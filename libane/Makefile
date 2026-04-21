@@ -1,11 +1,11 @@
 LIB_NAME = libane
 
 CC = gcc
-CFLAGS = -I. -Wall -Werror -Wextra \
+CFLAGS = -I. -Wall -Werror -Wextra -fPIC \
 	-Wdeclaration-after-statement \
 	-O3 -std=gnu99
 
-LIBS = -I/usr/include/libdrm -I/lib/modules/$(shell uname -r)/build/include/uapi/drm
+LIBS = -I/usr/include/drm -I../ane/src/uapi/drm
 
 BUILD_DIR = .
 SRC_DIR = .

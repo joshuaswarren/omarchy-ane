@@ -295,9 +295,14 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	struct ane_device *ane = drm->dev_private;
 	int err;
 
+	dev_info(ane->dev, "ane_drm_open called\n");
+
 	/* need to bring up power immediately if opening device */
 	err = pm_runtime_resume_and_get(ane->dev);
-	if (err < 0 && err != -EACCES) {
+	dev_info(ane->dev, "pm_runtime_resume_and_get returned %d\n", err);
+	if (err == -EINVAL || err == -EACCES)
+		err = 0;
+	if (err < 0) {
 		pm_runtime_put_autosuspend(ane->dev);
 		return err;
 	}
@@ -326,7 +331,9 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	long err;
 
 	err = pm_runtime_resume_and_get(ane->dev);
-	if (err < 0 && err != -EACCES) {
+	if (err == -EINVAL || err == -EACCES)
+		err = 0;
+	if (err < 0) {
 		pm_runtime_put_autosuspend(ane->dev);
 		return err;
 	}
@@ -382,6 +389,7 @@ static const struct file_operations ane_drm_fops = {
 	.read = drm_read,
 	.llseek = noop_llseek,
 	.mmap = ane_drm_mmap,
+	.fop_flags = FOP_UNSIGNED_OFFSET,
 };
 
 static const struct drm_driver ane_drm_driver = {
@@ -393,7 +401,6 @@ static const struct drm_driver ane_drm_driver = {
 	.fops = &ane_drm_fops,
 	.name = "ane",
 	.desc = "Apple Neural Engine driver",
-	.date = "20230103",
 };
 
 static int ane_iommu_domain_init(struct ane_device *ane)
@@ -595,7 +602,7 @@ detach_genpd:
 	return err;
 }
 
-static int ane_platform_remove(struct platform_device *pdev)
+static void ane_platform_remove(struct platform_device *pdev)
 {
 	struct ane_device *ane = platform_get_drvdata(pdev);
 	drm_dev_unregister(&ane->drm);
@@ -603,7 +610,6 @@ static int ane_platform_remove(struct platform_device *pdev)
 	pm_runtime_dont_use_autosuspend(ane->dev);
 	ane_iommu_domain_free(ane);
 	ane_detach_genpd(ane);
-	return 0;
 }
 
 static int __maybe_unused ane_runtime_suspend(struct device *dev)

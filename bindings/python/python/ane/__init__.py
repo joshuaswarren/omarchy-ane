@@ -5,13 +5,14 @@
 
 import atexit
 import ctypes
+import os
 import numpy as np
 from ctypes import c_void_p
 from construct import Struct, Array, Int32ul, Int64ul
 
 class _Driver:
 	def __init__(self, lib_path):
-		self.lib = ctypes.cdll.LoadLibrary(lib_path)
+		self.lib = ctypes.CDLL(lib_path, use_errno=True)
 		self.lib.pyane_init.restype = c_void_p
 		self.lib.pyane_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
 		self.lib.pyane_free.argtypes = [c_void_p]
@@ -46,6 +47,12 @@ class model:
 		assert(len(inarrs) == self.src_count)
 		assert(all(((arr.dtype == np.float16) and (arr.shape == self.src_nchw[idx][:4])) for idx,arr in enumerate(inarrs)))
 		self.driver.lib.pyane_send(self.handle, *[arr.tobytes(order='C') for arr in inarrs], *self.inputs_pad)
-		self.driver.lib.pyane_exec(self.handle)
+		ret = self.driver.lib.pyane_exec(self.handle)
+		if ret != 0:
+			err = ctypes.get_errno()
+			raise RuntimeError(f"ane_exec failed: {ret} errno={err} {os.strerror(err)}")
 		self.driver.lib.pyane_read(self.handle, *self.outputs, *self.outputs_pad)
 		return [np.frombuffer(self.outputs[idx], dtype=np.float16).reshape(*self.dst_nchw[idx][:4]) for idx in range(self.dst_count)]
+
+# Backwards-compatible alias for scripts that expect ane.Model.
+Model = model

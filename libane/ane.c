@@ -4,6 +4,8 @@
 #include <asm/types.h>
 #include <drm.h>
 #include <errno.h>
+#include <inttypes.h>
+#include <stdio.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -38,6 +40,23 @@
 #define MAX_ANE_DEVICES	   2
 #define MAX_NODE_LEN	   30
 #define MAX_NODE_COUNT	   64
+#define CMD_BUF_BDX	   0
+
+static inline int ane_env_enabled(const char *name)
+{
+	const char *val = getenv(name);
+	return val && *val && strcmp(val, "0") != 0;
+}
+
+static inline void ane_dump_bo(const char *path, void *data, uint64_t size)
+{
+	int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+	if (fd < 0) {
+		return;
+	}
+	(void)write(fd, data, size);
+	close(fd);
+}
 
 static inline void *ane_malloc(const uint64_t size)
 {
@@ -97,6 +116,20 @@ static inline void set_btsp_and_command(struct ane_nn *nn)
 	/* do not fucking overflow */
 	memcpy(nn->btsp_chan.map, nn->data, anec->td_size);
 	set_nid(nn->btsp_chan.map, ANE_FIFO_NID);
+}
+
+static inline void ane_dump_hex(FILE *fp, const char *label, const void *buf,
+				uint64_t size)
+{
+	const uint8_t *p = (const uint8_t *)buf;
+	fprintf(fp, "%s (size=%" PRIu64 "):\n", label, size);
+	for (uint64_t i = 0; i < size; i += 16) {
+		fprintf(fp, "  %04" PRIx64 ":", i);
+		for (uint64_t j = 0; j < 16 && (i + j) < size; j++) {
+			fprintf(fp, " %02x", p[i + j]);
+		}
+		fprintf(fp, "\n");
+	}
 }
 
 static inline int bo_init(struct ane_nn *nn, struct ane_bo *bo)
@@ -277,6 +310,39 @@ static inline int ane_pread(const char *fname, void *data, uint64_t size,
 	return 0;
 }
 
+static inline uint64_t anec_data_offset(const char *fname, uint64_t size)
+{
+	uint64_t offset = ANEC_HEADER_SIZE;
+	FILE *fp = fopen(fname, "rb");
+	if (!fp) {
+		return offset;
+	}
+
+	if (fseek(fp, 0, SEEK_END) == 0) {
+		long fsize = ftell(fp);
+		if (fsize > 0 &&
+		    (uint64_t)fsize >= (size + (ANEC_HEADER_SIZE * 2))) {
+			if (fseek(fp, ANEC_HEADER_SIZE, SEEK_SET) == 0) {
+				unsigned char buf[ANEC_HEADER_SIZE];
+				size_t n = fread(buf, 1, sizeof(buf), fp);
+				int all_zero = 1;
+				for (size_t i = 0; i < n; i++) {
+					if (buf[i] != 0) {
+						all_zero = 0;
+						break;
+					}
+				}
+				if (all_zero) {
+					offset = ANEC_HEADER_SIZE * 2;
+				}
+			}
+		}
+	}
+
+	fclose(fp);
+	return offset;
+}
+
 static inline int is_ane_device(int fd)
 {
 	drm_version_t version = {};
@@ -403,7 +469,8 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		return -ENOMEM;
 	}
 
-	if (ane_pread(path, nn->data, anec->size, ANEC_HEADER_SIZE) < 0) {
+	if (ane_pread(path, nn->data, anec->size,
+		      anec_data_offset(path, anec->size)) < 0) {
 		free(nn->data);
 		return -EINVAL;
 	}
@@ -458,6 +525,7 @@ void __ane_free(struct ane_nn *nn)
 int ane_exec(struct ane_nn *nn)
 {
 	const struct anec *anec = to_anec(nn);
+	int ret;
 
 	struct drm_ane_submit args;
 	memset(&args, 0, sizeof(args));
@@ -473,7 +541,79 @@ int ane_exec(struct ane_nn *nn)
 	}
 	args.btsp_handle = nn->btsp_chan.handle;
 
-	return ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
+	fprintf(stderr,
+		"ANE NN {\n"
+		"  fd=%d\n"
+		"  data=%p\n"
+		"  anec={size=%" PRIu64 " td_size=%u td_count=%u tsk_size=%" PRIu64
+		" krn_size=%" PRIu64 " src_count=%u dst_count=%u}\n"
+		"  btsp_chan={map=%p size=%" PRIu64 " handle=%u offset=%" PRIu64
+		"}\n"
+		"  chans=[\n",
+		nn->fd, nn->data, anec->size, anec->td_size, anec->td_count,
+		anec->tsk_size, anec->krn_size, anec->src_count,
+		anec->dst_count, nn->btsp_chan.map, nn->btsp_chan.size,
+		nn->btsp_chan.handle, nn->btsp_chan.offset);
+	for (int i = 0; i < ANE_TILE_COUNT; i++) {
+		fprintf(stderr,
+			"    %02d: {map=%p size=%" PRIu64 " handle=%u offset=%" PRIu64
+			"}%s\n",
+			i, nn->chans[i].map, nn->chans[i].size,
+			nn->chans[i].handle, nn->chans[i].offset,
+			(i + 1) < ANE_TILE_COUNT ? "," : "");
+	}
+	fprintf(stderr, "  ]\n}\n");
+
+	fprintf(stderr,
+		"ANE SUBMIT {\n"
+		"  tsk_size=%" PRIu64 "\n"
+		"  td_count=%u\n"
+		"  td_size=%u\n"
+		"  btsp_handle=%u\n"
+		"  pad=%u\n"
+		"  handles=[",
+		(uint64_t)args.tsk_size, args.td_count, args.td_size,
+		args.btsp_handle, args.pad);
+	for (int i = 0; i < ANE_TILE_COUNT; i++) {
+		fprintf(stderr, "%s%u", i ? ", " : "", args.handles[i]);
+	}
+	fprintf(stderr, "]\n}\n");
+
+	if (args.handles[CMD_BUF_BDX] && nn->chans[CMD_BUF_BDX].map) {
+		ane_dump_hex(stderr, "CMD_BUF (handle[0])",
+			     nn->chans[CMD_BUF_BDX].map, anec->td_size);
+	}
+
+	if (ane_env_enabled("LIBANE_DUMP_BOS")) {
+		char path[64];
+		for (int bdx = 0; bdx < ANE_TILE_COUNT; bdx++) {
+			if (!anec->tiles[bdx]) {
+				continue;
+			}
+			snprintf(path, sizeof(path), "/tmp/ane_bo_%02d.bin",
+				 bdx);
+			ane_dump_bo(path, nn->chans[bdx].map,
+				    nn->chans[bdx].size);
+		}
+		ane_dump_bo("/tmp/ane_btsp.bin", nn->btsp_chan.map,
+			    nn->btsp_chan.size);
+	}
+	ret = ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
+	if (ane_env_enabled("LIBANE_DUMP_BOS_POST")) {
+		char path[64];
+		for (int bdx = 0; bdx < ANE_TILE_COUNT; bdx++) {
+			if (!anec->tiles[bdx]) {
+				continue;
+			}
+			snprintf(path, sizeof(path), "/tmp/ane_bo_%02d_post.bin",
+				 bdx);
+			ane_dump_bo(path, nn->chans[bdx].map,
+				    nn->chans[bdx].size);
+		}
+		ane_dump_bo("/tmp/ane_btsp_post.bin", nn->btsp_chan.map,
+			    nn->btsp_chan.size);
+	}
+	return ret;
 }
 
 #ifndef LIBANE_CONFIG_NO_INDEX_CHECK

@@ -1,4 +1,5 @@
 ifneq ($(KERNELRELEASE),)
+	ccflags-y += -DMODULE
 	obj-m := ane.o
 	ane-objs := ./src/ane_drv.o ./src/ane_tm.o
 else
@@ -13,7 +14,8 @@ install:
 	sudo make -C $(KERNELDIR) M=$(PWD) modules_install
 	# sudo depmod -a
 	sudo modprobe ane
-	sudo chmod 666 /dev/accel/accel0
+	if [ -e /dev/accel/accel0 ]; then sudo chmod 666 /dev/accel/accel0; \
+	else echo "note: /dev/accel/accel0 not found; device may not have probed"; fi
 
 uninstall:
 	sudo modprobe -r ane

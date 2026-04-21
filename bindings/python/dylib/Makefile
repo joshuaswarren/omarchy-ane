@@ -1,17 +1,17 @@
 CC = gcc
-CFLAGS = -I. -I./include -Wall -Werror -Wextra \
+CFLAGS = -I. -I./include -I../../../libane -Wall -Werror -Wextra \
 	-Wdeclaration-after-statement \
 	-O3 -std=gnu99
 
-LIBS = -I/usr/include/libane
+LIBS = ../../../libane/libane.a
 
 .PHONY: libane_python install uninstall clean
 
 libane_python:
-	gcc $(CFLAGS) $(LIBS)\
+	gcc $(CFLAGS) \
 		-shared -pthread -fPIC -fno-strict-aliasing \
 		libane_python.c -o libane_python.so \
-		-lane
+		$(LIBS)
 
 install: libane_python
 	install libane_python.so ${DESTDIR}/usr/lib

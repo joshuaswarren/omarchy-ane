@@ -1,0 +1,28 @@
+/dts-v1/;
+/plugin/;
+
+&{/} {
+    compatible = "apple,j313", "apple,t8103";
+    #address-cells = <2>;
+    #size-cells = <2>;
+
+    /*
+     * NOTE: 0x23b100000 is AIC on T8103, not ANE. Do not use it.
+     * The reg values below are derived from the provided blob:
+     * "reg"= <0000006a0000000000000002000000000000703b0000000000c0080000000000>
+     * Verify they are from a T8103 IODeviceTree node before using.
+     */
+    ane: ane@6a000000 {
+        compatible = "apple,t8103-ane";
+        reg = <0x0 0x6a000000 0x0 0x02000000
+               0x0 0x3b700000 0x0 0x0008c000>;
+        /* From IODeviceTree: interrupts = <a0010000> */
+        interrupts = <0x1a0>;
+        /* From IODeviceTree: iommu-parent = <ed000000> (phandle to dart-ane) */
+        /* From IODeviceTree (dart-ane): sids = <01a00000> */
+        iommus = <&dart_ane 0x1a0>;
+        /* From IODeviceTree: power-gates = <2e010000> */
+        power-domains = <&pmgr 0x12e>;
+        status = "okay";
+    };
+};
