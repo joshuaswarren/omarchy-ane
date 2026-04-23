@@ -99,3 +99,8 @@ make -C /home/asahi/ane-ex/ane/libane
 make -C /home/asahi/ane-ex/ane/bindings/python/dylib
 After that, run_sum.py produced non‑zero outputs.
 
+## RuntimeError("driver error")
+root@fedora:~# cat /boot/efi/m1n1/boot.conf
+[device-tree]
+overlay=overlays/ane.dtbo
+
