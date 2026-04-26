@@ -10,6 +10,15 @@ All things Linux here.
 - libane/: Userspace lib.
 - python/: Python bindings for libane.
 
+# How to install
+
+```
+make
+cd ane && sh run.sh install
+```
+
+make sure ane is in lsmod
+
 # Dump
 
 ## GEM
@@ -103,4 +112,12 @@ After that, run_sum.py produced non‑zero outputs.
 root@fedora:~# cat /boot/efi/m1n1/boot.conf
 [device-tree]
 overlay=overlays/ane.dtbo
+
+root@fedora:/boot/dtbs/overlays# ls -la
+total 12
+drwxr-xr-x. 2 root root 4096 Jan 25 14:17 .
+drwxr-xr-x. 3 root root 4096 Jan 25 14:17 ..
+-rw-r--r--. 1 root root  680 Jan 25 14:17 ane.dtbo
+root@fedora:/boot/dtbs/overlays# pwd
+/boot/dtbs/overlays
 
