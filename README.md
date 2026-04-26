@@ -10,7 +10,7 @@ All things Linux here.
 - libane/: Userspace lib.
 - python/: Python bindings for libane.
 
-# How to install
+## How to install
 
 ```
 make
@@ -19,10 +19,10 @@ cd ane && sh run.sh install
 
 make sure ane is in lsmod
 
-# Dump
 
-## GEM
+## Dump GEM
 
+```
 handle[0]=1 → BO for tile/buffer index 0 (where the command/weights live)
 handle[4]=2 → BO for output tile (dst 0)
 handle[5]=3 → BO for input 0
@@ -42,9 +42,11 @@ python3 /home/asahi/ane-ex/dump.py /tmp/ane_bo_05.bin --dtype fp16 --tile 1,64,1
 
 python3 /home/asahi/ane-ex/dump.py /tmp/ane_bo_06.bin --dtype fp16 --tile 1,64,1,1,64,64 --count 8
 [2. 2. 2. 2. 2. 2. 2. 2.]
+```
 
 ## IOCTL
 
+```
 asahi@fedora:~/ane-ex$ sudo bpftrace -e '
 tracepoint:syscalls:sys_enter_ioctl /args->cmd == 0xc0186441/ { printf("ANE BO_INIT\n"); }
 tracepoint:syscalls:sys_enter_ioctl /args->cmd == 0xc0086442/ { printf("ANE BO_FREE\n"); }
@@ -61,13 +63,36 @@ ANE BO_FREE
 ANE BO_FREE
 ANE BO_FREE
 ANE BO_FREE
+```
 
+## Troubleshoot
 
-# Troubleshoot
+1. /dev/accel/accelXXX not found https://github.com/eiln/ane/issues/6
+```
+To enable typec dp and ane,
+- git clone https://github.com/AsahiLinux/linux
+- git switch fairy-dust
+- (for M1 only, idk what patch for other) apply patch in this commit https://github.com/eiln/linux/commit/6027c18cc9e9a125d0b2854b04a52e1672355886
+- follows steps here to compile https://grzegorz-smajdor.com/blog/2026-monitor-asahi-fedora/
+- git clone https://github.com/eiln/ane
+- cd ane && sudo make && cd ane && sh run.sh install
+- if make failed, try my fork https://github.com/allbilly/libane
+```
 
-## Driver issue
+I have device tree overlay working before but i cant make it work anymore, so just compile the kernel anyway as i need typec dp
 
-I fixed it by changing the ANE driver’s file‑operations so /dev/accel/accel0 opens through the DRM accel path instead of the generic DRM path.
+```
+/boot/dtbs/overlays/ane.dtbo
+/boot/efi/m1n1/boot.conf
+
+[device-tree]
+overlay=overlays/ane.dtbo
+```
+
+2. Driver issue
+
+```
+GPT: I fixed it by changing the ANE driver’s file‑operations so /dev/accel/accel0 opens through the DRM accel path instead of the generic DRM path.
 
 What was happening:
 
@@ -87,12 +112,11 @@ After rebuild + unload/reload the module, open() started working and dmesg showe
 
 ane_drm_open called
 pm_runtime_resume_and_get returned 0
+```
 
-## Register device tree
-https://github.com/eiln/ane/issues/6
+3. submit timeout and result all 0
 
-## submit timeout and result all 0
-
+```
 Root cause was the ANEC data offset: your sum.ane has a 0x1000 header (the 0x800..0x1000 range is all zeros), but libane always reads payload from 0x800. That meant the driver was sending all‑zero command data, so DRM_IOCTL_ANE_SUBMIT timed out and outputs stayed zero.
 
 I fixed libane to detect the padded header and read from 0x1000 when appropriate.
@@ -107,17 +131,7 @@ I rebuilt:
 make -C /home/asahi/ane-ex/ane/libane
 make -C /home/asahi/ane-ex/ane/bindings/python/dylib
 After that, run_sum.py produced non‑zero outputs.
+```
 
-## RuntimeError("driver error")
-root@fedora:~# cat /boot/efi/m1n1/boot.conf
-[device-tree]
-overlay=overlays/ane.dtbo
 
-root@fedora:/boot/dtbs/overlays# ls -la
-total 12
-drwxr-xr-x. 2 root root 4096 Jan 25 14:17 .
-drwxr-xr-x. 3 root root 4096 Jan 25 14:17 ..
--rw-r--r--. 1 root root  680 Jan 25 14:17 ane.dtbo
-root@fedora:/boot/dtbs/overlays# pwd
-/boot/dtbs/overlays
 
