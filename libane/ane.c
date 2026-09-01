@@ -31,7 +31,7 @@
 #define tile_align(x)	   ((((uint64_t)(x)) + TILE_SIZE - 1) & -TILE_SIZE)
 #define tile_size(nn, bdx) (tile_shift(to_anec(nn)->tiles[bdx]))
 
-#define ANEC_HEADER_SIZE   0x800UL
+#define ANEC_HEADER_SIZE   0x1000UL
 #define src_bdx(nn, idx)   (4 + ane_dst_count(nn) + idx)
 #define dst_bdx(nn, idx)   (4 + idx)
 
