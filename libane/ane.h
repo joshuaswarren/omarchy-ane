@@ -102,6 +102,7 @@ void __ane_free(struct ane_nn *nn);
 
 int ane_exec(struct ane_nn *nn);
 uint64_t ane_kernel_capacity(struct ane_nn *nn);
+int ane_bind_kernel(struct ane_nn *nn, const void *from, uint64_t size);
 
 #define to_anec(nn)	  (&nn->anec)
 #define ane_src_count(nn) (to_anec(nn)->src_count)
