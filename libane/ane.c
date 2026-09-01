@@ -483,6 +483,18 @@ uint64_t ane_kernel_capacity(struct ane_nn *nn)
 	return offset <= nn->chans[0].size ? nn->chans[0].size - offset : 0;
 }
 
+int ane_bind_kernel(struct ane_nn *nn, const void *from, uint64_t size)
+{
+	const struct anec *anec = to_anec(nn);
+	uint64_t offset = (anec->tsk_size + 15) & ~15ULL;
+	uint64_t capacity = ane_kernel_capacity(nn);
+	if (!from || size > capacity ||
+	    offset + size > nn->chans[0].size)
+		return -EINVAL;
+	memcpy((uint8_t *)nn->chans[0].map + offset, from, size);
+	return 0;
+}
+
 #ifndef LIBANE_CONFIG_NO_INDEX_CHECK
 #define INDEX_CHECK(cnt, idx, ret)                                             \
 	({                                                                     \
