@@ -455,12 +455,15 @@ void __ane_free(struct ane_nn *nn)
 	free(nn);
 }
 
-static int ane_exec_poll(struct ane_nn *nn)
+static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
+				    uint32_t state_src_idx,
+				    uint32_t state_dst_idx)
 {
 	const struct anec *anec = to_anec(nn);
 	/* fp16 +inf; completion flips the first output word */
 	const uint16_t sentinel = 0x7c00;
 	volatile uint16_t *first;
+	uint32_t first_bdx;
 	struct drm_ane_submit args;
 	int ret;
 
@@ -475,13 +478,27 @@ static int ane_exec_poll(struct ane_nn *nn)
 			args.handles[bdx] = nn->chans[bdx].handle;
 		}
 	}
+
+	/* swap state in/out buffers so output feeds the next input */
+	if (swap_state) {
+		uint32_t src = src_bdx(nn, state_src_idx);
+		uint32_t dst = dst_bdx(nn, state_dst_idx);
+		uint32_t handle = args.handles[src];
+		args.handles[src] = args.handles[dst];
+		args.handles[dst] = handle;
+	}
 	args.btsp_handle = nn->btsp_chan.handle;
 
 	/* poison outputs so stale results cannot pass the poll */
 	for (uint32_t idx = 0; idx < anec->dst_count; idx++) {
 		uint32_t bdx = dst_bdx(nn, idx);
-		uint16_t *words = (uint16_t *)nn->chans[bdx].map;
-		uint64_t count = nn->chans[bdx].size / sizeof(uint16_t);
+		uint16_t *words;
+		uint64_t count;
+		if (swap_state && idx == state_dst_idx) {
+			bdx = src_bdx(nn, state_src_idx);
+		}
+		words = (uint16_t *)nn->chans[bdx].map;
+		count = nn->chans[bdx].size / sizeof(uint16_t);
 		for (uint64_t word = 0; word < count; word++) {
 			words[word] = sentinel;
 		}
@@ -492,7 +509,11 @@ static int ane_exec_poll(struct ane_nn *nn)
 		return ret;
 	}
 
-	first = (volatile uint16_t *)nn->chans[dst_bdx(nn, 0)].map;
+	first_bdx = dst_bdx(nn, 0);
+	if (swap_state && state_dst_idx == 0) {
+		first_bdx = src_bdx(nn, state_src_idx);
+	}
+	first = (volatile uint16_t *)nn->chans[first_bdx].map;
 	for (int wait = 0; wait < 10000 && *first == sentinel; wait++) {
 		usleep(100);
 	}
@@ -501,7 +522,29 @@ static int ane_exec_poll(struct ane_nn *nn)
 
 int ane_exec(struct ane_nn *nn)
 {
-	return ane_exec_poll(nn);
+	return ane_exec_with_state_swap(nn, 0, 0, 0);
+}
+
+int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
+		  uint32_t state_src_idx, uint32_t state_dst_idx)
+{
+	if (!iterations || state_src_idx >= ane_src_count(nn) ||
+	    state_dst_idx >= ane_dst_count(nn)) {
+		return -EINVAL;
+	}
+	if (__ane_src_size(nn, state_src_idx) !=
+	    __ane_dst_size(nn, state_dst_idx)) {
+		return -EINVAL;
+	}
+	for (uint32_t iteration = 0; iteration < iterations; iteration++) {
+		int ret = ane_exec_with_state_swap(nn, iteration & 1,
+						   state_src_idx,
+						   state_dst_idx);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+	return 0;
 }
 
 uint64_t ane_kernel_capacity(struct ane_nn *nn)
