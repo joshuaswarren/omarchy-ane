@@ -476,6 +476,13 @@ int ane_exec(struct ane_nn *nn)
 	return ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
 }
 
+uint64_t ane_kernel_capacity(struct ane_nn *nn)
+{
+	const struct anec *anec = to_anec(nn);
+	uint64_t offset = (anec->tsk_size + 15) & ~15ULL;
+	return offset <= nn->chans[0].size ? nn->chans[0].size - offset : 0;
+}
+
 #ifndef LIBANE_CONFIG_NO_INDEX_CHECK
 #define INDEX_CHECK(cnt, idx, ret)                                             \
 	({                                                                     \
