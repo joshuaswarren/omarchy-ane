@@ -455,11 +455,15 @@ void __ane_free(struct ane_nn *nn)
 	free(nn);
 }
 
-int ane_exec(struct ane_nn *nn)
+static int ane_exec_poll(struct ane_nn *nn)
 {
 	const struct anec *anec = to_anec(nn);
-
+	/* fp16 +inf; completion flips the first output word */
+	const uint16_t sentinel = 0x7c00;
+	volatile uint16_t *first;
 	struct drm_ane_submit args;
+	int ret;
+
 	memset(&args, 0, sizeof(args));
 
 	args.tsk_size = anec->tsk_size;
@@ -473,7 +477,31 @@ int ane_exec(struct ane_nn *nn)
 	}
 	args.btsp_handle = nn->btsp_chan.handle;
 
-	return ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
+	/* poison outputs so stale results cannot pass the poll */
+	for (uint32_t idx = 0; idx < anec->dst_count; idx++) {
+		uint32_t bdx = dst_bdx(nn, idx);
+		uint16_t *words = (uint16_t *)nn->chans[bdx].map;
+		uint64_t count = nn->chans[bdx].size / sizeof(uint16_t);
+		for (uint64_t word = 0; word < count; word++) {
+			words[word] = sentinel;
+		}
+	}
+
+	ret = ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
+	if (ret < 0) {
+		return ret;
+	}
+
+	first = (volatile uint16_t *)nn->chans[dst_bdx(nn, 0)].map;
+	for (int wait = 0; wait < 10000 && *first == sentinel; wait++) {
+		usleep(100);
+	}
+	return *first == sentinel ? -ETIMEDOUT : ret;
+}
+
+int ane_exec(struct ane_nn *nn)
+{
+	return ane_exec_poll(nn);
 }
 
 uint64_t ane_kernel_capacity(struct ane_nn *nn)
