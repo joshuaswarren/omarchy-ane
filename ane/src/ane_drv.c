@@ -8,6 +8,8 @@
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 
 #include <drm/drm_accel.h>
 #include <drm/drm_drv.h>
@@ -16,6 +18,16 @@
 
 #include "ane.h"
 #include "ane_tm.h"
+
+static int ane_bo_stop_stage = 99;
+module_param(ane_bo_stop_stage, int, 0444);
+MODULE_PARM_DESC(ane_bo_stop_stage,
+		 "abort BO_INIT after this mapping stage (debug)");
+
+static int ane_skip_dart_invalidate;
+module_param(ane_skip_dart_invalidate, int, 0444);
+MODULE_PARM_DESC(ane_skip_dart_invalidate,
+		 "skip the manual dart1/dart2 TLB invalidate writes");
 
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
@@ -44,6 +56,11 @@ static void ane_iommu_invalidate_tlb(struct ane_device *ane)
 
 	iommu_flush_iotlb_all(ane->domain);
 
+	if (ane_skip_dart_invalidate) {
+		mutex_unlock(&ane->iommu_lock);
+		return;
+	}
+
 	writel(0x1, ane->dart1 + ane->hw->dart.select);
 	writel(ane->hw->dart.invalidate, ane->dart1 + ane->hw->dart.command);
 	writel(0x1, ane->dart2 + ane->hw->dart.select);
@@ -65,6 +82,12 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 
 	mutex_lock(&ane->iommu_lock);
 
+	if (ane_bo_stop_stage == 1) {
+		dev_info(ane->dev, "bo: stop stage 1 (locked, nothing reserved)\n");
+		err = -EINVAL;
+		goto unlock;
+	}
+
 	/* reserve area from ANE address space */
 	err = drm_mm_insert_node_generic(&ane->mm, bo->mm,
 					 bo->npages << ane->shift,
@@ -76,8 +99,20 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 
 	bo->iova = bo->mm->start;
 
+	if (ane_bo_stop_stage == 2) {
+		dev_info(ane->dev, "bo: stop stage 2 (iova %#llx reserved, unmapped)\n",
+			 (unsigned long long)bo->iova);
+		err = -EINVAL;
+		goto remove;
+	}
+
 	/* map into ANE address space */
-	for (u32 i = 0; i < bo->npages; i++) {
+	u32 limit = (ane_bo_stop_stage == 3) ? 1 : bo->npages;
+
+	dev_info(ane->dev, "bo: mapping %u page(s) at iova %#llx\n",
+		 limit, (unsigned long long)bo->iova);
+
+	for (u32 i = 0; i < limit; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
 		err = iommu_map(ane->domain, iova, page_to_phys(bo->pages[i]),
 				1UL << ane->shift, IOMMU_READ | IOMMU_WRITE,
@@ -91,6 +126,13 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 			}
 			goto remove;
 		}
+	}
+
+	if (ane_bo_stop_stage == 3) {
+		dev_info(ane->dev, "bo: stop stage 3 (one page mapped, survived)\n");
+		iommu_unmap(ane->domain, bo->iova, 1UL << ane->shift);
+		err = -EINVAL;
+		goto remove;
 	}
 
 	mutex_unlock(&ane->iommu_lock);
@@ -234,13 +276,19 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	struct ane_request req;
 	memset(&req, 0, sizeof(req));
 
-	if (args->pad || !args->tsk_size || !args->td_count || !args->td_size ||
+	if (!args->tsk_size || !args->td_count || !args->td_size ||
 	    !args->handles[CMD_BUF_BDX] || args->handles[KRN_BUF_BDX] ||
 	    !args->btsp_handle) {
 		return -EINVAL;
 	}
 
-	req.qid = 4;
+	/* pad==0 keeps qid 4; 0x80|qid selects one of eight queues. */
+	if (args->pad & 0x80)
+		req.qid = args->pad & 0x7;
+	else if (args->pad)
+		return -EINVAL;
+	else
+		req.qid = 4;
 	req.nid = ANE_FIFO_NID;
 	req.td_size = args->td_size;
 	req.td_count = args->td_count;
@@ -271,11 +319,15 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 
 	mutex_lock(&ane->engine_lock);
 
+	dev_info(ane->dev, "submit: ioctl entry\n");
 	err = ane_tm_enqueue(ane, &req);
+	dev_info(ane->dev, "submit: enqueue returned %d\n", err);
 	if (err < 0)
 		goto unlock;
 
+	dev_info(ane->dev, "submit: calling execute\n");
 	err = ane_tm_execute(ane, &req);
+	dev_info(ane->dev, "submit: execute returned %d\n", err);
 	if (err < 0)
 		goto unlock;
 
@@ -441,6 +493,27 @@ static void ane_iommu_remap_ttbr(struct ane_device *ane)
 		       ane->dart2 + ane->hw->dart.ttbr);
 }
 
+static int ane_disable_dart_irq;
+module_param(ane_disable_dart_irq, int, 0444);
+MODULE_PARM_DESC(ane_disable_dart_irq,
+	"disable the shared DART irq during probe (original upstream behaviour)");
+#define ane_keep_dart_irq (!ane_disable_dart_irq)
+
+static int ane_np_map;
+module_param(ane_np_map, int, 0444);
+MODULE_PARM_DESC(ane_np_map,
+	"map dart1/dart2 non-posted with ioremap_np (Apple MMIO semantics)");
+
+static int ane_skip_power;
+module_param(ane_skip_power, int, 0444);
+MODULE_PARM_DESC(ane_skip_power,
+	"skip the in-kernel PMGR power assertion (assume already powered)");
+
+static int ane_skip_genpd;
+module_param(ane_skip_genpd, int, 0444);
+MODULE_PARM_DESC(ane_skip_genpd,
+	"do not attach power domains; assume firmware/userspace powered the ANE");
+
 static void ane_detach_genpd(struct ane_device *ane)
 {
 	if (ane->pd_count <= 1)
@@ -448,7 +521,8 @@ static void ane_detach_genpd(struct ane_device *ane)
 
 	for (int i = ane->pd_count - 1; i >= 0; i--) {
 		if (ane->pd_link[i])
-			device_link_del(ane->pd_link[i]);
+			/* skip device_link_del: deadlocks in pm_runtime_drop_link
+	 * when probe aborts mid power transition (observed t8103). */
 		if (!IS_ERR_OR_NULL(ane->pd_dev[i]))
 			dev_pm_domain_detach(ane->pd_dev[i], true);
 	}
@@ -459,6 +533,12 @@ static void ane_detach_genpd(struct ane_device *ane)
 static int ane_attach_genpd(struct ane_device *ane)
 {
 	struct device *dev = ane->dev;
+
+	if (ane_skip_genpd) {
+		dev_info(dev, "genpd: skipped by ane_skip_genpd\n");
+		ane->pd_count = 0;
+		return 0;
+	}
 
 	ane->pd_count = of_count_phandle_with_args(
 		dev->of_node, "power-domains", "#power-domain-cells");
@@ -494,6 +574,83 @@ static int ane_attach_genpd(struct ane_device *ane)
 
 	return 0;
 }
+
+
+/*
+ * PMGR power-state assertion.
+ *
+ * ps_ane_sys_cpu gates the ANE engine partition, which contains DART
+ * instances TRADDARTBRD/TRADDARTBWR (dart1/dart2). genpd attach does not
+ * raise it during probe, and touching those windows while the partition is
+ * gated causes an immediate external abort (hard reset, no oops).
+ *
+ * Semantics match drivers/pmdomain/apple/pmgr-pwrstate.c.
+ */
+#define ANE_PMGR_PS_TARGET	GENMASK(3, 0)
+#define ANE_PMGR_PS_ACTUAL	GENMASK(7, 4)
+#define ANE_PMGR_AUTO_ENABLE	BIT(28)
+#define ANE_PMGR_PS_ACTIVE	0xf
+
+static int ane_force_power(struct ane_device *ane)
+{
+	if (ane_skip_power) {
+		dev_info(ane->dev, "power: skipped by ane_skip_power\n");
+		return 0;
+	}
+	/* offsets within the pmgr syscon: ps_ane_sys, ps_ane_sys_cpu */
+	static const u32 ps_offset[] = { 0x470, 0xc000 };
+	struct device *dev = ane->dev;
+	struct device_node *np;
+	struct regmap *map;
+	unsigned int val;
+	int err;
+
+	np = of_find_compatible_node(NULL, NULL, "apple,t8103-pmgr");
+	if (!np) {
+		dev_err(dev, "power: no apple,t8103-pmgr node\n");
+		return -ENODEV;
+	}
+	map = syscon_node_to_regmap(np);
+	of_node_put(np);
+	if (IS_ERR(map)) {
+		dev_err(dev, "power: pmgr regmap failed %ld\n", PTR_ERR(map));
+		return PTR_ERR(map);
+	}
+
+	for (int i = 0; i < ARRAY_SIZE(ps_offset); i++) {
+		err = regmap_read(map, ps_offset[i], &val);
+		if (err)
+			return err;
+
+		dev_info(dev, "power: ps@%#x before %#x\n", ps_offset[i], val);
+
+		val &= ~(ANE_PMGR_PS_TARGET | ANE_PMGR_AUTO_ENABLE);
+		val |= FIELD_PREP(ANE_PMGR_PS_TARGET, ANE_PMGR_PS_ACTIVE);
+		err = regmap_write(map, ps_offset[i], val);
+		if (err)
+			return err;
+
+		err = regmap_read_poll_timeout(map, ps_offset[i], val,
+			FIELD_GET(ANE_PMGR_PS_ACTUAL, val) == ANE_PMGR_PS_ACTIVE,
+			100, 100000);
+		if (err) {
+			dev_err(dev, "power: ps@%#x stuck at %#x, refusing MMIO\n",
+				ps_offset[i], val);
+			return -EIO;
+		}
+
+		/* Keep it up once we let go of it. */
+		regmap_update_bits(map, ps_offset[i], ANE_PMGR_AUTO_ENABLE,
+				   ANE_PMGR_AUTO_ENABLE);
+		dev_info(dev, "power: ps@%#x active\n", ps_offset[i]);
+	}
+
+	return 0;
+}
+
+static int ane_stop_stage = 99;
+module_param(ane_stop_stage, int, 0444);
+MODULE_PARM_DESC(ane_stop_stage, "abort probe after this stage (debug)");
 
 static int ane_platform_probe(struct platform_device *pdev)
 {
@@ -531,26 +688,61 @@ static int ane_platform_probe(struct platform_device *pdev)
 		err = -ENODEV;
 		goto detach_genpd;
 	}
-	disable_irq(ane->dart_irq);
+	/* Do not disable a line apple-dart owns: an unacked DART fault
+	 * escalates to an SoC reset. Opt in with ane_disable_dart_irq=1. */
+	if (!ane_keep_dart_irq)
+		disable_irq(ane->dart_irq);
+	else
+		dev_info(dev, "irq: leaving dart irq %d enabled\n", ane->dart_irq);
 
-	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
+	if (ane_np_map) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "engine");
+		if (!res) {
+			err = -ENODEV;
+			goto detach_genpd;
+		}
+		ane->engine = ioremap_np(res->start, resource_size(res));
+		dev_info(dev, "map: engine non-posted %p\n", ane->engine);
+	} else {
+		ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
+	}
 	if (IS_ERR(ane->engine)) {
 		err = PTR_ERR(ane->engine);
 		goto detach_genpd;
 	}
 
-	ane->dart1 = devm_platform_ioremap_resource_byname(pdev, "dart1");
+	/* dart1/dart2 sit inside the 32 MiB engine window (Apple ADT overlap):
+	 * ioremap without requesting, like dart0 below. */
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart1");
+	if (!res) {
+		err = -ENODEV;
+		goto detach_genpd;
+	}
+	if (ane_np_map) {
+		ane->dart1 = ioremap_np(res->start, resource_size(res));
+		dev_info(dev, "map: dart1 non-posted %p\n", ane->dart1);
+	} else {
+		ane->dart1 = devm_ioremap(dev, res->start, resource_size(res));
+	}
 	if (IS_ERR(ane->dart1)) {
 		err = PTR_ERR(ane->dart1);
 		goto detach_genpd;
 	}
-
-	ane->dart2 = devm_platform_ioremap_resource_byname(pdev, "dart2");
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart2");
+	if (!res) {
+		err = -ENODEV;
+		goto detach_genpd;
+	}
+	if (ane_np_map) {
+		ane->dart2 = ioremap_np(res->start, resource_size(res));
+		dev_info(dev, "map: dart2 non-posted %p\n", ane->dart2);
+	} else {
+		ane->dart2 = devm_ioremap(dev, res->start, resource_size(res));
+	}
 	if (IS_ERR(ane->dart2)) {
 		err = PTR_ERR(ane->dart2);
 		goto detach_genpd;
 	}
-
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart0");
 	if (!res) {
 		err = -ENODEV;
@@ -571,8 +763,77 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto detach_genpd;
 
+	if (ane_stop_stage == 0) { dev_info(dev, "probe: stop after attach\n"); err = -EINVAL; goto detach_genpd; }
+	for (int i = 0; i < ane->pd_count; i++)
+		dev_info(dev, "probe: pd[%d] = %s\n", i,
+			ane->pd_dev[i] ? dev_name(ane->pd_dev[i]) : "(null)");
+	{
+		static const char * const names[] = {
+			"engine", "dart0", "dart1", "dart2"
+		};
+		for (int i = 0; i < ARRAY_SIZE(names); i++) {
+			struct resource *r = platform_get_resource_byname(
+				pdev, IORESOURCE_MEM, names[i]);
+			if (r)
+				dev_info(dev, "res-dump: %s start=%pa size=%#llx\n",
+					 names[i], &r->start,
+					 (unsigned long long)resource_size(r));
+			else
+				dev_info(dev, "res-dump: %s MISSING\n", names[i]);
+		}
+		dev_info(dev, "res-dump: mapped engine=%p dart0=%p dart1=%p dart2=%p\n",
+			 ane->engine, ane->dart0, ane->dart1, ane->dart2);
+		dev_info(dev, "res-dump: ttbr offset=%#x\n", ane->hw->dart.ttbr);
+	}
+	dev_info(dev, "probe: iommu ok, powering domains\n");
+	for (int i = 0; i < ane->pd_count; i++) {
+		err = pm_runtime_get_sync(ane->pd_dev[i]);
+		if (err < 0) {
+			dev_err(dev, "probe: pd[%d] power on failed %d\n", i, err);
+			goto detach_genpd;
+		}
+	}
+	if (ane_stop_stage == 1) { dev_info(dev, "probe: stop after power-on\n"); err = -EINVAL; goto detach_genpd; }
+	err = ane_force_power(ane);
+	if (err < 0)
+		goto detach_genpd;
+	if (ane_stop_stage == 10) {
+		dev_info(dev, "probe: stop after force_power\n");
+		err = -EINVAL;
+		goto detach_genpd;
+	}
+	dev_info(dev, "probe: domains on, remap ttbr\n");
+	if (ane_stop_stage >= 30 && ane_stop_stage <= 32) {
+		u32 src;
+
+		dev_info(dev, "probe: stage30 reading dart0 ttbr\n");
+		src = readl_relaxed(ane->dart0 + ane->hw->dart.ttbr);
+		dev_info(dev, "probe: stage30 dart0 ttbr = %#x\n", src);
+		if (ane_stop_stage == 30) {
+			err = -EINVAL;
+			goto detach_genpd;
+		}
+
+		dev_info(dev, "probe: stage31 writing dart1 ttbr\n");
+		writel_relaxed(src, ane->dart1 + ane->hw->dart.ttbr);
+		dev_info(dev, "probe: stage31 dart1 write done\n");
+		if (ane_stop_stage == 31) {
+			err = -EINVAL;
+			goto detach_genpd;
+		}
+
+		dev_info(dev, "probe: stage32 writing dart2 ttbr\n");
+		writel_relaxed(src, ane->dart2 + ane->hw->dart.ttbr);
+		dev_info(dev, "probe: stage32 dart2 write done\n");
+		err = -EINVAL;
+		goto detach_genpd;
+	}
 	ane_iommu_remap_ttbr(ane);
+	if (ane_stop_stage == 2) { dev_info(dev, "probe: stop after ttbr\n"); err = -EINVAL; goto detach_genpd; }
+	dev_info(dev, "probe: ttbr done, enabling tm\n");
+
 	ane_tm_enable(ane);
+	dev_info(dev, "probe: tm enabled\n");
 
 	/* Measured 3sec on macos, but 1sec seems more stable */
 	pm_runtime_set_autosuspend_delay(dev, 1000);
@@ -622,6 +883,9 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 static int __maybe_unused ane_runtime_resume(struct device *dev)
 {
 	struct ane_device *ane = dev_get_drvdata(dev);
+
+	if (ane_force_power(ane) < 0)
+		return -EIO;
 	ane_iommu_remap_ttbr(ane);
 	ane_tm_enable(ane);
 	return 0;
