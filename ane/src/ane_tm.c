@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
 
+#include <linux/dev_printk.h>
 #include <linux/iopoll.h>
 
 #include "ane_tm.h"
@@ -71,7 +72,10 @@ int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req)
 {
 	int qid = req->qid;
 
+	dev_info(ane->dev, "submit: enqueue qid=%d td_size=%#x nid=%#x iova=%#llx\n",
+		 qid, req->td_size, req->nid, (unsigned long long)req->btsp_iova);
 	tq_write32(ane, TQ_STATUS(qid), 0x1);
+	dev_info(ane->dev, "submit: tq status written\n");
 
 	for (int bdx = 0; bdx < ANE_TILE_COUNT; bdx++) {
 		tq_write32(ane, TQ_BAR1(qid, bdx), req->bar[bdx]);
@@ -87,9 +91,13 @@ int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req)
 static void ane_tm_push_tq(struct ane_device *ane, struct ane_request *req)
 {
 	int qid = req->qid;
+	dev_info(ane->dev, "submit: push tq qid=%d addr=%#x\n", qid,
+		 tq_read32(ane, TQ_ADDR1(qid)));
 	tm_write32(ane, TM_ADDR, tq_read32(ane, TQ_ADDR1(qid)));
 	tm_write32(ane, TM_INFO, tq_read32(ane, TQ_SIZE1(qid)) | req->td_count);
+	dev_info(ane->dev, "submit: ringing doorbell (engine DMA starts)\n");
 	tm_write32(ane, TM_PUSH, TQ_PRTY_TABLE[qid] | (qid & 7) << 8); // magic
+	dev_info(ane->dev, "submit: doorbell survived\n");
 }
 
 static int ane_tm_get_status(struct ane_device *ane)
