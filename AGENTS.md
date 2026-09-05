@@ -39,6 +39,13 @@ mil-hwx-compiler ──emits──▶ ANEC package ──loads──▶ libane +
    add/mul/max/min/sub/real_div/relu/clip, matmul and linear of any
    size (tiled and zero-padded), DAGs with fan-out. Nothing has run on a
    device yet; see `receipts/2026-09-05-ane-community/h13-handoff.json`.
+   Runners: `tools/h13_run_linux.py` binds the `omarchy`-branch libane
+   API (`pyane_init`, `__ane_send`/`__ane_read`, `ane_bind_kernel`,
+   `ane_exec`, `ane_exec_loop`) and `tests/run_h13_linux_hardware.sh`
+   is the Linux gate; `tests/run_h13_hardware.sh` is the macOS gate
+   (H13 HWX through `aned`). `tools/h13_reference.py` is the fp16 oracle
+   both compare against. If M2 changes any of those libane entry points
+   or the ANEC layout, the runner is the first consumer to update.
 
 2. **`~/src/mlx-omarchy`** (`joshuaswarren/mlx-omarchy`). Linux MLX
    port: Honeykrisp Vulkan supplies the full tensor baseline, ANE
