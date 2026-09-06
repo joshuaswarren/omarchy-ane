@@ -130,7 +130,7 @@ Full ecosystem evidence with citations:
 ## Compiler-side references (read these before touching descriptor code)
 
 All paths are relative to `~/src/ane-research-mirror/mil-hwx-compiler`
-(branch `feat/h13-m1`, head `f2fdabd`).
+(branch `feat/h13-m1`, head `d72cb9b`).
 
 | Path | What it gives a driver author |
 |---|---|
@@ -159,6 +159,68 @@ Apple's compiler. Nothing in that repository has executed on an ANE.
   device table and `ane_hw` entries, DT binding, register deltas, and a
   written bring-up plan. Installing Asahi or Omarchy on an M2 machine is
   a separate decision the owner makes.
+
+### The first-run kit, for review before any submission
+
+`mil-hwx-compiler/tests/h13_first_run/` is the escalation ladder for the
+first time a package from that compiler reaches this driver. Eight rungs,
+in order, with a stop rule after each; `RUNBOOK.md` gives per rung the
+MIL, the deterministic weights and inputs, the expected output from
+`tools/h13_reference.py`, the exact command, the pass criterion, the
+libane call sequence, and what a failure there implicates.
+
+| # | Op / shape | Encoder | Programs | Tasks | First failure implicates |
+|---|---|---|---|---|---|
+| 1 | `add [1,64,1,1]`, folded constant | source-qualified | 1 | 1 | the driver contract: `0x1000` header, channel 4/5/6, `0x4000` tiles |
+| 2 | `add [1,64,1,1]`, two runtime | oracle-parity | 1 | 1 | Apple's descriptor form and `ane_bind_kernel` (16 KiB constant section) |
+| 3 | `mul [1,64,1,1]` by fp16 `0.5` | oracle-parity | 1 | 1 | the constant section's bias and scale blocks |
+| 4 | `matmul` K=256 N=512 | Apple-parity matvec | 1 | 2 | two-task linked stream, 256 KiB weight DMA, weight permutation |
+| 5 | `softmax [1,512,1,1]` | Apple-parity norm | 1 | 5 | five linked tasks in one program, fp16 exp/reciprocal tables |
+| 6 | `add` → `mul` `[1,64,1,1]` | oracle-parity ×2 | 2 | 2 | intermediate handoff, channel 4 out then channel 5 in |
+| 7 | `matmul` M=K=N=64, both runtime | Apple-parity matmul | 1 | 2 | Apple's reversed operand order (`y` on 5, `x` on 6), `__DATA`/`__bss` scratch |
+| 8 | 768→1024→768 MLP block | 76 source-qualified + 1 parity | 77 | 77 | sustained dispatch: 77 submissions, 4.5 MiB constants, chunked partials |
+
+Rungs 1 and 2 compute the same numbers from the same inputs through
+different encoders, so a rung-2-only failure is descriptor-side and not
+this driver. Rung 1 is the `allbilly`-derived 64-lane descriptor family,
+`constantBytes` 0 and therefore no `ane_bind_kernel` — the closest thing
+to what already ran here.
+
+All eight rungs compile and dry-run on Linux as of 2026-09-06 at compiler
+`d72cb9b`: `mil-hwx-compiler/receipts/2026-09-05-ane-community/h13-first-run-dryrun.log`.
+A dry run reaches no device; it prints the whole dispatch plan, every
+binding and channel, the per-output pass criterion, and the exact libane
+call sequence, so this repository's owner can review the submission before
+hardware. Review those plans before granting a hardware handoff.
+
+What the ladder expects from this side, per rung: `pyane_init` reading the
+ANEC payload at `0x1000`; `__ane_src_size`/`__ane_dst_size` returning the
+manifest's `allocationBytes` (16 KiB for a `[1,64,1,1]` fp16 surface,
+32 KiB for `[1,512,1,1]`); `ane_bind_kernel` accepting constant sections
+of 256 B (rung 5), 16 KiB (rungs 2, 3, 6, 7), 256 KiB (rung 4) and
+512 KiB (rung 8); `ane_exec`; `__ane_read`; `pyane_free`. Rung 6 and rung 8
+call `pyane_init`/`pyane_free` repeatedly in one process, which is where the
+known IOVA leak across module state would show up.
+
+Before every session, `bash mil-hwx-compiler/tests/h13_first_run/preflight.sh`
+gates and prints the identities a device result must be recorded with: host
+and kernel, the `/proc/device-tree/soc/ane@*` node with `compatible` and
+`status`, the `ane` module's `srcversion` and parameters, the bound platform
+device with its driver and runtime-PM state (must be pinned `on`), the device
+node's mode and owner, and this checkout's branch, commit, dirty count and
+`ANEC_HEADER_SIZE` (must be `0x1000`, which is the `omarchy` branch —
+`main` and `omarchy-kmd` read `0x800` and are rejected). The check pins the
+branch name, not just the header, so this `m2-support` branch is rejected
+too even though it carries the same `0x1000`: the H13 ladder is qualified
+against `omarchy` and nothing else. It touches no device and exits 2 on any
+failure; `mil-hwx-compiler/tests/run_h13_linux_hardware.sh` runs the same
+script and refuses to compile or submit if it fails.
+
+After a hung submission: reboot. Never `rmmod` and reload `ane` — the remove
+path leaks IOVA mappings and the next `insmod` fails `bo_init` with
+`iommu_map failed at 0x4000`. Re-run the bring-up ladder, re-run preflight,
+and restart at the rung that failed, not at the top and not past it. Any
+result read after a hang is not evidence.
 
 ## Working rules
 
