@@ -178,7 +178,7 @@ libane call sequence, and what a failure there implicates.
 | 5 | `softmax [1,512,1,1]` | Apple-parity norm | 1 | 5 | five linked tasks in one program, fp16 exp/reciprocal tables |
 | 6 | `add` → `mul` `[1,64,1,1]` | oracle-parity ×2 | 2 | 2 | intermediate handoff, channel 4 out then channel 5 in |
 | 7 | `matmul` M=K=N=64, both runtime | Apple-parity matmul | 1 | 2 | Apple's reversed operand order (`y` on 5, `x` on 6), `__DATA`/`__bss` scratch |
-| 8 | 768→1024→768 MLP block | 76 source-qualified + 1 parity | 77 | 77 | sustained dispatch: 77 submissions, 4.5 MiB constants, chunked partials |
+| 8 | 768→1024→768 MLP block | 76 source-qualified + 1 parity | 77 | 77 | sustained dispatch: 77 submissions, 4.02 MiB of constant sections, chunked partials |
 
 Rungs 1 and 2 compute the same numbers from the same inputs through
 different encoders, so a rung-2-only failure is descriptor-side and not
