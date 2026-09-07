@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
 
+#include <linux/device.h>
 #include <linux/iopoll.h>
-
+#include <linux/module.h>
 #include "ane_tm.h"
 
 #define ANE_TQ_COUNT 8
@@ -92,53 +93,65 @@ static void ane_tm_push_tq(struct ane_device *ane, struct ane_request *req)
 	tm_write32(ane, TM_PUSH, TQ_PRTY_TABLE[qid] | (qid & 7) << 8); // magic
 }
 
-static int ane_tm_get_status(struct ane_device *ane)
+static int ane_tm_collect_events(struct ane_device *ane,
+				 struct ane_request *req, u32 *finished)
 {
-	int err;
-	u32 status;
+	for (unsigned int line = 0; line < 2; line++) {
+		u32 count = tm_read32(ane, TM_IRQ_EVTC(line));
 
-	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS, status,
-				 (status & TM_IS_IDLE), 1, 1000000);
-	if (err)
-		dev_err(ane->dev, "tm execution failed w/ %d\n", err);
+		if (count > 64)
+			return -EIO;
+		for (u32 n = 0; n < count; n++) {
+			u32 info = tm_read32(ane, TM_IRQ_INFO(line));
 
-	return err;
-}
-
-static void ane_tm_handle_irq(struct ane_device *ane)
-{
-	int line;
-
-	line = 0;
-	for (u32 n = 0; n < tm_read32(ane, TM_IRQ_EVTC(line)); n++) {
-		tm_read32(ane, TM_IRQ_INFO(line));
-		tm_read32(ane, TM_IRQ_UNK1(line));
-		tm_read32(ane, TM_IRQ_TMST(line));
-		tm_read32(ane, TM_IRQ_UNK2(line));
+			tm_read32(ane, TM_IRQ_UNK1(line));
+			tm_read32(ane, TM_IRQ_TMST(line));
+			tm_read32(ane, TM_IRQ_UNK2(line));
+			if (req && info == (0x05000000 | (req->nid << 16) |
+					    (req->td_count - 1)))
+				*finished |= BIT(line);
+		}
 	}
-
 	tm_write32(ane, TM_IRQ_ACK, tm_read32(ane, TM_IRQ_ACK) | 2);
-
-	line = 1;
-	for (u32 n = 0; n < tm_read32(ane, TM_IRQ_EVTC(line)); n++) {
-		tm_read32(ane, TM_IRQ_INFO(line));
-		tm_read32(ane, TM_IRQ_UNK1(line));
-		tm_read32(ane, TM_IRQ_TMST(line));
-		tm_read32(ane, TM_IRQ_UNK2(line));
-	}
+	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 {
-	int err;
+	u32 finished = 0;
+	int err, status;
 
+	lockdep_assert_held(&ane->engine_lock);
+
+	err = ane_tm_collect_events(ane, NULL, &finished);
+	if (err < 0)
+		goto wedge;
+	wmb();
 	ane_tm_push_tq(ane, req);
 
-	err = ane_tm_get_status(ane);
-
-	ane_tm_handle_irq(ane);
-
+	err = read_poll_timeout(ane_tm_collect_events, status, status != 0,
+				1, 1000000, false, ane, req, &finished);
+	if (!err && status < 0)
+		err = status;
+	if (err)
+		goto wedge;
+	status = tq_read32(ane, TQ_NID1(req->qid));
+	if (((status >> 8) & 0xff) != req->nid) {
+		err = -EIO;
+		goto wedge;
+	}
+	tq_write32(ane, TQ_NID1(req->qid), status & ~1U);
+	rmb();
 	tq_write32(ane, TQ_STATUS(req->qid), 0x0);
 
+	return 0;
+
+wedge:
+	if (atomic_xchg(&ane->wedged, 1) == 0) {
+		__module_get(THIS_MODULE);
+		dev_err(ane->dev,
+			"tm completion failed: %d, finish lines=%x; preserving resources until reboot\n",
+			err, finished);
+	}
 	return err;
 }
