@@ -3,9 +3,9 @@ LIB_NAME = libane
 CC = gcc
 CFLAGS = -I. -Wall -Werror -Wextra \
 	-Wdeclaration-after-statement \
-	-O3 -std=gnu99
+	-O3 -fPIC -std=gnu99
 
-LIBS = -I/usr/include/libdrm -I/lib/modules/$(shell uname -r)/build/include/uapi/drm
+LIBS = -I/usr/include/libdrm -I../ane/src/uapi/drm
 
 BUILD_DIR = .
 SRC_DIR = .
@@ -18,7 +18,7 @@ libane: $(OBJECTS)
 	ld -r $(OBJECTS) -o $(BUILD_DIR)/${LIB_NAME}.o
 	ar rcs $(BUILD_DIR)/${LIB_NAME}.a $(BUILD_DIR)/${LIB_NAME}.o
 
-$(BUILD_DIR)/%.o : $(SRC_DIR)/%.c
+$(BUILD_DIR)/%.o : $(SRC_DIR)/%.c ane.h ane_f16.h ../ane/src/uapi/drm/ane_accel.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@
 

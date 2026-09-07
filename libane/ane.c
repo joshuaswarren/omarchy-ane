@@ -286,7 +286,7 @@ static inline int is_ane_device(int fd)
 		return -EINVAL;
 	}
 
-	if (!version.name_len) {
+	if (!version.name_len || version.version_major != ANE_ABI_MAJOR) {
 		return -EINVAL;
 	}
 
@@ -460,12 +460,7 @@ static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
 				    uint32_t state_dst_idx)
 {
 	const struct anec *anec = to_anec(nn);
-	/* fp16 +inf; completion flips the first output word */
-	const uint16_t sentinel = 0x7c00;
-	volatile uint16_t *first;
-	uint32_t first_bdx;
 	struct drm_ane_submit args;
-	int ret;
 
 	memset(&args, 0, sizeof(args));
 
@@ -479,7 +474,6 @@ static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
 		}
 	}
 
-	/* swap state in/out buffers so output feeds the next input */
 	if (swap_state) {
 		uint32_t src = src_bdx(nn, state_src_idx);
 		uint32_t dst = dst_bdx(nn, state_dst_idx);
@@ -489,35 +483,7 @@ static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
 	}
 	args.btsp_handle = nn->btsp_chan.handle;
 
-	/* poison outputs so stale results cannot pass the poll */
-	for (uint32_t idx = 0; idx < anec->dst_count; idx++) {
-		uint32_t bdx = dst_bdx(nn, idx);
-		uint16_t *words;
-		uint64_t count;
-		if (swap_state && idx == state_dst_idx) {
-			bdx = src_bdx(nn, state_src_idx);
-		}
-		words = (uint16_t *)nn->chans[bdx].map;
-		count = nn->chans[bdx].size / sizeof(uint16_t);
-		for (uint64_t word = 0; word < count; word++) {
-			words[word] = sentinel;
-		}
-	}
-
-	ret = ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
-	if (ret < 0) {
-		return ret;
-	}
-
-	first_bdx = dst_bdx(nn, 0);
-	if (swap_state && state_dst_idx == 0) {
-		first_bdx = src_bdx(nn, state_src_idx);
-	}
-	first = (volatile uint16_t *)nn->chans[first_bdx].map;
-	for (int wait = 0; wait < 10000 && *first == sentinel; wait++) {
-		usleep(100);
-	}
-	return *first == sentinel ? -ETIMEDOUT : ret;
+	return ioctl(nn->fd, DRM_IOCTL_ANE_SUBMIT, &args);
 }
 
 int ane_exec(struct ane_nn *nn)

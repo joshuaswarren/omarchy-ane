@@ -12,6 +12,9 @@ extern "C" {
 #define ANE_FIFO_NID	0x40
 #define ANE_CMD_GRAN	0x10
 
+/* ABI 1: successful SUBMIT guarantees terminal completion and CPU visibility. */
+#define ANE_ABI_MAJOR 1
+
 #define DRM_ANE_BO_INIT 0x1
 #define DRM_ANE_BO_FREE 0x2
 #define DRM_ANE_SUBMIT	0x3

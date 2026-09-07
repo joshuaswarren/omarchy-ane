@@ -3,12 +3,12 @@ CFLAGS = -I. -I./include -Wall -Werror -Wextra \
 	-Wdeclaration-after-statement \
 	-O3 -std=gnu99
 
-LIBS = -I/usr/include/libane
+LIBS = -I../../../libane -L../../../libane
 
 .PHONY: libane_python install uninstall clean
 
 libane_python:
-	gcc $(CFLAGS) $(LIBS)\
+	$(CC) $(CFLAGS) $(LIBS)\
 		-shared -pthread -fPIC -fno-strict-aliasing \
 		libane_python.c -o libane_python.so \
 		-lane
