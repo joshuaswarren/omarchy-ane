@@ -242,6 +242,7 @@ result read after a hang is not evidence.
 - Every delivered item leaves a receipt: command output, file path, or
   commit. Host builds are not device qualification.
 - Related checkouts: `~/src/omarchy-ane` (this fork, `omarchy` branch),
-  `~/src/omarchy-libane` (fork of allbilly/libane), 
+  `~/src/omarchy-libane` (archived snapshot of allbilly/libane; this
+  repository is the maintained driver and library),
   `~/src/ane-linux-experiments` (M1 ANE experiments and Qwen-shaped
   kernels).
