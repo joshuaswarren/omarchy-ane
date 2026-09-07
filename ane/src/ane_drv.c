@@ -311,7 +311,8 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	memset(&req, 0, sizeof(req));
 
 	if (args->pad || !args->tsk_size || !args->td_count ||
-	    args->td_count > 0xffff || args->td_size < 4 || (args->td_size & 3) ||
+	    args->td_count > 0xffff || args->td_size < 4 ||
+	    args->td_size > 0x40000 || (args->td_size & 3) ||
 	    !args->handles[CMD_BUF_BDX] || args->handles[KRN_BUF_BDX] ||
 	    !args->btsp_handle) {
 		return -EINVAL;
@@ -360,7 +361,7 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 		goto put;
 	}
 	btsp = &bo->base;
-	if (!bo->iova) {
+	if (!bo->iova || args->td_size > bo->base.size) {
 		err = -EINVAL;
 		goto put;
 	}
@@ -549,8 +550,10 @@ static int ane_attach_genpd(struct ane_device *ane)
 
 	ane->pd_count = of_count_phandle_with_args(
 		dev->of_node, "power-domains", "#power-domain-cells");
-	if (ane->pd_count <= 1)
-		return 0;
+	if (ane->pd_count < 1)
+		return ane->pd_count < 0 ? ane->pd_count : -EINVAL;
+	if (ane->pd_count == 1)
+		return dev->pm_domain ? 0 : -EPROBE_DEFER;
 
 	ane->pd_dev = devm_kcalloc(dev, ane->pd_count, sizeof(*ane->pd_dev),
 				   GFP_KERNEL);
@@ -681,13 +684,8 @@ static void ane_platform_remove(struct platform_device *pdev)
 	drm_dev_unplug(&ane->drm);
 
 	if (atomic_read(&ane->wedged)) {
-		/*
-		 * No documented quiesce/reset path exists. Leave mappings,
-		 * supplier links and the held PM reference intact here. Safe
-		 * module removal is not established; reboot is required.
-		 */
 		dev_err(ane->dev,
-			"wedged at remove; resources preserved, module removal unsafe, reboot required\n");
+			"forced removal of a wedged device is unsafe; reboot required\n");
 		mutex_unlock(&ane->engine_lock);
 		return;
 	}
@@ -757,5 +755,5 @@ module_platform_driver(ane_platform_driver);
 
 MODULE_AUTHOR("Eileen Yoon <eyn@gmx.com>");
 MODULE_DESCRIPTION("Apple Neural Engine driver");
-MODULE_VERSION("f2a3e5e+lifecycle5");
+MODULE_VERSION("f2a3e5e+lifecycle6");
 MODULE_LICENSE("Dual MIT/GPL");
