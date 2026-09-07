@@ -1,6 +1,6 @@
-# Asahi Neural Engine
+# Omarchy Neural Engine
 
-Linux driver and userspace library for the Apple Neural Engine. This fork targets the M1 T8103 through the kernel-owned IOMMU and power-domain providers.
+Apple Neural Engine support for Omarchy Linux: a DRM accelerator driver and userspace library. This fork targets the M1 T8103 through the kernel-owned IOMMU and power-domain providers.
 
 - `ane/`: DRM accelerator kernel module.
 - `libane/`: userspace loader and submission library.
