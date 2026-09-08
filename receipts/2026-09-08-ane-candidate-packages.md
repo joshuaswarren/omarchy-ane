@@ -55,3 +55,20 @@ Hardware runs pending the parent-approved ane insmod under the shared
   combined a slice count from this receipt with per-slice medians from
   the separate lifecycle6 benchmark on the same host. Until paired, it
   is an estimate, not a measurement.
+
+## Measured hardware result (2026-09-08, paired window, updates "pending" above)
+
+The two packages were timed on jwm1-linux with the lifecycle6 harness
+(3 warmups + 30 iterations, transfer->readback scope, exact fp16 output
+match on every iteration), under the shared /tmp/m1-gpu.lock, module
+f2a3e5e+lifecycle6, verified absent after unload:
+
+- b1-gemv-k896-n4864: median 200.95 ms/iteration
+- b2-gemv-k4864-n896: median 80.98 ms/iteration
+
+Paired against the integrated baseline release wheel (c2548675,
+255c2f93...7e02) on the same host: the same projections run in 1.02/1.06 ms
+(fp16) and 0.44/0.39 ms (4-bit qmm g64) on the GPU. The candidate is
+stopped; full paired table and ceiling analysis in the mlx-omarchy
+ane-parity branch receipt receipts/2026-09-08-paired-ane-vs-gpu-verdict.md
+@a44a1d41.
