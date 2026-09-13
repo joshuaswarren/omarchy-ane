@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
-
+#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/iommu.h>
 #include <linux/module.h>
@@ -858,8 +858,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 		dev_info(dev, "res-dump: ttbr offset=%#x\n", ane->hw->dart.ttbr);
 	}
 	dev_info(dev, "probe: iommu ok, powering domains\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
 	for (int i = 0; i < ane->pd_count; i++) {
-		err = pm_runtime_get_sync(ane->pd_dev[i]);
 		if (err < 0) {
 			dev_err(dev, "probe: pd[%d] power on failed %d\n", i, err);
 			goto detach_genpd;
@@ -874,6 +874,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 		err = -EINVAL;
 		goto detach_genpd;
 	}
+	mdelay(50); /* breadcrumb: let netconsole flush */
 	dev_info(dev, "probe: domains on, remap ttbr\n");
 	if (ane_stop_stage >= 30 && ane_stop_stage <= 32) {
 		u32 src;
@@ -902,18 +903,32 @@ static int ane_platform_probe(struct platform_device *pdev)
 	}
 	ane_iommu_remap_ttbr(ane);
 	if (ane_stop_stage == 2) { dev_info(dev, "probe: stop after ttbr\n"); err = -EINVAL; goto detach_genpd; }
-	dev_info(dev, "probe: ttbr done, enabling tm\n");
+	dev_info(dev, "probe: ttbr done, setting up runtime pm\n");
+
+	/*
+	 * Raise the engine partition through the device's own runtime PM
+	 * BEFORE any engine MMIO: genpd powers ps_ane_sys_cpu when it
+	 * runtime-resumes this device, and .runtime_resume then does the
+	 * SoC-appropriate enable (force_power+ttbr on T8103, nothing
+	 * manual on T600x). Probing the engine window while the partition
+	 * is gated external-aborts the SoC (jw16 cycles 5/6).
+	 */
+	pm_runtime_set_autosuspend_delay(dev, 1000);
+	pm_runtime_use_autosuspend(dev);
+	pm_runtime_enable(dev);
+
+	err = pm_runtime_get_sync(dev);
+	if (err < 0) {
+		dev_err(dev, "probe: runtime resume failed %d\n", err);
+		pm_runtime_put_sync(dev);
+		goto disable_pm;
+	}
+	dev_info(dev, "probe: runtime resumed (%d)\n", err);
+	mdelay(50); /* breadcrumb: let netconsole flush */
 
 	ane_tm_enable(ane);
 	dev_info(dev, "probe: tm enabled\n");
-
-	/* Measured 3sec on macos, but 1sec seems more stable */
-	pm_runtime_set_autosuspend_delay(dev, 1000);
-	pm_runtime_use_autosuspend(dev);
-
-	pm_runtime_get_noresume(dev);
-	pm_runtime_set_active(dev);
-	pm_runtime_enable(dev);
+	mdelay(50); /* breadcrumb: let netconsole flush */
 
 	pm_runtime_mark_last_busy(dev);
 	pm_runtime_put_autosuspend(dev);
