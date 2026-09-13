@@ -876,6 +876,13 @@ static int ane_platform_probe(struct platform_device *pdev)
 	}
 	mdelay(50); /* breadcrumb: let netconsole flush */
 	dev_info(dev, "probe: domains on, remap ttbr\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 4) {
+		dev_info(dev, "probe: stop after domains-on\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		err = -EINVAL;
+		goto detach_genpd;
+	}
 	if (ane_stop_stage >= 30 && ane_stop_stage <= 32) {
 		u32 src;
 
@@ -902,8 +909,17 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 	ane_iommu_remap_ttbr(ane);
+	dev_info(dev, "probe: ttbr remap returned\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 5) {
+		dev_info(dev, "probe: stop after remap\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		err = -EINVAL;
+		goto detach_genpd;
+	}
 	if (ane_stop_stage == 2) { dev_info(dev, "probe: stop after ttbr\n"); err = -EINVAL; goto detach_genpd; }
 	dev_info(dev, "probe: ttbr done, setting up runtime pm\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
 
 	/*
 	 * Raise the engine partition through the device's own runtime PM
