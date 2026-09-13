@@ -542,8 +542,10 @@ static int ane_attach_genpd(struct ane_device *ane)
 
 	ane->pd_count = of_count_phandle_with_args(
 		dev->of_node, "power-domains", "#power-domain-cells");
-	if (ane->pd_count <= 1)
+	if (ane->pd_count <= 1) {
+		ane->pd_count = 0;
 		return 0;
+	}
 
 	ane->pd_dev = devm_kcalloc(dev, ane->pd_count, sizeof(*ane->pd_dev),
 				   GFP_KERNEL);
