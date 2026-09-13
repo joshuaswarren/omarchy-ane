@@ -635,6 +635,46 @@ static int ane_pmgr_state_offset(struct device_node *pmgr, const char *label,
 	return -ENOENT;
 }
 
+/*
+ * Read-only discriminator (cycle 10): report ps_ane_sys_cpu ACTUAL
+ * without writing anything. Cycle-5 evidence proved PMGR syscon
+ * reads safe ('before 0x1f0003ff'); the lethal op was the write.
+ */
+static int ane_pmgr_read_cpu_actual(struct ane_device *ane)
+{
+	struct device_node *np;
+	struct regmap *map;
+	unsigned int val;
+	u32 offset;
+	int err;
+
+	np = NULL;
+	while ((np = of_find_compatible_node(np, NULL, "apple,pmgr"))) {
+		if (!ane_pmgr_state_offset(np, "ane_sys_cpu", &offset))
+			break;
+	}
+	if (!np) {
+		dev_err(ane->dev, "power: no PMGR ane_sys_cpu state\n");
+		return -ENODEV;
+	}
+	map = syscon_node_to_regmap(np);
+	of_node_put(np);
+	if (IS_ERR(map)) {
+		dev_err(ane->dev, "power: pmgr regmap failed %ld\n",
+			PTR_ERR(map));
+		return PTR_ERR(map);
+	}
+	err = regmap_read(map, offset, &val);
+	if (err)
+		return err;
+	dev_info(ane->dev, "power: ps_ane_sys_cpu@%#x actual=%#lx (%s)\n",
+		 offset, FIELD_GET(ANE_PMGR_PS_ACTUAL, val),
+		 FIELD_GET(ANE_PMGR_PS_ACTUAL, val) == ANE_PMGR_PS_ACTIVE ?
+			"ACTIVE" : "NOT-ACTIVE");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	return 0;
+}
+
 static int ane_force_power(struct ane_device *ane)
 {
 	struct device *dev = ane->dev;
@@ -942,6 +982,20 @@ static int ane_platform_probe(struct platform_device *pdev)
 	dev_info(dev, "probe: runtime resumed (%d)\n", err);
 	mdelay(50); /* breadcrumb: let netconsole flush */
 
+	/*
+	 * Cycle 10 discriminator: with the resume held and NO engine MMIO
+	 * yet, read back ps_ane_sys_cpu ACTUAL (read-only; cycle-5-safe).
+	 * Then exit by design - never touch the engine in this run.
+	 */
+	if (ane_stop_stage == 9) {
+		err = ane_pmgr_read_cpu_actual(ane);
+		dev_info(dev, "probe: cpu-actual readback rc=%d\n", err);
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		pm_runtime_put_sync(dev);
+		err = -EINVAL;
+		goto disable_pm;
+	}
+
 	ane_tm_enable(ane);
 	dev_info(dev, "probe: tm enabled\n");
 	mdelay(50); /* breadcrumb: let netconsole flush */
@@ -1008,6 +1062,11 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	ane_iommu_remap_ttbr(ane);
 	dev_info(dev, "resume: pre tm_enable\n");
 	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 9) {
+		dev_info(dev, "resume: stop pre-tm (stage 9, success)\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		return 0;
+	}
 	ane_tm_enable(ane);
 	dev_info(dev, "resume: tm_enable done\n");
 	mdelay(50); /* breadcrumb: let netconsole flush */
