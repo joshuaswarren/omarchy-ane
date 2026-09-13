@@ -459,6 +459,9 @@ static const struct drm_driver ane_drm_driver = {
 	.fops = &ane_drm_fops,
 	.name = "ane",
 	.desc = "Apple Neural Engine driver",
+	.major = 1,
+	.minor = 0,
+	.patchlevel = 0,
 };
 
 static int ane_iommu_domain_init(struct ane_device *ane)
