@@ -591,23 +591,82 @@ static int ane_attach_genpd(struct ane_device *ane)
 #define ANE_PMGR_AUTO_ENABLE	BIT(28)
 #define ANE_PMGR_PS_ACTIVE	0xf
 
+struct ane_pmgr_config {
+	const char *compatible;
+	const char *state_names[2];
+	const char *state_labels[2];
+	u32 state_offsets[2];
+};
+
+static const struct ane_pmgr_config ane_pmgr_configs[] = {
+	{
+		.compatible = "apple,t6000-pmgr",
+		.state_names = { "power-controller@268", "power-controller@2c8" },
+		.state_labels = { "ane_sys", "ane_sys_cpu" },
+		.state_offsets = { 0x268, 0x2c8 },
+	},
+	{
+		.compatible = "apple,t8103-pmgr",
+		.state_names = { "power-controller@470", "power-controller@c000" },
+		.state_labels = { "ane_sys", "ane_sys_cpu" },
+		.state_offsets = { 0x470, 0xc000 },
+	},
+};
+
+static bool ane_pmgr_has_state(struct device_node *np, const char *name,
+			       const char *expected_label)
+{
+	struct device_node *state = of_get_child_by_name(np, name);
+	const char *label;
+	bool matches;
+
+	if (!state)
+		return false;
+	matches = !of_property_read_string(state, "label", &label) &&
+		  !strcmp(label, expected_label);
+	of_node_put(state);
+	return matches;
+}
+
+static struct device_node *
+ane_find_pmgr(const struct ane_pmgr_config **config)
+{
+	struct device_node *np;
+
+	for (int i = 0; i < ARRAY_SIZE(ane_pmgr_configs); i++) {
+		np = NULL;
+		while ((np = of_find_compatible_node(np, NULL,
+					     ane_pmgr_configs[i].compatible))) {
+			if (ane_pmgr_has_state(np, ane_pmgr_configs[i].state_names[0],
+					    ane_pmgr_configs[i].state_labels[0]) &&
+			    ane_pmgr_has_state(np, ane_pmgr_configs[i].state_names[1],
+					    ane_pmgr_configs[i].state_labels[1])) {
+				*config = &ane_pmgr_configs[i];
+				return np;
+			}
+		}
+	}
+
+	return NULL;
+}
+
 static int ane_force_power(struct ane_device *ane)
 {
-	if (ane_skip_power) {
-		dev_info(ane->dev, "power: skipped by ane_skip_power\n");
-		return 0;
-	}
-	/* offsets within the pmgr syscon: ps_ane_sys, ps_ane_sys_cpu */
-	static const u32 ps_offset[] = { 0x470, 0xc000 };
+	const struct ane_pmgr_config *config;
 	struct device *dev = ane->dev;
 	struct device_node *np;
 	struct regmap *map;
 	unsigned int val;
 	int err;
 
-	np = of_find_compatible_node(NULL, NULL, "apple,t8103-pmgr");
+	if (ane_skip_power) {
+		dev_info(ane->dev, "power: skipped by ane_skip_power\n");
+		return 0;
+	}
+
+	np = ane_find_pmgr(&config);
 	if (!np) {
-		dev_err(dev, "power: no apple,t8103-pmgr node\n");
+		dev_err(dev, "power: no supported PMGR ANE power states\n");
 		return -ENODEV;
 	}
 	map = syscon_node_to_regmap(np);
@@ -617,32 +676,33 @@ static int ane_force_power(struct ane_device *ane)
 		return PTR_ERR(map);
 	}
 
-	for (int i = 0; i < ARRAY_SIZE(ps_offset); i++) {
-		err = regmap_read(map, ps_offset[i], &val);
+	for (int i = 0; i < ARRAY_SIZE(config->state_offsets); i++) {
+		u32 offset = config->state_offsets[i];
+
+		err = regmap_read(map, offset, &val);
 		if (err)
 			return err;
 
-		dev_info(dev, "power: ps@%#x before %#x\n", ps_offset[i], val);
+		dev_info(dev, "power: ps@%#x before %#x\n", offset, val);
 
 		val &= ~(ANE_PMGR_PS_TARGET | ANE_PMGR_AUTO_ENABLE);
 		val |= FIELD_PREP(ANE_PMGR_PS_TARGET, ANE_PMGR_PS_ACTIVE);
-		err = regmap_write(map, ps_offset[i], val);
+		err = regmap_write(map, offset, val);
 		if (err)
 			return err;
 
-		err = regmap_read_poll_timeout(map, ps_offset[i], val,
+		err = regmap_read_poll_timeout(map, offset, val,
 			FIELD_GET(ANE_PMGR_PS_ACTUAL, val) == ANE_PMGR_PS_ACTIVE,
 			100, 100000);
 		if (err) {
 			dev_err(dev, "power: ps@%#x stuck at %#x, refusing MMIO\n",
-				ps_offset[i], val);
+				offset, val);
 			return -EIO;
 		}
 
-		/* Keep it up once we let go of it. */
-		regmap_update_bits(map, ps_offset[i], ANE_PMGR_AUTO_ENABLE,
+		regmap_update_bits(map, offset, ANE_PMGR_AUTO_ENABLE,
 				   ANE_PMGR_AUTO_ENABLE);
-		dev_info(dev, "power: ps@%#x active\n", ps_offset[i]);
+		dev_info(dev, "power: ps@%#x active\n", offset);
 	}
 
 	return 0;
