@@ -987,10 +987,35 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 {
 	struct ane_device *ane = dev_get_drvdata(dev);
 
+	dev_info(dev, "resume: entry\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 6) {
+		dev_info(dev, "resume: stop at entry\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		return -EIO;
+	}
+
 	if (ane_force_power(ane) < 0)
 		return -EIO;
+	dev_info(dev, "resume: force_power done\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 7) {
+		dev_info(dev, "resume: stop pre-tm\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		return -EIO;
+	}
+
 	ane_iommu_remap_ttbr(ane);
+	dev_info(dev, "resume: pre tm_enable\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
 	ane_tm_enable(ane);
+	dev_info(dev, "resume: tm_enable done\n");
+	mdelay(50); /* breadcrumb: let netconsole flush */
+	if (ane_stop_stage == 8) {
+		dev_info(dev, "resume: stop post-tm\n");
+		mdelay(50); /* breadcrumb: let netconsole flush */
+		return -EIO;
+	}
 	return 0;
 }
 
