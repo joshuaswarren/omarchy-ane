@@ -61,6 +61,12 @@ static void ane_iommu_invalidate_tlb(struct ane_device *ane)
 		return;
 	}
 
+	/* T8103 register offsets are write-hostile on T600x DARTs. */
+	if (!ane->hw->dart.manual) {
+		mutex_unlock(&ane->iommu_lock);
+		return;
+	}
+
 	writel(0x1, ane->dart1 + ane->hw->dart.select);
 	writel(ane->hw->dart.invalidate, ane->dart1 + ane->hw->dart.command);
 	writel(0x1, ane->dart2 + ane->hw->dart.select);
@@ -486,6 +492,9 @@ static void ane_iommu_domain_free(struct ane_device *ane)
 
 static void ane_iommu_remap_ttbr(struct ane_device *ane)
 {
+	if (!ane->hw->dart.manual)
+		return;
+
 	/* L2 DMA fails without */
 	writel_relaxed(readl_relaxed(ane->dart0 + ane->hw->dart.ttbr),
 		       ane->dart1 + ane->hw->dart.ttbr);
@@ -724,17 +733,21 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
-	ane->dart_irq = platform_get_irq_byname(pdev, "dart");
-	if (ane->dart_irq < 0) {
-		err = -ENODEV;
-		goto detach_genpd;
+	if (ane->hw->dart.manual) {
+		ane->dart_irq = platform_get_irq_byname(pdev, "dart");
+		if (ane->dart_irq < 0) {
+			err = -ENODEV;
+			goto detach_genpd;
+		}
+		/* Do not disable a line apple-dart owns: an unacked DART fault
+		 * escalates to an SoC reset. Opt in with ane_disable_dart_irq=1. */
+		if (!ane_keep_dart_irq)
+			disable_irq(ane->dart_irq);
+		else
+			dev_info(dev, "irq: leaving dart irq %d enabled\n", ane->dart_irq);
+	} else {
+		dev_info(dev, "irq: dart lines owned by apple-dart providers\n");
 	}
-	/* Do not disable a line apple-dart owns: an unacked DART fault
-	 * escalates to an SoC reset. Opt in with ane_disable_dart_irq=1. */
-	if (!ane_keep_dart_irq)
-		disable_irq(ane->dart_irq);
-	else
-		dev_info(dev, "irq: leaving dart irq %d enabled\n", ane->dart_irq);
 
 	if (ane_np_map) {
 		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "engine");
@@ -751,51 +764,55 @@ static int ane_platform_probe(struct platform_device *pdev)
 		err = PTR_ERR(ane->engine);
 		goto detach_genpd;
 	}
+	if (ane->hw->dart.manual) {
+		/* dart1/dart2 sit inside the 32 MiB engine window (Apple ADT overlap):
+		 * ioremap without requesting, like dart0 below. */
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart1");
+		if (!res) {
+			err = -ENODEV;
+			goto detach_genpd;
+		}
+		if (ane_np_map) {
+			ane->dart1 = ioremap_np(res->start, resource_size(res));
+			dev_info(dev, "map: dart1 non-posted %p\n", ane->dart1);
+		} else {
+			ane->dart1 = devm_ioremap(dev, res->start, resource_size(res));
+		}
+		if (IS_ERR(ane->dart1)) {
+			err = PTR_ERR(ane->dart1);
+			goto detach_genpd;
+		}
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart2");
+		if (!res) {
+			err = -ENODEV;
+			goto detach_genpd;
+		}
+		if (ane_np_map) {
+			ane->dart2 = ioremap_np(res->start, resource_size(res));
+			dev_info(dev, "map: dart2 non-posted %p\n", ane->dart2);
+		} else {
+			ane->dart2 = devm_ioremap(dev, res->start, resource_size(res));
+		}
+		if (IS_ERR(ane->dart2)) {
+			err = PTR_ERR(ane->dart2);
+			goto detach_genpd;
+		}
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart0");
+		if (!res) {
+			err = -ENODEV;
+			goto detach_genpd;
+		}
 
-	/* dart1/dart2 sit inside the 32 MiB engine window (Apple ADT overlap):
-	 * ioremap without requesting, like dart0 below. */
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart1");
-	if (!res) {
-		err = -ENODEV;
-		goto detach_genpd;
-	}
-	if (ane_np_map) {
-		ane->dart1 = ioremap_np(res->start, resource_size(res));
-		dev_info(dev, "map: dart1 non-posted %p\n", ane->dart1);
+		/* Simply ioremap since it's a shared register zone */
+		ane->dart0 = devm_ioremap(dev, res->start, resource_size(res));
+		if (IS_ERR(ane->dart0)) {
+			err = PTR_ERR(ane->dart0);
+			goto detach_genpd;
+		}
 	} else {
-		ane->dart1 = devm_ioremap(dev, res->start, resource_size(res));
-	}
-	if (IS_ERR(ane->dart1)) {
-		err = PTR_ERR(ane->dart1);
-		goto detach_genpd;
-	}
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart2");
-	if (!res) {
-		err = -ENODEV;
-		goto detach_genpd;
-	}
-	if (ane_np_map) {
-		ane->dart2 = ioremap_np(res->start, resource_size(res));
-		dev_info(dev, "map: dart2 non-posted %p\n", ane->dart2);
-	} else {
-		ane->dart2 = devm_ioremap(dev, res->start, resource_size(res));
-	}
-	if (IS_ERR(ane->dart2)) {
-		err = PTR_ERR(ane->dart2);
-		goto detach_genpd;
-	}
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "dart0");
-	if (!res) {
-		err = -ENODEV;
-		goto detach_genpd;
+		dev_info(dev, "dart: translations owned by apple-dart providers\n");
 	}
 
-	/* Simply ioremap since it's a shared register zone */
-	ane->dart0 = devm_ioremap(dev, res->start, resource_size(res));
-	if (IS_ERR(ane->dart0)) {
-		err = PTR_ERR(ane->dart0);
-		goto detach_genpd;
-	}
 
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
@@ -939,7 +956,7 @@ static const struct dev_pm_ops ane_pm_ops = {
 };
 // clang-format on
 
-/* T8020/T6000 registers */
+/* T8020 registers */
 #define DART_T8020_STREAM_COMMAND	     0x20
 #define DART_T8020_STREAM_SELECT	     0x34
 #define DART_T8020_TTBR			     0x200
@@ -953,12 +970,21 @@ static const struct ane_hw ane_hw_t8020 = {
 		.select = DART_T8020_STREAM_SELECT,
 		.command = DART_T8020_STREAM_COMMAND,
 		.invalidate = DART_T8020_STREAM_COMMAND_INVALIDATE,
+		.manual = true,
+	},
+};
+
+static const struct ane_hw ane_hw_t6000 = {
+	.dart = {
+		.vm_base = 0x4000,
+		.vm_size = 0xe0000000,
+		.manual = false,
 	},
 };
 
 static const struct of_device_id ane_of_match[] = {
 	{ .compatible = "apple,t8103-ane", .data = &ane_hw_t8020 },
-	{ .compatible = "apple,t6000-ane", .data = &ane_hw_t8020 },
+	{ .compatible = "apple,t6000-ane", .data = &ane_hw_t6000 },
 	{}
 };
 

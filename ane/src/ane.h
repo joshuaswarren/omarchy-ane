@@ -42,6 +42,16 @@ struct ane_hw {
 		u32 select;
 		u32 command;
 		u32 invalidate;
+		/*
+		 * T8103 keeps the darts as named reg windows inside the ane
+		 * node and programs them manually (ttbr mirror, tlb flush).
+		 * On T600x the dart windows are standalone apple,t6000-dart
+		 * provider nodes attached via three iommus tuples, and the
+		 * T8103 register offsets are write-hostile on that DART
+		 * revision: a no-op TTBR write-back hard-resets the SoC in
+		 * 16 ms (t6001-test-host stage-3c evidence).
+		 */
+		bool manual;
 	} dart;
 };
 
