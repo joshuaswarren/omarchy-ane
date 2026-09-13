@@ -593,72 +593,46 @@ static int ane_attach_genpd(struct ane_device *ane)
 #define ANE_PMGR_AUTO_ENABLE	BIT(28)
 #define ANE_PMGR_PS_ACTIVE	0xf
 
-struct ane_pmgr_config {
-	const char *compatible;
-	const char *state_names[2];
-	const char *state_labels[2];
-	u32 state_offsets[2];
-};
-
-static const struct ane_pmgr_config ane_pmgr_configs[] = {
-	{
-		.compatible = "apple,t6000-pmgr",
-		.state_names = { "power-controller@268", "power-controller@2c8" },
-		.state_labels = { "ane_sys", "ane_sys_cpu" },
-		.state_offsets = { 0x268, 0x2c8 },
-	},
-	{
-		.compatible = "apple,t8103-pmgr",
-		.state_names = { "power-controller@470", "power-controller@c000" },
-		.state_labels = { "ane_sys", "ane_sys_cpu" },
-		.state_offsets = { 0x470, 0xc000 },
-	},
-};
-
-static bool ane_pmgr_has_state(struct device_node *np, const char *name,
-			       const char *expected_label)
+static int ane_pmgr_state_offset(struct device_node *pmgr, const char *label,
+				 u32 *offset)
 {
-	struct device_node *state = of_get_child_by_name(np, name);
-	const char *label;
-	bool matches;
+	struct device_node *child;
+	const char *child_label;
+	const char *at;
+	int err;
 
-	if (!state)
-		return false;
-	matches = !of_property_read_string(state, "label", &label) &&
-		  !strcmp(label, expected_label);
-	of_node_put(state);
-	return matches;
-}
-
-static struct device_node *
-ane_find_pmgr(const struct ane_pmgr_config **config)
-{
-	struct device_node *np;
-
-	for (int i = 0; i < ARRAY_SIZE(ane_pmgr_configs); i++) {
-		np = NULL;
-		while ((np = of_find_compatible_node(np, NULL,
-					     ane_pmgr_configs[i].compatible))) {
-			if (ane_pmgr_has_state(np, ane_pmgr_configs[i].state_names[0],
-					    ane_pmgr_configs[i].state_labels[0]) &&
-			    ane_pmgr_has_state(np, ane_pmgr_configs[i].state_names[1],
-					    ane_pmgr_configs[i].state_labels[1])) {
-				*config = &ane_pmgr_configs[i];
-				return np;
-			}
+	/*
+	 * of_get_child_by_name cannot be used here: of_node_name_eq strips
+	 * the "@unit" part, and every PMGR state child is named
+	 * "power-controller" — they differ only by unit address. Match by
+	 * the label property instead, and take the register offset from the
+	 * unit address, which mirrors it on all Apple SoC DTs.
+	 */
+	for_each_child_of_node(pmgr, child) {
+		if (of_property_read_string(child, "label", &child_label))
+			continue;
+		if (strcmp(child_label, label))
+			continue;
+		at = strrchr(kbasename(child->full_name), '@');
+		if (!at) {
+			of_node_put(child);
+			return -EINVAL;
 		}
+		err = kstrtou32(at + 1, 16, offset);
+		of_node_put(child);
+		return err;
 	}
 
-	return NULL;
+	return -ENOENT;
 }
 
 static int ane_force_power(struct ane_device *ane)
 {
-	const struct ane_pmgr_config *config;
 	struct device *dev = ane->dev;
 	struct device_node *np;
 	struct regmap *map;
 	unsigned int val;
+	u32 offsets[2];
 	int err;
 
 	if (ane_skip_power) {
@@ -666,9 +640,14 @@ static int ane_force_power(struct ane_device *ane)
 		return 0;
 	}
 
-	np = ane_find_pmgr(&config);
+	np = NULL;
+	while ((np = of_find_compatible_node(np, NULL, "apple,pmgr"))) {
+		if (!ane_pmgr_state_offset(np, "ane_sys", &offsets[0]) &&
+		    !ane_pmgr_state_offset(np, "ane_sys_cpu", &offsets[1]))
+			break;
+	}
 	if (!np) {
-		dev_err(dev, "power: no supported PMGR ANE power states\n");
+		dev_err(dev, "power: no PMGR ane_sys/ane_sys_cpu states\n");
 		return -ENODEV;
 	}
 	map = syscon_node_to_regmap(np);
@@ -678,8 +657,8 @@ static int ane_force_power(struct ane_device *ane)
 		return PTR_ERR(map);
 	}
 
-	for (int i = 0; i < ARRAY_SIZE(config->state_offsets); i++) {
-		u32 offset = config->state_offsets[i];
+	for (int i = 0; i < ARRAY_SIZE(offsets); i++) {
+		u32 offset = offsets[i];
 
 		err = regmap_read(map, offset, &val);
 		if (err)
