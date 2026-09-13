@@ -649,6 +649,20 @@ static int ane_force_power(struct ane_device *ane)
 		return 0;
 	}
 
+	/*
+	 * T600x: the three dart provider nodes and the ane node carry
+	 * power-domains, so pmgr-pwrstate genpd owns ps_ane_sys and
+	 * ps_ane_sys_cpu. A raw PMGR write here recomputes the register
+	 * with AUTO_ENABLE momentarily cleared on kernel-managed domains
+	 * with active consumers and hard-resets the SoC (jw16 cycle-5
+	 * netconsole evidence: last words 'power: ps@0x268 before
+	 * 0x1f0003ff', reset before 'ps@0x268 active' could print).
+	 */
+	if (!ane->hw->dart.manual) {
+		dev_info(ane->dev, "power: genpd-owned on this SoC\n");
+		return 0;
+	}
+
 	np = NULL;
 	while ((np = of_find_compatible_node(np, NULL, "apple,pmgr"))) {
 		if (!ane_pmgr_state_offset(np, "ane_sys", &offsets[0]) &&
