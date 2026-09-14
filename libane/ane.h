@@ -87,6 +87,7 @@ struct ane_nn {
 /* #define LIBANE_CONFIG_NO_ERR */
 /* #define LIBANE_CONFIG_NO_INDEX_CHECK */
 /* #define LIBANE_CONFIG_NO_STATIC_ASSERT */
+/* #define LIBANE_CONFIG_STRICT_BIND */ /* refuse a positional channel map */
 
 #ifndef LIBANE_CONFIG_NO_STATIC_ASSERT
 #ifdef __cplusplus
