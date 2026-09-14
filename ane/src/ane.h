@@ -11,7 +11,9 @@
 #include <drm/drm_device.h>
 #include <drm/drm_mm.h>
 
-#include <uapi/drm/ane_accel.h>
+/* Quoted so this tree's copy wins over any stray one in the kernel
+ * headers; the kernel include path is searched before ccflags. */
+#include "uapi/drm/ane_accel.h"
 
 struct ane_device {
 	struct drm_device drm;
