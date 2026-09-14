@@ -68,12 +68,20 @@ struct ane_bo {
 	uint64_t offset; /* drm gem fake offset for mmap */
 };
 
+/* Which tile channel carries each input and each output role. The ANEC header
+ * never states it; ane_bind.h reads it out of the task stream. */
+struct ane_bind {
+	uint8_t src[TILE_COUNT];
+	uint8_t dst[TILE_COUNT];
+};
+
 struct ane_nn {
 	int fd; /* file descriptor to accel node (index dev_id) */
 	void *data; /* anec content loaded from path */
 	struct anec anec; /* anec header loaded from path */
 	struct ane_bo chans[TILE_COUNT]; /* mmap-ed tile channels */
 	struct ane_bo btsp_chan; /* mmap-ed bootstrap channel */
+	struct ane_bind bind; /* role-to-channel map, per the task stream */
 };
 
 /* #define LIBANE_CONFIG_NO_ERR */
