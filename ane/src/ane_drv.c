@@ -641,33 +641,33 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto detach_genpd;
 
-	/* Managed runtime PM from here on. The device stays powered for the
-	 * whole qualification lifetime: autosuspend stays disabled and this
-	 * reference is held until remove balances it. */
-	pm_runtime_get_noresume(dev);
-	pm_runtime_set_active(dev);
+	/*
+	 * Managed runtime PM from here on. This resume is what raises the
+	 * ANE partition: genpd powers the domain when the device resumes
+	 * (through the platform bus for one power-domain entry, through the
+	 * supplier links for several), and .runtime_resume then does the
+	 * first engine MMIO. Marking the device active up front skips that
+	 * resume, and on T6001 the engine window external-aborts while its
+	 * partition is gated. The reference is held until remove: the device
+	 * stays powered for the whole lifetime, autosuspend stays disabled.
+	 */
 	pm_runtime_enable(dev);
-
-	/* First MMIO strictly after a checked managed resume. */
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
 		goto disable_pm;
 
-	ane_tm_enable(ane);
-
-	pm_runtime_put(dev);
-
 	err = drm_dev_register(drm, 0);
 	if (err < 0)
-		goto disable_pm;
+		goto put_pm;
 
 	dev_info(dev, "loaded ane\n");
 
 	return 0;
 
+put_pm:
+	pm_runtime_put_noidle(dev);
 disable_pm:
 	pm_runtime_disable(dev);
-	pm_runtime_put_noidle(dev); /* balances the probe-time noresume get */
 	drm_mm_takedown(&ane->mm);
 detach_genpd:
 	ane_detach_genpd(ane);
@@ -717,8 +717,9 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 {
 	struct ane_device *ane = dev_get_drvdata(dev);
 
-	/* After a power gate the task manager must be re-enabled; every
-	 * other translation is owned by the IOMMU providers. */
+	/* The only path that touches the engine while its partition comes
+	 * up: probe's first resume and every later ungate land here. Every
+	 * translation is owned by the IOMMU providers. */
 	ane_tm_enable(ane);
 
 	return 0;
@@ -755,5 +756,5 @@ module_platform_driver(ane_platform_driver);
 
 MODULE_AUTHOR("Eileen Yoon <eyn@gmx.com>");
 MODULE_DESCRIPTION("Apple Neural Engine driver");
-MODULE_VERSION("f2a3e5e+lifecycle6");
+MODULE_VERSION(ANE_MODULE_VERSION);
 MODULE_LICENSE("Dual MIT/GPL");
