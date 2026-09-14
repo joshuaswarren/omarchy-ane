@@ -14,6 +14,7 @@
 
 #include <ane_accel.h>
 #include "ane.h"
+#include "ane_bind.h"
 
 #ifndef LIBANE_CONFIG_NO_ERR
 #include <stdio.h>
@@ -32,8 +33,8 @@
 #define tile_size(nn, bdx) (tile_shift(to_anec(nn)->tiles[bdx]))
 
 #define ANEC_HEADER_SIZE   0x1000UL
-#define src_bdx(nn, idx)   (4 + ane_dst_count(nn) + idx)
-#define dst_bdx(nn, idx)   (4 + idx)
+#define src_bdx(nn, idx)   ((nn)->bind.src[idx])
+#define dst_bdx(nn, idx)   ((nn)->bind.dst[idx])
 
 #define MAX_ANE_DEVICES	   2
 #define MAX_NODE_LEN	   30
@@ -407,6 +408,8 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		free(nn->data);
 		return -EINVAL;
 	}
+
+	ane_bind_init(anec, nn->data, anec->size, &nn->bind);
 
 	return 0;
 }
