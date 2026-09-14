@@ -409,7 +409,14 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		return -EINVAL;
 	}
 
-	ane_bind_init(anec, nn->data, anec->size, &nn->bind);
+	if (!ane_bind_init(anec, nn->data, anec->size, &nn->bind)) {
+		ane_err("%s: task stream does not name every surface; "
+			"channel map is positional\n", path);
+#ifdef LIBANE_CONFIG_STRICT_BIND
+		free(nn->data);
+		return -EINVAL;
+#endif
+	}
 
 	return 0;
 }
