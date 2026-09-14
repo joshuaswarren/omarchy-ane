@@ -4,6 +4,7 @@ ifneq ($(KERNELRELEASE),)
 	# Resolve <uapi/drm/ane_accel.h> from this tree; never copy headers
 	# into the kernel build directory.
 	ccflags-y += -I$(src)/src
+	ccflags-y += -DANE_MODULE_VERSION='"$(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)"'
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
  	PWD := $(shell pwd)
