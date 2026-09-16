@@ -663,6 +663,14 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
+	/* m1n1 keys the same block by ADT node name (ANE.ps_map); the live
+	 * T6001 overlay carries no range for it, so the compatible picks
+	 * the SET base. Unmapped is fine: recovery then just skips the
+	 * set0/base gate. */
+	ane->ps_base = (phys_addr_t)of_device_get_match_data(dev);
+	if (ane->ps_base)
+		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
+
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
@@ -770,8 +778,11 @@ static const struct dev_pm_ops ane_pm_ops = {
 // clang-format on
 
 static const struct of_device_id ane_of_match[] = {
-	{ .compatible = "apple,t8103-ane" },
-	{ .compatible = "apple,t6000-ane" },
+	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map. */
+	{ .compatible = "apple,t8103-ane",
+	  .data = (const void *)0x23b70c000ULL },
+	{ .compatible = "apple,t6000-ane",
+	  .data = (const void *)0x28e08c000ULL },
 	{}
 };
 
