@@ -234,8 +234,10 @@ static int ane_ps_verify_on(struct ane_device *ane)
 {
 	int i;
 
+	/* No SET map (t8103) -> the genpd children are the only power
+	 * authority and they were just force-resumed; nothing to check. */
 	if (!ane->ps)
-		return -ENXIO;
+		return 0;
 	for (i = 0; i < 6; i++) {
 		u32 val = readl(ane->ps + i * 8);
 
