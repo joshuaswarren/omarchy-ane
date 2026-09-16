@@ -3,6 +3,7 @@
 
 #include <linux/device.h>
 #include <linux/iopoll.h>
+#include <linux/pm_runtime.h>
 #include <linux/module.h>
 #include "ane_tm.h"
 
