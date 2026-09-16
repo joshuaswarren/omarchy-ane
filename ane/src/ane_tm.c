@@ -196,12 +196,20 @@ static int ane_pd_cycle(struct ane_device *ane)
 			if (err)
 				break;
 		}
-		if (!err)
+		if (!err) {
+			/* The pmgr gate is asynchronous: TARGET clears long
+			 * before ACTUAL reaches the off state, and raising
+			 * before it gets there aborts the gate, leaving a
+			 * T6001 set island in retention with the tm/tq
+			 * register file intact. Sleep long enough for the
+			 * islands to actually drop before raising them. */
+			msleep(20);
 			for (int i = 0; i < ane->pd_count; i++) {
 				err = pm_runtime_force_resume(ane->pd_dev[i]);
 				if (err)
 					break;
 			}
+		}
 		while (gated--)
 			pm_runtime_put_noidle(ane->pd_dev[gated]);
 	} else {
