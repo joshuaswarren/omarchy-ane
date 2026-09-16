@@ -59,7 +59,14 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 
 void ane_tm_enable(struct ane_device *ane)
 {
-	tm_write32(ane, TM_TQ_EN, tm_read32(ane, TM_TQ_EN) | 0x1000);
+	/* 0x3000 is the power-on value m1n1's ANETaskManager.reset() writes
+	 * once the ANE_SET partitions are up, and the tm/tq register file
+	 * resets with exactly those partitions. Firmware normally leaves
+	 * both bits set, so the probe path just ORs; after a recovery cycle
+	 * the file is at hardware reset and T6001 needs bit 0x2000 restored
+	 * or the tm runs tasks but TM_STATUS never reports idle again
+	 * (finish events fire, submits time out). */
+	tm_write32(ane, TM_TQ_EN, tm_read32(ane, TM_TQ_EN) | 0x3000);
 
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
 		tq_write32(ane, TQ_PRTY(qid), TQ_PRTY_TABLE[qid]);
