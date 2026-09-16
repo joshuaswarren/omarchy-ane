@@ -49,6 +49,15 @@ struct ane_device {
 	 * recovered keep the strict idle predicate.
 	 */
 	bool tm_relaxed;
+
+	/*
+	 * Submission queue for the next request: 4 on a healthy engine
+	 * (upstream value), rotated after each recovery - the tm/tq file
+	 * rides out the partition cycle in retention on T6001 and the
+	 * wedged queue's retained fetch state must not serve new tasks.
+	 */
+	int next_qid;
+
 	bool removed;
 
 	/*

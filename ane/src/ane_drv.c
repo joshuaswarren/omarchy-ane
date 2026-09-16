@@ -325,7 +325,7 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 		return -ECANCELED;
 	}
 
-	req.qid = 4;
+	req.qid = ane->next_qid;
 	req.nid = ANE_FIFO_NID;
 	req.td_size = args->td_size;
 	req.td_count = args->td_count;
@@ -673,6 +673,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (ane->ps_base)
 		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
 
+	ane->next_qid = 4;
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);

@@ -237,8 +237,9 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 wedge:
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
-		dev_err(ane->dev, "tm completion failed: %d, finish lines=%x\n",
-			err, finished);
+		dev_err(ane->dev,
+			"tm completion failed: %d, finish lines=%x (q%d nid=%#x)\n",
+			err, finished, req->qid, req->nid);
 	}
 
 	/* One bounded recovery attempt: stop the tm, power-cycle the engine
@@ -407,9 +408,15 @@ int ane_tm_recover(struct ane_device *ane)
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
 		dev_info(ane->dev,
-			 "tm recovered: partitions cycled, status %#x; accepting work again\n",
-			 status);
+			 "tm recovered: partitions cycled, status %#x; accepting work again on q%d\n",
+			 status, ane->next_qid);
 	}
 	ane->tm_relaxed = true;
+
+	/* The tm/tq file rides out the partition cycle in retention on
+	 * T6001 (locked set0/base), taking the wedged queue's fetch state
+	 * with it; tasks pushed to that queue complete against stale
+	 * state. Serve new work from the next queue instead. */
+	ane->next_qid = (ane->next_qid + 1) % 8;
 	return 0;
 }
