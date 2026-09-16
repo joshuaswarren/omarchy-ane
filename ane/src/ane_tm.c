@@ -279,13 +279,20 @@ wedge:
  * this block on T6001. */
 static int ane_ps_verify_on(struct ane_device *ane)
 {
-	u32 act;
-	int err;
+	u32 act = 0;
+	int err = -ETIMEDOUT;
+	int i;
 
 	if (!ane->ps)
 		return 0;
-	err = read_poll_timeout(ane_ps_act, act, act == ANE_PS_ALL_ON,
-				1000, 100000, false, ane);
+	for (i = 0; i < 100; i++) {
+		act = ane_ps_act(ane);
+		if (act == ANE_PS_ALL_ON) {
+			err = 0;
+			break;
+		}
+		usleep_range(1000, 2000);
+	}
 	dev_info(ane->dev, "ANERD ps verify act=%#x err=%d\n", act, err);
 	return err;
 }
@@ -378,11 +385,11 @@ int ane_tm_recover(struct ane_device *ane)
 	 * like the probe resume path does. */
 	ane_tm_enable(ane, true);
 
-	err = read_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
-				status,
-				(status & TM_IS_IDLE) ||
-				status == ane->tm_status_fresh,
-				100, 1000000);
+	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
+				 status,
+				 (status & TM_IS_IDLE) ||
+				 status == ane->tm_status_fresh,
+				 100, 1000000);
 	status = ane_rec_read32(ane, "TM_STATUS tm+0x54",
 				ane->engine + ANE_TM_BASE + TM_STATUS);
 	if (err) {
