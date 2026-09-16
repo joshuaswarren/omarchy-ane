@@ -25,6 +25,14 @@ struct ane_device {
 
 	void __iomem *engine;
 
+	/* The ane SET block (m1n1 ANE.ps_map): pmgr power-state words for
+	 * this engine, mapped at probe on every SoC. Read-only, always:
+	 * pmgr reads give recovery its ACTUAL evidence, while direct SET
+	 * writes are firmware-locked and external-abort the SoC (T6001
+	 * netconsole-named 2026-09-16; T8103 same mechanism). */
+	phys_addr_t ps_base;
+	void __iomem *ps;
+
 	struct drm_mm mm;
 	struct iommu_domain *domain;
 	unsigned long shift;
