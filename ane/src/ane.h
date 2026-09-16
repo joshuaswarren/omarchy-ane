@@ -37,11 +37,18 @@ struct ane_device {
 
 	/*
 	 * Set under engine_lock once a task manager timeout leaves the queue
-	 * state unknown and DMA possibly still active. No documented abort/reset
-	 * exists, so a wedged engine refuses new work and resource reclamation
-	 * until reboot.
+	 * state unknown and DMA possibly still active. A wedged engine refuses
+	 * new work while recovery (ane_tm_recover) power-cycles it; the
+	 * preserve-until-reboot behaviour applies only when that reset fails.
 	 */
 	atomic_t wedged;
+
+	/*
+	 * Set under engine_lock for the duration of a recovery power cycle,
+	 * so runtime suspend may gate an engine that the reset itself is
+	 * quiescing.
+	 */
+	bool recovering;
 };
 
 struct ane_request {

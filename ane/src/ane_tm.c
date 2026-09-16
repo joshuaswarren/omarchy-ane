@@ -149,9 +149,68 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 wedge:
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
-		dev_err(ane->dev,
-			"tm completion failed: %d, finish lines=%x; preserving resources until reboot\n",
+		dev_err(ane->dev, "tm completion failed: %d, finish lines=%x\n",
 			err, finished);
 	}
+
+	/* One bounded recovery attempt: stop the tm, power-cycle the engine
+	 * and return to accepting work. Only a failed reset preserves
+	 * resources until reboot. */
+	if (ane_tm_recover(ane) < 0)
+		dev_err(ane->dev,
+			"recovery failed; preserving resources until reboot\n");
 	return err;
+}
+
+/*
+ * Bounded recovery after a failed task. The only reset this driver knows
+ * is the partition power cycle system sleep already performs on this
+ * hardware: force-suspend gates the engine, which stops any DMA still
+ * fetching the dead task and clears the tm register file; force-resume
+ * brings it back through the same runtime_resume path probe uses
+ * (ane_tm_enable), then the task manager must report idle. BO mappings
+ * deliberately stay in place: they remain coherent through the cycle and
+ * valid for the next submit, and once the wedge clears, BO_FREE unmaps
+ * them through the normal path again. Callers hold engine_lock.
+ */
+int ane_tm_recover(struct ane_device *ane)
+{
+	u32 status;
+	int err;
+
+	lockdep_assert_held(&ane->engine_lock);
+	if (!atomic_read(&ane->wedged))
+		return 0;
+
+	dev_err(ane->dev, "recovering: power-cycling engine\n");
+
+	ane->recovering = true;
+	/* Pin a second usage ref for the cycle: force_suspend only marks
+	 * needs_force_resume when a ref beyond the probe one is held, and
+	 * without that mark force_resume would leave the partition gated. */
+	pm_runtime_get_noresume(ane->dev);
+	err = pm_runtime_force_suspend(ane->dev);
+	if (!err)
+		err = pm_runtime_force_resume(ane->dev);
+	pm_runtime_put_noidle(ane->dev);
+	ane->recovering = false;
+	if (err) {
+		dev_err(ane->dev, "recovery: engine power cycle failed: %d\n",
+			err);
+		return err;
+	}
+
+	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
+				 status, status & TM_IS_IDLE, 100, 1000000);
+	if (err) {
+		dev_err(ane->dev, "recovery: tm not idle after reset: %#x\n",
+			status);
+		return err;
+	}
+
+	if (atomic_xchg(&ane->wedged, 0)) {
+		module_put(THIS_MODULE); /* drop the wedge pin */
+		dev_info(ane->dev, "tm recovered: idle, accepting work again\n");
+	}
+	return 0;
 }
