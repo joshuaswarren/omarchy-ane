@@ -664,12 +664,13 @@ static int ane_platform_probe(struct platform_device *pdev)
 	}
 
 	/* m1n1 keys the same block by ADT node name (ANE.ps_map); the live
-	 * T6001 overlay carries no range for it, so the compatible picks
-	 * the SET base. Unmapped is fine: recovery then just skips the
-	 * set0/base gate. */
-	ane->ps_base = (phys_addr_t)of_device_get_match_data(dev);
-	if (ane->ps_base)
-		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
+	 * overlays carry no range for it, so the compatible picks the SET
+	 * base. Mapped on both SoCs: the pmgr registers are always
+	 * readable and recovery logs their ACTUAL nibbles beside every
+	 * engine write; the write cycle itself stays T6001-only. */
+	ane->psi = of_device_get_match_data(dev);
+	if (ane->psi && ane->psi->base)
+		ane->ps = devm_ioremap(dev, ane->psi->base, 0x38);
 
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
@@ -765,7 +766,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	/* The only path that touches the engine while its partition comes
 	 * up: probe's first resume and every later ungate land here. Every
 	 * translation is owned by the IOMMU providers. */
-	ane_tm_enable(ane);
+	ane_tm_enable(ane, false);
 
 	return 0;
 }
@@ -777,16 +778,18 @@ static const struct dev_pm_ops ane_pm_ops = {
 };
 // clang-format on
 
+static const struct ane_ps_info ane_ps_t8103 = { .base = 0x23b70c000 };
+static const struct ane_ps_info ane_ps_t6000 = { .base = 0x28e08c000,
+						 .gate = true };
+
 static const struct of_device_id ane_of_match[] = {
 	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map.
-	 * t8103 maps NULL: the direct set0/base gate external-aborts on
-	 * T8103 (hard reset, 2026-09-16, during a -110 recovery with the
-	 * same provoke b52064c survived), so the T6001-only gate must not
-	 * arm there. With ps == NULL ane_pd_cycle is the b52064c genpd
-	 * cycle that is proven on T8103, and ane_ps_verify_on is a no-op. */
-	{ .compatible = "apple,t8103-ane" },
-	{ .compatible = "apple,t6000-ane",
-	  .data = (const void *)0x28e08c000ULL },
+	 * t8103 carries gate=false: the direct set0/base write cycle
+	 * external-aborts T8103 (hard resets, 2026-09-16, during -110/-5
+	 * recoveries with the same provoke b52064c survived), so the gate
+	 * must not arm there; the mapping stays for the ACTUAL log. */
+	{ .compatible = "apple,t8103-ane", .data = &ane_ps_t8103 },
+	{ .compatible = "apple,t6000-ane", .data = &ane_ps_t6000 },
 	{}
 };
 

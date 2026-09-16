@@ -57,20 +57,105 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 #define tm_write32(ane, off, val) (writel(val, ane->engine + ANE_TM_BASE + off))
 #define tq_write32(ane, off, val) (writel(val, ane->engine + ANE_TQ_BASE + off))
 
-void ane_tm_enable(struct ane_device *ane)
+/* set0 and base (m1n1 ANE.power_up's first two SET words) carry no genpd
+ * consumer on either SoC, so the genpd cycle never gates them - and the
+ * tm/tq register file survives every attached-partition cycle while
+ * those islands stay up. On T6001 recovery gates them directly around
+ * the genpd cycle, mirroring m1n1's power_down/power_up handshake, and
+ * waits for ACTUAL to actually reach the target: the pmgr gate is
+ * asynchronous and bouncing it aborts it. ps_set5 is deliberately
+ * untouched: it exists in m1n1's seven-word loop but failed to reach
+ * 0xf on T6001 and holds no part of this engine. */
+#define ANE_PS_SET0		  0x00
+#define ANE_PS_BASE		  0x08
+#define ANE_PS_OFF		  0x300
+#define ANE_PS_ON		  0xf
+#define ANE_PS_ACTUAL_MASK	  0xf0
+#define ANE_PS_WORDS		  6 /* set0, base, set1..4 */
+#define ANE_PS_ALL_ON		  ((1U << (4 * ANE_PS_WORDS)) - 1)
+
+/* ACTUAL nibble of each SET word, word 0 in the low nibble; 0 when the
+ * SET block is unmapped. pmgr registers only: engine MMIO is never
+ * read for power state (a readl through a warm gate external-aborts
+ * and hard-resets the machine). */
+static u32 ane_ps_act(struct ane_device *ane)
+{
+	u32 v = 0;
+	int i;
+
+	if (!ane->ps)
+		return 0;
+	for (i = 0; i < ANE_PS_WORDS; i++)
+		v |= ((readl(ane->ps + i * 8) & ANE_PS_ACTUAL_MASK) >> 4)
+		     << (i * 4);
+	return v;
+}
+
+/* Recovery-path MMIO logging. Every write prints before and after, and
+ * every engine read prints its value, each line carrying the pmgr
+ * ACTUAL of the owning partitions. A write that external-aborts the
+ * SoC is then named by the last line the off-box console carried, and
+ * the bisect starts from that register instead of a guess. */
+static void ane_rec_writel(struct ane_device *ane, const char *reg,
+			   void __iomem *addr, u32 val)
+{
+	dev_info(ane->dev, "ANEWR %s <- %#x (ps act %#x)\n", reg, val,
+		 ane_ps_act(ane));
+	writel(val, addr);
+	dev_info(ane->dev, "ANEWR %s wrote (ps act %#x)\n", reg,
+		 ane_ps_act(ane));
+}
+
+static u32 ane_rec_read32(struct ane_device *ane, const char *reg,
+			  void __iomem *addr)
+{
+	u32 val = readl(addr);
+
+	dev_info(ane->dev, "ANERD %s -> %#x (ps act %#x)\n", reg, val,
+		 ane_ps_act(ane));
+	return val;
+}
+
+void ane_tm_enable(struct ane_device *ane, bool rec)
 {
 	/* 0x3000 is the power-on value m1n1's ANETaskManager.reset() writes
 	 * once the ANE_SET partitions are up. Firmware normally leaves both
 	 * bits set, so the probe path just ORs; ORing the full mask also
 	 * makes this the exact reset transcription after a recovery cycle. */
-	tm_write32(ane, TM_TQ_EN, tm_read32(ane, TM_TQ_EN) | 0x3000);
+	void __iomem *tq_en = ane->engine + ANE_TM_BASE + TM_TQ_EN;
+	u32 val = rec ? ane_rec_read32(ane, "TM_TQ_EN tm+0x0c", tq_en)
+		      : readl(tq_en);
+	char reg[24];
+
+	val |= 0x3000;
+	if (rec)
+		ane_rec_writel(ane, "TM_TQ_EN tm+0x0c", tq_en, val);
+	else
+		writel(val, tq_en);
 
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
-		tq_write32(ane, TQ_PRTY(qid), TQ_PRTY_TABLE[qid]);
+		void __iomem *prty =
+			ane->engine + ANE_TQ_BASE + TQ_PRTY(qid);
+
+		if (rec) {
+			snprintf(reg, sizeof(reg), "TQ_PRTY[%d] tq+%#x", qid,
+				 TQ_PRTY(qid));
+			ane_rec_writel(ane, reg, prty, TQ_PRTY_TABLE[qid]);
+		} else {
+			writel(TQ_PRTY_TABLE[qid], prty);
+		}
 	}
 
-	tm_write32(ane, TM_IRQ_EN1, 0x4000000);
-	tm_write32(ane, TM_IRQ_EN2, 0x6);
+	if (rec) {
+		ane_rec_writel(ane, "TM_IRQ_EN1 tm+0x68",
+			       ane->engine + ANE_TM_BASE + TM_IRQ_EN1,
+			       0x4000000);
+		ane_rec_writel(ane, "TM_IRQ_EN2 tm+0x70",
+			       ane->engine + ANE_TM_BASE + TM_IRQ_EN2, 0x6);
+	} else {
+		tm_write32(ane, TM_IRQ_EN1, 0x4000000);
+		tm_write32(ane, TM_IRQ_EN2, 0x6);
+	}
 }
 
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req)
@@ -182,21 +267,6 @@ wedge:
  * Callers hold engine_lock.
  */
 
-/* set0 and base (m1n1 ANE.power_up's first two SET words) carry no genpd
- * consumer on either SoC, so the genpd cycle never gates them - and the
- * tm/tq register file survives every attached-partition cycle while
- * those islands stay up. Gate them directly around the genpd cycle,
- * mirroring m1n1's power_down/power_up handshake, and wait for ACTUAL
- * to actually reach the target: the pmgr gate is asynchronous and
- * bouncing it aborts it. ps_set5 is deliberately untouched: it exists
- * in m1n1's seven-word loop but failed to reach 0xf on T6001 and holds
- * no part of this engine. */
-#define ANE_PS_SET0		  0x00
-#define ANE_PS_BASE		  0x08
-#define ANE_PS_OFF		  0x300
-#define ANE_PS_ON		  0xf
-#define ANE_PS_ACTUAL_MASK	  0xf0
-
 static int ane_ps_settle(void __iomem *ps, u32 target)
 {
 	u32 val;
@@ -214,15 +284,22 @@ static int ane_ps_settle(void __iomem *ps, u32 target)
 
 static int ane_ps_cycle(struct ane_device *ane, bool on)
 {
-	void __iomem *ps = ane->ps;
 	u32 target = on ? ANE_PS_ON : ANE_PS_OFF;
+	int err;
 
-	if (!ps)
+	/* The write cycle external-aborts T8103; only the T6001 gate arms
+	 * it (psi->gate). The mapping itself is read-only evidence. */
+	if (!ane->psi || !ane->psi->gate || !ane->ps)
 		return 0;
 
-	writel(target, ps + ANE_PS_SET0);
-	writel(target, ps + ANE_PS_BASE);
-	return ane_ps_settle(ps, (target << 4) & ANE_PS_ACTUAL_MASK);
+	ane_rec_writel(ane, on ? "PS_SET0 ps+0x00 up" : "PS_SET0 ps+0x00 down",
+		       ane->ps + ANE_PS_SET0, target);
+	ane_rec_writel(ane, on ? "PS_BASE ps+0x08 up" : "PS_BASE ps+0x08 down",
+		       ane->ps + ANE_PS_BASE, target);
+	err = ane_ps_settle(ane->ps, (target << 4) & ANE_PS_ACTUAL_MASK);
+	dev_info(ane->dev, "ANERD ps settle %s err=%d (ps act %#x)\n",
+		 on ? "up" : "down", err, ane_ps_act(ane));
+	return err;
 }
 
 /* No engine MMIO unless the owning partitions read powered on (ACTUAL
@@ -232,19 +309,15 @@ static int ane_ps_cycle(struct ane_device *ane, bool on)
  * this block on T6001. */
 static int ane_ps_verify_on(struct ane_device *ane)
 {
-	int i;
+	u32 act;
+	int err;
 
-	/* No SET map (t8103) -> the genpd children are the only power
-	 * authority and they were just force-resumed; nothing to check. */
 	if (!ane->ps)
 		return 0;
-	for (i = 0; i < 6; i++) {
-		u32 val = readl(ane->ps + i * 8);
-
-		if ((val & ANE_PS_ACTUAL_MASK) != ANE_PS_ACTUAL_MASK)
-			return -EIO;
-	}
-	return 0;
+	err = read_poll_timeout(ane_ps_act, act, act == ANE_PS_ALL_ON,
+				1000, 100000, false, ane);
+	dev_info(ane->dev, "ANERD ps verify act=%#x err=%d\n", act, err);
+	return err;
 }
 
 static int ane_pd_cycle(struct ane_device *ane)
@@ -258,7 +331,13 @@ static int ane_pd_cycle(struct ane_device *ane)
 		for (int i = 0; i < ane->pd_count; i++) {
 			pm_runtime_get_noresume(ane->pd_dev[i]);
 			gated = i + 1;
+			dev_info(ane->dev,
+				 "ANERD pd[%d] %s force_suspend begin (ps act %#x)\n",
+				 i, dev_name(ane->pd_dev[i]), ane_ps_act(ane));
 			err = pm_runtime_force_suspend(ane->pd_dev[i]);
+			dev_info(ane->dev,
+				 "ANERD pd[%d] force_suspend -> %d (ps act %#x)\n",
+				 i, err, ane_ps_act(ane));
 			if (err)
 				break;
 		}
@@ -270,7 +349,14 @@ static int ane_pd_cycle(struct ane_device *ane)
 			err = ane_ps_cycle(ane, true);
 		if (!err)
 			for (int i = 0; i < ane->pd_count; i++) {
+				dev_info(ane->dev,
+					 "ANERD pd[%d] %s force_resume begin (ps act %#x)\n",
+					 i, dev_name(ane->pd_dev[i]),
+					 ane_ps_act(ane));
 				err = pm_runtime_force_resume(ane->pd_dev[i]);
+				dev_info(ane->dev,
+					 "ANERD pd[%d] force_resume -> %d (ps act %#x)\n",
+					 i, err, ane_ps_act(ane));
 				if (err)
 					break;
 			}
@@ -282,9 +368,15 @@ static int ane_pd_cycle(struct ane_device *ane)
 		 * is held, and without that mark force_resume would leave
 		 * the partition gated. */
 		pm_runtime_get_noresume(ane->dev);
+		dev_info(ane->dev, "ANERD dev force_suspend begin\n");
 		err = pm_runtime_force_suspend(ane->dev);
-		if (!err)
+		dev_info(ane->dev, "ANERD dev force_suspend -> %d\n", err);
+		if (!err) {
+			dev_info(ane->dev, "ANERD dev force_resume begin\n");
 			err = pm_runtime_force_resume(ane->dev);
+			dev_info(ane->dev, "ANERD dev force_resume -> %d\n",
+				 err);
+		}
 		pm_runtime_put_noidle(ane->dev);
 	}
 	ane->recovering = false;
@@ -294,6 +386,7 @@ static int ane_pd_cycle(struct ane_device *ane)
 
 int ane_tm_recover(struct ane_device *ane)
 {
+	char reg[24];
 	u32 status;
 	int err;
 
@@ -325,13 +418,22 @@ int ane_tm_recover(struct ane_device *ane)
 	 * forever. Clear it with the success-path handshake, then re-run
 	 * the probe init. */
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
-		tq_write32(ane, TQ_NID1(qid),
-			   tq_read32(ane, TQ_NID1(qid)) & ~1U);
-		tq_write32(ane, TQ_STATUS(qid), 0x0);
-	}
-	ane_tm_enable(ane);
+		void __iomem *nid1 = ane->engine + ANE_TQ_BASE + TQ_NID1(qid);
+		void __iomem *stat = ane->engine + ANE_TQ_BASE + TQ_STATUS(qid);
+		u32 nid;
 
-	status = tm_read32(ane, TM_STATUS);
+		snprintf(reg, sizeof(reg), "TQ_NID1[%d] tq+%#x", qid,
+			 TQ_NID1(qid));
+		nid = ane_rec_read32(ane, reg, nid1);
+		ane_rec_writel(ane, reg, nid1, nid & ~1U);
+		snprintf(reg, sizeof(reg), "TQ_STATUS[%d] tq+%#x", qid,
+			 TQ_STATUS(qid));
+		ane_rec_writel(ane, reg, stat, 0x0);
+	}
+	ane_tm_enable(ane, true);
+
+	status = ane_rec_read32(ane, "TM_STATUS tm+0x54",
+				ane->engine + ANE_TM_BASE + TM_STATUS);
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
 		dev_info(ane->dev,
