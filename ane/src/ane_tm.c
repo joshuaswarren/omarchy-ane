@@ -57,19 +57,16 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 #define tm_write32(ane, off, val) (writel(val, ane->engine + ANE_TM_BASE + off))
 #define tq_write32(ane, off, val) (writel(val, ane->engine + ANE_TQ_BASE + off))
 
-/* set0 and base (m1n1 ANE.power_up's first two SET words) carry no genpd
- * consumer on either SoC, so the genpd cycle never gates them - and the
- * tm/tq register file survives every attached-partition cycle while
- * those islands stay up. On T6001 recovery gates them directly around
- * the genpd cycle, mirroring m1n1's power_down/power_up handshake, and
- * waits for ACTUAL to actually reach the target: the pmgr gate is
- * asynchronous and bouncing it aborts it. ps_set5 is deliberately
- * untouched: it exists in m1n1's seven-word loop but failed to reach
- * 0xf on T6001 and holds no part of this engine. */
-#define ANE_PS_SET0		  0x00
-#define ANE_PS_BASE		  0x08
-#define ANE_PS_OFF		  0x300
-#define ANE_PS_ON		  0xf
+/* The ane SET block maps the pmgr power-state words (set0, base,
+ * set1..4). pmgr reads are always safe and give recovery its ACTUAL
+ * evidence; the SET words themselves are firmware-locked: a direct
+ * write external-aborts the SoC - netconsole-named on T6001 (PS_SET0
+ * down at 0x28e08c000, hard reset 2026-09-16) and on T8103 (same
+ * mechanism, 95dbcf3-era reset). No code here ever writes the SET
+ * block; recovery cycles the genpd partitions only, and sleeps between
+ * gate and raise so the islands genuinely drop instead of bouncing
+ * within tens of microseconds (the bounce leaves a T6001 set island in
+ * retention with the tm/tq register file intact). */
 #define ANE_PS_ACTUAL_MASK	  0xf0
 #define ANE_PS_WORDS		  6 /* set0, base, set1..4 */
 #define ANE_PS_ALL_ON		  ((1U << (4 * ANE_PS_WORDS)) - 1)
@@ -267,41 +264,6 @@ wedge:
  * Callers hold engine_lock.
  */
 
-static int ane_ps_settle(void __iomem *ps, u32 target)
-{
-	u32 val;
-	int err;
-
-	err = readl_poll_timeout(ps + ANE_PS_SET0, val,
-				 (val & ANE_PS_ACTUAL_MASK) == target,
-				 100, 100000);
-	if (err)
-		return err;
-	return readl_poll_timeout(ps + ANE_PS_BASE, val,
-				  (val & ANE_PS_ACTUAL_MASK) == target,
-				  100, 100000);
-}
-
-static int ane_ps_cycle(struct ane_device *ane, bool on)
-{
-	u32 target = on ? ANE_PS_ON : ANE_PS_OFF;
-	int err;
-
-	/* The write cycle external-aborts T8103; only the T6001 gate arms
-	 * it (psi->gate). The mapping itself is read-only evidence. */
-	if (!ane->psi || !ane->psi->gate || !ane->ps)
-		return 0;
-
-	ane_rec_writel(ane, on ? "PS_SET0 ps+0x00 up" : "PS_SET0 ps+0x00 down",
-		       ane->ps + ANE_PS_SET0, target);
-	ane_rec_writel(ane, on ? "PS_BASE ps+0x08 up" : "PS_BASE ps+0x08 down",
-		       ane->ps + ANE_PS_BASE, target);
-	err = ane_ps_settle(ane->ps, (target << 4) & ANE_PS_ACTUAL_MASK);
-	dev_info(ane->dev, "ANERD ps settle %s err=%d (ps act %#x)\n",
-		 on ? "up" : "down", err, ane_ps_act(ane));
-	return err;
-}
-
 /* No engine MMIO unless the owning partitions read powered on (ACTUAL
  * nibble per word): a readl through a warm gate external-aborts and
  * hard resets the machine. Covers set0, base and set1..4 from the SET
@@ -341,13 +303,12 @@ static int ane_pd_cycle(struct ane_device *ane)
 			if (err)
 				break;
 		}
-		if (!err)
-			err = ane_ps_cycle(ane, false);
-		/* m1n1 raises set0/base before the sets: resuming the genpd
-		 * children against gated hardware parents external-aborts. */
-		if (!err)
-			err = ane_ps_cycle(ane, true);
-		if (!err)
+		if (!err) {
+			/* The pmgr gate is asynchronous: TARGET clears long
+			 * before ACTUAL reaches the off state, and raising
+			 * before it gets there aborts the gate. Sleep long
+			 * enough for the islands to actually drop. */
+			msleep(20);
 			for (int i = 0; i < ane->pd_count; i++) {
 				dev_info(ane->dev,
 					 "ANERD pd[%d] %s force_resume begin (ps act %#x)\n",
@@ -360,6 +321,7 @@ static int ane_pd_cycle(struct ane_device *ane)
 				if (err)
 					break;
 			}
+		}
 		while (gated--)
 			pm_runtime_put_noidle(ane->pd_dev[gated]);
 	} else {
@@ -372,6 +334,7 @@ static int ane_pd_cycle(struct ane_device *ane)
 		err = pm_runtime_force_suspend(ane->dev);
 		dev_info(ane->dev, "ANERD dev force_suspend -> %d\n", err);
 		if (!err) {
+			msleep(20);
 			dev_info(ane->dev, "ANERD dev force_resume begin\n");
 			err = pm_runtime_force_resume(ane->dev);
 			dev_info(ane->dev, "ANERD dev force_resume -> %d\n",
@@ -411,12 +374,10 @@ int ane_tm_recover(struct ane_device *ane)
 		return err;
 	}
 
-	/* The gate stops any fetch still reading the dead task and resets
-	 * the tm/tq file on T8103, but a gated T6001 set island drops only
-	 * to retention, so the wedged task's queue state (TQ_STATUS
-	 * in-use, TQ_NID1 request-pending) survives and keeps the tm busy
-	 * forever. Clear it with the success-path handshake, then re-run
-	 * the probe init. */
+	/* A set island that only dropped to retention kept the wedged
+	 * task's queue state (TQ_STATUS in-use, TQ_NID1 request-pending)
+	 * and keeps the tm busy forever. Clear every queue with the
+	 * success-path handshake, then re-run the probe init. */
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
 		void __iomem *nid1 = ane->engine + ANE_TQ_BASE + TQ_NID1(qid);
 		void __iomem *stat = ane->engine + ANE_TQ_BASE + TQ_STATUS(qid);
