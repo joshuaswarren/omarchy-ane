@@ -49,15 +49,6 @@ struct ane_device {
 	 * quiescing.
 	 */
 	bool recovering;
-
-	/*
-	 * TM_STATUS sampled right after the first tm_enable at probe: the
-	 * engine's fresh, idle-state signature. Recovery accepts a reset
-	 * whose post-cycle status matches it, since the register reset
-	 * value is not documented.
-	 */
-	u32 tm_status_fresh;
-	bool tm_status_known;
 };
 
 struct ane_request {

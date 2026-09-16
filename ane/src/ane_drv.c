@@ -759,13 +759,6 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	 * translation is owned by the IOMMU providers. */
 	ane_tm_enable(ane);
 
-	/* First enable is the engine's fresh signature; recovery compares
-	 * its post-reset status against it. */
-	if (!ane->tm_status_known) {
-		ane->tm_status_fresh = ane_tm_status(ane);
-		ane->tm_status_known = true;
-	}
-
 	return 0;
 }
 
