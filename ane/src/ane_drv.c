@@ -663,6 +663,16 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
+	/* m1n1 keys the SET block by ADT node name (ANE.ps_map); the live
+	 * overlays carry no range for it, so the compatible picks the
+	 * base. Mapped on both SoCs, read-only: recovery logs its ACTUAL
+	 * nibbles beside every engine write and refuses engine MMIO
+	 * unless the islands read powered on. Unmapped is tolerated:
+	 * recovery then just skips the check. */
+	ane->ps_base = (phys_addr_t)of_device_get_match_data(dev);
+	if (ane->ps_base)
+		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
+
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
@@ -757,7 +767,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	/* The only path that touches the engine while its partition comes
 	 * up: probe's first resume and every later ungate land here. Every
 	 * translation is owned by the IOMMU providers. */
-	ane_tm_enable(ane);
+	ane_tm_enable(ane, false);
 
 	/* First enable is the engine's fresh signature; recovery compares
 	 * its post-reset status against it. */
@@ -777,8 +787,16 @@ static const struct dev_pm_ops ane_pm_ops = {
 // clang-format on
 
 static const struct of_device_id ane_of_match[] = {
-	{ .compatible = "apple,t8103-ane" },
-	{ .compatible = "apple,t6000-ane" },
+	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map.
+	 * Mapped read-only on both SoCs for the recovery ACTUAL log and
+	 * the powered-on guard; direct writes to either block
+	 * external-abort the SoC (T6001 named by netconsole 2026-09-16:
+	 * PS_SET0 down at 0x28e08c000; T8103 same mechanism at
+	 * 0x23b70c000 with the 95dbcf3-era gate armed). */
+	{ .compatible = "apple,t8103-ane",
+	  .data = (const void *)0x23b70c000ULL },
+	{ .compatible = "apple,t6000-ane",
+	  .data = (const void *)0x28e08c000ULL },
 	{}
 };
 
