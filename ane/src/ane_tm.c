@@ -310,7 +310,7 @@ static int ane_pd_cycle(struct ane_device *ane)
 			 * before ACTUAL reaches the off state, and raising
 			 * before it gets there aborts the gate. Sleep long
 			 * enough for the islands to actually drop. */
-			msleep(20);
+			msleep(2000);
 			for (int i = 0; i < ane->pd_count; i++) {
 				dev_info(ane->dev,
 					 "ANERD pd[%d] %s force_resume begin (ps act %#x)\n",
@@ -336,7 +336,7 @@ static int ane_pd_cycle(struct ane_device *ane)
 		err = pm_runtime_force_suspend(ane->dev);
 		dev_info(ane->dev, "ANERD dev force_suspend -> %d\n", err);
 		if (!err) {
-			msleep(20);
+			msleep(2000);
 			dev_info(ane->dev, "ANERD dev force_resume begin\n");
 			err = pm_runtime_force_resume(ane->dev);
 			dev_info(ane->dev, "ANERD dev force_resume -> %d\n",
