@@ -667,10 +667,11 @@ static int ane_platform_probe(struct platform_device *pdev)
 	 * overlays carry no range for it, so the compatible picks the SET
 	 * base. Mapped on both SoCs: the pmgr registers are always
 	 * readable and recovery logs their ACTUAL nibbles beside every
-	 * engine write; the write cycle itself stays T6001-only. */
-	ane->psi = of_device_get_match_data(dev);
-	if (ane->psi && ane->psi->base)
-		ane->ps = devm_ioremap(dev, ane->psi->base, 0x38);
+	 * engine write. Read-only, always: the SET words are
+	 * firmware-locked and a direct write external-aborts the SoC. */
+	ane->ps_base = (phys_addr_t)of_device_get_match_data(dev);
+	if (ane->ps_base)
+		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
 
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
@@ -778,18 +779,16 @@ static const struct dev_pm_ops ane_pm_ops = {
 };
 // clang-format on
 
-static const struct ane_ps_info ane_ps_t8103 = { .base = 0x23b70c000 };
-static const struct ane_ps_info ane_ps_t6000 = { .base = 0x28e08c000,
-						 .gate = true };
-
 static const struct of_device_id ane_of_match[] = {
 	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map.
-	 * t8103 carries gate=false: the direct set0/base write cycle
-	 * external-aborts T8103 (hard resets, 2026-09-16, during -110/-5
-	 * recoveries with the same provoke b52064c survived), so the gate
-	 * must not arm there; the mapping stays for the ACTUAL log. */
-	{ .compatible = "apple,t8103-ane", .data = &ane_ps_t8103 },
-	{ .compatible = "apple,t6000-ane", .data = &ane_ps_t6000 },
+	 * Both mapped read-only for the recovery ACTUAL log; direct
+	 * writes to either block external-abort the SoC (T6001 named by
+	 * netconsole 2026-09-16: PS_SET0 down at 0x28e08c000; T8103 same
+	 * mechanism, 95dbcf3-era reset at 0x23b70c000). */
+	{ .compatible = "apple,t8103-ane",
+	  .data = (const void *)0x23b70c000ULL },
+	{ .compatible = "apple,t6000-ane",
+	  .data = (const void *)0x28e08c000ULL },
 	{}
 };
 
