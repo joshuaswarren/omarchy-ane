@@ -8,6 +8,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/sysfs.h>
 
 #include <drm/drm_accel.h>
 #include <drm/drm_drv.h>
@@ -406,6 +407,40 @@ static const struct drm_ioctl_desc ane_drm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ANE_SUBMIT, ane_submit, 0),
 };
 
+static ssize_t wedged_show(struct device *dev, struct device_attribute *attr,
+			   char *buf)
+{
+	struct ane_device *ane = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", atomic_read(&ane->wedged));
+}
+static DEVICE_ATTR_RO(wedged);
+
+/* Operator retry for a wedge whose automatic recovery failed: one more
+ * bounded power-cycle attempt. No-op when not wedged. */
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct ane_device *ane = dev_get_drvdata(dev);
+	int err = 0;
+
+	mutex_lock(&ane->engine_lock);
+	if (!ane->removed)
+		err = ane_tm_recover(ane);
+	mutex_unlock(&ane->engine_lock);
+	if (err)
+		return err;
+	return count;
+}
+static DEVICE_ATTR_WO(reset);
+
+static struct attribute *ane_dev_attrs[] = {
+	&dev_attr_wedged.attr,
+	&dev_attr_reset.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(ane_dev);
+
 static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
@@ -628,6 +663,16 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
+	/* m1n1 keys the SET block by ADT node name (ANE.ps_map); the live
+	 * overlays carry no range for it, so the compatible picks the
+	 * base. Mapped on both SoCs, read-only: recovery logs its ACTUAL
+	 * nibbles beside every engine write and refuses engine MMIO
+	 * unless the islands read powered on. Unmapped is tolerated:
+	 * recovery then just skips the check. */
+	ane->ps_base = (phys_addr_t)of_device_get_match_data(dev);
+	if (ane->ps_base)
+		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
+
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
@@ -706,8 +751,10 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 	struct ane_device *ane = dev_get_drvdata(dev);
 
 	/* Veto gating while the engine may be DMA-active: there is no
-	 * documented abort/reset to establish quiescence first. */
-	if (atomic_read(&ane->wedged))
+	 * documented abort/reset to establish quiescence first -- except
+	 * when recovery is power-cycling a wedged engine to establish
+	 * exactly that quiescence. */
+	if (atomic_read(&ane->wedged) && !ane->recovering)
 		return -EBUSY;
 
 	return 0;
@@ -720,7 +767,14 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	/* The only path that touches the engine while its partition comes
 	 * up: probe's first resume and every later ungate land here. Every
 	 * translation is owned by the IOMMU providers. */
-	ane_tm_enable(ane);
+	ane_tm_enable(ane, false);
+
+	/* First enable is the engine's fresh signature; recovery compares
+	 * its post-reset status against it. */
+	if (!ane->tm_status_known) {
+		ane->tm_status_fresh = ane_tm_status(ane);
+		ane->tm_status_known = true;
+	}
 
 	return 0;
 }
@@ -733,8 +787,16 @@ static const struct dev_pm_ops ane_pm_ops = {
 // clang-format on
 
 static const struct of_device_id ane_of_match[] = {
-	{ .compatible = "apple,t8103-ane" },
-	{ .compatible = "apple,t6000-ane" },
+	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map.
+	 * Mapped read-only on both SoCs for the recovery ACTUAL log and
+	 * the powered-on guard; direct writes to either block
+	 * external-abort the SoC (T6001 named by netconsole 2026-09-16:
+	 * PS_SET0 down at 0x28e08c000; T8103 same mechanism at
+	 * 0x23b70c000 with the 95dbcf3-era gate armed). */
+	{ .compatible = "apple,t8103-ane",
+	  .data = (const void *)0x23b70c000ULL },
+	{ .compatible = "apple,t6000-ane",
+	  .data = (const void *)0x28e08c000ULL },
 	{}
 };
 
@@ -747,6 +809,7 @@ static struct platform_driver ane_platform_driver = {
 	{
 	    .name	    = "ane",
 	    .suppress_bind_attrs = true,
+	    .dev_groups     = ane_dev_groups,
 	    .pm             = pm_ptr(&ane_pm_ops),
 	    .of_match_table = ane_of_match,
 	},
