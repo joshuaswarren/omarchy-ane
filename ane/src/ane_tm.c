@@ -225,6 +225,26 @@ static int ane_ps_cycle(struct ane_device *ane, bool on)
 	return ane_ps_settle(ps, (target << 4) & ANE_PS_ACTUAL_MASK);
 }
 
+/* No engine MMIO unless the owning partitions read powered on (ACTUAL
+ * nibble per word): a readl through a warm gate external-aborts and
+ * hard resets the machine. Covers set0, base and set1..4 from the SET
+ * block map; sys_cpu rides its own genpd resume and has no cell in
+ * this block on T6001. */
+static int ane_ps_verify_on(struct ane_device *ane)
+{
+	int i;
+
+	if (!ane->ps)
+		return -ENXIO;
+	for (i = 0; i < 6; i++) {
+		u32 val = readl(ane->ps + i * 8);
+
+		if ((val & ANE_PS_ACTUAL_MASK) != ANE_PS_ACTUAL_MASK)
+			return -EIO;
+	}
+	return 0;
+}
+
 static int ane_pd_cycle(struct ane_device *ane)
 {
 	int err = 0;
@@ -242,15 +262,16 @@ static int ane_pd_cycle(struct ane_device *ane)
 		}
 		if (!err)
 			err = ane_ps_cycle(ane, false);
-		if (!err) {
+		/* m1n1 raises set0/base before the sets: resuming the genpd
+		 * children against gated hardware parents external-aborts. */
+		if (!err)
+			err = ane_ps_cycle(ane, true);
+		if (!err)
 			for (int i = 0; i < ane->pd_count; i++) {
 				err = pm_runtime_force_resume(ane->pd_dev[i]);
 				if (err)
 					break;
 			}
-			if (ane_ps_cycle(ane, true) && !err)
-				err = -ETIMEDOUT;
-		}
 		while (gated--)
 			pm_runtime_put_noidle(ane->pd_dev[gated]);
 	} else {
@@ -287,20 +308,28 @@ int ane_tm_recover(struct ane_device *ane)
 		return err;
 	}
 
-	/* Re-arm the tm. The gate stops any fetch still reading the dead
-	 * task and resets the tm/tq file on T8103, but a gated T6001 set
-	 * island drops only to retention, so the wedged task's queue
-	 * state (TQ_STATUS in-use, TQ_NID1 request-pending) survives and
-	 * keeps the tm busy forever. Clear it with the success-path
-	 * handshake, then re-run the probe init. */
+	/* No engine MMIO before the islands read powered on. */
+	err = ane_ps_verify_on(ane);
+	if (err) {
+		dev_err(ane->dev,
+			"recovery: ane set islands not powered on: %d\n", err);
+		return err;
+	}
+
+	/* The gate stops any fetch still reading the dead task and resets
+	 * the tm/tq file on T8103, but a gated T6001 set island drops only
+	 * to retention, so the wedged task's queue state (TQ_STATUS
+	 * in-use, TQ_NID1 request-pending) survives and keeps the tm busy
+	 * forever. Clear it with the success-path handshake, then re-run
+	 * the probe init. */
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
 		tq_write32(ane, TQ_NID1(qid),
 			   tq_read32(ane, TQ_NID1(qid)) & ~1U);
 		tq_write32(ane, TQ_STATUS(qid), 0x0);
 	}
 	ane_tm_enable(ane);
-	status = tm_read32(ane, TM_STATUS);
 
+	status = tm_read32(ane, TM_STATUS);
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
 		dev_info(ane->dev,
