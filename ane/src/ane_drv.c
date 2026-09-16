@@ -8,6 +8,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/sysfs.h>
 
 #include <drm/drm_accel.h>
 #include <drm/drm_drv.h>
@@ -406,6 +407,40 @@ static const struct drm_ioctl_desc ane_drm_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ANE_SUBMIT, ane_submit, 0),
 };
 
+static ssize_t wedged_show(struct device *dev, struct device_attribute *attr,
+			   char *buf)
+{
+	struct ane_device *ane = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", atomic_read(&ane->wedged));
+}
+static DEVICE_ATTR_RO(wedged);
+
+/* Operator retry for a wedge whose automatic recovery failed: one more
+ * bounded power-cycle attempt. No-op when not wedged. */
+static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct ane_device *ane = dev_get_drvdata(dev);
+	int err = 0;
+
+	mutex_lock(&ane->engine_lock);
+	if (!ane->removed)
+		err = ane_tm_recover(ane);
+	mutex_unlock(&ane->engine_lock);
+	if (err)
+		return err;
+	return count;
+}
+static DEVICE_ATTR_WO(reset);
+
+static struct attribute *ane_dev_attrs[] = {
+	&dev_attr_wedged.attr,
+	&dev_attr_reset.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(ane_dev);
+
 static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
@@ -706,8 +741,10 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 	struct ane_device *ane = dev_get_drvdata(dev);
 
 	/* Veto gating while the engine may be DMA-active: there is no
-	 * documented abort/reset to establish quiescence first. */
-	if (atomic_read(&ane->wedged))
+	 * documented abort/reset to establish quiescence first -- except
+	 * when recovery is power-cycling a wedged engine to establish
+	 * exactly that quiescence. */
+	if (atomic_read(&ane->wedged) && !ane->recovering)
 		return -EBUSY;
 
 	return 0;
@@ -747,6 +784,7 @@ static struct platform_driver ane_platform_driver = {
 	{
 	    .name	    = "ane",
 	    .suppress_bind_attrs = true,
+	    .dev_groups     = ane_dev_groups,
 	    .pm             = pm_ptr(&ane_pm_ops),
 	    .of_match_table = ane_of_match,
 	},
