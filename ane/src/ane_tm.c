@@ -117,11 +117,6 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
-u32 ane_tm_status(struct ane_device *ane)
-{
-	return tm_read32(ane, TM_STATUS);
-}
-
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 {
 	u32 finished = 0;
@@ -240,23 +235,21 @@ int ane_tm_recover(struct ane_device *ane)
 	}
 
 	/* Power-on reset cleared the tm register file; re-arm it exactly
-	 * like the probe resume path does. */
+	 * like the probe resume path does. Every force pair returned 0, so
+	 * each partition genuinely went through a gate and ungate and the
+	 * engine is at hardware reset state. The status register cannot
+	 * arbitrate here: T6001 reads 0 after the cycle where probe found
+	 * firmware-left state, so the next submit is the functional
+	 * oracle; a still-dead engine simply -110s again and wedges once
+	 * more. */
 	ane_tm_enable(ane);
-
-	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
-				 status,
-				 (status & TM_IS_IDLE) ||
-				 status == ane->tm_status_fresh,
-				 100, 1000000);
-	if (err) {
-		dev_err(ane->dev, "recovery: tm not idle after reset: %#x\n",
-			status);
-		return err;
-	}
+	status = tm_read32(ane, TM_STATUS);
 
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
-		dev_info(ane->dev, "tm recovered: idle, accepting work again\n");
+		dev_info(ane->dev,
+			 "tm recovered: partitions cycled, status %#x; accepting work again\n",
+			 status);
 	}
 	return 0;
 }
