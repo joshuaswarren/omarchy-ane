@@ -44,3 +44,24 @@ Linux `compatible` is the driver match. Internal names follow Apple's SoC table 
 M3 and M4 are the largest gaps. Homelab can take M1, M1 Max, M2 Max, M5 Ultra, and M6. Other parts need someone willing to reboot for a few hours.
 
 Bring-up on a new SoC needs: live FDT `compatible` for the ANE node (or its absence), PMGR labels and ranges, DART windows, SET/TM physical addresses, netconsole, and a bound `/dev/accel/accel0` before any program submit. T6001 SET0 is `0x28e08c000`; genpd raises it on the driver's probe-time runtime resume and the driver holds that reference until remove, so the partition stays up while the module is bound. The T6001 overlay is `ane/t6001-j316c-set-domains.dts`. Product install is still a packaged board DTB, not a live overlay.
+
+## Branch note: fix/tm-recovery is held at b52064c for T8103
+
+2026-09-16, m1-test-host (T8103): two hard resets landed on this lane while
+proving recovery tips beyond `b52064c`, both on branch-family modules and
+both with no journal tail (volatile journal, external-abort signature):
+`95dbcf3` died inside a -110 recovery, and a guarded build with the
+set0/base gate disabled still died under the deterministic island-submit
+tm -5 workload. The same workload only wedges gracefully on `main`
+(`6fa243a`), and `b52064c`'s recovery completed twice on T8103. The
+T8103-unsafe delta is therefore in the recovery's post-cycle engine
+re-init that `b52064c` lacked: the 8-queue `TQ_NID1`/`TQ_STATUS` clear
+(`95d3062`) and/or the `TQ_EN |= 0x3000` rewrite (`f3ad6e5`), and
+possibly the direct set0/base gate (`3442d00`/`95dbcf3`, T6001-motivated).
+
+This branch tip stays at `b52064c` until that sequence is bisected and
+re-proven per SoC. The T6001-motivated commits (`dcc3e5b`..`327fd12`,
+including the set0/base gate, the ACTUAL poll, the pre-raise ordering and
+the T8103 ps-map guard) live on `fix/tm-recovery-t6001` for the t6001-test-host lane.
+Ledger and evidence: ane-linux-experiments
+`receipts/2026-09-16-tm-recovery-t8103.md`.
