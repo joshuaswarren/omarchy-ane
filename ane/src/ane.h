@@ -40,6 +40,15 @@ struct ane_device {
 	struct mutex iommu_lock;
 	struct mutex engine_lock;
 	struct list_head bo_list;
+
+	/*
+	 * Sticky once a recovery has cycled the engine: on T6001 the
+	 * locked set0/base islands keep the tm/tq file in retention
+	 * through every genpd cycle, so TM_STATUS never reports idle
+	 * again. Completion then trusts the events alone; devices never
+	 * recovered keep the strict idle predicate.
+	 */
+	bool tm_relaxed;
 	bool removed;
 
 	/*
