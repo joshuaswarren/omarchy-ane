@@ -60,12 +60,9 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 void ane_tm_enable(struct ane_device *ane)
 {
 	/* 0x3000 is the power-on value m1n1's ANETaskManager.reset() writes
-	 * once the ANE_SET partitions are up, and the tm/tq register file
-	 * resets with exactly those partitions. Firmware normally leaves
-	 * both bits set, so the probe path just ORs; after a recovery cycle
-	 * the file is at hardware reset and T6001 needs bit 0x2000 restored
-	 * or the tm runs tasks but TM_STATUS never reports idle again
-	 * (finish events fire, submits time out). */
+	 * once the ANE_SET partitions are up. Firmware normally leaves both
+	 * bits set, so the probe path just ORs; ORing the full mask also
+	 * makes this the exact reset transcription after a recovery cycle. */
 	tm_write32(ane, TM_TQ_EN, tm_read32(ane, TM_TQ_EN) | 0x3000);
 
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
@@ -241,14 +238,17 @@ int ane_tm_recover(struct ane_device *ane)
 		return err;
 	}
 
-	/* Power-on reset cleared the tm register file; re-arm it exactly
-	 * like the probe resume path does. Every force pair returned 0, so
-	 * each partition genuinely went through a gate and ungate and the
-	 * engine is at hardware reset state. The status register cannot
-	 * arbitrate here: T6001 reads 0 after the cycle where probe found
-	 * firmware-left state, so the next submit is the functional
-	 * oracle; a still-dead engine simply -110s again and wedges once
-	 * more. */
+	/* Re-arm the tm. The gate stops any fetch still reading the dead
+	 * task and resets the tm/tq file on T8103, but a gated T6001 set
+	 * island drops only to retention, so the wedged task's queue
+	 * state (TQ_STATUS in-use, TQ_NID1 request-pending) survives and
+	 * keeps the tm busy forever. Clear it with the success-path
+	 * handshake, then re-run the probe init. */
+	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
+		tq_write32(ane, TQ_NID1(qid),
+			   tq_read32(ane, TQ_NID1(qid)) & ~1U);
+		tq_write32(ane, TQ_STATUS(qid), 0x0);
+	}
 	ane_tm_enable(ane);
 	status = tm_read32(ane, TM_STATUS);
 
