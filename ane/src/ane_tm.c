@@ -117,6 +117,11 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
+u32 ane_tm_status(struct ane_device *ane)
+{
+	return tm_read32(ane, TM_STATUS);
+}
+
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 {
 	u32 finished = 0;
@@ -166,14 +171,56 @@ wedge:
 /*
  * Bounded recovery after a failed task. The only reset this driver knows
  * is the partition power cycle system sleep already performs on this
- * hardware: force-suspend gates the engine, which stops any DMA still
- * fetching the dead task and clears the tm register file; force-resume
- * brings it back through the same runtime_resume path probe uses
- * (ane_tm_enable), then the task manager must report idle. BO mappings
- * deliberately stay in place: they remain coherent through the cycle and
- * valid for the next submit, and once the wedge clears, BO_FREE unmaps
- * them through the normal path again. Callers hold engine_lock.
+ * hardware. With the several ANE power partitions attached as genpd
+ * devices (T8103 five, T6001 similar), gating happens on those devices;
+ * with a single domain attached directly to the device, on the device
+ * itself. Gating the partitions stops any DMA still fetching the dead
+ * task and clears the tm register file; ungating brings the engine back
+ * through the probe resume path (ane_tm_enable), then the task manager
+ * must report idle. BO mappings deliberately stay in place: they remain
+ * coherent through the cycle and valid for the next submit, and once the
+ * wedge clears, BO_FREE unmaps them through the normal path again.
+ * Callers hold engine_lock.
  */
+static int ane_pd_cycle(struct ane_device *ane)
+{
+	int err = 0;
+
+	ane->recovering = true;
+	if (ane->pd_count > 1) {
+		int gated = 0;
+
+		for (int i = 0; i < ane->pd_count; i++) {
+			pm_runtime_get_noresume(ane->pd_dev[i]);
+			gated = i + 1;
+			err = pm_runtime_force_suspend(ane->pd_dev[i]);
+			if (err)
+				break;
+		}
+		if (!err)
+			for (int i = 0; i < ane->pd_count; i++) {
+				err = pm_runtime_force_resume(ane->pd_dev[i]);
+				if (err)
+					break;
+			}
+		while (gated--)
+			pm_runtime_put_noidle(ane->pd_dev[gated]);
+	} else {
+		/* Pin a second usage ref for the cycle: force_suspend only
+		 * marks needs_force_resume when a ref beyond the probe one
+		 * is held, and without that mark force_resume would leave
+		 * the partition gated. */
+		pm_runtime_get_noresume(ane->dev);
+		err = pm_runtime_force_suspend(ane->dev);
+		if (!err)
+			err = pm_runtime_force_resume(ane->dev);
+		pm_runtime_put_noidle(ane->dev);
+	}
+	ane->recovering = false;
+
+	return err;
+}
+
 int ane_tm_recover(struct ane_device *ane)
 {
 	u32 status;
@@ -183,26 +230,24 @@ int ane_tm_recover(struct ane_device *ane)
 	if (!atomic_read(&ane->wedged))
 		return 0;
 
-	dev_err(ane->dev, "recovering: power-cycling engine\n");
+	dev_err(ane->dev, "recovering: power-cycling engine partitions\n");
 
-	ane->recovering = true;
-	/* Pin a second usage ref for the cycle: force_suspend only marks
-	 * needs_force_resume when a ref beyond the probe one is held, and
-	 * without that mark force_resume would leave the partition gated. */
-	pm_runtime_get_noresume(ane->dev);
-	err = pm_runtime_force_suspend(ane->dev);
-	if (!err)
-		err = pm_runtime_force_resume(ane->dev);
-	pm_runtime_put_noidle(ane->dev);
-	ane->recovering = false;
+	err = ane_pd_cycle(ane);
 	if (err) {
 		dev_err(ane->dev, "recovery: engine power cycle failed: %d\n",
 			err);
 		return err;
 	}
 
+	/* Power-on reset cleared the tm register file; re-arm it exactly
+	 * like the probe resume path does. */
+	ane_tm_enable(ane);
+
 	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
-				 status, status & TM_IS_IDLE, 100, 1000000);
+				 status,
+				 (status & TM_IS_IDLE) ||
+				 status == ane->tm_status_fresh,
+				 100, 1000000);
 	if (err) {
 		dev_err(ane->dev, "recovery: tm not idle after reset: %#x\n",
 			status);
