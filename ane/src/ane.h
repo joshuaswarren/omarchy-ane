@@ -25,6 +25,12 @@ struct ane_device {
 
 	void __iomem *engine;
 
+	/* The ane SET block (m1n1 ANE.ps_map) holds set0 and base, the two
+	 * power islands behind the tm/tq register file that carry no genpd
+	 * consumer. Mapped at probe when recovery needs to gate them. */
+	phys_addr_t ps_base;
+	void __iomem *ps;
+
 	struct drm_mm mm;
 	struct iommu_domain *domain;
 	unsigned long shift;

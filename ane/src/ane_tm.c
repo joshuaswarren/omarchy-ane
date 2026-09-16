@@ -181,6 +181,50 @@ wedge:
  * wedge clears, BO_FREE unmaps them through the normal path again.
  * Callers hold engine_lock.
  */
+
+/* set0 and base (m1n1 ANE.power_up's first two SET words) carry no genpd
+ * consumer on either SoC, so the genpd cycle never gates them - and the
+ * tm/tq register file survives every attached-partition cycle while
+ * those islands stay up. Gate them directly around the genpd cycle,
+ * mirroring m1n1's power_down/power_up handshake, and wait for ACTUAL
+ * to actually reach the target: the pmgr gate is asynchronous and
+ * bouncing it aborts it. ps_set5 is deliberately untouched: it exists
+ * in m1n1's seven-word loop but failed to reach 0xf on T6001 and holds
+ * no part of this engine. */
+#define ANE_PS_SET0		  0x00
+#define ANE_PS_BASE		  0x08
+#define ANE_PS_OFF		  0x300
+#define ANE_PS_ON		  0xf
+#define ANE_PS_ACTUAL_MASK	  0xf0
+
+static int ane_ps_settle(void __iomem *ps, u32 target)
+{
+	u32 val;
+	int err;
+
+	err = readl_poll_timeout(ps + ANE_PS_SET0, val,
+				 (val & ANE_PS_ACTUAL_MASK) == target,
+				 100, 100000);
+	if (err)
+		return err;
+	return readl_poll_timeout(ps + ANE_PS_BASE, val,
+				  (val & ANE_PS_ACTUAL_MASK) == target,
+				  100, 100000);
+}
+
+static int ane_ps_cycle(struct ane_device *ane, bool on)
+{
+	void __iomem *ps = ane->ps;
+	u32 target = on ? ANE_PS_ON : ANE_PS_OFF;
+
+	if (!ps)
+		return 0;
+
+	writel(target, ps + ANE_PS_SET0);
+	writel(target, ps + ANE_PS_BASE);
+	return ane_ps_settle(ps, (target << 4) & ANE_PS_ACTUAL_MASK);
+}
+
 static int ane_pd_cycle(struct ane_device *ane)
 {
 	int err = 0;
@@ -196,19 +240,16 @@ static int ane_pd_cycle(struct ane_device *ane)
 			if (err)
 				break;
 		}
+		if (!err)
+			err = ane_ps_cycle(ane, false);
 		if (!err) {
-			/* The pmgr gate is asynchronous: TARGET clears long
-			 * before ACTUAL reaches the off state, and raising
-			 * before it gets there aborts the gate, leaving a
-			 * T6001 set island in retention with the tm/tq
-			 * register file intact. Sleep long enough for the
-			 * islands to actually drop before raising them. */
-			msleep(20);
 			for (int i = 0; i < ane->pd_count; i++) {
 				err = pm_runtime_force_resume(ane->pd_dev[i]);
 				if (err)
 					break;
 			}
+			if (ane_ps_cycle(ane, true) && !err)
+				err = -ETIMEDOUT;
 		}
 		while (gated--)
 			pm_runtime_put_noidle(ane->pd_dev[gated]);
