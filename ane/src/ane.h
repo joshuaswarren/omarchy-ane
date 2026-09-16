@@ -15,6 +15,15 @@
  * headers; the kernel include path is searched before ccflags. */
 #include "uapi/drm/ane_accel.h"
 
+/* ps block layout (m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map).
+ * gate=false on t8103: the direct set0/base write cycle external-aborts
+ * T8103 (hard resets, 2026-09-16) and must never arm there; reads are
+ * proven safe and drive the ACTUAL log. */
+struct ane_ps_info {
+	phys_addr_t base;
+	bool gate;
+};
+
 struct ane_device {
 	struct drm_device drm;
 	struct device *dev;
@@ -27,8 +36,10 @@ struct ane_device {
 
 	/* The ane SET block (m1n1 ANE.ps_map) holds set0 and base, the two
 	 * power islands behind the tm/tq register file that carry no genpd
-	 * consumer. Mapped at probe when recovery needs to gate them. */
-	phys_addr_t ps_base;
+	 * consumer. Mapped at probe on every SoC: the pmgr registers are
+	 * the ACTUAL power-state source for recovery logging, and recovery
+	 * gates set0/base only where the write cycle is proven (gate). */
+	const struct ane_ps_info *psi;
 	void __iomem *ps;
 
 	struct drm_mm mm;

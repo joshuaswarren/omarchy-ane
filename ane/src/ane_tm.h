@@ -6,7 +6,7 @@
 
 #include "ane.h"
 
-void ane_tm_enable(struct ane_device *ane);
+void ane_tm_enable(struct ane_device *ane, bool rec);
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req);
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req);
 int ane_tm_recover(struct ane_device *ane);
