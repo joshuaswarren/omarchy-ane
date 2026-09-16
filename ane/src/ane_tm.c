@@ -200,7 +200,8 @@ static int ane_tm_collect_events(struct ane_device *ane,
 		}
 	}
 	tm_write32(ane, TM_IRQ_ACK, tm_read32(ane, TM_IRQ_ACK) | 2);
-	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
+	return *finished == 3 &&
+	       ((tm_read32(ane, TM_STATUS) & TM_IS_IDLE) || ane->tm_relaxed);
 }
 
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
@@ -393,6 +394,14 @@ int ane_tm_recover(struct ane_device *ane)
 	}
 	ane_tm_enable(ane, true);
 
+	ane_rec_read32(ane, "TM_COMMITTED tm+0x44",
+		       ane->engine + ANE_TM_BASE + TM_COMMITTED);
+	ane_rec_read32(ane, "TM_ERROR1 tm+0x58",
+		       ane->engine + ANE_TM_BASE + TM_ERROR1);
+	ane_rec_read32(ane, "TM_ERROR2 tm+0x5c",
+		       ane->engine + ANE_TM_BASE + TM_ERROR2);
+	ane_rec_read32(ane, "TM_ERROR3 tm+0x60",
+		       ane->engine + ANE_TM_BASE + TM_ERROR3);
 	status = ane_rec_read32(ane, "TM_STATUS tm+0x54",
 				ane->engine + ANE_TM_BASE + TM_STATUS);
 	if (atomic_xchg(&ane->wedged, 0)) {
@@ -401,5 +410,6 @@ int ane_tm_recover(struct ane_device *ane)
 			 "tm recovered: partitions cycled, status %#x; accepting work again\n",
 			 status);
 	}
+	ane->tm_relaxed = true;
 	return 0;
 }
