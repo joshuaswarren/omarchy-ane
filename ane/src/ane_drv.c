@@ -778,9 +778,13 @@ static const struct dev_pm_ops ane_pm_ops = {
 // clang-format on
 
 static const struct of_device_id ane_of_match[] = {
-	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map. */
-	{ .compatible = "apple,t8103-ane",
-	  .data = (const void *)0x23b70c000ULL },
+	/* SET block bases: m1n1 proxyclient/m1n1/fw/ane.py ANE.ps_map.
+	 * t8103 maps NULL: the direct set0/base gate external-aborts on
+	 * T8103 (hard reset, 2026-09-16, during a -110 recovery with the
+	 * same provoke b52064c survived), so the T6001-only gate must not
+	 * arm there. With ps == NULL ane_pd_cycle is the b52064c genpd
+	 * cycle that is proven on T8103, and ane_ps_verify_on is a no-op. */
+	{ .compatible = "apple,t8103-ane" },
 	{ .compatible = "apple,t6000-ane",
 	  .data = (const void *)0x28e08c000ULL },
 	{}
