@@ -665,6 +665,76 @@ static int ane_attach_genpd(struct ane_device *ane)
 	return 0;
 }
 
+/*
+ * Per-SoC support descriptor, one per Linux `compatible`.
+ *
+ * Everything the probe needs except the SET block is derived from the
+ * device tree by design: DART topology from "iommus", power wiring from
+ * "power-domains", the engine window from "reg", the IRQ by name. Board
+ * facts belong in the overlay, not in compiled constants. The SET block
+ * is the one exception: the live overlays carry no range for it, so it
+ * is compiled in per SoC — and only from a source that has proven the
+ * address on hardware (m1n1 proxyclient ANE.ps_map, then a bound device).
+ * A guessed SET base is not a bug but a brick: direct writes to the
+ * block external-abort the SoC (T6001 named by netconsole 2026-09-16,
+ * PS_SET0 down at 0x28e08c000; T8103 same mechanism at 0x23b70c000),
+ * which is why a SoC without proven constants must refuse to bind
+ * instead of carrying a guess.
+ *
+ * Qualification tiers:
+ *  ANE_QUALIFIED   — execution proven on this silicon; binds normally.
+ *  ANE_RECOGNIZED  — constants present, never run on hardware; binds
+ *                    only with ane.allow_unqualified=1, loudly.
+ *  ANE_UNSUPPORTED — no proven constants; refuses and names the data
+ *                    needed to advance the port.
+ */
+enum ane_qual {
+	ANE_QUALIFIED,
+	ANE_RECOGNIZED,
+	ANE_UNSUPPORTED,
+};
+
+struct ane_soc {
+	phys_addr_t ps_base;
+	enum ane_qual qual;
+};
+
+static bool allow_unqualified;
+module_param(allow_unqualified, bool, 0444);
+MODULE_PARM_DESC(allow_unqualified,
+		 "Bind recognized-but-unproven ANE SoCs (unverified SET base: external-abort risk)");
+
+static const struct ane_soc ane_soc_t8103 = {
+	/* M1 (jwm1). SET block mapped read-only for the recovery ACTUAL
+	 * log and the powered-on guard. Execution proven in the fleet. */
+	.ps_base = 0x23b70c000ULL,
+	.qual = ANE_QUALIFIED,
+};
+
+static const struct ane_soc ane_soc_t6000 = {
+	/* M1 Pro and M1 Max share this compatible and SET base (proven on
+	 * T6001/jw16); M1 Pro still needs a board overlay and a tester. */
+	.ps_base = 0x28e08c000ULL,
+	.qual = ANE_QUALIFIED,
+};
+
+static const struct ane_soc ane_soc_t6020 = {
+	/* M2 Pro/Max family. Community device-tree captures exist, but the
+	 * SET base is unproven and the H14 compiler backend is unqualified:
+	 * no constants may enter here yet. */
+	.ps_base = 0,
+	.qual = ANE_UNSUPPORTED,
+};
+
+static const struct of_device_id ane_of_match[] = {
+	{ .compatible = "apple,t8103-ane", .data = &ane_soc_t8103 },
+	{ .compatible = "apple,t6000-ane", .data = &ane_soc_t6000 },
+	{ .compatible = "apple,t6020-ane", .data = &ane_soc_t6020 },
+	{}
+};
+
+MODULE_DEVICE_TABLE(of, ane_of_match);
+
 static int ane_platform_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -851,76 +921,6 @@ static const struct dev_pm_ops ane_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend, pm_runtime_force_resume)
 };
 // clang-format on
-
-/*
- * Per-SoC support descriptor, one per Linux `compatible`.
- *
- * Everything the probe needs except the SET block is derived from the
- * device tree by design: DART topology from "iommus", power wiring from
- * "power-domains", the engine window from "reg", the IRQ by name. Board
- * facts belong in the overlay, not in compiled constants. The SET block
- * is the one exception: the live overlays carry no range for it, so it
- * is compiled in per SoC — and only from a source that has proven the
- * address on hardware (m1n1 proxyclient ANE.ps_map, then a bound device).
- * A guessed SET base is not a bug but a brick: direct writes to the
- * block external-abort the SoC (T6001 named by netconsole 2026-09-16,
- * PS_SET0 down at 0x28e08c000; T8103 same mechanism at 0x23b70c000),
- * which is why a SoC without proven constants must refuse to bind
- * instead of carrying a guess.
- *
- * Qualification tiers:
- *  ANE_QUALIFIED   — execution proven on this silicon; binds normally.
- *  ANE_RECOGNIZED  — constants present, never run on hardware; binds
- *                    only with ane.allow_unqualified=1, loudly.
- *  ANE_UNSUPPORTED — no proven constants; refuses and names the data
- *                    needed to advance the port.
- */
-enum ane_qual {
-	ANE_QUALIFIED,
-	ANE_RECOGNIZED,
-	ANE_UNSUPPORTED,
-};
-
-struct ane_soc {
-	phys_addr_t ps_base;
-	enum ane_qual qual;
-};
-
-static bool allow_unqualified;
-module_param(allow_unqualified, bool, 0444);
-MODULE_PARM_DESC(allow_unqualified,
-		 "Bind recognized-but-unproven ANE SoCs (unverified SET base: external-abort risk)");
-
-static const struct ane_soc ane_soc_t8103 = {
-	/* M1 (jwm1). SET block mapped read-only for the recovery ACTUAL
-	 * log and the powered-on guard. Execution proven in the fleet. */
-	.ps_base = 0x23b70c000ULL,
-	.qual = ANE_QUALIFIED,
-};
-
-static const struct ane_soc ane_soc_t6000 = {
-	/* M1 Pro and M1 Max share this compatible and SET base (proven on
-	 * T6001/jw16); M1 Pro still needs a board overlay and a tester. */
-	.ps_base = 0x28e08c000ULL,
-	.qual = ANE_QUALIFIED,
-};
-
-static const struct ane_soc ane_soc_t6020 = {
-	/* M2 Pro/Max family. Community device-tree captures exist, but the
-	 * SET base is unproven and the H14 compiler backend is unqualified:
-	 * no constants may enter here yet. */
-	.ps_base = 0,
-	.qual = ANE_UNSUPPORTED,
-};
-
-static const struct of_device_id ane_of_match[] = {
-	{ .compatible = "apple,t8103-ane", .data = &ane_soc_t8103 },
-	{ .compatible = "apple,t6000-ane", .data = &ane_soc_t6000 },
-	{ .compatible = "apple,t6020-ane", .data = &ane_soc_t6020 },
-	{}
-};
-
-MODULE_DEVICE_TABLE(of, ane_of_match);
 
 static struct platform_driver ane_platform_driver = {
     .probe  = ane_platform_probe,
