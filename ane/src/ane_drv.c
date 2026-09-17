@@ -27,20 +27,31 @@
  * accesses cohere with the CPU caches). Each axis is toggleable alone for
  * attribution.
  *
- * Coherency evidence for mode 3 (T6001/t6001-test-host, apple,t6000-dart behind
- * iommu@285800000): (1) the ANE sits in the dma-coherent DART class every
- * SoC DMA-API device uses on arm64/Asahi, where dma-iommu itself programs
- * descriptors with IOMMU_CACHE; (2) eiln's pre-GEM driver (4566c89^) mapped
- * BOs cacheable on the CPU while DMAing them through this same iommu_map()
- * path for months on M1 with no maintenance; (3) empirically, an
- * alternating-pattern 16-rep buffer-reuse battery over 6 programs in both
- * directions is byte-identical WC+NC vs cached on every rep — stale
- * cache lines would surface as the previous pattern's bytes.
+ * Coherency evidence for mode 3, both SoCs:
+ *  - T6001/t6001-test-host (apple,t6000-dart x3, APPLE_DART2 PTEs): (1) the ANE sits in
+ *    the dma-coherent DART class every SoC DMA-API device uses on
+ *    arm64/Asahi, where dma-iommu itself programs descriptors with
+ *    IOMMU_CACHE; (2) eiln's pre-GEM driver (4566c89^) mapped BOs cacheable
+ *    on the CPU while DMAing them through this same iommu_map() path for
+ *    months with no maintenance; (3) empirically, an alternating-pattern
+ *    16-rep buffer-reuse battery over 6 programs in both directions is
+ *    byte-identical WC+NC vs cached on every rep — stale cache lines would
+ *    surface as the previous pattern's bytes.
+ *  - T8103/m1-test-host (apple,t8103-dart x3, APPLE_DART1 PTEs): the DART1 PTE
+ *    format has no cacheability field (io-pgtable-dart.c dart_prot_to_pte),
+ *    so bit 0 is a structural no-op there and the lever is the cached CPU
+ *    vma alone. eiln's pre-GEM precedent ran exactly that on M1 for months.
+ *    The same reuse battery is byte-identical (14/14) and the certified
+ *    Parakeet E2E pins hold bit-for-bit with ane_exec 2561.2 -> 2402.0 ms.
+ *
+ * Default 3 (cached both sides). 0 is the documented rollback: runtime via
+ * /sys/module/ane/parameters/map_mode, or by loading the retained prior
+ * module (ane-96d5a88.ko on both hosts).
  */
-static int map_mode;
+static int map_mode = 3;
 module_param(map_mode, int, 0644);
 MODULE_PARM_DESC(map_mode,
-		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 0 = writecombine + non-cacheable)");
+		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback)");
 
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
