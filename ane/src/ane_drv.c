@@ -18,6 +18,30 @@
 #include "ane.h"
 #include "ane_tm.h"
 
+/*
+ * BO mapping mode, runtime-switchable per device (/sys/module/ane/parameters/
+ * map_mode) and read at BO-mmap/iommu-map time:
+ *   bit 0 — mark DART descriptors IOMMU_CACHE (cacheable, inner-shareable)
+ *   bit 1 — map the CPU vma cacheable instead of write-combine
+ * 0 = today's WC CPU vmas + NC descriptors; 3 = both cacheable (device
+ * accesses cohere with the CPU caches). Each axis is toggleable alone for
+ * attribution.
+ *
+ * Coherency evidence for mode 3 (T6001/t6001-test-host, apple,t6000-dart behind
+ * iommu@285800000): (1) the ANE sits in the dma-coherent DART class every
+ * SoC DMA-API device uses on arm64/Asahi, where dma-iommu itself programs
+ * descriptors with IOMMU_CACHE; (2) eiln's pre-GEM driver (4566c89^) mapped
+ * BOs cacheable on the CPU while DMAing them through this same iommu_map()
+ * path for months on M1 with no maintenance; (3) empirically, an
+ * alternating-pattern 16-rep buffer-reuse battery over 6 programs in both
+ * directions is byte-identical WC+NC vs cached on every rep — stale
+ * cache lines would surface as the previous pattern's bytes.
+ */
+static int map_mode;
+module_param(map_mode, int, 0644);
+MODULE_PARM_DESC(map_mode,
+		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 0 = writecombine + non-cacheable)");
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -76,9 +100,11 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 	/* map into ANE address space */
 	for (u32 i = 0; i < bo->npages; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
+		int prot = IOMMU_READ | IOMMU_WRITE;
+		if (map_mode & 1)
+			prot |= IOMMU_CACHE;
 		err = iommu_map(ane->domain, iova, page_to_phys(bo->pages[i]),
-				1UL << ane->shift, IOMMU_READ | IOMMU_WRITE,
-				GFP_KERNEL);
+				1UL << ane->shift, prot, GFP_KERNEL);
 		if (err < 0) {
 			dev_err(ane->dev, "iommu_map failed at 0x%llx", iova);
 			while (i-- > 0) {
@@ -503,14 +529,22 @@ static int ane_drm_mmap(struct file *file, struct vm_area_struct *vma)
 		return -ENXIO;
 
 	/*
-	 * We allocated a struct page table, so clear
-	 * VM_PFNMAP flag that was set by drm_gem_mmap_obj()/drm_gem_mmap().
+	 * Cacheable CPU mapping when bit 1 of map_mode is set, paired with
+	 * IOMMU_CACHE DART descriptors: device accesses cohere with the CPU
+	 * caches and read-back stops paying uncached-mode DRAM latency.
+	 * Default (bit clear) keeps the write-combine mapping. VM_IO stays
+	 * set either way (no struct-page identity is promised).
 	 */
 	vm_flags_mod(vma, VM_IO | VM_DONTEXPAND | VM_DONTDUMP, VM_PFNMAP);
 
-	vma->vm_page_prot =
-		pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
-	vma->vm_page_prot = pgprot_decrypted(vma->vm_page_prot);
+	if (map_mode & 2)
+		vma->vm_page_prot =
+			pgprot_decrypted(vm_get_page_prot(vma->vm_flags));
+	else {
+		vma->vm_page_prot =
+			pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
+		vma->vm_page_prot = pgprot_decrypted(vma->vm_page_prot);
+	}
 
 	return vm_map_pages(vma, bo->pages, bo->npages);
 }
