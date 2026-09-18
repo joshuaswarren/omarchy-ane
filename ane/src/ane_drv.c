@@ -719,17 +719,35 @@ static const struct ane_soc ane_soc_t6000 = {
 };
 
 static const struct ane_soc ane_soc_t6020 = {
-	/* M2 Pro/Max family. Community device-tree captures exist, but the
+	/* M2 Pro (t6020). Community device-tree captures exist, but the
 	 * SET base is unproven and the H14 compiler backend is unqualified:
 	 * no constants may enter here yet. */
 	.ps_base = 0,
 	.qual = ANE_UNSUPPORTED,
 };
 
+static const struct ane_soc ane_soc_t6021 = {
+	/* M2 Max (T6021, t6021-test-host). SET window 0x8e08c000 = pmgr base
+	 * 0x8e080000 + 0xc000, present in ane0's own reg on macOS captures
+	 * of both 26.6.2 and 27.0 (2026-09-18, 11/11 derivation-input
+	 * checks each, zero delta); the Linux translation reuses the pmgr
+	 * high bits proven on T6000/T6020 rows (low-32 match) ->
+	 * 0x28e08c000. Recognized, not qualified: constants complete, but
+	 * no Linux execution yet, and the t6021 pwrstate word layout
+	 * (which of set0/base/set1..4 sits at which offset — macOS-side
+	 * capture cannot see it) is unverified; the first probe resume
+	 * logs the ACTUAL nibbles through this window as the Linux-side
+	 * probe (receipt 2026-09-18-t6021-driver-entry-prepared.md).
+	 * Promotion to ANE_QUALIFIED needs an exact run on this silicon. */
+	.ps_base = 0x28e08c000ULL,
+	.qual = ANE_RECOGNIZED,
+};
+
 static const struct of_device_id ane_of_match[] = {
 	{ .compatible = "apple,t8103-ane", .data = &ane_soc_t8103 },
 	{ .compatible = "apple,t6000-ane", .data = &ane_soc_t6000 },
 	{ .compatible = "apple,t6020-ane", .data = &ane_soc_t6020 },
+	{ .compatible = "apple,t6021-ane", .data = &ane_soc_t6021 },
 	{}
 };
 
@@ -910,6 +928,12 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	if (!ane->tm_status_known) {
 		ane->tm_status_fresh = ane_tm_status(ane);
 		ane->tm_status_known = true;
+		/* Linux-side pwrstate probe: ACTUAL nibbles read through
+		 * the SoC descriptor's SET window while the partition is
+		 * raised. 0xffffff means the mapped window is the live
+		 * pmgr SET block with every word on; anything else names
+		 * the t6021 word layout to fix before promotion. */
+		dev_info(dev, "ANERD ps probe act=%#x\n", ane_ps_act(ane));
 	}
 
 	return 0;

@@ -73,7 +73,7 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
  * SET block is unmapped. pmgr registers only: engine MMIO is never
  * read for power state (a readl through a warm gate external-aborts
  * and hard-resets the machine). */
-static u32 ane_ps_act(struct ane_device *ane)
+u32 ane_ps_act(struct ane_device *ane)
 {
 	u32 v = 0;
 	int i;
