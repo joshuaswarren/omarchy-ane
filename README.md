@@ -34,7 +34,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | unknown | unsupported | — | same as T6020, plus confirmation of the compatible |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-untested | macOS capture only: SET window `pmgr+0xc000` confirmed in ane0 reg on 26.6.2 and 27.0 (2026-09-18, 11/11 checks, zero delta); no Linux bind | Linux-side execution via `ane.allow_unqualified=1` (one-command qualification runbook: ane-linux-experiments `receipts/2026-09-18-t6021-driver-entry-prepared.md`), then tier promotion; a qualified H14 compiler backend if the M1-compiled smoke is generation-bound; board DART/pmgr overlay |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |

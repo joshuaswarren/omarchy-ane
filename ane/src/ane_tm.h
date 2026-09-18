@@ -8,6 +8,7 @@
 
 void ane_tm_enable(struct ane_device *ane, bool rec);
 u32 ane_tm_status(struct ane_device *ane);
+u32 ane_ps_act(struct ane_device *ane);
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req);
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req);
 int ane_tm_recover(struct ane_device *ane);
