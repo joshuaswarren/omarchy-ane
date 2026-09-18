@@ -41,6 +41,24 @@
 		};
 	};
 
+	/* fragment@3: ane_sys_mpm@4000 carries no phandle in the stock DTB
+	 * and nothing consumes it, so the set1..4 parent cascade (set4 ->
+	 * set3 -> .. -> ane_base@4010 -> ane_td@4008 -> ane_sys@260) can
+	 * never raise it. ane0's ADT pmgr window (0x8e080000..+0x4034)
+	 * frames exactly this six-island chain, so the bound device must
+	 * consume it explicitly. Bisect 2026-09-18: first engine read at
+	 * 0x285c2400c external-aborted with the five-domain raise; SET
+	 * window at 0x28e08c000 read safe (ACTUALs all zero). Applied at
+	 * DTS source level only: fdtoverlay renumbers overlay phandles
+	 * without remapping raw refs. */
+	fragment@3 {
+		target-path = "/soc/power-management@28e080000/power-controller@4000";
+
+		__overlay__ {
+			phandle = <0x1f5>; /* ane_sys_mpm */
+		};
+	};
+
 	fragment@2 {
 		target-path = "/soc";
 
@@ -90,7 +108,8 @@
 						<0xb7>,		/* ane_set1@4018 */
 						<0xb8>,		/* ane_set2@4020 */
 						<0xb9>,		/* ane_set3@4028 */
-						<0x1f1>;	/* ane_set4@4030 */
+						<0x1f1>,	/* ane_set4@4030 */
+						<0x1f5>;	/* ane_sys_mpm@4000 (fragment@3) */
 				status = "okay";
 			};
 		};
