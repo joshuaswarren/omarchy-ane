@@ -49,7 +49,7 @@
 			#size-cells = <2>;
 
 			ane_dart0: iommu@285800000 {
-				compatible = "apple,t6020-dart";
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
 				reg = <0x2 0x85800000 0x0 0x00004000>;
 				#iommu-cells = <1>;
 				interrupt-parent = <0x15>;
@@ -59,7 +59,7 @@
 			};
 
 			ane_dart1: iommu@285810000 {
-				compatible = "apple,t6020-dart";
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
 				reg = <0x2 0x85810000 0x0 0x00004000>;
 				#iommu-cells = <1>;
 				interrupt-parent = <0x15>;
@@ -69,7 +69,7 @@
 			};
 
 			ane_dart2: iommu@285820000 {
-				compatible = "apple,t6020-dart";
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
 				reg = <0x2 0x85820000 0x0 0x00004000>;
 				#iommu-cells = <1>;
 				interrupt-parent = <0x15>;
