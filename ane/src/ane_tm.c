@@ -86,6 +86,33 @@ u32 ane_ps_act(struct ane_device *ane)
 	return v;
 }
 
+/* Bisect probe: per-word named reads of the SET window. Each word logs
+ * before its readl, so a window whose address does not decode on this
+ * SoC is named by the last off-box line (word index + byte offset)
+ * instead of a silent hard reset between two other prints. */
+u32 ane_ps_act_probe(struct ane_device *ane)
+{
+	u32 v = 0;
+	int i;
+
+	if (!ane->ps) {
+		dev_info(ane->dev, "ps probe: SET window unmapped\n");
+		return 0;
+	}
+	dev_info(ane->dev, "ps probe: SET window at %pap, %d words\n",
+		 &ane->ps_base, ANE_PS_WORDS);
+	for (i = 0; i < ANE_PS_WORDS; i++) {
+		u32 w;
+
+		dev_info(ane->dev, "ps probe: word %d @ ps+0x%02x reading\n",
+			 i, i * 8);
+		w = readl(ane->ps + i * 8);
+		v |= ((w & ANE_PS_ACTUAL_MASK) >> 4) << (i * 4);
+		dev_info(ane->dev, "ps probe: word %d -> %#x\n", i, w);
+	}
+	return v;
+}
+
 /* Recovery-path MMIO logging. Every write prints before and after, and
  * every engine read prints its value, each line carrying the pmgr
  * ACTUAL of the owning partitions. A write that external-aborts the

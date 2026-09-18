@@ -917,15 +917,36 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 static int __maybe_unused ane_runtime_resume(struct device *dev)
 {
 	struct ane_device *ane = dev_get_drvdata(dev);
+	bool first = !ane->tm_status_known;
 
 	/* The only path that touches the engine while its partition comes
 	 * up: probe's first resume and every later ungate land here. Every
 	 * translation is owned by the IOMMU providers. */
-	ane_tm_enable(ane, false);
+	if (first) {
+		/* Bisect order, each stage named before it runs: genpd
+		 * raise is already complete when this callback runs; the
+		 * SET window reads come first (pmgr class, always safe
+		 * per T6001/T8103 bisect evidence), then the engine. A
+		 * hard reset after the last off-box line names the
+		 * killing access exactly (T6021 console bring-up). */
+		struct resource *eng = platform_get_resource_byname(
+			to_platform_device(dev), IORESOURCE_MEM, "engine");
+
+		dev_info(dev,
+			 "ANE-resume: genpd raise complete; SET window probe next\n");
+		ane_ps_act_probe(ane);
+
+		dev_info(dev,
+			 "ANE-resume: SET window probed; first engine access next (TM_TQ_EN tm+0x0c @ engine %pr + 0x2000c)\n",
+			 eng);
+	}
+
+	ane_tm_enable(ane, first);
 
 	/* First enable is the engine's fresh signature; recovery compares
 	 * its post-reset status against it. */
 	if (!ane->tm_status_known) {
+		dev_info(dev, "ANE-resume: enable writes survived; TM_STATUS read next\n");
 		ane->tm_status_fresh = ane_tm_status(ane);
 		ane->tm_status_known = true;
 		/* Linux-side pwrstate probe: ACTUAL nibbles read through
