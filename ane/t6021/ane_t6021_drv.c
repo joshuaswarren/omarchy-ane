@@ -19,6 +19,7 @@
 
 #include <linux/io.h>
 #include <linux/interrupt.h>
+#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -49,6 +50,21 @@ static const unsigned int ane_t6021_pmgr_words[] = {
 static const char *const ane_t6021_reg_names[ANE_T6021_REG_COUNT] = {
 	"engine", "pmgr", "set"
 };
+
+/* ps-word fields (apple-pmgr-pwrstate layout); constants mirror the
+ * device-proven rtkit/h14_bringup.py (PS_CLEAR/PS_ACTIVE/poll). The
+ * W3 death discriminator (receipt
+ * 2026-09-19-h14-init-sequence-kext-trace): engine-window access while
+ * any island word is below ACTUAL=0xf, or with ane_cpu AUTO_ENABLE
+ * set, hard-resets t6021 — so the resume walk is gated on the verified
+ * phase1 end state (all eight ACTUAL=0xf, BUSY clear, ane_cpu 0x3ff). */
+#define ANE_PS_ON		0xf
+#define ANE_PS_ACTUAL		GENMASK(7, 4)
+#define ANE_PS_BUSY		BIT(11)
+#define ANE_PS_AUTO_ENABLE	BIT(28)
+#define ANE_PS_CLEAR		(BIT(31) | BIT(28) | GENMASK(27, 24) | \
+				 GENMASK(19, 16) | BIT(12) | BIT(10) | \
+				 GENMASK(3, 0))
 
 static void ane_t6021_detach_genpd(struct ane_t6021 *ane)
 {
@@ -106,47 +122,91 @@ static int ane_t6021_attach_genpd(struct ane_t6021 *ane)
 	return 0;
 }
 
-/* First-resume bring-up evidence, in bisect order, read-only; names
- * each stage before it runs (the H13 driver's resume discipline,
- * receipt 2026-09-18-t6021-overlay-abort §2). */
-static void ane_t6021_first_resume(struct ane_t6021 *ane)
+/* First-resume bring-up in phase1 order; every stage logs before it
+ * runs so netconsole pins any stall, and the whole engine-window walk
+ * sits behind the eight-word power gate. */
+static int ane_t6021_first_resume(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+	void __iomem *pmgr = ane->base[ANE_T6021_REG_PMGR];
+	unsigned int i;
+	u32 cpu;
 
 	/* Stage 1: pmgr reads only (proven-safe read class on every
-	 * raise; SET window word 0 alongside — never written). */
+	 * raise state).  The genpd chain raised all eight islands
+	 * parent-first, ane_cpu last (overlay list order). */
 	dev_info(ane->dev,
 		 "ANE-resume: genpd raise complete; pmgr island words next\n");
-	for (unsigned int i = 0; i < ARRAY_SIZE(ane_t6021_pmgr_words); i++)
+	for (i = 0; i < ARRAY_SIZE(ane_t6021_pmgr_words); i++)
 		dev_info(ane->dev, "ANERD pmgr+%#05x act=%08x\n",
 			 ane_t6021_pmgr_words[i],
-			 readl(ane->base[ANE_T6021_REG_PMGR] +
-			       ane_t6021_pmgr_words[i]));
+			 readl(pmgr + ane_t6021_pmgr_words[i]));
+
+	/* Stage 2: clear AUTO_ENABLE on ane_cpu — the phase1 RMW
+	 * (`(v & ~PS_CLEAR) | 0xf`, poll ACTUAL=0xf && BUSY clear).
+	 * The kernel genpd raise leaves bit 28 set (W3: 0x1f0003ff);
+	 * the proven-safe end state is 0x3ff. */
+	cpu = readl(pmgr + 0x2e0);
+	writel((cpu & ~ANE_PS_CLEAR) | ANE_PS_ON, pmgr + 0x2e0);
+	readx_poll_timeout(readl, pmgr + 0x2e0, cpu,
+			   FIELD_GET(ANE_PS_ACTUAL, cpu) == ANE_PS_ON &&
+			   !(cpu & ANE_PS_BUSY),
+			   1000, 500000);
+	if (FIELD_GET(ANE_PS_ACTUAL, cpu) != ANE_PS_ON ||
+	    (cpu & (ANE_PS_BUSY | ANE_PS_AUTO_ENABLE))) {
+		dev_err(ane->dev,
+			"ANEGATE ane_cpu=%08x (want act=0xf busy=0 auto=0) — refusing block access\n",
+			cpu);
+		return -EIO;
+	}
+	dev_info(ane->dev, "ANERD ane_cpu=%08x auto_enable cleared\n", cpu);
+
+	/* Stage 3: the gate — all eight islands ACTUAL=0xf, BUSY clear,
+	 * before anything inside the engine aperture or the SET window
+	 * is touched. */
+	for (i = 0; i < ARRAY_SIZE(ane_t6021_pmgr_words); i++) {
+		u32 v = readl(pmgr + ane_t6021_pmgr_words[i]);
+
+		if (FIELD_GET(ANE_PS_ACTUAL, v) != ANE_PS_ON ||
+		    (v & ANE_PS_BUSY)) {
+			dev_err(ane->dev,
+				"ANEGATE pmgr+%#05x act=%08x not on — refusing block access\n",
+				ane_t6021_pmgr_words[i], v);
+			return -EIO;
+		}
+	}
+
+	/* Stage 4: SET word 0 (read-only by repo rule; proven-safe read
+	 * in W2 and W3), then the phase1-proven ASC status whitelist
+	 * ONLY (S2 read clean under the full eight-word raise).
+	 * CPU_CONTROL and the +0x1608xxx mailbox controls stay out of
+	 * this walk: read-suspect per phase1 §3, and the RTKit
+	 * transport exercises them itself. */
+	dev_info(ane->dev, "ANEGATE pass; ASC status whitelist next\n");
 	dev_info(ane->dev, "ANERD set+0 act=%08x\n",
 		 readl(ane->base[ANE_T6021_REG_SET]));
-
-	/* Stage 2: the RTKit/ASC status region — the block-relative first
-	 * touch W1 chose (phase1 §2; RVBAR read is device-proven safe).
-	 * CPU_CONTROL and mailbox controls are read-suspect per phase1
-	 * §3; the named dev_info line above is the netconsole flush point
-	 * for the first live pass. */
-	dev_info(ane->dev, "ANERD islands done; ASC status block next\n");
-	dev_info(ane->dev,
-		 "ANERD rvbar=%08x vers=%08x rtb_status=%08x gpio0=%08x cpu_ctl=%08x i2a=%08x a2i=%08x\n",
-		 readl(eng + ANE_ASC_RVBAR), readl(eng + ANE_ASC_VERS),
+	dev_info(ane->dev, "ANERD rvbar=%08x\n", readl(eng + ANE_ASC_RVBAR));
+	dev_info(ane->dev, "ANERD edprcr=%08x\n", readl(eng + ANE_ASC_EDPRCR));
+	dev_info(ane->dev, "ANERD vers=%08x\n", readl(eng + ANE_ASC_VERS));
+	dev_info(ane->dev, "ANERD rtb_status=%08x rtb_7c=%08x\n",
 		 readl(eng + ANE_ASC_RTB_STATUS),
-		 readl(eng + ANE_ASC_RTB_GPIO0),
-		 readl(eng + ANE_ASC_CPU_CONTROL),
-		 readl(eng + ANE_MBOX_I2A_CONTROL),
-		 readl(eng + ANE_MBOX_A2I_CONTROL));
+		 readl(eng + ANE_ASC_RTB_STATUS_UNK7C));
+	for (i = 0; i < 8; i++)
+		dev_info(ane->dev, "ANERD gpio%u=%08x\n", i,
+			 readl(eng + ANE_ASC_RTB_GPIO0 + 4 * i));
+	return 0;
 }
 
 static __maybe_unused int ane_t6021_runtime_resume(struct device *dev)
 {
 	struct ane_t6021 *ane = dev_get_drvdata(dev);
+	int err;
 
-	if (!ane->booted)
-		ane_t6021_first_resume(ane);
+	if (!ane->booted) {
+		err = ane_t6021_first_resume(ane);
+		if (err)
+			return err;
+	}
 
 	/* The fw (brought up by iBoot, phase1 §1) opens the exchange with
 	 * MGMT HELLO on its own; the mailbox IRQ thread drains it. Drain
@@ -181,8 +241,10 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	ane->dev = dev;
 	platform_set_drvdata(pdev, ane);
 
-	/* Managed power first: the six-domain pmgr chain raises through
-	 * the supplier links before any register is touched. */
+	/* Managed power first: the eight-island pmgr chain raises
+	 * parent-first (sys_mpm→td→base→set1..4, ane_cpu last — the
+	 * overlay list order) through the supplier links before any
+	 * register is touched. */
 	err = ane_t6021_attach_genpd(ane);
 	if (err < 0) {
 		dev_err(dev, "failed to attach power domains: %d\n", err);
@@ -238,7 +300,7 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	}
 
 	dev_info(dev,
-		 "loaded ane_t6021 %s (skeleton: RTKit bring-up; CSNE_CMD submission = W4)\n",
+		 "loaded ane_t6021 %s (RTKit bring-up; 8-domain power gate; CSNE_CMD submission = W4)\n",
 		 ANE_T6021_MODULE_VERSION);
 	return 0;
 
