@@ -76,7 +76,21 @@
 	 * the eight live ANE ps words and the first engine-window read
 	 * reset the machine; receipt 2026-09-19-h14-init-sequence-kext-
 	 * trace §3 pins the eight-word raise (parent-first, ane_cpu
-	 * last) as the proven precondition for any block access. */
+	 * last) as the proven precondition for any block access.
+	 *
+	 * INSTALLED-TREE DELTA (2026-09-19, applied by decompile-edit-
+	 * recompile of the booted DTB — fdtoverlay renumbers overlay
+	 * phandles without remapping raw refs): the eight chain nodes
+	 * above carry `apple,always-on;` so apple-pmgr-pwrstate raises
+	 * the seven boot-gated islands at probe (the proven 0x300->on
+	 * transition class) and genpd can NEVER power them down — the
+	 * genpd idle write class hard-freezes t6021 (2026-09-19 09:39,
+	 * kernel-context flag-clear write to pmgr+0x2e0, watchdog +62 s).
+	 * ane_cpu keeps AUTO_ENABLE set at boot (the kernel re-sets it on
+	 * every domain it finds on; hw consumes the bit only on a
+	 * transition) — clear it with the device-proven userspace RMW
+	 * before insmod:  h14_bringup.py --stage 1  (rtkit/h14_bringup.py).
+	 */
 
 	fragment@2 {
 		target-path = "/soc";
