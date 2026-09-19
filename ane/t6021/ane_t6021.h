@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/* T6021 (H14 / J414c) Apple Neural Engine — skeleton constants and types.
+ *
+ * Every constant below is static-decode provenance, no device writes:
+ *  - reg windows, IRQ, pmgr islands: ADT j414c (DeviceTree.j414cap.im4p,
+ *    receipts/2026-09-18-t6021-engine-layout-mined §2), Linux translation
+ *    +0x200000000 (proven class, pmgr low-32 match).
+ *  - ASC cpu block + mailbox: K14 kext disasm
+ *    (receipts/2026-09-18-h14-rtkit-port-phase1 §2), m1n1 ASCRegs layout.
+ *  - RTKit MGMT protocol: Asahi rtkit.c semantics, u64 message halves as
+ *    staged in omarchy-ane rtkit/h14_rtkit_hello.py (commit 6ad26b7).
+ *  - RTBuddy endpoint table + doorbell word: K14 kext cfg table
+ *    __DATA_CONST.__const+0x814e520 and HandleRTBuddyMessage
+ *    (receipts/2026-09-18-h14-w2-protocol-decode §3).
+ *
+ * DT binding (driver + ane/t6021-j414c-ane.dts are the two halves):
+ *  compatible    = "apple,t6021-ane"
+ *  reg/reg-names = "engine" (whole 32 MiB ADT range0, 0x284000000;
+ *                  the H13-style +0x1c04000 engine delta does not exist
+ *                  on this SoC — kext never computes it and first touch
+ *                  external-aborted, proven 2026-09-18),
+ *                  "pmgr" (0x28e080000+0x4034, pmgr1,t6021 island words),
+ *                  "set"  (0x28e08c000+0x4000, SET window — read-only by
+ *                  repo rule: direct SET writes external-abort the SoC)
+ *  interrupts    = one AIC2 level-high interrupt named "ane" (raw 884;
+ *                  [INFERENCE W2 §3: the ANE ASC mailbox doorbell IRQ].
+ *                  dart-ane0 carries raw 885, provider-owned, never
+ *                  fetched here)
+ *  iommus        = dart-ane0 streams (apple,t6020-dart/apple,t8110-dart
+ *                  nodes). The ADT dart-ane0 is one hardware block with a
+ *                  four-window quartet (0x85800000/85810000/85820000/
+ *                  85804000, each 0x4000); the installed overlay's
+ *                  three-node split (t6001-proven pattern) is kept.
+ *  power-domains = six: ane_cpu@2e0, ane_set1..4@4018-4030,
+ *                  ane_sys_mpm@4000 (phandle chain per the overlay)
+ */
+
+#ifndef __ANE_T6021_H__
+#define __ANE_T6021_H__
+
+#include <linux/bitfield.h>
+#include <linux/bits.h>
+#include <linux/dma-mapping.h>
+#include <linux/interrupt.h>
+#include <linux/sizes.h>
+#include <linux/device.h>
+#include <linux/mutex.h>
+
+/* reg windows (ane/t6021-j414c-ane.dts reg-names order) */
+enum {
+	ANE_T6021_REG_ENGINE,
+	ANE_T6021_REG_PMGR,
+	ANE_T6021_REG_SET,
+	ANE_T6021_REG_COUNT
+};
+
+#define ANE_T6021_SET_SIZE	0x4000
+#define ANE_T6021_PMGR_SIZE	0x4034
+
+/* ANE-block-relative ASC/RTBuddy addresses (phase1 §2) */
+#define ANE_ASC_CPU_CONTROL	0x1600044	/* RUN = BIT(4) */
+#define ANE_ASC_RVBAR		0x1050000	/* fw entry | valid bit0 */
+#define ANE_ASC_VERS		0x1840000
+#define ANE_ASC_RTB_STATUS	0x1840088	/* K14 poll: value < 2 */
+#define ANE_ASC_RTB_GPIO0	0x1840048	/* ack GPIOs 0..7, +0x48..+0x64 */
+
+/* ASC mailbox, m1n1 ASCRegs layout at block +0x1608000 (= Asahi
+ * apple-mailbox ASC variant: ctrl 0x110/0x114, send/recv 0x800-family,
+ * FULL BIT(16) / EMPTY BIT(17); drivers/soc/apple/mailbox.c) */
+#define ANE_MBOX_A2I_CONTROL	0x1608110
+#define ANE_MBOX_I2A_CONTROL	0x1608114
+#define ANE_MBOX_A2I_SEND0	0x1608800	/* u64 msg0 */
+#define ANE_MBOX_A2I_SEND1	0x1608808	/* u32 msg1 (endpoint) */
+#define ANE_MBOX_I2A_RECV0	0x1608830	/* u64 msg0 */
+#define ANE_MBOX_I2A_RECV1	0x1608838	/* u32 msg1 */
+
+#define ANE_MBOX_CONTROL_FULL	BIT(16)
+#define ANE_MBOX_CONTROL_EMPTY	BIT(17)
+#define ANE_MBOX_TX_TIMEOUT	500		/* ms, apple-mailbox.c value */
+
+/* RTKit MGMT (EP 0); type bits [59:52], u64 message halves */
+#define ANE_RTKIT_TYPE			GENMASK_ULL(59, 52)
+#define ANE_RTKIT_MGMT_HELLO		1
+#define ANE_RTKIT_MGMT_HELLO_REPLY	2
+#define ANE_RTKIT_MGMT_STARTEP		5
+#define ANE_RTKIT_MGMT_SET_IOP_PWR_STATE	6
+#define ANE_RTKIT_MGMT_SET_IOP_PWR_STATE_ACK	7
+#define ANE_RTKIT_MGMT_EPMAP		8
+#define ANE_RTKIT_MGMT_SET_AP_PWR_STATE		0xb
+#define ANE_RTKIT_MGMT_SET_AP_PWR_STATE_ACK	0xb
+
+#define ANE_RTKIT_HELLO_MINVER		GENMASK_ULL(15, 0)
+#define ANE_RTKIT_HELLO_MAXVER		GENMASK_ULL(31, 16)
+#define ANE_RTKIT_EPMAP_LAST		BIT_ULL(51)
+#define ANE_RTKIT_EPMAP_BASE		GENMASK_ULL(34, 32)
+#define ANE_RTKIT_EPMAP_BITMAP		GENMASK_ULL(31, 0)
+#define ANE_RTKIT_EPMAP_REPLY_MORE	BIT_ULL(0)
+#define ANE_RTKIT_STARTEP_EP		GENMASK_ULL(39, 32)
+#define ANE_RTKIT_STARTEP_FLAG		BIT_ULL(1)
+#define ANE_RTKIT_PWR_STATE		GENMASK_ULL(15, 0)
+#define ANE_RTKIT_PWR_STATE_ON		0x20
+
+#define ANE_RTKIT_VER_MIN	11
+#define ANE_RTKIT_VER_MAX	12
+
+/* RTKit system endpoints rtkit.c starts when announced */
+#define ANE_RTKIT_EP_CRASHLOG	1
+#define ANE_RTKIT_EP_SYSLOG	2
+#define ANE_RTKIT_EP_DEBUG	3
+#define ANE_RTKIT_EP_IOREPORT	4
+#define ANE_RTKIT_EP_OSLOG	8
+#define ANE_RTKIT_EP_TRACEKIT	0xa
+
+/* RTBuddy app endpoints — K14 InitializeRTBuddyEndpoints opens ids 1..6;
+ * ring sizes + fourccs from the per-EP config table (W2 §3). fourcc is
+ * byte-reversed in the table (0x54324643 = "T2FC"). */
+enum ane_t6021_eps {
+	ANE_T6021_EP_INIT = 1,	/* INIT — CSNE_CMD controller channel (W4) */
+	ANE_T6021_EP_T2FC,	/* fw->host commands */
+	ANE_T6021_EP_T2FH,	/* fw->host commands */
+	ANE_T6021_EP_T2HS,
+	ANE_T6021_EP_T2HC,
+	ANE_T6021_EP_T2HT,	/* polled on the host */
+	ANE_T6021_EP_COUNT = ANE_T6021_EP_T2HT + 1	/* arrays index by id */
+};
+
+/* CSNE command ids — selene id->name table, vaddr 0xea430, 96 entries
+ * (full set: receipts/2026-09-18-h14-w2-protocol-decode §4 and
+ * receipts/2026-09-18-h14-w2-protocol-decode/fw_cmd_table.json). Only
+ * the ids W4 submission names are carried here; the fw parses a u16 id
+ * at header offset 0 (sCSneCmdHdr.id), the kext controller header wraps
+ * it as u32 at +0x8 in 0x24 bytes. */
+enum ane_t6021_csne_cmd {
+	CSNE_CMD_START		= 0x0000,
+	CSNE_CMD_STOP		= 0x0001,
+	CSNE_CMD_REG_FILE_LOAD	= 0x0005,	/* fw _rtk_tunables 1456 B */
+	CSNE_CMD_BUILDINFO	= 0x0006,
+	CSNE_CMD_BOOT		= 0x0010,
+	CSNE_CMD_PING		= 0x0011,
+	CSNE_CMD_POWER_DEVICE_ON	= 0x0013,
+	CSNE_CMD_IPC_ENDPOINT_SET	= 0x0015,
+	CSNE_CMD_IPC_ENDPOINT_UNSET	= 0x0016,
+	CSNE_CMD_PROCEDURE_CALL	= 0x0204,
+	CSNE_CMD_INFERENCE_CALL	= 0x0404,
+	CSNE_CMD_BACK_CHANNEL_RPC	= 0x7000,
+};
+
+/* Doorbell word (app-EP ring notification, W2 §3): 54-bit packed
+ * offset[43:0] | size_code[51:44] | unit[53:52]; unit 0=code bytes,
+ * 1=code*4K, 2=code*1M, 3=code*2M. K14 SetupEndpoints encodes with
+ * unit 1 below 1 MiB and unit 2 at or above. */
+#define ANE_EP_DOORBELL_OFFSET	GENMASK_ULL(43, 0)
+#define ANE_EP_DOORBELL_SIZE	GENMASK_ULL(51, 44)
+#define ANE_EP_DOORBELL_UNIT	GENMASK_ULL(53, 52)
+
+static inline u64 ane_ep_doorbell_encode(u32 offset, u32 size)
+{
+	u64 unit = (size >= SZ_1M) ? 2 : 1;	/* K14 size-class encoder */
+	u64 code = size >> (unit * 12);
+
+	return (offset & ANE_EP_DOORBELL_OFFSET) |
+	       FIELD_PREP(ANE_EP_DOORBELL_SIZE, code) |
+	       FIELD_PREP(ANE_EP_DOORBELL_UNIT, unit);
+}
+
+static inline u32 ane_ep_doorbell_size(u64 msg)
+{
+	static const u8 shift[] = { 0, 12, 20, 21 };
+	u32 unit = FIELD_GET(ANE_EP_DOORBELL_UNIT, msg);
+
+	return FIELD_GET(ANE_EP_DOORBELL_SIZE, msg) << shift[unit];
+}
+
+struct ane_t6021_ep {
+	u8 id;
+	const char *name;
+	u32 fourcc;
+	u32 ring_size;
+	void *ring;			/* dma_alloc_coherent, ring_size */
+	dma_addr_t ring_iova;
+	bool started;
+};
+
+struct ane_t6021 {
+	struct device *dev;
+	void __iomem *base[ANE_T6021_REG_COUNT];
+	int irq;
+
+	struct device **pd_dev;
+	struct device_link **pd_link;
+	int pd_count;
+
+	/* Single mailbox consumer (threaded IRQ + probe drain serialize
+	 * here); sends ride the same lock to keep the 1-deep FIFO sane. */
+	struct mutex mbox_lock;
+
+	DECLARE_BITMAP(announced, 256);	/* EPMAP accumulation */
+	bool booted;		/* SET_AP_PWR_STATE ACK seen */
+
+	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
+};
+
+/* ane_t6021_rtkit.c */
+int ane_t6021_rtkit_init(struct ane_t6021 *ane);
+void ane_t6021_rtkit_shutdown(struct ane_t6021 *ane);
+void ane_t6021_rtkit_drain(struct ane_t6021 *ane);
+irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data);
+
+/* W4 — CSNE_CMD submission on the INIT (EP1) channel, deliberately not
+ * in this skeleton: the wire command set and header shapes are decoded
+ * (W2 §4) but submission order, fw-side shared-memory setup
+ * (IPC_ENDPOINT_SET / SCRATCH boot args) and response matching are not.
+ * Stubs return -EOPNOTSUPP. */
+int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
+
+#endif /* __ANE_T6021_H__ */
