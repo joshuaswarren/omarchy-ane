@@ -67,7 +67,7 @@ MODULE_PARM_DESC(rtkit_transport,
 static bool mbi_doorbell;
 module_param(mbi_doorbell, bool, 0444);
 MODULE_PARM_DESC(mbi_doorbell,
-		 "OPT-IN: allow ane_t6021_csne_submit to ring the +0x1844000 doorbell (1 << ep) after the a2i msg word");
+		 "OPT-IN: allow ane_t6021_csne_submit to ring the +0x1844000 doorbell (1 << ep) after the a2i msg word. LIVE 2026-09-19 (W5-live): armed ring with no RTBuddy session is SError-fatal (0xbe000000, watchdog reset) — needs the EP0 MGMT exchange first");
 
 /* pmgr island words this device consumes, inside the "pmgr" window:
  * ane_cpu@2e0, ane_sys_mpm@4000, ane_td@4008, ane_base@4010,

@@ -222,7 +222,14 @@ out:
  * the W4-fix captures — so it is sampled for the summary, not the
  * trigger): the ring slot doubles as the response area (fw completion
  * strb @+6 / str @+8, 0x4d324/0x4d3b0), and the i2a hi word + a2i_rd
- * peer register carry fw->host notifications. */
+ * peer register carry fw->host notifications.
+ *
+ * LIVE RESULT 2026-09-19 (W5-live, receipt
+ * 2026-09-19-h14-w5-live-ping-serror.md): the first ring SError'd CPU0
+ * (0xbe000000) 5 us after the {a2i word, doorbell} write pair — the
+ * fw rejects an EP1 send with no RTBuddy session in front of it.
+ * Machine-fatal until the EP0 MGMT exchange lands; this function stays
+ * behind the explicit mbi_doorbell=1 opt-in for that reason. */
 void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
