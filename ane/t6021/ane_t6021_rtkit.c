@@ -11,10 +11,21 @@
  * to SCRATCH7 (+0x1840064), poll until the fw overwrites it with
  * 0x80402006 ("channel description table ready"), read the table base
  * back from SCRATCH0/1, then register each {type,bit,size,phys} entry
- * with the doorbell setter (write32(1 << bit) to +0x1844000).  This
- * build runs the handshake and CAPTURES the results; it never rings
- * the doorbell — the channel bit for MGMT/INIT comes out of the table
- * dump first (W4-fix follow-up).
+ * with the doorbell setter (write32(1 << bit) to +0x1844000).  The
+ * SCRATCH handshake is the fw-sideload boot mode's init; in RTBuddy
+ * mode it is SError-fatal to write and stays capture-only here.
+ *
+ * RTBuddy-mode TX (decoded 2026-09-19 from com.apple.driver.RTBuddy
+ * 1.0.0 carved out of kernelcache.release.mac14j): K14 matches the
+ * ANEEndpoint1..5 nubs, takes the gate from [svc+0x88] and calls
+ * vtable+0x1e8 with the 48-bit MBI word {(ring cursor) [23:0],
+ * (len) [47:24]} after memcpy'ing the command into the shared ring;
+ * the gate ends in the AKF mailbox write — msg word to the a2i
+ * register (+0x1850000) and write32(1 << ep) to the doorbell
+ * (+0x1844000).  This driver implements exactly that sequence in
+ * ane_t6021_csne_submit, fenced behind mbi_doorbell=1 (default off:
+ * a wrong-bit ring on this surface is the machine-fatal class the
+ * SCRATCH SError receipted 2026-09-19).
  */
 
 #include <linux/bitmap.h>
@@ -77,16 +88,17 @@ int ane_t6021_mbi_boot(struct ane_t6021 *ane)
 	ane_mbi_msgregs_dump(ane, "attach");
 	ane->mbi_table_ready = true;
 
-	/* Next lane (static): EnableRTBuddyEndpoints 0x…95fec30 waits up
-	 * to 10 s (ns constant 0x2_540be400 = 10^10 into the wait
-	 * helper 0x964c038; 0x5f5e100 = 10^8 and 0x1dcd6500 = 5e8 at the
-	 * other call sites) for a service object and takes the RTBuddy
-	 * gate from [service+0x88] — the TX path lives behind that
-	 * service, not in an ANE-window register.  Carve the full
-	 * kernelcache.release.mac14j for the publishing kext before any
-	 * further device write. */
+	/* Provider kext decoded 2026-09-19 (receipt
+	 * 2026-09-19-h14-w5-provider-kext-doorbell.md): the TX gate is
+	 * com.apple.driver.RTBuddy's ANEEndpoint1..5 nubs (class
+	 * RTBuddyEndpointService, gate = [svc+0x88], send = vtable+0x1e8
+	 * -> AKF mailbox SET at +0x1844000, bit = endpoint id).  The
+	 * SCRATCH handshake above is the fw-sideload boot mode only and
+	 * stays read-only here; RTBuddy-mode TX rides the a2i message
+	 * register + doorbell behind the mbi_doorbell opt-in. */
 	dev_info(dev,
-		 "MBI wall: SCRATCH/msgreg surfaces are read-only (host write = SError, 2026-09-19); transport pinned next lane from the provider kext\n");
+		 "MBI wall: SCRATCH/msgreg surfaces are read-only (host write = SError, 2026-09-19); TX = doorbell(1<<ep) @+0x1844000, %s\n",
+		 ane->doorbell ? "mbi_doorbell=1 (armed)" : "fenced (mbi_doorbell=0)");
 	return 0;
 }
 
@@ -128,6 +140,7 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 	struct ane_t6021_ep *r = &ane->ep[ANE_T6021_EP_INIT];
 	u32 cursor;
 	u64 doorbell;
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
 	int err;
 
 	BUILD_BUG_ON(ANE_T6021_EP_INIT != 1);
@@ -157,13 +170,31 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 	 * (dma_wmb before it) orders this copy. */
 	memcpy(r->ring + cursor, cmd, size);
 
-	doorbell = ane_ep_doorbell_encode(cursor, size);
-	(void)doorbell;
-	/* INIT-channel doorbell bit is unknown until the MBI table dump
-	 * pins it — refuse rather than ring a guessed bit. */
-	dev_err_once(ane->dev,
-		     "csne submit refused: INIT doorbell bit unpinned (MBI table first)\n");
-	err = -EOPNOTSUPP;
+	/* Provider-kext decode (2026-09-19): the gate send = the 48-bit
+	 * MBI word into the a2i message register, then write32(1 << ep)
+	 * to +0x1844000.  K14 orders the ring memcpy before the gate
+	 * call (rtbuddyEndpointSendMessage 0x…95f3b20 -> 0x…95f3c30);
+	 * dma_wmb is the Linux equivalent.  The SCRATCH family stays
+	 * untouched — those writes are SError-fatal on this silicon
+	 * (2026-09-19); only msgreg + doorbell are written here, and
+	 * only with mbi_doorbell=1. */
+	doorbell = ane_mbi_msg48_encode(cursor, size);
+	if (!ane->doorbell) {
+		dev_dbg(ane->dev,
+			"csne ep%u: ring cursor=%u len=%zu msg48=%012llx (fenced: mbi_doorbell=0)\n",
+			r->id, cursor, size, doorbell);
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+	dma_wmb();
+	writeq(doorbell, eng + ANE_MBI_MSG_A2I_WR);
+	writel(BIT(r->id), eng + ANE_MBI_DOORBELL);
+
+	/* K14 advances the cursor only on send success (0x…95f3c70-c)
+	 * and snapshots the slot into the command state (rec+0x40 /
+	 * rec+0x58); this driver keeps just the cursor. */
+	r->write_cursor = cursor + size;
+	err = 0;
 out:
 	mutex_unlock(&ane->mbox_lock);
 	return err;

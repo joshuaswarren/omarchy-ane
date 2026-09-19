@@ -91,16 +91,71 @@ enum {
  * (0x…95eab74), table base read back from SCRATCH0/1 (0x…95ead04),
  * per-channel {type,bit,size,phys} entries registered with the
  * doorbell setter 0x…95ebdd0 writing (1 << bit) to +0x1844000.  Host
- * ack = SCRATCH3 = 0x80402006 (0x…95eaee4). */
+ * ack = SCRATCH3 = 0x80402006 (0x…95eaee4).
+ *
+ * PROVIDER DECODE (2026-09-19, kernelcache.release.mac14j): in
+ * RTBuddy mode the TX gate lives in com.apple.driver.RTBuddy 1.0.0
+ * (carved from the KC, 46088 B, __TEXT_EXEC 0x…b696860).  RTBuddy
+ * publishes per-ANE nubs named "%sEndpoint%u" (0x…7cc7d3f) with the
+ * role string "ANE" -> ANEEndpoint1..ANEEndpoint5, class
+ * RTBuddyEndpointService (0x98 B) wrapping RTBuddyEndpoint (0xE8 B),
+ * over the kernel IOSlaveEndpoint family; K14 EnableRTBuddyEndpoints
+ * (0x…95feb30) formats the name ("%s%d" @0x…74c481f), waits 10 s
+ * (x1 = 10^10 ns) for the match and takes the gate from [svc+0x88],
+ * registering its rx callback at gate+0xd0.  The gate's per-message
+ * send is the vtable+0x1e8 slot; its body ends in the AKF mailbox
+ * write (AKF_AP_MAILBOX_SET = the +0x1844000 doorbell; RTBuddy dump
+ * fn 0x…b69d9c8 prints "AKF_KIC_INBOX_CTRL / AKF_KIC_MAILBOX_SET /
+ * AKF_AP_OUTBOX_CTRL / AKF_AP_MAILBOX_SET" and guards
+ * "INBOX%d not ready"/"Inbox%d overflow").  Endpoint number =
+ * doorbell bit: EP0 is RTBuddyManagementEndpoint (_handleHello /
+ * _handleEPRollCall / _handlePowerAck), EP1..5 the ANE data channels.
+ * [INFERENCE: the fw->host doorbell/IRQ bit numbering mirrors the
+ * host->fw SET bit per Asahi rtkit semantics; pinned live by W5.] */
 #define ANE_MBI_SCRATCH0	0x1840048	/* SCRATCH0..7 = +0x48..+0x64 */
 #define ANE_MBI_SCRATCH7	0x1840064
 #define ANE_MBI_WAKE_REQ	0xf7fbdff9	/* host->fw SCRATCH7 */
 #define ANE_MBI_WAKE_ACK	0x80402006	/* fw->host: table ready */
-#define ANE_MBI_DOORBELL	0x1844000	/* write32 (1 << channel bit) */
+#define ANE_MBI_DOORBELL	0x1844000	/* write32 (1 << endpoint id) */
 #define ANE_MBI_MSG_I2A_LO	0x1170000	/* fw->host u64 message pair */
 #define ANE_MBI_MSG_I2A_HI	0x1170004
 #define ANE_MBI_MSG_A2I_RD	0x184c000	/* host->fw message read peer */
 #define ANE_MBI_MSG_A2I_WR	0x1850000	/* host->fw message write */
+
+/* Per-message MBI word (48-bit ring notification, K14
+ * rtbuddyEndpointSendMessage 0x…95f3bf4-c30): offset = ring write
+ * cursor [23:0], length [47:24].  NOT the 54-bit surface-announce
+ * word (ane_ep_doorbell_encode below) — that one rides SetupEndpoints
+ * buffer mapping; this one is what the gate sends per command: the
+ * gate call is send(&msg48, 0, 1) at vtable+0x1e8, after the command
+ * bytes are already memcpy'd into the shared ring at ring_base +
+ * cursor.  Length is capped at 0xffffff by the encoder field. */
+#define ANE_MBI_MSG48_OFF	GENMASK_ULL(23, 0)
+#define ANE_MBI_MSG48_LEN	GENMASK_ULL(47, 24)
+
+static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
+{
+	return (cursor & ANE_MBI_MSG48_OFF) |
+	       FIELD_PREP(ANE_MBI_MSG48_LEN, len);
+}
+
+/* Host->fw TX sequence (RTBuddy mode, all static-decode proven):
+ *   1. fail if len > ring_size (K14 0xe00002c2 @0x…95f3a24)
+ *   2. cursor = write_cursor; if (cursor + len >= ring_size) cursor = 0
+ *      (exact fit wraps: csel lo @0x…95f3b04)
+ *   3. memcpy(ring + cursor, cmd, len)   (DMA-coherent ring)
+ *   4. dma_wmb()                          (ring visible before bell)
+ *   5. write64(ANE_MBI_MSG_A2I_WR, msg48) [INFERENCE: the kext echo
+ *      pair 0x…9606e38 -> 0x…9606f0c reads 0x184c000 then writes
+ *      0x1850000; the 48-bit word is the only payload the gate sends]
+ *   6. write32(ANE_MBI_DOORBELL, 1 << ep)
+ *   7. on send success only: write_cursor = cursor + len (K14
+ *      0x…95f3c70-c); the cursors at rec+0x40/rec+0x58 track the last
+ *      issued slot.
+ * CSNE_CMD_PING = header-only 0x11 on EP1 (INIT) -> doorbell bit
+ * 1 << 1 = 0x2.  SError-fatal-class writes (SCRATCH family) stay
+ * out; only the a2i message register + doorbell are touched, and
+ * only behind the mbi_doorbell opt-in. */
 
 /* MBI channel-table entry (kext stride 0x100, fields at +0x40 family:
  * type @+0x40, doorbell bit @+0x44, size @+0x48, phys @+0x50 —
@@ -236,6 +291,8 @@ struct ane_t6021 {
 	 * status-only bring-up.  Opt-in runs the kext-evidenced MBI
 	 * handshake (SCRATCH wake -> fw channel table), capture-only. */
 	bool transport;
+	bool doorbell;	/* mbi_doorbell=1: EP rings may write the +0x1844000
+			 * doorbell + a2i message register (decoded 2026-09-19) */
 	bool irq_requested;
 
 	/* MBI handshake state (transport only, capture-only) */
