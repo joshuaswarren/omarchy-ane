@@ -99,7 +99,7 @@ int ane_t6021_mbi_boot(struct ane_t6021 *ane)
 	 * stays read-only here; RTBuddy-mode TX rides the a2i message
 	 * register + doorbell behind the mbi_doorbell opt-in. */
 	dev_info(dev,
-		 "MBI wall: SCRATCH/msgreg surfaces are read-only (host write = SError, 2026-09-19); TX = doorbell(1<<ep) @+0x1844000, %s\n",
+		 "MBI wall: a2i/doorbell send class host-write-fatal even behind the W8 grant; SCRATCH writable granted (W9); TX = doorbell(1<<ep) @+0x1844000, %s\n",
 		 ane->doorbell ? "mbi_doorbell=1 (armed)" : "fenced (mbi_doorbell=0)");
 	return 0;
 }
@@ -129,13 +129,28 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
  * one-shot host opener "HELLO(host)" — 32-bit a2i halves + doorbell
  * 0x1 — SError'd CPU0 (0xbe000000) 25 us after the write pair.  Same
  * class/latency as the W5-live EP1 ring: candidate (a) (64-bit
- * writeq width) is DEAD — the surface rejects ANY host write into
- * the ANE control aperture (SCRATCH W4-fix, EP1 W5-live, EP0 W6)
- * regardless of width, bit, or protocol position.  The missing
- * precondition is upstream of protocol: fabric/fw write-grant or a
- * still-unmapped transport for the running-boot mode.  The session
+ * writeq width) is DEAD.  The missing precondition is upstream of
+ * protocol: fabric/fw write-grant or a still-unmapped transport for
+ * the running-boot mode.  The session
  * code below stays as the prepared protocol half for the lane that
  * clears that wall.
+ *
+ * W9 2026-09-19 (receipt
+ * 2026-09-19-h14-w9-hello-granted.md): the W8 grant (m1n1 static
+ * tunables, led by base+0x0 <- 0x10) applied from userspace BEFORE
+ * insmod did NOT clear the wall — it is PARTIAL.  The same boot
+ * proved SCRATCH (+0x1840048) host writes accepted and LATCHING
+ * nonzero values (0xa5a5a5a5/0x5a5a5a5a read back exact) 17 s before
+ * the send, yet the MBI send class still aborted: seam
+ * "MGMT TX HELLO(host): msg=00100000000c000b -> a2i(half) + doorbell
+ * 0x1" then SError CPU0 0xbe000000 11 us in (W6: 25 us, no grant).
+ * The aperture is therefore not one fabric gate: the grant unlocks
+ * the SCRATCH/GPIO class, while a2i_wr (+0x1850000/4) and the
+ * doorbell (+0x1844000) stay host-write-rejected with the grant live.
+ * Candidates narrowed: a second, MBI-specific grant the 12 tunables
+ * do not carry, or the running fw owning/locking its own send
+ * surfaces.  No HELLO reply: fw stayed on the type-0 heartbeat
+ * (hi=0x0b this boot, ~29 ticks/3 s) until the abort.
  *
  * W5-live proved the wall: the first EP1 ring SError'd the machine
  * (0xbe000000) because macOS never sends an EP1 command without the
@@ -163,8 +178,9 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
  * Every host send is two 32-bit a2i stores + the doorbell word: the
  * AKF message register is word-shaped (kext sites are 32-bit) and the
  * W5-live 64-bit writeq is the flagged SError candidate (receipt
- * follow-up item 1).  SCRATCH stays read-only here (fatal class,
- * 2026-09-19).  The session is the gate in front of
+ * follow-up item 1).  SCRATCH is host-writable behind the W8 grant
+ * (W9: nonzero values latch); the a2i/doorbell send class stays
+ * fatal even granted.  The session is the gate in front of
  * ane_t6021_csne_ping_attempt: no fw MGMT word -> the PING stays
  * fenced (soft wall) instead of repeating the machine-fatal class. */
 
