@@ -6,18 +6,29 @@
  * set4@4018-4030, plus ane_cpu@2e0). Applied with fdtoverlay onto the
  * stock modules DTB; boot.bin is rebuilt with update-m1n1.
  *
- * Provenance (receipts 2026-09-18-t6021-qualification, 2026-09-13-t6001-
- * tm-offset, m1n1 fw/ane.py ps_map):
- *  - engine = ane0 ADT range0 (0x84000000/0x2000000 raw, +0x200000000
- *    translation proven by pmgr low-32 match) + m1n1 constant 0x1c04000
- *    (exact delta on t8103 dtsi and t6001 live) -> 0x285c04000 + 0x24000.
- *  - DART quartet 0x285800000/810000/820000 + 0x4000 each from the same
- *    capture (identical to T6001 live); fourth window 0x285804000 not
- *    split out on T6001 either. SIDs 0 (jw16 live od: <&dart 0> x3).
- *  - IRQs: AIC raw 0x374 (ane) / 0x375 (dart-ane0), AIC2 4-cell,
- *    level-high (family pattern, jw16 live flags=4).
- *  - The SET-window constant stays in the driver (0x28e08c000, m1n1
- *    ps_map["ane0"]); this overlay does not touch the pmgr c000 window.
+ * Provenance (receipts 2026-09-18-t6021-engine-layout-mined,
+ * 2026-09-18-h14-rtkit-port-phase1, 2026-09-18-h14-w2-protocol-decode):
+ *  - ane0 carries its three ADT reg ranges verbatim (raw 0x84000000/
+ *    0x8e080000/0x8e08c000, Linux translation +0x200000000, proven pmgr
+ *    low-32 class): the WHOLE 32 MiB engine block addressed
+ *    block-relative by the W3 skeleton, the pmgr island words, and the
+ *    SET window (mapped read-only by the driver; direct SET writes
+ *    external-abort). The H13-style engine delta +0x1c04000 does NOT
+ *    exist on t6021 — the K14 kext never computes it and first touch at
+ *    0x285c2400c external-aborted twice (bisect 2026-09-18); that window
+ *    is gone from this overlay.
+ *  - dart-ane0 is one ADT node (compatible "dart,t8110" — kernel row is
+ *    t8110 per b877b87) with a FOUR-window quartet 0x85800000/85810000/
+ *    85820000/85804000, each 0x4000, one mapper, all ANE DMA on it
+ *    (ane0 iommu-parent). The installed three-node split (t6001-proven
+ *    pattern, b877b87 boot-proven) is kept unchanged; the fourth ADT
+ *    window stays unsplit exactly as on T6001.
+ *  - IRQs: AIC2 raw 884 (ane) / 885 (dart-ane0), level-high.
+ *    [INFERENCE W2 §3] 884 is the ANE ASC mailbox doorbell IRQ the
+ *    RTKit transport rides.
+ *  - Endpoint/mailbox architecture lives in the driver
+ *    (ane/t6021/): ASC cpu block +0x1600000, mailbox +0x1608xxx,
+ *    RTKit MGMT handshake, RTBuddy app endpoints 1..6.
  */
 /dts-v1/;
 /plugin/;
@@ -98,8 +109,10 @@
 
 			ane@284000000 {
 				compatible = "apple,t6021-ane";
-				reg-names = "engine";
-				reg = <0x2 0x85c04000 0x0 0x0024000>;
+				reg-names = "engine", "pmgr", "set";
+				reg = <0x2 0x84000000 0x0 0x02000000>,	/* ADT range0, whole block */
+				      <0x2 0x8e080000 0x0 0x00004034>,	/* pmgr1,t6021 island words */
+				      <0x2 0x8e08c000 0x0 0x00004000>;	/* SET window (reads only) */
 				interrupt-parent = <0x15>;
 				interrupt-names = "ane";
 				interrupts = <0 0 884 4>;
