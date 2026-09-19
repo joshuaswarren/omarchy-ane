@@ -118,6 +118,219 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
 	mutex_unlock(&ane->mbox_lock);
 }
 
+/* ---- EP0 MGMT session (W6): the RTKit handshake that must sit in
+ * front of ANY app-endpoint TX ----
+ *
+ * W5-live proved the wall: the first EP1 ring SError'd the machine
+ * (0xbe000000) because macOS never sends an EP1 command without the
+ * RTBuddy management session (HELLO -> EPRollCall/PowerAck ->
+ * SetupEndpoints -> STARTEP) in front of it.  This session replays
+ * that handshake on EP0:
+ *
+ *   1. watch the fw->host message pair (+0x1170000/4, read-clean
+ *     proven) for a MGMT word — type bits [59:52] nonzero; the
+ *     ambient heartbeat words observed in W4-fix/W5-live
+ *     (0x00000002_216c8e1b family) decode to type 0, so the
+ *     discriminator does not fire on the heartbeat;
+ *   2. answer HELLO (type 1) with HELLO_REPLY, versions clamped to
+ *     the RTKit library range 11..12;
+ *   3. if the fw stays silent, send ONE host HELLO — the W5-live
+ *     receipt's follow-up item 2 names the EP0 MGMT exchange as the
+ *     missing precondition and the assignment sanctions the host
+ *     opener behind doorbell bit 0x1;
+ *   4. echo EPMAP (type 8) replies per rtkit semantics (base +
+ *     MORE/LAST bit), ACK IOP power state, and log every other MGMT
+ *     word raw (EPRollCall/PowerAck decode on first sight);
+ *   5. only after the fw has spoken on MGMT: announce the EP1
+ *     surface (54-bit doorbell word) and STARTEP EP1.
+ *
+ * Every host send is two 32-bit a2i stores + the doorbell word: the
+ * AKF message register is word-shaped (kext sites are 32-bit) and the
+ * W5-live 64-bit writeq is the flagged SError candidate (receipt
+ * follow-up item 1).  SCRATCH stays read-only here (fatal class,
+ * 2026-09-19).  The session is the gate in front of
+ * ane_t6021_csne_ping_attempt: no fw MGMT word -> the PING stays
+ * fenced (soft wall) instead of repeating the machine-fatal class. */
+
+static void ane_mbi_send(struct ane_t6021 *ane, u64 msg, u32 doorbell_bit,
+			 const char *what)
+{
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+
+	/* The netconsole seam: printed BEFORE the first MMIO write of
+	 * the send, same contract as the CSNE TX line. */
+	dev_info(ane->dev, "MGMT TX %s: msg=%016llx -> a2i(half) + doorbell %#x\n",
+		 what, msg, doorbell_bit);
+	dma_wmb();
+	writel(lower_32_bits(msg), eng + ANE_MBI_MSG_A2I_WR);
+	writel(upper_32_bits(msg), eng + ANE_MBI_MSG_A2I_WR + 4);
+	dma_wmb();
+	writel(doorbell_bit, eng + ANE_MBI_DOORBELL);
+}
+
+static u64 ane_mbi_i2a(struct ane_t6021 *ane)
+{
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+
+	return (u64)readl(eng + ANE_MBI_MSG_I2A_HI) << 32 |
+	       readl(eng + ANE_MBI_MSG_I2A_LO);
+}
+
+/* Poll the fw->host pair for @ms; log every change; stop at the first
+ * word carrying nonzero MGMT type bits (already the message we want)
+ * or when the window ends. */
+static void ane_mbi_watch(struct ane_t6021 *ane, const char *when,
+			  unsigned int ms, u64 *msg, u32 *type)
+{
+	unsigned long start = jiffies;
+	u64 prev = ane_mbi_i2a(ane);
+
+	*msg = prev;
+	*type = 0;
+	dev_info(ane->dev, "MGMT watch %s: i2a=%016llx (baseline)\n",
+		 when, prev);
+	while (time_before(jiffies, start + msecs_to_jiffies(ms))) {
+		u64 cur;
+		u32 t;
+
+		msleep(100);
+		cur = ane_mbi_i2a(ane);
+		if (cur == prev)
+			continue;
+		t = FIELD_GET(ANE_RTKIT_TYPE, cur);
+		dev_info(ane->dev,
+			 "MGMT i2a %016llx -> %016llx type=%u%s at +%ums\n",
+			 prev, cur, t, t ? " [MGMT]" : "",
+			 jiffies_to_msecs(jiffies - start));
+		prev = cur;
+		if (t) {
+			*msg = cur;
+			*type = t;
+			return;
+		}
+	}
+	*msg = prev;
+}
+
+static void ane_mbi_mgmt_reply_hello(struct ane_t6021 *ane, u64 fw_hello)
+{
+	u32 min_ver = FIELD_GET(ANE_RTKIT_HELLO_MINVER, fw_hello);
+	u32 max_ver = FIELD_GET(ANE_RTKIT_HELLO_MAXVER, fw_hello);
+	u32 want;
+
+	want = clamp(max_ver, (u32)ANE_RTKIT_VER_MIN, (u32)ANE_RTKIT_VER_MAX);
+	if (min_ver > ANE_RTKIT_VER_MAX || max_ver < ANE_RTKIT_VER_MIN) {
+		dev_err(ane->dev,
+			"MGMT HELLO version window [%u,%u] outside [%d,%d] — replying %u anyway\n",
+			min_ver, max_ver, ANE_RTKIT_VER_MIN, ANE_RTKIT_VER_MAX,
+			want);
+	}
+	ane_mbi_send(ane, FIELD_PREP(ANE_RTKIT_TYPE,
+				     ANE_RTKIT_MGMT_HELLO_REPLY) |
+		     FIELD_PREP(ANE_RTKIT_HELLO_MINVER, want) |
+		     FIELD_PREP(ANE_RTKIT_HELLO_MAXVER, want),
+		     BIT(0), "HELLO_REPLY");
+}
+
+static bool ane_t6021_mgmt_session(struct ane_t6021 *ane)
+{
+	bool fw_spoke = false, hello_done = false, started_ep1 = false;
+	bool host_hello = false;
+	unsigned int rounds = 16;	/* cap: a spamming fw must not
+					 * hang probe forever */
+
+	while (rounds--) {
+		u64 msg;
+		u32 type;
+		const char *when = host_hello ? "post-host-HELLO" : "HELLO";
+
+		ane_mbi_watch(ane, when, 3000, &msg, &type);
+
+		/* Silent window: the one-shot host opener (step 3), then
+		 * a final watch; a second silent window ends the session
+		 * with fw_spoke=false (soft wall). */
+		if (!type) {
+			if (fw_spoke || host_hello)
+				break;
+			host_hello = true;
+			ane_mbi_send(ane, FIELD_PREP(ANE_RTKIT_TYPE,
+				     ANE_RTKIT_MGMT_HELLO) |
+				     FIELD_PREP(ANE_RTKIT_HELLO_MINVER,
+				     ANE_RTKIT_VER_MIN) |
+				     FIELD_PREP(ANE_RTKIT_HELLO_MAXVER,
+				     ANE_RTKIT_VER_MAX),
+				     BIT(0), "HELLO(host)");
+			continue;
+		}
+		fw_spoke = true;
+
+		switch (type) {
+		case ANE_RTKIT_MGMT_HELLO:
+			ane_mbi_mgmt_reply_hello(ane, msg);
+			hello_done = true;	/* our half is done */
+			break;
+		case ANE_RTKIT_MGMT_HELLO_REPLY:
+			dev_info(ane->dev,
+				 "MGMT HELLO_REPLY: min=%u max=%u\n",
+				 (u32)FIELD_GET(ANE_RTKIT_HELLO_MINVER, msg),
+				 (u32)FIELD_GET(ANE_RTKIT_HELLO_MAXVER, msg));
+			hello_done = true;
+			break;
+		case ANE_RTKIT_MGMT_EPMAP:
+			dev_info(ane->dev, "MGMT EPMAP base=%u bitmap=%08x last=%u\n",
+				 (u32)FIELD_GET(ANE_RTKIT_EPMAP_BASE, msg),
+				 (u32)FIELD_GET(ANE_RTKIT_EPMAP_BITMAP, msg),
+				 msg & ANE_RTKIT_EPMAP_LAST ? 1u : 0u);
+			/* rtkit echo: base + MORE/LAST reply bit */
+			ane_mbi_send(ane, FIELD_PREP(ANE_RTKIT_TYPE,
+				     ANE_RTKIT_MGMT_EPMAP) |
+				     FIELD_PREP(ANE_RTKIT_EPMAP_BASE,
+				     FIELD_GET(ANE_RTKIT_EPMAP_BASE, msg)) |
+				     (msg & ANE_RTKIT_EPMAP_LAST ?
+				      ANE_RTKIT_EPMAP_LAST :
+				      ANE_RTKIT_EPMAP_REPLY_MORE),
+				     BIT(0), "EPMAP_REPLY");
+			break;
+		case ANE_RTKIT_MGMT_SET_IOP_PWR_STATE:
+			/* ACK echoes the fw's requested state */
+			ane_mbi_send(ane, FIELD_PREP(ANE_RTKIT_TYPE,
+				     ANE_RTKIT_MGMT_SET_IOP_PWR_STATE_ACK) |
+				     (msg & ANE_RTKIT_PWR_STATE),
+				     BIT(0), "IOP_PWR_ACK");
+			hello_done = true;
+			break;
+		default:
+			/* EPRollCall/PowerAck and anything unknown: log
+			 * raw, decode on sight, no reply guesswork */
+			dev_info(ane->dev, "MGMT fw word type=%llu msg=%016llx (logged, no reply)\n",
+				 (u64)type, msg);
+			if (type == ANE_RTKIT_MGMT_SET_AP_PWR_STATE_ACK)
+				hello_done = true;
+			break;
+		}
+
+		/* Step 5: once the handshake phase is answered, announce
+		 * the EP1 surface then STARTEP it (kext order:
+		 * SetupEndpoints -> STARTEP -> app traffic). */
+		if (hello_done && !started_ep1) {
+			started_ep1 = true;
+			ane_mbi_send(ane, ane_ep_doorbell_encode(0, 0x10000),
+				     BIT(1), "SETUPEP(EP1 surface)");
+			ane_mbi_send(ane, FIELD_PREP(ANE_RTKIT_TYPE,
+				     ANE_RTKIT_MGMT_STARTEP) |
+				     FIELD_PREP(ANE_RTKIT_STARTEP_EP,
+				     ANE_T6021_EP_INIT) |
+				     ANE_RTKIT_STARTEP_FLAG,
+				     BIT(0), "STARTEP(EP1)");
+			ane->ep[ANE_T6021_EP_INIT].started = true;
+		}
+	}
+
+	dev_info(ane->dev, "MGMT session %s: fw_spoke=%u hello_done=%u\n",
+		 fw_spoke ? "exchanged" : "silent", fw_spoke, hello_done);
+	return fw_spoke;
+}
+
 /* ---- RTBuddy app endpoints (W2 §3) ---- */
 
 static const struct ane_t6021_ep ane_ep_config[ANE_T6021_EP_COUNT] = {
@@ -195,7 +408,12 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 		 r->id, &r->ring_iova, cursor, size, doorbell,
 		 BIT(r->id));
 	dma_wmb();
-	writeq(doorbell, eng + ANE_MBI_MSG_A2I_WR);
+	/* 32-bit halves: the AKF message register is word-shaped (all
+	 * kext sites are 32-bit stores) and the W5-live 64-bit writeq
+	 * is the flagged SError candidate (receipt follow-up item 1). */
+	writel(lower_32_bits(doorbell), eng + ANE_MBI_MSG_A2I_WR);
+	writel(upper_32_bits(doorbell), eng + ANE_MBI_MSG_A2I_WR + 4);
+	dma_wmb();
 	writel(BIT(r->id), eng + ANE_MBI_DOORBELL);
 
 	/* K14 advances the cursor only on send success (0x…95f3c70-c)
@@ -214,22 +432,23 @@ out:
  * whitelist are clean (the W3 known-good state) — the ping cannot fire
  * on a failed gate because probe unwinds before this runs.
  *
- * Arming mbi_doorbell=1 is the opt-in; the kext's HELLO/STARTEP
- * management exchange is NOT replayed here (r->started is forced on
- * EP1): the question this answers is only whether selene answers the
- * RTBuddy-mode doorbell at all.  Response surfaces watched for 3 s,
- * changes only (the i2a lo counter ticks ambiently — fw heartbeat in
- * the W4-fix captures — so it is sampled for the summary, not the
- * trigger): the ring slot doubles as the response area (fw completion
- * strb @+6 / str @+8, 0x4d324/0x4d3b0), and the i2a hi word + a2i_rd
- * peer register carry fw->host notifications.
+ * W6: the probe-time sequence is EP0 MGMT session (HELLO/EPMAP
+ * handling, then EP1 surface announce + STARTEP) FIRST, then this
+ * PING — arming mbi_doorbell=1 runs the whole thing.  If the session
+ * ends with the fw silent, the PING stays fenced (soft wall).  After
+ * the send, response surfaces are watched 3 s, changes only (the i2a
+ * lo counter ticks ambiently — fw heartbeat in the W4-fix captures —
+ * so it is sampled for the summary, not the trigger): the ring slot
+ * doubles as the response area (fw completion strb @+6 / str @+8,
+ * 0x4d324/0x4d3b0), and the i2a hi word + a2i_rd peer register carry
+ * fw->host notifications.
  *
  * LIVE RESULT 2026-09-19 (W5-live, receipt
  * 2026-09-19-h14-w5-live-ping-serror.md): the first ring SError'd CPU0
  * (0xbe000000) 5 us after the {a2i word, doorbell} write pair — the
  * fw rejects an EP1 send with no RTBuddy session in front of it.
- * Machine-fatal until the EP0 MGMT exchange lands; this function stays
- * behind the explicit mbi_doorbell=1 opt-in for that reason. */
+ * W6: ane_t6021_mgmt_session() now runs first (HELLO/EPMAP/STARTEP on
+ * EP0, 32-bit a2i halves); a silent session fences this PING. */
 void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
@@ -243,9 +462,18 @@ void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
 	if (!ane->doorbell)
 		return;
 
+	/* W6 gate: the EP0 MGMT session MUST precede any EP1 send
+	 * (W5-live: a bare EP1 ring is the machine-fatal 0xbe000000
+	 * class).  No fw MGMT word = soft wall: the PING stays fenced
+	 * and the wall is reported instead of replayed. */
+	if (!ane_t6021_mgmt_session(ane)) {
+		dev_err(ane->dev,
+			"CSNE PING ep1: FENCED — EP0 MGMT session silent (soft wall; see W5-live SError receipt)\n");
+		return;
+	}
+
 	ane_mbi_msgregs_dump(ane, "pre-ping");
 	ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
-	ane->ep[ANE_T6021_EP_INIT].started = true;
 	err = ane_t6021_csne_submit(ane, &hdr, sizeof(hdr));
 	if (err) {
 		dev_err(ane->dev, "CSNE PING ep1: submit failed %d\n", err);
