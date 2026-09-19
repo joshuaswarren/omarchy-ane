@@ -56,3 +56,7 @@ tmp/*
 *.tmp
 
 .omp/
+
+# Python bytecode
+__pycache__/
+*.pyc
