@@ -143,11 +143,11 @@ enum {
  * and the message-register offsets @0x…7503860 into dev+0x488; runtime
  * handshake in InitializeRTBuddy 0x…95e942c: cmd buffer base ->
  * SCRATCH0/1 (0x…95eaa94), wake 0xf7fbdff9 -> SCRATCH7 (0x…95eab24),
- * poll SCRATCH7 == 0x80402006 "channel description table ready"
+ * poll SCRATCH7 == 0x08042006 "channel description table ready"
  * (0x…95eab74), table base read back from SCRATCH0/1 (0x…95ead04),
  * per-channel {type,bit,size,phys} entries registered with the
  * doorbell setter 0x…95ebdd0 writing (1 << bit) to +0x1844000.  Host
- * ack = SCRATCH3 = 0x80402006 (0x…95eaee4).
+ * ack = SCRATCH3 = 0x08042006 (0x…95eaee4).
  *
  * PROVIDER DECODE (2026-09-19, kernelcache.release.mac14j): in
  * RTBuddy mode the TX gate lives in com.apple.driver.RTBuddy 1.0.0
@@ -171,7 +171,7 @@ enum {
 #define ANE_MBI_SCRATCH0	0x1840048	/* SCRATCH0..7 = +0x48..+0x64 */
 #define ANE_MBI_SCRATCH7	0x1840064
 #define ANE_MBI_WAKE_REQ	0xf7fbdff9	/* host->fw SCRATCH7 */
-#define ANE_MBI_WAKE_ACK	0x80402006	/* fw->host: table ready */
+#define ANE_MBI_WAKE_ACK	0x08042006	/* fw->host: table ready */
 #define ANE_MBI_DOORBELL	0x1844000	/* write32 (1 << endpoint id) */
 /* NOT a message pair.  W10 proved this is a mirror of the 24 MHz
  * architectural counter: across 32 samples the absolute difference
