@@ -85,12 +85,49 @@ static const struct ane_t6021_ep ane_ep_config[ANE_T6021_EP_COUNT] = {
 		.ring_size = 0x10000 },
 };
 
-/* W4: submission path on the INIT channel. Endpoint-open only here. */
+/* ---- CSNE_CMD submission on the INIT channel (W4) ---- */
+
 int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 {
-	dev_warn_once(ane->dev,
-		      "CSNE_CMD submission is W4 work — not implemented\n");
-	return -EOPNOTSUPP;
+	struct ane_t6021_ep *r = &ane->ep[ANE_T6021_EP_INIT];
+	u32 cursor;
+	u64 doorbell;
+	int err;
+
+	BUILD_BUG_ON(ANE_T6021_EP_INIT != 1);
+
+	if (!cmd || size < sizeof(struct ane_csne_hdr))
+		return -EINVAL;
+	if (size > ANE_CSNE_CMD_MAX_SIZE)
+		return -E2BIG;
+	if (!r->started)
+		return -ENOTCONN;
+
+	mutex_lock(&ane->mbox_lock);
+
+	/* K14 rtbuddyEndpointSendMessage 0x…95f3af8-c04: size bound
+	 * first, then the write cursor — kept when cursor+size fits
+	 * strictly below ring_size, else the slot restarts at 0 (an
+	 * exact fit wraps too: csel lo @0x…95f3b04). */
+	if (size > r->ring_size) {
+		err = -E2BIG;
+		goto out;
+	}
+	cursor = r->write_cursor;
+	if (cursor + size >= r->ring_size)
+		cursor = 0;
+
+	/* Ring slot is device-visible DMA memory; ane_mbox_send's
+	 * dma_wmb() orders this copy before the doorbell MMIO write. */
+	memcpy(r->ring + cursor, cmd, size);
+
+	doorbell = ane_ep_doorbell_encode(cursor, size);
+	err = ane_mbox_send(ane, doorbell, ANE_T6021_EP_INIT);
+	if (!err)
+		r->write_cursor = cursor + size;	/* kext: only on gate success */
+out:
+	mutex_unlock(&ane->mbox_lock);
+	return err;
 }
 
 static void ane_rtkit_start_ep(struct ane_t6021 *ane, u8 ep)
@@ -248,7 +285,8 @@ int ane_t6021_rtkit_init(struct ane_t6021 *ane)
 	int id, err;
 
 	/* doorbell codec round-trip, unit-1 (4K) size class — the only
-	 * class the RTBuddy ring sizes produce */
+	 * class the RTBuddy ring sizes produce; then a non-multiple
+	 * size to pin the ceiling rounding (K14 cinc @0x…95fe8dc) */
 	for (id = 0; id < ARRAY_SIZE(sizes); id++) {
 		u64 msg = ane_ep_doorbell_encode(0x1234, sizes[id]);
 
@@ -258,6 +296,11 @@ int ane_t6021_rtkit_init(struct ane_t6021 *ane)
 				sizes[id]);
 			return -EINVAL;
 		}
+	}
+	if (ane_ep_doorbell_size(ane_ep_doorbell_encode(0, 0x1234)) !=
+	    0x2000) {
+		dev_err(ane->dev, "doorbell codec ceiling broken\n");
+		return -EINVAL;
 	}
 
 	mutex_init(&ane->mbox_lock);
