@@ -357,6 +357,12 @@ static int ane_t6021_probe(struct platform_device *pdev)
 				  "status-only bring-up, transport deferred",
 		 ane->doorbell ? "ARMED (mbi_doorbell=1)" :
 				 "fenced (mbi_doorbell=0)");
+
+	/* W5-live: the one-shot PING rides the armed fence only — the
+	 * gate + whitelist in first_resume passed above (probe unwinds
+	 * otherwise), so this runs in the verified coprocessor-alive
+	 * state. */
+	ane_t6021_csne_ping_attempt(ane);
 	return 0;
 
 put_pm:
