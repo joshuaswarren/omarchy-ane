@@ -3,9 +3,18 @@
  * table), capture of the fw->host message registers, MGMT decode for
  * received words, RTBuddy app-endpoint ring bookkeeping.
  *
- * The h14g transport is NOT the m1n1 ASC mailbox: the K14 kext never
- * touches any +0x8xxx-family register, and the +0x1608114 analogy read
- * SError-aborted t6021-test-host (2026-09-19).  The kext-evidenced sequence
+ * W10 2026-09-19 CORRECTION to the paragraph that stood here ("the
+ * h14g transport is NOT the m1n1 ASC mailbox ... the +0x1608114
+ * analogy read SError-aborted t6021-test-host").  The ASC mailbox DOES exist
+ * on this part, at ANE+0x1408000, and reads clean: a2i_control
+ * 0x285408110 and i2a_control 0x285408114 both = 0x00020001
+ * (ENABLE=1 EMPTY=1 FIFOCNT=0 WPTR=0 RPTR=0).  The aborting read was
+ * +0x1608114 — the h16g base, i.e. the wrong address, not evidence of
+ * absence; and the kext is silent about 0x1408xxx because the mailbox
+ * belongs to the RTBuddy provider kext.  Both FIFO pointer pairs are
+ * still at the origin, so nothing has ever crossed this mailbox, in
+ * either direction, because the ASC CPU is STOPPED (CPU_CONTROL
+ * 0x285400044 = 0, RVBAR entry 0).  The kext-evidenced sequence
  * (InitializeRTBuddy 0x…95e942c) is: hand a command buffer via
  * SCRATCH0/1 (+0x1840048/+0x184004c), write the wake word 0xf7fbdff9
  * to SCRATCH7 (+0x1840064), poll until the fw overwrites it with
@@ -123,9 +132,10 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
  *
  * LIVE RESULT 2026-09-19 (W6, receipt
  * 2026-09-19-h14-w6-mgmt-session-serror.md): with the runbook green
- * and three silent watch seconds (i2a = ambient heartbeat only, all
- * words type 0 — the +0x1170000/4 pair is a fast heartbeat surface,
- * {hi=0x0a, lo counter ~0x2500000/100 ms}, NOT message storage), the
+ * and three silent watch seconds (i2a "ambient heartbeat", all words
+ * type 0) — but see the W10 note below: that pair is a mirror of the
+ * 24 MHz architectural counter, so "all words type 0" was structural
+ * and the silence was total, not ambient — the
  * one-shot host opener "HELLO(host)" — 32-bit a2i halves + doorbell
  * 0x1 — SError'd CPU0 (0xbe000000) 25 us after the write pair.  Same
  * class/latency as the W5-live EP1 ring: candidate (a) (64-bit
@@ -149,8 +159,18 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
  * doorbell (+0x1844000) stay host-write-rejected with the grant live.
  * Candidates narrowed: a second, MBI-specific grant the 12 tunables
  * do not carry, or the running fw owning/locking its own send
- * surfaces.  No HELLO reply: fw stayed on the type-0 heartbeat
- * (hi=0x0b this boot, ~29 ticks/3 s) until the abort.
+ * surfaces.  No HELLO reply, and W10 explains why: there was never a
+ * heartbeat and never a firmware.  The "type-0 heartbeat (hi=0x0b,
+ * ~29 ticks/3 s)" is ANE+0x1170000/4 mirroring CNTVCT_EL0 — constant
+ * 13-18 count absolute offset across 32 samples, 0.054 ppm drift —
+ * plus a poll count.  The real receive register (i2a_control
+ * 0x285408114) sat EMPTY through 600 polls over 30 s, and the ASC CPU
+ * that would drive it reads RUNNING=0 STOPPED=1 with RUN never set.
+ * The send class did not abort because the host spoke out of turn: it
+ * aborted because +0x1850000/+0x1844000 are not the mailbox and no
+ * IOP is running behind them.  Next lane: load fw, program RVBAR,
+ * set CPU_CONTROL.RUN, then let the fw open the session on
+ * OUTBOX0/1 (0x285408830/8) per the RTKit contract.
  *
  * W5-live proved the wall: the first EP1 ring SError'd the machine
  * (0xbe000000) because macOS never sends an EP1 command without the
@@ -159,10 +179,12 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
  * that handshake on EP0:
  *
  *   1. watch the fw->host message pair (+0x1170000/4, read-clean
- *     proven) for a MGMT word — type bits [59:52] nonzero; the
- *     ambient heartbeat words observed in W4-fix/W5-live
- *     (0x00000002_216c8e1b family) decode to type 0, so the
- *     discriminator does not fire on the heartbeat;
+ *     proven) for a MGMT word — type bits [59:52] nonzero.  W10:
+ *     this discriminator can never fire, because that pair is the
+ *     24 MHz counter and bits [59:52] of a counter below 2^52 are
+ *     structurally zero (~6 years of uptime away).  The step is kept
+ *     only to keep the historical log readable; the real receive
+ *     poll is i2a_control EMPTY at ANE_ASC_MBOX_I2A_CTRL;
  *   2. answer HELLO (type 1) with HELLO_REPLY, versions clamped to
  *     the RTKit library range 11..12;
  *   3. if the fw stays silent, send ONE host HELLO — the W5-live
