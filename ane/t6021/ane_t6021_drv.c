@@ -57,6 +57,18 @@ module_param(rtkit_transport, bool, 0444);
 MODULE_PARM_DESC(rtkit_transport,
 		 "OPT-IN: MBI SCRATCH handshake + fw channel-table capture (kext-evidenced registers; no doorbell writes)");
 
+/* RTBuddy-mode TX arm (provider decode 2026-09-19): the gate send is
+ * the 48-bit MBI word to +0x1850000 followed by write32(1 << ep) to
+ * the +0x1844000 doorbell (bit = endpoint id: EP0 management, EP1
+ * INIT/CSNE, EP2..6 fw->host).  Default off — the first live ring is
+ * the next lane's W5 work; arming this only lifts the driver-side
+ * fence, it does not make the sequence safe (EP0/EP1 validity on
+ * selene is kext-evidenced but not yet device-proven). */
+static bool mbi_doorbell;
+module_param(mbi_doorbell, bool, 0444);
+MODULE_PARM_DESC(mbi_doorbell,
+		 "OPT-IN: allow ane_t6021_csne_submit to ring the +0x1844000 doorbell (1 << ep) after the a2i msg word");
+
 /* pmgr island words this device consumes, inside the "pmgr" window:
  * ane_cpu@2e0, ane_sys_mpm@4000, ane_td@4008, ane_base@4010,
  * ane_set1..4@4018-4030 (overlay phandle chain). */
@@ -308,6 +320,10 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	}
 
 	ane->transport = rtkit_transport;
+	ane->doorbell = mbi_doorbell;
+	if (ane->doorbell && !ane->transport)
+		dev_warn(dev,
+			 "mbi_doorbell=1 without rtkit_transport=1: TX armed but the drain/capture path is off\n");
 
 	err = ane_t6021_rtkit_init(ane);
 	if (err < 0)
@@ -335,10 +351,12 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	}
 
 	dev_info(dev,
-		 "loaded ane_t6021 %s (%s; 8-domain power gate; CSNE_CMD submission = W4)\n",
+		 "loaded ane_t6021 %s (%s; 8-domain power gate; CSNE TX %s)\n",
 		 ANE_T6021_MODULE_VERSION,
 		 ane->transport ? "RTKit transport ON" :
-				  "status-only bring-up, transport deferred");
+				  "status-only bring-up, transport deferred",
+		 ane->doorbell ? "ARMED (mbi_doorbell=1)" :
+				 "fenced (mbi_doorbell=0)");
 	return 0;
 
 put_pm:
