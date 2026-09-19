@@ -121,6 +121,22 @@ void ane_t6021_rtkit_drain(struct ane_t6021 *ane)
 /* ---- EP0 MGMT session (W6): the RTKit handshake that must sit in
  * front of ANY app-endpoint TX ----
  *
+ * LIVE RESULT 2026-09-19 (W6, receipt
+ * 2026-09-19-h14-w6-mgmt-session-serror.md): with the runbook green
+ * and three silent watch seconds (i2a = ambient heartbeat only, all
+ * words type 0 — the +0x1170000/4 pair is a fast heartbeat surface,
+ * {hi=0x0a, lo counter ~0x2500000/100 ms}, NOT message storage), the
+ * one-shot host opener "HELLO(host)" — 32-bit a2i halves + doorbell
+ * 0x1 — SError'd CPU0 (0xbe000000) 25 us after the write pair.  Same
+ * class/latency as the W5-live EP1 ring: candidate (a) (64-bit
+ * writeq width) is DEAD — the surface rejects ANY host write into
+ * the ANE control aperture (SCRATCH W4-fix, EP1 W5-live, EP0 W6)
+ * regardless of width, bit, or protocol position.  The missing
+ * precondition is upstream of protocol: fabric/fw write-grant or a
+ * still-unmapped transport for the running-boot mode.  The session
+ * code below stays as the prepared protocol half for the lane that
+ * clears that wall.
+ *
  * W5-live proved the wall: the first EP1 ring SError'd the machine
  * (0xbe000000) because macOS never sends an EP1 command without the
  * RTBuddy management session (HELLO -> EPRollCall/PowerAck ->

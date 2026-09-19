@@ -146,8 +146,8 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
  *   3. memcpy(ring + cursor, cmd, len)   (DMA-coherent ring)
  *   4. dma_wmb()                          (ring visible before bell)
  *   5. write32(ANE_MBI_MSG_A2I_WR, lo) + write32(+4, hi) — 32-bit
- *      halves (W6: the AKF message register is word-shaped; the
- *      W5-live 64-bit writeq is the flagged SError candidate)
+ *      halves (the AKF message register is word-shaped; W6 proved the
+ *      W5-live abort was NOT the 64-bit writeq — the halves abort too)
  *   6. write32(ANE_MBI_DOORBELL, 1 << ep)
  *   7. on send success only: write_cursor = cursor + len (K14
  *      0x…95f3c70-c); the cursors at rec+0x40/rec+0x58 track the last
