@@ -54,9 +54,6 @@ enum {
 	ANE_T6021_REG_COUNT
 };
 
-#define ANE_T6021_SET_SIZE	0x4000
-#define ANE_T6021_PMGR_SIZE	0x4034
-
 /* ANE-block-relative ASC/RTBuddy addresses (phase1 §2) */
 #define ANE_ASC_CPU_CONTROL	0x1600044	/* RUN = BIT(4) */
 #define ANE_ASC_RVBAR		0x1050000	/* fw entry | valid bit0 */
