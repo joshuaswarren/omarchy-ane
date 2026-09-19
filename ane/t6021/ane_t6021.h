@@ -5,8 +5,10 @@
  *  - reg windows, IRQ, pmgr islands: ADT j414c (DeviceTree.j414cap.im4p,
  *    receipts/2026-09-18-t6021-engine-layout-mined §2), Linux translation
  *    +0x200000000 (proven class, pmgr low-32 match).
- *  - ASC cpu block + mailbox: K14 kext disasm
- *    (receipts/2026-09-18-h14-rtkit-port-phase1 §2), m1n1 ASCRegs layout.
+ *  - ASC cpu block (+0x1400000 h14g) + MBI transport (SCRATCH, channel
+ *    table, +0x1844000 doorbell): K14 kext disasm, W4-fix receipt
+ *    (initializeANESoCConfig h14g blocks + InitializeRTBuddy +
+ *    doorbell setter 0x…95ebdd0); m1n1 ASCRegs = t8103 cross-ref only
  *  - RTKit MGMT protocol: Asahi rtkit.c semantics, u64 message halves as
  *    staged in omarchy-ane rtkit/h14_rtkit_hello.py (commit 6ad26b7).
  *  - RTBuddy endpoint table + doorbell word: K14 kext cfg table
@@ -23,7 +25,7 @@
  *                  "set"  (0x28e08c000+0x4000, SET window — read-only by
  *                  repo rule: direct SET writes external-abort the SoC)
  *  interrupts    = one AIC2 level-high interrupt named "ane" (raw 884;
- *                  [INFERENCE W2 §3: the ANE ASC mailbox doorbell IRQ].
+ *                  [INFERENCE W2 §3: the ANE MBI doorbell IRQ].
  *                  dart-ane0 carries raw 885, provider-owned, never
  *                  fetched here)
  *  iommus        = dart-ane0 streams (apple,t6020-dart/apple,t8110-dart
@@ -61,28 +63,50 @@ enum {
 	ANE_T6021_REG_COUNT
 };
 
-/* ANE-block-relative ASC/RTBuddy addresses (phase1 §2) */
-#define ANE_ASC_CPU_CONTROL	0x1600044	/* RUN = BIT(4) */
+/* ANE-block-relative ASC/RTBuddy addresses.  CPU block = ANE+0x1400000
+ * for h14g (K14 initializeANESoCConfig h14g blocks 0x…961365c /
+ * 0x…9614084 build 0x1400044 with NO 0x200000 orr — the 0x1600044
+ * phase-1 §2 quote is the h16g/h17/h18g variant block 0x…9613458;
+ * runtime h14g-shaped sites 0x…95d2968 write RUN there).  CPU_STATUS
+ * +0x48 keeps the m1n1 ASCRegs +4 shape (config field dev+0x49c =
+ * 0x1400048; kext poll 0x…95ecfb4).  The m1n1 t8103 mailbox
+ * (INBOX_CTRL +0x8110 / INBOX0 +0x8800 family) has NO h14g analog:
+ * zero 0x1608xxx / 0x1408xxx constants in the whole kext text, and the
+ * +0x1608114 read SError-aborted jw14m2 (2026-09-19).  The h14g
+ * transport is MBI (see ANE_MBI_* below). */
+#define ANE_ASC_CPU_CONTROL	0x1400044	/* RUN = BIT(4) */
+#define ANE_ASC_CPU_STATUS	0x1400048	/* m1n1 R_CPU_STATUS shape */
 #define ANE_ASC_RVBAR		0x1050000	/* fw entry | valid bit0 */
 #define ANE_ASC_EDPRCR		0x1010310	/* phase1 S2 whitelist */
 #define ANE_ASC_VERS		0x1840000
 #define ANE_ASC_RTB_STATUS	0x1840088	/* K14 poll: value < 2 */
 #define ANE_ASC_RTB_STATUS_UNK7C 0x184007c	/* phase1 S2 whitelist */
-#define ANE_ASC_RTB_GPIO0	0x1840048	/* ack GPIOs 0..7, +0x48..+0x64 */
 
-/* ASC mailbox, m1n1 ASCRegs layout at block +0x1608000 (= Asahi
- * apple-mailbox ASC variant: ctrl 0x110/0x114, send/recv 0x800-family,
- * FULL BIT(16) / EMPTY BIT(17); drivers/soc/apple/mailbox.c) */
-#define ANE_MBOX_A2I_CONTROL	0x1608110
-#define ANE_MBOX_I2A_CONTROL	0x1608114
-#define ANE_MBOX_A2I_SEND0	0x1608800	/* u64 msg0 */
-#define ANE_MBOX_A2I_SEND1	0x1608808	/* u32 msg1 (endpoint) */
-#define ANE_MBOX_I2A_RECV0	0x1608830	/* u64 msg0 */
-#define ANE_MBOX_I2A_RECV1	0x1608838	/* u32 msg1 */
+/* MBI transport (K14 h14g config: socinit stores the SCRATCH register
+ * offsets as q-blobs @0x…7503a40/0x…7503a50/0x…7503a60 into dev+0x438
+ * and the message-register offsets @0x…7503860 into dev+0x488; runtime
+ * handshake in InitializeRTBuddy 0x…95e942c: cmd buffer base ->
+ * SCRATCH0/1 (0x…95eaa94), wake 0xf7fbdff9 -> SCRATCH7 (0x…95eab24),
+ * poll SCRATCH7 == 0x80402006 "channel description table ready"
+ * (0x…95eab74), table base read back from SCRATCH0/1 (0x…95ead04),
+ * per-channel {type,bit,size,phys} entries registered with the
+ * doorbell setter 0x…95ebdd0 writing (1 << bit) to +0x1844000.  Host
+ * ack = SCRATCH3 = 0x80402006 (0x…95eaee4). */
+#define ANE_MBI_SCRATCH0	0x1840048	/* SCRATCH0..7 = +0x48..+0x64 */
+#define ANE_MBI_SCRATCH7	0x1840064
+#define ANE_MBI_WAKE_REQ	0xf7fbdff9	/* host->fw SCRATCH7 */
+#define ANE_MBI_WAKE_ACK	0x80402006	/* fw->host: table ready */
+#define ANE_MBI_DOORBELL	0x1844000	/* write32 (1 << channel bit) */
+#define ANE_MBI_MSG_I2A_LO	0x1170000	/* fw->host u64 message pair */
+#define ANE_MBI_MSG_I2A_HI	0x1170004
+#define ANE_MBI_MSG_A2I_RD	0x184c000	/* host->fw message read peer */
+#define ANE_MBI_MSG_A2I_WR	0x1850000	/* host->fw message write */
 
-#define ANE_MBOX_CONTROL_FULL	BIT(16)
-#define ANE_MBOX_CONTROL_EMPTY	BIT(17)
-#define ANE_MBOX_TX_TIMEOUT	500		/* ms, apple-mailbox.c value */
+/* MBI channel-table entry (kext stride 0x100, fields at +0x40 family:
+ * type @+0x40, doorbell bit @+0x44, size @+0x48, phys @+0x50 —
+ * InitializeRTBuddy 0x…95eade8-0x…95eae58) */
+#define ANE_MBI_CHAN_STRIDE	0x100
+#define ANE_MBI_CHAN_MAX_DUMP	8
 
 /* RTKit MGMT (EP 0); type bits [59:52], u64 message halves */
 #define ANE_RTKIT_TYPE			GENMASK_ULL(59, 52)
@@ -200,19 +224,22 @@ struct ane_t6021 {
 	struct device_link **pd_link;
 	int pd_count;
 
-	/* Single mailbox consumer (threaded IRQ + probe drain serialize
-	 * here); sends ride the same lock to keep the 1-deep FIFO sane. */
+	/* Single MBI consumer (threaded IRQ + probe drain serialize
+	 * here) */
 	struct mutex mbox_lock;
 
-	DECLARE_BITMAP(announced, 256);	/* EPMAP accumulation */
-	bool booted;		/* SET_AP_PWR_STATE ACK seen */
+	bool booted;		/* first_resume ran (eight-island gate) */
 
-	/* The +0x1608xxx mailbox block is read-fatal on t6021 (SExternal-
-	 * Abort 2026-09-19 under the full raise; phase1 hang 09-18);
-	 * default off = status-only bring-up, opt-in for transport
-	 * experiments once a real source pins the register block. */
+	/* The m1n1-analogy mailbox (+0x1608xxx) is read-fatal on t6021
+	 * (SExternal-Abort 2026-09-19 under the full raise; phase1 hang
+	 * 09-18) and does not exist in the kext text; default off =
+	 * status-only bring-up.  Opt-in runs the kext-evidenced MBI
+	 * handshake (SCRATCH wake -> fw channel table), capture-only. */
 	bool transport;
 	bool irq_requested;
+
+	/* MBI handshake state (transport only, capture-only) */
+	bool mbi_table_ready;
 
 	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
 };
@@ -222,6 +249,7 @@ int ane_t6021_rtkit_init(struct ane_t6021 *ane);
 void ane_t6021_rtkit_shutdown(struct ane_t6021 *ane);
 void ane_t6021_rtkit_drain(struct ane_t6021 *ane);
 irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data);
+int ane_t6021_mbi_boot(struct ane_t6021 *ane);
 
 /* ---- CSNE_CMD wire structs (host->fw on the INIT channel) ----
  *
@@ -327,10 +355,10 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
 
 /* Submit one CSNE command block on the INIT (EP1) ring: K14
  * rtbuddyEndpointSendMessage semantics (W2 §3) — slot alloc with wrap,
- * memcpy into the ring, 54-bit doorbell on the mailbox, cursor
+ * memcpy into the ring, 54-bit doorbell word, cursor
  * advanced only on doorbell success. No synchronous response matching:
  * fw->host responses arrive on the T2F* channels and are not walked
- * yet (W2 §3). Sleeps (mutex, mailbox poll) — process context only. */
+ * yet (W2 §3). Sleeps (mutex) — process context only. */
 int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
 
 #endif /* __ANE_T6021_H__ */
