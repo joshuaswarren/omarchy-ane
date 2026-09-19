@@ -19,7 +19,6 @@
 
 #include <linux/io.h>
 #include <linux/interrupt.h>
-#include <linux/iopoll.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -51,20 +50,20 @@ static const char *const ane_t6021_reg_names[ANE_T6021_REG_COUNT] = {
 	"engine", "pmgr", "set"
 };
 
-/* ps-word fields (apple-pmgr-pwrstate layout); constants mirror the
- * device-proven rtkit/h14_bringup.py (PS_CLEAR/PS_ACTIVE/poll). The
+/* ps-word fields (apple-pmgr-pwrstate layout; h14_bringup.py PS_*).
  * W3 death discriminator (receipt
  * 2026-09-19-h14-init-sequence-kext-trace): engine-window access while
  * any island word is below ACTUAL=0xf, or with ane_cpu AUTO_ENABLE
- * set, hard-resets t6021 — so the resume walk is gated on the verified
- * phase1 end state (all eight ACTUAL=0xf, BUSY clear, ane_cpu 0x3ff). */
+ * set, hard-resets t6021. The driver NEVER writes a ps word: the raise
+ * belongs to the genpd chain, the AUTO_ENABLE clear on the
+ * already-on ane_cpu to the device-proven userspace RMW
+ * (h14_bringup.py --stage 1) — the identical kernel-context write
+ * froze the machine at pmgr+0x2e0 on 2026-09-19 09:39 (watchdog +62 s)
+ * where the userspace RMW of the same word, same value, was clean. */
 #define ANE_PS_ON		0xf
 #define ANE_PS_ACTUAL		GENMASK(7, 4)
 #define ANE_PS_BUSY		BIT(11)
 #define ANE_PS_AUTO_ENABLE	BIT(28)
-#define ANE_PS_CLEAR		(BIT(31) | BIT(28) | GENMASK(27, 24) | \
-				 GENMASK(19, 16) | BIT(12) | BIT(10) | \
-				 GENMASK(3, 0))
 
 static void ane_t6021_detach_genpd(struct ane_t6021 *ane)
 {
@@ -133,8 +132,10 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 	u32 cpu;
 
 	/* Stage 1: pmgr reads only (proven-safe read class on every
-	 * raise state).  The genpd chain raised all eight islands
-	 * parent-first, ane_cpu last (overlay list order). */
+	 * raise state).  The genpd chain raised the islands parent-first
+	 * (list order, ane_cpu last); the userspace bring-up RMW
+	 * (h14_bringup.py --stage 1, run before insmod) cleared
+	 * AUTO_ENABLE on the already-on ane_cpu. */
 	dev_info(ane->dev,
 		 "ANE-resume: genpd raise complete; pmgr island words next\n");
 	for (i = 0; i < ARRAY_SIZE(ane_t6021_pmgr_words); i++)
@@ -142,24 +143,21 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 			 ane_t6021_pmgr_words[i],
 			 readl(pmgr + ane_t6021_pmgr_words[i]));
 
-	/* Stage 2: clear AUTO_ENABLE on ane_cpu — the phase1 RMW
-	 * (`(v & ~PS_CLEAR) | 0xf`, poll ACTUAL=0xf && BUSY clear).
-	 * The kernel genpd raise leaves bit 28 set (W3: 0x1f0003ff);
-	 * the proven-safe end state is 0x3ff. */
+	/* Stage 2: the ane_cpu shape — the W3 death discriminator.  The
+	 * kernel's apple-pmgr-pwrstate re-sets AUTO_ENABLE on every
+	 * domain it finds on at boot, and the hardware only consumes the
+	 * bit on a transition, so the untouched ane_cpu keeps it.  A
+	 * kernel-context flag-clear write to this word froze the box
+	 * (2026-09-19); refuse instead of writing. */
 	cpu = readl(pmgr + 0x2e0);
-	writel((cpu & ~ANE_PS_CLEAR) | ANE_PS_ON, pmgr + 0x2e0);
-	readx_poll_timeout(readl, pmgr + 0x2e0, cpu,
-			   FIELD_GET(ANE_PS_ACTUAL, cpu) == ANE_PS_ON &&
-			   !(cpu & ANE_PS_BUSY),
-			   1000, 500000);
 	if (FIELD_GET(ANE_PS_ACTUAL, cpu) != ANE_PS_ON ||
 	    (cpu & (ANE_PS_BUSY | ANE_PS_AUTO_ENABLE))) {
 		dev_err(ane->dev,
-			"ANEGATE ane_cpu=%08x (want act=0xf busy=0 auto=0) — refusing block access\n",
+			"ANEGATE ane_cpu=%08x (want act=0xf busy=0 auto=0) — refusing block access; run h14_bringup.py --stage 1 (userspace RMW) before insmod\n",
 			cpu);
 		return -EIO;
 	}
-	dev_info(ane->dev, "ANERD ane_cpu=%08x auto_enable cleared\n", cpu);
+	dev_info(ane->dev, "ANERD ane_cpu=%08x auto_enable clear\n", cpu);
 
 	/* Stage 3: the gate — all eight islands ACTUAL=0xf, BUSY clear,
 	 * before anything inside the engine aperture or the SET window
