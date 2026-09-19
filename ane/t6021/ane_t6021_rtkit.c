@@ -30,11 +30,13 @@
 
 #include <linux/bitmap.h>
 #include <linux/dev_printk.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <asm/memory.h>
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
+#include <linux/jiffies.h>
 #include <linux/minmax.h>
 
 #include <asm/barrier.h>
@@ -186,6 +188,12 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 		err = -EOPNOTSUPP;
 		goto out;
 	}
+	/* The netconsole seam: this line prints before the first MMIO
+	 * write of the sequence (a2i word -> doorbell). */
+	dev_info(ane->dev,
+		 "CSNE TX ep%u: ring iova=%pad cursor=%u len=%zu msg48=%012llx -> a2i + doorbell %#lx\n",
+		 r->id, &r->ring_iova, cursor, size, doorbell,
+		 BIT(r->id));
 	dma_wmb();
 	writeq(doorbell, eng + ANE_MBI_MSG_A2I_WR);
 	writel(BIT(r->id), eng + ANE_MBI_DOORBELL);
@@ -198,6 +206,78 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size)
 out:
 	mutex_unlock(&ane->mbox_lock);
 	return err;
+}
+
+/* W5-live one-shot: CSNE_CMD_PING (header-only 0x11) on EP1/INIT ->
+ * doorbell 0x2.  Caller is probe, after the loaded banner: by then
+ * first_resume has passed, so the eight-island gate and the ASC
+ * whitelist are clean (the W3 known-good state) — the ping cannot fire
+ * on a failed gate because probe unwinds before this runs.
+ *
+ * Arming mbi_doorbell=1 is the opt-in; the kext's HELLO/STARTEP
+ * management exchange is NOT replayed here (r->started is forced on
+ * EP1): the question this answers is only whether selene answers the
+ * RTBuddy-mode doorbell at all.  Response surfaces watched for 3 s,
+ * changes only (the i2a lo counter ticks ambiently — fw heartbeat in
+ * the W4-fix captures — so it is sampled for the summary, not the
+ * trigger): the ring slot doubles as the response area (fw completion
+ * strb @+6 / str @+8, 0x4d324/0x4d3b0), and the i2a hi word + a2i_rd
+ * peer register carry fw->host notifications. */
+void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
+{
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+	u8 *ring = ane->ep[ANE_T6021_EP_INIT].ring;
+	struct ane_csne_hdr hdr;
+	u64 slot0, slot8, prev0, prev8;
+	u32 hi, lo, rd, prev_hi, prev_rd;
+	unsigned long start;
+	int err;
+
+	if (!ane->doorbell)
+		return;
+
+	ane_mbi_msgregs_dump(ane, "pre-ping");
+	ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
+	ane->ep[ANE_T6021_EP_INIT].started = true;
+	err = ane_t6021_csne_submit(ane, &hdr, sizeof(hdr));
+	if (err) {
+		dev_err(ane->dev, "CSNE PING ep1: submit failed %d\n", err);
+		return;
+	}
+
+	prev0 = READ_ONCE(*(__force u64 *)ring);
+	prev8 = READ_ONCE(*(__force u64 *)(ring + 8));
+	prev_hi = readl(eng + ANE_MBI_MSG_I2A_HI);
+	prev_rd = readl(eng + ANE_MBI_MSG_A2I_RD);
+	start = jiffies;
+	while (time_before(jiffies, start + msecs_to_jiffies(3000))) {
+		msleep(200);
+		slot0 = READ_ONCE(*(__force u64 *)ring);
+		slot8 = READ_ONCE(*(__force u64 *)(ring + 8));
+		hi = readl(eng + ANE_MBI_MSG_I2A_HI);
+		rd = readl(eng + ANE_MBI_MSG_A2I_RD);
+		if (slot0 != prev0 || slot8 != prev8) {
+			dev_info(ane->dev,
+				 "CSNE PING: ring slot changed %016llx_%016llx -> %016llx_%016llx at +%ums\n",
+				 prev0, prev8, slot0, slot8,
+				 jiffies_to_msecs(jiffies - start));
+			prev0 = slot0;
+			prev8 = slot8;
+		}
+		if (hi != prev_hi || rd != prev_rd) {
+			dev_info(ane->dev,
+				 "CSNE PING: msgregs moved i2a_hi %08x->%08x a2i_rd %08x->%08x at +%ums\n",
+				 prev_hi, hi, prev_rd, rd,
+				 jiffies_to_msecs(jiffies - start));
+			prev_hi = hi;
+			prev_rd = rd;
+		}
+	}
+	lo = readl(eng + ANE_MBI_MSG_I2A_LO);
+	dev_info(ane->dev,
+		 "CSNE PING watch done: i2a=%08x_%08x a2i_rd=%08x a2i_wr=%08x slot=%016llx_%016llx\n",
+		 prev_hi, lo, prev_rd, readl(eng + ANE_MBI_MSG_A2I_WR),
+		 prev0, prev8);
 }
 
 irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data)
