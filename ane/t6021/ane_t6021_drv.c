@@ -1,20 +1,24 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* T6021 (H14 / J414c) ANE platform driver skeleton.
  *
- * Architecture (W1/W2 receipts; this is NOT the H13 ane driver model):
- * the fw owns the task manager and the 8 task queues (CSneTMDrvH14 —
- * the kext never programs the H13-style host TM/TQ window and first
- * touch on it external-aborted, proven twice 2026-09-18), so the host
- * brings up an RTKit mailbox connection on the ASC block at ANE
- * +0x1600000 and talks CSNE_CMD over RTBuddy app endpoints. Submission
- * is W4; this skeleton probes, maps, attaches power, requests the
- * mailbox IRQ and speaks the RTKit MGMT handshake.
+ * Architecture (W1/W2/W4-fix receipts; this is NOT the H13 ane driver
+ * model): the fw owns the task manager and the 8 task queues
+ * (CSneTMDrvH14 — the kext never programs the H13-style host TM/TQ
+ * window and first touch on it external-aborted, proven twice
+ * 2026-09-18), so the host brings up the MBI transport (SCRATCH wake
+ * -> fw channel table -> per-channel doorbell bits at +0x1844000; the
+ * m1n1 ASC mailbox analogy at +0x1608xxx is falsified and SError-fatal)
+ * and talks CSNE_CMD over RTBuddy app endpoints. Submission is gated on
+ * the channel-table dump pinning the INIT doorbell bit; this skeleton
+ * probes, maps, attaches power and captures the handshake.
  *
  * Probe makes no engine-window write and no SET write. First-touch
- * reads at resume are the phase-1-proven RTKit/ASC status region; the
- * +0x1600000 block itself is only write-evidenced (phase1 §3: one
- * ambiguous reset association) — the first on-device run must ride
- * netconsole with the named-stage dev_info lines as the flush points.
+ * reads at resume are the phase-1-proven ASC status region plus the
+ * kext-evidenced MBI registers (SCRATCH/message pair — the kext reads
+ * and writes these at runtime on this silicon; the +0x1608xxx family
+ * the kext never touches is what aborted the machine). The first
+ * on-device run must ride netconsole with the named-stage dev_info
+ * lines as the flush points.
  */
 
 #include <linux/io.h>
@@ -39,19 +43,19 @@ module_param(allow_unqualified, bool, 0444);
 MODULE_PARM_DESC(allow_unqualified,
 		 "Bind the unqualified T6021 skeleton (W3: no execution proven on silicon)");
 
-/* The mailbox transport stays OFF by default: every host access to the
- * +0x1600000 cpu-control/mailbox family has been fatal on t6021 (SError
- * on CPU1 at +0x1608114 under the full eight-word raise + ane_cpu
- * auto-clear, 2026-09-19; phase1 hang at the same family 09-18).  The
- * kext never READS the block at runtime, and the t6001/t8103
- * precedents have no RTKit mailbox there — the address family was
- * m1n1-ASC analogy, now falsified.  Status-only bring-up still proves
- * the coprocessor alive (RVBAR/VERS/RTB status = the phase1 criteria).
- * Opt in ONLY when a real t6021 source has pinned the transport. */
+/* The MBI transport stays OFF by default: the m1n1 ASC-mailbox analogy
+ * (+0x1608xxx) is falsified and SError-fatal on t6021 (read abort on
+ * CPU1 2026-09-19; phase1 hang 09-18) and the kext text has no such
+ * registers.  The kext-evidenced transport is MBI: SCRATCH0/1 command
+ * buffer, SCRATCH7 wake 0xf7fbdff9 -> fw channel table (ack
+ * 0x80402006), per-channel doorbell bits at +0x1844000.  Opt-in runs
+ * the handshake capture-only (no doorbell ring until the table pins
+ * the channel bits).  Status-only bring-up still proves the
+ * coprocessor alive (RVBAR/VERS/RTB status = the phase1 criteria). */
 static bool rtkit_transport;
 module_param(rtkit_transport, bool, 0444);
 MODULE_PARM_DESC(rtkit_transport,
-		 "OPT-IN: attempt the unproven +0x1608xxx RTKit mailbox (known SError class)");
+		 "OPT-IN: MBI SCRATCH handshake + fw channel-table capture (kext-evidenced registers; no doorbell writes)");
 
 /* pmgr island words this device consumes, inside the "pmgr" window:
  * ane_cpu@2e0, ane_sys_mpm@4000, ane_td@4008, ane_base@4010,
@@ -191,9 +195,9 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 	/* Stage 4: SET word 0 (read-only by repo rule; proven-safe read
 	 * in W2 and W3), then the phase1-proven ASC status whitelist
 	 * ONLY (S2 read clean under the full eight-word raise).
-	 * CPU_CONTROL and the +0x1608xxx mailbox controls stay out of
-	 * this walk: read-suspect per phase1 §3, and the RTKit
-	 * transport exercises them itself. */
+	 * CPU_CONTROL/+0x160xxx stay out of this walk: the h14g cpu
+	 * block is +0x1400000 (kext config), and the MBI transport
+	 * exercises its own registers. */
 	dev_info(ane->dev, "ANEGATE pass; ASC status whitelist next\n");
 	dev_info(ane->dev, "ANERD set+0 act=%08x\n",
 		 readl(ane->base[ANE_T6021_REG_SET]));
@@ -203,9 +207,13 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 	dev_info(ane->dev, "ANERD rtb_status=%08x rtb_7c=%08x\n",
 		 readl(eng + ANE_ASC_RTB_STATUS),
 		 readl(eng + ANE_ASC_RTB_STATUS_UNK7C));
+	/* +0x1840048..+0x1840064 = MBI SCRATCH0-7 (h14g config blob
+	 * @0x…7503a40; phase-1 S2 read all-zero pre-attach) */
 	for (i = 0; i < 8; i++)
-		dev_info(ane->dev, "ANERD gpio%u=%08x\n", i,
-			 readl(eng + ANE_ASC_RTB_GPIO0 + 4 * i));
+		dev_info(ane->dev, "ANERD scratch%u=%08x\n", i,
+			 readl(eng + ANE_MBI_SCRATCH0 + 4 * i));
+
+	ane->booted = true;
 	return 0;
 }
 
@@ -220,16 +228,19 @@ static __maybe_unused int ane_t6021_runtime_resume(struct device *dev)
 			return err;
 	}
 
-	/* The fw (brought up by iBoot, phase1 §1) opens the exchange with
-	 * MGMT HELLO on its own; the mailbox IRQ thread drains it. Drain
-	 * once here in case the HELLO landed before the IRQ was
-	 * requested — only with the transport opted in. */
-	if (ane->transport)
-		ane_t6021_rtkit_drain(ane);
-	else
+	/* The fw (brought up by iBoot, phase1 §1) publishes its MBI
+	 * channel table when the host wakes it via SCRATCH7; with the
+	 * transport opted in, run the kext-evidenced handshake and drain
+	 * the message registers once. */
+	if (ane->transport) {
+		err = ane_t6021_mbi_boot(ane);
+		if (!err)
+			ane_t6021_rtkit_drain(ane);
+	} else {
 		dev_info(ane->dev,
-			 "RTKit transport deferred (mailbox block unproven; rtkit_transport=1 opts in)\n");
-	return 0;
+			 "MBI transport deferred (rtkit_transport=1 opts in: SCRATCH handshake + channel table, capture-only)\n");
+	}
+	return err;
 }
 
 static const struct dev_pm_ops ane_t6021_pm_ops = {
@@ -307,9 +318,10 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto disable_pm;
 
-	/* After power: AIC2 mailbox interrupt (raw 884; dart-ane0's 885
+	/* After power: AIC2 ANE interrupt (raw 884; dart-ane0's 885
 	 * belongs to the dart driver and is never requested here).  Only
-	 * with the transport opted in — its thread is the mailbox path. */
+	 * with the transport opted in — its thread drains the MBI
+	 * message registers. */
 	if (ane->transport) {
 		err = devm_request_threaded_irq(dev, ane->irq, NULL,
 						ane_t6021_rtkit_irq_thread,
@@ -343,7 +355,7 @@ static void ane_t6021_remove(struct platform_device *pdev)
 {
 	struct ane_t6021 *ane = platform_get_drvdata(pdev);
 
-	/* devm irq actions run after remove(): free the mailbox IRQ
+	/* devm irq actions run after remove(): free the ANE IRQ
 	 * before the rings it drains go away. */
 	if (ane->irq_requested)
 		devm_free_irq(ane->dev, ane->irq, ane);
