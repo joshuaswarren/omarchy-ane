@@ -27,7 +27,6 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
-#include <linux/pm_runtime.h>
 
 #include "ane_t6021.h"
 
@@ -229,36 +228,6 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 	return 0;
 }
 
-static __maybe_unused int ane_t6021_runtime_resume(struct device *dev)
-{
-	struct ane_t6021 *ane = dev_get_drvdata(dev);
-	int err;
-
-	if (!ane->booted) {
-		err = ane_t6021_first_resume(ane);
-		if (err)
-			return err;
-	}
-
-	/* The fw (brought up by iBoot, phase1 §1) publishes its MBI
-	 * channel table when the host wakes it via SCRATCH7; with the
-	 * transport opted in, run the kext-evidenced handshake and drain
-	 * the message registers once. */
-	if (ane->transport) {
-		err = ane_t6021_mbi_boot(ane);
-		if (!err)
-			ane_t6021_rtkit_drain(ane);
-	} else {
-		dev_info(ane->dev,
-			 "MBI transport deferred (rtkit_transport=1 opts in: SCRATCH handshake + channel table, capture-only)\n");
-	}
-	return err;
-}
-
-static const struct dev_pm_ops ane_t6021_pm_ops = {
-	RUNTIME_PM_OPS(NULL, ane_t6021_runtime_resume, NULL)
-};
-
 static int ane_t6021_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -329,10 +298,16 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto detach_genpd;
 
-	pm_runtime_enable(dev);
-	err = pm_runtime_resume_and_get(dev);
-	if (err < 0)
-		goto disable_pm;
+	/* W13a: the gate + whitelist run EXPLICITLY here, with device
+	 * runtime PM never enabled — rpm_callback can therefore never
+	 * cache an error that hides this walk (the -22 trap), and the
+	 * whitelist always executes before any engine-window use.  The
+	 * pmgr islands are held on by the DL_FLAG_RPM_ACTIVE supplier
+	 * links from attach_genpd(), independent of consumer runtime
+	 * state. */
+	err = ane_t6021_first_resume(ane);
+	if (err)
+		goto detach_genpd;
 
 	/* After power: AIC2 ANE interrupt (raw 884; dart-ane0's 885
 	 * belongs to the dart driver and is never requested here).  Only
@@ -345,7 +320,7 @@ static int ane_t6021_probe(struct platform_device *pdev)
 						ane);
 		if (err < 0) {
 			dev_err(dev, "failed to request ane irq: %d\n", err);
-			goto put_pm;
+			goto shutdown;
 		}
 		ane->irq_requested = true;
 	}
@@ -363,12 +338,15 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	 * otherwise), so this runs in the verified coprocessor-alive
 	 * state. */
 	ane_t6021_csne_ping_attempt(ane);
+
+	/* W13: firmware load + validate + DART surface map (fw_load=1
+	 * opt-in; non-fatal, no boot action). */
+	ane_t6021_fwload_probe(ane);
 	return 0;
 
-put_pm:
-	pm_runtime_put_noidle(dev);
-disable_pm:
-	pm_runtime_disable(dev);
+shutdown:
+	/* rings (rtkit_init) + any fw surface unwind here; covers every
+	 * failure after rtkit_init and remove() (W13a review) */
 	ane_t6021_rtkit_shutdown(ane);
 detach_genpd:
 	ane_t6021_detach_genpd(ane);
@@ -379,12 +357,12 @@ static void ane_t6021_remove(struct platform_device *pdev)
 {
 	struct ane_t6021 *ane = platform_get_drvdata(pdev);
 
+	ane_t6021_fwload_remove(ane);
+
 	/* devm irq actions run after remove(): free the ANE IRQ
 	 * before the rings it drains go away. */
 	if (ane->irq_requested)
 		devm_free_irq(ane->dev, ane->irq, ane);
-	pm_runtime_disable(ane->dev);
-	pm_runtime_put_noidle(ane->dev);
 	ane_t6021_rtkit_shutdown(ane);
 	ane_t6021_detach_genpd(ane);
 }
@@ -401,7 +379,6 @@ static struct platform_driver ane_t6021_driver = {
 	.driver = {
 		.name = "ane_t6021",
 		.suppress_bind_attrs = true,
-		.pm = pm_ptr(&ane_t6021_pm_ops),
 		.of_match_table = ane_t6021_of_match,
 	},
 };
