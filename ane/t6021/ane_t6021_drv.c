@@ -163,7 +163,7 @@ static const struct dev_pm_ops ane_t6021_pm_ops = {
 static int ane_t6021_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *set_res;
+	struct resource *res;
 	struct ane_t6021 *ane;
 	int err;
 
@@ -195,29 +195,27 @@ static int ane_t6021_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
-	/* engine (whole 32 MiB block, block-relative) and pmgr windows
-	 * via the managed resource mapping; SET window by address,
-	 * read-only by repo rule (direct SET writes are firmware-locked
-	 * and external-abort; H13 precedent maps it outside the resource
-	 * API so nothing ever claims it for writing). */
-	for (unsigned int i = 0; i < ANE_T6021_REG_SET; i++) {
-		ane->base[i] = devm_platform_ioremap_resource_byname(
-			pdev, ane_t6021_reg_names[i]);
-		if (IS_ERR(ane->base[i])) {
-			err = PTR_ERR(ane->base[i]);
+	/* All three windows map by address outside the resource API:
+	 * the ADT puts the dart-ane0 windows inside the 32 MiB engine
+	 * aperture (block-relative W3 architecture) and the pmgr island
+	 * inside the PMGR syscon block, so region requests collide
+	 * with the bound darts / pmgr driver (-EBUSY, live probe
+	 * 2026-09-19). SET additionally stays read-only by repo rule
+	 * (direct SET writes external-abort; H13 precedent); no
+	 * engine-window write exists in this driver either. */
+	for (unsigned int i = 0; i < ANE_T6021_REG_COUNT; i++) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						   ane_t6021_reg_names[i]);
+		if (!res) {
+			err = -EINVAL;
 			goto detach_genpd;
 		}
-	}
-	set_res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "set");
-	if (!set_res) {
-		err = -EINVAL;
-		goto detach_genpd;
-	}
-	ane->base[ANE_T6021_REG_SET] = devm_ioremap(dev, set_res->start,
-						    ANE_T6021_SET_SIZE);
-	if (!ane->base[ANE_T6021_REG_SET]) {
-		err = -ENOMEM;
-		goto detach_genpd;
+		ane->base[i] = devm_ioremap(dev, res->start,
+					    resource_size(res));
+		if (!ane->base[i]) {
+			err = -ENOMEM;
+			goto detach_genpd;
+		}
 	}
 
 	err = ane_t6021_rtkit_init(ane);
