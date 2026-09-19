@@ -418,4 +418,8 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
  * yet (W2 §3). Sleeps (mutex) — process context only. */
 int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
 
+/* Probe-time one-shot CSNE_CMD_PING on EP1 (W5-live), behind
+ * mbi_doorbell=1 only; watches the fw response surfaces for 3 s. */
+void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane);
+
 #endif /* __ANE_T6021_H__ */
