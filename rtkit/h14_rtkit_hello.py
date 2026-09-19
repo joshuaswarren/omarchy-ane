@@ -14,6 +14,25 @@ Protocol per Asahi rtkit.c (RTKit v11/12):
   EPMAP: base [34:32], bitmap [31:0], LAST bit 51; host echoes base+LAST/MORE.
   Buffer request: type(bits 59..52)=1, size pages [51:44], iova [43:0].
 
+W2 decode adds (receipts/2026-09-18-h14-w2-protocol-decode.md, static-only):
+  - ANE app endpoints are 1..6 (K14 kext InitializeRTBuddyEndpoints opens
+    exactly these via RTBuddyService; per-EP config table __DATA_CONST.__const
+    +0x814e520, 40 B/entry): ep1 "INIT" 64K, ep2 "T2FC" 256K, ep3 "T2FH" 256K,
+    ep4 "T2HS" 64K, ep5 "T2HC" 128K, ep6 "T2HT" 64K (ep0 = empty slot).
+    Expect EPMAP to announce at least the fw-created subset of 1..6; answer
+    MORE/LAST for each accordingly.
+  - App-level ring doorbell word (NOT MGMT): u64 =
+    offset[43:0] | size_code[51:44] | unit[53:52]
+    (unit: 0=bytes, 1=*4K, 2=*1M, 3=*2M; K14 HandleRTBuddyMessage decode at
+    0x...95feff0 and SetupEndpoints packer at 0x...95fe660 agree).
+    Ring cursors live in the per-EP record (this+0x5c0 + ep*0x40: +0x08 size,
+    +0x18 endpoint obj, +0x20 u32 write offset, +0x28 command gate).
+  - ep2/ep3 (T2FC/T2FH) are the fw->host command channels the kext delivers
+    to processTargetToHostIOCommand; ep6 is polled via receiveMessage in
+    drainRtbuddyEndpointQueues. CSNE_CMD ids: see fw id->name table at selene
+    vaddr 0xea430 (16 B/entry {u16 id, u32 name-ptr, u32 tag}); INFERENCE_CALL
+    = 0x404, PROCEDURE_CALL = 0x204, IPC_ENDPOINT_SET = 0x15, BOOT = 0x10.
+
 Writes performed: only RTKit replies on the A2I mailbox (what the handshake
 requires).  No pmgr writes, no RVBAR writes, no register writes otherwise.
 """
