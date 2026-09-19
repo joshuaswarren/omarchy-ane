@@ -26,6 +26,8 @@
  */
 #include <crypto/sha2.h>
 #include <linux/dma-mapping.h>
+#include <linux/iommu.h>
+#include <linux/io.h>
 #include <linux/firmware.h>
 #include <linux/moduleparam.h>
 #include <linux/sizes.h>
@@ -39,6 +41,15 @@ module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load,
 		 "OPT-IN: validate + DART-map the selene PRELOAD payload "
 		 "(W13). No boot action; publication datum unevidenced.");
+
+static unsigned long long fw_iova;
+module_param(fw_iova, ullong, 0444);
+MODULE_PARM_DESC(fw_iova,
+		 "If nonzero, ALSO create a pinned alias mapping of the fw "
+		 "surface at this iova in the device's default domain "
+		 "(H14DartAudit prerequisite A: deterministic host mapping, "
+		 "expressible at whatever constant the iBoot trace yields). "
+		 "0 = record the allocator iova only (W14 behavior).");
 
 #define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
 
@@ -107,6 +118,35 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	ane->fw_iova = iova;
 	ane->fw_size = ANE_FW_BUF_SIZE;
 
+	if (fw_iova) {
+		/* H14DartAudit prerequisite A: alias the same physical
+		 * pages at a HOST-CHOSEN pinned iova in the device's
+		 * default domain, so the loader can express whatever
+		 * constant the iBoot placement trace yields without
+		 * depending on allocator choice. The pages are the same
+		 * coherent allocation (identity phys on arm64 direct
+		 * map), so both iovas view identical bytes. */
+		struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
+		phys_addr_t phys = page_to_phys(virt_to_page(buf));
+
+		if (!dom) {
+			dev_err(ane->dev, "fwload: no iommu domain for pinned iova\n");
+			dma_free_coherent(ane->dev, ANE_FW_BUF_SIZE, buf, iova);
+			return -ENODEV;
+		}
+		ret = iommu_map(dom, fw_iova, phys, ANE_FW_BUF_SIZE,
+				IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+		if (ret) {
+			dev_err(ane->dev, "fwload: pinned iova map %#llx: %d\n",
+				fw_iova, ret);
+			dma_free_coherent(ane->dev, ANE_FW_BUF_SIZE, buf, iova);
+			return ret;
+		}
+		ane->fw_pinned_iova = fw_iova;
+		dev_info(ane->dev, "fwload: pinned alias iova %#llx -> phys %pap\n",
+			 fw_iova, &phys);
+	}
+
 	dev_info(ane->dev,
 		 "fwload: selene PRELOAD validated + DART-mapped: 3 segs, "
 		 "entry %#llx, iova %pad size %#x (no boot action — "
@@ -120,6 +160,13 @@ void ane_t6021_fwload_remove(struct ane_t6021 *ane)
 {
 	if (!ane->fw_buf)
 		return;
+	if (ane->fw_pinned_iova) {
+		struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
+
+		if (dom)
+			iommu_unmap(dom, ane->fw_pinned_iova, ane->fw_size);
+		ane->fw_pinned_iova = 0;
+	}
 	dma_free_coherent(ane->dev, ane->fw_size, ane->fw_buf, ane->fw_iova);
 	ane->fw_buf = NULL;
 }
