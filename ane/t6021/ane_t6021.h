@@ -369,6 +369,12 @@ struct ane_t6021 {
 	bool mbi_table_ready;
 
 	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
+
+	/* W13 fw surface (fw_load=1): coherent, DART-mapped via the
+	 * device's iommu group. NULL unless loaded. */
+	void *fw_buf;
+	dma_addr_t fw_iova;
+	u32 fw_size;
 };
 
 /* ane_t6021_rtkit.c */
@@ -491,5 +497,11 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
 /* Probe-time one-shot CSNE_CMD_PING on EP1 (W5-live), behind
  * mbi_doorbell=1 only; watches the fw response surfaces for 3 s. */
 void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane);
+
+/* W13 firmware loader (ane_t6021_fwload.c): validate + DART-map the
+ * selene PRELOAD payload behind fw_load=1. Non-fatal to probe; no boot
+ * action (surface publication unevidenced, W13 §6). */
+int ane_t6021_fwload_probe(struct ane_t6021 *ane);
+void ane_t6021_fwload_remove(struct ane_t6021 *ane);
 
 #endif /* __ANE_T6021_H__ */

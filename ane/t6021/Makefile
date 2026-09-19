@@ -1,6 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_t6021.o
-	ane_t6021-objs := ane_t6021_drv.o ane_t6021_rtkit.o
+	ane_t6021-objs := ane_t6021_drv.o ane_t6021_rtkit.o ane_t6021_fwload.o
 	ccflags-y += -DANE_T6021_MODULE_VERSION='"$(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)"'
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
