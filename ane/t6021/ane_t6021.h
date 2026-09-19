@@ -153,9 +153,10 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
  *      0x…95f3c70-c); the cursors at rec+0x40/rec+0x58 track the last
  *      issued slot.
  * CSNE_CMD_PING = header-only 0x11 on EP1 (INIT) -> doorbell bit
- * 1 << 1 = 0x2.  SError-fatal-class writes (SCRATCH family) stay
- * out; only the a2i message register + doorbell are touched, and
- * only behind the mbi_doorbell opt-in. */
+ * 1 << 1 = 0x2.  Only the a2i message register + doorbell are
+ * touched, and only behind the mbi_doorbell opt-in (both stay
+ * host-write-fatal even behind the W8 grant, W9; SCRATCH family is
+ * host-writable granted, W9 nonzero latch). */
 
 /* MBI channel-table entry (kext stride 0x100, fields at +0x40 family:
  * type @+0x40, doorbell bit @+0x44, size @+0x48, phys @+0x50 —
