@@ -39,6 +39,20 @@ module_param(allow_unqualified, bool, 0444);
 MODULE_PARM_DESC(allow_unqualified,
 		 "Bind the unqualified T6021 skeleton (W3: no execution proven on silicon)");
 
+/* The mailbox transport stays OFF by default: every host access to the
+ * +0x1600000 cpu-control/mailbox family has been fatal on t6021 (SError
+ * on CPU1 at +0x1608114 under the full eight-word raise + ane_cpu
+ * auto-clear, 2026-09-19; phase1 hang at the same family 09-18).  The
+ * kext never READS the block at runtime, and the t6001/t8103
+ * precedents have no RTKit mailbox there — the address family was
+ * m1n1-ASC analogy, now falsified.  Status-only bring-up still proves
+ * the coprocessor alive (RVBAR/VERS/RTB status = the phase1 criteria).
+ * Opt in ONLY when a real t6021 source has pinned the transport. */
+static bool rtkit_transport;
+module_param(rtkit_transport, bool, 0444);
+MODULE_PARM_DESC(rtkit_transport,
+		 "OPT-IN: attempt the unproven +0x1608xxx RTKit mailbox (known SError class)");
+
 /* pmgr island words this device consumes, inside the "pmgr" window:
  * ane_cpu@2e0, ane_sys_mpm@4000, ane_td@4008, ane_base@4010,
  * ane_set1..4@4018-4030 (overlay phandle chain). */
@@ -209,8 +223,12 @@ static __maybe_unused int ane_t6021_runtime_resume(struct device *dev)
 	/* The fw (brought up by iBoot, phase1 §1) opens the exchange with
 	 * MGMT HELLO on its own; the mailbox IRQ thread drains it. Drain
 	 * once here in case the HELLO landed before the IRQ was
-	 * requested. */
-	ane_t6021_rtkit_drain(ane);
+	 * requested — only with the transport opted in. */
+	if (ane->transport)
+		ane_t6021_rtkit_drain(ane);
+	else
+		dev_info(ane->dev,
+			 "RTKit transport deferred (mailbox block unproven; rtkit_transport=1 opts in)\n");
 	return 0;
 }
 
@@ -278,6 +296,8 @@ static int ane_t6021_probe(struct platform_device *pdev)
 		}
 	}
 
+	ane->transport = rtkit_transport;
+
 	err = ane_t6021_rtkit_init(ane);
 	if (err < 0)
 		goto detach_genpd;
@@ -288,18 +308,25 @@ static int ane_t6021_probe(struct platform_device *pdev)
 		goto disable_pm;
 
 	/* After power: AIC2 mailbox interrupt (raw 884; dart-ane0's 885
-	 * belongs to the dart driver and is never requested here). */
-	err = devm_request_threaded_irq(dev, ane->irq, NULL,
-					ane_t6021_rtkit_irq_thread,
-					IRQF_ONESHOT, "ane_t6021", ane);
-	if (err < 0) {
-		dev_err(dev, "failed to request ane irq: %d\n", err);
-		goto put_pm;
+	 * belongs to the dart driver and is never requested here).  Only
+	 * with the transport opted in — its thread is the mailbox path. */
+	if (ane->transport) {
+		err = devm_request_threaded_irq(dev, ane->irq, NULL,
+						ane_t6021_rtkit_irq_thread,
+						IRQF_ONESHOT, "ane_t6021",
+						ane);
+		if (err < 0) {
+			dev_err(dev, "failed to request ane irq: %d\n", err);
+			goto put_pm;
+		}
+		ane->irq_requested = true;
 	}
 
 	dev_info(dev,
-		 "loaded ane_t6021 %s (RTKit bring-up; 8-domain power gate; CSNE_CMD submission = W4)\n",
-		 ANE_T6021_MODULE_VERSION);
+		 "loaded ane_t6021 %s (%s; 8-domain power gate; CSNE_CMD submission = W4)\n",
+		 ANE_T6021_MODULE_VERSION,
+		 ane->transport ? "RTKit transport ON" :
+				  "status-only bring-up, transport deferred");
 	return 0;
 
 put_pm:
@@ -318,7 +345,8 @@ static void ane_t6021_remove(struct platform_device *pdev)
 
 	/* devm irq actions run after remove(): free the mailbox IRQ
 	 * before the rings it drains go away. */
-	devm_free_irq(ane->dev, ane->irq, ane);
+	if (ane->irq_requested)
+		devm_free_irq(ane->dev, ane->irq, ane);
 	pm_runtime_disable(ane->dev);
 	pm_runtime_put_noidle(ane->dev);
 	ane_t6021_rtkit_shutdown(ane);

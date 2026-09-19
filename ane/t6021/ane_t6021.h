@@ -207,6 +207,13 @@ struct ane_t6021 {
 	DECLARE_BITMAP(announced, 256);	/* EPMAP accumulation */
 	bool booted;		/* SET_AP_PWR_STATE ACK seen */
 
+	/* The +0x1608xxx mailbox block is read-fatal on t6021 (SExternal-
+	 * Abort 2026-09-19 under the full raise; phase1 hang 09-18);
+	 * default off = status-only bring-up, opt-in for transport
+	 * experiments once a real source pins the register block. */
+	bool transport;
+	bool irq_requested;
+
 	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
 };
 
