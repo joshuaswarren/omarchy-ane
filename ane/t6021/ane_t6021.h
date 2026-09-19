@@ -31,8 +31,12 @@
  *                  four-window quartet (0x85800000/85810000/85820000/
  *                  85804000, each 0x4000); the installed overlay's
  *                  three-node split (t6001-proven pattern) is kept.
- *  power-domains = six: ane_cpu@2e0, ane_set1..4@4018-4030,
- *                  ane_sys_mpm@4000 (phandle chain per the overlay)
+ *  power-domains = eight, phase1 raise order (sys_mpm→td→base→set1..4,
+ *                  ane_cpu last): ane_sys_mpm@4000, ane_td@4008,
+ *                  ane_base@4010, ane_set1..4@4018-4030, ane_cpu@2e0.
+ *                  ane_td/ane_base were the W3 chain gap (six consumed,
+ *                  block access reset the machine); receipt
+ *                  2026-09-19-h14-init-sequence-kext-trace §3.
  */
 
 #ifndef __ANE_T6021_H__
@@ -60,8 +64,10 @@ enum {
 /* ANE-block-relative ASC/RTBuddy addresses (phase1 §2) */
 #define ANE_ASC_CPU_CONTROL	0x1600044	/* RUN = BIT(4) */
 #define ANE_ASC_RVBAR		0x1050000	/* fw entry | valid bit0 */
+#define ANE_ASC_EDPRCR		0x1010310	/* phase1 S2 whitelist */
 #define ANE_ASC_VERS		0x1840000
 #define ANE_ASC_RTB_STATUS	0x1840088	/* K14 poll: value < 2 */
+#define ANE_ASC_RTB_STATUS_UNK7C 0x184007c	/* phase1 S2 whitelist */
 #define ANE_ASC_RTB_GPIO0	0x1840048	/* ack GPIOs 0..7, +0x48..+0x64 */
 
 /* ASC mailbox, m1n1 ASCRegs layout at block +0x1608000 (= Asahi

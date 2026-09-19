@@ -70,6 +70,14 @@
 		};
 	};
 
+	/* ane_td@4008 and ane_base@4010 need no fragment: the stock DTB
+	 * already gives them phandles (0xb5, 0xb6 — they sit inside the
+	 * set1..4 parent cascade). The W3 skeleton consumed only six of
+	 * the eight live ANE ps words and the first engine-window read
+	 * reset the machine; receipt 2026-09-19-h14-init-sequence-kext-
+	 * trace §3 pins the eight-word raise (parent-first, ane_cpu
+	 * last) as the proven precondition for any block access. */
+
 	fragment@2 {
 		target-path = "/soc";
 
@@ -117,12 +125,18 @@
 				interrupt-names = "ane";
 				interrupts = <0 0 884 4>;
 				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
-				power-domains = <0x1f0>,	/* ane_cpu@2e0 */
+				/* Eight live ANE ps words, phase1 raise
+				 * order: parent-first, ane_cpu LAST
+				 * (attach order = raise order, each
+				 * entry carries DL_FLAG_RPM_ACTIVE). */
+				power-domains = <0x1f5>,	/* ane_sys_mpm@4000 */
+						<0xb5>,		/* ane_td@4008 */
+						<0xb6>,		/* ane_base@4010 */
 						<0xb7>,		/* ane_set1@4018 */
 						<0xb8>,		/* ane_set2@4020 */
 						<0xb9>,		/* ane_set3@4028 */
 						<0x1f1>,	/* ane_set4@4030 */
-						<0x1f5>;	/* ane_sys_mpm@4000 (fragment@3) */
+						<0x1f0>;	/* ane_cpu@2e0 (last) */
 				status = "okay";
 			};
 		};
