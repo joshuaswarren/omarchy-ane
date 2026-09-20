@@ -438,6 +438,10 @@ struct ane_t6021_boot_cfg {
 	int preflight_ok;	/* EVERY prerequisite closed (Main: no
 				 * partial boot — the whole sequence or
 				 * nothing) */
+	int preboot_table_safe;	/* LIVE-FAULT gate: 0 = the pre-CPU table
+				 * block is skipped with -EAGAIN and
+				 * ZERO writes (2026-09-20 wedge); 1 =
+				 * re-armed. */
 	u64 fw_dva;		/* staged surface DVA (fold input) */
 };
 
@@ -480,10 +484,17 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (!cfg->preflight_ok)
 		return -ENODATA;
 
-	io->phase(io->ctx, "P0 preboot-table");
 	/* pre-CPU engine table (pass4 receiver, pass5 gate: REQUIRED
-	 * every EnableANEClocksAndPower; residual alias/indirect
-	 * writer risk documented in the preflight list). */
+	 * every EnableANEClocksAndPower; residual alias/indirect writer
+	 * risk documented in the preflight list).
+	 * LIVE-FAULT 2026-09-20: this block wedged the machine (P0 then
+	 * silence — stall could be the FIRST write; P1 never reached;
+	 * hardware reset 16:24:08) — pf_preboot_table_safe gates it
+	 * OFF; nothing below runs until re-armed. */
+	if (!cfg->preboot_table_safe)
+		return -EAGAIN;	/* BEFORE any write: accidental-repeat
+				 * prevention (Main 2026-09-20) */
+	io->phase(io->ctx, "P0 preboot-table");
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE0,
 		 ANE_T6021_BOOT_TABLE_VALUE);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE1,

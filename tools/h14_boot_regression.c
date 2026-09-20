@@ -532,6 +532,29 @@ int main(void)
 			      "state stays fenced");
 		}
 
+		/* (1b) live-fault gate OFF (2026-09-20 wedge): the whole
+		 * sequence is skipped with -EAGAIN and ZERO writes —
+		 * accidental-repeat prevention, before any write. */
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_safe = 0,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -EAGAIN,
+			      "run: table gate OFF = -EAGAIN",
+			      "live-fault gate, zero writes");
+			check(fk.nwr == 0 && cs == 0 && fa == 0 && bo == 0,
+			      "gate-off: zero writes, no flags",
+			      "accidental-repeat prevention");
+		}
+
 		/* (2) open gate, bit0-set RVBAR (live state): lawful
 		 * skip branch. */
 		fake_reset(&fk);
@@ -545,6 +568,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 			int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa,
@@ -632,6 +656,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -656,6 +681,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -676,6 +702,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -698,6 +725,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -725,6 +753,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
+				.preboot_table_safe = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
