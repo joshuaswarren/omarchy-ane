@@ -293,7 +293,7 @@ int main(void)
 			.prev_fw_len = 0, /* first boot */
 			.heap_floor = 0x30000ULL,
 			.pool_dma = 0x5555aaaab000ULL,
-			.pool_word0 = 0x40000, /* pool total length (hypothesis-grade, selene open) */
+			.pool_word0 = 0x40000, /* MECHANISM-ONLY test value: the shipped [0x60] stays HARD-GATED (pf_pool_word0_proven) until pool+0x00 producer/consumer proof lands */
 		};
 		const u64 heap_size = ane_t6021_heap_size(0x8000, 0x30000,
 							  0x300000000ULL);
@@ -347,17 +347,22 @@ int main(void)
 		check(ane_t6021_ipc_size(0x4000, 0x5000) == 0x5001,
 		      "ipc size: huge ordinal+1 dominates",
 		      "ordinal+1 wins over page size");
-		check(ane_t6021_heap_size(0, 0x30000, 0x300000000ULL) == 0,
+		check(ane_t6021_heap_size(0, 0x30000,
+					  ANE_T6021_BOOT_HEAP_CEILING) == 0,
 		      "heap: request 0 -> no heap surface",
 		      "pass6: 0 if request 0");
 		check(ane_t6021_heap_size(0x8000, 0x30000,
-					  0x300000000ULL) == 0x30000,
+					  ANE_T6021_BOOT_HEAP_CEILING) == 0x30000,
 		      "heap: floor dominates small request",
 		      "MAX(request, floor)");
 		check(ane_t6021_heap_size(0x40000, 0x30000,
-					  0x300000000ULL) == 0x40000,
+					  ANE_T6021_BOOT_HEAP_CEILING) == 0x40000,
 		      "heap: request above floor passes",
 		      "MAX(request, floor)");
+		check(ane_t6021_heap_size(0x03000000, 0x30000,
+					  ANE_T6021_BOOT_HEAP_CEILING) == -E2BIG,
+		      "heap: request over the 32 MiB budget refused",
+		      "operational budget, distinct from ABI width");
 		check(ane_t6021_heap_size((u32)0x20000000ULL, 0x30000,
 					  0x10000000ULL) == -E2BIG,
 		      "heap: request over a tighter ceiling REFUSED",
