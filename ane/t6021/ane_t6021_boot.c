@@ -189,6 +189,14 @@ static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
  * closure, 183fd50 word0 confirmation, provider strategy acceptance,
  * and the netconsole end-to-end Wi-Fi marker (m2-wifi-check-1789937086,
  * 2026-09-20T15:44:47.121595Z from 192.168.3.103:6668). */
+/* LIVE-FAULT GATE (2026-09-20 16:23:07 window): the machine wedged
+ * INSIDE the pre-CPU table block (P0 emitted; the 3-write block
+ * eng+0xb38/b98/bf8 <- 0x01ff01ff stalled — could be the FIRST write;
+ * P1 never reached; hardware reset 16:24:08). OFF so the block cannot
+ * re-fire accidentally; re-arms only after the table-base source
+ * analysis (Reset lane) closes the cause. Feeds cfg.preboot_table_safe. */
+static const bool pf_preboot_table_safe = false;
+
 static const bool pf_main_lifetime_review = true;
 
 static bool ane_t6021_boot_preflight_complete(void)
@@ -196,7 +204,7 @@ static bool ane_t6021_boot_preflight_complete(void)
 	return pf_provider_genpd_strategy && pf_pool_word0_proven &&
 	       pf_heap_floor_pinned && pf_dart_page_floor &&
 	       pf_rvbar_lifecycle && pf_pass6_init_contract &&
-	       pf_main_lifetime_review;
+	       pf_preboot_table_safe && pf_main_lifetime_review;
 }
 
 /* STATIC boot sources — populated per the pinned contract (Main
@@ -379,6 +387,7 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	};
 	struct ane_t6021_boot_cfg cfg = {
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
+		.preboot_table_safe = pf_preboot_table_safe,
 		.fw_dva = ane->fw_iova,
 	};
 	int cs = 0, fa = 0, bo = 0;
