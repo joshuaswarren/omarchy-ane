@@ -403,7 +403,8 @@ struct ane_t6021 {
 	u64 boot_scratch_result;	/* SCRATCH1<<32 | SCRATCH0 captured
 					 * at DONE — raw; success semantics
 					 * UNSOURCED (never inferred) */
-	bool response_validated;	/* FALSE until the DONE response
+	bool response_validated;
+	bool hybrid_pinned;	/* FALSE until the DONE response
 					 * semantics are sourced AND the
 					 * raw address is range/length
 					 * validated against owned

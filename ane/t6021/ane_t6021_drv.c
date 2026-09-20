@@ -246,7 +246,7 @@ static void ane_t6021_cleanup(struct ane_t6021 *ane)
 	 * endpoint rings, IRQ and the power-domain links stay exactly
 	 * as they are; nothing under a possibly-fetching CPU is torn
 	 * down. Reboot is the cleanup. */
-	if (ane->cpu_started) {
+	if (ane->cpu_started || ane->hybrid_pinned) {
 		dev_err(ane->dev,
 			"wedged-pin: remove held — fw surface, rings, IRQ and power-domain links preserved until reboot (no verified quiescence; never tear down under a started CPU)\n");
 		return;

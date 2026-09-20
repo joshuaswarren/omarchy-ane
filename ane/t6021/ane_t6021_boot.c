@@ -148,7 +148,7 @@ static int fw_iova_set(const char *val, const struct kernel_param *kp)
 }
 static int fw_iova_get(char *buf, const struct kernel_param *kp)
 {
-	if (fw_boot && fw_iova_exported)
+	if (fw_iova_exported)
 		return scnprintf(buf, PAGE_SIZE, "0x%016llx\n",
 				 (u64)exported_fw_iova);
 	return scnprintf(buf, PAGE_SIZE, "0x0000000000000000\n");
@@ -484,8 +484,11 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	u64 rvbar;
 
 	if (!fw_boot) {
+		/* fw_boot=0: bind status-only. fw_load stages + DART-maps,
+		 * export gets set. NO boot MMIO. Userspace reads fw_iova
+		 * from sysfs and runs the boot sequence via DevMem. */
 		dev_info(ane->dev,
-			 "boot: fenced (fw_boot=0); no boot reads or writes\n");
+			 "boot: fw_boot=0 — status-only bind, staging retained for userspace hybrid boot\n");
 		return 0;
 	}
 
@@ -559,6 +562,18 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	/* Export the staged DVA for userspace (hybrid boot path) */
 	fw_iova_exported = true;
 	exported_fw_iova = (u64)ane->fw_iova;
+
+	/* WEDGED-PIN for hybrid boot: retain module ref so rmmod/unbind
+	 * cannot free the coherent fw+DART mapping while userspace does
+	 * the boot sequence. Never released — reboot reclaims. */
+	if (!try_module_get(THIS_MODULE)) {
+		dev_err(ane->dev,
+			"fwload: module dying — cannot retain fw+DART mapping\n");
+		return -EBUSY;
+	}
+	ane->hybrid_pinned = true;
+	dev_warn(ane->dev,
+		 "fwload: module PINNED until reboot (fw+DART mapping live)\n");
 
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
