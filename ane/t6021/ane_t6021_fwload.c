@@ -53,6 +53,7 @@
  * frees only what fw_buf still names. Load is non-fatal to probe.
  */
 #include <crypto/sha2.h>
+#include <linux/dma-map-ops.h>
 #include <linux/dma-mapping.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
