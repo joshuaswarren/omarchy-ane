@@ -6,7 +6,8 @@
  * Implements, behind fw_load=1:
  *   1. request_firmware("apple/ane/t602x_ane0_fw_selene_rc4x.macho")
  *   2. Validation via ane_fw_validate.h (shared with the offline
- *      regression tools/h14_fwload_regression.c): sha256 pin, strict
+ *      regression h14_fwload_regression.c, shipped in
+ *      ane-linux-experiments/tools/): sha256 pin, strict
  *      exact-image assertions (7 load commands, 3 pinned segments,
  *      entry 0, bounded LC walk).
  *   3. dma_alloc_coherent on the ANE platform device: the buffer is

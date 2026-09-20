@@ -363,9 +363,20 @@ ane_t6021_boot_prepare_publish(const struct ane_t6021_init_sources *s,
 	}
 
 	/* ordinal: exact u32 +1 on the READ SCRATCH1 value (kext add
-	 * w8,w0,#1; callers pass the read value, never pre-incremented) */
-	ane_t6021_init_struct_fill(a->pool, s, a->heap_size, a->heap_dva,
-				   (u32)(scratch1_read + 1));
+	 * w8,w0,#1; callers pass the read value, never pre-incremented).
+	 * HEADER SOURCES come from the ALLOCATIONS: s->ipc_dva/pool_dma
+	 * may be zero in the caller's static sources — fill from the
+	 * allocator outputs (a->ipc_dva/a->pool_dva), never from s
+	 * (Main review: zero-DVA header bug). */
+	{
+		struct ane_t6021_init_sources filled = *s;
+
+		filled.ipc_dva = a->ipc_dva;
+		filled.pool_dma = a->pool_dva;
+		ane_t6021_init_struct_fill(a->pool, &filled, a->heap_size,
+					   a->heap_dva,
+					   (u32)(scratch1_read + 1));
+	}
 	*lo = (u32)(a->pool_dva & 0xffffffffU);
 	*hi = (u32)(a->pool_dva >> 32);
 	return 0;
@@ -411,6 +422,11 @@ struct ane_t6021_boot_io {
 					     * dma_wmb() = dmb oshst on
 					     * arm64; NOT claimed as dsb st
 					     * (completion) */
+	void (*phase)(void *ctx, const char *what); /* bounded phase log:
+					     * emitted ONCE before each
+					     * write/poll block so a crash
+					     * source survives netconsole
+					     * (never per-poll) */
 	void (*poll_wait)(void *ctx);    /* 1 ms poll delay */
 	/* prepare(): called once, strictly AFTER poll A and BEFORE the
 	 * SCRATCH0/1 publish; returns the suballoc DVA halves. Kernel
@@ -464,6 +480,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (!cfg->preflight_ok)
 		return -ENODATA;
 
+	io->phase(io->ctx, "P0 preboot-table");
 	/* pre-CPU engine table (pass4 receiver, pass5 gate: REQUIRED
 	 * every EnableANEClocksAndPower; residual alias/indirect
 	 * writer risk documented in the preflight list). */
@@ -474,6 +491,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE2,
 		 ANE_T6021_BOOT_TABLE_VALUE);
 
+	io->phase(io->ctx, "P1 scratch-clear+pulse");
 	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = 1,
 	 * pulse SCRATCH7 1 -> 0 (stale READY/wake cleared pre-CPU). */
 	for (i = 0; i < 8; i++)
@@ -483,6 +501,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 1);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 0);
 
+	io->phase(io->ctx, "P2 rvbar");
 	/* S2: RVBAR skip-or-fold (bit0 set = lawful skip branch; no
 	 * latch override, no reset before first attempt). */
 	rvbar = io->rd64(io->ctx, ANE_T6021_BOOT_REG_RVBAR);
@@ -490,12 +509,14 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		io->wr64(io->ctx, ANE_T6021_BOOT_REG_RVBAR,
 			 ane_t6021_rvbar_compose(cfg->fw_dva));
 
+	io->phase(io->ctx, "P3 cpu-release");
 	/* S3: CPU release — both paths, strictly 0 then 0x10. */
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_CPUCTRL, 0);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_CPUCTRL,
 		 ANE_T6021_CPU_RUN_RELEASE);
 	*cpu_started = 1;
 
+	io->phase(io->ctx, "P4 pollA-READY");
 	/* S4: poll A — FRESH READY (the pulse made it unambiguous). */
 	for (i = 0; i < ANE_T6021_BOOT_TABLE_POLLS; i++) {
 		v = io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7);
@@ -507,6 +528,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		return -ETIMEDOUT;
 	*fw_alive = 1;
 
+	io->phase(io->ctx, "P5 prepare+publish");
 	/* S5-S6: prepare (alloc/fill; kernel backend owns DMA), then the
 	 * publish barrier, then publish suballoc DVA low32/high32, then
 	 * wake. Barrier semantics (Main review 2026-09-20): the kernel
@@ -526,9 +548,11 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH0, lo);
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH1, hi);
 	}
+	io->phase(io->ctx, "P6 wake");
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7,
 		 ANE_T6021_BOOT_WAKE_REQ);
 
+	io->phase(io->ctx, "P7 pollB-DONE");
 	/* S7: poll B — DONE; read back the SCRATCH0/1 result u64. */
 	for (i = 0; i < ANE_T6021_BOOT_TABLE_POLLS; i++) {
 		v = io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7);

@@ -18,6 +18,7 @@
  */
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -81,6 +82,8 @@ struct fake {
 	int s7_never_ack;
 	int failed;
 	int fail_alloc_idx;   /* fail the Nth allocation (-1 = none) */
+	const char *phase[16];
+	int nphase;
 	u32 prep_lo;
 	u32 prep_hi;
 	u32 scratch3_req;
@@ -94,11 +97,13 @@ struct fake {
  * purpose: catches low-byte-only serialization) */
 static const struct ane_t6021_init_sources asm_src = {
 	.fw_dva = 0x0000deadbeef000ULL,
-	.ipc_dva = 0x00000badc0de000ULL,
+	.ipc_dva = 0,   /* ZERO input: [0x08] must come from the
+			 * ALLOCATOR output (Main zero-DVA bug) */
 	.cfg_size = 0x500000,
 	.prev_fw_len = 0x1234,
 	.heap_floor = 0x30000ULL,
-	.pool_dma = 0x5555aaaab000ULL,
+	.pool_dma = 0,  /* ZERO input: [0x58] must come from the
+			 * ALLOCATOR output */
 	.pool_word0 = 0x40000, /* pool total length: HYPOTHESIS-GRADE in
 				* shipped sources; here it exercises the
 				* fill's u64 copy — the SHIPPED value
@@ -221,6 +226,15 @@ static void f_wait(void *ctx)
 
 	(void)ctx;
 	f->polls++;
+}
+
+static void f_phase(void *ctx, const char *what)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+	if (f->nphase < (int)(sizeof(f->phase) / sizeof(f->phase[0])))
+		f->phase[f->nphase++] = what;
 }
 
 static int f_prepare(void *ctx, u32 *lo, u32 *hi)
@@ -492,6 +506,7 @@ int main(void)
 			.rd32 = f_rd32, .rd64 = f_rd64,
 			.wr32 = f_wr32, .wr64 = f_wr64,
 			.publish_barrier = f_dsb, .poll_wait = f_wait,
+			.phase = f_phase,
 			.prepare = f_prepare,
 		};
 
@@ -590,9 +605,9 @@ int main(void)
 			check(fk.aiov[2] == 0x0000feedface000ULL,
 			      "SHARED assembly heap DVA",
 			      "fill sees the ALLOCATED iova (no NULL publish)");
-			check(rd_le64(fake_mem + 0x58) == asm_src.pool_dma,
-			      "publish halves = pool DVA",
-			      "pool DVA at header [0x58] from the shared split");
+			check(rd_le64(fake_mem + 0x58) == fk.aiov[0],
+			      "publish header [0x58] = ALLOCATED pool DVA",
+			      "not the zeroed input source (Main zero-DVA bug)");
 			check(fk.wval[16] == (u32)(0x5555aaaab000ULL & 0xffffffffU) &&
 			      fk.wval[17] == (u32)(0x5555aaaab000ULL >> 32),
 			      "publish low32/high32 from prepare",

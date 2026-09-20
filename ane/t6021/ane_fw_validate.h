@@ -4,14 +4,15 @@
  *
  * Single source of truth shared by the kernel loader
  * (ane_t6021_fwload.c) and the offline regression
- * (tools/h14_fwload_regression.c, userspace). Strict EXACT-image
+ * (h14_fwload_regression.c, userspace — shipped in
+ * ane-linux-experiments/tools/). Strict EXACT-image
  * assertions (no generic Mach-O parsing): the pinned t6021 selene
  * payload has exactly 7 load commands, 3 segments, entry 0, and zeroed
  * bootstrap page tables, per
  * receipts/2026-09-19-h14-w13-boot-contract.md.
  *
  * Userspace consumers typedef u8/u32/u64/size_t/bool and provide
- * get_unaligned_le32/64 + memcmp (see tools/h14_fwload_regression.c);
+ * get_unaligned_le32/64 + memcmp (see that tool's source);
  * kernel consumers get these from linux/types.h + linux/string.h.
  * This header intentionally includes nothing.
  */
