@@ -137,13 +137,14 @@ module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
 		 "OPT-IN: boot state resolution + report (W15, read-only until the preboot/RVBAR prerequisites land — see ane_t6021_boot.c header).");
 
-/* Boot-write gates — the ENTIRE write sequence (preboot engine table,
- * RVBAR resolution, CPU start, SCRATCH publication) is gated on ONE
- * complete-preflight flag: it runs start-to-finish once EVERY named
- * prerequisite is closed by a cited commit, or not at all (Main
- * 2026-09-20: no partial mutating boot for diagnostics; writes behind
- * complete preflight). Flipping this flag is a Main-reviewed commit,
- * not a runtime knob. */
+/* Boot-write gate — the ENTIRE write sequence (preboot engine table,
+ * scratch clear + pulse, RVBAR resolution, CPU release, publication,
+ * wake) is gated on ONE complete-preflight flag checked BEFORE any
+ * write: it runs start-to-finish once EVERY prerequisite is closed by
+ * a cited commit — including ALL init-source values (no partial boot,
+ * no mid-sequence fence: Main 2026-09-20) — or not at all. Flipping
+ * it is a Main-reviewed commit that also populates the sources and
+ * adds the kernel io backend, never a runtime knob. */
 static const bool boot_preflight_complete = false;
 
 /* Poll A/B bound: the kext polls <=1000 x sleep(1ms) (selene poll
@@ -151,87 +152,14 @@ static const bool boot_preflight_complete = false;
 #define ANE_BOOT_ACK_POLL_US	1000
 #define ANE_BOOT_POLL_MS	1000
 
-/* The COMPLETE resolved legacy-boot sequence (rvbar-lifecycle receipt
- * 6288b0b, linux_first_boot_order 1-10, 57/57 anchors; selene raw
- * anchors per the ack-model comment). UNREACHABLE until
- * boot_preflight_complete flips in a Main-reviewed commit. Steps:
- *
- *   S1  SCRATCH6 <- 1; pulse SCRATCH7 1 -> 0 (stale READY/wake
- *       cleared BEFORE CPU start; informational reads logged).
- *   S2  RVBAR read64: bit0 clear -> write64 entry fold; bit0 set ->
- *       lawful skip (no reset before first attempt).
- *   S3  CPU_CONTROL write32 0 then 0x10 (both paths); cpu_started.
- *   S4  Poll A: SCRATCH7 == ACK, 1000 x 1ms -> FRESH READY = fw alive
- *       (the pulse made it unambiguous). Timeout: HOLD — no in-kernel
- *       power cycle (PMGR ps writes are the 2026-09-19 freeze class);
- *       recovery is a Main-decided operation on a live state.
- *   S5  Publication — STILL FENCED on the init-structure opens
- *       ([0x20]/[0x28]/[0x30]/[0x50] producers, IPC cap numeric, pool
- *       total size): fill + dsb st + SCRATCH0/1 publish cannot run.
- *   S6  Wake: SCRATCH7 <- 0xf7fbdff9.
- *   S7  Poll B: SCRATCH7 DONE -> booted; read back SCRATCH0/1 u64. */
-static int ane_t6021_boot_start(struct ane_t6021 *ane)
-{
-	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-	u64 rvbar;
-	u32 v;
-	int err;
-
-	/* S1: scratch clear + stale-ack pulse (pre-CPU). */
-	writel(1, eng + ANE_MBI_SCRATCH6);
-	writel(1, eng + ANE_MBI_SCRATCH7);
-	writel(0, eng + ANE_MBI_SCRATCH7);
-	dev_info(ane->dev,
-		 "boot S1: SCRATCH6 <- 1, SCRATCH7 pulsed 1->0 (stale ack cleared); post-pulse reads scratch6=%08x scratch7=%08x\n",
-		 readl(eng + ANE_MBI_SCRATCH6),
-		 readl(eng + ANE_MBI_SCRATCH7));
-
-	/* S2: RVBAR skip-or-fold. */
-	rvbar = readq(eng + ANE_ASC_RVBAR);
-	if (!ane_t6021_rvbar_latched(rvbar)) {
-		u64 entry = ane_t6021_rvbar_compose(ane->fw_iova);
-
-		writeq(entry, eng + ANE_ASC_RVBAR);
-		rvbar = readq(eng + ANE_ASC_RVBAR);
-		dev_info(ane->dev,
-			 "boot S2: RVBAR <- %016llx readback %016llx\n",
-			 entry, rvbar);
-	} else {
-		dev_info(ane->dev,
-			 "boot S2: bit0 set — lawful skip (entry bits %0llx); no latch override\n",
-			 ane_t6021_rvbar_entry_bits(rvbar));
-	}
-
-	/* S3: CPU release, both paths, strictly 0 then 0x10. */
-	writel(0, eng + ANE_ASC_CPU_CONTROL);
-	writel(ANE_T6021_CPU_RUN_RELEASE, eng + ANE_ASC_CPU_CONTROL);
-	ane->cpu_started = true;
-	dev_info(ane->dev,
-		 "boot S3: CPU_CONTROL <- 0x10 (RUN released); cpu_status=%08x\n",
-		 readl(eng + ANE_ASC_CPU_STATUS));
-
-	/* S4: poll A — FRESH READY. Past this write there is no safe
-	 * teardown: timeout HOLDS state (no power cycle in-kernel). */
-	err = readl_poll_timeout(eng + ANE_MBI_SCRATCH7, v,
-				 v == ANE_T6021_BOOT_ACK,
-				 ANE_BOOT_ACK_POLL_US,
-				 ANE_BOOT_POLL_MS * 1000);
-	if (err) {
-		dev_err(ane->dev,
-			"boot S4: READY poll TIMEOUT (%ums, SCRATCH7=%08x) — CPU START UNCONFIRMED; HOLDING state (no teardown, no in-kernel power cycle — recovery vehicle is a Main decision); sessions stay fenced\n",
-			ANE_BOOT_POLL_MS, v);
-		return 0;
-	}
-	ane->fw_alive = true;
-	dev_info(ane->dev,
-		 "boot S4: fresh READY SCRATCH7=%08x SCRATCH6=%08x — fw alive\n",
-		 v, readl(eng + ANE_MBI_SCRATCH6));
-
-	/* S5: publication — fenced on the init-structure opens. */
-	dev_err(ane->dev,
-		"boot S5: publication FENCED — init fields without pinned Linux sources: [0x20] (obj2 +0x18), [0x28] (w22), [0x30] (fw-load progress semantics), [0x50] ([x23+4] object), IPC size cap (dev+0x3A70), pool total size; zero-gap contract requires the sources first\n");
-	return -ENODATA;
-}
+/* The COMPLETE resolved legacy-boot sequence is implemented ONCE in
+ * ane_t6021_boot.h (ane_t6021_boot_run) against an io backend, so the
+ * fake-MMIO trace check exercises the exact code the device will run
+ * (Main: runnable trace check; implement the device wiring only after
+ * ALL sources close — until then this file performs no boot write).
+ * The kernel backend (readl/writeq/udelay wrappers + prepare hook
+ * doing the pool/IPC allocations and the sourced fill) is the small
+ * reviewed increment that lands with the gate flip. */
 
 int ane_t6021_boot_probe(struct ane_t6021 *ane)
 {
@@ -316,8 +244,10 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	 * by a cited commit, and then the sequence runs start-to-finish.
 	 * With fw_boot=1 this -ENODATA FAILS the probe before any
 	 * write; with fw_boot=0 this function returned at the fence
-	 * above. When the preflight closes, this gate dispatches to the
-	 * full S1-S7 sequence in ane_t6021_boot_start(). */
+	 * above. The sequence itself is ane_t6021_boot_run() in
+	 * ane_t6021_boot.h (fake-MMIO-trace-tested); the kernel io
+	 * backend + source population + dispatch land together in the
+	 * Main-reviewed gate-flip commit, after ALL sources close. */
 	if (!boot_preflight_complete) {
 		dev_err(ane->dev,
 		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — preflight open on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) init-structure opens: [0x20]/[0x28]/[0x30]/[0x50] producers, IPC size cap dev+0x3A70 numeric, pool total size; RVBAR lifecycle RESOLVED (bit0-set = lawful skip branch, pulse clears stale ack, no reset before first attempt; domain power cycle = poll-A-timeout retry only, never in-kernel). cpu_started=%u fw_alive=%u booted=%u\n",
@@ -325,7 +255,9 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 		return -ENODATA;
 	}
 
-	return ane_t6021_boot_start(ane);
+	/* UNREACHABLE while boot_preflight_complete is false; the
+	 * gate-flip commit replaces this with the run() dispatch. */
+	return -ENODATA;
 }
 
 bool ane_t6021_boot_requested(void)
