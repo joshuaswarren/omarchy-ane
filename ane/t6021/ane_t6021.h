@@ -171,6 +171,7 @@ enum {
  * [INFERENCE: the fw->host doorbell/IRQ bit numbering mirrors the
  * host->fw SET bit per Asahi rtkit semantics; pinned live by W5.] */
 #define ANE_MBI_SCRATCH0	0x1840048	/* SCRATCH0..7 = +0x48..+0x64 */
+#define ANE_MBI_SCRATCH6	0x1840060
 #define ANE_MBI_SCRATCH7	0x1840064
 /* Wake/ack handshake words live in ane_t6021_boot.h
  * (ANE_T6021_BOOT_WAKE_REQ / ANE_T6021_BOOT_ACK) — single source, shared
