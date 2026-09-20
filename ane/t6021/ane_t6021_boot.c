@@ -155,12 +155,27 @@ static const bool pf_pool_word0_proven = true;	/* CONFIRMED (Main raw +
 						 * word0 = requested bytes =
 						 * 0x40000 — sourced, not
 						 * synthesized */
-static const bool pf_heap_floor_pinned = false;	/* dev+0x3A90 numeric value
-						 * (heap floor) — audit
-						 * open */
-static const bool pf_dart_page_floor = false;	/* raw numeric pin of
-						 * getPageSize() == 0x4000
-						 * (IPC floor) — audit open */
+static const bool pf_heap_floor_pinned = false;	/* EVIDENCE COMPLETE
+						 * (pass6h 4d8eb63): floor =
+						 * getPageSize() return =
+						 * DART page size 0x4000
+						 * (dev+0x3A90 stores the
+						 * call result verbatim,
+						 * 0x9602e68-0x9602e90).
+						 * boot_sources.heap_floor
+						 * populated; flip pending
+						 * Main review */
+static const bool pf_dart_page_floor = false;	/* EVIDENCE COMPLETE
+						 * (pass6h): 0x4000 has NO
+						 * code immediate anywhere
+						 * in the KC (exhaustive
+						 * movz scan) — its
+						 * provenance is the ADT
+						 * dart,t8110 page-size
+						 * property 0x4000
+						 * (dtree-j414c.txt:708).
+						 * Flip pending Main
+						 * review */
 static const bool pf_provider_strategy_confirmed = false; /* Main review of
 						 * the genpd-equivalence
 						 * strategy */
@@ -190,6 +205,10 @@ static bool ane_t6021_boot_preflight_complete(void)
 static const struct ane_t6021_init_sources boot_sources = {
 	.cfg_size = 0x500000,		/* config+0x138 (0x9613da8/ dac) */
 	.prev_fw_len = 0,		/* first boot; static per reload */
+	.heap_floor = 0x4000,		/* DART page size: dev+0x3A90 =
+					 * getPageSize() return (pass6h
+					 * 0x9602e68-90); ADT page-size
+					 * property authority */
 	.pool_word0 = 0x40000,		/* DDM Params word0 = requested
 					 * bytes (CONFIRMED, 183fd50) */
 };
