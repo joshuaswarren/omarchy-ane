@@ -387,6 +387,19 @@ struct ane_t6021 {
 	void *fw_buf;
 	dma_addr_t fw_iova;
 	u32 fw_size;
+
+	/* W15 boot allocations (gate-gated: never exist until the
+	 * preflight opens and the sequence passes poll A). Ownership per
+	 * the wedged-pin rule: held, never freed, while cpu_started. */
+	void *boot_pool;		/* 'DDM ' pool, 0x40000 (Params word0) */
+	dma_addr_t boot_pool_iova;
+	void *boot_ipc;			/* 'IPC ' surface, max(0x4000, ord+1) */
+	dma_addr_t boot_ipc_iova;
+	void *boot_heap;		/* fw-requested HEAP surface or NULL */
+	dma_addr_t boot_heap_iova;
+	u64 boot_heap_size;
+	u32 prev_fw_len;		/* [0x30]: previous fw image length
+					 * (0 first boot; updated per reload) */
 };
 
 /* ane_t6021_rtkit.c */
