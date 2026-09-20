@@ -534,6 +534,10 @@ int main(void)
 		check(ane_t6021_boot_dma_reclaimable(0) == true,
 		      "ownership: DMA reclaimable when never started",
 		      "normal status-only removal");
+		check(ane_t6021_boot_remove_held(1) == true &&
+		      ane_t6021_boot_remove_held(0) == false,
+		      "remove-held predicate",
+		      "whole lifetime held while started (H13 wedge)");
 		fake = NULL;
 	}
 
