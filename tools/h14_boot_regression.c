@@ -105,30 +105,27 @@ int main(void)
 	      0x123456000,
 	      "entry_bits low-bit truncation", "matches the fold algebra");
 
-	/* ---- Acceptance round-trip: an iova carrying NO bits outside
-	 * the mask survives the fold exactly; the loss bits (10, 48,
-	 * 55) do not — and bit 11 is RETAINED. ---- */
+	/* ---- Acceptance predicate — the EXACT check the boot path
+	 * applies (ane_t6021_rvbar_entry_ok): accept clean iovas and
+	 * bit-11 iovas (retained), reject any iova carrying a dropped
+	 * bit (0-10, 48, 55). ---- */
 	{
 		static const struct {
 			u64 iova;
-			u64 entry;	/* expected entry_bits(compose(iova)) */
+			bool ok;
 			const char *why;
 		} rt[] = {
-			{ 0xdeadbeef000ULL, 0xdeadbeef000ULL,
-			  "clean DVA round-trips" },
-			{ 0x800ULL, 0x800ULL,
-			  "bit 11 RETAINED by the mask" },
-			{ 0x400ULL, 0,
-			  "bit 10 dropped by the fold" },
-			{ 0x200ULL, 0, "bit 9 dropped" },
-			{ 0x0001000000000000ULL, 0,
-			  "bit 48 dropped" },
-			{ 0x0080000000000000ULL, 0,
-			  "bit 55 dropped" },
-			{ 0x0081000000001800ULL, 0x1800ULL,
-			  "bit 55 dropped while bits 11+12 kept" },
-			{ 0x0100800000001000ULL, 0x0100800000001000ULL,
-			  "bits 56/47/12 are outside the clears" },
+			{ 0xdeadbeef000ULL, true, "clean DVA accepted" },
+			{ 0x800ULL, true, "bit 11 RETAINED — accepted" },
+			{ 0x400ULL, false, "bit 10 rejected" },
+			{ 0x200ULL, false, "bit 9 rejected" },
+			{ 0x7ffULL, false, "entire low mask 0-10 rejected" },
+			{ 0x0001000000000000ULL, false,
+			  "bit 48 rejected" },
+			{ 0x0080000000000000ULL, false,
+			  "bit 55 rejected" },
+			{ 0x0080000000001800ULL, false,
+			  "bit 55 rejected even with retained bits 11+12" },
 		};
 		unsigned int i;
 
@@ -136,8 +133,14 @@ int main(void)
 			u64 got = ane_t6021_rvbar_entry_bits(
 				ane_t6021_rvbar_compose(rt[i].iova));
 
-			check(got == rt[i].entry, "fold round-trip",
-			      rt[i].why);
+			check(ane_t6021_rvbar_entry_ok(rt[i].iova) ==
+			      rt[i].ok, "entry acceptance", rt[i].why);
+			/* the fold agrees with the predicate: accepted
+			 * iovas round-trip exactly, rejected ones lose
+			 * bits */
+			check(got == (rt[i].iova &
+				      ANE_T6021_RVBAR_ADDR_MASK),
+			      "fold algebra", rt[i].why);
 		}
 	}
 
@@ -159,20 +162,20 @@ int main(void)
 	}
 
 	/* ---- Init suballocation CLOSED-FIELD fill (0x174: header[0x00]
-	 * u64 = fw DVA (legacy branch), [0x68] u32 = 64 count, template
-	 * [0x6C,0x16C) zeros with template+0xC0 = 4 (initial template
-	 * state; the |=0x10 mutation is unreachable — dev+0x784 bit0 has
-	 * no writer). PASS5 (c364f24): the fw CONSUMES [0x08]..[0x68]
-	 * ([0x08]/[0x10] = *(dev+0x988+0x24), [0x18] =
-	 * 0x10000000-config.size, [0x20]/[0x28]/[0x30] open) — zeros
-	 * there are UNSAFE and this fill does NOT produce a valid init
-	 * structure; publication stays fenced. ---- */
+	 * u64 = fw DVA (legacy branch), [0x68] u32 = 64 count. PASS5
+	 * (c364f24, Main-corrected): the fw CONSUMES [0x08]..[0x68] —
+	 * [0x08] = *(dev+0x988+0x18), [0x10] = config size, [0x18] =
+	 * 0x10000000-config.size. template+0xC0 = 4 RESOLVED (Main raw
+	 * anchors 0x9612b78/7c/80). The fill writes [0x00], [0x68] and
+	 * template+0xC0 only; the remaining fw-consumed fields have no
+	 * pinned Linux source and this test asserts NO full-init
+	 * validity: publication stays fenced. ---- */
 	{
 		u8 buf[ANE_T6021_INIT_STRUCT_SIZE];
 		u8 expected[ANE_T6021_INIT_STRUCT_SIZE];
 		u8 leak[ANE_T6021_INIT_STRUCT_SIZE];
 		size_t i;
-		int consumed_zone_nonzero;
+		int touched;
 
 		/* geometry invariants */
 		check(ANE_T6021_INIT_COUNT_OFF + 4 +
@@ -190,28 +193,38 @@ int main(void)
 		expected[2] = 0xee; expected[3] = 0xdb;
 		expected[4] = 0xea; expected[5] = 0x0d; /* 0xdeadbeef000 LE */
 		expected[0x68] = 0x40; /* count 64 */
-		expected[0x12c] = 0x04; /* template+0xC0 = 4 */
+		expected[0x12c] = 0x04; /* template+0xC0 = 4 (RESOLVED) */
 		check(memcmp(buf, expected, sizeof(buf)) == 0,
-		      "fill exact image (fw DVA)", "all other bytes zero");
+		      "fill writes resolved fields only",
+		      "fw-consumed open zone untouched");
 
 		check(rd_le64(buf) == 0xdeadbeef000ULL &&
 		      rd_le32(buf + ANE_T6021_INIT_COUNT_OFF) == 0x40 &&
 		      rd_le32(buf + ANE_T6021_INIT_TEMPLATE_OFF +
 			      ANE_T6021_INIT_TBIT_OFF) == 0x4,
-		      "fill field reads", "LE decode of the three fields");
+		      "fill field reads", "LE decode incl. tbit");
 
-		/* the fw-consumed open fields ([0x08]..[0x68)) must stay
-		 * untouched in this fill — the fill does not claim them
-		 * resolved and publication cannot fire over them */
-		consumed_zone_nonzero = 0;
-		for (i = 0x08; i < ANE_T6021_INIT_COUNT_OFF; i++)
-			consumed_zone_nonzero += buf[i] != 0;
-		check(consumed_zone_nonzero == 0,
-		      "fw-consumed open fields untouched-zero",
-		      "publication fenced: zeros are UNSAFE there (pass5)");
+		/* the fill itself must not touch anything but [0x00..0x08)
+		 * and [0x68..0x6c): the fw-consumed open zone and the
+		 * disputed template zone stay exactly as the caller left
+		 * them (zero here) — no hidden writes, no validity claim */
+		memset(leak, 0xa5, sizeof(leak));
+		ane_t6021_init_struct_fill(leak, 0x1234);
+		touched = 0;
+		for (i = 0; i < sizeof(leak); i++) {
+			int in_closed = i < 8 ||
+					(i >= ANE_T6021_INIT_COUNT_OFF &&
+					 i < ANE_T6021_INIT_COUNT_OFF + 4) ||
+					i == (ANE_T6021_INIT_TEMPLATE_OFF +
+					      ANE_T6021_INIT_TBIT_OFF);
 
-		/* determinism + no reliance on prior contents: DVA=0
-		 * variant differs from `expected` only in the header */
+			if (!in_closed && leak[i] != 0xa5)
+				touched++;
+		}
+		check(touched == 0, "fill touches closed fields only",
+		      "caller-owned zones preserved byte-exact");
+
+		/* determinism: DVA=0 variant differs only in the header */
 		memset(expected, 0, 8); /* header qword = 0 */
 		memset(leak, 0xff, sizeof(leak));
 		memset(leak, 0, sizeof(leak));

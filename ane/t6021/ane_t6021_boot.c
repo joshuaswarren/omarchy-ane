@@ -85,7 +85,6 @@
  *     re-reads all eight on every load.
  */
 
-#include <linux/array_size.h>
 #include <linux/device.h>
 #include <linux/iommu.h>
 #include <linux/io.h>
@@ -99,58 +98,19 @@ module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
 		 "OPT-IN: boot state resolution + report (W15, read-only until the preboot/RVBAR prerequisites land — see ane_t6021_boot.c header).");
 
-/* Boot-write gates — flip ONLY in a commit that cites the receipt
- * closing the named datum (Main review 2026-09-20: no unguarded
- * start; no runtime knobs, a knob would bypass review). */
-static const bool preboot_table_ready = true;	/* pass5 c364f24: dev+0x784
-						 * bit0 has NO writer
-						 * (ctor-zero at 0x959b268;
-						 * mutation 0x9600748-54
-						 * unreachable) — the table
-						 * gate is always open and
-						 * the three writels are
-						 * REQUIRED preboot; the
-						 * order-vs-start question
-						 * is moot */
-
-/* Kext pre-CPU engine table (pass4-proven receiver, pass5-proven
- * gate): three writels to the ENGINE aperture, eng+0xb38/0xb98/0xbf8
- * <- 0x01ff01ff (table vm 0xcb6c188, count config+0x150 = 3; loop
- * consumes u32 offset+0 and u32 value+8, skipping value 0xffffffff —
- * none skipped here). REQUIRED every EnableANEClocksAndPower: the
- * dev+0x784 bit0 gate has no writer (ctor-zero 0x959b268; the
- * mutation sites 0x9600748-54 are unreachable), so the kext loop runs
- * unconditionally and so does this. Runs only behind fw_boot=1, the
- * power gate, and the staging/iommu gates; each write logs a
- * netconsole seam line first. */
-static int ane_t6021_preboot_table(struct ane_t6021 *ane)
-{
-	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-	static const struct {
-		u32 off;
-		u32 val;
-	} tbl[] = {
-		{ 0xb38, 0x01ff01ff },
-		{ 0xb98, 0x01ff01ff },
-		{ 0xbf8, 0x01ff01ff },
-	};
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(tbl); i++) {
-		dev_info(ane->dev,
-			 "preboot table seam %u/%u: eng+%#05x <- %#010x next\n",
-			 i + 1, (unsigned int)ARRAY_SIZE(tbl),
-			 tbl[i].off, tbl[i].val);
-		writel(tbl[i].val, eng + tbl[i].off);
-	}
-	return 0;
-}
+/* Boot-write gates — the ENTIRE write sequence (preboot engine table,
+ * RVBAR resolution, CPU start, SCRATCH publication) is gated on ONE
+ * complete-preflight flag: it runs start-to-finish once EVERY named
+ * prerequisite is closed by a cited commit, or not at all (Main
+ * 2026-09-20: no partial mutating boot for diagnostics; writes behind
+ * complete preflight). Flipping this flag is a Main-reviewed commit,
+ * not a runtime knob. */
+static const bool boot_preflight_complete = false;
 
 int ane_t6021_boot_probe(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
 	u64 rvbar;
-	int err;
 
 	if (!fw_boot) {
 		dev_info(ane->dev,
@@ -178,10 +138,12 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 			"boot: REFUSED — device not IOMMU-mapped; a boot-published fw DVA would be untranslated\n");
 		return -EINVAL;
 	}
-	/* Exact fold-loss check: the entry mask clears bits 0..11, 48
-	 * and 55. ANY set bit outside the mask would be silently dropped
-	 * by the fold — refuse rather than truncate. */
-	if (ane->fw_iova & (u64)~ANE_T6021_RVBAR_ADDR_MASK) {
+	/* Acceptance predicate (shared with the regression): the staged
+	 * DVA must lose NOTHING to the entry fold — bit 11 survives,
+	 * bits 0-10/48/55 do not, so any of those set means the staging
+	 * placement is wrong for the fold and we refuse instead of
+	 * truncating. */
+	if (!ane_t6021_rvbar_entry_ok(ane->fw_iova)) {
 		dev_err(ane->dev,
 			"boot: REFUSED — fw iova %pad sets bits the entry fold drops (%016llx outside %016llx); staging placement must be re-examined\n",
 			&ane->fw_iova,
@@ -214,19 +176,18 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 		dev_info(ane->dev,
 			 "boot: bit0 set, entry bits 0 — the value every owned Linux boot read (W8/W10: 0x1). Which boot mode this names is UNRESOLVED: (a) entry 0 names the ASC boot ROM (the kext local order continues CPU_CONTROL 0->0x10 with RVBAR untouched), or (b) a programmed/latched state only a reset lifecycle reaches. No owned disassembly decides between (a) and (b); the audit lane owns ANE_CleanupForColdReboot_gated, island power-cycle RVBAR semantics, and dev+0x41f provenance\n");
 
-	/* Preboot write sequence — each write behind its own named
-	 * datum (header). Nothing has fired yet on this host. */
-	err = ane_t6021_preboot_table(ane);
-	if (err && err != -ENODATA)
-		return err;
-
-	/* HARD BLOCK (Main review 2026-09-20): remaining prerequisites
-	 * hold ALL further boot writes — not RVBAR, not CPU_CONTROL.
-	 * With fw_boot=1 this -ENODATA FAILS the probe (an explicit
-	 * boot request does not bind half-armed); with fw_boot=0 this
-	 * function returned at the fence above. */
+	/* HARD BLOCK before ANY MMIO write (Main 2026-09-20): the whole
+	 * write sequence — preboot engine table (eng+0xb38/0xb98/0xbf8
+	 * <- 0x01ff01ff), RVBAR resolution, CPU_CONTROL release, SCRATCH
+	 * publication — sits behind boot_preflight_complete and runs
+	 * start-to-finish or not at all. The pass5 "no writer of
+	 * dev+0x784 bit0" claim is itself under review (alias/indirect
+	 * absence not definitive), and pass5's init header table is
+	 * being corrected (fields +0x50/+0x58/+0x60 missing). With
+	 * fw_boot=1 this -ENODATA FAILS the probe before any write;
+	 * with fw_boot=0 this function returned at the fence above. */
 	dev_err(ane->dev,
-		"boot: BLOCKED (probe fails while fw_boot=1) — boot writes held on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) RVBAR mode fork (bit0 set, entry 0 — audit lane: ANE_CleanupForColdReboot_gated, island power-cycle semantics, dev+0x41f); (3) init publication: fw-consumed fields [0x08]..[0x68] lack pinned Linux sources ([0x08] = *(dev+0x988+0x18) second-surface DVA, [0x10]/[0x18] config-size terms, [0x30] load-progress word) and the first-alive ack site is unattributed (0x77c8 vs 0x86EC). cpu_started=%u fw_alive=%u booted=%u\n",
+		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — preflight open on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) RVBAR mode fork (bit0 set, entry 0 — M2ResetLifecycle: ANE_CleanupForColdReboot_gated, island power-cycle semantics, dev+0x41f); (3) preboot table gate dev+0x784 writer proof (alias/indirect review) plus init publication fields [0x08]..[0x68] Linux sources ([0x08] = *(dev+0x988+0x18) second-surface DVA, [0x10]/[0x18] config-size terms, +0x50/+0x58/+0x60 pending pass5b) and the first-alive ack site (0x77c8 vs 0x86EC). cpu_started=%u fw_alive=%u booted=%u\n",
 		ane->cpu_started, ane->fw_alive, ane->booted);
 	return -ENODATA;
 }
