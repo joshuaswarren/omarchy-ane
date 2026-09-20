@@ -129,53 +129,95 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  * zero; no partial boot). The caller MUST zero the full 0x174 block
  * first (coherent alloc): gaps [0x34..37]/[0x64..67] get no kext
  * store and sit inside fw-read u64 units. */
-/* IPC surface size (pass6c 75a017b): max of the config-side u64 field
- * dev+0x3A90 (single writer start+0x28a8) and the zero-extended u32
- * [x23+4]; both operands pin before the preflight can open. */
-static inline u64 ane_t6021_ipc_size(u64 dev_3a90, u32 x23p4)
-{
-	u64 big = x23p4;
-
-	return dev_3a90 > big ? dev_3a90 : big;
-}
-
+/* Init-suballocation contract — pass6 producer semantics
+ * (rvbar-lifecycle-evidence.json pass6_init_header_producers, commit
+ * cd25b46, anchors G1-G26; 87/87 total):
+ *
+ * STATIC sources (pinned before the preflight can open):
+ *   fw_dva      -> [0x00] staged selene ('FWIM') surface DVA,
+ *   ipc_dva     -> [0x08] 'IPC ' surface DVA (its size calc remains
+ *                  the audit lane's open item),
+ *   cfg_size    -> [0x10] config+0x138 = 0x500000; [0x18] =
+ *                  0x10000000 - cfg_size = 0x0fb00000,
+ *   prev_fw_len -> [0x30] previous fw image length (0 on first boot;
+ *                  driver-static, updated on each reload),
+ *   heap_floor  -> [0x28] floor = config field dev+0x3A90 (value
+ *                  pinned by the audit lane at preflight close),
+ *   pool_dma    -> [0x58] the 'DDM ' pool surface DVA (Linux allocates
+ *                  its own 0x40000-byte DDM pool — the kext size),
+ *   pool_word0  -> [0x60] first qword of the Linux pool-descriptor
+ *                  struct — semantics STILL OPEN (selene lane); the
+ *                  source is pinned, never synthesized zero, before
+ *                  publication may fire.
+ *
+ * DYNAMIC inputs (read AFTER poll A — the fw publishes its extra-heap
+ * request into SCRATCH3 (cell idx3) and its boot ordinal is
+ * SCRATCH1+1; both read from the live cells, never hardcoded):
+ *   scratch3_req  -> the fw extra-heap request; 0 = no heap surface,
+ *   scratch1_read -> SCRATCH1 read; [0x50] = (u32)read + 1 (boot
+ *                    ordinal).
+ *
+ * TRUST BOUNDARY: scratch3_req is firmware-supplied. The heap size
+ * must pass ane_t6021_heap_size() bounds BEFORE any allocation; the
+ * heap DVA and size are written to [0x20]/[0x28] only on success. */
 struct ane_t6021_init_sources {
-	u64 fw_dva;		/* [0x00] staged selene ('FWIM') DVA */
-	u64 ipc_dva;		/* [0x08] 'IPC ' surface DVA (Linux alloc) */
-	u32 cfg_size;		/* [0x10] config+0x138 = 0x500000 */
-	u64 obj2_dva;		/* [0x20] *(obj2+0x18) — pinned at close */
-	u32 w22;		/* [0x28] ANE_Init local — pinned at close */
-	u32 fwload_progress;	/* [0x30] dev+0x990 — pinned at close */
-	u32 x23p4;		/* [0x50] zext u32 [x23+4] */
-	u64 dev_3a90;		/* [0x50]-pair + IPC size operand */
-	u64 pool_dma;		/* [0x58] init-pool DMA base */
-	u64 pool_word0;		/* [0x60] pool first qword (write 0) */
+	u64 fw_dva;
+	u64 ipc_dva;
+	u32 cfg_size;
+	u32 prev_fw_len;
+	u64 heap_floor;
+	u64 pool_dma;
+	u64 pool_word0;
 };
 
+/* Trust boundary for the firmware-supplied heap request: 0 disables
+ * the heap surface; otherwise the size is MAX(request, floor) and is
+ * refused (negative) when the request exceeds the config-mandated
+ * maximum — a pinned constant at preflight close. */
+#define ANE_T6021_BOOT_HEAP_MAX	0x08000000ULL	/* 128 MiB ceiling;
+					 * final value pinned at close */
+
+static inline long long
+ane_t6021_heap_size(u32 scratch3_req, u64 floor, u64 max_size)
+{
+	u64 req = scratch3_req;
+
+	if (!req)
+		return 0;
+	if (req > max_size)
+		return -E2BIG;
+	return (long long)(req > floor ? req : floor);
+}
+
+/* Fill the COMPLETE init suballocation from the static sources plus
+ * the post-READY dynamic values. The caller MUST zero the full 0x174
+ * block first (coherent alloc): the gap bytes [0x34..37]/[0x64..67]
+ * get no kext store and sit inside fw-read u64 units. */
 static inline void
-ane_t6021_init_struct_fill(u8 *buf, const struct ane_t6021_init_sources *s)
+ane_t6021_init_struct_fill(u8 *buf, const struct ane_t6021_init_sources *s,
+			   long long heap_size, u64 heap_dva,
+			   u32 boot_ordinal)
 {
 	u64 size = s->cfg_size;
-	u64 ipc = ane_t6021_ipc_size(s->dev_3a90, s->x23p4);
 	int i;
 
 	for (i = 0; i < 8; i++) {
 		buf[ANE_T6021_INIT_FW_DVA_OFF + i] =
 			(u8)(s->fw_dva >> (8 * i));
-		buf[0x08 + i] = (u8)(ipc >> (8 * i));
+		buf[0x08 + i] = (u8)(s->ipc_dva >> (8 * i));
 		buf[0x10 + i] = (u8)(size >> (8 * i));
 		buf[0x18 + i] = (u8)((0x10000000ULL - size) >> (8 * i));
-		buf[0x20 + i] = (u8)(s->obj2_dva >> (8 * i));
-		buf[0x50 + i] = (u8)((u64)s->x23p4 >> (8 * i));
+		buf[0x20 + i] = (u8)(heap_dva >> (8 * i));
+		buf[0x50 + i] = (u8)((u64)boot_ordinal >> (8 * i));
 		buf[0x58 + i] = (u8)(s->pool_dma >> (8 * i));
 		buf[0x60 + i] = (u8)(s->pool_word0 >> (8 * i));
 	}
 
-	buf[0x28] = (u8)s->w22;
-	buf[0x29] = 0;
-	buf[0x2a] = 0;
-	buf[0x2b] = 0;
-	buf[0x30] = (u8)s->fwload_progress;
+	/* [0x28] u64 heap size (0 when the fw requested none) */
+	for (i = 0; i < 8; i++)
+		buf[0x28 + i] = (u8)((u64)heap_size >> (8 * i));
+
+	buf[0x30] = (u8)s->prev_fw_len;
 	buf[0x31] = 0;
 	buf[0x32] = 0;
 	buf[0x33] = 0;
