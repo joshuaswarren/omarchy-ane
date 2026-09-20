@@ -387,6 +387,9 @@ struct ane_t6021 {
 	void *fw_buf;
 	dma_addr_t fw_iova;
 	u32 fw_size;
+	/* W16 entry alias: IOVA the fw pages are aliased at (the latched
+	 * RVBAR entry); 0 = no alias mapped. */
+	u64 fw_alias_iova;
 
 	/* W15 boot allocations (gate-gated: never exist until the
 	 * preflight opens and the sequence passes poll A). Ownership per
