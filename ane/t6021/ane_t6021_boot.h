@@ -520,20 +520,40 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 
 	/* P-1: W8 write-grant tunables (proven no-abort class,
 	 * w8-run.out: APERTURE_UNLOCKED — 12 engine-aperture writes
-	 * preparing the aperture; replayed verbatim). */
-	io->phase(io->ctx, "P-1 grant-tunables");
-	io->wr32(io->ctx, 0x000, 0x00000010);
-	io->wr32(io->ctx, 0x038, 0x00050020);
-	io->wr32(io->ctx, 0x03c, 0x000a0030);
-	io->wr32(io->ctx, 0x400, 0x40010001);
-	io->wr32(io->ctx, 0x600, 0x01ffffff);
-	io->wr32(io->ctx, 0x738, 0x00200020);
-	io->wr32(io->ctx, 0x798, 0x00100030);
-	io->wr32(io->ctx, 0x7f8, 0x0100000a);
-	io->wr32(io->ctx, 0x900, 0x00000101);
-	io->wr32(io->ctx, 0x410, 0x00001100);
-	io->wr32(io->ctx, 0x420, 0x00001100);
-	io->wr32(io->ctx, 0x430, 0x00001100);
+	 * preparing the aperture; replayed verbatim).
+	 * Per-write before/after discrimination (Main: attempt 3 stalled
+	 * LAST phase = P-1, possibly FIRST tunable write). */
+	{
+		static const struct { u32 off; u32 val; } tun[] = {
+			{ 0x000, 0x00000010 }, { 0x038, 0x00050020 },
+			{ 0x03c, 0x000a0030 }, { 0x400, 0x40010001 },
+			{ 0x600, 0x01ffffff }, { 0x738, 0x00200020 },
+			{ 0x798, 0x00100030 }, { 0x7f8, 0x0100000a },
+			{ 0x900, 0x00000101 }, { 0x410, 0x00001100 },
+			{ 0x420, 0x00001100 }, { 0x430, 0x00001100 },
+		};
+		unsigned int ti;
+
+		io->phase(io->ctx, "P-1 grant-tunables begin");
+		for (ti = 0; ti < (unsigned int)ARRAY_SIZE(tun); ti++) {
+			io->phase(io->ctx, tun[ti].off == 0x000 ?
+				  "P-1a eng+0x000" :
+				  tun[ti].off == 0x038 ? "P-1b eng+0x038" :
+				  tun[ti].off == 0x03c ? "P-1c eng+0x03c" :
+				  tun[ti].off == 0x400 ? "P-1d eng+0x400" :
+				  tun[ti].off == 0x600 ? "P-1e eng+0x600" :
+				  tun[ti].off == 0x738 ? "P-1f eng+0x738" :
+				  tun[ti].off == 0x798 ? "P-1g eng+0x798" :
+				  tun[ti].off == 0x7f8 ? "P-1h eng+0x7f8" :
+				  tun[ti].off == 0x900 ? "P-1i eng+0x900" :
+				  tun[ti].off == 0x410 ? "P-1j eng+0x410" :
+				  tun[ti].off == 0x420 ? "P-1k eng+0x420" :
+				  "P-1l eng+0x430");
+			io->wr32(io->ctx, tun[ti].off, tun[ti].val);
+			io->phase(io->ctx, "P-1 write done");
+		}
+		io->phase(io->ctx, "P-1 grant-tunables end");
+	}
 
 	io->phase(io->ctx, "P1 scratch-clear+pulse");
 	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = 1,
