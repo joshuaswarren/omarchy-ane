@@ -103,13 +103,6 @@ static inline bool ane_t6021_rvbar_entry_ok(u64 iova)
 	return (iova & (u64)~ANE_T6021_RVBAR_ADDR_MASK) == 0;
 }
 
-/* DISPUTED template region — do NOT write: the template-allocation/
- * def-use receipts decoded an initial dev+0x998 template with
- * word+0xC0 = 4, but pass5's legacy-path analysis reads the template
- * zeros; the contradiction is unresolved pending pass5b raw evidence
- * of the actual template producer. Until it lands, the fill writes
- * nothing in [0x6C,0x16C) and makes no template claim. */
-
 /* Publication convention: low32 → SCRATCH0 (0x01840048) first, then
  * high32 → SCRATCH1, after dsb st. */
 static inline void ane_t6021_scratch64_split(u64 v, u32 *lo, u32 *hi)
@@ -123,41 +116,70 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
 	return ((u64)hi << 32) | lo;
 }
 
-/* Fill the CLOSED fields of a ZEROED 0x174-byte init suballocation.
- * The caller owns zeroing (dma_alloc_coherent memory is zero).
- *
- * Field table (pass5 c364f24 + Main correction 2026-09-20: the audit's
- * "+0x24" was DECIMAL 24 = 0x18, and x9 is overwritten before the
- * stp): the fw CONSUMES [0x08]..[0x68]. Producers:
- *   [0x08] = *(dev+0x988+0x18) — a Params-pattern DVA of a SECOND
- *            surface (dev+0x988 identity still undecoded),
- *   [0x10] = config size (the fw payload length; equivalence to
- *            ANE_FW_BLOB_SIZE on Linux unconfirmed),
- *   [0x18] = 0x10000000-config.size (formula closed),
- *   [0x20]/[0x28] open, [0x30] = dev+0x990 load-progress word.
- * Template+0xC0 = 4 is RESOLVED (Main raw anchors 0x9612b78/7c/80).
- * The remaining open fields have no pinned Linux source, so this fill
- * writes [0x00], [0x68] and template+0xC0 only, leaves the rest
- * untouched, and the result is NOT a valid init structure: zeros are
- * UNSAFE in the fw-consumed zone and publication stays fenced. */
-static inline void ane_t6021_init_struct_fill(u8 *buf, u64 fw_iova)
+/* Linux sources for the init-suballocation fields (pass5b/5c/5d
+ * b8b7c35 corrected contract; validator tools/check_init_contract.py
+ * 64/64):
+ *   fw_dva     -> [0x00] staged selene ('FWIM') surface DVA,
+ *   ipc_dva    -> [0x08] the 'IPC ' surface DVA (dev+0x988 pattern;
+ *                 a SECOND coherent allocation the Linux driver owns;
+ *                 kext alloc args 0x95ea240-58, exact byte size still
+ *                 to be quoted from cfg+4/clamp before arming),
+ *   cfg_size   -> [0x10] = config+0x138 image byte-count (u32
+ *                 zero-extended; the same config field W13 §5 names
+ *                 the image byte-count) and [0x18] = 0x10000000 -
+ *                 cfg_size; on Linux the byte-count is the validated
+ *                 selene payload length (ANE_FW_BLOB_SIZE),
+ *   pool_dma   -> [0x58] init-pool DMA base (kext *(pool+0x18)),
+ *   pool_word0 -> [0x60] pool first qword (kext *(pool+0x00);
+ *                 semantics open — write 0).
+ * Still OPEN — written by NOBODY, left to the caller's zeroing:
+ *   [0x20] (obj2 +0x18, provenance open), [0x28] (w22 local),
+ *   [0x30] (fw-load progress; producer closed, semantics open),
+ *   [0x50] (zext u32 [x23+4]; object identity open). Gaps
+ *   [0x34..0x37]/[0x64..0x67] sit inside fw-read u64 units and get no
+ *   kext store — the caller MUST zero the full 0x174 block first
+ *   (dma_alloc_coherent memory is zero). The result is NOT a valid
+ *   init structure while an open field is fw-read; publication stays
+ *   fenced until each open field has a pinned Linux source. */
+struct ane_t6021_init_sources {
+	u64 fw_dva;
+	u64 ipc_dva;
+	u32 cfg_size;
+	u64 pool_dma;
+	u64 pool_word0;
+};
+
+static inline void
+ane_t6021_init_struct_fill(u8 *buf, const struct ane_t6021_init_sources *s)
 {
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 0] = (u8)fw_iova;
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 1] = (u8)(fw_iova >> 8);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 2] = (u8)(fw_iova >> 16);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 3] = (u8)(fw_iova >> 24);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 4] = (u8)(fw_iova >> 32);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 5] = (u8)(fw_iova >> 40);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 6] = (u8)(fw_iova >> 48);
-	buf[ANE_T6021_INIT_FW_DVA_OFF + 7] = (u8)(fw_iova >> 56);
+	u64 size = s->cfg_size;
+	int i;
+
+	for (i = 0; i < 8; i++) {
+		buf[ANE_T6021_INIT_FW_DVA_OFF + i] =
+			(u8)(s->fw_dva >> (8 * i));
+		buf[0x08 + i] = (u8)(s->ipc_dva >> (8 * i));
+		buf[0x10 + i] = (u8)(size >> (8 * i));
+		buf[0x18 + i] = (u8)((0x10000000ULL - size) >> (8 * i));
+		buf[0x58 + i] = (u8)(s->pool_dma >> (8 * i));
+		buf[0x60 + i] = (u8)(s->pool_word0 >> (8 * i));
+	}
 
 	buf[ANE_T6021_INIT_COUNT_OFF + 0] = (u8)ANE_T6021_INIT_COUNT;
 	buf[ANE_T6021_INIT_COUNT_OFF + 1] = 0;
 	buf[ANE_T6021_INIT_COUNT_OFF + 2] = 0;
 	buf[ANE_T6021_INIT_COUNT_OFF + 3] = 0;
 
+	/* template[0x00] = config word [dev+0x1D8], pinned value 0
+	 * (pass5d); [0x04..0x0B] zero via the caller's zeroing. */
+	buf[ANE_T6021_INIT_TEMPLATE_OFF + 0] = 0;
+	buf[ANE_T6021_INIT_TEMPLATE_OFF + 1] = 0;
+	buf[ANE_T6021_INIT_TEMPLATE_OFF + 2] = 0;
+	buf[ANE_T6021_INIT_TEMPLATE_OFF + 3] = 0;
+
 	/* template+0xC0 = 4: RESOLVED initial state (Main raw anchors
-	 * 0x9612b78/7c/80). The conditional |=0x10 remains unset. */
+	 * 0x9612b78/7c/80: ldr w9,[x0,#192]; orr w9,w9,#4; str). The
+	 * conditional |=0x10 remains unset (dev+0x784 bit0 never set). */
 	buf[ANE_T6021_INIT_TEMPLATE_OFF + ANE_T6021_INIT_TBIT_OFF + 0] =
 		ANE_T6021_INIT_TBIT_VAL;
 }

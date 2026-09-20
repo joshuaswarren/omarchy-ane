@@ -71,17 +71,33 @@
  *     AUTO_ENABLE clear afterwards — the reset vehicle (userspace
  *     stage vs in-kernel) is a Main decision, so the fold+start path
  *     stays behind boot_preflight_complete.
- *   4. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
+ *   3. First-alive vs init-ack are DISTINCT REGISTERS (pass6 ae6ecc9):
+ *      the first-alive beacon is SCRATCH0 (0x01840048) — selene fn
+ *      0x86EC writes the ack VALUE 0x08042006 to index 0, and no
+ *      SCRATCH7-base builder exists in selene (exhaustive
+ *      movz/movk scan); its host-side consumer is OPEN. The
+ *      INIT-ACK is SCRATCH7 (0x01840064) written by fn 0x71A4
+ *      (0x77cc-0x77f0) — the register the kext polls after the wake.
+ *      fw_alive therefore watches the SCRATCH0 beacon; booted is
+ *      set only by the SCRATCH7 init ack.
+ *   4. Linux allocation map (legacy branch sizes, pass6): FWIM
+ *      surface = kext config+0x138 image byte-count; Linux fw_buf is
+ *      ANE_FW_BUF_SIZE (0x400000) — a deliberate SUPERSET covering the
+ *      image vmsize 0x36c000 ZI tail (kext CTRR heap absorbs that
+ *      tail separately). 'IPC ' surface = min(config+4, dev+0x3A70
+ *      cap) — the numeric cap needs the h14g config blob field map
+ *      (open prerequisite). Init suballoc = 0x174 from a Linux-owned
+ *      pool standing in for the kext dev+0x968/dev+0x980 pool (pool
+ *      total size open). RTBuddy FW_INIT sizes (64K…) are the OTHER
+ *      branch — never used here.
+ *   5. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
  *      the Linux sources of those fields are not pinned ([0x08] =
- *      *(dev+0x988+0x18), a Params-pattern DVA of a second surface
- *      whose identity is undecoded; [0x10]/[0x18] = config-size terms
- *      with the 0x10000000-config.size formula closed but config.size
- *      identity unconfirmed; [0x30] = dev+0x990 load-progress word) —
- *      the closed-field fill leaves them zero and publication cannot
- *      fire over them. Also open: which site owns the first-alive ack
- *      (fn 0x71A4 acks 0x08042006 at 0x77c8, but 0x86EC also writes
- *      the value via idx0 — SCRATCH0 vs SCRATCH7 depends on the
- *      accessor base at that execution point, not dumped).
+ *      *(dev+0x988+0x18) = the 'IPC ' surface DVA — the surface
+ *      itself is CLOSED (pass5c/5d), its Linux allocation size open
+ *      per item 4; [0x10]/[0x18] = config-size terms with
+ *      config+0x138 = image byte-count closed; [0x30] = dev+0x990
+ *      load-progress word) — publication cannot fire until every
+ *      fw-read field has a pinned Linux source.
  *
  * Read whitelist — every MMIO read below, individually:
  *   - RVBAR eng+0x01050000: read64 width-proven (rvbar-width
