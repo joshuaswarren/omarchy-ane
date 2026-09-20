@@ -11,5 +11,6 @@ u32 ane_tm_status(struct ane_device *ane);
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req);
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req);
 int ane_tm_recover(struct ane_device *ane);
+bool ane_tm_islands_on(struct ane_device *ane, u32 *act);
 
 #endif /* __ANE_TM_H__ */

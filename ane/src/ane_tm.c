@@ -6,6 +6,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/module.h>
 #include "ane_tm.h"
+#include "ane_ps.h"
 
 #define ANE_TQ_COUNT 8
 static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
@@ -64,10 +65,7 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
  * evidence, 2026-09-16: the T6001 kill is netconsole-named at
  * 0x28e08c000 (PS_SET0 down, all sets gated); T8103 hard-reset the same
  * way at 0x23b70c000 with the 95dbcf3-era gate armed. No code here ever
- * writes the SET block. */
-#define ANE_PS_ACTUAL_MASK	  0xf0
-#define ANE_PS_WORDS		  6 /* set0, base, set1..4 */
-#define ANE_PS_ALL_ON		  ((1U << (4 * ANE_PS_WORDS)) - 1)
+ * writes the SET block. Layout and predicate live in ane_ps.h. */
 
 /* ACTUAL nibble of each SET word, word 0 in the low nibble; 0 when the
  * SET block is unmapped. pmgr registers only: engine MMIO is never
@@ -75,15 +73,28 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
  * and hard-resets the machine). */
 static u32 ane_ps_act(struct ane_device *ane)
 {
-	u32 v = 0;
+	u32 words[ANE_PS_WORDS];
 	int i;
 
 	if (!ane->ps)
 		return 0;
 	for (i = 0; i < ANE_PS_WORDS; i++)
-		v |= ((readl(ane->ps + i * 8) & ANE_PS_ACTUAL_MASK) >> 4)
-		     << (i * 4);
-	return v;
+		words[i] = readl(ane->ps + i * 8);
+	return ane_ps_aggregate(words);
+}
+
+/* Single-shot submit-path power check: pmgr reads are always safe and
+ * the recovery path owns polling, so one read decides. True when the
+ * islands read powered on; also true when the block is unmapped, the
+ * same tolerance as the recovery check. *act, when non-NULL, carries
+ * the aggregate for the refusal message. */
+bool ane_tm_islands_on(struct ane_device *ane, u32 *act)
+{
+	u32 v = ane_ps_act(ane);
+
+	if (act)
+		*act = v;
+	return !ane->ps || ane_ps_islands_on(v);
 }
 
 /* Recovery-path MMIO logging. Every write prints before and after, and
