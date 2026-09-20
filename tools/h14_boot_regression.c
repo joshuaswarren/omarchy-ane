@@ -68,8 +68,8 @@ int main(void)
 	      "compose(0)", "pure valid bit, entry 0");
 	check(ane_t6021_rvbar_compose(0x1000) == 0x0081000000001001ULL,
 	      "compose(0x1000)", "aligned pass-through");
-	check(ane_t6021_rvbar_compose(0x400000) == 0x0081000000400001ULL,
-	      "compose(0x400000)", "FW_BUF-size surface vector");
+	check(ane_t6021_rvbar_compose(0x500000) == 0x0081000000500001ULL,
+	      "compose(0x500000)", "FWIM surface size (config+0x138)");
 	check(ane_t6021_rvbar_compose(0x123456789ULL) ==
 	      0x0081000123456001ULL,
 	      "compose(0x123456789)", "bits 0-10 dropped");
