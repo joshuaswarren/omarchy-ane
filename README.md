@@ -2,6 +2,15 @@
 
 Apple Neural Engine support for Omarchy Linux: a DRM accelerator driver and userspace library. Bind and execute are proven on M1 (`T8103`, `apple,t8103-ane`) and M1 Max (`T6001`, `apple,t6000-ane`). Every other SoC still needs its own PMGR, DART, SET, and TM offsets. eiln's original reverse engineering targeted one M1; this fork is where the other chips get wired.
 
+**Current hardware status (2026-09-20):** m1-test-host (T8103) fresh Arch boot
+reported (user-observed at login); Omarchy provisioning and benchmark
+recertification pending. Historical T8103 numbers in this tree are dated
+evidence from prior Linux boots and are not a current recert; recovery
+success not yet published. t6001-test-host (T6001) Linux ANE is live. T6021
+(t6021-test-host) Linux reads kernel 7.1.13-3-1-ARCH stable, ANE_UNBOUND, no
+`/dev/accel/accel0`; T6021 ANE is not live-inference-qualified in this
+project. macOS CoreML / `aned` measurements do not establish Linux execution.
+
 - `ane/`: DRM accelerator kernel module.
 - `libane/`: userspace loader and submission library.
 - `bindings/python/`: Python shared-library bindings.
@@ -12,7 +21,7 @@ The library requires driver ABI 1: successful submission guarantees terminal com
 
 Nothing here compiles a model. Programs come from the H13 backend in [joshuaswarren/mil-hwx-compiler](https://github.com/joshuaswarren/mil-hwx-compiler), whose runner validates each package and its reference outputs before it opens this library.
 
-The ABI-1 stack passed all eight compiler qualification packages and a finite-input overflow case producing `+inf`. Every output matched on three warmups and 30 measured iterations per package. With the optimized compiler, 512-element add-ReLU uses two programs and measures 0.679 ms per-op, or one program and 0.160 ms fused. The 768-to-1024-to-768 MLP uses 77 programs and measures 32.170 ms, versus 92 programs and 41.523 ms before whole-tensor binary selection on the same driver boot. Timing spans input transfer through output readback, excluding setup and reference evaluation. Cold power-on repeatability and general chain fusion remain unqualified.
+The ABI-1 stack passed all eight compiler qualification packages and a finite-input overflow case producing `+inf` (historical dated evidence, m1-test-host Linux boot prior to 2026-09-18; see the "Current hardware status" note above). Every output matched on three warmups and 30 measured iterations per package. With the optimized compiler, 512-element add-ReLU uses two programs and measures 0.679 ms per-op, or one program and 0.160 ms fused. The 768-to-1024-to-768 MLP uses 77 programs and measures 32.170 ms, versus 92 programs and 41.523 ms before whole-tensor binary selection on the same driver boot. Timing spans input transfer through output readback, excluding setup and reference evaluation. Cold power-on repeatability and general chain fusion remain unqualified. These are the standing numbers in the compiler evidence linked below; they are NOT a current recert.
 
 Compiler evidence: [M1 native progress](https://github.com/joshuaswarren/mil-hwx-compiler/blob/main/receipts/2026-09-06-m1-native-progress.json). Raw Apple firmware and private host details are not distributed.
 
@@ -28,13 +37,13 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 
 | Marketing | SoC | Internal | Linux ANE `compatible` | Driver status | Test confirmation | Data needed |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | T8103 | H13G | `apple,t8103-ane` | qualified | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17 | none |
+| M1 | T8103 | H13G | `apple,t8103-ane` | qualified (2026-09-20: m1-test-host fresh Arch boot reported; benchmark recertification pending) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17 (historical dated evidence; not current) | none |
 | M1 Pro | T6000 | H13J | `apple,t6000-ane` | recognized-untested | none on T6000 silicon | a tester plus the board DART/pmgr overlay (compatible and SET base shared with T6001 are proven); two community DT captures arrived 2026-09-17 |
-| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
+| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified (t6001-test-host Linux ANE is live: 104/104 Parakeet E2E on v0.6.0; v0.7.1 wall [receipts/2026-09-19-parakeet-e2e-v071-t6001-test-host.md](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-19-parakeet-e2e-v071-t6001-test-host.md)) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked (architectural) | board overlay installed + healthy; bind runbook 2026-09-18 proved genpd + SET-window reads safe, then host TM/TQ reads hard-reset the box (twice, netconsole-named). Kext+firmware mining (2026-09-18-t6021-engine-layout-mined.md, H13-method-validated) shows why: **the H14 generation has no host TM/TQ window at all** — the ANE firmware (CSneTMDrvH14, 8 task queues) owns the task manager and the macOS kext submits via RTKit mailbox RPC (ANEFWRpcMsg / CSNE_CMD_*); the t6021 ADT carries 3 ane0 reg ranges with no engine sub-window (IPSW second-source). The H13 host-offset driver model cannot bring up this silicon | Bring-up = a driver-generation port: RTKit + mailbox + CSNE_CMD fw-RPC submission path (H14+ architecture). Shared regions that do exist host-side: RTKit/ASC block-relative RVBAR +0x1050000, RTBuddy +0x1840000. All H13–H18 firmware blobs are cataloged with digests in the receipt. The pmgr +0xc000 odd readback may be a ps-word format change, not a wrong window |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. | Qualified firmware boot, DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify this driver. |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
@@ -73,3 +82,6 @@ including the set0/base gate, the ACTUAL poll, the pre-raise ordering and
 the T8103 ps-map guard) live on `fix/tm-recovery-t6001` for the t6001-test-host lane.
 Ledger and evidence: ane-linux-experiments
 `receipts/2026-09-16-tm-recovery-t8103.md`.
+
+For the replacement installation, see the [2026-09-20 clean-install receipt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-20-m1-test-host-clean-install.json).
+Current provisioning and recertification status is at the top of this README.
