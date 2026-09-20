@@ -535,7 +535,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		unsigned int ti;
 
 		io->phase(io->ctx, "P-1 grant-tunables begin");
-		for (ti = 0; ti < (unsigned int)ARRAY_SIZE(tun); ti++) {
+		for (ti = 0; ti < sizeof(tun) / sizeof(tun[0]); ti++) {
 			io->phase(io->ctx, tun[ti].off == 0x000 ?
 				  "P-1a eng+0x000" :
 				  tun[ti].off == 0x038 ? "P-1b eng+0x038" :
