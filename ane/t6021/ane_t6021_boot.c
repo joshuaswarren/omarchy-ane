@@ -71,20 +71,20 @@
  *     AUTO_ENABLE clear afterwards — the reset vehicle (userspace
  *     stage vs in-kernel) is a Main decision, so the fold+start path
  *     stays behind boot_preflight_complete.
- *   3. First-alive vs init-ack are DISTINCT REGISTERS (pass6 ae6ecc9):
- *      the first-alive beacon is SCRATCH0 (0x01840048) — selene fn
- *      0x86EC writes the ack VALUE 0x08042006 to index 0, and no
- *      SCRATCH7-base builder exists in selene (exhaustive
- *      movz/movk scan); its host-side consumer is OPEN. The
- *      INIT-ACK is SCRATCH7 (0x01840064) written by fn 0x71A4
- *      (0x77cc-0x77f0) — the register the kext polls after the wake.
- *      fw_alive therefore watches the SCRATCH0 beacon; booted is
- *      set only by the SCRATCH7 init ack.
- *   4. Linux allocation map (legacy branch sizes, pass6): FWIM
- *      surface = kext config+0x138 image byte-count; Linux fw_buf is
- *      ANE_FW_BUF_SIZE (0x400000) — a deliberate SUPERSET covering the
- *      image vmsize 0x36c000 ZI tail (kext CTRR heap absorbs that
- *      tail separately). 'IPC ' surface = min(config+4, dev+0x3A70
+ *   3. Ack model — SINGLE REGISTER, TRANSITION-BASED (Main, audit
+ *      751caa4; supersedes the pass6 SCRATCH0-beacon reading): SCRATCH7
+ *      (0x01840064) holds READY 0x08042006 BEFORE the host wake; the
+ *      fw polls the same SCRATCH7 for the wake word 0xf7fbdff9,
+ *      consumes it, and writes DONE 0x08042006 back. A bare ==0x08042006
+ *      poll is a STALE-ACK HAZARD (the READY value is identical); the
+ *      sequencer must observe the READY -> host-WAKE -> DONE
+ *      transition. The SCRATCH0 marker (fn 0x86EC) is NOT the alive
+ *      gate; fw_alive is set only by a post-wake DONE observation.
+ *   4. Linux allocation map (legacy branch sizes): FWIM surface =
+ *      config+0x138 byte-count = 0x500000 (Main, audit 751caa4);
+ *      Linux fw_buf is ANE_FW_BUF_SIZE = 0x500000 — the semantic is
+ *      honored directly, covering the image vmsize 0x36c000. 'IPC '
+ *      surface = min(config+4, dev+0x3A70
  *      cap) — the numeric cap needs the h14g config blob field map
  *      (open prerequisite). Init suballoc = 0x174 from a Linux-owned
  *      pool standing in for the kext dev+0x968/dev+0x980 pool (pool
