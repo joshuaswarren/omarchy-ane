@@ -512,12 +512,14 @@ void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
 	/* W15 gate: the W5/W6 host sends into these surfaces failed
 	 * (0xbe000000) while no valid fw was staged or running; cause
 	 * was not isolated. Conservative rule: this driver sends
-	 * nothing until the boot handshake observes a live fw
-	 * (ane->booted). */
-	if (!ane->booted) {
+	 * nothing until the boot handshake observes a live fw AND the
+	 * DONE response has been validated against owned windows —
+	 * booted alone is an ACK milestone, not transport clearance
+	 * (Main lifetime review 2026-09-20: first-boot fenced window). */
+	if (!ane->booted || !ane->response_validated) {
 		dev_err(ane->dev,
-			"CSNE PING ep1: FENCED — firmware not booted (cpu_started=%u fw_alive=%u booted=%u); the W5-live/W6 0xbe000000 class ran with no fw behind the surfaces\n",
-			ane->cpu_started, ane->fw_alive, ane->booted);
+			"CSNE PING ep1: FENCED — booted=%u response_validated=%u (first boot: transport stays fenced until DONE response semantics are sourced and the fw device address is range/length validated)\n",
+			ane->booted, ane->response_validated);
 		return;
 	}
 

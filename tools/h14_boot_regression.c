@@ -80,6 +80,7 @@ struct fake {
 	int polls;
 	int s7_never_ack;
 	int failed;
+	int fail_alloc_idx;   /* fail the Nth allocation (-1 = none) */
 	u32 prep_lo;
 	u32 prep_hi;
 	u32 scratch3_req;
@@ -114,7 +115,7 @@ static void *f_alloc2(void *ctx, u64 size, u64 *iova)
 	void *p;
 
 	(void)ctx;
-	if (fake_mem_off + size > sizeof(fake_mem) || f->nasz >= 8) {
+	if (f->nasz == f->fail_alloc_idx || f->nasz >= 8) {
 		*iova = 0;
 		return NULL;
 	}
@@ -144,6 +145,7 @@ static void fake_reset(struct fake *f)
 	f->cpuctrl0_at = -1;
 	f->wake_at = -1;
 	f->barrier_at = -1;
+	f->fail_alloc_idx = -1;
 }
 
 static u32 f_rd32(void *ctx, unsigned int off)
