@@ -244,7 +244,15 @@ static void ane_t6021_cleanup(struct ane_t6021 *ane)
 		ane->irq_requested = false;
 	}
 	ane_t6021_rtkit_shutdown(ane);
-	ane_t6021_fwload_remove(ane);
+	/* DMA ownership (W15): once the ASC CPU started it may still
+	 * fetch from the staged surface — the DMA memory is NOT
+	 * reclaimable on failure/remove (deliberate leak until the
+	 * domain-off reset, i.e. reboot). */
+	if (ane_t6021_boot_dma_reclaimable(ane->cpu_started))
+		ane_t6021_fwload_remove(ane);
+	else
+		dev_warn(ane->dev,
+			 "cpu_started — fw DMA surface intentionally NOT freed (leak until domain-off reset/reboot)\n");
 	ane_t6021_detach_genpd(ane);
 }
 

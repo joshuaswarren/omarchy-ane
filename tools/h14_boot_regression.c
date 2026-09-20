@@ -16,6 +16,8 @@
  * 2026-09-20-h14-rvbar-width / -legacy-init-publication /
  * mapper-callchain-audit (commits 3762aee, 12be074, 04630ef, c364f24).
  */
+#include <errno.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -55,6 +57,122 @@ static u32 rd_le32(const u8 *p)
 {
 	return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) |
 	       ((u32)p[3] << 24);
+}
+
+
+/* ---- fake MMIO backend (test-only; the kernel wraps real io in
+ * ane_t6021_boot.c at gate-flip time) ---- */
+struct fake {
+	unsigned int woff[64];
+	u32 wval[64];
+	int nwr;
+	int nw64;
+	u64 w64val;
+	int prepare_at;
+	int cpuctrl0_at;
+	int wake_at;
+	int barrier_at;
+	u64 rvbar;
+	u32 s7[4];
+	int n7;
+	int polls;
+	int s7_never_ack;
+	int failed;
+	u32 prep_lo;
+	u32 prep_hi;
+};
+
+static struct fake *fake;
+
+static void fake_reset(struct fake *f)
+{
+	memset(f, 0, sizeof(*f));
+	f->nw64 = -1;
+	f->prepare_at = -1;
+	f->cpuctrl0_at = -1;
+	f->wake_at = -1;
+	f->barrier_at = -1;
+}
+
+static u32 f_rd32(void *ctx, unsigned int off)
+{
+	struct fake *f = ctx ? ctx : fake;
+	(void)off;
+	if (f->s7_never_ack)
+		return 0;
+	if (f->n7 < (int)(sizeof(f->s7) / sizeof(f->s7[0])))
+		return f->s7[f->n7++];
+	return ANE_T6021_BOOT_ACK;
+}
+
+static u64 f_rd64(void *ctx, unsigned int off)
+{
+	struct fake *f = ctx ? ctx : fake;
+	(void)off;
+	return f->rvbar;
+}
+
+static void f_rec(struct fake *f, unsigned int off, u32 v)
+{
+	if (f->nwr < (int)(sizeof(f->woff) / sizeof(f->woff[0]))) {
+		f->woff[f->nwr] = off;
+		f->wval[f->nwr] = v;
+	}
+	f->nwr++;
+}
+
+static void f_wr32(void *ctx, unsigned int off, u32 v)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+
+	if (off == ANE_T6021_BOOT_REG_CPUCTRL && v == 0)
+		f->cpuctrl0_at = f->nwr;
+	if (off == ANE_T6021_BOOT_REG_SCRATCH7 && v == ANE_T6021_BOOT_WAKE_REQ)
+		f->wake_at = f->nwr;
+	f_rec(f, off, v);
+}
+
+static void f_wr64(void *ctx, unsigned int off, u64 v)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+
+	(void)off;
+	f->nw64 = f->nwr;
+	f->w64val = v;
+	f_rec(f, off, (u32)v);
+}
+
+static void f_dsb(void *ctx)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+	f->barrier_at = f->nwr;
+}
+
+static void f_wait(void *ctx)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+	f->polls++;
+}
+
+static int f_prepare(void *ctx, u32 *lo, u32 *hi)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+	f->prepare_at = f->nwr;
+	f->prep_lo = 0x1111;
+	f->prep_hi = 0x2222;
+	*lo = f->prep_lo;
+	*hi = f->prep_hi;
+	return 0;
 }
 
 int main(void)
@@ -161,48 +279,35 @@ int main(void)
 		      "join zero-extends hi", "no sign extension");
 	}
 
-	/* ---- Init suballocation SOURCED fill (pass5b/5c/5d corrected
-	 * contract, b8b7c35; validator check_init_contract.py 64/64):
-	 * [0x00]=FWIM DVA, [0x08]=IPC surface DVA, [0x10]=config size
-	 * (u32 zext; = image byte-count), [0x18]=0x10000000-size,
-	 * [0x58]=pool DMA base, [0x60]=pool word0, [0x68]=64 count,
-	 * template[0x00]=0, template+0xC0=4. OPEN [0x20]/[0x28]/[0x30]/
-	 * [0x50] written by nobody; gaps [0x34..37]/[0x64..67] need a
-	 * zeroed block; publication stays fenced. ---- */
+	/* ---- Init suballocation SOURCED fill (pass5b-5d/6c corrected
+	 * contract; validator check_init_contract.py 68/68): EVERY fw-read
+	 * field is sourced — [0x00] FWIM DVA, [0x08] 'IPC ' DVA (size =
+	 * max(u64[dev+0x3A90], zext(u32[x23+4]))), [0x10] config+0x138 =
+	 * 0x500000, [0x18] = 0x10000000 - size = 0x0fb00000, [0x20] obj2
+	 * DVA, [0x28] w22, [0x30] fw-load progress, [0x50] zext [x23+4],
+	 * [0x58] pool DMA base, [0x60] pool word0, [0x68] count 64,
+	 * template[0x00] = 0, template+0xC0 = 4. The preflight gate keeps
+	 * the sequence closed until every one of these values is pinned. */
 	{
 		static const struct ane_t6021_init_sources src = {
 			.fw_dva = 0x0000deadbeef000ULL,
-			.ipc_dva = 0x00000badc0de000ULL,
-			.cfg_size = 0x500000, /* config+0x138 byte-count (Main, audit 751caa4) */
+			.dev_3a90 = 0x12340000ULL,
+			.x23p4 = 0x2000,
+			.obj2_dva = 0x0000feedface000ULL,
+			.w22 = 0x2a,
+			.fwload_progress = 0x11,
+			.cfg_size = 0x500000,
 			.pool_dma = 0x5555aaaab000ULL,
-			.pool_word0 = 0,
 		};
 		u8 buf[ANE_T6021_INIT_STRUCT_SIZE];
 		u8 leak[ANE_T6021_INIT_STRUCT_SIZE];
-		size_t i;
-		int touched;
-
-		/* geometry invariants */
-		check(ANE_T6021_INIT_COUNT_OFF + 4 +
-			      ANE_T6021_INIT_TEMPLATE_SIZE ==
-			      0x16c,
-		      "template end 0x16c", "0x68+4+0x100");
-		check(0x16c + 8 == ANE_T6021_INIT_STRUCT_SIZE,
-		      "struct size 0x174", "0x16c + header qword");
-
-		memset(buf, 0, sizeof(buf));
-		ane_t6021_init_struct_fill(buf, &src);
-
-		/* golden image generated independently (python struct pack of
-		 * the six sources + count + tbit over a zeroed 0x174 block);
-		 * cfg_size = 0x500000 -> [0x18] = 0x0fb00000 (Main, 751caa4) */
 		static const u8 golden[ANE_T6021_INIT_STRUCT_SIZE] = {
-		0x00, 0xf0, 0xee, 0xdb, 0xea, 0x0d, 0x00, 0x00, 0x00, 0xe0, 0x0d, 0xdc, 0xba, 0x00, 0x00, 0x00,
+		0x00, 0xf0, 0xee, 0xdb, 0xea, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb0, 0x0f, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0xe0, 0xac, 0xdf, 0xee, 0x0f, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb0, 0xaa, 0xaa, 0x55, 0x55, 0x00, 0x00,
+		0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb0, 0xaa, 0xaa, 0x55, 0x55, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -222,28 +327,43 @@ int main(void)
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00,
 		};
+		size_t i;
+		int touched;
+
+		check(ANE_T6021_INIT_COUNT_OFF + 4 +
+			      ANE_T6021_INIT_TEMPLATE_SIZE == 0x16c,
+		      "template end 0x16c", "0x68+4+0x100");
+		check(0x16c + 8 == ANE_T6021_INIT_STRUCT_SIZE,
+		      "struct size 0x174", "0x16c + header qword");
+
+		memset(buf, 0, sizeof(buf));
+		ane_t6021_init_struct_fill(buf, &src);
 		check(memcmp(buf, golden, sizeof(buf)) == 0,
 		      "sourced fill exact image",
-		      "all six sources + count + tbit, rest zero");
+		      "every fw-read field sourced, gaps zero");
 
 		check(rd_le64(buf) == src.fw_dva &&
-		      rd_le64(buf + 0x08) == src.ipc_dva &&
+		      rd_le64(buf + 0x08) ==
+		      ane_t6021_ipc_size(0x12340000ULL, 0x2000) &&
+		      rd_le64(buf + 0x08) == 0x12340000ULL &&
 		      rd_le64(buf + 0x10) == 0x500000ULL &&
 		      rd_le64(buf + 0x18) == 0x0fb00000ULL &&
+		      rd_le32(buf + 0x28) == 0x2a &&
+		      rd_le32(buf + 0x30) == 0x11 &&
+		      rd_le64(buf + 0x50) == 0x2000ULL &&
 		      rd_le32(buf + ANE_T6021_INIT_COUNT_OFF) == 0x40 &&
 		      rd_le32(buf + ANE_T6021_INIT_TEMPLATE_OFF +
 			      ANE_T6021_INIT_TBIT_OFF) == 0x4,
-		      "fill field reads", "LE decode incl. size complement");
+		      "fill field reads", "all sourced fields decoded");
 
-		/* open fields ([0x20..0x58) incl. [0x30] fw-load progress and
-		 * [0x50]) and the gap bytes stay EXACTLY as the caller left
-		 * them - no hidden writes, no validity claim over fw-read units */
+		/* untouched-zone check: fill writes only its closed fields —
+		 * the gaps [0x34..37]/[0x64..67] stay caller-owned */
 		memset(leak, 0xa5, sizeof(leak));
 		ane_t6021_init_struct_fill(leak, &src);
 		touched = 0;
 		for (i = 0; i < sizeof(leak); i++) {
-			int closed = i < 0x20 ||
-				     (i >= 0x58 && i < 0x70) ||
+			int closed = i < 0x34 ||
+				     (i >= 0x50 && i < 0x70) ||
 				     i == (ANE_T6021_INIT_TEMPLATE_OFF +
 					   ANE_T6021_INIT_TBIT_OFF);
 
@@ -251,17 +371,170 @@ int main(void)
 				touched++;
 		}
 		check(touched == 0, "fill touches sourced fields only",
-		      "open fields + gaps preserved byte-exact (zero first)");
+		      "gap bytes preserved byte-exact (zero first)");
+	}
 
-		/* determinism: zero sources differ only in the written fields */
-		memset(leak, 0xff, sizeof(leak));
-		memset(leak, 0, sizeof(leak));
-		ane_t6021_init_struct_fill(leak, &(struct ane_t6021_init_sources){
-			.cfg_size = 0x500000 });
-		check(rd_le64(leak) == 0 && rd_le64(leak + 0x08) == 0 &&
-		      rd_le64(leak + 0x10) == 0x500000ULL &&
-		      rd_le64(leak + 0x18) == 0x0fb00000ULL,
-		      "fill with zero DVAs/pool", "zeroed-source variant");
+
+	/* ---- Fake-MMIO trace check: ane_t6021_boot_run against the
+	 * recording backend. Asserts (1) ZERO writes while the preflight
+	 * gate is closed, (2) exact write order/values on the bit0-set
+	 * skip branch, (3) the fold write on the unprogrammed branch,
+	 * (4) publish strictly after poll A, wake strictly after
+	 * publish, (5) poll A timeout = hold + DMA not reclaimable. ---- */
+	{
+		struct fake fk;
+		static const struct ane_t6021_boot_io io = {
+			.rd32 = f_rd32, .rd64 = f_rd64,
+			.wr32 = f_wr32, .wr64 = f_wr64,
+			.dsb_st = f_dsb, .poll_wait = f_wait,
+			.prepare = f_prepare,
+		};
+
+		/* (1) gates closed -> -ENODATA and NOT ONE write */
+		fake_reset(&fk);
+		fake = &fk;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 0,
+				.fw_dva = 0x500000,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo) == -ENODATA,
+			      "run: closed gate returns -ENODATA",
+			      "no sequence started");
+			check(fk.nwr == 0, "run: closed gate = no writes",
+			      "Main: all gates before any boot write");
+			check(cs == 0 && fa == 0 && bo == 0,
+			      "run: closed gate sets no flags",
+			      "state stays fenced");
+		}
+
+		/* (2) open gate, bit0-set RVBAR (live state): lawful
+		 * skip branch. */
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+			int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						   &bo);
+
+			check(r == 0, "run: happy path returns 0",
+			      "fresh READY and DONE both observed");
+			check(cs == 1 && fa == 1 && bo == 1,
+			      "run: cpu_started/fw_alive/booted set",
+			      "full sequence");
+			check(fk.nwr == 19,
+			      "run: 19 writes (3 table + 8 clear + s6 + pulse2 + cpu2 + pub2 + wake)",
+			      "exact write count");
+			check(fk.woff[0] == ANE_T6021_BOOT_REG_TABLE0 &&
+			      fk.woff[1] == ANE_T6021_BOOT_REG_TABLE1 &&
+			      fk.woff[2] == ANE_T6021_BOOT_REG_TABLE2 &&
+			      fk.wval[0] == 0x01ff01ffU &&
+			      fk.wval[1] == 0x01ff01ffU &&
+			      fk.wval[2] == 0x01ff01ffU,
+			      "pre-CPU table writes first",
+			      "pass4 receiver, pass5 gate");
+			check(fk.woff[3] == ANE_T6021_BOOT_REG_SCRATCH0 &&
+			      fk.wval[3] == 0 &&
+			      fk.woff[10] ==
+			      ANE_T6021_BOOT_REG_SCRATCH7 &&
+			      fk.wval[10] == 0,
+			      "all eight scratch cells cleared",
+			      "exact init clears ALL, not only 7");
+			check(fk.woff[11] ==
+			      ANE_T6021_BOOT_REG_SCRATCH6 &&
+			      fk.wval[11] == 1 &&
+			      fk.woff[12] ==
+			      ANE_T6021_BOOT_REG_SCRATCH7 &&
+			      fk.wval[12] == 1 &&
+			      fk.woff[13] ==
+			      ANE_T6021_BOOT_REG_SCRATCH7 &&
+			      fk.wval[13] == 0,
+			      "SCRATCH6=1 then SCRATCH7 pulse 1->0",
+			      "stale ack cleared pre-CPU");
+			check(fk.nw64 < 0,
+			      "no RVBAR write on bit0-set branch",
+			      "lawful skip; never write over bit0");
+			check(fk.cpuctrl0_at == 14 &&
+			      fk.wval[14] == 0 &&
+			      fk.wval[15] == ANE_T6021_CPU_RUN_RELEASE,
+			      "CPU_CONTROL 0 then 0x10 after pulse",
+			      "strict order, both paths");
+			check(fk.prepare_at == 16 &&
+			      fk.barrier_at == 16,
+			      "prepare+dsb after poll A",
+			      "publication strictly post-alive");
+			check(fk.woff[16] ==
+			      ANE_T6021_BOOT_REG_SCRATCH0 &&
+			      fk.wval[16] == 0x1111U &&
+			      fk.woff[17] ==
+			      ANE_T6021_BOOT_REG_SCRATCH1 &&
+			      fk.wval[17] == 0x2222U,
+			      "publish low32/high32 from prepare",
+			      "suballoc DVA halves");
+			check(fk.woff[18] ==
+			      ANE_T6021_BOOT_REG_SCRATCH7 &&
+			      fk.wval[18] == ANE_T6021_BOOT_WAKE_REQ,
+			      "wake after publish", "releases fw wait");
+		}
+
+		/* (3) bit0-clear RVBAR: the fold write64 appears */
+		fake_reset(&fk);
+		{
+			int cs = 0, fa = 0, bo = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo) == 0,
+			      "run: unprogrammed branch boots",
+			      "direct-image fold path");
+			check(fk.nw64 == 14 &&
+			      fk.w64val ==
+			      ane_t6021_rvbar_compose(cfg.fw_dva),
+			      "RVBAR write64 = entry fold",
+			      "after table+scratch pulse, before CPU release");
+		}
+
+		/* (4) poll A timeout: HOLD — started, nothing published */
+		fake_reset(&fk);
+		fk.s7_never_ack = 1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo) == -ETIMEDOUT,
+			      "run: poll A timeout = -ETIMEDOUT",
+			      "bounded polls");
+			check(cs == 1 && fa == 0 && bo == 0,
+			      "timeout: cpu_started, not alive/booted",
+			      "HOLD semantics");
+			check(fk.prepare_at < 0,
+			      "timeout: no publish attempted",
+			      "no partial boot past poll A");
+			check(fk.nwr == 17,
+			      "timeout: writes stop after CPU release (17 incl. fold wr64)",
+			      "no publish/wake after poll A timeout");
+			check(ane_t6021_boot_dma_reclaimable(cs) == false,
+			      "ownership: DMA NOT reclaimable while started",
+			      "cannot free while the CPU may fetch");
+		}
+		check(ane_t6021_boot_dma_reclaimable(0) == true,
+		      "ownership: DMA reclaimable when never started",
+		      "normal status-only removal");
+		fake = NULL;
 	}
 
 	printf("%s: %d checks, %d failures\n",
