@@ -188,7 +188,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 			 ane_t6021_rvbar_entry_bits(rvbar));
 	else
 		dev_info(ane->dev,
-			 "boot: bit0 set, entry bits 0 — STALE state (M2ResetLifecycle rvbar-lifecycle-evidence 38/38: kext remedy is power_off (PMGR ps 0x2e0 <- 0 via dev+0x190) -> power_on -> re-init, NEVER an RVBAR write while bit0 is set; RVBAR write requires read64 bit0 == 0 first). Reset vehicle unresolved: the ps-word write froze this host from kernel context (2026-09-19); userspace stage vs in-kernel cycle is a Main decision. Open edge: whether ps-off clears bit0 — one live read-only read64 after domain-off answers it\n");
+			 "boot: bit0 set, entry bits 0 — STALE state (M2ResetLifecycle rvbar-lifecycle-evidence 38/38: kext remedy is power_off (PMGR ps 0x2e0 <- 0 via dev+0x190) -> power_on -> re-init, NEVER an RVBAR write while bit0 is set; RVBAR write requires read64 bit0 == 0 first). Skip-path note (unambiguous): the kext converges on CPU_CONTROL 0x01400044 write32 0 then 0x10 on an already-latched target — that is its latched-target behavior, not a latch override. Reset vehicle unresolved: the ps-word write froze this host from kernel context (2026-09-19); userspace stage vs in-kernel cycle is a Main decision. Hazard for the open edge (does ps-off clear bit0): NEVER read the engine aperture while the domain is gated — re-enable FIRST (ps 0x2e0 <- 0x0000000f, validate 0xff), THEN read64 RVBAR\n");
 
 	/* HARD BLOCK before ANY MMIO write (Main 2026-09-20): the whole
 	 * write sequence — preboot engine table (eng+0xb38/0xb98/0xbf8
