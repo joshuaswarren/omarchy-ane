@@ -63,12 +63,11 @@
 						 * mutation is unqualified
 						 * on H14 and is NOT set */
 
-/* PASS5 (c364f24): fw-consumed open fields — the fill() leaves them
- * zero and publication cannot fire over them: [0x08]/[0x10]
- * (= *(dev+0x988+0x24), object not dumped), [0x18] (=
- * 0x10000000-config.size, formula closed but config.size identity
- * unconfirmed on Linux), [0x20], [0x28], [0x30] (load-progress
- * word). */
+/* Main-corrected (2026-09-20) open fields — the fill() leaves them
+ * zero and publication cannot fire over them: [0x08] (=
+ * *(dev+0x988+0x18), Params-pattern DVA of a second surface, identity
+ * undecoded), [0x10] (= config size), [0x18] (= 0x10000000-config.size),
+ * [0x20], [0x28], [0x30] (load-progress word). */
 #define ANE_T6021_INIT_STRUCT_SIZE	0x174
 
 static inline u64 ane_t6021_rvbar_compose(u64 iova)
@@ -107,13 +106,18 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
 /* Fill the CLOSED fields of a ZEROED 0x174-byte init suballocation.
  * The caller owns zeroing (dma_alloc_coherent memory is zero).
  *
- * PASS5 field table (commit c364f24): the fw CONSUMES [0x08]..[0x68]
- * — [0x08]/[0x10] = *(dev+0x988+0x24) (+size dup), [0x18] =
- * 0x10000000-config.size, [0x20] = *(sp136+0x24), [0x28] = local w22,
- * [0x30] = dev+0x990 load-progress word. Their producing objects are
- * not decoded, so this fill leaves them zero and the result is NOT a
- * valid init structure: zeros are UNSAFE there and publication stays
- * fenced until each open field has a pinned Linux source. */
+ * Field table (pass5 c364f24 + Main correction 2026-09-20: the audit's
+ * "+0x24" was DECIMAL 24 = 0x18, and x9 is overwritten before the
+ * stp): the fw CONSUMES [0x08]..[0x68]. Producers:
+ *   [0x08] = *(dev+0x988+0x18) — a Params-pattern DVA of a SECOND
+ *            surface (dev+0x988 identity still undecoded),
+ *   [0x10] = config size (the fw payload length; equivalence to
+ *            ANE_FW_BLOB_SIZE on Linux unconfirmed),
+ *   [0x18] = 0x10000000-config.size (formula closed),
+ *   [0x20]/[0x28] open, [0x30] = dev+0x990 load-progress word.
+ * None of these has a pinned Linux source, so this fill leaves them
+ * zero and the result is NOT a valid init structure: zeros are UNSAFE
+ * there and publication stays fenced. */
 static inline void ane_t6021_init_struct_fill(u8 *buf, u64 fw_iova)
 {
 	buf[ANE_T6021_INIT_FW_DVA_OFF + 0] = (u8)fw_iova;
