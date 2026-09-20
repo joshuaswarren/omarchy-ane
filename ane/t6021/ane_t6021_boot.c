@@ -136,7 +136,32 @@
 static bool fw_boot;
 module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
-		 "OPT-IN: boot state resolution + report (W15, read-only until the preboot/RVBAR prerequisites land — see ane_t6021_boot.c header).");
+		 "OPT-IN: boot state resolution + report (W15). Dispatches to boot_start when fw_boot=1 (MMIO writes fire); reports state without MMIO when fw_boot=1 is not set.");
+
+static bool fw_iova_exported;
+static u64 exported_fw_iova;
+
+/* Expose staged fw DVA for userspace via sysfs module parameter */
+static int fw_iova_set(const char *val, const struct kernel_param *kp)
+{
+	return 0; /* read-only */
+}
+static int fw_iova_get(char *buf, const struct kernel_param *kp)
+{
+	if (fw_boot && fw_iova_exported)
+		return scnprintf(buf, PAGE_SIZE, "0x%016llx\n",
+				 (u64)exported_fw_iova);
+	return scnprintf(buf, PAGE_SIZE, "0x0000000000000000\n");
+}
+static const struct kernel_param_ops fw_iova_ops = {
+	.set = fw_iova_set,
+	.get = fw_iova_get,
+};
+module_param_cb(fw_iova, &fw_iova_ops, NULL, 0444);
+MODULE_PARM_DESC(fw_iova, "READ-ONLY: staged selene surface DVA (populated by fw_load=1)");
+
+static bool fw_iova_exported;
+static u64 exported_fw_iova;
 
 /* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
  * sequence (preboot engine table, scratch clear + pulse, RVBAR
@@ -530,6 +555,10 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 		dev_info(ane->dev,
 			 "boot: bit0 set, entry bits %0llx — lawful skip branch: no RVBAR write, CPU_CONTROL 0->0x10 and fresh-READY poll next when the preflight opens\n",
 			 ane_t6021_rvbar_entry_bits(rvbar));
+
+	/* Export the staged DVA for userspace (hybrid boot path) */
+	fw_iova_exported = true;
+	exported_fw_iova = (u64)ane->fw_iova;
 
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
