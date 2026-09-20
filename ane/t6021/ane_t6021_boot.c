@@ -54,9 +54,23 @@
  *      substitutes the genpd raise + supplier links (islands verified
  *      ACTUAL=0xf by the gate); the equivalence datum is the open
  *      half.
- *   3. RVBAR lifecycle fork (bit0 set + entry 0): audit lane owns
- *      ANE_CleanupForColdReboot_gated, island power-cycle RVBAR
- *      semantics, dev+0x41f provenance.
+ *   3. RVBAR lifecycle — RESOLVED (M2ResetLifecycle,
+ *     rvbar-lifecycle-evidence.json, anchors 38/38
+ *     check_rvbar_lifecycle_anchors.py): live bit0-set + entry 0 is
+ *     the STALE state; the kext-lawful transition is power_off
+ *     (ANE_deInit when dev+0x3FB, then PMGR ps 0x2e0 ← 0x00000000 via
+ *     the dev+0x190 PMGR accessor) → power_on → re-init, NEVER an
+ *     RVBAR write while bit0 is set. RVBAR (engine accessor,
+ *     0x1050000, u64) is written only after a read64 with bit0 == 0;
+ *     CPU_CONTROL write32 0 then 0x10 runs on BOTH paths; success =
+ *     SCRATCH7 (dev+0x454 selector) read32 == 0x08042006. Open edge:
+ *     whether ps-off clears bit0 — one live read-only read64 after a
+ *     domain-off answers it. IMPLEMENTATION CAVEAT: the ps-word write
+ *     is the class that froze this host from kernel context
+ *     (2026-09-19 receipt) and the W3 gate demands act=0xf +
+ *     AUTO_ENABLE clear afterwards — the reset vehicle (userspace
+ *     stage vs in-kernel) is a Main decision, so the fold+start path
+ *     stays behind boot_preflight_complete.
  *   4. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
  *      the Linux sources of those fields are not pinned ([0x08] =
  *      *(dev+0x988+0x18), a Params-pattern DVA of a second surface
@@ -174,7 +188,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 			 ane_t6021_rvbar_entry_bits(rvbar));
 	else
 		dev_info(ane->dev,
-			 "boot: bit0 set, entry bits 0 — the value every owned Linux boot read (W8/W10: 0x1). Which boot mode this names is UNRESOLVED: (a) entry 0 names the ASC boot ROM (the kext local order continues CPU_CONTROL 0->0x10 with RVBAR untouched), or (b) a programmed/latched state only a reset lifecycle reaches. No owned disassembly decides between (a) and (b); the audit lane owns ANE_CleanupForColdReboot_gated, island power-cycle RVBAR semantics, and dev+0x41f provenance\n");
+			 "boot: bit0 set, entry bits 0 — STALE state (M2ResetLifecycle rvbar-lifecycle-evidence 38/38: kext remedy is power_off (PMGR ps 0x2e0 <- 0 via dev+0x190) -> power_on -> re-init, NEVER an RVBAR write while bit0 is set; RVBAR write requires read64 bit0 == 0 first). Reset vehicle unresolved: the ps-word write froze this host from kernel context (2026-09-19); userspace stage vs in-kernel cycle is a Main decision. Open edge: whether ps-off clears bit0 — one live read-only read64 after domain-off answers it\n");
 
 	/* HARD BLOCK before ANY MMIO write (Main 2026-09-20): the whole
 	 * write sequence — preboot engine table (eng+0xb38/0xb98/0xbf8
