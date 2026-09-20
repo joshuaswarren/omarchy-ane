@@ -288,6 +288,15 @@ static void ane_boot_wait(void *ctx)
 	usleep_range(1000, 1500);	/* kext poll: sleep(1000us) */
 }
 
+static void ane_boot_phase(void *ctx, const char *what)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+
+	/* bounded phase marker: one line per block boundary, survives
+	 * netconsole for crash attribution (never per-poll). */
+	dev_info(mm->ane->dev, "BOOT-PHASE %s\n", what);
+}
+
 /* S5 prepare — runs strictly AFTER poll A (fw alive), BEFORE the
  * SCRATCH0/1 publish. Dynamic allocations occur here per "dynamic
  * allocations occur after READY" (Main): the 'DDM ' pool, the 'IPC '
@@ -365,6 +374,7 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 		.rd32 = ane_boot_rd32, .rd64 = ane_boot_rd64,
 		.wr32 = ane_boot_wr32, .wr64 = ane_boot_wr64,
 		.publish_barrier = ane_boot_publish_barrier, .poll_wait = ane_boot_wait,
+		.phase = ane_boot_phase,
 		.prepare = ane_t6021_boot_prepare,
 	};
 	struct ane_t6021_boot_cfg cfg = {
