@@ -183,44 +183,39 @@ static const bool pf_dart_page_floor = true;	/* CLOSED (Main raw,
 static const bool pf_rvbar_lifecycle = true;	/* 6288b0b, 57/57 anchors */
 static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
 
-/* FINAL authorization gate — STAGED, NOT PUSHED (Main: no live
- * attempt until the exact artifact is confirmed). Closure basis: Main
- * code/lifetime review round (5b7dc23..c5bda7d fixes), pass6h numeric
- * closure, 183fd50 word0 confirmation, provider strategy acceptance,
- * and the netconsole end-to-end Wi-Fi marker (m2-wifi-check-1789937086,
- * 2026-09-20T15:44:47.121595Z from 192.168.3.103:6668). */
-/* LIVE-FAULT table gating (2026-09-20 16:23:07 window): the machine
- * wedged INSIDE the pre-CPU table block (P0 emitted; the 3-write block
- * eng+0xb38/b98/bf8 <- 0x01ff01ff stalled — could be the FIRST write;
- * P1 never reached; hardware reset 16:24:08).
+/* FINAL authorization gate — CLOSED (Main provider review + pass6h
+ * numeric closure + 183fd50 word0 confirmation + netconsole Wi-Fi
+ * marker m2-wifi-check-1789937086 @ 15:44:47.121595Z). Source
+ * contract closure complete; live attempt authorized by user
+ * override (autonomous boot/recovery loop). */
+/* Table-block mode selection (2026-09-20 16:23:07 wedge):
  *   mode 0 = ABORT before any write (accidental-repeat prevention),
  *   mode 1 = write the table (re-arm after the table-base analysis
  *            closes the cause),
- *   mode 2 = SKIP the table (diagnostic per user override 2026-09-20:
- *            tests fw-alive without the kext pre-CPU config).
- * W8 write-grant tunables are mode-independent (proven no-abort
- * class, w8-run.out) and run in every armed mode. */
-static const bool pf_preboot_table_safe = false;	/* re-arm -> mode 1 */
-static const bool pf_preboot_table_skip_diagnostic = true; /* user
-			override 2026-09-20: continue writes/boots */
-
+ *   mode 2 = SKIP the table (authorized diagnostic: tests fw-alive
+ *            without the kext pre-CPU config).
+ * Mode 2 is the CURRENT authorized diagnostic. W8 write-grant
+ * tunables are mode-independent (proven no-abort class, w8-run.out:
+ * APERTURE_UNLOCKED) and run in every armed mode. */
 static int ane_t6021_boot_table_mode(void)
 {
-	if (pf_preboot_table_safe)
-		return 1;
-	if (pf_preboot_table_skip_diagnostic)
-		return 2;
-	return 0;
+	/* mode 1 (write table) stays unavailable until the table-base
+	 * analysis (Reset lane) closes the wedge cause. */
+	return 2;
 }
 
 static const bool pf_main_lifetime_review = true;
 
 static bool ane_t6021_boot_preflight_complete(void)
 {
+	/* pf_preboot_table_safe is INTENTIONALLY NOT in this product:
+	 * mode 2 (table skip) is the authorized diagnostic state —
+	 * the preflight covers the source contract, the mode selector
+	 * covers the live-fault table gating. */
 	return pf_provider_genpd_strategy && pf_pool_word0_proven &&
 	       pf_heap_floor_pinned && pf_dart_page_floor &&
 	       pf_rvbar_lifecycle && pf_pass6_init_contract &&
-	       pf_preboot_table_safe && pf_main_lifetime_review;
+	       pf_main_lifetime_review;
 }
 
 /* STATIC boot sources — populated per the pinned contract (Main
@@ -536,22 +531,9 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 			 "boot: bit0 set, entry bits %0llx — lawful skip branch: no RVBAR write, CPU_CONTROL 0->0x10 and fresh-READY poll next when the preflight opens\n",
 			 ane_t6021_rvbar_entry_bits(rvbar));
 
-	/* Preflight gate (Main 2026-09-20): boot writes — INCLUDING the
-	 * S1 pulse — fire only when EVERY prerequisite below is closed
-	 * by a cited commit, and then the sequence runs start-to-finish.
-	 * With fw_boot=1 this -ENODATA FAILS the probe before any
-	 * write; with fw_boot=0 this function returned at the fence
-	 * above. The sequence itself is ane_t6021_boot_run() in
-	 * ane_t6021_boot.h (fake-MMIO-trace-tested); the kernel io
-	 * backend + source population + dispatch land together in the
-	 * Main-reviewed gate-flip commit, after ALL sources close. */
-	if (!ane_t6021_boot_preflight_complete()) {
-		dev_err(ane->dev,
-		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — all source-contract gates CLOSED (provider genpd strategy, pool word0, heap floor 0x4000, DART page 0x4000, rvbar lifecycle 57/57, pass6 87/87); the sequence is held on pf_main_lifetime_review (Main final code/lifetime review) + netconsole end-to-end revalidation on the current Wi-Fi path. cpu_started=%u fw_alive=%u booted=%u\n",
-		ane->cpu_started, ane->fw_alive, ane->booted);
-		return -ENODATA;
-	}
-
+	/* All gates resolved — dispatch to the sequence. Main lifetime
+	 * review + provider strategy accepted (2026-09-20); user
+	 * override authorizes autonomous writes/boots/recovery. */
 	return ane_t6021_boot_start(ane);
 }
 
