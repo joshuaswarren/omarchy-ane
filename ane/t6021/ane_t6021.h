@@ -400,6 +400,9 @@ struct ane_t6021 {
 	u64 boot_heap_size;
 	u32 prev_fw_len;		/* [0x30]: previous fw image length
 					 * (0 first boot; updated per reload) */
+	u64 boot_scratch_result;	/* SCRATCH1<<32 | SCRATCH0 captured
+					 * at DONE — raw; success semantics
+					 * UNSOURCED (never inferred) */
 };
 
 /* ane_t6021_rtkit.c */

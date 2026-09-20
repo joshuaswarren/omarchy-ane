@@ -75,18 +75,70 @@ struct fake {
 	u64 rvbar;
 	u32 s7[4];
 	int n7;
+	u32 scratch0_val;
+	u32 scratch1_val;
 	int polls;
 	int s7_never_ack;
 	int failed;
 	u32 prep_lo;
 	u32 prep_hi;
+	u32 scratch3_req;
+	u32 scratch1_captured;
+	u64 asz[8];
+	u64 aiov[8];
+	int nasz;
 };
+
+/* file-scope sources for the shared assembly (nonzero prev_fw_len on
+ * purpose: catches low-byte-only serialization) */
+static const struct ane_t6021_init_sources asm_src = {
+	.fw_dva = 0x0000deadbeef000ULL,
+	.ipc_dva = 0x00000badc0de000ULL,
+	.cfg_size = 0x500000,
+	.prev_fw_len = 0x1234,
+	.heap_floor = 0x30000ULL,
+	.pool_dma = 0x5555aaaab000ULL,
+	.pool_word0 = 0x40000, /* pool total length: HYPOTHESIS-GRADE in
+				* shipped sources; here it exercises the
+				* fill's u64 copy — the SHIPPED value
+				* stays hard-gated */
+};
+
+static struct fake *fake;
+static u8 fake_mem[0x80000];
+static size_t fake_mem_off;
+
+static void *f_alloc2(void *ctx, u64 size, u64 *iova)
+{
+	struct fake *f = fake;
+	void *p;
+
+	(void)ctx;
+	if (fake_mem_off + size > sizeof(fake_mem) || f->nasz >= 8) {
+		*iova = 0;
+		return NULL;
+	}
+	p = fake_mem + fake_mem_off;
+	/* call-order iovas: pool, 'IPC ', HEAP — matching the golden */
+	switch (f->nasz) {
+	case 0: *iova = 0x5555aaaab000ULL; break;
+	case 1: *iova = 0x00000badc0de000ULL; break;
+	case 2: *iova = 0x0000feedface000ULL; break;
+	default: *iova = 0x10000000ULL * (u64)(f->nasz + 1); break;
+	}
+	f->asz[f->nasz] = size;
+	f->aiov[f->nasz] = *iova;
+	f->nasz++;
+	fake_mem_off = (fake_mem_off + size + 0xfffULL) & ~(size_t)0xfffULL;
+	return p;
+}
 
 static struct fake *fake;
 
 static void fake_reset(struct fake *f)
 {
 	memset(f, 0, sizeof(*f));
+	fake_mem_off = 0;
 	f->nw64 = -1;
 	f->prepare_at = -1;
 	f->cpuctrl0_at = -1;
@@ -97,12 +149,19 @@ static void fake_reset(struct fake *f)
 static u32 f_rd32(void *ctx, unsigned int off)
 {
 	struct fake *f = ctx ? ctx : fake;
-	(void)off;
-	if (f->s7_never_ack)
-		return 0;
-	if (f->n7 < (int)(sizeof(f->s7) / sizeof(f->s7[0])))
-		return f->s7[f->n7++];
-	return ANE_T6021_BOOT_ACK;
+
+	if (off == ANE_T6021_BOOT_REG_SCRATCH0)
+		return f->scratch0_val;
+	if (off == ANE_T6021_BOOT_REG_SCRATCH1)
+		return f->scratch1_val;
+	if (off == ANE_T6021_BOOT_REG_SCRATCH7) {
+		if (f->s7_never_ack)
+			return 0;
+		if (f->n7 < (int)(sizeof(f->s7) / sizeof(f->s7[0])))
+			return f->s7[f->n7++];
+		return ANE_T6021_BOOT_ACK;
+	}
+	return 0;
 }
 
 static u64 f_rd64(void *ctx, unsigned int off)
@@ -165,13 +224,22 @@ static void f_wait(void *ctx)
 static int f_prepare(void *ctx, u32 *lo, u32 *hi)
 {
 	struct fake *f = fake;
+	struct ane_t6021_boot_allocs a;
+	int err;
 
 	(void)ctx;
 	f->prepare_at = f->nwr;
-	f->prep_lo = 0x1111;
-	f->prep_hi = 0x2222;
-	*lo = f->prep_lo;
-	*hi = f->prep_hi;
+	/* THE SHARED ASSEMBLY — same function the kernel prepare calls:
+	 * wrong-DVA, double-increment and unbounded-size classes must
+	 * fail here, not on hardware. */
+	err = ane_t6021_boot_prepare_publish(&asm_src, f->scratch3_req,
+					     f->scratch0_val,
+					     f->scratch1_captured, 0x4000,
+					     ANE_T6021_BOOT_IPC_CEILING,
+					     ANE_T6021_BOOT_HEAP_CEILING,
+					     NULL, f_alloc2, &a, lo, hi);
+	if (err)
+		return err;
 	return 0;
 }
 
@@ -290,7 +358,7 @@ int main(void)
 			.fw_dva = 0x0000deadbeef000ULL,
 			.ipc_dva = 0x00000badc0de000ULL,
 			.cfg_size = 0x500000,
-			.prev_fw_len = 0, /* first boot */
+			.prev_fw_len = 0x1234, /* nonzero: full u32 must land at [0x30] */
 			.heap_floor = 0x30000ULL,
 			.pool_dma = 0x5555aaaab000ULL,
 			.pool_word0 = 0x40000, /* MECHANISM-ONLY test value: the shipped [0x60] stays HARD-GATED (pf_pool_word0_proven) until pool+0x00 producer/consumer proof lands */
@@ -305,7 +373,7 @@ int main(void)
 		0x00, 0xf0, 0xee, 0xdb, 0xea, 0x0d, 0x00, 0x00, 0x00, 0xe0, 0x0d, 0xdc, 0xba, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb0, 0x0f, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0xe0, 0xac, 0xdf, 0xee, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb0, 0xaa, 0xaa, 0x55, 0x55, 0x00, 0x00,
 		0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -381,7 +449,7 @@ int main(void)
 		      rd_le64(buf + 0x18) == 0x0fb00000ULL &&
 		      rd_le64(buf + 0x20) == heap_dva &&
 		      rd_le64(buf + 0x28) == heap_size &&
-		      rd_le32(buf + 0x30) == 0 &&
+		      rd_le32(buf + 0x30) == 0x1234 &&
 		      rd_le64(buf + 0x50) == ordinal &&
 		      rd_le64(buf + 0x58) == src.pool_dma &&
 		      rd_le64(buf + 0x60) == 0x40000ULL &&
@@ -421,7 +489,7 @@ int main(void)
 		static const struct ane_t6021_boot_io io = {
 			.rd32 = f_rd32, .rd64 = f_rd64,
 			.wr32 = f_wr32, .wr64 = f_wr64,
-			.dsb_st = f_dsb, .poll_wait = f_wait,
+			.publish_barrier = f_dsb, .poll_wait = f_wait,
 			.prepare = f_prepare,
 		};
 
@@ -430,13 +498,14 @@ int main(void)
 		fake = &fk;
 		{
 			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 0,
 				.fw_dva = 0x500000,
 			};
 
 			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
-						 &bo) == -ENODATA,
+						 &bo, &sres) == -ENODATA,
 			      "run: closed gate returns -ENODATA",
 			      "no sequence started");
 			check(fk.nwr == 0, "run: closed gate = no writes",
@@ -450,14 +519,19 @@ int main(void)
 		 * skip branch. */
 		fake_reset(&fk);
 		fk.rvbar = 0x1;
+		fk.scratch0_val = 0x05;      /* below 0x21 band */
+		fk.scratch1_val = 0xab;
+		fk.scratch3_req = 0x8000;    /* below floor */
+		fk.scratch1_captured = 6;    /* ordinal 7 */
 		{
 			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 			int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa,
-						   &bo);
+						   &bo, &sres);
 
 			check(r == 0, "run: happy path returns 0",
 			      "fresh READY and DONE both observed");
@@ -505,33 +579,120 @@ int main(void)
 			      fk.barrier_at == 16,
 			      "prepare+dsb after poll A",
 			      "publication strictly post-alive");
-			check(fk.woff[16] ==
-			      ANE_T6021_BOOT_REG_SCRATCH0 &&
-			      fk.wval[16] == 0x1111U &&
-			      fk.woff[17] ==
-			      ANE_T6021_BOOT_REG_SCRATCH1 &&
-			      fk.wval[17] == 0x2222U,
+			check(fk.nasz == 3 &&
+			      fk.asz[0] == 0x40000 &&
+			      fk.asz[1] == 0x4000 &&
+			      fk.asz[2] == 0x30000,
+			      "SHARED assembly alloc sizes",
+			      "pool 0x40000; ipc max(0x4000,6+1); heap max(req,floor)");
+			check(fk.aiov[2] == 0x0000feedface000ULL,
+			      "SHARED assembly heap DVA",
+			      "fill sees the ALLOCATED iova (no NULL publish)");
+			check(rd_le64(fake_mem + 0x58) == asm_src.pool_dma,
+			      "publish halves = pool DVA",
+			      "pool DVA at header [0x58] from the shared split");
+			check(fk.wval[16] == (u32)(0x5555aaaab000ULL & 0xffffffffU) &&
+			      fk.wval[17] == (u32)(0x5555aaaab000ULL >> 32),
 			      "publish low32/high32 from prepare",
 			      "suballoc DVA halves");
 			check(fk.woff[18] ==
 			      ANE_T6021_BOOT_REG_SCRATCH7 &&
 			      fk.wval[18] == ANE_T6021_BOOT_WAKE_REQ,
 			      "wake after publish", "releases fw wait");
+			check(sres == 0x000000ab00000005ULL,
+			      "DONE result captured raw (SC1<<32|SC0)",
+			      "exposed, not discarded (Main review)");
 		}
 
-		/* (3) bit0-clear RVBAR: the fold write64 appears */
+		/* (2b) IPC double-increment catch: captured 0x3FFF makes
+		 * the correct ordinal+1 exactly one DART page (0x4000);
+		 * a +2 bug would allocate 0x4001. */
 		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		fk.scratch1_captured = 0x3fff;
 		{
 			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
 			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
-						 &bo) == 0,
+						 &bo, &sres) == 0,
+			      "run: 0x3FFF captured boots",
+			      "ordinal boundary");
+			check(fk.asz[1] == 0x4000,
+			      "IPC size = ordinal+1 EXACT (no double add)",
+			      "max(0x4000, 0x3FFF+1) == 0x4000");
+		}
+
+		/* (2c) SCRATCH0 band boundary: 0x20 accepted (below
+		 * threshold), 0x21 REFUSED before ANY allocation. */
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		fk.scratch0_val = 0x20;
+		fk.scratch1_val = 6;
+		fk.scratch3_req = 0x8000;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == 0,
+			      "run: scratch0=32 accepted",
+			      "boundary below threshold");
+			check(fk.nasz == 3,
+			      "scratch0=32 allocates pool/ipc/heap",
+			      "MAX path taken");
+		}
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		fk.scratch0_val = 0x21;
+		fk.scratch1_val = 6;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -EPROTO,
+			      "run: scratch0=33 REFUSED (-EPROTO)",
+			      "Main raw trace 0x95ea2a0->0x3330");
+			check(cs == 1 && fk.nasz == 0,
+			      "refusal BEFORE allocations/publication",
+			      "post-READY refusal; wedged-pin holds");
+			check(ane_t6021_boot_dma_reclaimable(cs) == false,
+			      "refusal: DMA held (wedged-pin)",
+			      "reboot reclaims");
+		}
+
+		/* (3) bit0-clear RVBAR: the fold write64 appears */
+		fake_reset(&fk);
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.fw_dva = 0x0000deadbeef000ULL,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == 0,
 			      "run: unprogrammed branch boots",
 			      "direct-image fold path");
+			/* DONE result capture: the fake returns scratch1
+			 * read = 0 -> hi word 0; scratch0 read = 0 -> lo 0.
+			 * Nonzero capture is asserted in case (2). */
+			check(sres == 0, "DONE result captured",
+			      "raw u64 exposed, not discarded");
 			check(fk.nw64 == 14 &&
 			      fk.w64val ==
 			      ane_t6021_rvbar_compose(cfg.fw_dva),
@@ -544,20 +705,21 @@ int main(void)
 		fk.s7_never_ack = 1;
 		{
 			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
 			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
-						 &bo) == -ETIMEDOUT,
+						 &bo, &sres) == -ETIMEDOUT,
 			      "run: poll A timeout = -ETIMEDOUT",
 			      "bounded polls");
 			check(cs == 1 && fa == 0 && bo == 0,
 			      "timeout: cpu_started, not alive/booted",
 			      "HOLD semantics");
-			check(fk.prepare_at < 0,
-			      "timeout: no publish attempted",
+			check(fk.prepare_at < 0 && fk.nasz == 0,
+			      "timeout: no publish, NO allocations",
 			      "no partial boot past poll A");
 			check(fk.nwr == 17,
 			      "timeout: writes stop after CPU release (17 incl. fold wr64)",

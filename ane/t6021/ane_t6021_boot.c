@@ -127,6 +127,7 @@
 #include <linux/iommu.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/module.h>
 #include <linux/moduleparam.h>
 
 #include "ane_t6021.h"
@@ -145,9 +146,13 @@ MODULE_PARM_DESC(fw_boot,
  * not comments). Each flips only with cited proof in a Main-reviewed
  * commit that also populates the sources and adds the kernel io
  * backend — never a runtime knob. */
-static const bool pf_provider_arrays = false;	/* genpd-binding strategy
-						 * accepted by audit; Main
-						 * confirmation pending */
+/* Provider equivalence — CLOSED (Main provider review 2026-09-20):
+ * Linux genpd attachment + supplier links accepted INSTEAD of
+ * reproducing Apple runtime index arrays, CONDITIONAL on the live
+ * first_resume verifying all 8 islands ACTUAL=0xf, BUSY=0, CPU
+ * AUTO_ENABLE clear before the sequence — that verification runs on
+ * every probe and the driver performs no direct kernel PMGR writes. */
+static const bool pf_provider_genpd_strategy = true;
 static const bool pf_pool_word0_proven = true;	/* CONFIRMED (Main raw +
 						 * Reset 183fd50, chain
 						 * 0x67dc/0x6824/0x68d8/
@@ -155,39 +160,43 @@ static const bool pf_pool_word0_proven = true;	/* CONFIRMED (Main raw +
 						 * word0 = requested bytes =
 						 * 0x40000 — sourced, not
 						 * synthesized */
-static const bool pf_heap_floor_pinned = false;	/* EVIDENCE COMPLETE
-						 * (pass6h 4d8eb63): floor =
+static const bool pf_heap_floor_pinned = true;	/* CLOSED: floor =
 						 * getPageSize() return =
 						 * DART page size 0x4000
-						 * (dev+0x3A90 stores the
-						 * call result verbatim,
-						 * 0x9602e68-0x9602e90).
-						 * boot_sources.heap_floor
-						 * populated; flip pending
-						 * Main review */
-static const bool pf_dart_page_floor = false;	/* EVIDENCE COMPLETE
-						 * (pass6h): 0x4000 has NO
-						 * code immediate anywhere
-						 * in the KC (exhaustive
-						 * movz scan) — its
-						 * provenance is the ADT
-						 * dart,t8110 page-size
-						 * property 0x4000
-						 * (dtree-j414c.txt:708).
-						 * Flip pending Main
-						 * review */
-static const bool pf_provider_strategy_confirmed = false; /* Main review of
-						 * the genpd-equivalence
-						 * strategy */
+						 * (store chain 0x9602e68-90
+						 * + dart-ane0 page-size
+						 * 0x4000 node, pass6h);
+						 * sourced in boot_sources */
+static const bool pf_dart_page_floor = true;	/* CLOSED (Main raw,
+						 * pass6h + exact-node
+						 * linkage): dtree-j414c.txt
+						 * sha256 dd2955…d504, ane0
+						 * iommu-parent 363 (line
+						 * 11499), dart-ane0
+						 * page-size 0x4000 (line
+						 * 11510), child mapper-ane0
+						 * phandle 363 (line 11527).
+						 * Runnable linkage check:
+						 * ane-linux-experiments
+						 * tools/
+						 * check_dart_ane_pagesize_linkage.py */
 static const bool pf_rvbar_lifecycle = true;	/* 6288b0b, 57/57 anchors */
 static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
 
+/* FINAL authorization gate: Main's code/lifetime review of the
+ * completed adapter. Outstanding at gate time: this review + the
+ * netconsole end-to-end revalidation on the current Wi-Fi path
+ * (pre-window checklist, receipt 7a3e804). Live MMIO stays
+ * unreachable until this flips — it is NOT part of the source
+ * contract closure, which is otherwise complete. */
+static const bool pf_main_lifetime_review = false;
+
 static bool ane_t6021_boot_preflight_complete(void)
 {
-	return pf_provider_arrays && pf_provider_strategy_confirmed &&
-	       pf_pool_word0_proven && pf_heap_floor_pinned &&
-	       pf_dart_page_floor && pf_rvbar_lifecycle &&
-	       pf_pass6_init_contract;
+	return pf_provider_genpd_strategy && pf_pool_word0_proven &&
+	       pf_heap_floor_pinned && pf_dart_page_floor &&
+	       pf_rvbar_lifecycle && pf_pass6_init_contract &&
+	       pf_main_lifetime_review;
 }
 
 /* STATIC boot sources — populated per the pinned contract (Main
@@ -206,9 +215,10 @@ static const struct ane_t6021_init_sources boot_sources = {
 	.cfg_size = 0x500000,		/* config+0x138 (0x9613da8/ dac) */
 	.prev_fw_len = 0,		/* first boot; static per reload */
 	.heap_floor = 0x4000,		/* DART page size: dev+0x3A90 =
-					 * getPageSize() return (pass6h
-					 * 0x9602e68-90); ADT page-size
-					 * property authority */
+					 * getPageSize() return; node
+					 * authority dart-ane0 page-size
+					 * 0x4000 (exact linkage check
+					 * passing) */
 	.pool_word0 = 0x40000,		/* DDM Params word0 = requested
 					 * bytes (CONFIRMED, 183fd50) */
 };
@@ -261,10 +271,15 @@ static void ane_boot_wr64(void *ctx, unsigned int off, u64 v)
 	writeq(v, mm->ane->base[ANE_T6021_REG_ENGINE] + off);
 }
 
-static void ane_boot_dsb(void *ctx)
+static void ane_boot_publish_barrier(void *ctx)
 {
 	(void)ctx;
-	dma_wmb();	/* dsb st: publish visibility, kext 0x95eaa90 */
+	/* dma_wmb() = dmb oshst on arm64: orders the coherent pool fill
+	 * before the device publish. ORDERING guarantee — not the kext's
+	 * dsb st (completion). Sufficient for the Linux coherent-DMA +
+	 * writel doorbell contract (writel orders prior accesses before
+	 * the MMIO store). */
+	dma_wmb();
 }
 
 static void ane_boot_wait(void *ctx)
@@ -280,70 +295,59 @@ static void ane_boot_wait(void *ctx)
  * allocation is wedged-pin owned from here on (held while
  * cpu_started; reboot reclaims). Publishes the pool DVA (suballoc at
  * offset 0) as the SCRATCH0/1 halves. */
+static void *ane_boot_alloc(void *ctx, u64 size, u64 *iova)
+{
+	struct ane_t6021 *ane = ctx;
+	dma_addr_t d = 0;
+	void *p = dma_alloc_coherent(ane->dev, size, &d, GFP_KERNEL);
+
+	*iova = p ? d : 0;
+	return p;
+}
+
+/* Kernel prepare: live SCRATCH3/SCRATCH1 reads feed the SHARED
+ * assembly (ane_t6021_boot_prepare_publish) with the dma_alloc hook —
+ * the same path the fake-MMIO trace test exercises. Allocations are
+ * wedged-pin owned from creation (held while cpu_started). */
 static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 {
 	struct ane_t6021_boot_mmio *mm = ctx;
 	struct ane_t6021 *ane = mm->ane;
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-	struct ane_t6021_init_sources src;
-	u64 ipc_size, heap_dva = 0;
-	long long heap_size;
-	u32 request, scratch1;
+	struct ane_t6021_init_sources src = boot_sources;
+	struct ane_t6021_boot_allocs a;
+	u32 request, scratch0, scratch1;
+	int err;
 
 	if (!ane_t6021_boot_preflight_complete())
 		return -ENODATA;	/* belt: run() already gated */
 
 	/* dynamic reads (post-READY, live cells — never hardcoded):
-	 * SCRATCH3 = fw extra-heap request; SCRATCH1 = ordinal base. */
+	 * read order SCRATCH0 then SCRATCH1 (0x95ea0d8/0x95ea100);
+	 * SCRATCH0 >= 0x21 refuses before allocations/publication;
+	 * SCRATCH3 = fw extra-heap request; SCRATCH1+1 = ordinal. */
+	scratch0 = readl(eng + ANE_MBI_SCRATCH0);
+	scratch1 = readl(eng + ANE_MBI_SCRATCH0 + 4);
 	request = readl(eng + ANE_MBI_SCRATCH0 + 4 * 3);
-	scratch1 = readl(eng + ANE_MBI_SCRATCH0 + 4 * 1);
 
-	/* 'DDM ' pool: 0x40000 bytes (Params word0, CONFIRMED). */
-	ane->boot_pool = dma_alloc_coherent(ane->dev, 0x40000,
-					    &ane->boot_pool_iova,
-					    GFP_KERNEL);
-	if (!ane->boot_pool)
-		return -ENOMEM;
-
-	/* 'IPC ' surface: max(DART page 0x4000, ordinal+1). */
-	ipc_size = ane_t6021_ipc_size(0x4000, scratch1 + 1);
-	ane->boot_ipc = dma_alloc_coherent(ane->dev, ipc_size,
-					   &ane->boot_ipc_iova,
-					   GFP_KERNEL);
-	if (!ane->boot_ipc)
-		return -ENOMEM;
-
-	/* HEAP surface: trust-bounded fw request (pass6 G-chain).
-	 * floor 0 here only because pf_heap_floor_pinned gates the
-	 * whole sequence; the pinned floor lands with that flip. */
-	heap_size = ane_t6021_heap_size(request,
-					boot_sources.heap_floor,
-					ANE_T6021_BOOT_HEAP_CEILING);
-	if (heap_size < 0)
-		return (int)heap_size;
-	if (heap_size > 0) {
-		ane->boot_heap = dma_alloc_coherent(ane->dev,
-						    heap_size,
-						    &ane->boot_heap_iova,
-						    GFP_KERNEL);
-		if (!ane->boot_heap)
-			return -ENOMEM;
-		ane->boot_heap_size = heap_size;
-	}
-
-	/* header fill: static sources + dynamic values */
-	src = boot_sources;
 	src.fw_dva = ane->fw_iova;
-	src.ipc_dva = ane->boot_ipc_iova;
-	src.pool_dma = ane->boot_pool_iova;
-	ane_t6021_init_struct_fill(ane->boot_pool, &src,
-				   heap_size, heap_dva,
-				   scratch1 + 1);
-	dma_wmb();
+	err = ane_t6021_boot_prepare_publish(&src, request, scratch0,
+					     scratch1, 0x4000,
+					     ANE_T6021_BOOT_IPC_CEILING,
+					     ANE_T6021_BOOT_HEAP_CEILING,
+					     ane, ane_boot_alloc, &a,
+					     lo, hi);
+	if (err)
+		return err;
 
-	/* publish the pool DVA (suballoc at offset 0): low32 ->
-	 * SCRATCH0 first, high32 -> SCRATCH1. */
-	ane_t6021_scratch64_split(ane->boot_pool_iova, lo, hi);
+	/* ownership handoff (wedged-pin: held while cpu_started) */
+	ane->boot_pool = a.pool;
+	ane->boot_pool_iova = a.pool_dva;
+	ane->boot_ipc = a.ipc;
+	ane->boot_ipc_iova = a.ipc_dva;
+	ane->boot_heap = a.heap;
+	ane->boot_heap_iova = a.heap_dva;
+	ane->boot_heap_size = a.heap_size;
 	return 0;
 }
 
@@ -359,7 +363,7 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 		.ctx = &mm,
 		.rd32 = ane_boot_rd32, .rd64 = ane_boot_rd64,
 		.wr32 = ane_boot_wr32, .wr64 = ane_boot_wr64,
-		.dsb_st = ane_boot_dsb, .poll_wait = ane_boot_wait,
+		.publish_barrier = ane_boot_publish_barrier, .poll_wait = ane_boot_wait,
 		.prepare = ane_t6021_boot_prepare,
 	};
 	struct ane_t6021_boot_cfg cfg = {
@@ -367,20 +371,42 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 		.fw_dva = ane->fw_iova,
 	};
 	int cs = 0, fa = 0, bo = 0;
-	int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo);
+	u64 sres = 0;
+	int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
 
 	ane->cpu_started = cs;
 	ane->fw_alive = fa;
 	ane->booted = bo;
+	ane->boot_scratch_result = sres;
+
+	if (cs) {
+		/* Wedged-pin module lifetime (Main review): a started CPU
+		 * holds the whole device lifetime — pin the module so
+		 * rmmod refuses until the domain-off reset (reboot)
+		 * reclaims. Never released: intentional. Residual: DT
+		 * hotplug unbind cannot be fully prevented; devm release
+		 * order still frees irq before ioremap (probe-order
+		 * reverse), DMA surfaces are wedge-held. */
+		if (!try_module_get(THIS_MODULE))
+			dev_err(ane->dev,
+				"boot: FATAL — module dying during CPU start; wedged state may be torn by unbind. REBOOT REQUIRED\n");
+		else
+			dev_warn(ane->dev,
+				 "boot: module PINNED until reboot (started CPU; wedged-pin)\n");
+	}
 
 	if (r == -ENODATA)
 		return r;	/* unreachable: the caller gated */
 	if (r && cs) {
 		dev_err(ane->dev,
-			"boot: sequence error %d AFTER CPU start (cpu_started=%u fw_alive=%u booted=%u) — WEDGED-PIN HOLD: all surfaces/rings/IRQ/links preserved; reboot is the only reclamation; no retry\n",
-			r, cs, fa, bo);
+			"boot: sequence error %d AFTER CPU start (cpu_started=%u fw_alive=%u booted=%u scratch_result=%016llx) — WEDGED-PIN HOLD: all surfaces/rings/IRQ/links preserved; reboot is the only reclamation; no retry. HANDSHAKE state only: the result word has NO sourced success semantics\n",
+			r, cs, fa, bo, sres);
 		return 0;	/* bind fenced, state held */
 	}
+	if (!r)
+		dev_info(ane->dev,
+			 "boot: DONE — handshake complete; scratch_result=%016llx (raw, semantics UNSOURCED — not a success claim)\n",
+			 sres);
 	return r;
 }
 
@@ -473,7 +499,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	 * Main-reviewed gate-flip commit, after ALL sources close. */
 	if (!ane_t6021_boot_preflight_complete()) {
 		dev_err(ane->dev,
-		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — preflight open on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) init-structure opens: [0x20]/[0x28]/[0x30]/[0x50] producers, IPC size cap dev+0x3A70 numeric, pool total size; RVBAR lifecycle RESOLVED (bit0-set = lawful skip branch, pulse clears stale ack, no reset before first attempt; domain power cycle = poll-A-timeout retry only, never in-kernel). cpu_started=%u fw_alive=%u booted=%u\n",
+		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — all source-contract gates CLOSED (provider genpd strategy, pool word0, heap floor 0x4000, DART page 0x4000, rvbar lifecycle 57/57, pass6 87/87); the sequence is held on pf_main_lifetime_review (Main final code/lifetime review) + netconsole end-to-end revalidation on the current Wi-Fi path. cpu_started=%u fw_alive=%u booted=%u\n",
 		ane->cpu_started, ane->fw_alive, ane->booted);
 		return -ENODATA;
 	}

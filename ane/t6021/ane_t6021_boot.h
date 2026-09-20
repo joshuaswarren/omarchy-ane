@@ -47,6 +47,11 @@
 
 /* SCRATCH7 handshake words (InitializeRTBuddy / legacy ANE_Init
  * publication; selene ack writer 0x77c8). */
+/* SCRATCH0 request band (pass9-corrected, Main raw trace): post-READY
+ * SCRATCH0 >= 0x21 REFUSES the boot preparation; below 0x21 proceeds
+ * to the MAX/alloc path. */
+#define ANE_T6021_BOOT_IPC_REQ_THRESHOLD	0x21U
+
 #define ANE_T6021_BOOT_WAKE_REQ		0xf7fbdff9U
 #define ANE_T6021_BOOT_ACK		0x08042006U
 
@@ -67,12 +72,6 @@
 					 * unqualified mutation and is
 					 * NOT set */
 
-/* Main-corrected (2026-09-20) open fields — the fill() leaves them
- * zero and publication cannot fire over them: [0x08] (=
- * *(dev+0x988+0x18), Params-pattern DVA of a second surface, identity
- * undecoded), [0x10] (= config size), [0x18] (= 0x10000000-config.size),
- * [0x20], [0x28], [0x30] (load-progress word). */
-#define ANE_T6021_INIT_STRUCT_SIZE	0x174
 
 static inline u64 ane_t6021_rvbar_compose(u64 iova)
 {
@@ -185,12 +184,30 @@ struct ane_t6021_init_sources {
  * DART page, typical; u32[x23+4] = captured SCRATCH1 + 1, the boot
  * ordinal): size = max(page_size, ordinal + 1). Used by the kernel
  * prepare hook to size the 'IPC ' allocation. */
-static inline u64 ane_t6021_ipc_size(u64 page_size, u32 ordinal)
+/* SCRATCH0 read-order note (pass9 phase-1: SCRATCH0 then SCRATCH1
+ * after READY): Main raw branch proof SUPERSEDES the audit's
+ * "SCRATCH0 >= 0x21 arms IPC" reading — 0x95ea1dc b.cc(low) branches
+ * TO the MAX+IPC-alloc path and >=0x21 goes to logging/error, so
+ * scratch0 < 33 is likely a VALIDITY gate, not an optional-IPC
+ * condition. Header [0x08] unconditionally dereferences
+ * dev+0x988+0x18. Allocation stays UNCONDITIONAL until Reset corrects
+ * the source; the threshold is NOT implemented. */
+static inline u64 ane_t6021_ipc_size(u64 page_size, u32 captured)
 {
-	u64 ord = (u64)ordinal + 1;
+	/* EXACT u32 semantics: the fw-visible ordinal is the captured
+	 * SCRATCH1 value + 1 in 32-bit arithmetic (kext add w8,w0,#1) —
+	 * it wraps. Callers pass the CAPTURED value, never pre-incremented.
+	 * The result is then bounded by ANE_T6021_BOOT_IPC_CEILING at the
+	 * allocation site: captured is fw-supplied and untrusted. */
+	u32 ord = captured + 1;
 
-	return page_size > ord ? page_size : ord;
+	return page_size > (u64)ord ? page_size : (u64)ord;
 }
+
+/* Operational ceiling for the fw-influenced 'IPC ' allocation
+ * (captured is untrusted; the max() can otherwise be forced to an
+ * arbitrary size). Distinct from ABI width — documented budget. */
+#define ANE_T6021_BOOT_IPC_CEILING	0x100000ULL	/* 1 MiB */
 
 /* Trust boundary for the firmware-supplied heap request: 0 disables
  * the heap surface; otherwise the size is MAX(request, floor) and is
@@ -246,10 +263,13 @@ ane_t6021_init_struct_fill(u8 *buf, const struct ane_t6021_init_sources *s,
 	for (i = 0; i < 8; i++)
 		buf[0x28 + i] = (u8)((u64)heap_size >> (8 * i));
 
+	/* [0x30] u32 FULL width: previous fw image length (0 first
+	 * boot). Main review: low-byte-only serialization dropped the
+	 * upper length bits. */
 	buf[0x30] = (u8)s->prev_fw_len;
-	buf[0x31] = 0;
-	buf[0x32] = 0;
-	buf[0x33] = 0;
+	buf[0x31] = (u8)(s->prev_fw_len >> 8);
+	buf[0x32] = (u8)(s->prev_fw_len >> 16);
+	buf[0x33] = (u8)(s->prev_fw_len >> 24);
 
 	buf[ANE_T6021_INIT_COUNT_OFF + 0] = (u8)ANE_T6021_INIT_COUNT;
 	buf[ANE_T6021_INIT_COUNT_OFF + 1] = 0;
@@ -268,6 +288,96 @@ ane_t6021_init_struct_fill(u8 *buf, const struct ane_t6021_init_sources *s,
 	buf[ANE_T6021_INIT_TEMPLATE_OFF + ANE_T6021_INIT_TBIT_OFF + 0] =
 		ANE_T6021_INIT_TBIT_VAL;
 }
+
+/* ---- Shared prepare-source assembly ----
+ *
+ * The ALLOCATION-SIZING + HEADER-FILL + PUBLISH-VALUE path used by the
+ * kernel prepare hook AND the fake-MMIO trace test — one
+ * implementation, so wrong-DVA / double-increment / unbounded-size
+ * classes fail in the host trace test instead of only on hardware.
+ *
+ * Allocation contract: alloc(ctx, size, &iova) is called in the order
+ * pool (0x40000), 'IPC ' (max(DART page 0x4000, ordinal+1)), HEAP
+ * (0 when the fw requested none); each must return NULL on failure
+ * and set *iova to the device-visible address of the returned memory
+ * (the DMA address, NOT a recorded constant). Refusal classes: the
+ * fw-supplied request and captured value are UNTRUSTED — over-ceiling
+ * heap requests and over-budget IPC sizes are refused BEFORE any
+ * allocation. */
+struct ane_t6021_boot_allocs {
+	u64 pool_dva, ipc_dva, heap_dva;
+	u64 ipc_size, heap_size;
+	void *pool, *ipc, *heap;
+};
+
+static inline int
+ane_t6021_boot_prepare_publish(const struct ane_t6021_init_sources *s,
+			       u32 scratch3_req, u32 scratch0_read,
+			       u32 scratch1_read,
+			       u64 page_size, u64 ipc_ceiling,
+			       u64 heap_ceiling,
+			       void *alloc_ctx,
+			       void *(*alloc)(void *ctx, u64 size,
+					      u64 *iova),
+			       struct ane_t6021_boot_allocs *a,
+			       u32 *lo, u32 *hi)
+{
+	int i;
+
+	for (i = 0; i < (int)(sizeof(*a) / sizeof(u64)); i++)
+		((u64 *)a)[i] = 0;
+
+	/* SCRATCH0 band check — REFUSAL before allocations/publication
+	 * (Main raw trace: >= 0x21 -> 0x95ea2a0 log -> 0x2c4 -> 0x3330
+	 * error, w21 = 0xE00002DA; < 0x21 -> 0x214 MAX -> 0x25c alloc ->
+	 * 0x260 -> 0x2c8). Boundary: 0x20 accepted, 0x21 refused.
+	 * Read order: SCRATCH0 first, then SCRATCH1 (0x95ea0d8/0x95ea100).
+	 * Untrusted-input sizing after the band check; heap_size()
+	 * returns SIGNED (negative = refused) — kept local so a refusal
+	 * cannot wrap into the u64 record. */
+	if (scratch0_read >= ANE_T6021_BOOT_IPC_REQ_THRESHOLD)
+		return -EPROTO;
+	a->ipc_size = ane_t6021_ipc_size(page_size, scratch1_read);
+	if (a->ipc_size > ipc_ceiling)
+		return -E2BIG;
+	{
+		long long heap = ane_t6021_heap_size(scratch3_req,
+						     s->heap_floor,
+						     heap_ceiling);
+
+		if (heap < 0)
+			return (int)heap;
+		a->heap_size = (u64)heap;
+	}
+
+	a->pool = alloc(alloc_ctx, 0x40000, &a->pool_dva);
+	if (!a->pool)
+		return -ENOMEM;
+	a->ipc = alloc(alloc_ctx, a->ipc_size, &a->ipc_dva);
+	if (!a->ipc)
+		return -ENOMEM;
+	if (a->heap_size) {
+		a->heap = alloc(alloc_ctx, a->heap_size, &a->heap_dva);
+		if (!a->heap)
+			return -ENOMEM;
+	}
+
+	/* ordinal: exact u32 +1 on the READ SCRATCH1 value (kext add
+	 * w8,w0,#1; callers pass the read value, never pre-incremented) */
+	ane_t6021_init_struct_fill(a->pool, s, a->heap_size, a->heap_dva,
+				   (u32)(scratch1_read + 1));
+	*lo = (u32)(a->pool_dva & 0xffffffffU);
+	*hi = (u32)(a->pool_dva >> 32);
+	return 0;
+}
+
+/* Post-DONE SCRATCH1:SCRATCH0 (read SCRATCH1 first, then SCRATCH0)
+ * is a fw-produced DEVICE ADDRESS (pass9 phase-2), NOT a return code —
+ * never dereference it raw. WHITELIST (Main 2026-09-20): only the
+ * Linux-owned FWIM and 'IPC ' windows may ever be matched against it;
+ * the 'DDM ' pool is NOT whitelisted. No consumption until range AND
+ * length checks are proven; until then the raw u64 is stored and
+ * logged only. */
 
 /* ---- Fake-MMIO-testable sequence core ----
  *
@@ -296,7 +406,11 @@ struct ane_t6021_boot_io {
 	u64 (*rd64)(void *ctx, unsigned int off);
 	void (*wr32)(void *ctx, unsigned int off, u32 v);
 	void (*wr64)(void *ctx, unsigned int off, u64 v);
-	void (*dsb_st)(void *ctx);       /* dsb st equivalent */
+	void (*publish_barrier)(void *ctx); /* orders the coherent fill
+					     * before the device publish:
+					     * dma_wmb() = dmb oshst on
+					     * arm64; NOT claimed as dsb st
+					     * (completion) */
 	void (*poll_wait)(void *ctx);    /* 1 ms poll delay */
 	/* prepare(): called once, strictly AFTER poll A and BEFORE the
 	 * SCRATCH0/1 publish; returns the suballoc DVA halves. Kernel
@@ -333,7 +447,8 @@ static inline int ane_t6021_boot_remove_held(int cpu_started)
 static inline int
 ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		   const struct ane_t6021_boot_cfg *cfg,
-		   int *cpu_started, int *fw_alive, int *booted)
+		   int *cpu_started, int *fw_alive, int *booted,
+		   u64 *scratch_result)
 {
 	unsigned int i;
 	u32 v;
@@ -342,6 +457,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	*cpu_started = 0;
 	*fw_alive = 0;
 	*booted = 0;
+	*scratch_result = 0;
 
 	/* Main: all gates checked BEFORE any boot write — no partial
 	 * sequence when the preflight is closed. */
@@ -391,15 +507,22 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		return -ETIMEDOUT;
 	*fw_alive = 1;
 
-	/* S5-S6: prepare (alloc/fill; kernel backend owns DMA) then
-	 * dsb st + publish suballoc DVA low32/high32, then wake. */
+	/* S5-S6: prepare (alloc/fill; kernel backend owns DMA), then the
+	 * publish barrier, then publish suballoc DVA low32/high32, then
+	 * wake. Barrier semantics (Main review 2026-09-20): the kernel
+	 * backend's dma_wmb() is dmb oshst — it ORDERS the coherent fill
+	 * before the device publish; it is NOT the kext's dsb st (which
+	 * additionally waits for completion). Ordering suffices for the
+	 * Linux coherent-DMA + writel doorbell contract (writel itself
+	 * orders prior accesses before the MMIO store); the kext dsb st
+	 * choice is a completion guarantee this driver does not claim. */
 	{
 		u32 lo = 0, hi = 0;
 		int err = io->prepare(io->ctx, &lo, &hi);
 
 		if (err)
 			return err;
-		io->dsb_st(io->ctx);
+		io->publish_barrier(io->ctx);
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH0, lo);
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH1, hi);
 	}
@@ -416,8 +539,15 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (v != ANE_T6021_BOOT_ACK)
 		return -ETIMEDOUT;
 	*booted = 1;
-	io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH1);
-	io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH0);
+
+	/* HANDSHAKE COMPLETE != firmware result success: the DONE ack is
+	 * the fw's handshake word; the SCRATCH0/1 result u64 it leaves
+	 * behind has UNSOURCED success semantics (pass6: the fw writes a
+	 * "result" at 0x77a0 whose meaning is not decoded). Expose it
+	 * raw; never infer success from booted alone. */
+	*scratch_result =
+		((u64)io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH1) << 32) |
+		 io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH0);
 	return 0;
 }
 
