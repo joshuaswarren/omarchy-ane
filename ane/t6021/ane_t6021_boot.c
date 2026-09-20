@@ -183,13 +183,13 @@ static const bool pf_dart_page_floor = true;	/* CLOSED (Main raw,
 static const bool pf_rvbar_lifecycle = true;	/* 6288b0b, 57/57 anchors */
 static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
 
-/* FINAL authorization gate: Main's code/lifetime review of the
- * completed adapter. Outstanding at gate time: this review + the
- * netconsole end-to-end revalidation on the current Wi-Fi path
- * (pre-window checklist, receipt 7a3e804). Live MMIO stays
- * unreachable until this flips — it is NOT part of the source
- * contract closure, which is otherwise complete. */
-static const bool pf_main_lifetime_review = false;
+/* FINAL authorization gate — STAGED, NOT PUSHED (Main: no live
+ * attempt until the exact artifact is confirmed). Closure basis: Main
+ * code/lifetime review round (5b7dc23..c5bda7d fixes), pass6h numeric
+ * closure, 183fd50 word0 confirmation, provider strategy acceptance,
+ * and the netconsole end-to-end Wi-Fi marker (m2-wifi-check-1789937086,
+ * 2026-09-20T15:44:47.121595Z from 192.168.3.103:6668). */
+static const bool pf_main_lifetime_review = true;
 
 static bool ane_t6021_boot_preflight_complete(void)
 {
