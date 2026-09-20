@@ -152,6 +152,13 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *                  Allocate). This value is a HARD-GATED source — the
  *                  sequence cannot run until a producer/consumer proof
  *                  pins it; no hypothesis value is shipped.
+ *                  PRODUCER OPEN (Main, superseding b21e23f): the
+ *                  "pool+0x00 = manager free-list head" claim is
+ *                  REJECTED — manager dev+0x968 != Params pool
+ *                  dev+0x980 (wrong-object alias likely), and
+ *                  Reset6cb048d shows the consumer stores word0
+ *                  VERBATIM at image ops 68 (possible extent use).
+ *                  Wait for the exact same-Params producer.
  *
  * DYNAMIC inputs (read AFTER poll A — the fw publishes its extra-heap
  * request into SCRATCH3 (cell idx3) and its boot ordinal is
