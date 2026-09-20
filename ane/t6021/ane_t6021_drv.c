@@ -239,20 +239,24 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
  * checks what actually exists. */
 static void ane_t6021_cleanup(struct ane_t6021 *ane)
 {
+	/* H13 wedged-pin pattern (ane/src/ane_drv.c
+	 * ane_gem_free_object: "leak the mapping ... Reboot reclaims
+	 * them"): once the ASC CPU started there is NO verified
+	 * quiescence path — hold the WHOLE lifetime. The fw surface,
+	 * endpoint rings, IRQ and the power-domain links stay exactly
+	 * as they are; nothing under a possibly-fetching CPU is torn
+	 * down. Reboot is the cleanup. */
+	if (ane->cpu_started) {
+		dev_err(ane->dev,
+			"wedged-pin: remove held — fw surface, rings, IRQ and power-domain links preserved until reboot (no verified quiescence; never tear down under a started CPU)\n");
+		return;
+	}
 	if (ane->irq_requested) {
 		devm_free_irq(ane->dev, ane->irq, ane);
 		ane->irq_requested = false;
 	}
 	ane_t6021_rtkit_shutdown(ane);
-	/* DMA ownership (W15): once the ASC CPU started it may still
-	 * fetch from the staged surface — the DMA memory is NOT
-	 * reclaimable on failure/remove (deliberate leak until the
-	 * domain-off reset, i.e. reboot). */
-	if (ane_t6021_boot_dma_reclaimable(ane->cpu_started))
-		ane_t6021_fwload_remove(ane);
-	else
-		dev_warn(ane->dev,
-			 "cpu_started — fw DMA surface intentionally NOT freed (leak until domain-off reset/reboot)\n");
+	ane_t6021_fwload_remove(ane);
 	ane_t6021_detach_genpd(ane);
 }
 

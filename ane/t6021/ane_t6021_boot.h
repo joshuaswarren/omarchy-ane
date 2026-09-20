@@ -248,6 +248,14 @@ static inline int ane_t6021_boot_dma_reclaimable(int cpu_started)
 	return !cpu_started;
 }
 
+/* The cleanup decision the predicate implements: while cpu_started,
+ * remove() is HELD (H13 wedged-pin pattern — surfaces, rings, IRQ and
+ * power-domain links preserved; reboot reclaims). */
+static inline int ane_t6021_boot_remove_held(int cpu_started)
+{
+	return cpu_started;
+}
+
 /* Returns 0 (DONE observed, booted), -ENODATA (preflight closed: ZERO
  * io writes), or -ETIMEDOUT (poll A/B: cpu_started holds, DMA stays
  * unreclaimable, no publish/wake happened on poll A timeout). */

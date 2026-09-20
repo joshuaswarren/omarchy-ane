@@ -60,3 +60,6 @@ tmp/*
 # Python bytecode
 __pycache__/
 *.pyc
+
+# W15 boot regression build product (build line in tools/h14_boot_regression.c)
+tools/h14_boot_regression
