@@ -47,10 +47,12 @@ MODULE_PARM_DESC(allow_unqualified,
  * CPU1 2026-09-19; phase1 hang 09-18) and the kext text has no such
  * registers.  The kext-evidenced transport is MBI: SCRATCH0/1 command
  * buffer, SCRATCH7 wake 0xf7fbdff9 -> fw channel table (ack
- * 0x80402006), per-channel doorbell bits at +0x1844000.  Opt-in runs
+ * 0x08042006), per-channel doorbell bits at +0x1844000.  Opt-in runs
  * the handshake capture-only (no doorbell ring until the table pins
- * the channel bits).  Status-only bring-up still proves the
- * coprocessor alive (RVBAR/VERS/RTB status = the phase1 criteria). */
+ * the channel bits).  Status-only bring-up performs the phase-1
+ * read-only whitelist and reports the honest state split
+ * (power_gated/cpu_started/fw_alive/booted); it does NOT establish a
+ * running coprocessor. */
 static bool rtkit_transport;
 module_param(rtkit_transport, bool, 0444);
 MODULE_PARM_DESC(rtkit_transport,
@@ -224,8 +226,26 @@ static int ane_t6021_first_resume(struct ane_t6021 *ane)
 		dev_info(ane->dev, "ANERD scratch%u=%08x\n", i,
 			 readl(eng + ANE_MBI_SCRATCH0 + 4 * i));
 
-	ane->booted = true;
+	ane->power_gated = true;
 	return 0;
+}
+
+/* One teardown for every path (W15 review: the old shutdown label
+ * freed rings under a still-registered threaded IRQ and never freed
+ * the fw surface; remove() duplicated a different order). Order:
+ * IRQ first — its thread reads MMIO and drains the rings and must not
+ * outlive them or the power domains — then rings + mutex, then the fw
+ * surface, then power. Safe on partially-probed state: every step
+ * checks what actually exists. */
+static void ane_t6021_cleanup(struct ane_t6021 *ane)
+{
+	if (ane->irq_requested) {
+		devm_free_irq(ane->dev, ane->irq, ane);
+		ane->irq_requested = false;
+	}
+	ane_t6021_rtkit_shutdown(ane);
+	ane_t6021_fwload_remove(ane);
+	ane_t6021_detach_genpd(ane);
 }
 
 static int ane_t6021_probe(struct platform_device *pdev)
@@ -259,10 +279,20 @@ static int ane_t6021_probe(struct platform_device *pdev)
 		return err;
 	}
 
+	/* One coherent DMA mask for every allocation (W15 review): the
+	 * rings used to allocate in rtkit_init BEFORE fwload set the
+	 * 64-bit mask, so early coherent allocations could land under a
+	 * default narrower mask. */
+	err = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
+	if (err) {
+		dev_err(dev, "dma mask: %d\n", err);
+		goto out;
+	}
+
 	ane->irq = platform_get_irq_byname(pdev, "ane");
 	if (ane->irq < 0) {
 		err = ane->irq;
-		goto detach_genpd;
+		goto out;
 	}
 
 	/* All three windows map by address outside the resource API:
@@ -278,13 +308,13 @@ static int ane_t6021_probe(struct platform_device *pdev)
 						   ane_t6021_reg_names[i]);
 		if (!res) {
 			err = -EINVAL;
-			goto detach_genpd;
+			goto out;
 		}
 		ane->base[i] = devm_ioremap(dev, res->start,
 					    resource_size(res));
 		if (!ane->base[i]) {
 			err = -ENOMEM;
-			goto detach_genpd;
+			goto out;
 		}
 	}
 
@@ -296,7 +326,7 @@ static int ane_t6021_probe(struct platform_device *pdev)
 
 	err = ane_t6021_rtkit_init(ane);
 	if (err < 0)
-		goto detach_genpd;
+		goto out;
 
 	/* W13a: the gate + whitelist run EXPLICITLY here, with device
 	 * runtime PM never enabled — rpm_callback can therefore never
@@ -307,7 +337,7 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	 * state. */
 	err = ane_t6021_first_resume(ane);
 	if (err)
-		goto detach_genpd;
+		goto out;	/* cleanup frees rings + surface + genpd */
 
 	/* After power: AIC2 ANE interrupt (raw 884; dart-ane0's 885
 	 * belongs to the dart driver and is never requested here).  Only
@@ -320,36 +350,60 @@ static int ane_t6021_probe(struct platform_device *pdev)
 						ane);
 		if (err < 0) {
 			dev_err(dev, "failed to request ane irq: %d\n", err);
-			goto shutdown;
+			goto out;
 		}
 		ane->irq_requested = true;
 	}
 
+	/* W15 order repair (Main review): staging and boot precede any
+	 * transport use. The old probe order ran the EP0/EP1 session
+	 * BEFORE fwload — the W10-proven pointless class (no fw running
+	 * behind the send surfaces) that SError'd W5/W6 live. */
+	err = ane_t6021_fwload_probe(ane);
+	if (err) {
+		if (ane_t6021_boot_requested()) {
+			/* A boot request makes staging a prerequisite:
+			 * fail with the ACTUAL staging error, not a
+			 * deferred generic one from boot_probe. */
+			dev_err(dev,
+				"fwload failed (%d) — boot requested, failing probe\n",
+				err);
+			goto out;
+		}
+		dev_err(dev,
+			"fwload failed (%d) — status-only continue, boot stays fenced\n",
+			err);
+	}
+
+	/* W15 boot state resolution (ane_t6021_boot.c; fw_boot=1). With
+	 * fw_boot=1 the preboot engine table fires (pass5: REQUIRED
+	 * every power-up), then the probe FAILS at the named-prerequisite
+	 * block (-ENODATA) — RVBAR, CPU_CONTROL and publication stay
+	 * blocked. With fw_boot=0 everything boot-side is fenced and
+	 * this returns 0 (status-only bind). */
+	err = ane_t6021_boot_probe(ane);
+	if (err)
+		goto out;
+
 	dev_info(dev,
-		 "loaded ane_t6021 %s (%s; 8-domain power gate; CSNE TX %s)\n",
+		 "loaded ane_t6021 %s (power_gated=%u cpu_started=%u fw_alive=%u booted=%u; transport %s, CSNE TX %s)\n",
 		 ANE_T6021_MODULE_VERSION,
-		 ane->transport ? "RTKit transport ON" :
-				  "status-only bring-up, transport deferred",
+		 ane->power_gated, ane->cpu_started, ane->fw_alive,
+		 ane->booted,
+		 ane->transport ? "ON" : "off",
 		 ane->doorbell ? "ARMED (mbi_doorbell=1)" :
 				 "fenced (mbi_doorbell=0)");
 
-	/* W5-live: the one-shot PING rides the armed fence only — the
-	 * gate + whitelist in first_resume passed above (probe unwinds
-	 * otherwise), so this runs in the verified coprocessor-alive
-	 * state. */
+	/* W15: the PING additionally fences on ane->booted inside
+	 * csne_ping_attempt. The W5/W6 sends failed while no valid fw
+	 * was staged or running; this driver treats a live fw as a
+	 * prerequisite for sending — a conservative gate, not a claimed
+	 * exclusive cause of those aborts. */
 	ane_t6021_csne_ping_attempt(ane);
-
-	/* W13: firmware load + validate + DART surface map (fw_load=1
-	 * opt-in; non-fatal, no boot action). */
-	ane_t6021_fwload_probe(ane);
 	return 0;
 
-shutdown:
-	/* rings (rtkit_init) + any fw surface unwind here; covers every
-	 * failure after rtkit_init and remove() (W13a review) */
-	ane_t6021_rtkit_shutdown(ane);
-detach_genpd:
-	ane_t6021_detach_genpd(ane);
+out:
+	ane_t6021_cleanup(ane);
 	return err;
 }
 
@@ -357,14 +411,9 @@ static void ane_t6021_remove(struct platform_device *pdev)
 {
 	struct ane_t6021 *ane = platform_get_drvdata(pdev);
 
-	ane_t6021_fwload_remove(ane);
-
-	/* devm irq actions run after remove(): free the ANE IRQ
-	 * before the rings it drains go away. */
-	if (ane->irq_requested)
-		devm_free_irq(ane->dev, ane->irq, ane);
-	ane_t6021_rtkit_shutdown(ane);
-	ane_t6021_detach_genpd(ane);
+	/* Same single teardown as every probe failure path (W15):
+	 * IRQ first, then rings, then the fw surface, then power. */
+	ane_t6021_cleanup(ane);
 }
 
 static const struct of_device_id ane_t6021_of_match[] = {
