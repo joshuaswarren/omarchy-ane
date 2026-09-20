@@ -338,6 +338,15 @@ int main(void)
 
 		/* trust boundary: 0 request -> no heap; below floor -> floor;
 		 * over ceiling -> refused */
+		/* 'IPC ' size: max(DART page 0x4000, ordinal+1) */
+		check(ane_t6021_ipc_size(0x4000, 0) == 0x4000,
+		      "ipc size: first boot = one 16K DART page",
+		      "max(0x4000, ordinal+1)");
+		check(ane_t6021_ipc_size(0x4000, 7) == 0x4000,
+		      "ipc size: ordinal below page size", "0x4000 wins");
+		check(ane_t6021_ipc_size(0x4000, 0x5000) == 0x5001,
+		      "ipc size: huge ordinal+1 dominates",
+		      "ordinal+1 wins over page size");
 		check(ane_t6021_heap_size(0, 0x30000, 0x08000000ULL) == 0,
 		      "heap: request 0 -> no heap surface",
 		      "pass6: 0 if request 0");

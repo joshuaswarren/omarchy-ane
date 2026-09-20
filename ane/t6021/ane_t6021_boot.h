@@ -170,6 +170,18 @@ struct ane_t6021_init_sources {
 	u64 pool_word0;
 };
 
+/* 'IPC ' surface size (CURRENT_CONTRACT f9602e0; operands proven:
+ * u64[dev+0x3A90] = IODARTMapper::getPageSize() — 0x4000, one 16K
+ * DART page, typical; u32[x23+4] = captured SCRATCH1 + 1, the boot
+ * ordinal): size = max(page_size, ordinal + 1). Used by the kernel
+ * prepare hook to size the 'IPC ' allocation. */
+static inline u64 ane_t6021_ipc_size(u64 page_size, u32 ordinal)
+{
+	u64 ord = (u64)ordinal + 1;
+
+	return page_size > ord ? page_size : ord;
+}
+
 /* Trust boundary for the firmware-supplied heap request: 0 disables
  * the heap surface; otherwise the size is MAX(request, floor) and is
  * refused (negative) when the request exceeds the config-mandated
