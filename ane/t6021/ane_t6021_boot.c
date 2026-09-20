@@ -58,10 +58,13 @@
  *      ANE_CleanupForColdReboot_gated, island power-cycle RVBAR
  *      semantics, dev+0x41f provenance.
  *   4. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
- *      the producing objects (dev+0x988 identity, config.size,
- *      sp136+0x24, dev+0x990 semantics) are not decoded — the
- *      closed-field fill leaves them zero and publication cannot fire
- *      over them. Also open: which site owns the first-alive ack
+ *      the Linux sources of those fields are not pinned ([0x08] =
+ *      *(dev+0x988+0x18), a Params-pattern DVA of a second surface
+ *      whose identity is undecoded; [0x10]/[0x18] = config-size terms
+ *      with the 0x10000000-config.size formula closed but config.size
+ *      identity unconfirmed; [0x30] = dev+0x990 load-progress word) —
+ *      the closed-field fill leaves them zero and publication cannot
+ *      fire over them. Also open: which site owns the first-alive ack
  *      (fn 0x71A4 acks 0x08042006 at 0x77c8, but 0x86EC also writes
  *      the value via idx0 — SCRATCH0 vs SCRATCH7 depends on the
  *      accessor base at that execution point, not dumped).
@@ -223,7 +226,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	 * boot request does not bind half-armed); with fw_boot=0 this
 	 * function returned at the fence above. */
 	dev_err(ane->dev,
-		"boot: BLOCKED (probe fails while fw_boot=1) — boot writes held on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) RVBAR mode fork (bit0 set, entry 0 — audit lane: ANE_CleanupForColdReboot_gated, island power-cycle semantics, dev+0x41f); (3) init publication: fw-consumed fields [0x08]..[0x68] have undecoded producers (dev+0x988 identity, config.size, sp136+0x24, dev+0x990) and the first-alive ack site is unattributed (0x77c8 vs 0x86EC). cpu_started=%u fw_alive=%u booted=%u\n",
+		"boot: BLOCKED (probe fails while fw_boot=1) — boot writes held on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) RVBAR mode fork (bit0 set, entry 0 — audit lane: ANE_CleanupForColdReboot_gated, island power-cycle semantics, dev+0x41f); (3) init publication: fw-consumed fields [0x08]..[0x68] lack pinned Linux sources ([0x08] = *(dev+0x988+0x18) second-surface DVA, [0x10]/[0x18] config-size terms, [0x30] load-progress word) and the first-alive ack site is unattributed (0x77c8 vs 0x86EC). cpu_started=%u fw_alive=%u booted=%u\n",
 		ane->cpu_started, ane->fw_alive, ane->booted);
 	return -ENODATA;
 }
