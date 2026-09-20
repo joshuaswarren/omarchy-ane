@@ -16,7 +16,7 @@
  *   - RVBAR entry fold (ENTRY_BASE | fw DVA & ADDR_MASK; single u64
  *     store, width_proof 0x95e9860→0x9622b0c read / 0x95e9988→0x9622c94
  *     write): semantics of the observed RVBAR read 0x1 are unresolved
- *     (see the fork in ane_t6021_boot_probe) AND the pre-CPU block
+ *     (see the rvbar lifecycle fork) AND the pre-CPU block
  *     below applies regardless.
  *   - CPU_CONTROL write32 0 then 0x10 (rvbar-width local order): waits
  *     on the same pre-CPU block; releasing RUN with an unresolved
@@ -516,7 +516,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 			 &ane->fw_iova);
 	else if (ane_t6021_rvbar_entry_bits(rvbar))
 		dev_info(ane->dev,
-			 "boot: bit0 set WITH entry bits %0llx — a boot entry is already programmed; re-booting over it is the move the kext skip prevents (tbnz w0,#0, ANE_Init 0x95e9878)\n",
+			 "boot: bit0 set WITH entry bits %0llx — kext skip: RVBAR write only is skipped; CPU_CONTROL 0->0x10 converges\n",
 			 ane_t6021_rvbar_entry_bits(rvbar));
 	else
 		/* Lawful normal branch (rvbar-lifecycle 6288b0b): bit0 set
