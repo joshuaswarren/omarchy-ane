@@ -483,12 +483,29 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
 	u64 rvbar;
 
+	/* Export + pin BEFORE the fw_boot fence: hybrid mode (fw_boot=0)
+	 * needs the staged DVA exported and the module pinned so
+	 * userspace can safely do the CPU release. Only if fwload
+	 * succeeded (fw_buf non-NULL). */
+	if (ane->fw_buf) {
+		fw_iova_exported = true;
+		exported_fw_iova = (u64)ane->fw_iova;
+		if (!try_module_get(THIS_MODULE)) {
+			dev_err(ane->dev,
+				"fwload: module dying — cannot retain fw+DART mapping for hybrid boot\n");
+			return -EBUSY;
+		}
+		ane->hybrid_pinned = true;
+		dev_warn(ane->dev,
+			 "fwload: module PINNED until reboot (fw+DART mapping live; hybrid boot ready)\n");
+	}
+
 	if (!fw_boot) {
-		/* fw_boot=0: bind status-only. fw_load stages + DART-maps,
-		 * export gets set. NO boot MMIO. Userspace reads fw_iova
-		 * from sysfs and runs the boot sequence via DevMem. */
+		/* fw_boot=0: bind status-only with staging + DART mapping
+		 * retained (module pinned). Userspace reads fw_iova from
+		 * sysfs and runs the boot sequence via DevMem. */
 		dev_info(ane->dev,
-			 "boot: fw_boot=0 — status-only bind, staging retained for userspace hybrid boot\n");
+			 "boot: fw_boot=0 — status-only bind, staging + DART mapping retained (pinned)\n");
 		return 0;
 	}
 

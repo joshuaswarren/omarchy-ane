@@ -109,6 +109,7 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	ane->fw_iova = iova;
 	ane->fw_size = ANE_FW_BUF_SIZE;
 
+
 	dev_info(ane->dev,
 		 "fwload: selene PRELOAD validated + DART-mapped: 3 segs, "
 		 "entry %#llx, iova %pad size %#x (no boot action — "
