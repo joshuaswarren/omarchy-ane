@@ -542,7 +542,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 0,
+				.preboot_table_mode = 0,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -555,8 +555,8 @@ int main(void)
 			      "accidental-repeat prevention");
 		}
 
-		/* (2) open gate, bit0-set RVBAR (live state): lawful
-		 * skip branch. */
+		/* (2) open gate, bit0-set RVBAR (live state), mode 2: TABLE
+		 * SKIPPED (diagnostic) — grant tunables + full sequence. */
 		fake_reset(&fk);
 		fk.rvbar = 0x1;
 		fk.scratch0_val = 0x05;      /* below 0x21 band */
@@ -568,7 +568,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 			int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa,
@@ -579,47 +579,56 @@ int main(void)
 			check(cs == 1 && fa == 1 && bo == 1,
 			      "run: cpu_started/fw_alive/booted set",
 			      "full sequence");
-			check(fk.nwr == 19,
-			      "run: 19 writes (3 table + 8 clear + s6 + pulse2 + cpu2 + pub2 + wake)",
-			      "exact write count");
-			check(fk.woff[0] == ANE_T6021_BOOT_REG_TABLE0 &&
-			      fk.woff[1] == ANE_T6021_BOOT_REG_TABLE1 &&
-			      fk.woff[2] == ANE_T6021_BOOT_REG_TABLE2 &&
-			      fk.wval[0] == 0x01ff01ffU &&
-			      fk.wval[1] == 0x01ff01ffU &&
-			      fk.wval[2] == 0x01ff01ffU,
-			      "pre-CPU table writes first",
-			      "pass4 receiver, pass5 gate");
-			check(fk.woff[3] == ANE_T6021_BOOT_REG_SCRATCH0 &&
-			      fk.wval[3] == 0 &&
-			      fk.woff[10] ==
+			check(fk.nwr == 28,
+			      "run: 28 writes (12 grant + 8 clear + s6 + pulse2 + cpu2 + pub2 + wake; NO table)",
+			      "mode-2 skip: full sequence minus table");
+			check(fk.woff[0] == 0x000 && fk.wval[0] == 0x10U &&
+			      fk.woff[11] == 0x430 &&
+			      fk.wval[11] == 0x00001100U,
+			      "grant tunables first (12 writes)",
+			      "W8 APERTURE_UNLOCKED replay");
+			check(fk.woff[12] == ANE_T6021_BOOT_REG_SCRATCH0 &&
+			      fk.wval[12] == 0 &&
+			      fk.woff[19] ==
 			      ANE_T6021_BOOT_REG_SCRATCH7 &&
-			      fk.wval[10] == 0,
+			      fk.wval[19] == 0,
 			      "all eight scratch cells cleared",
 			      "exact init clears ALL, not only 7");
-			check(fk.woff[11] ==
+			check(fk.woff[20] ==
 			      ANE_T6021_BOOT_REG_SCRATCH6 &&
-			      fk.wval[11] == 1 &&
-			      fk.woff[12] ==
+			      fk.wval[20] == 1 &&
+			      fk.woff[21] ==
 			      ANE_T6021_BOOT_REG_SCRATCH7 &&
-			      fk.wval[12] == 1 &&
-			      fk.woff[13] ==
+			      fk.wval[21] == 1 &&
+			      fk.woff[22] ==
 			      ANE_T6021_BOOT_REG_SCRATCH7 &&
-			      fk.wval[13] == 0,
+			      fk.wval[22] == 0,
 			      "SCRATCH6=1 then SCRATCH7 pulse 1->0",
 			      "stale ack cleared pre-CPU");
 			check(fk.nw64 < 0,
 			      "no RVBAR write on bit0-set branch",
 			      "lawful skip; never write over bit0");
-			check(fk.cpuctrl0_at == 14 &&
-			      fk.wval[14] == 0 &&
-			      fk.wval[15] == ANE_T6021_CPU_RUN_RELEASE,
+			check(fk.cpuctrl0_at == 23 &&
+			      fk.wval[23] == 0 &&
+			      fk.wval[24] == ANE_T6021_CPU_RUN_RELEASE,
 			      "CPU_CONTROL 0 then 0x10 after pulse",
 			      "strict order, both paths");
-			check(fk.prepare_at == 16 &&
-			      fk.barrier_at == 16,
+			check(fk.prepare_at == 25 &&
+			      fk.barrier_at == 25,
 			      "prepare+dsb after poll A",
 			      "publication strictly post-alive");
+			check(fk.woff[25] ==
+			      ANE_T6021_BOOT_REG_SCRATCH0 &&
+			      fk.wval[25] == (u32)(0x5555aaaab000ULL & 0xffffffffU) &&
+			      fk.woff[26] ==
+			      ANE_T6021_BOOT_REG_SCRATCH1 &&
+			      fk.wval[26] == (u32)(0x5555aaaab000ULL >> 32),
+			      "publish low32/high32 from prepare",
+			      "suballoc DVA halves");
+			check(fk.woff[27] ==
+			      ANE_T6021_BOOT_REG_SCRATCH7 &&
+			      fk.wval[27] == ANE_T6021_BOOT_WAKE_REQ,
+			      "wake after publish", "releases fw wait");
 			check(fk.nasz == 3 &&
 			      fk.asz[0] == 0x40000 &&
 			      fk.asz[1] == 0x4000 &&
@@ -632,14 +641,6 @@ int main(void)
 			check(rd_le64(fake_mem + 0x58) == fk.aiov[0],
 			      "publish header [0x58] = ALLOCATED pool DVA",
 			      "not the zeroed input source (Main zero-DVA bug)");
-			check(fk.wval[16] == (u32)(0x5555aaaab000ULL & 0xffffffffU) &&
-			      fk.wval[17] == (u32)(0x5555aaaab000ULL >> 32),
-			      "publish low32/high32 from prepare",
-			      "suballoc DVA halves");
-			check(fk.woff[18] ==
-			      ANE_T6021_BOOT_REG_SCRATCH7 &&
-			      fk.wval[18] == ANE_T6021_BOOT_WAKE_REQ,
-			      "wake after publish", "releases fw wait");
 			check(sres == 0x000000ab00000005ULL,
 			      "DONE result captured raw (SC1<<32|SC0)",
 			      "exposed, not discarded (Main review)");
@@ -656,7 +657,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -681,7 +682,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -702,7 +703,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -725,7 +726,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -738,11 +739,11 @@ int main(void)
 			 * Nonzero capture is asserted in case (2). */
 			check(sres == 0, "DONE result captured",
 			      "raw u64 exposed, not discarded");
-			check(fk.nw64 == 14 &&
+			check(fk.nw64 == 23 &&
 			      fk.w64val ==
 			      ane_t6021_rvbar_compose(cfg.fw_dva),
 			      "RVBAR write64 = entry fold",
-			      "after table+scratch pulse, before CPU release");
+			      "after grant+scratch pulse, before CPU release");
 		}
 
 		/* (4) poll A timeout: HOLD — started, nothing published */
@@ -753,7 +754,7 @@ int main(void)
 			u64 sres = 0;
 			struct ane_t6021_boot_cfg cfg = {
 				.preflight_ok = 1,
-				.preboot_table_safe = 1,
+				.preboot_table_mode = 2,
 				.fw_dva = 0x0000deadbeef000ULL,
 			};
 
@@ -767,8 +768,8 @@ int main(void)
 			check(fk.prepare_at < 0 && fk.nasz == 0,
 			      "timeout: no publish, NO allocations",
 			      "no partial boot past poll A");
-			check(fk.nwr == 17,
-			      "timeout: writes stop after CPU release (17 incl. fold wr64)",
+			check(fk.nwr == 26,
+			      "timeout: writes stop after CPU release (26 = 25 + fold wr64)",
 			      "no publish/wake after poll A timeout");
 			check(ane_t6021_boot_dma_reclaimable(cs) == false,
 			      "ownership: DMA NOT reclaimable while started",

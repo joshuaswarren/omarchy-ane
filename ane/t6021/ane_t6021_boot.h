@@ -438,10 +438,15 @@ struct ane_t6021_boot_cfg {
 	int preflight_ok;	/* EVERY prerequisite closed (Main: no
 				 * partial boot — the whole sequence or
 				 * nothing) */
-	int preboot_table_safe;	/* LIVE-FAULT gate: 0 = the pre-CPU table
-				 * block is skipped with -EAGAIN and
-				 * ZERO writes (2026-09-20 wedge); 1 =
-				 * re-armed. */
+	int preboot_table_mode;	/* LIVE-FAULT gating of the pre-CPU table
+				 * block (2026-09-20 wedge):
+				 * 0 = ABORT: -EAGAIN, zero writes
+				 *   (accidental-repeat prevention),
+				 * 1 = WRITE the table block (re-armed
+				 *   after the table-base analysis),
+				 * 2 = SKIP the table block, run the rest
+				 *   (diagnostic: tests fw-alive without
+				 *   the kext pre-CPU config). */
 	u64 fw_dva;		/* staged surface DVA (fold input) */
 };
 
@@ -491,16 +496,44 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	 * silence — stall could be the FIRST write; P1 never reached;
 	 * hardware reset 16:24:08) — pf_preboot_table_safe gates it
 	 * OFF; nothing below runs until re-armed. */
-	if (!cfg->preboot_table_safe)
+	switch (cfg->preboot_table_mode) {
+	case 0:
 		return -EAGAIN;	/* BEFORE any write: accidental-repeat
 				 * prevention (Main 2026-09-20) */
-	io->phase(io->ctx, "P0 preboot-table");
-	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE0,
-		 ANE_T6021_BOOT_TABLE_VALUE);
-	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE1,
-		 ANE_T6021_BOOT_TABLE_VALUE);
-	io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE2,
-		 ANE_T6021_BOOT_TABLE_VALUE);
+	case 1:
+		io->phase(io->ctx, "P0 preboot-table");
+		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE0,
+			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE1,
+			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE2,
+			 ANE_T6021_BOOT_TABLE_VALUE);
+		break;
+	case 2:
+	default:
+		/* diagnostic skip: NO table writes — tests fw-alive
+		 * without the kext pre-CPU config (user override
+		 * 2026-09-20). */
+		io->phase(io->ctx, "P0 table SKIPPED (diagnostic)");
+		break;
+	}
+
+	/* P-1: W8 write-grant tunables (proven no-abort class,
+	 * w8-run.out: APERTURE_UNLOCKED — 12 engine-aperture writes
+	 * preparing the aperture; replayed verbatim). */
+	io->phase(io->ctx, "P-1 grant-tunables");
+	io->wr32(io->ctx, 0x000, 0x00000010);
+	io->wr32(io->ctx, 0x038, 0x00050020);
+	io->wr32(io->ctx, 0x03c, 0x000a0030);
+	io->wr32(io->ctx, 0x400, 0x40010001);
+	io->wr32(io->ctx, 0x600, 0x01ffffff);
+	io->wr32(io->ctx, 0x738, 0x00200020);
+	io->wr32(io->ctx, 0x798, 0x00100030);
+	io->wr32(io->ctx, 0x7f8, 0x0100000a);
+	io->wr32(io->ctx, 0x900, 0x00000101);
+	io->wr32(io->ctx, 0x410, 0x00001100);
+	io->wr32(io->ctx, 0x420, 0x00001100);
+	io->wr32(io->ctx, 0x430, 0x00001100);
 
 	io->phase(io->ctx, "P1 scratch-clear+pulse");
 	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = 1,
