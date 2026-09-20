@@ -307,6 +307,7 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	struct drm_gem_object *btsp = NULL;
 	struct ane_bo *bo;
 	struct ane_request req;
+	u32 ps_act;
 	int err;
 
 	memset(&req, 0, sizeof(req));
@@ -381,6 +382,19 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	if (atomic_read(&ane->wedged)) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing submit\n");
 		err = -ECANCELED;
+		goto unlock;
+	}
+
+	/* Fail closed: the 2026-09-20 jwm1 first load dispatched while the
+	 * islands read gated (act=0xf) and ended in a -110 timeout and a
+	 * wedge; causation is pending the restored-provider smoke, but
+	 * refusing here is safe either way. One pmgr read: always safe,
+	 * never polled, and the lock excludes removal and recovery. */
+	if (!ane_tm_islands_on(ane, &ps_act)) {
+		dev_err_ratelimited(ane->dev,
+			"refusing submit: ane set islands not powered on (act=%#x): island power providers missing from DT?\n",
+			ps_act);
+		err = -ENODEV;
 		goto unlock;
 	}
 
