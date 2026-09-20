@@ -337,10 +337,11 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 					     ANE_T6021_BOOT_HEAP_CEILING,
 					     ane, ane_boot_alloc, &a,
 					     lo, hi);
-	if (err)
-		return err;
-
-	/* ownership handoff (wedged-pin: held while cpu_started) */
+	/* OWNERSHIP TRANSFER on EVERY path (Main lifetime review): an
+	 * error after the pool/ipc allocations must NOT lose them — a
+	 * started CPU may already be fetching, so partial allocations
+	 * are RETAINED (wedged-pin holds them; reboot reclaims), never
+	 * freed on this path. */
 	ane->boot_pool = a.pool;
 	ane->boot_pool_iova = a.pool_dva;
 	ane->boot_ipc = a.ipc;
@@ -348,7 +349,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 	ane->boot_heap = a.heap;
 	ane->boot_heap_iova = a.heap_dva;
 	ane->boot_heap_size = a.heap_size;
-	return 0;
+	return err;
 }
 
 /* Dispatch the resolved sequence against the kernel io backend. All
@@ -372,28 +373,40 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
-	int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
+	int r;
+
+	/* Wedged-pin module lifetime (Main lifetime review): the ref is
+	 * acquired BEFORE the first write — a started CPU can never
+	 * outlive the pin, and a dying module refuses the boot before
+	 * any write happens. Retained on CPU start (never released:
+	 * intentional); released only if no CPU start occurred. */
+	if (!try_module_get(THIS_MODULE)) {
+		dev_err(ane->dev,
+			"boot: REFUSED before any write — module ref unavailable (dying); no CPU start possible from a dying module\n");
+		return -EBUSY;
+	}
+
+	r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
 
 	ane->cpu_started = cs;
 	ane->fw_alive = fa;
 	ane->booted = bo;
 	ane->boot_scratch_result = sres;
 
-	if (cs) {
-		/* Wedged-pin module lifetime (Main review): a started CPU
-		 * holds the whole device lifetime — pin the module so
-		 * rmmod refuses until the domain-off reset (reboot)
-		 * reclaims. Never released: intentional. Residual: DT
-		 * hotplug unbind cannot be fully prevented; devm release
-		 * order still frees irq before ioremap (probe-order
-		 * reverse), DMA surfaces are wedge-held. */
-		if (!try_module_get(THIS_MODULE))
-			dev_err(ane->dev,
-				"boot: FATAL — module dying during CPU start; wedged state may be torn by unbind. REBOOT REQUIRED\n");
-		else
-			dev_warn(ane->dev,
-				 "boot: module PINNED until reboot (started CPU; wedged-pin)\n");
+	if (!cs) {
+		/* no CPU start: full release path, normal ownership */
+		module_put(THIS_MODULE);
+		dev_err(ane->dev,
+			"boot: -ENODATA before sequence (gate race) — module ref released\n");
+		return r;
 	}
+
+	/* started CPU: retain the pin for the whole wedged lifetime.
+	 * Residual: DT hotplug unbind cannot be fully prevented; devm
+	 * release order frees irq before ioremap (probe-order reverse);
+	 * DMA surfaces are wedge-held, never freed. */
+	dev_warn(ane->dev,
+		 "boot: module PINNED until reboot (started CPU; wedged-pin)\n");
 
 	if (r == -ENODATA)
 		return r;	/* unreachable: the caller gated */
@@ -405,7 +418,7 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	}
 	if (!r)
 		dev_info(ane->dev,
-			 "boot: DONE — handshake complete; scratch_result=%016llx (raw, semantics UNSOURCED — not a success claim)\n",
+			 "boot: DONE — handshake complete; scratch_result=%016llx (raw device address, semantics UNSOURCED — not a success claim; transport stays fenced until response validation)\n",
 			 sres);
 	return r;
 }
