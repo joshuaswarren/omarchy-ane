@@ -68,11 +68,8 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	if (!fw_load)
 		return 0;
 
-	ret = dma_set_mask_and_coherent(ane->dev, DMA_BIT_MASK(64));
-	if (ret) {
-		dev_err(ane->dev, "fwload: dma mask: %d\n", ret);
-		return ret;
-	}
+	/* The 64-bit coherent mask is set once in ane_t6021_probe,
+	 * BEFORE rtkit_init allocates the rings (W15 review). */
 
 	ret = request_firmware(&fw, ANE_FW_NAME, ane->dev);
 	if (ret) {

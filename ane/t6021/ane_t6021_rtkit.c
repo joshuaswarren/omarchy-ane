@@ -18,7 +18,7 @@
  * (InitializeRTBuddy 0x…95e942c) is: hand a command buffer via
  * SCRATCH0/1 (+0x1840048/+0x184004c), write the wake word 0xf7fbdff9
  * to SCRATCH7 (+0x1840064), poll until the fw overwrites it with
- * 0x80402006 ("channel description table ready"), read the table base
+ * 0x08042006 ("channel description table ready"), read the table base
  * back from SCRATCH0/1, then register each {type,bit,size,phys} entry
  * with the doorbell setter (write32(1 << bit) to +0x1844000).  The
  * SCRATCH handshake is the fw-sideload boot mode's init; in RTBuddy
@@ -54,63 +54,30 @@
 
 /* ---- MBI transport (capture-only; kext sites cited inline) ---- */
 
-static u32 ane_mbi_scratch_get(struct ane_t6021 *ane, unsigned int i)
-{
-	return readl(ane->base[ANE_T6021_REG_ENGINE] +
-		     ANE_MBI_SCRATCH0 + 4 * i);
-}
+/* SCRATCH write history, reconciled (W15): the legacy ANE_Init
+ * publication (dsb st at 0x95eaa90; low32→0x01840048, high32→
+ * 0x0184004c; wake 0xf7fbdff9 → SCRATCH7 0x01840064) is kext-proven on
+ * the OBSERVED provider path (AppleARMIODevice "ane" match, not
+ * RTBuddyService), and W9 latched nonzero SCRATCH values behind the W8
+ * grant — but a SCRATCH0 write SError-aborted CPU4 (0xbe000000) on the
+ * 2026-09-19 no-grant boot, and the init structure the publication
+ * names has unpinned consumer fields ([0x08], [0x10,0x38); selene fn
+ * 0x71A4 read-set pending). The host therefore performs NO SCRATCH
+ * write on this path: publication belongs to ane_t6021_boot.c once the
+ * consumer constraints land. SCRATCH READS stay in the proven-safe
+ * whitelist (first_resume dumps all eight). */
 
 static void ane_mbi_msgregs_dump(struct ane_t6021 *ane, const char *when)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
 
 	dev_info(ane->dev,
-		 "MBI msgregs %s: i2a=%08x_%08x a2i_rd=%08x a2i_wr=%08x\n",
+		 "MBI msgregs %s: tb=%08x_%08x a2i_rd=%08x a2i_wr=%08x (tb = +0x1170000 CNTVCT mirror, not a transport — W10)\n",
 		 when,
 		 readl(eng + ANE_MBI_MSG_I2A_HI),
 		 readl(eng + ANE_MBI_MSG_I2A_LO),
 		 readl(eng + ANE_MBI_MSG_A2I_RD),
 		 readl(eng + ANE_MBI_MSG_A2I_WR));
-}
-
-/* MBI capture: read-only.  The SCRATCH-handshake WRITE path (cmd
- * buffer -> SCRATCH0/1, wake 0xf7fbdff9 -> SCRATCH7) is FATAL on this
- * silicon in RTBuddy mode: the first write32 to SCRATCH0 (+0x1840048)
- * SError-aborted CPU4 (code 0xbe000000, unclean reset) on t6021-test-host
- * 2026-09-19, receipted by netconsole with per-stage flush points
- * (all eight SCRATCH pre-reads logged clean immediately before).  The
- * kext's SCRATCH flow (InitializeRTBuddy 0x…95eaa94-0x…95eaf00) is the
- * fw-sideload boot mode's init, not the RTBuddy host attach; with
- * selene running, the fw-protected control surface rejects host
- * writes with an async external abort while reads stub clean.  No
- * engine-window write exists in this driver again. */
-int ane_t6021_mbi_boot(struct ane_t6021 *ane)
-{
-	struct device *dev = ane->dev;
-	int i;
-
-	if (ane->mbi_table_ready)
-		return 0;
-
-	for (i = 0; i < 8; i++)
-		dev_info(dev, "MBI scratch%d pre=%08x\n", i,
-			 ane_mbi_scratch_get(ane, i));
-
-	ane_mbi_msgregs_dump(ane, "attach");
-	ane->mbi_table_ready = true;
-
-	/* Provider kext decoded 2026-09-19 (receipt
-	 * 2026-09-19-h14-w5-provider-kext-doorbell.md): the TX gate is
-	 * com.apple.driver.RTBuddy's ANEEndpoint1..5 nubs (class
-	 * RTBuddyEndpointService, gate = [svc+0x88], send = vtable+0x1e8
-	 * -> AKF mailbox SET at +0x1844000, bit = endpoint id).  The
-	 * SCRATCH handshake above is the fw-sideload boot mode only and
-	 * stays read-only here; RTBuddy-mode TX rides the a2i message
-	 * register + doorbell behind the mbi_doorbell opt-in. */
-	dev_info(dev,
-		 "MBI wall: a2i/doorbell send class host-write-fatal even behind the W8 grant; SCRATCH writable granted (W9); TX = doorbell(1<<ep) @+0x1844000, %s\n",
-		 ane->doorbell ? "mbi_doorbell=1 (armed)" : "fenced (mbi_doorbell=0)");
-	return 0;
 }
 
 /* fw->host message registers: capture-only read (kext reads the pair
@@ -222,38 +189,64 @@ static void ane_mbi_send(struct ane_t6021 *ane, u64 msg, u32 doorbell_bit,
 	writel(doorbell_bit, eng + ANE_MBI_DOORBELL);
 }
 
-static u64 ane_mbi_i2a(struct ane_t6021 *ane)
+/* fw->host receive = the real ASC mailbox (W10): i2a_control
+ * +0x1408114 gates a 64-bit POP-ON-READ RECV0/1 +0x1408830/8 pair
+ * (upstream apple mailbox semantics; W10 live read-proven clean).
+ * Only read RECV when a word is pending — a blind read eats it. */
+static bool ane_mbox_pending(struct ane_t6021 *ane)
 {
-	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-
-	return (u64)readl(eng + ANE_MBI_MSG_I2A_HI) << 32 |
-	       readl(eng + ANE_MBI_MSG_I2A_LO);
+	return !(readl(ane->base[ANE_T6021_REG_ENGINE] +
+		       ANE_ASC_MBOX_I2A_CTRL) & ANE_ASC_MBOX_CTRL_EMPTY);
 }
 
-/* Poll the fw->host pair for @ms; log every change; stop at the first
- * word carrying nonzero MGMT type bits (already the message we want)
- * or when the window ends. */
+static u64 ane_mbox_recv(struct ane_t6021 *ane)
+{
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+	u32 lo = readl(eng + ANE_ASC_MBOX_I2A_RECV0);
+	u32 hi = readl(eng + ANE_ASC_MBOX_I2A_RECV1);
+
+	return (u64)hi << 32 | lo;
+}
+
+/* Peek: 0 when the mailbox is empty (no side effect), else the
+ * pending 64-bit word (consumed — pop-on-read). */
+static u64 ane_mbi_i2a_peek(struct ane_t6021 *ane)
+{
+	return ane_mbox_pending(ane) ? ane_mbox_recv(ane) : 0;
+}
+
+/* Poll the fw->host receive surface for @ms; log every change; stop
+ * at the first word carrying nonzero MGMT type bits (already the
+ * message we want) or when the window ends.
+ *
+ * W10 CORRECTION: this watch used to poll +0x1170000/4 — the CNTVCT
+ * mirror, structurally unable to carry a MGMT word. The receive
+ * surface is the real ASC mailbox: ane_mbi_i2a_peek reads RECV0/1
+ * only while i2a_control reports a pending word (pop-on-read — a
+ * blind read would eat the message). Runs only behind the booted
+ * gate, i.e. with a live fw; the mailbox pop-read class has no
+ * live-read precedent yet and is logged on first use. */
 static void ane_mbi_watch(struct ane_t6021 *ane, const char *when,
 			  unsigned int ms, u64 *msg, u32 *type)
 {
 	unsigned long start = jiffies;
-	u64 prev = ane_mbi_i2a(ane);
+	u64 prev = ane_mbi_i2a_peek(ane);
 
 	*msg = prev;
 	*type = 0;
-	dev_info(ane->dev, "MGMT watch %s: i2a=%016llx (baseline)\n",
+	dev_info(ane->dev, "MGMT watch %s: mbox=%016llx (baseline)\n",
 		 when, prev);
 	while (time_before(jiffies, start + msecs_to_jiffies(ms))) {
 		u64 cur;
 		u32 t;
 
 		msleep(100);
-		cur = ane_mbi_i2a(ane);
+		cur = ane_mbi_i2a_peek(ane);
 		if (cur == prev)
 			continue;
 		t = FIELD_GET(ANE_RTKIT_TYPE, cur);
 		dev_info(ane->dev,
-			 "MGMT i2a %016llx -> %016llx type=%u%s at +%ums\n",
+			 "MGMT mbox %016llx -> %016llx type=%u%s at +%ums\n",
 			 prev, cur, t, t ? " [MGMT]" : "",
 			 jiffies_to_msecs(jiffies - start));
 		prev = cur;
@@ -515,6 +508,18 @@ void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane)
 
 	if (!ane->doorbell)
 		return;
+
+	/* W15 gate: the W5/W6 host sends into these surfaces failed
+	 * (0xbe000000) while no valid fw was staged or running; cause
+	 * was not isolated. Conservative rule: this driver sends
+	 * nothing until the boot handshake observes a live fw
+	 * (ane->booted). */
+	if (!ane->booted) {
+		dev_err(ane->dev,
+			"CSNE PING ep1: FENCED — firmware not booted (cpu_started=%u fw_alive=%u booted=%u); the W5-live/W6 0xbe000000 class ran with no fw behind the surfaces\n",
+			ane->cpu_started, ane->fw_alive, ane->booted);
+		return;
+	}
 
 	/* W6 gate: the EP0 MGMT session MUST precede any EP1 send
 	 * (W5-live: a bare EP1 ring is the machine-fatal 0xbe000000

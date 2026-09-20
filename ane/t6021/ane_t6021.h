@@ -55,6 +55,8 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 
+#include "ane_t6021_boot.h"
+
 /* reg windows (ane/t6021-j414c-ane.dts reg-names order) */
 enum {
 	ANE_T6021_REG_ENGINE,
@@ -170,8 +172,9 @@ enum {
  * host->fw SET bit per Asahi rtkit semantics; pinned live by W5.] */
 #define ANE_MBI_SCRATCH0	0x1840048	/* SCRATCH0..7 = +0x48..+0x64 */
 #define ANE_MBI_SCRATCH7	0x1840064
-#define ANE_MBI_WAKE_REQ	0xf7fbdff9	/* host->fw SCRATCH7 */
-#define ANE_MBI_WAKE_ACK	0x08042006	/* fw->host: table ready */
+/* Wake/ack handshake words live in ane_t6021_boot.h
+ * (ANE_T6021_BOOT_WAKE_REQ / ANE_T6021_BOOT_ACK) — single source, shared
+ * with the userspace boot regression. */
 #define ANE_MBI_DOORBELL	0x1844000	/* write32 (1 << endpoint id) */
 /* NOT a message pair.  W10 proved this is a mirror of the 24 MHz
  * architectural counter: across 32 samples the absolute difference
@@ -351,7 +354,18 @@ struct ane_t6021 {
 	 * here) */
 	struct mutex mbox_lock;
 
-	bool booted;		/* first_resume ran (eight-island gate) */
+	/* Bring-up state machine — honest semantics (W15):
+	 * power_gated: first_resume passed (eight-island gate +
+	 *              whitelist; block access proven-safe),
+	 * cpu_started: RVBAR programmed + CPU RUN released (fw_boot=1),
+	 * fw_alive:    fw first-alive ack observed on SCRATCH7 — NOT
+	 *              the init handshake,
+	 * booted:      full init handshake observed. CSNE/MGMT sessions
+	 *              gate on this flag only. */
+	bool power_gated;
+	bool cpu_started;
+	bool fw_alive;
+	bool booted;
 
 	/* W10: the mailbox does exist — at +0x1408xxx, not the h16g
 	 * +0x1608xxx that read-aborted in 2026-09-19 — and it reads a
@@ -364,9 +378,6 @@ struct ane_t6021 {
 	bool doorbell;	/* mbi_doorbell=1: EP rings may write the +0x1844000
 			 * doorbell + a2i message register (decoded 2026-09-19) */
 	bool irq_requested;
-
-	/* MBI handshake state (transport only, capture-only) */
-	bool mbi_table_ready;
 
 	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
 
@@ -382,7 +393,12 @@ int ane_t6021_rtkit_init(struct ane_t6021 *ane);
 void ane_t6021_rtkit_shutdown(struct ane_t6021 *ane);
 void ane_t6021_rtkit_drain(struct ane_t6021 *ane);
 irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data);
-int ane_t6021_mbi_boot(struct ane_t6021 *ane);
+
+/* ane_t6021_boot.c — W15 boot state resolution (fw_boot=1). An
+ * explicit boot request fails the probe while the prerequisites in
+ * ane_t6021_boot.c hold (-ENODATA); fw_boot=0 binds status-only. */
+int ane_t6021_boot_probe(struct ane_t6021 *ane);
+bool ane_t6021_boot_requested(void);
 
 /* ---- CSNE_CMD wire structs (host->fw on the INIT channel) ----
  *
@@ -498,9 +514,11 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
  * mbi_doorbell=1 only; watches the fw response surfaces for 3 s. */
 void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane);
 
-/* W13 firmware loader (ane_t6021_fwload.c): validate + DART-map the
- * selene PRELOAD payload behind fw_load=1. Non-fatal to probe; no boot
- * action (surface publication unevidenced, W13 §6). */
+/* W13/W14 firmware loader (ane_t6021_fwload.c): validate + stage +
+ * dart-ane0-map the selene PRELOAD payload behind fw_load=1. This is
+ * the staging half of the boot contract: the Params+0x18 producer
+ * chain and the RVBAR fold are closed (mapper-callchain audit, commits
+ * 3762aee/12be074); ane_t6021_boot.c consumes the staged surface. */
 int ane_t6021_fwload_probe(struct ane_t6021 *ane);
 void ane_t6021_fwload_remove(struct ane_t6021 *ane);
 
