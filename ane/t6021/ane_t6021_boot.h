@@ -23,9 +23,9 @@
  *  - 0x174 init suballocation: header[0x00] u64 = fw DVA (legacy
  *    branch, dev+0x780 bit0 clear = observed AppleARMIODevice
  *    provider), [0x68] u32 = 64 count, template 256 B at
- *    [0x6C,0x16C) whose pinned initial state is zeros with
- *    template+0xC0 = 4 (template-allocation/def-use receipts;
- *    dev+0x998 template word0 = config+0x1d8 = 0 proven).
+ *    [0x6C,0x16C) with template+0xC0 = 4 RESOLVED (Main raw anchors
+ *    0x9612b78/7c/80 on the dev+0x998 template; conditional |=0x10
+ *    separate, unqualified, not set).
  *
  * This header intentionally includes nothing. Kernel consumers have
  * <linux/types.h> already; userspace consumers typedef u8/u32/u64 and
@@ -59,9 +59,13 @@
 #define ANE_T6021_INIT_TEMPLATE_OFF	0x6c	/* 256 B at [0x6C,0x16C) */
 #define ANE_T6021_INIT_TEMPLATE_SIZE	0x100
 #define ANE_T6021_INIT_TBIT_OFF		0xc0	/* template-relative */
-#define ANE_T6021_INIT_TBIT_VAL		0x4	/* initial |4; the |0x10
-						 * mutation is unqualified
-						 * on H14 and is NOT set */
+#define ANE_T6021_INIT_TBIT_VAL		0x4	/* RESOLVED (Main raw
+					 * anchors 0x9612b78/7c/80:
+					 * ldr/orr#4/str on the dev+0x998
+					 * template); the conditional
+					 * |=0x10 is a separate, still
+					 * unqualified mutation and is
+					 * NOT set */
 
 /* Main-corrected (2026-09-20) open fields — the fill() leaves them
  * zero and publication cannot fire over them: [0x08] (=
@@ -90,6 +94,22 @@ static inline u64 ane_t6021_rvbar_entry_bits(u64 rd)
 	return rd & ANE_T6021_RVBAR_ADDR_MASK;
 }
 
+/* Boot acceptance predicate — the EXACT check the boot path applies
+ * to a staged fw DVA: the fold must lose nothing. Bit 11 is retained;
+ * bits 0-10, 48 and 55 are not, so an iova with any of them set is
+ * rejected rather than silently truncated. */
+static inline bool ane_t6021_rvbar_entry_ok(u64 iova)
+{
+	return (iova & (u64)~ANE_T6021_RVBAR_ADDR_MASK) == 0;
+}
+
+/* DISPUTED template region — do NOT write: the template-allocation/
+ * def-use receipts decoded an initial dev+0x998 template with
+ * word+0xC0 = 4, but pass5's legacy-path analysis reads the template
+ * zeros; the contradiction is unresolved pending pass5b raw evidence
+ * of the actual template producer. Until it lands, the fill writes
+ * nothing in [0x6C,0x16C) and makes no template claim. */
+
 /* Publication convention: low32 → SCRATCH0 (0x01840048) first, then
  * high32 → SCRATCH1, after dsb st. */
 static inline void ane_t6021_scratch64_split(u64 v, u32 *lo, u32 *hi)
@@ -115,9 +135,11 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *            ANE_FW_BLOB_SIZE on Linux unconfirmed),
  *   [0x18] = 0x10000000-config.size (formula closed),
  *   [0x20]/[0x28] open, [0x30] = dev+0x990 load-progress word.
- * None of these has a pinned Linux source, so this fill leaves them
- * zero and the result is NOT a valid init structure: zeros are UNSAFE
- * there and publication stays fenced. */
+ * Template+0xC0 = 4 is RESOLVED (Main raw anchors 0x9612b78/7c/80).
+ * The remaining open fields have no pinned Linux source, so this fill
+ * writes [0x00], [0x68] and template+0xC0 only, leaves the rest
+ * untouched, and the result is NOT a valid init structure: zeros are
+ * UNSAFE in the fw-consumed zone and publication stays fenced. */
 static inline void ane_t6021_init_struct_fill(u8 *buf, u64 fw_iova)
 {
 	buf[ANE_T6021_INIT_FW_DVA_OFF + 0] = (u8)fw_iova;
@@ -134,6 +156,8 @@ static inline void ane_t6021_init_struct_fill(u8 *buf, u64 fw_iova)
 	buf[ANE_T6021_INIT_COUNT_OFF + 2] = 0;
 	buf[ANE_T6021_INIT_COUNT_OFF + 3] = 0;
 
+	/* template+0xC0 = 4: RESOLVED initial state (Main raw anchors
+	 * 0x9612b78/7c/80). The conditional |=0x10 remains unset. */
 	buf[ANE_T6021_INIT_TEMPLATE_OFF + ANE_T6021_INIT_TBIT_OFF + 0] =
 		ANE_T6021_INIT_TBIT_VAL;
 }
