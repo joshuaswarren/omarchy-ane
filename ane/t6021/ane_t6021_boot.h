@@ -146,11 +146,12 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *   pool_dma    -> [0x58] the 'DDM ' pool surface DVA (Linux allocates
  *                  its own 0x40000-byte DDM pool — the kext size),
  *   pool_word0  -> [0x60] first qword of the Linux pool-descriptor
- *                  struct = the pool total length 0x40000. SELEN LANE
- *                  HYPOTHESIS-GRADE: the fw-side consumer of pool+0x00
- *                  is untraced; the kext never stores it (free-list
- *                  head at manager+0 untouched by Allocate). The
- *                  zero-block contract covers the safe default.
+ *                  struct. NOT CLOSED: the fw-side consumer of
+ *                  pool+0x00 is untraced and the kext never stores it
+ *                  (free-list head at manager+0 untouched by
+ *                  Allocate). This value is a HARD-GATED source — the
+ *                  sequence cannot run until a producer/consumer proof
+ *                  pins it; no hypothesis value is shipped.
  *
  * DYNAMIC inputs (read AFTER poll A — the fw publishes its extra-heap
  * request into SCRATCH3 (cell idx3) and its boot ordinal is
@@ -186,11 +187,17 @@ static inline u64 ane_t6021_ipc_size(u64 page_size, u32 ordinal)
 
 /* Trust boundary for the firmware-supplied heap request: 0 disables
  * the heap surface; otherwise the size is MAX(request, floor) and is
- * refused (negative) when the request exceeds the ceiling. Ceiling =
- * the dart-ane0 vm window bound (ADT dart node vm-size 0x3_00000000
- * with vm-base 0x10000000000) — audit-lane call, not a magic number:
- * no fw allocation can name a DVA outside the translation window. */
-#define ANE_T6021_BOOT_HEAP_MAX	0x300000000ULL
+ * refused (negative) when the request exceeds the ceiling.
+ *
+ * ANE_T6021_BOOT_HEAP_CEILING is an OPERATIONAL RESOURCE BUDGET, kept
+ * distinct from ABI width: header [0x28] is a u64 field and can
+ * express far larger values — the u64-ness says nothing about what is
+ * safe to allocate. The dart-ane0 vm window only bounds ADDRESSABILITY,
+ * not allocation safety, so it is deliberately not used as the
+ * ceiling. 32 MiB is the documented budget bounding a firmware-supplied
+ * allocation to a size the host can honor without starving; re-anchor
+ * to a config field when the h14g blob map lands. */
+#define ANE_T6021_BOOT_HEAP_CEILING	0x02000000ULL	/* 32 MiB budget */
 
 static inline long long
 ane_t6021_heap_size(u32 scratch3_req, u64 floor, u64 max_size)

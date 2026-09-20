@@ -70,7 +70,7 @@
  *     (2026-09-19 receipt) and the W3 gate demands act=0xf +
  *     AUTO_ENABLE clear afterwards — the reset vehicle (userspace
  *     stage vs in-kernel) is a Main decision, so the fold+start path
- *     stays behind boot_preflight_complete.
+ *     stays behind the itemized preflight gates.
  *   3. Ack model — TWO-PHASE, SINGLE REGISTER, TRANSITION-BASED
  *      (rvbar-lifecycle receipt 6288b0b, 57/57 anchors; supersedes the
  *      pass6 SCRATCH0-beacon reading): pre-CPU, SCRATCH cells are
@@ -137,15 +137,36 @@ module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
 		 "OPT-IN: boot state resolution + report (W15, read-only until the preboot/RVBAR prerequisites land — see ane_t6021_boot.c header).");
 
-/* Boot-write gate — the ENTIRE write sequence (preboot engine table,
- * scratch clear + pulse, RVBAR resolution, CPU release, publication,
- * wake) is gated on ONE complete-preflight flag checked BEFORE any
- * write: it runs start-to-finish once EVERY prerequisite is closed by
- * a cited commit — including ALL init-source values (no partial boot,
- * no mid-sequence fence: Main 2026-09-20) — or not at all. Flipping
- * it is a Main-reviewed commit that also populates the sources and
- * adds the kernel io backend, never a runtime knob. */
-static const bool boot_preflight_complete = false;
+/* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
+ * sequence (preboot engine table, scratch clear + pulse, RVBAR
+ * resolution, CPU release, publication, wake) runs start-to-finish
+ * only when EVERY gate below is true, checked BEFORE any write (Main
+ * 2026-09-20: no partial boot; remaining semantics stay hard gates,
+ * not comments). Each flips only with cited proof in a Main-reviewed
+ * commit that also populates the sources and adds the kernel io
+ * backend — never a runtime knob. */
+static const bool pf_provider_arrays = false;	/* genpd-binding strategy
+						 * accepted by audit; Main
+						 * confirmation pending */
+static const bool pf_pool_word0_proven = false;	/* pool+0x00 producer/
+						 * consumer proof (selene
+						 * lane) — the [0x60] value
+						 * is NOT closed */
+static const bool pf_heap_ceiling_anchored = false; /* operational ceiling
+						     * anchored to a config/
+						     * budget field */
+static const bool pf_init_sources_pinned = false; /* dev+0x3A90 value,
+						   * IPC numeric
+						   * confirmation */
+static const bool pf_rvbar_lifecycle = true;	/* 6288b0b, 57/57 anchors */
+static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
+
+static bool ane_t6021_boot_preflight_complete(void)
+{
+	return pf_provider_arrays && pf_pool_word0_proven &&
+	       pf_heap_ceiling_anchored && pf_init_sources_pinned &&
+	       pf_rvbar_lifecycle && pf_pass6_init_contract;
+}
 
 /* Poll A/B bound: the kext polls <=1000 x sleep(1ms) (selene poll
  * loop 0x73c4-0x73fc analog; rvbar-lifecycle step 6/10). */
@@ -248,14 +269,14 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	 * ane_t6021_boot.h (fake-MMIO-trace-tested); the kernel io
 	 * backend + source population + dispatch land together in the
 	 * Main-reviewed gate-flip commit, after ALL sources close. */
-	if (!boot_preflight_complete) {
+	if (!ane_t6021_boot_preflight_complete()) {
 		dev_err(ane->dev,
 		"boot: BLOCKED (probe fails while fw_boot=1; NO MMIO write performed) — preflight open on: (1) provider enableDeviceClock/enableDevicePower gate-ID arrays vs the genpd raise; (2) init-structure opens: [0x20]/[0x28]/[0x30]/[0x50] producers, IPC size cap dev+0x3A70 numeric, pool total size; RVBAR lifecycle RESOLVED (bit0-set = lawful skip branch, pulse clears stale ack, no reset before first attempt; domain power cycle = poll-A-timeout retry only, never in-kernel). cpu_started=%u fw_alive=%u booted=%u\n",
 		ane->cpu_started, ane->fw_alive, ane->booted);
 		return -ENODATA;
 	}
 
-	/* UNREACHABLE while boot_preflight_complete is false; the
+	/* UNREACHABLE while any preflight gate is false; the
 	 * gate-flip commit replaces this with the run() dispatch. */
 	return -ENODATA;
 }
