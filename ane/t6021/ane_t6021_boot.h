@@ -146,9 +146,11 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *   pool_dma    -> [0x58] the 'DDM ' pool surface DVA (Linux allocates
  *                  its own 0x40000-byte DDM pool — the kext size),
  *   pool_word0  -> [0x60] first qword of the Linux pool-descriptor
- *                  struct — semantics STILL OPEN (selene lane); the
- *                  source is pinned, never synthesized zero, before
- *                  publication may fire.
+ *                  struct = the pool total length 0x40000. SELEN LANE
+ *                  HYPOTHESIS-GRADE: the fw-side consumer of pool+0x00
+ *                  is untraced; the kext never stores it (free-list
+ *                  head at manager+0 untouched by Allocate). The
+ *                  zero-block contract covers the safe default.
  *
  * DYNAMIC inputs (read AFTER poll A — the fw publishes its extra-heap
  * request into SCRATCH3 (cell idx3) and its boot ordinal is
@@ -184,10 +186,11 @@ static inline u64 ane_t6021_ipc_size(u64 page_size, u32 ordinal)
 
 /* Trust boundary for the firmware-supplied heap request: 0 disables
  * the heap surface; otherwise the size is MAX(request, floor) and is
- * refused (negative) when the request exceeds the config-mandated
- * maximum — a pinned constant at preflight close. */
-#define ANE_T6021_BOOT_HEAP_MAX	0x08000000ULL	/* 128 MiB ceiling;
-					 * final value pinned at close */
+ * refused (negative) when the request exceeds the ceiling. Ceiling =
+ * the dart-ane0 vm window bound (ADT dart node vm-size 0x3_00000000
+ * with vm-base 0x10000000000) — audit-lane call, not a magic number:
+ * no fw allocation can name a DVA outside the translation window. */
+#define ANE_T6021_BOOT_HEAP_MAX	0x300000000ULL
 
 static inline long long
 ane_t6021_heap_size(u32 scratch3_req, u64 floor, u64 max_size)
