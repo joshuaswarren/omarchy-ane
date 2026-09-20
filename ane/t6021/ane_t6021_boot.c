@@ -148,25 +148,51 @@ MODULE_PARM_DESC(fw_boot,
 static const bool pf_provider_arrays = false;	/* genpd-binding strategy
 						 * accepted by audit; Main
 						 * confirmation pending */
-static const bool pf_pool_word0_proven = false;	/* pool+0x00 producer/
-						 * consumer proof (selene
-						 * lane) — the [0x60] value
-						 * is NOT closed */
-static const bool pf_heap_ceiling_anchored = false; /* operational ceiling
-						     * anchored to a config/
-						     * budget field */
-static const bool pf_init_sources_pinned = false; /* dev+0x3A90 value,
-						   * IPC numeric
-						   * confirmation */
+static const bool pf_pool_word0_proven = true;	/* CONFIRMED (Main raw +
+						 * Reset 183fd50, chain
+						 * 0x67dc/0x6824/0x68d8/
+						 * 0x70dc/0x736c): DDM Params
+						 * word0 = requested bytes =
+						 * 0x40000 — sourced, not
+						 * synthesized */
+static const bool pf_heap_floor_pinned = false;	/* dev+0x3A90 numeric value
+						 * (heap floor) — audit
+						 * open */
+static const bool pf_dart_page_floor = false;	/* raw numeric pin of
+						 * getPageSize() == 0x4000
+						 * (IPC floor) — audit open */
+static const bool pf_provider_strategy_confirmed = false; /* Main review of
+						 * the genpd-equivalence
+						 * strategy */
 static const bool pf_rvbar_lifecycle = true;	/* 6288b0b, 57/57 anchors */
 static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
 
 static bool ane_t6021_boot_preflight_complete(void)
 {
-	return pf_provider_arrays && pf_pool_word0_proven &&
-	       pf_heap_ceiling_anchored && pf_init_sources_pinned &&
-	       pf_rvbar_lifecycle && pf_pass6_init_contract;
+	return pf_provider_arrays && pf_provider_strategy_confirmed &&
+	       pf_pool_word0_proven && pf_heap_floor_pinned &&
+	       pf_dart_page_floor && pf_rvbar_lifecycle &&
+	       pf_pass6_init_contract;
 }
+
+/* STATIC boot sources — populated per the pinned contract (Main
+ * authorization 2026-09-20). Object layout (Main raw correction,
+ * superseding audit 018abdb): the OSValueObject at +0x10 POINTS to
+ * the Params; Params+0x00 = size, +0x18 = DVA, +0x38 = hostVA.
+ * dev+0x980 is the 'DDM ' Params pool (size 0x40000); dev+0x968 is a
+ * SEPARATE DMM manager constructed over the pool hostVA — never
+ * conflate the two. Runtime fields (fw_dva, ipc_dva, pool_dma) are
+ * filled by ane_t6021_boot_prepare() at sequence time (after poll A,
+ * per "dynamic allocations occur after READY"); heap_floor stays 0
+ * here and is supplied together with pf_heap_floor_pinned — NEVER
+ * used unpinned (the gate above keeps the whole sequence unrun until
+ * then). */
+static const struct ane_t6021_init_sources boot_sources = {
+	.cfg_size = 0x500000,		/* config+0x138 (0x9613da8/ dac) */
+	.prev_fw_len = 0,		/* first boot; static per reload */
+	.pool_word0 = 0x40000,		/* DDM Params word0 = requested
+					 * bytes (CONFIRMED, 183fd50) */
+};
 
 /* Poll A/B bound: the kext polls <=1000 x sleep(1ms) (selene poll
  * loop 0x73c4-0x73fc analog; rvbar-lifecycle step 6/10). */
@@ -181,6 +207,163 @@ static bool ane_t6021_boot_preflight_complete(void)
  * The kernel backend (readl/writeq/udelay wrappers + prepare hook
  * doing the pool/IPC allocations and the sourced fill) is the small
  * reviewed increment that lands with the gate flip. */
+
+/* ---- kernel io backend for ane_t6021_boot_run() ---- */
+
+struct ane_t6021_boot_mmio {
+	struct ane_t6021 *ane;
+};
+
+static u32 ane_boot_rd32(void *ctx, unsigned int off)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+
+	return readl(mm->ane->base[ANE_T6021_REG_ENGINE] + off);
+}
+
+static u64 ane_boot_rd64(void *ctx, unsigned int off)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+
+	return readq(mm->ane->base[ANE_T6021_REG_ENGINE] + off);
+}
+
+static void ane_boot_wr32(void *ctx, unsigned int off, u32 v)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+
+	writel(v, mm->ane->base[ANE_T6021_REG_ENGINE] + off);
+}
+
+static void ane_boot_wr64(void *ctx, unsigned int off, u64 v)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+
+	writeq(v, mm->ane->base[ANE_T6021_REG_ENGINE] + off);
+}
+
+static void ane_boot_dsb(void *ctx)
+{
+	(void)ctx;
+	dma_wmb();	/* dsb st: publish visibility, kext 0x95eaa90 */
+}
+
+static void ane_boot_wait(void *ctx)
+{
+	(void)ctx;
+	usleep_range(1000, 1500);	/* kext poll: sleep(1000us) */
+}
+
+/* S5 prepare — runs strictly AFTER poll A (fw alive), BEFORE the
+ * SCRATCH0/1 publish. Dynamic allocations occur here per "dynamic
+ * allocations occur after READY" (Main): the 'DDM ' pool, the 'IPC '
+ * surface, and the trust-bounded fw-requested HEAP surface. Every
+ * allocation is wedged-pin owned from here on (held while
+ * cpu_started; reboot reclaims). Publishes the pool DVA (suballoc at
+ * offset 0) as the SCRATCH0/1 halves. */
+static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
+{
+	struct ane_t6021_boot_mmio *mm = ctx;
+	struct ane_t6021 *ane = mm->ane;
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+	struct ane_t6021_init_sources src;
+	u64 ipc_size, heap_dva = 0;
+	long long heap_size;
+	u32 request, scratch1;
+
+	if (!ane_t6021_boot_preflight_complete())
+		return -ENODATA;	/* belt: run() already gated */
+
+	/* dynamic reads (post-READY, live cells — never hardcoded):
+	 * SCRATCH3 = fw extra-heap request; SCRATCH1 = ordinal base. */
+	request = readl(eng + ANE_MBI_SCRATCH0 + 4 * 3);
+	scratch1 = readl(eng + ANE_MBI_SCRATCH0 + 4 * 1);
+
+	/* 'DDM ' pool: 0x40000 bytes (Params word0, CONFIRMED). */
+	ane->boot_pool = dma_alloc_coherent(ane->dev, 0x40000,
+					    &ane->boot_pool_iova,
+					    GFP_KERNEL);
+	if (!ane->boot_pool)
+		return -ENOMEM;
+
+	/* 'IPC ' surface: max(DART page 0x4000, ordinal+1). */
+	ipc_size = ane_t6021_ipc_size(0x4000, scratch1 + 1);
+	ane->boot_ipc = dma_alloc_coherent(ane->dev, ipc_size,
+					   &ane->boot_ipc_iova,
+					   GFP_KERNEL);
+	if (!ane->boot_ipc)
+		return -ENOMEM;
+
+	/* HEAP surface: trust-bounded fw request (pass6 G-chain).
+	 * floor 0 here only because pf_heap_floor_pinned gates the
+	 * whole sequence; the pinned floor lands with that flip. */
+	heap_size = ane_t6021_heap_size(request,
+					boot_sources.heap_floor,
+					ANE_T6021_BOOT_HEAP_CEILING);
+	if (heap_size < 0)
+		return (int)heap_size;
+	if (heap_size > 0) {
+		ane->boot_heap = dma_alloc_coherent(ane->dev,
+						    heap_size,
+						    &ane->boot_heap_iova,
+						    GFP_KERNEL);
+		if (!ane->boot_heap)
+			return -ENOMEM;
+		ane->boot_heap_size = heap_size;
+	}
+
+	/* header fill: static sources + dynamic values */
+	src = boot_sources;
+	src.fw_dva = ane->fw_iova;
+	src.ipc_dva = ane->boot_ipc_iova;
+	src.pool_dma = ane->boot_pool_iova;
+	ane_t6021_init_struct_fill(ane->boot_pool, &src,
+				   heap_size, heap_dva,
+				   scratch1 + 1);
+	dma_wmb();
+
+	/* publish the pool DVA (suballoc at offset 0): low32 ->
+	 * SCRATCH0 first, high32 -> SCRATCH1. */
+	ane_t6021_scratch64_split(ane->boot_pool_iova, lo, hi);
+	return 0;
+}
+
+/* Dispatch the resolved sequence against the kernel io backend. All
+ * gates were checked by the caller; the run() core re-checks. After
+ * the CPU release there is NO ordinary unwind: failures HOLD state
+ * (wedged-pin cleanup refuses to free under a started CPU) and the
+ * probe binds fenced. */
+static int ane_t6021_boot_start(struct ane_t6021 *ane)
+{
+	struct ane_t6021_boot_mmio mm = { .ane = ane };
+	struct ane_t6021_boot_io io = {
+		.ctx = &mm,
+		.rd32 = ane_boot_rd32, .rd64 = ane_boot_rd64,
+		.wr32 = ane_boot_wr32, .wr64 = ane_boot_wr64,
+		.dsb_st = ane_boot_dsb, .poll_wait = ane_boot_wait,
+		.prepare = ane_t6021_boot_prepare,
+	};
+	struct ane_t6021_boot_cfg cfg = {
+		.preflight_ok = ane_t6021_boot_preflight_complete(),
+		.fw_dva = ane->fw_iova,
+	};
+	int cs = 0, fa = 0, bo = 0;
+	int r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo);
+
+	ane->cpu_started = cs;
+	ane->fw_alive = fa;
+	ane->booted = bo;
+
+	if (r == -ENODATA)
+		return r;	/* unreachable: the caller gated */
+	if (r && cs) {
+		dev_err(ane->dev,
+			"boot: sequence error %d AFTER CPU start (cpu_started=%u fw_alive=%u booted=%u) — WEDGED-PIN HOLD: all surfaces/rings/IRQ/links preserved; reboot is the only reclamation; no retry\n",
+			r, cs, fa, bo);
+		return 0;	/* bind fenced, state held */
+	}
+	return r;
+}
 
 int ane_t6021_boot_probe(struct ane_t6021 *ane)
 {
@@ -276,9 +459,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 		return -ENODATA;
 	}
 
-	/* UNREACHABLE while any preflight gate is false; the
-	 * gate-flip commit replaces this with the run() dispatch. */
-	return -ENODATA;
+	return ane_t6021_boot_start(ane);
 }
 
 bool ane_t6021_boot_requested(void)
