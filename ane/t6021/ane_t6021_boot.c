@@ -189,13 +189,29 @@ static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
  * closure, 183fd50 word0 confirmation, provider strategy acceptance,
  * and the netconsole end-to-end Wi-Fi marker (m2-wifi-check-1789937086,
  * 2026-09-20T15:44:47.121595Z from [redacted-ip]:6668). */
-/* LIVE-FAULT GATE (2026-09-20 16:23:07 window): the machine wedged
- * INSIDE the pre-CPU table block (P0 emitted; the 3-write block
+/* LIVE-FAULT table gating (2026-09-20 16:23:07 window): the machine
+ * wedged INSIDE the pre-CPU table block (P0 emitted; the 3-write block
  * eng+0xb38/b98/bf8 <- 0x01ff01ff stalled — could be the FIRST write;
- * P1 never reached; hardware reset 16:24:08). OFF so the block cannot
- * re-fire accidentally; re-arms only after the table-base source
- * analysis (Reset lane) closes the cause. Feeds cfg.preboot_table_safe. */
-static const bool pf_preboot_table_safe = false;
+ * P1 never reached; hardware reset 16:24:08).
+ *   mode 0 = ABORT before any write (accidental-repeat prevention),
+ *   mode 1 = write the table (re-arm after the table-base analysis
+ *            closes the cause),
+ *   mode 2 = SKIP the table (diagnostic per user override 2026-09-20:
+ *            tests fw-alive without the kext pre-CPU config).
+ * W8 write-grant tunables are mode-independent (proven no-abort
+ * class, w8-run.out) and run in every armed mode. */
+static const bool pf_preboot_table_safe = false;	/* re-arm -> mode 1 */
+static const bool pf_preboot_table_skip_diagnostic = true; /* user
+			override 2026-09-20: continue writes/boots */
+
+static int ane_t6021_boot_table_mode(void)
+{
+	if (pf_preboot_table_safe)
+		return 1;
+	if (pf_preboot_table_skip_diagnostic)
+		return 2;
+	return 0;
+}
 
 static const bool pf_main_lifetime_review = true;
 
@@ -387,7 +403,7 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	};
 	struct ane_t6021_boot_cfg cfg = {
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
-		.preboot_table_safe = pf_preboot_table_safe,
+		.preboot_table_mode = ane_t6021_boot_table_mode(),
 		.fw_dva = ane->fw_iova,
 	};
 	int cs = 0, fa = 0, bo = 0;
