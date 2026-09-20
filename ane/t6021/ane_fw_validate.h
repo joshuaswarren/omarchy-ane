@@ -19,7 +19,10 @@
 #define __ANE_FW_VALIDATE_H__
 
 #define ANE_FW_BLOB_SIZE	0x1a4000
-#define ANE_FW_BUF_SIZE		0x400000	/* covers vmsize 0x36c000 */
+/* FWIM surface size = config+0x138 byte-count = 0x500000 (Main
+ * 2026-09-20, audit 751caa4). Covers the image vmsize 0x36c000 plus
+ * the config-mandated tail; NOT derivable from the blob length. */
+#define ANE_FW_BUF_SIZE		0x500000
 #define ANE_FW_ENTRY_PC		0x0
 
 #define MH_MAGIC_64	0xfeedfacfU

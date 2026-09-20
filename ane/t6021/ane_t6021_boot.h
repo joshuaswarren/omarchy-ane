@@ -124,11 +124,11 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *                 a SECOND coherent allocation the Linux driver owns;
  *                 kext alloc args 0x95ea240-58, exact byte size still
  *                 to be quoted from cfg+4/clamp before arming),
- *   cfg_size   -> [0x10] = config+0x138 image byte-count (u32
- *                 zero-extended; the same config field W13 §5 names
- *                 the image byte-count) and [0x18] = 0x10000000 -
- *                 cfg_size; on Linux the byte-count is the validated
- *                 selene payload length (ANE_FW_BLOB_SIZE),
+ *   cfg_size   -> [0x10] = config+0x138 FWIM byte-count = 0x500000
+ *                 (Main, audit 751caa4 — NOT the blob length; the
+ *                 Linux FWIM surface fw_buf is ANE_FW_BUF_SIZE =
+ *                 0x500000 to honor the semantic) and [0x18] =
+ *                 0x10000000 - cfg_size = 0x0fb00000,
  *   pool_dma   -> [0x58] init-pool DMA base (kext *(pool+0x18)),
  *   pool_word0 -> [0x60] pool first qword (kext *(pool+0x00);
  *                 semantics open — write 0).
