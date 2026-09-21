@@ -124,6 +124,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/reset.h>
 #include <linux/iommu.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -131,6 +132,8 @@
 #include <linux/moduleparam.h>
 
 #include "ane_t6021.h"
+#define APPLE_PMGR_RESET_TIME_US 1
+
 #include "ane_t6021_boot.h"
 
 static bool fw_boot;
@@ -486,10 +489,69 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	return r;
 }
 
+/*
+ * W16 pass-3: cpu_reset — framework-mediated ASC core reset.
+ *
+ * reset_control_assert() sets ps RESET (BIT(31)) through the
+ * pmgr-pwrstate reset_controller ops (APPLE_PMGR_RESET_TIME 1 us),
+ * reset_control_deassert() clears it. The ane_cpu DOMAIN STAYS
+ * POWERED throughout — dart1/dart2 (power-domains = &ane_cpu) are
+ * untouched, unlike every raw ps-write arm (three freeze data).
+ * Caller contract: userspace quiesces the ASC CPU (CPU_CONTROL <- 0,
+ * DevMem) BEFORE writing this attribute; the kext quiesce rule.
+ */
+static ssize_t cpu_reset_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	struct ane_t6021 *ane = dev_get_drvdata(dev);
+	int ret;
+
+	if (!ane->cpu_rst)
+		return -ENODEV;
+	if (ane->cpu_started)
+		return -EBUSY;
+
+	ret = reset_control_assert(ane->cpu_rst);
+	if (ret)
+		return ret;
+	fsleep(2 * APPLE_PMGR_RESET_TIME_US);
+	ret = reset_control_deassert(ane->cpu_rst);
+	if (ret)
+		return ret;
+
+	dev_warn(ane->dev, "cpu_reset: ASC core cycled through ps RESET (domain powered)\n");
+	return count;
+}
+static DEVICE_ATTR_WO(cpu_reset);
+
+static struct attribute *ane_t6021_boot_attrs[] = {
+	&dev_attr_cpu_reset.attr,
+	NULL,
+};
+static const struct attribute_group ane_t6021_boot_group = {
+	.attrs = ane_t6021_boot_attrs,
+};
+
 int ane_t6021_boot_probe(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
 	u64 rvbar;
+
+	/* W16 pass-3: ane_cpu reset controller (ps RESET bit BIT(31) via
+	 * the pmgr-pwrstate reset_controller ops — framework-mediated,
+	 * domain stays powered, darts untouched). Wired by the DT
+	 * `resets = <&ane_cpu>` property; optional so older DTBs bind. */
+	ane->cpu_rst = devm_reset_control_get_optional_exclusive(ane->dev,
+								 NULL);
+	if (IS_ERR(ane->cpu_rst)) {
+		dev_err(ane->dev, "boot: reset control fetch: %pe\n",
+			ane->cpu_rst);
+		return PTR_ERR(ane->cpu_rst);
+	}
+	if (!ane->cpu_rst)
+		dev_info(ane->dev,
+			 "boot: no resets property — cpu_reset sysfs unavailable\n");
 
 	/* Export + pin BEFORE the fw_boot fence: hybrid mode (fw_boot=0)
 	 * needs the staged DVA exported and the module pinned so
@@ -506,6 +568,15 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 		ane->hybrid_pinned = true;
 		dev_warn(ane->dev,
 			 "fwload: module PINNED until reboot (fw+DART mapping live; hybrid boot ready)\n");
+	}
+
+	if (!ane->cpu_rst) {
+		/* nothing to expose */
+	} else {
+		int ret = devm_device_add_group(ane->dev, &ane_t6021_boot_group);
+
+		if (ret)
+			return ret;
 	}
 
 	if (!fw_boot) {
