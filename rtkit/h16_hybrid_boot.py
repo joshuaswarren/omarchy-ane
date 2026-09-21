@@ -139,14 +139,20 @@ def main():
         rvbar=f"{rvbar:#x}", scratch7=f"{s7:#010x}")
 
     if args.power_cycle:
-        # rvbar-lifecycle item 3: kext ANE_deInit power_off -> power_on
-        # -> re-init, USERSPACE vehicle (stage1 write class; the
-        # 2026-09-19 freeze was kernel-context only). Answers the open
-        # edge: does ps-off clear RVBAR bit0?
+        # rvbar-lifecycle item 3, KEXT ORDER (v2): gate the CPU FIRST
+        # (CPU_CONTROL <- 0, verify STOPPED), THEN ps 0x2e0 <- 0. The
+        # 19:04 freeze wrote ps<-0 with RUN still latched — order
+        # inversion, now corrected. Driver-blessed OFF value is exactly
+        # 0 (PmgrResetEvidence: apple-pmgr-pwrstate power_off writes
+        # TARGET=0, all control bits cleared).
         PMGR_ANE_CPU = 0x28E0802E0
         PS_CLEAR = ((1 << 31) | (1 << 28) | (0xF << 24) | (0xF << 16)
                     | (1 << 12) | (1 << 10) | 0xF)
         pm = d.window(PMGR_ANE_CPU & ~0xFFF, 0x1000)
+        log("pc.cpu-stop")
+        d.wr32(ANE_BASE + REG_CPUCTRL, 0)
+        log("pc.cpu-stopped",
+            cpu_status=f"{d.rd32(ANE_BASE + REG_CPUSTATUS):#010x}")
         log("pc.off")
         if not args.dry_run:
             struct.pack_into("<I", pm[0], pm[1] + (PMGR_ANE_CPU & 0xFFF), 0)
