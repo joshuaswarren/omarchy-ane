@@ -131,6 +131,8 @@ def main():
                          "re-raise, then full sequence")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the proposed phases without opening hardware")
+    ap.add_argument("--diagnostic-marker", action="store_true",
+                    help="expect lab execution marker, never firmware READY")
     args = ap.parse_args()
     if args.power_cycle:
         ap.error("--power-cycle refused: documented T6021 ps-off host freezes")
@@ -144,6 +146,23 @@ def main():
                     "S1 scratch clear/pulse", "S2 RVBAR", "S3 release", "S4 poll"],
             polls=args.polls, hardware_access=False)
         return 0
+
+    try:
+        params = {}
+        for name in ("fw_diag_marker", "fw_load", "fw_iova"):
+            with open("/sys/module/ane_t6021/parameters/" + name) as f:
+                params[name] = f.read().strip()
+        with open("/sys/module/ane_t6021/refcnt") as f:
+            pinned = int(f.read().strip()) > 0
+        if params["fw_diag_marker"] not in ("Y", "N"):
+            ap.error("unrecognized staged diagnostic mode")
+        if (params["fw_diag_marker"] == "Y") != args.diagnostic_marker:
+            ap.error("runner mode differs from staged firmware; refusing MMIO")
+        if params["fw_load"] != "Y" or int(params["fw_iova"], 0) == 0 or not pinned:
+            ap.error("firmware must be staged and module pinned before MMIO")
+    except (OSError, ValueError) as exc:
+        ap.error(f"cannot verify staged firmware: {exc}")
+    expected = 0x4d325431 if args.diagnostic_marker else BOOT_ACK
 
     d = DevMem()
     d.window(ANE_BASE, 0x2000000)  # 32 MiB engine block
@@ -316,10 +335,10 @@ def main():
     got = None
     for i in range(deadline):
         v = d.rd32(ANE_BASE + REG_SCRATCH7)
-        if v == BOOT_ACK:
+        if v == expected:
             got = i
             break
-        if v not in (0, BOOT_ACK) and (i % 500) == 499:
+        if v not in (0, expected) and (i % 500) == 499:
             log("pollA.progress", i=i, s7=f"{v:#010x}")
         time.sleep(0.001)
 
@@ -327,8 +346,13 @@ def main():
         log("pollA.TIMEOUT", polls=deadline,
             s7=f"{d.rd32(ANE_BASE + REG_SCRATCH7):#010x}",
             cpu_status=f"{d.rd32(ANE_BASE + REG_CPUSTATUS):#010x}",
-            note="fw did not reach READY — check DART FAULT + walk tool")
+            expected=f"{expected:#010x}", note="expected scratch value not observed")
         return 2
+
+    if args.diagnostic_marker:
+        log("pollA.MARKER", poll=got, s7=f"{expected:#010x}",
+            note="execution reached marker store; NOT firmware READY or functional ANE")
+        return 0
 
     log("pollA.READY", poll=got, s7=f"{BOOT_ACK:#010x}",
         cpu_status=f"{d.rd32(ANE_BASE + REG_CPUSTATUS):#010x}",
