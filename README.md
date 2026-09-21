@@ -39,7 +39,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | --- | --- | --- | --- | --- | --- | --- |
 | M1 | T8103 | H13G | `apple,t8103-ane` | qualified (2026-09-20: m1-test-host fresh Arch boot reported; benchmark recertification pending) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17 (historical dated evidence; not current) | none |
 | M1 Pro | T6000 | H13J | `apple,t6000-ane` | recognized-untested | none on T6000 silicon | a tester plus the board DART/pmgr overlay (compatible and SET base shared with T6001 are proven); two community DT captures arrived 2026-09-17 |
-| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified (t6001-test-host Linux ANE is live: 104/104 Parakeet E2E on v0.6.0; v0.7.1 wall [receipts/2026-09-19-parakeet-e2e-v071-t6001-test-host.md](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-19-parakeet-e2e-v071-t6001-test-host.md)) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
+| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified (t6001-test-host Linux ANE is live: 104/104 Parakeet E2E on v0.6.0; v0.7.1 wall  sanitized receipt copy: agent/parakeet-perf-resident branch ) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
@@ -83,5 +83,5 @@ the T8103 ps-map guard) live on `fix/tm-recovery-t6001` for the t6001-test-host 
 Ledger and evidence: ane-linux-experiments
 `receipts/2026-09-16-tm-recovery-t8103.md`.
 
-For the replacement installation, see the [2026-09-20 clean-install receipt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-20-m1-test-host-clean-install.json).
+For the replacement installation, see the 2026-09-20 clean-install receipt (private archive).
 Current provisioning and recertification status is at the top of this README.
