@@ -33,6 +33,7 @@ REG_RVBAR = 0x01050000
 REG_CPUCTRL = 0x01400044
 REG_CPUSTATUS = 0x01400048
 REG_SCRATCH0 = 0x01840048
+REG_SCRATCH1 = REG_SCRATCH0 + 4
 REG_SCRATCH6 = 0x01840060
 REG_SCRATCH7 = 0x01840064
 TABLE_VALUE = 0x01FF01FF
@@ -129,8 +130,20 @@ def main():
                          "ane_cpu (0x28e0802e0) <- 0, read RVBAR edge, "
                          "re-raise, then full sequence")
     ap.add_argument("--dry-run", action="store_true",
-                    help="read state, run P-1/S1 writes only, no CPU release")
+                    help="print the proposed phases without opening hardware")
     args = ap.parse_args()
+    if args.power_cycle:
+        ap.error("--power-cycle refused: documented T6021 ps-off host freezes")
+    if args.island_cycle:
+        ap.error("--island-cycle refused: unvalidated T6021 sequence and addresses")
+    if args.polls <= 0:
+        ap.error("--polls must be positive")
+    if args.dry_run:
+        log("dry-run.plan", table=args.with_table,
+            phases=["CPU stop", "P0 tables (optional)", "P1 grants",
+                    "S1 scratch clear/pulse", "S2 RVBAR", "S3 release", "S4 poll"],
+            polls=args.polls, hardware_access=False)
+        return 0
 
     d = DevMem()
     d.window(ANE_BASE, 0x2000000)  # 32 MiB engine block
