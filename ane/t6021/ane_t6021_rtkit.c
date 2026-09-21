@@ -616,6 +616,16 @@ int ane_t6021_rtkit_init(struct ane_t6021 *ane)
 
 		r->ring = dma_alloc_coherent(ane->dev, r->ring_size,
 					     &r->ring_iova, GFP_KERNEL);
+		if (r->ring &&
+		    !ane_t6021_fw_alias_iova_ok(ane, r->ring_iova,
+						r->ring_size)) {
+			dev_err(ane->dev,
+				"ep%u ring %pad overlaps fw alias — refusing\n",
+				r->id, &r->ring_iova);
+			dma_free_coherent(ane->dev, r->ring_size, r->ring,
+					  r->ring_iova);
+			r->ring = NULL;
+		}
 		if (!r->ring) {
 			err = -ENOMEM;
 			goto free;

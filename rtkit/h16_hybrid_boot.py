@@ -112,6 +112,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--polls", type=int, default=15000,
                     help="poll A iterations (1 ms cadence)")
+    ap.add_argument("--with-table", action="store_true",
+                    help="run P0 case-1: eng+0xb38/0xb98/0xbf8 <- 0x01ff01ff "
+                         "(kext EnableANEClocksAndPower, REQUIRED every "
+                         "init per boot.c pass5; skip only for the "
+                         "diagnostic no-config probe)")
+    ap.add_argument("--power-cycle", action="store_true",
+                    help="rvbar-lifecycle item 3 vehicle: userspace ps "
+                         "ane_cpu (0x28e0802e0) <- 0, read RVBAR edge, "
+                         "re-raise, then full sequence")
     ap.add_argument("--dry-run", action="store_true",
                     help="read state, run P-1/S1 writes only, no CPU release")
     args = ap.parse_args()
@@ -128,14 +137,80 @@ def main():
     s7 = d.rd32(ANE_BASE + REG_SCRATCH7)
     log("prestate", cpu_status=f"{cpu_status:#010x}",
         rvbar=f"{rvbar:#x}", scratch7=f"{s7:#010x}")
-    assert rvbar & 1, "RVBAR bit0 not latched — lawful skip branch invalid"
-    entry_bits = rvbar & RVBAR_ENTRY_MASK
-    assert entry_bits == ENTRY_IOVA, \
-        f"entry bits {entry_bits:#x} != expected {ENTRY_IOVA:#x} (alias target)"
 
-    # P0: table writes SKIPPED (diagnostic mode — loaded-module precedent;
-    # REQUIRED only under the full kext pre-CPU config, case 1)
-    log("P0", mode="skipped-diagnostic")
+    if args.power_cycle:
+        # rvbar-lifecycle item 3: kext ANE_deInit power_off -> power_on
+        # -> re-init, USERSPACE vehicle (stage1 write class; the
+        # 2026-09-19 freeze was kernel-context only). Answers the open
+        # edge: does ps-off clear RVBAR bit0?
+        PMGR_ANE_CPU = 0x28E0802E0
+        PS_CLEAR = ((1 << 31) | (1 << 28) | (0xF << 24) | (0xF << 16)
+                    | (1 << 12) | (1 << 10) | 0xF)
+        pm = d.window(PMGR_ANE_CPU & ~0xFFF, 0x1000)
+        log("pc.off")
+        if not args.dry_run:
+            struct.pack_into("<I", pm[0], pm[1] + (PMGR_ANE_CPU & 0xFFF), 0)
+            deadline = time.time() + 0.5
+            while time.time() < deadline:
+                cur = struct.unpack_from("<I", pm[0],
+                                         pm[1] + (PMGR_ANE_CPU & 0xFFF))[0]
+                if (cur & 0xF0) >> 4 == 0 and (cur & 0x800) == 0:
+                    break
+                time.sleep(0.001)
+            else:
+                log("pc.off.TIMEOUT", val=f"{cur:#010x}")
+                return 2
+        log("pc.off.done", ps=f"{cur:#010x}" if not args.dry_run else "-")
+        rvbar = d.rd64(ANE_BASE + REG_RVBAR)
+        log("pc.rvbar-after-off", rvbar=f"{rvbar:#x}",
+            bit0_cleared=not (rvbar & 1))
+        # power_on: stage1 raise class (CLEAR-mask off, ACTIVE on)
+        log("pc.on")
+        if not args.dry_run:
+            v = struct.unpack_from("<I", pm[0],
+                                   pm[1] + (PMGR_ANE_CPU & 0xFFF))[0]
+            nv = (v & ~PS_CLEAR) | 0xF
+            struct.pack_into("<I", pm[0], pm[1] + (PMGR_ANE_CPU & 0xFFF), nv)
+            deadline = time.time() + 0.5
+            while time.time() < deadline:
+                cur = struct.unpack_from("<I", pm[0],
+                                         pm[1] + (PMGR_ANE_CPU & 0xFFF))[0]
+                if (cur & 0xF0) >> 4 == 0xF and (cur & 0x800) == 0:
+                    break
+                time.sleep(0.001)
+            else:
+                log("pc.on.TIMEOUT", val=f"{cur:#010x}")
+                return 2
+        log("pc.on.done", ps=f"{cur:#010x}" if not args.dry_run else "-")
+        rvbar = d.rd64(ANE_BASE + REG_RVBAR)
+        log("pc.rvbar-after-on", rvbar=f"{rvbar:#x}")
+
+    assert rvbar & 1, "RVBAR bit0 clear and no fold branch taken yet"
+    entry_bits = rvbar & RVBAR_ENTRY_MASK
+    if entry_bits != ENTRY_IOVA:
+        log("S2.note", entry=f"{entry_bits:#x}",
+            note="entry differs from alias target — fold branch will run")
+
+    # S3 stop-first: a re-attempt on a live CPU must stop before
+    # re-prepare (CPU_CONTROL 0 -> 0x10 is lawful on both paths,
+    # rvbar-lifecycle item 3)
+    log("S3.pre-stop", cputrl=f"{d.rd32(ANE_BASE + REG_CPUCTRL):#010x}")
+    d.wr32(ANE_BASE + REG_CPUCTRL, 0)
+
+    # P0: case 1 writes the pre-CPU engine table (REQUIRED every
+    # EnableANEClocksAndPower per the kext, boot.c item 1); case 2
+    # skips (diagnostic no-config probe — 2026-09-20 first release
+    # proved it silent: no fetch, no fault, no READY)
+    if args.with_table:
+        log("P0", mode="table")
+        for off in REG_TABLE:
+            d.wr32(ANE_BASE + off, TABLE_VALUE)
+        log("P0.done",
+            t0=f"{d.rd32(ANE_BASE + REG_TABLE[0]):#010x}",
+            t1=f"{d.rd32(ANE_BASE + REG_TABLE[1]):#010x}",
+            t2=f"{d.rd32(ANE_BASE + REG_TABLE[2]):#010x}")
+    else:
+        log("P0", mode="skipped-diagnostic")
 
     # P-1: W8 grant tunables, per-write phase discrimination
     log("P-1.begin", writes=len(P1_TUNABLES))
@@ -162,9 +237,28 @@ def main():
         log("dry-run.stop")
         return 0
 
-    # S2: RVBAR skip-if-latched (bit0 set — no write, no reset; the W16
-    # entry alias makes this branch survivable)
-    log("S2.rvbar", branch="skip-latched", entry=f"{entry_bits:#x}")
+    # S2: RVBAR skip-or-fold. bit0 set + entry==alias target -> skip
+    # (the W16 entry alias makes this branch survivable). bit0 clear ->
+    # kext fold: write ENTRY_BASE | fw_dva (ane_t6021_rvbar_compose).
+    rvbar = d.rd64(ANE_BASE + REG_RVBAR)
+    if rvbar & 1:
+        entry_bits = rvbar & RVBAR_ENTRY_MASK
+        assert entry_bits == ENTRY_IOVA, \
+            (f"latched entry {entry_bits:#x} has no alias (alias is at "
+             f"{ENTRY_IOVA:#x}) — refusing blind start")
+        log("S2.rvbar", branch="skip-latched", entry=f"{entry_bits:#x}")
+    else:
+        with open("/sys/module/ane_t6021/parameters/fw_iova") as f:
+            fw_iova = int(f.read().strip(), 0)
+        ENTRY_BASE = 0x0081000000000001
+        fold = ENTRY_BASE | (fw_iova & RVBAR_ENTRY_MASK)
+        assert (fw_iova & ~RVBAR_ENTRY_MASK) == 0, "fw iova must fit fold"
+        log("S2.rvbar", branch="fold", fw_iova=f"{fw_iova:#x}",
+            fold=f"{fold:#x}")
+        if not args.dry_run:
+            d.wr32(ANE_BASE + REG_RVBAR, fold & 0xFFFFFFFF)
+            d.wr32(ANE_BASE + REG_RVBAR + 4, fold >> 32)
+            assert d.rd64(ANE_BASE + REG_RVBAR) == fold, "RVBAR fold readback"
 
     # S3: CPU release — strictly 0 then 0x10
     log("S3.cpu-release")

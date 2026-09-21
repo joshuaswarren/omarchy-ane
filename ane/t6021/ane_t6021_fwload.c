@@ -89,6 +89,8 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	u64 off;
 	int ret;
 
+	if (!dom)
+		return -ENODEV;
 	if (!ane_t6021_rvbar_latched(rvbar) || !entry) {
 		/* Unlatched branch: the boot path programs RVBAR to the
 		 * fw DVA itself (ane_t6021_rvbar_compose), no alias. */
@@ -104,13 +106,12 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 			entry, ANE_T6021_FW_ALIAS_PAGE);
 		return -EINVAL;
 	}
-	if (!dom ||
-	    entry + ane->fw_size - 1 > dom->geometry.aperture_end) {
+	if (entry + ane->fw_size - 1 > dom->geometry.aperture_end) {
 		dev_err(ane->dev,
 			"fwalias: entry %#llx+%#x outside aperture %#llx\n",
 			entry, ane->fw_size,
 			(unsigned long long)dom->geometry.aperture_end);
-		return dom ? -ERANGE : -ENODEV;
+		return -ERANGE;
 	}
 	if (dev_is_dma_coherent(ane->dev))
 		prot |= IOMMU_CACHE;
@@ -143,10 +144,16 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 			pa0 = pa;
 	}
 
-	if (iommu_iova_to_phys(dom, entry) != pa0) {
-		dev_err(ane->dev, "fwalias: iova_to_phys roundtrip mismatch\n");
-		ret = -EIO;
-		goto err_unmap;
+	/* full per-page roundtrip: every alias page must resolve to the
+	 * same PA as its fw source page (not just page 0) */
+	for (off = 0; off < ane->fw_size; off += ANE_T6021_FW_ALIAS_PAGE) {
+		if (iommu_iova_to_phys(dom, entry + off) !=
+		    iommu_iova_to_phys(dom, ane->fw_iova + off)) {
+			dev_err(ane->dev,
+				"fwalias: roundtrip mismatch at +%#llx\n", off);
+			ret = -EIO;
+			goto err_unmap;
+		}
 	}
 
 	ane->fw_alias_iova = entry;
