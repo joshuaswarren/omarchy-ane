@@ -117,6 +117,13 @@ def main():
                          "(kext EnableANEClocksAndPower, REQUIRED every "
                          "init per boot.c pass5; skip only for the "
                          "diagnostic no-config probe)")
+    ap.add_argument("--island-cycle", action="store_true",
+                    help="m1n1 fw/ane.py power_up parity: write 0x300 DOWN "
+                         "to the seven island ps words REVERSED "
+                         "(0x4030..0x4000), then 0xf UP forward — the "
+                         "t8103 working ANE cycle (SRAM retention keeps "
+                         "fw through the cycle; ASC restarts at latched "
+                         "RVBAR). ane_cpu @2e0 NOT touched (freeze class).")
     ap.add_argument("--power-cycle", action="store_true",
                     help="rvbar-lifecycle item 3 vehicle: userspace ps "
                          "ane_cpu (0x28e0802e0) <- 0, read RVBAR edge, "
@@ -202,6 +209,23 @@ def main():
     # rvbar-lifecycle item 3)
     log("S3.pre-stop", cputrl=f"{d.rd32(ANE_BASE + REG_CPUCTRL):#010x}")
     d.wr32(ANE_BASE + REG_CPUCTRL, 0)
+
+    # P-1a: m1n1-parity island cycle (BEFORE tables, matching m1n1
+    # power_up order: power_down reversed, power_up forward)
+    if args.island_cycle:
+        ISLANDS = [0x28e084000 + off for off in range(0x4000, 0x4038, 8)]
+        pmw = d.window(0x28e084000 & ~0xFFF, 0x2000)
+        log("island.down", n=len(ISLANDS))
+        if not args.dry_run:
+            for pa in reversed(ISLANDS):
+                struct.pack_into("<I", pmw[0], pmw[1] + (pa - (0x28e084000 & ~0xFFF)), 0x300)
+            time.sleep(0.002)
+            log("island.up")
+            for pa in ISLANDS:
+                struct.pack_into("<I", pmw[0], pmw[1] + (pa - (0x28e084000 & ~0xFFF)), 0xF)
+            time.sleep(0.002)
+        words = [struct.unpack_from("<I", pmw[0], pmw[1] + (pa - (0x28e084000 & ~0xFFF)))[0] for pa in ISLANDS]
+        log("island.cycled", words=[f"{w:#x}" for w in words])
 
     # P0: case 1 writes the pre-CPU engine table (REQUIRED every
     # EnableANEClocksAndPower per the kext, boot.c item 1); case 2
