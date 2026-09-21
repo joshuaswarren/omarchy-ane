@@ -342,6 +342,8 @@ struct ane_t6021_ep {
 	bool started;
 };
 
+struct reset_control;
+
 struct ane_t6021 {
 	struct device *dev;
 	void __iomem *base[ANE_T6021_REG_COUNT];
@@ -393,6 +395,10 @@ struct ane_t6021 {
 	 * collision bound every DMA allocation site must pass its iova
 	 * through ane_t6021_fw_alias_iova_ok() and refuse overlaps. */
 	u64 fw_alias_iova;
+	/* W16 pass-3: ane_cpu reset controller (ps RESET via the pmgr
+	 * pwrstate reset_controller ops); NULL when the DT carries no
+	 * resets property. */
+	struct reset_control *cpu_rst;
 
 	/* W15 boot allocations (gate-gated: never exist until the
 	 * preflight opens and the sequence passes poll A). Ownership per
