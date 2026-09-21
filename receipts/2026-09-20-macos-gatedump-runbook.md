@@ -1,3 +1,14 @@
+# macOS gate-table dump runbook — NOT EXECUTABLE AS WRITTEN (Main review 2026-09-20 23:4x)
+
+REJECTED CONTENT: the KDP/nvram/CSR steps below require security-posture changes NOT covered by the OS-switch authorization (no SIP disable, no authenticated-root exposure, no unauthenticated debug endpoint); the multiline boot-args were invalid; Apple Silicon KDP availability is unproven; IORegistry entry IDs are not kernel pointers; and the pinned module/DART state does NOT survive reboot (it is RESTORED by stage1+insmod, not persisted).
+
+REPLACEMENT PLAN (authorized scope: safe OS boot + read-only observation):
+1. READ-ONLY CAPABILITY CHECK FIRST (no boot): determine whether macOS IORegistry exposes the gate objects at all. Existing capture (ioreg-full.txt.gz, 44387 lines, 2026-09-17): NO AppleARMPerformanceControllerFunction*/gate-object/ANE-SYS-V entries found — userland ioreg does not surface them. ApplePMGRFunctionClockGate (a second, pmgr-family gate class) also absent. CAPABILITY: ABSENT.
+2. Therefore a macOS boot with the validated native capture toolchain (the 2026-09-17/18 ioreg flow, zero security changes) CANNOT observe the runtime gate tables. macOS switch = NO-OP for this question; documented and closed unless a kernel-debug authorization lands.
+3. The observable question a safe macOS boot COULD answer: whether the ANE device reports live/workload state (FirmwareLoaded etc.) — already known Yes from 09-17. No new information.
+
+=== ORIGINAL (INVALID) RUNBOOK preserved below for the record ===
+
 # macOS gate-table dump runbook (authorized; execute on next window)
 
 Goal: dump AppleARMPerformanceController runtime gate tables
