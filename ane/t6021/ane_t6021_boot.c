@@ -354,6 +354,14 @@ static void *ane_boot_alloc(void *ctx, u64 size, u64 *iova)
 	dma_addr_t d = 0;
 	void *p = dma_alloc_coherent(ane->dev, size, &d, GFP_KERNEL);
 
+	if (p && !ane_t6021_fw_alias_iova_ok(ane, d, size)) {
+		dev_err(ane->dev,
+			"boot alloc %#llx+%#llx overlaps fw alias — refusing\n",
+			(u64)d, size);
+		dma_free_coherent(ane->dev, size, p, d);
+		return NULL;
+	}
+
 	*iova = p ? d : 0;
 	return p;
 }

@@ -388,7 +388,10 @@ struct ane_t6021 {
 	dma_addr_t fw_iova;
 	u32 fw_size;
 	/* W16 entry alias: IOVA the fw pages are aliased at (the latched
-	 * RVBAR entry); 0 = no alias mapped. */
+	 * RVBAR entry); 0 = no alias mapped. The DMA allocator has no
+	 * runtime reservation API on this kernel, so instead of a prose
+	 * collision bound every DMA allocation site must pass its iova
+	 * through ane_t6021_fw_alias_iova_ok() and refuse overlaps. */
 	u64 fw_alias_iova;
 
 	/* W15 boot allocations (gate-gated: never exist until the
@@ -408,13 +411,26 @@ struct ane_t6021 {
 					 * UNSOURCED (never inferred) */
 	bool response_validated;
 	bool hybrid_pinned;	/* FALSE until the DONE response
-					 * semantics are sourced AND the
-					 * raw address is range/length
-					 * validated against owned
-					 * windows — transport/CSNE
-					 * sessions stay fenced on first
-					 * boot regardless of booted */
+				 * semantics are sourced AND the
+				 * raw address is range/length
+				 * validated against owned
+				 * windows — transport/CSNE
+				 * sessions stay fenced on first
+				 * boot regardless of booted */
 };
+
+/* Enforced alias-window invariant (W16): the DMA allocator has no
+ * runtime IOVA reservation on this kernel, so every DMA allocation
+ * site must refuse a mapping that overlaps the fw entry alias. */
+static inline bool ane_t6021_fw_alias_iova_ok(const struct ane_t6021 *ane,
+					      dma_addr_t iova, size_t size)
+{
+	u64 lo = ane->fw_alias_iova;
+
+	if (!lo)
+		return true;
+	return iova + size <= lo || iova >= lo + ane->fw_size;
+}
 
 /* ane_t6021_rtkit.c */
 int ane_t6021_rtkit_init(struct ane_t6021 *ane);
