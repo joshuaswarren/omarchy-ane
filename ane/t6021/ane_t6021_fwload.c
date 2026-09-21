@@ -171,6 +171,9 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 			dev_err(ane->dev,
 				"fwalias: roundtrip mismatch at +%#llx\n", off);
 			ret = -EIO;
+			/* Mapping finished: unwind every page, not only the
+			 * prefix already checked by this verification loop. */
+			off = ane->fw_size;
 			goto err_unmap;
 		}
 	}
