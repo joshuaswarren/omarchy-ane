@@ -72,6 +72,25 @@ MODULE_PARM_DESC(fw_load,
 		 "OPT-IN: validate + DART-map the selene PRELOAD payload "
 		 "(W13/W14). No boot action; publication datum unevidenced.");
 
+#include "ane_t6021_diag_marker.h"
+
+static bool fw_diag_marker;
+module_param(fw_diag_marker, bool, 0444);
+MODULE_PARM_DESC(fw_diag_marker,
+                 "LAB ONLY: patch validated RAM copy with execution marker; "
+                 "requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.");
+
+bool ane_t6021_fw_diag_requested(void)
+{
+	return fw_diag_marker;
+}
+
+bool ane_t6021_fwload_options_ok(bool transport)
+{
+	return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
+				       ane_t6021_boot_requested(), transport);
+}
+
 #define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
 
 /* DART page size on t6021 (apple_dart probe line: "pagesize 4000");
@@ -227,6 +246,13 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 			       fw->data + segs[i].fileoff, segs[i].filesize);
 	}
 
+	/* Original file SHA and segments passed validation above. Never
+	 * modify request_firmware data or the on-disk pinned image. */
+	if (fw_diag_marker) {
+		ane_t6021_diag_patch(buf);
+		dev_warn(ane->dev, "LAB MARKER: RAM VM 0x204 patched; SCRATCH7 0x4d325431 is NOT READY\n");
+	}
+
 	ane->fw_buf = buf;
 	ane->fw_iova = iova;
 	ane->fw_size = ANE_FW_BUF_SIZE;
@@ -237,6 +263,8 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 		 entry, &iova, ANE_FW_BUF_SIZE);
 
 	ret = ane_t6021_fw_alias_map(ane);
+	if (!ret && fw_diag_marker && !ane->fw_alias_iova)
+		ret = -ENODATA; /* Lab runner requires an existing entry alias. */
 	if (ret) {
 		ane_t6021_fwload_remove(ane);
 		release_firmware(fw);

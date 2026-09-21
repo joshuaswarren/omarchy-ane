@@ -275,6 +275,11 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	dev_warn(dev,
 		 "UNQUALIFIED T6021 bind forced by allow_unqualified: RTKit bring-up path only, CSNE_CMD submission is W4\n");
 
+	if (!ane_t6021_fwload_options_ok(rtkit_transport || mbi_doorbell)) {
+		dev_err(dev, "invalid laboratory firmware marker options; refusing before power access\n");
+		return -EINVAL;
+	}
+
 	ane = devm_kzalloc(dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
 		return -ENOMEM;
@@ -373,12 +378,12 @@ static int ane_t6021_probe(struct platform_device *pdev)
 	 * behind the send surfaces) that SError'd W5/W6 live. */
 	err = ane_t6021_fwload_probe(ane);
 	if (err) {
-		if (ane_t6021_boot_requested()) {
-			/* A boot request makes staging a prerequisite:
+		if (ane_t6021_boot_requested() || ane_t6021_fw_diag_requested()) {
+			/* Boot and diagnostic requests require successful staging:
 			 * fail with the ACTUAL staging error, not a
 			 * deferred generic one from boot_probe. */
 			dev_err(dev,
-				"fwload failed (%d) — boot requested, failing probe\n",
+				"fwload failed (%d) — boot/diagnostic requested, failing probe\n",
 				err);
 			goto out;
 		}
