@@ -25,12 +25,11 @@
 	} while (0)
 #endif
 
-#define TILE_SHIFT	   0xEUL
-#define TILE_SIZE	   0x4000UL
+#define TILE_SHIFT_DEFAULT 0xEUL /* H13 island containers: 0x4000-B units */
+#define TILE_ALIGN	   0x4000UL
 
-#define tile_shift(x)	   (((uint64_t)(x)) << TILE_SHIFT)
-#define tile_align(x)	   ((((uint64_t)(x)) + TILE_SIZE - 1) & -TILE_SIZE)
-#define tile_size(nn, bdx) (tile_shift(to_anec(nn)->tiles[bdx]))
+#define tile_align(x) 	((((uint64_t)(x)) + TILE_ALIGN - 1) & -TILE_ALIGN)
+#define tile_size(nn, bdx) 	(((uint64_t)to_anec(nn)->tiles[bdx]) << (nn)->tile_shift)
 
 #define ANEC_HEADER_SIZE   0x1000UL
 #define src_bdx(nn, idx)   ((nn)->bind.src[idx])
@@ -64,7 +63,7 @@ static inline void *ane_zmalloc(const uint64_t size)
 static inline void *ane_memalign(const uint64_t size)
 {
 	void *ptr = NULL;
-	if (posix_memalign(&ptr, TILE_SIZE, size)) {
+	if (posix_memalign(&ptr, TILE_ALIGN, size)) {
 		ane_err("failed to memalign size 0x%zx\n", size);
 		return NULL;
 	}
@@ -74,7 +73,7 @@ static inline void *ane_memalign(const uint64_t size)
 static inline void *ane_zmemalign(const uint64_t size)
 {
 	void *ptr = NULL;
-	if (posix_memalign(&ptr, TILE_SIZE, size)) {
+	if (posix_memalign(&ptr, TILE_ALIGN, size)) {
 		ane_err("failed to memalign size 0x%lx\n", size);
 		return NULL;
 	}
@@ -426,12 +425,22 @@ static inline void ane_model_free(struct ane_nn *nn)
 	free(nn->data);
 }
 
-struct ane_nn *__ane_init(const char *path, int dev_id)
+struct ane_nn *__ane_init_shift(const char *path, int dev_id,
+				uint32_t tile_shift)
 {
-	struct ane_nn *nn = ane_zmalloc(sizeof(struct ane_nn));
+	struct ane_nn *nn;
+
+	if (!tile_shift || tile_shift > 20) {
+		ane_err("refusing tile shift %u (must be 1..20)\n",
+			tile_shift);
+		return NULL;
+	}
+
+	nn = ane_zmalloc(sizeof(struct ane_nn));
 	if (!nn) {
 		return NULL;
 	}
+	nn->tile_shift = tile_shift;
 
 	if (ane_model_init(nn, path) < 0) {
 		ane_err("failed to load anec from %s\n", path);
@@ -455,6 +464,11 @@ struct ane_nn *__ane_init(const char *path, int dev_id)
 	}
 
 	return nn;
+}
+
+struct ane_nn *__ane_init(const char *path, int dev_id)
+{
+	return __ane_init_shift(path, dev_id, TILE_SHIFT_DEFAULT);
 }
 
 void __ane_free(struct ane_nn *nn)
