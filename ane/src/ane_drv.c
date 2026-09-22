@@ -11,6 +11,12 @@
 #include <linux/sysfs.h>
 
 #include <drm/drm_accel.h>
+
+static bool writecombine;
+module_param(writecombine, bool, 0444);
+MODULE_PARM_DESC(writecombine,
+	"Map BOs writecombine instead of cached (default: cached — Apple "
+	"DARTs are IO-coherent; cached readback is ~45x faster on T8103).");
 #include <drm/drm_drv.h>
 #include <drm/drm_gem.h>
 #include <drm/drm_ioctl.h>
@@ -508,8 +514,16 @@ static int ane_drm_mmap(struct file *file, struct vm_area_struct *vma)
 	 */
 	vm_flags_mod(vma, VM_IO | VM_DONTEXPAND | VM_DONTDUMP, VM_PFNMAP);
 
-	vma->vm_page_prot =
-		pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
+	/*
+	 * BO mappings are cached by default: Apple DARTs are IO-coherent, so
+	 * cached BO mappings are safe and read back at DRAM speed. The
+	 * writecombine mapping read at ~225 MB/s on T8103 (a 4.5 MB output
+	 * tile memcpy took 20 ms; cached: 0.45 ms — 45x). Set the
+	 * writecombine module param to force the old behavior.
+	 */
+	vma->vm_page_prot = writecombine
+		? pgprot_writecombine(vm_get_page_prot(vma->vm_flags))
+		: vm_get_page_prot(vma->vm_flags);
 	vma->vm_page_prot = pgprot_decrypted(vma->vm_page_prot);
 
 	return vm_map_pages(vma, bo->pages, bo->npages);
