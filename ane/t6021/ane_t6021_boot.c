@@ -141,6 +141,11 @@ module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
 		 "OPT-IN: boot state resolution + report (W15). Dispatches to boot_start when fw_boot=1 (MMIO writes fire); reports state without MMIO when fw_boot=1 is not set.");
 
+/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
+ * per-object metadata keeps modpost happy for either composition. */
+MODULE_LICENSE("Dual MIT/GPL");
+MODULE_DESCRIPTION("T6021 ANE contract-pinned boot sequence core");
+
 static bool fw_iova_exported;
 static u64 exported_fw_iova;
 
@@ -162,9 +167,6 @@ static const struct kernel_param_ops fw_iova_ops = {
 };
 module_param_cb(fw_iova, &fw_iova_ops, NULL, 0444);
 MODULE_PARM_DESC(fw_iova, "READ-ONLY: staged selene surface DVA (populated by fw_load=1)");
-
-static bool fw_iova_exported;
-static u64 exported_fw_iova;
 
 /* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
  * sequence (preboot engine table, scratch clear + pulse, RVBAR
@@ -421,7 +423,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-static int ane_t6021_boot_start(struct ane_t6021 *ane)
+int ane_t6021_boot_start(struct ane_t6021 *ane)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
 	struct ane_t6021_boot_io io = {

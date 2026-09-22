@@ -72,6 +72,11 @@ MODULE_PARM_DESC(fw_load,
 		 "OPT-IN: validate + DART-map the selene PRELOAD payload "
 		 "(W13/W14). No boot action; publication datum unevidenced.");
 
+/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
+ * per-object metadata keeps modpost happy for either composition. */
+MODULE_LICENSE("Dual MIT/GPL");
+MODULE_DESCRIPTION("T6021 ANE firmware staging + entry alias");
+
 #include "ane_t6021_diag_marker.h"
 
 static bool fw_diag_marker;
@@ -83,6 +88,11 @@ MODULE_PARM_DESC(fw_diag_marker,
 bool ane_t6021_fw_diag_requested(void)
 {
 	return fw_diag_marker;
+}
+
+bool ane_t6021_fwload_requested(void)
+{
+	return fw_load;
 }
 
 bool ane_t6021_fwload_options_ok(bool transport)

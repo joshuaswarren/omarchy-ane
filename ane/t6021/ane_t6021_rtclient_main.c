@@ -44,6 +44,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/iommu.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -70,6 +71,14 @@ struct ane_rtclient {
 	void __iomem *pmgr;
 	struct apple_rtkit *rtk;
 
+	/* fw_start=1: view over this device for the shared boot/fwload
+	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
+	struct ane_t6021 *fw;
+	/* A CPU we released is (or may be) running: state is HELD —
+	 * surfaces/rings/IRQ/power links preserved, no unwind, reboot
+	 * is the only reclamation (wedged-pin rule). */
+	bool held;
+
 	struct delayed_work poll_work;
 
 	bool boot_done;
@@ -85,19 +94,21 @@ module_param(csne_ping, bool, 0444);
 MODULE_PARM_DESC(csne_ping,
 		 "After a completed RTKit handshake, announce the INIT ring and send CSNE_CMD_PING (0x11)");
 
+static bool fw_start;
+module_param(fw_start, bool, 0444);
+MODULE_PARM_DESC(fw_start,
+		 "OPT-IN: fenced Linux-context firmware start — stage selene (fw_load=1 required), alias it at the latched RVBAR entry, then run the contract-pinned scratch/RUN/READY/publish/wake sequence and continue into the RTKit handshake. Default off = refuse at the CPU gate (evidence-backed: the proven-safe starter is a quiesce-context write-arm; kernel-context start is the open discriminator). Bounded: <=1 s polls, no retry, no ps@2e0 writes.");
+
 static bool poll_rx;
 module_param(poll_rx, bool, 0444);
 MODULE_PARM_DESC(poll_rx,
 		 "Drive RX by apple_rtkit_poll from a workqueue even though a recv IRQ exists (fallback if raw 0x374 is not the recv line)");
 
-/* ---- doorbell words (W2 decode, mirrored from ane_t6021.c) ---- */
-
-#define ANE_EP_DOORBELL_OFFSET	GENMASK_ULL(43, 0)
-#define ANE_EP_DOORBELL_SIZE	GENMASK_ULL(51, 44)
-#define ANE_EP_DOORBELL_UNIT	GENMASK_ULL(53, 52)
-
-#define ANE_MBI_MSG48_OFF	GENMASK_ULL(23, 0)
-#define ANE_MBI_MSG48_LEN	GENMASK_ULL(47, 24)
+/* ---- doorbell words (W2 decode) ----
+ * ANE_EP_DOORBELL_* and ANE_MBI_MSG48_* come from ane_t6021.h. This
+ * local encoder is the 44-bit-offset variant (the INIT ring IOVA lives
+ * above 4 GiB in the dart-ane0 window; the header's u32-offset encoder
+ * is the legacy MBI doorbell one). */
 
 static inline u64 ep_doorbell_encode(u64 offset, u32 size)
 {
@@ -165,11 +176,36 @@ static void ane_rtclient_post_boot(struct work_struct *w)
 		schedule_delayed_work(&ane->poll_work, HZ);
 }
 
-static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
+/* Submit one header-only CSNE control command at a fixed ring slot.
+ * Both ids are proven generation-stable and header-only per the
+ * selene decode (BOOT 0x10 / PING 0x11 / BUILDINFO 0x06 carry no
+ * payload beyond the 8-byte header). Informational only: the ring
+ * doorbell word bit placement is still the W2-vs-H14RpcProtocol
+ * conflict, so this path stays behind csne_ping and logs everything
+ * it sends; responses arrive on the T2F* endpoints (logged raw in
+ * ane_rtclient_recv). */
+static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, u16 id,
+				  u32 cursor)
 {
 	struct ane_csne_hdr hdr;
-	u32 cursor = 0;
 	u64 msg;
+	int ret;
+
+	ane_csne_hdr_init(&hdr, id);
+	memcpy(ane->ring + cursor, &hdr, sizeof(hdr));
+	dma_wmb();
+
+	msg = FIELD_PREP(ANE_MBI_MSG48_OFF, cursor) |
+	      FIELD_PREP(ANE_MBI_MSG48_LEN, sizeof(hdr));
+	ret = apple_rtkit_send_message(ane->rtk, ANE_T6021_EP_INIT, msg,
+				       NULL, false);
+	dev_info(ane->dev,
+		 "csne: CSNE_CMD_%#x submit ep=%u cursor=%u len=%zu -> %pe\n",
+		 id, ANE_T6021_EP_INIT, cursor, sizeof(hdr), ERR_PTR(ret));
+}
+
+static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
+{
 	int ret;
 
 	if (!apple_rtkit_has_endpoint(ane->rtk, ANE_T6021_EP_INIT)) {
@@ -200,19 +236,108 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 		ane->csne_setup_done = true;
 	}
 
-	ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
-	memcpy(ane->ring + cursor, &hdr, sizeof(hdr));
-	dma_wmb();
-
-	msg = FIELD_PREP(ANE_MBI_MSG48_OFF, cursor) |
-	      FIELD_PREP(ANE_MBI_MSG48_LEN, sizeof(hdr));
-	ret = apple_rtkit_send_message(ane->rtk, ANE_T6021_EP_INIT, msg,
-				       NULL, false);
-	dev_info(ane->dev, "csne: PING submit ep=1 cursor=%u len=%zu -> %pe\n",
-		 cursor, sizeof(hdr), ERR_PTR(ret));
+	ane_rtclient_csne_cmd(ane, CSNE_CMD_PING, 0);
+	ane_rtclient_csne_cmd(ane, CSNE_CMD_BUILDINFO, sizeof(struct ane_csne_hdr));
 }
 
 /* ---- probe ---- */
+
+/*
+ * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
+ *  - iBoot latches ANE RVBAR = entry | 1 (live reads 0x10000000001:
+ *    bit0 valid, entry bits = dart-ane0 vm-base 0x10000000000; ADT
+ *    "pre-loaded" = 1). The kext law (ANE_Init, tbnz-skip) and this
+ *    latch mean the driver NEVER writes RVBAR on this box.
+ *  - Starting the CPU = CPU_CONTROL 0 -> 0x10 (RUN) — exactly what
+ *    m1n1 does (ASC.boot(): RUN=1, no RVBAR anywhere) and what the
+ *    kext does after its RVBAR skip. The open discriminator is
+ *    whether the ASC fetch at the latched entry translates through
+ *    dart-ane0 (mode bits 55/48 absent from the iBoot latch); with
+ *    the selene alias mapped at the entry (fwload) a READY on
+ *    SCRATCH7 proves translation; a dart translation fault names the
+ *    stream; silence parks the core. Every outcome is bounded.
+ * The sequence itself is the contract-pinned core in
+ * ane_t6021_boot.h (ane_t6021_boot_run), exercised here through the
+ * kernel io backend in ane_t6021_boot.c: W8 grant tunables, scratch
+ * clear + stale-pulse, RVBAR skip-or-fold, RUN, poll A (READY
+ * 0x08042006, <=1000 x 1 ms), publish (pinned pool sources) + wake,
+ * poll B (DONE). Table block skipped (mode 2, authorized
+ * diagnostic). No ps@2e0 write anywhere; no power_off/power_on
+ * retry on timeout.
+ */
+static int ane_rtclient_fw_start(struct ane_rtclient *ane)
+{
+	struct device *dev = ane->dev;
+	struct ane_t6021 *a;
+	u32 cpu_status;
+	int ret;
+
+	if (!ane_t6021_fwload_requested()) {
+		dev_err(dev, "fw_start: requires fw_load=1 (no staged firmware)\n");
+		return -EINVAL;
+	}
+	if (!device_iommu_mapped(dev)) {
+		dev_err(dev,
+			"fw_start: device not IOMMU-mapped — a staged DVA/entry alias would be untranslated; refusing\n");
+		return -EINVAL;
+	}
+
+	a = devm_kzalloc(dev, sizeof(*a), GFP_KERNEL);
+	if (!a)
+		return -ENOMEM;
+	a->dev = dev;
+	a->base[ANE_T6021_REG_ENGINE] = ane->engine;
+	a->irq = -1;
+	a->power_gated = true;	/* the eight-island G1 gate passed above */
+	ane->fw = a;
+
+	/* Stage selene + alias it at the latched RVBAR entry
+	 * (request_firmware + sha-pin + exact-image validation +
+	 * per-page iommu_map with roundtrip verification). */
+	ret = ane_t6021_fwload_probe(a);
+	if (ret) {
+		dev_err_probe(dev, ret, "fw_start: staging failed\n");
+		ane->fw = NULL;
+		return ret;
+	}
+	if (!ane_t6021_rvbar_entry_ok(a->fw_iova)) {
+		dev_err(dev,
+			"fw_start: staged iova %pad sets bits the entry fold drops — refusing\n",
+			&a->fw_iova);
+		ane_t6021_fwload_remove(a);
+		ane->fw = NULL;
+		return -EINVAL;
+	}
+
+	ret = ane_t6021_boot_start(a);
+	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY) {
+		/* Refused before any write: normal unwind is safe. */
+		ane_t6021_fwload_remove(a);
+		ane->fw = NULL;
+		return ret;
+	}
+
+	/* From here a CPU may be running: HELD. No unwind, ever. */
+	ane->held = true;
+	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
+	dev_info(dev,
+		 "fw_start: sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
+		 ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
+		 cpu_status);
+
+	if (!a->fw_alive) {
+		/* Poll A timeout: RUN released, no READY. The fetch
+		 * discriminator answered NEGATIVE (park or bypass);
+		 * state held, module pinned, RTKit pointless. */
+		dev_err(dev,
+			"fw_start: no SCRATCH7 READY after CPU release — ASC fetch did not reach the staged alias (kernel-context start discriminator: negative); HELD until reboot, RTKit handshake skipped\n");
+		return 0;	/* bind fenced */
+	}
+
+	/* READY (and usually DONE) observed: the fetch DID translate.
+	 * RTKit handshake follows in probe. */
+	return 0;
+}
 
 static void ane_rtclient_unmap_engine(void *data)
 {
@@ -225,6 +350,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	struct resource *res;
 	struct ane_rtclient *ane;
 	u32 cpu_status, ps_cpu;
+	u64 rvbar;
+	bool fw_alive;
 	int ep;
 	int ret;
 
@@ -232,6 +359,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane)
 		return -ENOMEM;
 	ane->dev = dev;
+	platform_set_drvdata(pdev, ane);
 	INIT_DELAYED_WORK(&ane->poll_work, ane_rtclient_post_boot);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -274,38 +402,70 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* The CPU must already run: kernel-context RVBAR programming is
-	 * fatal / sticky-latched on this box (power-dart-fwload s23/s24).
-	 * This read is the first engine access and is read-clean proven
-	 * (W10) with the islands up. */
+	/* CPU gate. This read is the first engine access and is
+	 * read-clean proven (W10) with the islands up. Default
+	 * (fw_start=0): refuse unless the firmware is already alive —
+	 * kernel-context RVBAR programming is fatal / sticky-latched on
+	 * this box (power-dart-fwload s23/s24), start belongs to a
+	 * quiesce context. fw_start=1: run the fenced start below. */
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
-	dev_info(dev, "CPU_STATUS = 0x%x\n", cpu_status);
+	rvbar = readq(ane->engine + ANE_ASC_RVBAR);
+	dev_info(dev,
+		 "CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u entry=%0llx)\n",
+		 cpu_status, rvbar, (u32)(rvbar & 1),
+		 (u64)(rvbar & ANE_T6021_RVBAR_ADDR_MASK));
+
 	if (!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)) {
-		dev_err(dev, "ANE firmware not alive (CPU_STATUS 0x%x) — start it from a quiesce context (m1n1/iBoot); this driver will not program RVBAR\n",
-			cpu_status);
-		pm_runtime_put_sync_suspend(dev);
-		pm_runtime_disable(dev);
-		return -EPROBE_DEFER;
+		if (!fw_start) {
+			dev_err(dev,
+				"ANE firmware not alive (CPU_STATUS 0x%x) — start it from a quiesce context (m1n1/iBoot), or retry with fw_start=1; this driver will not program RVBAR\n",
+				cpu_status);
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return -EPROBE_DEFER;
+		}
+		ret = ane_rtclient_fw_start(ane);
+		if (ret) {
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return ret;
+		}
+		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
+		fw_alive = cpu_status & ANE_ASC_CPU_STATUS_RUNNING ||
+			   (ane->fw && ane->fw->fw_alive);
+		/* HELD from here on: a CPU we released may be running.
+		 * genpd must never be dropped under it — bind fenced
+		 * instead of unwinding power on any later failure. */
+	} else {
+		fw_alive = true;
+	}
+
+	if (!fw_alive) {
+		/* fw_start ran, CPU released, but no READY: bind fenced
+		 * and inert (state HELD, module pinned by the boot
+		 * path, genpd stays up, no RTKit). */
+		dev_warn(dev,
+			 "binding fenced-inert (no firmware; state HELD until reboot)\n");
+		return 0;
 	}
 
 	ane->rtk = devm_apple_rtkit_init(dev, ane, NULL, 0,
 					 &ane_rtclient_rtkit_ops);
 	if (IS_ERR(ane->rtk)) {
-		ret = dev_err_probe(dev, PTR_ERR(ane->rtk),
-				    "apple_rtkit_init failed\n");
-		goto err_pm;
+		ret = PTR_ERR(ane->rtk);
+		ane->rtk = NULL;
+		ret = dev_err_probe(dev, ret, "apple_rtkit_init failed\n");
+		goto err_pm_or_hold;
 	}
 
 	ane->ring = dmam_alloc_coherent(dev, ANE_RTCLIENT_RING_SIZE,
 					&ane->ring_iova, GFP_KERNEL);
 	if (!ane->ring) {
 		ret = -ENOMEM;
-		goto err_pm;
+		goto err_pm_or_hold;
 	}
 	dev_info(dev, "INIT ring: iova=%pad size=0x%x\n",
 		 &ane->ring_iova, ANE_RTCLIENT_RING_SIZE);
-
-	platform_set_drvdata(pdev, ane);
 
 	/* RX path: the recv irq (ADT raw 0x374) is primary; the worker is
 	 * the poll fallback that drives RX while the handshake runs. */
@@ -313,14 +473,15 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	/* The handshake itself: the fw HELLOes first on MGMT (W2), rtkit
 	 * answers, EPMAP + STARTEP + SET_IOP_PWR_STATE follow, then boot()
-	 * sets the AP power state ON and returns. */
+	 * sets the AP power state ON and returns. Bounded: each rtkit
+	 * completion wait is 1 s (APPLE_RTKIT_TIMEOUT in rtkit.c). */
 	ret = apple_rtkit_boot(ane->rtk);
 	if (ret) {
 		dev_err(dev, "rtkit boot handshake failed: %pe (is_running=%d crashed=%d)\n",
 			ERR_PTR(ret), apple_rtkit_is_running(ane->rtk),
 			apple_rtkit_is_crashed(ane->rtk));
 		cancel_delayed_work_sync(&ane->poll_work);
-		goto err_pm;
+		goto err_pm_or_hold;
 	}
 
 	ane->boot_done = true;
@@ -344,7 +505,15 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	dev_info(dev, "ANE RTKit client up: handshake complete\n");
 	return 0;
 
-err_pm:
+err_pm_or_hold:
+	if (ane->held) {
+		/* A CPU we released is running: NEVER drop genpd under
+		 * it. Bind fenced; reboot is the only reclamation. */
+		dev_warn(dev,
+			 "probe failed after CPU start (%pe) — binding fenced; power/rings/IRQ HELD until reboot\n",
+			 ERR_PTR(ret));
+		return 0;
+	}
 	pm_runtime_put_sync_suspend(dev);
 	pm_runtime_disable(dev);
 	return ret;
@@ -355,7 +524,19 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	struct ane_rtclient *ane = platform_get_drvdata(pdev);
 
 	cancel_delayed_work_sync(&ane->poll_work);
-	apple_rtkit_shutdown(ane->rtk);
+
+	if (ane->held) {
+		/* Wedged-pin: rmmod is already blocked by the module
+		 * pin; unbind reaches this point. Preserve every
+		 * surface, ring, IRQ and power-domain link — a running
+		 * ASC may be fetching from them. Reboot reclaims. */
+		dev_warn(&pdev->dev,
+			 "remove HELD (CPU started): no teardown — reboot reclaims\n");
+		return;
+	}
+
+	if (ane->rtk)
+		apple_rtkit_shutdown(ane->rtk);
 	pm_runtime_put_sync_suspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 }
