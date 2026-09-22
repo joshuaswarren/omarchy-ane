@@ -214,6 +214,11 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 
 /* ---- probe ---- */
 
+static void ane_rtclient_unmap_engine(void *data)
+{
+	iounmap(((struct ane_rtclient *)data)->engine);
+}
+
 static int ane_rtclient_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -232,14 +237,20 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return -ENODEV;
-	/* "nonposted-mmio" in the DT node sets IORESOURCE_MEM_NONPOSTED;
-	 * devm_ioremap_resource then maps with ioremap_np. All ANE
-	 * aperture access is non-posted (posted writel froze the box). */
+	/* "nonposted-mmio" (inherited from /soc) sets IORESOURCE_MEM_NONPOSTED;
+	 * all ANE aperture access is non-posted (posted writel froze the box). */
 	if (!(res->flags & IORESOURCE_MEM_NONPOSTED))
 		dev_warn(dev, "engine window is not flagged non-posted; refusing\n");
-	ane->engine = devm_ioremap_resource(dev, res);
-	if (IS_ERR(ane->engine))
-		return PTR_ERR(ane->engine);
+	/* No exclusive request_mem_region: the ASC mailbox child device
+	 * (0x285408000) lives inside this window and its region is
+	 * already claimed in the iomem tree, so an exclusive request of
+	 * the parent span would conflict with our own child. */
+	ane->engine = ioremap_np(res->start, resource_size(res));
+	if (!ane->engine)
+		return -ENOMEM;
+	ret = devm_add_action_or_reset(dev, ane_rtclient_unmap_engine, ane);
+	if (ret)
+		return ret;
 
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
 	if (ret)
@@ -314,8 +325,12 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	ane->boot_done = true;
 
-	dev_info(ane->dev, "rtkit RUNNING; announced app endpoints:");
-	for (ep = 1; ep <= 6; ep++)
+	/* Endpoint bitmap the firmware actually advertised via EPMAP —
+	 * this log is the hardware answer to the open "which endpoints
+	 * carry CSNE_CMD channels" item. Capture verbatim into the
+	 * receipt. */
+	dev_info(ane->dev, "rtkit RUNNING; fw-advertised endpoints:");
+	for (ep = 0; ep < 64; ep++)
 		if (apple_rtkit_has_endpoint(ane->rtk, ep))
 			pr_cont(" %d", ep);
 	pr_cont("\n");
@@ -346,7 +361,9 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id ane_rtclient_of_match[] = {
-	{ .compatible = "apple,t6021-ane-rtkit" },
+	/* The stock DTB's ane0 node. The legacy H13-path ane_t6021.ko
+	 * shares this compatible and must NOT be loaded on this box. */
+	{ .compatible = "apple,t6021-ane" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, ane_rtclient_of_match);
