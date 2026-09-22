@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * Board overlay v2 for jw14m2 (J414c / T6021, M2 Max): RTKit-client ANE.
+ *
+ * Supersedes t6021-j414c-ane.dts (v1) for the RTKit bring-up path. v1
+ * modeled the H13 host-TM layout and mapped ane0 as the H13-style
+ * engine delta (0x285c04000+0x24000) — the window that external-aborts
+ * on first touch (proven 2026-09-18). v2 matches the H14 finding: no
+ * host TM window, firmware-owned task manager, work submitted over the
+ * RTKit mailbox.
+ *
+ * Provenance (receipts/2026-09-22-t6021-rtkit-port):
+ *  - engine = ane0 ADT range0 whole (0x84000000/0x2000000 raw,
+ *    +0x200000000 translation; CPU block +0x1400000, mailbox +0x1408000,
+ *    RVBAR +0x1050000, RTBuddy +0x1840000 all live-read clean W10).
+ *  - mailbox = ASC-relative +0x8000: a2i/i2a controls 0x285408110 /
+ *    0x285408114 (m1n1 ASCRegs + upstream apple-mailbox offsets agree).
+ *  - IRQs: ADT ane0 carries exactly one interrupt entry, raw 0x374
+ *    (884), 4 bytes — the mailbox recv-not-empty line. There is NO
+ *    send-empty entry; apple-mailbox probes it with TX polling
+ *    (omarchy-linux commit 86c727e6e).
+ *  - nonposted-mmio everywhere in the ANE aperture (posted writel froze
+ *    the box: 2026-09-22-t6021-power-dart-fwload).
+ *  - genpd/phandle fragments identical to v1 (ane_cpu@2e0 0x1f0,
+ *    ane_set1..4 0xb7..0x1f1, ane_sys_mpm@4000 0x1f5 — fragment@3
+ *    exists because the stock DTB gives ane_sys_mpm no phandle).
+ *  - DART trio unchanged from v1 (t6020 darts bind via t8110
+ *    compatible), stream 0.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "apple,j414c", "apple,t6021";
+
+	fragment@0 {
+		target-path = "/soc/power-management@28e080000/power-controller@2e0";
+
+		__overlay__ {
+			phandle = <0x1f0>; /* ane_cpu */
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@28e080000/power-controller@4030";
+
+		__overlay__ {
+			phandle = <0x1f1>; /* ane_set4 */
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-management@28e080000/power-controller@4000";
+
+		__overlay__ {
+			phandle = <0x1f5>; /* ane_sys_mpm */
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc";
+
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			ane_dart0: iommu@285800000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85800000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <0x15>;
+				interrupts = <0 0 885 4>;
+				power-domains = <0x18>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@285810000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85810000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <0x15>;
+				interrupts = <0 0 885 4>;
+				power-domains = <0x1f0>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@285820000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85820000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <0x15>;
+				interrupts = <0 0 885 4>;
+				power-domains = <0x1f0>;
+				status = "okay";
+			};
+
+			ane_mbox: mailbox@285408000 {
+				compatible = "apple,t6021-ane-mailbox",
+					     "apple,asc-mailbox-v4";
+				reg = <0x2 0x85408000 0x0 0x00004000>;
+				nonposted-mmio;
+				interrupt-parent = <0x15>;
+				interrupt-names = "recv-not-empty";
+				interrupts = <0 0 884 4>;
+				#mbox-cells = <0>;
+				status = "okay";
+			};
+
+			ane-rtkit@284000000 {
+				compatible = "apple,t6021-ane-rtkit";
+				reg-names = "engine", "pmgr";
+				reg = <0x2 0x84000000 0x0 0x02000000>,
+				      <0x2 0x8e080000 0x0 0x00004034>;
+				nonposted-mmio;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>,
+					 <&ane_dart2 0>;
+				power-domains = <0x1f0>,	/* ane_cpu@2e0 */
+						<0xb7>,		/* ane_set1@4018 */
+						<0xb8>,		/* ane_set2@4020 */
+						<0xb9>,		/* ane_set3@4028 */
+						<0x1f1>,	/* ane_set4@4030 */
+						<0x1f5>;	/* ane_sys_mpm@4000 */
+				mboxes = <&ane_mbox>;
+				status = "okay";
+			};
+		};
+	};
+};
