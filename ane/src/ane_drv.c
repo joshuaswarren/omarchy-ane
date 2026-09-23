@@ -672,8 +672,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 	/* Polled completion design: the engine IRQ is validated but never
-	 * requested here. The DART interrupt belongs to the DART driver
-	 * and is never fetched, masked or unmasked from this driver. */
+	 * requested here. A DART fault IRQ stays owned by apple-dart. During
+	 * a job this driver masks it, and on a fault restores that stream. */
 
 	/* Mapping only; no register access happens while unpowered. */
 	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
@@ -689,7 +689,9 @@ static int ane_platform_probe(struct platform_device *pdev)
 	/*
 	 * Kernel-owned IOMMU domain. Defers until every "iommus" provider
 	 * has attached. There is deliberately no fallback to direct DART
-	 * programming: without providers this driver must not bind.
+	 * programming for mappings: without providers this driver must not
+	 * bind. Fault recovery only rewrites the TTBR and TCR the provider
+	 * already installed.
 	 */
 	err = ane_iommu_domain_init(ane);
 	if (err < 0)
@@ -711,6 +713,9 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto disable_pm;
 
 	ane_iommu_purge_stale(ane);
+	err = ane_dart_init(ane);
+	if (err < 0)
+		goto put_pm;
 
 	err = drm_dev_register(drm, 0);
 	if (err < 0)

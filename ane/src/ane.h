@@ -28,6 +28,13 @@ struct ane_device {
 	struct drm_mm mm;
 	struct iommu_domain *domain;
 	unsigned long shift;
+	struct ane_dart {
+		void __iomem *regs;
+		int irq;
+		u32 sid;
+		bool masked;
+	} darts[3];
+	int dart_count;
 
 	int irq;
 	struct mutex iommu_lock;
@@ -52,5 +59,13 @@ struct ane_request {
 	u32 btsp_iova;
 	u32 bar[ANE_TILE_COUNT];
 };
+
+#define ANE_DART_MAX 3
+
+int ane_dart_init(struct ane_device *ane);
+void ane_dart_mask(struct ane_device *ane);
+void ane_dart_unmask(struct ane_device *ane);
+bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status);
+int ane_dart_recover(struct ane_device *ane);
 
 #endif /* __ANE_H__ */

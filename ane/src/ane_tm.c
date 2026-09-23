@@ -4,6 +4,7 @@
 #include <linux/device.h>
 #include <linux/iopoll.h>
 #include <linux/module.h>
+#include <linux/pm_runtime.h>
 #include "ane_tm.h"
 
 #define ANE_TQ_COUNT 8
@@ -116,12 +117,24 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
+static int ane_tm_abort(struct ane_device *ane)
+{
+	/* Calling this while a faulting DMA was in flight took jwm1 down:
+	 * the journal ends at the fault, with no Oops. Do not power-cycle
+	 * from this path. */
+	(void)ane;
+	return 0;
+}
+
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 {
 	u32 finished = 0;
+	u32 fault_status = 0;
+	u64 fault_iova = 0;
 	int err, status;
 
 	lockdep_assert_held(&ane->engine_lock);
+	ane_dart_mask(ane);
 
 	err = ane_tm_collect_events(ane, NULL, &finished);
 	if (err < 0)
@@ -133,6 +146,25 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 				1, 1000000, false, ane, req, &finished);
 	if (!err && status < 0)
 		err = status;
+	if (!err && ane_dart_faulted(ane, &fault_iova, &fault_status))
+		err = -EIO;
+	if (err && ane_dart_faulted(ane, &fault_iova, &fault_status)) {
+		int reset_err = ane_tm_abort(ane);
+		int rec_err = ane_dart_recover(ane);
+
+		ane_dart_unmask(ane);
+		if (!reset_err && !rec_err) {
+			u32 nid = tq_read32(ane, TQ_NID1(req->qid));
+			tq_write32(ane, TQ_NID1(req->qid), nid & ~1U);
+			tq_write32(ane, TQ_STATUS(req->qid), 0x0);
+			dev_err(ane->dev,
+				"DART fault contained: status=%#x iova=%#llx\n",
+				fault_status, fault_iova);
+			return -EIO;
+		}
+		err = reset_err ? reset_err : rec_err;
+		goto wedge_unmasked;
+	}
 	if (err)
 		goto wedge;
 	status = tq_read32(ane, TQ_NID1(req->qid));
@@ -143,10 +175,12 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	tq_write32(ane, TQ_NID1(req->qid), status & ~1U);
 	rmb();
 	tq_write32(ane, TQ_STATUS(req->qid), 0x0);
-
+	ane_dart_unmask(ane);
 	return 0;
 
 wedge:
+	ane_dart_unmask(ane);
+wedge_unmasked:
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
 		dev_err(ane->dev,
