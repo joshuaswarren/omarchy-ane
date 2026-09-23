@@ -164,6 +164,7 @@ static int ane_rtclient_venc_gates(struct device *dev)
 	};
 	void __iomem *base;
 	unsigned int i;
+	int ret_all = 0;
 
 	base = ioremap_np(0x290288000ull, 0x40);
 	if (!base) {
@@ -171,36 +172,49 @@ static int ane_rtclient_venc_gates(struct device *dev)
 		return -ENOMEM;
 	}
 
-	for (i = 0; i < 4; i++) {
-		void __iomem *reg = base + gates[i].off;
+	/* Read-scan the whole ps-regs[15] block first (reads are safe):
+	 * which words are on (ACTUAL[7:4]==0xf, ON signature 0x3ff) vs
+	 * idle (0x300)? B5: 0x008 read 0x300, TARGET took, ACTUAL stuck
+	 * at 0 -> a parent rail in this block (or above) is down. */
+	for (i = 0; i < 8; i++)
+		dev_emerg(dev, "VENC-SCAN +%03x = %08x\n", i * 8,
+			  readl(base + i * 8));
+
+	/* Raise bottom-up (lowest offset first = likely parents first):
+	 * every idle word in the block, then assert the four targets
+	 * reached ACTUAL=0xf. Never a TARGET=0 write. */
+	for (i = 0; i < 8; i++) {
+		void __iomem *reg = base + i * 8;
 		u32 before = readl(reg);
 		u32 after;
 		int ret;
 
-		dev_emerg(dev, "VENC-GATES %u %s @%#x: before=%08x\n",
-			  gates[i].id, gates[i].name, gates[i].off,
-			  before);
-		if ((before & 0xf0) == 0xf0) {
-			dev_emerg(dev, "VENC-GATES %u already on\n",
-				  gates[i].id);
+		if ((before & 0xf0) == 0xf0)
 			continue;
-		}
+		dev_emerg(dev, "VENC-GATES +%03x before=%08x\n", i * 8,
+			  before);
 		writel((before | 0xf | BIT(28)) & ~(u32)BIT(31), reg);
 		ret = readl_poll_timeout(reg, after,
 					 ((after & 0xf0) == 0xf0),
 					 100, 10 * 1000);
 		after = readl(reg);
-		dev_emerg(dev,
-			  "VENC-GATES %u after=%08x ret=%pe\n",
-			  gates[i].id, after, ERR_PTR(ret));
-		if (ret) {
-			iounmap(base);
-			return -ETIMEDOUT;
-		}
+		dev_emerg(dev, "VENC-GATES +%03x after=%08x ret=%pe\n",
+			  i * 8, after, ERR_PTR(ret));
+		if (ret)
+			ret_all = ret;
+	}
+
+	for (i = 0; i < 4; i++) {
+		u32 v = readl(base + gates[i].off);
+
+		dev_emerg(dev, "VENC-GATES %u %s final=%08x\n",
+			  gates[i].id, gates[i].name, v);
+		if ((v & 0xf0) != 0xf0)
+			ret_all = -ETIMEDOUT;
 	}
 
 	iounmap(base);
-	return 0;
+	return ret_all;
 }
 
 static bool poll_rx;
