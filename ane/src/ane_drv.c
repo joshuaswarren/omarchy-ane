@@ -556,6 +556,35 @@ static int ane_iommu_domain_init(struct ane_device *ane)
 	return 0;
 }
 
+/*
+ * The DART page table belongs to the IOMMU domain, which outlives this
+ * module: a mapping a previous instance never unmapped (a wedge preserves
+ * them) survives a reload, and the first BO_INIT onto it fails with
+ * -EEXIST. Clear every mapping inside the still-empty allocator range.
+ * The unmap flushes the DART TLBs, so this runs only after runtime
+ * resume has powered the engine and its DARTs, and before registration
+ * lets a client map anything.
+ */
+static void ane_iommu_purge_stale(struct ane_device *ane)
+{
+	struct drm_mm_node *hole;
+	u64 start, end, iova;
+	unsigned long stale = 0;
+
+	drm_mm_for_each_hole(hole, &ane->mm, start, end) {
+		for (iova = start; iova < end; iova += 1UL << ane->shift) {
+			if (!iommu_iova_to_phys(ane->domain, iova))
+				continue;
+			iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+			stale++;
+		}
+	}
+	if (stale)
+		dev_warn(ane->dev,
+			 "cleared %lu stale DART mappings from a previous instance\n",
+			 stale);
+}
+
 static void ane_detach_genpd(struct ane_device *ane)
 {
 	if (ane->pd_count <= 1)
@@ -680,6 +709,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
 		goto disable_pm;
+
+	ane_iommu_purge_stale(ane);
 
 	err = drm_dev_register(drm, 0);
 	if (err < 0)
