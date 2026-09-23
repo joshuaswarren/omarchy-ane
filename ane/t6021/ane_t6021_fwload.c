@@ -85,6 +85,15 @@ MODULE_PARM_DESC(fw_diag_marker,
                  "LAB ONLY: patch validated RAM copy with execution marker; "
                  "requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.");
 
+/* fw-start-debug B7: if nonzero, patch the staged RAM copy's x22 stamp
+ * (vm 0x423C) to this PA base so the fw's own MMU maps VM i ->
+ * base+i, composing with the DART entry alias at 0x10000000000.
+ * 0 = off (default; sha-pinned byte-exact copy). */
+static u64 fw_load_stamp_base;
+module_param(fw_load_stamp_base, ullong, 0444);
+MODULE_PARM_DESC(fw_load_stamp_base,
+		 "fw-start-debug: stamp the RAM copy's x22 (vm 0x423C) to this PA base (e.g. 0x10000000000); 0 = off");
+
 bool ane_t6021_fw_diag_requested(void)
 {
 	return fw_diag_marker;
@@ -264,6 +273,33 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	if (fw_diag_marker) {
 		ane_t6021_diag_patch(buf);
 		dev_warn(ane->dev, "LAB MARKER: RAM VM 0x204 patched; SCRATCH7 0x4d325431 is NOT READY\n");
+	}
+
+	/* fw-start-debug B7 (M2Research decode): the 64-bit x22 stamp at
+	 * vm 0x423C (file 0x823C) defaults to 0 -> the fw's own MMU
+	 * tables map VM i -> PA 0xe8000+i, while the CPU runs at the
+	 * alias region 0x10000000000+i -> instruction abort at MMU-on
+	 * (0x590) -> the pre-READY spin B3-B6b observed (SCRATCH1/2
+	 * would read 0xc440/0x100 if fn 0x71a4 were reached; they read
+	 * zero). Stamping the RAM copy with the alias base makes the
+	 * fw-MMU and the DART alias compose: VM -> 0x10000000000+i ->
+	 * staged page i. RAM copy only; on-disk image untouched. */
+	if (fw_load_stamp_base) {
+		u64 before, after = fw_load_stamp_base;
+		u8 patched_sha[32];
+		char phex[65];
+		unsigned int b;
+
+		static_assert(sizeof(before) == 8);
+		memcpy(&before, buf + 0x423C, 8);
+		memcpy(buf + 0x423C, &after, 8);
+		sha256(buf, ANE_FW_BUF_SIZE, patched_sha);
+		for (b = 0; b < 32; b++)
+			snprintf(phex + b * 2, 3, "%02x", patched_sha[b]);
+		phex[64] = 0;
+		dev_emerg(ane->dev,
+			  "STAMP vm 0x423C: %016llx -> %016llx (x22 = PA base of VM 0); patched-buffer sha256 %s\n",
+			  before, after, phex);
 	}
 
 	ane->fw_buf = buf;
