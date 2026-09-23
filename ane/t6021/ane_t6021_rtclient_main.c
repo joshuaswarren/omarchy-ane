@@ -163,8 +163,46 @@ static int ane_rtclient_venc_gates(struct device *dev)
 		{ 0x020, 321, "VENC_ME1" },
 	};
 	void __iomem *base;
+	void __iomem *root;
 	unsigned int i;
 	int ret_all = 0;
+
+	/* VENC_SYS (299), map11 = window2+0x300 = 0x2902803e0: the
+	 * ps-regs[15] block ROOT (M2Research B6 decode). ps power-up
+	 * needs the parent rail first — B5/B5b proved the leaves latch
+	 * TARGET without ACTUAL while this is off. Raise it BEFORE the
+	 * leaf window. AVEMSR-V (519) above it is VIRTUAL: no write. */
+	root = ioremap_np(0x290280000ull, 0x1000);
+	if (!root) {
+		dev_emerg(dev, "VENC-ROOT: ioremap FAILED\n");
+		return -ENOMEM;
+	}
+	{
+		u32 before = readl(root + 0x3e0);
+		u32 after;
+		int ret;
+
+		dev_emerg(dev, "VENC-ROOT VENC_SYS @+3e0 before=%08x\n",
+			  before);
+		if ((before & 0xf0) != 0xf0) {
+			writel((before | 0xf | BIT(28)) & ~(u32)BIT(31),
+			       root + 0x3e0);
+			ret = readl_poll_timeout(root + 0x3e0, after,
+						 ((after & 0xf0) == 0xf0),
+						 100, 10 * 1000);
+			after = readl(root + 0x3e0);
+			dev_emerg(dev,
+				  "VENC-ROOT after=%08x ret=%pe\n",
+				  after, ERR_PTR(ret));
+			if (ret) {
+				iounmap(root);
+				return -ETIMEDOUT;
+			}
+		} else {
+			dev_emerg(dev, "VENC-ROOT already on\n");
+		}
+	}
+	iounmap(root);
 
 	base = ioremap_np(0x290288000ull, 0x40);
 	if (!base) {
