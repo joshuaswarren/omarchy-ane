@@ -24,6 +24,93 @@ MODULE_PARM_DESC(writecombine,
 #include "ane.h"
 #include "ane_tm.h"
 
+/* ANE DVFS probe + control (T6000 family). The ANE clock is never
+ * programmed by this driver's ancestors: genpd raises the partitions and
+ * iBoot's boot-time clock choice just stays. On macOS the ANE runs the
+ * same encoder ~3.2x faster, and the ADT's pmgr tables name the missing
+ * piece: perf-domains "ANE" + clocks "PLL_ANE0" -> voltage-states8 =
+ * 300/540/780/1020/1260/1500 MHz (2026-09-22 jw16 macOS capture). The
+ * CLPC-class per-domain block for ANE0 is ADT pmgr "hw-dpe-reg" record
+ * fourcc ANE0 at 0x28590c0c8 (inside the engine span the device owns).
+ * dvfs_debug=1 dumps that block once at first resume, after the SET
+ * guard proves every partition reads powered on (a readl through a warm
+ * gate external-aborts and hard-resets the machine - the documented
+ * failure this probe must not repeat). dvfs_debug=2 adds CPU-cluster
+ * calibration dumps (kernel-DT cpufreq_p0 window and the ECPM record,
+ * both kernel-proven windows). */
+static int dvfs_debug;
+module_param(dvfs_debug, int, 0444);
+MODULE_PARM_DESC(dvfs_debug,
+		 "1: dump ANE0 DPE block at first resume; 2: also CPU-cluster calibration dumps");
+
+#define ANE_T6000_DPE_BASE	0x28590c000ULL	/* block word at +0x0c8 */
+#define ANE_T6000_DPE_LEN	0x1000ULL
+#define ANE_T6000_CPUF_P0_BASE	0x211e20000ULL
+#define ANE_T6000_CPUF_P0_LEN	0x1000ULL
+#define ANE_T6000_ECPM_BASE	0x210e48000ULL
+#define ANE_T6000_ECPM_LEN	0x1000ULL
+
+static void ane_dvfs_dump(struct ane_device *ane, const char *name,
+			  phys_addr_t base, phys_addr_t len,
+			  unsigned int words)
+{
+	void __iomem *m = ioremap_np(base, len);
+	unsigned int i;
+
+	if (!m) {
+		dev_warn(ane->dev, "ane-dvfs: %s ioremap_np failed\n", name);
+		return;
+	}
+	for (i = 0; i + 8 <= words; i += 8) {
+		dev_info(ane->dev,
+			 "ane-dvfs: %s +%#05x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
+			 name, i * 4,
+			 readl_relaxed(m + (i + 0) * 4),
+			 readl_relaxed(m + (i + 1) * 4),
+			 readl_relaxed(m + (i + 2) * 4),
+			 readl_relaxed(m + (i + 3) * 4),
+			 readl_relaxed(m + (i + 4) * 4),
+			 readl_relaxed(m + (i + 5) * 4),
+			 readl_relaxed(m + (i + 6) * 4),
+			 readl_relaxed(m + (i + 7) * 4));
+	}
+	iounmap(m);
+}
+
+static void ane_dvfs_probe(struct ane_device *ane)
+{
+	u32 act = ane_tm_ps_act(ane);
+
+	if (!dvfs_debug)
+		return;
+	if (act != ANE_PS_ALL_ON) {
+		dev_warn(ane->dev,
+			 "ane-dvfs: partitions not all on (act %#x); no ANE dump\n",
+			 act);
+		return;
+	}
+	ane_dvfs_dump(ane, "ane-dpe", ANE_T6000_DPE_BASE, ANE_T6000_DPE_LEN,
+		      0x100);
+	/* The ane0 pmgr grant on T6001 spans ps_base + 0x000..0xc02c; the
+	 * SET words are its first 0x38 bytes. T6021 splits the same class
+	 * of DVFS window off at +0x1c000, so dump the grant pages plus
+	 * that candidate separately. */
+	ane_dvfs_dump(ane, "ane-ps0", ane->ps_base, 0x1000, 0x100);
+	ane_dvfs_dump(ane, "ane-ps1", ane->ps_base + 0x1000, 0x1000, 0x40);
+	ane_dvfs_dump(ane, "ane-ps2", ane->ps_base + 0x2000, 0x1000, 0x40);
+	ane_dvfs_dump(ane, "ane-ps4", ane->ps_base + 0x4000, 0x1000, 0x40);
+	ane_dvfs_dump(ane, "ane-ps8", ane->ps_base + 0x8000, 0x1000, 0x40);
+	ane_dvfs_dump(ane, "ane-psb", ane->ps_base + 0xb000, 0x1000, 0x40);
+	ane_dvfs_dump(ane, "ane-dv2", ane->ps_base + 0x1c000, 0x1000, 0x100);
+	if (dvfs_debug >= 2) {
+		ane_dvfs_dump(ane, "cpuf-p0", ANE_T6000_CPUF_P0_BASE,
+			      ANE_T6000_CPUF_P0_LEN, 0x44);
+		ane_dvfs_dump(ane, "ecpm", ANE_T6000_ECPM_BASE,
+			      ANE_T6000_ECPM_LEN, 0x40);
+	}
+}
+
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -789,6 +876,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		ane->tm_status_fresh = ane_tm_status(ane);
 		ane->tm_status_known = true;
 	}
+	ane_dvfs_probe(ane);
 
 	return 0;
 }
