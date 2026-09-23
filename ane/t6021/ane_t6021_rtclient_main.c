@@ -572,6 +572,24 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
 		  cpu_status);
 
+	/* M2Research split discriminator: the fw page-table region
+	 * (VM 0x104000-0x110000) ships all-zero; nonzero descriptors
+	 * after a timeout mean the fw reached the table builder
+	 * (~0x4e4) and parks post-MMU-on; all zero means the park is
+	 * at the ROM jump / entry fetch itself. Host-side read of the
+	 * coherent staging buffer — no extra hardware access. */
+	if (a->fw_buf) {
+		const u64 *tt = a->fw_buf + 0x104000;
+		unsigned int n, nonzero = 0, count = 0xC000 / 8;
+
+		for (n = 0; n < count; n++)
+			if (tt[n])
+				nonzero++;
+		dev_emerg(dev,
+			  "FW-TT region 0x104000: first=%016llx second=%016llx nonzero=%u/%u\n",
+			  tt[0], tt[1], nonzero, count);
+	}
+
 	if (fw_start_stop_after) {
 		/* Bisect stop or poll-A timeout reached the HELD state:
 		 * never continue into the handshake — publish/wake were
