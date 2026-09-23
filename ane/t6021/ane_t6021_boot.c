@@ -221,19 +221,11 @@ static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
  * override (autonomous boot/recovery loop). */
 /* Table-block mode selection (2026-09-20 16:23:07 wedge):
  *   mode 0 = ABORT before any write (accidental-repeat prevention),
- *   mode 1 = write the table (re-arm after the table-base analysis
- *            closes the cause),
- *   mode 2 = SKIP the table (authorized diagnostic: tests fw-alive
- *            without the kext pre-CPU config).
- * Mode 2 is the CURRENT authorized diagnostic. W8 write-grant
- * tunables are mode-independent (proven no-abort class, w8-run.out:
- * APERTURE_UNLOCKED) and run in every armed mode. */
-static int ane_t6021_boot_table_mode(void)
-{
-	/* mode 1 (write table) stays unavailable until the table-base
-	 * analysis (Reset lane) closes the wedge cause. */
-	return 2;
-}
+ *   mode 1 = write the table (kext-faithful; selected per-run via the
+ *            rtclient fw_start_table_mode param),
+ *   mode 2 = SKIP the table (default: the shipped diagnostic).
+ * W8 write-grant tunables are mode-independent (proven no-abort
+ * class, w8-run.out: APERTURE_UNLOCKED) and run in every armed mode. */
 
 static const bool pf_main_lifetime_review = true;
 
@@ -429,7 +421,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after)
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
 	struct ane_t6021_boot_io io = {
@@ -442,7 +434,7 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after)
 	};
 	struct ane_t6021_boot_cfg cfg = {
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
-		.preboot_table_mode = ane_t6021_boot_table_mode(),
+		.preboot_table_mode = table_mode,
 		.fw_dva = ane->fw_iova,
 		.stop_after = stop_after,
 	};
@@ -688,7 +680,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
 	 * override authorizes autonomous writes/boots/recovery. */
-	return ane_t6021_boot_start(ane, 0);
+	return ane_t6021_boot_start(ane, 0, 2);
 }
 
 bool ane_t6021_boot_requested(void)

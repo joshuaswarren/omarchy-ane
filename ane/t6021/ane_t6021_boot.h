@@ -511,10 +511,13 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 				 * prevention (Main 2026-09-20) */
 	case 1:
 		io->phase(io->ctx, "P0 preboot-table");
+		io->phase(io->ctx, "P0-1 eng+0xb38");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE0,
 			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->phase(io->ctx, "P0-2 eng+0xb98");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE1,
 			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->phase(io->ctx, "P0-3 eng+0xbf8");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE2,
 			 ANE_T6021_BOOT_TABLE_VALUE);
 		break;

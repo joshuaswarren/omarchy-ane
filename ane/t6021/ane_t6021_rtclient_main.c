@@ -123,6 +123,20 @@ module_param(fw_start_state_report, bool, 0444);
 MODULE_PARM_DESC(fw_start_state_report,
 		 "fw-start-debug: stage firmware + alias, dump ASC state (reads only), then clean unwind — no boot writes");
 
+/*
+ * fw_start_table_mode: the pre-CPU engine table block
+ * (eng+0xB38/0xB98/0xBF8 <- 0x01FF01FF, kext-sourced, run EVERY
+ * EnableANEClocksAndPower per pass4/pass5). 0 = abort before any
+ * write, 1 = write the table, 2 = skip it (the 2026-09-20-era
+ * diagnostic; the B3 run proved RUN itself is wedge-free with the
+ * repaired dtb, so the table is the next discriminator, not a
+ * live-fault gate). Default 2 keeps the shipped behavior.
+ */
+static int fw_start_table_mode = 2;
+module_param(fw_start_table_mode, int, 0444);
+MODULE_PARM_DESC(fw_start_table_mode,
+		 "pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)");
+
 static bool poll_rx;
 module_param(poll_rx, bool, 0444);
 MODULE_PARM_DESC(poll_rx,
@@ -344,6 +358,46 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		u64 rv = readq(ane->engine + ANE_ASC_RVBAR);
 		int s;
 
+		/* power-dart-fwload preflight item 2/§2.2: dart-ane0
+		 * instances 0/1/2 state — translate on, no bypass, TTBR
+		 * valid, stream-0 enabled. Must run HERE: dart1/2 sit on
+		 * the ane_cpu domain, only powered while genpd holds. */
+		{
+			static const struct {
+				u64 base;
+				const char *name;
+			} darts[3] = {
+				{ 0x285800000ull, "inst0-LLT" },
+				{ 0x285810000ull, "inst1-BRD" },
+				{ 0x285820000ull, "inst2-BWR" },
+			};
+			unsigned int di;
+
+			for (di = 0; di < 3; di++) {
+				void __iomem *d = ioremap_np(darts[di].base,
+							     0x2000);
+
+				if (!d) {
+					dev_emerg(dev,
+						  "DART %s: ioremap FAILED\n",
+						  darts[di].name);
+					continue;
+				}
+				dev_emerg(dev,
+					  "DART %s: TCR=%08x TTBR=%08x ENABLE=%08x PROTECT=%08x %s%s\n",
+					  darts[di].name,
+					  readl(d + 0x1000),
+					  readl(d + 0x1400),
+					  readl(d + 0xc00),
+					  readl(d + 0x200),
+					  (readl(d + 0x1000) & BIT(1)) ?
+						"BYPASS-DART!" : "translate",
+					  (readl(d + 0x1400) & BIT(0)) ?
+						"" : " TTBR-INVALID!");
+				iounmap(d);
+			}
+		}
+
 		dev_emerg(dev,
 			  "BOOT-REPORT rvbar=%016llx cpu_status=%08x scratch=%08x %08x %08x %08x %08x %08x %08x %08x a2i=%08x i2a=%08x\n",
 			  rv, readl(ane->engine + ANE_ASC_CPU_STATUS),
@@ -364,7 +418,7 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		return -ECANCELED;
 	}
 
-	ret = ane_t6021_boot_start(a, fw_start_stop_after);
+	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode);
 	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
 	    ret == -ECANCELED) {
 		/* Refused/stopped before any CPU start: normal unwind is
