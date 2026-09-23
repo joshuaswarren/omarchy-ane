@@ -124,6 +124,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/delay.h>
 #include <linux/reset.h>
 #include <linux/iommu.h>
 #include <linux/io.h>
@@ -342,8 +343,13 @@ static void ane_boot_phase(void *ctx, const char *what)
 	struct ane_t6021_boot_mmio *mm = ctx;
 
 	/* bounded phase marker: one line per block boundary, survives
-	 * netconsole for crash attribution (never per-poll). */
-	dev_info(mm->ane->dev, "BOOT-PHASE %s\n", what);
+	 * netconsole for crash attribution (never per-poll). KERN_EMERG
+	 * + a short drain so the line reaches tty0/netconsole/ssh
+	 * BEFORE the risky write it announces (fw-start-debug
+	 * 2026-09-22: fwstart#2 died with zero capture — the marker
+	 * must beat the write). */
+	dev_emerg(mm->ane->dev, "BOOT-PHASE %s\n", what);
+	msleep(30);
 }
 
 /* S5 prepare — runs strictly AFTER poll A (fw alive), BEFORE the
@@ -423,7 +429,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-int ane_t6021_boot_start(struct ane_t6021 *ane)
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
 	struct ane_t6021_boot_io io = {
@@ -438,6 +444,7 @@ int ane_t6021_boot_start(struct ane_t6021 *ane)
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
 		.preboot_table_mode = ane_t6021_boot_table_mode(),
 		.fw_dva = ane->fw_iova,
+		.stop_after = stop_after,
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
@@ -454,6 +461,10 @@ int ane_t6021_boot_start(struct ane_t6021 *ane)
 		return -EBUSY;
 	}
 
+	dev_emerg(ane->dev,
+		  "BOOT-PHASE dispatch (stop_after=%d%s)\n", stop_after,
+		  stop_after ? " BISECT STOP ARMED" : "");
+
 	r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
 
 	ane->cpu_started = cs;
@@ -464,8 +475,9 @@ int ane_t6021_boot_start(struct ane_t6021 *ane)
 	if (!cs) {
 		/* no CPU start: full release path, normal ownership */
 		module_put(THIS_MODULE);
-		dev_err(ane->dev,
-			"boot: -ENODATA before sequence (gate race) — module ref released\n");
+		dev_emerg(ane->dev,
+			  "BOOT-PHASE done r=%d cpu_started=0 (no CPU release: state clean, module unpinned)\n",
+			  r);
 		return r;
 	}
 
@@ -676,7 +688,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
 	 * override authorizes autonomous writes/boots/recovery. */
-	return ane_t6021_boot_start(ane);
+	return ane_t6021_boot_start(ane, 0);
 }
 
 bool ane_t6021_boot_requested(void)

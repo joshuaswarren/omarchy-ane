@@ -775,6 +775,124 @@ int main(void)
 			      "ownership: DMA NOT reclaimable while started",
 			      "cannot free while the CPU may fetch");
 		}
+
+		/* (5) fw-start-debug stop_after bisect (2026-09-22):
+		 * stop AFTER step N returns -ECANCELED, never splits a
+		 * step, and a poll-A timeout inside step 4 stays
+		 * -ETIMEDOUT. Bit0-set branch throughout: no fold write. */
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.stop_after = 1,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -ECANCELED,
+			      "stop_after=1 returns -ECANCELED",
+			      "tunables done, nothing else fired");
+			check(fk.nwr == 12 && cs == 0 && fa == 0 && bo == 0,
+			      "stop_after=1 = exactly the 12 tunables",
+			      "no CPU, no scratch");
+			check(fk.woff[0] == 0x000 && fk.woff[11] == 0x430,
+			      "stop_after=1 order intact",
+			      "first 0x000, last 0x430");
+		}
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.stop_after = 2,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -ECANCELED,
+			      "stop_after=2 returns -ECANCELED",
+			      "scratch clear+pulse done");
+			check(fk.nwr == 23 &&
+			      fk.wval[22] == 0 &&
+			      fk.woff[22] == ANE_T6021_BOOT_REG_SCRATCH7,
+			      "stop_after=2 ends on the pulse (23 writes)",
+			      "12 + 8 clear + s6 + pulse2; CPU untouched");
+		}
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.stop_after = 3,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -ECANCELED,
+			      "stop_after=3 returns -ECANCELED",
+			      "rvbar decision recorded (skip branch)");
+			check(fk.nwr == 23 && fk.nw64 < 0,
+			      "stop_after=3 adds no write on bit0-set",
+			      "decision is the read; RUN never fired");
+		}
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.stop_after = 4,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -ECANCELED,
+			      "stop_after=4 READY returns -ECANCELED",
+			      "fw alive, publish/wake withheld");
+			check(cs == 1 && fa == 1 && bo == 0,
+			      "stop_after=4: started+alive, not booted",
+			      "wedged-pin semantics apply");
+			check(fk.nwr == 25 && fk.prepare_at < 0 &&
+			      fk.nasz == 0,
+			      "stop_after=4 = 25 writes, NO publish/alloc",
+			      "23 + CPU_CONTROL 0 + 0x10");
+			check(ane_t6021_boot_dma_reclaimable(cs) == false,
+			      "stop_after=4: DMA held",
+			      "CPU may be fetching");
+		}
+		fake_reset(&fk);
+		fk.rvbar = 0x1;
+		fk.s7_never_ack = 1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.stop_after = 4,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == -ETIMEDOUT,
+			      "stop_after=4 timeout stays -ETIMEDOUT",
+			      "the timeout is the answer, not the stop");
+			check(cs == 1 && fk.nwr == 25,
+			      "timeout writes = same 25",
+			      "stop_after cannot silence a timeout");
+		}
 		check(ane_t6021_boot_dma_reclaimable(0) == true,
 		      "ownership: DMA reclaimable when never started",
 		      "normal status-only removal");

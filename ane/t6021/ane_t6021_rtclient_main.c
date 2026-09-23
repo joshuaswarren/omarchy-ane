@@ -99,6 +99,30 @@ module_param(fw_start, bool, 0444);
 MODULE_PARM_DESC(fw_start,
 		 "OPT-IN: fenced Linux-context firmware start — stage selene (fw_load=1 required), alias it at the latched RVBAR entry, then run the contract-pinned scratch/RUN/READY/publish/wake sequence and continue into the RTKit handshake. Default off = refuse at the CPU gate (evidence-backed: the proven-safe starter is a quiesce-context write-arm; kernel-context start is the open discriminator). Bounded: <=1 s polls, no retry, no ps@2e0 writes.");
 
+/*
+ * fw-start-debug (2026-09-22): fwstart#2 hard-crashed with no capture.
+ * Two knobs make every attempt observable and bounded:
+ *   fw_start_state_report=1 — stage fwload + alias (IOMMU only, no
+ *     engine writes), dump the whitelisted ASC state via dev_emerg,
+ *     then unwind CLEANLY. Zero-risk observability proof.
+ *   fw_start_stop_after=N — run the boot sequence only through step N
+ *     (1 grant tunables, 2 scratch clear+pulse, 3 rvbar decision,
+ *     4 cpu release + poll A), then stop with -ECANCELED. While no
+ *     CPU started the stop unwinds cleanly (rmmod-able, no reboot
+ *     needed); step 4 leaves the HELD wedged-pin state. 0 = full run.
+ * Smallest crashing N localizes the fatal write; per-write dev_emerg
+ * phases (30 ms drain) beat the write to every console.
+ */
+static int fw_start_stop_after;
+module_param(fw_start_stop_after, int, 0444);
+MODULE_PARM_DESC(fw_start_stop_after,
+		 "fw-start-debug bisect: 0 = full sequence; 1..4 = stop after that step (-ECANCELED). Steps: 1 tunables, 2 scratch, 3 rvbar, 4 RUN+pollA");
+
+static bool fw_start_state_report;
+module_param(fw_start_state_report, bool, 0444);
+MODULE_PARM_DESC(fw_start_state_report,
+		 "fw-start-debug: stage firmware + alias, dump ASC state (reads only), then clean unwind — no boot writes");
+
 static bool poll_rx;
 module_param(poll_rx, bool, 0444);
 MODULE_PARM_DESC(poll_rx,
@@ -294,12 +318,16 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 	/* Stage selene + alias it at the latched RVBAR entry
 	 * (request_firmware + sha-pin + exact-image validation +
 	 * per-page iommu_map with roundtrip verification). */
+	dev_emerg(dev, "BOOT-PHASE fwload stage+alias begin\n");
 	ret = ane_t6021_fwload_probe(a);
 	if (ret) {
 		dev_err_probe(dev, ret, "fw_start: staging failed\n");
 		ane->fw = NULL;
 		return ret;
 	}
+	dev_emerg(dev, "BOOT-PHASE fwload stage+alias done (fw_iova=%pad)\n",
+		  &a->fw_iova);
+
 	if (!ane_t6021_rvbar_entry_ok(a->fw_iova)) {
 		dev_err(dev,
 			"fw_start: staged iova %pad sets bits the entry fold drops — refusing\n",
@@ -309,9 +337,38 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		return -EINVAL;
 	}
 
-	ret = ane_t6021_boot_start(a);
-	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY) {
-		/* Refused before any write: normal unwind is safe. */
+	if (fw_start_state_report) {
+		/* Zero-write observability run: reads only, then a CLEAN
+		 * unwind (fwload removed, module unpinned, insmod fails
+		 * with -ECANCELED). */
+		u64 rv = readq(ane->engine + ANE_ASC_RVBAR);
+		int s;
+
+		dev_emerg(dev,
+			  "BOOT-REPORT rvbar=%016llx cpu_status=%08x scratch=%08x %08x %08x %08x %08x %08x %08x %08x a2i=%08x i2a=%08x\n",
+			  rv, readl(ane->engine + ANE_ASC_CPU_STATUS),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 0),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 1),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 2),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 3),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 4),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 5),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 6),
+			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7),
+			  readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL),
+			  readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL));
+		for (s = 0; s < 30; s++)
+			msleep(10);	/* let the report hit every sink */
+		ane_t6021_fwload_remove(a);
+		ane->fw = NULL;
+		return -ECANCELED;
+	}
+
+	ret = ane_t6021_boot_start(a, fw_start_stop_after);
+	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
+	    ret == -ECANCELED) {
+		/* Refused/stopped before any CPU start: normal unwind is
+		 * safe (-ECANCELED = bisect stop, state clean). */
 		ane_t6021_fwload_remove(a);
 		ane->fw = NULL;
 		return ret;
@@ -320,10 +377,20 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 	/* From here a CPU may be running: HELD. No unwind, ever. */
 	ane->held = true;
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
-	dev_info(dev,
-		 "fw_start: sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
-		 ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
-		 cpu_status);
+	dev_emerg(dev,
+		  "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
+		  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
+		  cpu_status);
+
+	if (fw_start_stop_after) {
+		/* Bisect stop or poll-A timeout reached the HELD state:
+		 * never continue into the handshake — publish/wake were
+		 * withheld, so the fw HELLO cannot come. */
+		dev_emerg(dev,
+			  "BOOT-PHASE bisect stop (stop_after=%d r=%pe): binding fenced-HELD; reboot reclaims\n",
+			  fw_start_stop_after, ERR_PTR(ret));
+		return 0;
+	}
 
 	if (!a->fw_alive) {
 		/* Poll A timeout: RUN released, no READY. The fetch
@@ -386,15 +453,17 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	/* Power: genpd chain (eight islands) via runtime PM. */
 	pm_runtime_enable(dev);
+	dev_emerg(dev, "BOOT-PHASE genpd raise (eight islands) begin\n");
 	ret = pm_runtime_resume_and_get(dev);
 	if (ret)
 		return dev_err_probe(dev, ret, "genpd raise failed\n");
+	dev_emerg(dev, "BOOT-PHASE genpd raise done\n");
 
 	/* G1 gate: ane_cpu ACTUAL must be 0xf before any further MMIO. */
 	ane->pmgr = devm_of_iomap(dev, dev->of_node, 1, NULL);
 	if (!IS_ERR_OR_NULL(ane->pmgr)) {
 		ps_cpu = readl(ane->pmgr + ANE_RTCLIENT_PS_CPU_ACTUAL_OFF);
-		dev_info(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
+		dev_emerg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
 		if ((ps_cpu & 0xf) != 0xf) {
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
@@ -410,10 +479,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	 * quiesce context. fw_start=1: run the fenced start below. */
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
 	rvbar = readq(ane->engine + ANE_ASC_RVBAR);
-	dev_info(dev,
-		 "CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u entry=%0llx)\n",
-		 cpu_status, rvbar, (u32)(rvbar & 1),
-		 (u64)(rvbar & ANE_T6021_RVBAR_ADDR_MASK));
+	dev_emerg(dev,
+		  "BOOT-PHASE engine reads ok: CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u entry=%0llx)\n",
+		  cpu_status, rvbar, (u32)(rvbar & 1),
+		  (u64)(rvbar & ANE_T6021_RVBAR_ADDR_MASK));
 
 	if (!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)) {
 		if (!fw_start) {
@@ -475,6 +544,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	 * answers, EPMAP + STARTEP + SET_IOP_PWR_STATE follow, then boot()
 	 * sets the AP power state ON and returns. Bounded: each rtkit
 	 * completion wait is 1 s (APPLE_RTKIT_TIMEOUT in rtkit.c). */
+	dev_emerg(dev, "BOOT-PHASE apple_rtkit_boot begin\n");
 	ret = apple_rtkit_boot(ane->rtk);
 	if (ret) {
 		dev_err(dev, "rtkit boot handshake failed: %pe (is_running=%d crashed=%d)\n",
