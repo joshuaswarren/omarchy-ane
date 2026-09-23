@@ -441,6 +441,17 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	struct ane_device *ane = drm->dev_private;
 	long err;
 
+	/*
+	 * An accel file has no DRM master, and core ioctls that read one
+	 * (GET_UNIQUE, GET_MAP, ...) dereference NULL from any process that
+	 * can open the node. Clients need only VERSION from the core set.
+	 */
+	if (_IOC_TYPE(cmd) != DRM_IOCTL_BASE ||
+	    (_IOC_NR(cmd) < DRM_COMMAND_BASE &&
+	     _IOC_NR(cmd) != _IOC_NR(DRM_IOCTL_VERSION)) ||
+	    _IOC_NR(cmd) >= DRM_COMMAND_END)
+		return -ENOTTY;
+
 	err = pm_runtime_resume_and_get(ane->dev);
 	if (err < 0)
 		return err;
