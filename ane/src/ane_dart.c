@@ -2,8 +2,11 @@
 /* Copyright 2026 Joshua Warren */
 
 #include <linux/interrupt.h>
+#include <linux/gfp.h>
 #include <linux/io.h>
+#include <linux/iommu.h>
 #include <linux/iopoll.h>
+#include <linux/mm.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
@@ -12,11 +15,13 @@
 
 /*
  * T8103 DART is the T8020 register block (apple_dart_hw_t8103 in
- * drivers/iommu/apple-dart.c). apple_dart_hw_reset() is the reset path,
- * but it is static and the driver is built in, so this module repeats
- * the part a fault leaves dirty: stop the stream, drop the fault latch,
- * invalidate the TLB, then write back the TTBR and TCR the provider
- * installed. Mapping itself stays provider-owned.
+ * drivers/iommu/apple-dart.c), pagesized 0x4000. Containment policy:
+ * during a job the apple-dart fault IRQ is masked so the latch survives
+ * for this driver to read, the completion poll checks that latch before
+ * every engine access (engine reads hang the SoC once a fault has
+ * landed), and a faulted IOVA is handed a throwaway page so the retried
+ * transaction completes and the engine drains. Mapping itself stays
+ * provider-owned; the page tables are never rewritten here.
  */
 #define DART_STREAM_COMMAND		0x20
 #define DART_STREAM_COMMAND_BUSY	BIT(2)
@@ -164,36 +169,51 @@ bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status)
 	return false;
 }
 
-int ane_dart_recover(struct ane_device *ane)
+/*
+ * A fault is a missing PTE, nothing more: the page tables are provider
+ * owned and unchanged, so the stream-restore apple-dart uses at reset
+ * time is the wrong tool mid-job (register surgery while the faulting
+ * transaction is retried is what killed jwm1 twice). Instead the faulted
+ * IOVA is handed a throwaway DART page, so the retried transaction
+ * completes and the engine drains on its own; the scratch pages are
+ * unmapped once the request has been failed cleanly.
+ */
+int ane_dart_drain_fault(struct ane_device *ane, u64 fault_iova,
+			 struct ane_dart_scratch *scratch, int *pages)
 {
-	int i, idx, ret = 0;
+	struct page *page;
+	u64 iova;
+	int ret, i;
 
-	for (i = 0; i < ane->dart_count; i++) {
-		struct ane_dart *dart = &ane->darts[i];
-		void __iomem *regs = dart->regs;
-		u32 tcr, ttbr[DART_TTBR_COUNT], err;
-
-		if (dart->sid >= 32)
-			return -EINVAL;
-		tcr = readl(regs + DART_TCR_SID(dart->sid));
-		for (idx = 0; idx < DART_TTBR_COUNT; idx++)
-			ttbr[idx] = readl(regs + DART_TTBR_SID(dart->sid, idx));
-
-		writel(0, regs + DART_TCR_SID(dart->sid));
-		for (idx = 0; idx < DART_TTBR_COUNT; idx++)
-			writel(0, regs + DART_TTBR_SID(dart->sid, idx));
-		writel(U32_MAX, regs + DART_STREAMS_ENABLE);
-		err = readl(regs + DART_ERROR);
-		if (err & DART_ERROR_FLAG)
-			writel(err, regs + DART_ERROR);
-		ret = ane_dart_invalidate(ane, dart);
-		for (idx = 0; idx < DART_TTBR_COUNT; idx++)
-			writel(ttbr[idx], regs + DART_TTBR_SID(dart->sid, idx));
-		writel(tcr, regs + DART_TCR_SID(dart->sid));
-		if (!ret)
-			ret = ane_dart_invalidate(ane, dart);
-		if (ret)
-			return ret;
+	page = alloc_page(GFP_KERNEL);
+	if (!page)
+		return -ENOMEM;
+	iova = fault_iova & ~((1ULL << ane->shift) - 1);
+	ret = iommu_map(ane->domain, iova, page_to_phys(page),
+			BIT(ane->shift), IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	if (ret) {
+		__free_page(page);
+		return ret;
 	}
+	scratch[*pages].iova = iova;
+	scratch[*pages].page = page;
+	(*pages)++;
+	for (i = 0; i < ane->dart_count; i++)
+		ane_dart_invalidate(ane, &ane->darts[i]);
 	return 0;
+}
+
+void ane_dart_release_scratch(struct ane_device *ane,
+			      struct ane_dart_scratch *scratch, int pages)
+{
+	int i, d;
+
+	for (i = 0; i < pages; i++) {
+		iommu_unmap(ane->domain, scratch[i].iova, BIT(ane->shift));
+		__free_page(scratch[i].page);
+		scratch[i].page = NULL;
+	}
+	if (pages)
+		for (d = 0; d < ane->dart_count; d++)
+			ane_dart_invalidate(ane, &ane->darts[d]);
 }
