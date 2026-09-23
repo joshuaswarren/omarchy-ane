@@ -260,3 +260,27 @@ int ane_tm_recover(struct ane_device *ane)
 	}
 	return 0;
 }
+
+/*
+ * Drop the wedge pin on demand. The recovery path in ane_tm_recover
+ * does an atomic_xchg + module_put, but only on its success branch -
+ * a real -110 with the engine stuck leaves ane->wedged set and the
+ * module refcount one too high, so rmmod fails forever and the bug
+ * becomes a kernel-brick-without-reboot. ane_drm_postclose calls
+ * this unconditionally so every session close releases the pin,
+ * letting the operator unload the ko for an updated build even when
+ * the engine itself cannot be cleared in software.
+ *
+ * Pair count: must follow an ane_wedge_set() that called
+ * __module_get(THIS_MODULE). Today the only such set is in the wedge:
+ * branch of ane_tm_execute(); future sets must call this in their
+ * clean-up path too.
+ */
+void ane_wedge_clear(struct ane_device *ane)
+{
+	if (atomic_xchg(&ane->wedged, 0)) {
+		module_put(THIS_MODULE);
+		dev_info(ane->dev,
+			 "wedge pin released (engine state unknown)\n");
+	}
+}

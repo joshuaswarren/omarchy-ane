@@ -481,11 +481,13 @@ static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 		return;
 	}
 
-	/* The wedged flag and tm completion counters are device-local; the
-	 * previous session leaving them set would wedge the next opener.
-	 * ane_tm_recover handles both: if wedged is set, it power-cycles
-	 * the engine and re-arms the tm register file before clearing the
-	 * flag. If wedged is already clear, it's a fast no-op. */
+	/* Drop the wedge pin first: a wedged engine that cannot be
+	 * recovered in software must NOT keep the module pinned, or the
+	 * operator cannot unload the ko for an updated build without a
+	 * reboot. ane_wedge_clear releases both the wedged flag and the
+	 * module_refcount; ane_tm_recover then attempts a power-cycle
+	 * recovery (succeeds only if the engine is actually idle-able). */
+	ane_wedge_clear(ane);
 	ane_tm_recover(ane);
 
 	mutex_unlock(&ane->engine_lock);
