@@ -137,6 +137,72 @@ module_param(fw_start_table_mode, int, 0444);
 MODULE_PARM_DESC(fw_start_table_mode,
 		 "pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)");
 
+static bool fw_start_venc_gates;
+module_param(fw_start_venc_gates, bool, 0444);
+MODULE_PARM_DESC(fw_start_venc_gates,
+		 "fw-start-debug: raise the four ADT ane0 clock-ids (318-321 = VENC_PIPE4/5, VENC_ME0/1) ps gates at 0x290288008/10/18/20 before the boot sequence. M2Research decode: pmgr ps-regs[15] = reg-window2+0x8000, index*8; plain ps TARGET RMW (raise, never 0), poll ACTUAL. The ANE complex sits behind VENC rails on T6021; Linux claims none of them.");
+
+/*
+ * Raise the VENC-side pmgr ps gates the ADT wires as ane0 clock-ids.
+ * Plain pmgr ps-word raise (TARGET |= 0xf | AUTO_ENABLE, poll ACTUAL
+ * [7:4] == 0xf, 100us poll / 10ms bound) — the same op class genpd
+ * performs for every DT device; never a TARGET=0 write, so outside
+ * the s24 ps-cycle fatal class. Runs BEFORE any engine write (kext
+ * order: provider clock/power first). Read-logged before/after.
+ */
+static int ane_rtclient_venc_gates(struct device *dev)
+{
+	static const struct {
+		u32 off;
+		u32 id;
+		const char *name;
+	} gates[4] = {
+		{ 0x008, 318, "VENC_PIPE4" },
+		{ 0x010, 319, "VENC_PIPE5" },
+		{ 0x018, 320, "VENC_ME0" },
+		{ 0x020, 321, "VENC_ME1" },
+	};
+	void __iomem *base;
+	unsigned int i;
+
+	base = ioremap_np(0x290288000ull, 0x40);
+	if (!base) {
+		dev_emerg(dev, "VENC-GATES: ioremap FAILED\n");
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < 4; i++) {
+		void __iomem *reg = base + gates[i].off;
+		u32 before = readl(reg);
+		u32 after;
+		int ret;
+
+		dev_emerg(dev, "VENC-GATES %u %s @%#x: before=%08x\n",
+			  gates[i].id, gates[i].name, gates[i].off,
+			  before);
+		if ((before & 0xf0) == 0xf0) {
+			dev_emerg(dev, "VENC-GATES %u already on\n",
+				  gates[i].id);
+			continue;
+		}
+		writel((before | 0xf | BIT(28)) & ~(u32)BIT(31), reg);
+		ret = readl_poll_timeout(reg, after,
+					 ((after & 0xf0) == 0xf0),
+					 100, 10 * 1000);
+		after = readl(reg);
+		dev_emerg(dev,
+			  "VENC-GATES %u after=%08x ret=%pe\n",
+			  gates[i].id, after, ERR_PTR(ret));
+		if (ret) {
+			iounmap(base);
+			return -ETIMEDOUT;
+		}
+	}
+
+	iounmap(base);
+	return 0;
+}
+
 static bool poll_rx;
 module_param(poll_rx, bool, 0444);
 MODULE_PARM_DESC(poll_rx,
@@ -416,6 +482,23 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		ane_t6021_fwload_remove(a);
 		ane->fw = NULL;
 		return -ECANCELED;
+	}
+
+	if (fw_start_venc_gates) {
+		/* Zero-engine-write precondition: VENC rails before the
+		 * sequence (kext provider order). On failure: abort
+		 * BEFORE any engine write, clean unwind. */
+		int vg = ane_rtclient_venc_gates(dev);
+
+		if (vg) {
+			dev_emerg(dev,
+				  "BOOT-PHASE venc-gates FAILED (%pe) — refusing sequence\n",
+				  ERR_PTR(vg));
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			return vg;
+		}
+		dev_emerg(dev, "BOOT-PHASE venc-gates raised\n");
 	}
 
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode);
