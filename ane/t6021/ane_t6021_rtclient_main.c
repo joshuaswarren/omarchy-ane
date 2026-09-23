@@ -218,10 +218,11 @@ static int ane_rtclient_venc_gates(struct device *dev)
 		dev_emerg(dev, "VENC-SCAN +%03x = %08x\n", i * 8,
 			  readl(base + i * 8));
 
-	/* Raise bottom-up (lowest offset first = likely parents first):
-	 * every idle word in the block, then assert the four targets
-	 * reached ACTUAL=0xf. Never a TARGET=0 write. */
-	for (i = 0; i < 8; i++) {
+	/* Raise bottom-up: only the five REAL ps words (B5b scan: +000
+	 * .. +020 carry the 0x300 idle signature; +028..+038 read 0 and
+	 * are not ps words — raising them would time out and refuse the
+	 * sequence spuriously, as B6 showed). Never a TARGET=0 write. */
+	for (i = 0; i < 5; i++) {
 		void __iomem *reg = base + i * 8;
 		u32 before = readl(reg);
 		u32 after;
