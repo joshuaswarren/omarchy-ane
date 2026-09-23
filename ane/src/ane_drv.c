@@ -110,6 +110,101 @@ static void ane_dvfs_probe(struct ane_device *ane)
 	}
 }
 
+/* H13 ASC firmware probe (phase 0, read-only). iBoot stages the eos
+ * firmware and latches RVBAR on every boot but nobody RUNs the ASC CPU
+ * (live-proven on T6021: CPU_STATUS 0x2a; H13 expectation identical,
+ * receipts/2026-09-23-ane-perf-route §4). This probe locates the ASCWRAP
+ * page inside the already-mapped engine window and reads CPU_STATUS plus
+ * the RVBAR latch — nothing else, no writes, no new mappings.
+ *
+ * Reads stay inside the driver's existing engine reg mapping and the
+ * partitions are verified powered first (unpowered fabric reads are the
+ * documented hard-reset class). Log-then-read: the guilty register is on
+ * the console (netconsole) before the access that could hang. */
+static int fw_probe;
+module_param(fw_probe, int, 0444);
+MODULE_PARM_DESC(fw_probe, "1: one-shot read-only ASC CPU_STATUS/RVBAR probe at first resume");
+
+static bool fw_probe_done;
+
+static u32 ane_fw_logged_r32(struct ane_device *ane, const char *name,
+			     void __iomem *reg)
+{
+	dev_info(ane->dev, "ane-fw0: reading %s\n", name);
+	return readl(reg);
+}
+
+static void ane_fw_probe(struct ane_device *ane)
+{
+	struct platform_device *pdev = to_platform_device(ane->dev);
+	struct resource *res;
+	u64 span;
+	u32 act = ane_tm_ps_act(ane);
+	static const unsigned long pages[] = {
+		0x1000000, 0x1100000, 0x1200000, 0x1300000, 0x1400000,
+		0x1500000, 0x1600000, 0x1700000, 0x1800000,
+	};
+	int i;
+
+	if (!fw_probe || fw_probe_done)
+		return;
+	fw_probe_done = true;
+	if (act != ANE_PS_ALL_ON) {
+		dev_warn(ane->dev,
+			 "ane-fw0: partitions not all on (act %#x); no probe\n",
+			 act);
+		return;
+	}
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "engine");
+	if (!res) {
+		dev_warn(ane->dev, "ane-fw0: no engine resource\n");
+		return;
+	}
+	span = (u64)resource_size(res);
+	dev_info(ane->dev, "ane-fw0: engine window %pap span %#llx\n",
+		 &res->start, span);
+	if (span < 0x1900000) {
+		dev_warn(ane->dev,
+			 "ane-fw0: window %#llx too small for ASC scan, RVBAR only\n",
+			 span);
+		return;
+	}
+	/* fixed family offsets: RVBAR (kext + m1n1 ane.py agree on
+	 * engine+0x1050000) and ASC_EDPRCR (+0x1010310) */
+	{
+		u64 rvbar;
+
+		dev_info(ane->dev, "ane-fw0: reading rvbar\n");
+		rvbar = readq(ane->engine + 0x1050000);
+		dev_info(ane->dev, "ane-fw0: rvbar=%016llx edprcr=%08x\n",
+			 rvbar,
+			 ane_fw_logged_r32(ane, "edprcr",
+					   ane->engine + 0x1010310));
+	}
+	/* candidate ASCWRAP pages, 1 MiB stride across the 0x1000000..0x1800000
+	 * aperture (T6021's live page sat at +0x1400000; m1n1's H13 map puts
+	 * VERS/GPIO at +0x1840000) */
+	for (i = 0; i < ARRAY_SIZE(pages); i++) {
+		void __iomem *base = ane->engine + pages[i];
+		u32 ctl, st, a2i_ctrl;
+		char nm[24];
+
+		snprintf(nm, sizeof(nm), "asc%lx.ctl", pages[i] + 0x44);
+		ctl = ane_fw_logged_r32(ane, nm, base + 0x44);
+		snprintf(nm, sizeof(nm), "asc%lx.st", pages[i] + 0x48);
+		st = ane_fw_logged_r32(ane, nm, base + 0x48);
+		snprintf(nm, sizeof(nm), "asc%lx.a2i", pages[i] + 0x8110);
+		a2i_ctrl = ane_fw_logged_r32(ane, nm, base + 0x8110);
+		dev_info(ane->dev,
+			 "ane-fw0: page +%#08lx ctl=%08x st=%08x a2i=%08x\n",
+			 pages[i], ctl, st, a2i_ctrl);
+	}
+	dev_info(ane->dev, "ane-fw0: vers=%08x\n",
+		 ane_fw_logged_r32(ane, "vers", ane->engine + 0x1840000));
+	dev_info(ane->dev, "ane-fw0: done (tm_status=%08x)\n",
+		 ane_tm_status(ane));
+}
+
 
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
@@ -877,6 +972,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		ane->tm_status_known = true;
 	}
 	ane_dvfs_probe(ane);
+	ane_fw_probe(ane);
 
 	return 0;
 }
