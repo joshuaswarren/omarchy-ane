@@ -513,8 +513,14 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	long err;
 
 	/* Reject anything outside the drm type ('d') namespace outright. The
-	 * accel node is not a primary control node. */
-	if ((cmd & _IOC_TYPEMASK) != _IOC_TYPE('d'))
+	 * accel node is not a primary control node.
+	 *
+	 * _IOC_TYPEMASK is the low 8 bits, which encode the *nr*, not the
+	 * *type*. The type byte lives at offset _IOC_TYPESHIFT (8). Use
+	 * _IOC_TYPE(cmd) to extract the right field; misuse here returns
+	 * -ENOTTY for every legitimate ane_ioctl, which is exactly the
+	 * regression committed and reverted in this series. */
+	if (_IOC_TYPE(cmd) != _IOC_TYPE('d'))
 		return -ENOTTY;
 
 	err = pm_runtime_resume_and_get(ane->dev);
