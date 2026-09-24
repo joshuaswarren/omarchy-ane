@@ -25,8 +25,37 @@ Offsets are from pmgr-window base 0x28e080000. `pwgate` vehicle
 - 0x1359c = 0x00000000 (pre-RUN write target)
 - 0x122dc = 0x00000000 (the RMW row)
 
-Islands were on, STATUS 0x28, no watchdog. Both pairs are 0/0, so no 3/0
-was seen anywhere two static derivations can point. Theory dead without
-a write. No release was run on this already-released boot.
+Islands were on, STATUS 0x28, no watchdog. Both pairs read 0/0. No release
+was run on this already-released boot.
+
+CORRECTION (17:52): the first report said this theory was dead. It is not:
+the kext wants 3/0, and 0/0 means the 3 is missing.
 
 Full access log: ascdbg.log.
+
+## Base bound (17:52 CDT, read-only)
+
+macOS registry capture (ane-linux-experiments
+.work/m2-macos-ane-ioreg/ane0-full.txt): `H11ANE <class H11ANEIn>` is a
+direct child of `ane0@84000000 <class AppleARMIODevice>`
+(`IOProviderClass = AppleARMIODevice`), so start()'s provider is the ane
+nub. Its IODeviceMemory:
+
+    0  0x284000000  0x2000000
+    1  0x28e080000  0x4034
+    2  0x28e08c000  0x4000   <- index 2
+
+Linux DT: /soc/ane@284000000 (parent /soc, simple-bus), reg-names
+engine/pmgr/set, same three ranges.
+
+    base 0x28e08c000 + 0x12cc = 0x28e08d2cc  (kext writes 3)
+    base 0x28e08c000 + 0x13cc = 0x28e08d3cc  (kext writes 0)
+
+Live (islands on, ps_ane_cpu 0x1f0003ff):
+
+    STATUS 0x28, RVBAR 0x10000000001
+    pr32 0xd2cc = 0x00000000   (want 3)
+    pr32 0xd3cc = 0x00000000   (want 0)
+
+The 3 is missing. A release has run this boot, so the write needs a
+fresh-boot, pre-release test.
