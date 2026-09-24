@@ -312,3 +312,22 @@ same fault as before: ESR_EL1 0x86000010, FAR_EL1 and ELR_EL1
 0x10000a54200. The DATA region hash was identical before and after the
 release (feb5e846..., six 4 KiB samples across 0x10001684000). The VENC
 leg is not the missing setup on T6001. Tool: ane/h13/ane_pdraise.c.
+
+## 18. The VENC leg, permanent in the driver path (2026-09-24)
+
+With the VENC leg up, the core executes to its idle loop and waits on
+host input; still no HELLO. The DATA footprint proves it: the RTKit
+canaries at SEG1+0x167d0 are overwritten with headers and ring words,
+a 319-pair dispatch table is built at SEG1+0x1c000, and ~46 flag rows
+sit at SEG1+0x5d42. The firmware parks in its service loop waiting on
+the host's first mailbox/doorbell message. Detail: section 25
+(static decode).
+
+Vehicle: `ane/h13/ane_t6021_venc.c`, same shape as `ane_pdraise.c`
+(attach a dummy device to each named `apple,pmgr-pwrstate` node,
+runtime-PM reference, parents powered by genpd). Default order is the
+kext's parents-first sequence: `venc_sys, venc_dma, venc_pipe4,
+venc_pipe5, venc_me0`. It refuses to load unless an `apple,t6021-ane`
+node exists, so M1 and M1 Max paths are untouched. Earlier driver code
+for this set AUTO_ENABLE (bit 28) and polled ACTUAL-only; the kext
+writes a plain TARGET and polls the low byte, so the vehicle does that.
