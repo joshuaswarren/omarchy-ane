@@ -146,6 +146,7 @@ MODULE_PARM_DESC(probe_reg,
 static struct ane_h13_perf {
 	struct platform_device *pdev;
 	void __iomem *engine;
+	void __iomem *win;
 	void __iomem *mb;
 	void *ring;
 	dma_addr_t ring_iova;
@@ -372,6 +373,8 @@ static void ane_h13_perf_cleanup(void)
 	if (a->ring)
 		dma_free_coherent(&a->pdev->dev, RING_SIZE, a->ring,
 				  a->ring_iova);
+	if (a->win)
+		iounmap(a->win);
 	if (a->engine)
 		iounmap(a->engine);
 	if (a->pm_pinned) {
@@ -436,6 +439,14 @@ static int __init ane_h13_perf_init(void)
 		goto err;
 	}
 	pr_info("ane_h13_perf: legacy reg window %pr\n", res);
+	/* TM offsets are relative to the legacy window (engine+0x20000),
+	 * NOT to the 32 MiB aperture — reading them aperture-relative
+	 * hits unproven pages (measured hard reset). */
+	g->win = ioremap_np(res->start, resource_size(res));
+	if (!g->win) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	aperture_base = aperture ? aperture :
 				   (res->start & ~(u64)(aperture_size - 1));
@@ -449,10 +460,8 @@ static int __init ane_h13_perf_init(void)
 	g->mb = g->engine + mb_off;
 
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
-	pr_info("ane_h13_perf: CPU_STATUS=%08x CPU_CONTROL=%08x TM_TQ_EN=%08x\n",
-		cpu_status,
-		readl_relaxed(g->engine + ANE_H13_CPU_CONTROL),
-		readl_relaxed(g->engine + 0x2000c));
+	pr_info("ane_h13_perf: CPU_STATUS=%08x TM_TQ_EN(win)=%08x\n",
+		cpu_status, readl_relaxed(g->win + 0x2000c));
 
 	if (probe_only) {
 		static const unsigned long offs[] = {
