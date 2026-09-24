@@ -149,6 +149,11 @@ stall is unchanged over 60 s.
 - A hypervisor trace of a kernel driver only captures what the kernel does.
   A lazily started coprocessor needs its userspace trigger inside the guest,
   or the trace ends at device bring-up forever.
+- One release per boot. CPU_CONTROL = 0 does not stop a released T6021
+  core, and the vector handler is `b .`, so every setup change must be in
+  place before the first release after a reboot. On T6021 the only valid
+  first-release test so far is the IOMMU_CACHE run (dart0 TCR15 `0x2`,
+  dart1/2 TCR15 0).
 
 ## 11. T6001 core state, read via CoreSight (2026-09-24)
 
@@ -193,4 +198,15 @@ only (`0x00a00000`, `0x00f00000`, `0x10700000`), and ERROR_ADDR holds
 residue. macOS writes TCR15 = `0x2` (bypass) on all three instances. Linux
 leaves SIDs 1-15 at TCR 0 on dart1 and dart2, which is neither translate nor
 bypass. A fetch on such a stream would be refused without a translation
-fault. That fits the T6001 external abort. It is untested.
+fault. That fits the T6001 external abort.
+
+SID-15 run: TCR15 = `0x2` was set on dart1 and dart2 and read back (dart0
+already had it), followed by CPU_CONTROL 0 then `0x10` and a 60 s poll.
+SCRATCH7 stayed 0 and I2A stayed `0x00020001`. CPU_STATUS stayed `0x28`,
+and the three ERROR words did not change. The run is **inconclusive**:
+the core had already been released and faulted earlier that boot, and
+CPU_CONTROL = 0 does not stop it (STATUS stayed `0x28` for 100 ms after
+the write). The T6021 image has `b .` at TEXT+0x200 (the sync vector),
+the same as T6001, so a faulted core stays parked even if the fetch path
+is later fixed. The valid test is TCR15 = `0x2` on all three instances,
+set after a reboot and before the first release.

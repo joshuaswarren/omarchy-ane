@@ -42,3 +42,20 @@ back as `0xffff`.
 - IOMMU_CACHE map: leaf PTE `0x000fff1000084801`, NO_CACHE clear, PA
   `0x10000848000`. SCRATCH7 0 and outbox empty for 60 s.
 - ENABLE bit 0 already set: stall unchanged over 60 s.
+
+## SID-15 bypass run (17:38 CDT, Main go)
+
+`sid15_run.sh`: TCR15 = 0x2 on dart1 (0x28581103c) and dart2
+(0x28582103c), read back 0x2 on both. dart0 was already 0x2. I2A bit 0
+was already set. The script wrote CPU_CONTROL 0 then 0x10 and polled every
+5 s for 60 s.
+
+    t=0..60  scratch7=00000000 i2a=00020001 status=00000028
+             err=00a00000/00f00000/10700000 (unchanged)
+
+The core had already been released at the 16:08 IOMMU_CACHE run on this
+boot. A follow-up check wrote CPU_CONTROL = 0 and read STATUS: it stayed
+0x28 for 100 ms, so the write does not stop the core. The T6021 image word
+at TEXT+0x200 is 0x14000000 (`b .`), and +0x234 is `msr VBAR_EL1, x0`.
+A core parked there does not recover when the fetch path changes, so this
+run is inconclusive. Full access log: `ascdbg.log`.
