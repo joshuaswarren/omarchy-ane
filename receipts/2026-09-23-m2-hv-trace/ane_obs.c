@@ -81,6 +81,35 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
 		return n;
 	}
+	if (strncmp(cmd, "snap", 4) == 0) {
+		/* Post-RUN snapshot: VENC root + leaves, island ACTUALs,
+		 * DART error regs. Read-only; one emerg block per call. */
+		static void __iomem *vr, *d0;
+		u32 ps;
+		int i;
+
+		if (!vr) {
+			vr = ioremap_np(0x290280000ull, 0x9000);
+			d0 = ioremap_np(0x285800000ull, 0x2000);
+			if (!vr || !d0) {
+				pr_emerg("ane_obs: snap ioremap FAILED\n");
+				return -ENOMEM;
+			}
+		}
+		pr_emerg("ane_obs: SNAP ctl=%08x status=%08x\n",
+			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
+		pr_emerg("ane_obs: SNAP venc_root=%08x leaf=%08x %08x %08x %08x %08x\n",
+			 readl(vr + 0x3e0), readl(vr + 0x8008),
+			 readl(vr + 0x8010), readl(vr + 0x8018),
+			 readl(vr + 0x8020), readl(vr + 0x8028));
+		ps = readl(pmgr + O_PS_CPU);
+		pr_emerg("ane_obs: SNAP ps_cpu=%08x\n", ps);
+		pr_emerg("ane_obs: SNAP dart_err=%08x addr=%08x%08x streams=%08x tcr=%08x en=%08x\n",
+			 readl(d0 + 0x100), readl(d0 + 0x174),
+			 readl(d0 + 0x170), readl(d0 + 0x1c0),
+			 readl(d0 + 0x1000), readl(d0 + 0xc00));
+		return n;
+	}
 	if (strncmp(cmd, "stop", 4) == 0) {
 		v = readl(eng + O_CPU_CTL);
 		writel(v & ~0x10u, eng + O_CPU_CTL);
