@@ -447,8 +447,11 @@ static int __init ane_h13_perf_init(void)
 		ret = -ENOMEM;
 		goto err;
 	}
+	pr_info("ane_h13_perf: aperture mapped ok (reading CPU_STATUS at ap+%#x)\n",
+		ANE_H13_CPU_STATUS);
 
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
+	pr_info("ane_h13_perf: CPU_STATUS raw read done = 0x%x\n", cpu_status);
 	dev_info(&g->pdev->dev, "CPU_STATUS @aperture+0x%x = 0x%x (running=%d)\n",
 		 ANE_H13_CPU_STATUS, cpu_status,
 		 !!(cpu_status & ANE_H13_CPU_STATUS_RUNNING));
