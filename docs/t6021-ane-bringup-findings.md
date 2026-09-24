@@ -103,18 +103,25 @@ same way, the missing piece is shared and is not T6021-specific.
 
 - `tools/m2hv_diff.py`: diffs an m1n1 hv MMIO trace against the Linux
   baseline; prints the first missing write (`--selftest` built in).
-- Power-gated observer module: refuses engine access unless every island is on.
-- Pre-RUN write TSV and the 13.5/26 static diffs: ane-linux-experiments main.
-- 13.5 hv trace (first run): 3075 writes, all power and DART bring-up. The
-  kext's CPU start was not reached, so the run is too short to show the missing
-  step.
+- 13.5 hv traces (three runs, up to 3075 writes): all power and DART
+  bring-up, then an ISP power-down walk and no CPU_CONTROL, SCRATCH, RVBAR
+  or mailbox write. AneStaticStart proved why: the 13.5 kext starts the ASC
+  lazily, only when a user client (aned/CoreML) powers it on, so a
+  kernel-only guest never issues the start sequence. A longer kernel-only
+  trace cannot capture the ASC start; reaching it needs a macOS 13.5
+  userspace that opens the ANE (an aned/CoreML inference workload in the
+  guest). `tools/m2hv_replay-trace-135.txt` (beb39fa): all 151 macOS writes
+  to ANE engine/DART/pmgr registers from trace-135, with per-write flags
+  for ps-off/SET-window/hook and the Linux-same mark.
 - 13.5 IPSW members (kernelcache, ane0/ane1 firmware) are stored with
   SHA256SUMS in the fleet artifact store, not in git.
 
 ## 9. Next steps
 
-1. Run a longer 13.5 hv trace that reaches the kext's CPU_CONTROL write and
-   the first mailbox exchange. Diff it with `m2hv_diff.py`.
+1. (SUPERSEDED) Run a longer 13.5 hv trace that reaches the kext's
+   CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
+   so longer runs of the same guest add nothing. What would work instead:
+   a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
 2. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 3. Whichever answer comes first gets tested on T6001 as well, because the
@@ -128,3 +135,6 @@ same way, the missing piece is shared and is not T6021-specific.
   question per hardware run.
 - A stall shared by two chips points at a shared missing step. Test it on the
   laptop that recovers cheaply.
+- A hypervisor trace of a kernel driver only captures what the kernel does.
+  A lazily started coprocessor needs its userspace trigger inside the guest,
+  or the trace ends at device bring-up forever.

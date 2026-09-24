@@ -163,3 +163,16 @@ per traced line, or a host-side pyserial frame counter with a read
 timeout) so the next death carries a last-trace-time timestamp. That
 distinguishes "guest idle while host stalls" from "host idle while guest
 runs".
+
+## Stand down: lazy ASC start (added 2026-09-24, per AneStaticStart via Main)
+AneStaticStart proved the 13.5 ANE kext starts the ASC lazily: it powers the
+coprocessor on only when a user client (aned/CoreML) opens it. Our hv guest
+is kernel-only, so no kernel-only trace can ever contain the CPU_CONTROL /
+mailbox sequence. The three 13.5 runs end at the ISP power-down walk not
+because the trace is too short, but because the start sequence is never
+issued inside that guest. This also closes the 35 s SerialException hunt on
+the trace side: there is no later kext sequence for a longer run to reach.
+A trace that captures the start needs a 13.5 userspace in the guest that
+opens the ANE (an aned/CoreML inference workload). Recorded in
+docs/t6021-ane-bringup-findings.md (trace section, superseded next step,
+method lesson).
