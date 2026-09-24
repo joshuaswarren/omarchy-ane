@@ -241,6 +241,31 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		}
 		return n;
 	}
+	if (strncmp(cmd, "c0rd", 4) == 0) {
+		/* Read-only: 0x28e08c000 through the pmgr window. */
+		static void __iomem *pm8;
+
+		if (!pm8) {
+			pm8 = ioremap_np(0x28e080000ull, 0x10000);
+			if (!pm8)
+				return -ENOMEM;
+		}
+		pr_emerg("ane_obs: C0RD %08x\n", readl(pm8 + 0xc000));
+		return n;
+	}
+	if (strncmp(cmd, "c0wr", 4) == 0) {
+		/* Bounded: 0x28e08c000 <- 0x80000000 once, with readback. */
+		static void __iomem *pm8;
+
+		if (!pm8) {
+			pm8 = ioremap_np(0x28e080000ull, 0x10000);
+			if (!pm8)
+				return -ENOMEM;
+		}
+		writel(0x80000000u, pm8 + 0xc000);
+		pr_emerg("ane_obs: C0WR %08x\n", readl(pm8 + 0xc000));
+		return n;
+	}
 	if (strncmp(cmd, "pwgrd", 5) == 0) {
 		/* Read-only: PWGATE 0x28e092000+0x159c, validate mask 3. */
 		static void __iomem *pwg;
