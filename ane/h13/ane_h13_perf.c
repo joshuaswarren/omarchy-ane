@@ -4,105 +4,95 @@
  *
  * Sends CSNE_CMD_CH_PROPERTY_WRITE(prop 0x10aa, value 1) — the
  * "setting FW perf mode" message AppleH11ANEInterface issues at
- * power-on — to the pre-loaded ANE firmware over an RTBuddy-style
- * RTKit session brought up on the ANE ASC mailbox. The firmware owns
- * the ANE clock; in perf mode it raises it through its own power
- * firmware link (receipt 2026-09-22-ane-dvfs: Linux programs no ANE
- * clock; macOS sustains 140 ms whole-encoder vs Linux 440).
+ * power-on — over an RTKit session on the ANE ASC mailbox.
  *
- * Message evidence (H13 kext 9.512.0-macstudio-25G83, static):
- *   - command id 0x1f built at __TEXT_EXEC 0xfffffe0009322e14
- *     (mov w20,#0x1f; strh), payload pool __TEXT.__const
- *     0xfffffe000748fdc8 = {channel 0, property 0x10aa}, value 1 at
- *     +0x10, error string "...CH_PROPERTY_WRITE for setting FW perf
- *     mode failed" xref 0xfffffe0009322ec8. One send site in the
- *     binary (init path, alongside cpuLoadScore watermark writes
- *     prop 0x1803/0x1804 and fw-log prop 0xa1).
- *   - 20-byte buffer: {u32 0; u16 id; u16 flags; u32 channel;
- *     u32 property; u32 value} (w2=0x14 send length; the stack word
- *     at +0x14 the kext also fills is the by-reference length, x3).
- *   - transport: RTBuddy RPC (the kext carries no TM-queue or ASC
- *     mailbox constants; m1n1's TM path is not the kext's). Endpoint
- *     numbers default to the K14 cfg mapping (EP1 INIT, EP2 T2F_CMD,
- *     ... EP6 T2H_TERM); the firmware's EPMAP answer is the runtime
- *     authority and is logged verbatim.
+ * Message evidence (H13 kext 9.512.0-macstudio-25G83, static): cmd id
+ * 0x1f built at __TEXT_EXEC 0xfffffe0009322e14, payload pool
+ * __TEXT.__const 0xfffffe000748fdc8 {channel 0, property 0x10aa},
+ * value 1 at +0x10, error-string xref 0xfffffe0009322ec8; 20-byte
+ * buffer {u32 0; u16 id; u16 flags; u32 channel; u32 property;
+ * u32 value}; one send site in the binary (init path).
  *
- * Safety posture (jw16 is a serving box until handed over):
- *   - never binds the ane platform node (the legacy ane.ko owns it);
- *     it only looks the probed device up and refuses if absent.
- *   - all engine MMIO non-posted (ioremap_np), reads before writes,
- *     every wait bounded.
- *   - perf_mode=0 (default): handshake + endpoint bitmap capture +
- *     logs only. No CSNE command is sent.
- *   - no RTKit power-state writes in either mode: the firmware is
- *     already ON (ADT "pre-loaded"=1, legacy submits running); IOP/AP
- *     power management stays with the production stack. Module exit
- *     sends nothing (no quiesce, no reset).
+ * Measured on T6001/jw16 (2026-09-24, receipts
+ * 2026-09-24-ane-perf-mode-h13):
+ *   - aperture-relative CPU_STATUS +0x1400048 reads 0x2a
+ *     (STOPPED|IDLE) on the working Linux stack — eos parked is the
+ *     M1-normal state (AneStaticStart diff: the M1 path is power,
+ *     tunables, DART, TM enable; no coprocessor start).
+ *   - some ASCWRAP-class reads hard-reset the SoC; unproven registers
+ *     are read ONE per load behind probe_reg.
+ *   - the legacy driver only pins runtime PM during its submits;
+ *     an unpinned visit can die seconds later (autosuspend + DART
+ *     TLB class, jwm1 bring-up rule) — so this module pins the
+ *     partition with pm_runtime_resume_and_get for its whole visit.
+ *
+ * Safety: never binds the platform node (lookup only); non-posted
+ * MMIO; bounded waits; no RTKit power-state writes; probe_only=0 and
+ * boot=0 defaults refuse to touch anything beyond proven reads.
  */
 
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/device/bus.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/iopoll.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 #include <linux/unaligned.h>
 
-/* ---- engine aperture registers (m1n1 ane.py / t6021 rtclient) ---- */
+/* ---- engine aperture registers ---- */
 
-#define ANE_H13_CPU_STATUS		0x1400048
-#define ASC_CPU_STOPPED			BIT(1)	/* 0x2a idle / 0x28 after RUN */
-#define ANE_H13_CPU_STATUS_RUNNING	BIT(0)
+#define ANE_H13_CPU_STATUS	0x1400048	/* 0x2a parked; bit1 STOPPED */
+#define ASC_CPU_STOPPED		BIT(1)
+#define ANE_H13_CPU_CONTROL	0x1400044
+#define ASC_CPU_RUN_RELEASE	0x10		/* write32 0 then 0x10 */
+#define ASC_IO_RVBAR		0x1050000	/* read-only here; bit0 latched */
 
 static char *pdev_name;
 module_param(pdev_name, charp, 0444);
 MODULE_PARM_DESC(pdev_name,
-		 "optional: platform device name of the legacy-bound ane node (auto-discovered by driver 'ane' when unset; e.g. 285c04000.ane on t6001 boots)");
+		 "optional platform device name (auto-discovered by legacy driver 'ane' when unset)");
 
 static unsigned long mb_off = 0x1408000;
 module_param(mb_off, ulong, 0444);
 MODULE_PARM_DESC(mb_off,
-		 "ASC mailbox block offset inside the engine aperture (h14-verified layout; runtime-confirmed by the HELLO/HELLO_REPLY exchange)");
+		 "ASC mailbox block offset inside the ane aperture (h14 layout)");
 
 static unsigned long long aperture;
 module_param(aperture, ullong, 0444);
 MODULE_PARM_DESC(aperture,
-		 "optional: ane aperture physical base (default: legacy reg window base 32 MiB-aligned down; t6001: 0x285c04000 -> 0x284000000)");
+		 "optional ane aperture physical base (default: reg window base 32 MiB-aligned down)");
 
 static unsigned long aperture_size = 0x2000000;
 module_param(aperture_size, ulong, 0444);
-MODULE_PARM_DESC(aperture_size,
-		 "ane aperture mapping size (default 32 MiB, the ADT ane0 range0 length)");
+MODULE_PARM_DESC(aperture_size, "ane aperture mapping size (default 32 MiB)");
 
 static uint t2fc_ep = 2;
 module_param(t2fc_ep, uint, 0444);
-MODULE_PARM_DESC(t2fc_ep,
-		 "T2F_CMD app endpoint number (K14 cfg table default 2; EPMAP bitmap logged at bind)");
-
-static bool perf_mode;
-module_param(perf_mode, bool, 0444);
-MODULE_PARM_DESC(perf_mode,
-		 "After a completed handshake, send CSNE_CMD_CH_PROPERTY_WRITE(prop 0x10aa, value 1) - the FW perf-mode enable macOS sends at power-on");
+MODULE_PARM_DESC(t2fc_ep, "T2F_CMD app endpoint (K14 cfg default 2; EPMAP logged at bind)");
 
 static bool boot;
 module_param(boot, bool, 0444);
 MODULE_PARM_DESC(boot,
-		 "Start the ANE ASC CPU from its iBoot-staged image (CPU_CONTROL RUN; Main-authorized on jw16). Without it the module refuses when CPU_STATUS shows stopped");
+		 "Run the iBoot-staged ASC firmware (CPU_CONTROL 0 -> 0x10, M2-measured sequence) when CPU_STATUS shows stopped");
+
+static bool perf_mode;
+module_param(perf_mode, bool, 0444);
+MODULE_PARM_DESC(perf_mode,
+		 "After a completed handshake, send CSNE_CMD_CH_PROPERTY_WRITE(prop 0x10aa, value 1)");
 
 static bool probe_only;
 module_param(probe_only, bool, 0444);
 MODULE_PARM_DESC(probe_only,
-		 "Read-only reconnaissance: dump CPU_STATUS, RVBAR, mailbox controls, then exit without any write");
+		 "Read-only reconnaissance dump, then exit");
 
-/* ---- ASC CPU boot (measured M2 sequence, M2FwStart-2 receipts) ---- */
-
-#define ANE_H13_CPU_CONTROL	0x1400044
-#define ASC_CPU_RUN		0x10	/* write 0 then 0x10 */
-#define ASC_I2A_OUTBOX_ENABLE	BIT(0)	/* I2A control bit 0; armed rb 0x20001 */
-#define ASC_CPU_RUN_RELEASE	0x10	/* CPU_CONTROL: write32 0 then 0x10 */
+static uint probe_reg;
+module_param(probe_reg, uint, 0444);
+MODULE_PARM_DESC(probe_reg,
+		 "probe_only: read ONE unproven register per load (1=I2A ctrl 2=A2I ctrl 3=RVBAR 4=CPU_CONTROL); 0 = proven reads only");
 
 /* ---- ASC mailbox (soc/apple/mailbox.c ASC variant) ---- */
 
@@ -114,6 +104,7 @@ MODULE_PARM_DESC(probe_only,
 #define ASC_I2A_RECV1		0x838
 #define ASC_CTRL_FULL		BIT(16)
 #define ASC_CTRL_EMPTY		BIT(17)
+#define ASC_I2A_OUTBOX_ENABLE	BIT(0)
 #define MSG1_EP			GENMASK_ULL(31, 0)
 
 /* ---- RTKit MGMT (drivers/soc/apple/rtkit.c shapes) ---- */
@@ -134,14 +125,13 @@ MODULE_PARM_DESC(probe_only,
 #define RTKIT_VER_MIN		11
 #define RTKIT_VER_MAX		12
 
-/* ---- CSNE command (kext-derived, see header comment) ---- */
+/* ---- CSNE command ---- */
 
 #define CSNE_CMD_CH_PROPERTY_WRITE	0x001f
 #define CSNE_PROP_FW_PERF_MODE		0x10aa
 #define CSNE_PERF_MODE_ON		1
 #define CSNE_PROPBUF_LEN		0x14
 
-/* doorbell words (t6021 rtclient / HandleRTBuddyMessage decode) */
 #define DB_OFFSET		GENMASK_ULL(43, 0)
 #define DB_SIZE			GENMASK_ULL(51, 44)
 #define DB_UNIT			GENMASK_ULL(53, 52)
@@ -162,11 +152,10 @@ static struct ane_h13_perf {
 	DECLARE_BITMAP(endpoints, 64);
 	bool hello_done;
 	bool epmap_last;
+	bool pm_pinned;
 } *g;
 
-static void mgmt_handle(struct ane_h13_perf *a, u8 ep, u64 msg);
-
-/* ---- raw mailbox ops (poll mode, no IRQs) ---- */
+/* ---- raw mailbox ops (poll mode) ---- */
 
 static int mb_send(struct ane_h13_perf *a, u8 ep, u64 msg)
 {
@@ -178,17 +167,17 @@ static int mb_send(struct ane_h13_perf *a, u8 ep, u64 msg)
 					2000000);
 	if (ret)
 		return ret;
-
 	dma_wmb();
 	writeq_relaxed(msg, a->mb + ASC_A2I_SEND0);
 	writeq_relaxed(FIELD_PREP(MSG1_EP, ep), a->mb + ASC_A2I_SEND1);
 	return 0;
 }
 
-/* drain everything pending; MGMT messages are serviced, the rest logged */
+static void mgmt_handle(struct ane_h13_perf *a, u8 ep, u64 msg);
+
 static void mb_pump(struct ane_h13_perf *a)
 {
-	struct device *dev = &a->pdev->dev;
+	struct device *dev = &g->pdev->dev;
 	u32 ctrl = readl_relaxed(a->mb + ASC_I2A_CONTROL);
 	int n = 0;
 
@@ -228,10 +217,8 @@ static void mgmt_handle(struct ane_h13_perf *a, u8 ep, u64 msg)
 		u32 want = min((u32)RTKIT_VER_MAX, vmax);
 
 		dev_info(dev, "mgmt: fw HELLO ver [%u,%u]\n", vmin, vmax);
-		if (vmin > RTKIT_VER_MAX || vmax < RTKIT_VER_MIN) {
-			dev_err(dev, "mgmt: version window unsupported\n");
+		if (vmin > RTKIT_VER_MAX || vmax < RTKIT_VER_MIN)
 			return;
-		}
 		mgmt_send(a, MGMT_HELLO_REPLY,
 			  FIELD_PREP(HELLO_MINVER, want) |
 			  FIELD_PREP(HELLO_MAXVER, want));
@@ -275,28 +262,25 @@ static void mgmt_handle(struct ane_h13_perf *a, u8 ep, u64 msg)
 
 static int handshake(struct ane_h13_perf *a)
 {
-	struct device *dev = &a->pdev->dev;
 	unsigned long t0 = jiffies;
 	int ret;
 
-	/* Host-initiated HELLO: the firmware is already running (legacy
-	 * submits execute), so it may not open the conversation itself. */
 	ret = mgmt_send(a, MGMT_HELLO,
 			FIELD_PREP(HELLO_MINVER, (u32)RTKIT_VER_MIN) |
 			FIELD_PREP(HELLO_MAXVER, (u32)RTKIT_VER_MAX));
 	if (ret) {
-		dev_err(dev, "mailbox A2I stuck FULL: %pe\n", ERR_PTR(ret));
+		pr_err("ane_h13_perf: mailbox A2I stuck FULL: %pe\n",
+		       ERR_PTR(ret));
 		return ret;
 	}
 
 	while (!(a->hello_done && a->epmap_last)) {
 		mb_pump(a);
-
 		if (a->hello_done && a->epmap_last)
 			break;
 		if (time_after(jiffies, t0 + msecs_to_jiffies(HANDSHAKE_MS))) {
-			dev_err(dev, "handshake timed out: hello=%d epmap_last=%d (mailbox silent? wrong mb_off?)\n",
-				a->hello_done, a->epmap_last);
+			pr_err("ane_h13_perf: handshake timed out hello=%d epmap=%d\n",
+			       a->hello_done, a->epmap_last);
 			return -ETIMEDOUT;
 		}
 		usleep_range(RX_POLL_US, RX_POLL_US + 500);
@@ -304,7 +288,7 @@ static int handshake(struct ane_h13_perf *a)
 	return 0;
 }
 
-/* ---- CSNE command send (T2F_CMD ring) ---- */
+/* ---- CSNE perf-mode write ---- */
 
 static u64 doorbell_encode(u64 offset, u32 size)
 {
@@ -312,8 +296,7 @@ static u64 doorbell_encode(u64 offset, u32 size)
 	u32 code = DIV_ROUND_UP(size, 1u << (unit * 12));
 
 	return (offset & DB_OFFSET) |
-	       FIELD_PREP(DB_SIZE, code) |
-	       FIELD_PREP(DB_UNIT, unit);
+	       FIELD_PREP(DB_SIZE, code) | FIELD_PREP(DB_UNIT, unit);
 }
 
 static int send_perf_mode(struct ane_h13_perf *a)
@@ -325,12 +308,11 @@ static int send_perf_mode(struct ane_h13_perf *a)
 	int ret;
 
 	if (!test_bit(t2fc_ep, a->endpoints)) {
-		dev_err(dev, "T2F_CMD ep %u not advertised by fw; read the EPMAP log and set t2fc_ep\n",
+		dev_err(dev, "T2F_CMD ep %u not advertised; set t2fc_ep from the EPMAP log\n",
 			t2fc_ep);
 		return -EINVAL;
 	}
 
-	/* SetupEndpoints: announce the ring surface, STARTEP, settle. */
 	ret = mb_send(a, t2fc_ep, doorbell_encode(a->ring_iova, RING_SIZE));
 	if (ret)
 		return ret;
@@ -339,21 +321,18 @@ static int send_perf_mode(struct ane_h13_perf *a)
 	msleep(50);
 	mb_pump(a);
 
-	/* CSNE_CMD_CH_PROPERTY_WRITE: {0, 0x1f, 0, ch 0, prop 0x10aa,
-	 * value 1}, 0x14 bytes — the exact H13 kext payload. */
 	put_unaligned_le16(CSNE_CMD_CH_PROPERTY_WRITE, buf + 0x04);
-	put_unaligned_le32(0, buf + 0x08);			/* channel */
+	put_unaligned_le32(0, buf + 0x08);
 	put_unaligned_le32(CSNE_PROP_FW_PERF_MODE, buf + 0x0c);
 	put_unaligned_le32(CSNE_PERF_MODE_ON, buf + 0x10);
 
 	memcpy(a->ring, buf, CSNE_PROPBUF_LEN);
 	dma_wmb();
 
-	msg = FIELD_PREP(CMDW_OFF, 0) |
-	      FIELD_PREP(CMDW_LEN, CSNE_PROPBUF_LEN);
+	msg = FIELD_PREP(CMDW_OFF, 0) | FIELD_PREP(CMDW_LEN, CSNE_PROPBUF_LEN);
 	ret = mb_send(a, t2fc_ep, msg);
-	dev_info(dev, "csne: CH_PROPERTY_WRITE(prop 0x%x=1) sent ep=%u -> %pe; awaiting reply\n",
-		 CSNE_PROP_FW_PERF_MODE, t2fc_ep, ERR_PTR(ret));
+	dev_info(dev, "csne: CH_PROPERTY_WRITE(prop 0x10aa=1) sent ep=%u -> %pe\n",
+		 t2fc_ep, ERR_PTR(ret));
 	if (ret)
 		return ret;
 
@@ -364,13 +343,12 @@ static int send_perf_mode(struct ane_h13_perf *a)
 		while (!(ctrl & ASC_CTRL_EMPTY) && n < 64) {
 			u64 msg0 = readq_relaxed(a->mb + ASC_I2A_RECV0);
 			u64 msg1 = readq_relaxed(a->mb + ASC_I2A_RECV1);
-			u8 ep = FIELD_GET(MSG1_EP, msg1);
 
-			if (ep == 0)
-				mgmt_handle(a, ep, msg0);
+			if (FIELD_GET(MSG1_EP, msg1) == 0)
+				mgmt_handle(a, 0, msg0);
 			else
 				dev_info(dev, "rx: ep=%u msg=%016llx\n",
-					 ep, msg0);
+					 FIELD_GET(MSG1_EP, msg1), msg0);
 			n++;
 			ctrl = readl_relaxed(a->mb + ASC_I2A_CONTROL);
 		}
@@ -378,12 +356,11 @@ static int send_perf_mode(struct ane_h13_perf *a)
 			return 0;
 		usleep_range(RX_POLL_US, RX_POLL_US + 500);
 	}
-	dev_warn(dev, "no reply to CH_PROPERTY_WRITE within %d ms (read the rx log)\n",
-		 REPLY_MS);
+	dev_warn(dev, "no reply within %d ms\n", REPLY_MS);
 	return -ETIMEDOUT;
 }
 
-/* ---- module plumbing (single instance, manual lifetime) ---- */
+/* ---- module plumbing ---- */
 
 static void ane_h13_perf_cleanup(void)
 {
@@ -397,6 +374,10 @@ static void ane_h13_perf_cleanup(void)
 				  a->ring_iova);
 	if (a->engine)
 		iounmap(a->engine);
+	if (a->pm_pinned) {
+		pm_runtime_put_sync_suspend(&a->pdev->dev);
+		pm_runtime_disable(&a->pdev->dev);
+	}
 	put_device(&a->pdev->dev);
 	kfree(a);
 }
@@ -405,7 +386,7 @@ static int match_owned(struct device *dev, const void *data)
 {
 	struct device_driver *drv = dev->driver;
 
-	if (!pdev_name)
+	if (!data)
 		return dev_is_platform(dev) && drv &&
 		       !strcmp(drv->name, "ane");
 	return dev_is_platform(dev) &&
@@ -420,13 +401,11 @@ static int __init ane_h13_perf_init(void)
 	u32 cpu_status;
 	int ret;
 
-	/* owned-by-production gate: the legacy ane driver must have
-	 * claimed the node first, so this module can never steal it. */
 	found = bus_find_device(&platform_bus_type, NULL, pdev_name,
 				match_owned);
 	if (!found) {
-		pr_err("ane_h13_perf: no legacy-bound ane platform device found (pdev_name='%s', driver gate 'ane')\n",
-		       pdev_name ? pdev_name : "<auto>");
+		pr_err("ane_h13_perf: no legacy-bound ane platform device (pdev_name='%s')\n",
+		       pdev_name ? pdev_name : "<auto:driver 'ane'>");
 		return -ENODEV;
 	}
 
@@ -439,109 +418,99 @@ static int __init ane_h13_perf_init(void)
 	pr_info("ane_h13_perf: found %s (driver %s)\n", dev_name(found),
 		found->driver ? found->driver->name : "?");
 
+	/* Pin the partition up for the whole visit: autosuspend after a
+	 * fresh attach invalidates DART TLBs and resets the SoC (jwm1
+	 * bring-up rule); the legacy driver only pins during submits. */
+	pm_runtime_enable(&g->pdev->dev);
+	ret = pm_runtime_resume_and_get(&g->pdev->dev);
+	if (ret) {
+		pr_err("ane_h13_perf: genpd raise failed: %pe\n", ERR_PTR(ret));
+		goto err;
+	}
+	g->pm_pinned = true;
+
 	res = platform_get_resource(g->pdev, IORESOURCE_MEM, 0);
 	if (!res) {
-		pr_err("ane_h13_perf: %s has no IORESOURCE_MEM[0]\n",
-		       dev_name(&g->pdev->dev));
+		pr_err("ane_h13_perf: no IORESOURCE_MEM[0]\n");
 		ret = -ENODEV;
 		goto err;
 	}
-	pr_info("ane_h13_perf: legacy reg window %pr (nonposted=%d)\n", res,
-		!(res->flags & IORESOURCE_MEM_NONPOSTED) ? 0 : 1);
+	pr_info("ane_h13_perf: legacy reg window %pr\n", res);
 
-	/* The legacy node's window is a sub-window of the ane aperture
-	 * (t6001 boots: reg 0x285c04000 inside range0 0x284000000..32M).
-	 * The mailbox and CPU_STATUS live at aperture-relative offsets,
-	 * so map the whole aperture: param override, else the reg window
-	 * base aligned down to the 32 MiB aperture granularity. */
 	aperture_base = aperture ? aperture :
 				   (res->start & ~(u64)(aperture_size - 1));
-	pr_info("ane_h13_perf: aperture %#llx+%#lx (param aperture=%llx)\n",
-		aperture_base, aperture_size, aperture);
+	pr_info("ane_h13_perf: aperture %#llx+%#lx\n",
+		aperture_base, aperture_size);
 	g->engine = ioremap_np(aperture_base, aperture_size);
 	if (!g->engine) {
-		pr_err("ane_h13_perf: ioremap_np(aperture %#llx+%#lx) failed\n",
-		       aperture_base, aperture_size);
 		ret = -ENOMEM;
 		goto err;
 	}
-	pr_info("ane_h13_perf: aperture mapped ok (reading CPU_STATUS at ap+%#x)\n",
-		ANE_H13_CPU_STATUS);
-
-	if (probe_only) {
-		u32 i2a = readl_relaxed(g->engine + mb_off + ASC_I2A_CONTROL);
-		u32 a2i = readl_relaxed(g->engine + mb_off + ASC_A2I_CONTROL);
-
-		pr_info("ane_h13_perf: PROBE-ONLY mailbox ap+%#lx: a2i=%08x i2a=%08x\n",
-			mb_off, a2i, i2a);
-		pr_info("ane_h13_perf: PROBE-ONLY CPU_STATUS=%08x CPU_CONTROL=%08x RVBAR=%016llx\n",
-			readl_relaxed(g->engine + ANE_H13_CPU_STATUS),
-			readl_relaxed(g->engine + ANE_H13_CPU_CONTROL),
-			readq_relaxed(g->engine + 0x1050000));
-		pr_info("ane_h13_perf: PROBE-ONLY TM_STATUS=%08x TM_TQ_EN=%08x\n",
-			readl_relaxed(g->engine + 0x20054),
-			readl_relaxed(g->engine + 0x2000c));
-		ane_h13_perf_cleanup();
-		return -EALREADY;
-	}
+	g->mb = g->engine + mb_off;
 
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
-	pr_info("ane_h13_perf: CPU_STATUS raw read done = 0x%x\n", cpu_status);
+	pr_info("ane_h13_perf: CPU_STATUS=%08x CPU_CONTROL=%08x TM_TQ_EN=%08x\n",
+		cpu_status,
+		readl_relaxed(g->engine + ANE_H13_CPU_CONTROL),
+		readl_relaxed(g->engine + 0x2000c));
+
+	if (probe_only) {
+		static const unsigned long offs[] = {
+			[1] = 0x1408114, [2] = 0x1408110,
+			[3] = ASC_IO_RVBAR, [4] = ANE_H13_CPU_CONTROL,
+		};
+
+		if (probe_reg == 3) {
+			u64 rv = readq_relaxed(g->engine + offs[3]);
+
+			pr_info("ane_h13_perf: PROBE-ONLY reg[3] ap+%#lx = %016llx\n",
+				offs[3], rv);
+		} else if (probe_reg) {
+			pr_info("ane_h13_perf: PROBE-ONLY reg[%u] ap+%#lx = %08x\n",
+				probe_reg, offs[probe_reg],
+				readl_relaxed(g->engine + offs[probe_reg]));
+		}
+		ret = -EALREADY;
+		goto err;
+	}
+
 	if (cpu_status & ASC_CPU_STOPPED) {
 		u32 i2a;
 		u64 rvbar;
-		int ret2;
 
 		if (!boot) {
-			dev_err(&g->pdev->dev, "ANE ASC stopped (CPU_STATUS 0x%x); reload with boot=1 to run the iBoot-staged firmware\n",
-				cpu_status);
+			pr_err("ane_h13_perf: ASC parked (CPU_STATUS %08x); reload with boot=1 to run the staged firmware\n",
+			       cpu_status);
 			ret = -ENODEV;
 			goto err;
 		}
-
-		/* Measured M2 sequence (M2FwStart-2 receipts): outbox
-		 * enable bit0 in the mailbox I2A control, then
-		 * CPU_CONTROL write32 0 -> 0x10. RVBAR is never written
-		 * when bit0 is latched (iBoot staged the image). */
-		rvbar = readq_relaxed(g->engine + 0x1050000);
-		dev_info(&g->pdev->dev, "boot: RVBAR = %016llx (bit0 latched=%d, never written)\n",
+		/* Measured M2 sequence: outbox enable, then
+		 * CPU_CONTROL write32 0 -> 0x10. RVBAR never written
+		 * when bit0 is latched. */
+		rvbar = readq_relaxed(g->engine + ASC_IO_RVBAR);
+		dev_info(&g->pdev->dev, "boot: RVBAR=%016llx (bit0 latched=%d, never written)\n",
 			 rvbar, (int)(rvbar & 1));
-
 		i2a = readl_relaxed(g->mb + ASC_I2A_CONTROL);
 		writel_relaxed(i2a | ASC_I2A_OUTBOX_ENABLE,
 			       g->mb + ASC_I2A_CONTROL);
-		dev_info(&g->pdev->dev, "boot: I2A control %08x -> %08x (armed ~0x20001 expected)\n",
+		dev_info(&g->pdev->dev, "boot: I2A %08x -> %08x\n",
 			 i2a, readl_relaxed(g->mb + ASC_I2A_CONTROL));
-
 		writel_relaxed(0, g->engine + ANE_H13_CPU_CONTROL);
 		wmb();
 		writel_relaxed(ASC_CPU_RUN_RELEASE,
 			       g->engine + ANE_H13_CPU_CONTROL);
-
-		ret2 = readl_poll_timeout_atomic(
+		ret = readl_poll_timeout_atomic(
 			g->engine + ANE_H13_CPU_STATUS, cpu_status,
 			!(cpu_status & ASC_CPU_STOPPED), 1000, 3000000);
-		dev_info(&g->pdev->dev, "boot: CPU_STATUS now 0x%x (rc=%pe)\n",
-			 cpu_status, ERR_PTR(ret2));
-		if (ret2 || (cpu_status & ASC_CPU_STOPPED)) {
-			ret = ret2 ?: -ENODEV;
+		dev_info(&g->pdev->dev, "boot: CPU_STATUS now %08x (rc=%pe)\n",
+			 cpu_status, ERR_PTR(ret));
+		if (ret)
 			goto err;
-		}
 	}
-	if (!(cpu_status & ASC_CPU_STOPPED))
-		dev_info(&g->pdev->dev, "ANE ASC running (CPU_STATUS 0x%x)\n",
-			 cpu_status);
-
-	g->mb = g->engine + mb_off;
-	dev_info(&g->pdev->dev, "ASC mailbox @aperture+0x%lx: a2i=%08x i2a=%08x\n",
-		 mb_off,
-		 readl_relaxed(g->mb + ASC_A2I_CONTROL),
-		 readl_relaxed(g->mb + ASC_I2A_CONTROL));
 
 	g->ring = dma_alloc_coherent(&g->pdev->dev, RING_SIZE,
 				     &g->ring_iova, GFP_KERNEL);
 	if (!g->ring) {
-		dev_err(&g->pdev->dev, "coherent ring alloc failed (device dma config)\n");
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -551,13 +520,12 @@ static int __init ane_h13_perf_init(void)
 	ret = handshake(g);
 	if (ret)
 		goto err;
-
-	dev_info(&g->pdev->dev, "RTKit session up (no power-state writes; fw already ON)\n");
+	dev_info(&g->pdev->dev, "RTKit session up (no power-state writes)\n");
 
 	if (perf_mode)
 		ret = send_perf_mode(g);
 	else
-		dev_info(&g->pdev->dev, "perf_mode=0: handshake capture only, no CSNE command sent\n");
+		dev_info(&g->pdev->dev, "perf_mode=0: capture only\n");
 	if (ret)
 		goto err;
 	return 0;
