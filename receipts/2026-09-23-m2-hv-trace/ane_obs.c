@@ -91,6 +91,63 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 	return -EINVAL;
 }
 
+static ssize_t ane_obs_phys_read(struct file *f, char __user *ubuf, size_t n,
+			   loff_t *off)
+{
+	/* Reserved-only physical reader for the iBoot-preloaded ANE
+	 * segments. Anything outside the three reserved windows is
+	 * refused with -EPERM; PA comes in *off. */
+	static const struct { u64 base, len; } win[] = {
+		{ 0x10000848000ull, 0xc4000ull },
+		{ 0x100009fc000ull, 0x393000ull },
+		{ 0x10001400000ull, 0x438000ull },
+	};
+	void __iomem *m;
+	u64 pa;
+	unsigned int i;
+
+	pa = (u64)*off;
+
+	for (i = 0; i < ARRAY_SIZE(win); i++) {
+		if (pa >= win[i].base && n <= win[i].len &&
+		    pa - win[i].base <= win[i].len - n) {
+			m = ioremap_np(pa, n);
+			if (!m)
+				return -ENOMEM;
+			if (copy_to_user(ubuf, (const void __force *)m, n)) {
+				iounmap(m);
+				return -EFAULT;
+			}
+			iounmap(m);
+			*off += n;
+			return n;
+		}
+	}
+	return -EPERM;
+}
+
+static loff_t ane_obs_phys_llseek(struct file *f, loff_t off, int whence)
+{
+	if (whence != SEEK_SET)
+		return -EINVAL;
+	if (off < 0)
+		return -EINVAL;
+	f->f_pos = off;
+	return off;
+}
+
+static const struct file_operations ane_obs_phys_fops = {
+	.owner = THIS_MODULE,
+	.read = ane_obs_phys_read,
+	.llseek = ane_obs_phys_llseek,
+};
+
+static struct miscdevice ane_obs_phys_dev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = "ane_phys",
+	.fops = &ane_obs_phys_fops,
+};
+
 static const struct file_operations ane_obs_fops = {
 	.owner = THIS_MODULE,
 	.read = ane_obs_read,
@@ -116,11 +173,14 @@ static int __init ane_obs_init(void)
 	pr_emerg("ane_obs: mapped eng=%p pmgr=%p; ctl=%08x status=%08x ps=%08x\n",
 		 eng, pmgr, readl(eng + O_CPU_CTL),
 		 readl(eng + O_CPU_STATUS), readl(pmgr + O_PS_CPU));
+	if (misc_register(&ane_obs_phys_dev))
+		return -ENODEV;
 	return misc_register(&ane_obs_dev);
 }
 
 static void __exit ane_obs_exit(void)
 {
+	misc_deregister(&ane_obs_phys_dev);
 	misc_deregister(&ane_obs_dev);
 	iounmap(pmgr);
 	iounmap(eng);
