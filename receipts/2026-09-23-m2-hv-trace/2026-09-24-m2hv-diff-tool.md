@@ -129,3 +129,37 @@ scrub all three on the first rerun. Verified with the m1n1 ADT parser on
 the real J414c ADT: three "Removing ADT node /arm-io/i2c6/atcrtN" lines,
 the tree rebuilds and reparses. The patch applies to the hvproxy copy with
 `patch -p1 --dry-run`.
+
+## Retimer rerun negative + what the three deaths share (added 2026-09-24 ~16:00)
+The atcrt0/1/2 scrub applied and logged (run.log lines 169-171), and the new
+run shows no i2c6 burst at all, but it died at the same point: guest-launch
+34 s, SerialException at the `hv_start` reply. Retimer writes were a
+correlate, not the cause. Status of the earlier fix: keep the patch (it
+removes a real hazard on the proxy port), but the 35 s death is open.
+
+What all three deaths share (trace-135, trace-135b, trace-atcrt):
+- The last traced guest writes are an ISP power-down walk: ps_ispsens1
+  (0x290280130), ps_ispsens0 (0x290280128) T=0x4f,0 then 0x340, then
+  ps_isp_sys (0x2902801c8) = 0x3f0. Runs a/b ended the same way on an
+  i2c6 cycle; the retimer-free run ends here with only five stray device
+  writes after it (ane islands/SET/ane_sys at fixed PCs).
+- No PMGR HACK hook word is written after line ~4717 in any run: the guest
+  never tried to gate the hooked UART0/ATC parents.
+- No `CPU W` lines at all (that hv code path is dead in these runs).
+- UART0 is NOT touched by the guest in any traced run: mapping
+  /arm-io/uart0 is benign read-only attention evidence, so no UART0
+  patch is proposed. The sure-visible UART0 register window never
+  appears in the traced pmgr windows.
+- I checked the PMGR hook semantics: `wh` forces the hardware write to
+  `(v|0xf)&~0x400` but records the guest's raw value; AUTO/PS_RESET/TARGET
+  bits in the guest value reach the log but not the hardware. The atc0 hook
+  wording in this receipt's earlier section is corrected: UART0/ATC are
+  hooked by device ancestry, not by pmgr-window offset.
+
+Open item: whether the disconnect is the guest powering something on the
+proxy data/power path, or a host-side stall that pyserial reports as a
+disconnect. Next experiment: a marker writer (e.g. a localhost TCP line
+per traced line, or a host-side pyserial frame counter with a read
+timeout) so the next death carries a last-trace-time timestamp. That
+distinguishes "guest idle while host stalls" from "host idle while guest
+runs".
