@@ -90,8 +90,8 @@ stall is unchanged over 60 s.
 | Wrong DART instance on SID 0 | All three instances have TCR0 `0x9` and the same TTBR0; the PTE resolves |
 | Uncached firmware pages, or SID 15 not bypassed (fetch stream refused) | First release after a reboot with the TEXT/DATA map `IOMMU_CACHE` (leaf PTE bit 1 clear) and TCR15 `0x2` on all three instances: stall unchanged over 60 s (§12) |
 | SID-0 stream enable | dart-ane0 ENABLE already `0xffff`; stall unchanged over 60 s |
-| Missing pre-RUN writes from the 26/27 kext | Every write is present, lawfully skipped, or provider-owned |
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
+| PWGATE set-window `+0x12cc <- 3` and `+0x13cc <- 0` | Both candidate pairs read 0/0: offsets `0xd2cc`/`0xd3cc` and `0x132cc`/`0x133cc`. Theory dead without a write. The receipt's `0x28e092cc` equals neither pair (off by one segment), so it needs a static fix (§12) |
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
@@ -217,3 +217,15 @@ released core, which tested nothing.
 With the fetch stream bypassed and SID 0 translating to the right
 cached page, the core still stalls. If T6021 has the T6001 fetch abort,
 the abort is not caused by a refused DART stream on SID 0 or SID 15.
+
+**PWGATE 3/0 words (17:41 CDT), read-only.** The islands were on
+(`ps_ane_cpu 0x1f0003ff`) and STATUS was `0x28`. A `pmgr`-window debug
+vehicle (`pr32`/`pw32` offsets from `0x28e080000`) read both derivations:
+`0xd2cc`/`0xd3cc` (PWGATE+0x12cc with PWGATE at `0x28e080000`) and
+`0x132cc`/`0x133cc` (with PWGATE at `0x28e080000+0x6000`). Both read
+`0x00000000`. Two more witnesses: `0x1359c` (the pre-RUN write) reads 0,
+and the RMW row `0x122dc` reads 0. No write was made, and the release was
+not repeated on this already-released boot. No watchdog. The static
+derivation needs fixing: `0x28e092cc` is `0x052cc` past the set window,
+not `0x12cc` past anything, and the `0x28e08c000` set window gives
+`+0x52cc`, which is outside its stated `0x4000` length.
