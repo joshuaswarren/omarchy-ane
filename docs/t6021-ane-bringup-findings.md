@@ -53,7 +53,8 @@ experiment. Update it when a finding changes, and delete lines that go stale.
 ## 4. Release sequence (proven on T6021 and T6001)
 
 1. Gate: all eight ANE pmgr islands read ACTUAL = `0xf` (bits [7:4]).
-2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in place.
+2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in
+   place. T6021 only; the T6001 runs were unmapped.
 3. Set bit 0 of the I2A control register (engine + `0x1408114`).
 4. Write CPU_CONTROL (engine + `0x1400044`) = 0, barrier, then `0x10`.
 5. RVBAR (engine + `0x1050000`) is latched (bit 0 set, `0x10000000001`).
@@ -72,6 +73,12 @@ After the release above, on **both** T6021 and T6001:
 The firmware runs but stalls before RTKit init. Because both chips stall the
 same way, the missing piece is shared and is not T6021-specific.
 
+On T6021 the firmware also stores nothing: the 0x430000 readable bytes of
+DATA are byte-identical before and after release. With both segments
+mapped `IOMMU_CACHE`, the leaf PTE for IOVA `0x10000000000` is
+`0x000fff1000084801` (valid, NO_CACHE clear, PA `0x10000848000`), and the
+stall is unchanged over 60 s.
+
 ## 6. Ruled out (do not re-run without new evidence)
 
 | Hypothesis | Evidence |
@@ -80,7 +87,9 @@ same way, the missing piece is shared and is not T6021-specific.
 | x1 = boot-args pointer for the 26/27 hv guest | x1 landed; cpu0 still spins at the same `cbz` |
 | Kernel DART reset erases iBoot's map | The DART is powered off at handoff; there is no iBoot map |
 | Unreserved TEXT tail | The fault IOVA is inside DATA; the gap holds an image-head copy |
-| Wrong DART instance or SID | All three ANE DARTs read clean after RUN |
+| Wrong DART instance on SID 0 | All three instances have TCR0 `0x9` and the same TTBR0; the PTE resolves. SIDs 1-15 were not tested as the fetch stream (see §12) |
+| Firmware pages mapped uncached | Leaf PTE bit 1 clear at the TEXT PA; stall unchanged |
+| SID-0 stream enable | dart-ane0 ENABLE already `0xffff`; stall unchanged over 60 s |
 | Missing pre-RUN writes from the 26/27 kext | Every write is present, lawfully skipped, or provider-owned |
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
@@ -94,7 +103,9 @@ same way, the missing piece is shared and is not T6021-specific.
 - The engine-window mirror of pmgr registers reads 0 while the pmgr window
   reads on. Trust the pmgr window. Never write through the engine mirror.
 - Raw pmgr ps writes can reset the laptop. Use the kernel power-domain path.
-- Never touch engine + `0x1010000` (CoreSight). Never use `/dev/mem`.
+- Never touch engine + `0x1010000` (CoreSight) except by the unlock order
+  in §11. On T6021 from Linux it reads zero (see §12). Never use
+  `/dev/mem`.
 - On T6001, reading CPU_CONTROL is hostile; writing it is safe.
 - A wedged M2 watchdog-resets in about 2 minutes. If it stays at the loader,
   reboot it over USB-C from the proxy host with the m1n1 proxy `p.reboot()`.
@@ -158,3 +169,28 @@ firmware did complete its EL3 to EL1 reset first (VBAR_EL1 reads back the
 image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
 receipts/2026-09-24-t6001-asc-debug.
+
+## 12. T6021 CoreSight and DART stream state (2026-09-24)
+
+The same debug block on T6021, read from Linux with the islands on and
+the core stalled (CPU_STATUS `0x28`), reads zero: EDPRSR (engine+0x1010314)
+`0x00000000` and EDDEVARCH (engine+0x1010fbc) `0x00000000`, against
+`0x2ab` and `0x09108a15` on T6001. No hang. The block is read-as-zero on
+this path, so the T6021 PC could not be read, and no unlock, halt, or DTR
+access was made.
+
+The ASC fetch stream is the open question. Read-only state of the three
+dart-ane instances after release, with the Linux domain attached:
+
+| instance | PARAMS_C | TCR0 | TTBR0 | TCR15 | TCR1-14 | ENABLE |
+|---|---|---|---|---|---|---|
+| `0x285800000` | `0x00010010` | `0x9` | `0x100124d1` | `0x2` (set by hand) | 0 | `0xffff` |
+| `0x285810000` | `0x00100010` | `0x9` | `0x100124d1` | 0 | 0 | `0xffff` |
+| `0x285820000` | `0x00100010` | `0x9` | `0x100124d1` | 0 | 0 | `0xffff` |
+
+ERROR (`+0x100`) has no FLAG on any instance. It carries SID-field bits
+only (`0x00a00000`, `0x00f00000`, `0x10700000`), and ERROR_ADDR holds
+residue. macOS writes TCR15 = `0x2` (bypass) on all three instances. Linux
+leaves SIDs 1-15 at TCR 0 on dart1 and dart2, which is neither translate nor
+bypass. A fetch on such a stream would be refused without a translation
+fault. That fits the T6001 external abort. It is untested.
