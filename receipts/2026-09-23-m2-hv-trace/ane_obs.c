@@ -259,14 +259,50 @@ static struct miscdevice ane_obs_dev = {
 	.fops = &ane_obs_fops,
 };
 
+/* Island ACTUAL gates: every ANE power word must read active before
+ * ANY engine-window access. The pmgr words live in the always-on pmgr
+ * block, so they are safe to read first; the engine window wedges the
+ * fabric when an island is down. */
+static const struct { u32 off; const char *name; } ane_islands[] = {
+	{ 0x2e0, "ane_cpu" }, { 0x4000, "ane_sys_mpm" },
+	{ 0x4008, "ane_td" }, { 0x4010, "ane_base" },
+	{ 0x4018, "ane_set1" }, { 0x4020, "ane_set2" },
+	{ 0x4028, "ane_set3" }, { 0x4030, "ane_set4" },
+};
+
+static bool ane_islands_up(void __iomem *pm, char *bad, size_t n)
+{
+	unsigned int i;
+
+	for (i = 0; i < 8; i++) {
+		u32 v = readl(pm + ane_islands[i].off);
+
+		if ((v & 0xf0u) != 0xf0u) {
+			snprintf(bad, n, "%s=%08x", ane_islands[i].name, v);
+			return false;
+		}
+	}
+	return true;
+}
+
 static int __init ane_obs_init(void)
 {
-	eng = ioremap_np(ANE_ENG_PHYS, ANE_ENG_LEN);
-	if (!eng)
-		return -ENOMEM;
+	char bad[48];
+
+	/* pmgr first, engine second: the engine window is only safe
+	 * once every island reads active. */
 	pmgr = ioremap_np(ANE_PMGR_PHYS, ANE_PMGR_LEN);
-	if (!pmgr) {
-		iounmap(eng);
+	if (!pmgr)
+		return -ENOMEM;
+	if (!ane_islands_up(pmgr, bad, sizeof(bad))) {
+		pr_emerg("ane_obs: REFUSED engine map, island down (%s)\n",
+			 bad);
+		iounmap(pmgr);
+		return -ENODEV;
+	}
+	eng = ioremap_np(ANE_ENG_PHYS, ANE_ENG_LEN);
+	if (!eng) {
+		iounmap(pmgr);
 		return -ENOMEM;
 	}
 	pr_emerg("ane_obs: mapped eng=%p pmgr=%p; ctl=%08x status=%08x ps=%08x\n",
