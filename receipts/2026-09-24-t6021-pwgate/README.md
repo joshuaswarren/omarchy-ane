@@ -59,3 +59,29 @@ Live (islands on, ps_ane_cpu 0x1f0003ff):
 
 The 3 is missing. A release has run this boot, so the write needs a
 fresh-boot, pre-release test.
+
+## First-release run with the PWGATE writes (17:58 boot, Main go)
+
+The boot was fresh: uptime 0 at 17:57, and no ANE module had been loaded.
+`sid15_prep.sh` (../2026-09-24-t6021-coresight-dart) read:
+
+    STATUS 0x2a  RVBAR 0x10000000001  I2A 0x00020001  SCRATCH7 0
+    TCR0 0x9, TTBR0 0x1000e0c9, ENABLE 0xffff on all three DARTs
+    TCR15 <- 0x2 on all three, read back 0x2
+    pr32 0xd2cc = 0, pr32 0xd3cc = 0, ps_ane_cpu 0x1f0003ff
+
+Then `insmod ane_t6021_rtclient.ko fw_cache_test=1 fw_pwgate=1`
+(sha256 53faf241..., source `ane_t6021_rtclient_main.c` here):
+
+    both segments mapped IOMMU_CACHE, iova_to_phys ok
+    pte[0]=000fff1000084801 valid=1 nocache=0
+    PWGATE set+0x12cc=00000000 set+0x13cc=00000000   <- after writing 3 / 0
+    pre-release status=0000002a
+    t=0..50  scratch7=0 i2a=00020001 recv0=0 status=0x28
+             err=00a00000/00f00000/10700000
+    PWGATE restored 00000000/00000000
+
+No apple-dart fault or SError appeared. The write of 3 did not latch, so
+the kext's state was never set up, and the firmware still stalled. Full
+dmesg: `dmesg-first-release.txt`. Access log: `ascdbg.log`. The module
+source here also contains the earlier IOMMU_CACHE runs.
