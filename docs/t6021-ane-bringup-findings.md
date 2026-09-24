@@ -132,11 +132,13 @@ stall is unchanged over 60 s.
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
-2. OPEN, strongest remaining pre-RUN candidate: the kext writes
-   set+0x12cc <- 3 and set+0x13cc <- 0 before ANE_Init. Linux never makes
-   those writes. The base is bound (§12): phys `0x28e08d2cc` / `0x28e08d3cc`
-   read `0` / `0`, so the `3` is missing. Test it on a fresh boot, before
-   the first release, with readback.
+2. OPEN: the kext writes set+0x12cc <- 3 and set+0x13cc <- 0 before
+   ANE_Init (phys `0x28e08d2cc` / `0x28e08d3cc`). On a fresh boot, before
+   the first release, Linux wrote 3 and 0, but **the 3 did not latch**:
+   `0x28e08d2cc` read `0` right after the write. The release still
+   stalled (§12). Before another hardware run, the static side must
+   settle what `validatePWGATEReg(3,3)` reads back and whether the kext's
+   index-2 map reaches this physical word.
 3. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 4. Whichever answer comes first gets tested on T6001 as well, because the
@@ -239,3 +241,18 @@ released this boot (STATUS `0x28`), so the write must be tested on a
 fresh boot before the first release. Risk: this is the ane nub's SET
 window. A Linux write of `0x28e08c000 = 0x80000000` was applied and read
 back without harm earlier today.
+
+**PWGATE first-release run (17:58 CDT boot).** This was a fresh boot:
+CPU_STATUS `0x2a`, and genpd had the islands on. TCR15 = `0x2` was written
+on all three DARTs and read back. `0x28e08d2cc`/`0x28e08d3cc` read `0/0`.
+The test module (`fw_cache_test=1 fw_pwgate=1`, sha256 `53faf241...`)
+mapped both segments `IOMMU_CACHE`, giving leaf PTE `0x000fff1000084801`.
+It then wrote set+0x12cc = 3 and set+0x13cc = 0 and read them back:
+`0x00000000` / `0x00000000`. **The 3 did not latch.** Next it set I2A bit 0
+(STATUS `0x2a` before the release) and wrote CPU_CONTROL 0 then `0x10`.
+For 60 s, SCRATCH7 stayed 0 and I2A stayed `0x00020001`. recv0 was 0,
+STATUS was `0x28`, and the ERROR words were unchanged
+(`0x00a00000/0x00f00000/0x10700000`). No apple-dart fault or SError was
+logged. Both words were restored to 0 and read `0/0`. This does not test
+the kext's state: the register did not take the value. The word either
+ignores writes from this mapping or is not the register the kext writes.
