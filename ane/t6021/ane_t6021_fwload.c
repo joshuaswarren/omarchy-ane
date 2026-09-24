@@ -91,6 +91,13 @@ MODULE_PARM_DESC(fw_diag_marker,
  * 0 = off (default; sha-pinned byte-exact copy). */
 static u64 fw_load_stamp_base;
 module_param(fw_load_stamp_base, ullong, 0444);
+/* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
+ * the entry IOVAs (same bytes as the staged copy, preloaded placement).
+ * 0 = off (default staged-DMA alias); 1 = reserved-phys alias. */
+static bool fw_alias_reserved;
+module_param(fw_alias_reserved, bool, 0444);
+MODULE_PARM_DESC(fw_alias_reserved,
+		 "map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it, instead of the staged DMA copy");
 MODULE_PARM_DESC(fw_load_stamp_base,
 		 "fw-start-debug: stamp the RAM copy's x22 (vm 0x423C) to this PA base (e.g. 0x10000000000); 0 = off");
 
@@ -153,6 +160,48 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	}
 	if (dev_is_dma_coherent(ane->dev))
 		prot |= IOMMU_CACHE;
+
+	if (fw_alias_reserved) {
+		/* Preloaded placement: the two reserved windows mapped at
+		 * the entry IOVAs. SEG0 0xc4000 covers TEXT 0xe8000 only
+		 * partially by ADT size, but the reserve is what m1n1
+		 * guarantees; the firmware fetch that matters is the
+		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully. */
+		static const struct { u64 iova, phys, len; } win[] = {
+			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
+			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
+		};
+		unsigned int w;
+
+		for (w = 0; w < 2; w++) {
+			u64 o;
+
+			for (o = 0; o < win[w].len; o += ANE_T6021_FW_ALIAS_PAGE) {
+				if (iommu_iova_to_phys(dom, win[w].iova + o)) {
+					dev_err(ane->dev,
+						"fwalias: reserved entry +%#llx mapped — refusing\n",
+						win[w].iova + o - entry);
+					ret = -EEXIST;
+					goto err_unmap;
+				}
+				ret = iommu_map(dom, win[w].iova + o,
+						win[w].phys + o,
+						ANE_T6021_FW_ALIAS_PAGE, prot,
+						GFP_KERNEL);
+				if (ret) {
+					dev_err(ane->dev,
+						"fwalias: reserved map +%#llx: %d\n",
+						win[w].iova + o - entry, ret);
+					goto err_unmap;
+				}
+			}
+		}
+		ane->fw_alias_iova = entry;
+		dev_info(ane->dev,
+			 "fwalias: reserved SEG0/SEGi at entry %#llx (preloaded placement)\n",
+			 entry);
+		return 0;
+	}
 
 	for (off = 0; off < ane->fw_size; off += ANE_T6021_FW_ALIAS_PAGE) {
 		phys_addr_t pa = iommu_iova_to_phys(dom, ane->fw_iova + off);
