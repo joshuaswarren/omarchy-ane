@@ -60,9 +60,41 @@ static ssize_t ane_obs_read(struct file *f, char __user *ubuf, size_t n,
 	return n;
 }
 
+static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
+			     size_t n, loff_t *off)
+{
+	char cmd[16];
+	size_t k = n < sizeof(cmd) - 1 ? n : sizeof(cmd) - 1;
+	u32 v;
+
+	if (copy_from_user(cmd, ubuf, k))
+		return -EFAULT;
+	cmd[k] = 0;
+	if (strncmp(cmd, "run", 3) == 0) {
+		v = readl(eng + O_OUT114);
+		writel(v | 0x1u, eng + O_OUT114);
+		pr_emerg("ane_obs: outbox 114 %08x -> %08x\n", v,
+			 readl(eng + O_OUT114));
+		writel(0x0u, eng + O_CPU_CTL);
+		writel(0x10u, eng + O_CPU_CTL);
+		pr_emerg("ane_obs: RUN ctl=%08x status=%08x\n",
+			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
+		return n;
+	}
+	if (strncmp(cmd, "stop", 4) == 0) {
+		v = readl(eng + O_CPU_CTL);
+		writel(v & ~0x10u, eng + O_CPU_CTL);
+		pr_emerg("ane_obs: STOP ctl=%08x status=%08x\n",
+			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
+		return n;
+	}
+	return -EINVAL;
+}
+
 static const struct file_operations ane_obs_fops = {
 	.owner = THIS_MODULE,
 	.read = ane_obs_read,
+	.write = ane_obs_write,
 };
 
 static struct miscdevice ane_obs_dev = {
