@@ -178,18 +178,20 @@ module_param(fw_start_table_mode, int, 0444);
 MODULE_PARM_DESC(fw_start_table_mode,
 		 "pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)");
 
-static bool fw_start_venc_gates;
+static bool fw_start_venc_gates = true;
 module_param(fw_start_venc_gates, bool, 0444);
 MODULE_PARM_DESC(fw_start_venc_gates,
-		 "fw-start-debug: raise the four ADT ane0 clock-ids (318-321 = VENC_PIPE4/5, VENC_ME0/1) ps gates at 0x290288008/10/18/20 before the boot sequence. M2Research decode: pmgr ps-regs[15] = reg-window2+0x8000, index*8; plain ps TARGET RMW (raise, never 0), poll ACTUAL. The ANE complex sits behind VENC rails on T6021; Linux claims none of them.");
+		 "Raise the VENC rails the ANE clock-ids need (VENC_SYS 0x2902803e0, then PIPE4/PIPE5/ME0 at 0x290288008/10/18), kext order, parents first. The ANE complex sits behind VENC rails on T6021; Linux claims none of them. Disable only to bisect.");
 
 /*
- * Raise the VENC-side pmgr ps gates the ADT wires as ane0 clock-ids.
- * Plain pmgr ps-word raise (TARGET |= 0xf | AUTO_ENABLE, poll ACTUAL
- * [7:4] == 0xf, 100us poll / 10ms bound) — the same op class genpd
- * performs for every DT device; never a TARGET=0 write, so outside
- * the s24 ps-cycle fatal class. Runs BEFORE any engine write (kext
- * order: provider clock/power first). Read-logged before/after.
+ * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
+ * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
+ * validatePSReg semantics: write 0xf, wait until (val & 0xff) == 0xff
+ * (TARGET nibble 0xf AND ACTUAL nibble 0xf). NOTE: no BIT(28)/BIT(31)
+ * munging — the earlier code added AUTO_ENABLE and cleared bit 31,
+ * which the kext never does, and which can put 0xf0003ff-class values
+ * on words whose AUTO-enable semantics are unowned here. Never a
+ * TARGET=0 write.
  */
 static int ane_rtclient_venc_gates(struct device *dev)
 {
@@ -225,12 +227,11 @@ static int ane_rtclient_venc_gates(struct device *dev)
 
 		dev_emerg(dev, "VENC-ROOT VENC_SYS @+3e0 before=%08x\n",
 			  before);
-		if ((before & 0xf0) != 0xf0) {
-			writel((before | 0xf | BIT(28)) & ~(u32)BIT(31),
-			       root + 0x3e0);
+		if ((before & 0xff) != 0xff) {
+			writel(before | 0xf, root + 0x3e0);
 			ret = readl_poll_timeout(root + 0x3e0, after,
-						 ((after & 0xf0) == 0xf0),
-						 100, 10 * 1000);
+						 ((after & 0xff) == 0xff),
+						 10, 50 * 1000);
 			after = readl(root + 0x3e0);
 			dev_emerg(dev,
 				  "VENC-ROOT after=%08x ret=%pe\n",
@@ -259,24 +260,23 @@ static int ane_rtclient_venc_gates(struct device *dev)
 		dev_emerg(dev, "VENC-SCAN +%03x = %08x\n", i * 8,
 			  readl(base + i * 8));
 
-	/* Raise bottom-up: only the five REAL ps words (B5b scan: +000
-	 * .. +020 carry the 0x300 idle signature; +028..+038 read 0 and
-	 * are not ps words — raising them would time out and refuse the
-	 * sequence spuriously, as B6 showed). Never a TARGET=0 write. */
-	for (i = 0; i < 5; i++) {
+	/* Only the REAL ps words the kext touches: VENC_DMA at +000 must
+	 * already read 0x3ff (VENC_SYS granted it), and the three leaves
+	 * PIPE4/PIPE5/ME0 at +008/+010/+018. Never a TARGET=0 write. */
+	for (i = 1; i <= 3; i++) {
 		void __iomem *reg = base + i * 8;
 		u32 before = readl(reg);
 		u32 after;
 		int ret;
 
-		if ((before & 0xf0) == 0xf0)
+		if ((before & 0xff) == 0xff)
 			continue;
 		dev_emerg(dev, "VENC-GATES +%03x before=%08x\n", i * 8,
 			  before);
-		writel((before | 0xf | BIT(28)) & ~(u32)BIT(31), reg);
+		writel(before | 0xf, reg);
 		ret = readl_poll_timeout(reg, after,
-					 ((after & 0xf0) == 0xf0),
-					 100, 10 * 1000);
+					 ((after & 0xff) == 0xff),
+					 10, 50 * 1000);
 		after = readl(reg);
 		dev_emerg(dev, "VENC-GATES +%03x after=%08x ret=%pe\n",
 			  i * 8, after, ERR_PTR(ret));
@@ -284,12 +284,12 @@ static int ane_rtclient_venc_gates(struct device *dev)
 			ret_all = ret;
 	}
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 3; i++) {
 		u32 v = readl(base + gates[i].off);
 
 		dev_emerg(dev, "VENC-GATES %u %s final=%08x\n",
 			  gates[i].id, gates[i].name, v);
-		if ((v & 0xf0) != 0xf0)
+		if ((v & 0xff) != 0xff)
 			ret_all = -ETIMEDOUT;
 	}
 
