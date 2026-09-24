@@ -120,6 +120,31 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
 		return n;
 	}
+	if (strncmp(cmd, "wakepwr", 7) == 0) {
+		/* RTKit mgmt SET_IOP_PWR_STATE=6 ON=0x20 on EP0 A2I, then
+		 * drain I2A while non-empty, logging every popped word
+		 * with its type field. No RUN, no reset. */
+		u64 msg = ((u64)6 << 52) | 0x20u;
+		u32 c;
+		int nwords = 0;
+
+		writeq(msg, eng + 0x1408800);
+		writeq(0, eng + 0x1408808);
+		pr_emerg("ane_obs: WAKE sent type=6 state=0x20\n");
+		c = readl(eng + O_OUT114);
+		while (!(c & (1u << 17)) && nwords < 16) {
+			u64 w0 = readq(eng + 0x1408830);
+			u64 w1 = readq(eng + 0x1408838);
+			pr_emerg("ane_obs: WAKE pop%d w0=%016llx w1=%016llx type=%llu\n",
+				 nwords, w0, w1,
+				 (w0 >> 52) & 0xffu);
+			nwords++;
+			c = readl(eng + O_OUT114);
+		}
+		pr_emerg("ane_obs: WAKE drained %d words, out114=%08x\n",
+			 nwords, readl(eng + O_OUT114));
+		return n;
+	}
 	if (strncmp(cmd, "clrerr", 6) == 0) {
 		/* W1C the T8110 DART inst0 error + stream latches so the
 		 * next RUN's fault (if any) is unambiguous. */
