@@ -85,3 +85,24 @@ No apple-dart fault or SError appeared. The write of 3 did not latch, so
 the kext's state was never set up, and the firmware still stalled. Full
 dmesg: `dmesg-first-release.txt`. Access log: `ascdbg.log`. The module
 source here also contains the earlier IOMMU_CACHE runs.
+
+## Ordered run: PS raise, then PWGATE (18:08 boot, Main go, unreleased)
+
+The boot was fresh: uptime 0 at 18:08, no ANE module, genpd ane_cpu on.
+The fallback ESP boot.bin was 43ec6090. Script: `pwgate_prep.sh`.
+
+    pre   STATUS 0x2a, ps_ane_cpu 0x1f0003ff
+          0x28e088000 = 0x0f   0x28e088008/10/18 = 0x2f   0x28e088020 = 0
+          0x28e08d2cc = 0      0x28e08d3cc = 0
+    TCR15 <- 0x2 on all three DARTs, read back 0x2
+    PS    0x8008/0x8010/0x8018 <- 0xf, each read 50 times: stay 0x2f
+          (ACTUAL never 0xf)
+    PWGATE set+0x12cc <- 3, polled 50 times for (v&3)==3: 0
+           set+0x13cc <- 0: 0
+    NOT-LATCHED -> set+0x12cc <- 0, no release
+    post  STATUS 0x2a (core still unrun), box alive
+
+The Linux pmgr node covers only 0x28e080000 + 0x8000, so no genpd domain
+owns the 0x28e088xxx words. The macOS hv traces (trace-135,
+trace-atcrt) show the OS itself writing 0x2f/0x20/0xf/0 to
+0x28e088004..0x28e088018 during boot. Access log: `ascdbg.log`.

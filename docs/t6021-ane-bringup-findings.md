@@ -132,13 +132,15 @@ stall is unchanged over 60 s.
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
-2. OPEN: the kext writes set+0x12cc <- 3 and set+0x13cc <- 0 before
-   ANE_Init (phys `0x28e08d2cc` / `0x28e08d3cc`). On a fresh boot, before
-   the first release, Linux wrote 3 and 0, but **the 3 did not latch**:
-   `0x28e08d2cc` read `0` right after the write. The release still
-   stalled (§12). Before another hardware run, the static side must
-   settle what `validatePWGATEReg(3,3)` reads back and whether the kext's
-   index-2 map reaches this physical word.
+2. OPEN: the kext's pre-ANE_Init power sequence is PS words
+   `0x28e088008/10/18 <- 0xf` (validated ACTUAL), then set+0x12cc <- 3
+   and set+0x13cc <- 0 (phys `0x28e08d2cc` / `0x28e08d3cc`, base bound to
+   the ane nub's index 2). From Linux, none of it takes. The PS words stay
+   `0x2f` (DESIRED f, ACTUAL 2) and lie outside the Linux pmgr reg
+   (`0x28e080000`+`0x8000`), so genpd never owns them. The 3 reads back 0
+   even after the PS writes (§12). Next, on the static side: what ACTUAL
+   value validatePSReg accepts for this block, which ADT pmgr devices sit
+   at `0x28e088008/10/18`, and what powers their parent.
 3. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 4. Whichever answer comes first gets tested on T6001 as well, because the
@@ -256,3 +258,18 @@ STATUS was `0x28`, and the ERROR words were unchanged
 logged. Both words were restored to 0 and read `0/0`. This does not test
 the kext's state: the register did not take the value. The word either
 ignores writes from this mapping or is not the register the kext writes.
+
+**Ordered run (18:08 CDT boot, unreleased).** The boot was fresh: STATUS
+`0x2a`, and the fallback ESP image was `43ec6090`. The PS words read
+`0x28e088000 = 0xf` and `0x28e088008/10/18 = 0x2f`, all three the same.
+`0x28e088020` read 0. TCR15 = `0x2` was set on all three DARTs and read
+back. The kext's PS raise came next: `0xf` was written to each of
+`0x8008/0x8010/0x8018`, followed by 50 reads each. All stayed `0x2f`, and
+ACTUAL never reached `0xf`. Then the PWGATE writes: set+0x12cc = 3 with 50
+polls for `(v & 3) == 3`, and set+0x13cc = 0. Both read `0`. **Nothing
+latched.** Following Main's condition, no release was made: the core is
+still unrun (STATUS `0x2a`), and the box stayed up. The macOS hv traces
+show the OS itself writing `0x2f`, `0x20`, `0xf`, and `0` to
+`0x28e088004..0x28e088018` during boot. So `0x2f` may be an ordinary state
+for this block rather than a stuck one, and the "ACTUAL 2" reading of
+bits 7:4 may not apply here.
