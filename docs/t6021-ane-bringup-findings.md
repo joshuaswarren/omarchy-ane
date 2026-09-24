@@ -87,8 +87,8 @@ stall is unchanged over 60 s.
 | x1 = boot-args pointer for the 26/27 hv guest | x1 landed; cpu0 still spins at the same `cbz` |
 | Kernel DART reset erases iBoot's map | The DART is powered off at handoff; there is no iBoot map |
 | Unreserved TEXT tail | The fault IOVA is inside DATA; the gap holds an image-head copy |
-| Wrong DART instance on SID 0 | All three instances have TCR0 `0x9` and the same TTBR0; the PTE resolves. SIDs 1-15 were not tested as the fetch stream (see §12) |
-| Firmware pages mapped uncached | Leaf PTE bit 1 clear at the TEXT PA; stall unchanged |
+| Wrong DART instance on SID 0 | All three instances have TCR0 `0x9` and the same TTBR0; the PTE resolves |
+| Uncached firmware pages, or SID 15 not bypassed (fetch stream refused) | First release after a reboot with the TEXT/DATA map `IOMMU_CACHE` (leaf PTE bit 1 clear) and TCR15 `0x2` on all three instances: stall unchanged over 60 s (§12) |
 | SID-0 stream enable | dart-ane0 ENABLE already `0xffff`; stall unchanged over 60 s |
 | Missing pre-RUN writes from the 26/27 kext | Every write is present, lawfully skipped, or provider-owned |
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
@@ -151,9 +151,8 @@ stall is unchanged over 60 s.
   or the trace ends at device bring-up forever.
 - One release per boot. CPU_CONTROL = 0 does not stop a released T6021
   core, and the vector handler is `b .`, so every setup change must be in
-  place before the first release after a reboot. Of the 2026-09-24 DART
-  tests, only the IOMMU_CACHE run was a first release (dart0 TCR15 `0x2`,
-  dart1/2 TCR15 0); the SID-0 and SID-15 runs were not.
+  place before the first release after a reboot. CPU_STATUS `0x2a` before
+  the release proves a core that has not run yet.
 
 ## 11. T6001 core state, read via CoreSight (2026-09-24)
 
@@ -194,19 +193,27 @@ dart-ane instances after release, with the Linux domain attached:
 | `0x285820000` | `0x00100010` | `0x9` | `0x100124d1` | 0 | 0 | `0xffff` |
 
 ERROR (`+0x100`) has no FLAG on any instance. It carries SID-field bits
-only (`0x00a00000`, `0x00f00000`, `0x10700000`), and ERROR_ADDR holds
+only: `0x00a00000`, `0x00f00000`, `0x10700000`. A fresh boot reads the same
+values before any release, so they are reset residue. ERROR_ADDR also holds
 residue. macOS writes TCR15 = `0x2` (bypass) on all three instances. Linux
-leaves SIDs 1-15 at TCR 0 on dart1 and dart2, which is neither translate nor
-bypass. A fetch on such a stream would be refused without a translation
-fault. That fits the T6001 external abort.
+leaves SIDs 1-15 at TCR 0.
 
-SID-15 run: TCR15 = `0x2` was set on dart1 and dart2 and read back (dart0
-already had it), followed by CPU_CONTROL 0 then `0x10` and a 60 s poll.
-SCRATCH7 stayed 0 and I2A stayed `0x00020001`. CPU_STATUS stayed `0x28`,
-and the three ERROR words did not change. The run is **inconclusive**:
-the core had already been released and faulted earlier that boot, and
-CPU_CONTROL = 0 does not stop it (STATUS stayed `0x28` for 100 ms after
-the write). The T6021 image has `b .` at TEXT+0x200 (the sync vector),
-the same as T6001, so a faulted core stays parked even if the fetch path
-is later fixed. The valid test is TCR15 = `0x2` on all three instances,
-set after a reboot and before the first release.
+CPU_CONTROL = 0 does not stop a released core. STATUS stayed `0x28` for
+100 ms after the write. The T6021 image has `b .` at TEXT+0x200, the same
+as T6001, so a parked core cannot show a later fix. Only the first release
+after a reboot is a valid test.
+
+**First-release test (17:30 CDT).** This run was a fresh boot with the
+islands already on in genpd and CPU_STATUS `0x2a` (not yet run).
+TCR15 = `0x2` was written on all three instances and read back. Both
+segments were mapped `IOMMU_CACHE`: leaf PTE `0x000fff1000084801`, PA
+`0x10000848000`. I2A bit 0 was set, then CPU_CONTROL 0 then `0x10`.
+STATUS went `0x2a -> 0x28`. For 60 s, SCRATCH0-7 stayed 0, I2A stayed
+`0x00020001`, the ERROR words did not move, and no apple-dart fault was
+logged. **Negative.** It supersedes the IOMMU_CACHE first release earlier
+that day (dart0 TCR15 only) and the SID-0 and SID-15 runs on an already
+released core, which tested nothing.
+
+With the fetch stream bypassed and SID 0 translating to the right
+cached page, the core still stalls. If T6021 has the T6001 fetch abort,
+the abort is not caused by a refused DART stream on SID 0 or SID 15.
