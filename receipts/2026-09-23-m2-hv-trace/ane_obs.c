@@ -135,6 +135,22 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
 		return n;
 	}
+	if (strncmp(cmd, "islw", 4) == 0) {
+		/* Static-diff item 1: engine+0x2e0 <- 0xf with readback,
+		 * then validated gate enables 0xc000/0xc008/0x3c8 <- 0xf
+		 * with readback. Bounded, logged, engine window only. */
+		static const u32 offs[] = { 0x2e0, 0xc000, 0xc008, 0x3c8 };
+		unsigned int i;
+
+		for (i = 0; i < 4; i++) {
+			u32 before = readl(eng + offs[i]);
+
+			writel(0xfu, eng + offs[i]);
+			pr_emerg("ane_obs: ISLW +%x %08x -> %08x\n", offs[i],
+				 before, readl(eng + offs[i]));
+		}
+		return n;
+	}
 	if (strncmp(cmd, "wakepwr", 7) == 0) {
 		/* RTKit mgmt SET_IOP_PWR_STATE=6 ON=0x20 on EP0 A2I, then
 		 * drain I2A while non-empty, logging every popped word
@@ -182,6 +198,33 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 			c = readl(eng + O_OUT114);
 		}
 		pr_emerg("ane_obs: DRAIN %d words out114=%08x\n", k, c);
+		return n;
+	}
+	if (strncmp(cmd, "pwgrd", 5) == 0) {
+		/* Read-only: PWGATE 0x28e092000+0x159c, validate mask 3. */
+		static void __iomem *pwg;
+
+		if (!pwg) {
+			pwg = ioremap_np(0x28e092000ull, 0x2000);
+			if (!pwg)
+				return -ENOMEM;
+		}
+		pr_emerg("ane_obs: PWGRD %08x (mask3=%u)\n",
+			 readl(pwg + 0x159c), readl(pwg + 0x159c) & 3u);
+		return n;
+	}
+	if (strncmp(cmd, "pwgw0", 5) == 0) {
+		/* Bounded: PWGATE+0x159c <- 0 once, with readback. */
+		static void __iomem *pwg;
+
+		if (!pwg) {
+			pwg = ioremap_np(0x28e092000ull, 0x2000);
+			if (!pwg)
+				return -ENOMEM;
+		}
+		writel(0u, pwg + 0x159c);
+		pr_emerg("ane_obs: PWGZERO %08x (mask3=%u)\n",
+			 readl(pwg + 0x159c), readl(pwg + 0x159c) & 3u);
 		return n;
 	}
 	if (strncmp(cmd, "clrerr", 6) == 0) {
