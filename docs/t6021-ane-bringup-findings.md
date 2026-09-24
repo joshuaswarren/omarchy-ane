@@ -138,3 +138,18 @@ same way, the missing piece is shared and is not T6021-specific.
 - A hypervisor trace of a kernel driver only captures what the kernel does.
   A lazily started coprocessor needs its userspace trigger inside the guest,
   or the trace ends at device bring-up forever.
+
+## 11. T6001 core state, read via CoreSight (2026-09-24)
+
+On T6001 the stalled core was halted through the Apple DBGWRAP register
+(engine+0x1040000) and read through the external debug block
+(engine+0x1010000). That block is readable on T6001 once the OS lock is
+cleared; reading DBGDTRRX (engine+0x1010080) while the lock is set resets
+the machine. PC = VBAR_EL1+0x200 = 0x10000a54200, and that vector slot is
+`b .`. The firmware completed its EL3 to EL1 reset (VBAR_EL1 reads back
+the image base its prologue writes at 0x10000a54234) and then took a
+synchronous exception and parked in that handler. ESR_EL1 = 0x02000000
+(EC 0x00, Unknown reason), FAR_EL1 = the handler address, and
+SCTLR_EL1.M = 0, so it is not a translation fault. The ISP-style warm
+reset (EDPRCR = 2) does not change the stall. Detail:
+receipts/2026-09-24-t6001-asc-debug.
