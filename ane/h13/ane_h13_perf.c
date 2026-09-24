@@ -54,6 +54,7 @@
 /* ---- engine aperture registers (m1n1 ane.py / t6021 rtclient) ---- */
 
 #define ANE_H13_CPU_STATUS		0x1400048
+#define ASC_CPU_STOPPED			BIT(1)	/* 0x2a idle / 0x28 after RUN */
 #define ANE_H13_CPU_STATUS_RUNNING	BIT(0)
 
 static char *pdev_name;
@@ -85,6 +86,23 @@ static bool perf_mode;
 module_param(perf_mode, bool, 0444);
 MODULE_PARM_DESC(perf_mode,
 		 "After a completed handshake, send CSNE_CMD_CH_PROPERTY_WRITE(prop 0x10aa, value 1) - the FW perf-mode enable macOS sends at power-on");
+
+static bool boot;
+module_param(boot, bool, 0444);
+MODULE_PARM_DESC(boot,
+		 "Start the ANE ASC CPU from its iBoot-staged image (CPU_CONTROL RUN; Main-authorized on jw16). Without it the module refuses when CPU_STATUS shows stopped");
+
+static bool probe_only;
+module_param(probe_only, bool, 0444);
+MODULE_PARM_DESC(probe_only,
+		 "Read-only reconnaissance: dump CPU_STATUS, RVBAR, mailbox controls, then exit without any write");
+
+/* ---- ASC CPU boot (measured M2 sequence, M2FwStart-2 receipts) ---- */
+
+#define ANE_H13_CPU_CONTROL	0x1400044
+#define ASC_CPU_RUN		0x10	/* write 0 then 0x10 */
+#define ASC_I2A_OUTBOX_ENABLE	BIT(0)	/* I2A control bit 0; armed rb 0x20001 */
+#define ASC_CPU_RUN_RELEASE	0x10	/* CPU_CONTROL: write32 0 then 0x10 */
 
 /* ---- ASC mailbox (soc/apple/mailbox.c ASC variant) ---- */
 
@@ -450,16 +468,69 @@ static int __init ane_h13_perf_init(void)
 	pr_info("ane_h13_perf: aperture mapped ok (reading CPU_STATUS at ap+%#x)\n",
 		ANE_H13_CPU_STATUS);
 
+	if (probe_only) {
+		u32 i2a = readl_relaxed(g->engine + mb_off + ASC_I2A_CONTROL);
+		u32 a2i = readl_relaxed(g->engine + mb_off + ASC_A2I_CONTROL);
+
+		pr_info("ane_h13_perf: PROBE-ONLY mailbox ap+%#lx: a2i=%08x i2a=%08x\n",
+			mb_off, a2i, i2a);
+		pr_info("ane_h13_perf: PROBE-ONLY CPU_STATUS=%08x CPU_CONTROL=%08x RVBAR=%016llx\n",
+			readl_relaxed(g->engine + ANE_H13_CPU_STATUS),
+			readl_relaxed(g->engine + ANE_H13_CPU_CONTROL),
+			readq_relaxed(g->engine + 0x1050000));
+		pr_info("ane_h13_perf: PROBE-ONLY TM_STATUS=%08x TM_TQ_EN=%08x\n",
+			readl_relaxed(g->engine + 0x20054),
+			readl_relaxed(g->engine + 0x2000c));
+		ane_h13_perf_cleanup();
+		return -EALREADY;
+	}
+
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
 	pr_info("ane_h13_perf: CPU_STATUS raw read done = 0x%x\n", cpu_status);
-	dev_info(&g->pdev->dev, "CPU_STATUS @aperture+0x%x = 0x%x (running=%d)\n",
-		 ANE_H13_CPU_STATUS, cpu_status,
-		 !!(cpu_status & ANE_H13_CPU_STATUS_RUNNING));
-	if (!(cpu_status & ANE_H13_CPU_STATUS_RUNNING)) {
-		dev_err(&g->pdev->dev, "ANE firmware not alive; refusing\n");
-		ret = -ENODEV;
-		goto err;
+	if (cpu_status & ASC_CPU_STOPPED) {
+		u32 i2a;
+		u64 rvbar;
+		int ret2;
+
+		if (!boot) {
+			dev_err(&g->pdev->dev, "ANE ASC stopped (CPU_STATUS 0x%x); reload with boot=1 to run the iBoot-staged firmware\n",
+				cpu_status);
+			ret = -ENODEV;
+			goto err;
+		}
+
+		/* Measured M2 sequence (M2FwStart-2 receipts): outbox
+		 * enable bit0 in the mailbox I2A control, then
+		 * CPU_CONTROL write32 0 -> 0x10. RVBAR is never written
+		 * when bit0 is latched (iBoot staged the image). */
+		rvbar = readq_relaxed(g->engine + 0x1050000);
+		dev_info(&g->pdev->dev, "boot: RVBAR = %016llx (bit0 latched=%d, never written)\n",
+			 rvbar, (int)(rvbar & 1));
+
+		i2a = readl_relaxed(g->mb + ASC_I2A_CONTROL);
+		writel_relaxed(i2a | ASC_I2A_OUTBOX_ENABLE,
+			       g->mb + ASC_I2A_CONTROL);
+		dev_info(&g->pdev->dev, "boot: I2A control %08x -> %08x (armed ~0x20001 expected)\n",
+			 i2a, readl_relaxed(g->mb + ASC_I2A_CONTROL));
+
+		writel_relaxed(0, g->engine + ANE_H13_CPU_CONTROL);
+		wmb();
+		writel_relaxed(ASC_CPU_RUN_RELEASE,
+			       g->engine + ANE_H13_CPU_CONTROL);
+
+		ret2 = readl_poll_timeout_atomic(
+			g->engine + ANE_H13_CPU_STATUS, cpu_status,
+			!(cpu_status & ASC_CPU_STOPPED), 1000, 3000000);
+		dev_info(&g->pdev->dev, "boot: CPU_STATUS now 0x%x (rc=%pe)\n",
+			 cpu_status, ERR_PTR(ret2));
+		if (ret2 || (cpu_status & ASC_CPU_STOPPED)) {
+			ret = ret2 ?: -ENODEV;
+			goto err;
+		}
 	}
+	if (!(cpu_status & ASC_CPU_STOPPED))
+		dev_info(&g->pdev->dev, "ANE ASC running (CPU_STATUS 0x%x)\n",
+			 cpu_status);
 
 	g->mb = g->engine + mb_off;
 	dev_info(&g->pdev->dev, "ASC mailbox @aperture+0x%lx: a2i=%08x i2a=%08x\n",
