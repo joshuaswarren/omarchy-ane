@@ -43,37 +43,44 @@ Read immediately after the halt:
 
 | register | value |
 |---|---|
-| PC (DLR_EL0) | 0x10000a54200, stable over four samples |
+| PC (DLR_EL0) | 0x10000a54200 |
 | VBAR_EL1 | 0x10000a54000 |
-| ESR_EL1 | 0x02000000 |
+| ESR_EL1 | 0x86000010 |
 | FAR_EL1 | 0x10000a54200 |
-| ELR_EL1 | 0x10000a54204 |
-| SPSR_EL1 / DSPSR_EL0 | 0x3c5 |
+| ELR_EL1 | 0x10000a54200 |
+| SPSR_EL1 | 0x3c5 |
 | SCTLR_EL1 | 0x30d50980 |
-| TCR_EL1 | 0x340008000 |
-| TTBR0_EL1 / TTBR1_EL1 | 0 |
+| ACTLR_EL1 | 0 |
+| x28, x29, x30 | 0 |
 
-A later ELR read, after debug-state loads that faulted, returned
-0x10000a54208. The value above is the one taken at the halt.
+These are from a clean capture: release, unlock, halt, then read, with no
+instruction stuffing before the syndrome reads. An earlier session read
+ESR_EL1 as 0x02000000, but that was after debug-state loads and trapped
+MRS instructions had run, and those change ESR. The clean value is
+0x86000010. SCR_EL3 and CurrentEL both trapped (their MRS set the error
+flag), so the core is not at EL3.
 
 ## Decode
 
-PC = VBAR_EL1 + 0x200, the current-EL synchronous exception vector. The
-word at that address (physical read) is 0x14000000, which is `b .`, an
-infinite loop. The firmware took a synchronous exception and is parked
-in its own handler. This is the loop the static analysis predicted, now
-seen on the core.
+ESR_EL1 = 0x86000010 is EC 0x21, an Instruction Abort taken from the
+current Exception level, with the IL bit set. The instruction fault
+status code in the low bits is 0x10: a synchronous external abort, not
+on a translation table walk. FAR_EL1 and ELR_EL1 are both 0x10000a54200,
+which is VBAR_EL1 + 0x200, the current-EL synchronous exception vector.
 
-ESR_EL1 = 0x02000000 is EC 0x00 (Unknown reason), IL set, ISS 0. The
-hardware did not classify the fault. FAR_EL1 equals the handler address.
-SCTLR_EL1 bit 0 is clear, so the MMU is off and this is not a translation
-fault. SPSR_EL1 = 0x3c5 is EL1h, DAIF masked, AArch64.
+The word at that address is 0x14000000, `b .`. The core's instruction
+fetch of it takes a synchronous external abort, so the handler never
+executes (x28, x29 and x30 stay zero) and the core faults on that fetch
+again on every entry. SCTLR_EL1 bit 0 is clear, so the MMU is off and
+this is not a translation fault. The CPU can read the same word through
+the kernel mapping, so the abort is specific to the core's own fetch.
 
-The firmware image is at physical 0x10000a54000: its first word is
-0x14000081 (`b +0x204`), matching the preloaded payload, and RVBAR
-decodes to the same base. The EL1 prologue at 0x10000a54234 writes
-VBAR_EL1 = image base, and that is the value read back, so execution got
-past the EL3→EL1 eret and reached that instruction before the exception.
+The firmware did get through its reset. The image at physical
+0x10000a54000 starts with 0x14000081 (`b +0x204`), and the EL1 prologue
+at 0x10000a54234 writes VBAR_EL1 = image base, which is the value read
+back. So execution passed the EL3 to EL1 eret and reached that
+instruction, and the abort happens on the fetch of the exception vector.
+
 
 ## Hostile register
 
@@ -85,10 +92,11 @@ the session reset the box.
 
 ## What it names
 
-The stall is the firmware's own exception trap, not a core that never
-reached the firmware. The reset path completes, then an unclassified
-synchronous exception (ESR EC 0, MMU off, FAR = the handler) parks the
-core in the `b .` handler. The missing setup is whatever raises that
-exception. ESR does not name it. This read is T6001 only; T6021 shares
-the external symptom but its debug window resets the machine, so it was
-not read.
+The stall is an instruction fetch the memory system rejects. The core's
+fetch of its own exception vector at 0x10000a54200 gets a synchronous
+external abort (ESR EC 0x21, IFSC 0x10), so the handler never runs and
+the core faults on that fetch at every entry. The MMU is off, the CPU
+reads the same word fine, and the core executed the adjacent reset code,
+so the failure is specific to the core's fetch of that address. The
+missing setup is whatever makes that fetch succeed. This read is T6001
+only; the same debug window resets the M2, so it was not read there.

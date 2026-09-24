@@ -145,11 +145,16 @@ On T6001 the stalled core was halted through the Apple DBGWRAP register
 (engine+0x1040000) and read through the external debug block
 (engine+0x1010000). That block is readable on T6001 once the OS lock is
 cleared; reading DBGDTRRX (engine+0x1010080) while the lock is set resets
-the machine. PC = VBAR_EL1+0x200 = 0x10000a54200, and that vector slot is
-`b .`. The firmware completed its EL3 to EL1 reset (VBAR_EL1 reads back
-the image base its prologue writes at 0x10000a54234) and then took a
-synchronous exception and parked in that handler. ESR_EL1 = 0x02000000
-(EC 0x00, Unknown reason), FAR_EL1 = the handler address, and
-SCTLR_EL1.M = 0, so it is not a translation fault. The ISP-style warm
+the machine. A clean read, taken before any debug instruction stuffing,
+gives ESR_EL1 = 0x86000010: EC 0x21, an Instruction Abort from the
+current level, with fault status 0x10, a synchronous external abort not
+on a translation table walk. FAR_EL1 and ELR_EL1 are both 0x10000a54200,
+which is VBAR_EL1+0x200, and the word there is `b .` (0x14000000). The
+core's instruction fetch of its own exception vector external-aborts, so
+the handler never runs and the core faults on that fetch at every entry.
+SCTLR_EL1.M = 0, so it is not a translation fault, and the CPU reads the
+same word fine, so the abort is specific to the core's fetch. The
+firmware did complete its EL3 to EL1 reset first (VBAR_EL1 reads back the
+image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
 receipts/2026-09-24-t6001-asc-debug.
