@@ -94,6 +94,11 @@ module_param(probe_reg, uint, 0444);
 MODULE_PARM_DESC(probe_reg,
 		 "probe_only: read ONE unproven register per load (1=I2A ctrl 2=A2I ctrl 3=RVBAR 4=CPU_CONTROL); 0 = proven reads only");
 
+static bool scratch_dump;
+module_param(scratch_dump, bool, 0444);
+MODULE_PARM_DESC(scratch_dump,
+		 "boot: 5 s after RUN, dump the I2A outbox, A2I control and SCRATCH0-7 (ap+0x1840048..64) raw");
+
 /* ---- ASC mailbox (soc/apple/mailbox.c ASC variant) ---- */
 
 #define ASC_A2I_CONTROL		0x110
@@ -525,6 +530,23 @@ static int __init ane_h13_perf_init(void)
 	}
 	dev_info(&g->pdev->dev, "ring: iova=%pad size=0x%x\n",
 		 &g->ring_iova, RING_SIZE);
+
+	if (scratch_dump && perf_mode) {
+		/* Raw fw-liveness evidence after RUN: I2A outbox state,
+		 * A2I control, and SCRATCH0-7 (m1n1 GPIO0-7 words at
+		 * ap+0x1840048). Read-only, one shot. */
+		msleep(5000);
+		dev_info(&g->pdev->dev,
+			 "SCRATCH: i2a=%08x recv0=%016llx recv1=%016llx a2i=%08x\n",
+			 readl_relaxed(g->mb + ASC_I2A_CONTROL),
+			 readq_relaxed(g->mb + ASC_I2A_RECV0),
+			 readq_relaxed(g->mb + ASC_I2A_RECV1),
+			 readl_relaxed(g->mb + ASC_A2I_CONTROL));
+		for (ret = 0; ret < 8; ret++)
+			dev_info(&g->pdev->dev, "SCRATCH%d=%08x\n", ret,
+				 readl_relaxed(g->engine + 0x1840048 +
+					       ret * 4));
+	}
 
 	ret = handshake(g);
 	if (ret)
