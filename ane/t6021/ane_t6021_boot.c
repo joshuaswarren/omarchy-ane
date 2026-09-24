@@ -421,7 +421,12 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode)
+/* RTBuddy select (SCRATCH6=0 vs legacy 1); set from the rtclient
+ * fw_start_rtb_mode parameter before boot_start. */
+int ane_t6021_rtb_mode;
+EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
+
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, int rtb_mode)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
 	struct ane_t6021_boot_io io = {
@@ -437,6 +442,7 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode)
 		.preboot_table_mode = table_mode,
 		.fw_dva = ane->fw_iova,
 		.stop_after = stop_after,
+		.rtb_mode = rtb_mode,
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
@@ -680,7 +686,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
 	 * override authorizes autonomous writes/boots/recovery. */
-	return ane_t6021_boot_start(ane, 0, 2);
+	return ane_t6021_boot_start(ane, 0, 2, ane_t6021_rtb_mode);
 }
 
 bool ane_t6021_boot_requested(void)

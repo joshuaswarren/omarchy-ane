@@ -448,6 +448,10 @@ struct ane_t6021_boot_cfg {
 				 *   (diagnostic: tests fw-alive without
 				 *   the kext pre-CPU config). */
 	u64 fw_dva;		/* staged surface DVA (fold input) */
+	int rtb_mode;		/* 1 = S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-
+				 * endpoint select, fw 0x42c8) instead of 1
+				 * (legacy ChMan/MBI). In RTBuddy mode the fw
+				 * may skip READY/DONE; listen on mailbox. */
 	int stop_after;		/* fw-start-debug step bisect (2026-09-22):
 				 * 0 = full run; N in 1..4 = stop AFTER
 				 * step N completes, return -ECANCELED
@@ -570,12 +574,13 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		return -ECANCELED;	/* tunables done, nothing else fired */
 
 	io->phase(io->ctx, "P1 scratch-clear+pulse");
-	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = 1,
-	 * pulse SCRATCH7 1 -> 0 (stale READY/wake cleared pre-CPU). */
+	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = rtb_mode ? 0 (RTBuddy) : 1
+	 * (legacy ChMan/MBI); pulse SCRATCH7 1 -> 0 (stale cleared). */
 	for (i = 0; i < 8; i++)
 		io->wr32(io->ctx,
 			 ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i, 0);
-	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH6, 1);
+	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH6,
+		 cfg->rtb_mode ? 0 : 1);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 1);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 0);
 	if (cfg->stop_after == 2)

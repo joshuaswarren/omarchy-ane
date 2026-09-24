@@ -453,7 +453,8 @@ irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data);
  * step bisect (stop after that step, -ECANCELED, clean unwind while
  * no CPU started). */
 int ane_t6021_boot_probe(struct ane_t6021 *ane);
-int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode);
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode,
+			 int rtb_mode);
 bool ane_t6021_boot_requested(void);
 
 /* ---- CSNE_CMD wire structs (host->fw on the INIT channel) ----

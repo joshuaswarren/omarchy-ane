@@ -141,6 +141,10 @@ module_param(fw_start_table_mode, int, 0444);
 MODULE_PARM_DESC(fw_start_table_mode,
 		 "pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)");
 
+static bool fw_start_rtb_mode;
+module_param(fw_start_rtb_mode, bool, 0444);
+MODULE_PARM_DESC(fw_start_rtb_mode,
+		 "fw-start-debug: S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-endpoint select) instead of 1 (legacy). In RTBuddy mode listen for HELLO, do not gate on READY.");
 static bool fw_start_venc_gates;
 module_param(fw_start_venc_gates, bool, 0444);
 MODULE_PARM_DESC(fw_start_venc_gates,
@@ -558,7 +562,8 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		dev_emerg(dev, "BOOT-PHASE venc-gates raised\n");
 	}
 
-	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode);
+	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
+				 fw_start_rtb_mode);
 	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
 	    ret == -ECANCELED) {
 		/* Refused/stopped before any CPU start: normal unwind is
