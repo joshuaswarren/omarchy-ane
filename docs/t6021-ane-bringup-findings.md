@@ -180,6 +180,7 @@ image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
 receipts/2026-09-24-t6001-asc-debug.
 
+<<<<<<< HEAD
 ## 12. T6021 CoreSight and DART stream state (2026-09-24)
 
 The same debug block on T6021, read from Linux with the islands on and
@@ -299,3 +300,16 @@ and the three ERROR words did not move. AneStaticStart confirmed from
 and the kext's PWGATE poll logs and continues, so PWGATE is not a gate.
 **This is the first Linux release with the kext's full pre-RUN register
 set, and it still stalls.** The stall is past the power/DART stage.
+
+## 17. The VENC power leg does not move the T6001 abort (2026-09-24)
+
+Raising the M2's VENC power leg makes its firmware run code. On T6001 the
+ANE's power domains are all in the die-0 pmgr (0x28e080000), and that pmgr
+has no VENC leg. Both VENC chains (venc_* in the die-1 pmgr at
+0x28e580000, and venc1_*) were raised through genpd, parents first
+(venc_sys, venc_dma, pipe4, pipe5, me0, then the venc1 chain), and all ten
+read back on. Two first-release-after-reboot runs, one per chain, gave the
+same fault as before: ESR_EL1 0x86000010, FAR_EL1 and ELR_EL1
+0x10000a54200. The DATA region hash was identical before and after the
+release (feb5e846..., six 4 KiB samples across 0x10001684000). The VENC
+leg is not the missing setup on T6001. Tool: ane/h13/ane_pdraise.c.
