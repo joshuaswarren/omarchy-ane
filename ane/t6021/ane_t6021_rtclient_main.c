@@ -121,6 +121,11 @@ module_param(start_app_eps, bool, 0444);
 MODULE_PARM_DESC(start_app_eps,
 		 "After the handshake, STARTEP every fw-announced app endpoint (>= 0x20; fw mgmt type 5, flag bit 1). Default on");
 
+static bool scratch3_ack = true;
+module_param(scratch3_ack, bool, 0444);
+MODULE_PARM_DESC(scratch3_ack,
+		 "fw_start=1 only: after DONE, write the host ack SCRATCH3 = 0x08042006 the fw spins on before starting RTKit (selene 0x7edc; kext 0x95eaee4). Default on; 0 withholds it to bisect");
+
 static bool csne_ping;
 module_param(csne_ping, bool, 0444);
 MODULE_PARM_DESC(csne_ping,
@@ -902,8 +907,33 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	}
 
 	/* RX path: the recv irq (ADT raw 0x374) is primary; the worker is
-	 * the poll fallback that drives RX while the handshake runs. */
+	 * the poll fallback that drives RX while the handshake runs. Armed
+	 * before the host ack below so the fw's HELLO is never missed. */
 	schedule_delayed_work(&ane->poll_work, msecs_to_jiffies(10));
+
+	if (ane->fw) {
+		/* Kext order after DONE (InitializeRTBuddy 0x95ead04 ->
+		 * 0x95eaee4): read the channel table, then host-ack. The
+		 * fw spins on SCRATCH3 == 0x08042006 right after DONE
+		 * (selene 0x7edc-0x7f10) and only then creates its
+		 * endpoints and starts RTKit (HELLO). Without this write
+		 * HELLO never comes. SCRATCH is the host-writable family
+		 * the boot sequence already writes (W9). */
+		ane_rtclient_validate_chman(ane);
+		dev_info(dev,
+			 "fw transport mode: S1 wrote SCRATCH6=1 -> legacy ChMan/MBI mode (fw 0x42c8: rtbuddyFW = (SCRATCH6 == 0))\n");
+		if (ane->fw->booted && scratch3_ack) {
+			dev_emerg(dev,
+				  "BOOT-PHASE P8 host ack: SCRATCH3 <- %08x\n",
+				  ANE_T6021_BOOT_ACK);
+			writel(ANE_T6021_BOOT_ACK,
+			       ane->engine + ANE_MBI_SCRATCH0 + 4 * 3);
+		} else {
+			dev_warn(dev,
+				 "BOOT-PHASE P8 host ack WITHHELD (booted=%u scratch3_ack=%u): fw parks at 0x7edc, no HELLO expected\n",
+				 ane->fw->booted, scratch3_ack);
+		}
+	}
 
 	/* The handshake: the fw HELLOes on MGMT (v12), rtkit.c answers,
 	 * EPMAP + system-endpoint STARTEP + IOP power ack follow, then
@@ -940,7 +970,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (start_app_eps)
 		ane_rtclient_start_app_eps(ane);
 
-	ane_rtclient_validate_chman(ane);
+	if (!ane->fw)
+		ane_rtclient_validate_chman(ane);
 
 	if (csne_ping)
 		ane_rtclient_csne_ping(ane);
