@@ -91,7 +91,6 @@ stall is unchanged over 60 s.
 | Uncached firmware pages, or SID 15 not bypassed (fetch stream refused) | First release after a reboot with the TEXT/DATA map `IOMMU_CACHE` (leaf PTE bit 1 clear) and TCR15 `0x2` on all three instances: stall unchanged over 60 s (§12) |
 | SID-0 stream enable | dart-ane0 ENABLE already `0xffff`; stall unchanged over 60 s |
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
-| PWGATE set-window `+0x12cc <- 3` and `+0x13cc <- 0` | Both candidate pairs read 0/0: offsets `0xd2cc`/`0xd3cc` and `0x132cc`/`0x133cc`. Theory dead without a write. The receipt's `0x28e092cc` equals neither pair (off by one segment), so it needs a static fix (§12) |
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
@@ -133,9 +132,14 @@ stall is unchanged over 60 s.
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
-2. Reverse the 13.5 firmware reset path: find the first loop that waits on an
+2. OPEN, strongest remaining pre-RUN candidate: the kext writes
+   set+0x12cc <- 3 and set+0x13cc <- 0 before ANE_Init. Linux never makes
+   those writes. The base is bound (§12): phys `0x28e08d2cc` / `0x28e08d3cc`
+   read `0` / `0`, so the `3` is missing. Test it on a fresh boot, before
+   the first release, with readback.
+3. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
-3. Whichever answer comes first gets tested on T6001 as well, because the
+4. Whichever answer comes first gets tested on T6001 as well, because the
    stall is shared.
 
 ## 10. Method lessons
@@ -218,14 +222,20 @@ With the fetch stream bypassed and SID 0 translating to the right
 cached page, the core still stalls. If T6021 has the T6001 fetch abort,
 the abort is not caused by a refused DART stream on SID 0 or SID 15.
 
-**PWGATE 3/0 words (17:41 CDT), read-only.** The islands were on
-(`ps_ane_cpu 0x1f0003ff`) and STATUS was `0x28`. A `pmgr`-window debug
-vehicle (`pr32`/`pw32` offsets from `0x28e080000`) read both derivations:
-`0xd2cc`/`0xd3cc` (PWGATE+0x12cc with PWGATE at `0x28e080000`) and
-`0x132cc`/`0x133cc` (with PWGATE at `0x28e080000+0x6000`). Both read
-`0x00000000`. Two more witnesses: `0x1359c` (the pre-RUN write) reads 0,
-and the RMW row `0x122dc` reads 0. No write was made, and the release was
-not repeated on this already-released boot. No watchdog. The static
-derivation needs fixing: `0x28e092cc` is `0x052cc` past the set window,
-not `0x12cc` past anything, and the `0x28e08c000` set window gives
-`+0x52cc`, which is outside its stated `0x4000` length.
+**PWGATE 3/0 words, base bound (17:52 CDT), read-only.** In the macOS
+registry, `H11ANEIn` is the direct child of `ane0@84000000`
+(`IOProviderClass AppleARMIODevice`), so the `start()` provider is the
+ane nub itself. Its `IODeviceMemory` index 2 is `0x28e08c000`, length
+`0x4000`. That is the same range as the Linux DT `set` reg
+(`/soc/ane@284000000`, parent `/soc`, `simple-bus`). The kext writes
+therefore land at phys `0x28e08d2cc <- 3` and `0x28e08d3cc <- 0`. The
+`0x28e092cc` in the first static derivation was an arithmetic slip. With
+the islands on, the live words read `0x00000000` and `0x00000000`. **The
+`3` at `+0x12cc` is missing on Linux.** An earlier 17:41 note in this doc
+called the theory dead on 0/0. That was wrong, because the kext wants
+3/0. Other words read 0: `0x28e0932cc`/`0x28e0933cc`, `0x28e09359c`, and
+the RMW word `0x28e0922dc`. No write was made. The core had already been
+released this boot (STATUS `0x28`), so the write must be tested on a
+fresh boot before the first release. Risk: this is the ane nub's SET
+window. A Linux write of `0x28e08c000 = 0x80000000` was applied and read
+back without harm earlier today.
