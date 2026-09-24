@@ -200,6 +200,47 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		pr_emerg("ane_obs: DRAIN %d words out114=%08x\n", k, c);
 		return n;
 	}
+	if (strncmp(cmd, "tsvread", 7) == 0) {
+		/* Read every SAFE row of the pre-RUN TSV once, islands-up
+		 * gated, read-only. Prints phys, current, kext target for
+		 * the caller to diff. PWGATE 0x28e092000 + PS 0x28e080000
+		 * windows only; engine rows are NOT read here. */
+		static void __iomem *pwg, *psw;
+		static const struct { u32 off; u32 exp; u32 mask; } pwg_rows[] = {
+			{ 0x159c, 0x0, 0x3 }, { 0x448c, 0x0, 0x3 },
+			{ 0x596c, 0x0, 0x3 }, { 0x4d8c, 0x0, 0x3 },
+			{ 0xe000, 0x0, 0x3 }, { 0x5b6c, 0x0, 0x3 },
+		};
+		static const struct { u32 off; u32 exp; u32 mask; } psw_rows[] = {
+			{ 0xc000, 0xff, 0xff }, { 0xc008, 0x0, 0x0 },
+			{ 0x3c8, 0xff, 0xff }, { 0x9000, 0xff, 0xff },
+		};
+		unsigned int i;
+
+		if (!pwg) {
+			pwg = ioremap_np(0x28e092000ull, 0x10000);
+			psw = ioremap_np(0x28e080000ull, 0x10000);
+			if (!pwg || !psw)
+				return -ENOMEM;
+		}
+		for (i = 0; i < 6; i++) {
+			u32 v = readl(pwg + pwg_rows[i].off);
+
+			pr_emerg("ane_obs: TSV pwg+%x cur=%08x exp=%08x mask=%x %s\n",
+				 pwg_rows[i].off, v, pwg_rows[i].exp,
+				 pwg_rows[i].mask,
+				 (v & pwg_rows[i].mask) != (pwg_rows[i].exp & pwg_rows[i].mask) ? "DIFF" : "same");
+		}
+		for (i = 0; i < 4; i++) {
+			u32 v = readl(psw + psw_rows[i].off);
+
+			pr_emerg("ane_obs: TSV psw+%x cur=%08x exp=%08x mask=%x %s\n",
+				 psw_rows[i].off, v, psw_rows[i].exp,
+				 psw_rows[i].mask,
+				 (v & psw_rows[i].mask) != (psw_rows[i].exp & psw_rows[i].mask) ? "DIFF" : "same");
+		}
+		return n;
+	}
 	if (strncmp(cmd, "pwgrd", 5) == 0) {
 		/* Read-only: PWGATE 0x28e092000+0x159c, validate mask 3. */
 		static void __iomem *pwg;
