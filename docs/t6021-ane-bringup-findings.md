@@ -53,7 +53,9 @@ experiment. Update it when a finding changes, and delete lines that go stale.
 ## 4. Release sequence (proven on T6021 and T6001)
 
 1. Gate: all eight ANE pmgr islands read ACTUAL = `0xf` (bits [7:4]).
-2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in place.
+2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in
+   place. T6021 only: the T6001 runs were unmapped (T6001 map staged in
+   agent/ane-boundaries `receipts/2026-09-24-ane-perf-mode-h13` §10).
 3. Set bit 0 of the I2A control register (engine + `0x1408114`).
 4. Write CPU_CONTROL (engine + `0x1400044`) = 0, barrier, then `0x10`.
 5. RVBAR (engine + `0x1050000`) is latched (bit 0 set, `0x10000000001`).
