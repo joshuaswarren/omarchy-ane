@@ -108,6 +108,9 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 			 readl(d0 + 0x100), readl(d0 + 0x174),
 			 readl(d0 + 0x170), readl(d0 + 0x1c0),
 			 readl(d0 + 0x1000), readl(d0 + 0xc00));
+		pr_emerg("ane_obs: SNAP tcr0=%08x tcr1=%08x ttbr0=%08x ttbr1=%08x\n",
+			 readl(d0 + 0x1000), readl(d0 + 0x1004),
+			 readl(d0 + 0x1400), readl(d0 + 0x1404));
 		return n;
 	}
 	if (strncmp(cmd, "stop", 4) == 0) {
@@ -115,6 +118,24 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		writel(v & ~0x10u, eng + O_CPU_CTL);
 		pr_emerg("ane_obs: STOP ctl=%08x status=%08x\n",
 			 readl(eng + O_CPU_CTL), readl(eng + O_CPU_STATUS));
+		return n;
+	}
+	if (strncmp(cmd, "clrerr", 6) == 0) {
+		/* W1C the T8110 DART inst0 error + stream latches so the
+		 * next RUN's fault (if any) is unambiguous. */
+		static void __iomem *d0;
+		u32 e;
+
+		if (!d0) {
+			d0 = ioremap_np(0x285800000ull, 0x2000);
+			if (!d0)
+				return -ENOMEM;
+		}
+		e = readl(d0 + 0x100);
+		writel(0xffffffffu, d0 + 0x100);
+		writel(0xffffffffu, d0 + 0x1c0);
+		pr_emerg("ane_obs: CLRERR was=%08x now=%08x\n", e,
+			 readl(d0 + 0x100));
 		return n;
 	}
 	return -EINVAL;
