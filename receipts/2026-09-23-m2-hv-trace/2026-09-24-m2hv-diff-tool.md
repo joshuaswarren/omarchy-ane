@@ -84,3 +84,24 @@
 - The DART reset assumes num_streams = 16, from the ENABLE readback of 0xffff.
 - The pmgr island and VENC raises are if-off: Linux writes them only when the
   word reads off.
+
+## Replay file (added 2026-09-24 ~15:10)
+- `tools/m2hv_replay-trace-135.txt`: every macOS write to an ANE engine, DART
+  or pmgr register in trace-135, uncollapsed, in trace order: 151 writes.
+  Columns: evt, W<bits>, addr, value, linux, flags, region, register. The
+  `linux` column is `same` for the 33 writes the Linux baseline already
+  makes with the same value, `diff` for 33 where Linux writes another
+  value, and `none` for 85 that Linux never writes.
+- `tools/m2hv_replay-trace-135.h`: the same list as a C table
+  (`struct m2hv_replay_w`, flags as `M2HV_F_*`), for the ane_obs observer or
+  the driver.
+- Flags an applier must respect: 13 `ps-off` writes set an ANE-chain ps
+  word to TARGET=0 (the s24 kernel-context fatal class), 11 `set-win` writes
+  go to the ane0 SET window (external-abort class from Linux), and 3 `hook`
+  writes went through m1n1's PMGR HACK hook, which passed only bits [9:0] to
+  hardware.
+- Regenerate: `python3 tools/m2hv_diff.py TRACE --replay OUT.txt --replay-c OUT.h`.
+- trace-135b.log (the second 13.5 run) yields the same 151 writes; only the
+  three DART TTBR[0] page-table addresses differ (0x10047a59 vs 0x100488ad).
+  Both traces end at the same write, ps_i2c6 (0x290280230) = 0x3f0, at
+  event #3170.
