@@ -29,7 +29,7 @@ static void __iomem *pmgr;
 static ssize_t ane_obs_read(struct file *f, char __user *ubuf, size_t n,
 			    loff_t *off)
 {
-	char buf[384];
+	char buf[512];
 	int len;
 	u32 ctl = readl(eng + O_CPU_CTL);
 	u32 st = readl(eng + O_CPU_STATUS);
@@ -40,16 +40,16 @@ static ssize_t ane_obs_read(struct file *f, char __user *ubuf, size_t n,
 	u32 ps = readl(pmgr + O_PS_CPU);
 	u64 a0 = readq(eng + O_A2I0);
 	u64 b1 = readq(eng + O_I2A1);
-	u32 sc[4];
+	u32 sc[8];
 	int i;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 8; i++)
 		sc[i] = readl(eng + O_SCRATCH + 4 * i);
 	len = scnprintf(buf, sizeof(buf),
 			"ctl=%08x status=%08x rvbar=%08x%08x out=%08x/%08x ps_cpu=%08x\n"
-			"a2i0=%016llx i2a1=%016llx sc=%08x %08x %08x %08x\n",
+			"a2i0=%016llx i2a1=%016llx sc=%08x %08x %08x %08x %08x %08x %08x %08x\n",
 			ctl, st, rv_hi, rv_lo, o110, o114, ps,
-			a0, b1, sc[0], sc[1], sc[2], sc[3]);
+			a0, b1, sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7]);
 	if (*off >= len || n == 0)
 		return 0;
 	if (n > (size_t)(len - *off))
@@ -143,6 +143,30 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		}
 		pr_emerg("ane_obs: WAKE drained %d words, out114=%08x\n",
 			 nwords, readl(eng + O_OUT114));
+		return n;
+	}
+	if (strncmp(cmd, "ack3", 4) == 0) {
+		/* Post-DONE host ack the fw spins on (selene 0x7edc). */
+		writel(0x08042006u, eng + O_SCRATCH + 4 * 3);
+		pr_emerg("ane_obs: ACK3 SCRATCH3 <- 08042006 (readback %08x)\n",
+			 readl(eng + O_SCRATCH + 4 * 3));
+		return n;
+	}
+	if (strncmp(cmd, "drain", 5) == 0) {
+		/* Pop and log every I2A word while the FIFO is non-empty. */
+		u32 c = readl(eng + O_OUT114);
+		int k = 0;
+
+		while (!(c & (1u << 17)) && k < 32) {
+			u64 w0 = readq(eng + 0x1408830);
+			u64 w1 = readq(eng + 0x1408838);
+
+			pr_emerg("ane_obs: I2A pop%d w0=%016llx w1=%016llx type=%llu\n",
+				 k, w0, w1, (w0 >> 52) & 0xffu);
+			k++;
+			c = readl(eng + O_OUT114);
+		}
+		pr_emerg("ane_obs: DRAIN %d words out114=%08x\n", k, c);
 		return n;
 	}
 	if (strncmp(cmd, "clrerr", 6) == 0) {
