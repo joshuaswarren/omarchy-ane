@@ -1,0 +1,277 @@
+# m2hv_linux_baseline.txt — ordered MMIO WRITES the Linux ane_t6021 path
+# issues on T6021 (M2 Max, J414c) inside the m1n1 hv trace-v3 windows
+# (/tmp/m2kstart/trace_ane_v3.py). Read by tools/m2hv_diff.py.
+#
+# Config pinned: the 2026-09-24 rtb-valid run (receipts/2026-09-23-m2-hv-
+# trace/2026-09-24-rtb-valid.md): ane_t6021_rtclient.ko fw_load=1
+# fw_start=1 fw_start_venc_gates=1 fw_start_rtb_mode=1 fw_alias_reserved=1,
+# fw_start_table_mode=2 (default: P0 table skipped), mailbox-poll bound,
+# RVBAR latched 0x10000000001 (P2 skip). Driver source: omarchy-ane
+# e115347, ane/t6021/ane_t6021_boot.h ane_t6021_boot_run(),
+# ane_t6021_rtclient_main.c (probe, fw_start, venc_gates),
+# ane_t6021_fwload.c; kernel omarchy-linux 078f865d1:
+# drivers/pmdomain/apple/pmgr-pwrstate.c, drivers/iommu/apple-dart.c
+# (t8110 hw ops), drivers/soc/apple/mailbox.c + rtkit.c.
+#
+# Columns: phase cond addr width value mask source
+#   cond  live     every run in the pinned config
+#         if-off   only when the ps word reads off (TARGET/ACTUAL != 0xf)
+#         gated    behind a gate that never opened live (named in source)
+#         observer receipts ane_obs.ko writes (misc-run2, wakepwr, rtb-valid
+#                  ack3, clrerr, stop) — not the driver
+#   mask  bits compared against macOS; '-' = full width. RMW registers
+#         mask the bits Linux actively sets or clears.
+# Order = Linux program order: boot (pmgr probe -> dart probe -> iommu
+# attach) then insmod (fwload -> venc gates -> P0..P7 -> RTKit), then
+# the observer writes.
+B1-pmgr          if-off   0x28e080100 4 0x0000000f         0x9000140f         ps_afi always-on fabric ancestor of ps_ane_sys (t602x-pmgr.dtsi chain afi->afnc0_ioa->afnc0_ls->afnc0_lw0->ane_sys): apple_pmgr_ps_set TARGET=0xf if off at probe
+B1-pmgr          if-off   0x28e080100 4 0x1000000f         0x9000140f         ps_afi: AUTO_ENABLE (bit28) via ps_set second write, or probe update_bits when already on without AUTO
+B1-pmgr          if-off   0x28e0801e8 4 0x0000000f         0x9000140f         ps_afnc0_ioa always-on fabric ancestor of ps_ane_sys (t602x-pmgr.dtsi chain afi->afnc0_ioa->afnc0_ls->afnc0_lw0->ane_sys): apple_pmgr_ps_set TARGET=0xf if off at probe
+B1-pmgr          if-off   0x28e0801e8 4 0x1000000f         0x9000140f         ps_afnc0_ioa: AUTO_ENABLE (bit28) via ps_set second write, or probe update_bits when already on without AUTO
+B1-pmgr          if-off   0x28e0801f8 4 0x0000000f         0x9000140f         ps_afnc0_ls always-on fabric ancestor of ps_ane_sys (t602x-pmgr.dtsi chain afi->afnc0_ioa->afnc0_ls->afnc0_lw0->ane_sys): apple_pmgr_ps_set TARGET=0xf if off at probe
+B1-pmgr          if-off   0x28e0801f8 4 0x1000000f         0x9000140f         ps_afnc0_ls: AUTO_ENABLE (bit28) via ps_set second write, or probe update_bits when already on without AUTO
+B1-pmgr          if-off   0x28e080218 4 0x0000000f         0x9000140f         ps_afnc0_lw0 always-on fabric ancestor of ps_ane_sys (t602x-pmgr.dtsi chain afi->afnc0_ioa->afnc0_ls->afnc0_lw0->ane_sys): apple_pmgr_ps_set TARGET=0xf if off at probe
+B1-pmgr          if-off   0x28e080218 4 0x1000000f         0x9000140f         ps_afnc0_lw0: AUTO_ENABLE (bit28) via ps_set second write, or probe update_bits when already on without AUTO
+B1-pmgr          if-off   0x28e080260 4 0x0000000f         0x9000140f         ps_ane_sys genpd parent (not always-on in the installed DT): apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e080260 4 0x1000000f         0x9000140f         ps_ane_sys: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e0802e0 4 0x0000000f         0x9000140f         ps_ane_cpu always-on (installed-tree delta): apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e0802e0 4 0x1000000f         0x9000140f         ps_ane_cpu: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084000 4 0x0000000f         0x9000140f         ps_ane_sys_mpm always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084000 4 0x1000000f         0x9000140f         ps_ane_sys_mpm: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084008 4 0x0000000f         0x9000140f         ps_ane_td always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084008 4 0x1000000f         0x9000140f         ps_ane_td: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084010 4 0x0000000f         0x9000140f         ps_ane_base always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084010 4 0x1000000f         0x9000140f         ps_ane_base: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084018 4 0x0000000f         0x9000140f         ps_ane_set1 always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084018 4 0x1000000f         0x9000140f         ps_ane_set1: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084020 4 0x0000000f         0x9000140f         ps_ane_set2 always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084020 4 0x1000000f         0x9000140f         ps_ane_set2: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084028 4 0x0000000f         0x9000140f         ps_ane_set3 always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084028 4 0x1000000f         0x9000140f         ps_ane_set3: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B1-pmgr          if-off   0x28e084030 4 0x0000000f         0x9000140f         ps_ane_set4 always-on: apple_pmgr_ps_set TARGET=0xf, clears DEV_DISABLE/PS_RESET/AUTO/flags
+B1-pmgr          if-off   0x28e084030 4 0x1000000f         0x9000140f         ps_ane_set4: apple_pmgr_ps_set second write |= AUTO_ENABLE (bit28); probe update_bits sets it on already-on domains too
+B2-dart0-reset   live     0x285801000 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[0]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801004 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[1]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801008 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[2]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x28580100c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[3]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801010 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[4]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801014 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[5]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801018 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[6]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x28580101c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[7]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801020 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[8]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801024 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[9]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801028 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[10]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x28580102c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[11]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801030 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[12]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801034 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[13]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801038 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[14]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x28580103c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[15]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart0-reset   live     0x285801400 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[0]=0
+B2-dart0-reset   live     0x285801404 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[1]=0
+B2-dart0-reset   live     0x285801408 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[2]=0
+B2-dart0-reset   live     0x28580140c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[3]=0
+B2-dart0-reset   live     0x285801410 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[4]=0
+B2-dart0-reset   live     0x285801414 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[5]=0
+B2-dart0-reset   live     0x285801418 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[6]=0
+B2-dart0-reset   live     0x28580141c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[7]=0
+B2-dart0-reset   live     0x285801420 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[8]=0
+B2-dart0-reset   live     0x285801424 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[9]=0
+B2-dart0-reset   live     0x285801428 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[10]=0
+B2-dart0-reset   live     0x28580142c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[11]=0
+B2-dart0-reset   live     0x285801430 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[12]=0
+B2-dart0-reset   live     0x285801434 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[13]=0
+B2-dart0-reset   live     0x285801438 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[14]=0
+B2-dart0-reset   live     0x28580143c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[15]=0
+B2-dart0-reset   live     0x285800c00 4 0xffffffff         -                  ENABLE_STREAMS[0]=U32_MAX (enable all; TCR isolates)
+B2-dart0-reset   live     0x285800100 4 0x00000000         0x00000000         ERROR W1C (writes back the value read)
+B2-dart0-reset   live     0x285800104 4 0x00000000         -                  ERROR_MASK=0 (m1n1: ERROR_DISABLE) — unmask all fault classes
+B2-dart0-reset   live     0x285800080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000101         -                  TLB_CMD FLUSH_SID sid 1 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000102         -                  TLB_CMD FLUSH_SID sid 2 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000103         -                  TLB_CMD FLUSH_SID sid 3 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000104         -                  TLB_CMD FLUSH_SID sid 4 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000105         -                  TLB_CMD FLUSH_SID sid 5 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000106         -                  TLB_CMD FLUSH_SID sid 6 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000107         -                  TLB_CMD FLUSH_SID sid 7 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000108         -                  TLB_CMD FLUSH_SID sid 8 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x00000109         -                  TLB_CMD FLUSH_SID sid 9 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010a         -                  TLB_CMD FLUSH_SID sid 10 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010b         -                  TLB_CMD FLUSH_SID sid 11 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010c         -                  TLB_CMD FLUSH_SID sid 12 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010d         -                  TLB_CMD FLUSH_SID sid 13 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010e         -                  TLB_CMD FLUSH_SID sid 14 (then busy poll)
+B2-dart0-reset   live     0x285800080 4 0x0000010f         -                  TLB_CMD FLUSH_SID sid 15 (then busy poll)
+B2-dart1-reset   live     0x285811000 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[0]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811004 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[1]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811008 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[2]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x28581100c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[3]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811010 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[4]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811014 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[5]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811018 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[6]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x28581101c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[7]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811020 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[8]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811024 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[9]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811028 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[10]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x28581102c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[11]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811030 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[12]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811034 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[13]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811038 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[14]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x28581103c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[15]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart1-reset   live     0x285811400 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[0]=0
+B2-dart1-reset   live     0x285811404 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[1]=0
+B2-dart1-reset   live     0x285811408 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[2]=0
+B2-dart1-reset   live     0x28581140c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[3]=0
+B2-dart1-reset   live     0x285811410 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[4]=0
+B2-dart1-reset   live     0x285811414 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[5]=0
+B2-dart1-reset   live     0x285811418 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[6]=0
+B2-dart1-reset   live     0x28581141c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[7]=0
+B2-dart1-reset   live     0x285811420 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[8]=0
+B2-dart1-reset   live     0x285811424 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[9]=0
+B2-dart1-reset   live     0x285811428 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[10]=0
+B2-dart1-reset   live     0x28581142c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[11]=0
+B2-dart1-reset   live     0x285811430 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[12]=0
+B2-dart1-reset   live     0x285811434 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[13]=0
+B2-dart1-reset   live     0x285811438 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[14]=0
+B2-dart1-reset   live     0x28581143c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[15]=0
+B2-dart1-reset   live     0x285810c00 4 0xffffffff         -                  ENABLE_STREAMS[0]=U32_MAX (enable all; TCR isolates)
+B2-dart1-reset   live     0x285810100 4 0x00000000         0x00000000         ERROR W1C (writes back the value read)
+B2-dart1-reset   live     0x285810104 4 0x00000000         -                  ERROR_MASK=0 (m1n1: ERROR_DISABLE) — unmask all fault classes
+B2-dart1-reset   live     0x285810080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000101         -                  TLB_CMD FLUSH_SID sid 1 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000102         -                  TLB_CMD FLUSH_SID sid 2 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000103         -                  TLB_CMD FLUSH_SID sid 3 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000104         -                  TLB_CMD FLUSH_SID sid 4 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000105         -                  TLB_CMD FLUSH_SID sid 5 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000106         -                  TLB_CMD FLUSH_SID sid 6 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000107         -                  TLB_CMD FLUSH_SID sid 7 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000108         -                  TLB_CMD FLUSH_SID sid 8 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x00000109         -                  TLB_CMD FLUSH_SID sid 9 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010a         -                  TLB_CMD FLUSH_SID sid 10 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010b         -                  TLB_CMD FLUSH_SID sid 11 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010c         -                  TLB_CMD FLUSH_SID sid 12 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010d         -                  TLB_CMD FLUSH_SID sid 13 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010e         -                  TLB_CMD FLUSH_SID sid 14 (then busy poll)
+B2-dart1-reset   live     0x285810080 4 0x0000010f         -                  TLB_CMD FLUSH_SID sid 15 (then busy poll)
+B2-dart2-reset   live     0x285821000 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[0]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821004 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[1]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821008 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[2]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x28582100c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[3]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821010 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[4]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821014 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[5]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821018 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[6]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x28582101c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[7]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821020 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[8]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821024 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[9]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821028 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[10]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x28582102c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[11]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821030 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[12]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821034 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[13]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821038 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[14]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x28582103c 4 0x00000000         -                  apple_dart_hw_disable_dma TCR[15]=0 (num_streams=16 [INFERENCE: ENABLE readback 0xffff])
+B2-dart2-reset   live     0x285821400 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[0]=0
+B2-dart2-reset   live     0x285821404 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[1]=0
+B2-dart2-reset   live     0x285821408 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[2]=0
+B2-dart2-reset   live     0x28582140c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[3]=0
+B2-dart2-reset   live     0x285821410 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[4]=0
+B2-dart2-reset   live     0x285821414 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[5]=0
+B2-dart2-reset   live     0x285821418 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[6]=0
+B2-dart2-reset   live     0x28582141c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[7]=0
+B2-dart2-reset   live     0x285821420 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[8]=0
+B2-dart2-reset   live     0x285821424 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[9]=0
+B2-dart2-reset   live     0x285821428 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[10]=0
+B2-dart2-reset   live     0x28582142c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[11]=0
+B2-dart2-reset   live     0x285821430 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[12]=0
+B2-dart2-reset   live     0x285821434 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[13]=0
+B2-dart2-reset   live     0x285821438 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[14]=0
+B2-dart2-reset   live     0x28582143c 4 0x00000000         -                  apple_dart_hw_clear_all_ttbrs TTBR[15]=0
+B2-dart2-reset   live     0x285820c00 4 0xffffffff         -                  ENABLE_STREAMS[0]=U32_MAX (enable all; TCR isolates)
+B2-dart2-reset   live     0x285820100 4 0x00000000         0x00000000         ERROR W1C (writes back the value read)
+B2-dart2-reset   live     0x285820104 4 0x00000000         -                  ERROR_MASK=0 (m1n1: ERROR_DISABLE) — unmask all fault classes
+B2-dart2-reset   live     0x285820080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000101         -                  TLB_CMD FLUSH_SID sid 1 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000102         -                  TLB_CMD FLUSH_SID sid 2 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000103         -                  TLB_CMD FLUSH_SID sid 3 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000104         -                  TLB_CMD FLUSH_SID sid 4 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000105         -                  TLB_CMD FLUSH_SID sid 5 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000106         -                  TLB_CMD FLUSH_SID sid 6 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000107         -                  TLB_CMD FLUSH_SID sid 7 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000108         -                  TLB_CMD FLUSH_SID sid 8 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x00000109         -                  TLB_CMD FLUSH_SID sid 9 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010a         -                  TLB_CMD FLUSH_SID sid 10 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010b         -                  TLB_CMD FLUSH_SID sid 11 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010c         -                  TLB_CMD FLUSH_SID sid 12 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010d         -                  TLB_CMD FLUSH_SID sid 13 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010e         -                  TLB_CMD FLUSH_SID sid 14 (then busy poll)
+B2-dart2-reset   live     0x285820080 4 0x0000010f         -                  TLB_CMD FLUSH_SID sid 15 (then busy poll)
+B3-dart0-attach  live     0x285800c00 4 0xffffffff         -                  apple_dart_setup_translation ENABLE_STREAMS[0]=U32_MAX
+B3-dart0-attach  live     0x285801400 4 0x00000001         0x00000001         TTBR[0]=VALID|(pgtable pa>>14)<<2 (live dart0 read 0x1001248d); address bits differ per boot, only VALID compared
+B3-dart0-attach  live     0x285801000 4 0x00000009         -                  TCR[0]=TRANSLATE_ENABLE|FOUR_LEVEL (live read 0x9)
+B3-dart0-attach  live     0x285800080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0
+B3-dart1-attach  live     0x285810c00 4 0xffffffff         -                  apple_dart_setup_translation ENABLE_STREAMS[0]=U32_MAX
+B3-dart1-attach  live     0x285811400 4 0x00000001         0x00000001         TTBR[0]=VALID|(pgtable pa>>14)<<2 (live dart0 read 0x1001248d); address bits differ per boot, only VALID compared
+B3-dart1-attach  live     0x285811000 4 0x00000009         -                  TCR[0]=TRANSLATE_ENABLE|FOUR_LEVEL (live read 0x9)
+B3-dart1-attach  live     0x285810080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0
+B3-dart2-attach  live     0x285820c00 4 0xffffffff         -                  apple_dart_setup_translation ENABLE_STREAMS[0]=U32_MAX
+B3-dart2-attach  live     0x285821400 4 0x00000001         0x00000001         TTBR[0]=VALID|(pgtable pa>>14)<<2 (live dart0 read 0x1001248d); address bits differ per boot, only VALID compared
+B3-dart2-attach  live     0x285821000 4 0x00000009         -                  TCR[0]=TRANSLATE_ENABLE|FOUR_LEVEL (live read 0x9)
+B3-dart2-attach  live     0x285820080 4 0x00000100         -                  TLB_CMD FLUSH_SID sid 0
+L1-fwload        live     0x285800080 4 0x00000100         -                  iommu_map -> apple_dart_iotlb_sync_map TLB_CMD FLUSH_SID 0 (dma_alloc_coherent + 49+270 alias pages; repeats)
+L1-fwload        live     0x285810080 4 0x00000100         -                  iommu_map -> apple_dart_iotlb_sync_map TLB_CMD FLUSH_SID 0 (dma_alloc_coherent + 49+270 alias pages; repeats)
+L1-fwload        live     0x285820080 4 0x00000100         -                  iommu_map -> apple_dart_iotlb_sync_map TLB_CMD FLUSH_SID 0 (dma_alloc_coherent + 49+270 alias pages; repeats)
+L2-venc          if-off   0x2902803e0 4 0x1000000f         0x9000000f         VENC_SYS (299) writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; parent first
+L2-venc          if-off   0x290288000 4 0x1000000f         0x9000000f         venc_dma writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; bottom-up
+L2-venc          if-off   0x290288008 4 0x1000000f         0x9000000f         venc_pipe4 (318) writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; bottom-up
+L2-venc          if-off   0x290288010 4 0x1000000f         0x9000000f         venc_pipe5 (319) writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; bottom-up
+L2-venc          if-off   0x290288018 4 0x1000000f         0x9000000f         venc_me0 (320) writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; bottom-up
+L2-venc          if-off   0x290288020 4 0x1000000f         0x9000000f         venc_me1 (321) writel((before|0xf|BIT28)&~BIT31), poll ACTUAL; bottom-up
+P0-table         gated    0x284000b38 4 0x01ff01ff         -                  P0-1 pre-CPU engine table: fw_start_table_mode=1 only (wedged 2026-09-20; default 2 = skip)
+P0-table         gated    0x284000b98 4 0x01ff01ff         -                  P0-2 pre-CPU engine table: fw_start_table_mode=1 only (wedged 2026-09-20; default 2 = skip)
+P0-table         gated    0x284000bf8 4 0x01ff01ff         -                  P0-3 pre-CPU engine table: fw_start_table_mode=1 only (wedged 2026-09-20; default 2 = skip)
+P-1-tunables     live     0x284000000 4 0x00000010         -                  P-1a W8 write-grant tunable eng+0x000
+P-1-tunables     live     0x284000038 4 0x00050020         -                  P-1b W8 write-grant tunable eng+0x038
+P-1-tunables     live     0x28400003c 4 0x000a0030         -                  P-1c W8 write-grant tunable eng+0x03c
+P-1-tunables     live     0x284000400 4 0x40010001         -                  P-1d W8 write-grant tunable eng+0x400
+P-1-tunables     live     0x284000600 4 0x01ffffff         -                  P-1e W8 write-grant tunable eng+0x600
+P-1-tunables     live     0x284000738 4 0x00200020         -                  P-1f W8 write-grant tunable eng+0x738
+P-1-tunables     live     0x284000798 4 0x00100030         -                  P-1g W8 write-grant tunable eng+0x798
+P-1-tunables     live     0x2840007f8 4 0x0100000a         -                  P-1h W8 write-grant tunable eng+0x7f8
+P-1-tunables     live     0x284000900 4 0x00000101         -                  P-1i W8 write-grant tunable eng+0x900
+P-1-tunables     live     0x284000410 4 0x00001100         -                  P-1j W8 write-grant tunable eng+0x410
+P-1-tunables     live     0x284000420 4 0x00001100         -                  P-1k W8 write-grant tunable eng+0x420
+P-1-tunables     live     0x284000430 4 0x00001100         -                  P-1l W8 write-grant tunable eng+0x430
+P1-scratch       live     0x285840048 4 0x00000000         -                  S1 clear SCRATCH0
+P1-scratch       live     0x28584004c 4 0x00000000         -                  S1 clear SCRATCH1
+P1-scratch       live     0x285840050 4 0x00000000         -                  S1 clear SCRATCH2
+P1-scratch       live     0x285840054 4 0x00000000         -                  S1 clear SCRATCH3
+P1-scratch       live     0x285840058 4 0x00000000         -                  S1 clear SCRATCH4
+P1-scratch       live     0x28584005c 4 0x00000000         -                  S1 clear SCRATCH5
+P1-scratch       live     0x285840060 4 0x00000000         -                  S1 clear SCRATCH6
+P1-scratch       live     0x285840064 4 0x00000000         -                  S1 clear SCRATCH7
+P1-scratch       live     0x285840060 4 0x00000000         -                  S1 SCRATCH6=0 RTBuddy select (fw_start_rtb_mode=1; legacy writes 1)
+P1-scratch       live     0x285840064 4 0x00000001         -                  S1 SCRATCH7=1 stale pulse
+P1-scratch       live     0x285840064 4 0x00000000         -                  S1 SCRATCH7=0 stale pulse
+P2-rvbar         gated    0x285050000 8 0x0081000000000001 0x0081000000000001 S2 writeq ENTRY_BASE|(fw_dva&0xff7efffffffff800) ONLY when read bit0=0; live latch 0x10000000001 -> skipped
+P3-run           live     0x285400044 4 0x00000000         -                  S3 CPU_CONTROL=0
+P3-run           live     0x285400044 4 0x00000010         -                  S3 P3b CPU_CONTROL=RUN 0x10 (live: STATUS 0x2a->0x28)
+P5-publish       gated    0x285840048 4 0x00000000         0x00000000         S5 SCRATCH0=pool DVA lo32 — only after poll-A READY 0x08042006 (never seen)
+P5-publish       gated    0x28584004c 4 0x00000000         0x00000000         S5 SCRATCH1=pool DVA hi32 — after READY
+P6-wake          gated    0x285840064 4 0xf7fbdff9         -                  S6 SCRATCH7=WAKE 0xf7fbdff9 — after READY
+RTK-mgmt         gated    0x285408800 8 0x0020000000000000 0x0ff0000000000000 rtkit.c EP0 HELLO_REPLY (type 0x2) A2I SEND0 — only after fw HELLO
+RTK-mgmt         gated    0x285408800 8 0x0080000000000000 0x0ff0000000000000 rtkit.c EP0 EPMAP reply (type 0x8) A2I SEND0 — only after fw HELLO
+RTK-mgmt         gated    0x285408800 8 0x0050000000000000 0x0ff0000000000000 rtkit.c EP0 STARTEP (type 0x5) A2I SEND0 — only after fw HELLO
+RTK-mgmt         gated    0x285408800 8 0x0060000000000000 0x0ff0000000000000 rtkit.c EP0 SET_IOP_PWR_STATE (type 0x6) A2I SEND0 — only after fw HELLO
+RTK-mgmt         gated    0x285408800 8 0x00b0000000000000 0x0ff0000000000000 rtkit.c EP0 SET_AP_PWR_STATE (type 0xb) A2I SEND0 — only after fw HELLO
+RTK-mgmt         gated    0x285408808 8 0x0000000000000000 -                  rtkit.c A2I SEND1 = endpoint 0 (mgmt)
+W16-cpu_reset    gated    0x28e0802e0 4 0x0000040f         0x8000040f         ps_ane_cpu reset_control assert: update_bits(FLAGS|DEV_DISABLE, DEV_DISABLE) — cpu_reset sysfs, absent live (DT has no resets property; reset-blocked receipt)
+W16-cpu_reset    gated    0x28e0802e0 4 0x8000040f         0x8000040f         ps_ane_cpu reset_control assert: update_bits(FLAGS|RESET, RESET) — cpu_reset sysfs, absent live (DT has no resets property; reset-blocked receipt)
+W16-cpu_reset    gated    0x28e0802e0 4 0x0000040f         0x8000040f         ps_ane_cpu reset_control deassert: update_bits(FLAGS|RESET, 0) — cpu_reset sysfs, absent live (DT has no resets property; reset-blocked receipt)
+W16-cpu_reset    gated    0x28e0802e0 4 0x0000000f         0x8000040f         ps_ane_cpu reset_control deassert: update_bits(FLAGS|DEV_DISABLE, 0) — cpu_reset sysfs, absent live (DT has no resets property; reset-blocked receipt)
+OBS-run          observer 0x285408114 4 0x00000001         0x00000001         ane_obs "run": I2A_CTRL(outbox) |= 1 (misc-run2; macOS _enableOutbox equivalent)
+OBS-run          observer 0x285400044 4 0x00000000         -                  ane_obs "run": CPU_CONTROL=0
+OBS-run          observer 0x285400044 4 0x00000010         -                  ane_obs "run": CPU_CONTROL=0x10
+OBS-ack3         observer 0x285840054 4 0x08042006         -                  ane_obs "ack3": SCRATCH3=0x08042006 after RUN (rtb-valid run)
+OBS-wake         observer 0x285408800 8 0x0060000000000020 -                  ane_obs "wakepwr": A2I SEND0 SET_IOP_PWR_STATE 0x20 (wake-attempt, no RUN)
+OBS-wake         observer 0x285408808 8 0x0000000000000000 -                  ane_obs "wakepwr": A2I SEND1 = EP0
+OBS-clrerr       observer 0x285800100 4 0xffffffff         -                  ane_obs "clrerr": dart-ane0 ERROR W1C
+OBS-clrerr       observer 0x2858001c0 4 0xffffffff         -                  ane_obs "clrerr": dart-ane0 ERR_SECONDARY[0] W1C
+OBS-stop         observer 0x285400044 4 0x00000000         -                  ane_obs "stop": CPU_CONTROL &= ~RUN
