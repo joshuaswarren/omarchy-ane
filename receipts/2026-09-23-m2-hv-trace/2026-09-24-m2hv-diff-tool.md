@@ -105,3 +105,27 @@
   three DART TTBR[0] page-table addresses differ (0x10047a59 vs 0x100488ad).
   Both traces end at the same write, ps_i2c6 (0x290280230) = 0x3f0, at
   event #3170.
+
+## SerialException root cause (added 2026-09-24 ~15:40)
+Both 13.5 runs died 35 s after launch (catch log: launched 19:58:54, exited
+19:59:29) with pyserial "device reports readiness to read but returned no
+data" inside `Uart.readfull()`. That is a USB disconnect of the ACM. What
+the guest was doing at that moment, read from the traces: the last ~500
+lines of both logs are only ps_i2c6 (0x290280230) power cycles, 58
+transactions in run a and 53 in run b, and nothing else. The J414c ADT
+(DeviceTree.j414cap.im4p, decoded here) has exactly three children on
+/arm-io/i2c6: atcrt0, atcrt1, atcrt2, the Type-C retimers (i2c 0x18-0x1a).
+The macOS driver is com.apple.driver.AppleTypeCRetimer (strings: matches
+"atcrt", apCommsTransaction, enablePolling, getRetimerState). The proxy port
+is left-back = hpm0 = atc-phy0 = usb-drd0 (shared dock id 0x183) and the hv
+runs over iodev USB0. m1n1's `setup_adt()` scrubs that port's dart-usb,
+atc-phy, usb-drd, acio, hpm and dp nodes, but not its retimer, so macOS
+reprogrammed the retimer on the proxy port and the link dropped.
+
+Fix: `tools/m1n1-patches/0001-hv-scrub-atcrt.patch` (against upstream
+b4654b3; the proxy-host copy is byte-identical there). It removes every
+/arm-io/i2c*/atcrt* node when the hv runs over USB, per Main's decision to
+scrub all three on the first rerun. Verified with the m1n1 ADT parser on
+the real J414c ADT: three "Removing ADT node /arm-io/i2c6/atcrtN" lines,
+the tree rebuilds and reparses. The patch applies to the hvproxy copy with
+`patch -p1 --dry-run`.
