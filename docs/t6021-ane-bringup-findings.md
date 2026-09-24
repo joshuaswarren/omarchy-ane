@@ -180,7 +180,6 @@ image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
 receipts/2026-09-24-t6001-asc-debug.
 
-<<<<<<< HEAD
 ## 12. T6021 CoreSight and DART stream state (2026-09-24)
 
 The same debug block on T6021, read from Linux with the islands on and
