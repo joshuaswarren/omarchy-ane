@@ -500,12 +500,14 @@ static int __init ane_h13_perf_init(void)
 		}
 		/* Measured M2 sequence: outbox enable, then
 		 * CPU_CONTROL write32 0 -> 0x10. RVBAR never written
-		 * when bit0 is latched. Pre-RUN island word first
-		 * (kext 0xfffffe00095d0e08: write32(0x2e0, 0xf) is the
-		 * first macOS write in program order — same proven-safe
-		 * engine-window class as the m1n1 static tunables). */
-		writel_relaxed(0xf, g->engine + 0x2e0);
-		wmb();
+		 * when bit0 is latched.
+		 * STRUCK per AneStaticStart prerun-diff CORRECTION
+		 * (c33c0d3): the kext 0x2e0 write is a pmgr ps word
+		 * (phys 0x28e080000, genpd-covered) — reissuing it
+		 * wedged the M2; my earlier engine+0x2e0 variant is
+		 * removed. Corrected first missing NON-ps write is
+		 * PWGATE+0x159c = 0 (third-window; T6001 base
+		 * unresolved — do not write without it). */
 		rvbar = readq_relaxed(g->engine + ASC_IO_RVBAR);
 		dev_info(&g->pdev->dev, "boot: RVBAR=%016llx (bit0 latched=%d, never written)\n",
 			 rvbar, (int)(rvbar & 1));
