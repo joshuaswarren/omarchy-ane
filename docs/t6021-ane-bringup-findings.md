@@ -132,14 +132,13 @@ stall is unchanged over 60 s.
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
-2. CLOSED as a discriminator on this boot: the kext's full pre-ANE_Init
-   power sequence was replayed — VENC_SYS + VENC_DMA up, leaf writes
-   re-issued, then set+0x12cc <- 3 and set+0x13cc <- 0 — and the 3 still
-   reads back 0 (§12). What remains open is the register identity: whether
-   `0x28e08d2cc` is the same word the kext's index-2 map reaches, or a
-   different register that shares the offset. The correct base is the
-   provider's reg entry [2], not the ane nub's own `0x28e08c000` by
-   assumption (§12).
+2. CLOSED as a discriminator: the kext's pre-ANE_Init register set —
+   VENC_SYS/VENC_DMA/leaves at `0x3ff`, TCR15 `0x2` x3, cached segment
+   map, cleared scratch, I2A bit 0, CPU_CONTROL 0 -> `0x10` — was released
+   on a fresh boot and still stalled (§12). AneStaticStart corrected the
+   PWGATE base claim in §20: for H11ANEIn the index-2 base IS the ane
+   nub's own `set` window (`0x28e08c000`), and the kext's write poll is
+   log-and-continue, so PWGATE is not a gate.
 3. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 4. Whichever answer comes first gets tested on T6001 as well, because the
@@ -288,3 +287,15 @@ question is the base: the kext's index 2 comes from the provider's reg
 entry [2], which has not been bound from the live `IODeviceMemory` of
 the `H11ANEIn` provider. Until that base is bound, `0x28e08d2cc` may be
 a different register that shares the offset.
+
+**VENC-up first release (same boot).** With the chain at `0x3ff`, the
+scratch regs `0x1840050..0x184006c` were cleared (read back 0; SCRATCH7
+`0x184006c` had read `0x00000004` before the clear), RVBAR was skipped
+(latched), and the cached-map module made the release: I2A bit 0 (already
+set), CPU_CONTROL 0 then `0x10`, then a 60 s poll. STATUS went
+`0x2a -> 0x28`. SCRATCH7 stayed 0 and I2A stayed `0x00020001`. recv0 was 0
+and the three ERROR words did not move. AneStaticStart confirmed from
+§20 that for H11ANEIn the index-2 base is the ane nub's own `set` window,
+and the kext's PWGATE poll logs and continues, so PWGATE is not a gate.
+**This is the first Linux release with the kext's full pre-RUN register
+set, and it still stalls.** The stall is past the power/DART stage.
