@@ -56,15 +56,25 @@
 #define ANE_H13_CPU_STATUS		0x1400048
 #define ANE_H13_CPU_STATUS_RUNNING	BIT(0)
 
-static char *pdev_name = "284000000.ane";
+static char *pdev_name;
 module_param(pdev_name, charp, 0444);
 MODULE_PARM_DESC(pdev_name,
-		 "platform device of the probed ane node (jw16: 284000000.ane, jwm1: 26bc04000.ane)");
+		 "optional: platform device name of the legacy-bound ane node (auto-discovered by driver 'ane' when unset; e.g. 285c04000.ane on t6001 boots)");
 
 static unsigned long mb_off = 0x1408000;
 module_param(mb_off, ulong, 0444);
 MODULE_PARM_DESC(mb_off,
 		 "ASC mailbox block offset inside the engine aperture (h14-verified layout; runtime-confirmed by the HELLO/HELLO_REPLY exchange)");
+
+static unsigned long long aperture;
+module_param(aperture, ullong, 0444);
+MODULE_PARM_DESC(aperture,
+		 "optional: ane aperture physical base (default: legacy reg window base 32 MiB-aligned down; t6001: 0x285c04000 -> 0x284000000)");
+
+static unsigned long aperture_size = 0x2000000;
+module_param(aperture_size, ulong, 0444);
+MODULE_PARM_DESC(aperture_size,
+		 "ane aperture mapping size (default 32 MiB, the ADT ane0 range0 length)");
 
 static uint t2fc_ep = 2;
 module_param(t2fc_ep, uint, 0444);
@@ -375,6 +385,11 @@ static void ane_h13_perf_cleanup(void)
 
 static int match_owned(struct device *dev, const void *data)
 {
+	struct device_driver *drv = dev->driver;
+
+	if (!pdev_name)
+		return dev_is_platform(dev) && drv &&
+		       !strcmp(drv->name, "ane");
 	return dev_is_platform(dev) &&
 	       !strcmp(dev_name(dev), (const char *)data);
 }
@@ -383,6 +398,7 @@ static int __init ane_h13_perf_init(void)
 {
 	struct device *found;
 	struct resource *res;
+	u64 aperture_base;
 	u32 cpu_status;
 	int ret;
 
@@ -391,8 +407,8 @@ static int __init ane_h13_perf_init(void)
 	found = bus_find_device(&platform_bus_type, NULL, pdev_name,
 				match_owned);
 	if (!found) {
-		pr_err("ane_h13_perf: no probed platform device '%s' (legacy ane.ko must claim the node first)\n",
-		       pdev_name);
+		pr_err("ane_h13_perf: no legacy-bound ane platform device found (pdev_name='%s', driver gate 'ane')\n",
+		       pdev_name ? pdev_name : "<auto>");
 		return -ENODEV;
 	}
 
@@ -402,23 +418,40 @@ static int __init ane_h13_perf_init(void)
 		return -ENOMEM;
 	}
 	g->pdev = to_platform_device(found);
+	pr_info("ane_h13_perf: found %s (driver %s)\n", dev_name(found),
+		found->driver ? found->driver->name : "?");
 
 	res = platform_get_resource(g->pdev, IORESOURCE_MEM, 0);
 	if (!res) {
+		pr_err("ane_h13_perf: %s has no IORESOURCE_MEM[0]\n",
+		       dev_name(&g->pdev->dev));
 		ret = -ENODEV;
 		goto err;
 	}
-	if (!(res->flags & IORESOURCE_MEM_NONPOSTED))
-		pr_warn("ane_h13_perf: window not flagged non-posted; using ioremap_np anyway\n");
-	g->engine = ioremap_np(res->start, resource_size(res));
+	pr_info("ane_h13_perf: legacy reg window %pr (nonposted=%d)\n", res,
+		!(res->flags & IORESOURCE_MEM_NONPOSTED) ? 0 : 1);
+
+	/* The legacy node's window is a sub-window of the ane aperture
+	 * (t6001 boots: reg 0x285c04000 inside range0 0x284000000..32M).
+	 * The mailbox and CPU_STATUS live at aperture-relative offsets,
+	 * so map the whole aperture: param override, else the reg window
+	 * base aligned down to the 32 MiB aperture granularity. */
+	aperture_base = aperture ? aperture :
+				   (res->start & ~(u64)(aperture_size - 1));
+	pr_info("ane_h13_perf: aperture %#llx+%#lx (param aperture=%llx)\n",
+		aperture_base, aperture_size, aperture);
+	g->engine = ioremap_np(aperture_base, aperture_size);
 	if (!g->engine) {
+		pr_err("ane_h13_perf: ioremap_np(aperture %#llx+%#lx) failed\n",
+		       aperture_base, aperture_size);
 		ret = -ENOMEM;
 		goto err;
 	}
 
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
-	dev_info(&g->pdev->dev, "CPU_STATUS = 0x%x (running=%d)\n",
-		 cpu_status, !!(cpu_status & ANE_H13_CPU_STATUS_RUNNING));
+	dev_info(&g->pdev->dev, "CPU_STATUS @aperture+0x%x = 0x%x (running=%d)\n",
+		 ANE_H13_CPU_STATUS, cpu_status,
+		 !!(cpu_status & ANE_H13_CPU_STATUS_RUNNING));
 	if (!(cpu_status & ANE_H13_CPU_STATUS_RUNNING)) {
 		dev_err(&g->pdev->dev, "ANE firmware not alive; refusing\n");
 		ret = -ENODEV;
@@ -426,7 +459,7 @@ static int __init ane_h13_perf_init(void)
 	}
 
 	g->mb = g->engine + mb_off;
-	dev_info(&g->pdev->dev, "ASC mailbox @+0x%lx: a2i=%08x i2a=%08x\n",
+	dev_info(&g->pdev->dev, "ASC mailbox @aperture+0x%lx: a2i=%08x i2a=%08x\n",
 		 mb_off,
 		 readl_relaxed(g->mb + ASC_A2I_CONTROL),
 		 readl_relaxed(g->mb + ASC_I2A_CONTROL));
