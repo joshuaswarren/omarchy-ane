@@ -78,6 +78,10 @@ The leaf PTE was `0x000fff1000084801`: valid, bit 1 (NO_CACHE) clear,
 PA the TEXT page. dart-ane0 TCR[15] read back `0x2` (BYPASS). After
 the usual release, SCRATCH7 stayed 0 and the I2A outbox stayed empty
 (`recv0=0`, `i2a=0x00020001`, CPU_STATUS `0x28`) for 5 s.
+dart-ane0 ENABLE at `0xc00` already read `0xffff` on that boot (bit 0
+set). A 60 s poll with that bit set still showed SCRATCH7 0 and an
+empty outbox. Writing `1` to DISABLE at `0xc20` cleared bit 0; the
+readback was `0xfffe`.
 
 ## 6. Ruled out (do not re-run without new evidence)
 
