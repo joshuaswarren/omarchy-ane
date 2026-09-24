@@ -120,6 +120,10 @@ MODULE_PARM_DESC(fw_start_stop_after,
 
 static bool fw_start_state_report;
 module_param(fw_start_state_report, bool, 0444);
+static bool fw_start_skip_genpd;
+module_param(fw_start_skip_genpd, bool, 0444);
+MODULE_PARM_DESC(fw_start_skip_genpd,
+		 "fw-start-debug: skip pm_runtime_resume_and_get in probe and run the static sequence directly. Use only when the islands already read on (recorded 'available' devlinks); the wedged-bind evidence shows the raise hangs the writer on this box.");
 MODULE_PARM_DESC(fw_start_state_report,
 		 "fw-start-debug: stage firmware + alias, dump ASC state (reads only), then clean unwind — no boot writes");
 
@@ -659,10 +663,18 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	/* Power: genpd chain (eight islands) via runtime PM. */
+	/* Power: genpd chain (eight islands) via runtime PM. On this
+	 * box the always-on islands report off at boot and resume_and_get
+	 * hangs the bind writer; when the islands already read on, skip
+	 * the raise and go straight to the static sequence. */
 	pm_runtime_enable(dev);
 	dev_emerg(dev, "BOOT-PHASE genpd raise (eight islands) begin\n");
-	ret = pm_runtime_resume_and_get(dev);
+	if (fw_start_skip_genpd) {
+		dev_emerg(dev, "BOOT-PHASE genpd raise SKIPPED (fw_start_skip_genpd=1)\n");
+		ret = 0;
+	} else {
+		ret = pm_runtime_resume_and_get(dev);
+	}
 	if (ret)
 		return dev_err_probe(dev, ret, "genpd raise failed\n");
 	dev_emerg(dev, "BOOT-PHASE genpd raise done\n");
