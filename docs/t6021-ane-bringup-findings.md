@@ -132,15 +132,14 @@ stall is unchanged over 60 s.
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
-2. OPEN: the kext's pre-ANE_Init power sequence is PS words
-   `0x28e088008/10/18 <- 0xf` (validated ACTUAL), then set+0x12cc <- 3
-   and set+0x13cc <- 0 (phys `0x28e08d2cc` / `0x28e08d3cc`, base bound to
-   the ane nub's index 2). From Linux, none of it takes. The PS words stay
-   `0x2f` (DESIRED f, ACTUAL 2) and lie outside the Linux pmgr reg
-   (`0x28e080000`+`0x8000`), so genpd never owns them. The 3 reads back 0
-   even after the PS writes (§12). Next, on the static side: what ACTUAL
-   value validatePSReg accepts for this block, which ADT pmgr devices sit
-   at `0x28e088008/10/18`, and what powers their parent.
+2. CLOSED as a discriminator on this boot: the kext's full pre-ANE_Init
+   power sequence was replayed — VENC_SYS + VENC_DMA up, leaf writes
+   re-issued, then set+0x12cc <- 3 and set+0x13cc <- 0 — and the 3 still
+   reads back 0 (§12). What remains open is the register identity: whether
+   `0x28e08d2cc` is the same word the kext's index-2 map reaches, or a
+   different register that shares the offset. The correct base is the
+   provider's reg entry [2], not the ane nub's own `0x28e08c000` by
+   assumption (§12).
 3. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 4. Whichever answer comes first gets tested on T6001 as well, because the
@@ -273,3 +272,19 @@ show the OS itself writing `0x2f`, `0x20`, `0xf`, and `0` to
 `0x28e088004..0x28e088018` during boot. So `0x2f` may be an ordinary state
 for this block rather than a stuck one, and the "ACTUAL 2" reading of
 bits 7:4 may not apply here.
+
+**Corrected order, same boot (STATUS still `0x2a`).** Those three words
+were the wrong window: dev+0x200 is provider index 1, not the ANE ps
+window. The right chain is VENC_SYS `0x2902803e0` (parent) ->
+VENC_DMA `0x290288000` -> leaves `0x290288008/10/18`. VENC_SYS read
+`0x0f0003ff` (low byte `0xff`, which is what `validatePSReg` compares).
+VENC_DMA was written `0xf` (from `0x00000300`) and went `0x000003ff`.
+The three leaves, which had earlier latched TARGET only (`0x0000030f`),
+then read the full `0x000003ff` on their own. Next the kext-exact leaf
+writes were re-issued (`0xf`, all read back `0x000003ff`), and then the
+PWGATE pair: `0x28e08d2cc <- 3` and `0x28e08d3cc <- 0`. **The 3 still
+reads back 0.** STATUS stayed `0x2a`, so no release was run. The open
+question is the base: the kext's index 2 comes from the provider's reg
+entry [2], which has not been bound from the live `IODeviceMemory` of
+the `H11ANEIn` provider. Until that base is bound, `0x28e08d2cc` may be
+a different register that shares the offset.
