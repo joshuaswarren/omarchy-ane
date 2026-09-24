@@ -1,0 +1,8 @@
+M2 macOS reference differs from golden: cause not yet known.
+
+M2 (27.0, fixed harness): 107 tokens every arm/rep, stdout 217 B
+(ane/all), 219 B (cpu). Golden: 104 emissions, 212 B. M1 macOS:
+104/104 match. Tail differs (M2 coda vs golden coda).
+
+Exact stdout + stderr sets: ~/m2transcript/out/parakeet-m2-20260924T111447/
+on the M2. Do not relabel as variant; investigate after the hv trace.
