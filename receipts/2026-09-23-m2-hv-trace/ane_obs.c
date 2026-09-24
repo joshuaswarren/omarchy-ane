@@ -111,6 +111,21 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		pr_emerg("ane_obs: SNAP tcr0=%08x tcr1=%08x ttbr0=%08x ttbr1=%08x\n",
 			 readl(d0 + 0x1000), readl(d0 + 0x1004),
 			 readl(d0 + 0x1400), readl(d0 + 0x1404));
+		{
+			static void __iomem *d1, *d2;
+
+			if (!d1) {
+				d1 = ioremap_np(0x285810000ull, 0x2000);
+				d2 = ioremap_np(0x285820000ull, 0x2000);
+			}
+			if (d1 && d2)
+				pr_emerg("ane_obs: SNAP d1 err=%08x addr=%08x%08x tcr0=%08x ttbr0=%08x | d2 err=%08x addr=%08x%08x tcr0=%08x ttbr0=%08x\n",
+					 readl(d1 + 0x100), readl(d1 + 0x174),
+					 readl(d1 + 0x170), readl(d1 + 0x1000),
+					 readl(d1 + 0x1400), readl(d2 + 0x100),
+					 readl(d2 + 0x174), readl(d2 + 0x170),
+					 readl(d2 + 0x1000), readl(d2 + 0x1400));
+		}
 		return n;
 	}
 	if (strncmp(cmd, "stop", 4) == 0) {
