@@ -9,7 +9,7 @@ Upstream remote: `upstream` (eiln/ane, main at `0dcea99`).
 
 | Branch | Purpose |
 |---|---|
-| `main` | Mirror of upstream `0dcea99`. Do not commit here. |
+| `main` | Ours — integration branch; finished work lands here and is pushed. Fork of eiln/ane (upstream at `0dcea99`), not a mirror — do commit here. |
 | `omarchy` | libane changes the compiler depends on: ANEC payload read at `0x1000`, `ane_bind_kernel`, `ane_kernel_capacity`, `ane_exec_loop`, output sentinel polling, `validate`/`loop` examples. |
 | `omarchy-kmd` | Debug instrumentation from the m1-test-host working tree, the working `ane.dtbo`, Fedora `6.14.8-400.asahi.fc42.aarch64+16k` notes. |
 | `m2-support` | This branch, from `omarchy`. Goal: M2 (T8112) and M2 Pro/Max/Ultra (T602x) support. |
