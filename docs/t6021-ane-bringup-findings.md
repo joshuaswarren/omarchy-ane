@@ -151,9 +151,9 @@ stall is unchanged over 60 s.
   or the trace ends at device bring-up forever.
 - One release per boot. CPU_CONTROL = 0 does not stop a released T6021
   core, and the vector handler is `b .`, so every setup change must be in
-  place before the first release after a reboot. On T6021 the only valid
-  first-release test so far is the IOMMU_CACHE run (dart0 TCR15 `0x2`,
-  dart1/2 TCR15 0).
+  place before the first release after a reboot. Of the 2026-09-24 DART
+  tests, only the IOMMU_CACHE run was a first release (dart0 TCR15 `0x2`,
+  dart1/2 TCR15 0); the SID-0 and SID-15 runs were not.
 
 ## 11. T6001 core state, read via CoreSight (2026-09-24)
 
