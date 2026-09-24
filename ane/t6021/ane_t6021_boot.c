@@ -410,6 +410,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 	ane->boot_pool_iova = a.pool_dva;
 	ane->boot_ipc = a.ipc;
 	ane->boot_ipc_iova = a.ipc_dva;
+	ane->boot_ipc_size = a.ipc_size;
 	ane->boot_heap = a.heap;
 	ane->boot_heap_iova = a.heap_dva;
 	ane->boot_heap_size = a.heap_size;

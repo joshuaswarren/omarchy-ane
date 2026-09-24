@@ -303,20 +303,23 @@ enum ane_t6021_csne_cmd {
 	CSNE_CMD_BACK_CHANNEL_RPC	= 0x7000,
 };
 
-/* Doorbell word (app-EP ring notification, W2 §3): 54-bit packed
- * offset[43:0] | size_code[51:44] | unit[53:52]; unit 0=code bytes,
- * 1=code*4K, 2=code*1M, 3=code*2M. K14 SetupEndpoints encodes with
- * unit 1 below 1 MiB and unit 2 at or above, and the size code is a
- * CEILING division (cinc on remainder @0x…95fe8dc) — the reconstructed
- * receive-side size is the rounded-up value. */
+/* fw buffer word (selene builder 0x982b4/0x98f84, decoder 0x98fc8; the
+ * K14 SetupEndpoints word is the same shape): addr[43:0] |
+ * size_code[51:44] | unit[53:52], unit 0 = no size, 1 = code*4K,
+ * 2 = code*1M, 3 = code*2M. The fw encoder picks unit 1 below 1 MiB
+ * and unit 2 at or above, size code = CEILING division (cinc on the
+ * remainder), so the decoded size is the rounded-up value. rtkit.c's
+ * BUFFER_REQUEST is this word with unit 1. */
 #define ANE_EP_DOORBELL_OFFSET	GENMASK_ULL(43, 0)
 #define ANE_EP_DOORBELL_SIZE	GENMASK_ULL(51, 44)
 #define ANE_EP_DOORBELL_UNIT	GENMASK_ULL(53, 52)
 
-static inline u64 ane_ep_doorbell_encode(u32 offset, u32 size)
+static const u8 ane_ep_doorbell_shift[] = { 0, 12, 20, 21 };
+
+static inline u64 ane_ep_doorbell_encode(u64 offset, u32 size)
 {
-	u64 unit = (size >= SZ_1M) ? 2 : 1;	/* K14 size-class encoder */
-	u32 code = DIV_ROUND_UP(size, 1u << (unit * 12));
+	u64 unit = (size >= SZ_1M) ? 2 : 1;
+	u32 code = DIV_ROUND_UP(size, 1u << ane_ep_doorbell_shift[unit]);
 
 	return (offset & ANE_EP_DOORBELL_OFFSET) |
 	       FIELD_PREP(ANE_EP_DOORBELL_SIZE, code) |
@@ -325,10 +328,9 @@ static inline u64 ane_ep_doorbell_encode(u32 offset, u32 size)
 
 static inline u32 ane_ep_doorbell_size(u64 msg)
 {
-	static const u8 shift[] = { 0, 12, 20, 21 };
 	u32 unit = FIELD_GET(ANE_EP_DOORBELL_UNIT, msg);
 
-	return FIELD_GET(ANE_EP_DOORBELL_SIZE, msg) << shift[unit];
+	return FIELD_GET(ANE_EP_DOORBELL_SIZE, msg) << ane_ep_doorbell_shift[unit];
 }
 
 struct ane_t6021_ep {
@@ -407,6 +409,7 @@ struct ane_t6021 {
 	dma_addr_t boot_pool_iova;
 	void *boot_ipc;			/* 'IPC ' surface, max(0x4000, ord+1) */
 	dma_addr_t boot_ipc_iova;
+	u64 boot_ipc_size;
 	void *boot_heap;		/* fw-requested HEAP surface or NULL */
 	dma_addr_t boot_heap_iova;
 	u64 boot_heap_size;

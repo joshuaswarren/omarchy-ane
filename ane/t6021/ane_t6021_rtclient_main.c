@@ -11,9 +11,10 @@
  *  - CPU start belongs to a quiesce context (m1n1/iBoot). This box's
  *    RVBAR latch is sticky with mode bits 55/48 missing
  *    (2026-09-22-t6021-power-dart-fwload, s23/s24); kernel-context
- *    RVBAR and ps@2e0 writes are fatal. This driver therefore NEVER
- *    programs RVBAR or CPU_CONTROL: it refuses to bind unless the
- *    firmware is already alive (CPU_STATUS RUNNING).
+ *    RVBAR and ps@2e0 writes are fatal. By default this driver
+ *    therefore never programs RVBAR or CPU_CONTROL: it refuses to bind
+ *    unless the firmware is already alive (CPU_STATUS RUNNING);
+ *    fw_start=1 is the fenced exception below.
  *  - genpd/pmgr: the eight ANE islands must read ACTUAL=0xf before
  *    any MMIO (same receipt, gate G1). Runtime PM + the DT
  *    power-domains binding owns the raise; probe also verifies ACTUAL
@@ -27,15 +28,24 @@
  *    "nonposted-mmio", which of_mmio_is_nonposted turns into
  *    IORESOURCE_MEM_NONPOSTED -> ioremap_np.
  *
- * CSNE_CMD layout evidence (static, kext 26A428 + selene):
- *  - header {u32 rsvd, u16 id, u8 flags, u8 rsvd} == 8 B; ids from the
- *    selene id->name table at vaddr 0xea430 (BOOT 0x10, PING 0x11,
- *    BUILDINFO 0x06, PROCEDURE_CALL 0x204, INFERENCE_CALL 0x404).
- *  - app endpoints 1..6 = INIT/T2FC/T2FH/T2HS/T2HC/T2HT (K14 cfg
- *    table __const+0x814e520); host->fw commands ride EP1 INIT.
- *  - SetupEndpoints doorbell word: offset[43:0] | size_code[51:44] |
- *    unit[53:52]; per-command word: cursor[23:0] | len[47:24]
- *    (HandleRTBuddyMessage + rtbuddyEndpointSendMessage agree).
+ * Post-HELLO protocol (static, selene t602x_ane0_fw_selene_rc4x +
+ * kext 26A428; ane-linux-experiments
+ * receipts/2026-09-24-m2-post-hello-protocol):
+ *  - RTKit protocol v12 only: fw HELLO = min 12 / max 12 (@0x971e0);
+ *    mainline rtkit.c accepts 11..12.
+ *  - fw RTKit endpoint table (vm 0xed0a0): 0 management, 1 crashlog,
+ *    2 syslog, 0x20 "user1". EP1 is the RTKit crashlog endpoint, not
+ *    an ANE command channel. The command endpoint is the app endpoint
+ *    (>= 0x20) that EPMAP announces; this driver never assumes it.
+ *  - fw buffer word (builder 0x982b4, decoder 0x98fc8): addr[43:0] |
+ *    size_code[51:44] | unit[53:52], unit 1 = 4 KiB, 2 = 1 MiB,
+ *    3 = 2 MiB. App-endpoint word: offset[23:0] | len[47:24] (fw
+ *    0x6330/0x64b4, kext rtbuddyEndpointSendMessage).
+ *  - The ANE data channels are ChMan rings that the fw lays out in the
+ *    host 'IPC ' surface before DONE (fw 0x5348): a table of
+ *    0x100-byte descriptors at IPC+0, rings after it.
+ *  - CSNE header {u32 rsvd, u16 id, u8 flags, u8 rsvd}; ids from the
+ *    selene id->name table (PING 0x11, BUILDINFO 0x06).
  */
 
 #include <linux/completion.h>
@@ -62,8 +72,11 @@
 /* CPU_STATUS RUNNING bit (m1n1 ASCRegs shape) */
 #define ANE_ASC_CPU_STATUS_RUNNING	BIT(0)
 
-#define ANE_RTCLIENT_RING_SIZE		SZ_64K	/* INIT ring, W2 cfg table */
-#define ANE_RTCLIENT_CSNE_CMD_MAX	0xffffff
+/* rtkit.c routes endpoints below this to its own handlers
+ * (rtkit-internal.h APPLE_RTKIT_APP_ENDPOINT_START) */
+#define ANE_RTKIT_APP_EP_START		0x20
+
+#define ANE_RTCLIENT_RING_SIZE		SZ_64K	/* csne_ping host ring */
 
 struct ane_rtclient {
 	struct device *dev;
@@ -83,16 +96,35 @@ struct ane_rtclient {
 
 	bool boot_done;
 
+	/* Lowest app endpoint (>= 0x20) the fw announced in EPMAP and we
+	 * STARTEPed; 0 = none. The ANE command endpoint candidate. */
+	u8 cmd_ep;
+	/* ChMan descriptor table validated in the 'IPC ' surface. */
+	bool chman_ok;
+
 	dma_addr_t ring_iova;
 	void *ring;
 
 	bool csne_setup_done;
 };
 
+/* Each rtkit.c boot-handshake wait (EPMAP, IOP power ack, AP power ack)
+ * is 1 s, and the fw sends HELLO only after its ChMan DONE, so the
+ * client retries -ETIME waits up to this bound. */
+static unsigned int hello_wait_ms = 10000;
+module_param(hello_wait_ms, uint, 0444);
+MODULE_PARM_DESC(hello_wait_ms,
+		 "Upper bound for the RTKit boot handshake (HELLO/EPMAP/power acks), retried in 1 s rtkit.c waits (default 10000)");
+
+static bool start_app_eps = true;
+module_param(start_app_eps, bool, 0444);
+MODULE_PARM_DESC(start_app_eps,
+		 "After the handshake, STARTEP every fw-announced app endpoint (>= 0x20; fw mgmt type 5, flag bit 1). Default on");
+
 static bool csne_ping;
 module_param(csne_ping, bool, 0444);
 MODULE_PARM_DESC(csne_ping,
-		 "After a completed RTKit handshake, announce the INIT ring and send CSNE_CMD_PING (0x11)");
+		 "GATED [INFERENCE]: after the handshake, announce a 64 KiB host ring on the command endpoint with the fw buffer word, then send CSNE_CMD_PING (0x11) and BUILDINFO (0x06) as offset|len words. Default off");
 
 static bool fw_start;
 module_param(fw_start, bool, 0444);
@@ -265,34 +297,22 @@ module_param(poll_rx, bool, 0444);
 MODULE_PARM_DESC(poll_rx,
 		 "Drive RX by apple_rtkit_poll from a workqueue even though a recv IRQ exists (fallback if raw 0x374 is not the recv line)");
 
-/* ---- doorbell words (W2 decode) ----
- * ANE_EP_DOORBELL_* and ANE_MBI_MSG48_* come from ane_t6021.h. This
- * local encoder is the 44-bit-offset variant (the INIT ring IOVA lives
- * above 4 GiB in the dart-ane0 window; the header's u32-offset encoder
- * is the legacy MBI doorbell one). */
-
-static inline u64 ep_doorbell_encode(u64 offset, u32 size)
-{
-	u64 unit = (size >= SZ_1M) ? 2 : 1;
-	u32 code = DIV_ROUND_UP(size, 1u << (unit * 12));
-
-	return (offset & ANE_EP_DOORBELL_OFFSET) |
-	       FIELD_PREP(ANE_EP_DOORBELL_SIZE, code) |
-	       FIELD_PREP(ANE_EP_DOORBELL_UNIT, unit);
-}
-
 /* ---- RTKit callbacks ---- */
 
 static void ane_rtclient_recv(void *cookie, u8 ep, u64 message)
 {
 	struct ane_rtclient *ane = cookie;
 
-	/* App endpoints: SetupEndpoints acks and fw->host command
-	 * delivery (EP2/EP3 T2FC/T2FH). Log raw; decode on sight. */
-	dev_info(ane->dev, "rtkit app msg: ep=%u msg=%016llx (offset=%#llx size_code=%#llx unit=%llu)\n",
+	/* App endpoints only reach here (rtkit.c owns 0..0x1f). Both
+	 * wire shapes the fw uses are decoded side by side; which one a
+	 * message is gets pinned on sight. */
+	dev_info(ane->dev,
+		 "rtkit app msg: ep=%#x msg=%016llx | as offset|len: off=%#llx len=%#llx | as buffer word: addr=%#llx size=%#x unit=%llu\n",
 		 ep, message,
+		 (u64)FIELD_GET(ANE_MBI_MSG48_OFF, message),
+		 (u64)FIELD_GET(ANE_MBI_MSG48_LEN, message),
 		 message & ANE_EP_DOORBELL_OFFSET,
-		 (u64)FIELD_GET(ANE_EP_DOORBELL_SIZE, message),
+		 ane_ep_doorbell_size(message),
 		 (u64)FIELD_GET(ANE_EP_DOORBELL_UNIT, message));
 }
 
@@ -307,16 +327,67 @@ static void ane_rtclient_crashed(void *cookie, const void *crashlog,
 		       crashlog, min_t(size_t, size, 256), false);
 }
 
+/* System-endpoint buffer grants (crashlog EP1, syslog EP2): rtkit.c
+ * decodes the fw request (unit-1 buffer word, addr 0 = host allocates)
+ * and replies with the same word carrying our IOVA. The fw asks for
+ * the crashlog buffer with addr 0 (0x98e44) and for the syslog buffer
+ * with addr 0 unless its own-buffer flag is set (0x98128), in which
+ * case it does not wait for a reply — so a fw-provided address is
+ * refused (mainline behavior) and only logged. The host allocation
+ * must honor the fw entry-alias invariant (W16). */
+static int ane_rtclient_shmem_setup(void *cookie,
+				    struct apple_rtkit_shmem *bfr)
+{
+	struct ane_rtclient *ane = cookie;
+
+	if (bfr->iova) {
+		dev_warn(ane->dev,
+			 "rtkit: fw-provided shmem iova=%pad size=%#zx — refused (unmapped by design)\n",
+			 &bfr->iova, bfr->size);
+		return -EINVAL;
+	}
+
+	bfr->buffer = dma_alloc_coherent(ane->dev, bfr->size, &bfr->iova,
+					 GFP_KERNEL);
+	if (!bfr->buffer)
+		return -ENOMEM;
+	if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bfr->iova,
+						    bfr->size)) {
+		dev_err(ane->dev,
+			"rtkit: shmem grant %pad+%#zx overlaps the fw alias — refusing\n",
+			&bfr->iova, bfr->size);
+		dma_free_coherent(ane->dev, bfr->size, bfr->buffer, bfr->iova);
+		bfr->buffer = NULL;
+		return -EBUSY;
+	}
+	dev_info(ane->dev, "rtkit: shmem grant iova=%pad size=%#zx\n",
+		 &bfr->iova, bfr->size);
+	return 0;
+}
+
+static void ane_rtclient_shmem_destroy(void *cookie,
+				       struct apple_rtkit_shmem *bfr)
+{
+	struct ane_rtclient *ane = cookie;
+
+	if (!bfr->buffer)
+		return;
+	if (ane->held) {
+		/* wedged-pin: a running ASC may still write here */
+		dev_warn(ane->dev,
+			 "rtkit: shmem %pad HELD (CPU started) — not freed\n",
+			 &bfr->iova);
+		return;
+	}
+	dma_free_coherent(ane->dev, bfr->size, bfr->buffer, bfr->iova);
+}
+
 static const struct apple_rtkit_ops ane_rtclient_rtkit_ops = {
 	.crashed = ane_rtclient_crashed,
 	.recv_message = ane_rtclient_recv,
+	.shmem_setup = ane_rtclient_shmem_setup,
+	.shmem_destroy = ane_rtclient_shmem_destroy,
 };
-
-/* ---- CSNE_CMD constants (selene id table vaddr 0xea430) ---- */
-
-#define CSNE_CMD_PING	0x11
-
-static void ane_rtclient_csne_ping(struct ane_rtclient *ane);
 
 /* ---- poll worker: RX fallback while the recv line is unproven ---- */
 
@@ -337,14 +408,94 @@ static void ane_rtclient_post_boot(struct work_struct *w)
 		schedule_delayed_work(&ane->poll_work, HZ);
 }
 
-/* Submit one header-only CSNE control command at a fixed ring slot.
- * Both ids are proven generation-stable and header-only per the
- * selene decode (BOOT 0x10 / PING 0x11 / BUILDINFO 0x06 carry no
- * payload beyond the 8-byte header). Informational only: the ring
- * doorbell word bit placement is still the W2-vs-H14RpcProtocol
- * conflict, so this path stays behind csne_ping and logs everything
- * it sends; responses arrive on the T2F* endpoints (logged raw in
- * ane_rtclient_recv). */
+/* ---- ChMan descriptor table: the control-command validation step ----
+ * Contract and static layout: ane_t6021_boot.h (ane_t6021_chman_*),
+ * checked offline by tools/h14_boot_regression.c. A mismatch is
+ * logged, never acted on. */
+static_assert(sizeof(struct ane_t6021_chman_desc) == ANE_T6021_CHMAN_ENTRY_SIZE);
+
+static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
+{
+	struct ane_t6021 *a = ane->fw;
+	const struct ane_t6021_chman_desc *t;
+	unsigned int i, bad;
+
+	if (!a || !a->boot_ipc) {
+		dev_info(ane->dev,
+			 "chman: no host IPC surface (firmware not started by this driver) — table not validated\n");
+		return;
+	}
+	if (a->boot_ipc_size < ANE_T6021_CHMAN_TOTAL) {
+		dev_warn(ane->dev,
+			 "chman: IPC surface %#llx bytes < fw layout %#x — table not validated\n",
+			 a->boot_ipc_size, ANE_T6021_CHMAN_TOTAL);
+		return;
+	}
+
+	dma_rmb();
+	t = a->boot_ipc;
+	dev_info(ane->dev,
+		 "chman: IPC dva=%pad size=%#llx booted=%u scratch_result=%016llx (low32 = fw VA of its IPC mapping, 0x77a4)\n",
+		 &a->boot_ipc_iova, a->boot_ipc_size, a->booted,
+		 a->boot_scratch_result);
+
+	bad = ane_t6021_chman_check(t, a->boot_ipc_iova);
+	for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++) {
+		const struct ane_t6021_chman_desc *d = &t[i];
+		const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
+
+		dev_info(ane->dev,
+			 "chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx ring=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
+			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
+			 d->size, d->ring, (bad & BIT(i)) ? "MISMATCH" : "OK",
+			 s->name, s->type, s->bit, s->size, s->off);
+		/* Ring head (IOP ring header: version/wrptr/rdptr/size
+		 * per the fw asserts at cstring 0xa296e) for the receipt. */
+		if (d->ring >= a->boot_ipc_iova &&
+		    d->ring + 0x20 <= a->boot_ipc_iova + a->boot_ipc_size)
+			print_hex_dump(KERN_INFO, "chman ring head: ",
+				       DUMP_PREFIX_OFFSET, 16, 4,
+				       a->boot_ipc + (d->ring - a->boot_ipc_iova),
+				       0x20, false);
+	}
+
+	ane->chman_ok = !bad;
+	dev_info(ane->dev, "chman: table %s (mismatch mask %#x)\n",
+		 bad ? "NOT VALIDATED" : "VALIDATED", bad);
+}
+
+/* ---- app endpoints ---- */
+
+/* STARTEP every announced app endpoint. Mainline apple_rtkit_start_ep
+ * sends mgmt type 5 with flag bit 1; the fw mgmt dispatcher (0x97364
+ * case 5 -> 0x973b4) reads ep from [47:32] and starts it on flag == 2
+ * (0x974bc). Same call every Asahi RTKit client makes (SMC on 0x20). */
+static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
+{
+	int ep;
+
+	for (ep = ANE_RTKIT_APP_EP_START; ep < 0x100; ep++) {
+		int ret;
+
+		if (!apple_rtkit_has_endpoint(ane->rtk, ep))
+			continue;
+		ret = apple_rtkit_start_ep(ane->rtk, ep);
+		dev_info(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n", ep,
+			 ERR_PTR(ret));
+		if (!ret && !ane->cmd_ep)
+			ane->cmd_ep = ep;
+	}
+	if (!ane->cmd_ep)
+		dev_warn(ane->dev,
+			 "rtkit: fw announced no app endpoint (static table predicts 0x20 \"user1\")\n");
+}
+
+/* GATED [INFERENCE] first CSNE control command. What is proven: the
+ * fw's buffer word format (0x98fc8), the app-endpoint offset|len word
+ * (0x64b4), the CSNE header. What is not: that the app endpoint takes a
+ * buffer word to set its ring base ([obj+0x28]) before offset|len
+ * words. Everything sent is logged; a wrong guess can crash the fw
+ * (crashlog is captured), never the host. */
 static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, u16 id,
 				  u32 cursor)
 {
@@ -356,44 +507,47 @@ static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, u16 id,
 	memcpy(ane->ring + cursor, &hdr, sizeof(hdr));
 	dma_wmb();
 
-	msg = FIELD_PREP(ANE_MBI_MSG48_OFF, cursor) |
-	      FIELD_PREP(ANE_MBI_MSG48_LEN, sizeof(hdr));
-	ret = apple_rtkit_send_message(ane->rtk, ANE_T6021_EP_INIT, msg,
-				       NULL, false);
+	msg = ane_mbi_msg48_encode(cursor, sizeof(hdr));
+	ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, msg, NULL,
+				       false);
 	dev_info(ane->dev,
-		 "csne: CSNE_CMD_%#x submit ep=%u cursor=%u len=%zu -> %pe\n",
-		 id, ANE_T6021_EP_INIT, cursor, sizeof(hdr), ERR_PTR(ret));
+		 "csne: CSNE_CMD_%#x submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
+		 id, ane->cmd_ep, cursor, sizeof(hdr), msg, ERR_PTR(ret));
 }
 
 static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 {
+	u64 word;
 	int ret;
 
-	if (!apple_rtkit_has_endpoint(ane->rtk, ANE_T6021_EP_INIT)) {
-		dev_info(ane->dev, "csne: fw did not announce EP1; no ping\n");
+	if (!ane->cmd_ep) {
+		dev_info(ane->dev, "csne: no command endpoint; no ping\n");
 		return;
 	}
 
 	if (!ane->csne_setup_done) {
-		/* SetupEndpoints: announce the INIT ring surface as the
-		 * EP1 doorbell word, then STARTEP EP1. [The offset
-		 * semantics (absolute dart IOVA vs fw-pool-relative) are
-		 * [INFERENCE]; this is the informational first attempt.] */
-		ret = apple_rtkit_send_message(ane->rtk, ANE_T6021_EP_INIT,
-					       ep_doorbell_encode(ane->ring_iova,
-								  ANE_RTCLIENT_RING_SIZE),
+		/* Never devm/dmam: under the wedged pin a started ASC may
+		 * still read this ring after unbind; remove() frees it
+		 * only when not held. */
+		ane->ring = dma_alloc_coherent(ane->dev, ANE_RTCLIENT_RING_SIZE,
+					       &ane->ring_iova, GFP_KERNEL);
+		if (!ane->ring)
+			return;
+		if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, ane->ring_iova,
+							    ANE_RTCLIENT_RING_SIZE)) {
+			dev_err(ane->dev, "csne: ring overlaps the fw alias — no ping\n");
+			return;
+		}
+		word = ane_ep_doorbell_encode(ane->ring_iova,
+					      ANE_RTCLIENT_RING_SIZE);
+		ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, word,
 					       NULL, false);
-		if (ret) {
-			dev_err(ane->dev, "csne: SETUP doorbell send failed: %pe\n",
-				ERR_PTR(ret));
+		dev_info(ane->dev,
+			 "csne: ring announce ep=%#x iova=%pad size=%#x word=%016llx -> %pe [INFERENCE]\n",
+			 ane->cmd_ep, &ane->ring_iova, ANE_RTCLIENT_RING_SIZE,
+			 word, ERR_PTR(ret));
+		if (ret)
 			return;
-		}
-		ret = apple_rtkit_start_ep(ane->rtk, ANE_T6021_EP_INIT);
-		if (ret) {
-			dev_err(ane->dev, "csne: STARTEP(EP1) failed: %pe\n",
-				ERR_PTR(ret));
-			return;
-		}
 		ane->csne_setup_done = true;
 	}
 
@@ -747,25 +901,24 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		goto err_pm_or_hold;
 	}
 
-	ane->ring = dmam_alloc_coherent(dev, ANE_RTCLIENT_RING_SIZE,
-					&ane->ring_iova, GFP_KERNEL);
-	if (!ane->ring) {
-		ret = -ENOMEM;
-		goto err_pm_or_hold;
-	}
-	dev_info(dev, "INIT ring: iova=%pad size=0x%x\n",
-		 &ane->ring_iova, ANE_RTCLIENT_RING_SIZE);
-
 	/* RX path: the recv irq (ADT raw 0x374) is primary; the worker is
 	 * the poll fallback that drives RX while the handshake runs. */
 	schedule_delayed_work(&ane->poll_work, msecs_to_jiffies(10));
 
-	/* The handshake itself: the fw HELLOes first on MGMT (W2), rtkit
-	 * answers, EPMAP + STARTEP + SET_IOP_PWR_STATE follow, then boot()
-	 * sets the AP power state ON and returns. Bounded: each rtkit
-	 * completion wait is 1 s (APPLE_RTKIT_TIMEOUT in rtkit.c). */
-	dev_emerg(dev, "BOOT-PHASE apple_rtkit_boot begin\n");
-	ret = apple_rtkit_boot(ane->rtk);
+	/* The handshake: the fw HELLOes on MGMT (v12), rtkit.c answers,
+	 * EPMAP + system-endpoint STARTEP + IOP power ack follow, then
+	 * boot() sets the AP power state ON. Each rtkit.c wait is 1 s;
+	 * the fw reaches HELLO only after its ChMan DONE, so -ETIME is
+	 * retried within hello_wait_ms. Anything else is final. */
+	dev_emerg(dev, "BOOT-PHASE apple_rtkit_boot begin (bound %u ms)\n",
+		  hello_wait_ms);
+	{
+		unsigned long deadline = jiffies + msecs_to_jiffies(hello_wait_ms);
+
+		do {
+			ret = apple_rtkit_boot(ane->rtk);
+		} while (ret == -ETIME && time_before(jiffies, deadline));
+	}
 	if (ret) {
 		dev_err(dev, "rtkit boot handshake failed: %pe (is_running=%d crashed=%d)\n",
 			ERR_PTR(ret), apple_rtkit_is_running(ane->rtk),
@@ -776,15 +929,18 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	ane->boot_done = true;
 
-	/* Endpoint bitmap the firmware actually advertised via EPMAP —
-	 * this log is the hardware answer to the open "which endpoints
-	 * carry CSNE_CMD channels" item. Capture verbatim into the
-	 * receipt. */
+	/* Endpoint bitmap the firmware advertised via EPMAP. Static
+	 * prediction (selene endpoint table, vm 0xed0a0): 0 1 2 0x20. */
 	dev_info(ane->dev, "rtkit RUNNING; fw-advertised endpoints:");
-	for (ep = 0; ep < 64; ep++)
+	for (ep = 0; ep < 0x100; ep++)
 		if (apple_rtkit_has_endpoint(ane->rtk, ep))
-			pr_cont(" %d", ep);
+			pr_cont(" %#x", ep);
 	pr_cont("\n");
+
+	if (start_app_eps)
+		ane_rtclient_start_app_eps(ane);
+
+	ane_rtclient_validate_chman(ane);
 
 	if (csne_ping)
 		ane_rtclient_csne_ping(ane);
@@ -792,7 +948,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!poll_rx)
 		cancel_delayed_work_sync(&ane->poll_work);
 
-	dev_info(dev, "ANE RTKit client up: handshake complete\n");
+	dev_info(dev,
+		 "ANE RTKit client up: handshake complete (cmd_ep=%#x chman=%s)\n",
+		 ane->cmd_ep, ane->chman_ok ? "validated" : "not validated");
 	return 0;
 
 err_pm_or_hold:
@@ -827,6 +985,9 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 
 	if (ane->rtk)
 		apple_rtkit_shutdown(ane->rtk);
+	if (ane->ring)
+		dma_free_coherent(&pdev->dev, ANE_RTCLIENT_RING_SIZE, ane->ring,
+				  ane->ring_iova);
 	pm_runtime_put_sync_suspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 }
