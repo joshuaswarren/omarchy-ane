@@ -71,6 +71,13 @@ After the release above, on **both** T6021 and T6001:
 
 The firmware runs but stalls before RTKit init. Because both chips stall the
 same way, the missing piece is shared and is not T6021-specific.
+The uncached-map hypothesis is ruled out. On 2026-09-24 the two
+segment-ranges were mapped with `IOMMU_READ|IOMMU_WRITE|IOMMU_CACHE`
+forced. `iommu_iova_to_phys(0x10000000000)` returned `0x10000848000`.
+The leaf PTE was `0x000fff1000084801`: valid, bit 1 (NO_CACHE) clear,
+PA the TEXT page. dart-ane0 TCR[15] read back `0x2` (BYPASS). After
+the usual release, SCRATCH7 stayed 0 and the I2A outbox stayed empty
+(`recv0=0`, `i2a=0x00020001`, CPU_STATUS `0x28`) for 5 s.
 
 ## 6. Ruled out (do not re-run without new evidence)
 
@@ -85,6 +92,7 @@ same way, the missing piece is shared and is not T6021-specific.
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
+| Firmware pages mapped uncached, so the ASC cannot fetch | Leaf PTE `0x000fff1000084801` has bit 1 clear and the TEXT PA; sid 15 TCR is `0x2`; SCRATCH7 and the outbox still empty |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
 
 ## 7. Hazards (each one wedged or reset a laptop)
