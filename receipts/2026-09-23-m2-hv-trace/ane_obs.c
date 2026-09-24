@@ -198,6 +198,7 @@ static ssize_t ane_obs_phys_read(struct file *f, char __user *ubuf, size_t n,
 	 * refused with -EPERM; PA comes in *off. */
 	static const struct { u64 base, len; } win[] = {
 		{ 0x10000848000ull, 0xc4000ull },
+		{ 0x1000090c000ull, 0xf0000ull }, /* TEXT-tail gap: DRAM, read-only (Main 2026-09-24) */
 		{ 0x100009fc000ull, 0x393000ull },
 		{ 0x10001400000ull, 0x438000ull },
 	};
