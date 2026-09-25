@@ -706,6 +706,29 @@ Source: ane-linux-experiments fedd4da (section 7) and 87f86ab (section 8),
   `request=11` writes the desired field once, waits for the granted field,
   and restores the saved word on unload. Not run yet.
 
+### T8103: Qwen ANE layout gate closed
+
+Source: ane-linux-experiments f5a8d4b (landing d99d9d4 on
+`agent/jwm1-parity5-gpu-parity-m64`),
+`receipts/2026-09-25-jwm1-qwen-ane-layout-gate/`. Stack: installed module at
+omarchy-ane a9a5f60, libane rebuilt from the same commit, 38 staged Qwen
+programs (one per layer slot), guard-checked load.
+
+- Verify PASS 10/10. Every prompt matches the host reference from the first
+  compared token (first_diff=32 on all 10). Guard proof: with the guard
+  removed, libane refuses the load at init, before any device open. No
+  silently wrong layout reaches the hardware.
+- Bench n=100 against the committed macOS denominator (fedd4da json sha
+  `410dc4f7`): decode 8.23 vs 5.625 tok/s = 1.466x [1.430, 1.503] PASS;
+  e2e 5.314 vs 6.718 s = 0.787x [0.770, 0.806] PASS; TTFT 1.534 vs 1.189 s
+  = 1.347x [1.236, 1.480] FAIL. The ~345 ms TTFT gap is the named live
+  lever for that lane (38-program cold path, weight staging, first-step
+  submission shape).
+- Same merge carries `receipts/2026-09-25-jwm1-parakeet-golden-rerun`:
+  Parakeet golden PASS bit-exact on the installed a9a5f60 stack. The earlier
+  post-reboot hang left no kernel trace, did not reproduce under an
+  instrumented re-run.
+
 ### T6001: tm/tq retention blocks in-place recovery
 
 Source: omarchy-ane a9a5f60 (merge of df23ca9), `fix/t6001-tm-recovery`.
