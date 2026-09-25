@@ -207,3 +207,92 @@ halt, or DTR sequence can work from either side, and none was attempted.
 No further CoreSight runs on T6021. The T6001 PC result stands on its
 own; the T6021 PC is unconfirmable. Log:
 `jwm1:~/m2proxy/hvlogs/proxy-coresight/capture.txt`.
+
+## 14. Why the parked core takes no interrupt (2026-09-25)
+
+Decode of the 13.5 ANE payload (`t602x_ane0_fw_selene_rc4x.payload`, sha256
+`a9c4b771`, TEXT vm 0, DATA vm 0xc4000) against the live iBoot-patched image
+(`/tmp/m2kstart/data_before.bin`, `data_venc.bin`) and the 13.5 kernelcache
+(sha256 `9615a486`). The core parks in `wfi` at payload vm 0x71bc and neither
+its own timer nor a mailbox doorbell wakes it.
+
+### The timer fires FIQ, and the firmware does arm and unmask it
+
+- Two vector tables. The reset stub (vm 0x234) sets VBAR_EL1 to the image base;
+  its slots at 0x80/0x100/0x180 capture ESR/FAR/ELR in x28/x29/x30 and spin.
+  After MMU bring-up the firmware installs `__rtk_arch_vectors` (vm 0x63800,
+  payload 0x65914). The core runs with SPSel=0 (payload 0x50c), so IRQs and
+  FIQs land on the Current-EL SP0 slots: IRQ at +0x80 (branches to 0x63d58),
+  FIQ at +0x100 (branches to 0x63eac). The SPx IRQ/FIQ slots are the fatal
+  capture spin, so a FIQ taken on the wrong stack pointer hangs the core.
+- The core timer is PPI 30 and Apple routes it to FIQ, not IRQ. The payload
+  keeps the two masks separate: `_RTK_enable_fiq` (vm 0x656ac) is `msr
+  daifclr, #1`, while IRQ unmask is `daifclr, #2` (`_RTK_enable_all_interrupts`,
+  vm 0x65694). Platform init unmasks both (vm 0x6fdc, 0x6fe4) before the idle
+  loop, and the timer driver arms the comparator (vm 0x654cc writes
+  CNTP_TVAL_EL0, 0x654d8 sets CNTP_CTL_EL0 = 1). So the firmware arms the
+  timer and unmasks FIQ. The interrupt is generated; it is not delivered.
+
+### The one verified macOS-vs-Linux gap in the timer path
+
+iBoot patches the RTKit patchbay on the Asahi path too (live image differs
+from the file in the stack guard, `RTK_soc` = 0x6021, `RTK_soc_revision` =
+0x11, `RTK_cpu_physical_address` = 0x285000000, `RTK_cpu_wrapper_physical_address`
+= 0x285400000, and the tunables block). It leaves exactly one field the
+interrupt path consumes at zero: `armv8_timer_frequency`, value at vm 0xca880,
+reads 0x00000000 in both live captures. The firmware writes CNTFRQ_EL0 from it
+only when nonzero (payload 0x65ff4-0x66010), so the register stays at its
+reset value of 0. The scheduler quantum (payload 0x6ccf8, 10000 units) and the
+tick converter (payload 0x6a028, an integer divide by the frequency) then
+collapse to 0. The 24 MHz counter itself ticks (engine+0x1160008), so the
+clock is present; only the firmware's idea of the frequency is missing.
+
+### What the host must do, from the working drivers
+
+- Asahi's ISP driver (`isp-fw.c`) writes the coprocessor IRQ mask registers
+  0x1400a00-0x1400a14 to 0xffffffff and polls the coprocessor status word at
+  +0x818 for zero before it releases the CPU. The ANE kext does neither.
+- The ANE mailbox is the ASC variant: Asahi's `mailbox.c` gives it
+  `has_irq_controls = false`. There is no host-side mailbox IRQ-enable
+  register to write; the doorbell is the inbox write itself, and the
+  coprocessor's own controller decides whether that raises a core interrupt.
+- The 13.5 kext `ANE_Init` (0xfffffe00094e0cfc) writes, before and at the
+  release: eight scratch clears (offsets from the per-version tables at
+  0xfffffe00073a0148, all inside the 0x18400xx GPIO block), RVBAR only if its
+  lock bit is clear (it is set, so skipped), and CPU_CONTROL = 0 then 0x10.
+  No interrupt, AIC, timer, or FIQ-route register is written on this path.
+  Linux already matches every one of these writes.
+
+### The delivery gate is not host-writable
+
+The physical-timer FIQ is gated by `S3_5_C15_C1_3`
+(`SYS_IMP_APL_VM_TMR_FIQ_ENA_EL2` in m1n1 `cpu_regs.h`), bit 1 = enable
+physical timer. The payload never writes it. The firmware drops EL3 to EL1 at
+reset (payload 0x214-0x224, SPSR_EL3 = 0x3c5) and runs at EL1, so it cannot
+set an EL2 register, and T6021 CoreSight is fused off (section 13), so the
+host cannot set it either. On macOS, iBoot sets it before the firmware runs;
+the Asahi stub's iBoot does not touch the ANE (its DART is powered off at
+handoff). No Linux register write reaches this bit. Confirming it is the
+difference needs the hypervisor trace of a macOS boot, not another register
+guess.
+
+### Ranked Linux-side tests
+
+1. Timer frequency, the verified gap. Write 0x016e3600 (24 MHz) to PA
+   0x10001406880 — the firmware DATA image, patchbay value at vm 0xca880 —
+   after the DATA map and before the CPU_CONTROL release. This is a write to
+   the reserved firmware DRAM, the same region iBoot already writes, not an
+   engine register, so it carries no fabric risk. It makes the firmware
+   program CNTFRQ_EL0 and gives the scheduler quantum a real interval.
+2. Coprocessor IRQ mask, post-release. The earlier 0xffffffff write was before
+   the release, and the firmware overwrites 0x1400a08 and 0x1400a10 from its
+   tunables (it writes 0x0ff0ffff to those two). The other four masks
+   (engine+0x1400a00, +0xa04, +0xa0c, +0xa14) are in no tunable, so the
+   firmware never sets them. Write 0xffffffff to all six after the core has
+   parked, so the value sticks. The write itself is already proven safe: the
+   earlier test wrote 0xffffffff to all six and read it back with no hang.
+3. Read before either write. Read engine+0x1400a00-0x1400a14 and
+   engine+0x1160020 (the timer word the firmware reads at payload 0x33c14)
+   after the core parks, to see what the firmware actually left. If the four
+   masks already read unmasked, test 2 cannot be the cause and should be
+   skipped.
