@@ -99,6 +99,7 @@ readback was `0xfffe`.
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
 | Firmware pages mapped uncached, so the ASC cannot fetch | Leaf PTE `0x000fff1000084801` has bit 1 clear and the TEXT PA; sid 15 TCR is `0x2`; SCRATCH7 and the outbox still empty |
+| Zero `armv8_timer_frequency` keeps the core asleep | `patch_timer_freq=0x016e3600` wrote PA 0x10001406880 and read back, then release: still parked, no READY (2026-09-25, 340f3a4) |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
 
 ## 7. Hazards (each one wedged or reset a laptop)
@@ -233,19 +234,23 @@ its own timer nor a mailbox doorbell wakes it.
   CNTP_TVAL_EL0, 0x654d8 sets CNTP_CTL_EL0 = 1). So the firmware arms the
   timer and unmasks FIQ. The interrupt is generated; it is not delivered.
 
-### The one verified macOS-vs-Linux gap in the timer path
+### The zero timer frequency is a real gap, and not the cause
 
 iBoot patches the RTKit patchbay on the Asahi path too (live image differs
 from the file in the stack guard, `RTK_soc` = 0x6021, `RTK_soc_revision` =
 0x11, `RTK_cpu_physical_address` = 0x285000000, `RTK_cpu_wrapper_physical_address`
-= 0x285400000, and the tunables block). It leaves exactly one field the
-interrupt path consumes at zero: `armv8_timer_frequency`, value at vm 0xca880,
-reads 0x00000000 in both live captures. The firmware writes CNTFRQ_EL0 from it
-only when nonzero (payload 0x65ff4-0x66010), so the register stays at its
-reset value of 0. The scheduler quantum (payload 0x6ccf8, 10000 units) and the
-tick converter (payload 0x6a028, an integer divide by the frequency) then
-collapse to 0. The 24 MHz counter itself ticks (engine+0x1160008), so the
-clock is present; only the firmware's idea of the frequency is missing.
+= 0x285400000, and the tunables block). It leaves one field the timer path
+consumes at zero: `armv8_timer_frequency`, value at vm 0xca880 (PA
+0x10001406880), 0x00000000 in both live captures. The firmware writes
+CNTFRQ_EL0 from it only when nonzero (payload 0x65ff4-0x66010), so CNTFRQ_EL0
+stays 0 and the frequency-derived tick rate (payload 0x6a028, frequency /
+1000000) is 0. That does not stop the timer: the arm routine clamps every
+interval to at least one tick (payload 0x654a8-0x654b8), so a zero frequency
+makes an armed timer fire sooner, not never.
+
+Tested 2026-09-25 (M2FwStart-2, `patch_timer_freq=0x016e3600`, omarchy-ane
+340f3a4): the write verified by readback, the CPU was released, and the core
+still parked with no READY. The frequency is not what keeps the core asleep.
 
 ### What the host must do, from the working drivers
 
@@ -276,28 +281,20 @@ handoff). No Linux register write reaches this bit. Confirming it is the
 difference needs the hypervisor trace of a macOS boot, not another register
 guess.
 
-### Ranked Linux-side tests
+### Remaining Linux-side tests
 
-1. Timer frequency, the verified gap. Write 0x016e3600 (24 MHz) to PA
-   0x10001406880 — the firmware DATA image, patchbay value at vm 0xca880 —
-   after the DATA map and before the CPU_CONTROL release. This is a write to
-   the reserved firmware DRAM, the same region iBoot already writes, not an
-   engine register, so it carries no fabric risk. It makes the firmware
-   program CNTFRQ_EL0 and gives the scheduler quantum a real interval.
-   The write is `patch_timer_freq=0x016e3600` on `ane_t6021_rtclient`,
-   applied through `ioremap_np` of the reserved DATA (not memremap) before
-   CPU_CONTROL, and only if the 36 bytes at PA 0x10001406870 still match.
-   That pattern was confirmed by read on the M2: tag `76384671`, length
-   `00000004`, value `00000000`, next word `4453524c` (LRSD).
-2. Coprocessor IRQ mask, post-release. The earlier 0xffffffff write was before
-   the release, and the firmware overwrites 0x1400a08 and 0x1400a10 from its
-   tunables (it writes 0x0ff0ffff to those two). The other four masks
-   (engine+0x1400a00, +0xa04, +0xa0c, +0xa14) are in no tunable, so the
-   firmware never sets them. Write 0xffffffff to all six after the core has
-   parked, so the value sticks. The write itself is already proven safe: the
-   earlier test wrote 0xffffffff to all six and read it back with no hang.
-3. Read before either write. Read engine+0x1400a00-0x1400a14 and
-   engine+0x1160020 (the timer word the firmware reads at payload 0x33c14)
-   after the core parks, to see what the firmware actually left. If the four
-   masks already read unmasked, test 2 cannot be the cause and should be
-   skipped.
+Keep `patch_timer_freq=0x016e3600` on every later run. It is not the fix, but
+macOS iBoot fills this field, and firmware that wakes with CNTFRQ_EL0 = 0
+would compute every timeout from a zero rate. The module writes it only when
+the 36 bytes at PA 0x10001406870 still match the pinned pattern (tag
+`76384671`, length `00000004`, value `00000000`, next tag `4453524c`).
+
+1. Read first. After the park, read engine+0x1400a00-0x1400a14 and
+   engine+0x1160020 (the timer word the firmware reads at payload 0x33c14).
+2. Coprocessor IRQ mask, post-release, only if step 1 shows the four
+   untuned masks still masked. The earlier 0xffffffff write came before the
+   release, and the firmware then overwrote 0x1400a08 and 0x1400a10 from its
+   tunables with 0x0ff0ffff. The other four (engine+0x1400a00, +0xa04, +0xa0c,
+   +0xa14) are in no tunable. Write 0xffffffff to all six after the park so
+   the value sticks. The write is proven safe: all six took 0xffffffff and
+   read back with no hang.
