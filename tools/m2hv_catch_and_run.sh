@@ -81,24 +81,42 @@ PREMOD=( )
 if [ -n "${M2HV_PREMOD:-}" ]; then
     PREMOD=( -m "$M2HV_PREMOD" )
 fi
+# run_guest's stdin is a FIFO held open read-write on fd 3, so its open
+# never blocks and never returns EOF; the watchdog types into it.
 FIFO=$OUT/stdin.fifo
 rm -f "$FIFO" && mkfifo "$FIFO"
+exec 3<>"$FIFO"
 say "launching run_guest -d, boot-args: $BOOTARGS"
 M1N1DEVICE="$proxy" python3 -u tools/run_guest.py -d "${@:5}" -m "$DBG" "${PREMOD[@]}" -m "$MOD" \
-    -l "$OUT/trace.log" "$KC" -- "$BOOTARGS" <"$FIFO" 2>&1 | tee -i "$OUT/run.log" &
+    -l "$OUT/trace.log" "$KC" -- "$BOOTARGS" <&3 >"$OUT/run.log" 2>&1 &
 rgpid=$!
+tail -n +1 -f "$OUT/run.log" &
+tailpid=$!
 ( sleep "${M2HV_TIMEOUT:-5400}"
   if kill -0 "$rgpid" 2>/dev/null; then
-      say "timeout: SIGINT to hv shell, then p.reboot()"
+      : >"$OUT/timeout.fired"
+      say "timeout: SIGINT run_guest $rgpid to the hv shell, then p.reboot()"
       kill -INT "$rgpid"
       sleep 20
-      printf 'p.reboot()\n' >"$FIFO"
+      printf 'p.reboot()\n' >&3
       sleep 30
-      kill -0 "$rgpid" 2>/dev/null && kill "$rgpid"
+      if kill -0 "$rgpid" 2>/dev/null; then
+          say "timeout: run_guest still up, SIGTERM"
+          kill "$rgpid"
+      fi
   fi ) &
 wdpid=$!
 wait "$rgpid"
 rc=$?
-kill "$wdpid" "$vpid" 2>/dev/null
 say "run_guest exited rc=$rc"
+if [ ! -e "$OUT/timeout.fired" ] && [ -e "$proxy" ]; then
+    say "run_guest gone on its own with the proxy port present: tools/reboot.py"
+    if M1N1DEVICE="$proxy" timeout 60 python3 tools/reboot.py >>"$OUT/run.log" 2>&1; then
+        say "reboot.py ok"
+    else
+        say "reboot.py failed (proxy deaf under the hv: guest still running, needs the hv shell)"
+    fi
+fi
+kill "$wdpid" "$tailpid" "$vpid" 2>/dev/null
+exec 3>&-
 exit "$rc"
