@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Capture decode step 0 of prompt p001 on the macOS e5rt path, at both ends.
+"""Capture decode steps 0-1 of prompt p001 on the macOS e5rt path, at both ends.
 
 - dense/: every program's port values as ANEForge hands them to e5rt (set_input)
   and gets them back (read_output), first occurrence = step 0
-- surfaces/: the IOSurfaces the ANE runtime actually hands the engine for the same
-  38 evaluations (ane_request_capture.m), raw bytes + surface properties + the
-  model's LiveInput/LiveOutput attributes
+- surfaces/: the IOSurfaces the ANE runtime actually hands the engine for the first
+  two steps' evaluations (ane_request_capture.m; eval k = program k % n of step
+  k // n), raw bytes + surface properties + the model's LiveInput/LiveOutput
+  attributes. Step 1 exists for the resident states: they never cross read_output,
+  and step 0 feeds them zeros, so their placement is checked step-0 out -> step-1 in.
 
 check_step_surfaces.py then packs dense/ with io_layout.json geometry and
 byte-compares against surfaces/.
@@ -65,8 +67,9 @@ for ci, c in enumerate(d["chunks"]):
     pr.set_input, pr.read_output = si, ro
 
 ids = json.load(open(a.ref))["prompts"][0]["prompt_token_ids"]
-hook.anecap_arm(os.path.join(a.out, "surfaces").encode(), n)
+hook.anecap_arm(os.path.join(a.out, "surfaces").encode(), 2 * n)
 m.generate(ids, max_new_tokens=1, max_len=int(a.max_len), temperature=0.0,
            top_p=1.0, top_k=0, batched_prefill=False)
-print(f"captured {hook.anecap_count()} ANE evaluations (armed {n}), "
+print(f"captured {hook.anecap_count()} ANE evaluations (armed {2 * n}), "
       f"{len(seen)} dense port values -> {a.out}")
+assert hook.anecap_count() == 2 * n, "prompt shorter than two steps"

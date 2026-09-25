@@ -14,6 +14,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <dlfcn.h>
+#include <math.h>
 
 static NSString *g_dir;
 static int g_left, g_seq;
@@ -43,13 +44,21 @@ static NSArray *dump_surfaces(NSArray *objs, NSString *tag, int seq) {
     IOSurfaceRef s = (__bridge IOSurfaceRef)call0(o, "ioSurface");
     NSUInteger start = ((NSUInteger (*)(id, SEL))objc_msgSend)(o, sel_registerName("startOffset"));
     if (!s) { [rows addObject:@{@"missing" : @YES}]; continue; }
-    IOSurfaceLock(s, kIOSurfaceLockReadOnly, NULL);
-    NSData *d = [NSData dataWithBytes:IOSurfaceGetBaseAddress(s) length:IOSurfaceGetAllocSize(s)];
+    NSMutableDictionary *r = [surface_props(s) mutableCopy];
+    r[@"start_offset"] = @(start);
+    kern_return_t lk = IOSurfaceLock(s, kIOSurfaceLockReadOnly, NULL);
+    if (lk != kIOReturnSuccess) {
+      r[@"lock_error"] = @(lk);
+      [rows addObject:r];
+      continue;
+    }
+    // bytes_per_row * height, not alloc_size: the CPU mapping can end before the
+    // 16 KB-rounded allocation (reading alloc_size faulted on staged-Qwen surfaces)
+    size_t len = IOSurfaceGetBytesPerRow(s) * IOSurfaceGetHeight(s);
+    NSData *d = [NSData dataWithBytes:IOSurfaceGetBaseAddress(s) length:len];
     IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
     NSString *f = [NSString stringWithFormat:@"eval_%03d_%@_%lu.bin", seq, tag, (unsigned long)i];
     [d writeToFile:[g_dir stringByAppendingPathComponent:f] atomically:NO];
-    NSMutableDictionary *r = [surface_props(s) mutableCopy];
-    r[@"start_offset"] = @(start);
     r[@"file"] = f;
     [rows addObject:r];
   }
@@ -67,7 +76,9 @@ static id jsonable(id v) {
     for (id x in v) [o addObject:jsonable(x)];
     return o;
   }
-  if ([v isKindOfClass:[NSNumber class]] || [v isKindOfClass:[NSString class]]) return v;
+  if ([v isKindOfClass:[NSNumber class]])
+    return isfinite([v doubleValue]) ? v : (id)[v description];  // NaN/inf are not JSON
+  if ([v isKindOfClass:[NSString class]]) return v;
   return [v description];
 }
 

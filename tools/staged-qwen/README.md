@@ -7,6 +7,7 @@
 - inproc_backend.py — e5rt-bundle inproc-shim backend (needs per-bundle manifest.json from the shim tooling)
 - run-e5rt-backend.py + staged_e5rt_backend.py — macOS validation rig (runner logic vs live e5rt programs)
 - e5rt_port_layout.py — macOS: the e5rt io-port tensor descriptors per program (dense logical view)
-- ane_request_capture.m + capture_step_surfaces.py — macOS: dense port values and the IOSurfaces the ANE runtime hands the engine, for decode step 0 of p001
+- ane_request_capture.m + capture_step_surfaces.py — macOS: dense port values and the IOSurfaces the ANE runtime hands the engine, for decode steps 0-1 of p001
+- check_step_surfaces.py — byte-checks an io_layout.py plan against that capture (runtime layout attributes, packed inputs, unpacked outputs, resident states)
 
 Receipt: joshuawarren/ane-linux-experiments receipts/2026-09-25-qwen-ane-decoder-fix/
