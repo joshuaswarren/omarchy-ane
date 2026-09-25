@@ -22,5 +22,11 @@ range dart0 0x285800000 0x2000 gated
 range dart1 0x285810000 0x2000 gated
 range dart2 0x285820000 0x2000 gated
 range patchbay 0x10001406870 0x40
+# Firmware carveouts, T6021 segment-ranges (omarchy-ane
+# docs/t6021-ane-bringup-findings.md section 3): TEXT and DATA are no-map
+# DRAM, always readable, not engine-window. The kext ADT lookup misses on
+# the ane0@84000000 unit address, so they are listed here instead.
+range fw-text 0x10000848000 0xc4000
+range fw-data 0x10001400000 0x438000
 handoff 1
 adt 1

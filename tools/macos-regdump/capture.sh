@@ -75,6 +75,19 @@ grep -i ANERegDump "$OUT/kext-loaded.txt"
 echo "== ioreg before"
 ioreg -lw0 -c H11ANEIn </dev/null > "$OUT/ioreg-before.txt"
 
+# ADT bytes come from userspace. The kext's IODeviceTree lookup uses the
+# bare name "ane0" and the registry entry is "ane0@84000000", so the
+# fw-text/fw-data/boot-args ranges never land from the kernel side.
+echo "== adt"
+ioreg -p IODeviceTree -w0 -r -n "ane0@84000000" -d1 </dev/null \
+	> "$OUT/adt-ane0.txt" 2>&1 || true
+ioreg -p IODeviceTree -w0 -r -n chosen -d1 </dev/null \
+	> "$OUT/adt-chosen.txt" 2>&1 || true
+sysctl kern.bootargs </dev/null > "$OUT/kern-bootargs.txt" 2>&1 || true
+nvram boot-args </dev/null > "$OUT/nvram-bootargs.txt" 2>&1 || true
+grep -E '"(segment-ranges|reg|segment-names|ane-type)"' "$OUT/adt-ane0.txt" || \
+	echo "adt-ane0: segment-ranges not found in ioreg output"
+
 echo "== workload + log stream + powermetrics"
 log stream --level debug --predicate 'subsystem CONTAINS "ane" OR process == "aned"' \
 	</dev/null > "$OUT/log-stream.txt" 2>&1 &
