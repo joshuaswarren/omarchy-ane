@@ -6,13 +6,16 @@
 # m1n1 drops vuart bytes until the host opens that port (DTR), so the guest
 # console, panic text included, is lost unless it is logged from launch.
 # -d sets /chosen/debug-enabled and m2hv_guest_debug.py (kept next to this
-# script) sets /chosen/asmb lp-sip0, the two gates XNU puts on debug=0x14e;
-# with them a guest panic stops in the debugger instead of resetting the
-# SoC, and wdt=-1 keeps the guest from arming the watchdog. The boot-args
-# are the ones the Asahi m1n1-hypervisor guide uses for macOS guests.
+# script) sets /chosen/asmb lp-sip0 to 0x7f, which keeps CSR_ALLOW_KERNEL_DEBUGGER
+# reachable. The base boot-args carry amfi=0x80 (GET_OUT_OF_MY_WAY), which the
+# 13.5 RELEASE kernel honors with no debugger gate; cs_enforcement_disable
+# and amfi_get_out_of_my_way panic a RELEASE kernel ("can't has ..."), so
+# they are never passed. M2HV_DEBUG=1 appends debug=0x14e wdt=-1 for a
+# parked panic-spin with the link up; without it a panic resets the SoC.
 #
 # Usage: m2hv_catch_and_run.sh PROXYCLIENT_DIR KERNELCACHE TRACE_MODULE OUTDIR [RUN_GUEST_OPTION...]
-# Env: M2HV_BOOTARGS overrides the default boot-args; M2HV_PREMOD names an
+# Env: M2HV_BOOTARGS overrides the default boot-args; M2HV_DEBUG=1 appends
+# the debugger pair (debug=0x14e wdt=-1); M2HV_PREMOD names an
 # extra hv module loaded between m2hv_guest_debug and the trace module
 # (e.g. m2hv_ramdisk.py, with M2HV_RDIMG for the dmg path); M2HV_TIMEOUT
 # bounds the run in seconds (default 5400). At the deadline a watchdog
@@ -24,7 +27,12 @@
 # up; C-c gives the hv shell, where p.reboot() restarts the M2.
 PC=$1 KC=$2 MOD=$3 OUT=$4
 DBG=$(cd "$(dirname "$0")" && pwd)/m2hv_guest_debug.py
-BOOTARGS="${M2HV_BOOTARGS:-debug=0x14e serial=3 apcie=0xfffffffe -enable-kprintf-spam wdt=-1 clpc=0}"
+# Two profiles share the base below. M2HV_DEBUG=1 appends debug=0x14e and
+# wdt=-1: a panic then spins in the debugger with the link up (needs the
+# hv shell for recovery). The default keeps the recovery property: no
+# debugger bits, so a panic resets the SoC and the M2 reboots itself.
+BOOTARGS="${M2HV_BOOTARGS:-serial=3 apcie=0xfffffffe -enable-kprintf-spam clpc=0 amfi_get_out_of_my_way=1 amfi_allow_any_signature=1 amfi_unrestricted_local_signing=1 rd=md0 -rootdmg-ramdisk rp=file:///ane-root.dmg}"
+[ -n "${M2HV_DEBUG:-}" ] && BOOTARGS="$BOOTARGS debug=0x14e wdt=-1"
 mkdir -p "$OUT"
 LOG=$OUT/catch.log
 : > "$LOG"
