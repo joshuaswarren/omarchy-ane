@@ -171,3 +171,16 @@ the VENC-down stall; with the leg up the core runs code. Vehicle:
 `ane/h13/ane_t6021_venc.c` (same shape as the T6001 `ane_pdraise.c`
 approach in 8756868, T6021-gated on `apple,t6021-ane`; ported from
 c9b2324, which was built on a side line and never landed on main).
+
+## 13. T6021 CoreSight is fused off: no live PC path (2026-09-24)
+
+EDPRSR (engine+0x1010314) and EDDEVARCH (engine+0x1010fbc) both read
+`0x00000000` from Linux (vehicle `ane_ascdbg`, islands on, core stalled)
+and from the m1n1 proxy (no guest, all nine ANE islands verified at
+ACTUAL=f after direct TARGET writes to the seven `0x4000` islands that
+`pmgr_adt_power_enable` does not raise). Neither path hung. A debug
+block that reads RAZ with power on is fused off, not gated: no unlock,
+halt, or DTR sequence can work from either side, and none was attempted.
+No further CoreSight runs on T6021. The T6001 PC result stands on its
+own; the T6021 PC is unconfirmable. Log:
+`jwm1:~/m2proxy/hvlogs/proxy-coresight/capture.txt`.
