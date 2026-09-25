@@ -20,8 +20,8 @@ mkdir -p "$OUT"
 	sw_vers
 	echo "== csrutil"
 	csrutil status
-	echo "== bputil"
-	bputil -d
+	echo "== boot volume group"
+	diskutil info / | grep -i "APFS Volume Group"
 } | tee "$OUT/host.txt"
 
 csrutil status | grep -q 'disabled' || { echo "SIP is not off"; exit 1; }
