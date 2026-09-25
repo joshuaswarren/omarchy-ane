@@ -29,9 +29,13 @@ experiment. Update it when a finding changes, and delete lines that go stale.
   the decompressed fileset is sha256 `9615a486...`. It contains
   `com.apple.driver.AppleH11ANEInterface`.
 - Consequence: static diffs and hypervisor traces must use the 13.5
-  kernelcache. A 26/27 kernelcache under m1n1 hv spins at `_start+0x10` on
-  `[x1+8] == 0` (new entry ABI). The 13.5 kernelcache enters with the stock
-  x0-only `hv_start`.
+  kernelcache. The 13.5 kernelcache enters with the stock x0-only
+  `hv_start`. A 26/27 kernelcache does not. Its entry dispatches on x0, and
+  the boot CPU needs x0 = 0, x1 = the boot_args pointer, x2 = a handoff
+  struct (magic `0xd00f000000000000`, version >= 7, bit 6 set).
+  `tools/m2hv_entry_abi.py` supplies that, loaded through `M2HV_PREMOD`.
+  The earlier "spins at `_start+0x10` on `[x1+8] == 0`" reading was the
+  secondary-CPU path, taken because x0 was still the boot_args pointer.
 
 ## 3. Firmware memory map (proven)
 
@@ -129,18 +133,20 @@ readback was `0xfffe`.
   guest). `tools/m2hv_replay-trace-135.txt` (beb39fa): all 151 macOS writes
   to ANE engine/DART/pmgr registers from trace-135, with per-write flags
   for ps-off/SET-window/hook and the Linux-same mark.
-- Every 13.5 hv run loses the proxy ACM 34-36 s after launch, whatever the
-  trace set and whether the guest ADT keeps the ATC/USB nodes. The guest
-  boots the Asahi stub, whose System volume has no macOS root filesystem
-  (asahi-installer `src/stub.py`), so XNU cannot mount root, and the
-  13.5 RELEASE kernel panics on that. The leading cause of the link loss
-  is the SoC reset after that panic; the panic text is not captured yet.
-  `tools/m2hv_catch_and_run.sh` logs the guest console from the hv vuart
-  and passes the Asahi guide's macOS boot-args with both XNU debug gates
-  opened (`-d` for `/chosen/debug-enabled`, `tools/m2hv_guest_debug.py`
-  for `/chosen/asmb lp-sip0`), so a panic parks in the debugger with the
-  link up. Receipt:
-  `receipts/2026-09-23-m2-hv-trace/2026-09-25-usb-death-root-cause.md`.
+- Every 13.5 hv run loses the proxy ACM 34-36 s after launch when booted
+  against the stub, whose System volume has no root filesystem (asahi-installer
+  `src/stub.py`), so XNU cannot mount root and panics. `tools/m2hv_catch_and_run.sh`
+  logs the console from the opened hv vuart (`serial=3`).
+- v7 ramdisk route: the 22G74 restore root (`022-15462-082.dmg`) was staged as
+  `ane-root-22G74.dmg` with `/sbin/launchd` replaced by `ane_open` (ad-hoc signed,
+  calls `IOServiceOpen("H11ANEIn")`, holds 25 s). First contact reached AMFI,
+  which panicked with `"can't has cs_enforcement_disable"` at
+  `AppleMobileFileIntegrity.cpp:5463`. Disassembly of AMFI in `kernelcache.release.mac14j.macho`
+  isolates `cs_enforcement_disable` as the ONLY boot-arg calling `csr_check(0x08)`
+  and panicking. Bypasses with zero gates on RELEASE: `amfi_get_out_of_my_way=1`,
+  `amfi_allow_any_signature=1`, `amfi_unrestricted_local_signing=1`. Default
+  profile omits `debug=0x14e` and `wdt=-1` so panics reset the SoC and auto-recover
+  to Linux. Receipt: `receipts/2026-09-23-m2-hv-trace/2026-09-25-amfi-boot-args-analysis.md`.
 - 13.5 IPSW members (kernelcache, ane0/ane1 firmware) are stored with
   SHA256SUMS in the fleet artifact store, not in git.
 
