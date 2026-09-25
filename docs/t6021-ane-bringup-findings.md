@@ -132,6 +132,15 @@ test form is omarchy-ane `agent/t6021-macos-ps-form` 265bb63 (section 18).
 - On T6001, reading CPU_CONTROL is hostile; writing it is safe.
 - A wedged M2 watchdog-resets in about 2 minutes. If it stays at the loader,
   reboot it over USB-C from the proxy host with the m1n1 proxy `p.reboot()`.
+- The stage-1 proxy falls through to U-Boot the moment the proxy client
+  disconnects. On the first macOS-to-Omarchy boot of 2026-09-25, U-Boot hung
+  after "Hit any key to stop autoboot: 0" (m2-fwstart lane observation,
+  receipt pending). One cold reset recovered it, and the box came up clean
+  from m1n1's own NVMe boot, ANS2 included. That is the same
+  rails-drop-cures-it shape as section 15. If a boot after a macOS session
+  hangs at the autoboot prompt, do one cold reset before deeper repair. The
+  43ec stage-1 lineage is identified in ane-linux-experiments 58b0917
+  (`receipts/2026-09-25-m2-43ec-provenance.md`).
 
 ## 8. Tools and artifacts
 
