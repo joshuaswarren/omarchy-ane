@@ -210,6 +210,26 @@ static inline int ane_bind_init(const struct anec *anec, const void *stream,
 		}
 	}
 
+	/* Apple's streams leave some surfaces unnamed by the selector
+	 * registers (an island program never enables its second source
+	 * selector, yet binds it on the next allocated channel). Such
+	 * surfaces bind on the first unused allocated channel ascending,
+	 * destinations first, then sources -- mirroring the mlx-omarchy
+	 * overlay bundle parser's derivation, which the 458 MB
+	 * whole-encoder program runs hardware-proven. */
+	for (channel = ANE_BIND_FIRST_SURFACE;
+	     channel < TILE_COUNT &&
+	     (dsts < anec->dst_count || srcs < anec->src_count);
+	     channel++) {
+		if (is_dst[channel] || is_src[channel] ||
+		    anec->tiles[channel] == 0)
+			continue;
+		if (dsts < anec->dst_count)
+			derived.dst[dsts++] = (uint8_t)channel;
+		else
+			derived.src[srcs++] = (uint8_t)channel;
+	}
+
 	if (srcs != anec->src_count || dsts != anec->dst_count)
 		return 0;
 
