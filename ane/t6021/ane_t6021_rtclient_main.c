@@ -211,6 +211,16 @@ module_param(fw_start_dart_single_stream, bool, 0444);
 MODULE_PARM_DESC(fw_start_dart_single_stream,
 		 "fw_start=1: configure all three ANE DARTs to macOS working-state single-stream form (stream 0 only via DISABLE_STREAMS 0xc20, dart0 PROTECT 0x6) before CPU release, logging before/after reads. Default 0 (off).");
 
+static bool fw_start_core1_run;
+module_param(fw_start_core1_run, bool, 0444);
+MODULE_PARM_DESC(fw_start_core1_run,
+		 "fw_start=1: write 0x10 (RUN) to secondary core control engine+0x1400444 before CPU release, logging before/after reads. Default 0 (off).");
+
+static bool fw_start_wrapper_b80_unmask;
+module_param(fw_start_wrapper_b80_unmask, bool, 0444);
+MODULE_PARM_DESC(fw_start_wrapper_b80_unmask,
+		 "fw_start=1: write 0xffffffff to KIC interrupt registers engine+0x1400b80..b94 and +0x1400bfc before CPU release, logging before/after reads. Default 0 (off).");
+
 /*
  * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
  * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
@@ -789,6 +799,37 @@ static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
 	}
 }
 
+static void ane_rtclient_apply_core1_run(struct ane_rtclient *ane)
+{
+	u32 before, after;
+
+	before = readl(ane->engine + 0x1400444);
+	writel(0x10, ane->engine + 0x1400444);
+	mb();
+	after = readl(ane->engine + 0x1400444);
+	dev_emerg(ane->dev,
+		  "BOOT-PHASE core1-run: +0x1400444 %08x -> %08x (wrote 0x10)\n",
+		  before, after);
+}
+
+static void ane_rtclient_apply_wrapper_b80_unmask(struct ane_rtclient *ane)
+{
+	static const u32 offs[] = {
+		0x1400b80, 0x1400b84, 0x1400b88, 0x1400b8c,
+		0x1400b90, 0x1400b94, 0x1400bfc
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(offs); i++) {
+		u32 before = readl(ane->engine + offs[i]);
+		writel(U32_MAX, ane->engine + offs[i]);
+		mb();
+		dev_emerg(ane->dev,
+			  "BOOT-PHASE wrapper-b80 +%x: %08x -> %08x (wrote ffffffff)\n",
+			  offs[i], before, readl(ane->engine + offs[i]));
+	}
+}
+
 
 /*
  * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
@@ -921,6 +962,19 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7),
 			  readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL),
 			  readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL));
+		dev_emerg(dev,
+			  "BOOT-REPORT wrapper: +0=%08x +8=%08x +40=%08x +444=%08x +b80=%08x +b84=%08x +b88=%08x +b8c=%08x +b90=%08x +b94=%08x +bfc=%08x\n",
+			  readl(ane->engine + 0x1400000),
+			  readl(ane->engine + 0x1400008),
+			  readl(ane->engine + 0x1400040),
+			  readl(ane->engine + 0x1400444),
+			  readl(ane->engine + 0x1400b80),
+			  readl(ane->engine + 0x1400b84),
+			  readl(ane->engine + 0x1400b88),
+			  readl(ane->engine + 0x1400b8c),
+			  readl(ane->engine + 0x1400b90),
+			  readl(ane->engine + 0x1400b94),
+			  readl(ane->engine + 0x1400bfc));
 		for (s = 0; s < 30; s++)
 			msleep(10);	/* let the report hit every sink */
 		ane_t6021_fwload_remove(a);
@@ -976,6 +1030,12 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 
 	if (fw_start_mbox_ctrl_bit19)
 		ane_rtclient_apply_mbox_ctrl_bit19(ane);
+
+	if (fw_start_core1_run)
+		ane_rtclient_apply_core1_run(ane);
+
+	if (fw_start_wrapper_b80_unmask)
+		ane_rtclient_apply_wrapper_b80_unmask(ane);
 
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);
