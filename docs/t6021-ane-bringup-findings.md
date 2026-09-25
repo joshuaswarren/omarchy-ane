@@ -842,13 +842,25 @@ programs (one per layer slot), guard-checked load.
 - Bench n=100 against the committed macOS denominator (fedd4da json sha
   `410dc4f7`): decode 8.23 vs 5.625 tok/s = 1.466x [1.430, 1.503] PASS;
   e2e 5.314 vs 6.718 s = 0.787x [0.770, 0.806] PASS; TTFT 1.534 vs 1.189 s
-  = 1.347x [1.236, 1.480] FAIL. The ~345 ms TTFT gap is the named live
-  lever for that lane (38-program cold path, weight staging, first-step
-  submission shape).
+  = 1.347x [1.236, 1.480] FAIL. The ~345 ms TTFT gap was this lane's live
+  lever; it is closed by the next bullet.
 - Same merge carries `receipts/2026-09-25-jwm1-parakeet-golden-rerun`:
   Parakeet golden PASS bit-exact on the installed a9a5f60 stack. The earlier
   post-reboot hang left no kernel trace, did not reproduce under an
   instrumented re-run.
+- TTFT lever closed (b93397a, `receipts/2026-09-25-jwm1-qwen-ane-ttft-rt/`).
+  The step is engine-bound: 38 program execs cost 65.2 of the 74.8 ms step.
+  The TTFT excess was scheduler wakeup stalls in the kernel `ane_exec`
+  completion poll — about 16% of steps stalled at ~154 ms,
+  blocked-without-CPU, at normal priority. `chrt -f 50` (SCHED_FIFO, no
+  code change) removes them: 1 spike in 5841 steps, tokens exact. Full
+  n=100 frozen contract: TTFT 0.9677 s = 0.8354x [0.7623, 0.9210] PASS,
+  decode 8.345 tok/s = 1.4926x PASS, e2e 4.6814 s = 0.6905x PASS, 100/100
+  tokens exact vs the fedd4da denominator. The Qwen ANE cell sweeps 3/3.
+- Same merge decomposed the GPU TTFT at RT: 219.6 ms fixed cost +
+  1.19 ms/token (the old 4.81 ms/token slope was jitter;
+  `receipts/2026-09-25-jwm1-gpu-ttft-fixed-cost/`). A Mesa barrier-batch
+  candidate is pending a rare-race battery.
 
 ### T6001: tm/tq retention blocks in-place recovery
 
