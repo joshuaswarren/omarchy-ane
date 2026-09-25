@@ -53,7 +53,9 @@ experiment. Update it when a finding changes, and delete lines that go stale.
 ## 4. Release sequence (proven on T6021 and T6001)
 
 1. Gate: all eight ANE pmgr islands read ACTUAL = `0xf` (bits [7:4]).
-2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in place.
+2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in
+   place. T6021 only: the T6001 runs were unmapped (T6001 map staged in
+   agent/ane-boundaries `receipts/2026-09-24-ane-perf-mode-h13` §10).
 3. Set bit 0 of the I2A control register (engine + `0x1408114`).
 4. Write CPU_CONTROL (engine + `0x1400044`) = 0, barrier, then `0x10`.
 5. RVBAR (engine + `0x1050000`) is latched (bit 0 set, `0x10000000001`).
@@ -71,6 +73,17 @@ After the release above, on **both** T6021 and T6001:
 
 The firmware runs but stalls before RTKit init. Because both chips stall the
 same way, the missing piece is shared and is not T6021-specific.
+The uncached-map hypothesis is ruled out. On 2026-09-24 the two
+segment-ranges were mapped with `IOMMU_READ|IOMMU_WRITE|IOMMU_CACHE`
+forced. `iommu_iova_to_phys(0x10000000000)` returned `0x10000848000`.
+The leaf PTE was `0x000fff1000084801`: valid, bit 1 (NO_CACHE) clear,
+PA the TEXT page. dart-ane0 TCR[15] read back `0x2` (BYPASS). After
+the usual release, SCRATCH7 stayed 0 and the I2A outbox stayed empty
+(`recv0=0`, `i2a=0x00020001`, CPU_STATUS `0x28`) for 5 s.
+dart-ane0 ENABLE at `0xc00` already read `0xffff` on that boot (bit 0
+set). A 60 s poll with that bit set still showed SCRATCH7 0 and an
+empty outbox. Writing `1` to DISABLE at `0xc20` cleared bit 0; the
+readback was `0xfffe`.
 
 ## 6. Ruled out (do not re-run without new evidence)
 
@@ -85,6 +98,7 @@ same way, the missing piece is shared and is not T6021-specific.
 | pmgr `ps_ane_cpu` TARGET (kext `0x2e0 = 0xf`) | Already on; it is a pmgr write, not an engine write |
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
+| Firmware pages mapped uncached, so the ASC cannot fetch | Leaf PTE `0x000fff1000084801` has bit 1 clear and the TEXT PA; sid 15 TCR is `0x2`; SCRATCH7 and the outbox still empty |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
 
 ## 7. Hazards (each one wedged or reset a laptop)
