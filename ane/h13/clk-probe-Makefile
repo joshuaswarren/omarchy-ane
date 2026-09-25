@@ -1,1 +1,1 @@
-obj-m := ane_clk_probe.o ane_perfstate_probe.o
+obj-m := ane_clk_probe.o
