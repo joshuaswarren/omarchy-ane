@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * Board overlay v2 for jw14m2 (J414c / T6021, M2 Max): RTKit-client ANE.
+ *
+ * The stock 7.1.13 DTB already carries the full ane0 node
+ * ("apple,t6021-ane", engine/pmgr/set windows, IRQ 884, iommus,
+ * power-domains incl. ane_sys_mpm, resets) with /soc marked
+ * nonposted-mmio — so the only additions needed for the RTKit path
+ * are the ASC mailbox device and the mboxes link. Supersedes
+ * t6021-j414c-ane.dts (v1), whose engine window (0x285c04000) was the
+ * H13-style delta that external-aborts on first touch.
+ *
+ * Mailbox: ASC-relative +0x8000 = 0x285408000; a2i/i2a controls
+ * 0x285408110/0x285408114 (m1n1 ASCRegs = upstream apple-mailbox ASC
+ * offsets). The ADT gives ane0 exactly one interrupt entry, raw
+ * 0x374 (884), 4 bytes — used as recv-not-empty. There is NO
+ * send-empty entry, so apple-mailbox needs poll-TX
+ * (omarchy-linux commit 86c727e6e).
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "apple,j414c", "apple,t6021";
+
+	fragment@0 {
+		target-path = "/soc";
+
+		__overlay__ {
+
+			ane_mbox: mailbox@285408000 {
+				compatible = "apple,t6021-ane-mailbox",
+					     "apple,asc-mailbox-v4";
+				reg = <0x2 0x85408000 0x0 0x00004000>;
+				/* /soc is nonposted-mmio; inherited. */
+				interrupt-parent = <0x15>;	/* AIC2 */
+				interrupt-names = "recv-not-empty";
+				interrupts = <0 0 884 4>;
+				#mbox-cells = <0>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/ane@284000000";
+
+		__overlay__ {
+			mboxes = <&ane_mbox>;
+		};
+	};
+};
