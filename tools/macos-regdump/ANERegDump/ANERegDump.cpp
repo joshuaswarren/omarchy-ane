@@ -294,8 +294,8 @@ uint32_t ANERegDump::addFixed(struct map *m, uint32_t n)
 		{ "pmgr-ps",     ANE_PMGR_PHYS,              0x4040, 0 },
 		{ "wrapper",     ANE_ENGINE_PHYS + 0x1400000, 0x14000, 1 },
 		{ "mailbox",     ANE_ENGINE_PHYS + 0x1408000, 0x1000,  1 },
-		{ "rvbar",       ANE_ENGINE_PHYS + 0x1050000, 0x1000,  1 },
-		{ "scratch",     ANE_ENGINE_PHYS + 0x1840000, 0x1000,  1 },
+		{ "rvbar",       ANE_ENGINE_PHYS + 0x1050000, 0x8,     1 },
+		{ "scratch",     ANE_ENGINE_PHYS + 0x1840048, 0x28,    1 },
 		{ "dart0",       ANE_DART0_PHYS,              0x2000,  1 },
 		{ "dart1",       ANE_DART0_PHYS + ANE_DART_STRIDE, 0x2000, 1 },
 		{ "dart2",       ANE_DART0_PHYS + 2 * ANE_DART_STRIDE, 0x2000, 1 },
@@ -426,91 +426,102 @@ uint32_t ANERegDump::addHandoff(struct map *m, uint32_t n, uint64_t slide)
 	return n;
 }
 
+/* All dump state lives in one heap block: kernel stacks are 16 KB and
+ * this path descends into the VM map code once per range. */
+struct ane_work {
+	ANERegDump::map table[ANE_RANGE_MAX];
+	struct ane_dump_hdr hdr;
+	const uint8_t *prop_src[ANE_RANGE_MAX];
+	uint32_t prop_len[ANE_RANGE_MAX];
+	IORegistryEntry *held[4];
+	uint32_t nheld;
+};
+
 IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out)
 {
-	struct map table[ANE_RANGE_MAX];
-	struct ane_dump_hdr hdr;
-	uint8_t *buf;
-	const uint8_t *prop_src[ANE_RANGE_MAX] = {};
-	uint32_t prop_len[ANE_RANGE_MAX] = {};
-	IORegistryEntry *held[4] = {};
-	uint32_t nheld = 0;
+	struct ane_work *w;
+	struct ane_dump_hdr *hdr;
+	uint8_t *buf = NULL;
 	uint32_t n = 0, data = 0, i;
 	uint64_t slide;
 	IOReturn rc;
 
-	memset(table, 0, sizeof(table));
-	memset(&hdr, 0, sizeof(hdr));
-	if (!readIslands(ps_cache))
-		return kIOReturnNotReady;
-	memcpy(hdr.ps, ps_cache, sizeof(hdr.ps));
-	hdr.islands_up = ane_islands_up(ps_cache);
-
-	n = addFixed(table, n);
-	n = addAdt(table, n, (const uint8_t **)prop_src, prop_len,
-	    ANE_DUMP_MAX, held, &nheld);
-	if (kernel_slide(&slide)) {
-		hdr.kaslr_slide = slide;
-		hdr.globals_va = ANE_GLOBALS_STATIC + slide;
-		n = addHandoff(table, n, slide);
-	}
-
-	buf = (uint8_t *)IOMalloc(ANE_DUMP_MAX);
-	if (!buf) {
-		for (i = 0; i < nheld; i++)
-			held[i]->release();
+	w = (struct ane_work *)IOMallocZero(sizeof(*w));
+	if (!w)
 		return kIOReturnNoMemory;
+	hdr = &w->hdr;
+	if (!readIslands(ps_cache)) {
+		rc = kIOReturnNotReady;
+		goto done;
 	}
-	memset(buf, 0, ANE_DUMP_MAX);
+	memcpy(hdr->ps, ps_cache, sizeof(hdr->ps));
+	hdr->islands_up = ane_islands_up(ps_cache);
 
+	n = addFixed(w->table, n);
+	n = addAdt(w->table, n, w->prop_src, w->prop_len, ANE_DUMP_MAX,
+	    w->held, &w->nheld);
+	if (kernel_slide(&slide)) {
+		hdr->kaslr_slide = slide;
+		hdr->globals_va = ANE_GLOBALS_STATIC + slide;
+		n = addHandoff(w->table, n, slide);
+	}
+
+	buf = (uint8_t *)IOMallocZero(ANE_DUMP_MAX);
+	if (!buf) {
+		rc = kIOReturnNoMemory;
+		goto done;
+	}
 	for (i = 0; i < n; i++) {
-		struct ane_range_rec *r = &hdr.range[i];
-		uint32_t banned = 0, got = 0;
+		struct ane_range_rec *r = &hdr->range[i];
+		const ANERegDump::map *m = &w->table[i];
+		uint32_t banned = 0;
 
-		strlcpy(r->name, table[i].name, ANE_NAME_MAX);
-		r->pa = table[i].pa;
-		r->src = table[i].src;
-		r->flags = table[i].flags;
+		strlcpy(r->name, m->name, ANE_NAME_MAX);
+		r->pa = m->pa;
+		r->src = m->src;
+		r->flags = m->flags;
 		r->off = data;
-		if (data + table[i].len > ANE_DUMP_MAX) {
+		if (data + m->len > ANE_DUMP_MAX) {
 			r->status = ANE_ST_NOMAP;
 			continue;
 		}
-		if (table[i].flags & ANE_F_VIRT) {
-			got = copyVirt(table[i].src, buf + data, table[i].len);
-			r->status = got ? ANE_ST_OK : ANE_ST_NOMAP;
-		} else if (table[i].flags & ANE_F_PROP) {
-			if (prop_src[i] && prop_len[i] == table[i].len) {
-				memcpy(buf + data, prop_src[i], prop_len[i]);
+		if (m->flags & ANE_F_VIRT) {
+			r->len = copyVirt(m->src, buf + data, m->len);
+			r->status = r->len ? ANE_ST_OK : ANE_ST_NOMAP;
+		} else if (m->flags & ANE_F_PROP) {
+			if (w->prop_src[i] && w->prop_len[i] == m->len) {
+				memcpy(buf + data, w->prop_src[i], m->len);
+				r->len = m->len;
 				r->status = ANE_ST_OK;
-				r->len = prop_len[i];
 			} else {
 				r->status = ANE_ST_ABSENT;
-				r->len = 0;
 			}
 		} else {
-			r->status = copyPhys(&table[i], buf + data, &banned);
+			r->status = copyPhys(m, buf + data, &banned);
 			r->banned = banned;
-			r->len = (r->status == ANE_ST_OK) ? table[i].len : 0;
+			r->len = (r->status == ANE_ST_OK) ? m->len : 0;
 		}
 		data += r->len;
 	}
-	hdr.magic = ANE_DUMP_MAGIC;
-	hdr.version = ANE_DUMP_VERSION;
-	hdr.hdr_bytes = sizeof(hdr);
-	hdr.nranges = n;
-	hdr.data_bytes = data;
+	hdr->magic = ANE_DUMP_MAGIC;
+	hdr->version = ANE_DUMP_VERSION;
+	hdr->hdr_bytes = sizeof(*hdr);
+	hdr->nranges = n;
+	hdr->data_bytes = data;
 
-	if (out->getLength() < sizeof(hdr) + data)
+	if (out->getLength() < sizeof(*hdr) + data)
 		rc = kIOReturnNoSpace;
 	else if ((rc = out->prepare(kIODirectionIn)) == kIOReturnSuccess) {
-		out->writeBytes(0, &hdr, sizeof(hdr));
-		out->writeBytes(sizeof(hdr), buf, data);
+		out->writeBytes(0, hdr, sizeof(*hdr));
+		out->writeBytes(sizeof(*hdr), buf, data);
 		out->complete(kIODirectionIn);
 	}
-	for (i = 0; i < nheld; i++)
-		held[i]->release();
-	IOFree(buf, ANE_DUMP_MAX);
+done:
+	for (i = 0; i < w->nheld; i++)
+		w->held[i]->release();
+	if (buf)
+		IOFree(buf, ANE_DUMP_MAX);
+	IOFree(w, sizeof(*w));
 	return rc;
 }
 

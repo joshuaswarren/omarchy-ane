@@ -408,3 +408,68 @@ physical-timer FIQ enable (`S3_5_C15_C1_3` bit 1) is still the register
 nobody sets, and it is still not host-writable. No further host read or
 write is ranked. The next evidence has to come from a macOS boot trace,
 or from a core register read this hardware cannot do.
+
+## 15. ANS2 fails the same way on the first macOS boot after Linux (2026-09-25)
+
+Receipt 1ff5328 (ane-linux-experiments). macOS 27.0 on the M2 panics on the
+first boot after a Linux session:
+`RTBuddy(ANS2)::_setManagedStateGated "No response received in 20s, ANS2 not
+started? (4)"`. Mailbox state at the panic: IDLE_STATUS 0x0000000a,
+INBOX0_CTRL 0x00100101, OUTBOX0_CTRL 0x00020001, one TX word
+0x0060000000000220, zero RX. The immediate retry boots clean. Source for the
+kext side: the 27.0 kernelcache (xnu-13432.1.9, RELEASE_ARM64_T6020,
+/tmp/anestatic/kc.raw).
+
+### What the AP does before the first TX
+
+`_performPowerStateChangeGated` (0xfffffe000b6aff40) calls the slave's
+`startCPU` (vtable slot +0x888, at 0xfffffe000b6b0034) before the first
+endpoint send (slot +0x1e8, at 0xfffffe000b6b0128). For an ASC that is
+`AppleA7IOP-ASCWrap-v4::_runCPU` (0xfffffe0008bc5180): read CPU_CONTROL at
+wrapper+0x44, write it back with bit 4 set. `stopCPU` clears bit 4, then bit
+5. No interrupt, AIC, or power register is written on this path. The ANE
+kext's own `ANE_Init` is the same shape (section 14). iopStatus 4 is the
+value this function stores (0xfffffe000b6b018c, `mov w1, #4`) when the IOP
+has been started and the host is waiting for the firmware's version reply.
+The panic prints that 4. It means the host sent its word and got nothing
+back.
+
+### What a panic reset clears that a warm reboot does not
+
+A panic reset is a PMU reset: the rails drop, so every coprocessor power
+domain and every wrapper register returns to its power-on value, and iBoot
+re-runs its full coprocessor setup. A Linux reboot through macsmc or the
+m1n1 proxy resets the application processors and re-enters the boot chain,
+but it does not drop the coprocessor rails. Wrapper registers, AIC routing,
+and a latched RVBAR survive it. That is the only reset-scope difference the
+two paths have, and it is the difference between the failing first boot and
+the working second boot.
+
+### Does that explain the ANE park
+
+Partly, and the part that does not is the useful one. The ANS2 failure is
+specific to the first boot after Linux and is cured by the panic reset. The
+ANE park is not: it reproduces after watchdog resets and after power-button
+boots (section 5, the 06:11 watchdog reset). So the ANS2 case names a
+residual that a PMU reset clears, but the ANE case survives resets that
+should clear the same class of state. The two share the park shape. They do
+not share the reset behaviour, and that rules out "a stale wrapper register"
+as the whole explanation for the ANE.
+
+### Tests, from Linux, ranked
+
+1. ANS2 register dump, read only. From the ADT, take the ANS2 ASC wrapper
+   base and read CPU_CONTROL, CPU_STATUS, both mailbox control words, and
+   the event word at +0x818 once. Do this on a normal Linux boot and record
+   it. The ANE reads 0x28 or 0x08 with the outbox armed and empty; if ANS2
+   reads the same shape, the coprocessors are parked alike and the ANS2
+   panic is the same park seen from macOS.
+2. The dump again after a warm reboot (m1n1 `p.reboot()`), before any ANE
+   experiment. If the values survive the reboot unchanged, the warm path
+   preserves coprocessor state and test 1's reading stands.
+3. The discriminating reset. One run where the machine is powered off at
+   the PMU (SMC shutdown, then power button) rather than rebooted, then the
+   same dump. If ANS2 and the ANE both come up differently after that and
+   only after that, the residual lives in a domain only a PMU reset clears.
+   If the ANE park survives that too, the residual is not reset state at all
+   and this section's hypothesis is exhausted.
