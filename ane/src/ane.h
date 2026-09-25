@@ -48,6 +48,12 @@ struct ane_device {
 	struct mutex iommu_lock;
 	struct mutex engine_lock;
 	struct list_head bo_list;
+
+	/*
+	 * Wedge-preserved BO ranges, tied to their still-inserted drm_mm
+	 * nodes (see ane_reclaim_preserved). Registered under engine_lock.
+	 */
+	struct list_head preserved_list;
 	bool removed;
 
 	/*
@@ -93,12 +99,20 @@ struct ane_request {
  */
 void ane_wedge_clear(struct ane_device *ane);
 
+/*
+ * Reclaim wedge-preserved BO ranges (unmap, release nodes and pages).
+ * Only legal once DMA is provably quiescent: after a successful
+ * recovery power cycle, or at driver remove. Callers hold engine_lock.
+ */
+void ane_reclaim_preserved(struct ane_device *ane);
+
 #define ANE_DART_MAX 3
 #define ANE_DART_SCRATCH_MAX 16
 
 struct ane_dart_scratch {
 	u64 iova;
 	struct page *page;
+	struct drm_mm_node *node;
 };
 
 int ane_dart_init(struct ane_device *ane);

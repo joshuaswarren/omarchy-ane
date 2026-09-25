@@ -10,6 +10,7 @@
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 
 #include "ane.h"
 
@@ -177,10 +178,25 @@ bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status)
  * IOVA is handed a throwaway DART page, so the retried transaction
  * completes and the engine drains on its own; the scratch pages are
  * unmapped once the request has been failed cleanly.
+ *
+ * The throwaway page is mapped at the faulting address, which is
+ * allocator-free by definition of a translation fault - but the drm_mm
+ * allocator knows nothing about a raw iommu_map. A scratch PTE that
+ * outlives its release path (any future bug on the wedge side) would
+ * then sit, untracked, in a range the allocator considers free: the
+ * next BO_INIT maps onto it and dies in dart_init_pte's "we require an
+ * unmap first" WARN (m1-test-host 2026-09-25, iommu_map failed at 0x4000). So
+ * the scratch range is RESERVED in the allocator first: a node-tracked
+ * mapping can never collide with a later BO_INIT, and a scratch whose
+ * release is skipped degrades into a bounded, benign leak instead of a
+ * poisoned address space. Reserve failure means a live BO node already
+ * owns the faulting page (a wild descriptor, not a hole): refuse and
+ * let the caller wedge, fail closed.
  */
 int ane_dart_drain_fault(struct ane_device *ane, u64 fault_iova,
 			 struct ane_dart_scratch *scratch, int *pages)
 {
+	struct drm_mm_node *node;
 	struct page *page;
 	u64 iova;
 	int ret, i;
@@ -189,14 +205,38 @@ int ane_dart_drain_fault(struct ane_device *ane, u64 fault_iova,
 	if (!page)
 		return -ENOMEM;
 	iova = fault_iova & ~((1ULL << ane->shift) - 1);
+
+	node = kzalloc(sizeof(*node), GFP_KERNEL);
+	if (!node) {
+		__free_page(page);
+		return -ENOMEM;
+	}
+	node->start = iova;
+	node->size = BIT(ane->shift);
+
+	mutex_lock(&ane->iommu_lock);
+	ret = drm_mm_reserve_node(&ane->mm, node);
+	if (ret) {
+		mutex_unlock(&ane->iommu_lock);
+		kfree(node);
+		__free_page(page);
+		return ret;
+	}
+
 	ret = iommu_map(ane->domain, iova, page_to_phys(page),
 			BIT(ane->shift), IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+	mutex_unlock(&ane->iommu_lock);
 	if (ret) {
+		mutex_lock(&ane->iommu_lock);
+		drm_mm_remove_node(node);
+		mutex_unlock(&ane->iommu_lock);
+		kfree(node);
 		__free_page(page);
 		return ret;
 	}
 	scratch[*pages].iova = iova;
 	scratch[*pages].page = page;
+	scratch[*pages].node = node;
 	(*pages)++;
 	for (i = 0; i < ane->dart_count; i++)
 		ane_dart_invalidate(ane, &ane->darts[i]);
@@ -208,11 +248,23 @@ void ane_dart_release_scratch(struct ane_device *ane,
 {
 	int i, d;
 
+	mutex_lock(&ane->iommu_lock);
 	for (i = 0; i < pages; i++) {
-		iommu_unmap(ane->domain, scratch[i].iova, BIT(ane->shift));
+		size_t unmapped;
+
+		unmapped = iommu_unmap(ane->domain, scratch[i].iova,
+				       BIT(ane->shift));
+		if (unmapped != BIT(ane->shift))
+			dev_err(ane->dev,
+				"scratch unmap short at %#llx: %zu\n",
+				scratch[i].iova, unmapped);
+		drm_mm_remove_node(scratch[i].node);
+		kfree(scratch[i].node);
+		scratch[i].node = NULL;
 		__free_page(scratch[i].page);
 		scratch[i].page = NULL;
 	}
+	mutex_unlock(&ane->iommu_lock);
 	if (pages)
 		for (d = 0; d < ane->dart_count; d++)
 			ane_dart_invalidate(ane, &ane->darts[d]);

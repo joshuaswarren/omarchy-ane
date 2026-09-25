@@ -498,6 +498,13 @@ int ane_tm_recover(struct ane_device *ane)
 
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
+		/* The power cycle above quiesced every transaction, so the
+		 * wedge-preserved mappings (dead BOs kept alive only to
+		 * stop IOVA teardown under active DMA) can now be unmapped
+		 * and their ranges handed back to the allocator. Without
+		 * this reclaim the ranges would stay pinned for the whole
+		 * module lifetime. */
+		ane_reclaim_preserved(ane);
 		dev_info(ane->dev, "tm recovered: idle, accepting work again\n");
 	}
 	return 0;

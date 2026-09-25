@@ -112,16 +112,47 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 	for (u32 i = 0; i < bo->npages; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
 		int prot = IOMMU_READ | IOMMU_WRITE;
-		if (map_mode & 1)
+		bool healed = false;
+		int prot_cache = map_mode & 1;
+
+retry:
+		if (prot_cache)
 			prot |= IOMMU_CACHE;
 		err = iommu_map(ane->domain, iova, page_to_phys(bo->pages[i]),
 				1UL << ane->shift, prot, GFP_KERNEL);
 		if (err < 0) {
 			dev_err(ane->dev, "iommu_map failed at 0x%llx", iova);
-			while (i-- > 0) {
-				iommu_unmap(ane->domain,
-					    bo->iova + (i << ane->shift),
+			/* Every PTE inside a reserved drm_mm node must be
+			 * ours-or-absent: scratch drains reserve before
+			 * mapping and wedge-preserved nodes stay inserted.
+			 * A VALID PTE in a just-reserved range is therefore
+			 * a stray from a torn-down session or a lost
+			 * unmap. Clear it once and retry instead of
+			 * poisoning every later BO_INIT until reload
+			 * (m1-test-host 2026-09-25: dart_init_pte -EEXIST at
+			 * 0x4000 for the rest of the session). */
+			if (err == -EEXIST && !healed &&
+			    iommu_iova_to_phys(ane->domain, iova)) {
+				dev_warn(ane->dev,
+					 "clearing stray DART PTE at 0x%llx (no node owns it)\n",
+					 iova);
+				iommu_unmap(ane->domain, iova,
 					    1UL << ane->shift);
+				healed = true;
+				goto retry;
+			}
+			while (i-- > 0) {
+				size_t unmapped;
+
+				unmapped = iommu_unmap(ane->domain,
+						       bo->iova +
+						       (i << ane->shift),
+						       1UL << ane->shift);
+				if (unmapped != 1UL << ane->shift)
+					dev_err(ane->dev,
+						"rollback unmap short at %#llx: %zu\n",
+						bo->iova + (i << ane->shift),
+						unmapped);
 			}
 			drm_mm_remove_node(bo->mm);
 			bo->iova = 0;
@@ -159,7 +190,12 @@ static void ane_iommu_unmap_pages(struct ane_device *ane, struct ane_bo *bo)
 	mutex_lock(&ane->iommu_lock);
 	for (u32 i = 0; i < bo->npages; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
-		iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+		size_t unmapped = iommu_unmap(ane->domain, iova,
+					      1UL << ane->shift);
+
+		if (unmapped != 1UL << ane->shift)
+			dev_err(ane->dev, "unmap short at %#llx: %zu\n",
+				iova, unmapped);
 	}
 	drm_mm_remove_node(mm);
 	bo->mm = NULL;
@@ -167,6 +203,82 @@ static void ane_iommu_unmap_pages(struct ane_device *ane, struct ane_bo *bo)
 	mutex_unlock(&ane->iommu_lock);
 
 	kfree(mm);
+}
+
+/*
+ * A BO freed while the engine is wedged keeps its mapping and its pages
+ * (DMA may still be reading the IOVA), but the GEM object is gone. The
+ * range's drm_mm node and the page array outlive it here, still linked
+ * into the allocator, until DMA is provably quiescent: recovery
+ * (ane_reclaim_preserved after the quiescing power cycle) or remove.
+ * The node stays reserved the whole time, so the IOVA can never be
+ * handed to a later BO_INIT while its PTEs are live.
+ */
+struct ane_preserved {
+	struct list_head list;
+	struct drm_mm_node *mm;
+	struct page **pages;
+	u32 npages;
+};
+
+static void ane_preserve_bo(struct ane_device *ane, struct ane_bo *bo)
+{
+	struct ane_preserved *p;
+
+	p = kzalloc(sizeof(*p), GFP_KERNEL);
+	if (!p) {
+		/* Fail closed the old way: the node stays inserted and the
+		 * pages leak until reboot - safe, just unreclaimable. */
+		dev_err(ane->dev, "wedged: preserve registry full, leaking\n");
+		bo->mm = NULL;
+		bo->pages = NULL;
+		return;
+	}
+	p->mm = bo->mm;
+	p->pages = bo->pages;
+	p->npages = bo->npages;
+	list_add_tail(&p->list, &ane->preserved_list);
+	bo->mm = NULL;
+	bo->pages = NULL;
+}
+
+void ane_reclaim_preserved(struct ane_device *ane)
+{
+	struct ane_preserved *p, *tmp;
+	unsigned long count = 0;
+
+	lockdep_assert_held(&ane->engine_lock);
+
+	list_for_each_entry_safe(p, tmp, &ane->preserved_list, list) {
+		u64 iova = p->mm->start;
+
+		mutex_lock(&ane->iommu_lock);
+		for (u32 i = 0; i < p->npages; i++) {
+			size_t unmapped;
+
+			unmapped = iommu_unmap(ane->domain,
+					       iova + (i << ane->shift),
+					       1UL << ane->shift);
+			if (unmapped != 1UL << ane->shift)
+				dev_err(ane->dev,
+					"preserved unmap short at %#llx: %zu\n",
+					iova + (i << ane->shift), unmapped);
+		}
+		drm_mm_remove_node(p->mm);
+		mutex_unlock(&ane->iommu_lock);
+
+		kfree(p->mm);
+		for (u32 i = 0; i < p->npages; i++)
+			put_page(p->pages[i]);
+		kfree(p->pages);
+		list_del(&p->list);
+		kfree(p);
+		count++;
+	}
+	if (count)
+		dev_info(ane->dev,
+			 "reclaimed %lu wedge-preserved mapping(s) after quiesce\n",
+			 count);
 }
 
 static vm_fault_t ane_gem_vm_fault(struct vm_fault *vmf)
@@ -207,13 +319,16 @@ static void ane_gem_free_object(struct drm_gem_object *gem)
 	mutex_lock(&ane->engine_lock);
 	if (bo->mm) {
 		if (atomic_read(&ane->wedged)) {
-			/* Fail closed: leak the mapping and the pages so no
+			/* Fail closed: keep the mapping and the pages so no
 			 * IOVA is torn down or page reused underneath active
-			 * DMA. Reboot reclaims them. */
+			 * DMA. The range's node stays reserved and tracked
+			 * until recovery quiesces the engine and reclaims
+			 * it, so no later BO_INIT can map over these PTEs
+			 * (a leaked-but-forgotten mapping is what turned
+			 * into dart_init_pte -EEXIST WARNs on m1-test-host). */
 			dev_err(ane->dev, "wedged: preserving bo mapping\n");
 			list_del_init(&bo->node);
-			bo->mm = NULL;
-			bo->pages = NULL;
+			ane_preserve_bo(ane, bo);
 		} else {
 			ane_iommu_unmap_pages(ane, bo);
 		}
@@ -917,6 +1032,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
+	INIT_LIST_HEAD(&ane->preserved_list);
 
 	/*
 	 * Kernel-owned IOMMU domain. Defers until every "iommus" provider
@@ -985,6 +1101,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 
 	list_for_each_entry_safe(bo, tmp, &ane->bo_list, node)
 		ane_iommu_unmap_pages(ane, bo);
+	ane_reclaim_preserved(ane);
 	drm_mm_takedown(&ane->mm);
 
 	ane_detach_genpd(ane);
