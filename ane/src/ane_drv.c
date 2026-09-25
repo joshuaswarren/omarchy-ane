@@ -899,6 +899,9 @@ enum ane_qual {
 struct ane_soc {
 	phys_addr_t ps_base;
 	enum ane_qual qual;
+	/* True when the tm/tq register file survives a genpd cycle in
+	 * retention and recovery must drain it (see ane_tm_drain_retained). */
+	bool tm_retention;
 };
 
 static bool allow_unqualified;
@@ -918,6 +921,7 @@ static const struct ane_soc ane_soc_t6000 = {
 	 * T6001/t6001-test-host); M1 Pro still needs a board overlay and a tester. */
 	.ps_base = 0x28e08c000ULL,
 	.qual = ANE_QUALIFIED,
+	.tm_retention = true,
 };
 
 static const struct ane_soc ane_soc_t6020 = {
@@ -994,6 +998,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 	drm->dev_private = ane;
 
 	atomic_set(&ane->wedged, 0);
+	ane->tm_retention = soc->tm_retention;
 
 	/* Managed power first: genpd links hold the ANE/DART supplier
 	 * topology awake before any register is touched. */
