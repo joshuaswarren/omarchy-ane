@@ -670,4 +670,76 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	return 0;
 }
 
+/* ---- ChMan descriptor table: what the fw leaves in the 'IPC '
+ * surface at DONE (selene 0x5348, called from 0x7728 with x0 =
+ * init[0x08] = IPC DVA as the ring base and x1 = the fw's own mapping
+ * of the same surface as the table address). Entries are 0x100 bytes
+ * at IPC+0: name[0x40] | u32 type @0x40 | u32 doorbell bit @0x44 |
+ * u64 size @0x48 | u64 ring DVA @0x50; rings follow the table. The
+ * READY-time SCRATCH0 = 8 (count) and SCRATCH1 = 0xc440 (bytes the
+ * host must provide) come from 0x5328. type 0 = host->target,
+ * 1 = target->host, 2 = terminal; size unit is per channel (64-byte
+ * slots for the 0x40-stride channels; SHAREDMALLOC's 0x40 spans
+ * 0x200 bytes). Reading the table is a host read of host-owned
+ * coherent memory: no device access. ---- */
+#define ANE_T6021_CHMAN_ENTRY_SIZE	0x100
+#define ANE_T6021_CHMAN_NAME_LEN	0x40
+#define ANE_T6021_CHMAN_COUNT		8
+#define ANE_T6021_CHMAN_TOTAL		0xc440
+
+struct ane_t6021_chman_desc {
+	char name[ANE_T6021_CHMAN_NAME_LEN];
+	u32 type;
+	u32 bit;
+	u64 size;
+	u64 ring;
+	u8 pad[ANE_T6021_CHMAN_ENTRY_SIZE - ANE_T6021_CHMAN_NAME_LEN - 0x18];
+};
+
+struct ane_t6021_chman_static {
+	const char *name;
+	u32 type;
+	u32 bit;
+	u64 size;
+	u32 off;	/* ring offset from the IPC DVA */
+};
+
+/* 0x5348 stores, in entry order (name / +0x40 / +0x44 / +0x48 / +0x50) */
+static const struct ane_t6021_chman_static
+ane_t6021_chman_layout[ANE_T6021_CHMAN_COUNT] = {
+	{ "TERMINAL",       2, 0, 0x200, 0x0800 },
+	{ "IO",             0, 1, 0x010, 0x8800 },
+	{ "DEBUG",          0, 2, 0x008, 0x8c00 },
+	{ "BUF_H2T",        0, 3, 0x040, 0x8e00 },
+	{ "BUF_T2H",        1, 4, 0x040, 0x9e00 },
+	{ "SHAREDMALLOC",   1, 5, 0x040, 0xae00 },
+	{ "IO_T2H",         1, 6, 0x040, 0xb000 },
+	{ "DATA_CHAIN_H2T", 0, 7, 0x010, 0xc000 },
+};
+
+/* True when entry i of a table read from the IPC surface matches the
+ * static layout with the rings based at ipc_dva. */
+static inline bool
+ane_t6021_chman_entry_ok(const struct ane_t6021_chman_desc *d,
+			 unsigned int i, u64 ipc_dva)
+{
+	const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
+
+	return !strncmp(d->name, s->name, ANE_T6021_CHMAN_NAME_LEN) &&
+	       d->type == s->type && d->bit == s->bit && d->size == s->size &&
+	       d->ring == ipc_dva + s->off;
+}
+
+/* Bitmask of mismatching entries (0 = the whole table validated). */
+static inline unsigned int
+ane_t6021_chman_check(const struct ane_t6021_chman_desc *t, u64 ipc_dva)
+{
+	unsigned int i, bad = 0;
+
+	for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++)
+		if (!ane_t6021_chman_entry_ok(&t[i], i, ipc_dva))
+			bad |= 1U << i;
+	return bad;
+}
+
 #endif /* __ANE_T6021_BOOT_H__ */

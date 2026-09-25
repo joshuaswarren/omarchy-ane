@@ -903,6 +903,52 @@ int main(void)
 		fake = NULL;
 	}
 
+	/* ---- ChMan descriptor table (selene 0x5348 output at DONE):
+	 * a table built the way 0x5348 stores it validates against the
+	 * static layout; any single field drift names its entry. ---- */
+	{
+		struct ane_t6021_chman_desc t[ANE_T6021_CHMAN_COUNT];
+		const u64 ipc = 0x3fffff00000ULL;
+		unsigned int i;
+
+		memset(t, 0, sizeof(t));
+		for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++) {
+			strncpy(t[i].name, ane_t6021_chman_layout[i].name,
+				ANE_T6021_CHMAN_NAME_LEN);
+			t[i].type = ane_t6021_chman_layout[i].type;
+			t[i].bit = ane_t6021_chman_layout[i].bit;
+			t[i].size = ane_t6021_chman_layout[i].size;
+			t[i].ring = ipc + ane_t6021_chman_layout[i].off;
+		}
+		check(sizeof(struct ane_t6021_chman_desc) ==
+		      ANE_T6021_CHMAN_ENTRY_SIZE,
+		      "chman entry stride 0x100", "kext + fw stride");
+		check(ane_t6021_chman_layout[0].off ==
+		      ANE_T6021_CHMAN_COUNT * ANE_T6021_CHMAN_ENTRY_SIZE,
+		      "first ring follows the 8-entry table",
+		      "TERMINAL at ipc+0x800");
+		check(ane_t6021_chman_layout[ANE_T6021_CHMAN_COUNT - 1].off +
+		      ane_t6021_chman_layout[ANE_T6021_CHMAN_COUNT - 1].size *
+		      0x40 + 0x40 == ANE_T6021_CHMAN_TOTAL,
+		      "layout + 64-byte align slack == 0xc440",
+		      "SCRATCH1 request (0x5328) = 0xc400 rings + align");
+		check(ane_t6021_chman_check(t, ipc) == 0,
+		      "chman table as 0x5348 stores it", "all 8 entries match");
+		t[1].bit = 9;
+		check(ane_t6021_chman_check(t, ipc) == (1U << 1),
+		      "chman IO doorbell bit drift", "mask names entry 1");
+		t[1].bit = 1;
+		t[6].ring = ipc + 0xb040;
+		check(ane_t6021_chman_check(t, ipc) == (1U << 6),
+		      "chman IO_T2H ring base drift", "mask names entry 6");
+		t[6].ring = ipc + 0xb000;
+		check(ane_t6021_chman_check(t, ipc + 0x40) != 0,
+		      "chman rings based elsewhere", "IPC DVA is the base");
+		memset(t, 0, sizeof(t));
+		check(ane_t6021_chman_check(t, ipc) == 0xff,
+		      "chman zero table", "no fw table = every entry bad");
+	}
+
 	printf("%s: %d checks, %d failures\n",
 	       failures ? "FAILED" : "PASSED", checks, failures);
 	return failures != 0;
