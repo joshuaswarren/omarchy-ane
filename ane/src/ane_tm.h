@@ -11,6 +11,7 @@ u32 ane_tm_status(struct ane_device *ane);
 u32 ane_ps_act(struct ane_device *ane);
 u32 ane_ps_act_probe(struct ane_device *ane);
 void ane_acg_hack_log(struct ane_device *ane);
+void ane_acg_hack(struct ane_device *ane, bool apply);
 int ane_acg_hack_map(struct ane_device *ane);
 bool ane_tm_islands_on(struct ane_device *ane, u32 *act);
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req);
