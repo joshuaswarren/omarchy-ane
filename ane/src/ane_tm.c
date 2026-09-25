@@ -220,8 +220,6 @@ void ane_acg_hack_log(struct ane_device *ane)
 		 val);
 }
 
-}
-
 u32 ane_tm_status(struct ane_device *ane)
 {
 	return tm_read32(ane, TM_STATUS);
