@@ -93,6 +93,18 @@ struct ane_device {
 	bool tm_retention;
 
 	/*
+	 * T8103 auto-clock-gate word, the target of the ane-acg-hack RMW
+	 * macOS does in AppleT8103PMGR::writeReg32 (see ane_tm.c). Lives in
+	 * the macOS ANE window, far outside this driver's engine reg, so
+	 * probe takes a dedicated one-page map for it; acg NULL (other SoC,
+	 * or the map failed) disables the feature cleanly. Touched only
+	 * while the islands are on, like every engine access.
+	 */
+	phys_addr_t acg_word;
+	void __iomem *acg;
+	bool acg_on; /* driver applied the RMW; undone at power-down */
+
+	/*
 	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on
 	 * every cpufreq policy from the first submit until boost_idle_ms
 	 * after the last one: on T8103 bandwidth-bound programs run ~2x

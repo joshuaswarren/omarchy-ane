@@ -902,6 +902,10 @@ struct ane_soc {
 	/* True when the tm/tq register file survives a genpd cycle in
 	 * retention and recovery must drain it (see ane_tm_drain_retained). */
 	bool tm_retention;
+	/* PA of the auto-clock-gate word macOS RMWs under the ADT
+	 * "ane-acg-hack" flag (see ane_tm.c), when that hack exists on
+	 * this SoC. 0 elsewhere. */
+	phys_addr_t acg_word;
 };
 
 static bool allow_unqualified;
@@ -914,7 +918,15 @@ static const struct ane_soc ane_soc_t8103 = {
 	 * log and the powered-on guard. Execution proven in the fleet. */
 	.ps_base = 0x23b70c000ULL,
 	.qual = ANE_QUALIFIED,
+	/* AppleT8103PMGR::writeReg32 (macOS 13.5 kernelcache) RMWs this
+	 * word once ANE_SYS reads state 0xf (ane-acg-hack flag). Offset
+	 * 0xa04 into its page; the static_assert keeps the constant
+	 * honest against the kernel's PAGE_SIZE. */
+	.acg_word = 0x26b868a04ULL,
 };
+
+static_assert((0x26b868a04ULL & (PAGE_SIZE - 1)) + sizeof(u32) <= PAGE_SIZE,
+	      "T8103 ACG word does not fit its one-page map");
 
 static const struct ane_soc ane_soc_t6000 = {
 	/* M1 Pro and M1 Max share this compatible and SET base (proven on
@@ -1034,6 +1046,22 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (ane->ps_base)
 		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
 
+	/* T8103 auto-clock-gate word (see ane_tm.c): one dedicated page,
+	 * mapped here like every other window — no access happens while
+	 * unpowered. A failed map only disables the feature, loudly. */
+	ane->acg_word = soc->acg_word;
+	if (ane->acg_word) {
+		void __iomem *page = devm_ioremap(
+			dev, ane->acg_word & ~(PAGE_SIZE - 1), PAGE_SIZE);
+
+		if (page)
+			ane->acg = page + (ane->acg_word & (PAGE_SIZE - 1));
+		else
+			dev_warn(dev,
+				 "ANE-ACG %#llx: page map failed, feature disabled\n",
+				 (unsigned long long)ane->acg_word);
+	}
+
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
@@ -1113,6 +1141,10 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane_reclaim_preserved(ane);
 	drm_mm_takedown(&ane->mm);
 
+	/* Partitions are still powered (the probe runtime ref is held
+	 * until below); mirror the macOS power-down before the genpd
+	 * detach gates them. */
+	ane_acg_powerdown(ane);
 	ane_boost_exit(ane);
 	ane_detach_genpd(ane);
 
@@ -1131,6 +1163,11 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 	 * exactly that quiescence. */
 	if (atomic_read(&ane->wedged) && !ane->recovering)
 		return -EBUSY;
+
+	/* Unreachable today (the probe ref pins the device for life,
+	 * autosuspend off) but semantically required: clear the ACG bit
+	 * while the islands are still on. */
+	ane_acg_powerdown(ane);
 
 	return 0;
 }

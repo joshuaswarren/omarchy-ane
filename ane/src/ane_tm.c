@@ -178,6 +178,65 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN1, 0x4000000);
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
+
+	/* Islands are on through here by construction: callers reach
+	 * ane_tm_enable only after a genpd raise (probe resume) or a
+	 * verified-on recovery, so this is engine-class MMIO. */
+	ane_acg_powerup(ane);
+}
+
+/*
+ * T8103 auto-clock-gate ("ane-acg-hack" in the macOS ADT). Once the
+ * ANE_SYS partition reaches state 0xf, AppleT8103PMGR::writeReg32
+ * (macOS 13.5 kernelcache) read-modify-writes the word at PA 0x26b868a04
+ * — inside the macOS ANE window (0x26a000000 + 0x2000000), far outside
+ * this driver's engine reg (0x26bc04000 + 0x24000) — to
+ * (old & ~BIT(12)) | 0x80001000, and clears bit 12 again on the
+ * power-down back to state 0. Linux mirrors exactly that: apply after
+ * every power-up, clear before every power-down, log the raw value on
+ * every power-up either way.
+ */
+#define ANE_ACG_SET 0x80001000u
+
+static bool acg_hack;
+module_param(acg_hack, bool, 0644);
+MODULE_PARM_DESC(acg_hack,
+		 "T8103: apply the macOS ane-acg-hack RMW to the ACG word after power-up (default off: read-only baseline log)");
+
+void ane_acg_powerup(struct ane_device *ane)
+{
+	if (!ane->acg)
+		return;
+
+	/* One line per power-up names the Linux-side baseline regardless
+	 * of the parameter, so the first boot records what Linux reads
+	 * where macOS would have written. */
+	u32 val = readl(ane->acg);
+	dev_info(ane->dev, "ANE-ACG pa=%#llx va=%px val=%#x\n",
+		 (unsigned long long)ane->acg_word, ane->acg, val);
+
+	if (acg_hack) {
+		u32 new = (val & ~BIT(12)) | ANE_ACG_SET;
+
+		if (new != val) {
+			writel(new, ane->acg);
+			ane->acg_on = true;
+			dev_info(ane->dev, "ANE-ACG applied: %#x -> %#x\n",
+				 val, new);
+		}
+	}
+}
+
+void ane_acg_powerdown(struct ane_device *ane)
+{
+	if (!ane->acg_on)
+		return;
+
+	ane->acg_on = false;
+	u32 val = readl(ane->acg);
+	writel(val & ~BIT(12), ane->acg);
+	dev_info(ane->dev, "ANE-ACG cleared: %#x -> %#x\n", val,
+		 val & ~BIT(12));
 }
 
 u32 ane_tm_status(struct ane_device *ane)
@@ -404,6 +463,11 @@ static int ane_ps_verify_on(struct ane_device *ane)
 static int ane_pd_cycle(struct ane_device *ane)
 {
 	int err = 0;
+
+	/* Mirror the macOS power-down while the islands are still on: the
+	 * forced suspends below take the partitions to state 0, where
+	 * macOS clears the ACG bit. */
+	ane_acg_powerdown(ane);
 
 	ane->recovering = true;
 	if (ane->pd_count > 1) {
