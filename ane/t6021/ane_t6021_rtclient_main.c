@@ -750,7 +750,7 @@ static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
 
 	for (di = 0; di < 3; di++) {
 		void __iomem *d = ioremap_np(darts[di].base, 0x2000);
-		u32 en_before, prot_before, tcr_before, ttbr_before;
+		u32 en_before, prot_before;
 		u32 en_after, prot_after, tcr_after, ttbr_after;
 		int w;
 
@@ -763,8 +763,6 @@ static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
 
 		en_before = readl(d + 0xc00);
 		prot_before = readl(d + 0x200);
-		tcr_before = readl(d + 0x1000);
-		ttbr_before = readl(d + 0x1400);
 
 		/* Disable streams 1..255 via DISABLE_STREAMS (0xc20..0xc3c):
 		 * stream 0 kept enabled, streams 1..31 disabled by ~1U,
@@ -828,6 +826,33 @@ static void ane_rtclient_apply_wrapper_b80_unmask(struct ane_rtclient *ane)
 			  "BOOT-PHASE wrapper-b80 +%x: %08x -> %08x (wrote ffffffff)\n",
 			  offs[i], before, readl(ane->engine + offs[i]));
 	}
+}
+
+/*
+ * Read-only snapshot of the engine words that differ between macOS's
+ * working state and anything Linux writes (ane-linux-experiments receipt
+ * 2026-09-25-macos-ane-engine-dump, wrapper map). Logged before and after
+ * the CPU release so one run yields the Linux side of that diff. The list
+ * holds no pop-on-read word (+0x1400818/81c/820, +0x1408810/818/830/838)
+ * and nothing in CoreSight.
+ */
+static void ane_rtclient_log_wrapper(struct ane_rtclient *ane, const char *tag)
+{
+	static const u32 words[] = {
+		0x1400000, 0x1400008, 0x1400040, 0x1400044, 0x1400048,
+		0x1400444,
+		0x1400a00, 0x1400a04, 0x1400a08, 0x1400a0c, 0x1400a10, 0x1400a14,
+		0x1400b80, 0x1400b84, 0x1400b88, 0x1400b8c, 0x1400b90, 0x1400b94,
+		0x1400bfc, 0x1401008,
+		0x1404110, 0x1404114, 0x1408110, 0x1408114, 0x140c110, 0x1410110,
+		0x1840048, 0x184004c, 0x1840050, 0x1840054, 0x1840058, 0x184005c,
+		0x1840060, 0x1840064, 0x1840068, 0x184006c,
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(words); i++)
+		dev_emerg(ane->dev, "WRAPPER %s +%#09x = %08x\n", tag, words[i],
+			  readl(ane->engine + words[i]));
 }
 
 
@@ -962,19 +987,7 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7),
 			  readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL),
 			  readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL));
-		dev_emerg(dev,
-			  "BOOT-REPORT wrapper: +0=%08x +8=%08x +40=%08x +444=%08x +b80=%08x +b84=%08x +b88=%08x +b8c=%08x +b90=%08x +b94=%08x +bfc=%08x\n",
-			  readl(ane->engine + 0x1400000),
-			  readl(ane->engine + 0x1400008),
-			  readl(ane->engine + 0x1400040),
-			  readl(ane->engine + 0x1400444),
-			  readl(ane->engine + 0x1400b80),
-			  readl(ane->engine + 0x1400b84),
-			  readl(ane->engine + 0x1400b88),
-			  readl(ane->engine + 0x1400b8c),
-			  readl(ane->engine + 0x1400b90),
-			  readl(ane->engine + 0x1400b94),
-			  readl(ane->engine + 0x1400bfc));
+		ane_rtclient_log_wrapper(ane, "state-report");
 		for (s = 0; s < 30; s++)
 			msleep(10);	/* let the report hit every sink */
 		ane_t6021_fwload_remove(a);
@@ -1037,6 +1050,8 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 	if (fw_start_wrapper_b80_unmask)
 		ane_rtclient_apply_wrapper_b80_unmask(ane);
 
+	ane_rtclient_log_wrapper(ane, "pre-release");
+
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);
 	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
@@ -1055,6 +1070,7 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		  "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
 		  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
 		  cpu_status);
+	ane_rtclient_log_wrapper(ane, "post-release");
 
 	/* M2Research split discriminator: the fw page-table region
 	 * (VM 0x104000-0x110000) ships all-zero; nonzero descriptors
