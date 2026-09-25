@@ -40,6 +40,8 @@ ap.add_argument("--ref", default="", help="chunk_00.json (verify/replay modes)")
 ap.add_argument("--mode", choices=("verify", "replay", "bench"), default="verify")
 ap.add_argument("--new-tokens", type=int, default=32)
 ap.add_argument("--resid-scale", type=float, default=1.0)
+ap.add_argument("--warmups", type=int, default=3, help="bench: contract = 3")
+ap.add_argument("--reps", type=int, default=10, help="bench: contract = 10")
 a = ap.parse_args()
 
 MAN = json.load(open(os.path.join(a.export, "manifest.json")))
@@ -267,7 +269,11 @@ if a.mode == "verify":
     sys.exit(0 if ok == len(prompts) else 1)
 
 if a.mode == "bench":
-    WARMUPS, REPS = 3, 10
+    # Per-prompt fields and definitions match the macOS harness
+    # (run_qwen_ane_ref.py): token IDs ready -> first selected token = ttft_s,
+    # decode_s = e2e_s - ttft_s over the remaining new_tokens - 1 tokens.
+    import resource
+    WARMUPS, REPS = a.warmups, a.reps
     rows = []
     print(f"bench: {WARMUPS} warmup corpus passes ...", flush=True)
     for w in range(WARMUPS):
@@ -275,34 +281,41 @@ if a.mode == "bench":
             Chain().generate(pr["prompt_token_ids"], a.new_tokens)
         print(f"warmup {w + 1}/{WARMUPS} done", flush=True)
     for rep in range(REPS):
-        for pr in prompts:
+        for i, pr in enumerate(prompts):
             ids = pr["prompt_token_ids"]
-            ch = Chain()
             t0 = time.perf_counter()
+            ch = Chain()
             for p, tok in enumerate(ids[:-1]):
                 ch.step(tok, p)
-            t_prefill = time.perf_counter() - t0
-            t0 = time.perf_counter()
-            out, cur, pos = [], ids[-1], len(ids) - 1
+            out, cur, pos, ttft = [], ids[-1], len(ids) - 1, None
             for _ in range(a.new_tokens):
                 hidden = ch.step(cur, pos)
                 cur = int(np.argmax(hidden @ LM_T))
                 pos += 1
                 out.append(cur)
-            t_dec = time.perf_counter() - t0
-            rows.append({"rep": rep, "id": pr["id"], "prefill_s": round(t_prefill, 4),
-                         "decode_s": round(t_dec, 4),
-                         "decode_tok_s": round(a.new_tokens / t_dec, 2),
-                         "e2e_s": round(t_prefill + t_dec, 4)})
+                if ttft is None:
+                    ttft = time.perf_counter() - t0
+            wall = time.perf_counter() - t0
+            rows.append({"pass": rep, "prompt_idx": i, "id": pr["id"], "prompt_tokens": len(ids),
+                         "match": out == pr["runs"][0]["generated_ids"][: a.new_tokens],
+                         "ttft_s": round(ttft, 4), "ttft_tok_rate": round(len(ids) / ttft, 2),
+                         "decode_s": round(wall - ttft, 4),
+                         "decode_tok_rate": round((len(out) - 1) / (wall - ttft), 2),
+                         "e2e_s": round(wall, 4)})
         print(f"rep {rep + 1}/{REPS} done", flush=True)
-    dec = [r["decode_tok_s"] for r in rows]
-    pre = [r["prefill_s"] for r in rows]
-    rng = np.random.default_rng(0)
-    boots = [statistics.median([dec[j] for j in rng.integers(0, len(dec), len(dec))]) for _ in range(2000)]
-    res = {"decode_tok_s_median": round(statistics.median(dec), 2),
-           "decode_tok_s_ci95": [round(float(np.percentile(boots, 2.5)), 2), round(float(np.percentile(boots, 97.5)), 2)],
-           "prefill_median_s": round(statistics.median(pre), 4),
-           "ane_programs_per_step": len(PROGS),
-           "rows": rows}
-    print(json.dumps({k: v for k, v in res.items() if k != "rows"}, indent=1))
+
+    def summarize(xs):
+        return {"median": round(statistics.median(xs), 4), "mean": round(statistics.mean(xs), 4),
+                "stdev": round(statistics.stdev(xs), 4), "min": min(xs), "max": max(xs), "n": len(xs)}
+
+    res = {"ane_programs_per_step": len(PROGS), "ane_submissions_per_token": len(PROGS),
+           "tokens_matching_reference": all(r["match"] for r in rows),
+           "decode_tok_rate": summarize([r["decode_tok_rate"] for r in rows]),
+           "ttft_s": summarize([r["ttft_s"] for r in rows]),
+           "ttft_tok_rate": summarize([r["ttft_tok_rate"] for r in rows]),
+           "e2e_s": summarize([r["e2e_s"] for r in rows]),
+           "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                             * (1 if sys.platform == "darwin" else 1024),   # macOS reports bytes
+           "per_prompt": rows}
+    print(json.dumps({k: v for k, v in res.items() if k != "per_prompt"}, indent=1))
     json.dump(res, open("staged-qwen-bench.json", "w"), indent=1)
