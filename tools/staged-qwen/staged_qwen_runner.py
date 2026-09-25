@@ -253,6 +253,7 @@ if a.mode == "prefill":
     pids = json.load(open(a.prefill_ids))["ids"]
     assert len(pids) == a.prefill_tokens, f"prefill ids: {len(pids)} != {a.prefill_tokens}"
     assert len(pids) + 1 <= M, f"export max_len {M} too small for a {len(pids)}-token prefill"
+    ch = Chain()
     ch.generate(pids, 1)  # untimed warm pass
     times = []
     for _ in range(3):
