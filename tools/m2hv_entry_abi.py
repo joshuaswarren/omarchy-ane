@@ -26,36 +26,52 @@ HANDOFF_OFF = 0x1000
 SUB_OFF = 0x1a0
 COUNT_PTR_OFF = 0x1a8   # sub+0x8, copied to a global dereferenced as a count
 BIT6_OFF = 0x248        # sub+0xa8, bit 6 copied to the global byte the entry checks
-ZERO_WORD_OFF = 0x300
-HANDOFF_SIZE = ZERO_WORD_OFF + 8
+COUNT_WORD_OFF = 0x300
+ARRAY_PTR_OFF = 0x1b0     # sub+0x10, copied to the region-array global
+REGION_OFF = 0x308
+REGION_STRIDE = 0x18
+PAGE_SHIFT = 14
+HANDOFF_SIZE = REGION_OFF + REGION_STRIDE
 BOOTARGS_REGION = 0x4000
 
 
-def build_handoff(base):
-    """Handoff struct the 27.0 entry accepts.
+def build_handoff(base, phys_base, virt_base, mem_size):
+    """Handoff struct the 27.0 entry accepts, plus the one derivable table.
 
-    base is the guest physical address the struct will occupy. The entry
-    checks, in order: the magic at +0, then a versioned sub-struct at +0x1a0.
-    version >= 7 makes it copy the sub-struct fields out to globals; bit 6 of
-    the field at sub+0xa8 lands in a global byte that must be non-zero, or the
-    entry executes `udf #0` and the CPU dies. The field at sub+0x8 is copied to
-    a global the entry dereferences as a table count, so it must point at a
-    readable zero word (count 0 reads as an empty table, and the lookup
-    returns not-found). Every other field is zero: the consumers null-check or
-    range-check before they dereference, and zero fails those checks safely.
+    base is the guest physical address the struct occupies. The entry checks
+    the magic at +0 and a versioned sub-struct at +0x1a0. version >= 7 copies
+    the sub-struct fields to globals; bit 6 of sub+0xa8 must be set or the
+    entry executes `udf #0`. sub+0x8 and sub+0x10 become the count pointer and
+    the array pointer of the physical-to-virtual region table (globals 0x6d0
+    and 0x6d8), which the kernel dereferences, so both must be readable.
+
+    The region table is the address translation behind 159 call sites. Its
+    entry is 0x18 bytes: physical base, virtual base, size in 16 KB pages.
+    One entry covering RAM is derivable from the boot_args m1n1 already
+    builds, and it translates every RAM address. The pointers are physical:
+    the 27.0 kernel never writes SCTLR_EL1 and m1n1 leaves the guest MMU off,
+    so early boot dereferences them as physical addresses.
     """
+    pages = mem_size >> PAGE_SHIFT
     b = bytearray(HANDOFF_SIZE)
     struct.pack_into('<Q', b, 0, HANDOFF_MAGIC)
     struct.pack_into('<I', b, SUB_OFF, HANDOFF_VERSION)
-    struct.pack_into('<Q', b, COUNT_PTR_OFF, base + ZERO_WORD_OFF)
     struct.pack_into('<Q', b, BIT6_OFF, 1 << 6)
+    struct.pack_into('<Q', b, COUNT_PTR_OFF, base + COUNT_WORD_OFF)
+    struct.pack_into('<Q', b, ARRAY_PTR_OFF, base + REGION_OFF)
+    struct.pack_into('<I', b, COUNT_WORD_OFF, 1 if pages else 0)
+    struct.pack_into('<Q', b, REGION_OFF, phys_base)
+    struct.pack_into('<Q', b, REGION_OFF + 8, virt_base)
+    struct.pack_into('<I', b, REGION_OFF + 0x10, pages)
     return bytes(b)
 
 
 def arm(hv):
     bootargs = hv.guest_base + hv.bootargs_off
     handoff = bootargs + HANDOFF_OFF
-    hv.iface.writemem(handoff, build_handoff(handoff))
+    ba = hv.tba
+    hv.iface.writemem(handoff, build_handoff(
+        handoff, ba.phys_base, ba.virt_base, ba.mem_size))
 
     real_start = hv.p.hv_start
 
@@ -87,12 +103,17 @@ def arm(hv):
 if __name__ == "<hv_script>":
     arm(hv)
 elif __name__ == "__main__":
-    base = 0x100000000
-    blob = build_handoff(base)
+    base, phys, virt, mem = 0x100000000, 0x800000000, 0xfffffe0010000000, 0x40000000
+    blob = build_handoff(base, phys, virt, mem)
     assert struct.unpack_from('<Q', blob, 0)[0] == HANDOFF_MAGIC
     assert struct.unpack_from('<I', blob, SUB_OFF)[0] == HANDOFF_VERSION
-    assert struct.unpack_from('<Q', blob, COUNT_PTR_OFF)[0] == base + ZERO_WORD_OFF
     assert (struct.unpack_from('<Q', blob, BIT6_OFF)[0] >> 6) & 1 == 1
-    assert struct.unpack_from('<I', blob, ZERO_WORD_OFF)[0] == 0
+    assert struct.unpack_from('<Q', blob, COUNT_PTR_OFF)[0] == base + COUNT_WORD_OFF
+    assert struct.unpack_from('<Q', blob, ARRAY_PTR_OFF)[0] == base + REGION_OFF
+    assert struct.unpack_from('<I', blob, COUNT_WORD_OFF)[0] == 1
+    assert struct.unpack_from('<Q', blob, REGION_OFF)[0] == phys
+    assert struct.unpack_from('<Q', blob, REGION_OFF + 8)[0] == virt
+    assert struct.unpack_from('<I', blob, REGION_OFF + 0x10)[0] == mem >> PAGE_SHIFT
     assert HANDOFF_OFF + HANDOFF_SIZE <= BOOTARGS_REGION
+    assert build_handoff(base, phys, virt, 0)[COUNT_WORD_OFF:COUNT_WORD_OFF + 4] == b'\x00' * 4
     print("entry abi self-check ok")
