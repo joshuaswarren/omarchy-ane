@@ -1044,6 +1044,15 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (ane->ps_base)
 		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
 
+	/* T8103 ACG page: one devm page at PA 0x26b868000, mapped here so a
+	 * mapping failure fails the probe cleanly instead of oopsing at
+	 * resume. devm frees it on remove. Other SoCs skip it. */
+	if (of_device_is_compatible(dev->of_node, "apple,t8103-ane")) {
+		err = ane_acg_hack_map(ane);
+		if (err < 0)
+			goto detach_genpd;
+	}
+
 	mutex_init(&ane->iommu_lock);
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);

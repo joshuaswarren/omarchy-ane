@@ -95,12 +95,15 @@ struct ane_device {
 	/*
 	 * T8103 auto-clock-gate hack state, mirroring macOS
 	 * AppleT8103PMGR::writeReg32 (mac13g 0x...9b84cd8): after ANE_SYS
-	 * reaches state 0xf with ane-acg-hack set, macOS RMWs engine+0x1868a04
+	 * reaches state 0xf with ane-acg-hack set, macOS RMWs PA 0x26b868a04
 	 * to (old & ~0x1000) | 0x80001000; on power-down to 0 it clears
 	 * bit 12. True once applied, so remove and recovery cycles restore
-	 * the same endpoint state.
+	 * the same endpoint state. acg_page is the one devm page at PA
+	 * 0x26b868000, mapped at probe on T8103 only, touched only while
+	 * the ANE domain is on.
 	 */
 	bool acg_hack_applied;
+	void __iomem *acg_page;
 
 	/*
 	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on

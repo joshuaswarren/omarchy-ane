@@ -179,31 +179,61 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
 }
-#define ANE_ACG_HACK_OFF	0x1868a04
+#define ANE_ACG_HACK_PA		0x26b868000ULL
+#define ANE_ACG_HACK_OFF	0x8a04
 #define ANE_ACG_HACK_SET	0x80001000U
 #define ANE_ACG_HACK_CLR	0x1000U
 
 /* T8103 auto-clock-gate hack, mirroring macOS AppleT8103PMGR::writeReg32
- * (mac13g 0x...9b84cd8). The engine window is powered here (the caller
- * only runs this with the islands on), so this is engine-class MMIO, not
- * the forbidden pmgr/CoreSight class. Skipped on other SoCs: T6001's ADT
- * has no ane-acg-hack property.
+ * (mac13g 0x...9b84cd8): after ANE_SYS reaches 0xf, macOS does a physical
+ * RMW at PA 0x26b868a04 (macOS ANE window 0x26a000000 + 0x1868a04).
+ *
+ * The Linux DT engine window (0x26bc04000/0x24000) ends 0x1858004 bytes
+ * short of that word, so this maps exactly one page in-driver at probe
+ * (devm, fails cleanly) and touches it only while the ANE domain is on.
+ * Skipped on other SoCs: T6001's ADT has no ane-acg-hack property.
  *
  * apply=true: RMW to (old & ~0x1000) | 0x80001000. apply=false (power
  * down): clear bit 12. Every value is logged with the AND/OR result
  * spelled out, so a wrong RMW is visible before it sticks.
  */
+int ane_acg_hack_map(struct ane_device *ane)
+{
+	if (ane->acg_page)
+		return 0;
+	ane->acg_page = devm_ioremap(ane->dev, ANE_ACG_HACK_PA, PAGE_SIZE);
+	if (!ane->acg_page) {
+		dev_err(ane->dev, "ANE-ACG: page map of %#llx failed\n",
+			ANE_ACG_HACK_PA);
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+static void __iomem *ane_acg_reg(struct ane_device *ane)
+{
+	if (!ane->acg_page)
+		return NULL;
+	return ane->acg_page + ANE_ACG_HACK_OFF;
+}
+
 void ane_acg_hack(struct ane_device *ane, bool apply)
 {
-	void __iomem *reg = ane->engine + ANE_ACG_HACK_OFF;
+	void __iomem *reg = ane_acg_reg(ane);
 	u32 before, after;
 
+	if (!reg) {
+		dev_err(ane->dev, "ANE-ACG: no page map, refusing %s\n",
+			apply ? "set" : "clear");
+		return;
+	}
 	before = readl(reg);
 	if (apply)
 		after = (before & ~ANE_ACG_HACK_CLR) | ANE_ACG_HACK_SET;
 	else
 		after = before & ~BIT(12);
-	dev_info(ane->dev, "ANE-ACG %#x: %#x -> %#x (%s)\n", ANE_ACG_HACK_OFF,
+	dev_info(ane->dev, "ANE-ACG %#llx: %#x -> %#x (%s)\n",
+		 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF,
 		 before, after, apply ? "set" : "clear");
 	if (after != before)
 		writel(after, reg);
@@ -212,13 +242,21 @@ void ane_acg_hack(struct ane_device *ane, bool apply)
 
 /* Read-only log of the ACG word. Runs on every power-up regardless of
  * the acg_hack parameter, so the first run names the Linux baseline.
+ * A missing page map logs and returns: fail clean, no oops.
  */
 void ane_acg_hack_log(struct ane_device *ane)
 {
-	u32 val = readl(ane->engine + ANE_ACG_HACK_OFF);
+	void __iomem *reg = ane_acg_reg(ane);
+	u32 val;
 
-	dev_info(ane->dev, "ANE-ACG %#x baseline %#x\n", ANE_ACG_HACK_OFF,
-		 val);
+	if (!reg) {
+		dev_info(ane->dev, "ANE-ACG %#llx: no page map\n",
+			 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF);
+		return;
+	}
+	val = readl(reg);
+	dev_info(ane->dev, "ANE-ACG %#llx baseline %#x\n",
+		 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF, val);
 }
 
 u32 ane_tm_status(struct ane_device *ane)
