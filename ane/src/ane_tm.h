@@ -14,5 +14,7 @@ bool ane_tm_islands_on(struct ane_device *ane, u32 *act);
 int ane_tm_enqueue(struct ane_device *ane, struct ane_request *req);
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req);
 int ane_tm_recover(struct ane_device *ane);
+#define ANE_PS_ALL_ON		  ((1U << (4 * 6)) - 1)
+u32 ane_tm_ps_act(struct ane_device *ane);
 
 #endif /* __ANE_TM_H__ */

@@ -67,7 +67,6 @@ static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
  * writes the SET block. */
 #define ANE_PS_ACTUAL_MASK	  0xf0
 #define ANE_PS_WORDS		  6 /* set0, base, set1..4 */
-#define ANE_PS_ALL_ON		  ((1U << (4 * ANE_PS_WORDS)) - 1)
 
 /* ACTUAL nibble of each SET word, word 0 in the low nibble; 0 when the
  * SET block is unmapped. pmgr registers only: engine MMIO is never
@@ -136,6 +135,11 @@ static u32 ane_rec_read32(struct ane_device *ane, const char *reg,
 	dev_info(ane->dev, "ANERD %s -> %#x (ps act %#x)\n", reg, val,
 		 ane_ps_act(ane));
 	return val;
+}
+
+u32 ane_tm_ps_act(struct ane_device *ane)
+{
+	return ane_ps_act(ane);
 }
 
 void ane_tm_enable(struct ane_device *ane, bool rec)
