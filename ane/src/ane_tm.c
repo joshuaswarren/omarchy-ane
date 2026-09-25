@@ -178,6 +178,48 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN1, 0x4000000);
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
+#define ANE_ACG_HACK_OFF	0x1868a04
+#define ANE_ACG_HACK_SET	0x80001000U
+#define ANE_ACG_HACK_CLR	0x1000U
+
+/* T8103 auto-clock-gate hack, mirroring macOS AppleT8103PMGR::writeReg32
+ * (mac13g 0x...9b84cd8). The engine window is powered here (the caller
+ * only runs this with the islands on), so this is engine-class MMIO, not
+ * the forbidden pmgr/CoreSight class. Skipped on other SoCs: T6001's ADT
+ * has no ane-acg-hack property.
+ *
+ * apply=true: RMW to (old & ~0x1000) | 0x80001000. apply=false (power
+ * down): clear bit 12. Every value is logged with the AND/OR result
+ * spelled out, so a wrong RMW is visible before it sticks.
+ */
+void ane_acg_hack(struct ane_device *ane, bool apply)
+{
+	void __iomem *reg = ane->engine + ANE_ACG_HACK_OFF;
+	u32 before, after;
+
+	before = readl(reg);
+	if (apply)
+		after = (before & ~ANE_ACG_HACK_CLR) | ANE_ACG_HACK_SET;
+	else
+		after = before & ~BIT(12);
+	dev_info(ane->dev, "ANE-ACG %#x: %#x -> %#x (%s)\n", ANE_ACG_HACK_OFF,
+		 before, after, apply ? "set" : "clear");
+	if (after != before)
+		writel(after, reg);
+	ane->acg_hack_applied = apply;
+}
+
+/* Read-only log of the ACG word. Runs on every power-up regardless of
+ * the acg_hack parameter, so the first run names the Linux baseline.
+ */
+void ane_acg_hack_log(struct ane_device *ane)
+{
+	u32 val = readl(ane->engine + ANE_ACG_HACK_OFF);
+
+	dev_info(ane->dev, "ANE-ACG %#x baseline %#x\n", ANE_ACG_HACK_OFF,
+		 val);
+}
+
 }
 
 u32 ane_tm_status(struct ane_device *ane)
@@ -582,6 +624,8 @@ int ane_tm_recover(struct ane_device *ane)
 	/* Power-on reset cleared the tm register file; re-arm it exactly
 	 * like the probe resume path does. */
 	ane_tm_enable(ane, true);
+	if (ane->acg_hack_applied)
+		ane_acg_hack(ane, true);
 
 	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
 				 status,

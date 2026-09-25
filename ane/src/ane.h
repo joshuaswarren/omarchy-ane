@@ -89,8 +89,17 @@ struct ane_device {
 	 * after a 2 s gate), so recovery must drain retained task-manager
 	 * state itself instead of expecting a power-on reset to clear it.
 	 * False on T8103, where the cycle is a full POR of the file.
-	 */
 	bool tm_retention;
+
+	/*
+	 * T8103 auto-clock-gate hack state, mirroring macOS
+	 * AppleT8103PMGR::writeReg32 (mac13g 0x...9b84cd8): after ANE_SYS
+	 * reaches state 0xf with ane-acg-hack set, macOS RMWs engine+0x1868a04
+	 * to (old & ~0x1000) | 0x80001000; on power-down to 0 it clears
+	 * bit 12. True once applied, so remove and recovery cycles restore
+	 * the same endpoint state.
+	 */
+	bool acg_hack_applied;
 
 	/*
 	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on

@@ -53,6 +53,16 @@ module_param(map_mode, int, 0644);
 MODULE_PARM_DESC(map_mode,
 		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback)");
 
+/* T8103 auto-clock-gate hack, default off. Mirrors macOS
+ * AppleT8103PMGR::writeReg32 (mac13g 0x...9b84cd8): after the ANE power
+ * domain reaches state 0xf (ANE_SYS fully on, ane-acg-hack=1 in the ADT),
+ * read-modify-write engine+0x1868a04 to (old & ~0x1000) | 0x80001000; on
+ * power-down to 0 clear bit 12. Every value is logged before and after,
+ * and a read-only log of the word runs on every power-up even when this
+ * is off, so the first run gives the Linux baseline. */
+static bool acg_hack;
+module_param(acg_hack, bool, 0644);
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -1114,6 +1124,10 @@ static void ane_platform_remove(struct platform_device *pdev)
 	drm_mm_takedown(&ane->mm);
 
 	ane_boost_exit(ane);
+	/* Mirror the macOS power-down path: clear the ACG bit while the
+	 * engine is still mapped, but only when this driver set it. */
+	if (ane->acg_hack_applied && ane->engine)
+		ane_acg_hack(ane, false);
 	ane_detach_genpd(ane);
 
 	pm_runtime_disable(ane->dev);
@@ -1152,7 +1166,6 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		 * killing access exactly (T6021 console bring-up). */
 		struct resource *eng = platform_get_resource_byname(
 			to_platform_device(dev), IORESOURCE_MEM, "engine");
-
 		dev_info(dev,
 			 "ANE-resume: genpd raise complete; SET window probe next\n");
 		ane_ps_act_probe(ane);
@@ -1163,6 +1176,14 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	}
 
 	ane_tm_enable(ane, first);
+
+	/* ACG baseline on every ungate (read-only, always): the engine is
+	 * powered after tm_enable, so this read names the Linux value of
+	 * the word macOS writes once ANE_SYS reaches 0xf. A default-off
+	 * acg_hack param then applies the macOS endpoint on T8103 only. */
+	ane_acg_hack_log(ane);
+	if (acg_hack && of_device_is_compatible(dev->of_node, "apple,t8103-ane"))
+		ane_acg_hack(ane, true);
 
 	/* First enable is the engine's fresh signature; recovery compares
 	 * its post-reset status against it. */
