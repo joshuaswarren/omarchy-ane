@@ -123,6 +123,76 @@ bool ane_t6021_fwload_options_ok(bool transport)
  * fw_size is a multiple. */
 #define ANE_T6021_FW_ALIAS_PAGE	0x4000
 
+#define ANE_DART0_BASE		0x285800000ull
+#define ANE_DART_TCR15		0x103c
+#define ANE_DART_TTBR0		0x1400
+#define ANE_DART_TTBR16		0x1440
+#define ANE_DART2_PADDR_MASK	0x3ffffffc00ull
+
+static phys_addr_t ane_dart2_pte_pa(u64 pte)
+{
+	return (pte & ANE_DART2_PADDR_MASK) << 4;
+}
+
+/* Sid 15 bypass is the ADT's second stream. The leaf dump is the
+ * Linux DART2 PTE for the entry page: bit 1 is NO_CACHE. */
+static void ane_t6021_cache_prove(struct ane_t6021 *ane, u64 iova,
+				  phys_addr_t expect)
+{
+	void __iomem *d;
+	void *pgd = NULL, *l2 = NULL;
+	u32 ttbr, ttbr16, tcr;
+	u64 l1, leaf;
+	unsigned int l1_idx, l2_idx;
+	phys_addr_t pgd_pa, l2_pa, leaf_pa;
+
+	d = ioremap_np(ANE_DART0_BASE, 0x2000);
+	if (!d) {
+		dev_err(ane->dev, "cache-prove: dart0 ioremap failed\n");
+		return;
+	}
+	writel(0x2, d + ANE_DART_TCR15);
+	wmb();
+	tcr = readl(d + ANE_DART_TCR15);
+	ttbr = readl(d + ANE_DART_TTBR0);
+	ttbr16 = readl(d + ANE_DART_TTBR16);
+	dev_info(ane->dev,
+		 "cache-prove: TCR15=%08x TTBR0=%08x TTBR16=%08x iova=%#llx\n",
+		 tcr, ttbr, ttbr16, iova);
+	if (!(ttbr & 1)) {
+		dev_err(ane->dev, "cache-prove: TTBR0 invalid\n");
+		goto out;
+	}
+	pgd_pa = ((u64)(ttbr >> 2)) << 14;
+	l1_idx = (iova >> 25) & 0x7ff;
+	l2_idx = (iova >> 14) & 0x7ff;
+	pgd = memremap(pgd_pa, 0x4000, MEMREMAP_WB);
+	if (!pgd) {
+		dev_err(ane->dev, "cache-prove: pgd remap failed\n");
+		goto out;
+	}
+	l1 = READ_ONCE(((u64 *)pgd)[l1_idx]);
+	dev_info(ane->dev, "cache-prove: L1[%u]=%016llx\n", l1_idx, l1);
+	if (!(l1 & 1))
+		goto out;
+	l2_pa = ane_dart2_pte_pa(l1);
+	l2 = memremap(l2_pa, 0x4000, MEMREMAP_WB);
+	if (!l2)
+		goto out;
+	leaf = READ_ONCE(((u64 *)l2)[l2_idx]);
+	leaf_pa = ane_dart2_pte_pa(leaf);
+	dev_info(ane->dev,
+		 "cache-prove: L2[%u]=%016llx valid=%u bit1_nocache=%u pa=%pa expect=%pa\n",
+		 l2_idx, leaf, !!(leaf & 1), !!(leaf & 2), &leaf_pa, &expect);
+out:
+	if (l2)
+		memunmap(l2);
+	if (pgd)
+		memunmap(pgd);
+	iounmap(d);
+}
+
+
 static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 {
 	struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
@@ -130,8 +200,8 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	u64 rvbar = readq(eng + ANE_ASC_RVBAR);
 	u64 entry = ane_t6021_rvbar_entry_bits(rvbar);
 	phys_addr_t pa0 = 0;
-	int prot = IOMMU_READ | IOMMU_WRITE;
-	u64 off;
+	int prot = IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE;
+	u64 off = 0;
 	int ret;
 
 	if (!dom)
@@ -158,8 +228,6 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 			(unsigned long long)dom->geometry.aperture_end);
 		return -ERANGE;
 	}
-	if (dev_is_dma_coherent(ane->dev))
-		prot |= IOMMU_CACHE;
 
 	if (fw_alias_reserved) {
 		/* Preloaded placement: the two reserved windows mapped at
@@ -169,7 +237,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully. */
 		static const struct { u64 iova, phys, len; } win[] = {
 			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
-			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
+			{ 0x100000c4000ull, 0x10001400000ull, 0x438000ull },
 		};
 		unsigned int w;
 
@@ -182,7 +250,9 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 						"fwalias: reserved entry +%#llx mapped — refusing\n",
 						win[w].iova + o - entry);
 					ret = -EEXIST;
-					goto err_unmap;
+					iommu_unmap(dom, win[0].iova, win[0].len);
+					iommu_unmap(dom, win[1].iova, win[1].len);
+					return ret;
 				}
 				ret = iommu_map(dom, win[w].iova + o,
 						win[w].phys + o,
@@ -192,14 +262,17 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 					dev_err(ane->dev,
 						"fwalias: reserved map +%#llx: %d\n",
 						win[w].iova + o - entry, ret);
-					goto err_unmap;
+					iommu_unmap(dom, win[0].iova, win[0].len);
+					iommu_unmap(dom, win[1].iova, win[1].len);
+					return ret;
 				}
 			}
 		}
 		ane->fw_alias_iova = entry;
 		dev_info(ane->dev,
-			 "fwalias: reserved SEG0/SEGi at entry %#llx (preloaded placement)\n",
-			 entry);
+			 "fwalias: reserved SEG0/SEG1 cached at %#llx/%#llx\n",
+			 win[0].iova, win[1].iova);
+		ane_t6021_cache_prove(ane, win[0].iova, win[0].phys);
 		return 0;
 	}
 
@@ -251,6 +324,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
 		 &ane->fw_iova, &pa0);
+	ane_t6021_cache_prove(ane, entry, pa0);
 	return 0;
 
 err_unmap:

@@ -4,7 +4,7 @@
 # live session keeps the hv shell reachable (tmux send-keys C-c).
 set -u
 OUT=/tmp/m2hv2
-PX=$HOME/m2proxy
+PX=/home/joshuawarren/m2proxy
 mkdir -p "$OUT"
 LOG=$OUT/catch.log
 : > "$LOG"

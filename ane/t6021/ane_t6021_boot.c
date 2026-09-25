@@ -124,6 +124,7 @@
  */
 
 #include <linux/device.h>
+#include <linux/delay.h>
 #include <linux/reset.h>
 #include <linux/iommu.h>
 #include <linux/io.h>
@@ -140,6 +141,11 @@ static bool fw_boot;
 module_param(fw_boot, bool, 0444);
 MODULE_PARM_DESC(fw_boot,
 		 "OPT-IN: boot state resolution + report (W15). Dispatches to boot_start when fw_boot=1 (MMIO writes fire); reports state without MMIO when fw_boot=1 is not set.");
+
+/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
+ * per-object metadata keeps modpost happy for either composition. */
+MODULE_LICENSE("Dual MIT/GPL");
+MODULE_DESCRIPTION("T6021 ANE contract-pinned boot sequence core");
 
 static bool fw_iova_exported;
 static u64 exported_fw_iova;
@@ -162,9 +168,6 @@ static const struct kernel_param_ops fw_iova_ops = {
 };
 module_param_cb(fw_iova, &fw_iova_ops, NULL, 0444);
 MODULE_PARM_DESC(fw_iova, "READ-ONLY: staged selene surface DVA (populated by fw_load=1)");
-
-static bool fw_iova_exported;
-static u64 exported_fw_iova;
 
 /* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
  * sequence (preboot engine table, scratch clear + pulse, RVBAR
@@ -218,19 +221,11 @@ static const bool pf_pass6_init_contract = true; /* cd25b46, 87/87 */
  * override (autonomous boot/recovery loop). */
 /* Table-block mode selection (2026-09-20 16:23:07 wedge):
  *   mode 0 = ABORT before any write (accidental-repeat prevention),
- *   mode 1 = write the table (re-arm after the table-base analysis
- *            closes the cause),
- *   mode 2 = SKIP the table (authorized diagnostic: tests fw-alive
- *            without the kext pre-CPU config).
- * Mode 2 is the CURRENT authorized diagnostic. W8 write-grant
- * tunables are mode-independent (proven no-abort class, w8-run.out:
- * APERTURE_UNLOCKED) and run in every armed mode. */
-static int ane_t6021_boot_table_mode(void)
-{
-	/* mode 1 (write table) stays unavailable until the table-base
-	 * analysis (Reset lane) closes the wedge cause. */
-	return 2;
-}
+ *   mode 1 = write the table (kext-faithful; selected per-run via the
+ *            rtclient fw_start_table_mode param),
+ *   mode 2 = SKIP the table (default: the shipped diagnostic).
+ * W8 write-grant tunables are mode-independent (proven no-abort
+ * class, w8-run.out: APERTURE_UNLOCKED) and run in every armed mode. */
 
 static const bool pf_main_lifetime_review = true;
 
@@ -340,8 +335,13 @@ static void ane_boot_phase(void *ctx, const char *what)
 	struct ane_t6021_boot_mmio *mm = ctx;
 
 	/* bounded phase marker: one line per block boundary, survives
-	 * netconsole for crash attribution (never per-poll). */
-	dev_info(mm->ane->dev, "BOOT-PHASE %s\n", what);
+	 * netconsole for crash attribution (never per-poll). KERN_EMERG
+	 * + a short drain so the line reaches tty0/netconsole/ssh
+	 * BEFORE the risky write it announces (fw-start-debug
+	 * 2026-09-22: fwstart#2 died with zero capture — the marker
+	 * must beat the write). */
+	dev_emerg(mm->ane->dev, "BOOT-PHASE %s\n", what);
+	msleep(30);
 }
 
 /* S5 prepare — runs strictly AFTER poll A (fw alive), BEFORE the
@@ -421,7 +421,12 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-static int ane_t6021_boot_start(struct ane_t6021 *ane)
+/* RTBuddy select (SCRATCH6=0 vs legacy 1); set from the rtclient
+ * fw_start_rtb_mode parameter before boot_start. */
+int ane_t6021_rtb_mode;
+EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
+
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, int rtb_mode)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
 	struct ane_t6021_boot_io io = {
@@ -434,8 +439,10 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	};
 	struct ane_t6021_boot_cfg cfg = {
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
-		.preboot_table_mode = ane_t6021_boot_table_mode(),
+		.preboot_table_mode = table_mode,
 		.fw_dva = ane->fw_iova,
+		.stop_after = stop_after,
+		.rtb_mode = rtb_mode,
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
@@ -452,6 +459,10 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 		return -EBUSY;
 	}
 
+	dev_emerg(ane->dev,
+		  "BOOT-PHASE dispatch (stop_after=%d%s)\n", stop_after,
+		  stop_after ? " BISECT STOP ARMED" : "");
+
 	r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
 
 	ane->cpu_started = cs;
@@ -462,8 +473,9 @@ static int ane_t6021_boot_start(struct ane_t6021 *ane)
 	if (!cs) {
 		/* no CPU start: full release path, normal ownership */
 		module_put(THIS_MODULE);
-		dev_err(ane->dev,
-			"boot: -ENODATA before sequence (gate race) — module ref released\n");
+		dev_emerg(ane->dev,
+			  "BOOT-PHASE done r=%d cpu_started=0 (no CPU release: state clean, module unpinned)\n",
+			  r);
 		return r;
 	}
 
@@ -674,7 +686,7 @@ int ane_t6021_boot_probe(struct ane_t6021 *ane)
 	/* All gates resolved — dispatch to the sequence. Main lifetime
 	 * review + provider strategy accepted (2026-09-20); user
 	 * override authorizes autonomous writes/boots/recovery. */
-	return ane_t6021_boot_start(ane);
+	return ane_t6021_boot_start(ane, 0, 2, ane_t6021_rtb_mode);
 }
 
 bool ane_t6021_boot_requested(void)

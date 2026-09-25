@@ -446,8 +446,15 @@ irqreturn_t ane_t6021_rtkit_irq_thread(int irq, void *data);
 
 /* ane_t6021_boot.c — W15 boot state resolution (fw_boot=1). An
  * explicit boot request fails the probe while the prerequisites in
- * ane_t6021_boot.c hold (-ENODATA); fw_boot=0 binds status-only. */
+ * ane_t6021_boot.c hold (-ENODATA); fw_boot=0 binds status-only.
+ * ane_t6021_boot_start() is the sequence dispatcher proper (all gates
+ * must already hold): it owns the wedged-pin module lifetime once the
+ * CPU is released; stop_after = 0 full run, 1..4 = fw-start-debug
+ * step bisect (stop after that step, -ECANCELED, clean unwind while
+ * no CPU started). */
 int ane_t6021_boot_probe(struct ane_t6021 *ane);
+int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode,
+			 int rtb_mode);
 bool ane_t6021_boot_requested(void);
 
 /* ---- CSNE_CMD wire structs (host->fw on the INIT channel) ----
@@ -573,5 +580,6 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane);
 void ane_t6021_fwload_remove(struct ane_t6021 *ane);
 bool ane_t6021_fwload_options_ok(bool transport);
 bool ane_t6021_fw_diag_requested(void);
+bool ane_t6021_fwload_requested(void);
 
 #endif /* __ANE_T6021_H__ */

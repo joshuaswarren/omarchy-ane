@@ -1,0 +1,29 @@
+== out/parakeet-m2-20260924T111447/stderr_ane-cold.txt
+inference:    0.187 s
+  encoder:    0.110 s
+  decode:     0.061 s   (decoder + joint loop)
+RTFx:         55.87x
+tokens:     107
+== out/parakeet-m2-20260924T111447/stderr_ane-rep10.txt
+inference:    0.170 s
+  encoder:    0.104 s
+  decode:     0.053 s   (decoder + joint loop)
+RTFx:         61.31x
+tokens:     107
+== out/parakeet-m2-20260924T111447/stderr_all-rep10.txt
+inference:    0.187 s
+  encoder:    0.123 s
+  decode:     0.051 s   (decoder + joint loop)
+RTFx:         55.67x
+tokens:     107
+== out/parakeet-m2-20260924T111447/stderr_cpu-rep10.txt
+inference:    0.332 s
+  encoder:    0.271 s
+  decode:     0.047 s   (decoder + joint loop)
+RTFx:         31.45x
+tokens:     107
+== transcript diff
+1c1
+< He hoped there would be stew for dinner, turnips and carrots and bruised potatoes and fat mutton pieces to be ladled out in thick, peppered, flour-fattened sauce.............................................. ЮНЕН
+---
+> He hoped there would be stew for dinner, turnips and carrots and bruised potatoes and fat mutton pieces to be ladled out in thick, peppered, flour-fattened sauce........................................... Юн Ю

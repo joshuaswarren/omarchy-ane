@@ -448,6 +448,19 @@ struct ane_t6021_boot_cfg {
 				 *   (diagnostic: tests fw-alive without
 				 *   the kext pre-CPU config). */
 	u64 fw_dva;		/* staged surface DVA (fold input) */
+	int rtb_mode;		/* 1 = S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-
+				 * endpoint select, fw 0x42c8) instead of 1
+				 * (legacy ChMan/MBI). In RTBuddy mode the fw
+				 * may skip READY/DONE; listen on mailbox. */
+	int stop_after;		/* fw-start-debug step bisect (2026-09-22):
+				 * 0 = full run; N in 1..4 = stop AFTER
+				 * step N completes, return -ECANCELED
+				 * (1 grant tunables, 2 scratch, 3 rvbar,
+				 * 4 cpu release + poll A). A poll-A
+				 * timeout inside step 4 still returns
+				 * -ETIMEDOUT — the timeout is the
+				 * answer. Steps complete = writes done;
+				 * the stop never splits a step. */
 };
 
 /* Ownership: a started CPU may be fetching from the staged surfaces —
@@ -502,10 +515,13 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 				 * prevention (Main 2026-09-20) */
 	case 1:
 		io->phase(io->ctx, "P0 preboot-table");
+		io->phase(io->ctx, "P0-1 eng+0xb38");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE0,
 			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->phase(io->ctx, "P0-2 eng+0xb98");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE1,
 			 ANE_T6021_BOOT_TABLE_VALUE);
+		io->phase(io->ctx, "P0-3 eng+0xbf8");
 		io->wr32(io->ctx, ANE_T6021_BOOT_REG_TABLE2,
 			 ANE_T6021_BOOT_TABLE_VALUE);
 		break;
@@ -554,16 +570,24 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		}
 		io->phase(io->ctx, "P-1 grant-tunables end");
 	}
+	if (cfg->stop_after == 1)
+		return -ECANCELED;	/* tunables done, nothing else fired */
 
 	io->phase(io->ctx, "P1 scratch-clear+pulse");
-	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = 1,
-	 * pulse SCRATCH7 1 -> 0 (stale READY/wake cleared pre-CPU). */
+	/* S1: InitANEScratchRegisters — clear ALL cells, SCRATCH6 = rtb_mode ? 0 (RTBuddy) : 1
+	 * (legacy ChMan/MBI); pulse SCRATCH7 1 -> 0 (stale cleared). */
 	for (i = 0; i < 8; i++)
 		io->wr32(io->ctx,
 			 ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i, 0);
-	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH6, 1);
+	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH6,
+		 cfg->rtb_mode ? 0 : 1);
+	io->phase(io->ctx, cfg->rtb_mode ?
+		  "P1 S1 SCRATCH6=0 (RTBuddy select)" :
+		  "P1 S1 SCRATCH6=1 (legacy ChMan/MBI select)");
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 1);
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7, 0);
+	if (cfg->stop_after == 2)
+		return -ECANCELED;	/* scratch programmed, CPU untouched */
 
 	io->phase(io->ctx, "P2 rvbar");
 	/* S2: RVBAR skip-or-fold (bit0 set = lawful skip branch; no
@@ -572,10 +596,13 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (!ane_t6021_rvbar_latched(rvbar))
 		io->wr64(io->ctx, ANE_T6021_BOOT_REG_RVBAR,
 			 ane_t6021_rvbar_compose(cfg->fw_dva));
+	if (cfg->stop_after == 3)
+		return -ECANCELED;	/* entry decision recorded, no RUN */
 
 	io->phase(io->ctx, "P3 cpu-release");
 	/* S3: CPU release — both paths, strictly 0 then 0x10. */
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_CPUCTRL, 0);
+	io->phase(io->ctx, "P3b cpu-release RUN=0x10");
 	io->wr32(io->ctx, ANE_T6021_BOOT_REG_CPUCTRL,
 		 ANE_T6021_CPU_RUN_RELEASE);
 	*cpu_started = 1;
@@ -591,6 +618,9 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (v != ANE_T6021_BOOT_ACK)
 		return -ETIMEDOUT;
 	*fw_alive = 1;
+	io->phase(io->ctx, "P4 pollA READY observed");
+	if (cfg->stop_after == 4)
+		return -ECANCELED;	/* fw alive, publish/wake withheld */
 
 	io->phase(io->ctx, "P5 prepare+publish");
 	/* S5-S6: prepare (alloc/fill; kernel backend owns DMA), then the
@@ -627,6 +657,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	if (v != ANE_T6021_BOOT_ACK)
 		return -ETIMEDOUT;
 	*booted = 1;
+	io->phase(io->ctx, "P7 pollB DONE observed");
 
 	/* HANDSHAKE COMPLETE != firmware result success: the DONE ack is
 	 * the fw's handshake word; the SCRATCH0/1 result u64 it leaves

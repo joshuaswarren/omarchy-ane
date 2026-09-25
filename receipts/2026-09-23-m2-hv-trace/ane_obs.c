@@ -241,6 +241,142 @@ static ssize_t ane_obs_write(struct file *f, const char __user *ubuf,
 		}
 		return n;
 	}
+	if (strncmp(cmd, "replay", 6) == 0) {
+		static const struct { u64 addr; u32 val; } w[] = {
+		{ 0x28400000cull, 0x0000000d },
+		{ 0x284000010ull, 0x0000000c },
+		{ 0x284000014ull, 0x00000001 },
+		{ 0x284000018ull, 0x00000001 },
+		{ 0x28400001cull, 0x00000003 },
+		{ 0x284000020ull, 0x00000003 },
+		{ 0x284000024ull, 0x00000003 },
+		{ 0x284000028ull, 0x00000003 },
+		{ 0x28400002cull, 0x00000003 },
+		{ 0x284000030ull, 0x00000003 },
+		{ 0x284000034ull, 0x00000003 },
+		{ 0x284000108ull, 0x00000011 },
+		{ 0x28400010cull, 0x0000000d },
+		{ 0x284000110ull, 0x0000000c },
+		{ 0x284000114ull, 0x00000001 },
+		{ 0x284000118ull, 0x00000001 },
+		{ 0x28400011cull, 0x00000003 },
+		{ 0x284000120ull, 0x00000003 },
+		{ 0x284000124ull, 0x00000003 },
+		{ 0x284000128ull, 0x00000003 },
+		{ 0x28400012cull, 0x00000003 },
+		{ 0x284000130ull, 0x00000003 },
+		{ 0x284000134ull, 0x00000003 },
+		{ 0x284000a00ull, 0x01ffffff },
+		{ 0x285800210ull, 0x00000000 },
+		{ 0x285810210ull, 0x00000000 },
+		{ 0x28581020cull, 0xe40000ff },
+		{ 0x285810220ull, 0x000f0f0f },
+		{ 0x285810224ull, 0x00080808 },
+		{ 0x285810300ull, 0x00000001 },
+		{ 0x285810308ull, 0x10000000 },
+		{ 0x285810310ull, 0x3fffffff },
+		{ 0x285810800ull, 0x00060000 },
+		{ 0x285810804ull, 0x00060000 },
+		{ 0x285810808ull, 0x00030040 },
+		{ 0x28581080cull, 0x00030040 },
+		{ 0x285810810ull, 0x00030040 },
+		{ 0x285810814ull, 0x00010048 },
+		{ 0x285810818ull, 0x00010048 },
+		{ 0x28581081cull, 0x00010048 },
+		{ 0x285810820ull, 0x00010048 },
+		{ 0x285810824ull, 0x00010048 },
+		{ 0x285810828ull, 0x00010048 },
+		{ 0x28581082cull, 0x00010048 },
+		{ 0x285810830ull, 0x00010048 },
+		{ 0x285810834ull, 0x00010048 },
+		{ 0x285810838ull, 0x00010048 },
+		{ 0x28581083cull, 0x00010048 },
+		{ 0x285820210ull, 0x00000000 },
+		{ 0x28582020cull, 0xe40000ff },
+		{ 0x285820220ull, 0x000f0f0f },
+		{ 0x285820224ull, 0x00080808 },
+		{ 0x285820300ull, 0x00000001 },
+		{ 0x285820308ull, 0x10000000 },
+		{ 0x285820310ull, 0x3fffffff },
+		{ 0x285820800ull, 0x00060000 },
+		{ 0x285820804ull, 0x00060000 },
+		{ 0x285820808ull, 0x00010040 },
+		{ 0x28582080cull, 0x00010040 },
+		{ 0x285820810ull, 0x00010040 },
+		{ 0x285820814ull, 0x00010040 },
+		{ 0x285820818ull, 0x00010040 },
+		{ 0x28582081cull, 0x00010040 },
+		{ 0x285820820ull, 0x00010040 },
+		{ 0x285820824ull, 0x00010040 },
+		{ 0x285820828ull, 0x00010040 },
+		{ 0x28582082cull, 0x00010040 },
+		{ 0x285820830ull, 0x00010040 },
+		{ 0x285820834ull, 0x00010040 },
+		{ 0x285820838ull, 0x00010040 },
+		{ 0x28582083cull, 0x00010040 },
+		{ 0x285800c20ull, 0x00000001 },
+		{ 0x285810c20ull, 0x00000001 },
+		{ 0x285820c20ull, 0x00000001 },
+		};
+		static void __iomem *eng, *d0, *d1, *d2;
+		unsigned int i;
+
+		if (!eng) {
+			eng = ioremap_np(0x284000000ull, 0x2000000ull);
+			d0 = ioremap_np(0x285800000ull, 0x4000);
+			d1 = ioremap_np(0x285810000ull, 0x4000);
+			d2 = ioremap_np(0x285820000ull, 0x4000);
+			if (!eng || !d0 || !d1 || !d2)
+				return -ENOMEM;
+		}
+		for (i = 0; i < 74; i++) {
+			void __iomem *m;
+			u64 addr = w[i].addr;
+
+			if (addr >= 0x284000000ull && addr < 0x286000000ull)
+				m = eng + (addr - 0x284000000ull);
+			else if (addr >= 0x285800000ull && addr < 0x285804000ull)
+				m = d0 + (addr - 0x285800000ull);
+			else if (addr >= 0x285810000ull && addr < 0x285814000ull)
+				m = d1 + (addr - 0x285810000ull);
+			else if (addr >= 0x285820000ull && addr < 0x285824000ull)
+				m = d2 + (addr - 0x285820000ull);
+			else {
+				pr_emerg("ane_obs: REPLAY SKIP %llx (no window)\n", addr);
+				continue;
+			}
+			writel(w[i].val, m);
+			pr_emerg("ane_obs: REPLAY %llx <- %08x (rb %08x)\n",
+				 addr, w[i].val, readl(m));
+		}
+		pr_emerg("ane_obs: REPLAY done 74 writes\n");
+		return n;
+	}
+	if (strncmp(cmd, "c0rd", 4) == 0) {
+		/* Read-only: 0x28e08c000 through the pmgr window. */
+		static void __iomem *pm8;
+
+		if (!pm8) {
+			pm8 = ioremap_np(0x28e080000ull, 0x10000);
+			if (!pm8)
+				return -ENOMEM;
+		}
+		pr_emerg("ane_obs: C0RD %08x\n", readl(pm8 + 0xc000));
+		return n;
+	}
+	if (strncmp(cmd, "c0wr", 4) == 0) {
+		/* Bounded: 0x28e08c000 <- 0x80000000 once, with readback. */
+		static void __iomem *pm8;
+
+		if (!pm8) {
+			pm8 = ioremap_np(0x28e080000ull, 0x10000);
+			if (!pm8)
+				return -ENOMEM;
+		}
+		writel(0x80000000u, pm8 + 0xc000);
+		pr_emerg("ane_obs: C0WR %08x\n", readl(pm8 + 0xc000));
+		return n;
+	}
 	if (strncmp(cmd, "pwgrd", 5) == 0) {
 		/* Read-only: PWGATE 0x28e092000+0x159c, validate mask 3. */
 		static void __iomem *pwg;

@@ -2,7 +2,7 @@
 # Wait for the M2 m1n1 proxy gadget on jwm1 macOS, clear foreign holders,
 # then start the hv guest trace inside the 60 s proxy window.
 set -u
-HV=$HOME/m2hv
+HV=/Users/joshuawarren/m2hv
 OUT=$HV/out
 mkdir -p "$OUT"
 LOG=$OUT/catch.log
