@@ -96,10 +96,14 @@ empty outbox. Writing `1` to DISABLE at `0xc20` cleared bit 0; the
 readback was `0xfffe`.
 
 The macOS working-state dump (section 17) narrows the open question "which
-macOS pre-RUN step is missing" to four candidates: ane_sys_mpm left off,
-the VENC rails left off, mailbox control bit 19, and the single-DART-stream
-form. Everything else the macOS dump reads matches Linux. The staged Linux
-test form is omarchy-ane `agent/t6021-macos-ps-form` 265bb63 (section 18).
+macOS pre-RUN step is missing" to three write-form candidates: ane_sys_mpm
+left off, the VENC rails left off, and the single-DART-stream form. The
+fourth dump difference, mailbox CTRL bit 19, is decoded as the UNDERFLOW
+status latch and macOS never writes it, so it is replicated only as a test,
+not treated as a required host write. Everything else the macOS dump reads
+matches Linux. The staged Linux test forms are omarchy-ane
+`agent/t6021-macos-ps-form` 265bb63 (section 18) and
+`agent/t6021-mbox-dart-form` dd66d27.
 
 ## 6. Ruled out (do not re-run without new evidence)
 
@@ -576,7 +580,14 @@ What this changes:
 - **SCRATCH7 is 0 while the firmware serves.** A READY poll on SCRATCH7 can
   only catch a transient. +0x184006c reads 4 in the working state.
 - **The mailbox control words differ in bit 19** (0x000a0001 vs 0x00020001).
-  Bits 16-17 are FULL and EMPTY. What bit 19 means is open.
+  Bits 16-17 are FULL and EMPTY. Bit 19 is now decoded (M2PreRunRE static
+  RE): bit 19 is UNDERFLOW (read from an empty FIFO) and bit 18 is
+  OVERFLOW. AppleA7IOP tests both words against mask 0xc0000 and panics
+  (27.0 site 0xfffffe0008bca008, 13.5 site 0xfffffe0008bc61fc), and the 13.5
+  ANE firmware runs the same test (payload text.dis 0x6d32c). macOS
+  software never writes bit 19 — the only control write is the outbox
+  enable, bit 0. The 0x000a0001 in this dump is a latched underflow flag,
+  not a mode the host must set.
 - **macOS enables one DART stream.** The dart1/dart2 sid1-14 words change
   between the two passes and are not a live TCR/TTBR layout.
 - **macOS keeps every VENC rail off** while it uses the ANE. Linux raises
@@ -632,6 +643,15 @@ Result pending:
   said ACTUAL, so an auto-gated ane_cpu (0x1000030f) passed it. It now tests
   ACTUAL, and a failed pmgr map fails the probe instead of reading engines.
 
+Two more opt-in params sit on omarchy-ane `agent/t6021-mbox-dart-form`
+dd66d27 (off 265bb63, default off) for candidates 3 and 4 before CPU
+release: `fw_start_mbox_ctrl_bit19` writes 0x000a0001 to both mailbox
+control words, and `fw_start_dart_single_stream` sets the macOS DART form
+(stream 0 only via DISABLE_STREAMS at +0xc20, dart0 PROTECT 0x6; Linux
+apple-dart enables all streams and never touches PROTECT, and with
+PROTECT bit 0 clear it will not fight) on all three DARTs. Both log before
+and after reads. Clean build verified against the 7.1.13 tree.
+
 ## 19. Cross-SoC: T6001 and T8103 (2026-09-25)
 
 Short notes from the M1 Max and M1 lanes. Each item says what it is derived
@@ -675,6 +695,13 @@ T6001-derived.
   ring. EP is the runtime IOP id for channel name "IO" (dev+0xDFC8), not a
   kext constant. The kext holds no raw doorbell MMIO store; XNU's
   IOProcessor layer owns the register.
+- HELLO strictly comes first (M2PreRunRE static RE of the 27.0 kext). ANE_Init
+  registers its RTBuddy endpoints, polls RTBuddy until the boot and handshake
+  complete, and only then sends the CSNE cold-start commands over the
+  established app channels (ANE_InitFirmwareConfigurationEv, after
+  0xfffffe00095e9b60). The firmware cannot receive CSNE commands before
+  HELLO/EPMAP. A Linux run that reaches the CSNE sequence without a
+  completed handshake is testing nothing.
 
 ### T6001: DART, CTRR and RTKit decode
 
