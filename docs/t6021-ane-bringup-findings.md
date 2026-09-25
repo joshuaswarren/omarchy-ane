@@ -339,3 +339,48 @@ dispatches through the interrupt-controller object at vm 0xca148, vtable
 (vm 0x4f84e8, PA 0x100018344e8), is only a per-line handler installed by
 `CPlatformISRManager::Unmask` (vm 0x757c). A zero `gIrqcTimestamp` therefore
 does not prove that no interrupt was taken.
+
+### The doorbell reaches the core, and the handler can spin on it
+
+Measured 2026-09-25 (receipt bb6bff2, lane/m2-fwstart, unmerged): a doorbell
+with the six masks left at 0 still moved CPU_STATUS 0x28 to 0x08 after 60 s,
+and the message never drained. The masks do not gate the doorbell. The diff
+window used (SEG1+0x3b2000 and +0x3b6000) is inside `_rtk_page_tables` (vm
+0x476000), so it cannot show a handler frame.
+
+The IRQ entry, decoded from the payload:
+
+- Runtime VBAR is vm 0x63800 (set at 0x65914). The Current-EL SP0 IRQ slot
+  (+0x80) saves a frame and calls `__rtk_arch_interrupt` (vm 0x656ec), which
+  dispatches through the controller object at vm 0xca148, vtable +0x18 (vm
+  0x682ec).
+- The handler reads the event word at MMIO base +0x818 (vm 0x68344). The
+  base is the wrapper, 0x285400000, set at payload 0x6f64, so the register
+  is engine+0x1400818. Type is bits [18:16], source is bits [9:0].
+- The decoder (vm 0x686a0) accepts type 1-7 only. Type 0 and type above 7
+  return an error and the handler does not acknowledge the event. The loop
+  repeats while ISR_EL1 bit 7 stays set (vm 0x683fc-0x68400). An event the
+  decoder rejects therefore stays pending, and the handler spins on it. That
+  is a doorbell that never drains and a core that never returns to IDLE.
+- The firmware has no generic acknowledge store. The only event-clear write
+  is the per-source mask bit at wrapper+0xa00/+0xa80 (vm 0x687ec).
+
+The IRQ frame lands on the IRQ stack, not the thread stack. SP_EL1 is set to
+`_rtk_irq_stack` + 0x1000 (payload 0x658ac-0x658d0), vm 0xdba10, which is PA
+0x10001417a10. The entry pushes about 0x400 bytes, so the frame occupies the
+top of the page below that. The file image there is the `RTKSTACK` canary.
+
+### Next reads, in order
+
+1. Read engine+0x1400818 while CPU_STATUS is 0x08, immediately after the
+   doorbell. Report the whole word. Bits [18:16] are the type and bits [9:0]
+   the source. Type 0 or above 7 is an event the firmware cannot clear, which
+   is the spin above. A read may itself retire the event; read it once and
+   record whether status returns to 0x28.
+2. Read PA 0x10001417610 for 0x400 bytes (vm 0xdb610-0xdba10) and compare with
+   the `RTKSTACK` canary. A saved frame there means the handler ran. No change
+   means the core left WFI without entering the handler.
+
+No host write is ranked yet. The acknowledge address depends on the type and
+source in test 1, and a guessed ack word written to the wrong offset is the
+class of access that has wedged this machine.
