@@ -172,6 +172,15 @@ the VENC-down stall; with the leg up the core runs code. Vehicle:
 approach in 8756868, T6021-gated on `apple,t6021-ane`; ported from
 c9b2324, which was built on a side line and never landed on main).
 
+A mailbox audit on the pre-VENC boot state (`receipts/2026-09-23-m2-hv-trace/
+2026-09-24-mbox-carveout.md`, ~14:00 UTC, before the VENC leg): the I2A
+outbox drains 0 words and holds EMPTY (out114 `0x000a0001`), the only I2A
+word is a stale type-0 `0x000a000000000000`, SCRATCH0-7 read zero, and the
+SEG0/SEG1 carveout reservations plus the iBoot image head are intact — with
+the firmware not booted, the mailbox was not the blocker. With the VENC leg
+up the core reaches its service loop and the mailbox FIFO still never
+drains; no RTKit HELLO has arrived in any state so far.
+
 ## 13. T6021 CoreSight is fused off: no live PC path (2026-09-24)
 
 EDPRSR (engine+0x1010314) and EDDEVARCH (engine+0x1010fbc) both read

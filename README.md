@@ -2,14 +2,18 @@
 
 Apple Neural Engine support for Omarchy Linux: a DRM accelerator driver and userspace library. Bind and execute are proven on M1 (`T8103`, `apple,t8103-ane`) and M1 Max (`T6001`, `apple,t6000-ane`). Every other SoC still needs its own PMGR, DART, SET, and TM offsets. eiln's original reverse engineering targeted one M1; this fork is where the other chips get wired.
 
-**Current hardware status (2026-09-20):** m1-test-host (T8103) fresh Arch boot
+**Current hardware status (2026-09-25):** m1-test-host (T8103) fresh Arch boot
 reported (user-observed at login); Omarchy provisioning and benchmark
 recertification pending. Historical T8103 numbers in this tree are dated
 evidence from prior Linux boots and are not a current recert; recovery
 success not yet published. t6001-test-host (T6001) Linux ANE is live. T6021
-(t6021-test-host) Linux reads kernel 7.1.13-3-1-ARCH stable, ANE_UNBOUND, no
-`/dev/accel/accel0`; T6021 ANE is not live-inference-qualified in this
-project. macOS CoreML / `aned` measurements do not establish Linux execution.
+(t6021-test-host) has no host TM path; the firmware program has proven the
+release sequence on T6021 and T6001 (status 0x28), and with the VENC power
+leg up the firmware reaches its service loop, but the mailbox FIFO never
+drains and no RTKit HELLO has arrived; CoreSight is fused off on T6021.
+T6021 ANE is not live-inference-qualified. The canonical record is
+[docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md).
+macOS CoreML / `aned` measurements do not establish Linux execution.
 
 - `ane/`: DRM accelerator kernel module.
 - `libane/`: userspace loader and submission library.
@@ -43,7 +47,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. | Qualified firmware boot, DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify this driver. |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). | Qualified firmware boot, DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify this driver. |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
