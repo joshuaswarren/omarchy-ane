@@ -773,7 +773,7 @@ Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
 
 Source: ane-linux-experiments fedd4da (section 7) and 887ba0e (section 8),
 `receipts/2026-09-25-m1-ane-clock-macos/`. The a90b9a9 section 9 PA
-reading is retracted; the history bullet below records it.
+reading is retracted (fix 8637d99); the history bullet below records it.
 
 - Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
   Linux 141.4-141.5 ms. The gap is real; no clock measurement explains it
@@ -793,7 +793,7 @@ reading is retracted; the history bullet below records it.
   T8103 `perf-regs` has entries 0-3.) On both chips the ANE perf regions
   are forbidden-class and the idx-to-offset layout inside the block is
   unsourced, so there is no candidate PA on either chip. Do not write
-  either region as part of a clock experiment.
+  either region as part of a clock experiment. Receipt fix: 8637d99.
 - T8103 kernelcache (mac13g, sha256 `861adca1`): `ApplePMGRNub::
   requestPerfState` maps enum 2 to internal domain 8 (ANE) and tail-calls
   `_handlePerfStateRequest`, which accepts domains 8 and 14 only. The
@@ -808,9 +808,10 @@ reading is retracted; the history bullet below records it.
 - The kext's only host write in its private PMU window (clear mask 0x8 at
   0x23b110100) is ruled out: Linux already reads 0x0 there.
 - Next measurement is staged, not run: dtrace `ane-perfstate.d` probes
-  `_handlePerfStateRequest` and the apply routine during an encoder run in
-  the next macOS window. No Linux device read of pmgr reg[0] until then —
-  a hang there would cost the M2 recovery while the catcher is armed.
+  `_handlePerfStateRequest` and the apply routine during an encoder run.
+  The capture moved to the M1 Max macOS window (8637d99), since the M1
+  laptop keeps the armed M2 catcher. No Linux device read of either
+  chip's perf block until then.
 
 ### T6021: the macOS pmgr has no ANE perf-state path
 
