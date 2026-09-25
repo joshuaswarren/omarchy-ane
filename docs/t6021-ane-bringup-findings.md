@@ -821,7 +821,8 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   has no ANE branch — its special case (map 2, reg 0xc00, die 0) is
   workaroundPSRegsForceWakeUP and the general path is a plain BIT(29)
   RMW, with none of the acg constants, and the T6001 ADT carries no
-  ane-acg-hack (Jw16Levers5, receipt pending). The ACG lever is
+  ane-acg-hack (Jw16Levers5, ane-linux-experiments e5e82aa,
+  `receipts/2026-09-25-jw16-levers5/receipt-step3-4.md`). The ACG lever is
   T8103-only; a Linux acg_hack fix does not transfer. Whether the T6021
   ADT carries the flag is unchecked — that decides whether this path can
   matter for the M2 park.
@@ -849,8 +850,8 @@ point therefore has no ANE path on M2: the host never sets the ANE clock
 through pmgr. That fits the firmware setting its own operating point after
 the `CH_PROPERTY_WRITE` "FW PERF MODE" command. Sibling PMGRs differ:
 T8103 accepts domains 8 and 14 (the T8103 clock lead above), T6001
-accepts 1-5 and 13 (Jw16Levers5, 22G74 cache, receipt pending). Each
-chip's accepted-domain set is its own.
+accepts 1-5 and 13 (Jw16Levers5, 22G74 cache, e5e82aa
+`receipt-step3-4.md`). Each chip's accepted-domain set is its own.
 
 ### T8103: Qwen ANE layout gate closed
 
