@@ -771,26 +771,29 @@ Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
 
 ### T8103: ANE clock lead
 
-Source: ane-linux-experiments fedd4da (section 7), 887ba0e (section 8,
-correcting 87f86ab) and a90b9a9 (section 9),
-`receipts/2026-09-25-m1-ane-clock-macos/`.
+Source: ane-linux-experiments fedd4da (section 7) and 887ba0e (section 8),
+`receipts/2026-09-25-m1-ane-clock-macos/`. The a90b9a9 section 9 PA
+reading is retracted; the history bullet below records it.
 
 - Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
   Linux 141.4-141.5 ms. The gap is real; no clock measurement explains it
   yet. The 1.258 ratio fit against the ladder steps is an inference.
-- ADT decode history: the first reading (87f86ab, PA 0x23d2b4140) was an
-  inference and is retracted; the probe built on it was removed in
-  omarchy-ane `agent/ane-clock-m1` 38beae6 before any run. `perf-domains`
-  byte 1 is not a perf-regs index (it takes 4/1/4/1/0/4, and `perf-regs`
-  has only entries 0-3). The ANE_SYS device row (devices[99]) reads perf
-  block 1 idx 0x31 (887ba0e), but the clocks chain resolves the actual
-  group (a90b9a9, section 9): the PLL_ANE row is bytes `48 01 03 13` —
-  slot 0x48, block byte 0x03 -> `perf-regs[3]` = pmgr reg[0] (0x23b700000)
-  + 0x78000, size 0xa. The pmgr node's `IODeviceMemory[0]` covers
-  0x23b700000, length 0x8c000, so the ANE perf group is PA **0x23b778000**,
-  10 bytes. The perf-regs[1] block at 0x23b734000 remains a distinct,
-  unsourced region — the T6001 forbidden-region twin — and stays
-  do-not-write.
+- ADT decode history: two readings retracted. 87f86ab's PA 0x23d2b4140
+  was an inference; the probe built on it was removed in omarchy-ane
+  `agent/ane-clock-m1` 38beae6 before any run. a90b9a9's PA 0x23b778000
+  read byte 2 of the `PMGRClocks` row as the perf block; byte 2 is a type
+  field (3 on every PLL, 1 on muxes). The T6001 row proves the layout:
+  PLL_ANE0 is `13 08 03 15` -> perf block 8 = `perf-regs[8]` =
+  0x28e070000, size 0x64, idx 0x13, matching the 09-22/09-23 receipts.
+  Standing result (887ba0e): T8103 `PLL_ANE` is perf block 1, idx 0x48 —
+  `perf-regs[1]` = 0x23b734000, size 0x100, the same block as ANE_SYS
+  (devices[99], idx 0x31) and the T8103 twin of the T6001 perf-regs[1]
+  region next to the read that hard-reset the M1 Max. (`perf-domains`
+  byte 1 is not a perf-regs index either: it takes 4/1/4/1/0/4, and the
+  T8103 `perf-regs` has entries 0-3.) On both chips the ANE perf regions
+  are forbidden-class and the idx-to-offset layout inside the block is
+  unsourced, so there is no candidate PA on either chip. Do not write
+  either region as part of a clock experiment.
 - T8103 kernelcache (mac13g, sha256 `861adca1`): `ApplePMGRNub::
   requestPerfState` maps enum 2 to internal domain 8 (ANE) and tail-calls
   `_handlePerfStateRequest`, which accepts domains 8 and 14 only. The
