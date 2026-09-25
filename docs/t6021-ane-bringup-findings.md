@@ -284,6 +284,11 @@ guess.
    the reserved firmware DRAM, the same region iBoot already writes, not an
    engine register, so it carries no fabric risk. It makes the firmware
    program CNTFRQ_EL0 and gives the scheduler quantum a real interval.
+   The write is `patch_timer_freq=0x016e3600` on `ane_t6021_rtclient`,
+   applied through `ioremap_np` of the reserved DATA (not memremap) before
+   CPU_CONTROL, and only if the 36 bytes at PA 0x10001406870 still match.
+   That pattern was confirmed by read on the M2: tag `76384671`, length
+   `00000004`, value `00000000`, next word `4453524c` (LRSD).
 2. Coprocessor IRQ mask, post-release. The earlier 0xffffffff write was before
    the release, and the firmware overwrites 0x1400a08 and 0x1400a10 from its
    tunables (it writes 0x0ff0ffff to those two). The other four masks

@@ -187,6 +187,14 @@ module_param(fw_start_venc_gates, bool, 0444);
 MODULE_PARM_DESC(fw_start_venc_gates,
 		 "Raise the VENC rails the ANE clock-ids need (VENC_SYS 0x2902803e0, then PIPE4/PIPE5/ME0 at 0x290288008/10/18), kext order, parents first. The ANE complex sits behind VENC rails on T6021; Linux claims none of them. Disable only to bisect.");
 
+/* 0 = off. Nonzero is the CNTFRQ value written to the patchbay before
+ * CPU_CONTROL release. The module refuses the write unless the live
+ * 36 bytes still match the pinned pattern. */
+static u32 patch_timer_freq;
+module_param(patch_timer_freq, uint, 0444);
+MODULE_PARM_DESC(patch_timer_freq,
+		 "fw_start=1: before CPU release, write this to patchbay armv8_timer_frequency at PA 0x10001406880. 0 = off. Refuses unless islands read ACTUAL=0xf, fw_alias_reserved=1, and the 36 bytes at PA 0x10001406870 match (value 0, next tag LRSD).");
+
 /*
  * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
  * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
@@ -565,6 +573,69 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 }
 
 /* ---- probe ---- */
+/* Pinned live pattern at PA 0x10001406870, 9 words. Word 4 is the
+ * frequency value (must be 0); word 5 is the LRSD tag. Confirmed by
+ * read on the M2, 2026-09-25. */
+static const u32 ane_patchbay_expect[9] = {
+	0x00000000, 0x00000000, 0x76384671, 0x00000004, 0x00000000,
+	0x4453524c, 0x00000001, 0x53565300, 0x00000844,
+};
+
+static int ane_rtclient_patch_timer_freq(struct ane_rtclient *ane, u32 freq)
+{
+	static const unsigned int islands[] = {
+		0x2e0, 0x4000, 0x4008, 0x4010, 0x4018, 0x4020, 0x4028, 0x4030
+	};
+	struct device *dev = ane->dev;
+	void __iomem *win;
+	unsigned int i;
+	u32 before, after;
+
+	if (!ane->pmgr) {
+		dev_emerg(dev, "timer-freq: no pmgr map — refusing\n");
+		return -ENODEV;
+	}
+	for (i = 0; i < ARRAY_SIZE(islands); i++) {
+		u32 v = readl(ane->pmgr + islands[i]);
+
+		if (((v >> 4) & 0xf) != 0xf) {
+			dev_emerg(dev,
+				  "timer-freq: pmgr+%#x=%08x ACTUAL != 0xf — refusing\n",
+				  islands[i], v);
+			return -EIO;
+		}
+	}
+	if (!ane_t6021_fw_alias_is_reserved()) {
+		dev_emerg(dev,
+			  "timer-freq: fw_alias_reserved=0 — core would not fetch this PA; refusing\n");
+		return -EINVAL;
+	}
+	/* Same non-posted map the observer used to confirm these bytes.
+	 * Not memremap: a second memremap of this DRAM EXEC-faults. */
+	win = ioremap_np(0x10001406870ull, 36);
+	if (!win)
+		return -ENOMEM;
+	for (i = 0; i < 9; i++) {
+		u32 got = readl(win + 4 * i);
+
+		if (got != ane_patchbay_expect[i]) {
+			dev_emerg(dev,
+				  "timer-freq: word[%u]=%08x want %08x — not writing\n",
+				  i, got, ane_patchbay_expect[i]);
+			iounmap(win);
+			return -EIO;
+		}
+	}
+	before = readl(win + 16);
+	writel(freq, win + 16);
+	after = readl(win + 16);
+	iounmap(win);
+	dev_emerg(dev,
+		  "timer-freq: PA 0x10001406880 before=%08x wrote=%08x readback=%08x\n",
+		  before, freq, after);
+	return after == freq ? 0 : -EIO;
+}
+
 
 /*
  * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
@@ -720,6 +791,19 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		}
 		dev_emerg(dev, "BOOT-PHASE venc-gates raised\n");
 	}
+	if (patch_timer_freq) {
+		int pr = ane_rtclient_patch_timer_freq(ane, patch_timer_freq);
+
+		if (pr) {
+			dev_emerg(dev,
+				  "BOOT-PHASE timer-freq FAILED (%pe) — refusing CPU release\n",
+				  ERR_PTR(pr));
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			return pr;
+		}
+	}
+
 
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);

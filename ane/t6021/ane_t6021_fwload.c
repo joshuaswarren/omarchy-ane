@@ -98,6 +98,11 @@ static bool fw_alias_reserved;
 module_param(fw_alias_reserved, bool, 0444);
 MODULE_PARM_DESC(fw_alias_reserved,
 		 "map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it, instead of the staged DMA copy");
+bool ane_t6021_fw_alias_is_reserved(void)
+{
+	return fw_alias_reserved;
+}
+
 MODULE_PARM_DESC(fw_load_stamp_base,
 		 "fw-start-debug: stamp the RAM copy's x22 (vm 0x423C) to this PA base (e.g. 0x10000000000); 0 = off");
 
