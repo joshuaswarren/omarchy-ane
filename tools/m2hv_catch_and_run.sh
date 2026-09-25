@@ -12,13 +12,15 @@
 # are the ones the Asahi m1n1-hypervisor guide uses for macOS guests.
 #
 # Usage: m2hv_catch_and_run.sh PROXYCLIENT_DIR KERNELCACHE TRACE_MODULE OUTDIR [RUN_GUEST_OPTION...]
+# Env: M2HV_BOOTARGS overrides the default boot-args; M2HV_PREMOD names an
+# extra hv module loaded between m2hv_guest_debug and the trace module
+# (e.g. m2hv_ramdisk.py, with M2HV_RDIMG for the dmg path).
 # Run it in tmux: after a panic the guest stays parked and the link stays
 # up; C-c gives the hv shell, where p.reboot() restarts the M2.
 set -u
-[ $# -ge 4 ] || { sed -n 2,16p "$0"; exit 2; }
 PC=$1 KC=$2 MOD=$3 OUT=$4
 DBG=$(cd "$(dirname "$0")" && pwd)/m2hv_guest_debug.py
-BOOTARGS="debug=0x14e serial=3 apcie=0xfffffffe -enable-kprintf-spam wdt=-1 clpc=0"
+BOOTARGS="${M2HV_BOOTARGS:-debug=0x14e serial=3 apcie=0xfffffffe -enable-kprintf-spam wdt=-1 clpc=0}"
 mkdir -p "$OUT"
 LOG=$OUT/catch.log
 : > "$LOG"
@@ -71,8 +73,12 @@ EOF
 vpid=$!
 
 cd "$PC" || exit 1
+PREMOD=( )
+if [ -n "${M2HV_PREMOD:-}" ]; then
+    PREMOD=( -m "$M2HV_PREMOD" )
+fi
 say "launching run_guest -d, boot-args: $BOOTARGS"
-M1N1DEVICE="$proxy" python3 -u tools/run_guest.py -d "${@:5}" -m "$DBG" -m "$MOD" \
+M1N1DEVICE="$proxy" python3 -u tools/run_guest.py -d "${@:5}" -m "$DBG" "${PREMOD[@]}" -m "$MOD" \
     -l "$OUT/trace.log" "$KC" -- "$BOOTARGS" 2>&1 | tee -i "$OUT/run.log"
 rc=${PIPESTATUS[0]}
 say "run_guest exited rc=$rc"
