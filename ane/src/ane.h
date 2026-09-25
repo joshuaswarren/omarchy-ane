@@ -77,4 +77,13 @@ struct ane_request {
 	u32 bar[ANE_TILE_COUNT];
 };
 
+/*
+ * Drop the wedge pin (module refcount) without requiring a successful
+ * recovery. Used by ane_drm_postclose so a wedged engine cannot leave
+ * the module un-unloadable after a clean session close. Recovery stays
+ * safe to call afterwards; if it returns error, the postclose path has
+ * already unlocked the module count so the operator can swap the ko.
+ */
+void ane_wedge_clear(struct ane_device *ane);
+
 #endif /* __ANE_H__ */

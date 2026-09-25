@@ -493,12 +493,54 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	return 0;
 }
 
+/*
+ * Per-session teardown: every file context open is a fresh boundary.
+ * Anything the previous session left on the device (wedged flag, tm
+ * completion counters, in-flight recovery state) belongs to that
+ * session and must not survive into the next one.
+ *
+ * drm_gem_release runs before us and has dropped every handle this
+ * file held. BOs leaked by `ane_gem_free_object under wedge` stay on
+ * ane->bo_list until module teardown (their backing `drm_gem_object`s
+ * are already gone, and touching them here would be use-after-free).
+ * We do not try to drain them; we only clear the session-leaving
+ * state (wedged + tm counters + recovering flag) so the next opener
+ * sees a clean device. The orphan BOs remain inert: they are not in
+ * any drm_file's handle table.
+ */
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
-	/* GEM release runs before postclose. Normal remove pre-unmaps every
-	 * live BO before supplier detach; wedged cleanup preserves mappings. */
+	struct ane_device *ane = drm->dev_private;
+
+	mutex_lock(&ane->engine_lock);
+	if (ane->removed) {
+		mutex_unlock(&ane->engine_lock);
+		return;
+	}
+
+	/* Drop the wedge pin first: a wedged engine that cannot be
+	 * recovered in software must NOT keep the module pinned, or the
+	 * operator cannot unload the ko for an updated build without a
+	 * reboot. ane_wedge_clear releases both the wedged flag and the
+	 * module_refcount; ane_tm_recover then attempts a power-cycle
+	 * recovery (succeeds only if the engine is actually idle-able). */
+	ane_wedge_clear(ane);
+	ane_tm_recover(ane);
+
+	mutex_unlock(&ane->engine_lock);
 }
 
+/*
+ * The driver only owns three ioctls (ANE_BO_INIT, ANE_BO_FREE,
+ * ANE_SUBMIT). Anything outside that table would otherwise fall through
+ * the standard drm_ioctl path to legacy primary-node handlers that
+ * dereference drm_device.unique, which an accel node never sets. Reject
+ * such callers explicitly so they fail with -ENOTTY instead of oopsing.
+ *
+ * The accel pattern uses ane_drm_ioctls[] via drm_ioctl() (legacy pattern
+ * from before DRM_ACCEL_FOPS landed drm_ioctl defaults), so this is a
+ * belt-and-suspenders gate on top of the existing ioctls table.
+ */
 static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 				   unsigned long arg)
 {
@@ -506,6 +548,17 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	struct drm_device *drm = filp->minor->dev;
 	struct ane_device *ane = drm->dev_private;
 	long err;
+
+	/* Reject anything outside the drm type ('d') namespace outright. The
+	 * accel node is not a primary control node.
+	 *
+	 * _IOC_TYPEMASK is the low 8 bits, which encode the *nr*, not the
+	 * *type*. The type byte lives at offset _IOC_TYPESHIFT (8). Use
+	 * _IOC_TYPE(cmd) to extract the right field; misuse here returns
+	 * -ENOTTY for every legitimate ane_ioctl, which is exactly the
+	 * regression committed and reverted in this series. */
+	if (_IOC_TYPE(cmd) != _IOC_TYPE('d'))
+		return -ENOTTY;
 
 	err = pm_runtime_resume_and_get(ane->dev);
 	if (err < 0)
