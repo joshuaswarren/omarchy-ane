@@ -378,13 +378,22 @@ including wrapper-page dumps. A dump that includes +0x818 steals events.
 +0x820 is not sampled in a loop either, until a pop is ruled out for it.
 
 The IRQ frame lands on the IRQ stack, not the thread stack. SP_EL1 is set to
-`_rtk_irq_stack` + 0x1000 (payload 0x658ac-0x658d0), vm 0xdba10, which is PA
-0x10001417a10. The entry pushes about 0x400 bytes, so the frame occupies the
-top of the page below that. The file image there is the `RTKSTACK` canary.
+`_rtk_irq_stack` + 0x1000 (payload 0x658ac-0x658d0), vm 0xdba10, PA
+0x10001417a10. The entry pushes 0x2e0 bytes before the handler call, so a
+frame occupies vm 0xdb730-0xdba10, PA 0x10001417730-0x10001417a10. The file
+image there is the `RTKSTACK` canary, `52 54 4b 53 54 41 43 4b`.
 
-### Next read
+### IRQ stack read: the low end is intact
 
-Read PA 0x10001417610 for 0x400 bytes (vm 0xdb610-0xdba10) and compare with
-the `RTKSTACK` canary. A saved frame means the handler ran. No change means
-the core left WFI without entering the handler. Do not read engine+0x1400818
-or engine+0x1400820 on that run.
+M2FwStart-2, 2026-09-25, one read of 0x400 bytes at PA 0x10001417610
+(vm 0xdb610-0xdba10): all 256 words nonzero, and the first words match the
+file canary. The first words are the low end of the window. A frame would
+be the last 0x2e0 bytes, from PA 0x10001417730. The last 8 bytes of the file
+image, at PA 0x10001417a08, are `52 54 4b 53 54 41 43 4b`. That tail is the
+check still owed.
+
+If the tail is still the canary, the core left WFI without taking an
+exception. The idle loop is `wfi; b wfi` (vm 0x71bc). A wake that is not
+delivered as an interrupt completes the wfi, takes the branch, and enters
+wfi again, so IDLE stays clear. Status 0x08 is that loop running. The
+doorbell is a wake event, not an interrupt the core takes.
