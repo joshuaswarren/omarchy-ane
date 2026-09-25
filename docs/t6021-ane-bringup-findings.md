@@ -104,8 +104,9 @@ not treated as a required host write. Everything else the macOS dump reads
 matches Linux. The staged Linux test forms are omarchy-ane
 `agent/t6021-macos-ps-form` 265bb63 (section 18) and
 `agent/t6021-mbox-dart-form` dd66d27. The stable wrapper words Linux never
-writes (end of section 17, ane-linux-experiments abb63dd) are further
-pre-RUN candidates, pending kext evidence.
+writes are closed as candidates: kext evidence shows they are reset
+defaults, hardware mirrors, or unused channels (end of section 17; data
+ane-linux-experiments abb63dd, closure omarchy-ane ee14b27).
 
 ## 6. Ruled out (do not re-run without new evidence)
 
@@ -623,6 +624,26 @@ absent from the +0x4110 block it does not poll. That matches the UNDERFLOW
 decode above: bit 19 is a symptom of host reads, not a configuration value.
 +0x1008 flips 1 -> 0 between the passes (transient), and the words at
 +0x4150../+0x8150../+0xc150../+0x10150.. change between samples: FIFO SRAM.
+
+Kext evidence then closed the list (M2PreRunRE static RE of the 27.0 and
+13.5 kexts, omarchy-ane `agent/t6021-mbox-dart-form` ee14b27). ANE_Init,
+EnableANEClocksAndPower and AppleASCWrapV4 write none of these words:
+
+- +0x0 = 1 and +0x8 = 0x12345678 are silicon power-on reset defaults (m1n1
+  prores.py shows the same pair).
+- +0x40 = 0x000a0000 is a read-only wrapper status word; bits 19:16 = 0xa is
+  UNDERFLOW + EMPTY.
+- +0x444 = 0x10 is the Core 1 slice (+0x400 stride) mirrored by hardware
+  when Core 0 RUN (+0x44) is written. No kext write to +0x444 exists.
+- The 0xffffffff bank at +0xb80..+0xb94, +0xbfc is KIC interrupt registers
+  at reset default; ASCWrapV4's interrupt functions are empty stubs.
+- The mailbox-shaped blocks at +0x4000, +0xc000 and +0x10000 are unused
+  extra ASC channels.
+
+So the wrapper map holds no missing host write. ee14b27 adds BOOT-REPORT
+baseline logging of the six locations plus opt-in `fw_start_core1_run` and
+`fw_start_wrapper_b80_unmask` (default off) to force the two hardware
+behaviours if a run ever needs them.
 
 ## 18. macOS capture tool and the staged Linux tests (2026-09-25)
 
