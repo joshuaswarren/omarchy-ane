@@ -127,6 +127,18 @@ readback was `0xfffe`.
   guest). `tools/m2hv_replay-trace-135.txt` (beb39fa): all 151 macOS writes
   to ANE engine/DART/pmgr registers from trace-135, with per-write flags
   for ps-off/SET-window/hook and the Linux-same mark.
+- Every 13.5 hv run loses the proxy ACM 34-36 s after launch, whatever the
+  trace set and whether the guest ADT keeps the ATC/USB nodes. The guest
+  boots the Asahi stub, whose System volume has no macOS root filesystem
+  (asahi-installer `src/stub.py`), so XNU cannot mount root, and the
+  13.5 RELEASE kernel panics on that. The leading cause of the link loss
+  is the SoC reset after that panic; the panic text is not captured yet.
+  `tools/m2hv_catch_and_run.sh` logs the guest console from the hv vuart
+  and passes the Asahi guide's macOS boot-args with both XNU debug gates
+  opened (`-d` for `/chosen/debug-enabled`, `tools/m2hv_guest_debug.py`
+  for `/chosen/asmb lp-sip0`), so a panic parks in the debugger with the
+  link up. Receipt:
+  `receipts/2026-09-23-m2-hv-trace/2026-09-25-usb-death-root-cause.md`.
 - 13.5 IPSW members (kernelcache, ane0/ane1 firmware) are stored with
   SHA256SUMS in the fleet artifact store, not in git.
 
@@ -135,7 +147,10 @@ readback was `0xfffe`.
 1. (SUPERSEDED) Run a longer 13.5 hv trace that reaches the kext's
    CPU_CONTROL write: the kernel-only guest never issues it (lazy start),
    so longer runs of the same guest add nothing. What would work instead:
-   a 13.5 guest whose userspace opens the ANE (aned/CoreML workload).
+   a 13.5 guest whose userspace opens the ANE (aned/CoreML workload). That
+   needs a full macOS 13.5 install in its own APFS volume on the M2, with
+   m1n1 as that volume's boot object (Asahi m1n1-hypervisor guide:
+   `bputil -nkcas`, `kmutil configure-boot`); the Asahi stub cannot host it.
 2. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 3. Whichever answer comes first gets tested on T6001 as well, because the
@@ -152,6 +167,9 @@ readback was `0xfffe`.
 - A hypervisor trace of a kernel driver only captures what the kernel does.
   A lazily started coprocessor needs its userspace trigger inside the guest,
   or the trace ends at device bring-up forever.
+- Open the hv vuart (the second ACM port) on every hypervisor run. m1n1
+  drops guest console bytes until the host opens that port, so without it
+  a guest panic looks like a bare USB disconnect.
 
 ## 11. T6001 core state, read via CoreSight (2026-09-24)
 
