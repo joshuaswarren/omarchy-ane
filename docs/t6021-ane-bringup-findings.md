@@ -807,6 +807,19 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   confirmed.
 - The kext's only host write in its private PMU window (clear mask 0x8 at
   0x23b110100) is ruled out: Linux already reads 0x0 there.
+- New kext engine-write path, mac13g kernelcache (AneClockM1 static RE,
+  receipt pending): `AppleT8103PMGR::writeReg32` (vtable slot +0xd20) has
+  an ANE branch on top of the base write (+0xd30). When the register is
+  0x470 — the ANE_SYS power-state word at pmgr reg[0]+0x470, PA
+  0x23b700470 — with a nonzero low nibble, and the ADT `ane-acg-hack`
+  flag is set (T8103 has it = 1), it does a physical read-modify-write at
+  PA 0x22868a04 (reported as engine+0x1868a04): `(old & ~0x1000) |
+  0x80001000`; power-down to 0 clears bit 12. No Linux code writes that
+  engine word. Candidate Linux test: read engine+0x1868a04 read-only
+  (engine window, SET-gated), compare macOS vs Linux, write only if
+  different. T6001 has no `ane-acg-hack`; whether the T6021 ADT carries
+  the flag is unchecked — that decides whether this path can matter for
+  the M2 park.
 - Next measurement is staged, not run: dtrace `ane-perfstate.d` probes
   `_handlePerfStateRequest` and the apply routine during an encoder run.
   The capture moved to the M1 Max macOS window (8637d99), since the M1
