@@ -103,7 +103,9 @@ status latch and macOS never writes it, so it is replicated only as a test,
 not treated as a required host write. Everything else the macOS dump reads
 matches Linux. The staged Linux test forms are omarchy-ane
 `agent/t6021-macos-ps-form` 265bb63 (section 18) and
-`agent/t6021-mbox-dart-form` dd66d27.
+`agent/t6021-mbox-dart-form` dd66d27. The stable wrapper words Linux never
+writes (end of section 17, ane-linux-experiments abb63dd) are further
+pre-RUN candidates, pending kext evidence.
 
 ## 6. Ruled out (do not re-run without new evidence)
 
@@ -599,6 +601,28 @@ Caveat: both gated passes fell in the encoder's model-load phase. The 500 ms
 powermetrics sample before each read showed 0 mW, and no engine read landed
 in the steady 4.8 W reps. Treat the table as "firmware running, compute
 idle", not as a mid-inference state.
+
+### Wrapper map (receipt abb63dd)
+
+Load3 vs load4 comparison of the same dump. These stable words read set in
+the macOS working state, and Linux's fw_start sequence writes none of them.
+They are further pre-RUN candidates, pending kext evidence:
+
+| wrapper offset | macOS working | note |
+|---|---|---|
+| +0x8 | 0x12345678 | test-pattern-shaped, stable |
+| +0x40 | 0x000a0000 | stable |
+| +0x444 | 0x10 | a second CPU_CONTROL-shaped word, RUN bit set |
+| +0xb80..+0xb94, +0xbfc | 0xffffffff | stable; candidate mask/enable bank |
+| +0x4110..+0x4140 | 0x00020001 / 0x1 | mailbox-shaped CTRL block, no bit 19 |
+| +0xc110, +0x10110 | 0x000a0001 | two more mailbox-shaped blocks |
+| +0x481c..+0x497c (stride 0x20), +0x881c, +0x883c, +0xc81c, +0x1081c | 0x000a0000 | per-channel status words carrying bit 19 |
+
+Bit 19 is set only in the CTRL and status words the macOS driver polls, and
+absent from the +0x4110 block it does not poll. That matches the UNDERFLOW
+decode above: bit 19 is a symptom of host reads, not a configuration value.
++0x1008 flips 1 -> 0 between the passes (transient), and the words at
++0x4150../+0x8150../+0xc150../+0x10150.. change between samples: FIFO SRAM.
 
 ## 18. macOS capture tool and the staged Linux tests (2026-09-25)
 
