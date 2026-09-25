@@ -108,6 +108,70 @@ static void build_header(uint8_t *raw, uint32_t src_count, uint32_t dst_count,
 
 #define as_anec(raw) ((const struct anec *)(raw))
 
+/* Append one single-register record to a task image. */
+static void add_record(struct task_image *task, uint32_t reg, uint32_t value)
+{
+	put32(task->bytes + task->size, reg);
+	put32(task->bytes + task->size + 4, value);
+	task->size += 8;
+}
+
+/* The staged-Qwen defect: prog_000's conv-state output is a 393216-byte
+ * surface the task writes through its destination DMA, while the old header
+ * gave that channel one 16 KB tile. */
+static void overrun_tests(void)
+{
+	static const uint32_t two[2] = { 4, 5 };
+	static const uint64_t conv_state[6] = { 1, 1, 6144, 3, 393216, 64 };
+	static const uint64_t beta[6] = { 1, 16, 1, 1, 64, 64 };
+	static const uint64_t mask[6] = { 1, 1, 1, 50, 128, 128 };
+	static const uint64_t bool_select[6] = { 1, 8, 375, 375, 144000, 384 };
+	const uint32_t src_on = 0x00033881u;
+	const uint32_t dst_on = 0x040000c1u;
+	struct task_image task;
+	uint8_t anec[sizeof(struct anec)];
+	uint32_t channel = 0;
+	uint64_t need = 0;
+	uint64_t have = 0;
+
+	build_task(&task, 0x00025864u, src_on, ANE_BIND_DMA_DISABLED, dst_on);
+	add_record(&task, 0x17810u, 0x60000u);
+	add_record(&task, 0x17814u, 0x60000u);
+	build_header(anec, 1, 1, two, 2, task.size);
+	expect(ane_bind_overrun(as_anec(anec), task.bytes, task.size, 14,
+				&channel, &need, &have) == 1 &&
+		       channel == 5 && need == 0x60000 && have == 0x4000,
+	       "a 384 KB destination write into a 16 KB channel is refused");
+
+	build_task(&task, 0x00025864u, src_on, ANE_BIND_DMA_DISABLED, dst_on);
+	add_record(&task, 0x13814u, 0x4000u);
+	add_record(&task, 0x17810u, 0x4000u);
+	build_header(anec, 1, 1, two, 2, task.size);
+	expect(ane_bind_overrun(as_anec(anec), task.bytes, task.size, 14,
+				&channel, &need, &have) == 0,
+	       "transfers that fill their channels exactly fit");
+
+	build_task(&task, 0x00025864u, src_on, ANE_BIND_DMA_DISABLED,
+		   ANE_BIND_DMA_DISABLED);
+	add_record(&task, 0x13814u, 0x8000u);
+	build_header(anec, 1, 1, two, 2, task.size);
+	expect(ane_bind_overrun(as_anec(anec), task.bytes, task.size, 14,
+				&channel, &need, &have) == 1 &&
+		       channel == 4 && need == 0x8000,
+	       "a source-1 read past its channel is refused");
+
+	/* Host side: the bytes ane_tile/ane_untile touch for a header geometry,
+	 * which __ane_tile_send/__ane_tile_read compare with the mapping. */
+	expect(ane_bind_tile_span(conv_state) == 393216,
+	       "a 64 B-row conv state spans its full packed size");
+	expect(ane_bind_tile_span(beta) == 1024,
+	       "a 64 B-plane [16,1,1] surface spans 16 planes");
+	expect(ane_bind_tile_span(mask) == 128,
+	       "a single padded row spans its row stride");
+	expect(ane_bind_tile_span(bool_select) == UINT64_MAX,
+	       "a 1-byte bool surface cannot be fp16-tiled");
+}
+
 static void self_test(void)
 {
 	static const uint32_t three[3] = { 4, 5, 6 };
@@ -148,19 +212,29 @@ static void self_test(void)
 		       bind.dst[0] == 5 && bind.src[0] == 4,
 	       "destination config 0x000000c1 is a real output write");
 
-	/* A surface the task stream never names leaves the header's counts
-	 * unmet, so the positional layout stands rather than half a map. */
+	/* A surface the task stream never names binds on the first unused
+	 * allocated channel, destinations first (b0028cd). */
 	build_task(&task, 0x00025864u, src_on, ANE_BIND_DMA_DISABLED,
 		   ANE_BIND_DMA_DISABLED);
+	expect(ane_bind_init(as_anec(anec), task.bytes, task.size, &bind) &&
+		       bind.dst[0] == 5 && bind.src[0] == 4,
+	       "an unnamed surface binds on the next allocated channel");
+
+	/* With no allocated channel left for it, the counts stay unmet and
+	 * the positional layout stands rather than half a map. */
+	build_header(anec, 1, 1, two, 1, task.size);
 	expect(!ane_bind_init(as_anec(anec), task.bytes, task.size, &bind) &&
 		       bind.dst[0] == 4 && bind.src[0] == 5,
-	       "an unaccounted surface keeps the positional layout");
+	       "an unplaceable surface keeps the positional layout");
+	build_header(anec, 1, 1, two, 2, task.size);
 
 	/* A truncated task is refused, not walked off the end. */
 	build_task(&task, 0x00025864u, src_on, src_on, dst_on);
 	expect(!ane_bind_init(as_anec(anec), task.bytes, 8, &bind) &&
 		       bind.dst[0] == 4,
 	       "a task shorter than its own header is refused");
+
+	overrun_tests();
 }
 
 static int report(const char *path)
@@ -171,6 +245,10 @@ static int report(const char *path)
 	unsigned char *stream;
 	uint32_t index;
 	int derived;
+	int overrun;
+	uint32_t channel;
+	uint64_t need;
+	uint64_t have;
 	FILE *file = fopen(path, "rb");
 
 	if (!file) {
@@ -194,6 +272,8 @@ static int report(const char *path)
 
 	derived = ane_bind_init(&anec, stream, anec.size, &bind);
 	ane_bind_positional(&anec, &positional);
+	overrun = ane_bind_overrun(&anec, stream, anec.size, 14, &channel, &need,
+				   &have);
 	free(stream);
 
 	printf("%s derived=%d src=", path, derived);
@@ -208,6 +288,11 @@ static int report(const char *path)
 	printf(" positional_dst=");
 	for (index = 0; index != anec.dst_count; index++)
 		printf("%s%u", index ? "," : "", positional.dst[index]);
+	if (overrun)
+		printf(" OVERRUN channel=%u need=%llu have=%llu", channel,
+		       (unsigned long long)need, (unsigned long long)have);
+	else
+		printf(" fits");
 	printf("\n");
 	return 0;
 }

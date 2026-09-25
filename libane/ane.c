@@ -388,6 +388,9 @@ static inline void ane_device_close(struct ane_nn *nn)
 static inline int ane_model_init(struct ane_nn *nn, const char *path)
 {
 	struct anec *anec = to_anec(nn);
+	uint32_t channel;
+	uint64_t need;
+	uint64_t have;
 
 	if (ane_fread(path, anec, sizeof(struct anec)) < 0) {
 		return -EINVAL;
@@ -415,6 +418,16 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		free(nn->data);
 		return -EINVAL;
 #endif
+	}
+
+	if (ane_bind_overrun(anec, nn->data, anec->size, nn->tile_shift,
+			     &channel, &need, &have)) {
+		ane_err("%s: surface channel %u needs %llu bytes but is allocated "
+			"%llu; refusing the program\n",
+			path, channel, (unsigned long long)need,
+			(unsigned long long)have);
+		free(nn->data);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -663,34 +676,52 @@ void ane_untile(void *data, void *tile, const uint64_t N, const uint64_t C,
 }
 // clang-format on
 
-static inline void ___ane_tile_send(struct ane_nn *nn, void *from,
-				    const uint32_t idx)
+/* ane_tile/ane_untile write and read the whole header geometry of a channel;
+ * refuse one whose span runs past the channel's mapping. */
+static int tile_fits(struct ane_nn *nn, const int bdx)
 {
 	const struct anec *anec = to_anec(nn);
-	const int bdx = src_bdx(nn, idx);
+	uint64_t geometry[6];
+	uint64_t span;
+
+	for (int i = 0; i < 6; i++)
+		geometry[i] = anec->nchw[bdx][i];
+	span = ane_bind_tile_span(geometry);
+	if (span <= nn->chans[bdx].size)
+		return 1;
+	ane_err("channel %d geometry spans %llu bytes past its %llu-byte "
+		"mapping; refusing the transfer\n",
+		bdx, (unsigned long long)span,
+		(unsigned long long)nn->chans[bdx].size);
+	return 0;
+}
+
+int __ane_tile_send(struct ane_nn *nn, void *from, const uint32_t idx)
+{
+	const struct anec *anec = to_anec(nn);
+	int bdx;
+
+	INDEX_CHECK(ane_src_count(nn), idx, -EINVAL);
+	bdx = src_bdx(nn, idx);
+	if (!tile_fits(nn, bdx))
+		return -EINVAL;
 	ane_tile(from, nn->chans[bdx].map, anec->nchw[bdx][0],
 		 anec->nchw[bdx][1], anec->nchw[bdx][2], anec->nchw[bdx][3],
 		 anec->nchw[bdx][4], anec->nchw[bdx][5]);
+	return 0;
 }
 
-static inline void ___ane_tile_read(struct ane_nn *nn, void *to,
-				    const uint32_t idx)
+int __ane_tile_read(struct ane_nn *nn, void *to, const uint32_t idx)
 {
 	const struct anec *anec = to_anec(nn);
-	const int bdx = dst_bdx(nn, idx);
+	int bdx;
+
+	INDEX_CHECK(ane_dst_count(nn), idx, -EINVAL);
+	bdx = dst_bdx(nn, idx);
+	if (!tile_fits(nn, bdx))
+		return -EINVAL;
 	ane_untile(to, nn->chans[bdx].map, anec->nchw[bdx][0],
 		   anec->nchw[bdx][1], anec->nchw[bdx][2], anec->nchw[bdx][3],
 		   anec->nchw[bdx][4], anec->nchw[bdx][5]);
-}
-
-void __ane_tile_send(struct ane_nn *nn, void *from, const uint32_t idx)
-{
-	INDEX_CHECK(ane_src_count(nn), idx, );
-	___ane_tile_send(nn, from, idx);
-}
-
-void __ane_tile_read(struct ane_nn *nn, void *to, const uint32_t idx)
-{
-	INDEX_CHECK(ane_dst_count(nn), idx, );
-	___ane_tile_read(nn, to, idx);
+	return 0;
 }

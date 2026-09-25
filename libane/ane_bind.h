@@ -51,9 +51,16 @@
 #define ANE_BIND_SELECTOR_MASK	0x1fu
 #define ANE_BIND_MIN_TASK_BYTES	40
 
-/* The three selectors, as (DMA configuration register, selector bit shift). */
-static const uint32_t ane_bind_selectors[3][2] = {
-	{ 0x13800u, 0 }, { 0x13804u, 6 }, { ANE_BIND_DST_REGISTER, 12 }
+/* The three selectors: DMA configuration register, selector bit shift in word
+ * 8, and the two registers that hold the surface's byte size. Source 1 and the
+ * destination program their surface size into both words (the larger is the
+ * extent the engine moves): on all 990 live accesses of the 38 staged-Qwen
+ * programs it equals the compiled surface size the HWX declares. Source 2's
+ * size registers are not decoded (0 = unknown). */
+static const uint32_t ane_bind_selectors[3][4] = {
+	{ 0x13800u, 0, 0x13814u, 0x13818u },
+	{ 0x13804u, 6, 0, 0 },
+	{ ANE_BIND_DST_REGISTER, 12, 0x17810u, 0x17814u },
 };
 
 static inline uint32_t ane_bind_word(const uint8_t *task, uint64_t index)
@@ -63,10 +70,11 @@ static inline uint32_t ane_bind_word(const uint8_t *task, uint64_t index)
 	       ((uint32_t)task[index * 4 + 3] << 24);
 }
 
-/* Collect the three tile-DMA configuration words of one task image. Returns 0
- * when the register-record walk stays inside the task, -1 when it does not. */
+/* Collect the three tile-DMA configuration words of one task image and the
+ * byte extent each slot programs (0 when not decoded). Returns 0 when the
+ * register-record walk stays inside the task, -1 when it does not. */
 static inline int ane_bind_task_dma(const uint8_t *task, uint64_t bytes,
-				    uint32_t dma[3])
+				    uint32_t dma[3], uint32_t extent[3])
 {
 	const uint64_t words = bytes / 4;
 	uint64_t index;
@@ -74,10 +82,14 @@ static inline int ane_bind_task_dma(const uint8_t *task, uint64_t bytes,
 	uint64_t offset;
 	uint32_t header;
 	uint32_t base;
+	uint32_t reg;
+	uint32_t value;
 	int slot;
 
-	for (slot = 0; slot < 3; slot++)
+	for (slot = 0; slot < 3; slot++) {
 		dma[slot] = ANE_BIND_DMA_DISABLED;
+		extent[slot] = 0;
+	}
 
 	if (bytes < ANE_BIND_MIN_TASK_BYTES || bytes % 4)
 		return -1;
@@ -90,28 +102,38 @@ static inline int ane_bind_task_dma(const uint8_t *task, uint64_t bytes,
 		base = header & 0x03ffffffu;
 		if (index + count >= words)
 			return -1;
-		for (offset = 0; offset < count; offset++)
-			for (slot = 0; slot < 3; slot++)
-				if (base + offset * 4 ==
-				    ane_bind_selectors[slot][0])
-					dma[slot] = ane_bind_word(
-						task, index + 1 + offset);
+		for (offset = 0; offset < count; offset++) {
+			reg = base + (uint32_t)offset * 4;
+			value = ane_bind_word(task, index + 1 + offset);
+			for (slot = 0; slot < 3; slot++) {
+				if (reg == ane_bind_selectors[slot][0])
+					dma[slot] = value;
+				else if (ane_bind_selectors[slot][2] &&
+					 (reg == ane_bind_selectors[slot][2] ||
+					  reg == ane_bind_selectors[slot][3]) &&
+					 value > extent[slot])
+					extent[slot] = value;
+			}
+		}
 		index += 1 + count;
 	}
 
 	return 0;
 }
 
-/* Mark every runtime surface channel the linked task stream selects. */
+/* Mark every runtime surface channel the linked task stream selects, and
+ * record in extent[] (TILE_COUNT entries, may be NULL) the largest byte extent
+ * any task moves through each live surface channel, allocated or not. */
 static inline int ane_bind_walk(const struct anec *anec, const uint8_t *stream,
 				uint64_t stream_size, uint8_t *is_src,
-				uint8_t *is_dst)
+				uint8_t *is_dst, uint64_t *extent)
 {
 	uint64_t offset = 0;
 	uint64_t next;
 	uint64_t bytes = anec->td_size;
 	uint32_t index;
 	uint32_t dma[3];
+	uint32_t size[3];
 	uint32_t selectors;
 	uint32_t channel;
 	int slot;
@@ -123,7 +145,7 @@ static inline int ane_bind_walk(const struct anec *anec, const uint8_t *stream,
 		if (bytes < ANE_BIND_MIN_TASK_BYTES || offset > stream_size ||
 		    bytes > stream_size - offset)
 			return -1;
-		if (ane_bind_task_dma(stream + offset, bytes, dma) < 0)
+		if (ane_bind_task_dma(stream + offset, bytes, dma, size) < 0)
 			return -1;
 
 		selectors = ane_bind_word(stream + offset, 8);
@@ -132,8 +154,11 @@ static inline int ane_bind_walk(const struct anec *anec, const uint8_t *stream,
 				  ANE_BIND_SELECTOR_MASK;
 			if (dma[slot] == ANE_BIND_DMA_DISABLED)
 				continue;
-			if (channel < ANE_BIND_FIRST_SURFACE ||
-			    channel >= TILE_COUNT || !anec->tiles[channel])
+			if (channel < ANE_BIND_FIRST_SURFACE || channel >= TILE_COUNT)
+				continue;
+			if (extent && size[slot] > extent[channel])
+				extent[channel] = size[slot];
+			if (!anec->tiles[channel])
 				continue;
 			if (ane_bind_selectors[slot][0] == ANE_BIND_DST_REGISTER)
 				is_dst[channel] = 1;
@@ -194,7 +219,7 @@ static inline int ane_bind_init(const struct anec *anec, const void *stream,
 	memset(is_src, 0, sizeof(is_src));
 	memset(is_dst, 0, sizeof(is_dst));
 	if (ane_bind_walk(anec, (const uint8_t *)stream, stream_size, is_src,
-			  is_dst) < 0)
+			  is_dst, NULL) < 0)
 		return 0;
 
 	for (channel = ANE_BIND_FIRST_SURFACE; channel < TILE_COUNT;
@@ -237,6 +262,65 @@ static inline int ane_bind_init(const struct anec *anec, const void *stream,
 	memcpy(bind->dst, derived.dst, dsts);
 
 	return 1;
+}
+
+/* The last byte offset (exclusive) ane_tile/ane_untile touch in a channel for
+ * one fp16 header geometry: N * C * plane on the dense fast path and for the
+ * memset, else the end of the last row they copy. UINT64_MAX when the
+ * geometry cannot be tiled at all (rows narrower than W fp16 elements --
+ * e.g. a 1-byte bool surface, which only raw consumers may move). */
+static inline uint64_t ane_bind_tile_span(const uint64_t nchw[6])
+{
+	const uint64_t n = nchw[0], c = nchw[1], h = nchw[2], w = nchw[3];
+	const uint64_t plane = nchw[4], row = nchw[5];
+	uint64_t rows, cols, last;
+
+	if (!n || !c || !h || !w)
+		return 0;
+	if (row < w * sizeof(uint16_t))
+		return UINT64_MAX;
+	rows = plane / row;
+	cols = row / sizeof(uint16_t);
+	last = (((n - 1) * c + (c - 1)) * rows * cols + (h - 1) * cols + w) *
+	       sizeof(uint16_t);
+	return last > n * c * plane ? last : n * c * plane;
+}
+
+/* Find a surface channel the engine would overrun: a live source-1 or
+ * destination transfer whose programmed byte size exceeds the channel's
+ * allocation (tiles << tile_shift, the BO the driver maps -- a write past it
+ * lands in whatever the DART maps next). Returns 1 with the channel, the
+ * bytes the task moves and the bytes allocated; 0 when every measured
+ * transfer fits, or when the stream cannot be walked (nothing measured).
+ * Source 2's size registers are not decoded. */
+static inline int ane_bind_overrun(const struct anec *anec, const void *stream,
+				   uint64_t stream_size, uint32_t tile_shift,
+				   uint32_t *channel, uint64_t *need,
+				   uint64_t *have)
+{
+	uint8_t is_src[TILE_COUNT];
+	uint8_t is_dst[TILE_COUNT];
+	uint64_t extent[TILE_COUNT];
+	uint64_t alloc;
+	uint32_t ch;
+
+	memset(is_src, 0, sizeof(is_src));
+	memset(is_dst, 0, sizeof(is_dst));
+	memset(extent, 0, sizeof(extent));
+	if (ane_bind_walk(anec, (const uint8_t *)stream, stream_size, is_src,
+			  is_dst, extent) < 0)
+		return 0;
+
+	for (ch = ANE_BIND_FIRST_SURFACE; ch < TILE_COUNT; ch++) {
+		alloc = (uint64_t)anec->tiles[ch] << tile_shift;
+		if (extent[ch] > alloc) {
+			*channel = ch;
+			*need = extent[ch];
+			*have = alloc;
+			return 1;
+		}
+	}
+	return 0;
 }
 
 #endif /* __ANE_BIND_H__ */

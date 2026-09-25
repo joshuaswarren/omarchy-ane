@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
 
+#include <stddef.h>
+
 #include <ane.h>
 
 void *pyane_init(char *path, int dev_id)
@@ -10,7 +12,7 @@ void *pyane_init(char *path, int dev_id)
 
 void *pyane_chan_map(struct ane_nn *nn, int bdx)
 {
-	if (!nn || bdx < 0 || bdx >= ANE_TILE_COUNT)
+	if (!nn || bdx < 0 || bdx >= TILE_COUNT)
 		return NULL;
 	return nn->chans[bdx].map;
 }
@@ -21,17 +23,26 @@ int pyane_free(struct ane_nn *nn)
 	return 0;
 }
 
-/* Explicit role-to-channel binding override: src/dst are TILE_COUNT-entry
- * arrays of channel indices in surface-index order. Use when the task stream
- * leaves surfaces unnamed and the derivation must come from the bundle/manifest
- * side (single source of truth: the task-stream-derived map). */
+/* Explicit role-to-channel binding: src/dst hold the channel of each input and
+ * output role, in role order (io_layout.py derives them from the compiled HWX's
+ * channel table). Every role must land on an allocated surface channel; the
+ * load-time overrun check has already bounded each such channel's geometry. */
 int pyane_bind_load(struct ane_nn *nn, const unsigned int *src,
 		    const unsigned int *dst)
 {
+	const uint32_t counts[2] = { nn ? nn->anec.src_count : 0,
+				     nn ? nn->anec.dst_count : 0 };
+	const unsigned int *maps[2] = { src, dst };
 	uint32_t i;
+	int role;
 
 	if (!nn)
 		return -1;
+	for (role = 0; role < 2; role++)
+		for (i = 0; i < counts[role]; i++)
+			if (maps[role][i] < 4 || maps[role][i] >= TILE_COUNT ||
+			    !nn->anec.tiles[maps[role][i]])
+				return -1;
 	for (i = 0; i < TILE_COUNT; i++) {
 		nn->bind.src[i] = (uint8_t)src[i];
 		nn->bind.dst[i] = (uint8_t)dst[i];
@@ -58,9 +69,9 @@ int pyane_send(struct ane_nn *nn, void *x0, void *x1, void *x2, void *x3,
 				 x8,  x9,  x10, x11, x12, x13, x14, x15,
 				 x16, x17, x18, x19, x20, x21, x22, x23,
 				 x24, x25, x26, x27, x28, x29, x30, x31 };
-	for (uint32_t i = 0; i < ane_src_count(nn); i++) {
-		__ane_tile_send(nn, xs[i], i);
-	}
+	for (uint32_t i = 0; i < ane_src_count(nn); i++)
+		if (__ane_tile_send(nn, xs[i], i) < 0)
+			return -1;
 	return 0;
 }
 
@@ -75,8 +86,8 @@ int pyane_read(struct ane_nn *nn, void *x0, void *x1, void *x2, void *x3,
 				 x8,  x9,  x10, x11, x12, x13, x14, x15,
 				 x16, x17, x18, x19, x20, x21, x22, x23,
 				 x24, x25, x26, x27, x28, x29, x30, x31 };
-	for (uint32_t i = 0; i < ane_dst_count(nn); i++) {
-		__ane_tile_read(nn, xs[i], i);
-	}
+	for (uint32_t i = 0; i < ane_dst_count(nn); i++)
+		if (__ane_tile_read(nn, xs[i], i) < 0)
+			return -1;
 	return 0;
 }

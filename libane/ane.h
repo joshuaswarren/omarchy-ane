@@ -145,8 +145,8 @@ void __ane_read(struct ane_nn *nn, void *to, const uint32_t idx);
  * converter. Out-of-range shifts are refused. */
 struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 				uint32_t tile_shift);
-void __ane_tile_send(struct ane_nn *nn, void *from, const uint32_t idx);
-void __ane_tile_read(struct ane_nn *nn, void *to, const uint32_t idx);
+int __ane_tile_send(struct ane_nn *nn, void *from, const uint32_t idx);
+int __ane_tile_read(struct ane_nn *nn, void *to, const uint32_t idx);
 #define ane_tile_send(nn, from, idx) _LIBANE_SF(__ane_tile_send, nn, idx, from)
 #define ane_tile_read(nn, to, idx)   _LIBANE_SF(__ane_tile_read, nn, idx, to)
 
