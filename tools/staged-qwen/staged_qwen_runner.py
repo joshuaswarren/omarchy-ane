@@ -125,18 +125,12 @@ for i in range(len(PROGS)):
         f"prog {i}: src_count {mdl.src_count} != manifest {len(PROGS[i]['srcs'])}"
     assert mdl.dst_count == len(PROGS[i]["dsts"]) + len(PROGS[i]["states"]), \
         f"prog {i}: dst_count {mdl.dst_count} mismatch"
-    surf.append({"src_nchw": getattr(mdl, "src_nchw", None) or [s["shape"] for s in PROGS[i]["srcs"]],
-                 "dst_nchw": getattr(mdl, "dst_nchw", None) or [x["shape"] for x in PROGS[i]["dsts"]]})
     if hasattr(mdl, "drop_host_content_pages"):
         mdl.drop_host_content_pages()
-    chans = PROGS[i].get("src_channels"), PROGS[i].get("dst_channels")
-    if all(chans) and hasattr(mdl, "bind_load"):
-        mdl.bind_load(chans[0], chans[1])
-    elif os.environ.get("STAGED_SKIP_DERIVE") != "1":
-        import ane_channels
-        d = ane_channels.derive(path)
-        if d:
-            mdl.bind_load(d[0], d[1])
+    if hasattr(mdl, "bind_load"):   # io_layout.py apply: role -> channel, manifest port order
+        mdl.bind_load(PROGS[i]["src_channels"], PROGS[i]["dst_channels"])
+    surf.append({"src_nchw": getattr(mdl, "src_nchw", None) or [s["shape"] for s in PROGS[i]["srcs"]],
+                 "dst_nchw": getattr(mdl, "dst_nchw", None) or [x["shape"] for x in PROGS[i]["dsts"]]})
 print(f"programs open: {time.perf_counter()-t0:.1f}s", flush=True)
 
 def as_surface(arr, nchw, what, pi):
@@ -144,7 +138,7 @@ def as_surface(arr, nchw, what, pi):
     flat = np.ascontiguousarray(arr, f16).reshape(-1)
     need = int(np.prod(want))
     if flat.size != need:
-        raise RuntimeError(f"prog {pi} {what}: lane {flat.size} elems vs surface {need} ({want}) -- padded surface needs a de-stride path")
+        raise RuntimeError(f"prog {pi} {what}: lane {flat.size} elems vs surface {need} ({want})")
     return flat.reshape(want)
 
 def ctx_vals(pos):
@@ -169,16 +163,11 @@ class Chain:
                         for k, st in enumerate(pr["states"])} for pr in PROGS]
 
     def step(self, tok, pos):
-        dbg = os.environ.get("STAGED_DEBUG")
-        if dbg:
-            print(f"  step tok={tok} pos={pos}", flush=True)
         vals = ctx_vals(pos)
         hs = {}
         hidden = np.asarray(EMB[tok], f16)[None]
         t0 = time.perf_counter()
         for pi, pr in enumerate(PROGS):
-            if dbg:
-                print(f"    prog {pi}", flush=True)
             if pr["group_start"]:
                 hs["x"] = hidden
             srcs = []

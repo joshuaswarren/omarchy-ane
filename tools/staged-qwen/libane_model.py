@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """libane_python.so model wrapper for the staged-Qwen runner.
 
-Self-contained port of omarchy-ane bindings/python ane.model: one ANEC program,
-multi-surface send/exec/read by surface index, geometry parsed from the ANEC
-header (packed: size Q, td_size I, td_count I, tsk_size Q, krn_size Q,
-src_count I, dst_count I, tiles[32] I, nchw[192] q; dst nchw at tile 4, then srcs).
+One ANEC program. Surfaces move through libane's ane_tile/ane_untile
+(pyane_send/pyane_read): each dense fp16 tensor is placed at the packed geometry
+the ANEC header records for its channel, nchw[ch] = N, C, H, W, plane stride,
+row stride (bytes). io_layout.py writes that geometry from the compiled HWX
+together with the role -> channel bind, which bind_load() installs
+(pyane_bind_load); predict() needs it.
 
-libane's __ane_send/__ane_read move the WHOLE channel BO (tiles[bdx] << 14),
-not the logical surface bytes, so inputs are padded to the channel size and
-outputs are read from channel buffers and trimmed (exact-size buffers segfault
-in ane_tile's memset/memcpy). After open, drop_host_content_pages() releases the
-host mapping of the content channel (the engine reads it via its own DART
-mapping) -- on a 16 GB laptop that host copy is pure dead weight.
+After open, drop_host_content_pages() releases the host mapping of the content
+channel (the engine reads it via its own DART mapping) -- on a 16 GB laptop that
+host copy is pure dead weight.
 """
 import ctypes
 import struct
@@ -20,89 +19,75 @@ import numpy as np
 from ctypes import c_void_p
 
 MADV_DONTNEED = 4
+TILE_SHIFT = 14
 
 
 class model:
     def __init__(self, path, lib_path="/usr/lib/libane_python.so", dev_id=0):
-        self.lib = ctypes.cdll.LoadLibrary(lib_path)
-        self.lib.pyane_init.restype = c_void_p
-        self.lib.pyane_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
-        self.lib.pyane_free.argtypes = [c_void_p]
-        self.lib.pyane_exec.argtypes = [c_void_p]
-        self.lib.pyane_send.argtypes = [c_void_p] + [c_void_p] * 0x20
-        self.lib.pyane_read.argtypes = [c_void_p] + [c_void_p] * 0x20
-        self.handle = self.lib.pyane_init(path.encode(), dev_id)
+        self.lib = lib = ctypes.cdll.LoadLibrary(lib_path)
+        lib.pyane_init.restype = c_void_p
+        lib.pyane_init.argtypes = [ctypes.c_char_p, ctypes.c_int]
+        lib.pyane_free.argtypes = [c_void_p]
+        lib.pyane_exec.argtypes = [c_void_p]
+        lib.pyane_send.argtypes = [c_void_p] + [c_void_p] * 0x20
+        lib.pyane_read.argtypes = [c_void_p] + [c_void_p] * 0x20
+        lib.pyane_chan_map.restype = c_void_p
+        lib.pyane_chan_map.argtypes = [c_void_p, ctypes.c_int]
+        lib.pyane_bind_load.argtypes = [c_void_p, ctypes.POINTER(ctypes.c_uint32),
+                                        ctypes.POINTER(ctypes.c_uint32)]
+        self.handle = lib.pyane_init(path.encode(), dev_id)
         if not self.handle:
             raise RuntimeError(f"libane init failed: {path}")
         self.path = path
         hdr = open(path, "rb").read(168 + 192 * 8)
-        size, td_size, td_count, tsk, krn, src_count, dst_count = struct.unpack_from("<QIIQQII", hdr, 0)
-        nchw = struct.unpack_from("<192q", hdr, 168)
-        geom = lambda base, n: [tuple(int(x) for x in nchw[(base + i) * 6:(base + i) * 6 + 4]) for i in range(n)]
-        self.td_count, self.src_count, self.dst_count = td_count, src_count, dst_count
+        _, _, self.td_count, _, _, self.src_count, self.dst_count = struct.unpack_from("<QIIQQII", hdr, 0)
         self.tiles = struct.unpack_from("<32I", hdr, 40)
-        self.dst_nchw = geom(4, dst_count)
-        self.src_nchw = geom(4 + dst_count, src_count)
-        # channel BO sizes: tiles[bdx] << 14 (libane TILE_SHIFT)
-        self.dst_chan = [self.tiles[4 + i] << 14 for i in range(dst_count)]
-        self.src_chan = [self.tiles[4 + dst_count + i] << 14 for i in range(src_count)]
-        self._pads_in = [ctypes.c_void_p(0)] * (0x20 - src_count)
-        self._pads_out = [ctypes.c_void_p(0)] * (0x20 - dst_count)
-        self._out_bufs = [ctypes.create_string_buffer(csz) for csz in self.dst_chan]
-        self._chan0_size = int(self.tiles[0]) << 14
-        self._chan0_map = 0
-        try:
-            get_map = getattr(self.lib, "pyane_chan_map", None)
-            if get_map is not None:
-                get_map.restype = c_void_p
-                get_map.argtypes = [c_void_p, ctypes.c_int]
-                self._chan0_map = get_map(self.handle, 0) or 0
-        except AttributeError:
-            pass
+        flat = struct.unpack_from("<192q", hdr, 168)
+        self.nchw = [flat[6 * c:6 * c + 6] for c in range(32)]
+        self.src_nchw = self.dst_nchw = None
+        self._pads_in = [None] * (0x20 - self.src_count)
+        self._pads_out = [None] * (0x20 - self.dst_count)
 
     def bind_load(self, src_channels, dst_channels):
-        """Explicit role-to-channel binding override (surface-index order).
-        Use when the task stream's own derivation is known to differ from
-        libane's positional fallback."""
-        import ctypes as ct
-        set_bind = getattr(self.lib, "pyane_bind_load", None)
-        if set_bind is None:
-            raise RuntimeError("libane_python.so lacks pyane_bind_load")
-        set_bind.restype = ct.c_int
-        set_bind.argtypes = [c_void_p, ct.POINTER(ct.c_uint32), ct.POINTER(ct.c_uint32)]
-        src_arr = (ct.c_uint32 * 0x20)(*[int(c) for c in src_channels] + [0] * (0x20 - len(src_channels)))
-        dst_arr = (ct.c_uint32 * 0x20)(*[int(c) for c in dst_channels] + [0] * (0x20 - len(dst_channels)))
-        if set_bind(self.handle, src_arr, dst_arr) != 0:
-            raise RuntimeError("bind load failed")
+        """Install the role -> channel map (manifest port order) and take each
+        role's geometry from its channel's header slot."""
+        if len(src_channels) != self.src_count or len(dst_channels) != self.dst_count:
+            raise RuntimeError(f"{self.path}: bind {len(src_channels)}/{len(dst_channels)} "
+                               f"vs header {self.src_count}/{self.dst_count}")
+        for ch in list(src_channels) + list(dst_channels):
+            n, c, _, _, plane, _ = self.nchw[ch]
+            if not self.tiles[ch] or n * c * plane > self.tiles[ch] << TILE_SHIFT:
+                raise RuntimeError(f"{self.path}: channel {ch} geometry {self.nchw[ch]} "
+                                   f"exceeds its {self.tiles[ch] << TILE_SHIFT} B allocation")
+        src = (ctypes.c_uint32 * 0x20)(*src_channels)
+        dst = (ctypes.c_uint32 * 0x20)(*dst_channels)
+        if self.lib.pyane_bind_load(self.handle, src, dst) != 0:
+            raise RuntimeError(f"{self.path}: pyane_bind_load failed")
+        self.src_nchw = [tuple(self.nchw[ch][:4]) for ch in src_channels]
+        self.dst_nchw = [tuple(self.nchw[ch][:4]) for ch in dst_channels]
+        self._outs = [np.empty(int(np.prod(g)), np.float16) for g in self.dst_nchw]
 
     def drop_host_content_pages(self):
         """Drop the host mapping of the content channel (chans[0]) after init:
         the engine reads it through its own DART mapping and per-step sends target
-        surface channels only, so the host copy is dead weight on a 16 GB box
-        (VM_IO|VM_PFNMAP: DONTNEED zaps host ptes, re-fault rebuilds them)."""
-        libc = ctypes.CDLL(None)
-        if self._chan0_map:
-            libc.madvise(ctypes.c_void_p(self._chan0_map),
-                         ctypes.c_size_t(self._chan0_size), MADV_DONTNEED)
+        surface channels only (VM_IO|VM_PFNMAP: DONTNEED zaps host ptes, re-fault
+        rebuilds them)."""
+        chan0 = self.lib.pyane_chan_map(self.handle, 0)
+        if chan0:
+            ctypes.CDLL(None).madvise(c_void_p(chan0), ctypes.c_size_t(self.tiles[0] << TILE_SHIFT),
+                                      MADV_DONTNEED)
 
     def predict(self, inarrs):
-        assert len(inarrs) == self.src_count, f"{self.path}: {len(inarrs)} srcs != {self.src_count}"
-        bufs = []
-        for x, csz in zip(inarrs, self.src_chan):
-            raw = np.ascontiguousarray(x, np.float16).tobytes()
-            assert len(raw) <= csz, f"{self.path}: surface {len(raw)}B > channel {csz}B"
-            b = ctypes.create_string_buffer(csz)
-            b.raw[:len(raw)] = raw
-            bufs.append(b)
-        args = [self.handle] + [ctypes.cast(b, c_void_p) for b in bufs] + self._pads_in
-        self.lib.pyane_send(*args)
-        self.lib.pyane_exec(self.handle)
-        self.lib.pyane_read(self.handle, *[ctypes.cast(b, c_void_p) for b in self._out_bufs] + self._pads_out)
-        outs = []
-        for b, csz, nchw in zip(self._out_bufs, self.dst_chan, self.dst_nchw):
-            n = int(np.prod(nchw[:4]))
-            outs.append(np.frombuffer(b, dtype=np.float16, count=n).copy())
-        return outs
+        xs = [np.ascontiguousarray(x, np.float16) for x in inarrs]
+        for x, g in zip(xs, self.src_nchw):
+            if x.size != int(np.prod(g)):
+                raise RuntimeError(f"{self.path}: input {x.size} elems vs surface {g}")
+        self.lib.pyane_send(self.handle, *[x.ctypes.data for x in xs], *self._pads_in)
+        err = self.lib.pyane_exec(self.handle)
+        if err < 0:
+            raise RuntimeError(f"{self.path}: ane_exec failed ({err})")
+        self.lib.pyane_read(self.handle, *[o.ctypes.data for o in self._outs], *self._pads_out)
+        return [o.copy() for o in self._outs]
 
     def close(self):
         if self.handle:
