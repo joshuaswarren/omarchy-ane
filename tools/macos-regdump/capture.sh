@@ -27,13 +27,23 @@ mkdir -p "$OUT"
 csrutil status | grep -q 'disabled' || { echo "SIP is not off"; exit 1; }
 
 echo "== kernelcache"
-KC=$(ls /System/Volumes/Preboot/*/boot/*/System/Library/Caches/com.apple.kernelcaches/kernelcache 2>/dev/null | head -1)
-[[ -n "$KC" ]] || { echo "no kernelcache under Preboot"; exit 1; }
+KCS=( /System/Volumes/Preboot/*/boot/*/System/Library/Caches/com.apple.kernelcaches/kernelcache(N) )
+(( ${#KCS} )) || { echo "no kernelcache under Preboot"; exit 1; }
+KC=${KCS[1]}
 shasum -a 256 "$KC" | tee "$OUT/kernelcache.sha256"
 
 echo "== kmutil load"
-echo "command: sudo kmutil load -p $STAGE/ANERegDump.kext"
-if ! kmutil load -p "$STAGE/ANERegDump.kext" 2>"$OUT/kmutil.err"; then
+# Apple silicon loads user kexts from /Library/Extensions, owned root:wheel.
+KEXT=/Library/Extensions/ANERegDump.kext
+if ! cmp -s "$STAGE/ANERegDump.kext/Contents/MacOS/ANERegDump" \
+	"$KEXT/Contents/MacOS/ANERegDump" 2>/dev/null; then
+	rm -rf "$KEXT"
+	cp -R "$STAGE/ANERegDump.kext" "$KEXT"
+	chown -R root:wheel "$KEXT"
+	chmod -R go-w "$KEXT"
+fi
+echo "command: sudo kmutil load -p $KEXT"
+if ! kmutil load -p "$KEXT" 2>"$OUT/kmutil.err"; then
 	cat "$OUT/kmutil.err"
 	echo
 	echo "If the error says the kext needs user approval: open System"
@@ -69,6 +79,6 @@ echo "== ioreg after"
 ioreg -lw0 -c H11ANEIn > "$OUT/ioreg-after.txt"
 
 echo "== sums"
-(cd "$OUT" && shasum -a 256 **/*(N) *(.N) | tee SHA256SUMS)
+(cd "$OUT" && shasum -a 256 **/*(.N) | tee SHA256SUMS)
 echo "aneregdump exit=$RC (0 = islands up, 3 = islands gated)"
 exit $RC

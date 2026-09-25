@@ -14,10 +14,14 @@
 #include <IOKit/IOUserClient.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 #include <libkern/libkern.h>
+#include <ptrauth.h>
 
 extern "C" {
 #include "ane_regdump_filter.h"
-extern vm_offset_t vm_kernel_slide;   /* not a declared KPI; resolved */
+/* Exported by com.apple.kpi.mach (xnu config/Mach.exports), not declared
+ * in the SDK headers. vm_kernel_slide itself is not exported. */
+void vm_kernel_unslide_or_perm_external(vm_offset_t addr,
+    vm_offset_t *up_addr);
 }
 
 #define ANE_DUMP_MAGIC   0x414e4531u   /* 'ANE1' */
@@ -30,6 +34,7 @@ extern vm_offset_t vm_kernel_slide;   /* not a declared KPI; resolved */
 #define ANE_GLOBALS_LO     0x6c8u
 #define ANE_GLOBALS_HI     0x7d0u
 #define ANE_TEXT_VMADDR    0xfffffe0007004000ull
+#define ANE_KC_STATIC_TOP  0xfffffe0020000000ull
 #define ANE_FOLLOW_BYTES   (64u * 1024u)
 
 enum {
@@ -263,6 +268,25 @@ static void setname(ANERegDump::map *m, const char *s)
 	strlcpy(m->name, s, ANE_NAME_MAX);
 }
 
+/* KASLR slide = runtime minus static address of any kernel text symbol.
+ * IOLog is in the kernel image. The helper permutes instead of unsliding
+ * for addresses outside the slid range; a result that is not 16 KB
+ * aligned or not inside the static kernelcache range is that case, and
+ * the handoff capture is skipped rather than read at a wrong address. */
+static bool kernel_slide(uint64_t *slide)
+{
+	vm_offset_t rt, st = 0;
+
+	rt = (vm_offset_t)ptrauth_strip((void *)&IOLog,
+	    ptrauth_key_function_pointer);
+	vm_kernel_unslide_or_perm_external(rt, &st);
+	if (st < ANE_TEXT_VMADDR || st >= ANE_KC_STATIC_TOP ||
+	    ((rt - st) & 0x3fff))
+		return false;
+	*slide = rt - st;
+	return true;
+}
+
 uint32_t ANERegDump::addFixed(struct map *m, uint32_t n)
 {
 	struct spec { const char *name; uint64_t pa; uint32_t len; int gated; };
@@ -423,10 +447,13 @@ IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out)
 	hdr.islands_up = ane_islands_up(ps_cache);
 
 	n = addFixed(table, n);
-	slide = vm_kernel_slide;
 	n = addAdt(table, n, (const uint8_t **)prop_src, prop_len,
 	    ANE_DUMP_MAX, held, &nheld);
-	n = addHandoff(table, n, slide);
+	if (kernel_slide(&slide)) {
+		hdr.kaslr_slide = slide;
+		hdr.globals_va = ANE_GLOBALS_STATIC + slide;
+		n = addHandoff(table, n, slide);
+	}
 
 	buf = (uint8_t *)IOMalloc(ANE_DUMP_MAX);
 	if (!buf) {
