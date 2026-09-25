@@ -15,10 +15,11 @@
  *    therefore never programs RVBAR or CPU_CONTROL: it refuses to bind
  *    unless the firmware is already alive (CPU_STATUS RUNNING);
  *    fw_start=1 is the fenced exception below.
- *  - genpd/pmgr: the eight ANE islands must read ACTUAL=0xf before
- *    any MMIO (same receipt, gate G1). Runtime PM + the DT
- *    power-domains binding owns the raise; probe also verifies ACTUAL
- *    on ane_cpu (pmgr window) before the first engine read.
+ *  - genpd/pmgr: Runtime PM + the DT power-domains binding owns the
+ *    raise; probe verifies ACTUAL on ane_cpu (pmgr window) before the
+ *    first engine read (gate G1). fw_start then puts the islands in the
+ *    form macOS runs the ANE in: ane_sys_mpm off, ane_sys/ane_cpu on
+ *    with AUTO_ENABLE, td/base/set1-4 on (fw_start_mpm_off).
  *  - Mailbox: apple,asc-mailbox-v4 child node at engine+0x1408000
  *    (a2i/i2a controls 0x285408110/0x285408114 live-read clean, W10).
  *    One AIC line only (ADT ane0 interrupts len 4: raw 0x374) ->
@@ -186,6 +187,11 @@ static bool fw_start_venc_gates = true;
 module_param(fw_start_venc_gates, bool, 0444);
 MODULE_PARM_DESC(fw_start_venc_gates,
 		 "Raise the VENC rails the ANE clock-ids need (VENC_SYS 0x2902803e0, then PIPE4/PIPE5/ME0 at 0x290288008/10/18), kext order, parents first. The ANE complex sits behind VENC rails on T6021; Linux claims none of them. Disable only to bisect.");
+
+static bool fw_start_mpm_off = true;
+module_param(fw_start_mpm_off, bool, 0444);
+MODULE_PARM_DESC(fw_start_mpm_off,
+		 "fw_start=1: before the boot sequence's first engine write, power ane_sys_mpm@4000 down to TARGET 0 (the macOS working state) and refuse the sequence unless ane_sys/ane_cpu read the macOS AUTO_ENABLE on-form and td/base/set1-4 read ACTUAL 0xf. 0 keeps the boot-raised ane_sys_mpm on, to bisect.");
 
 /* 0 = off. Nonzero is the CNTFRQ value written to the patchbay before
  * CPU_CONTROL release. The module refuses the write unless the live
@@ -591,14 +597,10 @@ static int ane_rtclient_patch_timer_freq(struct ane_rtclient *ane, u32 freq)
 	unsigned int i;
 	u32 before, after;
 
-	if (!ane->pmgr) {
-		dev_emerg(dev, "timer-freq: no pmgr map — refusing\n");
-		return -ENODEV;
-	}
 	for (i = 0; i < ARRAY_SIZE(islands); i++) {
 		u32 v = readl(ane->pmgr + islands[i]);
 
-		if (((v >> 4) & 0xf) != 0xf) {
+		if (FIELD_GET(ANE_PS_ACTUAL, v) != ANE_PS_ON) {
 			dev_emerg(dev,
 				  "timer-freq: pmgr+%#x=%08x ACTUAL != 0xf — refusing\n",
 				  islands[i], v);
@@ -634,6 +636,63 @@ static int ane_rtclient_patch_timer_freq(struct ane_rtclient *ane, u32 freq)
 		  "timer-freq: PA 0x10001406880 before=%08x wrote=%08x readback=%08x\n",
 		  before, freq, after);
 	return after == freq ? 0 : -EIO;
+}
+
+/*
+ * macOS runs the ANE with ane_sys_mpm@4000 off: it reads 0x300 in all 14
+ * samples of ane-linux-experiments receipt 2026-09-25-macos-ane-pstable,
+ * including those at 4.8 W encoder load. In the same samples ane_sys@260 and
+ * ane_cpu@2e0 read 0x1f0003ff (AUTO_ENABLE, ACTUAL and TARGET 0xf) and the
+ * six compute islands read 0x3ff. Linux raises ane_sys_mpm at boot because
+ * the stock DTB marks it apple,always-on, and genpd never lowers an
+ * always-on domain. Power it down with the write apple_pmgr_ps_set()
+ * issues for PWRGATE, then confirm the rest of the macOS form.
+ */
+static int ane_rtclient_ps_macos_form(struct ane_rtclient *ane)
+{
+	static const struct {
+		u32 off;
+		bool auto_enable;
+		const char *name;
+	} on[] = {
+		{ 0x260, true, "ane_sys" },	{ 0x2e0, true, "ane_cpu" },
+		{ 0x4008, false, "ane_td" },	{ 0x4010, false, "ane_base" },
+		{ 0x4018, false, "ane_set1" },	{ 0x4020, false, "ane_set2" },
+		{ 0x4028, false, "ane_set3" },	{ 0x4030, false, "ane_set4" },
+	};
+	struct device *dev = ane->dev;
+	void __iomem *mpm = ane->pmgr + 0x4000;
+	unsigned int i;
+	int ret;
+	bool ok;
+	u32 v;
+
+	v = readl(mpm);
+	dev_emerg(dev, "PS-FORM ane_sys_mpm@4000 before=%08x\n", v);
+	if (v & (ANE_PS_TARGET | ANE_PS_ACTUAL)) {
+		writel(v & ~(ANE_PS_AUTO_ENABLE | ANE_PS_WAS_GATED |
+			     ANE_PS_TARGET), mpm);
+		ret = readl_poll_timeout(mpm, v,
+					 !FIELD_GET(ANE_PS_ACTUAL, v),
+					 10, 100 * 1000);
+		dev_emerg(dev, "PS-FORM ane_sys_mpm@4000 after=%08x ret=%pe\n",
+			  v, ERR_PTR(ret));
+		if (ret)
+			return ret;
+	}
+
+	ret = 0;
+	for (i = 0; i < ARRAY_SIZE(on); i++) {
+		v = readl(ane->pmgr + on[i].off);
+		ok = FIELD_GET(ANE_PS_ACTUAL, v) == ANE_PS_ON &&
+		     FIELD_GET(ANE_PS_TARGET, v) == ANE_PS_ON &&
+		     (!on[i].auto_enable || (v & ANE_PS_AUTO_ENABLE));
+		dev_emerg(dev, "PS-FORM %s@%#x=%08x %s\n", on[i].name,
+			  on[i].off, v, ok ? "macOS form" : "NOT macOS form");
+		if (!ok)
+			ret = -EIO;
+	}
+	return ret;
 }
 
 
@@ -804,6 +863,19 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		}
 	}
 
+	if (fw_start_mpm_off) {
+		int pf = ane_rtclient_ps_macos_form(ane);
+
+		if (pf) {
+			dev_emerg(dev,
+				  "BOOT-PHASE ps-form FAILED (%pe) — refusing sequence\n",
+				  ERR_PTR(pf));
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			return pf;
+		}
+		dev_emerg(dev, "BOOT-PHASE ps-form: ane_sys_mpm off, macOS form\n");
+	}
 
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);
@@ -929,14 +1001,19 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	/* G1 gate: ane_cpu ACTUAL must be 0xf before any further MMIO. */
 	ane->pmgr = devm_of_iomap(dev, dev->of_node, 1, NULL);
-	if (!IS_ERR_OR_NULL(ane->pmgr)) {
-		ps_cpu = readl(ane->pmgr + ANE_RTCLIENT_PS_CPU_ACTUAL_OFF);
-		dev_emerg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
-		if ((ps_cpu & 0xf) != 0xf) {
-			pm_runtime_put_sync_suspend(dev);
-			pm_runtime_disable(dev);
-			return -EPROBE_DEFER;
-		}
+	if (IS_ERR(ane->pmgr)) {
+		ret = PTR_ERR(ane->pmgr);
+		pm_runtime_put_sync_suspend(dev);
+		pm_runtime_disable(dev);
+		return dev_err_probe(dev, ret,
+				     "pmgr window map failed; G1 gate cannot run\n");
+	}
+	ps_cpu = readl(ane->pmgr + ANE_RTCLIENT_PS_CPU_ACTUAL_OFF);
+	dev_emerg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
+	if (FIELD_GET(ANE_PS_ACTUAL, ps_cpu) != ANE_PS_ON) {
+		pm_runtime_put_sync_suspend(dev);
+		pm_runtime_disable(dev);
+		return -EPROBE_DEFER;
 	}
 
 	/* CPU gate. This read is the first engine access and is

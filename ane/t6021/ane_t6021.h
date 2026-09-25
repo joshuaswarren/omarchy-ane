@@ -65,6 +65,14 @@ enum {
 	ANE_T6021_REG_COUNT
 };
 
+/* pmgr ps-word fields (apple-pmgr-pwrstate layout). */
+#define ANE_PS_ON		0xf
+#define ANE_PS_TARGET		GENMASK(3, 0)
+#define ANE_PS_ACTUAL		GENMASK(7, 4)
+#define ANE_PS_WAS_GATED	GENMASK(9, 8)
+#define ANE_PS_BUSY		BIT(11)
+#define ANE_PS_AUTO_ENABLE	BIT(28)
+
 /* ANE-block-relative ASC/RTBuddy addresses.  CPU block = ANE+0x1400000
  * for h14g (K14 initializeANESoCConfig h14g blocks 0x…961365c /
  * 0x…9614084 build 0x1400044 with NO 0x200000 orr — the 0x1600044
