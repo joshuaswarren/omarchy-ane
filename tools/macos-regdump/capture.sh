@@ -79,14 +79,15 @@ echo "== workload + log stream + powermetrics"
 log stream --level debug --predicate 'subsystem CONTAINS "ane" OR process == "aned"' \
 	</dev/null > "$OUT/log-stream.txt" 2>&1 &
 LOGPID=$!
-powermetrics --samplers ane_power -i 1000 -n 20 \
+powermetrics --samplers ane_power -i 500 -n 40 \
 	</dev/null > "$OUT/powermetrics.txt" 2>&1 &
 PMPID=$!
-"$STAGE/aneprobe" "$STAGE/aneprobe.mlmodelc" 15 \
+# The kext polls the power gate for 2 s inside the dump. The workload
+# has to be running for that whole poll, not started after it.
+"$STAGE/aneprobe" "$STAGE/aneprobe.mlmodelc" 25 \
 	</dev/null > "$OUT/workload.txt" 2>&1 &
 WLPID=$!
-
-sleep 5
+sleep 0.2
 echo "== regdump"
 RC=0
 "$STAGE/aneregdump" "$OUT/regdump" </dev/null || RC=$?

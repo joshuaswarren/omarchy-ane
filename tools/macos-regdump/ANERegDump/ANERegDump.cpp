@@ -25,7 +25,7 @@ void vm_kernel_unslide_or_perm_external(vm_offset_t addr,
 }
 
 #define ANE_DUMP_MAGIC   0x414e4531u   /* 'ANE1' */
-#define ANE_DUMP_VERSION 1u
+#define ANE_DUMP_VERSION 2u
 #define ANE_RANGE_MAX    40u
 #define ANE_NAME_MAX     24u
 #define ANE_DUMP_MAX     (8u * 1024u * 1024u)
@@ -82,9 +82,13 @@ struct ane_dump_hdr {
 	uint32_t nranges;
 	uint32_t data_bytes;
 	uint32_t islands_up;
-	uint32_t ps[ANE_ISLAND_COUNT];
+	uint32_t ps[ANE_ISLAND_COUNT];       /* sample the gate decided on */
 	uint64_t kaslr_slide;
 	uint64_t globals_va;
+	uint32_t ps_first[ANE_ISLAND_COUNT]; /* first sample, before the poll */
+	uint32_t poll_iters;
+	uint32_t poll_us;
+	uint64_t pmgr_pa;
 	struct ane_range_rec range[ANE_RANGE_MAX];
 };
 
@@ -110,6 +114,8 @@ public:
 private:
 	IOMemoryMap *mapPhys(uint64_t pa, uint32_t len);
 	bool readIslands(uint32_t ps[ANE_ISLAND_COUNT]);
+	bool pollIslands(uint32_t first[ANE_ISLAND_COUNT], uint32_t *iters,
+	    uint32_t *us);
 	uint32_t copyPhys(const struct map *m, uint8_t *dst, uint32_t *banned);
 	uint32_t copyVirt(uint64_t va, uint8_t *dst, uint32_t len);
 	uint32_t addFixed(struct map *m, uint32_t n);
@@ -197,6 +203,42 @@ bool ANERegDump::readIslands(uint32_t ps[ANE_ISLAND_COUNT])
 	for (i = 0; i < ANE_ISLAND_COUNT; i++)
 		ps[i] = w[ane_island_off[i] / 4];
 	mm->release();
+	return true;
+}
+
+/* macOS powers the ANE per submission and drops it again. One sample
+ * misses that window. Poll the already-mapped pmgr words (always safe
+ * to read) for 2 s and stop at the first sample where every island's
+ * ACTUAL nibble, bits [7:4], is 0xf. Do not treat other set bits as
+ * ACTUAL: a captured ane_cpu word of 0x0f000300 has 0xf in bits [27:24]
+ * and ACTUAL 0, and 0x300 is the documented idle signature. */
+bool ANERegDump::pollIslands(uint32_t first[ANE_ISLAND_COUNT],
+    uint32_t *iters, uint32_t *us)
+{
+	IOMemoryMap *mm = mapPhys(ANE_PMGR_PHYS, ANE_PMGR_LEN);
+	volatile uint32_t *w;
+	uint32_t n = 0, spent = 0;
+	size_t i;
+
+	*iters = 0;
+	*us = 0;
+	if (!mm)
+		return false;
+	w = (volatile uint32_t *)mm->getVirtualAddress();
+	for (;;) {
+		for (i = 0; i < ANE_ISLAND_COUNT; i++)
+			ps_cache[i] = w[ane_island_off[i] / 4];
+		if (n == 0)
+			memcpy(first, ps_cache, sizeof(ps_cache));
+		n++;
+		if (ane_islands_up(ps_cache) || spent >= 2000000)
+			break;
+		IODelay(10);
+		spent += 10;
+	}
+	mm->release();
+	*iters = n;
+	*us = spent;
 	return true;
 }
 
@@ -450,12 +492,13 @@ IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out)
 	if (!w)
 		return kIOReturnNoMemory;
 	hdr = &w->hdr;
-	if (!readIslands(ps_cache)) {
+	if (!pollIslands(hdr->ps_first, &hdr->poll_iters, &hdr->poll_us)) {
 		rc = kIOReturnNotReady;
 		goto done;
 	}
 	memcpy(hdr->ps, ps_cache, sizeof(hdr->ps));
 	hdr->islands_up = ane_islands_up(ps_cache);
+	hdr->pmgr_pa = ANE_PMGR_PHYS;
 
 	n = addFixed(w->table, n);
 	n = addAdt(w->table, n, w->prop_src, w->prop_len, ANE_DUMP_MAX,

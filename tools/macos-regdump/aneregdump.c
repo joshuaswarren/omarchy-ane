@@ -38,6 +38,10 @@ struct ane_dump_hdr {
 	uint32_t ps[8];
 	uint64_t kaslr_slide;
 	uint64_t globals_va;
+	uint32_t ps_first[8];
+	uint32_t poll_iters;
+	uint32_t poll_us;
+	uint64_t pmgr_pa;
 	struct ane_range_rec range[ANE_RANGE_MAX];
 };
 
@@ -108,9 +112,24 @@ int main(int argc, char **argv)
 
 	snprintf(path, sizeof(path), "%s/index.json", argv[1]);
 	idx = fopen(path, "w");
-	fprintf(idx, "{\n  \"islands_up\": %u,\n  \"kaslr_slide\": \"%#llx\",\n"
-	    "  \"globals_va\": \"%#llx\",\n  \"ranges\": [\n",
-	    hdr->islands_up, hdr->kaslr_slide, hdr->globals_va);
+	fprintf(idx, "{\n  \"islands_up\": %u,\n  \"pmgr_pa\": \"%#llx\",\n"
+	    "  \"poll_iters\": %u,\n  \"poll_us\": %u,\n"
+	    "  \"kaslr_slide\": \"%#llx\",\n  \"globals_va\": \"%#llx\",\n"
+	    "  \"ps_first\": [",
+	    hdr->islands_up, hdr->pmgr_pa, hdr->poll_iters, hdr->poll_us,
+	    hdr->kaslr_slide, hdr->globals_va);
+	for (i = 0; i < 8; i++)
+		fprintf(idx, "%s\"%#x\"", i ? ", " : "", hdr->ps_first[i]);
+	fprintf(idx, "],\n  \"ps_first_actual\": [");
+	for (i = 0; i < 8; i++)
+		fprintf(idx, "%s%u", i ? ", " : "", (hdr->ps_first[i] >> 4) & 0xfu);
+	fprintf(idx, "],\n  \"ps\": [");
+	for (i = 0; i < 8; i++)
+		fprintf(idx, "%s\"%#x\"", i ? ", " : "", hdr->ps[i]);
+	fprintf(idx, "],\n  \"ps_actual\": [");
+	for (i = 0; i < 8; i++)
+		fprintf(idx, "%s%u", i ? ", " : "", (hdr->ps[i] >> 4) & 0xfu);
+	fprintf(idx, "],\n  \"ranges\": [\n");
 	for (i = 0; i < hdr->nranges; i++) {
 		struct ane_range_rec *r = &hdr->range[i];
 		const uint8_t *bytes = buf + sizeof(*hdr) + r->off;
@@ -131,7 +150,16 @@ int main(int argc, char **argv)
 	}
 	fprintf(idx, "  ]\n}\n");
 	fclose(idx);
-	printf("islands_up=%u ranges=%u bytes=%u\n",
-	    hdr->islands_up, hdr->nranges, hdr->data_bytes);
+	printf("islands_up=%u poll_iters=%u poll_us=%u ranges=%u bytes=%u\n",
+	    hdr->islands_up, hdr->poll_iters, hdr->poll_us,
+	    hdr->nranges, hdr->data_bytes);
+	printf("ps_first");
+	for (i = 0; i < 8; i++)
+		printf(" %#x(act=%u)", hdr->ps_first[i],
+		    (hdr->ps_first[i] >> 4) & 0xfu);
+	printf("\nps");
+	for (i = 0; i < 8; i++)
+		printf(" %#x(act=%u)", hdr->ps[i], (hdr->ps[i] >> 4) & 0xfu);
+	printf("\n");
 	return hdr->islands_up ? 0 : 3;
 }
