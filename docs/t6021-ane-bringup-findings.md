@@ -685,26 +685,45 @@ Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
 
 ### T8103: ANE clock lead
 
-Source: ane-linux-experiments fedd4da (section 7) and 87f86ab (section 8),
-`receipts/2026-09-25-m1-ane-clock-macos/`; probe staged on omarchy-ane
-`agent/ane-clock-m1` 581561f.
+Source: ane-linux-experiments fedd4da (section 7) and 887ba0e (section 8,
+which corrects 87f86ab), `receipts/2026-09-25-m1-ane-clock-macos/`.
 
 - Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
   Linux 141.4-141.5 ms. The gap is real; no clock measurement explains it
-  yet.
-- ADT decode: `perf-domains` record 8 is ANE -> perf-regs[0] = pmgr reg[1]
-  (0x23d280000, size 0x74000) + 0x34000 = PA 0x23d2b4000, size 0x100. The
-  ANE clock word is PA 0x23d2b4140 (block 0, perf index 4). Asahi's
-  apple-pmgr-misc.c gives the register shape: desired state bits 3:0,
-  granted state bits 7:4. `voltage-states8` holds a 12-step ladder,
-  432-1464 MHz, no voltage words.
-- The 1.258 ratio fit between the two encoder times and the ladder steps is
-  an inference. No measurement shows which step either system runs.
+  yet. The 1.258 ratio fit against the ladder steps is an inference.
+- ADT decode, corrected: the earlier PA 0x23d2b4140 / perf-regs[0] reading
+  was an inference, not a decode, and is wrong. `perf-domains` byte 1 is
+  not a perf-regs index (it takes 4/1/4/1/0/4, and `perf-regs` has only
+  entries 0-3). With m1n1's structs, `devices[99]` ANE_SYS is perf block 1
+  idx 0x31 and `clocks` PLL_ANE is perf block 1 idx 0x48. Both point into
+  `perf-regs[1]` = pmgr reg[0] (0x23b700000) + 0x34000 = PA 0x23b734000,
+  size 0x100.
+- That block is the T8103 twin of the T6001 `perf-regs[1]` region, the
+  forbidden region next to the read that hard-reset the M1 Max. No public
+  source gives its layout; m1n1 models no register there and no Asahi
+  driver touches it. Being inside the ADT pmgr range does not make an
+  address safe. Do not write it as part of a clock experiment.
 - The kext's only host write in its private PMU window (clear mask 0x8 at
   0x23b110100) is ruled out: Linux already reads 0x0 there.
-- Probe `ane/h13/ane_perfstate_probe.c` (581561f): read-only by default;
-  `request=11` writes the desired field once, waits for the granted field,
-  and restores the saved word on unload. Not run yet.
+- The probe built on the wrong address (581561f) was removed in omarchy-ane
+  `agent/ane-clock-m1` 38beae6 and never ran.
+
+### T6021: the macOS pmgr has no ANE perf-state path
+
+Source: ane-linux-experiments 887ba0e, `receipts/2026-09-25-m1-ane-clock-macos/`
+section 8 (`t6020-setPerfState-full.asm.txt`). Decoded from the macOS 13.5
+kernelcache (mac14j, sha256 `9615a486`). T6021-derived; carry to T8103 only
+after the same check there (the T8103 kernelcache is not decoded yet).
+
+`AppleT6020PMGR::setPerfState` (0xfffffe0009b7ef14-0xfffffe0009b7f684)
+dispatches on the domain ID. Only IDs 2, 5 and 13 reach the write path: the
+CPU-cluster DVFS command word at block+0xe20020, written as
+`(old & ~0x1f) | BIT(25) | (state & 0x1f)` — Asahi's
+`apple-soc-cpufreq.c` shape. Every other ID, including the ANE perf-domain
+index 8, branches to an assert panic. The host's only perf-state entry
+point therefore has no ANE path on M2: the host never sets the ANE clock
+through pmgr. That fits the firmware setting its own operating point after
+the `CH_PROPERTY_WRITE` "FW PERF MODE" command.
 
 ### T8103: Qwen ANE layout gate closed
 
