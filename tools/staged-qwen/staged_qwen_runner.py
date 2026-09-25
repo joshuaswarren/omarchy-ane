@@ -73,6 +73,8 @@ def load_gguf_parts(path):
 print(f"loading GGUF ({a.gguf}) ...", flush=True)
 t0 = time.perf_counter()
 EMB, FINAL_NORM, LM_HEAD = load_gguf_parts(a.gguf)
+import gc
+gc.collect()
 EMB = EMB * f16(1.0 / a.resid_scale)
 LM_T = np.ascontiguousarray(LM_HEAD.T, np.float32)   # same precompute as ANEForge _logits
 print(f"host weights: {time.perf_counter()-t0:.1f}s (embed {EMB.shape}, lmT {LM_T.shape})", flush=True)
@@ -125,6 +127,16 @@ for i in range(len(PROGS)):
         f"prog {i}: dst_count {mdl.dst_count} mismatch"
     surf.append({"src_nchw": getattr(mdl, "src_nchw", None) or [s["shape"] for s in PROGS[i]["srcs"]],
                  "dst_nchw": getattr(mdl, "dst_nchw", None) or [x["shape"] for x in PROGS[i]["dsts"]]})
+    if hasattr(mdl, "drop_host_content_pages"):
+        mdl.drop_host_content_pages()
+    chans = PROGS[i].get("src_channels"), PROGS[i].get("dst_channels")
+    if all(chans) and hasattr(mdl, "bind_load"):
+        mdl.bind_load(chans[0], chans[1])
+    elif os.environ.get("STAGED_SKIP_DERIVE") != "1":
+        import ane_channels
+        d = ane_channels.derive(path)
+        if d:
+            mdl.bind_load(d[0], d[1])
 print(f"programs open: {time.perf_counter()-t0:.1f}s", flush=True)
 
 def as_surface(arr, nchw, what, pi):
@@ -157,11 +169,16 @@ class Chain:
                         for k, st in enumerate(pr["states"])} for pr in PROGS]
 
     def step(self, tok, pos):
+        dbg = os.environ.get("STAGED_DEBUG")
+        if dbg:
+            print(f"  step tok={tok} pos={pos}", flush=True)
         vals = ctx_vals(pos)
         hs = {}
         hidden = np.asarray(EMB[tok], f16)[None]
         t0 = time.perf_counter()
         for pi, pr in enumerate(PROGS):
+            if dbg:
+                print(f"    prog {pi}", flush=True)
             if pr["group_start"]:
                 hs["x"] = hidden
             srcs = []

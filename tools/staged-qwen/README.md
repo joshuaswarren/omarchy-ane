@@ -7,3 +7,6 @@
 - run-e5rt-backend.py + staged_e5rt_backend.py — macOS validation rig (runner logic vs live e5rt programs)
 
 Receipt: joshuawarren/ane-linux-experiments receipts/2026-09-25-qwen-ane-decoder-fix/
+
+- libane_python.c — dylib source with pyane_chan_map + pyane_bind_load added (build per bindings/python/dylib/Makefile; jwm1 dylib rebuilt with these)
+- ane_channels.py — task-stream channel derivation (38/38 off-box on the staged set)
