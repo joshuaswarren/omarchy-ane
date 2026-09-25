@@ -31,11 +31,16 @@ class model:
         nchw = struct.unpack_from("<192q", hdr, 168)
         geom = lambda base, n: [tuple(int(x) for x in nchw[(base + i) * 6:(base + i) * 6 + 4]) for i in range(n)]
         self.td_count, self.src_count, self.dst_count = td_count, src_count, dst_count
+        self.tiles = struct.unpack_from("<32I", hdr, 40)
         self.dst_nchw = geom(4, dst_count)
         self.src_nchw = geom(4 + dst_count, src_count)
+        # channel BO sizes: tiles[bdx] << 14 (libane TILE_SHIFT); surfaces live in
+        # 16KB-granular channels and __ane_send/__ane_read move the FULL channel
+        self.dst_chan = [self.tiles[4 + i] << 14 for i in range(dst_count)]
+        self.src_chan = [self.tiles[4 + dst_count + i] << 14 for i in range(src_count)]
         self._pads_in = [ctypes.c_void_p(0)] * (0x20 - src_count)
         self._pads_out = [ctypes.c_void_p(0)] * (0x20 - dst_count)
-        self._out_bufs = [ctypes.create_string_buffer(int(np.prod(n)) * 2) for n in self.dst_nchw]
+        self._out_bufs = [ctypes.create_string_buffer(csz) for csz in self.dst_chan]
 
     def predict(self, inarrs):
         assert len(inarrs) == self.src_count, f"{self.path}: {len(inarrs)} srcs != {self.src_count}"
@@ -44,8 +49,11 @@ class model:
         self.lib.pyane_send(*args)
         self.lib.pyane_exec(self.handle)
         self.lib.pyane_read(self.handle, *[ctypes.cast(b, c_void_p) for b in self._out_bufs] + self._pads_out)
-        return [np.frombuffer(b, dtype=np.float16).reshape(*nchw[:4]).copy()
-                for b, nchw in zip(self._out_bufs, self.dst_nchw)]
+        outs = []
+        for b, csz, nchw in zip(self._out_bufs, self.dst_chan, self.dst_nchw):
+            n = int(np.prod(nchw[:4]))
+            outs.append(np.frombuffer(b, dtype=np.float16, count=n).copy())
+        return outs
 
     def close(self):
         if self.handle:
