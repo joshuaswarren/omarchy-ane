@@ -246,3 +246,22 @@ result read after a hang is not evidence.
   repository is the maintained driver and library),
   `~/src/ane-linux-experiments` (M1 ANE experiments and Qwen-shaped
   kernels).
+
+## Git identity (COS-290 — standing)
+
+All commits on this repo MUST be authored and committed as:
+
+- **Name:** Joshua Warren
+- **Email:** 816217+joshuaswarren@users.noreply.github.com
+
+Never use AneRecover, ane-recover@homelab.local, machine hostname, omp pane name, or any bot/subagent name as `user.name` / `user.email` / `GIT_AUTHOR_*` / `GIT_COMMITTER_*`.
+
+Before the first commit in a worktree or subagent:
+
+```bash
+git config user.name "Joshua Warren"
+git config user.email "816217+joshuaswarren@users.noreply.github.com"
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+```
+
+`core.hooksPath=scripts/hooks` enforces this via `pre-commit` (hard reject) for every clone that keeps that config.

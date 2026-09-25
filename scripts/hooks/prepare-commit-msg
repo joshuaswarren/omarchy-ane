@@ -1,0 +1,11 @@
+#!/bin/sh
+# COS-290: normalize author/committer to Joshua before commit message finalize.
+export GIT_AUTHOR_NAME="Joshua Warren"
+export GIT_AUTHOR_EMAIL="816217+joshuaswarren@users.noreply.github.com"
+export GIT_COMMITTER_NAME="Joshua Warren"
+export GIT_COMMITTER_EMAIL="816217+joshuaswarren@users.noreply.github.com"
+# Note: exporting here does not rewrite an already-formed commit object for all git
+# versions; pre-commit guard is the hard stop. This helps omp/subagent shells that
+# inherit bad GIT_* from the environment on subsequent commits in the same process
+# only when tools re-read env — primary enforcement is pre-commit + local user.*.
+exit 0
