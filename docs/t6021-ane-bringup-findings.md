@@ -894,3 +894,28 @@ Validated on T6001.
   because the wedge pin drops at postclose and the probe purges stale DART
   mappings.
 - T8103 keeps its full-POR recovery path; that path is unchanged.
+
+### T6001: ane_boost validated
+
+Source: Jw16Levers3 validation of omarchy-ane 5a22ee3 on T6001, built
+on-device (v0.1.0-605-g5a22ee3, module sha256 `cf1d4bf1...`), installed
+persistently with `boost_idle_ms=100`. Receipt:
+ane-linux-experiments `receipts/2026-09-25-jw16-levers3/`
+(artifacts/ane, artifacts/ane-ab), landing on main.
+
+- Kill-race x10: PASS 10/10 reopen-clean. The awk source-anchor half of
+  test/guard fails identically on a9a5f60 — a stale anchor, not a
+  regression. As in the retention finding above, a kill-race parks the TM
+  (in-place recovery fails, later opens get -28) until rmmod + modprobe;
+  after the reload the full Parakeet const-cache contract is all-green
+  bit-exact.
+- Boost A/B, interleaved 3 reps, all gates bit-exact in both arms:
+  whole-encoder single submit does not move (440.0/440.8/441.4 vs
+  441.0/440.7/441.0 ms/iter) — one 14.7 s submit is kicked once and the
+  QoS request drops 100 ms later, and the job is compute-bound. The 440
+  vs macOS 158 ms whole-encoder gap stays open. The island-submit
+  Parakeet pipeline does move: encoder_ane 1437.5-1439.5 vs
+  1640.3-1768.0 ms (-12.4% on medians), decoder_load 54 vs 77 ms, total
+  2227-2250 vs 2466-2612 ms (-9.5%).
+- cpufreq sampled at 50 ms: with boost the P-clusters sit at 3036 MHz in
+  55% of samples (median 3036); without, 2% (median ~1056).
