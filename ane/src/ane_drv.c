@@ -1038,6 +1038,9 @@ static int ane_platform_probe(struct platform_device *pdev)
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
 	INIT_LIST_HEAD(&ane->preserved_list);
+	err = ane_boost_init(ane);
+	if (err < 0)
+		goto detach_genpd;
 
 	/*
 	 * Kernel-owned IOMMU domain. Defers until every "iommus" provider
@@ -1084,6 +1087,7 @@ disable_pm:
 	pm_runtime_disable(dev);
 	drm_mm_takedown(&ane->mm);
 detach_genpd:
+	ane_boost_exit(ane);
 	ane_detach_genpd(ane);
 	return err;
 }
@@ -1109,6 +1113,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane_reclaim_preserved(ane);
 	drm_mm_takedown(&ane->mm);
 
+	ane_boost_exit(ane);
 	ane_detach_genpd(ane);
 
 	pm_runtime_disable(ane->dev);

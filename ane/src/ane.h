@@ -7,6 +7,8 @@
 #include <linux/atomic.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/pm_qos.h>
+#include <linux/workqueue.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_mm.h>
@@ -89,6 +91,22 @@ struct ane_device {
 	 * False on T8103, where the cycle is a full POR of the file.
 	 */
 	bool tm_retention;
+
+	/*
+	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on
+	 * every cpufreq policy from the first submit until boost_idle_ms
+	 * after the last one: on T8103 bandwidth-bound programs run ~2x
+	 * slower while schedutil parks the idle clusters low.
+	 */
+	struct ane_boost {
+		struct mutex lock;
+		struct delayed_work off;
+		struct freq_qos_request *legs;
+		int nlegs;
+		int held;
+		unsigned long last_kick;
+		bool on;
+	} boost;
 };
 
 struct ane_request {
@@ -115,6 +133,10 @@ void ane_wedge_clear(struct ane_device *ane);
  * recovery power cycle, or at driver remove. Callers hold engine_lock.
  */
 void ane_reclaim_preserved(struct ane_device *ane);
+
+int ane_boost_init(struct ane_device *ane);
+void ane_boost_exit(struct ane_device *ane);
+void ane_boost_kick(struct ane_device *ane);
 
 #define ANE_DART_MAX 3
 #define ANE_DART_SCRATCH_MAX 16
