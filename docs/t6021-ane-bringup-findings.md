@@ -158,3 +158,16 @@ firmware did complete its EL3 to EL1 reset first (VBAR_EL1 reads back the
 image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
 receipts/2026-09-24-t6001-asc-debug.
+
+## 12. T6021 VENC leg: firmware reaches its service loop (2026-09-24)
+
+With the VENC leg up (VENC_SYS→VENC_DMA→PIPE4/PIPE5/ME0), the T6021 core
+executes to its main service loop and waits on host input; no HELLO yet.
+The DATA footprint proves execution past fetch: the RTKit canaries at
+SEG1+0x167d0 are overwritten with headers and ring words, a 319-pair
+dispatch table is built at SEG1+0x1c000, and ~46 flag rows sit at
+SEG1+0x5d42. The earlier "no stores" result (byte-identical DATA) was
+the VENC-down stall; with the leg up the core runs code. Vehicle:
+`ane/h13/ane_t6021_venc.c` (same shape as the T6001 `ane_pdraise.c`
+approach in 8756868, T6021-gated on `apple,t6021-ane`; ported from
+c9b2324, which was built on a side line and never landed on main).
