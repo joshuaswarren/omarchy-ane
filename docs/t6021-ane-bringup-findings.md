@@ -1,8 +1,14 @@
-# T6021 (M2 Max) ANE bring-up: findings as of 2026-09-24
+# T6021 (M2 Max) ANE bring-up: findings as of 2026-09-25
 
 This is the canonical record of what the T6021 ANE work has proven, what it has
 ruled out, and what is still open. Read it before starting any T6021 ANE
 experiment. Update it when a finding changes, and delete lines that go stale.
+
+## Keeping this record current
+
+Every ANE agent lands its findings in this file on main in the same step as
+its receipt. A finding that lives only in a receipt or an agent branch is
+lost. Cite the source repo and the commit SHA next to every number.
 
 ## 1. Architecture: why the M2 needs firmware and the M1 does not
 
@@ -89,6 +95,12 @@ set). A 60 s poll with that bit set still showed SCRATCH7 0 and an
 empty outbox. Writing `1` to DISABLE at `0xc20` cleared bit 0; the
 readback was `0xfffe`.
 
+The macOS working-state dump (section 17) narrows the open question "which
+macOS pre-RUN step is missing" to four candidates: ane_sys_mpm left off,
+the VENC rails left off, mailbox control bit 19, and the single-DART-stream
+form. Everything else the macOS dump reads matches Linux. The staged Linux
+test form is omarchy-ane `agent/t6021-macos-ps-form` 265bb63 (section 18).
+
 ## 6. Ruled out (do not re-run without new evidence)
 
 | Hypothesis | Evidence |
@@ -106,6 +118,8 @@ readback was `0xfffe`.
 | Zero `armv8_timer_frequency` keeps the core asleep | `patch_timer_freq=0x016e3600` wrote PA 0x10001406880 and read back, then release: still parked, no READY (2026-09-25, 340f3a4, receipt 8004cfe) |
 | Coproc IRQ masks 0x1400a00-a14 left closed after the park | Read 0 post-park; 0xffffffff stuck 60 s; no READY, doorbell undrained (receipt 8004cfe). Status did move 0x28 -> 0x08, see section 14 |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
+| RVBAR mode bits or a different latch keep the core from starting | macOS runs the firmware with the identical latch `0x0000010000000001` and no mode bits (section 17, ane-linux-experiments b7c7bc5) |
+| CPU_STATUS 0x28 marks a parked core | The working macOS run reads 0x20 and 0x28 (section 17); 0x28 only says the core left its boot path |
 
 ## 7. Hazards (each one wedged or reset a laptop)
 
@@ -473,3 +487,230 @@ as the whole explanation for the ANE.
    only after that, the residual lives in a domain only a PMU reset clears.
    If the ANE park survives that too, the residual is not reset state at all
    and this section's hypothesis is exhausted.
+
+## 16. macOS power-state form: ane_sys_mpm stays off (2026-09-25)
+
+Source: ane-linux-experiments `lane/m2-fwstart` 511acc6,
+`receipts/2026-09-25-macos-ane-pstable`. macOS 27.0 (26A428) on T6021. A kext
+register capture read the pmgr power-state block (PA `0x28e080000`) 14 times
+around a Parakeet encoder run: 3 idle samples, 10 during the run at 4.8 W ANE
+power (powermetrics), 1 after. Field layout per Linux `pmgr-pwrstate.c`:
+TARGET [3:0], ACTUAL [7:4], PS_AUTO [27:24], AUTO_ENABLE bit 28.
+
+| domain (offset) | macOS idle | macOS under load | Linux raised |
+|---|---|---|---|
+| ane_sys @0x260 | 0x0f000300 | 0x1f0003ff | 0x1f0003ff |
+| ane_cpu @0x2e0 | 0x0f000300 | 0x1f0003ff | 0x1f0003ff |
+| ane_sys_mpm @0x4000 | 0x00000300 | **0x00000300** | 0x000003ff |
+| ane_td/base/set1-4 @0x4008-0x4030 | 0x00000300 | 0x000003ff | 0x000003ff |
+
+- ane_sys and ane_cpu run in hardware auto-gating mode. Under load the word
+  is 0x1f0003ff: AUTO_ENABLE set, PS_AUTO 0xf, ACTUAL 0xf, TARGET 0xf.
+  Between jobs ane_cpu reads 0x1000030f: TARGET and AUTO_ENABLE hold, ACTUAL
+  and PS_AUTO fall to 0. No software write moves it. Idle, macOS clears both
+  domains to 0x0f000300. ane_sys can read its idle word between jobs too.
+- ane_td, ane_base and ane_set1-4 use a plain target: 0x3ff under load,
+  0x300 idle.
+- ane_sys_mpm reads 0x300 (off) in all 14 samples, including the 4.8 W ones.
+  The stock Linux DTB marks it `apple,always-on`, so the pmgr probe raises it
+  at boot and genpd never lowers it. This is the largest power-form
+  difference between the two systems.
+- The ASC domain comes up before the compute islands: ane_cpu read ACTUAL 0xf
+  two samples before any compute island left 0x300.
+- This table also explains the earlier capture refusals: the old kext gate
+  required ane_sys_mpm at ACTUAL 0xf, and macOS never raises it.
+
+## 17. macOS working-state engine dump (2026-09-25)
+
+Source: ane-linux-experiments `lane/m2-fwstart` b7c7bc5,
+`receipts/2026-09-25-macos-ane-engine-dump`. Same T6021 laptop and kext tool,
+two gated passes (load3, load4) while the ANE firmware ran under the encoder.
+Engine base 0x284000000. Linux column: lane receipts
+`2026-09-25-m2-handshake` and `2026-09-23-m2-fwstart` s9.
+
+| register | macOS working | Linux |
+|---|---|---|
+| RVBAR +0x1050000 | 0x0000010000000001 | same value |
+| CPU_CONTROL +0x1400044 | 0x10 (RUN) | 0x10 after release |
+| CPU_STATUS +0x1400048 | 0x20 / 0x28 | 0x28 |
+| SCRATCH0-7 +0x1840048 | 0 0 0 0 0 0 1 0 | SCRATCH6=1 (S1), SCRATCH7=0 |
+| +0x184006c | 4 | not logged |
+| A2I_CTRL +0x1408110 | 0x000a0001 | 0x00020001 |
+| I2A_CTRL +0x1408114 | 0x000a0001 | not logged |
+| IRQ masks +0x1400a00-a14 | 0 | 0xffffffff (our test wrote them) |
+| DART ENABLE, all three instances | stream 0 only | stream 0; earlier runs enabled sid15 |
+| DART sid0 TCR / TTBR | 0x9 / 0x1004102d, one shared table on all three | TCR 0x9; TTBR equalized |
+| dart0 PROTECT +0x200 | 0x6 | not logged |
+| VENC_SYS 0x2902803e0 | 0x0f000300 (off) in every sample | raised to 0x1f0003ff |
+| VENC_DMA, PIPE4/5, ME0/1 | 0x300 (off) in every sample | raised to 0x3ff |
+
+What this changes:
+
+- **RVBAR is falsified as the blocker** (section 6). macOS runs the firmware
+  with the same locked latch and no mode bits.
+- **CPU_STATUS 0x28 is not a park signature** (section 6). The working macOS
+  run reads 0x20 and 0x28.
+- **SCRATCH7 is 0 while the firmware serves.** A READY poll on SCRATCH7 can
+  only catch a transient. +0x184006c reads 4 in the working state.
+- **The mailbox control words differ in bit 19** (0x000a0001 vs 0x00020001).
+  Bits 16-17 are FULL and EMPTY. What bit 19 means is open.
+- **macOS enables one DART stream.** The dart1/dart2 sid1-14 words change
+  between the two passes and are not a live TCR/TTBR layout.
+- **macOS keeps every VENC rail off** while it uses the ANE. Linux raises
+  them.
+- The six IRQ masks read 0 in the working macOS state. This confirms section
+  14: the masks are open only where our tests wrote them.
+
+Caveat: both gated passes fell in the encoder's model-load phase. The 500 ms
+powermetrics sample before each read showed 0 mW, and no engine read landed
+in the steady 4.8 W reps. Treat the table as "firmware running, compute
+idle", not as a mid-inference state.
+
+## 18. macOS capture tool and the staged Linux tests (2026-09-25)
+
+The capture tool behind sections 16-17 is `tools/macos-regdump/` on
+omarchy-ane main (commits cee3dd1 through 210a1e3). The kext
+(`com.warren.ANERegDump`) is frozen at binary sha256 `932d3b9b...`; a staged
+copy ships with SHA256SUMS. Each rebuilt kext costs an Allow click plus a
+reboot, so the address table, pmgr base, island offsets, gate mask and poll
+budget are runtime data in `ranges.txt` (all numbers hex).
+
+The kernel side enforces the safety net whatever the file says
+(`ane_regdump_filter.h`, `ane_req_acceptable`):
+
+- a gate predicate needs ACTUAL bits [7:4] = 0xf and must reject the idle
+  words 0x300 and 0x0f000300;
+- every engine-window range is gated even if the file omits the flag;
+- a range touching engine+0x1010000 (CoreSight) is refused outright;
+- the engine+0x1400818/81c/820 event words and the mailbox RECV words are
+  never read (pop-on-read, section 14);
+- `poll_us` is capped at 10 s;
+- `start()` only registers the service; all work happens on the CLI call.
+
+Building it gave the macOS 27 idle signature: 0x300 per island and
+0x0f000300 for ane_cpu, where the 0xf is bits [27:24] (PS_AUTO), not ACTUAL.
+The 2 s poll catches the short ACTUAL-0xf windows; one workload sample still
+read idle. Known gap: the kext asks the ADT for node `ane0`, the live node is
+`ane0@84000000`, so ADT ranges never land. `capture.sh` saves the ADT
+properties with ioreg and the boot args with sysctl, and the fw-text/fw-data
+reads are ungated DRAM reads (the section 3 segment-ranges).
+
+Linux test form, staged on omarchy-ane `agent/t6021-macos-ps-form` 265bb63.
+Result pending:
+
+- `fw_start_mpm_off` (default on, under `fw_start=1`) powers ane_sys_mpm down
+  with the `apple_pmgr_ps_set()` PWRGATE write before the boot sequence's
+  first engine write, and refuses the sequence unless ane_sys/ane_cpu read
+  the macOS AUTO_ENABLE form and td/base/set1-4 read ACTUAL 0xf. A refusal
+  unwinds cleanly, because no CPU has started.
+- `fw_start_venc_gates=0` leaves the VENC rails off (the macOS form; the
+  rtclient default raises them).
+- Fix that came with it: the probe G1 gate tested TARGET where its comment
+  said ACTUAL, so an auto-gated ane_cpu (0x1000030f) passed it. It now tests
+  ACTUAL, and a failed pmgr map fails the probe instead of reading engines.
+
+## 19. Cross-SoC: T6001 and T8103 (2026-09-25)
+
+Short notes from the M1 Max and M1 lanes. Each item says what it is derived
+from; carry it to T6021 only after a check on that chip.
+
+### T6001: firmware cold start as macOS does it
+
+Source: ane-linux-experiments `lane/jw16-lsink2-clean` 82ede28 (merged
+caabc0f), `receipts/2026-09-24-launch-sink2/asc-capture/run-205806/`. From a
+T6001 macOS boot log.
+
+- The kext starts the firmware lazily, on the first power-on client (the ISP
+  peer here), not at boot. The capture window shows six cold starts; the
+  `ColdStarts` counter reaches 6.
+- One cold start is fast: "FW App image..." at 20:52:11.940, command buffer
+  0x1fb08000 logged at .941, first firmware command accepted
+  (CSNE_CMD_SET_SNE_PMU_BASE2, res=0) at .955. About 15 ms from image to a
+  live firmware. Capability discovery follows at once: fNumANEs 1,
+  fANEMaxCacheRequests 16, fANEMaxGlobalWaitEvent 32.
+- Surfaces: ANE aperture 0x284000000, length 0x2000000; PS registers
+  0x28e080000, length 0xc02c; fw TEXT phys 0x10000a5c000 (identity remap,
+  size 0xf4000); fw DATA phys 0x10001684000, remap 0x1f0000f4000, size
+  0x5f8000; command buffer IOVA 0x1fb08000.
+
+### T6001: CSNE wire protocol (static kext RE)
+
+Source: ane-linux-experiments `lane/kext-re-clean` d4b9b3e,
+`kext-re/FINDINGS.md` (AppleH11ANEInterface 9.512.0, macOS 25G83 build).
+T6001-derived.
+
+- Command packet: u32 0 at +0, u16 opcode at +4, u16 0 at +6 (zeroed by the
+  sender), opcode payload from +8. Copied verbatim into the command-buffer
+  slot.
+- Cold-start order: PRINT_ENABLE (0x4, 12 B) -> TRACE_ENABLE (0x21, 12 B,
+  only when the unit-test flag dev+0xC8 is nonzero) -> START (0x0, 12 B) ->
+  SET_SNE_PMU_BASE2 (0x29, 16 B: `00000000 29000000` + u64 LE pmu_base) ->
+  CONFIG_GET (0x3, 16 B) -> CH_PROPERTY_WRITE (0x1F, 20 B: 0, 0x10A4, 1) ->
+  RESOURCE_INFO_GET (0x22, 100 B).
+- Doorbell: memcpy the packet into the slot, then IOProcessorChannelSend
+  writes a 64 B ring entry {ep | seqtoggle^1, dst pointer, respSize}, dsb,
+  ring. EP is the runtime IOP id for channel name "IO" (dev+0xDFC8), not a
+  kext constant. The kext holds no raw doorbell MMIO store; XNU's
+  IOProcessor layer owns the register.
+
+### T6001: DART, CTRR and RTKit decode
+
+Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
+`kext-re/DART-DECODE.md`. T6001-derived.
+
+- The kext never writes DART PTEs. IODARTVMAllocator and the DART framework
+  fill them. Bare-metal code must do that work itself.
+- All three ANE DARTs (0x285800000 / 0x285810000 / 0x285820000 on T6001)
+  need the same TTBR0 plus UNK_CONFIG_68/0x6c. m1n1's ane driver programs
+  all three ("DMA fails w/o").
+- DART8020 field map: TCR at 0x100 + 4*sid, TTBR at 0x200 + 16*sid + 4*bank,
+  ENABLED_STREAMS 0xfc, REMAP 0x80..0x8c.
+- The CTRR remap window (the 0x1f0000f4000 class) comes from the DT
+  `segment-ranges` property {phys, virt, remap, size}. The kext only creates
+  the DART translations that make remap -> phys true.
+- RTKit: after boot the firmware sends HELLO on the management endpoint and
+  waits. With no reply it never announces endpoints, and every later CSNE
+  write is ignored. That is the exact stall symptom on both chips.
+  Constants: HELLO=1, HELLO_REPLY=2, STARTEP=5, SET_IOP_PWR_STATE=6,
+  EPMAP=8.
+
+### T8103: ANE clock lead
+
+Source: ane-linux-experiments fedd4da (section 7) and 87f86ab (section 8),
+`receipts/2026-09-25-m1-ane-clock-macos/`; probe staged on omarchy-ane
+`agent/ane-clock-m1` 581561f.
+
+- Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
+  Linux 141.4-141.5 ms. The gap is real; no clock measurement explains it
+  yet.
+- ADT decode: `perf-domains` record 8 is ANE -> perf-regs[0] = pmgr reg[1]
+  (0x23d280000, size 0x74000) + 0x34000 = PA 0x23d2b4000, size 0x100. The
+  ANE clock word is PA 0x23d2b4140 (block 0, perf index 4). Asahi's
+  apple-pmgr-misc.c gives the register shape: desired state bits 3:0,
+  granted state bits 7:4. `voltage-states8` holds a 12-step ladder,
+  432-1464 MHz, no voltage words.
+- The 1.258 ratio fit between the two encoder times and the ladder steps is
+  an inference. No measurement shows which step either system runs.
+- The kext's only host write in its private PMU window (clear mask 0x8 at
+  0x23b110100) is ruled out: Linux already reads 0x0 there.
+- Probe `ane/h13/ane_perfstate_probe.c` (581561f): read-only by default;
+  `request=11` writes the desired field once, waits for the granted field,
+  and restores the saved word on unload. Not run yet.
+
+### T6001: tm/tq retention blocks in-place recovery
+
+Source: omarchy-ane a9a5f60 (merge of df23ca9), `fix/t6001-tm-recovery`.
+Validated on T6001.
+
+- The set0/base islands hold the tm/tq register file in retention through
+  any genpd cycle, so a power cycle clears nothing and in-place reset is
+  unavailable.
+- A timed-out task also leaves per-queue error latches: TM_ERROR1/2 read
+  0x22222222 and TM_ERROR3 reads 0x2222. The latches are firmware-held;
+  write-through and zero clears are both ignored.
+- The working cure is the module-reload door: rmmod + insmod after a wedge
+  (kill-race 10/10 reopen-clean; two wedge->reload cycles followed by the
+  full Parakeet contract, all green twice, no reboot). The reload works
+  because the wedge pin drops at postclose and the probe purges stale DART
+  mappings.
+- T8103 keeps its full-POR recovery path; that path is unchanged.
