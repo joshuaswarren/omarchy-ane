@@ -134,12 +134,26 @@ test form is omarchy-ane `agent/t6021-macos-ps-form` 265bb63 (section 18).
   reboot it over USB-C from the proxy host with the m1n1 proxy `p.reboot()`.
 - The stage-1 proxy falls through to U-Boot the moment the proxy client
   disconnects. On the first macOS-to-Omarchy boot of 2026-09-25, U-Boot hung
-  after "Hit any key to stop autoboot: 0" (m2-fwstart lane observation,
-  receipt pending). One cold reset recovered it, and the box came up clean
-  from m1n1's own NVMe boot, ANS2 included. That is the same
-  rails-drop-cures-it shape as section 15. If a boot after a macOS session
-  hangs at the autoboot prompt, do one cold reset before deeper repair. The
-  43ec stage-1 lineage is identified in ane-linux-experiments 58b0917
+  after "Hit any key to stop autoboot: 0"; the cause is not isolated. One
+  cold reset recovered it, and the box came up clean from m1n1's own NVMe
+  boot, ANS2 included. That is the same rails-drop-cures-it shape as
+  section 15. If a boot after a macOS session hangs at the autoboot prompt,
+  do one cold reset before deeper repair.
+- After two consecutive stub boot failures, every reset — including a
+  USB-PD VDM reboot from the proxy host's macOS — lands in the Omarchy
+  stub's paired recoveryOS 13.5 (22G74). `remotectl show` then reports
+  `OSInstallEnvironment => true`, the RemoteXPC services refuse
+  connections, and no remote shell exists. Getting out takes one action at
+  the M2's own screen (Restart, or Startup Options -> Omarchy). Only a
+  booted OS or m1n1's `PMU.reset_panic_counter()` clears the boot-failure
+  counter that drives this routing.
+- The escape that needs no screen: `tools/m2_linux_boot.py` with
+  `m2_boot_loop*.sh` chainloads grub's first menuentry (kernel, initrds,
+  devicetree, args, `panic=30`) over the proxy in one unbroken session and
+  resets the PMU panic counter. U-Boot is not involved.
+  Receipt: ane-linux-experiments `lane/m2-fwstart` 91dbab3,
+  `receipts/2026-09-25-m2-bootpath-recovery/README.md`; the 43ec stage-1
+  lineage is identified in 58b0917
   (`receipts/2026-09-25-m2-43ec-provenance.md`).
 
 ## 8. Tools and artifacts
