@@ -178,6 +178,7 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN1, 0x4000000);
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
+}
 #define ANE_ACG_HACK_OFF	0x1868a04
 #define ANE_ACG_HACK_SET	0x80001000U
 #define ANE_ACG_HACK_CLR	0x1000U
