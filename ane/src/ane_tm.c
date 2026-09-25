@@ -179,34 +179,44 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
 }
-#define ANE_ACG_HACK_PA		0x26b868000ULL
-#define ANE_ACG_HACK_OFF	0x8a04
+#define ANE_ACG_HACK_TARGET_PA	0x26b868a04ULL
+#define ANE_ACG_HACK_MAP_PA	(ANE_ACG_HACK_TARGET_PA & PAGE_MASK)
+#define ANE_ACG_HACK_OFF	(ANE_ACG_HACK_TARGET_PA - ANE_ACG_HACK_MAP_PA)
 #define ANE_ACG_HACK_SET	0x80001000U
 #define ANE_ACG_HACK_CLR	0x1000U
+
+/* Compile-time proof the offset is inside the one mapped page:
+ * 0x26b868a04 - 0x26b868000 = 0xa04 < 0x4000. The two oopses on jwm1
+ * came from a hand-written 0x8a04 offset, which is wrong by 0x8000. */
+static_assert(ANE_ACG_HACK_OFF < PAGE_SIZE);
+static_assert(ANE_ACG_HACK_OFF + sizeof(u32) <= PAGE_SIZE);
 
 /* T8103 auto-clock-gate hack, mirroring macOS AppleT8103PMGR::writeReg32
  * (mac13g 0x...9b84cd8): after ANE_SYS reaches 0xf, macOS does a physical
  * RMW at PA 0x26b868a04 (macOS ANE window 0x26a000000 + 0x1868a04).
  *
- * The Linux DT engine window (0x26bc04000/0x24000) ends 0x1858004 bytes
- * short of that word, so this maps exactly one page in-driver at probe
- * (devm, fails cleanly) and touches it only while the ANE domain is on.
- * Skipped on other SoCs: T6001's ADT has no ane-acg-hack property.
+ * The Linux DT engine window (0x26bc04000/0x24000) ends before that word,
+ * so this maps exactly one page in-driver at probe (devm, fails cleanly)
+ * and touches it only while the ANE domain is on. Skipped on other SoCs:
+ * T6001's ADT has no ane-acg-hack property.
  *
  * apply=true: RMW to (old & ~0x1000) | 0x80001000. apply=false (power
- * down): clear bit 12. Every value is logged with the AND/OR result
- * spelled out, so a wrong RMW is visible before it sticks.
+ * down): clear bit 12. PA, VA and value share one log line, so a wrong
+ * address is visible before it sticks.
  */
 int ane_acg_hack_map(struct ane_device *ane)
 {
 	if (ane->acg_page)
 		return 0;
-	ane->acg_page = devm_ioremap(ane->dev, ANE_ACG_HACK_PA, PAGE_SIZE);
+	ane->acg_page = devm_ioremap(ane->dev, ANE_ACG_HACK_MAP_PA, PAGE_SIZE);
 	if (!ane->acg_page) {
 		dev_err(ane->dev, "ANE-ACG: page map of %#llx failed\n",
-			ANE_ACG_HACK_PA);
+			ANE_ACG_HACK_MAP_PA);
 		return -ENOMEM;
 	}
+	dev_info(ane->dev, "ANE-ACG: mapped %#llx at %p, word at offset %#lx\n",
+		 ANE_ACG_HACK_MAP_PA, ane->acg_page,
+		 (unsigned long)ANE_ACG_HACK_OFF);
 	return 0;
 }
 
@@ -232,8 +242,8 @@ void ane_acg_hack(struct ane_device *ane, bool apply)
 		after = (before & ~ANE_ACG_HACK_CLR) | ANE_ACG_HACK_SET;
 	else
 		after = before & ~BIT(12);
-	dev_info(ane->dev, "ANE-ACG %#llx: %#x -> %#x (%s)\n",
-		 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF,
+	dev_info(ane->dev, "ANE-ACG reg %p (%#llx): %#x -> %#x (%s)\n",
+		 reg, ANE_ACG_HACK_TARGET_PA,
 		 before, after, apply ? "set" : "clear");
 	if (after != before)
 		writel(after, reg);
@@ -251,12 +261,12 @@ void ane_acg_hack_log(struct ane_device *ane)
 
 	if (!reg) {
 		dev_info(ane->dev, "ANE-ACG %#llx: no page map\n",
-			 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF);
+			 ANE_ACG_HACK_TARGET_PA);
 		return;
 	}
 	val = readl(reg);
-	dev_info(ane->dev, "ANE-ACG %#llx baseline %#x\n",
-		 ANE_ACG_HACK_PA + ANE_ACG_HACK_OFF, val);
+	dev_info(ane->dev, "ANE-ACG reg %p (%#llx) baseline %#x\n",
+		 reg, ANE_ACG_HACK_TARGET_PA, val);
 }
 
 u32 ane_tm_status(struct ane_device *ane)
