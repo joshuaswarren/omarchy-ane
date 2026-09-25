@@ -37,7 +37,9 @@ ap.add_argument("--programs", default="", help="pattern with %%03d (default <exp
 ap.add_argument("--backend-module", default="", help="module exposing model(path, lib_path=...); default libane_model.py beside this script")
 ap.add_argument("--libane-so", default="/usr/lib/libane_python.so")
 ap.add_argument("--ref", default="", help="chunk_00.json (verify/replay modes)")
-ap.add_argument("--mode", choices=("verify", "replay", "bench"), default="verify")
+ap.add_argument("--mode", choices=("verify", "replay", "bench", "prefill"), default="verify")
+ap.add_argument("--prefill-ids", default="", help="prefill mode: JSON {\"ids\": [...]} (512-token prefill leg)")
+ap.add_argument("--prefill-tokens", type=int, default=512)
 ap.add_argument("--new-tokens", type=int, default=32)
 ap.add_argument("--resid-scale", type=float, default=1.0)
 ap.add_argument("--warmups", type=int, default=3, help="bench: contract = 3")
@@ -240,6 +242,28 @@ if a.mode == "replay":
         print(f"REPLAY FAIL: {len(bad)} surface mismatches: {bad[:12]}")
         sys.exit(1)
     print(f"REPLAY PASS: {sum(len(v['srcs']) + len(v['dsts']) for v in goldens.values())} surfaces byte-identical to the macOS e5rt goldens")
+    sys.exit(0)
+
+if a.mode == "prefill":
+    # Pure-prefill leg, same construction and timing boundary as the macOS
+    # denominator (run_qwen_ane_ref.full.py pure_prefill): the staged decode
+    # path token-by-token, 512 prompt ids + 1 generated token per wall, wall =
+    # the whole generate call, rate = prompt_tokens / median(wall) over 3
+    # timed walls after 1 untimed pass.
+    pids = json.load(open(a.prefill_ids))["ids"]
+    assert len(pids) == a.prefill_tokens, f"prefill ids: {len(pids)} != {a.prefill_tokens}"
+    assert len(pids) + 1 <= M, f"export max_len {M} too small for a {len(pids)}-token prefill"
+    ch = Chain()
+    ch.generate(pids, 1)  # untimed warm pass
+    times = []
+    for _ in range(3):
+        t0 = time.perf_counter()
+        ch.generate(pids, 1)
+        times.append(time.perf_counter() - t0)
+    res = {"prompt_tokens": len(pids), "walls_s": [round(t, 4) for t in times],
+           "median_tok_rate": round(len(pids) / statistics.median(times), 2)}
+    print(json.dumps(res, indent=1))
+    json.dump(res, open("staged-qwen-prefill.json", "w"), indent=1)
     sys.exit(0)
 
 ref = load_ref()
