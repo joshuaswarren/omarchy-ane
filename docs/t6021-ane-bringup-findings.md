@@ -99,7 +99,8 @@ readback was `0xfffe`.
 | PWGATE `0x28e09359c = 0` | Already reads 0 |
 | `0x28e08c000 = 0x80000000` (first 13.5 trace write) | Applied, read back, no change |
 | Firmware pages mapped uncached, so the ASC cannot fetch | Leaf PTE `0x000fff1000084801` has bit 1 clear and the TEXT PA; sid 15 TCR is `0x2`; SCRATCH7 and the outbox still empty |
-| Zero `armv8_timer_frequency` keeps the core asleep | `patch_timer_freq=0x016e3600` wrote PA 0x10001406880 and read back, then release: still parked, no READY (2026-09-25, 340f3a4) |
+| Zero `armv8_timer_frequency` keeps the core asleep | `patch_timer_freq=0x016e3600` wrote PA 0x10001406880 and read back, then release: still parked, no READY (2026-09-25, 340f3a4, receipt 8004cfe) |
+| Coproc IRQ masks 0x1400a00-a14 left closed after the park | Read 0 post-park; 0xffffffff stuck 60 s; no READY, doorbell undrained (receipt 8004cfe). Status did move 0x28 -> 0x08, see section 14 |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
 
 ## 7. Hazards (each one wedged or reset a laptop)
@@ -267,8 +268,11 @@ interval to at least one tick (payload 0x654a8-0x654b8), so a zero frequency
 makes an armed timer fire sooner, not never.
 
 Tested 2026-09-25 (M2FwStart-2, `patch_timer_freq=0x016e3600`, omarchy-ane
-340f3a4): the write verified by readback, the CPU was released, and the core
-still parked with no READY. The frequency is not what keeps the core asleep.
+340f3a4; receipt ane-linux-experiments 8004cfe on lane/m2-fwstart): PA
+0x10001406880 before=00000000 wrote=016e3600 readback=016e3600. After the
+release CPU_STATUS read 0x28, SCRATCH7 (+0x1840064) and +0x184006c stayed 0,
+no HELLO, through poll A, a 30 s READY poll, and a 60 s doorbell poll. The
+frequency is not what keeps the core asleep.
 
 ### What the host must do, from the working drivers
 
@@ -299,7 +303,7 @@ handoff). No Linux register write reaches this bit. Confirming it is the
 difference needs the hypervisor trace of a macOS boot, not another register
 guess.
 
-### Remaining Linux-side tests
+### Coprocessor IRQ masks, post-park: null, but the core left IDLE
 
 Keep `patch_timer_freq=0x016e3600` on every later run. It is not the fix, but
 macOS iBoot fills this field, and firmware that wakes with CNTFRQ_EL0 = 0
@@ -307,12 +311,31 @@ would compute every timeout from a zero rate. The module writes it only when
 the 36 bytes at PA 0x10001406870 still match the pinned pattern (tag
 `76384671`, length `00000004`, value `00000000`, next tag `4453524c`).
 
-1. Read first. After the park, read engine+0x1400a00-0x1400a14 and
-   engine+0x1160020 (the timer word the firmware reads at payload 0x33c14).
-2. Coprocessor IRQ mask, post-release, only if step 1 shows the four
-   untuned masks still masked. The earlier 0xffffffff write came before the
-   release, and the firmware then overwrote 0x1400a08 and 0x1400a10 from its
-   tunables with 0x0ff0ffff. The other four (engine+0x1400a00, +0xa04, +0xa0c,
-   +0xa14) are in no tunable. Write 0xffffffff to all six after the park so
-   the value sticks. The write is proven safe: all six took 0xffffffff and
-   read back with no hang.
+Measured 2026-09-25, same boot as the frequency test (receipt 8004cfe): after
+the park all six masks engine+0x1400a00-0x1400a14 read 0, so the firmware
+never sets them. The tunables block does not touch them either: its records
+name offsets +0x1401xx, +0x145010, +0x14a008 and +0x14a010 (live words at vm
+0xdcf24, 0xdcf38, 0xdcf4c). Writing 0xffffffff to all six stuck, still
+0xffffffff 60 s later. With the masks open, a 30 s READY poll stayed 0 at
+status 0x28. A doorbell then sat queued for 60 s (A2I_CTRL 0x00020001, I2A
+0x00020001, recv 0, SCRATCH7 0), and at the end CPU_STATUS read 0x08.
+
+0x28 to 0x08 is bit 5 clearing, the bit m1n1 names IDLE (its CPU_STATUS
+map is partly guessed). It is the first state change seen after a park. It
+came only after masks-open plus doorbell. Masks alone held 0x28 for 30 s.
+A read-only discriminator comes next:
+
+1. On a 0x08 core, take the same SEG1 + BSS snapshot as section 12 and diff
+   it against a snapshot taken before the doorbell. New stores mean the core
+   took the interrupt and ran. A byte-identical image means it left WFI but
+   stores nothing, which fits a vector capture spin (section 9: the capture
+   slots only move ESR/FAR/ELR into x28-x30 and branch to self).
+2. Doorbell without the mask write, 60 s, then read CPU_STATUS. If it holds
+   0x28, the masks gate the doorbell's path to the core.
+
+The interrupt entry is `__rtk_arch_interrupt` (payload vm 0x656ec). It
+dispatches through the interrupt-controller object at vm 0xca148, vtable
++0x18. `_irqc` (vm 0x7384), which reads 0x285178000 into `gIrqcTimestamp`
+(vm 0x4f84e8, PA 0x100018344e8), is only a per-line handler installed by
+`CPlatformISRManager::Unmask` (vm 0x757c). A zero `gIrqcTimestamp` therefore
+does not prove that no interrupt was taken.
