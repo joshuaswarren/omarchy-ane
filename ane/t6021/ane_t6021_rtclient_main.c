@@ -201,6 +201,16 @@ module_param(patch_timer_freq, uint, 0444);
 MODULE_PARM_DESC(patch_timer_freq,
 		 "fw_start=1: before CPU release, write this to patchbay armv8_timer_frequency at PA 0x10001406880. 0 = off. Refuses unless islands read ACTUAL=0xf, fw_alias_reserved=1, and the 36 bytes at PA 0x10001406870 match (value 0, next tag LRSD).");
 
+static bool fw_start_mbox_ctrl_bit19;
+module_param(fw_start_mbox_ctrl_bit19, bool, 0444);
+MODULE_PARM_DESC(fw_start_mbox_ctrl_bit19,
+		 "fw_start=1: write 0x000a0001 (macOS working-state value, bit 19 set) to A2I_CTRL (0x1408110) and I2A_CTRL (0x1408114) before CPU release, logging before/after reads. Default 0 (off).");
+
+static bool fw_start_dart_single_stream;
+module_param(fw_start_dart_single_stream, bool, 0444);
+MODULE_PARM_DESC(fw_start_dart_single_stream,
+		 "fw_start=1: configure all three ANE DARTs to macOS working-state single-stream form (stream 0 only via DISABLE_STREAMS 0xc20, dart0 PROTECT 0x6) before CPU release, logging before/after reads. Default 0 (off).");
+
 /*
  * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
  * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
@@ -695,6 +705,90 @@ static int ane_rtclient_ps_macos_form(struct ane_rtclient *ane)
 	return ret;
 }
 
+static void ane_rtclient_apply_mbox_ctrl_bit19(struct ane_rtclient *ane)
+{
+	u32 a2i_before, a2i_after;
+	u32 i2a_before, i2a_after;
+
+	a2i_before = readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL);
+	i2a_before = readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL);
+
+	/* macOS working-state value: 0x000a0001 (bit 19 + bit 17 EMPTY + bit 0 ENABLE) */
+	writel(0x000a0001, ane->engine + ANE_ASC_MBOX_A2I_CTRL);
+	writel(0x000a0001, ane->engine + ANE_ASC_MBOX_I2A_CTRL);
+
+	mb();
+	a2i_after = readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL);
+	i2a_after = readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL);
+
+	dev_emerg(ane->dev,
+		  "BOOT-PHASE mbox-ctrl-bit19: A2I_CTRL %08x -> %08x (wrote 000a0001), I2A_CTRL %08x -> %08x (wrote 000a0001)\n",
+		  a2i_before, a2i_after, i2a_before, i2a_after);
+}
+
+static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
+{
+	static const struct {
+		u64 base;
+		const char *name;
+	} darts[3] = {
+		{ 0x285800000ull, "inst0-LLT" },
+		{ 0x285810000ull, "inst1-BRD" },
+		{ 0x285820000ull, "inst2-BWR" },
+	};
+	unsigned int di;
+
+	for (di = 0; di < 3; di++) {
+		void __iomem *d = ioremap_np(darts[di].base, 0x2000);
+		u32 en_before, prot_before, tcr_before, ttbr_before;
+		u32 en_after, prot_after, tcr_after, ttbr_after;
+		int w;
+
+		if (!d) {
+			dev_emerg(ane->dev,
+				  "BOOT-PHASE dart-single-stream %s: ioremap FAILED\n",
+				  darts[di].name);
+			continue;
+		}
+
+		en_before = readl(d + 0xc00);
+		prot_before = readl(d + 0x200);
+		tcr_before = readl(d + 0x1000);
+		ttbr_before = readl(d + 0x1400);
+
+		/* Disable streams 1..255 via DISABLE_STREAMS (0xc20..0xc3c):
+		 * stream 0 kept enabled, streams 1..31 disabled by ~1U,
+		 * streams 32..255 disabled by U32_MAX in words 1..7. */
+		writel(~1U, d + 0xc20);
+		for (w = 1; w < 8; w++)
+			writel(U32_MAX, d + 0xc20 + 4 * w);
+
+		/* Ensure stream 0 is enabled in ENABLE_STREAMS (0xc00) */
+		writel(1U, d + 0xc00);
+
+		/* On dart0 (inst0-LLT), macOS working state reads PROTECT = 0x6
+		 * (LOCK_REG_4xx | _BIT2; TCR/TTBR unlocked). dart1 and dart2
+		 * have PROTECT = 0. */
+		if (di == 0)
+			writel(0x6U, d + 0x200);
+
+		mb();
+		en_after = readl(d + 0xc00);
+		prot_after = readl(d + 0x200);
+		tcr_after = readl(d + 0x1000);
+		ttbr_after = readl(d + 0x1400);
+
+		dev_emerg(ane->dev,
+			  "BOOT-PHASE dart-single-stream %s: ENABLE %08x -> %08x, PROTECT %08x -> %08x, TCR0=%08x, TTBR0=%08x\n",
+			  darts[di].name,
+			  en_before, en_after,
+			  prot_before, prot_after,
+			  tcr_after, ttbr_after);
+
+		iounmap(d);
+	}
+}
+
 
 /*
  * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
@@ -876,6 +970,12 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		}
 		dev_emerg(dev, "BOOT-PHASE ps-form: ane_sys_mpm off, macOS form\n");
 	}
+
+	if (fw_start_dart_single_stream)
+		ane_rtclient_apply_dart_single_stream(ane);
+
+	if (fw_start_mbox_ctrl_bit19)
+		ane_rtclient_apply_mbox_ctrl_bit19(ane);
 
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);
