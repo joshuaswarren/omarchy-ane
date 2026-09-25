@@ -340,7 +340,7 @@ dispatches through the interrupt-controller object at vm 0xca148, vtable
 `CPlatformISRManager::Unmask` (vm 0x757c). A zero `gIrqcTimestamp` therefore
 does not prove that no interrupt was taken.
 
-### The doorbell reaches the core, and the handler can spin on it
+### The doorbell wakes the core, and the handler never runs
 
 Measured 2026-09-25 (receipt bb6bff2, lane/m2-fwstart, unmerged): a doorbell
 with the six masks left at 0 still moved CPU_STATUS 0x28 to 0x08 after 60 s,
@@ -383,17 +383,22 @@ The IRQ frame lands on the IRQ stack, not the thread stack. SP_EL1 is set to
 frame occupies vm 0xdb730-0xdba10, PA 0x10001417730-0x10001417a10. The file
 image there is the `RTKSTACK` canary, `52 54 4b 53 54 41 43 4b`.
 
-### IRQ stack read: the low end is intact
+### IRQ stack: no frame, handler never ran
 
-M2FwStart-2, 2026-09-25, one read of 0x400 bytes at PA 0x10001417610
-(vm 0xdb610-0xdba10): all 256 words nonzero, and the first words match the
-file canary. The first words are the low end of the window. A frame would
-be the last 0x2e0 bytes, from PA 0x10001417730. The last 8 bytes of the file
-image, at PA 0x10001417a08, are `52 54 4b 53 54 41 43 4b`. That tail is the
-check still owed.
+M2FwStart-2, 2026-09-25. One read of 0x400 bytes at PA 0x10001417610
+(vm 0xdb610-0xdba10). The tail, which is where a frame would be, still
+reads `53 4b 54 52 4b 43 41 54` at PA 0x10001417a08. That is the file
+canary `52 54 4b 53 54 41 43 4b`. No register was saved. The handler
+never ran.
 
-If the tail is still the canary, the core left WFI without taking an
-exception. The idle loop is `wfi; b wfi` (vm 0x71bc). A wake that is not
-delivered as an interrupt completes the wfi, takes the branch, and enters
-wfi again, so IDLE stays clear. Status 0x08 is that loop running. The
-doorbell is a wake event, not an interrupt the core takes.
+The core left WFI without taking an exception. The idle loop is
+`wfi; b wfi` (vm 0x71bc). A wake that is not delivered as an interrupt
+completes the wfi, takes the branch, and enters wfi again, so IDLE stays
+clear. Status 0x08 is that loop running. The doorbell is a wake event,
+not an interrupt the core takes.
+
+What remains is delivery into the core, not a handler bug. The
+physical-timer FIQ enable (`S3_5_C15_C1_3` bit 1) is still the register
+nobody sets, and it is still not host-writable. No further host read or
+write is ranked. The next evidence has to come from a macOS boot trace,
+or from a core register read this hardware cannot do.
