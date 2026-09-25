@@ -29,9 +29,13 @@ experiment. Update it when a finding changes, and delete lines that go stale.
   the decompressed fileset is sha256 `9615a486...`. It contains
   `com.apple.driver.AppleH11ANEInterface`.
 - Consequence: static diffs and hypervisor traces must use the 13.5
-  kernelcache. A 26/27 kernelcache under m1n1 hv spins at `_start+0x10` on
-  `[x1+8] == 0` (new entry ABI). The 13.5 kernelcache enters with the stock
-  x0-only `hv_start`.
+  kernelcache. The 13.5 kernelcache enters with the stock x0-only
+  `hv_start`. A 26/27 kernelcache does not. Its entry dispatches on x0, and
+  the boot CPU needs x0 = 0, x1 = the boot_args pointer, x2 = a handoff
+  struct (magic `0xd00f000000000000`, version >= 7, bit 6 set).
+  `tools/m2hv_entry_abi.py` supplies that, loaded through `M2HV_PREMOD`.
+  The earlier "spins at `_start+0x10` on `[x1+8] == 0`" reading was the
+  secondary-CPU path, taken because x0 was still the boot_args pointer.
 
 ## 3. Firmware memory map (proven)
 
