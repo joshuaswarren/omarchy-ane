@@ -89,6 +89,7 @@ struct ane_device {
 	 * after a 2 s gate), so recovery must drain retained task-manager
 	 * state itself instead of expecting a power-on reset to clear it.
 	 * False on T8103, where the cycle is a full POR of the file.
+	 */
 	bool tm_retention;
 
 	/*
