@@ -771,35 +771,51 @@ Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
 
 ### T8103: ANE clock lead
 
-Source: ane-linux-experiments fedd4da (section 7) and 887ba0e (section 8,
-which corrects 87f86ab), `receipts/2026-09-25-m1-ane-clock-macos/`.
+Source: ane-linux-experiments fedd4da (section 7), 887ba0e (section 8,
+correcting 87f86ab) and a90b9a9 (section 9),
+`receipts/2026-09-25-m1-ane-clock-macos/`.
 
 - Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
   Linux 141.4-141.5 ms. The gap is real; no clock measurement explains it
   yet. The 1.258 ratio fit against the ladder steps is an inference.
-- ADT decode, corrected: the earlier PA 0x23d2b4140 / perf-regs[0] reading
-  was an inference, not a decode, and is wrong. `perf-domains` byte 1 is
-  not a perf-regs index (it takes 4/1/4/1/0/4, and `perf-regs` has only
-  entries 0-3). With m1n1's structs, `devices[99]` ANE_SYS is perf block 1
-  idx 0x31 and `clocks` PLL_ANE is perf block 1 idx 0x48. Both point into
-  `perf-regs[1]` = pmgr reg[0] (0x23b700000) + 0x34000 = PA 0x23b734000,
-  size 0x100.
-- That block is the T8103 twin of the T6001 `perf-regs[1]` region, the
-  forbidden region next to the read that hard-reset the M1 Max. No public
-  source gives its layout; m1n1 models no register there and no Asahi
-  driver touches it. Being inside the ADT pmgr range does not make an
-  address safe. Do not write it as part of a clock experiment.
+- ADT decode history: the first reading (87f86ab, PA 0x23d2b4140) was an
+  inference and is retracted; the probe built on it was removed in
+  omarchy-ane `agent/ane-clock-m1` 38beae6 before any run. `perf-domains`
+  byte 1 is not a perf-regs index (it takes 4/1/4/1/0/4, and `perf-regs`
+  has only entries 0-3). The ANE_SYS device row (devices[99]) reads perf
+  block 1 idx 0x31 (887ba0e), but the clocks chain resolves the actual
+  group (a90b9a9, section 9): the PLL_ANE row is bytes `48 01 03 13` —
+  slot 0x48, block byte 0x03 -> `perf-regs[3]` = pmgr reg[0] (0x23b700000)
+  + 0x78000, size 0xa. The pmgr node's `IODeviceMemory[0]` covers
+  0x23b700000, length 0x8c000, so the ANE perf group is PA **0x23b778000**,
+  10 bytes. The perf-regs[1] block at 0x23b734000 remains a distinct,
+  unsourced region — the T6001 forbidden-region twin — and stays
+  do-not-write.
+- T8103 kernelcache (mac13g, sha256 `861adca1`): `ApplePMGRNub::
+  requestPerfState` maps enum 2 to internal domain 8 (ANE) and tail-calls
+  `_handlePerfStateRequest`, which accepts domains 8 and 14 only. The
+  apply routine writes an 8-bit state `(old & ~0xf) | (new & 0xf)` through
+  the device register accessor. Unlike M2, the T8103 PMGR has an ANE
+  path — but no kext imports `requestPerfState` statically: H11ANEIn
+  reaches perf control through its IOPerfControlClient token path, and
+  AppleT8103CLPCv3 owns the PMGR perf imports (`aneWorkBegin`/`aneWorkSubmit`
+  compute the state from submitted work). ApplePMGR builds the accessor
+  base from `perf-regs` at start, so the static PA is not independently
+  confirmed.
 - The kext's only host write in its private PMU window (clear mask 0x8 at
   0x23b110100) is ruled out: Linux already reads 0x0 there.
-- The probe built on the wrong address (581561f) was removed in omarchy-ane
-  `agent/ane-clock-m1` 38beae6 and never ran.
+- Next measurement is staged, not run: dtrace `ane-perfstate.d` probes
+  `_handlePerfStateRequest` and the apply routine during an encoder run in
+  the next macOS window. No Linux device read of pmgr reg[0] until then —
+  a hang there would cost the M2 recovery while the catcher is armed.
 
 ### T6021: the macOS pmgr has no ANE perf-state path
 
 Source: ane-linux-experiments 887ba0e, `receipts/2026-09-25-m1-ane-clock-macos/`
 section 8 (`t6020-setPerfState-full.asm.txt`). Decoded from the macOS 13.5
-kernelcache (mac14j, sha256 `9615a486`). T6021-derived; carry to T8103 only
-after the same check there (the T8103 kernelcache is not decoded yet).
+kernelcache (mac14j, sha256 `9615a486`). T6021-specific as a negative: the
+same check on T8103 has since run and differs — its PMGR accepts ANE
+domain 8 (see the T8103 clock lead above).
 
 `AppleT6020PMGR::setPerfState` (0xfffffe0009b7ef14-0xfffffe0009b7f684)
 dispatches on the domain ID. Only IDs 2, 5 and 13 reach the write path: the
