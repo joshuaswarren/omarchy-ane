@@ -19,6 +19,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 #define ANE_ENGINE_PHYS     0x284000000ull
 #define ANE_ENGINE_LEN      0x02000000ull
@@ -77,6 +78,168 @@ static inline int ane_islands_up(const uint32_t ps[ANE_ISLAND_COUNT])
 		if ((ps[i] & 0xf0u) != 0xf0u)
 			return 0;
 	return 1;
+}
+
+/* What the CLI may change without a new kext. The kernel still refuses
+ * a gate the idle word would pass, still skips pop-on-read words, and
+ * still treats every engine-window range as gated. */
+#define ANE_REQ_MAGIC       0x414e4552u  /* 'ANER' */
+#define ANE_REQ_VERSION     1u
+#define ANE_REQ_RANGE_MAX   40u
+#define ANE_POLL_DEFAULT_US 2000000u
+#define ANE_POLL_CAP_US     10000000u
+#define ANE_GATE_MIN_MASK   0xf0u
+#define ANE_GATE_MIN_WANT   0xf0u
+#define ANE_REQ_F_HANDOFF   1u
+#define ANE_REQ_F_ADT       2u
+#define ANE_IDLE_WORD       0x00000300u
+#define ANE_IDLE_CPU_WORD   0x0f000300u
+
+struct ane_req_range {
+	char     name[24];
+	uint64_t pa;
+	uint32_t len;
+	uint32_t flags; /* bit 0: caller asks for the gate; kernel may force it */
+};
+
+struct ane_req {
+	uint32_t magic;
+	uint32_t version;
+	uint32_t poll_us;
+	uint32_t nranges;
+	uint64_t pmgr_pa;
+	uint32_t pmgr_len;
+	uint32_t n_islands;
+	uint32_t gate_mask;
+	uint32_t gate_want;
+	uint32_t flags;
+	uint32_t island_off[ANE_ISLAND_COUNT];
+	struct ane_req_range range[ANE_REQ_RANGE_MAX];
+};
+
+/* True when [pa, pa+len) overlaps the engine window. */
+static inline int ane_overlaps_engine(uint64_t pa, uint32_t len)
+{
+	uint64_t end = pa + len;
+
+	return pa < ANE_ENGINE_PHYS + ANE_ENGINE_LEN && end > ANE_ENGINE_PHYS;
+}
+
+/* True when [pa, pa+len) overlaps CoreSight. Never map that page. */
+static inline int ane_overlaps_coresight(uint64_t pa, uint32_t len)
+{
+	uint64_t cs = ANE_ENGINE_PHYS + ANE_CORESIGHT_OFF;
+	uint64_t end = pa + len;
+
+	return pa < cs + ANE_CORESIGHT_LEN && end > cs;
+}
+
+/* Engine-window ranges are gated no matter what the caller asks. */
+static inline int ane_range_must_gate(const struct ane_req_range *r)
+{
+	return (r->flags & 1) || ane_overlaps_engine(r->pa, r->len);
+}
+
+/* The caller's predicate must be at least as strict as ACTUAL=0xf, and
+ * it must reject the two idle words this chip has already returned. */
+static inline int ane_gate_predicate_ok(uint32_t mask, uint32_t want)
+{
+	if ((mask & ANE_GATE_MIN_MASK) != ANE_GATE_MIN_MASK)
+		return 0;
+	if ((want & ANE_GATE_MIN_WANT) != ANE_GATE_MIN_WANT)
+		return 0;
+	if ((ANE_IDLE_WORD & mask) == want)
+		return 0;
+	if ((ANE_IDLE_CPU_WORD & mask) == want)
+		return 0;
+	return 1;
+}
+
+static inline int ane_words_pass(const uint32_t *ps, uint32_t n,
+    uint32_t mask, uint32_t want)
+{
+	uint32_t i;
+
+	if (!n || n > ANE_ISLAND_COUNT)
+		return 0;
+	for (i = 0; i < n; i++)
+		if ((ps[i] & mask) != want)
+			return 0;
+	return 1;
+}
+
+/* 0 when the request is safe to act on. */
+static inline int ane_req_acceptable(const struct ane_req *r)
+{
+	uint32_t i;
+	uint64_t pmgr_end;
+
+	if (!r || r->magic != ANE_REQ_MAGIC || r->version != ANE_REQ_VERSION)
+		return 0;
+	if (r->poll_us > ANE_POLL_CAP_US)
+		return 0;
+	if (!r->n_islands || r->n_islands > ANE_ISLAND_COUNT)
+		return 0;
+	if (!ane_gate_predicate_ok(r->gate_mask, r->gate_want))
+		return 0;
+	if (!r->pmgr_len || r->pmgr_len > 0x100000u || (r->pmgr_len & 3))
+		return 0;
+	if (ane_overlaps_engine(r->pmgr_pa, r->pmgr_len))
+		return 0;
+	pmgr_end = r->pmgr_pa + r->pmgr_len;
+	if (pmgr_end < r->pmgr_pa)
+		return 0;
+	for (i = 0; i < r->n_islands; i++) {
+		if ((r->island_off[i] & 3) ||
+		    r->island_off[i] > r->pmgr_len - 4)
+			return 0;
+	}
+	if (r->nranges > ANE_REQ_RANGE_MAX)
+		return 0;
+	for (i = 0; i < r->nranges; i++) {
+		const struct ane_req_range *g = &r->range[i];
+		uint64_t end = g->pa + g->len;
+
+		if (!g->len || (g->len & 3) || (g->pa & 3) || g->len > 0x1000000u)
+			return 0;
+		if (end < g->pa)
+			return 0;
+		if (ane_overlaps_coresight(g->pa, g->len))
+			return 0;
+	}
+	return 1;
+}
+
+static inline void ane_req_default(struct ane_req *r)
+{
+	static const struct ane_req_range def[] = {
+		{ "pmgr-ps",  ANE_PMGR_PHYS,              0x4040,  0 },
+		{ "wrapper",  ANE_ENGINE_PHYS + 0x1400000, 0x14000, 1 },
+		{ "mailbox",  ANE_ENGINE_PHYS + 0x1408000, 0x1000,  1 },
+		{ "rvbar",    ANE_ENGINE_PHYS + 0x1050000, 0x8,     1 },
+		{ "scratch",  ANE_ENGINE_PHYS + 0x1840048, 0x28,    1 },
+		{ "dart0",    ANE_DART0_PHYS,              0x2000,  1 },
+		{ "dart1",    ANE_DART0_PHYS + ANE_DART_STRIDE, 0x2000, 1 },
+		{ "dart2",    ANE_DART0_PHYS + 2 * ANE_DART_STRIDE, 0x2000, 1 },
+		{ "patchbay", 0x10001406870ull,            0x40,    0 },
+	};
+	uint32_t i;
+
+	memset(r, 0, sizeof(*r));
+	r->magic = ANE_REQ_MAGIC;
+	r->version = ANE_REQ_VERSION;
+	r->poll_us = ANE_POLL_DEFAULT_US;
+	r->pmgr_pa = ANE_PMGR_PHYS;
+	r->pmgr_len = ANE_PMGR_LEN;
+	r->n_islands = ANE_ISLAND_COUNT;
+	r->gate_mask = ANE_GATE_MIN_MASK;
+	r->gate_want = ANE_GATE_MIN_WANT;
+	r->flags = ANE_REQ_F_HANDOFF | ANE_REQ_F_ADT;
+	for (i = 0; i < ANE_ISLAND_COUNT; i++)
+		r->island_off[i] = ane_island_off[i];
+	r->nranges = sizeof(def) / sizeof(def[0]);
+	for (i = 0; i < r->nranges; i++)
+		r->range[i] = def[i];
 }
 
 #endif

@@ -103,7 +103,7 @@ public:
 	virtual IOReturn newUserClient(task_t owningTask, void *securityID,
 	    UInt32 type, OSDictionary *properties,
 	    IOUserClient **handler) APPLE_KEXT_OVERRIDE;
-	IOReturn buildDump(IOMemoryDescriptor *out);
+	IOReturn buildDump(IOMemoryDescriptor *out, const struct ane_req *req);
 	struct map {
 		char name[ANE_NAME_MAX];
 		uint64_t pa;
@@ -113,10 +113,11 @@ public:
 	};
 private:
 	IOMemoryMap *mapPhys(uint64_t pa, uint32_t len);
-	bool readIslands(uint32_t ps[ANE_ISLAND_COUNT]);
-	bool pollIslands(uint32_t first[ANE_ISLAND_COUNT], uint32_t *iters,
-	    uint32_t *us);
-	uint32_t copyPhys(const struct map *m, uint8_t *dst, uint32_t *banned);
+	bool readIslands(const struct ane_req *req, uint32_t ps[ANE_ISLAND_COUNT]);
+	bool pollIslands(const struct ane_req *req, uint32_t first[ANE_ISLAND_COUNT],
+	    uint32_t *iters, uint32_t *us);
+	uint32_t copyPhys(const struct map *m, uint8_t *dst, uint32_t *banned,
+	    const struct ane_req *req);
 	uint32_t copyVirt(uint64_t va, uint8_t *dst, uint32_t len);
 	uint32_t addFixed(struct map *m, uint32_t n);
 	uint32_t addAdt(struct map *m, uint32_t n,
@@ -191,47 +192,48 @@ IOMemoryMap *ANERegDump::mapPhys(uint64_t pa, uint32_t len)
 }
 
 /* The pmgr block is always on, so this read is safe in any island state. */
-bool ANERegDump::readIslands(uint32_t ps[ANE_ISLAND_COUNT])
+bool ANERegDump::readIslands(const struct ane_req *req,
+    uint32_t ps[ANE_ISLAND_COUNT])
 {
-	IOMemoryMap *mm = mapPhys(ANE_PMGR_PHYS, ANE_PMGR_LEN);
+	IOMemoryMap *mm = mapPhys(req->pmgr_pa, req->pmgr_len);
 	volatile uint32_t *w;
-	size_t i;
+	uint32_t i;
 
 	if (!mm)
 		return false;
 	w = (volatile uint32_t *)mm->getVirtualAddress();
-	for (i = 0; i < ANE_ISLAND_COUNT; i++)
-		ps[i] = w[ane_island_off[i] / 4];
+	for (i = 0; i < req->n_islands; i++)
+		ps[i] = w[req->island_off[i] / 4];
 	mm->release();
 	return true;
 }
 
-/* macOS powers the ANE per submission and drops it again. One sample
- * misses that window. Poll the already-mapped pmgr words (always safe
- * to read) for 2 s and stop at the first sample where every island's
- * ACTUAL nibble, bits [7:4], is 0xf. Do not treat other set bits as
- * ACTUAL: a captured ane_cpu word of 0x0f000300 has 0xf in bits [27:24]
- * and ACTUAL 0, and 0x300 is the documented idle signature. */
-bool ANERegDump::pollIslands(uint32_t first[ANE_ISLAND_COUNT],
-    uint32_t *iters, uint32_t *us)
+/* Poll the caller's pmgr words. The predicate was already checked: it
+ * cannot pass on the idle signature, and it includes ACTUAL=0xf. */
+bool ANERegDump::pollIslands(const struct ane_req *req,
+    uint32_t first[ANE_ISLAND_COUNT], uint32_t *iters, uint32_t *us)
 {
-	IOMemoryMap *mm = mapPhys(ANE_PMGR_PHYS, ANE_PMGR_LEN);
+	IOMemoryMap *mm = mapPhys(req->pmgr_pa, req->pmgr_len);
 	volatile uint32_t *w;
-	uint32_t n = 0, spent = 0;
-	size_t i;
+	uint32_t n = 0, spent = 0, budget = req->poll_us;
+	uint32_t i;
 
 	*iters = 0;
 	*us = 0;
+	if (!budget)
+		budget = ANE_POLL_DEFAULT_US;
+	memset(ps_cache, 0, sizeof(ps_cache));
 	if (!mm)
 		return false;
 	w = (volatile uint32_t *)mm->getVirtualAddress();
 	for (;;) {
-		for (i = 0; i < ANE_ISLAND_COUNT; i++)
-			ps_cache[i] = w[ane_island_off[i] / 4];
+		for (i = 0; i < req->n_islands; i++)
+			ps_cache[i] = w[req->island_off[i] / 4];
 		if (n == 0)
 			memcpy(first, ps_cache, sizeof(ps_cache));
 		n++;
-		if (ane_islands_up(ps_cache) || spent >= 2000000)
+		if (ane_words_pass(ps_cache, req->n_islands, req->gate_mask,
+		    req->gate_want) || spent >= budget)
 			break;
 		IODelay(10);
 		spent += 10;
@@ -244,15 +246,23 @@ bool ANERegDump::pollIslands(uint32_t first[ANE_ISLAND_COUNT],
 
 /* Copy one physical range. Banned engine-window words become 0xdead. */
 uint32_t ANERegDump::copyPhys(const struct map *m, uint8_t *dst,
-    uint32_t *banned)
+    uint32_t *banned, const struct ane_req *req)
 {
 	IOMemoryMap *mm;
 	volatile uint32_t *w;
 	uint32_t i, n;
+	int gated;
 
 	*banned = 0;
-	if ((m->flags & ANE_F_GATED) && !ane_islands_up(ps_cache))
-		return ANE_ST_GATED;
+	if (ane_overlaps_coresight(m->pa, m->len))
+		return ANE_ST_NOMAP;
+	gated = (m->flags & ANE_F_GATED) || ane_overlaps_engine(m->pa, m->len);
+	if (gated) {
+		if (!readIslands(req, ps_cache) ||
+		    !ane_words_pass(ps_cache, req->n_islands, req->gate_mask,
+		    req->gate_want))
+			return ANE_ST_GATED;
+	}
 	mm = mapPhys(m->pa, m->len);
 	if (!mm)
 		return ANE_ST_NOMAP;
@@ -479,31 +489,50 @@ struct ane_work {
 	uint32_t nheld;
 };
 
-IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out)
+IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out,
+    const struct ane_req *in)
 {
 	struct ane_work *w;
 	struct ane_dump_hdr *hdr;
+	struct ane_req fallback;
+	const struct ane_req *req = in;
 	uint8_t *buf = NULL;
 	uint32_t n = 0, data = 0, i;
 	uint64_t slide;
-	IOReturn rc;
+	IOReturn rc = kIOReturnSuccess;
 
+	if (!req) {
+		ane_req_default(&fallback);
+		req = &fallback;
+	}
+	if (!ane_req_acceptable(req))
+		return kIOReturnBadArgument;
 	w = (struct ane_work *)IOMallocZero(sizeof(*w));
 	if (!w)
 		return kIOReturnNoMemory;
 	hdr = &w->hdr;
-	if (!pollIslands(hdr->ps_first, &hdr->poll_iters, &hdr->poll_us)) {
+	if (!pollIslands(req, hdr->ps_first, &hdr->poll_iters, &hdr->poll_us)) {
 		rc = kIOReturnNotReady;
 		goto done;
 	}
-	memcpy(hdr->ps, ps_cache, sizeof(hdr->ps));
-	hdr->islands_up = ane_islands_up(ps_cache);
-	hdr->pmgr_pa = ANE_PMGR_PHYS;
+	memcpy(hdr->ps, ps_cache, req->n_islands * sizeof(uint32_t));
+	hdr->islands_up = ane_words_pass(ps_cache, req->n_islands,
+	    req->gate_mask, req->gate_want);
+	hdr->pmgr_pa = req->pmgr_pa;
 
-	n = addFixed(w->table, n);
-	n = addAdt(w->table, n, w->prop_src, w->prop_len, ANE_DUMP_MAX,
-	    w->held, &w->nheld);
-	if (kernel_slide(&slide)) {
+	for (i = 0; i < req->nranges && n < ANE_RANGE_MAX; i++) {
+		memset(&w->table[n], 0, sizeof(w->table[n]));
+		strlcpy(w->table[n].name, req->range[i].name, ANE_NAME_MAX);
+		w->table[n].pa = req->range[i].pa;
+		w->table[n].len = req->range[i].len;
+		if (ane_range_must_gate(&req->range[i]))
+			w->table[n].flags = ANE_F_GATED;
+		n++;
+	}
+	if (req->flags & ANE_REQ_F_ADT)
+		n = addAdt(w->table, n, w->prop_src, w->prop_len, ANE_DUMP_MAX,
+		    w->held, &w->nheld);
+	if ((req->flags & ANE_REQ_F_HANDOFF) && kernel_slide(&slide)) {
 		hdr->kaslr_slide = slide;
 		hdr->globals_va = ANE_GLOBALS_STATIC + slide;
 		n = addHandoff(w->table, n, slide);
@@ -540,7 +569,7 @@ IOReturn ANERegDump::buildDump(IOMemoryDescriptor *out)
 				r->status = ANE_ST_ABSENT;
 			}
 		} else {
-			r->status = copyPhys(m, buf + data, &banned);
+			r->status = copyPhys(m, buf + data, &banned, req);
 			r->banned = banned;
 			r->len = (r->status == ANE_ST_OK) ? m->len : 0;
 		}
@@ -586,10 +615,18 @@ IOReturn ANERegDumpUserClient::clientClose(void)
 IOReturn ANERegDumpUserClient::dumpGet(ANERegDumpUserClient *target, void *ref,
     IOExternalMethodArguments *args)
 {
+	const struct ane_req *req = NULL;
+
 	(void)ref;
 	if (!args->structureOutputDescriptor)
 		return kIOReturnBadArgument;
-	return target->owner->buildDump(args->structureOutputDescriptor);
+	if (args->structureInputSize) {
+		if (args->structureInputSize != sizeof(struct ane_req) ||
+		    !args->structureInput)
+			return kIOReturnBadArgument;
+		req = (const struct ane_req *)args->structureInput;
+	}
+	return target->owner->buildDump(args->structureOutputDescriptor, req);
 }
 
 IOReturn ANERegDumpUserClient::externalMethod(uint32_t selector,
@@ -598,7 +635,7 @@ IOReturn ANERegDumpUserClient::externalMethod(uint32_t selector,
 {
 	static const IOExternalMethodDispatch disp[] = {
 		{ (IOExternalMethodAction)&ANERegDumpUserClient::dumpGet,
-		  0, 0, 0, kIOUCVariableStructureSize }
+		  0, kIOUCVariableStructureSize, 0, kIOUCVariableStructureSize }
 	};
 
 	(void)dp;

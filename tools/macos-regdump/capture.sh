@@ -89,8 +89,10 @@ PMPID=$!
 WLPID=$!
 sleep 0.2
 echo "== regdump"
+[[ -f $STAGE/ranges.txt ]] || die "missing $STAGE/ranges.txt"
+echo "request: $STAGE/ranges.txt"
 RC=0
-"$STAGE/aneregdump" "$OUT/regdump" </dev/null || RC=$?
+"$STAGE/aneregdump" "$OUT/regdump" "$STAGE/ranges.txt" </dev/null || RC=$?
 wait $WLPID || true
 kill $LOGPID $PMPID 2>/dev/null || true
 wait $LOGPID $PMPID 2>/dev/null || true

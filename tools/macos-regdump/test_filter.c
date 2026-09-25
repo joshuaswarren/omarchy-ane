@@ -51,6 +51,30 @@ int main(void)
 		fprintf(stderr, "%d failed\n", fails);
 		return 1;
 	}
+	{
+		struct ane_req req;
+		uint32_t idle[1] = { ANE_IDLE_WORD };
+
+		ane_req_default(&req);
+		expect(ane_req_acceptable(&req), "default request");
+		expect(!ane_words_pass(idle, 1, req.gate_mask, req.gate_want),
+		       "idle word fails the default gate");
+		req.gate_mask = 0;
+		expect(!ane_req_acceptable(&req), "mask that drops ACTUAL");
+		ane_req_default(&req);
+		req.pmgr_pa = ANE_ENGINE_PHYS;
+		expect(!ane_req_acceptable(&req), "pmgr inside the engine window");
+		ane_req_default(&req);
+		req.range[0].pa = ANE_ENGINE_PHYS + ANE_CORESIGHT_OFF;
+		req.range[0].len = 0x1000;
+		expect(!ane_req_acceptable(&req), "coresight range");
+		ane_req_default(&req);
+		req.range[1].flags = 0;
+		expect(ane_range_must_gate(&req.range[1]),
+		       "engine range is gated anyway");
+		req.poll_us = ANE_POLL_CAP_US + 1;
+		expect(!ane_req_acceptable(&req), "poll cap");
+	}
 	printf("filter ok\n");
 	return 0;
 }

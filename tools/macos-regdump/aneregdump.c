@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <IOKit/IOKitLib.h>
+#include "ane_regdump_filter.h"
 
 #define ANE_DUMP_MAGIC 0x414e4531u
 #define ANE_RANGE_MAX  40u
@@ -57,6 +58,76 @@ static void sha256(const uint8_t *data, uint32_t len, char out[65])
 }
 static const char *status_name[] = { "ok", "gated", "nomap", "absent" };
 
+static int load_req(const char *path, struct ane_req *req)
+{
+	FILE *f = fopen(path, "r");
+	char line[256];
+	unsigned islands = 0, ranges = 0, saw_island = 0, saw_range = 0;
+
+	if (!f) {
+		perror(path);
+		return -1;
+	}
+	while (fgets(line, sizeof(line), f)) {
+		char name[24];
+		unsigned long long a, b;
+		char gated[8] = "";
+
+		if (line[0] == '#' || line[0] == '\n')
+			continue;
+		if (sscanf(line, "poll_us %llx", &a) == 1) {
+			req->poll_us = (uint32_t)a;
+		} else if (sscanf(line, "pmgr %llx %llx", &a, &b) == 2) {
+			req->pmgr_pa = a;
+			req->pmgr_len = (uint32_t)b;
+		} else if (sscanf(line, "gate %llx %llx", &a, &b) == 2) {
+			req->gate_mask = (uint32_t)a;
+			req->gate_want = (uint32_t)b;
+		} else if (sscanf(line, "island %llx", &a) == 1) {
+			if (!saw_island)
+				islands = 0;
+			saw_island = 1;
+			if (islands >= ANE_ISLAND_COUNT) {
+				fprintf(stderr, "too many islands\n");
+				fclose(f);
+				return -1;
+			}
+			req->island_off[islands++] = (uint32_t)a;
+		} else if (sscanf(line, "range %23s %llx %llx %7s",
+		    name, &a, &b, gated) >= 3) {
+			if (!saw_range)
+				ranges = 0;
+			saw_range = 1;
+			if (ranges >= ANE_REQ_RANGE_MAX) {
+				fprintf(stderr, "too many ranges\n");
+				fclose(f);
+				return -1;
+			}
+			memset(&req->range[ranges], 0, sizeof(req->range[0]));
+			snprintf(req->range[ranges].name, 24, "%s", name);
+			req->range[ranges].pa = a;
+			req->range[ranges].len = (uint32_t)b;
+			req->range[ranges].flags = gated[0] ? 1 : 0;
+			ranges++;
+		} else if (sscanf(line, "handoff %llx", &a) == 1) {
+			req->flags = a ? req->flags | ANE_REQ_F_HANDOFF
+				       : req->flags & ~ANE_REQ_F_HANDOFF;
+		} else if (sscanf(line, "adt %llx", &a) == 1) {
+			req->flags = a ? req->flags | ANE_REQ_F_ADT
+				       : req->flags & ~ANE_REQ_F_ADT;
+		} else {
+			fprintf(stderr, "bad line: %s", line);
+			fclose(f);
+			return -1;
+		}
+	}
+	fclose(f);
+	if (saw_island)
+		req->n_islands = islands;
+	if (saw_range)
+		req->nranges = ranges;
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -66,13 +137,25 @@ int main(int argc, char **argv)
 	uint8_t *buf;
 	size_t outsz;
 	struct ane_dump_hdr *hdr;
+	struct ane_req req;
 	char path[512], digest[65];
 	FILE *f, *idx;
 	uint32_t i;
 
-	if (argc != 2) {
-		fprintf(stderr, "usage: aneregdump <outdir>\n");
+	if (argc != 2 && argc != 3) {
+		fprintf(stderr, "usage: aneregdump <outdir> [ranges.txt]\n");
 		return 2;
+	}
+	ane_req_default(&req);
+	if (argc == 3 && load_req(argv[2], &req))
+		return 1;
+	if (!ane_req_acceptable(&req)) {
+		fprintf(stderr, "rejected poll=%u pmgr=%#llx/%u islands=%u "
+		    "mask=%#x want=%#x nranges=%u r0=%s pa=%#llx len=%u\n",
+		    req.poll_us, req.pmgr_pa, req.pmgr_len, req.n_islands,
+		    req.gate_mask, req.gate_want, req.nranges,
+		    req.range[0].name, req.range[0].pa, req.range[0].len);
+		return 1;
 	}
 	svc = IOServiceGetMatchingService(kIOMainPortDefault,
 	    IOServiceMatching("ANERegDump"));
@@ -90,7 +173,7 @@ int main(int argc, char **argv)
 	if (!buf)
 		return 1;
 	outsz = sizeof(*hdr) + ANE_DUMP_MAX;
-	kr = IOConnectCallStructMethod(conn, 0, NULL, 0, buf, &outsz);
+	kr = IOConnectCallStructMethod(conn, 0, &req, sizeof(req), buf, &outsz);
 	IOServiceClose(conn);
 	if (kr) {
 		fprintf(stderr, "dump: 0x%x\n", kr);
