@@ -848,15 +848,30 @@ programs (one per layer slot), guard-checked load.
   Parakeet golden PASS bit-exact on the installed a9a5f60 stack. The earlier
   post-reboot hang left no kernel trace, did not reproduce under an
   instrumented re-run.
-- TTFT lever closed (b93397a, `receipts/2026-09-25-jwm1-qwen-ane-ttft-rt/`).
-  The step is engine-bound: 38 program execs cost 65.2 of the 74.8 ms step.
-  The TTFT excess was scheduler wakeup stalls in the kernel `ane_exec`
-  completion poll — about 16% of steps stalled at ~154 ms,
-  blocked-without-CPU, at normal priority. `chrt -f 50` (SCHED_FIFO, no
-  code change) removes them: 1 spike in 5841 steps, tokens exact. Full
-  n=100 frozen contract: TTFT 0.9677 s = 0.8354x [0.7623, 0.9210] PASS,
-  decode 8.345 tok/s = 1.4926x PASS, e2e 4.6814 s = 0.6905x PASS, 100/100
-  tokens exact vs the fedd4da denominator. The Qwen ANE cell sweeps 3/3.
+- TTFT lever closed; the first root cause did not survive. b93397a
+  (`receipts/2026-09-25-jwm1-qwen-ane-ttft-rt/`) called the ~154 ms slow
+  steps (16% of steps) scheduler wakeup stalls in the kernel `ane_exec`
+  completion poll and passed the cell with `chrt -f 50`. Per-step schedstat
+  falsified that: inside a slow step every program runs at about 2x its
+  normal wall while the submitter's CPU time and run-queue delay stay
+  unchanged. The engine's memory path runs at half speed. On T8103
+  apple-soc-cpufreq writes `DVFS_CMD PS2 = PS1`, so the memory-side
+  performance state follows the CPU clusters; a mostly-sleeping submitter
+  lets schedutil park both clusters low, and the bandwidth-bound Qwen step
+  (~1.2 GB of Q4 weights per 65 ms) streams at the low memory p-state.
+  SCHED_FIFO had helped only because it holds a CPU at max frequency.
+  ff9ac7c (`receipts/2026-09-25-jwm1-ane-dvfs-boost/`): omarchy-ane main
+  5a22ee3 adds `ane/src/ane_boost.c` — from the first submit until
+  `boost_idle_ms` (default 100, 0 = off) after the last, the driver holds
+  a `FREQ_QOS_MIN` at `cpuinfo.max_freq` on every cpufreq policy. The
+  completion poll was never the cause and is unchanged. Pinned clusters
+  gave 0 slow steps in 489, twice. Installed module sha256 `57ceaddd`.
+  Qwen ANE cell at normal priority, no wrapper: TTFT 0.8449x [0.7750,
+  0.9283], decode 1.4718x [1.437, 1.509], e2e 0.6993x [0.683, 0.716],
+  100/100 tokens exact; golden bit-exact x3; battery 34/34. The
+  compute-bound Parakeet encoder does not move (about 140 ms either way),
+  so the 1.243x encoder gap stays with the ANE perf-state lever (the
+  T8103 clock lead above).
 - Same merge decomposed the GPU TTFT at RT: 219.6 ms fixed cost +
   1.19 ms/token (the old 4.81 ms/token slope was jitter;
   `receipts/2026-09-25-jwm1-gpu-ttft-fixed-cost/`). A Mesa barrier-batch
