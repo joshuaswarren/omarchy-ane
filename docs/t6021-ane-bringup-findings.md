@@ -356,31 +356,35 @@ The IRQ entry, decoded from the payload:
   0x682ec).
 - The handler reads the event word at MMIO base +0x818 (vm 0x68344). The
   base is the wrapper, 0x285400000, set at payload 0x6f64, so the register
-  is engine+0x1400818. Type is bits [18:16], source is bits [9:0].
-- The decoder (vm 0x686a0) accepts type 1-7 only. Type 0 and type above 7
-  return an error and the handler does not acknowledge the event. The loop
-  repeats while ISR_EL1 bit 7 stays set (vm 0x683fc-0x68400). An event the
-  decoder rejects therefore stays pending, and the handler spins on it. That
-  is a doorbell that never drains and a core that never returns to IDLE.
-- The firmware has no generic acknowledge store. The only event-clear write
-  is the per-source mask bit at wrapper+0xa00/+0xa80 (vm 0x687ec).
+  is engine+0x1400818. That read is a pop. Init drains the queue by reading
+  +0x818 until the read returns 0 (vm 0x682e0-0x682e4) and never writes the
+  register. The companion is +0x820, a status word the poll path reads
+  (vm 0x68314). The firmware never writes that either, and a pop is not
+  proven for it. There is no pointer register.
+- Type is bits [18:16], the low 3 bits of the Apple AIC event type in bits
+  [23:16] (`AIC_EVENT_TYPE`, irq-apple-aic.c). Source is bits [9:0], the low
+  part of `AIC_EVENT_NUM`. Type 4 is the AIC IPI type. The decoder
+  (vm 0x686a0) accepts type 4 only for source <= 0xb, type 1 for source
+  <= 0xbf, and type 7 for source <= 0xf. Types 2, 3 and 5 return an error
+  at once. A rejected event is not acknowledged. The dispatch loop repeats
+  while ISR_EL1 bit 7 stays set (vm 0x683fc).
+- Host samples of this word showed type 4 with the low field rising through
+  7, 9, 0xb, 0xd, and an earlier dump showed 1 then 3. Odd values, step 2:
+  two readers splitting one queue. Sources 7, 9 and 0xb are accepted; 0xd
+  is rejected. Each host read retired an event the firmware did not see.
+
+Host reads of engine+0x1400818 are banned while the core is running,
+including wrapper-page dumps. A dump that includes +0x818 steals events.
++0x820 is not sampled in a loop either, until a pop is ruled out for it.
 
 The IRQ frame lands on the IRQ stack, not the thread stack. SP_EL1 is set to
 `_rtk_irq_stack` + 0x1000 (payload 0x658ac-0x658d0), vm 0xdba10, which is PA
 0x10001417a10. The entry pushes about 0x400 bytes, so the frame occupies the
 top of the page below that. The file image there is the `RTKSTACK` canary.
 
-### Next reads, in order
+### Next read
 
-1. Read engine+0x1400818 while CPU_STATUS is 0x08, immediately after the
-   doorbell. Report the whole word. Bits [18:16] are the type and bits [9:0]
-   the source. Type 0 or above 7 is an event the firmware cannot clear, which
-   is the spin above. A read may itself retire the event; read it once and
-   record whether status returns to 0x28.
-2. Read PA 0x10001417610 for 0x400 bytes (vm 0xdb610-0xdba10) and compare with
-   the `RTKSTACK` canary. A saved frame there means the handler ran. No change
-   means the core left WFI without entering the handler.
-
-No host write is ranked yet. The acknowledge address depends on the type and
-source in test 1, and a guessed ack word written to the wrong offset is the
-class of access that has wedged this machine.
+Read PA 0x10001417610 for 0x400 bytes (vm 0xdb610-0xdba10) and compare with
+the `RTKSTACK` canary. A saved frame means the handler ran. No change means
+the core left WFI without entering the handler. Do not read engine+0x1400818
+or engine+0x1400820 on that run.
