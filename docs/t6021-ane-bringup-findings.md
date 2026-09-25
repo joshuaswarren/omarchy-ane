@@ -899,9 +899,9 @@ Validated on T6001.
 
 Source: Jw16Levers3 validation of omarchy-ane 5a22ee3 on T6001, built
 on-device (v0.1.0-605-g5a22ee3, module sha256 `cf1d4bf1...`), installed
-persistently with `boost_idle_ms=100`. Receipt:
-ane-linux-experiments `receipts/2026-09-25-jw16-levers3/`
-(artifacts/ane, artifacts/ane-ab), landing on main.
+persistently with `boost_idle_ms=100`. Receipt: ane-linux-experiments main
+3120fe1 (commit a5a1095), `receipts/2026-09-25-jw16-levers3/receipt.md`
+with artifacts/ane and artifacts/ane-ab.
 
 - Kill-race x10: PASS 10/10 reopen-clean. The awk source-anchor half of
   test/guard fails identically on a9a5f60 — a stale anchor, not a
