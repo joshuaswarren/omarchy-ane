@@ -229,12 +229,29 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
+/* read_poll_timeout op: consult the DART latch before any engine access.
+ * Returns 1 to end the poll when a fault is latched; the caller then
+ * handles the fault without ever reading the wedged engine. */
+static int ane_tm_poll_step(struct ane_device *ane, struct ane_request *req,
+			    u32 *finished)
+{
+	if (ane_dart_faulted(ane, NULL, NULL))
+		return 1;
+	return ane_tm_collect_events(ane, req, finished);
+}
+
 int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 {
 	u32 finished = 0;
+	u32 fault_status = 0;
+	u64 fault_iova = 0;
+	struct ane_dart_scratch scratch[ANE_DART_SCRATCH_MAX];
+	int scratch_pages = 0;
+	bool faulted = false;
 	int err, status;
 
 	lockdep_assert_held(&ane->engine_lock);
+	ane_dart_mask(ane);
 
 	err = ane_tm_collect_events(ane, NULL, &finished);
 	if (err < 0)
@@ -242,10 +259,58 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	wmb();
 	ane_tm_push_tq(ane, req);
 
-	err = read_poll_timeout(ane_tm_collect_events, status, status != 0,
-				1, 1000000, false, ane, req, &finished);
-	if (!err && status < 0)
-		err = status;
+	for (;;) {
+		/* Latch-first completion poll. Engine register reads hang
+		 * jwm1 once a DART fault has landed (lockups 1 and 3: the
+		 * journal ends inside the 1-microsecond completion poll,
+		 * before any fault handling ran), so the poll op consults
+		 * the DART error latch first and stops the poll before the
+		 * engine is touched. Residual hazard: a fault landing
+		 * between one iteration's latch read and engine read. */
+		err = read_poll_timeout(ane_tm_poll_step, status,
+					status != 0, 1, 1000000, false,
+					ane, req, &finished);
+		if (!err && status < 0)
+			err = status;
+		if (ane_dart_faulted(ane, &fault_iova, &fault_status)) {
+			faulted = true;
+			if (scratch_pages >= ANE_DART_SCRATCH_MAX)
+				break;
+			if (ane_dart_drain_fault(ane, fault_iova, scratch,
+						 &scratch_pages))
+				break;
+			/* The retried transaction now completes; poll on. */
+			continue;
+		}
+		break;
+	}
+
+	if (faulted) {
+		/* The faulting program drained through the scratch pages
+		 * and the engine is idle again (the latch is clear or the
+		 * poll would still be running). Gate the queue with the
+		 * normal completion writes, hand the scratch pages back,
+		 * and fail this request. No partition power cycle, no
+		 * stream disable: the page tables were never changed by
+		 * the fault. */
+		if (err || ane_dart_faulted(ane, NULL, NULL)) {
+			/* Drain failed or the drained program never reached
+			 * completion: the engine is not idle and access is
+			 * off the table. wedge releases the scratch. */
+			err = err ?: -EIO;
+			goto wedge;
+		}
+		status = tq_read32(ane, TQ_NID1(req->qid));
+		tq_write32(ane, TQ_NID1(req->qid), status & ~1U);
+		rmb();
+		tq_write32(ane, TQ_STATUS(req->qid), 0x0);
+		ane_dart_release_scratch(ane, scratch, scratch_pages);
+		ane_dart_unmask(ane);
+		dev_err(ane->dev,
+			"DART fault contained: status=%#x iova=%#llx scratch=%d\n",
+			fault_status, fault_iova, scratch_pages);
+		return -EIO;
+	}
 	if (err)
 		goto wedge;
 	status = tq_read32(ane, TQ_NID1(req->qid));
@@ -256,10 +321,12 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	tq_write32(ane, TQ_NID1(req->qid), status & ~1U);
 	rmb();
 	tq_write32(ane, TQ_STATUS(req->qid), 0x0);
-
+	ane_dart_unmask(ane);
 	return 0;
 
 wedge:
+	ane_dart_release_scratch(ane, scratch, scratch_pages);
+	ane_dart_unmask(ane);
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
 		dev_err(ane->dev,

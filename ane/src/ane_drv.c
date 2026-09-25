@@ -549,15 +549,20 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	struct ane_device *ane = drm->dev_private;
 	long err;
 
-	/* Reject anything outside the drm type ('d') namespace outright. The
-	 * accel node is not a primary control node.
+	/* Reject anything outside the drm type ('d') namespace outright, and
+	 * core ioctls that would read a DRM master the accel node does not
+	 * have (GET_UNIQUE, GET_MAP, ... dereference NULL); clients need
+	 * only VERSION from the core set.
 	 *
 	 * _IOC_TYPEMASK is the low 8 bits, which encode the *nr*, not the
 	 * *type*. The type byte lives at offset _IOC_TYPESHIFT (8). Use
 	 * _IOC_TYPE(cmd) to extract the right field; misuse here returns
 	 * -ENOTTY for every legitimate ane_ioctl, which is exactly the
-	 * regression committed and reverted in this series. */
-	if (_IOC_TYPE(cmd) != _IOC_TYPE('d'))
+	 * regression committed and reverted in the lifecycle-reset series. */
+	if (_IOC_TYPE(cmd) != DRM_IOCTL_BASE ||
+	    (_IOC_NR(cmd) < DRM_COMMAND_BASE &&
+	     _IOC_NR(cmd) != _IOC_NR(DRM_IOCTL_VERSION)) ||
+	    _IOC_NR(cmd) >= DRM_COMMAND_END)
 		return -ENOTTY;
 
 	err = pm_runtime_resume_and_get(ane->dev);
@@ -662,6 +667,35 @@ static int ane_iommu_domain_init(struct ane_device *ane)
 	drm_mm_init(&ane->mm, min_iova, limit - min_iova);
 
 	return 0;
+}
+
+/*
+ * The DART page table belongs to the IOMMU domain, which outlives this
+ * module: a mapping a previous instance never unmapped (a wedge preserves
+ * them) survives a reload, and the first BO_INIT onto it fails with
+ * -EEXIST. Clear every mapping inside the still-empty allocator range.
+ * The unmap flushes the DART TLBs, so this runs only after runtime
+ * resume has powered the engine and its DARTs, and before registration
+ * lets a client map anything.
+ */
+static void ane_iommu_purge_stale(struct ane_device *ane)
+{
+	struct drm_mm_node *hole;
+	u64 start, end, iova;
+	unsigned long stale = 0;
+
+	drm_mm_for_each_hole(hole, &ane->mm, start, end) {
+		for (iova = start; iova < end; iova += 1UL << ane->shift) {
+			if (!iommu_iova_to_phys(ane->domain, iova))
+				continue;
+			iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+			stale++;
+		}
+	}
+	if (stale)
+		dev_warn(ane->dev,
+			 "cleared %lu stale DART mappings from a previous instance\n",
+			 stale);
 }
 
 static void ane_detach_genpd(struct ane_device *ane)
@@ -860,8 +894,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 	/* Polled completion design: the engine IRQ is validated but never
-	 * requested here. The DART interrupt belongs to the DART driver
-	 * and is never fetched, masked or unmasked from this driver. */
+	 * requested here. A DART fault IRQ stays owned by apple-dart. During
+	 * a job this driver masks it, and on a fault restores that stream. */
 
 	/* Mapping only; no register access happens while unpowered. */
 	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
@@ -887,7 +921,9 @@ static int ane_platform_probe(struct platform_device *pdev)
 	/*
 	 * Kernel-owned IOMMU domain. Defers until every "iommus" provider
 	 * has attached. There is deliberately no fallback to direct DART
-	 * programming: without providers this driver must not bind.
+	 * programming for mappings: without providers this driver must not
+	 * bind. Fault recovery only rewrites the TTBR and TCR the provider
+	 * already installed.
 	 */
 	err = ane_iommu_domain_init(ane);
 	if (err < 0)
@@ -907,6 +943,11 @@ static int ane_platform_probe(struct platform_device *pdev)
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
 		goto disable_pm;
+
+	ane_iommu_purge_stale(ane);
+	err = ane_dart_init(ane);
+	if (err < 0)
+		goto put_pm;
 
 	err = drm_dev_register(drm, 0);
 	if (err < 0)

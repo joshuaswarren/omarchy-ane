@@ -36,6 +36,13 @@ struct ane_device {
 	struct drm_mm mm;
 	struct iommu_domain *domain;
 	unsigned long shift;
+	struct ane_dart {
+		void __iomem *regs;
+		int irq;
+		u32 sid;
+		bool masked;
+	} darts[3];
+	int dart_count;
 
 	int irq;
 	struct mutex iommu_lock;
@@ -85,5 +92,22 @@ struct ane_request {
  * already unlocked the module count so the operator can swap the ko.
  */
 void ane_wedge_clear(struct ane_device *ane);
+
+#define ANE_DART_MAX 3
+#define ANE_DART_SCRATCH_MAX 16
+
+struct ane_dart_scratch {
+	u64 iova;
+	struct page *page;
+};
+
+int ane_dart_init(struct ane_device *ane);
+void ane_dart_mask(struct ane_device *ane);
+void ane_dart_unmask(struct ane_device *ane);
+bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status);
+int ane_dart_drain_fault(struct ane_device *ane, u64 fault_iova,
+			 struct ane_dart_scratch *scratch, int *pages);
+void ane_dart_release_scratch(struct ane_device *ane,
+			      struct ane_dart_scratch *scratch, int pages);
 
 #endif /* __ANE_H__ */
