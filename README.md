@@ -2,11 +2,16 @@
 
 Apple Neural Engine support for Omarchy Linux: a DRM accelerator driver and userspace library. Bind and execute are proven on M1 (`T8103`, `apple,t8103-ane`) and M1 Max (`T6001`, `apple,t6000-ane`). Every other SoC still needs its own PMGR, DART, SET, and TM offsets. eiln's original reverse engineering targeted one M1; this fork is where the other chips get wired.
 
-**Current hardware status (2026-09-25):** m1-test-host (T8103) fresh Arch boot
-reported (user-observed at login); Omarchy provisioning and benchmark
-recertification pending. Historical T8103 numbers in this tree are dated
-evidence from prior Linux boots and are not a current recert; recovery
-success not yet published. t6001-test-host (T6001) Linux ANE is live. T6021
+**Current hardware status (2026-09-25, evening):** m1-host (T8103) is
+recertified on the fresh Arch boot. The Qwen ANE staged-decode cell passes
+against same-SoC macOS: decode 1.49x, TTFT 0.84x, e2e 0.69x, and prefill-512
+1.223x (all PASS, 100/100 tokens exact); the Parakeet golden contract is
+bit-exact on the installed module. Receipts live in
+[joshuaswarren/ane-linux-experiments](https://github.com/joshuaswarren/ane-linux-experiments)
+(`2026-09-25-jwm1-qwen-ane-layout-gate`, `2026-09-25-qwen-ane-export-513`,
+`2026-09-25-jwm1-parakeet-golden-rerun`, `2026-09-25-jwm1-kernels2-clean`).
+t6001-host (T6001) Linux ANE is live; TM recovery on T6001 now drains
+retained tm/tq state (kill-race 10/10 reopen-clean, no reboot). T6021
 (t6021-test-host) has no host TM path; the firmware program has proven the
 release sequence on T6021 and T6001 (status 0x28), and with the VENC power
 leg up the firmware reaches its service loop, but the mailbox FIFO never
@@ -19,7 +24,7 @@ macOS CoreML / `aned` measurements do not establish Linux execution.
 - `libane/`: userspace loader and submission library.
 - `bindings/python/`: Python shared-library bindings.
 
-This fork's `main` serializes submissions, holds GEM references across execution, waits for request-tagged last-task finish events, and retires the matching task-queue slot. An uncertain completion blocks new work and normal reclamation, pins the module against ordinary unload, and requires a reboot. Runtime power must remain on. Forced platform/DT removal is unsupported: driver-core teardown can release managed resources despite the module pin.
+This fork's `main` serializes submissions, holds GEM references across execution, waits for request-tagged last-task finish events, and retires the matching task-queue slot. While submits are in flight it also holds every CPU cluster at its top p-state (`ane_boost`, module parameter `boost_idle_ms`, default 100 ms after the last submit, 0 disables): on M1-class SoCs the memory-side performance state follows the CPU clusters, and a parked submitter halves the ANE's memory bandwidth. An uncertain completion blocks new work and normal reclamation, pins the module against ordinary unload, and requires a reboot. On T6001, recovery drains retained tm/tq state and names the module-reload door; the T8103 power-on reset path is unchanged. Runtime power must remain on. Forced platform/DT removal is unsupported: driver-core teardown can release managed resources despite the module pin.
 
 The library requires driver ABI 1: successful submission guarantees terminal completion and CPU visibility. Older drivers are rejected; output values are never used as completion signals. Build the module against matching kernel headers with `make -C ane`, then build the library and Python binding from this checkout with `make -C libane && make -C bindings/python/dylib`.
 
@@ -41,9 +46,9 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 
 | Marketing | SoC | Internal | Linux ANE `compatible` | Driver status | Test confirmation | Data needed |
 | --- | --- | --- | --- | --- | --- | --- |
-| M1 | T8103 | H13G | `apple,t8103-ane` | qualified (2026-09-20: m1-test-host fresh Arch boot reported; benchmark recertification pending) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17 (historical dated evidence; not current) | none |
+| M1 | T8103 | H13G | `apple,t8103-ane` | qualified (recertified 2026-09-25 on the fresh Arch boot) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17; Qwen ANE staged decode E2E PASS 2026-09-25 (1.49x macOS decode, 1.223x prefill-512) | none |
 | M1 Pro | T6000 | H13J | `apple,t6000-ane` | recognized-untested | none on T6000 silicon | a tester plus the board DART/pmgr overlay (compatible and SET base shared with T6001 are proven); two community DT captures arrived 2026-09-17 |
-| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified (t6001-test-host Linux ANE is live: 104/104 Parakeet E2E on v0.6.0; v0.7.1 wall  sanitized receipt copy: agent/parakeet-perf-resident branch ) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
+| M1 Max | T6001 | H13J | `apple,t6000-ane` | qualified (t6001-test-host Linux ANE is live; TM recovery drains retained tm/tq state, kill-race 10/10 reopen-clean, 2026-09-25) | bind + exact fp16 64-el smoke; o-proj + attention islands E2E certified 2026-09-17, 104/104 | none |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
