@@ -813,11 +813,21 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   0x470 — the ANE_SYS power-state word at pmgr reg[0]+0x470, PA
   0x23b700470 — with a nonzero low nibble, and the ADT `ane-acg-hack`
   flag is set (T8103 has it = 1), it does a physical read-modify-write at
-  PA 0x22868a04 (reported as engine+0x1868a04): `(old & ~0x1000) |
-  0x80001000`; power-down to 0 clears bit 12. No Linux code writes that
-  engine word. Candidate Linux test: read engine+0x1868a04 read-only
-  (engine window, SET-gated), compare macOS vs Linux, write only if
-  different. T6001 is closed: `AppleT6000PMGR::writeReg32` (22G74 cache)
+  PA 0x26b868a04 (macOS ANE window 0x26a000000 + 0x1868a04):
+  `(old & ~0x1000) | 0x80001000`; power-down to 0 clears bit 12. No
+  Linux code writes that engine word. Executed, in two halves
+  (AneAcgT8103, ane-linux-experiments 9288833,
+  `receipts/2026-09-25-jwm1-t8103-acg-hack/`; omarchy-ane
+  `agent/t8103-acg` eb4cf4c). Read half: Linux's power-up value at the
+  word is 0x80000000 — bit 12 clear where macOS sets it; the two systems
+  genuinely disagree. Write half, falsified: applying macOS's RMW
+  hard-resets the machine (PMU-logged reset during probe, auto-recovery
+  to stock, no filesystem damage). Bit 12 gates the idle engine's clocks,
+  and the hack rides on CLPC/pmgr clock state Linux never configures. No
+  retry — each attempt is an unclean reset on a btrfs root. Consequence:
+  acg alone cannot close the 112.99 vs 140 ms encoder gap; the missing
+  prerequisite is Linux-side ANE clock management.
+- T6001 ACG question closed: `AppleT6000PMGR::writeReg32` (22G74 cache)
   has no ANE branch — its special case (map 2, reg 0xc00, die 0) is
   workaroundPSRegsForceWakeUP and the general path is a plain BIT(29)
   RMW, with none of the acg constants, and the T6001 ADT carries no
