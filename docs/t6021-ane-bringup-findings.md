@@ -897,10 +897,11 @@ CPU-cluster DVFS command word at block+0xe20020, written as
 index 8, branches to an assert panic. The host's only perf-state entry
 point therefore has no ANE path on M2: the host never sets the ANE clock
 through pmgr. That fits the firmware setting its own operating point after
-the `CH_PROPERTY_WRITE` "FW PERF MODE" command. Sibling PMGRs differ:
-T8103 accepts domains 8 and 14 (the T8103 clock lead above), T6001
-accepts 1-5 and 13 (Jw16Levers5, 22G74 cache, e5e82aa
-`receipt-step3-4.md`). Each chip's accepted-domain set is its own.
+the `CH_PROPERTY_WRITE` "FW PERF MODE" command. Sibling PMGRs differ, and
+static reads can mislead: T8103 accepts domains 8 and 14 (the T8103 clock
+lead above); T6001's static 22G74 read said 1-5/13, but the live capture
+(a3641215, below) shows `ApplePMGR::_setPerfState` driving ANE domain 8 —
+the same domain as T8103. Each chip's decode is its own.
 
 ### T8103: Qwen ANE layout gate closed
 
@@ -1016,6 +1017,27 @@ Source: ane-linux-experiments d733cd1,
   matched none of 617 candidates. Unblock is one captured write set:
   either a recoveryOS SIP window with `ane-perfstate.d` on the M1 Max
   macOS side, or a physical USB serial for an m1n1 trace.
+
+### T6001: ANE perf-state live capture decoded
+
+Source: ane-linux-experiments a3641215,
+`receipts/2026-09-25-t6001-perfstate-capture/`.
+
+- Live fact from a 25G83 capture: `ApplePMGR::_setPerfState` is the live
+  ANE path on T6001, with ANE domain 8 (36 probe hits with a2=8) — the
+  same domain as T8103. This supersedes the 22G74 static read of accepted
+  domains 1-5/13 recorded in the sibling-PMGR note above; static reads of
+  the accepted-domain set can mislead.
+- 913 `writeReg32` writes captured inside the domain-8 gate, across 10
+  RegMap/reg targets: map0 0x1e8 ladder x430 (the ANE PS/PLL ladder
+  steps), map2 0x3c0 ladder x180, map2 0x64000 power gate, and map113
+  0xa00 writes = BIT31|N perf-controller tokens. RegMap-to-PA decode is
+  assigned to the clock lane; once it lands, the Linux driver write set
+  is fully determined (a scaffold exists; it needs a scoped PMGR-map
+  extension, since the targets are PMGR-mapped).
+- The T6001 ANE tunable-table lead is closed: not statically present in
+  any obtainable container (26.6.2 KernelCollections are x86 stubs; the
+  boot payload is transient) — 0865be7/0af98f6.
 - The cache sweep is now systematic (Jw16Levers5, ane-linux-experiments
   0865be7; interpretation amended in 0af98f6,
   `receipts/2026-09-25-ane-tunables-static/`): the T8103 13.5 cache
