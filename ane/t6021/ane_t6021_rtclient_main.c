@@ -221,6 +221,11 @@ module_param(fw_start_wrapper_b80_unmask, bool, 0444);
 MODULE_PARM_DESC(fw_start_wrapper_b80_unmask,
 		 "fw_start=1: write 0xffffffff to KIC interrupt registers engine+0x1400b80..b94 and +0x1400bfc before CPU release, logging before/after reads. Default 0 (off).");
 
+static bool fw_start_dapf;
+module_param(fw_start_dapf, bool, 0444);
+MODULE_PARM_DESC(fw_start_dapf,
+		 "fw_start=1: before CPU release, program the dart-ane0 DAPF (PA 0x285804000, ADT reg[3] DAPFLLT) with the five J414c ADT dapf-instance-0 windows, as XNU does, logging before/after reads. Default 0 (off).");
+
 /*
  * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
  * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
@@ -797,6 +802,60 @@ static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
 	}
 }
 
+/*
+ * dart-ane0 DAPF: the filter on the ANE's physical (bypass-stream) MMIO
+ * accesses. XNU programs it from the ADT property dapf-instance-0; m1n1
+ * programs DAPF only for aop/mtp/pmp/isp and ANE tunables only on T8103,
+ * so on T6021 nothing opens these windows for the ANE firmware. The first
+ * window is the ANE pmgr ps block (ane_sys_mpm..set4). Values are the
+ * J414cAP ADT entries (52-byte t8110 form), written in m1n1
+ * dapf_init_t8110a register order: r4, start, end, r0 = r0h << 4 | r0l,
+ * r20.
+ */
+static void ane_rtclient_apply_dapf(struct ane_rtclient *ane)
+{
+	static const struct {
+		u64 start;
+		u64 end;
+	} win[] = {
+		{ 0x28e084000ull, 0x28e084033ull },
+		{ 0x28e080260ull, 0x28e080263ull },
+		{ 0x38545c000ull, 0x38545c003ull },
+		{ 0x406468000ull, 0x406468003ull },
+		{ 0x228545c000ull, 0x228545c003ull },
+	};
+	void __iomem *d = ioremap_np(0x285804000ull, 0x4000);
+	unsigned int i;
+
+	if (!d) {
+		dev_emerg(ane->dev, "BOOT-PHASE dapf: ioremap FAILED\n");
+		return;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(win); i++) {
+		void __iomem *e = d + i * 0x40;
+		u32 r0 = readl(e), r4 = readl(e + 0x04), r20 = readl(e + 0x20);
+		u64 start = readq(e + 0x08), end = readq(e + 0x10);
+
+		writel(0, e + 0x04);
+		writeq(win[i].start, e + 0x08);
+		writeq(win[i].end, e + 0x10);
+		writel(0x31, e + 0x00);
+		writel(0x1, e + 0x20);
+		mb();
+		dev_emerg(ane->dev,
+			  "BOOT-PHASE dapf[%u]: r0 %08x -> %08x, r4 %08x -> %08x, start %llx -> %llx, end %llx -> %llx, r20 %08x -> %08x\n",
+			  i, r0, readl(e), r4, readl(e + 0x04),
+			  start, readq(e + 0x08), end, readq(e + 0x10),
+			  r20, readl(e + 0x20));
+	}
+	dev_emerg(ane->dev, "BOOT-PHASE dapf[%zu] (unused): r0 %08x start %llx end %llx\n",
+		  ARRAY_SIZE(win), readl(d + ARRAY_SIZE(win) * 0x40),
+		  readq(d + ARRAY_SIZE(win) * 0x40 + 0x08),
+		  readq(d + ARRAY_SIZE(win) * 0x40 + 0x10));
+	iounmap(d);
+}
+
 static void ane_rtclient_apply_core1_run(struct ane_rtclient *ane)
 {
 	u32 before, after;
@@ -1049,6 +1108,9 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 
 	if (fw_start_wrapper_b80_unmask)
 		ane_rtclient_apply_wrapper_b80_unmask(ane);
+
+	if (fw_start_dapf)
+		ane_rtclient_apply_dapf(ane);
 
 	ane_rtclient_log_wrapper(ane, "pre-release");
 
