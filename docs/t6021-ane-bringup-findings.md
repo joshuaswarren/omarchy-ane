@@ -710,7 +710,15 @@ at dart probe (27.0 site 0x9ffb74c, 13.5 site 0x9bfdc98), reads the 52
 byte / 0x34-slice ADT property, and programs the DAPF instance at reg[3],
 PA 0x285804000 — strictly before ANE_Init. Linux apple-dart has no DAPF
 code, and m1n1's dapf_init_all skips dart-ane0, so nothing opens those
-windows under Linux. Receipt: ane-linux-experiments `lane/m2-fwstart`
+windows under Linux. Why the first writes were ignored: DART8110 PROTECT
+(0x200) bit 1 (LOCK_REG_4xx) write-protects the +0x4000 DAPF aperture,
+and Linux boots with dart0 PROTECT = 0x2 — every write to 0x285804000 was
+dropped by silicon. The unlock protocol (M2PreRunRE; m1n1
+`hw/dart8110.py`): write 0x2 to UNPROTECT (0x285800204), verify PROTECT
+bit 1 clear, write the DAPF slices (+0x04 r4, +0x08 start, +0x10 end,
++0x00 r0 enable, +0x20 r20, stride 0x40), then re-protect by writing 0x6
+to PROTECT (0x285800200) — the macOS working-state value (section 17).
+Receipt: ane-linux-experiments `lane/m2-fwstart`
 22b208b, `receipts/2026-09-25-t6021-ane-dapf/` (ADT extract and m1n1
 entry list included). Not yet run on hardware.
 
