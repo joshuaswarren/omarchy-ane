@@ -176,10 +176,17 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 * contiguous run of `mapped` bytes starting at entry —
 		 * tracked exactly, because teardown must never unmap a
 		 * page that was not mapped (dart_unmap_pages WARNs on
-		 * holes and the 2026-09-26 state-report unwind hit it). */
+		 * holes and the 2026-09-26 state-report unwind hit it).
+		 * SEG1 IOVA = entry + 0xc4000 = 0x100000c4000 per the
+		 * pinned ADT segment-ranges record (0x10000000000 ->
+		 * 0x10000848000 0xc4000; 0x100000c4000 -> 0x10001400000
+		 * 0x438000). Commit e6612e9 shipped 0x1000000c4000 — one
+		 * hex digit off, mapping DATA at 16 TiB instead: every
+		 * fw_alias_reserved boot since 2026-09-24 left the fw
+		 * DATA section unmapped past the SEG0 head. */
 		static const struct { u64 iova, phys, len; } win[] = {
 			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
-			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
+			{ 0x100000c4000ull, 0x10001400000ull, 0x438000ull },
 		};
 		unsigned int w;
 
