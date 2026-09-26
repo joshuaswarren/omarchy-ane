@@ -758,6 +758,10 @@ Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
 - All three ANE DARTs (0x285800000 / 0x285810000 / 0x285820000 on T6001)
   need the same TTBR0 plus UNK_CONFIG_68/0x6c. m1n1's ane driver programs
   all three ("DMA fails w/o").
+- Three-dart topology is the shared h13 shape, not a T6001 quirk: T8103
+  also has three ANE DARTs (0x26b800000 / 0x26b810000 / 0x26b820000, 16K
+  pages; d733cd1), and T6021's three DARTs are on record above (section
+  17).
 - DART8020 field map: TCR at 0x100 + 4*sid, TTBR at 0x200 + 16*sid + 4*bank,
   ENABLED_STREAMS 0xfc, REMAP 0x80..0x8c.
 - The CTRR remap window (the 0x1f0000f4000 class) comes from the DT
@@ -949,9 +953,31 @@ with artifacts/ane and artifacts/ane-ab.
   whole-encoder single submit does not move (440.0/440.8/441.4 vs
   441.0/440.7/441.0 ms/iter) — one 14.7 s submit is kicked once and the
   QoS request drops 100 ms later, and the job is compute-bound. The 440
-  vs macOS 158 ms whole-encoder gap stays open. The island-submit
+  vs macOS 158 ms whole-encoder gap stays open; it is engine-side, not
+  host overhead (see the encoder-anomaly subsection below). The island-submit
   Parakeet pipeline does move: encoder_ane 1437.5-1439.5 vs
   1640.3-1768.0 ms (-12.4% on medians), decoder_load 54 vs 77 ms, total
   2227-2250 vs 2466-2612 ms (-9.5%).
 - cpufreq sampled at 50 ms: with boost the P-clusters sit at 3036 MHz in
   55% of samples (median 3036); without, 2% (median ~1056).
+
+### T6001: the 440 ms encoder gap is engine-side; the tuning values are unreachable
+
+Source: ane-linux-experiments d733cd1,
+`receipts/2026-09-25-jw16-levers6/receipt-encoder-anomaly.md`.
+
+- kprobe on the whole-encoder submit: dispatch is 13-139 us, execute is
+  431.5-438.8 ms — the 440 ms run is 99.97% engine window (gold
+  `fca96f13` bit-exact x3). Host-side work is not the gap.
+- Why T6001 differs: m1n1's `tunables_apply_static` seeds ANE op-point,
+  DPE and perf tables for T8103 only (AsahiLinux/m1n1 2abf3af3, from
+  eiln). T6001's iBoot-preloaded firmware self-manages from a low default
+  op point. The T6001 ADT ladder tops at 1500 MHz (300-1500, with mV
+  values); 1500/540 = 2.78, and with a T8103-class 1.25x residual that is
+  roughly the observed ~3.1x — labeled inference, not measured.
+- The T6001 values are in no reachable artifact: m1n1 ships T8103 units
+  only, the live ADT ane0 node has no tunables (checked against
+  EmbeddedDeviceTrees), and a literal scan of the mac13j kernelcache
+  matched none of 617 candidates. Unblock is one captured write set:
+  either a recoveryOS SIP window with `ane-perfstate.d` on the M1 Max
+  macOS side, or a physical USB serial for an m1n1 trace.
