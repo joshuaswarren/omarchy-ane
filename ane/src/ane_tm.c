@@ -260,7 +260,6 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	err = ane_tm_collect_events(ane, NULL, &finished);
 	if (err < 0)
 		goto wedge;
-	ane_boost_kick(ane);
 	wmb();
 	ane_tm_push_tq(ane, req);
 

@@ -540,7 +540,9 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	if (err < 0)
 		goto unlock;
 
+	ane_boost_begin(ane);
 	err = ane_tm_execute(ane, &req);
+	ane_boost_end(ane);
 
 unlock:
 	mutex_unlock(&ane->engine_lock);

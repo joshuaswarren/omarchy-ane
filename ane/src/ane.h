@@ -94,9 +94,9 @@ struct ane_device {
 
 	/*
 	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on
-	 * every cpufreq policy from the first submit until boost_idle_ms
-	 * after the last one: on T8103 bandwidth-bound programs run ~2x
-	 * slower while schedutil parks the idle clusters low.
+	 * every cpufreq policy while a submit runs and until boost_idle_ms
+	 * after the last one completes: on T8103 bandwidth-bound programs
+	 * run ~2x slower while schedutil parks the idle clusters low.
 	 */
 	struct ane_boost {
 		struct mutex lock;
@@ -104,7 +104,8 @@ struct ane_device {
 		struct freq_qos_request *legs;
 		int nlegs;
 		int held;
-		unsigned long last_kick;
+		unsigned long last_end;
+		bool busy;
 		bool on;
 	} boost;
 };
@@ -136,7 +137,8 @@ void ane_reclaim_preserved(struct ane_device *ane);
 
 int ane_boost_init(struct ane_device *ane);
 void ane_boost_exit(struct ane_device *ane);
-void ane_boost_kick(struct ane_device *ane);
+void ane_boost_begin(struct ane_device *ane);
+void ane_boost_end(struct ane_device *ane);
 
 #define ANE_DART_MAX 3
 #define ANE_DART_SCRATCH_MAX 16

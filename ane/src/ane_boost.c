@@ -10,15 +10,18 @@
  * submitter's CPU time and run delay unchanged; both clusters pinned
  * at their top p-state (performance governor, or SCHED_FIFO for the
  * submitter, which schedutil boosts the same way) -> 0 of 489. The
- * compute-bound Parakeet encoder (140 ms) does not move. The likely
+ * whole-encoder Parakeet program (140 ms) moves too once the QoS lapses
+ * mid-submit: timed from submit start, the hold dropped 100 ms into
+ * every encoder run, median 171 ms (140-238); held to completion, 138.0
+ * (137.7-138.7), jwm1 2026-09-25. The likely
  * mechanism is the second p-state field apple-soc-cpufreq writes with
  * the cluster p-state on T8103 only (DVFS_CMD PS2, has_ps2); the
  * memory-controller tuning its author named as unimplemented is still
  * absent from the tree. Whatever the field drives, the cure is the
  * cluster p-state, which cpufreq lets a driver request.
  *
- * So while the engine has work, hold a min-frequency QoS at the top of
- * every cpufreq policy, and drop it boost_idle_ms after the last submit.
+ * So hold a min-frequency QoS at the top of every cpufreq policy while a
+ * submit runs, and drop it boost_idle_ms after the last one completes.
  * The QoS goes through cpufreq's own constraint object, so it composes
  * with any governor and never touches the DVFS registers.
  */
@@ -34,7 +37,7 @@
 static unsigned int boost_idle_ms = 100;
 module_param(boost_idle_ms, uint, 0644);
 MODULE_PARM_DESC(boost_idle_ms,
-		 "hold every CPU cluster at its top p-state while the engine works and this long after the last submit (0 = off)");
+		 "hold every CPU cluster at its top p-state while a submit runs and this long after the last one completes (0 = off)");
 
 /* Lock held. */
 static void ane_boost_set(struct ane_device *ane, bool on)
@@ -77,24 +80,40 @@ static void ane_boost_off_work(struct work_struct *work)
 	struct ane_boost *b = &ane->boost;
 
 	mutex_lock(&b->lock);
-	/* A kick that raced this expiry re-armed the work; leave it on. */
-	if (b->on && time_after_eq(jiffies, b->last_kick +
-					    msecs_to_jiffies(boost_idle_ms)))
+	/* A submit that began or ended after this expiry was armed keeps
+	 * the boost on; its own completion re-arms the drop. */
+	if (b->on && !b->busy &&
+	    time_after_eq(jiffies, b->last_end + msecs_to_jiffies(boost_idle_ms)))
 		ane_boost_set(ane, false);
 	mutex_unlock(&b->lock);
 }
 
-void ane_boost_kick(struct ane_device *ane)
+/* Engine lock held: submits never overlap, so busy is a flag. */
+void ane_boost_begin(struct ane_device *ane)
 {
 	struct ane_boost *b = &ane->boost;
 
 	if (!b->legs || !boost_idle_ms)
 		return;
 	mutex_lock(&b->lock);
-	b->last_kick = jiffies;
+	b->busy = true;
 	if (!b->on)
 		ane_boost_set(ane, true);
-	mod_delayed_work(system_wq, &b->off, msecs_to_jiffies(boost_idle_ms));
+	mutex_unlock(&b->lock);
+}
+
+void ane_boost_end(struct ane_device *ane)
+{
+	struct ane_boost *b = &ane->boost;
+
+	if (!b->legs)
+		return;
+	mutex_lock(&b->lock);
+	b->busy = false;
+	b->last_end = jiffies;
+	if (b->on)
+		mod_delayed_work(system_wq, &b->off,
+				 msecs_to_jiffies(boost_idle_ms));
 	mutex_unlock(&b->lock);
 }
 
