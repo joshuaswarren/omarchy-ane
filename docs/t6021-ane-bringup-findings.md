@@ -97,8 +97,10 @@ readback was `0xfffe`.
 
 The macOS working-state dump (section 17) narrows the open question "which
 macOS pre-RUN step is missing" to three write-form candidates: ane_sys_mpm
-left off, the VENC rails left off, and the single-DART-stream form. The
-fourth dump difference, mailbox CTRL bit 19, is decoded as the UNDERFLOW
+left off, the VENC rails left off, and the single-DART-stream form, plus
+the dart-ane0 DAPF windows, which macOS programs at dart-probe time and
+Linux never opens (section 18). The fourth dump difference, mailbox CTRL
+bit 19, is decoded as the UNDERFLOW
 status latch and macOS never writes it, so it is replicated only as a test,
 not treated as a required host write. Everything else the macOS dump reads
 matches Linux. The staged Linux test forms are omarchy-ane
@@ -696,6 +698,19 @@ control words, and `fw_start_dart_single_stream` sets the macOS DART form
 apple-dart enables all streams and never touches PROTECT, and with
 PROTECT bit 0 clear it will not fight) on all three DARTs. Both log before
 and after reads. Clean build verified against the 7.1.13 tree.
+
+A fourth staged form opens the dart-ane0 DAPF: omarchy-ane
+`agent/t6021-leg-baseline` e8411ac adds `fw_start_dapf` (default off),
+which writes the five ADT `dapf-instance-0` windows in m1n1
+dapf_init_t8110a register order before CPU release — the first window is
+the ANE pmgr ps block, 0x28e084000..0x28e084033 — logging each entry
+before and after plus the first unused slot. Why this is a candidate
+(M2PreRunRE static RE): `AppleT8110DART::start` calls `_apfSetupInstance`
+at dart probe (27.0 site 0x9ffb74c, 13.5 site 0x9bfdc98), reads the 52
+byte / 0x34-slice ADT property, and programs the DAPF instance at reg[3],
+PA 0x285804000 — strictly before ANE_Init. Linux apple-dart has no DAPF
+code, and m1n1's dapf_init_all skips dart-ane0, so nothing opens those
+windows under Linux.
 
 ## 19. Cross-SoC: T6001 and T8103 (2026-09-25)
 
