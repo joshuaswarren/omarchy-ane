@@ -1029,11 +1029,17 @@ Source: ane-linux-experiments a3641215,
   domains 1-5/13 recorded in the sibling-PMGR note above; static reads of
   the accepted-domain set can mislead.
 - 913 `writeReg32` writes captured inside the domain-8 gate, across 10
-  RegMap/reg targets: map0 0x1e8 ladder x430 (the ANE PS/PLL ladder
-  steps), map2 0x3c0 ladder x180, map2 0x64000 power gate, and map113
-  0xa00 writes = BIT31|N perf-controller tokens. RegMap-to-PA decode is
-  assigned to the clock lane; once it lands, the Linux driver write set
-  is fully determined (a scaffold exists; it needs a scoped PMGR-map
+  RegMap/reg targets. Final decode (receipt final 4e221b34): the only
+  ANE perf writes in the path are the DVFS pair — DVFS_CMD at PA
+  0x400004A00, value = `0x80000000 | (prev << 4) | new`, driving a
+  6-entry ladder with state 5 = 1500 MHz, and DVFS_ON at PA 0x400006000
+  (0/1). Bridge arithmetic: raw ADT reg[113] 0x200004000 is pre-bridge;
+  absolute IODeviceMemory[113] = 0x400004000, length 16384. The two
+  hottest targets are not ANE perf hardware: map0 0x1e8 is the ps_afr
+  pwrstate and map2 0x3c0 the ps_gfx pwrstate (x430 and x180) — plain
+  pwrstate layout (AUTO_ENABLE 28, PS_AUTO 27:24, PS_MIN 19:16, target
+  3:0). With the RegMap-to-PA map resolved, the Linux driver write set is
+  fully determined (a scaffold exists; it needs a scoped PMGR-map
   extension, since the targets are PMGR-mapped).
 - The T6001 ANE tunable-table lead is closed: not statically present in
   any obtainable container (26.6.2 KernelCollections are x86 stubs; the
