@@ -710,7 +710,9 @@ at dart probe (27.0 site 0x9ffb74c, 13.5 site 0x9bfdc98), reads the 52
 byte / 0x34-slice ADT property, and programs the DAPF instance at reg[3],
 PA 0x285804000 — strictly before ANE_Init. Linux apple-dart has no DAPF
 code, and m1n1's dapf_init_all skips dart-ane0, so nothing opens those
-windows under Linux.
+windows under Linux. Receipt: ane-linux-experiments `lane/m2-fwstart`
+22b208b, `receipts/2026-09-25-t6021-ane-dapf/` (ADT extract and m1n1
+entry list included). Not yet run on hardware.
 
 ## 19. Cross-SoC: T6001 and T8103 (2026-09-25)
 
