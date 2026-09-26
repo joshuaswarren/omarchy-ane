@@ -981,3 +981,17 @@ Source: ane-linux-experiments d733cd1,
   matched none of 617 candidates. Unblock is one captured write set:
   either a recoveryOS SIP window with `ane-perfstate.d` on the M1 Max
   macOS side, or a physical USB serial for an m1n1 trace.
+- The cache sweep is now systematic (Jw16Levers5, ane-linux-experiments
+  0865be7, `receipts/2026-09-25-ane-tunables-static/`): the T8103 13.5
+  cache `__DATA` holds 179 tunable tables in a 16-byte-record
+  `{offset, clear, set, pad}` + zero-separator format. Five of m1n1's
+  eight ANE sequences are there (pmgr x2, dpe_sys x15, perf x4, dpe_soc
+  x3 copies), and the raw cache values differ from m1n1's normalized
+  published ones — the cache is the authoritative XNU data. m1n1's
+  ane_dart/ane_dapf ANE sequences are absent from the cache entirely.
+- Consequence for T6001 and T6021: neither chip shows any ANE tunable
+  table in any segment (T6001 22G74 stub + 25G83 base; T6021 13.5 +
+  27.0). That is consistent with m1n1's T8103-only ANE coverage and the
+  firmware-driven ANE on T600x/T602x, and it closes the static route: a
+  static {base, offset, clear, set} list for those chips cannot come
+  from these containers.
