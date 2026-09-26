@@ -90,13 +90,6 @@ struct ane_rtclient {
 	/* ane_cpu reset (DT resets = <&ane_cpu>, ps RESET bit 31). */
 	struct reset_control *cpu_rst;
 
-	/* DT power domains for multi-domain nodes. The core attaches a
-	 * domain only for single-domain nodes (genpd_dev_pm_attach
-	 * returns 0 with nothing attached otherwise, pmdomain/core.c);
-	 * every index here needs explicit dev_pm_domain_attach_by_id. */
-	struct device **pd_dev;
-	struct device_link **pd_link;
-
 	/* fw_start=1: view over this device for the shared boot/fwload
 	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
 	struct ane_t6021 *fw;
@@ -1251,19 +1244,47 @@ static const struct attribute_group ane_rtclient_group = {
 	.attrs = ane_rtclient_attrs,
 };
 
-/* Multi-domain nodes: the core attaches and raises a domain ONLY when
- * "power-domains" has exactly one entry (genpd_dev_pm_attach returns 0
- * with nothing attached otherwise). Attach every index with
- * dev_pm_domain_attach_by_id + an RPM_ACTIVE stateless link — the
- * ane_t6021_drv.c pattern. Raise-only contract: links are never
- * deleted, because dropping the RPM_ACTIVE ref lets genpd power the
- * domain off (ps-off writes are the s24-fatal class, receipts
- * 2026-09-21/23). Islands stay as raised until reboot; failure paths
- * leave earlier links in place and devm frees only the arrays. */
+/* Multi-domain genpd attach, ownership-correct and idempotent.
+ *
+ * The core attaches and raises a domain ONLY for single-domain nodes
+ * (genpd_dev_pm_attach returns 0 with nothing attached otherwise);
+ * here every index gets dev_pm_domain_attach_by_id + an RPM_ACTIVE
+ * stateless link, the ane_t6021_drv.c pattern.
+ *
+ * Lifetime: the registry below is keyed by consumer device and owned
+ * for the module's lifetime — NOT devm — so -EPROBE_DEFER retries
+ * reuse the same virtual devices/links instead of attaching new ones
+ * per retry. An interrupted attach is resumed at the first missing
+ * index. Raise-only: links and device refs are never released by
+ * this driver (dropping the RPM_ACTIVE ref lets genpd power the
+ * domain off — the ps-off write class, receipts 2026-09-21/23), so
+ * islands stay as raised until reboot. On module exit only the
+ * bookkeeping is freed; the core-owned links and the raised state
+ * remain, reclaimed by reboot.
+ */
+struct ane_rtclient_pd {
+	struct list_head list;
+	struct device *dev;
+	struct device **pd_dev;
+	struct device_link **pd_link;
+	int count;
+};
+static LIST_HEAD(ane_rtclient_pd_list);
+static DEFINE_MUTEX(ane_rtclient_pd_lock);
+
+static void ane_rtclient_pd_free(struct ane_rtclient_pd *pd)
+{
+	list_del(&pd->list);
+	kfree(pd->pd_dev);
+	kfree(pd->pd_link);
+	kfree(pd);
+}
+
 static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 {
 	struct device *dev = ane->dev;
-	int count, i;
+	struct ane_rtclient_pd *pd = NULL;
+	int count, i, err = 0;
 
 	count = of_count_phandle_with_args(dev->of_node, "power-domains",
 					   "#power-domain-cells");
@@ -1274,31 +1295,56 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 	if (count <= 1)
 		return 0; /* single domain: core attached and raised it */
 
-	ane->pd_dev = devm_kcalloc(dev, count, sizeof(*ane->pd_dev),
-				   GFP_KERNEL);
-	ane->pd_link = devm_kcalloc(dev, count, sizeof(*ane->pd_link),
-				    GFP_KERNEL);
-	if (!ane->pd_dev || !ane->pd_link)
-		return -ENOMEM;
+	mutex_lock(&ane_rtclient_pd_lock);
+	list_for_each_entry(pd, &ane_rtclient_pd_list, list)
+		if (pd->dev == dev)
+			goto found;
 
-	for (i = 0; i < count; i++) {
-		ane->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
+	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
+	if (!pd) {
+		err = -ENOMEM;
+		goto out;
+	}
+	pd->dev = dev;
+	pd->pd_dev = kcalloc(count, sizeof(*pd->pd_dev), GFP_KERNEL);
+	pd->pd_link = kcalloc(count, sizeof(*pd->pd_link), GFP_KERNEL);
+	if (!pd->pd_dev || !pd->pd_link) {
+		ane_rtclient_pd_free(pd);
+		pd = NULL;
+		err = -ENOMEM;
+		goto out;
+	}
+	list_add_tail(&pd->list, &ane_rtclient_pd_list);
+
+found:
+	for (i = pd->count; i < count; i++) {
+		pd->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
 		/* attach_by_id can also return NULL (pmdomain/core.c). */
-		if (IS_ERR_OR_NULL(ane->pd_dev[i]))
-			return IS_ERR(ane->pd_dev[i]) ?
-				       PTR_ERR(ane->pd_dev[i]) : -ENODEV;
+		if (IS_ERR_OR_NULL(pd->pd_dev[i])) {
+			err = IS_ERR(pd->pd_dev[i]) ?
+				      PTR_ERR(pd->pd_dev[i]) : -ENODEV;
+			pd->pd_dev[i] = NULL;
+			goto out;
+		}
 
-		ane->pd_link[i] =
-			device_link_add(dev, ane->pd_dev[i],
+		pd->pd_link[i] =
+			device_link_add(dev, pd->pd_dev[i],
 					DL_FLAG_STATELESS |
 					DL_FLAG_PM_RUNTIME |
 					DL_FLAG_RPM_ACTIVE);
-		if (!ane->pd_link[i])
-			return -EINVAL;
+		if (!pd->pd_link[i]) {
+			put_device(pd->pd_dev[i]);
+			pd->pd_dev[i] = NULL;
+			err = -EINVAL;
+			goto out;
+		}
+		pd->count = i + 1;
 	}
 
 	dev_emerg(dev, "BOOT-PHASE genpd domains attached: %d\n", count);
-	return 0;
+out:
+	mutex_unlock(&ane_rtclient_pd_lock);
+	return err;
 }
 
 static int ane_rtclient_probe(struct platform_device *pdev)
