@@ -96,7 +96,8 @@ struct ane_device {
 	 * Engine-busy CPU cluster boost (ane_boost.c): min-frequency QoS on
 	 * every cpufreq policy while a submit runs and until boost_idle_ms
 	 * after the last one completes: on T8103 bandwidth-bound programs
-	 * run ~2x slower while schedutil parks the idle clusters low.
+	 * run ~2x slower while schedutil parks the idle clusters low. On
+	 * T6001 the same hold drives the ANE DVFS domain (dvfs_ane).
 	 */
 	struct ane_boost {
 		struct mutex lock;
@@ -107,6 +108,10 @@ struct ane_device {
 		unsigned long last_end;
 		bool busy;
 		bool on;
+		void __iomem *dvfs;
+		u8 dvfs_top;
+		u8 dvfs_state;
+		bool dvfs_online;
 	} boost;
 };
 
@@ -135,7 +140,9 @@ void ane_wedge_clear(struct ane_device *ane);
  */
 void ane_reclaim_preserved(struct ane_device *ane);
 
-int ane_boost_init(struct ane_device *ane);
+int ane_boost_init(struct ane_device *ane, phys_addr_t dvfs_base, u8 dvfs_top);
+void ane_dvfs_power_on(struct ane_device *ane);
+void ane_dvfs_power_off(struct ane_device *ane);
 void ane_boost_exit(struct ane_device *ane);
 void ane_boost_begin(struct ane_device *ane);
 void ane_boost_end(struct ane_device *ane);

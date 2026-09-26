@@ -904,6 +904,10 @@ struct ane_soc {
 	/* True when the tm/tq register file survives a genpd cycle in
 	 * retention and recovery must drain it (see ane_tm_drain_retained). */
 	bool tm_retention;
+	/* ANE DVFS domain base and its top ladder state (ane_boost.c);
+	 * 0 where macOS has not been observed driving one. */
+	phys_addr_t dvfs_base;
+	u8 dvfs_top;
 };
 
 static bool allow_unqualified;
@@ -924,6 +928,10 @@ static const struct ane_soc ane_soc_t6000 = {
 	.ps_base = 0x28e08c000ULL,
 	.qual = ANE_QUALIFIED,
 	.tm_retention = true,
+	/* T6001 ADT pmgr reg[113]; voltage-states8 has six states,
+	 * 300..1500 MHz. Observed on M1 Max only. */
+	.dvfs_base = 0x400004000ULL,
+	.dvfs_top = 5,
 };
 
 static const struct ane_soc ane_soc_t6020 = {
@@ -1040,7 +1048,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 	mutex_init(&ane->engine_lock);
 	INIT_LIST_HEAD(&ane->bo_list);
 	INIT_LIST_HEAD(&ane->preserved_list);
-	err = ane_boost_init(ane);
+	err = ane_boost_init(ane, soc->dvfs_base, soc->dvfs_top);
 	if (err < 0)
 		goto detach_genpd;
 
@@ -1069,6 +1077,7 @@ static int ane_platform_probe(struct platform_device *pdev)
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
 		goto disable_pm;
+	ane_dvfs_power_on(ane);
 
 	ane_iommu_purge_stale(ane);
 	err = ane_dart_init(ane);

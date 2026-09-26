@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * Engine-busy CPU cluster boost.
+ * Engine-busy performance hold: CPU cluster boost, and the T6001 ANE DVFS domain.
  *
  * Bandwidth-bound programs run at a speed set by the CPU cluster
  * p-states. Measured on jwm1 (T8103, 2026-09-25, ane-linux-experiments
@@ -26,10 +26,12 @@
  * with any governor and never touches the DVFS registers.
  */
 #include <linux/cpufreq.h>
+#include <linux/io.h>
 #include <linux/jiffies.h>
 #include <linux/module.h>
 #include <linux/pm_qos.h>
 #include <linux/slab.h>
+#include <linux/sizes.h>
 #include <linux/workqueue.h>
 
 #include "ane.h"
@@ -39,13 +41,56 @@ module_param(boost_idle_ms, uint, 0644);
 MODULE_PARM_DESC(boost_idle_ms,
 		 "hold every CPU cluster at its top p-state while a submit runs and this long after the last one completes (0 = off)");
 
+/*
+ * T6001 ANE DVFS domain (PMGR domain 8; ADT pmgr reg[113], PA
+ * 0x400004000). macOS 25G83 ApplePMGR::_setPerfState(8, s), dtrace on
+ * jw16 2026-09-25: after ps_ane_sys powers on it writes DVFS_ON = 1 and
+ * a state-0 command; each engine run raises the state to the top of the
+ * six-entry ladder (300..1500 MHz), idle drops it to 0, and power-off
+ * writes state 0 then DVFS_ON = 0. The command word is
+ * SET | prev << 4 | new. Linux never wrote either register (both read
+ * 0 on jw16), so the engine ran unmanaged.
+ */
+#define ANE_DVFS_CMD		0xa00
+#define ANE_DVFS_ON		0x2000
+#define ANE_DVFS_CMD_SET	BIT(31)
+
+static bool dvfs_ane;
+module_param(dvfs_ane, bool, 0444);
+MODULE_PARM_DESC(dvfs_ane,
+		 "drive the T6001 ANE DVFS domain like macOS: top state while a submit runs, state 0 when idle");
+
+/* Boost lock held. */
+static void ane_dvfs_set(struct ane_device *ane, u8 state)
+{
+	struct ane_boost *b = &ane->boost;
+
+	if (!b->dvfs_online || state == b->dvfs_state)
+		return;
+	writel(ANE_DVFS_CMD_SET | b->dvfs_state << 4 | state,
+	       b->dvfs + ANE_DVFS_CMD);
+	b->dvfs_state = state;
+}
+
+/* Boost lock held; the ANE is still powered. */
+static void ane_dvfs_offline(struct ane_device *ane)
+{
+	struct ane_boost *b = &ane->boost;
+
+	if (!b->dvfs_online)
+		return;
+	ane_dvfs_set(ane, 0);
+	writel(0, b->dvfs + ANE_DVFS_ON);
+	b->dvfs_online = false;
+}
+
 /* Lock held. */
 static void ane_boost_set(struct ane_device *ane, bool on)
 {
 	struct ane_boost *b = &ane->boost;
 	int cpu, n = 0;
 
-	if (on) {
+	if (on && boost_idle_ms) {
 		for_each_possible_cpu(cpu) {
 			struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
 			int err;
@@ -65,11 +110,12 @@ static void ane_boost_set(struct ane_device *ane, bool on)
 				n++;
 		}
 		b->held = n;
-	} else {
+	} else if (!on) {
 		for (n = 0; n < b->held; n++)
 			freq_qos_remove_request(&b->legs[n]);
 		b->held = 0;
 	}
+	ane_dvfs_set(ane, on ? b->dvfs_top : 0);
 	b->on = on;
 }
 
@@ -93,7 +139,7 @@ void ane_boost_begin(struct ane_device *ane)
 {
 	struct ane_boost *b = &ane->boost;
 
-	if (!b->legs || !boost_idle_ms)
+	if (!b->legs || (!boost_idle_ms && !b->dvfs))
 		return;
 	mutex_lock(&b->lock);
 	b->busy = true;
@@ -117,7 +163,12 @@ void ane_boost_end(struct ane_device *ane)
 	mutex_unlock(&b->lock);
 }
 
-int ane_boost_init(struct ane_device *ane)
+static void ane_dvfs_unmap(void *addr)
+{
+	iounmap(addr);
+}
+
+int ane_boost_init(struct ane_device *ane, phys_addr_t dvfs_base, u8 dvfs_top)
 {
 	struct ane_boost *b = &ane->boost;
 
@@ -125,7 +176,57 @@ int ane_boost_init(struct ane_device *ane)
 	INIT_DELAYED_WORK(&b->off, ane_boost_off_work);
 	b->nlegs = num_possible_cpus();
 	b->legs = kcalloc(b->nlegs, sizeof(*b->legs), GFP_KERNEL);
-	return b->legs ? 0 : -ENOMEM;
+	if (!b->legs)
+		return -ENOMEM;
+	if (!dvfs_ane || !dvfs_base)
+		return 0;
+	/* Non-posted, like the reads that proved this page. A failed map
+	 * leaves the driver without DVFS, never unbound. */
+	b->dvfs = ioremap_np(dvfs_base, SZ_16K);
+	if (b->dvfs && devm_add_action_or_reset(ane->dev, ane_dvfs_unmap, b->dvfs))
+		b->dvfs = NULL;
+	if (!b->dvfs) {
+		dev_err(ane->dev, "ANE-DVFS: map of %pa failed, DVFS off\n",
+			&dvfs_base);
+		return 0;
+	}
+	b->dvfs_top = dvfs_top;
+	dev_info(ane->dev, "ANE-DVFS: domain at %pa, top state %u\n",
+		 &dvfs_base, dvfs_top);
+	return 0;
+}
+
+/* The ANE partition is powered: bring the DVFS domain online at state 0,
+ * as macOS does right after ps_ane_sys comes up, and return to the top
+ * state if a submit is holding the boost (recovery power cycle). */
+void ane_dvfs_power_on(struct ane_device *ane)
+{
+	struct ane_boost *b = &ane->boost;
+
+	if (!b->dvfs)
+		return;
+	mutex_lock(&b->lock);
+	writel(1, b->dvfs + ANE_DVFS_ON);
+	writel(ANE_DVFS_CMD_SET, b->dvfs + ANE_DVFS_CMD);
+	b->dvfs_state = 0;
+	b->dvfs_online = true;
+	if (b->on)
+		ane_dvfs_set(ane, b->dvfs_top);
+	dev_info(ane->dev, "ANE-DVFS online: on %#x cmd %#x\n",
+		 readl(b->dvfs + ANE_DVFS_ON), readl(b->dvfs + ANE_DVFS_CMD));
+	mutex_unlock(&b->lock);
+}
+
+/* Before the ANE partition powers down, while it is still on. */
+void ane_dvfs_power_off(struct ane_device *ane)
+{
+	struct ane_boost *b = &ane->boost;
+
+	if (!b->dvfs)
+		return;
+	mutex_lock(&b->lock);
+	ane_dvfs_offline(ane);
+	mutex_unlock(&b->lock);
 }
 
 void ane_boost_exit(struct ane_device *ane)
@@ -138,6 +239,7 @@ void ane_boost_exit(struct ane_device *ane)
 	mutex_lock(&b->lock);
 	if (b->on)
 		ane_boost_set(ane, false);
+	ane_dvfs_offline(ane);
 	mutex_unlock(&b->lock);
 	kfree(b->legs);
 	b->legs = NULL;

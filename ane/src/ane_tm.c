@@ -556,6 +556,7 @@ int ane_tm_recover(struct ane_device *ane)
 
 	dev_err(ane->dev, "recovering: power-cycling engine partitions\n");
 
+	ane_dvfs_power_off(ane);
 	err = ane_pd_cycle(ane);
 	if (err) {
 		dev_err(ane->dev, "recovery: engine power cycle failed: %d\n",
@@ -581,6 +582,7 @@ int ane_tm_recover(struct ane_device *ane)
 	/* Power-on reset cleared the tm register file; re-arm it exactly
 	 * like the probe resume path does. */
 	ane_tm_enable(ane, true);
+	ane_dvfs_power_on(ane);
 
 	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
 				 status,
