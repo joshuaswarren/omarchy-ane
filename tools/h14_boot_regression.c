@@ -776,6 +776,67 @@ int main(void)
 			      "cannot free while the CPU may fetch");
 		}
 
+		/* (4b) RTBuddy mode (SCRATCH6=0), no READY: the fw does
+		 * not publish BOOT_ACK to SCRATCH7 and no legacy
+		 * publication follows — aliveness is gated by the RTKit
+		 * HELLO after boot_run returns (kext fw 0x42c8: rtbuddyFW
+		 * when SCRATCH6 == 0; selene InitializeRTBuddy 0x95ead04
+		 * has no legacy publish/ack contract). The run proceeds,
+		 * fw_alive is NOT fabricated, and P5 publish/wake are
+		 * withheld. */
+		fake_reset(&fk);
+		fk.s7_never_ack = 1;
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.rtb_mode = 1,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == 0,
+			      "run: RTBuddy no-READY proceeds (rc 0)",
+			      "listen for HELLO, no READY gate");
+			check(cs == 1 && fa == 0 && bo == 0,
+			      "RTBuddy: cpu started, fw_alive NOT fabricated",
+			      "aliveness gated by HELLO, not SCRATCH7");
+			check(fk.prepare_at < 0 && fk.nasz == 0,
+			      "RTBuddy: no legacy publish, NO allocations",
+			      "RTKit negotiation replaces init publication");
+			check(fk.wake_at < 0,
+			      "RTBuddy: no legacy wake write",
+			      "no SCRATCH7 WAKE_REQ in RTBuddy mode");
+		}
+
+		/* (4c) RTBuddy mode with READY observed: still no legacy
+		 * publish/wake; fw_alive reflects the observed READY and
+		 * is not used to gate anything here. */
+		fake_reset(&fk);
+		{
+			int cs = 0, fa = 0, bo = 0;
+			u64 sres = 0;
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.rtb_mode = 1,
+			};
+
+			check(ane_t6021_boot_run(&io, &cfg, &cs, &fa,
+						 &bo, &sres) == 0,
+			      "run: RTBuddy READY observed, rc 0",
+			      "READY recorded, still no legacy publish");
+			check(cs == 1 && fa == 1 && bo == 0,
+			      "RTBuddy READY: fw_alive reflects observation",
+			      "no fabrication either direction");
+			check(fk.prepare_at < 0 && fk.wake_at < 0,
+			      "RTBuddy READY: publish/wake withheld",
+			      "legacy contract is mode-conditional");
+		}
+
 		/* (5) fw-start-debug stop_after bisect (2026-09-22):
 		 * stop AFTER step N returns -ECANCELED, never splits a
 		 * step, and a poll-A timeout inside step 4 stays

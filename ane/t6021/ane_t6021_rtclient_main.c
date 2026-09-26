@@ -1167,7 +1167,7 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		return 0;
 	}
 
-	if (!a->fw_alive) {
+	if (!a->fw_alive && !fw_start_rtb_mode) {
 		/* Poll A timeout: RUN released, no READY. The fetch
 		 * discriminator answered NEGATIVE (park or bypass);
 		 * state held, module pinned, RTKit pointless. */
@@ -1175,6 +1175,11 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 			"fw_start: no SCRATCH7 READY after CPU release — ASC fetch did not reach the staged alias (kernel-context start discriminator: negative); HELD until reboot, RTKit handshake skipped\n");
 		return 0;	/* bind fenced */
 	}
+
+	if (fw_start_rtb_mode)
+		dev_emerg(dev,
+			  "BOOT-PHASE RTBuddy mode: READY not required — proceeding to RTKit handshake (HELLO-gated, bounded by hello_wait_ms=%u)\n",
+			  hello_wait_ms);
 
 	/* READY (and usually DONE) observed: the fetch DID translate.
 	 * RTKit handshake follows in probe. */
@@ -1499,10 +1504,13 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		fw_alive = true;
 	}
 
-	if (!fw_alive) {
+	if (!fw_alive && !fw_start_rtb_mode) {
 		/* fw_start ran, CPU released, but no READY: bind fenced
 		 * and inert (state HELD, module pinned by the boot
-		 * path, genpd stays up, no RTKit). */
+		 * path, genpd stays up, no RTKit). In RTBuddy mode this
+		 * gate does not apply — READY is not the contract; the
+		 * RTKit handshake below is HELLO-gated and bounded by
+		 * hello_wait_ms. */
 		dev_warn(dev,
 			 "binding fenced-inert (no firmware; state HELD until reboot)\n");
 		return 0;
@@ -1532,8 +1540,12 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		 * the boot sequence already writes (W9). */
 		ane_rtclient_validate_chman(ane);
 		dev_info(dev,
-			 "fw transport mode: S1 wrote SCRATCH6=1 -> legacy ChMan/MBI mode (fw 0x42c8: rtbuddyFW = (SCRATCH6 == 0))\n");
-		if (ane->fw->booted && scratch3_ack) {
+			 "fw transport mode: %s (fw 0x42c8: rtbuddyFW = (SCRATCH6 == 0))\n",
+			 fw_start_rtb_mode ?
+			 "S1 wrote SCRATCH6=0 -> RTBuddy/RTKit-app-endpoint mode" :
+			 "S1 wrote SCRATCH6=1 -> legacy ChMan/MBI mode");
+		if (ane->fw->booted && scratch3_ack &&
+		    !fw_start_rtb_mode) {
 			dev_emerg(dev,
 				  "BOOT-PHASE P8 host ack: SCRATCH3 <- %08x\n",
 				  ANE_T6021_BOOT_ACK);

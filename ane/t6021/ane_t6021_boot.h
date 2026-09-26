@@ -451,7 +451,10 @@ struct ane_t6021_boot_cfg {
 	int rtb_mode;		/* 1 = S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-
 				 * endpoint select, fw 0x42c8) instead of 1
 				 * (legacy ChMan/MBI). In RTBuddy mode the fw
-				 * may skip READY/DONE; listen on mailbox. */
+				 * may skip READY/DONE; listen on mailbox.
+				 * Run contract: P4 READY is recorded, not
+				 * required; no legacy publish/wake runs;
+				 * aliveness is gated by the RTKit HELLO. */
 	int stop_after;		/* fw-start-debug step bisect (2026-09-22):
 				 * 0 = full run; N in 1..4 = stop AFTER
 				 * step N completes, return -ECANCELED
@@ -608,19 +611,33 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	*cpu_started = 1;
 
 	io->phase(io->ctx, "P4 pollA-READY");
-	/* S4: poll A — FRESH READY (the pulse made it unambiguous). */
+	/* S4: poll A — FRESH READY (the pulse made it unambiguous).
+	 * RTBuddy mode (SCRATCH6=0, kext fw 0x42c8: rtbuddyFW when
+	 * SCRATCH6 == 0): the fw does not publish BOOT_ACK to SCRATCH7
+	 * and no legacy publication follows — aliveness is gated by the
+	 * RTKit HELLO after boot_run returns (selene InitializeRTBuddy
+	 * 0x95ead04). A missing READY is recorded, not fatal, and
+	 * *fw_alive stays 0 — never fabricated. */
 	for (i = 0; i < ANE_T6021_BOOT_TABLE_POLLS; i++) {
 		v = io->rd32(io->ctx, ANE_T6021_BOOT_REG_SCRATCH7);
 		if (v == ANE_T6021_BOOT_ACK)
 			break;
 		io->poll_wait(io->ctx);
 	}
-	if (v != ANE_T6021_BOOT_ACK)
+	if (v == ANE_T6021_BOOT_ACK) {
+		*fw_alive = 1;
+		io->phase(io->ctx, "P4 pollA READY observed");
+	} else if (cfg->rtb_mode) {
+		io->phase(io->ctx,
+			  "P4 pollA no READY (RTBuddy: HELLO-gated)");
+		return 0;	/* RTBuddy: no legacy publish/wake */
+	} else {
 		return -ETIMEDOUT;
-	*fw_alive = 1;
-	io->phase(io->ctx, "P4 pollA READY observed");
+	}
 	if (cfg->stop_after == 4)
 		return -ECANCELED;	/* fw alive, publish/wake withheld */
+	if (cfg->rtb_mode)
+		return 0;	/* RTBuddy: no legacy publish/wake */
 
 	io->phase(io->ctx, "P5 prepare+publish");
 	/* S5-S6: prepare (alloc/fill; kernel backend owns DMA), then the
