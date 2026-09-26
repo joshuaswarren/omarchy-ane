@@ -112,6 +112,7 @@ struct ane_rtclient {
 	void *ring;
 
 	bool csne_setup_done;
+	u32 csne_cursor;	/* K14 wrap-semantics write cursor */
 };
 
 /* Each rtkit.c boot-handshake wait (EPMAP, IOP power ack, AP power ack)
@@ -543,29 +544,45 @@ static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
 			 "rtkit: fw announced no app endpoint (static table predicts 0x20 \"user1\")\n");
 }
 
-/* GATED [INFERENCE] first CSNE control command. What is proven: the
- * fw's buffer word format (0x98fc8), the app-endpoint offset|len word
- * (0x64b4), the CSNE header. What is not: that the app endpoint takes a
- * buffer word to set its ring base ([obj+0x28]) before offset|len
- * words. Everything sent is logged; a wrong guess can crash the fw
- * (crashlog is captured), never the host. */
-static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, u16 id,
-				  u32 cursor)
+/* GATED [INFERENCE] CSNE submit with K14 rtbuddyEndpointSendMessage
+ * wrap semantics (W4 receipt 2026-09-19-h14-w4-csne-submission): the
+ * slot cursor is kept only when cursor+size fits strictly below the
+ * ring size (an exact fit wraps to 0), the command is memcpy'd into
+ * the coherent ring, and the 48-bit offset|len doorbell follows a
+ * dma_wmb. Oversized commands fail fast at the fw's own bound
+ * (0x4d134: work items >= 0x1b89 rejected). Returns the slot cursor
+ * used, or a negative error. What remains unproven: that the app
+ * endpoint takes a buffer word to set its ring base ([obj+0x28])
+ * before offset|len words. Everything sent is logged; a wrong guess
+ * can crash the fw (crashlog is captured), never the host. */
+static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
+				    const void *cmd, size_t size)
 {
-	struct ane_csne_hdr hdr;
+	u32 cursor = ane->csne_cursor;
 	u64 msg;
 	int ret;
 
-	ane_csne_hdr_init(&hdr, id);
-	memcpy(ane->ring + cursor, &hdr, sizeof(hdr));
+	if (size < sizeof(struct ane_csne_hdr) ||
+	    size > ANE_CSNE_CMD_MAX_SIZE)
+		return -EINVAL;
+	if (size > ANE_RTCLIENT_RING_SIZE)
+		return -E2BIG;
+	if (cursor + size >= ANE_RTCLIENT_RING_SIZE)
+		cursor = 0;
+
+	memcpy(ane->ring + cursor, cmd, size);
 	dma_wmb();
 
-	msg = ane_mbi_msg48_encode(cursor, sizeof(hdr));
+	msg = ane_mbi_msg48_encode(cursor, size);
 	ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, msg, NULL,
 				       false);
 	dev_info(ane->dev,
-		 "csne: CSNE_CMD_%#x submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
-		 id, ane->cmd_ep, cursor, sizeof(hdr), msg, ERR_PTR(ret));
+		 "csne: submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
+		 ane->cmd_ep, cursor, size, msg, ERR_PTR(ret));
+	if (ret)
+		return ret;
+	ane->csne_cursor = cursor + size;
+	return cursor;
 }
 
 static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
@@ -602,10 +619,20 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 		if (ret)
 			return;
 		ane->csne_setup_done = true;
+		ane->csne_cursor = 0;
 	}
 
-	ane_rtclient_csne_cmd(ane, CSNE_CMD_PING, 0);
-	ane_rtclient_csne_cmd(ane, CSNE_CMD_BUILDINFO, sizeof(struct ane_csne_hdr));
+	{
+		struct ane_csne_hdr hdr;
+		int slot;
+
+		ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
+		slot = ane_rtclient_csne_submit(ane, &hdr, sizeof(hdr));
+		if (slot >= 0) {
+			ane_csne_hdr_init(&hdr, CSNE_CMD_BUILDINFO);
+			ane_rtclient_csne_submit(ane, &hdr, sizeof(hdr));
+		}
+	}
 }
 
 /* ---- probe ---- */

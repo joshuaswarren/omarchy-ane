@@ -503,6 +503,52 @@ static inline void ane_csne_hdr_init(struct ane_csne_hdr *h, u16 id)
  * SCRATCH0-7 / SetupFWInitBootArgs, not the command, phase1 §2.5),
  * PING (0x11), BUILDINFO (0x06). sizeof(struct ane_csne_hdr) bytes. */
 
+/* PROCEDURE_CALL (0x204) frame — offsets PROVEN by the selene parse
+ * sites (0x4d654 ldp program/procedure pair, 0x4d660-0x4d66c field_18
+ * unsigned bound [8,15], 0x4d6d4 validator, 0x524a8-0x524b4 io-record
+ * stride 3x16, 0x524bc num_io_buffers loop bound); semantics named
+ * only where kext asserts name them. INFERENCE_CALL (0x404) shares
+ * the shape [INFERENCE: the 0x404 id is not in the decoded id tree —
+ * it is the W4 submission endpoint per the phase-1 workstream plan].
+ * Ported from feat/t6021-ane-driver-w4 (receipt
+ * 2026-09-19-h14-w4-csne-submission). */
+struct ane_csne_io_elem {
+	u8 bytes[0x30];	/* internal layout not decoded */
+};
+
+struct ane_csne_cmd_procedure_call {
+	struct ane_csne_hdr hdr;
+	u32 program_id;		/* +0x08 */
+	u32 procedure_id;	/* +0x0c */
+	u64 field_10;
+	u32 field_18;		/* fw requires 8..15 */
+	u32 rsvd_1c;
+	u64 field_20;
+	u32 num_io_buffers;	/* +0x28 = element count */
+	u32 rsvd_2c;
+	u8 gap_30[0x30];
+	struct ane_csne_io_elem io[];
+};
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, program_id) == 0x08);
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, procedure_id) == 0x0c);
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, field_10) == 0x10);
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, field_18) == 0x18);
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, num_io_buffers) == 0x28);
+static_assert(offsetof(struct ane_csne_cmd_procedure_call, io) == 0x60);
+
+static inline size_t
+ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
+{
+	return sizeof(struct ane_csne_cmd_procedure_call) +
+	       num_io_buffers * sizeof(struct ane_csne_io_elem);
+}
+
+/* Fw-side bound: the generic CSNE processor rejects work items of
+ * 0x1b89 bytes and above (@0x4d134 cmp x2, #0x1b89). What x2 names
+ * beyond "the command's size" is [INFERENCE] — enforced here as a
+ * fail-fast so an oversized command cannot enter the ring. */
+#define ANE_CSNE_CMD_MAX_SIZE	0x1b88
+
 /* REG_FILE_LOAD (0x05) payload: the 1456 B blob is the fw's own
  * __DATA._rtk_tunables section (@0x100590, size 0x5b0) — its transport
  * (inline vs shared-memory iova) is [INFERENCE], pinned by W1. */
