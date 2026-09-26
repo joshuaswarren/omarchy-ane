@@ -497,7 +497,10 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 	}
 	if (!r)
 		dev_info(ane->dev,
-			 "boot: DONE — handshake complete; scratch_result=%016llx (raw device address, semantics UNSOURCED — not a success claim; transport stays fenced until response validation)\n",
+			 "boot: run returned 0 (booted=%u fw_alive=%u) — %s; scratch_result=%016llx (raw device address, semantics UNSOURCED — not a success claim; transport stays fenced until response validation)\n",
+			 bo, fa,
+			 bo ? "DONE observed — handshake complete"
+			    : "rc 0 WITHOUT DONE (rtb_mode: HELLO-gated; DONE not part of this mode)",
 			 sres);
 	return r;
 }

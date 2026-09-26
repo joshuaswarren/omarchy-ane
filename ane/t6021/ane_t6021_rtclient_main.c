@@ -1589,7 +1589,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			       ane->engine + ANE_MBI_SCRATCH0 + 4 * 3);
 		} else {
 			dev_warn(dev,
-				 "BOOT-PHASE P8 host ack WITHHELD (booted=%u scratch3_ack=%u): fw parks at 0x7edc, no HELLO expected\n",
+				 "BOOT-PHASE P8 host ack WITHHELD (booted=%u scratch3_ack=%u): ack is post-DONE per the 27.0 decode — the 13.5 fw order is UNVERIFIED\n",
 				 ane->fw->booted, scratch3_ack);
 		}
 	}
