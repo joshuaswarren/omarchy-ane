@@ -62,6 +62,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/reset.h>
 #include <linux/soc/apple/rtkit.h>
 #include <linux/workqueue.h>
 
@@ -70,8 +71,9 @@
 /* pmgr ane_cpu ACTUAL word (ane0 reg1 window, pmgr+0x2e0) */
 #define ANE_RTCLIENT_PS_CPU_ACTUAL_OFF	0x2e0
 
-/* CPU_STATUS RUNNING bit (m1n1 ASCRegs shape) */
+/* CPU_STATUS bits (m1n1 ASCRegs shape) */
 #define ANE_ASC_CPU_STATUS_RUNNING	BIT(0)
+#define ANE_ASC_CPU_STATUS_STOPPED	BIT(1)
 
 /* rtkit.c routes endpoints below this to its own handlers
  * (rtkit-internal.h APPLE_RTKIT_APP_ENDPOINT_START) */
@@ -84,6 +86,8 @@ struct ane_rtclient {
 	void __iomem *engine;
 	void __iomem *pmgr;
 	struct apple_rtkit *rtk;
+	/* ane_cpu reset (DT resets = <&ane_cpu>, ps RESET bit 31). */
+	struct reset_control *cpu_rst;
 
 	/* fw_start=1: view over this device for the shared boot/fwload
 	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
@@ -1181,6 +1185,64 @@ static void ane_rtclient_unmap_engine(void *data)
 	iounmap(((struct ane_rtclient *)data)->engine);
 }
 
+/*
+ * restart_probe answers whether this box can restart the firmware
+ * without a reboot. It stops the core (CPU_CONTROL <- 0, bounded wait for
+ * STOPPED), cycles it through the framework ane_cpu reset (the domain
+ * stays powered), and reports RVBAR and CPU_STATUS before and after: the
+ * iBoot RVBAR latch must survive the reset, because kernel RVBAR writes
+ * are fatal here. It never sets RUN again and keeps the module pin and
+ * every DMA surface, so a reboot still reclaims. Raw ps writes froze the
+ * box three times (W16 pass-2): write this only as the last act before a
+ * planned reboot.
+ */
+static ssize_t restart_probe_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct ane_rtclient *ane = dev_get_drvdata(dev);
+	u64 rv0, rv1;
+	u32 st0, st1, st2;
+	int ret;
+
+	if (!ane->cpu_rst)
+		return -ENODEV;
+
+	rv0 = readq(ane->engine + ANE_ASC_RVBAR);
+	st0 = readl(ane->engine + ANE_ASC_CPU_STATUS);
+	writel(0, ane->engine + ANE_ASC_CPU_CONTROL);
+	ret = readl_poll_timeout(ane->engine + ANE_ASC_CPU_STATUS, st1,
+				 st1 & ANE_ASC_CPU_STATUS_STOPPED, 10, 100000);
+	dev_emerg(dev,
+		  "RESTART-PROBE stop: CPU_STATUS %08x -> %08x (%pe), RVBAR %016llx\n",
+		  st0, st1, ERR_PTR(ret), rv0);
+	if (ret)
+		return ret;
+
+	ret = reset_control_assert(ane->cpu_rst);
+	if (!ret) {
+		fsleep(2);
+		ret = reset_control_deassert(ane->cpu_rst);
+	}
+	rv1 = readq(ane->engine + ANE_ASC_RVBAR);
+	st2 = readl(ane->engine + ANE_ASC_CPU_STATUS);
+	dev_emerg(dev,
+		  "RESTART-PROBE reset %pe: CPU_STATUS %08x, RVBAR %016llx -> %016llx (%s)\n",
+		  ERR_PTR(ret), st2, rv0, rv1,
+		  rv1 == rv0 ? "latch survives" : "latch LOST");
+	return ret ?: count;
+}
+static DEVICE_ATTR_WO(restart_probe);
+
+static struct attribute *ane_rtclient_attrs[] = {
+	&dev_attr_restart_probe.attr,
+	NULL,
+};
+
+static const struct attribute_group ane_rtclient_group = {
+	.attrs = ane_rtclient_attrs,
+};
+
 static int ane_rtclient_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1214,6 +1276,14 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane->engine)
 		return -ENOMEM;
 	ret = devm_add_action_or_reset(dev, ane_rtclient_unmap_engine, ane);
+	if (ret)
+		return ret;
+
+	ane->cpu_rst = devm_reset_control_get_optional_exclusive(dev, NULL);
+	if (IS_ERR(ane->cpu_rst))
+		return dev_err_probe(dev, PTR_ERR(ane->cpu_rst),
+				     "ane_cpu reset control\n");
+	ret = devm_device_add_group(dev, &ane_rtclient_group);
 	if (ret)
 		return ret;
 
