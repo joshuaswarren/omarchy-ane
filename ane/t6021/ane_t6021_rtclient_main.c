@@ -259,11 +259,16 @@ static int ane_rtclient_venc_gates(struct device *dev)
 	unsigned int i;
 	int ret_all = 0;
 
-	/* VENC_SYS (299), map11 = window2+0x300 = 0x2902803e0: the
-	 * ps-regs[15] block ROOT (M2Research B6 decode). ps power-up
-	 * needs the parent rail first — B5/B5b proved the leaves latch
-	 * TARGET without ACTUAL while this is off. Raise it BEFORE the
-	 * leaf window. AVEMSR-V (519) above it is VIRTUAL: no write. */
+	/* VENC_SYS (299) at +3e0 of window 0x290280000. DEPENDENCY
+	 * UNPROVEN — receipt conflict on record (entry-alias pass-3:
+	 * gate 473 virtual/no-op, clock-ids an ADT artifact; vs
+	 * csne-cmd-path live: leaves grant only with the bit28 parent
+	 * form; vs t602x-pmgr.dtsi:1920: leaves' parent is venc_dma
+	 * @+8000, which this helper does not raise). Live 2026-09-26
+	 * refusal (before 300 -> after 30f, ACTUAL 0) is consistent
+	 * with the missing-parent reading. No raise form is changed
+	 * here pending that proof; hardware write form belongs to the
+	 * genpd-supported route if the dependency is proven. */
 	root = ioremap_np(0x290280000ull, 0x1000);
 	if (!root) {
 		dev_emerg(dev, "VENC-ROOT: ioremap FAILED\n");
