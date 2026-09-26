@@ -1255,12 +1255,13 @@ static const struct attribute_group ane_rtclient_group = {
  * for the module's lifetime — NOT devm — so -EPROBE_DEFER retries
  * reuse the same virtual devices/links instead of attaching new ones
  * per retry. An interrupted attach is resumed at the first missing
- * index. Raise-only: links and device refs are never released by
- * this driver (dropping the RPM_ACTIVE ref lets genpd power the
- * domain off — the ps-off write class, receipts 2026-09-21/23), so
- * islands stay as raised until reboot. On module exit only the
- * bookkeeping is freed; the core-owned links and the raised state
- * remain, reclaimed by reboot.
+ * index. Retention contract: links and device refs are never
+ * released by this driver, so no intentional subsequent power-down
+ * exists. NOT an absolute no-off-write guarantee: attach_by_id
+ * itself enables runtime PM and queues genpd power-off work before
+ * returning the virtual device (pmdomain/core.c:3398), so the
+ * attach window carries a bounded controlled-hardware risk; live
+ * attempts require camera+USB recovery and the noCPU state-report.
  */
 struct ane_rtclient_pd {
 	struct list_head list;
