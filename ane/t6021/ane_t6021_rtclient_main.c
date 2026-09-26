@@ -591,6 +591,7 @@ static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
 static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
 				    const void *cmd, size_t size);
 static void ane_rtclient_csne_first_op(struct ane_rtclient *ane);
+static bool csne_first_op;
 
 static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 {
