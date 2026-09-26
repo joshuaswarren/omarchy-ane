@@ -1271,6 +1271,7 @@ struct ane_rtclient_pd {
 };
 static LIST_HEAD(ane_rtclient_pd_list);
 static DEFINE_MUTEX(ane_rtclient_pd_lock);
+static bool ane_rtclient_pinned;
 
 static void ane_rtclient_pd_free(struct ane_rtclient_pd *pd)
 {
@@ -1305,6 +1306,7 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 		err = -ENOMEM;
 		goto out;
 	}
+	INIT_LIST_HEAD(&pd->list); /* safe pd_free even before list_add */
 	pd->dev = dev;
 	pd->pd_dev = kcalloc(count, sizeof(*pd->pd_dev), GFP_KERNEL);
 	pd->pd_link = kcalloc(count, sizeof(*pd->pd_link), GFP_KERNEL);
@@ -1318,25 +1320,45 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 
 found:
 	for (i = pd->count; i < count; i++) {
-		pd->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
-		/* attach_by_id can also return NULL (pmdomain/core.c). */
-		if (IS_ERR_OR_NULL(pd->pd_dev[i])) {
-			err = IS_ERR(pd->pd_dev[i]) ?
-				      PTR_ERR(pd->pd_dev[i]) : -ENODEV;
-			pd->pd_dev[i] = NULL;
-			goto out;
+		/* A slot may hold a virtual device whose link add failed
+		 * on an earlier retry: reuse it instead of attaching a
+		 * fresh one. */
+		if (!pd->pd_dev[i]) {
+			pd->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
+			/* attach_by_id can also return NULL
+			 * (pmdomain/core.c). */
+			if (IS_ERR_OR_NULL(pd->pd_dev[i])) {
+				err = IS_ERR(pd->pd_dev[i]) ?
+					      PTR_ERR(pd->pd_dev[i]) : -ENODEV;
+				pd->pd_dev[i] = NULL;
+				goto out;
+			}
 		}
 
-		pd->pd_link[i] =
-			device_link_add(dev, pd->pd_dev[i],
-					DL_FLAG_STATELESS |
-					DL_FLAG_PM_RUNTIME |
-					DL_FLAG_RPM_ACTIVE);
 		if (!pd->pd_link[i]) {
-			put_device(pd->pd_dev[i]);
-			pd->pd_dev[i] = NULL;
-			err = -EINVAL;
-			goto out;
+			/* Once-only permanent pin before the first raised
+			 * link: after a power mutation this driver must
+			 * not unload (rmmod -EBUSY); reboot reclaims. */
+			if (!ane_rtclient_pinned) {
+				if (!try_module_get(THIS_MODULE)) {
+					err = -ENODEV;
+					goto out;
+				}
+				ane_rtclient_pinned = true;
+			}
+			pd->pd_link[i] =
+				device_link_add(dev, pd->pd_dev[i],
+						DL_FLAG_STATELESS |
+						DL_FLAG_PM_RUNTIME |
+						DL_FLAG_RPM_ACTIVE);
+			if (!pd->pd_link[i]) {
+				/* Keep the virtual device in its slot for
+				 * the next retry; never put_device here —
+				 * the attached state must stay tracked and
+				 * owned. */
+				err = -EINVAL;
+				goto out;
+			}
 		}
 		pd->count = i + 1;
 	}
@@ -1593,10 +1615,11 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	cancel_delayed_work_sync(&ane->poll_work);
 
 	if (ane->held) {
-		/* Wedged-pin: rmmod is already blocked by the module
-		 * pin; unbind reaches this point. Preserve every
-		 * surface, ring, IRQ and power-domain link — a running
-		 * ASC may be fetching from them. Reboot reclaims. */
+		/* Unreachable in practice: suppress_bind_attrs blocks
+		 * unbind and the permanent module pin blocks rmmod once
+		 * any domain was raised. If it ever runs, claim nothing —
+		 * the core frees devm state after this callback; reboot
+		 * reclaims the raised hardware state. */
 		dev_warn(&pdev->dev,
 			 "remove HELD (CPU started): no teardown — reboot reclaims\n");
 		return;
@@ -1623,6 +1646,8 @@ static struct platform_driver ane_rtclient_driver = {
 	.driver = {
 		.name = "ane_t6021_rtclient",
 		.of_match_table = ane_rtclient_of_match,
+		/* Reboot-only research driver: no manual bind/unbind. */
+		.suppress_bind_attrs = true,
 	},
 	.probe = ane_rtclient_probe,
 	.remove = ane_rtclient_remove,
