@@ -171,12 +171,18 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 * the entry IOVAs. SEG0 0xc4000 covers TEXT 0xe8000 only
 		 * partially by ADT size, but the reserve is what m1n1
 		 * guarantees; the firmware fetch that matters is the
-		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully. */
+		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully.
+		 * The windows are adjacent, so the mapping is one
+		 * contiguous run of `mapped` bytes starting at entry —
+		 * tracked exactly, because teardown must never unmap a
+		 * page that was not mapped (dart_unmap_pages WARNs on
+		 * holes and the 2026-09-26 state-report unwind hit it). */
 		static const struct { u64 iova, phys, len; } win[] = {
 			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
 			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
 		};
 		unsigned int w;
+		u64 mapped = 0;
 
 		for (w = 0; w < 2; w++) {
 			u64 o;
@@ -187,7 +193,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 						"fwalias: reserved entry +%#llx mapped — refusing\n",
 						win[w].iova + o - entry);
 					ret = -EEXIST;
-					goto err_unmap;
+					goto err_unmap_mapped;
 				}
 				ret = iommu_map(dom, win[w].iova + o,
 						win[w].phys + o,
@@ -197,15 +203,22 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 					dev_err(ane->dev,
 						"fwalias: reserved map +%#llx: %d\n",
 						win[w].iova + o - entry, ret);
-					goto err_unmap;
+					goto err_unmap_mapped;
 				}
+				mapped += ANE_T6021_FW_ALIAS_PAGE;
 			}
 		}
 		ane->fw_alias_iova = entry;
+		ane->fw_alias_len = mapped;
 		dev_info(ane->dev,
-			 "fwalias: reserved SEG0/SEGi at entry %#llx (preloaded placement)\n",
-			 entry);
+			 "fwalias: reserved SEG0/SEGi at entry %#llx len %#zx (preloaded placement)\n",
+			 entry, mapped);
 		return 0;
+
+err_unmap_mapped:
+		if (mapped)
+			iommu_unmap(dom, entry, mapped);
+		return ret;
 	}
 
 	for (off = 0; off < ane->fw_size; off += ANE_T6021_FW_ALIAS_PAGE) {
@@ -252,6 +265,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	}
 
 	ane->fw_alias_iova = entry;
+	ane->fw_alias_len = ane->fw_size;
 	dev_info(ane->dev,
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
@@ -380,12 +394,18 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 
 void ane_t6021_fwload_remove(struct ane_t6021 *ane)
 {
-	if (ane->fw_alias_iova) {
+	if (ane->fw_alias_iova && ane->fw_alias_len) {
 		struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
 
+		/* Unmap exactly the recorded extent: the reserved-alias
+		 * branch maps 0x4fc000 (SEG0+SEGi) while fw_size is the
+		 * 0x500000 staging buffer — unmapping fw_size walks
+		 * unmapped PTEs (dart_unmap_pages WARN, 2026-09-26). */
 		if (dom)
-			iommu_unmap(dom, ane->fw_alias_iova, ane->fw_size);
+			iommu_unmap(dom, ane->fw_alias_iova,
+				    ane->fw_alias_len);
 		ane->fw_alias_iova = 0;
+		ane->fw_alias_len = 0;
 	}
 	if (!ane->fw_buf)
 		return;

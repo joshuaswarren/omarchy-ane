@@ -407,6 +407,13 @@ struct ane_t6021 {
 	 * collision bound every DMA allocation site must pass its iova
 	 * through ane_t6021_fw_alias_iova_ok() and refuse overlaps. */
 	u64 fw_alias_iova;
+	/* Exact mapped extent at fw_alias_iova. The reserved-alias
+	 * branch maps SEG0+SEGi (0x4fc000 contiguous) while fw_size is
+	 * the 0x500000 staging buffer — unmapping fw_size was the
+	 * dart_unmap_pages WARN of the 2026-09-26 state-report unwind
+	 * (io-pgtable-dart.c:319). Set only on successful map; teardown
+	 * unmaps exactly this. */
+	size_t fw_alias_len;
 	/* W16 pass-3: ane_cpu reset controller (ps RESET via the pmgr
 	 * pwrstate reset_controller ops); NULL when the DT carries no
 	 * resets property. */
