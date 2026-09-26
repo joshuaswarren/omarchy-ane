@@ -90,14 +90,12 @@ struct ane_rtclient {
 	/* ane_cpu reset (DT resets = <&ane_cpu>, ps RESET bit 31). */
 	struct reset_control *cpu_rst;
 
-	/* Extra DT power domains for multi-domain nodes. The core's
-	 * dev_pm_domain_attach -> genpd_dev_pm_attach handles ONLY
-	 * "power-domains" index 0 (pmdomain/core.c:3336); every other
-	 * index needs explicit dev_pm_domain_attach_by_id, the
-	 * ane_t6021_drv.c / ane/src/ane_drv.c pattern. */
+	/* DT power domains for multi-domain nodes. The core attaches a
+	 * domain only for single-domain nodes (genpd_dev_pm_attach
+	 * returns 0 with nothing attached otherwise, pmdomain/core.c);
+	 * every index here needs explicit dev_pm_domain_attach_by_id. */
 	struct device **pd_dev;
 	struct device_link **pd_link;
-	int pd_count;
 
 	/* fw_start=1: view over this device for the shared boot/fwload
 	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
@@ -1253,43 +1251,28 @@ static const struct attribute_group ane_rtclient_group = {
 	.attrs = ane_rtclient_attrs,
 };
 
-/* Attach every extra DT power domain. genpd_dev_pm_attach (the core's
- * pre-probe attach) covers ONLY index 0; this covers a multi-domain
- * node the same way ane_t6021_drv.c does: one dev_pm_domain_attach_by_id
- * per index, each held RPM-ACTIVE by a stateless device link — the
- * raise itself is the genpd hierarchy's job (parents before children),
- * never a hand-written ps TARGET word (the s24-fatal write class,
- * receipts 2026-09-21/23). The unwind therefore detaches with
- * power_off=false: links and virtual devices go away, islands stay
- * exactly as the probe found them, and no Linux path here can drive a
- * domain down. */
-static void ane_rtclient_detach_genpd(struct ane_rtclient *ane)
-{
-	int i;
-
-	for (i = ane->pd_count - 1; i >= 0; i--) {
-		if (ane->pd_link[i])
-			device_link_del(ane->pd_link[i]);
-		if (!IS_ERR_OR_NULL(ane->pd_dev[i]))
-			dev_pm_domain_detach(ane->pd_dev[i], false);
-	}
-	ane->pd_count = 0;
-}
-
+/* Multi-domain nodes: the core attaches and raises a domain ONLY when
+ * "power-domains" has exactly one entry (genpd_dev_pm_attach returns 0
+ * with nothing attached otherwise). Attach every index with
+ * dev_pm_domain_attach_by_id + an RPM_ACTIVE stateless link — the
+ * ane_t6021_drv.c pattern. Raise-only contract: links are never
+ * deleted, because dropping the RPM_ACTIVE ref lets genpd power the
+ * domain off (ps-off writes are the s24-fatal class, receipts
+ * 2026-09-21/23). Islands stay as raised until reboot; failure paths
+ * leave earlier links in place and devm frees only the arrays. */
 static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 {
 	struct device *dev = ane->dev;
-	int count;
+	int count, i;
 
 	count = of_count_phandle_with_args(dev->of_node, "power-domains",
 					   "#power-domain-cells");
+	if (count == -ENOENT)
+		return 0; /* no list: inert node, the G1 gate governs */
 	if (count < 0)
 		return count;
 	if (count <= 1)
-		/* No list (the inert no-PD node form: the G1 pmgr gate
-		 * governs) or a single domain (core-attached before
-		 * ->probe). */
-		return 0;
+		return 0; /* single domain: core attached and raised it */
 
 	ane->pd_dev = devm_kcalloc(dev, count, sizeof(*ane->pd_dev),
 				   GFP_KERNEL);
@@ -1298,30 +1281,23 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 	if (!ane->pd_dev || !ane->pd_link)
 		return -ENOMEM;
 
-	for (ane->pd_count = 0; ane->pd_count < count; ane->pd_count++) {
-		ane->pd_dev[ane->pd_count] =
-			dev_pm_domain_attach_by_id(dev, ane->pd_count);
-		if (IS_ERR(ane->pd_dev[ane->pd_count])) {
-			int err = PTR_ERR(ane->pd_dev[ane->pd_count]);
+	for (i = 0; i < count; i++) {
+		ane->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
+		/* attach_by_id can also return NULL (pmdomain/core.c). */
+		if (IS_ERR_OR_NULL(ane->pd_dev[i]))
+			return IS_ERR(ane->pd_dev[i]) ?
+				       PTR_ERR(ane->pd_dev[i]) : -ENODEV;
 
-			ane_rtclient_detach_genpd(ane);
-			return err;
-		}
-
-		ane->pd_link[ane->pd_count] =
-			device_link_add(dev, ane->pd_dev[ane->pd_count],
+		ane->pd_link[i] =
+			device_link_add(dev, ane->pd_dev[i],
 					DL_FLAG_STATELESS |
 					DL_FLAG_PM_RUNTIME |
 					DL_FLAG_RPM_ACTIVE);
-		if (!ane->pd_link[ane->pd_count]) {
-			dev_pm_domain_detach(ane->pd_dev[ane->pd_count],
-					     false);
-			ane_rtclient_detach_genpd(ane);
+		if (!ane->pd_link[i])
 			return -EINVAL;
-		}
 	}
 
-	dev_emerg(dev, "BOOT-PHASE extra genpd domains attached: %d\n", count);
+	dev_emerg(dev, "BOOT-PHASE genpd domains attached: %d\n", count);
 	return 0;
 }
 
@@ -1411,7 +1387,6 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (FIELD_GET(ANE_PS_ACTUAL, ps_cpu) != ANE_PS_ON) {
 		pm_runtime_put_sync_suspend(dev);
 		pm_runtime_disable(dev);
-		ane_rtclient_detach_genpd(ane);
 		return -EPROBE_DEFER;
 	}
 
@@ -1435,7 +1410,6 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				cpu_status);
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
-			ane_rtclient_detach_genpd(ane);
 			return -EPROBE_DEFER;
 		}
 		ret = ane_rtclient_fw_start(ane);
@@ -1563,7 +1537,6 @@ err_pm_or_hold:
 	}
 	pm_runtime_put_sync_suspend(dev);
 	pm_runtime_disable(dev);
-	ane_rtclient_detach_genpd(ane);
 	return ret;
 }
 
@@ -1590,7 +1563,6 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 				  ane->ring_iova);
 	pm_runtime_put_sync_suspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
-	ane_rtclient_detach_genpd(ane);
 }
 
 static const struct of_device_id ane_rtclient_of_match[] = {
