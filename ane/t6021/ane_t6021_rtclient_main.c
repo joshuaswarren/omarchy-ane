@@ -61,6 +61,7 @@
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
 #include <linux/soc/apple/rtkit.h>
@@ -88,6 +89,15 @@ struct ane_rtclient {
 	struct apple_rtkit *rtk;
 	/* ane_cpu reset (DT resets = <&ane_cpu>, ps RESET bit 31). */
 	struct reset_control *cpu_rst;
+
+	/* Extra DT power domains for multi-domain nodes. The core's
+	 * dev_pm_domain_attach -> genpd_dev_pm_attach handles ONLY
+	 * "power-domains" index 0 (pmdomain/core.c:3336); every other
+	 * index needs explicit dev_pm_domain_attach_by_id, the
+	 * ane_t6021_drv.c / ane/src/ane_drv.c pattern. */
+	struct device **pd_dev;
+	struct device_link **pd_link;
+	int pd_count;
 
 	/* fw_start=1: view over this device for the shared boot/fwload
 	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
@@ -1243,6 +1253,78 @@ static const struct attribute_group ane_rtclient_group = {
 	.attrs = ane_rtclient_attrs,
 };
 
+/* Attach every extra DT power domain. genpd_dev_pm_attach (the core's
+ * pre-probe attach) covers ONLY index 0; this covers a multi-domain
+ * node the same way ane_t6021_drv.c does: one dev_pm_domain_attach_by_id
+ * per index, each held RPM-ACTIVE by a stateless device link — the
+ * raise itself is the genpd hierarchy's job (parents before children),
+ * never a hand-written ps TARGET word (the s24-fatal write class,
+ * receipts 2026-09-21/23). The unwind therefore detaches with
+ * power_off=false: links and virtual devices go away, islands stay
+ * exactly as the probe found them, and no Linux path here can drive a
+ * domain down. */
+static void ane_rtclient_detach_genpd(struct ane_rtclient *ane)
+{
+	int i;
+
+	for (i = ane->pd_count - 1; i >= 0; i--) {
+		if (ane->pd_link[i])
+			device_link_del(ane->pd_link[i]);
+		if (!IS_ERR_OR_NULL(ane->pd_dev[i]))
+			dev_pm_domain_detach(ane->pd_dev[i], false);
+	}
+	ane->pd_count = 0;
+}
+
+static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
+{
+	struct device *dev = ane->dev;
+	int count;
+
+	count = of_count_phandle_with_args(dev->of_node, "power-domains",
+					   "#power-domain-cells");
+	if (count < 0)
+		return count;
+	if (count <= 1)
+		/* No list (the inert no-PD node form: the G1 pmgr gate
+		 * governs) or a single domain (core-attached before
+		 * ->probe). */
+		return 0;
+
+	ane->pd_dev = devm_kcalloc(dev, count, sizeof(*ane->pd_dev),
+				   GFP_KERNEL);
+	ane->pd_link = devm_kcalloc(dev, count, sizeof(*ane->pd_link),
+				    GFP_KERNEL);
+	if (!ane->pd_dev || !ane->pd_link)
+		return -ENOMEM;
+
+	for (ane->pd_count = 0; ane->pd_count < count; ane->pd_count++) {
+		ane->pd_dev[ane->pd_count] =
+			dev_pm_domain_attach_by_id(dev, ane->pd_count);
+		if (IS_ERR(ane->pd_dev[ane->pd_count])) {
+			int err = PTR_ERR(ane->pd_dev[ane->pd_count]);
+
+			ane_rtclient_detach_genpd(ane);
+			return err;
+		}
+
+		ane->pd_link[ane->pd_count] =
+			device_link_add(dev, ane->pd_dev[ane->pd_count],
+					DL_FLAG_STATELESS |
+					DL_FLAG_PM_RUNTIME |
+					DL_FLAG_RPM_ACTIVE);
+		if (!ane->pd_link[ane->pd_count]) {
+			dev_pm_domain_detach(ane->pd_dev[ane->pd_count],
+					     false);
+			ane_rtclient_detach_genpd(ane);
+			return -EINVAL;
+		}
+	}
+
+	dev_emerg(dev, "BOOT-PHASE extra genpd domains attached: %d\n", count);
+	return 0;
+}
+
 static int ane_rtclient_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -1291,12 +1373,20 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	/* Power: genpd chain (eight islands) via runtime PM. On this
-	 * box the always-on islands report off at boot and resume_and_get
-	 * hangs the bind writer; when the islands already read on, skip
-	 * the raise and go straight to the static sequence. */
+	/* Power: the DT power-domain list. The core pre-probe attach owns
+	 * index 0 only; the extras are attached above, each held
+	 * RPM-ACTIVE for the link's lifetime. On this box the always-on
+	 * islands report off at boot and resume_and_get hangs the bind
+	 * writer; when the islands already read on, fw_start_skip_genpd
+	 * skips both the attach and the resume so nothing is raised. */
+	if (!fw_start_skip_genpd) {
+		ret = ane_rtclient_attach_genpd(ane);
+		if (ret)
+			return dev_err_probe(dev, ret,
+					     "extra genpd attach\n");
+	}
 	pm_runtime_enable(dev);
-	dev_emerg(dev, "BOOT-PHASE genpd raise (eight islands) begin\n");
+	dev_emerg(dev, "BOOT-PHASE core genpd resume begin\n");
 	if (fw_start_skip_genpd) {
 		dev_emerg(dev, "BOOT-PHASE genpd raise SKIPPED (fw_start_skip_genpd=1)\n");
 		ret = 0;
@@ -1321,6 +1411,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (FIELD_GET(ANE_PS_ACTUAL, ps_cpu) != ANE_PS_ON) {
 		pm_runtime_put_sync_suspend(dev);
 		pm_runtime_disable(dev);
+		ane_rtclient_detach_genpd(ane);
 		return -EPROBE_DEFER;
 	}
 
@@ -1344,13 +1435,16 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				cpu_status);
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
+			ane_rtclient_detach_genpd(ane);
 			return -EPROBE_DEFER;
 		}
 		ret = ane_rtclient_fw_start(ane);
 		if (ret) {
-			pm_runtime_put_sync_suspend(dev);
-			pm_runtime_disable(dev);
-			return ret;
+			/* Unwind through err_pm_or_hold, not here: if the
+			 * boot contract already released the CPU, a power
+			 * teardown on this path would drop domains under a
+			 * running ASC. */
+			goto err_pm_or_hold;
 		}
 		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
 		fw_alive = cpu_status & ANE_ASC_CPU_STATUS_RUNNING ||
@@ -1469,6 +1563,7 @@ err_pm_or_hold:
 	}
 	pm_runtime_put_sync_suspend(dev);
 	pm_runtime_disable(dev);
+	ane_rtclient_detach_genpd(ane);
 	return ret;
 }
 
@@ -1495,6 +1590,7 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 				  ane->ring_iova);
 	pm_runtime_put_sync_suspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
+	ane_rtclient_detach_genpd(ane);
 }
 
 static const struct of_device_id ane_rtclient_of_match[] = {
