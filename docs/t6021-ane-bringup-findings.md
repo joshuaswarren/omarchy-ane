@@ -697,7 +697,9 @@ control words, and `fw_start_dart_single_stream` sets the macOS DART form
 (stream 0 only via DISABLE_STREAMS at +0xc20, dart0 PROTECT 0x6; Linux
 apple-dart enables all streams and never touches PROTECT, and with
 PROTECT bit 0 clear it will not fight) on all three DARTs. Both log before
-and after reads. Clean build verified against the 7.1.13 tree.
+and after reads. Clean build verified against the 7.1.13 tree. First
+hardware leg: the single-stream writes landed — ENABLE went 0xffff to 1
+and dart0 PROTECT went 0x2 to 0x6 (receipt caeb09cf).
 
 A fourth staged form opens the dart-ane0 DAPF: omarchy-ane
 `agent/t6021-leg-baseline` e8411ac adds `fw_start_dapf` (default off),
@@ -720,7 +722,15 @@ bit 1 clear, write the DAPF slices (+0x04 r4, +0x08 start, +0x10 end,
 to PROTECT (0x285800200) — the macOS working-state value (section 17).
 Receipt: ane-linux-experiments `lane/m2-fwstart`
 22b208b, `receipts/2026-09-25-t6021-ane-dapf/` (ADT extract and m1n1
-entry list included). Not yet run on hardware.
+entry list included). First hardware leg failed (M2FwStart-2, receipt
+`lane/m2-fwstart` caeb09cf, `receipts/2026-09-25-t6021-dapf-lock/`): the
+five writes did not land — every entry stayed r0=0, start=0, end=3.
+PROTECT_LOCK read 0x2: bit 1 is set-once, and a live UNPROTECT could not
+clear it (the bit was set before this Linux session; Linux apple-dart
+never writes PROTECT_LOCK). A stage-1 read of 0x285800200 also aborted
+(FAR 0x285800200, ESR 0x96000010) — the aperture was unpowered. Next
+attempt, not yet run: power /arm-io/dart-ane0 in the catcher, then
+unprotect and program.
 
 ## 19. Cross-SoC: T6001 and T8103 (2026-09-25)
 
