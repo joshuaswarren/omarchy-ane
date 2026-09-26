@@ -182,7 +182,6 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
 		};
 		unsigned int w;
-		u64 mapped = 0;
 
 		for (w = 0; w < 2; w++) {
 			u64 o;
@@ -205,19 +204,31 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 						win[w].iova + o - entry, ret);
 					goto err_unmap_mapped;
 				}
-				mapped += ANE_T6021_FW_ALIAS_PAGE;
+				/* per-window successfully mapped bytes */
+				ane->fw_alias_ext_len[w] = o + ANE_T6021_FW_ALIAS_PAGE;
+				ane->fw_alias_ext_iova[w] = win[w].iova;
 			}
 		}
+		ane->fw_alias_extn = 2;
 		ane->fw_alias_iova = entry;
-		ane->fw_alias_len = mapped;
 		dev_info(ane->dev,
-			 "fwalias: reserved SEG0/SEGi at entry %#llx len %#zx (preloaded placement)\n",
-			 entry, mapped);
+			 "fwalias: reserved SEG0/SEGi at entry %#llx (%llx+%zx %llx+%zx, preloaded placement)\n",
+			 entry,
+			 ane->fw_alias_ext_iova[0], ane->fw_alias_ext_len[0],
+			 ane->fw_alias_ext_iova[1], ane->fw_alias_ext_len[1]);
 		return 0;
 
 err_unmap_mapped:
-		if (mapped)
-			iommu_unmap(dom, entry, mapped);
+		/* Cleanup exactly the per-window bytes we mapped; windows
+		 * are not assumed adjacent (live trace: a hole between
+		 * SEG0 and SEGi), and foreign collision mappings are
+		 * never touched. */
+		for (w = 0; w < 2; w++)
+			if (ane->fw_alias_ext_len[w])
+				iommu_unmap(dom, ane->fw_alias_ext_iova[w],
+					    ane->fw_alias_ext_len[w]);
+		ane->fw_alias_ext_len[0] = ane->fw_alias_ext_len[1] = 0;
+		ane->fw_alias_extn = 0;
 		return ret;
 	}
 
@@ -265,7 +276,9 @@ err_unmap_mapped:
 	}
 
 	ane->fw_alias_iova = entry;
-	ane->fw_alias_len = ane->fw_size;
+	ane->fw_alias_ext_iova[0] = entry;
+	ane->fw_alias_ext_len[0] = ane->fw_size;
+	ane->fw_alias_extn = 1;
 	dev_info(ane->dev,
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
@@ -394,18 +407,20 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 
 void ane_t6021_fwload_remove(struct ane_t6021 *ane)
 {
-	if (ane->fw_alias_iova && ane->fw_alias_len) {
+	if (ane->fw_alias_extn) {
 		struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
+		int i;
 
-		/* Unmap exactly the recorded extent: the reserved-alias
-		 * branch maps 0x4fc000 (SEG0+SEGi) while fw_size is the
-		 * 0x500000 staging buffer — unmapping fw_size walks
-		 * unmapped PTEs (dart_unmap_pages WARN, 2026-09-26). */
+		/* Unmap exactly the per-window recorded extents: the
+		 * reserved-alias windows are not assumed adjacent (live
+		 * trace hole between SEG0 and SEGi) and unmapping bytes
+		 * that were never mapped trips dart_unmap_pages
+		 * (io-pgtable-dart.c:319 WARN, 2026-09-26). */
 		if (dom)
-			iommu_unmap(dom, ane->fw_alias_iova,
-				    ane->fw_alias_len);
-		ane->fw_alias_iova = 0;
-		ane->fw_alias_len = 0;
+			for (i = 0; i < ane->fw_alias_extn; i++)
+				iommu_unmap(dom, ane->fw_alias_ext_iova[i],
+					    ane->fw_alias_ext_len[i]);
+		ane->fw_alias_extn = 0;
 	}
 	if (!ane->fw_buf)
 		return;

@@ -113,9 +113,6 @@ struct ane_rtclient {
 
 	bool csne_setup_done;
 	u32 csne_cursor;	/* K14 wrap-semantics write cursor */
-	void *progobj;		/* host-authored program object (first-op) */
-	dma_addr_t progobj_iova;
-	size_t progobj_sz;
 };
 
 /* Each rtkit.c boot-handshake wait (EPMAP, IOP power ack, AP power ack)
@@ -590,8 +587,6 @@ static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
 
 static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
 				    const void *cmd, size_t size);
-static void ane_rtclient_csne_first_op(struct ane_rtclient *ane);
-static bool csne_first_op;
 
 static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 {
@@ -642,102 +637,6 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 		}
 	}
 
-	if (csne_first_op)
-		ane_rtclient_csne_first_op(ane);
-}
-
-/* GATED [INFERENCE] first-operation chain. Wire fields are decode-
- * grounded (notebook item 23/23b/23c/23e); the sections' CONTENT
- * binding to a real .anec lands with Root's validated reference —
- * this chain proves frame transport and fw acceptance ordering. */
-static bool csne_first_op;
-module_param(csne_first_op, bool, 0444);
-MODULE_PARM_DESC(csne_first_op,
-		 "GATED [INFERENCE]: after PING/BUILDINFO, send LOAD_PROGRAM (genericSection only, host-authored program object), CREATE_PROCESS (header-only per selene default path) and INFERENCE_CALL (0 io buffers — wire-valid per the decoded loop bound). Default off");
-
-/* Host-authored program object: 0x5d0c8 validates magic 1 @+0,
- * count <= 0x10 @+4, entry count in [0x201,0x400] @+0x204 and bounds
- * recorded pointers into the 0x30-byte entry table @+0x208. Minimal
- * legal object = header + ANE_PROGOBJ_MIN_ENTRIES zeroed entries. */
-static int ane_rtclient_csne_progobj(struct ane_rtclient *ane)
-{
-	size_t sz = ane_progobj_size(ANE_PROGOBJ_MIN_ENTRIES);
-
-	ane->progobj = dma_alloc_coherent(ane->dev, sz, &ane->progobj_iova,
-					  GFP_KERNEL);
-	if (!ane->progobj)
-		return -ENOMEM;
-	ane->progobj_sz = sz;
-	ane_progobj_init(ane->progobj, ANE_PROGOBJ_MIN_ENTRIES);
-	dma_wmb();
-	return 0;
-}
-
-static void ane_rtclient_csne_first_op(struct ane_rtclient *ane)
-{
-	struct ane_csne_cmd_load_program *lp;
-	struct ane_csne_hdr hdr;
-	int slot, ret;
-
-	if (!ane->cmd_ep || !ane->csne_setup_done)
-		return;
-
-	ret = ane_rtclient_csne_progobj(ane);
-	if (ret) {
-		dev_err(ane->dev, "first-op: program object alloc %pe\n",
-			ERR_PTR(ret));
-		return;
-	}
-
-	lp = kzalloc(sizeof(*lp), GFP_KERNEL);
-	if (!lp)
-		return;
-	ane_csne_hdr_init(&lp->hdr, CSNE_CMD_LOAD_PROGRAM);
-	/* genericSection present with the program-object IOVA + key 0;
-	 * the other eight stay absent (flags bit0 clear) — every
-	 * decoded parser skips absent sections. */
-	ane_sec_record_init(&lp->sec[ANE_SEC_GENERIC], ane->progobj_iova, 0);
-	slot = ane_rtclient_csne_submit(ane, lp, sizeof(*lp));
-	kfree(lp);
-	if (slot < 0) {
-		dev_err(ane->dev, "first-op: LOAD_PROGRAM submit %pe\n",
-			ERR_PTR(slot));
-		return;
-	}
-
-	/* CREATE_PROCESS rides the generic processor's default path —
-	 * carried without field parsing (W4 receipt §2), header-only. */
-	ane_csne_hdr_init(&hdr, CSNE_CMD_CREATE_PROCESS);
-	slot = ane_rtclient_csne_submit(ane, &hdr, sizeof(hdr));
-	if (slot < 0) {
-		dev_err(ane->dev, "first-op: CREATE_PROCESS submit %pe\n",
-			ERR_PTR(slot));
-		return;
-	}
-
-	/* INFERENCE_CALL (0x404) shares the PROCEDURE_CALL frame shape
-	 * [INFERENCE]. Zero io buffers is wire-valid per the decoded
-	 * loop bound (0x524bc); the input-buffer binding lands with the
-	 * io_elem internals decode. */
-	{
-		struct ane_csne_cmd_procedure_call *ic;
-
-		ic = kzalloc(ane_csne_cmd_procedure_call_size(0),
-			     GFP_KERNEL);
-		if (!ic)
-			return;
-		ane_csne_hdr_init(&ic->hdr, CSNE_CMD_INFERENCE_CALL);
-		ic->program_id = 0;	/* single-program session [INFERENCE] */
-		ic->procedure_id = 0;	/* first procedure [INFERENCE] */
-		ic->field_18 = 8;	/* fw requires value in [8,15] */
-		ic->num_io_buffers = 0;
-		slot = ane_rtclient_csne_submit(ane, ic,
-						ane_csne_cmd_procedure_call_size(0));
-		kfree(ic);
-		dev_info(ane->dev,
-			 "first-op: INFERENCE_CALL submitted (slot %d) — response walk is capture-only; watch crashlog/syslog\n",
-			 slot);
-	}
 }
 
 /* ---- probe ---- */
