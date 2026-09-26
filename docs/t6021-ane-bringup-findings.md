@@ -999,13 +999,19 @@ Source: ane-linux-experiments d733cd1,
   either a recoveryOS SIP window with `ane-perfstate.d` on the M1 Max
   macOS side, or a physical USB serial for an m1n1 trace.
 - The cache sweep is now systematic (Jw16Levers5, ane-linux-experiments
-  0865be7, `receipts/2026-09-25-ane-tunables-static/`): the T8103 13.5
-  cache `__DATA` holds 179 tunable tables in a 16-byte-record
-  `{offset, clear, set, pad}` + zero-separator format. Five of m1n1's
-  eight ANE sequences are there (pmgr x2, dpe_sys x15, perf x4, dpe_soc
-  x3 copies), and the raw cache values differ from m1n1's normalized
-  published ones — the cache is the authoritative XNU data. m1n1's
-  ane_dart/ane_dapf ANE sequences are absent from the cache entirely.
+  0865be7; interpretation amended in 0af98f6,
+  `receipts/2026-09-25-ane-tunables-static/`): the T8103 13.5 cache
+  `__DATA` holds 179 tunable tables in a 16-byte-record
+  `{offset, clear, set, pad}` + zero-separator format, and they belong to
+  `com.apple.ApplePMGR` (kmod_info at the region head), not the ANE kext.
+  Five of m1n1's eight ANE sequences are present (pmgr x2, dpe_sys x15,
+  perf x4, dpe_soc x3 copies); m1n1's ane_dart/ane_dapf ANE sequences are
+  absent entirely. Value semantics, corrected: the perf and DPE set
+  values in the cache are zero runtime-fill templates (perf 45/45,
+  dpe_sys 16/16, dpe_soc 96/96 zero) — m1n1's nonzero published values
+  are runtime captures of one machine's state, origin unexplained, not
+  normalizations of static data. Only the ane_pmgr sequences carry
+  static set values, with copy-to-copy variance.
 - Consequence for T6001 and T6021: neither chip shows any ANE tunable
   table in any segment (T6001 22G74 stub + 25G83 base; T6021 13.5 +
   27.0). That is consistent with m1n1's T8103-only ANE coverage and the
