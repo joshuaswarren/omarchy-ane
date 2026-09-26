@@ -1417,12 +1417,12 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	/* Power: the DT power-domain list. The core pre-probe attach owns
-	 * index 0 only; the extras are attached above, each held
-	 * RPM-ACTIVE for the link's lifetime. On this box the always-on
-	 * islands report off at boot and resume_and_get hangs the bind
-	 * writer; when the islands already read on, fw_start_skip_genpd
-	 * skips both the attach and the resume so nothing is raised. */
+	/* Power: the DT power-domain list. For multi-domain nodes the
+	 * core attaches nothing (genpd_dev_pm_attach returns 0 without
+	 * attaching), so attach_genpd raises every domain by id. On this
+	 * box the always-on islands report off at boot and resume_and_get
+	 * hangs the bind writer; when the islands already read on,
+	 * fw_start_skip_genpd=1 skips the attach so nothing is raised. */
 	if (!fw_start_skip_genpd) {
 		ret = ane_rtclient_attach_genpd(ane);
 		if (ret)
