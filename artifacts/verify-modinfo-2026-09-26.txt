@@ -1,0 +1,34 @@
+== ane_t6021.ko
+059fadaa8f1ad497e746f1b3c5f7447502b941b57b95630ed27cf6e59d6d4ca5  ane_t6021.ko
+version=0eaf1dd
+srcversion=69B7687F1198743A29706E4
+vermagic=7.1.13-3-1-ARCH SMP preempt mod_unload aarch64
+== ane_t6021_rtclient.ko
+5de1416ad0cdf8e3a2fd79d884055afe970ba9e3a55ba7793f83ed97dba8f500  ane_t6021_rtclient.ko
+vermagic=7.1.13-3-1-ARCH SMP preempt mod_unload aarch64
+== parm list rtclient ==
+parm=poll_rx:Drive RX by apple_rtkit_poll from a workqueue even though a recv IRQ exists (fallback if raw 0x374 is not the recv line)
+parm=fw_start_dapf:fw_start=1: before CPU release, program the dart-ane0 DAPF (PA 0x285804000, ADT reg[3] DAPFLLT) with the five J414c ADT dapf-instance-0 windows, as XNU does, logging before/after reads. Default 0 (off).
+parm=fw_start_wrapper_b80_unmask:fw_start=1: write 0xffffffff to KIC interrupt registers engine+0x1400b80..b94 and +0x1400bfc before CPU release, logging before/after reads. Default 0 (off).
+parm=fw_start_core1_run:fw_start=1: write 0x10 (RUN) to secondary core control engine+0x1400444 before CPU release, logging before/after reads. Default 0 (off).
+parm=fw_start_dart_single_stream:fw_start=1: configure all three ANE DARTs to macOS working-state single-stream form (stream 0 only via DISABLE_STREAMS 0xc20, dart0 PROTECT 0x6) before CPU release, logging before/after reads. Default 0 (off).
+parm=fw_start_mbox_ctrl_bit19:fw_start=1: write 0x000a0001 (macOS working-state value, bit 19 set) to A2I_CTRL (0x1408110) and I2A_CTRL (0x1408114) before CPU release, logging before/after reads. Default 0 (off).
+parm=patch_timer_freq:fw_start=1: before CPU release, write this to patchbay armv8_timer_frequency at PA 0x10001406880. 0 = off. Refuses unless islands read ACTUAL=0xf, fw_alias_reserved=1, and the 36 bytes at PA 0x10001406870 match (value 0, next tag LRSD).
+parm=fw_start_mpm_off:fw_start=1: before the boot sequence's first engine write, power ane_sys_mpm@4000 down to TARGET 0 (the macOS working state) and refuse the sequence unless ane_sys/ane_cpu read the macOS AUTO_ENABLE on-form and td/base/set1-4 read ACTUAL 0xf. 0 keeps the boot-raised ane_sys_mpm on, to bisect.
+parm=fw_start_venc_gates:Raise the VENC rails the ANE clock-ids need (VENC_SYS 0x2902803e0, then PIPE4/PIPE5/ME0 at 0x290288008/10/18), kext order, parents first. The ANE complex sits behind VENC rails on T6021; Linux claims none of them. Disable only to bisect.
+parm=fw_start_rtb_mode:fw-start-debug: S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-endpoint select) instead of 1 (legacy). In RTBuddy mode listen for HELLO, do not gate on READY.
+parm=fw_start_table_mode:pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)
+parm=fw_start_state_report:fw-start-debug: stage firmware + alias, dump ASC state (reads only), then clean unwind 
+parm=fw_start_skip_genpd:fw-start-debug: skip pm_runtime_resume_and_get in probe and run the static sequence directly. Use only when the islands already read on (recorded 'available' devlinks); the wedged-bind evidence shows the raise hangs the writer on this box.
+parm=fw_start_stop_after:fw-start-debug bisect: 0 = full sequence; 1..4 = stop after that step (-ECANCELED). Steps: 1 tunables, 2 scratch, 3 rvbar, 4 RUN+pollA
+parm=fw_start:OPT-IN: fenced Linux-context firmware start 
+parm=csne_ping:GATED [INFERENCE]: after the handshake, announce a 64 KiB host ring on the command endpoint with the fw buffer word, then send CSNE_CMD_PING (0x11) and BUILDINFO (0x06) as offset|len words. Default off
+parm=scratch3_ack:fw_start=1 only: after DONE, write the host ack SCRATCH3 = 0x08042006 the fw spins on before starting RTKit (selene 0x7edc; kext 0x95eaee4). Default on; 0 withholds it to bisect
+parm=start_app_eps:After the handshake, STARTEP every fw-announced app endpoint (>= 0x20; fw mgmt type 5, flag bit 1). Default on
+parm=hello_wait_ms:Upper bound for the RTKit boot handshake (HELLO/EPMAP/power acks), retried in 1 s rtkit.c waits (default 10000)
+parm=fw_load_stamp_base:fw-start-debug: stamp the RAM copy's x22 (vm 0x423C) to this PA base (e.g. 0x10000000000); 0 = off
+parm=fw_alias_reserved:map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it, instead of the staged DMA copy
+parm=fw_diag_marker:LAB ONLY: patch validated RAM copy with execution marker; requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.
+parm=fw_load:OPT-IN: validate + DART-map the selene PRELOAD payload (W13/W14). No boot action; publication datum unevidenced.
+parm=fw_iova:READ-ONLY: staged selene surface DVA (populated by fw_load=1)
+parm=fw_boot:OPT-IN: boot state resolution + report (W15). Dispatches to boot_start when fw_boot=1 (MMIO writes fire); reports state without MMIO when fw_boot=1 is not set.
