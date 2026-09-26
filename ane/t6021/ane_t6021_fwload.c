@@ -184,11 +184,25 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 * hex digit off, mapping DATA at 16 TiB instead: every
 		 * fw_alias_reserved boot since 2026-09-24 left the fw
 		 * DATA section unmapped past the SEG0 head. */
-		static const struct { u64 iova, phys, len; } win[] = {
+		static struct { u64 iova, phys, len; } win[] = {
 			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
-			{ 0x100000c4000ull, 0x10001400000ull, 0x438000ull },
+			{ 0,                0x10001400000ull, 0x438000ull },
 		};
 		unsigned int w;
+
+		/* The remap is contiguous: SEG1 base = SEG0 base + SEG0
+		 * len (segment-ranges order). Derived, never hand-written
+		 * — the standalone literal 0x1000000c4000 that shipped in
+		 * e6612e9 was one digit off and mapped DATA at 16 TiB.
+		 * The remap base must also equal the latched entry, or
+		 * the fetch head is not where we mapped. */
+		win[1].iova = win[0].iova + win[0].len;
+		if (win[0].iova != entry) {
+			dev_err(ane->dev,
+				"fwalias: remap base %#llx != latched entry %#llx\n",
+				win[0].iova, entry);
+			return -EINVAL;
+		}
 
 		for (w = 0; w < 2; w++) {
 			u64 o;
