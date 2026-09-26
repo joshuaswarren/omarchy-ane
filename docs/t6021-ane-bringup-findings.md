@@ -1041,6 +1041,23 @@ Source: ane-linux-experiments a3641215,
   3:0). With the RegMap-to-PA map resolved, the Linux driver write set is
   fully determined (a scaffold exists; it needs a scoped PMGR-map
   extension, since the targets are PMGR-mapped).
+- The DVFS pair is PMP-served (PmpDvfsResearch, d54d714b,
+  `receipts/2026-09-25-pmp-dvfs-map113/`): PA 0x400004000 sits in
+  /arm-io/pmp's PIO ranges — an iop,ascwrap-v4 coprocessor (ASC
+  0x28ec00000, SRAM 0x28e700000) whose iop-pmp-nub ADT `dvfs-domain`
+  table manages DCS, FAB, AFR, SOC0, SOC0_ANE_SYS, SOC0_AVD, DISP and
+  AVEMSR, with pmgr flagging ANE_SYS notify_pmp=1. DVFS_CMD and DVFS_ON
+  act only while the PMP firmware runs: macOS boots ApplePMPFirmware
+  (RTBuddy role PMP); Asahi leaves the pmp node disabled, so under Linux
+  the window is dead (reads 0, writes no-op). The 22G74 side is decoded
+  too: its BIT(29) ORR is a value flag on a 10-entry PS-reg table and
+  never touches map113, and 22G74 setPerfState accepts 1-5/13 — domain 8
+  is 25G83-only. T8103 has no PMP and no such window; T6021 has the same
+  PMP subsystem but no 0x400004000 window (its nub table shows AFR at 6
+  levels; the ladder is not located). Linux route, receipt section 7:
+  probe the parked-PMP-firmware question, enable the pmp node with
+  CONFIG_APPLE_PMP and the ADT tunable payloads, then replay the
+  captured token stream idle-safe.
 - The T6001 ANE tunable-table lead is closed: not statically present in
   any obtainable container (26.6.2 KernelCollections are x86 stubs; the
   boot payload is transient) — 0865be7/0af98f6.
