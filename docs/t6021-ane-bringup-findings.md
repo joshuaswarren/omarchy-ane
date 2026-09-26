@@ -1042,8 +1042,12 @@ Source: ane-linux-experiments a3641215,
   fully determined (a scaffold exists; it needs a scoped PMGR-map
   extension, since the targets are PMGR-mapped).
 - The DVFS pair is PMP-served (PmpDvfsResearch, d54d714b,
-  `receipts/2026-09-25-pmp-dvfs-map113/`): PA 0x400004000 sits in
-  /arm-io/pmp's PIO ranges — an iop,ascwrap-v4 coprocessor (ASC
+  `receipts/2026-09-25-pmp-dvfs-map113/`): PA 0x400004000 is the pmgr
+  reg[113] window (raw ADT 0x200004000 pre-bridge) in the die-IO band —
+  not inside any T6001 PMP PIO range (those are 0x282000000 /
+  0x304000000 / 0x383000000 / 0x402000000; it is the T6021 PMP whose PIO
+  range covers 0x400000000). The tie to the PMP is functional:
+  /arm-io/pmp is an iop,ascwrap-v4 coprocessor (ASC
   0x28ec00000, SRAM 0x28e700000) whose iop-pmp-nub ADT `dvfs-domain`
   table manages DCS, FAB, AFR, SOC0, SOC0_ANE_SYS, SOC0_AVD, DISP and
   AVEMSR, with pmgr flagging ANE_SYS notify_pmp=1. DVFS_CMD and DVFS_ON
