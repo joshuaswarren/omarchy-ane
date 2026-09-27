@@ -1,7 +1,11 @@
 import struct
-"""Predict the staged-buffer boot-PT window (fw_buf 0xe0000..0xe8000) for the
-cold mode-1 staged vehicle: slide 1 TiB, TEXT mirror + DATA fills. Compare
-against the live FW-PT readback; first divergent descriptor = abort page."""
+"""Predict the staged-buffer boot-PT window (fw_buf 0xe0000..0xe8000).
+
+CANDIDATE MODEL — NOT validated (Main 2026-09-27): observed nonzero = 321 =
+2 table descriptors + 319 DATA leaves (16K stride, absolute end 0x4fafd8,
+ceil) per Main's exact disassembly; this script's mirror-count attribution
+disagrees and is kept only as a candidate. Do not cite as proven.
+"""
 SLIDE = 0x10000000000
 TEXT_IOVA = SLIDE
 DATA_IOVA = SLIDE + 0xc4000
