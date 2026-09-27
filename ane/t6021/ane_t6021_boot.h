@@ -408,6 +408,14 @@ ane_t6021_boot_prepare_publish(const struct ane_t6021_init_sources *s,
 #define ANE_T6021_BOOT_REG_SCRATCH1	0x0184004c
 #define ANE_T6021_BOOT_REG_SCRATCH6	0x01840060
 #define ANE_T6021_BOOT_REG_SCRATCH7	0x01840064
+/* 13.5 stub execution-progress observables (M2StartupRecovery 2026-09-26
+ * decode of a9c4b771294a6b11…; VM 0x30c writes VM[0x828] to VM[0x820]
+ * unconditionally on the cold path, before the boot PT build and MMU
+ * enable; VM 0x1160008 is the 24 MHz domain tick proven readable in the
+ * 2026-09-25 handshake receipt). */
+#define ANE_T6021_BOOT_REG_BOOTCFG	0x01140008
+#define ANE_T6021_BOOT_BOOTCFG_COLD	0x5000fbfc00000000ULL
+#define ANE_T6021_BOOT_REG_TICK		0x01160008
 #define ANE_T6021_BOOT_TABLE_VALUE	0x01ff01ffU
 #define ANE_T6021_BOOT_TABLE_POLLS	1000
 

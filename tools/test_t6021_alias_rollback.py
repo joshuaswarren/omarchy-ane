@@ -17,6 +17,7 @@ prefix = r'''
 #include <stdio.h>
 #include <errno.h>
 typedef uint64_t u64;
+typedef uint32_t u32;
 typedef uint64_t phys_addr_t;
 #define __iomem
 #define ANE_T6021_REG_ENGINE 0
@@ -32,7 +33,9 @@ typedef uint64_t phys_addr_t;
 #define SOURCE 0x100000ULL
 #define PAGE ANE_T6021_FW_ALIAS_PAGE
 struct iommu_domain { struct { u64 aperture_end; } geometry; } domain = {{~0ULL}};
-struct ane_t6021 { void *dev; void *base[1]; u64 fw_iova, fw_size, fw_alias_iova; };
+struct ane_t6021 { void *dev; void *base[1]; u32 fw_size; u64 fw_iova, fw_alias_iova;
+    u64 fw_alias_ext_iova[2]; size_t fw_alias_ext_len[2]; int fw_alias_extn; };
+static bool fw_alias_reserved;
 static bool pages[3];
 static int map_failure, verify_failure, mapped;
 static u64 unmapped;

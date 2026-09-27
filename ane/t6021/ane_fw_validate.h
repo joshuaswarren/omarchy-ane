@@ -1,15 +1,22 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * ane_fw_validate.h — selene PRELOAD payload validator, W13.
+ * ane_fw_validate.h — selene PRELOAD payload validator.
  *
  * Single source of truth shared by the kernel loader
  * (ane_t6021_fwload.c) and the offline regression
  * (h14_fwload_regression.c, userspace — shipped in
  * ane-linux-experiments/tools/). Strict EXACT-image
- * assertions (no generic Mach-O parsing): the pinned t6021 selene
- * payload has exactly 7 load commands, 3 segments, entry 0, and zeroed
- * bootstrap page tables, per
- * receipts/2026-09-19-h14-w13-boot-contract.md.
+ * assertions (no generic Mach-O parsing).
+ *
+ * Re-pinned 2026-09-26 (M2StartupRecovery) to the ACTUAL iBoot-preloaded
+ * image: macOS 13.5 (22G74) selene, SHA-256
+ * a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc —
+ * byte-verified live at SEG0 by root's preloaded-firmware capture
+ * (notebook 20260926T230146Z). The former pins (9f7915c4…, 0x1a4000,
+ * 7 commands, 3 segments, TEXT 0xe8000/DATA 0xe8000) belonged to the
+ * other-generation payload; the loader validated those bytes while the
+ * reserved-alias boot executed 13.5. Exact image: 5 load commands
+ * (2 segments + LC_SYMTAB + LC_UUID + LC_UNIXTHREAD), entry 0.
  *
  * Userspace consumers typedef u8/u32/u64/size_t/bool and provide
  * get_unaligned_le32/64 + memcmp (see that tool's source);
@@ -19,10 +26,11 @@
 #ifndef __ANE_FW_VALIDATE_H__
 #define __ANE_FW_VALIDATE_H__
 
-#define ANE_FW_BLOB_SIZE	0x1a4000
+#define ANE_FW_BLOB_SIZE	0x4c5b28
 /* FWIM surface size = config+0x138 byte-count = 0x500000 (Main
- * 2026-09-20, audit 751caa4). Covers the image vmsize 0x36c000 plus
- * the config-mandated tail; NOT derivable from the blob length. */
+ * 2026-09-20, audit 751caa4). Covers the image vmsize 0x4fc000
+ * (TEXT 0xc4000 + DATA 0x438000) plus the config-mandated tail; NOT
+ * derivable from the blob length. */
 #define ANE_FW_BUF_SIZE		0x500000
 #define ANE_FW_ENTRY_PC		0x0
 
@@ -33,10 +41,10 @@
 #define LC_UNIXTHREAD	0x5
 #define ARM_THREAD_STATE64 6
 
-#define ANE_FW_NCMDS		7
-#define ANE_FW_SIZEOF_CMDS	0xae8
-#define ANE_FW_FLAGS		0x200001
-#define ANE_FW_NSEGS		3
+#define ANE_FW_NCMDS		5
+#define ANE_FW_SIZEOF_CMDS	0x960
+#define ANE_FW_FLAGS		0x1
+#define ANE_FW_NSEGS		2
 
 struct ane_fw_seg {
 	u64 vmaddr;
@@ -46,11 +54,12 @@ struct ane_fw_seg {
 	char name[17];		/* 16 + NUL */
 };
 
-/* exact pinned layout (W13 parse of payload 9f7915c431d288a2…) */
+/* exact pinned layout (13.5 22G74 parse of payload a9c4b771294a6b11…;
+ * root preload capture 20260926T230146 byte-verified the entry head,
+ * power-config words and firmware identity at the reserved windows) */
 static const struct ane_fw_seg ane_fw_expected_segs[ANE_FW_NSEGS] = {
-	{ 0x000000, 0x0e8000, 0x004000, 0x0e8000, "__TEXT" },
-	{ 0x0e8000, 0x284000, 0x0ec000, 0x0b8000, "__DATA" },
-	{ 0x36c000, 0x000000, 0x1a4000, 0x000000, "__DATA_CONST" },
+	{ 0x000000, 0x0c4000, 0x004000, 0x0c4000, "__TEXT" },
+	{ 0x0c4000, 0x438000, 0x0c8000, 0x3e8000, "__DATA" },
 };
 
 /* Validate a candidate payload.  Returns 0 on pass, else -1 with
@@ -68,7 +77,7 @@ ane_fw_validate_blob(const u8 *blob, size_t size,
 	u64 entry = (u64)~0ULL;
 
 	if (size != ANE_FW_BLOB_SIZE) {
-		*reason = "size != 0x1a4000";
+		*reason = "size != ANE_FW_BLOB_SIZE";
 		return -1;
 	}
 	if (memcmp(expected_sha, actual_sha, 32) != 0) {
@@ -182,7 +191,7 @@ ane_fw_validate_blob(const u8 *blob, size_t size,
 	}
 
 	if (nsegs != ANE_FW_NSEGS) {
-		*reason = "segment count != 3";
+		*reason = "segment count != 2";
 		return -1;
 	}
 	if (entry != ANE_FW_ENTRY_PC) {

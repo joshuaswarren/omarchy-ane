@@ -86,9 +86,16 @@ MODULE_PARM_DESC(fw_diag_marker,
                  "requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.");
 
 /* fw-start-debug B7: if nonzero, patch the staged RAM copy's x22 stamp
- * (vm 0x423C) to this PA base so the fw's own MMU maps VM i ->
- * base+i, composing with the DART entry alias at 0x10000000000.
- * 0 = off (default; sha-pinned byte-exact copy). */
+ * (vm 0x423C) to this DATA base. 13.5 decode (M2StartupRecovery
+ * 2026-09-26): the stub reads this pointer (helper 0x6fc over 8 bytes
+ * at vm 0x423C); nonzero selects it as the DATA base (x22) and derives
+ * the slide x25 = x22 - 0xc4000, boot PTs at slide+0xe0000..0xe8000 and
+ * DATA accesses at x22+offset — i.e. it must equal the DART alias DATA
+ * IOVA. Zero (the archive value) selects the fallback x22 = TEXT_base +
+ * 0xc4000, which equals 0x100000c4000 exactly when the staged copy is
+ * aliased at the latched entry 0x10000000000 — the default is correct
+ * for that vehicle without a stamp. 0 = off (default; sha-pinned
+ * byte-exact copy after this optional patch is hash-logged). */
 static u64 fw_load_stamp_base;
 module_param(fw_load_stamp_base, ullong, 0444);
 /* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
@@ -312,11 +319,18 @@ err_unmap:
 	return ret;
 }
 
+/* ACTUAL iBoot-preloaded payload: macOS 13.5 (22G74) selene — root
+ * preload capture 20260926T230146 byte-verified the reserved windows
+ * against this exact archive (SHA-256
+ * a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc).
+ * The previous pin (9f7915c4…) was the other-generation blob: the
+ * loader validated its bytes while the reserved-alias boot executed
+ * 13.5. */
 static const u8 ane_fw_sha256_expected[32] = {
-	0x9f, 0x79, 0x15, 0xc4, 0x31, 0xd2, 0x88, 0xa2,
-	0xbd, 0xc2, 0x13, 0x2c, 0x39, 0x9d, 0xb8, 0xcf,
-	0x55, 0x74, 0x71, 0x6a, 0x3b, 0x1e, 0x94, 0xaf,
-	0x76, 0xbe, 0x6a, 0x29, 0x1c, 0x2e, 0x66, 0x5b,
+	0xa9, 0xc4, 0xb7, 0x71, 0x29, 0x4a, 0x6b, 0x11,
+	0x56, 0x24, 0xd9, 0x48, 0x0a, 0x62, 0x48, 0xd0,
+	0x89, 0x9a, 0x16, 0x81, 0xa5, 0x75, 0xe8, 0x65,
+	0x07, 0x0b, 0x87, 0xa3, 0x24, 0x84, 0x27, 0xbc,
 };
 
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
