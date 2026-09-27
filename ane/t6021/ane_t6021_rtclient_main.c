@@ -979,9 +979,11 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 				first = value;
 			if (i == 1)
 				second = value;
-			if (value && ++nz <= 8)
+			if (value) {
+				nz++;
 				dev_emerg(a->dev, "RESERVED-PT %s +%#x=%016llx\n",
 					  tag, i * 8, value);
+			}
 		}
 		iounmap(window);
 		dev_emerg(a->dev,
