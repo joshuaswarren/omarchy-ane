@@ -121,12 +121,11 @@
  *   - SCRATCH eng+0x1840048..0x1840064: phase-1 S2 whitelist
  *     (all-zero pre-attach), W5 pre-read log clean, first_resume
  *     re-reads all eight on every load.
- *   - BOOTCFG eng+0x1140008 (PROGRESS dump only): the 13.5 stub's own
- *     config-store target (VM 0x30c write), read once after CPU
- *     release under the passed eight-island gate; never polled.
  *   - TICK eng+0x1160008 (PROGRESS dump only): 24 MHz domain tick,
  *     proven readable post-release (2026-09-25 handshake receipt);
- *     two reads 20 ms apart for a delta.
+ *     two reads 20 ms apart for a delta. engine+0x1140008 is
+ *     deliberately NOT read (readability/width/reset semantics
+ *     unproven, no pre-release baseline — Main review 2026-09-26).
  */
 
 #include <linux/device.h>
@@ -433,31 +432,24 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 int ane_t6021_rtb_mode;
 EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
 
-/* Poll-A-timeout execution-progress observables — 13.5 22G74 decode
- * (M2StartupRecovery 2026-09-26, artifacts/Main/selene135-startup.py).
+/* Poll-A-timeout progress dump — PROVEN-readable observables ONLY
+ * (Main review 2026-09-26): all eight SCRATCH cells (pulse-cleared to 0
+ * pre-release, so any nonzero word with SCRATCH7 != READY/WAKE is a
+ * candidate firmware store), RVBAR, CPU_STATUS, and the 24 MHz domain
+ * tick at engine+0x1160008 (watched advancing post-release in the
+ * 2026-09-25 handshake receipt; a static tick separates "ASC domain
+ * unclocked" from "clocked but silent").
  *
- * The cold stub (SCRATCH7 == 0 at VM 0x2d0) writes VM[0x828]
- * (0x5000fbfc00000000) to VM[0x820] (engine+0x1140008) at PC 0x30c,
- * BEFORE the boot-page-table build at slide+0xe0000..0xe8000 and before
- * MMU-on. SCRATCH7 still 0 with this register holding the constant
- * places the ASC between stub 0x30c and the READY write at 0x63a4; any
- * other value says the CPU never reached stub 0x30c. Every 13.5 WFI
- * (0x71bc idle park, 0x64038/0x644a0/0x644ac/0x652d0 — all inside
- * RealChannelCreateTarget AFTER the READY write) is at or after READY,
- * so pre-READY silence is NOT a parked wait on 13.5; the 27-era
- * "firmware parks pre-READY in a timer WFI" model does not exist here.
- *
- * Read class: engine-window reads, gated on the passed eight-island
- * power gate, after CPU release only. The 24 MHz tick at
- * engine+0x1160008 is the proven aliveness observable (2026-09-25
- * handshake receipt); 0x1140008 is the firmware's own config-store
- * target, read once — never polled (pop-on-read registers such as
- * +0x1400818 must not be dumped; this is a different offset, one
- * shot). */
+ * Deliberately NOT read: engine+0x1140008 (the 13.5 stub's VM 0x30c
+ * store target). Its readability, width and reset value are unproven
+ * and no pre-release baseline exists, so an after-value would not
+ * locate PC (could be preexisting iBoot state, write-only, or
+ * normalized). The proven pre-READY discriminator remains the staged
+ * execution marker (S7 = 0x4d325431, fw_diag_marker), not a register
+ * probe. */
 static void ane_t6021_boot_progress_dump(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-	u64 bootcfg = readq(eng + ANE_T6021_BOOT_REG_BOOTCFG);
 	u32 tick0 = readl(eng + ANE_T6021_BOOT_REG_TICK);
 	u32 tick1;
 	unsigned int i;
@@ -468,14 +460,6 @@ static void ane_t6021_boot_progress_dump(struct ane_t6021 *ane)
 	for (i = 0; i < 8; i++)
 		dev_emerg(ane->dev, "PROGRESS SCRATCH%u=%08x\n", i,
 			  readl(eng + ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i));
-	dev_emerg(ane->dev,
-		  "PROGRESS bootcfg=%016llx %s VM0x30c (stub-to-READY %s)\n",
-		  bootcfg,
-		  bootcfg == ANE_T6021_BOOT_BOOTCFG_COLD ?
-			  "MATCHES" : "differs-from",
-		  bootcfg == ANE_T6021_BOOT_BOOTCFG_COLD ?
-			  "ASC progressed past stub 0x30c; died PT-build..READY" :
-			  "ASC died or never fetched before stub 0x30c");
 	dev_emerg(ane->dev,
 		  "PROGRESS rvbar=%016llx cpu_status=%08x tick %08x->%08x (%s)\n",
 		  readq(eng + ANE_ASC_RVBAR),

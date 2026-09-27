@@ -409,12 +409,13 @@ ane_t6021_boot_prepare_publish(const struct ane_t6021_init_sources *s,
 #define ANE_T6021_BOOT_REG_SCRATCH6	0x01840060
 #define ANE_T6021_BOOT_REG_SCRATCH7	0x01840064
 /* 13.5 stub execution-progress observables (M2StartupRecovery 2026-09-26
- * decode of a9c4b771294a6b11…; VM 0x30c writes VM[0x828] to VM[0x820]
- * unconditionally on the cold path, before the boot PT build and MMU
- * enable; VM 0x1160008 is the 24 MHz domain tick proven readable in the
- * 2026-09-25 handshake receipt). */
-#define ANE_T6021_BOOT_REG_BOOTCFG	0x01140008
-#define ANE_T6021_BOOT_BOOTCFG_COLD	0x5000fbfc00000000ULL
+ * decode of a9c4b771294a6b11…). Only PROVEN-readable engine-window
+ * registers: the 24 MHz domain tick at VM 0x1160008 (watched advancing
+ * ~24 MHz post-release, 2026-09-25 handshake receipt) plus SCRATCH,
+ * RVBAR and CPU_STATUS already on the whitelist. The stub's VM 0x30c
+ * store to engine+0x1140008 is real, but the register's readability,
+ * width and reset state are UNPROVEN and no pre-release baseline exists
+ * — it is deliberately NOT read here (Main review 2026-09-26). */
 #define ANE_T6021_BOOT_REG_TICK		0x01160008
 #define ANE_T6021_BOOT_TABLE_VALUE	0x01ff01ffU
 #define ANE_T6021_BOOT_TABLE_POLLS	1000
