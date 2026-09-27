@@ -983,7 +983,7 @@ static void ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 		if (pt[i])
 			nz++;
 	dev_emerg(a->dev,
-		  "BUFAUDIT %s vm0=%08x patch=%*phN pthead=%016llx pt_nonzero=%u/2048\n",
+		  "BUFAUDIT %s vm0=%08x patch=%*phN pthead=%016llx pt_nonzero=%u/4096\n",
 		  tag, vm0, 32, a->fw_buf + 0x204, pt[0], nz);
 }
 
