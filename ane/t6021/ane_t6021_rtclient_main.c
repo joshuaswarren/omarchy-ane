@@ -1200,33 +1200,18 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		  cpu_status);
 	ane_rtclient_log_wrapper(ane, "post-release");
 
-	/* Bounded marker report (Main 2026-09-26): one fresh SCRATCH7
-	 * read (whitelisted register) decides the marker outcome. */
-	if (ane_t6021_fw_diag_requested()) {
-		u32 s7 = readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7);
-
-		if (s7 == ANE_T6021_DIAG_MARKER_WORD)
-			dev_emerg(dev,
-				  "MARKER-RESULT SCRATCH7=%08x: ASC fetched the staged alias, executed VM 0x204 and wrote SCRATCH7 — fetch+execute+scratch-write proven under this vehicle; the pre-READY death is in firmware init\n",
-				  s7);
-		else
-			dev_emerg(dev,
-				  "MARKER-RESULT SCRATCH7=%08x (marker %08x ABSENT): ASC did not reach the staged-copy marker under this vehicle\n",
-				  s7, ANE_T6021_DIAG_MARKER_WORD);
-	}
-
-	/* 13.5 boot-page-table readback (M2StartupRecovery decode): the
-	 * cold stub builds its tables at slide+0xe0000..0xe8000 with
-	 * slide = 1 TiB when the staged copy is aliased at the latched
-	 * entry, i.e. staged-buffer offset 0xe0000 (the former 0x104000
-	 * region belonged to the other-generation image). Meaningful
-	 * ONLY when the staged copy executes; not in marker mode (the
-	 * marker self-loops before any PT build) and not under the
-	 * reserved alias (the staged copy is not what executes).
-	 * Host-side read of the coherent staging buffer — no extra
+	/* Boot-PT / marker readback (13.5 boot-PT window at staged offset
+	 * 0xe0000; M2StartupRecovery decode). Meaningful only when the
+	 * staged copy is what executes (fw_alias_reserved=0):
+	 *  - normal run: nonzero descriptors after a timeout mean the fw
+	 *    reached the bootstrap PT construction;
+	 *  - marker mode (fw_diag_marker=1): the FIRST qword is the marker
+	 *    store (0x000000004d325431) — the execution proof itself;
+	 *    remaining entries staying zero is EXPECTED (the marker
+	 *    self-loops before any PT build).
+	 * Host-side read of the owned coherent staging buffer — no extra
 	 * hardware access. */
-	if (a->fw_buf && !ane_t6021_fw_alias_is_reserved() &&
-	    !ane_t6021_fw_diag_requested()) {
+	if (a->fw_buf && !ane_t6021_fw_alias_is_reserved()) {
 		const u64 *tt = a->fw_buf + 0xe0000;
 		unsigned int n, nonzero = 0, count = 0x8000 / 8;
 
@@ -1236,6 +1221,13 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		dev_emerg(dev,
 			  "FW-PT region 0xe0000: first=%016llx second=%016llx nonzero=%u/%u\n",
 			  tt[0], tt[1], nonzero, count);
+		if (ane_t6021_fw_diag_requested())
+			dev_emerg(dev,
+				  "MARKER-BUFFER first qword = %016llx (marker word %08x at offset 0)%s\n",
+				  tt[0], ANE_T6021_DIAG_MARKER_WORD,
+				  tt[0] == 0x4d325431 ?
+				  " — MARKER PRESENT: ASC fetched and executed" :
+				  " — MARKER ABSENT");
 	}
 
 	if (fw_start_stop_after) {

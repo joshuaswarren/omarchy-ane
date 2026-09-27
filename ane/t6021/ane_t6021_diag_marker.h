@@ -3,10 +3,35 @@
 #define ANE_T6021_DIAG_MARKER_H
 
 /* Laboratory execution marker, NOT firmware READY or functional ANE.
- * GNU-assembled/byte-verified source: ane-linux-experiments receipt
- * 2026-09-21-m2-reset-marker-offline (2caa6a9), marker.S.
- * At VM 0x204: x0=0x285840064; w1=0x4d325431; str w1,[x0];
- * dsb sy; self-loop. Only the validated coherent copy may be patched.
+ *
+ * REPLACED 2026-09-27 (Main directive, M2StartupRecovery): the previous
+ * marker stored to the SCRATCH7 MMIO register (0x285840064) pre-MMU — a
+ * missing value there could not distinguish "no fetch" from "the MMIO
+ * access itself faulted". The marker now stores 0x4d325431 into the OWNED
+ * staged DMA buffer at offset 0xe0000 (the boot-PT window head, documented
+ * unused at bootstrap time), then DSB and self-loop — no MMIO access at
+ * all. The reader is the existing FW-PT readback (host-side coherent read
+ * of fw_buf 0xe0000); the staged-buffer word at offset 0xe0000 IS the
+ * marker result.
+ *
+ * Position independent: adr x0, #0 captures the runtime load base
+ * (pre-MMU PC-relative, any load base), then +0xe0000 selects the staged
+ * offset through the entry alias mapping (entry+0xe0000 -> staged page
+ * 0xe0000). Byte-verified with Capstone against the 13.5 image.
+ *
+ * At VM 0x204 (replacing the first 8 stub instructions; eret at 0x228 is
+ * never reached):
+ *   adr  x0, #0                 ; x0 = runtime VM 0 (load base)
+ *   add  x0, x0, #0xe0, lsl #12 ; x0 = staged offset 0xe0000
+ *   movz w1, #0x5431
+ *   movk w1, #0x4d32, lsl #16   ; w1 = 0x4d325431 ("M2T1")
+ *   str  w1, [x0]               ; record in OWNED staged RAM
+ *   dsb  sy
+ *   b    .                      ; self-loop
+ *   nop
+ * Only the validated coherent copy may be patched. Historical MMIO-marker
+ * receipts (2026-09-21-m2-reset-marker-offline 2caa6a9) are preserved; the
+ * SCRATCH7 MMIO write is retired as the marker vehicle.
  */
 static inline bool ane_t6021_diag_options_ok(bool diag, bool load,
                                             bool boot, bool transport)
@@ -14,20 +39,21 @@ static inline bool ane_t6021_diag_options_ok(bool diag, bool load,
     return !diag || (load && !boot && !transport);
 }
 
-/* Value the marker stores to SCRATCH7 (engine+0x1840064 = 0x285840064):
+/* Marker word stored into the OWNED staged buffer (offset 0xe0000):
  * "M2T1" little-endian. NOT firmware READY 0x08042006. */
 #define ANE_T6021_DIAG_MARKER_WORD	0x4d325431u
-#define ANE_T6021_DIAG_MARKER_SCRATCH	0x285840064ull
+/* Staged-buffer offset the marker word lands at (boot-PT window head). */
+#define ANE_T6021_DIAG_MARKER_BUF_OFF	0x000e0000ull
 
 static inline void ane_t6021_diag_patch(void *image)
 {
     static const unsigned char marker[] = {
-        0x80,0x0c,0x80,0xd2,0x80,0xb0,0xb0,0xf2,
-        0x40,0x00,0xc0,0xf2,0x21,0x86,0x8a,0x52,
-        0x41,0xa6,0xa9,0x72,0x01,0x00,0x00,0xb9,
-        0x9f,0x3f,0x03,0xd5,0x00,0x00,0x00,0x14
+        0xe0,0xef,0xff,0x10, 0x00,0x80,0x43,0x91,
+        0x21,0x86,0x8a,0x52, 0x41,0xa6,0xa9,0x72,
+        0x01,0x00,0x00,0xb9, 0x9f,0x3f,0x03,0xd5,
+        0x00,0x00,0x00,0x14, 0x1f,0x20,0x03,0xd5
     };
     memcpy((unsigned char *)image + 0x204, marker, sizeof(marker));
 }
 
-#endif
+#endif /* ANE_T6021_DIAG_MARKER_H */

@@ -106,6 +106,31 @@ def main() -> int:
 
     print(f'{len(ranges)} patched ranges in DATA segment '
           f'(segment-relative; VM = offset + {DATA_VM_BASE:#x}):')
+    if len(sys.argv) > 4:
+        # KV-list walk: the patchbay is a [key 4ch][u32 len][value] record
+        # list; walk forward from an anchor record start (segment offset)
+        # and emit the complete contract a lawful patcher must provide.
+        o = int(sys.argv[4], 0)
+        print('KV list walk from segment', hex(o))
+        while o < len(live) - 8:
+            k = live[o:o+4][::-1].decode(errors='replace')
+            if not (k.isascii() and k.isalpha()):
+                print(f'  stop at 0x{o:06x}: non-alpha key {live[o:o+4].hex()}')
+                break
+            ln = struct.unpack_from('<I', live, o + 4)[0]
+            if ln > 64:
+                print(f'  stop at 0x{o:06x}: len {ln} > 64')
+                break
+            val = live[o+8:o+8+ln]
+            extra = ''
+            if ln == 4:
+                extra = f' u32={struct.unpack("<I", val)[0]:#x}'
+            elif ln == 8:
+                extra = f' u64={struct.unpack("<Q", val)[0]:#x}'
+            print(f'  seg 0x{o:06x} vm 0x{o + DATA_VM_BASE:06x} key "{k}" '
+                  f'len {ln}: {val.hex()}{extra}')
+            o += 8 + ln
+        return 0
     syms = symtab(archive)
     for off, length, arch, lv in sorted(ranges):
         vm = DATA_VM_BASE + off
