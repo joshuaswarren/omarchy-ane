@@ -957,6 +957,36 @@ static void ane_rtclient_log_wrapper(struct ane_rtclient *ane, const char *tag)
 }
 
 
+/* Owned-buffer audit (Main 2026-09-27): closes the stale-PT /
+ * pre-existing-buffer / overwritten-patch gaps by dumping the exact
+ * staged-buffer state the CPU will see (or just saw):
+ *   vm0    = first word of the image (entry branch, 0x14000081-class)
+ *   patch  = the 32 patched bytes at VM 0x204 (marker words when
+ *            fw_diag_marker=1, original stub bytes otherwise)
+ *   pthead = first qword of the boot-PT window (staged 0xe0000)
+ *   pt_nonzero = nonzero qwords in the 0xe0000..0xe8000 window
+ * PRE runs after the alias map, immediately before CPU start; POST runs
+ * after the bounded poll. Reads the OWNED coherent staged buffer only —
+ * no MMIO, no reserved-window access; not meaningful under
+ * fw_alias_reserved=1 (the staged copy is not the fetch target there). */
+static void ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
+{
+	const u64 *pt;
+	unsigned int i, nz = 0;
+	u32 vm0 = 0;
+
+	if (!a->fw_buf || ane_t6021_fw_alias_is_reserved())
+		return;
+	memcpy(&vm0, a->fw_buf, 4);
+	pt = (const u64 *)(a->fw_buf + 0xe0000);
+	for (i = 0; i < 0x8000 / 8; i++)
+		if (pt[i])
+			nz++;
+	dev_emerg(a->dev,
+		  "BUFAUDIT %s vm0=%08x patch=%*phN pthead=%016llx pt_nonzero=%u/2048\n",
+		  tag, vm0, 32, a->fw_buf + 0x204, pt[0], nz);
+}
+
 /*
  * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
  *  - iBoot latches ANE RVBAR = entry | 1 (live reads 0x10000000001:
@@ -1180,6 +1210,11 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 
 	ane_rtclient_log_wrapper(ane, "pre-release");
 
+	/* Owned-buffer PRE audit: prove the marker/patch bytes are in RAM
+	 * immediately before CPU start (source order alone is not runtime
+	 * proof — Main 2026-09-27). */
+	ane_rtclient_fwbuf_audit(a, "PRE");
+
 	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
 				 fw_start_rtb_mode);
 	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
@@ -1199,6 +1234,12 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
 		  cpu_status);
 	ane_rtclient_log_wrapper(ane, "post-release");
+
+	/* Owned-buffer POST audit: same window after the bounded poll —
+	 * delta vs PRE distinguishes stale-PT/pre-existing bytes from
+	 * bootstrap-written bytes, and in marker mode the first qword is
+	 * the marker store (0x000000004d325431). */
+	ane_rtclient_fwbuf_audit(a, "POST");
 
 	/* Boot-PT / marker readback (13.5 boot-PT window at staged offset
 	 * 0xe0000; M2StartupRecovery decode). Meaningful only when the
@@ -1575,8 +1616,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			 * not firmware alive, and the CPU_STATUS RUNNING
 			 * bit of a parked/released core must never open
 			 * the RTKit path. Keep the module pin, genpd and
-			 * every DMA surface; MARKER-RESULT above is the
-			 * outcome of record. */
+			 * every DMA surface; the BUFAUDIT/FW-PT marker
+			 * word is the outcome of record. */
 			dev_warn(dev,
 				 "MARKER run complete — binding fenced-inert before any RTKit (CPU_STATUS bit not consulted)\n");
 			return 0;
@@ -1601,7 +1642,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		dev_warn(dev,
 			 "binding fenced-inert (no firmware%s; state HELD until reboot)\n",
 			 ane_t6021_fw_diag_requested() ?
-			 " — marker outcome in MARKER-RESULT above" : "");
+			 " — marker word in BUFAUDIT/FW-PT above" : "");
 		return 0;
 	}
 
