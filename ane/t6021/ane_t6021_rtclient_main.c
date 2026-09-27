@@ -1241,16 +1241,13 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 	}
 
 	if (!a->fw_alive && !fw_start_rtb_mode) {
-		/* Poll A timeout: RUN released, no READY. The fetch
-		 * discriminator answered NEGATIVE (park or bypass);
-		 * state held, module pinned, RTKit pointless. In marker
-		 * mode the MARKER-RESULT line above is the outcome. */
-		if (ane_t6021_fw_diag_requested())
-			dev_emerg(dev,
-				  "fw_start: marker outcome above is final for this boot — HELD until reboot, RTKit handshake skipped\n");
-		else
-			dev_err(dev,
-				"fw_start: no SCRATCH7 READY after CPU release — ASC fetch did not reach the staged alias (kernel-context start discriminator: negative); HELD until reboot, RTKit handshake skipped\n");
+		/* Poll A timeout: RUN released, no READY. State held, module
+		 * pinned, RTKit handshake skipped. CAUSE NOT LOCALIZED: a
+		 * missing READY does not distinguish fetch failure from a
+		 * RAM/MMIO write that did not land (Main 2026-09-27) — do
+		 * not read this message as a fetch verdict. */
+		dev_err(dev,
+			"fw_start: poll A timeout, no READY — cause not localized; HELD until reboot, RTKit handshake skipped\n");
 		return 0;	/* bind fenced */
 	}
 
