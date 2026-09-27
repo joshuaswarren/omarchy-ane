@@ -994,10 +994,11 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 			dev_err(a->dev, "RESERVED-C %s mapping failed\n", tag);
 			return -ENOMEM;
 		}
-		for (i = 0x4e0; i < 0xea0; i += 8) {
+		for (i = 0x4e0; i < 0xfd8; i += 8) {
 			u64 value;
 
-			if (i != 0x4e0 && !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
+			if (i != 0x4e0 && i != 0xb60 && !(i >= 0xa20 && i < 0xa38) &&
+			    !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
 				continue;
 			value = readl(window + i);
 			value |= (u64)readl(window + i + 4) << 32;
@@ -1005,6 +1006,23 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 				  tag, 0x4fa000 + i, value);
 		}
 		iounmap(window);
+		window = ioremap_np(0x10001417000ull, 0x1000);
+		if (!window) {
+			dev_err(a->dev, "RESERVED-STACK %s mapping failed\n", tag);
+			return -ENOMEM;
+		}
+		nz = 0;
+		for (i = 0; i < 0x1000; i += 4) {
+			u32 value = readl(window + i);
+
+			if (value) {
+				nz++;
+				dev_emerg(a->dev, "RESERVED-STACK %s vm=%#x value=%08x\n",
+					  tag, 0xdb000 + i, value);
+			}
+		}
+		iounmap(window);
+		dev_emerg(a->dev, "RESERVED-STACK %s nonzero=%u/1024\n", tag, nz);
 		return 0;
 	}
 	if (!a->fw_buf)
