@@ -9,8 +9,8 @@ on a private path.
 
 ## Version scope (firmware contract)
 
-- The T6021 ANE firmware preloaded by the Asahi stub on jw14m2 is the
-  macOS 13.5 (22G74) selene image, sha-256
+- The T6021 ANE firmware preloaded by the Asahi stub on the testbed
+  is the macOS 13.5 (22G74) selene image, sha-256
   `a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`.
 - `ane_t6021_fwload.c` (this commit) refuses every other image and tags
   the boot path with the SHA-pinned contract. The published `legacy_only`
@@ -111,7 +111,7 @@ on a private path.
 ## Provenance
 
 - Boot IDs and box identities are intentionally omitted; the runs were
-  performed on the single T6021 (jw14m2) testbed that the program uses.
+  performed on the single T6021 testbed that the program uses.
 - Receipt paths above are within the canonical M2 bring-up artifact
   store; the runs themselves are reproducible from the documented
   invocation scripts.

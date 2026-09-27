@@ -903,37 +903,61 @@ int main(void)
 		fake = NULL;
 	}
 
-	/* ---- ChMan descriptor table (selene 0x5348 output at DONE):
-	 * a table built the way 0x5348 stores it validates against the
-	 * static layout; any single field drift names its entry. ---- */
 	{
-		struct ane_t6021_chman_desc t[ANE_T6021_CHMAN_COUNT];
-		const u64 ipc = 0x3fffff00000ULL;
-		unsigned int i;
+		struct ane_t6021_chman_desc t[8] = {
+			{ "TERMINAL", 2, 0, 0x300, 0xff7a0800, {0} },
+			{ "IO", 0, 1, 0x10, 0xff7ac800, {0} },
+			{ "DEBUG", 0, 2, 8, 0xff7acc00, {0} },
+			{ "BUF_H2T", 0, 3, 0x40, 0xff7ace00, {0} },
+			{ "BUF_T2H", 1, 4, 0x40, 0xff7ade00, {0} },
+			{ "SHAREDMALLOC", 1, 5, 8, 0xff7aee00, {0} },
+			{ "IO_T2H", 1, 6, 0x40, 0xff7af000, {0} },
+			{ "DATA_CHAIN_H2T", 0, 7, 0x10, 0xff7b0000, {0} },
+		};
+		const u64 ipc = 0xff7a0000;
 
-		memset(t, 0, sizeof(t));
-		for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++) {
-			strncpy(t[i].name, ane_t6021_chman_layout[i].name,
-				ANE_T6021_CHMAN_NAME_LEN);
-			t[i].type = ane_t6021_chman_layout[i].type;
-			t[i].bit = ane_t6021_chman_layout[i].bit;
-			t[i].size = ane_t6021_chman_layout[i].size;
-			t[i].ring = ipc + ane_t6021_chman_layout[i].off;
-		}
-		check(sizeof(struct ane_t6021_chman_desc) ==
-		      ANE_T6021_CHMAN_ENTRY_SIZE,
-		      "chman entry stride 0x100", "kext + fw stride");
-		check(ane_t6021_chman_layout[0].off ==
-		      ANE_T6021_CHMAN_COUNT * ANE_T6021_CHMAN_ENTRY_SIZE,
-		      "first ring follows the 8-entry table",
-		      "TERMINAL at ipc+0x800");
-		check(ane_t6021_chman_layout[ANE_T6021_CHMAN_COUNT - 1].off +
-		      ane_t6021_chman_layout[ANE_T6021_CHMAN_COUNT - 1].size *
-		      0x40 + 0x40 == ANE_T6021_CHMAN_TOTAL,
-		      "layout + 64-byte align slack == 0xc440",
-		      "SCRATCH1 request (0x5328) = 0xc400 rings + align");
 		check(ane_t6021_chman_check(t, ipc) == 0,
-		      "chman table as 0x5348 stores it", "all 8 entries match");
+		      "13.5 live firmware channel table", "captured before ACK");
+		{
+			u8 *surface = malloc(0x10440);
+			u8 *expected = malloc(0x10440);
+			unsigned int channel, slot;
+
+			if (!surface || !expected)
+				return 1;
+			memset(surface, 0xa4, 0x10440);
+			memcpy(surface, t, sizeof(t));
+			memcpy(expected, surface, 0x10440);
+			check(!ane_t6021_chman_host_init(surface, 0x1043f, ipc) &&
+			      !memcmp(surface, expected, 0x10440),
+			      "short IPC rejected without writes", "full channel extent required");
+			((struct ane_t6021_chman_desc *)surface)[7].ring = ~(u64)0;
+			memcpy(expected, surface, 0x10440);
+			check(!ane_t6021_chman_host_init(surface, 0x10440, ipc) &&
+			      !memcmp(surface, expected, 0x10440),
+			      "invalid last ring rejected atomically", "no earlier ring changed");
+			memcpy(surface, t, sizeof(t));
+			memcpy(expected, surface, 0x10440);
+			for (channel = 0; channel < 8; channel++) {
+				if (t[channel].type != 0)
+					continue;
+				for (slot = 0; slot < t[channel].size; slot++) {
+					u8 *entry = expected + t[channel].ring - ipc + slot * 64;
+
+					memset(entry, 0, 24);
+					entry[0] = 1;
+				}
+			}
+			check(ane_t6021_chman_host_init(surface, 0x10440, ipc) &&
+			      !memcmp(surface, expected, 0x10440),
+			      "all H2T slots initially host-owned",
+			      "firmware cannot consume zero commands; other bytes unchanged");
+			check(!ane_t6021_chman_host_init(surface, 0x10440, ~(u64)0) &&
+			      !memcmp(surface, expected, 0x10440),
+			      "DVA overflow rejected without writes", "no wrapped ring address");
+			free(expected);
+			free(surface);
+		}
 		t[1].bit = 9;
 		check(ane_t6021_chman_check(t, ipc) == (1U << 1),
 		      "chman IO doorbell bit drift", "mask names entry 1");
@@ -941,7 +965,7 @@ int main(void)
 		t[6].ring = ipc + 0xb040;
 		check(ane_t6021_chman_check(t, ipc) == (1U << 6),
 		      "chman IO_T2H ring base drift", "mask names entry 6");
-		t[6].ring = ipc + 0xb000;
+		t[6].ring = ipc + 0xf000;
 		check(ane_t6021_chman_check(t, ipc + 0x40) != 0,
 		      "chman rings based elsewhere", "IPC DVA is the base");
 		memset(t, 0, sizeof(t));

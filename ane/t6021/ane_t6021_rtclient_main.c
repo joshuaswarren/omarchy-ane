@@ -475,8 +475,9 @@ static void ane_rtclient_post_boot(struct work_struct *w)
 
 /* ---- ChMan descriptor table: the control-command validation step ----
  * Contract and static layout: ane_t6021_boot.h (ane_t6021_chman_*),
- * checked offline by tools/h14_boot_regression.c. A mismatch is
- * logged, never acted on. */
+ * checked offline by tools/h14_boot_regression.c. In legacy_only mode a
+ * failed check withholds the legacy P8 host ack (the fw must not see an
+ * ACK over a table the host could not verify). */
 static_assert(sizeof(struct ane_t6021_chman_desc) == ANE_T6021_CHMAN_ENTRY_SIZE);
 
 static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
@@ -514,8 +515,8 @@ static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
 			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
 			 d->size, d->ring, (bad & BIT(i)) ? "MISMATCH" : "OK",
 			 s->name, s->type, s->bit, s->size, s->off);
-		/* Ring head (IOP ring header: version/wrptr/rdptr/size
-		 * per the fw asserts at cstring 0xa296e) for the receipt. */
+		/* Ring head dump (first 32 bytes of the ring the
+		 * descriptor names) for the receipt. */
 		if (d->ring >= a->boot_ipc_iova &&
 		    d->ring + 0x20 <= a->boot_ipc_iova + a->boot_ipc_size)
 			print_hex_dump(KERN_INFO, "chman ring head: ",
@@ -999,11 +1000,12 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 			dev_err(a->dev, "RESERVED-C %s mapping failed\n", tag);
 			return -ENOMEM;
 		}
-		for (i = 0x4e0; i < 0xfd8; i += 8) {
+		for (i = 0x490; i < 0xfd8; i += 8) {
 			u64 value;
 
-			if (i != 0x4e0 && i != 0xb60 && !(i >= 0xa20 && i < 0xa38) &&
-			    !(i >= 0xb80 && i <= 0xbc0) && !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
+			if (!(i >= 0x490 && i <= 0x4a8) && i != 0x4e0 &&
+			    !(i >= 0xb60 && i <= 0xbc0) && !(i >= 0xa20 && i < 0xa38) &&
+			    !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
 				continue;
 			value = readl(window + i);
 			value |= (u64)readl(window + i + 4) << 32;
@@ -1022,6 +1024,19 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 					dev_emerg(a->dev, "RESERVED-FRAME %s vm=%#llx value=%016llx\n",
 						  tag, frame + i, readq(window + i));
 				iounmap(window);
+			} else if (frame >= 0x20004fc000ull &&
+				   frame < 0x2000000000ull + a->fw_size &&
+				   a->fw_size - (frame - 0x2000000000ull) >= 0x340 &&
+				   !(frame & 7) && a->fw_buf) {
+				u64 offset = frame - 0x2000000000ull;
+				const u64 *saved = a->fw_buf + offset;
+
+				dma_rmb();
+				for (i = 0; i < 0x340 / sizeof(*saved); i++)
+					dev_emerg(a->dev,
+						  "OWNED-CONTEXT %s va=%#llx offset=%#llx value=%016llx\n",
+						  tag, frame + i * sizeof(*saved),
+						  offset + i * sizeof(*saved), READ_ONCE(saved[i]));
 			}
 		}
 		window = ioremap_np(0x10001414000ull, 0x3000);
@@ -1808,15 +1823,20 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		dev_emerg(dev,
 			  "LEGACY-ONLY transport (13.5 contract): RTKit surfaces excluded; validate chman, write ACK, observe\n");
 		ane_rtclient_validate_chman(ane);
-		if (ane->fw && ane->fw->booted && scratch3_ack) {
+		if (ane->fw && ane->fw->booted && scratch3_ack && ane->chman_ok &&
+		    ane_t6021_chman_host_init(ane->fw->boot_ipc,
+					    ane->fw->boot_ipc_size,
+					    ane->fw->boot_ipc_iova)) {
+			dma_wmb();
+			dev_info(dev, "chman: H2T slots initialized host-owned before ACK\n");
 			dev_emerg(dev, "LEGACY P8 host ack: SCRATCH3 <- %08x\n",
 				  ANE_T6021_BOOT_ACK);
 			writel(ANE_T6021_BOOT_ACK,
 			       ane->engine + ANE_MBI_SCRATCH0 + 4 * 3);
 		} else {
 			dev_warn(dev,
-				 "LEGACY ack withheld (booted=%u scratch3_ack=%u)\n",
-				 ane->fw ? ane->fw->booted : 0, scratch3_ack);
+				 "LEGACY ack withheld (booted=%u scratch3_ack=%u chman_ok=%u)\n",
+				 ane->fw ? ane->fw->booted : 0, scratch3_ack, ane->chman_ok);
 		}
 		msleep(1000);
 		if (ane->fw)

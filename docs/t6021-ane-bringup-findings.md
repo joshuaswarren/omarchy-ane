@@ -1123,7 +1123,7 @@ dmesg-ane-complete.log, 2185 lines) shows:
 
 A subsequent same-settings run
 (`legacy-envfields-20260927T154327`) with the experimental
-RESERVED-ENV dump row added pins the park inside ctor2/ctor3:
+RESERVED-ENV dump row added narrowed the post-ACK park:
 
 - **ENV+278** (CSharedMemory-returned ptr): `0x2000681660`,
   captured once at the post-ACK tagged ioread dump window —
@@ -1138,10 +1138,22 @@ RESERVED-ENV dump row added pins the park inside ctor2/ctor3:
 - **SCRATCH3** at the same dump window: `0x08042006`. A separate
   SCRATCH3 re-poll observed the same value at +10 min (raw second
   read, NOT an ENV-window read; it does not extend the env+290
-  observation). The GPIO3 clear at 6d84..6d98 never ran. The fw
-  parks INSIDE `CDebugAgent::C2`'s body (0x13604 in the 13.5
-  payload), not on any host-fed mailbox or GPIO token — token
-  theory (CIPSynchro 0x5c00) was excluded by this same dump.
+  observation).
+
+SUPERSEDED INTERPRETATION (2026-09-27, ring-owner run): the park was
+NOT a timer/scheduler stall and NOT a ctor2 body wait. The firmware's
+DebugTask was consuming the first slot of the zeroed `BUF_H2T` ring
+as a real command and faulting (captured context: ELR `0x128c0`,
+FAR `0x4`, x0 = 0; exception globals `0x4fab80 = 1`, `0x4fabb0 = 4`
+post-ACK; SCRATCH3 stuck at `0x08042006` because the clear at
+6d84..6d98 never runs after that fault). With the host initializing
+every H2T ring slot to ownership `1` before the ACK
+(`ane_t6021_chman_host_init()`, `dma_wmb()`-ordered before the
+SCRATCH3 store), the fault does not occur: post-ACK exception globals
+`0x4fab80/0x4fabb0/0x4fabb8 = 0` and **SCRATCH3 clears to
+`0x00000000`** — the 13.5 post-DONE sequence completes end to end.
+Receipt: `receipts/2026-09-27-t6021-ring-owner-h2t-init.md`.
+Handshake-only: no CSNE command, no inference, no program load.
 
 ### Backing-envelope contract
 
@@ -1197,8 +1209,11 @@ pre-alloc rejection, 4 KiB-but-not-16-KiB rejection (0x1000),
 - `receipts/2026-09-27-t6021-13_5-legacy-only-publish.md` —
   full provenance, param contract, run list, and what is NOT in
   this publication.
+- `receipts/2026-09-27-t6021-ring-owner-h2t-init.md` — the
+  ring-owner fix: H2T slots host-initialized before the ACK, the
+  SCRATCH3-clear verification, and the superseded-park decode.
 - Boot IDs and box identities are intentionally omitted; the runs
-  were on the single T6021 (jw14m2) testbed the program uses.
+  were on the single T6021 testbed the program uses.
 
 ### Out of this publication
 

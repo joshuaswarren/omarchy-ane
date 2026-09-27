@@ -52,7 +52,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified. **13.5 (22G74) legacy ChMan `legacy_only` transport: EXPERIMENTAL, default off, proven post-DONE fw progression only** (parent poll EXITED, ctor1 globals nonzero; ctor2/3 park inside CDebugAgent). Sha-pinned 13.5 selene `a9c4b771…`. Backing envelope is `fw_extra_ram=0x200000` (16 KiB-aligned, ≤ SZ_16M) + DMA32; the 24 MiB attempt was rejected at probe top — not a DMA-size finding. Receipts: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md), [receipts/2026-09-27-t6021-13_5-legacy-only-publish.md](receipts/2026-09-27-t6021-13_5-legacy-only-publish.md). | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). `legacy_only` excludes every RTKit surface (no devm_apple_rtkit_init, no RX poll worker, no apple_rtkit_boot). The legacy ChMan host server (SHAREDMALLOC/TERMINAL) was excluded from this publication pending independent review of acquire ordering, unchecked ring offsets/size/bit before deref/modulo, and TERMINAL cursor not returning the slot to the producer. | Qualified firmware boot (post-DONE on legacy ChMan), DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify thi…
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified. **13.5 (22G74) legacy ChMan `legacy_only` transport: EXPERIMENTAL, default off; full post-DONE handshake completes** (SCRATCH3 ack cleared by the fw after H2T slots are host-initialized; no command submission yet). Sha-pinned 13.5 selene `a9c4b771…`. Backing envelope is `fw_extra_ram=0x200000` (16 KiB-aligned, ≤ SZ_16M) + DMA32; the 24 MiB attempt was rejected before allocation — not a DMA-size finding. Receipts: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md), [receipts/2026-09-27-t6021-ring-owner-h2t-init.md](receipts/2026-09-27-t6021-ring-owner-h2t-init.md). | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). `legacy_only` excludes every RTKit surface (no devm_apple_rtkit_init, no RX poll worker, no apple_rtkit_boot). The legacy ChMan host server (SHAREDMALLOC/TERMINAL) was excluded from this publication pending independent review of acquire ordering, unchecked ring offsets/size/bit before deref/modulo, and TERMINAL cursor not returning the slot to the producer. | Qualified firmware boot (post-DONE on legacy ChMan), DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify thi…
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
@@ -103,12 +103,16 @@ sequence. Built and verified as of `45dc9a7`; receipts in
 
 **Open:**
 
-- `legacy_only` reaches ctor1 (parent poll EXITED,
-  `CSharedMemory::instance 0x4f86d8` and `CTaskPool::instance 0x4f8710`
-  both nonzero post-ACK). It parks inside `CDebugAgent`'s ctor2 — the
-  `dbg290` row stays 0 at +10min and the GPIO3 clear at 6d84…6d98
-  never runs. The next discriminator (thread-table + TCB walk in
-  `fwbuf_audit`) belongs to the M2Runtime lane.
+- The post-ACK park inside `CDebugAgent`'s ctor2 that earlier runs
+  reported is CLOSED as misdiagnosed: the firmware was consuming a
+  host-authored null command from a zeroed H2T ring and faulting (ELR
+  `0x128c0`), not stalling on a scheduler. With
+  `ane_t6021_chman_host_init()` writing ownership `1` into every H2T
+  slot before the ACK, the post-ACK exception globals stay zero and
+  **SCRATCH3 clears to `0x00000000`** — the 13.5 post-DONE sequence
+  completes end to end on the `legacy_only` path
+  ([receipts/2026-09-27-t6021-ring-owner-h2t-init.md](receipts/2026-09-27-t6021-ring-owner-h2t-init.md)).
+  Still handshake-only: no CSNE command, no inference, no program load.
 - The legacy ChMan host server (SHAREDMALLOC/TERMINAL) is **not** in
   this publication. Root review flagged acquire-ordering, unchecked ring
   offsets/size/bit before deref/modulo, and TERMINAL cursor not returning
