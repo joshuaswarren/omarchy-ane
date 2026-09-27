@@ -1,4 +1,4 @@
-# T6021 (M2 Max) ANE bring-up: findings as of 2026-09-25
+# T6021 (M2 Max) ANE bring-up: findings as of 2026-09-27 (legacy ChMan section added; older sections 2026-09-25)
 
 This is the canonical record of what the T6021 ANE work has proven, what it has
 ruled out, and what is still open. Read it before starting any T6021 ANE
@@ -1085,3 +1085,124 @@ Source: ane-linux-experiments a3641215,
   firmware-driven ANE on T600x/T602x, and it closes the static route: a
   static {base, offset, clear, set} list for those chips cannot come
   from these containers.
+
+## 20. 13.5 (22G74) legacy ChMan transport — verified evidence (2026-09-27)
+
+The T6021 ANE bring-up splits along the macOS-Asahi-stub's preloaded
+firmware version. The 13.5 (22G74) selene image
+(`a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`,
+sha-256) does NOT speak RTKit HELLO when brought up by the mainline
+`apple_rtkit` path — its post-DONE contract is the legacy ChMan
+sequence, which the macOS kext pairs with the IORegistry-started host
+server (SHAREDMALLOC/TERMINAL). The driver exposes `legacy_only=1`
+(default OFF, 0444) as the *experimental* path that takes the legacy
+contract and excludes every RTKit surface. Verified state as of
+`45dc9a7`.
+
+### What the legacy ChMan probe path proves
+
+The host ack (legacy P8: SCRATCH3 ← `0x08042006`, post-DONE) causes
+the parent poll (6c80..6ca4) to EXIT. The discriminator run
+(`artifacts/M2Runtime/legacy-discriminator-20260927T152309/`,
+dmesg-ane-complete.log, 2185 lines) shows:
+
+- **Pre-ACK POST** (217–218 s after module probe): CSharedMemory
+  `0x4f86d8 = 0`, encode pair `0x4f86e8/f0 = 0`, CIPSynchro
+  `0x4f8558 = 0`, CTaskPool `0x4f8710 = 0`. These zeros are
+  *negative-ambiguous* (BSS sweep not yet executed); they cannot
+  prove "ctor did not run".
+- **ACK** at 218.6 s (LEGACY P8).
+- **Post-ACK dump** at 227 s: CSharedMemory::instance
+  `0x4f86d8 = 0x2000681660`; encode pair `0x4f86e8/f0 =
+  {0x21bf0, 0x21c14}` — exactly the `EncodeLegacy` /
+  `Encode5bPacking` slots M2Protocol decode predicted;
+  CTaskPool::instance `0x4f8710 = 0x2000696148`.
+- **Nonzeros are proven this-boot** (lean rule, M2Protocol): the
+  parent poll EXITED and ctor1 COMPLETED after the ACK. First
+  proven post-DONE fw progression on Linux.
+
+A subsequent same-settings run
+(`legacy-envfields-20260927T154327`) with the experimental
+RESERVED-ENV dump row added pins the park inside ctor2/ctor3:
+
+- **ENV+278** (CSharedMemory-returned ptr): `0x2000681660` →
+  ctor1 returned, paired with the discriminator result.
+- **ENV+290** (CDebugAgent ctor store): `0` at +227 s and at
+  +10 min. Store is at 6d64, before any CIPSynchro code path.
+- **ENV+298** (validator): `0x1b3d4440`, positive control
+  (unchanged pre-ACK post-ACK).
+- **SCRATCH3** stays `0x08042006` at +10 min; the GPIO3 clear at
+  6d84..6d98 (the only path that confirms post-ACK progression
+  in 13.5) never ran. The fw parks INSIDE `CDebugAgent::C2`'s
+  body (0x13604 in the 13.5 payload), not on any host-fed
+  mailbox or GPIO token — token theory (CIPSynchro 0x5c00) was
+  excluded by this same dump.
+
+### Backing-envelope contract
+
+- `fw_extra_ram = 0x200000` (2 MiB, 16 KiB-aligned at
+  `ANE_T6021_FW_ALIAS_PAGE = 0x4000`) + DMA32 — only verified
+  envelope.
+- `fw_alias_reserved = 1` — required when `fw_extra_ram > 0` (the
+  staged DMA copy cannot grant owned heap beyond its 5 MiB
+  image). `ane_t6021_fw_alias_is_reserved()` is the predicate.
+- `ane_t6021_fwload_options_ok()` rejects `fw_extra_ram > SZ_16M`
+  AND any value not 16 KiB-aligned at probe top, BEFORE
+  `devm_kzalloc`/power. Same rule runs again at alloc time as
+  defense in depth.
+
+The earlier `0x1800000` (24 MiB) invocation was rejected at probe
+top — it never reached `dma_alloc_coherent`. The hard-hang
+observed on that single boot is undetermined and is *not* a
+DMA-size finding. Do not lower the 16 MiB cap or loosen the
+alignment without independent verification (new discriminator +
+new boot).
+
+### Probe-top predicate is shared
+
+Both `ane_t6021_probe` (drv.c:375) and `ane_rtclient_probe` (rtclient
+probe top) call `ane_t6021_fwload_options_ok()` *before*
+`devm_kzalloc`/power. The predicate composes two pure inline
+helpers in `ane_t6021_diag_marker.h`:
+
+- `ane_t6021_fw_extra_ram_envelope_ok(load, fw_extra_ram,
+  fw_alias_reserved)` — backing-envelope rule, with the SAME
+  16 KiB / SZ_16M / reserved-alias-if-extra0 constants the late
+  alloc-time check also uses.
+- `ane_t6021_diag_options_ok(diag, load, boot, transport)` —
+  diag gate.
+
+The unit test in `test/test_anet6021_fwload_options_ok.c` pulls
+both inlines from the same header and runs an executable 11-case
+boundary matrix (`make -C ane/t6021 check`). No rule is duplicated
+between kernel and test; if the rule changes, the test changes
+with it. The test covers: 16 MiB cap, 16 MiB+1, 24 MiB
+pre-alloc rejection, 4 KiB-but-not-16-KiB rejection (0x1000),
+16 KiB alignment, reserved-alias coupling, 0-bytes envelope.
+
+### Receipts (in this repo)
+
+- `receipts/2026-09-27-t6021-13_5-legacy-only-publish.md` —
+  full provenance, param contract, run list, and what is NOT in
+  this publication.
+- Boot IDs and box identities are intentionally omitted; the runs
+  were on the single T6021 (jw14m2) testbed the program uses.
+
+### Out of this publication
+
+- The legacy ChMan host server (SHAREDMALLOC/TERMINAL). Root
+  review flagged three defects: wrong acquire ordering
+  (`dma_rmb` AFTER the `hdr+a1+a2` loads), unchecked ring
+  offsets/size/bit before deref and modulo, and the TERMINAL
+  cursor never returning the slot to the producer. It will land
+  under a separate commit when those are addressed.
+- Lowering `SZ_16M`, loosening the 16 KiB alignment, dropping the
+  reserved-alias coupling when `fw_extra_ram > 0`. The probe-top
+  predicate makes each one explicit; lowering it requires
+  independent verification.
+- Live inference (no CPU tensor fallback used here; the
+  installation lifecycle for inference is untouched).
+- The 14.x / 15.x / 26 / 27 firmware paths. The `legacy_only`
+  contract is structural against the sha-pinned 13.5 (22G74)
+  selene image only.
+

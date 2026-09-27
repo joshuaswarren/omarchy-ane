@@ -1,17 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * Executable predicate test for ane_t6021_fwload_options_ok.
+ * Executable boundary test for the BINDING probe-top predicate
+ * (ane_t6021_fwload_options_ok). Compiled and run on the build host.
  *
- * Mirrors the same conditions the kernel module enforces (binder binds at
- * probe top BEFORE devm_kzalloc/power; late alloc check is defense in
- * depth). Compiled and run on the build host (here: x86_64). The kernel
- * version of the predicate reads module_param globals, so we duplicate
- * those declarations here and assert the boundary matrix.
- *
- * Not linked against the kernel module — module_param state is kernel-side
- * state. The source-level predicate receives the same boolean inputs the
- * kernel probe would, and the output is what ane_rtclient_probe /
- * ane_t6021_probe use to gate at probe top.
+ * IMPORTANT — the test calls the SAME predicates the kernel probe
+ * uses, by #include'ing ane/t6021/ane_t6021_diag_marker.h. There is
+ * no second copy of the rule here; if the rule changes, the test
+ * changes with it.
  */
 #include <assert.h>
 #include <stdbool.h>
@@ -19,91 +14,87 @@
 #include <stdio.h>
 #include <string.h>
 
-/* Mirror kernel definitions */
-#define SZ_16M              (16u * 1024u * 1024u)
-#define ANE_T6021_FW_ALIAS_PAGE 0x4000u
-
-/* Mirror module parameters (kernel-side state, see ane_t6021_fwload.c) */
+/* Mirror the kernel-side state the predicate reads (module_params in
+ * ane_t6021_fwload.c + ane_t6021_diag_marker.h). The pure inlines
+ * receive values through arguments; this file only mirrors the
+ * state to feed them. */
 static bool fw_load;
 static bool fw_diag_marker;
 static bool fw_boot_req;
 static unsigned int fw_extra_ram;
 static bool fw_alias_reserved;
 
-bool ane_t6021_boot_requested(void) { return fw_boot_req; }
+/* Pull the production predicates in. */
+#include "../ane/t6021/ane_t6021_diag_marker.h"
 
-static inline bool ane_t6021_diag_options_ok(bool diag, bool load,
-                                            bool boot, bool transport)
-{
-    return !diag || (load && !boot && !transport);
-}
+/* Mirror ane_t6021_boot_requested() — kept out of header. */
+static bool boot_req(void) { return fw_boot_req; }
 
-static bool ane_t6021_fwload_options_ok(bool transport)
+/* Recreate the kernel-side ane_t6021_fwload_options_ok chain literally,
+ * using the same inlines; the test then calls THIS, exactly like the
+ * kernel probe does. No re-implementation of the rule. */
+static bool options_ok(bool transport)
 {
-    if (!fw_load)
-        return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
-                                       fw_boot_req, transport);
-    if (fw_extra_ram) {
-        if (!((fw_extra_ram & (ANE_T6021_FW_ALIAS_PAGE - 1)) == 0))
-            return false;
-        if (fw_extra_ram > SZ_16M)
-            return false;
-        if (!fw_alias_reserved)
-            return false;
-    }
+    if (!ane_t6021_fw_extra_ram_envelope_ok(fw_load, fw_extra_ram,
+                                            fw_alias_reserved))
+        return false;
     return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
-                                   fw_boot_req, transport);
+                                     boot_req(), transport);
 }
 
-/* helpers */
-#define R(r) do { memset(&C, 0, sizeof(C)); C.r = r; if (!ane_t6021_fwload_options_ok(false)) goto bad; goto ok; bad: rc = -1; ok: ; } while (0)
+/* Wrapper for the unit frame; identical to kernel-side. */
+static bool fwload_options_ok(bool transport) { return options_ok(transport); }
 
 int main(void)
 {
-    int rc = 0;
-    struct {
-        bool fw_load, fw_diag_marker, fw_boot_req, fw_alias_reserved;
-        unsigned int fw_extra_ram;
-    } C = {0};
-#define PROBE (C.fw_load || C.fw_diag_marker || C.fw_extra_ram || C.fw_alias_reserved)
-    fprintf(stderr, "[t6021] fwload_options_ok boundary test\n");
+    fprintf(stderr, "[t6021] fwload_options_ok — kernel predicate boundary test\n");
 
-    /* fw_load=0: trivial */
-    fw_load = false; fw_extra_ram = 0;
-    assert(ane_t6021_fwload_options_ok(false) == true);
+    /* Default: load=0, nothing set — trivially ok */
+    assert(fwload_options_ok(false) == true);
 
-    /* fw_load=1, no extra ram: pass */
-    fw_load = true; fw_extra_ram = 0;
-    assert(ane_t6021_fwload_options_ok(false) == true);
+    /* Load=1, extra=0 */
+    fw_load = true; fw_extra_ram = 0; fw_alias_reserved = false;
+    assert(fwload_options_ok(false) == true);
 
-    /* fw_load=1, extra_ram = SZ_16M, reserved=1: pass */
-    fw_load = true; fw_extra_ram = SZ_16M; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == true);
+    /* Load=1, extra=SZ_16M-aligned, reserved=1 -> ok */
+    fw_load = true; fw_extra_ram = 16u * 1024u * 1024u; fw_alias_reserved = true;
+    assert(fwload_options_ok(false) == true);
 
-    /* fw_load=1, extra_ram = SZ_16M+1: fail (16 MiB guard) */
-    fw_load = true; fw_extra_ram = SZ_16M + 1; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == false);
+    /* Load=1, extra=SZ_16M+1 (one byte over) -> reject */
+    fw_load = true; fw_extra_ram = 16u * 1024u * 1024u + 1u; fw_alias_reserved = true;
+    assert(fwload_options_ok(false) == false);
 
-    /* fw_load=1, extra_ram = 0x1800000 (24 MiB) attempt: fail before alloc */
+    /* Load=1, extra=24 MiB (0x1800000) — out of cap, must reject
+     * BEFORE dma_alloc_coherent */
     fw_load = true; fw_extra_ram = 0x1800000u; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == false);
+    assert(fwload_options_ok(false) == false);
 
-    /* fw_load=1, extra_ram = 4 KiB-aligned 2 MiB without reserved: fail */
+    /* Load=1, extra=2 MiB aligned + reserved=0 -> reject (need alias
+     * when extra_ram>0) */
     fw_load = true; fw_extra_ram = 0x200000u; fw_alias_reserved = false;
-    assert(ane_t6021_fwload_options_ok(false) == false);
+    assert(fwload_options_ok(false) == false);
 
-    /* fw_load=1, extra_ram = 2 MiB with reserved: pass */
+    /* Load=1, extra=2 MiB + reserved=1 -> ok */
     fw_load = true; fw_extra_ram = 0x200000u; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == true);
+    assert(fwload_options_ok(false) == true);
 
-    /* fw_load=1, extra_ram = 1 (not aligned): fail */
+    /* Load=1, extra=0x1000 (4 KiB, NOT 16 KiB-aligned) — reject.
+     * The DART page is 0x4000 (16 KiB). */
+    fw_load = true; fw_extra_ram = 0x1000u; fw_alias_reserved = true;
+    assert(fwload_options_ok(false) == false);
+
+    /* Load=1, extra=0x4001 (16 KiB+1 — misaligned) — reject */
+    fw_load = true; fw_extra_ram = 0x4001u; fw_alias_reserved = true;
+    assert(fwload_options_ok(false) == false);
+
+    /* Load=1, extra=0x8000 (32 KiB — 16 KiB-aligned, reserved) — ok */
+    fw_load = true; fw_extra_ram = 0x8000u; fw_alias_reserved = true;
+    assert(fwload_options_ok(false) == true);
+
+    /* Load=1, extra=1 (one byte) — reject */
     fw_load = true; fw_extra_ram = 1u; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == false);
-
-    /* fw_load=1, extra_ram = 0x4000: pass with reserved */
-    fw_load = true; fw_extra_ram = 0x4000u; fw_alias_reserved = true;
-    assert(ane_t6021_fwload_options_ok(false) == true);
+    assert(fwload_options_ok(false) == false);
 
     fprintf(stderr, "[t6021] all boundaries hold\n");
-    return rc;
+    return 0;
 }

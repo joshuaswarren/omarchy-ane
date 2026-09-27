@@ -48,17 +48,26 @@ they name *which* ctor returned without leaking a usable pointer.
 
 ## Backing-envelope contract (the only verified one)
 
-- `fw_extra_ram = 0x200000` (2 MiB) + DMA_BIT_MASK(32) — verified under
-  the runs above.
-- `ane_t6021_fwload.c:373` rejects `fw_extra_ram > SZ_16M` and unaligned
-  values at probe top **before** any `dma_alloc_coherent` /
-  power-domain / CPU release. The earlier 0x1800000 attempt hit that
-  guard and never reached DMA allocation.
-- A single 0x1800000 attempt reported a box hard-hang. The hang is
-  **undetermined** — DMA size is not implicated, the allocation never
-  happened — and is not part of this publication's evidence. Do NOT
-  read it as "the 24 MiB grant hangs the box" and do NOT lower the
-  guard without independent verification.
+- `fw_extra_ram = 0x200000` (2 MiB, 16 KiB-aligned at
+  `ANE_T6021_FW_ALIAS_PAGE = 0x4000`) + DMA_BIT_MASK(32) — verified
+  under the runs above.
+- `ane_t6021_fwload_options_ok()` (a) extends to be the SHARED
+  probe-top predicate called from both `ane_t6021_probe` and
+  `ane_rtclient_probe` BEFORE `devm_kzalloc`/power and (b) rejects
+  `fw_extra_ram > SZ_16M` AND any value not 16 KiB-aligned AND, when
+  `fw_extra_ram > 0`, requires `fw_alias_reserved = 1`. The late
+  alloc-time check at line ~404 returns the same -EINVAL when it
+  fires (defense in depth). The earlier 0x1800000 attempt hit the
+  probe-top guard and never reached DMA allocation.
+- A single 0x1800000 attempt reported a box hard-hang. `ane_t6021_fwload.c`
+  rejects `fw_extra_ram > SZ_16M` AND any value not 16 KiB-aligned
+  (`ANE_T6021_FW_ALIAS_PAGE = 0x4000`) at probe top BEFORE any
+  `dma_alloc_coherent` runs; the 0x1800000 attempt hit the guard and
+  never reached DMA allocation. The hang is **undetermined** — DMA size
+  is not implicated, the allocation never happened — and is not part of
+  this publication's evidence. Do NOT read it as "the 24 MiB grant
+  hangs the box" and do NOT lower the guard or loosen the alignment
+  without independent verification.
 
 ## Bounded source change set (this commit)
 

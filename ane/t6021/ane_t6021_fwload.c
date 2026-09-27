@@ -140,34 +140,14 @@ bool ane_t6021_fwload_options_ok(bool transport)
 	/* BINDING probe-top predicate. MUST be called before
 	 * devm_kzalloc / power / CPU release at every probe site
 	 * (drv.c probe, rtclient probe). The matching alloc-time check
-	 * below runs as defense in depth.
-	 *
-	 * Immutable envelope (13.5 selene preloaded, DMA32):
-	 *   - fw_load=0: no staging surface, predicate trivially true.
-	 *   - fw_load=1 && fw_extra_ram == 0: aligned (0 is a multiple
-	 *     of any page), no reserved alias required.
-	 *   - fw_load=1 && fw_extra_ram > 0: must be 4 KiB-aligned,
-	 *     must be <= SZ_16M, and the reserved alias must back it
-	 *     (because the staged DMA copy cannot grant owned heap
-	 *     beyond its 5 MiB image).
-	 *
-	 * The 16 MiB ceiling is the public contract; the in-tree late
-	 * check at alloc time returns the same -EINVAL when it fires,
-	 * but only after this probe-top gate has already turned down
-	 * the bind. No relaxation of SZ_16M is part of this contract.
+	 * below runs as defense in depth. The two predicates it
+	 * composes are pure inline functions in ane_t6021_diag_marker.h
+	 * (kernel probe + unit test share them by reference — no
+	 * separate copy).
 	 */
-	if (!fw_load)
-		return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
-					       ane_t6021_boot_requested(),
-					       transport);
-	if (fw_extra_ram) {
-		if (!IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE))
-			return false;
-		if (fw_extra_ram > SZ_16M)
-			return false;
-		if (!fw_alias_reserved)
-			return false;
-	}
+	if (!ane_t6021_fw_extra_ram_envelope_ok(fw_load, fw_extra_ram,
+					       fw_alias_reserved))
+		return false;
 	return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
 				       ane_t6021_boot_requested(), transport);
 }

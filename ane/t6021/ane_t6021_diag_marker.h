@@ -34,17 +34,45 @@
  * SCRATCH7 MMIO write is retired as the marker vehicle.
  */
 /*
- * ane_t6021_diag_options_ok — original diag-vs-options predicate,
- * unchanged. Kept for clarity at the call site; the BINDING predicate
- * callers should use at probe top before devm_kzalloc / power is
- * ane_t6021_fwload_options_ok(), which contains BOTH the diag gating
- * AND the immutable fw_extra_ram bound/alignment envelope. The same
- * predicate runs at late alloc-time as defense in depth.
+ * ane_t6021_diag_options_ok — diag-vs-options gate. Pure: callers
+ * pass the booleans that drive the gate; no kernel state referenced.
+ * Kernel probe sites pass module_param reads; tests pass hand-set
+ * inputs through the SAME inline (no copy).
  */
 static inline bool ane_t6021_diag_options_ok(bool diag, bool load,
                                             bool boot, bool transport)
 {
     return !diag || (load && !boot && !transport);
+}
+
+/* ane_t6021_fw_extra_ram_envelope_ok — pure backing-envelope gate.
+ * Returns true when (load == false) OR (fw_extra_ram == 0) OR
+ * (fw_extra_ram is 16 KiB-aligned, <= SZ_16M, and fw_alias_reserved
+ * is set). Aligned-to-0 is a degenerate case; the page check is
+ * deliberately ANE_T6021_FW_ALIAS_PAGE (16 KiB) because the late
+ * alloc-time check in ane_t6021_fwload.c uses the same constant.
+ *
+ * IMPORTANT: this is the SAME predicate the kernel probe calls
+ * (chain ane_t6021_fwload_options_ok → ane_t6021_fw_extra_ram_envelope_ok
+ * → ane_t6021_diag_options_ok). The unit test pulls it from this
+ * header and never re-implements the rule. If the rule changes,
+ * the test changes with it in lockstep.
+ */
+static inline bool ane_t6021_fw_extra_ram_envelope_ok(bool load,
+                                                    unsigned int fw_extra_ram,
+                                                    bool fw_alias_reserved)
+{
+    if (!load)
+        return true;
+    if (!fw_extra_ram)
+        return true;
+    if ((fw_extra_ram & (0x4000u - 1u)) != 0)
+        return false;
+    if (fw_extra_ram > (16u * 1024u * 1024u))
+        return false;
+    if (!fw_alias_reserved)
+        return false;
+    return true;
 }
 
 /* Marker word stored into the OWNED staged buffer (offset 0xe0000):

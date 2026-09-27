@@ -52,7 +52,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). | Qualified firmware boot, DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify this driver. |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified. **13.5 (22G74) legacy ChMan `legacy_only` transport: EXPERIMENTAL, default off, proven post-DONE fw progression only** (parent poll EXITED, ctor1 globals nonzero; ctor2/3 park inside CDebugAgent). Sha-pinned 13.5 selene `a9c4b771…`. Backing envelope is `fw_extra_ram=0x200000` (16 KiB-aligned, ≤ SZ_16M) + DMA32; the 24 MiB attempt was rejected at probe top — not a DMA-size finding. Receipts: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md), [receipts/2026-09-27-t6021-13_5-legacy-only-publish.md](receipts/2026-09-27-t6021-13_5-legacy-only-publish.md). | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). `legacy_only` excludes every RTKit surface (no devm_apple_rtkit_init, no RX poll worker, no apple_rtkit_boot). The legacy ChMan host server (SHAREDMALLOC/TERMINAL) was excluded from this publication pending independent review of acquire ordering, unchecked ring offsets/size/bit before deref/modulo, and TERMINAL cursor not returning the slot to the producer. | Qualified firmware boot (post-DONE on legacy ChMan), DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify thi…
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
@@ -70,6 +70,54 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 Run the mlx-omarchy quick collector on the target machine: `python3 scripts/collect_quick.py --out capture.json` from an mlx-omarchy checkout. No install and no driver needed — it captures the ANE/DART/PMGR/AIC device-tree data even when no ANE node is present, redacts personal data, and finishes in seconds. Submit with `scripts/collect_submit.py` into the community diagnostics archive. The SET-block base is the one constant the collector cannot take from the device tree; on macOS, IORegistry-derived data helps too (a macOS ANE probe is being added to the collector).
 
 Bring-up on a new SoC beyond the capture: PMGR labels and ranges, DART windows, SET/TM physical addresses, netconsole, and a bound `/dev/accel/accel0` before any program submit. Going from M1 to M1 Max was hours of reboot, netconsole, and PMGR/SET work; expect that on each new part. Do not write SET `0xf` from userspace. T6001 SET0 is `0x28e08c000`; genpd raises it on the driver's probe-time runtime resume and the driver holds that reference until remove, so the partition stays up while the module is bound. The T6001 overlay is `ane/t6001-j316c-set-domains.dts`. Product install is still a packaged board DTB, not a live overlay.
+
+## T6021 legacy ChMan transport (`legacy_only` module parameter)
+
+The M2 Max (T6021) ANE on Linux needs its ASC firmware boot, then either
+the mainline RTKit handshake or, on the 13.5 (22G74) preloaded selene
+image only, the firmware's legacy ChMan path. The `legacy_only=1` knob
+takes the second route and excludes every RTKit surface — no
+`devm_apple_rtkit_init`, no RX poll worker, no `apple_rtkit_boot` — so the
+generic mailbox/RTKit path cannot interfere with the fw post-DONE
+sequence. Built and verified as of `45dc9a7`; receipts in
+[receipts/2026-09-27-t6021-13_5-legacy-only-publish.md](receipts/2026-09-27-t6021-13_5-legacy-only-publish.md).
+
+**Scope — strict, default off, experimental-only:**
+
+- The version contract is structural: `ane_t6021_fwload.c` sha-pins the
+  13.5 (22G74) selene image `a9c4b771…` and refuses any other. The
+  14.x/15.x/26/27 firmware paths are NOT covered. Do not enable
+  `legacy_only` outside the Asahi stub's 13.5 preloaded image.
+- Backing envelope is `fw_extra_ram=0x200000` (2 MiB, 16 KiB-aligned at
+  `ANE_T6021_FW_ALIAS_PAGE = 0x4000`) + DMA32. The 24 MiB attempt
+  (`0x1800000`) was rejected at probe top by
+  `ane_t6021_fwload_options_ok()` BEFORE any `dma_alloc_coherent` ran —
+  *not* a DMA-size finding. Whatever hard-hung the box on that single
+  boot is undetermined and unrelated to the RAM grant.
+- The probe-top predicate lives at `ane_t6021_fwload_options_ok()`, is
+  shared between `ane_t6021_drv.c` and `ane_rtclient_probe`, and is unit
+  tested by `make -C ane/t6021 check` (host-side, pulls the same
+  inlines from `ane_t6021_diag_marker.h`). The executable test is the
+  contract: 11 boundary cases including the 16 KiB cap, 16 KiB
+  alignment, 24 MiB pre-alloc rejection, reserved-alias coupling.
+
+**Open:**
+
+- `legacy_only` reaches ctor1 (parent poll EXITED,
+  `CSharedMemory::instance 0x4f86d8` and `CTaskPool::instance 0x4f8710`
+  both nonzero post-ACK). It parks inside `CDebugAgent`'s ctor2 — the
+  `dbg290` row stays 0 at +10min and the GPIO3 clear at 6d84…6d98
+  never runs. The next discriminator (thread-table + TCB walk in
+  `fwbuf_audit`) belongs to the M2Runtime lane.
+- The legacy ChMan host server (SHAREDMALLOC/TERMINAL) is **not** in
+  this publication. Root review flagged acquire-ordering, unchecked ring
+  offsets/size/bit before deref/modulo, and TERMINAL cursor not returning
+  the slot to the producer. It will land under a separate commit once
+  those defects are addressed.
+
+**Out of scope for the publication:** live inference, the inferred RTKit
+mode path, and any lowering of the 16 MiB cap or alignment constraint.
+macOS 14+ firmware decompiles are not in this repository.
 
 ## Branch note: fix/tm-recovery is held at b52064c for T8103
 
