@@ -81,7 +81,7 @@ static const char *const ane_t6021_reg_names[ANE_T6021_REG_COUNT] = {
 	"engine", "pmgr", "set"
 };
 
-/* ps-word fields (apple-pmgr-pwrstate layout; h14_bringup.py PS_*).
+/* ps-word policy (fields in ane_t6021.h; h14_bringup.py PS_*).
  * W3 death discriminator (receipt
  * 2026-09-19-h14-init-sequence-kext-trace): engine-window access while
  * any island word is below ACTUAL=0xf, or with ane_cpu AUTO_ENABLE
@@ -91,10 +91,6 @@ static const char *const ane_t6021_reg_names[ANE_T6021_REG_COUNT] = {
  * (h14_bringup.py --stage 1) — the identical kernel-context write
  * froze the machine at pmgr+0x2e0 on 2026-09-19 09:39 (watchdog +62 s)
  * where the userspace RMW of the same word, same value, was clean. */
-#define ANE_PS_ON		0xf
-#define ANE_PS_ACTUAL		GENMASK(7, 4)
-#define ANE_PS_BUSY		BIT(11)
-#define ANE_PS_AUTO_ENABLE	BIT(28)
 
 static void ane_t6021_detach_genpd(struct ane_t6021 *ane)
 {

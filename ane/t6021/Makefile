@@ -23,7 +23,17 @@ modules:
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	rm -f test/test_anet6021_fwload_options_ok
 
-.PHONY: default modules clean
+# Executable predicate test (host-side, x86_64). Mirrors the kernel-side
+# ane_t6021_fwload_options_ok / ane_t6021_diag_options_ok inputs and runs
+# the boundary matrix (16 MiB cap, 4 KiB alignment, reserved-alias
+# coupling, 24 MiB pre-alloc rejection). Independent of the kernel tree.
+test/test_anet6021_fwload_options_ok: ../../test/test_anet6021_fwload_options_ok.c
+	$(CC) -O2 -Wall -Wextra -o $@ $<
+
+.PHONY: default modules check test clean
+check: test/test_anet6021_fwload_options_ok
+	./$<
 
 endif

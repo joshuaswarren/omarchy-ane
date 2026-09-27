@@ -86,9 +86,19 @@ MODULE_PARM_DESC(fw_diag_marker,
                  "requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.");
 
 /* fw-start-debug B7: if nonzero, patch the staged RAM copy's x22 stamp
- * (vm 0x423C) to this PA base so the fw's own MMU maps VM i ->
- * base+i, composing with the DART entry alias at 0x10000000000.
- * 0 = off (default; sha-pinned byte-exact copy). */
+ * (vm 0x423C) to this DATA base. 13.5 decode (M2StartupRecovery
+ * 2026-09-26): the stub reads this pointer (helper 0x6fc over 8 bytes
+ * at vm 0x423C); nonzero selects it as the DATA base (x22) and derives
+ * the slide x25 = x22 - 0xc4000, boot PTs at slide+0xe0000..0xe8000 and
+ * DATA accesses at x22+offset — i.e. it must equal the DART alias DATA
+ * IOVA. Zero (the archive value) selects the fallback x22 = TEXT_base +
+ * 0xc4000, which equals 0x100000c4000 exactly when the staged copy is
+ * aliased at the latched entry 0x10000000000 — the default is correct
+ * for that vehicle without a stamp. 0 = off (default; sha-pinned
+ * byte-exact copy after this optional patch is hash-logged). */
+static unsigned int fw_extra_ram;
+module_param(fw_extra_ram, uint, 0444);
+MODULE_PARM_DESC(fw_extra_ram, "LAB: page-aligned owned RAM after the 5 MiB firmware allocation; maximum 16 MiB");
 static u64 fw_load_stamp_base;
 module_param(fw_load_stamp_base, ullong, 0444);
 /* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
@@ -111,22 +121,58 @@ bool ane_t6021_fw_diag_requested(void)
 	return fw_diag_marker;
 }
 
+bool ane_t6021_fw_stamp_requested(void)
+{
+	return fw_load_stamp_base != 0;
+}
+
 bool ane_t6021_fwload_requested(void)
 {
 	return fw_load;
 }
 
+/* DART page size on t6021 (apple_dart probe line: "pagesize 4000");
+ * fw_size is a multiple. Shared with the probe-top predicate below. */
+#define ANE_T6021_FW_ALIAS_PAGE	0x4000
+
 bool ane_t6021_fwload_options_ok(bool transport)
 {
+	/* BINDING probe-top predicate. MUST be called before
+	 * devm_kzalloc / power / CPU release at every probe site
+	 * (drv.c probe, rtclient probe). The matching alloc-time check
+	 * below runs as defense in depth.
+	 *
+	 * Immutable envelope (13.5 selene preloaded, DMA32):
+	 *   - fw_load=0: no staging surface, predicate trivially true.
+	 *   - fw_load=1 && fw_extra_ram == 0: aligned (0 is a multiple
+	 *     of any page), no reserved alias required.
+	 *   - fw_load=1 && fw_extra_ram > 0: must be 4 KiB-aligned,
+	 *     must be <= SZ_16M, and the reserved alias must back it
+	 *     (because the staged DMA copy cannot grant owned heap
+	 *     beyond its 5 MiB image).
+	 *
+	 * The 16 MiB ceiling is the public contract; the in-tree late
+	 * check at alloc time returns the same -EINVAL when it fires,
+	 * but only after this probe-top gate has already turned down
+	 * the bind. No relaxation of SZ_16M is part of this contract.
+	 */
+	if (!fw_load)
+		return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
+					       ane_t6021_boot_requested(),
+					       transport);
+	if (fw_extra_ram) {
+		if (!IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE))
+			return false;
+		if (fw_extra_ram > SZ_16M)
+			return false;
+		if (!fw_alias_reserved)
+			return false;
+	}
 	return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
 				       ane_t6021_boot_requested(), transport);
 }
 
 #define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
-
-/* DART page size on t6021 (apple_dart probe line: "pagesize 4000");
- * fw_size is a multiple. */
-#define ANE_T6021_FW_ALIAS_PAGE	0x4000
 
 static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 {
@@ -171,41 +217,100 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		 * the entry IOVAs. SEG0 0xc4000 covers TEXT 0xe8000 only
 		 * partially by ADT size, but the reserve is what m1n1
 		 * guarantees; the firmware fetch that matters is the
-		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully. */
-		static const struct { u64 iova, phys, len; } win[] = {
+		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully.
+		 * The windows are adjacent, so the mapping is one
+		 * contiguous run of `mapped` bytes starting at entry —
+		 * tracked exactly, because teardown must never unmap a
+		 * page that was not mapped (dart_unmap_pages WARNs on
+		 * holes and the 2026-09-26 state-report unwind hit it).
+		 * SEG1 IOVA = entry + 0xc4000 = 0x100000c4000 per the
+		 * pinned ADT segment-ranges record (0x10000000000 ->
+		 * 0x10000848000 0xc4000; 0x100000c4000 -> 0x10001400000
+		 * 0x438000). Commit e6612e9 shipped 0x1000000c4000 — one
+		 * hex digit off, mapping DATA at 16 TiB instead: every
+		 * fw_alias_reserved boot since 2026-09-24 left the fw
+		 * DATA section unmapped past the SEG0 head. */
+		struct { u64 iova, phys, len; } win[] = {
 			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
-			{ 0x1000000c4000ull, 0x10001400000ull, 0x438000ull },
+			{ 0, 0x10001400000ull, 0x438000ull },
+			{ entry + 0x4fc000, 0, fw_extra_ram ? ane->fw_size - 0x4fc000 : 0 },
 		};
-		unsigned int w;
+		unsigned int w, windows = fw_extra_ram ? ARRAY_SIZE(win) : 2;
 
-		for (w = 0; w < 2; w++) {
+		/* The remap is contiguous: SEG1 base = SEG0 base + SEG0
+		 * len (segment-ranges order). Derived, never hand-written
+		 * — the standalone literal 0x1000000c4000 that shipped in
+		 * e6612e9 was one digit off and mapped DATA at 16 TiB.
+		 * The remap base must also equal the latched entry, or
+		 * the fetch head is not where we mapped. */
+		win[1].iova = win[0].iova + win[0].len;
+		if (win[0].iova != entry) {
+			dev_err(ane->dev,
+				"fwalias: remap base %#llx != latched entry %#llx\n",
+				win[0].iova, entry);
+			return -EINVAL;
+		}
+
+		for (w = 0; w < windows; w++) {
 			u64 o;
 
 			for (o = 0; o < win[w].len; o += ANE_T6021_FW_ALIAS_PAGE) {
+				phys_addr_t pa = w < 2 ? win[w].phys + o :
+					iommu_iova_to_phys(dom, ane->fw_iova + win[w].iova + o - entry);
+				if (!pa || !IS_ALIGNED(pa, ANE_T6021_FW_ALIAS_PAGE)) {
+					ret = -EFAULT;
+					goto err_unmap_mapped;
+				}
 				if (iommu_iova_to_phys(dom, win[w].iova + o)) {
 					dev_err(ane->dev,
 						"fwalias: reserved entry +%#llx mapped — refusing\n",
 						win[w].iova + o - entry);
 					ret = -EEXIST;
-					goto err_unmap;
+					goto err_unmap_mapped;
 				}
 				ret = iommu_map(dom, win[w].iova + o,
-						win[w].phys + o,
+						pa,
 						ANE_T6021_FW_ALIAS_PAGE, prot,
 						GFP_KERNEL);
 				if (ret) {
 					dev_err(ane->dev,
 						"fwalias: reserved map +%#llx: %d\n",
 						win[w].iova + o - entry, ret);
-					goto err_unmap;
+					goto err_unmap_mapped;
+				}
+				/* per-window successfully mapped bytes */
+				ane->fw_alias_ext_len[w] = o + ANE_T6021_FW_ALIAS_PAGE;
+				ane->fw_alias_ext_iova[w] = win[w].iova;
+				if (iommu_iova_to_phys(dom, win[w].iova + o) != pa) {
+					ret = -EIO;
+					goto err_unmap_mapped;
 				}
 			}
 		}
+		ane->fw_alias_extn = windows;
 		ane->fw_alias_iova = entry;
 		dev_info(ane->dev,
-			 "fwalias: reserved SEG0/SEGi at entry %#llx (preloaded placement)\n",
-			 entry);
+			 "fwalias: reserved SEG0/SEGi at entry %#llx (%llx+%zx %llx+%zx, preloaded placement)\n",
+			 entry,
+			 ane->fw_alias_ext_iova[0], ane->fw_alias_ext_len[0],
+			 ane->fw_alias_ext_iova[1], ane->fw_alias_ext_len[1]);
+		if (fw_extra_ram)
+			dev_info(ane->dev, "fwalias: owned heap [%#llx,%#llx) roundtrip verified\n",
+				 win[2].iova, win[2].iova + win[2].len);
 		return 0;
+
+err_unmap_mapped:
+		/* Cleanup exactly the per-window bytes we mapped; windows
+		 * are not assumed adjacent (live trace: a hole between
+		 * SEG0 and SEGi), and foreign collision mappings are
+		 * never touched. */
+		for (w = 0; w < windows; w++)
+			if (ane->fw_alias_ext_len[w])
+				iommu_unmap(dom, ane->fw_alias_ext_iova[w],
+					    ane->fw_alias_ext_len[w]);
+		memset(ane->fw_alias_ext_len, 0, sizeof(ane->fw_alias_ext_len));
+		ane->fw_alias_extn = 0;
+		return ret;
 	}
 
 	for (off = 0; off < ane->fw_size; off += ANE_T6021_FW_ALIAS_PAGE) {
@@ -252,6 +357,9 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	}
 
 	ane->fw_alias_iova = entry;
+	ane->fw_alias_ext_iova[0] = entry;
+	ane->fw_alias_ext_len[0] = ane->fw_size;
+	ane->fw_alias_extn = 1;
 	dev_info(ane->dev,
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
@@ -264,11 +372,18 @@ err_unmap:
 	return ret;
 }
 
+/* ACTUAL iBoot-preloaded payload: macOS 13.5 (22G74) selene — root
+ * preload capture 20260926T230146 byte-verified the reserved windows
+ * against this exact archive (SHA-256
+ * a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc).
+ * The previous pin (9f7915c4…) was the other-generation blob: the
+ * loader validated its bytes while the reserved-alias boot executed
+ * 13.5. */
 static const u8 ane_fw_sha256_expected[32] = {
-	0x9f, 0x79, 0x15, 0xc4, 0x31, 0xd2, 0x88, 0xa2,
-	0xbd, 0xc2, 0x13, 0x2c, 0x39, 0x9d, 0xb8, 0xcf,
-	0x55, 0x74, 0x71, 0x6a, 0x3b, 0x1e, 0x94, 0xaf,
-	0x76, 0xbe, 0x6a, 0x29, 0x1c, 0x2e, 0x66, 0x5b,
+	0xa9, 0xc4, 0xb7, 0x71, 0x29, 0x4a, 0x6b, 0x11,
+	0x56, 0x24, 0xd9, 0x48, 0x0a, 0x62, 0x48, 0xd0,
+	0x89, 0x9a, 0x16, 0x81, 0xa5, 0x75, 0xe8, 0x65,
+	0x07, 0x0b, 0x87, 0xa3, 0x24, 0x84, 0x27, 0xbc,
 };
 
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
@@ -281,11 +396,13 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	dma_addr_t iova;
 	unsigned int i;
 	const char *reason = NULL;
+	u32 alloc_size = ANE_FW_BUF_SIZE + fw_extra_ram;
 	int ret;
 
 	if (!fw_load)
 		return 0;
-
+	if (fw_extra_ram > SZ_16M || !IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE))
+		return -EINVAL;
 	/* The 64-bit coherent mask is set once in ane_t6021_probe,
 	 * BEFORE rtkit_init allocates the rings (W15 review). */
 
@@ -308,10 +425,10 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 		return ret;
 	}
 
-	buf = dma_alloc_coherent(ane->dev, ANE_FW_BUF_SIZE, &iova, GFP_KERNEL);
+	buf = dma_alloc_coherent(ane->dev, alloc_size, &iova, GFP_KERNEL);
 	if (!buf) {
 		dev_err(ane->dev, "fwload: coherent alloc %#x failed\n",
-			ANE_FW_BUF_SIZE);
+			alloc_size);
 		release_firmware(fw);
 		return -ENOMEM;
 	}
@@ -358,12 +475,12 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 
 	ane->fw_buf = buf;
 	ane->fw_iova = iova;
-	ane->fw_size = ANE_FW_BUF_SIZE;
+	ane->fw_size = alloc_size;
 
 	dev_info(ane->dev,
 		 "fwload: selene PRELOAD validated + DART-mapped: 3 segs, "
 		 "entry %#llx, iova %pad size %#x\n",
-		 entry, &iova, ANE_FW_BUF_SIZE);
+		 entry, &iova, alloc_size);
 
 	ret = ane_t6021_fw_alias_map(ane);
 	if (!ret && fw_diag_marker && !ane->fw_alias_iova)
@@ -380,12 +497,20 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 
 void ane_t6021_fwload_remove(struct ane_t6021 *ane)
 {
-	if (ane->fw_alias_iova) {
+	if (ane->fw_alias_extn) {
 		struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
+		int i;
 
+		/* Unmap exactly the per-window recorded extents: the
+		 * reserved-alias windows are not assumed adjacent (live
+		 * trace hole between SEG0 and SEGi) and unmapping bytes
+		 * that were never mapped trips dart_unmap_pages
+		 * (io-pgtable-dart.c:319 WARN, 2026-09-26). */
 		if (dom)
-			iommu_unmap(dom, ane->fw_alias_iova, ane->fw_size);
-		ane->fw_alias_iova = 0;
+			for (i = 0; i < ane->fw_alias_extn; i++)
+				iommu_unmap(dom, ane->fw_alias_ext_iova[i],
+					    ane->fw_alias_ext_len[i]);
+		ane->fw_alias_extn = 0;
 	}
 	if (!ane->fw_buf)
 		return;

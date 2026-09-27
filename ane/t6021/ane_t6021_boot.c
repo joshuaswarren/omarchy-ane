@@ -121,6 +121,11 @@
  *   - SCRATCH eng+0x1840048..0x1840064: phase-1 S2 whitelist
  *     (all-zero pre-attach), W5 pre-read log clean, first_resume
  *     re-reads all eight on every load.
+ *   - TICK eng+0x1160008 (PROGRESS dump only): 24 MHz domain tick,
+ *     proven readable post-release (2026-09-25 handshake receipt);
+ *     two reads 20 ms apart for a delta. engine+0x1140008 is
+ *     deliberately NOT read (readability/width/reset semantics
+ *     unproven, no pre-release baseline — Main review 2026-09-26).
  */
 
 #include <linux/device.h>
@@ -427,6 +432,42 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 int ane_t6021_rtb_mode;
 EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
 
+/* Poll-A-timeout progress dump — PROVEN-readable observables ONLY
+ * (Main review 2026-09-26): all eight SCRATCH cells (pulse-cleared to 0
+ * pre-release, so any nonzero word with SCRATCH7 != READY/WAKE is a
+ * candidate firmware store), RVBAR, CPU_STATUS, and the 24 MHz domain
+ * tick at engine+0x1160008 (watched advancing post-release in the
+ * 2026-09-25 handshake receipt; a static tick separates "ASC domain
+ * unclocked" from "clocked but silent").
+ *
+ * Deliberately NOT read: engine+0x1140008 (the 13.5 stub's VM 0x30c
+ * store target). Its readability, width and reset value are unproven
+ * and no pre-release baseline exists, so an after-value would not
+ * locate PC (could be preexisting iBoot state, write-only, or
+ * normalized). The proven pre-READY discriminator remains the staged
+ * execution marker (S7 = 0x4d325431, fw_diag_marker), not a register
+ * probe. */
+static void ane_t6021_boot_progress_dump(struct ane_t6021 *ane)
+{
+	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
+	u32 tick0 = readl(eng + ANE_T6021_BOOT_REG_TICK);
+	u32 tick1;
+	unsigned int i;
+
+	msleep(20);
+	tick1 = readl(eng + ANE_T6021_BOOT_REG_TICK);
+
+	for (i = 0; i < 8; i++)
+		dev_emerg(ane->dev, "PROGRESS SCRATCH%u=%08x\n", i,
+			  readl(eng + ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i));
+	dev_emerg(ane->dev,
+		  "PROGRESS rvbar=%016llx cpu_status=%08x tick %08x->%08x (%s)\n",
+		  readq(eng + ANE_ASC_RVBAR),
+		  readl(eng + ANE_ASC_CPU_STATUS),
+		  tick0, tick1,
+		  tick1 != tick0 ? "24MHz domain clocked" : "tick STATIC");
+}
+
 int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, int rtb_mode)
 {
 	struct ane_t6021_boot_mmio mm = { .ane = ane };
@@ -471,6 +512,13 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 	ane->booted = bo;
 	ane->boot_scratch_result = sres;
 
+	/* Released CPU without READY (poll-A timeout, either transport
+	 * mode): capture the 13.5 execution-progress observables NOW,
+	 * while the islands are powered — this is the exact-progress
+	 * datum the next pre-Linux capture cross-checks. */
+	if (cs && !fa)
+		ane_t6021_boot_progress_dump(ane);
+
 	if (!cs) {
 		/* no CPU start: full release path, normal ownership */
 		module_put(THIS_MODULE);
@@ -497,7 +545,10 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 	}
 	if (!r)
 		dev_info(ane->dev,
-			 "boot: DONE — handshake complete; scratch_result=%016llx (raw device address, semantics UNSOURCED — not a success claim; transport stays fenced until response validation)\n",
+			 "boot: run returned 0 (booted=%u fw_alive=%u) — %s; scratch_result=%016llx (raw device address, semantics UNSOURCED — not a success claim; transport stays fenced until response validation)\n",
+			 bo, fa,
+			 bo ? "DONE observed — handshake complete"
+			    : "rc 0 WITHOUT DONE (rtb_mode: HELLO-gated; DONE not part of this mode)",
 			 sres);
 	return r;
 }

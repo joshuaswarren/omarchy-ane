@@ -65,6 +65,14 @@ enum {
 	ANE_T6021_REG_COUNT
 };
 
+/* pmgr ps-word fields (apple-pmgr-pwrstate layout). */
+#define ANE_PS_ON		0xf
+#define ANE_PS_TARGET		GENMASK(3, 0)
+#define ANE_PS_ACTUAL		GENMASK(7, 4)
+#define ANE_PS_WAS_GATED	GENMASK(9, 8)
+#define ANE_PS_BUSY		BIT(11)
+#define ANE_PS_AUTO_ENABLE	BIT(28)
+
 /* ANE-block-relative ASC/RTBuddy addresses.  CPU block = ANE+0x1400000
  * for h14g (K14 initializeANESoCConfig h14g blocks 0x…961365c /
  * 0x…9614084 build 0x1400044 with NO 0x200000 orr — the 0x1600044
@@ -298,6 +306,8 @@ enum ane_t6021_csne_cmd {
 	CSNE_CMD_POWER_DEVICE_ON	= 0x0013,
 	CSNE_CMD_IPC_ENDPOINT_SET	= 0x0015,
 	CSNE_CMD_IPC_ENDPOINT_UNSET	= 0x0016,
+	CSNE_CMD_LOAD_PROGRAM		= 0x0200,
+	CSNE_CMD_CREATE_PROCESS		= 0x0202,
 	CSNE_CMD_PROCEDURE_CALL	= 0x0204,
 	CSNE_CMD_INFERENCE_CALL	= 0x0404,
 	CSNE_CMD_BACK_CHANNEL_RPC	= 0x7000,
@@ -397,6 +407,16 @@ struct ane_t6021 {
 	 * collision bound every DMA allocation site must pass its iova
 	 * through ane_t6021_fw_alias_iova_ok() and refuse overlaps. */
 	u64 fw_alias_iova;
+	/* Per-window mapped extents (iova, bytes) — teardown unmaps
+	 * exactly these, because the windows are not assumed adjacent
+	 * (live trace: hole between SEG0 and SEGi) and unmapping a page
+	 * that was never mapped trips dart_unmap_pages (io-pgtable-dart
+	 * .c:319 WARN, 2026-09-26 state-report unwind). Set only on
+	 * successful map. */
+#define ANE_FW_ALIAS_MAX_WIN	3
+	u64 fw_alias_ext_iova[ANE_FW_ALIAS_MAX_WIN];
+	size_t fw_alias_ext_len[ANE_FW_ALIAS_MAX_WIN];
+	int fw_alias_extn;
 	/* W16 pass-3: ane_cpu reset controller (ps RESET via the pmgr
 	 * pwrstate reset_controller ops); NULL when the DT carries no
 	 * resets property. */
@@ -562,6 +582,103 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
  * fail-fast so an oversized command cannot enter the ring. */
 #define ANE_CSNE_CMD_MAX_SIZE	0x1b88
 
+/* ---- LOAD_PROGRAM (0x200) wire contract (selene 0x4e44c hook +
+ * 0x4e53c worker + 0x4e640 registration; decode 2026-09-26, entry
+ * item 23/23b/23c/23e): the payload is NINE 0x30-byte named section
+ * records at +0x08. Registration publishes "<name>.bin" into the fw
+ * program-info symbol table (format "%s.bin" @0xa733f,
+ * CAneProgramInfo.cpp) with value = record+0x18 and aux =
+ * u32(record+0x20). The fw dereferences record+0x18 (0x5d0c8), so it
+ * carries a fw-addressable pointer — in this driver, the IOVA of a
+ * host-authored section object (below). Absent sections (flags bit0
+ * clear) are skipped by every decoded parser. ---- */
+enum ane_t6021_load_section {
+	ANE_SEC_GENERIC = 0,
+	ANE_SEC_KERNEL,
+	ANE_SEC_TEXT,
+	ANE_SEC_OPERATION,
+	ANE_SEC_PROCEDURE,
+	ANE_SEC_KERNELPROP,
+	ANE_SEC_TEXTPROP,
+	ANE_SEC_OPDBG,
+	ANE_SEC_PROCPROP,
+	ANE_SEC_COUNT			/* 9 */
+};
+#define ANE_T6021_LOAD_SEC_COUNT	9
+
+static const char * const
+ane_t6021_load_sec_name[ANE_T6021_LOAD_SEC_COUNT] = {
+	"genericSection", "kernelSection", "textSection",
+	"operationSection", "procedureSection", "kernelPropSection",
+	"textPropSection", "opDbgSection", "procPropSection",
+};
+
+struct ane_csne_cmd_load_program {
+	struct ane_csne_hdr hdr;			/* id 0x200 @ +4 */
+	struct ane_csne_io_elem sec[ANE_T6021_LOAD_SEC_COUNT];
+};
+
+static_assert(sizeof(struct ane_csne_cmd_load_program) ==
+	      0x08 + 9 * 0x30);
+
+/* Section-record wire accessors over the 0x30-byte io_elem (the only
+ * bytes any decoded parser reads; the rest is unread pass-through):
+ * +0x00 u8 flags — bit0 present; +0x18 u64 obj — fw-addressable
+ * pointer, validated by 0x5d0c8 to land inside a registered program
+ * object's entry table; +0x20 u64 key — per-section lookup key. */
+#define ANE_SEC_F_PRESENT	BIT(0)
+
+static inline void ane_sec_record_init(void *rec, u64 obj, u64 key)
+{
+	u8 *r = rec;
+
+	memset(r, 0, 0x30);
+	r[0] |= ANE_SEC_F_PRESENT;
+	*(u64 *)(r + 0x18) = obj;
+	*(u64 *)(r + 0x20) = key;
+}
+
+/* Host-authored PROGRAM OBJECT (the thing section records point at;
+ * 0x5d0c8 validates: magic 1 @+0, count <= 0x10 @+4, table entry
+ * count in [0x201, 0x400] @+0x204, 0x30-byte entry table @+0x208 with
+ * the recorded pointer bounded inside it). Minimum object = header +
+ * 0x201 zeroed entries; entries are the same 0x30-byte shape. */
+#define ANE_PROGOBJ_MIN_ENTRIES	0x201
+#define ANE_PROGOBJ_MAX_ENTRIES	0x400
+#define ANE_PROGOBJ_TABLE_OFF	0x208
+#define ANE_PROGOBJ_HDR_SZ	0x208
+
+static inline size_t ane_progobj_size(u32 entries)
+{
+	return ANE_PROGOBJ_TABLE_OFF + (size_t)entries * 0x30;
+}
+
+static inline void ane_progobj_init(void *obj, u32 entries)
+{
+	struct { u32 magic; u32 count; u32 rsvd[2]; u32 entries; } *h = obj;
+
+	h->magic = 1;
+	h->count = 0;
+	h->rsvd[0] = 0;
+	h->rsvd[1] = 0;
+	h->entries = entries;
+	/* caller zeroes the tail: entries table starts at +0x208 */
+}
+
+/* Host-authored OPERATION-SECTION image (0x5d290: u32 op_count @+0,
+ * <= 0x80; then op_count 0x40c-byte operation records at +4; the
+ * section KEY is an offset past the array, >= op_count*0x40c + 4).
+ * Operation record fields decoded: +0x00 u32 type <= 4; +0x04 u16
+ * <= 0x10; +0x08 u32 procedure_count <= 0x80 (non-zero); +0x0c..
+ * u32 procedure indices, each <= 0x3c. */
+#define ANE_OPSEC_OP_REC_SIZE	0x40c
+#define ANE_OPSEC_MAX_OPS	0x80
+
+static inline size_t ane_opsec_size(u32 ops)
+{
+	return 4 + (size_t)ops * ANE_OPSEC_OP_REC_SIZE;
+}
+
 /* Submit one CSNE command block on the INIT (EP1) ring: K14
  * rtbuddyEndpointSendMessage semantics (W2 §3) — slot alloc with wrap,
  * memcpy into the ring, 54-bit doorbell word, cursor
@@ -585,5 +702,6 @@ bool ane_t6021_fwload_options_ok(bool transport);
 bool ane_t6021_fw_diag_requested(void);
 bool ane_t6021_fwload_requested(void);
 bool ane_t6021_fw_alias_is_reserved(void);
+bool ane_t6021_fw_stamp_requested(void);
 
 #endif /* __ANE_T6021_H__ */
