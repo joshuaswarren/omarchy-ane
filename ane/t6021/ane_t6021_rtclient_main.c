@@ -1580,6 +1580,18 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			 * running ASC. */
 			goto err_pm_or_hold;
 		}
+		if (ane_t6021_fw_diag_requested()) {
+			/* Marker mode fences at probe UNCONDITIONALLY
+			 * (Main 2026-09-26): the staged-copy self-loop is
+			 * not firmware alive, and the CPU_STATUS RUNNING
+			 * bit of a parked/released core must never open
+			 * the RTKit path. Keep the module pin, genpd and
+			 * every DMA surface; MARKER-RESULT above is the
+			 * outcome of record. */
+			dev_warn(dev,
+				 "MARKER run complete — binding fenced-inert before any RTKit (CPU_STATUS bit not consulted)\n");
+			return 0;
+		}
 		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
 		fw_alive = cpu_status & ANE_ASC_CPU_STATUS_RUNNING ||
 			   (ane->fw && ane->fw->fw_alive);
