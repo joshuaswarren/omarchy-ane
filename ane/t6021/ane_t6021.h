@@ -702,5 +702,6 @@ bool ane_t6021_fwload_options_ok(bool transport);
 bool ane_t6021_fw_diag_requested(void);
 bool ane_t6021_fwload_requested(void);
 bool ane_t6021_fw_alias_is_reserved(void);
+bool ane_t6021_fw_stamp_requested(void);
 
 #endif /* __ANE_T6021_H__ */

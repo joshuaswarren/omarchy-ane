@@ -118,6 +118,11 @@ bool ane_t6021_fw_diag_requested(void)
 	return fw_diag_marker;
 }
 
+bool ane_t6021_fw_stamp_requested(void)
+{
+	return fw_load_stamp_base != 0;
+}
+
 bool ane_t6021_fwload_requested(void)
 {
 	return fw_load;

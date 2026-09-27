@@ -68,6 +68,7 @@
 #include <linux/workqueue.h>
 
 #include "ane_t6021.h"
+#include "ane_t6021_diag_marker.h"
 
 /* pmgr ane_cpu ACTUAL word (ane0 reg1 window, pmgr+0x2e0) */
 #define ANE_RTCLIENT_PS_CPU_ACTUAL_OFF	0x2e0
@@ -990,6 +991,30 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		dev_err(dev, "fw_start: requires fw_load=1 (no staged firmware)\n");
 		return -EINVAL;
 	}
+	if (ane_t6021_fw_diag_requested()) {
+		/* Marker mode (Main 2026-09-26): staged-copy execution
+		 * probe. The VM 0x204 patch is meaningful ONLY when the
+		 * staged copy is what the ASC executes; the options
+		 * guard in the legacy drv.c does not run on this
+		 * module, so the invariants are enforced here. */
+		if (ane_t6021_fw_alias_is_reserved()) {
+			dev_err(dev,
+				"marker: fw_alias_reserved=1 maps the reserved windows — the patched staged copy would not execute; refusing (run with fw_alias_reserved=0)\n");
+			return -EINVAL;
+		}
+		if (ane_t6021_fw_stamp_requested()) {
+			dev_err(dev,
+				"marker: fw_load_stamp_base co-patch refused\n");
+			return -EINVAL;
+		}
+		if (fw_start_rtb_mode) {
+			dev_err(dev,
+				"marker: rtb_mode proceeds into the RTKit handshake; refusing\n");
+			return -EINVAL;
+		}
+		dev_warn(dev,
+			 "MARKER mode: staged copy VM 0x204 patched (SCRATCH7 <- 0x4d325431 + self-loop); existing fw_start staging + safe release reused; bounded SCRATCH7 report follows; state HELD until reboot\n");
+	}
 	if (!device_iommu_mapped(dev)) {
 		dev_err(dev,
 			"fw_start: device not IOMMU-mapped — a staged DVA/entry alias would be untranslated; refusing\n");
@@ -1175,21 +1200,41 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 		  cpu_status);
 	ane_rtclient_log_wrapper(ane, "post-release");
 
-	/* M2Research split discriminator: the fw page-table region
-	 * (VM 0x104000-0x110000) ships all-zero; nonzero descriptors
-	 * after a timeout mean the fw reached the table builder
-	 * (~0x4e4) and parks post-MMU-on; all zero means the park is
-	 * at the ROM jump / entry fetch itself. Host-side read of the
-	 * coherent staging buffer — no extra hardware access. */
-	if (a->fw_buf) {
-		const u64 *tt = a->fw_buf + 0x104000;
-		unsigned int n, nonzero = 0, count = 0xC000 / 8;
+	/* Bounded marker report (Main 2026-09-26): one fresh SCRATCH7
+	 * read (whitelisted register) decides the marker outcome. */
+	if (ane_t6021_fw_diag_requested()) {
+		u32 s7 = readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7);
+
+		if (s7 == ANE_T6021_DIAG_MARKER_WORD)
+			dev_emerg(dev,
+				  "MARKER-RESULT SCRATCH7=%08x: ASC fetched the staged alias, executed VM 0x204 and wrote SCRATCH7 — fetch+execute+scratch-write proven under this vehicle; the pre-READY death is in firmware init\n",
+				  s7);
+		else
+			dev_emerg(dev,
+				  "MARKER-RESULT SCRATCH7=%08x (marker %08x ABSENT): ASC did not reach the staged-copy marker under this vehicle\n",
+				  s7, ANE_T6021_DIAG_MARKER_WORD);
+	}
+
+	/* 13.5 boot-page-table readback (M2StartupRecovery decode): the
+	 * cold stub builds its tables at slide+0xe0000..0xe8000 with
+	 * slide = 1 TiB when the staged copy is aliased at the latched
+	 * entry, i.e. staged-buffer offset 0xe0000 (the former 0x104000
+	 * region belonged to the other-generation image). Meaningful
+	 * ONLY when the staged copy executes; not in marker mode (the
+	 * marker self-loops before any PT build) and not under the
+	 * reserved alias (the staged copy is not what executes).
+	 * Host-side read of the coherent staging buffer — no extra
+	 * hardware access. */
+	if (a->fw_buf && !ane_t6021_fw_alias_is_reserved() &&
+	    !ane_t6021_fw_diag_requested()) {
+		const u64 *tt = a->fw_buf + 0xe0000;
+		unsigned int n, nonzero = 0, count = 0x8000 / 8;
 
 		for (n = 0; n < count; n++)
 			if (tt[n])
 				nonzero++;
 		dev_emerg(dev,
-			  "FW-TT region 0x104000: first=%016llx second=%016llx nonzero=%u/%u\n",
+			  "FW-PT region 0xe0000: first=%016llx second=%016llx nonzero=%u/%u\n",
 			  tt[0], tt[1], nonzero, count);
 	}
 
@@ -1206,9 +1251,14 @@ static int ane_rtclient_fw_start(struct ane_rtclient *ane)
 	if (!a->fw_alive && !fw_start_rtb_mode) {
 		/* Poll A timeout: RUN released, no READY. The fetch
 		 * discriminator answered NEGATIVE (park or bypass);
-		 * state held, module pinned, RTKit pointless. */
-		dev_err(dev,
-			"fw_start: no SCRATCH7 READY after CPU release — ASC fetch did not reach the staged alias (kernel-context start discriminator: negative); HELD until reboot, RTKit handshake skipped\n");
+		 * state held, module pinned, RTKit pointless. In marker
+		 * mode the MARKER-RESULT line above is the outcome. */
+		if (ane_t6021_fw_diag_requested())
+			dev_emerg(dev,
+				  "fw_start: marker outcome above is final for this boot — HELD until reboot, RTKit handshake skipped\n");
+		else
+			dev_err(dev,
+				"fw_start: no SCRATCH7 READY after CPU release — ASC fetch did not reach the staged alias (kernel-context start discriminator: negative); HELD until reboot, RTKit handshake skipped\n");
 		return 0;	/* bind fenced */
 	}
 
@@ -1548,7 +1598,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		 * RTKit handshake below is HELLO-gated and bounded by
 		 * hello_wait_ms. */
 		dev_warn(dev,
-			 "binding fenced-inert (no firmware; state HELD until reboot)\n");
+			 "binding fenced-inert (no firmware%s; state HELD until reboot)\n",
+			 ane_t6021_fw_diag_requested() ?
+			 " — marker outcome in MARKER-RESULT above" : "");
 		return 0;
 	}
 

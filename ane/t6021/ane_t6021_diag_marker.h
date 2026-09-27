@@ -14,6 +14,11 @@ static inline bool ane_t6021_diag_options_ok(bool diag, bool load,
     return !diag || (load && !boot && !transport);
 }
 
+/* Value the marker stores to SCRATCH7 (engine+0x1840064 = 0x285840064):
+ * "M2T1" little-endian. NOT firmware READY 0x08042006. */
+#define ANE_T6021_DIAG_MARKER_WORD	0x4d325431u
+#define ANE_T6021_DIAG_MARKER_SCRATCH	0x285840064ull
+
 static inline void ane_t6021_diag_patch(void *image)
 {
     static const unsigned char marker[] = {
