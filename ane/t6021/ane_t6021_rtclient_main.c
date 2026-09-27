@@ -1006,23 +1006,23 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 				  tag, 0x4fa000 + i, value);
 		}
 		iounmap(window);
-		window = ioremap_np(0x10001417000ull, 0x1000);
+		window = ioremap_np(0x10001414000ull, 0x3000);
 		if (!window) {
 			dev_err(a->dev, "RESERVED-STACK %s mapping failed\n", tag);
 			return -ENOMEM;
 		}
 		nz = 0;
-		for (i = 0; i < 0x1000; i += 4) {
+		for (i = 0; i < 0x3000; i += 4) {
 			u32 value = readl(window + i);
 
-			if (value) {
+			if (value != ((i & 4) ? 0x4b434154 : 0x534b5452)) {
 				nz++;
 				dev_emerg(a->dev, "RESERVED-STACK %s vm=%#x value=%08x\n",
-					  tag, 0xdb000 + i, value);
+					  tag, 0xd8000 + i, value);
 			}
 		}
 		iounmap(window);
-		dev_emerg(a->dev, "RESERVED-STACK %s nonzero=%u/1024\n", tag, nz);
+		dev_emerg(a->dev, "RESERVED-STACK %s nonpattern=%u/3072\n", tag, nz);
 		return 0;
 	}
 	if (!a->fw_buf)
