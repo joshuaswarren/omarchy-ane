@@ -27,17 +27,29 @@ on a private path.
 | `legacy-discriminator-20260927T152309` | 64e745ca | After host ACK (legacy P8 SCRATCH3 ← `0x08042006`), ctor1 globals went nonzero at +227s post-ACK: `CSharedMemory::instance 0x4f86d8 = 0x2000681660`, encode pair `0x4f86e8/f0 = {0x21bf0, 0x21c14}` (predicted EncodeLegacy/Encode5bPacking exactly), `CTaskPool::instance 0x4f8710 = 0x2000696148`. Pre-ACK dump at 217–218s showed all three at 0. | `artifacts/M2Runtime/legacy-discriminator-20260927T152309/dmesg-ane-complete.log` (2185 lines). |
 | `legacy-envfields-20260927T154327` | 57e17349 | Same 2 MiB backing, ENV window rows: post-ACK `env+278 = 0x2000681660` (CSharedMemory-returned, ctor1 finished) but `env+290 = 0` (CDebugAgent ctor never returned — its store at 6d64 is before any CIPSynchro path); `env+298 = 0x1b3d4440` (validator, positive control). | `artifacts/M2Runtime/legacy-envfields-20260927T154327/envfields-dmesg-ane.log` (340 lines). |
 
-These runs are reproducible from the invocations on a fresh boot with
-`fw_load=1 fw_alias_reserved=1 fw_extra_ram=0x200000 legacy_only=1`
-(see `legacy-envfields-invocation.sh` for the exact module-param set).
-The global address values are firmware-build offsets, not host memory;
-they name *which* ctor returned without leaking a usable pointer.
+- These runs are reproducible from the invocations on a fresh boot with
+  `fw_load=1 fw_alias_reserved=1 fw_extra_ram=0x200000 legacy_only=1`
+  (see `legacy-envfields-invocation.sh` for the exact module-param set).
+  The global address values are firmware-build offsets, not host memory;
+  they name *which* ctor returned without leaking a usable pointer.
 
 ## Parked inside CDebugAgent ctor2 (open decode)
 
-- At `+8.3s`, `+10 min`, and beyond: `env+290` stays 0; SCRATCH3 stays
-  `0x08042006`. The GPIO3 clear at 6d84…6d98 — the only path that
-  confirms post-ACK fw progress in 13.5 — never ran.
+- ENV-fields explicit dump window captured once during the
+  `legacy-envfields-20260927T154327` boot, post-ACK (the dump fires
+  on a single tagged ioread): `env+290 = 0` (CDebugAgent ctor never
+  returned — its store at 6d64 is before any CIPSynchro code path).
+  `env+278 = 0x2000681660` (CSharedMemory returned, paired with the
+  +227 s discriminator observation). `env+298 = 0x1b3d4440`
+  (validator positive control, unchanged). SCRATCH3 read at the same
+  tagged window: `0x08042006`.
+- The GPIO3 clear at 6d84…6d98 — the only path that confirms post-ACK
+  fw progress in 13.5 — was also not observed at the dump window.
+- A separate SCRATCH3 re-poll observed SCRATCH3 = `0x08042006` at
+  +10 min after probe (raw second read; not an ENV-window read, so
+  it does not extend the env+290 negative observation). Both readings
+  are consistent with the fw parked inside `CDebugAgent::C2`'s body
+  (0x13604 in the 13.5 payload) at every reading taken.
 - Leading suspect (M2Protocol slice6): the ctor2 spawn chain
   (TCB / thread-stack via `ffwAlignedAlloc`, semaphores via try-only
   pool, `RTK_thread_create` fail-fast) draws from the FFW heap
@@ -51,23 +63,23 @@ they name *which* ctor returned without leaking a usable pointer.
 - `fw_extra_ram = 0x200000` (2 MiB, 16 KiB-aligned at
   `ANE_T6021_FW_ALIAS_PAGE = 0x4000`) + DMA_BIT_MASK(32) — verified
   under the runs above.
-- `ane_t6021_fwload_options_ok()` (a) extends to be the SHARED
-  probe-top predicate called from both `ane_t6021_probe` and
-  `ane_rtclient_probe` BEFORE `devm_kzalloc`/power and (b) rejects
-  `fw_extra_ram > SZ_16M` AND any value not 16 KiB-aligned AND, when
-  `fw_extra_ram > 0`, requires `fw_alias_reserved = 1`. The late
-  alloc-time check at line ~404 returns the same -EINVAL when it
-  fires (defense in depth). The earlier 0x1800000 attempt hit the
-  probe-top guard and never reached DMA allocation.
-- A single 0x1800000 attempt reported a box hard-hang. `ane_t6021_fwload.c`
-  rejects `fw_extra_ram > SZ_16M` AND any value not 16 KiB-aligned
-  (`ANE_T6021_FW_ALIAS_PAGE = 0x4000`) at probe top BEFORE any
-  `dma_alloc_coherent` runs; the 0x1800000 attempt hit the guard and
-  never reached DMA allocation. The hang is **undetermined** — DMA size
-  is not implicated, the allocation never happened — and is not part of
-  this publication's evidence. Do NOT read it as "the 24 MiB grant
-  hangs the box" and do NOT lower the guard or loosen the alignment
-  without independent verification.
+- This commit MOVES the bound/alignment/rejected-extra-when-not-reserved
+  check to the SHARED probe-top predicate `ane_t6021_fwload_options_ok()`,
+  called from both `ane_t6021_probe` (drv.c) and `ane_rtclient_probe`
+  (rtclient) BEFORE `devm_kzalloc`/power. The same rule still runs at
+  the alloc site in `ane_t6021_fwload.c` (line ~404) as defense in depth.
+- Historical 0x1800000 (24 MiB) attempt: the prior code rejected
+  `fw_extra_ram > SZ_16M` (or unaligned) at the late fwload alloc site
+  — after `devm_kzalloc` ran and AFTER the power raise had completed,
+  not at probe top. The actual `insmod` log for that boot was lost
+  (M2Runtime recovery cleanups superseded the buffer). What the code
+  PREDICTED (then and now) is the same -EINVAL; what was OBSERVED was
+  a single box hard-hang whose cause is undetermined and unrelated to
+  the RAM grant — DMA size is not implicated in this publication's
+  evidence, and the historical log cannot prove which side of the
+  alloc actually fired. Do NOT read it as "the 24 MiB grant hangs the
+  box" and do NOT lower the 16 MiB guard or loosen the 16 KiB
+  alignment without independent verification on a new boot.
 
 ## Bounded source change set (this commit)
 

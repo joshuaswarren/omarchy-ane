@@ -1125,18 +1125,23 @@ A subsequent same-settings run
 (`legacy-envfields-20260927T154327`) with the experimental
 RESERVED-ENV dump row added pins the park inside ctor2/ctor3:
 
-- **ENV+278** (CSharedMemory-returned ptr): `0x2000681660` →
+- **ENV+278** (CSharedMemory-returned ptr): `0x2000681660`,
+  captured once at the post-ACK tagged ioread dump window —
   ctor1 returned, paired with the discriminator result.
-- **ENV+290** (CDebugAgent ctor store): `0` at +227 s and at
-  +10 min. Store is at 6d64, before any CIPSynchro code path.
+- **ENV+290** (CDebugAgent ctor store): `0`, captured at the same
+  tagged dump window — store at 6d64, before any CIPSynchro code
+  path. This is the only ENV-window observation. There is no raw
+  second ENV re-read; do not extrapolate the park across time from
+  the dump window alone.
 - **ENV+298** (validator): `0x1b3d4440`, positive control
-  (unchanged pre-ACK post-ACK).
-- **SCRATCH3** stays `0x08042006` at +10 min; the GPIO3 clear at
-  6d84..6d98 (the only path that confirms post-ACK progression
-  in 13.5) never ran. The fw parks INSIDE `CDebugAgent::C2`'s
-  body (0x13604 in the 13.5 payload), not on any host-fed
-  mailbox or GPIO token — token theory (CIPSynchro 0x5c00) was
-  excluded by this same dump.
+  (unchanged pre-ACK vs post-ACK).
+- **SCRATCH3** at the same dump window: `0x08042006`. A separate
+  SCRATCH3 re-poll observed the same value at +10 min (raw second
+  read, NOT an ENV-window read; it does not extend the env+290
+  observation). The GPIO3 clear at 6d84..6d98 never ran. The fw
+  parks INSIDE `CDebugAgent::C2`'s body (0x13604 in the 13.5
+  payload), not on any host-fed mailbox or GPIO token — token
+  theory (CIPSynchro 0x5c00) was excluded by this same dump.
 
 ### Backing-envelope contract
 
@@ -1146,17 +1151,24 @@ RESERVED-ENV dump row added pins the park inside ctor2/ctor3:
 - `fw_alias_reserved = 1` — required when `fw_extra_ram > 0` (the
   staged DMA copy cannot grant owned heap beyond its 5 MiB
   image). `ane_t6021_fw_alias_is_reserved()` is the predicate.
-- `ane_t6021_fwload_options_ok()` rejects `fw_extra_ram > SZ_16M`
-  AND any value not 16 KiB-aligned at probe top, BEFORE
-  `devm_kzalloc`/power. Same rule runs again at alloc time as
-  defense in depth.
+- This commit MOVES the bound/alignment/rejected-extra-when-not-reserved
+  check to the SHARED probe-top predicate
+  `ane_t6021_fwload_options_ok()`, called before
+  `devm_kzalloc`/power. The same rule still runs at the alloc site
+  in `ane_t6021_fwload.c` (line ~404) as defense in depth.
 
-The earlier `0x1800000` (24 MiB) invocation was rejected at probe
-top — it never reached `dma_alloc_coherent`. The hard-hang
-observed on that single boot is undetermined and is *not* a
-DMA-size finding. Do not lower the 16 MiB cap or loosen the
-alignment without independent verification (new discriminator +
-new boot).
+The earlier `0x1800000` (24 MiB) invocation was rejected at the
+prior code's late fwload alloc site (after `devm_kzalloc` and after
+the power raise had completed), NOT at probe top. The actual insmod
+log for that boot was lost to a recovery cleanup
+(M2Runtime, 2026-09-27). What the code PREDICTED then and predicts
+now is the same -EINVAL; what was OBSERVED is a single box
+hard-hang whose cause is undetermined and unrelated to the RAM
+grant — DMA size is not implicated in this publication's evidence,
+and the historical log cannot prove which side of the alloc
+actually fired. Do not lower the 16 MiB cap or loosen the 16 KiB
+alignment without independent verification on a new boot (with
+the actual log captured this time).
 
 ### Probe-top predicate is shared
 
