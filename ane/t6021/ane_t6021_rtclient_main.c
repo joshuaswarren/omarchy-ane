@@ -989,6 +989,22 @@ static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
 		dev_emerg(a->dev,
 			  "RESERVED-PT %s first=%016llx second=%016llx nonzero=%u/4096\n",
 			  tag, first, second, nz);
+		window = ioremap_np(0x10001836000ull, 0x1000);
+		if (!window) {
+			dev_err(a->dev, "RESERVED-C %s mapping failed\n", tag);
+			return -ENOMEM;
+		}
+		for (i = 0x4e0; i < 0xea0; i += 8) {
+			u64 value;
+
+			if (i != 0x4e0 && !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
+				continue;
+			value = readl(window + i);
+			value |= (u64)readl(window + i + 4) << 32;
+			dev_emerg(a->dev, "RESERVED-C %s vm=%#x value=%016llx\n",
+				  tag, 0x4fa000 + i, value);
+		}
+		iounmap(window);
 		return 0;
 	}
 	if (!a->fw_buf)
