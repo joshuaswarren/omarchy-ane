@@ -51,6 +51,7 @@
 #include <linux/completion.h>
 #include <linux/dev_printk.h>
 #include <linux/delay.h>
+#include <linux/firmware.h>
 #include <linux/dma-mapping.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
@@ -130,6 +131,12 @@ static bool csne_ping;
 module_param(csne_ping, bool, 0444);
 MODULE_PARM_DESC(csne_ping,
 		 "GATED [INFERENCE]: after the handshake, announce a 64 KiB host ring on the command endpoint with the fw buffer word, then send CSNE_CMD_PING (0x11) and BUILDINFO (0x06) as offset|len words. Default off");
+
+
+static bool csne_load_program;
+module_param(csne_load_program, bool, 0444);
+MODULE_PARM_DESC(csne_load_program,
+		 "OPT-IN: copy apple/ane/load_program.bin (h14_load_program.py pack()) into the command ring at cursor 0x100 and doorbell that length. Default off. A missing or wrong-sized blob is not submitted.");
 
 static bool fw_start;
 module_param(fw_start, bool, 0444);
@@ -501,63 +508,112 @@ static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
  * buffer word to set its ring base ([obj+0x28]) before offset|len
  * words. Everything sent is logged; a wrong guess can crash the fw
  * (crashlog is captured), never the host. */
-static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, u16 id,
-				  u32 cursor)
+static void ane_rtclient_csne_cmd(struct ane_rtclient *ane, const void *cmd,
+				  size_t len, u32 cursor)
 {
-	struct ane_csne_hdr hdr;
 	u64 msg;
 	int ret;
 
-	ane_csne_hdr_init(&hdr, id);
-	memcpy(ane->ring + cursor, &hdr, sizeof(hdr));
+	if (!cmd || len < sizeof(struct ane_csne_hdr) ||
+	    len > ANE_CSNE_CMD_MAX_SIZE ||
+	    cursor > ANE_RTCLIENT_RING_SIZE ||
+	    len > ANE_RTCLIENT_RING_SIZE - cursor)
+		return;
+	memcpy(ane->ring + cursor, cmd, len);
 	dma_wmb();
 
-	msg = ane_mbi_msg48_encode(cursor, sizeof(hdr));
+	msg = ane_mbi_msg48_encode(cursor, len);
 	ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, msg, NULL,
 				       false);
 	dev_info(ane->dev,
-		 "csne: CSNE_CMD_%#x submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
-		 id, ane->cmd_ep, cursor, sizeof(hdr), msg, ERR_PTR(ret));
+		 "csne: submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
+		 ane->cmd_ep, cursor, len, msg, ERR_PTR(ret));
 }
 
-static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
+static bool ane_rtclient_csne_ring(struct ane_rtclient *ane)
 {
 	u64 word;
 	int ret;
 
 	if (!ane->cmd_ep) {
-		dev_info(ane->dev, "csne: no command endpoint; no ping\n");
+		dev_info(ane->dev, "csne: no command endpoint; no submit\n");
+		return false;
+	}
+	if (ane->csne_setup_done)
+		return true;
+
+	/* Never devm/dmam: under the wedged pin a started ASC may
+	 * still read this ring after unbind; remove() frees it
+	 * only when not held. */
+	ane->ring = dma_alloc_coherent(ane->dev, ANE_RTCLIENT_RING_SIZE,
+				       &ane->ring_iova, GFP_KERNEL);
+	if (!ane->ring)
+		return false;
+	if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, ane->ring_iova,
+						    ANE_RTCLIENT_RING_SIZE)) {
+		dev_err(ane->dev, "csne: ring overlaps the fw alias — no submit\n");
+		return false;
+	}
+	word = ane_ep_doorbell_encode(ane->ring_iova, ANE_RTCLIENT_RING_SIZE);
+	ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, word,
+				       NULL, false);
+	dev_info(ane->dev,
+		 "csne: ring announce ep=%#x iova=%pad size=%#x word=%016llx -> %pe [INFERENCE]\n",
+		 ane->cmd_ep, &ane->ring_iova, ANE_RTCLIENT_RING_SIZE,
+		 word, ERR_PTR(ret));
+	if (ret)
+		return false;
+	ane->csne_setup_done = true;
+	return true;
+}
+
+static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
+{
+	struct ane_csne_hdr hdr;
+
+	if (!ane_rtclient_csne_ring(ane))
+		return;
+	ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
+	ane_rtclient_csne_cmd(ane, &hdr, sizeof(hdr), 0);
+	ane_csne_hdr_init(&hdr, CSNE_CMD_BUILDINFO);
+	ane_rtclient_csne_cmd(ane, &hdr, sizeof(hdr), sizeof(hdr));
+}
+
+/* Bytes from tools/h14_load_program.py pack(). Cursor 0x100 sits clear
+ * of the ping headers at 0 and 8. */
+#define ANE_LOAD_PROGRAM_FW	"apple/ane/load_program.bin"
+#define ANE_LOAD_PROGRAM_SIZE	0x1b8
+#define ANE_LOAD_PROGRAM_CURSOR	0x100
+
+static void ane_rtclient_csne_load_program(struct ane_rtclient *ane)
+{
+	const struct firmware *fw;
+	u16 id;
+	int ret;
+
+	if (!ane_rtclient_csne_ring(ane))
+		return;
+	ret = request_firmware(&fw, ANE_LOAD_PROGRAM_FW, ane->dev);
+	if (ret) {
+		dev_err(ane->dev, "csne: request_firmware(%s): %d — no LOAD_PROGRAM submit\n",
+			ANE_LOAD_PROGRAM_FW, ret);
 		return;
 	}
-
-	if (!ane->csne_setup_done) {
-		/* Never devm/dmam: under the wedged pin a started ASC may
-		 * still read this ring after unbind; remove() frees it
-		 * only when not held. */
-		ane->ring = dma_alloc_coherent(ane->dev, ANE_RTCLIENT_RING_SIZE,
-					       &ane->ring_iova, GFP_KERNEL);
-		if (!ane->ring)
-			return;
-		if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, ane->ring_iova,
-							    ANE_RTCLIENT_RING_SIZE)) {
-			dev_err(ane->dev, "csne: ring overlaps the fw alias — no ping\n");
-			return;
-		}
-		word = ane_ep_doorbell_encode(ane->ring_iova,
-					      ANE_RTCLIENT_RING_SIZE);
-		ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, word,
-					       NULL, false);
-		dev_info(ane->dev,
-			 "csne: ring announce ep=%#x iova=%pad size=%#x word=%016llx -> %pe [INFERENCE]\n",
-			 ane->cmd_ep, &ane->ring_iova, ANE_RTCLIENT_RING_SIZE,
-			 word, ERR_PTR(ret));
-		if (ret)
-			return;
-		ane->csne_setup_done = true;
+	if (fw->size != ANE_LOAD_PROGRAM_SIZE || fw->size < sizeof(struct ane_csne_hdr)) {
+		dev_err(ane->dev, "csne: %s size %zu != %#x — no submit\n",
+			ANE_LOAD_PROGRAM_FW, fw->size, ANE_LOAD_PROGRAM_SIZE);
+		release_firmware(fw);
+		return;
 	}
-
-	ane_rtclient_csne_cmd(ane, CSNE_CMD_PING, 0);
-	ane_rtclient_csne_cmd(ane, CSNE_CMD_BUILDINFO, sizeof(struct ane_csne_hdr));
+	id = fw->data[4] | ((u16)fw->data[5] << 8);
+	if (id != CSNE_CMD_LOAD_PROGRAM) {
+		dev_err(ane->dev, "csne: %s id %#x != LOAD_PROGRAM — no submit\n",
+			ANE_LOAD_PROGRAM_FW, id);
+		release_firmware(fw);
+		return;
+	}
+	ane_rtclient_csne_cmd(ane, fw->data, fw->size, ANE_LOAD_PROGRAM_CURSOR);
+	release_firmware(fw);
 }
 
 /* ---- probe ---- */
@@ -975,6 +1031,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	if (csne_ping)
 		ane_rtclient_csne_ping(ane);
+	if (csne_load_program)
+		ane_rtclient_csne_load_program(ane);
 
 	if (!poll_rx)
 		cancel_delayed_work_sync(&ane->poll_work);
