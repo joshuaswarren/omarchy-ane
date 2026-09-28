@@ -107,6 +107,9 @@ struct ane_rtclient {
 	void *ring;
 
 	bool csne_setup_done;
+	void *section;
+	dma_addr_t section_iova;
+	size_t section_size;
 };
 
 /* Each rtkit.c boot-handshake wait (EPMAP, IOP power ack, AP power ack)
@@ -580,14 +583,53 @@ static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
 }
 
 /* Bytes from tools/h14_load_program.py pack(). Cursor 0x100 sits clear
- * of the ping headers at 0 and 8. */
+ * of the ping headers at 0 and 8. A present generic record with dva 0
+ * means "stage it": the IOVA does not exist until dma_alloc. */
 #define ANE_LOAD_PROGRAM_FW	"apple/ane/load_program.bin"
 #define ANE_LOAD_PROGRAM_SIZE	0x1b8
 #define ANE_LOAD_PROGRAM_CURSOR	0x100
+#define ANE_LOAD_GENERIC_OFF	0x08
+#define ANE_LOAD_GENERIC_DVA	0x20
+#define ANE_LOAD_GENERIC_SIZE	0x28
+#define ANE_LOAD_BLOB_COUNT	0x204
+#define ANE_LOAD_BLOB_MIN	(0x208 + 0x30)
+
+static int ane_rtclient_stage_generic(struct ane_rtclient *ane, u8 *cmd)
+{
+	u64 dva, size;
+	u32 one = 1;
+
+	if (!(cmd[ANE_LOAD_GENERIC_OFF] & 1))
+		return 0;
+	memcpy(&dva, cmd + ANE_LOAD_GENERIC_DVA, sizeof(dva));
+	memcpy(&size, cmd + ANE_LOAD_GENERIC_SIZE, sizeof(size));
+	if (dva)
+		return 0;
+	if (size < ANE_LOAD_BLOB_MIN || size > SZ_1M)
+		return -EINVAL;
+	ane->section = dma_alloc_coherent(ane->dev, size, &ane->section_iova,
+					  GFP_KERNEL);
+	if (!ane->section)
+		return -ENOMEM;
+	if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, ane->section_iova,
+						    size)) {
+		dev_err(ane->dev, "csne: section overlaps the fw alias — no submit\n");
+		return -EINVAL;
+	}
+	ane->section_size = size;
+	memset(ane->section, 0, size);
+	memcpy(ane->section, &one, sizeof(one));
+	memcpy((u8 *)ane->section + ANE_LOAD_BLOB_COUNT, &one, sizeof(one));
+	dma_wmb();
+	dva = ane->section_iova;
+	memcpy(cmd + ANE_LOAD_GENERIC_DVA, &dva, sizeof(dva));
+	return 0;
+}
 
 static void ane_rtclient_csne_load_program(struct ane_rtclient *ane)
 {
 	const struct firmware *fw;
+	u8 cmd[ANE_LOAD_PROGRAM_SIZE];
 	u16 id;
 	int ret;
 
@@ -599,21 +641,26 @@ static void ane_rtclient_csne_load_program(struct ane_rtclient *ane)
 			ANE_LOAD_PROGRAM_FW, ret);
 		return;
 	}
-	if (fw->size != ANE_LOAD_PROGRAM_SIZE || fw->size < sizeof(struct ane_csne_hdr)) {
+	if (fw->size != ANE_LOAD_PROGRAM_SIZE) {
 		dev_err(ane->dev, "csne: %s size %zu != %#x — no submit\n",
 			ANE_LOAD_PROGRAM_FW, fw->size, ANE_LOAD_PROGRAM_SIZE);
 		release_firmware(fw);
 		return;
 	}
-	id = fw->data[4] | ((u16)fw->data[5] << 8);
+	memcpy(cmd, fw->data, sizeof(cmd));
+	release_firmware(fw);
+	id = cmd[4] | ((u16)cmd[5] << 8);
 	if (id != CSNE_CMD_LOAD_PROGRAM) {
 		dev_err(ane->dev, "csne: %s id %#x != LOAD_PROGRAM — no submit\n",
 			ANE_LOAD_PROGRAM_FW, id);
-		release_firmware(fw);
 		return;
 	}
-	ane_rtclient_csne_cmd(ane, fw->data, fw->size, ANE_LOAD_PROGRAM_CURSOR);
-	release_firmware(fw);
+	ret = ane_rtclient_stage_generic(ane, cmd);
+	if (ret) {
+		dev_err(ane->dev, "csne: generic stage failed (%d) — no submit\n", ret);
+		return;
+	}
+	ane_rtclient_csne_cmd(ane, cmd, sizeof(cmd), ANE_LOAD_PROGRAM_CURSOR);
 }
 
 /* ---- probe ---- */
@@ -1077,6 +1124,9 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	if (ane->ring)
 		dma_free_coherent(&pdev->dev, ANE_RTCLIENT_RING_SIZE, ane->ring,
 				  ane->ring_iova);
+	if (ane->section)
+		dma_free_coherent(&pdev->dev, ane->section_size, ane->section,
+				  ane->section_iova);
 	pm_runtime_put_sync_suspend(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 }
