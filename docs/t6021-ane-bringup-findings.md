@@ -31,9 +31,15 @@ lost. Cite the source repo and the commit SHA next to every number.
 - Firmware: `Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p` from the 13.5 IPSW
   (decompressed payload: Mach-O arm64, sha256 `a9c4b771...`).
 - Kernelcache: the stub ESP holds `asahi/kernelcache.release.mac14j`. It is an
-  IM4P (LZFSE), byte-identical to the IPSW member (sha256 `ea70fb77...`);
-  the decompressed fileset is sha256 `9615a486...`. It contains
-  `com.apple.driver.AppleH11ANEInterface`.
+  IM4P (LZFSE), byte-identical to the IPSW member (sha256 `ea70fb77...`,
+  25,883,676 B; re-verified on the ESP 2026-09-28); the decompressed fileset
+  is sha256 `9615a486...` (local copy:
+  `/var/tmp/t6021-kc/kernelcache.t6020.13.5-22G74.macho`, hash-verified). It
+  contains `com.apple.driver.AppleH11ANEInterface`.
+  **Filename trap:** `ane-linux-experiments-parakeet-perf/receipts/2026-09-18-t6021-engine-layout-mined/kernelcache.release.mac14j`
+  is a different image (sha256 `5e11f97a...`, the 26A428 mining copy) — same
+  name, not 13.5. Hash-check before use; this is the 09-28 firmware-mismatch
+  failure mode.
 - Consequence: static diffs and hypervisor traces must use the 13.5
   kernelcache. The 13.5 kernelcache enters with the stock x0-only
   `hv_start`. A 26/27 kernelcache does not. Its entry dispatches on x0, and
