@@ -955,7 +955,7 @@ static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 			break;
 		}
 	}
-	if (!bo || size > bo->size) {
+	if (!bo || size > PAGE_ALIGN(bo->size)) {
 		mutex_unlock(&ane_t6021_bo_lock);
 		return -ENOENT;
 	}
