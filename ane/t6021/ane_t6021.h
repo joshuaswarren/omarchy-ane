@@ -535,7 +535,9 @@ struct ane_csne_cmd_ipc_endpoint_set {
  * them (programId, procedureId, numIoBuffers in assert order, W2 §4):
  *   +0x08/+0x0c u32 pair validated together (ldp @0x4d654)
  *   +0x10        u64 passed to the fw validator (0x4d6d4)
- *   +0x18        u32 required in [8,15] (@0x4d660-0x4d66c)
+ *   +0x18        u32 stats/priority, fw-valid [2,7]; 2 is the value
+ *                proven end-to-end (binding.json stats_type; the
+ *                first-inference receipt's bare calls)
  *   +0x28        u32 element count (loop bound @0x524bc-0x524c4)
  *   +0x60        count × 0x30-byte io-buffer records (@0x524a8-0x524b4)
  * The kext `size % sizeof(sCSneCmdProcedureCall) == 0` assert says

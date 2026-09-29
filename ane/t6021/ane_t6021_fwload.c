@@ -341,7 +341,11 @@ err_unmap_mapped:
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
 		 &ane->fw_iova, &pa0);
-	return 0;
+	/* The firmware's power service needs the pmgr sub-block mapped
+	 * IOVA == PA in every vehicle (NO PMD FOR IOVA 0x28e084008,
+	 * 2026-09-29); the staged-DMA alias branch skipped it and left
+	 * a bisect run booting a halting fw. */
+	return ane_t6021_pmu_map(ane, dom);
 
 err_unmap:
 	if (off)

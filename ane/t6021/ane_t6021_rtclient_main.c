@@ -196,21 +196,38 @@ struct ane_rtclient {
 	size_t legacy_bytes;
 	u32 legacy_malloc_cursor;
 	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
+	/* One reusable 16 KiB command buffer for every host command
+	 * (CONFIG_GET + the three ioctls). Protocol-legal to reuse: an
+	 * exchange returns 0 only after the IO slot flipped back to
+	 * host-owned with a zero status (the lab's own completion
+	 * predicate), so the firmware has fully consumed the previous
+	 * command. The legacy_buffers table stays for fw MALLOC replies,
+	 * which the firmware may reference forever (held until reboot). */
+	struct ane_legacy_buffer *cmd_buf;
 };
 
-/* BO table — kernels own the cached IOVA for every section passed to
- * PROG_LOAD and the IO buffer passed to EXEC until BO_FREE (the
- * power/state HELD rule keeps the table around while CPU started). */
+/* Per-open BO ownership (drm_file->driver_priv). Handles live in the
+ * fd's list; closing the fd drops its handles (postclose). The
+ * coherent buffers themselves are only freed while no firmware is
+ * staged — once a CPU may be running, every DMA surface is HELD until
+ * reboot (the lab rule: the firmware never sees a freed address). */
+struct ane_t6021_fd {
+	struct list_head bos;
+};
+
+/* BOs are owned per open file (ane_t6021_fd); bo_lock guards the
+ * handle counter and every per-fd list against same-fd concurrent
+ * ioctls. Coherent buffers are held until reboot once firmware is
+ * staged (the firmware never sees a freed address). */
 struct ane_t6021_bo {
 	struct list_head node;
+	struct ane_t6021_fd *owner;
 	u32 handle;
 	void *cpu;			/* coherent mapping */
 	dma_addr_t dma;
 	size_t size;
-	bool kernel_owned;		/* PROG_LOAD section copy */
 };
 
-static LIST_HEAD(ane_t6021_bo_list);
 static DEFINE_MUTEX(ane_t6021_bo_lock);
 static u32 ane_t6021_next_handle = 1;
 
@@ -557,18 +574,20 @@ static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
  * at iova +0x20 / +0x28 once the BO is copied. Returns 0 with
  * *prog_id set on success. */
 static int ane_rtclient_load_program(struct ane_rtclient *ane,
+				     struct drm_file *file,
 				     const struct drm_ane_prog_load *user,
 				     __u32 *prog_id)
 {
 	struct drm_ane_section *sections;
 	struct drm_ane_generic_bind *binds;
 	struct ane_legacy_buffer *command;
+	struct ane_t6021_fd *fd = file->driver_priv;
 	size_t binds_size;
-	int ret, i;
+	int ret, i, j;
 
 	if (user->section_count < 1 ||
 	    user->section_count > ANE_T6021_LOAD_SEC_COUNT ||
-	    user->generic_count > ANE_M2_MAX_BINDS)
+	    user->generic_count > ANE_M2_MAX_BINDS || !fd)
 		return -EINVAL;
 
 	sections = kmalloc_array(user->section_count, sizeof(*sections),
@@ -593,42 +612,62 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 		goto out;
 	}
 
-	ret = ane_rtclient_legacy_alloc(ane, SZ_16K);
-	if (ret)
+	/* Lab contract: the record slot IS the section identity (slot =
+	 * id - 1; tdprop id 7 lands at slot 6 and slot 5 stays empty,
+	 * exactly the proven add-path image). Reject out-of-range and
+	 * duplicate ids before building the wire image. */
+	for (i = 0; i < user->section_count; i++) {
+		if (sections[i].id < 1 ||
+		    sections[i].id > ANE_T6021_LOAD_SEC_COUNT) {
+			ret = -EINVAL;
+			goto out;
+		}
+		for (j = i + 1; j < user->section_count; j++) {
+			if (sections[i].id == sections[j].id) {
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+	}
+
+	command = ane->cmd_buf;
+	if (!command) {
+		ret = -ENODEV;
 		goto out;
-	command = &ane->legacy_buffers[ane->legacy_allocated - 1];
+	}
 	memset(command->cpu, 0, SZ_16K);
-	/* One 0x30-byte section record at +8 + slot * 0x30 per supplied
-	 * section; unsupplied slots stay zero-filled (flags = 0), which
-	 * is exactly the proven add-path image (six populated records:
-	 * ids 1,2,3,4,5 then tdprop id 7 at slot 6). flags bit0 = 1,
-	 * id = the firmware section identity the caller carries in
-	 * drm_ane_section.id, iova at +0x18, size at +0x20. */
+	/* One 0x30-byte section record per supplied section, placed at
+	 * its IDENTITY slot: slot = id - 1 (tdprop id 7 lands at slot
+	 * 6, slot 5 stays empty — exactly the proven add-path image:
+	 * six populated records, ids 1,2,3,4,5 then 7). Unsupplied
+	 * slots stay zero-filled (flags = 0). flags bit0 = 1, id at
+	 * +0x04, iova at +0x18, size at +0x20. */
 	for (i = 0; i < user->section_count; i++) {
 		struct ane_t6021_bo *bo = NULL, *b;
+		u64 slot_base;
+		u8 *cmd = command->cpu;
 
-		list_for_each_entry(b, &ane_t6021_bo_list, node) {
+		mutex_lock(&ane_t6021_bo_lock);
+		list_for_each_entry(b, &fd->bos, node) {
 			if (b->handle == sections[i].bo_handle) {
 				bo = b;
 				break;
 			}
 		}
-		if (!bo || sections[i].offset + sections[i].size > bo->size) {
+		mutex_unlock(&ane_t6021_bo_lock);
+		if (!bo || sections[i].size > bo->size ||
+		    sections[i].offset > bo->size - sections[i].size) {
 			ret = -EINVAL;
 			goto out;
 		}
-		{
-			u64 slot_base = 0x8 + (u64)i * 0x30;
-			u8 *cmd = command->cpu;
-
-			*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
-			*(u32 *)(cmd + slot_base + 0x04) =
-				cpu_to_le32(sections[i].id);
-			*(u64 *)(cmd + slot_base + 0x18) =
-				cpu_to_le64(bo->dma + sections[i].offset);
-			*(u64 *)(cmd + slot_base + 0x20) =
-				cpu_to_le64(sections[i].size);
-		}
+		slot_base = 0x8 + (u64)(sections[i].id - 1) * 0x30;
+		*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
+		*(u32 *)(cmd + slot_base + 0x04) =
+			cpu_to_le32(sections[i].id);
+		*(u64 *)(cmd + slot_base + 0x18) =
+			cpu_to_le64(bo->dma + sections[i].offset);
+		*(u64 *)(cmd + slot_base + 0x20) =
+			cpu_to_le64(sections[i].size);
 	}
 	/* Generic binds are accepted for ABI compatibility and unused:
 	 * the LOAD record already carries iova + size, and the generic
@@ -675,10 +714,9 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 	struct ane_legacy_buffer *command;
 	int ret;
 
-	ret = ane_rtclient_legacy_alloc(ane, SZ_16K);
-	if (ret)
-		return ret;
-	command = &ane->legacy_buffers[ane->legacy_allocated - 1];
+	command = ane->cmd_buf;
+	if (!command)
+		return -ENODEV;
 	memset(command->cpu, 0, SZ_16K);
 	{
 		u8 *cmd = command->cpu;
@@ -700,19 +738,18 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 }
 
 static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
-				      const struct drm_ane_exec *user)
+				       struct drm_file *file,
+				       const struct drm_ane_exec *user)
 {
 	struct drm_ane_exec_io *ios;
 	struct ane_legacy_buffer *command;
+	struct ane_t6021_fd *fd = file->driver_priv;
 	size_t ios_size;
 	size_t cmd_size;
 	int ret, i;
 
-	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS)
-		return -EINVAL;
-	if (user->priority < 2 || user->priority > 7)
-		return -EINVAL;
-	if (!user->prog_id || !user->proc_id)
+	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS ||
+	    user->priority < 2 || user->priority > 7 || !fd)
 		return -EINVAL;
 
 	ios_size = (size_t)user->count * sizeof(*ios);
@@ -737,13 +774,12 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		kfree(ios);
 		return -ETIMEDOUT;
 	}
-	ret = ane_rtclient_legacy_alloc(ane, SZ_16K);
-	if (ret) {
+	command = ane->cmd_buf;
+	if (!command) {
 		mutex_unlock(&ane_t6021_fw_lock);
 		kfree(ios);
-		return ret;
+		return -ENODEV;
 	}
-	command = &ane->legacy_buffers[ane->legacy_allocated - 1];
 	memset(command->cpu, 0, SZ_16K);
 	{
 		u8 *cmd = command->cpu;
@@ -758,12 +794,14 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 			struct ane_t6021_bo *bo = NULL, *b;
 			u64 slot_base = 0x60 + (u64)i * 0x30;
 
-			list_for_each_entry(b, &ane_t6021_bo_list, node) {
+			mutex_lock(&ane_t6021_bo_lock);
+			list_for_each_entry(b, &fd->bos, node) {
 				if (b->handle == ios[i].bo_handle) {
 					bo = b;
 					break;
 				}
 			}
+			mutex_unlock(&ane_t6021_bo_lock);
 			if (!bo) {
 				ret = -EINVAL;
 				goto unlock;
@@ -812,10 +850,11 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 				   struct drm_file *file)
 {
 	struct drm_ane_bo_init *args = data;
+	struct ane_t6021_fd *fd = file->driver_priv;
 	struct ane_t6021_bo *bo;
 	struct ane_rtclient *ane;
 
-	if (args->size == 0 || args->size > SZ_16M)
+	if (args->size == 0 || args->size > SZ_16M || !fd)
 		return -EINVAL;
 	ane = to_ane_t6021_drm(drm)->ane;
 	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
@@ -838,41 +877,119 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 		return -ERANGE;
 	}
 	bo->size = args->size;
-	bo->kernel_owned = false;
+	bo->owner = fd;
 	mutex_lock(&ane_t6021_bo_lock);
 	bo->handle = ane_t6021_next_handle++;
 	if (bo->handle == 0)
 		bo->handle = ane_t6021_next_handle++;
-	list_add_tail(&bo->node, &ane_t6021_bo_list);
+	list_add_tail(&bo->node, &fd->bos);
 	mutex_unlock(&ane_t6021_bo_lock);
 	args->handle = bo->handle;
-	args->offset = 0;
+	/* mmap offset = the handle; libane mmaps the fd at exactly this
+	 * offset and ane_t6021_mmap resolves the BO from vm_pgoff. */
+	args->offset = (u64)bo->handle << PAGE_SHIFT;
 	return 0;
+}
+
+/* Drop one handle owned by this fd. The coherent buffer is freed only
+ * while no firmware is staged; once a CPU may be running, every DMA
+ * surface is HELD until reboot (lab rule: the firmware never sees a
+ * freed address; libane's IOVA-lifetime-v1 comment describes this). */
+static void ane_t6021_bo_drop(struct drm_device *drm, struct ane_t6021_bo *bo)
+{
+	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
+
+	list_del(&bo->node);
+	if (bo->cpu && !ane->fw)
+		dma_free_coherent(drm->dev, bo->size, bo->cpu, bo->dma);
+	kfree(bo);
 }
 
 static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
 				   struct drm_file *file)
 {
 	struct drm_ane_bo_free *args = data;
+	struct ane_t6021_fd *fd = file->driver_priv;
 	struct ane_t6021_bo *bo = NULL, *b;
 
+	if (!fd)
+		return -ENODEV;
 	mutex_lock(&ane_t6021_bo_lock);
-	list_for_each_entry(b, &ane_t6021_bo_list, node) {
+	list_for_each_entry(b, &fd->bos, node) {
 		if (b->handle == args->handle) {
 			bo = b;
 			break;
 		}
 	}
-	if (!bo) {
+	if (bo)
+		ane_t6021_bo_drop(drm, bo);
+	mutex_unlock(&ane_t6021_bo_lock);
+	return bo ? 0 : -ENOENT;
+}
+
+/* Resolve the BO a user mmap names (BO_INIT returned offset = handle
+ * << PAGE_SHIFT) and map the coherent buffer cacheably — the device
+ * half coheres through the DART (IOMMU_CACHE), so reads after EXEC
+ * observe the firmware's writes without extra sync. */
+static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct drm_file *file = filp->private_data;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct drm_device *drm = file->minor->dev;
+	struct ane_t6021_bo *bo = NULL, *b;
+	size_t size = vma->vm_end - vma->vm_start;
+	u32 handle;
+	int ret;
+
+	if (!fd)
+		return -ENODEV;
+	/* vm_pgoff is the BO_INIT offset in pages: handle << PAGE_SHIFT
+	 * >> PAGE_SHIFT == handle. */
+	handle = (u32)vma->vm_pgoff;
+	if (!handle)
+		return -EINVAL;
+	mutex_lock(&ane_t6021_bo_lock);
+	list_for_each_entry(b, &fd->bos, node) {
+		if (b->handle == handle && b->owner == fd) {
+			bo = b;
+			break;
+		}
+	}
+	if (!bo || size > bo->size) {
 		mutex_unlock(&ane_t6021_bo_lock);
 		return -ENOENT;
 	}
-	list_del(&bo->node);
+	vma->vm_pgoff = 0;
+	ret = dma_mmap_coherent(drm->dev, vma, bo->cpu, bo->dma, size);
 	mutex_unlock(&ane_t6021_bo_lock);
-	if (bo->cpu)
-		dma_free_coherent(drm->dev, bo->size, bo->cpu, bo->dma);
-	kfree(bo);
+	return ret;
+}
+
+static int ane_t6021_open(struct drm_device *drm, struct drm_file *file)
+{
+	struct ane_t6021_fd *fd;
+
+	fd = kzalloc(sizeof(*fd), GFP_KERNEL);
+	if (!fd)
+		return -ENOMEM;
+	INIT_LIST_HEAD(&fd->bos);
+	file->driver_priv = fd;
 	return 0;
+}
+
+static void ane_t6021_postclose(struct drm_device *drm, struct drm_file *file)
+{
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_bo *bo, *tmp;
+
+	if (!fd)
+		return;
+	mutex_lock(&ane_t6021_bo_lock);
+	list_for_each_entry_safe(bo, tmp, &fd->bos, node)
+		ane_t6021_bo_drop(drm, bo);
+	mutex_unlock(&ane_t6021_bo_lock);
+	kfree(fd);
+	file->driver_priv = NULL;
 }
 
 static int ane_t6021_submit_ioctl(struct drm_device *drm, void *data,
@@ -893,7 +1010,8 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 		mutex_unlock(&ane_t6021_fw_lock);
 		return -ETIMEDOUT;
 	}
-	ret = ane_rtclient_load_program(adrm->ane, args, &args->prog_id_out);
+	ret = ane_rtclient_load_program(adrm->ane, file, args,
+					&args->prog_id_out);
 	mutex_unlock(&ane_t6021_fw_lock);
 	return ret;
 }
@@ -923,7 +1041,7 @@ static int ane_t6021_exec_ioctl(struct drm_device *drm, void *data,
 	struct ane_t6021_drm *adrm = to_ane_t6021_drm(drm);
 	struct drm_ane_exec *args = data;
 
-	return ane_rtclient_procedure_call(adrm->ane, args);
+	return ane_rtclient_procedure_call(adrm->ane, file, args);
 }
 
 static const struct drm_ioctl_desc ane_t6021_ioctls[] = {
@@ -935,11 +1053,31 @@ static const struct drm_ioctl_desc ane_t6021_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ANE_EXEC, ane_t6021_exec_ioctl, 0),
 };
 
-/* Version reported through DRM_IOCTL_VERSION: ABI 2 (T6021). */
+/* Driver fops: the accel-core entry points plus our BO mmap (the core
+ * default maps only GEM objects; this driver keeps its own BO table,
+ * so .mmap resolves the handle from BO_INIT's returned offset). */
+static const struct file_operations ane_t6021_fops = {
+	.owner = THIS_MODULE,
+	.fop_flags = FOP_UNSIGNED_OFFSET,
+	.open = accel_open,
+	.release = drm_release,
+	.unlocked_ioctl = drm_ioctl,
+	.compat_ioctl = drm_compat_ioctl,
+	.poll = drm_poll,
+	.read = drm_read,
+	.llseek = noop_llseek,
+	.mmap = ane_t6021_mmap,
+};
+
+/* Version reported through DRM_IOCTL_VERSION: ABI 2 (T6021).
+ * DRIVER_COMPUTE_ACCEL puts the node at /dev/accel/accelN. */
 static const struct drm_driver ane_t6021_drm_driver = {
 	.driver_features = DRIVER_GEM | DRIVER_COMPUTE_ACCEL,
+	.open = ane_t6021_open,
+	.postclose = ane_t6021_postclose,
 	.ioctls = ane_t6021_ioctls,
 	.num_ioctls = ARRAY_SIZE(ane_t6021_ioctls),
+	.fops = &ane_t6021_fops,
 	.major = ANE_ABI_M2_MAJOR,
 	.minor = 0,
 	.name = "ane",
@@ -1321,6 +1459,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	}
 
 	if (legacy_only) {
+		int cfg_err = 0;
+
 		ane_rtclient_validate_chman(ane);
 		if (ane->fw && ane->fw->booted && scratch3_ack &&
 		    ane->chman_ok &&
@@ -1382,18 +1522,28 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				 ane->fw ? ane->fw->booted : 0,
 				 scratch3_ack, ane->chman_ok);
 		}
-		if (legacy_query && ane->chman_ok) {
+		if (ane->chman_ok) {
+			/* One reusable command buffer for the transport
+			 * (CONFIG_GET + every ioctl); reuse is legal
+			 * because each exchange completes with the slot
+			 * host-owned again. The 128-entry table stays
+			 * for fw MALLOC replies only. */
+			if (ane_rtclient_legacy_alloc(ane, SZ_16K) == 0)
+				ane->cmd_buf =
+					&ane->legacy_buffers[ane->legacy_allocated - 1];
+			else
+				cfg_err = -ENOMEM;
+		}
+		if (!cfg_err && legacy_query && ane->chman_ok) {
 			/* CONFIG_GET (opcode 0x03) keeps the legacy ChMan
 			 * transport armed for the ioctls; the reply's
 			 * word +0x08 must be nonzero (lab rule). The
 			 * boot heap + 'IPC ' allocations stay HELD until
 			 * reboot. */
-			struct ane_legacy_buffer *command;
+			struct ane_legacy_buffer *command = ane->cmd_buf;
 			int qret;
 
-			qret = ane_rtclient_legacy_alloc(ane, SZ_16K);
-			if (qret == 0) {
-				command = &ane->legacy_buffers[ane->legacy_allocated - 1];
+			if (command) {
 				memset(command->cpu, 0, SZ_16K);
 				qret = ane_rtclient_legacy_exchange(ane,
 								     command,
@@ -1404,15 +1554,28 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 					 READ_ONCE(((u32 *)command->cpu)[1]),
 					 READ_ONCE(((u32 *)command->cpu)[2]),
 					 qret);
-				if (!qret &&
-				    !READ_ONCE(((u32 *)command->cpu)[2])) {
+				if (qret)
+					cfg_err = qret;
+				else if (!READ_ONCE(((u32 *)command->cpu)[2])) {
 					dev_err(dev,
 						"LEGACY CONFIG_GET reply word +0x08 zero\n");
-					qret = -EPROTO;
+					cfg_err = -EPROTO;
 				}
+			} else {
+				cfg_err = -ENOMEM;
 			}
 		}
 		ane->boot_done = true;
+		if (cfg_err) {
+			dev_err(dev,
+				"install: CONFIG_GET failed (%d) — refusing to register DRM device (ioctls would run on an unproven ring)\n",
+				cfg_err);
+			if (!ane->held) {
+				pm_runtime_put_sync_suspend(dev);
+				pm_runtime_disable(dev);
+			}
+			return cfg_err;
+		}
 	} else {
 		unsigned long deadline;
 		int boot_ret;

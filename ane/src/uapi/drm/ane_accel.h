@@ -91,7 +91,8 @@ struct drm_ane_exec_io {
 	__u32 bo_handle;
 	__u32 type;
 	__u32 flags;
-	__u64 dma;		/* out: IOVA bound for this call */
+	__u64 dma;		/* in only, reserved: the driver binds the
+				 * IOVA from bo_handle */
 	__u64 size;
 };
 
