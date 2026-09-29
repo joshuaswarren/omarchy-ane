@@ -19,7 +19,7 @@ ane-selfcheck: ane-selfcheck.c ane_f16_add.h $(LIB) ../libane/ane.h \
 	$(CC) $(CFLAGS) -o $@ ane-selfcheck.c $(LIB) -lm
 
 check: ane-selfcheck
-	./ane-selfcheck fixtures
+	./ane-selfcheck ../fixtures
 
 clean:
 	rm -f ane-run ane-selfcheck
