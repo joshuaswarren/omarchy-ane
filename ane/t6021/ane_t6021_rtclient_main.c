@@ -533,8 +533,14 @@ static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
  * last-committed-TD word and the TQ busy mask for `ms` and log each
  * change with its time, to learn how the ack orders against the
  * compute. Reads are PS-gated single words. */
+static unsigned int call_trace_ms = 30;
+module_param(call_trace_ms, uint, 0644);
+MODULE_PARM_DESC(call_trace_ms, "TEMPORARY: post-ack sampling window in ms (0 = none)");
+
 static void ane_rtclient_call_trace(struct ane_rtclient *ane, unsigned int ms)
 {
+	if (!ms)
+		return;
 	void __iomem *tm = ioremap_np(ANE_TM_BASE + 0x20400, 0x440);
 	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
 	ktime_t t0 = ktime_get();
@@ -590,7 +596,7 @@ static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
 	dev_info(ane->dev, "EXCH op=%#x acked (fw allocs %u, %zu bytes)\n",
 		 opcode, ane->legacy_allocated, ane->legacy_bytes);
 	if (opcode == CSNE_CMD_PROCEDURE_CALL)
-		ane_rtclient_call_trace(ane, 30);
+		ane_rtclient_call_trace(ane, call_trace_ms);
 	/* Firmware ack is the slot reply; the TQ-idle poll is the
 	 * completion proof — only after all eight queues idle does the
 	 * result become visible to the CPU. The poll is the contract a
