@@ -86,6 +86,7 @@ struct ane_nn {
 			      * H13 island containers use 0xE (0x4000-B units),
 			      * whole-program containers from the hwxv2
 			      * converter use 0x9 (512-B units). */
+	void *m2; /* ABI-2 (T6021) backend state; NULL on the M1 path. */
 };
 
 /* #define LIBANE_CONFIG_NO_ERR */
