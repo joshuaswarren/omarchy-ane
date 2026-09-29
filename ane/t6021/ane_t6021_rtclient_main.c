@@ -99,6 +99,9 @@
 #define ANE_TM_TQ_STATUS_OFF		0x20804
 #define ANE_TM_TQ_STATUS(q)		(ANE_TM_BASE + ANE_TM_TQ_STATUS_OFF + \
 					 (u64)(q) * ANE_TM_TQ_STATUS_STRIDE)
+#define ANE_TM_TD_WINDOW		0x20400
+#define ANE_TM_TD_WINDOW_SIZE		0x440
+#define ANE_TM_TD_COUNT_OFF		0x58
 #define ANE_TM_TQ_STATUS_IDLE		0x81
 #define ANE_TM_TQ_STATUS_BUSY		0x70
 
@@ -195,6 +198,8 @@ struct ane_rtclient {
 	u32 legacy_allocated;
 	size_t legacy_bytes;
 	u32 legacy_malloc_cursor;
+	/* Last-committed-TD word after the previous completed call. */
+	u32 td_seen;
 	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
 	/* One reusable 16 KiB command buffer for every host command
 	 * (CONFIG_GET + the three ioctls). Protocol-legal to reuse: an
@@ -426,63 +431,66 @@ out:
 	return result;
 }
 
-/* Validate the pmgr PS words at 0x28e084000..0x28e084030 read 0x3ff
- * before touching the TM window (a TM read while compute domains are
- * off hangs the SoC). */
-static int ane_rtclient_pm_pwrstate_ok(void)
+/* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
+ * completion: measured 2026-09-29, an ack can arrive before the engine
+ * has written the output (exec returned after 0.16 ms, output landed
+ * 0.12 ms later; the same call then read all zeros in ~1 of 5 runs after
+ * an idle gap). All eight TQ status words read 0x81 before a TD starts,
+ * so idle alone proves nothing either. The proof is: the last-committed
+ * TD word (TM +0x20458, counts up by 0x10000 per completed TD)
+ * moved off the value seen after the previous call, AND all eight TQ
+ * words read idle.
+ *
+ * Every TM read is gated on the seven pmgr PS words reading 0x3ff (a TM
+ * read while the compute domains are off hangs the SoC); while they do
+ * not, the call has not started or finished and the loop keeps waiting.
+ * Only single words are read. Returns 0 when complete, -ETIMEDOUT else. */
+static int ane_rtclient_call_wait(struct ane_rtclient *ane,
+				  unsigned int timeout_ms)
 {
+	void __iomem *tm = ioremap_np(ANE_TM_BASE + ANE_TM_TD_WINDOW,
+				      ANE_TM_TD_WINDOW_SIZE);
 	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
-	u32 v;
-	unsigned int i;
-	int ret = 0;
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	int ret = -ETIMEDOUT;
 
-	if (!pm)
-		return -ENOMEM;
-	for (i = 0; i <= 0x30; i += 8) {
-		v = readl(pm + i);
-		if ((v & 0x3ff) != 0x3ff) {
-			ret = -EIO;
-			break;
-		}
+	if (!tm || !pm) {
+		ret = -ENOMEM;
+		goto out;
 	}
-	iounmap(pm);
-	return ret;
-}
-
-/* Wait for all eight TQ status words to read 0x81 (idle). A read of
- * the TM window is gated on ane_rtclient_pm_pwrstate_ok; the watchdog
- * deadline is timeout_ms. Returns 0 on idle, -ETIMEDOUT on stall. */
-static int ane_rtclient_tq_idle_poll(unsigned int timeout_ms)
-{
-	void __iomem *tm;
-	unsigned int q;
-	unsigned long deadline;
-	int ret;
-
-	ret = ane_rtclient_pm_pwrstate_ok();
-	if (ret)
-		return ret;
-	tm = ioremap_np(ANE_TM_TQ_STATUS(0),
-			ANE_TM_TQ_STATUS_STRIDE * ANE_T6021_CHMAN_COUNT);
-	if (!tm)
-		return -ENOMEM;
-	deadline = jiffies + msecs_to_jiffies(timeout_ms);
 	while (time_before(jiffies, deadline)) {
-		for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++) {
-			/* receipt 2026-09-28 first-inference: status word
-			 * 0x285c20804 + q*0x2c reads 0x81 when idle. */
-			if (readl(tm + q * ANE_TM_TQ_STATUS_STRIDE) !=
-			    ANE_TM_TQ_STATUS_IDLE)
+		unsigned int i, q;
+		u32 cnt;
+
+		for (i = 0; i <= 0x30; i += 8)
+			if ((readl(pm + i) & 0x3ff) != 0x3ff)
 				break;
+		if (i <= 0x30) {
+			usleep_range(100, 200);
+			continue;
 		}
-		if (q == ANE_T6021_CHMAN_COUNT) {
-			iounmap(tm);
-			return 0;
+		cnt = readl(tm + ANE_TM_TD_COUNT_OFF);
+		if (cnt != ane->td_seen) {
+			for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++)
+				if (readl(tm + ANE_TM_TQ_STATUS_OFF -
+					  ANE_TM_TD_WINDOW +
+					  q * ANE_TM_TQ_STATUS_STRIDE) !=
+				    ANE_TM_TQ_STATUS_IDLE)
+					break;
+			if (q == ANE_T6021_CHMAN_COUNT) {
+				ane->td_seen = cnt;
+				ret = 0;
+				break;
+			}
 		}
-		usleep_range(1000, 2000);
+		usleep_range(50, 100);
 	}
-	iounmap(tm);
-	return -ETIMEDOUT;
+out:
+	if (tm)
+		iounmap(tm);
+	if (pm)
+		iounmap(pm);
+	return ret;
 }
 
 /* Return every firmware-owned slot on a target-to-host ring to the fw
@@ -529,7 +537,7 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
  * ioctls until a reboot reclaims the surfaces (wedged-pin rule). */
 static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
 
-static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
+static int ane_rtclient_command(struct ane_rtclient *ane,
 						     struct ane_legacy_buffer *command,
 						     size_t length, u16 opcode,
 						     unsigned int channel,
@@ -545,27 +553,22 @@ static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
 		atomic_set(&ane_t6021_quarantined, 1);
 		return ret;
 	}
-	/* Firmware ack is the slot reply; the TQ-idle poll is the
-	 * completion proof — only after all eight queues idle does the
-	 * result become visible to the CPU. The poll is the contract a
-	 * successful EXEC guarantees (the user ABI). */
-	ret = ane_rtclient_tq_idle_poll(timeout_ms);
-	if (ret) {
-		dev_info(ane->dev, "TQ idle poll failed %d\n", ret);
-		atomic_set(&ane_t6021_quarantined, 1);
-		return ret;
+	if (opcode == CSNE_CMD_PROCEDURE_CALL) {
+		ret = ane_rtclient_call_wait(ane, timeout_ms);
+		if (ret) {
+			dev_info(ane->dev, "call completion wait failed %d\n",
+				 ret);
+			atomic_set(&ane_t6021_quarantined, 1);
+			return ret;
+		}
 	}
 	/* The fw talks back on the target-to-host rings (fwlog, perf);
 	 * hand those slots back so the rings never fill (the sequencer
 	 * did this per step; same ack, channels 4 and 6). */
 	ane_rtclient_drain_t2h(ane, 4);
 	ane_rtclient_drain_t2h(ane, 6);
-	/* dma_sync: the section BO + the io BO were allocated
-	 * cache-coherent (dma_alloc_coherent), so no cache clean is
-	 * needed for the device write half; the CPU-side read after
-	 * EXEC needs an invalidate to pull the post-call bytes back.
-	 * The ane_bo caller owns that mapping; the legacy buffer holds
-	 * only the command slot, already coherent. */
+	/* BOs are dma_alloc_coherent memory mapped write-combined for the
+	 * CPU, so no cache maintenance is needed on either side. */
 	return 0;
 }
 
@@ -691,7 +694,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	 * 0x1b8, so the length is pinned here (h14_seq_first_add.py
 	 * load_step). */
 	BUILD_BUG_ON(sizeof(struct ane_csne_cmd_load_program) != 0x1b8);
-	ret = ane_rtclient_legacy_exchange_with_tq_idle(ane, command,
+	ret = ane_rtclient_command(ane, command,
 						       0x1c0,
 						       CSNE_CMD_LOAD_PROGRAM,
 						       1, 5000);
@@ -727,7 +730,7 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 		*(u32 *)(cmd + 0x08) = cpu_to_le32(prog_id);
 		*(u32 *)(cmd + 0x0c) = cpu_to_le32(U32_MAX);
 	}
-	ret = ane_rtclient_legacy_exchange_with_tq_idle(ane, command, 0x10,
+	ret = ane_rtclient_command(ane, command, 0x10,
 						       CSNE_CMD_CREATE_PROCESS,
 						       1, 3000);
 	if (!ret) {
@@ -823,7 +826,7 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 			*(u64 *)(cmd + slot_base + 0x20) =
 				cpu_to_le64(ios[i].size);
 		}
-		ret = ane_rtclient_legacy_exchange_with_tq_idle(ane, command,
+		ret = ane_rtclient_command(ane, command,
 							       cmd_size,
 							       CSNE_CMD_PROCEDURE_CALL,
 							       1,
