@@ -1,0 +1,38 @@
+{
+  "procedure_id": 0,
+  "records": [
+    {
+      "name": "a",
+      "size": 32768,
+      "type": 0,
+      "buffer_id": 5
+    },
+    {
+      "name": "b",
+      "size": 32768,
+      "type": 0,
+      "buffer_id": 6
+    },
+    {
+      "name": "y",
+      "size": 32768,
+      "type": 1,
+      "buffer_id": 4
+    }
+  ],
+  "stats_type": 2,
+  "section_ids": {
+    "generic": 1,
+    "kernel": 2,
+    "descriptor": 3,
+    "operation": 4,
+    "procedure": 5,
+    "tdprop": 7
+  },
+  "uuid": null,
+  "notes": {
+    "record_order": "emission order = cmd+0x60 + i*0x30; record.type 0=input 1=output (cmd rec +0x08)",
+    "buffer_ids": "ANEC channel ids from H14Program.cpp:547-561 (output=4, inputs=5,6); must avoid kernel/text section ids 2/3 per fw135 0x48df8",
+    "stats_type": "cmd+0x18 priority, valid [2,7]; 2 is the value proven through the controller by the h14conv run"
+  }
+}
