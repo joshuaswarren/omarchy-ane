@@ -382,10 +382,8 @@ static void ane_h13_perf_cleanup(void)
 		iounmap(a->win);
 	if (a->engine)
 		iounmap(a->engine);
-	if (a->pm_pinned) {
-		pm_runtime_put_sync_suspend(&a->pdev->dev);
-		pm_runtime_disable(&a->pdev->dev);
-	}
+	if (a->pm_pinned)
+		pm_runtime_put(&a->pdev->dev);
 	put_device(&a->pdev->dev);
 	kfree(a);
 }
@@ -428,8 +426,10 @@ static int __init ane_h13_perf_init(void)
 
 	/* Pin the partition up for the whole visit: autosuspend after a
 	 * fresh attach invalidates DART TLBs and resets the SoC (m1-host
-	 * bring-up rule); the legacy driver only pins during submits. */
-	pm_runtime_enable(&g->pdev->dev);
+	 * bring-up rule); the legacy driver only pins during submits.
+	 * Runtime PM belongs to the legacy driver: take a usage reference
+	 * only. Enabling/disabling it here left the legacy device's runtime
+	 * PM disabled after rmmod ("Unbalanced pm_runtime_enable!"). */
 	ret = pm_runtime_resume_and_get(&g->pdev->dev);
 	if (ret) {
 		pr_err("ane_h13_perf: genpd raise failed: %pe\n", ERR_PTR(ret));
