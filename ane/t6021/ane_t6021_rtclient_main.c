@@ -507,7 +507,7 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		if (hdr & 1)
 			break;
 		dma_rmb();
-		dev_info(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
+		dev_dbg(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
 			 c->name, slot_i, hdr, len);
 		n++;
 		WRITE_ONCE(slot[0], hdr | 1);
@@ -529,54 +529,6 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
  * ioctls until a reboot reclaims the surfaces (wedged-pin rule). */
 static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
 
-/* TEMPORARY completion trace: after the ack, sample PS words, the
- * last-committed-TD word and the TQ busy mask for `ms` and log each
- * change with its time, to learn how the ack orders against the
- * compute. Reads are PS-gated single words. */
-static unsigned int call_trace_ms = 30;
-module_param(call_trace_ms, uint, 0644);
-MODULE_PARM_DESC(call_trace_ms, "TEMPORARY: post-ack sampling window in ms (0 = none)");
-
-static void ane_rtclient_call_trace(struct ane_rtclient *ane, unsigned int ms)
-{
-	if (!ms)
-		return;
-	void __iomem *tm = ioremap_np(ANE_TM_BASE + 0x20400, 0x440);
-	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
-	ktime_t t0 = ktime_get();
-	u32 last[3] = { ~0u, ~0u, ~0u };
-
-	if (!tm || !pm)
-		goto out;
-	while (ktime_to_ms(ktime_sub(ktime_get(), t0)) < ms) {
-		u32 psok = 0, cnt = 0, busy = 0, i;
-
-		for (i = 0; i <= 6; i++)
-			psok |= ((readl(pm + i * 8) & 0x3ff) == 0x3ff) << i;
-		if (psok == 0x7f) {
-			cnt = readl(tm + 0x58);
-			for (i = 0; i < 8; i++)
-				busy |= (readl(tm + 0x404 + i * 0x2c) !=
-					 ANE_TM_TQ_STATUS_IDLE) << i;
-		}
-		if (psok != last[0] || cnt != last[1] || busy != last[2]) {
-			dev_info(ane->dev,
-				 "TRACE +%lldus ps=%#x td=%#x busy=%#x\n",
-				 ktime_to_us(ktime_sub(ktime_get(), t0)),
-				 psok, cnt, busy);
-			last[0] = psok;
-			last[1] = cnt;
-			last[2] = busy;
-		}
-		udelay(100);
-	}
-out:
-	if (tm)
-		iounmap(tm);
-	if (pm)
-		iounmap(pm);
-}
-
 static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
 						     struct ane_legacy_buffer *command,
 						     size_t length, u16 opcode,
@@ -593,10 +545,6 @@ static int ane_rtclient_legacy_exchange_with_tq_idle(struct ane_rtclient *ane,
 		atomic_set(&ane_t6021_quarantined, 1);
 		return ret;
 	}
-	dev_info(ane->dev, "EXCH op=%#x acked (fw allocs %u, %zu bytes)\n",
-		 opcode, ane->legacy_allocated, ane->legacy_bytes);
-	if (opcode == CSNE_CMD_PROCEDURE_CALL)
-		ane_rtclient_call_trace(ane, call_trace_ms);
 	/* Firmware ack is the slot reply; the TQ-idle poll is the
 	 * completion proof — only after all eight queues idle does the
 	 * result become visible to the CPU. The poll is the contract a
