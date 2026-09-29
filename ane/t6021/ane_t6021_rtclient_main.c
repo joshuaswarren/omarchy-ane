@@ -445,13 +445,15 @@ static int ane_rtclient_tq_idle_poll(unsigned int timeout_ms)
 	ret = ane_rtclient_pm_pwrstate_ok();
 	if (ret)
 		return ret;
-	tm = ioremap_np(ANE_TM_BASE + ANE_TM_TQ_STATUS_OFF - 0x40,
-			ANE_TM_TQ_STATUS_STRIDE * ANE_T6021_CHMAN_COUNT + 0x40);
+	tm = ioremap_np(ANE_TM_TQ_STATUS(0),
+			ANE_TM_TQ_STATUS_STRIDE * ANE_T6021_CHMAN_COUNT);
 	if (!tm)
 		return -ENOMEM;
 	deadline = jiffies + msecs_to_jiffies(timeout_ms);
 	while (time_before(jiffies, deadline)) {
 		for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++) {
+			/* receipt 2026-09-28 first-inference: status word
+			 * 0x285c20804 + q*0x2c reads 0x81 when idle. */
 			if (readl(tm + q * ANE_TM_TQ_STATUS_STRIDE) !=
 			    ANE_TM_TQ_STATUS_IDLE)
 				break;
