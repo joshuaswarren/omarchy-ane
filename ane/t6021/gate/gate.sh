@@ -40,11 +40,15 @@ dmesg | grep -iE 'ane_t6021|ane:' | tail -40 > "$OUT/dmesg-load.txt" || true
 fail=0
 for t in $(seq 1 "$TRIALS"); do
 	python3 - "$OUT" "$t" <<'PY'
+# The add fixture is nchw [1,512,1,1] with a 64-byte plane stride: 512
+# valid fp16 lanes, one per 64 bytes (index % 32 == 0). Padding lanes must
+# be zero because the ANE ignores them and writes zero.
 import numpy as np, sys
 out, t = sys.argv[1], int(sys.argv[2])
 rng = np.random.default_rng(1000 + t)
 for name in ("a", "b"):
-    x = rng.uniform(-8, 8, 16384).astype(np.float16)
+    x = np.zeros(16384, dtype=np.float16)
+    x[::32] = rng.uniform(-8, 8, 512).astype(np.float16)
     x.tofile(f"{out}/in-{name}-{t}.fp16")
 PY
 	if "$RUN" --anec "$ANEC" --in 0="$OUT/in-a-$t.fp16" --in 1="$OUT/in-b-$t.fp16" \
