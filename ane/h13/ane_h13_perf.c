@@ -6,14 +6,14 @@
  * "setting FW perf mode" message AppleH11ANEInterface issues at
  * power-on — over an RTKit session on the ANE ASC mailbox.
  *
- * Message evidence (H13 kext 9.512.0-t6000-gen-25G83, static): cmd id
+ * Message evidence (H13 kext 9.512.0-macstudio-25G83, static): cmd id
  * 0x1f built at __TEXT_EXEC 0xfffffe0009322e14, payload pool
  * __TEXT.__const 0xfffffe000748fdc8 {channel 0, property 0x10aa},
  * value 1 at +0x10, error-string xref 0xfffffe0009322ec8; 20-byte
  * buffer {u32 0; u16 id; u16 flags; u32 channel; u32 property;
  * u32 value}; one send site in the binary (init path).
  *
- * Measured on T6001/m1max-host (2026-09-24, receipts
+ * Measured on T6001/jw16 (2026-09-24, receipts
  * 2026-09-24-ane-perf-mode-h13):
  *   - aperture-relative CPU_STATUS +0x1400048 reads 0x2a
  *     (STOPPED|IDLE) on the working Linux stack — eos parked is the
@@ -23,7 +23,7 @@
  *     are read ONE per load behind probe_reg.
  *   - the legacy driver only pins runtime PM during its submits;
  *     an unpinned visit can die seconds later (autosuspend + DART
- *     TLB class, m1-host bring-up rule) — so this module pins the
+ *     TLB class, jwm1 bring-up rule) — so this module pins the
  *     partition with pm_runtime_resume_and_get for its whole visit.
  *
  * Safety: never binds the platform node (lookup only); non-posted
@@ -34,9 +34,12 @@
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/device/bus.h>
+#include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/jiffies.h>
+#include <linux/memremap.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
@@ -99,6 +102,57 @@ module_param(scratch_dump, bool, 0444);
 MODULE_PARM_DESC(scratch_dump,
 		 "boot: 5 s after RUN, dump the I2A outbox, A2I control and SCRATCH0-7 (ap+0x1840048..64) raw");
 
+/* ---- ChMan boot contract (eos/t600x, 13.5 stub; decode 2026-09-29) ----
+ * eos builds the selene constants: READY/DONE/ACK 0x08042006 (7 sites,
+ * scratch-write vtable+0x30 idx7), wake 0xf7fbdff9 (vm 0x62c4). The fw
+ * publishes READY on SCRATCH7 after RUN, waits for the host to publish
+ * a DVA in SCRATCH1:SCRATCH0 and write the wake word to SCRATCH7, walks
+ * SCRATCH6 1/7/8/9, publishes DONE, then spins on SCRATCH3 until the
+ * host writes the ACK. Only then does RTKit HELLO come. */
+#define ASC_SCRATCH_BASE	0x1840048
+#define ASC_SCRATCH(i)		(ASC_SCRATCH_BASE + 4 * (i))
+#define CHMAN_READY_MAGIC	0x08042006u
+#define CHMAN_WAKE_MAGIC	0xf7fbdff9u
+
+static bool chman;
+module_param(chman, bool, 0444);
+MODULE_PARM_DESC(chman,
+		 "boot: perform the eos ChMan boot contract (READY poll, DVA publish, wake, DONE poll, SCRATCH3 ack) before the MGMT handshake");
+
+static unsigned long long fw_iova = 0x10000a5c000ULL;
+module_param(fw_iova, ullong, 0444);
+MODULE_PARM_DESC(fw_iova,
+		 "DVA published in SCRATCH1:SCRATCH0 (T6001 ADT TEXT identity staging)");
+
+static unsigned long text_phys = 0x10000a54000UL;
+module_param(text_phys, ulong, 0444);
+MODULE_PARM_DESC(text_phys,
+		 "live image base PA (CoreSight receipt) for the execution-footprint read");
+
+static unsigned long data_phys = 0x10001684000UL;
+module_param(data_phys, ulong, 0444);
+MODULE_PARM_DESC(data_phys,
+		 "fw DATA staging PA (reserved-memory asc-firmware@1000163c000)");
+
+static unsigned long data_len = 0x1c0000UL;
+module_param(data_len, ulong, 0444);
+MODULE_PARM_DESC(data_len, "readable DATA span (reservation size caps it)");
+
+static bool restore_data;
+module_param(restore_data, bool, 0444);
+MODULE_PARM_DESC(restore_data,
+		 "boot+chman: load firmware 'ane/eos-data.bin' (eos __DATA content, 0x3e8000 B) and write it to data_phys before the contract (staging-DRAM write class, readback-verified, rollback = re-zero)");
+
+static bool scan_staging;
+module_param(scan_staging, bool, 0444);
+MODULE_PARM_DESC(scan_staging,
+		 "chman: read-only scan of candidate reservations for the eos DATA signature (patchbay GKST tag / DATA start 0x597c)");
+
+static bool patch_bay;
+module_param(patch_bay, bool, 0444);
+MODULE_PARM_DESC(patch_bay,
+		 "restore_data: patch the eos patchbay placeholders before staging: SOC_=0x6001 SOCR=0x11 CpAd=0x285000000 WrAd=0x285400000 (T6021 live-form values; T6001 shares the aperture layout)");
+
 /* ---- ASC mailbox (soc/apple/mailbox.c ASC variant) ---- */
 
 #define ASC_A2I_CONTROL		0x110
@@ -159,6 +213,7 @@ static struct ane_h13_perf {
 	bool hello_done;
 	bool epmap_last;
 	bool pm_pinned;
+	bool asc_was_stopped;
 } *g;
 
 /* ---- raw mailbox ops (poll mode) ---- */
@@ -382,10 +437,257 @@ static void ane_h13_perf_cleanup(void)
 		iounmap(a->win);
 	if (a->engine)
 		iounmap(a->engine);
-	if (a->pm_pinned)
-		pm_runtime_put(&a->pdev->dev);
+	if (a->pm_pinned) {
+		pm_runtime_put_sync_suspend(&a->pdev->dev);
+		pm_runtime_disable(&a->pdev->dev);
+	}
 	put_device(&a->pdev->dev);
 	kfree(a);
+}
+
+/* ---- ChMan boot contract ---- */
+
+static u64 span_sum(const u8 *p, size_t len, u64 *alt)
+{
+	u64 s1 = 0, s2 = 0;
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		s1 += p[i];
+		s2 += s1;
+	}
+	*alt = s1;
+	return s2;
+}
+
+static void chman_footprint(struct ane_h13_perf *a, const char *when)
+{
+	static const struct { const char *name; unsigned long off; size_t len; } sp[] = {
+		{ "text-head", 0, 0x400 },
+		{ "text-copy", 0x7c000, 0x8000 },	/* eos __data_copy vm 0x7c000 */
+		{ "data-head", 0, 0x8000 },
+		{ "data-patchbay", 0x6aa0, 0x160 },	/* eos _rtk_patchbay vm 0xdaaa0 */
+		{ "data-stacks", 0x17c70, 0x80 },	/* _rtk_irq_stack tail vm 0xeac70+ */
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(sp); i++) {
+		phys_addr_t pa = (sp[i].name[0] == 't') ? text_phys + sp[i].off :
+							  data_phys + sp[i].off;
+		size_t len = (sp[i].name[0] == 't') ? sp[i].len :
+						      min_t(size_t, sp[i].len, data_len);
+		u8 *va = memremap(pa, len, MEMREMAP_WB);
+		u64 s1 = 0, s2 = 0;
+
+		if (va) {
+			s2 = span_sum(va, len, &s1);
+			memunmap(va);
+			dev_info(&a->pdev->dev, "chman: fp %s %s pa=%pa len=%zx sum=%016llx:%016llx\n",
+				 when, sp[i].name, &pa, len, s2, s1);
+		} else {
+			dev_info(&a->pdev->dev, "chman: fp %s %s pa=%pa UNREADABLE\n",
+				 when, sp[i].name, &pa);
+		}
+	}
+}
+
+static void chman_dump_scratch(struct ane_h13_perf *a)
+{
+	u32 s[8];
+	int i;
+
+	for (i = 0; i < 8; i++)
+		s[i] = readl_relaxed(a->engine + ASC_SCRATCH(i));
+	dev_info(&a->pdev->dev,
+		 "chman: SCRATCH %08x %08x %08x %08x %08x %08x %08x %08x cpu_status=%08x\n",
+		 s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
+		 readl_relaxed(a->engine + ANE_H13_CPU_STATUS));
+}
+
+static int chman_contract(struct ane_h13_perf *a)
+{
+	struct device *dev = &a->pdev->dev;
+	int t, ret = -ETIMEDOUT;
+	u32 s0, s6, s7;
+
+	chman_footprint(a, "A-pre");
+
+	for (t = 0; t < 20; t++) {
+		chman_dump_scratch(a);
+		if (readl_relaxed(a->engine + ASC_SCRATCH(7)) == CHMAN_READY_MAGIC) {
+			ret = 0;
+			break;
+		}
+		msleep(1000);
+	}
+	if (ret) {
+		dev_info(dev, "chman: POLL-A no READY (0x%08x) in 20 s\n",
+			 CHMAN_READY_MAGIC);
+		goto out;
+	}
+	dev_info(dev, "chman: POLL-A READY seen at t=%d s\n", t);
+
+	/* publish fw DVA in SCRATCH1:SCRATCH0, then wake */
+	writel_relaxed(lower_32_bits(fw_iova), a->engine + ASC_SCRATCH(0));
+	writel_relaxed(upper_32_bits(fw_iova), a->engine + ASC_SCRATCH(1));
+	dma_wmb();
+	writel_relaxed(CHMAN_WAKE_MAGIC, a->engine + ASC_SCRATCH(7));
+	dma_wmb();
+	dev_info(dev, "chman: published dva=%016llx wake=0x%08x\n",
+		 fw_iova, CHMAN_WAKE_MAGIC);
+
+	ret = -EIO;
+	for (t = 0; t < 15; t++) {
+		msleep(1000);
+		chman_dump_scratch(a);
+		s0 = readl_relaxed(a->engine + ASC_SCRATCH(0));
+		s6 = readl_relaxed(a->engine + ASC_SCRATCH(6));
+		s7 = readl_relaxed(a->engine + ASC_SCRATCH(7));
+		if (s7 == CHMAN_READY_MAGIC && (s6 >= 7 || s0 != lower_32_bits(fw_iova))) {
+			dev_info(dev, "chman: POLL-B DONE at t=%d (s6=%08x s0=%08x)\n",
+				 t, s6, s0);
+			writel_relaxed(CHMAN_READY_MAGIC, a->engine + ASC_SCRATCH(3));
+			dma_wmb();
+			dev_info(dev, "chman: SCRATCH3 ACK 0x%08x written\n",
+				 CHMAN_READY_MAGIC);
+			ret = 0;
+			break;
+		}
+	}
+	if (ret)
+		dev_info(dev, "chman: POLL-B no DONE in 15 s\n");
+
+out:
+	chman_footprint(a, "B-post");
+	return ret;
+}
+
+/* ---- eos DATA staging restore + scan ---- */
+
+#define EOS_DATA_LEN		0x3e8000
+#define EOS_DATA_FW		"ane/eos-data.bin"
+
+static const u8 eos_sig_pb[8] = { 'G', 'K', 'S', 'T', 0x08, 0x00, 0x00, 0x00 };
+
+static void chman_scan(struct ane_h13_perf *a)
+{
+	static const struct { const char *name; unsigned long pa; size_t len; } span[] = {
+		{ "ascfw@10000c68000", 0x10000c68000UL, 0x980000 },
+		{ "ascfw@1000163c000", 0x1000163c000UL, 0x1c0000 },
+		{ "ascfw@10001d70000", 0x10001d70000UL, 0x324000 },
+		/* ascfw@10002094000 memremaps NULL on jw16 — kept out.
+		 * text-contig (0x10000a618000+0x400000) removed: straddles
+		 * an unmapped PA hole, memremap hands back a dead mapping
+		 * and the read oopses (winD 2026-09-29, boot e25fcf83). */
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(span); i++) {
+		u8 *va = memremap(span[i].pa, span[i].len, MEMREMAP_WB);
+		size_t o;
+		int hits = 0;
+
+		if (!va) {
+			dev_info(&a->pdev->dev, "chman: scan %s UNREADABLE\n",
+				 span[i].name);
+			continue;
+		}
+		for (o = 0; o + 8 <= span[i].len; o += 8) {
+			if (!memcmp(va + o, eos_sig_pb, 8)) {
+				if (hits < 4)
+					dev_info(&a->pdev->dev,
+						 "chman: scan %s GKST hit at +%zx (pa=%pa)\n",
+						 span[i].name, o, &span[i].pa);
+				hits++;
+			}
+		}
+		dev_info(&a->pdev->dev, "chman: scan %s done, GKST hits=%d\n",
+			 span[i].name, hits);
+		memunmap(va);
+	}
+}
+
+static int chman_restore_data(struct ane_h13_perf *a)
+{
+	const struct firmware *fw;
+	u8 *buf, *va;
+	u64 sum2, sum1;
+	int ret;
+
+	ret = request_firmware_direct(&fw, EOS_DATA_FW, &a->pdev->dev);
+	if (ret) {
+		dev_err(&a->pdev->dev, "chman: restore: no %s: %pe\n",
+			EOS_DATA_FW, ERR_PTR(ret));
+		return ret;
+	}
+	if (fw->size != EOS_DATA_LEN) {
+		dev_err(&a->pdev->dev, "chman: restore: %s size %zu != %#x\n",
+			EOS_DATA_FW, fw->size, EOS_DATA_LEN);
+		release_firmware(fw);
+		return -EINVAL;
+	}
+
+	/* mutable copy: the patchbay lives in the DATA content at +0x6aa0 */
+	buf = kmemdup(fw->data, EOS_DATA_LEN, GFP_KERNEL);
+	release_firmware(fw);
+	if (!buf)
+		return -ENOMEM;
+
+	if (patch_bay) {
+		static const struct { u32 off; const char tag[5]; u64 val; u32 len; } pb[] = {
+			{ 0x6aa0 + 0x16b, "_COS", 0x6001, 4 },
+			{ 0x6aa0 + 0x177, "RCOS", 0x11, 4 },
+			{ 0x6aa0 + 0x183, "dApC", 0x285000000ULL, 8 },
+			{ 0x6aa0 + 0x193, "dArW", 0x285400000ULL, 8 },
+		};
+		int i;
+
+		for (i = 0; i < ARRAY_SIZE(pb); i++) {
+			u32 o = pb[i].off;
+
+			if (memcmp(buf + o, pb[i].tag, 4)) {
+				dev_err(&a->pdev->dev,
+					"chman: patchbay: tag %.4s not at +%#x (%ph) — refuse\n",
+					pb[i].tag, o - 0x6aa0, buf + o);
+				kfree(buf);
+				return -EINVAL;
+			}
+			if (pb[i].len == 4)
+				put_unaligned_le32((u32)pb[i].val, buf + o + 8);
+			else
+				put_unaligned_le64(pb[i].val, buf + o + 8);
+			dev_info(&a->pdev->dev,
+				 "chman: patchbay: %.4s <- %016llx (len %u)\n",
+				 pb[i].tag, pb[i].val, pb[i].len);
+		}
+	}
+
+	va = memremap(data_phys, EOS_DATA_LEN, MEMREMAP_WC);
+	if (!va) {
+		dev_err(&a->pdev->dev, "chman: restore: data_phys %pa unmappable\n",
+			&data_phys);
+		kfree(buf);
+		return -ENOMEM;
+	}
+	memcpy(va, buf, EOS_DATA_LEN);
+	{
+		u8 rb_head[32], rb_tail[32];
+
+		memcpy(rb_head, va, 32);
+		memcpy(rb_tail, va + EOS_DATA_LEN - 32, 32);
+		dev_info(&a->pdev->dev,
+			 "chman: restore: wrote %#x B to data_phys %pa; head %08x %08x tail %08x %08x\n",
+			 EOS_DATA_LEN, &data_phys,
+			 get_unaligned_le32(rb_head), get_unaligned_le32(rb_head + 4),
+			 get_unaligned_le32(rb_tail), get_unaligned_le32(rb_tail + 4));
+	}
+	sum2 = span_sum(va, EOS_DATA_LEN, &sum1);
+	dev_info(&a->pdev->dev,
+		 "chman: restore: post-write DATA fletcher sum=%016llx:%016llx\n",
+		 sum2, sum1);
+	memunmap(va);
+	kfree(buf);
+	return 0;
 }
 
 static int match_owned(struct device *dev, const void *data)
@@ -425,11 +727,9 @@ static int __init ane_h13_perf_init(void)
 		found->driver ? found->driver->name : "?");
 
 	/* Pin the partition up for the whole visit: autosuspend after a
-	 * fresh attach invalidates DART TLBs and resets the SoC (m1-host
-	 * bring-up rule); the legacy driver only pins during submits.
-	 * Runtime PM belongs to the legacy driver: take a usage reference
-	 * only. Enabling/disabling it here left the legacy device's runtime
-	 * PM disabled after rmmod ("Unbalanced pm_runtime_enable!"). */
+	 * fresh attach invalidates DART TLBs and resets the SoC (jwm1
+	 * bring-up rule); the legacy driver only pins during submits. */
+	pm_runtime_enable(&g->pdev->dev);
 	ret = pm_runtime_resume_and_get(&g->pdev->dev);
 	if (ret) {
 		pr_err("ane_h13_perf: genpd raise failed: %pe\n", ERR_PTR(ret));
@@ -465,6 +765,7 @@ static int __init ane_h13_perf_init(void)
 	g->mb = g->engine + mb_off;
 
 	cpu_status = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
+	g->asc_was_stopped = cpu_status & ASC_CPU_STOPPED;
 	pr_info("ane_h13_perf: CPU_STATUS=%08x TM_TQ_EN(win)=%08x\n",
 		cpu_status, readl_relaxed(g->win + 0x2000c));
 
@@ -508,6 +809,16 @@ static int __init ane_h13_perf_init(void)
 		 * removed. Corrected first missing NON-ps write is
 		 * PWGATE+0x159c = 0 (third-window; T6001 base
 		 * unresolved — do not write without it). */
+		if (chman) {
+			if (scan_staging)
+				chman_scan(g);
+			chman_footprint(g, "A-prerun");
+			if (restore_data) {
+				ret = chman_restore_data(g);
+				if (ret)
+					goto err;
+			}
+		}
 		rvbar = readq_relaxed(g->engine + ASC_IO_RVBAR);
 		dev_info(&g->pdev->dev, "boot: RVBAR=%016llx (bit0 latched=%d, never written)\n",
 			 rvbar, (int)(rvbar & 1));
@@ -553,6 +864,25 @@ static int __init ane_h13_perf_init(void)
 			dev_info(&g->pdev->dev, "SCRATCH%d=%08x\n", ret,
 				 readl_relaxed(g->engine + 0x1840048 +
 					       ret * 4));
+	}
+
+	if (chman) {
+		u32 st = readl_relaxed(g->engine + ANE_H13_CPU_STATUS);
+
+		if (!g->asc_was_stopped) {
+			dev_err(&g->pdev->dev,
+				"chman: ASC was already running at attach (attach=%08x, now=%08x) — reboot to a fresh boot; the contract is only valid right after its own RUN\n",
+				st, readl_relaxed(g->engine + ANE_H13_CPU_STATUS));
+			ret = -EBUSY;
+			goto err;
+		}
+		ret = chman_contract(g);
+		if (ret) {
+			dev_err(&g->pdev->dev,
+				"chman: boot contract did not complete: %pe\n",
+				ERR_PTR(ret));
+			goto err;
+		}
 	}
 
 	ret = handshake(g);
