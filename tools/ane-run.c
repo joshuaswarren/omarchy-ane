@@ -150,25 +150,35 @@ int main(int argc, char **argv)
 		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
 			anec = argv[++i];
 		} else if (!strcmp(argv[i], "--in") && i + 1 < argc) {
+			int slot = -1;
+
 			for (int k = 0; k < 8; k++) {
 				if (!ins[k].set) {
-					if (parse_io_arg(argv[++i], &ins[k],
-							 "in")) {
-						return 2;
-					}
+					slot = k;
 					break;
 				}
 			}
+			if (slot < 0) {
+				fprintf(stderr, "too many --in args (max 8)\n");
+				return 2;
+			}
+			if (parse_io_arg(argv[++i], &ins[slot], "in"))
+				return 2;
 		} else if (!strcmp(argv[i], "--out") && i + 1 < argc) {
+			int slot = -1;
+
 			for (int k = 0; k < 8; k++) {
 				if (!outs[k].set) {
-					if (parse_io_arg(argv[++i], &outs[k],
-							 "out")) {
-						return 2;
-					}
+					slot = k;
 					break;
 				}
 			}
+			if (slot < 0) {
+				fprintf(stderr, "too many --out args (max 8)\n");
+				return 2;
+			}
+			if (parse_io_arg(argv[++i], &outs[slot], "out"))
+				return 2;
 		} else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) {
 			repeat = (uint32_t)strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "--check-add")) {

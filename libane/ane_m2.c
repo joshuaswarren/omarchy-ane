@@ -586,8 +586,11 @@ int ane_m2_open(struct ane_nn *nn, const char *path)
 		memset(ctx->io_bo[i].map, 0, ctx->model.io[i].size);
 	}
 
-	/* PROG_LOAD: section list plus one generic bind per io buffer; the
-	 * driver patches each generic entry with the buffer's IOVA and size. */
+	/* PROG_LOAD: section list plus one generic bind per io buffer.
+	 * The M2 driver accepts the binds for ABI compatibility and
+	 * ignores them: the LOAD record already carries each section's
+	 * IOVA and size, and the generic section image inside
+	 * generic.bin is fully prepared here. */
 	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
 		sec_args[i].id = ane_m2_section_ids[i];
 		sec_args[i].bo_handle = ctx->sec_bo[i].handle;
