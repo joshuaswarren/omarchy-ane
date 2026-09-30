@@ -1,9 +1,10 @@
-# Packaging: DKMS, udev rule, readiness check, M2 firmware fetch
+# Packaging: DKMS, readiness check, M2 firmware fetch
 
 Date: 2026-09-30
-Source built: `5606864` (`dkms.conf`, `ane/Makefile`, `ane/src/` are
-unchanged after it). Scope: packaging only. No driver logic change, no
-device submission, no module load on any fleet machine.
+Source built: `5606864` (linux-aurora) and `87f427f` (linux-asahi and
+linux-aurora). `dkms.conf`, `ane/Makefile` and `ane/src/` are identical at
+both commits. Scope: packaging only. No driver logic change, no device
+submission, no module load on any fleet machine.
 
 ## DKMS build, aarch64, linux-aurora 7.1.12 headers
 
@@ -63,6 +64,79 @@ Makefiles gives `-DANE_MODULE_VERSION="v0.2.0-11-g5606864"`); with
 `ANE_VERSION=1.2.3` it gives `"1.2.3"`. A plain `make -C ane` in a tree
 without `.git` still builds and reports `unknown`.
 
+## DKMS build, aarch64, linux-asahi 7.1.13 (non-Aurora kernel)
+
+`dkms.conf` and `ane/Makefile` name no kernel: no `BUILD_EXCLUSIVE_*`
+directive, and `grep -ciE 'aurora|asahi|BUILD_EXCLUSIVE'` counts 0 in both.
+
+Same rootfs, `[asahi-alarm]` repo added (key `12CE6799…97FB8FEB`).
+`linux-asahi` 7.1.13.asahi3-2 and `linux-aurora` 7.1.12.aurora2-11 are
+mutually exclusive: `linux-aurora` has `Provides: linux-asahi=7.1.12.aurora2`
+and `Conflicts With: linux-asahi`, and the header packages do the same. So
+`linux-aurora` and its headers were removed first. Source `87f427f`,
+version `0.2.0.r14.g87f427f`. The linux-asahi kernel is gcc 16.1.1 with
+`# CONFIG_MODULE_SIG is not set`.
+
+```
+$ pacman -S linux-asahi linux-asahi-headers
+(3/4) Install DKMS modules
+==> dkms install --no-depmod omarchy-ane/0.2.0.r14.g87f427f -k 7.1.13-3-2-ARCH
+==> depmod 7.1.13-3-2-ARCH
+$ dkms build omarchy-ane/0.2.0.r14.g87f427f -k 7.1.13-3-2-ARCH --force
+Building module(s)............ done.
+# command: make -j16 KERNELRELEASE=7.1.13-3-2-ARCH -C /usr/lib/modules/7.1.13-3-2-ARCH/build M=/var/lib/dkms/omarchy-ane/0.2.0.r14.g87f427f/build/ane ANE_VERSION=0.2.0.r14.g87f427f modules
+  LD [M]  ane.ko
+  BTF [M] ane.ko
+# exit code: 0
+$ modinfo -k 7.1.13-3-2-ARCH ane
+filename:       /lib/modules/7.1.13-3-2-ARCH/updates/dkms/ane.ko
+version:        0.2.0.r14.g87f427f
+vermagic:       7.1.13-3-2-ARCH SMP preempt mod_unload aarch64
+$ omarchy-ane-check --installed
+  ok    ane.ko built for 7.1.13-3-2-ARCH: /lib/modules/7.1.13-3-2-ARCH/updates/dkms/ane.ko (version 0.2.0.r14.g87f427f)
+```
+
+The same source against the linux-aurora 7.1.12 headers, unpacked outside
+pacman because of the conflict:
+
+```
+$ dkms build omarchy-ane/0.2.0.r14.g87f427f -k 7.1.12-2-11-ARCH --kernelsourcedir /root/aurora-hdr/usr/lib/modules/7.1.12-2-11-ARCH/build --force
+Building module(s)............. done.
+# exit code: 0
+vermagic:       7.1.12-2-11-ARCH SMP preempt mod_unload aarch64
+```
+
+## Device-tree node
+
+No shipped device tree has an ANE node. `dtc -I dtb -O dts` counts zero
+`apple,t*-ane` compatibles and `fdtget -l /` finds no `__symbols__` in
+`t8103-j293.dtb`, `t6001-j316c.dtb` and `t6021-j414c.dtb` from both
+`linux-asahi-7.1.13.asahi3-2` and `linux-aurora-7.1.12.aurora2-11`.
+
+The lab path is the one in the overlay headers: `dtc -@`, `fdtoverlay` onto
+the modules DTB, then `update-m1n1`. asahi-alarm's `asahi-scripts`
+20260127.1-1 builds `update-m1n1` with
+`DTBS:=$(/bin/ls -d /lib/modules/*-ARCH | sort -rV | head -1)/dtbs/*.dtb`,
+and its `95-m1n1-install.hook` runs it when `usr/lib/modules/*/dtbs/*`
+changes. omarchy-pkgs `m1n1-aurora/README.md` names the same flow for
+linux-aurora. A kernel package update overwrites the patched DTB.
+
+Offline application (file level only; nothing booted):
+
+| DTB | Overlay | `fdtoverlay` | Result |
+| --- | --- | --- | --- |
+| linux-asahi `t6001-j316c.dtb` | `t6001-j316c-set-domains.dts` | rc 0 | `/soc/ane@284000000` `apple,t6000-ane`, `okay` |
+| linux-aurora `t6001-j316c.dtb` | `t6001-j316c-set-domains.dts` | rc 0 | same |
+| linux-asahi `t6021-j414c.dtb` | `t6021-j414c-ane.dts` | rc 0 | `apple,t6021-ane`, `okay` |
+| linux-aurora `t6021-j414c.dtb` | `t6021-j414c-ane.dts` | rc 0 | same |
+
+The T6001 overlay hard-codes `interrupt-parent = <0x13>`. The AIC
+(`/soc/interrupt-controller@28e100000`) phandle is `0x13` in both
+`t6001-j316c.dtb` files. The T6021 v1 overlay's engine window
+(`0x285c04000`) is the one `t6021-j414c-ane-rtkit.dts` records as
+external-aborting on first touch, so the README keeps it out of the
+packaged path. There is no T8103 overlay in this repository.
+
 ## Firmware fetch (x86_64 workstation, temporary root)
 
 Device tree faked under a `mktemp -d` root: `compatible` =
@@ -106,23 +180,33 @@ omarchy-ane-check: kernel (x86_64 host kernel)
   FAIL  no device tree: this is not an Apple Silicon Linux system
 omarchy-ane-check: FAILED          (exit 1)
 
-$ omarchy-ane-check                 # m1-test-host, T8103, read-only run
+$ sudo unshare -m bash fake-ane-sys.sh omarchy-ane-check /dev/null   # x86_64, fake bound-ANE sysfs
   ok    ANE device-tree node: apple,t8103-ane
-  ok    ane.ko built for 7.1.13-3-2-ARCH: /lib/modules/7.1.13-3-2-ARCH/updates/ane.ko (version 5ecff86)
-  ok    ane is loaded (version 5ecff86)
+  FAIL  ane.ko is not built for kernel (x86_64 host kernel). …
+  ok    ane is loaded (version fake)
   ok    ane is bound to 26bc04000.ane
-  ok    /dev/accel/accel0 present (crw-rw-rw- root:render) and (user) can open it
-omarchy-ane-check: ready            (exit 0)
+  ok    /dev/accel/accel0 present (crw-rw-rw- nobody:nogroup); every user can open it
+
+$ sudo unshare -m bash fake-ane-sys.sh omarchy-ane-check /dev/tty1   # same, node not world-openable
+  FAIL  /dev/accel/accel0 is crw--w---- root:tty, so not every user can open it. systemd's default rule makes accel nodes mode 0666. A udev rule on this system changed that.
 
 $ omarchy-ane-check --installed     # aarch64 rootfs, before / after the DKMS hook
   FAIL  ane.ko is not built for kernel 7.1.12-2-11-ARCH. …   (exit 1)
   ok    ane.ko built for 7.1.12-2-11-ARCH: /lib/modules/7.1.12-2-11-ARCH/updates/dkms/ane.ko (version 0.2.0.r11.g5606864)
 ```
 
-## udev rule
+The fake sysfs is a private mount namespace: tmpfs over `/sys` and `/dev`
+with the driver symlinks the check reads, and an existing char device
+bind-mounted as `/dev/accel/accel0` (the container denies `mknod`). It tests
+the check's logic only, not hardware.
 
-`udevadm verify packaging/70-omarchy-ane.rules`: 1 checked, 1 success.
-On m1-test-host, systemd 261.3 `50-udev-default.rules:63` is
-`SUBSYSTEM=="accel", GROUP="render", MODE="0666"`, and `udevadm info -a`
-shows the accel node's parent with `DRIVERS=="ane"`. The rule narrows the
-ANE node to `0660` plus `uaccess`; the group stays `render`.
+## Device access
+
+The package ships no udev rule. systemd 262-1 in the aarch64 rootfs,
+`/usr/lib/udev/rules.d/50-udev-default.rules:63`:
+
+```
+SUBSYSTEM=="accel", GROUP="render", MODE="0666"
+```
+
+So every accel node, the ANE node included, is open to every user.

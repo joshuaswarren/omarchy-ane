@@ -85,17 +85,21 @@ else
   bad "ane is bound to no device. Read the reason with: journalctl -k -g ane"
 fi
 
-# 5. Device node, and access for the user who runs this check.
+# 5. Device node. Every user must be able to open it. The package adds no
+#    udev rule: systemd's 50-udev-default.rules makes accel nodes mode 0666.
 node=""
 for s in /sys/class/accel/accel*; do
   [[ $(readlink "$s/device/driver") == */ane ]] && { node=/dev/accel/${s##*/}; break; }
 done
 if [[ -z $node || ! -c $node ]]; then
   bad "no /dev/accel node from ane"
-elif [[ -r $node && -w $node ]]; then
-  ok "$node present ($(stat -c '%A %U:%G' "$node")) and $(id -un) can open it"
 else
-  bad "$node present, but $(id -un) cannot open it. Log in at the local seat, or join the render group."
+  mode=$(stat -c '%A %U:%G' "$node")
+  if [[ $mode == c??????rw?\ * ]]; then
+    ok "$node present ($mode); every user can open it"
+  else
+    bad "$node is $mode, so not every user can open it. systemd's default rule makes accel nodes mode 0666. A udev rule on this system changed that."
+  fi
 fi
 
 finish
