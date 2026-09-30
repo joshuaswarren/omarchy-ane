@@ -201,7 +201,10 @@ def run(root):
         raise Refuse(f"cannot fetch from Apple's CDN: {e}. Check the network and try again")
     data = im4p_payload(blob)
     digest = verify(data)
-    install(data, dest)
+    try:
+        install(data, dest)
+    except OSError as e:
+        raise Refuse(f"cannot write {dest}: {e.strerror}")
     print(f"installed {dest} ({len(data)} bytes, sha256 {digest})")
 
 
