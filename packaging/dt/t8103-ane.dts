@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T8103 (M1) board device trees, for kernels whose trees lack it.
+ *
+ * DERIVED, NOT YET BOOTED FROM THIS OVERLAY. The nodes reproduce the tree the
+ * qualified M1 host runs with ane.ko bound (live /proc/device-tree dump,
+ * 2026-09-30): ane@26bc04000, its three ANE DARTs, and the ANE power chain
+ *   ane -> ane_set1..5 (c010..c030) -> ane_base (c008) -> ane_sys_cpu (c000)
+ *       -> ane_sys (470); the DARTs -> ane_sys.
+ * Stock T8103 trees already carry AIC, ane_sys and ane_sys_cpu. Their phandles
+ * differ between kernels and boards, so this overlay reaches them by path.
+ *
+ * apple-dart owns the three DARTs, and the ane node names them in iommus:
+ * ane.ko maps through that IOMMU domain and never requests an IRQ.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t8103-ane";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@23b100000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@23b700000/power-controller@470";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@23b700000/power-controller@c000";
+		ps_ane_sys_cpu: __overlay__ {
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-management@23b700000";
+
+		__overlay__ {
+			ps_ane_base: power-controller@c008 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_sys_cpu>;
+			};
+
+			ps_ane_set1: power-controller@c010 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set1";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set2: power-controller@c018 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set2";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set3: power-controller@c020 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc020 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set3";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set4: power-controller@c028 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc028 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set4";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set5: power-controller@c030 {
+				compatible = "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc030 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set5";
+				power-domains = <&ps_ane_base>;
+			};
+		};
+	};
+
+	fragment@4 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@26b800000 {
+				compatible = "apple,t8103-dart";
+				reg = <0x2 0x6b800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				apple,dma-range = <0x0 0x0 0x0 0xe0000000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0x1a1 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@26b810000 {
+				compatible = "apple,t8103-dart";
+				reg = <0x2 0x6b810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				apple,dma-range = <0x0 0x0 0x0 0xe0000000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0x1a1 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@26b820000 {
+				compatible = "apple,t8103-dart";
+				reg = <0x2 0x6b820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				apple,dma-range = <0x0 0x0 0x0 0xe0000000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0x1a1 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane@26bc04000 {
+				compatible = "apple,t8103-ane";
+				reg = <0x2 0x6bc04000 0x0 0x24000>;
+				reg-names = "engine";
+				interrupt-parent = <&aic>;
+				interrupts = <0 0x1a0 4>;
+				interrupt-names = "ane";
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_set1>, <&ps_ane_set2>, <&ps_ane_set3>,
+						<&ps_ane_set4>, <&ps_ane_set5>;
+				status = "okay";
+			};
+		};
+	};
+};

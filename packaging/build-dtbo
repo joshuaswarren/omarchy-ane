@@ -1,0 +1,15 @@
+#!/bin/bash
+# Compile the enabled device tree overlays in packaging/dt/overlays into
+#   DESTDIR/usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-ane.dtbo
+# For a package recipe: packaging/build-dtbo "$pkgdir". Needs dtc.
+set -euo pipefail
+destdir=${1:?usage: build-dtbo DESTDIR}
+dt=$(dirname -- "$(realpath -- "$0")")/dt
+while read -r prefix source state; do
+  [[ -n $prefix && $prefix != \#* ]] || continue
+  [[ $state == enabled ]] || { echo "build-dtbo: $prefix: $state, not installed"; continue; }
+  out=$destdir/usr/lib/omarchy-platform/dtb-overlays/$prefix/omarchy-ane.dtbo
+  install -d "${out%/*}"
+  dtc -q -@ -I dts -O dtb -o "$out" "$dt/$source"
+  echo "build-dtbo: $prefix: ${out#"$destdir"}"
+done <"$dt/overlays"

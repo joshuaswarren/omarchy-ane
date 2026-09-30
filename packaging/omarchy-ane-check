@@ -52,12 +52,27 @@ for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
   [[ -e $st ]] && status=$(tr -d '\0' <"$st")
   [[ $status == okay ]] && { compat=$c; break; }
 done
+# Where the node comes from: omarchy-ane-dt status compares the running
+# kernel's board device tree with omarchy-ane's overlay.
+dtool=$(dirname -- "$(realpath -- "$0")")/omarchy-ane-dt
+[[ -x $dtool ]] || dtool=$(command -v omarchy-ane-dt || true)
+origin=""
+[[ -z $dtool ]] || origin=$("$dtool" status 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
 if [[ ! -d $dt ]]; then
   bad "no device tree: this is not an Apple Silicon Linux system"; finish
 elif [[ -z $compat ]]; then
-  bad "no ANE node with status okay in the device tree. The kernel's device tree must carry one."; finish
+  case $origin in
+    kernel) bad "no ANE node in the running device tree, but the kernel's DTB has one. m1n1 has an older device tree. Run: sudo update-m1n1, then reboot." ;;
+    overlay) bad "no ANE node in the running device tree, but the omarchy-ane overlay has one. m1n1 has an older device tree. Run: sudo update-m1n1, then reboot." ;;
+    *) bad "no ANE node: neither the kernel's DTB nor the omarchy-ane overlay has one. Run: sudo omarchy-ane-dt apply" ;;
+  esac
+  finish
 fi
-ok "ANE device-tree node: $compat"
+case $origin in
+  kernel) ok "ANE device-tree node: $compat (DTB has node: kernel)" ;;
+  overlay) ok "ANE device-tree node: $compat (DTB has node: omarchy-ane overlay)" ;;
+  *) ok "ANE device-tree node: $compat (from a device tree outside the kernel package and omarchy-ane)" ;;
+esac
 
 # 2. Module built for the running kernel.
 built "$kver"

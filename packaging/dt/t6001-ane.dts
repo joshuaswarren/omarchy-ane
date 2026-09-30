@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T6001 (M1 Max) board device trees, for kernels whose trees lack it.
+ *
+ * The nodes are those of the lab overlay ane/t6001-j316c-set-domains.dts,
+ * which bound ane.ko and ran exact fp16 programs on the M1 Max host. Two
+ * changes make it safe on every stock T6001 tree:
+ *  - AIC and ane_sys@268 are reached by path. The lab file uses their raw
+ *    phandles 0x13 and 0x18, which are right only while the kernel keeps them.
+ *  - The pmgr window is 0x1c000. The lab file sets 0x14000 to cover SET0 at
+ *    0xc000. linux-asahi 7.1.13 ships 0x4000, but linux-aurora 7.1.12 already
+ *    ships 0x1c000 with a child past 0x14000, so 0x14000 would cut that off.
+ * set5@c030 stays out of the ane node: it is past ADT range1 0xc02c.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t6000-ane";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@28e100000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@28e080000/power-controller@268";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@28e080000/power-controller@2c8";
+		ane_cpu_pd: __overlay__ {
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-management@28e080000";
+
+		__overlay__ {
+			reg = <0x2 0x8e080000 0 0x1c000>;
+
+			ps_ane_set0: power-controller@c000 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set0";
+				power-domains = <&ane_cpu_pd>;
+			};
+
+			ps_ane_base: power-controller@c008 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_set0>;
+			};
+
+			ps_ane_set1: power-controller@c010 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set1";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set2: power-controller@c018 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set2";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set3: power-controller@c020 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc020 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set3";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set4: power-controller@c028 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc028 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set4";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set5: power-controller@c030 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc030 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set5";
+				power-domains = <&ps_ane_base>;
+			};
+		};
+	};
+
+	fragment@4 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@285800000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85800000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 771 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@285810000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85810000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 771 4>;
+				power-domains = <&ane_cpu_pd>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@285820000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85820000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 771 4>;
+				power-domains = <&ane_cpu_pd>;
+				status = "okay";
+			};
+
+			ane@284000000 {
+				compatible = "apple,t6000-ane";
+				reg-names = "engine";
+				reg = <0x2 0x85c04000 0x0 0x0024000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "ane";
+				interrupts = <0 0 770 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ane_cpu_pd>,
+						<&ps_ane_set1>,
+						<&ps_ane_set2>,
+						<&ps_ane_set3>,
+						<&ps_ane_set4>;
+				status = "okay";
+			};
+		};
+	};
+};

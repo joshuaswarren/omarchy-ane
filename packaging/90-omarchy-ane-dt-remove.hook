@@ -1,0 +1,11 @@
+# Package removal: take the update-m1n1 line and the overlaid copies out while
+# omarchy-ane-dt still exists.
+[Trigger]
+Type = Path
+Operation = Remove
+Target = usr/bin/omarchy-ane-dt
+
+[Action]
+Description = Removing the ANE device tree overlay...
+When = PreTransaction
+Exec = /usr/bin/omarchy-ane-dt remove

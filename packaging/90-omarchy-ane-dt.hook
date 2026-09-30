@@ -1,0 +1,15 @@
+# Before 95-m1n1-install.hook (asahi-scripts), so the update-m1n1 it runs after
+# a kernel update reads the overlaid board device tree.
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Target = usr/lib/modules/*/dtbs/*
+Target = usr/lib/omarchy-platform/dtb-overlays/*
+
+[Action]
+Description = Adding the ANE node to the board device tree...
+When = PostTransaction
+Exec = /usr/bin/omarchy-ane-dt apply --hook
+NeedsTargets
