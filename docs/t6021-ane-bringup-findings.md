@@ -1285,7 +1285,11 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   1- and 2-task programs have passed on this module. Do not run programs
   with more than 2 tasks until the call waits for the program's own TD count
   ([receipts/2026-09-30-t6021-qwen-chain](../receipts/2026-09-30-t6021-qwen-chain/README.md)).
-- `ane-run --ports` now binds the port table on the device and refuses a
-  port whose surface is larger than its channel allocation (`49eb8ed`).
-  37 of the 38 generated Qwen port tables fail that check; only `prog_020`
-  passes.
+- `ane-run --ports` binds the port table on the device and refuses a port
+  whose surface is larger than its io BO (`49eb8ed`). A BAR slot is the
+  HWX program-descriptor resource at `+0x10 + 0x10 * slot` (0 text, 1 kernel
+  constants, 3 `__DATA` scratch, 4.. io surfaces), so a port larger than
+  16 KiB is one slot and one BO. All 38 regenerated Qwen tables pass the
+  size gate and `--dry-run`; the port build takes several outputs and the
+  slot-3 scratch, and refuses a task-stream slot the table does not bind
+  ([ports-sizes.md](../receipts/2026-09-30-t6021-qwen-chain/ports-sizes.md)).

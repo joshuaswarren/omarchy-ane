@@ -111,6 +111,10 @@ the port build accepts only one output (program 0 has 7 outputs, program 1
 has 2). M1 inputs and goldens exist for both: captures e0418 and e0419, which
 match `goldens.json` by SHA-256.
 
+Addendum (same day): the size failures and the one-output limit are fixed.
+See [ports-sizes.md](ports-sizes.md): all 38 tables pass the size gate and
+`ane-run --dry-run`, and the call-wait stop above still applies.
+
 Private record: entry `entries/Prog20Run/20260930T230934Z-…-prog020-ports.md`
 and `artifacts/Prog20Run/2026-09-30-prog020-ports/` (MANIFEST.txt,
 SHA256SUMS).
