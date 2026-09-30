@@ -872,8 +872,6 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 		*(u64 *)(cmd + slot_base + 0x18) = cpu_to_le64(iova);
 		*(u64 *)(cmd + slot_base + 0x20) =
 			cpu_to_le64(sections[i].size);
-		dev_info(ane->dev, "LOADSEC id=%u iova=%#llx size=%llu\n",
-			 sections[i].id, (u64)iova, (u64)sections[i].size);
 	}
 	/* Generic binds are accepted for ABI compatibility and unused:
 	 * the LOAD record already carries iova + size, and the generic
@@ -1045,9 +1043,6 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 				cpu_to_le64(iova);
 			*(u64 *)(cmd + slot_base + 0x20) =
 				cpu_to_le64(ios[i].size);
-			dev_info(ane->dev, "CALLIO buf=%u type=%u iova=%#llx size=%llu\n",
-				 ios[i].buffer_id, ios[i].type, (u64)iova,
-				 (u64)ios[i].size);
 		}
 		/* Drain the CPU write buffers so the input BOs the user
 		 * filled through its uncached mapping are in DRAM before
