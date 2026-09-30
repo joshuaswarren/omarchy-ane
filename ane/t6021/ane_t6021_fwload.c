@@ -1,9 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * T6021 ANE firmware loader — W13/W14 increment (receipts
- * 2026-09-19-h14-w13-boot-contract.md, -w14-staging-proven.md).
+ * T6021 ANE firmware loader — installed-module port of the proven lab
+ * staging unit (receipts 2026-09-19-h14-w13-boot-contract.md,
+ * -w14-staging-proven.md; add-path proof
+ * 2026-09-28-h14-fsm-secure-park-decode/first-inference.md).
  *
- * Implements, behind fw_load=1:
+ * Implements, behind fw_load=1 (default on):
  *   1. request_firmware("apple/ane/t602x_ane0_fw_selene_rc4x.macho")
  *   2. Validation via ane_fw_validate.h (shared with the offline
  *      regression h14_fwload_regression.c, shipped in
@@ -66,64 +68,37 @@
 #include "ane_t6021_boot.h"
 #include "ane_fw_validate.h"
 
-static bool fw_load;
-module_param(fw_load, bool, 0444);
-MODULE_PARM_DESC(fw_load,
-		 "OPT-IN: validate + DART-map the selene PRELOAD payload "
-		 "(W13/W14). No boot action; publication datum unevidenced.");
-
 /* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
  * per-object metadata keeps modpost happy for either composition. */
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_DESCRIPTION("T6021 ANE firmware staging + entry alias");
 
-#include "ane_t6021_diag_marker.h"
+static bool fw_load = true;
+module_param(fw_load, bool, 0444);
+MODULE_PARM_DESC(fw_load,
+		 "Validate + DART-map the selene PRELOAD payload (default on: "
+		 "the proven add-path configuration).");
 
-static bool fw_diag_marker;
-module_param(fw_diag_marker, bool, 0444);
-MODULE_PARM_DESC(fw_diag_marker,
-                 "LAB ONLY: patch validated RAM copy with execution marker; "
-                 "requires fw_load=1, fw_boot=0, transport/doorbell off. NOT ANE READY.");
-
-/* fw-start-debug B7: if nonzero, patch the staged RAM copy's x22 stamp
- * (vm 0x423C) to this DATA base. 13.5 decode (M2StartupRecovery
- * 2026-09-26): the stub reads this pointer (helper 0x6fc over 8 bytes
- * at vm 0x423C); nonzero selects it as the DATA base (x22) and derives
- * the slide x25 = x22 - 0xc4000, boot PTs at slide+0xe0000..0xe8000 and
- * DATA accesses at x22+offset — i.e. it must equal the DART alias DATA
- * IOVA. Zero (the archive value) selects the fallback x22 = TEXT_base +
- * 0xc4000, which equals 0x100000c4000 exactly when the staged copy is
- * aliased at the latched entry 0x10000000000 — the default is correct
- * for that vehicle without a stamp. 0 = off (default; sha-pinned
- * byte-exact copy after this optional patch is hash-logged). */
-static unsigned int fw_extra_ram;
+static unsigned int fw_extra_ram = 0x200000;
 module_param(fw_extra_ram, uint, 0444);
-MODULE_PARM_DESC(fw_extra_ram, "LAB: page-aligned owned RAM after the 5 MiB firmware allocation; maximum 16 MiB");
-static u64 fw_load_stamp_base;
-module_param(fw_load_stamp_base, ullong, 0444);
+MODULE_PARM_DESC(fw_extra_ram,
+		 "Page-aligned owned RAM after the 5 MiB firmware allocation "
+		 "(default 0x200000, the proven add-path grant; maximum 16 MiB). "
+		 "Rides the reserved alias only.");
+
 /* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
  * the entry IOVAs (same bytes as the staged copy, preloaded placement).
- * 0 = off (default staged-DMA alias); 1 = reserved-phys alias. */
-static bool fw_alias_reserved;
+ * Default on: the proven add-path configuration. */
+static bool fw_alias_reserved = true;
 module_param(fw_alias_reserved, bool, 0444);
 MODULE_PARM_DESC(fw_alias_reserved,
-		 "map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it, instead of the staged DMA copy");
+		 "Map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 "
+		 "0x10001400000+0x438000 after it, instead of the staged DMA copy "
+		 "(default on).");
+
 bool ane_t6021_fw_alias_is_reserved(void)
 {
 	return fw_alias_reserved;
-}
-
-MODULE_PARM_DESC(fw_load_stamp_base,
-		 "fw-start-debug: stamp the RAM copy's x22 (vm 0x423C) to this PA base (e.g. 0x10000000000); 0 = off");
-
-bool ane_t6021_fw_diag_requested(void)
-{
-	return fw_diag_marker;
-}
-
-bool ane_t6021_fw_stamp_requested(void)
-{
-	return fw_load_stamp_base != 0;
 }
 
 bool ane_t6021_fwload_requested(void)
@@ -135,24 +110,46 @@ bool ane_t6021_fwload_requested(void)
  * fw_size is a multiple. Shared with the probe-top predicate below. */
 #define ANE_T6021_FW_ALIAS_PAGE	0x4000
 
-bool ane_t6021_fwload_options_ok(bool transport)
+bool ane_t6021_fwload_options_ok(void)
 {
 	/* BINDING probe-top predicate. MUST be called before
-	 * devm_kzalloc / power / CPU release at every probe site
-	 * (drv.c probe, rtclient probe). The matching alloc-time check
-	 * below runs as defense in depth. The two predicates it
-	 * composes are pure inline functions in ane_t6021_diag_marker.h
-	 * (kernel probe + unit test share them by reference — no
-	 * separate copy).
-	 */
-	if (!ane_t6021_fw_extra_ram_envelope_ok(fw_load, fw_extra_ram,
-					       fw_alias_reserved))
+	 * devm_kzalloc / power / CPU release at every probe site.
+	 * The alloc-time check below runs as defense in depth.
+	 * fw_extra_ram is meaningful only behind the reserved alias
+	 * (the lab envelope rule: 16 KiB-aligned, <= 16 MiB). */
+	if (fw_extra_ram > SZ_16M ||
+	    !IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE))
 		return false;
-	return ane_t6021_diag_options_ok(fw_diag_marker, fw_load,
-				       ane_t6021_boot_requested(), transport);
+	if (fw_extra_ram && !fw_alias_reserved)
+		return false;
+	return true;
 }
 
 #define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
+
+/* ANE sub-block power registers (pmgr 0x28e080000 + 0x4000: ane_sys_mpm,
+ * ane_td, ane_base, ane_set1..4). The firmware's power service programs
+ * them through its DART at IOVA == PA once SET_SNE_PMU_BASE2 (0x29) sets
+ * its base (fw 13.5 SetPMUBaseAddress 0x62694 stores 0x28e084008). macOS
+ * maps the page first; without it the first access faults
+ * (NO PMD FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts. */
+#define ANE_T6021_PMU_PA	0x28e084000ull
+
+static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom)
+{
+	int prot = IOMMU_READ | IOMMU_WRITE;
+	int ret;
+
+	if (dev_is_dma_coherent(ane->dev))
+		prot |= IOMMU_CACHE;
+	ret = iommu_map(dom, ANE_T6021_PMU_PA, ANE_T6021_PMU_PA, ANE_T6021_FW_ALIAS_PAGE,
+			prot, GFP_KERNEL);
+	if (!ret && iommu_iova_to_phys(dom, ANE_T6021_PMU_PA) != ANE_T6021_PMU_PA)
+		ret = -EIO;
+	dev_info(ane->dev, "pmu: DART map %#llx (IOVA == PA, %#x bytes): %d\n",
+		 ANE_T6021_PMU_PA, ANE_T6021_FW_ALIAS_PAGE, ret);
+	return ret;
+}
 
 static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 {
@@ -277,7 +274,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 		if (fw_extra_ram)
 			dev_info(ane->dev, "fwalias: owned heap [%#llx,%#llx) roundtrip verified\n",
 				 win[2].iova, win[2].iova + win[2].len);
-		return 0;
+		return ane_t6021_pmu_map(ane, dom);
 
 err_unmap_mapped:
 		/* Cleanup exactly the per-window bytes we mapped; windows
@@ -344,7 +341,11 @@ err_unmap_mapped:
 		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
 		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
 		 &ane->fw_iova, &pa0);
-	return 0;
+	/* The firmware's power service needs the pmgr sub-block mapped
+	 * IOVA == PA in every vehicle (NO PMD FOR IOVA 0x28e084008,
+	 * 2026-09-29); the staged-DMA alias branch skipped it and left
+	 * a bisect run booting a halting fw. */
+	return ane_t6021_pmu_map(ane, dom);
 
 err_unmap:
 	if (off)
@@ -419,40 +420,6 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 			       fw->data + segs[i].fileoff, segs[i].filesize);
 	}
 
-	/* Original file SHA and segments passed validation above. Never
-	 * modify request_firmware data or the on-disk pinned image. */
-	if (fw_diag_marker) {
-		ane_t6021_diag_patch(buf);
-		dev_warn(ane->dev, "LAB MARKER: RAM VM 0x204 patched; SCRATCH7 0x4d325431 is NOT READY\n");
-	}
-
-	/* fw-start-debug B7 (M2Research decode): the 64-bit x22 stamp at
-	 * vm 0x423C (file 0x823C) defaults to 0 -> the fw's own MMU
-	 * tables map VM i -> PA 0xe8000+i, while the CPU runs at the
-	 * alias region 0x10000000000+i -> instruction abort at MMU-on
-	 * (0x590) -> the pre-READY spin B3-B6b observed (SCRATCH1/2
-	 * would read 0xc440/0x100 if fn 0x71a4 were reached; they read
-	 * zero). Stamping the RAM copy with the alias base makes the
-	 * fw-MMU and the DART alias compose: VM -> 0x10000000000+i ->
-	 * staged page i. RAM copy only; on-disk image untouched. */
-	if (fw_load_stamp_base) {
-		u64 before, after = fw_load_stamp_base;
-		u8 patched_sha[32];
-		char phex[65];
-		unsigned int b;
-
-		static_assert(sizeof(before) == 8);
-		memcpy(&before, buf + 0x423C, 8);
-		memcpy(buf + 0x423C, &after, 8);
-		sha256(buf, ANE_FW_BUF_SIZE, patched_sha);
-		for (b = 0; b < 32; b++)
-			snprintf(phex + b * 2, 3, "%02x", patched_sha[b]);
-		phex[64] = 0;
-		dev_emerg(ane->dev,
-			  "STAMP vm 0x423C: %016llx -> %016llx (x22 = PA base of VM 0); patched-buffer sha256 %s\n",
-			  before, after, phex);
-	}
-
 	ane->fw_buf = buf;
 	ane->fw_iova = iova;
 	ane->fw_size = alloc_size;
@@ -463,8 +430,6 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 		 entry, &iova, alloc_size);
 
 	ret = ane_t6021_fw_alias_map(ane);
-	if (!ret && fw_diag_marker && !ane->fw_alias_iova)
-		ret = -ENODATA; /* Lab runner requires an existing entry alias. */
 	if (ret) {
 		ane_t6021_fwload_remove(ane);
 		release_firmware(fw);
