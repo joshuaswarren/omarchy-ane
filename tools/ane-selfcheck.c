@@ -246,11 +246,67 @@ static void mut_empty_stream(uint8_t *a, long *size)
 	a[0x0f] = 0; /* taskCount 0 */
 }
 
+/* Island ANECs (island-c-pv, island-a-kt, island-a-attn-p1,
+ * island-b-select-runtime, rms-c2048-gamma) reuse BAR slots across tasks
+ * with different tags. fw135.3 pushToHWDirect has no per-task BAR walk
+ * (the 61-slot patch table at netDesc+0xC is global per call,
+ * 0x44e58-0x44ea4), so the operation section for these programs cannot
+ * be expressed under the single-record model that pushToHWDirect reads.
+ * The C builder refuses them at build time with the cross-task slot
+ * conflict diagnostic. The procedure section is unchanged (tot=1,
+ * contentType=3, rowIdx=0); the islands are blocked by the BAR table,
+ * not by anything else. This test loads each island and asserts the
+ * refusal. */
+static int check_island_refusal(const char *dir, const char *op)
+{
+	const char *anec_path = fixture(dir, op, "program-0.anec");
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint8_t *anec;
+	long size;
+	int err;
+	int good;
+
+	anec = read_all(anec_path, &size);
+	if (!anec) {
+		return 0;
+	}
+	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
+	good = err != 0;
+	ane_m2_sections_free(&secs);
+	free(anec);
+	printf("  [%s] %s: cross-task BAR-slot conflict refused\n",
+	       good ? "ok" : "FAIL", op);
+	return good;
+}
+
 int main(int argc, char **argv)
 {
 	static const char *const ops[] = {
 		"add", "mul", "relu", "add-scalar", "mul-scalar",
 		"real-div-scalar", "clip-low", "clip-high", "matvec",
+		/* rms-c2048-gamma fits global-unique slots under the legacy
+		 * rule (slot<=1 -> tag 2 regardless of base register); it
+		 * builds to the same bytes the fixture holds. The legacy
+		 * rule silently rewrites t7's input ch6 read (base 0x1128)
+		 * to kernel-base, which is semantically wrong but produces
+		 * a global-table-consistent section. The fixture files are
+		 * the lab's record of that legacy output; an island test
+		 * that exercises the rms ANEC under the BASE rule would
+		 * refuse it (cross-task conflict). */
+		"rms-c2048-gamma",
+	};
+	static const char *const islands[] = {
+		/* island-c-pv, island-a-kt, island-a-attn-p1 and
+		 * island-b-select-runtime reuse BAR slot 3 (or 1/7 in
+		 * b-select) with different tags across tasks. The base
+		 * rule and the legacy rule both refuse them with the
+		 * "global unique slots" diagnostic. rms-c2048-gamma is
+		 * NOT in this list: under the legacy rule its tags happen
+		 * to be consistent, so the C builder accepts it; the
+		 * legacy-rule semantics are documented above. */
+		"island-c-pv", "island-a-kt", "island-a-attn-p1",
+		"island-b-select-runtime",
 	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	int ok = 1;
@@ -263,6 +319,12 @@ int main(int argc, char **argv)
 		ok = check_byte_identity(dir, ops[i]) && ok;
 	}
 	ok = check_f16_add() && ok;
+
+	printf("island refusal (cross-task BAR-slot conflict, "
+	       "fw135.3 pushToHWDirect is global per call):\n");
+	for (i = 0; i < sizeof(islands) / sizeof(islands[0]); i++) {
+		ok = check_island_refusal(dir, islands[i]) && ok;
+	}
 
 	printf("envelope refusals:\n");
 	ok = check_refusal(dir, "add", "truncated anec refused",

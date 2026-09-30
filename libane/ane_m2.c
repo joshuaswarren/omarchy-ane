@@ -319,10 +319,26 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 }
 
 /* Walk every record of every task and write the per-call ref set into
- * `model`. The existing 9 stage 1-4 fixtures are preserved byte-identical
- * because their per-task refs are consistent (no slot→tag cross-task
- * conflict) and we fall back to the single-record model in that case.
- * Multi-call programs (the Parakeet islands) emit one record per task. */
+ * `model`. The firmware reads ONE operation record per call and writes
+ * a global 61-slot BAR patch table (fw135 pushToHWDirect 0x44c98-0x44ea0,
+ * netDesc+0xC zero-filled at 0x44e58-0x44ea4); there is no per-task BAR
+ * walk in pushToHWDirect or RunProcInternal (0x42244). Multi-task
+ * programs MUST therefore use globally-unique slot numbers across all
+ * tasks. A cross-task slot conflict (two tasks mapping the same slot to
+ * different tags) would let the LAST pair win for the whole call and
+ * bind the wrong surface for the losing task. This implementation
+ * refuses on cross-task conflict instead of silently emitting a
+ * miscompiled section. The 9 stage 1-4 fixtures (add, mul, relu,
+ * add-scalar, mul-scalar, real-div-scalar, clip-low, clip-high, matvec)
+ * all satisfy global-unique slots under the legacy rule and stay
+ * byte-identical. The Parakeet island ANECs (island-c-pv, a-kt,
+ * a-attn-p1, b-select-runtime, rms-c2048-gamma) collide on slots 1, 3
+ * or 7 with different tags across tasks; they are rejected at build
+ * time and must be loaded with a different op-record layout (one
+ * procedure call per task with per-task rowIdx entries, or a multi-row
+ * per-call record) that is not yet supported on fw135.3. The refusal
+ * message matches tools/h14_sections.py:derive_refs so the lab tool and
+ * the C builder stay in sync. */
 static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 		       uint32_t ntasks, struct ane_m2_model *m, int legacy)
 {
@@ -330,14 +346,12 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	uint32_t union_slots[0x40];
 	uint32_t union_count = 0;
 	uint32_t n_unique;
-	uint32_t calls;
 	uint32_t t;
 	uint32_t i;
 
 	for (i = 0; i < 0x40; i++) {
 		union_tag[i] = 0xffffffffu;
 	}
-	calls = 0;
 	for (t = 0; t < ntasks; t++) {
 		const uint8_t *tp = stream + tasks[t].off;
 		struct ane_m2_ref *task_refs = m->call_refs[t];
@@ -355,59 +369,71 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 			if (union_tag[s] == 0xffffffffu) {
 				union_tag[s] = task_refs[i].tag;
 				union_slots[union_count++] = s;
-			} else if (union_tag[s] != task_refs[i].tag) {
-				/* Cross-task conflict: caller must emit
-				 * one record per task. */
-				calls = ntasks;
+				continue;
+			}
+			if (union_tag[s] == task_refs[i].tag) {
+				continue;
+			}
+			/* Cross-task conflict: name both tasks. The
+			 * refusal text mirrors derive_refs in
+			 * tools/h14_sections.py so the lab and the C
+			 * builder produce the same diagnostic. */
+			{
+				char buf[512];
+
+				snprintf(buf, sizeof(buf),
+					 "task %u: BAR slot %u resolves "
+					 "to tag %u here and tag %u in an "
+					 "earlier task; fw135 0x44c98 "
+					 "pushToHWDirect has no per-task "
+					 "BAR walk and the 61-slot patch "
+					 "table at netDesc+0xC is global "
+					 "per call (0x44e58-0x44ea4), so "
+					 "this slot must be unique across "
+					 "the whole program",
+					 (unsigned)t, (unsigned)s,
+					 (unsigned)task_refs[i].tag,
+					 (unsigned)union_tag[s]);
+				return fail(buf);
 			}
 		}
-	}
-	/* Consistent: caller emits the single-record model. */
-	if (!calls) {
-		calls = 1;
-	}
-	if (calls > ANE_M2_MAX_CALLS) {
-		return fail("more calls than the model holds");
 	}
 	/* Encode the union {slot, tag} in a stable ascending-slot order
-	 * when the single-record model applies. */
+	 * (the proven add emission order; the lab Python tool sorts the
+	 * same way). */
 	n_unique = 0;
-	if (calls == 1) {
-		for (i = 0; i < union_count; i++) {
-			uint32_t s = union_slots[i];
+	for (i = 0; i < union_count; i++) {
+		uint32_t s = union_slots[i];
 
-			if (n_unique == ANE_M2_MAX_BINDS) {
-				return fail("more union refs than the model "
-					    "holds");
-			}
-			m->call_refs[0][n_unique].slot = s;
-			m->call_refs[0][n_unique].tag = union_tag[s];
-			n_unique++;
+		if (n_unique == ANE_M2_MAX_BINDS) {
+			return fail("more union refs than the model holds");
 		}
-		/* Sort ascending by slot (the proven add emission order). */
-		for (i = 1; i < n_unique; i++) {
-			uint32_t j = i;
-			while (j > 0 &&
-			       m->call_refs[0][j - 1].slot >
-			       m->call_refs[0][j].slot) {
-				struct ane_m2_ref tmp = m->call_refs[0][j - 1];
+		m->call_refs[0][n_unique].slot = s;
+		m->call_refs[0][n_unique].tag = union_tag[s];
+		n_unique++;
+	}
+	for (i = 1; i < n_unique; i++) {
+		uint32_t j = i;
+		while (j > 0 &&
+		       m->call_refs[0][j - 1].slot >
+		       m->call_refs[0][j].slot) {
+			struct ane_m2_ref tmp = m->call_refs[0][j - 1];
 
-				m->call_refs[0][j - 1] = m->call_refs[0][j];
-				m->call_refs[0][j] = tmp;
-				j--;
-			}
+			m->call_refs[0][j - 1] = m->call_refs[0][j];
+			m->call_refs[0][j] = tmp;
+			j--;
 		}
-		m->call_ref_count[0] = n_unique;
-		for (t = 1; t < ntasks; t++) {
-			m->call_ref_count[t] = 0;
-		}
+	}
+	m->call_ref_count[0] = n_unique;
+	for (t = 1; t < ntasks; t++) {
+		m->call_ref_count[t] = 0;
 	}
 	/* Each ref must name either the kernel section (tag 2) or one of
 	 * the bound channels; tag 3 (text/descriptor) is never a ref's tag
-	 * because no island ANEC reads through the descriptor section. */
-	for (t = 0; t < calls; t++) {
-		uint32_t n = m->call_ref_count[t];
-		struct ane_m2_ref *r = m->call_refs[t];
+	 * because no H14 ANEC reads through the descriptor section. */
+	{
+		uint32_t n = m->call_ref_count[0];
+		struct ane_m2_ref *r = m->call_refs[0];
 
 		for (i = 0; i < n; i++) {
 			int known = r[i].tag == 2;
@@ -423,8 +449,8 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 			}
 		}
 	}
-	m->calls = calls;
-	if (!calls) {
+	m->calls = 1;
+	if (!m->call_ref_count[0]) {
 		return fail("the task stream holds no BAR-ref record");
 	}
 	return 0;
@@ -807,9 +833,21 @@ struct ane_m2_ctx {
 	struct ane_bo io_bo[ANE_M2_MAX_BINDS];
 };
 
+/* The engine reads and writes slightly past the end of a surface: measured
+ * 2026-09-30 on the island programs, DART faults at exactly the end of the
+ * output BO (write) and at end + 0x100 of an input BO (read). One extra
+ * DART page (16 KiB) behind every BO keeps those accesses mapped. */
+static uint64_t ane_m2_guard(void)
+{
+	const char *e = getenv("ANE_M2_GUARD");
+
+	return e ? strtoull(e, NULL, 0) : 0x4000ull;
+}
+#define ANE_M2_BO_GUARD ane_m2_guard()
+
 static int bo_alloc(struct ane_nn *nn, struct ane_bo *bo, uint64_t size)
 {
-	struct drm_ane_bo_init args = { .size = size };
+	struct drm_ane_bo_init args = { .size = size + ANE_M2_BO_GUARD };
 	struct drm_ane_bo_free f;
 
 	if (ioctl(nn->fd, DRM_IOCTL_ANE_BO_INIT, &args) < 0) {
@@ -817,7 +855,7 @@ static int bo_alloc(struct ane_nn *nn, struct ane_bo *bo, uint64_t size)
 			   (unsigned long long)size);
 		return -EINVAL;
 	}
-	bo->size = size;
+	bo->size = size + ANE_M2_BO_GUARD;
 	bo->handle = args.handle;
 	bo->offset = args.offset;
 	bo->map = mmap(0, bo->size, PROT_READ | PROT_WRITE, MAP_SHARED, nn->fd,
