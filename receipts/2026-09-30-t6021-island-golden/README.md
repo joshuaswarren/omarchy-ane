@@ -26,11 +26,11 @@ matmul_0, attn_output_1) are NOT captured by the Apple Silicon Mac
 harness `overlay/tools/coreml/capture` (Swift, macOS-only), which
 emits only the model input/output trace.
 
-The capture harness was last run 2026-09-12 on macstudio (the pinned
-build/compiler oracle, never updated); a re-capture would require
+The capture harness was last run 2026-09-12 on the pinned Apple-silicon
+build/compiler oracle, which was not updated. A re-capture would require
 running macOS parakeet-encoder inference on the M2's macOS partition,
-which is outside the scope of this workstream (assignment forbids
-fleet hosts other than jw14m2-linux; no other host was probed).
+which is outside the scope of this workstream; only the assignment-approved
+M2 Linux host was probed.
 
 **Substitute used (labeled `SYNTHETIC_BUT_REALISTIC`):**
 
@@ -154,7 +154,7 @@ The tool:
 ## Commands run on M2 (per island)
 
 ```
-ssh jw14m2-linux 'timeout 60 /var/tmp/inst/tools/ane-run \
+ssh <M2-SSH-alias> 'timeout 60 /var/tmp/inst/tools/ane-run \
   --anec /var/tmp/inst/fixtures/h14-anec/<island>/program-0.anec \
   --in 0=/var/tmp/islands-golden/in_<island>/in-ch5.bin \
   --in 1=/var/tmp/islands-golden/in_<island>/in-ch6.bin \
@@ -256,7 +256,7 @@ results/                                    # 4 JSON results (verdict + metrics)
 
 - Real-operand runner: `tools/island_real.py`
 - Receipt: this file
-- Notebook entry: `~/.local/share/apple-silicon-lab/entries/IslandGolden/20260930T111114Z-jw14m2-linux-island-golden.md`
+- Notebook entry: `~/.local/share/apple-silicon-lab/entries/IslandGolden/`.
 - Artifacts: `~/.local/share/apple-silicon-lab/artifacts/IslandGolden/`
 
 ## Not in this receipt
@@ -370,11 +370,11 @@ integration and the bundle manifest/ABI-2 compatibility gap also remain.
   the transcript preserves both batches and the initial error.
 - Final verdicts: 9 PASS, 3 FAIL (all C pv). Captured dmesg tail had no
   EXCH failure, protocol-error, or I/O-error marker.
-- Notebook entry: `~/.local/share/apple-silicon-lab/entries/IslandGolden2/2026-09-30T151905Z-jw14m2-linux-island-real.md`.
+- Notebook entry: under `~/.local/share/apple-silicon-lab/entries/IslandGolden2/`.
 - Raw inputs, packed surfaces, device outputs, results JSON, transcript,
   post-state, dmesg, and SHA256SUMS:
   `~/.local/share/apple-silicon-lab/artifacts/IslandGolden2/2026-09-30-real-parakeet/`.
-- M2 post-state: `jw14m2-linux`, kernel `7.1.13-ARCH-polltx`, boot ID
+- M2 post-state: kernel `7.1.13-ARCH-polltx`, boot ID
   `95675db4-da91-42e5-bdee-dfb3329e7369`; no kernel/module/boot change.
 
 Runner source: `tools/island_real.py`. Results JSON and checksum inventory
