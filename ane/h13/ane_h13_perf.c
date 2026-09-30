@@ -675,6 +675,16 @@ static int h4a_stage(struct ane_h13_perf *a)
 	va = memremap(text_phys, EOS_TEXT_LEN, MEMREMAP_WC);
 	if (!va) { ret = -ENOMEM; goto out; }
 	dev_info(&a->pdev->dev, "h4a: stage TEXT pa=%pa len=%#x\n", &text_phys, EOS_TEXT_LEN);
+	/*
+	 * Warm the mapping before the first store: on 7.1.13 a store as the
+	 * FIRST access to a fresh carveout mapping permission-faults (ESR
+	 * L3 permission, sane RW WC PTE verified in-walk — Gap5 EXP-B.2,
+	 * 3/3 cold stores faulted, 4/4 read-first writes succeeded). A
+	 * full-span read both warms the translation and pre-verifies the
+	 * live content is the expected 22G74 vm0.
+	 */
+	s2 = span_sum(va, EOS_TEXT_LEN, &s1);
+	dev_info(&a->pdev->dev, "h4a: stage TEXT pre-write live sum=%016llx:%016llx\n", s2, s1);
 	memcpy(va, text->data, EOS_TEXT_LEN);
 	if (memcmp(va, text->data, EOS_TEXT_LEN)) { ret = -EIO; goto out; }
 	memunmap(va); va = NULL;
@@ -683,6 +693,10 @@ static int h4a_stage(struct ane_h13_perf *a)
 	if (!va) { ret = -ENOMEM; goto out; }
 	dev_info(&a->pdev->dev, "h4a: stage DATA pa=%pa file=%#x zero=%#x\n",
 		 &data_phys, EOS_DATA_FILE_LEN, EOS_DATA_LEN - EOS_DATA_FILE_LEN);
+	/* Warm before first store — same EXP-B.2 cold-store hazard as TEXT. */
+	s2 = span_sum(va, EOS_DATA_LEN, &s1);
+	dev_info(&a->pdev->dev, "h4a: stage DATA pre-write live sum=%016llx:%016llx (expect 0:0 zeros)\n",
+		 s2, s1);
 	memcpy(va, dbuf, EOS_DATA_FILE_LEN);
 	memset(va + EOS_DATA_FILE_LEN, 0, EOS_DATA_LEN - EOS_DATA_FILE_LEN);
 	if (memcmp(va, dbuf, EOS_DATA_FILE_LEN) ||
