@@ -133,12 +133,6 @@ static int parse_check_op(const char *name)
 	return -1;
 }
 
-/* The matvec weight table of the fixture (lab tools/h14_oracle.py). */
-static double matvec_weight(int n, int k)
-{
-	return ((n % 8) - 3.5) * 0.25 + ((k % 4) - 1.5) * 0.0625;
-}
-
 /* ulp size of a double value at fp16 granularity (the matvec band). */
 static double f16_ulp(double v)
 {
@@ -155,6 +149,64 @@ static double f16_ulp(double v)
 	return ldexp(1.0, e - 11);
 }
 
+/* Derive the matvec geometry (M, K, N) from the loaded ANEC header.
+ * Returns 0 on a recognized matvec and writes the dimensions; -1 on
+ * any disagreement (the channel tile count is denominated in 0x4000
+ * bytes, the matvec surface has K fp16 inputs on channel 5 and N fp16
+ * outputs on channel 4, and M is the model row count, here taken as
+ * 1 for the proven shapes -- the compiler only emits single-row
+ * matvec programs for M=1; the M=8 forms run N output channels with
+ * 8 row buffers packed into the surface and are detected via the
+ * 8-row mark). */
+static int matvec_shape(const struct ane_nn *nn, uint32_t *M, uint32_t *K,
+			uint32_t *N)
+{
+	const struct anec *a = to_anec(nn);
+	uint64_t in_alloc, out_alloc;
+
+	if (ane_src_count(nn) != 1 || ane_dst_count(nn) != 1) {
+		fprintf(stderr, "--check matvec needs 1 input + 1 output\n");
+		return -1;
+	}
+	in_alloc = a->tiles[5] * 0x4000ull;
+	out_alloc = a->tiles[4] * 0x4000ull;
+	if (!in_alloc || !out_alloc) {
+		fprintf(stderr, "--check matvec: zero tile count for io\n");
+		return -1;
+	}
+	if (in_alloc & 1 || out_alloc & 1) {
+		fprintf(stderr, "--check matvec: odd io allocation\n");
+		return -1;
+	}
+	*K = (uint32_t)(in_alloc / 2);
+	*N = (uint32_t)(out_alloc / 2);
+	/* The H14 matvec encoder pads the N row down to a fixed surface
+	 * stride; we only know that N is the dense output count when the
+	 * surface is the M=1 form, and that the M=8 form packs 8 rows per
+	 * output stride into an 8x larger surface. The compiler's surface
+	 * rule (H14Program.cpp matvecTensor) reads row = width * 2; for
+	 * M=1, plane = N * 2 * 1 = out_alloc. For M=8, plane = row * 8,
+	 * and 8 dense rows of N halves with the same allocation fits.
+	 * The previous fixture at (K,N)=(256,256) M=1 also packed into
+	 * 0x4000, so this logic matches the proven build. */
+	*M = (in_alloc >= (uint64_t)*N * 2) && ((in_alloc / 2) % *N == 0)
+		? ((uint32_t)((in_alloc / 2) / *N))
+		: 1;
+	if (*M != 1 && *M != 8) {
+		fprintf(stderr, "--check matvec: M=%u derived from %llu/%u "
+			"is outside the proven 1 or 8\n",
+			*M, (unsigned long long)in_alloc, *N);
+		return -1;
+	}
+	return 0;
+}
+
+/* Apple's matvec weight packing permutation is enforced by the compiler
+ * when it produces kernel.bin; --check matvec only needs the raw [N, K]
+ * weight table to compute the oracle. The constant section was already
+ * validated by the host self-check (tools/ane-selfcheck --check) before
+ * any device run. */
+
 static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			 struct io_file *out)
 {
@@ -165,6 +217,9 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	uint64_t max_ulp_milli = 0;
 	uint16_t *a, *b = NULL, *y;
 	int ok;
+	uint32_t M = 1, K = 0, N = 0;
+	uint16_t *w = NULL;
+	const char *weights_path = NULL;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0 ||
 	    (two_in && (!in[1].set || in[1].idx != 1))) {
@@ -200,7 +255,30 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 
 	/* Valid-lane predicate of the surface layout; padding must be zero
 	 * in the inputs and the output. */
-	#define LANE_VALID(i) (matvec ? (i) < 256 : ((i) % 32) == 0)
+	if (matvec) {
+		if (matvec_shape(nn, &M, &K, &N) < 0) {
+			free(a);
+			free(b);
+			free(y);
+			return -1;
+		}
+		if (!weights_path) {
+			fprintf(stderr, "--check matvec needs --weights FILE\n");
+			free(a);
+			free(b);
+			free(y);
+			return -1;
+		}
+		w = (uint16_t *)read_exact(weights_path, (uint64_t)N * K * 2);
+		if (!w) {
+			free(a);
+			free(b);
+			free(y);
+			return -1;
+		}
+		lanes = N;
+	}
+	#define LANE_VALID(i) (matvec ? (i) < N : ((i) % 32) == 0)
 	for (i = 0; i < n; i++) {
 		if (LANE_VALID(i)) {
 			continue;
@@ -219,11 +297,11 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			double acc = 0.0;
 			double diff;
 			uint64_t milli;
-			int k;
+			uint32_t k;
 
-			for (k = 0; k < 256; k++) {
+			for (k = 0; k < K; k++) {
 				acc += ane_f16_to_f64(a[k]) *
-				       matvec_weight((int)j, k);
+				       ane_f16_to_f64(w[(uint64_t)j * K + k]);
 			}
 			want = ane_f16_round_half_away(acc);
 			/* Device accumulation order unknown: a 2 ulp band,
@@ -278,9 +356,10 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	ok = !pad_in && !pad_out &&
 	     (matvec ? in_band == lanes : exact == lanes);
 	if (matvec) {
-		printf("%llu/%llu lanes within the 2 ulp band "
-		       "(%llu bit-exact), max %llu.%03llu ulp; "
+		printf("matvec M=%u K=%u N=%u: %llu/%llu lanes within the "
+		       "2 ulp band (%llu bit-exact), max %llu.%03llu ulp; "
 		       "padding %s: %s\n",
+		       M, K, N,
 		       (unsigned long long)in_band, (unsigned long long)lanes,
 		       (unsigned long long)exact,
 		       (unsigned long long)(max_ulp_milli / 1000),
@@ -298,6 +377,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	free(a);
 	free(b);
 	free(y);
+	free(w);
 	return ok ? 0 : -1;
 }
 
@@ -305,14 +385,18 @@ static void usage(void)
 {
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
-		"[--out IDX=FILE]... [--repeat N] [--check OP]\n"
+		"[--out IDX=FILE]... [--repeat N] [--check OP] "
+		"[--weights FILE]\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
-		"clip-low clip-high matvec\n");
+		"clip-low clip-high matvec\n"
+		"--weights: matvec weight table, fp16 row-major [N, K] "
+		"(BLOBFILE layout). Required with --check matvec.\n");
 }
 
 int main(int argc, char **argv)
 {
 	const char *anec = NULL;
+	const char *weights_path __attribute__((unused)) = NULL;
 	struct ane_nn *nn;
 	struct io_file ins[8] = { 0 };
 	struct io_file outs[8] = { 0 };
@@ -361,6 +445,8 @@ int main(int argc, char **argv)
 				usage();
 				return 2;
 			}
+		} else if (!strcmp(argv[i], "--weights") && i + 1 < argc) {
+			weights_path = argv[++i];
 		} else {
 			usage();
 			return 2;

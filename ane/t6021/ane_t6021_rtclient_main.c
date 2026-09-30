@@ -222,9 +222,24 @@ struct ane_t6021_fd {
 };
 
 /* BOs are owned per open file (ane_t6021_fd); bo_lock guards the
- * handle counter and every per-fd list against same-fd concurrent
+/* Per-file handle counter and every per-fd list against same-fd concurrent
  * ioctls. Coherent buffers are held until reboot once firmware is
- * staged (the firmware never sees a freed address). */
+ * staged (the firmware never sees a freed address).
+ *
+ * Cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen by the
+ * H14 compiler are bounded by `reduction * columns * 2`, which reaches
+ * 20 MiB at (K,N)=(2048,5120). The same cap serves the Qwen4-attention
+ * (K,N)=(4096,4096) constant at 32 MiB and any H14 softmax/reduction
+ * with an 8 MiB table. The cap is one BO; total-BO-bytes are capped
+ * separately by an atomic counter under ane_t6021_bo_lock.
+ *   ANE_T6021_BO_MAX       — per-BO size, the IOVA is at most 1 GiB.
+ *   ANE_T6021_BO_TOTAL_MAX — total coherent BO bytes across all fds,
+ *                            enforced at alloc and released at drop.
+ * The 16 KiB alignment check is unchanged: every DMA site assumes it. */
+#define ANE_T6021_BO_MAX		SZ_1G
+#define ANE_T6021_BO_TOTAL_MAX		(2UL * SZ_1G)
+#define ANE_T6021_BO_HASH_CHUNK		SZ_1M
+
 struct ane_t6021_bo {
 	struct list_head node;
 	struct ane_t6021_fd *owner;
@@ -236,6 +251,7 @@ struct ane_t6021_bo {
 
 static DEFINE_MUTEX(ane_t6021_bo_lock);
 static u32 ane_t6021_next_handle = 1;
+static atomic64_t ane_t6021_bo_total_bytes = ATOMIC64_INIT(0);
 
 /* Serializes every firmware command (LOAD/CREATE/CALL) so the
  * cursor-on-next-64-byte-slot rule and the PMGR/TM gate cannot race. */
@@ -691,14 +707,26 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 		}
 	}
 
-	/* Identical sections share one firmware program (see the table). */
+	/* Identical sections share one firmware program (see the table).
+	 * A constant section can reach 20 MiB (the H14 (K,N)=(2048,5120)
+	 * matvec), so feed the hash in ANE_T6021_BO_HASH_CHUNK-sized slices
+	 * under bo_lock: a single sha256_update of a 20 MiB buffer would
+	 * rely on a 20 MiB stack argument list and has no upper bound on
+	 * the chunk that the BO could supply. */
 	{
 		struct sha256_ctx sha;
+		void *scratch;
 
 		sha256_init(&sha);
+		scratch = kvmalloc(ANE_T6021_BO_HASH_CHUNK, GFP_KERNEL);
+		if (!scratch) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		for (i = 0; i < user->section_count; i++) {
 			struct ane_t6021_bo *bo = NULL, *b;
 			u64 hdr[2] = { sections[i].id, sections[i].size };
+			size_t left;
 
 			mutex_lock(&ane_t6021_bo_lock);
 			list_for_each_entry(b, &fd->bos, node) {
@@ -710,14 +738,24 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 			if (!bo || sections[i].size > bo->size ||
 			    sections[i].offset > bo->size - sections[i].size) {
 				mutex_unlock(&ane_t6021_bo_lock);
+				kvfree(scratch);
 				ret = -EINVAL;
 				goto out;
 			}
 			sha256_update(&sha, (const u8 *)hdr, sizeof(hdr));
-			sha256_update(&sha, (const u8 *)bo->cpu +
-				      sections[i].offset, sections[i].size);
+			left = sections[i].size;
+			while (left) {
+				size_t n = min(left, (size_t)ANE_T6021_BO_HASH_CHUNK);
+
+				memcpy(scratch, (const u8 *)bo->cpu +
+				       sections[i].offset +
+				       (sections[i].size - left), n);
+				sha256_update(&sha, scratch, n);
+				left -= n;
+			}
 			mutex_unlock(&ane_t6021_bo_lock);
 		}
+		kvfree(scratch);
 		sha256_final(&sha, digest);
 	}
 	cached = ane_t6021_prog_find(digest);
@@ -973,15 +1011,27 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	struct ane_t6021_bo *bo;
 	struct ane_rtclient *ane;
 
-	if (args->size == 0 || args->size > SZ_16M || !fd)
+	if (args->size == 0 || args->size > ANE_T6021_BO_MAX ||
+	    !IS_ALIGNED(args->size, SZ_16K) || !fd)
 		return -EINVAL;
+	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned and
+	 * stays mapped until reboot once firmware is staged, so the bound
+	 * here is a hard cap on the firmware's visible DMA surface area. */
+	if (atomic64_add_return(args->size, &ane_t6021_bo_total_bytes) >
+	    ANE_T6021_BO_TOTAL_MAX) {
+		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
+		return -ENOSPC;
+	}
 	ane = to_ane_t6021_drm(drm)->ane;
 	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
-	if (!bo)
+	if (!bo) {
+		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
 		return -ENOMEM;
+	}
 	bo->cpu = dma_alloc_coherent(drm->dev, args->size, &bo->dma,
 				     GFP_KERNEL);
 	if (!bo->cpu) {
+		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
 		kfree(bo);
 		return -ENOMEM;
 	}
@@ -992,6 +1042,7 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	    (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bo->dma,
 						    args->size))) {
 		dma_free_coherent(drm->dev, args->size, bo->cpu, bo->dma);
+		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
 		kfree(bo);
 		return -ERANGE;
 	}
@@ -1013,12 +1064,15 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 /* Drop one handle owned by this fd. The coherent buffer is freed only
  * while no firmware is staged; once a CPU may be running, every DMA
  * surface is HELD until reboot (lab rule: the firmware never sees a
- * freed address; libane's IOVA-lifetime-v1 comment describes this). */
+ * freed address; libane's IOVA-lifetime-v1 comment describes this).
+ * The global bytes counter is debited either way: the BO is gone from
+ * the bookkeeping, so future BO_INIT calls get the room. */
 static void ane_t6021_bo_drop(struct drm_device *drm, struct ane_t6021_bo *bo)
 {
 	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
 
 	list_del(&bo->node);
+	atomic64_sub(bo->size, &ane_t6021_bo_total_bytes);
 	if (bo->cpu && !ane->fw)
 		dma_free_coherent(drm->dev, bo->size, bo->cpu, bo->dma);
 	kfree(bo);

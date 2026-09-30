@@ -4,23 +4,42 @@
 # sparse inputs (same surface shapes as the lab oracle inputs) and checks
 # the output with ane-run --check OP.
 #
-# usage: gate.sh OUTDIR [OP] [--insmod KO]
+# usage: gate.sh OUTDIR [OP|--anec ANEC [--weights FILE]] [--insmod KO]
+#   OUTDIR       output directory (created if missing)
 #   OP           fixture op under fixtures/h14-anec (default add; one of
 #                add mul relu add-scalar mul-scalar real-div-scalar
 #                clip-low clip-high matvec)
+#   --anec ANEC  use a specific ANEC file instead of fixtures/h14-anec/<OP>
+#   --weights F  fp16 [N, K] weight file for --check matvec (Qwen-dim
+#                fixtures; required when the ANEC is a matvec program)
 #   --insmod KO  load KO with no parameters first (for a boot where the
 #                module is installed but not yet in modules.dep).
 # Run from a fresh boot. The module cannot be unloaded, so this never rmmods.
 set -euo pipefail
 OUT=${1:?output dir required}
 OP=${2:-add}
+EXPLICIT_ANEC=""
+WEIGHTS=""
 KO=""
-[[ ${3:-} == --insmod ]] && KO=${4:?module path required}
+shift 2 || true
+while [[ $# -gt 0 ]]; do
+	case $1 in
+	--anec) EXPLICIT_ANEC=${2:?anec path required}; shift 2;;
+	--weights) WEIGHTS=${2:?weights path required}; shift 2;;
+	--insmod) KO=${2:?module path required}; shift 2;;
+	*) echo "unknown arg: $1" >&2; exit 2;;
+	esac
+done
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 FW=/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho
 FW_SHA=a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc
-ANEC=$ROOT/fixtures/h14-anec/$OP/program-0.anec
-[[ -f $ANEC ]] || { echo "no fixture for op $OP"; exit 2; }
+if [[ -n $EXPLICIT_ANEC ]]; then
+	ANEC=$EXPLICIT_ANEC
+	[[ -f $ANEC ]] || { echo "no such anec: $ANEC"; exit 2; }
+else
+	ANEC=$ROOT/fixtures/h14-anec/$OP/program-0.anec
+	[[ -f $ANEC ]] || { echo "no fixture for op $OP"; exit 2; }
+fi
 RUN=$ROOT/tools/ane-run
 TRIALS=${TRIALS:-4}
 TWO_IN=0
@@ -30,6 +49,8 @@ exec > >(tee "$OUT/gate.log") 2>&1
 
 echo "boot_id $(cat /proc/sys/kernel/random/boot_id)"
 echo "kernel $(uname -r)"
+echo "anec $ANEC"
+[[ -z $WEIGHTS ]] || echo "weights $WEIGHTS"
 printf '%s  %s\n' "$FW_SHA" "$FW" | sha256sum -c -
 [[ -e /proc/device-tree/soc/ane@284000000 ]] || { echo "no ANE DT node"; exit 2; }
 if [[ -n $KO ]]; then
@@ -74,11 +95,21 @@ PY
 	else
 		INS=(--in 0="$OUT/in-a-$t.fp16")
 	fi
-	if "$RUN" --anec "$ANEC" "${INS[@]}" \
-		--out 0="$OUT/out-y-$t.fp16" --check "$OP"; then
-		echo "trial $t PASS"
+	if [[ -n $WEIGHTS ]]; then
+		if "$RUN" --anec "$ANEC" "${INS[@]}" \
+			--out 0="$OUT/out-y-$t.fp16" --check "$OP" \
+			--weights "$WEIGHTS"; then
+			echo "trial $t PASS"
+		else
+			echo "trial $t FAIL"; fail=1
+		fi
 	else
-		echo "trial $t FAIL"; fail=1
+		if "$RUN" --anec "$ANEC" "${INS[@]}" \
+			--out 0="$OUT/out-y-$t.fp16" --check "$OP"; then
+			echo "trial $t PASS"
+		else
+			echo "trial $t FAIL"; fail=1
+		fi
 	fi
 done
 # A second process in the same boot closes and reopens the device.
@@ -87,11 +118,21 @@ if [[ $TWO_IN == 1 ]]; then
 else
 	INS=(--in 0="$OUT/in-a-1.fp16")
 fi
-if "$RUN" --anec "$ANEC" "${INS[@]}" \
-	--out 0="$OUT/out-y-reopen.fp16" --check "$OP" --repeat 3; then
-	echo "reopen+repeat PASS"
+if [[ -n $WEIGHTS ]]; then
+	if "$RUN" --anec "$ANEC" "${INS[@]}" \
+		--out 0="$OUT/out-y-reopen.fp16" --check "$OP" --repeat 3 \
+		--weights "$WEIGHTS"; then
+		echo "reopen+repeat PASS"
+	else
+		echo "reopen+repeat FAIL"; fail=1
+	fi
 else
-	echo "reopen+repeat FAIL"; fail=1
+	if "$RUN" --anec "$ANEC" "${INS[@]}" \
+		--out 0="$OUT/out-y-reopen.fp16" --check "$OP" --repeat 3; then
+		echo "reopen+repeat PASS"
+	else
+		echo "reopen+repeat FAIL"; fail=1
+	fi
 fi
 (cd "$OUT" && sha256sum ./*.fp16 gate.log > SHA256SUMS)
 if [[ $fail -eq 0 ]]; then echo "GATE PASS"; else echo "GATE FAIL"; exit 1; fi
