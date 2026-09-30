@@ -82,11 +82,21 @@ against the exact fp64 product in condition units (the fp16 output
 rounding bound is 1.0): 1536x1536 (M=1) 0.217, 2048x2048 (M=8)
 0.218, 2048x5120 (M=1, 20 MiB weights) 0.187. All trials PASS.
 
-Parakeet attention islands on real-model operands: island-c-pv
-(probs x V), island-a-kt and island-a-attn-p1 (batched matmul) stay
-within 1.0 cond-unit on every valid lane; the two select islands are
-bit-exact on all 1,125,000 valid lanes on 3 seeds. In the
-loop-closed encoder test
+Parakeet attention islands. On random U(-1, 1) inputs, the three
+batched-matmul islands (island-c-pv, island-a-kt, island-a-attn-p1)
+pass on 3 of 3 seeds: 99.77 to 99.80 percent of lanes are within
+max(3 ulp, 4 cond-units) of the fp64 reference
+([2026-09-30-t6021-island-bmm](../../receipts/2026-09-30-t6021-island-bmm/README.md)).
+On real-model operands (layers 0, 11 and 23), island-a-kt and
+island-a-attn-p1 stay within 1.0 cond-unit of the exact fp64 product
+on every lane (worst ratio 0.91). island-c-pv fails that strict bound
+on 1.3, 47.6 and 52.4 percent of lanes (worst ratio 14.5, 104.1 and
+65.3), and its accumulator model is not identified
+([2026-09-30-t6021-island-golden](../../receipts/2026-09-30-t6021-island-golden/README.md),
+[2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
+The two select islands are bit-exact on all 1,125,000 valid lanes on
+3 seeds. In the loop-closed encoder test with all four island
+families on the ANE
 ([2026-09-30-t6021-parakeet-encoder-islands](../../receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)):
 120 device submissions, zero failures, and the decoded transcript is
 byte-identical to the golden transcript from the pinned macOS ANE
@@ -103,8 +113,11 @@ Not proven:
 - The full Parakeet encoder on the ANE. Only the four island sites
   run on the device; the convolutions, LayerNorms, feed-forward
   blocks, softmaxes and the decoder run on the CPU.
-- Qwen on the M2. The staged chain stopped at inventory; no M2 ANE
-  program was launched
+- Qwen on the M2. Program 20 of the 38 staged programs ran on the
+  device with real weights and failed against the M1 golden
+  (relative L2 0.276). An offline decode traces the failure to the
+  loader's slot-4 port binding. The fixed binding has not run on the
+  device
   ([2026-09-30-t6021-qwen-chain](../../receipts/2026-09-30-t6021-qwen-chain/README.md)).
 - The rms_norm chain. The device writes only channels 64 to 2047 of
   2048, so the program does not qualify for a model run (receipt
@@ -198,7 +211,8 @@ default path.
 
 A bare `modinfo ane_t6021.ko` reports
 `alias: of:N*T*Capple,t6021-ane`. The DRM device, when bound,
-exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`:
+exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`
+(ABI 2 added in commit 23b8eef, merged to main in 1df4412):
 
 - `DRM_IOCTL_ANE_BO_INIT` — allocate a coherent BO and return its
   handle.
@@ -220,6 +234,10 @@ exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`:
   target-to-host slots, and only then returns — output buffers are
   coherent, so CPU visibility needs no explicit sync.
 
-The driver reports `major = ANE_ABI_M2_MAJOR = 2`. The libane ABI-2
-backend `libane/ane_m2.c` checks `major == 2`; `tools/ane-run` drives
-it (the `--anec` path of every proven run).
+The driver reports `major = ANE_ABI_M2_MAJOR = 2`
+(`ane/t6021/ane_t6021_rtclient_main.c`, commit 27e996a). libane
+selects its ABI-2 backend in `libane/ane.c` (commit 8a4379e):
+`is_ane_device()` accepts `ANE_ABI_MAJOR` and `ANE_ABI_M2_MAJOR`, and
+`__ane_init_shift()` calls `ane_m2_open()` (`libane/ane_m2.c`) when
+the major is `ANE_ABI_M2_MAJOR`. `tools/ane-run` drives it (the
+`--anec` path of every proven run).

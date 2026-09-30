@@ -102,21 +102,30 @@ identical in every variant.
 
 ## Findings
 
-1. The strict C pv accumulator bound failures do NOT propagate. Swapping
-   the exact fp16 CPU C pv for the real ANE C pv in every layer moves the
-   encoder CLOSER to the ANE-captured golden (rel L2 2.4736e-02 vs
-   2.4852e-02) and recovers the exact golden transcript. The golden capture
-   was produced by a real ANE; the device's measured accumulator noise is
-   the product-path behaviour.
-2. A kt, A p1 and B select contribute almost nothing to the divergence:
-   islands-on-m2 vs cpv-only-on-m2 differs by 2.6e-05 in final-output
-   rel L2 (2.6895e-03 vs 2.6639e-03), bounding the A-family + select
-   device contribution at ~1 % of the total island divergence. Consistent
-   with the per-island receipts (A/P1/select PASS the strict bound).
-3. The emulated 2^-16-grid C pv noise reproduces the qualitative result
-   (104-token match) but is not bit-exact to the device (rel L2 vs
-   baseline 2.362e-03 vs the device's 2.664e-03); the real accumulator's
-   internal chunked rounding is not modelled (receipt
+1. With all four island families on the ANE (islands-on-m2), the encoder
+   output is closer to the ANE-captured golden than the CPU baseline
+   (rel L2 2.4736e-02 vs 2.4852e-02), and the transcript is the exact
+   104-token golden transcript. With only C pv on the ANE
+   (cpv-only-on-m2), the output is farther from the golden than the
+   baseline (2.5421e-02 vs 2.4852e-02), and the transcript is the
+   100-token baseline transcript. The strict C pv bound failures do not
+   change the transcript relative to the CPU baseline. This run does not
+   show that the device C pv alone moves the output toward the golden.
+2. The islands-on-m2 and cpv-only-on-m2 final outputs differ by rel L2
+   3.129912e-03 and max abs 4.846191e-02 (||islands-on-m2 -
+   cpv-only-on-m2|| / ||cpv-only-on-m2||, from the saved `hidden_*.npy`).
+   This distance is larger than the distance of either variant from the
+   baseline (2.689549e-03 and 2.663920e-03). These data do not isolate
+   the A kt, A p1 and B select contribution: the two variants differ in
+   those three families and, through the closed loop, in the C pv
+   operands. On real operands, the per-island receipt shows A kt, A p1
+   and B select within the strict bound on every lane
+   (receipts/2026-09-30-t6021-island-golden: 9 PASS, 3 FAIL, all C pv).
+3. The emulated 2^-16-grid C pv noise (cpv-noise-cpu) gives the 104-token
+   golden transcript, but the device C pv alone (cpv-only-on-m2) gives
+   the 100-token baseline transcript. The emulation is not bit-exact to
+   the device (rel L2 vs baseline 2.362e-03 vs the device's 2.664e-03);
+   the real accumulator's internal rounding is not modelled (receipt
    2026-09-30-t6021-accumulator: no tested model is bit-exact).
 4. The islands-on-m2 path is loop-closed: every layer's island operands
    were packed from activations produced by the previous layers in the same
@@ -182,6 +191,11 @@ input (x), ch5 = second (w, K x N surface); select ch6 = cond=1 branch (the
   final encoder outputs, fp32 (1, 375, 640).
 - `dmesg-e2e.txt` — M2 dmesg after the run (0 faults).
 - `m2_probe.txt` — pre-run liveness + fixture listing.
+
+The islands-on-m2 vs cpv-only-on-m2 distance in finding 2 is computed from
+the saved `hidden_*.npy` by
+`~/.local/share/apple-silicon-lab/artifacts/DocsConsolidate/2026-09-30-receipt-recheck/recheck.py`
+(output `stdout.txt`, SHA256SUMS).
 
 Notebook entry: `~/.local/share/apple-silicon-lab/entries/ParakeetE2E/`
 (file `20260930T165300Z-*-encoder-islands.md`).

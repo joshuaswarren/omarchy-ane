@@ -23,10 +23,12 @@ C pv subnormal / FTZ follow-up: 0.02288818 vs 0.02287292).
 | fp16 round every N steps                      | False     | 165k–353k | 0.41       |
 | fp16 product + fp32 accumulate                | False     | 114,608   | 4.81e-3    |
 
-fp32 RN is the closest standard model: 275,765 of 384,000 lanes bit-exact.
-Remaining 108,235 deviate by ±1–2 ulps (tail to ±10 ulps, outliers to 517
-ulps). Symmetric distribution consistent with internal chunked rounding
-noise, not a single fixed bias.
+Kahan fp32 is marginally closer than fp32 RN on both reported metrics
+(108,217 lanes off and max abs 4.47e-3, vs 108,235 and 7.81e-3). Neither
+reproduces the device bit-exactly. fp32 RN matches 275,765 of 384,000
+lanes bit-exactly; its other 108,235 lanes deviate by ±1–2 ulps (tail to
+±10 ulps, outliers to 517 ulps). The distribution is symmetric, which is
+consistent with internal chunked rounding noise, not a single fixed bias.
 
 ## Online phase — three probes under flock
 
@@ -52,8 +54,8 @@ Observed in probe 2:
 ### Probe 3 (42.4 ms): wide-range magnitude sweep with random mantissas
 
 Batched stimulus (8 heads × 375 rows × 128 cols):
-- Head 0: single-term P=1, V over geometric grid 2^-24..2^15 (~9 values
-  per octave with random mantissa).
+- Head 0: single-term P=1, V = 10 values with random mantissa in each
+  octave from 2^-24 to 2^13 (5 in the last octave; `build_probe3.py`).
 - Head 1: P=0.5 × V.
 - Head 2: P=2^-8 × V.
 - Head 3: P=2^-12 × V.
@@ -62,16 +64,19 @@ Batched stimulus (8 heads × 375 rows × 128 cols):
 - Head 6: K=2 terms (tiny at K=0, P=1 at K=1) — order test.
 - Head 7: K=2 terms with V=1 constant.
 
-Head 0 findings (P=1, single-term):
-- |V| < 2^-17: dev = 0 (FTZ floor).
-- |V| in [2^-17, 2^-10): dev quantized to grid step 2^-16 (e.g. V =
-  5.96e-6 → dev = 0; V = 1.526e-5 → dev = 1.526e-5; V = 4.578e-5 →
-  dev = 4.578e-5).
-- |V| >= 2^-10: dev = V exactly (no extra quantization beyond fp16).
-- Largest |V| where dev == 0: 1.353e-5 (i.e. just below 2^-16).
-- Grid step changes smoothly: at |V| in [2^-8, 2^-7), smallest nonzero
-  diff = 1.679e-4 ≈ 2^-12.5 (i.e., step matches fp16 ulp at that
-  magnitude).
+Head 0 findings (P=1, single term). Recomputed from the saved probe-3
+arrays (`device3.npy`, `v3.npy`); the 128 columns of each row are
+bit-identical:
+- dev = 0 on exactly the 70 rows with |V| < 2^-17. The largest |V| with
+  dev = 0 is 7.569790e-06; the smallest |V| with dev != 0 is
+  7.688999e-06 (2^-17 = 7.629395e-06).
+- On all 375 rows, dev is the multiple of 2^-16 nearest to V, with ties
+  rounded up (every V is positive, so "up" and "away from zero" are not
+  separated). Round-half-to-even matches 369 of 375 rows; the 6 misses
+  are exact ties. The zero threshold 2^-17 is the half step of this grid.
+- For |V| >= 2^-6 the fp16 ulp is at least 2^-16, so dev = V exactly
+  (195 of 195 rows). Below 2^-6, dev = V only when V is already on the
+  grid (for example 5 of 10 rows in [2^-7, 2^-6)).
 
 Heads 1..4 (P != 1): the same grid structure applies to the product
 P*V — output quantized for small product magnitudes.
@@ -81,35 +86,29 @@ Heads 5, 6, 7 (K=2 terms): when one term dominates (e.g. K=0 term is
 2^-16. When both terms comparable, the device output is some quantized
 value that is not bit-exact predicted by any tested model.
 
-### Per-octave dev vs V match rate (head 0)
+### Per-octave dev vs V (head 0)
 
-| |V| range           | n   | dev=0 | dev==V | max rel err |
-|---------------------|-----|-------|--------|------------|
-| [2^-24, 2^-17)      | 60  | 60    | 0      | n/a        |
-| [2^-17, 2^-16)      | 10  | 0     | 0      | 1.0000     |
-| [2^-16, 2^-15)      | 10  | 0     | 0      | 0.9845     |
-| [2^-15, 2^-14)      | 10  | 0     | 0      | 0.7815     |
-| [2^-14, 2^-13)      | 10  | 0     | 0      | 0.0716     |
-| [2^-13, 2^-12)      | 10  | 0     | 0      | 0.0092     |
-| [2^-12, 2^-11)      | 10  | 0     | 0      | 0.0019     |
-| [2^-11, 2^-10)      | 10  | 0     | 0      | 0.0008     |
-| [2^-10, 2^-9)       | 10  | 0     | 1      | 0.0000     |
-| [2^-9, 2^-8)        | 10  | 0     | 2      | 0.0000     |
-| [2^-8, 2^-7)        | 10  | 0     | 2      | 0.0000     |
-| ...                 | ... | ...   | ...                 |
-| [2^-2, 2^-1)        | 10  | 0     | 10     | 0.0000     |
-| [2^-1, 2^0)         | 10  | 0     | 10     | 0.0000     |
-| [2^0, 2^1)          | 10  | 0     | 10     | 0.0000     |
-| ...                 | ... | ...   | ...                 |
-| [2^4, 2^5)          | 10  | 0     | 10     | 0.0000     |
-| [2^5, 2^6)          | 10  | 0     | 10     | 0.0000     |
-| [2^6, 2^7)          | 10  | 0     | 10     | 0.0000     |
-| [2^13, 2^14)        |  5  | 0     |  5     | 0.0000     |
+`dev bit-equal V` counts exact fp16 bit equality. `on 2^-16 grid` counts
+rows whose dev is an exact multiple of 2^-16.
 
-All 375 non-zero dev values are exact multiples of 2^-16. Smallest
-non-zero dev = 1.526e-5 = 2^-16. The grid step of 2^-16 matches for
-all values up to 2^-10; for larger magnitudes, dev matches V directly
-(no extra quantization).
+| abs(V) range    | n   | dev=0 | dev bit-equal V | on 2^-16 grid | max rel err |
+|-----------------|-----|-------|-----------------|---------------|-------------|
+| [2^-24, 2^-17)  | 70  | 70    | 0               | 70            | 1.0         |
+| [2^-17, 2^-16)  | 10  | 0     | 0               | 10            | 9.84e-1     |
+| [2^-16, 2^-15)  | 10  | 0     | 0               | 10            | 3.21e-1     |
+| [2^-15, 2^-14)  | 10  | 0     | 0               | 10            | 1.35e-1     |
+| [2^-14, 2^-13)  | 10  | 0     | 0               | 10            | 7.16e-2     |
+| [2^-13, 2^-12)  | 10  | 0     | 0               | 10            | 5.19e-2     |
+| [2^-12, 2^-11)  | 10  | 0     | 0               | 10            | 1.83e-2     |
+| [2^-11, 2^-10)  | 10  | 0     | 0               | 10            | 9.17e-3     |
+| [2^-10, 2^-9)   | 10  | 0     | 1               | 10            | 5.65e-3     |
+| [2^-9, 2^-8)    | 10  | 0     | 2               | 10            | 3.41e-3     |
+| [2^-8, 2^-7)    | 10  | 0     | 2               | 10            | 1.88e-3     |
+| [2^-7, 2^-6)    | 10  | 0     | 5               | 10            | 9.61e-4     |
+| [2^-6, 2^14)    | 195 | 0     | 195             | 195           | 0           |
+
+Every nonzero dev lane (39,040 lanes, 305 rows x 128) is an exact
+multiple of 2^-16. The smallest nonzero dev is 2^-16 = 1.526e-5.
 
 ## Verdict on the original question
 
@@ -117,9 +116,9 @@ all values up to 2^-10; for larger magnitudes, dev matches V directly
 fp32 pairwise, fp16 chunked (8/16/32/64/128), block-floating N=8..18,
 Kahan, fp16 pure, K-order variant model.** No tested model bit-exactly
 reproduces the saved real-parakeet layer-0 device output. Probe 3
-confirms an output quantization grid (step 2^-16 for small magnitudes,
-FTZ for |V| < 2^-17) but no tested accumulator model reproduces the
-multi-term deviations.
+shows that single-term outputs are rounded to the nearest multiple of
+2^-16 (so |V| < 2^-17 gives 0), but no tested accumulator model
+reproduces the multi-term deviations.
 
 ## Correlation analysis: failing lanes vs sum|terms| and |device|
 
@@ -141,8 +140,8 @@ at regular magnitudes, not small sum|terms|.
 108,235 lanes (28.2% of layer-0) deviate from fp32 RN. The deviation is
 symmetric ±1–2 ulps in the bulk, tail to ±10 ulps, occasional outliers
 to 517 ulps (h=2, r=340). The accumulator is clearly fp32-class (probe
-1: 99.93% lanes match fp32 RN) but the final fp16 round has a
-non-standard grid structure (probe 3) that biases small magnitudes.
+1: 99.93% lanes match fp32 RN), but single-term outputs below 2^-6 are
+rounded to multiples of 2^-16, not to the fp16 ulp (probe 3).
 
 A "floor model" `bound = max(2^-11 * sum|terms|, F_absorbed)` was tested
 in isolation: with F_absorbed = 2^-25, all currently-failing lanes pass.
@@ -151,19 +150,14 @@ sum|terms| = 2.1 (NOT small), median |dev-exact| = 1.68e-3 (NOT floor-
 dominated). The failures are genuine accumulator precision issues at
 normal magnitudes, not an absolute error floor.
 
-## Product contract status (CORRECTED)
-
-The "passes the product contract" claim from prior receipt is REMOVED.
-No model-vs-stock numbers were computed; the claim had no evidence. The
-recorded facts are:
+## Strict per-lane bound
 
 - The C pv island FAILS the strict per-lane fp64-exact-product bound
   `|dev - fp64_exact| / (2^-11 * sum|terms|) <= 1` on 5,100 / 182,742 /
   201,045 lanes for layers 0 / 11 / 23 (1.3% / 47.6% / 52.4%).
 - The rel L2 vs the saved reference output is 2.21e-4 / 8.40e-4 /
-  1.13e-3, max abs 7.81e-3 / 2.59e-3 / 1.95e-3 — within typical fp16
-  matmul tolerances but the strict bound fails on a non-trivial
-  fraction of lanes.
+  1.13e-3, max abs 7.81e-3 / 2.59e-3 / 1.95e-3. No product-contract
+  verdict is made from these numbers.
 
 ## What did NOT change
 
@@ -184,6 +178,9 @@ recorded facts are:
 - Artifacts: `~/.local/share/apple-silicon-lab/artifacts/AccumProbe/`
   with probe 1, 2, 3 device outputs, exact references, packed inputs,
   SUMMARY (with addendum), post-state, SHA256SUMS.
+- Head-0 recheck (per-octave table and zero bounds):
+  `~/.local/share/apple-silicon-lab/artifacts/DocsConsolidate/2026-09-30-receipt-recheck/`
+  (`recheck.py`, `stdout.txt`, SHA256SUMS).
 
 ## Run evidence
 
