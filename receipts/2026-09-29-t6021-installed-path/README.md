@@ -158,3 +158,26 @@ terms. The verdict above uses the exact product and the true sum of terms.
 
 Not done: select islands and the rms_norm chain (device output wrong or program
 refused), the intermittent all-zero output on some boots, any model.
+
+## Select islands and the rms_norm chain (2026-09-30)
+
+Re-run by the lead on the M2 after the builder change (`tools/island_ref.py`):
+
+- island-b-select-runtime: 1125000/1125000 valid lanes bit-exact on 3 seeds,
+  padding zero, no DART fault. Device channel roles: ch5 = the cond=0 branch,
+  ch6 = the cond=1 branch, ch7 = cond (the compiler-side order guess had ch5
+  and ch6 swapped).
+- island-b-select-constfill (a = -inf baked in the kernel surface): 1125000/1125000
+  bit-exact on 3 seeds.
+- rms-c2048-gamma: PARTIAL, not verified. The device writes output channels
+  64 to 2047 only (1984 of 2048): 1980 of 1984 bit-exact, max 1.43 ulp against
+  `y = fp16(x * fp16(0.5 / rs))`, `rs = sqrt(mean(x^2) + 2^-17 * max(x)^2)`.
+  Channels 0 to 63 are never written, and 5 stray non-zero lanes appear
+  outside the output. The formula was fitted from device probes, not taken
+  from Apple. A real RMSNorm needs all 2048 channels, so this program does
+  not qualify for a model run.
+
+Root-cause status for the rms gap: the constant blob of this oracle holds 1984
+gamma values plus a 64-value coefficient table; whether the missing 64
+channels come from the captured Apple program or from our slot binding is not
+decided.
