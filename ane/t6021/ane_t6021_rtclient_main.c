@@ -1,384 +1,1402 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * ane_t6021_rtclient.c — T6021 (H14 / M2) ANE RTKit CLIENT.
+ * ane_t6021_rtclient.c — T6021 (H14 / M2) installed ANE driver.
  *
- * This is the t6021 bring-up path that uses mainline RTKit instead of
- * the H13 host-MMIO model: genpd power-up -> devm_apple_rtkit_init on
- * the ANE ASC mailbox (drivers/soc/apple/rtkit.c) -> apple_rtkit_boot
- * (HELLO / EPMAP / STARTEP / IOP power state) -> first CSNE_CMD.
+ * One module, two surfaces:
+ *   - boot/transport: fenced Linux-context firmware start (fw_start=1
+ *     default — the proven add-path config), shared boot/fwload
+ *     contract units, then the legacy 13.5 ChMan transport for the
+ *     three load-time commands (LOAD_PROGRAM 0x200, CREATE_PROCESS
+ *     0x202, PROCEDURE_CALL 0x204) driven through the ioctls in this
+ *     file;
+ *   - DRM accel: BO_INIT/BO_FREE plus PROG_LOAD/PROC_CREATE/EXEC per
+ *     ane/src/uapi/drm/ane_accel.h (ABI 2). Sections ride BOs the
+ *     user supplies; one global mutex serializes every firmware
+ *     command; completion = the legacy exchange's reply PLUS a
+ *     TQ-idle poll gated on the pmgr PS words. EXEC also returns the
+ *     fw's target-to-host slots (the sequencer's per-step drain).
+ *
+ * Compiled defaults are the load-run.sh parameter list verbatim — a
+ * bare `insmod ane_t6021.ko` is the proven add-path configuration on
+ * boot 3ab812a3 (fw_load=1 fw_start=1 fw_start_dapf=0 legacy_only=1
+ * legacy_query=1 scratch3_ack=1 poll_rx=1 hello_wait_ms=1000 ...).
+ * Remaining parameters are overridable from sysfs for bisection only.
  *
  * Division of labor (receipts/2026-09-22-t6021-rtkit-port):
- *  - CPU start belongs to a quiesce context (m1n1/iBoot). This box's
- *    RVBAR latch is sticky with mode bits 55/48 missing
- *    (2026-09-22-t6021-power-dart-fwload, s23/s24); kernel-context
- *    RVBAR and ps@2e0 writes are fatal. By default this driver
- *    therefore never programs RVBAR or CPU_CONTROL: it refuses to bind
- *    unless the firmware is already alive (CPU_STATUS RUNNING);
- *    fw_start=1 is the fenced exception below.
+ *  - CPU start: kernel-context start is the proven-safe route on this
+ *    box — m1n1 RTBuddy path is dormant (W5/W6 MGMT session wall) and
+ *    the 13.5 (22G74) selene image brings up the legacy ChMan
+ *    transport after DONE without RTKit. Boot is fenced in
+ *    ane_t6021_boot.c (entry fold, RVBAR skip-or-fold, scratch,
+ *    RUN, poll A/B, publish/wake) and audited in
+ *    tools/h14_boot_regression.c.
  *  - genpd/pmgr: Runtime PM + the DT power-domains binding owns the
- *    raise; probe verifies ACTUAL on ane_cpu (pmgr window) before the
- *    first engine read (gate G1). fw_start then puts the islands in the
- *    form macOS runs the ANE in: ane_sys_mpm off, ane_sys/ane_cpu on
- *    with AUTO_ENABLE, td/base/set1-4 on (fw_start_mpm_off).
- *  - Mailbox: apple,asc-mailbox-v4 child node at engine+0x1408000
- *    (a2i/i2a controls 0x285408110/0x285408114 live-read clean, W10).
- *    One AIC line only (ADT ane0 interrupts len 4: raw 0x374) ->
- *    recv-not-empty = that line; TX polls (mailbox.c poll_tx).
- *  - non-posted MMIO everywhere in the ANE aperture (posted writel
- *    froze the box, same receipt): the DT nodes carry
- *    "nonposted-mmio", which of_mmio_is_nonposted turns into
- *    IORESOURCE_MEM_NONPOSTED -> ioremap_np.
- *
- * Post-HELLO protocol (static, selene t602x_ane0_fw_selene_rc4x +
- * kext 26A428; ane-linux-experiments
- * receipts/2026-09-24-m2-post-hello-protocol):
- *  - RTKit protocol v12 only: fw HELLO = min 12 / max 12 (@0x971e0);
- *    mainline rtkit.c accepts 11..12.
- *  - fw RTKit endpoint table (vm 0xed0a0): 0 management, 1 crashlog,
- *    2 syslog, 0x20 "user1". EP1 is the RTKit crashlog endpoint, not
- *    an ANE command channel. The command endpoint is the app endpoint
- *    (>= 0x20) that EPMAP announces; this driver never assumes it.
- *  - fw buffer word (builder 0x982b4, decoder 0x98fc8): addr[43:0] |
- *    size_code[51:44] | unit[53:52], unit 1 = 4 KiB, 2 = 1 MiB,
- *    3 = 2 MiB. App-endpoint word: offset[23:0] | len[47:24] (fw
- *    0x6330/0x64b4, kext rtbuddyEndpointSendMessage).
- *  - The ANE data channels are ChMan rings that the fw lays out in the
- *    host 'IPC ' surface before DONE (fw 0x5348): a table of
- *    0x100-byte descriptors at IPC+0, rings after it.
- *  - CSNE header {u32 rsvd, u16 id, u8 flags, u8 rsvd}; ids from the
- *    selene id->name table (PING 0x11, BUILDINFO 0x06).
+ *    raise; probe verifies ACTUAL on ane_cpu (pmgr window) before
+ *    the first engine read (G1 gate). The pre-CPU engine table block
+ *    is intentionally NOT written (preboot_table_mode = 2 = SKIP, the
+ *    2026-09-20-era live-fault discriminator). macOS-form mpm_off is
+ *    skipped: with fw_start_mpm_off=0 (the proven config) the
+ *    boot-raised ane_sys_mpm stays on; the boot writes do not depend
+ *    on it.
+ *  - mailbox: ane_rtclient_validate_chman sees the 'IPC ' surface the
+ *    fw published during boot; the three load-time commands travel
+ *    the IO ring (channel 1) over ane_rtclient_legacy_exchange. Each
+ *    command advances the cursor on the next 64-byte slot — resending
+ *    to slot 0 wedges the ring (sequencer rule).
+ *  - non-posted MMIO (DT "nonposted-mmio" -> IORESOURCE_MEM_NONPOSTED)
+ *    is mandatory throughout the ANE aperture; posted writel froze the
+ *    box.
+ *  - Firmware alias: fw_alias_reserved=1 maps the iBoot-reserved
+ *    SEG0/SEGi phys at the latched RVBAR entry (proven); the
+ *    subsequent kernel writes into the entry region translate through
+ *    dart-ane0 instead of faulting.
  */
 
-#include <linux/completion.h>
-#include <linux/dev_printk.h>
+#include <linux/atomic.h>
 #include <linux/delay.h>
+#include <linux/device.h>
 #include <linux/dma-mapping.h>
+#include <linux/firmware.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/iommu.h>
 #include <linux/jiffies.h>
+#include <linux/kref.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
+#include <linux/sizes.h>
+#include <linux/slab.h>
 #include <linux/soc/apple/rtkit.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include <linux/util_macros.h>
 #include <linux/workqueue.h>
 
+#include <drm/drm_accel.h>
+#include <drm/drm_device.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_file.h>
+#include <drm/drm_gem.h>
+#include <drm/drm_ioctl.h>
+#include <drm/drm_mm.h>
+#include <crypto/sha2.h>
+
 #include "ane_t6021.h"
-#include "ane_t6021_diag_marker.h"
+#include "ane_t6021_boot.h"
+
+#include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
 /* pmgr ane_cpu ACTUAL word (ane0 reg1 window, pmgr+0x2e0) */
 #define ANE_RTCLIENT_PS_CPU_ACTUAL_OFF	0x2e0
+
+/* TM base for the eight TQ status words (one per queue) */
+#define ANE_TM_BASE			0x285c00000ull
+#define ANE_TM_TQ_STATUS_STRIDE		0x2c
+#define ANE_TM_TQ_STATUS_OFF		0x20804
+#define ANE_TM_TQ_STATUS(q)		(ANE_TM_BASE + ANE_TM_TQ_STATUS_OFF + \
+					 (u64)(q) * ANE_TM_TQ_STATUS_STRIDE)
+#define ANE_TM_TD_WINDOW		0x20400
+#define ANE_TM_TD_WINDOW_SIZE		0x440
+#define ANE_TM_TD_COUNT_OFF		0x58
+#define ANE_TM_TQ_STATUS_IDLE		0x81
+#define ANE_TM_TQ_STATUS_BUSY		0x70
 
 /* CPU_STATUS bits (m1n1 ASCRegs shape) */
 #define ANE_ASC_CPU_STATUS_RUNNING	BIT(0)
 #define ANE_ASC_CPU_STATUS_STOPPED	BIT(1)
 
-/* rtkit.c routes endpoints below this to its own handlers
- * (rtkit-internal.h APPLE_RTKIT_APP_ENDPOINT_START) */
-#define ANE_RTKIT_APP_EP_START		0x20
+/* Boot-time module parameters — defaults are the proven add-path
+ * parameter list (boot 3ab812a3 / load-run.sh). fw_load, fw_extra_ram
+ * and fw_alias_reserved live in ane_t6021_fwload.c and
+ * boot_prevent_nap in ane_t6021_boot.c (single registration each);
+ * their compiled defaults are the proven values. Remaining knobs are
+ * overridable from sysfs for bisection only. */
+static bool fw_start = true;
+module_param(fw_start, bool, 0444);
+MODULE_PARM_DESC(fw_start,
+		 "Fenced Linux-context firmware start: stage + alias, then the boot sequence; default on (proven add-path config).");
 
-#define ANE_RTCLIENT_RING_SIZE		SZ_64K	/* csne_ping host ring */
+static int fw_start_table_mode = 2;
+module_param(fw_start_table_mode, int, 0444);
+MODULE_PARM_DESC(fw_start_table_mode,
+		 "Pre-CPU engine table block: 0 abort, 1 write, 2 skip (default, proven config).");
+
+static bool fw_start_rtb_mode;
+module_param(fw_start_rtb_mode, bool, 0444);
+MODULE_PARM_DESC(fw_start_rtb_mode,
+		 "RTBuddy/RTKit-app-endpoint select; default off (legacy ChMan transport).");
+
+/* Drive RX by apple_rtkit_poll from a workqueue even though a recv
+ * IRQ exists (lab poll_rx=1, the proven add-path value: the raw recv
+ * line is unproven, so the worker is what services HELLO/EPMAP). */
+static bool poll_rx = true;
+module_param(poll_rx, bool, 0444);
+MODULE_PARM_DESC(poll_rx,
+		 "Drive RX by apple_rtkit_poll from a workqueue (default on, proven config).");
+
+/* STARTEP every fw-announced app endpoint (>= 0x20) after a successful
+ * RTKit handshake (lab start_app_eps=1 default). */
+static bool start_app_eps = true;
+module_param(start_app_eps, bool, 0444);
+MODULE_PARM_DESC(start_app_eps,
+		 "STARTEP every fw-announced app endpoint after the handshake (default on).");
+
+static bool scratch3_ack = true;
+module_param(scratch3_ack, bool, 0444);
+MODULE_PARM_DESC(scratch3_ack,
+		 "After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc, kext 0x95eaee4). Default on; 0 withholds.");
+
+static bool legacy_only = true;
+module_param(legacy_only, bool, 0444);
+MODULE_PARM_DESC(legacy_only,
+		 "Use the pinned 13.5 legacy ChMan transport (default on, proven add-path config).");
+
+static bool legacy_query = true;
+module_param(legacy_query, bool, 0444);
+MODULE_PARM_DESC(legacy_query,
+		 "Service bounded startup allocations and CONFIG_GET; default on (proven config).");
+
+static unsigned int hello_wait_ms = 1000;
+module_param(hello_wait_ms, uint, 0444);
+MODULE_PARM_DESC(hello_wait_ms,
+		 "Upper bound for the RTKit boot handshake (rtkit.c waits are 1 s each); the lab proven value is 1000.");
+
+#define ANE_LEGACY_ALLOCS 8192
+#define ANE_LEGACY_BYTES SZ_512M
+
+struct ane_legacy_buffer {
+	void *cpu;
+	dma_addr_t dma;
+	size_t size;
+};
 
 struct ane_rtclient {
 	struct device *dev;
 	void __iomem *engine;
 	void __iomem *pmgr;
 	struct apple_rtkit *rtk;
-	/* ane_cpu reset (DT resets = <&ane_cpu>, ps RESET bit 31). */
 	struct reset_control *cpu_rst;
-
-	/* fw_start=1: view over this device for the shared boot/fwload
-	 * contract units (ane_t6021_boot.c/ane_t6021_fwload.c). */
-	struct ane_t6021 *fw;
-	/* A CPU we released is (or may be) running: state is HELD —
-	 * surfaces/rings/IRQ/power links preserved, no unwind, reboot
-	 * is the only reclamation (wedged-pin rule). */
-	bool held;
-
 	struct delayed_work poll_work;
+
+	/* fw_start=1 view over the shared boot/fwload contract units. */
+	struct ane_t6021 *fw;
+
+	/* A CPU we released is (or may be) running: state HELD — surfaces,
+	 * rings, IRQ, power links preserved; no unwind; reboot reclaims
+	 * (wedged-pin rule). */
+	bool held;
 
 	bool boot_done;
 
-	/* Lowest app endpoint (>= 0x20) the fw announced in EPMAP and we
-	 * STARTEPed; 0 = none. The ANE command endpoint candidate. */
-	u8 cmd_ep;
-	/* ChMan descriptor table validated in the 'IPC ' surface. */
+	/* ChMan descriptor table validated against the 'IPC ' surface. */
 	bool chman_ok;
-
-	dma_addr_t ring_iova;
-	void *ring;
-
-	bool csne_setup_done;
-	u32 csne_cursor;	/* K14 wrap-semantics write cursor */
+	struct ane_legacy_buffer *legacy_buffers;
+	u32 legacy_allocated;
+	size_t legacy_bytes;
+	u32 legacy_malloc_cursor;
+	/* Last-committed-TD word after the previous completed call. */
+	u32 td_seen;
+	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
+	/* One reusable 16 KiB command buffer for every host command
+	 * (CONFIG_GET + the three ioctls). Protocol-legal to reuse: an
+	 * exchange returns 0 only after the IO slot flipped back to
+	 * host-owned with a zero status (the lab's own completion
+	 * predicate), so the firmware has fully consumed the previous
+	 * command. The legacy_buffers table stays for fw MALLOC replies,
+	 * which the firmware may reference forever (held until reboot). */
+	struct ane_legacy_buffer *cmd_buf;
 };
 
-/* Each rtkit.c boot-handshake wait (EPMAP, IOP power ack, AP power ack)
- * is 1 s, and the fw sends HELLO only after its ChMan DONE, so the
- * client retries -ETIME waits up to this bound. */
-static unsigned int hello_wait_ms = 10000;
-module_param(hello_wait_ms, uint, 0444);
-MODULE_PARM_DESC(hello_wait_ms,
-		 "Upper bound for the RTKit boot handshake (HELLO/EPMAP/power acks), retried in 1 s rtkit.c waits (default 10000)");
+/* Per-open BO ownership (drm_file->driver_priv). Handles live in the
+ * fd's list; closing the fd drops its handles (postclose). The
+ * coherent buffers themselves live as long as something references
+ * them: a user mapping, or the firmware (see ane_t6021_bo_release). */
+struct ane_t6021_fd {
+	struct list_head bos;
+};
 
-static bool start_app_eps = true;
-module_param(start_app_eps, bool, 0444);
-MODULE_PARM_DESC(start_app_eps,
-		 "After the handshake, STARTEP every fw-announced app endpoint (>= 0x20; fw mgmt type 5, flag bit 1). Default on");
+/* Per-file handle counter and every per-fd list against same-fd concurrent
+ * ioctls. A BO whose IOVA reached the firmware (fw_ref) is held, with
+ * its bytes counted, until reboot; every other BO frees at its last
+ * reference (see ane_t6021_bo_release).
+ *
+ * Cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen by the
+ * H14 compiler are bounded by `reduction * columns * 2`, which reaches
+ * 20 MiB at (K,N)=(2048,5120). The same cap serves the Qwen4-attention
+ * (K,N)=(4096,4096) constant at 32 MiB and any H14 softmax/reduction
+ * with an 8 MiB table. The cap is one BO; total-BO-bytes are capped
+ * separately by an atomic counter under ane_t6021_bo_lock.
+ *   ANE_T6021_BO_MAX       — per-BO size, the IOVA is at most 1 GiB.
+ *   ANE_T6021_BO_TOTAL_MAX — total coherent BO bytes across all fds,
+ *                            enforced at alloc and released when the
+ *                            memory is really freed.
+ * The 16 KiB alignment check is unchanged: every DMA site assumes it. */
+#define ANE_T6021_BO_MAX		SZ_1G
+#define ANE_T6021_BO_TOTAL_MAX		(2UL * SZ_1G)
+#define ANE_T6021_BO_HASH_CHUNK		SZ_1M
 
-static bool scratch3_ack = true;
-module_param(scratch3_ack, bool, 0444);
-MODULE_PARM_DESC(scratch3_ack,
-		 "fw_start=1 only: after DONE, write the host ack SCRATCH3 = 0x08042006 the fw spins on before starting RTKit (selene 0x7edc; kext 0x95eaee4). Default on; 0 withholds it to bisect");
+struct ane_t6021_bo {
+	struct list_head node;
+	struct ane_t6021_fd *owner;
+	u32 handle;
+	struct kref refcount;		/* handle + user mappings */
+	void *cpu;			/* coherent mapping */
+	dma_addr_t dma;
+	size_t size;
+	bool fw_ref;			/* the firmware received this IOVA */
+	struct device *dev;
+};
 
-static bool legacy_only;
-module_param(legacy_only, bool, 0444);
-MODULE_PARM_DESC(legacy_only,
-		 "EXPERIMENTAL, default off: requires fw_start=1 and !fw_start_rtb_mode (validated at probe top, no rejection past that). 13.5 (22G74) legacy ChMan transport — exclude every RTKit surface (no devm_apple_rtkit_init, no RX poll worker, no apple_rtkit_boot) so the generic mailbox/RTKit path cannot interfere with the fw post-DONE sequence. Version contract is structural: fwload sha-pins the exact 13.5 22G74 selene image (a9c4b771...) and refuses any other, so fw_start staging success is the version gate. After the host ACK (post-DONE legacy P8 SCRATCH3 <- 0x08042006) the probe re-runs fwbuf_audit + the wrapper/scratch readback and holds all pins. Verified evidence: parent poll EXITED, ctor1 globals nonzero (CSharedMemory 0x4f86d8, CTaskPool 0x4f8710); ctor2/ctor3 park pinned inside CDebugAgent (dbg290 row 0 at +10min). Use only with fw_extra_ram=0x200000 (2MiB, 16 KiB-aligned at ANE_T6021_FW_ALIAS_PAGE = 0x4000) + DMA32 — the only verified backing envelope. ane_t6021_fwload.c rejects fw_extra_ram > SZ_16M AND any value not 16 KiB-aligned at probe top BEFORE any allocation/power, so the earlier 24MiB (0x1800000) attempt did not reach dma_alloc_coherent and is not a DMA-size finding — whatever hard-hung the box on that single boot is undetermined and unrelated to the RAM grant. Do NOT relax the >SZ_16M guard or loosen the alignment without independent verification. The legacy ChMan host server (SHAREDMALLOC/TERMINAL) is intentionally excluded from this publication pending independent review of acquire ordering, unchecked ring offsets/size/bit before deref/modulo, and TERMINAL cursor not returning the slot to the producer.");
+static DEFINE_MUTEX(ane_t6021_bo_lock);
+static u32 ane_t6021_next_handle = 1;
+static atomic64_t ane_t6021_bo_total_bytes = ATOMIC64_INIT(0);
 
-static bool csne_ping;
-module_param(csne_ping, bool, 0444);
-MODULE_PARM_DESC(csne_ping,
-		 "GATED [INFERENCE]: after the handshake, announce a 64 KiB host ring on the command endpoint with the fw buffer word, then send CSNE_CMD_PING (0x11) and BUILDINFO (0x06) as offset|len words. Default off");
-
-static bool fw_start;
-module_param(fw_start, bool, 0444);
-MODULE_PARM_DESC(fw_start,
-		 "OPT-IN: fenced Linux-context firmware start — stage selene (fw_load=1 required), alias it at the latched RVBAR entry, then run the contract-pinned scratch/RUN/READY/publish/wake sequence and continue into the RTKit handshake. Default off = refuse at the CPU gate (evidence-backed: the proven-safe starter is a quiesce-context write-arm; kernel-context start is the open discriminator). Bounded: <=1 s polls, no retry, no ps@2e0 writes.");
-
-/*
- * fw-start-debug (2026-09-22): fwstart#2 hard-crashed with no capture.
- * Two knobs make every attempt observable and bounded:
- *   fw_start_state_report=1 — stage fwload + alias (IOMMU only, no
- *     engine writes), dump the whitelisted ASC state via dev_emerg,
- *     then unwind CLEANLY. Zero-risk observability proof.
- *   fw_start_stop_after=N — run the boot sequence only through step N
- *     (1 grant tunables, 2 scratch clear+pulse, 3 rvbar decision,
- *     4 cpu release + poll A), then stop with -ECANCELED. While no
- *     CPU started the stop unwinds cleanly (rmmod-able, no reboot
- *     needed); step 4 leaves the HELD wedged-pin state. 0 = full run.
- * Smallest crashing N localizes the fatal write; per-write dev_emerg
- * phases (30 ms drain) beat the write to every console.
- */
-static int fw_start_stop_after;
-module_param(fw_start_stop_after, int, 0444);
-MODULE_PARM_DESC(fw_start_stop_after,
-		 "fw-start-debug bisect: 0 = full sequence; 1..4 = stop after that step (-ECANCELED). Steps: 1 tunables, 2 scratch, 3 rvbar, 4 RUN+pollA");
-
-static bool fw_start_state_report;
-module_param(fw_start_state_report, bool, 0444);
-static bool fw_start_skip_genpd;
-module_param(fw_start_skip_genpd, bool, 0444);
-MODULE_PARM_DESC(fw_start_skip_genpd,
-		 "fw-start-debug: skip pm_runtime_resume_and_get in probe and run the static sequence directly. Use only when the islands already read on (recorded 'available' devlinks); the wedged-bind evidence shows the raise hangs the writer on this box.");
-MODULE_PARM_DESC(fw_start_state_report,
-		 "fw-start-debug: stage firmware + alias, dump ASC state (reads only), then clean unwind — no boot writes");
-
-/*
- * fw_start_table_mode: the pre-CPU engine table block
- * (eng+0xB38/0xB98/0xBF8 <- 0x01FF01FF, kext-sourced, run EVERY
- * EnableANEClocksAndPower per pass4/pass5). 0 = abort before any
- * write, 1 = write the table, 2 = skip it (the 2026-09-20-era
- * diagnostic; the B3 run proved RUN itself is wedge-free with the
- * repaired dtb, so the table is the next discriminator, not a
- * live-fault gate). Default 2 keeps the shipped behavior.
- */
-static int fw_start_table_mode = 2;
-module_param(fw_start_table_mode, int, 0444);
-MODULE_PARM_DESC(fw_start_table_mode,
-		 "pre-CPU table block: 0 abort, 1 write (kext-faithful), 2 skip (default)");
-
-static bool fw_start_rtb_mode;
-module_param(fw_start_rtb_mode, bool, 0444);
-MODULE_PARM_DESC(fw_start_rtb_mode,
-		 "fw-start-debug: S1 writes SCRATCH6=0 (RTBuddy/RTKit-app-endpoint select) instead of 1 (legacy). In RTBuddy mode listen for HELLO, do not gate on READY.");
-static bool fw_start_venc_gates = true;
-module_param(fw_start_venc_gates, bool, 0444);
-MODULE_PARM_DESC(fw_start_venc_gates,
-		 "Raise the VENC rails the ANE clock-ids need (VENC_SYS 0x2902803e0, then PIPE4/PIPE5/ME0 at 0x290288008/10/18), kext order, parents first. The ANE complex sits behind VENC rails on T6021; Linux claims none of them. Disable only to bisect.");
-
-static bool fw_start_mpm_off = true;
-module_param(fw_start_mpm_off, bool, 0444);
-MODULE_PARM_DESC(fw_start_mpm_off,
-		 "fw_start=1: before the boot sequence's first engine write, power ane_sys_mpm@4000 down to TARGET 0 (the macOS working state) and refuse the sequence unless ane_sys/ane_cpu read the macOS AUTO_ENABLE on-form and td/base/set1-4 read ACTUAL 0xf. 0 keeps the boot-raised ane_sys_mpm on, to bisect.");
-
-/* 0 = off. Nonzero is the CNTFRQ value written to the patchbay before
- * CPU_CONTROL release. The module refuses the write unless the live
- * 36 bytes still match the pinned pattern. */
-static u32 patch_timer_freq;
-module_param(patch_timer_freq, uint, 0444);
-MODULE_PARM_DESC(patch_timer_freq,
-		 "fw_start=1: before CPU release, write this to patchbay armv8_timer_frequency at PA 0x10001406880. 0 = off. Refuses unless islands read ACTUAL=0xf, fw_alias_reserved=1, and the 36 bytes at PA 0x10001406870 match (value 0, next tag LRSD).");
-
-static bool fw_start_mbox_ctrl_bit19;
-module_param(fw_start_mbox_ctrl_bit19, bool, 0444);
-MODULE_PARM_DESC(fw_start_mbox_ctrl_bit19,
-		 "fw_start=1: write 0x000a0001 (macOS working-state value, bit 19 set) to A2I_CTRL (0x1408110) and I2A_CTRL (0x1408114) before CPU release, logging before/after reads. Default 0 (off).");
-
-static bool fw_start_dart_single_stream;
-module_param(fw_start_dart_single_stream, bool, 0444);
-MODULE_PARM_DESC(fw_start_dart_single_stream,
-		 "fw_start=1: configure all three ANE DARTs to macOS working-state single-stream form (stream 0 only via DISABLE_STREAMS 0xc20, dart0 PROTECT 0x6) before CPU release, logging before/after reads. Default 0 (off).");
-
-static bool fw_start_core1_run;
-module_param(fw_start_core1_run, bool, 0444);
-MODULE_PARM_DESC(fw_start_core1_run,
-		 "fw_start=1: write 0x10 (RUN) to secondary core control engine+0x1400444 before CPU release, logging before/after reads. Default 0 (off).");
-
-static bool fw_start_wrapper_b80_unmask;
-module_param(fw_start_wrapper_b80_unmask, bool, 0444);
-MODULE_PARM_DESC(fw_start_wrapper_b80_unmask,
-		 "fw_start=1: write 0xffffffff to KIC interrupt registers engine+0x1400b80..b94 and +0x1400bfc before CPU release, logging before/after reads. Default 0 (off).");
-
-static bool fw_start_dapf;
-module_param(fw_start_dapf, bool, 0444);
-MODULE_PARM_DESC(fw_start_dapf,
-		 "fw_start=1: before CPU release, program the dart-ane0 DAPF (PA 0x285804000, ADT reg[3] DAPFLLT) with the five J414c ADT dapf-instance-0 windows, as XNU does, logging before/after reads. Default 0 (off).");
-
-/*
- * Raise the VENC rails the ADT wires as ane0 clock-ids, kext order,
- * parents first. Plain TARGET write + low-byte-0xff poll, exactly the
- * validatePSReg semantics: write 0xf, wait until (val & 0xff) == 0xff
- * (TARGET nibble 0xf AND ACTUAL nibble 0xf). NOTE: no BIT(28)/BIT(31)
- * munging — the earlier code added AUTO_ENABLE and cleared bit 31,
- * which the kext never does, and which can put 0xf0003ff-class values
- * on words whose AUTO-enable semantics are unowned here. Never a
- * TARGET=0 write.
- */
-static int ane_rtclient_venc_gates(struct device *dev)
+/* Final put: the last handle or mapping is gone. A fw_ref BO stays
+ * allocated and counted until reboot — the lab rule: the firmware
+ * never sees a freed IOVA. Every other BO frees here, so the 2 GiB
+ * cap bounds only the memory the firmware may still touch. */
+static void ane_t6021_bo_release(struct kref *ref)
 {
-	static const struct {
-		u32 off;
-		u32 id;
-		const char *name;
-	} gates[4] = {
-		{ 0x008, 318, "VENC_PIPE4" },
-		{ 0x010, 319, "VENC_PIPE5" },
-		{ 0x018, 320, "VENC_ME0" },
-		{ 0x020, 321, "VENC_ME1" },
-	};
-	void __iomem *base;
-	void __iomem *root;
-	unsigned int i;
-	int ret_all = 0;
+	struct ane_t6021_bo *bo = container_of(ref, struct ane_t6021_bo,
+					       refcount);
 
-	/* VENC_SYS (299) at +3e0 of window 0x290280000. DEPENDENCY
-	 * UNPROVEN — receipt conflict on record (entry-alias pass-3:
-	 * gate 473 virtual/no-op, clock-ids an ADT artifact; vs
-	 * csne-cmd-path live: leaves grant only with the bit28 parent
-	 * form; vs t602x-pmgr.dtsi:1920: leaves' parent is venc_dma
-	 * @+8000, which this helper does not raise). Live 2026-09-26
-	 * refusal (before 300 -> after 30f, ACTUAL 0) is consistent
-	 * with the missing-parent reading. No raise form is changed
-	 * here pending that proof; hardware write form belongs to the
-	 * genpd-supported route if the dependency is proven. */
-	root = ioremap_np(0x290280000ull, 0x1000);
-	if (!root) {
-		dev_emerg(dev, "VENC-ROOT: ioremap FAILED\n");
-		return -ENOMEM;
+	if (bo->fw_ref) {
+		kfree(bo);
+		return;
 	}
-	{
-		u32 before = readl(root + 0x3e0);
-		u32 after;
-		int ret;
-
-		dev_emerg(dev, "VENC-ROOT VENC_SYS @+3e0 before=%08x\n",
-			  before);
-		if ((before & 0xff) != 0xff) {
-			writel(before | 0xf, root + 0x3e0);
-			ret = readl_poll_timeout(root + 0x3e0, after,
-						 ((after & 0xff) == 0xff),
-						 10, 50 * 1000);
-			after = readl(root + 0x3e0);
-			dev_emerg(dev,
-				  "VENC-ROOT after=%08x ret=%pe\n",
-				  after, ERR_PTR(ret));
-			if (ret) {
-				iounmap(root);
-				return -ETIMEDOUT;
-			}
-		} else {
-			dev_emerg(dev, "VENC-ROOT already on\n");
-		}
-	}
-	iounmap(root);
-
-	base = ioremap_np(0x290288000ull, 0x40);
-	if (!base) {
-		dev_emerg(dev, "VENC-GATES: ioremap FAILED\n");
-		return -ENOMEM;
-	}
-
-	/* Read-scan the whole ps-regs[15] block first (reads are safe):
-	 * which words are on (ACTUAL[7:4]==0xf, ON signature 0x3ff) vs
-	 * idle (0x300)? B5: 0x008 read 0x300, TARGET took, ACTUAL stuck
-	 * at 0 -> a parent rail in this block (or above) is down. */
-	for (i = 0; i < 8; i++)
-		dev_emerg(dev, "VENC-SCAN +%03x = %08x\n", i * 8,
-			  readl(base + i * 8));
-
-	/* Only the REAL ps words the kext touches: VENC_DMA at +000 must
-	 * already read 0x3ff (VENC_SYS granted it), and the three leaves
-	 * PIPE4/PIPE5/ME0 at +008/+010/+018. Never a TARGET=0 write. */
-	for (i = 1; i <= 3; i++) {
-		void __iomem *reg = base + i * 8;
-		u32 before = readl(reg);
-		u32 after;
-		int ret;
-
-		if ((before & 0xff) == 0xff)
-			continue;
-		dev_emerg(dev, "VENC-GATES +%03x before=%08x\n", i * 8,
-			  before);
-		writel(before | 0xf, reg);
-		ret = readl_poll_timeout(reg, after,
-					 ((after & 0xff) == 0xff),
-					 10, 50 * 1000);
-		after = readl(reg);
-		dev_emerg(dev, "VENC-GATES +%03x after=%08x ret=%pe\n",
-			  i * 8, after, ERR_PTR(ret));
-		if (ret)
-			ret_all = ret;
-	}
-
-	for (i = 0; i < 3; i++) {
-		u32 v = readl(base + gates[i].off);
-
-		dev_emerg(dev, "VENC-GATES %u %s final=%08x\n",
-			  gates[i].id, gates[i].name, v);
-		if ((v & 0xff) != 0xff)
-			ret_all = -ETIMEDOUT;
-	}
-
-	iounmap(base);
-	return ret_all;
+	atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
+	dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
+	kfree(bo);
 }
 
-static bool poll_rx;
-module_param(poll_rx, bool, 0444);
-MODULE_PARM_DESC(poll_rx,
-		 "Drive RX by apple_rtkit_poll from a workqueue even though a recv IRQ exists (fallback if raw 0x374 is not the recv line)");
+/* A user mapping holds its BO's memory until it is torn down: open
+ * (fork, mremap split) takes a reference, close drops it. A BO the
+ * user freed while mapped stays allocated until the last mapping
+ * goes away. */
+static void ane_t6021_vm_open(struct vm_area_struct *vma)
+{
+	kref_get(&((struct ane_t6021_bo *)vma->vm_private_data)->refcount);
+}
 
-/* ---- RTKit callbacks ---- */
+static void ane_t6021_vm_close(struct vm_area_struct *vma)
+{
+	kref_put(&((struct ane_t6021_bo *)vma->vm_private_data)->refcount,
+		 ane_t6021_bo_release);
+}
+
+static const struct vm_operations_struct ane_t6021_vm_ops = {
+	.open = ane_t6021_vm_open,
+	.close = ane_t6021_vm_close,
+};
+
+/* Serializes every firmware command (LOAD/CREATE/CALL) so the
+ * cursor-on-next-64-byte-slot rule and the PMGR/TM gate cannot race. */
+static DEFINE_MUTEX(ane_t6021_fw_lock);
+
+/* Forward declaration (defined below). */
+static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
+				       struct ane_legacy_buffer *command,
+				       size_t length, u16 opcode,
+				       unsigned int channel,
+				       unsigned int timeout_ms);
+
+/* ---- boot-contract helpers (shared with boot.c / fwload.c) ---- */
+
+static int ane_rtclient_legacy_alloc(struct ane_rtclient *ane, u64 size)
+{
+	struct ane_legacy_buffer *buffer;
+
+	if (!size || !IS_ALIGNED(size, SZ_16K) || size > SZ_2M ||
+	    ane->legacy_allocated == ANE_LEGACY_ALLOCS ||
+	    size > ANE_LEGACY_BYTES - ane->legacy_bytes)
+		return -E2BIG;
+	buffer = &ane->legacy_buffers[ane->legacy_allocated];
+	buffer->cpu = dma_alloc_coherent(ane->dev, size, &buffer->dma,
+					 GFP_KERNEL);
+	if (!buffer->cpu)
+		return -ENOMEM;
+	if (!IS_ALIGNED(buffer->dma, SZ_16K) ||
+	    (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, buffer->dma, size))) {
+		dma_free_coherent(ane->dev, size, buffer->cpu, buffer->dma);
+		buffer->cpu = NULL;
+		return -ERANGE;
+	}
+	memset(buffer->cpu, 0, size);
+	buffer->size = size;
+	ane->legacy_bytes += size;
+	ane->legacy_allocated++;
+	return 0;
+}
+
+/* Validate the chman table the fw published in the 'IPC ' surface. */
+static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
+{
+	struct ane_t6021 *a = ane->fw;
+	const struct ane_t6021_chman_desc *t;
+	unsigned int i, bad;
+
+	if (!a || !a->boot_ipc) {
+		dev_info(ane->dev,
+			 "chman: no host IPC surface — table not validated\n");
+		return;
+	}
+	if (a->boot_ipc_size < ANE_T6021_CHMAN_TOTAL) {
+		dev_warn(ane->dev,
+			 "chman: IPC surface %#llx bytes < fw layout %#x — table not validated\n",
+			 a->boot_ipc_size, ANE_T6021_CHMAN_TOTAL);
+		return;
+	}
+
+	dma_rmb();
+	t = a->boot_ipc;
+	bad = ane_t6021_chman_check(t, a->boot_ipc_iova);
+	for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++) {
+		const struct ane_t6021_chman_desc *d = &t[i];
+		const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
+
+		dev_info(ane->dev,
+			 "chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
+			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
+			 d->size,
+			 (bad & BIT(i)) ? "MISMATCH" : "OK",
+			 s->name, s->type, s->bit, s->size, s->off);
+	}
+
+	ane->chman_ok = !bad;
+	dev_info(ane->dev, "chman: table %s (mismatch mask %#x)\n",
+		 bad ? "NOT VALIDATED" : "VALIDATED", bad);
+}
+
+/* Legacy ChMan exchange (post-DONE 13.5 transport). Resends to the same
+ * 64-byte IO slot would wedge the ring; cursor advances after each
+ * completed command (selene fw decodes bit0 = host-owned). */
+static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
+				       struct ane_legacy_buffer *command,
+				       size_t length, u16 opcode,
+				       unsigned int channel,
+				       unsigned int timeout_ms)
+{
+	struct ane_t6021 *a = ane->fw;
+	u64 *io, *malloc_ring, header;
+	u64 *t2h_buf, *t2h_ioq;
+	void __iomem *ipi;
+	unsigned int cursor = ane->legacy_malloc_cursor;
+	unsigned long deadline;
+	u32 *reply;
+	int result = -ETIMEDOUT;
+
+	if (!ane->held || !ane->chman_ok ||
+	    ane_t6021_chman_check(a->boot_ipc, a->boot_ipc_iova))
+		return -EPROTO;
+	ipi = ioremap_np(0x285844000ull, 0xc004);
+	if (!ipi)
+		return -ENOMEM;
+	if (length < 8 || length > command->size ||
+	    channel >= ANE_T6021_CHMAN_COUNT) {
+		result = -EINVAL;
+		goto out;
+	}
+	io = a->boot_ipc + ane_t6021_chman_layout[channel].off +
+	     (size_t)ane->legacy_cmd_cursor[channel] * 64;
+	malloc_ring = a->boot_ipc + ane_t6021_chman_layout[5].off;
+	t2h_buf = a->boot_ipc + ane_t6021_chman_layout[4].off;
+	t2h_ioq = a->boot_ipc + ane_t6021_chman_layout[6].off;
+
+	if (!(READ_ONCE(io[0]) & 1)) {
+		result = -EBUSY;
+		goto out;
+	}
+	reply = command->cpu;
+	((u16 *)reply)[2] = opcode;
+	WRITE_ONCE(io[1], length);
+	WRITE_ONCE(io[2], length);
+	dma_wmb();
+	WRITE_ONCE(io[0], command->dma);
+	dma_wmb();
+	writel(BIT(ane_t6021_chman_layout[channel].bit), ipi);
+	deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	while (time_before(jiffies, deadline)) {
+		u32 pending = readl(ipi + 0x8000);
+
+		if (pending) {
+			writel(pending, ipi + 0xc000);
+			mb();
+		}
+		header = READ_ONCE(io[0]);
+		if (!(header & 1)) {
+			/* malloc-ring service: the fw may ask for an
+			 * allocation while we wait; service those until
+			 * the command slot flips back. */
+			u64 *slot = malloc_ring + cursor * 8;
+			u64 alloc_hdr = READ_ONCE(slot[0]);
+
+			if (!(alloc_hdr & 1)) {
+				u64 size, tag;
+				struct ane_legacy_buffer *buf;
+
+				dma_rmb();
+				size = READ_ONCE(slot[1]);
+				tag = READ_ONCE(slot[2]);
+				/* Lab rule: a valid MALLOC slot carries
+				 * header 0 and a u32 tag; anything else
+				 * is a malformed ring and we stop. */
+				if (alloc_hdr || tag > U32_MAX) {
+					result = -EOPNOTSUPP;
+					goto out;
+				}
+				if (ane_rtclient_legacy_alloc(ane, size)) {
+					result = -ENOMEM;
+					goto out;
+				}
+				buf = &ane->legacy_buffers[ane->legacy_allocated - 1];
+				WRITE_ONCE(slot[1], 0);
+				WRITE_ONCE(slot[2], ane->legacy_allocated);
+				dma_wmb();
+				WRITE_ONCE(slot[0], buf->dma | 1);
+				dma_wmb();
+				writel(BIT(5), ipi);
+				cursor = (cursor + 1) %
+					ane_t6021_chman_layout[5].size;
+			}
+		}
+		header = READ_ONCE(io[0]);
+		if (header & 1) {
+			dma_rmb();
+			result = (header == (command->dma | 1) &&
+				  READ_ONCE(io[1]) == length &&
+				  READ_ONCE(io[2]) == 0 &&
+				  ((u16 *)reply)[2] == opcode &&
+				  ((u16 *)reply)[3] == 0) ? 0 : -EPROTO;
+			ane->legacy_cmd_cursor[channel] =
+				(ane->legacy_cmd_cursor[channel] + 1) %
+				ane_t6021_chman_layout[channel].size;
+			goto out;
+		}
+		/* legacy_fast_poll=1 (the proven add-path cadence): poll
+		 * the rings every 50 us instead of sleeping 1-2 ms. */
+		udelay(50);
+	}
+	dev_info(ane->dev, "LEGACY timeout ch=%u io=%016llx\n",
+		 channel, READ_ONCE(io[0]));
+out:
+	ane->legacy_malloc_cursor = cursor;
+	iounmap(ipi);
+	return result;
+}
+
+/* Time to let the output writes land after the completion signals.
+ * Measured 2026-09-29 on some boots: the fw ack, the TD counter and the
+ * TQ words all report done ~0.13 ms before the output reaches DRAM (the
+ * output read as zeros in about 1 of 5 calls). No signal for "output
+ * landed" is known, so the wait is a fixed margin of about 8x the lag. */
+static unsigned int call_settle_us = 1000;
+module_param(call_settle_us, uint, 0644);
+MODULE_PARM_DESC(call_settle_us,
+		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
+
+/* When 1, io BOs used in a PROCEDURE_CALL are not marked fw_ref, so
+ * BO_FREE frees their memory even though the firmware received their
+ * IOVAs. Soak-test knob only: a clean run with free_io_bos=1 shows no
+ * IOMMU fault in dmesg. The default 0 keeps every published IOVA held
+ * until reboot (the lab rule: the firmware never sees a freed
+ * address). */
+static bool free_io_bos;
+module_param(free_io_bos, bool, 0644);
+MODULE_PARM_DESC(free_io_bos,
+		 "Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob; default 0 = held)");
+
+/* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
+ * completion: measured 2026-09-29, an ack can arrive before the engine
+ * has written the output (exec returned after 0.16 ms, output landed
+ * 0.12 ms later; the same call then read all zeros in ~1 of 5 runs after
+ * an idle gap). All eight TQ status words read 0x81 before a TD starts,
+ * so idle alone proves nothing either. The proof is: the last-committed
+ * TD word (TM +0x20458, counts up by 0x10000 per completed TD)
+ * moved off the value seen after the previous call, AND all eight TQ
+ * words read idle.
+ *
+ * Every TM read is gated on the seven pmgr PS words reading 0x3ff (a TM
+ * read while the compute domains are off hangs the SoC); while they do
+ * not, the call has not started or finished and the loop keeps waiting.
+ * Only single words are read. Returns 0 when complete, -ETIMEDOUT else. */
+static int ane_rtclient_call_wait(struct ane_rtclient *ane,
+				  unsigned int timeout_ms)
+{
+	void __iomem *tm = ioremap_np(ANE_TM_BASE + ANE_TM_TD_WINDOW,
+				      ANE_TM_TD_WINDOW_SIZE);
+	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	int ret = -ETIMEDOUT;
+
+	if (!tm || !pm) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	while (time_before(jiffies, deadline)) {
+		unsigned int i, q;
+		u32 cnt;
+
+		for (i = 0; i <= 0x30; i += 8)
+			if ((readl(pm + i) & 0x3ff) != 0x3ff)
+				break;
+		if (i <= 0x30) {
+			usleep_range(100, 200);
+			continue;
+		}
+		cnt = readl(tm + ANE_TM_TD_COUNT_OFF);
+		if (cnt != ane->td_seen) {
+			for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++)
+				if (readl(tm + ANE_TM_TQ_STATUS_OFF -
+					  ANE_TM_TD_WINDOW +
+					  q * ANE_TM_TQ_STATUS_STRIDE) !=
+				    ANE_TM_TQ_STATUS_IDLE)
+					break;
+			if (q == ANE_T6021_CHMAN_COUNT) {
+				ane->td_seen = cnt;
+				ret = 0;
+				break;
+			}
+		}
+		usleep_range(50, 100);
+	}
+out:
+	if (tm)
+		iounmap(tm);
+	if (pm)
+		iounmap(pm);
+	return ret;
+}
+
+/* Return every firmware-owned slot on a target-to-host ring to the fw
+ * (legacy_t2h_ack=1, the lab default): the fw publishes by writing the
+ * DMA address with bit0 clear; the host returns the slot by setting
+ * bit0 and ringing the channel's doorbell bit, as the allocation ring
+ * does. The sequencer drained channels 4/6 after every step; the
+ * ioctls drain them after every completed exchange. */
+static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
+					   unsigned int channel)
+{
+	const struct ane_t6021_chman_static *c = &ane_t6021_chman_layout[channel];
+	unsigned int n = 0, slot_i = ane->legacy_cmd_cursor[channel];
+	void __iomem *ipi = NULL;
+
+	if (!ane->fw || !ane->fw->boot_ipc)
+		return 0;
+	while (n < c->size) {
+		u64 *slot = ane->fw->boot_ipc + c->off + (size_t)slot_i * 64;
+		u64 hdr = READ_ONCE(slot[0]), len = READ_ONCE(slot[1]);
+
+		if (hdr & 1)
+			break;
+		dma_rmb();
+		dev_dbg(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
+			 c->name, slot_i, hdr, len);
+		n++;
+		WRITE_ONCE(slot[0], hdr | 1);
+		dma_wmb();
+		if (!ipi)
+			ipi = ioremap_np(0x285844000ull, 0xc004);
+		if (ipi)
+			writel(BIT(c->bit), ipi);
+		slot_i = (slot_i + 1) % c->size;
+		ane->legacy_cmd_cursor[channel] = slot_i;
+	}
+	if (ipi)
+		iounmap(ipi);
+	return n;
+}
+
+/* Mark the device quarantined: a timed-out command left the firmware
+ * queue state unknown. The only safe next step is to refuse further
+ * ioctls until a reboot reclaims the surfaces (wedged-pin rule). */
+static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
+
+static int ane_rtclient_command(struct ane_rtclient *ane,
+						     struct ane_legacy_buffer *command,
+						     size_t length, u16 opcode,
+						     unsigned int channel,
+						     unsigned int timeout_ms)
+{
+	int ret;
+
+	ret = ane_rtclient_legacy_exchange(ane, command, length, opcode,
+					   channel, timeout_ms);
+	if (ret) {
+		dev_info(ane->dev, "EXCH op=%#x failed %d (fw allocs %u, %zu bytes)\n",
+			 opcode, ret, ane->legacy_allocated, ane->legacy_bytes);
+		atomic_set(&ane_t6021_quarantined, 1);
+		return ret;
+	}
+	if (opcode == CSNE_CMD_PROCEDURE_CALL) {
+		ret = ane_rtclient_call_wait(ane, timeout_ms);
+		if (!ret && call_settle_us)
+			usleep_range(call_settle_us, call_settle_us + 100);
+		if (ret) {
+			dev_info(ane->dev, "call completion wait failed %d\n",
+				 ret);
+			atomic_set(&ane_t6021_quarantined, 1);
+			return ret;
+		}
+	}
+	/* The fw talks back on the target-to-host rings (fwlog, perf);
+	 * hand those slots back so the rings never fill (the sequencer
+	 * did this per step; same ack, channels 4 and 6). */
+	ane_rtclient_drain_t2h(ane, 4);
+	ane_rtclient_drain_t2h(ane, 6);
+	/* BOs are dma_alloc_coherent memory mapped write-combined for the
+	 * CPU, so no cache maintenance is needed on either side. */
+	return 0;
+}
+
+/* ---- LOAD / CREATE / CALL wrappers ---- */
+
+/* The firmware never frees a program or a process, and its program table
+ * holds 256 entries: measured 2026-09-29, the 257th LOAD_PROGRAM on one
+ * boot answered with a protocol error and quarantined the device. Two
+ * loads of byte-identical sections therefore share one firmware program
+ * and one process. The key is SHA-256 over every section's id, size and
+ * bytes, so a client can only reach a program whose bytes it also
+ * supplied. Protected by ane_t6021_fw_lock. */
+#define ANE_T6021_MAX_PROGRAMS 250
+
+struct ane_t6021_prog {
+	u8 digest[SHA256_DIGEST_SIZE];
+	u32 prog_id;
+	u32 proc_id;		/* U32_MAX until a process exists */
+};
+
+static struct ane_t6021_prog ane_t6021_progs[ANE_T6021_MAX_PROGRAMS];
+static unsigned int ane_t6021_nprogs;
+
+static struct ane_t6021_prog *ane_t6021_prog_find(const u8 *digest)
+{
+	unsigned int i;
+
+	for (i = 0; i < ane_t6021_nprogs; i++)
+		if (!memcmp(ane_t6021_progs[i].digest, digest,
+			    SHA256_DIGEST_SIZE))
+			return &ane_t6021_progs[i];
+	return NULL;
+}
+
+static struct ane_t6021_prog *ane_t6021_prog_by_id(u32 prog_id)
+{
+	unsigned int i;
+
+	for (i = 0; i < ane_t6021_nprogs; i++)
+		if (ane_t6021_progs[i].prog_id == prog_id)
+			return &ane_t6021_progs[i];
+	return NULL;
+}
+
+
+/* Build a LOAD_PROGRAM (0x200) message in a kernel-owned buffer. The
+ * section bytes live in the BOs the user supplied (section_ptr), the
+ * generic binds (bufferId, bo_handle, size) patch the generic section
+ * at iova +0x20 / +0x28 once the BO is copied. Returns 0 with
+ * *prog_id set on success. */
+static int ane_rtclient_load_program(struct ane_rtclient *ane,
+				     struct drm_file *file,
+				     const struct drm_ane_prog_load *user,
+				     __u32 *prog_id)
+{
+	struct drm_ane_section *sections;
+	struct drm_ane_generic_bind *binds;
+	struct ane_legacy_buffer *command;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_prog *cached;
+	u8 digest[SHA256_DIGEST_SIZE];
+	size_t binds_size;
+	int ret, i, j;
+
+	if (user->section_count < 1 ||
+	    user->section_count > ANE_T6021_LOAD_SEC_COUNT ||
+	    user->generic_count > ANE_M2_MAX_BINDS || !fd)
+		return -EINVAL;
+
+	sections = kmalloc_array(user->section_count, sizeof(*sections),
+				GFP_KERNEL);
+	binds = kmalloc_array(user->generic_count, sizeof(*binds),
+			      GFP_KERNEL);
+	if (!sections || !binds) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	if (copy_from_user(sections,
+			   u64_to_user_ptr(user->sections_ptr),
+			   user->section_count * sizeof(*sections))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	binds_size = user->generic_count * sizeof(*binds);
+	if (binds_size && copy_from_user(binds,
+					u64_to_user_ptr(user->generic_ptr),
+					binds_size)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	/* Lab contract: the record slot IS the section identity (slot =
+	 * id - 1; tdprop id 7 lands at slot 6 and slot 5 stays empty,
+	 * exactly the proven add-path image). Reject out-of-range and
+	 * duplicate ids before building the wire image. */
+	for (i = 0; i < user->section_count; i++) {
+		if (sections[i].id < 1 ||
+		    sections[i].id > ANE_T6021_LOAD_SEC_COUNT) {
+			ret = -EINVAL;
+			goto out;
+		}
+		for (j = i + 1; j < user->section_count; j++) {
+			if (sections[i].id == sections[j].id) {
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+	}
+
+	/* Identical sections share one firmware program (see the table).
+	 * A constant section can reach 20 MiB (the H14 (K,N)=(2048,5120)
+	 * matvec), so feed the hash in ANE_T6021_BO_HASH_CHUNK-sized slices
+	 * under bo_lock: a single sha256_update of a 20 MiB buffer would
+	 * rely on a 20 MiB stack argument list and has no upper bound on
+	 * the chunk that the BO could supply. */
+	{
+		struct sha256_ctx sha;
+		void *scratch;
+
+		sha256_init(&sha);
+		scratch = kvmalloc(ANE_T6021_BO_HASH_CHUNK, GFP_KERNEL);
+		if (!scratch) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		for (i = 0; i < user->section_count; i++) {
+			struct ane_t6021_bo *bo = NULL, *b;
+			u64 hdr[2] = { sections[i].id, sections[i].size };
+			size_t left;
+
+			mutex_lock(&ane_t6021_bo_lock);
+			list_for_each_entry(b, &fd->bos, node) {
+				if (b->handle == sections[i].bo_handle) {
+					bo = b;
+					break;
+				}
+			}
+			if (!bo || sections[i].size > bo->size ||
+			    sections[i].offset > bo->size - sections[i].size) {
+				mutex_unlock(&ane_t6021_bo_lock);
+				kvfree(scratch);
+				ret = -EINVAL;
+				goto out;
+			}
+			sha256_update(&sha, (const u8 *)hdr, sizeof(hdr));
+			left = sections[i].size;
+			while (left) {
+				size_t n = min(left, (size_t)ANE_T6021_BO_HASH_CHUNK);
+
+				memcpy(scratch, (const u8 *)bo->cpu +
+				       sections[i].offset +
+				       (sections[i].size - left), n);
+				sha256_update(&sha, scratch, n);
+				left -= n;
+			}
+			mutex_unlock(&ane_t6021_bo_lock);
+		}
+		kvfree(scratch);
+		sha256_final(&sha, digest);
+	}
+	cached = ane_t6021_prog_find(digest);
+	if (cached) {
+		*prog_id = cached->prog_id;
+		ret = 0;
+		goto out;
+	}
+	if (ane_t6021_nprogs == ANE_T6021_MAX_PROGRAMS) {
+		ret = -ENOSPC;
+		goto out;
+	}
+
+	command = ane->cmd_buf;
+	if (!command) {
+		ret = -ENODEV;
+		goto out;
+	}
+	memset(command->cpu, 0, SZ_16K);
+	/* One 0x30-byte section record per supplied section, placed at
+	 * its IDENTITY slot: slot = id - 1 (tdprop id 7 lands at slot
+	 * 6, slot 5 stays empty — exactly the proven add-path image:
+	 * six populated records, ids 1,2,3,4,5 then 7). Unsupplied
+	 * slots stay zero-filled (flags = 0). flags bit0 = 1, id at
+	 * +0x04, iova at +0x18, size at +0x20. */
+	for (i = 0; i < user->section_count; i++) {
+		struct ane_t6021_bo *bo = NULL, *b;
+		u64 slot_base, iova;
+		u8 *cmd = command->cpu;
+
+		mutex_lock(&ane_t6021_bo_lock);
+		list_for_each_entry(b, &fd->bos, node) {
+			if (b->handle == sections[i].bo_handle) {
+				bo = b;
+				break;
+			}
+		}
+		if (bo && sections[i].size <= bo->size &&
+		    sections[i].offset <= bo->size - sections[i].size) {
+			/* The IOVA below is about to be published to the
+			 * firmware, so mark the BO before the exchange:
+			 * the fw may read the section any time after the
+			 * doorbell rings, including during a timeout.
+			 * Under bo_lock the handle reference cannot go
+			 * away, so no kref is needed here. */
+			bo->fw_ref = true;
+			iova = bo->dma + sections[i].offset;
+		} else {
+			bo = NULL;
+		}
+		mutex_unlock(&ane_t6021_bo_lock);
+		if (!bo) {
+			ret = -EINVAL;
+			goto out;
+		}
+		slot_base = 0x8 + (u64)(sections[i].id - 1) * 0x30;
+		*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
+		*(u32 *)(cmd + slot_base + 0x04) =
+			cpu_to_le32(sections[i].id);
+		*(u64 *)(cmd + slot_base + 0x18) = cpu_to_le64(iova);
+		*(u64 *)(cmd + slot_base + 0x20) =
+			cpu_to_le64(sections[i].size);
+	}
+	/* Generic binds are accepted for ABI compatibility and unused:
+	 * the LOAD record already carries iova + size, and the generic
+	 * section image is prepared by userspace (the proven add path
+	 * ships it inside the section bytes, generic.bin). */
+
+	/* ProgramId placeholder; the firmware writes the assigned id
+	 * back at +0x1b8. */
+	{
+		u8 *cmd = command->cpu;
+
+		*(u32 *)(cmd + 0x1b8) = cpu_to_le32(U32_MAX);
+	}
+
+	/* The proven add-path LOAD command is 0x1C0 bytes: the nine
+	 * 0x30 records end at 0x1b8, ProgramId at +0x1b8, 8 bytes of
+	 * zero tail. sizeof(struct ane_csne_cmd_load_program) is only
+	 * 0x1b8, so the length is pinned here (h14_seq_first_add.py
+	 * load_step). */
+	BUILD_BUG_ON(sizeof(struct ane_csne_cmd_load_program) != 0x1b8);
+	ret = ane_rtclient_command(ane, command,
+						       0x1c0,
+						       CSNE_CMD_LOAD_PROGRAM,
+						       1, 5000);
+	if (!ret) {
+		u8 *cmd = command->cpu;
+
+		*prog_id = le32_to_cpu(*(u32 *)(cmd + 0x1b8));
+		if (*prog_id == U32_MAX) {
+			ret = -EPROTO;
+			goto out;
+		}
+		memcpy(ane_t6021_progs[ane_t6021_nprogs].digest, digest,
+		       SHA256_DIGEST_SIZE);
+		ane_t6021_progs[ane_t6021_nprogs].prog_id = *prog_id;
+		ane_t6021_progs[ane_t6021_nprogs].proc_id = U32_MAX;
+		ane_t6021_nprogs++;
+	}
+
+out:
+	kfree(sections);
+	kfree(binds);
+	return ret;
+}
+
+static int ane_rtclient_create_process(struct ane_rtclient *ane,
+				       __u32 prog_id, __u32 *proc_id)
+{
+	struct ane_legacy_buffer *command;
+	struct ane_t6021_prog *prog = ane_t6021_prog_by_id(prog_id);
+	int ret;
+
+	if (!prog)
+		return -ENOENT;
+	if (prog->proc_id != U32_MAX) {
+		*proc_id = prog->proc_id;
+		return 0;
+	}
+	command = ane->cmd_buf;
+	if (!command)
+		return -ENODEV;
+	memset(command->cpu, 0, SZ_16K);
+	{
+		u8 *cmd = command->cpu;
+
+		*(u32 *)(cmd + 0x08) = cpu_to_le32(prog_id);
+		*(u32 *)(cmd + 0x0c) = cpu_to_le32(U32_MAX);
+	}
+	ret = ane_rtclient_command(ane, command, 0x10,
+						       CSNE_CMD_CREATE_PROCESS,
+						       1, 3000);
+	if (!ret) {
+		u8 *cmd = command->cpu;
+
+		*proc_id = le32_to_cpu(*(u32 *)(cmd + 0x0c));
+		if (*proc_id == U32_MAX)
+			ret = -EPROTO;
+		else
+			prog->proc_id = *proc_id;
+	}
+	return ret;
+}
+
+static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
+				       struct drm_file *file,
+				       const struct drm_ane_exec *user)
+{
+	struct drm_ane_exec_io *ios;
+	struct ane_legacy_buffer *command;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	size_t ios_size;
+	size_t cmd_size;
+	int ret, i;
+
+	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS ||
+	    user->priority < 2 || user->priority > 7 || !fd)
+		return -EINVAL;
+
+	ios_size = (size_t)user->count * sizeof(*ios);
+	ios = kmalloc(ios_size, GFP_KERNEL);
+	if (!ios)
+		return -ENOMEM;
+	if (copy_from_user(ios, u64_to_user_ptr(user->io_ptr), ios_size)) {
+		kfree(ios);
+		return -EFAULT;
+	}
+
+	cmd_size = sizeof(struct ane_csne_cmd_procedure_call) +
+		   (size_t)user->count * sizeof(struct ane_csne_io_elem);
+	if (cmd_size > SZ_16K) {
+		kfree(ios);
+		return -E2BIG;
+	}
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		kfree(ios);
+		return -ETIMEDOUT;
+	}
+	command = ane->cmd_buf;
+	if (!command) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		kfree(ios);
+		return -ENODEV;
+	}
+	memset(command->cpu, 0, SZ_16K);
+	{
+		u8 *cmd = command->cpu;
+
+		*(u32 *)(cmd + 0x08) = cpu_to_le32(user->prog_id);
+		*(u32 *)(cmd + 0x0c) = cpu_to_le32(user->proc_id);
+		*(u64 *)(cmd + 0x10) = cpu_to_le64(0);
+		*(u32 *)(cmd + 0x18) = cpu_to_le32(user->priority);
+		*(u64 *)(cmd + 0x20) = cpu_to_le64(0xADD0);
+		*(u32 *)(cmd + 0x28) = cpu_to_le32(user->count);
+		for (i = 0; i < user->count; i++) {
+			struct ane_t6021_bo *bo = NULL, *b;
+			u64 slot_base = 0x60 + (u64)i * 0x30;
+			u64 iova;
+
+			mutex_lock(&ane_t6021_bo_lock);
+			list_for_each_entry(b, &fd->bos, node) {
+				if (b->handle == ios[i].bo_handle) {
+					bo = b;
+					break;
+				}
+			}
+			if (!bo || ios[i].size > bo->size) {
+				mutex_unlock(&ane_t6021_bo_lock);
+				ret = -EINVAL;
+				goto unlock;
+			}
+			/* The IOVA below is about to be published to the
+			 * firmware, so mark the BO before the exchange
+			 * unless free_io_bos=1 (soak-test knob). Under
+			 * bo_lock the handle reference cannot go away,
+			 * so no kref is needed here. */
+			if (!free_io_bos)
+				bo->fw_ref = true;
+			iova = bo->dma;
+			mutex_unlock(&ane_t6021_bo_lock);
+			*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
+			*(u32 *)(cmd + slot_base + 0x04) =
+				cpu_to_le32(ios[i].buffer_id);
+			*(u32 *)(cmd + slot_base + 0x08) =
+				cpu_to_le32(ios[i].type);
+			*(u64 *)(cmd + slot_base + 0x18) =
+				cpu_to_le64(iova);
+			*(u64 *)(cmd + slot_base + 0x20) =
+				cpu_to_le64(ios[i].size);
+		}
+		/* Drain the CPU write buffers so the input BOs the user
+		 * filled through its uncached mapping are in DRAM before
+		 * the fw starts reading them. */
+		wmb();
+		ret = ane_rtclient_command(ane, command,
+							       cmd_size,
+							       CSNE_CMD_PROCEDURE_CALL,
+							       1,
+							       user->timeout_ms ?
+							       user->timeout_ms : 5000);
+	}
+unlock:
+	mutex_unlock(&ane_t6021_fw_lock);
+	kfree(ios);
+	return ret;
+}
+
+/* ---- DRM accel glue (minimal BO + ioctl table) ---- */
+
+struct ane_t6021_drm {
+	struct drm_device drm;
+	struct device *dev;
+	struct ane_rtclient *ane;
+};
+
+static struct ane_t6021_drm *to_ane_t6021_drm(struct drm_device *drm)
+{
+	return container_of(drm, struct ane_t6021_drm, drm);
+}
+
+static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
+				   struct drm_file *file)
+{
+	struct drm_ane_bo_init *args = data;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_bo *bo;
+	struct ane_rtclient *ane;
+
+	if (args->size == 0 || args->size > ANE_T6021_BO_MAX || !fd)
+		return -EINVAL;
+	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned;
+	 * a BO whose IOVA reaches the firmware stays allocated until
+	 * reboot, so this bound caps the memory that outlives its
+	 * users. */
+	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
+	    ANE_T6021_BO_TOTAL_MAX) {
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
+		return -ENOSPC;
+	}
+	ane = to_ane_t6021_drm(drm)->ane;
+	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
+	if (!bo) {
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
+		return -ENOMEM;
+	}
+	bo->cpu = dma_alloc_coherent(drm->dev, args->size, &bo->dma,
+				     GFP_KERNEL);
+	if (!bo->cpu) {
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
+		kfree(bo);
+		return -ENOMEM;
+	}
+	/* Every fw-visible DMA surface must be 16 KiB aligned and clear
+	 * of the firmware entry alias (receipt 2026-09-20-t6021-entry-alias:
+	 * the same invariant ane_rtclient_legacy_alloc enforces). */
+	if (!IS_ALIGNED(bo->dma, SZ_16K) ||
+	    (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bo->dma,
+						    args->size))) {
+		dma_free_coherent(drm->dev, args->size, bo->cpu, bo->dma);
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
+		kfree(bo);
+		return -ERANGE;
+	}
+	bo->size = args->size;
+	bo->owner = fd;
+	bo->dev = drm->dev;
+	kref_init(&bo->refcount); /* the handle holds this reference */
+	mutex_lock(&ane_t6021_bo_lock);
+	bo->handle = ane_t6021_next_handle++;
+	if (bo->handle == 0)
+		bo->handle = ane_t6021_next_handle++;
+	list_add_tail(&bo->node, &fd->bos);
+	mutex_unlock(&ane_t6021_bo_lock);
+	args->handle = bo->handle;
+	/* mmap offset = the handle; libane mmaps the fd at exactly this
+	 * offset and ane_t6021_mmap resolves the BO from vm_pgoff. */
+	args->offset = (u64)bo->handle << PAGE_SHIFT;
+	return 0;
+}
+
+/* Drop one handle owned by this fd. The kref may keep the memory
+ * alive past this call — a user mapping still holds a reference — so
+ * the final ane_t6021_bo_release makes the free-or-hold decision. */
+static void ane_t6021_bo_drop(struct ane_t6021_bo *bo)
+{
+	list_del(&bo->node);
+	kref_put(&bo->refcount, ane_t6021_bo_release);
+}
+
+static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
+				   struct drm_file *file)
+{
+	struct drm_ane_bo_free *args = data;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_bo *bo = NULL, *b;
+
+	if (!fd)
+		return -ENODEV;
+	mutex_lock(&ane_t6021_bo_lock);
+	list_for_each_entry(b, &fd->bos, node) {
+		if (b->handle == args->handle) {
+			bo = b;
+			break;
+		}
+	}
+	if (bo)
+		ane_t6021_bo_drop(bo);
+	mutex_unlock(&ane_t6021_bo_lock);
+	return bo ? 0 : -ENOENT;
+}
+
+/* Resolve the BO a user mmap names (BO_INIT returned offset = handle
+ * << PAGE_SHIFT) and map the coherent buffer cacheably — the device
+ * half coheres through the DART (IOMMU_CACHE), so reads after EXEC
+ * observe the firmware's writes without extra sync. The mapping takes
+ * one BO reference: it survives BO_FREE until the vma is gone. */
+static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	struct drm_file *file = filp->private_data;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct drm_device *drm = file->minor->dev;
+	struct ane_t6021_bo *bo = NULL, *b;
+	size_t size = vma->vm_end - vma->vm_start;
+	u32 handle;
+	int ret;
+
+	if (!fd)
+		return -ENODEV;
+	/* vm_pgoff is the BO_INIT offset in pages: handle << PAGE_SHIFT
+	 * >> PAGE_SHIFT == handle. */
+	handle = (u32)vma->vm_pgoff;
+	if (!handle)
+		return -EINVAL;
+	mutex_lock(&ane_t6021_bo_lock);
+	list_for_each_entry(b, &fd->bos, node) {
+		if (b->handle == handle && b->owner == fd) {
+			kref_get(&b->refcount);
+			bo = b;
+			break;
+		}
+	}
+	if (!bo || size > PAGE_ALIGN(bo->size)) {
+		mutex_unlock(&ane_t6021_bo_lock);
+		return -ENOENT;
+	}
+	vma->vm_pgoff = 0;
+	ret = dma_mmap_coherent(drm->dev, vma, bo->cpu, bo->dma, size);
+	mutex_unlock(&ane_t6021_bo_lock);
+	if (ret) {
+		kref_put(&bo->refcount, ane_t6021_bo_release);
+		return ret;
+	}
+	/* The vma owns the lookup reference: close (and open on fork)
+	 * go through ane_t6021_vm_ops. */
+	vma->vm_private_data = bo;
+	vma->vm_ops = &ane_t6021_vm_ops;
+	return 0;
+}
+
+static int ane_t6021_open(struct drm_device *drm, struct drm_file *file)
+{
+	struct ane_t6021_fd *fd;
+
+	fd = kzalloc(sizeof(*fd), GFP_KERNEL);
+	if (!fd)
+		return -ENOMEM;
+	INIT_LIST_HEAD(&fd->bos);
+	file->driver_priv = fd;
+	return 0;
+}
+
+static void ane_t6021_postclose(struct drm_device *drm, struct drm_file *file)
+{
+	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_bo *bo, *tmp;
+
+	if (!fd)
+		return;
+	mutex_lock(&ane_t6021_bo_lock);
+	list_for_each_entry_safe(bo, tmp, &fd->bos, node)
+		ane_t6021_bo_drop(bo);
+	mutex_unlock(&ane_t6021_bo_lock);
+	kfree(fd);
+	file->driver_priv = NULL;
+}
+
+static int ane_t6021_submit_ioctl(struct drm_device *drm, void *data,
+				  struct drm_file *file)
+{
+	return -ENOTTY; /* ABI 1 SUBMIT is rejected on T6021/M2 */
+}
+
+static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
+				     struct drm_file *file)
+{
+	struct ane_t6021_drm *adrm = to_ane_t6021_drm(drm);
+	struct drm_ane_prog_load *args = data;
+	int ret;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	ret = ane_rtclient_load_program(adrm->ane, file, args,
+					&args->prog_id_out);
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+/* Firmware perf mode: CSNE_CMD_CH_PROPERTY_WRITE (0x1f), channel 0,
+ * property 0x10aa, value 1. macOS sends it once during power-on (H13
+ * kext evidence in the omarchy-ane perf-mode receipt); the selene 13.5
+ * fw routes it to CAneEngineExeLoop::setPerfMode. It is a runtime
+ * switch (write 1 to /sys/module/ane_t6021/parameters/fw_perf_mode) so
+ * its effect on call time can be measured on one boot. Only 1 is
+ * accepted: no other value is known to be safe. */
+static struct ane_rtclient *ane_t6021_perf_ane;
+static bool fw_perf_mode;
+
+static int ane_t6021_perf_mode_set(const char *val,
+				   const struct kernel_param *kp)
+{
+	struct ane_rtclient *ane = READ_ONCE(ane_t6021_perf_ane);
+	struct ane_legacy_buffer *command;
+	bool on;
+	int ret;
+
+	ret = kstrtobool(val, &on);
+	if (ret)
+		return ret;
+	if (!on || fw_perf_mode)
+		return on ? 0 : -EINVAL;
+	if (!ane)
+		return -ENODEV;
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	command = ane->cmd_buf;
+	if (!command) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ENODEV;
+	}
+	memset(command->cpu, 0, SZ_16K);
+	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(0);
+	*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(0x10aa);
+	*(u32 *)((u8 *)command->cpu + 0x10) = cpu_to_le32(1);
+	ret = ane_rtclient_command(ane, command, 0x14, 0x001f, 1, 3000);
+	if (!ret) {
+		fw_perf_mode = true;
+		dev_info(ane->dev, "fw perf mode set (property 0x10aa = 1)\n");
+	}
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops ane_t6021_perf_mode_ops = {
+	.set = ane_t6021_perf_mode_set,
+	.get = param_get_bool,
+};
+module_param_cb(fw_perf_mode, &ane_t6021_perf_mode_ops, &fw_perf_mode, 0644);
+MODULE_PARM_DESC(fw_perf_mode,
+		 "Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent");
+
+static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
+				       struct drm_file *file)
+{
+	struct ane_t6021_drm *adrm = to_ane_t6021_drm(drm);
+	struct drm_ane_proc_create *args = data;
+	int ret;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	args->proc_id_out = 0;
+	ret = ane_rtclient_create_process(adrm->ane, args->prog_id,
+					  &args->proc_id_out);
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+static int ane_t6021_exec_ioctl(struct drm_device *drm, void *data,
+				struct drm_file *file)
+{
+	struct ane_t6021_drm *adrm = to_ane_t6021_drm(drm);
+	struct drm_ane_exec *args = data;
+
+	return ane_rtclient_procedure_call(adrm->ane, file, args);
+}
+
+static const struct drm_ioctl_desc ane_t6021_ioctls[] = {
+	DRM_IOCTL_DEF_DRV(ANE_BO_INIT, ane_t6021_bo_init_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_BO_FREE, ane_t6021_bo_free_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_SUBMIT, ane_t6021_submit_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_PROG_LOAD, ane_t6021_prog_load_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_PROC_CREATE, ane_t6021_proc_create_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_EXEC, ane_t6021_exec_ioctl, 0),
+};
+
+/* Driver fops: the accel-core entry points plus our BO mmap (the core
+ * default maps only GEM objects; this driver keeps its own BO table,
+ * so .mmap resolves the handle from BO_INIT's returned offset). */
+static const struct file_operations ane_t6021_fops = {
+	.owner = THIS_MODULE,
+	.fop_flags = FOP_UNSIGNED_OFFSET,
+	.open = accel_open,
+	.release = drm_release,
+	.unlocked_ioctl = drm_ioctl,
+	.compat_ioctl = drm_compat_ioctl,
+	.poll = drm_poll,
+	.read = drm_read,
+	.llseek = noop_llseek,
+	.mmap = ane_t6021_mmap,
+};
+
+/* Version reported through DRM_IOCTL_VERSION: ABI 2 (T6021).
+ * DRIVER_COMPUTE_ACCEL puts the node at /dev/accel/accelN. */
+static const struct drm_driver ane_t6021_drm_driver = {
+	.driver_features = DRIVER_GEM | DRIVER_COMPUTE_ACCEL,
+	.open = ane_t6021_open,
+	.postclose = ane_t6021_postclose,
+	.ioctls = ane_t6021_ioctls,
+	.num_ioctls = ARRAY_SIZE(ane_t6021_ioctls),
+	.fops = &ane_t6021_fops,
+	.major = ANE_ABI_M2_MAJOR,
+	.minor = 0,
+	.name = "ane",
+	.desc = "Apple Neural Engine (T6021/M2)",
+};
+
+/* ---- RTKit ops (kept on the boot path; the legacy ChMan transport
+ * is used by the ioctls once probe confirms legacy_only / chman_ok). */
 
 static void ane_rtclient_recv(void *cookie, u8 ep, u64 message)
 {
 	struct ane_rtclient *ane = cookie;
 
-	/* App endpoints only reach here (rtkit.c owns 0..0x1f). Both
-	 * wire shapes the fw uses are decoded side by side; which one a
-	 * message is gets pinned on sight. */
 	dev_info(ane->dev,
-		 "rtkit app msg: ep=%#x msg=%016llx | as offset|len: off=%#llx len=%#llx | as buffer word: addr=%#llx size=%#x unit=%llu\n",
-		 ep, message,
-		 (u64)FIELD_GET(ANE_MBI_MSG48_OFF, message),
-		 (u64)FIELD_GET(ANE_MBI_MSG48_LEN, message),
-		 message & ANE_EP_DOORBELL_OFFSET,
-		 ane_ep_doorbell_size(message),
-		 (u64)FIELD_GET(ANE_EP_DOORBELL_UNIT, message));
+		 "rtkit app msg: ep=%#x msg=%016llx\n", ep, message);
 }
 
 static void ane_rtclient_crashed(void *cookie, const void *crashlog,
@@ -392,14 +1410,6 @@ static void ane_rtclient_crashed(void *cookie, const void *crashlog,
 		       crashlog, min_t(size_t, size, 256), false);
 }
 
-/* System-endpoint buffer grants (crashlog EP1, syslog EP2): rtkit.c
- * decodes the fw request (unit-1 buffer word, addr 0 = host allocates)
- * and replies with the same word carrying our IOVA. The fw asks for
- * the crashlog buffer with addr 0 (0x98e44) and for the syslog buffer
- * with addr 0 unless its own-buffer flag is set (0x98128), in which
- * case it does not wait for a reply — so a fw-provided address is
- * refused (mainline behavior) and only logged. The host allocation
- * must honor the fw entry-alias invariant (W16). */
 static int ane_rtclient_shmem_setup(void *cookie,
 				    struct apple_rtkit_shmem *bfr)
 {
@@ -407,17 +1417,16 @@ static int ane_rtclient_shmem_setup(void *cookie,
 
 	if (bfr->iova) {
 		dev_warn(ane->dev,
-			 "rtkit: fw-provided shmem iova=%pad size=%#zx — refused (unmapped by design)\n",
+			 "rtkit: fw-provided shmem iova=%pad size=%#zx — refused\n",
 			 &bfr->iova, bfr->size);
 		return -EINVAL;
 	}
-
 	bfr->buffer = dma_alloc_coherent(ane->dev, bfr->size, &bfr->iova,
 					 GFP_KERNEL);
 	if (!bfr->buffer)
 		return -ENOMEM;
 	if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bfr->iova,
-						    bfr->size)) {
+						   bfr->size)) {
 		dev_err(ane->dev,
 			"rtkit: shmem grant %pad+%#zx overlaps the fw alias — refusing\n",
 			&bfr->iova, bfr->size);
@@ -425,8 +1434,6 @@ static int ane_rtclient_shmem_setup(void *cookie,
 		bfr->buffer = NULL;
 		return -EBUSY;
 	}
-	dev_info(ane->dev, "rtkit: shmem grant iova=%pad size=%#zx\n",
-		 &bfr->iova, bfr->size);
 	return 0;
 }
 
@@ -438,7 +1445,6 @@ static void ane_rtclient_shmem_destroy(void *cookie,
 	if (!bfr->buffer)
 		return;
 	if (ane->held) {
-		/* wedged-pin: a running ASC may still write here */
 		dev_warn(ane->dev,
 			 "rtkit: shmem %pad HELD (CPU started) — not freed\n",
 			 &bfr->iova);
@@ -454,8 +1460,10 @@ static const struct apple_rtkit_ops ane_rtclient_rtkit_ops = {
 	.shmem_destroy = ane_rtclient_shmem_destroy,
 };
 
-/* ---- poll worker: RX fallback while the recv line is unproven ---- */
-
+/* ---- poll worker: RX fallback while the recv line is unproven ----
+ * (lab poll_rx=1). Runs every 10 ms until the handshake completes,
+ * then every second while poll_rx stays on. Armed BEFORE the host ack
+ * so the fw's HELLO is never missed. */
 static void ane_rtclient_post_boot(struct work_struct *w)
 {
 	struct ane_rtclient *ane =
@@ -473,1058 +1481,25 @@ static void ane_rtclient_post_boot(struct work_struct *w)
 		schedule_delayed_work(&ane->poll_work, HZ);
 }
 
-/* ---- ChMan descriptor table: the control-command validation step ----
- * Contract and static layout: ane_t6021_boot.h (ane_t6021_chman_*),
- * checked offline by tools/h14_boot_regression.c. In legacy_only mode a
- * failed check withholds the legacy P8 host ack (the fw must not see an
- * ACK over a table the host could not verify). */
-static_assert(sizeof(struct ane_t6021_chman_desc) == ANE_T6021_CHMAN_ENTRY_SIZE);
-
-static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
-{
-	struct ane_t6021 *a = ane->fw;
-	const struct ane_t6021_chman_desc *t;
-	unsigned int i, bad;
-
-	if (!a || !a->boot_ipc) {
-		dev_info(ane->dev,
-			 "chman: no host IPC surface (firmware not started by this driver) — table not validated\n");
-		return;
-	}
-	if (a->boot_ipc_size < ANE_T6021_CHMAN_TOTAL) {
-		dev_warn(ane->dev,
-			 "chman: IPC surface %#llx bytes < fw layout %#x — table not validated\n",
-			 a->boot_ipc_size, ANE_T6021_CHMAN_TOTAL);
-		return;
-	}
-
-	dma_rmb();
-	t = a->boot_ipc;
-	dev_info(ane->dev,
-		 "chman: IPC dva=%pad size=%#llx booted=%u scratch_result=%016llx (low32 = fw VA of its IPC mapping, 0x77a4)\n",
-		 &a->boot_ipc_iova, a->boot_ipc_size, a->booted,
-		 a->boot_scratch_result);
-
-	bad = ane_t6021_chman_check(t, a->boot_ipc_iova);
-	for (i = 0; i < ANE_T6021_CHMAN_COUNT; i++) {
-		const struct ane_t6021_chman_desc *d = &t[i];
-		const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
-
-		dev_info(ane->dev,
-			 "chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx ring=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
-			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
-			 d->size, d->ring, (bad & BIT(i)) ? "MISMATCH" : "OK",
-			 s->name, s->type, s->bit, s->size, s->off);
-		/* Ring head dump (first 32 bytes of the ring the
-		 * descriptor names) for the receipt. */
-		if (d->ring >= a->boot_ipc_iova &&
-		    d->ring + 0x20 <= a->boot_ipc_iova + a->boot_ipc_size)
-			print_hex_dump(KERN_INFO, "chman ring head: ",
-				       DUMP_PREFIX_OFFSET, 16, 4,
-				       a->boot_ipc + (d->ring - a->boot_ipc_iova),
-				       0x20, false);
-	}
-
-	ane->chman_ok = !bad;
-	dev_info(ane->dev, "chman: table %s (mismatch mask %#x)\n",
-		 bad ? "NOT VALIDATED" : "VALIDATED", bad);
-}
-
-/* ---- app endpoints ---- */
-
-/* STARTEP every announced app endpoint. Mainline apple_rtkit_start_ep
- * sends mgmt type 5 with flag bit 1; the fw mgmt dispatcher (0x97364
- * case 5 -> 0x973b4) reads ep from [47:32] and starts it on flag == 2
- * (0x974bc). Same call every Asahi RTKit client makes (SMC on 0x20). */
+/* STARTEP every fw-announced app endpoint (>= 0x20; the fw mgmt
+ * dispatcher starts an endpoint on flag bit 1). Same call every Asahi
+ * RTKit client makes; the lab ran it with start_app_eps=1. */
 static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
 {
 	int ep;
 
-	for (ep = ANE_RTKIT_APP_EP_START; ep < 0x100; ep++) {
+	for (ep = 0x20; ep < 0x100; ep++) {
 		int ret;
 
 		if (!apple_rtkit_has_endpoint(ane->rtk, ep))
 			continue;
 		ret = apple_rtkit_start_ep(ane->rtk, ep);
-		dev_info(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n", ep,
-			 ERR_PTR(ret));
-		if (!ret && !ane->cmd_ep)
-			ane->cmd_ep = ep;
-	}
-	if (!ane->cmd_ep)
-		dev_warn(ane->dev,
-			 "rtkit: fw announced no app endpoint (static table predicts 0x20 \"user1\")\n");
-}
-
-/* GATED [INFERENCE] CSNE submit with K14 rtbuddyEndpointSendMessage
- * wrap semantics (W4 receipt 2026-09-19-h14-w4-csne-submission): the
- * slot cursor is kept only when cursor+size fits strictly below the
- * ring size (an exact fit wraps to 0), the command is memcpy'd into
- * the coherent ring, and the 48-bit offset|len doorbell follows a
- * dma_wmb. Oversized commands fail fast at the fw's own bound
- * (0x4d134: work items >= 0x1b89 rejected). Returns the slot cursor
- * used, or a negative error. What remains unproven: that the app
- * endpoint takes a buffer word to set its ring base ([obj+0x28])
- * before offset|len words. Everything sent is logged; a wrong guess
- * can crash the fw (crashlog is captured), never the host. */
-static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
-				    const void *cmd, size_t size)
-{
-	u32 cursor = ane->csne_cursor;
-	u64 msg;
-	int ret;
-
-	if (size < sizeof(struct ane_csne_hdr) ||
-	    size > ANE_CSNE_CMD_MAX_SIZE)
-		return -EINVAL;
-	if (size > ANE_RTCLIENT_RING_SIZE)
-		return -E2BIG;
-	if (cursor + size >= ANE_RTCLIENT_RING_SIZE)
-		cursor = 0;
-
-	memcpy(ane->ring + cursor, cmd, size);
-	dma_wmb();
-
-	msg = ane_mbi_msg48_encode(cursor, size);
-	ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, msg, NULL,
-				       false);
-	dev_info(ane->dev,
-		 "csne: submit ep=%#x cursor=%u len=%zu word=%016llx -> %pe\n",
-		 ane->cmd_ep, cursor, size, msg, ERR_PTR(ret));
-	if (ret)
-		return ret;
-	ane->csne_cursor = cursor + size;
-	return cursor;
-}
-
-static int ane_rtclient_csne_submit(struct ane_rtclient *ane,
-				    const void *cmd, size_t size);
-
-static void ane_rtclient_csne_ping(struct ane_rtclient *ane)
-{
-	u64 word;
-	int ret;
-
-	if (!ane->cmd_ep) {
-		dev_info(ane->dev, "csne: no command endpoint; no ping\n");
-		return;
-	}
-
-	if (!ane->csne_setup_done) {
-		/* Never devm/dmam: under the wedged pin a started ASC may
-		 * still read this ring after unbind; remove() frees it
-		 * only when not held. */
-		ane->ring = dma_alloc_coherent(ane->dev, ANE_RTCLIENT_RING_SIZE,
-					       &ane->ring_iova, GFP_KERNEL);
-		if (!ane->ring)
-			return;
-		if (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, ane->ring_iova,
-							    ANE_RTCLIENT_RING_SIZE)) {
-			dev_err(ane->dev, "csne: ring overlaps the fw alias — no ping\n");
-			return;
-		}
-		word = ane_ep_doorbell_encode(ane->ring_iova,
-					      ANE_RTCLIENT_RING_SIZE);
-		ret = apple_rtkit_send_message(ane->rtk, ane->cmd_ep, word,
-					       NULL, false);
-		dev_info(ane->dev,
-			 "csne: ring announce ep=%#x iova=%pad size=%#x word=%016llx -> %pe [INFERENCE]\n",
-			 ane->cmd_ep, &ane->ring_iova, ANE_RTCLIENT_RING_SIZE,
-			 word, ERR_PTR(ret));
-		if (ret)
-			return;
-		ane->csne_setup_done = true;
-		ane->csne_cursor = 0;
-	}
-
-	{
-		struct ane_csne_hdr hdr;
-		int slot;
-
-		ane_csne_hdr_init(&hdr, CSNE_CMD_PING);
-		slot = ane_rtclient_csne_submit(ane, &hdr, sizeof(hdr));
-		if (slot >= 0) {
-			ane_csne_hdr_init(&hdr, CSNE_CMD_BUILDINFO);
-			ane_rtclient_csne_submit(ane, &hdr, sizeof(hdr));
-		}
-	}
-
-}
-
-/* ---- probe ---- */
-/* Pinned live pattern at PA 0x10001406870, 9 words. Word 4 is the
- * frequency value (must be 0); word 5 is the LRSD tag. Confirmed by
- * read on the M2, 2026-09-25. */
-static const u32 ane_patchbay_expect[9] = {
-	0x00000000, 0x00000000, 0x76384671, 0x00000004, 0x00000000,
-	0x4453524c, 0x00000001, 0x53565300, 0x00000844,
-};
-
-static int ane_rtclient_patch_timer_freq(struct ane_rtclient *ane, u32 freq)
-{
-	static const unsigned int islands[] = {
-		0x2e0, 0x4000, 0x4008, 0x4010, 0x4018, 0x4020, 0x4028, 0x4030
-	};
-	struct device *dev = ane->dev;
-	void __iomem *win;
-	unsigned int i;
-	u32 before, after;
-
-	for (i = 0; i < ARRAY_SIZE(islands); i++) {
-		u32 v = readl(ane->pmgr + islands[i]);
-
-		if (FIELD_GET(ANE_PS_ACTUAL, v) != ANE_PS_ON) {
-			dev_emerg(dev,
-				  "timer-freq: pmgr+%#x=%08x ACTUAL != 0xf — refusing\n",
-				  islands[i], v);
-			return -EIO;
-		}
-	}
-	if (!ane_t6021_fw_alias_is_reserved()) {
-		dev_emerg(dev,
-			  "timer-freq: fw_alias_reserved=0 — core would not fetch this PA; refusing\n");
-		return -EINVAL;
-	}
-	/* Same non-posted map the observer used to confirm these bytes.
-	 * Not memremap: a second memremap of this DRAM EXEC-faults. */
-	win = ioremap_np(0x10001406870ull, 36);
-	if (!win)
-		return -ENOMEM;
-	for (i = 0; i < 9; i++) {
-		u32 got = readl(win + 4 * i);
-
-		if (got != ane_patchbay_expect[i]) {
-			dev_emerg(dev,
-				  "timer-freq: word[%u]=%08x want %08x — not writing\n",
-				  i, got, ane_patchbay_expect[i]);
-			iounmap(win);
-			return -EIO;
-		}
-	}
-	before = readl(win + 16);
-	writel(freq, win + 16);
-	after = readl(win + 16);
-	iounmap(win);
-	dev_emerg(dev,
-		  "timer-freq: PA 0x10001406880 before=%08x wrote=%08x readback=%08x\n",
-		  before, freq, after);
-	return after == freq ? 0 : -EIO;
-}
-
-/*
- * macOS runs the ANE with ane_sys_mpm@4000 off: it reads 0x300 in all 14
- * samples of ane-linux-experiments receipt 2026-09-25-macos-ane-pstable,
- * including those at 4.8 W encoder load. In the same samples ane_sys@260 and
- * ane_cpu@2e0 read 0x1f0003ff (AUTO_ENABLE, ACTUAL and TARGET 0xf) and the
- * six compute islands read 0x3ff. Linux raises ane_sys_mpm at boot because
- * the stock DTB marks it apple,always-on, and genpd never lowers an
- * always-on domain. Power it down with the write apple_pmgr_ps_set()
- * issues for PWRGATE, then confirm the rest of the macOS form.
- */
-static int ane_rtclient_ps_macos_form(struct ane_rtclient *ane)
-{
-	static const struct {
-		u32 off;
-		bool auto_enable;
-		const char *name;
-	} on[] = {
-		{ 0x260, true, "ane_sys" },	{ 0x2e0, true, "ane_cpu" },
-		{ 0x4008, false, "ane_td" },	{ 0x4010, false, "ane_base" },
-		{ 0x4018, false, "ane_set1" },	{ 0x4020, false, "ane_set2" },
-		{ 0x4028, false, "ane_set3" },	{ 0x4030, false, "ane_set4" },
-	};
-	struct device *dev = ane->dev;
-	void __iomem *mpm = ane->pmgr + 0x4000;
-	unsigned int i;
-	int ret;
-	bool ok;
-	u32 v;
-
-	v = readl(mpm);
-	dev_emerg(dev, "PS-FORM ane_sys_mpm@4000 before=%08x\n", v);
-	if (v & (ANE_PS_TARGET | ANE_PS_ACTUAL)) {
-		writel(v & ~(ANE_PS_AUTO_ENABLE | ANE_PS_WAS_GATED |
-			     ANE_PS_TARGET), mpm);
-		ret = readl_poll_timeout(mpm, v,
-					 !FIELD_GET(ANE_PS_ACTUAL, v),
-					 10, 100 * 1000);
-		dev_emerg(dev, "PS-FORM ane_sys_mpm@4000 after=%08x ret=%pe\n",
-			  v, ERR_PTR(ret));
-		if (ret)
-			return ret;
-	}
-
-	ret = 0;
-	for (i = 0; i < ARRAY_SIZE(on); i++) {
-		v = readl(ane->pmgr + on[i].off);
-		ok = FIELD_GET(ANE_PS_ACTUAL, v) == ANE_PS_ON &&
-		     FIELD_GET(ANE_PS_TARGET, v) == ANE_PS_ON &&
-		     (!on[i].auto_enable || (v & ANE_PS_AUTO_ENABLE));
-		dev_emerg(dev, "PS-FORM %s@%#x=%08x %s\n", on[i].name,
-			  on[i].off, v, ok ? "macOS form" : "NOT macOS form");
-		if (!ok)
-			ret = -EIO;
-	}
-	return ret;
-}
-
-static void ane_rtclient_apply_mbox_ctrl_bit19(struct ane_rtclient *ane)
-{
-	u32 a2i_before, a2i_after;
-	u32 i2a_before, i2a_after;
-
-	a2i_before = readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL);
-	i2a_before = readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL);
-
-	/* macOS working-state value: 0x000a0001 (bit 19 + bit 17 EMPTY + bit 0 ENABLE) */
-	writel(0x000a0001, ane->engine + ANE_ASC_MBOX_A2I_CTRL);
-	writel(0x000a0001, ane->engine + ANE_ASC_MBOX_I2A_CTRL);
-
-	mb();
-	a2i_after = readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL);
-	i2a_after = readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL);
-
-	dev_emerg(ane->dev,
-		  "BOOT-PHASE mbox-ctrl-bit19: A2I_CTRL %08x -> %08x (wrote 000a0001), I2A_CTRL %08x -> %08x (wrote 000a0001)\n",
-		  a2i_before, a2i_after, i2a_before, i2a_after);
-}
-
-static void ane_rtclient_apply_dart_single_stream(struct ane_rtclient *ane)
-{
-	static const struct {
-		u64 base;
-		const char *name;
-	} darts[3] = {
-		{ 0x285800000ull, "inst0-LLT" },
-		{ 0x285810000ull, "inst1-BRD" },
-		{ 0x285820000ull, "inst2-BWR" },
-	};
-	unsigned int di;
-
-	for (di = 0; di < 3; di++) {
-		void __iomem *d = ioremap_np(darts[di].base, 0x2000);
-		u32 en_before, prot_before;
-		u32 en_after, prot_after, tcr_after, ttbr_after;
-		int w;
-
-		if (!d) {
-			dev_emerg(ane->dev,
-				  "BOOT-PHASE dart-single-stream %s: ioremap FAILED\n",
-				  darts[di].name);
-			continue;
-		}
-
-		en_before = readl(d + 0xc00);
-		prot_before = readl(d + 0x200);
-
-		/* Disable streams 1..255 via DISABLE_STREAMS (0xc20..0xc3c):
-		 * stream 0 kept enabled, streams 1..31 disabled by ~1U,
-		 * streams 32..255 disabled by U32_MAX in words 1..7. */
-		writel(~1U, d + 0xc20);
-		for (w = 1; w < 8; w++)
-			writel(U32_MAX, d + 0xc20 + 4 * w);
-
-		/* Ensure stream 0 is enabled in ENABLE_STREAMS (0xc00) */
-		writel(1U, d + 0xc00);
-
-		/* On dart0 (inst0-LLT), macOS working state reads PROTECT = 0x6
-		 * (LOCK_REG_4xx | _BIT2; TCR/TTBR unlocked). dart1 and dart2
-		 * have PROTECT = 0. */
-		if (di == 0)
-			writel(0x6U, d + 0x200);
-
-		mb();
-		en_after = readl(d + 0xc00);
-		prot_after = readl(d + 0x200);
-		tcr_after = readl(d + 0x1000);
-		ttbr_after = readl(d + 0x1400);
-
-		dev_emerg(ane->dev,
-			  "BOOT-PHASE dart-single-stream %s: ENABLE %08x -> %08x, PROTECT %08x -> %08x, TCR0=%08x, TTBR0=%08x\n",
-			  darts[di].name,
-			  en_before, en_after,
-			  prot_before, prot_after,
-			  tcr_after, ttbr_after);
-
-		iounmap(d);
+		dev_info(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n",
+			 ep, ERR_PTR(ret));
 	}
 }
 
-/*
- * dart-ane0 DAPF: the filter on the ANE's physical (bypass-stream) MMIO
- * accesses. XNU programs it from the ADT property dapf-instance-0; m1n1
- * programs DAPF only for aop/mtp/pmp/isp and ANE tunables only on T8103,
- * so on T6021 nothing opens these windows for the ANE firmware. The first
- * window is the ANE pmgr ps block (ane_sys_mpm..set4). Values are the
- * J414cAP ADT entries (52-byte t8110 form), written in m1n1
- * dapf_init_t8110a register order: r4, start, end, r0 = r0h << 4 | r0l,
- * r20.
- */
-static void ane_rtclient_apply_dapf(struct ane_rtclient *ane)
-{
-	static const struct {
-		u64 start;
-		u64 end;
-	} win[] = {
-		{ 0x28e084000ull, 0x28e084033ull },
-		{ 0x28e080260ull, 0x28e080263ull },
-		{ 0x38545c000ull, 0x38545c003ull },
-		{ 0x406468000ull, 0x406468003ull },
-		{ 0x228545c000ull, 0x228545c003ull },
-	};
-	void __iomem *d = ioremap_np(0x285804000ull, 0x4000);
-	unsigned int i;
-
-	if (!d) {
-		dev_emerg(ane->dev, "BOOT-PHASE dapf: ioremap FAILED\n");
-		return;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(win); i++) {
-		void __iomem *e = d + i * 0x40;
-		u32 r0 = readl(e), r4 = readl(e + 0x04), r20 = readl(e + 0x20);
-		u64 start = readq(e + 0x08), end = readq(e + 0x10);
-
-		writel(0, e + 0x04);
-		writeq(win[i].start, e + 0x08);
-		writeq(win[i].end, e + 0x10);
-		writel(0x31, e + 0x00);
-		writel(0x1, e + 0x20);
-		mb();
-		dev_emerg(ane->dev,
-			  "BOOT-PHASE dapf[%u]: r0 %08x -> %08x, r4 %08x -> %08x, start %llx -> %llx, end %llx -> %llx, r20 %08x -> %08x\n",
-			  i, r0, readl(e), r4, readl(e + 0x04),
-			  start, readq(e + 0x08), end, readq(e + 0x10),
-			  r20, readl(e + 0x20));
-	}
-	dev_emerg(ane->dev, "BOOT-PHASE dapf[%zu] (unused): r0 %08x start %llx end %llx\n",
-		  ARRAY_SIZE(win), readl(d + ARRAY_SIZE(win) * 0x40),
-		  readq(d + ARRAY_SIZE(win) * 0x40 + 0x08),
-		  readq(d + ARRAY_SIZE(win) * 0x40 + 0x10));
-	iounmap(d);
-}
-
-static void ane_rtclient_apply_core1_run(struct ane_rtclient *ane)
-{
-	u32 before, after;
-
-	before = readl(ane->engine + 0x1400444);
-	writel(0x10, ane->engine + 0x1400444);
-	mb();
-	after = readl(ane->engine + 0x1400444);
-	dev_emerg(ane->dev,
-		  "BOOT-PHASE core1-run: +0x1400444 %08x -> %08x (wrote 0x10)\n",
-		  before, after);
-}
-
-static void ane_rtclient_apply_wrapper_b80_unmask(struct ane_rtclient *ane)
-{
-	static const u32 offs[] = {
-		0x1400b80, 0x1400b84, 0x1400b88, 0x1400b8c,
-		0x1400b90, 0x1400b94, 0x1400bfc
-	};
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(offs); i++) {
-		u32 before = readl(ane->engine + offs[i]);
-		writel(U32_MAX, ane->engine + offs[i]);
-		mb();
-		dev_emerg(ane->dev,
-			  "BOOT-PHASE wrapper-b80 +%x: %08x -> %08x (wrote ffffffff)\n",
-			  offs[i], before, readl(ane->engine + offs[i]));
-	}
-}
-
-/*
- * Read-only snapshot of the engine words that differ between macOS's
- * working state and anything Linux writes (ane-linux-experiments receipt
- * 2026-09-25-macos-ane-engine-dump, wrapper map). Logged before and after
- * the CPU release so one run yields the Linux side of that diff. The list
- * holds no pop-on-read word (+0x1400818/81c/820, +0x1408810/818/830/838)
- * and nothing in CoreSight.
- */
-static void ane_rtclient_log_wrapper(struct ane_rtclient *ane, const char *tag)
-{
-	static const u32 words[] = {
-		0x1400000, 0x1400008, 0x1400040, 0x1400044, 0x1400048,
-		0x1400444,
-		0x1400a00, 0x1400a04, 0x1400a08, 0x1400a0c, 0x1400a10, 0x1400a14,
-		0x1400b80, 0x1400b84, 0x1400b88, 0x1400b8c, 0x1400b90, 0x1400b94,
-		0x1400bfc, 0x1401008,
-		0x1404110, 0x1404114, 0x1408110, 0x1408114, 0x140c110, 0x1410110,
-		0x1840048, 0x184004c, 0x1840050, 0x1840054, 0x1840058, 0x184005c,
-		0x1840060, 0x1840064, 0x1840068, 0x184006c,
-	};
-	unsigned int i;
-
-	for (i = 0; i < ARRAY_SIZE(words); i++)
-		dev_emerg(ane->dev, "WRAPPER %s +%#09x = %08x\n", tag, words[i],
-			  readl(ane->engine + words[i]));
-}
-
-
-static int ane_rtclient_fwbuf_audit(struct ane_t6021 *a, const char *tag)
-{
-	const u64 *pt;
-	unsigned int i, nz = 0;
-	u32 vm0 = 0;
-
-	if (ane_t6021_fw_alias_is_reserved()) {
-		void __iomem *window = ioremap_np(0x1000141c000ull, 0x8000);
-		u64 first = 0, second = 0;
-
-		if (!window) {
-			dev_err(a->dev, "RESERVED-PT %s mapping failed\n", tag);
-			return -ENOMEM;
-		}
-		for (i = 0; i < 0x8000 / 8; i++) {
-			u64 value = readl(window + i * 8);
-
-			value |= (u64)readl(window + i * 8 + 4) << 32;
-			if (i == 0)
-				first = value;
-			if (i == 1)
-				second = value;
-			if (value) {
-				nz++;
-				dev_emerg(a->dev, "RESERVED-PT %s +%#x=%016llx\n",
-					  tag, i * 8, value);
-			}
-		}
-		iounmap(window);
-		dev_emerg(a->dev,
-			  "RESERVED-PT %s first=%016llx second=%016llx nonzero=%u/4096\n",
-			  tag, first, second, nz);
-		window = ioremap_np(0x10001836000ull, 0x1000);
-		if (!window) {
-			dev_err(a->dev, "RESERVED-C %s mapping failed\n", tag);
-			return -ENOMEM;
-		}
-		for (i = 0x490; i < 0xfd8; i += 8) {
-			u64 value;
-
-			if (!(i >= 0x490 && i <= 0x4a8) && i != 0x4e0 &&
-			    !(i >= 0xb60 && i <= 0xbc0) && !(i >= 0xa20 && i < 0xa38) &&
-			    !(i >= 0xd50 && i < 0xd90) && i < 0xe10)
-				continue;
-			value = readl(window + i);
-			value |= (u64)readl(window + i + 4) << 32;
-			dev_emerg(a->dev, "RESERVED-C %s vm=%#x value=%016llx\n",
-				  tag, 0x4fa000 + i, value);
-		}
-		{
-			u64 frame = readq(window + 0xbb8);
-
-			iounmap(window);
-			if (frame >= 0xc4000 && frame <= 0x4fc000 - 0x340 && !(frame & 7)) {
-				window = ioremap_np(0x10001400000ull + frame - 0xc4000, 0x340);
-				if (!window)
-					return -ENOMEM;
-				for (i = 0; i < 0x340; i += 8)
-					dev_emerg(a->dev, "RESERVED-FRAME %s vm=%#llx value=%016llx\n",
-						  tag, frame + i, readq(window + i));
-				iounmap(window);
-			} else if (frame >= 0x20004fc000ull &&
-				   frame < 0x2000000000ull + a->fw_size &&
-				   a->fw_size - (frame - 0x2000000000ull) >= 0x340 &&
-				   !(frame & 7) && a->fw_buf) {
-				u64 offset = frame - 0x2000000000ull;
-				const u64 *saved = a->fw_buf + offset;
-
-				dma_rmb();
-				for (i = 0; i < 0x340 / sizeof(*saved); i++)
-					dev_emerg(a->dev,
-						  "OWNED-CONTEXT %s va=%#llx offset=%#llx value=%016llx\n",
-						  tag, frame + i * sizeof(*saved),
-						  offset + i * sizeof(*saved), READ_ONCE(saved[i]));
-			}
-		}
-		window = ioremap_np(0x10001414000ull, 0x3000);
-		if (!window) {
-			dev_err(a->dev, "RESERVED-STACK %s mapping failed\n", tag);
-			return -ENOMEM;
-		}
-		nz = 0;
-		for (i = 0; i < 0x3000; i += 4) {
-			u32 value = readl(window + i);
-
-			if (value != ((i & 4) ? 0x4b434154 : 0x534b5452)) {
-				nz++;
-				dev_emerg(a->dev, "RESERVED-STACK %s vm=%#x value=%08x\n",
-					  tag, 0xd8000 + i, value);
-			}
-		}
-		iounmap(window);
-		dev_emerg(a->dev, "RESERVED-STACK %s nonpattern=%u/3072\n", tag, nz);
-		window = ioremap_np(0x10001400000ull + 0x4a84e8 - 0xc4000, 0x50000);
-		if (!window)
-			return -ENOMEM;
-		nz = 0;
-		for (i = 0; i < 0x2000; i++) {
-			u64 link = readq(window + i * 0x28 + 0x18);
-
-			if (link)
-				nz++;
-			if (i < 4 || i >= 0x1ffc || (i % 0x100) == 0)
-				dev_emerg(a->dev, "RESERVED-NODES %s node=%u link=%016llx\n", tag, i, link);
-		}
-		iounmap(window);
-		dev_emerg(a->dev, "RESERVED-NODES %s nonzero-links=%u/8192\n", tag, nz);
-		window = ioremap_np(0x10001400000ull + 0x4f8500 - 0xc4000, 0x300);
-		if (!window)
-			return -ENOMEM;
-		for (i = 0; i < 0x300; i += 8)
-			dev_emerg(a->dev, "RESERVED-APP %s vm=%#x value=%016llx\n",
-				  tag, 0x4f8500 + i, readq(window + i));
-		iounmap(window);
-		/* env-relative ctor-boundary rows (Main, 2026-09-27): the
-		 * CPlatformEnvironment instance is a static-DATA object
-		 * (live-verified VM 0xc95f8), so env+0x278 (CSharedMemory
-		 * instance, stored at 6d10 right after ctor1 returns) vs
-		 * env+0x290 (CDebugAgent instance, stored at 6d64 right
-		 * after ctor2 returns) separates ctor1-return from
-		 * ctor2-return. env+0x298 = the 0x1b3d4440 ctor constant
-		 * (683c..6844) as the translation validator. Fail-closed
-		 * DATA-window bounds; same non-posted mapping style; no
-		 * /dev/mem. */
-		{
-			u64 env = 0;
-			void __iomem *w = ioremap_np(0x10001400000ull +
-						     0x4f8528 - 0xc4000, 8);
-
-			if (w) {
-				env = readq(w);
-				iounmap(w);
-			}
-			if (env >= 0xc4000 && env + 0x2a8 <= 0x4fc000) {
-				w = ioremap_np(0x10001400000ull + env - 0xc4000,
-					       0x2a8);
-				if (!w)
-					return -ENOMEM;
-				dev_emerg(a->dev,
-					  "RESERVED-ENV %s vm=%#llx sm278=%016llx dbg290=%016llx const298=%016llx\n",
-					  tag, env, readq(w + 0x278),
-					  readq(w + 0x290), readq(w + 0x298));
-				iounmap(w);
-			} else {
-				dev_emerg(a->dev,
-					  "RESERVED-ENV %s env=%016llx out-of-window — refused\n",
-					  tag, env);
-			}
-		}
-		return 0;
-	}
-	if (!a->fw_buf)
-		return -EINVAL;
-	memcpy(&vm0, a->fw_buf, 4);
-	pt = (const u64 *)(a->fw_buf + 0xe0000);
-	for (i = 0; i < 0x8000 / 8; i++)
-		if (pt[i])
-			nz++;
-	dev_emerg(a->dev,
-		  "BUFAUDIT %s vm0=%08x patch=%*phN pthead=%016llx pt_nonzero=%u/4096\n",
-		  tag, vm0, 32, a->fw_buf + 0x204, pt[0], nz);
-	return 0;
-}
-
-/*
- * Fenced Linux-context firmware start (fw_start=1). Evidence chain:
- *  - iBoot latches ANE RVBAR = entry | 1 (live reads 0x10000000001:
- *    bit0 valid, entry bits = dart-ane0 vm-base 0x10000000000; ADT
- *    "pre-loaded" = 1). The kext law (ANE_Init, tbnz-skip) and this
- *    latch mean the driver NEVER writes RVBAR on this box.
- *  - Starting the CPU = CPU_CONTROL 0 -> 0x10 (RUN) — exactly what
- *    m1n1 does (ASC.boot(): RUN=1, no RVBAR anywhere) and what the
- *    kext does after its RVBAR skip. The open discriminator is
- *    whether the ASC fetch at the latched entry translates through
- *    dart-ane0 (mode bits 55/48 absent from the iBoot latch); with
- *    the selene alias mapped at the entry (fwload) a READY on
- *    SCRATCH7 proves translation; a dart translation fault names the
- *    stream; silence parks the core. Every outcome is bounded.
- * The sequence itself is the contract-pinned core in
- * ane_t6021_boot.h (ane_t6021_boot_run), exercised here through the
- * kernel io backend in ane_t6021_boot.c: W8 grant tunables, scratch
- * clear + stale-pulse, RVBAR skip-or-fold, RUN, poll A (READY
- * 0x08042006, <=1000 x 1 ms), publish (pinned pool sources) + wake,
- * poll B (DONE). Table block skipped (mode 2, authorized
- * diagnostic). No ps@2e0 write anywhere; no power_off/power_on
- * retry on timeout.
- */
-#include "ane_t6021_dart_observer.h"
-
-static int ane_rtclient_fw_start(struct ane_rtclient *ane)
-{
-	struct device *dev = ane->dev;
-	struct ane_t6021 *a;
-	u32 cpu_status;
-	int ret;
-
-	if (!ane_t6021_fwload_requested()) {
-		dev_err(dev, "fw_start: requires fw_load=1 (no staged firmware)\n");
-		return -EINVAL;
-	}
-	if (ane_t6021_fw_diag_requested()) {
-		/* Marker mode (Main 2026-09-26): staged-copy execution
-		 * probe. The VM 0x204 patch is meaningful ONLY when the
-		 * staged copy is what the ASC executes; the options
-		 * guard in the legacy drv.c does not run on this
-		 * module, so the invariants are enforced here. */
-		if (ane_t6021_fw_alias_is_reserved()) {
-			dev_err(dev,
-				"marker: fw_alias_reserved=1 maps the reserved windows — the patched staged copy would not execute; refusing (run with fw_alias_reserved=0)\n");
-			return -EINVAL;
-		}
-		if (ane_t6021_fw_stamp_requested()) {
-			dev_err(dev,
-				"marker: fw_load_stamp_base co-patch refused\n");
-			return -EINVAL;
-		}
-		if (fw_start_rtb_mode) {
-			dev_err(dev,
-				"marker: rtb_mode proceeds into the RTKit handshake; refusing\n");
-			return -EINVAL;
-		}
-		dev_warn(dev,
-			 "MARKER mode: staged copy VM 0x204 patched (SCRATCH7 <- 0x4d325431 + self-loop); existing fw_start staging + safe release reused; bounded SCRATCH7 report follows; state HELD until reboot\n");
-	}
-	if (!device_iommu_mapped(dev)) {
-		dev_err(dev,
-			"fw_start: device not IOMMU-mapped — a staged DVA/entry alias would be untranslated; refusing\n");
-		return -EINVAL;
-	}
-
-	a = devm_kzalloc(dev, sizeof(*a), GFP_KERNEL);
-	if (!a)
-		return -ENOMEM;
-	a->dev = dev;
-	a->base[ANE_T6021_REG_ENGINE] = ane->engine;
-	a->irq = -1;
-	a->power_gated = true;	/* the eight-island G1 gate passed above */
-	ane->fw = a;
-
-	/* Stage selene + alias it at the latched RVBAR entry
-	 * (request_firmware + sha-pin + exact-image validation +
-	 * per-page iommu_map with roundtrip verification). */
-	dev_emerg(dev, "BOOT-PHASE fwload stage+alias begin\n");
-	ret = ane_t6021_fwload_probe(a);
-	if (ret) {
-		dev_err_probe(dev, ret, "fw_start: staging failed\n");
-		ane->fw = NULL;
-		return ret;
-	}
-	dev_emerg(dev, "BOOT-PHASE fwload stage+alias done (fw_iova=%pad)\n",
-		  &a->fw_iova);
-
-	if (!ane_t6021_rvbar_entry_ok(a->fw_iova)) {
-		dev_err(dev,
-			"fw_start: staged iova %pad sets bits the entry fold drops — refusing\n",
-			&a->fw_iova);
-		ane_t6021_fwload_remove(a);
-		ane->fw = NULL;
-		return -EINVAL;
-	}
-
-	if (fw_start_state_report) {
-		/* Zero-write observability run: reads only, then a CLEAN
-		 * unwind (fwload removed, module unpinned, insmod fails
-		 * with -ECANCELED). */
-		u64 rv = readq(ane->engine + ANE_ASC_RVBAR);
-		int s;
-
-		ane_rtclient_dart_observe(dev);
-		/* power-dart-fwload preflight item 2/§2.2: dart-ane0
-		 * instances 0/1/2 state — translate on, no bypass, TTBR
-		 * valid, stream-0 enabled. Must run HERE: dart1/2 sit on
-		 * the ane_cpu domain, only powered while genpd holds. */
-		{
-			static const struct {
-				u64 base;
-				const char *name;
-			} darts[3] = {
-				{ 0x285800000ull, "inst0-LLT" },
-				{ 0x285810000ull, "inst1-BRD" },
-				{ 0x285820000ull, "inst2-BWR" },
-			};
-			unsigned int di;
-
-			for (di = 0; di < 3; di++) {
-				void __iomem *d = ioremap_np(darts[di].base,
-							     0x2000);
-
-				if (!d) {
-					dev_emerg(dev,
-						  "DART %s: ioremap FAILED\n",
-						  darts[di].name);
-					continue;
-				}
-				dev_emerg(dev,
-					  "DART %s: TCR=%08x TTBR=%08x ENABLE=%08x PROTECT=%08x %s%s\n",
-					  darts[di].name,
-					  readl(d + 0x1000),
-					  readl(d + 0x1400),
-					  readl(d + 0xc00),
-					  readl(d + 0x200),
-					  (readl(d + 0x1000) & BIT(1)) ?
-						"BYPASS-DART!" : "translate",
-					  (readl(d + 0x1400) & BIT(0)) ?
-						"" : " TTBR-INVALID!");
-				iounmap(d);
-			}
-		}
-
-		dev_emerg(dev,
-			  "BOOT-REPORT rvbar=%016llx cpu_status=%08x scratch=%08x %08x %08x %08x %08x %08x %08x %08x a2i=%08x i2a=%08x\n",
-			  rv, readl(ane->engine + ANE_ASC_CPU_STATUS),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 0),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 1),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 2),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 3),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 4),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 5),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 6),
-			  readl(ane->engine + ANE_MBI_SCRATCH0 + 4 * 7),
-			  readl(ane->engine + ANE_ASC_MBOX_A2I_CTRL),
-			  readl(ane->engine + ANE_ASC_MBOX_I2A_CTRL));
-		ane_rtclient_log_wrapper(ane, "state-report");
-		for (s = 0; s < 30; s++)
-			msleep(10);	/* let the report hit every sink */
-		ane_t6021_fwload_remove(a);
-		ane->fw = NULL;
-		return -ECANCELED;
-	}
-
-	if (fw_start_venc_gates) {
-		/* Zero-engine-write precondition: VENC rails before the
-		 * sequence (kext provider order). On failure: abort
-		 * BEFORE any engine write, clean unwind. */
-		int vg = ane_rtclient_venc_gates(dev);
-
-		if (vg) {
-			dev_emerg(dev,
-				  "BOOT-PHASE venc-gates FAILED (%pe) — refusing sequence\n",
-				  ERR_PTR(vg));
-			ane_t6021_fwload_remove(a);
-			ane->fw = NULL;
-			return vg;
-		}
-		dev_emerg(dev, "BOOT-PHASE venc-gates raised\n");
-	}
-	if (patch_timer_freq) {
-		int pr = ane_rtclient_patch_timer_freq(ane, patch_timer_freq);
-
-		if (pr) {
-			dev_emerg(dev,
-				  "BOOT-PHASE timer-freq FAILED (%pe) — refusing CPU release\n",
-				  ERR_PTR(pr));
-			ane_t6021_fwload_remove(a);
-			ane->fw = NULL;
-			return pr;
-		}
-	}
-
-	if (fw_start_mpm_off) {
-		int pf = ane_rtclient_ps_macos_form(ane);
-
-		if (pf) {
-			dev_emerg(dev,
-				  "BOOT-PHASE ps-form FAILED (%pe) — refusing sequence\n",
-				  ERR_PTR(pf));
-			ane_t6021_fwload_remove(a);
-			ane->fw = NULL;
-			return pf;
-		}
-		dev_emerg(dev, "BOOT-PHASE ps-form: ane_sys_mpm off, macOS form\n");
-	}
-
-	if (fw_start_dart_single_stream)
-		ane_rtclient_apply_dart_single_stream(ane);
-
-	if (fw_start_mbox_ctrl_bit19)
-		ane_rtclient_apply_mbox_ctrl_bit19(ane);
-
-	if (fw_start_core1_run)
-		ane_rtclient_apply_core1_run(ane);
-
-	if (fw_start_wrapper_b80_unmask)
-		ane_rtclient_apply_wrapper_b80_unmask(ane);
-
-	if (fw_start_dapf)
-		ane_rtclient_apply_dapf(ane);
-
-	ane_rtclient_log_wrapper(ane, "pre-release");
-
-	ret = ane_rtclient_fwbuf_audit(a, "PRE");
-	if (ret) {
-		ane_t6021_fwload_remove(a);
-		ane->fw = NULL;
-		return ret;
-	}
-
-	ret = ane_t6021_boot_start(a, fw_start_stop_after, fw_start_table_mode,
-				 fw_start_rtb_mode);
-	if (ret == -ENODATA || ret == -EAGAIN || ret == -EBUSY ||
-	    ret == -ECANCELED) {
-		/* Refused/stopped before any CPU start: normal unwind is
-		 * safe (-ECANCELED = bisect stop, state clean). */
-		ane_t6021_fwload_remove(a);
-		ane->fw = NULL;
-		return ret;
-	}
-
-	/* From here a CPU may be running: HELD. No unwind, ever. */
-	ane->held = true;
-	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
-	dev_emerg(dev,
-		  "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
-		  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
-		  cpu_status);
-	ane_rtclient_log_wrapper(ane, "post-release");
-
-	ane_rtclient_fwbuf_audit(a, "POST");
-
-	/* Boot-PT / marker readback (13.5 boot-PT window at staged offset
-	 * 0xe0000; M2StartupRecovery decode). Meaningful only when the
-	 * staged copy is what executes (fw_alias_reserved=0):
-	 *  - normal run: nonzero descriptors after a timeout mean the fw
-	 *    reached the bootstrap PT construction;
-	 *  - marker mode (fw_diag_marker=1): the FIRST qword is the marker
-	 *    store (0x000000004d325431) — the execution proof itself;
-	 *    remaining entries staying zero is EXPECTED (the marker
-	 *    self-loops before any PT build).
-	 * Host-side read of the owned coherent staging buffer — no extra
-	 * hardware access. */
-	if (a->fw_buf && !ane_t6021_fw_alias_is_reserved()) {
-		const u64 *tt = a->fw_buf + 0xe0000;
-		unsigned int n, nonzero = 0, count = 0x8000 / 8;
-
-		for (n = 0; n < count; n++)
-			if (tt[n])
-				nonzero++;
-		dev_emerg(dev,
-			  "FW-PT region 0xe0000: first=%016llx second=%016llx nonzero=%u/%u\n",
-			  tt[0], tt[1], nonzero, count);
-		if (ane_t6021_fw_diag_requested())
-			dev_emerg(dev,
-				  "MARKER-BUFFER first qword = %016llx (marker word %08x at offset 0)%s\n",
-				  tt[0], ANE_T6021_DIAG_MARKER_WORD,
-				  tt[0] == 0x4d325431 ?
-				  " — MARKER PRESENT: ASC fetched and executed" :
-				  " — MARKER ABSENT");
-	}
-
-	if (fw_start_stop_after) {
-		/* Bisect stop or poll-A timeout reached the HELD state:
-		 * never continue into the handshake — publish/wake were
-		 * withheld, so the fw HELLO cannot come. */
-		dev_emerg(dev,
-			  "BOOT-PHASE bisect stop (stop_after=%d r=%pe): binding fenced-HELD; reboot reclaims\n",
-			  fw_start_stop_after, ERR_PTR(ret));
-		return 0;
-	}
-
-	if (!a->fw_alive && !fw_start_rtb_mode) {
-		/* Poll A timeout: RUN released, no READY. State held, module
-		 * pinned, RTKit handshake skipped. CAUSE NOT LOCALIZED: a
-		 * missing READY does not distinguish fetch failure from a
-		 * RAM/MMIO write that did not land (Main 2026-09-27) — do
-		 * not read this message as a fetch verdict. */
-		dev_err(dev,
-			"fw_start: poll A timeout, no READY — cause not localized; HELD until reboot, RTKit handshake skipped\n");
-		return 0;	/* bind fenced */
-	}
-
-	if (fw_start_rtb_mode)
-		dev_emerg(dev,
-			  "BOOT-PHASE RTBuddy mode: READY not required — proceeding to RTKit handshake (HELLO-gated, bounded by hello_wait_ms=%u)\n",
-			  hello_wait_ms);
-
-	/* READY (and usually DONE) observed: the fetch DID translate.
-	 * RTKit handshake follows in probe. */
-	return 0;
-}
-
-static void ane_rtclient_unmap_engine(void *data)
-{
-	iounmap(((struct ane_rtclient *)data)->engine);
-}
-
-/*
- * restart_probe answers whether this box can restart the firmware
- * without a reboot. It stops the core (CPU_CONTROL <- 0, bounded wait for
- * STOPPED), cycles it through the framework ane_cpu reset (the domain
- * stays powered), and reports RVBAR and CPU_STATUS before and after: the
- * iBoot RVBAR latch must survive the reset, because kernel RVBAR writes
- * are fatal here. It never sets RUN again and keeps the module pin and
- * every DMA surface, so a reboot still reclaims. Raw ps writes froze the
- * box three times (W16 pass-2): write this only as the last act before a
- * planned reboot.
- */
-static ssize_t restart_probe_store(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
-{
-	struct ane_rtclient *ane = dev_get_drvdata(dev);
-	u64 rv0, rv1;
-	u32 st0, st1, st2;
-	int ret;
-
-	if (!ane->cpu_rst)
-		return -ENODEV;
-
-	rv0 = readq(ane->engine + ANE_ASC_RVBAR);
-	st0 = readl(ane->engine + ANE_ASC_CPU_STATUS);
-	writel(0, ane->engine + ANE_ASC_CPU_CONTROL);
-	ret = readl_poll_timeout(ane->engine + ANE_ASC_CPU_STATUS, st1,
-				 st1 & ANE_ASC_CPU_STATUS_STOPPED, 10, 100000);
-	dev_emerg(dev,
-		  "RESTART-PROBE stop: CPU_STATUS %08x -> %08x (%pe), RVBAR %016llx\n",
-		  st0, st1, ERR_PTR(ret), rv0);
-	if (ret)
-		return ret;
-
-	ret = reset_control_assert(ane->cpu_rst);
-	if (!ret) {
-		fsleep(2);
-		ret = reset_control_deassert(ane->cpu_rst);
-	}
-	rv1 = readq(ane->engine + ANE_ASC_RVBAR);
-	st2 = readl(ane->engine + ANE_ASC_CPU_STATUS);
-	dev_emerg(dev,
-		  "RESTART-PROBE reset %pe: CPU_STATUS %08x, RVBAR %016llx -> %016llx (%s)\n",
-		  ERR_PTR(ret), st2, rv0, rv1,
-		  rv1 == rv0 ? "latch survives" : "latch LOST");
-	return ret ?: count;
-}
-static DEVICE_ATTR_WO(restart_probe);
-
-static struct attribute *ane_rtclient_attrs[] = {
-	&dev_attr_restart_probe.attr,
-	NULL,
-};
-
-static const struct attribute_group ane_rtclient_group = {
-	.attrs = ane_rtclient_attrs,
-};
-
-/* Multi-domain genpd attach, ownership-correct and idempotent.
- *
- * The core attaches and raises a domain ONLY for single-domain nodes
- * (genpd_dev_pm_attach returns 0 with nothing attached otherwise);
- * here every index gets dev_pm_domain_attach_by_id + an RPM_ACTIVE
- * stateless link, the ane_t6021_drv.c pattern.
- *
- * Lifetime: the registry below is keyed by consumer device and owned
- * for the module's lifetime — NOT devm — so -EPROBE_DEFER retries
- * reuse the same virtual devices/links instead of attaching new ones
- * per retry. An interrupted attach is resumed at the first missing
- * index. Retention contract: links and device refs are never
- * released by this driver, so no intentional subsequent power-down
- * exists. NOT an absolute no-off-write guarantee: attach_by_id
- * itself enables runtime PM and queues genpd power-off work before
- * returning the virtual device (pmdomain/core.c:3398), so the
- * attach window carries a bounded controlled-hardware risk; live
- * attempts require camera+USB recovery and the noCPU state-report.
- */
+/* Multi-domain genpd attach, ownership-correct and idempotent. */
 struct ane_rtclient_pd {
 	struct list_head list;
 	struct device *dev;
@@ -1553,11 +1528,11 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 	count = of_count_phandle_with_args(dev->of_node, "power-domains",
 					   "#power-domain-cells");
 	if (count == -ENOENT)
-		return 0; /* no list: inert node, the G1 gate governs */
+		return 0;
 	if (count < 0)
 		return count;
 	if (count <= 1)
-		return 0; /* single domain: core attached and raised it */
+		return 0;
 
 	mutex_lock(&ane_rtclient_pd_lock);
 	list_for_each_entry(pd, &ane_rtclient_pd_list, list)
@@ -1569,7 +1544,7 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 		err = -ENOMEM;
 		goto out;
 	}
-	INIT_LIST_HEAD(&pd->list); /* safe pd_free even before list_add */
+	INIT_LIST_HEAD(&pd->list);
 	pd->dev = dev;
 	pd->pd_dev = kcalloc(count, sizeof(*pd->pd_dev), GFP_KERNEL);
 	pd->pd_link = kcalloc(count, sizeof(*pd->pd_link), GFP_KERNEL);
@@ -1583,25 +1558,16 @@ static int ane_rtclient_attach_genpd(struct ane_rtclient *ane)
 
 found:
 	for (i = pd->count; i < count; i++) {
-		/* A slot may hold a virtual device whose link add failed
-		 * on an earlier retry: reuse it instead of attaching a
-		 * fresh one. */
 		if (!pd->pd_dev[i]) {
 			pd->pd_dev[i] = dev_pm_domain_attach_by_id(dev, i);
-			/* attach_by_id can also return NULL
-			 * (pmdomain/core.c). */
 			if (IS_ERR_OR_NULL(pd->pd_dev[i])) {
 				err = IS_ERR(pd->pd_dev[i]) ?
-					      PTR_ERR(pd->pd_dev[i]) : -ENODEV;
+				      PTR_ERR(pd->pd_dev[i]) : -ENODEV;
 				pd->pd_dev[i] = NULL;
 				goto out;
 			}
 		}
-
 		if (!pd->pd_link[i]) {
-			/* Once-only permanent pin before the first raised
-			 * link: after a power mutation this driver must
-			 * not unload (rmmod -EBUSY); reboot reclaims. */
 			if (!ane_rtclient_pinned) {
 				if (!try_module_get(THIS_MODULE)) {
 					err = -ENODEV;
@@ -1615,10 +1581,6 @@ found:
 						DL_FLAG_PM_RUNTIME |
 						DL_FLAG_RPM_ACTIVE);
 			if (!pd->pd_link[i]) {
-				/* Keep the virtual device in its slot for
-				 * the next retry; never put_device here —
-				 * the attached state must stay tracked and
-				 * owned. */
 				err = -EINVAL;
 				goto out;
 			}
@@ -1637,35 +1599,37 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct resource *res;
 	struct ane_rtclient *ane;
+	struct ane_t6021 *a;
 	u32 cpu_status, ps_cpu;
 	u64 rvbar;
-	bool fw_alive;
-	int ep;
 	int ret;
 
-	/* Early, BEFORE any allocation/power: shared probe-top predicate
-	 * (drv.c:375 / rtclient 1366, refactored — fw_extra_ram bound +
-	 * alignment + reserved-alias coupling + diag gate, all in one
-	 * helper). The late check in ane_t6021_fwload.c alloc path stays
-	 * as defense in depth. Anything path-restricted (legacy_only,
-	 * rtbuddy mode, transport-only, etc.) is checked right after. */
-	if (!ane_t6021_fwload_options_ok(false)) {
+	if (!ane_t6021_fwload_options_ok()) {
 		dev_err(dev,
-			"invalid laboratory firmware marker / RAM-grant options; refusing before power access\n");
+			"invalid firmware RAM-grant options; refusing before power access\n");
 		return -EINVAL;
 	}
 
 	/* Early, BEFORE any allocation/power: legacy_only must never be
-	 * rejected after the CPU release, where a devm teardown could
-	 * unwind domains under a running ASC (Main, 2026-09-27). */
+	 * rejected after the CPU release, where an unwind could drop
+	 * domains under a running ASC (lab probe order). */
 	if (legacy_only && (!fw_start || fw_start_rtb_mode)) {
 		dev_err(dev,
 			"legacy_only=1 requires fw_start=1 and fw_start_rtb_mode=0\n");
 		return -EINVAL;
 	}
+	if (legacy_query && !legacy_only) {
+		dev_err(dev, "legacy_query requires legacy_only=1\n");
+		return -EINVAL;
+	}
 
 	ane = devm_kzalloc(dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
+		return -ENOMEM;
+	ane->legacy_buffers = devm_kcalloc(dev, ANE_LEGACY_ALLOCS,
+					   sizeof(*ane->legacy_buffers),
+					   GFP_KERNEL);
+	if (!ane->legacy_buffers)
 		return -ENOMEM;
 	ane->dev = dev;
 	platform_set_drvdata(pdev, ane);
@@ -1674,59 +1638,28 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return -ENODEV;
-	/* "nonposted-mmio" (inherited from /soc) sets IORESOURCE_MEM_NONPOSTED;
-	 * all ANE aperture access is non-posted (posted writel froze the box). */
 	if (!(res->flags & IORESOURCE_MEM_NONPOSTED))
-		dev_warn(dev, "engine window is not flagged non-posted; refusing\n");
-	/* No exclusive request_mem_region: the ASC mailbox child device
-	 * (0x285408000) lives inside this window and its region is
-	 * already claimed in the iomem tree, so an exclusive request of
-	 * the parent span would conflict with our own child. */
+		dev_warn(dev, "engine window is not flagged non-posted\n");
 	ane->engine = ioremap_np(res->start, resource_size(res));
 	if (!ane->engine)
 		return -ENOMEM;
-	ret = devm_add_action_or_reset(dev, ane_rtclient_unmap_engine, ane);
-	if (ret)
-		return ret;
-
 	ane->cpu_rst = devm_reset_control_get_optional_exclusive(dev, NULL);
 	if (IS_ERR(ane->cpu_rst))
 		return dev_err_probe(dev, PTR_ERR(ane->cpu_rst),
 				     "ane_cpu reset control\n");
-	ret = devm_device_add_group(dev, &ane_rtclient_group);
-	if (ret)
-		return ret;
 
-	/* Selene 13.5 channel setup loads ring DVA as u32 at VM 0x60b0. */
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
 
-	/* Power: the DT power-domain list. For multi-domain nodes the
-	 * core attaches nothing (genpd_dev_pm_attach returns 0 without
-	 * attaching), so attach_genpd raises every domain by id. On this
-	 * box the always-on islands report off at boot and resume_and_get
-	 * hangs the bind writer; when the islands already read on,
-	 * fw_start_skip_genpd=1 skips the attach so nothing is raised. */
-	if (!fw_start_skip_genpd) {
-		ret = ane_rtclient_attach_genpd(ane);
-		if (ret)
-			return dev_err_probe(dev, ret,
-					     "extra genpd attach\n");
-	}
+	ret = ane_rtclient_attach_genpd(ane);
+	if (ret)
+		return dev_err_probe(dev, ret, "extra genpd attach\n");
 	pm_runtime_enable(dev);
-	dev_emerg(dev, "BOOT-PHASE core genpd resume begin\n");
-	if (fw_start_skip_genpd) {
-		dev_emerg(dev, "BOOT-PHASE genpd raise SKIPPED (fw_start_skip_genpd=1)\n");
-		ret = 0;
-	} else {
-		ret = pm_runtime_resume_and_get(dev);
-	}
+	ret = pm_runtime_resume_and_get(dev);
 	if (ret)
 		return dev_err_probe(dev, ret, "genpd raise failed\n");
-	dev_emerg(dev, "BOOT-PHASE genpd raise done\n");
 
-	/* G1 gate: ane_cpu ACTUAL must be 0xf before any further MMIO. */
 	ane->pmgr = devm_of_iomap(dev, dev->of_node, 1, NULL);
 	if (IS_ERR(ane->pmgr)) {
 		ret = PTR_ERR(ane->pmgr);
@@ -1743,212 +1676,297 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	/* CPU gate. This read is the first engine access and is
-	 * read-clean proven (W10) with the islands up. Default
-	 * (fw_start=0): refuse unless the firmware is already alive —
-	 * kernel-context RVBAR programming is fatal / sticky-latched on
-	 * this box (power-dart-fwload s23/s24), start belongs to a
-	 * quiesce context. fw_start=1: run the fenced start below. */
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
 	rvbar = readq(ane->engine + ANE_ASC_RVBAR);
 	dev_emerg(dev,
-		  "BOOT-PHASE engine reads ok: CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u entry=%0llx)\n",
-		  cpu_status, rvbar, (u32)(rvbar & 1),
-		  (u64)(rvbar & ANE_T6021_RVBAR_ADDR_MASK));
+		  "BOOT-PHASE engine reads ok: CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u)\n",
+		  cpu_status, rvbar, (u32)(rvbar & 1));
 
 	if (!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)) {
 		if (!fw_start) {
 			dev_err(dev,
-				"ANE firmware not alive (CPU_STATUS 0x%x) — start it from a quiesce context (m1n1/iBoot), or retry with fw_start=1; this driver will not program RVBAR\n",
+				"ANE firmware not alive (CPU_STATUS 0x%x) — start it from a quiesce context, or retry with fw_start=1\n",
 				cpu_status);
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
 			return -EPROBE_DEFER;
 		}
-		ret = ane_rtclient_fw_start(ane);
-		if (ret) {
-			/* Unwind through err_pm_or_hold, not here: if the
-			 * boot contract already released the CPU, a power
-			 * teardown on this path would drop domains under a
-			 * running ASC. */
-			goto err_pm_or_hold;
+
+		/* Lab fw_start order: staging requires fw_load and an
+		 * IOMMU-mapped device BEFORE any allocation/staging. */
+		if (!ane_t6021_fwload_requested()) {
+			dev_err(dev,
+				"fw_start: requires fw_load=1 (no staged firmware)\n");
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return -EINVAL;
 		}
-		if (ane_t6021_fw_diag_requested()) {
-			/* Marker mode fences at probe UNCONDITIONALLY
-			 * (Main 2026-09-26): the staged-copy self-loop is
-			 * not firmware alive, and the CPU_STATUS RUNNING
-			 * bit of a parked/released core must never open
-			 * the RTKit path. Keep the module pin, genpd and
-			 * every DMA surface; the BUFAUDIT/FW-PT marker
-			 * word is the outcome of record. */
-			dev_warn(dev,
-				 "MARKER run complete — binding fenced-inert before any RTKit (CPU_STATUS bit not consulted)\n");
+		if (!device_iommu_mapped(dev)) {
+			dev_err(dev,
+				"fw_start: device not IOMMU-mapped — a staged DVA/entry alias would be untranslated; refusing\n");
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return -EINVAL;
+		}
+
+		a = devm_kzalloc(dev, sizeof(*a), GFP_KERNEL);
+		if (!a) {
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return -ENOMEM;
+		}
+		a->dev = dev;
+		a->base[ANE_T6021_REG_ENGINE] = ane->engine;
+		a->irq = -1;
+		a->power_gated = true;
+		ane->fw = a;
+
+		dev_emerg(dev, "BOOT-PHASE fwload stage+alias begin\n");
+		ret = ane_t6021_fwload_probe(a);
+		if (ret) {
+			dev_err_probe(dev, ret, "fw_start: staging failed\n");
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return ret;
+		}
+		if (!ane_t6021_rvbar_entry_ok(a->fw_iova)) {
+			dev_err(dev, "fw_start: staged iova %pad invalid\n",
+				&a->fw_iova);
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return -EINVAL;
+		}
+
+		dev_emerg(dev, "BOOT-PHASE dispatch (table_mode=%d)\n",
+			  fw_start_table_mode);
+		ret = ane_t6021_boot_start(a, 0, fw_start_table_mode,
+					   fw_start_rtb_mode);
+		if (ret == -ENODATA || ret == -EAGAIN ||
+		    ret == -EBUSY || ret == -ECANCELED) {
+			ane_t6021_fwload_remove(a);
+			ane->fw = NULL;
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return ret;
+		}
+
+		ane->held = true;
+		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
+		dev_emerg(dev,
+			  "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
+			  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
+			  cpu_status);
+		if (!a->fw_alive && !fw_start_rtb_mode) {
+			dev_err(dev,
+				"fw_start: poll A timeout, no READY — HELD until reboot, RTKit handshake skipped\n");
 			return 0;
 		}
-		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
-		fw_alive = cpu_status & ANE_ASC_CPU_STATUS_RUNNING ||
-			   (ane->fw && ane->fw->fw_alive);
-		/* HELD from here on: a CPU we released may be running.
-		 * genpd must never be dropped under it — bind fenced
-		 * instead of unwinding power on any later failure. */
-	} else {
-		fw_alive = true;
 	}
 
-	if (!fw_alive && !fw_start_rtb_mode) {
-		/* fw_start ran, CPU released, but no READY: bind fenced
-		 * and inert (state HELD, module pinned by the boot
-		 * path, genpd stays up, no RTKit). In RTBuddy mode this
-		 * gate does not apply — READY is not the contract; the
-		 * RTKit handshake below is HELLO-gated and bounded by
-		 * hello_wait_ms. */
-		dev_warn(dev,
-			 "binding fenced-inert (no firmware%s; state HELD until reboot)\n",
-			 ane_t6021_fw_diag_requested() ?
-			 " — marker word in BUFAUDIT/FW-PT above" : "");
-		return 0;
-	}
-
-	/* 13.5 legacy ChMan transport (legacy_only=1): the fw's post-DONE
-	 * sequence — parent poll GPIO3==0x08042006 (6c80..6ca4), then
-	 * CSharedMemory 20e78 / CDebugAgent 13604 / CIPSynchroReal 5b98,
-	 * then the GPIO3 clear 6d84..6d98 — is driven only by the ACK.
-	 * Every RTKit surface stays off so the generic mailbox/RTKit
-	 * path cannot touch the ASC while the legacy sequence runs.
-	 * Version contract: fwload already sha-pinned a9c4b771... (13.5
-	 * 22G74) and would have refused staging otherwise.
-	 * Invariant (validated at probe top): legacy_only implies
-	 * fw_start && !fw_start_rtb_mode — no rejection past this point. */
 	if (legacy_only) {
-		dev_emerg(dev,
-			  "LEGACY-ONLY transport (13.5 contract): RTKit surfaces excluded; validate chman, write ACK, observe\n");
+		int cfg_err = 0;
+
 		ane_rtclient_validate_chman(ane);
-		if (ane->fw && ane->fw->booted && scratch3_ack && ane->chman_ok &&
+		if (ane->fw && ane->fw->booted && scratch3_ack &&
+		    ane->chman_ok &&
 		    ane_t6021_chman_host_init(ane->fw->boot_ipc,
-					    ane->fw->boot_ipc_size,
-					    ane->fw->boot_ipc_iova)) {
+					     ane->fw->boot_ipc_size,
+					     ane->fw->boot_ipc_iova)) {
+			int hello_ret = 0;
+
 			dma_wmb();
-			dev_info(dev, "chman: H2T slots initialized host-owned before ACK\n");
-			dev_emerg(dev, "LEGACY P8 host ack: SCRATCH3 <- %08x\n",
+			dev_emerg(dev,
+				  "LEGACY P8 host ack: SCRATCH3 <- %08x\n",
 				  ANE_T6021_BOOT_ACK);
+			/* The 13.5 fw HELLOes on the RTKit MGMT endpoint
+			 * after the ack; with the recv line unproven the
+			 * poll worker is the only RX path, so init rtkit
+			 * and arm the worker BEFORE writing the ack. */
+			if (hello_wait_ms && !ane->rtk) {
+				ane->rtk = devm_apple_rtkit_init(dev, ane,
+								NULL, 0,
+								&ane_rtclient_rtkit_ops);
+				if (IS_ERR(ane->rtk)) {
+					dev_err(dev,
+						"LEGACY hello: rtkit init %pe\n",
+						ane->rtk);
+					ane->rtk = NULL;
+				} else {
+					schedule_delayed_work(&ane->poll_work,
+							      msecs_to_jiffies(10));
+				}
+			}
 			writel(ANE_T6021_BOOT_ACK,
 			       ane->engine + ANE_MBI_SCRATCH0 + 4 * 3);
+			if (ane->rtk) {
+				unsigned long hello_deadline =
+					jiffies + msecs_to_jiffies(hello_wait_ms);
+
+				dev_emerg(dev, "LEGACY hello: boot begin (%u ms)\n",
+					  hello_wait_ms);
+				do {
+					hello_ret = apple_rtkit_boot(ane->rtk);
+				} while (hello_ret == -ETIME &&
+					 time_before(jiffies, hello_deadline));
+				dev_emerg(dev,
+					  "LEGACY hello: boot %pe running=%d crashed=%d\n",
+					  ERR_PTR(hello_ret),
+					  apple_rtkit_is_running(ane->rtk),
+					  apple_rtkit_is_crashed(ane->rtk));
+				if (!hello_ret) {
+					ane->boot_done = true;
+					if (start_app_eps)
+						ane_rtclient_start_app_eps(ane);
+				} else {
+					cancel_delayed_work_sync(&ane->poll_work);
+				}
+			}
 		} else {
 			dev_warn(dev,
 				 "LEGACY ack withheld (booted=%u scratch3_ack=%u chman_ok=%u)\n",
-				 ane->fw ? ane->fw->booted : 0, scratch3_ack, ane->chman_ok);
+				 ane->fw ? ane->fw->booted : 0,
+				 scratch3_ack, ane->chman_ok);
 		}
-		msleep(1000);
-		if (ane->fw)
-			ane_rtclient_fwbuf_audit(ane->fw, "post-ack");
-		ane_rtclient_log_wrapper(ane, "legacy-post-ack");
-		dev_emerg(dev,
-			  "LEGACY transport armed; state HELD (pins kept, no RTKit). If SCRATCH3 readback still shows the ack, the fw did not reach the 6d84 clear\n");
-		return 0;
-	}
-
-	ane->rtk = devm_apple_rtkit_init(dev, ane, NULL, 0,
-					 &ane_rtclient_rtkit_ops);
-	if (IS_ERR(ane->rtk)) {
-		ret = PTR_ERR(ane->rtk);
-		ane->rtk = NULL;
-		ret = dev_err_probe(dev, ret, "apple_rtkit_init failed\n");
-		goto err_pm_or_hold;
-	}
-
-	/* RX path: the recv irq (ADT raw 0x374) is primary; the worker is
-	 * the poll fallback that drives RX while the handshake runs. Armed
-	 * before the host ack below so the fw's HELLO is never missed. */
-	schedule_delayed_work(&ane->poll_work, msecs_to_jiffies(10));
-
-	if (ane->fw) {
-		/* Kext order after DONE (InitializeRTBuddy 0x95ead04 ->
-		 * 0x95eaee4): read the channel table, then host-ack. The
-		 * fw spins on SCRATCH3 == 0x08042006 right after DONE
-		 * (selene 0x7edc-0x7f10) and only then creates its
-		 * endpoints and starts RTKit (HELLO). Without this write
-		 * HELLO never comes. SCRATCH is the host-writable family
-		 * the boot sequence already writes (W9). */
-		ane_rtclient_validate_chman(ane);
-		dev_info(dev,
-			 "fw transport mode: %s (fw 0x42c8: rtbuddyFW = (SCRATCH6 == 0))\n",
-			 fw_start_rtb_mode ?
-			 "S1 wrote SCRATCH6=0 -> RTBuddy/RTKit-app-endpoint mode" :
-			 "S1 wrote SCRATCH6=1 -> legacy ChMan/MBI mode");
-		if (ane->fw->booted && scratch3_ack &&
-		    !fw_start_rtb_mode) {
-			dev_emerg(dev,
-				  "BOOT-PHASE P8 host ack: SCRATCH3 <- %08x\n",
-				  ANE_T6021_BOOT_ACK);
-			writel(ANE_T6021_BOOT_ACK,
-			       ane->engine + ANE_MBI_SCRATCH0 + 4 * 3);
-		} else {
-			dev_warn(dev,
-				 "BOOT-PHASE P8 host ack WITHHELD (booted=%u scratch3_ack=%u): ack is post-DONE per the 27.0 decode — the 13.5 fw order is UNVERIFIED\n",
-				 ane->fw->booted, scratch3_ack);
+		if (ane->chman_ok) {
+			/* One reusable command buffer for the transport
+			 * (CONFIG_GET + every ioctl); reuse is legal
+			 * because each exchange completes with the slot
+			 * host-owned again. The 128-entry table stays
+			 * for fw MALLOC replies only. */
+			if (ane_rtclient_legacy_alloc(ane, SZ_16K) == 0)
+				ane->cmd_buf =
+					&ane->legacy_buffers[ane->legacy_allocated - 1];
+			else
+				cfg_err = -ENOMEM;
 		}
-	}
+		if (!cfg_err && legacy_query && ane->chman_ok) {
+			/* CONFIG_GET (opcode 0x03) keeps the legacy ChMan
+			 * transport armed for the ioctls; the reply's
+			 * word +0x08 must be nonzero (lab rule). The
+			 * boot heap + 'IPC ' allocations stay HELD until
+			 * reboot. */
+			struct ane_legacy_buffer *command = ane->cmd_buf;
+			int qret;
 
-	/* The handshake: the fw HELLOes on MGMT (v12), rtkit.c answers,
-	 * EPMAP + system-endpoint STARTEP + IOP power ack follow, then
-	 * boot() sets the AP power state ON. Each rtkit.c wait is 1 s;
-	 * the fw reaches HELLO only after its ChMan DONE, so -ETIME is
-	 * retried within hello_wait_ms. Anything else is final. */
-	dev_emerg(dev, "BOOT-PHASE apple_rtkit_boot begin (bound %u ms)\n",
-		  hello_wait_ms);
-	{
-		unsigned long deadline = jiffies + msecs_to_jiffies(hello_wait_ms);
+			if (command) {
+				memset(command->cpu, 0, SZ_16K);
+				qret = ane_rtclient_legacy_exchange(ane,
+								     command,
+								     16, 0x03,
+								     1, 3000);
+				dev_info(dev,
+					 "LEGACY CONFIG_GET words %08x %08x result=%d (DMA remains held)\n",
+					 READ_ONCE(((u32 *)command->cpu)[1]),
+					 READ_ONCE(((u32 *)command->cpu)[2]),
+					 qret);
+				if (qret)
+					cfg_err = qret;
+				else if (!READ_ONCE(((u32 *)command->cpu)[2])) {
+					dev_err(dev,
+						"LEGACY CONFIG_GET reply word +0x08 zero\n");
+					cfg_err = -EPROTO;
+				}
+			} else {
+				cfg_err = -ENOMEM;
+			}
+		}
+		ane->boot_done = true;
+		if (cfg_err) {
+			dev_err(dev,
+				"install: CONFIG_GET failed (%d) — refusing to register DRM device (ioctls would run on an unproven ring)\n",
+				cfg_err);
+			if (!ane->held) {
+				pm_runtime_put_sync_suspend(dev);
+				pm_runtime_disable(dev);
+			}
+			return cfg_err;
+		}
+	} else {
+		unsigned long deadline;
+		int boot_ret;
 
+		ane->rtk = devm_apple_rtkit_init(dev, ane, NULL, 0,
+						 &ane_rtclient_rtkit_ops);
+		if (IS_ERR(ane->rtk)) {
+			ret = PTR_ERR(ane->rtk);
+			ane->rtk = NULL;
+			dev_err_probe(dev, ret, "apple_rtkit_init failed\n");
+			goto err_pm_or_hold;
+		}
+		/* RX fallback worker first: the fw's HELLO must not be
+		 * missed while the recv line is unproven. */
+		schedule_delayed_work(&ane->poll_work, msecs_to_jiffies(10));
+		deadline = jiffies + msecs_to_jiffies(hello_wait_ms);
 		do {
-			ret = apple_rtkit_boot(ane->rtk);
-		} while (ret == -ETIME && time_before(jiffies, deadline));
+			boot_ret = apple_rtkit_boot(ane->rtk);
+		} while (boot_ret == -ETIME && time_before(jiffies, deadline));
+		if (boot_ret) {
+			dev_err(dev, "rtkit boot handshake failed: %pe\n",
+				ERR_PTR(boot_ret));
+			cancel_delayed_work_sync(&ane->poll_work);
+			ret = boot_ret;
+			goto err_pm_or_hold;
+		}
+		ane->boot_done = true;
+		if (start_app_eps)
+			ane_rtclient_start_app_eps(ane);
 	}
-	if (ret) {
-		dev_err(dev, "rtkit boot handshake failed: %pe (is_running=%d crashed=%d)\n",
-			ERR_PTR(ret), apple_rtkit_is_running(ane->rtk),
-			apple_rtkit_is_crashed(ane->rtk));
-		cancel_delayed_work_sync(&ane->poll_work);
-		goto err_pm_or_hold;
+
+	if (!ane->chman_ok) {
+		dev_err(dev,
+			"install: ChMan table not validated — refusing to register DRM device (ioctls would stall the ring)\n");
+		if (!ane->held) {
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+		}
+		return -EPROTO;
 	}
 
-	ane->boot_done = true;
+	{
+		struct ane_t6021_drm *adrm;
+		int drmret;
 
-	/* Endpoint bitmap the firmware advertised via EPMAP. Static
-	 * prediction (selene endpoint table, vm 0xed0a0): 0 1 2 0x20. */
-	dev_info(ane->dev, "rtkit RUNNING; fw-advertised endpoints:");
-	for (ep = 0; ep < 0x100; ep++)
-		if (apple_rtkit_has_endpoint(ane->rtk, ep))
-			pr_cont(" %#x", ep);
-	pr_cont("\n");
+		/* This kernel dropped drm_dev_init; the resource-managed
+		 * alloc registers the same ABI-2 device. */
+		adrm = devm_drm_dev_alloc(dev, &ane_t6021_drm_driver,
+					  struct ane_t6021_drm, drm);
+		if (IS_ERR(adrm)) {
+			ret = dev_err_probe(dev, PTR_ERR(adrm),
+					    "drm device alloc\n");
+			goto err_pm_or_hold;
+		}
+		adrm->dev = dev;
+		adrm->ane = ane;
+		WRITE_ONCE(ane_t6021_perf_ane, ane);
+		drmret = drm_dev_register(&adrm->drm, 0);
+		if (drmret) {
+			dev_err_probe(dev, drmret, "drm_dev_register\n");
+			ret = drmret;
+			goto err_pm_or_hold;
+		}
+		dev_info(dev,
+			 "loaded ane_t6021 %s (DRM major %d minor %d; ABI 2; legacy_only=%u chman_ok=%u booted=%u; state %s)\n",
+			 ANE_T6021_MODULE_VERSION, ANE_ABI_M2_MAJOR, 0,
+			 legacy_only, ane->chman_ok,
+			 ane->fw ? ane->fw->booted : 0,
+			 ane->held ? "HELD" : "ready");
+	}
 
-	if (start_app_eps)
-		ane_rtclient_start_app_eps(ane);
-
-	if (!ane->fw)
-		ane_rtclient_validate_chman(ane);
-
-	if (csne_ping)
-		ane_rtclient_csne_ping(ane);
-
-	if (!poll_rx)
-		cancel_delayed_work_sync(&ane->poll_work);
-
-	dev_info(dev,
-		 "ANE RTKit client up: handshake complete (cmd_ep=%#x chman=%s)\n",
-		 ane->cmd_ep, ane->chman_ok ? "validated" : "not validated");
 	return 0;
 
 err_pm_or_hold:
-	if (ane->held) {
-		/* A CPU we released is running: NEVER drop genpd under
-		 * it. Bind fenced; reboot is the only reclamation. */
+	if (ane->held)
 		dev_warn(dev,
 			 "probe failed after CPU start (%pe) — binding fenced; power/rings/IRQ HELD until reboot\n",
 			 ERR_PTR(ret));
-		return 0;
+	else {
+		pm_runtime_put_sync_suspend(dev);
+		pm_runtime_disable(dev);
 	}
-	pm_runtime_put_sync_suspend(dev);
-	pm_runtime_disable(dev);
 	return ret;
 }
 
@@ -1958,29 +1976,12 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 
 	cancel_delayed_work_sync(&ane->poll_work);
 
-	if (ane->held) {
-		/* Unreachable in practice: suppress_bind_attrs blocks
-		 * unbind and the permanent module pin blocks rmmod once
-		 * any domain was raised. If it ever runs, claim nothing —
-		 * the core frees devm state after this callback; reboot
-		 * reclaims the raised hardware state. */
+	if (ane->held)
 		dev_warn(&pdev->dev,
-			 "remove HELD (CPU started): no teardown — reboot reclaims\n");
-		return;
-	}
-
-	if (ane->rtk)
-		apple_rtkit_shutdown(ane->rtk);
-	if (ane->ring)
-		dma_free_coherent(&pdev->dev, ANE_RTCLIENT_RING_SIZE, ane->ring,
-				  ane->ring_iova);
-	pm_runtime_put_sync_suspend(&pdev->dev);
-	pm_runtime_disable(&pdev->dev);
+			 "remove HELD: no teardown — reboot reclaims\n");
 }
 
 static const struct of_device_id ane_rtclient_of_match[] = {
-	/* The stock DTB's ane0 node. The legacy H13-path ane_t6021.ko
-	 * shares this compatible and must NOT be loaded on this box. */
 	{ .compatible = "apple,t6021-ane" },
 	{ }
 };
@@ -1988,9 +1989,8 @@ MODULE_DEVICE_TABLE(of, ane_rtclient_of_match);
 
 static struct platform_driver ane_rtclient_driver = {
 	.driver = {
-		.name = "ane_t6021_rtclient",
+		.name = "ane_t6021",
 		.of_match_table = ane_rtclient_of_match,
-		/* Reboot-only research driver: no manual bind/unbind. */
 		.suppress_bind_attrs = true,
 	},
 	.probe = ane_rtclient_probe,
@@ -1999,4 +1999,4 @@ static struct platform_driver ane_rtclient_driver = {
 module_platform_driver(ane_rtclient_driver);
 
 MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("T6021 ANE RTKit client (mainline apple_rtkit)");
+MODULE_DESCRIPTION("Apple Neural Engine (T6021/M2) installed module");

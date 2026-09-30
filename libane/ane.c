@@ -15,6 +15,7 @@
 #include <ane_accel.h>
 #include "ane.h"
 #include "ane_bind.h"
+#include "ane_m2.h"
 
 #ifndef LIBANE_CONFIG_NO_ERR
 #include <stdio.h>
@@ -277,7 +278,7 @@ static inline int ane_pread(const char *fname, void *data, uint64_t size,
 	return 0;
 }
 
-static inline int is_ane_device(int fd)
+static inline int is_ane_device(int fd, int *abi_major)
 {
 	drm_version_t version = {};
 	int err = ioctl(fd, DRM_IOCTL_VERSION, &version);
@@ -286,7 +287,13 @@ static inline int is_ane_device(int fd)
 		return -EINVAL;
 	}
 
-	if (!version.name_len || version.version_major != ANE_ABI_MAJOR) {
+	if (!version.name_len) {
+		return -EINVAL;
+	}
+	/* ABI 1 is the M1 submit path; ABI 2 is the T6021 program path
+	 * (ane_accel.h). Anything else is not this driver. */
+	if (version.version_major != ANE_ABI_MAJOR &&
+	    version.version_major != ANE_ABI_M2_MAJOR) {
 		return -EINVAL;
 	}
 
@@ -310,17 +317,18 @@ static inline int is_ane_device(int fd)
 
 	free(version.name);
 
+	*abi_major = version.version_major;
 	return 0;
 }
 
-static inline int open_fd(const char *node)
+static inline int open_fd(const char *node, int *abi_major)
 {
 	int fd = open(node, O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		return -ENODEV;
 	}
 
-	if (is_ane_device(fd) < 0) {
+	if (is_ane_device(fd, abi_major) < 0) {
 		close(fd);
 		return -EINVAL;
 	}
@@ -328,7 +336,7 @@ static inline int open_fd(const char *node)
 	return fd;
 }
 
-static inline int device_open(int dev_id)
+static inline int device_open(int dev_id, int *abi_major)
 {
 	int fd;
 	char node[MAX_NODE_LEN];
@@ -343,7 +351,7 @@ static inline int device_open(int dev_id)
 	for (int i = 0; i < MAX_NODE_COUNT; i++) {
 		snprintf(node, MAX_NODE_LEN, "/dev/accel/accel%d", i);
 
-		fd = open_fd(node);
+		fd = open_fd(node, abi_major);
 		if (fd < 0) {
 			continue;
 		}
@@ -367,9 +375,10 @@ static inline void device_close(int fd)
 	}
 }
 
-static inline int ane_device_open(struct ane_nn *nn, int dev_id)
+static inline int ane_device_open(struct ane_nn *nn, int dev_id,
+				  int *abi_major)
 {
-	int fd = device_open(dev_id);
+	int fd = device_open(dev_id, abi_major);
 	if (fd < 0) {
 		return -EINVAL;
 	}
@@ -442,6 +451,7 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 				uint32_t tile_shift)
 {
 	struct ane_nn *nn;
+	int abi_major = 0;
 
 	if (!tile_shift || tile_shift > 20) {
 		ane_err("refusing tile shift %u (must be 1..20)\n",
@@ -455,15 +465,28 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 	}
 	nn->tile_shift = tile_shift;
 
-	if (ane_model_init(nn, path) < 0) {
-		ane_err("failed to load anec from %s\n", path);
+	if (ane_device_open(nn, dev_id, &abi_major) < 0) {
+		ane_err("failed to open device with dev_id %d\n", dev_id);
 		free(nn);
 		return NULL;
 	}
 
-	if (ane_device_open(nn, dev_id) < 0) {
-		ane_err("failed to open device with dev_id %d\n", dev_id);
-		ane_model_free(nn);
+	/* ABI 2 (T6021): sections + program/procedure on the accel node; the
+	 * M1 channel machinery does not apply. */
+	if (abi_major == ANE_ABI_M2_MAJOR) {
+		if (ane_m2_open(nn, path) < 0) {
+			ane_err("failed to load ABI-2 program from %s\n",
+				path);
+			ane_device_close(nn);
+			free(nn);
+			return NULL;
+		}
+		return nn;
+	}
+
+	if (ane_model_init(nn, path) < 0) {
+		ane_err("failed to load anec from %s\n", path);
+		ane_device_close(nn);
 		free(nn);
 		return NULL;
 	}
@@ -486,7 +509,11 @@ struct ane_nn *__ane_init(const char *path, int dev_id)
 
 void __ane_free(struct ane_nn *nn)
 {
-	ane_chan_free(nn);
+	if (nn->m2) {
+		ane_m2_close(nn);
+	} else {
+		ane_chan_free(nn);
+	}
 	ane_device_close(nn);
 	ane_model_free(nn);
 	free(nn);
@@ -525,6 +552,9 @@ static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
 
 int ane_exec(struct ane_nn *nn)
 {
+	if (nn->m2) {
+		return ane_m2_exec(nn);
+	}
 	return ane_exec_with_state_swap(nn, 0, 0, 0);
 }
 
@@ -586,12 +616,18 @@ int ane_bind_kernel(struct ane_nn *nn, const void *from, uint64_t size)
 
 uint64_t __ane_src_size(struct ane_nn *nn, const uint32_t idx)
 {
+	if (nn->m2) {
+		return ane_m2_src_size(nn, idx);
+	}
 	INDEX_CHECK(ane_src_count(nn), idx, 0);
 	return tile_size(nn, src_bdx(nn, idx));
 }
 
 uint64_t __ane_dst_size(struct ane_nn *nn, const uint32_t idx)
 {
+	if (nn->m2) {
+		return ane_m2_dst_size(nn, idx);
+	}
 	INDEX_CHECK(ane_dst_count(nn), idx, 0);
 	return tile_size(nn, dst_bdx(nn, idx));
 }
@@ -599,6 +635,10 @@ uint64_t __ane_dst_size(struct ane_nn *nn, const uint32_t idx)
 void __ane_send(struct ane_nn *nn, void *from, const uint32_t idx)
 {
 	INDEX_CHECK(ane_src_count(nn), idx, );
+	if (nn->m2) {
+		ane_m2_send(nn, from, idx);
+		return;
+	}
 	memcpy(nn->chans[src_bdx(nn, idx)].map, from,
 	       tile_size(nn, src_bdx(nn, idx)));
 }
@@ -606,6 +646,10 @@ void __ane_send(struct ane_nn *nn, void *from, const uint32_t idx)
 void __ane_read(struct ane_nn *nn, void *to, const uint32_t idx)
 {
 	INDEX_CHECK(ane_dst_count(nn), idx, );
+	if (nn->m2) {
+		ane_m2_read(nn, to, idx);
+		return;
+	}
 	memcpy(to, nn->chans[dst_bdx(nn, idx)].map,
 	       tile_size(nn, dst_bdx(nn, idx)));
 }
@@ -673,6 +717,16 @@ void ane_untile(void *data, void *tile, const uint64_t N, const uint64_t C,
 		}
 	}
 	return;
+}
+
+void ane_set_oracle_nchw(struct ane_nn *nn, uint32_t ch, const uint64_t nchw[6])
+{
+	if (ch >= TILE_COUNT) {
+		return;
+	}
+	for (uint32_t i = 0; i < 6; i++) {
+		nn->anec.nchw[ch][i] = nchw[i];
+	}
 }
 // clang-format on
 

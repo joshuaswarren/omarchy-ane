@@ -138,41 +138,20 @@
 #include <linux/moduleparam.h>
 
 #include "ane_t6021.h"
-#define APPLE_PMGR_RESET_TIME_US 1
 
 #include "ane_t6021_boot.h"
 
-static bool fw_boot;
-module_param(fw_boot, bool, 0444);
-MODULE_PARM_DESC(fw_boot,
-		 "OPT-IN: boot state resolution + report (W15). Dispatches to boot_start when fw_boot=1 (MMIO writes fire); reports state without MMIO when fw_boot=1 is not set.");
+/* Retain the firmware nap-prevention counter via the init resource bit
+ * (lab boot_prevent_nap=1, the proven add-path value). */
+static bool boot_prevent_nap = true;
+module_param(boot_prevent_nap, bool, 0444);
+MODULE_PARM_DESC(boot_prevent_nap,
+		 "Retain firmware nap-prevention counter via init resource bit (default on: proven add-path value)");
 
 /* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
  * per-object metadata keeps modpost happy for either composition. */
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_DESCRIPTION("T6021 ANE contract-pinned boot sequence core");
-
-static bool fw_iova_exported;
-static u64 exported_fw_iova;
-
-/* Expose staged fw DVA for userspace via sysfs module parameter */
-static int fw_iova_set(const char *val, const struct kernel_param *kp)
-{
-	return 0; /* read-only */
-}
-static int fw_iova_get(char *buf, const struct kernel_param *kp)
-{
-	if (fw_iova_exported)
-		return scnprintf(buf, PAGE_SIZE, "0x%016llx\n",
-				 (u64)exported_fw_iova);
-	return scnprintf(buf, PAGE_SIZE, "0x0000000000000000\n");
-}
-static const struct kernel_param_ops fw_iova_ops = {
-	.set = fw_iova_set,
-	.get = fw_iova_get,
-};
-module_param_cb(fw_iova, &fw_iova_ops, NULL, 0444);
-MODULE_PARM_DESC(fw_iova, "READ-ONLY: staged selene surface DVA (populated by fw_load=1)");
 
 /* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
  * sequence (preboot engine table, scratch clear + pulse, RVBAR
@@ -406,6 +385,10 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 					     ANE_T6021_BOOT_HEAP_CEILING,
 					     ane, ane_boot_alloc, &a,
 					     lo, hi);
+	if (!err && boot_prevent_nap) {
+		((u8 *)a.pool)[ANE_T6021_INIT_TEMPLATE_OFF + 0x84] |= 1;
+		dev_info(ane->dev, "LAB init resource[0x84] bit0=1: prevent nap\n");
+	}
 	/* OWNERSHIP TRANSFER on EVERY path (Main lifetime review): an
 	 * error after the pool/ipc allocations must NOT lose them — a
 	 * started CPU may already be fetching, so partial allocations
@@ -427,11 +410,6 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
  * the CPU release there is NO ordinary unwind: failures HOLD state
  * (wedged-pin cleanup refuses to free under a started CPU) and the
  * probe binds fenced. */
-/* RTBuddy select (SCRATCH6=0 vs legacy 1); set from the rtclient
- * fw_start_rtb_mode parameter before boot_start. */
-int ane_t6021_rtb_mode;
-EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
-
 /* Poll-A-timeout progress dump — PROVEN-readable observables ONLY
  * (Main review 2026-09-26): all eight SCRATCH cells (pulse-cleared to 0
  * pre-release, so any nonzero word with SCRATCH7 != READY/WAKE is a
@@ -444,9 +422,7 @@ EXPORT_SYMBOL_GPL(ane_t6021_rtb_mode);
  * store target). Its readability, width and reset value are unproven
  * and no pre-release baseline exists, so an after-value would not
  * locate PC (could be preexisting iBoot state, write-only, or
- * normalized). The proven pre-READY discriminator remains the staged
- * execution marker (S7 = 0x4d325431, fw_diag_marker), not a register
- * probe. */
+ * normalized). */
 static void ane_t6021_boot_progress_dump(struct ane_t6021 *ane)
 {
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
@@ -553,195 +529,3 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 	return r;
 }
 
-/*
- * W16 pass-3: cpu_reset — framework-mediated ASC core reset.
- *
- * reset_control_assert() sets ps RESET (BIT(31)) through the
- * pmgr-pwrstate reset_controller ops (APPLE_PMGR_RESET_TIME 1 us),
- * reset_control_deassert() clears it. The ane_cpu DOMAIN STAYS
- * POWERED throughout — dart1/dart2 (power-domains = &ane_cpu) are
- * untouched, unlike every raw ps-write arm (three freeze data).
- * Caller contract: userspace quiesces the ASC CPU (CPU_CONTROL <- 0,
- * DevMem) BEFORE writing this attribute; the kext quiesce rule.
- */
-static ssize_t cpu_reset_store(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
-{
-	struct ane_t6021 *ane = dev_get_drvdata(dev);
-	int ret;
-
-	if (!ane->cpu_rst)
-		return -ENODEV;
-	if (ane->cpu_started)
-		return -EBUSY;
-
-	ret = reset_control_assert(ane->cpu_rst);
-	if (ret)
-		return ret;
-	fsleep(2 * APPLE_PMGR_RESET_TIME_US);
-	ret = reset_control_deassert(ane->cpu_rst);
-	if (ret)
-		return ret;
-
-	dev_warn(ane->dev, "cpu_reset: ASC core cycled through ps RESET (domain powered)\n");
-	return count;
-}
-static DEVICE_ATTR_WO(cpu_reset);
-
-static struct attribute *ane_t6021_boot_attrs[] = {
-	&dev_attr_cpu_reset.attr,
-	NULL,
-};
-static const struct attribute_group ane_t6021_boot_group = {
-	.attrs = ane_t6021_boot_attrs,
-};
-
-int ane_t6021_boot_probe(struct ane_t6021 *ane)
-{
-	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
-	u64 rvbar;
-
-	/* W16 pass-3: ane_cpu reset controller (ps RESET bit BIT(31) via
-	 * the pmgr-pwrstate reset_controller ops — framework-mediated,
-	 * domain stays powered, darts untouched). Wired by the DT
-	 * `resets = <&ane_cpu>` property; optional so older DTBs bind. */
-	ane->cpu_rst = devm_reset_control_get_optional_exclusive(ane->dev,
-								 NULL);
-	if (IS_ERR(ane->cpu_rst)) {
-		dev_err(ane->dev, "boot: reset control fetch: %pe\n",
-			ane->cpu_rst);
-		return PTR_ERR(ane->cpu_rst);
-	}
-	if (!ane->cpu_rst)
-		dev_info(ane->dev,
-			 "boot: no resets property — cpu_reset sysfs unavailable\n");
-
-	/* Export + pin BEFORE the fw_boot fence: hybrid mode (fw_boot=0)
-	 * needs the staged DVA exported and the module pinned so
-	 * userspace can safely do the CPU release. Only if fwload
-	 * succeeded (fw_buf non-NULL). */
-	if (ane->fw_buf) {
-		fw_iova_exported = true;
-		exported_fw_iova = (u64)ane->fw_iova;
-		if (!try_module_get(THIS_MODULE)) {
-			dev_err(ane->dev,
-				"fwload: module dying — cannot retain fw+DART mapping for hybrid boot\n");
-			return -EBUSY;
-		}
-		ane->hybrid_pinned = true;
-		dev_warn(ane->dev,
-			 "fwload: module PINNED until reboot (fw+DART mapping live; hybrid boot ready)\n");
-	}
-
-	if (!ane->cpu_rst) {
-		/* nothing to expose */
-	} else {
-		int ret = devm_device_add_group(ane->dev, &ane_t6021_boot_group);
-
-		if (ret)
-			return ret;
-	}
-
-	if (!fw_boot) {
-		/* fw_boot=0: bind status-only with staging + DART mapping
-		 * retained (module pinned). Userspace reads fw_iova from
-		 * sysfs and runs the boot sequence via DevMem. */
-		dev_info(ane->dev,
-			 "boot: fw_boot=0 — status-only bind, staging + DART mapping retained (pinned)\n");
-		return 0;
-	}
-
-	/* Gates — all read-only; the W3 gate already ran in
-	 * first_resume and probe unwound on its failure. */
-	if (!ane->power_gated) {
-		dev_err(ane->dev,
-			"boot: REFUSED — eight-island gate/whitelist not passed\n");
-		return -EIO;
-	}
-	if (!ane->fw_buf) {
-		dev_err(ane->dev,
-			"boot: REFUSED — no staged firmware (fw_load=1 must succeed first)\n");
-		return -EINVAL;
-	}
-	/* A boot-published address must be a dart-ane0 translation DVA
-	 * (live iommu group 6, three apple,t6020-dart streams, DMA
-	 * domain — DMA-topology receipt). */
-	if (!device_iommu_mapped(ane->dev)) {
-		dev_err(ane->dev,
-			"boot: REFUSED — device not IOMMU-mapped; a boot-published fw DVA would be untranslated\n");
-		return -EINVAL;
-	}
-	/* Acceptance predicate (shared with the regression): the staged
-	 * DVA must lose NOTHING to the entry fold — bit 11 survives,
-	 * bits 0-10/48/55 do not, so any of those set means the staging
-	 * placement is wrong for the fold and we refuse instead of
-	 * truncating. */
-	if (!ane_t6021_rvbar_entry_ok(ane->fw_iova)) {
-		dev_err(ane->dev,
-			"boot: REFUSED — fw iova %pad sets bits the entry fold drops (%016llx outside %016llx); staging placement must be re-examined\n",
-			&ane->fw_iova,
-			ane->fw_iova & (u64)~ANE_T6021_RVBAR_ADDR_MASK,
-			ANE_T6021_RVBAR_ADDR_MASK);
-		return -EINVAL;
-	}
-
-	/* State report. Reads only — each register is on the whitelist
-	 * in the header comment. */
-	rvbar = readq(eng + ANE_ASC_RVBAR);
-	dev_info(ane->dev,
-		 "boot state: rvbar=%016llx (entry bits %0llx, bit0=%u) cpu_status=%08x a2i_ctrl=%08x i2a_ctrl=%08x\n",
-		 rvbar, ane_t6021_rvbar_entry_bits(rvbar),
-		 ane_t6021_rvbar_latched(rvbar) ? 1u : 0u,
-		 readl(eng + ANE_ASC_CPU_STATUS),
-		 readl(eng + ANE_ASC_MBOX_A2I_CTRL),
-		 readl(eng + ANE_ASC_MBOX_I2A_CTRL));
-
-	if (!ane_t6021_rvbar_latched(rvbar))
-		dev_info(ane->dev,
-			 "boot: bit0 clear — unprogrammed; the entry fold would be %016llx from fw_iova=%pad\n",
-			 ane_t6021_rvbar_compose(ane->fw_iova),
-			 &ane->fw_iova);
-	else if (ane_t6021_rvbar_entry_bits(rvbar))
-		dev_info(ane->dev,
-			 "boot: bit0 set WITH entry bits %0llx — kext skip: RVBAR write only is skipped; CPU_CONTROL 0->0x10 converges\n",
-			 ane_t6021_rvbar_entry_bits(rvbar));
-	else
-		/* Lawful normal branch (rvbar-lifecycle 6288b0b): bit0 set
-		 * means SKIP the RVBAR write — no latch override, no reset
-		 * before the first attempt. The sequence still converges on
-		 * CPU_CONTROL 0 -> 0x10 and a FRESH SCRATCH7 READY demand
-		 * (the pre-CPU pulse cleared any stale ack). Reset recovery
-		 * (domain power cycle) is a retry-only path the kext runs
-		 * after a poll-A timeout — never a first-attempt step, and
-		 * the PMGR writes belong to a Main-decided vehicle. */
-		dev_info(ane->dev,
-			 "boot: bit0 set, entry bits %0llx — lawful skip branch: no RVBAR write, CPU_CONTROL 0->0x10 and fresh-READY poll next when the preflight opens\n",
-			 ane_t6021_rvbar_entry_bits(rvbar));
-
-	/* Export the staged DVA for userspace (hybrid boot path) */
-	fw_iova_exported = true;
-	exported_fw_iova = (u64)ane->fw_iova;
-
-	/* WEDGED-PIN for hybrid boot: retain module ref so rmmod/unbind
-	 * cannot free the coherent fw+DART mapping while userspace does
-	 * the boot sequence. Never released — reboot reclaims. */
-	if (!try_module_get(THIS_MODULE)) {
-		dev_err(ane->dev,
-			"fwload: module dying — cannot retain fw+DART mapping\n");
-		return -EBUSY;
-	}
-	ane->hybrid_pinned = true;
-	dev_warn(ane->dev,
-		 "fwload: module PINNED until reboot (fw+DART mapping live)\n");
-
-	/* All gates resolved — dispatch to the sequence. Main lifetime
-	 * review + provider strategy accepted (2026-09-20); user
-	 * override authorizes autonomous writes/boots/recovery. */
-	return ane_t6021_boot_start(ane, 0, 2, ane_t6021_rtb_mode);
-}
-
-bool ane_t6021_boot_requested(void)
-{
-	return fw_boot;
-}
