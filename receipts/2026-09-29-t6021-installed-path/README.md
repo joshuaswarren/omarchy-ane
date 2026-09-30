@@ -55,7 +55,35 @@ lanes and writes zero there.
   known. No failure in 900+ runs on six other boots, also not with a
   powersave governor or a memory-bandwidth load. The 1 ms settle is
   therefore unverified against a failing boot.
-- Only the add program has run. Other ops need the generalized C builder.
+- Rounding for mul and the scalar ops, and the matvec accumulation order, are
+  checked against references (see Stage 1-4) but not derived from Apple
+  documentation.
 - Autoload was tested on three boots. A hang at autoload would loop on
   every boot; the recovery is the kernel argument `module_blacklist=ane_t6021`.
 - The module cannot be unloaded after the firmware starts. Reboot only.
+
+## Stage 1-4 ops through the installed path (boot e77abe94)
+
+`gate.sh OUTDIR OP` (4 seeded trials, then a second process with
+`--repeat 3`), module `ff85a989...` autoloaded, libane at commit 742a728.
+The C section builder is byte-identical to the Python builder on all nine
+fixture ANECs (`make check`, host-only). On the device, first run of each
+program:
+
+| op | shape | result |
+|---|---|---|
+| add | [1,512,1,1] | 512/512 lanes exact, padding zero: PASS |
+| mul | [1,512,1,1] | 512/512 exact: PASS |
+| relu | [1,512,1,1] | 512/512 exact: PASS |
+| add-scalar (0.5) | [1,512,1,1] | 512/512 exact: PASS |
+| mul-scalar (0.5) | [1,512,1,1] | 512/512 exact: PASS |
+| real-div-scalar (0.5) | [1,512,1,1], 2 tasks | 512/512 exact: PASS |
+| clip-low (maximum 0.5) | [1,512,1,1] | 512/512 exact: PASS |
+| clip-high (minimum 0.5) | [1,512,1,1] | 512/512 exact: PASS |
+| matvec | x [1,256] x W [256,256], 2 tasks, 128 KiB weights | 256/256 within 2 ulp, max 1.000 ulp (224 to 256 exact per trial): PASS |
+
+Artifacts: notebook `Main/installed-ops-e77abe94/` with SHA256SUMS.
+The inferred kernel-base refs {1,2} (real-div, matvec, clip) worked on the
+first device run. The matvec reference accumulates in fp32 and rounds once;
+the device differs by at most 1 ulp on some lanes, so accumulation order
+or width on the device is not the reference's.
