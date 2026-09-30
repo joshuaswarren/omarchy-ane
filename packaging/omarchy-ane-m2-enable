@@ -11,8 +11,9 @@ it cannot be unloaded. Only a reboot releases it.
   omarchy-ane-m2-enable --status        print the opt-in state (one line)
 
 Opt-in refuses, and changes nothing, unless: this Mac is a T6021; ane_t6021.ko
-is built for the kernel; that kernel can drive the ANE mailbox (its
-apple-mailbox polls TX, or ane_t6021 has its own mailbox controller); and
+is built for the kernel; the kernel's board device tree, with the T6021
+overlay on, gives the ANE mailbox both "recv-not-empty" and "send-empty"
+interrupts (the stock apple-mailbox binds it only then); and
 omarchy-ane-firmware-fetch installs the pinned firmware. Then it writes
 "ane-t6021" to /etc/omarchy-platform/dtb-overlays.opt-in, applies the overlay
 through omarchy-ane-dt, and comments out the block in ane_t6021.conf. It never
@@ -29,8 +30,8 @@ import argparse
 import glob
 import hashlib
 import os
-import subprocess
 import sys
+import tempfile
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
@@ -42,8 +43,7 @@ BLOCK = "install ane_t6021 /bin/false"
 LIFTED = f"# {BLOCK}  (lifted by omarchy-ane-m2-enable)"
 OPT_IN_KEY = "ane-t6021"
 OVERLAY = "usr/lib/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo"
-MAILBOX_HEADER = "include/linux/soc/apple/mailbox.h"
-MODULE_MAILBOX_ALIAS = "apple,t6021-ane-mailbox"
+MAILBOX_IRQS = ("recv-not-empty", "send-empty")
 REBOOT_RULE = ("Once ane_t6021 starts the ANE firmware, it cannot be unloaded. "
                "Only a reboot releases it. Do not rmmod it.")
 
@@ -77,23 +77,40 @@ def module_file(root, kver):
     return Path(found[0]) if found else None
 
 
-def module_aliases(path):
-    out = subprocess.run(["modinfo", "-F", "alias", str(path)], capture_output=True, text=True)
-    return out.stdout.split() if out.returncode == 0 else []
+def board_dtb(root, kver):
+    """The board device tree KVER boots with the T6021 overlay on: the kernel's
+    own when it already has the ANE node, else the overlays applied to it."""
+    name = dt.board(root)
+    stock = root / "usr/lib/modules" / kver / "dtbs" / name
+    if not stock.is_file():
+        raise Refuse(f"kernel {kver} has no {name}")
+    overlays = sorted(set(dt.overlays_for(root, name)) | {root / OVERLAY})
+    with tempfile.TemporaryDirectory() as tmp:
+        data = dt.build(stock, overlays, Path(tmp))
+    return stock.read_bytes() if data is None else data
 
 
-def mailbox(root, kver):
-    """How KVER can drive the ANE mailbox: "kernel", "module", or None."""
-    header = root / "usr/lib/modules" / kver / "build" / MAILBOX_HEADER
+def mailbox_irqs(data):
+    """The interrupt-names of the mailbox the T6021 ANE node names in mboxes;
+    None when the tree has no T6021 ANE node."""
+    tree = dt.Tree(data)
+    ane = [p for p in tree.nodes if "apple,t6021-ane" in tree.strings(p, "compatible")]
+    if not ane:
+        return None
+    words = dt.cells(tree.nodes[ane[0]].get("mboxes", b""))
+    target = tree.phandles.get(words[0]) if words else None
+    return tree.strings(target, "interrupt-names") if target else []
+
+
+def mailbox_state(root, kver):
+    """ok, no-send-empty, no-node, or unknown (the tree cannot be built)."""
     try:
-        if "poll_tx" in header.read_text():
-            return "kernel"
-    except OSError:
-        pass
-    ko = module_file(root, kver)
-    if ko and any(MODULE_MAILBOX_ALIAS in alias for alias in module_aliases(ko)):
-        return "module"
-    return None
+        names = mailbox_irqs(board_dtb(root, kver))
+    except Refuse:
+        return "unknown"
+    if names is None:
+        return "no-node"
+    return "ok" if all(irq in names for irq in MAILBOX_IRQS) else "no-send-empty"
 
 
 def gate_blocked(root):
@@ -167,10 +184,12 @@ def enable(root, kver):
     if module_file(root, kver) is None:
         raise Refuse(f"ane_t6021.ko is not built for kernel {kver}. Install the headers for {kver}, "
                      f"then run: sudo dkms autoinstall -k {kver}")
-    how = mailbox(root, kver)
-    if how is None:
-        raise Refuse(f"kernel {kver} cannot drive the ANE mailbox: its apple-mailbox does not poll TX "
-                     f"(no poll_tx in {MAILBOX_HEADER}), and ane_t6021 has no mailbox controller of its own")
+    names = mailbox_irqs(board_dtb(root, kver))
+    if names is None:
+        raise Refuse(f"the device tree for kernel {kver} has no apple,t6021-ane node, even with the T6021 overlay")
+    if not all(irq in names for irq in MAILBOX_IRQS):
+        raise Refuse(f"the ANE mailbox in the device tree for kernel {kver} has interrupt-names {names}; "
+                     f"the stock apple-mailbox binds it only with {' and '.join(MAILBOX_IRQS)}")
     had_firmware = firmware_path(root).exists()
     try:
         fetch.run(root)
@@ -185,7 +204,7 @@ def enable(root, kver):
             firmware_path(root).unlink(missing_ok=True)
         raise Refuse(f"the T6021 overlay did not apply: {e}")
     set_gate(root, blocked=False)
-    print(f"omarchy-ane-m2-enable: ane_t6021 may load on the next boot (kernel {kver}, mailbox: {how}).")
+    print(f"omarchy-ane-m2-enable: ane_t6021 may load on the next boot (kernel {kver}).")
     print(REBOOT_RULE)
     print("m1n1 does not have the T6021 node yet. Run: sudo update-m1n1, then reboot.")
 
@@ -209,7 +228,7 @@ def status(root, kver):
     loaded = "yes" if (root / "sys/module/ane_t6021").exists() else "no"
     overlay = "on" if OPT_IN_KEY in dt.opted_in(root) else "off"
     print(f"module={'blocked' if gate_blocked(root) else 'enabled'} firmware={firmware_state(root)} "
-          f"overlay={overlay} mailbox={mailbox(root, kver) or 'none'} loaded={loaded} kernel={kver}")
+          f"overlay={overlay} mailbox={mailbox_state(root, kver)} loaded={loaded} kernel={kver}")
 
 
 def main(argv=None):

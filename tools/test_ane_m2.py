@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline checks for the M2 opt-in: the modprobe gate file and
-packaging/omarchy-ane-m2-enable against a fake root. No network, no module
-loads; the firmware fetch and the device-tree apply are stubbed. Needs dtc."""
+packaging/omarchy-ane-m2-enable against a fake root with a fake T6021 board
+device tree and the real T6021 overlay. No network and no module loads: the
+firmware fetch is stubbed; omarchy-ane-dt runs for real. Needs dtc."""
 from contextlib import redirect_stderr, redirect_stdout
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -16,27 +17,54 @@ repo = Path(__file__).resolve().parents[1]
 spec = spec_from_loader('m2', SourceFileLoader('m2', str(repo / 'packaging/omarchy-ane-m2-enable')))
 m2 = module_from_spec(spec)
 spec.loader.exec_module(m2)
-KVER = '7.1.13-ARCH-polltx'
+KVER = '7.1.13-3-2-ARCH'
+BOARD = 't6021-j414c.dtb'
+GATE_SRC = repo / 'packaging/modprobe/ane_t6021.conf'
+OVERLAY_SRC = (repo / 'packaging/dt/t6021-ane.dts').read_text()
 
 # 1. The package's gate blocks ane_t6021 with exactly the line the helper toggles.
-gate = (repo / 'packaging/modprobe/ane_t6021.conf').read_text().splitlines()
+gate = GATE_SRC.read_text().splitlines()
 active = [line.strip() for line in gate if line.strip() and not line.startswith('#')]
 assert active == ['install ane_t6021 /bin/false'] == [m2.BLOCK], active
+assert 'omarchy,opt-in = "ane-t6021";' in OVERLAY_SRC
+
+# A T6021 board tree with the nodes the overlay reaches by path. The targets
+# carry no phandle, so any dtc version keeps the stock phandles.
+PCS = ''.join(f'power-controller@{a} {{ #power-domain-cells = <0>; #reset-cells = <0>; }};'
+              for a in ('2c8', '2e0', '4000', '4008', '4010', '4018', '4020', '4028', '4030'))
+BOARD_DTS = '''/dts-v1/;
+/ {
+  compatible = "apple,j414c", "apple,t6021";
+  #address-cells = <2>; #size-cells = <2>;
+  reserved-memory { #address-cells = <2>; #size-cells = <2>; ranges; };
+  soc {
+    compatible = "simple-bus"; #address-cells = <2>; #size-cells = <2>; ranges;
+    interrupt-controller@28e100000 { interrupt-controller; #interrupt-cells = <4>; };
+    power-management@28e080000 { %s };
+    %s
+  };
+};
+'''
+KERNEL_ANE = ('mbox: mailbox@285408000 { interrupt-names = "recv-not-empty"; #mbox-cells = <0>; };'
+              ' ane@284000000 { compatible = "apple,t6021-ane"; mboxes = <&mbox>; };')
 
 
-def machine(chip='t6021', poll_tx=True, module=True, mac=None):
+def dtc(source, out, overlay=False):
+    subprocess.run(['dtc', '-q', *(['-@'] if overlay else []), '-I', 'dts', '-O', 'dtb', '-o', str(out), '-'],
+                   input=source.encode(), check=True)
+
+
+def machine(chip='t6021', module=True, mac=None, kernel_ane='', overlay=OVERLAY_SRC):
     root = Path(tempfile.mkdtemp())
     (root / 'sys/firmware/devicetree/base').mkdir(parents=True)
     (root / 'sys/firmware/devicetree/base/compatible').write_bytes(f'apple,j414c\0apple,{chip}\0'.encode())
     (root / 'etc/modprobe.d').mkdir(parents=True)
-    (root / m2.GATE).write_text((repo / 'packaging/modprobe/ane_t6021.conf').read_text())
-    overlay = root / m2.OVERLAY
-    overlay.parent.mkdir(parents=True)
-    subprocess.run(['dtc', '-q', '-@', '-I', 'dts', '-O', 'dtb', '-o', str(overlay),
-                    str(repo / 'packaging/dt/t6021-ane.dts')], check=True)
-    header = root / 'usr/lib/modules' / KVER / 'build' / m2.MAILBOX_HEADER
-    header.parent.mkdir(parents=True)
-    header.write_text('struct apple_mbox {\n\tbool poll_tx;\n};\n' if poll_tx else 'struct apple_mbox {\n};\n')
+    (root / m2.GATE).write_text(GATE_SRC.read_text())
+    (root / m2.OVERLAY).parent.mkdir(parents=True)
+    dtc(overlay, root / m2.OVERLAY, overlay=True)
+    dtbs = root / 'usr/lib/modules' / KVER / 'dtbs'
+    dtbs.mkdir(parents=True)
+    dtc(BOARD_DTS % (PCS, kernel_ane), dtbs / BOARD)
     if module:
         ko = root / 'usr/lib/modules' / KVER / 'updates/dkms/ane_t6021.ko.zst'
         ko.parent.mkdir(parents=True)
@@ -47,11 +75,6 @@ def machine(chip='t6021', poll_tx=True, module=True, mac=None):
             (root / 'usr/lib/omarchy-mac/boot').mkdir(parents=True)
             (root / 'usr/lib/omarchy-mac/boot/dtb-overlays.sh').write_text('')
     return root
-
-
-calls = []
-m2.module_aliases = lambda path: []
-m2.dt.apply = lambda root, targets: calls.append(('apply', [p.parent.name for p in m2.dt.overlays_for(root, 't6021-j414c.dtb')]))
 
 
 def fetch_ok(root):
@@ -70,33 +93,33 @@ def run(*args):
     return rc, out.getvalue() + err.getvalue()
 
 
+def copy(root):
+    return root / 'var/lib/omarchy-ane/dtbs' / KVER / BOARD
+
+
 def unchanged(root):
     assert m2.gate_blocked(root), 'the gate still blocks ane_t6021'
     assert not (root / m2.dt.OPT_IN).exists(), 'no opt-in was written'
     assert not m2.firmware_path(root).exists(), 'no firmware was left behind'
-    assert m2.dt.overlays_for(root, 't6021-j414c.dtb') == [], 'the T6021 overlay stays off'
+    assert not copy(root).exists(), 'no overlaid device tree was written'
+
+
+def refused(root, why):
+    rc, out = run('--root', str(root))
+    assert rc == 1 and why in out and 'Nothing was changed.' in out, out
+    unchanged(root)
 
 
 # 2. Refusals change nothing.
-root = machine(chip='t8103')
-rc, out = run('--root', str(root))
-assert rc == 1 and 'apple,t8103: this command is for the M2 Max' in out, out
-unchanged(root)
-
-root = machine(poll_tx=False)
-rc, out = run('--root', str(root))
-assert rc == 1 and 'cannot drive the ANE mailbox' in out, out
-unchanged(root)
-
-root = machine(module=False)
-rc, out = run('--root', str(root))
-assert rc == 1 and f'ane_t6021.ko is not built for kernel {KVER}' in out, out
-unchanged(root)
-
-root = machine(mac=False)
-rc, out = run('--root', str(root))
-assert rc == 1 and 'omacom/omarchy-mac#677' in out, out
-unchanged(root)
+refused(machine(chip='t8103'), 'apple,t8103: this command is for the M2 Max')
+refused(machine(module=False), f'ane_t6021.ko is not built for kernel {KVER}')
+refused(machine(mac=False), 'omacom/omarchy-mac#677')
+recv_only = OVERLAY_SRC.replace('interrupt-names = "recv-not-empty", "send-empty";',
+                                'interrupt-names = "recv-not-empty";')
+assert recv_only != OVERLAY_SRC
+refused(machine(overlay=recv_only), "has interrupt-names ['recv-not-empty']")
+# A kernel tree that already has the node keeps it: its mailbox is the one checked.
+refused(machine(kernel_ane=KERNEL_ANE), "has interrupt-names ['recv-not-empty']")
 
 
 def fetch_refused(root):
@@ -104,10 +127,7 @@ def fetch_refused(root):
 
 
 m2.fetch.run = fetch_refused
-root = machine()
-rc, out = run('--root', str(root))
-assert rc == 1 and 'firmware: stub macOS 14.8.3' in out, out
-unchanged(root)
+refused(machine(), 'firmware: stub macOS 14.8.3')
 m2.fetch.run = fetch_ok
 
 
@@ -115,43 +135,35 @@ def apply_refused(root, targets):
     raise m2.dt.Refuse('the result has no enabled apple,t6021-ane node')
 
 
-m2.dt.apply, good_apply = apply_refused, m2.dt.apply
-root = machine()
-rc, out = run('--root', str(root))
-assert rc == 1 and 'the T6021 overlay did not apply' in out, out
-unchanged(root)
-m2.dt.apply = good_apply
+m2.dt.apply, real_apply = apply_refused, m2.dt.apply
+refused(machine(), 'the T6021 overlay did not apply')
+m2.dt.apply = real_apply
 
-# 3. The module's own mailbox controller counts as a capability.
-root = machine(poll_tx=False)
-m2.module_aliases = lambda path: ['of:N*T*Capple,t6021-ane-mailboxC*', 'of:N*T*Capple,t6021-ane']
-assert m2.mailbox(root, KVER) == 'module'
-m2.module_aliases = lambda path: []
-
-# 4. Enable, enable again, disable: a round trip.
+# 3. Enable, enable again, disable: a round trip through the real omarchy-ane-dt.
 root = machine()
-calls.clear()
+rc, out = run('--root', str(root), '--status')
+assert out.startswith('module=blocked firmware=absent overlay=off mailbox=ok loaded=no'), out
 rc, out = run('--root', str(root))
 assert rc == 0 and 'sudo update-m1n1, then reboot' in out and 'Only a reboot releases it' in out, out
-assert calls == [('apply', ['t6021'])], calls
 assert not m2.gate_blocked(root) and m2.LIFTED in (root / m2.GATE).read_text()
 assert (root / m2.dt.OPT_IN).read_text() == 'ane-t6021\n'
+assert m2.mailbox_irqs(copy(root).read_bytes()) == ['recv-not-empty', 'send-empty']
+assert m2.dt.LINE in (root / 'etc/default/update-m1n1').read_text()
 rc, out = run('--root', str(root), '--status')
-assert rc == 0 and out.startswith('module=enabled firmware=mismatch overlay=on mailbox=kernel loaded=no'), out
-gate_text = (root / m2.GATE).read_text()
+assert rc == 0 and out.startswith('module=enabled firmware=mismatch overlay=on mailbox=ok loaded=no'), out
+before = {p: p.read_bytes() for p in (root / m2.GATE, copy(root), root / m2.dt.OPT_IN)}
 rc, out = run('--root', str(root))
-assert rc == 0 and (root / m2.GATE).read_text() == gate_text, 'a second opt-in changes nothing'
+assert rc == 0 and all(p.read_bytes() == b for p, b in before.items()), 'a second opt-in changes nothing'
 
 (root / m2.dt.OPT_IN).write_text('other\nane-t6021\n')
-calls.clear()
 rc, out = run('--root', str(root), '--disable')
-assert rc == 0 and calls == [('apply', [])], (out, calls)
-assert (root / m2.GATE).read_text() == (repo / 'packaging/modprobe/ane_t6021.conf').read_text(), \
-    'disable restores the gate file exactly'
+assert rc == 0, out
+assert (root / m2.GATE).read_text() == GATE_SRC.read_text(), 'disable restores the gate file exactly'
 assert (root / m2.dt.OPT_IN).read_text() == 'other\n', 'disable keeps other opt-ins'
-assert not m2.firmware_path(root).exists()
+assert not m2.firmware_path(root).exists() and not copy(root).exists()
+assert m2.dt.LINE not in (root / 'etc/default/update-m1n1').read_text()
 rc, out = run('--root', str(root), '--status')
-assert out.startswith('module=blocked firmware=absent overlay=off'), out
+assert out.startswith('module=blocked firmware=absent overlay=off mailbox=ok'), out
 
 # A deleted gate file means "not blocked"; disable writes the block back.
 (root / m2.GATE).unlink()
