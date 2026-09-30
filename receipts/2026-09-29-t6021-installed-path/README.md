@@ -108,3 +108,18 @@ above the measured maximum, not derived. The first matvec runs with the
 sparse 256-value input (K=1536 with 256 nonzero values) were a weak test
 and are superseded by these. The directory `gate-7f0e8312-matvec` in the
 artifact holds a run without `--weights` (expected FAIL).
+
+## BO lifetime (boot a32ca689, module `d7417708...`)
+
+Before: after the firmware ran, the driver never freed a BO and kept its
+bytes counted. One session of 20 MiB matvec runs and island runs reached
+the 2 GiB cap (`BO_INIT failed for 2310144 bytes`). Now: BOs are
+reference-counted (handle + each user mapping); a BO whose IOVA the
+firmware never saw is freed at the last put; a section BO of a LOAD that
+was sent to the firmware, and an io BO used in a CALL, stay held (the
+firmware never sees a freed IOVA); PROG_LOAD of identical sections reuses
+the cached program, so the new section BOs are freed. Test: 150 runs of
+the 2048x5120 matvec (20 MiB weights, about 3 GiB of BO traffic), all
+PASS, no BO_INIT failure, no IOMMU fault in dmesg, memory used 4.9 GB and
+stable. Not tested: `free_io_bos=1` (off by default), free while mapped.
+Open ceiling: io BOs of every process stay held until reboot.
