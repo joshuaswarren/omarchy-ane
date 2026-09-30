@@ -12,17 +12,26 @@ bit-exact on the installed module. Receipts live in
 `2026-09-25-jwm1-parakeet-golden-rerun`, `2026-09-25-jwm1-kernels2-clean`).
 t6001-host (T6001) Linux ANE is live; TM recovery on T6001 now drains
 retained tm/tq state (kill-race 10/10 reopen-clean, no reboot).
-**T6021 (M2 Max, 2026-09-29):** the ANE firmware runs from an autoloaded
+**T6021 (M2 Max, 2026-09-30):** the ANE firmware runs from an autoloaded
 `ane_t6021` module (`ane/t6021/`, DRM ABI 2) and executes compiled H14
 programs through `libane`: fp16 add, mul, relu, scalar add/mul/div, clip,
 and matvec up to 2048x5120 (20 MiB weights) pass on hardware, on the
 valid lanes of each surface (`ane/t6021/gate/gate.sh`, receipt
 [receipts/2026-09-29-t6021-installed-path](receipts/2026-09-29-t6021-installed-path/README.md)).
-Not proven: any model (Parakeet, Qwen) on the M2, and one intermittent
-all-zero-output failure seen on three boots is unexplained (a 1 ms
-post-call settle is the mitigation). The host must not touch TM registers
-while the firmware runs; T6021 needs the pinned 13.5 firmware and a DT
-overlay, and the module cannot be unloaded.
+The four Parakeet attention island families (A kt, A p1, C pv, select)
+run per layer on real data-dependent operands with the loop closed:
+120 device submissions, zero failures, and the decoded transcript is
+byte-identical to the golden transcript from the pinned macOS ANE
+capture (receipt
+[receipts/2026-09-30-t6021-parakeet-encoder-islands](receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)).
+Not proven: the full Parakeet encoder on the ANE (every op outside the
+four island sites runs on the CPU) and Qwen on the M2 (the staged chain
+stopped at inventory; no device run, receipt
+[receipts/2026-09-30-t6021-qwen-chain](receipts/2026-09-30-t6021-qwen-chain/README.md)).
+One intermittent all-zero-output failure seen on three boots is
+unexplained (a 1 ms post-call settle is the mitigation). The host must
+not touch TM registers while the firmware runs; T6021 needs the pinned
+13.5 firmware and a DT overlay, and the module cannot be unloaded.
 macOS CoreML / `aned` measurements do not establish Linux execution.
 
 - `ane/`: DRM accelerator kernel module.
@@ -78,7 +87,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | fw-driven path live; ops qualified, models not | Autoloaded `ane_t6021` (DRM ABI 2) + libane: add, mul, relu, add/mul/div-scalar, clip, matvec up to 2048x5120 exact or within the recorded tolerance on hardware, 2026-09-29 ([receipt](receipts/2026-09-29-t6021-installed-path/README.md)). Pinned 13.5 selene `a9c4b771…`. | Parakeet and Qwen on the M2 (H14 compiler coverage: rms_norm, softmax, silu/sigmoid shapes, batched matmul), an explanation for the intermittent all-zero output on some boots, the DT overlay as a packaged board DTB |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | research driver, opt-in, not enabled by default (the packaged `ane.ko` chip gate does not bind T6021 and the packaged overlay is disabled); no unload after firmware start, reboot-only reclamation | Autoloaded `ane_t6021` (DRM ABI 2) + libane: add, mul, relu, add/mul/div-scalar, clip, matvec up to 2048x5120 exact or within the recorded tolerance, 2026-09-29 ([receipt](receipts/2026-09-29-t6021-installed-path/README.md)); Parakeet attention islands (A kt, A p1, C pv, select) per layer on real operands, transcript byte-identical to golden, 2026-09-30 ([receipt](receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)); 160/160 gate trials on four parallel workers, 150 matvec loads with no BO exhaustion. Pinned 13.5 selene `a9c4b771…`. | Full Parakeet encoder and Qwen are NOT yet on the M2 ANE (H14 compiler coverage: rms_norm, softmax, silu/sigmoid shapes, batched matmul; the Qwen chain stopped at inventory, [receipt](receipts/2026-09-30-t6021-qwen-chain/README.md)); an explanation for the intermittent all-zero output on some boots; the DT overlay as a packaged board DTB; a tested stock-kernel boot path (only the USB-proxy chain-load boot is tested) |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |

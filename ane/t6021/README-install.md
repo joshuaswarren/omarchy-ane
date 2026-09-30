@@ -1,14 +1,18 @@
 # ane_t6021 — installed module (T6021 / M2 Max)
 
 This directory ships the installed-path `ane_t6021.ko` for the
-Apple Neural Engine on the T6021 (M2 Max). It replaces the
-`ane_t6021_rtclient.ko` scratch module that boot 3ab812a3 used to
-verify the add path (`y == a + b` on the 512 valid lanes of the add
-surface; padding lanes are zero).
+Apple Neural Engine on the T6021 (M2 Max). This is a research
+driver: opt-in, not part of the packaged install, not enabled by
+default. Once the firmware starts, the only reclamation is reboot.
+
+Boot path status: every proven run used kernel
+`7.1.13-ARCH-polltx` booted through the USB proxy chain load
+(kernel, DTB and initramfs staged over the m1n1 proxy by the M1
+host). No packaged or stock-kernel boot of this driver is tested.
 
 ## Prerequisites
 
-- Kernel `7.1.13-ARCH-polltx` (the proven add-path kernel). The
+- Kernel `7.1.13-ARCH-polltx` (the kernel of every proven run). The
   module builds against `/lib/modules/$(uname -r)/build`.
 - Device-tree overlay: enable the `apple,t6021-ane` compatible on
   the `ane@284000000` node, attach `apple,always-on` to
@@ -59,7 +63,60 @@ pinned — see "Lifecycle" below.
 (matching `apple,t6021-ane`) triggers `request_module("ane_t6021")`
 and the kernel loads `ane_t6021.ko`. A bare insmod is also valid and
 exercises the same probe path; the compiled-in defaults are the
-proven add-path parameter list.
+proven parameter list.
+
+## Proven on hardware
+
+All results are on T6021 hardware through the autoloaded module and
+libane ABI 2. Receipts:
+[2026-09-29-t6021-installed-path](../../receipts/2026-09-29-t6021-installed-path/README.md)
+and the 2026-09-30 receipts named below.
+
+Elementwise and clip ops on [1,512,1,1] (512 valid fp16 lanes,
+padding zero), exact in every trial: `add`, `mul`, `relu`,
+add/mul/real-div scalar (0.5), clip low and clip high. Matvec
+[1,256] x [256,256]: 256 of 256 lanes within 2 ulp.
+
+Qwen-size matvec, dense random inputs, fp16 weights, device error
+against the exact fp64 product in condition units (the fp16 output
+rounding bound is 1.0): 1536x1536 (M=1) 0.217, 2048x2048 (M=8)
+0.218, 2048x5120 (M=1, 20 MiB weights) 0.187. All trials PASS.
+
+Parakeet attention islands on real-model operands: island-c-pv
+(probs x V), island-a-kt and island-a-attn-p1 (batched matmul) stay
+within 1.0 cond-unit on every valid lane; the two select islands are
+bit-exact on all 1,125,000 valid lanes on 3 seeds. In the
+loop-closed encoder test
+([2026-09-30-t6021-parakeet-encoder-islands](../../receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)):
+120 device submissions, zero failures, and the decoded transcript is
+byte-identical to the golden transcript from the pinned macOS ANE
+capture.
+
+Lifecycle: 160 of 160 gate trials across four parallel `ane-run`
+workers; 150 loads of the 2048x5120 matvec (20 MiB weights, about
+3 GiB of BO traffic) with no `BO_INIT` failure and no IOMMU fault
+([2026-09-29-t6021-installed-path](../../receipts/2026-09-29-t6021-installed-path/README.md),
+"BO lifetime").
+
+Not proven:
+
+- The full Parakeet encoder on the ANE. Only the four island sites
+  run on the device; the convolutions, LayerNorms, feed-forward
+  blocks, softmaxes and the decoder run on the CPU.
+- Qwen on the M2. The staged chain stopped at inventory; no M2 ANE
+  program was launched
+  ([2026-09-30-t6021-qwen-chain](../../receipts/2026-09-30-t6021-qwen-chain/README.md)).
+- The rms_norm chain. The device writes only channels 64 to 2047 of
+  2048, so the program does not qualify for a model run (receipt
+  [2026-09-30-t6021-island-select-rms](../../receipts/2026-09-30-t6021-island-select-rms/README.md)).
+- An explanation for the intermittent all-zero output seen on three
+  boots (about 1 call in 5 on those boots). The 1 ms post-call
+  settle is the mitigation and is unverified against a failing boot.
+- A bit-exact model of the C pv accumulator. It is fp32-class, but
+  no tested model reproduces it; the strict per-lane bound fails on
+  1.3 to 52.4 percent of lanes per layer and the deviation does not
+  propagate to the transcript
+  ([2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
 
 ## Lifecycle (wedged-pin rule)
 
@@ -99,7 +156,7 @@ while mapped stays allocated until the mapping is torn down.
 The 2 GiB cap therefore bounds the memory the firmware may still be
 reading, not every allocation a short-lived context makes.
 
-## Module parameters (compiled defaults = proven add-path config)
+## Module parameters (compiled defaults = proven configuration)
 
 The defaults reproduce the `load-run.sh` parameter list exactly so a
 bare `insmod ane_t6021.ko` is the proven configuration. Parameters
@@ -163,7 +220,6 @@ exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`:
   target-to-host slots, and only then returns — output buffers are
   coherent, so CPU visibility needs no explicit sync.
 
-The driver reports `major = ANE_ABI_M2_MAJOR = 2`. libane
-`is_ane_device()` (in `libane/ane.c`) checks `major == 1` today; a
-M2 backend requires `major == 2`, which `ane_m2.c` will provide
-separately.
+The driver reports `major = ANE_ABI_M2_MAJOR = 2`. The libane ABI-2
+backend `libane/ane_m2.c` checks `major == 2`; `tools/ane-run` drives
+it (the `--anec` path of every proven run).
