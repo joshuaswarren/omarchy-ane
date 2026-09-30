@@ -379,3 +379,69 @@ integration and the bundle manifest/ABI-2 compatibility gap also remain.
 
 Runner source: `tools/island_real.py`. Results JSON and checksum inventory
 are in the private artifact directory.
+
+## 2026-09-30 C pv subnormal / FTZ follow-up
+
+Subnormal means `0 < abs(x) < 2^-14`, the fp16 minimum normal threshold
+is `2^-14`. The tiny count includes zeros (`abs(x) < 2^-14`).
+
+| Layer | Input | Elements | Subnormal | Zero | Min-subnormal (`2^-24`) | Other subnormal |
+|---:|---|---:|---:|---:|---:|---:|
+| 0 | probs (ch6) | 1,125,000 | 49,317 | 18 | 25 | 49,292 |
+| 0 | v_heads (ch5) | 384,000 | 8 | 0 | 5 | 3 |
+| 11 | probs (ch6) | 1,125,000 | 421,789 | 167,961 | 34,250 | 387,539 |
+| 11 | v_heads (ch5) | 384,000 | 45 | 0 | 0 | 45 |
+| 23 | probs (ch6) | 1,125,000 | 429,276 | 5,390 | 9,458 | 419,818 |
+| 23 | v_heads (ch5) | 384,000 | 25 | 0 | 0 | 25 |
+
+The original exact-input failures remain unchanged. For the FTZ reference,
+both fp16 operands are zeroed when `abs(x) < 2^-14`, then the reference
+product and `sum(abs(terms))` are computed in fp64. The original strict
+bound is retained: `abs(device - reference) / (2^-11 * sum(abs(terms)))
+<= 1`.
+
+| Layer | Reference | Denominator | In bound / total | Worst ratio | Worst lane (head,row,col) |
+|---:|---|---|---:|---:|---|
+| 0 | Exact inputs | Original terms | 378,900 / 384,000 | 14.4986 | (0,1,43) |
+| 0 | Input FTZ | Original terms | 339,582 / 384,000 | 233.8196 | (1,11,4) |
+| 0 | Input FTZ | FTZ terms | 339,569 / 384,000 | 271.2988 | (1,11,4) |
+| 11 | Exact inputs | Original terms | 201,258 / 384,000 | 104.1316 | (7,224,40) |
+| 11 | Input FTZ | Original terms | 151,227 / 384,000 | 125.1519 | (6,40,30) |
+| 11 | Input FTZ | FTZ terms | 151,118 / 384,000 | 134.0365 | (6,40,30) |
+| 23 | Exact inputs | Original terms | 182,955 / 384,000 | 65.3453 | (2,8,120) |
+| 23 | Input FTZ | Original terms | 90,566 / 384,000 | 271.7908 | (7,272,49) |
+| 23 | Input FTZ | FTZ terms | 90,438 / 384,000 | 324.1917 | (7,272,49) |
+
+Input FTZ does not explain the failures. It changes 65,942 / 373,832 /
+377,816 of 384,000 reference lanes for layers 0 / 11 / 23 and increases
+the worst ratios. Every query row has at least one out-of-bound lane in
+both the original and FTZ comparisons. Exact-input failures span seven
+heads at layer 0 and all eight heads at layers 11 and 23; the worst
+lanes are not confined to one row or head. The worst FTZ lanes move to
+heads/rows (1,11), (6,40), and (7,272) for layers 0, 11, and 23.
+
+### Isolated subnormal probe
+
+One locked C pv invocation used P=0 except row 0 in every head, where
+all 375 K values were the largest fp16 subnormal
+(`2^-14 - 2^-24 = 6.0975551605224609e-5`). V was all ones. The exact
+no-flush row sum is `0.0228658318519592`; its correctly rounded fp16
+value is `0.0228729248046875`. The device returned `0.02288818359375`
+for all 1,024 row-0 output lanes, an absolute difference of
+`2.23517418e-5` from the fp64 sum (about 1.5 fp16 ulp). Every other row
+was zero; there were no NaN/Inf lanes. The nonzero output rejects uniform
+input FTZ and product FTZ for this kernel path; those models predict zero.
+The precise reduction model remains unknown. No separate accumulator-flush
+simulation is justified because accumulator precision and reduction order
+are not specified.
+
+The probe used the existing C pv ANEC, proven packing, ch5=V and ch6=P,
+under `flock /var/tmp/ane-run.lock timeout 60`. One invocation completed
+in 39.131 ms. The M2 kept boot ID
+`95675db4-da91-42e5-bdee-dfb3329e7369`; the captured fatal-marker search
+found no EXCH failure, protocol error, or I/O error. The probe input
+builder, packed inputs, device output, reference metrics, command, logs,
+post-state, and SHA256SUMS are under
+`~/.local/share/apple-silicon-lab/artifacts/IslandGolden2/2026-09-30-ftz/`.
+The notebook entry is under
+`~/.local/share/apple-silicon-lab/entries/IslandGolden2/`.
