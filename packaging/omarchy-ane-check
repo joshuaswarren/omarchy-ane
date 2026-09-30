@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# omarchy-ane-check: report whether the Apple Neural Engine driver is ready.
+#
+#   omarchy-ane-check              check the running kernel: ANE device-tree
+#                                  node, ane.ko built, loaded, bound, and the
+#                                  /dev/accel node
+#   omarchy-ane-check --installed  check that ane.ko exists for every
+#                                  installed kernel with headers (pacman hook)
+#
+# Read-only. It never loads, unloads, or binds the module.
+# Exit 0 when every check passes, 1 when a check fails, 2 on bad usage.
+set -u
+shopt -s nullglob
+
+fail=0
+ok()  { printf '  ok    %s\n' "$*"; }
+bad() { printf '  FAIL  %s\n' "$*"; fail=1; }
+finish() {
+  if (( fail )); then echo "omarchy-ane-check: FAILED"; exit 1; fi
+  echo "omarchy-ane-check: ready"; exit 0
+}
+
+built() {
+  local file
+  file=$(modinfo -k "$1" -F filename ane 2>/dev/null)
+  if [[ -n $file ]]; then
+    ok "ane.ko built for $1: $file (version $(modinfo -k "$1" -F version ane 2>/dev/null))"
+  else
+    bad "ane.ko is not built for kernel $1. Install the headers for $1, then run: sudo dkms autoinstall -k $1"
+  fi
+}
+
+case "${1:-}" in
+  --installed)
+    kernels=(/usr/lib/modules/*/build)
+    (( ${#kernels[@]} )) || { bad "no kernel headers are installed, so DKMS cannot build ane.ko"; finish; }
+    for b in "${kernels[@]}"; do k=${b%/build}; built "${k##*/}"; done
+    finish ;;
+  "") ;;
+  *) echo "usage: omarchy-ane-check [--installed]" >&2; exit 2 ;;
+esac
+
+kver=$(uname -r)
+dt=/sys/firmware/devicetree/base
+echo "omarchy-ane-check: kernel $kver"
+
+# 1. ANE node. Without it nothing else can pass, so stop here.
+compat=""
+for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
+  c=$(tr '\0' '\n' <"$f" | grep -m1 -E '^apple,t[0-9a-z]+-ane$') || continue
+  st=${f%/compatible}/status status=okay
+  [[ -e $st ]] && status=$(tr -d '\0' <"$st")
+  [[ $status == okay ]] && { compat=$c; break; }
+done
+if [[ ! -d $dt ]]; then
+  bad "no device tree: this is not an Apple Silicon Linux system"; finish
+elif [[ -z $compat ]]; then
+  bad "no ANE node with status okay in the device tree. The kernel's device tree must carry one."; finish
+fi
+ok "ANE device-tree node: $compat"
+
+# 2. Module built for the running kernel.
+built "$kver"
+
+# 3. Module loaded.
+if [[ -d /sys/module/ane ]]; then
+  ok "ane is loaded (version $(cat /sys/module/ane/version 2>/dev/null))"
+  disk=$(modinfo -k "$kver" -F srcversion ane 2>/dev/null)
+  live=$(cat /sys/module/ane/srcversion 2>/dev/null)
+  if [[ -n $disk && -n $live && $disk != "$live" ]]; then
+    echo "  note  the loaded ane differs from the installed ane.ko. Reboot to load the new one. Do not rmmod ane."
+  fi
+else
+  bad "ane is not loaded. Load it with: sudo modprobe ane"
+fi
+
+# 4. Driver bound to the ANE platform device.
+dev=""
+for l in /sys/bus/platform/drivers/ane/*; do
+  [[ -L $l && ${l##*/} != module ]] && { dev=${l##*/}; break; }
+done
+if [[ -n $dev ]]; then
+  ok "ane is bound to $dev"
+else
+  bad "ane is bound to no device. Read the reason with: journalctl -k -g ane"
+fi
+
+# 5. Device node, and access for the user who runs this check.
+node=""
+for s in /sys/class/accel/accel*; do
+  [[ $(readlink "$s/device/driver") == */ane ]] && { node=/dev/accel/${s##*/}; break; }
+done
+if [[ -z $node || ! -c $node ]]; then
+  bad "no /dev/accel node from ane"
+elif [[ -r $node && -w $node ]]; then
+  ok "$node present ($(stat -c '%A %U:%G' "$node")) and $(id -un) can open it"
+else
+  bad "$node present, but $(id -un) cannot open it. Log in at the local seat, or join the render group."
+fi
+
+finish

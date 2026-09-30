@@ -1,0 +1,9 @@
+# /dev/accel/accel* from the omarchy-ane driver (ane.ko).
+#
+# systemd's 50-udev-default.rules makes every accel node root:render 0666.
+# The ANE is a shared queue that one bad submission can hold until reboot, so
+# this rule limits it: the user at the local seat gets an ACL (uaccess), and
+# headless users and services need the render group. The group stays render
+# because mlx-omarchy's lock files under /run/lock/mlx-omarchy-ane must share
+# the device's group. 70 runs before 73-seat-late.rules applies uaccess.
+SUBSYSTEM=="accel", KERNEL=="accel[0-9]*", DRIVERS=="ane", GROUP="render", MODE="0660", TAG+="uaccess"
