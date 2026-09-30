@@ -12,17 +12,34 @@ bit-exact on the installed module. Receipts live in
 `2026-09-25-jwm1-parakeet-golden-rerun`, `2026-09-25-jwm1-kernels2-clean`).
 t6001-host (T6001) Linux ANE is live; TM recovery on T6001 now drains
 retained tm/tq state (kill-race 10/10 reopen-clean, no reboot).
-**T6021 (M2 Max, 2026-09-29):** the ANE firmware runs from an autoloaded
-`ane_t6021` module (`ane/t6021/`, DRM ABI 2) and executes compiled H14
+**T6021 (M2 Max, 2026-09-30):** the ANE firmware runs from an autoloaded
+`ane_t6021` module (`ane/t6021/`, DRM ABI 2 from commit 23b8eef, merged to
+main in 1df4412) and executes compiled H14
 programs through `libane`: fp16 add, mul, relu, scalar add/mul/div, clip,
 and matvec up to 2048x5120 (20 MiB weights) pass on hardware, on the
 valid lanes of each surface (`ane/t6021/gate/gate.sh`, receipt
 [receipts/2026-09-29-t6021-installed-path](receipts/2026-09-29-t6021-installed-path/README.md)).
-Not proven: any model (Parakeet, Qwen) on the M2, and one intermittent
-all-zero-output failure seen on three boots is unexplained (a 1 ms
-post-call settle is the mitigation). The host must not touch TM registers
-while the firmware runs; T6021 needs the pinned 13.5 firmware and a DT
-overlay, and the module cannot be unloaded.
+The four Parakeet attention island families (A kt, A p1, C pv, select)
+run per layer on real data-dependent operands with the loop closed:
+120 device submissions, zero failures, and the decoded transcript is
+byte-identical to the golden transcript from the pinned macOS ANE
+capture (receipt
+[receipts/2026-09-30-t6021-parakeet-encoder-islands](receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)).
+Not proven: the full Parakeet encoder on the ANE (every op outside the
+four island sites runs on the CPU) and Qwen on the M2 (program 20 of 38
+ran on the device and failed, relative L2 0.276 against the M1 golden;
+an offline decode traces it to the loader's port binding, and the fixed
+binding has not run on the device; receipt
+[receipts/2026-09-30-t6021-qwen-chain](receipts/2026-09-30-t6021-qwen-chain/README.md)).
+One intermittent all-zero-output failure seen on three boots is
+unexplained (a 1 ms post-call settle is the mitigation). The module also
+runs on the stock linux-asahi `7.1.13-3-1-ARCH` kernel: 20 of 20 gate
+loads on each of three boots, the third with the packaged overlay
+`packaging/dt/t6021-ane.dts` (receipt
+[receipts/2026-09-30-t6021-stock-mailbox](receipts/2026-09-30-t6021-stock-mailbox/README.md)).
+Every boot so far is a USB chain load from the M1 host. The host must
+not touch TM registers while the firmware runs; T6021 needs the pinned
+13.5 firmware and a DT overlay, and the module cannot be unloaded.
 macOS CoreML / `aned` measurements do not establish Linux execution.
 
 - `ane/`: DRM accelerator kernel module.
@@ -64,7 +81,7 @@ The package installs the driver. You do not need `install.sh`.
 
 The M2 Max (T6021) ANE works only with `ane_t6021.ko`, and that module cannot be unloaded. When it starts the ANE firmware, only a reboot releases it. So the package does not let it load. `/etc/modprobe.d/ane_t6021.conf` has the line `install ane_t6021 /bin/false`, and the T6021 overlay is off.
 
-- **Opt in.** Run `sudo omarchy-ane-m2-enable`. It refuses, and changes nothing, when this Mac is not a T6021, when `ane_t6021.ko` is not built for the kernel, or when the kernel cannot drive the ANE mailbox. The kernel can drive it when its `apple-mailbox` polls TX (`poll_tx` in `include/linux/soc/apple/mailbox.h`, omarchy-linux `86c727e6e`) or when `ane_t6021` has its own mailbox controller. Stock `linux-asahi` 7.1.13 and `linux-aurora` 7.1.12 cannot. Next, it runs `omarchy-ane-firmware-fetch` and refuses if the firmware is not the pinned image. Then it turns the T6021 overlay on, applies it with `omarchy-ane-dt`, and comments out the block line. pacman keeps that edit. Run `sudo update-m1n1`, then reboot. `ane_t6021` loads on that boot.
+- **Opt in.** Run `sudo omarchy-ane-m2-enable`. It refuses, and changes nothing, when this Mac is not a T6021, when `ane_t6021.ko` is not built for the kernel, or when the kernel cannot drive the ANE mailbox. The kernel can drive it when its `apple-mailbox` polls TX (`poll_tx` in `include/linux/soc/apple/mailbox.h`, omarchy-linux `86c727e6e`) or when `ane_t6021` has its own mailbox controller. Stock `linux-asahi` 7.1.13 and `linux-aurora` 7.1.12 fail this check. Stock `linux-asahi` 7.1.13 does run the ANE with the packaged overlay and its `send-empty` interrupt ([receipt](receipts/2026-09-30-t6021-stock-mailbox/README.md)), but the check does not accept that path yet. Next, it runs `omarchy-ane-firmware-fetch` and refuses if the firmware is not the pinned image. Then it turns the T6021 overlay on, applies it with `omarchy-ane-dt`, and comments out the block line. pacman keeps that edit. Run `sudo update-m1n1`, then reboot. `ane_t6021` loads on that boot.
 - **Reboot-only rule.** Do not `rmmod ane_t6021`. Only a reboot unloads it.
 - **Opt out.** Run `sudo omarchy-ane-m2-enable --disable`. It restores the block line, turns the overlay off, and removes the fetched firmware. Run `sudo update-m1n1`, then reboot.
 - **State.** `omarchy-ane-m2-enable --status` prints one line: module blocked or enabled, firmware pinned or not, overlay on or off, mailbox capability, and whether `ane_t6021` is loaded. `omarchy-ane-check` shows the same state on an M2 Max.
@@ -87,7 +104,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | fw-driven path live; ops qualified, models not | Autoloaded `ane_t6021` (DRM ABI 2) + libane: add, mul, relu, add/mul/div-scalar, clip, matvec up to 2048x5120 exact or within the recorded tolerance on hardware, 2026-09-29 ([receipt](receipts/2026-09-29-t6021-installed-path/README.md)). Pinned 13.5 selene `a9c4b771…`. | Parakeet and Qwen on the M2 (H14 compiler coverage: rms_norm, softmax, silu/sigmoid shapes, batched matmul), an explanation for the intermittent all-zero output on some boots, the DT overlay as a packaged board DTB |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | research driver, opt-in, not enabled by default (the packaged `ane.ko` chip gate does not bind T6021 and the packaged overlay is off until opt-in); no unload after firmware start, reboot-only reclamation | Autoloaded `ane_t6021` (DRM ABI 2) + libane: add, mul, relu, add/mul/div-scalar, clip, matvec up to 2048x5120 exact or within the recorded tolerance, 2026-09-29 ([receipt](receipts/2026-09-29-t6021-installed-path/README.md)); Parakeet attention islands (A kt, A p1, C pv, select) per layer on real operands, transcript byte-identical to golden, 2026-09-30 ([receipt](receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)); 160/160 gate trials on four parallel workers, 150 matvec loads with no BO exhaustion; stock linux-asahi `7.1.13-3-1-ARCH`, 20/20 gate loads on each of three boots, the third with the packaged overlay, 2026-09-30 ([receipt](receipts/2026-09-30-t6021-stock-mailbox/README.md)). Pinned 13.5 selene `a9c4b771…`. | Full Parakeet encoder and Qwen are NOT yet on the M2 ANE (H14 compiler coverage: rms_norm, softmax, silu/sigmoid shapes, batched matmul; Qwen program 20 ran on the device and failed on the loader's port binding, the fixed binding is not yet run, [receipt](receipts/2026-09-30-t6021-qwen-chain/README.md)); an explanation for the intermittent all-zero output on some boots; the DT overlay as a packaged board DTB; a proven disk boot (every boot so far, stock kernel included, is a USB-proxy chain load); `omarchy-ane-m2-enable` acceptance of the stock kernel's send-empty mailbox path |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |

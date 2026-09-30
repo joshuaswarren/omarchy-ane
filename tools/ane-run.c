@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "ane.h"
+#include "ane_m2.h"
 
 /* Populate the nchw shadow for one channel. Used by --check OP in
  * ane-run.c to attach the proven oracle layout to an island ANEC
@@ -51,6 +52,17 @@ struct io_file {
 	const char *path;
 };
 
+/* Port-table path: --in NAME=FILE / --out NAME=FILE look up the port
+ * by name and resolve the host-side idx from the sidecar order. The
+ * sidecar carries inputs in MIL declaration order followed by the
+ * single output; inputs are numbered 0..N-1 by their position among
+ * the dir==0 entries. */
+struct name_file {
+	int set;
+	const char *name;
+	const char *path;
+};
+
 static int parse_io_arg(char *arg, struct io_file *io, const char *what)
 {
 	char *eq = strchr(arg, '=');
@@ -62,6 +74,651 @@ static int parse_io_arg(char *arg, struct io_file *io, const char *what)
 	io->set = 1;
 	io->idx = (uint32_t)strtoul(arg, NULL, 0);
 	io->path = eq + 1;
+	return 0;
+}
+
+static int parse_name_arg(char *arg, struct name_file *nf,
+			  const char *what)
+{
+	char *eq = strchr(arg, '=');
+	if (!eq || eq == arg || !eq[1]) {
+		fprintf(stderr, "bad --%s %s: want NAME=FILE\n", what, arg);
+		return -1;
+	}
+	*eq = 0;
+	nf->set = 1;
+	nf->name = arg;
+	nf->path = eq + 1;
+	return 0;
+}
+
+/* Strict minimal JSON reader for the port-table sidecar. Accepts
+ * exactly the flat schema: object with "program" (string), "ports"
+ * (array of objects with "name", "shape" (4-int array), "buffer_id",
+ * "channel", "bar_slot", "tile_bytes", "direction"). Everything else
+ * is an error. Returned ports[] is in sidecar order; the caller
+ * decides how to map it to the model. */
+struct port_read {
+	struct ane_m2_port_spec *ports;
+	uint32_t count;
+	uint32_t cap;
+};
+
+static int is_ws(int c)
+{
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+static const char *json_skip_ws(const char *p)
+{
+	while (*p && is_ws((unsigned char)*p)) {
+		p++;
+	}
+	return p;
+}
+
+/* Parse a JSON string literal starting at p (which must point at the
+ * opening quote). Returns the position right after the closing quote
+ * in *end, and stores the unescaped contents into a heap-allocated
+ * nul-terminated buffer returned via *out. Rejects control characters
+ * and backslash escapes (the schema has none). */
+static int json_read_string(const char *p, const char **end, char **out)
+{
+	const char *s = p;
+
+	if (*s != '"') {
+		return -1;
+	}
+	s++;
+	while (*s && *s != '"') {
+		if ((unsigned char)*s < 0x20 || *s == '\\') {
+			return -1;
+		}
+		s++;
+	}
+	if (*s != '"') {
+		return -1;
+	}
+	*out = strndup(p + 1, (size_t)(s - (p + 1)));
+	if (!*out) {
+		return -1;
+	}
+	*end = s + 1;
+	return 0;
+}
+
+/* Parse a JSON integer literal (positive, optional hex via 0x, no
+ * exponent). The schema has no floats, no negatives, no exponent. */
+static int json_read_u64(const char *p, const char **end, uint64_t *out)
+{
+	const char *s = p;
+	int seen = 0;
+	uint64_t v = 0;
+	int base = 10;
+
+	if (*s == '0' && (s[1] == 'x' || s[1] == 'X')) {
+		base = 16;
+		s += 2;
+	}
+	while (*s) {
+		int c = (unsigned char)*s;
+		int d;
+
+		if (c >= '0' && c <= '9') {
+			d = c - '0';
+		} else if (base == 16 && c >= 'a' && c <= 'f') {
+			d = 10 + (c - 'a');
+		} else if (base == 16 && c >= 'A' && c <= 'F') {
+			d = 10 + (c - 'A');
+		} else {
+			break;
+		}
+		v = v * (uint64_t)base + (uint64_t)d;
+		s++;
+		seen = 1;
+	}
+	if (!seen) {
+		return -1;
+	}
+	*out = v;
+	*end = s;
+	return 0;
+}
+
+/* Expect a single byte (with whitespace tolerance). */
+static int json_expect(const char *p, const char **end, char c)
+{
+	p = json_skip_ws(p);
+	if (*p != c) {
+		return -1;
+	}
+	*end = p + 1;
+	return 0;
+}
+
+/* Parse the shape [n, c, h, w] (4 uint64). Returns 0/-1. */
+static int json_read_shape(const char *p, const char **end,
+			   uint64_t shape[4])
+{
+	int i;
+
+	p = json_skip_ws(p);
+	if (json_expect(p, &p, '[')) {
+		return -1;
+	}
+	for (i = 0; i < 4; i++) {
+		p = json_skip_ws(p);
+		if (json_read_u64(p, &p, &shape[i])) {
+			return -1;
+		}
+		p = json_skip_ws(p);
+		if (i + 1 < 4) {
+			if (json_expect(p, &p, ',')) {
+				return -1;
+			}
+		}
+	}
+	if (json_expect(p, &p, ']')) {
+		return -1;
+	}
+	*end = p;
+	return 0;
+}
+
+/* Add a port to a struct port_read, growing if needed. */
+static int port_read_push(struct port_read *pr,
+			  const struct ane_m2_port_spec *p)
+{
+	if (pr->count == pr->cap) {
+		uint32_t nc = pr->cap ? pr->cap * 2 : 8;
+		struct ane_m2_port_spec *np = realloc(pr->ports,
+						     nc * sizeof(*np));
+		if (!np) {
+			return -1;
+		}
+		pr->ports = np;
+		pr->cap = nc;
+	}
+	pr->ports[pr->count++] = *p;
+	return 0;
+}
+
+/* Parse one port object {...}. The strict schema has exactly the keys
+ * the C side reads (others are accepted but ignored); we still reject
+ * unknown keys to keep the sidecar self-describing. */
+static int json_read_port(const char *p, const char **end,
+			  struct port_read *pr)
+{
+	const char *kstart, *kend;
+	char *key = NULL;
+	char *name_buf = NULL;
+	struct ane_m2_port_spec ps = { 0 };
+	int seen_dir = 0, seen_buf = 0, seen_slot = 0, seen_tile = 0;
+
+	p = json_skip_ws(p);
+	if (json_expect(p, &p, '{')) {
+		return -1;
+	}
+	while (1) {
+		p = json_skip_ws(p);
+		if (*p == '}') {
+			break;
+		}
+		kstart = p;
+		if (json_read_string(kstart, &kend, &key)) {
+			free(name_buf);
+			return -1;
+		}
+		p = json_skip_ws(kend);
+		if (json_expect(p, &p, ':')) {
+			free(key);
+			free(name_buf);
+			return -1;
+		}
+		p = json_skip_ws(p);
+		if (!strcmp(key, "name")) {
+			free(name_buf);
+			name_buf = NULL;
+			if (json_read_string(p, &p, &name_buf)) {
+				free(key);
+				return -1;
+			}
+		} else if (!strcmp(key, "direction")) {
+			char *d = NULL;
+			if (json_read_string(p, &p, &d)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			if (!strcmp(d, "input")) {
+				ps.dir = 0;
+			} else if (!strcmp(d, "output")) {
+				ps.dir = 1;
+			} else {
+				free(d);
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			free(d);
+			seen_dir = 1;
+		} else if (!strcmp(key, "buffer_id") ||
+			   !strcmp(key, "channel")) {
+			uint64_t v;
+			if (json_read_u64(p, &p, &v)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			ps.buffer_id = (uint32_t)v;
+			seen_buf = 1;
+		} else if (!strcmp(key, "bar_slot")) {
+			uint64_t v;
+			if (json_read_u64(p, &p, &v)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			ps.bar_slot = (uint32_t)v;
+			seen_slot = 1;
+		} else if (!strcmp(key, "tile_bytes")) {
+			uint64_t v;
+			if (json_read_u64(p, &p, &v)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			ps.tile_bytes = v;
+			seen_tile = 1;
+		} else if (!strcmp(key, "shape")) {
+			uint64_t shp[4];
+			if (json_read_shape(p, &p, shp)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+		} else if (!strcmp(key, "dtype") ||
+			   !strcmp(key, "strides") ||
+			   !strcmp(key, "surface_bytes") ||
+			   !strcmp(key, "confidence")) {
+			/* Accepted but not consulted by the C reader; the
+			 * Python coverage pass and the human verifier use
+			 * these. Strictly typed so a typo like "tileByte"
+			 * still fails loud. */
+			const char *q;
+			int depth = 0;
+			int opened = 0;
+			int in_str = 0;
+
+			p = json_skip_ws(p);
+			for (q = p; *q; q++) {
+				int c = (unsigned char)*q;
+				if (in_str) {
+					if (c == '"' && q[-1] != '\\') {
+						in_str = 0;
+					}
+					continue;
+				}
+				if (c == '"') {
+					in_str = 1;
+					continue;
+				}
+				if (c == '{' || c == '[') {
+					depth++;
+					opened = 1;
+					continue;
+				}
+				if (c == '}' || c == ']') {
+					/* A close before we've matched a
+					 * nested structure is the parent
+					 * object's close: stop without
+					 * consuming (the outer loop will
+					 * see the `}` and break). */
+					if (!opened) {
+						break;
+					}
+					depth--;
+					if (depth == 0) {
+						q++;
+						break;
+					}
+					continue;
+				}
+				if (c == ',' && depth == 0) {
+					break;
+				}
+			}
+			if (depth != 0) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
+			p = q;
+		} else {
+			free(key);
+			free(name_buf);
+			return -1;
+		}
+		free(key);
+		key = NULL;
+		p = json_skip_ws(p);
+		if (*p == ',') {
+			p++;
+			continue;
+		}
+		if (*p == '}') {
+			break;
+		}
+		free(name_buf);
+		return -1;
+	}
+	if (json_expect(p, &p, '}')) {
+		free(name_buf);
+		return -1;
+	}
+	if (!seen_dir || !seen_buf || !seen_slot || !seen_tile || !name_buf) {
+		free(name_buf);
+		return -1;
+	}
+	ps.name = name_buf;
+	if (port_read_push(pr, &ps)) {
+		free(name_buf);
+		return -1;
+	}
+	*end = p;
+	return 0;
+}
+
+/* Top-level entry: {"program": ..., "ports": [ ... ]} plus tolerated
+ * "anec"/"hwx"/"dma_coverage"/"ambiguities" siblings. We parse "program"
+ * to confirm the schema header and "ports" to fill the array; the rest
+ * is accepted and ignored for forward compatibility with later
+ * MultiPort sidecars. */
+static int json_read_top(const char *p, const char **end,
+			 struct port_read *pr)
+{
+	char *prog = NULL;
+	int seen_prog = 0, seen_ports = 0;
+
+	p = json_skip_ws(p);
+	if (json_expect(p, &p, '{')) {
+		return -1;
+	}
+	while (1) {
+		char *key = NULL;
+		const char *kend;
+
+		p = json_skip_ws(p);
+		if (*p == '}') {
+			break;
+		}
+		if (json_read_string(p, &kend, &key)) {
+			return -1;
+		}
+		p = json_skip_ws(kend);
+		if (json_expect(p, &p, ':')) {
+			free(key);
+			return -1;
+		}
+		p = json_skip_ws(p);
+		if (!strcmp(key, "program")) {
+			free(prog);
+			if (json_read_string(p, &p, &prog)) {
+				free(key);
+				return -1;
+			}
+			seen_prog = 1;
+		} else if (!strcmp(key, "ports")) {
+			p = json_skip_ws(p);
+			if (json_expect(p, &p, '[')) {
+				free(key);
+				return -1;
+			}
+			while (1) {
+				p = json_skip_ws(p);
+				if (*p == ']') {
+					break;
+				}
+				if (json_read_port(p, &p, pr)) {
+					free(key);
+					return -1;
+				}
+				p = json_skip_ws(p);
+				if (*p == ',') {
+					p++;
+					continue;
+				}
+				if (*p == ']') {
+					break;
+				}
+				free(key);
+				return -1;
+			}
+			if (json_expect(p, &p, ']')) {
+				free(key);
+				return -1;
+			}
+			seen_ports = 1;
+		} else {
+			/* Accept and skip a value of any shape:
+			 * strings, numbers, arrays, objects. We do a
+			 * bracket-balanced skip rather than a full parse
+			 * so sidecar additions do not break us. */
+			int depth = 0;
+			int opened = 0;
+			const char *q;
+			int in_str = 0;
+
+			p = json_skip_ws(p);
+			for (q = p; *q; q++) {
+				int c = (unsigned char)*q;
+				if (in_str) {
+					if (c == '"' && q[-1] != '\\') {
+						in_str = 0;
+					}
+					continue;
+				}
+				if (c == '"') {
+					in_str = 1;
+					continue;
+				}
+				if (c == '{' || c == '[') {
+					depth++;
+					opened = 1;
+					continue;
+				}
+				if (c == '}' || c == ']') {
+					depth--;
+					if (depth == 0) {
+						if (opened) {
+							q++;
+						}
+						break;
+					}
+					continue;
+				}
+				if (c == ',' && depth == 0) {
+					break;
+				}
+			}
+			if (depth != 0) {
+				free(key);
+				return -1;
+			}
+			p = q;
+		}
+		free(key);
+		p = json_skip_ws(p);
+		if (*p == ',') {
+			p++;
+			continue;
+		}
+		if (*p == '}') {
+			break;
+		}
+		return -1;
+	}
+	if (json_expect(p, &p, '}')) {
+		free(prog);
+		return -1;
+	}
+	free(prog);
+	if (!seen_prog || !seen_ports) {
+		return -1;
+	}
+	*end = p;
+	return 0;
+}
+
+static int read_port_file(const char *path, struct port_read *pr)
+{
+	FILE *fp = fopen(path, "rb");
+	long end;
+	char *buf;
+	int err;
+
+	if (!fp) {
+		fprintf(stderr, "failed to open port table %s\n", path);
+		return -1;
+	}
+	if (fseek(fp, 0, SEEK_END)) {
+		fclose(fp);
+		return -1;
+	}
+	end = ftell(fp);
+	if (end < 0 || fseek(fp, 0, SEEK_SET)) {
+		fclose(fp);
+		return -1;
+	}
+	buf = malloc((size_t)end + 1);
+	if (!buf) {
+		fclose(fp);
+		return -1;
+	}
+	if (fread(buf, 1, (size_t)end, fp) != (size_t)end) {
+		fprintf(stderr, "short read on %s\n", path);
+		free(buf);
+		fclose(fp);
+		return -1;
+	}
+	fclose(fp);
+	buf[end] = 0;
+	err = json_read_top(buf, (const char **)&end, pr);
+	free(buf);
+	if (err) {
+		fprintf(stderr, "%s: malformed port-table JSON (strict "
+				"reader accepts only the documented schema)\n",
+			path);
+	}
+	return err;
+}
+
+/* Find a port by name. Returns the index in `pr` or -1. */
+static int port_find(const struct port_read *pr, const char *name)
+{
+	uint32_t k;
+
+	for (k = 0; k < pr->count; k++) {
+		if (!strcmp(pr->ports[k].name, name)) {
+			return (int)k;
+		}
+	}
+	return -1;
+}
+
+/* Resolve the host-side idx (input position-among-inputs, or output 0)
+ * for a named port. Returns the idx, or -1 if the name does not
+ * exist or the direction does not match `dir`. */
+static int port_host_idx(const struct port_read *pr, const char *name,
+			 uint32_t dir)
+{
+	int idx = port_find(pr, name);
+	uint32_t k;
+	uint32_t pos = 0;
+
+	if (idx < 0) {
+		return -1;
+	}
+	if (dir == 1) {
+		/* Single output: ane_m2_read indexes outputs by position. */
+		return pr->ports[idx].dir == 1 ? 0 : -1;
+	}
+	for (k = 0; k < pr->count; k++) {
+		if (pr->ports[k].dir == 0) {
+			if (k == (uint32_t)idx) {
+				return (int)pos;
+			}
+			pos++;
+		}
+	}
+	return -1;
+}
+
+/* Print the operation-record pairs and io records that
+ * ane_m2_program_build_ports would submit, without opening the device.
+ * Format chosen for grep/ey: one line per pair, comma-separated, then
+ * a header line, then the io records. */
+static int dry_run_ports(const char *anec_path, const struct port_read *pr)
+{
+	void *buf = NULL;
+	uint64_t size = 0;
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint32_t i;
+	uint32_t pair_count;
+	FILE *fp;
+
+	fp = fopen(anec_path, "rb");
+	if (!fp) {
+		fprintf(stderr, "failed to open %s\n", anec_path);
+		return 1;
+	}
+	if (fseek(fp, 0, SEEK_END)) {
+		fclose(fp);
+		return 1;
+	}
+	size = (uint64_t)ftell(fp);
+	if (fseek(fp, 0, SEEK_SET)) {
+		fclose(fp);
+		return 1;
+	}
+	buf = malloc(size);
+	if (!buf) {
+		fclose(fp);
+		return 1;
+	}
+	if (fread(buf, 1, size, fp) != size) {
+		fprintf(stderr, "short read on %s\n", anec_path);
+		free(buf);
+		fclose(fp);
+		return 1;
+	}
+	fclose(fp);
+
+	if (ane_m2_program_build_ports(buf, size, pr->ports, pr->count,
+				       &model, &secs) < 0) {
+		fprintf(stderr, "ane_m2_program_build_ports failed\n");
+		free(buf);
+		return 1;
+	}
+	ane_m2_sections_free(&secs);
+	free(buf);
+
+	pair_count = model.call_ref_count[0];
+	printf("opref %u:", pair_count);
+	for (i = 0; i < pair_count; i++) {
+		printf("%s%u:%u", i ? "," : "",
+		       model.call_refs[0][i].slot,
+		       model.call_refs[0][i].tag);
+	}
+	printf("\n");
+	printf("io %u:", model.io_count);
+	for (i = 0; i < model.io_count; i++) {
+		printf("%s%u:%llu", i ? "," : "",
+		       model.io[i].buffer_id,
+		       (unsigned long long)model.io[i].size);
+	}
+	printf("\n");
 	return 0;
 }
 
@@ -1090,6 +1747,8 @@ static void usage(void)
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
 		"[--out IDX=FILE]... [--repeat N] [--time] [--check OP] "
 		"[--weights FILE]\n"
+		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
+		"                                  [--out NAME=FILE]... [--dry-run]\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
 		"    select bmm rms\n"
@@ -1109,53 +1768,104 @@ static void usage(void)
 		"    2^-17 * max(|x|)^2). Measured band: 2 ulp of the result\n"
 		"    (over 99.8 percent bit-exact on 3 seeds).\n"
 		"--weights: matvec weight table (fp16 [N, K]); rms BLOBFILE.\n"
-		"  Required with --check matvec and --check rms.\n");
+		"  Required with --check matvec and --check rms.\n"
+		"--ports FILE.json: port table sidecar ({\"program\": \"...\",\n"
+		"  \"ports\": [{\"name\":..., \"direction\":..., \"buffer_id\":...,\n"
+		"  \"bar_slot\":..., \"tile_bytes\":..., \"shape\":[n,c,h,w]} ... ]}).\n"
+		"  Switches to the named-port path; --in/--out take NAME=FILE.\n"
+		"  Strict JSON: anything outside the documented keys is rejected.\n"
+		"--dry-run: with --ports, print the operation-record pairs and\n"
+		"  io records the runner would submit, then exit. No device.\n");
 }
 
 int main(int argc, char **argv)
 {
 	const char *anec = NULL;
+	const char *ports_path = NULL;
 	struct ane_nn *nn;
 	struct io_file ins[8] = { 0 };
 	struct io_file outs[8] = { 0 };
+	struct name_file nins[8] = { 0 };
+	struct name_file nouts[8] = { 0 };
 	uint32_t repeat = 1;
 	int timing = 0;
 	int check = -1;
+	int dry_run = 0;
+	int ports_mode = 0;
 	int ret;
+	int k;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
 			anec = argv[++i];
 		} else if (!strcmp(argv[i], "--in") && i + 1 < argc) {
-			int slot = -1;
-
-			for (int k = 0; k < 8; k++) {
-				if (!ins[k].set) {
-					slot = k;
-					break;
+			if (ports_mode) {
+				int slot = -1;
+				for (k = 0; k < 8; k++) {
+					if (!nins[k].set) {
+						slot = k;
+						break;
+					}
 				}
+				if (slot < 0) {
+					fprintf(stderr, "too many --in args "
+						"(max 8)\n");
+					return 2;
+				}
+				if (parse_name_arg(argv[++i], &nins[slot],
+						   "in")) {
+					return 2;
+				}
+			} else {
+				int slot = -1;
+				for (k = 0; k < 8; k++) {
+					if (!ins[k].set) {
+						slot = k;
+						break;
+					}
+				}
+				if (slot < 0) {
+					fprintf(stderr, "too many --in args "
+						"(max 8)\n");
+					return 2;
+				}
+				if (parse_io_arg(argv[++i], &ins[slot], "in"))
+					return 2;
 			}
-			if (slot < 0) {
-				fprintf(stderr, "too many --in args (max 8)\n");
-				return 2;
-			}
-			if (parse_io_arg(argv[++i], &ins[slot], "in"))
-				return 2;
 		} else if (!strcmp(argv[i], "--out") && i + 1 < argc) {
-			int slot = -1;
-
-			for (int k = 0; k < 8; k++) {
-				if (!outs[k].set) {
-					slot = k;
-					break;
+			if (ports_mode) {
+				int slot = -1;
+				for (k = 0; k < 8; k++) {
+					if (!nouts[k].set) {
+						slot = k;
+						break;
+					}
 				}
+				if (slot < 0) {
+					fprintf(stderr, "too many --out args "
+						"(max 8)\n");
+					return 2;
+				}
+				if (parse_name_arg(argv[++i], &nouts[slot],
+						   "out")) {
+					return 2;
+				}
+			} else {
+				int slot = -1;
+				for (k = 0; k < 8; k++) {
+					if (!outs[k].set) {
+						slot = k;
+						break;
+					}
+				}
+				if (slot < 0) {
+					fprintf(stderr, "too many --out args "
+						"(max 8)\n");
+					return 2;
+				}
+				if (parse_io_arg(argv[++i], &outs[slot], "out"))
+					return 2;
 			}
-			if (slot < 0) {
-				fprintf(stderr, "too many --out args (max 8)\n");
-				return 2;
-			}
-			if (parse_io_arg(argv[++i], &outs[slot], "out"))
-				return 2;
 		} else if (!strcmp(argv[i], "--time")) {
 			timing = 1;
 		} else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) {
@@ -1168,6 +1878,11 @@ int main(int argc, char **argv)
 			}
 		} else if (!strcmp(argv[i], "--weights") && i + 1 < argc) {
 			weights_path = argv[++i];
+		} else if (!strcmp(argv[i], "--ports") && i + 1 < argc) {
+			ports_path = argv[++i];
+			ports_mode = 1;
+		} else if (!strcmp(argv[i], "--dry-run")) {
+			dry_run = 1;
 		} else {
 			usage();
 			return 2;
@@ -1177,6 +1892,23 @@ int main(int argc, char **argv)
 		usage();
 		return 2;
 	}
+	if (!ports_mode) {
+		/* Legacy path: unchanged. */
+	} else if (dry_run) {
+		/* Dry-run path: no device. */
+		struct port_read pr = { 0 };
+
+		if (read_port_file(ports_path, &pr) < 0) {
+			free(pr.ports);
+			return 1;
+		}
+		ret = dry_run_ports(anec, &pr);
+		for (k = 0; k < (int)pr.count; k++) {
+			free((void *)pr.ports[k].name);
+		}
+		free(pr.ports);
+		return ret;
+	}
 
 	nn = ane_init(anec);
 
@@ -1185,8 +1917,59 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	if (ports_mode) {
+		/* Replace ins/outs with name-resolved indices. We need
+		 * anec.src_count and anec.dst_count to be valid for the
+		 * name-bound io entries; if a name-based --in asks for
+		 * a port whose dir == 0 but nn->m2 reports fewer
+		 * inputs than the sidecar promises, we surface the
+		 * mismatch. The legacy ane_init path uses
+		 * ane_m2_program_build which synthesises inputs from
+		 * the anec input_count; for the port-table path we
+		 * also need those inputs to be allocated. */
+		struct port_read pr = { 0 };
+
+		if (read_port_file(ports_path, &pr) < 0) {
+			ane_free(nn);
+			free(pr.ports);
+			return 1;
+		}
+		for (k = 0; k < 8; k++) {
+			if (nins[k].set) {
+				int idx = port_host_idx(&pr, nins[k].name, 0);
+				if (idx < 0) {
+					fprintf(stderr, "no input port named "
+						"%s\n", nins[k].name);
+					ane_free(nn);
+					free(pr.ports);
+					return 1;
+				}
+				ins[k].set = 1;
+				ins[k].idx = (uint32_t)idx;
+				ins[k].path = nins[k].path;
+			}
+			if (nouts[k].set) {
+				int idx = port_host_idx(&pr, nouts[k].name, 1);
+				if (idx < 0) {
+					fprintf(stderr, "no output port named "
+						"%s\n", nouts[k].name);
+					ane_free(nn);
+					free(pr.ports);
+					return 1;
+				}
+				outs[k].set = 1;
+				outs[k].idx = (uint32_t)idx;
+				outs[k].path = nouts[k].path;
+			}
+		}
+		for (k = 0; k < (int)pr.count; k++) {
+			free((void *)pr.ports[k].name);
+		}
+		free(pr.ports);
+	}
+
 	ret = 0;
-	for (int k = 0; k < 8 && !ret; k++) {
+	for (k = 0; k < 8 && !ret; k++) {
 		uint64_t size;
 		void *buf;
 
@@ -1239,7 +2022,7 @@ int main(int argc, char **argv)
 		free(lat);
 	}
 
-	for (int k = 0; k < 8 && !ret; k++) {
+	for (k = 0; k < 8 && !ret; k++) {
 		uint64_t size;
 		void *buf;
 
