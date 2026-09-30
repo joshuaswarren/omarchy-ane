@@ -16,6 +16,7 @@ prefix = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 typedef uint64_t u64;
 typedef uint64_t phys_addr_t;
 #define __iomem
@@ -30,9 +31,14 @@ typedef uint64_t phys_addr_t;
 #define dev_err(...) ((void)0)
 #define ENTRY (1ULL << 40)
 #define SOURCE 0x100000ULL
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+#define IS_ALIGNED(x, a) (!((x) & ((a) - 1)))
 #define PAGE ANE_T6021_FW_ALIAS_PAGE
 struct iommu_domain { struct { u64 aperture_end; } geometry; } domain = {{~0ULL}};
-struct ane_t6021 { void *dev; void *base[1]; u64 fw_iova, fw_size, fw_alias_iova; };
+struct ane_t6021 { void *dev; void *base[1]; u64 fw_iova, fw_size, fw_alias_iova; u64 fw_alias_ext_iova[3]; size_t fw_alias_ext_len[3]; int fw_alias_extn; };
+static bool fw_alias_reserved;
+static unsigned int fw_extra_ram;
+static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom) { (void)ane; (void)dom; return 0; }
 static bool pages[3];
 static int map_failure, verify_failure, mapped;
 static u64 unmapped;
