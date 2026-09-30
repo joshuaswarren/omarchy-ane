@@ -815,7 +815,6 @@ static int scratch_size_bytes(const uint8_t *stream,
 		const uint8_t *tp = stream + tasks[t].off;
 		uint32_t words = tasks[t].words;
 		uint32_t idx = 8;
-		uint32_t n = 0;
 
 		if ((le32(tp + 28) & 3u) == 3u) {
 			idx = 9;
@@ -844,7 +843,6 @@ static int scratch_size_bytes(const uint8_t *stream,
 						max_payload = p0;
 					}
 				}
-				n++;
 			}
 			idx += 1 + rec_count;
 		}
