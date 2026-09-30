@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "ane.h"
 #include "ane_f16_add.h"
@@ -383,11 +384,18 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	return ok ? 0 : -1;
 }
 
+static int cmp_double(const void *a, const void *b)
+{
+	double x = *(const double *)a, y = *(const double *)b;
+
+	return (x > y) - (x < y);
+}
+
 static void usage(void)
 {
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
-		"[--out IDX=FILE]... [--repeat N] [--check OP] "
+		"[--out IDX=FILE]... [--repeat N] [--time] [--check OP] "
 		"[--weights FILE]\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
@@ -402,6 +410,7 @@ int main(int argc, char **argv)
 	struct io_file ins[8] = { 0 };
 	struct io_file outs[8] = { 0 };
 	uint32_t repeat = 1;
+	int timing = 0;
 	int check = -1;
 	int ret;
 
@@ -438,6 +447,8 @@ int main(int argc, char **argv)
 			}
 			if (parse_io_arg(argv[++i], &outs[slot], "out"))
 				return 2;
+		} else if (!strcmp(argv[i], "--time")) {
+			timing = 1;
 		} else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) {
 			repeat = (uint32_t)strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
@@ -489,11 +500,32 @@ int main(int argc, char **argv)
 		free(buf);
 	}
 
-	for (uint32_t r = 0; r < repeat && !ret; r++) {
-		if (ane_exec(nn) < 0) {
-			fprintf(stderr, "ane_exec failed\n");
-			ret = 1;
+	{
+		double *lat = timing ? calloc(repeat, sizeof(*lat)) : NULL;
+		uint32_t done = 0;
+
+		for (uint32_t r = 0; r < repeat && !ret; r++) {
+			struct timespec t0, t1;
+
+			clock_gettime(CLOCK_MONOTONIC, &t0);
+			if (ane_exec(nn) < 0) {
+				fprintf(stderr, "ane_exec failed\n");
+				ret = 1;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &t1);
+			if (lat) {
+				lat[done++] = (t1.tv_sec - t0.tv_sec) * 1e3 +
+					      (t1.tv_nsec - t0.tv_nsec) / 1e6;
+			}
 		}
+		if (lat && done) {
+			qsort(lat, done, sizeof(*lat), cmp_double);
+			printf("exec ms over %u calls: min %.3f median %.3f "
+			       "p90 %.3f max %.3f\n", done, lat[0],
+			       lat[done / 2], lat[(done * 9) / 10],
+			       lat[done - 1]);
+		}
+		free(lat);
 	}
 
 	for (int k = 0; k < 8 && !ret; k++) {

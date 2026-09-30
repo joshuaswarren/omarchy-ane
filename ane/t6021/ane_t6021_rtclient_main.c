@@ -1190,6 +1190,62 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 	return ret;
 }
 
+/* Firmware perf mode: CSNE_CMD_CH_PROPERTY_WRITE (0x1f), channel 0,
+ * property 0x10aa, value 1. macOS sends it once during power-on (H13
+ * kext evidence in the omarchy-ane perf-mode receipt); the selene 13.5
+ * fw routes it to CAneEngineExeLoop::setPerfMode. It is a runtime
+ * switch (write 1 to /sys/module/ane_t6021/parameters/fw_perf_mode) so
+ * its effect on call time can be measured on one boot. Only 1 is
+ * accepted: no other value is known to be safe. */
+static struct ane_rtclient *ane_t6021_perf_ane;
+static bool fw_perf_mode;
+
+static int ane_t6021_perf_mode_set(const char *val,
+				   const struct kernel_param *kp)
+{
+	struct ane_rtclient *ane = READ_ONCE(ane_t6021_perf_ane);
+	struct ane_legacy_buffer *command;
+	bool on;
+	int ret;
+
+	ret = kstrtobool(val, &on);
+	if (ret)
+		return ret;
+	if (!on || fw_perf_mode)
+		return on ? 0 : -EINVAL;
+	if (!ane)
+		return -ENODEV;
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	command = ane->cmd_buf;
+	if (!command) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ENODEV;
+	}
+	memset(command->cpu, 0, SZ_16K);
+	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(0);
+	*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(0x10aa);
+	*(u32 *)((u8 *)command->cpu + 0x10) = cpu_to_le32(1);
+	ret = ane_rtclient_command(ane, command, 0x14, 0x001f, 1, 3000);
+	if (!ret) {
+		fw_perf_mode = true;
+		dev_info(ane->dev, "fw perf mode set (property 0x10aa = 1)\n");
+	}
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops ane_t6021_perf_mode_ops = {
+	.set = ane_t6021_perf_mode_set,
+	.get = param_get_bool,
+};
+module_param_cb(fw_perf_mode, &ane_t6021_perf_mode_ops, &fw_perf_mode, 0644);
+MODULE_PARM_DESC(fw_perf_mode,
+		 "Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent");
+
 static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 				       struct drm_file *file)
 {
@@ -1811,6 +1867,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		}
 		adrm->dev = dev;
 		adrm->ane = ane;
+		WRITE_ONCE(ane_t6021_perf_ane, ane);
 		drmret = drm_dev_register(&adrm->drm, 0);
 		if (drmret) {
 			dev_err_probe(dev, drmret, "drm_dev_register\n");
