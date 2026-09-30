@@ -588,15 +588,15 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 {
 	uint32_t B = 0, C_ = 0, M = 0, K = 0, N = 0;
 	uint64_t a_size, b_size, y_size;
-	uint16_t *a = NULL, *b = NULL, *y = NULL;
+	uint16_t *w = NULL, *x = NULL, *y = NULL;
 	uint64_t lanes = 0;
 	uint64_t in_band = 0, exact = 0;
 	uint64_t max_ulp_milli = 0;
 	double max_nerr = 0.0;
 	uint64_t pad_out = 0;
-	uint64_t x_row, y_row, o_row;
-	uint64_t x_bc_off, y_bc_off, o_bc_off;
-	uint64_t x_row_off, y_col_off, o_row_off;
+	uint64_t w_row, x_row, o_row;
+	uint64_t x_bc_off, w_bc_off, o_bc_off;
+	uint64_t x_row_off, w_col_off, o_row_off;
 	uint32_t bc, m, n, k;
 	double ax, ay, acc, sumabs, err, nerr, diff;
 	uint16_t got, want;
@@ -606,7 +606,7 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	if (!in[0].set || in[0].idx != 0 || !in[1].set || in[1].idx != 1 ||
 	    !out[0].set || out[0].idx != 0) {
 		fprintf(stderr, "--check bmm needs --in 0, --in 1, --out 0 "
-			"(UNPROVEN (x, y) ordering)\n");
+			"(slot0 = ch5 = w [B,C,K,N]; slot1 = ch6 = x [B,C,M,K])\n");
 		return -1;
 	}
 	if (bmm_shape(nn, &B, &C_, &M, &K, &N) < 0) {
@@ -615,34 +615,40 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	a_size = ane_src_size(nn, 0);
 	b_size = ane_src_size(nn, 1);
 	y_size = ane_dst_size(nn, 0);
-	a = read_exact(in[0].path, a_size);
-	b = read_exact(in[1].path, b_size);
+	/* Device binding (libane/ane_m2.c:545-553, proven on M2 by IslandDebug
+	 * 2026-09-30): user io 0 -> ANEC channel 5 = w [B,C,K,N] in compiler
+	 * templates (H14IslandTemplates.inc Tensors4/6/9); user io 1 ->
+	 * channel 6 = x [B,C,M,K]; output -> channel 4. Reference:
+	 * out[b,c,m,n] = sum_k x[b,c,m,k] * w[b,c,k,n] with x on slot1
+	 * (M rows of align(K*2,64)) and w on slot0 (K rows of align(N*2,64)). */
+	w = read_exact(in[0].path, a_size);
+	x = read_exact(in[1].path, b_size);
 	y = read_exact(out[0].path, y_size);
-	if (!a || !b || !y) {
-		free(a); free(b); free(y);
+	if (!w || !x || !y) {
+		free(w); free(x); free(y);
 		return -1;
 	}
-	x_row = (K * 2 + 63) & ~63ULL;
-	y_row = (K * 2 + 63) & ~63ULL;
+	w_row = (N * 2 + 63) & ~63ULL; /* K rows of N */
+	x_row = (K * 2 + 63) & ~63ULL; /* M rows of K */
 	o_row = (N * 2 + 63) & ~63ULL;
 	lanes = (uint64_t)B * C_ * M * N;
 	for (bc = 0; bc < B * C_; bc++) {
+		w_bc_off = (uint64_t)bc * K * w_row;
 		x_bc_off = (uint64_t)bc * M * x_row;
-		y_bc_off = (uint64_t)bc * K * y_row;
 		o_bc_off = (uint64_t)bc * M * o_row;
 		for (m = 0; m < M; m++) {
 			x_row_off = x_bc_off + (uint64_t)m * x_row;
 			o_row_off = o_bc_off + (uint64_t)m * o_row;
 			for (n = 0; n < N; n++) {
-				y_col_off = y_bc_off +
-					(uint64_t)n * y_row;
+				w_col_off = w_bc_off +
+					(uint64_t)n * w_row;
 				acc = 0.0;
 				sumabs = 0.0;
 				for (k = 0; k < K; k++) {
 					ax = ane_f16_to_f64(
-						a[(x_row_off + k * 2) / 2]);
+						x[(x_row_off + k * 2) / 2]);
 					ay = ane_f16_to_f64(
-						b[(y_col_off + k * 2) / 2]);
+						w[(w_col_off + k * 2) / 2]);
 					acc += ax * ay;
 					sumabs += fabs(ax * ay);
 				}
@@ -687,7 +693,7 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	       (unsigned long long)(max_ulp_milli % 1000), max_nerr,
 	       pad_out ? "lanes NONZERO" : "lanes zero",
 	       ok ? "PASS" : "FAIL");
-	free(a); free(b); free(y);
+	free(w); free(x); free(y);
 	return ok ? 0 : -1;
 }
 
