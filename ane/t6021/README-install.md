@@ -3,8 +3,8 @@
 This directory ships the installed-path `ane_t6021.ko` for the
 Apple Neural Engine on the T6021 (M2 Max). It replaces the
 `ane_t6021_rtclient.ko` scratch module that boot 3ab812a3 used to
-verify the add path (`y == a + b` bit-exact over all 16384 fp16
-elements of the 32 KiB output buffer).
+verify the add path (`y == a + b` on the 512 valid lanes of the add
+surface; padding lanes are zero).
 
 ## Prerequisites
 

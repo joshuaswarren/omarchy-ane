@@ -11,13 +11,18 @@ bit-exact on the installed module. Receipts live in
 (`2026-09-25-jwm1-qwen-ane-layout-gate`, `2026-09-25-qwen-ane-export-513`,
 `2026-09-25-jwm1-parakeet-golden-rerun`, `2026-09-25-jwm1-kernels2-clean`).
 t6001-host (T6001) Linux ANE is live; TM recovery on T6001 now drains
-retained tm/tq state (kill-race 10/10 reopen-clean, no reboot). T6021
-(t6021-test-host) has no host TM path; the firmware program has proven the
-release sequence on T6021 and T6001 (status 0x28), and with the VENC power
-leg up the firmware reaches its service loop, but the mailbox FIFO never
-drains and no RTKit HELLO has arrived; CoreSight is fused off on T6021.
-T6021 ANE is not live-inference-qualified. The canonical record is
-[docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md).
+retained tm/tq state (kill-race 10/10 reopen-clean, no reboot).
+**T6021 (M2 Max, 2026-09-29):** the ANE firmware runs from an autoloaded
+`ane_t6021` module (`ane/t6021/`, DRM ABI 2) and executes compiled H14
+programs through `libane`: fp16 add, mul, relu, scalar add/mul/div, clip,
+and matvec up to 2048x5120 (20 MiB weights) pass on hardware, on the
+valid lanes of each surface (`ane/t6021/gate/gate.sh`, receipt
+[receipts/2026-09-29-t6021-installed-path](receipts/2026-09-29-t6021-installed-path/README.md)).
+Not proven: any model (Parakeet, Qwen) on the M2, and one intermittent
+all-zero-output failure seen on three boots is unexplained (a 1 ms
+post-call settle is the mitigation). The host must not touch TM registers
+while the firmware runs; T6021 needs the pinned 13.5 firmware and a DT
+overlay, and the module cannot be unloaded.
 macOS CoreML / `aned` measurements do not establish Linux execution.
 
 - `ane/`: DRM accelerator kernel module.
@@ -52,7 +57,7 @@ Tier is decided per `compatible`, so T6000 silicon reads recognized-untested bel
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | recognized-untested | none | a tester plus a board overlay; dual-die SET base unverified — confirm before any bind |
 | M2 | T8112 | H14G | unknown | unsupported | — | ANE node DT capture (quick collector works with no ANE node), SET-block base; H14 compiler backend is unqualified |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | unsupported | — | SET-block base, a qualified H14 compiler backend, and the board DART/pmgr overlay; three community DT captures and one native-macOS IORegistry capture arrived 2026-09-17 |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | recognized-blocked; not live-inference-qualified. **13.5 (22G74) legacy ChMan `legacy_only` transport: EXPERIMENTAL, default off; full post-DONE handshake completes** (SCRATCH3 ack cleared by the fw after H2T slots are host-initialized; no command submission yet). Sha-pinned 13.5 selene `a9c4b771…`. Backing envelope is `fw_extra_ram=0x200000` (16 KiB-aligned, ≤ SZ_16M) + DMA32; the 24 MiB attempt was rejected before allocation — not a DMA-size finding. Receipts: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md), [receipts/2026-09-27-t6021-ring-owner-h2t-init.md](receipts/2026-09-27-t6021-ring-owner-h2t-init.md). | The [2026-09-18 qualification attempt](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-qualification.md) did not probe with its then-current device tree. Separate [firmware analysis](https://github.com/joshuaswarren/ane-linux-experiments/blob/main/receipts/2026-09-18-t6021-engine-layout-mined.md) identifies a firmware-owned task manager; H13 host TM/TQ offsets are not a safe bring-up path. Proven state and open blockers: [docs/t6021-ane-bringup-findings.md](docs/t6021-ane-bringup-findings.md). `legacy_only` excludes every RTKit surface (no devm_apple_rtkit_init, no RX poll worker, no apple_rtkit_boot). The legacy ChMan host server (SHAREDMALLOC/TERMINAL) was excluded from this publication pending independent review of acquire ordering, unchecked ring offsets/size/bit before deref/modulo, and TERMINAL cursor not returning the slot to the producer. | Qualified firmware boot (post-DONE on legacy ChMan), DART mappings, mailbox submission, and live output checks; macOS measurements alone do not qualify thi…
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | fw-driven path live; ops qualified, models not | Autoloaded `ane_t6021` (DRM ABI 2) + libane: add, mul, relu, add/mul/div-scalar, clip, matvec up to 2048x5120 exact or within the recorded tolerance on hardware, 2026-09-29 ([receipt](receipts/2026-09-29-t6021-installed-path/README.md)). Pinned 13.5 selene `a9c4b771…`. | Parakeet and Qwen on the M2 (H14 compiler coverage: rms_norm, softmax, silu/sigmoid shapes, batched matmul), an explanation for the intermittent all-zero output on some boots, the DT overlay as a packaged board DTB |
 | M2 Ultra | T6022 | H14J | unknown | unsupported | — | DT capture, SET-block base (dual-die), qualified H14 backend |
 | M3 | T8122 | H15G | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
 | M3 Pro | T6030 | H15J | unknown | unsupported | — | DT capture, SET-block base, qualified compiler backend |
