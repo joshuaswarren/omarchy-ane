@@ -68,11 +68,21 @@ struct ane_m2_ref {
 	uint32_t tag;
 };
 
+/* ANE_M2_MAX_CALLS bounds the per-call ref set: one record per task in the
+ * worst case, with ANE_M2_MAX_BINDS deduped refs each. For islands the
+ * largest emitted program is `pv-rank4` with 5 tasks; the limit is set
+ * to 64 for headroom. */
+#define ANE_M2_MAX_CALLS 64
+
 struct ane_m2_model {
 	struct ane_m2_io io[ANE_M2_MAX_BINDS];
 	uint32_t io_count;
-	struct ane_m2_ref refs[ANE_M2_MAX_BINDS];
-	uint32_t ref_count;
+	/* One ref-set per call; the operation section emits calls records,
+	 * each with call_ref_count[j] {slot, tag} pairs. Single-call programs
+	 * (the existing stage 1-4 fixtures) collapse to calls == 1. */
+	uint32_t calls;
+	uint32_t call_ref_count[ANE_M2_MAX_CALLS];
+	struct ane_m2_ref call_refs[ANE_M2_MAX_CALLS][ANE_M2_MAX_BINDS];
 };
 
 struct ane_m2_sections {
