@@ -1,4 +1,4 @@
-# 2026-09-30 — T6021 C pv accumulator model: probed, not bit-exactly identified
+# 2026-09-30 — T6021 C pv accumulator: tested, no bit-exact reproduction
 
 ## Purpose
 
@@ -7,16 +7,7 @@ real-parakeet layer-0 device output, given that input FTZ and product FTZ
 have already been falsified (`receipts/2026-09-30-t6021-island-golden/README.md`,
 C pv subnormal / FTZ follow-up: 0.02288818 vs 0.02287292).
 
-Complements IslandGolden2's per-lane exact-product failure diagnosis by
-targeting the accumulator precision + reduction order + block alignment.
-
-## Offline phase — error structure
-
-The saved C pv layer-0 device output (384,000 lanes = 8 heads × 375 rows ×
-128 cols) was compared offline against a sequence of numpy models. The
-verdict from offline analysis is that **no standard accumulator model is
-bit-exact**; the device's accumulator has small (~±1–10 ulp) symmetric
-deviation from fp32 round-to-nearest that no tested config captures.
+## Offline phase — no standard model is bit-exact
 
 | Model                                         | bit-eq    | lanes off | max abs    |
 |-----------------------------------------------|-----------|-----------|------------|
@@ -32,159 +23,172 @@ deviation from fp32 round-to-nearest that no tested config captures.
 | fp16 round every N steps                      | False     | 165k–353k | 0.41       |
 | fp16 product + fp32 accumulate                | False     | 114,608   | 4.81e-3    |
 
-The fp32 RN baseline is the closest by a wide margin: it matches 275,765 of
-384,000 lanes bit-exactly, with the remaining 108,235 deviating by a
-symmetric ±1–2 ulp pattern (tails to ~10 ulps, occasional outliers to ~517
-ulps). No combination of chunk size, fp16/fp32 combine, block-floating N, or
-K-order reproduces the device.
+fp32 RN is the closest standard model: 275,765 of 384,000 lanes bit-exact.
+Remaining 108,235 deviate by ±1–2 ulps (tail to ±10 ulps, outliers to 517
+ulps). Symmetric distribution consistent with internal chunked rounding
+noise, not a single fixed bias.
 
-## Online phase — two probes
+## Online phase — three probes under flock
 
-Two batched probe stimuli were packed into single program invocations under
-`flock /var/tmp/ane-run.lock timeout 60`.
+### Probe 1 (33.6 + 34.2 ms): targeted K-position / V-magnitude cases
 
-### Probe 1: targeted K-position / V-magnitude cases
+Batched stimulus (8 heads × 375 rows × 128 cols). Head 4 row 0 (V =
+fp16(0.01)) and head 6 row 0 (375 subnormal × V=1) reproduce the prior
+FTZ-probe result. 383,744 of 384,000 lanes match fp32 RN bit-exactly.
+Only 256 lanes (1 ulp above) at (h=4, r=0, all n) and (h=6, r=0, all n).
 
-Per-head stimulus:
-- **Head 0** (K-position boundary): `probs[h, r, k] = 1 if k=r else 0`, V=1
-  for all (k, n). Output should equal V[h, r, n] = 1.0. Probe1 verifies
-  single-term dot products at all 375 K positions.
-- **Head 1** (order probe): single large term at varying K positions.
-- **Head 2** (single large + many tiny): probs with `large=1.0` at one K,
-  `tiny=2^-12` at others; V=1. Tests whether tiny terms survive.
-- **Head 3** (sum-of-K-ones): probs[k=0..r]=1 for varying r, V=1. Tests
-  whether `sum(r+1)` matches exact integer arithmetic in fp16.
-- **Head 4** (varying V): V varies with K (0.01..), single K-term per row.
-  Tests fp16 × V rounding.
-- **Head 5** (mixed signs): paired large positive + negative terms.
-- **Head 6** (subnormal): probs = `largest fp16 subnormal (2^-14 - 2^-24)`
-  at all 375 K (V=1); single large + many subnormal variants; sub +
-  large + sub. Reproduces the prior FTZ probe.
-- **Head 7** (powers of 2): probs = `1.0, 0.5, 0.25, ..., 1/8192`. Tests
-  whether `N × powers-of-2` sum matches fp16 exact.
+### Probe 2 (33.6 ms): sweep of fp16 bit patterns
 
-**Result**: 33.6 + 34.2 ms execution. **383,744 of 384,000 lanes match
-fp32 RN bit-exactly**. Only **256 lanes differ** from fp32 RN, all 1 ulp
-above:
-- `(h=4, r=0, all 128 n)`: V = `0.0100021362` (fp16 bits 0x211f), device
-  returns `0.0100097656` (bits 0x2120). 1 ulp above V.
-- `(h=6, r=0, all 128 n)`: 375 subnormal × V=1, device returns
-  `0.02288818` (vs fp32 RN `0.02287292`, vs fp64 exact `0.02286583`). This
-  reproduces the prior FTZ probe result (1.5 ulp above correctly-rounded
-  fp16 of exact sum).
+CORRECTION: this sweep only covered bits 0x0001..0x0BB8 (|V| < 2^-13).
+The "V >= 0x0500 returns V exactly" claim was unsupported because 0x0500
+itself is inside the swept range. The "output FTZ on subnormal fp16 is
+documented IEEE-754 behavior" framing is wrong: IEEE-754 fp16 has
+subnormals; what we observed is an absolute quantization floor.
 
-### Probe 2: single-term dot products across the fp16 range
+Observed in probe 2:
+- |V| < 2^-17: dev = 0 (FTZ).
+- |V| in [2^-17, 2^-13): dev quantized to fp16 grid step 2^-16.
 
-For every (h, r) ∈ [0,8) × [0,375), set `probs[h, r, k] = 1 if k=r else 0`
-and `V[h, r, n] = fp16(bits[(h*375+r) % 0x3C00 + 0x0001])` (a distinct
-fp16 value per (h, r), sweeping bits 0x0001 to ~0x3000+).
+### Probe 3 (42.4 ms): wide-range magnitude sweep with random mantissas
 
-**Result**: 33.6 ms execution. **382,080 of 384,000 lanes differ from
-fp32 RN**. The deviation is identical across all 128 n at any given
-(h, r), confirming the deviation lives in the (h, r) accumulator
-result, not per-lane.
+Batched stimulus (8 heads × 375 rows × 128 cols):
+- Head 0: single-term P=1, V over geometric grid 2^-24..2^15 (~9 values
+  per octave with random mantissa).
+- Head 1: P=0.5 × V.
+- Head 2: P=2^-8 × V.
+- Head 3: P=2^-12 × V.
+- Head 4: P=0.999 × V.
+- Head 5: K=2 terms (P=1 at K=0, tiny at K=1), V varies per row.
+- Head 6: K=2 terms (tiny at K=0, P=1 at K=1) — order test.
+- Head 7: K=2 terms with V=1 constant.
 
-**Pattern**:
-- For V = fp16 subnormal (bits 0x0001..0x007F, values < 2^-14): device
-  returns **0**. The device applies **output FTZ**.
-- For V = 0x0080 (smallest normal fp16 = 2^-14): device returns **0x0100**
-  (= 2^-16, smallest normal fp16 in the next exponent bracket). The fp32
-  sum (= V exactly, since V is in fp32 normal range) rounds up to the
-  smallest normal fp16 at the lower end of the new bracket.
-- For V ∈ [0x0080, 0x04ff] (subnormal-in-fp16 but normal-in-fp32): device
-  returns **0x0500** consistently. The rounding rule consistently maps
-  any fp32 sum in this range to the same fp16 output.
-- For V ≥ 0x0500 (clearly normal fp16): device returns **V exactly**.
-  fp32 sum = V exactly, fp16 round = V exactly.
+Head 0 findings (P=1, single-term):
+- |V| < 2^-17: dev = 0 (FTZ floor).
+- |V| in [2^-17, 2^-10): dev quantized to grid step 2^-16 (e.g. V =
+  5.96e-6 → dev = 0; V = 1.526e-5 → dev = 1.526e-5; V = 4.578e-5 →
+  dev = 4.578e-5).
+- |V| >= 2^-10: dev = V exactly (no extra quantization beyond fp16).
+- Largest |V| where dev == 0: 1.353e-5 (i.e. just below 2^-16).
+- Grid step changes smoothly: at |V| in [2^-8, 2^-7), smallest nonzero
+  diff = 1.679e-4 ≈ 2^-12.5 (i.e., step matches fp16 ulp at that
+  magnitude).
 
-The +1-ulp jump at the smallest normal boundary and the consistent mapping of
-a wide subnormal-fp16 range to the same fp16 output is **not** any
-standard IEEE-754 fp16 rounding rule tested (RN, RTZ, RTA, RTU).
+Heads 1..4 (P != 1): the same grid structure applies to the product
+P*V — output quantized for small product magnitudes.
+
+Heads 5, 6, 7 (K=2 terms): when one term dominates (e.g. K=0 term is
+1.0, K=1 term is tiny), the second term is rounded away to grid step
+2^-16. When both terms comparable, the device output is some quantized
+value that is not bit-exact predicted by any tested model.
+
+### Per-octave dev vs V match rate (head 0)
+
+| |V| range           | n   | dev=0 | dev==V | max rel err |
+|---------------------|-----|-------|--------|------------|
+| [2^-24, 2^-17)      | 60  | 60    | 0      | n/a        |
+| [2^-17, 2^-16)      | 10  | 0     | 0      | 1.0000     |
+| [2^-16, 2^-15)      | 10  | 0     | 0      | 0.9845     |
+| [2^-15, 2^-14)      | 10  | 0     | 0      | 0.7815     |
+| [2^-14, 2^-13)      | 10  | 0     | 0      | 0.0716     |
+| [2^-13, 2^-12)      | 10  | 0     | 0      | 0.0092     |
+| [2^-12, 2^-11)      | 10  | 0     | 0      | 0.0019     |
+| [2^-11, 2^-10)      | 10  | 0     | 0      | 0.0008     |
+| [2^-10, 2^-9)       | 10  | 0     | 1      | 0.0000     |
+| [2^-9, 2^-8)        | 10  | 0     | 2      | 0.0000     |
+| [2^-8, 2^-7)        | 10  | 0     | 2      | 0.0000     |
+| ...                 | ... | ...   | ...                 |
+| [2^-2, 2^-1)        | 10  | 0     | 10     | 0.0000     |
+| [2^-1, 2^0)         | 10  | 0     | 10     | 0.0000     |
+| [2^0, 2^1)          | 10  | 0     | 10     | 0.0000     |
+| ...                 | ... | ...   | ...                 |
+| [2^4, 2^5)          | 10  | 0     | 10     | 0.0000     |
+| [2^5, 2^6)          | 10  | 0     | 10     | 0.0000     |
+| [2^6, 2^7)          | 10  | 0     | 10     | 0.0000     |
+| [2^13, 2^14)        |  5  | 0     |  5     | 0.0000     |
+
+All 375 non-zero dev values are exact multiples of 2^-16. Smallest
+non-zero dev = 1.526e-5 = 2^-16. The grid step of 2^-16 matches for
+all values up to 2^-10; for larger magnitudes, dev matches V directly
+(no extra quantization).
 
 ## Verdict on the original question
 
 **The C pv device accumulator is NOT any of the candidate fp32 RN,
 fp32 pairwise, fp16 chunked (8/16/32/64/128), block-floating N=8..18,
 Kahan, fp16 pure, K-order variant model.** No tested model bit-exactly
-reproduces the saved real-parakeet layer-0 device output. The device
-deviates from fp32 RN by a symmetric ±1–10 ulp pattern with occasional
-outliers up to ~517 ulps in real data.
+reproduces the saved real-parakeet layer-0 device output. Probe 3
+confirms an output quantization grid (step 2^-16 for small magnitudes,
+FTZ for |V| < 2^-17) but no tested accumulator model reproduces the
+multi-term deviations.
+
+## Correlation analysis: failing lanes vs sum|terms| and |device|
+
+Main's prediction: failing lanes are at small sum|terms|. Tested.
+
+| Layer | Failing strict | sum|terms| at failing (min/median/max) | sum|terms|<2^-6 failing |
+|------:|---------------:|----------------------------------------:|----------------------------:|
+|     0 |          5,100 | 5.66e-2 / 2.11e+0 / 5.69e+0             |                       0 / 0 |
+|    11 |        182,742 | 2.42e-3 / 2.52e-1 / 1.48e+0             |                 467 / 515 |
+|    23 |        201,045 | 1.14e-2 / 2.37e-1 / 2.34e+0             |                     6 / 6 |
+
+**Main's prediction is FALSE for layer 0** (no failing lane has
+sum|terms| < 2^-6). For layer 11: 467 of 182,742 failing lanes have
+sum|terms| < 2^-6. For layer 23: 6 of 201,045. The bulk of failures is
+at regular magnitudes, not small sum|terms|.
 
 ## Residual
 
-108,235 lanes (28.2% of layer-0) deviate from fp32 RN. The deviation is:
-- Symmetric ±1–2 ulps in the bulk.
-- Tail to ±10 ulps.
-- Outliers to 517 ulps (h=2, r=340).
+108,235 lanes (28.2% of layer-0) deviate from fp32 RN. The deviation is
+symmetric ±1–2 ulps in the bulk, tail to ±10 ulps, occasional outliers
+to 517 ulps (h=2, r=340). The accumulator is clearly fp32-class (probe
+1: 99.93% lanes match fp32 RN) but the final fp16 round has a
+non-standard grid structure (probe 3) that biases small magnitudes.
 
-These are consistent with internal chunked rounding noise but no single
-chunked model (tested 8, 16, 32, 64, 128, 192, 256) reproduces the
-device. The accumulation is clearly fp32-class (probe 1: 99.93% lanes
-match fp32 RN), but the final fp16 output has a non-standard rounding
-rule for small magnitudes (probe 2) that biases outputs up by 1 ulp.
+A "floor model" `bound = max(2^-11 * sum|terms|, F_absorbed)` was tested
+in isolation: with F_absorbed = 2^-25, all currently-failing lanes pass.
+This is NOT a meaningful model because the failing lanes have median
+sum|terms| = 2.1 (NOT small), median |dev-exact| = 1.68e-3 (NOT floor-
+dominated). The failures are genuine accumulator precision issues at
+normal magnitudes, not an absolute error floor.
 
-## Product contract implication
+## Product contract status (CORRECTED)
 
-The stock CoreML fp16 matmul contract uses fp32 accumulate with a single
-fp16 round on the output. The C pv device's behavior is consistent with
-that contract (output FTZ on subnormal fp16 results is the documented
-fp16 IEEE-754 behavior; fp32 RN of the exact sum rounds within 1 ulp of
-any fp16 the contract permits).
+The "passes the product contract" claim from prior receipt is REMOVED.
+No model-vs-stock numbers were computed; the claim had no evidence. The
+recorded facts are:
 
-The **per-lane fp64-exact-product bound is the implementation debug
-gate, not the product's accuracy contract.** The C pv island passes the
-product contract but fails the strict per-lane bound on 1.3–7.3% of
-lanes for layers 0/11/23 (worst normalized ratios 14.5 / 104.1 / 65.3,
-rel L2 vs stored reference 2.2e-4 to 1.1e-3) — already known from
-IslandGolden2.
+- The C pv island FAILS the strict per-lane fp64-exact-product bound
+  `|dev - fp64_exact| / (2^-11 * sum|terms|) <= 1` on 5,100 / 182,742 /
+  201,045 lanes for layers 0 / 11 / 23 (1.3% / 47.6% / 52.4%).
+- The rel L2 vs the saved reference output is 2.21e-4 / 8.40e-4 /
+  1.13e-3, max abs 7.81e-3 / 2.59e-3 / 1.95e-3 — within typical fp16
+  matmul tolerances but the strict bound fails on a non-trivial
+  fraction of lanes.
 
-If a model is found that reproduces the device bit-exact on the real-data
-cases, that model's rel L2 / max abs vs the stock fp16 Core ML reference
-should be reported. For the candidate models above, the model's rel L2
-vs fp32 RN reference is approximately the same as the device's (since
-most lanes are bit-exact), and the model's rel L2 vs fp64 exact is also
-near-zero (fp32 RN vs fp64 max error 2.5e-5). The model that reproduces
-the device would therefore also reproduce the stock reference within
-fp32 RN tolerance, so the **product contract verdict is unchanged
-whether the device's accumulator is fp32 RN or the unidentified alternative**.
-
-## What did NOT change in this work
+## What did NOT change
 
 - `tools/island_ref.py`, `tools/island_real.py`, `tools/island_golden.py`
-  are unchanged. Packing helpers are reused via Python import; no change.
+  are unchanged.
 - `libane`, `ane.ko`, the driver are unchanged.
 - Any edit to mlx-omarchy, mil-hwx-compiler, or the FSM worktree.
 
 ## Files
 
-- Probe runner: temporary `/tmp/accprobe/run_probe.py`, `run_probe2.py`,
-  `build_probes.py`, `build_probe2.py`.
-- Analysis scripts: `/tmp/accprobe/test_models.py`, `precise_chunks.py`,
-  `check_struct.py`, `find_bias.py`, `boundary.py`, `recheck_real.py`,
-  `test_chunks_real.py` (all in scratch).
+- Probe runner: `/tmp/accprobe2/build_probe3.py`, `run_probe3.py`.
+- Analysis: `/tmp/accprobe2/analyze3.py`, `model_quant.py`, `grid_step.py`,
+  `grid_per_octave.py`, `find_threshold.py`, `test_real2.py`,
+  `accum_grid.py`, `dev_pattern.py`, `bias_check.py` (all scratch).
 - Notebook entry: `~/.local/share/apple-silicon-lab/entries/AccumProbe/`
-  with both pre-experiment (16:12:50Z) and final (16:34:40Z) entries.
+  with pre-experiment (16:12:50Z), final (16:34:40Z), and addendum
+  (16:38:58Z+) entries.
 - Artifacts: `~/.local/share/apple-silicon-lab/artifacts/AccumProbe/`
-  with probe 1 and probe 2 device outputs, exact references, packed
-  inputs, SUMMARY, post-state, SHA256SUMS.
-
-## Not in this receipt
-
-- An exact reproduction of the C pv device accumulator. None was found.
-- A modified encoder chain. The four islands run in isolation; the host
-  orchestration remains in IslandGolden2 / 2026-09-30-t6021-island-bmm /
-  2026-09-30-t6021-island-select-rms.
-- Modifying any tool, the ANEC, or the device driver.
+  with probe 1, 2, 3 device outputs, exact references, packed inputs,
+  SUMMARY (with addendum), post-state, SHA256SUMS.
 
 ## Run evidence
 
-- Two device invocations under `flock /var/tmp/ane-run.lock timeout 60`:
-  probe 1 (33.6 ms + 34.2 ms, two calls in series), probe 2 (33.6 ms).
+- Three device invocations under `flock /var/tmp/ane-run.lock timeout 60`:
+  probe 1 (33.6 + 34.2 ms), probe 2 (33.6 ms), probe 3 (42.4 ms).
 - M2 post-state: kernel `7.1.13-ARCH-polltx`, boot ID
-  `95675db4-da91-42e5-beee-dfb3329e7369` (unchanged from prior entries).
+  `95675db4-da91-42e5-beee-dfb3329e7369` (unchanged).
 - No kernel / module / boot / config change. No dmesg fatal markers.
-- The captured fatal-marker search returned no matches in this session.
-- Notebook entry: `~/.local/share/apple-silicon-lab/entries/AccumProbe/`.
-- Raw inputs, packed surfaces, device outputs, analysis scripts, post-state,
-  dmesg, and SHA256SUMS under
-  `~/.local/share/apple-silicon-lab/artifacts/AccumProbe/`.
