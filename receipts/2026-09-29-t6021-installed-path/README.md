@@ -123,3 +123,38 @@ the 2048x5120 matvec (20 MiB weights, about 3 GiB of BO traffic), all
 PASS, no BO_INIT failure, no IOMMU fault in dmesg, memory used 4.9 GB and
 stable. Not tested: `free_io_bos=1` (off by default), free while mapped.
 Open ceiling: io BOs of every process stay held until reboot.
+
+## Multi-task programs: batched-matmul islands (module `df541aa4...`, 2026-09-30)
+
+Parakeet islands compiled by the H14 compiler (island A kt and p1, island C pv;
+2 to 5 tasks) run on the M2 ANE and match the exact fp64 product.
+
+| island | tasks | shape | max error (3 seeds) |
+|---|---|---|---|
+| island-c-pv (probs x V) | 5 | [8,375,375] x [8,375,128] | 0.188 cond-units |
+| island-a-kt | 2 | [8,375,128] x [8,128,749] | 0.470 |
+| island-a-attn-p1 | 2 | [8,375,128] x [8,128,375] | 0.487 |
+
+Every valid lane is within 1.0 cond-unit (`|dev - exact| / (2^-11 * sum|a_k w_k|)`,
+the fp16 output rounding bound) and padding lanes are zero
+(`tools/island_ref.py`, gate `ane/t6021/gate/gate.sh island-c-pv` and the two others).
+
+What failed first and why (all measured): the single-task recipe (one op record
+per task, tags from the register role) faulted. The firmware pushes ONE TQ
+command per call and patches ONE 61-slot BAR table from ONE operation record;
+the hardware walks all tasks against that table (fw135 pushToHWDirect 0x44c98,
+receipt `2026-09-30-t6021-procedure-section`). So each slot names one buffer for
+the whole program. For c-pv slot 3 is a SCRATCH surface: task 0 writes it, tasks
+1 to 4 read it as KernelDMA at offsets 1696512, 1131008, 565504 and 0. The
+builder now derives each slot's buffer from the extents it reaches, adds a
+scratch buffer (bufferId 0x40, size from the extents plus a guard page) as an
+extra EXEC io record, and emits one operation record. Slot 5 reads w in four
+chunks (offsets 576000 to 0, 192000 bytes each, 768000 = the size of w) and slot
+6 reads the large operand.
+
+A false pass was found and removed: an earlier tool accepted the same runs with a
+"3 ulp band plus waivers" while 0.2% of lanes were far off, using a wrong sum of
+terms. The verdict above uses the exact product and the true sum of terms.
+
+Not done: select islands and the rms_norm chain (device output wrong or program
+refused), the intermittent all-zero output on some boots, any model.
