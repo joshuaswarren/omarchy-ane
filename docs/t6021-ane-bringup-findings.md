@@ -1262,10 +1262,15 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
 - On the 13.5 firmware the host sends no mailbox message after probe (RTKit
   HELLO times out; commands use the ChMan ring and the IPI doorbell), so
   the A2I FIFO cannot fill.
-- Open: AIC2 884 (`mailbox-recv`) storms at about 700,000/s while the
-  mailbox is started, about one CPU of hardirq time. The I2A FIFO is empty
-  during the storm, so 884 is not I2A-not-empty (inference: it is the ANE
-  doorbell line). `ane_t6021.hello_wait_ms=0` should keep it disabled; not
-  yet booted. Its link to the episodic latency stalls is not decided.
+- AIC2 884 (`mailbox-recv`) stormed at about 700,000/s while the mailbox was
+  started (about one CPU of hardirq time), and it caused the episodic latency
+  stalls. `hello_wait_ms` now defaults to 0 (omarchy-ane `4648648`): the
+  mailbox never starts and 884 never fires. add p90 fell from 95-152 ms to
+  1.29-1.42 ms; a 30 s loop ran 4,787 processes instead of 203. The I2A FIFO
+  was empty during the storm, so 884 is not I2A-not-empty (inference: it is
+  the ANE doorbell line).
+- Open: io BOs the firmware saw stay held until reboot, capped at 2 GiB
+  (`ANE_T6021_BO_TOTAL_MAX`), so a boot runs out after about 14,500 add
+  processes; every `BO_INIT` then fails until reboot.
 - Every M2 boot so far is a USB chainload from the M1 host; the disk boot
   path is unproven.

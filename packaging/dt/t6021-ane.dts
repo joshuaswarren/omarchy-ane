@@ -25,7 +25,8 @@
  *    line that never fires: stock TX waits on it only while the A2I FIFO
  *    is full, and ane_t6021 on the 13.5 firmware sends no mailbox message
  *    after probe. recv-not-empty 884 storms (~0.7 M/s) while the mailbox
- *    is started; see receipts/2026-09-30-t6021-stock-mailbox.
+ *    is started; ane_t6021 leaves it stopped (hello_wait_ms=0). See
+ *    receipts/2026-09-30-t6021-stock-mailbox.
  *  - reserved-memory/ane-alias-iova and memory-region: the IOVA reservation
  *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000,
  *    16 MiB, in the ane DART domain).
