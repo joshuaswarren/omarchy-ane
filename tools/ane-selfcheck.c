@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 /* Copyright 2026 Joshua Warren */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 #include "ane.h"
 #include "ane_m2.h"
@@ -13,59 +13,57 @@
 /*
 // HOST-ONLY self-check: no device, no kernel, no hardware anywhere.
 //
-// 1. Byte identity: ane_m2_program_build() on fixtures/program-0.anec must
-//    reproduce the proven Python lab section builder's output byte for byte
-//    (fixtures generic/kernel/descriptor/operation/procedure/tdprop bins --
-//    the exact payloads that produced the bit-exact y == a+b run through
-//    the scratch-module sequencer path). This is the main proof of the
-//    builder; it says nothing about device behaviour.
-// 2. The fp16 half-away reference vectors (independent of numpy: the ANE's
-//    add rounding, verified against a numpy ties-away oracle when the
-//    vectors were pinned).
-// 3. Envelope refusals: a truncated anec must be rejected.
+// 1. Byte identity: ane_m2_program_build() on every fixture under
+//    fixtures/h14-anec/<op> must reproduce the lab Python section builder
+//    (tools/h14_sections.py) byte for byte: the six <section>.bin files
+//    next to each ANEC. For add those payloads are additionally the exact
+//    bytes of the hardware-proven LOAD command. This proves the builder;
+//    it says nothing about device behaviour.
+// 2. The fp16 half-away add reference vectors (independent of numpy: the
+//    ANE's add rounding, verified against a numpy ties-away oracle when
+//    the vectors were pinned).
+// 3. Envelope refusals: one test per refusal the lab builder raises
+//    (fixtures/h14-anec README in the lab repo), plus the truncated and
+//    tampered-firstTaskBytes cases. Every corruption is a named byte
+//    patch on a real fixture.
 //
-// usage: ane-selfcheck [fixtures-dir]
+// usage: ane-selfcheck [fixtures-dir]   (default ../fixtures/h14-anec)
 */
 
-static const char *fixture(const char *dir, const char *name)
+static const char *fixture(const char *dir, const char *op, const char *name)
 {
 	static char path[512];
-	snprintf(path, sizeof(path), "%s/%s", dir, name);
+
+	snprintf(path, sizeof(path), "%s/%s/%s", dir, op, name);
 	return path;
 }
 
-static int check_section(const char *dir, const char *name, int which,
-			 const struct ane_m2_sections *secs)
+static uint8_t *read_all(const char *path, long *out_size)
 {
-	const char *path = fixture(dir, name);
 	FILE *fp = fopen(path, "rb");
-	long expect;
-	int ok;
+	uint8_t *buf;
+	long size;
 
 	if (!fp) {
 		printf("FAIL %s: cannot open\n", path);
-		return 0;
+		return NULL;
 	}
 	fseek(fp, 0, SEEK_END);
-	expect = ftell(fp);
+	size = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	ok = expect > 0 && (uint64_t)expect == secs->sec[which].size;
-	if (ok) {
-		void *buf = malloc((uint64_t)expect);
-		if (fread(buf, 1, (uint64_t)expect, fp) != (size_t)expect) {
-			ok = 0;
-		}
-		ok = ok && !memcmp(buf, secs->sec[which].data,
-				   secs->sec[which].size);
+	buf = malloc((uint64_t)size);
+	if (!buf || fread(buf, 1, (uint64_t)size, fp) != (size_t)size) {
+		printf("FAIL %s: short read\n", path);
 		free(buf);
+		fclose(fp);
+		return NULL;
 	}
 	fclose(fp);
-	printf("  [%s] %s (%ld bytes byte-identical)\n", ok ? "ok" : "FAIL",
-	       name, expect);
-	return ok;
+	*out_size = size;
+	return buf;
 }
 
-static int check_byte_identity(const char *dir)
+static int check_byte_identity(const char *dir, const char *op)
 {
 	static const struct {
 		const char *name;
@@ -78,8 +76,7 @@ static int check_byte_identity(const char *dir)
 		{ "procedure.bin", ANE_M2_SEC_PROCEDURE },
 		{ "tdprop.bin", ANE_M2_SEC_TDPROP },
 	};
-	const char *anec_path = fixture(dir, "program-0.anec");
-	FILE *fp = fopen(anec_path, "rb");
+	const char *anec_path = fixture(dir, op, "program-0.anec");
 	uint8_t *anec;
 	struct ane_m2_model model;
 	struct ane_m2_sections secs;
@@ -88,36 +85,41 @@ static int check_byte_identity(const char *dir)
 	int ok;
 	int i;
 
-	if (!fp) {
-		printf("FAIL %s: cannot open\n", anec_path);
+	anec = read_all(anec_path, &size);
+	if (!anec) {
 		return 0;
 	}
-	fseek(fp, 0, SEEK_END);
-	size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	anec = malloc((uint64_t)size);
-	if (fread(anec, 1, (uint64_t)size, fp) != (size_t)size) {
-		fclose(fp);
-		free(anec);
-		printf("FAIL %s: short read\n", anec_path);
-		return 0;
-	}
-	fclose(fp);
-
 	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
 	free(anec);
 	if (err) {
-		printf("FAIL ane_m2_program_build: %d\n", err);
+		printf("  [FAIL] %s: ane_m2_program_build: %d\n", op, err);
 		return 0;
 	}
-
 	ok = 1;
-	printf("byte identity vs the Python builder (%s):\n", dir);
 	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
-		ok = check_section(dir, table[i].name, table[i].which, &secs) &&
-		     ok;
+		const char *path = fixture(dir, op, table[i].name);
+		const struct ane_m2_sections *s = &secs;
+		uint8_t *want = read_all(path, &size);
+		int good;
+
+		if (!want) {
+			ane_m2_sections_free(&secs);
+			return 0;
+		}
+		good = (uint64_t)size == s->sec[table[i].which].size &&
+		       !memcmp(want, s->sec[table[i].which].data,
+			       (uint64_t)size);
+		if (!good) {
+			printf("  [FAIL] %s: %s differs (%ld B want, %llu B "
+			       "got)\n", op, table[i].name, size,
+			       (unsigned long long)s->sec[table[i].which].size);
+		}
+		free(want);
+		ok = ok && good;
 	}
 	ane_m2_sections_free(&secs);
+	printf("  [%s] %s: six sections byte-identical\n", ok ? "ok" : "FAIL",
+	       op);
 	return ok;
 }
 
@@ -158,61 +160,127 @@ static int check_f16_add(void)
 	return ok;
 }
 
-static int check_refusals(const char *dir)
+/* One refusal test: load <op>/program-0.anec, mutate it, expect refusal. */
+static int check_refusal(const char *dir, const char *op, const char *what,
+			 void (*mutate)(uint8_t *anec, long *size))
 {
-	const char *anec_path = fixture(dir, "program-0.anec");
-	FILE *fp = fopen(anec_path, "rb");
+	const char *anec_path = fixture(dir, op, "program-0.anec");
 	uint8_t *anec;
 	struct ane_m2_model model;
 	struct ane_m2_sections secs;
 	long size;
-	int ok = 1;
 	int err;
 	int good;
 
-	printf("envelope refusals:\n");
-	if (!fp) {
-		printf("  [FAIL] %s: cannot open\n", anec_path);
+	anec = read_all(anec_path, &size);
+	if (!anec) {
 		return 0;
 	}
-	fseek(fp, 0, SEEK_END);
-	size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	anec = malloc((uint64_t)size);
-	if (fread(anec, 1, (uint64_t)size, fp) != (size_t)size) {
-		fclose(fp);
-		free(anec);
-		return 0;
-	}
-	fclose(fp);
-
-	/* Truncated payload must be refused. */
-	err = ane_m2_program_build(anec, (uint64_t)size / 2, &model, &secs);
-	good = err != 0;
-	ok = ok && good;
-	printf("  [%s] truncated anec refused\n", good ? "ok" : "FAIL");
-
-	/* A tampered task length must be refused. */
-	anec[0x08] ^= 0x04; /* firstTaskBytes 244 -> 248, breaks tsk_size */
+	mutate(anec, &size);
 	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
 	good = err != 0;
-	ok = ok && good;
-	printf("  [%s] tampered td_size refused\n", good ? "ok" : "FAIL");
-
+	printf("  [%s] %s\n", good ? "ok" : "FAIL", what);
 	free(anec);
-	return ok;
+	return good;
+}
+
+static void mut_truncated(uint8_t *a, long *size)
+{
+	(void)a;
+	*size /= 2; /* payload shorter than the header promises */
+}
+
+static void mut_td_size(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x08] ^= 0x04; /* firstTaskBytes 244 -> 248, not the walked task */
+}
+
+static void mut_version(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x24] ^= 0x04; /* header version word 1 -> 5 */
+}
+
+static void mut_input_count(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x20] = 3; /* inputCount 3: no derivation for channels 7,8 */
+}
+
+static void mut_task_words(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x1013] |= 0x07; /* task header declares ~7400 B in a 260 B stream */
+}
+
+static void mut_task_gap(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x10a8] = 0x01; /* nonzero byte in the real-div task-0 gap */
+}
+
+static void mut_bar_reg(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x10e0] = 0x40; /* add src-base record 0x1110 -> 0x1100 */
+}
+
+static void mut_bar_slot(uint8_t *a, long *size)
+{
+	(void)size;
+	a[0x10e3] = 0x23; /* add src-base record slot 4 -> 2 (kernel tag) */
+}
+
+static void mut_empty_stream(uint8_t *a, long *size)
+{
+	(void)size;
+	memset(a + 0x1000, 0, 0xcc); /* relu stream: every word a filler */
+	a[0x0c] = 0;
+	a[0x0d] = 0;
+	a[0x0e] = 0;
+	a[0x0f] = 0; /* taskCount 0 */
 }
 
 int main(int argc, char **argv)
 {
-	const char *dir = argc > 1 ? argv[1] : "fixtures";
-	int ok;
+	static const char *const ops[] = {
+		"add", "mul", "relu", "add-scalar", "mul-scalar",
+		"real-div-scalar", "clip-low", "clip-high", "matvec",
+	};
+	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
+	int ok = 1;
+	unsigned i;
 
 	printf("HOST-ONLY self-check (no device; proves nothing about "
 	       "hardware behaviour)\n");
-	ok = check_byte_identity(dir);
+	printf("byte identity vs the Python builder (%s):\n", dir);
+	for (i = 0; i < sizeof(ops) / sizeof(ops[0]); i++) {
+		ok = check_byte_identity(dir, ops[i]) && ok;
+	}
 	ok = check_f16_add() && ok;
-	ok = check_refusals(dir) && ok;
+
+	printf("envelope refusals:\n");
+	ok = check_refusal(dir, "add", "truncated anec refused",
+			   mut_truncated) && ok;
+	ok = check_refusal(dir, "add", "tampered firstTaskBytes refused",
+			   mut_td_size) && ok;
+	ok = check_refusal(dir, "add", "unknown header version refused",
+			   mut_version) && ok;
+	ok = check_refusal(dir, "add", "inputCount 3 refused",
+			   mut_input_count) && ok;
+	ok = check_refusal(dir, "add", "task beyond the stream refused",
+			   mut_task_words) && ok;
+	ok = check_refusal(dir, "real-div-scalar",
+			   "nonzero 16-byte task gap refused",
+			   mut_task_gap) && ok;
+	ok = check_refusal(dir, "add", "BAR-ref at an unknown register refused",
+			   mut_bar_reg) && ok;
+	ok = check_refusal(dir, "add",
+			   "BAR slot 2 on a surface base refused",
+			   mut_bar_slot) && ok;
+	ok = check_refusal(dir, "relu", "empty task stream refused",
+			   mut_empty_stream) && ok;
 
 	printf("%s\n", ok ? "SELF-CHECK PASS" : "SELF-CHECK FAIL");
 	return ok ? 0 : 1;

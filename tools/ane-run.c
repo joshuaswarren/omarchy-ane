@@ -14,12 +14,28 @@
 // ane-run -- run one ANEC program through libane and save its outputs.
 //
 //   ane-run --anec program.anec --in 0=a.fp16 --in 1=b.fp16 \
-//           --out 0=y.fp16 [--repeat N] [--check-add]
+//           --out 0=y.fp16 [--repeat N] [--check OP]
 //
-// Input files must hold at least the channel's allocation bytes (ane_src_size).
-// Output files are written with exactly ane_dst_size bytes.
-// --check-add verifies y == a + b element-wise against the fp16
-// half-away-from-zero reference and needs inputs 0, 1 and output 0.
+// Input files must hold at least the channel's allocation bytes
+// (ane_src_size). Output files are written with exactly ane_dst_size
+// bytes. --check OP compares the output against the reference semantics
+// of the fixture op (lab tools/h14_oracle.py).
+//
+// PROVEN on hardware (boot 8f468602): only the two-input add, fp16 with
+// ties rounded away from zero. ASSUMED, not yet run on a device:
+//   - mul, add-scalar, mul-scalar, real-div-scalar round half away from
+//     zero like the add (mul products of two fp16 are exact before the
+//     rounding; mul-scalar scales by 0.5 and real-div-scalar by 2.0, so
+//     those two never round at all);
+//   - relu, clip-low, clip-high are exact lane compares;
+//   - matvec accumulates each output and rounds once; the device
+//     accumulation width and order are unknown, so --check matvec
+//     accepts a 2 ulp band and prints the max ulp difference.
+// The valid lanes are the surface positions of the ANEC layout:
+// elementwise ops pack one fp16 per 64-byte plane (nchw [1,512,1,1];
+// valid half index % 32 == 0), matvec packs 256 dense halves (half index
+// < 256). Every padding lane must be zero in the inputs and the output;
+// both are checked.
 */
 
 struct io_file {
@@ -83,57 +99,215 @@ static int write_exact(const char *path, const void *buf, uint64_t size)
 	return 0;
 }
 
-static int check_add(struct ane_nn *nn, struct io_file *in,
-		     struct io_file *out)
-{
-	uint64_t a_size;
-	uint64_t b_size;
-	uint64_t y_size;
-	uint64_t n;
-	uint64_t same = 0;
-	uint16_t *a;
-	uint16_t *b;
-	uint16_t *y;
+/* The checked fixture ops and their input arity. */
+enum {
+	CHK_ADD, CHK_MUL, CHK_RELU, CHK_ADD_SCALAR, CHK_MUL_SCALAR,
+	CHK_REAL_DIV, CHK_CLIP_LOW, CHK_CLIP_HIGH, CHK_MATVEC, CHK_COUNT
+};
 
-	if (!in[0].set || !in[1].set || !out[0].set || in[0].idx != 0 ||
-	    in[1].idx != 1 || out[0].idx != 0) {
-		fprintf(stderr, "--check-add needs --in 0, --in 1, --out 0\n");
+static const struct {
+	const char *name;
+	int ins;
+	int matvec;
+} check_ops[CHK_COUNT] = {
+	{ "add", 2, 0 },
+	{ "mul", 2, 0 },
+	{ "relu", 1, 0 },
+	{ "add-scalar", 1, 0 },
+	{ "mul-scalar", 1, 0 },
+	{ "real-div-scalar", 1, 0 },
+	{ "clip-low", 1, 0 },
+	{ "clip-high", 1, 0 },
+	{ "matvec", 1, 1 },
+};
+
+static int parse_check_op(const char *name)
+{
+	int i;
+
+	for (i = 0; i < CHK_COUNT; i++) {
+		if (!strcmp(name, check_ops[i].name)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+/* The matvec weight table of the fixture (lab tools/h14_oracle.py). */
+static double matvec_weight(int n, int k)
+{
+	return ((n % 8) - 3.5) * 0.25 + ((k % 4) - 1.5) * 0.0625;
+}
+
+/* ulp size of a double value at fp16 granularity (the matvec band). */
+static double f16_ulp(double v)
+{
+	double a = fabs(v);
+	int e;
+
+	if (a == 0.0) {
+		return 0x1p-24; /* subnormal quantum */
+	}
+	frexp(a, &e);
+	if (e < -13) {
+		return 0x1p-24;
+	}
+	return ldexp(1.0, e - 11);
+}
+
+static int check_program(int op, struct ane_nn *nn, struct io_file *in,
+			 struct io_file *out)
+{
+	int two_in = check_ops[op].ins == 2;
+	int matvec = check_ops[op].matvec;
+	uint64_t a_size, b_size = 0, y_size, n, lanes, i, j;
+	uint64_t pad_in = 0, pad_out = 0, exact = 0, in_band = 0;
+	uint64_t max_ulp_milli = 0;
+	uint16_t *a, *b = NULL, *y;
+	int ok;
+
+	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0 ||
+	    (two_in && (!in[1].set || in[1].idx != 1))) {
+		fprintf(stderr, "--check %s needs --in 0%s, --out 0\n",
+			check_ops[op].name, two_in ? ", --in 1" : "");
 		return -1;
 	}
 	a_size = ane_src_size(nn, 0);
-	b_size = ane_src_size(nn, 1);
 	y_size = ane_dst_size(nn, 0);
-	if (!a_size || a_size != b_size || y_size != a_size) {
-		fprintf(stderr, "--check-add: io channel sizes disagree\n");
+	if (two_in) {
+		b_size = ane_src_size(nn, 1);
+	}
+	if (!a_size || !y_size || y_size != a_size ||
+	    (two_in && b_size != a_size)) {
+		fprintf(stderr, "--check %s: io channel sizes disagree\n",
+			check_ops[op].name);
 		return -1;
 	}
-	n = y_size / 2;
+	n = a_size / 2;
+	lanes = matvec ? 256 : n / 32;
+
 	a = read_exact(in[0].path, a_size);
-	b = read_exact(in[1].path, b_size);
+	if (two_in) {
+		b = read_exact(in[1].path, b_size);
+	}
 	y = read_exact(out[0].path, y_size);
-	if (!a || !b || !y) {
+	if (!a || !y || (two_in && !b)) {
 		free(a);
 		free(b);
 		free(y);
 		return -1;
 	}
-	for (uint64_t i = 0; i < n; i++) {
-		same += ane_f16_add_half_away(a[i], b[i]) == y[i];
+
+	/* Valid-lane predicate of the surface layout; padding must be zero
+	 * in the inputs and the output. */
+	#define LANE_VALID(i) (matvec ? (i) < 256 : ((i) % 32) == 0)
+	for (i = 0; i < n; i++) {
+		if (LANE_VALID(i)) {
+			continue;
+		}
+		pad_in += (a[i] != 0) + (b && b[i] != 0);
+		pad_out += y[i] != 0;
 	}
-	printf("%llu/%llu bit-exact vs half-away reference: %s\n",
-	       (unsigned long long)same, (unsigned long long)n,
-	       same == n ? "PASS" : "FAIL");
+	for (j = 0; j < lanes; j++) {
+		double va;
+		uint16_t want;
+
+		i = matvec ? j : j * 32;
+		va = ane_f16_to_f64(a[i]);
+
+		if (matvec) {
+			double acc = 0.0;
+			double diff;
+			uint64_t milli;
+			int k;
+
+			for (k = 0; k < 256; k++) {
+				acc += ane_f16_to_f64(a[k]) *
+				       matvec_weight((int)j, k);
+			}
+			want = ane_f16_round_half_away(acc);
+			/* Device accumulation order unknown: a 2 ulp band,
+			 * max |got - want| printed in milli-ulp. */
+			diff = fabs(ane_f16_to_f64(y[i]) -
+				    ane_f16_to_f64(want)) /
+			       f16_ulp(ane_f16_to_f64(want));
+			milli = (uint64_t)(diff * 1000.0 + 0.5);
+
+			in_band += diff <= 2.0;
+			if (milli > max_ulp_milli) {
+				max_ulp_milli = milli;
+			}
+			exact += want == y[i];
+			continue;
+		}
+		switch (op) {
+		case CHK_ADD:
+			want = ane_f16_round_half_away(va +
+				ane_f16_to_f64(b[i]));
+			break;
+		case CHK_MUL:
+			want = ane_f16_round_half_away(va *
+				ane_f16_to_f64(b[i]));
+			break;
+		case CHK_RELU:
+			want = va > 0.0 ? a[i] : (uint16_t)0x0000;
+			break;
+		case CHK_ADD_SCALAR:
+			want = ane_f16_round_half_away(va + 0.5);
+			break;
+		case CHK_MUL_SCALAR:
+			want = ane_f16_round_half_away(va * 0.5);
+			break;
+		case CHK_REAL_DIV:
+			want = ane_f16_round_half_away(va * 2.0);
+			break;
+		case CHK_CLIP_LOW:
+			want = va >= 0.5 ? a[i] : (uint16_t)0x3800;
+			break;
+		case CHK_CLIP_HIGH:
+			want = va <= 0.5 ? a[i] : (uint16_t)0x3800;
+			break;
+		default:
+			want = 0;
+			break;
+		}
+		exact += want == y[i];
+	}
+	#undef LANE_VALID
+
+	ok = !pad_in && !pad_out &&
+	     (matvec ? in_band == lanes : exact == lanes);
+	if (matvec) {
+		printf("%llu/%llu lanes within the 2 ulp band "
+		       "(%llu bit-exact), max %llu.%03llu ulp; "
+		       "padding %s: %s\n",
+		       (unsigned long long)in_band, (unsigned long long)lanes,
+		       (unsigned long long)exact,
+		       (unsigned long long)(max_ulp_milli / 1000),
+		       (unsigned long long)(max_ulp_milli % 1000),
+		       pad_in || pad_out ? "lanes NONZERO" : "lanes zero",
+		       ok ? "PASS" : "FAIL");
+	} else {
+		printf("%llu/%llu lanes bit-exact vs the %s reference, "
+		       "padding %s: %s\n",
+		       (unsigned long long)exact, (unsigned long long)lanes,
+		       check_ops[op].name,
+		       pad_in || pad_out ? "lanes NONZERO" : "lanes zero",
+		       ok ? "PASS" : "FAIL");
+	}
 	free(a);
 	free(b);
 	free(y);
-	return same == n ? 0 : -1;
+	return ok ? 0 : -1;
 }
 
 static void usage(void)
 {
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
-		"[--out IDX=FILE]... [--repeat N] [--check-add]\n");
+		"[--out IDX=FILE]... [--repeat N] [--check OP]\n"
+		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
+		"clip-low clip-high matvec\n");
 }
 
 int main(int argc, char **argv)
@@ -143,7 +317,7 @@ int main(int argc, char **argv)
 	struct io_file ins[8] = { 0 };
 	struct io_file outs[8] = { 0 };
 	uint32_t repeat = 1;
-	int check = 0;
+	int check = -1;
 	int ret;
 
 	for (int i = 1; i < argc; i++) {
@@ -181,8 +355,12 @@ int main(int argc, char **argv)
 				return 2;
 		} else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) {
 			repeat = (uint32_t)strtoul(argv[++i], NULL, 0);
-		} else if (!strcmp(argv[i], "--check-add")) {
-			check = 1;
+		} else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
+			check = parse_check_op(argv[++i]);
+			if (check < 0) {
+				usage();
+				return 2;
+			}
 		} else {
 			usage();
 			return 2;
@@ -255,8 +433,8 @@ int main(int argc, char **argv)
 		free(buf);
 	}
 
-	if (!ret && check) {
-		ret = check_add(nn, ins, outs);
+	if (!ret && check >= 0) {
+		ret = check_program(check, nn, ins, outs);
 	}
 
 	ane_free(nn);

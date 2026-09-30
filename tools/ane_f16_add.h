@@ -35,15 +35,17 @@ static inline double ane_f16_to_f64(uint16_t h)
 	return sign ? -base : base;
 }
 
-static inline uint16_t ane_f16_add_half_away(uint16_t ha, uint16_t hb)
+/* Round a finite double to the nearest fp16 value, ties away from zero.
+ * This is the rounding tail of the hardware-proven add; the mul and
+ * scalar references share it. The rounding is exact in double: every
+ * fp16-representable input and every product/sum of two fp16 magnitudes
+ * is a multiple of 2^-24, inside the 53-bit mantissa. */
+static inline uint16_t ane_f16_round_half_away(double s)
 {
-	double s = ane_f16_to_f64(ha) + ane_f16_to_f64(hb);
 	uint16_t sign = signbit(s) ? (uint16_t)0x8000 : (uint16_t)0x0000;
 	double a, ulp, frac, n;
 	int e;
 
-	/* The add is exact in double: the sum of two fp16 magnitudes
-	 * (< 2^17) is a multiple of 2^-24, inside the 53-bit mantissa. */
 	if (isnan(s)) {
 		return 0x7e00; /* canonical quiet NaN */
 	}
@@ -52,7 +54,7 @@ static inline uint16_t ane_f16_add_half_away(uint16_t ha, uint16_t hb)
 	}
 	a = fabs(s);
 	if (a == 0.0) {
-		return sign; /* -0 + -0 keeps the sign */
+		return sign; /* keep the sign of zero */
 	}
 
 	frexp(a, &e); /* a = f * 2^e, f in [0.5, 1) */
@@ -88,6 +90,12 @@ static inline uint16_t ane_f16_add_half_away(uint16_t ha, uint16_t hb)
 	/* n in [1024, 2048): biased exponent (e-1)+15, mantissa n-1024. */
 	return (uint16_t)(sign | (uint32_t)((e + 14) << 10) |
 			  (uint32_t)(n - 1024.0));
+}
+
+static inline uint16_t ane_f16_add_half_away(uint16_t ha, uint16_t hb)
+{
+	return ane_f16_round_half_away(ane_f16_to_f64(ha) +
+				       ane_f16_to_f64(hb));
 }
 
 #endif /* __ANE_F16_ADD_H__ */
