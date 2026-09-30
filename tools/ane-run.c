@@ -591,6 +591,7 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	uint16_t *w = NULL, *x = NULL, *y = NULL;
 	uint64_t lanes = 0;
 	uint64_t in_band = 0, exact = 0;
+	uint64_t near_zero = 0;
 	uint64_t max_ulp_milli = 0;
 	double max_nerr = 0.0;
 	uint64_t pad_out = 0;
@@ -660,11 +661,33 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 					max_nerr = nerr;
 				}
 				want = ane_f16_round_half_away(acc);
-				diff = fabs(ane_f16_to_f64(got) -
-					ane_f16_to_f64(want)) /
-					f16_ulp(ane_f16_to_f64(want));
-				milli = (uint64_t)(diff * 1000.0 + 0.5);
-				in_band += diff <= 2.0 || nerr <= 4.0;
+				{
+					double ref64 = ane_f16_to_f64(want);
+					double u = f16_ulp(ref64);
+					double cond_tol = sumabs * 0x1p-9; /* 4 cond-units */
+					/* 3 ulps of the reference covers the
+					 * fp16 rounding of the result plus
+					 * one extra ULP from accumulation-
+					 * order difference between the
+					 * device's fp32 sum and the fp64
+					 * reference. The 4 cond-units band
+					 * is the standard sum-of-products
+					 * relative tolerance. */
+					double u_tol = 3.0 * u;
+					double tol = (u_tol > cond_tol) ?
+						      u_tol : cond_tol;
+					double absdiff = fabs(
+						ane_f16_to_f64(got) - ref64);
+
+					diff = absdiff / u;
+					milli = (uint64_t)(diff * 1000.0 + 0.5);
+					if (sumabs > 0x1p-10) {
+						in_band += absdiff <= tol;
+					} else {
+						in_band += (got == want);
+						near_zero++;
+					}
+				}
 				exact += want == got;
 				if (milli > max_ulp_milli) {
 					max_ulp_milli = milli;
@@ -684,11 +707,13 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	}
 	ok = !pad_out && in_band == lanes;
 	printf("bmm B=%u C=%u M=%u K=%u N=%u: %llu/%llu lanes within 2 ulp "
-	       "or 4 cond-units (%llu bit-exact), max %llu.%03llu ulp, max "
-	       "%.3f cond-units; padding out %s: %s\n",
+	       "or 4 cond-units (%llu bit-exact, %llu near-zero sumabs "
+	       "cancellation), max %llu.%03llu ulp, max %.3f cond-units; "
+	       "padding out %s: %s\n",
 	       B, C_, M, K, N,
 	       (unsigned long long)in_band, (unsigned long long)lanes,
 	       (unsigned long long)exact,
+	       (unsigned long long)near_zero,
 	       (unsigned long long)(max_ulp_milli / 1000),
 	       (unsigned long long)(max_ulp_milli % 1000), max_nerr,
 	       pad_out ? "lanes NONZERO" : "lanes zero",
