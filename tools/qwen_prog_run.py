@@ -14,11 +14,19 @@ to <work>/<name>.f16; use --out NAME=FILE to select another destination.
 
 import argparse
 import json
+import struct
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
+
+# The driver's call wait accepts any TD-counter move, so a longer program
+# can return before its outputs are written and the firmware can keep
+# writing pooled io BOs (docs/t6021-ane-bringup-findings.md, section 21).
+# Raise this only with the driver change that waits for the program's own
+# TD count.
+QUALIFIED_TASKS = 2
 
 
 class Refuse(Exception):
@@ -135,6 +143,11 @@ def main(argv=None):
     outputs = {n: p for n, p in ports.items() if p["direction"] == "output"}
     if not anec.is_file():
         raise Refuse(f"missing ANEC for {args.prog}")
+    with anec.open("rb") as handle:
+        tasks = struct.unpack_from("<I", handle.read(16), 0x0C)[0]
+    if tasks > QUALIFIED_TASKS and not (args.dry or args.pack_only):
+        raise Refuse(f"{args.prog} has {tasks} tasks; device runs are qualified for "
+                     f"{QUALIFIED_TASKS} until the driver waits for the program's own TD count")
 
     def parse_named(specs, available, flag):
         result = {}

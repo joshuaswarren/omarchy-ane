@@ -103,7 +103,9 @@ least the allocation.
   descriptor strides (for example `t5` [1,1,6144,3] at 64 B per row, and
   [1,16,1,1] at 64 B per plane). The `prog_020` inputs pack to the same
   bytes as the surfaces that ran on the M2 (`c2f1483b`, `d1fa1370`,
-  `9e996bea`). The HWX readers moved into the generator.
+  `9e996bea`). The HWX readers moved into the generator. A device run of a
+  program with more than 2 tasks is refused until the driver waits for the
+  program's own TD count; `--dry` and `--pack-only` still work.
 
 ## Per-program tables
 
@@ -197,7 +199,7 @@ reason and a device test for each group:
   `-Wall -Werror -Wextra`.
 - `tools/ane-selfcheck fixtures/h14-anec`: SELF-CHECK PASS, including the
   new refusal of a table that leaves a task-stream slot unbound.
-- `python3 -m pytest -q tests/`: 7 passed. `test_hwx_ports.py` regenerates
+- `python3 -m pytest -q tests/`: 8 passed. `test_hwx_ports.py` regenerates
   all 38 tables, checks the size and coverage invariants, runs
   `ane-run --dry-run` on each, and checks the `prog_020` binding.
 - `/var/tmp/qwen-real-anec-h14/PORTS_SHA256SUMS` lists the 38 new tables.
