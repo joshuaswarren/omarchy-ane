@@ -432,20 +432,15 @@ out:
 	return result;
 }
 
-/* TEMPORARY tunables for the output-landing measurement. */
-static unsigned int call_settle_us;
+/* Time to let the output writes land after the completion signals.
+ * Measured 2026-09-29 on some boots: the fw ack, the TD counter and the
+ * TQ words all report done ~0.13 ms before the output reaches DRAM (the
+ * output read as zeros in about 1 of 5 calls). No signal for "output
+ * landed" is known, so the wait is a fixed margin of about 8x the lag. */
+static unsigned int call_settle_us = 1000;
 module_param(call_settle_us, uint, 0644);
-static unsigned int call_t2h_ms;
-module_param(call_t2h_ms, uint, 0644);
-
-static bool ane_rtclient_t2h_pending(struct ane_rtclient *ane, unsigned int ch)
-{
-	const struct ane_t6021_chman_static *c = &ane_t6021_chman_layout[ch];
-	u64 *slot = ane->fw->boot_ipc + c->off +
-		    (size_t)ane->legacy_cmd_cursor[ch] * 64;
-
-	return !(READ_ONCE(slot[0]) & 1);
-}
+MODULE_PARM_DESC(call_settle_us,
+		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
 
 /* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
  * completion: measured 2026-09-29, an ack can arrive before the engine
@@ -570,27 +565,9 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		return ret;
 	}
 	if (opcode == CSNE_CMD_PROCEDURE_CALL) {
-		ktime_t t0 = ktime_get();
-		bool early4 = ane_rtclient_t2h_pending(ane, 4);
-		bool early6 = ane_rtclient_t2h_pending(ane, 6);
-		s64 t_cnt, t_t2h = -1;
-
 		ret = ane_rtclient_call_wait(ane, timeout_ms);
-		t_cnt = ktime_to_us(ktime_sub(ktime_get(), t0));
-		if (!ret && call_t2h_ms) {
-			unsigned long dl = jiffies + msecs_to_jiffies(call_t2h_ms);
-
-			while (time_before(jiffies, dl) &&
-			       !ane_rtclient_t2h_pending(ane, 6))
-				udelay(20);
-			t_t2h = ktime_to_us(ktime_sub(ktime_get(), t0));
-		}
 		if (!ret && call_settle_us)
 			usleep_range(call_settle_us, call_settle_us + 100);
-		dev_info(ane->dev, "CALLWAIT cnt=%lldus t2h=%lldus pending-at-ack 4:%d 6:%d now 4:%d 6:%d\n",
-			 t_cnt, t_t2h, early4, early6,
-			 ane_rtclient_t2h_pending(ane, 4),
-			 ane_rtclient_t2h_pending(ane, 6));
 		if (ret) {
 			dev_info(ane->dev, "call completion wait failed %d\n",
 				 ret);
@@ -958,6 +935,10 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 			*(u64 *)(cmd + slot_base + 0x20) =
 				cpu_to_le64(ios[i].size);
 		}
+		/* Drain the CPU write buffers so the input BOs the user
+		 * filled through its uncached mapping are in DRAM before
+		 * the fw starts reading them. */
+		wmb();
 		ret = ane_rtclient_command(ane, command,
 							       cmd_size,
 							       CSNE_CMD_PROCEDURE_CALL,
