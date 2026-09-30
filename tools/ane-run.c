@@ -100,10 +100,27 @@ static int write_exact(const char *path, const void *buf, uint64_t size)
 	return 0;
 }
 
-/* The checked fixture ops and their input arity. */
+/* The checked fixture ops and their input arity.
+ *
+ * select: 3 inputs (a, b, cond). The (a, b, cond) ordering at --in 0,1,2
+ * matches the ANEC channel order 5,6,7 = MIL declaration order for
+ * select(a = a_in, b = b_in, cond = c_in). UNPROVEN for any program
+ * whose MIL does not declare cond last: the C builder binds channels
+ * in declaration order and the runtime input list comes out in the
+ * same order, but a decoder that reorders the operands would silently
+ * swap a and b.
+ *
+ * bmm: 2 inputs (x, y). The (x, y) ordering at --in 0,1 matches channels
+ * 5,6 = MIL declaration order for matmul(x = q, y = k). UNPROVEN for
+ * any program whose MIL reorders operands.
+ *
+ * rms: 1 input (x). Gamma is loaded from --weights (fp16 [C], row-major;
+ * matches the MIL BLOBFILE gamma offset 64 in the encoder oracle).
+ */
 enum {
 	CHK_ADD, CHK_MUL, CHK_RELU, CHK_ADD_SCALAR, CHK_MUL_SCALAR,
-	CHK_REAL_DIV, CHK_CLIP_LOW, CHK_CLIP_HIGH, CHK_MATVEC, CHK_COUNT
+	CHK_REAL_DIV, CHK_CLIP_LOW, CHK_CLIP_HIGH, CHK_MATVEC,
+	CHK_SELECT, CHK_BMM, CHK_RMS, CHK_COUNT
 };
 
 static const struct {
@@ -120,6 +137,9 @@ static const struct {
 	{ "clip-low", 1, 0 },
 	{ "clip-high", 1, 0 },
 	{ "matvec", 1, 1 },
+	{ "select", 3, 0 },
+	{ "bmm", 2, 0 },
+	{ "rms", 1, 0 },
 };
 
 static int parse_check_op(const char *name)
@@ -197,11 +217,534 @@ static int matvec_shape(const struct ane_nn *nn, uint32_t *M, uint32_t *K,
 /* Weight table for --check matvec, set from --weights. */
 static const char *weights_path;
 
+/* Select: read the nchw to derive dtype, row stride, and valid-lane count.
+ *
+ * The cond operand (channel 7 in the Parakeet select-8head island; the
+ * 3rd declared input of MIL select(a, b, cond)) is a bool tensor whose
+ * surface is byte-packed and row-aligned to 64 bytes (row_bytes =
+ * align_up(W, 64) when each element is one byte; the fp16 surfaces use
+ * row_bytes = align_up(W*2, 64) and a half index % (W*2/2) advances
+ * one element). The decoder's dtype inference is INFERRED from the
+ * MIL declaration, not a decoded fw site.
+ *
+ * Returns 0 on a recognized select shape and writes per-channel shapes;
+ * -1 on disagreement (e.g. fp16 channel 7 row stride inconsistent with
+ * bool packing).
+ */
+static int select_shape(const struct ane_nn *nn,
+			uint64_t *elements,
+			uint64_t *cond_row_bytes,
+			uint64_t *a_row_bytes,
+			int *cond_is_bool)
+{
+	const struct anec *a = to_anec(nn);
+	uint64_t N, C, H, W;
+	uint64_t fp16_row, bool_row;
+
+	if (ane_src_count(nn) != 3 || ane_dst_count(nn) != 1) {
+		fprintf(stderr, "--check select needs 3 inputs + 1 output\n");
+		return -1;
+	}
+	/* channels 5 (a), 6 (b) are fp16; channel 7 (cond) is bool (or
+	 * the encoder-decided shape per the MIL). We require N, C, H, W
+	 * to agree across the three input channels and the output. */
+	if (a->nchw[4][0] != a->nchw[5][0] ||
+	    a->nchw[4][1] != a->nchw[5][1] ||
+	    a->nchw[4][2] != a->nchw[5][2] ||
+	    a->nchw[4][3] != a->nchw[5][3] ||
+	    a->nchw[4][0] != a->nchw[6][0] ||
+	    a->nchw[4][1] != a->nchw[6][1] ||
+	    a->nchw[4][2] != a->nchw[6][2] ||
+	    a->nchw[4][3] != a->nchw[6][3] ||
+	    a->nchw[4][0] != a->nchw[7][0] ||
+	    a->nchw[4][1] != a->nchw[7][1] ||
+	    a->nchw[4][2] != a->nchw[7][2] ||
+	    a->nchw[4][3] != a->nchw[7][3]) {
+		fprintf(stderr, "--check select: input shapes disagree\n");
+		return -1;
+	}
+	N = a->nchw[4][0];
+	C = a->nchw[5][1];
+	H = a->nchw[4][2];
+	W = a->nchw[4][3];
+	if (!N || !C || !H || !W) {
+		fprintf(stderr, "--check select: zero-shape channel\n");
+		return -1;
+	}
+	/* cond is bool (1 byte per element) iff row_bytes == align_up(W, 64)
+	 * AND a->nchw[7][4] == H * align_up(W, 64). For fp16 cond (not
+	 * exercised by the Parakeet islands), row_bytes would be
+	 * align_up(W*2, 64) and the rule would be inverted. */
+	fp16_row = (W * 2 + 63) & ~63ULL;
+	bool_row = (W + 63) & ~63ULL;
+	if (a->nchw[7][5] == bool_row &&
+	    a->nchw[7][4] == H * bool_row) {
+		*cond_is_bool = 1;
+		*cond_row_bytes = bool_row;
+	} else if (a->nchw[7][5] == fp16_row &&
+		   a->nchw[7][4] == H * fp16_row) {
+		*cond_is_bool = 0;
+		*cond_row_bytes = fp16_row;
+	} else {
+		fprintf(stderr, "--check select: cond row stride %llu does "
+			"not match either bool (%llu) or fp16 (%llu) packing\n",
+			(unsigned long long)a->nchw[7][5],
+			(unsigned long long)bool_row,
+			(unsigned long long)fp16_row);
+		return -1;
+	}
+	if (a->nchw[5][5] != fp16_row || a->nchw[6][5] != fp16_row ||
+	    a->nchw[4][5] != fp16_row) {
+		fprintf(stderr, "--check select: fp16 channels row stride "
+			"is not align_up(W*2, 64) (a=%llu b=%llu y=%llu, want "
+			"%llu)\n",
+			(unsigned long long)a->nchw[5][5],
+			(unsigned long long)a->nchw[6][5],
+			(unsigned long long)a->nchw[4][5],
+			(unsigned long long)fp16_row);
+		return -1;
+	}
+	*a_row_bytes = fp16_row;
+	*elements = N * C * H * W;
+	return 0;
+}
+
+/* Batched matmul (bmm): derive M, K, N from the loaded ANEC header.
+ *
+ * Shapes:
+ *   output (channel 4): [N, C, M, N] in MIL order (matmul x = q [B,C,M,K],
+ *                                          y = k [B,C,K,N], z = t2 [B,C,M,N]).
+ *   x (channel 5):      [N, C, M, K] (declared first; tensor x = q).
+ *   y (channel 6):      [N, C, K, N] (declared second; tensor y = k).
+ *
+ * The (x, y) ordering at --in 0,1 follows the MIL declaration order;
+ * UNPROVEN for any MIL that reorders operands. The fp32 accumulate
+ * path keeps the partial sum in double and quantises once at the end;
+ * the 2 ulp band and condition-normalized error match the matvec
+ * check (the device's accumulation order is unknown). */
+static int bmm_shape(const struct ane_nn *nn, uint32_t *Bm, uint32_t *Cm,
+		     uint32_t *Mm, uint32_t *Km, uint32_t *Nm)
+{
+	const struct anec *a = to_anec(nn);
+	uint64_t out_W, out_row, x_row, y_row;
+
+	if (ane_src_count(nn) != 2 || ane_dst_count(nn) != 1) {
+		fprintf(stderr, "--check bmm needs 2 inputs + 1 output\n");
+		return -1;
+	}
+	/* Output must be a [B, C, M, N] dense row of fp16; the row stride
+	 * is align_up(N*2, 64), matching a single N-valued output row. */
+	out_W = a->nchw[4][3];
+	out_row = (out_W * 2 + 63) & ~63ULL;
+	if (a->nchw[4][5] != out_row) {
+		fprintf(stderr, "--check bmm: output row stride %llu does "
+			"not match align_up(N*2, 64)=%llu\n",
+			(unsigned long long)a->nchw[4][5],
+			(unsigned long long)out_row);
+		return -1;
+	}
+	/* x and y must share the batch/head dim with the output and have
+	 * matching inner dims (K). */
+	if (a->nchw[5][0] != a->nchw[4][0] ||
+	    a->nchw[5][1] != a->nchw[4][1] ||
+	    a->nchw[5][2] != a->nchw[4][2] ||
+	    a->nchw[6][0] != a->nchw[4][0] ||
+	    a->nchw[6][1] != a->nchw[4][1] ||
+	    a->nchw[6][3] != a->nchw[4][3]) {
+		fprintf(stderr, "--check bmm: input shapes disagree with "
+			"output\n");
+		return -1;
+	}
+	if (a->nchw[5][3] != a->nchw[6][2]) {
+		fprintf(stderr, "--check bmm: x.K (%llu) != y.M (%llu); "
+			"the matmul reduction axis must match\n",
+			(unsigned long long)a->nchw[5][3],
+			(unsigned long long)a->nchw[6][2]);
+		return -1;
+	}
+	/* Row strides must be align_up(W*2, 64) for the fp16 inner dim. */
+	x_row = (a->nchw[5][3] * 2 + 63) & ~63ULL;
+	y_row = (a->nchw[6][2] * 2 + 63) & ~63ULL;
+	if (a->nchw[5][5] != x_row || a->nchw[6][5] != y_row) {
+		fprintf(stderr, "--check bmm: input row strides disagree\n");
+		return -1;
+	}
+	*Bm = (uint32_t)a->nchw[4][0];
+	*Cm = (uint32_t)a->nchw[4][1];
+	*Mm = (uint32_t)a->nchw[4][2];
+	*Km = (uint32_t)a->nchw[5][3];
+	*Nm = (uint32_t)a->nchw[4][3];
+	if (!*Bm || !*Cm || !*Mm || !*Km || !*Nm) {
+		fprintf(stderr, "--check bmm: zero-shape channel\n");
+		return -1;
+	}
+	return 0;
+}
+
+/* select_check: out = cond ? a : b on the valid lanes.
+ *
+ * UNPROVEN: the (a, b, cond) ordering at --in 0,1,2 follows the MIL
+ * declaration order (channels 5,6,7), but the runtime input list is
+ * bound by channel id alone — there is no fw decoder site that ties
+ * a specific input slot to a or cond.
+ */
+static int select_check(struct ane_nn *nn, struct io_file *in,
+			struct io_file *out)
+{
+	uint64_t elements = 0;
+	uint64_t cond_row_bytes = 0;
+	uint64_t a_row_bytes = 0;
+	int cond_is_bool = 0;
+	uint64_t a_size, b_size, c_size, y_size;
+	uint16_t *a = NULL, *b = NULL, *y = NULL;
+	uint8_t *c = NULL;
+	uint64_t pad_in = 0, pad_out = 0, exact = 0;
+	uint64_t N, C, H, W, pad_per_row_a, pad_per_row_c;
+	uint64_t n, ch, h, w, p, a_row_off, c_row_off, y_row_off, off;
+	uint64_t a_off, c_off;
+	uint16_t av, bv, yv, want;
+	uint8_t cv;
+	int ok;
+
+	if (!in[0].set || in[0].idx != 0 || !in[1].set || in[1].idx != 1 ||
+	    !in[2].set || in[2].idx != 2 || !out[0].set || out[0].idx != 0) {
+		fprintf(stderr, "--check select needs --in 0, --in 1, --in 2, "
+			"--out 0 (UNPROVEN channel ordering)\n");
+		return -1;
+	}
+	if (select_shape(nn, &elements, &cond_row_bytes, &a_row_bytes,
+			 &cond_is_bool) < 0) {
+		return -1;
+	}
+	a_size = ane_src_size(nn, 0);
+	b_size = ane_src_size(nn, 1);
+	c_size = ane_src_size(nn, 2);
+	y_size = ane_dst_size(nn, 0);
+	a = read_exact(in[0].path, a_size);
+	b = read_exact(in[1].path, b_size);
+	c = read_exact(in[2].path, c_size);
+	y = read_exact(out[0].path, y_size);
+	if (!a || !b || !c || !y) {
+		free(a); free(b); free(c); free(y);
+		return -1;
+	}
+	N = to_anec(nn)->nchw[4][0];
+	C = to_anec(nn)->nchw[4][1];
+	H = to_anec(nn)->nchw[4][2];
+	W = to_anec(nn)->nchw[4][3];
+	pad_per_row_a = (a_row_bytes - W * 2) / 2;
+	pad_per_row_c = cond_is_bool ? (cond_row_bytes - W) :
+				      (cond_row_bytes - W * 2) / 2;
+	for (n = 0; n < N; n++) {
+		for (ch = 0; ch < C; ch++) {
+			for (h = 0; h < H; h++) {
+				a_row_off = ((n * C + ch) * H + h) *
+					    a_row_bytes;
+				c_row_off = ((n * C + ch) * H + h) *
+					    cond_row_bytes;
+				for (w = 0; w < W; w++) {
+					a_off = a_row_off + w * 2;
+					c_off = c_row_off + w;
+					av = a[a_off / 2];
+					bv = b[a_off / 2];
+					cv = c[c_off];
+					yv = y[a_off / 2];
+					want = cv ? av : bv;
+					exact += want == yv;
+				}
+				for (p = 0; p < pad_per_row_a; p++) {
+					off = a_row_off + W * 2 + p * 2;
+					pad_in += (a[off / 2] != 0 ||
+						   b[off / 2] != 0);
+				}
+				for (p = 0; p < pad_per_row_c; p++) {
+					off = c_row_off + W + p;
+					pad_in += c[off] != 0;
+				}
+			}
+		}
+	}
+	for (n = 0; n < N; n++) {
+		for (ch = 0; ch < C; ch++) {
+			for (h = 0; h < H; h++) {
+				y_row_off = ((n * C + ch) * H + h) *
+					    a_row_bytes;
+				for (p = 0; p < pad_per_row_a; p++) {
+					off = y_row_off + W * 2 + p * 2;
+					pad_out += y[off / 2] != 0;
+				}
+			}
+		}
+	}
+	ok = !pad_in && !pad_out && exact == elements;
+	printf("select [%llu,%llu,%llu,%llu] cond %s: %llu/%llu lanes "
+	       "bit-exact (UNPROVEN (a,b,cond) ordering), padding %s: %s\n",
+	       (unsigned long long)N, (unsigned long long)C,
+	       (unsigned long long)H, (unsigned long long)W,
+	       cond_is_bool ? "bool (1B/elem)" : "fp16 (2B/elem)",
+	       (unsigned long long)exact, (unsigned long long)elements,
+	       pad_in || pad_out ? "lanes NONZERO" : "lanes zero",
+	       ok ? "PASS" : "FAIL");
+	free(a); free(b); free(c); free(y);
+	return ok ? 0 : -1;
+}
+
+/* bmm_check: batched matmul reference (fp32 accumulate in fp64,
+ * condition-normalized error like the matvec check). */
+static int bmm_check(struct ane_nn *nn, struct io_file *in,
+		     struct io_file *out)
+{
+	uint32_t B = 0, C_ = 0, M = 0, K = 0, N = 0;
+	uint64_t a_size, b_size, y_size;
+	uint16_t *a = NULL, *b = NULL, *y = NULL;
+	uint64_t lanes = 0;
+	uint64_t in_band = 0, exact = 0;
+	uint64_t max_ulp_milli = 0;
+	double max_nerr = 0.0;
+	uint64_t pad_out = 0;
+	uint64_t x_row, y_row, o_row;
+	uint64_t x_bc_off, y_bc_off, o_bc_off;
+	uint64_t x_row_off, y_col_off, o_row_off;
+	uint32_t bc, m, n, k;
+	double ax, ay, acc, sumabs, err, nerr, diff;
+	uint16_t got, want;
+	uint64_t milli;
+	int ok;
+
+	if (!in[0].set || in[0].idx != 0 || !in[1].set || in[1].idx != 1 ||
+	    !out[0].set || out[0].idx != 0) {
+		fprintf(stderr, "--check bmm needs --in 0, --in 1, --out 0 "
+			"(UNPROVEN (x, y) ordering)\n");
+		return -1;
+	}
+	if (bmm_shape(nn, &B, &C_, &M, &K, &N) < 0) {
+		return -1;
+	}
+	a_size = ane_src_size(nn, 0);
+	b_size = ane_src_size(nn, 1);
+	y_size = ane_dst_size(nn, 0);
+	a = read_exact(in[0].path, a_size);
+	b = read_exact(in[1].path, b_size);
+	y = read_exact(out[0].path, y_size);
+	if (!a || !b || !y) {
+		free(a); free(b); free(y);
+		return -1;
+	}
+	x_row = (K * 2 + 63) & ~63ULL;
+	y_row = (K * 2 + 63) & ~63ULL;
+	o_row = (N * 2 + 63) & ~63ULL;
+	lanes = (uint64_t)B * C_ * M * N;
+	for (bc = 0; bc < B * C_; bc++) {
+		x_bc_off = (uint64_t)bc * M * x_row;
+		y_bc_off = (uint64_t)bc * K * y_row;
+		o_bc_off = (uint64_t)bc * M * o_row;
+		for (m = 0; m < M; m++) {
+			x_row_off = x_bc_off + (uint64_t)m * x_row;
+			o_row_off = o_bc_off + (uint64_t)m * o_row;
+			for (n = 0; n < N; n++) {
+				y_col_off = y_bc_off +
+					(uint64_t)n * y_row;
+				acc = 0.0;
+				sumabs = 0.0;
+				for (k = 0; k < K; k++) {
+					ax = ane_f16_to_f64(
+						a[(x_row_off + k * 2) / 2]);
+					ay = ane_f16_to_f64(
+						b[(y_col_off + k * 2) / 2]);
+					acc += ax * ay;
+					sumabs += fabs(ax * ay);
+				}
+				got = y[(o_row_off + n * 2) / 2];
+				err = fabs(ane_f16_to_f64(got) - acc);
+				nerr = sumabs > 0.0 ?
+					err / (sumabs * 0x1p-11) : 0.0;
+				if (nerr > max_nerr) {
+					max_nerr = nerr;
+				}
+				want = ane_f16_round_half_away(acc);
+				diff = fabs(ane_f16_to_f64(got) -
+					ane_f16_to_f64(want)) /
+					f16_ulp(ane_f16_to_f64(want));
+				milli = (uint64_t)(diff * 1000.0 + 0.5);
+				in_band += diff <= 2.0 || nerr <= 4.0;
+				exact += want == got;
+				if (milli > max_ulp_milli) {
+					max_ulp_milli = milli;
+				}
+			}
+		}
+	}
+	/* Output padding: half indices N..o_row/2-1 per row must be zero. */
+	for (bc = 0; bc < B * C_; bc++) {
+		o_bc_off = (uint64_t)bc * M * o_row;
+		for (m = 0; m < M; m++) {
+			o_row_off = o_bc_off + (uint64_t)m * o_row;
+			for (k = N; k < o_row / 2; k++) {
+				pad_out += y[o_row_off / 2 + k] != 0;
+			}
+		}
+	}
+	ok = !pad_out && in_band == lanes;
+	printf("bmm B=%u C=%u M=%u K=%u N=%u: %llu/%llu lanes within 2 ulp "
+	       "or 4 cond-units (%llu bit-exact), max %llu.%03llu ulp, max "
+	       "%.3f cond-units; padding out %s: %s\n",
+	       B, C_, M, K, N,
+	       (unsigned long long)in_band, (unsigned long long)lanes,
+	       (unsigned long long)exact,
+	       (unsigned long long)(max_ulp_milli / 1000),
+	       (unsigned long long)(max_ulp_milli % 1000), max_nerr,
+	       pad_out ? "lanes NONZERO" : "lanes zero",
+	       ok ? "PASS" : "FAIL");
+	free(a); free(b); free(y);
+	return ok ? 0 : -1;
+}
+
+/* Forward declarations for the helpers that follow rms_check. */
+static int rms_shape(const struct ane_nn *nn, uint32_t *Cm);
+
+/* rms_check: y = x * gamma / sqrt(E[x^2] + eps*max^2) with eps = 2^-17. */
+static int rms_check(struct ane_nn *nn, struct io_file *in,
+		     struct io_file *out)
+{
+	uint32_t C = 0;
+	uint64_t a_size, y_size;
+	uint16_t *a = NULL, *y = NULL, *gamma = NULL;
+	uint64_t lanes = 0;
+	uint64_t in_band = 0, exact = 0;
+	uint64_t max_ulp_milli = 0;
+	double max_nerr = 0.0;
+	double max_abs = 0.0;
+	double sum_sq = 0.0;
+	double mean_sq, eps, rscaled;
+	double xv, gv, want_v, err, sumabs, nerr, diff;
+	uint16_t want, got;
+	uint64_t milli;
+	uint32_t i;
+	int ok;
+
+	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0) {
+		fprintf(stderr, "--check rms needs --in 0, --out 0\n");
+		return -1;
+	}
+	if (rms_shape(nn, &C) < 0) {
+		return -1;
+	}
+	if (!weights_path) {
+		fprintf(stderr, "--check rms needs --weights FILE (the MIL "
+			"BLOBFILE; gamma is fp16 [C] starting at offset 64 "
+			"per the encoder oracle)\n");
+		return -1;
+	}
+	a_size = ane_src_size(nn, 0);
+	y_size = ane_dst_size(nn, 0);
+	a = read_exact(in[0].path, a_size);
+	y = read_exact(out[0].path, y_size);
+	/* The MIL BLOBFILE has a 64-byte sub-header before gamma; skip it
+	 * (per the encoder oracle for rms_norm_decomposed). */
+	gamma = read_exact(weights_path, 64 + (uint64_t)C * 2);
+	if (!a || !y || !gamma) {
+		free(a); free(y); free(gamma);
+		return -1;
+	}
+	lanes = C;
+	/* Find the max(|x|) and E[x^2] over all C channels (single batch,
+	 * single head, single H, single W). */
+	for (i = 0; i < C; i++) {
+		xv = ane_f16_to_f64(a[i]);
+		if (fabs(xv) > max_abs) {
+			max_abs = fabs(xv);
+		}
+		sum_sq += xv * xv;
+	}
+	mean_sq = sum_sq / (double)C;
+	eps = 0x1p-17;
+	rscaled = sqrt(mean_sq + eps * max_abs * max_abs);
+	/* Tolerance: 2 ulp band (UNPROVEN — the device's order of the
+	 * max-abs, mean, sqrt, and 1/rscaled is not decoded from fw). */
+	for (i = 0; i < C; i++) {
+		xv = ane_f16_to_f64(a[i]);
+		gv = ane_f16_to_f64(gamma[64 / 2 + i]);
+		want_v = xv * gv / rscaled;
+		want = ane_f16_round_half_away(want_v);
+		got = y[i];
+		err = fabs(ane_f16_to_f64(got) - want_v);
+		sumabs = fabs(xv) + fabs(gv) + fabs(rscaled);
+		nerr = sumabs > 0.0 ? err / (sumabs * 0x1p-11) : 0.0;
+		if (nerr > max_nerr) {
+			max_nerr = nerr;
+		}
+		diff = fabs(ane_f16_to_f64(got) -
+			    ane_f16_to_f64(want)) /
+		       f16_ulp(ane_f16_to_f64(want));
+		milli = (uint64_t)(diff * 1000.0 + 0.5);
+		in_band += diff <= 2.0 || nerr <= 4.0;
+		exact += want == got;
+		if (milli > max_ulp_milli) {
+			max_ulp_milli = milli;
+		}
+	}
+	ok = in_band == lanes;
+	printf("rms C=%u: %llu/%llu lanes within 2 ulp or 4 cond-units "
+	       "(%llu bit-exact), max %llu.%03llu ulp, max %.3f cond-units; "
+	       "tolerance UNPROVEN: %s\n",
+	       C,
+	       (unsigned long long)in_band, (unsigned long long)lanes,
+	       (unsigned long long)exact,
+	       (unsigned long long)(max_ulp_milli / 1000),
+	       (unsigned long long)(max_ulp_milli % 1000), max_nerr,
+	       ok ? "PASS" : "FAIL");
+	free(a); free(y); free(gamma);
+	return ok ? 0 : -1;
+}
+
+/* RMS: derive C from the loaded ANEC header. The MIL
+ * rms_norm_decomposed chain computes
+ *   scaled = x / max; sq = scaled^2; mean = E[sq]; eps = 2^-17
+ *   rscaled = sqrt(mean + eps) * max
+ *   y = (x / rscaled) * gamma
+ * which is equivalent to y = x * gamma / sqrt(E[x^2] + eps*max^2).
+ *
+ * The gamma tensor is read from --weights (fp16 [C] row-major, the
+ * BLOBFILE layout from the encoder oracle; offset 64 in weights.bin).
+ * Tolerance: 2 ulp band like matvec; cond-normalized in fp16 ulps.
+ * UNPROVEN: the device's accumulation order, the rounding of
+ * 1/rscaled, and the fp16 epsilon constant are not decoded from fw.
+ */
+static int rms_shape(const struct ane_nn *nn, uint32_t *Cm)
+{
+	const struct anec *a = to_anec(nn);
+
+	if (ane_src_count(nn) != 1 || ane_dst_count(nn) != 1) {
+		fprintf(stderr, "--check rms needs 1 input + 1 output\n");
+		return -1;
+	}
+	if (a->nchw[4][0] != a->nchw[5][0] ||
+	    a->nchw[4][1] != a->nchw[5][1] ||
+	    a->nchw[4][2] != a->nchw[5][2] ||
+	    a->nchw[4][3] != a->nchw[5][3]) {
+		fprintf(stderr, "--check rms: input/output shapes disagree\n");
+		return -1;
+	}
+	if (a->nchw[5][2] != 1 || a->nchw[5][3] != 1) {
+		fprintf(stderr, "--check rms: H,W must be 1 (channel-only); "
+			"got H=%llu W=%llu\n",
+			(unsigned long long)a->nchw[5][2],
+			(unsigned long long)a->nchw[5][3]);
+		return -1;
+	}
+	*Cm = (uint32_t)a->nchw[5][1];
+	if (!*Cm) {
+		fprintf(stderr, "--check rms: zero channel count\n");
+		return -1;
+	}
+	return 0;
+}
+
 static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			 struct io_file *out)
 {
-	int two_in = check_ops[op].ins == 2;
-	int matvec = check_ops[op].matvec;
+	int two_in;
+	int matvec;
 	uint64_t a_size, b_size = 0, y_size, n, lanes, i, j;
 	uint64_t pad_in = 0, pad_out = 0, exact = 0, in_band = 0;
 	uint64_t max_ulp_milli = 0;
@@ -210,6 +753,18 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	int ok;
 	uint32_t M = 1, K = 0, N = 0;
 	uint16_t *w = NULL;
+
+	if (op == CHK_SELECT) {
+		return select_check(nn, in, out);
+	}
+	if (op == CHK_BMM) {
+		return bmm_check(nn, in, out);
+	}
+	if (op == CHK_RMS) {
+		return rms_check(nn, in, out);
+	}
+	two_in = check_ops[op].ins == 2;
+	matvec = check_ops[op].matvec;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0 ||
 	    (two_in && (!in[1].set || in[1].idx != 1))) {
@@ -399,8 +954,19 @@ static void usage(void)
 		"[--weights FILE]\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
-		"--weights: matvec weight table, fp16 row-major [N, K] "
-		"(BLOBFILE layout). Required with --check matvec.\n");
+		"    select bmm rms\n"
+		"  select: 3 inputs --in 0=a --in 1=b --in 2=cond (UNPROVEN\n"
+		"    ordering; cond is bool 1B/elem, surface row-aligned to\n"
+		"    64 B). Output: out = cond ? a : b.\n"
+		"  bmm: 2 inputs --in 0=x --in 1=y (UNPROVEN ordering).\n"
+		"    Output: out[b,c,m,n] = sum_k x[b,c,m,k] * y[b,c,k,n],\n"
+		"    fp64 accumulate, 2 ulp band.\n"
+		"  rms: 1 input --in 0=x. --weights is the MIL BLOBFILE;\n"
+		"    gamma is fp16 [C] at offset 64. Output:\n"
+		"    y = x * gamma / sqrt(E[x^2] + 2^-17 * max(|x|)^2).\n"
+		"    Tolerance UNPROVEN.\n"
+		"--weights: matvec weight table (fp16 [N, K]); rms BLOBFILE.\n"
+		"  Required with --check matvec and --check rms.\n");
 }
 
 int main(int argc, char **argv)
@@ -520,9 +1086,11 @@ int main(int argc, char **argv)
 		}
 		if (lat && done) {
 			qsort(lat, done, sizeof(*lat), cmp_double);
-			printf("exec ms over %u calls: min %.3f median %.3f "
-			       "p90 %.3f max %.3f\n", done, lat[0],
-			       lat[done / 2], lat[(done * 9) / 10],
+			printf("exec ms over %u calls: min %.3f p10 %.3f p25 %.3f "
+			       "median %.3f p75 %.3f p90 %.3f p99 %.3f max %.3f\n",
+			       done, lat[0], lat[done / 10], lat[done / 4],
+			       lat[done / 2], lat[(done * 3) / 4],
+			       lat[(done * 9) / 10], lat[(done * 99) / 100],
 			       lat[done - 1]);
 		}
 		free(lat);
