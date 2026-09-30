@@ -95,8 +95,8 @@ static int parse_name_arg(char *arg, struct name_file *nf,
 /* Strict minimal JSON reader for the port-table sidecar. Accepts
  * exactly the flat schema: object with "program" (string), "ports"
  * (array of objects with "name", "shape" (4-int array), "buffer_id",
- * "channel", "bar_slot", "tile_bytes", "direction"). Everything else
- * is an error. Returned ports[] is in sidecar order; the caller
+ * "channel", "bar_slot", "tile_bytes", "surface_bytes", "direction").
+ * Everything else is an error. Returned ports[] is in sidecar order; the caller
  * decides how to map it to the model. */
 struct port_read {
 	struct ane_m2_port_spec *ports;
@@ -254,6 +254,7 @@ static int json_read_port(const char *p, const char **end,
 	char *name_buf = NULL;
 	struct ane_m2_port_spec ps = { 0 };
 	int seen_dir = 0, seen_buf = 0, seen_slot = 0, seen_tile = 0;
+	uint64_t surface_bytes = 0;
 
 	p = json_skip_ws(p);
 	if (json_expect(p, &p, '{')) {
@@ -321,6 +322,12 @@ static int json_read_port(const char *p, const char **end,
 			}
 			ps.bar_slot = (uint32_t)v;
 			seen_slot = 1;
+		} else if (!strcmp(key, "surface_bytes")) {
+			if (json_read_u64(p, &p, &surface_bytes)) {
+				free(key);
+				free(name_buf);
+				return -1;
+			}
 		} else if (!strcmp(key, "tile_bytes")) {
 			uint64_t v;
 			if (json_read_u64(p, &p, &v)) {
@@ -339,7 +346,6 @@ static int json_read_port(const char *p, const char **end,
 			}
 		} else if (!strcmp(key, "dtype") ||
 			   !strcmp(key, "strides") ||
-			   !strcmp(key, "surface_bytes") ||
 			   !strcmp(key, "confidence")) {
 			/* Accepted but not consulted by the C reader; the
 			 * Python coverage pass and the human verifier use
@@ -417,6 +423,16 @@ static int json_read_port(const char *p, const char **end,
 		return -1;
 	}
 	if (!seen_dir || !seen_buf || !seen_slot || !seen_tile || !name_buf) {
+		free(name_buf);
+		return -1;
+	}
+	/* The task DMA at this port's slot spans surface_bytes; a smaller
+	 * io BO would let the firmware write past it. */
+	if (!surface_bytes || surface_bytes > ps.tile_bytes) {
+		fprintf(stderr, "port %s: surface_bytes %llu missing or larger "
+			"than tile_bytes %llu\n", name_buf,
+			(unsigned long long)surface_bytes,
+			(unsigned long long)ps.tile_bytes);
 		free(name_buf);
 		return -1;
 	}
@@ -611,6 +627,16 @@ static int read_port_file(const char *path, struct port_read *pr)
 			path);
 	}
 	return err;
+}
+
+static void free_port_read(struct port_read *pr)
+{
+	uint32_t k;
+
+	for (k = 0; k < pr->count; k++) {
+		free((void *)pr->ports[k].name);
+	}
+	free(pr->ports);
 }
 
 /* Find a port by name. Returns the index in `pr` or -1. */
@@ -1771,8 +1797,11 @@ static void usage(void)
 		"  Required with --check matvec and --check rms.\n"
 		"--ports FILE.json: port table sidecar ({\"program\": \"...\",\n"
 		"  \"ports\": [{\"name\":..., \"direction\":..., \"buffer_id\":...,\n"
-		"  \"bar_slot\":..., \"tile_bytes\":..., \"shape\":[n,c,h,w]} ... ]}).\n"
-		"  Switches to the named-port path; --in/--out take NAME=FILE.\n"
+		"  \"bar_slot\":..., \"tile_bytes\":..., \"surface_bytes\":...,\n"
+		"  \"shape\":[n,c,h,w]} ... ]}); surface_bytes must fit in\n"
+		"  tile_bytes. Switches to the named-port path: the device\n"
+		"  program binds the table's slots and buffers, and --in/--out\n"
+		"  take NAME=FILE.\n"
 		"  Strict JSON: anything outside the documented keys is rejected.\n"
 		"--dry-run: with --ports, print the operation-record pairs and\n"
 		"  io records the runner would submit, then exit. No device.\n");
@@ -1792,6 +1821,7 @@ int main(int argc, char **argv)
 	int check = -1;
 	int dry_run = 0;
 	int ports_mode = 0;
+	struct port_read pr = { 0 };
 	int ret;
 	int k;
 
@@ -1892,83 +1922,56 @@ int main(int argc, char **argv)
 		usage();
 		return 2;
 	}
-	if (!ports_mode) {
-		/* Legacy path: unchanged. */
-	} else if (dry_run) {
-		/* Dry-run path: no device. */
-		struct port_read pr = { 0 };
-
-		if (read_port_file(ports_path, &pr) < 0) {
-			free(pr.ports);
-			return 1;
-		}
+	if (ports_mode && read_port_file(ports_path, &pr) < 0) {
+		free_port_read(&pr);
+		return 1;
+	}
+	if (ports_mode && dry_run) {
 		ret = dry_run_ports(anec, &pr);
-		for (k = 0; k < (int)pr.count; k++) {
-			free((void *)pr.ports[k].name);
-		}
-		free(pr.ports);
+		free_port_read(&pr);
 		return ret;
 	}
 
-	nn = ane_init(anec);
-
+	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count)
+			: ane_init(anec);
 	if (!nn) {
 		fprintf(stderr, "ane_init failed on %s\n", anec);
+		free_port_read(&pr);
 		return 1;
 	}
 
-	if (ports_mode) {
-		/* Replace ins/outs with name-resolved indices. We need
-		 * anec.src_count and anec.dst_count to be valid for the
-		 * name-bound io entries; if a name-based --in asks for
-		 * a port whose dir == 0 but nn->m2 reports fewer
-		 * inputs than the sidecar promises, we surface the
-		 * mismatch. The legacy ane_init path uses
-		 * ane_m2_program_build which synthesises inputs from
-		 * the anec input_count; for the port-table path we
-		 * also need those inputs to be allocated. */
-		struct port_read pr = { 0 };
-
-		if (read_port_file(ports_path, &pr) < 0) {
-			ane_free(nn);
-			free(pr.ports);
-			return 1;
-		}
-		for (k = 0; k < 8; k++) {
-			if (nins[k].set) {
-				int idx = port_host_idx(&pr, nins[k].name, 0);
-				if (idx < 0) {
-					fprintf(stderr, "no input port named "
-						"%s\n", nins[k].name);
-					ane_free(nn);
-					free(pr.ports);
-					return 1;
-				}
-				ins[k].set = 1;
-				ins[k].idx = (uint32_t)idx;
-				ins[k].path = nins[k].path;
-			}
-			if (nouts[k].set) {
-				int idx = port_host_idx(&pr, nouts[k].name, 1);
-				if (idx < 0) {
-					fprintf(stderr, "no output port named "
-						"%s\n", nouts[k].name);
-					ane_free(nn);
-					free(pr.ports);
-					return 1;
-				}
-				outs[k].set = 1;
-				outs[k].idx = (uint32_t)idx;
-				outs[k].path = nouts[k].path;
-			}
-		}
-		for (k = 0; k < (int)pr.count; k++) {
-			free((void *)pr.ports[k].name);
-		}
-		free(pr.ports);
-	}
-
 	ret = 0;
+	for (k = 0; ports_mode && k < 8 && !ret; k++) {
+		if (nins[k].set) {
+			int idx = port_host_idx(&pr, nins[k].name, 0);
+
+			if (idx < 0) {
+				fprintf(stderr, "no input port named %s\n",
+					nins[k].name);
+				ret = 1;
+			}
+			ins[k].set = 1;
+			ins[k].idx = (uint32_t)idx;
+			ins[k].path = nins[k].path;
+		}
+		if (nouts[k].set) {
+			int idx = port_host_idx(&pr, nouts[k].name, 1);
+
+			if (idx < 0) {
+				fprintf(stderr, "no output port named %s\n",
+					nouts[k].name);
+				ret = 1;
+			}
+			outs[k].set = 1;
+			outs[k].idx = (uint32_t)idx;
+			outs[k].path = nouts[k].path;
+		}
+	}
+	free_port_read(&pr);
+	if (ret) {
+		ane_free(nn);
+		return 1;
+	}
 	for (k = 0; k < 8 && !ret; k++) {
 		uint64_t size;
 		void *buf;

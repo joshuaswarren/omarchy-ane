@@ -133,13 +133,11 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 
 /* Same as ane_m2_program_build() but uses `ports` (count `port_count`)
  * to fill the io table and the union ref set directly, bypassing the
- * derive_refs BAR walk and the input_count>3 refusal. The ref set is
- * exactly the {bar_slot, buffer_id} pairs from the port list, sorted by
- * bar_slot; the kernel/scratch section is not auto-added (no scratch
- * merge). For Qwen program 20 the port table describes the four
- * ANEC channels and the kernel constant at slot 1 (an extra
- * {bar_slot=1, buffer_id=2} pair goes through `extra_kernel_ref` when
- * non-zero; usually 0 so the constant stays implicit). */
+ * derive_refs BAR walk, ANE_M2_OPREFS, and the input_count>3 refusal.
+ * The ref set is the kernel constant pair {slot 1, buffer_id 2} plus
+ * one {bar_slot, buffer_id} pair per port, sorted by bar_slot; no
+ * scratch merge. The io table lists the inputs in caller order, then
+ * the single output. */
 int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
 			       const struct ane_m2_port_spec *ports,
 			       uint32_t port_count,
@@ -147,10 +145,18 @@ int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
 			       struct ane_m2_sections *secs);
 void ane_m2_sections_free(struct ane_m2_sections *secs);
 
-/* Device path on an ABI-2 accel node (nn->fd already open). Returns 0 and
- * sets nn->m2, or negative. */
-int ane_m2_open(struct ane_nn *nn, const char *path);
+/* Device path on an ABI-2 accel node (nn->fd already open). With
+ * `ports` non-NULL the program is built by ane_m2_program_build_ports,
+ * else by ane_m2_program_build. Returns 0 and sets nn->m2, or negative. */
+int ane_m2_open(struct ane_nn *nn, const char *path,
+		const struct ane_m2_port_spec *ports, uint32_t port_count);
 void ane_m2_close(struct ane_nn *nn);
+
+/* ane_init() for an explicit port table (ABI-2 only; the M1 path
+ * refuses). Inputs are indexed in port order, the output is index 0. */
+struct ane_nn *ane_m2_init_ports(const char *path,
+				 const struct ane_m2_port_spec *ports,
+				 uint32_t port_count);
 
 int ane_m2_exec(struct ane_nn *nn);
 int ane_m2_send(struct ane_nn *nn, const void *from, uint32_t idx);

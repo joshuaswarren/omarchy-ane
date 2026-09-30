@@ -110,7 +110,8 @@ def derive_program(prog, hwx_path, anec_path, mil_path, research_path):
     port_by_slot = {p["bar_slot"]: p for p in ports}
     scratch = {}
     coverage = []
-    exceptions = []
+    exceptions = [f"port {p['name']} surface {p['surface_bytes']} B exceeds channel {p['channel']} allocation {p['tile_bytes']} B"
+                  for p in ports if p["surface_bytes"] > p["tile_bytes"]]
     for slot in sorted(slots):
         if slot <= 3:
             scratch[slot] = "kernel_constant"

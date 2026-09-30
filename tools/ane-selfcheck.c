@@ -64,7 +64,11 @@ static uint8_t *read_all(const char *path, long *out_size)
 	return buf;
 }
 
-static int check_byte_identity(const char *dir, const char *op)
+/* With `ports`, build through ane_m2_program_build_ports instead: the
+ * table must reproduce the derived build's bytes exactly. */
+static int check_byte_identity(const char *dir, const char *op,
+			       const struct ane_m2_port_spec *ports,
+			       uint32_t port_count)
 {
 	static const struct {
 		const char *name;
@@ -90,7 +94,9 @@ static int check_byte_identity(const char *dir, const char *op)
 	if (!anec) {
 		return 0;
 	}
-	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
+	err = ports ? ane_m2_program_build_ports(anec, (uint64_t)size, ports,
+						 port_count, &model, &secs)
+		    : ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
 	free(anec);
 	if (err) {
 		printf("  [FAIL] %s: ane_m2_program_build: %d\n", op, err);
@@ -119,8 +125,8 @@ static int check_byte_identity(const char *dir, const char *op)
 		ok = ok && good;
 	}
 	ane_m2_sections_free(&secs);
-	printf("  [%s] %s: six sections byte-identical\n", ok ? "ok" : "FAIL",
-	       op);
+	printf("  [%s] %s%s: six sections byte-identical\n", ok ? "ok" : "FAIL",
+	       op, ports ? " (port table, output listed first)" : "");
 	return ok;
 }
 
@@ -429,6 +435,10 @@ int main(int argc, char **argv)
 	static const struct want_ref constfill_refs[] = {
 		{ 1, 2 }, { 3, 0x40 }, { 4, 5 }, { 5, 6 }, { 6, 4 },
 	};
+	/* Output first: the build must still emit inputs, then the output. */
+	static const struct ane_m2_port_spec matvec_ports[] = {
+		{ "y", 1, 4, 4, 0x4000 }, { "x", 0, 5, 5, 0x4000 },
+	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	int ok = 1;
 	unsigned skipped = 0;
@@ -438,8 +448,11 @@ int main(int argc, char **argv)
 	       "hardware behaviour)\n");
 	printf("byte identity vs the Python builder (%s):\n", dir);
 	for (i = 0; i < sizeof(ops) / sizeof(ops[0]); i++) {
-		ok = check_byte_identity(dir, ops[i]) && ok;
+		ok = check_byte_identity(dir, ops[i], NULL, 0) && ok;
 	}
+	ok = check_byte_identity(dir, "matvec", matvec_ports,
+				 sizeof(matvec_ports) / sizeof(matvec_ports[0]))
+	     && ok;
 	ok = check_f16_add() && ok;
 
 	printf("island scratch merge (single-record op section, slot retagged "

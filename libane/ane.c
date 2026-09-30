@@ -447,8 +447,10 @@ static inline void ane_model_free(struct ane_nn *nn)
 	free(nn->data);
 }
 
-struct ane_nn *__ane_init_shift(const char *path, int dev_id,
-				uint32_t tile_shift)
+static struct ane_nn *ane_init_common(const char *path, int dev_id,
+				      uint32_t tile_shift,
+				      const struct ane_m2_port_spec *ports,
+				      uint32_t port_count)
 {
 	struct ane_nn *nn;
 	int abi_major = 0;
@@ -474,7 +476,7 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 	/* ABI 2 (T6021): sections + program/procedure on the accel node; the
 	 * M1 channel machinery does not apply. */
 	if (abi_major == ANE_ABI_M2_MAJOR) {
-		if (ane_m2_open(nn, path) < 0) {
+		if (ane_m2_open(nn, path, ports, port_count) < 0) {
 			ane_err("failed to load ABI-2 program from %s\n",
 				path);
 			ane_device_close(nn);
@@ -482,6 +484,13 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 			return NULL;
 		}
 		return nn;
+	}
+
+	if (ports) {
+		ane_err("port tables need the ABI-2 (T6021) device\n");
+		ane_device_close(nn);
+		free(nn);
+		return NULL;
 	}
 
 	if (ane_model_init(nn, path) < 0) {
@@ -500,6 +509,20 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 	}
 
 	return nn;
+}
+
+struct ane_nn *__ane_init_shift(const char *path, int dev_id,
+				uint32_t tile_shift)
+{
+	return ane_init_common(path, dev_id, tile_shift, NULL, 0);
+}
+
+struct ane_nn *ane_m2_init_ports(const char *path,
+				 const struct ane_m2_port_spec *ports,
+				 uint32_t port_count)
+{
+	return ane_init_common(path, 0, TILE_SHIFT_DEFAULT, ports,
+			       port_count);
 }
 
 struct ane_nn *__ane_init(const char *path, int dev_id)

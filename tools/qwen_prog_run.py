@@ -14,7 +14,6 @@ to <work>/<name>.f16; use --out NAME=FILE to select another destination.
 
 import argparse
 import json
-import os
 import struct
 import subprocess
 import sys
@@ -224,7 +223,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--prog", required=True, help="prog_NNN")
     ap.add_argument("--ports", help="per-program ports.json")
-    ap.add_argument("--hwx-dir", default="/var/tmp/qwen-real-hwx-h14")
     ap.add_argument("--anec-dir", default="/var/tmp/qwen-real-anec-h14")
     ap.add_argument("--in", dest="ins", action="append", default=[], metavar="NAME=FILE")
     ap.add_argument("--out", dest="outs", action="append", default=[], metavar="NAME=FILE")
@@ -234,8 +232,7 @@ def main(argv=None):
     ap.add_argument("--ane-run", default="/var/tmp/inst/tools/ane-run")
     ap.add_argument("--dry", action="store_true", help="pack inputs, validate, and print the locked command")
     ap.add_argument("--pack-only", action="store_true")
-    ap.add_argument("--map", help="legacy ANE_M2_OPREFS override")
-    ap.add_argument("--no-oprefs", action="store_true")
+    ap.add_argument("--timeout", type=int, default=60, help="per-invocation deadline, seconds")
     ap.add_argument("--repeat", type=int, default=1)
     args = ap.parse_args(argv)
     if args.repeat < 1:
@@ -251,8 +248,8 @@ def main(argv=None):
         raise Refuse("unresolved DMA coverage: " + "; ".join(table["exceptions"]))
     inputs = {n: p for n, p in ports.items() if p["direction"] == "input"}
     outputs = {n: p for n, p in ports.items() if p["direction"] == "output"}
-    if not anec.is_file() or not (Path(args.hwx_dir) / args.prog / "model.hwx").is_file():
-        raise Refuse(f"missing HWX/ANEC for {args.prog}")
+    if not anec.is_file():
+        raise Refuse(f"missing ANEC for {args.prog}")
 
     def parse_named(specs, available, flag):
         result = {}
@@ -288,12 +285,8 @@ def main(argv=None):
         output_surfaces[name] = filename
         output_args.extend(["--out", f"{name}={filename}"])
     command = [args.ane_run, "--anec", str(anec), "--ports", str(ports_path),
-               *input_args, *output_args, "--repeat", str(args.repeat)]
-    override = None if args.no_oprefs else args.map
-    locked = ["flock", "/var/tmp/ane-run.lock", "--", *command]
-    if override:
-        locked = ["flock", "/var/tmp/ane-run.lock", "--", "env",
-                  f"ANE_M2_OPREFS={override}", *command]
+               *input_args, *output_args, "--repeat", str(args.repeat), "--time"]
+    locked = ["flock", "/var/tmp/ane-run.lock", "timeout", str(args.timeout), *command]
     print("ports:")
     for name, port in ports.items():
         print(f"  {name}: {port['direction']} slot{port['bar_slot']} bufferId={port['buffer_id']} channel={port['channel']} shape={port['shape']}")
@@ -304,10 +297,7 @@ def main(argv=None):
         print("dry-run: no device access")
         print("  " + shlex.join(locked))
         return 0
-    env = dict(os.environ)
-    if override:
-        env["ANE_M2_OPREFS"] = override
-    subprocess.run(["flock", "/var/tmp/ane-run.lock", "--", *command], check=True, env=env)
+    subprocess.run(locked, check=True)
     for name, port in outputs.items():
         raw = output_surfaces[name].read_bytes()
         if len(raw) != port["tile_bytes"]:

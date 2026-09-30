@@ -1334,7 +1334,6 @@ static int ane_m2_program_build_ports_inner(
 	uint64_t payload, tsk_size, krn_size, const_off, gen_size;
 	uint32_t first_task, task_count, input_count, version;
 	uint32_t inputs = 0, outputs = 0;
-	uint32_t slot_used[0x40];
 	uint8_t *desc_buf, *gen, *oper, *proc, *tdp;
 	struct ane_task tasks[ANE_M2_MAX_TASKS];
 	uint32_t ntasks = 0;
@@ -1412,22 +1411,22 @@ static int ane_m2_program_build_ports_inner(
 			    "exactly one output");
 	}
 
-	/* Fill model->io in the same order as the caller gave: inputs
-	 * first (any order), output last. The generic-section emit
-	 * preserves this order, which the firmware treats as opaque
-	 * (it only checks id uniqueness and id!=2/3). */
-	memset(slot_used, 0, sizeof(slot_used));
-	model->io_count = port_count;
-	for (k = 0; k < port_count; k++) {
-		struct ane_m2_io *io = &model->io[k];
-		uint32_t s = ports[k].bar_slot;
+	/* Fill model->io with the inputs in caller order, then the
+	 * output: the legacy build's order, so ane_m2_send/read index
+	 * the same way on both paths. The firmware treats the order as
+	 * opaque (it only checks id uniqueness and id!=2/3). */
+	model->io_count = 0;
+	for (k = 0; k < port_count * 2; k++) {
+		const struct ane_m2_port_spec *p = &ports[k % port_count];
+		struct ane_m2_io *io;
 
-		io->buffer_id = ports[k].buffer_id;
-		io->dir = ports[k].dir;
-		io->size = ports[k].tile_bytes;
-		if (s < 0x40) {
-			slot_used[s] = 1;
+		if (p->dir != (k < port_count ? 0u : 1u)) {
+			continue;
 		}
+		io = &model->io[model->io_count++];
+		io->buffer_id = p->buffer_id;
+		io->dir = p->dir;
+		io->size = p->tile_bytes;
 	}
 
 	/* Build the union ref set from the port table directly:
@@ -1476,9 +1475,6 @@ static int ane_m2_program_build_ports_inner(
 	}
 	model->calls = 1;
 	model->scratch_io_index = UINT32_MAX;
-	/* Drop unused-suppress for slot_used; not part of the emitted
-	 * bytes. The compiler trims it. */
-	(void)slot_used;
 
 	/* Descriptor section + kernel constant region, same as the
 	 * legacy path. */
@@ -2107,7 +2103,8 @@ static int ane_m2_fread_all(const char *path, void **out, uint64_t *out_size)
 	return 0;
 }
 
-int ane_m2_open(struct ane_nn *nn, const char *path)
+int ane_m2_open(struct ane_nn *nn, const char *path,
+		const struct ane_m2_port_spec *ports, uint32_t port_count)
 {
 	struct ane_m2_ctx *ctx;
 	struct drm_ane_section sec_args[ANE_M2_SEC_COUNT];
@@ -2135,7 +2132,10 @@ int ane_m2_open(struct ane_nn *nn, const char *path)
 		memcpy(&nn->anec, buf, sizeof(struct anec));
 	}
 
-	err = ane_m2_program_build(buf, size, &ctx->model, &ctx->secs);
+	err = ports
+		? ane_m2_program_build_ports(buf, size, ports, port_count,
+					     &ctx->model, &ctx->secs)
+		: ane_m2_program_build(buf, size, &ctx->model, &ctx->secs);
 	free(buf);
 	if (err) {
 		ane_m2_err("failed to build sections from %s\n", path);
