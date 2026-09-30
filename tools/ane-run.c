@@ -768,6 +768,13 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	}
 	a_size = ane_src_size(nn, 0);
 	y_size = ane_dst_size(nn, 0);
+	if (a_size < (uint64_t)C * channel_stride * 2 ||
+	    y_size < (uint64_t)C * channel_stride * 2) {
+		fprintf(stderr, "--check rms: io surface smaller than C=%u "
+			"rows of %u elements; the stride-%u accessor would "
+			"over-read\n", C, channel_stride, channel_stride);
+		return -1;
+	}
 	a = read_exact(in[0].path, a_size);
 	y = read_exact(out[0].path, y_size);
 	/* The MIL BLOBFILE has a 64-byte sub-header before gamma; skip it

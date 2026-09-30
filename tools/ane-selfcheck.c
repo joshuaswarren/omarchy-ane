@@ -362,26 +362,39 @@ static int check_island_blend(const char *anec_path, const char *label,
 	return good;
 }
 
-static int check_optional_island_blend(const char *op,
-		const struct want_ref *want, unsigned nwant)
+static int check_optional_island_blend(const char *dir, const char *op,
+		const struct want_ref *want, unsigned nwant,
+		unsigned *skipped)
 {
-	const char *dir = getenv("ANE_ISLAND_FIXTURES_DIR");
+	const char *dirs[3];
 	char path[4096];
+	unsigned i;
 	int n;
 
-	if (!dir || !*dir)
-		dir = "/var/tmp/islands-fixtures";
-	n = snprintf(path, sizeof(path), "%s/%s.anec", dir, op);
-	if (n < 0 || (size_t)n >= sizeof(path)) {
-		fprintf(stderr, "island fixture path is too long: %s\n", op);
-		return 0;
+	/* Search the requested fixture dir first, then the env override,
+	 * then the lab default; skip only when the file is absent
+	 * everywhere, and record the skip so a green summary stays
+	 * distinguishable from a fully verified one. */
+	dirs[0] = dir;
+	dirs[1] = getenv("ANE_ISLAND_FIXTURES_DIR");
+	dirs[2] = "/var/tmp/islands-fixtures";
+	for (i = 0; i < 3; i++) {
+		if (!dirs[i] || !*dirs[i])
+			continue;
+		n = snprintf(path, sizeof(path), "%s/%s.anec", dirs[i], op);
+		if (n < 0 || (size_t)n >= sizeof(path)) {
+			fprintf(stderr, "island fixture path is too long: %s\n",
+				op);
+			return 0;
+		}
+		if (access(path, R_OK) != 0)
+			continue;
+		return check_island_blend(path, op, want, nwant);
 	}
-	if (access(path, R_OK) != 0) {
-		printf("  [skip] optional island fixture unavailable: %s\n",
-		       path);
-		return 1;
-	}
-	return check_island_blend(path, op, want, nwant);
+	printf("  [skip] optional island fixture %s unavailable in arg dir, "
+	       "ANE_ISLAND_FIXTURES_DIR and /var/tmp/islands-fixtures\n", op);
+	(*skipped)++;
+	return 1;
 }
 
 int main(int argc, char **argv)
@@ -418,6 +431,7 @@ int main(int argc, char **argv)
 	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	int ok = 1;
+	unsigned skipped = 0;
 	unsigned i;
 
 	printf("HOST-ONLY self-check (no device; proves nothing about "
@@ -454,9 +468,9 @@ int main(int argc, char **argv)
 		/* The constfill ANEC is 2.26 MiB and lives in the fixture
 		 * root, not the repo (> 1 MiB artifacts stay out of git). */
 		ok = check_optional_island_blend(
-			"island-b-select-constfill", constfill_refs,
+			dir, "island-b-select-constfill", constfill_refs,
 			sizeof(constfill_refs) /
-			sizeof(constfill_refs[0])) && ok;
+			sizeof(constfill_refs[0]), &skipped) && ok;
 	}
 
 	printf("envelope refusals:\n");
@@ -481,6 +495,10 @@ int main(int argc, char **argv)
 	ok = check_refusal(dir, "relu", "empty task stream refused",
 			   mut_empty_stream) && ok;
 
-	printf("%s\n", ok ? "SELF-CHECK PASS" : "SELF-CHECK FAIL");
+	if (ok && skipped)
+		printf("SELF-CHECK PASS (%u optional fixture check skipped: "
+		       "not fully verified)\n", skipped);
+	else
+		printf("%s\n", ok ? "SELF-CHECK PASS" : "SELF-CHECK FAIL");
 	return ok ? 0 : 1;
 }
