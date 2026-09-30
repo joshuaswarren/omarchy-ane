@@ -1,5 +1,13 @@
 # T6021 (M2 Max) ANE bring-up: findings as of 2026-09-27 (legacy ChMan section added; older sections 2026-09-25)
 
+> **Update 2026-09-29.** The blocker sections below that say no command
+> completes and no inference exists are superseded. The firmware runs from
+> the autoloaded `ane_t6021` module and executes H14 programs (add, mul,
+> relu, scalar ops, clip, matvec up to 2048x5120) on the valid lanes of
+> each surface. Current record:
+> [receipts/2026-09-29-t6021-installed-path](../receipts/2026-09-29-t6021-installed-path/README.md).
+> The older sections stay as history until they are rewritten.
+
 This is the canonical record of what the T6021 ANE work has proven, what it has
 ruled out, and what is still open. Read it before starting any T6021 ANE
 experiment. Update it when a finding changes, and delete lines that go stale.
