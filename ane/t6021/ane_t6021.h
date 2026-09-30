@@ -15,7 +15,7 @@
  *    __DATA_CONST.__const+0x814e520 and HandleRTBuddyMessage
  *    (receipts/2026-09-18-h14-w2-protocol-decode §3).
  *
- * DT binding (driver + ane/t6021-j414c-ane.dts are the two halves):
+ * DT binding (driver + packaging/dt/t6021-ane.dts are the two halves):
  *  compatible    = "apple,t6021-ane"
  *  reg/reg-names = "engine" (whole 32 MiB ADT range0, 0x284000000;
  *                  the H13-style +0x1c04000 engine delta does not exist
@@ -57,7 +57,7 @@
 
 #include "ane_t6021_boot.h"
 
-/* reg windows (ane/t6021-j414c-ane.dts reg-names order) */
+/* reg windows (packaging/dt/t6021-ane.dts reg-names order) */
 enum {
 	ANE_T6021_REG_ENGINE,
 	ANE_T6021_REG_PMGR,

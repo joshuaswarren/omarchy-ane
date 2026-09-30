@@ -2,24 +2,34 @@
 
 This directory ships the installed-path `ane_t6021.ko` for the
 Apple Neural Engine on the T6021 (M2 Max). This is a research
-driver: opt-in, not part of the packaged install, not enabled by
-default. Once the firmware starts, the only reclamation is reboot.
+driver, opt-in only: the package builds it with DKMS and blocks it
+until `omarchy-ane-m2-enable` runs (top-level README, "M2 Max
+opt-in"). Once the firmware starts, the only reclamation is reboot.
 
-Boot path status: every proven run used kernel
-`7.1.13-ARCH-polltx` booted through the USB proxy chain load
-(kernel, DTB and initramfs staged over the m1n1 proxy by the M1
-host). No packaged or stock-kernel boot of this driver is tested.
+Boot path status: the module works on the stock linux-asahi kernel
+`7.1.13-3-1-ARCH` (three boots; the third used the complete overlay
+`packaging/dt/t6021-ane.dts`, the first two a lab overlay with the
+same ANE nodes; receipt
+[2026-09-30-t6021-stock-mailbox](../../receipts/2026-09-30-t6021-stock-mailbox/README.md))
+and on `7.1.13-ARCH-polltx`. Every boot so far, on both kernels, is a
+USB proxy chain load (kernel, DTB and initramfs staged over the m1n1
+proxy by the M1 host). The disk boot (m1n1, U-Boot, GRUB) is not
+proven. The stock-kernel boots installed the module and the DTB by
+hand; `omarchy-ane-m2-enable` still refuses a kernel whose
+apple-mailbox does not poll TX, and the stock kernel is one.
 
 ## Prerequisites
 
-- Kernel `7.1.13-ARCH-polltx` (the kernel of every proven run). The
-  module builds against `/lib/modules/$(uname -r)/build`.
-- Device-tree overlay: enable the `apple,t6021-ane` compatible on
-  the `ane@284000000` node, attach `apple,always-on` to
-  `ane_sys_mpm@4000` (the override is what genpd needs to lower the
-  island), and provide the three `ane_dart{0,1,2}` iommus wired to
-  `ane_cpu`. The shipped overlay is `ane/t6021-j414c-ane-rtkit.dts`;
-  apply with `fdtoverlay`.
+- Kernel: stock linux-asahi `7.1.13-3-1-ARCH` (proven 2026-09-30 with the
+  packaged overlay, receipts/2026-09-30-t6021-stock-mailbox) or
+  `7.1.13-ARCH-polltx`. The module builds against
+  `/lib/modules/$(uname -r)/build`.
+- Device tree: `packaging/dt/t6021-ane.dts` adds the `apple,t6021-ane`
+  node at `ane@284000000`, the three ANE DARTs, the ANE mailbox
+  (`recv-not-empty` 884, `send-empty` 1833) and the alias IOVA
+  reservation. `omarchy-ane-dt apply` puts it in m1n1's device trees; by
+  hand, `dtc -@` and `fdtoverlay` from dtc 1.7.1 or newer (older
+  `fdtoverlay` renumbers the AIC phandle).
 - Firmware: place the pinned selene payload at
   `/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho`
   (sha256 `a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`).
@@ -68,7 +78,10 @@ proven parameter list.
 ## Proven on hardware
 
 All results are on T6021 hardware through the autoloaded module and
-libane ABI 2. Receipts:
+libane ABI 2, on `7.1.13-ARCH-polltx` unless noted. On the stock
+kernel, each of three boots passed 20 of 20 gate loads (`add`, `mul`,
+2048x2048 matvec and 17 more `add` runs; receipt
+2026-09-30-t6021-stock-mailbox). Receipts:
 [2026-09-29-t6021-installed-path](../../receipts/2026-09-29-t6021-installed-path/README.md)
 and the 2026-09-30 receipts named below.
 
