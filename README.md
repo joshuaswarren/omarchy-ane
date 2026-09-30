@@ -39,6 +39,27 @@ The ABI-1 stack passed all eight compiler qualification packages and a finite-in
 
 Compiler evidence: [M1 native progress](https://github.com/joshuaswarren/mil-hwx-compiler/blob/main/receipts/2026-09-06-m1-native-progress.json). Raw Apple firmware and private host details are not distributed.
 
+## Packaged install
+
+The package installs the driver. You do not need `install.sh`.
+
+- **DKMS.** `dkms.conf` builds `ane.ko` from `ane/` for each kernel that has headers. DKMS builds it again after each kernel update. Install the headers for the kernel you run, for example `linux-aurora-headers` or `linux-asahi-headers`. The build does not include the T6021 lab modules in `ane/t6021/`. The chip gate in `ane.ko` decides which SoC binds. T8103 and T6001 bind. T6021 does not bind.
+- **Device access.** The package adds no udev rule. The systemd default rule (`50-udev-default.rules`) sets each `/dev/accel` node to mode `0666`. Every user can open the ANE node.
+- **Check.** Run `omarchy-ane-check`. It checks the device-tree node, the module build for the running kernel, the loaded module, the bound device, and that every user can open the device node. It does not load the module. It exits with 1 when a check fails. After a kernel update, run `omarchy-ane-check --installed`. It checks the module build for each installed kernel.
+- **Firmware.** M1 chips need no firmware from Linux. iBoot loads it. On M2 Max (T6021), run `sudo omarchy-ane-firmware-fetch`. It reads the stub macOS version. It downloads only the ANE file from Apple and unwraps it. It installs the file only when the size and SHA-256 agree with the driver. It needs only Python 3. It stops and installs nothing when the version is unknown, the network is down, or the hash is different. We do not distribute Apple firmware.
+
+### Device-tree node
+
+`ane.ko` binds only to a device-tree node with an `apple,t*-ane` compatible. The device trees in `linux-aurora` 7.1.12 and `linux-asahi` 7.1.13 do not have this node. Until they do, the lab adds the node with a board overlay:
+
+1. Compile the overlay: `dtc -@ -I dts -O dtb -o ane.dtbo ane/t6001-j316c-set-domains.dts`.
+2. `update-m1n1` reads the DTBs from the newest `/lib/modules/*-ARCH/dtbs`. Keep a copy of `t6001-j316c.dtb` from that directory. Apply the overlay: `fdtoverlay -i t6001-j316c.dtb -o t6001-j316c.dtb.new ane.dtbo`. Replace `t6001-j316c.dtb` with the new file.
+3. Run `sudo update-m1n1`. It writes the DTBs into `boot.bin`. Reboot.
+
+A kernel update installs the original DTB again. Apply the overlay again after each kernel update.
+
+The repository has an overlay for one board that `ane.ko` binds: `ane/t6001-j316c-set-domains.dts` (M1 Max, J316c). It uses phandle `0x13` as the AIC interrupt parent. That is correct for the two kernels above. For a different kernel, make sure that `fdtget -t x t6001-j316c.dtb /soc/interrupt-controller@28e100000 phandle` gives `13`. There is no overlay for T8103. The T6021 overlays in `ane/` are lab files. Do not use them with the packaged driver.
+
 ## Chip coverage
 
 Linux `compatible` is the driver match. Internal names follow Apple's SoC table (H13G, H14J, …); unknown means exactly that. Each SoC carries one of three driver states, mirroring the qualification tiers on the descriptors in `ane/src/ane_drv.c`:
