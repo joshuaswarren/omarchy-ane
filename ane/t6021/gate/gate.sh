@@ -48,6 +48,13 @@ fi
 RUN=$ROOT/tools/ane-run
 TRIALS=${TRIALS:-4}
 TWO_IN=0
+# ane-run --check name for each gate op.
+case "$OP" in
+	island-a-kt|island-a-attn-p1|island-c-pv) CHECK=bmm;;
+	island-b-select-runtime|island-b-select-constfill) CHECK=select;;
+	rms-c2048-gamma) CHECK=rms;;
+	*) CHECK=$OP;;
+esac
 [[ $OP == add || $OP == mul || $OP == bmm ]] && TWO_IN=1
 [[ $OP == select ]] && THREE_IN=1 || THREE_IN=0
 [[ $OP == rms ]] && ONE_IN=1 || ONE_IN=0
@@ -191,7 +198,7 @@ PY
 	esac
 	if [[ -n $WEIGHTS ]]; then
 		if "$RUN" --anec "$ANEC" "${INS[@]}" \
-			--out 0="$OUT/out-y-$t.fp16" --check "$OP" \
+			--out 0="$OUT/out-y-$t.fp16" --check "$CHECK" \
 			--weights "$WEIGHTS"; then
 			echo "trial $t PASS"
 		else
@@ -199,7 +206,7 @@ PY
 		fi
 	else
 		if "$RUN" --anec "$ANEC" "${INS[@]}" \
-			--out 0="$OUT/out-y-$t.fp16" --check "$OP"; then
+			--out 0="$OUT/out-y-$t.fp16" --check "$CHECK"; then
 			echo "trial $t PASS"
 		else
 			echo "trial $t FAIL"; fail=1
@@ -232,7 +239,7 @@ case "$OP" in
 esac
 if [[ -n $WEIGHTS ]]; then
 	if "$RUN" --anec "$ANEC" "${INS[@]}" \
-		--out 0="$OUT/out-y-reopen.fp16" --check "$OP" --repeat 3 \
+		--out 0="$OUT/out-y-reopen.fp16" --check "$CHECK" --repeat 3 \
 		--weights "$WEIGHTS"; then
 		echo "reopen+repeat PASS"
 	else
@@ -240,7 +247,7 @@ if [[ -n $WEIGHTS ]]; then
 	fi
 else
 	if "$RUN" --anec "$ANEC" "${INS[@]}" \
-		--out 0="$OUT/out-y-reopen.fp16" --check "$OP" --repeat 3; then
+		--out 0="$OUT/out-y-reopen.fp16" --check "$CHECK" --repeat 3; then
 		echo "reopen+repeat PASS"
 	else
 		echo "reopen+repeat FAIL"; fail=1
