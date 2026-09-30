@@ -16,6 +16,9 @@ writes the overlaid copy to /var/lib/omarchy-ane/dtbs/KERNEL/ and adds one line
 to /etc/default/update-m1n1 that sources /usr/lib/omarchy-ane/update-m1n1-dtbs.
 That script swaps the copy in only while it was made from the same kernel file.
 A kernel device tree that already has the node wins: apply retires the copy.
+An overlay whose root has the string "omarchy,opt-in" applies only when that
+string is a line of /etc/omarchy-platform/dtb-overlays.opt-in (the T6021 node:
+"ane-t6021", written by omarchy-ane-m2-enable).
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
 
@@ -38,6 +41,7 @@ from pathlib import Path
 FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
+OPT_IN = "etc/omarchy-platform/dtb-overlays.opt-in"
 REFS = {"power-domains": "#power-domain-cells", "iommus": "#iommu-cells",
         "mboxes": "#mbox-cells", "resets": "#reset-cells"}
 
@@ -104,20 +108,32 @@ def run(*cmd):
         raise Refuse(f"{cmd[0]} failed: {e.stderr.decode(errors='replace').strip()}")
 
 
+def fdt_string(overlay, prop):
+    out = subprocess.run(["fdtget", "-t", "s", str(overlay), "/", prop], capture_output=True)
+    return out.stdout.decode().split() if out.returncode == 0 else []
+
+
+def opted_in(root):
+    try:
+        return {line.strip() for line in (root / OPT_IN).read_text().splitlines()} - {""}
+    except FileNotFoundError:
+        return set()
+
+
 def overlays_for(root, name):
     """The overlays that select device tree NAME, in the order they apply."""
-    found = []
+    found, allowed = [], opted_in(root)
     for overlay in sorted(glob.glob(str(root / "usr/lib/omarchy-platform/dtb-overlays/*/*.dtbo"))):
         prefix = Path(overlay).parent.name
-        if name == f"{prefix}.dtb" or name.startswith(f"{prefix}-"):
+        if name != f"{prefix}.dtb" and not name.startswith(f"{prefix}-"):
+            continue
+        if all(key in allowed for key in fdt_string(overlay, "omarchy,opt-in")):
             found.append(Path(overlay))
     return found
 
 
 def skip_compatibles(overlay):
-    out = subprocess.run(["fdtget", "-t", "s", str(overlay), "/", "omarchy,skip-if-compatible"],
-                         capture_output=True)
-    return out.stdout.decode().split() if out.returncode == 0 else []
+    return fdt_string(overlay, "omarchy,skip-if-compatible")
 
 
 def validate(stock, result, wanted):
@@ -250,8 +266,11 @@ def apply(root, hook_targets):
         if stale.name not in {k.name for k in kernels}:
             remove_tree(stale)
     if not overlays:
-        remove(root, quiet=True)
-        raise Refuse(f"no omarchy-ane overlay for {name}")
+        removed = remove(root, quiet=True)
+        print(f"omarchy-ane-dt: no omarchy-ane overlay applies to {name}; nothing to apply")
+        if removed and not any("/dtbs/" in t for t in hook_targets or []):
+            print("m1n1 still has the old device tree. Run: sudo update-m1n1, then reboot.")
+        return
     changed = False
     with tempfile.TemporaryDirectory() as tmp:
         for kernel in kernels:
@@ -292,6 +311,7 @@ def remove(root, quiet=False):
         remove_tree(state)
     if had and not quiet:
         print("omarchy-ane-dt: removed. m1n1 keeps the ANE node until update-m1n1 runs: sudo update-m1n1")
+    return had
 
 
 def status(root, kver):

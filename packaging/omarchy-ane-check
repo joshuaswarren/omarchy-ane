@@ -2,10 +2,13 @@
 # omarchy-ane-check: report whether the Apple Neural Engine driver is ready.
 #
 #   omarchy-ane-check              check the running kernel: ANE device-tree
-#                                  node, ane.ko built, loaded, bound, and the
-#                                  /dev/accel node
-#   omarchy-ane-check --installed  check that ane.ko exists for every
-#                                  installed kernel with headers (pacman hook)
+#                                  node, the driver built, loaded, bound, and
+#                                  the /dev/accel node. On an M2 Max (T6021)
+#                                  the driver is ane_t6021, behind the opt-in
+#                                  gate of omarchy-ane-m2-enable.
+#   omarchy-ane-check --installed  check that ane.ko and ane_t6021.ko exist
+#                                  for every installed kernel with headers
+#                                  (pacman hook)
 #
 # Read-only. It never loads, unloads, or binds the module.
 # Exit 0 when every check passes, 1 when a check fails, 2 on bad usage.
@@ -20,21 +23,29 @@ finish() {
   echo "omarchy-ane-check: ready"; exit 0
 }
 
+# built KERNEL MODULE
 built() {
   local file
-  file=$(modinfo -k "$1" -F filename ane 2>/dev/null)
+  file=$(modinfo -k "$1" -F filename "$2" 2>/dev/null)
   if [[ -n $file ]]; then
-    ok "ane.ko built for $1: $file (version $(modinfo -k "$1" -F version ane 2>/dev/null))"
+    ok "$2.ko built for $1: $file (version $(modinfo -k "$1" -F version "$2" 2>/dev/null))"
   else
-    bad "ane.ko is not built for kernel $1. Install the headers for $1, then run: sudo dkms autoinstall -k $1"
+    bad "$2.ko is not built for kernel $1. Install the headers for $1, then run: sudo dkms autoinstall -k $1"
   fi
+}
+
+tool() {
+  local path
+  path=$(dirname -- "$(realpath -- "$0")")/$1
+  [[ -x $path ]] || path=$(command -v "$1" || true)
+  printf '%s\n' "$path"
 }
 
 case "${1:-}" in
   --installed)
     kernels=(/usr/lib/modules/*/build)
     (( ${#kernels[@]} )) || { bad "no kernel headers are installed, so DKMS cannot build ane.ko"; finish; }
-    for b in "${kernels[@]}"; do k=${b%/build}; built "${k##*/}"; done
+    for b in "${kernels[@]}"; do k=${b%/build}; built "${k##*/}" ane; built "${k##*/}" ane_t6021; done
     finish ;;
   "") ;;
   *) echo "usage: omarchy-ane-check [--installed]" >&2; exit 2 ;;
@@ -43,6 +54,24 @@ esac
 kver=$(uname -r)
 dt=/sys/firmware/devicetree/base
 echo "omarchy-ane-check: kernel $kver"
+
+# 0. M2 Max: ane_t6021 stays blocked until the owner opts in.
+mod=ane
+if [[ -r $dt/compatible ]] && tr '\0' '\n' <"$dt/compatible" | grep -qx 'apple,t6021'; then
+  mod=ane_t6021
+  m2tool=$(tool omarchy-ane-m2-enable)
+  state=""
+  [[ -z $m2tool ]] || state=$("$m2tool" --status 2>/dev/null)
+  case $state in
+    *module=blocked*) bad "M2 opt-in: ane_t6021 is blocked ($state). Opt in with: sudo omarchy-ane-m2-enable"; finish ;;
+    *module=enabled*) ok "M2 opt-in: enabled ($state)" ;;
+    *) bad "cannot read the M2 opt-in state: omarchy-ane-m2-enable is missing"; finish ;;
+  esac
+  [[ $state == *firmware=pinned* ]] ||
+    bad "the M2 ANE firmware is not the pinned image. Run: sudo omarchy-ane-firmware-fetch"
+  [[ $state != *mailbox=none* ]] ||
+    bad "kernel $kver cannot drive the ANE mailbox: its apple-mailbox does not poll TX, and ane_t6021 has no mailbox controller of its own. Boot a kernel that can."
+fi
 
 # 1. ANE node. Without it nothing else can pass, so stop here.
 compat=""
@@ -54,8 +83,7 @@ for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
 done
 # Where the node comes from: omarchy-ane-dt status compares the running
 # kernel's board device tree with omarchy-ane's overlay.
-dtool=$(dirname -- "$(realpath -- "$0")")/omarchy-ane-dt
-[[ -x $dtool ]] || dtool=$(command -v omarchy-ane-dt || true)
+dtool=$(tool omarchy-ane-dt)
 origin=""
 [[ -z $dtool ]] || origin=$("$dtool" status 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
 if [[ ! -d $dt ]]; then
@@ -75,39 +103,42 @@ case $origin in
 esac
 
 # 2. Module built for the running kernel.
-built "$kver"
+built "$kver" "$mod"
 
 # 3. Module loaded.
-if [[ -d /sys/module/ane ]]; then
-  ok "ane is loaded (version $(cat /sys/module/ane/version 2>/dev/null))"
-  disk=$(modinfo -k "$kver" -F srcversion ane 2>/dev/null)
-  live=$(cat /sys/module/ane/srcversion 2>/dev/null)
+if [[ -d /sys/module/$mod ]]; then
+  ver=$(cat "/sys/module/$mod/version" 2>/dev/null)
+  ok "$mod is loaded${ver:+ (version $ver)}"
+  disk=$(modinfo -k "$kver" -F srcversion "$mod" 2>/dev/null)
+  live=$(cat "/sys/module/$mod/srcversion" 2>/dev/null)
   if [[ -n $disk && -n $live && $disk != "$live" ]]; then
-    echo "  note  the loaded ane differs from the installed ane.ko. Reboot to load the new one. Do not rmmod ane."
+    echo "  note  the loaded $mod differs from the installed $mod.ko. Reboot to load the new one. Do not rmmod $mod."
   fi
+elif [[ $mod == ane_t6021 ]]; then
+  bad "ane_t6021 is not loaded. It loads at boot when the ANE node is present. Reboot."
 else
   bad "ane is not loaded. Load it with: sudo modprobe ane"
 fi
 
 # 4. Driver bound to the ANE platform device.
 dev=""
-for l in /sys/bus/platform/drivers/ane/*; do
+for l in /sys/bus/platform/drivers/"$mod"/*; do
   [[ -L $l && ${l##*/} != module ]] && { dev=${l##*/}; break; }
 done
 if [[ -n $dev ]]; then
-  ok "ane is bound to $dev"
+  ok "$mod is bound to $dev"
 else
-  bad "ane is bound to no device. Read the reason with: journalctl -k -g ane"
+  bad "$mod is bound to no device. Read the reason with: journalctl -k -g $mod"
 fi
 
 # 5. Device node. Every user must be able to open it. The package adds no
 #    udev rule: systemd's 50-udev-default.rules makes accel nodes mode 0666.
 node=""
 for s in /sys/class/accel/accel*; do
-  [[ $(readlink "$s/device/driver") == */ane ]] && { node=/dev/accel/${s##*/}; break; }
+  [[ $(readlink "$s/device/driver") == */"$mod" ]] && { node=/dev/accel/${s##*/}; break; }
 done
 if [[ -z $node || ! -c $node ]]; then
-  bad "no /dev/accel node from ane"
+  bad "no /dev/accel node from $mod"
 else
   mode=$(stat -c '%A %U:%G' "$node")
   if [[ $mode == c??????rw?\ * ]]; then
