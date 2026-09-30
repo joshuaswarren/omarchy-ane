@@ -16,8 +16,9 @@
 //
 // The section payloads are built by ane_m2_program_build(), which is
 // device-independent and is also the core of the host byte-identity
-// self-check (tools/ane-selfcheck.c): on the proven fixture it must
-// reproduce the lab section builder's output byte for byte.
+// self-check (tools/ane-selfcheck.c): on every fixture under
+// fixtures/h14-anec it must reproduce the lab section builder's output
+// (lab tools/h14_sections.py) byte for byte.
 //
 // PROVEN on hardware means a bit-exact y == a+b run through the
 // scratch-module sequencer path (LOAD_PROGRAM -> CREATE_PROCEDURE ->
@@ -72,7 +73,6 @@ struct ane_m2_model {
 	uint32_t io_count;
 	struct ane_m2_ref refs[ANE_M2_MAX_BINDS];
 	uint32_t ref_count;
-	uint32_t td_size;
 };
 
 struct ane_m2_sections {

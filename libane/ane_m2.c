@@ -17,12 +17,16 @@
 #include "ane_m2.h"
 
 #define ANEC_M2_HEADER_SIZE 0x1000UL
-#define TASK_OFFSET	   0x1000UL
 #define FRAME_BYTES	   16UL
-/* Task stream region: 0x1000..0x1140, then the 0x4000-byte constant region.
- * Fixed offsets of the H14 anec layout (encodeANEC); proven on the fixture. */
-#define CONST_OFFSET	 0x1140UL
-#define ANE_M2_KRN_BYTES 0x4000UL
+/* H14 anec layout (encodeANEC): 0x1000-byte header, then the task stream,
+ * then the constant region (the kernel section) at a 64-byte-aligned
+ * offset near the end of the payload. All sizes come from the header. */
+#define ANE_M2_MAX_TASKS	64
+#define TD_KDMA_LO		0x1900u
+#define TD_KDMA_HI		0x1a40u
+#define TD_DST			0x1508u
+#define TD_SRC_A		0x1110u
+#define TD_SRC_B		0x1128u
 
 const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT] = {1, 2, 3, 4, 5, 7};
 
@@ -71,104 +75,211 @@ static int fail(const char *why)
 }
 
 /*
- * Descriptor address records (the only hardware-proven decode):
- *   u32 header with bit29 = BAR reference, bits 28:23 = local BAR slot,
- *   followed by an 8-byte IOVA placeholder (zero in the anec; the firmware
- *   patches it from BAR[slot] at load, pushToHWDirect fw135 0x44c98).
- * PROVEN: slots 4,5,6 carried a,y,b bit-exact through the scratch-module
- *   sequencer run.
- * INFERRED (one program): the records appear in task order inputs-first,
- *   outputs-last, and record order matches ascending input channel order
- *   (a=5, b=6) with the output channel 4 last. The anec carries no
- *   direction field this decode can read, so the builder accepts the
- *   association only when it is fully consistent (every io buffer bound
- *   exactly once, distinct slots) and refuses everything else.
+ * H14 task-stream walk, ported from the lab builder (tools/h14_sections.py,
+ * split_h14_tasks; itself ported from mil-hwx-compiler research/h13_td.py).
+ * A u16 at offset+2 carries the task word count in bits 10:0; a zero count
+ * marks a 16-byte filler frame; a task ends on the next 16-byte boundary
+ * and every filler byte between tasks must be zero.
  */
-struct bar_rec {
-	uint32_t slot;
+struct ane_task {
+	uint64_t off;   /* byte offset inside the task stream */
+	uint32_t words; /* word count, including the 8-word task header */
 };
 
-static int walk_bar_records(const uint8_t *desc, uint64_t bytes,
-			    const struct ane_m2_model *m,
-			    struct ane_m2_ref *refs, uint32_t *ref_count)
+static int split_h14_tasks(const uint8_t *stream, uint64_t bytes,
+			   struct ane_task *tasks, uint32_t *count)
 {
-	struct bar_rec rec[ANE_M2_MAX_BINDS];
+	uint64_t off = 0;
+	uint64_t i;
+
+	*count = 0;
+	while (off < bytes) {
+		uint32_t words;
+		uint64_t task_bytes;
+		uint64_t end;
+
+		if (bytes - off < 4) {
+			for (i = off; i < bytes; i++) {
+				if (stream[i]) {
+					return fail("nonzero trailing bytes "
+						    "after the last task");
+				}
+			}
+			break;
+		}
+		words = le16(stream + off + 2) & 0x7ff;
+		if (!words) {
+			off += FRAME_BYTES;
+			if (off > bytes) {
+				off = bytes;
+			}
+			continue;
+		}
+		if (words < 8) {
+			return fail("task declares fewer words than the 8-word "
+				    "H14 header");
+		}
+		task_bytes = (uint64_t)words * 4;
+		if (task_bytes > bytes - off) {
+			return fail("task declares more words than the task "
+				    "stream holds");
+		}
+		end = (off + task_bytes + 15) & ~15ULL;
+		if (end > bytes) {
+			end = bytes;
+		}
+		for (i = off + task_bytes; i < end; i++) {
+			if (stream[i]) {
+				return fail("nonzero bytes in a 16-byte task "
+					    "alignment gap");
+			}
+		}
+		if (*count == ANE_M2_MAX_TASKS) {
+			return fail("more tasks than the builder envelope "
+				    "holds");
+		}
+		tasks[*count].off = off;
+		tasks[*count].words = words;
+		(*count)++;
+		off = end;
+	}
+	return 0;
+}
+
+/*
+ * Operation refs from dense TD address records. A dense record header with
+ * bit 29 set is a BAR reference: bits 28:23 hold the local BAR slot and
+ * the low 15 bits select the register word the record patches (fw135
+ * pushToHWDirect 0x44c98 writes the pairs, 0x44f20 reads them). Register
+ * roles and their buffer tags:
+ *   0x1900..0x19ff  KernelDMA block   -> tag 2 (kernel/constant section)
+ *   0x1508          TileDMA dst base  -> tag 4 (output channel 4)
+ *   0x1110/0x1128   TileDMA src base  -> input channel 5 / 6; slot 0/1 on
+ *                   a src base loads a stored constant row -> tag 2
+ * PROVEN on hardware: the add program ran bit-exact with refs {4,5} {5,4}
+ * {6,6} derived this way (boot 8f468602). INFERRED, one program each and
+ * named in the lab receipt: the tag-2 refs of matvec, real-div-scalar and
+ * clip-low/clip-high (kernel-base constant loads).
+ */
+static int bar_ref_tag(uint32_t addr, uint32_t slot, uint32_t *tag)
+{
+	if (addr >= TD_KDMA_LO && addr < TD_KDMA_HI) {
+		*tag = 2;
+		return 0;
+	}
+	if (addr == TD_DST) {
+		*tag = 4;
+		return 0;
+	}
+	if (addr == TD_SRC_A || addr == TD_SRC_B) {
+		if (slot <= 1) {
+			*tag = 2;
+			return 0;
+		}
+		if (slot <= 3) {
+			return fail("BAR slot 2/3 on a TileDMA source base "
+				    "collides with the section-tag namespace");
+		}
+		*tag = addr == TD_SRC_A ? 5 : 6;
+		return 0;
+	}
+	if (addr == 0x1120 || addr == 0x1124 || addr == 0x112c) {
+		return fail("BAR-ref record sits between the two known source "
+			    "bases; its surface is not identified");
+	}
+	return fail("BAR-ref record outside the known register roles (sources "
+		    "0x1110/0x1128, destination 0x1508, KernelDMA "
+		    "0x1900..0x19ff)");
+}
+
+/* Walk every record of every task and collect {slot, tag} pairs by slot. */
+static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
+		       uint32_t ntasks, const struct ane_m2_model *m,
+		       struct ane_m2_ref *refs, uint32_t *ref_count)
+{
+	uint32_t tag_of[0x40]; /* tag per slot; UINT32_MAX = unassigned */
 	uint32_t n = 0;
+	uint32_t t;
+	uint32_t s;
 	uint32_t i;
-	uint32_t j;
-	uint32_t in = 0;
-	uint64_t off;
 
-	for (off = FRAME_BYTES; off + 12 <= bytes; off += 4) {
-		uint32_t w = le32(desc + off);
-		uint32_t slot;
+	for (s = 0; s < 0x40; s++) {
+		tag_of[s] = 0xffffffffu;
+	}
+	for (t = 0; t < ntasks; t++) {
+		const uint8_t *tp = stream + tasks[t].off;
+		uint32_t nw = tasks[t].words;
+		uint32_t idx = 8;
 
-		if (!((w >> 29) & 1)) {
-			continue;
+		if ((le32(tp + 28) & 3u) == 3u) {
+			idx = 9; /* an extra header word precedes the records */
 		}
-		/* A record candidate is only a record when its IOVA
-		 * placeholder is still zero (the firmware patches it at
-		 * load); task data words with bit29 set carry other data
-		 * there (the fixture has 0xb60e0000 at +0x38). */
-		if (le64(desc + off + 4)) {
-			continue;
+		while (idx < nw) {
+			uint32_t h = le32(tp + idx * 4);
+			uint32_t count;
+
+			if (h & 0x80000000u) {
+				count = 1 + (uint32_t)__builtin_popcount(
+						  (h >> 15) & 0xffffu);
+			} else {
+				count = ((h >> 15) & 0x3fu) + 1;
+			}
+			if (idx + 1 + count > nw) {
+				return fail("record declares more payload "
+					    "words than its task holds");
+			}
+			if (!(h & 0x80000000u) && (h & 0x20000000u)) {
+				uint32_t slot = (h >> 23) & 0x3fu;
+				uint32_t tag;
+				int err;
+
+				if (h & 0x10000000u) {
+					return fail("BAR-ref header has bit 28 "
+						    "set; the slot field width "
+						    "(28:23 vs 27:23) is not "
+						    "decided by any decoded "
+						    "case");
+				}
+				err = bar_ref_tag((h & 0x7fffu) * 4, slot,
+						  &tag);
+				if (err) {
+					return err;
+				}
+				if (tag_of[slot] != 0xffffffffu &&
+				    tag_of[slot] != tag) {
+					return fail("one BAR slot resolves to "
+						    "two different tags");
+				}
+				tag_of[slot] = tag;
+			}
+			idx += 1 + count;
 		}
-		slot = (w >> 23) & 0x3f;
-		if (!slot || slot >= TILE_COUNT) {
-			return fail("address record slot out of [1,0x1f]");
+	}
+	for (s = 0; s < 0x40; s++) {
+		if (tag_of[s] == 0xffffffffu) {
+			continue;
 		}
 		if (n == ANE_M2_MAX_BINDS) {
-			return fail("too many BAR address records");
+			return fail("more refs than the model holds");
 		}
-		rec[n].slot = slot;
+		refs[n].slot = s;
+		refs[n].tag = tag_of[s];
 		n++;
 	}
-
-	if (n != m->io_count) {
-		return fail("BAR record count does not match the io table");
+	if (!n) {
+		return fail("the task stream holds no BAR-ref record");
 	}
-
-	/* Assign input channels in record order, then the output. */
 	for (i = 0; i < n; i++) {
-		if (in < m->io_count - 1 && m->io[in].dir == 0) {
-			refs[i].tag = m->io[in].buffer_id;
-			in++;
-		} else {
-			refs[i].tag = m->io[m->io_count - 1].buffer_id;
-		}
-		refs[i].slot = rec[i].slot;
-	}
+		int known = refs[i].tag == 2; /* the kernel section */
 
-	/* Emission order: slot ascending (the proven order 4,5,6). */
-	for (i = 0; i < n; i++) {
-		for (j = i + 1; j < n; j++) {
-			if (refs[j].slot < refs[i].slot) {
-				struct ane_m2_ref t = refs[i];
-				refs[i] = refs[j];
-				refs[j] = t;
-			}
+		for (s = 0; s < m->io_count && !known; s++) {
+			known = m->io[s].buffer_id == refs[i].tag;
+		}
+		if (!known) {
+			return fail("a ref names a tag outside the kernel "
+				    "section and the bound channels");
 		}
 	}
-	for (i = 1; i < n; i++) {
-		if (refs[i].slot == refs[i - 1].slot) {
-			return fail("duplicate BAR slot in address records");
-		}
-	}
-
-	/* Every io buffer must be bound exactly once. */
-	for (i = 0; i < m->io_count; i++) {
-		uint32_t hits = 0;
-
-		for (j = 0; j < n; j++) {
-			if (refs[j].tag == m->io[i].buffer_id) {
-				hits++;
-			}
-		}
-		if (hits != 1) {
-			return fail("io buffer not covered by exactly one ref");
-		}
-	}
-
 	*ref_count = n;
 	return 0;
 }
@@ -210,64 +321,62 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			 struct ane_m2_sections *secs)
 {
 	const uint8_t *d = anec;
-	uint64_t payload, tsk_size, krn_size, gen_size;
-	uint32_t td_size, td_count, src_count, dst_count;
-	uint32_t task_words, k;
+	uint64_t payload, tsk_size, krn_size, const_off, gen_size;
+	uint32_t first_task, task_count, input_count, version, k;
 	uint8_t *desc, *kern, *gen, *oper, *proc, *tdp;
+	struct ane_task tasks[ANE_M2_MAX_TASKS];
+	uint32_t ntasks = 0;
 	struct ane_m2_ref *refs;
 	int blocks, err;
 
 	memset(secs, 0, sizeof(*secs));
 	memset(model, 0, sizeof(*model));
 
-	if (anec_size < ANEC_M2_HEADER_SIZE + CONST_OFFSET) {
+	if (anec_size < ANEC_M2_HEADER_SIZE) {
 		return fail("anec shorter than the H14 header layout");
 	}
 
 	payload = le64(d);
-	td_size = le32(d + 0x08);
-	td_count = le32(d + 0x0c);
+	first_task = le32(d + 0x08);
+	task_count = le32(d + 0x0c);
 	tsk_size = le64(d + 0x10);
 	krn_size = le64(d + 0x18);
-	src_count = le32(d + 0x20);
-	dst_count = le32(d + 0x24);
+	input_count = le32(d + 0x20);
+	version = le32(d + 0x24);
 
 	if (payload != anec_size - ANEC_M2_HEADER_SIZE) {
 		return fail("header payload size disagrees with file size");
 	}
-	/* One task per program: multi-task streams were never loaded. */
-	if (td_count != 1) {
-		return fail("td_count != 1");
+	if (version != 1) {
+		return fail("anec header version word is not the emitted 1");
 	}
-	if (td_size < FRAME_BYTES || td_size % 4) {
-		return fail("bad firstTaskBytes");
+	/* The builder derives tags for 1..2 runtime inputs (channels 5,6),
+	 * the only forms the h14-oracle-parity encoder emits. */
+	if (input_count < 1 || input_count > 2) {
+		return fail("inputCount outside [1,2]");
 	}
-	if (tsk_size != FRAME_BYTES + td_size) {
-		return fail("tsk_size != frame + task");
+	if (krn_size > payload) {
+		return fail("constant region is larger than the payload");
 	}
-	/* The constant region is 16384 B at 0x1140 in the proven layout. */
-	if (krn_size != ANE_M2_KRN_BYTES) {
-		return fail("krn_size != 0x4000");
+	const_off = payload - krn_size;
+	if (const_off & 0x3f) {
+		return fail("constant region is not 64-byte aligned (the "
+			    "encoder emits align_up(stream, 64))");
 	}
-	if (anec_size != CONST_OFFSET + krn_size) {
-		return fail("anec size != task region + constants");
-	}
-	/* One output, one or more inputs: the proven shape is 2 + 1. */
-	if (dst_count != 1 || !src_count ||
-	    src_count + dst_count > ANE_M2_MAX_BINDS) {
-		return fail("unsupported src/dst counts");
+	if (tsk_size > const_off) {
+		return fail("task stream reaches into the constant region");
 	}
 
 	/* io table: H14 channel contract (H14Program.cpp:547-561, proven on
 	 * hardware): output = channel 4, input k = channel 5+k. Emission
 	 * order: inputs ascending, then the output. */
-	model->io_count = src_count + dst_count;
+	model->io_count = input_count + 1;
 	for (k = 0; k < model->io_count; k++) {
 		struct ane_m2_io *io = &model->io[k];
 		uint32_t b;
-		uint64_t n, c, plane, tiles;
+		uint32_t tiles;
 
-		if (k < src_count) {
+		if (k < input_count) {
 			b = 5 + k;
 			io->dir = 0;
 		} else {
@@ -280,50 +389,57 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 		if (b >= TILE_COUNT || b == 2 || b == 3) {
 			return fail("io channel id collides with a section id");
 		}
-		/* Entry size from the anec geometry: N * C * plane bytes,
-		 * cross-checked against tiles[b] << 14 (the add fixture
-		 * carries nchw [1,512,1,1,64,64] and tiles[b] == 2, both
-		 * 0x8000). Refuse on disagreement instead of guessing. */
-		n = le64(d + 0xa8 + b * 48);
-		c = le64(d + 0xa8 + b * 48 + 8);
-		plane = le64(d + 0xa8 + b * 48 + 32);
+		/* Entry size = the channel allocation, tiles[b] units of
+		 * 0x4000 B (the lab builder's allocation_bytes; the add
+		 * fixture carries tiles[4..6] == 2 -> 0x8000). The nchw
+		 * layout is informational and not part of the derivation. */
 		tiles = le32(d + 0x28 + b * 4);
-		if (!n || !c || !plane || n > (1ULL << 20) || c > (1ULL << 20) ||
-		    plane > (1ULL << 20) || n * c * plane > (1ULL << 30)) {
-			return fail("unusable nchw geometry for an io channel");
+		if (!tiles || tiles > (1u << 20)) {
+			return fail("unusable tile count for an io channel");
 		}
 		io->buffer_id = b;
-		io->size = n * c * plane;
-		if (!tiles || (tiles << ANE_M2_TILE_UNIT_SHIFT) != io->size) {
-			return fail("tiles[] disagrees with the nchw size");
-		}
+		io->size = (uint64_t)tiles << ANE_M2_TILE_UNIT_SHIFT;
 	}
 
-	/* Descriptor section: 16-byte zero frame + the task. The task stream
-	 * header word (task word 4) declares the task length in bits 26:16;
-	 * copying only firstTaskBytes drops the tail records and wedges the
-	 * TQ, so the section is frame + task and the two lengths must agree. */
-	desc = sec_alloc(secs, ANE_M2_SEC_DESCRIPTOR, FRAME_BYTES + td_size);
+	/* Descriptor section: the raw task stream (16-byte zero frame, the
+	 * tasks, their alignment filler), walked to count the tasks. The
+	 * task header word (bits 26:16) declares the task length; copying
+	 * only a prefix drops tail records and wedges the TQ. */
+	if (tsk_size < FRAME_BYTES) {
+		return fail("task stream is shorter than one frame");
+	}
+	desc = sec_alloc(secs, ANE_M2_SEC_DESCRIPTOR, tsk_size);
 	if (!desc) {
 		return -ENOMEM;
 	}
-	memcpy(desc, d + TASK_OFFSET, FRAME_BYTES + td_size);
+	memcpy(desc, d + ANEC_M2_HEADER_SIZE, tsk_size);
 	for (k = 0; k < FRAME_BYTES; k++) {
 		if (desc[k]) {
 			return fail("task frame not zero");
 		}
 	}
-	task_words = (le32(desc + FRAME_BYTES) >> 16) & 0x7ff;
-	if (4 + task_words != (FRAME_BYTES + td_size) / 4) {
-		return fail("task header word count disagrees with td_size");
+	err = split_h14_tasks(desc, tsk_size, tasks, &ntasks);
+	if (err) {
+		return err;
+	}
+	if (!ntasks) {
+		return fail("the task stream holds no task");
+	}
+	if (ntasks != task_count) {
+		return fail("walked task count disagrees with the header "
+			    "taskCount");
+	}
+	if (first_task != tasks[0].words * 4) {
+		return fail("firstTaskBytes disagrees with the walked first "
+			    "task");
 	}
 
 	refs = calloc(model->io_count, sizeof(struct ane_m2_ref));
 	if (!refs) {
 		return -ENOMEM;
 	}
-	err = walk_bar_records(desc, FRAME_BYTES + td_size, model, refs,
-			       &model->ref_count);
+	err = derive_refs(desc, tasks, ntasks, model, refs,
+			  &model->ref_count);
 	if (err) {
 		free(refs);
 		return err;
@@ -331,12 +447,13 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	memcpy(model->refs, refs, model->ref_count * sizeof(*refs));
 	free(refs);
 
-	/* Kernel/constant section: the raw constant region. */
+	/* Kernel/constant section: the raw constant region, sized by the
+	 * header (0x80 B for the clip fold, 128 KiB for matvec weights). */
 	kern = sec_alloc(secs, ANE_M2_SEC_KERNEL, krn_size);
 	if (!kern) {
 		return -ENOMEM;
 	}
-	memcpy(kern, d + CONST_OFFSET, krn_size);
+	memcpy(kern, d + ANEC_M2_HEADER_SIZE + const_off, krn_size);
 
 	/* Generic section: 0x208-byte header + 0x30-byte entries. */
 	gen_size = 0x208 + 0x30ULL * model->io_count;
@@ -395,10 +512,15 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	put_le32(proc + 0x34, 4);
 
 	/* tdprop: one segment covering the whole descriptor, blockNbr from
-	 * the firmware block walk. */
-	blocks = tdprop_block_count(desc, FRAME_BYTES + td_size);
+	 * the firmware block walk (fw135 0x486a0; the walked count must
+	 * match, 0x48798). */
+	blocks = tdprop_block_count(desc, tsk_size);
 	if (blocks < 0) {
 		return blocks;
+	}
+	if (!blocks) {
+		return fail("tdprop walk found no block; the firmware deep "
+			    "check would reject the descriptor");
 	}
 	tdp = sec_alloc(secs, ANE_M2_SEC_TDPROP, 40);
 	if (!tdp) {
@@ -409,9 +531,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	put_le32(tdp + 0x0c, (uint32_t)blocks);
 	put_le64(tdp + 0x10, 0); /* segment offset */
 	put_le64(tdp + 0x18, 0); /* pad */
-	put_le64(tdp + 0x20, FRAME_BYTES + td_size);
-
-	model->td_size = td_size;
+	put_le64(tdp + 0x20, tsk_size);
 	return 0;
 }
 
