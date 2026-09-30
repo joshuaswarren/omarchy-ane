@@ -80,6 +80,20 @@ done
 ls -l /dev/accel/
 dmesg | grep -iE 'ane_t6021|ane:' | tail -40 > "$OUT/dmesg-load.txt" || true
 
+# The bmm islands are checked by tools/island_ref.py (surface pack/unpack and
+# the exact fp64 product; verdict = condition-normalized error <= 1.0, the
+# fp16 output-rounding bound). It runs the device itself through the
+# installed ane-run at /var/tmp/inst/tools/ane-run.
+if [[ $CHECK == bmm ]]; then
+	for s in 0 1 2; do
+		python3 "$ROOT/tools/island_ref.py" --island "$OP" --seed "$s" \
+			--out-dir "$OUT" --in-dir "$OUT" | tee -a "$OUT/gate.log" | tail -1
+	done
+	if grep -q "FAIL" "$OUT/gate.log"; then echo "GATE FAIL"; exit 1; fi
+	echo "GATE PASS"
+	exit 0
+fi
+
 fail=0
 for t in $(seq 1 "$TRIALS"); do
 	python3 - "$OUT" "$t" "$OP" "$TWO_IN" "$THREE_IN" "$ANEC" <<'PY'

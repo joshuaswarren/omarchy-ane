@@ -570,20 +570,38 @@ def main():
                 for h in range(H):
                     base = ((n * C + c) * H + h) * (rb // 2)
                     valid[base : base + W] = True
-        max_ulp, max_nerr, exact, total, in_band = compare_fp16(out_dev, out_ref, valid)
-        pad_zero = (np.fromfile(out_dev, dtype=np.float16)[~valid] == 0).all()
-        # Empirical M2 ANE matmul band (see compare_fp16 docstring):
-        # at least 99.9% of valid lanes within the 3-ULP-or-4-cond-units
-        # band, all padding zero, no 1-ULP systematic bias. The 0.1%
-        # residual is the device's tile-level fp16 accumulation rounding
-        # at cancellation-prone magnitudes (see receipt for the
-        # 9-seed / 3-island residual histogram).
-        residual_frac = (total - in_band) / total if total else 0.0
-        verdict = "PASS" if (residual_frac <= 0.005 and pad_zero) else "FAIL"
-        print(f"{args.island} s{args.seed} bmm: max_ulp={max_ulp:.4f} "
-              f"max_nerr={max_nerr:.3f} exact={exact}/{total} "
-              f"in_band={in_band}/{total} ({residual_frac*100:.3f}% residual) "
-              f"pad_zero={pad_zero} -> {verdict}")
+        # Verdict: condition-normalized error against the exact fp64 product,
+        # |dev - exact| / (2^-11 * sum_k |x_k w_k|), over every valid lane
+        # (sum|terms| > 0 everywhere for the random inputs). Rounding the
+        # result to fp16 alone costs at most 1.0 in these units, so the
+        # threshold 1.0 is the fp16 output-rounding bound, not a tuned band.
+        # The pack of x and w and the exact product come from the surfaces.
+        cd_w = island["channels"][5]
+        cd_x = island["channels"][6]
+        w64 = read_fp16_surface(in_files[5], cd_w).astype(np.float64)
+        x64 = read_fp16_surface(in_files[6], cd_x).astype(np.float64)
+        exact_full = np.einsum("bcmk,bckn->bcmn", x64, w64)
+        sumabs_full = np.einsum("bcmk,bckn->bcmn", np.abs(x64), np.abs(w64))
+        dev_arr = np.fromfile(out_dev, dtype=np.float16)
+        dev_full = np.zeros_like(exact_full)
+        for n in range(N):
+            for c in range(C):
+                for h in range(H):
+                    base = ((n * C + c) * H + h) * (rb // 2)
+                    dev_full[n, c, h] = dev_arr[base : base + W].astype(np.float64)
+        err_full = np.abs(dev_full - exact_full)
+        live = sumabs_full > 0
+        nerr_all = np.where(live, err_full / np.where(live, sumabs_full * 2.0 ** -11, 1.0), 0.0)
+        max_nerr = float(nerr_all.max())
+        exact = int((dev_full == exact_full).sum())
+        total = int(dev_full.size)
+        in_band = int((nerr_all <= 1.0).sum())
+        max_ulp = 0.0
+        pad_zero = bool((dev_arr[~valid] == 0).all())
+        verdict = "PASS" if (in_band == total and pad_zero) else "FAIL"
+        print(f"{args.island} s{args.seed} bmm: max_cond_units={max_nerr:.3f} "
+              f"lanes_within_1_cond_unit={in_band}/{total} pad_zero={pad_zero} "
+              f"-> {verdict}")
     elif island["kind"] in ("select", "select_constfill"):
         out_ref = os.path.join(args.out_dir, f"ref-{args.island}-s{args.seed}.fp16")
         ref_arr = select_reference(island, in_files, out_ref)
