@@ -84,6 +84,7 @@
 #include <drm/drm_gem.h>
 #include <drm/drm_ioctl.h>
 #include <drm/drm_mm.h>
+#include <crypto/sha2.h>
 
 #include "ane_t6021.h"
 #include "ane_t6021_boot.h"
@@ -609,6 +610,46 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 
 /* ---- LOAD / CREATE / CALL wrappers ---- */
 
+/* The firmware never frees a program or a process, and its program table
+ * holds 256 entries: measured 2026-09-29, the 257th LOAD_PROGRAM on one
+ * boot answered with a protocol error and quarantined the device. Two
+ * loads of byte-identical sections therefore share one firmware program
+ * and one process. The key is SHA-256 over every section's id, size and
+ * bytes, so a client can only reach a program whose bytes it also
+ * supplied. Protected by ane_t6021_fw_lock. */
+#define ANE_T6021_MAX_PROGRAMS 250
+
+struct ane_t6021_prog {
+	u8 digest[SHA256_DIGEST_SIZE];
+	u32 prog_id;
+	u32 proc_id;		/* U32_MAX until a process exists */
+};
+
+static struct ane_t6021_prog ane_t6021_progs[ANE_T6021_MAX_PROGRAMS];
+static unsigned int ane_t6021_nprogs;
+
+static struct ane_t6021_prog *ane_t6021_prog_find(const u8 *digest)
+{
+	unsigned int i;
+
+	for (i = 0; i < ane_t6021_nprogs; i++)
+		if (!memcmp(ane_t6021_progs[i].digest, digest,
+			    SHA256_DIGEST_SIZE))
+			return &ane_t6021_progs[i];
+	return NULL;
+}
+
+static struct ane_t6021_prog *ane_t6021_prog_by_id(u32 prog_id)
+{
+	unsigned int i;
+
+	for (i = 0; i < ane_t6021_nprogs; i++)
+		if (ane_t6021_progs[i].prog_id == prog_id)
+			return &ane_t6021_progs[i];
+	return NULL;
+}
+
+
 /* Build a LOAD_PROGRAM (0x200) message in a kernel-owned buffer. The
  * section bytes live in the BOs the user supplied (section_ptr), the
  * generic binds (bufferId, bo_handle, size) patch the generic section
@@ -623,6 +664,8 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	struct drm_ane_generic_bind *binds;
 	struct ane_legacy_buffer *command;
 	struct ane_t6021_fd *fd = file->driver_priv;
+	struct ane_t6021_prog *cached;
+	u8 digest[SHA256_DIGEST_SIZE];
 	size_t binds_size;
 	int ret, i, j;
 
@@ -669,6 +712,46 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 				goto out;
 			}
 		}
+	}
+
+	/* Identical sections share one firmware program (see the table). */
+	{
+		struct sha256_ctx sha;
+
+		sha256_init(&sha);
+		for (i = 0; i < user->section_count; i++) {
+			struct ane_t6021_bo *bo = NULL, *b;
+			u64 hdr[2] = { sections[i].id, sections[i].size };
+
+			mutex_lock(&ane_t6021_bo_lock);
+			list_for_each_entry(b, &fd->bos, node) {
+				if (b->handle == sections[i].bo_handle) {
+					bo = b;
+					break;
+				}
+			}
+			if (!bo || sections[i].size > bo->size ||
+			    sections[i].offset > bo->size - sections[i].size) {
+				mutex_unlock(&ane_t6021_bo_lock);
+				ret = -EINVAL;
+				goto out;
+			}
+			sha256_update(&sha, (const u8 *)hdr, sizeof(hdr));
+			sha256_update(&sha, (const u8 *)bo->cpu +
+				      sections[i].offset, sections[i].size);
+			mutex_unlock(&ane_t6021_bo_lock);
+		}
+		sha256_final(&sha, digest);
+	}
+	cached = ane_t6021_prog_find(digest);
+	if (cached) {
+		*prog_id = cached->prog_id;
+		ret = 0;
+		goto out;
+	}
+	if (ane_t6021_nprogs == ANE_T6021_MAX_PROGRAMS) {
+		ret = -ENOSPC;
+		goto out;
 	}
 
 	command = ane->cmd_buf;
@@ -741,6 +824,11 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 			ret = -EPROTO;
 			goto out;
 		}
+		memcpy(ane_t6021_progs[ane_t6021_nprogs].digest, digest,
+		       SHA256_DIGEST_SIZE);
+		ane_t6021_progs[ane_t6021_nprogs].prog_id = *prog_id;
+		ane_t6021_progs[ane_t6021_nprogs].proc_id = U32_MAX;
+		ane_t6021_nprogs++;
 	}
 
 out:
@@ -753,8 +841,15 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 				       __u32 prog_id, __u32 *proc_id)
 {
 	struct ane_legacy_buffer *command;
+	struct ane_t6021_prog *prog = ane_t6021_prog_by_id(prog_id);
 	int ret;
 
+	if (!prog)
+		return -ENOENT;
+	if (prog->proc_id != U32_MAX) {
+		*proc_id = prog->proc_id;
+		return 0;
+	}
 	command = ane->cmd_buf;
 	if (!command)
 		return -ENODEV;
@@ -774,6 +869,8 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 		*proc_id = le32_to_cpu(*(u32 *)(cmd + 0x0c));
 		if (*proc_id == U32_MAX)
 			ret = -EPROTO;
+		else
+			prog->proc_id = *proc_id;
 	}
 	return ret;
 }

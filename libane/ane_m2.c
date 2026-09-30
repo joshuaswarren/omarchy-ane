@@ -610,6 +610,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path)
 	load.prog_id_out = 0;
 	load.pad = 0;
 	if (ioctl(nn->fd, DRM_IOCTL_ANE_PROG_LOAD, &load) < 0) {
+		err = -errno;
 		ane_m2_err("DRM_IOCTL_ANE_PROG_LOAD failed: %s\n", strerror(errno));
 		goto error;
 	}
@@ -618,6 +619,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path)
 	create.prog_id = ctx->prog_id;
 	create.proc_id_out = 0;
 	if (ioctl(nn->fd, DRM_IOCTL_ANE_PROC_CREATE, &create) < 0) {
+		err = -errno;
 		ane_m2_err("DRM_IOCTL_ANE_PROC_CREATE failed: %s\n", strerror(errno));
 		goto error;
 	}
