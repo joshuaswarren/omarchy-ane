@@ -162,40 +162,26 @@ static int matvec_shape(const struct ane_nn *nn, uint32_t *M, uint32_t *K,
 			uint32_t *N)
 {
 	const struct anec *a = to_anec(nn);
-	uint64_t in_alloc, out_alloc;
 
 	if (ane_src_count(nn) != 1 || ane_dst_count(nn) != 1) {
 		fprintf(stderr, "--check matvec needs 1 input + 1 output\n");
 		return -1;
 	}
-	in_alloc = a->tiles[5] * 0x4000ull;
-	out_alloc = a->tiles[4] * 0x4000ull;
-	if (!in_alloc || !out_alloc) {
-		fprintf(stderr, "--check matvec: zero tile count for io\n");
+	/* nchw = (n, c, h, w, plane bytes, row bytes): h is M, w is the
+	 * element count of a row. The ANEC surface allocation is padded to
+	 * whole 0x4000 tiles, so the tile counts say nothing about K, N. */
+	if (a->nchw[4][0] != 1 || a->nchw[4][1] != 1 ||
+	    a->nchw[5][0] != 1 || a->nchw[5][1] != 1 ||
+	    a->nchw[4][2] != a->nchw[5][2]) {
+		fprintf(stderr, "--check matvec: unexpected io shape\n");
 		return -1;
 	}
-	if (in_alloc & 1 || out_alloc & 1) {
-		fprintf(stderr, "--check matvec: odd io allocation\n");
-		return -1;
-	}
-	*K = (uint32_t)(in_alloc / 2);
-	*N = (uint32_t)(out_alloc / 2);
-	/* The H14 matvec encoder pads the N row down to a fixed surface
-	 * stride; we only know that N is the dense output count when the
-	 * surface is the M=1 form, and that the M=8 form packs 8 rows per
-	 * output stride into an 8x larger surface. The compiler's surface
-	 * rule (H14Program.cpp matvecTensor) reads row = width * 2; for
-	 * M=1, plane = N * 2 * 1 = out_alloc. For M=8, plane = row * 8,
-	 * and 8 dense rows of N halves with the same allocation fits.
-	 * The previous fixture at (K,N)=(256,256) M=1 also packed into
-	 * 0x4000, so this logic matches the proven build. */
-	*M = (in_alloc >= (uint64_t)*N * 2) && ((in_alloc / 2) % *N == 0)
-		? ((uint32_t)((in_alloc / 2) / *N))
-		: 1;
-	if (*M != 1 && *M != 8) {
-		fprintf(stderr, "--check matvec: M=%u derived from %llu/%u "
-			"is outside the proven 1 or 8\n",
-			*M, (unsigned long long)in_alloc, *N);
+	*M = (uint32_t)a->nchw[4][2];
+	*N = (uint32_t)a->nchw[4][3];
+	*K = (uint32_t)a->nchw[5][3];
+	if (!*M || !*N || !*K || a->nchw[4][5] != (uint64_t)*N * 2 ||
+	    a->nchw[5][5] != (uint64_t)*K * 2) {
+		fprintf(stderr, "--check matvec: io rows are not dense\n");
 		return -1;
 	}
 	return 0;
@@ -207,6 +193,9 @@ static int matvec_shape(const struct ane_nn *nn, uint32_t *M, uint32_t *K,
  * validated by the host self-check (tools/ane-selfcheck --check) before
  * any device run. */
 
+/* Weight table for --check matvec, set from --weights. */
+static const char *weights_path;
+
 static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			 struct io_file *out)
 {
@@ -215,11 +204,11 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	uint64_t a_size, b_size = 0, y_size, n, lanes, i, j;
 	uint64_t pad_in = 0, pad_out = 0, exact = 0, in_band = 0;
 	uint64_t max_ulp_milli = 0;
+	double max_nerr = 0.0;
 	uint16_t *a, *b = NULL, *y;
 	int ok;
 	uint32_t M = 1, K = 0, N = 0;
 	uint16_t *w = NULL;
-	const char *weights_path = NULL;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0 ||
 	    (two_in && (!in[1].set || in[1].idx != 1))) {
@@ -276,32 +265,44 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			free(y);
 			return -1;
 		}
-		lanes = N;
+		lanes = (uint64_t)M * N;
 	}
-	#define LANE_VALID(i) (matvec ? (i) < N : ((i) % 32) == 0)
+	#define A_VALID(i) (matvec ? (i) < (uint64_t)M * K : ((i) % 32) == 0)
+	#define Y_VALID(i) (matvec ? (i) < (uint64_t)M * N : ((i) % 32) == 0)
 	for (i = 0; i < n; i++) {
-		if (LANE_VALID(i)) {
-			continue;
-		}
-		pad_in += (a[i] != 0) + (b && b[i] != 0);
-		pad_out += y[i] != 0;
+		pad_in += !A_VALID(i) && ((a[i] != 0) || (b && b[i] != 0));
+		pad_out += !Y_VALID(i) && y[i] != 0;
 	}
 	for (j = 0; j < lanes; j++) {
 		double va;
 		uint16_t want;
 
 		i = matvec ? j : j * 32;
-		va = ane_f16_to_f64(a[i]);
+		va = matvec ? 0.0 : ane_f16_to_f64(a[i]);
 
 		if (matvec) {
-			double acc = 0.0;
+			double acc = 0.0, sumabs = 0.0, err, nerr;
 			double diff;
 			uint64_t milli;
 			uint32_t k;
 
+			uint64_t row = j / N, col = j % N;
+
 			for (k = 0; k < K; k++) {
-				acc += ane_f16_to_f64(a[k]) *
-				       ane_f16_to_f64(w[(uint64_t)j * K + k]);
+				double term = ane_f16_to_f64(a[row * K + k]) *
+					      ane_f16_to_f64(w[col * K + k]);
+
+				acc += term;
+				sumabs += fabs(term);
+			}
+			/* Condition-normalized error: |device - exact| in units
+			 * of 2^-11 * sum|a_k w_k|, the fp16 rounding error of
+			 * one partial sum. Cancellation makes the ulp of the
+			 * result a poor scale. */
+			err = fabs(ane_f16_to_f64(y[i]) - acc);
+			nerr = sumabs > 0.0 ? err / (sumabs * 0x1p-11) : 0.0;
+			if (nerr > max_nerr) {
+				max_nerr = nerr;
 			}
 			want = ane_f16_round_half_away(acc);
 			/* Device accumulation order unknown: a 2 ulp band,
@@ -311,7 +312,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 			       f16_ulp(ane_f16_to_f64(want));
 			milli = (uint64_t)(diff * 1000.0 + 0.5);
 
-			in_band += diff <= 2.0;
+			in_band += diff <= 2.0 || nerr <= 4.0;
 			if (milli > max_ulp_milli) {
 				max_ulp_milli = milli;
 			}
@@ -351,19 +352,20 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 		}
 		exact += want == y[i];
 	}
-	#undef LANE_VALID
+	#undef A_VALID
+	#undef Y_VALID
 
 	ok = !pad_in && !pad_out &&
 	     (matvec ? in_band == lanes : exact == lanes);
 	if (matvec) {
-		printf("matvec M=%u K=%u N=%u: %llu/%llu lanes within the "
-		       "2 ulp band (%llu bit-exact), max %llu.%03llu ulp; "
-		       "padding %s: %s\n",
+		printf("matvec M=%u K=%u N=%u: %llu/%llu lanes within 2 ulp or "
+		       "4 cond-units (%llu bit-exact), max %llu.%03llu ulp, "
+		       "max %.3f cond-units; padding %s: %s\n",
 		       M, K, N,
 		       (unsigned long long)in_band, (unsigned long long)lanes,
 		       (unsigned long long)exact,
 		       (unsigned long long)(max_ulp_milli / 1000),
-		       (unsigned long long)(max_ulp_milli % 1000),
+		       (unsigned long long)(max_ulp_milli % 1000), max_nerr,
 		       pad_in || pad_out ? "lanes NONZERO" : "lanes zero",
 		       ok ? "PASS" : "FAIL");
 	} else {
@@ -396,7 +398,6 @@ static void usage(void)
 int main(int argc, char **argv)
 {
 	const char *anec = NULL;
-	const char *weights_path __attribute__((unused)) = NULL;
 	struct ane_nn *nn;
 	struct io_file ins[8] = { 0 };
 	struct io_file outs[8] = { 0 };

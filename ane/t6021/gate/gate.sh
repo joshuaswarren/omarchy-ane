@@ -68,21 +68,26 @@ dmesg | grep -iE 'ane_t6021|ane:' | tail -40 > "$OUT/dmesg-load.txt" || true
 
 fail=0
 for t in $(seq 1 "$TRIALS"); do
-	python3 - "$OUT" "$t" "$OP" "$TWO_IN" <<'PY'
+	python3 - "$OUT" "$t" "$OP" "$TWO_IN" "$ANEC" <<'PY'
 # Sparse inputs in the surface layout of the fixture (same shapes as the
 # lab oracle inputs): elementwise ops are nchw [1,512,1,1] with a 64-byte
 # plane stride (one valid fp16 per 64 bytes, index % 32 == 0); matvec is
-# [1,256] dense in a 0x4000 buffer (the first 256 halves). Padding lanes
+# M rows of K dense halves (M and K from the ANEC nchw) in the padded buffer. Padding lanes
 # stay zero; the ANE ignores them and writes zero.
-import numpy as np, sys
+import numpy as np, struct, sys
 out, t, op, two_in = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4] == "1"
+anec = sys.argv[5]
 seed0 = {"add": 1000, "mul": 2000, "relu": 3000, "add-scalar": 4000,
          "mul-scalar": 5000, "real-div-scalar": 6000, "clip-low": 7000,
          "clip-high": 8000, "matvec": 9000}[op]
 rng = np.random.default_rng(seed0 + t)
 if op == "matvec":
-    x = np.zeros(8192, dtype=np.float16)
-    x[:256] = rng.uniform(-1, 1, 256).astype(np.float16)
+    # nchw of the input channel (5): (n, c, M, K, plane bytes, row bytes).
+    hdr = open(anec, "rb").read(0x1000)
+    tiles = struct.unpack_from("<32I", hdr, 40)
+    _, _, m, k, _, _ = struct.unpack_from("<6Q", hdr, 168 + 5 * 48)
+    x = np.zeros(tiles[5] * 0x4000 // 2, dtype=np.float16)
+    x[: m * k] = rng.uniform(-1, 1, m * k).astype(np.float16)
     x.tofile(f"{out}/in-a-{t}.fp16")
 else:
     for name in ("a", "b")[: 2 if two_in else 1]:
