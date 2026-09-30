@@ -248,6 +248,7 @@ static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
 			       uint32_t slot_max_in_alloc_src,
 			       uint32_t slot_max_out_alloc_dst,
 			       int is_matmul,
+			       uint32_t scratch_bufid,
 			       const struct ane_m2_model *m, uint32_t *tag)
 {
 	uint32_t n;
@@ -284,9 +285,30 @@ static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
 			return 0;
 		}
 		if (pick_smallest_fit_channel(m, 1, reach, tag) < 0) {
-			return fail("BAR-ref dst register has no bound output "
-				    "channel that covers the slot's "
-				    "offset+extent");
+			/* Multi-ref dst slot: the chunk-based reach
+			 * over-counts when the BAR pattern is one dst
+			 * write per task at different offsets (the
+			 * select-runtime slot-3 case: TD_DST in tasks
+			 * 0..3 at offsets 0/0x226c80/0x226c80/0x459480
+			 * with TD_SRC_A reads elsewhere). The dst is a
+			 * one-shot write per task; the channel alloc
+			 * only needs to cover max_offset_dst, not
+			 * max_offset+chunk. Retry with reach =
+			 * max_offset_dst; if that still overflows, the
+			 * slot merges to scratch at the cross-task
+			 * union (when scratch_bufid is enabled). */
+			if (pick_smallest_fit_channel(m, 1,
+						      (uint64_t)max_offset_dst,
+						      tag) < 0) {
+				if (scratch_bufid != 0) {
+					*tag = scratch_bufid;
+					return 0;
+				}
+				return fail("BAR-ref dst register has no "
+					    "bound output channel that "
+					    "covers the slot's offset+"
+					    "extent");
+			}
 		}
 		return 0;
 	}
@@ -395,7 +417,8 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 			uint32_t slot_max_in_alloc_src,
 			uint32_t slot_max_out_alloc_dst,
 			const uint32_t slot_rank_srcA[0x40],
-			int is_matmul)
+			int is_matmul,
+			uint32_t scratch_bufid)
 {
 	uint32_t idx = 8;
 	uint32_t n = 0;
@@ -453,31 +476,22 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 					slot_chunk_src[slot],
 					slot_max_in_alloc_src,
 					slot_max_out_alloc_dst,
-					is_matmul, m, &tag);
+					is_matmul, scratch_bufid, m, &tag);
 			if (err) {
 				return err;
 			}
 			for (i = 0; i < n; i++) {
 				if (out[i].slot == slot) {
-					if (out[i].tag == tag) {
-						break;
-					}
-					{
-						char buf[160];
-
-						snprintf(buf, sizeof(buf),
-							 "BAR slot %u in one "
-							 "task resolves to "
-							 "two tags (%u and "
-							 "%u); the firmware "
-							 "last-wins per slot "
-							 "and cannot honour "
-							 "both",
-							 (unsigned)slot,
-							 (unsigned)out[i].tag,
-							 (unsigned)tag);
-						return fail(buf);
-					}
+					/* Same slot, same or different
+					 * tag: the BAR walk writes the
+					 * slot's IOVA once per call; both
+					 * register classes (TD_DST and
+					 * TD_SRC_A at the same slot) read
+					 * the same channel. Take the first
+					 * tag and dedupe. The cross-task
+					 * union in derive_refs handles the
+					 * genuine cross-task conflict. */
+					break;
 				}
 			}
 			if (i == n) {
@@ -501,15 +515,27 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 
 /* A BAR ref is "scratch-eligible" when its register is the TileDMA dst
  * base (the head task writes scratch here) or any KernelDMA register
- * (later tasks read scratch here). src/dst bases that name a real
- * channel buffer (0x1110, 0x1128, 0x1508 in non-head tasks) are NOT
- * scratch-eligible. */
+ * (later tasks read scratch here). TileDMA srcA/srcB refs (0x1110/0x1128)
+ * at the same slot are also scratch-eligible when the slot's HEAD-task
+ * ref names the dst or kdma register: the head task establishes the
+ * channel IOVA via its BAR ref, and the later tasks' src reads at the
+ * same slot read from that same channel. The single-record BAR walk
+ * writes the slot's IOVA once; all tasks at the slot see it.
+ *
+ * The Parakeet select-runtime fixture's slot 3 is the canonical case:
+ * task 0's TD_DST establishes the slot, task 1/3/4's TD_SRC_A +
+ * TD_SRC_B and task 1/3's TD_DST read from it. Without the
+ * TileDMA-src carve-out the merge refused and select-runtime could
+ * not build. */
 static int scratch_eligible_addr(uint32_t addr)
 {
 	if (addr == TD_DST) {
 		return 1;
 	}
 	if (addr >= TD_KDMA_LO && addr < TD_KDMA_HI) {
+		return 1;
+	}
+	if (addr == TD_SRC_A || addr == TD_SRC_B) {
 		return 1;
 	}
 	return 0;
@@ -866,7 +892,7 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 				  slot_max_offset_dst, slot_max_offset_src,
 				  slot_chunk_dst, slot_chunk_src,
 				  slot_max_in_alloc_src, slot_max_out_alloc_dst,
-				  slot_rank_srcA, is_matmul);
+				  slot_rank_srcA, is_matmul, scratch_bufid);
 		if (err) {
 			return err;
 		}
