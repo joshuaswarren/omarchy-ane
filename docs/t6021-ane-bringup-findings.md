@@ -1277,3 +1277,15 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   ([receipts/2026-09-30-t6021-bo-pool](../receipts/2026-09-30-t6021-bo-pool/README.md)).
 - Every M2 boot so far is a USB chainload from the M1 host; the disk boot
   path is unproven.
+- With `hello_wait_ms=0`, a 20-task program returned too early (inference).
+  Qwen `prog_020` (20 tasks, 83,892,736 B of constants, port-table binding,
+  omarchy-ane `49eb8ed`) completed two calls in 1.280 and 1.374 ms, with no
+  driver error, and its output was all zero. `ane_rtclient_call_wait`
+  accepts any TD-counter move plus idle TQ words, then settles 1 ms. Only
+  1- and 2-task programs have passed on this module. Do not run programs
+  with more than 2 tasks until the call waits for the program's own TD count
+  ([receipts/2026-09-30-t6021-qwen-chain](../receipts/2026-09-30-t6021-qwen-chain/README.md)).
+- `ane-run --ports` now binds the port table on the device and refuses a
+  port whose surface is larger than its channel allocation (`49eb8ed`).
+  37 of the 38 generated Qwen port tables fail that check; only `prog_020`
+  passes.

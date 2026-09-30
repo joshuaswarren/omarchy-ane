@@ -44,3 +44,73 @@ t0 = 0 (rel L2 0.012 vs the model, 0.276 vs the golden). Packing, feed order,
 and the in-ANEC constants are proven correct. Fix and one-run recipe:
 prog20-port-binding.md; runner: tools/qwen_prog_run.py
 (ANE_M2_OPREFS=1:2,4:5,5:4,6:6,7:7).
+
+## Addendum — program 20 on the port-table path (2026-09-30, 23:11Z)
+
+### Loader fix (commit 49eb8ed)
+
+Before this commit, `ane-run --ports` used the port table only for
+`--dry-run`. A device run built the program with the derived binding
+(refs `1:2 4:4 5:4 6:6 7:7`), which is the failed M1 binding. Now
+`ane_m2_init_ports()` loads the program through
+`ane_m2_program_build_ports()`. For program 20 the six sections and the io
+table are byte-identical to the derived build with
+`ANE_M2_OPREFS=1:2,4:5,5:4,6:6,7:7` (host compare, all six sections and io
+`5,6,7 in / 4 out`, 16,384 B each). `qwen_prog_run.py` no longer sets
+`ANE_M2_OPREFS`: the port build ignores it. The runner now wraps each call
+as `flock /var/tmp/ane-run.lock timeout 60 ane-run ... --time`.
+
+`ane-run` now refuses a port whose `surface_bytes` is larger than its
+`tile_bytes`, because the task DMA could write past the io BO. 37 of the 38
+generated tables fail this check; only `prog_020` passes. Example:
+`prog_000` puts `t38` (393,216 B) on channel 10 (16,384 B), but the ANEC
+allocates 393,216 B only on channels 6 and 12. `hwx_ports.py` now reports
+such ports as exceptions, and the runner refuses tables with exceptions.
+
+### Device run: FAIL, output all zero
+
+Stock kernel `7.1.13-3-1-ARCH`, module `ane_t6021` SHA-256 `7b592674…`
+(PR #8 `hello_wait_ms=0`, PR #9 io BO pool), the same boot as the BO pool
+receipt. `ane-run` built on the M2 with gcc 16.1.1 at 49eb8ed, no warnings.
+One run of `qwen_prog_run.py --prog prog_020 --repeat 2` with the M1 vectors:
+
+| Check | Result |
+| --- | --- |
+| ane-run exit | 0 |
+| exec ms, 2 calls | 1.280, 1.374 |
+| output surface | 16,384 B, all zero |
+| t15 vs M1 golden | max abs 2.14453125, rel L2 1.0, exact 0 |
+| t15 vs fp64 reference | max abs 2.142410896, rel L2 1.0, exact 0 |
+| new dmesg lines | 0 (no EXCH failure, DART fault, or quarantine) |
+
+An all-zero output is not a binding signature, so the ranked binding
+fallbacks in `prog20-port-binding.md` cannot discriminate. They were not
+run. The 50-run determinism loop needs a pass first. It was not run.
+
+Inference, from source, not measured: the call returned before the program
+finished. With `hello_wait_ms=0`, `ane_rtclient_call_wait`
+(`ane/t6021/ane_t6021_rtclient_main.c:564`) returns when the TD counter at
+TM+0x20458 moves by any amount and all eight TQ status words read idle. Then
+it waits `call_settle_us` (1,000 µs). Program 20 has 20 tasks and
+83,892,736 B of constants. Its 1.28-1.37 ms per call equals the add latency
+on this module (p90 1.29-1.42 ms). On this module, only programs with 1 or 2
+tasks have run (add, mul, relu, scalar ops, clip, matvec). The multi-task
+Parakeet islands and the first program-20 run used the poll-TX kernel. If
+the inference is true, `--repeat 2` sent the second call while the first
+was still running. Also, later firmware writes go to io BOs that the pool
+keeps mapped and gives to the next process.
+
+**Stop.** Do not run programs with more than 2 tasks on this module until
+the call waits for the program's own TD count. The task count is known at
+PROG_LOAD (tdprop block count). After that driver change and a reboot, run
+this one program again with the same pass criteria (rel L2 <= 0.02 against
+the golden and the fp64 reference).
+
+Programs 0 and 1 were not run. Their port tables fail the surface check, and
+the port build accepts only one output (program 0 has 7 outputs, program 1
+has 2). M1 inputs and goldens exist for both: captures e0418 and e0419, which
+match `goldens.json` by SHA-256.
+
+Private record: entry `entries/Prog20Run/20260930T230934Z-…-prog020-ports.md`
+and `artifacts/Prog20Run/2026-09-30-prog020-ports/` (MANIFEST.txt,
+SHA256SUMS).
