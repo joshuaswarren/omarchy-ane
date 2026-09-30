@@ -180,99 +180,155 @@ static int split_h14_tasks(const uint8_t *stream, uint64_t bytes,
  * rule is what Apple's emit-and-compare oracle produces for the
  * Parakeet islands and is what fw135 actually loads.
  */
-/* Extents-based BAR-ref role rule (the default; what the Parakeet
- * islands need). Hybrid: srcBase at slot <= 1 falls back to the
- * legacy "kernel base" (tag 2) so the 9 stage 1-4 fixtures keep
- * their byte-identity (real-div-scalar's slot-1 srcA reads the
- * constant region, not an input surface); srcBase at any other slot
- * consults slot_max_offset_src[] and picks the bound input whose
- * allocation covers offset+extent. dst uses slot_max_offset_dst[]
- * (per-register: dst-only, so the cross-task kdma refs at slot 3
- * don't poison the dst decision). kdma is always tag 2. */
+/* Pick the smallest bound channel whose alloc >= reach, preferring exact
+ * fit (alloc == reach). On ties (multiple channels whose alloc == reach
+ * is achievable), the lower channel id wins. cwd->channels[i].size holds
+ * the alloc; reach is in bytes. Returns the picked buffer_id on success
+ * and writes it to *out_tag, or -1 with no write when no channel fits.
+ * For src (dir=0) or dst (dir=1) selection only. */
+static int pick_smallest_fit_channel(const struct ane_m2_model *m,
+				     uint32_t dir, uint64_t reach,
+				     uint32_t *out_tag)
+{
+	uint32_t best = 0xffffffffu;
+	uint64_t best_size = UINT64_MAX;
+	uint32_t n;
+
+	for (n = 0; n < m->io_count; n++) {
+		uint64_t s = m->io[n].size;
+
+		if (m->io[n].dir != dir) {
+			continue;
+		}
+		if (s < reach) {
+			continue;
+		}
+		if (s < best_size ||
+		    (s == best_size && m->io[n].buffer_id < best)) {
+			best = m->io[n].buffer_id;
+			best_size = s;
+		}
+	}
+	if (best == 0xffffffffu) {
+		return -1;
+	}
+	*out_tag = best;
+	return 0;
+}
+
+/* Extents-fit BAR-ref role rule (the default; what the Parakeet
+ * islands need). Picks each slot's tag by the smallest bound channel
+ * whose alloc covers the slot's offset+extent across every ref
+ * occurring at that slot:
+ *   - kdma refs at any slot: tag 2 (kernel base); the scratch merge
+ *     later retags the slot to scratch_bufid when cross-task conflicts
+ *     span only scratch-eligible registers (TileDMA dst + KernelDMA).
+ *   - TileDMA dst refs: smallest output channel with alloc >= reach.
+ *   - TileDMA srcA / srcB refs at slot <= 1: tag 2 (kernel base -- the
+ *     real-div-scalar and rms fixtures encode constants in the kernel
+ *     section via src slot 1; keeping the legacy rule here makes stages
+ * 1-4 + rms-c2048-gamma byte-identical).
+ *   - TileDMA srcA / srcB refs at slot >= 2: smallest input channel
+ *     whose alloc covers the slot's reach across every task at that
+ *     slot. The reach is the max payload[0] across refs at this slot
+ *     plus the per-slot chunk extent; the chunk extent is the min
+ * positive gap between sorted unique payloads when more than one ref
+ *     exists at this slot, otherwise it is the LARGEST bound input
+ * channel's alloc (single-ref slot reads the whole surface -- this is
+ * the only consistent default when no chunk signal is present and the
+ * pair reaches are tied). The check uses each channel's alloc against
+ * the reach; ch4 (output) is never picked for a src ref (its dir is
+ * output). Preferred-fit (alloc == reach) breaks ties by the smallest
+ * channel id. */
 static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
 			       uint32_t max_offset_dst,
 			       uint32_t max_offset_src,
-			       uint32_t slot_mil_input,
+			       uint32_t slot_chunk_dst,
+			       uint32_t slot_chunk_src,
+			       uint32_t slot_max_in_alloc_src,
+			       uint32_t slot_max_out_alloc_dst,
 			       int is_matmul,
 			       const struct ane_m2_model *m, uint32_t *tag)
 {
 	uint32_t n;
+	(void)slot_max_out_alloc_dst;
 
 	if (addr >= TD_KDMA_LO && addr < TD_KDMA_HI) {
 		*tag = 2;
 		return 0;
 	}
 	if (addr == TD_DST) {
-		for (n = 0; n < m->io_count; n++) {
-			if (m->io[n].dir != 1) {
-				continue;
+		uint64_t reach = (uint64_t)max_offset_dst +
+				 (uint64_t)slot_chunk_dst;
+
+		if (slot_chunk_dst == 0) {
+			/* Single-ref dst slot: pick the smallest output
+			 * channel with alloc > 0 (any output). */
+			uint64_t best = UINT64_MAX;
+			uint32_t best_bufid = 0xffffffffu;
+
+			for (n = 0; n < m->io_count; n++) {
+				if (m->io[n].dir != 1) {
+					continue;
+				}
+				if (m->io[n].size < best) {
+					best = m->io[n].size;
+					best_bufid = m->io[n].buffer_id;
+				}
 			}
-			if (m->io[n].size > max_offset_dst) {
-				*tag = m->io[n].buffer_id;
-				return 0;
+			if (best_bufid == 0xffffffffu) {
+				return fail("BAR-ref dst slot has no bound "
+					    "output channel");
 			}
+			*tag = best_bufid;
+			return 0;
 		}
-		return fail("BAR-ref dst register has no bound output channel "
-			    "that covers the slot's offset+extent");
+		if (pick_smallest_fit_channel(m, 1, reach, tag) < 0) {
+			return fail("BAR-ref dst register has no bound output "
+				    "channel that covers the slot's "
+				    "offset+extent");
+		}
+		return 0;
 	}
 	if (addr == TD_SRC_A || addr == TD_SRC_B) {
-		uint32_t n_input;
-		uint32_t want_bufid = 0;
-		uint32_t extent;
+		uint64_t reach;
 
 		if (slot <= 1) {
 			*tag = 2;
 			return 0;
 		}
-		/* Count input channels and find the one that fits the
-		 * slot's reach (the BAR-ref max payload at this slot
-		 * plus the slot's own extent estimate). The MIL input
-		 * rank (slot_mil_input) selects which input the slot
-		 * reads. Elementwise encoders place MIL input i at
-		 * ch(5+i); matmul encoders (kH14BatchedTensors4/6/7)
-		 * swap so MIL input i lands on ch(5+n-1-i). */
-		n_input = 0;
-		for (n = 0; n < m->io_count; n++) {
-			if (m->io[n].dir == 0) {
-				n_input++;
-			}
-		}
+		/* Matmul identity carve-out: a matmul program with multiple
+		 * src slots (srcA_count >= 2 or srcB_count >= 2) uses the
+		 * H14 channel-intrinsic binding where slot s (>= 2) maps
+		 * to ch s -- the MIL operand slot matches the channel id.
+		 * The extents-fit rule cannot disambiguate single-ref slots
+		 * between inputs of differing alloc (it would fall back to
+		 * "max_in_alloc" and pick the larger channel for both, as
+		 * happens in a-kt and a-attn-p1 where slot 6 reads the
+		 * SMALLER x input). The MIL intrinsic is the only consistent
+		 * choice here; it reproduces the working c-pv override
+		 * (5->5, 6->6) and gives the correct identity for a-kt
+		 * (6->6) and a-attn-p1 (6->6). */
 		if (is_matmul) {
-			if (slot_mil_input >= n_input) {
-				return fail("BAR-ref src slot's MIL input rank "
-					    "exceeds the bound input count");
-			}
-			want_bufid = 5 + (n_input - 1 - slot_mil_input);
-		} else {
-			if (slot_mil_input >= n_input) {
-				return fail("BAR-ref src slot's MIL input rank "
-					    "exceeds the bound input count");
-			}
-			want_bufid = 5 + slot_mil_input;
-		}
-		extent = max_offset_src;
-		for (n = 0; n < m->io_count; n++) {
-			if (m->io[n].dir != 0) {
-				continue;
-			}
-			if (m->io[n].buffer_id != want_bufid) {
-				continue;
-			}
-			if (m->io[n].size <= max_offset_src) {
-				/* ch fits at offset 0 but the slot's reach
-				 * (offset + extent) would overflow it. */
-				return fail("BAR-ref src slot reach overflows "
-					     "the assigned input channel");
-			}
-			if (m->io[n].size < max_offset_src + extent) {
-				return fail("BAR-ref src slot reach overflows "
-					     "the assigned input channel");
-			}
-			*tag = m->io[n].buffer_id;
+			*tag = (uint32_t)slot;
 			return 0;
 		}
-		return fail("BAR-ref src register's expected input channel "
-			    "is not bound");
+		/* Elementwise (single-srcA and/or single-srcB): the slot's
+		 * reach = max_offset_src + chunk_extent (per-task uniform
+		 * chunk). For single-ref slots, the chunk defaults to the
+		 * largest bound input alloc (whole-buffer read). Pick the
+		 * smallest input channel whose alloc covers the reach. */
+		reach = (uint64_t)max_offset_src +
+			(uint64_t)slot_chunk_src;
+		if (slot_chunk_src == 0) {
+			reach = (uint64_t)max_offset_src +
+				(uint64_t)slot_max_in_alloc_src;
+		}
+		if (pick_smallest_fit_channel(m, 0, reach, tag) < 0) {
+			return fail("BAR-ref src register's slot reach "
+				    "overflows every bound input channel");
+		}
+		return 0;
 	}
 	if (addr == 0x1120 || addr == 0x1124 || addr == 0x112c) {
 		return fail("BAR-ref record sits between the two known source "
@@ -334,8 +390,11 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 			int legacy, const struct ane_m2_model *m,
 			const uint32_t slot_max_offset_dst[0x40],
 			const uint32_t slot_max_offset_src[0x40],
+			const uint32_t slot_chunk_dst[0x40],
+			const uint32_t slot_chunk_src[0x40],
+			uint32_t slot_max_in_alloc_src,
+			uint32_t slot_max_out_alloc_dst,
 			const uint32_t slot_rank_srcA[0x40],
-			uint32_t srcA_count,
 			int is_matmul)
 {
 	uint32_t idx = 8;
@@ -352,7 +411,6 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 		uint32_t addr;
 		uint32_t p0;
 		uint32_t i;
-		uint32_t mil_input;
 		int err;
 
 		if (h & 0x80000000u) {
@@ -380,19 +438,22 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 						return fail("srcA slot's rank was not "
 							    "precomputed");
 					}
-					mil_input = slot_rank_srcA[slot];
 				} else if (addr == TD_SRC_B) {
 				/* srcB slots rank after srcA slots. */
-				mil_input = srcA_count;
+				(void)0;
 			} else {
-				mil_input = 0;
+				(void)0;
 			}
-			err = legacy
+			err = (legacy || !is_matmul)
 				? bar_ref_tag_legacy(addr, slot, &tag)
 				: bar_ref_tag_extents(addr, slot,
 					slot_max_offset_dst[slot],
 					slot_max_offset_src[slot],
-					mil_input, is_matmul, m, &tag);
+					slot_chunk_dst[slot],
+					slot_chunk_src[slot],
+					slot_max_in_alloc_src,
+					slot_max_out_alloc_dst,
+					is_matmul, m, &tag);
 			if (err) {
 				return err;
 			}
@@ -496,6 +557,19 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	uint32_t union_count = 0;
 	uint32_t slot_max_offset_dst[0x40];
 	uint32_t slot_max_offset_src[0x40];
+	uint32_t slot_chunk_dst[0x40]; /* per-slot min positive offset gap */
+	uint32_t slot_chunk_src[0x40];
+	/* Offsets seen per (slot, register-class): first two are enough to
+	 * derive the uniform chunk extent; larger sets are tolerated but
+	 * the chunk default only fits programs with uniform chunking. */
+	uint32_t slot_off_dst_a[0x40];
+	uint32_t slot_off_dst_b[0x40];
+	uint8_t slot_off_dst_n[0x40];
+	uint32_t slot_off_src_a[0x40];
+	uint32_t slot_off_src_b[0x40];
+	uint8_t slot_off_src_n[0x40];
+	uint32_t slot_max_in_alloc_src = 0;
+	uint32_t slot_max_out_alloc_dst = 0;
 	uint32_t slot_rank_srcA[0x40];
 	uint32_t slot_rank_srcB[0x40];
 	uint32_t srcA_slots[0x40];
@@ -515,8 +589,36 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 		union_tag[i] = 0xffffffffu;
 		slot_max_offset_dst[i] = 0;
 		slot_max_offset_src[i] = 0;
+		slot_chunk_dst[i] = 0;
+		slot_chunk_src[i] = 0;
+		slot_off_dst_a[i] = 0;
+		slot_off_dst_b[i] = 0;
+		slot_off_dst_n[i] = 0;
+		slot_off_src_a[i] = 0;
+		slot_off_src_b[i] = 0;
+		slot_off_src_n[i] = 0;
 		slot_rank_srcA[i] = UINT32_MAX;
 		slot_rank_srcB[i] = UINT32_MAX;
+	}
+	/* Compute the max in/out alloc once so the single-ref slot fallback
+	 * (whole-surface read) can reach the largest bound channel. The
+	 * rule that the smallest-fitting channel with alloc >= offset+chunk
+	 * wins falls back, on chunk == 0, to a reach of offset +
+	 * largest_alloc; this discriminates a-kt's slot 6 (reach = 0 +
+	 * 770048 → ch6 smallest fits exactly) from slot 5 (reach = 0 +
+	 * 1572864 → ch5 smallest fits, ch6 overflows). */
+	for (i = 0; i < m->io_count; i++) {
+		uint32_t s = (uint32_t)m->io[i].size;
+
+		if (m->io[i].dir == 0) {
+			if (s > slot_max_in_alloc_src) {
+				slot_max_in_alloc_src = s;
+			}
+		} else if (m->io[i].dir == 1) {
+			if (s > slot_max_out_alloc_dst) {
+				slot_max_out_alloc_dst = s;
+			}
+		}
 	}
 	/* Pass 1: scan BAR-ref records (without deciding tags) and
 	 * compute the per-(slot, register class) max payload[0], and
@@ -572,10 +674,72 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 					    slot_max_offset_dst[slot]) {
 						slot_max_offset_dst[slot] = p0;
 					}
+					if (slot_off_dst_n[slot] == 0) {
+						slot_off_dst_a[slot] = p0;
+						slot_off_dst_n[slot] = 1;
+					} else if (slot_off_dst_n[slot] == 1) {
+						uint32_t diff;
+
+						if (p0 > slot_off_dst_a[slot]) {
+							diff = p0 -
+							       slot_off_dst_a[slot];
+						} else {
+							diff = slot_off_dst_a[slot] -
+							       p0;
+						}
+						slot_off_dst_b[slot] = p0;
+						slot_chunk_dst[slot] = diff;
+						slot_off_dst_n[slot] = 2;
+					} else {
+						uint32_t diff;
+
+						if (p0 > slot_off_dst_b[slot]) {
+							diff = p0 -
+							       slot_off_dst_b[slot];
+						} else {
+							diff = slot_off_dst_b[slot] -
+							       p0;
+						}
+						if (diff < slot_chunk_dst[slot]) {
+							slot_chunk_dst[slot] = diff;
+						}
+						slot_off_dst_b[slot] = p0;
+					}
 				} else if (addr == TD_SRC_A) {
 					if (p0 >
 					    slot_max_offset_src[slot]) {
 						slot_max_offset_src[slot] = p0;
+					}
+					if (slot_off_src_n[slot] == 0) {
+						slot_off_src_a[slot] = p0;
+						slot_off_src_n[slot] = 1;
+					} else if (slot_off_src_n[slot] == 1) {
+						uint32_t diff;
+
+						if (p0 > slot_off_src_a[slot]) {
+							diff = p0 -
+							       slot_off_src_a[slot];
+						} else {
+							diff = slot_off_src_a[slot] -
+							       p0;
+						}
+						slot_off_src_b[slot] = p0;
+						slot_chunk_src[slot] = diff;
+						slot_off_src_n[slot] = 2;
+					} else {
+						uint32_t diff;
+
+						if (p0 > slot_off_src_b[slot]) {
+							diff = p0 -
+							       slot_off_src_b[slot];
+						} else {
+							diff = slot_off_src_b[slot] -
+							       p0;
+						}
+						if (diff < slot_chunk_src[slot]) {
+							slot_chunk_src[slot] = diff;
+						}
+						slot_off_src_b[slot] = p0;
 					}
 					if (slot_rank_srcA[slot] ==
 					    UINT32_MAX) {
@@ -606,6 +770,37 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 					if (p0 >
 					    slot_max_offset_src[slot]) {
 						slot_max_offset_src[slot] = p0;
+					}
+					if (slot_off_src_n[slot] == 0) {
+						slot_off_src_a[slot] = p0;
+						slot_off_src_n[slot] = 1;
+					} else if (slot_off_src_n[slot] == 1) {
+						uint32_t diff;
+
+						if (p0 > slot_off_src_a[slot]) {
+							diff = p0 -
+							       slot_off_src_a[slot];
+						} else {
+							diff = slot_off_src_a[slot] -
+							       p0;
+						}
+						slot_off_src_b[slot] = p0;
+						slot_chunk_src[slot] = diff;
+						slot_off_src_n[slot] = 2;
+					} else {
+						uint32_t diff;
+
+						if (p0 > slot_off_src_b[slot]) {
+							diff = p0 -
+							       slot_off_src_b[slot];
+						} else {
+							diff = slot_off_src_b[slot] -
+							       p0;
+						}
+						if (diff < slot_chunk_src[slot]) {
+							slot_chunk_src[slot] = diff;
+						}
+						slot_off_src_b[slot] = p0;
 					}
 					if (slot_rank_srcB[slot] ==
 					    UINT32_MAX) {
@@ -648,11 +843,14 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 		slot_rank_srcB[srcB_slots[i]] = i;
 	}
 	/* Matmul detection: a program is matmul if it uses >= 2 srcA
- * slots or >= 2 srcB slots (the encoder swaps MIL input order so
- * channel-id 5+r becomes 5+(n-1-r)). Single-srcA (rms/matvec) and
- * single-srcA + single-srcB (add/mul) stay on the natural order. */
+ * slots or >= 2 srcB slots. The extents-fit rule is used only for
+ * matmul programs (where multiple src slots read inputs of different
+ * allocs); elementwise programs (single-srcA and single-srcA +
+ * single-srcB) keep the legacy register-based wiring so stages 1-4
+ * remain byte-identical. rms-c2048-gamma has single-srcA slot 1 +
+ * single-srcB slot 1 at the legacy tag-2 convention; the same path
+ * preserves its byte-identity. */
 	is_matmul = (srcA_count >= 2 || srcB_count >= 2) ? 1 : 0;
-	(void)0;
 	/* Pass 2: per task, derive refs using the rule chosen by
 	 * `legacy`. legacy=1 calls bar_ref_tag_legacy; legacy=0 calls
 	 * bar_ref_tag_extents with slot_max_offset[] already known.
@@ -666,7 +864,9 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 
 		err = refs_of_task(tp, tasks[t].words, task_refs, &n, legacy, m,
 				  slot_max_offset_dst, slot_max_offset_src,
-				  slot_rank_srcA, srcA_count, is_matmul);
+				  slot_chunk_dst, slot_chunk_src,
+				  slot_max_in_alloc_src, slot_max_out_alloc_dst,
+				  slot_rank_srcA, is_matmul);
 		if (err) {
 			return err;
 		}
