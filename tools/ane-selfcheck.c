@@ -205,7 +205,7 @@ static void mut_version(uint8_t *a, long *size)
 static void mut_input_count(uint8_t *a, long *size)
 {
 	(void)size;
-	a[0x20] = 3; /* inputCount 3: no derivation for channels 7,8 */
+	a[0x20] = 4; /* inputCount 4: no derivation for channels 8+ */
 }
 
 static void mut_task_words(uint8_t *a, long *size)
@@ -229,7 +229,11 @@ static void mut_bar_reg(uint8_t *a, long *size)
 static void mut_bar_slot(uint8_t *a, long *size)
 {
 	(void)size;
-	a[0x10e3] = 0x23; /* add src-base record slot 4 -> 2 (kernel tag) */
+	/* matvec task 1's slot-1 BAR-ref at base 0x1908 (KernelDMA, tag 2)
+	 * -> base 0x1108 (in the surface range; falls through both rules to
+	 * "BAR-ref record outside the known register roles"). Both rules
+	 * refuse. */
+	a[0x11f9] = (a[0x11f9] & 0x80) | 0x04;
 }
 
 static void mut_empty_stream(uint8_t *a, long *size)
@@ -267,7 +271,7 @@ int main(int argc, char **argv)
 			   mut_td_size) && ok;
 	ok = check_refusal(dir, "add", "unknown header version refused",
 			   mut_version) && ok;
-	ok = check_refusal(dir, "add", "inputCount 3 refused",
+	ok = check_refusal(dir, "add", "inputCount 4 refused",
 			   mut_input_count) && ok;
 	ok = check_refusal(dir, "add", "task beyond the stream refused",
 			   mut_task_words) && ok;
@@ -276,8 +280,8 @@ int main(int argc, char **argv)
 			   mut_task_gap) && ok;
 	ok = check_refusal(dir, "add", "BAR-ref at an unknown register refused",
 			   mut_bar_reg) && ok;
-	ok = check_refusal(dir, "add",
-			   "BAR slot 2 on a surface base refused",
+	ok = check_refusal(dir, "matvec",
+			   "BAR-ref at a between-bases register refused",
 			   mut_bar_slot) && ok;
 	ok = check_refusal(dir, "relu", "empty task stream refused",
 			   mut_empty_stream) && ok;
