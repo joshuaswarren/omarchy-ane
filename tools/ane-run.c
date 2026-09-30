@@ -750,7 +750,7 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	double xv, gv, want_v, err, sumabs, nerr, diff;
 	uint16_t want, got;
 	uint64_t milli;
-	uint32_t i;
+	uint32_t i, lanes;
 	int ok;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0) {
