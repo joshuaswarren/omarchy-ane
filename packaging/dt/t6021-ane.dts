@@ -14,8 +14,14 @@
  *    linux-aurora 7.1.12 do not carry this node.
  *  - The three DART nodes: the DART half of the retired v1 overlay
  *    ane/t6021-j414c-ane.dts. The v1 ane node, with engine 0x285c04000, is
- *    not used: its first engine touch external-aborts.
- *  - mailbox@285408000 and mboxes: ane/t6021-j414c-ane-rtkit.dts (v2).
+ *    not used: its first engine touch external-aborts. dart0 is in the pmp
+ *    domain (power-controller@2c8, always-on), as in the lab DTB: v1 named
+ *    it by the raw phandle 0x18, which is pmp in linux-asahi 7.1.13 j414c.
+ *    ane_sys@260 may be the domain the hardware wants; it was never booted.
+ *  - mailbox@285408000 and mboxes: ane/t6021-j414c-ane-rtkit.dts (v3).
+ *    Stock apple-mailbox needs a send-empty IRQ. 1833 is an unused AIC2
+ *    line that never fires: stock TX waits on it only while the A2I FIFO
+ *    is full.
  *  - reserved-memory/ane-alias-iova and memory-region: the IOVA reservation
  *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000,
  *    16 MiB, in the ane DART domain).
@@ -38,8 +44,8 @@
 	};
 
 	fragment@1 {
-		target-path = "/soc/power-management@28e080000/power-controller@260";
-		ps_ane_sys: __overlay__ {
+		target-path = "/soc/power-management@28e080000/power-controller@2c8";
+		ps_pmp: __overlay__ {
 		};
 	};
 
@@ -101,8 +107,7 @@
 				#iommu-cells = <1>;
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
-				power-domains = <&ps_ane_sys>;
-				status = "okay";
+				power-domains = <&ps_pmp>;
 			};
 
 			ane_dart1: iommu@285810000 {
@@ -112,7 +117,6 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
 				power-domains = <&ps_ane_cpu>;
-				status = "okay";
 			};
 
 			ane_dart2: iommu@285820000 {
@@ -122,15 +126,14 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
 				power-domains = <&ps_ane_cpu>;
-				status = "okay";
 			};
 
 			ane_mbox: mailbox@285408000 {
 				compatible = "apple,t6021-ane-mailbox", "apple,asc-mailbox-v4";
 				reg = <0x2 0x85408000 0x0 0x4000>;
 				interrupt-parent = <&aic>;
-				interrupt-names = "recv-not-empty";
-				interrupts = <0 0 884 4>;
+				interrupt-names = "recv-not-empty", "send-empty";
+				interrupts = <0 0 884 4>, <0 0 1833 4>;
 				#mbox-cells = <0>;
 				status = "okay";
 			};
