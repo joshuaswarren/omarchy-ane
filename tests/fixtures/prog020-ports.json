@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "program": "prog_020",
+  "anec": "/var/tmp/qwen-real-anec-h14/prog_020/program-0.anec",
+  "hwx": "/var/tmp/qwen-real-hwx-h14/prog_020/model.hwx",
+  "ports": [
+    {
+      "name": "t0",
+      "direction": "input",
+      "shape": [1, 1, 16, 128],
+      "dtype": "fp16",
+      "strides": [4096, 4096, 256, 2],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 4,
+      "buffer_id": 5,
+      "channel": 5,
+      "confidence": "verified"
+    },
+    {
+      "name": "t15",
+      "direction": "output",
+      "shape": [1, 1, 1, 2048],
+      "dtype": "fp16",
+      "strides": [4096, 4096, 4096, 2],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 5,
+      "buffer_id": 4,
+      "channel": 4,
+      "confidence": "verified"
+    },
+    {
+      "name": "t2",
+      "direction": "input",
+      "shape": [1, 1, 16, 128],
+      "dtype": "fp16",
+      "strides": [4096, 4096, 256, 2],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 6,
+      "buffer_id": 6,
+      "channel": 6,
+      "confidence": "verified"
+    },
+    {
+      "name": "t7",
+      "direction": "input",
+      "shape": [1, 1, 1, 2048],
+      "dtype": "fp16",
+      "strides": [4096, 4096, 4096, 2],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 7,
+      "buffer_id": 7,
+      "channel": 7,
+      "confidence": "verified"
+    }
+  ],
+  "dma_coverage": [
+    {"bar_slot": 1, "buffer_id": 2, "kind": "kernel_constant"},
+    {"bar_slot": 4, "buffer_id": 5, "kind": "port", "port": "t0"},
+    {"bar_slot": 5, "buffer_id": 4, "kind": "port", "port": "t15"},
+    {"bar_slot": 6, "buffer_id": 6, "kind": "port", "port": "t2"},
+    {"bar_slot": 7, "buffer_id": 7, "kind": "port", "port": "t7"}
+  ],
+  "ambiguities": []
+}
