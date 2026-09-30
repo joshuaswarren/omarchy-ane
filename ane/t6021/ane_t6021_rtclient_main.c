@@ -12,9 +12,10 @@
  *   - DRM accel: BO_INIT/BO_FREE plus PROG_LOAD/PROC_CREATE/EXEC per
  *     ane/src/uapi/drm/ane_accel.h (ABI 2). Sections ride BOs the
  *     user supplies; one global mutex serializes every firmware
- *     command; completion = the legacy exchange's reply PLUS a
- *     TQ-idle poll gated on the pmgr PS words. EXEC also returns the
- *     fw's target-to-host slots (the sequencer's per-step drain).
+ *     command; completion = the legacy exchange's reply PLUS a poll
+ *     for the program's last task, gated on the pmgr PS words. EXEC
+ *     also returns the fw's target-to-host slots (the sequencer's
+ *     per-step drain).
  *
  * Compiled defaults are the load-run.sh parameter list — a bare
  * `insmod ane_t6021.ko` is the proven add-path configuration on
@@ -63,6 +64,7 @@
 #include <linux/iommu.h>
 #include <linux/jiffies.h>
 #include <linux/kref.h>
+#include <linux/ktime.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -77,6 +79,7 @@
 #include <linux/soc/apple/rtkit.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/unaligned.h>
 #include <linux/util_macros.h>
 #include <linux/workqueue.h>
 
@@ -105,7 +108,11 @@
 					 (u64)(q) * ANE_TM_TQ_STATUS_STRIDE)
 #define ANE_TM_TD_WINDOW		0x20400
 #define ANE_TM_TD_WINDOW_SIZE		0x540
-#define ANE_TM_TD_COUNT_OFF		0x58
+/* Last committed TD (fw 0x333b4): bits 23:16 the nid the firmware stamps
+ * on each call, bits 15:0 the index of the last task that committed (a
+ * task header carries its index in word 0 bits 15:0). */
+#define ANE_TM_LAST_TD_OFF		0x58
+#define ANE_TM_LAST_TD_TASK		GENMASK(15, 0)
 #define ANE_TM_TQ_STATUS_IDLE		0x81
 #define ANE_TM_TQ_STATUS_BUSY		0x70
 
@@ -547,36 +554,67 @@ module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
 
+/* The firmware never frees a program or a process, and its program table
+ * holds 256 entries: measured 2026-09-29, the 257th LOAD_PROGRAM on one
+ * boot answered with a protocol error and quarantined the device. Two
+ * loads of byte-identical sections therefore share one firmware program
+ * and one process. The key is SHA-256 over every section's id, size and
+ * bytes, so a client can only reach a program whose bytes it also
+ * supplied. Protected by ane_t6021_fw_lock. */
+#define ANE_T6021_MAX_PROGRAMS 250
+
+struct ane_t6021_prog {
+	u8 digest[SHA256_DIGEST_SIZE];
+	u32 prog_id;
+	u32 proc_id;		/* U32_MAX until a process exists */
+	u32 tds;		/* task count from the tdprop section; 0 = unknown */
+	bool traced;		/* first CALL logged its TD word */
+};
+
+static struct ane_t6021_prog ane_t6021_progs[ANE_T6021_MAX_PROGRAMS];
+static unsigned int ane_t6021_nprogs;
+
 /* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
  * completion: measured 2026-09-29, an ack can arrive before the engine
  * has written the output (exec returned after 0.16 ms, output landed
  * 0.12 ms later; the same call then read all zeros in ~1 of 5 runs after
  * an idle gap). All eight TQ status words read 0x81 before a TD starts,
- * so idle alone proves nothing either. The proof is: the last-committed
- * TD word (TM +0x20458, counts up by 0x10000 per completed TD)
- * moved off the value seen after the previous call, AND all eight TQ
- * words read idle.
+ * so idle alone proves nothing either. The proof is the last-committed
+ * TD word: it moved off the value seen after the previous call (the
+ * firmware stamps a new nid on every call), its task index is the
+ * program's last task (tds - 1), and all eight TQ words read idle. The
+ * first moved word is not enough: it shows the first task, and Qwen
+ * program 20 (20 tasks) then returned an all-zero output
+ * (receipts/2026-09-30-t6021-call-wait). A program with an unknown task
+ * count (tds 0) falls back to the first moved word.
  *
  * Every TM read is gated on the seven pmgr PS words reading 0x3ff (a TM
  * read while the compute domains are off hangs the SoC); while they do
  * not, the call has not started or finished and the loop keeps waiting.
- * Only single words are read. Returns 0 when complete, -ETIMEDOUT else. */
+ * Only single words are read. The first call of each program logs the
+ * word it saw. Returns 0 when complete, -ETIMEDOUT else. */
 static int ane_rtclient_call_wait(struct ane_rtclient *ane,
+				  struct ane_t6021_prog *prog,
 				  unsigned int timeout_ms)
 {
 	void __iomem *tm = ioremap_np(ANE_TM_BASE + ANE_TM_TD_WINDOW,
 				      ANE_TM_TD_WINDOW_SIZE);
 	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
 	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	u32 tds = prog ? prog->tds : 0;
+	u32 cnt = ane->td_seen;
+	ktime_t start = ktime_get();
 	int ret = -ETIMEDOUT;
 
+	if (!tds)
+		dev_warn_once(ane->dev,
+			      "call: task count unknown; completion waits for the first task\n");
 	if (!tm || !pm) {
 		ret = -ENOMEM;
 		goto out;
 	}
 	while (time_before(jiffies, deadline)) {
 		unsigned int i, q;
-		u32 cnt;
 
 		for (i = 0; i <= 0x30; i += 8)
 			if ((readl(pm + i) & 0x3ff) != 0x3ff)
@@ -585,8 +623,9 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 			usleep_range(100, 200);
 			continue;
 		}
-		cnt = readl(tm + ANE_TM_TD_COUNT_OFF);
-		if (cnt != ane->td_seen) {
+		cnt = readl(tm + ANE_TM_LAST_TD_OFF);
+		if (cnt != ane->td_seen &&
+		    (!tds || FIELD_GET(ANE_TM_LAST_TD_TASK, cnt) == tds - 1)) {
 			for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++)
 				if (readl(tm + ANE_TM_TQ_STATUS_OFF -
 					  ANE_TM_TD_WINDOW +
@@ -594,6 +633,13 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 				    ANE_TM_TQ_STATUS_IDLE)
 					break;
 			if (q == ANE_T6021_CHMAN_COUNT) {
+				if (prog && !prog->traced) {
+					prog->traced = true;
+					dev_info(ane->dev,
+						 "call: program %u, %u tasks: TD word %#x -> %#x after %lld us\n",
+						 prog->prog_id, tds, ane->td_seen,
+						 cnt, ktime_us_delta(ktime_get(), start));
+				}
 				ane->td_seen = cnt;
 				ret = 0;
 				break;
@@ -601,6 +647,10 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 		}
 		usleep_range(50, 100);
 	}
+	if (ret == -ETIMEDOUT)
+		dev_err(ane->dev,
+			"call: timed out at TD word %#x (before %#x, %u tasks)\n",
+			cnt, ane->td_seen, tds);
 out:
 	if (tm)
 		iounmap(tm);
@@ -648,11 +698,14 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 	return n;
 }
 
+/* PROG is the program a PROCEDURE_CALL runs (its task count ends the
+ * completion wait); NULL for every other command. */
 static int ane_rtclient_command(struct ane_rtclient *ane,
 						     struct ane_legacy_buffer *command,
 						     size_t length, u16 opcode,
 						     unsigned int channel,
-						     unsigned int timeout_ms)
+						     unsigned int timeout_ms,
+						     struct ane_t6021_prog *prog)
 {
 	int ret;
 
@@ -665,7 +718,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		return ret;
 	}
 	if (opcode == CSNE_CMD_PROCEDURE_CALL) {
-		ret = ane_rtclient_call_wait(ane, timeout_ms);
+		ret = ane_rtclient_call_wait(ane, prog, timeout_ms);
 		if (!ret && call_settle_us)
 			usleep_range(call_settle_us, call_settle_us + 100);
 		if (ret) {
@@ -686,24 +739,6 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 }
 
 /* ---- LOAD / CREATE / CALL wrappers ---- */
-
-/* The firmware never frees a program or a process, and its program table
- * holds 256 entries: measured 2026-09-29, the 257th LOAD_PROGRAM on one
- * boot answered with a protocol error and quarantined the device. Two
- * loads of byte-identical sections therefore share one firmware program
- * and one process. The key is SHA-256 over every section's id, size and
- * bytes, so a client can only reach a program whose bytes it also
- * supplied. Protected by ane_t6021_fw_lock. */
-#define ANE_T6021_MAX_PROGRAMS 250
-
-struct ane_t6021_prog {
-	u8 digest[SHA256_DIGEST_SIZE];
-	u32 prog_id;
-	u32 proc_id;		/* U32_MAX until a process exists */
-};
-
-static struct ane_t6021_prog ane_t6021_progs[ANE_T6021_MAX_PROGRAMS];
-static unsigned int ane_t6021_nprogs;
 
 static struct ane_t6021_prog *ane_t6021_prog_find(const u8 *digest)
 {
@@ -744,6 +779,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	struct ane_t6021_prog *cached;
 	u8 digest[SHA256_DIGEST_SIZE];
 	size_t binds_size;
+	u32 tds = 0;
 	int ret, i, j;
 
 	if (user->section_count < 1 ||
@@ -888,6 +924,18 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 			bo->fw_ref = true;
 			bo->fw_program = true;
 			iova = bo->dma + sections[i].offset;
+			/* The tdprop section (id 7, textPropSection): one
+			 * segment (u32 +0 = 1) with the task count at
+			 * +0x0c, which the firmware checks against the
+			 * descriptor walk at LOAD. Any other layout leaves
+			 * the count unknown. */
+			if (sections[i].id == ANE_SEC_TEXTPROP + 1 &&
+			    sections[i].size >= 0x10) {
+				const u8 *tp = bo->cpu + sections[i].offset;
+
+				if (get_unaligned_le32(tp) == 1)
+					tds = get_unaligned_le32(tp + 0x0c);
+			}
 		} else {
 			bo = NULL;
 		}
@@ -926,7 +974,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	ret = ane_rtclient_command(ane, command,
 						       0x1c0,
 						       CSNE_CMD_LOAD_PROGRAM,
-						       1, 5000);
+						       1, 5000, NULL);
 	if (!ret) {
 		u8 *cmd = command->cpu;
 
@@ -939,6 +987,10 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 		       SHA256_DIGEST_SIZE);
 		ane_t6021_progs[ane_t6021_nprogs].prog_id = *prog_id;
 		ane_t6021_progs[ane_t6021_nprogs].proc_id = U32_MAX;
+		/* A task index is 16 bits wide. */
+		ane_t6021_progs[ane_t6021_nprogs].tds =
+			tds <= 0x10000 ? tds : 0;
+		ane_t6021_progs[ane_t6021_nprogs].traced = false;
 		ane_t6021_nprogs++;
 	}
 
@@ -973,7 +1025,7 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 	}
 	ret = ane_rtclient_command(ane, command, 0x10,
 						       CSNE_CMD_CREATE_PROCESS,
-						       1, 3000);
+						       1, 3000, NULL);
 	if (!ret) {
 		u8 *cmd = command->cpu;
 
@@ -1082,7 +1134,8 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 							       CSNE_CMD_PROCEDURE_CALL,
 							       1,
 							       user->timeout_ms ?
-							       user->timeout_ms : 5000);
+							       user->timeout_ms : 5000,
+							       ane_t6021_prog_by_id(user->prog_id));
 	}
 unlock:
 	mutex_unlock(&ane_t6021_fw_lock);
@@ -1342,7 +1395,7 @@ static int ane_t6021_perf_mode_set(const char *val,
 	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(0);
 	*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(0x10aa);
 	*(u32 *)((u8 *)command->cpu + 0x10) = cpu_to_le32(1);
-	ret = ane_rtclient_command(ane, command, 0x14, 0x001f, 1, 3000);
+	ret = ane_rtclient_command(ane, command, 0x14, 0x001f, 1, 3000, NULL);
 	if (!ret) {
 		fw_perf_mode = true;
 		dev_info(ane->dev, "fw perf mode set (property 0x10aa = 1)\n");
