@@ -146,19 +146,24 @@ if op == "matvec":
     x[: m * k] = rng.uniform(-1, 1, m * k).astype(np.float16)
     x.tofile(f"{out}/in-a-{t}.fp16")
 elif op in ("island-a-kt", "island-c-pv"):
-    write_fp16_channel(f"{out}/in-x-{t}.fp16", 5, lo=-0.5, hi=0.5)
-    write_fp16_channel(f"{out}/in-y-{t}.fp16", 6, lo=-0.5, hi=0.5)
+    # ANEC channel mapping: ch5 = w (second MIL input), ch6 = x (first
+    # MIL input). The MIL is matmul(x, w); the encoder swaps operands
+    # into ch 5/6. Slot 0 in --in args is ch5 = w.
+    write_fp16_channel(f"{out}/in-w-{t}.fp16", 5, lo=-0.5, hi=0.5)
+    write_fp16_channel(f"{out}/in-x-{t}.fp16", 6, lo=-0.5, hi=0.5)
 elif op == "island-a-attn-p1":
-    write_fp16_channel(f"{out}/in-x-{t}.fp16", 5, lo=-0.5, hi=0.5)
-    write_fp16_channel(f"{out}/in-y-{t}.fp16", 6, lo=-0.5, hi=0.5)
+    write_fp16_channel(f"{out}/in-w-{t}.fp16", 5, lo=-0.5, hi=0.5)
+    write_fp16_channel(f"{out}/in-x-{t}.fp16", 6, lo=-0.5, hi=0.5)
 elif op == "island-b-select-runtime":
     write_fp16_channel(f"{out}/in-a-{t}.fp16", 5, lo=-1.0, hi=1.0)
     write_fp16_channel(f"{out}/in-b-{t}.fp16", 6, lo=-1.0, hi=1.0)
     write_bool_channel(f"{out}/in-c-{t}.bin", 7)
 elif op == "island-b-select-constfill":
-    # a is the runtime input (channel 5); b and cond are loaded from the
-    # kernel section by the encoder, so the gate only generates a.
-    write_fp16_channel(f"{out}/in-a-{t}.fp16", 5, lo=-1.0, hi=1.0)
+    # Per the in-MANIFEST for this island: ch5 = b (fp16 runtime);
+    # ch6 = cond (bool, in kernel); a = -inf constant in kernel. The
+    # gate only generates b; the device computes y = cond ? a : b =
+    # cond ? -inf : b. Expected output with cond=0 should equal b.
+    write_fp16_channel(f"{out}/in-b-{t}.fp16", 5, lo=-1.0, hi=1.0)
 elif op == "rms-c2048-gamma":
     write_fp16_channel(f"{out}/in-x-{t}.fp16", 5, lo=-1.0, hi=1.0)
     # Build a fake weights.bin so the rms check can be exercised: 64
@@ -175,14 +180,17 @@ PY
 	# Compose --in args per op.
 	case "$OP" in
 		island-a-kt|island-c-pv|island-a-attn-p1|bmm)
-			INS=(--in 0="$OUT/in-x-$t.fp16" --in 1="$OUT/in-y-$t.fp16")
+			INS=(--in 0="$OUT/in-w-$t.fp16" --in 1="$OUT/in-x-$t.fp16")
 			;;
 		island-b-select-runtime)
 			INS=(--in 0="$OUT/in-a-$t.fp16" --in 1="$OUT/in-b-$t.fp16" \
 			     --in 2="$OUT/in-c-$t.bin")
 			;;
 		island-b-select-constfill)
-			INS=(--in 0="$OUT/in-a-$t.fp16")
+			# Per the in-MANIFEST for this island: ch5 = b (fp16,
+			# runtime); ch6 = cond (bool, in the kernel, NOT
+			# runtime). Only one runtime fp16 input: b.
+			INS=(--in 0="$OUT/in-b-$t.fp16")
 			;;
 		rms-c2048-gamma)
 			INS=(--in 0="$OUT/in-x-$t.fp16")
@@ -216,14 +224,14 @@ done
 # A second process in the same boot closes and reopens the device.
 case "$OP" in
 	island-a-kt|island-c-pv|island-a-attn-p1|bmm)
-		INS=(--in 0="$OUT/in-x-1.fp16" --in 1="$OUT/in-y-1.fp16")
+		INS=(--in 0="$OUT/in-w-1.fp16" --in 1="$OUT/in-x-1.fp16")
 		;;
 	island-b-select-runtime)
 		INS=(--in 0="$OUT/in-a-1.fp16" --in 1="$OUT/in-b-1.fp16" \
 		     --in 2="$OUT/in-c-1.bin")
 		;;
 	island-b-select-constfill)
-		INS=(--in 0="$OUT/in-a-1.fp16")
+		INS=(--in 0="$OUT/in-b-1.fp16")
 		;;
 	rms-c2048-gamma)
 		INS=(--in 0="$OUT/in-x-1.fp16")

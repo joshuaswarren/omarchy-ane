@@ -718,6 +718,16 @@ void ane_untile(void *data, void *tile, const uint64_t N, const uint64_t C,
 	}
 	return;
 }
+
+void ane_set_oracle_nchw(struct ane_nn *nn, uint32_t ch, const uint64_t nchw[6])
+{
+	if (ch >= TILE_COUNT) {
+		return;
+	}
+	for (uint32_t i = 0; i < 6; i++) {
+		nn->anec.nchw[ch][i] = nchw[i];
+	}
+}
 // clang-format on
 
 /* ane_tile/ane_untile write and read the whole header geometry of a channel;

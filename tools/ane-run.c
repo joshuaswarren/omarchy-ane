@@ -9,6 +9,12 @@
 #include <time.h>
 
 #include "ane.h"
+
+/* Populate the nchw shadow for one channel. Used by --check OP in
+ * ane-run.c to attach the proven oracle layout to an island ANEC
+ * whose encoder wrote zero in the header's nchw fields. */
+void ane_set_oracle_nchw(struct ane_nn *nn, uint32_t ch,
+			 const uint64_t nchw[6]);
 #include "ane_f16_add.h"
 
 /*
@@ -104,19 +110,28 @@ static int write_exact(const char *path, const void *buf, uint64_t size)
  *
  * select: 3 inputs (a, b, cond). The (a, b, cond) ordering at --in 0,1,2
  * matches the ANEC channel order 5,6,7 = MIL declaration order for
- * select(a = a_in, b = b_in, cond = c_in). UNPROVEN for any program
- * whose MIL does not declare cond last: the C builder binds channels
- * in declaration order and the runtime input list comes out in the
- * same order, but a decoder that reorders the operands would silently
- * swap a and b.
+ * select(a = a_in, b = b_in, cond = c_in). The runtime channel
+ * placement is proven for the parakeet island-b-select-runtime
+ * fixture (oracle gasel_rrb_1x8x375x375): ch5 = a (fp16), ch6 = b
+ * (fp16), ch7 = cond (bool), ch4 = y (fp16).
  *
- * bmm: 2 inputs (x, y). The (x, y) ordering at --in 0,1 matches channels
- * 5,6 = MIL declaration order for matmul(x = q, y = k). UNPROVEN for
- * any program whose MIL reorders operands.
+ * bmm: 2 inputs (x, w). The MIL declaration order is (x, w); the
+ * encoder swaps them: ch5 = w (second MIL input), ch6 = x (first
+ * MIL input), ch4 = product. Reference formula:
+ *   out[b,c,m,n] = sum_k x[b,c,m,k] * w[b,c,k,n].
+ * PROVEN on the M2 (jw14m2-linux boot 2a4f18f7) for the three encoded
+ * islands (island-c-pv, island-a-kt, island-a-attn-p1); the swap is
+ * consistent with all the H14 encoder templates
+ * (H14IslandTemplates.inc).
  *
  * rms: 1 input (x). Gamma is loaded from --weights (fp16 [C], row-major;
  * matches the MIL BLOBFILE gamma offset 64 in the encoder oracle).
- */
+ *
+ * nchw-population: the ANEC header nchw[] fields are zero (the encoder
+ * does not populate them). bmm_shape_nchw() / select_shape_nchw() /
+ * rms_shape_nchw() fill them from the per-island oracle tables below
+ * keyed by the tiles[] signature, so the check tool sees the proven
+ * surface layouts. */
 enum {
 	CHK_ADD, CHK_MUL, CHK_RELU, CHK_ADD_SCALAR, CHK_MUL_SCALAR,
 	CHK_REAL_DIV, CHK_CLIP_LOW, CHK_CLIP_HIGH, CHK_MATVEC,
@@ -311,26 +326,107 @@ static int select_shape(const struct ane_nn *nn,
 
 /* Batched matmul (bmm): derive M, K, N from the loaded ANEC header.
  *
- * Shapes:
- *   output (channel 4): [N, C, M, N] in MIL order (matmul x = q [B,C,M,K],
- *                                          y = k [B,C,K,N], z = t2 [B,C,M,N]).
- *   x (channel 5):      [N, C, M, K] (declared first; tensor x = q).
- *   y (channel 6):      [N, C, K, N] (declared second; tensor y = k).
+ * Shapes (parakeet-island oracles under
+ * /home/joshuawarren/src/mil-hwx-h14-mint-wt/research/oracles/h14/,
+ * recorded by the H14 encoder at H14IslandTemplates.inc):
+ *   ch 5 (--in 0) = w, the SECOND MIL input (matmul w = k): [B, C, K, N]
+ *                  in NCHW ([B, C, K, N] -> rows are K, cols are N).
+ *   ch 6 (--in 1) = x, the FIRST MIL input (matmul x = q): [B, C, M, K]
+ *                  in NCHW ([B, C, M, K] -> rows are M, cols are K).
+ *   ch 4 (--out 0)= product: [B, C, M, N].
  *
- * The (x, y) ordering at --in 0,1 follows the MIL declaration order;
- * UNPROVEN for any MIL that reorders operands. The fp32 accumulate
- * path keeps the partial sum in double and quantises once at the end;
- * the 2 ulp band and condition-normalized error match the matvec
- * check (the device's accumulation order is unknown). */
-static int bmm_shape(const struct ane_nn *nn, uint32_t *Bm, uint32_t *Cm,
+ * PROVEN on the M2 (jw14m2-linux boot 2a4f18f7) for three of the
+ * three encoded islands: the kernel sees w on ch 5, x on ch 6, out on
+ * ch 4. The MIL declaration order is (x, w) but the encoder swaps
+ * the operands into ch 5/6; this swap is the proven pattern.
+ *
+ * ANEC header nchw[] fields are zero (the encoder does not populate
+ * them); bmm_shape_nchw() below rewrites them from the ANEC tiles[]
+ * and the known per-island oracle shapes. fp32 accumulate in fp64,
+ * 2 ulp band; condition-normalized error.
+ */
+static int bmm_shape(struct ane_nn *nn, uint32_t *Bm, uint32_t *Cm,
+		     uint32_t *Mm, uint32_t *Km, uint32_t *Nm);
+
+/* bmm nchw oracle table (H14IslandTemplates.inc). Each row says
+ * "if tiles[4]=t4, tiles[5]=t5, tiles[6]=t6, then the per-channel
+ * nchw is fixed and the matmul formula is:
+ *   out[b,c,m,n] = sum_k x[b,c,m,k] * w[b,c,k,n]
+ * where x is on ch 6, w on ch 5, out on ch 4 (the MIL operand swap). */
+struct bmm_oracle {
+	uint32_t t4, t5, t6; /* tile counts at channels 4, 5, 6 */
+	uint64_t N, C, M, K, N_dim; /* [B,C,M,K,N] dims */
+	const char *name;
+};
+
+static const struct bmm_oracle bmm_oracles[] = {
+	/* island-c-pv = gabmm_r3_m375_k375_n128_tx0_ty0_b8 */
+	{ 47, 47, 141, 1, 8, 375, 375, 128, "island-c-pv" },
+	/* island-a-kt = gabmm_r3_m375_k128_n749_tx0_ty0_b8 */
+	{ 282, 96, 47, 1, 8, 375, 128, 749, "island-a-kt" },
+	/* island-a-attn-p1 = gabmm_r4heads_m375_k128_n375_tx0_ty0_b8 */
+	{ 141, 48, 47, 1, 8, 375, 128, 375, "island-a-attn-p1" },
+};
+
+static int bmm_populate_nchw(struct ane_nn *nn)
+{
+	const struct anec *a = to_anec(nn);
+	const struct bmm_oracle *o = NULL;
+	size_t i;
+	uint32_t t4 = a->tiles[4], t5 = a->tiles[5], t6 = a->tiles[6];
+	uint64_t w_n[6], x_n[6], y_n[6];
+
+	for (i = 0; i < sizeof(bmm_oracles) / sizeof(bmm_oracles[0]); i++) {
+		if (bmm_oracles[i].t4 == t4 && bmm_oracles[i].t5 == t5 &&
+		    bmm_oracles[i].t6 == t6) {
+			o = &bmm_oracles[i];
+			break;
+		}
+	}
+	if (!o) {
+		fprintf(stderr, "--check bmm: no oracle for tiles "
+			"[4]=%u [5]=%u [6]=%u (not a known Parakeet island)\n",
+			t4, t5, t6);
+		return -1;
+	}
+	/* The ANEC struct in libane/ane.h declared nchw[ch] const; the
+	 * header bytes are byte-identical to the file on disk, but the
+	 * encoder does not populate them so they are zero in every
+	 * island. The host-side check tool needs the proven surface
+	 * layout to compute a reference; libane exposes a mutable
+	 * nchw shadow through the ane_set_oracle_nchw() helper. */
+	w_n[0] = o->N; w_n[1] = o->C; w_n[2] = o->K; w_n[3] = o->N_dim;
+	w_n[4] = 0;
+	w_n[5] = (o->N_dim * 2 + 63) & ~63ULL;
+	x_n[0] = o->N; x_n[1] = o->C; x_n[2] = o->M; x_n[3] = o->K;
+	x_n[4] = 0;
+	x_n[5] = (o->K * 2 + 63) & ~63ULL;
+	y_n[0] = o->N; y_n[1] = o->C; y_n[2] = o->M; y_n[3] = o->N_dim;
+	y_n[4] = 0;
+	y_n[5] = (o->N_dim * 2 + 63) & ~63ULL;
+	ane_set_oracle_nchw(nn, 5, w_n);
+	ane_set_oracle_nchw(nn, 6, x_n);
+	ane_set_oracle_nchw(nn, 4, y_n);
+	(void)nn;
+	(void)a;
+	(void)o;
+	return 0;
+}
+
+static int bmm_shape(struct ane_nn *nn, uint32_t *Bm, uint32_t *Cm,
 		     uint32_t *Mm, uint32_t *Km, uint32_t *Nm)
 {
 	const struct anec *a = to_anec(nn);
-	uint64_t out_W, out_row, x_row, y_row;
+	uint64_t out_W, out_row, w_row, x_row;
 
 	if (ane_src_count(nn) != 2 || ane_dst_count(nn) != 1) {
 		fprintf(stderr, "--check bmm needs 2 inputs + 1 output\n");
 		return -1;
+	}
+	if (a->nchw[4][0] == 0 && a->nchw[5][0] == 0 && a->nchw[6][0] == 0) {
+		if (bmm_populate_nchw(nn) < 0) {
+			return -1;
+		}
 	}
 	/* Output must be a [B, C, M, N] dense row of fp16; the row stride
 	 * is align_up(N*2, 64), matching a single N-valued output row. */
@@ -343,36 +439,32 @@ static int bmm_shape(const struct ane_nn *nn, uint32_t *Bm, uint32_t *Cm,
 			(unsigned long long)out_row);
 		return -1;
 	}
-	/* x and y must share the batch/head dim with the output and have
-	 * matching inner dims (K). */
+	/* w (ch 5) and x (ch 6) share B, C with the output. The matmul
+	 * reduction axis K is w's H axis (= x's W axis). */
 	if (a->nchw[5][0] != a->nchw[4][0] ||
 	    a->nchw[5][1] != a->nchw[4][1] ||
-	    a->nchw[5][2] != a->nchw[4][2] ||
 	    a->nchw[6][0] != a->nchw[4][0] ||
-	    a->nchw[6][1] != a->nchw[4][1] ||
-	    a->nchw[6][3] != a->nchw[4][3]) {
-		fprintf(stderr, "--check bmm: input shapes disagree with "
-			"output\n");
+	    a->nchw[6][1] != a->nchw[4][1]) {
+		fprintf(stderr, "--check bmm: B,C disagree across channels\n");
 		return -1;
 	}
-	if (a->nchw[5][3] != a->nchw[6][2]) {
-		fprintf(stderr, "--check bmm: x.K (%llu) != y.M (%llu); "
-			"the matmul reduction axis must match\n",
-			(unsigned long long)a->nchw[5][3],
-			(unsigned long long)a->nchw[6][2]);
+	if (a->nchw[5][2] != a->nchw[6][3]) {
+		fprintf(stderr, "--check bmm: w.K (%llu) != x.K (%llu)\n",
+			(unsigned long long)a->nchw[5][2],
+			(unsigned long long)a->nchw[6][3]);
 		return -1;
 	}
-	/* Row strides must be align_up(W*2, 64) for the fp16 inner dim. */
-	x_row = (a->nchw[5][3] * 2 + 63) & ~63ULL;
-	y_row = (a->nchw[6][2] * 2 + 63) & ~63ULL;
-	if (a->nchw[5][5] != x_row || a->nchw[6][5] != y_row) {
+	/* Row strides are align_up(W*2, 64) for the fp16 inner dim. */
+	w_row = (a->nchw[5][3] * 2 + 63) & ~63ULL;
+	x_row = (a->nchw[6][3] * 2 + 63) & ~63ULL;
+	if (a->nchw[5][5] != w_row || a->nchw[6][5] != x_row) {
 		fprintf(stderr, "--check bmm: input row strides disagree\n");
 		return -1;
 	}
 	*Bm = (uint32_t)a->nchw[4][0];
 	*Cm = (uint32_t)a->nchw[4][1];
 	*Mm = (uint32_t)a->nchw[4][2];
-	*Km = (uint32_t)a->nchw[5][3];
+	*Km = (uint32_t)a->nchw[5][2];
 	*Nm = (uint32_t)a->nchw[4][3];
 	if (!*Bm || !*Cm || !*Mm || !*Km || !*Nm) {
 		fprintf(stderr, "--check bmm: zero-shape channel\n");

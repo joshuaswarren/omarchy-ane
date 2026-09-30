@@ -58,7 +58,14 @@ struct anec {
 	const uint32_t src_count;
 	const uint32_t dst_count;
 	const uint32_t tiles[TILE_COUNT];
-	const uint64_t nchw[TILE_COUNT][6];
+	/* The ANEC header nchw[] fields are zero in every Parakeet
+	 * island ANEC the encoder emits -- the H14 compiler oracle
+	 * tables under research/oracles/h14/ record them per-island
+	 * instead. The host-side check tool needs the proven surface
+	 * layout, so the header still loads zero and the host
+	 * populates this field via ane_set_oracle_nchw() before
+	 * running --check. Not const so the helper can write it. */
+	uint64_t nchw[TILE_COUNT][6];
 } __attribute__((__packed__, aligned(1)));
 
 struct ane_bo {
@@ -154,6 +161,11 @@ int __ane_tile_read(struct ane_nn *nn, void *to, const uint32_t idx);
 void ane_tile(void *data, void *tile, const uint64_t N, const uint64_t C,
 	      const uint64_t H, const uint64_t W, const uint64_t P,
 	      const uint64_t R);
+/* Populate the nchw shadow for one channel. Used by --check OP in
+ * ane-run.c to attach the proven oracle layout to an island ANEC
+ * whose encoder wrote zero in the header's nchw fields. */
+void ane_set_oracle_nchw(struct ane_nn *nn, uint32_t ch,
+			 const uint64_t nchw[6]);
 void ane_untile(void *data, void *tile, const uint64_t N, const uint64_t C,
 		const uint64_t H, const uint64_t W, const uint64_t P,
 		const uint64_t R);
