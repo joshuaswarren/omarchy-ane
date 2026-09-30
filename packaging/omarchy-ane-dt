@@ -240,7 +240,8 @@ def apply(root, hook_targets):
                   "and rebuilds m1n1 when they change.")
             return
         raise Refuse("this omarchy-mac-boot refuses a changed device tree (omarchy update's boot check) and has "
-                     "no overlay support yet; the ANE node must come from the kernel or a newer omarchy-mac-boot")
+                     "no overlay support (omacom/omarchy-mac#677); the ANE node must come from the kernel or an "
+                     "omarchy-mac-boot with that support")
     name = board(root)
     overlays = overlays_for(root, name)
     state_root = root / "var/lib/omarchy-ane/dtbs"
