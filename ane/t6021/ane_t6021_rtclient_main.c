@@ -16,10 +16,11 @@
  *     TQ-idle poll gated on the pmgr PS words. EXEC also returns the
  *     fw's target-to-host slots (the sequencer's per-step drain).
  *
- * Compiled defaults are the load-run.sh parameter list verbatim — a
- * bare `insmod ane_t6021.ko` is the proven add-path configuration on
+ * Compiled defaults are the load-run.sh parameter list — a bare
+ * `insmod ane_t6021.ko` is the proven add-path configuration on
  * boot 3ab812a3 (fw_load=1 fw_start=1 fw_start_dapf=0 legacy_only=1
- * legacy_query=1 scratch3_ack=1 poll_rx=1 hello_wait_ms=1000 ...).
+ * legacy_query=1 scratch3_ack=1 poll_rx=1 ...) — except hello_wait_ms,
+ * 1000 in that list and 0 here (see its definition).
  * Remaining parameters are overridable from sysfs for bisection only.
  *
  * Division of labor (receipts/2026-09-22-t6021-rtkit-port):
@@ -163,10 +164,16 @@ module_param(legacy_query, bool, 0444);
 MODULE_PARM_DESC(legacy_query,
 		 "Service bounded startup allocations and CONFIG_GET; default on (proven config).");
 
-static unsigned int hello_wait_ms = 1000;
+/* 0 (default) skips RTKit in legacy mode, so the ANE mailbox never
+ * starts. Measured 2026-09-30 (receipts/2026-09-30-t6021-stock-mailbox):
+ * the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after
+ * 1000 ms), and starting the mailbox enables AIC2 884, a level line
+ * that then fired ~700,000 times/s (one CPU of hardirq time). A
+ * firmware that speaks RTKit needs hello_wait_ms=1000. */
+static unsigned int hello_wait_ms;
 module_param(hello_wait_ms, uint, 0444);
 MODULE_PARM_DESC(hello_wait_ms,
-		 "Upper bound for the RTKit boot handshake (rtkit.c waits are 1 s each); the lab proven value is 1000.");
+		 "RTKit HELLO wait in legacy mode; 0 (default) skips RTKit and leaves the mailbox stopped. A firmware that speaks RTKit needs 1000.");
 
 #define ANE_LEGACY_ALLOCS 8192
 #define ANE_LEGACY_BYTES SZ_512M
@@ -1784,10 +1791,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			dev_emerg(dev,
 				  "LEGACY P8 host ack: SCRATCH3 <- %08x\n",
 				  ANE_T6021_BOOT_ACK);
-			/* The 13.5 fw HELLOes on the RTKit MGMT endpoint
-			 * after the ack; with the recv line unproven the
-			 * poll worker is the only RX path, so init rtkit
-			 * and arm the worker BEFORE writing the ack. */
+			/* hello_wait_ms > 0 only: init rtkit and arm the RX
+			 * poll worker BEFORE writing the ack, so a HELLO
+			 * after the ack is not missed. The 13.5 fw sent none
+			 * on any recorded boot. */
 			if (hello_wait_ms && !ane->rtk) {
 				ane->rtk = devm_apple_rtkit_init(dev, ane,
 								NULL, 0,

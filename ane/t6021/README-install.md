@@ -184,9 +184,10 @@ reading, not every allocation a short-lived context makes.
 
 ## Module parameters (compiled defaults = proven configuration)
 
-The defaults reproduce the `load-run.sh` parameter list exactly so a
-bare `insmod ane_t6021.ko` is the proven configuration. Parameters
-remain overridable from sysfs for bisection only.
+The defaults reproduce the `load-run.sh` parameter list, except
+`hello_wait_ms` (1000 there, 0 here), so a bare `insmod ane_t6021.ko` is
+the proven configuration. Parameters remain overridable from sysfs for
+bisection only.
 
 | Parameter | Default | Lives in | Purpose |
 |---|---|---|---|
@@ -200,9 +201,9 @@ remain overridable from sysfs for bisection only.
 | `scratch3_ack` | `1` | rtclient | After DONE, write SCRATCH3 = 0x08042006 |
 | `legacy_only` | `1` | rtclient | Use the pinned 13.5 legacy ChMan transport |
 | `legacy_query` | `1` | rtclient | Service bounded startup allocations and CONFIG_GET |
-| `hello_wait_ms` | `1000` | rtclient | Upper bound for the RTKit HELLO wait (lab proven value) |
-| `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue |
-| `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after the handshake |
+| `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (receipts/2026-09-30-t6021-stock-mailbox). A firmware that speaks RTKit needs `1000` (the lab value). |
+| `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue (only with an RTKit instance: `legacy_only=0`, or legacy mode with `hello_wait_ms` > 0) |
+| `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
 | `free_io_bos` | `0` | rtclient | Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob) |
 
 Lab knobs that stayed at their inert values in every proven run are

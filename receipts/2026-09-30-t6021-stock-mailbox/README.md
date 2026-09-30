@@ -195,15 +195,10 @@ tool exists and the fleet rule forbids `/dev/mem`):
 
 Latency: `ane-run --check add --time --repeat 200`, seven runs, all exact:
 minimum 1.27-1.38 ms, median 1.48-24.5 ms, p90 94.6-151.8 ms, max 234.9-409.0
-ms. The storm was on during every timed run, so this boot has no storm-free
-control, and the link to the latency stalls is not decided. The p90 stalls
-stay at 95-152 ms both when the storm spreads over 12 CPUs and when it sits
-on the task's own CPU; that argues against CPU starvation alone. Pinned to
-cpu0 (an E-core) the median was 1.48 ms, pinned to cpu11 (a P-core) 12.5 and
-24.5 ms; the core type is a confounder. `ane_rtclient_call_wait` sleeps while
-any pmgr power word is not 0x3ff, which is another candidate for the stalls.
+ms. The storm was on during every timed run. The storm-free boots below
+decide the question: the storm caused these stalls.
 
-Fix options (none applied):
+Fix options (option A is applied; see the next section):
 
 | Option | Change | Risk |
 | --- | --- | --- |
@@ -212,6 +207,53 @@ Fix options (none applied):
 | C1 | Module: after `HELLO -ETIME` in legacy mode, free the RTKit instance, which stops the mailbox and disables 884. | Low to medium. A code change and one boot. |
 | C2 | Module: request 884 itself and acknowledge the IPI pending word in the handler, which makes completion IRQ-driven. | High. MMIO in the ANE aperture from hardirq context must respect the pmgr power gate; reads of the ANE window while it is unpowered have wedged the M2 before. |
 
+## Option A applied: `hello_wait_ms` defaults to 0
+
+Change (commit `4648648`): the default of `hello_wait_ms` in
+`ane/t6021/ane_t6021_rtclient_main.c` goes from 1000 to 0. In legacy mode
+the module then never creates the RTKit instance (`if (hello_wait_ms &&
+!ane->rtk)`), so apple-mailbox never starts and 884, requested with
+`IRQF_NO_AUTOEN`, stays disabled. Nothing else in legacy mode uses the RTKit
+instance: the RX poll worker is armed only with it, app endpoints start only
+after a successful HELLO, and CONFIG_GET and every ioctl use the ChMan ring.
+The 13.5 firmware sent no HELLO on any recorded boot: no `RTKit:` line comes
+from `284000000.ane`, while 8 other coprocessors log `RTKit: Initializing`.
+A firmware that speaks RTKit needs `hello_wait_ms=1000`.
+
+Same kernel, DTB, firmware and scripts on every boot:
+
+| Boot | hello_wait_ms | recv IRQ/s | hardirq CPUs idle / loop | 30 s loop processes | p90, 200-call runs (ms) | median (ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| a93553ad | 1000 | 669,657 / 764,265 | 1.01 / 0.99 | 203 | 94.6-151.8 | 1.48-24.5 |
+| 42d63200, modprobe option | 0 | 0 | 0.003 / 0.028 | 4,793 | 1.406-1.420 | 1.398-1.401 |
+| d9be5c60, compiled default | 0 | 0 | 0.003 / 0.027 | 4,787 | 1.289-1.409 | 1.282-1.402 |
+
+Every timed run was exact (512/512 lanes). On a same-input control boot with
+`hello_wait_ms` 1000 (3e434e68), 884 fired about 1.05 million times during
+probe and then stopped while idle; on a93553ad it came back with ANE work.
+The storm was the cause of the latency stalls, not the pmgr wait in
+`ane_rtclient_call_wait`.
+
+On both `hello_wait_ms=0` boots, probe finished 1.4 s sooner (11.4-12.0 s
+against 13.3-13.4 s). The add, mul and matvec gates passed, 20 of 20 gate
+loads passed, and dmesg had zero `EXCH ... failed`, timeout, quarantine or
+DART-fault lines. On d9be5c60 a 20 s four-worker burst ran 4,831 of 4,831
+exact.
+
+A limit that the storm hid: the 60 s four-worker burst on 42d63200 ran 9,601
+exact processes, then every `DRM_IOCTL_ANE_BO_INIT` failed until reboot.
+`ane_t6021_bo_init_ioctl` returns `-ENOSPC` once the held BO bytes would pass
+`ANE_T6021_BO_TOTAL_MAX` (2 GiB). An io BO whose IOVA reached the firmware
+(`fw_ref`) stays allocated and counted until reboot, and every add process
+holds about 144 KiB, so a boot runs out after about 14,500 processes
+(100 gate + 4,793 loop + 9 timed + 9,601 burst = 14,503 on that boot). At
+the old speed, a boot ran about 1,000 processes, and the cap was never
+reached. The fix is the next change.
+
+Procedure note: `tuxvdmtool` resets the laptop without a sync. The first
+option-A reboot lost the freshly written `/etc/modprobe.d` file; every later
+staging step ran `sync` before the reset.
+
 ## Control
 
 The poll-TX kernel passed the same add check on the same DTB base and module
@@ -219,13 +261,14 @@ source in its own verified boot. No new control boot was run.
 
 ## Final state
 
-The laptop runs the stock kernel on boot 3 (`a93553ad…`) with the DTB made
-from the pristine package DTB and the packaged overlay. The poll-TX trees,
-module and boot caches are untouched and can be chainloaded again at any
-time. The stock-tree module install stays; it loads only on stock kernels and
-reverses with one file delete plus `depmod`. Sleep targets are masked on the
-laptop (fleet standard): the login-screen auto-suspend had poisoned the first
-restore attempt.
+The laptop runs the stock kernel on boot `d9be5c60…` with the DTB made from
+the pristine package DTB and the packaged overlay, and the `ane_t6021`
+module built from commit `4648648` (`hello_wait_ms` 0 by default) in the
+stock module tree. The poll-TX trees, module and boot caches are untouched
+and can be chainloaded again at any time. The stock-tree module install
+stays; it loads only on stock kernels and reverses with one file delete plus
+`depmod`. Sleep targets are masked on the laptop (fleet standard): the
+login-screen auto-suspend had poisoned the first restore attempt.
 
 ## Limits
 
@@ -259,5 +302,10 @@ task did not investigate it further.
   merged DTBs, the normalizing comparator and its diffs, live-tree dumps of
   boots 2 and 3, gate directories, IRQ samples, latency runs, burst logs,
   capture log).
+- Private notebook, option A (boots 3e434e68, 42d63200, d9be5c60): entry
+  `entries/IrqStorm/20260930T214900Z-…-hello0-irq-storm.md`,
+  `artifacts/IrqStorm/` with `SHA256SUMS` (651 files: verify logs, dmesg,
+  capture logs, gate directories, IRQ samples and rates, latency runs, burst
+  logs including the BO_INIT failures).
 - Overlay: `packaging/dt/t6021-ane.dts` at `9c925cd` builds the DTBO
   `c9441f55…` with `packaging/build-dtbo`'s `dtc` command.
