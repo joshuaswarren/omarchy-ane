@@ -32,3 +32,15 @@ STAGED-QWEN-REF on T6021 remains unproven. Acceptance requires all 38 stages wit
 - M1 vectors, ANEC, exact fp64 reference output, and numerical results: ~/.local/share/apple-silicon-lab/artifacts/QwenM2/2026-09-30-t6021-qwen-chain/prog020-classC/; its SHA256SUMS records each file hash.
 - Inventory preflight artifact: ~/.local/share/apple-silicon-lab/artifacts/QwenM2/2026-09-30-t6021-qwen-chain/inventory.txt.
 - After M1 failed, the lead paused all M2 device use for a stock-kernel mailbox test. No further device actions are taken until the lead releases the machine.
+
+## Addendum — offline slot decode (2026-09-30, post-M1)
+
+The M1 failure root cause is found without device time: the task stream binds
+BAR slot 4 to input t0, slot 5 to the OUTPUT t15, slots 6/7 to t2/t7 (slot =
+Apple surface-array index + 4, decoded from the HWX IOVA list). The loader's
+matmul carve-out bound slot 4 -> ch4, so the kernel read the zero-filled output
+channel in place of t0; the saved device output equals the fp16 MIL graph with
+t0 = 0 (rel L2 0.012 vs the model, 0.276 vs the golden). Packing, feed order,
+and the in-ANEC constants are proven correct. Fix and one-run recipe:
+prog20-port-binding.md; runner: tools/qwen_prog_run.py
+(ANE_M2_OPREFS=1:2,4:5,5:4,6:6,7:7).
