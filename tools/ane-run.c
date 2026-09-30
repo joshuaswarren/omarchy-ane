@@ -495,7 +495,7 @@ static int select_check(struct ane_nn *nn, struct io_file *in,
 	uint64_t n, ch, h, w, p, a_row_off, c_row_off, y_row_off, off;
 	uint64_t a_off, c_off;
 	uint16_t av, bv, yv, want;
-	uint8_t cv;
+	uint16_t cv;
 	int ok;
 
 	if (!in[0].set || in[0].idx != 0 || !in[1].set || in[1].idx != 1 ||
@@ -536,10 +536,15 @@ static int select_check(struct ane_nn *nn, struct io_file *in,
 					    cond_row_bytes;
 				for (w = 0; w < W; w++) {
 					a_off = a_row_off + w * 2;
-					c_off = c_row_off + w;
+					c_off = c_row_off + w * (cond_is_bool ? 1 : 2);
 					av = a[a_off / 2];
 					bv = b[a_off / 2];
-					cv = c[c_off];
+					if (cond_is_bool) {
+						cv = c[c_off];
+					} else {
+						memcpy(&cv, c + c_off, sizeof(cv));
+						cv &= 0x7fff;
+					}
 					yv = y[a_off / 2];
 					want = cv ? av : bv;
 					exact += want == yv;
@@ -550,8 +555,13 @@ static int select_check(struct ane_nn *nn, struct io_file *in,
 						   b[off / 2] != 0);
 				}
 				for (p = 0; p < pad_per_row_c; p++) {
-					off = c_row_off + W + p;
-					pad_in += c[off] != 0;
+					off = c_row_off + (W + p) * (cond_is_bool ? 1 : 2);
+					if (cond_is_bool) {
+						pad_in += c[off] != 0;
+					} else {
+						memcpy(&cv, c + off, sizeof(cv));
+						pad_in += cv != 0;
+					}
 				}
 			}
 		}
@@ -597,7 +607,7 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 	uint64_t pad_out = 0;
 	uint64_t w_row, x_row, o_row;
 	uint64_t x_bc_off, w_bc_off, o_bc_off;
-	uint64_t x_row_off, w_col_off, o_row_off;
+	uint64_t x_row_off, o_row_off;
 	uint32_t bc, m, n, k;
 	double ax, ay, acc, sumabs, err, nerr, diff;
 	uint16_t got, want;
@@ -641,15 +651,13 @@ static int bmm_check(struct ane_nn *nn, struct io_file *in,
 			x_row_off = x_bc_off + (uint64_t)m * x_row;
 			o_row_off = o_bc_off + (uint64_t)m * o_row;
 			for (n = 0; n < N; n++) {
-				w_col_off = w_bc_off +
-					(uint64_t)n * w_row;
 				acc = 0.0;
 				sumabs = 0.0;
 				for (k = 0; k < K; k++) {
 					ax = ane_f16_to_f64(
 						x[(x_row_off + k * 2) / 2]);
 					ay = ane_f16_to_f64(
-						w[(w_col_off + k * 2) / 2]);
+					w[(w_bc_off + (uint64_t)k * w_row + (uint64_t)n * 2) / 2]);
 					acc += ax * ay;
 					sumabs += fabs(ax * ay);
 				}
@@ -732,7 +740,7 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	uint32_t C = 0;
 	uint64_t a_size, y_size;
 	uint16_t *a = NULL, *y = NULL, *gamma = NULL;
-	uint64_t lanes = 0;
+	const uint32_t channel_stride = 32;
 	uint64_t in_band = 0, exact = 0;
 	uint64_t max_ulp_milli = 0;
 	double max_nerr = 0.0;
@@ -742,7 +750,7 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	double xv, gv, want_v, err, sumabs, nerr, diff;
 	uint16_t want, got;
 	uint64_t milli;
-	uint32_t i;
+	uint32_t i, lanes;
 	int ok;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0) {
@@ -760,6 +768,13 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	}
 	a_size = ane_src_size(nn, 0);
 	y_size = ane_dst_size(nn, 0);
+	if (a_size < (uint64_t)C * channel_stride * 2 ||
+	    y_size < (uint64_t)C * channel_stride * 2) {
+		fprintf(stderr, "--check rms: io surface smaller than C=%u "
+			"rows of %u elements; the stride-%u accessor would "
+			"over-read\n", C, channel_stride, channel_stride);
+		return -1;
+	}
 	a = read_exact(in[0].path, a_size);
 	y = read_exact(out[0].path, y_size);
 	/* The MIL BLOBFILE has a 64-byte sub-header before gamma; skip it
@@ -773,7 +788,7 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	/* Find the max(|x|) and E[x^2] over all C channels (single batch,
 	 * single head, single H, single W). */
 	for (i = 0; i < C; i++) {
-		xv = ane_f16_to_f64(a[i]);
+		xv = ane_f16_to_f64(a[i * channel_stride]);
 		if (fabs(xv) > max_abs) {
 			max_abs = fabs(xv);
 		}
@@ -785,11 +800,11 @@ static int rms_check(struct ane_nn *nn, struct io_file *in,
 	/* Tolerance: 2 ulp band (UNPROVEN — the device's order of the
 	 * max-abs, mean, sqrt, and 1/rscaled is not decoded from fw). */
 	for (i = 0; i < C; i++) {
-		xv = ane_f16_to_f64(a[i]);
+		xv = ane_f16_to_f64(a[i * channel_stride]);
 		gv = ane_f16_to_f64(gamma[64 / 2 + i]);
 		want_v = xv * gv / rscaled;
 		want = ane_f16_round_half_away(want_v);
-		got = y[i];
+		got = y[i * channel_stride];
 		err = fabs(ane_f16_to_f64(got) - want_v);
 		sumabs = fabs(xv) + fabs(gv) + fabs(rscaled);
 		nerr = sumabs > 0.0 ? err / (sumabs * 0x1p-11) : 0.0;

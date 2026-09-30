@@ -97,6 +97,17 @@ def unpack_fp16(d, path):
             for h in range(H):
                 out[n, c, h] = flat[base + h * row_elems : base + h * row_elems + W]
     return out, flat
+def compare_fp16_surface(d, logical, flat, expected_bits):
+    actual_bits = logical.view(np.uint16).reshape(-1)
+    exact = int((actual_bits == expected_bits).sum())
+    row_elems = d["row_bytes"] // 2
+    rows = d["N"] * d["C"] * d["H"]
+    pad_nonzero = sum(
+        int((flat[row * row_elems + d["W"]:(row + 1) * row_elems] != 0).sum())
+        for row in range(rows)
+    )
+    pad_nonzero += int((flat[rows * row_elems:] != 0).sum())
+    return exact, pad_nonzero
 
 
 def pack_bool(d, logical):
@@ -295,9 +306,8 @@ def suite_constfill():
         inf_bits = np.float16(-np.inf).view(np.uint16) if hasattr(np.float16(-np.inf), 'view') else 0xFC00
         ref_bits = np.where(cnd.astype(bool), np.uint16(0xFC00),
                             b.view(np.uint16)).reshape(-1)
-        eq = int((flat[:1125000].view(np.uint16) == ref_bits).sum())
-        print(f"constfill s{seed}: exact {eq}/1125000 "
-              f"pad_nz={int((flat[1125000:] != 0).sum())}")
+        eq, pad_nz = compare_fp16_surface(do_, out, flat, ref_bits)
+        print(f"constfill s{seed}: exact {eq}/1125000 pad_nz={pad_nz}")
 
 
 def suite_rms():

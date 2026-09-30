@@ -561,6 +561,8 @@ int ane_exec(struct ane_nn *nn)
 int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
 		  uint32_t state_src_idx, uint32_t state_dst_idx)
 {
+	if (nn->m2)
+		return -EOPNOTSUPP;
 	if (!iterations || state_src_idx >= ane_src_count(nn) ||
 	    state_dst_idx >= ane_dst_count(nn)) {
 		return -EINVAL;

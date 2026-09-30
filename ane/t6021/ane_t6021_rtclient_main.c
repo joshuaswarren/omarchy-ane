@@ -103,7 +103,7 @@
 #define ANE_TM_TQ_STATUS(q)		(ANE_TM_BASE + ANE_TM_TQ_STATUS_OFF + \
 					 (u64)(q) * ANE_TM_TQ_STATUS_STRIDE)
 #define ANE_TM_TD_WINDOW		0x20400
-#define ANE_TM_TD_WINDOW_SIZE		0x440
+#define ANE_TM_TD_WINDOW_SIZE		0x540
 #define ANE_TM_TD_COUNT_OFF		0x58
 #define ANE_TM_TQ_STATUS_IDLE		0x81
 #define ANE_TM_TQ_STATUS_BUSY		0x70
@@ -1197,6 +1197,8 @@ static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 	if (!bo || size > PAGE_ALIGN(bo->size)) {
 		mutex_unlock(&ane_t6021_bo_lock);
+		if (bo)
+			kref_put(&bo->refcount, ane_t6021_bo_release);
 		return -ENOENT;
 	}
 	vma->vm_pgoff = 0;
@@ -1919,6 +1921,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane->chman_ok) {
 		dev_err(dev,
 			"install: ChMan table not validated — refusing to register DRM device (ioctls would stall the ring)\n");
+		cancel_delayed_work_sync(&ane->poll_work);
 		if (!ane->held) {
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
@@ -1973,6 +1976,8 @@ err_pm_or_hold:
 static void ane_rtclient_remove(struct platform_device *pdev)
 {
 	struct ane_rtclient *ane = platform_get_drvdata(pdev);
+	if (READ_ONCE(ane_t6021_perf_ane) == ane)
+		WRITE_ONCE(ane_t6021_perf_ane, NULL);
 
 	cancel_delayed_work_sync(&ane->poll_work);
 

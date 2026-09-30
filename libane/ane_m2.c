@@ -1288,14 +1288,20 @@ static int oprefs_apply(struct ane_m2_model *m)
 
 static int tdprop_block_count(const uint8_t *desc, uint64_t size)
 {
-	uint32_t w0 = le32(desc);
-	uint64_t stride = (w0 & 4) ? 0x30 : 0x10;
-	uint64_t cur = stride;
-	uint64_t last = 0;
+	uint32_t w0;
+	uint64_t stride, cur, last = 0;
 	int walked = 0;
+	if (size < sizeof(w0))
+		return fail("tdprop header is truncated");
+	w0 = le32(desc);
+	stride = (w0 & 4) ? 0x30 : 0x10;
+	cur = stride;
 
-	while (size > cur) {
-		uint32_t blk = le16(desc + cur + 2) & 0x7ff;
+	while (cur < size) {
+		uint32_t blk;
+		if (size - cur < 4)
+			return fail("tdprop block header is truncated");
+		blk = le16(desc + cur + 2) & 0x7ff;
 
 		last = cur;
 		if (!blk) {
@@ -1304,8 +1310,11 @@ static int tdprop_block_count(const uint8_t *desc, uint64_t size)
 		cur += ((blk << 2) + 0xf) & 0x3ff0;
 		walked++;
 	}
-	if ((w0 & 1) && size > stride && le32(desc + last + 0x18)) {
-		return fail("tdprop tail word not zero");
+	if ((w0 & 1) && size > stride) {
+		if (size - last < 0x1c)
+			return fail("tdprop tail word is truncated");
+		if (le32(desc + last + 0x18))
+			return fail("tdprop tail word not zero");
 	}
 	return walked;
 }
@@ -1833,6 +1842,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path)
 	free(buf);
 	if (err) {
 		ane_m2_err("failed to build sections from %s\n", path);
+		ane_m2_sections_free(&ctx->secs);
 		free(ctx);
 		return err;
 	}
