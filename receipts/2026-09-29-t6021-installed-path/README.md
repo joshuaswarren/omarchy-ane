@@ -87,3 +87,24 @@ The inferred kernel-base refs {1,2} (real-div, matvec, clip) worked on the
 first device run. The matvec reference accumulates in fp32 and rounds once;
 the device differs by at most 1 ulp on some lanes, so accumulation order
 or width on the device is not the reference's.
+
+## Qwen-size matvec (boot 7f0e8312, module `91f16eed...`)
+
+Driver BO cap raised (1 GiB per BO, 2 GiB counted total). Dense random
+inputs (M rows of K halves), weights fp16 [N,K], 4 trials + reopen/repeat
+per case, all PASS:
+
+| case | tasks | weights | device error vs fp64-exact |
+|---|---|---|---|
+| M=1 K=1536 N=1536 | 2 | 4.5 MiB | max 0.217 cond-units |
+| M=8 K=2048 N=2048 | 2 | 8 MiB | max 0.218 cond-units |
+| M=1 K=2048 N=5120 | 2 | 20 MiB | max 0.187 cond-units |
+
+Cond-unit = |device - exact| / (2^-11 * sum |a_k w_k|). The ulp of the
+result is the wrong scale under cancellation: the same runs show up to
+23 ulp on lanes whose result is near zero. Bit-exact lanes: 50 to 100 %
+per trial. The pass threshold (4 cond-units) is an assumption chosen
+above the measured maximum, not derived. The first matvec runs with the
+sparse 256-value input (K=1536 with 256 nonzero values) were a weak test
+and are superseded by these. The directory `gate-7f0e8312-matvec` in the
+artifact holds a run without `--weights` (expected FAIL).
