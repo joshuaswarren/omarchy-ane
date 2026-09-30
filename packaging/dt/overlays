@@ -1,0 +1,12 @@
+# Device tree overlays the package installs as
+# /usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-ane.dtbo
+# (packaging/build-dtbo). PREFIX selects the board device trees by file name.
+#
+# PREFIX  SOURCE          STATE
+t8103     t8103-ane.dts   enabled
+t6001     t6001-ane.dts   enabled
+# T6021 stays disabled until packages supply what the node needs: the
+# ane_t6021 module (dkms.conf builds ane.ko only), m1n1 that preloads the
+# firmware segments into reserved memory, and a kernel with the poll-TX
+# apple-mailbox change. The firmware itself is omarchy-ane-firmware-fetch.
+t6021     t6021-ane.dts   disabled

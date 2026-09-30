@@ -50,15 +50,15 @@ The package installs the driver. You do not need `install.sh`.
 
 ### Device-tree node
 
-`ane.ko` binds only to a device-tree node with an `apple,t*-ane` compatible. The device trees in `linux-aurora` 7.1.12 and `linux-asahi` 7.1.13 do not have this node. Until they do, the lab adds the node with a board overlay:
+`ane.ko` binds only to a device-tree node with an `apple,t*-ane` compatible. The device trees in `linux-aurora` 7.1.12 and `linux-asahi` 7.1.13 do not have this node. The package adds it with an overlay until the kernel's device trees have it.
 
-1. Compile the overlay: `dtc -@ -I dts -O dtb -o ane.dtbo ane/t6001-j316c-set-domains.dts`.
-2. `update-m1n1` reads the DTBs from the newest `/lib/modules/*-ARCH/dtbs`. Keep a copy of `t6001-j316c.dtb` from that directory. Apply the overlay: `fdtoverlay -i t6001-j316c.dtb -o t6001-j316c.dtb.new ane.dtbo`. Replace `t6001-j316c.dtb` with the new file.
-3. Run `sudo update-m1n1`. It writes the DTBs into `boot.bin`. Reboot.
-
-A kernel update installs the original DTB again. Apply the overlay again after each kernel update.
-
-The repository has an overlay for one board that `ane.ko` binds: `ane/t6001-j316c-set-domains.dts` (M1 Max, J316c). It uses phandle `0x13` as the AIC interrupt parent. That is correct for the two kernels above. For a different kernel, make sure that `fdtget -t x t6001-j316c.dtb /soc/interrupt-controller@28e100000 phandle` gives `13`. There is no overlay for T8103. The T6021 overlays in `ane/` are lab files. Do not use them with the packaged driver.
+- **Overlays.** `packaging/dt/` holds one overlay for each SoC. `packaging/build-dtbo` compiles the enabled ones to `/usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-ane.dtbo`. The prefix selects the board device trees by file name: `t8103` selects every `t8103-*.dtb`. The T8103 overlay makes the same ANE, DART and power-domain nodes that the bound M1 host has. The T6001 overlay makes the nodes of the lab overlay `ane/t6001-j316c-set-domains.dts`. The T6021 overlay is disabled in `packaging/dt/overlays`. A node alone does not start the M2 ANE, and packages do not supply the other parts yet.
+- **The kernel wins.** Each overlay names its compatible in `omarchy,skip-if-compatible`. When the kernel's board device tree has that node, the overlay is not used.
+- **Arch Linux ARM (asahi-alarm).** `omarchy-ane-dt apply` finds this Mac's board device tree from `/sys/firmware/devicetree/base/compatible`. For each installed kernel, it applies the overlays to a copy of that device tree. It checks that dtc can read the result and that the ANE node is present, and that every reference in the new nodes resolves. It writes the copy to `/var/lib/omarchy-ane/dtbs/KERNEL/`. It does not change a file that a package owns. It adds one line to `/etc/default/update-m1n1`. That line sources `/usr/lib/omarchy-ane/update-m1n1-dtbs`, which puts the copy in `DTBS` only while the copy was made from the same kernel file. A second run changes nothing. If a step fails, the original device trees stay in use and the tool prints the reason.
+- **Kernel updates.** The pacman hook `90-omarchy-ane-dt.hook` runs `omarchy-ane-dt apply` after a kernel update. It runs before `95-m1n1-install.hook`, so `update-m1n1` reads the new copy. omarchy-ane does not run `update-m1n1` itself. After the first install, run `sudo update-m1n1`, then reboot.
+- **Omarchy Macs (omarchy-mac-boot).** omarchy-mac-boot builds `boot.bin` and checks it on each `omarchy update`. A version of omarchy-mac-boot with device tree overlay support ([omacom/omarchy-mac#677](https://github.com/omacom/omarchy-mac/pull/677), draft) applies `/usr/lib/omarchy-platform/dtb-overlays` itself, and `omarchy-ane-dt` does nothing. With an older omarchy-mac-boot, `omarchy-ane-dt` refuses, because its boot check stops `omarchy update` when a device tree changes.
+- **Removal.** Removing the package runs `omarchy-ane-dt remove`. It removes the line and the copies. `boot.bin` keeps the node until `update-m1n1` runs again: run `sudo update-m1n1`.
+- **Status.** `omarchy-ane-dt status` and `omarchy-ane-check` tell you where the running node comes from: the kernel's DTB, the omarchy-ane overlay, or no node.
 
 ## Chip coverage
 

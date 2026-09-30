@@ -1,0 +1,28 @@
+# omarchy-ane: sourced by /etc/default/update-m1n1, one line that
+# omarchy-ane-dt adds on systems without omarchy-mac-boot.
+#
+# When DTBS is unset, it takes update-m1n1's default device trees (the newest
+# /lib/modules/*-ARCH kernel's) and swaps in omarchy-ane-dt's copy of a board
+# device tree that carries the ANE node, but only while that copy was made from
+# the same kernel file. Otherwise DTBS stays unset and update-m1n1 uses its
+# default. update-m1n1 runs with set -e: nothing here may fail.
+if [ -z "${DTBS:-}" ]; then
+  _oa_modules=$(/bin/ls -d /lib/modules/*-ARCH 2>/dev/null | sort -rV | head -1)
+  _oa_state=/var/lib/omarchy-ane/dtbs/${_oa_modules##*/}
+  _oa_list=""
+  _oa_swapped=""
+  for _oa_dtb in "$_oa_modules"/dtbs/*.dtb; do
+    _oa_copy=$_oa_state/${_oa_dtb##*/}
+    if [ -f "$_oa_copy" ] && [ -f "$_oa_copy.src" ] &&
+      [ "$(sed -n 's/^stock=//p' "$_oa_copy.src")" = "$(sha256sum <"$_oa_dtb" | cut -d' ' -f1)" ]; then
+      _oa_list="$_oa_list $_oa_copy"
+      _oa_swapped=1
+    else
+      _oa_list="$_oa_list $_oa_dtb"
+    fi
+  done
+  if [ -n "$_oa_swapped" ]; then
+    DTBS=${_oa_list# }
+  fi
+  unset _oa_modules _oa_state _oa_list _oa_swapped _oa_dtb _oa_copy
+fi
