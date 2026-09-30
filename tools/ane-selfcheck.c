@@ -191,6 +191,28 @@ static int check_refusal(const char *dir, const char *op, const char *what,
 	return good;
 }
 
+static int check_port_refusal(const char *dir, const char *op,
+			      const char *what,
+			      const struct ane_m2_port_spec *ports,
+			      uint32_t port_count)
+{
+	uint8_t *anec;
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	long size;
+	int good;
+
+	anec = read_all(fixture(dir, op, "program-0.anec"), &size);
+	if (!anec) {
+		return 0;
+	}
+	good = ane_m2_program_build_ports(anec, (uint64_t)size, ports,
+					  port_count, &model, &secs) != 0;
+	printf("  [%s] %s\n", good ? "ok" : "FAIL", what);
+	free(anec);
+	return good;
+}
+
 static void mut_truncated(uint8_t *a, long *size)
 {
 	(void)a;
@@ -439,6 +461,10 @@ int main(int argc, char **argv)
 	static const struct ane_m2_port_spec matvec_ports[] = {
 		{ "y", 1, 4, 4, 0x4000 }, { "x", 0, 5, 5, 0x4000 },
 	};
+	/* x moved off slot 5: the stream's slot-5 reads have no buffer. */
+	static const struct ane_m2_port_spec matvec_unbound[] = {
+		{ "y", 1, 4, 4, 0x4000 }, { "x", 0, 5, 6, 0x4000 },
+	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	int ok = 1;
 	unsigned skipped = 0;
@@ -507,6 +533,11 @@ int main(int argc, char **argv)
 			   mut_bar_slot) && ok;
 	ok = check_refusal(dir, "relu", "empty task stream refused",
 			   mut_empty_stream) && ok;
+	ok = check_port_refusal(dir, "matvec",
+				"port table leaving a task-stream slot unbound "
+				"refused", matvec_unbound,
+				sizeof(matvec_unbound) /
+				sizeof(matvec_unbound[0])) && ok;
 
 	if (ok && skipped)
 		printf("SELF-CHECK PASS (%u optional fixture check skipped: "

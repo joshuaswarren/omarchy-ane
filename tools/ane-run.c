@@ -53,10 +53,10 @@ struct io_file {
 };
 
 /* Port-table path: --in NAME=FILE / --out NAME=FILE look up the port
- * by name and resolve the host-side idx from the sidecar order. The
- * sidecar carries inputs in MIL declaration order followed by the
- * single output; inputs are numbered 0..N-1 by their position among
- * the dir==0 entries. */
+ * by name. Inputs and outputs are each numbered 0..N-1 by their
+ * position among the ports of their direction, the order
+ * ane_m2_send/read index. A scratch port is never named. */
+#define IO_ARGS ANE_M2_MAX_BINDS
 struct name_file {
 	int set;
 	const char *name;
@@ -295,6 +295,8 @@ static int json_read_port(const char *p, const char **end,
 				ps.dir = 0;
 			} else if (!strcmp(d, "output")) {
 				ps.dir = 1;
+			} else if (!strcmp(d, "scratch")) {
+				ps.dir = 2;
 			} else {
 				free(d);
 				free(key);
@@ -652,32 +654,23 @@ static int port_find(const struct port_read *pr, const char *name)
 	return -1;
 }
 
-/* Resolve the host-side idx (input position-among-inputs, or output 0)
- * for a named port. Returns the idx, or -1 if the name does not
- * exist or the direction does not match `dir`. */
+/* Resolve the host-side idx of a named port: its position among the
+ * ports of direction `dir`. Returns -1 if the name does not exist or
+ * the port has another direction. */
 static int port_host_idx(const struct port_read *pr, const char *name,
 			 uint32_t dir)
 {
 	int idx = port_find(pr, name);
-	uint32_t k;
-	uint32_t pos = 0;
+	int pos = 0;
+	int k;
 
-	if (idx < 0) {
+	if (idx < 0 || pr->ports[idx].dir != dir) {
 		return -1;
 	}
-	if (dir == 1) {
-		/* Single output: ane_m2_read indexes outputs by position. */
-		return pr->ports[idx].dir == 1 ? 0 : -1;
+	for (k = 0; k < idx; k++) {
+		pos += pr->ports[k].dir == dir;
 	}
-	for (k = 0; k < pr->count; k++) {
-		if (pr->ports[k].dir == 0) {
-			if (k == (uint32_t)idx) {
-				return (int)pos;
-			}
-			pos++;
-		}
-	}
-	return -1;
+	return pos;
 }
 
 /* Print the operation-record pairs and io records that
@@ -1798,8 +1791,9 @@ static void usage(void)
 		"--ports FILE.json: port table sidecar ({\"program\": \"...\",\n"
 		"  \"ports\": [{\"name\":..., \"direction\":..., \"buffer_id\":...,\n"
 		"  \"bar_slot\":..., \"tile_bytes\":..., \"surface_bytes\":...,\n"
-		"  \"shape\":[n,c,h,w]} ... ]}); surface_bytes must fit in\n"
-		"  tile_bytes. Switches to the named-port path: the device\n"
+		"  \"shape\":[n,c,h,w]} ... ]}); direction is input, output or\n"
+		"  scratch (bufferId 0x40, never named); surface_bytes must fit\n"
+		"  in tile_bytes. Switches to the named-port path: the device\n"
 		"  program binds the table's slots and buffers, and --in/--out\n"
 		"  take NAME=FILE.\n"
 		"  Strict JSON: anything outside the documented keys is rejected.\n"
@@ -1812,10 +1806,10 @@ int main(int argc, char **argv)
 	const char *anec = NULL;
 	const char *ports_path = NULL;
 	struct ane_nn *nn;
-	struct io_file ins[8] = { 0 };
-	struct io_file outs[8] = { 0 };
-	struct name_file nins[8] = { 0 };
-	struct name_file nouts[8] = { 0 };
+	struct io_file ins[IO_ARGS] = { 0 };
+	struct io_file outs[IO_ARGS] = { 0 };
+	struct name_file nins[IO_ARGS] = { 0 };
+	struct name_file nouts[IO_ARGS] = { 0 };
 	uint32_t repeat = 1;
 	int timing = 0;
 	int check = -1;
@@ -1831,7 +1825,7 @@ int main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "--in") && i + 1 < argc) {
 			if (ports_mode) {
 				int slot = -1;
-				for (k = 0; k < 8; k++) {
+				for (k = 0; k < IO_ARGS; k++) {
 					if (!nins[k].set) {
 						slot = k;
 						break;
@@ -1839,7 +1833,7 @@ int main(int argc, char **argv)
 				}
 				if (slot < 0) {
 					fprintf(stderr, "too many --in args "
-						"(max 8)\n");
+						"(max %d)\n", IO_ARGS);
 					return 2;
 				}
 				if (parse_name_arg(argv[++i], &nins[slot],
@@ -1848,7 +1842,7 @@ int main(int argc, char **argv)
 				}
 			} else {
 				int slot = -1;
-				for (k = 0; k < 8; k++) {
+				for (k = 0; k < IO_ARGS; k++) {
 					if (!ins[k].set) {
 						slot = k;
 						break;
@@ -1856,7 +1850,7 @@ int main(int argc, char **argv)
 				}
 				if (slot < 0) {
 					fprintf(stderr, "too many --in args "
-						"(max 8)\n");
+						"(max %d)\n", IO_ARGS);
 					return 2;
 				}
 				if (parse_io_arg(argv[++i], &ins[slot], "in"))
@@ -1865,7 +1859,7 @@ int main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "--out") && i + 1 < argc) {
 			if (ports_mode) {
 				int slot = -1;
-				for (k = 0; k < 8; k++) {
+				for (k = 0; k < IO_ARGS; k++) {
 					if (!nouts[k].set) {
 						slot = k;
 						break;
@@ -1873,7 +1867,7 @@ int main(int argc, char **argv)
 				}
 				if (slot < 0) {
 					fprintf(stderr, "too many --out args "
-						"(max 8)\n");
+						"(max %d)\n", IO_ARGS);
 					return 2;
 				}
 				if (parse_name_arg(argv[++i], &nouts[slot],
@@ -1882,7 +1876,7 @@ int main(int argc, char **argv)
 				}
 			} else {
 				int slot = -1;
-				for (k = 0; k < 8; k++) {
+				for (k = 0; k < IO_ARGS; k++) {
 					if (!outs[k].set) {
 						slot = k;
 						break;
@@ -1890,7 +1884,7 @@ int main(int argc, char **argv)
 				}
 				if (slot < 0) {
 					fprintf(stderr, "too many --out args "
-						"(max 8)\n");
+						"(max %d)\n", IO_ARGS);
 					return 2;
 				}
 				if (parse_io_arg(argv[++i], &outs[slot], "out"))
@@ -1941,7 +1935,7 @@ int main(int argc, char **argv)
 	}
 
 	ret = 0;
-	for (k = 0; ports_mode && k < 8 && !ret; k++) {
+	for (k = 0; ports_mode && k < IO_ARGS && !ret; k++) {
 		if (nins[k].set) {
 			int idx = port_host_idx(&pr, nins[k].name, 0);
 
@@ -1972,7 +1966,7 @@ int main(int argc, char **argv)
 		ane_free(nn);
 		return 1;
 	}
-	for (k = 0; k < 8 && !ret; k++) {
+	for (k = 0; k < IO_ARGS && !ret; k++) {
 		uint64_t size;
 		void *buf;
 
@@ -2025,7 +2019,7 @@ int main(int argc, char **argv)
 		free(lat);
 	}
 
-	for (k = 0; k < 8 && !ret; k++) {
+	for (k = 0; k < IO_ARGS && !ret; k++) {
 		uint64_t size;
 		void *buf;
 

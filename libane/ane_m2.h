@@ -77,10 +77,10 @@ struct ane_m2_ref {
 };
 
 /* ANE_M2_MAX_CALLS bounds the per-call ref set: one record per task in the
- * worst case, with ANE_M2_MAX_BINDS deduped refs each. For islands the
- * largest emitted program is `pv-rank4` with 5 tasks; the limit is set
- * to 64 for headroom. */
-#define ANE_M2_MAX_CALLS 64
+ * worst case, with ANE_M2_MAX_BINDS deduped refs each. derive_refs keeps
+ * each task's refs in call_refs[task], so it also bounds the task count.
+ * The largest staged Qwen program has 120 tasks. */
+#define ANE_M2_MAX_CALLS 128
 
 struct ane_m2_model {
 	struct ane_m2_io io[ANE_M2_MAX_BINDS];
@@ -107,17 +107,19 @@ struct ane_m2_sections {
 
 extern const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT];
 
-/* One explicit port for ane_m2_program_build_ports(). The caller supplies
- * one entry per ANEC channel: a name (host-side label, not part of the
- * emitted bytes), the direction, the channel id (== the buffer_id the
- * firmware reads back from the IO array), the BAR slot the host wants
- * the operation-section to bind, and the per-channel allocation in bytes
- * (a multiple of 0x4000; the same value the encodeANEC emits as
- * tiles[id] << 14). The port_count must equal the anec header's
- * input_count+1 (no output doubling, no implicit scratch). */
+/* bufferId of the scratch io record (above the channel ids, not 2/3). */
+#define ANE_M2_SCRATCH_BUFID 0x40u
+
+/* One explicit port for ane_m2_program_build_ports(): a name (host-side
+ * label, not part of the emitted bytes), the direction, the buffer_id
+ * the io record carries, the BAR slot the operation record binds to it,
+ * and the io BO size in bytes (a multiple of 0x4000). An input or
+ * output buffer_id is an ANEC channel id, whose allocation is
+ * tiles[id] << 14. dir 2 is the scratch for the program's __DATA
+ * (BAR slot 3): buffer_id ANE_M2_SCRATCH_BUFID, never sent or read. */
 struct ane_m2_port_spec {
 	const char *name;
-	uint32_t dir; /* 0 = input, 1 = output */
+	uint32_t dir; /* 0 = input, 1 = output, 2 = scratch */
 	uint32_t buffer_id;
 	uint32_t bar_slot;
 	uint64_t tile_bytes;
@@ -134,10 +136,13 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 /* Same as ane_m2_program_build() but uses `ports` (count `port_count`)
  * to fill the io table and the union ref set directly, bypassing the
  * derive_refs BAR walk, ANE_M2_OPREFS, and the input_count>3 refusal.
- * The ref set is the kernel constant pair {slot 1, buffer_id 2} plus
- * one {bar_slot, buffer_id} pair per port, sorted by bar_slot; no
- * scratch merge. The io table lists the inputs in caller order, then
- * the single output. */
+ * The table needs the anec's input_count inputs, one or more outputs
+ * and at most one scratch. The ref set is the kernel constant pair
+ * {slot 1, buffer_id 2} plus one {bar_slot, buffer_id} pair per port,
+ * sorted by bar_slot. The io table lists the inputs, then the outputs,
+ * each in caller order, then the scratch. Refuses a task stream with a
+ * BAR ref at a slot the table does not bind, or at an offset outside
+ * the bound buffer. */
 int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
 			       const struct ane_m2_port_spec *ports,
 			       uint32_t port_count,
@@ -153,7 +158,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 void ane_m2_close(struct ane_nn *nn);
 
 /* ane_init() for an explicit port table (ABI-2 only; the M1 path
- * refuses). Inputs are indexed in port order, the output is index 0. */
+ * refuses). Inputs and outputs are each indexed in port order. */
 struct ane_nn *ane_m2_init_ports(const char *path,
 				 const struct ane_m2_port_spec *ports,
 				 uint32_t port_count);

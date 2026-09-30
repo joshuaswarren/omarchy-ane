@@ -21,7 +21,7 @@
 /* H14 anec layout (encodeANEC): 0x1000-byte header, then the task stream,
  * then the constant region (the kernel section) at a 64-byte-aligned
  * offset near the end of the payload. All sizes come from the header. */
-#define ANE_M2_MAX_TASKS	64
+#define ANE_M2_MAX_TASKS	ANE_M2_MAX_CALLS
 #define TD_KDMA_LO		0x1900u
 #define TD_KDMA_HI		0x1a40u
 #define TD_DST			0x1508u
@@ -1210,15 +1210,15 @@ static uint32_t scratch_bufid_from_env(void)
 	const char *e = getenv("ANE_M2_SCRATCH");
 
 	if (!e) {
-		return 0x40;
+		return ANE_M2_SCRATCH_BUFID;
 	}
 	if (e[0] == '-' || e[0] == '+') {
-		return 0x40;
+		return ANE_M2_SCRATCH_BUFID;
 	}
 	if (strtoull(e, NULL, 0) == 0) {
 		return 0;
 	}
-	return 0x40;
+	return ANE_M2_SCRATCH_BUFID;
 }
 
 /* Parse ANE_M2_OPREFS="slot:tag,slot:tag,..." into the union ref set,
@@ -1319,6 +1319,206 @@ static int tdprop_block_count(const uint8_t *desc, uint64_t size)
 	return walked;
 }
 
+/* Generic, operation, procedure and tdprop sections of a built model.
+ * Both builders emit them the same way; they differ only in how the io
+ * table and the ref set are chosen. */
+static int emit_io_sections(const struct ane_m2_model *model,
+			    struct ane_m2_sections *secs,
+			    const uint8_t *desc, uint64_t tsk_size)
+{
+	uint8_t *gen, *oper, *proc, *tdp;
+	uint64_t gen_size;
+	uint32_t k;
+	int blocks;
+
+	/* Generic section: 0x208-byte header + 0x30-byte entries. */
+	gen_size = 0x208 + 0x30ULL * model->io_count;
+	gen = sec_alloc(secs, ANE_M2_SEC_GENERIC, gen_size);
+	if (!gen) {
+		return -ENOMEM;
+	}
+	put_le32(gen + 0x00, 1);    /* magic (fw135 0x481fc) */
+	put_le32(gen + 0x04, 0x10); /* version <= 0x10 (0x48208) */
+	put_le32(gen + 0x204, model->io_count);
+	for (k = 0; k < model->io_count; k++) {
+		const struct ane_m2_io *io = &model->io[k];
+		uint8_t *e = gen + 0x208 + 0x30ULL * k;
+		uint32_t type_field;
+		uint32_t dir_field;
+
+		if (io->dir == 2) {
+			/* Scratch: firmware treats it as input for BAR
+			 * resolution; type 0 / dir 1 (input-side buffer).
+			 * validateCall 0x48df8 only checks id!=2/3 and
+			 * id uniqueness; the type byte is not consulted
+			 * for BAR resolution. */
+			type_field = 0;
+			dir_field = 1;
+		} else {
+			type_field = io->dir;
+			dir_field = io->dir ? 2 : 1;
+		}
+		put_le32(e + 0x00, 1); /* flags: present */
+		put_le32(e + 0x04, io->buffer_id);
+		put_le32(e + 0x08, type_field);
+		put_le32(e + 0x10, dir_field);
+		put_le64(e + 0x20, io->size);
+		put_le32(e + 0x28, 0xffff); /* sentinel, mirrored from h14conv */
+	}
+
+	/* Operation section: u32 tot + N 0x40c-byte records. type 0 (kernel
+	 * op) with tdCount 0 short-circuits the kernel-ref resolver
+	 * (fw135 0x48904); refCount refs {slot, tag} at +0x10. The existing
+	 * 9 stage 1-4 fixtures get N == 1 with the union of all per-task
+	 * refs; the Parakeet island ANECs get N == taskCount (one record per
+	 * call, refs specific to that call's task).
+	 *
+	 * PROVEN on hardware for N==1 (boot 8f468602: add, refs {4,5}{5,4}
+	 * {6,6}). The N==taskCount form is INFERRED: the firmware reads
+	 * call->recordIdx (fw135 0x44ea0 ldr w10, [x9, #0xc]!; cbz w10) and
+	 * indexes into the operation section, so each call may pick its own
+	 * record. The byte-identical match to the lab Python builder
+	 * (which emits one record per task when refs differ across tasks)
+	 * confirms the encoding. */
+	oper = sec_alloc(secs, ANE_M2_SEC_OPERATION,
+			 4 + 0x40cULL * model->calls);
+	if (!oper) {
+		return -ENOMEM;
+	}
+	put_le32(oper, model->calls);
+	for (k = 0; k < model->calls; k++) {
+		uint32_t n = model->call_ref_count[k];
+		uint32_t j;
+		uint8_t *rec = oper + 4 + 0x40cULL * k;
+
+		put_le32(rec + 0x08, n);
+		for (j = 0; j < n; j++) {
+			put_le32(rec + 0x0c + 8ULL * j,
+				 model->call_refs[k][j].slot);
+			put_le32(rec + 0x0c + 8ULL * j + 4,
+				 model->call_refs[k][j].tag);
+		}
+	}
+
+	/* Procedure section: tot + {u64 offset, u64 size} + records. Content
+	 * mirrors the h14conv procedure.bin (load-proven on hardware);
+	 * record +4 = 3 is eCSneCmdProgramProcedureContentType_3, accepted
+	 * by getProcedureCallType with {0,3,4} (fw135 0x5a04c region). No
+	 * rule for other contents was derived, so it stays fixed. */
+	proc = sec_alloc(secs, ANE_M2_SEC_PROCEDURE, 0x18 + 0x20);
+	if (!proc) {
+		return -ENOMEM;
+	}
+	put_le32(proc, 1);
+	put_le64(proc + 0x08, 0x18);
+	put_le64(proc + 0x10, 0x20);
+	put_le32(proc + 0x18, 1);
+	put_le32(proc + 0x1c, 3);
+	put_le32(proc + 0x20, 0);
+	put_le32(proc + 0x24, 0);
+	put_le32(proc + 0x28, 1);
+	put_le32(proc + 0x2c, 0);
+	put_le32(proc + 0x30, 0xffffffff);
+	put_le32(proc + 0x34, 4);
+
+	/* tdprop: one segment covering the whole descriptor, blockNbr from
+	 * the firmware block walk (fw135 0x486a0; the walked count must
+	 * match, 0x48798). The 5-task Parakeet islands exercise this:
+	 * each task is one block in the descriptor (stride 0x30 when
+	 * the task header has bit 2 set, else 0x10); the walker counts
+	 * them all and the segment's blockNbr must match. PROVEN by the
+	 * byte-identical match to the lab Python builder. */
+	blocks = tdprop_block_count(desc, tsk_size);
+	if (blocks < 0) {
+		return blocks;
+	}
+	if (!blocks) {
+		return fail("tdprop walk found no block; the firmware deep "
+			    "check would reject the descriptor");
+	}
+	tdp = sec_alloc(secs, ANE_M2_SEC_TDPROP, 40);
+	if (!tdp) {
+		return -ENOMEM;
+	}
+	put_le32(tdp, 1);
+	put_le32(tdp + 0x08, 0); /* a */
+	put_le32(tdp + 0x0c, (uint32_t)blocks);
+	put_le64(tdp + 0x10, 0); /* segment offset */
+	put_le64(tdp + 0x18, 0); /* pad */
+	put_le64(tdp + 0x20, tsk_size);
+	return 0;
+}
+
+/* Every dense BAR-ref record in the task stream must name a slot that
+ * the ref set binds, at an offset inside the bound buffer (tag 2: the
+ * kernel constant region; any other tag: its io record). The firmware
+ * resolves a slot's IOVA only through the operation record, so an
+ * unbound slot would send task DMA through an IOVA the host never
+ * allocated. The second payload word of a two-word record is taken as
+ * the high half, so any nonzero high word is refused. */
+static int check_bound_slots(const uint8_t *desc, const struct ane_task *tasks,
+			     uint32_t ntasks, const struct ane_m2_model *m,
+			     uint64_t krn_size)
+{
+	uint32_t t;
+
+	for (t = 0; t < ntasks; t++) {
+		const uint8_t *tp = desc + tasks[t].off;
+		uint32_t words = tasks[t].words;
+		uint32_t idx = (le32(tp + 28) & 3u) == 3u ? 9 : 8;
+
+		while (idx < words) {
+			uint32_t h = le32(tp + idx * 4);
+			uint32_t n = h & 0x80000000u
+				? 1 + (uint32_t)__builtin_popcount(
+					      (h >> 15) & 0xffffu)
+				: ((h >> 15) & 0x3fu) + 1;
+			uint32_t slot = (h >> 23) & 0x3fu;
+			uint64_t off, size = 0;
+			uint32_t r, i;
+			int bound = 0;
+
+			if (idx + 1 + n > words) {
+				return fail("record declares more payload "
+					    "words than its task holds");
+			}
+			if ((h & 0x80000000u) || !(h & 0x20000000u)) {
+				idx += 1 + n;
+				continue;
+			}
+			off = le32(tp + (idx + 1) * 4);
+			if (n > 1) {
+				off |= (uint64_t)le32(tp + (idx + 2) * 4) << 32;
+			}
+			for (r = 0; r < m->call_ref_count[0]; r++) {
+				const struct ane_m2_ref *ref =
+					&m->call_refs[0][r];
+
+				if (ref->slot != slot) {
+					continue;
+				}
+				bound = 1;
+				size = ref->tag == 2 ? krn_size : 0;
+				for (i = 0; i < m->io_count; i++) {
+					if (m->io[i].buffer_id == ref->tag) {
+						size = m->io[i].size;
+					}
+				}
+			}
+			if (!bound) {
+				return fail("task-stream BAR slot has no "
+					    "binding in the port table");
+			}
+			if (off >= size) {
+				return fail("BAR-ref offset lies outside its "
+					    "bound buffer");
+			}
+			idx += 1 + n;
+		}
+	}
+	return 0;
+}
+
 /* Fill the kernel/descriptor/tdprop/procedure sections of an explicit
  * port table build. Shares the descriptor/task split and the kernel
  * constant-region copy with ane_m2_program_build(); the io table and
@@ -1331,13 +1531,13 @@ static int ane_m2_program_build_ports_inner(
 	struct ane_m2_model *model, struct ane_m2_sections *secs)
 {
 	const uint8_t *d = anec;
-	uint64_t payload, tsk_size, krn_size, const_off, gen_size;
+	uint64_t payload, tsk_size, krn_size, const_off;
 	uint32_t first_task, task_count, input_count, version;
-	uint32_t inputs = 0, outputs = 0;
-	uint8_t *desc_buf, *gen, *oper, *proc, *tdp;
+	uint32_t counts[3] = { 0 };
+	uint32_t dir;
+	uint8_t *desc_buf;
 	struct ane_task tasks[ANE_M2_MAX_TASKS];
 	uint32_t ntasks = 0;
-	int blocks;
 	uint32_t k;
 	uint32_t ref_count = 0;
 
@@ -1371,62 +1571,68 @@ static int ane_m2_program_build_ports_inner(
 	if (tsk_size > const_off) {
 		return fail("task stream reaches into the constant region");
 	}
-	if (port_count != input_count + 1) {
-		return fail("port_count must equal anec input_count + 1");
-	}
 
-	/* Validate the port list: exactly one output, the rest inputs;
-	 * buffer_id unique; tile_bytes positive and 0x4000-aligned; the
-	 * kernel/text ids 2/3 are reserved and never valid as
-	 * buffer_id for an io record. The Qwen programs (prog_020) use
-	 * buffer_ids {4,5,6,7} — one output (4) plus three inputs
-	 * (5,6,7). The accept/emit order is the caller's input_count
-	 * inputs followed by the one output. */
+	/* Validate the port list: input_count inputs, at least one output,
+	 * at most one scratch (bufferId 0x40, the derived build's scratch
+	 * id); unique buffer_ids and slots. The kernel/text ids 2/3 are
+	 * reserved section ids; slots 0 and 1 hold the text and the kernel
+	 * constants. */
 	for (k = 0; k < port_count; k++) {
-		if (!ports[k].tile_bytes ||
-		    (ports[k].tile_bytes & 0x3fffull)) {
+		const struct ane_m2_port_spec *p = &ports[k];
+		uint32_t j;
+
+		if (!p->tile_bytes || (p->tile_bytes & 0x3fffull)) {
 			return fail("port tile_bytes must be a positive "
 				    "multiple of 0x4000");
 		}
-		if (ports[k].buffer_id >= TILE_COUNT ||
-		    ports[k].buffer_id == 2 || ports[k].buffer_id == 3) {
+		if (p->dir > 2) {
+			return fail("port dir must be 0 (input), 1 (output) "
+				    "or 2 (scratch)");
+		}
+		if (p->dir == 2 ? p->buffer_id != ANE_M2_SCRATCH_BUFID
+				: (p->buffer_id >= TILE_COUNT ||
+				   p->buffer_id == 2 || p->buffer_id == 3)) {
 			return fail("port buffer_id collides with a section "
 				    "id or is out of range");
 		}
-		if (ports[k].bar_slot > 0x3cu) {
-			return fail("port bar_slot outside the 61-slot BAR "
-				    "range");
+		if (p->bar_slot < 2 || p->bar_slot > 0x3cu) {
+			return fail("port bar_slot outside BAR slots 2..60");
 		}
-		if (ports[k].dir == 0) {
-			inputs++;
-		} else if (ports[k].dir == 1) {
-			outputs++;
-		} else {
-			return fail("port dir must be 0 (input) or 1 "
-				    "(output)");
+		for (j = 0; j < k; j++) {
+			if (ports[j].buffer_id == p->buffer_id ||
+			    ports[j].bar_slot == p->bar_slot) {
+				return fail("two ports share a buffer_id or a "
+					    "BAR slot");
+			}
 		}
+		counts[p->dir]++;
 	}
-	if (inputs != input_count || outputs != 1) {
-		return fail("port table must have input_count inputs and "
-			    "exactly one output");
+	if (counts[0] != input_count || !counts[1] || counts[2] > 1) {
+		return fail("port table must have input_count inputs, at "
+			    "least one output and at most one scratch");
 	}
 
-	/* Fill model->io with the inputs in caller order, then the
-	 * output: the legacy build's order, so ane_m2_send/read index
-	 * the same way on both paths. The firmware treats the order as
-	 * opaque (it only checks id uniqueness and id!=2/3). */
+	/* io table: the inputs, then the outputs, each in caller order,
+	 * then the scratch (the derived build's order). ane_m2_send/read
+	 * index each direction by position; the firmware treats the order
+	 * as opaque (it only checks id uniqueness and id!=2/3). */
 	model->io_count = 0;
-	for (k = 0; k < port_count * 2; k++) {
-		const struct ane_m2_port_spec *p = &ports[k % port_count];
-		struct ane_m2_io *io;
+	model->scratch_io_index = UINT32_MAX;
+	for (dir = 0; dir < 3; dir++) {
+		for (k = 0; k < port_count; k++) {
+			struct ane_m2_io *io;
 
-		if (p->dir != (k < port_count ? 0u : 1u)) {
-			continue;
+			if (ports[k].dir != dir) {
+				continue;
+			}
+			if (dir == 2) {
+				model->scratch_io_index = model->io_count;
+			}
+			io = &model->io[model->io_count++];
+			io->buffer_id = ports[k].buffer_id;
+			io->dir = dir;
+			io->size = ports[k].tile_bytes;
 		}
-		io = &model->io[model->io_count++];
-		io->buffer_id = p->buffer_id;
-		io->dir = p->dir;
-		io->size = p->tile_bytes;
 	}
 
 	/* Build the union ref set from the port table directly:
@@ -1474,7 +1680,6 @@ static int ane_m2_program_build_ports_inner(
 		model->call_ref_count[0] = ref_count;
 	}
 	model->calls = 1;
-	model->scratch_io_index = UINT32_MAX;
 
 	/* Descriptor section + kernel constant region, same as the
 	 * legacy path. */
@@ -1508,6 +1713,11 @@ static int ane_m2_program_build_ports_inner(
 			return fail("firstTaskBytes disagrees with the "
 				    "walked first task");
 		}
+		err = check_bound_slots(desc_buf, tasks, ntasks, model,
+					krn_size);
+		if (err) {
+			return err;
+		}
 	}
 	{
 		uint8_t *kern = sec_alloc(secs, ANE_M2_SEC_KERNEL,
@@ -1518,81 +1728,7 @@ static int ane_m2_program_build_ports_inner(
 		memcpy(kern, d + ANEC_M2_HEADER_SIZE + const_off, krn_size);
 	}
 
-	gen_size = 0x208 + 0x30ULL * model->io_count;
-	gen = sec_alloc(secs, ANE_M2_SEC_GENERIC, gen_size);
-	if (!gen) {
-		return -ENOMEM;
-	}
-	put_le32(gen + 0x00, 1);
-	put_le32(gen + 0x04, 0x10);
-	put_le32(gen + 0x204, model->io_count);
-	for (k = 0; k < model->io_count; k++) {
-		const struct ane_m2_io *io = &model->io[k];
-		uint8_t *e = gen + 0x208 + 0x30ULL * k;
-		uint32_t dir_field = io->dir ? 2 : 1;
-
-		put_le32(e + 0x00, 1);
-		put_le32(e + 0x04, io->buffer_id);
-		put_le32(e + 0x08, io->dir);
-		put_le32(e + 0x10, dir_field);
-		put_le64(e + 0x20, io->size);
-		put_le32(e + 0x28, 0xffff);
-	}
-
-	oper = sec_alloc(secs, ANE_M2_SEC_OPERATION,
-			 4 + 0x40cULL * model->calls);
-	if (!oper) {
-		return -ENOMEM;
-	}
-	put_le32(oper, model->calls);
-	for (k = 0; k < model->calls; k++) {
-		uint32_t n = model->call_ref_count[k];
-		uint32_t j;
-		uint8_t *rec = oper + 4 + 0x40cULL * k;
-
-		put_le32(rec + 0x08, n);
-		for (j = 0; j < n; j++) {
-			put_le32(rec + 0x0c + 8ULL * j,
-				 model->call_refs[k][j].slot);
-			put_le32(rec + 0x0c + 8ULL * j + 4,
-				 model->call_refs[k][j].tag);
-		}
-	}
-
-	proc = sec_alloc(secs, ANE_M2_SEC_PROCEDURE, 0x18 + 0x20);
-	if (!proc) {
-		return -ENOMEM;
-	}
-	put_le32(proc, 1);
-	put_le64(proc + 0x08, 0x18);
-	put_le64(proc + 0x10, 0x20);
-	put_le32(proc + 0x18, 1);
-	put_le32(proc + 0x1c, 3);
-	put_le32(proc + 0x20, 0);
-	put_le32(proc + 0x24, 0);
-	put_le32(proc + 0x28, 1);
-	put_le32(proc + 0x2c, 0);
-	put_le32(proc + 0x30, 0xffffffff);
-	put_le32(proc + 0x34, 4);
-
-	blocks = tdprop_block_count(desc_buf, tsk_size);
-	if (blocks < 0) {
-		return blocks;
-	}
-	if (!blocks) {
-		return fail("tdprop walk found no block");
-	}
-	tdp = sec_alloc(secs, ANE_M2_SEC_TDPROP, 40);
-	if (!tdp) {
-		return -ENOMEM;
-	}
-	put_le32(tdp, 1);
-	put_le32(tdp + 0x08, 0);
-	put_le32(tdp + 0x0c, (uint32_t)blocks);
-	put_le64(tdp + 0x10, 0);
-	put_le64(tdp + 0x18, 0);
-	put_le64(tdp + 0x20, tsk_size);
-	return 0;
+	return emit_io_sections(model, secs, desc_buf, tsk_size);
 }
 
 int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
@@ -1601,15 +1737,21 @@ int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
 			       struct ane_m2_model *model,
 			       struct ane_m2_sections *secs)
 {
+	int err;
+
 	if (!ports || port_count == 0) {
 		return fail("port list is empty");
 	}
-	if (port_count > ANE_M2_MAX_BINDS) {
-		return fail("port list exceeds ANE_M2_MAX_BINDS");
+	if (port_count >= ANE_M2_MAX_BINDS) {
+		return fail("port list and the kernel pair exceed "
+			    "ANE_M2_MAX_BINDS");
 	}
-	return ane_m2_program_build_ports_inner(anec, anec_size,
-					       ports, port_count,
-					       model, secs);
+	err = ane_m2_program_build_ports_inner(anec, anec_size, ports,
+					       port_count, model, secs);
+	if (err) {
+		ane_m2_sections_free(secs);
+	}
+	return err;
 }
 
 int ane_m2_program_build(const void *anec, uint64_t anec_size,
@@ -1617,12 +1759,12 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			 struct ane_m2_sections *secs)
 {
 	const uint8_t *d = anec;
-	uint64_t payload, tsk_size, krn_size, const_off, gen_size;
+	uint64_t payload, tsk_size, krn_size, const_off;
 	uint32_t first_task, task_count, input_count, version, k;
-	uint8_t *desc, *kern, *gen, *oper, *proc, *tdp;
+	uint8_t *desc, *kern;
 	struct ane_task tasks[ANE_M2_MAX_TASKS];
 	uint32_t ntasks = 0;
-	int blocks, err;
+	int err;
 
 	memset(secs, 0, sizeof(*secs));
 	memset(model, 0, sizeof(*model));
@@ -1786,7 +1928,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 		uint32_t i;
 		int has_scratch = 0;
 		for (i = 0; i < model->call_ref_count[0]; i++) {
-			if (model->call_refs[0][i].tag == 0x40) {
+			if (model->call_refs[0][i].tag == ANE_M2_SCRATCH_BUFID) {
 				has_scratch = 1;
 				break;
 			}
@@ -1813,7 +1955,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 		int found = 0;
 
 		for (i = 0; i < model->call_ref_count[0]; i++) {
-			if (model->call_refs[0][i].tag == 0x40) {
+			if (model->call_refs[0][i].tag == ANE_M2_SCRATCH_BUFID) {
 				scratch_slot = model->call_refs[0][i].slot;
 				found = 1;
 				break;
@@ -1841,7 +1983,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			return fail("io table full; cannot add scratch entry");
 		}
 		scratch_io = &model->io[model->io_count];
-		scratch_io->buffer_id = 0x40;
+		scratch_io->buffer_id = ANE_M2_SCRATCH_BUFID;
 		scratch_io->dir = 2;
 		scratch_io->size = scratch_bytes;
 		model->io_count++;
@@ -1855,122 +1997,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	}
 	memcpy(kern, d + ANEC_M2_HEADER_SIZE + const_off, krn_size);
 
-	/* Generic section: 0x208-byte header + 0x30-byte entries. */
-	gen_size = 0x208 + 0x30ULL * model->io_count;
-	gen = sec_alloc(secs, ANE_M2_SEC_GENERIC, gen_size);
-	if (!gen) {
-		return -ENOMEM;
-	}
-	put_le32(gen + 0x00, 1);    /* magic (fw135 0x481fc) */
-	put_le32(gen + 0x04, 0x10); /* version <= 0x10 (0x48208) */
-	put_le32(gen + 0x204, model->io_count);
-	for (k = 0; k < model->io_count; k++) {
-		const struct ane_m2_io *io = &model->io[k];
-		uint8_t *e = gen + 0x208 + 0x30ULL * k;
-		uint32_t type_field;
-		uint32_t dir_field;
-
-		if (io->dir == 2) {
-			/* Scratch: firmware treats it as input for BAR
-			 * resolution; type 0 / dir 1 (input-side buffer).
-			 * validateCall 0x48df8 only checks id!=2/3 and
-			 * id uniqueness; the type byte is not consulted
-			 * for BAR resolution. */
-			type_field = 0;
-			dir_field = 1;
-		} else {
-			type_field = io->dir;
-			dir_field = io->dir ? 2 : 1;
-		}
-		put_le32(e + 0x00, 1); /* flags: present */
-		put_le32(e + 0x04, io->buffer_id);
-		put_le32(e + 0x08, type_field);
-		put_le32(e + 0x10, dir_field);
-		put_le64(e + 0x20, io->size);
-		put_le32(e + 0x28, 0xffff); /* sentinel, mirrored from h14conv */
-	}
-
-	/* Operation section: u32 tot + N 0x40c-byte records. type 0 (kernel
-	 * op) with tdCount 0 short-circuits the kernel-ref resolver
-	 * (fw135 0x48904); refCount refs {slot, tag} at +0x10. The existing
-	 * 9 stage 1-4 fixtures get N == 1 with the union of all per-task
-	 * refs; the Parakeet island ANECs get N == taskCount (one record per
-	 * call, refs specific to that call's task).
-	 *
-	 * PROVEN on hardware for N==1 (boot 8f468602: add, refs {4,5}{5,4}
-	 * {6,6}). The N==taskCount form is INFERRED: the firmware reads
-	 * call->recordIdx (fw135 0x44ea0 ldr w10, [x9, #0xc]!; cbz w10) and
-	 * indexes into the operation section, so each call may pick its own
-	 * record. The byte-identical match to the lab Python builder
-	 * (which emits one record per task when refs differ across tasks)
-	 * confirms the encoding. */
-	oper = sec_alloc(secs, ANE_M2_SEC_OPERATION,
-			 4 + 0x40cULL * model->calls);
-	if (!oper) {
-		return -ENOMEM;
-	}
-	put_le32(oper, model->calls);
-	for (k = 0; k < model->calls; k++) {
-		uint32_t n = model->call_ref_count[k];
-		uint32_t j;
-		uint8_t *rec = oper + 4 + 0x40cULL * k;
-
-		put_le32(rec + 0x08, n);
-		for (j = 0; j < n; j++) {
-			put_le32(rec + 0x0c + 8ULL * j,
-				 model->call_refs[k][j].slot);
-			put_le32(rec + 0x0c + 8ULL * j + 4,
-				 model->call_refs[k][j].tag);
-		}
-	}
-
-	/* Procedure section: tot + {u64 offset, u64 size} + records. Content
-	 * mirrors the h14conv procedure.bin (load-proven on hardware);
-	 * record +4 = 3 is eCSneCmdProgramProcedureContentType_3, accepted
-	 * by getProcedureCallType with {0,3,4} (fw135 0x5a04c region). No
-	 * rule for other contents was derived, so it stays fixed. */
-	proc = sec_alloc(secs, ANE_M2_SEC_PROCEDURE, 0x18 + 0x20);
-	if (!proc) {
-		return -ENOMEM;
-	}
-	put_le32(proc, 1);
-	put_le64(proc + 0x08, 0x18);
-	put_le64(proc + 0x10, 0x20);
-	put_le32(proc + 0x18, 1);
-	put_le32(proc + 0x1c, 3);
-	put_le32(proc + 0x20, 0);
-	put_le32(proc + 0x24, 0);
-	put_le32(proc + 0x28, 1);
-	put_le32(proc + 0x2c, 0);
-	put_le32(proc + 0x30, 0xffffffff);
-	put_le32(proc + 0x34, 4);
-
-	/* tdprop: one segment covering the whole descriptor, blockNbr from
-	 * the firmware block walk (fw135 0x486a0; the walked count must
-	 * match, 0x48798). The 5-task Parakeet islands exercise this:
-	 * each task is one block in the descriptor (stride 0x30 when
-	 * the task header has bit 2 set, else 0x10); the walker counts
-	 * them all and the segment's blockNbr must match. PROVEN by the
-	 * byte-identical match to the lab Python builder. */
-	blocks = tdprop_block_count(desc, tsk_size);
-	if (blocks < 0) {
-		return blocks;
-	}
-	if (!blocks) {
-		return fail("tdprop walk found no block; the firmware deep "
-			    "check would reject the descriptor");
-	}
-	tdp = sec_alloc(secs, ANE_M2_SEC_TDPROP, 40);
-	if (!tdp) {
-		return -ENOMEM;
-	}
-	put_le32(tdp, 1);
-	put_le32(tdp + 0x08, 0); /* a */
-	put_le32(tdp + 0x0c, (uint32_t)blocks);
-	put_le64(tdp + 0x10, 0); /* segment offset */
-	put_le64(tdp + 0x18, 0); /* pad */
-	put_le64(tdp + 0x20, tsk_size);
-	return 0;
+	return emit_io_sections(model, secs, desc, tsk_size);
 }
 
 void ane_m2_sections_free(struct ane_m2_sections *secs)
