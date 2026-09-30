@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""omarchy-ane-firmware-fetch: install this Mac's ANE firmware from Apple.
+
+M2 Max (T6021) only. Linux must start the ANE firmware there, and the driver
+accepts exactly one image: the selene payload from the macOS 13.5 (22G74)
+stub that every Omarchy M1/M2 install boots. This tool reads the stub version
+from the device tree, maps it to a pinned IPSW URL, range-fetches only the ANE
+member (about 5 MB of a 12.9 GB IPSW), unwraps the IM4P, and installs the
+payload only when its size and SHA-256 equal the driver's pin. M1-family
+chips need nothing: iBoot preloads their ANE firmware.
+
+We never redistribute Apple firmware. Each Mac fetches its own copy.
+Dependencies: Python 3, stdlib only. The pinned IM4P ("anef", 5,004,097
+bytes, sha256 3647759e...) stores its Mach-O payload uncompressed, so no
+LZFSE decoder is needed.
+
+  sudo omarchy-ane-firmware-fetch [--root DIR]
+
+--root reads the device tree from DIR/sys/... and installs under DIR/usr/lib/
+firmware (for tests). Exit 0: installed, already installed, or not needed.
+Exit 1: refused; nothing was written.
+"""
+import argparse
+import hashlib
+import http.client
+import os
+import re
+import sys
+import tempfile
+import urllib.request
+import zipfile
+from pathlib import Path
+
+# The driver's pin: ane/t6021/ane_t6021_fwload.c ane_fw_sha256_expected and
+# ane/t6021/ane_fw_validate.h ANE_FW_BLOB_SIZE. Change them together.
+PIN_SHA256 = "a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc"
+PIN_SIZE = 0x4C5B28
+FIRMWARE = "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
+MEMBER = "Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p"
+MEMBER_MAX = 16 << 20
+
+# Stub macOS version -> IPSW, from AsahiLinux/asahi-installer src/main.py
+# IPSW_VERSIONS. Apple's mesu catalog no longer lists 13.5, so the URL is pinned.
+IPSW = {
+    "13.5": "https://updates.cdn-apple.com/2023SummerFCS/fullrestores/032-69606/"
+            "D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw",
+}
+NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
+FETCH = ("apple,t6021",)
+TIMEOUT = 30
+
+
+class Refuse(Exception):
+    pass
+
+
+def dt_strings(path):
+    try:
+        return [s for s in path.read_bytes().decode("ascii", "replace").split("\0") if s]
+    except OSError as e:
+        raise Refuse(f"cannot read {path}: {e.strerror}. Is this an Apple Silicon Linux system?")
+
+
+def stub_version(text):
+    m = re.match(r"\s*(\d+\.\d+(?:\.\d+)?)", text)
+    if not m:
+        raise Refuse(f"cannot parse asahi,os-fw-version {text!r}")
+    return m.group(1)
+
+
+class RangeFile:
+    """Read-only, seekable view of a URL. Every read is one HTTP range request."""
+
+    def __init__(self, url):
+        self.url, self.pos = url, 0
+        with self._get(0, 0) as head:  # closes without reading a non-206 body
+            total = head.headers.get("Content-Range", "").rpartition("/")[2]
+            if head.status != 206 or not total.isdigit():
+                raise Refuse(f"{url} does not serve range requests (HTTP {head.status})")
+        self.size = int(total)
+
+    def _get(self, start, end):
+        req = urllib.request.Request(self.url, headers={"Range": f"bytes={start}-{end}"})
+        return urllib.request.urlopen(req, timeout=TIMEOUT)
+
+    def seekable(self):
+        return True
+
+    def tell(self):
+        return self.pos
+
+    def seek(self, offset, whence=0):
+        self.pos = (offset, self.pos + offset, self.size + offset)[whence]
+        return self.pos
+
+    def read(self, n=-1):
+        if n is None or n < 0 or n > self.size - self.pos:
+            n = self.size - self.pos
+        if n <= 0:
+            return b""
+        with self._get(self.pos, self.pos + n - 1) as r:
+            if r.status != 206:
+                raise OSError(f"range request at {self.pos} got HTTP {r.status}")
+            data = r.read()
+        if len(data) != n:
+            raise OSError(f"short range read at {self.pos}: {len(data)} of {n} bytes")
+        self.pos += n
+        return data
+
+
+def fetch_member(url):
+    with zipfile.ZipFile(RangeFile(url)) as z:
+        info = z.getinfo(MEMBER)
+        if info.file_size > MEMBER_MAX:
+            raise Refuse(f"{MEMBER} is {info.file_size} bytes; expected about 5 MB")
+        return z.read(info)  # zipfile checks the member's CRC-32
+
+
+def der(buf, pos):
+    """One DER header at pos: (tag, content start, content end)."""
+    if pos + 2 > len(buf):
+        raise Refuse("IM4P is truncated")
+    tag, length, pos = buf[pos], buf[pos + 1], pos + 2
+    if length & 0x80:
+        k = length & 0x7F
+        length, pos = int.from_bytes(buf[pos:pos + k], "big"), pos + k
+    if pos + length > len(buf):
+        raise Refuse("IM4P is truncated")
+    return tag, pos, pos + length
+
+
+def im4p_payload(blob):
+    """IM4P = SEQUENCE { "IM4P", type, description, OCTET STRING payload, ... }."""
+    tag, pos, end = der(blob, 0)
+    fields = []
+    while tag == 0x30 and pos < end and len(fields) < 4:
+        field = der(blob, pos)
+        fields.append(field)
+        pos = field[2]
+    if len(fields) < 4 or blob[fields[0][1]:fields[0][2]] != b"IM4P" or fields[3][0] != 0x04:
+        raise Refuse("the IPSW member is not an IM4P")
+    return blob[fields[3][1]:fields[3][2]]
+
+
+def verify(data):
+    digest = hashlib.sha256(data).hexdigest()
+    if len(data) != PIN_SIZE or digest != PIN_SHA256:
+        raise Refuse(f"got {len(data)} bytes, sha256 {digest}; the driver pins {PIN_SIZE} bytes, "
+                     f"sha256 {PIN_SHA256}")
+    return digest
+
+
+def install(data, dest):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=".fetch-")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, dest)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def run(root):
+    dt = root / "sys/firmware/devicetree/base"
+    chips = dt_strings(dt / "compatible")
+    chip = next((c for c in chips if re.fullmatch(r"apple,t\d+", c)), "unknown")
+    if chip in NO_FETCH:
+        print(f"{chip}: iBoot preloads the ANE firmware on M1 chips. Nothing to fetch.")
+        return
+    if chip not in FETCH:
+        raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
+
+    dest = root / "usr/lib/firmware" / FIRMWARE
+    try:
+        verify(dest.read_bytes())
+        print(f"{dest} is already installed and matches the pin.")
+        return
+    except (OSError, Refuse):
+        pass
+    parent = dest.parent
+    while not parent.exists():
+        parent = parent.parent
+    if not os.access(parent, os.W_OK):
+        raise Refuse(f"cannot write {parent}. Run with sudo")
+
+    version = stub_version("".join(dt_strings(dt / "chosen/asahi,os-fw-version")))
+    url = IPSW.get(version)
+    if url is None:
+        raise Refuse(f"stub macOS {version}: no pinned ANE image. The driver accepts only the "
+                     "13.5 (22G74) image")
+
+    print(f"stub macOS {version}: fetching {MEMBER}")
+    try:
+        blob = fetch_member(url)
+    except (OSError, http.client.HTTPException, zipfile.BadZipFile, KeyError) as e:
+        raise Refuse(f"cannot fetch from Apple's CDN: {e}. Check the network and try again")
+    data = im4p_payload(blob)
+    digest = verify(data)
+    install(data, dest)
+    print(f"installed {dest} ({len(data)} bytes, sha256 {digest})")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--root", type=Path, default=Path("/"), help="system root (tests)")
+    args = ap.parse_args(argv)
+    try:
+        run(args.root)
+    except Refuse as e:
+        print(f"omarchy-ane-firmware-fetch: {e}\nNothing was installed.", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

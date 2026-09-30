@@ -34,6 +34,15 @@ The ABI-1 stack passed all eight compiler qualification packages and a finite-in
 
 Compiler evidence: [M1 native progress](https://github.com/joshuaswarren/mil-hwx-compiler/blob/main/receipts/2026-09-06-m1-native-progress.json). Raw Apple firmware and private host details are not distributed.
 
+## Packaged install
+
+The package installs the driver. You do not need `install.sh`.
+
+- **DKMS.** `dkms.conf` builds `ane.ko` from `ane/` for each kernel that has headers. DKMS builds it again after each kernel update. Install `linux-aurora-headers`. The build does not include the T6021 lab modules in `ane/t6021/`. The chip gate in `ane.ko` decides which SoC binds. T8103 and T6001 bind. T6021 does not bind.
+- **Device access.** `packaging/70-omarchy-ane.rules` sets the ANE `/dev/accel` node to `root:render`, mode `0660`, with the `uaccess` tag. The user at the local seat can open it. Other users and services must be in the `render` group. `install.sh --ane` from mlx-omarchy adds the user to `render`. It continues to work.
+- **Check.** Run `omarchy-ane-check`. It checks the device-tree node, the module build for the running kernel, the loaded module, the bound device, and the device node. It does not load the module. It exits with 1 when a check fails. After a kernel update, run `omarchy-ane-check --installed`. It checks the module build for each installed kernel.
+- **Firmware.** M1 chips need no firmware from Linux. iBoot loads it. On M2 Max (T6021), run `sudo omarchy-ane-firmware-fetch`. It reads the stub macOS version. It downloads only the ANE file from Apple and unwraps it. It installs the file only when the size and SHA-256 agree with the driver. It needs only Python 3. It stops and installs nothing when the version is unknown, the network is down, or the hash is different. We do not distribute Apple firmware.
+
 ## Chip coverage
 
 Linux `compatible` is the driver match. Internal names follow Apple's SoC table (H13G, H14J, …); unknown means exactly that. Each SoC carries one of three driver states, mirroring the qualification tiers on the descriptors in `ane/src/ane_drv.c`:
