@@ -8,14 +8,16 @@ surface; padding lanes are zero).
 
 ## Prerequisites
 
-- Kernel `7.1.13-ARCH-polltx` (the proven add-path kernel). The
-  module builds against `/lib/modules/$(uname -r)/build`.
-- Device-tree overlay: enable the `apple,t6021-ane` compatible on
-  the `ane@284000000` node, attach `apple,always-on` to
-  `ane_sys_mpm@4000` (the override is what genpd needs to lower the
-  island), and provide the three `ane_dart{0,1,2}` iommus wired to
-  `ane_cpu`. The shipped overlay is `ane/t6021-j414c-ane-rtkit.dts`;
-  apply with `fdtoverlay`.
+- Kernel: stock linux-asahi `7.1.13-3-1-ARCH` (proven 2026-09-30 with the
+  packaged overlay, receipts/2026-09-30-t6021-stock-mailbox) or
+  `7.1.13-ARCH-polltx`. The module builds against
+  `/lib/modules/$(uname -r)/build`.
+- Device tree: `packaging/dt/t6021-ane.dts` adds the `apple,t6021-ane`
+  node at `ane@284000000`, the three ANE DARTs, the ANE mailbox
+  (`recv-not-empty` 884, `send-empty` 1833) and the alias IOVA
+  reservation. `omarchy-ane-dt apply` puts it in m1n1's device trees; by
+  hand, `dtc -@` and `fdtoverlay` from dtc 1.7.1 or newer (older
+  `fdtoverlay` renumbers the AIC phandle).
 - Firmware: place the pinned selene payload at
   `/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho`
   (sha256 `a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`).
