@@ -246,17 +246,63 @@ static void mut_empty_stream(uint8_t *a, long *size)
 	a[0x0f] = 0; /* taskCount 0 */
 }
 
-/* Island ANECs (island-c-pv, island-a-kt, island-a-attn-p1,
- * island-b-select-runtime, rms-c2048-gamma) reuse BAR slots across tasks
- * with different tags. fw135.3 pushToHWDirect has no per-task BAR walk
- * (the 61-slot patch table at netDesc+0xC is global per call,
- * 0x44e58-0x44ea4), so the operation section for these programs cannot
- * be expressed under the single-record model that pushToHWDirect reads.
- * The C builder refuses them at build time with the cross-task slot
- * conflict diagnostic. The procedure section is unchanged (tot=1,
- * contentType=3, rowIdx=0); the islands are blocked by the BAR table,
- * not by anything else. This test loads each island and asserts the
- * refusal. */
+/* Island ANECs (island-c-pv, island-a-kt, island-a-attn-p1) reuse BAR
+ * slot 3 across tasks with different tags (dst tag 4 in the head task,
+ * KernelDMA tag 2 later). IslandBind (2026-09-30): the scratch merge
+ * retags those refs to a fresh scratch bufferId (0x40) and adds a
+ * scratch entry to the generic section + io table, so the islands build
+ * as ONE operation record with globally unique slots. This test asserts
+ * the build succeeds, the scratch entry exists, and the op refs name
+ * {3 -> 0x40} with the remaining slots unchanged. */
+static int check_island_scratch(const char *dir, const char *op)
+{
+	const char *anec_path = fixture(dir, op, "program-0.anec");
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint8_t *anec;
+	long size;
+	int err;
+	int good = 1;
+	unsigned i;
+	int has_scratch_ref = 0;
+
+	anec = read_all(anec_path, &size);
+	if (!anec) {
+		return 0;
+	}
+	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
+	if (err != 0) {
+		printf("  [FAIL] %s: scratch merge build failed (%d)\n", op,
+		       err);
+		free(anec);
+		return 0;
+	}
+	good &= model.calls == 1;
+	good &= model.scratch_io_index != UINT32_MAX;
+	good &= model.scratch_io_index == model.io_count - 1;
+	for (i = 0; i < model.call_ref_count[0]; i++) {
+		if (model.call_refs[0][i].slot == 3 &&
+		    model.call_refs[0][i].tag == 0x40) {
+			has_scratch_ref = 1;
+		}
+	}
+	good &= has_scratch_ref;
+	good &= model.io[model.scratch_io_index].buffer_id == 0x40;
+	good &= model.io[model.scratch_io_index].size > 0;
+	ane_m2_sections_free(&secs);
+	free(anec);
+	printf("  [%s] %s: scratch merge build (%zu refs, scratch %llu B)\n",
+	       good ? "ok" : "FAIL", op,
+	       (unsigned long)model.call_ref_count[0],
+	       (unsigned long long)(good ? model.io[model.io_count - 1].size :
+					   0));
+	return good;
+}
+
+/* island-b-select-runtime mixes a TileDMA src base into its slot-3
+ * ref set (srcA at slot 3 in tasks 1/3/4) AND has a within-task slot
+ * conflict (task 4: srcA and dst both at slot 3). Scratch merge cannot
+ * bind a real channel buffer to scratch, so the builder refuses. */
 static int check_island_refusal(const char *dir, const char *op)
 {
 	const char *anec_path = fixture(dir, op, "program-0.anec");
@@ -296,16 +342,22 @@ int main(int argc, char **argv)
 		 * refuse it (cross-task conflict). */
 		"rms-c2048-gamma",
 	};
-	static const char *const islands[] = {
-		/* island-c-pv, island-a-kt, island-a-attn-p1 and
-		 * island-b-select-runtime reuse BAR slot 3 (or 1/7 in
-		 * b-select) with different tags across tasks. The base
-		 * rule and the legacy rule both refuse them with the
-		 * "global unique slots" diagnostic. rms-c2048-gamma is
-		 * NOT in this list: under the legacy rule its tags happen
-		 * to be consistent, so the C builder accepts it; the
-		 * legacy-rule semantics are documented above. */
+	static const char *const scratch_islands[] = {
+		/* island-c-pv, island-a-kt, island-a-attn-p1 reuse BAR
+		 * slot 3 with different tags across tasks, but every ref
+		 * at that slot sits at a scratch-eligible register
+		 * (TileDMA dst in the head task, KernelDMA later). The
+		 * scratch merge retags the slot to bufferId 0x40 and the
+		 * builder emits ONE op record. */
 		"island-c-pv", "island-a-kt", "island-a-attn-p1",
+	};
+	static const char *const islands[] = {
+		/* island-b-select-runtime mixes a TileDMA src base into
+		 * its slot-3 ref set and has a within-task slot conflict
+		 * (task 4 binds both srcA and dst to slot 3). Scratch
+		 * merge cannot express that; the refusal stands. rms is
+		 * NOT here: under the legacy rule its slot-1 tags are
+		 * consistent, so it byte-identically builds (above). */
 		"island-b-select-runtime",
 	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
@@ -319,6 +371,13 @@ int main(int argc, char **argv)
 		ok = check_byte_identity(dir, ops[i]) && ok;
 	}
 	ok = check_f16_add() && ok;
+
+	printf("island scratch merge (single-record op section, slot retagged "
+	       "to scratch 0x40):\n");
+	for (i = 0; i < sizeof(scratch_islands) / sizeof(scratch_islands[0]);
+	     i++) {
+		ok = check_island_scratch(dir, scratch_islands[i]) && ok;
+	}
 
 	printf("island refusal (cross-task BAR-slot conflict, "
 	       "fw135.3 pushToHWDirect is global per call):\n");

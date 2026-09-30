@@ -62,10 +62,13 @@ struct ane_m2_io {
 };
 
 /* One operation-section ref: the firmware copies the IOVA of buffer `tag`
- * into local BAR `slot` (fw135 pushToHWDirect 0x44c98). */
+ * into local BAR `slot` (fw135 pushToHWDirect 0x44c98). `addr` is the TD
+ * register offset the ref patches (kept here for scratch-merge
+ * eligibility; not part of the emitted op-section bytes). */
 struct ane_m2_ref {
 	uint32_t slot;
 	uint32_t tag;
+	uint32_t addr;
 };
 
 /* ANE_M2_MAX_CALLS bounds the per-call ref set: one record per task in the
@@ -77,6 +80,11 @@ struct ane_m2_ref {
 struct ane_m2_model {
 	struct ane_m2_io io[ANE_M2_MAX_BINDS];
 	uint32_t io_count;
+	/* Index of the scratch buffer inside io[], or UINT32_MAX when no
+	 * scratch merge was needed (the byte-identity path for stages
+	 * 1-4 + rms-c2048-gamma). The scratch entry's dir is set to 2
+	 * (a host-internal value) so ane_m2_send/read skip it. */
+	uint32_t scratch_io_index;
 	/* One ref-set per call; the operation section emits calls records,
 	 * each with call_ref_count[j] {slot, tag} pairs. Single-call programs
 	 * (the existing stage 1-4 fixtures) collapse to calls == 1. */
