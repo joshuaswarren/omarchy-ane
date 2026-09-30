@@ -69,8 +69,12 @@ if [[ -r $dt/compatible ]] && tr '\0' '\n' <"$dt/compatible" | grep -qx 'apple,t
   esac
   [[ $state == *firmware=pinned* ]] ||
     bad "the M2 ANE firmware is not the pinned image. Run: sudo omarchy-ane-firmware-fetch"
-  [[ $state != *mailbox=none* ]] ||
-    bad "kernel $kver cannot drive the ANE mailbox: its apple-mailbox does not poll TX, and ane_t6021 has no mailbox controller of its own. Boot a kernel that can."
+  case $state in
+    *mailbox=ok*) ;;
+    *mailbox=no-send-empty*) bad "the ANE mailbox in this Mac's device tree has no send-empty interrupt, so the stock apple-mailbox cannot bind it. Update omarchy-ane, then run: sudo omarchy-ane-dt apply" ;;
+    *mailbox=no-node*) bad "this Mac's device tree has no T6021 ANE node, even with the omarchy-ane overlay" ;;
+    *) bad "cannot build this Mac's device tree for kernel $kver to check the ANE mailbox. It needs dtc and /usr/lib/modules/$kver/dtbs." ;;
+  esac
 fi
 
 # 1. ANE node. Without it nothing else can pass, so stop here.
