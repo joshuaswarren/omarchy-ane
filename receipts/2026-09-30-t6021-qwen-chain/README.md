@@ -1,12 +1,12 @@
 # Qwen staged decode on T6021 — milestone receipt
 
-Date: 2026-09-30. Worktree branch: agent/m2-installed-path. Private preflight record: ~/.local/share/apple-silicon-lab/entries/QwenM2/20260930T153451Z-jw14m2-linux-qwen-chain.md. Program-20 run record: ~/.local/share/apple-silicon-lab/entries/QwenM2/20260930T184718Z-jw14m2-linux-prog020-readout.md.
+Date: 2026-09-30. Worktree branch: agent/m2-installed-path. Private preflight and program-20 run records: under ~/.local/share/apple-silicon-lab/entries/QwenM2/.
 
 ## M0 — inventory: PASS
 
 - The M1 contract contains 38 programs, bank hashes, and a paired lane/port/shape manifest. The hashes are not output arrays.
 - The e0438 arrays in Jw16Levers8/e5rt-embed-capture match all four program-20 M1 logical fp16 hashes. The similarly named e0020 arrays from e5rt-capture3 do not match this program-20 golden and were not used.
-- All 38 M1 MIL and weights.bin exports are present under /var/tmp/qwen38-staged-jwm1/prog_NNN/. The plan records every staged program's constant inventory, source, and weight-file size.
+- All 38 M1 MIL and weights.bin exports are present under /var/tmp/qwen38-staged-<M1-host>/prog_NNN/. The plan records every staged program's constant inventory, source, and weight-file size.
 - The real-weight H14 ANEC set is /var/tmp/qwen-real-anec-h14/, distinct from the synthetic batch8 proxy. Program 20 has 20 tasks, 3 inputs, 1 output, and 83,892,736 constant bytes. The manifest warns that tensor/channel identity is inferred from size/order.
 - The program-20 M1 MIL has inputs t7, t2, t0 and output t15. The real ANEC metadata names its input channels t15, t2, t7 and output channel t0. Shape-based channel mapping remains unverified.
 
