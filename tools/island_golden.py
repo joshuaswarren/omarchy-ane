@@ -218,9 +218,15 @@ def device_full_array(dev_arr_flat, cd_o):
     return out
 
 
-def metrics_bmm(dev_full, ref_full, cd_o):
-    """Per-island matmul metrics: rel_l2, max abs, mean abs,
-    per-head worst rel_l2, NaN/Inf count, padding-zero check."""
+def bmm_verdict(metrics):
+    return "PASS" if (
+        metrics["pad_zero"]
+        and metrics["nan_count"] == 0
+        and metrics["inf_count"] == 0
+        and metrics["in_band_pct"] >= 99.5
+    ) else "FAIL"
+def metrics_bmm(dev_full, ref_full, cd_o, w, x):
+    """Per-island matmul metrics and the measured in-band rate."""
     N, C, H, W = cd_o["N"], cd_o["C"], cd_o["H"], cd_o["W"]
     diff = dev_full - ref_full
     abs_diff = np.abs(diff)
@@ -231,6 +237,17 @@ def metrics_bmm(dev_full, ref_full, cd_o):
     mean_abs = float(abs_diff.mean())
     # rel_l2 = ||dev - ref||_2 / ||ref||_2 (vectorized over all valid lanes)
     rel_l2 = float(np.sqrt((diff ** 2).sum()) / max(np.sqrt((ref_full ** 2).sum()), 1e-30))
+    sumabs = np.einsum(
+        "...mk,...kn->...mn",
+        np.abs(x.astype(np.float64)),
+        np.abs(w.astype(np.float64)),
+        optimize=True,
+    )
+    ulp = np.abs(np.spacing(ref_full.astype(np.float16))).astype(np.float64)
+    in_band = abs_diff <= np.maximum(3.0 * ulp, sumabs * (2.0 ** -9))
+    near_zero = sumabs <= (2.0 ** -10)
+    in_band[near_zero] = dev_full[near_zero] == ref_full[near_zero]
+    in_band_pct = 100.0 * float(in_band.sum()) / in_band.size
     # per-head worst rel_l2: compute for each (b, c) slice
     per_head_rel_l2 = []
     for n in range(N):
@@ -254,11 +271,12 @@ def metrics_bmm(dev_full, ref_full, cd_o):
         rel_l2=rel_l2,
         max_abs=max_abs,
         mean_abs=mean_abs,
-        per_head_worst=per_head_worst,
-        per_head_mean=per_head_mean,
+        per_head_worst=max(per_head_rel_l2),
+        per_head_mean=float(np.mean(per_head_rel_l2)),
         nan_count=nans,
         inf_count=infs,
         pad_zero=pad_zero,
+        in_band_pct=in_band_pct,
     )
 
 
@@ -381,11 +399,9 @@ def main():
         ch5_arr = in_files[5][2]  # fp16
         ch6_arr = in_files[6][2]
         ref_full = bmm_reference_from_inputs(island, ch5_arr, ch6_arr, cd_o)
-        m = metrics_bmm(dev_full, ref_full, cd_o)
-        # Plan-doc comparator: rel_l2 <= 0.000208 for select; for bmm the
-        # receipt gate is `in-band >= 99.5% AND pad_zero`. Here we also
-        # emit absolute numerics for honest reporting.
-        verdict_bmm = "PASS" if (m["pad_zero"] and m["nan_count"] == 0 and m["inf_count"] == 0) else "FAIL"
+        m = metrics_bmm(dev_full, ref_full, cd_o, ch5_arr, ch6_arr)
+        # Match the receipt gate while retaining the aggregate error metrics.
+        verdict_bmm = bmm_verdict(m)
         result = {
             "island": args.island,
             "kind": "bmm",

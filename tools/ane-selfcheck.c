@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <unistd.h>
 #include "ane.h"
 #include "ane_m2.h"
 #include "ane_f16_add.h"
@@ -287,8 +288,14 @@ static int check_island_scratch(const char *dir, const char *op)
 		}
 	}
 	good &= has_scratch_ref;
-	good &= model.io[model.scratch_io_index].buffer_id == 0x40;
-	good &= model.io[model.scratch_io_index].size > 0;
+	if (model.scratch_io_index < model.io_count &&
+	    model.scratch_io_index <
+		    sizeof(model.io) / sizeof(model.io[0])) {
+		good &= model.io[model.scratch_io_index].buffer_id == 0x40;
+		good &= model.io[model.scratch_io_index].size > 0;
+	} else {
+		good = 0;
+	}
 	ane_m2_sections_free(&secs);
 	free(anec);
 	printf("  [%s] %s: scratch merge build (%zu refs, scratch %llu B)\n",
@@ -353,6 +360,28 @@ static int check_island_blend(const char *anec_path, const char *label,
 	       good ? "ok" : "FAIL", label,
 	       (unsigned long)model.call_ref_count[0]);
 	return good;
+}
+
+static int check_optional_island_blend(const char *op,
+		const struct want_ref *want, unsigned nwant)
+{
+	const char *dir = getenv("ANE_ISLAND_FIXTURES_DIR");
+	char path[4096];
+	int n;
+
+	if (!dir || !*dir)
+		dir = "/var/tmp/islands-fixtures";
+	n = snprintf(path, sizeof(path), "%s/%s.anec", dir, op);
+	if (n < 0 || (size_t)n >= sizeof(path)) {
+		fprintf(stderr, "island fixture path is too long: %s\n", op);
+		return 0;
+	}
+	if (access(path, R_OK) != 0) {
+		printf("  [skip] optional island fixture unavailable: %s\n",
+		       path);
+		return 1;
+	}
+	return check_island_blend(path, op, want, nwant);
 }
 
 int main(int argc, char **argv)
@@ -424,8 +453,7 @@ int main(int argc, char **argv)
 		}
 		/* The constfill ANEC is 2.26 MiB and lives in the fixture
 		 * root, not the repo (> 1 MiB artifacts stay out of git). */
-		ok = check_island_blend(
-			"/var/tmp/islands-fixtures/island-b-select-constfill.anec",
+		ok = check_optional_island_blend(
 			"island-b-select-constfill", constfill_refs,
 			sizeof(constfill_refs) /
 			sizeof(constfill_refs[0])) && ok;
