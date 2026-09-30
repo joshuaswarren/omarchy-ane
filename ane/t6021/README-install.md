@@ -77,6 +77,28 @@ because the boot surface, the `IPC '` ring, the mailbox state,
 and the genpd links are all preserved exactly as the firmware
 expects to find them.
 
+## BO lifetime
+
+The firmware never frees a program or a process, and it reads
+section bytes and io buffers by IOVA at any time after the doorbell
+rings. The driver marks a BO `fw_ref` when the firmware receives its
+IOVA — under the fw lock, before the exchange goes out:
+
+- section BOs of a `LOAD_PROGRAM` that is sent to the firmware
+  (cache misses only: a cache hit reuses the firmware program and
+  never touches the caller's BOs);
+- the io BOs of every `PROCEDURE_CALL`, unless `free_io_bos=1`.
+
+A `fw_ref` BO is held, with its bytes counted against
+`ANE_T6021_BO_TOTAL_MAX` (2 GiB), until reboot. Every other BO frees
+when its last reference drops. Each BO holds two reference kinds:
+its handle (dropped by `BO_FREE` or fd close) and each live user
+mapping (`mmap`; fork takes one more, unmap drops one). A BO freed
+while mapped stays allocated until the mapping is torn down.
+
+The 2 GiB cap therefore bounds the memory the firmware may still be
+reading, not every allocation a short-lived context makes.
+
 ## Module parameters (compiled defaults = proven add-path config)
 
 The defaults reproduce the `load-run.sh` parameter list exactly so a
@@ -98,6 +120,7 @@ remain overridable from sysfs for bisection only.
 | `hello_wait_ms` | `1000` | rtclient | Upper bound for the RTKit HELLO wait (lab proven value) |
 | `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue |
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after the handshake |
+| `free_io_bos` | `0` | rtclient | Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob) |
 
 Lab knobs that stayed at their inert values in every proven run are
 deleted outright, not kept at 0: `fw_diag_marker`, `fw_load_stamp_base`,
@@ -122,7 +145,9 @@ exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`:
 
 - `DRM_IOCTL_ANE_BO_INIT` — allocate a coherent BO and return its
   handle.
-- `DRM_IOCTL_ANE_BO_FREE` — release the BO and unmap its IOVA.
+- `DRM_IOCTL_ANE_BO_FREE` — drop the handle. The memory frees when
+  its last reference drops, except a BO the firmware received: those
+  are held until reboot (see "BO lifetime" below).
 - `DRM_IOCTL_ANE_SUBMIT` — rejected with `-ENOTTY` on T6021.
 - `DRM_IOCTL_ANE_PROG_LOAD` (0x200) — build the LOAD_PROGRAM message
   (1..9 section records; each record carries the caller's

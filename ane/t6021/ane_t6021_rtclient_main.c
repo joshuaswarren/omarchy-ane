@@ -61,6 +61,8 @@
 #include <linux/iopoll.h>
 #include <linux/iommu.h>
 #include <linux/jiffies.h>
+#include <linux/kref.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
@@ -214,17 +216,16 @@ struct ane_rtclient {
 
 /* Per-open BO ownership (drm_file->driver_priv). Handles live in the
  * fd's list; closing the fd drops its handles (postclose). The
- * coherent buffers themselves are only freed while no firmware is
- * staged — once a CPU may be running, every DMA surface is HELD until
- * reboot (the lab rule: the firmware never sees a freed address). */
+ * coherent buffers themselves live as long as something references
+ * them: a user mapping, or the firmware (see ane_t6021_bo_release). */
 struct ane_t6021_fd {
 	struct list_head bos;
 };
 
-/* BOs are owned per open file (ane_t6021_fd); bo_lock guards the
 /* Per-file handle counter and every per-fd list against same-fd concurrent
- * ioctls. Coherent buffers are held until reboot once firmware is
- * staged (the firmware never sees a freed address).
+ * ioctls. A BO whose IOVA reached the firmware (fw_ref) is held, with
+ * its bytes counted, until reboot; every other BO frees at its last
+ * reference (see ane_t6021_bo_release).
  *
  * Cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen by the
  * H14 compiler are bounded by `reduction * columns * 2`, which reaches
@@ -234,7 +235,8 @@ struct ane_t6021_fd {
  * separately by an atomic counter under ane_t6021_bo_lock.
  *   ANE_T6021_BO_MAX       — per-BO size, the IOVA is at most 1 GiB.
  *   ANE_T6021_BO_TOTAL_MAX — total coherent BO bytes across all fds,
- *                            enforced at alloc and released at drop.
+ *                            enforced at alloc and released when the
+ *                            memory is really freed.
  * The 16 KiB alignment check is unchanged: every DMA site assumes it. */
 #define ANE_T6021_BO_MAX		SZ_1G
 #define ANE_T6021_BO_TOTAL_MAX		(2UL * SZ_1G)
@@ -244,14 +246,55 @@ struct ane_t6021_bo {
 	struct list_head node;
 	struct ane_t6021_fd *owner;
 	u32 handle;
+	struct kref refcount;		/* handle + user mappings */
 	void *cpu;			/* coherent mapping */
 	dma_addr_t dma;
 	size_t size;
+	bool fw_ref;			/* the firmware received this IOVA */
+	struct device *dev;
 };
 
 static DEFINE_MUTEX(ane_t6021_bo_lock);
 static u32 ane_t6021_next_handle = 1;
 static atomic64_t ane_t6021_bo_total_bytes = ATOMIC64_INIT(0);
+
+/* Final put: the last handle or mapping is gone. A fw_ref BO stays
+ * allocated and counted until reboot — the lab rule: the firmware
+ * never sees a freed IOVA. Every other BO frees here, so the 2 GiB
+ * cap bounds only the memory the firmware may still touch. */
+static void ane_t6021_bo_release(struct kref *ref)
+{
+	struct ane_t6021_bo *bo = container_of(ref, struct ane_t6021_bo,
+					       refcount);
+
+	if (bo->fw_ref) {
+		kfree(bo);
+		return;
+	}
+	atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
+	dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
+	kfree(bo);
+}
+
+/* A user mapping holds its BO's memory until it is torn down: open
+ * (fork, mremap split) takes a reference, close drops it. A BO the
+ * user freed while mapped stays allocated until the last mapping
+ * goes away. */
+static void ane_t6021_vm_open(struct vm_area_struct *vma)
+{
+	kref_get(&((struct ane_t6021_bo *)vma->vm_private_data)->refcount);
+}
+
+static void ane_t6021_vm_close(struct vm_area_struct *vma)
+{
+	kref_put(&((struct ane_t6021_bo *)vma->vm_private_data)->refcount,
+		 ane_t6021_bo_release);
+}
+
+static const struct vm_operations_struct ane_t6021_vm_ops = {
+	.open = ane_t6021_vm_open,
+	.close = ane_t6021_vm_close,
+};
 
 /* Serializes every firmware command (LOAD/CREATE/CALL) so the
  * cursor-on-next-64-byte-slot rule and the PMGR/TM gate cannot race. */
@@ -457,6 +500,17 @@ static unsigned int call_settle_us = 1000;
 module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
+
+/* When 1, io BOs used in a PROCEDURE_CALL are not marked fw_ref, so
+ * BO_FREE frees their memory even though the firmware received their
+ * IOVAs. Soak-test knob only: a clean run with free_io_bos=1 shows no
+ * IOMMU fault in dmesg. The default 0 keeps every published IOVA held
+ * until reboot (the lab rule: the firmware never sees a freed
+ * address). */
+static bool free_io_bos;
+module_param(free_io_bos, bool, 0644);
+MODULE_PARM_DESC(free_io_bos,
+		 "Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob; default 0 = held)");
 
 /* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
  * completion: measured 2026-09-29, an ack can arrive before the engine
@@ -783,7 +837,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	 * +0x04, iova at +0x18, size at +0x20. */
 	for (i = 0; i < user->section_count; i++) {
 		struct ane_t6021_bo *bo = NULL, *b;
-		u64 slot_base;
+		u64 slot_base, iova;
 		u8 *cmd = command->cpu;
 
 		mutex_lock(&ane_t6021_bo_lock);
@@ -793,9 +847,21 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 				break;
 			}
 		}
+		if (bo && sections[i].size <= bo->size &&
+		    sections[i].offset <= bo->size - sections[i].size) {
+			/* The IOVA below is about to be published to the
+			 * firmware, so mark the BO before the exchange:
+			 * the fw may read the section any time after the
+			 * doorbell rings, including during a timeout.
+			 * Under bo_lock the handle reference cannot go
+			 * away, so no kref is needed here. */
+			bo->fw_ref = true;
+			iova = bo->dma + sections[i].offset;
+		} else {
+			bo = NULL;
+		}
 		mutex_unlock(&ane_t6021_bo_lock);
-		if (!bo || sections[i].size > bo->size ||
-		    sections[i].offset > bo->size - sections[i].size) {
+		if (!bo) {
 			ret = -EINVAL;
 			goto out;
 		}
@@ -803,8 +869,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 		*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
 		*(u32 *)(cmd + slot_base + 0x04) =
 			cpu_to_le32(sections[i].id);
-		*(u64 *)(cmd + slot_base + 0x18) =
-			cpu_to_le64(bo->dma + sections[i].offset);
+		*(u64 *)(cmd + slot_base + 0x18) = cpu_to_le64(iova);
 		*(u64 *)(cmd + slot_base + 0x20) =
 			cpu_to_le64(sections[i].size);
 	}
@@ -946,6 +1011,7 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		for (i = 0; i < user->count; i++) {
 			struct ane_t6021_bo *bo = NULL, *b;
 			u64 slot_base = 0x60 + (u64)i * 0x30;
+			u64 iova;
 
 			mutex_lock(&ane_t6021_bo_lock);
 			list_for_each_entry(b, &fd->bos, node) {
@@ -954,22 +1020,27 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 					break;
 				}
 			}
+			if (!bo || ios[i].size > bo->size) {
+				mutex_unlock(&ane_t6021_bo_lock);
+				ret = -EINVAL;
+				goto unlock;
+			}
+			/* The IOVA below is about to be published to the
+			 * firmware, so mark the BO before the exchange
+			 * unless free_io_bos=1 (soak-test knob). Under
+			 * bo_lock the handle reference cannot go away,
+			 * so no kref is needed here. */
+			if (!free_io_bos)
+				bo->fw_ref = true;
+			iova = bo->dma;
 			mutex_unlock(&ane_t6021_bo_lock);
-			if (!bo) {
-				ret = -EINVAL;
-				goto unlock;
-			}
-			if (ios[i].size > bo->size) {
-				ret = -EINVAL;
-				goto unlock;
-			}
 			*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
 			*(u32 *)(cmd + slot_base + 0x04) =
 				cpu_to_le32(ios[i].buffer_id);
 			*(u32 *)(cmd + slot_base + 0x08) =
 				cpu_to_le32(ios[i].type);
 			*(u64 *)(cmd + slot_base + 0x18) =
-				cpu_to_le64(bo->dma);
+				cpu_to_le64(iova);
 			*(u64 *)(cmd + slot_base + 0x20) =
 				cpu_to_le64(ios[i].size);
 		}
@@ -1013,9 +1084,10 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 
 	if (args->size == 0 || args->size > ANE_T6021_BO_MAX || !fd)
 		return -EINVAL;
-	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned and
-	 * stays mapped until reboot once firmware is staged, so the bound
-	 * here is a hard cap on the firmware's visible DMA surface area. */
+	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned;
+	 * a BO whose IOVA reaches the firmware stays allocated until
+	 * reboot, so this bound caps the memory that outlives its
+	 * users. */
 	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
 	    ANE_T6021_BO_TOTAL_MAX) {
 		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
@@ -1047,6 +1119,8 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	}
 	bo->size = args->size;
 	bo->owner = fd;
+	bo->dev = drm->dev;
+	kref_init(&bo->refcount); /* the handle holds this reference */
 	mutex_lock(&ane_t6021_bo_lock);
 	bo->handle = ane_t6021_next_handle++;
 	if (bo->handle == 0)
@@ -1060,23 +1134,13 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	return 0;
 }
 
-/* Drop one handle owned by this fd. The coherent buffer is freed only
- * while no firmware is staged; once a CPU may be running, every DMA
- * surface is HELD until reboot (lab rule: the firmware never sees a
- * freed address; libane's IOVA-lifetime-v1 comment describes this).
- * The global bytes counter is debited only when the memory is really
- * freed; a HELD surface stays counted, so the 2 GiB cap bounds the
- * memory that short-lived contexts can pin until reboot. */
-static void ane_t6021_bo_drop(struct drm_device *drm, struct ane_t6021_bo *bo)
+/* Drop one handle owned by this fd. The kref may keep the memory
+ * alive past this call — a user mapping still holds a reference — so
+ * the final ane_t6021_bo_release makes the free-or-hold decision. */
+static void ane_t6021_bo_drop(struct ane_t6021_bo *bo)
 {
-	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
-
 	list_del(&bo->node);
-	if (bo->cpu && !ane->fw) {
-		atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
-		dma_free_coherent(drm->dev, bo->size, bo->cpu, bo->dma);
-	}
-	kfree(bo);
+	kref_put(&bo->refcount, ane_t6021_bo_release);
 }
 
 static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
@@ -1096,7 +1160,7 @@ static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
 		}
 	}
 	if (bo)
-		ane_t6021_bo_drop(drm, bo);
+		ane_t6021_bo_drop(bo);
 	mutex_unlock(&ane_t6021_bo_lock);
 	return bo ? 0 : -ENOENT;
 }
@@ -1104,7 +1168,8 @@ static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
 /* Resolve the BO a user mmap names (BO_INIT returned offset = handle
  * << PAGE_SHIFT) and map the coherent buffer cacheably — the device
  * half coheres through the DART (IOMMU_CACHE), so reads after EXEC
- * observe the firmware's writes without extra sync. */
+ * observe the firmware's writes without extra sync. The mapping takes
+ * one BO reference: it survives BO_FREE until the vma is gone. */
 static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct drm_file *file = filp->private_data;
@@ -1125,6 +1190,7 @@ static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 	mutex_lock(&ane_t6021_bo_lock);
 	list_for_each_entry(b, &fd->bos, node) {
 		if (b->handle == handle && b->owner == fd) {
+			kref_get(&b->refcount);
 			bo = b;
 			break;
 		}
@@ -1136,7 +1202,15 @@ static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_pgoff = 0;
 	ret = dma_mmap_coherent(drm->dev, vma, bo->cpu, bo->dma, size);
 	mutex_unlock(&ane_t6021_bo_lock);
-	return ret;
+	if (ret) {
+		kref_put(&bo->refcount, ane_t6021_bo_release);
+		return ret;
+	}
+	/* The vma owns the lookup reference: close (and open on fork)
+	 * go through ane_t6021_vm_ops. */
+	vma->vm_private_data = bo;
+	vma->vm_ops = &ane_t6021_vm_ops;
+	return 0;
 }
 
 static int ane_t6021_open(struct drm_device *drm, struct drm_file *file)
@@ -1160,7 +1234,7 @@ static void ane_t6021_postclose(struct drm_device *drm, struct drm_file *file)
 		return;
 	mutex_lock(&ane_t6021_bo_lock);
 	list_for_each_entry_safe(bo, tmp, &fd->bos, node)
-		ane_t6021_bo_drop(drm, bo);
+		ane_t6021_bo_drop(bo);
 	mutex_unlock(&ane_t6021_bo_lock);
 	kfree(fd);
 	file->driver_priv = NULL;
