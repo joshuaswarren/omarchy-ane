@@ -1269,8 +1269,11 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   1.29-1.42 ms; a 30 s loop ran 4,787 processes instead of 203. The I2A FIFO
   was empty during the storm, so 884 is not I2A-not-empty (inference: it is
   the ANE doorbell line).
-- Open: io BOs the firmware saw stay held until reboot, capped at 2 GiB
-  (`ANE_T6021_BO_TOTAL_MAX`), so a boot runs out after about 14,500 add
-  processes; every `BO_INIT` then fails until reboot.
+- io BOs the firmware saw used to stay held until reboot, capped at 2 GiB
+  (`ANE_T6021_BO_TOTAL_MAX`), so a boot ran out after about 14,500 add
+  processes. They now go to a pool at the last reference and are reused
+  after zeroing (omarchy-ane `b17f49b`); program sections stay held. 105,232
+  add processes ran exact on one boot with used memory flat within 88 MiB
+  ([receipts/2026-09-30-t6021-bo-pool](../receipts/2026-09-30-t6021-bo-pool/README.md)).
 - Every M2 boot so far is a USB chainload from the M1 host; the disk boot
   path is unproven.

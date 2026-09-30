@@ -170,17 +170,27 @@ IOVA — under the fw lock, before the exchange goes out:
 - section BOs of a `LOAD_PROGRAM` that is sent to the firmware
   (cache misses only: a cache hit reuses the firmware program and
   never touches the caller's BOs);
-- the io BOs of every `PROCEDURE_CALL`, unless `free_io_bos=1`.
+- the io BOs of every `PROCEDURE_CALL`.
 
-A `fw_ref` BO is held, with its bytes counted against
-`ANE_T6021_BO_TOTAL_MAX` (2 GiB), until reboot. Every other BO frees
-when its last reference drops. Each BO holds two reference kinds:
-its handle (dropped by `BO_FREE` or fd close) and each live user
-mapping (`mmap`; fork takes one more, unmap drops one). A BO freed
-while mapped stays allocated until the mapping is torn down.
+A `fw_ref` BO never goes back to the kernel, and its bytes stay counted
+against `ANE_T6021_BO_TOTAL_MAX` (2 GiB):
 
-The 2 GiB cap therefore bounds the memory the firmware may still be
-reading, not every allocation a short-lived context makes.
+- a section BO of a sent `LOAD_PROGRAM` is held until reboot, because the
+  cached firmware program keeps reading it;
+- an io BO is parked in a pool when its last reference drops. Its IOVA
+  stays mapped. The next `BO_INIT` of the same page-aligned size takes it,
+  zeroes it and gives it to the new owner. After a quarantine, io BOs are
+  held instead, because the firmware may still write them.
+
+Every other BO frees when its last reference drops. Each BO holds two
+reference kinds: its handle (dropped by `BO_FREE` or fd close) and each
+live user mapping (`mmap`; fork takes one more, unmap drops one). A BO
+freed while mapped stays allocated until the mapping is torn down.
+
+The held memory is therefore the loaded program sections plus the peak
+number of io BOs in use at the same time, not the sum over every
+process. Before the pool, every process held its io BOs until reboot, and
+a boot ran out of the 2 GiB after about 14,500 add processes.
 
 ## Module parameters (compiled defaults = proven configuration)
 
@@ -204,7 +214,6 @@ bisection only.
 | `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (receipts/2026-09-30-t6021-stock-mailbox). A firmware that speaks RTKit needs `1000` (the lab value). |
 | `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue (only with an RTKit instance: `legacy_only=0`, or legacy mode with `hello_wait_ms` > 0) |
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
-| `free_io_bos` | `0` | rtclient | Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob) |
 
 Lab knobs that stayed at their inert values in every proven run are
 deleted outright, not kept at 0: `fw_diag_marker`, `fw_load_stamp_base`,
@@ -231,8 +240,9 @@ exposes the ABI 2 ioctl set per `ane/src/uapi/drm/ane_accel.h`
 - `DRM_IOCTL_ANE_BO_INIT` — allocate a coherent BO and return its
   handle.
 - `DRM_IOCTL_ANE_BO_FREE` — drop the handle. The memory frees when
-  its last reference drops, except a BO the firmware received: those
-  are held until reboot (see "BO lifetime" below).
+  its last reference drops, except a BO the firmware received: a
+  program section is held until reboot, an io BO is parked for reuse
+  (see "BO lifetime").
 - `DRM_IOCTL_ANE_SUBMIT` — rejected with `-ENOTTY` on T6021.
 - `DRM_IOCTL_ANE_PROG_LOAD` (0x200) — build the LOAD_PROGRAM message
   (1..9 section records; each record carries the caller's

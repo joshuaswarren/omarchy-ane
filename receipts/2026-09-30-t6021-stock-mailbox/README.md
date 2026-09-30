@@ -248,7 +248,8 @@ exact processes, then every `DRM_IOCTL_ANE_BO_INIT` failed until reboot.
 holds about 144 KiB, so a boot runs out after about 14,500 processes
 (100 gate + 4,793 loop + 9 timed + 9,601 burst = 14,503 on that boot). At
 the old speed, a boot ran about 1,000 processes, and the cap was never
-reached. The fix is the next change.
+reached. Fixed by the io BO pool:
+[2026-09-30-t6021-bo-pool](../2026-09-30-t6021-bo-pool/README.md).
 
 Procedure note: `tuxvdmtool` resets the laptop without a sync. The first
 option-A reboot lost the freshly written `/etc/modprobe.d` file; every later

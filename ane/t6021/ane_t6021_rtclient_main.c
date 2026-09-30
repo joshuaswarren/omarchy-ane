@@ -230,9 +230,10 @@ struct ane_t6021_fd {
 };
 
 /* Per-file handle counter and every per-fd list against same-fd concurrent
- * ioctls. A BO whose IOVA reached the firmware (fw_ref) is held, with
- * its bytes counted, until reboot; every other BO frees at its last
- * reference (see ane_t6021_bo_release).
+ * ioctls. A BO whose IOVA reached the firmware (fw_ref) never goes back to
+ * the kernel: a program section is held until reboot, an io BO is parked
+ * for reuse (see ane_t6021_bo_release). Every other BO frees at its last
+ * reference.
  *
  * Cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen by the
  * H14 compiler are bounded by `reduction * columns * 2`, which reaches
@@ -258,6 +259,7 @@ struct ane_t6021_bo {
 	dma_addr_t dma;
 	size_t size;
 	bool fw_ref;			/* the firmware received this IOVA */
+	bool fw_program;		/* a loaded program keeps this IOVA */
 	struct device *dev;
 };
 
@@ -265,22 +267,59 @@ static DEFINE_MUTEX(ane_t6021_bo_lock);
 static u32 ane_t6021_next_handle = 1;
 static atomic64_t ane_t6021_bo_total_bytes = ATOMIC64_INIT(0);
 
-/* Final put: the last handle or mapping is gone. A fw_ref BO stays
- * allocated and counted until reboot — the lab rule: the firmware
- * never sees a freed IOVA. Every other BO frees here, so the 2 GiB
- * cap bounds only the memory the firmware may still touch. */
+/* Mark the device quarantined: a timed-out command left the firmware
+ * queue state unknown. The only safe next step is to refuse further
+ * ioctls until a reboot reclaims the surfaces (wedged-pin rule). */
+static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
+
+/* Parked io BOs: their last user is gone, the IOVA stays mapped and the
+ * bytes stay counted. BO_INIT of the same page-aligned size takes one,
+ * so held memory stays at the peak of concurrent io BOs instead of
+ * growing with every process until the 2 GiB cap refuses BO_INIT. */
+static LIST_HEAD(ane_t6021_bo_pool);
+static DEFINE_SPINLOCK(ane_t6021_bo_pool_lock);
+
+/* Final put: the last handle or mapping is gone. The firmware never sees
+ * a freed IOVA (lab rule), so a fw_ref BO is never freed: a program
+ * section stays held, because a cached firmware program keeps reading
+ * it; an io BO goes to the pool, unless a quarantined firmware may still
+ * write it. Every other BO frees here, so the 2 GiB cap bounds only the
+ * memory the firmware may touch. */
 static void ane_t6021_bo_release(struct kref *ref)
 {
 	struct ane_t6021_bo *bo = container_of(ref, struct ane_t6021_bo,
 					       refcount);
 
-	if (bo->fw_ref) {
+	if (!bo->fw_ref) {
+		atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
+		dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
 		kfree(bo);
-		return;
+	} else if (bo->fw_program || atomic_read(&ane_t6021_quarantined)) {
+		kfree(bo);
+	} else {
+		spin_lock(&ane_t6021_bo_pool_lock);
+		list_add(&bo->node, &ane_t6021_bo_pool);
+		spin_unlock(&ane_t6021_bo_pool_lock);
 	}
-	atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
-	dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
-	kfree(bo);
+}
+
+/* A parked io BO of SIZE's page-aligned size, or NULL. */
+static struct ane_t6021_bo *ane_t6021_bo_pool_take(size_t size)
+{
+	struct ane_t6021_bo *bo;
+
+	if (atomic_read(&ane_t6021_quarantined))
+		return NULL;
+	spin_lock(&ane_t6021_bo_pool_lock);
+	list_for_each_entry(bo, &ane_t6021_bo_pool, node) {
+		if (PAGE_ALIGN(bo->size) == PAGE_ALIGN(size)) {
+			list_del(&bo->node);
+			spin_unlock(&ane_t6021_bo_pool_lock);
+			return bo;
+		}
+	}
+	spin_unlock(&ane_t6021_bo_pool_lock);
+	return NULL;
 }
 
 /* A user mapping holds its BO's memory until it is torn down: open
@@ -508,17 +547,6 @@ module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
 
-/* When 1, io BOs used in a PROCEDURE_CALL are not marked fw_ref, so
- * BO_FREE frees their memory even though the firmware received their
- * IOVAs. Soak-test knob only: a clean run with free_io_bos=1 shows no
- * IOMMU fault in dmesg. The default 0 keeps every published IOVA held
- * until reboot (the lab rule: the firmware never sees a freed
- * address). */
-static bool free_io_bos;
-module_param(free_io_bos, bool, 0644);
-MODULE_PARM_DESC(free_io_bos,
-		 "Free PROCEDURE_CALL io BOs at BO_FREE even though the fw saw their IOVAs (soak-test knob; default 0 = held)");
-
 /* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
  * completion: measured 2026-09-29, an ack can arrive before the engine
  * has written the output (exec returned after 0.16 ms, output landed
@@ -619,11 +647,6 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		iounmap(ipi);
 	return n;
 }
-
-/* Mark the device quarantined: a timed-out command left the firmware
- * queue state unknown. The only safe next step is to refuse further
- * ioctls until a reboot reclaims the surfaces (wedged-pin rule). */
-static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
 
 static int ane_rtclient_command(struct ane_rtclient *ane,
 						     struct ane_legacy_buffer *command,
@@ -863,6 +886,7 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 			 * Under bo_lock the handle reference cannot go
 			 * away, so no kref is needed here. */
 			bo->fw_ref = true;
+			bo->fw_program = true;
 			iova = bo->dma + sections[i].offset;
 		} else {
 			bo = NULL;
@@ -1033,12 +1057,10 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 				goto unlock;
 			}
 			/* The IOVA below is about to be published to the
-			 * firmware, so mark the BO before the exchange
-			 * unless free_io_bos=1 (soak-test knob). Under
-			 * bo_lock the handle reference cannot go away,
-			 * so no kref is needed here. */
-			if (!free_io_bos)
-				bo->fw_ref = true;
+			 * firmware, so mark the BO before the exchange.
+			 * Under bo_lock the handle reference cannot go
+			 * away, so no kref is needed here. */
+			bo->fw_ref = true;
 			iova = bo->dma;
 			mutex_unlock(&ane_t6021_bo_lock);
 			*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
@@ -1091,9 +1113,16 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 
 	if (args->size == 0 || args->size > ANE_T6021_BO_MAX || !fd)
 		return -EINVAL;
+	/* A parked io BO is already mapped and counted; its old contents
+	 * belong to another process, so it is zeroed like a new one. */
+	bo = ane_t6021_bo_pool_take(args->size);
+	if (bo) {
+		memset(bo->cpu, 0, PAGE_ALIGN(args->size));
+		goto publish;
+	}
 	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned;
-	 * a BO whose IOVA reaches the firmware stays allocated until
-	 * reboot, so this bound caps the memory that outlives its
+	 * a BO whose IOVA reaches the firmware is never freed (held or
+	 * pooled), so this bound caps the memory that outlives its
 	 * users. */
 	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
 	    ANE_T6021_BO_TOTAL_MAX) {
@@ -1124,6 +1153,7 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 		kfree(bo);
 		return -ERANGE;
 	}
+publish:
 	bo->size = args->size;
 	bo->owner = fd;
 	bo->dev = drm->dev;
