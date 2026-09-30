@@ -406,7 +406,13 @@ static int bar_ref_tag_legacy(uint32_t addr, uint32_t slot, uint32_t *tag)
  * for src BAR refs. The precomputed slot_rank[] array gives the rank of
  * each srcA/srcB slot among all slots of the same register class in
  * the program (sorted ascending): srcA slots {5, 6} -> rank[5]=0,
- * rank[6]=1. dst and kdma slots' entries are unused. */
+ * rank[6]=1. dst and kdma slots' entries are unused.
+ *
+ * `blend_mode` selects the blend-pipeline input rank (see derive_refs):
+ * the compiler's select lowering expands the bool mask in a solo srcA
+ * read and blends the two fp16 operands through srcB slots that NUMBER
+ * BELOW the srcA slot. When set, slot_rank_blend[] holds the final
+ * channel tag for every input slot > 1 and is used verbatim. */
 static int refs_of_task(const uint8_t *tp, uint32_t words,
 			struct ane_m2_ref *out, uint32_t *count,
 			int legacy, const struct ane_m2_model *m,
@@ -417,6 +423,8 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 			uint32_t slot_max_in_alloc_src,
 			uint32_t slot_max_out_alloc_dst,
 			const uint32_t slot_rank_srcA[0x40],
+			const uint32_t slot_rank_blend[0x40],
+			int blend_mode,
 			int is_matmul,
 			uint32_t scratch_bufid)
 {
@@ -467,16 +475,42 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 			} else {
 				(void)0;
 			}
-			err = (legacy || !is_matmul)
-				? bar_ref_tag_legacy(addr, slot, &tag)
-				: bar_ref_tag_extents(addr, slot,
-					slot_max_offset_dst[slot],
-					slot_max_offset_src[slot],
-					slot_chunk_dst[slot],
-					slot_chunk_src[slot],
-					slot_max_in_alloc_src,
-					slot_max_out_alloc_dst,
-					is_matmul, scratch_bufid, m, &tag);
+			if (!legacy && blend_mode &&
+			    (addr == TD_SRC_A || addr == TD_SRC_B) &&
+			    slot > 1 &&
+			    slot_rank_blend[slot] != UINT32_MAX) {
+				/* Pure input slots take the blend rank. */
+				tag = slot_rank_blend[slot];
+				err = 0;
+			} else if (!legacy && blend_mode &&
+				   (addr == TD_SRC_A || addr == TD_SRC_B) &&
+				   slot > 1) {
+				/* The only unmapped src slots in a blend
+				 * program are those that also carry a
+				 * TileDMA dst ref (select-runtime slot
+				 * 3): the scratch surface. The dst refs
+				 * already resolved the slot to scratch
+				 * via the extents rule; the src reads
+				 * name the same buffer. */
+				if (scratch_bufid == 0) {
+					return fail("blend-program scratch "
+						    "slot read with scratch "
+						    "disabled");
+				}
+				tag = scratch_bufid;
+				err = 0;
+			} else if (!legacy && (is_matmul || blend_mode)) {
+				err = bar_ref_tag_extents(addr, slot,
+						slot_max_offset_dst[slot],
+						slot_max_offset_src[slot],
+						slot_chunk_dst[slot],
+						slot_chunk_src[slot],
+						slot_max_in_alloc_src,
+						slot_max_out_alloc_dst,
+						is_matmul, scratch_bufid, m, &tag);
+			} else {
+				err = bar_ref_tag_legacy(addr, slot, &tag);
+			}
 			if (err) {
 				return err;
 			}
@@ -594,10 +628,12 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	uint32_t slot_off_src_a[0x40];
 	uint32_t slot_off_src_b[0x40];
 	uint8_t slot_off_src_n[0x40];
+	uint8_t slot_has_dst[0x40];
 	uint32_t slot_max_in_alloc_src = 0;
 	uint32_t slot_max_out_alloc_dst = 0;
 	uint32_t slot_rank_srcA[0x40];
 	uint32_t slot_rank_srcB[0x40];
+	uint32_t slot_rank_blend[0x40];
 	uint32_t srcA_slots[0x40];
 	uint32_t srcB_slots[0x40];
 	uint32_t srcA_count;
@@ -608,6 +644,7 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	uint32_t tmp;
 	uint32_t j;
 	int is_matmul;
+	int blend_mode;
 	int scratch_used = 0;
 
 	*scratch_used_out = 0;
@@ -623,8 +660,10 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 		slot_off_src_a[i] = 0;
 		slot_off_src_b[i] = 0;
 		slot_off_src_n[i] = 0;
+		slot_has_dst[i] = 0;
 		slot_rank_srcA[i] = UINT32_MAX;
 		slot_rank_srcB[i] = UINT32_MAX;
+		slot_rank_blend[i] = UINT32_MAX;
 	}
 	/* Compute the max in/out alloc once so the single-ref slot fallback
 	 * (whole-surface read) can reach the largest bound channel. The
@@ -696,6 +735,7 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 				addr = (h & 0x7fffu) * 4;
 				p0 = le32(tp + (idx + 1) * 4);
 				if (addr == TD_DST) {
+					slot_has_dst[slot] = 1;
 					if (p0 >
 					    slot_max_offset_dst[slot]) {
 						slot_max_offset_dst[slot] = p0;
@@ -769,7 +809,8 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 					}
 					if (slot_rank_srcA[slot] ==
 					    UINT32_MAX) {
-						if (slot > 1) {
+						if (slot > 1 &&
+						    !slot_has_dst[slot]) {
 							/* srcA slots > 1
 							 * rank among MIL
 							 * inputs; slot <= 1
@@ -777,7 +818,14 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 							 * convention (tag 2)
 							 * used by real-div-*
 							 * and rms, not a real
-							 * input surface. */
+							 * input surface. A
+							 * slot that also has
+							 * a TileDMA dst ref
+							 * is an output or
+							 * scratch surface,
+							 * never a pure input
+							 * (select-runtime
+							 * slot 3). */
 							if (srcA_count == 0x40) {
 								return fail("too "
 									    "many "
@@ -830,13 +878,16 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 					}
 					if (slot_rank_srcB[slot] ==
 					    UINT32_MAX) {
-						if (srcB_count == 0x40) {
-							return fail("too many "
+						if (slot > 1 &&
+						    !slot_has_dst[slot]) {
+							if (srcB_count == 0x40) {
+								return fail("too many "
 								    "srcB "
 								    "slots");
+							}
+							srcB_slots[srcB_count++] =
+								slot;
 						}
-						srcB_slots[srcB_count++] =
-							slot;
 					}
 				}
 			}
@@ -868,15 +919,73 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	for (i = 0; i < srcB_count; i++) {
 		slot_rank_srcB[srcB_slots[i]] = i;
 	}
+	/* Blend-pipeline detection + input rank. The H14 select lowering
+	 * (proven structurally on island-b-select-runtime and
+	 * island-b-select-constfill, whose 5-task shapes are identical)
+	 * is: task 0 SOLO-reads the bool cond through ONE srcA slot and
+	 * expands it to a mask; tasks 1/3 blend the two fp16 operands
+	 * through srcB slots; task 4 mixes the two blend results. The
+	 * constfill form bakes operand a as 0xfc00 constants in the
+	 * kernel surface and reads them via a slot<=1 srcB (tag 2), so
+	 * the cross-program correspondence is: t1-srcB = operand a
+	 * (runtime slot 5 -> ch5), t3-srcB = operand b (runtime slot 4
+	 * -> ch6), t0-solo-srcA = cond (runtime slot 6 -> ch7).
+	 *
+	 * Observable structural signature: some srcB slot numbers sit
+	 * BELOW some srcA slot number (the mask expansion slot is
+	 * emitted after the operand slots). Everything proven so far
+	 * has the opposite arrangement -- add/mul emit srcA slot 4 below
+	 * srcB slot 6, the bmm islands use srcA slots {5,6} only -- so
+	 * this branch leaves them (and their bytes) untouched. Slots <= 1
+	 * are the kernel-base convention (tag 2), never inputs, and are
+	 * excluded from the rank.
+	 *
+	 * Rank: srcB slots DESCENDING take ch5, ch6, ...; srcA slots
+	 * ascending continue from there. For select-runtime
+	 * (srcB {4,5}, srcA {6}): slot5 -> ch5(a), slot4 -> ch6(b),
+	 * slot6 -> ch7(cond). For constfill (srcB {4}, srcA {5}):
+	 * slot4 -> ch5(b), slot5 -> ch6(cond). */
+	blend_mode = 0;
+	{
+		uint32_t srcB_lo = UINT32_MAX;
+		uint32_t srcA_hi = 0;
+		uint32_t rank;
+
+		for (i = 0; i < srcB_count; i++) {
+			if (srcB_slots[i] > 1 && srcB_slots[i] < srcB_lo) {
+				srcB_lo = srcB_slots[i];
+			}
+		}
+		for (i = 0; i < srcA_count; i++) {
+			if (srcA_slots[i] > srcA_hi) {
+				srcA_hi = srcA_slots[i];
+			}
+		}
+		if (srcB_lo != UINT32_MAX && srcA_hi != 0 && srcB_lo < srcA_hi) {
+			blend_mode = 1;
+			rank = 0;
+			for (i = srcB_count; i-- > 0;) {
+				if (srcB_slots[i] > 1) {
+					slot_rank_blend[srcB_slots[i]] = 5 + rank;
+					rank++;
+				}
+			}
+			for (i = 0; i < srcA_count; i++) {
+				slot_rank_blend[srcA_slots[i]] = 5 + rank;
+				rank++;
+			}
+		}
+	}
 	/* Matmul detection: a program is matmul if it uses >= 2 srcA
- * slots or >= 2 srcB slots. The extents-fit rule is used only for
+ * slots (the bmm islands: srcA {5,6}). The extents-fit rule is used only for
  * matmul programs (where multiple src slots read inputs of different
  * allocs); elementwise programs (single-srcA and single-srcA +
  * single-srcB) keep the legacy register-based wiring so stages 1-4
  * remain byte-identical. rms-c2048-gamma has single-srcA slot 1 +
  * single-srcB slot 1 at the legacy tag-2 convention; the same path
- * preserves its byte-identity. */
-	is_matmul = (srcA_count >= 2 || srcB_count >= 2) ? 1 : 0;
+ * preserves its byte-identity. Multi-srcB select programs take the
+ * blend-pipeline branch above instead. */
+	is_matmul = (srcA_count >= 2) ? 1 : 0;
 	/* Pass 2: per task, derive refs using the rule chosen by
 	 * `legacy`. legacy=1 calls bar_ref_tag_legacy; legacy=0 calls
 	 * bar_ref_tag_extents with slot_max_offset[] already known.
@@ -892,7 +1001,8 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 				  slot_max_offset_dst, slot_max_offset_src,
 				  slot_chunk_dst, slot_chunk_src,
 				  slot_max_in_alloc_src, slot_max_out_alloc_dst,
-				  slot_rank_srcA, is_matmul, scratch_bufid);
+				  slot_rank_srcA, slot_rank_blend, blend_mode,
+				  is_matmul, scratch_bufid);
 		if (err) {
 			return err;
 		}

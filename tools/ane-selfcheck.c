@@ -299,30 +299,59 @@ static int check_island_scratch(const char *dir, const char *op)
 	return good;
 }
 
-/* island-b-select-runtime mixes a TileDMA src base into its slot-3
- * ref set (srcA at slot 3 in tasks 1/3/4) AND has a within-task slot
- * conflict (task 4: srcA and dst both at slot 3). Scratch merge cannot
- * bind a real channel buffer to scratch, so the builder refuses. */
-static int check_island_refusal(const char *dir, const char *op)
+/* Blend-pipeline islands (island-b-select-runtime,
+ * island-b-select-constfill): the select lowering solo-reads the bool
+ * cond through a srcA slot numbered ABOVE the srcB operand slots. The
+ * blend rank rule binds srcB descending then srcA ascending onto
+ * ch(5+r), so the exact op-ref tables are asserted here:
+ *   select-runtime: 1->2(kernel) 3->0x40(scratch) 5->5(a) 4->6(b)
+ *                   6->7(cond) 7->4(out)
+ *   constfill:      1->2(kernel) 3->0x40(scratch) 4->5(b) 5->6(cond)
+ *                   6->4(out)
+ * The a/b/cond channel order itself is a device-validated fact (see the
+ * IslandSelectRms2 notebook entry); this check pins the derived table
+ * that the device matrices validate. */
+struct want_ref {
+	uint32_t slot;
+	uint32_t tag;
+};
+
+static int check_island_blend(const char *anec_path, const char *label,
+			      const struct want_ref *want, unsigned nwant)
 {
-	const char *anec_path = fixture(dir, op, "program-0.anec");
 	struct ane_m2_model model;
 	struct ane_m2_sections secs;
 	uint8_t *anec;
 	long size;
 	int err;
-	int good;
+	int good = 1;
+	unsigned i;
 
 	anec = read_all(anec_path, &size);
 	if (!anec) {
+		printf("  [FAIL] %s: cannot read %s\n", label, anec_path);
 		return 0;
 	}
 	err = ane_m2_program_build(anec, (uint64_t)size, &model, &secs);
-	good = err != 0;
+	if (err != 0) {
+		printf("  [FAIL] %s: blend build failed (%d)\n", label, err);
+		free(anec);
+		return 0;
+	}
+	good &= model.calls == 1;
+	good &= model.scratch_io_index != UINT32_MAX;
+	if (model.call_ref_count[0] != nwant) {
+		good = 0;
+	}
+	for (i = 0; good && i < nwant; i++) {
+		good &= model.call_refs[0][i].slot == want[i].slot;
+		good &= model.call_refs[0][i].tag == want[i].tag;
+	}
 	ane_m2_sections_free(&secs);
 	free(anec);
-	printf("  [%s] %s: cross-task BAR-slot conflict refused\n",
-	       good ? "ok" : "FAIL", op);
+	printf("  [%s] %s: blend-pipeline ref table (%zu refs)\n",
+	       good ? "ok" : "FAIL", label,
+	       (unsigned long)model.call_ref_count[0]);
 	return good;
 }
 
@@ -351,14 +380,12 @@ int main(int argc, char **argv)
 		 * builder emits ONE op record. */
 		"island-c-pv", "island-a-kt", "island-a-attn-p1",
 	};
-	static const char *const islands[] = {
-		/* island-b-select-runtime mixes a TileDMA src base into
-		 * its slot-3 ref set and has a within-task slot conflict
-		 * (task 4 binds both srcA and dst to slot 3). Scratch
-		 * merge cannot express that; the refusal stands. rms is
-		 * NOT here: under the legacy rule its slot-1 tags are
-		 * consistent, so it byte-identically builds (above). */
-		"island-b-select-runtime",
+	static const struct want_ref select_refs[] = {
+		{ 1, 2 }, { 3, 0x40 }, { 4, 6 }, { 5, 5 },
+		{ 6, 7 }, { 7, 4 },
+	};
+	static const struct want_ref constfill_refs[] = {
+		{ 1, 2 }, { 3, 0x40 }, { 4, 5 }, { 5, 6 }, { 6, 4 },
 	};
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	int ok = 1;
@@ -379,10 +406,29 @@ int main(int argc, char **argv)
 		ok = check_island_scratch(dir, scratch_islands[i]) && ok;
 	}
 
-	printf("island refusal (cross-task BAR-slot conflict, "
-	       "fw135.3 pushToHWDirect is global per call):\n");
-	for (i = 0; i < sizeof(islands) / sizeof(islands[0]); i++) {
-		ok = check_island_refusal(dir, islands[i]) && ok;
+	printf("blend-pipeline islands (select rank: srcB desc, then srcA; "
+	       "device-validated channel order):\n");
+	{
+		static const char *const blend_islands[] = {
+			"island-b-select-runtime",
+		};
+		for (i = 0;
+		     i < sizeof(blend_islands) / sizeof(blend_islands[0]);
+		     i++) {
+			const char *p = fixture(dir, blend_islands[i],
+						"program-0.anec");
+			ok = check_island_blend(p, blend_islands[i],
+						select_refs,
+						sizeof(select_refs) /
+						sizeof(select_refs[0])) && ok;
+		}
+		/* The constfill ANEC is 2.26 MiB and lives in the fixture
+		 * root, not the repo (> 1 MiB artifacts stay out of git). */
+		ok = check_island_blend(
+			"/var/tmp/islands-fixtures/island-b-select-constfill.anec",
+			"island-b-select-constfill", constfill_refs,
+			sizeof(constfill_refs) /
+			sizeof(constfill_refs[0])) && ok;
 	}
 
 	printf("envelope refusals:\n");
