@@ -1011,27 +1011,26 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	struct ane_t6021_bo *bo;
 	struct ane_rtclient *ane;
 
-	if (args->size == 0 || args->size > ANE_T6021_BO_MAX ||
-	    !IS_ALIGNED(args->size, SZ_16K) || !fd)
+	if (args->size == 0 || args->size > ANE_T6021_BO_MAX || !fd)
 		return -EINVAL;
 	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned and
 	 * stays mapped until reboot once firmware is staged, so the bound
 	 * here is a hard cap on the firmware's visible DMA surface area. */
-	if (atomic64_add_return(args->size, &ane_t6021_bo_total_bytes) >
+	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
 	    ANE_T6021_BO_TOTAL_MAX) {
-		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
 		return -ENOSPC;
 	}
 	ane = to_ane_t6021_drm(drm)->ane;
 	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
 	if (!bo) {
-		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
 		return -ENOMEM;
 	}
 	bo->cpu = dma_alloc_coherent(drm->dev, args->size, &bo->dma,
 				     GFP_KERNEL);
 	if (!bo->cpu) {
-		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
 		kfree(bo);
 		return -ENOMEM;
 	}
@@ -1042,7 +1041,7 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	    (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bo->dma,
 						    args->size))) {
 		dma_free_coherent(drm->dev, args->size, bo->cpu, bo->dma);
-		atomic64_sub(args->size, &ane_t6021_bo_total_bytes);
+		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
 		kfree(bo);
 		return -ERANGE;
 	}
@@ -1065,16 +1064,18 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
  * while no firmware is staged; once a CPU may be running, every DMA
  * surface is HELD until reboot (lab rule: the firmware never sees a
  * freed address; libane's IOVA-lifetime-v1 comment describes this).
- * The global bytes counter is debited either way: the BO is gone from
- * the bookkeeping, so future BO_INIT calls get the room. */
+ * The global bytes counter is debited only when the memory is really
+ * freed; a HELD surface stays counted, so the 2 GiB cap bounds the
+ * memory that short-lived contexts can pin until reboot. */
 static void ane_t6021_bo_drop(struct drm_device *drm, struct ane_t6021_bo *bo)
 {
 	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
 
 	list_del(&bo->node);
-	atomic64_sub(bo->size, &ane_t6021_bo_total_bytes);
-	if (bo->cpu && !ane->fw)
+	if (bo->cpu && !ane->fw) {
+		atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
 		dma_free_coherent(drm->dev, bo->size, bo->cpu, bo->dma);
+	}
 	kfree(bo);
 }
 
