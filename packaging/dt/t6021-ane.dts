@@ -12,16 +12,20 @@
  *    range, the pmgr words and the SET window, IRQ 884, three DARTs with
  *    sid 0, eight power domains, reset ane_cpu. linux-asahi 7.1.13 and
  *    linux-aurora 7.1.12 do not carry this node.
- *  - The three DART nodes: the DART half of the retired v1 overlay
- *    ane/t6021-j414c-ane.dts. The v1 ane node, with engine 0x285c04000, is
- *    not used: its first engine touch external-aborts. dart0 is in the pmp
- *    domain (power-controller@2c8, always-on), as in the lab DTB: v1 named
- *    it by the raw phandle 0x18, which is pmp in linux-asahi 7.1.13 j414c.
- *    ane_sys@260 may be the domain the hardware wants; it was never booted.
- *  - mailbox@285408000 and mboxes: ane/t6021-j414c-ane-rtkit.dts (v3).
+ *  - The three DART nodes: the DART half of the retired v1 lab overlay
+ *    (ane/t6021-j414c-ane.dts, removed after 9c925cd). The v1 ane node, with
+ *    engine 0x285c04000, is not used: its first engine touch external-aborts.
+ *    dart0 is in the pmp domain (power-controller@2c8, always-on), as in the
+ *    lab DTB: v1 named it by the raw phandle 0x18, which is pmp in
+ *    linux-asahi 7.1.13 j414c. ane_sys@260 may be the domain the hardware
+ *    wants; it was never booted.
+ *  - mailbox@285408000 and mboxes: the v3 lab overlay
+ *    (ane/t6021-j414c-ane-rtkit.dts, removed after 9c925cd).
  *    Stock apple-mailbox needs a send-empty IRQ. 1833 is an unused AIC2
  *    line that never fires: stock TX waits on it only while the A2I FIFO
- *    is full.
+ *    is full, and ane_t6021 on the 13.5 firmware sends no mailbox message
+ *    after probe. recv-not-empty 884 storms (~0.7 M/s) while the mailbox
+ *    is started; see receipts/2026-09-30-t6021-stock-mailbox.
  *  - reserved-memory/ane-alias-iova and memory-region: the IOVA reservation
  *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000,
  *    16 MiB, in the ane DART domain).
