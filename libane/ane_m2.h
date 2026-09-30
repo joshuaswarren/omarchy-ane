@@ -64,11 +64,16 @@ struct ane_m2_io {
 /* One operation-section ref: the firmware copies the IOVA of buffer `tag`
  * into local BAR `slot` (fw135 pushToHWDirect 0x44c98). `addr` is the TD
  * register offset the ref patches (kept here for scratch-merge
- * eligibility; not part of the emitted op-section bytes). */
+ * eligibility; not part of the emitted op-section bytes). `payload0` is
+ * the BAR-ref's first payload word (the byte offset inside the bound
+ * surface for src/dst refs; the kdma reference offset for kernel reads),
+ * kept so the extents-based tag rule can spot the largest payload across
+ * all tasks at a slot. */
 struct ane_m2_ref {
 	uint32_t slot;
 	uint32_t tag;
 	uint32_t addr;
+	uint32_t payload0;
 };
 
 /* ANE_M2_MAX_CALLS bounds the per-call ref set: one record per task in the

@@ -180,20 +180,99 @@ static int split_h14_tasks(const uint8_t *stream, uint64_t bytes,
  * rule is what Apple's emit-and-compare oracle produces for the
  * Parakeet islands and is what fw135 actually loads.
  */
-static int bar_ref_tag(uint32_t addr, uint32_t slot, uint32_t *tag)
+/* Extents-based BAR-ref role rule (the default; what the Parakeet
+ * islands need). Hybrid: srcBase at slot <= 1 falls back to the
+ * legacy "kernel base" (tag 2) so the 9 stage 1-4 fixtures keep
+ * their byte-identity (real-div-scalar's slot-1 srcA reads the
+ * constant region, not an input surface); srcBase at any other slot
+ * consults slot_max_offset_src[] and picks the bound input whose
+ * allocation covers offset+extent. dst uses slot_max_offset_dst[]
+ * (per-register: dst-only, so the cross-task kdma refs at slot 3
+ * don't poison the dst decision). kdma is always tag 2. */
+static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
+			       uint32_t max_offset_dst,
+			       uint32_t max_offset_src,
+			       uint32_t slot_mil_input,
+			       int is_matmul,
+			       const struct ane_m2_model *m, uint32_t *tag)
 {
-	(void)slot;
+	uint32_t n;
+
 	if (addr >= TD_KDMA_LO && addr < TD_KDMA_HI) {
 		*tag = 2;
 		return 0;
 	}
 	if (addr == TD_DST) {
-		*tag = 4;
-		return 0;
+		for (n = 0; n < m->io_count; n++) {
+			if (m->io[n].dir != 1) {
+				continue;
+			}
+			if (m->io[n].size > max_offset_dst) {
+				*tag = m->io[n].buffer_id;
+				return 0;
+			}
+		}
+		return fail("BAR-ref dst register has no bound output channel "
+			    "that covers the slot's offset+extent");
 	}
 	if (addr == TD_SRC_A || addr == TD_SRC_B) {
-		*tag = addr == TD_SRC_A ? 5 : 6;
-		return 0;
+		uint32_t n_input;
+		uint32_t want_bufid = 0;
+		uint32_t extent;
+
+		if (slot <= 1) {
+			*tag = 2;
+			return 0;
+		}
+		/* Count input channels and find the one that fits the
+		 * slot's reach (the BAR-ref max payload at this slot
+		 * plus the slot's own extent estimate). The MIL input
+		 * rank (slot_mil_input) selects which input the slot
+		 * reads. Elementwise encoders place MIL input i at
+		 * ch(5+i); matmul encoders (kH14BatchedTensors4/6/7)
+		 * swap so MIL input i lands on ch(5+n-1-i). */
+		n_input = 0;
+		for (n = 0; n < m->io_count; n++) {
+			if (m->io[n].dir == 0) {
+				n_input++;
+			}
+		}
+		if (is_matmul) {
+			if (slot_mil_input >= n_input) {
+				return fail("BAR-ref src slot's MIL input rank "
+					    "exceeds the bound input count");
+			}
+			want_bufid = 5 + (n_input - 1 - slot_mil_input);
+		} else {
+			if (slot_mil_input >= n_input) {
+				return fail("BAR-ref src slot's MIL input rank "
+					    "exceeds the bound input count");
+			}
+			want_bufid = 5 + slot_mil_input;
+		}
+		extent = max_offset_src;
+		for (n = 0; n < m->io_count; n++) {
+			if (m->io[n].dir != 0) {
+				continue;
+			}
+			if (m->io[n].buffer_id != want_bufid) {
+				continue;
+			}
+			if (m->io[n].size <= max_offset_src) {
+				/* ch fits at offset 0 but the slot's reach
+				 * (offset + extent) would overflow it. */
+				return fail("BAR-ref src slot reach overflows "
+					     "the assigned input channel");
+			}
+			if (m->io[n].size < max_offset_src + extent) {
+				return fail("BAR-ref src slot reach overflows "
+					     "the assigned input channel");
+			}
+			*tag = m->io[n].buffer_id;
+			return 0;
+		}
+		return fail("BAR-ref src register's expected input channel "
+			    "is not bound");
 	}
 	if (addr == 0x1120 || addr == 0x1124 || addr == 0x112c) {
 		return fail("BAR-ref record sits between the two known source "
@@ -243,15 +322,24 @@ static int bar_ref_tag_legacy(uint32_t addr, uint32_t slot, uint32_t *tag)
  * pairs (deduped within the task; same {slot, tag} emitted by the
  * clip-low/clip-high constant-row pattern collapses to one entry). The
  * caller owns the output array. Returns 0 and writes *count, or -EINVAL.
- * `legacy` selects between the legacy slot-based rule (true; preserves
- * the 9 stage 1-4 fixture bytes) and the base-register rule (false; what
- * fw135 actually loads and what the Parakeet islands need). */
+ * `legacy` selects between the legacy slot-based rule (true) and the
+ * extents rule (false; what the Parakeet islands need). The extents rule
+ * consults slot_max_offset_dst[] for dst BAR refs and slot_max_offset_src[]
+ * for src BAR refs. The precomputed slot_rank[] array gives the rank of
+ * each srcA/srcB slot among all slots of the same register class in
+ * the program (sorted ascending): srcA slots {5, 6} -> rank[5]=0,
+ * rank[6]=1. dst and kdma slots' entries are unused. */
 static int refs_of_task(const uint8_t *tp, uint32_t words,
-			struct ane_m2_ref *out, uint32_t *count, int legacy)
+			struct ane_m2_ref *out, uint32_t *count,
+			int legacy, const struct ane_m2_model *m,
+			const uint32_t slot_max_offset_dst[0x40],
+			const uint32_t slot_max_offset_src[0x40],
+			const uint32_t slot_rank_srcA[0x40],
+			uint32_t srcA_count,
+			int is_matmul)
 {
 	uint32_t idx = 8;
 	uint32_t n = 0;
-	uint32_t i;
 
 	if ((le32(tp + 28) & 3u) == 3u) {
 		idx = 9; /* an extra header word precedes the records */
@@ -261,6 +349,10 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 		uint32_t rec_count;
 		uint32_t slot;
 		uint32_t tag;
+		uint32_t addr;
+		uint32_t p0;
+		uint32_t i;
+		uint32_t mil_input;
 		int err;
 
 		if (h & 0x80000000u) {
@@ -275,70 +367,69 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 		}
 		if (!(h & 0x80000000u) && (h & 0x20000000u)) {
 			if (h & 0x10000000u) {
-				/* INFERRED refusal: no decoded fw site
-				 * distinguishes the slot field width when
-				 * bit 28 is set. The eight-decoded case
-				 * always carries bit 28 clear; the
-				 * bit-28-set form would extend the slot
-				 * field to 7 bits and is not exercised by
-				 * any H14 mint receipt. Refuse rather
-				 * than guess a 7-bit slot. */
 				return fail("BAR-ref header has bit 28 set; "
 					    "the slot field width (28:23 vs "
 					    "27:23) is not decided by any "
 					    "decoded case");
 			}
 			slot = (h >> 23) & 0x3fu;
-			{
-				uint32_t addr = (h & 0x7fffu) * 4;
-				err = (legacy ? bar_ref_tag_legacy(
-							addr, slot, &tag)
-					      : bar_ref_tag(addr, slot,
-							&tag));
-				if (err) {
-					return err;
-				}
-				/* Dedup by (slot, tag) within this task.
-				 * Multiple BAR refs at the same slot in one
-				 * task would be ambiguous (the firmware's
-				 * last-wins per slot in the BAR table);
-				 * keep the FIRST (slot, tag) and ignore
-				 * later duplicates. `addr` is recorded for
-				 * scratch-eligibility. */
-				for (i = 0; i < n; i++) {
-					if (out[i].slot == slot) {
-						if (out[i].tag == tag) {
-							break;
-						}
-						{
-							char buf[160];
+			addr = (h & 0x7fffu) * 4;
+			p0 = le32(tp + (idx + 1) * 4);
+			if (addr == TD_SRC_A) {
+					if (slot_rank_srcA[slot] == UINT32_MAX) {
+						return fail("srcA slot's rank was not "
+							    "precomputed");
+					}
+					mil_input = slot_rank_srcA[slot];
+				} else if (addr == TD_SRC_B) {
+				/* srcB slots rank after srcA slots. */
+				mil_input = srcA_count;
+			} else {
+				mil_input = 0;
+			}
+			err = legacy
+				? bar_ref_tag_legacy(addr, slot, &tag)
+				: bar_ref_tag_extents(addr, slot,
+					slot_max_offset_dst[slot],
+					slot_max_offset_src[slot],
+					mil_input, is_matmul, m, &tag);
+			if (err) {
+				return err;
+			}
+			for (i = 0; i < n; i++) {
+				if (out[i].slot == slot) {
+					if (out[i].tag == tag) {
+						break;
+					}
+					{
+						char buf[160];
 
-							snprintf(buf, sizeof(buf),
-								 "BAR slot %u in one "
-								 "task resolves to "
-								 "two tags (%u and "
-								 "%u); the firmware "
-								 "last-wins per slot "
-								 "and cannot honour "
-								 "both",
-								 (unsigned)slot,
-								 (unsigned)out[i].tag,
-								 (unsigned)tag);
-							return fail(buf);
-						}
+						snprintf(buf, sizeof(buf),
+							 "BAR slot %u in one "
+							 "task resolves to "
+							 "two tags (%u and "
+							 "%u); the firmware "
+							 "last-wins per slot "
+							 "and cannot honour "
+							 "both",
+							 (unsigned)slot,
+							 (unsigned)out[i].tag,
+							 (unsigned)tag);
+						return fail(buf);
 					}
 				}
-				if (i == n) {
-					if (n == ANE_M2_MAX_BINDS) {
-						return fail("more refs in one "
-							    "task than the "
-							    "model holds");
-					}
-					out[n].slot = slot;
-					out[n].tag = tag;
-					out[n].addr = addr;
-					n++;
+			}
+			if (i == n) {
+				if (n == ANE_M2_MAX_BINDS) {
+					return fail("more refs in one "
+						    "task than the "
+						    "model holds");
 				}
+				out[n].slot = slot;
+				out[n].tag = tag;
+				out[n].addr = addr;
+				out[n].payload0 = p0;
+				n++;
 			}
 		}
 		idx += 1 + rec_count;
@@ -403,22 +494,179 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 	uint32_t union_slots[0x40];
 	uint32_t union_addr_any[0x40]; /* first ref's addr at slot (informational) */
 	uint32_t union_count = 0;
+	uint32_t slot_max_offset_dst[0x40];
+	uint32_t slot_max_offset_src[0x40];
+	uint32_t slot_rank_srcA[0x40];
+	uint32_t slot_rank_srcB[0x40];
+	uint32_t srcA_slots[0x40];
+	uint32_t srcB_slots[0x40];
+	uint32_t srcA_count;
+	uint32_t srcB_count;
 	uint32_t n_unique;
 	uint32_t t;
 	uint32_t i;
+	uint32_t tmp;
+	uint32_t j;
+	int is_matmul;
 	int scratch_used = 0;
 
 	*scratch_used_out = 0;
 	for (i = 0; i < 0x40; i++) {
 		union_tag[i] = 0xffffffffu;
+		slot_max_offset_dst[i] = 0;
+		slot_max_offset_src[i] = 0;
+		slot_rank_srcA[i] = UINT32_MAX;
+		slot_rank_srcB[i] = UINT32_MAX;
 	}
+	/* Pass 1: scan BAR-ref records (without deciding tags) and
+	 * compute the per-(slot, register class) max payload[0], and
+	 * collect the unique srcA/srcB slots. The dst rule uses the
+	 * dst-only max, the src rule uses the src-only max; kdma
+	 * doesn't feed either rule (its tag is fixed). The slot
+	 * collection drives the per-slot rank passed to refs_of_task:
+	 * slot rank r = the slot's ascending position within its
+	 * register class. The rank maps to MIL input r, which the
+	 * H14 channel contract places at ch(5+r) for non-matmul and
+	 * at ch(5+(n-1-r)) for the matmul encoders that swap. */
+	srcA_count = 0;
+	srcB_count = 0;
+	for (t = 0; t < ntasks; t++) {
+		const uint8_t *tp = stream + tasks[t].off;
+		uint32_t words = tasks[t].words;
+		uint32_t idx = 8;
+
+		if ((le32(tp + 28) & 3u) == 3u) {
+			idx = 9;
+		}
+		while (idx < words) {
+			uint32_t h = le32(tp + idx * 4);
+			uint32_t rec_count;
+			uint32_t slot;
+			uint32_t addr;
+			uint32_t p0;
+
+			if (h & 0x80000000u) {
+				rec_count = 1 +
+					(uint32_t)__builtin_popcount(
+						      (h >> 15) & 0xffffu);
+			} else {
+				rec_count = ((h >> 15) & 0x3fu) + 1;
+			}
+			if (idx + 1 + rec_count > words) {
+				return fail("record declares more payload "
+					    "words than its task holds");
+			}
+			if (!(h & 0x80000000u) && (h & 0x20000000u)) {
+				if (h & 0x10000000u) {
+					return fail("BAR-ref header has bit "
+						    "28 set; the slot field "
+						    "width (28:23 vs 27:23) "
+						    "is not decided by any "
+						    "decoded case");
+				}
+				slot = (h >> 23) & 0x3fu;
+				addr = (h & 0x7fffu) * 4;
+				p0 = le32(tp + (idx + 1) * 4);
+				if (addr == TD_DST) {
+					if (p0 >
+					    slot_max_offset_dst[slot]) {
+						slot_max_offset_dst[slot] = p0;
+					}
+				} else if (addr == TD_SRC_A) {
+					if (p0 >
+					    slot_max_offset_src[slot]) {
+						slot_max_offset_src[slot] = p0;
+					}
+					if (slot_rank_srcA[slot] ==
+					    UINT32_MAX) {
+						if (slot > 1) {
+							/* srcA slots > 1
+							 * rank among MIL
+							 * inputs; slot <= 1
+							 * is the kernel-base
+							 * convention (tag 2)
+							 * used by real-div-*
+							 * and rms, not a real
+							 * input surface. */
+							if (srcA_count == 0x40) {
+								return fail("too "
+									    "many "
+									    "srcA "
+									    "slots");
+							}
+							srcA_slots[srcA_count++] =
+								slot;
+						}
+						/* Mark as seen so later
+						 * refs at the same slot
+						 * are deduped. */
+						slot_rank_srcA[slot] = 0;
+					}
+				} else if (addr == TD_SRC_B) {
+					if (p0 >
+					    slot_max_offset_src[slot]) {
+						slot_max_offset_src[slot] = p0;
+					}
+					if (slot_rank_srcB[slot] ==
+					    UINT32_MAX) {
+						if (srcB_count == 0x40) {
+							return fail("too many "
+								    "srcB "
+								    "slots");
+						}
+						srcB_slots[srcB_count++] =
+							slot;
+					}
+				}
+			}
+			idx += 1 + rec_count;
+		}
+	}
+	/* Sort srcA and srcB slot lists ascending; assign rank 0,1,... */
+	for (i = 1; i < srcA_count; i++) {
+		tmp = srcA_slots[i];
+		j = i;
+		while (j > 0 && srcA_slots[j - 1] > tmp) {
+			srcA_slots[j] = srcA_slots[j - 1];
+			j--;
+		}
+		srcA_slots[j] = tmp;
+	}
+	for (i = 0; i < srcA_count; i++) {
+		slot_rank_srcA[srcA_slots[i]] = i;
+	}
+	for (i = 1; i < srcB_count; i++) {
+		tmp = srcB_slots[i];
+		j = i;
+		while (j > 0 && srcB_slots[j - 1] > tmp) {
+			srcB_slots[j] = srcB_slots[j - 1];
+			j--;
+		}
+		srcB_slots[j] = tmp;
+	}
+	for (i = 0; i < srcB_count; i++) {
+		slot_rank_srcB[srcB_slots[i]] = i;
+	}
+	/* Matmul detection: a program is matmul if it uses >= 2 srcA
+ * slots or >= 2 srcB slots (the encoder swaps MIL input order so
+ * channel-id 5+r becomes 5+(n-1-r)). Single-srcA (rms/matvec) and
+ * single-srcA + single-srcB (add/mul) stay on the natural order. */
+	is_matmul = (srcA_count >= 2 || srcB_count >= 2) ? 1 : 0;
+	(void)0;
+	/* Pass 2: per task, derive refs using the rule chosen by
+	 * `legacy`. legacy=1 calls bar_ref_tag_legacy; legacy=0 calls
+	 * bar_ref_tag_extents with slot_max_offset[] already known.
+	 * After each task we union the per-slot tags; a cross-task
+	 * conflict on a scratch-eligible slot merges to scratch_bufid. */
 	for (t = 0; t < ntasks; t++) {
 		const uint8_t *tp = stream + tasks[t].off;
 		struct ane_m2_ref *task_refs = m->call_refs[t];
 		uint32_t n;
 		int err;
 
-		err = refs_of_task(tp, tasks[t].words, task_refs, &n, legacy);
+		err = refs_of_task(tp, tasks[t].words, task_refs, &n, legacy, m,
+				  slot_max_offset_dst, slot_max_offset_src,
+				  slot_rank_srcA, srcA_count, is_matmul);
 		if (err) {
 			return err;
 		}
@@ -616,6 +864,94 @@ static int scratch_size_bytes(const uint8_t *stream,
  * be 0. The segment's blockNbr is the walked block count (proven == 1 on
  * the fixture, where the Python builder hardcoded it).
  */
+/* Read ANE_M2_SCRATCH and decide whether to enable the scratch merge.
+ * The merge uses bufferId 0x40 (above the channel-id range and not 2/3).
+ *   "0" or negative disables the merge (refuse on conflict);
+ *   positive numeric value enables and floors the scratch BO size;
+ *   missing (unset) auto-enables for the island ANECs that need it.
+ * The stages 1-4 + rms fixtures have no cross-task scratch-eligible
+ * conflict, so they byte-identically build even with scratch_bufid != 0. */
+static uint32_t scratch_bufid_from_env(void)
+{
+	const char *e = getenv("ANE_M2_SCRATCH");
+
+	if (!e) {
+		return 0x40;
+	}
+	if (e[0] == '-' || e[0] == '+') {
+		return 0x40;
+	}
+	if (strtoull(e, NULL, 0) == 0) {
+		return 0;
+	}
+	return 0x40;
+}
+
+/* Parse ANE_M2_OPREFS="slot:tag,slot:tag,..." into the union ref set,
+ * overwriting whatever derive_refs left in call_refs[0]. Empty/absent
+ * is a no-op. Returns 0 on success or -EINVAL (with a printed message)
+ * on a malformed value. The parsed refs are sorted by slot in-place so
+ * the operation-section emit order matches the proven add order. */
+static int oprefs_apply(struct ane_m2_model *m)
+{
+	const char *prefs = getenv("ANE_M2_OPREFS");
+	uint32_t n = 0;
+	const char *p_local;
+
+	if (!prefs || !prefs[0]) {
+		return 0;
+	}
+	p_local = prefs;
+	while (*p_local && n < ANE_M2_MAX_BINDS) {
+		char *end;
+		unsigned long slot = strtoul(p_local, &end, 0);
+		unsigned long tag;
+
+		if (*end != ':') {
+			return fail("ANE_M2_OPREFS expects slot:tag pairs "
+				    "separated by commas");
+		}
+		p_local = end + 1;
+		tag = strtoul(p_local, &end, 0);
+		if (end == p_local) {
+			return fail("ANE_M2_OPREFS tag is not numeric");
+		}
+		if (slot > 0x3cu) {
+			return fail("ANE_M2_OPREFS slot outside the 61-slot "
+				    "BAR range");
+		}
+		if (tag > 0x3cu && (uint32_t)tag != 0x40u) {
+			return fail("ANE_M2_OPREFS tag outside the 61-slot "
+				    "BAR range (scratch_bufid 0x40 is "
+				    "allowed when scratch is enabled)");
+		}
+		m->call_refs[0][n].slot = (uint32_t)slot;
+		m->call_refs[0][n].tag = (uint32_t)tag;
+		m->call_refs[0][n].addr = 0;
+		m->call_refs[0][n].payload0 = 0;
+		n++;
+		p_local = (*end == ',') ? end + 1 : end;
+	}
+	if (n == 0) {
+		return fail("ANE_M2_OPREFS produced no ref pairs");
+	}
+	/* Insertion sort by slot. */
+	{
+		uint32_t i;
+		for (i = 1; i < n; i++) {
+			struct ane_m2_ref tmp = m->call_refs[0][i];
+			uint32_t j = i;
+			while (j > 0 && m->call_refs[0][j - 1].slot > tmp.slot) {
+				m->call_refs[0][j] = m->call_refs[0][j - 1];
+				j--;
+			}
+			m->call_refs[0][j] = tmp;
+		}
+	}
+	m->call_ref_count[0] = n;
+	return 0;
+}
+
 static int tdprop_block_count(const uint8_t *desc, uint64_t size)
 {
 	uint32_t w0 = le32(desc);
@@ -768,180 +1104,67 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			    "task");
 	}
 
-	/* Try the legacy rule first; the 9 stage 1-4 fixtures need it. The
-	 * base-register rule below is what the Parakeet islands need. If
-	 * the legacy attempt fails, we reset model and retry with the base
-	 * rule. Both attempts print the LIBANE error log to stderr unless
-	 * we redirect it: the legacy attempt's failure is expected and not
-	 * a bug for the islands, so we silence both attempts and only
-	 * surface a final failure.
-	 *
-	 * IslandBind (2026-09-30): the legacy and base attempts both
-	 * receive a scratch bufferId (auto-detected, ANE_M2_SCRATCH=<n>
-	 * forces it). When the cross-task slot conflict on islands is
-	 * scratch-eligible (TileDMA dst + KernelDMA only), the conflicting
-	 * refs are retagged to the scratch bufferId and a scratch BO is
-	 * added after refs_done. */
+/* Derive the BAR slots using the extents rule. The rule picks each
+	 * slot's tag from the slot's max payload plus the bound channel
+	 * allocations; it falls back to kernel-base (tag 2) only when slot
+	 * <= 1 and the register is a TileDMA source base (the legacy
+	 * convention used by real-div-scalar, clip-*, matvec, and the
+	 * kernel-resident rms reads). Cross-task scratch-eligible
+	 * conflicts merge to scratch_bufid (0x40); everything else
+	 * refuses. */
 	{
 		FILE *saved = stderr;
 		FILE *sink = fopen("/dev/null", "w");
-		uint32_t scratch_bufid = 0;
+		uint32_t scratch_bufid = scratch_bufid_from_env();
 		int scratch_used = 0;
-		const char *scratch_env;
-
-		scratch_env = getenv("ANE_M2_SCRATCH");
-		if (scratch_env && scratch_env[0] != '0') {
-			/* ANE_M2_SCRATCH=<bytes>: explicit scratch size
-			 * (>=1 byte). A bare "0" disables scratch (refuse
-			 * on conflict). A negative or non-numeric value is
-			 * treated as "auto". The bufferId stays 0x40 to
-			 * avoid the kernel/text section ids 2/3. */
-			unsigned long long v = strtoull(scratch_env, NULL, 0);
-
-			if (scratch_env[0] != '-' && scratch_env[0] != '+' &&
-			    v > 0) {
-				scratch_bufid = 0x40;
-			}
-		} else if (!scratch_env) {
-			/* Auto-enable: the host's default. Stage 1-4 +
-			 * rms don't conflict so scratch_bufid is never
-			 * used; the islands do. */
-			scratch_bufid = 0x40;
-		}
 
 		if (sink) {
 			stderr = sink;
 		}
-		err = derive_refs(desc, tasks, ntasks, model, 1 /*legacy*/,
+		err = derive_refs(desc, tasks, ntasks, model, 0 /*extents*/,
 				  scratch_bufid, &scratch_used);
-		if (!err) {
-			if (sink) {
-				fclose(sink);
-			}
-			stderr = saved;
-			model->scratch_io_index = scratch_used
-				? (uint32_t)model->io_count : UINT32_MAX;
-			goto refs_done;
-		}
-		/* The legacy rule refuses BAR slot 2/3 at a TileDMA source
-		 * base and forces tag 2 for slot <= 1. The island ANECs
-		 * need the base-register rule: tag is decided purely by
-		 * the patched register address. Reset model and rebuild
-		 * the io table. The 9 stage 1-4 fixtures don't hit the
-		 * legacy refusal, so they keep their bytes. */
-		memset(model, 0, sizeof(*model));
-		/* io table was zeroed too; rebuild it. */
-		model->io_count = input_count + 1;
-		err = 0;
-		for (k = 0; k < model->io_count && !err; k++) {
-			struct ane_m2_io *io = &model->io[k];
-			uint32_t b;
-			uint32_t tiles;
-
-			if (k < input_count) {
-				b = 5 + k;
-				io->dir = 0;
-			} else {
-				b = 4;
-				io->dir = 1;
-			}
-			/* The call checker rejects io ids equal to the
-			 * kernel/text section ids 2/3 (fw135 0x48ee0-
-			 * 0x48f10); ids >= 5 cannot hit them, but stay
-			 * explicit. */
-			if (b >= TILE_COUNT || b == 2 || b == 3) {
-				err = fail("io channel id collides with a "
-					   "section id");
-				break;
-			}
-			tiles = le32(d + 0x28 + b * 4);
-			if (!tiles || tiles > (1u << 20)) {
-				err = fail("unusable tile count for an io "
-					   "channel");
-				break;
-			}
-			io->buffer_id = b;
-			io->size = (uint64_t)tiles <<
-				   ANE_M2_TILE_UNIT_SHIFT;
-		}
-		if (!err) {
-			err = derive_refs(desc, tasks, ntasks, model,
-					  0 /*base*/, scratch_bufid,
-					  &scratch_used);
-		}
 		if (sink) {
 			fclose(sink);
 		}
 		stderr = saved;
-		/* If the base rule also failed, re-run the failing path
-		 * with stderr live so the LIBANE error log explains why.
-		 * scratch_used stays 0 because the failing derive_refs
-		 * returns before setting it. */
 		if (err) {
+			/* Re-run with stderr live so the LIBANE error log
+			 * tells the caller which rule failed and why. */
 			(void)derive_refs(desc, tasks, ntasks, model, 0,
 					  scratch_bufid, &scratch_used);
-		} else {
-			model->scratch_io_index = scratch_used
-				? (uint32_t)model->io_count : UINT32_MAX;
+			return err;
 		}
-	}
-refs_done:
-	;
-
-	if (err) {
-		return err;
+		model->scratch_io_index = scratch_used
+			? (uint32_t)model->io_count : UINT32_MAX;
 	}
 
 	/* ANE_M2_OPREFS="slot:tag,slot:tag,...": replace the derived ref
-	 * set entirely. This lets a device-side hypothesis swap the tag
-	 * for a slot (e.g. bind slot 3 to scratch 0x40 or to kernel 2)
-	 * without rebuilding the sections by hand. Empty or absent keeps
-	 * the derived refs. */
+	 * set entirely. Lets a device-side hypothesis swap the tag for a
+	 * slot (e.g. bind slot 3 to scratch 0x40 or to kernel 2) without
+	 * rebuilding the sections by hand. Empty or absent keeps the
+	 * derived refs. */
+	if (oprefs_apply(model)) {
+		return fail("ANE_M2_OPREFS parsing failed");
+	}
 	{
-		const char *prefs = getenv("ANE_M2_OPREFS");
-
-		if (prefs && prefs[0]) {
-			uint32_t n = 0;
-			const char *p = prefs;
-
-			while (*p && n < ANE_M2_MAX_BINDS) {
-				char *end;
-				unsigned long slot = strtoul(p, &end, 0);
-				unsigned long tag;
-
-				if (*end != ':') {
-					return fail("ANE_M2_OPREFS expects "
-						    "slot:tag pairs separated "
-						    "by commas");
-				}
-				p = end + 1;
-				tag = strtoul(p, &end, 0);
-				if (end == p) {
-					return fail("ANE_M2_OPREFS tag is not "
-						    "numeric");
-				}
-				if (slot > 0x3cu || tag > 0x3cu) {
-					return fail("ANE_M2_OPREFS slot/tag "
-						    "outside the 61-slot BAR "
-						    "range");
-				}
-				model->call_refs[0][n].slot = (uint32_t)slot;
-				model->call_refs[0][n].tag = (uint32_t)tag;
-				n++;
-				p = (*end == ',') ? end + 1 : end;
+		uint32_t i;
+		int has_scratch = 0;
+		for (i = 0; i < model->call_ref_count[0]; i++) {
+			if (model->call_refs[0][i].tag == 0x40) {
+				has_scratch = 1;
+				break;
 			}
-			if (n == 0) {
-				return fail("ANE_M2_OPREFS produced no ref "
-					    "pairs");
-			}
-			model->call_ref_count[0] = n;
+		}
+		if (has_scratch && model->scratch_io_index == UINT32_MAX) {
+			model->scratch_io_index = (uint32_t)model->io_count;
 		}
 	}
 
-	/* If the scratch merge fired, append the scratch entry to the io
-	 * table. The scratch bufferId is 0x40 (above the channel-id range
-	 * and not 2/3); the entry's direction is a host-internal value
-	 * (2) so ane_m2_send/read skip it. The scratch BO size is
+	/* If the scratch merge fired (either by derive_refs OR by
+	 * OPREFS naming scratch_bufid), append the scratch entry to the
+	 * io table. The scratch bufferId is 0x40 (above the channel-id
+	 * range and not 2/3); the entry's direction is a host-internal
+	 * value (2) so ane_m2_send/read skip it. The scratch BO size is
 	 * computed from BAR-ref extents at the merged slot, optionally
 	 * forced via ANE_M2_SCRATCH. */
 	if (model->scratch_io_index != UINT32_MAX) {
@@ -949,37 +1172,35 @@ refs_done:
 		uint64_t env_bytes = 0;
 		const char *env = getenv("ANE_M2_SCRATCH");
 		struct ane_m2_io *scratch_io;
+		uint32_t scratch_slot = 0;
+		uint32_t i;
+		int found = 0;
 
+		for (i = 0; i < model->call_ref_count[0]; i++) {
+			if (model->call_refs[0][i].tag == 0x40) {
+				scratch_slot = model->call_refs[0][i].slot;
+				found = 1;
+				break;
+			}
+		}
+		if (!found) {
+			return fail("scratch merge requested but no ref "
+				    "uses scratch_bufid 0x40");
+		}
+		err = scratch_size_bytes(desc, tasks, ntasks, scratch_slot,
+					 model->io[input_count].size,
+					 &scratch_bytes);
+		if (err) {
+			return err;
+		}
 		if (env && env[0] != '0' && env[0] != '-') {
 			env_bytes = strtoull(env, NULL, 0);
-		}
-		/* Identify the scratch slot: it's the slot whose union tag
-		 * was set to scratch_bufid (0x40). */
-		{
-			uint32_t i;
-			uint32_t scratch_slot = 0;
-
-			for (i = 0; i < model->call_ref_count[0]; i++) {
-				if (model->call_refs[0][i].tag == 0x40) {
-					scratch_slot =
-						model->call_refs[0][i].slot;
-					break;
-				}
-			}
-			err = scratch_size_bytes(desc, tasks, ntasks,
-						 scratch_slot,
-						 model->io[input_count].size,
-						 &scratch_bytes);
-			if (err) {
-				return err;
-			}
 		}
 		if (env_bytes > scratch_bytes) {
 			scratch_bytes = env_bytes;
 		}
 		/* Add guard page for kernel reads past end. */
 		scratch_bytes += 0x4000ull;
-
 		if (model->io_count >= ANE_M2_MAX_BINDS) {
 			return fail("io table full; cannot add scratch entry");
 		}
