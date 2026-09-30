@@ -85,11 +85,10 @@ The M2 Max (T6021) ANE works only with `ane_t6021.ko`, and that module cannot be
 - **Reboot-only rule.** Do not `rmmod ane_t6021`. Only a reboot unloads it.
 - **Opt out.** Run `sudo omarchy-ane-m2-enable --disable`. It restores the block line, turns the overlay off, and removes the fetched firmware. Run `sudo update-m1n1`, then reboot.
 - **State.** `omarchy-ane-m2-enable --status` prints one line: module blocked or enabled, firmware pinned or not, overlay on or off, the mailbox check, and whether `ane_t6021` is loaded. `omarchy-ane-check` shows the same state on an M2 Max.
-- **Known limits.** These come from the stock-kernel boots in [receipts/2026-09-30-t6021-stock-mailbox](receipts/2026-09-30-t6021-stock-mailbox/README.md).
-  - The mailbox receive line (884) fires about 700,000 times per second while the mailbox is started. That uses about one CPU in interrupt time. It starts with the first ANE command and does not always stop when the work stops. The fix is not applied yet.
-  - Latency: the median of an `add` run was 1.5 to 25 ms, and the p90 was 95 to 152 ms. The link to the interrupt load is not known.
-  - Mailbox sends: with the pinned macOS 13.5 firmware, the host sends no mailbox message after probe, so the never-firing `send-empty` line costs nothing. A later firmware that talks over the mailbox would make each full-FIFO send wait 500 ms and then fail. `omarchy-ane-firmware-fetch` installs only the 13.5 image.
+- **Fixed.** The mailbox receive-IRQ storm and the latency stalls it caused are fixed by PR #8: `ane_t6021.hello_wait_ms` now defaults to 0, so the mailbox never starts. Before the fix, line 884 fired about 700,000 times per second (about one CPU in interrupt time), and the `add` p90 was 95 to 152 ms. After it, the line does not fire, the p90 is 1.29 to 1.42 ms and the median is 1.28 to 1.40 ms, and a 30 s loop runs about 4,800 processes (it was 203). The per-boot BO cap is fixed by PR #9, a recycle pool for io BOs. Before the pool, a boot stopped after about 14,500 `ane-run` processes (the 2 GiB cap). With the pool, one boot ran 105,232 processes in 420 s with 0 failures and flat memory. Receipts: [t6021-stock-mailbox](receipts/2026-09-30-t6021-stock-mailbox/README.md) ("Option A applied") and [t6021-bo-pool](receipts/2026-09-30-t6021-bo-pool/README.md).
+- **Known limits.**
   - All M2 boots so far used a USB chain load from another Mac. A boot from the internal disk, with `update-m1n1`, is not proven yet.
+  - An intermittent all-zero output, seen on three boots, is not explained. A 1 ms settle after each call is the mitigation.
 
 ## Chip coverage
 
