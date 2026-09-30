@@ -107,6 +107,22 @@ struct ane_m2_sections {
 
 extern const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT];
 
+/* One explicit port for ane_m2_program_build_ports(). The caller supplies
+ * one entry per ANEC channel: a name (host-side label, not part of the
+ * emitted bytes), the direction, the channel id (== the buffer_id the
+ * firmware reads back from the IO array), the BAR slot the host wants
+ * the operation-section to bind, and the per-channel allocation in bytes
+ * (a multiple of 0x4000; the same value the encodeANEC emits as
+ * tiles[id] << 14). The port_count must equal the anec header's
+ * input_count+1 (no output doubling, no implicit scratch). */
+struct ane_m2_port_spec {
+	const char *name;
+	uint32_t dir; /* 0 = input, 1 = output */
+	uint32_t buffer_id;
+	uint32_t bar_slot;
+	uint64_t tile_bytes;
+};
+
 /* Parse the H14 anec and build all six LOAD_PROGRAM section payloads.
  * Returns 0 and fills `model` + `secs` (malloc'd, free with
  * ane_m2_sections_free), or -EINVAL/-ENOMEM and fills nothing.
@@ -114,6 +130,21 @@ extern const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT];
 int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			 struct ane_m2_model *model,
 			 struct ane_m2_sections *secs);
+
+/* Same as ane_m2_program_build() but uses `ports` (count `port_count`)
+ * to fill the io table and the union ref set directly, bypassing the
+ * derive_refs BAR walk and the input_count>3 refusal. The ref set is
+ * exactly the {bar_slot, buffer_id} pairs from the port list, sorted by
+ * bar_slot; the kernel/scratch section is not auto-added (no scratch
+ * merge). For Qwen program 20 the port table describes the four
+ * ANEC channels and the kernel constant at slot 1 (an extra
+ * {bar_slot=1, buffer_id=2} pair goes through `extra_kernel_ref` when
+ * non-zero; usually 0 so the constant stays implicit). */
+int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
+			       const struct ane_m2_port_spec *ports,
+			       uint32_t port_count,
+			       struct ane_m2_model *model,
+			       struct ane_m2_sections *secs);
 void ane_m2_sections_free(struct ane_m2_sections *secs);
 
 /* Device path on an ABI-2 accel node (nn->fd already open). Returns 0 and

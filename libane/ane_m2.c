@@ -1319,6 +1319,303 @@ static int tdprop_block_count(const uint8_t *desc, uint64_t size)
 	return walked;
 }
 
+/* Fill the kernel/descriptor/tdprop/procedure sections of an explicit
+ * port table build. Shares the descriptor/task split and the kernel
+ * constant-region copy with ane_m2_program_build(); the io table and
+ * ref set are filled from `ports`. `model->io`, `model->io_count`, and
+ * `model->call_refs[0]`/`call_ref_count[0]` are filled in. Returns 0 or
+ * a negative error code. */
+static int ane_m2_program_build_ports_inner(
+	const void *anec, uint64_t anec_size,
+	const struct ane_m2_port_spec *ports, uint32_t port_count,
+	struct ane_m2_model *model, struct ane_m2_sections *secs)
+{
+	const uint8_t *d = anec;
+	uint64_t payload, tsk_size, krn_size, const_off, gen_size;
+	uint32_t first_task, task_count, input_count, version;
+	uint32_t inputs = 0, outputs = 0;
+	uint32_t slot_used[0x40];
+	uint8_t *desc_buf, *gen, *oper, *proc, *tdp;
+	struct ane_task tasks[ANE_M2_MAX_TASKS];
+	uint32_t ntasks = 0;
+	int blocks;
+	uint32_t k;
+	uint32_t ref_count = 0;
+
+	memset(secs, 0, sizeof(*secs));
+	memset(model, 0, sizeof(*model));
+
+	if (anec_size < ANEC_M2_HEADER_SIZE) {
+		return fail("anec shorter than the H14 header layout");
+	}
+	payload = le64(d);
+	first_task = le32(d + 0x08);
+	task_count = le32(d + 0x0c);
+	tsk_size = le64(d + 0x10);
+	krn_size = le64(d + 0x18);
+	input_count = le32(d + 0x20);
+	version = le32(d + 0x24);
+
+	if (payload != anec_size - ANEC_M2_HEADER_SIZE) {
+		return fail("header payload size disagrees with file size");
+	}
+	if (version != 1) {
+		return fail("anec header version word is not the emitted 1");
+	}
+	if (krn_size > payload) {
+		return fail("constant region is larger than the payload");
+	}
+	const_off = payload - krn_size;
+	if (const_off & 0x3f) {
+		return fail("constant region is not 64-byte aligned");
+	}
+	if (tsk_size > const_off) {
+		return fail("task stream reaches into the constant region");
+	}
+	if (port_count != input_count + 1) {
+		return fail("port_count must equal anec input_count + 1");
+	}
+
+	/* Validate the port list: exactly one output, the rest inputs;
+	 * buffer_id unique; tile_bytes positive and 0x4000-aligned; the
+	 * kernel/text ids 2/3 are reserved and never valid as
+	 * buffer_id for an io record. The Qwen programs (prog_020) use
+	 * buffer_ids {4,5,6,7} — one output (4) plus three inputs
+	 * (5,6,7). The accept/emit order is the caller's input_count
+	 * inputs followed by the one output. */
+	for (k = 0; k < port_count; k++) {
+		if (!ports[k].tile_bytes ||
+		    (ports[k].tile_bytes & 0x3fffull)) {
+			return fail("port tile_bytes must be a positive "
+				    "multiple of 0x4000");
+		}
+		if (ports[k].buffer_id >= TILE_COUNT ||
+		    ports[k].buffer_id == 2 || ports[k].buffer_id == 3) {
+			return fail("port buffer_id collides with a section "
+				    "id or is out of range");
+		}
+		if (ports[k].bar_slot > 0x3cu) {
+			return fail("port bar_slot outside the 61-slot BAR "
+				    "range");
+		}
+		if (ports[k].dir == 0) {
+			inputs++;
+		} else if (ports[k].dir == 1) {
+			outputs++;
+		} else {
+			return fail("port dir must be 0 (input) or 1 "
+				    "(output)");
+		}
+	}
+	if (inputs != input_count || outputs != 1) {
+		return fail("port table must have input_count inputs and "
+			    "exactly one output");
+	}
+
+	/* Fill model->io in the same order as the caller gave: inputs
+	 * first (any order), output last. The generic-section emit
+	 * preserves this order, which the firmware treats as opaque
+	 * (it only checks id uniqueness and id!=2/3). */
+	memset(slot_used, 0, sizeof(slot_used));
+	model->io_count = port_count;
+	for (k = 0; k < port_count; k++) {
+		struct ane_m2_io *io = &model->io[k];
+		uint32_t s = ports[k].bar_slot;
+
+		io->buffer_id = ports[k].buffer_id;
+		io->dir = ports[k].dir;
+		io->size = ports[k].tile_bytes;
+		if (s < 0x40) {
+			slot_used[s] = 1;
+		}
+	}
+
+	/* Build the union ref set from the port table directly:
+	 * exactly one {bar_slot, buffer_id} pair per port, sorted by
+	 * bar_slot so the operation-section emit order is stable.
+	 * For Qwen program 20 the known-good binding (see
+	 * receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)
+	 * is {1,2} (kernel constant) plus {4,5},{5,4},{6,6},{7,7}
+	 * for the four io channels; we add the kernel pair here so
+	 * the operation section covers the BAR walks emitted by the
+	 * task stream at slot 1. */
+	{
+		struct ane_m2_ref tmp[ANE_M2_MAX_BINDS];
+		uint32_t i = 0;
+
+		/* Kernel constant slot (bar_slot 1 -> buffer_id 2). The
+		 * kernels live inside the anec constant region; the
+		 * firmware reads them through BAR slot 1 (tag 2). */
+		tmp[i].slot = 1;
+		tmp[i].tag = 2;
+		tmp[i].addr = 0;
+		tmp[i].payload0 = 0;
+		i++;
+		for (k = 0; k < port_count && i < ANE_M2_MAX_BINDS; k++) {
+			tmp[i].slot = ports[k].bar_slot;
+			tmp[i].tag = ports[k].buffer_id;
+			tmp[i].addr = 0;
+			tmp[i].payload0 = 0;
+			i++;
+		}
+		ref_count = i;
+		/* Insertion sort by slot (stable ascending order). */
+		for (i = 1; i < ref_count; i++) {
+			struct ane_m2_ref r = tmp[i];
+			uint32_t j = i;
+			while (j > 0 && tmp[j - 1].slot > r.slot) {
+				tmp[j] = tmp[j - 1];
+				j--;
+			}
+			tmp[j] = r;
+		}
+		for (i = 0; i < ref_count; i++) {
+			model->call_refs[0][i] = tmp[i];
+		}
+		model->call_ref_count[0] = ref_count;
+	}
+	model->calls = 1;
+	model->scratch_io_index = UINT32_MAX;
+	/* Drop unused-suppress for slot_used; not part of the emitted
+	 * bytes. The compiler trims it. */
+	(void)slot_used;
+
+	/* Descriptor section + kernel constant region, same as the
+	 * legacy path. */
+	if (tsk_size < FRAME_BYTES) {
+		return fail("task stream is shorter than one frame");
+	}
+	desc_buf = sec_alloc(secs, ANE_M2_SEC_DESCRIPTOR, tsk_size);
+	if (!desc_buf) {
+		return -ENOMEM;
+	}
+	memcpy(desc_buf, d + ANEC_M2_HEADER_SIZE, tsk_size);
+	for (k = 0; k < FRAME_BYTES; k++) {
+		if (desc_buf[k]) {
+			return fail("task frame not zero");
+		}
+	}
+	{
+		int err = split_h14_tasks(desc_buf, tsk_size, tasks,
+					  &ntasks);
+		if (err) {
+			return err;
+		}
+		if (!ntasks) {
+			return fail("the task stream holds no task");
+		}
+		if (ntasks != task_count) {
+			return fail("walked task count disagrees with the "
+				    "header taskCount");
+		}
+		if (first_task != tasks[0].words * 4) {
+			return fail("firstTaskBytes disagrees with the "
+				    "walked first task");
+		}
+	}
+	{
+		uint8_t *kern = sec_alloc(secs, ANE_M2_SEC_KERNEL,
+					 krn_size);
+		if (!kern) {
+			return -ENOMEM;
+		}
+		memcpy(kern, d + ANEC_M2_HEADER_SIZE + const_off, krn_size);
+	}
+
+	gen_size = 0x208 + 0x30ULL * model->io_count;
+	gen = sec_alloc(secs, ANE_M2_SEC_GENERIC, gen_size);
+	if (!gen) {
+		return -ENOMEM;
+	}
+	put_le32(gen + 0x00, 1);
+	put_le32(gen + 0x04, 0x10);
+	put_le32(gen + 0x204, model->io_count);
+	for (k = 0; k < model->io_count; k++) {
+		const struct ane_m2_io *io = &model->io[k];
+		uint8_t *e = gen + 0x208 + 0x30ULL * k;
+		uint32_t dir_field = io->dir ? 2 : 1;
+
+		put_le32(e + 0x00, 1);
+		put_le32(e + 0x04, io->buffer_id);
+		put_le32(e + 0x08, io->dir);
+		put_le32(e + 0x10, dir_field);
+		put_le64(e + 0x20, io->size);
+		put_le32(e + 0x28, 0xffff);
+	}
+
+	oper = sec_alloc(secs, ANE_M2_SEC_OPERATION,
+			 4 + 0x40cULL * model->calls);
+	if (!oper) {
+		return -ENOMEM;
+	}
+	put_le32(oper, model->calls);
+	for (k = 0; k < model->calls; k++) {
+		uint32_t n = model->call_ref_count[k];
+		uint32_t j;
+		uint8_t *rec = oper + 4 + 0x40cULL * k;
+
+		put_le32(rec + 0x08, n);
+		for (j = 0; j < n; j++) {
+			put_le32(rec + 0x0c + 8ULL * j,
+				 model->call_refs[k][j].slot);
+			put_le32(rec + 0x0c + 8ULL * j + 4,
+				 model->call_refs[k][j].tag);
+		}
+	}
+
+	proc = sec_alloc(secs, ANE_M2_SEC_PROCEDURE, 0x18 + 0x20);
+	if (!proc) {
+		return -ENOMEM;
+	}
+	put_le32(proc, 1);
+	put_le64(proc + 0x08, 0x18);
+	put_le64(proc + 0x10, 0x20);
+	put_le32(proc + 0x18, 1);
+	put_le32(proc + 0x1c, 3);
+	put_le32(proc + 0x20, 0);
+	put_le32(proc + 0x24, 0);
+	put_le32(proc + 0x28, 1);
+	put_le32(proc + 0x2c, 0);
+	put_le32(proc + 0x30, 0xffffffff);
+	put_le32(proc + 0x34, 4);
+
+	blocks = tdprop_block_count(desc_buf, tsk_size);
+	if (blocks < 0) {
+		return blocks;
+	}
+	if (!blocks) {
+		return fail("tdprop walk found no block");
+	}
+	tdp = sec_alloc(secs, ANE_M2_SEC_TDPROP, 40);
+	if (!tdp) {
+		return -ENOMEM;
+	}
+	put_le32(tdp, 1);
+	put_le32(tdp + 0x08, 0);
+	put_le32(tdp + 0x0c, (uint32_t)blocks);
+	put_le64(tdp + 0x10, 0);
+	put_le64(tdp + 0x18, 0);
+	put_le64(tdp + 0x20, tsk_size);
+	return 0;
+}
+
+int ane_m2_program_build_ports(const void *anec, uint64_t anec_size,
+			       const struct ane_m2_port_spec *ports,
+			       uint32_t port_count,
+			       struct ane_m2_model *model,
+			       struct ane_m2_sections *secs)
+{
+	if (!ports || port_count == 0) {
+		return fail("port list is empty");
+	}
+	if (port_count > ANE_M2_MAX_BINDS) {
+		return fail("port list exceeds ANE_M2_MAX_BINDS");
+	}
+	return ane_m2_program_build_ports_inner(anec, anec_size,
+					       ports, port_count,
+					       model, secs);
+}
+
 int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			 struct ane_m2_model *model,
 			 struct ane_m2_sections *secs)
