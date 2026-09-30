@@ -1247,3 +1247,25 @@ pre-alloc rejection, 4 KiB-but-not-16-KiB rejection (0x1000),
   contract is structural against the sha-pinned 13.5 (22G74)
   selene image only.
 
+## 21. Stock kernel, packaged overlay, ANE mailbox (2026-09-30)
+
+Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-stock-mailbox/README.md).
+
+- The stock linux-asahi kernel `7.1.13-3-1-ARCH` runs the ANE; the poll-TX
+  kernel is not needed. The mailbox node needs a second, never-firing
+  `send-empty` IRQ (AIC2 1833) for stock apple-mailbox to bind.
+- `packaging/dt/t6021-ane.dts` (omarchy-ane `9c925cd`) on the pristine
+  package DTB gives the lab tree again (phandles normalized, only
+  `__symbols__` differs), and the M2 passed on it: 20/20 gate loads and a
+  60 s four-worker burst, 680/680 exact. dart0 sits in the pmp domain as in
+  the lab tree; `ane_sys` was never booted.
+- On the 13.5 firmware the host sends no mailbox message after probe (RTKit
+  HELLO times out; commands use the ChMan ring and the IPI doorbell), so
+  the A2I FIFO cannot fill.
+- Open: AIC2 884 (`mailbox-recv`) storms at about 700,000/s while the
+  mailbox is started, about one CPU of hardirq time. The I2A FIFO is empty
+  during the storm, so 884 is not I2A-not-empty (inference: it is the ANE
+  doorbell line). `ane_t6021.hello_wait_ms=0` should keep it disabled; not
+  yet booted. Its link to the episodic latency stalls is not decided.
+- Every M2 boot so far is a USB chainload from the M1 host; the disk boot
+  path is unproven.
