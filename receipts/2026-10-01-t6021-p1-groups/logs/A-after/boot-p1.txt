@@ -1,0 +1,46 @@
+[    3.160804] ane_t6021 284000000.ane: BOOT-PHASE genpd domains attached: 8
+[    3.160836] ane_t6021 284000000.ane: BOOT-PHASE engine reads ok: CPU_STATUS = 0x2a, RVBAR = 0000010000000001 (bit0=1)
+[    3.160839] ane_t6021 284000000.ane: BOOT-PHASE fwload stage+alias begin
+[    3.173543] ane_t6021 284000000.ane: BOOT-PHASE dispatch (table_mode=2)
+[    3.173545] ane_t6021 284000000.ane: BOOT-PHASE dispatch (stop_after=0)
+[    3.173547] ane_t6021 284000000.ane: BOOT-PHASE P0 table SKIPPED (diagnostic)
+[    3.204363] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables begin
+[    3.235376] ane_t6021 284000000.ane: BOOT-PHASE P-1a eng+0x000
+[    3.266365] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.297371] ane_t6021 284000000.ane: BOOT-PHASE P-1b eng+0x038
+[    3.329379] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.360554] ane_t6021 284000000.ane: BOOT-PHASE P-1c eng+0x03c
+[    3.392384] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.424376] ane_t6021 284000000.ane: BOOT-PHASE P-1d eng+0x400
+[    3.455385] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.487391] ane_t6021 284000000.ane: BOOT-PHASE P-1e eng+0x600
+[    3.518389] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.549367] ane_t6021 284000000.ane: BOOT-PHASE P-1f eng+0x738
+[    3.580391] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.611387] ane_t6021 284000000.ane: BOOT-PHASE P-1g eng+0x798
+[    3.642390] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.673397] ane_t6021 284000000.ane: BOOT-PHASE P-1h eng+0x7f8
+[    3.704387] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.735388] ane_t6021 284000000.ane: BOOT-PHASE P-1i eng+0x900
+[    3.766392] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.797387] ane_t6021 284000000.ane: BOOT-PHASE P-1j eng+0x410
+[    3.828388] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.859369] ane_t6021 284000000.ane: BOOT-PHASE P-1k eng+0x420
+[    3.891393] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.922385] ane_t6021 284000000.ane: BOOT-PHASE P-1l eng+0x430
+[    3.953378] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.984394] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables end
+[    4.015372] ane_t6021 284000000.ane: BOOT-PHASE P1 scratch-clear+pulse
+[    4.046415] ane_t6021 284000000.ane: BOOT-PHASE P1 S1 SCRATCH6=1 (legacy ChMan/MBI select)
+[    4.077384] ane_t6021 284000000.ane: BOOT-PHASE P2 rvbar
+[    4.108384] ane_t6021 284000000.ane: BOOT-PHASE P3 cpu-release
+[    4.139385] ane_t6021 284000000.ane: BOOT-PHASE P3b cpu-release RUN=0x10
+[    4.171368] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA-READY
+[    4.202373] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA READY observed
+[    4.233381] ane_t6021 284000000.ane: BOOT-PHASE P5 prepare+publish
+[    4.265545] ane_t6021 284000000.ane: BOOT-PHASE P6 wake
+[    4.296403] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB-DONE
+[    4.328377] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB DONE observed
+[    4.360374] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\x94 not a success claim; transport stays fenced until response validation)
+[    4.360382] ane_t6021 284000000.ane: BOOT-PHASE sequence returned 0000000000000000 (cpu_started=1 fw_alive=1 booted=1) CPU_STATUS=0x2c
+[    4.371647] ane_t6021 284000000.ane: loaded ane_t6021 0.4.0 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)

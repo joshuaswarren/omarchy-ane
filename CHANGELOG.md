@@ -5,6 +5,7 @@
 - Removed: the `af_bridge_macos` experiment parameter (#33); the 26 macOS AXI2AF bridge values did not change encoder time (254.274 vs 254.276 ms); see receipts/2026-10-01-t6021-af-bridge-run/.
 - Added: `ane/t6021/probes/ane_dart_probe.c` reads the ANE DART tunable and PERF words (read only by default) and applies the bulk-DART tunables by group in the macOS order. Linux leaves the bulk DARTs at reset values; 0x220/0x224 and the SID words do not change the speed, and 0x20c breaks translation on a live DART; see receipts/2026-10-01-t6021-dart-tunables/.
 - Added: `packaging/dt/t8112-ane.dts`, the T8112 (M2) ANE, its three DARTs and its seven ANE power states, from the macOS 13.5 and 27.0 ADTs and the 13.5 ANE kext. The package does not install it: no driver binds `apple,t8112-ane`. Its key is `ane-t8112`. The iBoot values that `ane_t6021` replays (chip revision, ASC tunables) and a mailbox send-empty interrupt are not in Apple's IPSW data; see receipts/2026-10-01-t8112-ane/.
+- Tested, not merged: skipping the ten P-1 engine writes that macOS never makes (`p1_groups=0x1f`, branch `agent/m2-p1-groups`). The firmware boots and every output stays bit-exact; the encoder time does not change (254.147 vs 254.349 and 254.121 ms). The DART 0x300-0x310 words are ADT tunables whose values bound the IOMapper range; see receipts/2026-10-01-t6021-p1-groups/.
 
 ## 0.4.0 (2026-10-01)
 

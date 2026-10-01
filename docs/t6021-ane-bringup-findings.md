@@ -1477,3 +1477,24 @@ Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-d
   `apple_dart_hw_reset()` (kernel build). apple-dart is built in with
   `suppress_bind_attrs`, so no unbind/rebind; m1n1 cannot help because
   `ane_cpu` is off at handover and the DART resets at power-up.
+
+## 31. The ten Linux-only P-1 writes: skipped, no speed change; the DART DVA window (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-p1-groups](../receipts/2026-10-01-t6021-p1-groups/README.md).
+
+- P-1 writes 12 words in the engine page; the macOS 13.5 trace never writes
+  ten of them (0x038, 0x03c, 0x600, 0x738, 0x798, 0x7f8, 0x900, 0x410,
+  0x420, 0x430). The test-only parameter `p1_groups=0x1f` (code `46636d3`,
+  branch `agent/m2-p1-groups`, not merged) skips all ten. The firmware still
+  boots, every output stays bit-exact, and the encoder time does not change:
+  254.147 ms against 254.349 and 254.121 ms on default boots before and
+  after. Rejected; no per-group arm ran.
+- Without P-1 the ten words read 0 (0x038), 0xffff (0x03c), 0x100
+  (0x410-0x430) and 0 (the other five). 0x600, 0x738, 0x798, 0x7f8 and 0x900
+  read 0 also after P-1 writes them: the m1n1 T8103 values leave no readable
+  state there.
+- DART 0x300-0x310 are ADT tunables of all three ANE DARTs: 0x300 bit 0 on,
+  0x308/0x310 = the IOMapper range [0x100_0000_0000, 0x400_0000_0000) in
+  4 KiB units. LLT holds them; on BRD and BWR bit 0 is off and the bound
+  words change from boot to boot. BO IOVAs sit below 4 GiB (32-bit DMA
+  mask); a 42-bit mask would put them inside the window.
