@@ -1,0 +1,26 @@
+gate add rc=0 GATE PASS
+gate mul rc=0 GATE PASS
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+gate island-c-pv rc=0 GATE PASS seeds_pass=4
+gate island-a-kt rc=0 GATE PASS seeds_pass=4
+gate island-a-attn-p1 rc=0 GATE PASS seeds_pass=4
+gate island-b-select-runtime rc=0 GATE PASS seeds_pass=4
+gate island-b-select-constfill rc=0 GATE PASS seeds_pass=4
+gate rms-c2048-gamma rc=0 GATE PASS seeds_pass=4
+prog20 rc=124 WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'} 
+encoder rc=124 
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+    a = np.load(sys.argv[1])
+  File "/usr/lib/python3.14/site-packages/numpy/lib/_npyio_impl.py", line 454, in load
+    fid = stack.enter_context(open(os.fspath(file), "rb"))
+                              ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/var/tmp/rb-run-65d832d5/enc-hidden.npy'
+lifecycle add gate loads: 20/20 GATE PASS
+burst rc=0 w1 runs=3298 pass=3298 fail=0 w2 runs=3276 pass=3276 fail=0 w3 runs=3283 pass=3283 fail=0 w4 runs=3284 pass=3284 fail=0 exact lines: 13141 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+dmesg new lines: 16; bad new: 0; bad whole boot: 0
+2026-10-01T17:01:57Z
+bo_total_bytes 59031552
+ 53:          0          0          0          0          0          0          0          0          0          0          0          0     AIC2 66420 Level     285408000.mailbox-recv
+ 54:          0          0          0          0          0          0          0          0          0          0          0          0     AIC2 67369 Level     285408000.mailbox-send
+ 12:01:57 up 5 min,  1 user,  load average: 2.57, 0.81, 0.30

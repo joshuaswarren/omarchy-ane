@@ -96,4 +96,57 @@ second copy of `e1c37287…`.
 
 ## Result
 
-Pending: the reboot waits for the lab's GPU lock on the M2.
+PASS on boot `65d832d5-482a-48b3-abcc-017a87ad4c7e`. No rollback ran.
+
+The M2 had been parked for a macOS session (14:30-16:52Z). It came back on
+boot `a273ac7b` with the old module and `e1c37287`. The install ran at
+16:53Z: ESP backup `boot.bin.e1c37287.bak`, module `54c1da56…` and boot.bin
+`62ba3010…`, each verified by readback, then sync and 45 s. The lab locks
+were free right before the reboot (T0 16:54:36Z, `systemctl reboot`). ssh
+answered 110 s later.
+
+After the boot:
+
+| Check | Result |
+|---|---|
+| Boot path | disk: `BOOT_IMAGE=/vmlinuz-linux-asahi …`, m1n1 stage 2 `v1.6.1-pdtrace`, U-Boot 2026.07; `running`, 0 failed units |
+| Loaded module | `/lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko` sha256 `54c1da562f869797932403ec6af1f140ed86658142c21287bb2f26dcad128235`; `modinfo` and `/sys/module/ane_t6021/version` `0.4.0`; srcversion `1FEE1B2BCF064C6109E1904` |
+| Device tree | `iommu@285800000/285810000/285820000` `status = "okay"` (before: no status), each bound to `apple-dart`; `284000000.ane` bound to `ane_t6021`; `omarchy-ane-dt status`: `node=present source=overlay` |
+| `omarchy-ane-check` (release tree) | 6 ok, `ready` |
+| Mailbox IRQs `285408000` recv/send | 0 / 0 |
+| `bo_total_max_mb` | 12288 |
+| add, mul | GATE PASS, 512/512 lanes bit-exact, 4 trials + reopen |
+| matvec 2048x5120 | GATE PASS, 5120/5120 lanes in band, max 0.187 cond units |
+| island-c-pv, island-a-kt, island-a-attn-p1 | GATE PASS, 3 seeds, max 0.487 cond units |
+| island-b-select-runtime, island-b-select-constfill | GATE PASS, 3 seeds, exact |
+| rms-c2048-gamma | GATE PASS, 3 seeds, max 1.55 ulp |
+| Qwen prog_020, one call | vs M1 golden rel L2 0.001174, max abs 0.000732; 4.830 ms |
+| Whole Parakeet encoder, 5 calls | vs golden max abs 0, rel L2 0; fp16 sha256 `fca96f13…`; 254.275 ms min, 254.442 ms median |
+| Lifecycle | 20 of 20 `gate.sh add` loads GATE PASS |
+| 60 s burst, 4 workers | 13,141 processes, 13,141 exact, 0 fail |
+| Kernel log | 0 lines of `EXCH.*failed`, `completion wait`, `mailbox.*timed out`, `ETIMEDOUT`, `quarantin`, `translation fault`, DART error over the whole boot; the only new lines during the gates are firewall (`UFW BLOCK`) lines |
+
+Every device process ran under `flock /var/tmp/ane-run.lock timeout 120`, with
+the userspace built on the M2 from an archive of `9f37b47` (`ane-run`
+`f687a7ab…`, equal to the draft's build). One protocol slip: the first
+prog_020 and encoder runs had a second, outer flock around
+`tools/qwen_prog_run.py`, which takes the same lock itself. Both waited on
+each other and ended at the 120 s timeout before any device work (no program
+load, no output surface). The numbers above come from the rerun without the
+outer lock.
+
+The M2 stays on the release module and on boot.bin `62ba3010…`.
+
+Logs: `logs/tree.diff` (new tree against `8f5491c2`), `logs/compare.txt`
+(boot.bin parts), `logs/gate-summary.log` (first gate run, with the two
+timed-out steps), `logs/qwen-rerun-summary.log` (prog_020 and encoder rerun).
+
+## Limits
+
+- One boot of one M2 Max, with two changes (the module and the tree). A
+  pass covers both. It does not say what each one does alone.
+- The #23 change was booted on a kernel with no ANE nodes. A kernel tree that
+  ships them disabled (aurora-silicon/linux #65) has not been booted.
+- The disk path here uses the lab m1n1 stage 2 and the opt-in U-Boot
+  overlay (see [2026-10-01-t6021-disk-boot](../2026-10-01-t6021-disk-boot/README.md)).
+- No camera watched this boot.

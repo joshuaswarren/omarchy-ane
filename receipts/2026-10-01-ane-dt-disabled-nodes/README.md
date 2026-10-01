@@ -124,6 +124,11 @@ After the fix (`logs/tests-after.txt`, `logs/pytest-after.txt`):
 
 - No boot. These are static runs on an x86_64 host with a trimmed tree, not a
   full kernel DTB, and no M2 ran this tree.
+  Addendum, later on 2026-10-01: an M2 Max disk boot ran a tree that this
+  overlay built on the stock kernel (no kernel ANE nodes); the three DARTs
+  read `okay` and the ANE gates pass
+  ([2026-10-01-t6021-release-boot](../2026-10-01-t6021-release-boot/README.md)).
+  A kernel that ships the nodes disabled is still unbooted.
 - omarchy-mac-boot `dtb-overlays.sh` (joshuaswarren/omarchy-mac
   `feat/dtb-overlays` `986486a7`, draft omacom/omarchy-mac#677) has the same
   skip rule: `dtb_overlays_has_compatible` greps every `compatible =` line of

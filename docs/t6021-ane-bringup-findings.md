@@ -1281,8 +1281,10 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   fails with `ENOMEM` before the cap. One boot loaded and ran all 38 Qwen
   programs once each, with 2.63 GiB counted at the end
   ([receipts/2026-10-01-t6021-bo-cap](../receipts/2026-10-01-t6021-bo-cap/README.md)).
-- Every M2 boot so far is a USB chainload from the M1 host; the disk boot
-  path is unproven.
+- The disk boot path works on the test laptop since 2026-10-01 with the
+  opt-in `uboot-serial-stdin-t6021` overlay and the lab m1n1 stage 2
+  ([receipts/2026-10-01-t6021-disk-boot](../receipts/2026-10-01-t6021-disk-boot/README.md));
+  see section 26 for the 0.4.0 module on that path.
 - `ane-run --ports` binds the port table on the device and refuses a port
   whose surface is larger than its io BO (`49eb8ed`). A BAR slot is the
   HWX program-descriptor resource at `+0x10 + 0x10 * slot` (0 text, 1 kernel
@@ -1371,3 +1373,20 @@ Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-
   most 5%.
 - The clock (or core use) can still explain the linear layers; activation
   traffic explains the rest.
+
+## 26. The 0.4.0 release module and the #23 overlay on a disk boot (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-release-boot](../receipts/2026-10-01-t6021-release-boot/README.md).
+
+- The release-built `ane_t6021.ko` (sha256 `54c1da56…`, 0.4.0) and a boot.bin
+  built by the packaged path from the #23 overlay (j414c tree `c31a54c3…`)
+  booted together from the disk. The three ANE DARTs read `status = "okay"`
+  in the live tree and bind to `apple-dart`; the full device gate, the
+  whole encoder (bit-exact, 254.3 ms) and a 60 s four-worker burst pass.
+- On a kernel without ANE nodes, the #23 change adds only the three status
+  properties to the tree. The kernel case #23 was written for (nodes shipped
+  disabled) has not been booted.
+- The module bytes depend on the build directory: the path is in the module
+  10 times. A rebuild of the same source in another directory gives a
+  different sha256 with the same srcversion and `.text`. A DKMS build will
+  not reproduce the release sha; compare srcversion and `.text` instead.
