@@ -175,7 +175,7 @@ IOVA — under the fw lock, before the exchange goes out:
 - the io BOs of every `PROCEDURE_CALL`.
 
 A `fw_ref` BO never goes back to the kernel, and its bytes stay counted
-against `ANE_T6021_BO_TOTAL_MAX` (2 GiB):
+against the `bo_total_max_mb` cap (12 GiB by default):
 
 - a section BO of a sent `LOAD_PROGRAM` is held until reboot, because the
   cached firmware program keeps reading it;
@@ -192,7 +192,12 @@ freed while mapped stays allocated until the mapping is torn down.
 The held memory is therefore the loaded program sections plus the peak
 number of io BOs in use at the same time, not the sum over every
 process. Before the pool, every process held its io BOs until reboot, and
-a boot ran out of the 2 GiB after about 14,500 add processes.
+a boot ran out of the old 2 GiB cap after about 14,500 add processes.
+The 38 Qwen programs hold about 2.6 GiB of sections, so the cap is now a
+parameter with a 12 GiB default. Every BO also needs IOVA below 4 GiB
+(the module sets a 32-bit DMA mask), so `BO_INIT` fails with `ENOMEM`
+near 4 GiB of BOs whatever the cap. `bo_total_bytes` shows the bytes
+counted now; the probe line `loaded ane_t6021 ...` names the cap.
 
 ## Module parameters (compiled defaults = proven configuration)
 
@@ -216,6 +221,8 @@ bisection only.
 | `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (receipts/2026-09-30-t6021-stock-mailbox). A firmware that speaks RTKit needs `1000` (the lab value). |
 | `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue (only with an RTKit instance: `legacy_only=0`, or legacy mode with `hello_wait_ms` > 0) |
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
+| `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
+| `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
 
 Lab knobs that stayed at their inert values in every proven run are
 deleted outright, not kept at 0: `fw_diag_marker`, `fw_load_stamp_base`,
