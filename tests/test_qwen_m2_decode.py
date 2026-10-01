@@ -77,13 +77,17 @@ def test_per_m_programs_and_states_follow_the_prompt_max_len():
                            ("y", "output", [1, 1, 1, 2]), ("s2", "output", [1, 2, m, 3])]
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
+        permuted = attention(5)
+        permuted[1] = ("s", "input", [1, 2, 3, 5])  # [2, 3, M] for [2, M, 3]: same element count
         files = {"base/prog_000": _table("prog_000", attention(4)),
                  "base/prog_001": _table("prog_001", [("a", "input", [1, 2]), ("h", "output", [1, 2])]),
                  "perm/M3/prog_000": _table("prog_000", attention(3)),
-                 "perm/M2/prog_000": _table("prog_000", attention(3))}
+                 "perm/M2/prog_000": _table("prog_000", attention(3)),
+                 "perm/M5/prog_000": _table("prog_000", permuted)}
         for rel, table in files.items():
             (tmp / rel).mkdir(parents=True)
             (tmp / rel / "ports.json").write_text(json.dumps(table))
+            (tmp / rel / "program-0.anec").touch()
         args = argparse.Namespace(out=str(tmp / "out"), anec_dir=str(tmp / "base"), ports_dir=None,
                                   per_m_dir=str(tmp / "perm"))
         dec = Decoder(args, manifest)
@@ -94,12 +98,12 @@ def test_per_m_programs_and_states_follow_the_prompt_max_len():
         assert dec.max_len == 3 and dec.states[0]["s"].shape == (2, 3, 3) and not dec.states[0]["s"].any()
         assert [t[0] for t in dec.tables] == [tmp / "perm/M3/prog_000/program-0.anec",
                                               tmp / "base/prog_001/program-0.anec"]
-        try:
-            dec.configure(2)  # a table built for M=3 must not pass as M=2
-        except Refuse:
-            pass
-        else:
-            raise AssertionError("configure(2) accepted an M=3 port table")
+        for m in (2, 5, 6):  # an M=3 table, a permuted M=5 table, no M=6 set
+            try:
+                dec.configure(m)
+            except Refuse:
+                continue
+            raise AssertionError(f"configure({m}) accepted a wrong or missing port table")
 
 
 def test_lanes_and_states_chain_across_programs_and_steps():

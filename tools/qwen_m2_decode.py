@@ -157,18 +157,21 @@ class Decoder:
                 anec_dir = Path(args.anec_dir)
                 path_dir, name = (Path(args.ports_dir), "ports.resolved.json") if args.ports_dir \
                     else (anec_dir, "ports.json")
-            path = path_dir / prog / name
+            path, anec = path_dir / prog / name, anec_dir / prog / "program-0.anec"
+            if not (path.is_file() and anec.is_file()):
+                raise Refuse(f"max_len {m}: {path} or {anec} is missing")
             table = json.loads(path.read_text())
             if table.get("program") != prog or table.get("exceptions"):
                 raise Refuse(f"{path}: wrong program or unresolved exceptions")
             ports = port_map_from_table(table)
-            want = {s["port"]: ("input", s["shape"]) for s in pr["srcs"]}
-            want.update({d["port"]: ("output", d["shape"]) for d in pr["dsts"]})
-            want.update({s["out_port"]: ("output", s["out_shape"]) for s in pr["states"]})
-            got = {n: (p["direction"], int(np.prod(p["shape"]))) for n, p in ports.items()}
-            if got != {n: (d, int(np.prod(s))) for n, (d, s) in want.items()}:
-                raise Refuse(f"{path}: ports {sorted(got)} do not match the manifest {sorted(want)}")
-            self.tables.append((anec_dir / prog / "program-0.anec", path, ports))
+            dims = lambda shape: [d for d in shape if d != 1]
+            want = {s["port"]: ("input", dims(s["shape"])) for s in pr["srcs"]}
+            want.update({d["port"]: ("output", dims(d["shape"])) for d in pr["dsts"]})
+            want.update({s["out_port"]: ("output", dims(s["out_shape"])) for s in pr["states"]})
+            got = {n: (p["direction"], dims(p["shape"])) for n, p in ports.items()}
+            if got != want:
+                raise Refuse(f"{path}: ports {sorted(got.items())} do not match the manifest {sorted(want.items())}")
+            self.tables.append((anec, path, ports))
         self.reset()
 
     def reset(self):
