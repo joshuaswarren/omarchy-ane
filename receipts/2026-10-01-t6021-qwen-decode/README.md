@@ -168,3 +168,7 @@ in this directory: [SHA256SUMS](SHA256SUMS).
 Not covered: a reference produced on the M2 by Apple's runtime, an
 instrumented M1 run at a divergence step (the dump covers steps 0-2 and 11-13
 only), and more than one boot.
+
+The divergence analysis (float64 chains of all seven prompts, the per-program
+error budget, the T6021 output-grid test, the flip model) and the
+pre-registered rule for the native macOS run are in [precision.md](precision.md).
