@@ -1,0 +1,10 @@
+bd202b9bdfad4b8b9714ebf962741a85747e84ab88f70f4cde586c998a74322a  ./PR-DRAFT.md
+7c9bae216fc349d5f7295958b5c1228f04e9f06b875200867fa0abae5b5e1b2e  ./README.md
+f8f491286051fd9a7a06d29616c0a8c7f8b1140403c7bb1aae5d6f662e0b9b1a  ./build-uboot-mtp.sh
+76cbad1b1aad1ca970ef785a94d21235196a5b7eb4310bfdc96a88056b61edc3  ./hosttest/run.sh
+4573eb8473caec8758c6752cc9c6431074476d42fadcc2852b523b4a9dba47b8  ./hosttest/shim.h
+fc4baf653277eb2dc02ad6069a711e973d656189fd3531a7c27c6c69fc7be529  ./hosttest/test_mtp_kbd.c
+c372456d3a64b6d3e41c66cccb3fb99170fc09213be393cba8471a68043ca555  ./patches/0001-input-apple_mtp_kbd-Take-key-input-only-from-the-key.patch
+7a5d66ab8fb937350dec88eb36c11005a19d018ba1c11eb0e142df1f0f77c88c  ./patches/0002-input-apple_mtp_kbd-Ignore-keys-that-are-down-when-t.patch
+f88b6c1f08cc03ec4ea2e7ec40fc95fc43aa17802b2b8b8c80900ef96a2d2e02  ./uboot-lab.config
+53def3cf05b8032d8bf91a95748d111129bfb36325da39925d66a54ac0100f37  ./w12-check.sh

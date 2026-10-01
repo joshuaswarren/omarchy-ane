@@ -1,0 +1,170 @@
+From 8e844eccf63c554b5c05edbdfb531db3a3420bef Mon Sep 17 00:00:00 2001
+From: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 06:59:48 -0500
+Subject: [PATCH 2/2] input: apple_mtp_kbd: Ignore keys that are down when the
+ keyboard starts
+
+The MTP sends keyboard reports without a request when it starts. A key
+that is down in such a report was not pressed at a U-Boot prompt: it
+can be a stuck key, an object on the keyboard or a stale state. Today
+it becomes a key press, which stops autoboot and the GRUB menu timeout.
+
+Take the keyboard interface as announced only after its last EVENT_INIT
+packet (more_packets is 0), as Linux does, and drop its reports before
+that.
+
+Take the keyboard reports that were already queued at the first poll as
+the key state at start: keys that are down in them make no key event,
+and their release makes none either. Print one line with the keys that
+are down, so that a stuck key shows on the console. Reports that come
+after the first poll are handled as before. A report with no key down,
+and a report that repeats the previous one, make no key event, as
+before.
+
+Move KBD_REPORTID to apple_kbd.h for this.
+
+Signed-off-by: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+---
+ drivers/input/apple_kbd.c     |  3 ---
+ drivers/input/apple_kbd.h     |  3 +++
+ drivers/input/apple_mtp_kbd.c | 43 ++++++++++++++++++++++++++++++++---
+ 3 files changed, 43 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/input/apple_kbd.c b/drivers/input/apple_kbd.c
+index 71e242a..f620a61 100644
+--- a/drivers/input/apple_kbd.c
++++ b/drivers/input/apple_kbd.c
+@@ -57,9 +57,6 @@ static const u8 hid_kbd_keymap[] = {
+ 	KEY_BACKSLASH, KEY_COMPOSE, KEY_POWER, KEY_KPEQUAL,
+ };
+ 
+-/* Report ID used for keyboard input reports. */
+-#define KBD_REPORTID	0x01
+-
+ static void apple_kbd_service_modifiers(struct input_config *input,
+ 					struct apple_kbd_priv *priv)
+ {
+diff --git a/drivers/input/apple_kbd.h b/drivers/input/apple_kbd.h
+index 2a9d002..4ef41a8 100644
+--- a/drivers/input/apple_kbd.h
++++ b/drivers/input/apple_kbd.h
+@@ -10,6 +10,9 @@
+ 
+ #include <input.h>
+ 
++/* Report ID used for keyboard input reports. */
++#define KBD_REPORTID	0x01
++
+ struct apple_kbd_report {
+ 	u8 reportid;
+ 	u8 modifiers;
+diff --git a/drivers/input/apple_mtp_kbd.c b/drivers/input/apple_mtp_kbd.c
+index ab41b5c..6bbc455 100644
+--- a/drivers/input/apple_mtp_kbd.c
++++ b/drivers/input/apple_mtp_kbd.c
+@@ -27,6 +27,7 @@ struct apple_mtp_kbd_priv {
+ 	u32 init_size;
+ 	u32 fifo_size;
+ 	int kbd_iface;		/* keyboard interface, -1 until announced */
++	int backlog;		/* bytes queued at the first poll, -1 before it */
+ };
+ 
+ #define DATA_TX8		0x4
+@@ -122,8 +123,9 @@ static int dchid_input_len(struct dchid_hdr *hdr, u8 *body)
+ }
+ 
+ /*
+- * The comm interface announces each interface with an EVENT_INIT report
+- * that names it. Remember which one is the keyboard.
++ * The comm interface announces each interface with EVENT_INIT reports
++ * that name it. Remember which one is the keyboard once its last init
++ * packet is in, as Linux does.
+  */
+ static void apple_mtp_kbd_comm(struct apple_mtp_kbd_priv *priv,
+ 			       struct dchid_hdr *hdr, u8 *body)
+@@ -135,15 +137,37 @@ static void apple_mtp_kbd_comm(struct apple_mtp_kbd_priv *priv,
+ 	    init->type != EVENT_INIT)
+ 		return;
+ 
+-	if (!strncmp(init->name, "keyboard", sizeof(init->name)))
++	if (!strncmp(init->name, "keyboard", sizeof(init->name)) &&
++	    !init->more_packets)
+ 		priv->kbd_iface = init->iface;
+ }
+ 
++/*
++ * A keyboard report that was queued before the first poll gives the key
++ * state at start, not a key press at a prompt. Take it as the initial
++ * state: keys that are down in it make no key event, and their release
++ * makes none either. So a stuck key never gets to stdin.
++ */
++static void apple_mtp_kbd_held(struct apple_mtp_kbd_priv *priv, u8 *data)
++{
++	struct apple_kbd_report *r = (void *)data;
++
++	if (r->reportid != KBD_REPORTID)
++		return;
++
++	priv->kbd.old = *r;
++	if (r->modifiers || memchr_inv(r->keycode, 0, sizeof(r->keycode)))
++		printf("mtp: keys down at start, ignored: %02x %02x %02x %02x %02x %02x %02x\n",
++		       r->modifiers, r->keycode[0], r->keycode[1], r->keycode[2],
++		       r->keycode[3], r->keycode[4], r->keycode[5]);
++}
++
+ static int apple_mtp_kbd_check(struct input_config *input)
+ {
+ 	struct udevice *dev = input->dev;
+ 	struct apple_mtp_kbd_priv *priv = dev_get_priv(dev);
+ 	struct dchid_hdr hdr;
++	bool startup;
+ 	int ret;
+ 
+ 	/* Poll for syslogs if RTKit is up */
+@@ -151,6 +175,8 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 		apple_rtkit_helper_poll(priv->helper, 0);
+ 
+ 	u32 pending = readl(priv->local + DATA_RX_COUNT);
++	if (priv->backlog < 0)
++		priv->backlog = pending;
+ 	if (pending < 8)
+ 		return 0;
+ 
+@@ -164,9 +190,14 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 		/* Not at a packet start: drop what is queued, then resync */
+ 		dev_err(dev, "bad header length %d\n", hdr.hdr_len);
+ 		dockchannel_read(dev, NULL, pending - sizeof(hdr));
++		priv->backlog = 0;
+ 		return 0;
+ 	}
+ 
++	/* Packets that were queued at the first poll were sent at start */
++	startup = priv->backlog > 0;
++	priv->backlog -= min_t(int, priv->backlog, sizeof(hdr) + hdr.length + 4);
++
+ 	/* Save comm init messages for the next stage */
+ 	if (hdr.iface == 0) {
+ 		int space = priv->fifo_size - priv->init_size;
+@@ -204,6 +235,11 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 		if (len < (int)sizeof(struct apple_kbd_report))
+ 			return 0;
+ 
++		if (startup) {
++			apple_mtp_kbd_held(priv, buf + sizeof(struct dchid_subhdr));
++			return 0;
++		}
++
+ 		return apple_kbd_handle_report(input, &priv->kbd,
+ 					       buf + sizeof(struct dchid_subhdr),
+ 					       len);
+@@ -284,6 +320,7 @@ static int apple_mtp_kbd_probe(struct udevice *dev)
+ 		return -ENOMEM;
+ 
+ 	priv->kbd_iface = -1;
++	priv->backlog = -1;
+ 
+ 	input->dev = dev;
+ 	input->read_keys = apple_mtp_kbd_check;
+-- 
+2.39.5
+
