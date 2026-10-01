@@ -1,0 +1,37 @@
+# boot T (04731cc7, stock kernel): journalctl -b -3 -u linux-modules-cleanup.service (host field removed)
+[    4.953484] systemd[1]: Starting Clean up modules from old kernels...
+[    4.957554] bash[659]: + for i in /usr/lib/modules/[0-9]*
+[    4.957554] bash[659]: + [[ 7.1.13-3-1-ARCH = 7\.1\.13\-3\-1\-ARCH ]]
+[    4.957554] bash[659]: + continue
+[    4.957554] bash[659]: + for i in /usr/lib/modules/[0-9]*
+[    4.957554] bash[659]: + [[ 7.1.13-3-1-ARCH-dart = 7\.1\.13\-3\-1\-ARCH ]]
+[    4.957554] bash[659]: + pacman -Qo /usr/lib/modules/7.1.13-3-1-ARCH-dart
+[    5.173475] bash[662]: error: No package owns /usr/lib/modules/7.1.13-3-1-ARCH-dart
+[    5.180146] bash[659]: + rsync -AHXal /usr/lib/modules/7.1.13-3-1-ARCH-dart /usr/lib/modules/.old/
+[    5.557274] bash[659]: + rm -rf /usr/lib/modules/7.1.13-3-1-ARCH-dart
+[    5.653727] systemd[1]: linux-modules-cleanup.service: Deactivated successfully.
+[    5.653996] systemd[1]: Finished Clean up modules from old kernels.
+[    5.654140] systemd[1]: linux-modules-cleanup.service: Consumed 459ms CPU time over 700ms wall clock time, 318.1M memory peak.
+
+# boot C (6899c555, 7.1.13-3-1-ARCH-dart): selected lines of journalctl -b -1 (host field removed)
+[    1.088574] kernel: Linux version 7.1.13-3-1-ARCH-dart (linux-asahi@dartkern) (aarch64-linux-gnu-gcc (Debian 12.2.0-14) 12.2.0, GNU ld (GNU Binutils for Debian) 2.40) #1 SMP PREEMPT_DYNAMIC Thu Oct  1 17:10:49 CDT 2026
+[    1.088865] kernel: Kernel command line: BOOT_IMAGE=/vmlinuz-linux-asahi-dart root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash ane_dart_oneshot=ctl panic=30 systemd.watchdog_sec=120 systemd.crash_action=reboot apple_dart.ane_tunables=0
+[    1.089736] kernel: apple-dart 285820000.iommu: DART [pagesize 4000, 16 streams, bypass support: 1, bypass forced: 0, locked: 0, AS 42 -> 42] initialized
+[    1.089805] kernel: apple-dart 285810000.iommu: DART [pagesize 4000, 16 streams, bypass support: 1, bypass forced: 0, locked: 0, AS 42 -> 42] initialized
+[    1.089933] kernel: apple-dart 285800000.iommu: DART [pagesize 4000, 16 streams, bypass support: 1, bypass forced: 0, locked: 0, AS 42 -> 42] initialized
+[    1.103148] systemd[1]: Using hardware watchdog /dev/watchdog0: 'Apple SoC Watchdog', version 0.
+[    2.865094] systemd[1]: Using hardware watchdog /dev/watchdog0: 'Apple SoC Watchdog', version 0.
+[    2.865104] zram_generator::generator[344]: modprobe "zram" failed, ignoring: code exit status: 1
+[    2.861122] systemd-modules-load[359]: Failed to find module 'pkcs8_key_parser'
+[    2.861123] systemd-modules-load[359]: Failed to find module 'i2c_dev'
+[    2.861123] systemd-modules-load[359]: Failed to find module 'crypto_user'
+[   93.135939] modprobe[629]: modprobe: FATAL: Module netconsole not found in directory /lib/modules/7.1.13-3-1-ARCH-dart
+[   93.161227] tailscaled[632]: is CONFIG_TUN enabled in your kernel? `modprobe tun` failed with: modprobe: FATAL: Module tun not found in directory /lib/modules/7.1.13-3-1-ARCH-dart
+[   93.258526] systemd[1]: Reached target Multi-User System.
+[   93.263593] systemd[1]: linux-modules-cleanup.service: Deactivated successfully.
+[   93.276444] systemd[1]: linux-modules-cleanup.service: Consumed 78ms CPU time over 224ms wall clock time, 92.3M memory peak.
+[   95.429408] tailscaled[770]: is CONFIG_TUN enabled in your kernel? `modprobe tun` failed with: modprobe: FATAL: Module tun not found in directory /lib/modules/7.1.13-3-1-ARCH-dart
+[   97.686981] tailscaled[866]: is CONFIG_TUN enabled in your kernel? `modprobe tun` failed with: modprobe: FATAL: Module tun not found in directory /lib/modules/7.1.13-3-1-ARCH-dart
+[  103.646870] systemd[1]: Reached target Graphical Interface.
+[  103.706400] sddm[1142]: Starting...
+# tailscaled 'modprobe tun failed' lines in boot C: 298

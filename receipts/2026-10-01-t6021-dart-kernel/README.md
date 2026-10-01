@@ -1,8 +1,9 @@
 # T6021: the ANE DART tunables written by apple-dart at DART reset (2026-10-01)
 
-Status: PREPARED, NOT BOOTED. The patched kernel is built and staged on the
-build host. Nothing is installed on the M2 yet. This file holds the decision
-rule, the one-shot boot plan and its fallback, written before the first boot.
+Status: INSTALLED, ONE-SHOT PROVEN, CONTROL BOOT C FAILED ON A MISSING
+MODULE TREE (cause found, fix staged, not re-run). The decision rule, the
+one-shot plan and its fallback were written before the first boot; the boot
+record is below.
 
 ## Question
 
@@ -128,7 +129,7 @@ aarch64`. The file sha differs from `54c1da56…` because the bytes depend on
 the compiler and the build path (T6021ReleaseBoot finding). The full list
 with the scripts is `logs/stage-SHA256SUMS`.
 
-## Install (not run yet)
+## Install
 
 `scripts/install.sh STAGEDIR`, run on the M2 from the stock kernel. It
 writes only new paths and stops at the first failed check:
@@ -139,9 +140,11 @@ writes only new paths and stops at the first failed check:
    `/boot/initramfs-linux-asahi.img`, `/boot/grub/grub.cfg`,
    `/boot/grub/grubenv`, the ESP `BOOTAA64.EFI` and `m1n1/boot.bin`, and a
    manifest hash of `/usr/lib/modules/7.1.13-3-1-ARCH`.
-3. Module tree to `/usr/lib/modules/7.1.13-3-1-ARCH-dart/` (`tar -d`
-   compares it with the archive), `ane_t6021.ko` to `updates/`, `depmod`,
-   `modinfo -k` checks path and vermagic.
+3. `scripts/modules.sh`: module tree to `/usr/lib/modules/7.1.13-3-1-ARCH-dart/`
+   (`tar -d` compares it with the archive), `ane_t6021.ko` to `updates/`,
+   `depmod`, `modinfo -k` checks path and vermagic (see the boot record: a
+   stock boot deletes this tree, so the script runs again before each
+   stock-to-custom reboot).
 4. `/boot/vmlinuz-linux-asahi-dart`, then
    `mkinitcpio -k 7.1.13-3-1-ARCH-dart -g /boot/initramfs-linux-asahi-dart.img`.
    Checks: the image holds `btrfs.ko` from the new tree and nothing from the
@@ -255,18 +258,72 @@ Recovery without a helper (the USB proxy host is not available):
   report. The panic and watchdog paths finish inside that time (120 s +
   about 115 s for a disk boot).
 
+## Boot record (2026-10-01)
+
+Install (`install.sh`, M2 stock boot `9a5a8563`): two attempts stopped on
+wrong checks in the script and were removed with `revert.sh` (stock hashes
+equal the pre-install list both times): `modinfo -n` prints `/lib/modules/…`
+(`/lib` is a link to `usr/lib`), and the installed stock initramfs
+(2026-09-19) holds ramoops and reed_solomon, which a stock image built now
+does not. The third attempt passed at 22:56:31Z: `vmlinuz-linux-asahi-dart`
+`364e2e95…`, `initramfs-linux-asahi-dart.img` `589df2e4…` (544 files, equal
+to a stock-kernel image built at the same time, release normalized),
+`custom.cfg` `43e71e5f…`; every stock boot file unchanged.
+
+| boot | boot id | selection | result |
+|---|---|---|---|
+| T | `04731cc7` | `grub-reboot dart-oneshot-test`, T0 23:07:44Z | ssh after 110 s. Stock kernel, cmdline with `ane_dart_oneshot=test`. `grubenv` now `next_entry=` (empty): GRUB consumed the entry and wrote `grubenv`. The initramfs systemd armed the watchdog at 1.081 s (`systemd.watchdog_sec=120` works). PASS |
+| D0 | `e8b280ed` | none, T0 23:13:40Z | ssh after 110 s. Stock default, no marker. PASS |
+| C | `6899c555` | `grub-reboot dart-ctl`, T0 23:19:41Z | no ssh in 6.6 min (Tailscale and wlan routes), no netconsole line. STOP. A camera frame (Main) showed the login screen; a hard reset over USB-C (Main) at 23:36Z booted the stock default (boot `5498f953`), as planned |
+
+Cause of the C failure, from the C boot's persistent journal (read on the
+stock boot): the custom kernel booted normally (no Oops or warning, the
+three ANE DARTs initialized, `Reached target Graphical Interface` at
+103.6 s, sddm started), but every module load from the root filesystem
+failed: `modprobe "zram" failed`, `Failed to find module 'i2c_dev'`,
+`modprobe: FATAL: Module netconsole not found in directory /lib/modules/…`,
+and tailscaled restarted 298 times on `modprobe tun` failed. brcmfmac never
+loaded, so there was no Wi-Fi and no network. The module tree
+`/usr/lib/modules/7.1.13-3-1-ARCH-dart` was gone: during boot T,
+`linux-modules-cleanup.service` (package `kernel-modules-hook` 0.1.7-3,
+`WantedBy=basic.target`) ran
+
+    for i in /usr/lib/modules/[0-9]*; do
+      if [[ ${i##*/} = '%v' ]] || pacman -Qo "${i}"; then continue; fi
+      rsync -AHXal "${i}" /usr/lib/modules/.old/; rm -rf "${i}"; done
+
+and logged `rsync … 7.1.13-3-1-ARCH-dart /usr/lib/modules/.old/` and
+`rm -rf /usr/lib/modules/7.1.13-3-1-ARCH-dart` at 5.2-5.6 s. Its tmpfiles
+rule `R! /usr/lib/modules/.old/*` emptied `.old` at the next boot (D0).
+So any module tree that is not the running kernel's and that no package
+owns survives exactly one boot. The initramfs carried its own copies of
+its 30 modules (btrfs among them), so the root filesystem mounted and the
+failure showed only after the switch to it. [INFERENCE] The same service is
+the likely cause of the earlier loss of the `7.1.13-ARCH-m2mbox` module tree
+on this M2 (not checked against that boot's journal).
+
+Fix (staged, not run): `scripts/modules.sh` puts the tree back and checks
+vermagic of ane_t6021, brcmfmac, zram, tun, netconsole, r8152 and btrfs.
+It runs in the stock boot right before the reboot into C (after that
+boot's cleanup has run); the C and X boots keep the tree because it is the
+running kernel's. `reboot.sh` now refuses `dart-ctl`/`dart-tun` unless
+those modules resolve for the -dart release. X follows C with no stock boot
+between. At S the cleanup moves the tree to `.old`; `revert.sh` removes it
+there too.
+
 ## Files
 
 | file | content |
 |---|---|
 | `scripts/build.sh` | source download and check, patch, config, cross build, module builds, stage and `SHA256SUMS` |
 | `scripts/analyze.py` | per-arm encoder / prog_020 / prog_006 minmin and medmed, correctness lines, the C control band and the X verdict |
-| `scripts/install.sh`, `scripts/revert.sh` | install next to the stock kernel with stock-hash proof; removal |
+| `scripts/install.sh`, `scripts/modules.sh`, `scripts/revert.sh` | install next to the stock kernel with stock-hash proof; module tree (again before each stock-to-custom reboot); removal |
 | `scripts/custom.cfg` | the three GRUB entries (`dart-oneshot-test`, `dart-ctl`, `dart-tun`) |
 | `scripts/reboot.sh` | lock checks, sync, 40 s, `grub-reboot` last, reboot |
 | `scripts/boot-check.sh` | post-boot identity: cmdline marker, `grubenv`, `ane_tunables`, dmesg lines, module |
 | `scripts/window.sh` | one device window: read probe, then the DartTune/AfBridgeRun arm; it runs the M2 copies `/var/tmp/dart/lib.sh` and `ab-turn.sh` only if their sha256 equal the DartTune receipt copies (`e6c54bcc…`, `5f959368…`) |
 | `logs/config.diff` | olddefconfig against the M2 config |
 | `logs/hw_reset.disasm.txt` | compiled `apple_dart_hw_reset` |
+| `logs/boot-T-C-excerpt.txt` | the module cleanup in boot T and the C-boot lines that show the missing module tree |
 | `logs/stage-SHA256SUMS` | the staged files |
 | `SHA256SUMS` | sha256 of every file here |
