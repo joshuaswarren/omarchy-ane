@@ -167,6 +167,13 @@ static bool zerofill;
 module_param(zerofill, bool, 0444);
 MODULE_PARM_DESC(zerofill, "stage22: zero the DATA carveout tail past the file image");
 
+/* Gap8: the GKTS canary is a guess shaped like the 25G83 live capture
+ * (random u64, low byte 0) and is the only staging delta vs the H3 run
+ * that stored. Default OFF replicates H3 exactly. */
+static bool gkts;
+module_param(gkts, bool, 0444);
+MODULE_PARM_DESC(gkts, "stage22: write the guessed GKTS per-boot canary (default: leave in-file 0xaff)");
+
 /* ---- 22G74 (Gap7) staging + generation table ---- */
 #define EOS22_TEXT_LEN		0xd4000		/* __TEXT vmsize (ZSTR 0x50c000 - DATA) */
 #define EOS22_DATA_FILE_LEN	0x3e8000	/* __DATA filesize */
@@ -865,8 +872,14 @@ static int stage22_run(struct ane_h13_perf *a)
 		u32 off = pb[i].off;
 		u64 value = pb[i].value;
 
-		if (pb[i].len == 8 && !memcmp(pb[i].tag, "GKTS", 4))
+		if (pb[i].len == 8 && !memcmp(pb[i].tag, "GKTS", 4)) {
+			if (!gkts) {
+				dev_info(&a->pdev->dev,
+					 "stage22: gkts=0, GKTS left in-file\n");
+				continue;
+			}
 			value = canary;
+		}
 		if (memcmp(dbuf + off, pb[i].tag, 4) ||
 		    get_unaligned_le32(dbuf + off + 4) != pb[i].len) {
 			dev_err(&a->pdev->dev, "stage22: patchbay mismatch at DATA+%#x\n", off);
