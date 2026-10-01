@@ -994,7 +994,6 @@ static int h4a_bypass_streams(struct ane_h13_perf *a)
 	for (i = 0; i < count; i++) {
 		struct of_phandle_args args;
 		struct platform_device *dart;
-		struct resource *res;
 		void __iomem *regs;
 		u32 old, sid;
 
@@ -1006,11 +1005,9 @@ static int h4a_bypass_streams(struct ane_h13_perf *a)
 		if (!dart)
 			continue;
 		sid = args.args[0];
-		res = platform_get_resource(dart, IORESOURCE_MEM, 0);
-		regs = res ? devm_ioremap(&a->pdev->dev, res->start,
-					  resource_size(res)) : NULL;
+		regs = devm_platform_ioremap_resource(dart, 0);
 		put_device(&dart->dev);
-		if (!regs) {
+		if (IS_ERR(regs)) {
 			dev_err(&a->pdev->dev, "bypass: dart[%d] ioremap failed\n", i);
 			continue;
 		}
