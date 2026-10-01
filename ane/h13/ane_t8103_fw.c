@@ -67,7 +67,10 @@ static const u8 fw_sha256[32] = {
 
 static unsigned int stage = 1;
 module_param(stage, uint, 0444);
-MODULE_PARM_DESC(stage, "1 = read-only checks, 2 = also stage the DATA segment in the DART (3+ refused)");
+MODULE_PARM_DESC(stage, "1 = read-only checks, 2 = also stage the DATA segment in the DART, 3 = also release the ASC CPU (needs go=1)");
+static bool go;
+module_param(go, bool, 0444);
+MODULE_PARM_DESC(go, "arm stage 3 (device writes: SCRATCH clear, CPU_CONTROL 0 then 0x10); a reboot or ANE power cycle undoes it");
 static char *fw_name = "apple/ane/h13_ane_fw_13.5_22G74.bin";
 module_param(fw_name, charp, 0444);
 static unsigned long long text_phys = 0x800938000ULL;
@@ -248,6 +251,47 @@ out:
 	return err;
 }
 
+#define R_CPU_CONTROL	0x1400044
+#define R_TICK		0x1160008
+#define BOOT_READY	0x08042006U
+
+static void wr(struct fw_ctx *c, u32 off, u32 v)
+{
+	writel(v, c->eng + off);
+}
+
+/* Stage 3: T6021 recipe (ane_t6021_boot_run), legacy ChMan select, no preboot table, no W8 grant tunables,
+ * RVBAR already latched (no write). Ends at the READY word; ChMan publication is stage 4. */
+static void fw_stage3(struct fw_ctx *c)
+{
+	u32 v = 0;
+	int i;
+
+	dev_info(c->dev, "fw-start: S3 scratch clear + SCRATCH6=1 + SCRATCH7 pulse\n");
+	for (i = 0; i < 8; i++)
+		wr(c, R_SCRATCH0 + 4 * i, 0);
+	wr(c, R_SCRATCH0 + 24, 1);
+	wr(c, R_SCRATCH0 + 28, 1);
+	wr(c, R_SCRATCH0 + 28, 0);
+	dev_info(c->dev, "fw-start: S3 CPU_CONTROL <- 0\n");
+	wr(c, R_CPU_CONTROL, 0);
+	dev_info(c->dev, "fw-start: S3 CPU_CONTROL <- 0x10 (RUN)\n");
+	wr(c, R_CPU_CONTROL, 0x10);
+	for (i = 0; i < 1000; i++) {
+		v = rd(c, R_SCRATCH0 + 28);
+		if (v == BOOT_READY)
+			break;
+		usleep_range(900, 1100);
+	}
+	dev_info(c->dev, "fw-start: S3 SCRATCH7 %#x after %d polls (%s)\n", v, i, v == BOOT_READY ? "READY" : "no READY");
+	msleep(200);
+	dev_info(c->dev, "fw-start: S3 CPU_STATUS %#x SCRATCH0-7 %#x %#x %#x %#x %#x %#x %#x %#x\n", rd(c, R_CPU_STATUS),
+		 rd(c, R_SCRATCH0), rd(c, R_SCRATCH0 + 4), rd(c, R_SCRATCH0 + 8), rd(c, R_SCRATCH0 + 12),
+		 rd(c, R_SCRATCH0 + 16), rd(c, R_SCRATCH0 + 20), rd(c, R_SCRATCH0 + 24), rd(c, R_SCRATCH0 + 28));
+	dev_info(c->dev, "fw-start: S3 mailbox A2I %#x I2A %#x tick %#x pending %#x\n", rd(c, R_MBOX_A2I),
+		 rd(c, R_MBOX_I2A), rd(c, R_TICK), rd(c, R_DB_PENDING));
+}
+
 static int fw_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -258,8 +302,8 @@ static int fw_probe(struct platform_device *pdev)
 	u8 dig[32];
 	int err;
 
-	if (stage < 1 || stage > 2) {
-		dev_err(dev, "fw-start: only stages 1-2 are implemented\n");
+	if (stage < 1 || stage > 3 || (stage == 3 && !go)) {
+		dev_err(dev, "fw-start: stage 3 needs go=1; stages > 3 are not implemented\n");
 		return -EINVAL;
 	}
 	c = devm_kzalloc(dev, sizeof(*c), GFP_KERNEL);
@@ -330,6 +374,10 @@ static int fw_probe(struct platform_device *pdev)
 	if (err)
 		goto unmap_eng;
 	release_firmware(fw);
+	if (stage >= 3) {
+		fw_stage3(c);
+		return 0;
+	}
 	dev_info(dev, "fw-start: stage %u done (no device register written)\n", stage);
 	return 0;
 
