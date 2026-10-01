@@ -53,9 +53,10 @@ UNTESTED opt-ins).
 
 - A, own memory (chosen): no address and no reservation. The firmware
   only needs iBoot's values, and the table above gives a source for each.
-- B, addresses from the live DT: stock m1n1 (v1.6.1 and main) calls
-  `dt_reserve_asc_firmware()` only for dcpext, sio and isp
-  (`src/kboot.c:1889, 2260, 2897`); it never exports the ANE
+- B, addresses from the live DT: stock m1n1 calls
+  `dt_reserve_asc_firmware()` only for dcpext, sio and isp (`src/kboot.c`
+  :1838, 2202, 2821 at v1.6.1 06a4601a; :1889, 2260, 2897 at main
+  a878095); it never exports the ANE
   `segment-ranges`. Only the lab m1n1 adds the `ane-firmware` nodes. The
   IPSW ADT `ane0` has no `segment-ranges` (iBoot adds them at boot), so a
   T6020 or T6022 placement needs a capture from that machine. B keeps both
