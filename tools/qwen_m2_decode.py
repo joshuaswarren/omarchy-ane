@@ -61,13 +61,16 @@ def load_head(path):
     reader = GGUFReader(path)
     tensor = next(t for t in reader.tensors if t.name == "token_embd.weight")
     head = dequantize(np.asarray(tensor.data), tensor.tensor_type).astype(np.float32, copy=False)
+    return head.astype(f16), head, rope_params(reader)
 
+
+def rope_params(reader):
+    """(dh, rotary dim, base) from the GGUF metadata."""
     def scalar(key):
         field = next(f for name, f in reader.fields.items() if name.endswith("." + key))
         return field.parts[field.data[-1]][0]
-    rope = int(scalar("attention.key_length")), int(scalar("rope.dimension_count")), \
+    return int(scalar("attention.key_length")), int(scalar("rope.dimension_count")), \
         float(scalar("rope.freq_base"))
-    return head.astype(f16), head, rope
 
 
 def rope_tables(seq, dh, rotary_dim, base):

@@ -105,31 +105,43 @@ def run_op(op, a):
     raise ValueError(f"unsupported MIL op {op}")
 
 
-def run_mil(mil_path, inputs):
-    """inputs: name -> array (any float dtype). Returns name -> float64 array
-    for every returned tensor."""
+def parse_mil(mil_path):
+    """One MIL program as (input shapes, float64 constants, ops, returned
+    names), for run_mil. weights.bin is memory-mapped."""
     mil_path = Path(mil_path)
-    weights = (mil_path.parent / "weights.bin").read_bytes()
+    weights = np.memmap(mil_path.parent / "weights.bin", np.uint8, "r")
     text = mil_path.read_text()
     sig = re.search(r"func main<\w+>\((.*?)\)\s*\{", text, re.S).group(1)
-    env = {}
+    shapes = {}
     for decl in split_top(sig):
         m = re.fullmatch(r"tensor<\w+,\s*\[([^\]]*)\]>\s+(\w+)", decl)
-        shape = [int(d) for d in m.group(1).split(",")]
-        env[m.group(2)] = np.asarray(inputs[m.group(2)], dtype=np.float64).reshape(shape)
+        shapes[m.group(2)] = [int(d) for d in m.group(1).split(",")]
+    consts, ops = {}, []
     for line in text.splitlines():
         m = LINE.match(line)
         if not m:
             continue
         name, op, args, attrs = m.groups()
         if op == "const":
-            val = re.search(r"\bval\s*=\s*(.*)$", attrs).group(1)
-            env[name] = literal(val, env, weights)
+            consts[name] = literal(re.search(r"\bval\s*=\s*(.*)$", attrs).group(1), consts, weights)
         else:
-            env[name] = run_op(op, {k.strip(): literal(v.strip(), env, weights)
-                                    for k, v in (p.split("=", 1) for p in split_top(args))})
+            ops.append((name, op, {k.strip(): v.strip() for k, v in (p.split("=", 1) for p in split_top(args))}))
     returns = re.search(r"\}\s*->\s*\(([^)]*)\)", text).group(1)
-    return {n.strip(): env[n.strip()] for n in returns.split(",")}
+    return shapes, consts, ops, [n.strip() for n in returns.split(",")]
+
+
+def run_mil(program, inputs, post=None):
+    """program: parse_mil() output. inputs: name -> array (any float dtype).
+    Returns name -> float64 array for every returned tensor. post(op, value,
+    const_args), if given, replaces each op result (a rounding model);
+    const_args holds the names of the op's arguments that are constants."""
+    shapes, consts, ops, returns = program
+    env = dict(consts)
+    env.update({n: np.asarray(inputs[n], dtype=np.float64).reshape(s) for n, s in shapes.items()})
+    for name, op, raw in ops:
+        out = run_op(op, {k: literal(v, env, None) for k, v in raw.items()})
+        env[name] = post(op, out, {k for k, v in raw.items() if v in consts}) if post else out
+    return {n: env[n] for n in returns}
 
 
 def main(argv=None):
@@ -145,11 +157,11 @@ def main(argv=None):
     index = json.loads((dump / "index.json").read_text())
     executions = {(e["step"], e["program"]): e for e in index["executions"]}
     for prog in parse_list(args.progs):
-        mil = Path(args.mil_dir) / f"prog_{prog:03d}" / "model.mil"
+        program = parse_mil(Path(args.mil_dir) / f"prog_{prog:03d}" / "model.mil")
         for step in parse_list(args.steps):
             execution = executions[step, prog]
             ins = {n: a for n, (a, _) in m1_io(dump, execution, "inputs").items()}
-            ref = run_mil(mil, ins)
+            ref = run_mil(program, ins)
             for name, (m1, entry) in m1_io(dump, execution, "outputs").items():
                 exact = ref[name].ravel()
                 c = compare(m1, exact)
