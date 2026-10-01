@@ -1,19 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- `omarchy-ane-dt` counts only an enabled kernel node (no `status`, `"okay"`
-  or `"ok"`) as the kernel's ANE node. Before, a disabled node, as in
-  aurora-silicon/linux #65, made it skip the T6021 overlay, and the ANE stayed
-  disabled. Now the overlay applies over the disabled nodes and enables them.
-  The T6021 overlay sets `status = "okay"` on its three DARTs, so a merged
-  DART does not stay disabled. `validate` refuses a new or changed node that
-  names a disabled provider. `omarchy-ane-dt status` and
-  `omarchy-ane-m2-enable` ignore disabled ANE nodes. See
-  `receipts/2026-10-01-ane-dt-disabled-nodes`.
-
 ## 0.4.0 (2026-10-01)
 
 The T6021 (M2 Max) driver stays opt-in. This release adds whole-model runs on
@@ -67,6 +53,15 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
   8 bytes (#17).
 - `omarchy-ane-dt` skips each overlay on its own. Before, it skipped every
   overlay when the kernel tree had the ANE node (#16).
+- `omarchy-ane-dt` counts only an enabled kernel node (no `status`, `"okay"`
+  or `"ok"`) as the kernel's ANE node. Before, a disabled node, as in
+  aurora-silicon/linux #65, made it skip the T6021 overlay, and the ANE stayed
+  disabled. Now the overlay applies over the disabled nodes and enables them.
+  The T6021 overlay sets `status = "okay"` on its three DARTs, so a merged
+  DART does not stay disabled. `validate` refuses a new or changed node that
+  names a disabled provider. `omarchy-ane-dt status` and
+  `omarchy-ane-m2-enable` ignore disabled ANE nodes. See
+  `receipts/2026-10-01-ane-dt-disabled-nodes` (#23).
 - Removed the CoreSight PC-sampling path of the research module
   `ane_t8103_fw`, after it caused a hard reset of the M1.
 
