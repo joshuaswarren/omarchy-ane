@@ -33,6 +33,7 @@
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/vmalloc.h>
+#include <linux/debugfs.h>
 
 #include "../src/ane_ps.h"
 
@@ -89,6 +90,9 @@ struct fw_ctx {
 	struct page **pages;
 	unsigned long npages, mapped;
 	bool pm_held;
+	void *snap;
+	struct debugfs_blob_wrapper blob;
+	struct dentry *dbg;
 };
 
 static u32 rd(struct fw_ctx *c, u32 off)
@@ -251,6 +255,61 @@ out:
 	return err;
 }
 
+/* H174: read the staged DATA back through the CPU mapping of the same pages the DART maps and report what the fw wrote. */
+static void fw_readback(struct fw_ctx *c, const struct firmware *fw, const char *label)
+{
+	unsigned long i, changed = 0, shown = 0, nstr = 0;
+	u8 *va = vmap(c->pages, c->npages, VM_MAP, PAGE_KERNEL);
+
+	if (!va) {
+		dev_err(c->dev, "fw-start: readback vmap failed\n");
+		return;
+	}
+	if (!c->snap) {
+		c->snap = kvmalloc(FW_DATA_VMSZ, GFP_KERNEL);
+		if (c->snap) {
+			c->blob.data = c->snap;
+			c->blob.size = FW_DATA_VMSZ;
+			c->dbg = debugfs_create_blob("ane_t8103_fw_data", 0400, NULL, &c->blob);
+		}
+	}
+	if (c->snap)
+		memcpy(c->snap, va, FW_DATA_VMSZ);
+	for (i = 0; i < c->npages; i++) {
+		const u8 *p = va + i * PAGE_SIZE;
+		const u8 *w = i * PAGE_SIZE < FW_DATA_FSZ ? fw->data + FW_DATA_FOFF + i * PAGE_SIZE : NULL;
+		unsigned long j, n = 0, run = 0;
+
+		for (j = 0; j < PAGE_SIZE; j++)
+			if (p[j] != (w ? w[j] : 0))
+				n++;
+		if (!n)
+			continue;
+		changed++;
+		if (shown++ < 24)
+			dev_info(c->dev, "fw-start: %s DATA page %lu (+%#lx) changed bytes %lu\n", label, i, i * PAGE_SIZE, n);
+		for (j = 0; j <= PAGE_SIZE && nstr < 24; j++) {
+			if (j < PAGE_SIZE && p[j] >= 0x20 && p[j] < 0x7f) {
+				run++;
+				continue;
+			}
+			if (run >= 10 && (!w || memcmp(p + j - run, w + j - run, run))) {
+				char s[81];
+				unsigned long k, m = min(run, 80UL);
+
+				for (k = 0; k < m; k++)
+					s[k] = p[j - run + k];
+				s[m] = 0;
+				dev_info(c->dev, "fw-start: %s str @%#lx: %s\n", label, i * PAGE_SIZE + j - run, s);
+				nstr++;
+			}
+			run = 0;
+		}
+	}
+	dev_info(c->dev, "fw-start: %s DATA: %lu of %lu pages differ from the payload\n", label, changed, c->npages);
+	vunmap(va);
+}
+
 #define R_CPU_CONTROL	0x1400044
 #define R_TICK		0x1160008
 #define BOOT_READY	0x08042006U
@@ -262,7 +321,7 @@ static void wr(struct fw_ctx *c, u32 off, u32 v)
 
 /* Stage 3: T6021 recipe (ane_t6021_boot_run), legacy ChMan select, no preboot table, no W8 grant tunables,
  * RVBAR already latched (no write). Ends at the READY word; ChMan publication is stage 4. */
-static void fw_stage3(struct fw_ctx *c)
+static void fw_stage3(struct fw_ctx *c, const struct firmware *fw)
 {
 	u32 v = 0;
 	int i;
@@ -290,6 +349,10 @@ static void fw_stage3(struct fw_ctx *c)
 		 rd(c, R_SCRATCH0 + 16), rd(c, R_SCRATCH0 + 20), rd(c, R_SCRATCH0 + 24), rd(c, R_SCRATCH0 + 28));
 	dev_info(c->dev, "fw-start: S3 mailbox A2I %#x I2A %#x tick %#x pending %#x\n", rd(c, R_MBOX_A2I),
 		 rd(c, R_MBOX_I2A), rd(c, R_TICK), rd(c, R_DB_PENDING));
+	fw_readback(c, fw, "t+0.2s");
+	msleep(1800);
+	fw_readback(c, fw, "t+2s");
+	dev_info(c->dev, "fw-start: S3 later: CPU_STATUS %#x SCRATCH7 %#x tick %#x\n", rd(c, R_CPU_STATUS), rd(c, R_SCRATCH0 + 28), rd(c, R_TICK));
 }
 
 static int fw_probe(struct platform_device *pdev)
@@ -373,11 +436,12 @@ static int fw_probe(struct platform_device *pdev)
 		err = fw_stage_data(c, fw);
 	if (err)
 		goto unmap_eng;
-	release_firmware(fw);
 	if (stage >= 3) {
-		fw_stage3(c);
+		fw_stage3(c, fw);
+		release_firmware(fw);
 		return 0;
 	}
+	release_firmware(fw);
 	dev_info(dev, "fw-start: stage %u done (no device register written)\n", stage);
 	return 0;
 
@@ -397,6 +461,8 @@ static void fw_remove(struct platform_device *pdev)
 {
 	struct fw_ctx *c = platform_get_drvdata(pdev);
 
+	debugfs_remove(c->dbg);
+	kvfree(c->snap);
 	fw_unstage_data(c);
 	iounmap(c->eng);
 	pm_runtime_disable(c->dev);
