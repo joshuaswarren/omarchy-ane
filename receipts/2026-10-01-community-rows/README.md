@@ -185,3 +185,12 @@ t6022 are the same before and after this change (comment-only edits; dtc 1.7.2-g
 - Rows from one machine can repeat (quick and deep from the same Mac); no row has a machine id, so the number of
   T6020 machines is at least two (two boards), not known exactly.
 - D1 rests on the T6021 match (17 = 0x11 = capture) and on the iBoot eFuse code; no T6020 preload is captured.
+
+## Addendum 2026-10-01: D1 and D2 fixed on main
+
+This corrects the D1 and D2 verdicts above, which say that `ane_t6021` on T6020 still replays 0x11. omarchy-ane
+c2b7408 (PR #47, commit e91d350) gives each SoC its own revision and tunables: in `ane/t6021/ane_t6021_fwload.c`,
+T6020 has `.soc_revision = 0x01` with `ane_t6020_asc_tunables` (`ane_fw_validate.h`, the j414s and j416s iBoot
+table), and T6021 and T6022 have 0x11 with the T6021 table. `ANE_T602X_SOC_REVISION` is gone from the code. Receipt:
+[t8112-optin](../2026-10-01-t8112-optin/README.md). No T6020 has run the new values, and no T6020 preload is
+captured.
