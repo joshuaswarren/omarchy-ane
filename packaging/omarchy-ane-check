@@ -69,10 +69,10 @@ if [[ -r $dt/compatible ]]; then
   done <"$dt/compatible"
 fi
 mod=ane
-[[ $soc == t602? ]] && mod=ane_t6021
+[[ $soc == t602? || $soc == t8112 ]] && mod=ane_t6021
 case $soc in
   t8103|t6001|t6021|"") ;;
-  t6000|t6002|t6020|t6022)
+  t6000|t6002|t6020|t6022|t8112)
     echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in." ;;
   *)
     echo "UNTESTED SoC: $soc"

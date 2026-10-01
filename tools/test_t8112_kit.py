@@ -2,7 +2,8 @@
 """Checks for tools/t8112-kit. No device, no network.
 
 Always: the decoder on a synthetic image with the T8112 layout, and the
-ingest diffs apply to this tree. With Apple data (never in this repo):
+ingest comparison with the driver's T8112 data. With Apple data (never in
+this repo):
   ANE_KIT_BIA=h14_ane_fw_bia_j4xx.macho ANE_KIT_ADT=DeviceTree.j413ap.adt
   ANE_KIT_M1N1=<m1n1>/proxyclient     live path against a fake read-only proxy
   ANE_KIT_SELENE=t602x_ane0_fw_selene_rc4x.macho
@@ -15,7 +16,6 @@ import io
 import os
 from pathlib import Path
 import struct
-import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -50,11 +50,6 @@ def patched(archive, rev=0x22):
     return bytes(live[:tvs]), bytes(live[tvs:])
 
 
-def git_apply_check(diff):
-    r = subprocess.run(['git', 'apply', '--check', '-'], input=diff, text=True, cwd=root, capture_output=True)
-    assert r.returncode == 0, r.stderr
-
-
 # 1. Synthetic image with the T8112 layout: only the iBoot fields may differ.
 fake = bytearray(dfo + dfs)
 for (_, tag, n), vm in zip(collect.RECORDS, img.patch):
@@ -79,11 +74,18 @@ for bad in ((text[:-1], data), (text, data[:img.patch[1] - dvm] + b'XXXX' + data
     except ValueError:
         pass
 
-# 2. The ingest diffs apply to this tree; the header block is the C layout.
-header = ingest.header_diff(f, 'test')
-assert '+#define ANE_T8112_SOC_REVISION\t0x22\n' in header and '+\t0x01, 0x03, 0x24, 0x02,' in header
-git_apply_check(header)
-git_apply_check(ingest.overlay_diff(ENTRY, 1000, 'test'))
+# 2. ingest compares a T8112 result with the driver's T8112 data: the
+# synthetic two-record block is refused, the driver's own block passes.
+want = ingest.driver_block(0x8112, 0x22)
+assert want[:8] == bytes.fromhex('0103241710000000') and len(want) == 8 + 23 * 20
+assert ingest.driver_block(0x8112, 0x01)[4] == 0x00
+for tun, ok in ((TUN, False), (want, True), (want + b'\1', False)):
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            ingest.check_driver(dict(f, tunables_hex=tun.hex()), 0x8112)
+        assert ok, tun[:8].hex()
+    except ingest.Bad:
+        assert not ok, tun[:8].hex()
 
 # 3. Live path against a fake proxy that has no write method.
 if all(os.environ.get(k) for k in ('ANE_KIT_BIA', 'ANE_KIT_ADT', 'ANE_KIT_M1N1')):

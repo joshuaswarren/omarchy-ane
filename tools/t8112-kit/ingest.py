@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""ingest.py: check a T8112 kit result and print the driver and overlay values it gives.
+"""ingest.py: check a T8112 or T6021 kit result against the driver's per-SoC data.
 
-  ingest.py RESULT_DIR --archive h14_ane_fw_bia_j4xx.macho [--send-empty-irq N]
+  ingest.py RESULT_DIR --archive IMAGE.macho
   ingest.py --macos t8112-macos-*.tar.gz
 
 RESULT_DIR is the --out directory of collect-m1n1.py (live or replay). Every
 field is computed again from the raw segments and the archive; a result whose
-JSON, files or cross-checks disagree is refused (exit 1). For a T8112 result
-the output is the derived values, the per-SoC driver data, and unified diffs
-for ane/t6021/ane_fw_validate.h and (with --send-empty-irq, a lab choice)
-packaging/dt/t8112-ane.dts; apply them with git apply from the repository
-root. For a T6021 replay the values are checked against the driver's T6021
-constants instead. --macos reads a collect-macos.sh tarball.
+JSON, files or cross-checks disagree is refused (exit 1). Then the values
+iBoot wrote are compared with ane_t6021's data for that SoC
+(ane/t6021/ane_t6021_fwload.c, ane/t6021/ane_fw_validate.h): the ASC
+tunables block, the pmgr page, RTK_soc_revision (T8112: the driver reads it
+from the eFuse window, so the result only shows it), and on T6021 the
+t602x-ane.dtsi alias IOVA. A difference is refused: the capture wins and the
+driver data needs a fix. --macos reads a collect-macos.sh tarball.
 """
 import argparse
-import difflib
 import hashlib
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -34,7 +34,6 @@ collect = module_from_spec(_spec)
 _spec.loader.exec_module(collect)
 
 HEADER = "ane/t6021/ane_fw_validate.h"
-OVERLAY = "packaging/dt/t8112-ane.dts"
 RVBAR_ADDR_MASK = 0xFF7EFFFFFFFFF800  # ane/t6021/ane_t6021_boot.h ANE_T6021_RVBAR_ADDR_MASK
 PAGE = 0x4000
 
@@ -109,122 +108,54 @@ def verify(result, soc, segs, archive):
     return f, sources
 
 
-def rows(tun):
-    """C rows in the ane_fw_validate.h layout: the 8-byte header, then 20-byte records."""
-    out = [tun[:8]] + [tun[i:i + 20] for i in range(8, len(tun), 20)]
-    while len(out) > 1 and not any(out[-1]):
-        out.pop()
-    return ["\t" + ", ".join(f"0x{b:02x}" for b in row) + ",\n" for row in out]
+SOC_DATA = {0x6021: "ane_t6021_soc", 0x8112: "ane_t8112_soc"}
 
 
-def header_rows(text, name):
-    body = text.split(f"static const u8 {name}[ANE_FW_TUNABLES_LEN] = {{\n", 1)[1].split("};\n", 1)[0]
-    return [line for line in body.splitlines(keepends=True) if "/*" not in line]
-
-
-def define(text, name):
-    return int(re.search(rf"#define {name}\s+(0x[0-9a-f]+)", text).group(1), 16)
-
-
-def check_t6021(f):
-    """A T6021 replay must reproduce the constants the driver already carries."""
-    hdr = (REPO / HEADER).read_text()
+def driver_data(soc):
+    """(soc_revision or None for the fuse read, tunables keys, records, pmu_pa) of the driver."""
     fwload = (REPO / "ane/t6021/ane_t6021_fwload.c").read_text()
-    alias = re.search(r"iommu-addresses = <&ane (0x[0-9a-f]+) (0x[0-9a-f]+)",
-                      (REPO / "packaging/dt/t602x-ane.dtsi").read_text())
+    hdr = (REPO / HEADER).read_text()
+    body = fwload.split(f"const struct ane_t602x_soc {SOC_DATA[soc]} = {{", 1)[1].split("};", 1)[0]
+    rev = re.search(r"\.soc_revision = (0x[0-9a-f]+)", body)
+    table = re.search(r"\.tunables = &(\w+)", body).group(1)
+    tun = hdr.split(f"static const struct ane_asc_tunables {table} = {{", 1)[1].split("\n};", 1)[0]
+    keys = [int(k, 16) for k in re.findall(r"0x[0-9a-f]+", re.search(r"\.keys = \{([^}]*)\}", tun).group(1))]
+    recs = [tuple(int(x, 16) for x in r)
+            for r in re.findall(r"\{ (0x[0-9a-f]+), (0x[0-9a-f]+), (0x[0-9a-f]+) \}", tun.split(".r = {", 1)[1])]
+    pmu = int(re.search(r"\.pmu_pa = (0x[0-9a-f]+)", body).group(1), 16)
+    return (None if ".revision_fuse = true" in body else int(rev.group(1), 16)), keys, recs, pmu
+
+
+def driver_block(soc, rev):
+    """The type-1 tunables block the driver writes for chip revision REV."""
+    _, keys, recs, _ = driver_data(soc)
+    key = next((k for k in keys if k <= rev), None)
+    check(key is not None, f"the driver has no ASC tunables entry for revision {rev:#x}")
+    return bytes([1, 3, 0x24, len(recs)]) + struct.pack("<I", key) + b"".join(
+        struct.pack("<IQQ", *r) for r in recs)
+
+
+def check_driver(f, soc):
+    """A result must reproduce the per-SoC data the driver carries."""
+    rev_driver, _, _, pmu = driver_data(soc)
+    rev = int(f["soc_revision"], 16)
     tun = bytes.fromhex(f["tunables_hex"])
-    for what, got, want in (
-            ("RTK_soc_revision vs ANE_T602X_SOC_REVISION", int(f["soc_revision"], 16),
-             define(hdr, "ANE_T602X_SOC_REVISION")),
-            ("tunables vs ane_t602x_asc_tunables, as C rows", rows(tun), header_rows(hdr, "ane_t602x_asc_tunables")),
-            ("PMU page vs ANE_T6021_PMU_PA", int(f["pmu_base"], 16) & ~(PAGE - 1), define(fwload, "ANE_T6021_PMU_PA")),
-            ("entry IOVA vs the t602x-ane.dtsi alias reservation", int(f["entry_iova"], 16),
-             int(alias.group(1), 16) << 32 | int(alias.group(2), 16))):
-        check(got == want, f"{what}: {got} != {want}")
-        print(f"  matches the driver: {what}")
-
-
-def unified(path, old, new):
-    return "".join(difflib.unified_diff(old, new, f"a/{path}", f"b/{path}"))
-
-
-def header_diff(f, tag):
-    old = (REPO / HEADER).read_text().splitlines(keepends=True)
-    start = old.index("static const u8 ane_t602x_asc_tunables[ANE_FW_TUNABLES_LEN] = {\n")
-    end = old.index("};\n", start) + 1
-    tun = bytes.fromhex(f["tunables_hex"])
-    block = ["\n",
-             "/* T8112 values that iBoot wrote into the h14_ane_fw_bia_j4xx preload of\n",
-             f" * a T8112 boot (tools/t8112-kit result {tag}). */\n",
-             f"#define ANE_T8112_SOC_REVISION\t{f['soc_revision']}\n",
-             "\n",
-             "static const u8 ane_t8112_asc_tunables[ANE_FW_TUNABLES_LEN] = {\n",
-             f"\t/* header, then {tun[3]} entries {{u32 offset, u64 mask, u64 value}} */\n",
-             *rows(tun),
-             "};\n"]
-    return unified(HEADER, old, old[:end] + block + old[end:])
-
-
-OVERLAY_NOTE = (" * Not here, because Apple data does not complete them: the ANE mailbox\n"
-                " * (0x26b408000; stock apple-mailbox needs a send-empty IRQ, and no ADT node\n"
-                " * names one) and the firmware IOVA reservation (memory-region; the entry\n"
-                " * IOVA is in the ane segment-ranges, which iBoot writes at boot, and no IPSW\n"
-                " * ADT has it). ane_t6021 needs both.\n")
-OVERLAY_ANE = "\t\t\tane@26a000000 {\n"
-OVERLAY_PD = "\t\t\t\t\t\t<&ps_ane_set4>;\n"
-
-
-def overlay_diff(entry, irq, tag):
-    old = (REPO / OVERLAY).read_text()
-    for anchor in (OVERLAY_NOTE, OVERLAY_ANE, OVERLAY_PD):
-        check(old.count(anchor) == 1, f"{OVERLAY} changed since ingest.py was written; update its anchors")
-    note = (" *  - mailbox@26b408000: the ASC mailbox v4 at ASC + 0x8000, as on T6021.\n"
-            " *    recv-not-empty is the ADT ane interrupt 520 (on T6021 the ADT ane\n"
-            f" *    interrupt 884 is that line). send-empty {irq} is a lab choice: no ADT\n"
-            " *    node names one (T6021 uses the unused AIC2 line 1833).\n"
-            " * No memory-region: ane_t6021 runs the firmware from its own memory and\n"
-            f" * aliases it at the entry IOVA {entry:#x} (T8112 capture, tools/t8112-kit\n"
-            f" * result {tag}).\n")
-    mbox = ("\t\t\tane_mbox: mailbox@26b408000 {\n"
-            "\t\t\t\tcompatible = \"apple,t8112-ane-mailbox\", \"apple,asc-mailbox-v4\";\n"
-            "\t\t\t\treg = <0x2 0x6b408000 0x0 0x4000>;\n"
-            "\t\t\t\tinterrupt-parent = <&aic>;\n"
-            "\t\t\t\tinterrupt-names = \"recv-not-empty\", \"send-empty\";\n"
-            f"\t\t\t\tinterrupts = <0 520 4>, <0 {irq} 4>;\n"
-            "\t\t\t\t#mbox-cells = <0>;\n"
-            "\t\t\t\tstatus = \"okay\";\n"
-            "\t\t\t};\n\n")
-    new = (old.replace(OVERLAY_NOTE, note).replace(OVERLAY_ANE, mbox + OVERLAY_ANE)
-           .replace(OVERLAY_PD, OVERLAY_PD + "\t\t\t\tmboxes = <&ane_mbox>;\n"))
-    return unified(OVERLAY, old.splitlines(keepends=True), new.splitlines(keepends=True))
-
-
-def report_t8112(f, sources, tag, irq):
-    img = collect.IMAGES[0x8112]
-    member, name, size, digest = collect.fetch_tool().FETCH[img.fetch_key]
-    pmu = int(f["pmu_base"], 16)
-    segs = ", ".join("{" + ", ".join(f"{x:#x}" for x in s) + "}" for s in img.segs)
-    patch = " ".join(f"{t.decode()} {vm:#x}" for (_, t, _), vm in zip(collect.RECORDS, img.patch))
-    print(f"""
-apple,t8112-ane per-SoC data for ane_t6021 (one reviewed commit; the driver has no T8112 entry yet):
-  firmware           {name}  {size} B  sha256 {digest}
-  segments           {segs}
-  patch records      {patch}; tunables {img.tunables:#x}; DATA base u64 {collect.DATA_BASE_VM:#x}
-  RTK_soc            {f['soc']}
-  RTK_soc_revision   {f['soc_revision']}
-  ASC tunables       {len(f['tunables'])} records (diff below)
-  cpu / wrapper PA   {f['cpu_pa']} / {f['wrapper_pa']}  (engine + 0x1000000 / + 0x1400000)
-  entry IOVA         {f['entry_iova']}  ({'; '.join(sources)})
-  pmgr page          {pmu & ~(PAGE - 1):#x}  (firmware PMU base {pmu:#x}, SetPMUBaseAddress+0x6c at vm {img.pmu_site:#x};
-                     the dart-ane DAPF names 0x23b70c000..0x23b70c03b)
-  PWGATE             reg[2] + 0x8b8: write 0, wait for bits 29:28 = 0; off: 0x30000000 (receipts/2026-10-01-t8112-ane)
-  overlay            stays disabled in packaging/dt/overlays until the driver binds apple,t8112-ane
-""")
-    print(header_diff(f, tag), end="")
-    if irq is None:
-        print(f"\n(no {OVERLAY} diff: give --send-empty-irq N, an unused AIC line the lab picks)")
+    want = driver_block(soc, rev)
+    checks = [("ASC tunables block vs the driver's table",
+               (tun[:len(want)], any(tun[len(want):])), (want, False)),
+              ("pmgr page vs pmu_pa", int(f["pmu_base"], 16) & ~(PAGE - 1), pmu)]
+    if rev_driver is None:
+        print(f"  RTK_soc_revision {rev:#x}: the driver reads it from the eFuse window at load")
     else:
-        print(overlay_diff(int(f["entry_iova"], 16), irq, tag), end="")
+        checks.append(("RTK_soc_revision vs soc_revision", rev, rev_driver))
+    if soc == 0x6021:
+        alias = re.search(r"iommu-addresses = <&ane (0x[0-9a-f]+) (0x[0-9a-f]+)",
+                          (REPO / "packaging/dt/t602x-ane.dtsi").read_text())
+        checks.append(("entry IOVA vs the t602x-ane.dtsi alias reservation", int(f["entry_iova"], 16),
+                       int(alias.group(1), 16) << 32 | int(alias.group(2), 16)))
+    for what, got, wanted in checks:
+        check(got == wanted, f"{what}: differs")
+        print(f"  matches the driver: {what}")
 
 
 def macos(tarball):
@@ -256,7 +187,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("result", nargs="?", type=Path, help="collect-m1n1.py --out directory")
     ap.add_argument("--archive", help="the pinned 13.5 image of the result's SoC; fetched here when absent")
-    ap.add_argument("--send-empty-irq", type=int, help="AIC line for the mailbox send-empty interrupt")
     ap.add_argument("--macos", type=Path, help="collect-macos.sh tarball")
     args = ap.parse_args(argv)
     try:
@@ -277,10 +207,7 @@ def main(argv=None):
         if result.get("power"):
             print("  power        ", " ".join(f"{k}={v}" for k, v in result["power"].items()),
                   "| engine", result.get("engine"))
-        if soc == 0x6021:
-            check_t6021(f)
-        else:
-            report_t8112(f, sources, tag, args.send_empty_irq)
+        check_driver(f, soc)
     except (Bad, collect.Refuse, OSError, KeyError, ValueError) as e:
         print(f"ingest: REFUSED: {e}", file=sys.stderr)
         return 1

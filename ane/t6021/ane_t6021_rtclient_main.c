@@ -99,8 +99,10 @@
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
-/* pmgr ane_cpu ACTUAL word (ane0 reg1 window, pmgr+0x2e0) */
-#define ANE_RTCLIENT_PS_CPU_ACTUAL_OFF	0x2e0
+/* Doorbell (IPI) block, engine + 0x1844000: set +0, pending +0x8000,
+ * ack +0xc000 (kext aneInterruptHandler reads +0x184c000 and writes
+ * +0x1850000 with no SoC branch, receipts/2026-10-01-t8112-ane). */
+#define ANE_IPI_OFF			0x1844000
 
 /* CPU_STATUS bits (m1n1 ASCRegs shape) */
 #define ANE_ASC_CPU_STATUS_RUNNING	BIT(0)
@@ -181,6 +183,7 @@ struct ane_rtclient {
 	struct device *dev;
 	void __iomem *engine;
 	void __iomem *pmgr;
+	const struct ane_t602x_soc *soc;
 	struct apple_rtkit *rtk;
 	struct reset_control *cpu_rst;
 	struct delayed_work poll_work;
@@ -448,7 +451,7 @@ static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
 	struct ane_t6021 *a = ane->fw;
 	u64 *io, *malloc_ring, header;
 	u64 *t2h_buf, *t2h_ioq;
-	void __iomem *ipi;
+	void __iomem *ipi = ane->engine + ANE_IPI_OFF;
 	unsigned int cursor = ane->legacy_malloc_cursor;
 	unsigned long deadline;
 	u32 *reply;
@@ -457,9 +460,6 @@ static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
 	if (!ane->held || !ane->chman_ok ||
 	    ane_t6021_chman_check(a->boot_ipc, a->boot_ipc_iova))
 		return -EPROTO;
-	ipi = ioremap_np(0x285844000ull, 0xc004);
-	if (!ipi)
-		return -ENOMEM;
 	if (length < 8 || length > command->size ||
 	    channel >= ANE_T6021_CHMAN_COUNT) {
 		result = -EINVAL;
@@ -549,7 +549,6 @@ static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
 		 channel, READ_ONCE(io[0]));
 out:
 	ane->legacy_malloc_cursor = cursor;
-	iounmap(ipi);
 	return result;
 }
 
@@ -572,15 +571,17 @@ MODULE_PARM_DESC(call_settle_us,
  * while the seven ANE pmgr PS words read 0x3ff. No register is written.
  *
  * Provenance (omarchy-ane commits):
- * - ANE_TM_TD_WORD = TM 0x285c00000 + TD window 0x20400 + 0x58, the word
- *   the CALL wait polled from be2cf130d761ed675ad86f12b21ac1d53d906e1d
- *   until 3a942d6cf6278526fbc02bf0c4743c5c1b276cdb. 3a942d6 measured its
+ * - The TD word: engine + ane_t602x_soc.trace_td_off; on T602x TM
+ *   0x285c00000 + TD window 0x20400 + 0x58, the word the CALL wait polled
+ *   from be2cf130d761ed675ad86f12b21ac1d53d906e1d until
+ *   3a942d6cf6278526fbc02bf0c4743c5c1b276cdb. 3a942d6 measured its
  *   layout: the call's nid in bits 23:16 (+1 per call), the index of the
  *   last task taken in bits 15:0 (receipts/2026-09-30-t6021-call-wait).
- * - ANE_PMGR_PS_BASE..+0x30: the seven ANE power-state words (DT
- *   power-domains ane_sys_mpm 0x4000 .. ane_set4 0x4030 of the pmgr at
- *   0x28e080000). The guard "PS words 0x3ff before any TM read; a TM read
- *   while the compute domains are off hangs the SoC" is
+ *   Not known on T8112, so trace_td records nothing there.
+ * - The seven ANE power-state words at ane_t602x_soc.pmu_pa + ps_off
+ *   (T602x: DT power-domains ane_sys_mpm 0x4000 .. ane_set4 0x4030 of
+ *   the pmgr at 0x28e080000). The guard "PS words 0x3ff before any TM
+ *   read; a TM read while the compute domains are off hangs the SoC" is
  *   ane_rtclient_pm_pwrstate_ok in 27e996a6de544a803a71d7a5c4ed11d828d4d049,
  *   and the CALL wait applied it until 3a942d6.
  *
@@ -595,8 +596,6 @@ MODULE_PARM_DESC(call_settle_us,
  * trace state is protected by ane_t6021_fw_lock. */
 #define ANE_TRACE_MAGIC		0x31445441	/* "ATD1" */
 #define ANE_TRACE_RECS		(1U << 18)
-#define ANE_TM_TD_WORD		0x285c20458ull
-#define ANE_PMGR_PS_BASE	0x28e084000ull
 #define ANE_PMGR_PS_LAST_OFF	0x30
 
 enum {
@@ -688,7 +687,7 @@ static const struct kernel_param_ops ane_t6021_trace_ops = {
 };
 module_param_cb(trace_td, &ane_t6021_trace_ops, &trace_td, 0644);
 MODULE_PARM_DESC(trace_td,
-		 "Record a read-only per-CALL TD-word timeline in debugfs ane_t6021/trace_td (default 0)");
+		 "Record a read-only per-CALL TD-word timeline in debugfs ane_t6021/trace_td (default 0; T602x only)");
 
 static void ane_t6021_trace_free(void)
 {
@@ -743,7 +742,7 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 {
 	const struct ane_t6021_chman_static *c = &ane_t6021_chman_layout[channel];
 	unsigned int n = 0, slot_i = ane->legacy_cmd_cursor[channel];
-	void __iomem *ipi = NULL;
+	void __iomem *ipi = ane->engine + ANE_IPI_OFF;
 	bool finished = false;
 
 	if (!ane->fw || !ane->fw->boot_ipc)
@@ -776,15 +775,10 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		n++;
 		WRITE_ONCE(slot[0], hdr | 1);
 		dma_wmb();
-		if (!ipi)
-			ipi = ioremap_np(0x285844000ull, 0xc004);
-		if (ipi)
-			writel(BIT(c->bit), ipi);
+		writel(BIT(c->bit), ipi);
 		slot_i = (slot_i + 1) % c->size;
 		ane->legacy_cmd_cursor[channel] = slot_i;
 	}
-	if (ipi)
-		iounmap(ipi);
 	return finished;
 }
 
@@ -794,8 +788,8 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 					 unsigned long deadline)
 {
-	void __iomem *td = ioremap_np(ANE_TM_TD_WORD, 4);
-	void __iomem *ps = ioremap_np(ANE_PMGR_PS_BASE,
+	void __iomem *td = ane->engine + ane->soc->trace_td_off;
+	void __iomem *ps = ioremap_np(ane->soc->pmu_pa + ane->soc->ps_off,
 				      ANE_PMGR_PS_LAST_OFF + 4);
 	unsigned int i, gate = ANE_PMGR_PS_LAST_OFF + 8;
 	u32 last = U32_MAX, samples = 0;
@@ -806,7 +800,7 @@ static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 			ret = 0;
 			break;
 		}
-		if (td && ps) {
+		if (ps) {
 			for (i = 0; i <= ANE_PMGR_PS_LAST_OFF; i += 8)
 				if ((readl(ps + i) & 0x3ff) != 0x3ff)
 					break;
@@ -827,8 +821,6 @@ static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 	if (ret && ane_rtclient_drain_t2h(ane, 6))
 		ret = 0;
 	ane_t6021_trace_add(ANE_TR_DONE, samples);
-	if (td)
-		iounmap(td);
 	if (ps)
 		iounmap(ps);
 	return ret;
@@ -867,7 +859,8 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 {
 	int ret;
 
-	ane_t6021_tracing = opcode == CSNE_CMD_PROCEDURE_CALL && trace_td;
+	ane_t6021_tracing = opcode == CSNE_CMD_PROCEDURE_CALL && trace_td &&
+			    ane->soc->trace_td_off;
 	if (ane_t6021_tracing) {
 		ane_t6021_trace->calls++;
 		ane_t6021_trace_add(ANE_TR_CALL, 0);
@@ -1897,6 +1890,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane->legacy_buffers)
 		return -ENOMEM;
 	ane->dev = dev;
+	ane->soc = of_device_get_match_data(dev);
 	platform_set_drvdata(pdev, ane);
 	INIT_DELAYED_WORK(&ane->poll_work, ane_rtclient_post_boot);
 
@@ -1933,12 +1927,28 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, ret,
 				     "pmgr window map failed; G1 gate cannot run\n");
 	}
-	ps_cpu = readl(ane->pmgr + ANE_RTCLIENT_PS_CPU_ACTUAL_OFF);
+	ps_cpu = readl(ane->pmgr + ane->soc->ps_cpu_off);
 	dev_emerg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
 	if (FIELD_GET(ANE_PS_ACTUAL, ps_cpu) != ANE_PS_ON) {
 		pm_runtime_put_sync_suspend(dev);
 		pm_runtime_disable(dev);
 		return -EPROBE_DEFER;
+	}
+	/* T8112: the kext (type 0x70) opens PWGATE (bits 29:28 = 0) before
+	 * the ps words. This driver only reads it: an engine read behind a
+	 * closed gate is untested, so it refuses first. */
+	if (ane->soc->pwgate_off) {
+		void __iomem *set = devm_of_iomap(dev, dev->of_node, 2, NULL);
+		u32 gate = IS_ERR(set) ? U32_MAX :
+			   readl(set + ane->soc->pwgate_off);
+
+		dev_emerg(dev, "PWGATE = 0x%x\n", gate);
+		if (gate & GENMASK(29, 28)) {
+			pm_runtime_put_sync_suspend(dev);
+			pm_runtime_disable(dev);
+			return dev_err_probe(dev, -ENODEV,
+					     "PWGATE closed; refusing before any engine read\n");
+		}
 	}
 
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
@@ -2249,19 +2259,11 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 			 "remove HELD: no teardown — reboot reclaims\n");
 }
 
-/* T6020 and T6022 (die 0 only: the die-0 IPI and pmgr addresses are
- * compiled in) run the T6021 data and the same selene image; UNTESTED. */
-static const struct ane_t602x_soc ane_t6020_soc = { .soc = 0x6020 };
-static const struct ane_t602x_soc ane_t6021_soc = {
-	.soc = 0x6021,
-	.preload_placement = true,
-};
-static const struct ane_t602x_soc ane_t6022_soc = { .soc = 0x6022 };
-
 static const struct of_device_id ane_rtclient_of_match[] = {
 	{ .compatible = "apple,t6020-ane", .data = &ane_t6020_soc },
 	{ .compatible = "apple,t6021-ane", .data = &ane_t6021_soc },
 	{ .compatible = "apple,t6022-ane", .data = &ane_t6022_soc },
+	{ .compatible = "apple,t8112-ane", .data = &ane_t8112_soc },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, ane_rtclient_of_match);

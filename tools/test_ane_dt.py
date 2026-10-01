@@ -85,14 +85,14 @@ with tempfile.TemporaryDirectory() as tmp:
     assert names('t6021-j414c.dtb') == []
 
     # The packaged overlays: build-dtbo names, the hook's Target, T6021 on by
-    # default, and the opt-in keys of the untested T6000, T6002, T6020 and T6022.
+    # default, and the opt-in keys of the untested T6000, T6002, T6020, T6022 and T8112.
     pkg = Path(tmp) / 'pkg'
     subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True)
     pkg_lib = pkg / oadt.OVERLAY_DIR
     assert sorted(p.relative_to(pkg_lib).as_posix() for p in pkg_lib.glob('*/*.dtbo')) == [
         't6000/omarchy-ane.dtbo', 't6001/omarchy-ane.dtbo', 't6002/omarchy-ane.dtbo',
         't6020/omarchy-ane.dtbo', 't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo',
-        't6022/omarchy-ane.dtbo', 't8103/omarchy-ane.dtbo']
+        't6022/omarchy-ane.dtbo', 't8103/omarchy-ane.dtbo', 't8112/omarchy-ane.dtbo']
     hook = (root / 'packaging/90-omarchy-ane-dt.hook').read_text().splitlines()
     assert f'Target = {oadt.OVERLAY_DIR}/*' in hook, 'the hook must watch OVERLAY_DIR'
     opt_in = pkg / oadt.OPT_IN
@@ -100,12 +100,14 @@ with tempfile.TemporaryDirectory() as tmp:
     chosen = lambda dtb: [f'{p.parent.name}/{p.name}' for p in oadt.overlays_for(pkg, dtb)]
     assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo'], 'the T6021 ANE applies by default'
     assert chosen('t6000-j314s.dtb') == chosen('t6002-j375d.dtb') == chosen('t6020-j414s.dtb') == \
-        chosen('t6022-j180d.dtb') == [], 'untested SoCs wait for the opt-in'
+        chosen('t6022-j180d.dtb') == chosen('t8112-j413.dtb') == [], 'untested SoCs wait for the opt-in'
     assert chosen('t6001-j316c.dtb') == ['t6001/omarchy-ane.dtbo']
     opt_in.write_text('uboot-serial-stdin-t6021\nane-t6000\n')
     assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo']
     assert chosen('t6000-j314s.dtb') == ['t6000/omarchy-ane.dtbo']
     assert chosen('t6002-j375d.dtb') == [], 'ane-t6000 does not opt T6002 in'
+    opt_in.write_text('ane-t8112\n')
+    assert chosen('t8112-j413.dtb') == ['t8112/omarchy-ane.dtbo']
     opt_in.write_text('ane-t6002\n')
     assert chosen('t6002-j375d.dtb') == ['t6002/omarchy-ane.dtbo']
     assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo'], 'the U-Boot input waits for its own key'

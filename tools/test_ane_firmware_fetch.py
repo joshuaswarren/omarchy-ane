@@ -19,19 +19,20 @@ spec = spec_from_loader('fetch', SourceFileLoader('fetch', str(root / 'packaging
 fetch = module_from_spec(spec)
 spec.loader.exec_module(fetch)
 
-# 1. The T602x pin, size and file name agree with the driver. T8112 has no
-# driver entry yet; its pin is receipts/2026-10-01-t8112-ane.
-member, name, size, sha256 = fetch.FETCH['apple,t6021']
-assert fetch.FETCH['apple,t6020'] == fetch.FETCH['apple,t6022'] == fetch.FETCH['apple,t6021']
-fwload = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
-array = fwload.split('ane_fw_sha256_expected[32] = {', 1)[1].split('}', 1)[0]
-assert bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', array)).hex() == sha256
+# 1. Each chip's pin, size and file name agree with the driver's image
+# (ane/t6021/ane_fw_validate.h, through ane_t602x_soc.fw in ane_t6021_fwload.c).
 validate = (root / 'ane/t6021/ane_fw_validate.h').read_text()
-assert int(re.search(r'#define ANE_FW_BLOB_SIZE\s+(0x[0-9a-f]+)', validate).group(1), 16) == size
-assert f'#define ANE_FW_NAME "{name}"' in fwload
-receipt = (root / 'receipts/2026-10-01-t8112-ane/README.md').read_text()
-bia = fetch.FETCH['apple,t8112']
-assert bia[0] in receipt and bia[3] in receipt and f'{bia[2]:#x}' in receipt
+fwload = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
+def image(var):
+    body = validate.split(f'static const struct ane_fw_image {var} = {{', 1)[1].split('\n};', 1)[0]
+    sha = body.split('.sha256 = {', 1)[1].split('}', 1)[0]
+    return (re.search(r'\.name = "([^"]+)"', body).group(1),
+            int(re.search(r'\.size = (0x[0-9a-f]+)', body).group(1), 16),
+            bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', sha)).hex())
+for chip, member, name, size, sha256 in ((c, *v) for c, v in fetch.FETCH.items()):
+    soc = fwload.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('};', 1)[0]
+    var = re.search(r'\.fw = &(\w+)', soc).group(1)
+    assert image(var) == (name, size, sha256), (chip, var)
 
 # 2. IM4P unwrap: short and long DER lengths; anything else is refused.
 def der(tag, body):
