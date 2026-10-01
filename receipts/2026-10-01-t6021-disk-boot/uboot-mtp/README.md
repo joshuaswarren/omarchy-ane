@@ -75,7 +75,7 @@ interface's 0x14 reports. Bugs against the Linux protocol:
 
 It does not stop a phantom that comes from the keyboard interface itself.
 
-## Patch A (`0001-…patch`)
+## Patch A (`patches/0001-…patch`)
 
 Check each packet as Linux does: `hdr_len` 8 (if not, drop the queued bytes
 and resync), checksum, input group, sub-header length. Learn the keyboard
@@ -83,7 +83,7 @@ interface from EVENT_INIT. Give only that interface's input reports to the
 parser, with the length from the sub header. Drop other reports without a
 message.
 
-## Patch B (`0002-…patch`, on top of A)
+## Patch B (`patches/0002-…patch`, on top of A)
 
 - Take the keyboard as announced only after its last EVENT_INIT packet.
 - Keyboard reports that were already queued at the first poll give the key
@@ -158,6 +158,7 @@ reports with sub length 10.
 
 ## Files
 
-`0001-…patch`, `0002-…patch`, `build-uboot-mtp.sh`, `w12-check.sh`,
+`patches/0001-…patch`, `patches/0002-…patch`, `build-uboot-mtp.sh`,
+`w12-check.sh` (run after `build-uboot-mtp.sh`, in its tree),
 `uboot-lab.config`, `hosttest/`, `PR-DRAFT.md` (text for the upstream PR,
 not sent), `SHA256SUMS`.
