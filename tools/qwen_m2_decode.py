@@ -252,6 +252,7 @@ def run(args):
     record({"type": "start", "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "argv": " ".join(sys.argv[1:]), "ane_run_sha256": sha(args.ane_run),
             "ref_sha256": sha(args.ref), "manifest_sha256": sha(args.manifest),
+            "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
             "head_load_s": round(time.monotonic() - start, 2), "rope": f"dh={dh} rotary={rotary} base={base}"})
     dump = DumpCheck(args.dump, args.band, record, out / "m2-dump") if args.dump else None
     for n, prompt in prompts:
