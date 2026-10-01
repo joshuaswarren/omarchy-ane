@@ -87,7 +87,8 @@ struct ane_task {
 };
 
 static int split_h14_tasks(const uint8_t *stream, uint64_t bytes,
-			   struct ane_task *tasks, uint32_t *count)
+			   struct ane_task *tasks, uint32_t cap,
+			   uint32_t *count)
 {
 	uint64_t off = 0;
 	uint64_t i;
@@ -134,7 +135,7 @@ static int split_h14_tasks(const uint8_t *stream, uint64_t bytes,
 					    "alignment gap");
 			}
 		}
-		if (*count == ANE_M2_MAX_TASKS) {
+		if (*count == cap) {
 			return fail("more tasks than the builder envelope "
 				    "holds");
 		}
@@ -1536,7 +1537,7 @@ static int ane_m2_program_build_ports_inner(
 	uint32_t counts[3] = { 0 };
 	uint32_t dir;
 	uint8_t *desc_buf;
-	struct ane_task tasks[ANE_M2_MAX_TASKS];
+	struct ane_task *tasks;
 	uint32_t ntasks = 0;
 	uint32_t k;
 	uint32_t ref_count = 0;
@@ -1696,25 +1697,33 @@ static int ane_m2_program_build_ports_inner(
 			return fail("task frame not zero");
 		}
 	}
+	/* One ref set covers every task on this path, so the task count is
+	 * bounded only by the header (Apple's whole Parakeet encoder for
+	 * h14 has 3597 tasks); the list lives on the heap. */
+	tasks = calloc(task_count ? task_count : 1, sizeof(*tasks));
+	if (!tasks) {
+		return -ENOMEM;
+	}
 	{
 		int err = split_h14_tasks(desc_buf, tsk_size, tasks,
-					  &ntasks);
-		if (err) {
-			return err;
+					  task_count, &ntasks);
+
+		if (!err && !ntasks) {
+			err = fail("the task stream holds no task");
 		}
-		if (!ntasks) {
-			return fail("the task stream holds no task");
+		if (!err && ntasks != task_count) {
+			err = fail("walked task count disagrees with the "
+				   "header taskCount");
 		}
-		if (ntasks != task_count) {
-			return fail("walked task count disagrees with the "
-				    "header taskCount");
+		if (!err && first_task != tasks[0].words * 4) {
+			err = fail("firstTaskBytes disagrees with the "
+				   "walked first task");
 		}
-		if (first_task != tasks[0].words * 4) {
-			return fail("firstTaskBytes disagrees with the "
-				    "walked first task");
+		if (!err) {
+			err = check_bound_slots(desc_buf, tasks, ntasks, model,
+						krn_size);
 		}
-		err = check_bound_slots(desc_buf, tasks, ntasks, model,
-					krn_size);
+		free(tasks);
 		if (err) {
 			return err;
 		}
@@ -1861,7 +1870,8 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 			return fail("task frame not zero");
 		}
 	}
-	err = split_h14_tasks(desc, tsk_size, tasks, &ntasks);
+	err = split_h14_tasks(desc, tsk_size, tasks, ANE_M2_MAX_TASKS,
+			      &ntasks);
 	if (err) {
 		return err;
 	}
