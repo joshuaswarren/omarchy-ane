@@ -1343,9 +1343,31 @@ Record: [receipts/2026-10-01-t6021-parakeet-encoder](../receipts/2026-10-01-t602
   the golden 104 tokens.
 - Exec time is 254.4 ms per call. The M1 under Linux runs the h13 build in
   about 139.4 ms; CoreML on the M2 under macOS 27 runs its own build in
-  90.6 ms. The numerics are correct, so the gap is the ANE operating point
-  (inference; see section 19).
+  90.6 ms. The numerics are correct, so the gap is in how the engine runs
+  the program; section 25 splits the time by task family.
 - libane's port-table build no longer caps the task count at 128; that bound
   belongs to the derived build only. An HWX LC 0x40 record holds the tensor
   name from +0x18 and grows in 8-byte steps with it (0x20, 0x28, 0x30 here),
   so a name longer than 8 bytes needs the whole record.
+
+## 25. Per-task timeline of the encoder: trace_td (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-td/README.md).
+
+- `ane_t6021.trace_td` (runtime switch, default 0, omarchy-ane `7ae53e0`)
+  samples the last-committed-TD word every 20-40 us during the completion
+  wait, under the PS-word guard, into debugfs `ane_t6021/trace_td`. Trace on
+  changes the encoder exec time by less than 0.1%.
+- The TD word moves when the task manager takes a task. The manager keeps
+  19 tasks in flight: task k+1 is taken when task k+1-19 finishes (r 0.985
+  with the weight bytes of that task in Qwen prog_006, 0.871 with the
+  activation bytes in the encoder). The IO_T2H state-0 event comes 0.2-0.5 ms
+  after the ack whatever the program length.
+- The encoder timeline is the same in every call; no firmware pacing shows.
+  Linear and conv layers with weights take 41% of the call at about
+  2.2 TMAC/s (estimate). The 120 attention-shape tasks (relative positions,
+  inferred) take 30% at about 14 GB/s of activations. PE-only tasks take
+  23%. The smallest tasks run in about 3 us, so a fixed cost per task is at
+  most 5%.
+- The clock (or core use) can still explain the linear layers; activation
+  traffic explains the rest.

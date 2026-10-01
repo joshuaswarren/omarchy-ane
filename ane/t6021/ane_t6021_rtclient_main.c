@@ -693,8 +693,10 @@ static void ane_t6021_trace_free(void)
 /* IO_T2H event of a PROCEDURE_CALL, 0x28 bytes (measured 2026-09-30,
  * receipts/2026-09-30-t6021-call-wait): u32 sequence, u32 0x300, u64
  * cookie, u32 program id, u32 process id, u32 0, u32 state. The firmware
- * posts two per call: state 0 when the task queue has taken every task,
- * state 1 when the procedure has finished. */
+ * posts two per call: state 0 about 0.2-0.5 ms after the ack whatever the
+ * program length (a 3,597-task program takes its last task 252 ms later;
+ * receipts/2026-10-01-t6021-trace-td), and state 1 when the procedure has
+ * finished. */
 #define ANE_T2H_CALL_COOKIE_OFF		0x08
 #define ANE_T2H_CALL_STATE_OFF		0x1c
 #define ANE_T2H_CALL_FINISHED		1
