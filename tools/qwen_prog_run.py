@@ -14,6 +14,7 @@ to <work>/<name>.f16; use --out NAME=FILE to select another destination.
 
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -102,6 +103,36 @@ def port_map_from_table(table):
     return {name: port for name, port in by_name.items() if port["direction"] != "scratch"}
 
 
+def ane_call(anec, ports_path, ports, arrays, work, ane_run, timeout, repeat=1, dry=False):
+    """Pack arrays (input name -> tensor) into the port surfaces under work and
+    run ane-run once under the device lock. Returns (exit status, ane-run
+    stdout+stderr, output name -> unpacked tensor); dry packs, runs nothing
+    and returns (0, the locked command, {})."""
+    input_args, output_args, output_surfaces = [], [], {}
+    for name, port in ports.items():
+        if port["direction"] == "input":
+            filename = work / f"in-{name}.surface"
+            pack_surface(arrays[name].reshape(port["shape"]), port["strides"],
+                         port["tile_bytes"]).tofile(filename)
+            input_args.extend(["--in", f"{name}={filename}"])
+        else:
+            filename = work / f"out-{name}.surface"
+            filename.unlink(missing_ok=True)
+            output_surfaces[name] = filename
+            output_args.extend(["--out", f"{name}={filename}"])
+    locked = ["flock", "/var/tmp/ane-run.lock", "timeout", str(timeout), ane_run,
+              "--anec", str(anec), "--ports", str(ports_path),
+              *input_args, *output_args, "--repeat", str(repeat), "--time"]
+    if dry:
+        return 0, shlex.join(locked), {}
+    run = subprocess.run(locked, capture_output=True, text=True)
+    outputs = {}
+    for name, filename in output_surfaces.items() if run.returncode == 0 else ():
+        raw = filename.read_bytes()
+        if len(raw) != ports[name]["tile_bytes"]:
+            raise Refuse(f"{name}: output bytes do not match tile_bytes")
+        outputs[name] = unpack_surface(raw, tuple(ports[name]["shape"]), ports[name]["strides"])
+    return run.returncode, run.stdout + run.stderr, outputs
 
 
 def main(argv=None):
@@ -156,44 +187,30 @@ def main(argv=None):
     golden_files = parse_named(args.golden, outputs, "golden")
     work = Path(args.work or f"/var/tmp/qwen-run/{args.prog}")
     work.mkdir(parents=True, exist_ok=True)
-    input_args, output_args, output_surfaces = [], [], {}
-    for name, port in inputs.items():
-        arr = load_input(input_files[name], tuple(port["shape"]), name in args.transpose)
-        surface = pack_surface(arr, port["strides"], port["tile_bytes"])
-        if surface.nbytes != port["tile_bytes"]:
-            raise Refuse(f"{name}: packed size does not match tile_bytes")
-        filename = work / f"in-{name}.surface"
-        surface.tofile(filename)
-        input_args.extend(["--in", f"{name}={filename}"])
-    for name, port in outputs.items():
-        filename = work / f"out-{name}.surface"
-        output_surfaces[name] = filename
-        output_args.extend(["--out", f"{name}={filename}"])
-    command = [args.ane_run, "--anec", str(anec), "--ports", str(ports_path),
-               *input_args, *output_args, "--repeat", str(args.repeat), "--time"]
-    locked = ["flock", "/var/tmp/ane-run.lock", "timeout", str(args.timeout), *command]
+    arrays = {name: load_input(input_files[name], tuple(port["shape"]), name in args.transpose)
+              for name, port in inputs.items()}
     print("ports:")
     for name, port in ports.items():
         print(f"  {name}: {port['direction']} slot{port['bar_slot']} bufferId={port['buffer_id']} channel={port['channel']} shape={port['shape']}")
     for ambiguity in table.get("ambiguities", []):
         print(f"WARNING unresolved port identity: {ambiguity}", file=sys.stderr)
-    if args.dry or args.pack_only:
-        import shlex
+    dry = args.dry or args.pack_only
+    status, log, results = ane_call(anec, ports_path, ports, arrays, work, args.ane_run,
+                                    args.timeout, args.repeat, dry)
+    if dry:
         print("dry-run: no device access")
-        print("  " + shlex.join(locked))
+        print("  " + log)
         return 0
-    subprocess.run(locked, check=True)
-    for name, port in outputs.items():
-        raw = output_surfaces[name].read_bytes()
-        if len(raw) != port["tile_bytes"]:
-            raise Refuse(f"{name}: output bytes do not match tile_bytes")
-        arr = unpack_surface(raw, tuple(port["shape"]), port["strides"])
+    print(log, end="")
+    if status:
+        raise Refuse(f"ane-run exited {status}")
+    for name, arr in results.items():
         target = output_files.get(name, work / f"{name}.f16")
         target.parent.mkdir(parents=True, exist_ok=True)
         np.save(target, arr) if target.suffix == ".npy" else arr.tofile(target)
         print(f"unpacked {name} {arr.shape} -> {target}")
         if name in golden_files:
-            gold = load_input(golden_files[name], tuple(port["shape"]))
+            gold = load_input(golden_files[name], tuple(outputs[name]["shape"]))
             delta = arr.astype(np.float32) - gold.astype(np.float32)
             norm = np.linalg.norm(gold.astype(np.float32))
             print(f"{name} golden max_abs={np.abs(delta).max():.7g} relL2={np.linalg.norm(delta) / norm if norm else float('inf'):.7g} exact={(arr.ravel() == gold.ravel()).mean():.6g}")
