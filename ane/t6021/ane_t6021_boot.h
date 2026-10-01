@@ -441,6 +441,14 @@ struct ane_t6021_boot_io {
 	 * SCRATCH0/1 publish; returns the suballoc DVA halves. Kernel
 	 * backend: allocate pool/IPC + fill from pinned sources. */
 	int (*prepare)(void *ctx, u32 *lo, u32 *hi);
+	/* af_bridge_macos only (never called otherwise): power_ok() is
+	 * the PS guard (ane_sys ACTUAL on, seven island words 0x3ff);
+	 * bridge_log() records one RMW, before the write (written = 0,
+	 * v = the value to write; must drain to netconsole) and after
+	 * the readback (written = 1, v = the readback). */
+	int (*power_ok)(void *ctx);
+	void (*bridge_log)(void *ctx, unsigned int off, u32 before, u32 v,
+			   int written);
 };
 
 struct ane_t6021_boot_cfg {
@@ -473,7 +481,66 @@ struct ane_t6021_boot_cfg {
 				 * -ETIMEDOUT — the timeout is the
 				 * answer. Steps complete = writes done;
 				 * the stop never splits a step. */
+	int af_bridge_macos;	/* 1 = replace P-1a/P-1d (eng+0x000,
+				 * eng+0x400) by the 26 macOS AF-bridge
+				 * RMWs (ane_t6021_af_bridge_rmw), at the
+				 * position of P-1a; 0 = P-1 unchanged */
 };
+
+/* macOS T6021 ANE0 AXI2AF bridge tunables (AppleT6020PMGR::
+ * applyBridgeTunables), reg = (reg & ~mask) | val, in this order. The
+ * macOS 13.5 hv trace writes exactly these 26 words between ps_ane_sys
+ * on and ps_ane_cpu on (events 2816-2841; receipt
+ * 2026-10-01-t6021-af-bridge). Per register: guard, read, log the
+ * value to write (drained), guard, write, read back, log. A guard miss
+ * returns -EAGAIN before the CPU start. */
+static inline int ane_t6021_af_bridge_rmw(const struct ane_t6021_boot_io *io)
+{
+	static const struct { u32 off, mask, val; } t[] = {
+		{ 0x000, 0x00000003, 0x00000001 },
+		{ 0x00c, 0x000fffff, 0x0000000d },
+		{ 0x010, 0x000fffff, 0x0000000c },
+		{ 0x014, 0x00000fff, 0x00000001 },
+		{ 0x018, 0x00000fff, 0x00000001 },
+		{ 0x01c, 0x00000fff, 0x00000003 },
+		{ 0x020, 0x00000fff, 0x00000003 },
+		{ 0x024, 0x00000fff, 0x00000003 },
+		{ 0x028, 0x00000fff, 0x00000003 },
+		{ 0x02c, 0x00000fff, 0x00000003 },
+		{ 0x030, 0x00000fff, 0x00000003 },
+		{ 0x034, 0x00000fff, 0x00000003 },
+		{ 0x108, 0x00000003, 0x00000001 },
+		{ 0x10c, 0x000fffff, 0x0000000d },
+		{ 0x110, 0x000fffff, 0x0000000c },
+		{ 0x114, 0x00000fff, 0x00000001 },
+		{ 0x118, 0x00000fff, 0x00000001 },
+		{ 0x11c, 0x00000fff, 0x00000003 },
+		{ 0x120, 0x00000fff, 0x00000003 },
+		{ 0x124, 0x00000fff, 0x00000003 },
+		{ 0x128, 0x00000fff, 0x00000003 },
+		{ 0x12c, 0x00000fff, 0x00000003 },
+		{ 0x130, 0x00000fff, 0x00000003 },
+		{ 0x134, 0x00000fff, 0x00000003 },
+		{ 0x400, 0xc00103ff, 0xc0010010 },
+		{ 0xa00, 0x01ffffff, 0x01ffffff },
+	};
+	unsigned int i;
+	u32 before, v;
+
+	for (i = 0; i < sizeof(t) / sizeof(t[0]); i++) {
+		if (!io->power_ok(io->ctx))
+			return -EAGAIN;
+		before = io->rd32(io->ctx, t[i].off);
+		v = (before & ~t[i].mask) | t[i].val;
+		io->bridge_log(io->ctx, t[i].off, before, v, 0);
+		if (!io->power_ok(io->ctx))
+			return -EAGAIN;
+		io->wr32(io->ctx, t[i].off, v);
+		io->bridge_log(io->ctx, t[i].off, before,
+			       io->rd32(io->ctx, t[i].off), 1);
+	}
+	return 0;
+}
 
 /* Ownership: a started CPU may be fetching from the staged surfaces —
  * the DMA memory is NOT reclaimable on failure/remove while
@@ -563,7 +630,22 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 		unsigned int ti;
 
 		io->phase(io->ctx, "P-1 grant-tunables begin");
+		if (cfg->af_bridge_macos) {
+			int err;
+
+			io->phase(io->ctx,
+				  "P-1 AF bridge: 26 macOS RMWs replace P-1a/P-1d");
+			err = ane_t6021_af_bridge_rmw(io);
+			if (err) {
+				io->phase(io->ctx,
+					  "P-1 AF bridge: PS guard miss, stop before CPU start");
+				return err;
+			}
+		}
 		for (ti = 0; ti < sizeof(tun) / sizeof(tun[0]); ti++) {
+			if (cfg->af_bridge_macos &&
+			    (tun[ti].off == 0x000 || tun[ti].off == 0x400))
+				continue;
 			io->phase(io->ctx, tun[ti].off == 0x000 ?
 				  "P-1a eng+0x000" :
 				  tun[ti].off == 0x038 ? "P-1b eng+0x038" :

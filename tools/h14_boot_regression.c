@@ -91,6 +91,10 @@ struct fake {
 	u64 asz[8];
 	u64 aiov[8];
 	int nasz;
+	u32 bridge_pre;       /* rd32 of engine offsets < 0x1000 */
+	int guard_calls;
+	int guard_miss_at;    /* power_ok() fails at this call (0 = never) */
+	int bridge_logs;
 };
 
 /* file-scope sources for the shared assembly (nonzero prev_fw_len on
@@ -157,6 +161,8 @@ static u32 f_rd32(void *ctx, unsigned int off)
 {
 	struct fake *f = ctx ? ctx : fake;
 
+	if (off < 0x1000)
+		return f->bridge_pre;
 	if (off == ANE_T6021_BOOT_REG_SCRATCH0)
 		return f->scratch0_val;
 	if (off == ANE_T6021_BOOT_REG_SCRATCH1)
@@ -257,6 +263,25 @@ static int f_prepare(void *ctx, u32 *lo, u32 *hi)
 	if (err)
 		return err;
 	return 0;
+}
+
+static int f_power_ok(void *ctx)
+{
+	struct fake *f = fake;
+
+	(void)ctx;
+	return ++f->guard_calls != f->guard_miss_at;
+}
+
+static void f_bridge_log(void *ctx, unsigned int off, u32 before, u32 v,
+			 int written)
+{
+	(void)ctx;
+	(void)off;
+	(void)before;
+	(void)v;
+	(void)written;
+	fake->bridge_logs++;
 }
 
 int main(void)
@@ -644,6 +669,72 @@ int main(void)
 			check(sres == 0x000000ab00000005ULL,
 			      "DONE result captured raw (SC1<<32|SC0)",
 			      "exposed, not discarded (Main review)");
+		}
+
+		/* (2a) af_bridge_macos: the 26 macOS RMWs replace P-1a and
+		 * P-1d at the head of P-1 (masked onto the read value), the
+		 * other ten P-1 writes keep their order, the rest follows;
+		 * a PS guard miss stops before the CPU start. */
+		{
+			static const struct ane_t6021_boot_io iob = {
+				.rd32 = f_rd32, .rd64 = f_rd64,
+				.wr32 = f_wr32, .wr64 = f_wr64,
+				.publish_barrier = f_dsb, .poll_wait = f_wait,
+				.phase = f_phase, .prepare = f_prepare,
+				.power_ok = f_power_ok,
+				.bridge_log = f_bridge_log,
+			};
+			static const unsigned int kept[] = {
+				0x038, 0x03c, 0x600, 0x738, 0x798,
+				0x7f8, 0x900, 0x410, 0x420, 0x430,
+			};
+			struct ane_t6021_boot_cfg cfg = {
+				.preflight_ok = 1,
+				.preboot_table_mode = 2,
+				.fw_dva = 0x0000deadbeef000ULL,
+				.af_bridge_macos = 1,
+			};
+			int cs = 0, fa = 0, bo = 0, k, ok = 1, p1 = 0;
+			u64 sres = 0;
+
+			fake_reset(&fk);
+			fk.rvbar = 0x1;
+			fk.scratch1_captured = 6;
+			fk.bridge_pre = 0xffffffffU;
+			check(ane_t6021_boot_run(&iob, &cfg, &cs, &fa, &bo,
+						 &sres) == 0 && bo == 1,
+			      "af: full sequence reaches DONE",
+			      "26 RMW + 10 P-1 + 16 rest");
+			check(fk.nwr == 52 && fk.bridge_logs == 52 &&
+			      fk.guard_calls == 52,
+			      "af: 52 writes, 2 logs + 2 guards per RMW",
+			      "guard before read and before write");
+			check(fk.woff[0] == 0x000 && fk.wval[0] == 0xfffffffdU &&
+			      fk.woff[24] == 0x400 &&
+			      fk.wval[24] == 0xfffffc10U &&
+			      fk.woff[25] == 0xa00 &&
+			      fk.wval[25] == 0xffffffffU,
+			      "af: (read & ~mask) | value",
+			      "0x000, 0x400, 0xa00 on an all-ones read");
+			for (k = 0; k < 10; k++)
+				ok &= fk.woff[26 + k] == kept[k];
+			for (k = 0; k < 52; k++)
+				p1 |= (fk.woff[k] == 0x000 &&
+				       fk.wval[k] == 0x10U) ||
+				      (fk.woff[k] == 0x400 &&
+				       fk.wval[k] == 0x40010001U);
+			check(ok && !p1 && fk.cpuctrl0_at == 47,
+			      "af: P-1a/P-1d gone, ten P-1 kept in order",
+			      "then scratch, CPU release");
+
+			fake_reset(&fk);
+			fk.rvbar = 0x1;
+			fk.guard_miss_at = 5;	/* before the read of RMW 3 */
+			check(ane_t6021_boot_run(&iob, &cfg, &cs, &fa, &bo,
+						 &sres) == -EAGAIN &&
+			      cs == 0 && fk.nwr == 2,
+			      "af: guard miss stops before CPU start",
+			      "-EAGAIN after 2 RMWs, no CPU write");
 		}
 
 		/* (2b) IPC double-increment catch: captured 0x3FFF makes
