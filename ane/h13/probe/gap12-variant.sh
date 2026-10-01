@@ -42,7 +42,7 @@ variant() {
 
 swap() {
 	[ "$(sha256sum <"$DST" | cut -d' ' -f1)" = "$EXPECT" ] || { echo 'FATAL variant sha mismatch'; exit 6; }
-	[ "$(sudo sha256sum </boot/efi/m1n1/boot.bin | cut -d' ' -f1)" = "$STD_BOOT" ] || { echo 'FATAL: ESP boot.bin is not the 6e8f90c8 standard image'; exit 7; }
+	 [ "$(sudo sha256sum /boot/efi/m1n1/boot.bin | cut -d' ' -f1)" = "$STD_BOOT" ] || { echo 'FATAL: ESP boot.bin is not the 6e8f90c8 standard image'; exit 7; }
 	sudo cp /boot/efi/m1n1/boot.bin "$ESP_BACKUP"
 	sudo sha256sum "$ESP_BACKUP"
 	sudo mkdir -p "$DTB_BAK"
@@ -89,7 +89,7 @@ revert() {
 	# boot does not pass ane_no_iommu=1 to the stock ane.ko.
 	sudo rm -f /etc/modprobe.d/ane-no-iommu.conf
 	ls /etc/modprobe.d/ 2>&1 | head
-	[ "$(sudo sha256sum <"$ESP_BACKUP" | cut -d' ' -f1)" = "$STD_BOOT" ] || { echo 'FATAL: gap12 ESP backup is not 6e8f90c8'; exit 8; }
+	 [ "$(sudo sha256sum "$ESP_BACKUP" | cut -d' ' -f1)" = "$STD_BOOT" ] || { echo 'FATAL: gap12 ESP backup is not 6e8f90c8'; exit 8; }
 	sudo cp "$ESP_BACKUP" /boot/efi/m1n1/boot.bin
 	sudo rm -rf "/var/lib/omarchy-ane/dtbs/$K"
 	sudo cp -a "$DTB_BAK/$K" "/var/lib/omarchy-ane/dtbs/$K"
