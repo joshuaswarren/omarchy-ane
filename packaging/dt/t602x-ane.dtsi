@@ -43,6 +43,13 @@
  * interrupt 884, /arm-io/dart-ane0 has reg 0x285800000, 0x285810000,
  * 0x285820000 and interrupt 885, pmgr has the same nine ANE states
  * (0x260, 0x2e0, 0x4000..0x4030), and no node names AIC line 1833.
+ * Community rows (receipts/2026-10-01-community-rows; row = submission sha256
+ * prefix) measure the same ane0 reg, interrupt 884, dart-ane0 reg and
+ * interrupt 885 in the live macOS IORegistry: T6020 4e8224a39f40, e6069fe959ad
+ * (J416s, 26.5.1), dc53badc436a, ea8c35bd20bf (J414s, 26.6.2), 857e1e6c61b0;
+ * T6022 90c6b9bf3e03 (J475d, 27.0). Every target-path above exists with the
+ * labels used here (pmp, ane_cpu, ane_sys_mpm, ane_td, ane_base, ane_set1..4)
+ * on all 19 T6020 Linux rows (j414s, j416s; linux-asahi 7.1.13-3).
  */
 
 / {
