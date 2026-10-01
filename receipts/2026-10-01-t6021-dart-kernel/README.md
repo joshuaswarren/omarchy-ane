@@ -145,9 +145,11 @@ writes only new paths and stops at the first failed check:
 4. `/boot/vmlinuz-linux-asahi-dart`, then
    `mkinitcpio -k 7.1.13-3-1-ARCH-dart -g /boot/initramfs-linux-asahi-dart.img`.
    Checks: the image holds `btrfs.ko` from the new tree and nothing from the
-   stock tree; its module list equals the stock initramfs list. The full
-   file lists (release string normalized) are compared and the difference
-   is written to `initramfs-files.diff`.
+   stock tree; its module list and its full file list (release string
+   normalized) equal those of a stock-kernel initramfs that install.sh
+   builds into STAGEDIR at the same time. (The installed stock initramfs,
+   built 2026-09-19, also holds ramoops and reed_solomon, which autodetect
+   no longer selects; a stock image built now does not.)
 5. `/boot/grub/custom.cfg` (`scripts/custom.cfg`), `grub-script-check`.
 6. Readback of every new file, and the stock hashes again: they must be
    equal.
