@@ -20,6 +20,13 @@
  * interrupt 771, and pmgr has ANE_SYS at 0x268 and ANE_SYS_CPU at 0x2c8.
  * linux-asahi 7.1.13 builds all three from the same t600x-die0.dtsi and
  * t600x-pmgr.dtsi.
+ * Community rows (receipts/2026-10-01-community-rows; row = submission sha256
+ * prefix): the M1 Ultra macOS 26.6.2 IORegistry (J375d: 755c2d8d3b9a,
+ * ffe77ec70b57, 14fbcbe67589, 5e75a04c9727, 869e1c8ba779) has the same die-0
+ * ane0 reg, interrupt 770, dart-ane0 reg and interrupt 771. The T6000 Linux
+ * rows (j314s: c901d2bb47ba, 1c239648b330; j316s: 8bdc4c196309, fbc20029b7fd)
+ * have the AIC path and ane_sys@268 and ane_sys_cpu@2c8 used here, and pmgr
+ * reg 0x4000. No M1 Pro macOS row exists.
  */
 
 / {

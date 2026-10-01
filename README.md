@@ -134,6 +134,27 @@ Run the mlx-omarchy quick collector on the target machine: `python3 scripts/coll
 
 Bring-up on a new SoC beyond the capture: PMGR labels and ranges, DART windows, SET/TM physical addresses, netconsole, and a bound `/dev/accel/accel0` before any program submit. Going from M1 to M1 Max was hours of reboot, netconsole, and PMGR/SET work; expect that on each new part. Do not write SET `0xf` from userspace. T6001 SET0 is `0x28e08c000`; genpd raises it on the driver's probe-time runtime resume and the driver holds that reference until remove, so the partition stays up while the module is bound. The lab T6001 overlay is `ane/t6001-j316c-set-domains.dts`; the package installs its nodes from `packaging/dt/t6001-ane.dts`. A new SoC's overlay goes in `packaging/dt/` with a source for every value, and `tools/test_ane_overlays.py` must pass on every board device tree of that SoC.
 
+### Promotion rule
+
+An untested SoC stays opt-in until community rows prove it. It goes on by default when `tools/promotion_check.py` prints `PROMOTE` for it. Then a separate PR changes its line in `packaging/dt/overlays` to `enabled` and cites the passing rows. The checker only reports; it changes nothing.
+
+A row passes when all of these are true:
+
+- `omarchy-ane-check` exits 0 and prints `omarchy-ane-check: ready`, with the driver of the SoC loaded: `ane` on T8103 and T600x, `ane_t6021` on T602x and T8112.
+- The smoke test is bit-exact: 20 calls of the golden program for the SoC, every output SHA-256 equal to the golden, and no error. On T6020, T6021 and T6022 the golden is the whole Parakeet encoder (fp16 output SHA-256 `fca96f1355485ec3…`, [receipt](receipts/2026-10-01-t6021-release-boot/README.md)). A SoC with no golden program (T6000, T6002 and T8112 today) cannot pass a row.
+- No kernel log line from the ANE, its DARTs or its mailbox has a fault word (fault, error, timeout, abort, oops, warn, bug, call trace, stall, hung).
+- The machine was up for 30 minutes (1800 s) or more when the row was taken.
+
+A SoC passes when all of these are true:
+
+- 3 rows pass, from 3 different machines and 2 different owners.
+- The passing rows come from 2 different boards (1 when linux-asahi has only one board device tree for the SoC, as for T6002) and from 2 different kernel releases.
+- No judged row of the SoC fails. A failing row is a result: find its cause first.
+
+Why 3 machines: one machine cannot show the difference between the SoC and that one unit. Parts of one SoC are not the same. The community rows show chip revision 0x01 on the T6020 parts and 0x11 on the T6021 and T6022 parts (macOS `ANEDevicePropertyANEMinorVersion` 1 and 17), and iBoot selects the ANE ASC tunables by revision. One M2 Max laptop also stopped at the U-Boot prompt on every disk boot, and that cause may be in that laptop only ("M2 Max opt-in", U-Boot input). Three machines on two boards and two kernels separate the SoC from the unit, the board and the kernel, and one row is spare.
+
+The rows carry these facts in `summary.ane_port_detail.runtime.omarchy_ane` of the mlx-omarchy collector: `machine_id` and `owner_id` (hashes of random tokens, never a serial number), `check`, `module`, `smoke`, `uptime_s`, `dmesg` and `dmesg_faults`. On 2026-10-01 no row has this block, so no SoC can pass: `tools/promotion_check.py --remote` prints `0 judged` for every SoC ([receipt](receipts/2026-10-01-community-rows/README.md)). Run `tools/promotion_check.py --remote` for the public dataset, or `tools/promotion_check.py ROW.json ...` for rows on disk.
+
 ## T6021 legacy ChMan transport (`legacy_only` module parameter)
 
 The M2 Max (T6021) ANE on Linux needs its ASC firmware boot, then either

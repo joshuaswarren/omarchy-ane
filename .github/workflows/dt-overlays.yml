@@ -16,6 +16,8 @@ on:
       - tools/test_ane_firmware_fetch.py
       - tools/test_t8112_kit.py
       - tools/t8112-kit/**
+      - tools/promotion_check.py
+      - tools/test_promotion_check.py
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
@@ -27,6 +29,8 @@ on:
       - tools/test_ane_firmware_fetch.py
       - tools/test_t8112_kit.py
       - tools/t8112-kit/**
+      - tools/promotion_check.py
+      - tools/test_promotion_check.py
       - .github/workflows/dt-overlays.yml
 
 jobs:
@@ -47,3 +51,4 @@ jobs:
           python3 tools/test_ane_firmware_fetch.py
           python3 tools/test_t8112_kit.py
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
+          python3 tools/test_promotion_check.py
