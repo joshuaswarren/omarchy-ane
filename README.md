@@ -28,12 +28,12 @@ sudo reboot
 | M1 Pro | T6000 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested | `ane-t6000` | nothing on T6000 silicon |
 | M1 Max | T6001 | H13J | `apple,t6000-ane` | `ane` | on by default | — | bind + exact fp16 execution; task-queue recovery validated |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | nothing on T6002 silicon |
-| M2 | T8112 | H14G | `apple,t8112-ane` | none | not installable | — | no driver binds it; [tools/t8112-kit](tools/t8112-kit/README.md) collects the values that would unblock it |
+| M2 | T8112 | H14G | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | nothing on T8112 silicon |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | `ane_t6021` | opt-in, untested | `ane-t6020` + note | nothing on T6020 silicon |
 | M2 Max | T6021 | H14J | `apple,t6021-ane` | `ane_t6021` | on by default once the own-memory change lands (note below) | — | firmware starts under Linux; fp16 ops and matvec to 2048×5120 exact; Parakeet attention islands transcript-exact; all 38 Qwen programs conform to the M1 |
 | M2 Ultra | T6022 | H14J | `apple,t6022-ane` | `ane_t6021` | opt-in, untested (die 0) | `ane-t6022` + note | nothing on T6022 silicon |
 
-The T6020/T6022 note: after adding the key, also run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply` — the install hook fetches firmware on the M2 Max only. The M2 Max needs one more driver change before "on by default" is true on the packaged stack: with the packaged m1n1 1.6.1, `ane_t6021` refuses at probe (`fw_alias_reserved` guard) until the own-memory default merges. M3 and later are unsupported: their ANE is a different generation that Apple's own firmware describes as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1/M2 ANE presents, and no Linux driver exists for that design.
+The T6020/T6022/T8112 note: after adding the key, also run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply` — the install hook fetches firmware on the M2 Max only. The M2 Max needs one more driver change before "on by default" is true on the packaged stack: with the packaged m1n1 1.6.1, `ane_t6021` refuses at probe (`fw_alias_reserved` guard) until the own-memory default merges. M3 and later are unsupported: their ANE is a different generation that Apple's own firmware describes as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1/M2 ANE presents, and no Linux driver exists for that design.
 
 **Promotion.** An untested chip turns on by default once community runs prove it: 3 passing rows from 3 different machines, 2 owners, 2 boards and 2 kernel releases, with no failing row. `tools/promotion_check.py --remote` prints the live verdict per chip; when it says `PROMOTE`, a PR flips that chip's line in `packaging/dt/overlays` to `enabled`.
 
