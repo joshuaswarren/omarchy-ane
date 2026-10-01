@@ -148,6 +148,13 @@ module_param(boot_prevent_nap, bool, 0444);
 MODULE_PARM_DESC(boot_prevent_nap,
 		 "Retain firmware nap-prevention counter via init resource bit (default on: proven add-path value)");
 
+/* A/B switch: skip the P-1 groups ANE_T6021_P1_A..E (the ten words macOS
+ * never writes). Default 0 = P-1 unchanged. Set at load (modprobe.d). */
+static unsigned int p1_groups;
+module_param(p1_groups, uint, 0444);
+MODULE_PARM_DESC(p1_groups,
+		 "Skip these P-1 write groups: 0x1 A 0x038/0x03c, 0x2 B 0x600, 0x4 C 0x738/0x798/0x7f8, 0x8 D 0x900, 0x10 E 0x410/0x420/0x430 (default 0)");
+
 /* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
  * per-object metadata keeps modpost happy for either composition. */
 MODULE_LICENSE("Dual MIT/GPL");
@@ -461,10 +468,19 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 		.fw_dva = ane->fw_iova,
 		.stop_after = stop_after,
 		.rtb_mode = rtb_mode,
+		.p1_skip = p1_groups,
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
 	int r;
+
+	if (p1_groups & ~ANE_T6021_P1_ALL) {
+		dev_err(ane->dev, "boot: REFUSED before any write: p1_groups %#x has bits outside %#x\n",
+			p1_groups, ANE_T6021_P1_ALL);
+		return -EINVAL;
+	}
+	if (p1_groups)
+		dev_emerg(ane->dev, "BOOT-PHASE P-1 skips groups %#x (p1_groups)\n", p1_groups);
 
 	/* Wedged-pin module lifetime (Main lifetime review): the ref is
 	 * acquired BEFORE the first write — a started CPU can never

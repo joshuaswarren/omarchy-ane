@@ -473,7 +473,19 @@ struct ane_t6021_boot_cfg {
 				 * -ETIMEDOUT — the timeout is the
 				 * answer. Steps complete = writes done;
 				 * the stop never splits a step. */
+	unsigned int p1_skip;	/* ANE_T6021_P1_* groups whose P-1 writes
+				 * are skipped (A/B test); 0 = all 12. */
 };
+
+/* The ten P-1 words that the macOS 13.5 hv trace never writes, by
+ * group (receipt 2026-10-01-t6021-macos-vs-linux-mmio, rank 4).
+ * 0x000 and 0x400 have no group and are always written. */
+#define ANE_T6021_P1_A		0x01u	/* 0x038, 0x03c */
+#define ANE_T6021_P1_B		0x02u	/* 0x600 */
+#define ANE_T6021_P1_C		0x04u	/* 0x738, 0x798, 0x7f8 */
+#define ANE_T6021_P1_D		0x08u	/* 0x900 */
+#define ANE_T6021_P1_E		0x10u	/* 0x410, 0x420, 0x430 */
+#define ANE_T6021_P1_ALL	0x1fu
 
 /* Ownership: a started CPU may be fetching from the staged surfaces —
  * the DMA memory is NOT reclaimable on failure/remove while
@@ -552,13 +564,19 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	 * Per-write before/after discrimination (Main: attempt 3 stalled
 	 * LAST phase = P-1, possibly FIRST tunable write). */
 	{
-		static const struct { u32 off; u32 val; } tun[] = {
-			{ 0x000, 0x00000010 }, { 0x038, 0x00050020 },
-			{ 0x03c, 0x000a0030 }, { 0x400, 0x40010001 },
-			{ 0x600, 0x01ffffff }, { 0x738, 0x00200020 },
-			{ 0x798, 0x00100030 }, { 0x7f8, 0x0100000a },
-			{ 0x900, 0x00000101 }, { 0x410, 0x00001100 },
-			{ 0x420, 0x00001100 }, { 0x430, 0x00001100 },
+		static const struct { u32 off; u32 val; u32 grp; } tun[] = {
+			{ 0x000, 0x00000010, 0 },
+			{ 0x038, 0x00050020, ANE_T6021_P1_A },
+			{ 0x03c, 0x000a0030, ANE_T6021_P1_A },
+			{ 0x400, 0x40010001, 0 },
+			{ 0x600, 0x01ffffff, ANE_T6021_P1_B },
+			{ 0x738, 0x00200020, ANE_T6021_P1_C },
+			{ 0x798, 0x00100030, ANE_T6021_P1_C },
+			{ 0x7f8, 0x0100000a, ANE_T6021_P1_C },
+			{ 0x900, 0x00000101, ANE_T6021_P1_D },
+			{ 0x410, 0x00001100, ANE_T6021_P1_E },
+			{ 0x420, 0x00001100, ANE_T6021_P1_E },
+			{ 0x430, 0x00001100, ANE_T6021_P1_E },
 		};
 		unsigned int ti;
 
@@ -577,6 +595,10 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 				  tun[ti].off == 0x410 ? "P-1j eng+0x410" :
 				  tun[ti].off == 0x420 ? "P-1k eng+0x420" :
 				  "P-1l eng+0x430");
+			if (tun[ti].grp & cfg->p1_skip) {
+				io->phase(io->ctx, "P-1 write SKIPPED (p1_groups)");
+				continue;
+			}
 			io->wr32(io->ctx, tun[ti].off, tun[ti].val);
 			io->phase(io->ctx, "P-1 write done");
 		}

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
  * ane_afbridge_probe — read-only dump of the 26 T6021 ANE0 AXI2AF bridge
- * registers that macOS programs (AppleT6020PMGR::applyBridgeTunables).
+ * registers that macOS programs (AppleT6020PMGR::applyBridgeTunables),
+ * then the ten engine-low words that only the Linux P-1 writes.
  *
  * The bridge is the first block of the ANE engine window: the macOS 13.5
  * hv trace writes exactly these 26 offsets at 0x284000000 between the
  * ane_sys power-up and the ane_cpu power-up
- * (tools/m2hv_replay-trace-135.txt events 2816-2841).
+ * (tools/m2hv_replay-trace-135.txt events 2816-2841). It never writes the
+ * ten P-1 words (ane_t6021_boot.h, groups ANE_T6021_P1_A..E).
  *
  * Rules: non-posted mapping only, no write, and no engine read unless
  * ane_sys and the seven compute islands read on. The guard runs before
@@ -36,6 +38,7 @@ static const u16 afb_off[] = {
 	0x108, 0x10c, 0x110, 0x114, 0x118, 0x11c, 0x120, 0x124, 0x128,
 	0x12c, 0x130, 0x134,
 	0x400, 0xa00,
+	0x038, 0x03c, 0x600, 0x738, 0x798, 0x7f8, 0x900, 0x410, 0x420, 0x430,
 };
 
 /* ane_sys holds the bridge (macOS programs it right after ane_sys

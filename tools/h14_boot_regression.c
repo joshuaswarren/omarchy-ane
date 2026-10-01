@@ -893,6 +893,48 @@ int main(void)
 			      "timeout writes = same 25",
 			      "stop_after cannot silence a timeout");
 		}
+		/* (6) p1_skip (2026-10-01): each group skips exactly its
+		 * named words, the rest keep their order, and 0x000/0x400
+		 * are always written. Expected groups written out here, not
+		 * taken from the header table. */
+		{
+			static const unsigned int p1_off[12] = {
+				0x000, 0x038, 0x03c, 0x400, 0x600, 0x738,
+				0x798, 0x7f8, 0x900, 0x410, 0x420, 0x430,
+			};
+			static const unsigned int p1_grp[12] = {
+				0, 0x1, 0x1, 0, 0x2, 0x4, 0x4, 0x4, 0x8, 0x10, 0x10, 0x10,
+			};
+			static const unsigned int masks[] = { 0x1, 0x2, 0x4, 0x8, 0x10, 0x1f };
+			static char name[48];
+			unsigned int m, k;
+
+			for (m = 0; m < sizeof(masks) / sizeof(masks[0]); m++) {
+				int cs = 0, fa = 0, bo = 0, n = 0, ok;
+				u64 sres = 0;
+				struct ane_t6021_boot_cfg cfg = {
+					.preflight_ok = 1,
+					.preboot_table_mode = 2,
+					.fw_dva = 0x0000deadbeef000ULL,
+					.stop_after = 1,
+					.p1_skip = masks[m],
+				};
+
+				fake_reset(&fk);
+				fk.rvbar = 0x1;
+				ok = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo,
+							&sres) == -ECANCELED;
+				for (k = 0; k < 12; k++) {
+					if (p1_grp[k] & masks[m])
+						continue;
+					ok = ok && n < fk.nwr && fk.woff[n] == p1_off[k];
+					n++;
+				}
+				snprintf(name, sizeof(name), "p1_skip=%#x writes", masks[m]);
+				check(ok && fk.nwr == n, name,
+				      "exactly the unskipped words, in order");
+			}
+		}
 		check(ane_t6021_boot_dma_reclaimable(0) == true,
 		      "ownership: DMA reclaimable when never started",
 		      "normal status-only removal");
