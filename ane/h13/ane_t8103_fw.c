@@ -255,6 +255,46 @@ out:
 	return err;
 }
 
+/* H175: the three ANE DARTs' error latch (ERROR, ADDR lo/hi) and the per-stream TCR words, non-posted reads. The standard
+ * apple-dart T8020 offsets (0x40/0x50/0x54, TCR 0x100 + 4*sid) are an assumption; H167 read nonzero latched values at rest. */
+static void fw_dart_dump(struct fw_ctx *c, const char *label)
+{
+	for (int n = 0; n < 3; n++) {
+		void __iomem *d = ioremap_np(0x26b800000ULL + n * 0x10000ULL, 0x4000);
+		u32 tcr[16];
+
+		if (!d)
+			continue;
+		for (int s = 0; s < 16; s++)
+			tcr[s] = readl(d + 0x100 + 4 * s);
+		dev_info(c->dev, "fw-start: %s DART%d err %#x addr %#x_%08x TCR0-15 %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x %#x\n",
+			 label, n, readl(d + 0x40), readl(d + 0x54), readl(d + 0x50), tcr[0], tcr[1], tcr[2], tcr[3], tcr[4],
+			 tcr[5], tcr[6], tcr[7], tcr[8], tcr[9], tcr[10], tcr[11], tcr[12], tcr[13], tcr[14], tcr[15]);
+		iounmap(d);
+	}
+}
+
+static bool pcsr;
+module_param(pcsr, bool, 0444);
+MODULE_PARM_DESC(pcsr, "stage 3: after RUN read the ASC CoreSight debug block (EDPRCR 0x1010310, EDSCR 0x1010088, EDPCSR 0x10100a0/ac) to sample the fw PC");
+
+static void fw_pc_samples(struct fw_ctx *c)
+{
+	u32 lo, hi;
+
+	dev_info(c->dev, "fw-start: PCSR next: EDPRCR (+0x1010310)\n");
+	dev_info(c->dev, "fw-start: PCSR EDPRCR %#x\n", rd(c, 0x1010310));
+	dev_info(c->dev, "fw-start: PCSR next: EDSCR (+0x1010088)\n");
+	dev_info(c->dev, "fw-start: PCSR EDSCR %#x\n", rd(c, 0x1010088));
+	for (int k = 0; k < 8; k++) {
+		dev_info(c->dev, "fw-start: PCSR next: EDPCSR lo (+0x10100a0)\n");
+		lo = rd(c, 0x10100a0);
+		hi = rd(c, 0x10100ac);
+		dev_info(c->dev, "fw-start: PCSR sample %d: lo %#x hi %#x\n", k, lo, hi);
+		msleep(50);
+	}
+}
+
 /* H174: read the staged DATA back through the CPU mapping of the same pages the DART maps and report what the fw wrote. */
 static void fw_readback(struct fw_ctx *c, const struct firmware *fw, const char *label)
 {
@@ -326,6 +366,7 @@ static void fw_stage3(struct fw_ctx *c, const struct firmware *fw)
 	u32 v = 0;
 	int i;
 
+	fw_dart_dump(c, "pre-RUN");
 	dev_info(c->dev, "fw-start: S3 scratch clear + SCRATCH6=1 + SCRATCH7 pulse\n");
 	for (i = 0; i < 8; i++)
 		wr(c, R_SCRATCH0 + 4 * i, 0);
@@ -349,6 +390,9 @@ static void fw_stage3(struct fw_ctx *c, const struct firmware *fw)
 		 rd(c, R_SCRATCH0 + 16), rd(c, R_SCRATCH0 + 20), rd(c, R_SCRATCH0 + 24), rd(c, R_SCRATCH0 + 28));
 	dev_info(c->dev, "fw-start: S3 mailbox A2I %#x I2A %#x tick %#x pending %#x\n", rd(c, R_MBOX_A2I),
 		 rd(c, R_MBOX_I2A), rd(c, R_TICK), rd(c, R_DB_PENDING));
+	fw_dart_dump(c, "post-RUN");
+	if (pcsr)
+		fw_pc_samples(c);
 	fw_readback(c, fw, "t+0.2s");
 	msleep(1800);
 	fw_readback(c, fw, "t+2s");
