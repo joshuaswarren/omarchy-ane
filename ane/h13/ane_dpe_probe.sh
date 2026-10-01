@@ -1,17 +1,22 @@
 #!/bin/bash
 # Read-only T8103 ANE DPE tunable readback (module ane_dpe_probe.ko). No writes.
 #
-# Usage: ane_dpe_probe.sh <tag> <group>...     groups: efuse fuse sys soc cpms
-#   e.g. ane_dpe_probe.sh idle efuse        # first, smallest, standard efuse region
-#        ane_dpe_probe.sh idle fuse         # die-window fuse qwords (new read class)
-#        ane_dpe_probe.sh idle sys soc cpms # the three DPE register blocks (new read classes)
+# Usage: ane_dpe_probe.sh <tag> <group>...     groups: fuse efuse sys soc cpms
+# Required order (w76 conditions, one invocation per step, owner go before each):
+#   1. ane_dpe_probe.sh idle fuse      # fuse qwords at 0x211e70000: nothing else in this run
+#   2. ane_dpe_probe.sh idle efuse     # two words in the standard efuse region
+#   3. ane_dpe_probe.sh idle sys soc cpms   # DPE blocks, only after ANE power-up has settled
+#   4. same under a running whole-encoder loop, tag busy
 # One insmod per group; the module refuses unless the ANE_SYS SET word shows
 # ACTUAL==0xf. Every address is logged before it is read and the kernel log is
 # followed into $OUT/follow.log, so a reset leaves the offending address as the
-# last line. Run each new class only with the owner's go (w73) and the machine idle.
+# last line. Non-posted mappings only (ioremap_np in the module).
 set -euo pipefail
 tag=${1:?tag}; shift
 [ $# -ge 1 ] || { echo "no group given" >&2; exit 2; }
+for g in "$@"; do
+	if [ "$g" = fuse ] && [ $# -ne 1 ]; then echo "fuse must be the only group in its run" >&2; exit 2; fi
+done
 ko=${KO:-./ane_dpe_probe.ko}
 ps_phys=0x23b70c000
 OUT=${OUT:-/var/tmp/dpe-probe}
@@ -19,7 +24,11 @@ mkdir -p "$OUT"
 
 lsmod | grep -q '^ane ' || { echo "ane not loaded: refusing" >&2; exit 1; }
 if lsmod | grep -q '^ane_dpe_probe '; then echo "ane_dpe_probe already loaded" >&2; exit 1; fi
-sleep 3   # first access >= 3 s after power-up (ane-fleet rule)
+# power-up settle (H164 rule: first access >= 3 s after power-up): require the ane
+# module to have been loaded for >= 10 s (its /sys/module dir appears at load)
+age=$(( $(date +%s) - $(stat -c %Y /sys/module/ane) ))
+[ "$age" -ge 10 ] || { echo "ane loaded only ${age}s ago, wait for >= 10 s" >&2; exit 1; }
+sleep 3
 
 # the redirect target is user-owned, so it is deliberately opened by the caller
 # shellcheck disable=SC2024
