@@ -101,4 +101,5 @@ with only `ane-t6021`, it has the ANE node and no `/config`.
   again (the pacman hook does this), `update-m1n1` uses the stock tree and the
   stop at the U-Boot prompt comes back.
 - Remove the workaround when uboot-asahi passes only keyboard reports from
-  `mtpkbd` to stdin.
+  `mtpkbd` to stdin. Candidate U-Boot patches, not yet tested on the laptop:
+  `uboot-mtp/`.

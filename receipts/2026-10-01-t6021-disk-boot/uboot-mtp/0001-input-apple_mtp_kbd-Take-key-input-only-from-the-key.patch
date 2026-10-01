@@ -1,0 +1,196 @@
+From 31244bcbeba2461ecd9bd632027886d2d94a6b3f Mon Sep 17 00:00:00 2001
+From: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 06:55:36 -0500
+Subject: [PATCH 1/2] input: apple_mtp_kbd: Take key input only from the
+ keyboard interface
+
+apple_mtp_kbd_check() gives every DockChannel packet with channel 0x12
+and length 0x14 to the keyboard report parser, from any interface. The
+MTP also sends input reports from its other HID interfaces (stm,
+multi-touch, actuator, tp_accel), and it sends some reports without a
+request when it starts. A 0x14-byte report of another interface whose
+first byte is 0x01 is parsed as a key report.
+
+Check each packet as the Linux dockchannel-hid driver does:
+
+- the header length byte is 8; if it is not, drop the queued bytes and
+  resync at the next packet,
+- the header, body and checksum words add up to 0xffffffff,
+- the sub header group is input and its length fits in the body.
+
+Learn the keyboard interface index from the EVENT_INIT reports of the
+comm interface, which name each interface. Give only input reports of
+that interface to the parser, with the report length from the sub
+header. Drop the reports of the other interfaces without a message:
+they are normal traffic.
+
+Signed-off-by: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+---
+ drivers/input/apple_mtp_kbd.c | 98 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 95 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/input/apple_mtp_kbd.c b/drivers/input/apple_mtp_kbd.c
+index e80e9a0..ab41b5c 100644
+--- a/drivers/input/apple_mtp_kbd.c
++++ b/drivers/input/apple_mtp_kbd.c
+@@ -12,6 +12,8 @@
+ #include <stdio_dev.h>
+ #include <asm/arch/rtkit.h>
+ #include <asm/io.h>
++#include <asm/unaligned.h>
++#include <linux/bitfield.h>
+ #include <linux/input.h>
+ #include "apple_kbd.h"
+ 
+@@ -24,6 +26,7 @@ struct apple_mtp_kbd_priv {
+ 	u8 *init_data;
+ 	u32 init_size;
+ 	u32 fifo_size;
++	int kbd_iface;		/* keyboard interface, -1 until announced */
+ };
+ 
+ #define DATA_TX8		0x4
+@@ -40,6 +43,30 @@ struct dchid_hdr {
+ 	__le16 pad;
+ } __packed;
+ 
++#define DCHID_CHANNEL_REPORT	0x12
++
++struct dchid_subhdr {
++	u8 flags;
++	u8 unk;
++	__le16 length;
++	__le32 retcode;
++} __packed;
++
++#define FLAGS_GROUP		GENMASK(7, 6)
++#define GROUP_INPUT		0
++
++#define EVENT_INIT		0xf0
++
++struct dchid_init_hdr {
++	u8 type;
++	u8 unk1;
++	u8 unk2;
++	u8 iface;
++	char name[16];
++	u8 more_packets;
++	u8 unkpad;
++} __packed;
++
+ static int dockchannel_read(struct udevice *dev, void *buf, size_t size)
+ {
+ 	struct apple_mtp_kbd_priv *priv = dev_get_priv(dev);
+@@ -69,6 +96,49 @@ static int dockchannel_read(struct udevice *dev, void *buf, size_t size)
+ 	return ret;
+ }
+ 
++/*
++ * Check a packet as Linux dockchannel-hid does: the header, body and
++ * checksum words add up to 0xffffffff, the sub header is an input report
++ * and its length fits in the body. Return the payload length or -1.
++ */
++static int dchid_input_len(struct dchid_hdr *hdr, u8 *body)
++{
++	struct dchid_subhdr *sub = (void *)body;
++	u32 sum = get_unaligned_le32(hdr) + get_unaligned_le32((u8 *)hdr + 4);
++	size_t i;
++
++	if (hdr->length < sizeof(*sub))
++		return -1;
++
++	for (i = 0; i + 4 <= hdr->length + 4u; i += 4)
++		sum += get_unaligned_le32(body + i);
++
++	if (sum != 0xffffffff ||
++	    FIELD_GET(FLAGS_GROUP, sub->flags) != GROUP_INPUT ||
++	    le16_to_cpu(sub->length) > hdr->length - sizeof(*sub))
++		return -1;
++
++	return le16_to_cpu(sub->length);
++}
++
++/*
++ * The comm interface announces each interface with an EVENT_INIT report
++ * that names it. Remember which one is the keyboard.
++ */
++static void apple_mtp_kbd_comm(struct apple_mtp_kbd_priv *priv,
++			       struct dchid_hdr *hdr, u8 *body)
++{
++	struct dchid_init_hdr *init = (void *)(body + sizeof(struct dchid_subhdr));
++
++	if (hdr->channel != DCHID_CHANNEL_REPORT ||
++	    dchid_input_len(hdr, body) < (int)sizeof(*init) ||
++	    init->type != EVENT_INIT)
++		return;
++
++	if (!strncmp(init->name, "keyboard", sizeof(init->name)))
++		priv->kbd_iface = init->iface;
++}
++
+ static int apple_mtp_kbd_check(struct input_config *input)
+ {
+ 	struct udevice *dev = input->dev;
+@@ -90,6 +160,13 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 		return ret;
+ 	}
+ 
++	if (hdr.hdr_len != sizeof(hdr)) {
++		/* Not at a packet start: drop what is queued, then resync */
++		dev_err(dev, "bad header length %d\n", hdr.hdr_len);
++		dockchannel_read(dev, NULL, pending - sizeof(hdr));
++		return 0;
++	}
++
+ 	/* Save comm init messages for the next stage */
+ 	if (hdr.iface == 0) {
+ 		int space = priv->fifo_size - priv->init_size;
+@@ -109,9 +186,12 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 			if (ret < 0)
+ 				return ret;
+ 			priv->init_size += need;
++			apple_mtp_kbd_comm(priv, &hdr, p + sizeof(hdr));
+ 		}
+-	} else if (hdr.channel == 0x12 && hdr.length == 0x14) {
++	} else if (hdr.channel == DCHID_CHANNEL_REPORT &&
++		   hdr.iface == priv->kbd_iface && hdr.length == 0x14) {
+ 		u8 buf[0x18];
++		int len;
+ 
+ 		ret = dockchannel_read(dev, buf, 0x18);
+ 		if (ret < 0)
+@@ -120,8 +200,18 @@ static int apple_mtp_kbd_check(struct input_config *input)
+ 		if (!priv->helper)
+ 			return 1; /* Ignore if shutting down */
+ 
+-		/* Just assume it's a keyboard report */
+-		return apple_kbd_handle_report(input, &priv->kbd, buf + 8, 0xc);
++		len = dchid_input_len(&hdr, buf);
++		if (len < (int)sizeof(struct apple_kbd_report))
++			return 0;
++
++		return apple_kbd_handle_report(input, &priv->kbd,
++					       buf + sizeof(struct dchid_subhdr),
++					       len);
++	} else if (hdr.channel == DCHID_CHANNEL_REPORT) {
++		/* Other interfaces, other reports, or keyboard not announced */
++		ret = dockchannel_read(dev, NULL, hdr.length + 4);
++		if (ret < 0)
++			return ret;
+ 	} else {
+ 		printk("mtp: unknown message ch=%02x l=%04x if=%02x\n",
+ 		       hdr.channel, hdr.length, hdr.iface);
+@@ -193,6 +283,8 @@ static int apple_mtp_kbd_probe(struct udevice *dev)
+ 	if (!priv->init_data)
+ 		return -ENOMEM;
+ 
++	priv->kbd_iface = -1;
++
+ 	input->dev = dev;
+ 	input->read_keys = apple_mtp_kbd_check;
+ 	input_add_tables(input, false);
+
+base-commit: b33034a515a068381c4aa28831fb709e91300cd1
+-- 
+2.39.5
+
