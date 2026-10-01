@@ -28,14 +28,7 @@ done
 sha256sum -c --quiet SHA256SUMS
 stock_hashes | tee pre-stock.txt
 
-sudo -n mkdir "$M/$REL"
-sudo -n tar -x --no-same-owner -C "$M/$REL" -f modules.tar
-sudo -n tar -d -C "$M/$REL" -f modules.tar
-sudo -n install -D -m644 ane_t6021.ko "$M/$REL/updates/ane_t6021.ko"
-sudo -n depmod -a "$REL"
-[ "$(realpath "$(modinfo -k "$REL" -n ane_t6021)")" = "$M/$REL/updates/ane_t6021.ko" ]
-[ "$(modinfo -k "$REL" -F vermagic ane_t6021 | xargs)" = "$REL SMP preempt mod_unload aarch64" ]
-echo "ane_t6021 $(modinfo -k "$REL" -F version ane_t6021) srcversion $(modinfo -k "$REL" -F srcversion ane_t6021)"
+"$S/modules.sh" "$S"
 
 sudo -n install -m644 Image "$K"
 sudo -n mkinitcpio -k "$REL" -g "$I"

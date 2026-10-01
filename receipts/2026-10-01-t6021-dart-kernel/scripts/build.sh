@@ -56,6 +56,6 @@ git -C "$REPO" archive "$RELTREE" | tar -x -C "$W/rel"
 git -C "$REPO" archive "$PROBETREE" ane/t6021/probes | tar -x -C "$W/probe"
 "${MK[@]}" -C "$O" M="$W/probe/ane/t6021/probes" modules
 cp "$W/rel/ane/t6021/ane_t6021.ko" "$W/probe/ane/t6021/probes/ane_dart_probe.ko" "$ST/"
-cp "$(dirname "$0")"/{install.sh,revert.sh,boot-check.sh,window.sh,reboot.sh,custom.cfg} "$ST/"
-(cd "$ST" && sha256sum Image modules.tar ane_t6021.ko ane_dart_probe.ko install.sh revert.sh boot-check.sh window.sh reboot.sh custom.cfg >SHA256SUMS)
+cp "$(dirname "$0")"/{install.sh,modules.sh,revert.sh,boot-check.sh,window.sh,reboot.sh,custom.cfg} "$ST/"
+(cd "$ST" && sha256sum Image modules.tar ane_t6021.ko ane_dart_probe.ko install.sh modules.sh revert.sh boot-check.sh window.sh reboot.sh custom.cfg >SHA256SUMS)
 cat "$ST/SHA256SUMS"

@@ -9,7 +9,7 @@ M=/usr/lib/modules
 [ "$(uname -r)" = "$STOCK" ] || { echo "FAIL: running $(uname -r), not $STOCK"; exit 2; }
 sudo -n grub-editenv /boot/grub/grubenv unset next_entry
 sudo -n rm -f /boot/grub/custom.cfg /boot/vmlinuz-linux-asahi-dart /boot/initramfs-linux-asahi-dart.img
-sudo -n rm -rf "${M:?}/$REL"
+sudo -n rm -rf "${M:?}/$REL" "${M:?}/.old/$REL"
 sync
 [ -z "$(sudo -n grub-editenv /boot/grub/grubenv list)" ]
 sudo -n sha256sum /boot/vmlinuz-linux-asahi /boot/initramfs-linux-asahi.img /boot/grub/grub.cfg \

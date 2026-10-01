@@ -12,11 +12,13 @@ exec > >(tee -a "$O/console.log") 2>&1
 echo "e6c54bcc2b12ac2174e418d1aef66797ff4e1f8aa7b8d9804a4e5a5a8a0bcc01  /var/tmp/dart/lib.sh
 5f9593684107206128bc2816348e8d76e54bd0cdbcfd4ce05c93500aaea0e193  /var/tmp/dart/ab-turn.sh" | sha256sum -c --quiet - || exit 2
 . /var/tmp/dart/lib.sh
-if [ "$(uname -r)" = 7.1.13-3-1-ARCH-dart ]; then
-	# lib.sh's probe() loads $K after checking $KSHA; the -dart kernel needs the probe built for it.
-	K=$S/ane_dart_probe.ko
-	KSHA=$(grep ' ane_dart_probe.ko$' "$S/SHA256SUMS" | cut -c1-64)
-fi
+# lib.sh's probe() loads $K after checking $KSHA: the same probe source (547ae7c), built for the
+# running kernel (-dart: by build.sh; stock: on the M2 into STAGEDIR/stock-probe).
+case "$(uname -r)" in
+7.1.13-3-1-ARCH-dart) K=$S/ane_dart_probe.ko KSHA=085a094e0e7a74aee33f4619081792d0d6428af467c5c8ac4230484a242c0651 ;;
+7.1.13-3-1-ARCH) K=$S/stock-probe/ane/t6021/probes/ane_dart_probe.ko KSHA=7f635f82cd422cf08ffcac6d0beff685832dc5f6f2f0b925e298c328f4a60a33 ;;
+*) exit 2 ;;
+esac
 state start | tee "$O/state-start.txt"
 probe "r-$TAG"
 /var/tmp/dart/ab-turn.sh "$TAG"

@@ -16,6 +16,12 @@ free() { flock -n /var/tmp/ane-run.lock true && ! pgrep -x ane-run >/dev/null; }
 	echo "grubenv before: [$(sudo -n grub-editenv /boot/grub/grubenv list | tr '\n' ' ')]"
 } 2>&1 | tee -a "$S/reboots.log"
 case "$(sudo -n grub-editenv /boot/grub/grubenv list)" in "" | "next_entry=") ;; *) echo "grubenv holds an entry"; exit 3 ;; esac
+# a stock boot deletes the -dart module tree (linux-modules-cleanup.service): modules.sh first
+case "$E" in dart-ctl | dart-tun)
+	for m in brcmfmac tun zram netconsole ane_t6021; do
+		modinfo -k 7.1.13-3-1-ARCH-dart -n "$m" >/dev/null || { echo "no -dart module $m: run modules.sh"; exit 3; }
+	done ;;
+esac
 free || { echo "BUSY $(date -u +%T)"; exit 3; }
 sync
 sleep 40
