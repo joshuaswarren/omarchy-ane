@@ -32,6 +32,11 @@
  *    16 MiB, in the ane DART domain).
  * AIC2 and the ANE power islands already exist in stock T6021 trees. Their
  * phandles differ between kernels and boards, so they are reached by path.
+ * The DARTs, the mailbox and ane set status "okay": aurora-silicon/linux #65
+ * ships these nodes, same names, disabled. On such a kernel omarchy-ane-dt
+ * applies this overlay, fdtoverlay merges each node into the kernel's, and a
+ * node without a status here would stay disabled
+ * (receipts/2026-10-01-ane-dt-disabled-nodes).
  */
 /dts-v1/;
 /plugin/;
@@ -113,6 +118,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
 				power-domains = <&ps_pmp>;
+				status = "okay";
 			};
 
 			ane_dart1: iommu@285810000 {
@@ -122,6 +128,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
 				power-domains = <&ps_ane_cpu>;
+				status = "okay";
 			};
 
 			ane_dart2: iommu@285820000 {
@@ -131,6 +138,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 0 885 4>;
 				power-domains = <&ps_ane_cpu>;
+				status = "okay";
 			};
 
 			ane_mbox: mailbox@285408000 {

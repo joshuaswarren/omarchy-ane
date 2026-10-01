@@ -1,0 +1,63 @@
+/*
+ * Trimmed T6021 board tree for the merge experiment. The included excerpts are
+ * verbatim lines of joshuaswarren/linux t6021-ane-node (8b9a89509291):
+ * ex-die0.dtsi = t602x-die0.dtsi:9-68 (the five ANE nodes, status disabled;
+ * DIE0_EXCERPT="ex-die0-pr65.dtsi" selects aurora-silicon/linux bc41726b524d
+ * t602x-die0.dtsi:9-66 instead),
+ * ex-pmgr.dtsi = t602x-pmgr.dtsi:332-339,462-470,491-498,580-641,
+ * ex-common.dtsi = t602x-common.dtsi:631-634 (the alias reservation).
+ * Everything else here is a stub that only supplies the paths and labels.
+ */
+/dts-v1/;
+
+#define AIC_IRQ 0
+#define IRQ_TYPE_LEVEL_HIGH 4
+#define DIE_NODE(x) x
+#define DIE_LABEL(x) #x
+
+/ {
+	compatible = "apple,j414c", "apple,t6021", "apple,arm-platform";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+#include "ex-common.dtsi"
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		aic: interrupt-controller@28e100000 {
+			compatible = "apple,t6020-aic", "apple,aic2";
+			#interrupt-cells = <4>;
+			interrupt-controller;
+			reg = <0x2 0x8e100000 0x0 0xc000>, <0x2 0x8e10c000 0x0 0x1000>;
+			reg-names = "core", "event";
+		};
+
+		pmgr: power-management@28e080000 {
+			compatible = "apple,t6020-pmgr", "apple,pmgr", "syscon", "simple-mfd";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x2 0x8e080000 0 0xc000>;
+
+			ps_afnc0_lw0: power-controller@1f0 {
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				reg = <0x1f0 4>;
+			};
+#include "ex-pmgr.dtsi"
+		};
+
+#ifndef DIE0_EXCERPT
+#define DIE0_EXCERPT "ex-die0.dtsi"
+#endif
+#include DIE0_EXCERPT
+	};
+};

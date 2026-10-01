@@ -1,0 +1,60 @@
+	ane_mbox: mailbox@285408000 {
+		compatible = "apple,t6021-ane-mailbox", "apple,asc-mailbox-v4";
+		reg = <0x2 0x85408000 0x0 0x4000>;
+		interrupt-parent = <&aic>;
+		/* send-empty: AIC 1833 has no known source and never fired */
+		interrupts = <AIC_IRQ 0 884 IRQ_TYPE_LEVEL_HIGH>,
+			<AIC_IRQ 0 1833 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "recv-not-empty", "send-empty";
+		#mbox-cells = <0>;
+		status = "disabled";
+	};
+
+	ane_dart0: iommu@285800000 {
+		compatible = "apple,t6020-dart", "apple,t8110-dart";
+		reg = <0x2 0x85800000 0x0 0x4000>;
+		#iommu-cells = <1>;
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 0 885 IRQ_TYPE_LEVEL_HIGH>;
+		power-domains = <&ps_pmp>;
+		status = "disabled";
+	};
+
+	ane_dart1: iommu@285810000 {
+		compatible = "apple,t6020-dart", "apple,t8110-dart";
+		reg = <0x2 0x85810000 0x0 0x4000>;
+		#iommu-cells = <1>;
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 0 885 IRQ_TYPE_LEVEL_HIGH>;
+		power-domains = <&ps_ane_cpu>;
+		status = "disabled";
+	};
+
+	ane_dart2: iommu@285820000 {
+		compatible = "apple,t6020-dart", "apple,t8110-dart";
+		reg = <0x2 0x85820000 0x0 0x4000>;
+		#iommu-cells = <1>;
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 0 885 IRQ_TYPE_LEVEL_HIGH>;
+		power-domains = <&ps_ane_cpu>;
+		status = "disabled";
+	};
+
+	ane: ane@284000000 {
+		compatible = "apple,t6021-ane";
+		reg = <0x2 0x84000000 0x0 0x2000000>,
+			<0x2 0x8e080000 0x0 0x4034>,
+			<0x2 0x8e08c000 0x0 0x4000>;
+		reg-names = "engine", "pmgr", "set";
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 0 884 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "ane";
+		iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+		power-domains = <&ps_ane_sys_mpm>, <&ps_ane_td>,
+			<&ps_ane_base>, <&ps_ane_set1>, <&ps_ane_set2>,
+			<&ps_ane_set3>, <&ps_ane_set4>, <&ps_ane_cpu>;
+		resets = <&ps_ane_cpu>;
+		mboxes = <&ane_mbox>;
+		memory-region = <&ane_alias_iova>;
+		status = "disabled";
+	};

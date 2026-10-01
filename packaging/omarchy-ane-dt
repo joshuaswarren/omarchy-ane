@@ -18,8 +18,10 @@ writes the overlaid copy to /var/lib/omarchy-ane/dtbs/KERNEL/ and adds one line
 to /etc/default/update-m1n1 that sources /usr/lib/omarchy-ane/update-m1n1-dtbs.
 That script swaps the copy in only while it was made from the same kernel file.
 An overlay whose root has the string list "omarchy,skip-if-compatible" is left
-out of a kernel device tree that already has a node with one of them: the
-kernel's node wins. When no overlay is left, apply retires the copy.
+out of a kernel device tree that already has an enabled node (no status, "okay"
+or "ok") with one of them: the kernel's node wins. A disabled node does not
+count: the overlay applies, and its nodes of the same name replace the kernel
+node's properties and enable it. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
 string is a line of /etc/omarchy-platform/dtb-overlays.opt-in (the T6021 node:
 "ane-t6021", written by omarchy-ane-m2-enable; the T6021 U-Boot input:
@@ -92,8 +94,13 @@ class Tree:
     def strings(self, path, prop):
         return [s.decode() for s in self.nodes.get(path, {}).get(prop, b"").split(b"\0") if s]
 
+    def enabled(self, path):
+        """Linux's of_device_is_available(): no status, "okay" or "ok"."""
+        return self.strings(path, "status") in ([], ["okay"], ["ok"])
+
     def ane_nodes(self):
-        return [path for path in self.nodes if any(ANE.fullmatch(c) for c in self.strings(path, "compatible"))]
+        return [path for path in self.nodes
+                if self.enabled(path) and any(ANE.fullmatch(c) for c in self.strings(path, "compatible"))]
 
 
 def cells(data):
@@ -142,7 +149,8 @@ def skip_compatibles(overlay):
 
 
 def validate(stock, result, wanted):
-    """Refuse RESULT unless it is STOCK plus nodes whose references resolve."""
+    """Refuse RESULT unless it is STOCK plus new or changed nodes whose
+    references resolve to enabled providers."""
     if result.strings("/", "compatible") != stock.strings("/", "compatible"):
         raise Refuse("the overlay changed the board compatible")
     for path, props in stock.nodes.items():
@@ -151,11 +159,10 @@ def validate(stock, result, wanted):
         if "phandle" in props and result.nodes[path].get("phandle") != props["phandle"]:
             raise Refuse(f"the overlay renumbered {path}; this dtc is too old (1.7.1 or newer keeps phandles)")
     for compatible in wanted:
-        live = [p for p in result.nodes if compatible in result.strings(p, "compatible")
-                and result.strings(p, "status") in ([], ["okay"])]
+        live = [p for p in result.nodes if compatible in result.strings(p, "compatible") and result.enabled(p)]
         if not live:
             raise Refuse(f"the result has no enabled {compatible} node")
-    for path in set(result.nodes) - set(stock.nodes):
+    for path in [p for p in result.nodes if result.nodes[p] != stock.nodes.get(p)]:
         props = result.nodes[path]
         plain = cells(props.get("interrupt-parent", b"")) + cells(props.get("memory-region", b""))
         if "iommu-addresses" in props:
@@ -163,21 +170,25 @@ def validate(stock, result, wanted):
         for phandle in plain:
             if phandle not in result.phandles:
                 raise Refuse(f"{path} names phandle {phandle:#x}, which no node has")
+            if not result.enabled(result.phandles[phandle]):
+                raise Refuse(f"{path} names {result.phandles[phandle]}, which is disabled")
         for prop, count in REFS.items():
             words, i = cells(props.get(prop, b"")), 0
             while i < len(words):
                 target = result.phandles.get(words[i])
                 if target is None or count not in result.nodes[target]:
                     raise Refuse(f"{path} {prop} names phandle {words[i]:#x}, which is not a {count} provider")
+                if not result.enabled(target):
+                    raise Refuse(f"{path} {prop} names {target}, which is disabled")
                 i += 1 + cells(result.nodes[target][count])[0]
 
 
 def build(stock_file, overlays, workdir):
     """(overlaid device tree bytes, validated; the overlays applied), or None
-    when the kernel's tree has the nodes of every overlay."""
+    when the kernel's tree has enabled nodes for every overlay."""
     stock_bytes = stock_file.read_bytes()
     stock = Tree(stock_bytes)
-    present = {c for p in stock.nodes for c in stock.strings(p, "compatible")}
+    present = {c for p in stock.nodes if stock.enabled(p) for c in stock.strings(p, "compatible")}
     needed = [o for o in overlays if not present.intersection(skip_compatibles(o))]
     if not needed:
         return None
@@ -297,7 +308,8 @@ def apply(root, hook_targets):
             if built is None:
                 if state.exists():
                     remove_tree(state)
-                print(f"omarchy-ane-dt: {kernel.name}: the kernel's {name} has the overlays' nodes; no copy needed")
+                print(f"omarchy-ane-dt: {kernel.name}: the kernel's {name} has the overlays' nodes enabled; "
+                      "no copy needed")
                 continue
             data, applied = built
             changed = changed or not (state / name).is_file() or (state / name).read_bytes() != data
@@ -326,6 +338,9 @@ def status(root, kver):
     base = root / "sys/firmware/devicetree/base"
     live = []
     for compat in base.glob("**/compatible") if base.is_dir() else []:
+        st = compat.parent / "status"
+        if st.exists() and st.read_bytes().rstrip(b"\0") not in (b"okay", b"ok"):
+            continue
         if any(ANE.fullmatch(s) for s in compat.read_bytes().decode(errors="replace").split("\0")):
             live.append(str(compat.parent.relative_to(base)))
     name = board(root)

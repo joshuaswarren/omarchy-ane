@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/var/tmp/omarchy-ane-dt-disabled/tools/test_ane_dt.py", line 147, in <module>
+    assert built is not None, f'kernel ANE status {status}: the T6021 overlay must apply'
+           ^^^^^^^^^^^^^^^^^
+AssertionError: kernel ANE status disabled: the T6021 overlay must apply
+exit=1
