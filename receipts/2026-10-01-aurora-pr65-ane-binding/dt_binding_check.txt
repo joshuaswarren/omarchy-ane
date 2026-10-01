@@ -1,0 +1,16 @@
+=== apple,ane.yaml
+make[1]: Entering directory '<O>'
+  SCHEMA  Documentation/devicetree/bindings/processed-schema.json
+  CHKDT   <src>/Documentation/devicetree/bindings
+  LINT    <src>/Documentation/devicetree/bindings
+  DTC [C] Documentation/devicetree/bindings/npu/apple,ane.example.dtb
+make[1]: Leaving directory '<O>'
+exit=0
+=== apple,mailbox.yaml
+make[1]: Entering directory '<O>'
+  CHKDT   <src>/Documentation/devicetree/bindings
+  LINT    <src>/Documentation/devicetree/bindings
+  DTEX    Documentation/devicetree/bindings/mailbox/apple,mailbox.example.dts
+  DTC [C] Documentation/devicetree/bindings/mailbox/apple,mailbox.example.dtb
+make[1]: Leaving directory '<O>'
+exit=0

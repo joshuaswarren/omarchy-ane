@@ -1,0 +1,4 @@
+/include/ "common.dtsi"
+/ {
+	ane@26bc04000 { compatible = "apple,t8103-ane"; reg = <0x2 0x6bc04000 0x0 0x24000>, <0x2 0x8e080000 0x0 0x4034>, <0x2 0x8e08c000 0x0 0x4000>; reg-names = "engine", "pmgr", "set"; interrupt-parent = <&aic>; interrupts = <0 416 4>; interrupt-names = "ane"; iommus = <&d0 0>, <&d1 0>, <&d2 0>; power-domains = <&p1>, <&p2>, <&p3>, <&p4>, <&p5>; };
+};

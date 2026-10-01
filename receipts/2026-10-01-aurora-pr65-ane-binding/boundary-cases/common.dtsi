@@ -1,0 +1,21 @@
+/dts-v1/;
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "test,board";
+	model = "test";
+	aic: interrupt-controller { interrupt-controller; #interrupt-cells = <3>; };
+	d0: d0 { #iommu-cells = <1>; };
+	d1: d1 { #iommu-cells = <1>; };
+	d2: d2 { #iommu-cells = <1>; };
+	p0: p0 { #power-domain-cells = <0>; #reset-cells = <0>; };
+	p1: p1 { #power-domain-cells = <0>; };
+	p2: p2 { #power-domain-cells = <0>; };
+	p3: p3 { #power-domain-cells = <0>; };
+	p4: p4 { #power-domain-cells = <0>; };
+	p5: p5 { #power-domain-cells = <0>; };
+	p6: p6 { #power-domain-cells = <0>; };
+	p7: p7 { #power-domain-cells = <0>; };
+	rm: rm { reg = <0 0 0 0x1000>; };
+	mb: mb { #mbox-cells = <0>; };
+};

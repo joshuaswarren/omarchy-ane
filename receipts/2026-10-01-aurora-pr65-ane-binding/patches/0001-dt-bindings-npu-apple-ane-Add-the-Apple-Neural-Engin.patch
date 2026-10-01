@@ -1,0 +1,213 @@
+From 13ed770050d9a18320fbbd044c618c5787955b12 Mon Sep 17 00:00:00 2001
+From: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 09:11:26 -0500
+Subject: [PATCH 1/2] dt-bindings: npu: apple,ane: Add the Apple Neural Engine
+
+The arm64 Apple device trees describe the Neural Engine (ANE) of T8103
+(M1), T6000 (M1 Pro, Max and Ultra) and T6021 (M2 Max) as
+apple,t8103-ane, apple,t6000-ane and apple,t6021-ane, and dtbs_check
+finds no schema for these nodes.
+
+On T8103 and T6000 the node has the engine register window, one
+interrupt, the three ANE DARTs and five power domains. On T6021 a
+coprocessor runs the ANE firmware, so the node also has the PMGR and
+power state windows, eight power domains, the coprocessor reset and
+mailbox, and an IOVA-only reservation for the firmware entry alias.
+
+The T8103 node equals the live device tree of an M1 MacBook Pro (j293),
+and the T6000 node the overlay that booted on an M1 Max MacBook Pro
+(j316c), both with the out-of-tree omarchy-ane driver bound. The T6021
+node has the properties of the device tree an out-of-tree driver ran on
+an M2 Max. The M1 Pro, M1 Ultra, M2 Pro and M2 Ultra have not run these
+nodes.
+
+The schema goes in npu/ with the other neural processing units, and in
+the ARM/APPLE MACHINE SUPPORT entry with the other Apple bindings.
+
+Signed-off-by: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+---
+ .../devicetree/bindings/npu/apple,ane.yaml    | 159 ++++++++++++++++++
+ MAINTAINERS                                   |   1 +
+ 2 files changed, 160 insertions(+)
+ create mode 100644 Documentation/devicetree/bindings/npu/apple,ane.yaml
+
+diff --git a/Documentation/devicetree/bindings/npu/apple,ane.yaml b/Documentation/devicetree/bindings/npu/apple,ane.yaml
+new file mode 100644
+index 000000000000..8a704e759b69
+--- /dev/null
++++ b/Documentation/devicetree/bindings/npu/apple,ane.yaml
+@@ -0,0 +1,159 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/npu/apple,ane.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Apple Neural Engine
++
++maintainers:
++  - Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
++
++description:
++  The Apple Neural Engine (ANE) is the neural network accelerator of Apple
++  SoCs. It accesses memory through three DARTs. On T8103 and T6000 the host
++  drives the engine through its register window. On T6021 a coprocessor
++  runs the ANE firmware and the host talks to it through an ASC mailbox.
++
++properties:
++  compatible:
++    enum:
++      - apple,t8103-ane
++      - apple,t6000-ane
++      - apple,t6021-ane
++
++  reg:
++    minItems: 1
++    items:
++      - description: Engine registers. On T6021 this is the whole ANE
++          block, including the coprocessor.
++      - description: Power manager (PMGR) registers of the ANE
++      - description: ANE power state registers in the PMGR
++
++  reg-names:
++    minItems: 1
++    items:
++      - const: engine
++      - const: pmgr
++      - const: set
++
++  interrupts:
++    maxItems: 1
++
++  interrupt-names:
++    items:
++      - const: ane
++
++  iommus:
++    maxItems: 3
++
++  power-domains:
++    description:
++      The power states the engine needs, five on T8103 and T6000, eight on
++      T6021.
++    minItems: 5
++    maxItems: 8
++
++  resets:
++    maxItems: 1
++    description: Reset of the ANE coprocessor
++
++  mboxes:
++    maxItems: 1
++    description: Mailbox of the ANE coprocessor
++
++  memory-region:
++    maxItems: 1
++    description:
++      IOVA-only reservation of the firmware entry alias in the ANE DART
++      address space.
++
++required:
++  - compatible
++  - reg
++  - reg-names
++  - interrupts
++  - interrupt-names
++  - iommus
++  - power-domains
++
++allOf:
++  - if:
++      properties:
++        compatible:
++          contains:
++            const: apple,t6021-ane
++    then:
++      properties:
++        reg:
++          minItems: 3
++        reg-names:
++          minItems: 3
++        power-domains:
++          minItems: 8
++      required:
++        - resets
++        - mboxes
++        - memory-region
++    else:
++      properties:
++        reg:
++          maxItems: 1
++        reg-names:
++          maxItems: 1
++        power-domains:
++          maxItems: 5
++        resets: false
++        mboxes: false
++        memory-region: false
++
++additionalProperties: false
++
++examples:
++  - |
++    #include <dt-bindings/interrupt-controller/apple-aic.h>
++    #include <dt-bindings/interrupt-controller/irq.h>
++
++    soc {
++        #address-cells = <2>;
++        #size-cells = <2>;
++
++        ane@26bc04000 {
++            compatible = "apple,t8103-ane";
++            reg = <0x2 0x6bc04000 0x0 0x24000>;
++            reg-names = "engine";
++            interrupt-parent = <&aic>;
++            interrupts = <AIC_IRQ 416 IRQ_TYPE_LEVEL_HIGH>;
++            interrupt-names = "ane";
++            iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
++            power-domains = <&ps_ane_set1>, <&ps_ane_set2>,
++                            <&ps_ane_set3>, <&ps_ane_set4>, <&ps_ane_set5>;
++        };
++    };
++
++  - |
++    #include <dt-bindings/interrupt-controller/apple-aic.h>
++    #include <dt-bindings/interrupt-controller/irq.h>
++
++    soc {
++        #address-cells = <2>;
++        #size-cells = <2>;
++
++        ane@284000000 {
++            compatible = "apple,t6021-ane";
++            reg = <0x2 0x84000000 0x0 0x2000000>,
++                  <0x2 0x8e080000 0x0 0x4034>,
++                  <0x2 0x8e08c000 0x0 0x4000>;
++            reg-names = "engine", "pmgr", "set";
++            interrupt-parent = <&aic>;
++            interrupts = <AIC_IRQ 0 884 IRQ_TYPE_LEVEL_HIGH>;
++            interrupt-names = "ane";
++            iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
++            power-domains = <&ps_ane_sys_mpm>, <&ps_ane_td>,
++                            <&ps_ane_base>, <&ps_ane_set1>, <&ps_ane_set2>,
++                            <&ps_ane_set3>, <&ps_ane_set4>, <&ps_ane_cpu>;
++            resets = <&ps_ane_cpu>;
++            mboxes = <&ane_mbox>;
++            memory-region = <&ane_alias_iova>;
++        };
++    };
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 368bf2b43af1..6cbc8ab2d367 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -2570,6 +2570,7 @@ F:	Documentation/devicetree/bindings/leds/backlight/apple,dwi-bl.yaml
+ F:	Documentation/devicetree/bindings/mailbox/apple,mailbox.yaml
+ F:	Documentation/devicetree/bindings/mfd/apple,smc.yaml
+ F:	Documentation/devicetree/bindings/net/bluetooth/brcm,bcm4377-bluetooth.yaml
++F:	Documentation/devicetree/bindings/npu/apple,ane.yaml
+ F:	Documentation/devicetree/bindings/nvme/apple,nvme-ans.yaml
+ F:	Documentation/devicetree/bindings/nvmem/apple,efuses.yaml
+ F:	Documentation/devicetree/bindings/nvmem/apple,spmi-nvmem.yaml
+-- 
+2.39.5
+

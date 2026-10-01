@@ -1,0 +1,115 @@
+From 30071bf4d66f1f199d90992d917bb0a2849ee986 Mon Sep 17 00:00:00 2001
+From: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 09:11:27 -0500
+Subject: [PATCH 2/2] dt-bindings: mailbox: apple,mailbox: Allow the ANE
+ mailbox variant
+
+The T6021 ANE coprocessor mailbox is an ASC mailbox, but only its
+recv-not-empty interrupt is known: the Apple device tree gives the ANE a
+single interrupt line. The binding requires the four ASC mailbox
+interrupts in a fixed order, so the T602x ANE mailbox node fails
+dtbs_check.
+
+Add the apple,t6021-ane-mailbox compatible with the apple,asc-mailbox-v4
+fallback. For it, recv-not-empty is the only required interrupt;
+send-empty, send-not-empty and recv-empty may follow in that order.
+Without send-empty, apple-mailbox polls the FIFO status to send (the
+poll-TX change earlier in this series).
+
+The other variants keep their constraints. The four-interrupt rule moves
+into a condition that excludes the ANE and AOP setup mailboxes, and the
+AOP setup mailbox states its minimum of two interrupts, which the
+top-level limit gave it before.
+
+Signed-off-by: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>
+---
+ .../bindings/mailbox/apple,mailbox.yaml       | 42 +++++++++++++++++--
+ 1 file changed, 38 insertions(+), 4 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/mailbox/apple,mailbox.yaml b/Documentation/devicetree/bindings/mailbox/apple,mailbox.yaml
+index ee40e13c9a2b..96675c53c3dd 100644
+--- a/Documentation/devicetree/bindings/mailbox/apple,mailbox.yaml
++++ b/Documentation/devicetree/bindings/mailbox/apple,mailbox.yaml
+@@ -36,6 +36,13 @@ properties:
+               - apple,t6020-asc-mailbox
+           - const: apple,asc-mailbox-v4
+ 
++      - description:
++          The T6021 ANE coprocessor mailbox is an ASC mailbox. Only its
++          recv-not-empty interrupt is known.
++        items:
++          - const: apple,t6021-ane-mailbox
++          - const: apple,asc-mailbox-v4
++
+       - description:
+           AOP setup-port mailbox with a separate register layout.
+         const: apple,t8140-aop-setup-mailbox
+@@ -62,11 +69,11 @@ properties:
+     maxItems: 1
+ 
+   interrupts:
+-    minItems: 2
++    minItems: 1
+     maxItems: 4
+ 
+   interrupt-names:
+-    minItems: 2
++    minItems: 1
+     maxItems: 4
+ 
+   iommus:
+@@ -95,6 +102,7 @@ allOf:
+     then:
+       properties:
+         interrupts:
++          minItems: 2
+           maxItems: 2
+         interrupt-names:
+           items:
+@@ -104,6 +112,34 @@ allOf:
+         - iommus
+         - apple,dma-range
+     else:
++      properties:
++        iommus: false
++        apple,dma-range: false
++
++  - if:
++      properties:
++        compatible:
++          contains:
++            const: apple,t6021-ane-mailbox
++    then:
++      properties:
++        interrupt-names:
++          minItems: 1
++          items:
++            - const: recv-not-empty
++            - const: send-empty
++            - const: send-not-empty
++            - const: recv-empty
++
++  - if:
++      properties:
++        compatible:
++          not:
++            contains:
++              enum:
++                - apple,t6021-ane-mailbox
++                - apple,t8140-aop-setup-mailbox
++    then:
+       properties:
+         interrupts:
+           minItems: 4
+@@ -113,8 +149,6 @@ allOf:
+             - const: send-not-empty
+             - const: recv-empty
+             - const: recv-not-empty
+-        iommus: false
+-        apple,dma-range: false
+ 
+ required:
+   - compatible
+-- 
+2.39.5
+

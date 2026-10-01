@@ -1,0 +1,4 @@
+/include/ "common.dtsi"
+/ {
+	mailbox@285408000 { compatible = "apple,t6020-asc-mailbox", "apple,asc-mailbox-v4"; reg = <0x2 0x85408000 0x0 0x4000>; interrupt-parent = <&aic>; #mbox-cells = <0>; interrupts = <0 1 4>, <0 2 4>, <0 3 4>, <0 4 4>; interrupt-names = "send-empty", "send-not-empty", "recv-empty", "recv-not-empty"; };
+};

@@ -1,0 +1,20 @@
+# dt-validate explanation (indented) lines, multiset diff base -> new
+## removed
+   8  'apple,m3-mailbox-v2' was expected
+   8  'apple,t6021-ane-mailbox' is not one of ['apple,t8103-asc-mailbox', 'apple,t8112-asc-mailbox', 'apple,t8122-asc-mailbox', 'apple,t8140-asc-mailbox', 'apple,t6000-asc-mailbox', 'apple,t6020-asc-mailbox']
+   8  'apple,t6021-ane-mailbox' is not one of ['apple,t8103-m3-mailbox', 'apple,t8112-m3-mailbox', 'apple,t6000-m3-mailbox']
+   8  'apple,t8015-asc-mailbox' was expected
+   8  'apple,t8140-aop-setup-mailbox' was expected
+   8  ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4'] is too long
+  48  from schema $id: http://devicetree.org/schemas/mailbox/apple,mailbox.yaml
+## added
+  28  'apple,t6021-ane-mailbox' was expected
+## findings (unchanged in base and new) that now list the new oneOf alternative
+   5  mbox@2a4408000 (apple,t6031-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   5  mbox@2a8408000 (apple,t6031-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   5  mbox@2ac408000 (apple,t6031-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   5  mbox@349408000 (apple,t6031-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   2  mbox@36c408000 (apple,t6030-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   2  mbox@374408000 (apple,t6030-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   2  mbox@37a408000 (apple,t6030-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+   2  mbox@389408000 (apple,t6030-asc-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:

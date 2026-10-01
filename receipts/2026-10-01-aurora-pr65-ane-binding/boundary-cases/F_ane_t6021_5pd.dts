@@ -1,0 +1,4 @@
+/include/ "common.dtsi"
+/ {
+	ane@284000000 { compatible = "apple,t6021-ane"; reg = <0x2 0x84000000 0x0 0x2000000>, <0x2 0x8e080000 0x0 0x4034>, <0x2 0x8e08c000 0x0 0x4000>; reg-names = "engine", "pmgr", "set"; interrupt-parent = <&aic>; interrupts = <0 884 4>; interrupt-names = "ane"; iommus = <&d0 0>, <&d1 0>, <&d2 0>; power-domains = <&p0>, <&p1>, <&p2>, <&p3>, <&p4>, <&p7>; resets = <&p0>; mboxes = <&mb>; memory-region = <&rm>; };
+};

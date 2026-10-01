@@ -1,0 +1,4 @@
+/include/ "common.dtsi"
+/ {
+	mailbox@285408000 { compatible = "apple,t8140-aop-setup-mailbox"; reg = <0x2 0x85408000 0x0 0x4000>; interrupt-parent = <&aic>; #mbox-cells = <0>; iommus = <&d0 0>; apple,dma-range = /bits/ 64 <0x0 0x1000>; interrupts = <0 1 4>, <0 4 4>; interrupt-names = "send-empty", "recv-not-empty"; };
+};
