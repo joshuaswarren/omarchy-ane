@@ -98,15 +98,17 @@ Notes:
 
 m1n1 names 0x700 / 0x704 PERF_INTR_ENABLE / STATUS, 0x720-0x75c two unknown
 banks, and 0x760-0x788 TLB, ST and CTC miss / fill / hit counters
-(`hw/dart8110.py`, marked "completely guessed, unverified"; Linux
-`apple-dart.c` has no PERF register). All of these read 0 on all three DARTs
+(m1n1 `0b1c9d98b709` `proxyclient/m1n1/hw/dart8110.py:216-232`, marked
+"completely guessed, unverified"; Linux `apple-dart.c` has no PERF
+register). All of these read 0 on all three DARTs
 before and after 21 encoder CALLs (`logs/dart-check.txt`). So under Linux the
 counters do not count. 0x700 reads 0 [INFERENCE: counting needs an enable
 bit that no one sets]. E1 is read only, so it did not write 0x700, and the
 miss count per CALL stays unknown. The receipt's two TLB models are not
 separated by this run.
 
-[INFERENCE from the m1n1 PARAMS field names] TLB_SET_COUNT (PARAMS_0 [11:0])
+[INFERENCE from the m1n1 PARAMS field names, `dart8110.py:11-29` at
+`0b1c9d98b709`] TLB_SET_COUNT (PARAMS_0 [11:0])
 is 32 on LLT, 72 on BRD and 68 on BWR, and LOG2_NUM_WAYS (PARAMS_4 [30:28])
 is 3 on all three. If the names are right, the TLBs hold about 256, 576 and
 544 entries. 576 entries of 16 KiB cover 9 MiB, much less than the 61 MB
@@ -136,7 +138,8 @@ Window (one GPU-idle ticket, boot unchanged throughout):
    0x00010040`). Trials 1 and 3 and the reopen run gave 0 of 512 lanes (all
    16,384 output values zero); trials 2 and 4 gave 512 of 512
    (`logs/b-gate-add.log`). The kernel logged 10 faults in 37 us, the
-   rate-limit burst of `dev_err_ratelimited` (`apple-dart.c:1292`), so the
+   rate-limit burst of `dev_err_ratelimited` (omarchy-linux `57f8f6deaa3a`, on
+   asahi-7.1.13-3, `drivers/iommu/apple-dart.c:1292`), so the
    faults of the later failed trials are not in the log (`logs/b-console.log`):
 
         apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c0000
@@ -157,7 +160,9 @@ What the fault says, and what it does not:
   them on a live DART with a valid TTBR, enabled streams and warm TLB state,
   and issued no flush. The alternating pattern fits a translation cache that
   the tunables enable and that the Linux per-stream flush (`TLB_CMD` op
-  FLUSH_SID, no STT/CTC flush bits) does not clear: a stale entry fails one
+  FLUSH_SID, `apple-dart.c:546-549` at `57f8f6deaa3a`; m1n1 names the
+  STT/CTC flush bits 12 and 13 of that word, `dart8110.py:65-80`) does not
+  clear: a stale entry fails one
   process, the fault clears it, and the next process passes. This is not
   shown; the run could not test it under its stop rule.
 - So the result does not show that the tunables are wrong for Linux. It
@@ -212,13 +217,19 @@ In order of risk, each with the same stop rule:
     gpu-turn -m 15 -- post-window.sh OUT
     python3 scripts/dart_compare.py ../2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv LOG...
 
-The probe that ran is commit `2f943fe` (the source on main). `scripts/lib.sh`
-holds the shared steps: the probe load under `/var/tmp/ane-run.lock` (it
-refuses while an ane-run runs), the encoder run with its golden check, and
-the stop checks.
+The probe that ran is commit `2f943fe`. Main carries `260d869`, which adds a
+log line with a 50 ms drain before the first read of each RMW (a review
+finding: a fault at that read would otherwise leave no address line) and
+the source citations. The read-only path is the same. `260d869` builds with
+W=1 and no compiler warning; it was not loaded. `scripts/lib.sh` holds the
+shared steps: the probe load under `/var/tmp/ane-run.lock` (it refuses while
+an ane-run runs), the encoder run with its golden check, and the stop
+checks.
 
 `apply=2 orig_brd=… orig_bwr=…` writes the given values back with the same
-RMW. This run never used it.
+RMW. `apply=1` changes only the bits inside each mask, so the RMW of the
+masked E1 field is the exact inverse (0x20c: 0x1e000048 -> 0xe40000ff ->
+0x1e000048). This run never used it.
 
 ## Limits
 
