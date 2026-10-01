@@ -159,6 +159,14 @@ static bool nodart;
 module_param(nodart, bool, 0444);
 MODULE_PARM_DESC(nodart, "chman: skip the DART segment map before RUN");
 
+/* Gap7 run 2 killed the fw before its first store; the only span it touched
+ * beyond H3's staging was the carveout tail zero-fill — whose pre-write
+ * content is boot-varying NONZERO (iBoot-era runtime state, e.g. fw stacks).
+ * Default now keeps the tail exactly as iBoot left it. */
+static bool zerofill;
+module_param(zerofill, bool, 0444);
+MODULE_PARM_DESC(zerofill, "stage22: zero the DATA carveout tail past the file image");
+
 /* ---- 22G74 (Gap7) staging + generation table ---- */
 #define EOS22_TEXT_LEN		0xd4000		/* __TEXT vmsize (ZSTR 0x50c000 - DATA) */
 #define EOS22_DATA_FILE_LEN	0x3e8000	/* __DATA filesize */
@@ -875,17 +883,20 @@ static int stage22_run(struct ane_h13_perf *a)
 
 	va = memremap(data_phys, EOS22_DATA_LEN, MEMREMAP_WC);
 	if (!va) { ret = -ENOMEM; goto out; }
-	dev_info(&a->pdev->dev, "stage22: stage DATA pa=%pa file=%#x zero=%#x\n",
+	dev_info(&a->pdev->dev, "stage22: stage DATA pa=%pa file=%#x zero=%#x (%s)\n",
 		 &data_phys, EOS22_DATA_FILE_LEN,
-		 EOS22_DATA_LEN - EOS22_DATA_FILE_LEN);
+		 EOS22_DATA_LEN - EOS22_DATA_FILE_LEN,
+		 zerofill ? "zero-fill tail" : "tail LEFT AS IBOOT LEFT IT");
 	/* Warm before first store — 7.1.13 cold-store fault law (Gap5 3/3). */
 	s2 = span_sum(va, EOS22_DATA_LEN, &s1);
 	dev_info(&a->pdev->dev, "stage22: DATA pre-write live sum=%016llx:%016llx\n", s2, s1);
 	memcpy(va, dbuf, EOS22_DATA_FILE_LEN);
-	memset(va + EOS22_DATA_FILE_LEN, 0, EOS22_DATA_LEN - EOS22_DATA_FILE_LEN);
+	if (zerofill)
+		memset(va + EOS22_DATA_FILE_LEN, 0,
+		       EOS22_DATA_LEN - EOS22_DATA_FILE_LEN);
 	if (memcmp(va, dbuf, EOS22_DATA_FILE_LEN) ||
-	    memchr_inv(va + EOS22_DATA_FILE_LEN, 0,
-		       EOS22_DATA_LEN - EOS22_DATA_FILE_LEN)) {
+	    (zerofill && memchr_inv(va + EOS22_DATA_FILE_LEN, 0,
+				    EOS22_DATA_LEN - EOS22_DATA_FILE_LEN))) {
 		ret = -EIO;
 		goto out;
 	}
