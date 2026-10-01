@@ -10,5 +10,8 @@
 - ane_request_capture.m + capture_step_surfaces.py — macOS: dense port values and the IOSurfaces the ANE runtime hands the engine, for decode steps 0-1 of p001
 - compare_denominator.py — Linux bench vs the macOS ANE denominator: medians and Linux/macOS ratios with a paired bootstrap 95% CI over the repetitions
 - check_step_surfaces.py — byte-checks an io_layout.py plan against that capture (runtime layout attributes, packed inputs, unpacked outputs, resident states)
+- dump_step_ports.py — macOS: exact fp16 inputs/outputs of every program execution (resident states included) for chosen decode steps of p001, with an index.json
+- check_step_dump.py — offline check of that dump: file hashes, goldens.json, lane/ctx/state chain closure
+- host-between-programs.md — what the host does between the 38 programs, and what the max_len 50 goldens.json actually hashes
 
 Receipt: joshuawarren/ane-linux-experiments receipts/2026-09-25-qwen-ane-decoder-fix/
