@@ -1,0 +1,26 @@
+--- /var/tmp/rel-0.4.0r-boot/old-8f5491c2.dts	2026-10-01 09:18:00.042282963 -0500
++++ /var/tmp/rel-0.4.0r-boot/new.dts	2026-10-01 09:18:00.049700069 -0500
+@@ -1543,6 +1543,7 @@
+ 			phandle = <0x119>;
+ 			power-domains = <0x18>;
+ 			reg = <0x02 0x85800000 0x00 0x4000>;
++			status = "okay";
+ 		};
+ 
+ 		ane_dart1: iommu@285810000 {
+@@ -1553,6 +1554,7 @@
+ 			phandle = <0x11a>;
+ 			power-domains = <0x118>;
+ 			reg = <0x02 0x85810000 0x00 0x4000>;
++			status = "okay";
+ 		};
+ 
+ 		ane_dart2: iommu@285820000 {
+@@ -1563,6 +1565,7 @@
+ 			phandle = <0x11b>;
+ 			power-domains = <0x118>;
+ 			reg = <0x02 0x85820000 0x00 0x4000>;
++			status = "okay";
+ 		};
+ 
+ 		iommu@287010000 {

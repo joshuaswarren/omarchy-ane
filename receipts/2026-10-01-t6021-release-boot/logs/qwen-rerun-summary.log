@@ -1,0 +1,9 @@
+no stray qwen_prog_run/ane-run
+bo_total_bytes before 59031552
+prog20 rc=0 WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap f
+encoder rc=0 exec ms over 5 calls: min 254.275 p10 254.275 p25 254.302 median 254.442 p75 254.529 p90 254.571 p99 254.571 max 254.571 linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1 
+encoder hidden float16 (1, 1, 375, 640) fp16 480000 B sha256 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+dmesg new lines: 0 (non-UFW: 0); bad new: 0; bad whole boot: 0
+bo_total_bytes after 654049280
+ 53:          0          0          0          0          0          0          0          0          0          0          0          0     AIC2 66420 Level     285408000.mailbox-recv
+ 54:          0          0          0          0          0          0          0          0          0          0          0          0     AIC2 67369 Level     285408000.mailbox-send

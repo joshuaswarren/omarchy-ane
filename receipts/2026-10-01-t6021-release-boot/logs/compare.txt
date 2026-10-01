@@ -1,0 +1,5 @@
+old: m1n1 1179648 B 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c; 110 trees; u-boot 660216 B b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1; tail b''
+new: m1n1 1179648 B 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c; 110 trees; u-boot 660216 B b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1; tail b''
+only old: j414c 8f5491c27c28ec69aeab5d696b0fec606cf1bd34a5193547a197b12506590e50 ane=True
+only new: j414c c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b ane=True
+m1n1, u-boot and tail identical: True; trees differing: 2
