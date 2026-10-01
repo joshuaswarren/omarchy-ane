@@ -1,0 +1,182 @@
+# aarch64-linux-gnu-objdump -d --no-show-raw-insn --disassemble=apple_dart_hw_reset out/vmlinux (vmlinux sha256 b80dca84...)
+ffff800080917f6c <apple_dart_hw_reset>:
+ffff800080917f6c:	paciasp
+ffff800080917f70:	stp	x29, x30, [sp, #-128]!
+ffff800080917f74:	mov	w1, #0x0                   	// #0
+ffff800080917f78:	mov	x29, sp
+ffff800080917f7c:	stp	x19, x20, [sp, #16]
+ffff800080917f80:	mov	x19, x0
+ffff800080917f84:	mrs	x0, sp_el0
+ffff800080917f88:	ldr	x2, [x0, #1600]
+ffff800080917f8c:	str	x2, [sp, #120]
+ffff800080917f90:	mov	x2, #0x0                   	// #0
+ffff800080917f94:	add	x0, sp, #0x30
+ffff800080917f98:	ldr	w2, [x19, #60]
+ffff800080917f9c:	mov	w20, #0x0                   	// #0
+ffff800080917fa0:	str	x19, [sp, #40]
+ffff800080917fa4:	stp	xzr, xzr, [sp, #48]
+ffff800080917fa8:	stp	xzr, xzr, [sp, #64]
+ffff800080917fac:	bl	ffff800080747bdc <__bitmap_set>
+ffff800080917fb0:	add	x0, sp, #0x28
+ffff800080917fb4:	bl	ffff800080916c68 <apple_dart_hw_disable_dma>
+ffff800080917fb8:	ldr	x0, [sp, #40]
+ffff800080917fbc:	ldr	x0, [x0, #8]
+ffff800080917fc0:	ldr	w0, [x0, #88]
+ffff800080917fc4:	cmp	w0, #0x0
+ffff800080917fc8:	b.le	ffff800080917ff4 <apple_dart_hw_reset+0x88>
+ffff800080917fcc:	nop
+ffff800080917fd0:	add	x0, sp, #0x28
+ffff800080917fd4:	mov	w1, w20
+ffff800080917fd8:	bl	ffff800080916cd4 <apple_dart_hw_clear_ttbr>
+ffff800080917fdc:	add	w20, w20, #0x1
+ffff800080917fe0:	ldr	x0, [sp, #40]
+ffff800080917fe4:	ldr	x0, [x0, #8]
+ffff800080917fe8:	ldr	w0, [x0, #88]
+ffff800080917fec:	cmp	w20, w0
+ffff800080917ff0:	b.lt	ffff800080917fd0 <apple_dart_hw_reset+0x64>  // b.tstop
+ffff800080917ff4:	ldr	x20, [x19, #72]
+ffff800080917ff8:	cbz	x20, ffff80008091801c <apple_dart_hw_reset+0xb0>
+ffff800080917ffc:	mov	x2, #0x1                   	// #1
+ffff800080918000:	add	x0, sp, #0x50
+ffff800080918004:	mov	w1, #0x0                   	// #0
+ffff800080918008:	stp	x19, x2, [sp, #80]
+ffff80008091800c:	stp	xzr, xzr, [sp, #96]
+ffff800080918010:	str	xzr, [sp, #112]
+ffff800080918014:	bl	ffff80008091796c <apple_dart_t8110_hw_tlb_command>
+ffff800080918018:	cbz	w0, ffff8000809180f8 <apple_dart_hw_reset+0x18c>
+ffff80008091801c:	ldr	w0, [x19, #60]
+ffff800080918020:	mov	x3, #0x0                   	// #0
+ffff800080918024:	mov	w2, #0x0                   	// #0
+ffff800080918028:	mov	w4, #0xffffffff            	// #-1
+ffff80008091802c:	add	x0, x0, #0x1f
+ffff800080918030:	cmp	xzr, x0, lsr #5
+ffff800080918034:	b.eq	ffff80008091806c <apple_dart_hw_reset+0x100>  // b.none
+ffff800080918038:	ldp	x1, x0, [x19, #8]
+ffff80008091803c:	ldr	w1, [x1, #48]
+ffff800080918040:	add	x1, x1, x3
+ffff800080918044:	add	x0, x0, x1
+ffff800080918048:	dmb	oshst
+ffff80008091804c:	str	w4, [x0]
+ffff800080918050:	ldr	w1, [x19, #60]
+ffff800080918054:	add	w2, w2, #0x1
+ffff800080918058:	add	x3, x3, #0x4
+ffff80008091805c:	add	x1, x1, #0x1f
+ffff800080918060:	lsr	x1, x1, #5
+ffff800080918064:	cmp	x1, w2, sxtw
+ffff800080918068:	b.hi	ffff800080918038 <apple_dart_hw_reset+0xcc>  // b.pmore
+ffff80008091806c:	ldp	x1, x0, [x19, #8]
+ffff800080918070:	ldr	w1, [x1, #44]
+ffff800080918074:	add	x0, x0, x1
+ffff800080918078:	ldr	w0, [x0]
+ffff80008091807c:	dmb	oshld
+ffff800080918080:	mov	w1, w0
+ffff800080918084:	eor	x1, x1, x1
+ffff800080918088:	cbnz	x1, ffff800080918088 <apple_dart_hw_reset+0x11c>
+ffff80008091808c:	ldp	x2, x1, [x19, #8]
+ffff800080918090:	ldr	w2, [x2, #44]
+ffff800080918094:	add	x1, x1, x2
+ffff800080918098:	dmb	oshst
+ffff80008091809c:	str	w0, [x1]
+ffff8000809180a0:	ldr	x1, [x19, #8]
+ffff8000809180a4:	ldr	w0, [x1]
+ffff8000809180a8:	cmp	w0, #0x2
+ffff8000809180ac:	b.ne	ffff8000809180c4 <apple_dart_hw_reset+0x158>  // b.any
+ffff8000809180b0:	ldr	x0, [x19, #16]
+ffff8000809180b4:	add	x0, x0, #0x104
+ffff8000809180b8:	dmb	oshst
+ffff8000809180bc:	str	wzr, [x0]
+ffff8000809180c0:	ldr	x1, [x19, #8]
+ffff8000809180c4:	add	x0, sp, #0x28
+ffff8000809180c8:	ldr	x1, [x1, #16]
+ffff8000809180cc:	blr	x1
+ffff8000809180d0:	mrs	x1, sp_el0
+ffff8000809180d4:	ldr	x3, [sp, #120]
+ffff8000809180d8:	ldr	x2, [x1, #1600]
+ffff8000809180dc:	subs	x3, x3, x2
+ffff8000809180e0:	mov	x2, #0x0                   	// #0
+ffff8000809180e4:	b.ne	ffff80008091822c <apple_dart_hw_reset+0x2c0>  // b.any
+ffff8000809180e8:	ldp	x19, x20, [sp, #16]
+ffff8000809180ec:	ldp	x29, x30, [sp], #128
+ffff8000809180f0:	autiasp
+ffff8000809180f4:	ret
+ffff8000809180f8:	ldr	x1, [x19, #16]
+ffff8000809180fc:	add	x1, x1, #0x20c
+ffff800080918100:	ldr	w1, [x1]
+ffff800080918104:	dmb	oshld
+ffff800080918108:	mov	w2, w1
+ffff80008091810c:	eor	x2, x2, x2
+ffff800080918110:	cbnz	x2, ffff800080918110 <apple_dart_hw_reset+0x1a4>
+ffff800080918114:	ldr	x2, [x19, #16]
+ffff800080918118:	mov	w3, #0xff48                	// #65352
+ffff80008091811c:	movk	w3, #0xff, lsl #16
+ffff800080918120:	and	w1, w1, w3
+ffff800080918124:	mov	w3, #0xb7                  	// #183
+ffff800080918128:	add	x2, x2, #0x20c
+ffff80008091812c:	movk	w3, #0xe400, lsl #16
+ffff800080918130:	orr	w1, w1, w3
+ffff800080918134:	dmb	oshst
+ffff800080918138:	str	w1, [x2]
+ffff80008091813c:	ldr	x1, [x19, #16]
+ffff800080918140:	add	x1, x1, #0x220
+ffff800080918144:	ldr	w1, [x1]
+ffff800080918148:	dmb	oshld
+ffff80008091814c:	mov	w2, w1
+ffff800080918150:	eor	x2, x2, x2
+ffff800080918154:	cbnz	x2, ffff800080918154 <apple_dart_hw_reset+0x1e8>
+ffff800080918158:	ldr	x2, [x19, #16]
+ffff80008091815c:	mov	w3, #0xf0f                 	// #3855
+ffff800080918160:	movk	w3, #0xf, lsl #16
+ffff800080918164:	orr	w1, w1, w3
+ffff800080918168:	add	x2, x2, #0x220
+ffff80008091816c:	dmb	oshst
+ffff800080918170:	str	w1, [x2]
+ffff800080918174:	ldr	x1, [x19, #16]
+ffff800080918178:	add	x1, x1, #0x224
+ffff80008091817c:	ldr	w1, [x1]
+ffff800080918180:	dmb	oshld
+ffff800080918184:	mov	w2, w1
+ffff800080918188:	eor	x2, x2, x2
+ffff80008091818c:	cbnz	x2, ffff80008091818c <apple_dart_hw_reset+0x220>
+ffff800080918190:	ldr	x2, [x19, #16]
+ffff800080918194:	and	w1, w1, #0xff000000
+ffff800080918198:	mov	w3, #0x808                 	// #2056
+ffff80008091819c:	movk	w3, #0x8, lsl #16
+ffff8000809181a0:	add	x2, x2, #0x224
+ffff8000809181a4:	orr	w1, w1, w3
+ffff8000809181a8:	dmb	oshst
+ffff8000809181ac:	str	w1, [x2]
+ffff8000809181b0:	mov	w5, #0xff80                	// #65408
+ffff8000809181b4:	mov	x2, #0x800                 	// #2048
+ffff8000809181b8:	mov	w4, #0x60000               	// #393216
+ffff8000809181bc:	movk	w5, #0xfff0, lsl #16
+ffff8000809181c0:	ldr	x1, [x19, #16]
+ffff8000809181c4:	add	x1, x1, x2
+ffff8000809181c8:	ldr	w1, [x1]
+ffff8000809181cc:	dmb	oshld
+ffff8000809181d0:	mov	w3, w1
+ffff8000809181d4:	eor	x3, x3, x3
+ffff8000809181d8:	cbnz	x3, ffff8000809181d8 <apple_dart_hw_reset+0x26c>
+ffff8000809181dc:	ldr	x3, [x19, #16]
+ffff8000809181e0:	and	w1, w1, w5
+ffff8000809181e4:	orr	w1, w1, w4
+ffff8000809181e8:	add	x3, x3, x2
+ffff8000809181ec:	dmb	oshst
+ffff8000809181f0:	str	w1, [x3]
+ffff8000809181f4:	add	w0, w0, #0x1
+ffff8000809181f8:	add	x2, x2, #0x4
+ffff8000809181fc:	cmp	w0, #0x10
+ffff800080918200:	b.eq	ffff80008091801c <apple_dart_hw_reset+0xb0>  // b.none
+ffff800080918204:	cmp	w0, #0x1
+ffff800080918208:	b.eq	ffff800080918224 <apple_dart_hw_reset+0x2b8>  // b.none
+ffff80008091820c:	cmp	w0, #0x4
+ffff800080918210:	b.le	ffff80008091821c <apple_dart_hw_reset+0x2b0>
+ffff800080918214:	ldr	w4, [x20, #12]
+ffff800080918218:	b	ffff8000809181c0 <apple_dart_hw_reset+0x254>
+ffff80008091821c:	ldr	w4, [x20, #8]
+ffff800080918220:	b	ffff8000809181c0 <apple_dart_hw_reset+0x254>
+ffff800080918224:	mov	w4, #0x60000               	// #393216
+ffff800080918228:	b	ffff8000809181c0 <apple_dart_hw_reset+0x254>
+ffff80008091822c:	bl	ffff800080f59b00 <__stack_chk_fail>
+Disassembly of section .rodata.text:
+Disassembly of section .init.text:
+Disassembly of section .exit.text:
