@@ -142,11 +142,61 @@ u32 ane_tm_ps_act(struct ane_device *ane)
 	return ane_ps_act(ane);
 }
 
+/*
+ * Differences between this driver's TM bring-up and the one the macOS ANE firmware runs (CSneTMDrvH13::Reset and
+ * CSneTMDrv::EnableTQs in the H13 13.5 image; receipt omarchy-mplus-private 2026-10-01-jwm1-tm-fw-diff). All default off:
+ *  tm_tq_en_extra  OR this mask into TM_TQ_EN after the stock 0x1000 (the firmware sets 0x2000, bit 13, in EnableTQs;
+ *                  T6001 reads 0x3000 after the stock enable, so there the bit is already set).
+ *  tm_prty_keep    write TQ_PRTY as (old & ~0x3f) | n like the firmware instead of the plain value.
+ *  tm_log          log TM_TQ_EN before and after the enable writes.
+ *  tm_route3       write 3 to PA 0x26b874008, which the firmware's Reset does (engine+0x1874008, inside the window the
+ *                  T6021 notes call fabric-fatal): UNSAFE, needs tm_route3_ack=1 as well and a reset window; T8103 only.
+ */
+static unsigned int tm_tq_en_extra;
+module_param(tm_tq_en_extra, uint, 0444);
+MODULE_PARM_DESC(tm_tq_en_extra, "OR mask added to TM_TQ_EN after the stock enable (firmware sets 0x2000); default 0");
+static bool tm_prty_keep;
+module_param(tm_prty_keep, bool, 0444);
+MODULE_PARM_DESC(tm_prty_keep, "write TQ_PRTY read-modify-write like the firmware (keep bits above 0x3f); default off");
+static bool tm_log;
+module_param(tm_log, bool, 0444);
+MODULE_PARM_DESC(tm_log, "log TM_TQ_EN around the enable writes; default off");
+static bool tm_route3;
+module_param(tm_route3, bool, 0444);
+MODULE_PARM_DESC(tm_route3, "UNSAFE: write 3 to PA 0x26b874008 like the firmware TM reset (T8103; needs tm_route3_ack=1)");
+static bool tm_route3_ack;
+module_param(tm_route3_ack, bool, 0444);
+MODULE_PARM_DESC(tm_route3_ack, "acknowledge that tm_route3 touches an unproven block and may reset the SoC");
+
+#define T8103_PS_BASE		0x23b70c000ULL
+#define T8103_FW_ROUTE_PA	0x26b874008ULL
+
+static void ane_tm_route3(struct ane_device *ane)
+{
+	void __iomem *p;
+
+	if (!tm_route3)
+		return;
+	if (!tm_route3_ack || ane->ps_base != T8103_PS_BASE) {
+		dev_warn(ane->dev, "tm_route3 ignored (needs tm_route3_ack=1 and a T8103)\n");
+		return;
+	}
+	/* non-posted mapping: a posted one reset this SoC three times (H164) */
+	p = ioremap_np(T8103_FW_ROUTE_PA & ~0xfffULL, 0x1000);
+	if (!p)
+		return;
+	dev_info(ane->dev, "tm_route3: writing 3 to %#llx next\n", T8103_FW_ROUTE_PA);
+	writel(3, p + (T8103_FW_ROUTE_PA & 0xfff));
+	dev_info(ane->dev, "tm_route3: write survived\n");
+	iounmap(p);
+}
+
 void ane_tm_enable(struct ane_device *ane, bool rec)
 {
 	void __iomem *tq_en = ane->engine + ANE_TM_BASE + TM_TQ_EN;
 	u32 val = rec ? ane_rec_read32(ane, "TM_TQ_EN tm+0x0c", tq_en)
 		      : readl(tq_en);
+	u32 before = val;
 	char reg[24];
 
 	val |= 0x1000;
@@ -154,17 +204,24 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		ane_rec_writel(ane, "TM_TQ_EN tm+0x0c", tq_en, val);
 	else
 		writel(val, tq_en);
+	if (tm_tq_en_extra)
+		writel(readl(tq_en) | tm_tq_en_extra, tq_en);
+	if (tm_log)
+		dev_info(ane->dev, "tm: TM_TQ_EN %#x -> %#x\n", before, readl(tq_en));
 
 	for (int qid = 0; qid < ANE_TQ_COUNT; qid++) {
 		void __iomem *prty =
 			ane->engine + ANE_TQ_BASE + TQ_PRTY(qid);
+		u32 pv = TQ_PRTY_TABLE[qid];
 
+		if (tm_prty_keep)
+			pv |= readl(prty) & ~0x3fU;
 		if (rec) {
 			snprintf(reg, sizeof(reg), "TQ_PRTY[%d] tq+%#x", qid,
 				 TQ_PRTY(qid));
-			ane_rec_writel(ane, reg, prty, TQ_PRTY_TABLE[qid]);
+			ane_rec_writel(ane, reg, prty, pv);
 		} else {
-			writel(TQ_PRTY_TABLE[qid], prty);
+			writel(pv, prty);
 		}
 	}
 
@@ -178,6 +235,7 @@ void ane_tm_enable(struct ane_device *ane, bool rec)
 		tm_write32(ane, TM_IRQ_EN1, 0x4000000);
 		tm_write32(ane, TM_IRQ_EN2, 0x6);
 	}
+	ane_tm_route3(ane);
 }
 
 u32 ane_tm_status(struct ane_device *ane)
