@@ -657,24 +657,27 @@ uint64_t __ane_dst_size(struct ane_nn *nn, const uint32_t idx)
 	return tile_size(nn, dst_bdx(nn, idx));
 }
 
+/* The M2 port model, not the ANEC header, counts the M2 io: the header
+ * of an Apple-compiled ANEC records one output however many the port
+ * table binds, so the legacy index check would skip every later one. */
 void __ane_send(struct ane_nn *nn, void *from, const uint32_t idx)
 {
-	INDEX_CHECK(ane_src_count(nn), idx, );
 	if (nn->m2) {
 		ane_m2_send(nn, from, idx);
 		return;
 	}
+	INDEX_CHECK(ane_src_count(nn), idx, );
 	memcpy(nn->chans[src_bdx(nn, idx)].map, from,
 	       tile_size(nn, src_bdx(nn, idx)));
 }
 
 void __ane_read(struct ane_nn *nn, void *to, const uint32_t idx)
 {
-	INDEX_CHECK(ane_dst_count(nn), idx, );
 	if (nn->m2) {
 		ane_m2_read(nn, to, idx);
 		return;
 	}
+	INDEX_CHECK(ane_dst_count(nn), idx, );
 	memcpy(to, nn->chans[dst_bdx(nn, idx)].map,
 	       tile_size(nn, dst_bdx(nn, idx)));
 }

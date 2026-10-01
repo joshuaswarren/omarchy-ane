@@ -241,8 +241,9 @@ class Harness:
         exec_ms = re.search(r"exec ms over .*", log)
         self.last = {"status": status, "wall_s": round(wall, 3),
                      "exec": exec_ms.group(0) if exec_ms else "", "kernel_lines": len(new)}
-        if status:
-            tail = log.strip().splitlines()[-1] if log.strip() else ""
+        libane_err = [line for line in log.splitlines() if "LIBANE: ERR" in line]
+        if status or libane_err:
+            tail = libane_err[0] if libane_err else log.strip().splitlines()[-1] if log.strip() else ""
             self.record({"type": "error", "prog": prog, "label": label, **self.last, "log_tail": tail})
             raise ProgramFailed(f"prog_{prog:03d} {label}: ane-run exited {status}: {tail}")
         return outputs
@@ -259,8 +260,8 @@ class Harness:
         return ins, outs
 
     def resolve(self, prog, table, table_path, ports):
-        """Write and return <work>/prog_NNN/ports.resolved.json (or the original
-        table path in --dry mode)."""
+        """Write and return <work>/prog_NNN/ports.resolved.json when a binding
+        trial passes; otherwise return the table as given."""
         target = self.work / f"prog_{prog:03d}" / "ports.resolved.json"
         if target.exists():
             return target
@@ -301,16 +302,19 @@ class Harness:
         runner_up = scores[1] if len(scores) > 1 else None
         names = {**feed, **read}
         status = dict(zip(map(tuple, in_groups + out_groups), in_status + out_status))
+        rec = {"type": "resolve", "prog": prog, "step": step, "binding": fmt_map(names),
+               "in_status": ",".join(in_status), "out_status": ",".join(out_status),
+               "worst_ratio": scores[0], "runner_up_ratio": runner_up, "trials": len(trials)}
+        if not any(r["pass"] for _, r in trials):
+            self.record({**rec, "file": ""})
+            return table_path
         notes = [f"qwen_m2_conform step {step}: {status[tuple(a['ports'])]}; "
                  f"binding {fmt_map({n: names.get(n, n) for n in a['ports']})}; "
                  f"worst rel L2 / threshold {scores[0]:.4g}, next {runner_up}" for a in ambiguities]
         resolved = resolved_table(table, names, notes)
         port_map_from_table(resolved)
         target.write_text(json.dumps(resolved, indent=2) + "\n")
-        self.record({"type": "resolve", "prog": prog, "step": step, "binding": fmt_map(names),
-                     "in_status": ",".join(in_status), "out_status": ",".join(out_status),
-                     "worst_ratio": scores[0], "runner_up_ratio": runner_up,
-                     "trials": len(trials), "file": str(target)})
+        self.record({**rec, "file": str(target)})
         return target
 
     def conform(self, prog, step, table_path, chain):
