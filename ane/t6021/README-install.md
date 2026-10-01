@@ -236,7 +236,6 @@ bisection only.
 | `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
 | `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
 | `trace_td` | `0` | rtclient | Runtime switch (0644). 1 records a read-only timeline of each CALL (ack, each new value of the last-taken-TD word, the IO_T2H events, the finish) in debugfs `ane_t6021/trace_td`; each switch to 1 empties it. The TD word is read only while the ANE pmgr PS words read 0x3ff. 0 leaves the CALL path unchanged. |
-| `af_bridge_macos` | `0` | boot.c | Load-time A/B switch (0444). 1 replaces the P-1 writes eng+0x000 and eng+0x400 by the 26 macOS AXI2AF bridge read-modify-writes (each under the PS guard, logged). On the M2 all 26 then read back as macOS writes them, and the encoder time does not change (receipts/2026-10-01-t6021-af-bridge-run). 0 leaves P-1 unchanged. |
 
 Lab knobs that stayed at their inert values in every proven run are
 deleted outright, not kept at 0: `fw_diag_marker`, `fw_load_stamp_base`,
@@ -251,7 +250,9 @@ gated are simply absent) and `legacy_notify_ack`/`legacy_fast_poll`
 (both 1: the port always acks pending IPIs and polls at 50 us).
 `fw_start_skip_genpd` (lab default 0) is likewise absent: the genpd
 attach + `pm_runtime_resume_and_get` always run, which IS the lab
-default path.
+default path. `af_bridge_macos` (#33) is absent too: the 26 macOS AXI2AF
+bridge values did not change the encoder time
+(receipts/2026-10-01-t6021-af-bridge-run).
 
 ## DRM device
 

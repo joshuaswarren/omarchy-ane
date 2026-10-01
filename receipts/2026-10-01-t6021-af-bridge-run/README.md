@@ -1,5 +1,8 @@
 # T6021: the macOS ANE0 AXI2AF bridge tunables on the M2, read and applied (2026-10-01)
 
+Status: rejected. The driver parameter was reverted in PR #34; the
+measurements stay valid. The code is at `d3b8561`.
+
 ## Result: rejected
 
 Under Linux, none of the 26 bridge registers that macOS programs

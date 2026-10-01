@@ -148,13 +148,6 @@ module_param(boot_prevent_nap, bool, 0444);
 MODULE_PARM_DESC(boot_prevent_nap,
 		 "Retain firmware nap-prevention counter via init resource bit (default on: proven add-path value)");
 
-/* A/B switch for the macOS AF-bridge tunables (ane_t6021_af_bridge_rmw):
- * default off = P-1 unchanged. Set at load (modprobe.d option). */
-static bool af_bridge_macos;
-module_param(af_bridge_macos, bool, 0444);
-MODULE_PARM_DESC(af_bridge_macos,
-		 "Replace P-1 eng+0x000/0x400 by the 26 macOS AF-bridge RMWs (default off)");
-
 /* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
  * per-object metadata keeps modpost happy for either composition. */
 MODULE_LICENSE("Dual MIT/GPL");
@@ -335,38 +328,6 @@ static void ane_boot_phase(void *ctx, const char *what)
 	msleep(30);
 }
 
-/* PS guard of the probes and trace_td: ane_sys (pmgr+0x260) ACTUAL on and
- * the seven island words (ane_sys_mpm .. ane_set4, pmgr+0x4000..0x4030)
- * 0x3ff, read through the DT "pmgr" window. */
-static int ane_boot_power_ok(void *ctx)
-{
-	struct ane_t6021_boot_mmio *mm = ctx;
-	void __iomem *pm = mm->ane->base[ANE_T6021_REG_PMGR];
-	unsigned int off;
-
-	if (!pm || (readl(pm + 0x260) & ANE_PS_ACTUAL) != ANE_PS_ACTUAL)
-		return 0;
-	for (off = 0x4000; off <= 0x4030; off += 8)
-		if ((readl(pm + off) & 0x3ff) != 0x3ff)
-			return 0;
-	return 1;
-}
-
-static void ane_boot_bridge_log(void *ctx, unsigned int off, u32 before,
-				u32 v, int written)
-{
-	struct ane_t6021_boot_mmio *mm = ctx;
-
-	if (written) {
-		dev_emerg(mm->ane->dev, "AFB eng+0x%03x before 0x%08x after 0x%08x\n",
-			  off, before, v);
-		return;
-	}
-	dev_emerg(mm->ane->dev, "AFB eng+0x%03x before 0x%08x write 0x%08x\n",
-		  off, before, v);
-	msleep(30);	/* the line leaves before the write (ane_boot_phase) */
-}
-
 /* S5 prepare — runs strictly AFTER poll A (fw alive), BEFORE the
  * SCRATCH0/1 publish. Dynamic allocations occur here per "dynamic
  * allocations occur after READY" (Main): the 'DDM ' pool, the 'IPC '
@@ -493,8 +454,6 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 		.publish_barrier = ane_boot_publish_barrier, .poll_wait = ane_boot_wait,
 		.phase = ane_boot_phase,
 		.prepare = ane_t6021_boot_prepare,
-		.power_ok = ane_boot_power_ok,
-		.bridge_log = ane_boot_bridge_log,
 	};
 	struct ane_t6021_boot_cfg cfg = {
 		.preflight_ok = ane_t6021_boot_preflight_complete(),
@@ -502,7 +461,6 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 		.fw_dva = ane->fw_iova,
 		.stop_after = stop_after,
 		.rtb_mode = rtb_mode,
-		.af_bridge_macos = af_bridge_macos,
 	};
 	int cs = 0, fa = 0, bo = 0;
 	u64 sres = 0;
