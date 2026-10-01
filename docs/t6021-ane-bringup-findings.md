@@ -1456,3 +1456,20 @@ Record: [receipts/2026-10-01-t6021-macos-vs-linux-mmio](../receipts/2026-10-01-t
   fabric. It cannot test the PMP and DPE/PPT candidates of section 27.
 - Next: read the DART tunables and PERF counters on Linux and on macOS, then
   an A/B of the BRD/BWR tunables with the NativeVsCross method.
+
+## 30. The ANE DART tunables under Linux: read, and a live write that faults (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-dart-tunables/README.md).
+
+- Under Linux, dart-ane1 (BRD) and dart-ane2 (BWR) keep their reset values:
+  0 of the 22 ADT tunable words on each holds the macOS value. dart-ane0
+  (LLT) already holds its 6 macOS values; a stage before Linux writes them.
+- The m1n1-named DART PERF words (0x700-0x788) read 0 and stay 0 over 21
+  encoder CALLs. The counters are not enabled, so there is no TLB miss count.
+- `ane_dart_probe apply=1` wrote the 19 macOS words per bulk DART on the
+  live DART (no flush), every readback equal. The next gate failed: `NO PTE
+  FOR IOVA` faults on BRD and BWR stream 0, and every second process gave an
+  all-zero output. A reboot restores the reset values. No timing verdict.
+- Next: the same write followed by a FLUSH_ALL, then a group bisect. macOS
+  writes the words at DART init before TTBR and ENABLE_STREAMS; in Linux
+  that place is `apple-dart`.

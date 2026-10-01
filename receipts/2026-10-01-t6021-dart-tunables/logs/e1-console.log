@@ -1,0 +1,38 @@
+== state start 2026-10-01T19:19:40.903Z
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2073.57
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 0 dmesg_lines 1290
+no ane-run
+ 14:19:40 up 34 min, 15 users,  load average: 0.02, 0.30, 0.57
+probe r0  start 19:19:40.977
+probe r0 insmod rc=0 end 19:19:53.066
+probe r0 rmmod rc=0
+[ 2085.665246] ane_dart_probe: done, 177 of 177 read, no write
+probe r0b  start 19:19:53.146
+probe r0b insmod rc=0 end 19:20:05.227
+probe r0b rmmod rc=0
+[ 2097.827103] ane_dart_probe: done, 177 of 177 read, no write
+enc c1 min 254.307 median 254.307 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+probe r1  start 19:20:06.263
+probe r1 insmod rc=0 end 19:20:18.345
+probe r1 rmmod rc=0
+[ 2110.944972] ane_dart_probe: done, 177 of 177 read, no write
+enc c20 min 254.243 median 254.377 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+probe r20  start 19:20:24.311
+probe r20 insmod rc=0 end 19:20:36.392
+probe r20 rmmod rc=0
+[ 2128.992769] ane_dart_probe: done, 177 of 177 read, no write
+== state end 2026-10-01T19:20:36.461Z
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2129.13
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 0 dmesg_lines 2713
+no ane-run
+ 14:20:36 up 35 min, 15 users,  load average: 0.61, 0.42, 0.59
+dmesg new 1423, bad 0
+== E1 done 19:20:36

@@ -1,5 +1,10 @@
 # T6021: the macOS 13.5 hv trace against the Linux ane_t6021 MMIO footprint (2026-10-01)
 
+Status: step 4 E1 and E2 ran later on 2026-10-01, see
+[2026-10-01-t6021-dart-tunables](../2026-10-01-t6021-dart-tunables/README.md)
+(BRD/BWR at reset values, LLT already applied, PERF counters off; the live
+E2 write caused DART translation faults, so no timing verdict).
+
 The macOS hv trace shows one DMA-path setting that Linux never makes: the
 DART tunables on the two bulk DARTs of the ANE, DARTBRD and DARTBWR. By
 their names these carry the bulk reads and writes of the ANE: weights and
