@@ -1,0 +1,53 @@
+[   37.619364] ane_afbridge_probe: read 0x284000000
+[   37.669853] ane_afbridge_probe: 0x284000000 = 0x00000011
+[   37.669869] ane_afbridge_probe: read 0x28400000c
+[   37.719504] ane_afbridge_probe: 0x28400000c = 0x0000000d
+[   37.719514] ane_afbridge_probe: read 0x284000010
+[   37.769742] ane_afbridge_probe: 0x284000010 = 0x0000000c
+[   37.769753] ane_afbridge_probe: read 0x284000014
+[   37.819705] ane_afbridge_probe: 0x284000014 = 0x00000001
+[   37.819713] ane_afbridge_probe: read 0x284000018
+[   37.869575] ane_afbridge_probe: 0x284000018 = 0x00000001
+[   37.869582] ane_afbridge_probe: read 0x28400001c
+[   37.919784] ane_afbridge_probe: 0x28400001c = 0x00000003
+[   37.919794] ane_afbridge_probe: read 0x284000020
+[   37.969818] ane_afbridge_probe: 0x284000020 = 0x00000003
+[   37.969832] ane_afbridge_probe: read 0x284000024
+[   38.020146] ane_afbridge_probe: 0x284000024 = 0x00000003
+[   38.020162] ane_afbridge_probe: read 0x284000028
+[   38.070050] ane_afbridge_probe: 0x284000028 = 0x00000003
+[   38.070061] ane_afbridge_probe: read 0x28400002c
+[   38.120337] ane_afbridge_probe: 0x28400002c = 0x00000003
+[   38.120348] ane_afbridge_probe: read 0x284000030
+[   38.170376] ane_afbridge_probe: 0x284000030 = 0x00000003
+[   38.170387] ane_afbridge_probe: read 0x284000034
+[   38.220001] ane_afbridge_probe: 0x284000034 = 0x00000003
+[   38.220015] ane_afbridge_probe: read 0x284000108
+[   38.270391] ane_afbridge_probe: 0x284000108 = 0x00000011
+[   38.270403] ane_afbridge_probe: read 0x28400010c
+[   38.319901] ane_afbridge_probe: 0x28400010c = 0x0000000d
+[   38.319909] ane_afbridge_probe: read 0x284000110
+[   38.369961] ane_afbridge_probe: 0x284000110 = 0x0000000c
+[   38.369969] ane_afbridge_probe: read 0x284000114
+[   38.420476] ane_afbridge_probe: 0x284000114 = 0x00000001
+[   38.420492] ane_afbridge_probe: read 0x284000118
+[   38.470372] ane_afbridge_probe: 0x284000118 = 0x00000001
+[   38.470386] ane_afbridge_probe: read 0x28400011c
+[   38.520628] ane_afbridge_probe: 0x28400011c = 0x00000003
+[   38.520639] ane_afbridge_probe: read 0x284000120
+[   38.570098] ane_afbridge_probe: 0x284000120 = 0x00000003
+[   38.570109] ane_afbridge_probe: read 0x284000124
+[   38.620633] ane_afbridge_probe: 0x284000124 = 0x00000003
+[   38.620644] ane_afbridge_probe: read 0x284000128
+[   38.670794] ane_afbridge_probe: 0x284000128 = 0x00000003
+[   38.670805] ane_afbridge_probe: read 0x28400012c
+[   38.720821] ane_afbridge_probe: 0x28400012c = 0x00000003
+[   38.720829] ane_afbridge_probe: read 0x284000130
+[   38.771014] ane_afbridge_probe: 0x284000130 = 0x00000003
+[   38.771027] ane_afbridge_probe: read 0x284000134
+[   38.821316] ane_afbridge_probe: 0x284000134 = 0x00000003
+[   38.821329] ane_afbridge_probe: read 0x284000400
+[   38.871075] ane_afbridge_probe: 0x284000400 = 0xc0f10010
+[   38.871086] ane_afbridge_probe: read 0x284000a00
+[   38.921392] ane_afbridge_probe: 0x284000a00 = 0x01ffffff
+[   38.921401] ane_afbridge_probe: done, 26 of 26 read, no write

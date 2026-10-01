@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `ane_t6021.af_bridge_macos` (default 0) writes the 26 macOS ANE0 AXI2AF
+  bridge tunables in P-1, in place of the two T8103 writes. On the M2 they
+  apply, and the encoder time does not change
+  (receipts/2026-10-01-t6021-af-bridge-run). With 0 the boot sequence does
+  not change.
+
 ## 0.4.0 (2026-10-01)
 
 The T6021 (M2 Max) driver stays opt-in. This release adds whole-model runs on

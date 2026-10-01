@@ -1,0 +1,77 @@
+[    3.261378] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables begin
+[    3.292376] ane_t6021 284000000.ane: BOOT-PHASE P-1 AF bridge: 26 macOS RMWs replace P-1a/P-1d
+[    3.323395] ane_t6021 284000000.ane: AFB eng+0x000 before 0x00000010 write 0x00000011
+[    3.354580] ane_t6021 284000000.ane: AFB eng+0x000 before 0x00000010 after 0x00000011
+[    3.354592] ane_t6021 284000000.ane: AFB eng+0x00c before 0x000fffff write 0x0000000d
+[    3.386382] ane_t6021 284000000.ane: AFB eng+0x00c before 0x000fffff after 0x0000000d
+[    3.386394] ane_t6021 284000000.ane: AFB eng+0x010 before 0x0007ffff write 0x0000000c
+[    3.416450] ane_t6021 284000000.ane: AFB eng+0x010 before 0x0007ffff after 0x0000000c
+[    3.416462] ane_t6021 284000000.ane: AFB eng+0x014 before 0x000005a0 write 0x00000001
+[    3.447577] ane_t6021 284000000.ane: AFB eng+0x014 before 0x000005a0 after 0x00000001
+[    3.447586] ane_t6021 284000000.ane: AFB eng+0x018 before 0x000005a0 write 0x00000001
+[    3.479376] ane_t6021 284000000.ane: AFB eng+0x018 before 0x000005a0 after 0x00000001
+[    3.479384] ane_t6021 284000000.ane: AFB eng+0x01c before 0x000005a0 write 0x00000003
+[    3.509486] ane_t6021 284000000.ane: AFB eng+0x01c before 0x000005a0 after 0x00000003
+[    3.509499] ane_t6021 284000000.ane: AFB eng+0x020 before 0x000005a0 write 0x00000003
+[    3.540478] ane_t6021 284000000.ane: AFB eng+0x020 before 0x000005a0 after 0x00000003
+[    3.540489] ane_t6021 284000000.ane: AFB eng+0x024 before 0x000005a0 write 0x00000003
+[    3.572396] ane_t6021 284000000.ane: AFB eng+0x024 before 0x000005a0 after 0x00000003
+[    3.572406] ane_t6021 284000000.ane: AFB eng+0x028 before 0x000005a0 write 0x00000003
+[    3.603399] ane_t6021 284000000.ane: AFB eng+0x028 before 0x000005a0 after 0x00000003
+[    3.603409] ane_t6021 284000000.ane: AFB eng+0x02c before 0x000005a0 write 0x00000003
+[    3.634394] ane_t6021 284000000.ane: AFB eng+0x02c before 0x000005a0 after 0x00000003
+[    3.634409] ane_t6021 284000000.ane: AFB eng+0x030 before 0x000005a0 write 0x00000003
+[    3.665399] ane_t6021 284000000.ane: AFB eng+0x030 before 0x000005a0 after 0x00000003
+[    3.665409] ane_t6021 284000000.ane: AFB eng+0x034 before 0x000005a0 write 0x00000003
+[    3.696400] ane_t6021 284000000.ane: AFB eng+0x034 before 0x000005a0 after 0x00000003
+[    3.696410] ane_t6021 284000000.ane: AFB eng+0x108 before 0x00000010 write 0x00000011
+[    3.727401] ane_t6021 284000000.ane: AFB eng+0x108 before 0x00000010 after 0x00000011
+[    3.727414] ane_t6021 284000000.ane: AFB eng+0x10c before 0x000fffff write 0x0000000d
+[    3.758402] ane_t6021 284000000.ane: AFB eng+0x10c before 0x000fffff after 0x0000000d
+[    3.758412] ane_t6021 284000000.ane: AFB eng+0x110 before 0x0007ffff write 0x0000000c
+[    3.789401] ane_t6021 284000000.ane: AFB eng+0x110 before 0x0007ffff after 0x0000000c
+[    3.789411] ane_t6021 284000000.ane: AFB eng+0x114 before 0x000005a0 write 0x00000001
+[    3.820401] ane_t6021 284000000.ane: AFB eng+0x114 before 0x000005a0 after 0x00000001
+[    3.820412] ane_t6021 284000000.ane: AFB eng+0x118 before 0x000005a0 write 0x00000001
+[    3.851402] ane_t6021 284000000.ane: AFB eng+0x118 before 0x000005a0 after 0x00000001
+[    3.851412] ane_t6021 284000000.ane: AFB eng+0x11c before 0x000005a0 write 0x00000003
+[    3.883382] ane_t6021 284000000.ane: AFB eng+0x11c before 0x000005a0 after 0x00000003
+[    3.883392] ane_t6021 284000000.ane: AFB eng+0x120 before 0x000005a0 write 0x00000003
+[    3.915406] ane_t6021 284000000.ane: AFB eng+0x120 before 0x000005a0 after 0x00000003
+[    3.915423] ane_t6021 284000000.ane: AFB eng+0x124 before 0x000005a0 write 0x00000003
+[    3.947377] ane_t6021 284000000.ane: AFB eng+0x124 before 0x000005a0 after 0x00000003
+[    3.947388] ane_t6021 284000000.ane: AFB eng+0x128 before 0x000005a0 write 0x00000003
+[    3.979386] ane_t6021 284000000.ane: AFB eng+0x128 before 0x000005a0 after 0x00000003
+[    3.979400] ane_t6021 284000000.ane: AFB eng+0x12c before 0x000005a0 write 0x00000003
+[    4.010387] ane_t6021 284000000.ane: AFB eng+0x12c before 0x000005a0 after 0x00000003
+[    4.010398] ane_t6021 284000000.ane: AFB eng+0x130 before 0x000005a0 write 0x00000003
+[    4.041401] ane_t6021 284000000.ane: AFB eng+0x130 before 0x000005a0 after 0x00000003
+[    4.041415] ane_t6021 284000000.ane: AFB eng+0x134 before 0x000005a0 write 0x00000003
+[    4.072403] ane_t6021 284000000.ane: AFB eng+0x134 before 0x000005a0 after 0x00000003
+[    4.072416] ane_t6021 284000000.ane: AFB eng+0x400 before 0x00f00008 write 0xc0f10010
+[    4.103402] ane_t6021 284000000.ane: AFB eng+0x400 before 0x00f00008 after 0xc0f10010
+[    4.103417] ane_t6021 284000000.ane: AFB eng+0xa00 before 0x00000000 write 0x01ffffff
+[    4.134391] ane_t6021 284000000.ane: AFB eng+0xa00 before 0x00000000 after 0x01ffffff
+[    4.134401] ane_t6021 284000000.ane: BOOT-PHASE P-1b eng+0x038
+[    4.165391] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.196391] ane_t6021 284000000.ane: BOOT-PHASE P-1c eng+0x03c
+[    4.227394] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.258400] ane_t6021 284000000.ane: BOOT-PHASE P-1e eng+0x600
+[    4.289377] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.320391] ane_t6021 284000000.ane: BOOT-PHASE P-1f eng+0x738
+[    4.351394] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.382401] ane_t6021 284000000.ane: BOOT-PHASE P-1g eng+0x798
+[    4.414380] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.446376] ane_t6021 284000000.ane: BOOT-PHASE P-1h eng+0x7f8
+[    4.478382] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.510403] ane_t6021 284000000.ane: BOOT-PHASE P-1i eng+0x900
+[    4.541389] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.572395] ane_t6021 284000000.ane: BOOT-PHASE P-1j eng+0x410
+[    4.603386] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.634402] ane_t6021 284000000.ane: BOOT-PHASE P-1k eng+0x420
+[    4.665400] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.696400] ane_t6021 284000000.ane: BOOT-PHASE P-1l eng+0x430
+[    4.727400] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.758397] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables end
+[    5.132383] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\x94 not a success claim; transport stays fenced until response validation)
+[    5.143336] ane_t6021 284000000.ane: loaded ane_t6021 0.4.0-afb-d3b8561 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)

@@ -65,8 +65,10 @@ static int __init afb_init(void)
 	if (!ps)
 		return -ENOMEM;
 	if (!afb_power_on(ps)) {
-		pr_crit("refused: ane_sys %#010x or an island is off, no engine read\n",
-			readl(ps + PS_ANE_SYS));
+		pr_crit("refused: ane_sys %#010x islands %#x %#x %#x %#x %#x %#x %#x, no engine read\n",
+			readl(ps + PS_ANE_SYS), readl(ps + 0x4000), readl(ps + 0x4008),
+			readl(ps + 0x4010), readl(ps + 0x4018), readl(ps + 0x4020),
+			readl(ps + 0x4028), readl(ps + 0x4030));
 		ret = -EAGAIN;
 		goto out_ps;
 	}
@@ -80,16 +82,17 @@ static int __init afb_init(void)
 	for (i = 0; i < ARRAY_SIZE(afb_off); i++) {
 		u64 pa = AFB_BASE + afb_off[i];
 
+		pr_crit("read %#llx\n", pa);
+		/* ponytail: netconsole is an nbcon kthread and pr_flush() is not
+		 * exported; 50 ms lets the line leave before the read. The guard
+		 * runs after that wait, right before the read. */
+		msleep(50);
 		if (!afb_power_on(ps)) {
 			pr_crit("stopped before %#llx: power left on-state, %u of %zu read\n",
 				pa, i, ARRAY_SIZE(afb_off));
 			ret = -EAGAIN;
 			break;
 		}
-		pr_crit("read %#llx\n", pa);
-		/* ponytail: netconsole is an nbcon kthread and pr_flush() is not
-		 * exported; 50 ms lets the line leave before the read. */
-		msleep(50);
 		pr_crit("%#llx = %#010x\n", pa, readl(afb + afb_off[i]));
 	}
 	if (!ret)

@@ -1411,3 +1411,24 @@ Records: [receipts/2026-10-01-t6021-native-macos](../receipts/2026-10-01-t6021-n
   0x10aa, `ane/t6021/ane_t6021_rtclient_main.c:1565` at `9f37b47`; 0x1701 is
   never sent), and the firmware build (`asahi,os-fw-version` 13.5 under
   Linux, macOS 27.0 under macOS).
+
+## 28. The macOS ANE0 AXI2AF bridge tunables: applied, no speed change (2026-10-01)
+
+Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-bridge/README.md)
+(table and probe) and [receipts/2026-10-01-t6021-af-bridge-run](../receipts/2026-10-01-t6021-af-bridge-run/README.md).
+
+- Under Linux none of the 26 bridge registers at 0x284000000 + 0x000..0xa00
+  holds the macOS value (`AppleT6020PMGR::applyBridgeTunables`). Two of them
+  carry our P-1 values (0x000 = 0x10, 0x400 = 0x40010001); the other 24 read
+  the same values on two boots before any write, so they are most probably
+  power-on values.
+- The iBoot state cannot be read: on a `fw_start=0` boot the seven ANE
+  islands are off (PS word 0x300) and only `ane_sys`/`ane_cpu` are on.
+- `ane_t6021` parameter `af_bridge_macos=1` (default 0) writes the 26
+  read-modify-writes at the start of P-1, in place of P-1a and P-1d. All 26
+  read back as macOS writes them (0x400 = 0xc0f10010, as in the 13.5 hv
+  trace), the firmware boots, and every output stays bit-exact.
+- The encoder time does not change: 254.274 ms against 254.276 and 254.215
+  ms on default boots before and after (prog_020 and prog_006 within 0.1%).
+  The bridge tunables are not the cause of the gap to macOS. The section 27
+  candidates remain.
