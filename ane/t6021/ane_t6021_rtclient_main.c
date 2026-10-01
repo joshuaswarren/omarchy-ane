@@ -47,10 +47,11 @@
  *  - non-posted MMIO (DT "nonposted-mmio" -> IORESOURCE_MEM_NONPOSTED)
  *    is mandatory throughout the ANE aperture; posted writel froze the
  *    box.
- *  - Firmware alias: fw_alias_reserved=1 maps the iBoot-reserved
- *    SEG0/SEGi phys at the latched RVBAR entry (proven); the
- *    subsequent kernel writes into the entry region translate through
- *    dart-ane0 instead of faulting.
+ *  - Firmware alias: the staged copy (own memory, default) or, with the
+ *    lab option fw_alias_reserved=1, the iBoot-reserved SEG0/SEGi phys
+ *    is aliased at the latched RVBAR entry; the subsequent kernel writes
+ *    into the entry region translate through dart-ane0 instead of
+ *    faulting.
  */
 
 #include <linux/atomic.h>
@@ -109,11 +110,12 @@
 #define ANE_ASC_CPU_STATUS_STOPPED	BIT(1)
 
 /* Boot-time module parameters — defaults are the proven add-path
- * parameter list (boot 3ab812a3 / load-run.sh). fw_load, fw_extra_ram
- * and fw_alias_reserved live in ane_t6021_fwload.c and
- * boot_prevent_nap in ane_t6021_boot.c (single registration each);
- * their compiled defaults are the proven values. Remaining knobs are
- * overridable from sysfs for bisection only. */
+ * parameter list (boot 3ab812a3 / load-run.sh), except fw_alias_reserved,
+ * which defaults to own memory (receipts/2026-10-01-t602x-independent,
+ * "Boot B"). fw_load, fw_extra_ram and fw_alias_reserved live in
+ * ane_t6021_fwload.c and boot_prevent_nap in ane_t6021_boot.c (single
+ * registration each). Remaining knobs are overridable from sysfs for
+ * bisection only. */
 static bool fw_start = true;
 module_param(fw_start, bool, 0444);
 MODULE_PARM_DESC(fw_start,
