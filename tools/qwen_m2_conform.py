@@ -117,7 +117,8 @@ def evaluate(dev, ref, meta, read):
         metrics = compare(dev[name], ref[read[name]])
         m = meta[read[name]]
         records.append({"port": name, "m1_port": read[name], **m, **metrics,
-                        "pass": passes(metrics, m["threshold"])})
+                        "pass": passes(metrics, m["threshold"]),
+                        "sha256": hashlib.sha256(dev[name].tobytes()).hexdigest()})
     return records
 
 
@@ -128,7 +129,8 @@ def summarize(records):
     return {"pass": all(r["pass"] for r in records),
             "worst_ratio": worst["rel_l2"] / worst["threshold"], "worst_port": worst["port"],
             "worst_rel_l2": worst["rel_l2"], "worst_threshold": worst["threshold"],
-            "nonfinite": sum(r["nonfinite"] for r in records)}
+            "nonfinite": sum(r["nonfinite"] for r in records),
+            "outputs_sha256": hashlib.sha256("".join(r["sha256"] for r in records).encode()).hexdigest()}
 
 
 def decide(in_groups, distinct, out_groups, trials):

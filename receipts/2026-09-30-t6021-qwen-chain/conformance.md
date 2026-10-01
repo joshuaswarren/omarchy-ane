@@ -7,8 +7,9 @@ Date: 2026-09-30. Branch: agent/qwen-m2-conform.
 - `tools/qwen_m2_conform.py` runs each staged program with the M1 inputs of one
   decode step from the per-step dump (`tools/staged-qwen/dump_step_ports.py`;
   6 steps x 38 programs) and compares every output port with the M1 output:
-  rel L2, max abs, exact fp16 fraction, NaN/Inf count. A program passes a step
-  when every lane and state output is finite and within its threshold.
+  rel L2, max abs, exact fp16 fraction, NaN/Inf count, and the SHA-256 of each
+  output. A program passes a step when every lane and state output is finite
+  and within its threshold.
 - Before a program's first comparison, the harness resolves the ambiguity
   groups of its port table on the device at step 11. It makes one run per
   permutation of the input groups, and it matches the outputs of each output
@@ -82,4 +83,19 @@ known reference: its M2 output was at 0.00117 vs the M1 with b = 0.0112.
 
 ## Device results
 
-Not yet run.
+Sanity run before the BO-cap reboot. Boot `b68db721`, stock `7.1.13-3-1-ARCH`,
+boot-time module from the call-wait receipt. ane-run was built on the M2 at
+8e5699e (sources equal main eaf16f9) with no warnings, sha `238eb85b…`.
+`qwen_m2_conform.py --progs 20 --steps 11` made 3 device calls of 0.13 s wall
+each (exec 4.89 ms), and no new kernel lines appeared:
+
+| Run | rel L2 vs M1 | max abs | exact | threshold | verdict |
+|---|---|---|---|---|---|
+| binding trial, table order (t0 at slot 4) | 0.0011742 | | | 0.022454 | pass |
+| binding trial, t0/t2 swapped | 0.27548 | | | 0.022454 | fail |
+| conform, step 11 | 0.0011742 | 0.000732 | 17.29% | 0.022454 | PASS |
+
+The binding is `decided`: the table order has 0.052 of the threshold and the
+swap has 12.27 of it. The conform result equals the call-wait receipt (rel L2
+0.00117, 17.3% exact). The swap equals the earlier swapped M1-input run (0.2759).
+The full 38-program run waits for the BO-cap reboot.
