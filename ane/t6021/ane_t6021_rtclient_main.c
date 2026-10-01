@@ -286,7 +286,7 @@ static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
 /* Parked io BOs: their last user is gone, the IOVA stays mapped and the
  * bytes stay counted. BO_INIT of the same page-aligned size takes one,
  * so held memory stays at the peak of concurrent io BOs instead of
- * growing with every process until the 2 GiB cap refuses BO_INIT. */
+ * growing with every process until the BO cap refuses BO_INIT. */
 static LIST_HEAD(ane_t6021_bo_pool);
 static DEFINE_SPINLOCK(ane_t6021_bo_pool_lock);
 
@@ -294,7 +294,7 @@ static DEFINE_SPINLOCK(ane_t6021_bo_pool_lock);
  * a freed IOVA (lab rule), so a fw_ref BO is never freed: a program
  * section stays held, because a cached firmware program keeps reading
  * it; an io BO goes to the pool, unless a quarantined firmware may still
- * write it. Every other BO frees here, so the 2 GiB cap bounds only the
+ * write it. Every other BO frees here, so the BO cap bounds only the
  * memory the firmware may touch. */
 static void ane_t6021_bo_release(struct kref *ref)
 {

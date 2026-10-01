@@ -1275,6 +1275,12 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   after zeroing (omarchy-ane `b17f49b`); program sections stay held. 105,232
   add processes ran exact on one boot with used memory flat within 88 MiB
   ([receipts/2026-09-30-t6021-bo-pool](../receipts/2026-09-30-t6021-bo-pool/README.md)).
+- The total BO cap is now the parameter `bo_total_max_mb` (12288 MiB by
+  default, omarchy-ane `62f04c6`); `bo_total_bytes` shows the counted bytes.
+  The 32-bit DMA mask still limits all BOs to 4 GiB of IOVA, so `BO_INIT`
+  fails with `ENOMEM` before the cap. One boot loaded and ran all 38 Qwen
+  programs once each, with 2.63 GiB counted at the end
+  ([receipts/2026-10-01-t6021-bo-cap](../receipts/2026-10-01-t6021-bo-cap/README.md)).
 - Every M2 boot so far is a USB chainload from the M1 host; the disk boot
   path is unproven.
 - `ane-run --ports` binds the port table on the device and refuses a port
