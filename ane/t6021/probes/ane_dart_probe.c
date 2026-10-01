@@ -24,6 +24,14 @@
  * leaves the address as the last netconsole line. A readback that differs
  * from the written value stops the sequence. Nothing stays mapped after
  * init. Output: "ane_dart_probe: 0x<PA> = 0x<value>".
+ *
+ * Sources (omarchy-ane 12c7fa9 unless named): DART bases and power domains
+ * packaging/dt/t602x-ane.dtsi:55-62,112-138 (dart-ane0 in pmp 0x2c8,
+ * dart-ane1/2 in ane_cpu 0x2e0), the islands :67-106, the ADT regs :40-44,
+ * all checked against the live DT of the test boot. Tunable masks and
+ * values: receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv.
+ * PARAMS and PERF names: m1n1 0b1c9d98b709 proxyclient/m1n1/hw/dart8110.py
+ * :11-35,216-234 (the PERF names are marked as guesses there).
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -152,6 +160,8 @@ static int rmw_pass(void __iomem *ps, void __iomem *const *dart)
 			else
 				v = d == 1 ? orig_brd[i] : orig_bwr[i];
 			v &= m;
+			pr_crit("rmw %#llx\n", pa);
+			msleep(50);
 			if (!power_on(ps))
 				return power_left(pa, "written", n);
 			r = readl(reg);
