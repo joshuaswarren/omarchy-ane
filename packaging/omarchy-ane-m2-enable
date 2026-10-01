@@ -153,7 +153,7 @@ def set_opt_in(root, present):
 
 
 def firmware_path(root):
-    return root / "usr/lib/firmware" / fetch.FIRMWARE
+    return root / "usr/lib/firmware" / fetch.SELENE[1]
 
 
 def firmware_state(root):
@@ -161,7 +161,8 @@ def firmware_state(root):
         data = firmware_path(root).read_bytes()
     except FileNotFoundError:
         return "absent"
-    return "pinned" if len(data) == fetch.PIN_SIZE and hashlib.sha256(data).hexdigest() == fetch.PIN_SHA256 else "mismatch"
+    _, _, size, sha256 = fetch.SELENE
+    return "pinned" if len(data) == size and hashlib.sha256(data).hexdigest() == sha256 else "mismatch"
 
 
 def writable(root):

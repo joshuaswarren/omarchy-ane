@@ -2,7 +2,8 @@ name: dt-overlays
 
 # The ANE device tree overlays against every linux-asahi board device tree they
 # select (tools/asahi-dtbs, tools/test_ane_overlays.py), plus the offline
-# omarchy-ane-dt and omarchy-ane-m2-enable checks.
+# omarchy-ane-dt, omarchy-ane-m2-enable, firmware-fetch and T8112 kit checks
+# (the kit's overlay diff anchors on packaging/dt/t8112-ane.dts).
 on:
   push:
     branches: [main]
@@ -12,6 +13,9 @@ on:
       - tools/test_ane_dt.py
       - tools/test_ane_m2.py
       - tools/test_ane_overlays.py
+      - tools/test_ane_firmware_fetch.py
+      - tools/test_t8112_kit.py
+      - tools/t8112-kit/**
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
@@ -20,6 +24,9 @@ on:
       - tools/test_ane_dt.py
       - tools/test_ane_m2.py
       - tools/test_ane_overlays.py
+      - tools/test_ane_firmware_fetch.py
+      - tools/test_t8112_kit.py
+      - tools/t8112-kit/**
       - .github/workflows/dt-overlays.yml
 
 jobs:
@@ -37,4 +44,6 @@ jobs:
           dtc --version
           python3 tools/test_ane_dt.py
           python3 tools/test_ane_m2.py
+          python3 tools/test_ane_firmware_fetch.py
+          python3 tools/test_t8112_kit.py
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py

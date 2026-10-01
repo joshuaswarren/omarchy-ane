@@ -18,13 +18,19 @@ spec = spec_from_loader('fetch', SourceFileLoader('fetch', str(root / 'packaging
 fetch = module_from_spec(spec)
 spec.loader.exec_module(fetch)
 
-# 1. Pin, size and file name agree with the driver.
+# 1. The T602x pin, size and file name agree with the driver. T8112 has no
+# driver entry yet; its pin is receipts/2026-10-01-t8112-ane.
+member, name, size, sha256 = fetch.FETCH['apple,t6021']
+assert fetch.FETCH['apple,t6020'] == fetch.FETCH['apple,t6022'] == fetch.FETCH['apple,t6021']
 fwload = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
 array = fwload.split('ane_fw_sha256_expected[32] = {', 1)[1].split('}', 1)[0]
-assert bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', array)).hex() == fetch.PIN_SHA256
+assert bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', array)).hex() == sha256
 validate = (root / 'ane/t6021/ane_fw_validate.h').read_text()
-assert int(re.search(r'#define ANE_FW_BLOB_SIZE\s+(0x[0-9a-f]+)', validate).group(1), 16) == fetch.PIN_SIZE
-assert f'#define ANE_FW_NAME "{fetch.FIRMWARE}"' in fwload
+assert int(re.search(r'#define ANE_FW_BLOB_SIZE\s+(0x[0-9a-f]+)', validate).group(1), 16) == size
+assert f'#define ANE_FW_NAME "{name}"' in fwload
+receipt = (root / 'receipts/2026-10-01-t8112-ane/README.md').read_text()
+bia = fetch.FETCH['apple,t8112']
+assert bia[0] in receipt and bia[3] in receipt and f'{bia[2]:#x}' in receipt
 
 # 2. IM4P unwrap: short and long DER lengths; anything else is refused.
 def der(tag, body):
@@ -44,7 +50,7 @@ for bad in (im4p[:-1], der(0x30, der(0x16, b'IMG4') + im4p[2:]), b''):
 
 # 3. Wrong bytes never pass verify.
 try:
-    fetch.verify(bytes(fetch.PIN_SIZE))
+    fetch.verify(bytes(size), size, sha256)
     raise AssertionError('verify accepted unpinned bytes')
 except fetch.Refuse:
     pass
@@ -61,16 +67,17 @@ def system(compat, version):
 fetch.IPSW = {v: 'http://127.0.0.1:9/unreachable' for v in fetch.IPSW}
 assert fetch.main(['--root', str(system([b'apple,j293', b'apple,t8103'], b'13.5'))]) == 0
 for compat, version in (([b'apple,j414c', b'apple,t6021'], b'14.8.3'),
-                        ([b'apple,j413', b'apple,t8112'], b'13.5'),
+                        ([b'apple,j413', b'apple,t8112'], b'14.8.3'),
                         ([b'apple,j414c', b'apple,t6021'], b'13.5')):  # offline
     t = system(compat, version)
     assert fetch.main(['--root', str(t)]) == 1
     assert not (t / 'usr').exists()
 
-# T6020 and T6022 pass the chip gate to the same image; T8112 does not.
+# T6020, T6022 and T8112 pass the chip gate; an unknown chip does not.
 for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
                      ([b'apple,j180d', b'apple,t6022'], True),
-                     ([b'apple,j413', b'apple,t8112'], False)):
+                     ([b'apple,j413', b'apple,t8112'], True),
+                     ([b'apple,j504', b'apple,t8122'], False)):
     err = io.StringIO()
     with contextlib.redirect_stderr(err):
         assert fetch.main(['--root', str(system(compat, b'13.5'))]) == 1

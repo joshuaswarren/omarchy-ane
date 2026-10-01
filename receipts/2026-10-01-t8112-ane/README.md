@@ -85,9 +85,9 @@ maps to an IPSW. The 27.0 image has another layout and would need its own pin.
 
 | Item | Why the IPSW lacks it | How to get it | Needs a T8112? |
 | --- | --- | --- | --- |
-| iBoot patch values: `RCOS` (chip revision) and the ASC tunables block | iBoot takes them from its own tables (T6021: 0x11 and 24 entries, receipts/2026-10-01-t602x-independent) | one preload capture on a T8112: read the patched `__DATA` records | yes |
-| Firmware entry IOVA (RVBAR at handoff, engine +0x1050000) | iBoot latches it at boot; the IOVA is in the ane `segment-ranges`, which no IPSW ADT has. Likely `vm-base` 0x800000000 [INFERENCE: T6021 latched its `vm-base` 0x10000000000] | one RVBAR read on a powered ANE, or the `segment-ranges` from an m1n1 ADT dump on a T8112 booted from the 13.5 stub | yes |
-| The pmgr page the firmware writes | runtime value (T6021 firmware stores 0x28e084008, `ane/t6021/ane_t6021_fwload.c`) | the DAPF names 0x23b70c000..0x23b70c03b, so the page is likely 0x23b70c000 [INFERENCE]; confirm by a DART fault address or a firmware store | yes |
+| iBoot patch values: `RCOS` (chip revision) and the ASC tunables block | iBoot takes them from its own tables (T6021: 0x11 and 24 entries, receipts/2026-10-01-t602x-independent) | one preload capture on a T8112 with `tools/t8112-kit/collect-m1n1.py` (m1n1 proxy) | yes |
+| Firmware entry IOVA (RVBAR at handoff, engine +0x1050000) | iBoot latches it at boot; the IOVA is in the ane `segment-ranges`, which no IPSW ADT has. Likely `vm-base` 0x800000000 [INFERENCE: T6021 latched its `vm-base` 0x10000000000] | the `segment-ranges` TEXT remap, which macOS `ioreg` also shows (`tools/t8112-kit/collect-macos.sh`), or the m1n1 kit | yes |
+| The pmgr page the firmware writes | answered from the image: bia `SetPMUBaseAddress` stores 0x23b70c010 (`ANE_TD`), so the page is 0x23b70c000 (receipts/2026-10-01-t8112-kit) | — | no |
 | Mailbox send-empty interrupt | Apple data names none (T6021 uses unused AIC2 line 1833, a lab choice) | a lab choice of an unused AIC line, or a driver that does not need the mailbox (the 13.5 legacy transport never starts it) | no |
 
 ## Overlay
@@ -136,15 +136,16 @@ needed. To add T8112, `ane_t6021` needs a per-SoC data entry for
 | `RTK_cpu_physical_address`, `RTK_cpu_wrapper_physical_address` | 0x26b000000, 0x26b400000 (engine + 0x1000000 and + 0x1400000, the rule `ane_t6021` uses) | 0x285000000, 0x285400000 |
 | `RTK_soc_revision`, ASC tunables | from a T8112 capture | T6021 capture constants |
 | firmware entry IOVA | from a T8112 read (likely 0x800000000) | 0x10000000000 |
-| pmgr page mapped for the firmware | 0x23b70c000 [INFERENCE, see above] | 0x28e084000 |
+| pmgr page mapped for the firmware | 0x23b70c000 (bia stores PMU base 0x23b70c010, receipts/2026-10-01-t8112-kit) | 0x28e084000 |
 | PWGATE | reg[2] +0x8b8: write 0 / 0x30000000 | reg[2] +0x2dc: RMW of bits 29:28 |
 
 The engine offsets (RVBAR, CPU_CONTROL, SCRATCH, IRQ status and ack) need no
-per-SoC field. `omarchy-ane-firmware-fetch` needs a T8112 row (IPSW member
+per-SoC field. `omarchy-ane-firmware-fetch` has the T8112 row (IPSW member
 `Firmware/ane/h14_ane_fw_bia_j4xx.im4p`, the pin above). Estimate: about 150
-to 250 lines across `ane_t6021_fwload.c`, `ane_fw_validate.h`, the of_match
-table and the fetch tool, plus host-test cases. A T8112 machine must supply
-the items in "Missing data" before the first boot test.
+to 250 lines across `ane_t6021_fwload.c`, `ane_fw_validate.h` and the
+of_match table, plus host-test cases. A T8112 machine must supply the items
+in "Missing data" before the first boot test; `tools/t8112-kit` collects
+them and prints the diffs.
 
 ## Files
 
