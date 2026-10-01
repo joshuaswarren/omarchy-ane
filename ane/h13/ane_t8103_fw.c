@@ -78,6 +78,13 @@ static unsigned long long text_phys = 0x800938000ULL;
 module_param(text_phys, ullong, 0444);
 MODULE_PARM_DESC(text_phys, "PA of the iBoot-preloaded TEXT (RVBAR entry, H166)");
 static unsigned int settle_ms = 3000;
+/* H177: the fw bootstrap zeroes then fills its page tables at DATA offsets 0x1c000..0x24000 (emulated reset head). Pre-filling
+ * that range with 0xa5 turns "did the fw reach its first DATA write" into a visible change. */
+#define PT_OFF 0x1c000UL
+#define PT_LEN 0x8000UL
+static bool fill_pt;
+module_param(fill_pt, bool, 0444);
+MODULE_PARM_DESC(fill_pt, "stage 2+: fill DATA 0x1c000..0x24000 with 0xa5 so a fw write there is visible");
 module_param(settle_ms, uint, 0444);
 
 struct fw_ctx {
@@ -232,6 +239,8 @@ static int fw_stage_data(struct fw_ctx *c, const struct firmware *fw)
 		goto out;
 	}
 	memcpy(va, fw->data + FW_DATA_FOFF, FW_DATA_FSZ);
+	if (fill_pt)
+		memset(va + PT_OFF, 0xa5, PT_LEN);
 	for (i = 0; i < c->npages; i++) {
 		err = iommu_map(c->dom, FW_DATA_IOVA + i * PAGE_SIZE, page_to_phys(c->pages[i]), PAGE_SIZE, prot,
 				GFP_KERNEL);
@@ -244,7 +253,7 @@ static int fw_stage_data(struct fw_ctx *c, const struct firmware *fw)
 		for (i = 0; i < c->npages; i++)
 			if (iommu_iova_to_phys(c->dom, FW_DATA_IOVA + i * PAGE_SIZE) != page_to_phys(c->pages[i]))
 				err = -EFAULT;
-		filled = memcmp(va, fw->data + FW_DATA_FOFF, FW_DATA_FSZ) ? 0 : FW_DATA_FSZ;
+		filled = (fill_pt ? memcmp(va, fw->data + FW_DATA_FOFF, PT_OFF) : memcmp(va, fw->data + FW_DATA_FOFF, FW_DATA_FSZ)) ? 0 : FW_DATA_FSZ;
 	}
 	vunmap(va);
 	dev_info(c->dev, "fw-start: DATA staged: %lu pages mapped at IOVA %#lx.., payload bytes verified %#lx, err %d\n",
@@ -302,7 +311,7 @@ static void fw_readback(struct fw_ctx *c, const struct firmware *fw, const char 
 		unsigned long j, n = 0, run = 0;
 
 		for (j = 0; j < PAGE_SIZE; j++)
-			if (p[j] != (w ? w[j] : 0))
+			if (p[j] != (fill_pt && i * PAGE_SIZE + j >= PT_OFF && i * PAGE_SIZE + j < PT_OFF + PT_LEN ? 0xa5 : (w ? w[j] : 0)))
 				n++;
 		if (!n)
 			continue;
