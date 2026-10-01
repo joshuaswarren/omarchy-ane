@@ -222,19 +222,18 @@ struct ane_t6021_fd {
  * for reuse (see ane_t6021_bo_release). Every other BO frees at its last
  * reference.
  *
- * Cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen by the
- * H14 compiler are bounded by `reduction * columns * 2`, which reaches
- * 20 MiB at (K,N)=(2048,5120). The same cap serves the Qwen4-attention
- * (K,N)=(4096,4096) constant at 32 MiB and any H14 softmax/reduction
- * with an 8 MiB table. The cap is one BO; total-BO-bytes are capped
- * separately by an atomic counter under ane_t6021_bo_lock.
- *   ANE_T6021_BO_MAX       — per-BO size, the IOVA is at most 1 GiB.
- *   ANE_T6021_BO_TOTAL_MAX — total coherent BO bytes across all fds,
- *                            enforced at alloc and released when the
- *                            memory is really freed.
+ * Per-BO cap raised 2026-09-30: the 256 KiB Qwen-class matvec weights seen
+ * by the H14 compiler are bounded by `reduction * columns * 2`, which
+ * reaches 20 MiB at (K,N)=(2048,5120). The same cap serves the
+ * Qwen4-attention (K,N)=(4096,4096) constant at 32 MiB and any H14
+ * softmax/reduction with an 8 MiB table. Total BO bytes across all fds are
+ * capped separately (bo_total_max_mb) by an atomic counter, enforced at
+ * alloc and released when the memory is really freed. Program sections stay
+ * held until reboot, and the 38 Qwen programs alone hold about 2.6 GiB.
+ * Every BO also needs IOVA below 4 GiB (32-bit DMA mask), so allocations
+ * fail with -ENOMEM near that bound whatever the cap.
  * The 16 KiB alignment check is unchanged: every DMA site assumes it. */
 #define ANE_T6021_BO_MAX		SZ_1G
-#define ANE_T6021_BO_TOTAL_MAX		(2UL * SZ_1G)
 #define ANE_T6021_BO_HASH_CHUNK		SZ_1M
 
 struct ane_t6021_bo {
@@ -253,6 +252,31 @@ struct ane_t6021_bo {
 static DEFINE_MUTEX(ane_t6021_bo_lock);
 static u32 ane_t6021_next_handle = 1;
 static atomic64_t ane_t6021_bo_total_bytes = ATOMIC64_INIT(0);
+
+static unsigned int bo_total_max_mb = 12288;
+module_param(bo_total_max_mb, uint, 0444);
+MODULE_PARM_DESC(bo_total_max_mb,
+		 "Cap on the BO bytes held at one time, in MiB (default 12288)");
+
+static int ane_t6021_bo_total_get(char *buf, const struct kernel_param *kp)
+{
+	return sysfs_emit(buf, "%lld\n",
+			  (long long)atomic64_read(&ane_t6021_bo_total_bytes));
+}
+
+static int ane_t6021_bo_total_set(const char *val,
+				  const struct kernel_param *kp)
+{
+	return -EPERM;
+}
+
+static const struct kernel_param_ops ane_t6021_bo_total_ops = {
+	.set = ane_t6021_bo_total_set,
+	.get = ane_t6021_bo_total_get,
+};
+module_param_cb(bo_total_bytes, &ane_t6021_bo_total_ops, NULL, 0444);
+MODULE_PARM_DESC(bo_total_bytes,
+		 "Read only: the BO bytes counted against bo_total_max_mb now");
 
 /* Mark the device quarantined: a timed-out command left the firmware
  * queue state unknown. The only safe next step is to refuse further
@@ -1119,7 +1143,7 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	 * pooled), so this bound caps the memory that outlives its
 	 * users. */
 	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
-	    ANE_T6021_BO_TOTAL_MAX) {
+	    (s64)bo_total_max_mb << 20) {
 		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
 		return -ENOSPC;
 	}
@@ -1983,11 +2007,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			goto err_pm_or_hold;
 		}
 		dev_info(dev,
-			 "loaded ane_t6021 %s (DRM major %d minor %d; ABI 2; legacy_only=%u chman_ok=%u booted=%u; state %s)\n",
+			 "loaded ane_t6021 %s (DRM major %d minor %d; ABI 2; legacy_only=%u chman_ok=%u booted=%u; state %s; BO cap %u MiB)\n",
 			 ANE_T6021_MODULE_VERSION, ANE_ABI_M2_MAJOR, 0,
 			 legacy_only, ane->chman_ok,
 			 ane->fw ? ane->fw->booted : 0,
-			 ane->held ? "HELD" : "ready");
+			 ane->held ? "HELD" : "ready", bo_total_max_mb);
 	}
 
 	return 0;
