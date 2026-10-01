@@ -170,4 +170,22 @@ assert out.startswith('module=blocked firmware=absent overlay=off mailbox=ok'), 
 assert not m2.gate_blocked(root)
 rc, out = run('--root', str(root), '--disable')
 assert rc == 0 and m2.gate_blocked(root)
+
+# A kernel tree with the node disabled (aurora-silicon/linux #65) is not the
+# kernel's node: the overlay applies, and its mailbox replaces the kernel's.
+root = machine(kernel_ane='mailbox@285408000 { interrupt-names = "recv-not-empty"; status = "disabled"; };'
+                          ' ane@284000000 { compatible = "apple,t6021-ane"; status = "disabled"; };')
+rc, out = run('--root', str(root))
+assert rc == 0, out
+assert m2.dt.Tree(copy(root).read_bytes()).ane_nodes() == ['/soc/ane@284000000']
+assert m2.mailbox_irqs(copy(root).read_bytes()) == ['recv-not-empty', 'send-empty']
+# Until m1n1 boots the copy, the running tree has the kernel's disabled node.
+live = root / 'sys/firmware/devicetree/base/soc/ane@284000000'
+live.mkdir(parents=True)
+(live / 'compatible').write_bytes(b'apple,t6021-ane\0')
+(live / 'status').write_bytes(b'disabled\0')
+out = StringIO()
+with redirect_stdout(out):
+    rc = m2.dt.status(root, KVER)
+assert rc == 1 and out.getvalue().startswith(f'node=absent source=overlay dtb={BOARD}'), out.getvalue()
 print('test_ane_m2: ok')

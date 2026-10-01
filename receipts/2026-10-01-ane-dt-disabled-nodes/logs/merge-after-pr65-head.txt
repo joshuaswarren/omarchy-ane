@@ -1,0 +1,23 @@
+dtc new: Version: DTC 1.7.2-g53373d13  fdtoverlay new: Version: DTC 1.7.2-g53373d13
+dtc old: Version: DTC 1.6.1  fdtoverlay old: Version: DTC 1.6.1
+fdtoverlay new: exit 0 
+fdtoverlay old: exit 0 
+--- fdtoverlay new: 23 nodes before, 23 after; new paths: []
+/soc/mailbox@285408000: status ['disabled'] -> ['okay']; phandle 16 -> 16; changed props ['interrupt-names', 'interrupts', 'status']
+/soc/iommu@285800000: status ['disabled'] -> ['okay']; phandle 11 -> 11; changed props ['power-domains', 'status']
+/soc/iommu@285810000: status ['disabled'] -> ['okay']; phandle 12 -> 12; changed props ['status']
+/soc/iommu@285820000: status ['disabled'] -> ['okay']; phandle 13 -> 13; changed props ['status']
+/soc/ane@284000000: status ['disabled'] -> ['okay']; phandle 1 -> 1; changed props ['status']
+/reserved-memory/ane-alias-iova: status [] -> []; phandle 17 -> 17; changed props []
+renumbered existing phandles: []
+validate: accepted
+--- fdtoverlay old: 23 nodes before, 23 after; new paths: []
+/soc/mailbox@285408000: status ['disabled'] -> ['okay']; phandle 16 -> 33; changed props ['interrupt-names', 'interrupt-parent', 'interrupts', 'phandle', 'status']
+/soc/iommu@285800000: status ['disabled'] -> ['okay']; phandle 11 -> 23; changed props ['interrupt-parent', 'phandle', 'power-domains', 'status']
+/soc/iommu@285810000: status ['disabled'] -> ['okay']; phandle 12 -> 24; changed props ['interrupt-parent', 'phandle', 'power-domains', 'status']
+/soc/iommu@285820000: status ['disabled'] -> ['okay']; phandle 13 -> 25; changed props ['interrupt-parent', 'phandle', 'power-domains', 'status']
+/soc/ane@284000000: status ['disabled'] -> ['okay']; phandle 1 -> 35; changed props ['interrupt-parent', 'iommus', 'mboxes', 'memory-region', 'phandle', 'power-domains', 'resets', 'status']
+/reserved-memory/ane-alias-iova: status [] -> []; phandle 17 -> 34; changed props ['iommu-addresses', 'phandle']
+renumbered existing phandles: ['/reserved-memory/ane-alias-iova', '/soc/interrupt-controller@28e100000', '/soc/power-management@28e080000/power-controller@2c8', '/soc/power-management@28e080000/power-controller@2e0', '/soc/power-management@28e080000/power-controller@4000', '/soc/power-management@28e080000/power-controller@4008', '/soc/power-management@28e080000/power-controller@4010', '/soc/power-management@28e080000/power-controller@4018', '/soc/power-management@28e080000/power-controller@4020', '/soc/power-management@28e080000/power-controller@4028', '/soc/power-management@28e080000/power-controller@4030', '/soc/mailbox@285408000', '/soc/iommu@285800000', '/soc/iommu@285810000', '/soc/iommu@285820000', '/soc/ane@284000000']
+validate: refused: the overlay renumbered /reserved-memory/ane-alias-iova; this dtc is too old (1.7.1 or newer keeps phandles)
+build(): applied ['t6021-ane.dtbo'], 5907 bytes

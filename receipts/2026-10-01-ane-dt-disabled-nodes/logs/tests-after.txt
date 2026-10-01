@@ -1,0 +1,4 @@
+test_ane_dt: ok
+tools/test_ane_dt.py exit=0
+test_ane_m2: ok
+tools/test_ane_m2.py exit=0

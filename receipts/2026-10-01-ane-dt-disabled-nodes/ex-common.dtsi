@@ -1,0 +1,4 @@
+		/* IOVA-only: the ANE firmware entry alias, 16 MiB at 0x10000000000 */
+		ane_alias_iova: ane-alias-iova {
+			iommu-addresses = <&ane 0x100 0x0 0x0 0x1000000>;
+		};

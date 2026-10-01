@@ -79,7 +79,7 @@ def module_file(root, kver):
 
 def board_dtb(root, kver):
     """The board device tree KVER boots with the T6021 overlay on: the kernel's
-    own when it already has the ANE node, else the overlays applied to it."""
+    own when it already has an enabled ANE node, else the overlays applied to it."""
     name = dt.board(root)
     stock = root / "usr/lib/modules" / kver / "dtbs" / name
     if not stock.is_file():
@@ -91,10 +91,10 @@ def board_dtb(root, kver):
 
 
 def mailbox_irqs(data):
-    """The interrupt-names of the mailbox the T6021 ANE node names in mboxes;
-    None when the tree has no T6021 ANE node."""
+    """The interrupt-names of the mailbox the enabled T6021 ANE node names in
+    mboxes; None when the tree has no enabled T6021 ANE node."""
     tree = dt.Tree(data)
-    ane = [p for p in tree.nodes if "apple,t6021-ane" in tree.strings(p, "compatible")]
+    ane = [p for p in tree.ane_nodes() if "apple,t6021-ane" in tree.strings(p, "compatible")]
     if not ane:
         return None
     words = dt.cells(tree.nodes[ane[0]].get("mboxes", b""))
@@ -186,7 +186,8 @@ def enable(root, kver):
                      f"then run: sudo dkms autoinstall -k {kver}")
     names = mailbox_irqs(board_dtb(root, kver))
     if names is None:
-        raise Refuse(f"the device tree for kernel {kver} has no apple,t6021-ane node, even with the T6021 overlay")
+        raise Refuse(f"the device tree for kernel {kver} has no enabled apple,t6021-ane node, "
+                     "even with the T6021 overlay")
     if not all(irq in names for irq in MAILBOX_IRQS):
         raise Refuse(f"the ANE mailbox in the device tree for kernel {kver} has interrupt-names {names}; "
                      f"the stock apple-mailbox binds it only with {' and '.join(MAILBOX_IRQS)}")

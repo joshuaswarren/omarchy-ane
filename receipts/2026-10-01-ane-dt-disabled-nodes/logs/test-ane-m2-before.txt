@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/var/tmp/ane-dt-disabled/main-tree/tools/test_ane_m2.py", line 179, in <module>
+    assert rc == 0, out
+           ^^^^^^^
+AssertionError: omarchy-ane-m2-enable: the ANE mailbox in the device tree for kernel 7.1.13-3-2-ARCH has interrupt-names []; the stock apple-mailbox binds it only with recv-not-empty and send-empty
+Nothing was changed.
+
+exit=1

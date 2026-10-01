@@ -107,4 +107,53 @@ with tempfile.TemporaryDirectory() as tmp:
     assert built.ane_nodes() == ['/soc/ane@26bc04000']
     assert built.nodes['/config']['bootdelay'] == b'\xff\xff\xff\xfe'
     assert built.strings('/config', 'bootcmd') == ['setenv stdin serial; bootflow scan -b']
+
+    # The T6021 overlay over a kernel tree with no ANE node, with the five ANE
+    # nodes enabled, and with them disabled (aurora-silicon/linux #65). A
+    # disabled node is not the kernel's node: the overlay applies and enables
+    # the kernel's nodes in place. The fixture nodes have no phandle, so any
+    # dtc keeps the stock phandles.
+    t6021_dtbo = pkg_lib / 't6021/omarchy-ane.dtbo'
+    pcs = ''.join(f'power-controller@{a} {{ #power-domain-cells = <0>; #reset-cells = <0>; }};'
+                  for a in ('2c8', '2e0', '4000', '4008', '4010', '4018', '4020', '4028', '4030'))
+    darts = [f'/soc/iommu@2858{i}0000' for i in range(3)]
+
+    def t6021_tree(status):
+        s = f'status = "{status}";' if status else ''
+        nodes = ('' if status is None else
+                 f'mailbox@285408000 {{ compatible = "apple,t6021-ane-mailbox"; {s} }};'
+                 + ''.join(f'{p[5:]} {{ compatible = "apple,t6020-dart"; {s} }};' for p in darts)
+                 + f'ane@284000000 {{ compatible = "apple,t6021-ane"; {s} }};')
+        path = Path(tmp) / f't6021-{status}.dtb'
+        subprocess.run(['dtc', '-q', '-I', 'dts', '-O', 'dtb', '-o', str(path), '-'], check=True, input=f'''
+/dts-v1/;
+/ {{
+  compatible = "apple,j414c", "apple,t6021";
+  #address-cells = <2>; #size-cells = <2>;
+  reserved-memory {{ #address-cells = <2>; #size-cells = <2>; ranges; }};
+  soc {{
+    #address-cells = <2>; #size-cells = <2>; ranges;
+    interrupt-controller@28e100000 {{ interrupt-controller; #interrupt-cells = <4>; }};
+    power-management@28e080000 {{ {pcs} }};
+    {nodes}
+  }};
+}};'''.encode())
+        return path
+
+    for status in ('okay', 'ok', ''):
+        assert oadt.build(t6021_tree(status), [t6021_dtbo], work) is None, f'status "{status}" is the kernel node'
+    for status in ('disabled', None):
+        built = oadt.build(t6021_tree(status), [t6021_dtbo], work)
+        assert built is not None, f'kernel ANE status {status}: the T6021 overlay must apply'
+        data, applied = built
+        assert applied == [t6021_dtbo], applied
+        result = oadt.Tree(data)
+        assert result.ane_nodes() == ['/soc/ane@284000000'], result.ane_nodes()
+        parts = [p for p in result.nodes if result.strings(p, 'compatible')[:1] in
+                 (['apple,t6021-ane-mailbox'], ['apple,t6020-dart'])]
+        assert sorted(parts) == sorted(['/soc/mailbox@285408000', *darts]), (status, parts)
+        assert all(result.enabled(p) for p in parts), (status, [result.strings(p, 'status') for p in parts])
+        iommus = oadt.cells(result.nodes['/soc/ane@284000000']['iommus'])
+        assert [result.phandles[w] for w in iommus[::2]] == darts, iommus
+    assert oadt.Tree(t6021_tree('disabled').read_bytes()).ane_nodes() == []
 print('test_ane_dt: ok')
