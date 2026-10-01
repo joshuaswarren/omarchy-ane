@@ -1,0 +1,40 @@
+name: dt-overlays
+
+# The ANE device tree overlays against every linux-asahi board device tree they
+# select (tools/asahi-dtbs, tools/test_ane_overlays.py), plus the offline
+# omarchy-ane-dt and omarchy-ane-m2-enable checks.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packaging/**
+      - tools/asahi-dtbs
+      - tools/test_ane_dt.py
+      - tools/test_ane_m2.py
+      - tools/test_ane_overlays.py
+      - .github/workflows/dt-overlays.yml
+  pull_request:
+    paths:
+      - packaging/**
+      - tools/asahi-dtbs
+      - tools/test_ane_dt.py
+      - tools/test_ane_m2.py
+      - tools/test_ane_overlays.py
+      - .github/workflows/dt-overlays.yml
+
+jobs:
+  overlays:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # fdtget and fdtput; dtc and fdtoverlay come from the kernel tree.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison
+      - run: tools/asahi-dtbs "$RUNNER_TEMP/asahi"
+      - name: tests (kernel dtc 1.7.2, libfdt linked in)
+        run: |
+          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
+          dtc --version
+          python3 tools/test_ane_dt.py
+          python3 tools/test_ane_m2.py
+          ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py

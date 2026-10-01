@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T6000 (M1 Pro) board device trees. UNTESTED, OPT-IN: installed, but
+ * it applies only when "ane-t6000" is a line of
+ * /etc/omarchy-platform/dtb-overlays.opt-in. No M1 Pro has run ane.ko.
+ *
+ * The nodes are the T6001 ones (t600x-ane.dtsi): the macOS 13.5 ADTs of j314s
+ * and j316s have the same ane0, dart-ane0 and pmgr ANE values as j316c, and
+ * ane.ko drives both with apple,t6000-ane and SET base 0x28e08c000.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t6000-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6000";
+};
+
+/include/ "t600x-ane.dtsi"

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # omarchy-ane-check: report whether the Apple Neural Engine driver is ready.
 #
-#   omarchy-ane-check              check the running kernel: ANE device-tree
-#                                  node, the driver built, loaded, bound, and
-#                                  the /dev/accel node. On an M2 Max (T6021)
-#                                  the driver is ane_t6021, behind the opt-in
-#                                  gate of omarchy-ane-m2-enable.
+#   omarchy-ane-check              check the running kernel: the SoC, the ANE
+#                                  device-tree node, the driver built, loaded,
+#                                  bound, and the /dev/accel node. On an M2
+#                                  Max (T6021) the driver is ane_t6021, behind
+#                                  the opt-in gate of omarchy-ane-m2-enable.
 #   omarchy-ane-check --installed  check that ane.ko and ane_t6021.ko exist
 #                                  for every installed kernel with headers
 #                                  (pacman hook)
@@ -55,9 +55,26 @@ kver=$(uname -r)
 dt=/sys/firmware/devicetree/base
 echo "omarchy-ane-check: kernel $kver"
 
-# 0. M2 Max: ane_t6021 stays blocked until the owner opts in.
+# 0. SoC. The ANE has run on T8103, T6001 and T6021 only. Every other SoC
+#    gets an "UNTESTED SoC" line (README.md, "Chip coverage").
+soc=""
+if [[ -r $dt/compatible ]]; then
+  while IFS= read -r -d '' c; do
+    [[ $c =~ ^apple,(t[0-9]+)$ ]] && { soc=${BASH_REMATCH[1]}; break; }
+  done <"$dt/compatible"
+fi
+case $soc in
+  t8103|t6001|t6021|"") ;;
+  t6000|t6002)
+    echo "UNTESTED SoC: $soc. ane.ko has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in." ;;
+  *)
+    echo "UNTESTED SoC: $soc"
+    bad "no omarchy-ane driver supports the $soc ANE"; finish ;;
+esac
+
+# 1. M2 Max: ane_t6021 stays blocked until the owner opts in.
 mod=ane
-if [[ -r $dt/compatible ]] && tr '\0' '\n' <"$dt/compatible" | grep -qx 'apple,t6021'; then
+if [[ $soc == t6021 ]]; then
   mod=ane_t6021
   m2tool=$(tool omarchy-ane-m2-enable)
   state=""
@@ -77,7 +94,7 @@ if [[ -r $dt/compatible ]] && tr '\0' '\n' <"$dt/compatible" | grep -qx 'apple,t
   esac
 fi
 
-# 1. ANE node. Without it nothing else can pass, so stop here.
+# 2. ANE node. Without it nothing else can pass, so stop here.
 compat=""
 for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
   c=$(tr '\0' '\n' <"$f" | grep -m1 -E '^apple,t[0-9a-z]+-ane$') || continue
@@ -106,10 +123,10 @@ case $origin in
   *) ok "ANE device-tree node: $compat (from a device tree outside the kernel package and omarchy-ane)" ;;
 esac
 
-# 2. Module built for the running kernel.
+# 3. Module built for the running kernel.
 built "$kver" "$mod"
 
-# 3. Module loaded.
+# 4. Module loaded.
 if [[ -d /sys/module/$mod ]]; then
   ver=$(cat "/sys/module/$mod/version" 2>/dev/null)
   ok "$mod is loaded${ver:+ (version $ver)}"
@@ -124,7 +141,7 @@ else
   bad "ane is not loaded. Load it with: sudo modprobe ane"
 fi
 
-# 4. Driver bound to the ANE platform device.
+# 5. Driver bound to the ANE platform device.
 dev=""
 for l in /sys/bus/platform/drivers/"$mod"/*; do
   [[ -L $l && ${l##*/} != module ]] && { dev=${l##*/}; break; }
@@ -135,7 +152,7 @@ else
   bad "$mod is bound to no device. Read the reason with: journalctl -k -g $mod"
 fi
 
-# 5. Device node. Every user must be able to open it. The package adds no
+# 6. Device node. Every user must be able to open it. The package adds no
 #    udev rule: systemd's 50-udev-default.rules makes accel nodes mode 0666.
 node=""
 for s in /sys/class/accel/accel*; do

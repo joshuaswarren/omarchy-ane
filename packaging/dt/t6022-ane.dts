@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T6022 (M2 Ultra) board device trees: the die-0 ANE only. NOT
+ * INSTALLED (packaging/dt/overlays: disabled): no driver binds
+ * apple,t6022-ane. Die 0 has the T6021 values (t602x-ane.dtsi, same in the
+ * macOS 13.5 ADTs of j180d and j475d), and the 13.5 BuildManifest gives ANE0
+ * the same firmware (t602x_ane0_fw_selene_rc4x). ane_t6021 also maps the
+ * firmware where iBoot preloaded it on the T6021 (0x10000848000 and
+ * 0x10001400000, ane/t6021/ane_t6021_fwload.c); that placement is a boot-time
+ * ADT value (ane0 segment-ranges) that no T6022 capture has given. Install
+ * this overlay as opt-in "ane-t6022" when ane_t6021 has T6022 data.
+ *
+ * The die-1 ANE (ADT ane1: 0x2284000000, interrupt 884 on die 1, DARTs at
+ * 0x2285800000, firmware t602x_ane1_fw_selene_rc4x) is left out: ane_t6021
+ * drives one ANE, with die-0 addresses compiled in (the IPI doorbell
+ * 0x285844000 and the pmgr words 0x28e084000 in
+ * ane/t6021/ane_t6021_rtclient_main.c).
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t6022-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6022";
+};
+
+/include/ "t602x-ane.dtsi"
+
+/ {
+	fragment@10 {
+		__overlay__ {
+			ane@284000000 {
+				compatible = "apple,t6022-ane";
+			};
+		};
+	};
+};

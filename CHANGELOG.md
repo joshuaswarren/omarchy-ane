@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- ANE overlays for every SoC with cited values. T6000 (M1 Pro) and the T6002
+  (M1 Ultra) die 0 get the T6001 nodes, behind the opt-in keys `ane-t6000` and
+  `ane-t6002`; `ane.ko` binds them with the `apple,t6000-ane` data. T6020 (M2
+  Pro) and the T6022 (M2 Ultra) die 0 get the T6021 nodes, but the package
+  does not install them: no driver binds them. The macOS 13.5 ADTs give the
+  same values on these SoCs. T8112 and M3 and later get no overlay.
+- `omarchy-ane-check` prints `UNTESTED SoC: SOC` on every SoC other than T8103,
+  T6001 and T6021, and fails on a SoC that no driver supports.
+- `tools/test_ane_overlays.py` applies every overlay to every linux-asahi
+  7.1.13 board device tree it selects. `tools/asahi-dtbs` builds those device
+  trees, byte for byte as the Arch package has them, and a dtc 1.7.2 with
+  libfdt linked in. The `dt-overlays` workflow runs them.
+
+### Changed
+
+- The overlays install to `/usr/share/omarchy-platform/dtb-overlays`, the
+  directory of omacom/omarchy-mac#677. It was
+  `/usr/lib/omarchy-platform/dtb-overlays`. `OVERLAY_DIR` in `omarchy-ane-dt`
+  is the one place that names it. While `.dtbo` files are still in the old
+  directory (a hand install), `omarchy-ane-dt apply` refuses and keeps the
+  current copies; the README gives the three move commands. `update-m1n1-dtbs`
+  and the hooks stay: Arch Linux ARM installs have no omarchy-mac-boot.
+- The T600x and T602x overlays share their nodes through `t600x-ane.dtsi` and
+  `t602x-ane.dtsi`. The T6001 and T6021 `.dtbo` files do not change.
+- `omarchy-ane-dt` names the libfdt trap when fdtoverlay renumbers a phandle.
+- The README chip table gives each SoC its ANE firmware, support state,
+  overlay gate, and the data that is missing.
+
 ## 0.4.0 (2026-10-01)
 
 The T6021 (M2 Max) driver stays opt-in. This release adds whole-model runs on

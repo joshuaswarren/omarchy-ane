@@ -1,0 +1,13 @@
+# build-dtbo with kernel dtc 1.7.2: origin/main (before) vs this branch (after)
+## before
+63d6872aacd5658c2455c168ae00f1ced223112dde7685f85da4eb89b62aa732  ./usr/lib/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+60ff275fc1766c48f54740b3080075b798523f8647a3e55339644e46e6859bac  ./usr/lib/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+da22067888090c6d269d5ed098c9b6fa122a1860df4d30ae67bc4771cc5e8e32  ./usr/lib/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+8037475416a4d0092b05856a10afd7dabfc5ad154a533c1e6e22652c92746a58  ./usr/lib/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+## after
+9491d8a1e2824db9a2e2d0320b47fb96458e29f1a7f3aef351c05ce2f07b068c  ./usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+63d6872aacd5658c2455c168ae00f1ced223112dde7685f85da4eb89b62aa732  ./usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+2bd4ceca54da1468ada20e43f5720bf61cc95aa4849b0538b08800301eeefd28  ./usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+60ff275fc1766c48f54740b3080075b798523f8647a3e55339644e46e6859bac  ./usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+da22067888090c6d269d5ed098c9b6fa122a1860df4d30ae67bc4771cc5e8e32  ./usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+8037475416a4d0092b05856a10afd7dabfc5ad154a533c1e6e22652c92746a58  ./usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo

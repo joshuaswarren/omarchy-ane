@@ -1,0 +1,25 @@
+# PATH=OUT/bin:$PATH (kernel dtc 1.7.2-g53373d13, libfdt linked in)
+$ python3 tools/test_ane_dt.py
+test_ane_dt: ok
+exit 0
+$ python3 tools/test_ane_m2.py
+test_ane_m2: ok
+exit 0
+$ ANE_DTBS=OUT/dtbs python3 tools/test_ane_overlays.py
+test_ane_overlays: t8103-ane.dts (enabled): 5 boards: t8103-j274 t8103-j293 t8103-j313 t8103-j456 t8103-j457
+test_ane_overlays: t6000-ane.dts (opt-in): 2 boards: t6000-j314s t6000-j316s
+test_ane_overlays: t6001-ane.dts (enabled): 3 boards: t6001-j314c t6001-j316c t6001-j375c
+test_ane_overlays: t6002-ane.dts (opt-in): 1 boards: t6002-j375d
+test_ane_overlays: t6020-ane.dts (disabled): 3 boards: t6020-j414s t6020-j416s t6020-j474s
+test_ane_overlays: t6021-ane.dts (opt-in): 3 boards: t6021-j414c t6021-j416c t6021-j475c
+test_ane_overlays: t6021-uboot-serial-stdin.dts (opt-in): 3 boards: t6021-j414c t6021-j416c t6021-j475c
+test_ane_overlays: t6022-ane.dts (disabled): 2 boards: t6022-j180d t6022-j475d
+test_ane_overlays: ok (8 overlays, 22 applications)
+exit 0
+# negative control 1: system dtc/fdtoverlay 1.6.1
+oadt.Refuse: the overlay renumbered /soc/interrupt-controller@23b100000; this fdtoverlay, or the libfdt.so it loads, is older than 1.7.1 (1.7.1 or newer keeps phandles)
+exit 1
+# negative control 2: fdtoverlay 1.7.2 linked against the system libfdt.so.1 (1.6.1): the ldd trap
+# 	libfdt.so.1 => /lib/x86_64-linux-gnu/libfdt.so.1
+oadt.Refuse: the overlay renumbered /soc/interrupt-controller@23b100000; this fdtoverlay, or the libfdt.so it loads, is older than 1.7.1 (1.7.1 or newer keeps phandles)
+exit 1

@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * The die-0 ANE of T602x (T6020 M2 Pro, T6021 M2 Max, T6022 M2 Ultra), for
+ * the overlays t6020-ane.dts, t6021-ane.dts and t6022-ane.dts. The node
+ * compatible is apple,t6021-ane; t6020-ane.dts and t6022-ane.dts replace it.
+ *
+ * Sources:
+ *  - ane@284000000: the node of the lab 7.1.13 j414c DTB the ane_t6021
+ *    module ran on (M2 lane answer, 2026-09-30): the whole 32 MiB engine
+ *    range, the pmgr words and the SET window, IRQ 884, three DARTs with
+ *    sid 0, eight power domains, reset ane_cpu. linux-asahi 7.1.13 and
+ *    linux-aurora 7.1.12 do not carry this node.
+ *  - The three DART nodes: the DART half of the retired v1 lab overlay
+ *    (ane/t6021-j414c-ane.dts, removed after 9c925cd). The v1 ane node, with
+ *    engine 0x285c04000, is not used: its first engine touch external-aborts.
+ *    dart0 is in the pmp domain (power-controller@2c8, always-on), as in the
+ *    lab DTB: v1 named it by the raw phandle 0x18, which is pmp in
+ *    linux-asahi 7.1.13 j414c. ane_sys@260 may be the domain the hardware
+ *    wants; it was never booted.
+ *  - mailbox@285408000 and mboxes: the v3 lab overlay
+ *    (ane/t6021-j414c-ane-rtkit.dts, removed after 9c925cd).
+ *    Stock apple-mailbox needs a send-empty IRQ. 1833 is an unused AIC2
+ *    line that never fires: stock TX waits on it only while the A2I FIFO
+ *    is full, and ane_t6021 on the 13.5 firmware sends no mailbox message
+ *    after probe. recv-not-empty 884 storms (~0.7 M/s) while the mailbox
+ *    is started; ane_t6021 leaves it stopped (hello_wait_ms=0). See
+ *    receipts/2026-09-30-t6021-stock-mailbox.
+ *  - reserved-memory/ane-alias-iova and memory-region: the IOVA reservation
+ *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000,
+ *    16 MiB, in the ane DART domain).
+ * AIC2 and the ANE power islands already exist in stock T602x trees. Their
+ * phandles differ between kernels and boards, so they are reached by path.
+ * The DARTs, the mailbox and ane set status "okay": aurora-silicon/linux #65
+ * ships these nodes, same names, disabled. On such a kernel omarchy-ane-dt
+ * applies the overlay, fdtoverlay merges each node into the kernel's, and a
+ * node without a status here would stay disabled
+ * (receipts/2026-10-01-ane-dt-disabled-nodes).
+ *
+ * T6020 and T6022 have the same die-0 values as T6021: in the macOS 13.5
+ * ADTs (j414s, j416s, j474s, j180d, j475d against j414c) /arm-io/ane0 has reg
+ * 0x284000000+0x2000000, 0x28e080000+0x4034 and 0x28e08c000+0x4000 and
+ * interrupt 884, /arm-io/dart-ane0 has reg 0x285800000, 0x285810000,
+ * 0x285820000 and interrupt 885, pmgr has the same nine ANE states
+ * (0x260, 0x2e0, 0x4000..0x4030), and no node names AIC line 1833.
+ */
+
+/ {
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@28e100000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@28e080000/power-controller@2c8";
+		ps_pmp: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@28e080000/power-controller@2e0";
+		ps_ane_cpu: __overlay__ {
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-management@28e080000/power-controller@4000";
+		ps_ane_sys_mpm: __overlay__ {
+		};
+	};
+
+	fragment@4 {
+		target-path = "/soc/power-management@28e080000/power-controller@4008";
+		ps_ane_td: __overlay__ {
+		};
+	};
+
+	fragment@5 {
+		target-path = "/soc/power-management@28e080000/power-controller@4010";
+		ps_ane_base: __overlay__ {
+		};
+	};
+
+	fragment@6 {
+		target-path = "/soc/power-management@28e080000/power-controller@4018";
+		ps_ane_set1: __overlay__ {
+		};
+	};
+
+	fragment@7 {
+		target-path = "/soc/power-management@28e080000/power-controller@4020";
+		ps_ane_set2: __overlay__ {
+		};
+	};
+
+	fragment@8 {
+		target-path = "/soc/power-management@28e080000/power-controller@4028";
+		ps_ane_set3: __overlay__ {
+		};
+	};
+
+	fragment@9 {
+		target-path = "/soc/power-management@28e080000/power-controller@4030";
+		ps_ane_set4: __overlay__ {
+		};
+	};
+
+	fragment@10 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@285800000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 885 4>;
+				power-domains = <&ps_pmp>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@285810000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 885 4>;
+				power-domains = <&ps_ane_cpu>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@285820000 {
+				compatible = "apple,t6020-dart", "apple,t8110-dart";
+				reg = <0x2 0x85820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 885 4>;
+				power-domains = <&ps_ane_cpu>;
+				status = "okay";
+			};
+
+			ane_mbox: mailbox@285408000 {
+				compatible = "apple,t6021-ane-mailbox", "apple,asc-mailbox-v4";
+				reg = <0x2 0x85408000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "recv-not-empty", "send-empty";
+				interrupts = <0 0 884 4>, <0 0 1833 4>;
+				#mbox-cells = <0>;
+				status = "okay";
+			};
+
+			ane: ane@284000000 {
+				compatible = "apple,t6021-ane";
+				reg-names = "engine", "pmgr", "set";
+				reg = <0x2 0x84000000 0x0 0x2000000>,
+				      <0x2 0x8e080000 0x0 0x4034>,
+				      <0x2 0x8e08c000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "ane";
+				interrupts = <0 0 884 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_sys_mpm>, <&ps_ane_td>, <&ps_ane_base>,
+						<&ps_ane_set1>, <&ps_ane_set2>, <&ps_ane_set3>,
+						<&ps_ane_set4>, <&ps_ane_cpu>;
+				resets = <&ps_ane_cpu>;
+				mboxes = <&ane_mbox>;
+				memory-region = <&ane_alias_iova>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@11 {
+		target-path = "/reserved-memory";
+
+		__overlay__ {
+			ane_alias_iova: ane-alias-iova {
+				iommu-addresses = <&ane 0x100 0x0 0x0 0x1000000>;
+			};
+		};
+	};
+};

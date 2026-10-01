@@ -1,0 +1,317 @@
+== arm-io,t6000
+j314c:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0xc02c interrupts=770 gates=ANE-SYS-V ane-type=96 die-id=0
+  dart-ane0: compatible=dart,t6000 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=771 gates=ANE-SYS-DART
+  ane1: compatible=ane,t8020 reg=0x508000000+0x2000000 0x28e680100+0x3f2c interrupts=797 gates=ANE1-SYS-V ane-type=96 die-id=0
+  dart-ane1: compatible=dart,t6000 reg=0x509800000+0x4000 0x509810000+0x4000 0x509820000+0x4000 0x509804000+0x4000 interrupts=798 gates=ANE1-SYS-DART
+  pmgr ANE_SYS 0x28e080268 parents=AFR
+  pmgr ANE_SYS_CPU 0x28e0802c8 parents=ANE_SYS
+  pmgr ANE1_SYS 0x28e680268 parents=AFNC5_LW0
+  pmgr ANE1_SYS_CPU 0x28e680270 parents=ANE1_SYS
+  AIC lines named by any node: highest 1613; 1833 named: False
+j314s:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0xc02c interrupts=770 gates=ANE-SYS-V ane-type=96 die-id=0
+  dart-ane0: compatible=dart,t6000 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=771 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080268 parents=AFR
+  pmgr ANE_SYS_CPU 0x28e0802c8 parents=ANE_SYS
+  AIC lines named by any node: highest 1613; 1833 named: False
+j316c: same as j314c
+j316s:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0xc02c interrupts=770 gates=ANE-SYS-V ane-type=96 die-id=0
+  dart-ane0: compatible=dart,t6000 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=771 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080268 parents=AFR
+  pmgr ANE_SYS_CPU 0x28e0802c8 parents=ANE_SYS
+  AIC lines named by any node: highest 1613; 1833 named: False
+j375c: same as j314c
+j375d:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0xc02c interrupts=770 gates=ANE-SYS-V ane-type=96 die-id=0
+  dart-ane0: compatible=dart,t6000 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=771 gates=ANE-SYS-DART
+  ane1: compatible=ane,t8020 reg=0x508000000+0x2000000 0x28e680100+0x3f2c interrupts=797 gates=ANE1-SYS-V ane-type=96 die-id=0
+  dart-ane1: compatible=dart,t6000 reg=0x509800000+0x4000 0x509810000+0x4000 0x509820000+0x4000 0x509804000+0x4000 interrupts=798 gates=ANE1-SYS-DART
+  ane2: compatible=ane,t8020 reg=0x2284000000+0x2000000 0x228e080000+0xc02c interrupts=4866 gates=die1:ANE-SYS-V ane-type=96 die-id=1
+  dart-ane2: compatible=dart,t6000 reg=0x2285800000+0x4000 0x2285810000+0x4000 0x2285820000+0x4000 0x2285804000+0x4000 interrupts=4867 gates=die1:ANE-SYS-DART
+  ane3: compatible=ane,t8020 reg=0x2508000000+0x2000000 0x228e680100+0x3f2c interrupts=4893 gates=die1:ANE1-SYS-V ane-type=96 die-id=1
+  dart-ane3: compatible=dart,t6000 reg=0x2509800000+0x4000 0x2509810000+0x4000 0x2509820000+0x4000 0x2509804000+0x4000 interrupts=4894 gates=die1:ANE1-SYS-DART
+  pmgr ANE_SYS 0x28e080268 parents=AFR
+  pmgr ANE_SYS_CPU 0x28e0802c8 parents=ANE_SYS
+  pmgr ANE1_SYS 0x28e680268 parents=AFNC5_LW0
+  pmgr ANE1_SYS_CPU 0x28e680270 parents=ANE1_SYS
+  AIC lines named by any node: highest 1613; 1833 named: False
+== arm-io,t6020
+j180d:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  ane1: compatible=ane,t8020 reg=0x2284000000+0x2000000 0x228e080000+0x4034 0x228e08c000+0x4000 interrupts=4980 gates=die1:ANE-SYS-V ane-type=160 die-id=1
+  dart-ane1: compatible=dart,t8110 reg=0x2285800000+0x4000 0x2285810000+0x4000 0x2285820000+0x4000 0x2285804000+0x4000 interrupts=4981 gates=die1:ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j414c:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j414s:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j416c:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j416s:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j474s:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j475c:
+  ane0: compatible=ane,t8020 reg=0x284000000+0x2000000 0x28e080000+0x4034 0x28e08c000+0x4000 interrupts=884 gates=ANE-SYS-V ane-type=160 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x285800000+0x4000 0x285810000+0x4000 0x285820000+0x4000 0x285804000+0x4000 interrupts=885 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x28e080260 parents=AFNC0_LW0
+  pmgr ANE_CPU 0x28e0802e0 parents=ANE_SYS
+  pmgr ANE_SYS_MPM 0x28e084000 parents=ANE_SYS
+  pmgr ANE_TD 0x28e084008 parents=ANE_SYS
+  pmgr ANE_BASE 0x28e084010 parents=ANE_TD
+  pmgr ANE_SET1 0x28e084018 parents=ANE_BASE
+  pmgr ANE_SET2 0x28e084020 parents=ANE_SET1
+  pmgr ANE_SET3 0x28e084028 parents=ANE_SET2
+  pmgr ANE_SET4 0x28e084030 parents=ANE_SET3
+  AIC lines named by any node: highest 1832; 1833 named: False
+j475d: same as j180d
+== arm-io,t6030
+j514s:
+  ane: compatible=iop,ascwrap-v6 reg=0x309400000+0x6c000 0x309050000+0x4000 0x308000000+0x2000000 0x350700000+0x18000 0x350724000+0x4000 0x3503c0000+0x24000 0x211000000+0xf74000 0x3642c8000+0x4000 interrupts=559 558 561 560 576 gates=ANE_CPU ANE-SYS-V ane-type=192
+  dart-ane: compatible=dart,t8110 reg=0x309800000+0x4000 0x309810000+0x4000 0x309820000+0x4000 0x309804000+0x4000 interrupts=577 gates=
+  pmgr ANE_SYS 0x350700498 parents=LW20
+  pmgr ANE_MPM 0x35070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x35070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x35070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x35070c018 parents=ANE_TD
+  AIC lines named by any node: highest 1247; 1833 named: False
+j516s: same as j514s
+== arm-io,t6031
+j514c:
+  ane0: compatible=iop,ascwrap-v6 reg=0x3c9400000+0x6c000 0x3c9050000+0x4000 0x3c8000000+0x2000000 0x292280000+0x10000 0x292290000+0x4000 0x2903c0000+0x30000 0x404000000+0x2000000 0x2a02dc000+0x4000 interrupts=965 964 967 966 983 gates=ANE_CPU ANE-SYS-V ane-type=224 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x3c9800000+0x4000 0x3c9810000+0x4000 0x3c9820000+0x4000 0x3c9804000+0x4000 interrupts=984 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x292280520 parents=AFNC5_LW0 AFNC6_LW0
+  pmgr ANE_MPM 0x2922805a0 parents=ANE_SYS
+  pmgr ANE_CPU 0x2922805a8 parents=ANE_SYS
+  pmgr ANE_TD 0x2922805b8 parents=ANE_SYS
+  pmgr ANE_BASE 0x2922805c0 parents=ANE_TD
+  AIC lines named by any node: highest 2366; 1833 named: False
+j514m: same as j514c
+j516c: same as j514c
+j516m: same as j514c
+j575d:
+  ane0: compatible=iop,ascwrap-v6 reg=0x3c9400000+0x6c000 0x3c9050000+0x4000 0x3c8000000+0x2000000 0x292280000+0x10000 0x292290000+0x4000 0x2903c0000+0x30000 0x404000000+0x2000000 0x2a02dc000+0x4000 interrupts=965 964 967 966 983 gates=ANE_CPU ANE-SYS-V ane-type=224 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x3c9800000+0x4000 0x3c9810000+0x4000 0x3c9820000+0x4000 0x3c9804000+0x4000 interrupts=984 gates=ANE-SYS-DART
+  ane1: compatible=iop,ascwrap-v6 reg=0x23c9400000+0x6c000 0x23c9050000+0x4000 0x23c8000000+0x2000000 0x2292280000+0x10000 0x2292290000+0x4000 0x2903c0000+0x30000 0x2404000000+0x2000000 0x22a02dc000+0x4000 interrupts=5061 5060 5063 5062 5079 gates=die1:ANE_CPU die1:ANE-SYS-V ane-type=224 die-id=1
+  dart-ane1: compatible=dart,t8110 reg=0x23c9800000+0x4000 0x23c9810000+0x4000 0x23c9820000+0x4000 0x23c9804000+0x4000 interrupts=5080 gates=die1:ANE-SYS-DART
+  pmgr ANE_SYS 0x292280520 parents=AFNC5_LW0 AFNC6_LW0
+  pmgr ANE_MPM 0x2922805a0 parents=ANE_SYS
+  pmgr ANE_CPU 0x2922805a8 parents=ANE_SYS
+  pmgr ANE_TD 0x2922805b8 parents=ANE_SYS
+  pmgr ANE_BASE 0x2922805c0 parents=ANE_TD
+  AIC lines named by any node: highest 2366; 1833 named: False
+== arm-io,t6041
+j575c:
+  ane0: compatible=ane,t8020 reg=0x484000000+0x2000000 0x502280000+0x18000 0x5022a0000+0x4000 0x5003c0000+0x30000 0x212000000+0xff4000 0x522000000+0x2000000 0x508374000+0x4000 interrupts=1054 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=272
+  dart-ane0: compatible=dart,t8110 reg=0x485800000+0xc000 0x485820000+0xc000 0x485840000+0xc000 0x485810000+0x4000 interrupts=1055 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x5022803c0 parents=FAB5_SOC FAB4_SOC
+  pmgr ANE_MPM 0x50228c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x50228c008 parents=ANE_SYS
+  pmgr ANE_TD 0x50228c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x50228c018 parents=ANE_TD
+  AIC lines named by any node: highest 2583; 1833 named: True
+j614c: same as j575c
+j614s: same as j575c
+j616c: same as j575c
+j616s: same as j575c
+j773s: same as j575c
+== arm-io,t6050
+j714c:
+  ane0: compatible=ane,t8132exclave reg=0x508000000+0x2000000 0x280900000+0x18000 0x280920000+0x4000 0x284240000+0x40000 0x212000000+0xff4000 0x584000000+0x2000000 0x288374000+0x4000 interrupts=954 967 gates=ANE_SYS_V ANE_SYS_V_PMP ane-type=544 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x509800000+0xc000 0x509820000+0xc000 0x509840000+0xc000 0x509810000+0x4000 interrupts=955 gates=ANE_SYS_DART
+  pmgr ANE_MPM 0x2809003c0 parents=0xdb
+  pmgr ANE_CPU 0x2809003c8 parents=0xdb
+  pmgr ANE_TDBASE 0x2809003d0 parents=0xdb
+  AIC lines named by any node: highest 3503; 1833 named: False
+j714s: same as j714c
+j716c: same as j714c
+j716s: same as j714c
+j775c: same as j714c
+j775d:
+  ane1: compatible=ane,t8020 reg=0x4308000000+0x2000000 0x4080900000+0x18000 0x4080920000+0x4000 0x4084240000+0x40000 0x4012000000+0xff4000 0x4384000000+0x2000000 0x4088374000+0x4000 interrupts=4058 gates=die1:ANE_SYS_V die1:ANE_SYS_V_PMP ane-type=544 die-id=1
+  dart-ane1: compatible=dart,t8110 reg=0x4309800000+0xc000 0x4309820000+0xc000 0x4309840000+0xc000 0x4309810000+0x4000 interrupts=4059 gates=die1:ANE_SYS_DART
+  ane0: compatible=ane,t8132exclave reg=0x508000000+0x2000000 0x280900000+0x18000 0x280920000+0x4000 0x284240000+0x40000 0x212000000+0xff4000 0x584000000+0x2000000 0x288374000+0x4000 interrupts=954 967 gates=ANE_SYS_V ANE_SYS_V_PMP ane-type=544 die-id=0
+  dart-ane0: compatible=dart,t8110 reg=0x509800000+0xc000 0x509820000+0xc000 0x509840000+0xc000 0x509810000+0x4000 interrupts=955 gates=ANE_SYS_DART
+  pmgr ANE_MPM 0x2809003c0 parents=0xdb
+  pmgr ANE_CPU 0x2809003c8 parents=0xdb
+  pmgr ANE_TDBASE 0x2809003d0 parents=0xdb
+  AIC lines named by any node: highest 4059; 1833 named: False
+j873s: same as j714c
+== arm-io,t8103
+j274:
+  ane: compatible=ane,t8020 reg=0x26a000000+0x2000000 0x23b700000+0x8c000 interrupts=416 gates=ANE-SYS-V ane-type=64
+  dart-ane: compatible=dart,t8020 reg=0x26b800000+0x4000 0x26b810000+0x4000 0x26b820000+0x4000 0x26b804000+0x4000 interrupts=417 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x23b700470 parents=
+  pmgr ANE_SYS_CPU 0x23b70c000 parents=ANE_SYS
+  AIC lines named by any node: highest 895; 1833 named: False
+j293: same as j274
+j313: same as j274
+j456: same as j274
+j457: same as j274
+== arm-io,t8110
+j413:
+  ane: compatible=ane,t8020 reg=0x26a000000+0x2000000 0x23b700000+0x18000 0x23b724000+0x4000 interrupts=520 gates=ANE-SYS-V ane-type=128
+  dart-ane: compatible=dart,t8110 reg=0x26b800000+0x4000 0x26b810000+0x4000 0x26b820000+0x4000 0x26b804000+0x4000 interrupts=521 gates=ANE-SYS-DART
+  pmgr ANE_SYS 0x23b7004a8 parents=MMX
+  AIC lines named by any node: highest 1151; 1833 named: False
+j415: same as j413
+j473: same as j413
+j493: same as j413
+== arm-io,t8122
+j433:
+  ane: compatible=iop,ascwrap-v6 reg=0x311400000+0x6c000 0x311050000+0x4000 0x310000000+0x2000000 0x2d0700000+0x18000 0x2d0724000+0x4000 interrupts=507 506 509 508 524 gates=ANE_CPU ANE-SYS-V ane-type=176
+  dart-ane: compatible=dart,t8110 reg=0x311800000+0x4000 0x311810000+0x4000 0x311820000+0x4000 0x311804000+0x4000 interrupts=525 gates=
+  pmgr ANE_SYS 0x2d0700438 parents=LMX4
+  pmgr ANE_MPM 0x2d070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x2d070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x2d070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x2d070c018 parents=ANE_TD ANE_CPU
+  AIC lines named by any node: highest 1074; 1833 named: False
+j434: same as j433
+j504: same as j433
+j613: same as j433
+j615: same as j433
+== arm-io,t8132
+j604:
+  ane: compatible=ane,t8020 reg=0x500000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x30000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=629 642 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=256
+  dart-ane: compatible=dart,t8110 reg=0x501800000+0xc000 0x501820000+0xc000 0x501840000+0xc000 0x501810000+0x4000 interrupts=630 gates=
+  pmgr ANE_SYS 0x380700570 parents=AFISOCNI5
+  pmgr ANE_MPM 0x38070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x38070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x38070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x38070c018 parents=ANE_TD
+  AIC lines named by any node: highest 1505; 1833 named: False
+j623:
+  ane: compatible=ane,t8020 reg=0x500000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x30000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=629 642 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=256
+  dart-ane: compatible=dart,t8110 reg=0x501800000+0xc000 0x501820000+0xc000 0x501840000+0xc000 0x501810000+0x4000 interrupts=630 gates=
+  pmgr ANE_SYS 0x380700570 parents=AFISOCNI5
+  pmgr ANE_MPM 0x38070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x38070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x38070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x38070c018 parents=ANE_TD
+  AIC lines named by any node: highest 1381; 1833 named: False
+j624: same as j604
+j713:
+  ane: compatible=ane,t8020 reg=0x500000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x30000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=629 642 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=256
+  dart-ane: compatible=dart,t8110 reg=0x501800000+0xc000 0x501820000+0xc000 0x501840000+0xc000 0x501810000+0x4000 interrupts=630 gates=
+  pmgr ANE_SYS 0x380700570 parents=AFISOCNI5
+  pmgr ANE_MPM 0x38070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x38070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x38070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x38070c018 parents=ANE_TD
+  AIC lines named by any node: highest 1381; 1833 named: False
+j715:
+  ane: compatible=ane,t8020 reg=0x500000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x30000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=629 642 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=256
+  dart-ane: compatible=dart,t8110 reg=0x501800000+0xc000 0x501820000+0xc000 0x501840000+0xc000 0x501810000+0x4000 interrupts=630 gates=
+  pmgr ANE_SYS 0x380700570 parents=AFISOCNI5
+  pmgr ANE_MPM 0x38070c000 parents=ANE_SYS
+  pmgr ANE_CPU 0x38070c008 parents=ANE_SYS
+  pmgr ANE_TD 0x38070c010 parents=ANE_SYS
+  pmgr ANE_BASE 0x38070c018 parents=ANE_TD
+  AIC lines named by any node: highest 1381; 1833 named: False
+j773g: same as j604
+== arm-io,t8140
+j700:
+  ane: compatible=ane,t8132exclave reg=0x400000000+0x2000000 0x300700000+0x18000 0x300724000+0x4000 0x3003c0000+0x30000 0x211000000+0xff4000 0x3082c8000+0x4000 interrupts=655 668 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=512
+  dart-ane: compatible=dart,t8110 reg=0x401800000+0xc000 0x401820000+0x20000 0x401840000+0x20000 0x401810000+0x4000 interrupts=656 gates=
+  pmgr ANE_SYS 0x300700290 parents=AFISOCNI2
+  AIC lines named by any node: highest 1260; 1833 named: False
+== arm-io,t8142
+j704:
+  ane: compatible=ane,t8132exclave reg=0x420000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x40000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=751 764 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=528
+  dart-ane: compatible=dart,t8110 reg=0x421800000+0xc000 0x421820000+0xc000 0x421840000+0xc000 0x421810000+0x4000 interrupts=752 gates=
+  pmgr ANE_SYS 0x3807002e8 parents=AFISOCNI3
+  pmgr ANE_CPU 0x38070c000 parents=ANE_SYS
+  pmgr ANE_TDBASE 0x38070c008 parents=ANE_SYS
+  pmgr ANE_MPM 0x38070c010 parents=ANE_SYS
+  AIC lines named by any node: highest 1740; 1833 named: False
+j813:
+  ane: compatible=ane,t8132exclave reg=0x420000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x40000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=751 764 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=528
+  dart-ane: compatible=dart,t8110 reg=0x421800000+0xc000 0x421820000+0xc000 0x421840000+0xc000 0x421810000+0x4000 interrupts=752 gates=
+  pmgr ANE_SYS 0x3807002e8 parents=AFISOCNI3
+  pmgr ANE_CPU 0x38070c000 parents=ANE_SYS
+  pmgr ANE_TDBASE 0x38070c008 parents=ANE_SYS
+  pmgr ANE_MPM 0x38070c010 parents=ANE_SYS
+  AIC lines named by any node: highest 1614; 1833 named: False
+j815:
+  ane: compatible=ane,t8132exclave reg=0x420000000+0x2000000 0x380700000+0x18000 0x380724000+0x4000 0x3803c0000+0x40000 0x211000000+0xff4000 0x3882c8000+0x4000 interrupts=751 764 gates=ANE-SYS-V ANE-SYS-V-PMP ane-type=528
+  dart-ane: compatible=dart,t8110 reg=0x421800000+0xc000 0x421820000+0xc000 0x421840000+0xc000 0x421810000+0x4000 interrupts=752 gates=
+  pmgr ANE_SYS 0x3807002e8 parents=AFISOCNI3
+  pmgr ANE_CPU 0x38070c000 parents=ANE_SYS
+  pmgr ANE_TDBASE 0x38070c008 parents=ANE_SYS
+  pmgr ANE_MPM 0x38070c010 parents=ANE_SYS
+  AIC lines named by any node: highest 1614; 1833 named: False
+== arm-io,t8152
+j873g:
+  ane: compatible=iop-ane,ascwrap-v8 reg=0x419600000+0x74000 0x419050000+0x4000 0x316000000+0x1c000 0x418000000+0x2000000 0x300700000+0x1c000 0x300724000+0x4000 0x3003c0000+0x40000 0x211000000+0xff4000 0x3082c8000+0x4000 0x301200000+0x8000 interrupts=311 271 788 801 765 gates=DCS2 DCS3 ane-type=784 die-id=0
+  dart-ane: compatible=dart,gen3 reg=0x419800000+0xc000 0x419820000+0xc000 0x419840000+0xc000 0x419860000+0xc000 0x419810000+0x4000 interrupts=789 gates=
+  ane1: compatible=iop-ane,ascwrap-v8 reg=0x481600000+0x74000 0x481050000+0x4000 0x316000000+0x1c000 0x480000000+0x2000000 0x300700000+0x1c000 0x300724000+0x4000 0x3003c0000+0x40000 0x211000000+0xff4000 0x3082c8000+0x4000 0x301200000+0x8000 interrupts=312 272 836 813 813 gates=AFIMCCNI1 AFINS0 ane-type=784 die-id=0
+  dart-ane1: compatible=dart,gen3 reg=0x481800000+0xc000 0x481820000+0xc000 0x481840000+0xc000 0x481860000+0xc000 0x481810000+0x4000 interrupts=837 gates=
+  AIC lines named by any node: highest 1873; 1833 named: False

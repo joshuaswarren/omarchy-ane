@@ -1,0 +1,12 @@
+== 1. old main: hand install to /usr/lib, apply
+omarchy-ane-dt: 7.1.13-3-2-ARCH: t6021-j414c.dtb + t6021/omarchy-ane.dtbo t6021/omarchy-uboot-serial-stdin.dtbo -> /var/tmp/ane-allsoc/migrate.Rq4f/var/lib/omarchy-ane/dtbs/7.1.13-3-2-ARCH/t6021-j414c.dtb
+m1n1 still has the old device tree. Run: sudo update-m1n1, then reboot.
+copy c31a54c3fc917059
+== 2. new tool, overlays still in /usr/lib: apply
+omarchy-ane-dt: overlays are in the old directory /usr/lib/omarchy-platform/dtb-overlays (4 files). Install them in /usr/share/omarchy-platform/dtb-overlays (the omarchy-ane package, or packaging/build-dtbo /), remove /usr/lib/omarchy-platform/dtb-overlays, then run apply again. The current copies stay until then
+exit 1
+copy c31a54c3fc917059 (unchanged: yes)
+== 3. move: build-dtbo to /usr/share, remove /usr/lib dir, apply
+omarchy-ane-dt: 7.1.13-3-2-ARCH: t6021-j414c.dtb copy is current
+copy c31a54c3fc917059 (same as step 1: yes)
+node=absent source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-2-ARCH

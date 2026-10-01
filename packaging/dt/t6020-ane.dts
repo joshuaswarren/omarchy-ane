@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T6020 (M2 Pro) board device trees. NOT INSTALLED (packaging/dt/
+ * overlays: disabled): no driver binds apple,t6020-ane. The node values are
+ * the T6021 ones (t602x-ane.dtsi, same in the macOS 13.5 ADTs of j414s, j416s
+ * and j474s), and the 13.5 BuildManifest gives these boards the same ANE
+ * firmware (t602x_ane0_fw_selene_rc4x). ane_t6021 also maps the firmware where
+ * iBoot preloaded it on the T6021 (0x10000848000 and 0x10001400000,
+ * ane/t6021/ane_t6021_fwload.c); that placement is a boot-time ADT value
+ * (ane0 segment-ranges) that no T6020 capture has given. Install this overlay
+ * as opt-in "ane-t6020" when ane_t6021 has T6020 data.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t6020-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6020";
+};
+
+/include/ "t602x-ane.dtsi"
+
+/ {
+	fragment@10 {
+		__overlay__ {
+			ane@284000000 {
+				compatible = "apple,t6020-ane";
+			};
+		};
+	};
+};

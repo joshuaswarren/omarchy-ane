@@ -1,12 +1,19 @@
 # Device tree overlays the package installs. SOURCE PREFIX-NAME.dts installs as
-# /usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-NAME.dtbo
-# (packaging/build-dtbo). PREFIX selects the board device trees by file name.
-# STATE: enabled applies by default; opt-in applies only after the owner
-# opts in (the overlay's "omarchy,opt-in" string, listed in
+# OVERLAY_DIR/PREFIX/omarchy-NAME.dtbo (packaging/build-dtbo; OVERLAY_DIR is
+# the constant in packaging/omarchy-ane-dt). PREFIX selects the board device
+# trees by file name. STATE: enabled applies by default; opt-in applies only
+# after the owner opts in (the overlay's "omarchy,opt-in" string, listed in
 # /etc/omarchy-platform/dtb-overlays.opt-in); disabled is not installed.
+# Tested SoCs are enabled (T8103, T6001) or opt-in for a driver that cannot
+# unload (T6021). Untested SoCs are opt-in. SoCs that no driver binds are
+# disabled. The SoC table is in README.md, "Chip coverage".
 #
 # PREFIX  SOURCE                          STATE
 t8103     t8103-ane.dts                   enabled
+t6000     t6000-ane.dts                   opt-in
 t6001     t6001-ane.dts                   enabled
+t6002     t6002-ane.dts                   opt-in
+t6020     t6020-ane.dts                   disabled
 t6021     t6021-ane.dts                   opt-in
 t6021     t6021-uboot-serial-stdin.dts    opt-in
+t6022     t6022-ane.dts                   disabled

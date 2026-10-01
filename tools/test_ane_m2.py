@@ -20,7 +20,9 @@ spec.loader.exec_module(m2)
 KVER = '7.1.13-3-2-ARCH'
 BOARD = 't6021-j414c.dtb'
 GATE_SRC = repo / 'packaging/modprobe/ane_t6021.conf'
-OVERLAY_SRC = (repo / 'packaging/dt/t6021-ane.dts').read_text()
+# The T6021 overlay with its /include/ inlined, as dtc reads it.
+OVERLAY_SRC = (repo / 'packaging/dt/t6021-ane.dts').read_text().replace(
+    '/include/ "t602x-ane.dtsi"', (repo / 'packaging/dt/t602x-ane.dtsi').read_text())
 
 # 1. The package's gate blocks ane_t6021 with exactly the line the helper toggles.
 gate = GATE_SRC.read_text().splitlines()

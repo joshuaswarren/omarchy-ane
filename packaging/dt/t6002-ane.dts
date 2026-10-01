@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T6002 (M1 Ultra) board device trees: the die-0 ANE only. UNTESTED,
+ * OPT-IN: installed, but it applies only when "ane-t6002" is a line of
+ * /etc/omarchy-platform/dtb-overlays.opt-in. No M1 Ultra has run ane.ko.
+ *
+ * Die 0 is the T6001 die (t600x-ane.dtsi): the macOS 13.5 ADT of j375d has
+ * the same ane0, dart-ane0 and pmgr ANE values as j316c.
+ *
+ * The die-1 ANE (ADT ane2: 0x2284000000, interrupt 770 on die 1, DARTs at
+ * 0x2285800000) is left out. ane.ko takes the SET block from its per-
+ * compatible descriptor, not from the node: apple,t6000-ane has the die-0
+ * base 0x28e08c000 (ane/src/ane_drv.c ane_soc_t6000). A die-1 node would
+ * guard its engine reads with the die-0 power state.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t6000-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6002";
+};
+
+/include/ "t600x-ane.dtsi"
