@@ -1405,6 +1405,9 @@ Records: [receipts/2026-10-01-t6021-native-macos](../receipts/2026-10-01-t6021-n
   task fewer) runs within 0.3% of the cross build, with byte-identical
   outputs.
 - So the compiled program is not the cause of the 2.8x gap to macOS. The
-  cause is on the Linux side: the ANE operating point (clock/DVFS; no PMP or
-  CLPC under Linux), the DPE/PPT limit (property 0x1701 is never sent), or
-  the firmware build (selene 13.5 under Linux, 27.0 under macOS 27).
+  cause is on the Linux side. Untested candidates: the ANE operating point
+  (the live tree of boot `65d832d5` has `pmp@28e700000` disabled, so no PMP
+  runs), the DPE/PPT limit (the driver's only CH_PROPERTY_WRITE is property
+  0x10aa, `ane/t6021/ane_t6021_rtclient_main.c:1565` at `9f37b47`; 0x1701 is
+  never sent), and the firmware build (`asahi,os-fw-version` 13.5 under
+  Linux, macOS 27.0 under macOS).

@@ -99,10 +99,18 @@ the native encoder only if R <= 0.90. R is 0.9954. The cross timeline is in
   in a cache that System Integrity Protection makes unreadable. The compile
   is deterministic (two compiles of this MIL give the same sha256), so the
   direct compile here is the best available copy.
-- Linux-side candidates that this run did not test: the ANE clock and DVFS
-  state (Linux starts no PMP and has no CLPC tokens), the DPE/PPT power
-  limit (CH_PROPERTY_WRITE 0x1701 is never sent), and the firmware build
-  (selene 13.5 under Linux, 27.0 under macOS 27).
+- Linux-side candidates that this run did not test:
+  - The ANE clock and DVFS state. On this boot (`65d832d5`) the live tree has
+    `pmp@28e700000` (`apple,t6020-pmp-v2`) with `status = "disabled"`, so
+    Linux starts no PMP coprocessor.
+  - The DPE/PPT power limit. The driver sends CSNE_CMD_CH_PROPERTY_WRITE
+    (command 0x001f) at one site only, with property 0x10aa
+    (`ane/t6021/ane_t6021_rtclient_main.c:1565` at `9f37b47`, the release
+    source of the tested module, and at `8709d67`). It never sends property
+    0x1701, which the selene 13.5 firmware routes to its PPT write.
+  - The firmware build. This boot's `/chosen/asahi,os-fw-version` is 13.5,
+    so Linux runs the macOS 13.5 ANE firmware. macOS 27.0 (26A428) runs its
+    own.
 
 ## Limits
 
