@@ -898,7 +898,8 @@ out:
 static int h4a_map_window(struct ane_h13_perf *a, struct iommu_domain *dom,
 			  u64 iova, phys_addr_t phys, size_t len, unsigned int slot)
 {
-	const size_t page = SZ_4K;
+	/* apple-dart domains may be 16K-page-only (t6000 hw); 4K maps -EINVAL. */
+	const size_t page = (dom->pgsize_bitmap & SZ_4K) ? SZ_4K : SZ_16K;
 	size_t off;
 	bool any = false, all = true;
 	int ret;
