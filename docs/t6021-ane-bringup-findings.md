@@ -1330,3 +1330,22 @@ Record: [receipts/2026-09-30-t6021-qwen-chain/conformance.md](../receipts/2026-0
   the M2 send/read index against that header before cb5a8f1, so
   `ane-run --ports` read only output 0 and wrote heap garbage for the rest.
   Device writes, the kernel io binding and the BO pool were correct.
+
+## 24. The whole Parakeet encoder as one H14 program (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-parakeet-encoder](../receipts/2026-10-01-t6021-parakeet-encoder/README.md).
+
+- Apple's h14 cross-compile accepts the encoder's ANE-segment MIL (the
+  compile input of the H13 whole-encoder HWX) whole: one program, 3,597
+  tasks, 448 MB of palettized constants, a 61 MB scratch at BAR slot 3.
+- On the M2 it runs as one call. The output is bit-exact with the golden
+  macOS capture (fp16 sha256 `fca96f13…`), and the greedy TDT decode gives
+  the golden 104 tokens.
+- Exec time is 254.4 ms per call. The M1 under Linux runs the h13 build in
+  about 139.4 ms; CoreML on the M2 under macOS 27 runs its own build in
+  90.6 ms. The numerics are correct, so the gap is the ANE operating point
+  (inference; see section 19).
+- libane's port-table build no longer caps the task count at 128; that bound
+  belongs to the derived build only. An HWX LC 0x40 record holds the tensor
+  name from +0x18 and grows in 8-byte steps with it (0x20, 0x28, 0x30 here),
+  so a name longer than 8 bytes needs the whole record.
