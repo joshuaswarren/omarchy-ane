@@ -54,6 +54,7 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
@@ -63,11 +64,13 @@
 #include <linux/iommu.h>
 #include <linux/jiffies.h>
 #include <linux/kref.h>
+#include <linux/ktime.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
+#include <linux/overflow.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
@@ -79,6 +82,7 @@
 #include <linux/uaccess.h>
 #include <linux/unaligned.h>
 #include <linux/util_macros.h>
+#include <linux/vmalloc.h>
 #include <linux/workqueue.h>
 
 #include <drm/drm_accel.h>
@@ -560,6 +564,128 @@ module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
 
+/* trace_td: a read-only timeline of each CALL for performance work. Off
+ * by default; switch it at runtime with
+ * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
+ * CALL path is unchanged. On, the completion wait polls every 20-40 us
+ * and also reads the last-committed-TD word (TM +0x20458: the call's nid
+ * in bits 23:16, the index of the last task taken in bits 15:0). It reads
+ * that word only while the seven ANE pmgr PS words read 0x3ff, the guard
+ * of the TM-polling wait before e794c4a: a TM read with the compute
+ * domains off hangs the SoC. No register is written.
+ *
+ * Each record has a ktime_get_ns() stamp: CALL before the exchange, ACK
+ * when the firmware acked it, TD for each new TD word value (word = the
+ * value), EVENT for each IO_T2H event of the CALL (word = its state),
+ * GATE when a PS word reads other than 0x3ff (word = its offset), DONE
+ * when the wait ends (word = the TD samples taken). The buffer is
+ * allocated at the first switch-on and kept until unload; each switch-on
+ * empties it, and records past its end are counted in `dropped`. Read
+ * it, while no CALL runs, from debugfs ane_t6021/trace_td (0400). All
+ * trace state is protected by ane_t6021_fw_lock. */
+#define ANE_TRACE_MAGIC		0x31445441	/* "ATD1" */
+#define ANE_TRACE_RECS		(1U << 18)
+#define ANE_TM_TD_WORD		0x285c20458ull
+#define ANE_PMGR_PS_BASE	0x28e084000ull
+#define ANE_PMGR_PS_LAST_OFF	0x30
+
+enum {
+	ANE_TR_CALL = 1,
+	ANE_TR_ACK,
+	ANE_TR_TD,
+	ANE_TR_EVENT,
+	ANE_TR_GATE,
+	ANE_TR_DONE,
+};
+
+struct ane_t6021_trace_rec {
+	u64 t_ns;
+	u32 word;
+	u16 kind;
+	u16 call;
+};
+
+struct ane_t6021_trace {
+	u32 magic;
+	u32 rec_size;
+	u32 capacity;
+	u32 n;
+	u32 dropped;
+	u32 calls;
+	u64 reserved;
+	struct ane_t6021_trace_rec r[];
+};
+
+static bool trace_td;
+static bool ane_t6021_tracing;	/* the running CALL is traced */
+static struct ane_t6021_trace *ane_t6021_trace;
+static struct debugfs_blob_wrapper ane_t6021_trace_blob;
+static struct dentry *ane_t6021_trace_dir;
+
+static void ane_t6021_trace_add(u16 kind, u32 word)
+{
+	struct ane_t6021_trace *t = ane_t6021_trace;
+
+	if (t->n == t->capacity) {
+		t->dropped++;
+		return;
+	}
+	t->r[t->n++] = (struct ane_t6021_trace_rec){
+		.t_ns = ktime_get_ns(), .word = word, .kind = kind,
+		.call = t->calls,
+	};
+}
+
+static int ane_t6021_trace_set(const char *val, const struct kernel_param *kp)
+{
+	size_t size = struct_size_t(struct ane_t6021_trace, r, ANE_TRACE_RECS);
+	bool on;
+	int ret;
+
+	ret = kstrtobool(val, &on);
+	if (ret)
+		return ret;
+	mutex_lock(&ane_t6021_fw_lock);
+	if (on && !ane_t6021_trace) {
+		ane_t6021_trace = vzalloc(size);
+		if (!ane_t6021_trace) {
+			ret = -ENOMEM;
+			goto out;
+		}
+		ane_t6021_trace->magic = ANE_TRACE_MAGIC;
+		ane_t6021_trace->rec_size = sizeof(struct ane_t6021_trace_rec);
+		ane_t6021_trace->capacity = ANE_TRACE_RECS;
+		ane_t6021_trace_blob.data = ane_t6021_trace;
+		ane_t6021_trace_blob.size = size;
+		ane_t6021_trace_dir = debugfs_create_dir("ane_t6021", NULL);
+		debugfs_create_blob("trace_td", 0400, ane_t6021_trace_dir,
+				    &ane_t6021_trace_blob);
+	}
+	if (on && !trace_td) {
+		ane_t6021_trace->n = 0;
+		ane_t6021_trace->dropped = 0;
+		ane_t6021_trace->calls = 0;
+	}
+	trace_td = on;
+out:
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops ane_t6021_trace_ops = {
+	.set = ane_t6021_trace_set,
+	.get = param_get_bool,
+};
+module_param_cb(trace_td, &ane_t6021_trace_ops, &trace_td, 0644);
+MODULE_PARM_DESC(trace_td,
+		 "Record a read-only per-CALL TD-word timeline in debugfs ane_t6021/trace_td (default 0)");
+
+static void ane_t6021_trace_free(void)
+{
+	debugfs_remove_recursive(ane_t6021_trace_dir);
+	vfree(ane_t6021_trace);
+}
+
 /* The CALL cookie (CALL +0x20); the firmware returns it in the call's
  * IO_T2H events. */
 #define ANE_CALL_COOKIE		0xADD0
@@ -625,10 +751,15 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 
 			if (ev &&
 			    get_unaligned_le64(ev + ANE_T2H_CALL_COOKIE_OFF) ==
-			    ANE_CALL_COOKIE &&
-			    get_unaligned_le32(ev + ANE_T2H_CALL_STATE_OFF) ==
-			    ANE_T2H_CALL_FINISHED)
-				finished = true;
+			    ANE_CALL_COOKIE) {
+				u32 state = get_unaligned_le32(ev +
+							       ANE_T2H_CALL_STATE_OFF);
+
+				if (ane_t6021_tracing)
+					ane_t6021_trace_add(ANE_TR_EVENT, state);
+				if (state == ANE_T2H_CALL_FINISHED)
+					finished = true;
+			}
 		}
 		n++;
 		WRITE_ONCE(slot[0], hdr | 1);
@@ -645,6 +776,52 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 	return finished;
 }
 
+/* The completion wait with trace_td on: the same finish-event test with a
+ * 20-40 us poll, and one TD-word sample per poll under the PS-word guard
+ * (see trace_td). */
+static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
+					 unsigned long deadline)
+{
+	void __iomem *td = ioremap_np(ANE_TM_TD_WORD, 4);
+	void __iomem *ps = ioremap_np(ANE_PMGR_PS_BASE,
+				      ANE_PMGR_PS_LAST_OFF + 4);
+	unsigned int i, gate = ANE_PMGR_PS_LAST_OFF + 8;
+	u32 last = U32_MAX, samples = 0;
+	int ret = -ETIMEDOUT;
+
+	do {
+		if (ane_rtclient_drain_t2h(ane, 6)) {
+			ret = 0;
+			break;
+		}
+		if (td && ps) {
+			for (i = 0; i <= ANE_PMGR_PS_LAST_OFF; i += 8)
+				if ((readl(ps + i) & 0x3ff) != 0x3ff)
+					break;
+			if (i > ANE_PMGR_PS_LAST_OFF) {
+				u32 w = readl(td);
+
+				samples++;
+				if (w != last)
+					ane_t6021_trace_add(ANE_TR_TD, w);
+				last = w;
+			} else if (i != gate) {
+				ane_t6021_trace_add(ANE_TR_GATE, i);
+			}
+			gate = i;
+		}
+		usleep_range(20, 40);
+	} while (time_before(jiffies, deadline));
+	if (ret && ane_rtclient_drain_t2h(ane, 6))
+		ret = 0;
+	ane_t6021_trace_add(ANE_TR_DONE, samples);
+	if (td)
+		iounmap(td);
+	if (ps)
+		iounmap(ps);
+	return ret;
+}
+
 /* Completion wait for one PROCEDURE_CALL: the finish event on IO_T2H
  * (channel 6). The ack, the eight TQ status words and the last-committed
  * TD word (TM +0x20458: the call's nid in bits 23:16 and the index of the
@@ -658,6 +835,9 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 				  unsigned int timeout_ms)
 {
 	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+
+	if (ane_t6021_tracing)
+		return ane_rtclient_call_wait_traced(ane, deadline);
 
 	do {
 		if (ane_rtclient_drain_t2h(ane, 6))
@@ -675,16 +855,25 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 {
 	int ret;
 
+	ane_t6021_tracing = opcode == CSNE_CMD_PROCEDURE_CALL && trace_td;
+	if (ane_t6021_tracing) {
+		ane_t6021_trace->calls++;
+		ane_t6021_trace_add(ANE_TR_CALL, 0);
+	}
 	ret = ane_rtclient_legacy_exchange(ane, command, length, opcode,
 					   channel, timeout_ms);
 	if (ret) {
+		ane_t6021_tracing = false;
 		dev_info(ane->dev, "EXCH op=%#x failed %d (fw allocs %u, %zu bytes)\n",
 			 opcode, ret, ane->legacy_allocated, ane->legacy_bytes);
 		atomic_set(&ane_t6021_quarantined, 1);
 		return ret;
 	}
 	if (opcode == CSNE_CMD_PROCEDURE_CALL) {
+		if (ane_t6021_tracing)
+			ane_t6021_trace_add(ANE_TR_ACK, 0);
 		ret = ane_rtclient_call_wait(ane, timeout_ms);
+		ane_t6021_tracing = false;
 		if (!ret && call_settle_us)
 			usleep_range(call_settle_us, call_settle_us + 100);
 		if (ret) {
@@ -2057,7 +2246,23 @@ static struct platform_driver ane_rtclient_driver = {
 	.probe = ane_rtclient_probe,
 	.remove = ane_rtclient_remove,
 };
-module_platform_driver(ane_rtclient_driver);
+
+static int __init ane_rtclient_init(void)
+{
+	int ret = platform_driver_register(&ane_rtclient_driver);
+
+	if (ret)
+		ane_t6021_trace_free();
+	return ret;
+}
+module_init(ane_rtclient_init);
+
+static void __exit ane_rtclient_exit(void)
+{
+	platform_driver_unregister(&ane_rtclient_driver);
+	ane_t6021_trace_free();
+}
+module_exit(ane_rtclient_exit);
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_DESCRIPTION("Apple Neural Engine (T6021/M2) installed module");
