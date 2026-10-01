@@ -3,17 +3,22 @@
 #
 #   omarchy-ane-check              check the running kernel: the SoC, the ANE
 #                                  device-tree node, the driver built, loaded,
-#                                  bound, and the /dev/accel node. On an M2
-#                                  Max (T6021) the driver is ane_t6021, behind
-#                                  the opt-in gate of omarchy-ane-m2-enable.
+#                                  bound, and the /dev/accel node. On T602x the
+#                                  driver is ane_t6021, and it also checks the
+#                                  firmware that omarchy-ane-firmware-fetch
+#                                  installs.
 #   omarchy-ane-check --installed  check that ane.ko and ane_t6021.ko exist
 #                                  for every installed kernel with headers
 #                                  (pacman hook)
 #
+# --root DIR (first argument) reads the system below DIR (tests).
 # Read-only. It never loads, unloads, or binds the module.
 # Exit 0 when every check passes, 1 when a check fails, 2 on bad usage.
 set -u
 shopt -s nullglob
+
+root=""
+[[ ${1:-} == --root ]] && { root=${2:?--root needs a directory}; shift 2; }
 
 fail=0
 ok()  { printf '  ok    %s\n' "$*"; }
@@ -26,9 +31,9 @@ finish() {
 # built KERNEL MODULE
 built() {
   local file
-  file=$(modinfo -k "$1" -F filename "$2" 2>/dev/null)
+  file=$(modinfo -b "${root:-/}" -k "$1" -F filename "$2" 2>/dev/null)
   if [[ -n $file ]]; then
-    ok "$2.ko built for $1: $file (version $(modinfo -k "$1" -F version "$2" 2>/dev/null))"
+    ok "$2.ko built for $1: $file (version $(modinfo -b "${root:-/}" -k "$1" -F version "$2" 2>/dev/null))"
   else
     bad "$2.ko is not built for kernel $1. Install the headers for $1, then run: sudo dkms autoinstall -k $1"
   fi
@@ -43,16 +48,16 @@ tool() {
 
 case "${1:-}" in
   --installed)
-    kernels=(/usr/lib/modules/*/build)
+    kernels=("$root"/usr/lib/modules/*/build)
     (( ${#kernels[@]} )) || { bad "no kernel headers are installed, so DKMS cannot build ane.ko"; finish; }
     for b in "${kernels[@]}"; do k=${b%/build}; built "${k##*/}" ane; built "${k##*/}" ane_t6021; done
     finish ;;
   "") ;;
-  *) echo "usage: omarchy-ane-check [--installed]" >&2; exit 2 ;;
+  *) echo "usage: omarchy-ane-check [--root DIR] [--installed]" >&2; exit 2 ;;
 esac
 
 kver=$(uname -r)
-dt=/sys/firmware/devicetree/base
+dt=$root/sys/firmware/devicetree/base
 echo "omarchy-ane-check: kernel $kver"
 
 # 0. SoC. The ANE has run on T8103, T6001 and T6021 only. Every other SoC
@@ -63,38 +68,29 @@ if [[ -r $dt/compatible ]]; then
     [[ $c =~ ^apple,(t[0-9]+)$ ]] && { soc=${BASH_REMATCH[1]}; break; }
   done <"$dt/compatible"
 fi
+mod=ane
+[[ $soc == t602? ]] && mod=ane_t6021
 case $soc in
   t8103|t6001|t6021|"") ;;
-  t6000|t6002)
-    echo "UNTESTED SoC: $soc. ane.ko has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in." ;;
-  t6020|t6022)
-    echo "UNTESTED SoC: $soc. ane_t6021 has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in, and ane_t6021 loads only after you comment out the install line in /etc/modprobe.d/ane_t6021.conf." ;;
+  t6000|t6002|t6020|t6022)
+    echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in." ;;
   *)
     echo "UNTESTED SoC: $soc"
     bad "no omarchy-ane driver supports the $soc ANE"; finish ;;
 esac
 
-# 1. M2 Max: ane_t6021 stays blocked until the owner opts in.
-mod=ane
-[[ $soc == t6020 || $soc == t6022 ]] && mod=ane_t6021
-if [[ $soc == t6021 ]]; then
-  mod=ane_t6021
-  m2tool=$(tool omarchy-ane-m2-enable)
-  state=""
-  [[ -z $m2tool ]] || state=$("$m2tool" --status 2>/dev/null)
-  case $state in
-    *module=blocked*) bad "M2 opt-in: ane_t6021 is blocked ($state). Opt in with: sudo omarchy-ane-m2-enable"; finish ;;
-    *module=enabled*) ok "M2 opt-in: enabled ($state)" ;;
-    *) bad "cannot read the M2 opt-in state: omarchy-ane-m2-enable is missing"; finish ;;
-  esac
-  [[ $state == *firmware=pinned* ]] ||
-    bad "the M2 ANE firmware is not the pinned image. Run: sudo omarchy-ane-firmware-fetch"
-  case $state in
-    *mailbox=ok*) ;;
-    *mailbox=no-send-empty*) bad "the ANE mailbox in this Mac's device tree has no send-empty interrupt, so the stock apple-mailbox cannot bind it. Update omarchy-ane, then run: sudo omarchy-ane-dt apply" ;;
-    *mailbox=no-node*) bad "this Mac's device tree has no T6021 ANE node, even with the omarchy-ane overlay" ;;
-    *) bad "cannot build this Mac's device tree for kernel $kver to check the ANE mailbox. It needs dtc and /usr/lib/modules/$kver/dtbs." ;;
-  esac
+# 1. T602x firmware: Linux starts it there, from the file that
+#    omarchy-ane-firmware-fetch installs (90-omarchy-ane-firmware.hook on
+#    T6021).
+if [[ $mod == ane_t6021 ]]; then
+  fwtool=$(tool omarchy-ane-firmware-fetch)
+  if [[ -z $fwtool ]]; then
+    bad "cannot check the ANE firmware: omarchy-ane-firmware-fetch is missing"
+  elif fw=$("$fwtool" --check ${root:+--root "$root"} 2>&1); then
+    ok "ANE firmware: $fw"
+  else
+    bad "${fw#omarchy-ane-firmware-fetch: }"
+  fi
 fi
 
 # 2. ANE node. Without it nothing else can pass, so stop here.
@@ -109,7 +105,7 @@ done
 # kernel's board device tree with omarchy-ane's overlay.
 dtool=$(tool omarchy-ane-dt)
 origin=""
-[[ -z $dtool ]] || origin=$("$dtool" status 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
+[[ -z $dtool ]] || origin=$("$dtool" status ${root:+--root "$root"} 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
 if [[ ! -d $dt ]]; then
   bad "no device tree: this is not an Apple Silicon Linux system"; finish
 elif [[ -z $compat ]]; then
@@ -130,11 +126,11 @@ esac
 built "$kver" "$mod"
 
 # 4. Module loaded.
-if [[ -d /sys/module/$mod ]]; then
-  ver=$(cat "/sys/module/$mod/version" 2>/dev/null)
+if [[ -d $root/sys/module/$mod ]]; then
+  ver=$(cat "$root/sys/module/$mod/version" 2>/dev/null)
   ok "$mod is loaded${ver:+ (version $ver)}"
-  disk=$(modinfo -k "$kver" -F srcversion "$mod" 2>/dev/null)
-  live=$(cat "/sys/module/$mod/srcversion" 2>/dev/null)
+  disk=$(modinfo -b "${root:-/}" -k "$kver" -F srcversion "$mod" 2>/dev/null)
+  live=$(cat "$root/sys/module/$mod/srcversion" 2>/dev/null)
   if [[ -n $disk && -n $live && $disk != "$live" ]]; then
     echo "  note  the loaded $mod differs from the installed $mod.ko. Reboot to load the new one. Do not rmmod $mod."
   fi
@@ -146,7 +142,7 @@ fi
 
 # 5. Driver bound to the ANE platform device.
 dev=""
-for l in /sys/bus/platform/drivers/"$mod"/*; do
+for l in "$root"/sys/bus/platform/drivers/"$mod"/*; do
   [[ -L $l && ${l##*/} != module ]] && { dev=${l##*/}; break; }
 done
 if [[ -n $dev ]]; then
@@ -158,13 +154,13 @@ fi
 # 6. Device node. Every user must be able to open it. The package adds no
 #    udev rule: systemd's 50-udev-default.rules makes accel nodes mode 0666.
 node=""
-for s in /sys/class/accel/accel*; do
-  [[ $(readlink "$s/device/driver") == */"$mod" ]] && { node=/dev/accel/${s##*/}; break; }
+for s in "$root"/sys/class/accel/accel*; do
+  [[ $(readlink "$s/device/driver") == */"$mod" ]] && { node=$root/dev/accel/${s##*/}; break; }
 done
 if [[ -z $node || ! -c $node ]]; then
   bad "no /dev/accel node from $mod"
 else
-  mode=$(stat -c '%A %U:%G' "$node")
+  mode=$(stat -Lc '%A %U:%G' "$node")
   if [[ $mode == c??????rw?\ * ]]; then
     ok "$node present ($mode); every user can open it"
   else

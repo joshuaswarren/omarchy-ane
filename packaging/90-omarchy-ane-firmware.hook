@@ -1,0 +1,15 @@
+# Install and upgrade: fetch the ANE firmware on a Mac whose ANE is on by
+# default and needs it (T6021). Elsewhere, and when the pinned file is already
+# installed, it does nothing. Without network it prints a note; the ANE then
+# stays off until "sudo omarchy-ane-firmware-fetch" succeeds and the Mac
+# reboots.
+[Trigger]
+Type = Path
+Operation = Install
+Operation = Upgrade
+Target = usr/bin/omarchy-ane-firmware-fetch
+
+[Action]
+Description = Fetching the ANE firmware from Apple...
+When = PostTransaction
+Exec = /usr/bin/omarchy-ane-firmware-fetch --hook

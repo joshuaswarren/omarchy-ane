@@ -19,7 +19,9 @@
  *      0xc4000; vmsize tail zero from the coherent alloc). Coherent
  *      memory needs no explicit cache clean.
  *   4. Which copy runs. fw_alias_reserved=1 (default, T6021 only) maps
- *      the copy iBoot preloaded at SEG0/SEGi. Otherwise the staged copy
+ *      the copy iBoot preloaded at SEG0/SEGi; probe refuses it unless
+ *      no-map /reserved-memory nodes cover both windows (the lab m1n1
+ *      adds them, the packaged m1n1 1.6.1 does not). Otherwise the staged copy
  *      runs: ane_fw_apply_boot_patches() first writes iBoot's runtime
  *      patches into it (DATA base, RTK_soc, revision, ASC addresses,
  *      stack guard, ASC tunables), and then it equals the preload byte
@@ -71,6 +73,7 @@
 #include <linux/iommu.h>
 #include <linux/moduleparam.h>
 #include <linux/of.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 #include <linux/random.h>
 #include <linux/sizes.h>
@@ -100,20 +103,65 @@ MODULE_PARM_DESC(fw_extra_ram,
 /* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
  * the entry IOVAs (the preload, with iBoot's patches in place). Default
  * on: the proven add-path configuration. Only SoCs whose placement is
- * recorded honor it (ane_t602x_soc.preload_placement). */
+ * recorded honor it (ane_t602x_soc.preload_placement), and only over
+ * reserved RAM (ane_t6021_fwload_placement_ok). */
 static bool fw_alias_reserved = true;
 module_param(fw_alias_reserved, bool, 0444);
 MODULE_PARM_DESC(fw_alias_reserved,
 		 "T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 "
-		 "0x10001400000+0x438000 after it (default on); 0 = run the staged "
+		 "0x10001400000+0x438000 after it (default on; probe refuses unless "
+		 "no-map /reserved-memory nodes cover both); 0 = run the staged "
 		 "copy with iBoot's patches replayed (own memory, the only mode on "
 		 "T6020/T6022).");
 
-static bool ane_t6021_fw_alias_is_reserved(const struct ane_t6021 *ane)
+static bool ane_t6021_fw_alias_is_reserved(struct device *dev)
 {
-	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	const struct ane_t602x_soc *soc = of_device_get_match_data(dev);
 
 	return fw_alias_reserved && soc->preload_placement;
+}
+
+/* iBoot's T6021 SEG0/SEGi placement (pinned ADT segment-ranges record):
+ * the physical pages fw_alias_reserved=1 hands to the ASC. */
+static const struct { u64 phys, len; } ane_t6021_fw_preload[] = {
+	{ 0x10000848000ull, 0xc4000ull },
+	{ 0x10001400000ull, 0x438000ull },
+};
+
+/* Only a no-map /reserved-memory node that the kernel took at boot keeps
+ * it off those pages. The lab m1n1 adds ane-firmware@ nodes; the packaged
+ * m1n1 1.6.1 adds none (receipts/2026-10-01-t6021-disk-boot, "Limits"). */
+static bool ane_t6021_fw_preload_reserved(void)
+{
+	struct device_node *parent = of_find_node_by_path("/reserved-memory");
+	unsigned int i, covered = 0;
+
+	for (i = 0; parent && i < ARRAY_SIZE(ane_t6021_fw_preload); i++) {
+		u64 phys = ane_t6021_fw_preload[i].phys;
+		u64 end = phys + ane_t6021_fw_preload[i].len;
+		struct device_node *np;
+
+		for_each_available_child_of_node(parent, np) {
+			struct reserved_mem *rmem = of_reserved_mem_lookup(np);
+
+			if (rmem && of_property_read_bool(np, "no-map") &&
+			    rmem->base <= phys && end <= rmem->base + rmem->size) {
+				covered++;
+				of_node_put(np);
+				break;
+			}
+		}
+	}
+	of_node_put(parent);
+	return covered == ARRAY_SIZE(ane_t6021_fw_preload);
+}
+
+bool ane_t6021_fwload_placement_ok(struct device *dev)
+{
+	/* BINDING probe-top predicate, as ane_t6021_fwload_options_ok():
+	 * reserved mode never maps RAM the kernel may own. */
+	return !fw_load || !ane_t6021_fw_alias_is_reserved(dev) ||
+	       ane_t6021_fw_preload_reserved();
 }
 
 bool ane_t6021_fwload_requested(void)
@@ -217,8 +265,8 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane, bool reserved)
 		 * fw_alias_reserved boot since 2026-09-24 left the fw
 		 * DATA section unmapped past the SEG0 head. */
 		struct { u64 iova, phys, len; } win[] = {
-			{ 0x10000000000ull, 0x10000848000ull, 0xc4000ull },
-			{ 0, 0x10001400000ull, 0x438000ull },
+			{ 0x10000000000ull, ane_t6021_fw_preload[0].phys, ane_t6021_fw_preload[0].len },
+			{ 0, ane_t6021_fw_preload[1].phys, ane_t6021_fw_preload[1].len },
 			{ entry + 0x4fc000, 0, fw_extra_ram ? ane->fw_size - 0x4fc000 : 0 },
 		};
 		unsigned int w, windows = fw_extra_ram ? ARRAY_SIZE(win) : 2;
@@ -424,7 +472,7 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	const char *reason = NULL;
 	u32 alloc_size = ANE_FW_BUF_SIZE + fw_extra_ram;
 	int ret;
-	bool reserved = ane_t6021_fw_alias_is_reserved(ane);
+	bool reserved = ane_t6021_fw_alias_is_reserved(ane->dev);
 
 	if (!fw_load)
 		return 0;

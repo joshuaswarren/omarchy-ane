@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * ANE for T6021 (M2 Max) board device trees. OPT-IN: installed, but it applies
- * only after omarchy-ane-m2-enable writes "ane-t6021" to
- * /etc/omarchy-platform/dtb-overlays.opt-in. The node alone does nothing:
- * ane_t6021 stays blocked by /etc/modprobe.d/ane_t6021.conf until the same
- * command lifts it. The nodes and their sources: t602x-ane.dtsi.
+ * ANE for T6021 (M2 Max) board device trees. ENABLED: it applies by default.
+ * ane_t6021 then autoloads by the node's compatible; once it starts the ANE
+ * firmware, only a reboot unloads it. The nodes and their sources:
+ * t602x-ane.dtsi.
  */
 /dts-v1/;
 /plugin/;
@@ -12,8 +11,6 @@
 / {
 	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
 	omarchy,skip-if-compatible = "apple,t6021-ane";
-	/* dtb-overlays.sh: applies only when opted in (omarchy-ane-m2-enable). */
-	omarchy,opt-in = "ane-t6021";
 };
 
 /include/ "t602x-ane.dtsi"

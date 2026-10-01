@@ -706,6 +706,7 @@ void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane);
 int ane_t6021_fwload_probe(struct ane_t6021 *ane);
 void ane_t6021_fwload_remove(struct ane_t6021 *ane);
 bool ane_t6021_fwload_options_ok(void);
+bool ane_t6021_fwload_placement_ok(struct device *dev);
 bool ane_t6021_fwload_requested(void);
 
 /* Per-SoC of_match data. soc is the value iBoot writes to RTK_soc.
