@@ -42,7 +42,6 @@ GATE = "etc/modprobe.d/ane_t6021.conf"
 BLOCK = "install ane_t6021 /bin/false"
 LIFTED = f"# {BLOCK}  (lifted by omarchy-ane-m2-enable)"
 OPT_IN_KEY = "ane-t6021"
-OVERLAY = "usr/lib/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo"
 MAILBOX_IRQS = ("recv-not-empty", "send-empty")
 REBOOT_RULE = ("Once ane_t6021 starts the ANE firmware, it cannot be unloaded. "
                "Only a reboot releases it. Do not rmmod it.")
@@ -61,6 +60,7 @@ def sibling(name):
 dt = sibling("omarchy-ane-dt")
 fetch = sibling("omarchy-ane-firmware-fetch")
 Refuse = dt.Refuse
+OVERLAY = f"{dt.OVERLAY_DIR}/t6021/omarchy-ane.dtbo"
 
 
 def is_t6021(root):

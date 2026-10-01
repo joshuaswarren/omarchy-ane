@@ -1,0 +1,23 @@
+0x6000 j314sap ANE=t600x_ane0_fw_eos_jc3x.im4p
+0x6000 j316sap ANE=t600x_ane0_fw_eos_jc3x.im4p
+0x6001 j314cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6001 j316cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6001 j375cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6002 j375dap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p Ap,ANE2=t600x_ane2_fw_eos_jc3x.im4p Ap,ANE3=t600x_ane3_fw_eos_jc3x.im4p
+0x6020 j414sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6020 j416sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6020 j474sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j414cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j416cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j475cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6022 j180dap ANE=t602x_ane0_fw_selene_rc4x.im4p Ap,ANE1=t602x_ane1_fw_selene_rc4x.im4p
+0x6022 j475dap ANE=t602x_ane0_fw_selene_rc4x.im4p Ap,ANE1=t602x_ane1_fw_selene_rc4x.im4p
+0x8103 j274ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j293ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j313ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j456ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j457ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8112 j413ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j415ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j473ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j493ap ANE=h14_ane_fw_bia_j4xx.im4p

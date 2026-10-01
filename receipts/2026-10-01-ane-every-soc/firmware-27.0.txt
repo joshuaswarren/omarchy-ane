@@ -1,0 +1,59 @@
+0x6000 j314sap ANE=t600x_ane0_fw_eos_jc3x.im4p
+0x6000 j316sap ANE=t600x_ane0_fw_eos_jc3x.im4p
+0x6001 j314cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6001 j316cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6001 j375cap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p
+0x6002 j375dap ANE=t600x_ane0_fw_eos_jc3x.im4p Ap,ANE1=t600x_ane1_fw_eos_jc3x.im4p Ap,ANE2=t600x_ane2_fw_eos_jc3x.im4p Ap,ANE3=t600x_ane3_fw_eos_jc3x.im4p
+0x6020 j414sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6020 j416sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6020 j474sap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j414cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j416cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6021 j475cap ANE=t602x_ane0_fw_selene_rc4x.im4p
+0x6022 j180dap ANE=t602x_ane0_fw_selene_rc4x.im4p Ap,ANE1=t602x_ane1_fw_selene_rc4x.im4p
+0x6022 j475dap ANE=t602x_ane0_fw_selene_rc4x.im4p Ap,ANE1=t602x_ane1_fw_selene_rc4x.im4p
+0x6030 j514sap ANE=t603x_ane0_fw_erebus_ls5x.im4p
+0x6030 j516sap ANE=t603x_ane0_fw_erebus_ls5x.im4p
+0x6031 j514cap ANE=t603x_ane0_fw_erebus_pc5x.im4p
+0x6031 j516cap ANE=t603x_ane0_fw_erebus_pc5x.im4p
+0x6032 j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p Ap,ANE1=t603x_ane1_fw_erebus_pc5x.im4p
+0x6034 j514map ANE=t603x_ane0_fw_erebus_pc5x.im4p
+0x6034 j516map ANE=t603x_ane0_fw_erebus_pc5x.im4p
+0x6040 j614sap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6040 j616sap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6040 j773sap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6041 j575cap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6041 j614cap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6041 j616cap ANE=t604x_ane_fw_aether_brvx.im4p
+0x6050 j714cap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x6050 j714sap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x6050 j716cap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x6050 j716sap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x6050 j775cap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x6050 j775dap ANE=h17_ane0_fw_hyperion_j71y.im4p Ap,ANE1=h17_ane1_fw_hyperion_j71y.im4p
+0x6050 j873sap ANE=h17_ane0_fw_hyperion_j71y.im4p
+0x8103 j274ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j293ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j313ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j456ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8103 j457ap ANE=h13_ane_fw_styx_j5x.im4p
+0x8112 j413ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j415ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j473ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8112 j493ap ANE=h14_ane_fw_bia_j4xx.im4p
+0x8122 j433ap ANE=h15_ane_fw_themis_j51y.im4p
+0x8122 j434ap ANE=h15_ane_fw_themis_j51y.im4p
+0x8122 j504ap ANE=h15_ane_fw_themis_j51y.im4p
+0x8122 j613ap ANE=h15_ane_fw_themis_j51y.im4p
+0x8122 j615ap ANE=h15_ane_fw_themis_j51y.im4p
+0x8132 j604ap ANE=h16_ane_fw_leto_j7x.im4p
+0x8132 j623ap ANE=h16_ane_fw_leto_j7x.im4p
+0x8132 j624ap ANE=h16_ane_fw_leto_j7x.im4p
+0x8132 j713ap ANE=h16_ane_fw_leto_j7x.im4p
+0x8132 j715ap ANE=h16_ane_fw_leto_j7x.im4p
+0x8132 j773gap ANE=h16_ane_fw_leto_j7x.im4p
+0x8140 j700ap ANE=h17_ane_fw_theia_d9x.im4p
+0x8142 j704ap ANE=h17_ane_fw_theia_j73y.im4p
+0x8142 j813ap ANE=h17_ane_fw_theia_j73y.im4p
+0x8142 j815ap ANE=h17_ane_fw_theia_j73y.im4p
+0x8152 j873gap ANE=h18_ane0_fw_kirkland_j8xx.im4p Ap,ANE1=h18_ane1_fw_kirkland_j8xx.im4p

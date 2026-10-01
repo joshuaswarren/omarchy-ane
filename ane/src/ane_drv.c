@@ -919,8 +919,8 @@ static const struct ane_soc ane_soc_t8103 = {
 };
 
 static const struct ane_soc ane_soc_t6000 = {
-	/* M1 Pro and M1 Max share this compatible and SET base (proven on
-	 * T6001/t6001-test-host); M1 Pro still needs a board overlay and a tester. */
+	/* M1 Pro, M1 Max and M1 Ultra die 0 share this compatible and SET base
+	 * (proven on T6001/t6001-test-host); M1 Pro and M1 Ultra are untested. */
 	.ps_base = 0x28e08c000ULL,
 	.qual = ANE_QUALIFIED,
 	.tm_retention = true,

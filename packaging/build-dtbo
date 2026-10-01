@@ -1,17 +1,21 @@
 #!/bin/bash
 # Compile the enabled and opt-in device tree overlays in packaging/dt/overlays:
 # SOURCE PREFIX-NAME.dts becomes
-#   DESTDIR/usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-NAME.dtbo
+#   DESTDIR/OVERLAY_DIR/PREFIX/omarchy-NAME.dtbo
+# OVERLAY_DIR is the constant in packaging/omarchy-ane-dt.
 # For a package recipe: packaging/build-dtbo "$pkgdir". Needs dtc.
 set -euo pipefail
 destdir=${1:?usage: build-dtbo DESTDIR}
-dt=$(dirname -- "$(realpath -- "$0")")/dt
+here=$(dirname -- "$(realpath -- "$0")")
+dt=$here/dt
+overlay_dir=$(sed -n 's/^OVERLAY_DIR = "\(.*\)"$/\1/p' "$here/omarchy-ane-dt")
+[[ -n $overlay_dir ]] || { echo "build-dtbo: no OVERLAY_DIR in $here/omarchy-ane-dt" >&2; exit 1; }
 while read -r prefix source state; do
   [[ -n $prefix && $prefix != \#* ]] || continue
   [[ $state == enabled || $state == opt-in ]] || { echo "build-dtbo: $prefix: $state, not installed"; continue; }
   name=${source%.dts}
   [[ $source == *.dts && $name == "$prefix"-?* ]] || { echo "build-dtbo: $source: not named $prefix-NAME.dts" >&2; exit 1; }
-  out=$destdir/usr/lib/omarchy-platform/dtb-overlays/$prefix/omarchy-${name#"$prefix"-}.dtbo
+  out=$destdir/$overlay_dir/$prefix/omarchy-${name#"$prefix"-}.dtbo
   install -d "${out%/*}"
   dtc -q -@ -I dts -O dtb -o "$out" "$dt/$source"
   echo "build-dtbo: $prefix ($state): ${out#"$destdir"}"

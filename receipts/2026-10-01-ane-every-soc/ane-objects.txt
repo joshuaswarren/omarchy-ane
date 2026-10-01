@@ -1,0 +1,6 @@
+# ane.ko objects: origin/main vs this branch, same build path, aarch64-linux-gnu-gcc 12.2.0, a prepared O= tree of linux-aurora 7.1.12 at bc41726b (aurora-silicon/linux#65)
+# The final .ko link (modpost/modfinal) does not run in that tree for either side; only objects are compared.
+ane_drv.o identical (cd694724df454cad)
+ane_tm.o identical (1c492c3a5f0704df)
+ane_dart.o identical (1ae91e7244632b9b)
+ane_boost.o identical (c2d13d7c590c7e05)

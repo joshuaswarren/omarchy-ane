@@ -3,7 +3,7 @@
 
 ane.ko binds only to an "apple,t*-ane" device tree node. Until the kernel's
 device trees carry one, the package ships overlays that add it:
-/usr/lib/omarchy-platform/dtb-overlays/PREFIX/NAME.dtbo. PREFIX selects board
+/OVERLAY_DIR/PREFIX/NAME.dtbo (OVERLAY_DIR is set below). PREFIX selects board
 device trees by file name ("t8103" for every t8103-*.dtb). The T6021 prefix
 also has an opt-in overlay that is not an ANE part: omarchy-uboot-serial-stdin,
 U-Boot console input from serial only.
@@ -24,7 +24,8 @@ count: the overlay applies, and its nodes of the same name replace the kernel
 node's properties and enable it. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
 string is a line of /etc/omarchy-platform/dtb-overlays.opt-in (the T6021 node:
-"ane-t6021", written by omarchy-ane-m2-enable; the T6021 U-Boot input:
+"ane-t6021", written by omarchy-ane-m2-enable; the untested T6000 and T6002
+nodes: "ane-t6000" and "ane-t6002", and the T6021 U-Boot input:
 "uboot-serial-stdin-t6021", written by the owner).
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
@@ -45,6 +46,17 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Where the package installs its overlays: the directory that
+# omacom/omarchy-mac#677 (dtb-overlays.sh) applies on Omarchy Macs.
+# packaging/build-dtbo reads this line, omarchy-ane-m2-enable imports it, and
+# 90-omarchy-ane-dt.hook's second Target names the same directory
+# (tools/test_ane_dt.py checks both). Arch Linux ARM installs have no
+# omarchy-mac-boot, so there apply, update-m1n1-dtbs and the hooks stay.
+OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"
+# The directory before 2026-10-01. apply refuses while it has overlays, so a
+# hand install there (the lab M2) keeps its copies until it moves them.
+# Remove with its check in apply when no install uses it.
+OLD_OVERLAY_DIR = "usr/lib/omarchy-platform/dtb-overlays"
 FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
@@ -135,7 +147,7 @@ def opted_in(root):
 def overlays_for(root, name):
     """The overlays that select device tree NAME, in the order they apply."""
     found, allowed = [], opted_in(root)
-    for overlay in sorted(glob.glob(str(root / "usr/lib/omarchy-platform/dtb-overlays/*/*.dtbo"))):
+    for overlay in sorted(glob.glob(str(root / OVERLAY_DIR / "*/*.dtbo"))):
         prefix = Path(overlay).parent.name
         if name != f"{prefix}.dtb" and not name.startswith(f"{prefix}-"):
             continue
@@ -157,7 +169,8 @@ def validate(stock, result, wanted):
         if path not in result.nodes:
             raise Refuse(f"the overlay removed {path}")
         if "phandle" in props and result.nodes[path].get("phandle") != props["phandle"]:
-            raise Refuse(f"the overlay renumbered {path}; this dtc is too old (1.7.1 or newer keeps phandles)")
+            raise Refuse(f"the overlay renumbered {path}; this fdtoverlay, or the libfdt.so it loads, is older "
+                         "than 1.7.1 (1.7.1 or newer keeps phandles)")
     for compatible in wanted:
         live = [p for p in result.nodes if compatible in result.strings(p, "compatible") and result.enabled(p)]
         if not live:
@@ -269,12 +282,17 @@ def apply(root, hook_targets):
     if mac is not None:
         remove(root, quiet=True)
         if mac:
-            print("omarchy-ane-dt: omarchy-mac-boot applies /usr/lib/omarchy-platform/dtb-overlays itself "
+            print(f"omarchy-ane-dt: omarchy-mac-boot applies /{OVERLAY_DIR} itself "
                   "and rebuilds m1n1 when they change.")
             return
         raise Refuse("this omarchy-mac-boot refuses a changed device tree (omarchy update's boot check) and has "
                      "no overlay support (omacom/omarchy-mac#677); the ANE node must come from the kernel or an "
                      "omarchy-mac-boot with that support")
+    old = glob.glob(str(root / OLD_OVERLAY_DIR / "*/*.dtbo"))
+    if old:
+        raise Refuse(f"overlays are in the old directory /{OLD_OVERLAY_DIR} ({len(old)} files). Install them in "
+                     f"/{OVERLAY_DIR} (the omarchy-ane package, or packaging/build-dtbo /), remove "
+                     f"/{OLD_OVERLAY_DIR}, then run apply again. The current copies stay until then")
     name = board(root)
     overlays = overlays_for(root, name)
     state_root = root / "var/lib/omarchy-ane/dtbs"
