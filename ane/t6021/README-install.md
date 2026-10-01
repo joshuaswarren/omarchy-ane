@@ -21,13 +21,12 @@ boot (receipt
 [2026-10-01-t6021-disk-boot](../../receipts/2026-10-01-t6021-disk-boot/README.md)).
 That boot used a lab m1n1 stage 2 that adds the two `ane-firmware`
 reserved-memory nodes; the packaged m1n1 1.6.1 does not add them. The
-default `fw_alias_reserved=1` maps those physical windows, so probe refuses
-it, before any power access, unless no-map `/reserved-memory` nodes cover
-both windows: with the packaged m1n1 the module stays unbound and the ANE
-stays off. `fw_alias_reserved=0` needs no reservation: the driver runs its
-own copy of the firmware with iBoot's runtime patches replayed (receipt
-[2026-10-01-t602x-independent](../../receipts/2026-10-01-t602x-independent/README.md));
-no T6021 has run it yet. It becomes the default after its T6021 device test.
+default, `fw_alias_reserved=0`, needs no reservation: the driver runs its own
+copy of the firmware with iBoot's runtime patches replayed (receipt
+[2026-10-01-t602x-independent](../../receipts/2026-10-01-t602x-independent/README.md),
+"Boot B" for the T6021 device test). The lab option `fw_alias_reserved=1`
+maps the preloaded physical windows instead; probe refuses it, before any
+power access, unless no-map `/reserved-memory` nodes cover both windows.
 
 On that laptop the disk boot also needs the opt-in overlay
 `packaging/dt/t6021-uboot-serial-stdin.dts` (opt-in key
@@ -55,9 +54,10 @@ The overlay goes away when uboot-asahi passes only keyboard reports from
   (sha256 `a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`).
   The package's `90-omarchy-ane-firmware.hook` installs it with
   `omarchy-ane-firmware-fetch`; by hand, `sudo omarchy-ane-firmware-fetch`.
-- Memory: with the default `fw_alias_reserved=1`, no-map
-  `/reserved-memory` nodes that cover `0x10000848000`+`0xc4000` and
-  `0x10001400000`+`0x438000` (the lab m1n1 adds them).
+- Memory: nothing with the default. With the lab option
+  `fw_alias_reserved=1`, no-map `/reserved-memory` nodes that cover
+  `0x10000848000`+`0xc4000` and `0x10001400000`+`0x438000` (the lab m1n1
+  adds them).
 - Module build prerequisites: `make`, a working kernel headers tree,
   `sparse` if you want the warnings the upstream expects.
 
@@ -235,7 +235,7 @@ bisection only.
 |---|---|---|---|
 | `fw_load` | `1` | fwload.c | Validate + DART-map the selene PRELOAD payload |
 | `fw_extra_ram` | `0x200000` (2 MiB) | fwload.c | Page-aligned owned RAM after the 5 MiB firmware surface |
-| `fw_alias_reserved` | `1` | fwload.c | T6021: map the iBoot-reserved SEG0/SEGi phys at the latched RVBAR entry; probe refuses unless no-map `/reserved-memory` nodes cover both windows; `0` = own memory (staged copy + iBoot patches), the only mode on T6020/T6022 |
+| `fw_alias_reserved` | `0` | fwload.c | `0` = own memory (staged copy + iBoot patches), the only mode on T6020/T6022; `1` (lab, T6021) = map the iBoot-reserved SEG0/SEGi phys at the latched RVBAR entry; probe refuses unless no-map `/reserved-memory` nodes cover both windows |
 | `fw_start` | `1` | rtclient | Fenced Linux-context firmware start (boot contract) |
 | `fw_start_table_mode` | `2` (skip) | rtclient | Pre-CPU engine table block: 0 abort, 1 write, 2 skip |
 | `fw_start_rtb_mode` | `0` | rtclient | RTBuddy/RTKit-app-endpoint select; off = legacy ChMan transport |

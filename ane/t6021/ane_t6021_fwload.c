@@ -18,10 +18,11 @@
  *      (__TEXT fileoff 0x4000 -> vm 0, __DATA fileoff 0xc8000 -> vm
  *      0xc4000; vmsize tail zero from the coherent alloc). Coherent
  *      memory needs no explicit cache clean.
- *   4. Which copy runs. fw_alias_reserved=1 (default, T6021 only) maps
- *      the copy iBoot preloaded at SEG0/SEGi; probe refuses it unless
- *      no-map /reserved-memory nodes cover both windows (the lab m1n1
- *      adds them, the packaged m1n1 1.6.1 does not). Otherwise the staged copy
+ *   4. Which copy runs. By default the staged copy (own memory). The lab
+ *      option fw_alias_reserved=1 (T6021 only) maps the copy iBoot
+ *      preloaded at SEG0/SEGi; probe refuses it unless no-map
+ *      /reserved-memory nodes cover both windows (the lab m1n1 adds them,
+ *      the packaged m1n1 1.6.1 does not). The staged copy
  *      runs: ane_fw_apply_boot_patches() first writes iBoot's runtime
  *      patches into it (DATA base, RTK_soc, revision, ASC addresses,
  *      stack guard, ASC tunables), and then it equals the preload byte
@@ -100,17 +101,19 @@ MODULE_PARM_DESC(fw_extra_ram,
 		 "Page-aligned owned RAM after the 5 MiB firmware allocation "
 		 "(default 0x200000, the proven add-path grant; maximum 16 MiB).");
 
-/* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
- * the entry IOVAs (the preload, with iBoot's patches in place). Default
- * on: the proven add-path configuration. Only SoCs whose placement is
- * recorded honor it (ane_t602x_soc.preload_placement), and only over
- * reserved RAM (ane_t6021_fwload_placement_ok). */
-static bool fw_alias_reserved = true;
+/* Preloaded-placement alias, lab only: map the iBoot-reserved SEG0/SEGi
+ * phys at the entry IOVAs (the preload, with iBoot's patches in place).
+ * Default off: the own-memory copy needs no reserved RAM, so it runs with
+ * the packaged m1n1 (T6021 own-memory boot: receipts/2026-10-01-t602x-
+ * independent, "Boot B"). Only SoCs whose placement is recorded honor it
+ * (ane_t602x_soc.preload_placement), and only over reserved RAM
+ * (ane_t6021_fwload_placement_ok). */
+static bool fw_alias_reserved;
 module_param(fw_alias_reserved, bool, 0444);
 MODULE_PARM_DESC(fw_alias_reserved,
-		 "T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 "
-		 "0x10001400000+0x438000 after it (default on; probe refuses unless "
-		 "no-map /reserved-memory nodes cover both); 0 = run the staged "
+		 "Lab, T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and "
+		 "SEG1 0x10001400000+0x438000 after it (probe refuses unless no-map "
+		 "/reserved-memory nodes cover both); 0 (default) = run the staged "
 		 "copy with iBoot's patches replayed (own memory, the only mode on "
 		 "T6020/T6022).");
 
