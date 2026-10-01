@@ -45,6 +45,7 @@
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/random.h>
 #include <linux/unaligned.h>
 #include <linux/sizes.h>
 
@@ -140,6 +141,35 @@ static bool stage25;
 module_param(stage25, bool, 0444);
 MODULE_PARM_DESC(stage25,
 		 "preflight current 22G74 reset head, stage 25G83 eos TEXT+DATA and patch T6001 device fields");
+
+/* Gap7 corrected 22G74 staging: guard the stub-staged reset head, restore
+ * the full 22G74 DATA file image + zero the carveout tail, patch the five
+ * host-written patchbay fields the 25G83 live capture confirmed, then let
+ * chman map the DART segments at 22G74 vmsizes before the boot contract. */
+static bool stage22;
+module_param(stage22, bool, 0444);
+MODULE_PARM_DESC(stage22,
+		 "preflight 22G74 reset head, restore 22G74 DATA (file + zero tail to carveout end), patch SOC_/SOCR/CpAd/WrAd/GKTS, then the boot contract with DART SEG0/SEG1 mapped");
+
+/* ---- 22G74 (Gap7) staging + generation table ---- */
+#define EOS22_TEXT_LEN		0xd4000		/* __TEXT vmsize (ZSTR 0x50c000 - DATA) */
+#define EOS22_DATA_FILE_LEN	0x3e8000	/* __DATA filesize */
+#define EOS22_DATA_LEN		0x438000	/* __DATA vmsize = iBoot carveout */
+#define EOS22_DATA_FW		"ane/eos-data.bin"
+#define EOS22_DATA_IOVA		0x1f0000d4000ULL
+#define EOS22_DATA_FLETcher_S2	0x000016ab3bf7ccfdULL
+#define EOS22_DATA_FLETcher_S1	0x00000000005e41adULL
+
+/* Which staging generation chman runs. Set once in init. */
+struct stage_gen {
+	const char *name;
+	size_t text_len;	/* DART SEG0 len (TEXT vmsize) */
+	u64 data_iova;		/* DART SEG1 IOVA (fw VM->IOVA base + text vm) */
+	size_t data_len;	/* DART SEG1 len (DATA vmsize) */
+	u32 pb_off, pb_len;	/* DATA-relative _rtk_patchbay span */
+};
+
+static const struct stage_gen *stage;
 
 /* ---- ASC mailbox (soc/apple/mailbox.c ASC variant) ---- */
 
@@ -458,11 +488,11 @@ static u64 span_sum(const u8 *p, size_t len, u64 *alt)
 
 static void chman_footprint(struct ane_h13_perf *a, const char *when)
 {
-	static const struct { const char *name; unsigned long off; size_t len; } sp[] = {
+	static struct { const char *name; unsigned long off; size_t len; } sp[] = {
 		{ "text-head", 0, 0x400 },
 		{ "text-copy", 0x7c000, 0x8000 },
 		{ "data-head", 0, 0x8000 },
-		{ "data-patchbay", 0x74b8, 0x241 },
+		{ "data-patchbay", 0, 0 },	/* stage-dependent, filled below */
 		{ "data-tunables", 0x19700, 0x1e8 },
 		{ "data-bootlog", 0x1c000, 0x4000 },
 		{ "data-page-tables", 0x28000, 0x4000 },
@@ -470,6 +500,9 @@ static void chman_footprint(struct ane_h13_perf *a, const char *when)
 		{ "data-copy", 0x3ec000, 0x8000 },
 	};
 	int i;
+
+	sp[3].off = stage ? stage->pb_off : 0x74b8;
+	sp[3].len = stage ? stage->pb_len : 0x241;
 
 	for (i = 0; i < ARRAY_SIZE(sp); i++) {
 		phys_addr_t pa = (sp[i].name[0] == 't') ? text_phys + sp[i].off :
@@ -572,6 +605,13 @@ out:
 #define EOS_TEXT_IOVA 0x1f000000000ULL
 #define EOS_DATA_IOVA 0x1f0000f4000ULL
 #define EOS_PATCHBAY_OFF 0x74b8
+
+static const struct stage_gen stages[] = {
+	[0] = { "25G83", EOS_TEXT_LEN, EOS_DATA_IOVA, EOS_DATA_LEN,
+		EOS_PATCHBAY_OFF, 0x241 },
+	[1] = { "22G74", EOS22_TEXT_LEN, EOS22_DATA_IOVA, EOS22_DATA_LEN,
+		0x6aa0, 0x1c8 },
+};
 
 static int h4a_patch_data(struct device *dev, u8 *buf)
 {
@@ -718,6 +758,143 @@ out:
 	return ret;
 }
 
+/* ---- Gap7: corrected 22G74 staging ----
+ * The stub already staged the 22G74 eos TEXT at the latched reset base
+ * (H1 byte-exact) — guard it, never rewrite it. Restore the full DATA
+ * file image, zero the carveout tail (22G74 bss), patch the five
+ * host-written patchbay fields, all after a warm read (873ac7b law). */
+static int stage22_run(struct ane_h13_perf *a)
+{
+	const struct firmware *head = NULL, *data = NULL;
+	static const struct { u32 off; const char tag[4]; u32 len; u64 value; } pb[] = {
+		{ 0x6aa0, "GKTS", 8, 0 },		/* per-boot canary, filled below */
+		{ 0x6c0b, "_COS", 4, 0x6001 },
+		{ 0x6c17, "RCOS", 4, 0x11 },
+		{ 0x6c23, "dApC", 8, 0x285000000ULL },
+		{ 0x6c33, "dArW", 8, 0x285400000ULL },
+	};
+	u8 *verify = NULL, *dbuf = NULL, *va = NULL;
+	u64 s1, s2, canary = 0;
+	unsigned int i;
+	int ret;
+
+	if (fw_iova != EOS_TEXT_IOVA || text_phys != 0x10000a54000UL ||
+	    data_phys != 0x10001684000UL) {
+		dev_err(&a->pdev->dev, "stage22: staging addresses must match the registered T6001 map\n");
+		return -EINVAL;
+	}
+	ret = request_firmware_direct(&head, EOS_HEAD_22_FW, &a->pdev->dev);
+	if (ret) goto out;
+	ret = request_firmware_direct(&data, EOS22_DATA_FW, &a->pdev->dev);
+	if (ret) goto out;
+	if (head->size != EOS_HEAD_LEN || data->size != EOS22_DATA_FILE_LEN) {
+		dev_err(&a->pdev->dev, "stage22: bad payload size head=%zu data=%zu\n",
+			head->size, data->size);
+		ret = -EINVAL;
+		goto out;
+	}
+	s2 = span_sum(data->data, data->size, &s1);
+	if (s2 != EOS22_DATA_FLETcher_S2 || s1 != EOS22_DATA_FLETcher_S1) {
+		dev_err(&a->pdev->dev, "stage22: 22G74 DATA fletcher mismatch %016llx:%016llx\n",
+			s2, s1);
+		ret = -EBADMSG;
+		goto out;
+	}
+	dev_info(&a->pdev->dev, "stage22: 22G74 DATA offline fletcher matched\n");
+
+	/* Guard: the live head must still be the 22G74 vm0 the stub staged. */
+	va = memremap(text_phys, EOS_HEAD_LEN, MEMREMAP_WC);
+	if (!va) { ret = -ENOMEM; goto out; }
+	verify = kmemdup(va, EOS_HEAD_LEN, GFP_KERNEL);
+	memunmap(va); va = NULL;
+	if (!verify) { ret = -ENOMEM; goto out; }
+	{
+		const u32 *o = (const u32 *)verify, *e = (const u32 *)head->data;
+		unsigned int ndiff = 0;
+
+		for (i = 0; i < EOS_HEAD_LEN / 4; i++) {
+			if (o[i] == e[i])
+				continue;
+			if (ndiff < 8)
+				dev_info(&a->pdev->dev, "stage22: head word +%#x live=%08x ref=%08x\n",
+					 i * 4, o[i], e[i]);
+			ndiff++;
+		}
+		if (ndiff > 4) {
+			s2 = span_sum(verify, EOS_HEAD_LEN, &s1);
+			dev_err(&a->pdev->dev,
+				"stage22: reset-head mismatch (%u words) observed=%016llx:%016llx; refusing\n",
+				ndiff, s2, s1);
+			ret = -EUCLEAN;
+			goto out;
+		}
+	}
+	dev_info(&a->pdev->dev, "stage22: read-only 22G74 vm0 head matched (%#x bytes)\n",
+		 EOS_HEAD_LEN);
+
+	/* Record the untouched TEXT span (bss tail content on 7.1.13 is
+	 * unknown; read-only evidence only). */
+	va = memremap(text_phys, EOS22_TEXT_LEN, MEMREMAP_WC);
+	if (va) {
+		s2 = span_sum(va, EOS22_TEXT_LEN, &s1);
+		dev_info(&a->pdev->dev, "stage22: TEXT live span sum=%016llx:%016llx\n", s2, s1);
+		memunmap(va); va = NULL;
+	}
+
+	dbuf = kmemdup(data->data, EOS22_DATA_FILE_LEN, GFP_KERNEL);
+	if (!dbuf) { ret = -ENOMEM; goto out; }
+	get_random_bytes(&canary, sizeof(canary));
+	canary &= ~0xffULL;	/* live GKTS analog: random u64, low byte 0 */
+	for (i = 0; i < ARRAY_SIZE(pb); i++) {
+		u32 off = pb[i].off;
+		u64 value = pb[i].value;
+
+		if (pb[i].len == 8 && !strcmp(pb[i].tag, "GKTS"))
+			value = canary;
+		if (memcmp(dbuf + off, pb[i].tag, 4) ||
+		    get_unaligned_le32(dbuf + off + 4) != pb[i].len) {
+			dev_err(&a->pdev->dev, "stage22: patchbay mismatch at DATA+%#x\n", off);
+			ret = -EINVAL;
+			goto out;
+		}
+		if (pb[i].len == 4)
+			put_unaligned_le32((u32)value, dbuf + off + 8);
+		else
+			put_unaligned_le64(value, dbuf + off + 8);
+		dev_info(&a->pdev->dev, "stage22: patch %.4s DATA+%#x len=%u value=%#llx\n",
+			 pb[i].tag, off, pb[i].len, value);
+	}
+
+	va = memremap(data_phys, EOS22_DATA_LEN, MEMREMAP_WC);
+	if (!va) { ret = -ENOMEM; goto out; }
+	dev_info(&a->pdev->dev, "stage22: stage DATA pa=%pa file=%#x zero=%#x\n",
+		 &data_phys, EOS22_DATA_FILE_LEN,
+		 EOS22_DATA_LEN - EOS22_DATA_FILE_LEN);
+	/* Warm before first store — 7.1.13 cold-store fault law (Gap5 3/3). */
+	s2 = span_sum(va, EOS22_DATA_LEN, &s1);
+	dev_info(&a->pdev->dev, "stage22: DATA pre-write live sum=%016llx:%016llx\n", s2, s1);
+	memcpy(va, dbuf, EOS22_DATA_FILE_LEN);
+	memset(va + EOS22_DATA_FILE_LEN, 0, EOS22_DATA_LEN - EOS22_DATA_FILE_LEN);
+	if (memcmp(va, dbuf, EOS22_DATA_FILE_LEN) ||
+	    memchr_inv(va + EOS22_DATA_FILE_LEN, 0,
+		       EOS22_DATA_LEN - EOS22_DATA_FILE_LEN)) {
+		ret = -EIO;
+		goto out;
+	}
+	s2 = span_sum(va, EOS22_DATA_FILE_LEN, &s1);
+	dev_info(&a->pdev->dev, "stage22: DATA readback sum=%016llx:%016llx (byte-verified)\n",
+		 s2, s1);
+	memunmap(va); va = NULL;
+	ret = 0;
+out:
+	if (va) memunmap(va);
+	kfree(verify);
+	kfree(dbuf);
+	if (data) release_firmware(data);
+	if (head) release_firmware(head);
+	return ret;
+}
+
 static int h4a_map_window(struct ane_h13_perf *a, struct iommu_domain *dom,
 			  u64 iova, phys_addr_t phys, size_t len, unsigned int slot)
 {
@@ -766,11 +943,11 @@ static int h4a_map_segments(struct ane_h13_perf *a)
 	int ret;
 
 	if (!dom) return -ENODEV;
-	if (fw_iova != EOS_TEXT_IOVA) return -EINVAL;
+	if (fw_iova != EOS_TEXT_IOVA || !stage) return -EINVAL;
 	a->dart_domain = dom;
-	ret = h4a_map_window(a, dom, EOS_TEXT_IOVA, text_phys, EOS_TEXT_LEN, 0);
+	ret = h4a_map_window(a, dom, EOS_TEXT_IOVA, text_phys, stage->text_len, 0);
 	if (ret) return ret;
-	return h4a_map_window(a, dom, EOS_DATA_IOVA, data_phys, EOS_DATA_LEN, 1);
+	return h4a_map_window(a, dom, stage->data_iova, data_phys, stage->data_len, 1);
 }
 
 static int match_owned(struct device *dev, const void *data)
@@ -893,13 +1070,18 @@ static int __init ane_h13_perf_init(void)
 		 * PWGATE+0x159c = 0 (third-window; T6001 base
 		 * unresolved — do not write without it). */
 		if (chman) {
-			if (!stage25) {
-				dev_err(&g->pdev->dev, "chman: stage25=1 is required for H4a\n");
+			if (stage25 == stage22) {
+				dev_err(&g->pdev->dev,
+					"chman: exactly one of stage25=1 (25G83) or stage22=1 (22G74) is required\n");
 				ret = -EINVAL;
 				goto err;
 			}
+			stage = &stages[stage25 ? 0 : 1];
+			dev_info(&g->pdev->dev, "chman: staging generation %s (SEG0 len %#zx, SEG1 iova %#llx len %#zx)\n",
+				 stage->name, stage->text_len, stage->data_iova,
+				 stage->data_len);
 			chman_footprint(g, "A-prerun");
-			ret = h4a_stage(g);
+			ret = stage25 ? h4a_stage(g) : stage22_run(g);
 			if (ret)
 				goto err;
 			ret = h4a_map_segments(g);
