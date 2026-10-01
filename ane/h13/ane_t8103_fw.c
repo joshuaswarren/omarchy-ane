@@ -274,27 +274,8 @@ static void fw_dart_dump(struct fw_ctx *c, const char *label)
 	}
 }
 
-static bool pcsr;
-module_param(pcsr, bool, 0444);
-MODULE_PARM_DESC(pcsr, "stage 3: after RUN read the ASC CoreSight debug block (EDPRCR 0x1010310, EDSCR 0x1010088, EDPCSR 0x10100a0/ac) to sample the fw PC");
-
-static void fw_pc_samples(struct fw_ctx *c)
-{
-	u32 lo, hi;
-
-	dev_info(c->dev, "fw-start: PCSR next: EDPRCR (+0x1010310)\n");
-	dev_info(c->dev, "fw-start: PCSR EDPRCR %#x\n", rd(c, 0x1010310));
-	dev_info(c->dev, "fw-start: PCSR next: EDSCR (+0x1010088)\n");
-	dev_info(c->dev, "fw-start: PCSR EDSCR %#x\n", rd(c, 0x1010088));
-	for (int k = 0; k < 8; k++) {
-		dev_info(c->dev, "fw-start: PCSR next: EDPCSR lo (+0x10100a0)\n");
-		lo = rd(c, 0x10100a0);
-		hi = rd(c, 0x10100ac);
-		dev_info(c->dev, "fw-start: PCSR sample %d: lo %#x hi %#x\n", k, lo, hi);
-		msleep(50);
-	}
-}
-
+/* BANNED (H176 incident 2026-10-01): reading the ASC CoreSight debug block (engine+0x1010000.., EDSCR/EDPCSR) from the AP
+ * hard-reset jwm1. Do not add AP reads of that block back; see the omarchy-mplus-private receipt 2026-10-01-jwm1-h176-incident. */
 /* H174: read the staged DATA back through the CPU mapping of the same pages the DART maps and report what the fw wrote. */
 static void fw_readback(struct fw_ctx *c, const struct firmware *fw, const char *label)
 {
@@ -391,8 +372,6 @@ static void fw_stage3(struct fw_ctx *c, const struct firmware *fw)
 	dev_info(c->dev, "fw-start: S3 mailbox A2I %#x I2A %#x tick %#x pending %#x\n", rd(c, R_MBOX_A2I),
 		 rd(c, R_MBOX_I2A), rd(c, R_TICK), rd(c, R_DB_PENDING));
 	fw_dart_dump(c, "post-RUN");
-	if (pcsr)
-		fw_pc_samples(c);
 	fw_readback(c, fw, "t+0.2s");
 	msleep(1800);
 	fw_readback(c, fw, "t+2s");
