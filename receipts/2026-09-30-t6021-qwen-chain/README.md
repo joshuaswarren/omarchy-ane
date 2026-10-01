@@ -119,3 +119,7 @@ See [ports-sizes.md](ports-sizes.md): all 38 tables pass the size gate and
 Private record: entry `entries/Prog20Run/20260930T230934Z-…-prog020-ports.md`
 and `artifacts/Prog20Run/2026-09-30-prog020-ports/` (MANIFEST.txt,
 SHA256SUMS).
+
+Addendum: per-program conformance of all 38 programs against the M1
+per-step dump, with per-output thresholds from the M1-vs-fp64 band:
+[conformance.md](conformance.md).

@@ -1,0 +1,442 @@
+{
+  "schema_version": 2,
+  "program": "prog_000",
+  "hwx": "/var/tmp/qwen-real-hwx-h14/prog_000/model.hwx",
+  "anec": "/var/tmp/qwen-real-anec-h14/prog_000/program-0.anec",
+  "ports": [
+    {
+      "name": "t1",
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        1,
+        2048
+      ],
+      "dtype": "fp16",
+      "strides": [
+        4096,
+        4096,
+        4096,
+        2
+      ],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 4,
+      "buffer_id": 5,
+      "channel": 5
+    },
+    {
+      "name": "t16",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        16,
+        128
+      ],
+      "dtype": "fp16",
+      "strides": [
+        4096,
+        4096,
+        256,
+        2
+      ],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 5,
+      "buffer_id": 4,
+      "channel": 4
+    },
+    {
+      "name": "t20",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        16,
+        128
+      ],
+      "dtype": "fp16",
+      "strides": [
+        4096,
+        4096,
+        256,
+        2
+      ],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 6,
+      "buffer_id": 7,
+      "channel": 7
+    },
+    {
+      "name": "t22",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        16,
+        128
+      ],
+      "dtype": "fp16",
+      "strides": [
+        4096,
+        4096,
+        256,
+        2
+      ],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 7,
+      "buffer_id": 8,
+      "channel": 8
+    },
+    {
+      "name": "t26",
+      "direction": "output",
+      "shape": [
+        1,
+        16,
+        1,
+        1
+      ],
+      "dtype": "fp16",
+      "strides": [
+        1024,
+        64,
+        64,
+        2
+      ],
+      "surface_bytes": 1024,
+      "tile_bytes": 16384,
+      "bar_slot": 8,
+      "buffer_id": 9,
+      "channel": 9
+    },
+    {
+      "name": "t35",
+      "direction": "output",
+      "shape": [
+        1,
+        16,
+        1,
+        1
+      ],
+      "dtype": "fp16",
+      "strides": [
+        1024,
+        64,
+        64,
+        2
+      ],
+      "surface_bytes": 1024,
+      "tile_bytes": 16384,
+      "bar_slot": 9,
+      "buffer_id": 10,
+      "channel": 10
+    },
+    {
+      "name": "t37",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        16,
+        128
+      ],
+      "dtype": "fp16",
+      "strides": [
+        4096,
+        4096,
+        256,
+        2
+      ],
+      "surface_bytes": 4096,
+      "tile_bytes": 16384,
+      "bar_slot": 10,
+      "buffer_id": 11,
+      "channel": 11
+    },
+    {
+      "name": "t38",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        6144,
+        3
+      ],
+      "dtype": "fp16",
+      "strides": [
+        393216,
+        393216,
+        64,
+        2
+      ],
+      "surface_bytes": 393216,
+      "tile_bytes": 393216,
+      "bar_slot": 11,
+      "buffer_id": 12,
+      "channel": 12
+    },
+    {
+      "name": "t5",
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        6144,
+        3
+      ],
+      "dtype": "fp16",
+      "strides": [
+        393216,
+        393216,
+        64,
+        2
+      ],
+      "surface_bytes": 393216,
+      "tile_bytes": 393216,
+      "bar_slot": 12,
+      "buffer_id": 6,
+      "channel": 6
+    }
+  ],
+  "dma_coverage": [
+    {
+      "bar_slot": 1,
+      "buffer_id": 2,
+      "kind": "kernel_constant",
+      "iova": "0x300dd880",
+      "allocation_bytes": 34087872,
+      "bo_bytes": 34087872,
+      "dma_classes": [
+        "kdma",
+        "srcB"
+      ],
+      "tasks": [
+        1,
+        3,
+        4,
+        5,
+        7,
+        9,
+        10,
+        11,
+        13,
+        14,
+        15,
+        19,
+        20,
+        21,
+        23,
+        25,
+        27,
+        29
+      ],
+      "max_offset": 34086848
+    },
+    {
+      "bar_slot": 4,
+      "buffer_id": 5,
+      "kind": "port",
+      "port": "t1",
+      "iova": "0x30000000",
+      "allocation_bytes": 4096,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "srcA"
+      ],
+      "tasks": [
+        0
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 5,
+      "buffer_id": 4,
+      "kind": "port",
+      "port": "t16",
+      "iova": "0x30004000",
+      "allocation_bytes": 4096,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        31
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 6,
+      "buffer_id": 7,
+      "kind": "port",
+      "port": "t20",
+      "iova": "0x30008000",
+      "allocation_bytes": 4096,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        26
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 7,
+      "buffer_id": 8,
+      "kind": "port",
+      "port": "t22",
+      "iova": "0x3000c000",
+      "allocation_bytes": 4096,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        22
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 8,
+      "buffer_id": 9,
+      "kind": "port",
+      "port": "t26",
+      "iova": "0x30010000",
+      "allocation_bytes": 1024,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        4
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 9,
+      "buffer_id": 10,
+      "kind": "port",
+      "port": "t35",
+      "iova": "0x30014000",
+      "allocation_bytes": 1024,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        14
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 10,
+      "buffer_id": 11,
+      "kind": "port",
+      "port": "t37",
+      "iova": "0x30018000",
+      "allocation_bytes": 4096,
+      "bo_bytes": 16384,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        6
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 11,
+      "buffer_id": 12,
+      "kind": "port",
+      "port": "t38",
+      "iova": "0x3001c000",
+      "allocation_bytes": 393216,
+      "bo_bytes": 393216,
+      "dma_classes": [
+        "dst"
+      ],
+      "tasks": [
+        19
+      ],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 12,
+      "buffer_id": 6,
+      "kind": "port",
+      "port": "t5",
+      "iova": "0x3007c000",
+      "allocation_bytes": 393216,
+      "bo_bytes": 393216,
+      "dma_classes": [
+        "srcA"
+      ],
+      "tasks": [
+        17
+      ],
+      "max_offset": 0
+    }
+  ],
+  "ambiguities": [
+    {
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        16,
+        128
+      ],
+      "strides": [
+        4096,
+        4096,
+        256,
+        2
+      ],
+      "ports": [
+        "t16",
+        "t20",
+        "t22",
+        "t37"
+      ],
+      "bar_slots": [
+        5,
+        6,
+        7,
+        10
+      ],
+      "reason": "same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot",
+      "discriminator": "one run with the golden inputs; compare each port in the group with each golden in the group. The name binding predicts rel L2 <= 0.02 only on the name-matched pairs (needs pairwise-distinct goldens, a host check)"
+    },
+    {
+      "direction": "output",
+      "shape": [
+        1,
+        16,
+        1,
+        1
+      ],
+      "strides": [
+        1024,
+        64,
+        64,
+        2
+      ],
+      "ports": [
+        "t26",
+        "t35"
+      ],
+      "bar_slots": [
+        8,
+        9
+      ],
+      "reason": "same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot",
+      "discriminator": "one run with the golden inputs; compare each port in the group with each golden in the group. The name binding predicts rel L2 <= 0.02 only on the name-matched pairs (needs pairwise-distinct goldens, a host check)"
+    }
+  ],
+  "exceptions": []
+}
