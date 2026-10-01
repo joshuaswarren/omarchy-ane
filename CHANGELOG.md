@@ -1,41 +1,10 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- ANE overlays for every SoC with cited values. T6000 (M1 Pro) and the T6002
-  (M1 Ultra) die 0 get the T6001 nodes, behind the opt-in keys `ane-t6000` and
-  `ane-t6002`; `ane.ko` binds them with the `apple,t6000-ane` data. T6020 (M2
-  Pro) and the T6022 (M2 Ultra) die 0 get the T6021 nodes, but the package
-  does not install them: no driver binds them. The macOS 13.5 ADTs give the
-  same values on these SoCs. T8112 and M3 and later get no overlay.
-- `omarchy-ane-check` prints `UNTESTED SoC: SOC` on every SoC other than T8103,
-  T6001 and T6021, and fails on a SoC that no driver supports.
-- `tools/test_ane_overlays.py` applies every overlay to every linux-asahi
-  7.1.13 board device tree it selects. `tools/asahi-dtbs` builds those device
-  trees, byte for byte as the Arch package has them, and a dtc 1.7.2 with
-  libfdt linked in. The `dt-overlays` workflow runs them.
-
-### Changed
-
-- The overlays install to `/usr/share/omarchy-platform/dtb-overlays`, the
-  directory of omacom/omarchy-mac#677. It was
-  `/usr/lib/omarchy-platform/dtb-overlays`. `OVERLAY_DIR` in `omarchy-ane-dt`
-  is the one place that names it. While `.dtbo` files are still in the old
-  directory (a hand install), `omarchy-ane-dt apply` refuses and keeps the
-  current copies; the README gives the three move commands. `update-m1n1-dtbs`
-  and the hooks stay: Arch Linux ARM installs have no omarchy-mac-boot.
-- The T600x and T602x overlays share their nodes through `t600x-ane.dtsi` and
-  `t602x-ane.dtsi`. The T6001 and T6021 `.dtbo` files do not change.
-- `omarchy-ane-dt` names the libfdt trap when fdtoverlay renumbers a phandle.
-- The README chip table gives each SoC its ANE firmware, support state,
-  overlay gate, and the data that is missing.
-
 ## 0.4.0 (2026-10-01)
 
 The T6021 (M2 Max) driver stays opt-in. This release adds whole-model runs on
-the M2, a first disk boot, and the version string for `ane_t6021`.
+the M2, a first disk boot, ANE overlays for every SoC with cited values, and
+the version string for `ane_t6021`.
 
 ### Added
 
@@ -55,11 +24,35 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
 - `packaging/dt/t6021-uboot-serial-stdin.dts`: an opt-in overlay
   (`uboot-serial-stdin-t6021`) that lets one M2 Max boot from the internal disk
   (#16).
-- Research only, not in the DKMS package: `ane/h13/ane_t8103_fw.c` stages 1-3
-  and the H13 `sCSneCmdProgramLoad` packer `tools/h13_progload.py`, for a
-  Linux-side firmware start on the M1 (T8103). Candidate U-Boot `mtpkbd`
-  patches are in `receipts/2026-10-01-t6021-disk-boot/uboot-mtp/patches/` and
-  are not applied (#19).
+- ANE overlays for every SoC with cited values. T6000 (M1 Pro) and the T6002
+  (M1 Ultra) die 0 get the T6001 nodes, behind the opt-in keys `ane-t6000` and
+  `ane-t6002`; `ane.ko` binds them with the `apple,t6000-ane` data. T6020 (M2
+  Pro) and the T6022 (M2 Ultra) die 0 get the T6021 nodes, but the package
+  does not install them: no driver binds them. The macOS 13.5 ADTs give the
+  same values on these SoCs. T8112 and M3 and later get no overlay (#28).
+- `omarchy-ane-check` prints `UNTESTED SoC: SOC` on every SoC other than T8103,
+  T6001 and T6021, and fails on a SoC that no driver supports (#28).
+- `tools/test_ane_overlays.py` applies every overlay to every linux-asahi
+  7.1.13 board device tree it selects. `tools/asahi-dtbs` builds those device
+  trees, byte for byte as the Arch package has them, and a dtc 1.7.2 with
+  libfdt linked in. The `dt-overlays` workflow runs them (#28).
+- `tools/qwen_m2_decode.py --m-per-prompt` decodes each prompt at
+  M = len(prompt) + 32, the attention size that the M1 reference used (#27).
+- `tools/native-macos/` runs the staged Qwen programs and the Parakeet encoder
+  on a Mac's own ANE compile under macOS. `tools/staged-qwen/dump_step_ports.py`
+  and `check_step_dump.py` dump and check every port of a decode step (#29).
+- Research only, not in the DKMS build:
+  - `ane/h13/ane_t8103_fw.c` stages 1-3 and the H13 `sCSneCmdProgramLoad`
+    packer `tools/h13_progload.py`, for a Linux-side firmware start on the M1
+    (T8103).
+  - `ane/t6021/probes/ane_afbridge_probe.c`, a read-only probe of the 26 ANE0
+    AXI2AF bridge registers that macOS programs. It is built but has not run
+    (#25).
+  - Candidate U-Boot `mtpkbd` patches in
+    `receipts/2026-10-01-t6021-disk-boot/uboot-mtp/patches/`, not applied
+    (#19).
+  - Receipts for the ANE device-tree nodes and bindings on
+    aurora-silicon/linux #65 (#22, #26).
 
 ### Changed
 
@@ -71,6 +64,22 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
   (#13).
 - `packaging/build-dtbo` installs `PREFIX-NAME.dts` as
   `PREFIX/omarchy-NAME.dtbo`, so one prefix can hold two overlays (#16).
+- The overlays install to `/usr/share/omarchy-platform/dtb-overlays`, the
+  directory of omacom/omarchy-mac#677. It was
+  `/usr/lib/omarchy-platform/dtb-overlays`. A package upgrade moves the
+  files. A hand install in the old directory (`packaging/build-dtbo /`) must
+  move: while `.dtbo` files are in the old directory, `omarchy-ane-dt apply`
+  refuses and keeps the current copies, and the README gives the three move
+  commands. `OVERLAY_DIR` in `omarchy-ane-dt` is the one place that names the
+  directory. `update-m1n1-dtbs` and the two `90-omarchy-ane-dt` hooks stay:
+  Arch Linux ARM installs have no omarchy-mac-boot (#28).
+- The T600x and T602x overlays share their nodes through `t600x-ane.dtsi` and
+  `t602x-ane.dtsi`. The T8103, T6001 and T6021 `.dtbo` files do not change
+  (#28).
+- `omarchy-ane-dt` names the libfdt trap when fdtoverlay renumbers a phandle
+  (#28).
+- The README chip table gives each SoC its ANE firmware, support state,
+  overlay gate, and the data that is missing (#28).
 
 ### Fixed
 
@@ -103,14 +112,27 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
   serial-stdin overlay. That boot used a lab m1n1 stage 2 that adds the two
   `ane-firmware` reserved-memory nodes. The packaged m1n1 1.6.1 does not add
   them, so a disk boot with the packaged m1n1 and `ane_t6021` is not proven.
-- The whole encoder takes 254 ms per CALL on the M2 and about 139 ms on the M1
-  (T8103). CoreML on macOS takes 91 ms on the same M2.
-- Qwen: all 38 programs conform, but STAGED-QWEN-REF passes 3 of 10 prompts.
-  The native macOS reference run that decides the next step is pending.
+- The whole encoder takes 254 ms per CALL on the M2 under Linux and about
+  139 ms on the M1 (T8103). On the same M2 under macOS, the same MIL compiled
+  by macOS takes 89 ms with the same output bits (#29). The cause of the gap is
+  not known.
+- Qwen: all 38 programs conform, but STAGED-QWEN-REF passes 3 of 10 prompts
+  against the M1 reference. The M2's own macOS compile and runtime give the
+  same tokens as Linux on 10 of 10 prompts, with a logit difference of 0, so
+  the 3 of 10 comes from H14 against H13 numerics, not from the driver (#29).
+- Only T8103, T6001 and T6021 have run the ANE. The T6000 (M1 Pro) and T6002
+  (M1 Ultra) overlays are untested: each applies only with its own opt-in key
+  (`ane-t6000`, `ane-t6002`), and `omarchy-ane-check` prints
+  `UNTESTED SoC: SOC` on them. The T6020 and T6022 overlays are not installed.
+  The new overlays were checked against the linux-asahi 7.1.13 board device
+  trees, not on hardware.
 - `trace_td` is off by default. Use it for measurement only.
 - The T8103 firmware start is research. The package does not contain it.
-- The T8103 and T6001 hardware gates for this release are pending. Only the
-  M2 (T6021) ran the device gate.
+- Hardware gates of this release: T6021 passed the device gate with the
+  release-built `ane_t6021` after a disk boot of one M2 Max, with the #23
+  overlay (#30). T6001: both modules compile, and a smoke test passed on the
+  loaded older `ane` module; the 0.4.0 module was not loaded. T8103: pending.
+- The disabled-node kernel case that #23 fixes has not been booted.
 - After the firmware starts, `ane_t6021` cannot unload. Only a reboot removes
   it. The driver stays opt-in through `omarchy-ane-m2-enable`.
 
