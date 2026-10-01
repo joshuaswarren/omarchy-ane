@@ -1,0 +1,142 @@
+== state start 2026-10-01T19:23:34.403Z
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2307.07
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 0 dmesg_lines 2721
+no ane-run
+ 14:23:34 up 38 min, 15 users,  load average: 0.03, 0.22, 0.48
+== state start 2026-10-01T19:23:34.479Z arm A-before
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2307.14
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 2721
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 14:23:34 up 38 min, 15 users,  load average: 0.03, 0.22, 0.48
+== 1. gates 19:23:34
+gate add rc=0 GATE PASS
+gate mul rc=0 GATE PASS
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+== 2. correctness 19:23:36
+enc w1 min 254.451 median 254.451 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+prog_020 WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'} exec ms over 1 calls: min 4.886 p10 4.886 p25 4.886 median 4.886 p75 4.886 p90 4.886 p99 4.886 max 4.886 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+== 3. encoder timing, 20 blocks x 16 19:23:37
+enc b01 min 254.221 median 254.379 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b02 min 254.246 median 254.393 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b03 min 254.266 median 254.386 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b04 min 254.255 median 254.370 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b05 min 254.225 median 254.380 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b06 min 254.226 median 254.392 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b07 min 254.303 median 254.482 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b08 min 254.261 median 254.387 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b09 min 254.251 median 254.415 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b10 min 254.228 median 254.406 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b11 min 254.249 median 254.429 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b12 min 254.264 median 254.411 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b13 min 254.284 median 254.400 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b14 min 254.198 median 254.360 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b15 min 254.234 median 254.426 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b16 min 254.219 median 254.344 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b17 min 254.217 median 254.378 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b18 min 254.258 median 254.382 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b19 min 254.197 median 254.348 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b20 min 254.253 median 254.387 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+== 4. Qwen timing 19:25:14
+q prog_020 blocks done 19:25:19
+q prog_006 blocks done 19:25:28
+== 5. burst 60 s 19:25:28
+burst rc=0 w1 runs=3283 pass=3283 fail=0 w2 runs=3267 pass=3267 fail=0 w3 runs=3271 pass=3271 fail=0 w4 runs=3270 pass=3270 fail=0 exact lines: 13091 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+== state end 2026-10-01T19:26:28.072Z arm A-before
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2480.74
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 2731
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 14:26:28 up 41 min, 15 users,  load average: 4.54, 2.48, 1.33
+dmesg new lines 10, non-UFW 0, bad 0
+== window done 19:26:28 /var/tmp/dart/run-A-before-20261001T192334Z
+arm A-before rc=0 19:26:28
+probe apply apply=1 start 19:26:28.193
+probe apply insmod rc=0 end 19:26:32.447
+probe apply rmmod rc=0
+[ 2485.043265] ane_dart_probe: done, 38 of 38 written (apply=1), readback equal
+probe readB  start 19:26:32.549
+probe readB insmod rc=0 end 19:26:44.648
+probe readB rmmod rc=0
+[ 2497.244152] ane_dart_probe: done, 177 of 177 read, no write
+== state start 2026-10-01T19:26:44.733Z arm B
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2497.40
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 3164
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 14:26:44 up 41 min, 15 users,  load average: 3.82, 2.43, 1.33
+== 1. gates 19:26:44
+gate add rc=1 GATE FAIL
+STOP after /var/tmp/dart/run-B-20261001T192644Z/gate-add.log: rc=1
+[ 2497.508300] apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c0000
+[ 2497.508310] apple-dart 285810000.iommu: translation fault: status:0x800c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f990000
+[ 2497.508316] apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c0d00
+[ 2497.508318] apple-dart 285810000.iommu: translation fault: status:0x800c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9910c0
+[ 2497.508322] apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c1380
+[ 2497.508325] apple-dart 285810000.iommu: translation fault: status:0x800c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f991640
+[ 2497.508329] apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c18c0
+[ 2497.508331] apple-dart 285810000.iommu: translation fault: status:0x800c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f991b80
+[ 2497.508335] apple-dart 285820000.iommu: translation fault: status:0x900c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f9c1e00
+[ 2497.508337] apple-dart 285810000.iommu: translation fault: status:0x800c0008 stream:0 code:0x8 (NO PTE FOR IOVA) at 0x9f992080
+== state stop 2026-10-01T19:26:45.176Z arm B
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2497.84
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 10 dmesg_lines 3174
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 14:26:45 up 41 min, 15 users,  load average: 3.82, 2.43, 1.33
+arm B rc=3 19:26:45
+STOP: arm B rc=3
+== state stop 2026-10-01T19:26:45.268Z
+boot_id 39b103d8-22ea-496b-8618-2638305cbe11 uname 7.1.13-3-1-ARCH up 2497.93
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 10 dmesg_lines 3174
+no ane-run
+ 14:26:45 up 41 min, 15 users,  load average: 3.82, 2.43, 1.33

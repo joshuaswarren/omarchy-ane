@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Removed: the `af_bridge_macos` experiment parameter (#33); the 26 macOS AXI2AF bridge values did not change encoder time (254.274 vs 254.276 ms); see receipts/2026-10-01-t6021-af-bridge-run/.
+- Added: `ane/t6021/probes/ane_dart_probe.c` reads the ANE DART tunable and PERF words (read only by default). Linux leaves the bulk DARTs at reset values, and a live write of the macOS values causes DART translation faults; see receipts/2026-10-01-t6021-dart-tunables/.
 
 ## 0.4.0 (2026-10-01)
 

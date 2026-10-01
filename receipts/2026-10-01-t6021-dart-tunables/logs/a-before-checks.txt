@@ -1,0 +1,7 @@
+gate add rc=0 GATE PASS
+gate mul rc=0 GATE PASS
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+prog_020 exec ms over 1 calls: min 4.886 p10 4.886 p25 4.886 median 4.886 p75 4.886 p90 4.886 p99 4.886 max 4.886 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+burst rc=0 w1 runs=3283 pass=3283 fail=0 w2 runs=3267 pass=3267 fail=0 w3 runs=3271 pass=3271 fail=0 w4 runs=3270 pass=3270 fail=0 exact lines: 13091 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+dmesg new lines 10, non-UFW 0, bad 0
