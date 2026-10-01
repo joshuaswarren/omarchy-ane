@@ -1,0 +1,174 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * ANE for T8112 (M2) board device trees. NOT INSTALLED (packaging/dt/overlays:
+ * disabled): no driver binds apple,t8112-ane. UNTESTED: no T8112 has booted
+ * this overlay. Install it as opt-in "ane-t8112" when a driver has T8112 data.
+ *
+ * Every value comes from Apple data; receipts/2026-10-01-t8112-ane has the
+ * table with the source of each value:
+ *  - ADT /arm-io/ane and /arm-io/dart-ane of the macOS 13.5 (22G74) and 27.0
+ *    (26A428) IPSWs, the same on j413, j415, j473 and j493: the ane reg
+ *    windows and IRQ 520; the DART windows LLT/BRD/BWR (instance property),
+ *    IRQ 521, stream 0 (sid 0 and 15, bypass-15), vm-base 0x800000000 and
+ *    vm-size 0x7ffff0000 (apple,dma-range, as linux-asahi writes dcp_dart
+ *    from the same ADT values); the DART gate ANE-SYS-DART and ANE_CPU
+ *    (pmgr 0xc008) have the parent ANE_SYS (pmgr 0x4a8, ps_ane_sys).
+ *  - AppleH11ANEInterface 6.602.1 in the 13.5 kernelcache.release.mac14g:
+ *    for this ANE (ane-type 0x80) it powers on 0xc008, 0xc010, 0xc018,
+ *    0xc020, 0xc028, 0xc030, 0xc038 in that order, powers them off in the
+ *    reverse order, and names them ANE_SYS_CPU, ANE_TD, ANE_BASE and
+ *    ANE_SET1..4 (DumpANERegisters). The parent links below give genpd that
+ *    order. The ADT gives a parent only for 0xc008.
+ * Not here, because Apple data does not complete them: the ANE mailbox
+ * (0x26b408000; stock apple-mailbox needs a send-empty IRQ, and no ADT node
+ * names one) and the firmware IOVA reservation (memory-region; the entry
+ * IOVA is in the ane segment-ranges, which iBoot writes at boot, and no IPSW
+ * ADT has it). ane_t6021 needs both.
+ * Stock T8112 trees already carry AIC and ane_sys. Their phandles differ
+ * between kernels and boards, so they are reached by path.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
+	omarchy,skip-if-compatible = "apple,t8112-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t8112";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@23b0c0000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@23b700000/power-controller@4a8";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@23b700000";
+
+		__overlay__ {
+			ps_ane_sys_cpu: power-controller@c008 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_sys_cpu";
+				power-domains = <&ps_ane_sys>;
+			};
+
+			ps_ane_td: power-controller@c010 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_td";
+				power-domains = <&ps_ane_sys_cpu>;
+			};
+
+			ps_ane_base: power-controller@c018 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_td>;
+			};
+
+			ps_ane_set1: power-controller@c020 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc020 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set1";
+				power-domains = <&ps_ane_base>;
+			};
+
+			ps_ane_set2: power-controller@c028 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc028 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set2";
+				power-domains = <&ps_ane_set1>;
+			};
+
+			ps_ane_set3: power-controller@c030 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc030 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set3";
+				power-domains = <&ps_ane_set2>;
+			};
+
+			ps_ane_set4: power-controller@c038 {
+				compatible = "apple,t8112-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc038 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set4";
+				power-domains = <&ps_ane_set3>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@26b800000 {
+				compatible = "apple,t8112-dart", "apple,t8110-dart";
+				reg = <0x2 0x6b800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 521 4>;
+				power-domains = <&ps_ane_sys>;
+				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@26b810000 {
+				compatible = "apple,t8112-dart", "apple,t8110-dart";
+				reg = <0x2 0x6b810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 521 4>;
+				power-domains = <&ps_ane_sys>;
+				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@26b820000 {
+				compatible = "apple,t8112-dart", "apple,t8110-dart";
+				reg = <0x2 0x6b820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 521 4>;
+				power-domains = <&ps_ane_sys>;
+				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
+				status = "okay";
+			};
+
+			ane@26a000000 {
+				compatible = "apple,t8112-ane";
+				reg-names = "engine", "pmgr", "set";
+				reg = <0x2 0x6a000000 0x0 0x2000000>,
+				      <0x2 0x3b700000 0x0 0x18000>,
+				      <0x2 0x3b724000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "ane";
+				interrupts = <0 520 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_sys_cpu>, <&ps_ane_td>, <&ps_ane_base>,
+						<&ps_ane_set1>, <&ps_ane_set2>, <&ps_ane_set3>,
+						<&ps_ane_set4>;
+				status = "okay";
+			};
+		};
+	};
+};

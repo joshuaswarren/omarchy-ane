@@ -1,0 +1,47 @@
+# 2026-10-01T22:31:44Z, base f9c96fb + this change, x86_64 host
+$ tools/asahi-dtbs /var/tmp/t8112-ane/asahi
+asahi-dtbs: 23 DTBs in /var/tmp/t8112-ane/asahi/dtbs; tools in /var/tmp/t8112-ane/asahi/bin (Version: DTC 1.7.2-g53373d13)
+$ export PATH=/var/tmp/t8112-ane/asahi/bin:$PATH
+$ python3 tools/test_ane_dt.py && python3 tools/test_ane_m2.py && python3 tools/test_ane_firmware_fetch.py && ANE_DTBS=/var/tmp/t8112-ane/asahi/dtbs python3 tools/test_ane_overlays.py
+test_ane_dt: ok
+test_ane_m2: ok
+test_ane_firmware_fetch: ok (its T8112 case still refuses: "apple,t8112: no pinned ANE firmware for this chip")
+test_ane_overlays: t8103-ane.dts (enabled): 5 boards: t8103-j274 t8103-j293 t8103-j313 t8103-j456 t8103-j457
+test_ane_overlays: t6000-ane.dts (opt-in): 2 boards: t6000-j314s t6000-j316s
+test_ane_overlays: t6001-ane.dts (enabled): 3 boards: t6001-j314c t6001-j316c t6001-j375c
+test_ane_overlays: t6002-ane.dts (opt-in): 1 boards: t6002-j375d
+test_ane_overlays: t8112-ane.dts (disabled): 4 boards: t8112-j413 t8112-j415 t8112-j473 t8112-j493
+test_ane_overlays: t6020-ane.dts (opt-in): 3 boards: t6020-j414s t6020-j416s t6020-j474s
+test_ane_overlays: t6021-ane.dts (opt-in): 3 boards: t6021-j414c t6021-j416c t6021-j475c
+test_ane_overlays: t6021-uboot-serial-stdin.dts (opt-in): 3 boards: t6021-j414c t6021-j416c t6021-j475c
+test_ane_overlays: t6022-ane.dts (opt-in): 2 boards: t6022-j180d t6022-j475d
+test_ane_overlays: ok (9 overlays, 26 applications)
+exit 0
+
+# T8112 board DTBs (equal to the linux-asahi-7.1.13.asahi3-2 package DTBs)
+8e6c9d4ac982d3ce3d229c1b1f680c9a801f81e980a6dad83008f8cfe6e42804  t8112-j413.dtb
+8afa377f189405043bcfa064671b09d27d6e17406a6a0e0ebd20884ab6a2db26  t8112-j415.dtb
+a18edba743711d7e37a3151ca71fef6602afcaa4dc47c49a781782a83098d1fb  t8112-j473.dtb
+5000f81c5a05d83668bb41aa7e3b38cc4f89a1005d8e2d84a108ab1d791ea81a  t8112-j493.dtb
+
+# dtc -q -@ t8112-ane.dts, fdtoverlay onto each board DTB
+c0edc0295e085d5e27884808e0b9722caa6c8bc025146e64643132295c74c847  t8112-ane.dtbo
+3f4dc05a6521965762836f81c2bb6786cbb59ed1618e4a92d7de479586585214  t8112-j413-ane.dtb
+aa2b4484fbabeb81e7da53a331586e8abe56bfab3762e8451762e09274f99e49  t8112-j415-ane.dtb
+2a00fd5ea6eb4734720d8eb4dd4a8ad1ad15dc28196a8cf7fcf7fa79bb06aca3  t8112-j473-ane.dtb
+6212879ad83d5b556ab3636413d4ad8cbc32ceeeef1a803c55f6e98f3e00cd62  t8112-j493-ane.dtb
+
+# j413 result, decompiled (ane node; phandles: 0xf = interrupt-controller@23b0c0000,
+# 0xd1/d2/d3/d4/d5/d6/db = power-controller@c008/c010/c018/c020/c028/c030/c038,
+# 0xd8/d9/da = iommu@26b800000/26b810000/26b820000, 0x6b = power-controller@4a8)
+ane@26a000000 {
+	status = "okay";
+	power-domains = <0xd1 0xd2 0xd3 0xd4 0xd5 0xd6 0xdb>;
+	iommus = <0xd8 0x00 0xd9 0x00 0xda 0x00>;
+	interrupts = <0x00 0x208 0x04>;
+	interrupt-names = "ane";
+	interrupt-parent = <0x0f>;
+	reg = <0x02 0x6a000000 0x00 0x2000000 0x02 0x3b700000 0x00 0x18000 0x02 0x3b724000 0x00 0x4000>;
+	reg-names = "engine", "pmgr", "set";
+	compatible = "apple,t8112-ane";
+};
