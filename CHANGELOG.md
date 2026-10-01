@@ -75,8 +75,8 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
 
 ## 0.3.0 (2026-09-30)
 
-- T6021 (M2 Max) opt-in driver `ane_t6021` on the stock kernel: DRM ABI 2 and
-  the libane ABI-2 backend.
+- T6021 (M2 Max) opt-in driver `ane_t6021` on the stock kernel: DRM ABI 2
+  (UAPI `23b8eef`, driver `27e996a`) and the libane ABI-2 backend (`8a4379e`).
 - Complete T6021 device-tree overlay with the send-empty IRQ. The poll-TX
   kernel patch is not necessary.
 - `hello_wait_ms` defaults to 0. This stops a mailbox IRQ storm of 700,000 per
@@ -98,5 +98,5 @@ the M2, a first disk boot, and the version string for `ane_t6021`.
 ## 0.1.0
 
 - First release: the `ane` DRM accelerator module, `libane` and the Python
-  bindings, for M1 (T8103) and M1 Max (T6001), driver ABI 1.
+  bindings, for M1 (T8103) and M1 Max (T6001), driver ABI 1 (`7529715`).
 - A three-tier SoC gate: qualified, recognized-untested and unsupported.
