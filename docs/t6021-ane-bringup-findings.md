@@ -1424,7 +1424,8 @@ Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-b
   power-on values.
 - The iBoot state cannot be read: on a `fw_start=0` boot the seven ANE
   islands are off (PS word 0x300) and only `ane_sys`/`ane_cpu` are on.
-- `ane_t6021` parameter `af_bridge_macos=1` (default 0) writes the 26
+- The test-only `ane_t6021` parameter `af_bridge_macos=1` (code `d3b8561`,
+  removed from main after this result) writes the 26
   read-modify-writes at the start of P-1, in place of P-1a and P-1d. All 26
   read back as macOS writes them (0x400 = 0xc0f10010, as in the 13.5 hv
   trace), the firmware boots, and every output stays bit-exact.

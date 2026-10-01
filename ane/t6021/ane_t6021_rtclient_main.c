@@ -1976,7 +1976,6 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		}
 		a->dev = dev;
 		a->base[ANE_T6021_REG_ENGINE] = ane->engine;
-		a->base[ANE_T6021_REG_PMGR] = ane->pmgr;
 		a->irq = -1;
 		a->power_gated = true;
 		ane->fw = a;
