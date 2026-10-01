@@ -35,7 +35,9 @@ discriminates enable-accepted vs still-locked.
   CONFIG_LOCALVERSION="-3-2-ARCH" (release string preserved → module vermagic parity;
   recorded /proc/config.gz delta). Built-in-only change: no module ABI surface touched
   (CONFIG_MODVERSIONS not set; exported symbols unchanged).
-  Candidate vmlinuz sha256: <PINNED_AT_STAGE> (artifacts/Jw16PmpProto/build/).
+  **Candidate vmlinuz (Image) sha256:
+  d41b89194cb76abf5b10133a5bc9af6f6fc8a20df52e5b4740bbd066b7e2b4b5** (33,802,752 B;
+  receipt: artifacts/Jw16PmpProto/build/; branch HEAD 77e3ff69916f).
 - Variant DTB: the PROVEN Pmp5 v5 bytes unchanged
   (bf5bb60476cf034a77d93f7e7bdc3489acac29f03ff49a26c394c35e1c1a0ac7 — 78-channel
   variant, ane/dart nodes byte-identical to base 7b6ac97a).
