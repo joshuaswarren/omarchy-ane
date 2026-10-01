@@ -1,29 +1,37 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * ANE for T8112 (M2) board device trees. NOT INSTALLED (packaging/dt/overlays:
- * disabled): no driver binds apple,t8112-ane. UNTESTED: no T8112 has booted
- * this overlay. Install it as opt-in "ane-t8112" when a driver has T8112 data.
+ * ANE for T8112 (M2) board device trees, for ane_t6021 (apple,t8112-ane).
+ * UNTESTED opt-in "ane-t8112": no T8112 has booted this overlay.
  *
- * Every value comes from Apple data; receipts/2026-10-01-t8112-ane has the
- * table with the source of each value:
+ * Values and sources (receipts/2026-10-01-t8112-ane, the table, and
+ * receipts/2026-10-01-t8112-optin, this node's additions):
  *  - ADT /arm-io/ane and /arm-io/dart-ane of the macOS 13.5 (22G74) and 27.0
  *    (26A428) IPSWs, the same on j413, j415, j473 and j493: the ane reg
  *    windows and IRQ 520; the DART windows LLT/BRD/BWR (instance property),
- *    IRQ 521, stream 0 (sid 0 and 15, bypass-15), vm-base 0x800000000 and
- *    vm-size 0x7ffff0000 (apple,dma-range, as linux-asahi writes dcp_dart
- *    from the same ADT values); the DART gate ANE-SYS-DART and ANE_CPU
- *    (pmgr 0xc008) have the parent ANE_SYS (pmgr 0x4a8, ps_ane_sys).
+ *    IRQ 521, stream 0 (sid 0 and 15, bypass-15); the DART gate ANE-SYS-DART
+ *    and ANE_CPU (pmgr 0xc008) have the parent ANE_SYS (pmgr 0x4a8,
+ *    ps_ane_sys). No apple,dma-range: ane_t6021 maps its buffers with a
+ *    32-bit DMA mask and aliases the firmware at the RVBAR entry itself, as
+ *    on T6021 (t602x-ane.dtsi has none either).
  *  - AppleH11ANEInterface 6.602.1 in the 13.5 kernelcache.release.mac14g:
  *    for this ANE (ane-type 0x80) it powers on 0xc008, 0xc010, 0xc018,
  *    0xc020, 0xc028, 0xc030, 0xc038 in that order, powers them off in the
  *    reverse order, and names them ANE_SYS_CPU, ANE_TD, ANE_BASE and
  *    ANE_SET1..4 (DumpANERegisters). The parent links below give genpd that
  *    order. The ADT gives a parent only for 0xc008.
- * Not here, because Apple data does not complete them: the ANE mailbox
- * (0x26b408000; stock apple-mailbox needs a send-empty IRQ, and no ADT node
- * names one) and the firmware IOVA reservation (memory-region; the entry
- * IOVA is in the ane segment-ranges, which iBoot writes at boot, and no IPSW
- * ADT has it). ane_t6021 needs both.
+ *  - mailbox@26b408000: the ASC is engine + 0x1400000 (kext ANE_Init) and an
+ *    ASC v4 mailbox sits at ASC + 0x8000, as for every T8112 ASC in
+ *    t8112.dtsi (dcp_mbox 0x231c08000, sio_mbox 0x236408000) and for the
+ *    T6021 ANE (0x285408000). recv-not-empty is the ADT ane interrupt 520,
+ *    the line T6021's ane interrupt (884) is. send-empty 1000 is a lab
+ *    choice, as 1833 is on T6021: no node in the 13.5 or 27.0 ADTs of the
+ *    four boards nor in the linux-asahi 7.1.13 DTBs uses it, and it is below
+ *    the highest used line (1151), so it maps. ane_t6021 leaves the mailbox
+ *    stopped by default (hello_wait_ms=0).
+ *  - "fuse" 0x23d2c8060+8: the two eFuse words iBoot reads for
+ *    RTK_soc_revision (iBootStage2 macOS 26.6.2 j413 0x40270), inside ADT
+ *    pmgr reg[36] 0x23d2c8000+0x4000, the block m1n1 reads its T8112 ATC
+ *    and GPU fuses from. No linux-asahi node claims it.
  * Stock T8112 trees already carry AIC and ane_sys. Their phandles differ
  * between kernels and boards, so they are reached by path.
  */
@@ -128,7 +136,6 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 521 4>;
 				power-domains = <&ps_ane_sys>;
-				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
 				status = "okay";
 			};
 
@@ -139,7 +146,6 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 521 4>;
 				power-domains = <&ps_ane_sys>;
-				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
 				status = "okay";
 			};
 
@@ -150,16 +156,26 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 521 4>;
 				power-domains = <&ps_ane_sys>;
-				apple,dma-range = <0x8 0x0 0x7 0xffff0000>;
+				status = "okay";
+			};
+
+			ane_mbox: mailbox@26b408000 {
+				compatible = "apple,t8112-asc-mailbox", "apple,asc-mailbox-v4";
+				reg = <0x2 0x6b408000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "recv-not-empty", "send-empty";
+				interrupts = <0 520 4>, <0 1000 4>;
+				#mbox-cells = <0>;
 				status = "okay";
 			};
 
 			ane@26a000000 {
 				compatible = "apple,t8112-ane";
-				reg-names = "engine", "pmgr", "set";
+				reg-names = "engine", "pmgr", "set", "fuse";
 				reg = <0x2 0x6a000000 0x0 0x2000000>,
 				      <0x2 0x3b700000 0x0 0x18000>,
-				      <0x2 0x3b724000 0x0 0x4000>;
+				      <0x2 0x3b724000 0x0 0x4000>,
+				      <0x2 0x3d2c8060 0x0 0x8>;
 				interrupt-parent = <&aic>;
 				interrupt-names = "ane";
 				interrupts = <0 520 4>;
@@ -167,6 +183,7 @@
 				power-domains = <&ps_ane_sys_cpu>, <&ps_ane_td>, <&ps_ane_base>,
 						<&ps_ane_set1>, <&ps_ane_set2>, <&ps_ane_set3>,
 						<&ps_ane_set4>;
+				mboxes = <&ane_mbox>;
 				status = "okay";
 			};
 		};

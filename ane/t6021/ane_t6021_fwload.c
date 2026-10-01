@@ -1,23 +1,23 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * T6021 ANE firmware loader — installed-module port of the proven lab
+ * T602x/T8112 ANE firmware loader — installed-module port of the proven lab
  * staging unit (receipts 2026-09-19-h14-w13-boot-contract.md,
  * -w14-staging-proven.md; add-path proof
  * 2026-09-28-h14-fsm-secure-park-decode/first-inference.md).
  *
  * Implements, behind fw_load=1 (default on):
- *   1. request_firmware("apple/ane/t602x_ane0_fw_selene_rc4x.macho")
+ *   1. request_firmware() of the SoC's pinned 13.5 image
+ *      (ane_t602x_soc.fw: selene on T602x, bia on T8112)
  *   2. Validation via ane_fw_validate.h (shared with the offline
- *      regression h14_fwload_regression.c, shipped in
- *      ane-linux-experiments/tools/): sha256 pin, strict
- *      exact-image assertions (7 load commands, 3 pinned segments,
+ *      regression tools/h14_boot_regression.c): sha256 pin, strict
+ *      exact-image assertions (5 load commands, 2 pinned segments,
  *      entry 0, bounded LC walk).
  *   3. dma_alloc_coherent on the ANE platform device: the buffer is
  *      DART-mapped through the device's iommu group (stream 0 of the
  *      three bound instances, H14DartAudit). Segment-wise copy
- *      (__TEXT fileoff 0x4000 -> vm 0, __DATA fileoff 0xc8000 -> vm
- *      0xc4000; vmsize tail zero from the coherent alloc). Coherent
- *      memory needs no explicit cache clean.
+ *      (__TEXT fileoff 0x4000 -> vm 0, __DATA -> its vmaddr; vmsize
+ *      tail zero from the coherent alloc). Coherent memory needs no
+ *      explicit cache clean.
  *   4. Which copy runs. fw_alias_reserved=1 (default, T6021 only) maps
  *      the copy iBoot preloaded at SEG0/SEGi; probe refuses it unless
  *      no-map /reserved-memory nodes cover both windows (the lab m1n1
@@ -28,7 +28,7 @@
  *      for byte except the random guard (17 captures,
  *      receipts/2026-10-01-t602x-independent). That needs no reserved
  *      memory and no preload address, so it is the only mode on SoCs
- *      without a recorded placement (T6020, T6022).
+ *      without a recorded placement (T6020, T6022, T8112).
  *   5. W16 entry alias: the staged fw pages are ALIASED at the latched
  *      RVBAR entry on the device's default DMA domain. Placement
  *      contract, receipt receipts/2026-09-20-t6021-entry-alias.md:
@@ -91,7 +91,7 @@ MODULE_DESCRIPTION("T6021 ANE firmware staging + entry alias");
 static bool fw_load = true;
 module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load,
-		 "Validate + DART-map the selene PRELOAD payload (default on: "
+		 "Validate + DART-map the 13.5 PRELOAD payload (default on: "
 		 "the proven add-path configuration).");
 
 static unsigned int fw_extra_ram = 0x200000;
@@ -184,29 +184,65 @@ bool ane_t6021_fwload_options_ok(void)
 	       IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE);
 }
 
-#define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
+/* Per-SoC data. RTK_soc_revision on T602x is a measured constant: m1n1
+ * gives Linux no chip-revision. T6021: the 17 preload captures (0x11);
+ * T6020: ANEMinorVersion 1 on community rows 4e8224a39f40, dc53badc436a,
+ * ea8c35bd20bf, e6069fe959ad; T6022: 17 on row 90c6b9bf3e03
+ * (receipts/2026-10-01-community-rows). T6020 and T6022 have the T6021
+ * die-0 addresses (13.5 ADTs, t602x-ane.dtsi).
+ *
+ * pmu_pa: the firmware's power service programs the seven ANE ps words
+ * through its DART at IOVA == PA (SetPMUBaseAddress stores the ANE_TD
+ * word: selene 0x28e084008, bia 0x23b70c010, receipts/2026-10-01-t8112-kit).
+ * macOS maps the page first; without it the first access faults (NO PMD
+ * FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts.
+ *
+ * T8112 (receipts/2026-10-01-t8112-optin): the revision comes from the
+ * eFuse words iBoot reads, the ANE_SYS_CPU word is pmgr +0xc008, and the
+ * kext (type 0x70) opens PWGATE "set" +0x8b8 before the ps words. The TM
+ * TD word is not known there, so trace_td is off. */
+const struct ane_t602x_soc ane_t6020_soc = {
+	.soc = 0x6020, .soc_revision = 0x01,
+	.fw = &ane_fw_selene, .tunables = &ane_t6020_asc_tunables,
+	.ps_cpu_off = 0x2e0, .pmu_pa = 0x28e084000ull,
+	.trace_td_off = 0x1c20458,
+};
 
-/* ANE sub-block power registers (pmgr 0x28e080000 + 0x4000: ane_sys_mpm,
- * ane_td, ane_base, ane_set1..4). The firmware's power service programs
- * them through its DART at IOVA == PA once SET_SNE_PMU_BASE2 (0x29) sets
- * its base (fw 13.5 SetPMUBaseAddress 0x62694 stores 0x28e084008). macOS
- * maps the page first; without it the first access faults
- * (NO PMD FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts. */
-#define ANE_T6021_PMU_PA	0x28e084000ull
+const struct ane_t602x_soc ane_t6021_soc = {
+	.soc = 0x6021, .soc_revision = 0x11, .preload_placement = true,
+	.fw = &ane_fw_selene, .tunables = &ane_t602x_asc_tunables,
+	.ps_cpu_off = 0x2e0, .pmu_pa = 0x28e084000ull,
+	.trace_td_off = 0x1c20458,
+};
+
+const struct ane_t602x_soc ane_t6022_soc = {
+	.soc = 0x6022, .soc_revision = 0x11,
+	.fw = &ane_fw_selene, .tunables = &ane_t602x_asc_tunables,
+	.ps_cpu_off = 0x2e0, .pmu_pa = 0x28e084000ull,
+	.trace_td_off = 0x1c20458,
+};
+
+const struct ane_t602x_soc ane_t8112_soc = {
+	.soc = 0x8112, .revision_fuse = true,
+	.fw = &ane_fw_bia, .tunables = &ane_t8112_asc_tunables,
+	.ps_cpu_off = 0xc008, .pwgate_off = 0x8b8,
+	.pmu_pa = 0x23b70c000ull, .ps_off = 0x8,
+};
 
 static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom)
 {
+	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
 	int prot = IOMMU_READ | IOMMU_WRITE;
 	int ret;
 
 	if (dev_is_dma_coherent(ane->dev))
 		prot |= IOMMU_CACHE;
-	ret = iommu_map(dom, ANE_T6021_PMU_PA, ANE_T6021_PMU_PA, ANE_T6021_FW_ALIAS_PAGE,
+	ret = iommu_map(dom, soc->pmu_pa, soc->pmu_pa, ANE_T6021_FW_ALIAS_PAGE,
 			prot, GFP_KERNEL);
-	if (!ret && iommu_iova_to_phys(dom, ANE_T6021_PMU_PA) != ANE_T6021_PMU_PA)
+	if (!ret && iommu_iova_to_phys(dom, soc->pmu_pa) != soc->pmu_pa)
 		ret = -EIO;
 	dev_info(ane->dev, "pmu: DART map %#llx (IOVA == PA, %#x bytes): %d\n",
-		 ANE_T6021_PMU_PA, ANE_T6021_FW_ALIAS_PAGE, ret);
+		 soc->pmu_pa, ANE_T6021_FW_ALIAS_PAGE, ret);
 	return ret;
 }
 
@@ -251,7 +287,7 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane, bool reserved)
 	if (reserved) {
 		/* Preloaded placement: the two reserved windows mapped at
 		 * the entry IOVAs. SEG0 0xc4000 is TEXT and SEG1 0x438000
-		 * is DATA (the 13.5 layout, ane_fw_expected_segs).
+		 * is DATA (the 13.5 layout, ane_fw_selene.segs).
 		 * The windows are adjacent, so the mapping is one
 		 * contiguous run of `mapped` bytes starting at entry —
 		 * tracked exactly, because teardown must never unmap a
@@ -410,19 +446,41 @@ err_unmap:
 	return ret;
 }
 
-/* ACTUAL iBoot-preloaded payload: macOS 13.5 (22G74) selene — root
- * preload capture 20260926T230146 byte-verified the reserved windows
- * against this exact archive (SHA-256
- * a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc).
- * The previous pin (9f7915c4…) was the other-generation blob: the
- * loader validated its bytes while the reserved-alias boot executed
- * 13.5. */
-static const u8 ane_fw_sha256_expected[32] = {
-	0xa9, 0xc4, 0xb7, 0x71, 0x29, 0x4a, 0x6b, 0x11,
-	0x56, 0x24, 0xd9, 0x48, 0x0a, 0x62, 0x48, 0xd0,
-	0x89, 0x9a, 0x16, 0x81, 0xa5, 0x75, 0xe8, 0x65,
-	0x07, 0x0b, 0x87, 0xa3, 0x24, 0x84, 0x27, 0xbc,
-};
+/* RTK_soc_revision. T8112 reads it as iBoot does: the two eFuse words
+ * of the DT "fuse" window (0x23d2c8060, 8 bytes), decoded by
+ * ane_t8112_fuse_revision(). Two non-posted 32-bit reads and nothing
+ * else: the eFuse block (ADT pmgr reg[36]) is always on, and m1n1 reads
+ * its ATC and GPU fuses at 0x23d2c8484 and 0x23d2c84dc on every T8112
+ * boot. Without the window the revision is unknown, so the load refuses. */
+static int ane_t6021_soc_revision(struct ane_t6021 *ane,
+				  const struct ane_t602x_soc *soc, u32 *rev)
+{
+	struct resource *res;
+	void __iomem *fuse;
+	u32 w0, w1;
+
+	if (!soc->revision_fuse) {
+		*rev = soc->soc_revision;
+		return 0;
+	}
+	res = platform_get_resource_byname(to_platform_device(ane->dev),
+					   IORESOURCE_MEM, "fuse");
+	if (!res || resource_size(res) != 8) {
+		dev_err(ane->dev,
+			"fwload: no 8-byte \"fuse\" window: chip revision unknown, refusing\n");
+		return -ENODEV;
+	}
+	fuse = ioremap_np(res->start, 8);
+	if (!fuse)
+		return -ENOMEM;
+	w0 = readl(fuse);
+	w1 = readl(fuse + 4);
+	iounmap(fuse);
+	*rev = ane_t8112_fuse_revision(w0, w1);
+	dev_info(ane->dev, "fwload: chip revision %#x (fuse %#llx: %08x %08x)\n",
+		 *rev, (u64)res->start, w0, w1);
+	return 0;
+}
 
 /* Own memory (header item 4): iBoot's runtime patches, with values from
  * the running system: the latched entry (or the staged DVA that the boot
@@ -442,26 +500,32 @@ static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 		/* iBoot's guards have one zero byte at a random position */
 		.stack_guard = guard & ~(0xffull << (8 * (guard >> 61))),
 		.soc = soc->soc,
-		.soc_revision = ANE_T602X_SOC_REVISION,
 		.cpu_pa = res->start + ANE_ASC_CPU_BASE,
 		.wrapper_pa = res->start + ANE_ASC_WRAPPER_BASE,
 	};
 	const char *reason = NULL;
+	int ret;
 
-	if (ane_fw_apply_boot_patches(img, &p, &reason)) {
-		dev_err(ane->dev, "fwload: own memory: %s\n", reason);
+	ret = ane_t6021_soc_revision(ane, soc, &p.soc_revision);
+	if (ret)
+		return ret;
+	if (ane_fw_apply_boot_patches(img, soc->fw, soc->tunables, &p, &reason)) {
+		dev_err(ane->dev, "fwload: own memory: %s (rev %#x)\n", reason,
+			p.soc_revision);
 		return -EINVAL;
 	}
 	dev_info(ane->dev,
 		 "fwload: own memory: iBoot patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
 		 p.soc, p.soc_revision,
-		 p.exec_base + ane_fw_expected_segs[1].vmaddr, p.cpu_pa,
+		 p.exec_base + soc->fw->segs[1].vmaddr, p.cpu_pa,
 		 p.wrapper_pa);
 	return 0;
 }
 
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 {
+	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	const struct ane_fw_image *img = soc->fw;
 	const struct firmware *fw = NULL;
 	struct ane_fw_seg segs[ANE_FW_NSEGS];
 	u64 entry = 0;
@@ -481,17 +545,16 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	/* The 64-bit coherent mask is set once in ane_t6021_probe,
 	 * BEFORE rtkit_init allocates the rings (W15 review). */
 
-	ret = request_firmware(&fw, ANE_FW_NAME, ane->dev);
+	ret = request_firmware(&fw, img->name, ane->dev);
 	if (ret) {
 		dev_err(ane->dev,
 			"fwload: request_firmware(%s): %d — stage the payload "
-			"under /lib/firmware/apple/ane/\n", ANE_FW_NAME, ret);
+			"with omarchy-ane-firmware-fetch\n", img->name, ret);
 		return ret;
 	}
 
 	sha256(fw->data, fw->size, actual_sha);
-	ret = ane_fw_validate_blob(fw->data, fw->size,
-				   ane_fw_sha256_expected, actual_sha,
+	ret = ane_fw_validate_blob(fw->data, fw->size, img, actual_sha,
 				   segs, &entry, &reason);
 	if (ret) {
 		dev_err(ane->dev, "fwload: validation failed: %s\n",
@@ -519,9 +582,8 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	ane->fw_size = alloc_size;
 
 	dev_info(ane->dev,
-		 "fwload: selene PRELOAD validated + DART-mapped: 3 segs, "
-		 "entry %#llx, iova %pad size %#x\n",
-		 entry, &iova, alloc_size);
+		 "fwload: %s PRELOAD validated + DART-mapped: entry %#llx, iova %pad size %#x\n",
+		 img->name, entry, &iova, alloc_size);
 
 	ret = reserved ? 0 : ane_t6021_fw_patch(ane, buf);
 	if (!ret)

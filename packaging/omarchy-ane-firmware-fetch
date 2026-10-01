@@ -6,8 +6,8 @@ the ANE firmware there, and the driver accepts exactly one image: the selene
 payload from the macOS 13.5 (22G74) stub that every Omarchy M1/M2 install
 boots; its BuildManifest gives that one file to the die-0 ANE of all three.
 T8112 (M2): the 13.5 BuildManifest gives h14_ane_fw_bia_j4xx to j413, j415,
-j473 and j493 (receipts/2026-10-01-t8112-ane). No driver loads it yet; the
-T8112 kit (tools/t8112-kit) compares a boot capture against it. This tool
+j473 and j493 (receipts/2026-10-01-t8112-ane); ane_t6021 loads it (UNTESTED,
+receipts/2026-10-01-t8112-optin). This tool
 reads the stub version from the device tree, maps it to a pinned IPSW URL,
 range-fetches only the ANE member (about 5 MB of a 12.9 GB IPSW), unwraps the
 IM4P, and installs the payload only when its size and SHA-256 equal the pin.
@@ -40,9 +40,8 @@ import zipfile
 from pathlib import Path
 
 # chip -> (IPSW member, installed name, payload size, payload SHA-256).
-# SELENE is the driver's pin: ane/t6021/ane_t6021_fwload.c
-# ane_fw_sha256_expected and ane/t6021/ane_fw_validate.h ANE_FW_BLOB_SIZE.
-# Change them together. BIA: receipts/2026-10-01-t8112-ane.
+# These are the driver's pins: ane/t6021/ane_fw_validate.h ane_fw_selene and
+# ane_fw_bia. Change them together (tools/test_ane_firmware_fetch.py).
 SELENE = ("Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p", "apple/ane/t602x_ane0_fw_selene_rc4x.macho",
           0x4C5B28, "a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc")
 BIA = ("Firmware/ane/h14_ane_fw_bia_j4xx.im4p", "apple/ane/h14_ane_fw_bia_j4xx.macho",

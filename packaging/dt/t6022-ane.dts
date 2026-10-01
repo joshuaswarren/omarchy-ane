@@ -8,14 +8,15 @@
  * ane_t6021 binds apple,t6022-ane and runs that firmware from memory it
  * allocates, with iBoot's runtime patches replayed (ane/t6021/ane_fw_validate.h),
  * so no preload address and no reserved-memory node is needed. RTK_soc is
- * 0x6022; the chip revision 0x11 and the ASC tunables are T6021 capture values
- * that no T6022 has confirmed. No T6022 has run it.
+ * 0x6022, the chip revision 0x11 (ANEMinorVersion 17 on community row
+ * 90c6b9bf3e03), and the ASC tunables are the T6021 values: the macOS 26.6.2
+ * iBoot of j180d and j475d holds the same ANE table as j414c
+ * (receipts/2026-10-01-t8112-optin). No T6022 has run it.
  *
  * The die-1 ANE (ADT ane1: 0x2284000000, interrupt 884 on die 1, DARTs at
  * 0x2285800000, firmware t602x_ane1_fw_selene_rc4x) is left out: ane_t6021
- * drives one ANE, with die-0 addresses compiled in (the IPI doorbell
- * 0x285844000 and the pmgr words 0x28e084000 in
- * ane/t6021/ane_t6021_rtclient_main.c).
+ * drives one ANE, and its T6022 data (ane_t6022_soc in
+ * ane/t6021/ane_t6021_fwload.c: the pmgr page 0x28e084000) is die 0's.
  */
 /dts-v1/;
 /plugin/;

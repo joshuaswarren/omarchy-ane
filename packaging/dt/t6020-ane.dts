@@ -7,9 +7,12 @@
  * boards the same ANE firmware (t602x_ane0_fw_selene_rc4x). ane_t6021 binds
  * apple,t6020-ane and runs that firmware from memory it allocates, with
  * iBoot's runtime patches replayed (ane/t6021/ane_fw_validate.h), so no
- * preload address and no reserved-memory node is needed. RTK_soc is 0x6020;
- * the chip revision 0x11 and the ASC tunables are T6021 capture values that
- * no T6020 has confirmed. No T6020 has run it.
+ * preload address and no reserved-memory node is needed. RTK_soc is 0x6020,
+ * the chip revision 0x01 (ANEMinorVersion 1 on community rows 4e8224a39f40,
+ * dc53badc436a, ea8c35bd20bf, e6069fe959ad; receipts/2026-10-01-community-rows),
+ * and the ASC tunables are the T6020 table of the macOS 26.6.2 iBoot of j414s
+ * and j416s, which differs from T6021 in 13 of 24 values
+ * (receipts/2026-10-01-t8112-optin). No T6020 has run it.
  */
 /dts-v1/;
 /plugin/;

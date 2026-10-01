@@ -170,11 +170,10 @@ assert rc == 0 and 'UNTESTED' not in out and 'firmware' not in out, out
 for soc, board, compat, mod in (('t6000', 'j314s', 'apple,t6000-ane', 'ane'),
                                 ('t6002', 'j375d', 'apple,t6000-ane', 'ane'),
                                 ('t6020', 'j414s', 'apple,t6020-ane', 'ane_t6021'),
-                                ('t6022', 'j180d', 'apple,t6022-ane', 'ane_t6021')):
+                                ('t6022', 'j180d', 'apple,t6022-ane', 'ane_t6021'),
+                                ('t8112', 'j413', 'apple,t8112-ane', 'ane_t6021')):
     rc, out = check(soc, board, compat, mod)
     assert rc == 0 and f'UNTESTED SoC: {soc}. {mod} has not run on it.' in out, out
-rc, out = check('t8112', 'j413', 'apple,t8112-ane', 'ane_t6021')
-assert 'UNTESTED SoC: t8112' in out, out
 rc, out = check('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021', real_fetch=True)
 assert rc == 1 and 't602x_ane0_fw_selene_rc4x.macho is missing. Run: sudo omarchy-ane-firmware-fetch' in out, out
 rc, out = check('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021', bound=False)

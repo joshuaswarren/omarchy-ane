@@ -16,8 +16,13 @@
  *    (receipts/2026-09-18-h14-w2-protocol-decode §3).
  *
  * DT binding (driver + packaging/dt/t6021-ane.dts are the two halves):
- *  compatible    = "apple,t6021-ane" (also "apple,t6020-ane" and the
- *                  T6022 die-0 "apple,t6022-ane": struct ane_t602x_soc)
+ *  compatible    = "apple,t6021-ane" (also "apple,t6020-ane", the
+ *                  T6022 die-0 "apple,t6022-ane" and "apple,t8112-ane":
+ *                  struct ane_t602x_soc). The T6021 values follow; T8112
+ *                  (packaging/dt/t8112-ane.dts) has engine 0x26a000000,
+ *                  pmgr 0x23b700000+0x18000, set 0x23b724000+0x4000,
+ *                  IRQ 520, seven power states 0xc008..0xc038, and a
+ *                  fourth window "fuse" (0x23d2c8060+8, chip revision).
  *  reg/reg-names = "engine" (whole 32 MiB ADT range0, 0x284000000;
  *                  the H13-style +0x1c04000 engine delta does not exist
  *                  on this SoC — kext never computes it and first touch
@@ -699,7 +704,7 @@ int ane_t6021_csne_submit(struct ane_t6021 *ane, const void *cmd, size_t size);
 void ane_t6021_csne_ping_attempt(struct ane_t6021 *ane);
 
 /* W13/W14 firmware loader (ane_t6021_fwload.c): validate + stage +
- * dart-ane0-map the selene PRELOAD payload behind fw_load=1. This is
+ * dart-ane0-map the 13.5 PRELOAD payload behind fw_load=1. This is
  * the staging half of the boot contract: the Params+0x18 producer
  * chain and the RVBAR fold are closed (mapper-callchain audit, commits
  * 3762aee/12be074); ane_t6021_boot.c consumes the staged surface. */
@@ -709,13 +714,39 @@ bool ane_t6021_fwload_options_ok(void);
 bool ane_t6021_fwload_placement_ok(struct device *dev);
 bool ane_t6021_fwload_requested(void);
 
-/* Per-SoC of_match data. soc is the value iBoot writes to RTK_soc.
- * preload_placement: the iBoot SEG0/SEGi physical placement is recorded
- * for this SoC (T6021 only), so fw_alias_reserved=1 may map it; the other
- * SoCs always run the firmware from driver-owned memory. */
+struct ane_fw_image;
+struct ane_asc_tunables;
+
+/* Per-SoC of_match data (defined in ane_t6021_fwload.c).
+ *  soc, soc_revision: what iBoot writes to RTK_soc and RTK_soc_revision.
+ *    revision_fuse: read the revision from the DT "fuse" window as iBoot
+ *    does instead (T8112).
+ *  preload_placement: the iBoot SEG0/SEGi physical placement is recorded
+ *    for this SoC (T6021 only), so fw_alias_reserved=1 may map it; the
+ *    other SoCs always run the firmware from driver-owned memory.
+ *  ps_cpu_off: the ANE CPU ps word in the DT "pmgr" window (probe guard).
+ *  pwgate_off: the kext's PWGATE word in the DT "set" window, checked
+ *    open before any engine read; 0 = not checked.
+ *  pmu_pa: the page of the seven ANE ps words; the firmware's power
+ *    service writes them through its DART at IOVA == PA. ps_off: the
+ *    first of the seven in that page.
+ *  trace_td_off: engine offset of the TM last-committed-TD word read by
+ *    trace_td; 0 = trace_td unsupported. */
 struct ane_t602x_soc {
 	u32 soc;
+	u32 soc_revision;
+	bool revision_fuse;
 	bool preload_placement;
+	const struct ane_fw_image *fw;
+	const struct ane_asc_tunables *tunables;
+	u32 ps_cpu_off;
+	u32 pwgate_off;
+	u64 pmu_pa;
+	u32 ps_off;
+	u32 trace_td_off;
 };
+
+extern const struct ane_t602x_soc ane_t6020_soc, ane_t6021_soc,
+	ane_t6022_soc, ane_t8112_soc;
 
 #endif /* __ANE_T6021_H__ */
