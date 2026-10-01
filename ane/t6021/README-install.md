@@ -221,7 +221,7 @@ bisection only.
 | `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (receipts/2026-09-30-t6021-stock-mailbox). A firmware that speaks RTKit needs `1000` (the lab value). |
 | `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue (only with an RTKit instance: `legacy_only=0`, or legacy mode with `hello_wait_ms` > 0) |
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
-| `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. Read at load (0444). |
+| `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
 | `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
 
 Lab knobs that stayed at their inert values in every proven run are

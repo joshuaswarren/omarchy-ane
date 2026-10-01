@@ -230,8 +230,9 @@ struct ane_t6021_fd {
  * capped separately (bo_total_max_mb) by an atomic counter, enforced at
  * alloc and released when the memory is really freed. Program sections stay
  * held until reboot, and the 38 Qwen programs alone hold about 2.6 GiB.
- * Every BO also needs IOVA below 4 GiB (32-bit DMA mask), so allocations
- * fail with -ENOMEM near that bound whatever the cap.
+ * A cap of 0 refuses every BO_INIT with -ENOSPC; there is no unlimited
+ * value. Every BO also needs IOVA below 4 GiB (32-bit DMA mask), so
+ * allocations fail with -ENOMEM near that bound whatever the cap.
  * The 16 KiB alignment check is unchanged: every DMA site assumes it. */
 #define ANE_T6021_BO_MAX		SZ_1G
 #define ANE_T6021_BO_HASH_CHUNK		SZ_1M

@@ -50,8 +50,9 @@ now uses it. The dense generator remains for matvec and the elementwise ops.
 
 Stock `7.1.13-3-1-ARCH`, DTB from the packaged overlay. The module was built
 on the device from `19648c8`. The merged `ane/` tree differs from it only in
-two comments that named the old 2 GiB cap (the rebase onto main touched only
-tools and tests). Module SHA-256
+comments: two named the old 2 GiB cap, and one says that a cap of 0 refuses
+every `BO_INIT` (the rebase onto main touched only tools and tests). Module
+SHA-256
 `a584a96744a8d51232ee1ede5996c8fe8f8cf11556b2751283446cc539f7ae7f`.
 
 | Check | Result |
