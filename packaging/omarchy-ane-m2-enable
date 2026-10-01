@@ -86,8 +86,8 @@ def board_dtb(root, kver):
         raise Refuse(f"kernel {kver} has no {name}")
     overlays = sorted(set(dt.overlays_for(root, name)) | {root / OVERLAY})
     with tempfile.TemporaryDirectory() as tmp:
-        data = dt.build(stock, overlays, Path(tmp))
-    return stock.read_bytes() if data is None else data
+        built = dt.build(stock, overlays, Path(tmp))
+    return stock.read_bytes() if built is None else built[0]
 
 
 def mailbox_irqs(data):

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * U-Boot console input for T6021 (M2 Max) disk boots: serial only. OPT-IN:
+ * installed, but it applies only when "uboot-serial-stdin-t6021" is a line of
+ * /etc/omarchy-platform/dtb-overlays.opt-in. It is a workaround, not an ANE
+ * part.
+ *
+ * Problem, seen on one M2 Max laptop (receipts/2026-10-01-t6021-disk-boot):
+ * every disk boot stopped at the U-Boot prompt. The internal keyboard input
+ * of U-Boot ("mtpkbd", drivers/input/apple_mtp_kbd.c in uboot-asahi
+ * 2026.07) gives a key less than 0.2 s into the 1 s autoboot countdown. With the
+ * countdown skipped, the same input stops the GRUB menu timeout through the
+ * U-Boot EFI console. With stdin=serial, the same laptop boots. Nobody
+ * pressed a key; whether other machines see this input is not known.
+ *
+ * U-Boot reads /config from the device tree that m1n1 gives it:
+ * bootdelay = -2 skips the key check (common/autoboot.c), and bootcmd removes
+ * mtpkbd from stdin before the boot flow, so GRUB gets no input from it.
+ *
+ * Cost: the internal keyboard does not work at the U-Boot prompt or in the
+ * GRUB menu. Only the serial console gives input there.
+ *
+ * Remove this overlay when uboot-asahi gets a fix that passes only keyboard
+ * reports from mtpkbd to stdin.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "uboot-serial-stdin-t6021";
+
+	fragment@0 {
+		target-path = "/";
+
+		__overlay__ {
+			config {
+				bootdelay = <0xfffffffe>;
+				bootcmd = "setenv stdin serial; bootflow scan -b";
+			};
+		};
+	};
+};

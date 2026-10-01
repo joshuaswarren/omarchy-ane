@@ -11,12 +11,24 @@ Boot path status: the module works on the stock linux-asahi kernel
 `packaging/dt/t6021-ane.dts`, the first two a lab overlay with the
 same ANE nodes; receipt
 [2026-09-30-t6021-stock-mailbox](../../receipts/2026-09-30-t6021-stock-mailbox/README.md))
-and on `7.1.13-ARCH-polltx`. Every boot so far, on both kernels, is a
-USB proxy chain load (kernel, DTB and initramfs staged over the m1n1
-proxy by the M1 host). The disk boot (m1n1, U-Boot, GRUB) is not
-proven. The stock-kernel boots installed the module and the DTB by
-hand; `omarchy-ane-m2-enable` still refuses a kernel whose
-apple-mailbox does not poll TX, and the stock kernel is one.
+and on `7.1.13-ARCH-polltx`. Up to 2026-09-30 every boot, on both kernels,
+was a USB proxy chain load (kernel, DTB and initramfs staged over the m1n1
+proxy by the M1 host), with the module and the DTB installed by hand. On
+2026-10-01 one M2 Max booted from the internal disk (m1n1, U-Boot, GRUB)
+with `omarchy-ane-dt apply` and `update-m1n1`, and `ane_t6021` loaded at
+boot (receipt
+[2026-10-01-t6021-disk-boot](../../receipts/2026-10-01-t6021-disk-boot/README.md)).
+That boot used a lab m1n1 stage 2 that adds the two `ane-firmware`
+reserved-memory nodes; the packaged m1n1 1.6.1 does not add them.
+
+On that laptop the disk boot also needs the opt-in overlay
+`packaging/dt/t6021-uboot-serial-stdin.dts` (opt-in key
+`uboot-serial-stdin-t6021`): without it, input from the U-Boot internal
+keyboard driver (`mtpkbd`) stops the boot at the U-Boot prompt. With it, the
+internal keyboard does not work at the U-Boot prompt or in the GRUB menu;
+only serial gives input there. This input may be specific to that laptop.
+The overlay goes away when uboot-asahi passes only keyboard reports from
+`mtpkbd` to stdin.
 
 ## Prerequisites
 
