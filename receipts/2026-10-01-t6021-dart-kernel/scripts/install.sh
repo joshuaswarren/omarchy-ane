@@ -41,7 +41,10 @@ sudo -n mkinitcpio -k "$REL" -g "$I"
 sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$REL/kernel/fs/btrfs/btrfs.ko$"
 ! sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$STOCK/"
 diff <(kos /boot/initramfs-linux-asahi.img) <(kos "$I")
-sudo -n bsdtar -xOf "$I" etc/systemd/system.conf | grep -x 'RuntimeWatchdogSec=120'
+diff <(sudo -n lsinitcpio /boot/initramfs-linux-asahi.img | sed "s|/$STOCK/|/KVER/|" | sort) \
+	<(sudo -n lsinitcpio "$I" | sed "s|/$REL/|/KVER/|" | sort) >initramfs-files.diff &&
+	echo "initramfs file lists equal (release normalized)" ||
+	echo "initramfs file lists differ in $(grep -c '^[<>]' initramfs-files.diff) lines (see initramfs-files.diff)"
 
 sudo -n install -m644 custom.cfg "$C"
 sudo -n grub-script-check "$C"

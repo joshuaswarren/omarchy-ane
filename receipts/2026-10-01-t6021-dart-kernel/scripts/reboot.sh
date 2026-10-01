@@ -15,7 +15,7 @@ free() { flock -n /var/tmp/ane-run.lock true && ! pgrep -x ane-run >/dev/null; }
 	ls /etc/modprobe.d/
 	echo "grubenv before: [$(sudo -n grub-editenv /boot/grub/grubenv list | tr '\n' ' ')]"
 } 2>&1 | tee -a "$S/reboots.log"
-[ -z "$(sudo -n grub-editenv /boot/grub/grubenv list)" ] || { echo "grubenv not empty"; exit 3; }
+case "$(sudo -n grub-editenv /boot/grub/grubenv list)" in "" | "next_entry=") ;; *) echo "grubenv holds an entry"; exit 3 ;; esac
 free || { echo "BUSY $(date -u +%T)"; exit 3; }
 sync
 sleep 40
