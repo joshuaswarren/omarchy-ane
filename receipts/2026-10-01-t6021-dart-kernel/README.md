@@ -145,8 +145,9 @@ writes only new paths and stops at the first failed check:
 4. `/boot/vmlinuz-linux-asahi-dart`, then
    `mkinitcpio -k 7.1.13-3-1-ARCH-dart -g /boot/initramfs-linux-asahi-dart.img`.
    Checks: the image holds `btrfs.ko` from the new tree and nothing from the
-   stock tree; its module list equals the stock initramfs list; its
-   `etc/systemd/system.conf` has `RuntimeWatchdogSec=120`.
+   stock tree; its module list equals the stock initramfs list. The full
+   file lists (release string normalized) are compared and the difference
+   is written to `initramfs-files.diff`.
 5. `/boot/grub/custom.cfg` (`scripts/custom.cfg`), `grub-script-check`.
 6. Readback of every new file, and the stock hashes again: they must be
    equal.
@@ -193,19 +194,25 @@ History that this plan avoids:
   step 4 checks the contents).
 
 `scripts/reboot.sh STAGEDIR [entry]` runs inside a `gpu-turn` ticket. It
-checks the ANE lock and `ane-run`, syncs, waits 40 s, checks again, and
-only then runs `grub-reboot <entry>` and reads `next_entry` back as the last
-step before `systemctl reboot` (a busy lock leaves `grubenv` empty).
+refuses if `grubenv` holds an entry (`next_entry=` with no value, which GRUB
+leaves after a one-shot, counts as empty), checks the ANE lock and
+`ane-run`, syncs, waits 40 s, checks again, and only then runs
+`grub-reboot <entry>` and reads `next_entry` back as the last step before
+`systemctl reboot` (a busy lock leaves `grubenv` as it was).
 
 Boot sequence (one plain reboot each):
 
 | boot | GRUB selection | kernel | extra cmdline | pass |
 |---|---|---|---|---|
-| T | `grub-reboot dart-oneshot-test` | STOCK kernel and initramfs | `ane_dart_oneshot=test panic=30` | marker present; `grubenv` now `next_entry=` (empty): GRUB wrote it |
+| T | `grub-reboot dart-oneshot-test` | STOCK kernel and initramfs | `ane_dart_oneshot=test` + safety args | marker present; `grubenv` now `next_entry=` (empty): GRUB wrote it |
 | D0 | none | stock default | none | no marker: the next boot after a one-shot is the default |
-| C | `grub-reboot dart-ctl` | `-dart` | `ane_dart_oneshot=ctl panic=30 apple_dart.ane_tunables=0` | boot-check, read probe at reset values, control arm |
-| X | `grub-reboot dart-tun` | `-dart` | `ane_dart_oneshot=tun panic=30 apple_dart.ane_tunables=1` | boot-check, read probe applied, X arm |
+| C | `grub-reboot dart-ctl` | `-dart` | `ane_dart_oneshot=ctl` + safety args + `apple_dart.ane_tunables=0` | boot-check, read probe at reset values, control arm |
+| X | `grub-reboot dart-tun` | `-dart` | `ane_dart_oneshot=tun` + safety args + `apple_dart.ane_tunables=1` | boot-check, read probe applied, X arm |
 | S | none | stock default | none | stock, gates, then `revert.sh` |
+
+Safety args in all three entries: `panic=30 systemd.watchdog_sec=120
+systemd.crash_action=reboot`. T boots them on the stock kernel first, so a
+problem with the arguments shows up before any custom kernel boots.
 
 T and D0 prove the mechanism with the stock kernel before any custom kernel
 boots. If T shows `next_entry` still set, the plan stops there: the next
@@ -217,24 +224,31 @@ Recovery without a helper (the USB proxy host is not available):
 - Panic: `panic=30` (the stock cmdline has none and `CONFIG_PANIC_TIMEOUT=0`)
   reboots 30 s after a panic. GRUB has already cleared `next_entry`, so the
   next boot is the stock default.
-- Hard hang after about 2.7 s: systemd arms the Apple SoC watchdog. Stock
-  boot dmesg: `[2.689486] systemd[1]: Using hardware watchdog
-  /dev/watchdog0: 'Apple SoC Watchdog', version 0.` and `Watchdog running
-  with a hardware timeout of 2min.`; `/etc/systemd/system.conf` has
-  `RuntimeWatchdogSec=120`; `systemctl show`: `RuntimeWatchdogUSec=2min`,
-  `RebootWatchdogUSec=10min`. If the system stops, systemd stops the pings
-  and the SoC resets within 120 s into the stock default. Kernel config:
-  `CONFIG_APPLE_WATCHDOG=y`, `CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y`,
-  `CONFIG_WATCHDOG_OPEN_TIMEOUT=0`. The kernel line `watchdog: Hard watchdog
-  permanently disabled` is the NMI hard-lockup detector (not available
-  here), not the SoC watchdog.
-- Not covered: a hang before systemd arms the watchdog (about 0-2.7 s) that
-  does not panic, and a soft failure where systemd keeps running (for
-  example an initramfs emergency shell). Whether m1n1 or iBoot leaves the
-  SoC watchdog running at handover is not known (the kernel has no watchdog
-  sysfs status). Boot C carries this risk for the cross-built kernel; boot X
-  adds 19 register writes per bulk DART at probe (about 0.07 s), the same
-  writes DartTune made on a live DART without a system hang.
+- Hard hang: on the stock boot the root-filesystem systemd arms the Apple
+  SoC watchdog right after the switch from the initramfs (boot `9a5a8563`:
+  `[2.179359] systemd[1]: Switching root.`, then `[2.925386]
+  systemd[1]: Using hardware watchdog /dev/watchdog0: 'Apple SoC Watchdog',
+  version 0.` and `Watchdog running with a hardware timeout of 2min.`). The
+  value comes from `/etc/systemd/system.conf` `RuntimeWatchdogSec=120` on the
+  root filesystem; the initramfs has no `system.conf` and does not arm it.
+  The entries add `systemd.watchdog_sec=120` (systemd(1): it overrides
+  `RuntimeWatchdogSec`, `RebootWatchdogSec` and `KExecWatchdogSec`), so the
+  initramfs systemd (`[1.055989]` on the stock boot) arms the watchdog too.
+  If the system stops, the pings stop and the SoC resets within 120 s into
+  the stock default. `systemd.crash_action=reboot` reboots if systemd itself
+  crashes. Kernel config: `CONFIG_APPLE_WATCHDOG=y`,
+  `CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y`, `CONFIG_WATCHDOG_OPEN_TIMEOUT=0`.
+  The kernel line `watchdog: Hard watchdog permanently disabled` is the NMI
+  hard-lockup detector (not available here), not the SoC watchdog.
+- Not covered: a hang before the initramfs systemd starts (about 0-1.1 s)
+  that does not panic, and a failure where systemd keeps running and keeps
+  pinging, for example the initramfs emergency shell after a failed root
+  mount (root has a password, so `sulogin` waits at the console). Whether
+  m1n1 or iBoot leaves the SoC watchdog running at handover is not known (the
+  kernel has no watchdog sysfs status). Boot C carries this risk for the
+  cross-built kernel; install.sh checks the initramfs for it. Boot X adds a
+  TLB flush and 19 register writes per bulk DART at DART probe (about
+  0.07 s), the writes DartTune made on a live DART without a system hang.
 - Wait rule: if ssh does not answer 6 minutes after a reboot, stop and
   report. The panic and watchdog paths finish inside that time (120 s +
   about 115 s for a disk boot).
@@ -244,6 +258,7 @@ Recovery without a helper (the USB proxy host is not available):
 | file | content |
 |---|---|
 | `scripts/build.sh` | source download and check, patch, config, cross build, module builds, stage and `SHA256SUMS` |
+| `scripts/analyze.py` | per-arm encoder / prog_020 / prog_006 minmin and medmed, correctness lines, the C control band and the X verdict |
 | `scripts/install.sh`, `scripts/revert.sh` | install next to the stock kernel with stock-hash proof; removal |
 | `scripts/custom.cfg` | the three GRUB entries (`dart-oneshot-test`, `dart-ctl`, `dart-tun`) |
 | `scripts/reboot.sh` | lock checks, sync, 40 s, `grub-reboot` last, reboot |
