@@ -1457,7 +1457,7 @@ Record: [receipts/2026-10-01-t6021-macos-vs-linux-mmio](../receipts/2026-10-01-t
 - Next: read the DART tunables and PERF counters on Linux and on macOS, then
   an A/B of the BRD/BWR tunables with the NativeVsCross method.
 
-## 30. The ANE DART tunables under Linux: read, and a live write that faults (2026-10-01)
+## 30. The ANE DART tunables under Linux: read, applied, 0x20c breaks translation (2026-10-01)
 
 Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-dart-tunables/README.md).
 
@@ -1469,7 +1469,15 @@ Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-d
 - `ane_dart_probe apply=1` wrote the 19 macOS words per bulk DART on the
   live DART (no flush), every readback equal. The next gate failed: `NO PTE
   FOR IOVA` faults on BRD and BWR stream 0, and every second process gave an
-  all-zero output. A reboot restores the reset values. No timing verdict.
-- Next: the same write followed by a FLUSH_ALL, then a group bisect. macOS
-  writes the words at DART init before TTBR and ENABLE_STREAMS; in Linux
-  that place is `apple-dart`.
+  all-zero output. A reboot restores the reset values.
+- In the macOS order (streams off, TLB flush, words, flush, streams on), by
+  group: 0x220/0x224 and the 32 SID words apply with 0 faults, alone and
+  together, and do not change the speed (encoder 254.3 ms, drop +0.00% to
+  +0.03%). Rejected.
+- 0x20c alone breaks translation in that order too: `NO PGD FOR IOVA` on BRD,
+  then the CALL hangs and every program load times out until a reboot, also
+  after 0x20c is written back. It stays untested for speed.
+- 0x20c can only go in at DART init, before TTBR and ENABLE_STREAMS: in
+  `apple_dart_hw_reset()` (kernel build). apple-dart is built in with
+  `suppress_bind_attrs`, so no unbind/rebind; m1n1 cannot help because
+  `ane_cpu` is off at handover and the DART resets at power-up.

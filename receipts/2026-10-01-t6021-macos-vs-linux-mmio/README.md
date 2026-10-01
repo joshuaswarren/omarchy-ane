@@ -2,8 +2,9 @@
 
 Status: step 4 E1 and E2 ran later on 2026-10-01, see
 [2026-10-01-t6021-dart-tunables](../2026-10-01-t6021-dart-tunables/README.md)
-(BRD/BWR at reset values, LLT already applied, PERF counters off; the live
-E2 write caused DART translation faults, so no timing verdict).
+(BRD/BWR at reset values, LLT already applied, PERF counters off; applied in
+the macOS order, 0x220/0x224 and the SID words do not change the speed, and
+0x20c breaks translation on a live DART).
 
 The macOS hv trace shows one DMA-path setting that Linux never makes: the
 DART tunables on the two bulk DARTs of the ANE, DARTBRD and DARTBWR. By
