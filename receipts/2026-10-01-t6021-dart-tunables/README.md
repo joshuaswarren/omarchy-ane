@@ -261,6 +261,14 @@ The run did not apply G4 (all 19 words): it contains 0x20c, and a second
 application would knowingly repeat the hang. The groups=3 window replaced it
 on the next boot, and a final A arm (254.357 / 254.529 ms) passed.
 
+Protocol note (review finding): after the group fault the window still
+loaded the probe for the undo (DART register writes only), and the next
+window's A arm submitted work to the hung queue. That arm only confirmed the
+hang and is not used as evidence. A hung ANE queue is untrustworthy until
+reboot (AGENTS.md), so a later run should stop at the first failed group arm
+and reboot before any other probe load or submission. `scripts/e2q-window.sh`
+is kept as it ran.
+
 What this shows and what it does not:
 
 - 0x220/0x224 and the SID words are safe to apply after attach in this order
