@@ -1,0 +1,3 @@
+[    3.089127] ane_t6021: loading out-of-tree module taints kernel.
+[    3.102578] ane_t6021 284000000.ane: legacy_only=1 requires fw_start=1 and fw_start_rtb_mode=0
+[    3.102582] ane_t6021 284000000.ane: probe with driver ane_t6021 failed with error -22

@@ -1,7 +1,9 @@
 # T6021: the ANE0 AXI2AF bridge tunables, read-only comparison prepared (2026-10-01)
 
-Status: prepared, not run. The probe module is built. No register on the M2
-was read or written for this receipt. Running it needs an owner go.
+Status: prepared here; run later on 2026-10-01, see
+[2026-10-01-t6021-af-bridge-run](../2026-10-01-t6021-af-bridge-run/README.md)
+(0 of 26 applied under Linux; applying all 26 does not change the speed).
+No register on the M2 was read or written for this receipt.
 
 ## Question
 

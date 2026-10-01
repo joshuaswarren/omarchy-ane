@@ -1,0 +1,43 @@
+== default (run-default-s2r-20261001T181351Z)
+encoder: blocks 20, minmin 254.276, median of block mins 254.373, medmed 254.550, worst block median 263.280 ms
+prog_020: blocks 20, minmin 4.758, medmed 4.829 ms
+prog_006: blocks 20, minmin 10.581, medmed 10.633 ms
+encoder processes not bit-exact / wrong sha: none (of 21)
+  gate add rc=0 GATE PASS
+  gate mul rc=0 GATE PASS
+  gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+  prog_020 exec ms over 1 calls: min 4.834 p10 4.834 p25 4.834 median 4.834 p75 4.834 p90 4.834 p99 4.834 max 4.834 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+  prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+  burst rc=0 w1 runs=3321 pass=3321 fail=0 w2 runs=3339 pass=3339 fail=0 w3 runs=3316 pass=3316 fail=0 w4 runs=3305 pass=3305 fail=0 exact lines: 13281 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+  dmesg new lines 9, non-UFW 0, bad 0
+== af_bridge_macos=1 (run-af-20261001T182918Z)
+encoder: blocks 20, minmin 254.274, median of block mins 254.327, medmed 254.459, worst block median 256.327 ms
+prog_020: blocks 20, minmin 4.764, medmed 4.832 ms
+prog_006: blocks 20, minmin 10.570, medmed 10.631 ms
+encoder processes not bit-exact / wrong sha: none (of 21)
+  gate add rc=0 GATE PASS
+  gate mul rc=0 GATE PASS
+  gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+  prog_020 exec ms over 1 calls: min 4.897 p10 4.897 p25 4.897 median 4.897 p75 4.897 p90 4.897 p99 4.897 max 4.897 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+  prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+  burst rc=0 w1 runs=3313 pass=3313 fail=0 w2 runs=3326 pass=3326 fail=0 w3 runs=3332 pass=3332 fail=0 w4 runs=3316 pass=3316 fail=0 exact lines: 13287 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+  dmesg new lines 8, non-UFW 0, bad 0
+== default (S4) (run-default-s4-20261001T184528Z)
+encoder: blocks 20, minmin 254.215, median of block mins 254.255, medmed 254.408, worst block median 255.750 ms
+prog_020: blocks 20, minmin 4.761, medmed 4.830 ms
+prog_006: blocks 20, minmin 10.578, medmed 10.630 ms
+encoder processes not bit-exact / wrong sha: none (of 21)
+  gate add rc=0 GATE PASS
+  gate mul rc=0 GATE PASS
+  gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+  prog_020 exec ms over 1 calls: min 4.844 p10 4.844 p25 4.844 median 4.844 p75 4.844 p90 4.844 p99 4.844 max 4.844 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+  prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+  burst rc=0 w1 runs=3305 pass=3305 fail=0 w2 runs=3289 pass=3289 fail=0 w3 runs=3282 pass=3282 fail=0 w4 runs=3284 pass=3284 fail=0 exact lines: 13160 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+  dmesg new lines 8, non-UFW 0, bad 0
+== decision (af vs default, same chain)
+encoder minmin: default 254.276 -> af 254.274 ms, drop +0.00% -> REJECTED
+encoder medmed: default 254.550 -> af 254.459 ms, drop +0.04% -> REJECTED
+VERDICT REJECTED; absolute rule minmin <= 216 ms: False
+prog_020: minmin ratio af/default 1.0013, medmed ratio 1.0004
+prog_006: minmin ratio af/default 0.9990, medmed ratio 0.9999
+default S4 vs default S2: encoder minmin 0.9998, medmed 0.9994
