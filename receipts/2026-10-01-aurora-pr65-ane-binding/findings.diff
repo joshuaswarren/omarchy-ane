@@ -1,0 +1,110 @@
+534d533
+< arch/arm64/boot/dts/apple/t6000-j314s.dtb: /soc/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+663d661
+< arch/arm64/boot/dts/apple/t6000-j316s.dtb: /soc/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+794d791
+< arch/arm64/boot/dts/apple/t6001-j314c.dtb: /soc/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+931d927
+< arch/arm64/boot/dts/apple/t6001-j316c.dtb: /soc/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+1070d1065
+< arch/arm64/boot/dts/apple/t6001-j375c.dtb: /soc/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+1192d1186
+< arch/arm64/boot/dts/apple/t6002-j375d.dtb: /soc@200000000/ane@285c04000: failed to match any schema with compatible: ['apple,t6000-ane']
+1351d1344
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+1377d1369
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+1500,1505d1491
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6020-j414s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+1938d1923
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+1964d1948
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+2088,2093d2071
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6020-j416s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+2526d2503
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+2549d2525
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+2662,2667d2637
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6020-j474s.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+3098d3067
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+3128d3096
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+3279,3284d3246
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6021-j414c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+3799d3760
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+3829d3789
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+3981,3986d3940
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6021-j416c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+4501d4454
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: /soc/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+4524d4476
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: /soc/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+4652,4657d4603
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6021-j475c.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+5169d5114
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: /soc@200000000/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+5188d5132
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: /soc@200000000/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+5335,5340d5278
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6022-j180d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+6344d6281
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: /soc@200000000/ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+6363d6299
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: /soc@200000000/mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+6506,6511d6441
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+< arch/arm64/boot/dts/apple/t6022-j475d.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 0, 884, 4]] is too short
+8305d8234
+< arch/arm64/boot/dts/apple/t8103-j274.dtb: /soc/ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+8398d8326
+< arch/arm64/boot/dts/apple/t8103-j293.dtb: /soc/ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+8508d8435
+< arch/arm64/boot/dts/apple/t8103-j313.dtb: /soc/ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+8610d8536
+< arch/arm64/boot/dts/apple/t8103-j456.dtb: /soc/ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+8705d8630
+< arch/arm64/boot/dts/apple/t8103-j457.dtb: /soc/ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']

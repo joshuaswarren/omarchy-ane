@@ -1,0 +1,81 @@
+##### BEFORE (bc41726b schema)
+F_ane_badcompat want=F got=F ok
+    F_ane_badcompat.dtb: /ane@284000000: failed to match any schema with compatible: ['apple,t6020-ane']
+F_ane_t6021_1reg want=F got=F ok
+    F_ane_t6021_1reg.dtb: /ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+F_ane_t6021_5pd want=F got=F ok
+    F_ane_t6021_5pd.dtb: /ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+F_ane_t6021_nombox want=F got=F ok
+    F_ane_t6021_nombox.dtb: /ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+F_ane_t8103_2iommu want=F got=F ok
+    F_ane_t8103_2iommu.dtb: /ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+F_ane_t8103_3reg want=F got=F ok
+    F_ane_t8103_3reg.dtb: /ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+F_ane_t8103_mbox want=F got=F ok
+    F_ane_t8103_mbox.dtb: /ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+F_mb_ane_iommus want=F got=F ok
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): False schema does not allow [[2, 0]]
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_ane_iommus.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_ane_iommus.dtb: /mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+F_mb_ane_nofallback want=F got=F ok
+    F_mb_ane_nofallback.dtb: /mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox']
+F_mb_ane_wrongfirst want=F got=F ok
+    F_mb_ane_wrongfirst.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['send-empty'] is too short
+    F_mb_ane_wrongfirst.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_ane_wrongfirst.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+    F_mb_ane_wrongfirst.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['send-empty'] is too short
+    F_mb_ane_wrongfirst.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_ane_wrongfirst.dtb: /mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+F_mb_aop_1irq want=F got=F ok
+    F_mb_aop_1irq.dtb: mailbox@285408000 (apple,t8140-aop-setup-mailbox): interrupt-names:0: 'send-empty' was expected
+    F_mb_aop_1irq.dtb: mailbox@285408000 (apple,t8140-aop-setup-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_aop_1irq.dtb: mailbox@285408000 (apple,t8140-aop-setup-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_aop_1irq.dtb: mailbox@285408000 (apple,t8140-aop-setup-mailbox): interrupts: [[0, 884, 4]] is too short
+F_mb_aop_1irq_2names want=F got=F ok
+    F_mb_aop_1irq_2names.dtb: mailbox@285408000 (apple,t8140-aop-setup-mailbox): interrupts: [[0, 884, 4]] is too short
+F_mb_asc_1irq want=F got=F ok
+    F_mb_asc_1irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupt-names:0: 'send-empty' was expected
+    F_mb_asc_1irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_asc_1irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_asc_1irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_asc_1irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupts: [[0, 884, 4]] is too short
+F_mb_asc_1irq_4names want=F got=F ok
+    F_mb_asc_1irq_4names.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_asc_1irq_4names.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupts: [[0, 884, 4]] is too short
+F_mb_asc_2irq want=F got=F ok
+    F_mb_asc_2irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupt-names:1: 'send-not-empty' was expected
+    F_mb_asc_2irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupt-names: ['send-empty', 'recv-not-empty'] is too short
+    F_mb_asc_2irq.dtb: mailbox@285408000 (apple,t6020-asc-mailbox): interrupts: [[0, 1, 4], [0, 4, 4]] is too short
+F_mb_m3_1irq want=F got=F ok
+    F_mb_m3_1irq.dtb: mailbox@285408000 (apple,t8103-m3-mailbox): interrupt-names:0: 'send-empty' was expected
+    F_mb_m3_1irq.dtb: mailbox@285408000 (apple,t8103-m3-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_m3_1irq.dtb: mailbox@285408000 (apple,t8103-m3-mailbox): interrupts: [[0, 884, 4]] is too short
+    F_mb_m3_1irq.dtb: mailbox@285408000 (apple,t8103-m3-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    F_mb_m3_1irq.dtb: mailbox@285408000 (apple,t8103-m3-mailbox): interrupts: [[0, 884, 4]] is too short
+P_ane_t6021 want=P got=F MISMATCH
+    P_ane_t6021.dtb: /ane@284000000: failed to match any schema with compatible: ['apple,t6021-ane']
+P_ane_t8103 want=P got=F MISMATCH
+    P_ane_t8103.dtb: /ane@26bc04000: failed to match any schema with compatible: ['apple,t8103-ane']
+P_mb_ane_1 want=P got=F MISMATCH
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty'] is too short
+    P_mb_ane_1.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4]] is too short
+    P_mb_ane_1.dtb: /mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+P_mb_ane_2 want=P got=F MISMATCH
+    P_mb_ane_2.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:0: 'send-empty' was expected
+    P_mb_ane_2.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names:1: 'send-not-empty' was expected
+    P_mb_ane_2.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupt-names: ['recv-not-empty', 'send-empty'] is too short
+    P_mb_ane_2.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): interrupts: [[0, 884, 4], [0, 1833, 4]] is too short
+    P_mb_ane_2.dtb: mailbox@285408000 (apple,t6021-ane-mailbox): compatible: 'oneOf' conditional failed, one must be fixed:
+    P_mb_ane_2.dtb: /mailbox@285408000: failed to match any schema with compatible: ['apple,t6021-ane-mailbox', 'apple,asc-mailbox-v4']
+P_mb_aop_2irq want=P got=P ok
+P_mb_asc_4irq want=P got=P ok
+before_exit=1

@@ -1,0 +1,10 @@
+=== 0001-dt-bindings-npu-apple-ane-Add-the-Apple-Neural-Engin.patch
+total: 0 errors, 0 warnings, 0 checks, 166 lines checked
+
+patches/0001-dt-bindings-npu-apple-ane-Add-the-Apple-Neural-Engin.patch has no obvious style problems and is ready for submission.
+exit=0
+=== 0002-dt-bindings-mailbox-apple-mailbox-Allow-the-ANE-mail.patch
+total: 0 errors, 0 warnings, 0 checks, 75 lines checked
+
+patches/0002-dt-bindings-mailbox-apple-mailbox-Allow-the-ANE-mail.patch has no obvious style problems and is ready for submission.
+exit=0
