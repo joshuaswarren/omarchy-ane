@@ -14,118 +14,15 @@ to <work>/<name>.f16; use --out NAME=FILE to select another destination.
 
 import argparse
 import json
-import os
-import struct
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 
-HWX_MAGIC = 0xBEEFFACE
-H14_SUBTYPE = 5
-LC_SEGMENT_64 = 0x19
-ANEC_HEADER_SIZE = 0x1000
-TILE_BYTES = 0x4000
-KERNEL_TAG = 2
-
-ROLES = {0x1110: "srcA", 0x1128: "srcB", 0x1508: "dst"}
-
 
 class Refuse(Exception):
     pass
-
-
-# --------------------------------------------------------------------------
-# HWX: surface array (Apple's allocation order) and buffer names
-# --------------------------------------------------------------------------
-
-def hwx_surface_array(path: Path):
-    """Return the io-surface array [(name, address, section_kind)] in Apple's
-    allocation order (program descriptor IOVA list at +0x50)."""
-    data = path.read_bytes()
-    magic, _, cpusub, _, ncmd, _ = struct.unpack_from("<6I", data, 0)
-    if magic != HWX_MAGIC:
-        raise Refuse(f"{path}: magic {magic:#x}")
-    if cpusub != H14_SUBTYPE:
-        raise Refuse(f"{path}: cpusubtype {cpusub} is not H14")
-    sections = []  # (address, size, secname)
-    buffers = {}   # address -> name
-    iova_array = None
-    cursor = 32
-    for _ in range(ncmd):
-        cmd, size = struct.unpack_from("<2I", data, cursor)
-        if cmd == LC_SEGMENT_64 and size >= 72:
-            nsec = struct.unpack_from("<I", data, cursor + 64)[0]
-            for i in range(nsec):
-                sf = struct.unpack_from("<16s16s2Q8I", data, cursor + 72 + i * 80)
-                sections.append((sf[2], sf[3],
-                                 sf[0].split(b"\0", 1)[0].decode("ascii", "replace")))
-        elif cmd == 0x40 and size == 0x20:
-            addr = struct.unpack_from("<Q", data, cursor + 0x10)[0]
-            buffers[addr] = data[cursor + 0x18:cursor + 0x20].split(b"\0", 1)[0] \
-                .decode("ascii", "replace")
-        elif cmd == 4 and size >= 0x838 and \
-                struct.unpack_from("<I", data, cursor + 8)[0] == 4:
-            iova_array = []
-            for i in range(64):
-                entry = struct.unpack_from("<Q", data, cursor + 0x50 + i * 0x10)[0]
-                if entry == 0:
-                    break
-                iova_array.append(entry)
-        cursor += size
-    if iova_array is None:
-        raise Refuse(f"{path}: no H14 program descriptor IOVA array")
-    out = []
-    for addr in iova_array:
-        name = buffers.get(addr, f"@{addr:#x}")
-        kind = next((s for a, _z, s in sections if a == addr), "?")
-        out.append((name, addr, kind))
-    return out
-
-
-# --------------------------------------------------------------------------
-# ANEC: task-stream BAR slots and header tiles
-# --------------------------------------------------------------------------
-
-def anec_bar_slots(path: Path):
-    """Dense BAR-ref records (bit 29, no bit 31) across all H14 tasks:
-    {slot: [(register_class, task_index)]}."""
-    d = path.read_bytes()
-    stream_size, = struct.unpack_from("<Q", d, 0x10)
-    task_count, = struct.unpack_from("<I", d, 0x0C)
-    stream = d[ANEC_HEADER_SIZE:ANEC_HEADER_SIZE + stream_size]
-    slots = {}
-    offset, seen = 0, 0
-    while offset < len(stream):
-        words = struct.unpack_from("<H", stream, offset + 2)[0] & 0x7FF
-        if words == 0:
-            offset = min(offset + 16, len(stream))
-            continue
-        task = stream[offset:offset + words * 4]
-        tw = struct.unpack(f"<{words}I", task)
-        idx = 8 + (1 if tw[7] & 3 == 3 else 0)
-        while idx < words:
-            h = tw[idx]
-            if h & 0x80000000:
-                n = 1 + bin((h >> 15) & 0xFFFF).count("1")
-            else:
-                n = ((h >> 15) & 0x3F) + 1
-            if not (h & 0x80000000) and (h & (1 << 29)):
-                slot = (h >> 23) & 0x3F
-                addr = (h & 0x7FFF) * 4
-                cls = "kdma" if 0x1900 <= addr < 0x1A40 else ROLES.get(addr)
-                if cls is None:
-                    raise Refuse(f"task {seen}: BAR ref at {addr:#x} outside "
-                                 "the known register roles")
-                slots.setdefault(slot, []).append((cls, seen))
-            idx += 1 + n
-        seen += 1
-        offset = min((offset + words * 4 + 15) & ~15, len(stream))
-    if seen != task_count:
-        raise Refuse(f"walked {seen} tasks, header says {task_count}")
-    return slots
-
 
 
 # --------------------------------------------------------------------------
@@ -143,42 +40,27 @@ def load_input(path: Path, shape, transpose=False):
     return arr
 
 
+def surface_view(buf, shape, strides):
+    """The NCHW fp16 view of a surface at the tensor-descriptor byte strides
+    [batch, plane, row, element]; refuses strides that overlap or run past
+    the buffer."""
+    n, c, h, w = shape
+    if strides[3] != 2 or strides[2] < 2 * w or strides[1] < strides[2] * h or \
+            strides[0] < strides[1] * c or any(s % 2 for s in strides) or \
+            (n - 1) * strides[0] + (c - 1) * strides[1] + (h - 1) * strides[2] + 2 * w > buf.nbytes:
+        raise Refuse(f"strides {strides} do not hold shape {list(shape)} in {buf.nbytes} B")
+    return np.lib.stride_tricks.as_strided(buf, shape=tuple(shape), strides=tuple(strides))
+
+
 def pack_surface(arr, strides, alloc_bytes):
-    """Dense fp16 tensor laid out at the descriptor strides, zero-padded
-    to the channel allocation."""
-    if strides[-1] != 2:
-        raise Refuse(f"strides {strides}: last-element stride is not 2 B; "
-                     "non-dense pack not supported")
-    n, c, h, w = arr.shape
-    if strides[2] != w * 2 or strides[1] < strides[2] * h:
-        raise Refuse(f"strides {strides}: not a plain row-major layout")
+    """The tensor at the descriptor strides, zero elsewhere in the BO."""
     surf = np.zeros(alloc_bytes // 2, dtype=np.float16)
-    row = strides[2] // 2
-    plane = strides[1] // 2
-    flat = arr.reshape(n * c, h, w)
-    for i in range(n * c):
-        base = i * plane
-        for r in range(h):
-            surf[base + r * row: base + r * row + w] = flat[i, r]
+    surface_view(surf, arr.shape, strides)[...] = arr
     return surf
 
 
 def unpack_surface(raw, shape, strides):
-    if strides[-1] != 2 or strides[2] != shape[3] * 2:
-        raise Refuse(f"strides {strides}: unsupported output layout")
-    arr = np.frombuffer(raw, dtype=np.float16)
-    row = strides[2] // 2
-    plane = strides[1] // 2
-    n, c, h, w = shape
-    out = np.zeros((n * c, h, w), dtype=np.float16)
-    for i in range(n * c):
-        base = i * plane
-        if row == w:
-            out[i] = arr[base:base + h * w].reshape(h, w)
-        else:
-            for r in range(h):
-                out[i, r] = arr[base + r * row: base + r * row + w]
-    return out.reshape(shape)
+    return surface_view(np.frombuffer(raw, dtype=np.float16), shape, strides).copy()
 
 
 # --------------------------------------------------------------------------
@@ -186,6 +68,8 @@ def unpack_surface(raw, shape, strides):
 # --------------------------------------------------------------------------
 
 def port_map_from_table(table):
+    """Named input/output ports; the scratch entry (BAR slot 3) is checked
+    for coverage but never packed or named."""
     ports = table.get("ports")
     if not isinstance(ports, list) or not ports:
         raise Refuse("ports.json must contain a non-empty ports array")
@@ -195,11 +79,11 @@ def port_map_from_table(table):
         name = port.get("name")
         if not name or name in by_name:
             raise Refuse(f"duplicate or empty port name: {name!r}")
-        if port.get("direction") not in ("input", "output"):
+        if port.get("direction") not in ("input", "output", "scratch"):
             raise Refuse(f"{name}: invalid direction")
         if port.get("bar_slot") in by_slot:
             raise Refuse(f"multiple ports bind BAR slot {port['bar_slot']}")
-        if port.get("channel") != port.get("buffer_id"):
+        if port["direction"] != "scratch" and port.get("channel") != port.get("buffer_id"):
             raise Refuse(f"{name}: channel and buffer_id disagree")
         by_name[name] = port
         by_slot[port["bar_slot"]] = port
@@ -213,9 +97,9 @@ def port_map_from_table(table):
     for port in ports:
         slot = port["bar_slot"]
         entry = coverage_by_slot.get(slot)
-        if not entry or entry.get("kind") != "port" or entry.get("port") != port["name"] or entry.get("buffer_id") != port["buffer_id"]:
+        if not entry or entry.get("port") != port["name"] or entry.get("buffer_id") != port["buffer_id"]:
             raise Refuse(f"{port['name']}: DMA coverage does not uniquely match its port")
-    return by_name
+    return {name: port for name, port in by_name.items() if port["direction"] != "scratch"}
 
 
 
@@ -224,7 +108,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--prog", required=True, help="prog_NNN")
     ap.add_argument("--ports", help="per-program ports.json")
-    ap.add_argument("--hwx-dir", default="/var/tmp/qwen-real-hwx-h14")
     ap.add_argument("--anec-dir", default="/var/tmp/qwen-real-anec-h14")
     ap.add_argument("--in", dest="ins", action="append", default=[], metavar="NAME=FILE")
     ap.add_argument("--out", dest="outs", action="append", default=[], metavar="NAME=FILE")
@@ -234,8 +117,7 @@ def main(argv=None):
     ap.add_argument("--ane-run", default="/var/tmp/inst/tools/ane-run")
     ap.add_argument("--dry", action="store_true", help="pack inputs, validate, and print the locked command")
     ap.add_argument("--pack-only", action="store_true")
-    ap.add_argument("--map", help="legacy ANE_M2_OPREFS override")
-    ap.add_argument("--no-oprefs", action="store_true")
+    ap.add_argument("--timeout", type=int, default=60, help="per-invocation deadline, seconds")
     ap.add_argument("--repeat", type=int, default=1)
     args = ap.parse_args(argv)
     if args.repeat < 1:
@@ -251,8 +133,8 @@ def main(argv=None):
         raise Refuse("unresolved DMA coverage: " + "; ".join(table["exceptions"]))
     inputs = {n: p for n, p in ports.items() if p["direction"] == "input"}
     outputs = {n: p for n, p in ports.items() if p["direction"] == "output"}
-    if not anec.is_file() or not (Path(args.hwx_dir) / args.prog / "model.hwx").is_file():
-        raise Refuse(f"missing HWX/ANEC for {args.prog}")
+    if not anec.is_file():
+        raise Refuse(f"missing ANEC for {args.prog}")
 
     def parse_named(specs, available, flag):
         result = {}
@@ -288,12 +170,8 @@ def main(argv=None):
         output_surfaces[name] = filename
         output_args.extend(["--out", f"{name}={filename}"])
     command = [args.ane_run, "--anec", str(anec), "--ports", str(ports_path),
-               *input_args, *output_args, "--repeat", str(args.repeat)]
-    override = None if args.no_oprefs else args.map
-    locked = ["flock", "/var/tmp/ane-run.lock", "--", *command]
-    if override:
-        locked = ["flock", "/var/tmp/ane-run.lock", "--", "env",
-                  f"ANE_M2_OPREFS={override}", *command]
+               *input_args, *output_args, "--repeat", str(args.repeat), "--time"]
+    locked = ["flock", "/var/tmp/ane-run.lock", "timeout", str(args.timeout), *command]
     print("ports:")
     for name, port in ports.items():
         print(f"  {name}: {port['direction']} slot{port['bar_slot']} bufferId={port['buffer_id']} channel={port['channel']} shape={port['shape']}")
@@ -304,10 +182,7 @@ def main(argv=None):
         print("dry-run: no device access")
         print("  " + shlex.join(locked))
         return 0
-    env = dict(os.environ)
-    if override:
-        env["ANE_M2_OPREFS"] = override
-    subprocess.run(["flock", "/var/tmp/ane-run.lock", "--", *command], check=True, env=env)
+    subprocess.run(locked, check=True)
     for name, port in outputs.items():
         raw = output_surfaces[name].read_bytes()
         if len(raw) != port["tile_bytes"]:
