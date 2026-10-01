@@ -29,6 +29,14 @@ reference, the reference's top1-top2 margin and the M2-vs-reference logit
 error: a divergence where the reference margin is below that error is a
 precision flip.
 
+--m-per-prompt decodes each prompt with max_len M = len(prompt) + new tokens,
+as ANEForge generate() does without max_len (the M1 reference run). Every
+manifest shape dimension equal to the manifest's max_len becomes M (the ctx
+tables oh/inv [1,M,1], mask [1,1,M] and the KV states [2,M,256] of the six
+attention programs); the programs whose shapes change come from
+<per-m-dir>/M<M>/prog_NNN/{program-0.anec,ports.json}, the others from the
+manifest's set.
+
 Flat JSON records append to <out>/results.jsonl; a rerun skips finished
 prompts. The run stops on a timeout, 'Connection timed out' or
 'Input/output error' from ane-run, a 'LIBANE: ERR' line, a nonzero exit, or a
@@ -114,16 +122,42 @@ def kernel_marks():
     return [(float(m.group(1)), line) for line in out.splitlines() if (m := KERNEL_TS.match(line))]
 
 
+def manifest_at(manifest, m):
+    """The manifest for max_len m: each shape dimension equal to its max_len becomes m."""
+    base = int(manifest["max_len"])
+    fix = lambda shape: [m if d == base else d for d in shape]
+    out = json.loads(json.dumps(manifest))
+    out["max_len"] = m
+    for pr in out["programs"]:
+        for port in pr["srcs"] + pr["dsts"]:
+            port["shape"] = fix(port["shape"])
+        for s in pr["states"]:
+            s["in_shape"], s["out_shape"] = fix(s["in_shape"]), fix(s["out_shape"])
+    return out
+
+
 class Decoder:
     def __init__(self, args, manifest):
         self.args = args
-        self.progs = manifest["programs"]
-        self.max_len = int(manifest["max_len"])
-        self.tables = []
-        for i, pr in enumerate(self.progs):
+        self.manifest = manifest
+        self.work = Path(args.out) / "surf"
+        self.work.mkdir(parents=True, exist_ok=True)
+        self.configure(int(manifest["max_len"]))
+
+    def configure(self, m):
+        """Programs, port tables and zero states for max_len m."""
+        args, base = self.args, self.manifest
+        self.max_len, self.progs, self.tables = m, manifest_at(base, m)["programs"], []
+        for i, (pr, pr0) in enumerate(zip(self.progs, base["programs"])):
             prog = f"prog_{i:03d}"
-            path = Path(args.ports_dir) / prog / "ports.resolved.json" if args.ports_dir \
-                else Path(args.anec_dir) / prog / "ports.json"
+            if pr != pr0:
+                anec_dir = path_dir = Path(args.per_m_dir) / f"M{m}"
+                name = "ports.json"
+            else:
+                anec_dir = Path(args.anec_dir)
+                path_dir, name = (Path(args.ports_dir), "ports.resolved.json") if args.ports_dir \
+                    else (anec_dir, "ports.json")
+            path = path_dir / prog / name
             table = json.loads(path.read_text())
             if table.get("program") != prog or table.get("exceptions"):
                 raise Refuse(f"{path}: wrong program or unresolved exceptions")
@@ -134,9 +168,7 @@ class Decoder:
             got = {n: (p["direction"], int(np.prod(p["shape"]))) for n, p in ports.items()}
             if got != {n: (d, int(np.prod(s))) for n, (d, s) in want.items()}:
                 raise Refuse(f"{path}: ports {sorted(got)} do not match the manifest {sorted(want)}")
-            self.tables.append((Path(args.anec_dir) / prog / "program-0.anec", path, ports))
-        self.work = Path(args.out) / "surf"
-        self.work.mkdir(parents=True, exist_ok=True)
+            self.tables.append((anec_dir / prog / "program-0.anec", path, ports))
         self.reset()
 
     def reset(self):
@@ -250,7 +282,9 @@ def run(args):
     decoder = Decoder(args, manifest)
     start = time.monotonic()
     embed, head, (dh, rotary, base) = load_head(args.gguf)
-    cos, sin = rope_tables(decoder.max_len, dh, rotary, base)
+    max_len = (lambda p: len(p["prompt_token_ids"]) + args.new_tokens) if args.m_per_prompt \
+        else (lambda p: decoder.max_len)
+    cos, sin = rope_tables(max([decoder.max_len] + [max_len(p) for _, p in prompts]), dh, rotary, base)
     sha = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
     record({"type": "start", "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "argv": " ".join(sys.argv[1:]), "ane_run_sha256": sha(args.ane_run),
@@ -264,7 +298,7 @@ def run(args):
             continue
         ids, want = prompt["prompt_token_ids"], prompt["generated_ids"][:args.new_tokens]
         rl = ref_logits[f"prompt_{n:03d}"] if ref_logits is not None else None
-        decoder.reset()
+        decoder.configure(max_len(prompt))
         gen, margins, ref_rec, prompt_start = [], [], {}, time.monotonic()
         token, pos = ids[0], 0
         while len(gen) < args.new_tokens and pos < decoder.max_len - 1:
@@ -312,8 +346,8 @@ def run(args):
         if args.max_steps is not None:
             return 1 if dump and dump.failed else 0
         div = first_divergence(gen, want)
-        rec = {"type": "prompt", "prompt": pid, "match": div is None, "first_divergence": div,
-               "generated": len(gen), "wall_s": round(time.monotonic() - prompt_start, 2),
+        rec = {"type": "prompt", "prompt": pid, "max_len": decoder.max_len, "match": div is None,
+               "first_divergence": div, "generated": len(gen), "wall_s": round(time.monotonic() - prompt_start, 2),
                "min_margin": min(margins), "generated_ids": ",".join(map(str, gen)),
                "reference_ids": ",".join(map(str, want))}
         if div is not None and div < len(gen):
@@ -355,7 +389,13 @@ def main(argv=None):
     ap.add_argument("--ane-run", default="/var/tmp/inst/tools/ane-run")
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--m-per-prompt", action="store_true",
+                    help="max_len = len(prompt) + new tokens per prompt (ANEForge generate without max_len)")
+    ap.add_argument("--per-m-dir", default="/var/tmp/qwen-perM",
+                    help="M<M>/prog_NNN/{program-0.anec,ports.json} for the programs whose shapes depend on M")
     args = ap.parse_args(argv)
+    if args.m_per_prompt and args.dump:
+        ap.error("--dump holds max_len 50 executions; it does not apply to --m-per-prompt")
     if args.summary:
         summary(args.out)
         return 0

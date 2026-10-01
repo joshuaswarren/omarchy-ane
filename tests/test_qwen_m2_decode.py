@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Host checks for the M2 staged-Qwen decode: context tables bit for bit
-against the M1 step dump, lane and state chaining across programs and steps,
-and the token comparison helpers. No device."""
+against the M1 step dump (and, per prompt max_len M, the dumped tables cut to
+M), per-M program and state selection, lane and state chaining across
+programs and steps, and the token comparison helpers. No device."""
 
+import argparse
 import hashlib
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from qwen_m2_decode import Decoder, ctx_vals, first_divergence, rope_tables, top2
+from qwen_prog_run import Refuse
 
 # sha256 of the context inputs of prog_006 in the M1 per-step dump of p001
 # (qwen38-step-goldens index.json), steps 0 and 11.
@@ -35,6 +40,66 @@ def test_context_tables_match_the_m1_dump():
         got = {k: hashlib.sha256(np.ascontiguousarray(v).tobytes()).hexdigest()
                for k, v in ctx_vals(pos, 50, cos, sin).items()}
         assert got == want, pos
+
+
+def test_context_tables_at_m_are_the_dumped_m50_tables_cut_to_m():
+    # ANEForge rebuilds the rope table at M = len(prompt) + 32 (43..50 for chunk_00).
+    cos50, sin50 = rope_tables(50, 256, 64, 10_000_000.0)
+    for m in range(43, 51):
+        cos, sin = rope_tables(m, 256, 64, 10_000_000.0)
+        assert cos.tobytes() == cos50[:m].tobytes() and sin.tobytes() == sin50[:m].tobytes(), m
+        for pos in (0, 11, m - 2):
+            ref = ctx_vals(pos, 50, cos50, sin50)
+            cut = {"oh": ref["oh"][:, :m], "inv": ref["inv"][:, :m], "mask": ref["mask"][..., :m],
+                   "cosp": ref["cosp"], "sinp": ref["sinp"]}
+            for key, got in ctx_vals(pos, m, cos, sin).items():
+                want = np.ascontiguousarray(cut[key])
+                assert got.shape == want.shape and got.tobytes() == want.tobytes(), (m, pos, key)
+
+
+def _table(prog, ports):
+    rows = [{"name": n, "direction": d, "shape": s, "bar_slot": 4 + k, "buffer_id": 4 + k, "channel": 4 + k}
+            for k, (n, d, s) in enumerate(ports)]
+    return {"program": prog, "ports": rows, "exceptions": [],
+            "dma_coverage": [{"bar_slot": r["bar_slot"], "port": r["name"], "buffer_id": r["buffer_id"]}
+                             for r in rows]}
+
+
+def test_per_m_programs_and_states_follow_the_prompt_max_len():
+    manifest = {"max_len": 4, "programs": [
+        {"srcs": [{"port": "oh", "kind": "ctx", "lane": "oh", "shape": [1, 4, 1]},
+                  {"port": "s", "kind": "state_in", "lane": "state0", "shape": [2, 4, 3]}],
+         "dsts": [{"port": "y", "kind": "lane", "lane": "y", "shape": [1, 2]}],
+         "states": [{"in_port": "s", "in_shape": [2, 4, 3], "out_port": "s2", "out_shape": [2, 4, 3]}]},
+        {"srcs": [{"port": "a", "kind": "lane", "lane": "y", "shape": [1, 2]}],
+         "dsts": [{"port": "h", "kind": "lane", "lane": "h", "shape": [1, 2]}], "states": []}]}
+    attention = lambda m: [("oh", "input", [1, 1, m, 1]), ("s", "input", [1, 2, m, 3]),
+                           ("y", "output", [1, 1, 1, 2]), ("s2", "output", [1, 2, m, 3])]
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        files = {"base/prog_000": _table("prog_000", attention(4)),
+                 "base/prog_001": _table("prog_001", [("a", "input", [1, 2]), ("h", "output", [1, 2])]),
+                 "perm/M3/prog_000": _table("prog_000", attention(3)),
+                 "perm/M2/prog_000": _table("prog_000", attention(3))}
+        for rel, table in files.items():
+            (tmp / rel).mkdir(parents=True)
+            (tmp / rel / "ports.json").write_text(json.dumps(table))
+        args = argparse.Namespace(out=str(tmp / "out"), anec_dir=str(tmp / "base"), ports_dir=None,
+                                  per_m_dir=str(tmp / "perm"))
+        dec = Decoder(args, manifest)
+        assert [t[0] for t in dec.tables] == [tmp / "base/prog_000/program-0.anec",
+                                              tmp / "base/prog_001/program-0.anec"]
+        dec.states[0]["s"][:] = 1
+        dec.configure(3)
+        assert dec.max_len == 3 and dec.states[0]["s"].shape == (2, 3, 3) and not dec.states[0]["s"].any()
+        assert [t[0] for t in dec.tables] == [tmp / "perm/M3/prog_000/program-0.anec",
+                                              tmp / "base/prog_001/program-0.anec"]
+        try:
+            dec.configure(2)  # a table built for M=3 must not pass as M=2
+        except Refuse:
+            pass
+        else:
+            raise AssertionError("configure(2) accepted an M=3 port table")
 
 
 def test_lanes_and_states_chain_across_programs_and_steps():
