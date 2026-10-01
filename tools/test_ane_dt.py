@@ -77,4 +77,34 @@ with tempfile.TemporaryDirectory() as tmp:
     assert names('t8103-j274.dtb') == ['t8103/omarchy-ane.dtbo']
     assert names('t6001-j316c.dtb') == ['t6001/omarchy-ane.dtbo']
     assert names('t6021-j414c.dtb') == []
+
+    # The packaged overlays: build-dtbo names, and the T6021 opt-in keys.
+    pkg = Path(tmp) / 'pkg'
+    subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True)
+    pkg_lib = pkg / 'usr/lib/omarchy-platform/dtb-overlays'
+    assert sorted(p.relative_to(pkg_lib).as_posix() for p in pkg_lib.glob('*/*.dtbo')) == [
+        't6001/omarchy-ane.dtbo', 't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo',
+        't8103/omarchy-ane.dtbo']
+    opt_in = pkg / oadt.OPT_IN
+    opt_in.parent.mkdir(parents=True)
+    t6021 = lambda: [p.name for p in oadt.overlays_for(pkg, 't6021-j414c.dtb')]
+    assert t6021() == [], 'both T6021 overlays wait for the opt-in'
+    opt_in.write_text('uboot-serial-stdin-t6021\n')
+    assert t6021() == ['omarchy-uboot-serial-stdin.dtbo']
+    opt_in.write_text('ane-t6021\nuboot-serial-stdin-t6021\n')
+    assert t6021() == ['omarchy-ane.dtbo', 'omarchy-uboot-serial-stdin.dtbo']
+
+    # A kernel tree that has the ANE node keeps it; an overlay without
+    # omarchy,skip-if-compatible still applies.
+    ane_dtbo = pkg_lib / 't8103/omarchy-ane.dtbo'
+    uboot_dtbo = pkg_lib / 't6021/omarchy-uboot-serial-stdin.dtbo'
+    work = Path(tmp) / 'work'
+    work.mkdir()
+    assert oadt.build(Path(tmp) / 'good.dtb', [ane_dtbo], work) is None
+    data, applied = oadt.build(Path(tmp) / 'good.dtb', [ane_dtbo, uboot_dtbo], work)
+    assert applied == [uboot_dtbo], applied
+    built = oadt.Tree(data)
+    assert built.ane_nodes() == ['/soc/ane@26bc04000']
+    assert built.nodes['/config']['bootdelay'] == b'\xff\xff\xff\xfe'
+    assert built.strings('/config', 'bootcmd') == ['setenv stdin serial; bootflow scan -b']
 print('test_ane_dt: ok')

@@ -3,8 +3,10 @@
 
 ane.ko binds only to an "apple,t*-ane" device tree node. Until the kernel's
 device trees carry one, the package ships overlays that add it:
-/usr/lib/omarchy-platform/dtb-overlays/PREFIX/omarchy-ane.dtbo. PREFIX selects
-board device trees by file name ("t8103" for every t8103-*.dtb).
+/usr/lib/omarchy-platform/dtb-overlays/PREFIX/NAME.dtbo. PREFIX selects board
+device trees by file name ("t8103" for every t8103-*.dtb). The T6021 prefix
+also has an opt-in overlay that is not an ANE part: omarchy-uboot-serial-stdin,
+U-Boot console input from serial only.
 
   omarchy-ane-dt apply    overlay this Mac's board device tree, for every
                           installed kernel, and have update-m1n1 use the copy
@@ -15,10 +17,13 @@ apply never changes a file a package owns and never runs update-m1n1. It
 writes the overlaid copy to /var/lib/omarchy-ane/dtbs/KERNEL/ and adds one line
 to /etc/default/update-m1n1 that sources /usr/lib/omarchy-ane/update-m1n1-dtbs.
 That script swaps the copy in only while it was made from the same kernel file.
-A kernel device tree that already has the node wins: apply retires the copy.
+An overlay whose root has the string list "omarchy,skip-if-compatible" is left
+out of a kernel device tree that already has a node with one of them: the
+kernel's node wins. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
 string is a line of /etc/omarchy-platform/dtb-overlays.opt-in (the T6021 node:
-"ane-t6021", written by omarchy-ane-m2-enable).
+"ane-t6021", written by omarchy-ane-m2-enable; the T6021 U-Boot input:
+"uboot-serial-stdin-t6021", written by the owner).
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
 
@@ -168,22 +173,23 @@ def validate(stock, result, wanted):
 
 
 def build(stock_file, overlays, workdir):
-    """The overlaid device tree bytes, validated; None when the kernel's wins."""
+    """(overlaid device tree bytes, validated; the overlays applied), or None
+    when the kernel's tree has the nodes of every overlay."""
     stock_bytes = stock_file.read_bytes()
     stock = Tree(stock_bytes)
-    wanted = [c for overlay in overlays for c in skip_compatibles(overlay)]
-    have = [c for c in wanted if any(c in stock.strings(p, "compatible") for p in stock.nodes)]
-    if have:
+    present = {c for p in stock.nodes for c in stock.strings(p, "compatible")}
+    needed = [o for o in overlays if not present.intersection(skip_compatibles(o))]
+    if not needed:
         return None
     current = workdir / "base.dtb"
     current.write_bytes(stock_bytes)
-    for overlay in overlays:
+    for overlay in needed:
         run("fdtoverlay", "-i", str(current), "-o", str(workdir / "next.dtb"), str(overlay))
         os.replace(workdir / "next.dtb", current)
     run("dtc", "-q", "-I", "dtb", "-O", "dtb", "-o", os.devnull, str(current))
     data = current.read_bytes()
-    validate(stock, Tree(data), wanted)
-    return data
+    validate(stock, Tree(data), [c for o in needed for c in skip_compatibles(o)])
+    return data, needed
 
 
 def board(root):
@@ -283,19 +289,21 @@ def apply(root, hook_targets):
                    f"overlays={sha256(b''.join(o.read_bytes() for o in overlays))}\n")
             try:
                 if (state / name).is_file() and (state / f"{name}.src").read_text() == src:
-                    print(f"omarchy-ane-dt: {kernel.name}: {name} already carries the ANE node")
+                    print(f"omarchy-ane-dt: {kernel.name}: {name} copy is current")
                     continue
             except FileNotFoundError:
                 pass
-            data = build(stock_file, overlays, Path(tmp))
-            if data is None:
+            built = build(stock_file, overlays, Path(tmp))
+            if built is None:
                 if state.exists():
                     remove_tree(state)
-                print(f"omarchy-ane-dt: {kernel.name}: the kernel's {name} has the ANE node; no overlay needed")
+                print(f"omarchy-ane-dt: {kernel.name}: the kernel's {name} has the overlays' nodes; no copy needed")
                 continue
+            data, applied = built
+            changed = changed or not (state / name).is_file() or (state / name).read_bytes() != data
             write_copy(state, name, data, src)
-            changed = True
-            print(f"omarchy-ane-dt: {kernel.name}: {name} with the ANE node -> {state / name}")
+            print(f"omarchy-ane-dt: {kernel.name}: {name} + "
+                  f"{' '.join(f'{o.parent.name}/{o.name}' for o in applied)} -> {state / name}")
     copies = glob.glob(str(state_root / "*/*.dtb"))
     set_line(root, bool(copies))
     if changed and not any("/dtbs/" in t for t in hook_targets or []):
@@ -310,7 +318,7 @@ def remove(root, quiet=False):
     if state.exists():
         remove_tree(state)
     if had and not quiet:
-        print("omarchy-ane-dt: removed. m1n1 keeps the ANE node until update-m1n1 runs: sudo update-m1n1")
+        print("omarchy-ane-dt: removed. m1n1 keeps the overlaid device tree until update-m1n1 runs: sudo update-m1n1")
     return had
 
 
@@ -323,11 +331,13 @@ def status(root, kver):
     name = board(root)
     stock = root / "usr/lib/modules" / kver / "dtbs" / name
     kernel_has = stock.is_file() and bool(Tree(stock.read_bytes()).ane_nodes())
-    copy = (root / "var/lib/omarchy-ane/dtbs" / kver / name).is_file()
-    mac_overlay = omarchy_mac(root) and bool(overlays_for(root, name))
+    copy = root / "var/lib/omarchy-ane/dtbs" / kver / name
+    copy_has = copy.is_file() and bool(Tree(copy.read_bytes()).ane_nodes())
+    mac_overlay = omarchy_mac(root) and any(ANE.fullmatch(c) for o in overlays_for(root, name)
+                                            for c in skip_compatibles(o))
     if kernel_has:
         source = "kernel"
-    elif copy or mac_overlay:
+    elif copy_has or mac_overlay:
         source = "overlay"
     else:
         source = "none"
