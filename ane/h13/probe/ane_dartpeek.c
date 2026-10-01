@@ -76,6 +76,14 @@ static int __init dartpeek_init(void)
 			pr_info("dartpeek: %s: not found\n", darts[d]);
 			continue;
 		}
+		if (!dev->driver) {
+			/* No driver = likely unpowered (unbound boot): reads
+			 * on unpowered MMIO can wedge the interconnect. */
+			pr_info("dartpeek: %s: no driver bound, SKIPPING reads (unpowered-dart guard)\n",
+				darts[d]);
+			put_device(dev);
+			continue;
+		}
 		peek_one(dev, darts[d]);
 		put_device(dev);
 	}
