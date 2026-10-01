@@ -1698,8 +1698,13 @@ static int ane_m2_program_build_ports_inner(
 		}
 	}
 	/* One ref set covers every task on this path, so the task count is
-	 * bounded only by the header (Apple's whole Parakeet encoder for
-	 * h14 has 3597 tasks); the list lives on the heap. */
+	 * bounded only by the stream (Apple's whole Parakeet encoder for
+	 * h14 has 3597 tasks); the list lives on the heap. A task is at
+	 * least the 8-word header, so a larger header count is corrupt. */
+	if (task_count > tsk_size / 32) {
+		return fail("header taskCount exceeds what the task stream "
+			    "holds");
+	}
 	tasks = calloc(task_count ? task_count : 1, sizeof(*tasks));
 	if (!tasks) {
 		return -ENOMEM;

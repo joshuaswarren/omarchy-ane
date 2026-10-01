@@ -11,12 +11,12 @@ greedy TDT decode gives the golden 104 tokens.
 |---|---|
 | Apple h14 compile of the whole encoder MIL | accepted, one program, 14.6 s |
 | Static port gates (`hwx_ports.py`, `ane-run --dry-run`) | 0 exceptions, 0 ambiguities, exit 0 |
-| Device calls (3 processes: 1 + 20 + 20 calls) | exit 0; 0 new ANE, DART, EXCH or quarantine kernel lines |
+| Device calls (4 processes: 1 + 20 + 20 + 1 calls) | exit 0; 0 new ANE, DART, EXCH or quarantine kernel lines |
 | encoder_hidden [1,375,640] vs golden | rel L2 0, max abs 0, bit-exact (fp16 sha256 `fca96f13…`) |
 | encoder_hidden vs CPU NumPy MIL fp32 reference | rel L2 2.4651e-02, max abs 1.4642e-01 |
 | output_mask vs golden | equal (375 of 375 frames) |
 | Tokens vs golden | 104 of 104 equal; transcript equal; WER 0 |
-| Determinism | the last output of each of the 3 processes is byte-identical |
+| Determinism | the last output of each of the 4 processes is byte-identical |
 | Exec time per call | min 254.405 ms, median 254.50 ms (40 calls, 2 processes) |
 
 The islands run ([2026-09-30-t6021-parakeet-encoder-islands](../2026-09-30-t6021-parakeet-encoder-islands/README.md))
@@ -109,7 +109,9 @@ io 5:5:16384,6:770048,4:491520,7:16384,64:61456384
 Stock kernel `7.1.13-3-1-ARCH`, module sha256 `a584a967…` (BO cap), boot
 `40f95214`, `hello_wait_ms=0`, `call_settle_us=1000`, `fw_perf_mode` N.
 `ane-run` built on the M2 from this branch (gcc 16.1.1, -Werror, no warnings),
-sha256 `0563c81edb02…`. Each call:
+sha256 `0563c81edb02…` for processes 1-3. The final commit adds one header
+check (taskCount at most the stream bytes / 32); process 4 used that build,
+sha256 `f687a7abe374…`: 254.506 ms, bit-exact. Each call:
 `flock /var/tmp/ane-run.lock timeout 120 ane-run --anec program-0.anec --ports ports.json ...`,
 packed and unpacked by `tools/qwen_prog_run.py`. The 20-call processes ran
 inside a GPU turn, so no GPU job ran during the timing.
