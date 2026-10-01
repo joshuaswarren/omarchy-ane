@@ -1,0 +1,6 @@
+start	end	note
+0x28e084000	0x28e084033	DAPF LLT allow-window (ADT dapf-instance-0, macOS 27)
+0x28e080260	0x28e080263	DAPF LLT allow-window (ADT dapf-instance-0, macOS 27)
+0x38545c000	0x38545c003	DAPF LLT allow-window (ADT dapf-instance-0, macOS 27)
+0x406468000	0x406468003	DAPF LLT allow-window (ADT dapf-instance-0, macOS 27)
+0x228545c000	0x228545c003	DAPF LLT allow-window (ADT dapf-instance-0, macOS 27)

@@ -1,0 +1,12 @@
+DART geometry (macOS ioreg dart-ane0): page-size 16384 B, vm-base 0x10000000000, vm-size 0x30000000000
+0x308/0x310 tunables in 4 KiB units: 0x10000000 .. 0x40000000 = vm-base .. vm-base+vm-size
+Per encoder CALL (3.47 GB estimate):
+  weight pages (kDMA 413.6 MB / 16 KiB): 25244 distinct, each read once per CALL
+  scratch pages (61 MB slot-3 working set): 3723 distinct
+  page-equivalents of traffic (3.47 GB / 16 KiB): 211646
+  TLB entries needed to hold the activation working set: 3723
+Average traffic: Linux 13.7 GB/s (1.196 us per 16 KiB), macOS 38.8 GB/s (0.422 us per 16 KiB) if the native build moves the same bytes
+Gap 163.8 ms = 0.774 us per page-equivalent, or 5.65 us per distinct page (weights + scratch)
+Serialized walk bound, ASSUMED 0.10 us (one DRAM read, upper levels cached) to 0.60 us (four cold reads at 0.15 us) per miss:
+  one miss per distinct page:   2.9-17.4 ms
+  one miss per page-equivalent: 21.2-127.0 ms

@@ -1,0 +1,29 @@
+block	baseline_phase	cond	writes	in_603c79b_default
+pmgr-ps-fabric(afi,afnc0)	B1-pmgr	if-off	8	yes
+pmgr-ps-ane_sys/ane_cpu	B1-pmgr	if-off	4	yes
+pmgr-ps-ane-islands	B1-pmgr	if-off	14	yes
+dart-ane0(LLT)	B2-dart0-reset	live	51	yes
+dart-ane1(BRD)	B2-dart1-reset	live	51	yes
+dart-ane2(BWR)	B2-dart2-reset	live	51	yes
+dart-ane0(LLT)	B3-dart0-attach	live	4	yes
+dart-ane1(BRD)	B3-dart1-attach	live	4	yes
+dart-ane2(BWR)	B3-dart2-attach	live	4	yes
+dart-ane0(LLT)	L1-fwload	live	1	yes
+dart-ane1(BRD)	L1-fwload	live	1	yes
+dart-ane2(BWR)	L1-fwload	live	1	yes
+venc-root-ps	L2-venc	if-off	1	no
+venc-leaf-ps	L2-venc	if-off	5	no
+engine-low(AXI2AF bridge)	P0-table	gated	3	no
+engine-low(AXI2AF bridge)	P-1-tunables	live	12	yes
+scratch	P1-scratch	live	11	yes
+rvbar	P2-rvbar	gated	1	yes
+asc-wrapper	P3-run	live	2	yes
+scratch	P5-publish	gated	2	yes
+scratch	P6-wake	gated	1	yes
+asc-wrapper	RTK-mgmt	gated	6	no
+pmgr-ps-ane_sys/ane_cpu	W16-cpu_reset	gated	4	no
+asc-wrapper	OBS-run	observer	3	no
+scratch	OBS-ack3	observer	1	no
+asc-wrapper	OBS-wake	observer	2	no
+dart-ane0(LLT)	OBS-clrerr	observer	2	no
+asc-wrapper	OBS-stop	observer	1	no
