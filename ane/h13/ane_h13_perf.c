@@ -970,54 +970,6 @@ static int h4a_map_segments(struct ane_h13_perf *a)
 	return h4a_map_window(a, dom, stage->data_iova, data_phys, stage->data_len, 1);
 }
 
-/* ---- Gap7 run-4 hypothesis: the ASC core's fetch path runs through the
- * ANE DART stream(s); apple-dart holds them in TRANSLATE with page tables
- * that only cover kernel BOs, so the fw's first exception-vector fetch at
- * VBAR+0x200 aborts (CoreSight: PC=ELR=FAR=VBAR+0x200, ESR 0x86000010,
- * sync external abort on the fetch — identical to the 2026-09-24 receipt).
- * iBoot leaves the streams untranslated. Put sid 0 of every dart in the
- * ane device's iommus list into BYPASS (T8020 shape, proven by ane_dart.c
- * containment on this box) before RUN; restore on cleanup. ---- */
-#define DART_TCR_OFF(sid)	(0x100 + ((sid) << 2))
-#define DART_TCR_BYPASS		(BIT(12) | BIT(8))	/* DAPF | DART */
-
-static int h4a_bypass_streams(struct ane_h13_perf *a)
-{
-	struct device_node *np = a->pdev->dev.of_node;
-	int count, i;
-
-	count = of_count_phandle_with_args(np, "iommus", "#iommu-cells");
-	if (count < 0)
-		return 0;
-	for (i = 0; i < count; i++) {
-		struct of_phandle_args args;
-		struct platform_device *dart;
-		void __iomem *regs;
-		u32 old, sid;
-
-		if (of_parse_phandle_with_args(np, "iommus", "#iommu-cells",
-					       i, &args))
-			continue;
-		dart = of_find_device_by_node(args.np);
-		of_node_put(args.np);
-		if (!dart)
-			continue;
-		sid = args.args[0];
-		regs = devm_platform_ioremap_resource(dart, 0);
-		put_device(&dart->dev);
-		if (IS_ERR(regs)) {
-			dev_err(&a->pdev->dev, "bypass: dart[%d] ioremap failed\n", i);
-			continue;
-		}
-		old = readl_relaxed(regs + DART_TCR_OFF(sid));
-		writel_relaxed(old | DART_TCR_BYPASS, regs + DART_TCR_OFF(sid));
-		wmb();
-		dev_info(&a->pdev->dev, "bypass: dart[%d] sid %u TCR %08x -> %08x\n",
-			 i, sid, old, old | DART_TCR_BYPASS);
-	}
-	return 0;
-}
-
 static int match_owned(struct device *dev, const void *data)
 {
 	struct device_driver *drv = dev->driver;
@@ -1155,8 +1107,6 @@ static int __init ane_h13_perf_init(void)
 			ret = h4a_map_segments(g);
 			if (ret && !nodart)
 				goto err;
-			if (nodart)
-				h4a_bypass_streams(g);
 		}
 		rvbar = readq_relaxed(g->engine + ASC_IO_RVBAR);
 		dev_info(&g->pdev->dev, "boot: RVBAR=%016llx (bit0 latched=%d, never written)\n",
