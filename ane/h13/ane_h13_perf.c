@@ -151,6 +151,14 @@ module_param(stage22, bool, 0444);
 MODULE_PARM_DESC(stage22,
 		 "preflight 22G74 reset head, restore 22G74 DATA (file + zero tail to carveout end), patch SOC_/SOCR/CpAd/WrAd/GKTS, then the boot contract with DART SEG0/SEG1 mapped");
 
+/* Gap7: the 2858 ANE darts report VA width 32 (hardware PARAMS, probed via
+ * t8110 hw: "AS 32 -> 42") — the fw VM window 0x1f000000000 is unmappable
+ * through this kernel's apple-dart. nodart=1 runs the corrected staging
+ * without a DART map (H2/H3 proved the fw executes pre-walk unmapped). */
+static bool nodart;
+module_param(nodart, bool, 0444);
+MODULE_PARM_DESC(nodart, "chman: skip the DART segment map before RUN");
+
 /* ---- 22G74 (Gap7) staging + generation table ---- */
 #define EOS22_TEXT_LEN		0xd4000		/* __TEXT vmsize (ZSTR 0x50c000 - DATA) */
 #define EOS22_DATA_FILE_LEN	0x3e8000	/* __DATA filesize */
@@ -849,7 +857,7 @@ static int stage22_run(struct ane_h13_perf *a)
 		u32 off = pb[i].off;
 		u64 value = pb[i].value;
 
-		if (pb[i].len == 8 && !strcmp(pb[i].tag, "GKTS"))
+		if (pb[i].len == 8 && !memcmp(pb[i].tag, "GKTS", 4))
 			value = canary;
 		if (memcmp(dbuf + off, pb[i].tag, 4) ||
 		    get_unaligned_le32(dbuf + off + 4) != pb[i].len) {
@@ -1086,7 +1094,7 @@ static int __init ane_h13_perf_init(void)
 			if (ret)
 				goto err;
 			ret = h4a_map_segments(g);
-			if (ret)
+			if (ret && !nodart)
 				goto err;
 		}
 		rvbar = readq_relaxed(g->engine + ASC_IO_RVBAR);
