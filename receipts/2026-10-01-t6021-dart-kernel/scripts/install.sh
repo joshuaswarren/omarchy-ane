@@ -3,6 +3,7 @@
 # (module tree, kernel, initramfs, custom.cfg) and proves every stock boot file unchanged.
 # usage: install.sh STAGEDIR   (run from the stock kernel; STAGEDIR = build.sh stage + SHA256SUMS)
 set -euo pipefail
+trap 'echo "FAIL line $LINENO: $BASH_COMMAND"' ERR
 S=$(realpath "${1:?stagedir}")
 REL=7.1.13-3-1-ARCH-dart
 STOCK=7.1.13-3-1-ARCH
@@ -32,7 +33,7 @@ sudo -n tar -x --no-same-owner -C "$M/$REL" -f modules.tar
 sudo -n tar -d -C "$M/$REL" -f modules.tar
 sudo -n install -D -m644 ane_t6021.ko "$M/$REL/updates/ane_t6021.ko"
 sudo -n depmod -a "$REL"
-[ "$(modinfo -k "$REL" -n ane_t6021)" = "$M/$REL/updates/ane_t6021.ko" ]
+[ "$(realpath "$(modinfo -k "$REL" -n ane_t6021)")" = "$M/$REL/updates/ane_t6021.ko" ]
 [ "$(modinfo -k "$REL" -F vermagic ane_t6021 | xargs)" = "$REL SMP preempt mod_unload aarch64" ]
 echo "ane_t6021 $(modinfo -k "$REL" -F version ane_t6021) srcversion $(modinfo -k "$REL" -F srcversion ane_t6021)"
 
@@ -40,11 +41,13 @@ sudo -n install -m644 Image "$K"
 sudo -n mkinitcpio -k "$REL" -g "$I"
 sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$REL/kernel/fs/btrfs/btrfs.ko$"
 ! sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$STOCK/"
-diff <(kos /boot/initramfs-linux-asahi.img) <(kos "$I")
-diff <(sudo -n lsinitcpio /boot/initramfs-linux-asahi.img | sed "s|/$STOCK/|/KVER/|" | sort) \
-	<(sudo -n lsinitcpio "$I" | sed "s|/$REL/|/KVER/|" | sort) >initramfs-files.diff &&
-	echo "initramfs file lists equal (release normalized)" ||
-	echo "initramfs file lists differ in $(grep -c '^[<>]' initramfs-files.diff) lines (see initramfs-files.diff)"
+# Reference: a stock-kernel initramfs built now into STAGEDIR (the installed stock image is from
+# 2026-09-19 and lists ramoops/reed_solomon that autodetect no longer selects).
+sudo -n mkinitcpio -k "$STOCK" -g "$S/stock-ref.img" >"$S/stock-ref.log" 2>&1
+diff <(kos "$S/stock-ref.img") <(kos "$I")
+diff <(sudo -n lsinitcpio "$S/stock-ref.img" | sed "s|/$STOCK/|/KVER/|" | sort) \
+	<(sudo -n lsinitcpio "$I" | sed "s|/$REL/|/KVER/|" | sort)
+echo "initramfs: modules and $(sudo -n lsinitcpio "$I" | wc -l) files equal a stock-kernel image built now (release normalized)"
 
 sudo -n install -m644 custom.cfg "$C"
 sudo -n grub-script-check "$C"
