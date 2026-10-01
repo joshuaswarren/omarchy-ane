@@ -213,6 +213,71 @@ static int check_port_refusal(const char *dir, const char *op,
 	return good;
 }
 
+static uint64_t get_le(const uint8_t *p, int n)
+{
+	uint64_t v = 0;
+
+	while (n--)
+		v = v << 8 | p[n];
+	return v;
+}
+
+static void put_le(uint8_t *p, uint64_t v, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		p[i] = (uint8_t)(v >> (8 * i));
+}
+
+/* The port-table build has no task bound beyond the header (Apple's whole
+ * Parakeet encoder has 3597 tasks): matvec's two tasks repeated 100 times,
+ * 200 tasks > ANE_M2_MAX_CALLS, must build. */
+static int check_port_many_tasks(const char *dir,
+				  const struct ane_m2_port_spec *ports,
+				  uint32_t port_count)
+{
+	enum { REPEAT = 100 };
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint64_t tsk, krn, body, stride, out_tsk, const_off;
+	uint8_t *src, *dst;
+	long size;
+	int good;
+	unsigned k;
+
+	src = read_all(fixture(dir, "matvec", "program-0.anec"), &size);
+	if (!src)
+		return 0;
+	tsk = get_le(src + 0x10, 8);
+	krn = get_le(src + 0x18, 8);
+	body = tsk - 16;
+	stride = (body + 15) & ~15ull;
+	out_tsk = 16 + stride * REPEAT;
+	const_off = (out_tsk + 63) & ~63ull;
+	dst = calloc(1, 0x1000 + const_off + krn);
+	if (!dst) {
+		free(src);
+		return 0;
+	}
+	memcpy(dst, src, 0x1000);
+	for (k = 0; k < REPEAT; k++)
+		memcpy(dst + 0x1000 + 16 + stride * k, src + 0x1000 + 16, body);
+	memcpy(dst + 0x1000 + const_off, src + size - krn, krn);
+	put_le(dst, const_off + krn, 8);
+	put_le(dst + 0x0c, get_le(src + 0x0c, 4) * REPEAT, 4);
+	put_le(dst + 0x10, out_tsk, 8);
+	good = !ane_m2_program_build_ports(dst, 0x1000 + const_off + krn, ports,
+					   port_count, &model, &secs);
+	if (good)
+		ane_m2_sections_free(&secs);
+	printf("  [%s] port table builds a %u-task stream\n",
+	       good ? "ok" : "FAIL", (unsigned)get_le(dst + 0x0c, 4));
+	free(dst);
+	free(src);
+	return good;
+}
+
 static void mut_truncated(uint8_t *a, long *size)
 {
 	(void)a;
@@ -478,6 +543,9 @@ int main(int argc, char **argv)
 	}
 	ok = check_byte_identity(dir, "matvec", matvec_ports,
 				 sizeof(matvec_ports) / sizeof(matvec_ports[0]))
+	     && ok;
+	ok = check_port_many_tasks(dir, matvec_ports,
+				   sizeof(matvec_ports) / sizeof(matvec_ports[0]))
 	     && ok;
 	ok = check_f16_add() && ok;
 

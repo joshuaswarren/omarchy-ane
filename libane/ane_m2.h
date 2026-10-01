@@ -78,8 +78,9 @@ struct ane_m2_ref {
 
 /* ANE_M2_MAX_CALLS bounds the per-call ref set: one record per task in the
  * worst case, with ANE_M2_MAX_BINDS deduped refs each. derive_refs keeps
- * each task's refs in call_refs[task], so it also bounds the task count.
- * The largest staged Qwen program has 120 tasks. */
+ * each task's refs in call_refs[task], so it also bounds the task count of
+ * the derived build. The port-table build uses one ref set for all tasks
+ * and has no task bound beyond the header's taskCount. */
 #define ANE_M2_MAX_CALLS 128
 
 struct ane_m2_model {

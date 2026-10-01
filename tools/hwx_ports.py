@@ -57,9 +57,9 @@ def parse_hwx(data):
             for index in range(struct.unpack_from("<I", data, cursor + 64)[0]):
                 name, _, address, length = struct.unpack_from("<16s16s2Q", data, cursor + 72 + index * 80)
                 hwx["sections"][address] = (segment, name.split(b"\0", 1)[0].decode(), length)
-        elif command == 0x40 and size == 0x20:
+        elif command == 0x40 and size >= 0x20:
             address = struct.unpack_from("<Q", data, cursor + 0x10)[0]
-            hwx["names"][address] = data[cursor + 0x18:cursor + 0x20].split(b"\0", 1)[0].decode()
+            hwx["names"][address] = data[cursor + 0x18:cursor + size].split(b"\0", 1)[0].decode()
         elif command == 4 and struct.unpack_from("<I", data, cursor + 8)[0] == 4:
             slots = [struct.unpack_from("<Q", data, cursor + 0x10 + 0x10 * slot)[0] for slot in range(64)]
             end = slots.index(0, 4) if 0 in slots[4:] else 64

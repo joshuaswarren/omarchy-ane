@@ -11,7 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from hwx_ports import TILE_BYTES, derive_program, task_records
+from hwx_ports import TILE_BYTES, derive_program, parse_hwx, task_records
 
 HWX = Path("/var/tmp/qwen-real-hwx-h14")
 ANEC = Path("/var/tmp/qwen-real-anec-h14")
@@ -28,6 +28,15 @@ def test_task_records_split_bar_refs_from_unbarred_bases():
     struct.pack_into("<Q", header, 0x10, len(stream))
     assert list(task_records(bytes(header) + stream)) == [
         (0, [(5, 0x1110, 0x40), (6, 0x1508, 1 << 32)], [0x1508])]
+
+
+def test_parse_hwx_reads_lc40_names_longer_than_8_bytes():
+    """The whole Parakeet encoder HWX names `input_features` in a 0x28-byte
+    LC 0x40 record; the name must not stop at 8 bytes."""
+    lc40 = struct.pack("<2I8xQ16s", 0x40, 0x28, 0x33AA0000, b"input_features")
+    program = struct.pack("<3I", 4, 0x410, 4).ljust(0x410, b"\0")
+    data = struct.pack("<8I", 0xBEEFFACE, 0, 5, 0, 2, len(lc40) + len(program), 0, 0) + lc40 + program
+    assert parse_hwx(data)["names"] == {0x33AA0000: "input_features"}
 
 
 def test_staged_qwen_tables_fit_and_pass_the_dry_run(tmp_path):
