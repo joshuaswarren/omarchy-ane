@@ -212,6 +212,9 @@ def report(path, anec=None):
         for lab, w in work.items():
             if w[src[ok]].std() > 0 and gap[ok].std() > 0:
                 scan.append((np.corrcoef(gap[ok], w[src[ok]])[0, 1], D, lab))
+    if not scan:
+        print("\nWindow depth indeterminate: the take gaps or the per-task work do not vary")
+        return
     scan.sort(reverse=True)
     D = scan[0][1]
     print(f"\nWindow depth scan r(gap[k], work of task k+1-D), best 6: "
@@ -274,7 +277,7 @@ def report(path, anec=None):
               f"+ {cf[3]:.2f}*MB_tile, R^2 {r2:.3f}")
     cf, *_ = np.linalg.lstsq(A[ok], y[ok], rcond=None)
     resid = y - A @ cf
-    out = np.where(ok & (resid > np.maximum(100, 2 * (A @ cf))))[0]
+    out = np.where(ok & (y > 2 * (A @ cf)) & (resid > 100))[0]
     print(f"Tasks > 2x the all-task fit and > 100 us over it: {len(out)}; "
           f"their excess {np.sum(resid[out]) / 1e3:.2f} ms")
     for k in out[np.argsort(-resid[out])][:8]:

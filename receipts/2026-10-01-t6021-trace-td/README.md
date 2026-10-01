@@ -170,8 +170,9 @@ Fit over 3,578 tasks:
   coefficients mean nothing alone.
 - Taken one at a time, the activation bytes follow the gaps (r 0.87). The
   MAC estimates follow less (r 0.56), and the weight bytes do not (r 0.03).
-- 80 tasks run more than 2x over the fit. Together they add 12.8 ms. The
-  largest are PE tasks of about 210 us at fixed task indices.
+- 114 tasks run longer than 2x their fit and more than 100 us over it.
+  Together they are 16.6 ms over the fit (6.5% of the call). The largest are
+  PE tasks of about 210 us at fixed task indices.
 
 The smallest tasks (NE 1x1 output, 18 tasks) run in a median of 3.3-3.6 us,
 with a minimum of 2.6 us.
