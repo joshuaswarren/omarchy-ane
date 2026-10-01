@@ -1,0 +1,25 @@
+== encoder (ms per CALL)
+X: blocks 20, minmin 254.274, median of block mins 254.333, medmed 254.478, worst block min 254.363, worst block median 254.525
+N: blocks 20, minmin 253.095, median of block mins 253.129, medmed 253.201, worst block min 253.159, worst block median 253.244
+R = minmin(N)/minmin(X) = 0.9954; Rmed = 0.9950; minmin(X) - minmin(N) = 1.179 ms
+paired block-median ratios N/X (k-th X with k-th N): median 0.9950, range 0.9948-0.9952
+decision rule: minmin -> H_driver; medmed -> H_driver; VERDICT H_driver
+split of the gap to macOS 89.3 ms (165.0 ms): compile share 0.0071, driver/operating-point share 0.9929
+X anchor 254.4 +- 1.5: pass
+golden: 42 processes, not bit-exact: none; fp16 sha256 prefixes by arm: [('N', 'fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063'), ('X', 'fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063'), ('w', 'fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063')]
+== Qwen (ms per CALL, 16 calls per block)
+prog_020: X blocks 20 minmin 4.776 medmed 4.870; N blocks 20 minmin 4.790 medmed 4.866; R 1.0029 Rmed 0.9993
+  t15: 4096 B, N==X bytes True; X vs golden max_abs 0.000732422 relL2 0.00117423; N vs golden max_abs 0.000732422 relL2 0.00117423
+prog_006: X blocks 20 minmin 10.618 medmed 10.677; N blocks 20 minmin 10.583 medmed 10.675; R 0.9967 Rmed 0.9998
+  t106: 32 B, N==X bytes True; X vs golden max_abs 0.000488281 relL2 0.000195826; N vs golden max_abs 0.000488281 relL2 0.000195826
+  t108: 4096 B, N==X bytes True; X vs golden max_abs 0.00878906 relL2 0.00141717; N vs golden max_abs 0.00878906 relL2 0.00141717
+  t109: 36864 B, N==X bytes True; X vs golden max_abs 0.015625 relL2 0.00104045; N vs golden max_abs 0.015625 relL2 0.00104045
+  t30: 51200 B, N==X bytes True; X vs golden max_abs 0 relL2 0; N vs golden max_abs 0 relL2 0
+  t46: 51200 B, N==X bytes True; X vs golden max_abs 0 relL2 0; N vs golden max_abs 0 relL2 0
+  t71: 4096 B, N==X bytes True; X vs golden max_abs 0.000671387 relL2 0.0027375; N vs golden max_abs 0.000671387 relL2 0.0027375
+  t87: 4096 B, N==X bytes True; X vs golden max_abs 0.000106812 relL2 0.00193004; N vs golden max_abs 0.000106812 relL2 0.00193004
+  t91: 4096 B, N==X bytes True; X vs golden max_abs 0.000976562 relL2 0.00116881; N vs golden max_abs 0.000976562 relL2 0.00116881
+  t93: 4096 B, N==X bytes True; X vs golden max_abs 0.00390625 relL2 0.000683125; N vs golden max_abs 0.00390625 relL2 0.000683125
+  t97: 32 B, N==X bytes True; X vs golden max_abs 0.000488281 relL2 0.000558082; N vs golden max_abs 0.000488281 relL2 0.000558082
+X float16 (1, 1, 375, 640) fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+N float16 (1, 1, 375, 640) fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
