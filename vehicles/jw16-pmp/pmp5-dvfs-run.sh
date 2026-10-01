@@ -16,7 +16,7 @@ OUT="$LAB/$RUN_ID"
 mkdir -p "$OUT"
 exec > >(tee -a "$OUT/run.log") 2>&1
 DEV=/dev/pmp_dvfs
-RUNG=0x40084401; ON=0x00020002; OFF=0x00020003; RDCMD=0x80084404; RDON=0x80084405
+RUNG=0x40044401; ON=0x00000002; OFF=0x00000003; RDCMD=0x80044404; RDON=0x80044405
 HIDDEN_WANT=fca96f1355485ec3
 TOP=${1:-5}
 echo "=== $RUN_ID boot=$(cat /proc/sys/kernel/random/boot_id) top=$TOP ==="
@@ -47,10 +47,10 @@ parsehash() { echo "$1" | sed -n 's/.*hidden=\([0-9a-f]*\).*/\1/p'; }
 
 python3 - <<'PY'
 import fcntl, os, struct, time
-RUNG=0x40084401; ON=0x00020002; OFF=0x00020003; RDCMD=0x80084404; RDON=0x80084405
+RUNG=0x40044401; ON=0x00000002; OFF=0x00000003; RDCMD=0x80044404; RDON=0x80044405
 fd=os.open("/dev/pmp_dvfs", os.O_RDWR)
-print("initial CMD readback:", hex(fcntl.ioctl(fd, RDCMD) & 0xffffffff))
-print("initial ON  readback:", hex(fcntl.ioctl(fd, RDON) & 0xffffffff))
+print("initial CMD readback:", hex(fcntl.ioctl(fd, RDCMD, 0) & 0xffffffff))
+print("initial ON  readback:", hex(fcntl.ioctl(fd, RDON, 0) & 0xffffffff))
 os.close(fd)
 PY
 rows
@@ -60,12 +60,13 @@ baseline8=$(bench 8); echo "BASELINE-n8: $baseline8"
 BEST=$(parse "$baseline"); [ -n "$BEST" ] || BEST=999999
 python3 - "$TOP" <<'PY'
 import fcntl, os, struct
+ON=0x00000002; RUNG=0x40044401; RDCMD=0x80044404
 fd=os.open("/dev/pmp_dvfs", os.O_RDWR)
-fcntl.ioctl(fd, ON)
+fcntl.ioctl(fd, ON, 0)
 print("DVFS_ON <- 1")
 time.sleep(0.01)
-rb=fcntl.ioctl(fd, RUNG, struct.pack('<I', 0))
-print("idle token 0x80000000 written, readback:", hex(rb & 0xffffffff))
+fcntl.ioctl(fd, RUNG, struct.pack('<I', 0))
+print("idle token 0x80000000 written; CMD now:", hex(fcntl.ioctl(fd, RDCMD, 0) & 0xffffffff))
 os.close(fd)
 PY
 rows
@@ -77,10 +78,11 @@ for new in $(seq 1 "$TOP"); do
 	if [ "$CL" != 0 ] || [ "$T" -ge 85000 ]; then echo "ABORT pre-rung crash=$CL temp=$T"; STATE=abort; break; fi
 	line=$(python3 - "$prev" "$new" <<'PY'
 import fcntl, os, struct, sys
+RUNG=0x40044401; RDCMD=0x80044404
 prev, new = int(sys.argv[1]), int(sys.argv[2])
 fd=os.open("/dev/pmp_dvfs", os.O_RDWR)
-rb=fcntl.ioctl(fd, RUNG, struct.pack('<I', (prev<<4)|new))
-print(hex(rb & 0xffffffff))
+fcntl.ioctl(fd, RUNG, struct.pack('<I', (prev<<4)|new))
+print(hex(fcntl.ioctl(fd, RDCMD, 0) & 0xffffffff))
 os.close(fd)
 PY
 	)
@@ -104,15 +106,16 @@ done
 echo "--- restore ---"
 python3 - "$prev" <<'PY'
 import fcntl, os, struct, sys, time
+RUNG=0x40044401; OFF=0x00000003; RDON=0x80044405; RDCMD=0x80044404
 prev=int(sys.argv[1] or 0)
 fd=os.open("/dev/pmp_dvfs", os.O_RDWR)
 for new in reversed(range(0, prev)):
-	rb=fcntl.ioctl(fd, RUNG, struct.pack('<I', (prev<<4)|new))
-	print(f"reverse rung {prev}->{new} rb={hex(rb & 0xffffffff)}")
+	fcntl.ioctl(fd, RUNG, struct.pack('<I', (prev<<4)|new))
+	print(f"reverse rung {prev}->{new}; CMD now:", hex(fcntl.ioctl(fd, RDCMD, 0) & 0xffffffff))
 	prev=new
 	time.sleep(0.005)
-fcntl.ioctl(fd, OFF)
-print("DVFS_ON <- 0 readback:", hex(fcntl.ioctl(fd, RDON) & 0xffffffff))
+fcntl.ioctl(fd, OFF, 0)
+print("DVFS_ON <- 0 readback:", hex(fcntl.ioctl(fd, RDON, 0) & 0xffffffff))
 os.close(fd)
 PY
 rows
