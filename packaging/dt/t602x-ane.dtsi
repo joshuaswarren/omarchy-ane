@@ -26,8 +26,9 @@
  *    is started; ane_t6021 leaves it stopped (hello_wait_ms=0). See
  *    receipts/2026-09-30-t6021-stock-mailbox.
  *  - reserved-memory/ane-alias-iova and memory-region: the IOVA reservation
- *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000,
- *    16 MiB, in the ane DART domain).
+ *    of receipts/2026-09-20-t6021-entry-alias.md (IOVA 0x10000000000 = the
+ *    ADT dart-ane0 vm-base on every T602x board, 16 MiB, in the ane DART
+ *    domain). An IOVA only: the overlays name no physical firmware address.
  * AIC2 and the ANE power islands already exist in stock T602x trees. Their
  * phandles differ between kernels and boards, so they are reached by path.
  * The DARTs, the mailbox and ane set status "okay": aurora-silicon/linux #65

@@ -340,6 +340,23 @@ release CPU_STATUS read 0x28, SCRATCH7 (+0x1840064) and +0x184006c stayed 0,
 no HELLO, through poll A, a 30 s READY poll, and a 60 s doorbell poll. The
 frequency is not what keeps the core asleep.
 
+### iBoot's runtime patches are the whole difference between the preload and the file
+
+On 17 pre-Linux captures (2026-09-27) the preload differs from the 13.5
+archive in exactly these places: the TEXT u64 at vm 0x423c (the DATA base
+IOVA, 0x100000c4000), five `__rtk_patch` records (stack guard, `RTK_soc`,
+`RTK_soc_revision`, `RTK_cpu_physical_address`,
+`RTK_cpu_wrapper_physical_address`) and the first 0x1e8 bytes of
+`__rtk_platform_asc_tunables_block` (24 ASC register tunables). Only the
+stack guard changes between boots. The Mach-O vm layout already equals the
+iBoot placement. So the earlier staged-copy trials ran an image with
+`RTK_soc` 0xffffffff, zero ASC addresses and DATA base 0: they never ran
+what iBoot runs. `ane_fw_apply_boot_patches()` writes these fields into the
+driver's own copy; with them, the copy equals every capture byte for byte
+(guard aside). `fw_alias_reserved=0` runs that copy and needs no preload
+address or reserved memory. No T6021 has run it yet (receipt
+`receipts/2026-10-01-t602x-independent/README.md`).
+
 ### What the host must do, from the working drivers
 
 - Asahi's ISP driver (`isp-fw.c`) writes the coprocessor IRQ mask registers
@@ -1174,14 +1191,15 @@ Handshake-only: no CSNE command, no inference, no program load.
 - `fw_extra_ram = 0x200000` (2 MiB, 16 KiB-aligned at
   `ANE_T6021_FW_ALIAS_PAGE = 0x4000`) + DMA32 — only verified
   envelope.
-- `fw_alias_reserved = 1` — required when `fw_extra_ram > 0` (the
-  staged DMA copy cannot grant owned heap beyond its 5 MiB
-  image). `ane_t6021_fw_alias_is_reserved()` is the predicate.
-- This commit MOVES the bound/alignment/rejected-extra-when-not-reserved
-  check to the SHARED probe-top predicate
-  `ane_t6021_fwload_options_ok()`, called before
-  `devm_kzalloc`/power. The same rule still runs at the alloc site
-  in `ane_t6021_fwload.c` (line ~404) as defense in depth.
+- Both alias modes map the whole allocation at the entry: the
+  reserved mode maps SEG0, SEGi and the owned tail; own memory
+  (`fw_alias_reserved=0`) maps the whole staged copy. So the grant
+  does not need `fw_alias_reserved=1` (corrected 2026-10-01, receipt
+  `receipts/2026-10-01-t602x-independent/README.md`).
+- The bound and alignment check is the probe-top predicate
+  `ane_t6021_fwload_options_ok()`, which `ane_rtclient_probe` calls
+  before `devm_kzalloc`/power; `ane_t6021_fwload_probe()` repeats it
+  at the alloc site as defense in depth.
 
 The earlier `0x1800000` (24 MiB) invocation was rejected at the
 prior code's late fwload alloc site (after `devm_kzalloc` and after
@@ -1195,28 +1213,6 @@ and the historical log cannot prove which side of the alloc
 actually fired. Do not lower the 16 MiB cap or loosen the 16 KiB
 alignment without independent verification on a new boot (with
 the actual log captured this time).
-
-### Probe-top predicate is shared
-
-Both `ane_t6021_probe` (drv.c:375) and `ane_rtclient_probe` (rtclient
-probe top) call `ane_t6021_fwload_options_ok()` *before*
-`devm_kzalloc`/power. The predicate composes two pure inline
-helpers in `ane_t6021_diag_marker.h`:
-
-- `ane_t6021_fw_extra_ram_envelope_ok(load, fw_extra_ram,
-  fw_alias_reserved)` — backing-envelope rule, with the SAME
-  16 KiB / SZ_16M / reserved-alias-if-extra0 constants the late
-  alloc-time check also uses.
-- `ane_t6021_diag_options_ok(diag, load, boot, transport)` —
-  diag gate.
-
-The unit test in `test/test_anet6021_fwload_options_ok.c` pulls
-both inlines from the same header and runs an executable 11-case
-boundary matrix (`make -C ane/t6021 check`). No rule is duplicated
-between kernel and test; if the rule changes, the test changes
-with it. The test covers: 16 MiB cap, 16 MiB+1, 24 MiB
-pre-alloc rejection, 4 KiB-but-not-16-KiB rejection (0x1000),
-16 KiB alignment, reserved-alias coupling, 0-bytes envelope.
 
 ### Receipts (in this repo)
 

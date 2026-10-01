@@ -85,20 +85,22 @@ with tempfile.TemporaryDirectory() as tmp:
     assert names('t6021-j414c.dtb') == []
 
     # The packaged overlays: build-dtbo names, the hook's Target, and the
-    # opt-in keys of T6021 and the untested T6000 and T6002.
+    # opt-in keys of T6021 and the untested T6000, T6002, T6020 and T6022.
     pkg = Path(tmp) / 'pkg'
     subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True)
     pkg_lib = pkg / oadt.OVERLAY_DIR
     assert sorted(p.relative_to(pkg_lib).as_posix() for p in pkg_lib.glob('*/*.dtbo')) == [
         't6000/omarchy-ane.dtbo', 't6001/omarchy-ane.dtbo', 't6002/omarchy-ane.dtbo',
-        't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo', 't8103/omarchy-ane.dtbo']
+        't6020/omarchy-ane.dtbo', 't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo',
+        't6022/omarchy-ane.dtbo', 't8103/omarchy-ane.dtbo']
     hook = (root / 'packaging/90-omarchy-ane-dt.hook').read_text().splitlines()
     assert f'Target = {oadt.OVERLAY_DIR}/*' in hook, 'the hook must watch OVERLAY_DIR'
     opt_in = pkg / oadt.OPT_IN
     opt_in.parent.mkdir(parents=True)
     chosen = lambda dtb: [f'{p.parent.name}/{p.name}' for p in oadt.overlays_for(pkg, dtb)]
     assert chosen('t6021-j414c.dtb') == [], 'both T6021 overlays wait for the opt-in'
-    assert chosen('t6000-j314s.dtb') == chosen('t6002-j375d.dtb') == [], 'untested SoCs wait for the opt-in'
+    assert chosen('t6000-j314s.dtb') == chosen('t6002-j375d.dtb') == chosen('t6020-j414s.dtb') == \
+        chosen('t6022-j180d.dtb') == [], 'untested SoCs wait for the opt-in'
     assert chosen('t6001-j316c.dtb') == ['t6001/omarchy-ane.dtbo']
     opt_in.write_text('uboot-serial-stdin-t6021\nane-t6000\n')
     assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-uboot-serial-stdin.dtbo']
@@ -107,6 +109,11 @@ with tempfile.TemporaryDirectory() as tmp:
     opt_in.write_text('ane-t6021\nuboot-serial-stdin-t6021\nane-t6002\n')
     assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo']
     assert chosen('t6002-j375d.dtb') == ['t6002/omarchy-ane.dtbo']
+    assert chosen('t6020-j414s.dtb') == chosen('t6022-j180d.dtb') == [], 'ane-t6021 does not opt T6020/T6022 in'
+    opt_in.write_text('ane-t6020\nane-t6022\n')
+    assert chosen('t6020-j414s.dtb') == ['t6020/omarchy-ane.dtbo']
+    assert chosen('t6022-j180d.dtb') == ['t6022/omarchy-ane.dtbo']
+    assert chosen('t6021-j414c.dtb') == [], 'ane-t6020/ane-t6022 do not opt T6021 in'
 
     # Overlays left in the old directory (a hand install): apply refuses and
     # keeps the current copy and the update-m1n1 line.

@@ -13,7 +13,7 @@ t8103     t8103-ane.dts                   enabled
 t6000     t6000-ane.dts                   opt-in
 t6001     t6001-ane.dts                   enabled
 t6002     t6002-ane.dts                   opt-in
-t6020     t6020-ane.dts                   disabled
+t6020     t6020-ane.dts                   opt-in
 t6021     t6021-ane.dts                   opt-in
 t6021     t6021-uboot-serial-stdin.dts    opt-in
-t6022     t6022-ane.dts                   disabled
+t6022     t6022-ane.dts                   opt-in

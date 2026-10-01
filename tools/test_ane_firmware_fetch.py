@@ -2,8 +2,10 @@
 """Offline checks for packaging/omarchy-ane-firmware-fetch. No network.
 The pin must equal the driver's pin, or the tool installs bytes the driver rejects.
 """
+import contextlib
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
+import io
 from pathlib import Path
 import re
 import sys
@@ -64,4 +66,13 @@ for compat, version in (([b'apple,j414c', b'apple,t6021'], b'14.8.3'),
     t = system(compat, version)
     assert fetch.main(['--root', str(t)]) == 1
     assert not (t / 'usr').exists()
+
+# T6020 and T6022 pass the chip gate to the same image; T8112 does not.
+for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
+                     ([b'apple,j180d', b'apple,t6022'], True),
+                     ([b'apple,j413', b'apple,t8112'], False)):
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert fetch.main(['--root', str(system(compat, b'13.5'))]) == 1
+    assert ('cannot fetch' in err.getvalue()) == gate, (compat, err.getvalue())
 print('test_ane_firmware_fetch: ok')

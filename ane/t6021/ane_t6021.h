@@ -16,7 +16,8 @@
  *    (receipts/2026-09-18-h14-w2-protocol-decode §3).
  *
  * DT binding (driver + packaging/dt/t6021-ane.dts are the two halves):
- *  compatible    = "apple,t6021-ane"
+ *  compatible    = "apple,t6021-ane" (also "apple,t6020-ane" and the
+ *                  T6022 die-0 "apple,t6022-ane": struct ane_t602x_soc)
  *  reg/reg-names = "engine" (whole 32 MiB ADT range0, 0x284000000;
  *                  the H13-style +0x1c04000 engine delta does not exist
  *                  on this SoC — kext never computes it and first touch
@@ -103,6 +104,12 @@ enum {
 #define ANE_ASC_VERS		0x1840000
 #define ANE_ASC_RTB_STATUS	0x1840088	/* K14 poll: value < 2 */
 #define ANE_ASC_RTB_STATUS_UNK7C 0x184007c	/* phase1 S2 whitelist */
+
+/* ASC blocks iBoot names in the firmware's __rtk_patch records
+ * (RTK_cpu_physical_address 0x285000000 and RTK_cpu_wrapper_physical_address
+ * 0x285400000 on the T6021 preload), as engine-relative offsets. */
+#define ANE_ASC_CPU_BASE	0x1000000
+#define ANE_ASC_WRAPPER_BASE	0x1400000
 
 /* The real ASC mailbox, mapped live by W10 (read-only) at ASC+0x8000.
  * Three independent sources agree on the offsets: the live DT sibling
@@ -700,6 +707,14 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane);
 void ane_t6021_fwload_remove(struct ane_t6021 *ane);
 bool ane_t6021_fwload_options_ok(void);
 bool ane_t6021_fwload_requested(void);
-bool ane_t6021_fw_alias_is_reserved(void);
+
+/* Per-SoC of_match data. soc is the value iBoot writes to RTK_soc.
+ * preload_placement: the iBoot SEG0/SEGi physical placement is recorded
+ * for this SoC (T6021 only), so fw_alias_reserved=1 may map it; the other
+ * SoCs always run the firmware from driver-owned memory. */
+struct ane_t602x_soc {
+	u32 soc;
+	bool preload_placement;
+};
 
 #endif /* __ANE_T6021_H__ */
