@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """omarchy-ane-firmware-fetch: install this Mac's ANE firmware from Apple.
 
-M2 Max (T6021) only. Linux must start the ANE firmware there, and the driver
-accepts exactly one image: the selene payload from the macOS 13.5 (22G74)
-stub that every Omarchy M1/M2 install boots. This tool reads the stub version
-from the device tree, maps it to a pinned IPSW URL, range-fetches only the ANE
-member (about 5 MB of a 12.9 GB IPSW), unwraps the IM4P, and installs the
-payload only when its size and SHA-256 equal the driver's pin. M1-family
-chips need nothing: iBoot preloads their ANE firmware.
+M2 Pro, Max and Ultra (T6020, T6021, T6022) only. Linux must start the ANE
+firmware there, and the driver accepts exactly one image: the selene payload
+from the macOS 13.5 (22G74) stub that every Omarchy M1/M2 install boots; its
+BuildManifest gives that one file to the die-0 ANE of all three. This tool
+reads the stub version from the device tree, maps it to a pinned IPSW URL,
+range-fetches only the ANE member (about 5 MB of a 12.9 GB IPSW), unwraps the
+IM4P, and installs the payload only when its size and SHA-256 equal the
+driver's pin. M1-family chips need nothing: iBoot preloads their ANE firmware.
 
 We never redistribute Apple firmware. Each Mac fetches its own copy.
 Dependencies: Python 3, stdlib only. The pinned IM4P ("anef", 5,004,097
@@ -46,7 +47,7 @@ IPSW = {
             "D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw",
 }
 NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
-FETCH = ("apple,t6021",)
+FETCH = ("apple,t6020", "apple,t6021", "apple,t6022")
 TIMEOUT = 30
 
 

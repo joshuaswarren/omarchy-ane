@@ -67,6 +67,8 @@ case $soc in
   t8103|t6001|t6021|"") ;;
   t6000|t6002)
     echo "UNTESTED SoC: $soc. ane.ko has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in." ;;
+  t6020|t6022)
+    echo "UNTESTED SoC: $soc. ane_t6021 has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in, and ane_t6021 loads only after you comment out the install line in /etc/modprobe.d/ane_t6021.conf." ;;
   *)
     echo "UNTESTED SoC: $soc"
     bad "no omarchy-ane driver supports the $soc ANE"; finish ;;
@@ -74,6 +76,7 @@ esac
 
 # 1. M2 Max: ane_t6021 stays blocked until the owner opts in.
 mod=ane
+[[ $soc == t6020 || $soc == t6022 ]] && mod=ane_t6021
 if [[ $soc == t6021 ]]; then
   mod=ane_t6021
   m2tool=$(tool omarchy-ane-m2-enable)

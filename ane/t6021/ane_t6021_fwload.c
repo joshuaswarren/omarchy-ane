@@ -15,10 +15,19 @@
  *   3. dma_alloc_coherent on the ANE platform device: the buffer is
  *      DART-mapped through the device's iommu group (stream 0 of the
  *      three bound instances, H14DartAudit). Segment-wise copy
- *      (__TEXT fileoff 0x4000 -> vm0, __DATA -> 0xe8000; vmsize tail
- *      zero from the coherent alloc). Coherent memory needs no explicit
- *      cache clean.
- *   4. W16 entry alias: the staged fw pages are ALIASED at the latched
+ *      (__TEXT fileoff 0x4000 -> vm 0, __DATA fileoff 0xc8000 -> vm
+ *      0xc4000; vmsize tail zero from the coherent alloc). Coherent
+ *      memory needs no explicit cache clean.
+ *   4. Which copy runs. fw_alias_reserved=1 (default, T6021 only) maps
+ *      the copy iBoot preloaded at SEG0/SEGi. Otherwise the staged copy
+ *      runs: ane_fw_apply_boot_patches() first writes iBoot's runtime
+ *      patches into it (DATA base, RTK_soc, revision, ASC addresses,
+ *      stack guard, ASC tunables), and then it equals the preload byte
+ *      for byte except the random guard (17 captures,
+ *      receipts/2026-10-01-t602x-independent). That needs no reserved
+ *      memory and no preload address, so it is the only mode on SoCs
+ *      without a recorded placement (T6020, T6022).
+ *   5. W16 entry alias: the staged fw pages are ALIASED at the latched
  *      RVBAR entry on the device's default DMA domain. Placement
  *      contract, receipt receipts/2026-09-20-t6021-entry-alias.md:
  *        - live RVBAR read64 = 0x10000000001 (bit0 latched, entry
@@ -61,6 +70,9 @@
 #include <linux/io.h>
 #include <linux/iommu.h>
 #include <linux/moduleparam.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
+#include <linux/random.h>
 #include <linux/sizes.h>
 #include <linux/unaligned.h>
 
@@ -83,22 +95,25 @@ static unsigned int fw_extra_ram = 0x200000;
 module_param(fw_extra_ram, uint, 0444);
 MODULE_PARM_DESC(fw_extra_ram,
 		 "Page-aligned owned RAM after the 5 MiB firmware allocation "
-		 "(default 0x200000, the proven add-path grant; maximum 16 MiB). "
-		 "Rides the reserved alias only.");
+		 "(default 0x200000, the proven add-path grant; maximum 16 MiB).");
 
 /* Preloaded-placement alias: map the iBoot-reserved SEG0/SEGi phys at
- * the entry IOVAs (same bytes as the staged copy, preloaded placement).
- * Default on: the proven add-path configuration. */
+ * the entry IOVAs (the preload, with iBoot's patches in place). Default
+ * on: the proven add-path configuration. Only SoCs whose placement is
+ * recorded honor it (ane_t602x_soc.preload_placement). */
 static bool fw_alias_reserved = true;
 module_param(fw_alias_reserved, bool, 0444);
 MODULE_PARM_DESC(fw_alias_reserved,
-		 "Map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 "
-		 "0x10001400000+0x438000 after it, instead of the staged DMA copy "
-		 "(default on).");
+		 "T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 "
+		 "0x10001400000+0x438000 after it (default on); 0 = run the staged "
+		 "copy with iBoot's patches replayed (own memory, the only mode on "
+		 "T6020/T6022).");
 
-bool ane_t6021_fw_alias_is_reserved(void)
+static bool ane_t6021_fw_alias_is_reserved(const struct ane_t6021 *ane)
 {
-	return fw_alias_reserved;
+	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+
+	return fw_alias_reserved && soc->preload_placement;
 }
 
 bool ane_t6021_fwload_requested(void)
@@ -115,14 +130,10 @@ bool ane_t6021_fwload_options_ok(void)
 	/* BINDING probe-top predicate. MUST be called before
 	 * devm_kzalloc / power / CPU release at every probe site.
 	 * The alloc-time check below runs as defense in depth.
-	 * fw_extra_ram is meaningful only behind the reserved alias
-	 * (the lab envelope rule: 16 KiB-aligned, <= 16 MiB). */
-	if (fw_extra_ram > SZ_16M ||
-	    !IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE))
-		return false;
-	if (fw_extra_ram && !fw_alias_reserved)
-		return false;
-	return true;
+	 * The lab envelope rule: 16 KiB-aligned, <= 16 MiB. Both alias
+	 * modes map the whole allocation, so the grant needs no mode. */
+	return fw_extra_ram <= SZ_16M &&
+	       IS_ALIGNED(fw_extra_ram, ANE_T6021_FW_ALIAS_PAGE);
 }
 
 #define ANE_FW_NAME "apple/ane/t602x_ane0_fw_selene_rc4x.macho"
@@ -151,7 +162,7 @@ static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom)
 	return ret;
 }
 
-static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
+static int ane_t6021_fw_alias_map(struct ane_t6021 *ane, bool reserved)
 {
 	struct iommu_domain *dom = iommu_get_domain_for_dev(ane->dev);
 	void __iomem *eng = ane->base[ANE_T6021_REG_ENGINE];
@@ -189,12 +200,10 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane)
 	if (dev_is_dma_coherent(ane->dev))
 		prot |= IOMMU_CACHE;
 
-	if (fw_alias_reserved) {
+	if (reserved) {
 		/* Preloaded placement: the two reserved windows mapped at
-		 * the entry IOVAs. SEG0 0xc4000 covers TEXT 0xe8000 only
-		 * partially by ADT size, but the reserve is what m1n1
-		 * guarantees; the firmware fetch that matters is the
-		 * entry head. SEG1 0x438000 covers DATA 0x284000 fully.
+		 * the entry IOVAs. SEG0 0xc4000 is TEXT and SEG1 0x438000
+		 * is DATA (the 13.5 layout, ane_fw_expected_segs).
 		 * The windows are adjacent, so the mapping is one
 		 * contiguous run of `mapped` bytes starting at entry —
 		 * tracked exactly, because teardown must never unmap a
@@ -367,6 +376,42 @@ static const u8 ane_fw_sha256_expected[32] = {
 	0x07, 0x0b, 0x87, 0xa3, 0x24, 0x84, 0x27, 0xbc,
 };
 
+/* Own memory (header item 4): iBoot's runtime patches, with values from
+ * the running system: the latched entry (or the staged DVA that the boot
+ * path programs when RVBAR is not latched), the DT engine window (probe
+ * already refused a node without it), the compatible, a fresh guard. */
+static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
+{
+	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	struct resource *res = platform_get_resource(to_platform_device(ane->dev),
+						     IORESOURCE_MEM, 0);
+	u64 rvbar = readq(ane->base[ANE_T6021_REG_ENGINE] + ANE_ASC_RVBAR);
+	u64 entry = ane_t6021_rvbar_latched(rvbar) ?
+		    ane_t6021_rvbar_entry_bits(rvbar) : 0;
+	u64 guard = get_random_u64();
+	struct ane_fw_boot_patch p = {
+		.exec_base = entry ?: ane->fw_iova,
+		/* iBoot's guards have one zero byte at a random position */
+		.stack_guard = guard & ~(0xffull << (8 * (guard >> 61))),
+		.soc = soc->soc,
+		.soc_revision = ANE_T602X_SOC_REVISION,
+		.cpu_pa = res->start + ANE_ASC_CPU_BASE,
+		.wrapper_pa = res->start + ANE_ASC_WRAPPER_BASE,
+	};
+	const char *reason = NULL;
+
+	if (ane_fw_apply_boot_patches(img, &p, &reason)) {
+		dev_err(ane->dev, "fwload: own memory: %s\n", reason);
+		return -EINVAL;
+	}
+	dev_info(ane->dev,
+		 "fwload: own memory: iBoot patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
+		 p.soc, p.soc_revision,
+		 p.exec_base + ane_fw_expected_segs[1].vmaddr, p.cpu_pa,
+		 p.wrapper_pa);
+	return 0;
+}
+
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 {
 	const struct firmware *fw = NULL;
@@ -379,6 +424,7 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	const char *reason = NULL;
 	u32 alloc_size = ANE_FW_BUF_SIZE + fw_extra_ram;
 	int ret;
+	bool reserved = ane_t6021_fw_alias_is_reserved(ane);
 
 	if (!fw_load)
 		return 0;
@@ -429,7 +475,9 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 		 "entry %#llx, iova %pad size %#x\n",
 		 entry, &iova, alloc_size);
 
-	ret = ane_t6021_fw_alias_map(ane);
+	ret = reserved ? 0 : ane_t6021_fw_patch(ane, buf);
+	if (!ret)
+		ret = ane_t6021_fw_alias_map(ane, reserved);
 	if (ret) {
 		ane_t6021_fwload_remove(ane);
 		release_firmware(fw);

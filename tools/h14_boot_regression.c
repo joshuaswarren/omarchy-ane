@@ -11,6 +11,11 @@
  *       -o h14_boot_regression tools/h14_boot_regression.c
  * Exit 0 = every positive and negative case behaved as asserted.
  *
+ * Capture mode: h14_boot_regression SELENE.macho BYTES-DIR...
+ * also replays iBoot's runtime patches (ane_fw_validate.h) on the
+ * archive and requires byte equality with each pre-Linux capture
+ * BYTES-DIR/{text,data}-segment.bin (guard taken from the capture).
+ *
  * Byte anchors: KC 8304156f… (ANE_Init 0x95e9850–0x95e9988 RVBAR fold,
  * 0x95ea710–0x95ea97c init suballocation), selene 9f7915c4…; receipts
  * 2026-09-20-h14-rvbar-width / -legacy-init-publication /
@@ -58,6 +63,176 @@ static u32 rd_le32(const u8 *p)
 {
 	return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) |
 	       ((u32)p[3] << 24);
+}
+
+#define get_unaligned_le32(p) rd_le32(p)
+#define get_unaligned_le64(p) rd_le64(p)
+#include "ane_fw_validate.h"
+
+#define FW_IMG_SIZE	0x4fc000
+#define FW_DATA_VM	0xc4000
+
+/* __rtk_patch records of the 13.5 archive (tag, value length), read
+ * from the 17 T6021 preload captures independently of the header. */
+static const struct { u32 vm, tag, len; } rtk_rec[ANE_FW_RTK_PATCHES] = {
+	{ 0xca848, 0x53544b47, 8 }, { 0xca9b3, 0x534f435f, 4 },
+	{ 0xca9bf, 0x534f4352, 4 }, { 0xca9cb, 0x43704164, 8 },
+	{ 0xca9db, 0x57724164, 8 },
+};
+
+static void put_le(u8 *p, u64 v, unsigned int n)
+{
+	while (n--) {
+		*p++ = (u8)v;
+		v >>= 8;
+	}
+}
+
+static const struct ane_fw_boot_patch t6021_patch = {
+	.exec_base = 0x10000000000ULL, .stack_guard = 0x4476ff001c97e931ULL,
+	.soc = 0x6021, .soc_revision = 0x11,
+	.cpu_pa = 0x285000000ULL, .wrapper_pa = 0x285400000ULL,
+};
+
+/* Archive state of every patched field; zero elsewhere. */
+static u8 *unpatched_image(void)
+{
+	u8 *img = calloc(1, FW_IMG_SIZE);
+	unsigned int i;
+
+	for (i = 0; i < ANE_FW_RTK_PATCHES; i++) {
+		put_le(img + rtk_rec[i].vm, rtk_rec[i].tag, 4);
+		put_le(img + rtk_rec[i].vm + 4, rtk_rec[i].len, 4);
+		put_le(img + rtk_rec[i].vm + 8, ~0ULL, rtk_rec[i].len);
+	}
+	memcpy(img + 0xdcd78, "\x01\x03\x24\x00\xff\xff\xff\xff", 8);
+	return img;
+}
+
+static u8 *read_file(const char *path, size_t want)
+{
+	FILE *f = fopen(path, "rb");
+	u8 *buf = malloc(want + 1);
+	size_t got = f ? fread(buf, 1, want + 1, f) : 0;
+
+	if (f)
+		fclose(f);
+	if (got != want) {
+		free(buf);
+		return NULL;
+	}
+	return buf;
+}
+
+static void boot_patch_checks(void)
+{
+	u8 *img = unpatched_image(), *want = unpatched_image(), *pre;
+	struct ane_fw_boot_patch p = t6021_patch;
+	const char *reason = NULL;
+	unsigned int i;
+	u64 vals[ANE_FW_RTK_PATCHES] = { p.stack_guard, p.soc, p.soc_revision,
+					 p.cpu_pa, p.wrapper_pa };
+
+	put_le(want + 0x423c, 0x100000c4000ULL, 8);
+	for (i = 0; i < ANE_FW_RTK_PATCHES; i++)
+		put_le(want + rtk_rec[i].vm + 8, vals[i], rtk_rec[i].len);
+	memcpy(want + 0xdcd78, ane_t602x_asc_tunables, ANE_FW_TUNABLES_LEN);
+
+	check(ane_fw_apply_boot_patches(img, &p, &reason) == 0 &&
+	      !memcmp(img, want, FW_IMG_SIZE),
+	      "boot patches: T6021 preload fields",
+	      "DATA base 0x100000c4000, soc, rev, ASC PAs, guard, tunables; no other byte");
+
+	pre = malloc(FW_IMG_SIZE);
+	memcpy(pre, img, FW_IMG_SIZE);
+	check(ane_fw_apply_boot_patches(img, &p, &reason) != 0 && reason &&
+	      !memcmp(img, pre, FW_IMG_SIZE),
+	      "boot patches: second replay refused", "DATA base already set; image untouched");
+	free(pre);
+	free(img);
+
+	img = unpatched_image();
+	img[0xca9cb] ^= 1;
+	pre = malloc(FW_IMG_SIZE);
+	memcpy(pre, img, FW_IMG_SIZE);
+	reason = NULL;
+	check(ane_fw_apply_boot_patches(img, &p, &reason) != 0 && reason &&
+	      !memcmp(img, pre, FW_IMG_SIZE),
+	      "boot patches: record tag drift refused", "RTK_cpu tag; nothing written");
+	img[0xca9cb] ^= 1;
+	img[0xca9c3] = 8;
+	memcpy(pre, img, FW_IMG_SIZE);
+	check(ane_fw_apply_boot_patches(img, &p, &reason) != 0 &&
+	      !memcmp(img, pre, FW_IMG_SIZE),
+	      "boot patches: record length drift refused", "RTK_soc_revision len 8; nothing written");
+	img[0xca9c3] = 4;
+	img[0xdcd7b] = 0x18;
+	memcpy(pre, img, FW_IMG_SIZE);
+	check(ane_fw_apply_boot_patches(img, &p, &reason) != 0 &&
+	      !memcmp(img, pre, FW_IMG_SIZE),
+	      "boot patches: filled tunables refused", "header != archive; nothing written");
+	free(pre);
+	free(img);
+
+	img = unpatched_image();
+	p.exec_base = 0x3ffff800000ULL;
+	check(ane_fw_apply_boot_patches(img, &p, &reason) == 0 &&
+	      rd_le64(img + 0x423c) == 0x3ffff8c4000ULL,
+	      "boot patches: unlatched DATA base", "staged DVA + DATA vmaddr");
+	free(img);
+	free(want);
+
+	check(ane_t602x_asc_tunables[3] == 24 &&
+	      8 + 24 * 20 == ANE_FW_TUNABLES_LEN,
+	      "tunables table length", "header count 24 x {u32,u64,u64} + 8");
+}
+
+/* Replay on the real archive, compared with real captures. */
+static void capture_checks(const char *macho, char **dirs, int n)
+{
+	static const u8 nohash[32];	/* sha256sum is checked outside */
+	u8 *blob = read_file(macho, ANE_FW_BLOB_SIZE);
+	struct ane_fw_seg segs[ANE_FW_NSEGS];
+	const char *reason = NULL;
+	char path[4096], detail[160];
+	u64 entry;
+	int d;
+
+	check(blob && !ane_fw_validate_blob(blob, ANE_FW_BLOB_SIZE, nohash, nohash,
+					    segs, &entry, &reason),
+	      "capture mode: archive layout", macho);
+	if (!blob)
+		return;
+	for (d = 0; d < n; d++) {
+		u8 *img = calloc(1, FW_IMG_SIZE), *text, *data;
+		struct ane_fw_boot_patch p = t6021_patch;
+		size_t i, raw = 0, diff = 0;
+
+		snprintf(path, sizeof(path), "%s/text-segment.bin", dirs[d]);
+		text = read_file(path, FW_DATA_VM);
+		snprintf(path, sizeof(path), "%s/data-segment.bin", dirs[d]);
+		data = read_file(path, FW_IMG_SIZE - FW_DATA_VM);
+		if (!text || !data) {
+			check(0, "capture mode: read", dirs[d]);
+			free(img); free(text); free(data);
+			continue;
+		}
+		for (i = 0; i < ANE_FW_NSEGS; i++)
+			memcpy(img + segs[i].vmaddr, blob + segs[i].fileoff,
+			       segs[i].filesize);
+		for (i = 0; i < FW_IMG_SIZE; i++)
+			raw += img[i] != (i < FW_DATA_VM ? text[i] : data[i - FW_DATA_VM]);
+		p.stack_guard = rd_le64(data + 0xca850 - FW_DATA_VM);
+		if (ane_fw_apply_boot_patches(img, &p, &reason))
+			diff = FW_IMG_SIZE;
+		for (i = 0; i < FW_IMG_SIZE && diff != FW_IMG_SIZE; i++)
+			diff += img[i] != (i < FW_DATA_VM ? text[i] : data[i - FW_DATA_VM]);
+		snprintf(detail, sizeof(detail), "%zu bytes differ unpatched, %zu after replay",
+			 raw, diff);
+		check(diff == 0, dirs[d], detail);
+		free(img); free(text); free(data);
+	}
+	free(blob);
 }
 
 
@@ -259,7 +434,7 @@ static int f_prepare(void *ctx, u32 *lo, u32 *hi)
 	return 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
 	/* ---- RVBAR entry fold (ANE_Init 0x95e9868-0x95e988c algebra:
 	 * ENTRY_BASE | (iova & ADDR_MASK); mask clears bits 0-10, 48,
@@ -972,6 +1147,10 @@ int main(void)
 		check(ane_t6021_chman_check(t, ipc) == 0xff,
 		      "chman zero table", "no fw table = every entry bad");
 	}
+
+	boot_patch_checks();
+	if (argc > 2)
+		capture_checks(argv[1], argv + 2, argc - 2);
 
 	printf("%s: %d checks, %d failures\n",
 	       failures ? "FAILED" : "PASSED", checks, failures);

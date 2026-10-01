@@ -36,7 +36,6 @@ typedef uint64_t phys_addr_t;
 #define PAGE ANE_T6021_FW_ALIAS_PAGE
 struct iommu_domain { struct { u64 aperture_end; } geometry; } domain = {{~0ULL}};
 struct ane_t6021 { void *dev; void *base[1]; u64 fw_iova, fw_size, fw_alias_iova; u64 fw_alias_ext_iova[3]; size_t fw_alias_ext_len[3]; int fw_alias_extn; };
-static bool fw_alias_reserved;
 static unsigned int fw_extra_ram;
 static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom) { (void)ane; (void)dom; return 0; }
 static bool pages[3];
@@ -88,7 +87,7 @@ int main(void)
             mapped = 0; unmapped = 0;
             map_failure = mode == 0 ? failure : -1;
             verify_failure = mode == 1 ? failure : -1;
-            assert(ane_t6021_fw_alias_map(&ane) == (mode == 0 ? -ENOMEM : -EIO));
+            assert(ane_t6021_fw_alias_map(&ane, false) == (mode == 0 ? -ENOMEM : -EIO));
             assert(!ane.fw_alias_iova);
             for (int i = 0; i < 3; ++i) assert(!pages[i]);
             assert(unmapped == (u64)(mode == 0 ? failure : 3) * PAGE);
@@ -96,7 +95,7 @@ int main(void)
     }
     struct ane_t6021 ane = {.fw_iova=SOURCE, .fw_size=3*PAGE};
     mapped=0; unmapped=0; map_failure=verify_failure=-1;
-    assert(ane_t6021_fw_alias_map(&ane) == 0);
+    assert(ane_t6021_fw_alias_map(&ane, false) == 0);
     assert(ane.fw_alias_iova == ENTRY && unmapped == 0);
     for (int i=0; i<3; ++i) assert(pages[i]);
     puts("PASS actual alias function: map/roundtrip failure at every page and success");

@@ -2243,8 +2243,19 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 			 "remove HELD: no teardown — reboot reclaims\n");
 }
 
+/* T6020 and T6022 (die 0 only: the die-0 IPI and pmgr addresses are
+ * compiled in) run the T6021 data and the same selene image; UNTESTED. */
+static const struct ane_t602x_soc ane_t6020_soc = { .soc = 0x6020 };
+static const struct ane_t602x_soc ane_t6021_soc = {
+	.soc = 0x6021,
+	.preload_placement = true,
+};
+static const struct ane_t602x_soc ane_t6022_soc = { .soc = 0x6022 };
+
 static const struct of_device_id ane_rtclient_of_match[] = {
-	{ .compatible = "apple,t6021-ane" },
+	{ .compatible = "apple,t6020-ane", .data = &ane_t6020_soc },
+	{ .compatible = "apple,t6021-ane", .data = &ane_t6021_soc },
+	{ .compatible = "apple,t6022-ane", .data = &ane_t6022_soc },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, ane_rtclient_of_match);
