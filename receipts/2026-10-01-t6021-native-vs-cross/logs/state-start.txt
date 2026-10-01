@@ -1,0 +1,15 @@
+== state start 2026-10-01T17:11:38.846Z
+boot_id 65d832d5-482a-48b3-abcc-017a87ad4c7e uname 7.1.13-3-1-ARCH
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 654049280
+bo_total_max_mb 12288
+governor schedutil
+esp boot.bin 62ba301084714634
+dmesg_bad 0 dmesg_lines 1243
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 12:11:38 up 15 min,  1 user,  load average: 0.13, 0.18, 0.17

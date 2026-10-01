@@ -1390,3 +1390,21 @@ Record: [receipts/2026-10-01-t6021-release-boot](../receipts/2026-10-01-t6021-re
   10 times. A rebuild of the same source in another directory gives a
   different sha256 with the same srcversion and `.text`. A DKMS build will
   not reproduce the release sha; compare srcversion and `.text` instead.
+
+## 27. The M2's native encoder program under Linux: H_driver (2026-10-01)
+
+Records: [receipts/2026-10-01-t6021-native-macos](../receipts/2026-10-01-t6021-native-macos/README.md)
+(macOS side) and [receipts/2026-10-01-t6021-native-vs-cross](../receipts/2026-10-01-t6021-native-vs-cross/README.md).
+
+- The M2's own macOS 27 compile of the whole encoder (HWX `6430da18…`, 3,597
+  tasks) runs under our driver in 253.10 ms. The Mac Studio cross-compile
+  runs in 254.27 ms in the same session (20 interleaved blocks per arm, R =
+  0.9954). Both are bit-exact with the golden. macOS runs the native build in
+  89.3 ms.
+- Qwen prog_020 and prog_006 give the same result: the native build (one
+  task fewer) runs within 0.3% of the cross build, with byte-identical
+  outputs.
+- So the compiled program is not the cause of the 2.8x gap to macOS. The
+  cause is on the Linux side: the ANE operating point (clock/DVFS; no PMP or
+  CLPC under Linux), the DPE/PPT limit (property 0x1701 is never sent), or
+  the firmware build (selene 13.5 under Linux, 27.0 under macOS 27).
