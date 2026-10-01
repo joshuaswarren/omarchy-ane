@@ -1,1 +1,1 @@
-obj-m := ane_h13_perf.o ane_t6021_venc.o
+obj-m := ane_h13_perf.o ane_t8103_fw.o
