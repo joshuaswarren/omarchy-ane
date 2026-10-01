@@ -1,0 +1,4 @@
+[ 3621.539090] kernel: ane_dart_probe: done, 2 words written (apply=1 groups=0x4), readback equal, streams as read
+[ 3633.943646] kernel: apple-dart 285810000.iommu: translation fault: status:0x800c0002 stream:0 code:0x2 (NO PGD FOR IOVA) at 0xfd68c580
+[ 3663.944022] kernel: ane_t6021 284000000.ane: call completion wait failed -110
+[ 3667.938213] kernel: ane_dart_probe: done, 2 words written (apply=2 groups=0x4), readback equal, streams as read

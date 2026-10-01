@@ -1,0 +1,18 @@
+b9ed2e9a 00-rPost: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 01-x-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 03-w0-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 05-w0-readG: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 06-w1-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 08-w1-readG: 9 words differ from E1 r0, 4 outside 0x300-0x310 (0x285810220 0x285810224 0x285820220 0x285820224); ADT applied LLT/BRD/BWR 6/2/2
+b9ed2e9a 10-w1-readU: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 11-w2-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 13-w2-readG: 37 words differ from E1 r0, 32 outside 0x300-0x310 (0x285810800 0x285810804 0x285810808 0x28581080c 0x285810810 0x285810814 0x285810818 0x28581081c 0x285810820 0x285810824 0x285810828 0x28581082c 0x285810830 0x285810834 0x285810838 0x28581083c 0x285820800 0x285820804 0x285820808 0x28582080c 0x285820810 0x285820814 0x285820818 0x28582081c 0x285820820 0x285820824 0x285820828 0x28582082c 0x285820830 0x285820834 0x285820838 0x28582083c); ADT applied LLT/BRD/BWR 6/16/16
+b9ed2e9a 15-w2-readU: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 16-w3-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 18-w3-readG: 7 words differ from E1 r0, 2 outside 0x300-0x310 (0x28581020c 0x28582020c); ADT applied LLT/BRD/BWR 6/1/1
+b9ed2e9a 20-w3-readU: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+b9ed2e9a 21-w4-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+c16519a4 00-w3m-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+c16519a4 02-w3m-readG: 41 words differ from E1 r0, 36 outside 0x300-0x310 (0x285810220 0x285810224 0x285810800 0x285810804 0x285810808 0x28581080c 0x285810810 0x285810814 0x285810818 0x28581081c 0x285810820 0x285810824 0x285810828 0x28581082c 0x285810830 0x285810834 0x285810838 0x28581083c 0x285820220 0x285820224 0x285820800 0x285820804 0x285820808 0x28582080c 0x285820810 0x285820814 0x285820818 0x28582081c 0x285820820 0x285820824 0x285820828 0x28582082c 0x285820830 0x285820834 0x285820838 0x28582083c); ADT applied LLT/BRD/BWR 6/18/18
+c16519a4 04-w3m-readU: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0
+c16519a4 05-wfinal-pre: 5 words differ from E1 r0, 0 outside 0x300-0x310 (-); ADT applied LLT/BRD/BWR 6/0/0

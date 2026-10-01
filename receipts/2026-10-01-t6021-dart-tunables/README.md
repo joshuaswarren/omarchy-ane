@@ -1,7 +1,9 @@
 # T6021: the ANE DART tunables on the M2, read and applied (2026-10-01)
 
-Status: E1 done. E2 stopped on DART translation faults, so there is no
-timing verdict. The probe is on main and is read only by default.
+Status: E1 done. E2 (live write) stopped on DART faults. E2' (the macOS
+order, one group at a time) done: every tunable except 0x20c applies cleanly
+and does not change the speed; 0x20c breaks translation. The probe is on
+main and is read only by default.
 
 ## Result
 
@@ -22,9 +24,21 @@ run wrote nothing after the fault, took no B timing, and rebooted. On the
 default boot the 38 words read their reset values again, and the gates,
 the encoder (254.286 ms) and the other checks pass.
 
-The hypothesis "the DART tunables cost time" is **not tested**: with the
-macOS values applied the way this run applied them, the ANE does not compute
-correctly.
+**E2', write in the macOS order, by group.** Per bulk DART the probe now
+disables the streams, flushes all TLBs, writes the group, flushes again and
+enables the streams as read. The procedure alone (G0), 0x220/0x224 (G1), the
+32 SID words (G2) and G1+G2 together (36 words) give 0 faults, pass every
+check, and do not change the speed: encoder minmin drop +0.00% to +0.03%
+(about 254.3 ms in every arm), prog_020 and prog_006 within 0.2%. Verdict:
+**rejected** for all of them. 0x20c alone breaks translation even in this
+order: one `NO PGD FOR IOVA` fault on BRD stream 0, then the CALL hangs and
+every later program load times out until a reboot, also after 0x20c is
+written back. So the run did not apply G4 (all 19 words), which contains
+0x20c.
+
+The hypothesis "the DART tunables cost time" is rejected for 0x220, 0x224 and
+the SID words. For 0x20c it is not tested: on a live, attached DART that
+word stops the ANE.
 
 ## Question and decision rule
 
@@ -192,18 +206,104 @@ All times in ms per CALL (20 blocks of 16 CALLs). On the new boot, blocks
 1-3 ran at 255.0-258.0 ms (the warm-up seen in every arm started right
 after a boot); they do not set the minimum.
 
-## Next discriminators (not run)
+## E2': the macOS order, one group at a time
 
-In order of risk, each with the same stop rule:
+The E2 fault pattern fits translation state that the tunables change and that
+the Linux per-stream flush does not clear. macOS writes the words at DART
+init: a TLB flush (`TLB_OP` 0, trace event 2856), the tunables, and the
+streams last (2915), with TTBR[0] cleared first (2853). The rule for E2' was
+written before the run (private notebook, 20:05Z): the same bands per group
+(15% / 3%), the next A arm within 1% of the group's own A arm, and any fault
+stops that group.
 
-1. Apply the full set live, then a FLUSH_ALL (`TLB_CMD` op 0) on each bulk
-   DART, then one gate. Passing gates mean the faults came from stale
-   translation state, and the timing A/B can run.
-2. If 1 still faults: bisect by group (0x20c alone, 0x220-0x224, the SID
-   words), one group per boot, each followed by a flush.
-3. Apply the words where macOS does, in `apple-dart` before TTBR and
-   ENABLE_STREAMS, from the DT tunables. That is the upstream-shaped place,
-   and it needs a kernel build; m1n1 would pass the ADT values in the DT.
+The probe (`3ec8a28`, ko sha256 `50de061c…`) now does, per bulk DART: read
+ENABLE_STREAMS, TCR0, TTBR0, ERROR and PROTECT; write DISABLE_STREAMS with
+the enabled mask (ENABLE_STREAMS then reads 0); `TLB_CMD` = 0 (flush all) and
+wait for BUSY to clear; the RMWs of the selected `groups`; flush all again;
+write ENABLE_STREAMS back (read back equal). It does not touch TTBR or TCR.
+Before each group: TCR0 0x9, TTBR0 0x1000fa9d (0x1000fa95 on the next boot),
+PROTECT 0, ENABLE 0xffff on both bulk DARTs. Undo is `apply=2` with the E1
+values in the same order.
+
+Each window ran in one GPU-idle ticket: read, A arm, apply, read, group arm,
+undo, read. Every read after an apply shows exactly the group's words
+changed, and every read after an undo equals E1 except the boot-variable
+0x300-0x310 (`logs/e2q-reads.txt`; the reads come from the kernel journal,
+because the probe output had filled the dmesg ring).
+
+| `groups` (words) | writes | A arm minmin / medmed | group arm minmin / medmed | drop minmin / medmed | next A drift | result |
+|---|---|---|---|---|---|---|
+| 0 (streams off, flush, flush, on) | 0 | 254.278 / 254.452 | 254.255 / 254.479 | +0.01% / -0.01% | +0.009% | no fault, rejected |
+| 1 (0x220, 0x224) | 4 | 254.300 / 254.472 | 254.290 / 254.457 | +0.00% / +0.01% | -0.007% | no fault, rejected |
+| 2 (SID words 0x800-0x83c) | 32 | 254.283 / 254.473 | 254.280 / 254.494 | +0.00% / -0.01% | +0.002% | no fault, rejected |
+| 4 (0x20c) | 2 | 254.289 / 254.478 | gate FAILED | - | - | fault, ANE wedged |
+| 3 (1 + 2), next boot | 36 | 254.367 / 254.591 | 254.349 / 254.522 | +0.01% / +0.03% | -0.004% | no fault, rejected |
+
+Encoder times in ms per CALL (20 blocks of 16). Every passing arm: gates add,
+mul and matvec 2048x5120 PASS, 21 encoder processes bit-exact (fp16 sha256
+`fca96f13…`), prog_020 t15 rel L2 0.001174227, prog_006 10 of 10
+byte-identical, burst 13,127-13,314 runs with 0 fail, 0 bad kernel lines.
+prog_020 and prog_006 move by 0.2% or less (`logs/e2q-analysis.txt`).
+
+The 0x20c group (`logs/e2q-g3-fault.txt`): the apply wrote 0x1e000048 ->
+0xe40000ff on both bulk DARTs, read back equal, streams back to 0xffff. The
+first gate CALL, 12 s later, gave
+
+    apple-dart 285810000.iommu: translation fault: status:0x800c0002 stream:0 code:0x2 (NO PGD FOR IOVA) at 0xfd68c580
+    ane_t6021 284000000.ane: call completion wait failed -110
+
+and from then on every `DRM_IOCTL_ANE_PROG_LOAD` failed with `Connection
+timed out`. The undo wrote 0x20c back (readback equal); the BRD ERROR word
+then read 0x00040000 (before: 0x00f00000; bit 18 is FILL_REGION in m1n1's
+guessed names), and the next A arm failed the same way. The run stopped and
+rebooted the M2 (10-minute notice).
+The run did not apply G4 (all 19 words): it contains 0x20c, and a second
+application would knowingly repeat the hang. The groups=3 window replaced it
+on the next boot, and a final A arm (254.357 / 254.529 ms) passed.
+
+Protocol note (review finding): after the group fault the window still
+loaded the probe for the undo (DART register writes only), and the next
+window's A arm submitted work to the hung queue. That arm only confirmed the
+hang and is not used as evidence. A hung ANE queue is untrustworthy until
+reboot (AGENTS.md), so a later run should stop at the first failed group arm
+and reboot before any other probe load or submission. `scripts/e2q-window.sh`
+is kept as it ran.
+
+What this shows and what it does not:
+
+- 0x220/0x224 and the SID words are safe to apply after attach in this order
+  and have no measurable effect on the ANE speed.
+- 0x20c changes how the BRD walker reads the page tables [INFERENCE: `NO PGD`
+  means the walk found no top-level entry for an IOVA that the default setup
+  translates]. Two readings remain. (a) Walker state built under the old
+  value stays stale: then the macOS order with TTBR cleared during the write
+  would work. (b) The value selects a table format or walk mode that the Linux
+  `io-pgtable-dart` tables do not match: then no write order helps. This run
+  cannot tell them apart.
+
+## Where 0x20c can be applied
+
+- **Unbind and rebind of apple-dart: not possible.** The driver is built in
+  (`CONFIG_APPLE_DART=y` in the running kernel) and sets
+  `.suppress_bind_attrs = true` (omarchy-linux `57f8f6deaa3a`
+  `drivers/iommu/apple-dart.c:1640`), so sysfs has no bind/unbind. The ANE
+  module cannot be unloaded either.
+- **m1n1 or iBoot at boot: not realistic for BRD/BWR.** Both sit in the
+  `ane_cpu` power domain, which is off at handover. Linux powers it at ANE
+  probe, and the DART comes up at reset values (E1 and the reads after both
+  reboots). LLT keeps its tunables because its `pmp` domain stays on.
+- **apple-dart at DART init: realistic, needs a kernel build.** Apply the
+  tunables from a DT property in `apple_dart_hw_reset()` after
+  `apple_dart_hw_disable_dma()` and `apple_dart_hw_clear_all_ttbrs()` and
+  before ENABLE_STREAMS (`apple-dart.c:552-574`). `hw_reset` runs at probe and
+  on every runtime resume (`apple_dart_resume`, `:1599-1622`), so the values
+  survive power cycles. The property can come from the ADT
+  `dart-tunables-instance-N` (m1n1 copies it) or from our overlay. This is the
+  macOS order, TTBR clear included, and it separates (a) from (b).
+- **From our module, closer to macOS (not run):** the E2' sequence plus
+  TTBR[0] = 0 during the write (restored after), or the flush with `TLB_CMD`
+  bit 13 (ENABLE_STT_FLUSH in m1n1). This needs no kernel build, but if (b)
+  holds it wedges the ANE again and needs a reboot.
 
 ## Commands
 
@@ -215,31 +315,38 @@ In order of risk, each with the same stop rule:
     gpu-turn -m 25 -- e2-window.sh OUT
     # after the reboot: read probe, one default arm
     gpu-turn -m 15 -- post-window.sh OUT
+    # E2': windows in order (each: read, A, apply groups, read, G arm, undo, read)
+    e2q-run.sh ROOT 0 1 2 4 7 final     # stopped at 7 (A arm failed after the 0x20c fault)
+    e2q-run.sh ROOT 3 final             # next boot
+    python3 scripts/e2q_analyze.py e2q-runs
     python3 scripts/dart_compare.py ../2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv LOG...
 
-The probe that ran is commit `2f943fe`. Main carries `260d869`, which adds a
-log line with a 50 ms drain before the first read of each RMW (a review
-finding: a fault at that read would otherwise leave no address line) and
-the source citations. The read-only path is the same. `260d869` builds with
-W=1 and no compiler warning; it was not loaded. `scripts/lib.sh` holds the
-shared steps: the probe load under `/var/tmp/ane-run.lock` (it refuses while
-an ane-run runs), the encoder run with its golden check, and the stop
-checks.
+E1 and E2 ran the probe from commit `2f943fe`; `260d869` added a log line
+with a 50 ms drain before the first read of each RMW and the source
+citations. E2' ran `3ec8a28` (the macOS order and `groups`); its read-only
+path is the same as before. `scripts/lib.sh` holds the shared steps: the
+probe load under `/var/tmp/ane-run.lock` (it refuses while an ane-run runs),
+the encoder run with its golden check, and the stop checks.
+`scripts/e2q-window.sh` overrides the bad-line check to read the kernel
+journal and to ignore the probe's own lines (its `error 0x…` lines matched
+the pattern once and stopped a first W0 before its group arm; that run is in
+the private record).
 
 `apply=2 orig_brd=… orig_bwr=…` writes the given values back with the same
 RMW. `apply=1` changes only the bits inside each mask, so the RMW of the
 masked E1 field is the exact inverse (0x20c: 0x1e000048 -> 0xe40000ff ->
-0x1e000048). This run never used it.
+0x1e000048). E2' used it for every undo.
 
 ## Limits
 
-- One M2. E1 and E2 ran on one boot, and the default arm ran on the next.
+- One M2 and three boots: E1 and E2 on the first; the E2 default arm and E2'
+  groups 0, 1, 2 and 4 on the second; groups=3 and the final A arm on the third.
 - The PERF counters gave no data. The TLB size comes from field names that
   m1n1 marks as guesses.
-- The fault log is rate-limited to 10 lines, so only the first failed process
-  has addresses.
-- E2 applied the words live, without a flush. It does not test the macOS
-  order (write at DART init).
+- The fault logs are rate-limited, so only the first failed process has
+  addresses.
+- E2' writes on a live, attached DART with TTBR valid. It does not test the
+  write at DART init (TTBR cleared), which is the only order macOS uses.
 - The run did not decode what any of the tunable fields do.
 
 ## Files
@@ -253,5 +360,10 @@ masked E1 field is the exact inverse (0x20c: 0x1e000048 -> 0xe40000ff ->
 | `logs/e2-console.log`, `logs/b-console.log`, `logs/b-gate-add.log` | the E2 window, the B arm with the fault lines, the failed gate |
 | `logs/a-before-*`, `logs/default-post-*` | per arm: checks, encoder blocks, prog_020 and prog_006 blocks |
 | `logs/post-console.log` | the window on the default boot after the reboot |
-| `scripts/` | `lib.sh`, `e1-window.sh`, `e2-window.sh`, `post-window.sh`, `ab-turn.sh` (the AfBridgeRun harness), `dart_compare.py` |
+| `logs/e2q-analysis.txt` | `e2q_analyze.py` over `e2q-runs/`: per group, the A arm, the group arm, drops, drift, verdict |
+| `logs/e2q-reads.txt` | each E2' read against E1 r0: words changed, ADT words applied per DART |
+| `logs/e2q-apply-undo.log` | every E2' apply and undo (stream state, flushes, RMWs), from the kernel journal |
+| `logs/e2q-g3-fault.txt` | the 0x20c apply, the DART fault, the CALL timeout, the undo |
+| `e2q-runs/` | per E2' arm: console, encoder blocks, prog_020 and prog_006 blocks (and the failed gate logs) |
+| `scripts/` | `lib.sh`, `e1-window.sh`, `e2-window.sh`, `post-window.sh`, `e2q-window.sh`, `e2q-run.sh`, `ab-turn.sh` (the AfBridgeRun harness), `dart_compare.py`, `e2q_analyze.py` |
 | `SHA256SUMS` | sha256 of every file here |

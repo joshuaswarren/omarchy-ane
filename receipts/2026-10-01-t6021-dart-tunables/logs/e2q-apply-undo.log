@@ -1,0 +1,660 @@
+== groups=0 apply (boot b9ed2e9a)
+[ 1734.944046] kernel: ane_dart_probe: state 0x285810000
+[ 1734.994077] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 1734.994479] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 1735.025068] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 1735.025714] kernel: ane_dart_probe: flush-all 0x285810080
+[ 1735.056070] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 1735.056718] kernel: ane_dart_probe: flush-all 0x285810080
+[ 1735.087069] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 1735.087807] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 1735.118070] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 1735.118750] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 1735.118843] kernel: ane_dart_probe: state 0x285820000
+[ 1735.169063] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 1735.169723] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 1735.200118] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 1735.200708] kernel: ane_dart_probe: flush-all 0x285820080
+[ 1735.231058] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 1735.231670] kernel: ane_dart_probe: flush-all 0x285820080
+[ 1735.262060] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 1735.262657] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 1735.293064] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 1735.293642] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 1735.295199] kernel: ane_dart_probe: done, 0 words written (apply=1 groups=0x0), readback equal, streams as read
+== groups=1 apply
+[ 2834.016032] kernel: ane_dart_probe: state 0x285810000
+[ 2834.066075] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 2834.066601] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 2834.097069] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 2834.097725] kernel: ane_dart_probe: flush-all 0x285810080
+[ 2834.128074] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 2834.128680] kernel: ane_dart_probe: rmw 0x285810220
+[ 2834.180030] kernel: ane_dart_probe: write 0x285810220 0x00020202 -> 0x000f0f0f
+[ 2834.210073] kernel: ane_dart_probe: after 0x285810220 = 0x000f0f0f
+[ 2834.210560] kernel: ane_dart_probe: rmw 0x285810224
+[ 2834.262034] kernel: ane_dart_probe: write 0x285810224 0x00000000 -> 0x00080808
+[ 2834.292122] kernel: ane_dart_probe: after 0x285810224 = 0x00080808
+[ 2834.292627] kernel: ane_dart_probe: flush-all 0x285810080
+[ 2834.323058] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 2834.323500] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 2834.354080] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 2834.354584] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 2834.355274] kernel: ane_dart_probe: state 0x285820000
+[ 2834.405075] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 2834.405671] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 2834.436071] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 2834.436566] kernel: ane_dart_probe: flush-all 0x285820080
+[ 2834.467072] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 2834.467697] kernel: ane_dart_probe: rmw 0x285820220
+[ 2834.519038] kernel: ane_dart_probe: write 0x285820220 0x00020202 -> 0x000f0f0f
+[ 2834.549162] kernel: ane_dart_probe: after 0x285820220 = 0x000f0f0f
+[ 2834.549614] kernel: ane_dart_probe: rmw 0x285820224
+[ 2834.601038] kernel: ane_dart_probe: write 0x285820224 0x00000000 -> 0x00080808
+[ 2834.631069] kernel: ane_dart_probe: after 0x285820224 = 0x00080808
+[ 2834.631680] kernel: ane_dart_probe: flush-all 0x285820080
+[ 2834.662055] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 2834.662671] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 2834.693101] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 2834.693636] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 2834.694176] kernel: ane_dart_probe: done, 4 words written (apply=1 groups=0x1), readback equal, streams as read
+== groups=1 undo
+[ 3022.944032] kernel: ane_dart_probe: state 0x285810000
+[ 3022.994096] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 3022.994575] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 3023.025082] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 3023.025600] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3023.056098] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3023.056646] kernel: ane_dart_probe: rmw 0x285810220
+[ 3023.108032] kernel: ane_dart_probe: write 0x285810220 0x000f0f0f -> 0x00020202
+[ 3023.138093] kernel: ane_dart_probe: after 0x285810220 = 0x00020202
+[ 3023.138547] kernel: ane_dart_probe: rmw 0x285810224
+[ 3023.190038] kernel: ane_dart_probe: write 0x285810224 0x00080808 -> 0x00000000
+[ 3023.220147] kernel: ane_dart_probe: after 0x285810224 = 0x00000000
+[ 3023.220601] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3023.251069] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3023.251477] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 3023.282073] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 3023.282536] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 3023.282620] kernel: ane_dart_probe: state 0x285820000
+[ 3023.333105] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 3023.333607] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 3023.364077] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 3023.364637] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3023.395068] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3023.395540] kernel: ane_dart_probe: rmw 0x285820220
+[ 3023.447032] kernel: ane_dart_probe: write 0x285820220 0x000f0f0f -> 0x00020202
+[ 3023.477123] kernel: ane_dart_probe: after 0x285820220 = 0x00020202
+[ 3023.477422] kernel: ane_dart_probe: rmw 0x285820224
+[ 3023.529024] kernel: ane_dart_probe: write 0x285820224 0x00080808 -> 0x00000000
+[ 3023.560035] kernel: ane_dart_probe: after 0x285820224 = 0x00000000
+[ 3023.560454] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3023.590079] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3023.590514] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 3023.621070] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 3023.621514] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 3023.621582] kernel: ane_dart_probe: done, 4 words written (apply=2 groups=0x1), readback equal, streams as read
+== groups=2 apply
+[ 3224.992035] kernel: ane_dart_probe: state 0x285810000
+[ 3225.042080] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 3225.042796] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 3225.073094] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 3225.073670] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3225.104076] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3225.104535] kernel: ane_dart_probe: rmw 0x285810800
+[ 3225.156030] kernel: ane_dart_probe: write 0x285810800 0x000f0000 -> 0x00060000
+[ 3225.186071] kernel: ane_dart_probe: after 0x285810800 = 0x00060000
+[ 3225.186688] kernel: ane_dart_probe: rmw 0x285810804
+[ 3225.238044] kernel: ane_dart_probe: write 0x285810804 0x000f0000 -> 0x00060000
+[ 3225.268130] kernel: ane_dart_probe: after 0x285810804 = 0x00060000
+[ 3225.268705] kernel: ane_dart_probe: rmw 0x285810808
+[ 3225.320043] kernel: ane_dart_probe: write 0x285810808 0x000f0000 -> 0x00030040
+[ 3225.350086] kernel: ane_dart_probe: after 0x285810808 = 0x00030040
+[ 3225.350694] kernel: ane_dart_probe: rmw 0x28581080c
+[ 3225.402042] kernel: ane_dart_probe: write 0x28581080c 0x000f0000 -> 0x00030040
+[ 3225.432062] kernel: ane_dart_probe: after 0x28581080c = 0x00030040
+[ 3225.432715] kernel: ane_dart_probe: rmw 0x285810810
+[ 3225.484037] kernel: ane_dart_probe: write 0x285810810 0x000f0000 -> 0x00030040
+[ 3225.514074] kernel: ane_dart_probe: after 0x285810810 = 0x00030040
+[ 3225.514662] kernel: ane_dart_probe: rmw 0x285810814
+[ 3225.566088] kernel: ane_dart_probe: write 0x285810814 0x000f0000 -> 0x00010048
+[ 3225.596059] kernel: ane_dart_probe: after 0x285810814 = 0x00010048
+[ 3225.596634] kernel: ane_dart_probe: rmw 0x285810818
+[ 3225.648040] kernel: ane_dart_probe: write 0x285810818 0x000f0000 -> 0x00010048
+[ 3225.678066] kernel: ane_dart_probe: after 0x285810818 = 0x00010048
+[ 3225.678510] kernel: ane_dart_probe: rmw 0x28581081c
+[ 3225.730026] kernel: ane_dart_probe: write 0x28581081c 0x000f0000 -> 0x00010048
+[ 3225.760068] kernel: ane_dart_probe: after 0x28581081c = 0x00010048
+[ 3225.760523] kernel: ane_dart_probe: rmw 0x285810820
+[ 3225.812030] kernel: ane_dart_probe: write 0x285810820 0x000f0000 -> 0x00010048
+[ 3225.842122] kernel: ane_dart_probe: after 0x285810820 = 0x00010048
+[ 3225.842712] kernel: ane_dart_probe: rmw 0x285810824
+[ 3225.894028] kernel: ane_dart_probe: write 0x285810824 0x000f0000 -> 0x00010048
+[ 3225.924082] kernel: ane_dart_probe: after 0x285810824 = 0x00010048
+[ 3225.924628] kernel: ane_dart_probe: rmw 0x285810828
+[ 3225.976026] kernel: ane_dart_probe: write 0x285810828 0x000f0000 -> 0x00010048
+[ 3226.007070] kernel: ane_dart_probe: after 0x285810828 = 0x00010048
+[ 3226.007555] kernel: ane_dart_probe: rmw 0x28581082c
+[ 3226.059018] kernel: ane_dart_probe: write 0x28581082c 0x000f0000 -> 0x00010048
+[ 3226.089075] kernel: ane_dart_probe: after 0x28581082c = 0x00010048
+[ 3226.089731] kernel: ane_dart_probe: rmw 0x285810830
+[ 3226.141077] kernel: ane_dart_probe: write 0x285810830 0x000f0000 -> 0x00010048
+[ 3226.171071] kernel: ane_dart_probe: after 0x285810830 = 0x00010048
+[ 3226.171642] kernel: ane_dart_probe: rmw 0x285810834
+[ 3226.223021] kernel: ane_dart_probe: write 0x285810834 0x000f0000 -> 0x00010048
+[ 3226.253062] kernel: ane_dart_probe: after 0x285810834 = 0x00010048
+[ 3226.253609] kernel: ane_dart_probe: rmw 0x285810838
+[ 3226.305020] kernel: ane_dart_probe: write 0x285810838 0x000f0000 -> 0x00010048
+[ 3226.335056] kernel: ane_dart_probe: after 0x285810838 = 0x00010048
+[ 3226.335462] kernel: ane_dart_probe: rmw 0x28581083c
+[ 3226.387026] kernel: ane_dart_probe: write 0x28581083c 0x000f0000 -> 0x00010048
+[ 3226.417071] kernel: ane_dart_probe: after 0x28581083c = 0x00010048
+[ 3226.417533] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3226.448055] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3226.448498] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 3226.479058] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 3226.479567] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 3226.479648] kernel: ane_dart_probe: state 0x285820000
+[ 3226.530076] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 3226.530701] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 3226.561072] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 3226.561511] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3226.592062] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3226.592625] kernel: ane_dart_probe: rmw 0x285820800
+[ 3226.644013] kernel: ane_dart_probe: write 0x285820800 0x000f0000 -> 0x00060000
+[ 3226.674130] kernel: ane_dart_probe: after 0x285820800 = 0x00060000
+[ 3226.674667] kernel: ane_dart_probe: rmw 0x285820804
+[ 3226.726035] kernel: ane_dart_probe: write 0x285820804 0x000f0000 -> 0x00060000
+[ 3226.756064] kernel: ane_dart_probe: after 0x285820804 = 0x00060000
+[ 3226.756659] kernel: ane_dart_probe: rmw 0x285820808
+[ 3226.808042] kernel: ane_dart_probe: write 0x285820808 0x000f0000 -> 0x00010040
+[ 3226.838065] kernel: ane_dart_probe: after 0x285820808 = 0x00010040
+[ 3226.838600] kernel: ane_dart_probe: rmw 0x28582080c
+[ 3226.890025] kernel: ane_dart_probe: write 0x28582080c 0x000f0000 -> 0x00010040
+[ 3226.920068] kernel: ane_dart_probe: after 0x28582080c = 0x00010040
+[ 3226.920508] kernel: ane_dart_probe: rmw 0x285820810
+[ 3226.972075] kernel: ane_dart_probe: write 0x285820810 0x000f0000 -> 0x00010040
+[ 3227.002067] kernel: ane_dart_probe: after 0x285820810 = 0x00010040
+[ 3227.002604] kernel: ane_dart_probe: rmw 0x285820814
+[ 3227.054029] kernel: ane_dart_probe: write 0x285820814 0x000f0000 -> 0x00010040
+[ 3227.084059] kernel: ane_dart_probe: after 0x285820814 = 0x00010040
+[ 3227.084473] kernel: ane_dart_probe: rmw 0x285820818
+[ 3227.136028] kernel: ane_dart_probe: write 0x285820818 0x000f0000 -> 0x00010040
+[ 3227.166070] kernel: ane_dart_probe: after 0x285820818 = 0x00010040
+[ 3227.166553] kernel: ane_dart_probe: rmw 0x28582081c
+[ 3227.218021] kernel: ane_dart_probe: write 0x28582081c 0x000f0000 -> 0x00010040
+[ 3227.248121] kernel: ane_dart_probe: after 0x28582081c = 0x00010040
+[ 3227.248630] kernel: ane_dart_probe: rmw 0x285820820
+[ 3227.300028] kernel: ane_dart_probe: write 0x285820820 0x000f0000 -> 0x00010040
+[ 3227.330068] kernel: ane_dart_probe: after 0x285820820 = 0x00010040
+[ 3227.330518] kernel: ane_dart_probe: rmw 0x285820824
+[ 3227.382019] kernel: ane_dart_probe: write 0x285820824 0x000f0000 -> 0x00010040
+[ 3227.412073] kernel: ane_dart_probe: after 0x285820824 = 0x00010040
+[ 3227.412602] kernel: ane_dart_probe: rmw 0x285820828
+[ 3227.464024] kernel: ane_dart_probe: write 0x285820828 0x000f0000 -> 0x00010040
+[ 3227.494072] kernel: ane_dart_probe: after 0x285820828 = 0x00010040
+[ 3227.494560] kernel: ane_dart_probe: rmw 0x28582082c
+[ 3227.546075] kernel: ane_dart_probe: write 0x28582082c 0x000f0000 -> 0x00010040
+[ 3227.576073] kernel: ane_dart_probe: after 0x28582082c = 0x00010040
+[ 3227.576581] kernel: ane_dart_probe: rmw 0x285820830
+[ 3227.628016] kernel: ane_dart_probe: write 0x285820830 0x000f0000 -> 0x00010040
+[ 3227.658074] kernel: ane_dart_probe: after 0x285820830 = 0x00010040
+[ 3227.658595] kernel: ane_dart_probe: rmw 0x285820834
+[ 3227.710026] kernel: ane_dart_probe: write 0x285820834 0x000f0000 -> 0x00010040
+[ 3227.740068] kernel: ane_dart_probe: after 0x285820834 = 0x00010040
+[ 3227.740601] kernel: ane_dart_probe: rmw 0x285820838
+[ 3227.792017] kernel: ane_dart_probe: write 0x285820838 0x000f0000 -> 0x00010040
+[ 3227.822108] kernel: ane_dart_probe: after 0x285820838 = 0x00010040
+[ 3227.822596] kernel: ane_dart_probe: rmw 0x28582083c
+[ 3227.874020] kernel: ane_dart_probe: write 0x28582083c 0x000f0000 -> 0x00010040
+[ 3227.904067] kernel: ane_dart_probe: after 0x28582083c = 0x00010040
+[ 3227.904573] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3227.935062] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3227.935613] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 3227.966068] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 3227.966606] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 3227.967184] kernel: ane_dart_probe: done, 32 words written (apply=1 groups=0x2), readback equal, streams as read
+== groups=2 undo
+[ 3416.928035] kernel: ane_dart_probe: state 0x285810000
+[ 3416.978105] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 3416.978701] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 3417.009086] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 3417.009880] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3417.040091] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3417.040779] kernel: ane_dart_probe: rmw 0x285810800
+[ 3417.092040] kernel: ane_dart_probe: write 0x285810800 0x00060000 -> 0x000f0000
+[ 3417.122086] kernel: ane_dart_probe: after 0x285810800 = 0x000f0000
+[ 3417.122780] kernel: ane_dart_probe: rmw 0x285810804
+[ 3417.174036] kernel: ane_dart_probe: write 0x285810804 0x00060000 -> 0x000f0000
+[ 3417.204143] kernel: ane_dart_probe: after 0x285810804 = 0x000f0000
+[ 3417.204786] kernel: ane_dart_probe: rmw 0x285810808
+[ 3417.256039] kernel: ane_dart_probe: write 0x285810808 0x00030040 -> 0x000f0000
+[ 3417.286077] kernel: ane_dart_probe: after 0x285810808 = 0x000f0000
+[ 3417.286783] kernel: ane_dart_probe: rmw 0x28581080c
+[ 3417.338035] kernel: ane_dart_probe: write 0x28581080c 0x00030040 -> 0x000f0000
+[ 3417.368070] kernel: ane_dart_probe: after 0x28581080c = 0x000f0000
+[ 3417.368640] kernel: ane_dart_probe: rmw 0x285810810
+[ 3417.420030] kernel: ane_dart_probe: write 0x285810810 0x00030040 -> 0x000f0000
+[ 3417.450075] kernel: ane_dart_probe: after 0x285810810 = 0x000f0000
+[ 3417.450622] kernel: ane_dart_probe: rmw 0x285810814
+[ 3417.502074] kernel: ane_dart_probe: write 0x285810814 0x00010048 -> 0x000f0000
+[ 3417.532075] kernel: ane_dart_probe: after 0x285810814 = 0x000f0000
+[ 3417.532595] kernel: ane_dart_probe: rmw 0x285810818
+[ 3417.584029] kernel: ane_dart_probe: write 0x285810818 0x00010048 -> 0x000f0000
+[ 3417.614061] kernel: ane_dart_probe: after 0x285810818 = 0x000f0000
+[ 3417.614458] kernel: ane_dart_probe: rmw 0x28581081c
+[ 3417.666030] kernel: ane_dart_probe: write 0x28581081c 0x00010048 -> 0x000f0000
+[ 3417.696057] kernel: ane_dart_probe: after 0x28581081c = 0x000f0000
+[ 3417.696516] kernel: ane_dart_probe: rmw 0x285810820
+[ 3417.748031] kernel: ane_dart_probe: write 0x285810820 0x00010048 -> 0x000f0000
+[ 3417.778115] kernel: ane_dart_probe: after 0x285810820 = 0x000f0000
+[ 3417.778555] kernel: ane_dart_probe: rmw 0x285810824
+[ 3417.830030] kernel: ane_dart_probe: write 0x285810824 0x00010048 -> 0x000f0000
+[ 3417.860066] kernel: ane_dart_probe: after 0x285810824 = 0x000f0000
+[ 3417.860602] kernel: ane_dart_probe: rmw 0x285810828
+[ 3417.912027] kernel: ane_dart_probe: write 0x285810828 0x00010048 -> 0x000f0000
+[ 3417.942062] kernel: ane_dart_probe: after 0x285810828 = 0x000f0000
+[ 3417.942534] kernel: ane_dart_probe: rmw 0x28581082c
+[ 3417.994031] kernel: ane_dart_probe: write 0x28581082c 0x00010048 -> 0x000f0000
+[ 3418.024070] kernel: ane_dart_probe: after 0x28581082c = 0x000f0000
+[ 3418.024560] kernel: ane_dart_probe: rmw 0x285810830
+[ 3418.076064] kernel: ane_dart_probe: write 0x285810830 0x00010048 -> 0x000f0000
+[ 3418.106067] kernel: ane_dart_probe: after 0x285810830 = 0x000f0000
+[ 3418.106636] kernel: ane_dart_probe: rmw 0x285810834
+[ 3418.158031] kernel: ane_dart_probe: write 0x285810834 0x00010048 -> 0x000f0000
+[ 3418.188066] kernel: ane_dart_probe: after 0x285810834 = 0x000f0000
+[ 3418.188592] kernel: ane_dart_probe: rmw 0x285810838
+[ 3418.240030] kernel: ane_dart_probe: write 0x285810838 0x00010048 -> 0x000f0000
+[ 3418.270074] kernel: ane_dart_probe: after 0x285810838 = 0x000f0000
+[ 3418.270499] kernel: ane_dart_probe: rmw 0x28581083c
+[ 3418.322032] kernel: ane_dart_probe: write 0x28581083c 0x00010048 -> 0x000f0000
+[ 3418.352119] kernel: ane_dart_probe: after 0x28581083c = 0x000f0000
+[ 3418.352591] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3418.383077] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3418.383487] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 3418.414067] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 3418.414506] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 3418.414575] kernel: ane_dart_probe: state 0x285820000
+[ 3418.465086] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 3418.465520] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 3418.496071] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 3418.496559] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3418.527090] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3418.527600] kernel: ane_dart_probe: rmw 0x285820800
+[ 3418.579033] kernel: ane_dart_probe: write 0x285820800 0x00060000 -> 0x000f0000
+[ 3418.609118] kernel: ane_dart_probe: after 0x285820800 = 0x000f0000
+[ 3418.609653] kernel: ane_dart_probe: rmw 0x285820804
+[ 3418.661029] kernel: ane_dart_probe: write 0x285820804 0x00060000 -> 0x000f0000
+[ 3418.691055] kernel: ane_dart_probe: after 0x285820804 = 0x000f0000
+[ 3418.691548] kernel: ane_dart_probe: rmw 0x285820808
+[ 3418.743031] kernel: ane_dart_probe: write 0x285820808 0x00010040 -> 0x000f0000
+[ 3418.773068] kernel: ane_dart_probe: after 0x285820808 = 0x000f0000
+[ 3418.773492] kernel: ane_dart_probe: rmw 0x28582080c
+[ 3418.825026] kernel: ane_dart_probe: write 0x28582080c 0x00010040 -> 0x000f0000
+[ 3418.855079] kernel: ane_dart_probe: after 0x28582080c = 0x000f0000
+[ 3418.855790] kernel: ane_dart_probe: rmw 0x285820810
+[ 3418.907028] kernel: ane_dart_probe: write 0x285820810 0x00010040 -> 0x000f0000
+[ 3418.937081] kernel: ane_dart_probe: after 0x285820810 = 0x000f0000
+[ 3418.937880] kernel: ane_dart_probe: rmw 0x285820814
+[ 3418.989036] kernel: ane_dart_probe: write 0x285820814 0x00010040 -> 0x000f0000
+[ 3419.019080] kernel: ane_dart_probe: after 0x285820814 = 0x000f0000
+[ 3419.019746] kernel: ane_dart_probe: rmw 0x285820818
+[ 3419.071031] kernel: ane_dart_probe: write 0x285820818 0x00010040 -> 0x000f0000
+[ 3419.101075] kernel: ane_dart_probe: after 0x285820818 = 0x000f0000
+[ 3419.101648] kernel: ane_dart_probe: rmw 0x28582081c
+[ 3419.154015] kernel: ane_dart_probe: write 0x28582081c 0x00010040 -> 0x000f0000
+[ 3419.184138] kernel: ane_dart_probe: after 0x28582081c = 0x000f0000
+[ 3419.184776] kernel: ane_dart_probe: rmw 0x285820820
+[ 3419.236037] kernel: ane_dart_probe: write 0x285820820 0x00010040 -> 0x000f0000
+[ 3419.266074] kernel: ane_dart_probe: after 0x285820820 = 0x000f0000
+[ 3419.266793] kernel: ane_dart_probe: rmw 0x285820824
+[ 3419.318033] kernel: ane_dart_probe: write 0x285820824 0x00010040 -> 0x000f0000
+[ 3419.348074] kernel: ane_dart_probe: after 0x285820824 = 0x000f0000
+[ 3419.348721] kernel: ane_dart_probe: rmw 0x285820828
+[ 3419.400037] kernel: ane_dart_probe: write 0x285820828 0x00010040 -> 0x000f0000
+[ 3419.430067] kernel: ane_dart_probe: after 0x285820828 = 0x000f0000
+[ 3419.430662] kernel: ane_dart_probe: rmw 0x28582082c
+[ 3419.482101] kernel: ane_dart_probe: write 0x28582082c 0x00010040 -> 0x000f0000
+[ 3419.512080] kernel: ane_dart_probe: after 0x28582082c = 0x000f0000
+[ 3419.512784] kernel: ane_dart_probe: rmw 0x285820830
+[ 3419.564041] kernel: ane_dart_probe: write 0x285820830 0x00010040 -> 0x000f0000
+[ 3419.594076] kernel: ane_dart_probe: after 0x285820830 = 0x000f0000
+[ 3419.594722] kernel: ane_dart_probe: rmw 0x285820834
+[ 3419.646042] kernel: ane_dart_probe: write 0x285820834 0x00010040 -> 0x000f0000
+[ 3419.676069] kernel: ane_dart_probe: after 0x285820834 = 0x000f0000
+[ 3419.676620] kernel: ane_dart_probe: rmw 0x285820838
+[ 3419.728038] kernel: ane_dart_probe: write 0x285820838 0x00010040 -> 0x000f0000
+[ 3419.758121] kernel: ane_dart_probe: after 0x285820838 = 0x000f0000
+[ 3419.758664] kernel: ane_dart_probe: rmw 0x28582083c
+[ 3419.810038] kernel: ane_dart_probe: write 0x28582083c 0x00010040 -> 0x000f0000
+[ 3419.840055] kernel: ane_dart_probe: after 0x28582083c = 0x000f0000
+[ 3419.840683] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3419.871066] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3419.871684] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 3419.902096] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 3419.902704] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 3419.903804] kernel: ane_dart_probe: done, 32 words written (apply=2 groups=0x2), readback equal, streams as read
+== groups=4 (0x20c) apply
+[ 3621.024047] kernel: ane_dart_probe: state 0x285810000
+[ 3621.074094] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00f00000 protect 0x00000000
+[ 3621.074805] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 3621.105074] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 3621.105694] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3621.136072] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3621.136540] kernel: ane_dart_probe: rmw 0x28581020c
+[ 3621.188031] kernel: ane_dart_probe: write 0x28581020c 0x1e000048 -> 0xe40000ff
+[ 3621.218080] kernel: ane_dart_probe: after 0x28581020c = 0xe40000ff
+[ 3621.218647] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3621.249080] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3621.249640] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 3621.280115] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 3621.280648] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[ 3621.281119] kernel: ane_dart_probe: state 0x285820000
+[ 3621.331088] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 3621.331643] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 3621.362068] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 3621.362486] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3621.393088] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3621.393675] kernel: ane_dart_probe: rmw 0x28582020c
+[ 3621.445031] kernel: ane_dart_probe: write 0x28582020c 0x1e000048 -> 0xe40000ff
+[ 3621.475065] kernel: ane_dart_probe: after 0x28582020c = 0xe40000ff
+[ 3621.475595] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3621.506069] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3621.506569] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 3621.537133] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 3621.537638] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 3621.539090] kernel: ane_dart_probe: done, 2 words written (apply=1 groups=0x4), readback equal, streams as read
+== groups=4 (0x20c) undo
+[ 3667.424035] kernel: ane_dart_probe: state 0x285810000
+[ 3667.474092] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x00040000 protect 0x00000000
+[ 3667.474687] kernel: ane_dart_probe: disable-streams 0x285810c20
+[ 3667.505084] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[ 3667.505516] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3667.536095] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3667.536509] kernel: ane_dart_probe: rmw 0x28581020c
+[ 3667.588034] kernel: ane_dart_probe: write 0x28581020c 0xe40000ff -> 0x1e000048
+[ 3667.618082] kernel: ane_dart_probe: after 0x28581020c = 0x1e000048
+[ 3667.618480] kernel: ane_dart_probe: flush-all 0x285810080
+[ 3667.649082] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[ 3667.649606] kernel: ane_dart_probe: enable-streams 0x285810c00
+[ 3667.680140] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[ 3667.680702] kernel: ane_dart_probe: 0x285810000 error 0x00040000
+[ 3667.680811] kernel: ane_dart_probe: state 0x285820000
+[ 3667.731080] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa9d error 0x10700000 protect 0x00000000
+[ 3667.731631] kernel: ane_dart_probe: disable-streams 0x285820c20
+[ 3667.762060] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[ 3667.762496] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3667.793063] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3667.793629] kernel: ane_dart_probe: rmw 0x28582020c
+[ 3667.845039] kernel: ane_dart_probe: write 0x28582020c 0xe40000ff -> 0x1e000048
+[ 3667.875086] kernel: ane_dart_probe: after 0x28582020c = 0x1e000048
+[ 3667.875826] kernel: ane_dart_probe: flush-all 0x285820080
+[ 3667.906081] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[ 3667.906747] kernel: ane_dart_probe: enable-streams 0x285820c00
+[ 3667.937129] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[ 3667.937685] kernel: ane_dart_probe: 0x285820000 error 0x10700000
+[ 3667.938213] kernel: ane_dart_probe: done, 2 words written (apply=2 groups=0x4), readback equal, streams as read
+== groups=3 apply (boot c16519a4)
+[  212.000023] kernel: ane_dart_probe: state 0x285810000
+[  212.050093] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa95 error 0x00f00000 protect 0x00000000
+[  212.051112] kernel: ane_dart_probe: disable-streams 0x285810c20
+[  212.081080] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[  212.081796] kernel: ane_dart_probe: flush-all 0x285810080
+[  212.112086] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[  212.112816] kernel: ane_dart_probe: rmw 0x285810220
+[  212.164030] kernel: ane_dart_probe: write 0x285810220 0x00020202 -> 0x000f0f0f
+[  212.194099] kernel: ane_dart_probe: after 0x285810220 = 0x000f0f0f
+[  212.194723] kernel: ane_dart_probe: rmw 0x285810224
+[  212.246024] kernel: ane_dart_probe: write 0x285810224 0x00000000 -> 0x00080808
+[  212.276143] kernel: ane_dart_probe: after 0x285810224 = 0x00080808
+[  212.276706] kernel: ane_dart_probe: rmw 0x285810800
+[  212.328034] kernel: ane_dart_probe: write 0x285810800 0x000f0000 -> 0x00060000
+[  212.358084] kernel: ane_dart_probe: after 0x285810800 = 0x00060000
+[  212.358774] kernel: ane_dart_probe: rmw 0x285810804
+[  212.410024] kernel: ane_dart_probe: write 0x285810804 0x000f0000 -> 0x00060000
+[  212.440082] kernel: ane_dart_probe: after 0x285810804 = 0x00060000
+[  212.440606] kernel: ane_dart_probe: rmw 0x285810808
+[  212.492038] kernel: ane_dart_probe: write 0x285810808 0x000f0000 -> 0x00030040
+[  212.522087] kernel: ane_dart_probe: after 0x285810808 = 0x00030040
+[  212.522514] kernel: ane_dart_probe: rmw 0x28581080c
+[  212.574101] kernel: ane_dart_probe: write 0x28581080c 0x000f0000 -> 0x00030040
+[  212.604069] kernel: ane_dart_probe: after 0x28581080c = 0x00030040
+[  212.604467] kernel: ane_dart_probe: rmw 0x285810810
+[  212.656037] kernel: ane_dart_probe: write 0x285810810 0x000f0000 -> 0x00030040
+[  212.686085] kernel: ane_dart_probe: after 0x285810810 = 0x00030040
+[  212.686795] kernel: ane_dart_probe: rmw 0x285810814
+[  212.738031] kernel: ane_dart_probe: write 0x285810814 0x000f0000 -> 0x00010048
+[  212.768076] kernel: ane_dart_probe: after 0x285810814 = 0x00010048
+[  212.768844] kernel: ane_dart_probe: rmw 0x285810818
+[  212.820028] kernel: ane_dart_probe: write 0x285810818 0x000f0000 -> 0x00010048
+[  212.850128] kernel: ane_dart_probe: after 0x285810818 = 0x00010048
+[  212.850788] kernel: ane_dart_probe: rmw 0x28581081c
+[  212.902027] kernel: ane_dart_probe: write 0x28581081c 0x000f0000 -> 0x00010048
+[  212.932074] kernel: ane_dart_probe: after 0x28581081c = 0x00010048
+[  212.932722] kernel: ane_dart_probe: rmw 0x285810820
+[  212.984025] kernel: ane_dart_probe: write 0x285810820 0x000f0000 -> 0x00010048
+[  213.014082] kernel: ane_dart_probe: after 0x285810820 = 0x00010048
+[  213.014584] kernel: ane_dart_probe: rmw 0x285810824
+[  213.066034] kernel: ane_dart_probe: write 0x285810824 0x000f0000 -> 0x00010048
+[  213.096100] kernel: ane_dart_probe: after 0x285810824 = 0x00010048
+[  213.096602] kernel: ane_dart_probe: rmw 0x285810828
+[  213.148031] kernel: ane_dart_probe: write 0x285810828 0x000f0000 -> 0x00010048
+[  213.178095] kernel: ane_dart_probe: after 0x285810828 = 0x00010048
+[  213.178575] kernel: ane_dart_probe: rmw 0x28581082c
+[  213.230029] kernel: ane_dart_probe: write 0x28581082c 0x000f0000 -> 0x00010048
+[  213.260100] kernel: ane_dart_probe: after 0x28581082c = 0x00010048
+[  213.260696] kernel: ane_dart_probe: rmw 0x285810830
+[  213.312030] kernel: ane_dart_probe: write 0x285810830 0x000f0000 -> 0x00010048
+[  213.342080] kernel: ane_dart_probe: after 0x285810830 = 0x00010048
+[  213.342574] kernel: ane_dart_probe: rmw 0x285810834
+[  213.394034] kernel: ane_dart_probe: write 0x285810834 0x000f0000 -> 0x00010048
+[  213.424116] kernel: ane_dart_probe: after 0x285810834 = 0x00010048
+[  213.424532] kernel: ane_dart_probe: rmw 0x285810838
+[  213.476036] kernel: ane_dart_probe: write 0x285810838 0x000f0000 -> 0x00010048
+[  213.506084] kernel: ane_dart_probe: after 0x285810838 = 0x00010048
+[  213.506476] kernel: ane_dart_probe: rmw 0x28581083c
+[  213.558039] kernel: ane_dart_probe: write 0x28581083c 0x000f0000 -> 0x00010048
+[  213.588081] kernel: ane_dart_probe: after 0x28581083c = 0x00010048
+[  213.588605] kernel: ane_dart_probe: flush-all 0x285810080
+[  213.619066] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[  213.619522] kernel: ane_dart_probe: enable-streams 0x285810c00
+[  213.650092] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[  213.650672] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[  213.651557] kernel: ane_dart_probe: state 0x285820000
+[  213.701152] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa95 error 0x00700000 protect 0x00000000
+[  213.701677] kernel: ane_dart_probe: disable-streams 0x285820c20
+[  213.732088] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[  213.732585] kernel: ane_dart_probe: flush-all 0x285820080
+[  213.763092] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[  213.763591] kernel: ane_dart_probe: rmw 0x285820220
+[  213.815030] kernel: ane_dart_probe: write 0x285820220 0x00020202 -> 0x000f0f0f
+[  213.845062] kernel: ane_dart_probe: after 0x285820220 = 0x000f0f0f
+[  213.845574] kernel: ane_dart_probe: rmw 0x285820224
+[  213.897019] kernel: ane_dart_probe: write 0x285820224 0x00000000 -> 0x00080808
+[  213.927076] kernel: ane_dart_probe: after 0x285820224 = 0x00080808
+[  213.927621] kernel: ane_dart_probe: rmw 0x285820800
+[  213.979068] kernel: ane_dart_probe: write 0x285820800 0x000f0000 -> 0x00060000
+[  214.009073] kernel: ane_dart_probe: after 0x285820800 = 0x00060000
+[  214.009553] kernel: ane_dart_probe: rmw 0x285820804
+[  214.061034] kernel: ane_dart_probe: write 0x285820804 0x000f0000 -> 0x00060000
+[  214.091077] kernel: ane_dart_probe: after 0x285820804 = 0x00060000
+[  214.091607] kernel: ane_dart_probe: rmw 0x285820808
+[  214.143031] kernel: ane_dart_probe: write 0x285820808 0x000f0000 -> 0x00010040
+[  214.173087] kernel: ane_dart_probe: after 0x285820808 = 0x00010040
+[  214.173585] kernel: ane_dart_probe: rmw 0x28582080c
+[  214.225032] kernel: ane_dart_probe: write 0x28582080c 0x000f0000 -> 0x00010040
+[  214.255115] kernel: ane_dart_probe: after 0x28582080c = 0x00010040
+[  214.255634] kernel: ane_dart_probe: rmw 0x285820810
+[  214.307041] kernel: ane_dart_probe: write 0x285820810 0x000f0000 -> 0x00010040
+[  214.337083] kernel: ane_dart_probe: after 0x285820810 = 0x00010040
+[  214.337593] kernel: ane_dart_probe: rmw 0x285820814
+[  214.389030] kernel: ane_dart_probe: write 0x285820814 0x000f0000 -> 0x00010040
+[  214.419067] kernel: ane_dart_probe: after 0x285820814 = 0x00010040
+[  214.419518] kernel: ane_dart_probe: rmw 0x285820818
+[  214.471036] kernel: ane_dart_probe: write 0x285820818 0x000f0000 -> 0x00010040
+[  214.501060] kernel: ane_dart_probe: after 0x285820818 = 0x00010040
+[  214.501459] kernel: ane_dart_probe: rmw 0x28582081c
+[  214.553078] kernel: ane_dart_probe: write 0x28582081c 0x000f0000 -> 0x00010040
+[  214.583073] kernel: ane_dart_probe: after 0x28582081c = 0x00010040
+[  214.583614] kernel: ane_dart_probe: rmw 0x285820820
+[  214.635032] kernel: ane_dart_probe: write 0x285820820 0x000f0000 -> 0x00010040
+[  214.665084] kernel: ane_dart_probe: after 0x285820820 = 0x00010040
+[  214.665577] kernel: ane_dart_probe: rmw 0x285820824
+[  214.717035] kernel: ane_dart_probe: write 0x285820824 0x000f0000 -> 0x00010040
+[  214.747081] kernel: ane_dart_probe: after 0x285820824 = 0x00010040
+[  214.747574] kernel: ane_dart_probe: rmw 0x285820828
+[  214.799027] kernel: ane_dart_probe: write 0x285820828 0x000f0000 -> 0x00010040
+[  214.829133] kernel: ane_dart_probe: after 0x285820828 = 0x00010040
+[  214.829627] kernel: ane_dart_probe: rmw 0x28582082c
+[  214.881031] kernel: ane_dart_probe: write 0x28582082c 0x000f0000 -> 0x00010040
+[  214.911067] kernel: ane_dart_probe: after 0x28582082c = 0x00010040
+[  214.911509] kernel: ane_dart_probe: rmw 0x285820830
+[  214.963038] kernel: ane_dart_probe: write 0x285820830 0x000f0000 -> 0x00010040
+[  214.993073] kernel: ane_dart_probe: after 0x285820830 = 0x00010040
+[  214.993489] kernel: ane_dart_probe: rmw 0x285820834
+[  215.045039] kernel: ane_dart_probe: write 0x285820834 0x000f0000 -> 0x00010040
+[  215.075095] kernel: ane_dart_probe: after 0x285820834 = 0x00010040
+[  215.075583] kernel: ane_dart_probe: rmw 0x285820838
+[  215.127040] kernel: ane_dart_probe: write 0x285820838 0x000f0000 -> 0x00010040
+[  215.157091] kernel: ane_dart_probe: after 0x285820838 = 0x00010040
+[  215.157575] kernel: ane_dart_probe: rmw 0x28582083c
+[  215.209040] kernel: ane_dart_probe: write 0x28582083c 0x000f0000 -> 0x00010040
+[  215.239095] kernel: ane_dart_probe: after 0x28582083c = 0x00010040
+[  215.239479] kernel: ane_dart_probe: flush-all 0x285820080
+[  215.270087] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[  215.270668] kernel: ane_dart_probe: enable-streams 0x285820c00
+[  215.301062] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[  215.301491] kernel: ane_dart_probe: 0x285820000 error 0x00700000
+[  215.302059] kernel: ane_dart_probe: done, 36 words written (apply=1 groups=0x3), readback equal, streams as read
+== groups=3 undo
+[  403.936042] kernel: ane_dart_probe: state 0x285810000
+[  403.986071] kernel: ane_dart_probe: 0x285810000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa95 error 0x00f00000 protect 0x00000000
+[  403.986524] kernel: ane_dart_probe: disable-streams 0x285810c20
+[  404.017066] kernel: ane_dart_probe: 0x285810000 enable after disable 0x00000000
+[  404.017663] kernel: ane_dart_probe: flush-all 0x285810080
+[  404.048074] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[  404.048576] kernel: ane_dart_probe: rmw 0x285810220
+[  404.100029] kernel: ane_dart_probe: write 0x285810220 0x000f0f0f -> 0x00020202
+[  404.130079] kernel: ane_dart_probe: after 0x285810220 = 0x00020202
+[  404.130620] kernel: ane_dart_probe: rmw 0x285810224
+[  404.182027] kernel: ane_dart_probe: write 0x285810224 0x00080808 -> 0x00000000
+[  404.212103] kernel: ane_dart_probe: after 0x285810224 = 0x00000000
+[  404.212553] kernel: ane_dart_probe: rmw 0x285810800
+[  404.264034] kernel: ane_dart_probe: write 0x285810800 0x00060000 -> 0x000f0000
+[  404.294069] kernel: ane_dart_probe: after 0x285810800 = 0x000f0000
+[  404.294542] kernel: ane_dart_probe: rmw 0x285810804
+[  404.346020] kernel: ane_dart_probe: write 0x285810804 0x00060000 -> 0x000f0000
+[  404.376073] kernel: ane_dart_probe: after 0x285810804 = 0x000f0000
+[  404.376621] kernel: ane_dart_probe: rmw 0x285810808
+[  404.428031] kernel: ane_dart_probe: write 0x285810808 0x00030040 -> 0x000f0000
+[  404.458061] kernel: ane_dart_probe: after 0x285810808 = 0x000f0000
+[  404.458496] kernel: ane_dart_probe: rmw 0x28581080c
+[  404.510066] kernel: ane_dart_probe: write 0x28581080c 0x00030040 -> 0x000f0000
+[  404.540074] kernel: ane_dart_probe: after 0x28581080c = 0x000f0000
+[  404.540692] kernel: ane_dart_probe: rmw 0x285810810
+[  404.592030] kernel: ane_dart_probe: write 0x285810810 0x00030040 -> 0x000f0000
+[  404.622069] kernel: ane_dart_probe: after 0x285810810 = 0x000f0000
+[  404.622622] kernel: ane_dart_probe: rmw 0x285810814
+[  404.674037] kernel: ane_dart_probe: write 0x285810814 0x00010048 -> 0x000f0000
+[  404.704078] kernel: ane_dart_probe: after 0x285810814 = 0x000f0000
+[  404.704591] kernel: ane_dart_probe: rmw 0x285810818
+[  404.756029] kernel: ane_dart_probe: write 0x285810818 0x00010048 -> 0x000f0000
+[  404.786118] kernel: ane_dart_probe: after 0x285810818 = 0x000f0000
+[  404.786607] kernel: ane_dart_probe: rmw 0x28581081c
+[  404.838031] kernel: ane_dart_probe: write 0x28581081c 0x00010048 -> 0x000f0000
+[  404.868070] kernel: ane_dart_probe: after 0x28581081c = 0x000f0000
+[  404.868514] kernel: ane_dart_probe: rmw 0x285810820
+[  404.920030] kernel: ane_dart_probe: write 0x285810820 0x00010048 -> 0x000f0000
+[  404.950059] kernel: ane_dart_probe: after 0x285810820 = 0x000f0000
+[  404.950501] kernel: ane_dart_probe: rmw 0x285810824
+[  405.002030] kernel: ane_dart_probe: write 0x285810824 0x00010048 -> 0x000f0000
+[  405.032079] kernel: ane_dart_probe: after 0x285810824 = 0x000f0000
+[  405.032569] kernel: ane_dart_probe: rmw 0x285810828
+[  405.084084] kernel: ane_dart_probe: write 0x285810828 0x00010048 -> 0x000f0000
+[  405.114075] kernel: ane_dart_probe: after 0x285810828 = 0x000f0000
+[  405.114541] kernel: ane_dart_probe: rmw 0x28581082c
+[  405.166030] kernel: ane_dart_probe: write 0x28581082c 0x00010048 -> 0x000f0000
+[  405.196073] kernel: ane_dart_probe: after 0x28581082c = 0x000f0000
+[  405.196476] kernel: ane_dart_probe: rmw 0x285810830
+[  405.248030] kernel: ane_dart_probe: write 0x285810830 0x00010048 -> 0x000f0000
+[  405.278058] kernel: ane_dart_probe: after 0x285810830 = 0x000f0000
+[  405.278562] kernel: ane_dart_probe: rmw 0x285810834
+[  405.330030] kernel: ane_dart_probe: write 0x285810834 0x00010048 -> 0x000f0000
+[  405.360117] kernel: ane_dart_probe: after 0x285810834 = 0x000f0000
+[  405.360583] kernel: ane_dart_probe: rmw 0x285810838
+[  405.412030] kernel: ane_dart_probe: write 0x285810838 0x00010048 -> 0x000f0000
+[  405.442072] kernel: ane_dart_probe: after 0x285810838 = 0x000f0000
+[  405.442525] kernel: ane_dart_probe: rmw 0x28581083c
+[  405.494032] kernel: ane_dart_probe: write 0x28581083c 0x00010048 -> 0x000f0000
+[  405.524083] kernel: ane_dart_probe: after 0x28581083c = 0x000f0000
+[  405.524552] kernel: ane_dart_probe: flush-all 0x285810080
+[  405.555079] kernel: ane_dart_probe: 0x285810000 flush-all 0x00000000
+[  405.555672] kernel: ane_dart_probe: enable-streams 0x285810c00
+[  405.586072] kernel: ane_dart_probe: 0x285810000 enable after enable 0x0000ffff
+[  405.586559] kernel: ane_dart_probe: 0x285810000 error 0x00f00000
+[  405.586621] kernel: ane_dart_probe: state 0x285820000
+[  405.637069] kernel: ane_dart_probe: 0x285820000 enable 0x0000ffff tcr0 0x00000009 ttbr0 0x1000fa95 error 0x00700000 protect 0x00000000
+[  405.637602] kernel: ane_dart_probe: disable-streams 0x285820c20
+[  405.668063] kernel: ane_dart_probe: 0x285820000 enable after disable 0x00000000
+[  405.668489] kernel: ane_dart_probe: flush-all 0x285820080
+[  405.699062] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[  405.699499] kernel: ane_dart_probe: rmw 0x285820220
+[  405.751029] kernel: ane_dart_probe: write 0x285820220 0x000f0f0f -> 0x00020202
+[  405.781070] kernel: ane_dart_probe: after 0x285820220 = 0x00020202
+[  405.781539] kernel: ane_dart_probe: rmw 0x285820224
+[  405.833016] kernel: ane_dart_probe: write 0x285820224 0x00080808 -> 0x00000000
+[  405.863084] kernel: ane_dart_probe: after 0x285820224 = 0x00000000
+[  405.863495] kernel: ane_dart_probe: rmw 0x285820800
+[  405.915078] kernel: ane_dart_probe: write 0x285820800 0x00060000 -> 0x000f0000
+[  405.945072] kernel: ane_dart_probe: after 0x285820800 = 0x000f0000
+[  405.945478] kernel: ane_dart_probe: rmw 0x285820804
+[  405.997030] kernel: ane_dart_probe: write 0x285820804 0x00060000 -> 0x000f0000
+[  406.027083] kernel: ane_dart_probe: after 0x285820804 = 0x000f0000
+[  406.027524] kernel: ane_dart_probe: rmw 0x285820808
+[  406.079030] kernel: ane_dart_probe: write 0x285820808 0x00010040 -> 0x000f0000
+[  406.109065] kernel: ane_dart_probe: after 0x285820808 = 0x000f0000
+[  406.109478] kernel: ane_dart_probe: rmw 0x28582080c
+[  406.161033] kernel: ane_dart_probe: write 0x28582080c 0x00010040 -> 0x000f0000
+[  406.191121] kernel: ane_dart_probe: after 0x28582080c = 0x000f0000
+[  406.191593] kernel: ane_dart_probe: rmw 0x285820810
+[  406.243030] kernel: ane_dart_probe: write 0x285820810 0x00010040 -> 0x000f0000
+[  406.273080] kernel: ane_dart_probe: after 0x285820810 = 0x000f0000
+[  406.273512] kernel: ane_dart_probe: rmw 0x285820814
+[  406.325026] kernel: ane_dart_probe: write 0x285820814 0x00010040 -> 0x000f0000
+[  406.355075] kernel: ane_dart_probe: after 0x285820814 = 0x000f0000
+[  406.355572] kernel: ane_dart_probe: rmw 0x285820818
+[  406.407029] kernel: ane_dart_probe: write 0x285820818 0x00010040 -> 0x000f0000
+[  406.437068] kernel: ane_dart_probe: after 0x285820818 = 0x000f0000
+[  406.437538] kernel: ane_dart_probe: rmw 0x28582081c
+[  406.489063] kernel: ane_dart_probe: write 0x28582081c 0x00010040 -> 0x000f0000
+[  406.519066] kernel: ane_dart_probe: after 0x28582081c = 0x000f0000
+[  406.519502] kernel: ane_dart_probe: rmw 0x285820820
+[  406.571030] kernel: ane_dart_probe: write 0x285820820 0x00010040 -> 0x000f0000
+[  406.601064] kernel: ane_dart_probe: after 0x285820820 = 0x000f0000
+[  406.601492] kernel: ane_dart_probe: rmw 0x285820824
+[  406.653029] kernel: ane_dart_probe: write 0x285820824 0x00010040 -> 0x000f0000
+[  406.683068] kernel: ane_dart_probe: after 0x285820824 = 0x000f0000
+[  406.683502] kernel: ane_dart_probe: rmw 0x285820828
+[  406.735030] kernel: ane_dart_probe: write 0x285820828 0x00010040 -> 0x000f0000
+[  406.765102] kernel: ane_dart_probe: after 0x285820828 = 0x000f0000
+[  406.765569] kernel: ane_dart_probe: rmw 0x28582082c
+[  406.817024] kernel: ane_dart_probe: write 0x28582082c 0x00010040 -> 0x000f0000
+[  406.847042] kernel: ane_dart_probe: after 0x28582082c = 0x000f0000
+[  406.847534] kernel: ane_dart_probe: rmw 0x285820830
+[  406.899031] kernel: ane_dart_probe: write 0x285820830 0x00010040 -> 0x000f0000
+[  406.929068] kernel: ane_dart_probe: after 0x285820830 = 0x000f0000
+[  406.929502] kernel: ane_dart_probe: rmw 0x285820834
+[  406.981020] kernel: ane_dart_probe: write 0x285820834 0x00010040 -> 0x000f0000
+[  407.011048] kernel: ane_dart_probe: after 0x285820834 = 0x000f0000
+[  407.011476] kernel: ane_dart_probe: rmw 0x285820838
+[  407.063077] kernel: ane_dart_probe: write 0x285820838 0x00010040 -> 0x000f0000
+[  407.093069] kernel: ane_dart_probe: after 0x285820838 = 0x000f0000
+[  407.093513] kernel: ane_dart_probe: rmw 0x28582083c
+[  407.145028] kernel: ane_dart_probe: write 0x28582083c 0x00010040 -> 0x000f0000
+[  407.175073] kernel: ane_dart_probe: after 0x28582083c = 0x000f0000
+[  407.175524] kernel: ane_dart_probe: flush-all 0x285820080
+[  407.206056] kernel: ane_dart_probe: 0x285820000 flush-all 0x00000000
+[  407.206551] kernel: ane_dart_probe: enable-streams 0x285820c00
+[  407.237057] kernel: ane_dart_probe: 0x285820000 enable after enable 0x0000ffff
+[  407.237554] kernel: ane_dart_probe: 0x285820000 error 0x00700000
+[  407.237602] kernel: ane_dart_probe: done, 36 words written (apply=2 groups=0x3), readback equal, streams as read

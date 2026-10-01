@@ -1,0 +1,68 @@
+== state start 2026-10-01T21:15:00.220Z arm A-g3
+boot_id c16519a4-6c1f-4ffc-ba84-bcc3ce84414d uname 7.1.13-3-1-ARCH up 35.89
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 0
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 1543
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 16:15:00 up 0 min,  1 user,  load average: 0.45, 0.11, 0.04
+== 1. gates 21:15:00
+gate add rc=0 GATE PASS
+gate mul rc=0 GATE PASS
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+== 2. correctness 21:15:02
+enc w1 min 259.563 median 259.563 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+prog_020 WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'} exec ms over 1 calls: min 4.918 p10 4.918 p25 4.918 median 4.918 p75 4.918 p90 4.918 p99 4.918 max 4.918 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+== 3. encoder timing, 20 blocks x 16 21:15:03
+enc b01 min 256.810 median 257.538 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b02 min 255.687 median 256.138 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b03 min 255.072 median 255.430 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b04 min 254.768 median 254.973 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b05 min 254.641 median 254.752 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b06 min 254.618 median 254.686 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b07 min 254.506 median 254.667 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b08 min 254.501 median 254.612 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b09 min 254.469 median 254.564 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b10 min 254.459 median 254.619 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b11 min 254.467 median 254.566 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b12 min 254.443 median 254.588 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b13 min 254.492 median 254.577 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b14 min 254.432 median 254.577 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b15 min 254.417 median 254.594 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b16 min 254.444 median 254.577 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b17 min 254.427 median 254.544 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b18 min 254.425 median 254.546 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b19 min 254.367 median 254.558 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b20 min 254.376 median 254.512 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+== 4. Qwen timing 21:16:39
+q prog_020 blocks done 21:16:44
+q prog_006 blocks done 21:16:53
+== 5. burst 60 s 21:16:53
+burst rc=0 w1 runs=3300 pass=3300 fail=0 w2 runs=3287 pass=3287 fail=0 w3 runs=3286 pass=3286 fail=0 w4 runs=3282 pass=3282 fail=0 exact lines: 13155 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+== state end 2026-10-01T21:17:53.060Z arm A-g3
+boot_id c16519a4-6c1f-4ffc-ba84-bcc3ce84414d uname 7.1.13-3-1-ARCH up 208.73
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 1551
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 16:17:53 up 3 min,  1 user,  load average: 3.20, 1.17, 0.44
+dmesg new lines 8, non-UFW 0, bad 0
+== window done 21:17:53 /var/tmp/dart/run-A-g3-20261001T211500Z

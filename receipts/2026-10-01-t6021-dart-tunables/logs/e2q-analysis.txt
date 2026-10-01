@@ -1,0 +1,40 @@
+== groups=0 (run-G0-20261001T201507Z)
+run-A-g0-20261001T201159Z: encoder minmin 254.278 medmed 254.452; prog_020 4.778 / 4.837; prog_006 10.585 / 10.643; bad encoder processes none
+run-G0-20261001T201507Z: encoder minmin 254.255 medmed 254.479; prog_020 4.777 / 4.809; prog_006 10.583 / 10.667; bad encoder processes none
+encoder minmin drop +0.01% -> REJECTED
+encoder medmed drop -0.01% -> REJECTED
+drift run-A-g1-20261001T203018Z vs control minmin +0.009%
+prog_020 minmin ratio G/A 0.9998
+prog_006 minmin ratio G/A 0.9998
+VERDICT REJECTED
+== groups=1 (run-G1-20261001T203327Z)
+run-A-g1-20261001T203018Z: encoder minmin 254.300 medmed 254.472; prog_020 4.769 / 4.837; prog_006 10.590 / 10.645; bad encoder processes none
+run-G1-20261001T203327Z: encoder minmin 254.290 medmed 254.457; prog_020 4.771 / 4.837; prog_006 10.587 / 10.640; bad encoder processes none
+encoder minmin drop +0.00% -> REJECTED
+encoder medmed drop +0.01% -> REJECTED
+drift run-A-g2-20261001T203648Z vs control minmin -0.007%
+prog_020 minmin ratio G/A 1.0004
+prog_006 minmin ratio G/A 0.9997
+VERDICT REJECTED
+== groups=2 (run-G2-20261001T204000Z)
+run-A-g2-20261001T203648Z: encoder minmin 254.283 medmed 254.473; prog_020 4.766 / 4.834; prog_006 10.594 / 10.645; bad encoder processes none
+run-G2-20261001T204000Z: encoder minmin 254.280 medmed 254.494; prog_020 4.776 / 4.837; prog_006 10.587 / 10.649; bad encoder processes none
+encoder minmin drop +0.00% -> REJECTED
+encoder medmed drop -0.01% -> REJECTED
+drift run-A-g4-20261001T204324Z vs control minmin +0.002%
+prog_020 minmin ratio G/A 1.0021
+prog_006 minmin ratio G/A 0.9993
+VERDICT REJECTED
+== groups=4 (run-G4-20261001T204634Z)
+run-A-g4-20261001T204324Z: encoder minmin 254.289 medmed 254.478; prog_020 4.771 / 4.834; prog_006 10.587 / 10.646; bad encoder processes none
+run-G4-20261001T204634Z: arm FAILED (stop): no timing verdict
+== groups=3 (run-G3-20261001T211811Z)
+run-A-g3-20261001T211500Z: encoder minmin 254.367 medmed 254.591; prog_020 4.764 / 4.830; prog_006 10.579 / 10.630; bad encoder processes none
+run-G3-20261001T211811Z: encoder minmin 254.349 medmed 254.522; prog_020 4.766 / 4.833; prog_006 10.577 / 10.636; bad encoder processes none
+encoder minmin drop +0.01% -> REJECTED
+encoder medmed drop +0.03% -> REJECTED
+drift run-A-gfinal-20261001T212136Z vs control minmin -0.004%
+prog_020 minmin ratio G/A 1.0004
+prog_006 minmin ratio G/A 0.9998
+VERDICT REJECTED
+run-A-gfinal-20261001T212136Z: encoder minmin 254.357 medmed 254.529; prog_020 4.765 / 4.815; prog_006 10.580 / 10.626; bad encoder processes none

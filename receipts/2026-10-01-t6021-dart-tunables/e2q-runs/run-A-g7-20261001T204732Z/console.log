@@ -1,0 +1,36 @@
+== state start 2026-10-01T20:47:32.887Z arm A-g7
+boot_id b9ed2e9a-98fc-412a-a4a4-17e5f7ae5c09 uname 7.1.13-3-1-ARCH up 3692.55
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 30 dmesg_lines 4582
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 15:47:32 up  1:01,  2 users,  load average: 1.58, 1.85, 1.64
+== 1. gates 20:47:32
+gate add rc=1 GATE FAIL
+STOP after /var/tmp/dart/run-A-g7-20261001T204732Z/gate-add.log: rc=1
+
+== state stop 2026-10-01T20:47:33.256Z arm A-g7
+boot_id b9ed2e9a-98fc-412a-a4a4-17e5f7ae5c09 uname 7.1.13-3-1-ARCH up 3692.92
+module 0.4.0 1FEE1B2BCF064C6109E1904 54c1da562f869797
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 30 dmesg_lines 4582
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 15:47:33 up  1:01,  2 users,  load average: 1.58, 1.85, 1.64

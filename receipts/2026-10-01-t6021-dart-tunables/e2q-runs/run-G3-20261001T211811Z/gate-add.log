@@ -1,0 +1,17 @@
+boot_id c16519a4-6c1f-4ffc-ba84-bcc3ce84414d
+kernel 7.1.13-3-1-ARCH
+anec /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho: OK
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  1 16:14 accel0
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+trial 1 PASS
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+trial 2 PASS
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+trial 3 PASS
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+trial 4 PASS
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+reopen+repeat PASS
+GATE PASS
