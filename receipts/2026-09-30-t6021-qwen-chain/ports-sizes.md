@@ -103,9 +103,7 @@ least the allocation.
   descriptor strides (for example `t5` [1,1,6144,3] at 64 B per row, and
   [1,16,1,1] at 64 B per plane). The `prog_020` inputs pack to the same
   bytes as the surfaces that ran on the M2 (`c2f1483b`, `d1fa1370`,
-  `9e996bea`). The HWX readers moved into the generator. A device run of a
-  program with more than 2 tasks is refused until the driver waits for the
-  program's own TD count; `--dry` and `--pack-only` still work.
+  `9e996bea`). The HWX readers moved into the generator.
 
 ## Per-program tables
 
@@ -178,9 +176,10 @@ reason and a device test for each group:
 
 ## Before a device run of programs 0 and 1
 
-1. The driver call wait. `prog_000` has 32 tasks and `prog_001` has 10. The
-   program-20 run stopped multi-task runs on module 7b592674 until the call
-   waits for the program's own TD count ([README.md](README.md)).
+1. A module with the call-wait fix (#11, `3a942d6`: a CALL waits for the
+   firmware's finish event) must be loaded. `prog_000` has 32 tasks and
+   `prog_001` has 10; the old wait returned before a multi-task program
+   finished ([call-wait](../2026-09-30-t6021-call-wait/README.md)).
 2. `prog_001` is the first port-table program with a scratch. Slot 3 binds
    bufferId 0x40 (16,384 B). The derived build used the same binding for the
    three bmm islands, which passed on the M2
@@ -199,7 +198,7 @@ reason and a device test for each group:
   `-Wall -Werror -Wextra`.
 - `tools/ane-selfcheck fixtures/h14-anec`: SELF-CHECK PASS, including the
   new refusal of a table that leaves a task-stream slot unbound.
-- `python3 -m pytest -q tests/`: 8 passed. `test_hwx_ports.py` regenerates
+- `python3 -m pytest -q tests/`: 7 passed. `test_hwx_ports.py` regenerates
   all 38 tables, checks the size and coverage invariants, runs
   `ane-run --dry-run` on each, and checks the `prog_020` binding.
 - `/var/tmp/qwen-real-anec-h14/PORTS_SHA256SUMS` lists the 38 new tables.

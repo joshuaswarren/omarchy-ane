@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import numpy as np
 
-from qwen_prog_run import Refuse, main, pack_surface, port_map_from_table, unpack_surface
+from qwen_prog_run import Refuse, pack_surface, port_map_from_table, unpack_surface
 
 
 def test_prog020_table_contract():
@@ -70,24 +70,6 @@ def test_pack_follows_padded_descriptor_strides():
             raise AssertionError(f"overlapping or oversized strides {strides} in {size} B accepted")
 
 
-def test_live_run_refuses_programs_past_the_qualified_task_count():
-    """A 20-task program must not reach ane-run until the driver waits for
-    the program's own TD count; --dry still gets past the gate."""
-    with tempfile.TemporaryDirectory() as tmp:
-        anec = Path(tmp) / "prog_020" / "program-0.anec"
-        anec.parent.mkdir()
-        anec.write_bytes(bytes(12) + (20).to_bytes(4, "little"))
-        argv = ["--prog", "prog_020", "--anec-dir", tmp, "--ane-run", "/nonexistent/ane-run",
-                "--ports", str(ROOT / "tests/fixtures/prog020-ports.json")]
-        for extra, gated in (([], True), (["--dry"], False)):
-            try:
-                main(argv + extra)
-            except Refuse as err:
-                assert ("has 20 tasks" in str(err)) == gated, err
-            else:
-                raise AssertionError("run without inputs was accepted")
-
-
 def test_ane_run_refuses_surface_larger_than_tile():
     """The port table sizes the io BOs; a surface that does not fit would
     let the task DMA run past its BO. Needs tools/ane-run built."""
@@ -111,5 +93,4 @@ if __name__ == "__main__":
     test_ane_run_refuses_surface_larger_than_tile()
     test_scratch_entry_needs_coverage_and_is_never_named()
     test_pack_follows_padded_descriptor_strides()
-    test_live_run_refuses_programs_past_the_qualified_task_count()
     print("named-port runner checks passed")

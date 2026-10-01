@@ -113,7 +113,8 @@ match `goldens.json` by SHA-256.
 
 Addendum (same day): the size failures and the one-output limit are fixed.
 See [ports-sizes.md](ports-sizes.md): all 38 tables pass the size gate and
-`ane-run --dry-run`, and the call-wait stop above still applies.
+`ane-run --dry-run`. The call-wait stop above is lifted by #11
+([call-wait](../2026-09-30-t6021-call-wait/README.md)).
 
 Private record: entry `entries/Prog20Run/20260930T230934Z-…-prog020-ports.md`
 and `artifacts/Prog20Run/2026-09-30-prog020-ports/` (MANIFEST.txt,
