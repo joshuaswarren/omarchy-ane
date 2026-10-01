@@ -1,0 +1,22 @@
+block	addresses	access	when	count	source
+pmgr-ps-fabric(afi,afnc0)	0x28e080100/1e8/1f8/218	W (if off) TARGET=f, AUTO	kernel boot, pmgr probe	<=8 per boot	pmgr-pwrstate.c:79-123,297; baseline B1
+pmgr-ps-ane_sys/ane_cpu	0x28e080260, 0x28e0802e0	W (if off) TARGET=f, AUTO; R 0x2e0	genpd raise; ane probe G1 gate	<=4 W + 1 R per boot	pmgr-pwrstate.c; rtclient_main.c:1930
+pmgr-ps-pmp	0x28e0802c8	W (if off) TARGET=f	genpd: dart-ane0 power-domains = ps_pmp	<=2 per boot	packaging/dt/t602x-ane.dtsi:118
+pmgr-ps-ane-islands	0x28e084000..0x28e084030 (7 words)	W (if off) TARGET=f, AUTO; R	genpd raise (held until reboot); trace_td guard reads	<=14 W per boot; 7 R per TD sample (trace_td=1 only)	t602x-ane.dtsi:162-164; rtclient_main.c:798-811
+pmgr-ps-ane-islands	0x28e084000 page	DART map IOVA==PA (firmware writes it, not the host)	fwload	1 map per boot	ane_t6021_fwload.c:130-152
+pmgr-SET-window	0x28e08c000+0x4000	none (DT reg[2], never mapped by the driver)	-	0	rtclient_main.c:1922 maps reg[1] only
+engine-low(AXI2AF bridge)	0x284000000 +0x000,0x038,0x03c,0x400,0x600,0x738,0x798,0x7f8,0x900,0x410,0x420,0x430	W: 9 values from m1n1's T8103 ANE pmgr table, 0x410/0x420/0x430 = 0x1100	P-1, before CPU release	12 per boot	ane_t6021_boot.h:555-582
+engine-low(AXI2AF bridge)	0x284000b38/b98/bf8	none (P0 table skipped, fw_start_table_mode=2)	-	0	ane_t6021_boot.h:524-546; rtclient_main.c:120
+rvbar	0x285050000	R (W skipped when latched)	probe, fwload, P2, report	4 R per boot	rtclient_main.c:1939; fwload.c:158; boot.h:607-610; boot.c:441
+asc-wrapper	0x285400044 CPU_CONTROL, 0x285400048 CPU_STATUS	W 0 then 0x10; R	P3 release; probe/report	2 W + 3 R per boot	boot.h:616-619; rtclient_main.c:1938,2017; boot.c:442
+scratch	0x285840048..0x285840064 (SCRATCH0-7)	W clear/select/pulse, publish, wake, ack; R polls	P1, P4-P7, P8 ack	15 W + up to 2000 R per boot	boot.h:591-600,630-695; rtclient_main.c:2062; boot.c:377-379,438
+asc-tick	0x285160008	R	boot report	2 per boot	boot.c:429-434
+ipi-doorbell	0x285844000 (+0x0 W ring, +0x8000 R pending, +0xc000 W clear)	W/R	every ChMan command; every T2H slot return; every fw MALLOC	per CALL: 1 W + 1 R per 50 us poll (+1 W clear if pending); +1 W per T2H slot (2 events per CALL)	rtclient_main.c:460-552,746-787
+tm-td-word	0x285c20458	R	CALL wait, trace_td=1 only	1 per 20-40 us sample	rtclient_main.c:797-814
+asc-mailbox	0x285408000	none (apple-mailbox bound, never started: hello_wait_ms=0)	-	0	rtclient_main.c:2048; drivers/soc/apple/mailbox.c:243-266
+dart-ane0(LLT)/1(BRD)/2(BWR)	0x2858x0000: TCR[0..15], TTBR, ENABLE_STREAMS, ERROR, ERROR_MASK, TLB_CMD	W/R	kernel apple-dart probe reset, attach, every iommu map/unmap, IRQ, resume	51 W reset + 4 W attach per DART per boot; 1 TLB_CMD per map/unmap	apple-dart.c:324-380,514,552-571,1262-1299,1617-1619; baseline B2/B3/L1
+dart-ane0(LLT)/1(BRD)/2(BWR)	0x20c,0x220,0x224,0x300,0x308,0x310,0x800-0x83c,0x210,TCR[15],0x700-0x788	none	-	0	apple-dart.c has no tunable, DIAG_LOCK, bypass or PERF code
+dapf-ane(LLT)	0x285804000	none (no DAPF code)	-	0	findings 'DAPF windows unwritten'
+aic	IRQ 885 (DART errors)	kernel IRQ path; ANE IRQ 884 not requested	-	-	apple-dart.c:1262; no request_irq in ane/t6021
+pmp	0x28e700000 / ASC 0x28ec00000	none (pmp node disabled)	-	0	findings section 27, AneSpeed live FDT
+dcs/amcc/fabric-qos/clpc/smc	-	none on the ANE path	-	0	no reference in ane/t6021

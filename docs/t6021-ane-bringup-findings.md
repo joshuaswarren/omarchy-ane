@@ -1433,3 +1433,26 @@ Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-b
   ms on default boots before and after (prog_020 and prog_006 within 0.1%).
   The bridge tunables are not the cause of the gap to macOS. The section 27
   candidates remain.
+
+## 29. macOS vs Linux MMIO footprint: the DART tunables (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-macos-vs-linux-mmio](../receipts/2026-10-01-t6021-macos-vs-linux-mmio/README.md)
+(offline; no device run).
+
+- The only DMA-path setting in the 13.5 hv trace that Linux never makes is
+  the DART tunables on dart-ane1 and dart-ane2 (ADT instance names DARTBRD
+  and DARTBWR): 0x20c, 0x220, 0x224, the 0x300-0x310 DVA window and 16
+  per-SID words at 0x800. The trace, the 26.6.2 j414c iBoot tables and the
+  live macOS 27.0 ADT agree on the values. Linux `apple-dart` writes none of
+  them. On T8103, m1n1 writes the same 0xf0f0f/0x80808 pair to the ANE DART.
+- macOS translates the ANE stream the same way Linux does: TCR[0] = 0x9,
+  16 KiB pages, bypass on sid 15 only. Each TLB entry covers the same 16 KiB
+  on both systems. Of the DART state the trace shows, only these tunables
+  differ for the ANE data stream (sid 0).
+- Linux writes 10 bridge-page words at P-1 (P-1b, c, e-l; seven carry
+  m1n1's T8103 values) that macOS never writes.
+- The hv trace has no firmware start and no job (kernel-only guest, lazy ASC
+  start), traces writes only, and does not cover the PMP, DPE, DAPF, DCS or
+  fabric. It cannot test the PMP and DPE/PPT candidates of section 27.
+- Next: read the DART tunables and PERF counters on Linux and on macOS, then
+  an A/B of the BRD/BWR tunables with the NativeVsCross method.
