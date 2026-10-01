@@ -170,6 +170,8 @@ def validate(stock, result, wanted):
         for phandle in plain:
             if phandle not in result.phandles:
                 raise Refuse(f"{path} names phandle {phandle:#x}, which no node has")
+            if not result.enabled(result.phandles[phandle]):
+                raise Refuse(f"{path} names {result.phandles[phandle]}, which is disabled")
         for prop, count in REFS.items():
             words, i = cells(props.get(prop, b"")), 0
             while i < len(words):

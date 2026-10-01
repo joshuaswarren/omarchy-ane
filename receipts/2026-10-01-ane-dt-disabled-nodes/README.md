@@ -25,8 +25,10 @@ T6021 overlay, apply wrote no copy, and the ANE stayed disabled.
    as the mailbox and the ane node already did (the T8103 and T6001 overlays
    already set it on their DARTs).
 3. `validate()` checks the references of every new **or changed** node, not
-   only new nodes, and refuses a reference to a disabled `power-domains`,
-   `iommus`, `mboxes` or `resets` provider.
+   only new nodes, and refuses a reference to a disabled provider: the
+   `power-domains`, `iommus`, `mboxes` and `resets` targets, and the plain
+   `interrupt-parent`, `memory-region` and `iommu-addresses` targets (these
+   three after the PR #23 review).
 
 The renumbered-phandle guard (the AIC check, dtc older than 1.7.1) is not
 changed.
@@ -90,6 +92,9 @@ before.
 
 ## Tests
 
+- `tools/test_ane_dt.py`: `validate()` refuses a new ane node whose AIC
+  (`interrupt-parent`) or power domain is disabled. The AIC case fails on the
+  first commit of PR #23 (`ba5e5b4`): `validate accepted`.
 - `tools/test_ane_dt.py`: T6021 kernel trees with no ANE node, with the five
   nodes `okay`, `ok`, no `status`, and `disabled`, built with dtc in the test.
   `okay`, `ok` and no `status`: the overlay is skipped. No node and `disabled`:

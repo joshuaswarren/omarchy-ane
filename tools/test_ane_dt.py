@@ -66,6 +66,12 @@ with tempfile.TemporaryDirectory() as tmp:
     wrong_board = tree(ANE % '&aic', tmp, 'board.dtb')
     wrong_board.nodes['/']['compatible'] = b'apple,j274\0apple,t8103\0'
     refused(stock, wrong_board, 'changed the board compatible')
+    # A new node must not name a disabled provider, plain or with cells.
+    for node, why in (('/soc/interrupt-controller@23b100000', 'names /soc/interrupt-controller@23b100000, which is disabled'),
+                      ('/soc/power-controller@c000', 'power-domains names /soc/power-controller@c000, which is disabled')):
+        off_provider = tree(ANE % '&aic', tmp, 'off-provider.dtb')
+        off_provider.nodes[node]['status'] = b'disabled\0'
+        refused(stock, off_provider, why)
 
     # Overlay selection by file-name prefix.
     lib = Path(tmp) / 'r/usr/lib/omarchy-platform/dtb-overlays'
