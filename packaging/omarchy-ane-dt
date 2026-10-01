@@ -23,10 +23,10 @@ or "ok") with one of them: the kernel's node wins. A disabled node does not
 count: the overlay applies, and its nodes of the same name replace the kernel
 node's properties and enable it. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
-string is a line of /etc/omarchy-platform/dtb-overlays.opt-in (the T6021 node:
-"ane-t6021", written by omarchy-ane-m2-enable; the untested T6000 and T6002
-nodes: "ane-t6000" and "ane-t6002", and the T6021 U-Boot input:
-"uboot-serial-stdin-t6021", written by the owner).
+string is a line of /etc/omarchy-platform/dtb-overlays.opt-in, which the owner
+writes (the untested T6000, T6002, T6020 and T6022 nodes: "ane-t6000",
+"ane-t6002", "ane-t6020" and "ane-t6022"; the T6021 U-Boot input:
+"uboot-serial-stdin-t6021").
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
 
@@ -48,10 +48,10 @@ from pathlib import Path
 
 # Where the package installs its overlays: the directory that
 # omacom/omarchy-mac#677 (dtb-overlays.sh) applies on Omarchy Macs.
-# packaging/build-dtbo reads this line, omarchy-ane-m2-enable imports it, and
-# 90-omarchy-ane-dt.hook's second Target names the same directory
-# (tools/test_ane_dt.py checks both). Arch Linux ARM installs have no
-# omarchy-mac-boot, so there apply, update-m1n1-dtbs and the hooks stay.
+# packaging/build-dtbo reads this line, and 90-omarchy-ane-dt.hook's second
+# Target names the same directory (tools/test_ane_dt.py checks both). Arch
+# Linux ARM installs have no omarchy-mac-boot, so there apply,
+# update-m1n1-dtbs and the hooks stay.
 OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"
 # The directory before 2026-10-01. apply refuses while it has overlays, so a
 # hand install there (the lab M2) keeps its copies until it moves them.

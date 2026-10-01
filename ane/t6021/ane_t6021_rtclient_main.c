@@ -1869,6 +1869,12 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	if (!ane_t6021_fwload_placement_ok(dev)) {
+		dev_err(dev,
+			"fw_alias_reserved=1, but no no-map /reserved-memory node covers the iBoot firmware windows (this m1n1 does not reserve them); refusing before power access, ANE off\n");
+		return -ENODEV;
+	}
+
 	/* Early, BEFORE any allocation/power: legacy_only must never be
 	 * rejected after the CPU release, where an unwind could drop
 	 * domains under a running ASC (lab probe order). */

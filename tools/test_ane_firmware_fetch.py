@@ -3,6 +3,7 @@
 The pin must equal the driver's pin, or the tool installs bytes the driver rejects.
 """
 import contextlib
+import hashlib
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import io
@@ -82,4 +83,33 @@ for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
     with contextlib.redirect_stderr(err):
         assert fetch.main(['--root', str(system(compat, b'13.5'))]) == 1
     assert ('cannot fetch' in err.getvalue()) == gate, (compat, err.getvalue())
+
+# 5. --hook (pacman): only T6021, where the ANE is on by default, fetches; a
+# failed fetch or a system without a device tree is a note, exit 0.
+for compat, tries in (([b'apple,j414c', b'apple,t6021'], True),
+                      ([b'apple,j414s', b'apple,t6020'], False),
+                      ([b'apple,j413', b'apple,t8112'], False),
+                      ([b'apple,j293', b'apple,t8103'], False)):
+    t, out, err = system(compat, b'13.5'), io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        assert fetch.main(['--hook', '--root', str(t)]) == 0
+    assert ('cannot fetch' in err.getvalue()) == tries, (compat, out.getvalue(), err.getvalue())
+    assert not (t / 'usr').exists()
+with contextlib.redirect_stderr(io.StringIO()):
+    assert fetch.main(['--hook', '--root', tempfile.mkdtemp()]) == 0
+
+# 6. --check reads only the installed file of this chip.
+t = system([b'apple,j414c', b'apple,t6021'], b'13.5')
+dest = t / 'usr/lib/firmware' / fetch.FETCH['apple,t6021'][1]
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    assert fetch.main(['--check', '--root', str(t)]) == 1
+assert 'is missing. Run: sudo omarchy-ane-firmware-fetch' in err.getvalue(), err.getvalue()
+dest.parent.mkdir(parents=True)
+dest.write_bytes(b'not the pin')
+with contextlib.redirect_stderr(io.StringIO()):
+    assert fetch.main(['--check', '--root', str(t)]) == 1
+fetch.FETCH['apple,t6021'] = (*fetch.SELENE[:2], len(b'not the pin'), hashlib.sha256(b'not the pin').hexdigest())
+with contextlib.redirect_stdout(io.StringIO()):
+    assert fetch.main(['--check', '--root', str(t)]) == 0
 print('test_ane_firmware_fetch: ok')

@@ -18,10 +18,15 @@ Dependencies: Python 3, stdlib only. Both pinned IM4Ps ("anef") store their
 Mach-O payload uncompressed, so no LZFSE decoder is needed.
 
   sudo omarchy-ane-firmware-fetch [--root DIR]
+  omarchy-ane-firmware-fetch --check [--root DIR]
+  omarchy-ane-firmware-fetch --hook            (90-omarchy-ane-firmware.hook)
 
 --root reads the device tree from DIR/sys/... and installs under DIR/usr/lib/
 firmware (for tests). Exit 0: installed, already installed, or not needed.
-Exit 1: refused; nothing was written.
+Exit 1: refused; nothing was written. --check reads only the installed file:
+exit 0 when it matches the pin. --hook fetches only on a chip whose ANE is on
+by default (DEFAULT_ON); what it cannot do there is a note, not an error, and
+the ANE stays off until a fetch succeeds and the Mac reboots.
 """
 import argparse
 import hashlib
@@ -52,6 +57,10 @@ IPSW = {
             "D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw",
 }
 NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
+# FETCH chips whose ANE overlay is enabled in packaging/dt/overlays (the
+# others are opt-in or not installed); tools/test_ane_m2.py checks that the
+# two agree.
+DEFAULT_ON = ("apple,t6021",)
 TIMEOUT = 30
 
 
@@ -169,12 +178,19 @@ def install(data, dest):
         raise
 
 
-def run(root):
+def soc(root):
+    chips = dt_strings(root / "sys/firmware/devicetree/base/compatible")
+    return next((c for c in chips if re.fullmatch(r"apple,t\d+", c)), "unknown")
+
+
+def run(root, hook=False):
     dt = root / "sys/firmware/devicetree/base"
-    chips = dt_strings(dt / "compatible")
-    chip = next((c for c in chips if re.fullmatch(r"apple,t\d+", c)), "unknown")
+    chip = soc(root)
     if chip in NO_FETCH:
         print(f"{chip}: iBoot preloads the ANE firmware on M1 chips. Nothing to fetch.")
+        return
+    if hook and chip not in DEFAULT_ON:
+        print(f"{chip}: the ANE is not on by default here. Nothing fetched.")
         return
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
@@ -212,14 +228,42 @@ def run(root):
     print(f"installed {dest} ({len(data)} bytes, sha256 {digest})")
 
 
+def check(root):
+    chip = soc(root)
+    if chip not in FETCH:
+        raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
+    _, name, size, sha256 = FETCH[chip]
+    dest = root / "usr/lib/firmware" / name
+    try:
+        verify(dest.read_bytes(), size, sha256)
+    except FileNotFoundError:
+        raise Refuse(f"{dest} is missing. Run: sudo omarchy-ane-firmware-fetch")
+    except Refuse as e:
+        raise Refuse(f"{dest}: {e}. Run: sudo omarchy-ane-firmware-fetch")
+    print(f"{dest} matches the pin")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, default=Path("/"), help="system root (tests)")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="check the installed file only (no network)")
+    mode.add_argument("--hook", action="store_true", help="run from the pacman hook")
     args = ap.parse_args(argv)
     try:
-        run(args.root)
+        if args.check:
+            check(args.root)
+        else:
+            run(args.root, args.hook)
     except Refuse as e:
+        if args.check:
+            print(f"omarchy-ane-firmware-fetch: {e}", file=sys.stderr)
+            return 1
         print(f"omarchy-ane-firmware-fetch: {e}\nNothing was installed.", file=sys.stderr)
+        if args.hook:
+            print("The ANE stays off until this succeeds: sudo omarchy-ane-firmware-fetch, then reboot.",
+                  file=sys.stderr)
+            return 0
         return 1
     return 0
 
