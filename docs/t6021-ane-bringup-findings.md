@@ -1312,3 +1312,21 @@ Record: [receipts/2026-09-30-t6021-call-wait](../receipts/2026-09-30-t6021-call-
   no TM or pmgr register.
 - Program 20 then matches the M1 golden with one call: relative L2
   0.00117, 50 of 50 runs identical.
+
+## 23. Qwen per-program conformance against the M1 (2026-10-01)
+
+Record: [receipts/2026-09-30-t6021-qwen-chain/conformance.md](../receipts/2026-09-30-t6021-qwen-chain/conformance.md).
+
+- All 38 Apple-compiled Qwen programs match the M1 outputs of the same
+  decode step on boot `0e2c3743` (module `a584a967`). That covers six steps
+  with the M1 inputs, and 0→1→2 and 11→12→13 with the resident state chained
+  on the M2: 456 of 456 runs pass, and the largest relative L2 over 2,304
+  outputs is 0.007. The pass bound for each output is twice the M1's own
+  error against a float64 evaluation of the MIL program, and at least 0.02.
+  The 18 DeltaNet programs are bit-exact.
+- All 114 port-table ambiguity groups resolve on the device to the generated
+  table order. The next permutation is at least 7.4 times the bound.
+- Every Apple-compiled Qwen ANEC header records one output. libane checked
+  the M2 send/read index against that header before cb5a8f1, so
+  `ane-run --ports` read only output 0 and wrote heap garbage for the rest.
+  Device writes, the kernel io binding and the BO pool were correct.

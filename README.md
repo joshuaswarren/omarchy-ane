@@ -26,12 +26,13 @@ byte-identical to the golden transcript from the pinned macOS ANE
 capture (receipt
 [receipts/2026-09-30-t6021-parakeet-encoder-islands](receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)).
 Not proven: the full Parakeet encoder on the ANE (every op outside the
-four island sites runs on the CPU) and Qwen on the M2 as a model. Program
-20 of 38 (20 tasks) matches the M1 golden on the device with the
-named-port binding (relative L2 0.00117, 50 of 50 runs identical); the
-other 37 have not run (receipts
-[receipts/2026-09-30-t6021-call-wait](receipts/2026-09-30-t6021-call-wait/README.md),
-[receipts/2026-09-30-t6021-qwen-chain](receipts/2026-09-30-t6021-qwen-chain/README.md)).
+four island sites runs on the CPU) and Qwen on the M2 as a model. All 38
+Qwen programs match the M1 outputs on the device, program by program, at six
+decode steps with the M1 inputs. This also holds with the resident state
+chained on the M2 for three steps: 456 of 456 runs pass, the largest relative
+L2 is 0.007, and the 18 DeltaNet programs are bit-exact. The host steps
+between programs and a token-level decode over all 38 have not run (receipt
+[receipts/2026-09-30-t6021-qwen-chain/conformance.md](receipts/2026-09-30-t6021-qwen-chain/conformance.md)).
 One intermittent all-zero-output failure seen on three boots is
 unexplained (a 1 ms post-call settle is the mitigation). The module also
 runs on the stock linux-asahi `7.1.13-3-1-ARCH` kernel: 20 of 20 gate
@@ -89,6 +90,7 @@ The M2 Max (T6021) ANE works only with `ane_t6021.ko`, and that module cannot be
 - **Fixed.** The mailbox receive-IRQ storm and the latency stalls it caused are fixed by PR #8: `ane_t6021.hello_wait_ms` now defaults to 0, so the mailbox never starts. Before the fix, line 884 fired about 700,000 times per second (about one CPU in interrupt time), and the `add` p90 was 95 to 152 ms. After it, the line does not fire, the p90 is 1.29 to 1.42 ms and the median is 1.28 to 1.40 ms, and a 30 s loop runs about 4,800 processes (it was 203). The per-boot BO cap is fixed by PR #9, a recycle pool for io BOs. Before the pool, a boot stopped after about 14,500 `ane-run` processes (the 2 GiB cap). With the pool, one boot ran 105,232 processes in 420 s with 0 failures and flat memory. Receipts: [t6021-stock-mailbox](receipts/2026-09-30-t6021-stock-mailbox/README.md) ("Option A applied") and [t6021-bo-pool](receipts/2026-09-30-t6021-bo-pool/README.md).
 - **Fixed.** A CALL waited only until the last task was dispatched, so a long program returned before it had finished: Qwen program 20 ran for about 3.3 ms after the wait ended and read an all-zero output. A CALL now waits for the firmware's finish event on the IO_T2H ring (3.5 ms after the ack for program 20). Receipt: [t6021-call-wait](receipts/2026-09-30-t6021-call-wait/README.md).
 - **Fixed.** One boot could not hold the sections of all 38 Qwen programs (2.6 GiB) under the old 2 GiB BO cap. The cap is now the parameter `ane_t6021.bo_total_max_mb` (12 GiB by default), and one boot loaded and ran all 38 programs once each. The 32-bit DMA mask still limits all BOs to 4 GiB of IOVA. Receipt: [t6021-bo-cap](receipts/2026-10-01-t6021-bo-cap/README.md).
+- **Fixed.** `ane-run --ports` read only the first output of a program. libane checked the output index against the ANEC header, which records one output in every Apple-compiled Qwen ANEC, and ane-run wrote uninitialized memory for each later output. Send and read now use the M2 port model. Receipt: [conformance](receipts/2026-09-30-t6021-qwen-chain/conformance.md).
 - **Known limits.**
   - All M2 boots so far used a USB chain load from another Mac. A boot from the internal disk, with `update-m1n1`, is not proven yet.
   - An intermittent all-zero output, seen on three boots, is not explained. A 1 ms settle after each call is the mitigation.
