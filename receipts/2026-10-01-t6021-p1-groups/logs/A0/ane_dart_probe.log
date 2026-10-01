@@ -1,0 +1,355 @@
+[   35.680525] ane_dart_probe: read 0x285800000
+[   35.730577] ane_dart_probe: 0x285800000 = 0x1e313020
+[   35.730590] ane_dart_probe: read 0x285800004
+[   35.780434] ane_dart_probe: 0x285800004 = 0x31221403
+[   35.780446] ane_dart_probe: read 0x285800008
+[   35.830450] ane_dart_probe: 0x285800008 = 0x2a2a0200
+[   35.830465] ane_dart_probe: read 0x28580000c
+[   35.880350] ane_dart_probe: 0x28580000c = 0x00010010
+[   35.880362] ane_dart_probe: read 0x28580020c
+[   35.929909] ane_dart_probe: 0x28580020c = 0xe40000ff
+[   35.929924] ane_dart_probe: read 0x285800210
+[   35.980301] ane_dart_probe: 0x285800210 = 0x00000000
+[   35.980310] ane_dart_probe: read 0x285800220
+[   36.029969] ane_dart_probe: 0x285800220 = 0x000f0f0f
+[   36.029984] ane_dart_probe: read 0x285800224
+[   36.079525] ane_dart_probe: 0x285800224 = 0x00080808
+[   36.079539] ane_dart_probe: read 0x285800228
+[   36.129225] ane_dart_probe: 0x285800228 = 0x3f3f3f3f
+[   36.129238] ane_dart_probe: read 0x28580022c
+[   36.179711] ane_dart_probe: 0x28580022c = 0x01010101
+[   36.179720] ane_dart_probe: read 0x285800300
+[   36.229566] ane_dart_probe: 0x285800300 = 0x00000001
+[   36.229578] ane_dart_probe: read 0x285800304
+[   36.278927] ane_dart_probe: 0x285800304 = 0x00000000
+[   36.278936] ane_dart_probe: read 0x285800308
+[   36.328608] ane_dart_probe: 0x285800308 = 0x10000000
+[   36.328616] ane_dart_probe: read 0x28580030c
+[   36.379049] ane_dart_probe: 0x28580030c = 0x00000000
+[   36.379062] ane_dart_probe: read 0x285800310
+[   36.428823] ane_dart_probe: 0x285800310 = 0x3fffffff
+[   36.428832] ane_dart_probe: read 0x285800700
+[   36.478266] ane_dart_probe: 0x285800700 = 0x00000000
+[   36.478277] ane_dart_probe: read 0x285800704
+[   36.527940] ane_dart_probe: 0x285800704 = 0x00000000
+[   36.527949] ane_dart_probe: read 0x285800720
+[   36.578291] ane_dart_probe: 0x285800720 = 0x00000000
+[   36.578306] ane_dart_probe: read 0x285800724
+[   36.628121] ane_dart_probe: 0x285800724 = 0x00000000
+[   36.628134] ane_dart_probe: read 0x285800728
+[   36.677570] ane_dart_probe: 0x285800728 = 0x00000000
+[   36.677578] ane_dart_probe: read 0x28580072c
+[   36.727520] ane_dart_probe: 0x28580072c = 0x00000000
+[   36.727529] ane_dart_probe: read 0x285800730
+[   36.777507] ane_dart_probe: 0x285800730 = 0x00000000
+[   36.777516] ane_dart_probe: read 0x285800734
+[   36.827905] ane_dart_probe: 0x285800734 = 0x00000000
+[   36.827917] ane_dart_probe: read 0x285800738
+[   36.877534] ane_dart_probe: 0x285800738 = 0x00000000
+[   36.877547] ane_dart_probe: read 0x28580073c
+[   36.928006] ane_dart_probe: 0x28580073c = 0x00000000
+[   36.928019] ane_dart_probe: read 0x285800740
+[   36.977466] ane_dart_probe: 0x285800740 = 0x00000000
+[   36.977475] ane_dart_probe: read 0x285800744
+[   37.027535] ane_dart_probe: 0x285800744 = 0x00000000
+[   37.027547] ane_dart_probe: read 0x285800748
+[   37.077543] ane_dart_probe: 0x285800748 = 0x00000000
+[   37.077552] ane_dart_probe: read 0x28580074c
+[   37.127880] ane_dart_probe: 0x28580074c = 0x00000000
+[   37.127893] ane_dart_probe: read 0x285800750
+[   37.178028] ane_dart_probe: 0x285800750 = 0x00000000
+[   37.178040] ane_dart_probe: read 0x285800754
+[   37.227831] ane_dart_probe: 0x285800754 = 0x00000000
+[   37.227843] ane_dart_probe: read 0x285800758
+[   37.278007] ane_dart_probe: 0x285800758 = 0x00000000
+[   37.278018] ane_dart_probe: read 0x28580075c
+[   37.327505] ane_dart_probe: 0x28580075c = 0x00000000
+[   37.327516] ane_dart_probe: read 0x285800760
+[   37.377852] ane_dart_probe: 0x285800760 = 0x00000000
+[   37.377865] ane_dart_probe: read 0x285800764
+[   37.427567] ane_dart_probe: 0x285800764 = 0x00000000
+[   37.427577] ane_dart_probe: read 0x285800768
+[   37.477439] ane_dart_probe: 0x285800768 = 0x00000000
+[   37.477452] ane_dart_probe: read 0x285800770
+[   37.527397] ane_dart_probe: 0x285800770 = 0x00000000
+[   37.527407] ane_dart_probe: read 0x285800774
+[   37.577545] ane_dart_probe: 0x285800774 = 0x00000000
+[   37.577554] ane_dart_probe: read 0x285800778
+[   37.627584] ane_dart_probe: 0x285800778 = 0x00000000
+[   37.627595] ane_dart_probe: read 0x285800780
+[   37.677963] ane_dart_probe: 0x285800780 = 0x00000000
+[   37.677975] ane_dart_probe: read 0x285800784
+[   37.727578] ane_dart_probe: 0x285800784 = 0x00000000
+[   37.727591] ane_dart_probe: read 0x285800788
+[   37.777987] ane_dart_probe: 0x285800788 = 0x00000000
+[   37.777998] ane_dart_probe: read 0x285800800
+[   37.827928] ane_dart_probe: 0x285800800 = 0x00000000
+[   37.827940] ane_dart_probe: read 0x285800804
+[   37.878309] ane_dart_probe: 0x285800804 = 0x00000000
+[   37.878323] ane_dart_probe: read 0x285800808
+[   37.928116] ane_dart_probe: 0x285800808 = 0x00000000
+[   37.928131] ane_dart_probe: read 0x28580080c
+[   37.978293] ane_dart_probe: 0x28580080c = 0x00000000
+[   37.978308] ane_dart_probe: read 0x285800810
+[   38.028321] ane_dart_probe: 0x285800810 = 0x00000000
+[   38.028333] ane_dart_probe: read 0x285800814
+[   38.078822] ane_dart_probe: 0x285800814 = 0x00000000
+[   38.078833] ane_dart_probe: read 0x285800818
+[   38.128505] ane_dart_probe: 0x285800818 = 0x00000000
+[   38.128517] ane_dart_probe: read 0x28580081c
+[   38.178971] ane_dart_probe: 0x28580081c = 0x00000000
+[   38.178986] ane_dart_probe: read 0x285800820
+[   38.228701] ane_dart_probe: 0x285800820 = 0x00000000
+[   38.228710] ane_dart_probe: read 0x285800824
+[   38.278981] ane_dart_probe: 0x285800824 = 0x00000000
+[   38.278994] ane_dart_probe: read 0x285800828
+[   38.329435] ane_dart_probe: 0x285800828 = 0x00000000
+[   38.329447] ane_dart_probe: read 0x28580082c
+[   38.379049] ane_dart_probe: 0x28580082c = 0x00000000
+[   38.379057] ane_dart_probe: read 0x285800830
+[   38.429687] ane_dart_probe: 0x285800830 = 0x00000000
+[   38.429696] ane_dart_probe: read 0x285800834
+[   38.479644] ane_dart_probe: 0x285800834 = 0x00000000
+[   38.479659] ane_dart_probe: read 0x285800838
+[   38.529877] ane_dart_probe: 0x285800838 = 0x00000000
+[   38.529889] ane_dart_probe: read 0x28580083c
+[   38.580052] ane_dart_probe: 0x28580083c = 0x00000000
+[   38.580069] ane_dart_probe: read 0x285800c00
+[   38.630144] ane_dart_probe: 0x285800c00 = 0x0000ffff
+[   38.630156] ane_dart_probe: read 0x285810000
+[   38.680282] ane_dart_probe: 0x285810000 = 0x2e313048
+[   38.680296] ane_dart_probe: read 0x285810004
+[   38.730476] ane_dart_probe: 0x285810004 = 0x30110023
+[   38.730488] ane_dart_probe: read 0x285810008
+[   38.780301] ane_dart_probe: 0x285810008 = 0x2a2a0200
+[   38.780318] ane_dart_probe: read 0x28581000c
+[   38.830642] ane_dart_probe: 0x28581000c = 0x00100010
+[   38.830654] ane_dart_probe: read 0x28581020c
+[   38.881196] ane_dart_probe: 0x28581020c = 0x1e000048
+[   38.881205] ane_dart_probe: read 0x285810210
+[   38.931412] ane_dart_probe: 0x285810210 = 0x00000000
+[   38.931424] ane_dart_probe: read 0x285810220
+[   38.981292] ane_dart_probe: 0x285810220 = 0x00020202
+[   38.981304] ane_dart_probe: read 0x285810224
+[   39.031459] ane_dart_probe: 0x285810224 = 0x00000000
+[   39.031474] ane_dart_probe: read 0x285810228
+[   39.081764] ane_dart_probe: 0x285810228 = 0x3f3f3f3f
+[   39.081776] ane_dart_probe: read 0x28581022c
+[   39.132248] ane_dart_probe: 0x28581022c = 0x01010101
+[   39.132260] ane_dart_probe: read 0x285810300
+[   39.182520] ane_dart_probe: 0x285810300 = 0x00001c10
+[   39.182531] ane_dart_probe: read 0x285810304
+[   39.232757] ane_dart_probe: 0x285810304 = 0x00000000
+[   39.232768] ane_dart_probe: read 0x285810308
+[   39.282629] ane_dart_probe: 0x285810308 = 0x3ffffdac
+[   39.282644] ane_dart_probe: read 0x28581030c
+[   39.332778] ane_dart_probe: 0x28581030c = 0x00000000
+[   39.332787] ane_dart_probe: read 0x285810310
+[   39.383402] ane_dart_probe: 0x285810310 = 0x3e6cffcf
+[   39.383415] ane_dart_probe: read 0x285810700
+[   39.434187] ane_dart_probe: 0x285810700 = 0x00000000
+[   39.434196] ane_dart_probe: read 0x285810704
+[   39.484446] ane_dart_probe: 0x285810704 = 0x00000000
+[   39.484455] ane_dart_probe: read 0x285810720
+[   39.534707] ane_dart_probe: 0x285810720 = 0x00000000
+[   39.534718] ane_dart_probe: read 0x285810724
+[   39.585266] ane_dart_probe: 0x285810724 = 0x00000000
+[   39.585280] ane_dart_probe: read 0x285810728
+[   39.635566] ane_dart_probe: 0x285810728 = 0x00000000
+[   39.635574] ane_dart_probe: read 0x28581072c
+[   39.685467] ane_dart_probe: 0x28581072c = 0x00000000
+[   39.685475] ane_dart_probe: read 0x285810730
+[   39.736125] ane_dart_probe: 0x285810730 = 0x00000000
+[   39.736135] ane_dart_probe: read 0x285810734
+[   39.786222] ane_dart_probe: 0x285810734 = 0x00000000
+[   39.786234] ane_dart_probe: read 0x285810738
+[   39.836492] ane_dart_probe: 0x285810738 = 0x00000000
+[   39.836506] ane_dart_probe: read 0x28581073c
+[   39.887019] ane_dart_probe: 0x28581073c = 0x00000000
+[   39.887030] ane_dart_probe: read 0x285810740
+[   39.937104] ane_dart_probe: 0x285810740 = 0x00000000
+[   39.937115] ane_dart_probe: read 0x285810744
+[   39.987403] ane_dart_probe: 0x285810744 = 0x00000000
+[   39.987415] ane_dart_probe: read 0x285810748
+[   40.037823] ane_dart_probe: 0x285810748 = 0x00000000
+[   40.037834] ane_dart_probe: read 0x28581074c
+[   40.088052] ane_dart_probe: 0x28581074c = 0x00000000
+[   40.088062] ane_dart_probe: read 0x285810750
+[   40.138420] ane_dart_probe: 0x285810750 = 0x00000000
+[   40.138432] ane_dart_probe: read 0x285810754
+[   40.188645] ane_dart_probe: 0x285810754 = 0x00000000
+[   40.188655] ane_dart_probe: read 0x285810758
+[   40.239330] ane_dart_probe: 0x285810758 = 0x00000000
+[   40.239340] ane_dart_probe: read 0x28581075c
+[   40.289460] ane_dart_probe: 0x28581075c = 0x00000000
+[   40.289471] ane_dart_probe: read 0x285810760
+[   40.339728] ane_dart_probe: 0x285810760 = 0x00000000
+[   40.339740] ane_dart_probe: read 0x285810764
+[   40.390073] ane_dart_probe: 0x285810764 = 0x00000000
+[   40.390084] ane_dart_probe: read 0x285810768
+[   40.440373] ane_dart_probe: 0x285810768 = 0x00000000
+[   40.440381] ane_dart_probe: read 0x285810770
+[   40.490577] ane_dart_probe: 0x285810770 = 0x00000000
+[   40.490585] ane_dart_probe: read 0x285810774
+[   40.541244] ane_dart_probe: 0x285810774 = 0x00000000
+[   40.541255] ane_dart_probe: read 0x285810778
+[   40.591287] ane_dart_probe: 0x285810778 = 0x00000000
+[   40.591296] ane_dart_probe: read 0x285810780
+[   40.641621] ane_dart_probe: 0x285810780 = 0x00000000
+[   40.641636] ane_dart_probe: read 0x285810784
+[   40.692040] ane_dart_probe: 0x285810784 = 0x00000000
+[   40.692052] ane_dart_probe: read 0x285810788
+[   40.742724] ane_dart_probe: 0x285810788 = 0x00000000
+[   40.742734] ane_dart_probe: read 0x285810800
+[   40.792853] ane_dart_probe: 0x285810800 = 0x000f0000
+[   40.792865] ane_dart_probe: read 0x285810804
+[   40.843241] ane_dart_probe: 0x285810804 = 0x000f0000
+[   40.843252] ane_dart_probe: read 0x285810808
+[   40.893627] ane_dart_probe: 0x285810808 = 0x000f0000
+[   40.893635] ane_dart_probe: read 0x28581080c
+[   40.944306] ane_dart_probe: 0x28581080c = 0x000f0000
+[   40.944319] ane_dart_probe: read 0x285810810
+[   40.994434] ane_dart_probe: 0x285810810 = 0x000f0000
+[   40.994442] ane_dart_probe: read 0x285810814
+[   41.044949] ane_dart_probe: 0x285810814 = 0x000f0000
+[   41.044958] ane_dart_probe: read 0x285810818
+[   41.095285] ane_dart_probe: 0x285810818 = 0x000f0000
+[   41.095294] ane_dart_probe: read 0x28581081c
+[   41.145916] ane_dart_probe: 0x28581081c = 0x000f0000
+[   41.145927] ane_dart_probe: read 0x285810820
+[   41.196132] ane_dart_probe: 0x285810820 = 0x000f0000
+[   41.196141] ane_dart_probe: read 0x285810824
+[   41.246798] ane_dart_probe: 0x285810824 = 0x000f0000
+[   41.246810] ane_dart_probe: read 0x285810828
+[   41.297100] ane_dart_probe: 0x285810828 = 0x000f0000
+[   41.297108] ane_dart_probe: read 0x28581082c
+[   41.347288] ane_dart_probe: 0x28581082c = 0x000f0000
+[   41.347300] ane_dart_probe: read 0x285810830
+[   41.397973] ane_dart_probe: 0x285810830 = 0x000f0000
+[   41.397984] ane_dart_probe: read 0x285810834
+[   41.448372] ane_dart_probe: 0x285810834 = 0x000f0000
+[   41.448380] ane_dart_probe: read 0x285810838
+[   41.498815] ane_dart_probe: 0x285810838 = 0x000f0000
+[   41.498830] ane_dart_probe: read 0x28581083c
+[   41.549210] ane_dart_probe: 0x28581083c = 0x000f0000
+[   41.549225] ane_dart_probe: read 0x285810c00
+[   41.599298] ane_dart_probe: 0x285810c00 = 0x0000ffff
+[   41.599311] ane_dart_probe: read 0x285820000
+[   41.649754] ane_dart_probe: 0x285820000 = 0x2e313044
+[   41.649762] ane_dart_probe: read 0x285820004
+[   41.700544] ane_dart_probe: 0x285820004 = 0x30110023
+[   41.700556] ane_dart_probe: read 0x285820008
+[   41.751007] ane_dart_probe: 0x285820008 = 0x2a2a0200
+[   41.751018] ane_dart_probe: read 0x28582000c
+[   41.801188] ane_dart_probe: 0x28582000c = 0x00100010
+[   41.801196] ane_dart_probe: read 0x28582020c
+[   41.851675] ane_dart_probe: 0x28582020c = 0x1e000048
+[   41.851690] ane_dart_probe: read 0x285820210
+[   41.903111] ane_dart_probe: 0x285820210 = 0x00000000
+[   41.903119] ane_dart_probe: read 0x285820220
+[   41.953621] ane_dart_probe: 0x285820220 = 0x00020202
+[   41.953632] ane_dart_probe: read 0x285820224
+[   42.004111] ane_dart_probe: 0x285820224 = 0x00000000
+[   42.004125] ane_dart_probe: read 0x285820228
+[   42.054703] ane_dart_probe: 0x285820228 = 0x3f3f3f3f
+[   42.054716] ane_dart_probe: read 0x28582022c
+[   42.105042] ane_dart_probe: 0x28582022c = 0x01010101
+[   42.105055] ane_dart_probe: read 0x285820300
+[   42.155822] ane_dart_probe: 0x285820300 = 0x00001f30
+[   42.155836] ane_dart_probe: read 0x285820304
+[   42.206185] ane_dart_probe: 0x285820304 = 0x00000000
+[   42.206198] ane_dart_probe: read 0x285820308
+[   42.256491] ane_dart_probe: 0x285820308 = 0x2fedebf4
+[   42.256504] ane_dart_probe: read 0x28582030c
+[   42.307042] ane_dart_probe: 0x28582030c = 0x00000000
+[   42.307054] ane_dart_probe: read 0x285820310
+[   42.357655] ane_dart_probe: 0x285820310 = 0x3e3dedff
+[   42.357671] ane_dart_probe: read 0x285820700
+[   42.407941] ane_dart_probe: 0x285820700 = 0x00000000
+[   42.407957] ane_dart_probe: read 0x285820704
+[   42.458478] ane_dart_probe: 0x285820704 = 0x00000000
+[   42.458488] ane_dart_probe: read 0x285820720
+[   42.509028] ane_dart_probe: 0x285820720 = 0x00000000
+[   42.509042] ane_dart_probe: read 0x285820724
+[   42.559313] ane_dart_probe: 0x285820724 = 0x00000000
+[   42.559329] ane_dart_probe: read 0x285820728
+[   42.610133] ane_dart_probe: 0x285820728 = 0x00000000
+[   42.610143] ane_dart_probe: read 0x28582072c
+[   42.660425] ane_dart_probe: 0x28582072c = 0x00000000
+[   42.660437] ane_dart_probe: read 0x285820730
+[   42.711146] ane_dart_probe: 0x285820730 = 0x00000000
+[   42.711159] ane_dart_probe: read 0x285820734
+[   42.761490] ane_dart_probe: 0x285820734 = 0x00000000
+[   42.761502] ane_dart_probe: read 0x285820738
+[   42.812297] ane_dart_probe: 0x285820738 = 0x00000000
+[   42.812306] ane_dart_probe: read 0x28582073c
+[   42.862715] ane_dart_probe: 0x28582073c = 0x00000000
+[   42.862727] ane_dart_probe: read 0x285820740
+[   42.913133] ane_dart_probe: 0x285820740 = 0x00000000
+[   42.913146] ane_dart_probe: read 0x285820744
+[   42.963773] ane_dart_probe: 0x285820744 = 0x00000000
+[   42.963788] ane_dart_probe: read 0x285820748
+[   43.014428] ane_dart_probe: 0x285820748 = 0x00000000
+[   43.014440] ane_dart_probe: read 0x28582074c
+[   43.064827] ane_dart_probe: 0x28582074c = 0x00000000
+[   43.064839] ane_dart_probe: read 0x285820750
+[   43.115540] ane_dart_probe: 0x285820750 = 0x00000000
+[   43.115553] ane_dart_probe: read 0x285820754
+[   43.165903] ane_dart_probe: 0x285820754 = 0x00000000
+[   43.165911] ane_dart_probe: read 0x285820758
+[   43.216630] ane_dart_probe: 0x285820758 = 0x00000000
+[   43.216639] ane_dart_probe: read 0x28582075c
+[   43.266965] ane_dart_probe: 0x28582075c = 0x00000000
+[   43.266977] ane_dart_probe: read 0x285820760
+[   43.317455] ane_dart_probe: 0x285820760 = 0x00000000
+[   43.317468] ane_dart_probe: read 0x285820764
+[   43.368014] ane_dart_probe: 0x285820764 = 0x00000000
+[   43.368029] ane_dart_probe: read 0x285820768
+[   43.418741] ane_dart_probe: 0x285820768 = 0x00000000
+[   43.418756] ane_dart_probe: read 0x285820770
+[   43.469099] ane_dart_probe: 0x285820770 = 0x00000000
+[   43.469111] ane_dart_probe: read 0x285820774
+[   43.519888] ane_dart_probe: 0x285820774 = 0x00000000
+[   43.519902] ane_dart_probe: read 0x285820778
+[   43.570176] ane_dart_probe: 0x285820778 = 0x00000000
+[   43.570187] ane_dart_probe: read 0x285820780
+[   43.621001] ane_dart_probe: 0x285820780 = 0x00000000
+[   43.621012] ane_dart_probe: read 0x285820784
+[   43.671536] ane_dart_probe: 0x285820784 = 0x00000000
+[   43.671543] ane_dart_probe: read 0x285820788
+[   43.722236] ane_dart_probe: 0x285820788 = 0x00000000
+[   43.722247] ane_dart_probe: read 0x285820800
+[   43.772646] ane_dart_probe: 0x285820800 = 0x000f0000
+[   43.772655] ane_dart_probe: read 0x285820804
+[   43.823230] ane_dart_probe: 0x285820804 = 0x000f0000
+[   43.823246] ane_dart_probe: read 0x285820808
+[   43.873784] ane_dart_probe: 0x285820808 = 0x000f0000
+[   43.873795] ane_dart_probe: read 0x28582080c
+[   43.924462] ane_dart_probe: 0x28582080c = 0x000f0000
+[   43.924473] ane_dart_probe: read 0x285820810
+[   43.975181] ane_dart_probe: 0x285820810 = 0x000f0000
+[   43.975192] ane_dart_probe: read 0x285820814
+[   44.025577] ane_dart_probe: 0x285820814 = 0x000f0000
+[   44.025593] ane_dart_probe: read 0x285820818
+[   44.076387] ane_dart_probe: 0x285820818 = 0x000f0000
+[   44.076397] ane_dart_probe: read 0x28582081c
+[   44.126974] ane_dart_probe: 0x28582081c = 0x000f0000
+[   44.126988] ane_dart_probe: read 0x285820820
+[   44.177562] ane_dart_probe: 0x285820820 = 0x000f0000
+[   44.177578] ane_dart_probe: read 0x285820824
+[   44.228219] ane_dart_probe: 0x285820824 = 0x000f0000
+[   44.228230] ane_dart_probe: read 0x285820828
+[   44.278637] ane_dart_probe: 0x285820828 = 0x000f0000
+[   44.278648] ane_dart_probe: read 0x28582082c
+[   44.329288] ane_dart_probe: 0x28582082c = 0x000f0000
+[   44.329299] ane_dart_probe: read 0x285820830
+[   44.379768] ane_dart_probe: 0x285820830 = 0x000f0000
+[   44.379779] ane_dart_probe: read 0x285820834
+[   44.430355] ane_dart_probe: 0x285820834 = 0x000f0000
+[   44.430364] ane_dart_probe: read 0x285820838
+[   44.480991] ane_dart_probe: 0x285820838 = 0x000f0000
+[   44.481002] ane_dart_probe: read 0x28582083c
+[   44.531570] ane_dart_probe: 0x28582083c = 0x000f0000
+[   44.531585] ane_dart_probe: read 0x285820c00
+[   44.582194] ane_dart_probe: 0x285820c00 = 0x0000ffff
+[   44.582205] ane_dart_probe: done, 177 of 177 read, no write

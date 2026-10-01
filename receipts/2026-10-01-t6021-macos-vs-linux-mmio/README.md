@@ -4,7 +4,10 @@ Status: step 4 E1 and E2 ran later on 2026-10-01, see
 [2026-10-01-t6021-dart-tunables](../2026-10-01-t6021-dart-tunables/README.md)
 (BRD/BWR at reset values, LLT already applied, PERF counters off; applied in
 the macOS order, 0x220/0x224 and the SID words do not change the speed, and
-0x20c breaks translation on a live DART).
+0x20c breaks translation on a live DART). Step 4 E4 (rank 4, the ten P-1
+words skipped) and the rank 2 analysis ran in
+[2026-10-01-t6021-p1-groups](../2026-10-01-t6021-p1-groups/README.md): no
+speed change; the 0x300-0x310 words are ADT tunables of all three DARTs.
 
 The macOS hv trace shows one DMA-path setting that Linux never makes: the
 DART tunables on the two bulk DARTs of the ANE, DARTBRD and DARTBWR. By

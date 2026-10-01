@@ -1,0 +1,27 @@
+1
+PASSED: 111 checks, 0 failures
+PASS p1_skip=0x1 writes                           (exactly the unskipped words, in order)
+PASS p1_skip=0x2 writes                           (exactly the unskipped words, in order)
+PASS p1_skip=0x4 writes                           (exactly the unskipped words, in order)
+PASS p1_skip=0x8 writes                           (exactly the unskipped words, in order)
+PASS p1_skip=0x10 writes                          (exactly the unskipped words, in order)
+PASS p1_skip=0x1f writes                          (exactly the unskipped words, in order)
+old regression: identical output with old and new header (PASSED: 105 checks, 0 failures)
+2fcf7d86a65cc302ad31586c7f7716a72f1903cb6ecf4c9bbb00fb60f465463f  /tmp/p1g/offline/trace-new-skip0.txt
+7d2d952fe4f4179a0964757b3d2b17bdb8a496f3b9a3d7ac9132b377c9a2417c  /tmp/p1g/offline/trace-new-skip1f.txt
+2fcf7d86a65cc302ad31586c7f7716a72f1903cb6ecf4c9bbb00fb60f465463f  /tmp/p1g/offline/trace-new.txt
+2fcf7d86a65cc302ad31586c7f7716a72f1903cb6ecf4c9bbb00fb60f465463f  /tmp/p1g/offline/trace-old.txt
+lines 1252 writes 468 (skip1f writes 268)
+TRACE-IDENTICAL
+    200 < phase P-1 write done
+     20 < wr32 0x38 0x50020
+     20 < wr32 0x3c 0xa0030
+     20 < wr32 0x410 0x1100
+     20 < wr32 0x420 0x1100
+     20 < wr32 0x430 0x1100
+     20 < wr32 0x600 0x1ffffff
+     20 < wr32 0x738 0x200020
+     20 < wr32 0x798 0x100030
+     20 < wr32 0x7f8 0x100000a
+     20 < wr32 0x900 0x101
+    200 > phase P-1 write SKIPPED (p1_groups)
