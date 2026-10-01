@@ -4,7 +4,9 @@ ifneq ($(KERNELRELEASE),)
 	# One module: the installed-path rtclient surface plus the shared
 	# boot/fwload contract units. The probe file is _main.c so no
 	# object shares the module name (composite/single-object collision).
-	ccflags-y += -DANE_T6021_MODULE_VERSION='"$(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)"'
+	# DKMS sources carry no .git: dkms.conf passes ANE_VERSION instead.
+	ANE_VERSION ?= $(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)
+	ccflags-y += -DANE_T6021_MODULE_VERSION='"$(ANE_VERSION)"'
 	# The ABI-2 UAPI lives at ane/src/uapi/drm/ane_accel.h; the quoted
 	# include "uapi/drm/ane_accel.h" resolves through this path.
 	ccflags-y += -I$(src)/../src

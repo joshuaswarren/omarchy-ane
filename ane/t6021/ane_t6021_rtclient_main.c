@@ -2277,4 +2277,5 @@ static void __exit ane_rtclient_exit(void)
 module_exit(ane_rtclient_exit);
 
 MODULE_LICENSE("Dual MIT/GPL");
+MODULE_VERSION(ANE_T6021_MODULE_VERSION);
 MODULE_DESCRIPTION("Apple Neural Engine (T6021/M2) installed module");
