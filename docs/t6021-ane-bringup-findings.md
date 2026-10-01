@@ -1277,14 +1277,6 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   ([receipts/2026-09-30-t6021-bo-pool](../receipts/2026-09-30-t6021-bo-pool/README.md)).
 - Every M2 boot so far is a USB chainload from the M1 host; the disk boot
   path is unproven.
-- With `hello_wait_ms=0`, a 20-task program returned too early (inference).
-  Qwen `prog_020` (20 tasks, 83,892,736 B of constants, port-table binding,
-  omarchy-ane `49eb8ed`) completed two calls in 1.280 and 1.374 ms, with no
-  driver error, and its output was all zero. `ane_rtclient_call_wait`
-  accepts any TD-counter move plus idle TQ words, then settles 1 ms. Only
-  1- and 2-task programs have passed on this module. Do not run programs
-  with more than 2 tasks until the call waits for the program's own TD count
-  ([receipts/2026-09-30-t6021-qwen-chain](../receipts/2026-09-30-t6021-qwen-chain/README.md)).
 - `ane-run --ports` binds the port table on the device and refuses a port
   whose surface is larger than its io BO (`49eb8ed`). A BAR slot is the
   HWX program-descriptor resource at `+0x10 + 0x10 * slot` (0 text, 1 kernel
@@ -1293,3 +1285,24 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   size gate and `--dry-run`; the port build takes several outputs and the
   slot-3 scratch, and refuses a task-stream slot the table does not bind
   ([ports-sizes.md](../receipts/2026-09-30-t6021-qwen-chain/ports-sizes.md)).
+
+## 22. CALL completion: the IO_T2H finish event (2026-09-30)
+
+Record: [receipts/2026-09-30-t6021-call-wait](../receipts/2026-09-30-t6021-call-wait/README.md).
+
+- The last-committed-TD word (TM +0x20458) holds the call's nid (bits
+  23:16, +1 per call) and the index of the last task taken (bits 15:0; a
+  task header carries its index in word 0 bits 15:0). It is not a per-TD
+  counter: a 2-task matvec moved it from 0xe0000 to 0xf0001.
+- That word, the eight TQ status words and the firmware's first IO_T2H
+  event mark the dispatch of the last task, not its end. Qwen program 20
+  (20 tasks, 84 MB of constants) showed them 0.22 ms after the ack and ran
+  on for about 3.3 ms, so one call read an all-zero output.
+- The firmware posts two IO_T2H events per CALL (0x28-byte payload: u32
+  sequence, u32 0x300, u64 the CALL cookie from +0x20, u32 program id,
+  u32 process id, u32 0, u32 state). State 0 marks the dispatch, state 1
+  the finish: 3.5 ms after the ack for program 20, 0.22 ms for add. A CALL
+  now waits for the state-1 event (omarchy-ane `e794c4a`); the wait reads
+  no TM or pmgr register.
+- Program 20 then matches the M1 golden with one call: relative L2
+  0.00117, 50 of 50 runs identical.

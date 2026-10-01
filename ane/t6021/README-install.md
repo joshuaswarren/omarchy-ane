@@ -126,18 +126,20 @@ Not proven:
 - The full Parakeet encoder on the ANE. Only the four island sites
   run on the device; the convolutions, LayerNorms, feed-forward
   blocks, softmaxes and the decoder run on the CPU.
-- Qwen on the M2. Program 20 of the 38 staged programs ran on the
-  device with real weights and failed against the M1 golden
-  (relative L2 0.276). An offline decode traces the failure to the
-  loader's slot-4 port binding. The fixed binding has not run on the
-  device
-  ([2026-09-30-t6021-qwen-chain](../../receipts/2026-09-30-t6021-qwen-chain/README.md)).
+- Qwen on the M2. Program 20 of the 38 staged programs (20 tasks,
+  84 MB of constants) matches the M1 golden on the device with the
+  named-port binding: relative L2 0.00117, 50 of 50 runs identical
+  ([2026-09-30-t6021-call-wait](../../receipts/2026-09-30-t6021-call-wait/README.md)).
+  The other 37 programs have not run: their port tables give some
+  surfaces a channel smaller than the surface, and the loader takes
+  one output only.
 - The rms_norm chain. The device writes only channels 64 to 2047 of
   2048, so the program does not qualify for a model run (receipt
   [2026-09-30-t6021-island-select-rms](../../receipts/2026-09-30-t6021-island-select-rms/README.md)).
 - An explanation for the intermittent all-zero output seen on three
   boots (about 1 call in 5 on those boots). The 1 ms post-call
-  settle is the mitigation and is unverified against a failing boot.
+  settle is the mitigation. On the finish-event wait, 5000 single add
+  processes gave 0 all-zero outputs; the failing boots have not recurred.
 - A bit-exact model of the C pv accumulator. It is fp32-class, but
   no tested model reproduces it; the strict per-lane bound fails on
   1.3 to 52.4 percent of lanes per layer and the deviation does not

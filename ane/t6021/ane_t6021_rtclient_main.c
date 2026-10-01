@@ -12,8 +12,8 @@
  *   - DRM accel: BO_INIT/BO_FREE plus PROG_LOAD/PROC_CREATE/EXEC per
  *     ane/src/uapi/drm/ane_accel.h (ABI 2). Sections ride BOs the
  *     user supplies; one global mutex serializes every firmware
- *     command; completion = the legacy exchange's reply PLUS a
- *     TQ-idle poll gated on the pmgr PS words. EXEC also returns the
+ *     command; completion = the legacy exchange's reply PLUS the
+ *     firmware's finish event on the IO_T2H ring. EXEC also returns the
  *     fw's target-to-host slots (the sequencer's per-step drain).
  *
  * Compiled defaults are the load-run.sh parameter list — a bare
@@ -77,6 +77,7 @@
 #include <linux/soc/apple/rtkit.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/unaligned.h>
 #include <linux/util_macros.h>
 #include <linux/workqueue.h>
 
@@ -96,18 +97,6 @@
 
 /* pmgr ane_cpu ACTUAL word (ane0 reg1 window, pmgr+0x2e0) */
 #define ANE_RTCLIENT_PS_CPU_ACTUAL_OFF	0x2e0
-
-/* TM base for the eight TQ status words (one per queue) */
-#define ANE_TM_BASE			0x285c00000ull
-#define ANE_TM_TQ_STATUS_STRIDE		0x2c
-#define ANE_TM_TQ_STATUS_OFF		0x20804
-#define ANE_TM_TQ_STATUS(q)		(ANE_TM_BASE + ANE_TM_TQ_STATUS_OFF + \
-					 (u64)(q) * ANE_TM_TQ_STATUS_STRIDE)
-#define ANE_TM_TD_WINDOW		0x20400
-#define ANE_TM_TD_WINDOW_SIZE		0x540
-#define ANE_TM_TD_COUNT_OFF		0x58
-#define ANE_TM_TQ_STATUS_IDLE		0x81
-#define ANE_TM_TQ_STATUS_BUSY		0x70
 
 /* CPU_STATUS bits (m1n1 ASCRegs shape) */
 #define ANE_ASC_CPU_STATUS_RUNNING	BIT(0)
@@ -208,8 +197,6 @@ struct ane_rtclient {
 	u32 legacy_allocated;
 	size_t legacy_bytes;
 	u32 legacy_malloc_cursor;
-	/* Last-committed-TD word after the previous completed call. */
-	u32 td_seen;
 	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
 	/* One reusable 16 KiB command buffer for every host command
 	 * (CONFIG_GET + the three ioctls). Protocol-legal to reuse: an
@@ -537,76 +524,48 @@ out:
 	return result;
 }
 
-/* Time to let the output writes land after the completion signals.
+/* Time to let the output writes land after the completion signal.
  * Measured 2026-09-29 on some boots: the fw ack, the TD counter and the
  * TQ words all report done ~0.13 ms before the output reaches DRAM (the
- * output read as zeros in about 1 of 5 calls). No signal for "output
- * landed" is known, so the wait is a fixed margin of about 8x the lag. */
+ * output read as zeros in about 1 of 5 calls). The finish event arrives
+ * at the same time for short programs. No signal for "output landed" is
+ * known, so the wait is a fixed margin of about 8x the lag. */
 static unsigned int call_settle_us = 1000;
 module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
 
-/* Completion wait for one PROCEDURE_CALL. The firmware ack alone is not
- * completion: measured 2026-09-29, an ack can arrive before the engine
- * has written the output (exec returned after 0.16 ms, output landed
- * 0.12 ms later; the same call then read all zeros in ~1 of 5 runs after
- * an idle gap). All eight TQ status words read 0x81 before a TD starts,
- * so idle alone proves nothing either. The proof is: the last-committed
- * TD word (TM +0x20458, counts up by 0x10000 per completed TD)
- * moved off the value seen after the previous call, AND all eight TQ
- * words read idle.
- *
- * Every TM read is gated on the seven pmgr PS words reading 0x3ff (a TM
- * read while the compute domains are off hangs the SoC); while they do
- * not, the call has not started or finished and the loop keeps waiting.
- * Only single words are read. Returns 0 when complete, -ETIMEDOUT else. */
-static int ane_rtclient_call_wait(struct ane_rtclient *ane,
-				  unsigned int timeout_ms)
+/* The CALL cookie (CALL +0x20); the firmware returns it in the call's
+ * IO_T2H events. */
+#define ANE_CALL_COOKIE		0xADD0
+
+/* IO_T2H event of a PROCEDURE_CALL, 0x28 bytes (measured 2026-09-30,
+ * receipts/2026-09-30-t6021-call-wait): u32 sequence, u32 0x300, u64
+ * cookie, u32 program id, u32 process id, u32 0, u32 state. The firmware
+ * posts two per call: state 0 when the task queue has taken every task,
+ * state 1 when the procedure has finished. */
+#define ANE_T2H_CALL_COOKIE_OFF		0x08
+#define ANE_T2H_CALL_STATE_OFF		0x1c
+#define ANE_T2H_CALL_FINISHED		1
+
+/* The CPU address of LEN bytes at the firmware IOVA, or NULL. The firmware
+ * places T2H payloads in memory the host gave it: a SHAREDMALLOC buffer or
+ * the 'IPC ' surface. */
+static const void *ane_rtclient_fw_cpu(struct ane_rtclient *ane, u64 iova,
+				       size_t len)
 {
-	void __iomem *tm = ioremap_np(ANE_TM_BASE + ANE_TM_TD_WINDOW,
-				      ANE_TM_TD_WINDOW_SIZE);
-	void __iomem *pm = ioremap_np(0x28e084000ull, 0x40);
-	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
-	int ret = -ETIMEDOUT;
+	u32 i;
 
-	if (!tm || !pm) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	while (time_before(jiffies, deadline)) {
-		unsigned int i, q;
-		u32 cnt;
+	for (i = 0; i < ane->legacy_allocated; i++) {
+		const struct ane_legacy_buffer *b = &ane->legacy_buffers[i];
 
-		for (i = 0; i <= 0x30; i += 8)
-			if ((readl(pm + i) & 0x3ff) != 0x3ff)
-				break;
-		if (i <= 0x30) {
-			usleep_range(100, 200);
-			continue;
-		}
-		cnt = readl(tm + ANE_TM_TD_COUNT_OFF);
-		if (cnt != ane->td_seen) {
-			for (q = 0; q < ANE_T6021_CHMAN_COUNT; q++)
-				if (readl(tm + ANE_TM_TQ_STATUS_OFF -
-					  ANE_TM_TD_WINDOW +
-					  q * ANE_TM_TQ_STATUS_STRIDE) !=
-				    ANE_TM_TQ_STATUS_IDLE)
-					break;
-			if (q == ANE_T6021_CHMAN_COUNT) {
-				ane->td_seen = cnt;
-				ret = 0;
-				break;
-			}
-		}
-		usleep_range(50, 100);
+		if (iova >= b->dma && iova - b->dma + len <= b->size)
+			return b->cpu + (iova - b->dma);
 	}
-out:
-	if (tm)
-		iounmap(tm);
-	if (pm)
-		iounmap(pm);
-	return ret;
+	if (iova >= ane->fw->boot_ipc_iova &&
+	    iova - ane->fw->boot_ipc_iova + len <= ane->fw->boot_ipc_size)
+		return ane->fw->boot_ipc + (iova - ane->fw->boot_ipc_iova);
+	return NULL;
 }
 
 /* Return every firmware-owned slot on a target-to-host ring to the fw
@@ -614,16 +573,18 @@ out:
  * DMA address with bit0 clear; the host returns the slot by setting
  * bit0 and ringing the channel's doorbell bit, as the allocation ring
  * does. The sequencer drained channels 4/6 after every step; the
- * ioctls drain them after every completed exchange. */
-static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
-					   unsigned int channel)
+ * ioctls drain them after every completed exchange. Returns true when
+ * an IO_T2H slot held the finish event of a CALL. */
+static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
+				   unsigned int channel)
 {
 	const struct ane_t6021_chman_static *c = &ane_t6021_chman_layout[channel];
 	unsigned int n = 0, slot_i = ane->legacy_cmd_cursor[channel];
 	void __iomem *ipi = NULL;
+	bool finished = false;
 
 	if (!ane->fw || !ane->fw->boot_ipc)
-		return 0;
+		return false;
 	while (n < c->size) {
 		u64 *slot = ane->fw->boot_ipc + c->off + (size_t)slot_i * 64;
 		u64 hdr = READ_ONCE(slot[0]), len = READ_ONCE(slot[1]);
@@ -633,6 +594,17 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		dma_rmb();
 		dev_dbg(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
 			 c->name, slot_i, hdr, len);
+		if (channel == 6 && len >= ANE_T2H_CALL_STATE_OFF + 4) {
+			const u8 *ev = ane_rtclient_fw_cpu(ane, hdr,
+							   ANE_T2H_CALL_STATE_OFF + 4);
+
+			if (ev &&
+			    get_unaligned_le64(ev + ANE_T2H_CALL_COOKIE_OFF) ==
+			    ANE_CALL_COOKIE &&
+			    get_unaligned_le32(ev + ANE_T2H_CALL_STATE_OFF) ==
+			    ANE_T2H_CALL_FINISHED)
+				finished = true;
+		}
 		n++;
 		WRITE_ONCE(slot[0], hdr | 1);
 		dma_wmb();
@@ -645,7 +617,29 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 	}
 	if (ipi)
 		iounmap(ipi);
-	return n;
+	return finished;
+}
+
+/* Completion wait for one PROCEDURE_CALL: the finish event on IO_T2H
+ * (channel 6). The ack, the eight TQ status words and the last-committed
+ * TD word (TM +0x20458: the call's nid in bits 23:16 and the index of the
+ * last task taken in bits 15:0) all report done once the last task has
+ * been dispatched, not when it has run: measured 2026-09-30, Qwen program
+ * 20 (20 tasks) showed its last task index 0.22 ms after the ack, posted
+ * its finish event 3.5 ms after the ack, and a caller that returned at
+ * the first signal read an all-zero output. Returns 0 when the event
+ * arrived, -ETIMEDOUT else. */
+static int ane_rtclient_call_wait(struct ane_rtclient *ane,
+				  unsigned int timeout_ms)
+{
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+
+	do {
+		if (ane_rtclient_drain_t2h(ane, 6))
+			return 0;
+		usleep_range(50, 100);
+	} while (time_before(jiffies, deadline));
+	return ane_rtclient_drain_t2h(ane, 6) ? 0 : -ETIMEDOUT;
 }
 
 static int ane_rtclient_command(struct ane_rtclient *ane,
@@ -1037,7 +1031,7 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		*(u32 *)(cmd + 0x0c) = cpu_to_le32(user->proc_id);
 		*(u64 *)(cmd + 0x10) = cpu_to_le64(0);
 		*(u32 *)(cmd + 0x18) = cpu_to_le32(user->priority);
-		*(u64 *)(cmd + 0x20) = cpu_to_le64(0xADD0);
+		*(u64 *)(cmd + 0x20) = cpu_to_le64(ANE_CALL_COOKIE);
 		*(u32 *)(cmd + 0x28) = cpu_to_le32(user->count);
 		for (i = 0; i < user->count; i++) {
 			struct ane_t6021_bo *bo = NULL, *b;
