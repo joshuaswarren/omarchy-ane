@@ -53,6 +53,31 @@ module_param(map_mode, int, 0644);
 MODULE_PARM_DESC(map_mode,
 		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback)");
 
+/*
+ * ane_no_iommu (bool, default off): opt-in bypass of ane_iommu_domain_init.
+ * Lets the driver bind on a kernel that has no providers for the ANE
+ * device (variant-2 boot: three ANE DART nodes status=disabled, ane node's
+ * iommus property deleted, so iommu_get_domain_for_dev returns NULL forever
+ * and the stock probe defers indefinitely — Gap9 falsified that as a
+ * power-class crash signature on T6001, not a workable boot).
+ *
+ * When set, ane_iommu_domain_init returns 0 with ane->domain = NULL; the
+ * BO map/unmap paths short-circuit to -EOPNOTSUPP / no-op so user mode sees a
+ * -EOPNOTSUPP on first BO_INIT (clean failure, never a kernel fault).
+ * No DART register is written: ane_dart_init only matches apple,t8103-dart,
+ * the darts stay in their iBoot state. The driver owns its genpd partition
+ * and runtime-PM reference so the ANE power domains stay held under the
+ * running ASC.
+ *
+ * Only honored by the patched module; stock ane.ko rejects unknown
+ * params, so /etc/modprobe.d persistence must be paired with the patched
+ * build (the Gap10 entry documents the variant-boot install/restore).
+ */
+static bool ane_no_iommu;
+module_param(ane_no_iommu, bool, 0644);
+MODULE_PARM_DESC(ane_no_iommu,
+		 "Bind ane.ko without an IOMMU domain (variant-2 dart-unbound boot). Off by default; BO_INIT fails -EOPNOTSUPP when set.");
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -88,6 +113,8 @@ static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
 	int err;
 
 	lockdep_assert_held(&ane->engine_lock);
+	if (!ane->domain)
+		return -EOPNOTSUPP;
 	if (bo->mm)
 		return -EBUSY;
 
@@ -183,6 +210,8 @@ static void ane_iommu_unmap_pages(struct ane_device *ane, struct ane_bo *bo)
 
 	lockdep_assert_held(&ane->engine_lock);
 
+	if (!ane->domain)
+		return;
 	if (!mm)
 		return;
 
@@ -762,6 +791,20 @@ static int ane_iommu_domain_init(struct ane_device *ane)
 {
 	u64 min_iova, limit;
 
+	/*
+	 * Opt-in bypass for the dart-unbound variant-2 boot (Gap9): on a
+	 * standard DT this branch is unreachable (iommu_get_domain_for_dev
+	 * returns non-NULL because apple-dart is in the iommus list).
+	 * Off by default so the deliberate no-fallback design holds.
+	 */
+	if (ane_no_iommu) {
+		dev_info(ane->dev,
+			 "ane_no_iommu=1: bypassing IOMMU domain init (BO_INIT -> -EOPNOTSUPP)\n");
+		ane->domain = NULL;
+		ane->shift = 0;
+		return 0;
+	}
+
 	struct iommu_domain *domain = iommu_get_domain_for_dev(ane->dev);
 	if (!domain)
 		return -EPROBE_DEFER;
@@ -798,6 +841,9 @@ static void ane_iommu_purge_stale(struct ane_device *ane)
 	struct drm_mm_node *hole;
 	u64 start, end, iova;
 	unsigned long stale = 0;
+
+	if (!ane->domain)
+		return;
 
 	drm_mm_for_each_hole(hole, &ane->mm, start, end) {
 		for (iova = start; iova < end; iova += 1UL << ane->shift) {
