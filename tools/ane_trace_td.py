@@ -156,12 +156,20 @@ def report(path, anec=None):
     print(f"distinct indices seen per call (fraction of tasks): {stat(seen)}")
     print(f"stale TD values before the call's own (previous nid): "
           f"{collections.Counter(len(c['stale']) for c in cls)}; gate misses: {sum(len(c['gates']) for c in cls)}")
-    if ntask < 3:
+    done = [c for c in cls if c["fin"]]
+    if len(done) < len(cls):
+        print(f"calls without a finish event (timed out or cut off): {len(cls) - len(done)}; "
+              f"the timeline below uses the {len(done)} finished calls")
+        for c in cls:
+            if not c["fin"]:
+                print(f"  call {c['call']}: last TD index {c['own'][-1][1]} seen "
+                      f"{(c['own'][-1][0] - c['ack']) / 1e6:.3f} ms after the ACK")
+    if ntask < 3 or not done:
         return
 
-    T = np.array([take_times(c, ntask) for c in cls])
+    T = np.array([take_times(c, ntask) for c in done])
     Tm = np.nanmean(T, axis=0)
-    finm = st.median([f for f in fin if f is not None])
+    finm = st.median([(c["fin"] - c["ack"]) / 1e6 for c in done])
     print("\nCumulative curve (mean over calls; time in ms after the ACK):")
     print("  tasks taken | time ms | share of ACK->finish")
     for p in range(0, 101, 10):

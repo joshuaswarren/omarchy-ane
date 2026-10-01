@@ -568,11 +568,21 @@ MODULE_PARM_DESC(call_settle_us,
  * by default; switch it at runtime with
  * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
  * CALL path is unchanged. On, the completion wait polls every 20-40 us
- * and also reads the last-committed-TD word (TM +0x20458: the call's nid
- * in bits 23:16, the index of the last task taken in bits 15:0). It reads
- * that word only while the seven ANE pmgr PS words read 0x3ff, the guard
- * of the TM-polling wait before e794c4a: a TM read with the compute
- * domains off hangs the SoC. No register is written.
+ * and also reads the last-committed-TD word. It reads that word only
+ * while the seven ANE pmgr PS words read 0x3ff. No register is written.
+ *
+ * Provenance (omarchy-ane commits):
+ * - ANE_TM_TD_WORD = TM 0x285c00000 + TD window 0x20400 + 0x58, the word
+ *   the CALL wait polled from be2cf130d761ed675ad86f12b21ac1d53d906e1d
+ *   until 3a942d6cf6278526fbc02bf0c4743c5c1b276cdb. 3a942d6 measured its
+ *   layout: the call's nid in bits 23:16 (+1 per call), the index of the
+ *   last task taken in bits 15:0 (receipts/2026-09-30-t6021-call-wait).
+ * - ANE_PMGR_PS_BASE..+0x30: the seven ANE power-state words (DT
+ *   power-domains ane_sys_mpm 0x4000 .. ane_set4 0x4030 of the pmgr at
+ *   0x28e080000). The guard "PS words 0x3ff before any TM read; a TM read
+ *   while the compute domains are off hangs the SoC" is
+ *   ane_rtclient_pm_pwrstate_ok in 27e996a6de544a803a71d7a5c4ed11d828d4d049,
+ *   and the CALL wait applied it until 3a942d6.
  *
  * Each record has a ktime_get_ns() stamp: CALL before the exchange, ACK
  * when the firmware acked it, TD for each new TD word value (word = the

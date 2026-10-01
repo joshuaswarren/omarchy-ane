@@ -19,9 +19,15 @@ firmware pacing?
   allocates a 4 MiB buffer and creates the debugfs file
   `ane_t6021/trace_td` (0400). Each switch-on empties the buffer.
 - When it is 1, the completion wait of each CALL polls every 20-40 us and
-  reads the last-committed-TD word (TM +0x20458). It reads that word only
-  while the seven ANE pmgr PS words read 0x3ff, which is the guard of the
-  TM-polling wait before `e794c4a`. No register is written.
+  reads the last-committed-TD word (0x285c20458 = TM 0x285c00000 + 0x20458).
+  The CALL wait polled the same word from
+  `be2cf130d761ed675ad86f12b21ac1d53d906e1d` until
+  `3a942d6cf6278526fbc02bf0c4743c5c1b276cdb`, and 3a942d6 measured its
+  layout. The driver reads that word only while the seven ANE pmgr PS words
+  (0x28e084000-0x28e084030) read 0x3ff. That guard is
+  `ane_rtclient_pm_pwrstate_ok` from
+  `27e996a6de544a803a71d7a5c4ed11d828d4d049`: a TM read while the compute
+  domains are off hangs the SoC. No register is written.
 - Each record holds a `ktime_get_ns()` stamp and one of these kinds: CALL,
   ACK, TD (the first sight of each TD value), EVENT (each IO_T2H event of the
   call), GATE (a PS word was not 0x3ff) and DONE (the number of samples).
@@ -37,7 +43,8 @@ descriptors of the ANEC.
 ## Device run
 
 The module was built on the device from `7ae53e0` with no compiler warning
-(sha256 `f7abc3a69a53252c...`). It was installed in the stock tree and loaded
+(sha256 `f7abc3a69a53252c...`). Later commits on the branch change only
+comments in the driver. It was installed in the stock tree and loaded
 by a disk boot (boot `2084c5b1`, stock `7.1.13-3-1-ARCH`). All runs are ANE
 calls under the device lock: the gates first, then the encoder (golden check
 on the last call of each process), then 3 blocks of 16 calls for each of the
