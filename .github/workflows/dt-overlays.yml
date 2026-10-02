@@ -6,7 +6,10 @@ name: dt-overlays
 # checks, the driver alias tables against the default overlays
 # (tools/test_ane_m2.py), the boot regression of ane/t6021 (images, iBoot
 # patches, ASC tunables), and the libane host checks (make check: ane-selfcheck
-# and the ioctl argument check against a fake DRM node).
+# and the ioctl argument check against a fake DRM node). The ane-soc-data job
+# checks data/ane-soc/*.json and the README data-only table
+# (docs/ane-soc-data.md); the overlays job compiles and applies the data-only
+# overlays where a linux-asahi board device tree exists.
 on:
   push:
     branches: [main]
@@ -15,6 +18,12 @@ on:
       - tools/Makefile
       - tools/test_libane_ioctl.c
       - packaging/**
+      - data/ane-soc/**
+      - tests/fixtures/ane-soc/**
+      - tools/validate_ane_soc.py
+      - tools/test_validate_ane_soc.py
+      - tools/gen_coverage_table.py
+      - README.md
       - ane/src/ane_drv.c
       - ane/t6021/**
       - tools/h14_boot_regression.c
@@ -37,6 +46,12 @@ on:
       - tools/Makefile
       - tools/test_libane_ioctl.c
       - packaging/**
+      - data/ane-soc/**
+      - tests/fixtures/ane-soc/**
+      - tools/validate_ane_soc.py
+      - tools/test_validate_ane_soc.py
+      - tools/gen_coverage_table.py
+      - README.md
       - ane/src/ane_drv.c
       - ane/t6021/**
       - tools/h14_boot_regression.c
@@ -55,6 +70,17 @@ on:
       - .github/workflows/dt-overlays.yml
 
 jobs:
+  ane-soc-data:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: data/ane-soc schema, its tests, the README data-only table
+        run: |
+          python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
+          python3 tools/test_validate_ane_soc.py
+          python3 tools/gen_coverage_table.py --check
+
   overlays:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
