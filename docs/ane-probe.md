@@ -117,8 +117,5 @@ In the `omarchy-ane-dkms` recipe, from the source directory:
 install -Dm755 tools/omarchy-ane-probe "$pkgdir/usr/bin/omarchy-ane-probe"
 ```
 
-When `data/ane-soc/` ships, add its tables:
-
-```sh
-install -Dm644 -t "$pkgdir/usr/share/omarchy-ane/soc" data/ane-soc/*.json
-```
+`packaging/build-dtbo` installs the data-only tables to
+`/usr/share/omarchy-ane/soc`.

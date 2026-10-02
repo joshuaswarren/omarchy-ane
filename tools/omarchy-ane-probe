@@ -361,7 +361,8 @@ def table_dir(arg, root):
 
 
 def v(leaf):
-    return leaf.get("v") if isinstance(leaf, dict) else leaf
+    """The value of a {"v": ...} leaf; anything else as it is."""
+    return leaf["v"] if isinstance(leaf, dict) and "v" in leaf else leaf
 
 
 def as_int(value):
@@ -398,13 +399,14 @@ def soc_table(soc, board, family, tdir):
     if boards:
         check("boards", board, boards, board in boards)
     for key, nodes in (("ane", "ane_nodes"), ("dart", "dart_ane_nodes"), ("mailbox", "mailbox_nodes")):
-        spec = table.get(key) or {}
+        spec = v(table.get(key)) or {}
         node = (family[nodes] or [None])[0]
         compat = v(spec.get("compatible"))
         dt_compat = node["compatible"] if node else None
         check(f"{key}.compatible", dt_compat, compat, bool(node) and compat in node["compatible"])
         dt_regs = (node or {}).get("reg_decoded") or []
-        for i, reg in enumerate(spec.get("reg") or []):
+        for i, reg in enumerate(v(spec.get("reg")) or []):
+            reg = v(reg) or {}
             for part in ("base", "size"):
                 want = v(reg.get(part))
                 have = dt_regs[i][part] if i < len(dt_regs) else None
