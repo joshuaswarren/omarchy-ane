@@ -1,0 +1,12 @@
+# boot 1 (stats=1)
+gate-add rc=0 gate=0.31 0.00 0 50.32 stats [20 29144338] -> [27 39514497] GATE PASS
+gate-mul rc=0 gate=0.31 0.00 0 50.65 stats [27 39514497] -> [34 49770678] GATE PASS
+gate-relu rc=0 gate=0.31 0.00 0 50.96 stats [34 49770678] -> [41 60185115] GATE PASS
+gate-matvec5120 rc=2 gate=0.31 0.00 0 51.29 stats [41 60185115] -> [41 60185115] unknown arg: /var/tmp/large-matvec-fixtures/matvec-2048-5120-m1/out/program-0.anec
+# boot 1 matvec rerun after the invocation fix
+gate-matvec5120 rc=0 gate=0.19 0.00 0 83.67 stats [41 60185115] -> [48 76868440] GATE PASS
+# boot 2 (stats=0)
+gate-add rc=0 gate=0.31 0.00 0 53.31 stats [absent absent] -> [absent absent] GATE PASS
+gate-mul rc=0 gate=0.31 0.00 0 53.73 stats [absent absent] -> [absent absent] GATE PASS
+gate-relu rc=0 gate=0.31 0.00 0 54.07 stats [absent absent] -> [absent absent] GATE PASS
+gate-matvec5120 rc=0 gate=0.31 0.00 0 54.41 stats [absent absent] -> [absent absent] GATE PASS

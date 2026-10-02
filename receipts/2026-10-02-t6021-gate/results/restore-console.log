@@ -1,0 +1,29 @@
+== state post 2026-10-02T21:40:56.756Z
+boot_id 0f990497-9dcc-45f9-8e07-55e6fe67cc38 uname 7.1.13-3-1-ARCH up 16.42
+module 0.4.0-main-b6ef8f1 6783D1DE1FAE8D064F84FD0 af2cee6c3962e642
+stats 
+call_settle_us 1000
+bo_total_bytes 0
+trace_td N
+options-file: none
+/var/tmp/t6021gate/bin/common.sh: line 47: /sys/class/accel/accel0/device/ane_stats: No such file or directory
+ane_stats: absent
+load 0.22 0.05 0.02 psi some avg10=0.15 avg60=0.07 avg300=0.01 total=88326
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1193
+no ane-run
+module file sha af2cee6c3962e642d3de485131a118b71852c9d215503757efa626795a9b3b7a (hand af2cee6c3962e642d3de485131a118b71852c9d215503757efa626795a9b3b7a)
+srcversion 6783D1DE1FAE8D064F84FD0 version 0.4.0-main-b6ef8f1
+bound: ../../../../bus/platform/drivers/ane_t6021
+lsmod ane*: ane_t6021 98304 2;
+ane.ko under /lib/modules/7.1.13-3-1-ARCH: 0
+modprobe.d: hid_apple.conf netconsole.conf 
+system running failed_units 0
+markers: ownmem 1 fwalias 1 run0 1 VALIDATED 1 CONFIG_GET0 1 refusing 0 BAD 0
+[    4.398638] ane_t6021 284000000.ane: loaded ane_t6021 0.4.0-main-b6ef8f1 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)
+labstate written /var/tmp/t6021gate/runs/labstate-post.txt (131 lines)
+labstate diff lines: 14
+settle: up 362.35 s OK
+encoder smoke rc=0 gate=[0.00 0.00 0 362.36] exec ms over 4 calls: min 254.271 p10 254.271 p25 254.321 median 254.430 p75 254 golden max_abs=0 relL2=0 exact=1 fp16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+dmesg new 16 non-UFW 0 BAD 0
+== post done /var/tmp/t6021gate/runs/post-20261002T214056Z

@@ -1,0 +1,4 @@
+# coreglass phases (item 2), host line omitted
+phase             n    sec        p_busy        e_busy  gpu_fw_irq_s    heatpipe_w         ctx_s         run_q  disk_rd_mb_s      majflt_s      ane_busy    ane_jobs_s
+idle             67    7.8         0.007           0.0         4.179         4.704      1004.291         1.104           0.0           0.0           0.0           0.0
+encoder         506   51.6          0.01         0.005         3.992         7.326     19575.823         1.121           0.0           0.0         0.994         3.893

@@ -1,0 +1,88 @@
+== item1 first read 2026-10-02T21:02:27.052Z up 24.72
+stats param: Y
+ST=/sys/class/accel/accel0/device/ane_stats
+-r--r--r-- 1 root root 16384 Oct  2 16:02 /sys/class/accel/accel0/device/ane_stats
+-- as nobody:
+busy_ns 0
+jobs 0
+rc=0
+-- as <lab-user>:
+busy_ns 0
+jobs 0
+-- debugfs (root):
+total 0
+drwxr-xr-x  2 root root 0 Oct  2 16:02 .
+drwx------ 46 root root 0 Dec 31  1969 ..
+-r--r--r--  1 root root 0 Oct  2 16:02 ane_timeline
+# ane_timeline: seq submit_ns start_ns end_ns tasks rc tmst (tmst raw tick on ane.ko, 0 = unavailable on ane_t6021)
+timeline lines: 1
+-- any ane_stats/ane_timeline files: /sys/devices/platform/soc/284000000.ane/ane_stats  /sys/kernel/debug/ane_t6021/ane_timeline 
+== identity
+== state boot 2026-10-02T21:02:27.104Z
+boot_id 9d67e566-8c55-46bc-ab1e-b249e3e89d3c uname 7.1.13-3-1-ARCH up 24.77
+module 0.4.1-main-53d162c C6BEAF73AB255965AC9AA18 c1b3db66c2f02835
+stats Y
+call_settle_us 1000
+bo_total_bytes 0
+trace_td N
+options-file: none
+ane_stats: busy_ns 0 jobs 0 
+load 0.34 0.08 0.03 psi some avg10=0.06 avg60=0.06 avg300=0.01 total=98688
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1188
+no ane-run
+BOOT_IMAGE=/vmlinuz-linux-asahi root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash
+system running failed_units 0
+module file /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko c1b3db66c2f02835013dd5aba4768026fee2385a651e60b4b6c86387e86c9bd3
+loaded: ane_t6021 98304 2;
+bound: ../../../../bus/platform/drivers/ane_t6021
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  2 16:02 accel0
+== BOOT-PHASE markers
+902:[    3.252448] ane_t6021 284000000.ane: fwalias: entry 0x10000000000 <- 448 dart pages aliased from fw 0x00000000ff800000 (first 0x000001001eff0000, roundtrip OK)
+943:[    3.299861] apple_aop 2a6c00000.aop: RTKit: syslog message: SPU_init.cpp:320: ===( AOP IS READY )===
+987:[    4.213492] apple-isp: CISP_CMD_CONFIG_GET: 
+1000:[    4.213774] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 0
+1008:[    4.213908] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 1
+1016:[    4.214046] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 2
+1024:[    4.214162] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 3
+1032:[    4.214296] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 4
+1040:[    4.214424] apple-isp: ps: CISP_CMD_CH_CAMERA_CONFIG_GET: 5
+1050:[    4.251390] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA-READY
+1073:[    4.282379] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA READY observed
+1077:[    4.378385] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB-DONE
+1082:[    4.410361] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB DONE observed
+1084:[    4.441377] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED
+1086:[    4.441383] ane_t6021 284000000.ane: chman[0]: name="TERMINAL" type=2 bit=0 size=0x300 OK (static: TERMINAL/2/0/0x300/ipc+0x800)
+1087:[    4.441386] ane_t6021 284000000.ane: chman[1]: name="IO" type=0 bit=1 size=0x10 OK (static: IO/0/1/0x10/ipc+0xc800)
+1088:[    4.441388] ane_t6021 284000000.ane: chman[2]: name="DEBUG" type=0 bit=2 size=0x8 OK (static: DEBUG/0/2/0x8/ipc+0xcc00)
+1089:[    4.441390] ane_t6021 284000000.ane: chman[3]: name="BUF_H2T" type=0 bit=3 size=0x40 OK (static: BUF_H2T/0/3/0x40/ipc+0xce00)
+1090:[    4.441392] ane_t6021 284000000.ane: chman[4]: name="BUF_T2H" type=1 bit=4 size=0x40 OK (static: BUF_T2H/1/4/0x40/ipc+0xde00)
+1091:[    4.441393] ane_t6021 284000000.ane: chman[5]: name="SHAREDMALLOC" type=1 bit=5 size=0x8 OK (static: SHAREDMALLOC/1/5/0x8/ipc+0xee00)
+1092:[    4.441395] ane_t6021 284000000.ane: chman[6]: name="IO_T2H" type=1 bit=6 size=0x40 OK (static: IO_T2H/1/6/0x40/ipc+0xf000)
+1093:[    4.441396] ane_t6021 284000000.ane: chman[7]: name="DATA_CHAIN_H2T" type=0 bit=7 size=0x10 OK (static: DATA_CHAIN_H2T/0/7/0x10/ipc+0x10000)
+1094:[    4.441399] ane_t6021 284000000.ane: chman: table VALIDATED (mismatch mask 0x0)
+1096:[    4.452147] ane_t6021 284000000.ane: LEGACY CONFIG_GET words 00000003 016e3600 result=0 (DMA remains held)
+1098:[    4.452187] ane_t6021 284000000.ane: loaded ane_t6021 0.4.1-main-53d162c (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)
+markers: ownmem 0 fwalias 1 READY 3 DONE 3 run0 1 VALIDATED 1 CONFIG_GET0 1 refusing 0 BAD 0
+== omarchy-ane-check (candidate tree)
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.1-main-53d162c)
+  ok    ane_t6021 is loaded (version 0.4.1-main-53d162c)
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+check rc=0
+== /usr/bin/omarchy-ane-check (lab)
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.1-main-53d162c)
+  ok    ane_t6021 is loaded (version 0.4.1-main-53d162c)
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+lab check rc=0
+== boot.sh done /var/tmp/t6021gate/runs/boot-b1-20261002T210227Z

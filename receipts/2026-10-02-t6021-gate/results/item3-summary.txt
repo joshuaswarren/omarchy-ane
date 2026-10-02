@@ -1,0 +1,4 @@
+jobs 428 -> 628 delta 200; busy_ns delta 50887898560 (50887.9 ms, 254.439 ms/job)
+process wall 51566.4 ms; busy<=wall True; busy/process_wall 0.9868; busy/(200 x median 254.439) 1.0000; timeline span 50889.0 ms busy/span 1.0000
+timeline: file lines 257 data lines 256; lines with ticket in (428,628] = 200; rc!=0 among them 0
+ITEM3 PASS
