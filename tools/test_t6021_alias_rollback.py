@@ -12,7 +12,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
 preload = 'static const struct { u64 phys, len; } ane_t6021_fw_preload[]'
 preload += source.split(preload, 1)[1].split('\nbool ane_t6021_fwload_placement_ok', 1)[0]
-function = source.split('static int ane_t6021_fw_alias_map(', 1)[1].split('\nstatic const u8 ', 1)[0]
+function = source.split('static int ane_t6021_fw_alias_map(', 1)[1].split('\n}\n', 1)[0] + '\n}\n'
 function = preload + 'static int ane_t6021_fw_alias_map(' + function
 prefix = r'''
 #include <assert.h>
