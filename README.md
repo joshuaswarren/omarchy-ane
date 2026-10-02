@@ -1,6 +1,6 @@
 # omarchy-ane
 
-Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs. It ships DRM kernel modules and `libane`, the userspace library. Tested and on by default after install: M1 (T8103), M1 Max (T6001), M2 Max (T6021), with one note on the M2 Max below. Other chips are opt-in and untested, or unsupported. eiln/ane did the M1 reverse engineering. This fork wires up the other chips.
+Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs. It ships DRM kernel modules and `libane`, the userspace library. Tested and on by default after install: M1 (T8103), M1 Max (T6001), M2 Max (T6021). Other chips are opt-in and untested, or unsupported. eiln/ane did the M1 reverse engineering. This fork wires up the other chips.
 
 ## Chip coverage
 
@@ -24,10 +24,10 @@ sudo reboot
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | nothing on T6002 silicon |
 | M2 | T8112 | H14G | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | nothing on T8112 silicon |
 | M2 Pro | T6020 | H14J | `apple,t6020-ane` | `ane_t6021` | opt-in, untested | `ane-t6020` + note | nothing on T6020 silicon |
-| M2 Max | T6021 | H14J | `apple,t6021-ane` | `ane_t6021` | on by default once the own-memory change lands (note below) | none | firmware starts under Linux. fp16 ops and matvec to 2048x5120 exact. Parakeet attention islands transcript-exact. All 38 Qwen programs conform to the M1. |
+| M2 Max | T6021 | H14J | `apple,t6021-ane` | `ane_t6021` | on by default | none | firmware starts under Linux. fp16 ops and matvec to 2048x5120 exact. The whole Parakeet encoder is bit-exact. All 38 Qwen programs conform to the M1. |
 | M2 Ultra | T6022 | H14J | `apple,t6022-ane` | `ane_t6021` | opt-in, untested (die 0) | `ane-t6022` + note | nothing on T6022 silicon |
 
-The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. The M2 Max needs one more driver change first. With the packaged m1n1 1.6.1, `ane_t6021` refuses at probe (`fw_alias_reserved` guard) until the own-memory default merges. M3 and later are unsupported. Their ANE is a different generation. Apple's own firmware describes it as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1 and M2 ANE presents. No Linux driver exists for that design.
+The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. M3 and later are unsupported. Their ANE is a different generation. Apple's own firmware describes it as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1 and M2 ANE presents. No Linux driver exists for that design.
 
 Promotion. An untested chip turns on by default once community runs prove it. The proof is 3 passing rows of the deep collector's `omarchy_ane` block. They must come from 3 machines (`machine_id`), 2 owners (`owner_id`), 2 boards and 2 kernel releases, with no failing row. In a passing row, `omarchy-ane-check` is ready and the chip's driver is loaded. The row has no ANE, DART or mailbox fault line and 30 minutes of uptime. Its smoke (`omarchy-ane-smoke`, name `add-fixture`) has 20 calls, and each output hash equals the golden. The M1 family has no smoke fixture yet, so a T6000 or T6002 row cannot pass. The Parakeet encoder hash is a developer check, not a collector field. `tools/promotion_check.py --remote` prints the live verdict per chip. When it says `PROMOTE`, a PR flips that chip's line in `packaging/dt/overlays` to `enabled`.
 
@@ -44,7 +44,7 @@ Install `omarchy-ane-dkms` (`sudo pacman -S omarchy-ane-dkms`), or pick the Inst
 - fetches the ANE firmware at install and upgrade on the M2 Max (pacman hook `90-omarchy-ane-firmware.hook`).
 - ships the tools: `omarchy-ane-check`, `omarchy-ane-dt`, `omarchy-ane-firmware-fetch`, `omarchy-ane-smoke`, and `omarchy-ane-run` (the `tools/ane-run` program runner).
 
-On M1, M1 Max and M2 Max nothing else is needed. The overlay applies at install and the driver binds at boot. The package adds no udev rule: systemd's default rule makes `/dev/accel/*` mode `0666`, so every user can open the ANE node.
+On M1, M1 Max and M2 Max the package does the rest, once omarchy-mac-boot can apply device tree overlays. That support is [omacom/omarchy-mac#677](https://github.com/omacom/omarchy-mac/pull/677), which is not merged yet. With an older omarchy-mac-boot, `omarchy-ane-dt` refuses, and the ANE node is absent unless the kernel's own device tree has it. With the support in place, the overlay applies at install and the driver binds at boot. The package adds no udev rule: systemd's default rule makes `/dev/accel/*` mode `0666`, so every user can open the ANE node.
 
 ### Arch Linux ARM (asahi-alarm)
 
