@@ -1542,3 +1542,19 @@ Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dar
 - GRUB on the M2 consumes a `grub-reboot` entry before the boot (tested with
   the stock kernel), and `systemd.watchdog_sec=120` on the kernel command
   line arms the SoC watchdog in the initramfs at about 1.0 s.
+
+## 34. fabric-ps at the macOS value and DSID 14: no speed change (2026-10-02)
+
+Record: receipts/2026-10-03-fabric-ps on branch `agent/ane-fabric-ps-set` (module `c511ab3`, results `7a86aef`).
+
+- macOS 27 holds fabric-ps 0x28e20c000 at 0x666 (idle and under ANE load) and the TM DSID word 0x285c2046c at
+  0x3880 (dsid 14); Linux holds 0x555 and 0x80. Under macOS the M2 runs P6' (compute-bound) 3.74x, P7 (DMA
+  stream) 2.49x and the encoder 2.84x faster than under Linux.
+- `apple-pmgr-misc.c` sources only DESIRED [3:0] of fabric-ps. The lab module `ane_fabric_ps_set` does the
+  driver's own read-modify-write of that field. 5 -> 6 reads back 0x666 after 61 ms (bit 31 set for about
+  11 ms in between) and stays there under load; 6 -> 5 returns 0x555. No fault, outputs bit-identical.
+- At fabric 6 (ABA on one boot, 20x16 blocks per program): encoder +0.22%, P7 -0.49%, P6' +0.57%, matvec
+  2048x5120 -2.4% (its own A1/A2 spread is 1.6%). The fabric pstate is not a material part of the gap.
+- `fw_dsid_set=14` (the macOS 27 value) lands: `DSID_SET dsid=14 result=0`, word 0x3880. Encoder, P7 and P6'
+  stay within 0.25%, as with dsid 9. DSID tagging alone does not change ANE timing on Linux.
+- The open H1 candidate stays the ANE perf state (ADT perf domain 8).
