@@ -53,6 +53,184 @@ module_param(map_mode, int, 0644);
 MODULE_PARM_DESC(map_mode,
 		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback)");
 
+
+/*
+ * Jw16AneVa dart_fw_map (TEST BUILD, window-only): map the eos firmware
+ * segments at the fixed ADT iova fields through the kernel apple-dart
+ * driver, INTO THE DEVICE'S OWN DEFAULT DOMAIN (no domain swap, no raw
+ * dart MMIO), gated by a read-only live-carveout proof. Inert unless
+ * dart_fw_map=1 with all params given.
+ */
+static bool dart_fw_map;
+module_param(dart_fw_map, bool, 0444);
+static unsigned long long fw_text_pa, fw_text_size = 0xd4000ULL;
+static unsigned long long fw_data_pa, fw_data_size = 0x438000ULL;
+static unsigned long long fw_expect_a, fw_expect_b;
+module_param(fw_text_pa, ullong, 0444);
+module_param(fw_text_size, ullong, 0444);
+module_param(fw_data_pa, ullong, 0444);
+module_param(fw_data_size, ullong, 0444);
+module_param(fw_expect_a, ullong, 0444);
+module_param(fw_expect_b, ullong, 0444);
+
+static struct iommu_domain *fw_map_domain;
+static size_t fw_mapped_text, fw_mapped_data;
+
+static void ane_fw_span_fletcher(const void *p, size_t len, size_t skip_off,
+				 u64 *fa, u64 *fb)
+{
+	const __le32 *w = p;
+	size_t i;
+
+	*fa = *fb = 0;
+	for (i = 0; i < len / 4; i++) {
+		u32 v;
+
+		if (i * 4 == skip_off)
+			continue;
+		v = le32_to_cpu(w[i]);
+		*fa += v;
+		*fb += *fa;
+	}
+}
+
+static void ane_dart_fw_map_detach(struct ane_device *ane)
+{
+	if (!fw_map_domain)
+		return;
+	if (fw_mapped_data)
+		iommu_unmap(fw_map_domain, fw_mapped_text, fw_mapped_data);
+	if (fw_mapped_text)
+		iommu_unmap(fw_map_domain, 0, fw_mapped_text);
+	fw_map_domain = NULL;
+	fw_mapped_text = fw_mapped_data = 0;
+	dev_info(ane->dev, "dart_fw_map: unmapped; default domain intact\n");
+}
+
+static int ane_dart_fw_map(struct ane_device *ane)
+{
+	struct iommu_domain *dom;
+	void *tv, *dv;
+	void __iomem *ti;
+	u64 fa, fb, va, vb, ua, ub;
+	u32 nz = 0, i;
+	phys_addr_t chk;
+	int ret;
+
+	if (!fw_text_pa || !fw_data_pa || !fw_expect_a || !fw_expect_b) {
+		dev_err(ane->dev, "dart_fw_map: params missing\n");
+		return -EINVAL;
+	}
+
+	/* live proof 1a: TEXT head in two independent views must agree */
+	tv = memremap(fw_text_pa, 0x400, MEMREMAP_WC);
+	if (!tv) {
+		dev_err(ane->dev, "dart_fw_map: memremap TEXT failed\n");
+		return -ENOMEM;
+	}
+	ane_fw_span_fletcher(tv, 0x400, 0x200, &va, &vb);
+	memunmap(tv);
+	ti = ioremap(fw_text_pa, 0x400);
+	if (!ti) {
+		dev_err(ane->dev, "dart_fw_map: ioremap TEXT failed\n");
+		return -ENOMEM;
+	}
+	ua = ub = 0;
+	for (i = 0; i < 0x400 / 4; i++) {
+		u32 v = readl(ti + i * 4);
+
+		if (i * 4 == 0x200)
+			continue;
+		ua += v;
+		ub += ua;
+	}
+	iounmap(ti);
+	if (ua != va || ub != vb) {
+		dev_err(ane->dev,
+			"dart_fw_map: TEXT view mismatch (%016llx:%016llx vs %016llx:%016llx) - no map, no release\n",
+			ua, ub, va, vb);
+		return -EKEYREJECTED;
+	}
+
+	/* live proof 1b: full head digest vs the pinned 22G74 reference */
+	tv = memremap(fw_text_pa, fw_text_size, MEMREMAP_WC);
+	if (!tv) {
+		dev_err(ane->dev, "dart_fw_map: memremap TEXT failed\n");
+		return -ENOMEM;
+	}
+	ane_fw_span_fletcher(tv, 0x8000, 0x200, &fa, &fb);
+	memunmap(tv);
+	dev_info(ane->dev,
+		 "dart_fw_map: TEXT live fletcher %016llx:%016llx (want %016llx:%016llx)\n",
+		 fa, fb, fw_expect_a, fw_expect_b);
+	if (fa != fw_expect_a || fb != fw_expect_b) {
+		dev_err(ane->dev,
+			"dart_fw_map: TEXT PROOF FAILED - no map, no release\n");
+		return -EKEYREJECTED;
+	}
+
+	/* live proof 2: DATA carveout head must read zero pre-staging */
+	dv = memremap(fw_data_pa, 0x1000, MEMREMAP_WC);
+	if (!dv) {
+		dev_err(ane->dev, "dart_fw_map: memremap DATA failed\n");
+		return -ENOMEM;
+	}
+	for (i = 0; i < 0x1000 / 4; i++) {
+		u32 v = *((volatile u32 *)(dv + i * 4));
+
+		if (v)
+			nz++;
+	}
+	memunmap(dv);
+	dev_info(ane->dev, "dart_fw_map: DATA head nonzero words: %u/1024\n",
+		 nz);
+	if (nz) {
+		dev_err(ane->dev,
+			"dart_fw_map: DATA PA not a fresh carveout - no map, no release\n");
+		return -EKEYREJECTED;
+	}
+
+	dom = iommu_get_domain_for_dev(ane->dev);
+	if (!dom) {
+		dev_err(ane->dev, "dart_fw_map: no iommu domain\n");
+		return -ENODEV;
+	}
+	ret = iommu_map(dom, 0, fw_text_pa, fw_text_size,
+			IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
+	if (ret) {
+		dev_err(ane->dev, "dart_fw_map: TEXT map failed %d\n", ret);
+		return ret;
+	}
+	ret = iommu_map(dom, fw_text_size, fw_data_pa, fw_data_size,
+			IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
+	if (ret) {
+		dev_err(ane->dev, "dart_fw_map: DATA map failed %d\n", ret);
+		iommu_unmap(dom, 0, fw_text_size);
+		return ret;
+	}
+	fw_map_domain = dom;
+	fw_mapped_text = fw_text_size;
+	fw_mapped_data = fw_data_size;
+	chk = iommu_iova_to_phys(dom, 0);
+	if (chk != fw_text_pa) {
+		dev_err(ane->dev, "dart_fw_map: iova0 readback %pap\n", &chk);
+		ane_dart_fw_map_detach(ane);
+		return -EIO;
+	}
+	chk = iommu_iova_to_phys(dom, fw_text_size);
+	if (chk != fw_data_pa) {
+		dev_err(ane->dev, "dart_fw_map: DATA iova readback %pap\n",
+			&chk);
+		ane_dart_fw_map_detach(ane);
+		return -EIO;
+	}
+	dev_info(ane->dev,
+		 "dart_fw_map: MAPPED into default domain - TEXT iova 0 size 0x%llx pa 0x%llx; DATA iova 0x%llx size 0x%llx pa 0x%llx\n",
+		 fw_text_size, fw_text_pa, fw_text_size, fw_data_size,
+		 fw_data_pa);
+	return 0;
+}
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -1079,6 +1257,12 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto put_pm;
 
+	if (dart_fw_map) {
+		err = ane_dart_fw_map(ane);
+		if (err)
+			goto put_pm;
+	}
+
 	dev_info(dev, "loaded ane\n");
 
 	return 0;
@@ -1099,6 +1283,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	struct ane_device *ane = platform_get_drvdata(pdev);
 	struct ane_bo *bo, *tmp;
 
+	ane_dart_fw_map_detach(ane);
 	mutex_lock(&ane->engine_lock);
 	ane->removed = true;
 	drm_dev_unplug(&ane->drm);
