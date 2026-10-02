@@ -1,0 +1,12 @@
+{
+  "chips": [
+    {
+      "chip": "t8112",
+      "state": "opt-in",
+      "verdict": "PROMOTE",
+      "rows": [
+        {"row_sha": "synthetic001", "judged": true, "passed": true, "reasons": []}
+      ]
+    }
+  ]
+}

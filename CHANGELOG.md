@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The `promotion` workflow runs the promotion flow with no person in the loop: a daily cron judges the community rows, opens or updates one auto-promotion PR per PROMOTE or REVERT verdict, runs the host tests plus a fresh-verdict comparison in the gate, squash-merges, and cuts the patch release (CHANGELOG move, tag on the merge commit, GitHub release with the row shas and the tarball sha256 in the summary). `dry_run` prints the plan. Synthetic verdict fixtures are refused in this repo.
+
 - `tools/promote_chip.py` flips a chip between opt-in and on-by-default exactly like the PR that did it by hand: the overlays row and tested header, the overlay's opt-in marker, the omarchy-ane-check case lists, the omarchy-ane-dt opt-in enumeration, firmware-fetch DEFAULT_ON, the README State/Opt-in key cells, one CHANGELOG line. `--check` prints the diff without writing; `--apply` is idempotent and its revert restores the tree byte for byte except that CHANGELOG line. `test_ane_dt` now derives its enabled/opt-in expectations from the overlays table, so a flip needs no test edits.
 - `omarchy-ane-check` prints the bring-up steps after its `UNTESTED SoC` line: add the opt-in key, on T6020/T6022/T8112 run `omarchy-ane-firmware-fetch` first, then `omarchy-ane-dt apply`, `update-m1n1`, reboot, and submit a collector row with `--ane-smoke` when the machine is idle. The machine-parsed lines are unchanged.
 - `omarchy-ane-smoke` now routes T8103/T6000/T6001/T6002 to the packaged H13 add fixture and T6020/T6021/T6022/T8112 to H14. H13 checks 64 valid little-endian fp16 planes and zero padding across the full 16 KiB tile. See `receipts/2026-10-02-h13-smoke/README.md`.

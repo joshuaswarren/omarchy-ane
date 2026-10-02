@@ -1,0 +1,143 @@
+name: promotion
+
+# The promotion flow with no person in the loop: judge the community rows,
+# open PRs for PROMOTE (untested chip) and REVERT (default-on chip) verdicts,
+# run the host tests, require the fresh verdict to still match, squash-merge,
+# and cut the patch release. A dry_run dispatch prints every step instead.
+# Synthetic verdict fixtures are refused in the production repo.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "print the propose/merge/release actions without doing them"
+        type: boolean
+        default: false
+      synthetic:
+        description: "judge tools/promotion_synthetic.json instead of the live dataset (test repos only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: promotion
+  cancel-in-progress: false
+
+jobs:
+  verdict:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: refuse a synthetic verdict in the production repo
+        if: inputs.synthetic && github.repository == 'joshuaswarren/omarchy-ane'
+        run: |
+          echo "::error::synthetic verdicts are refused in $GITHUB_REPOSITORY"
+          exit 1
+      - name: verdict
+        run: |
+          if [ "${{ inputs.synthetic }}" = "true" ]; then
+            python3 tools/promotion_check.py --json tools/promotion_synthetic.json > verdict.json
+          else
+            python3 tools/promotion_check.py --remote --json > verdict.json
+          fi
+          cat verdict.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verdict
+          path: verdict.json
+
+  propose:
+    needs: verdict
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: verdict
+      - name: propose (or print the plan, with dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          git config user.name omarchy-ane-automation
+          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          python3 tools/promote_from_verdict.py propose --verdict-file verdict.json \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
+  gate:
+    needs: propose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      merged: ${{ steps.gate.outputs.merged }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: verdict
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev
+      - name: gate every auto-promotion PR (host tests, fresh verdict, squash-merge)
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          git config user.name omarchy-ane-automation
+          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          tools/asahi-dtbs "$RUNNER_TEMP/asahi"
+          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
+          : > merged.txt
+          for pr in $(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+                        --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number'); do
+            echo "== gate PR #$pr"
+            git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
+            python3 tools/test_ane_dt.py
+            python3 tools/test_ane_firmware_fetch.py
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
+            python3 tools/test_t8112_kit.py
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
+            python3 tools/test_promotion_check.py
+            python3 tools/test_promote_chip.py
+            python3 tools/test_ane_smoke.py
+            make -C tools check
+            if [ "${{ inputs.synthetic }}" = "true" ]; then
+              python3 tools/promotion_check.py --json tools/promotion_synthetic.json > fresh.json
+            else
+              python3 tools/promotion_check.py --remote --json > fresh.json
+            fi
+            out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" --verdict-file fresh.json)
+            echo "$out"
+            grep '^MERGED' <<<"$out" | cut -f2- >> merged.txt || true
+            git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
+          done
+          {
+            echo 'merged<<EOF'
+            cat merged.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: gate
+    if: needs.gate.outputs.merged != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: release every merged promotion (tag, changelog, publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          git config user.name omarchy-ane-automation
+          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          while read -r chip sha; do
+            [ -n "$chip" ] || continue
+            python3 tools/promote_from_verdict.py release --chip "$chip" --merge-sha "$sha"
+          done <<< "${{ needs.gate.outputs.merged }}"
