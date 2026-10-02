@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
+  steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
+  revert made opt-in again got no firmware step.
+
 ## 0.4.1 (2026-10-02)
 
 Both drivers count ANE work for monitoring, and the M1 family has its own

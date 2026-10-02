@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Offline checks for the M2-family ANE defaults. The T6021 ANE is on by
-default: its overlay applies with no opt-in file and omarchy-ane-check reports
-ready. The untested T6020, T6022 and T8112 stay opt-in, so without their key no node
-carries a compatible from a driver alias table, and the driver, which udev
-autoloads by that compatible, does not load there. No network and no module
-loads. Needs dtc and fdtoverlay 1.7.1 or newer."""
+"""Offline checks for the M2-family ANE defaults. A SoC whose overlay row is
+enabled (TESTED, from packaging/dt/overlays; T6021 today) is on by default: its
+overlay applies with no opt-in file and omarchy-ane-check reports ready. Every
+other SoC stays opt-in, so without its key no node carries a compatible from a
+driver alias table, and the driver, which udev autoloads by that compatible,
+does not load there. No network and no module loads. Needs dtc and fdtoverlay
+1.7.1 or newer."""
 from contextlib import redirect_stdout
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -109,21 +110,20 @@ def apply(root):
     return oadt.Tree(copies[0].read_bytes()) if copies else None
 
 
-tree = apply(machine('t6021', 'j414c'))
-assert tree, 'the T6021 overlay applies with no opt-in file'
-ane = tree.ane_nodes()
-assert [tree.strings(p, 'compatible') for p in ane] == [['apple,t6021-ane']], ane
-# The stock apple-mailbox binds the ANE mailbox only with both interrupts.
-mbox = tree.phandles[oadt.cells(tree.nodes[ane[0]]['mboxes'])[0]]
-assert tree.strings(mbox, 'interrupt-names') == ['recv-not-empty', 'send-empty']
-assert '/config' not in tree.nodes, 'the U-Boot input overlay stays off'
-for soc, board in (('t6020', 'j414s'), ('t6022', 'j180d')):
+for soc, board in (('t6020', 'j414s'), ('t6021', 'j414c'), ('t6022', 'j180d')):
     root = machine(soc, board)
-    assert apply(root) is None, f'{soc}: no node without ane-{soc}'
-    (root / oadt.OPT_IN).parent.mkdir(parents=True)
-    (root / oadt.OPT_IN).write_text(f'ane-{soc}\n')
+    if soc not in TESTED:
+        assert apply(root) is None, f'{soc}: no node without ane-{soc}'
+        (root / oadt.OPT_IN).parent.mkdir(parents=True)
+        (root / oadt.OPT_IN).write_text(f'ane-{soc}\n')
     tree = apply(root)
-    assert [tree.strings(p, 'compatible') for p in tree.ane_nodes()] == [[f'apple,{soc}-ane']], soc
+    assert tree, f'{soc}: the overlay applies' + (' with no opt-in file' if soc in TESTED else '')
+    ane = tree.ane_nodes()
+    assert [tree.strings(p, 'compatible') for p in ane] == [[f'apple,{soc}-ane']], (soc, ane)
+    # The stock apple-mailbox binds the ANE mailbox only with both interrupts.
+    mbox = tree.phandles[oadt.cells(tree.nodes[ane[0]]['mboxes'])[0]]
+    assert tree.strings(mbox, 'interrupt-names') == ['recv-not-empty', 'send-empty'], soc
+    assert '/config' not in tree.nodes, 'the U-Boot input overlay stays off'
 
 # 3. omarchy-ane-check --root on a fake running system: node present, module
 # built, loaded and bound, accel node mode 0666. modinfo is a stub; the
@@ -166,22 +166,21 @@ def check(soc, board, compat, mod, real_fetch=False, bound=True):
     return out.returncode, out.stdout + out.stderr
 
 
-rc, out = check('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021')
-assert rc == 0 and out.endswith('omarchy-ane-check: ready\n') and 'UNTESTED' not in out, out
-assert '  ok    ANE firmware: ' in out and '  ok    ane_t6021 is bound to ane.1' in out, out
-rc, out = check('t8103', 'j293', 'apple,t8103-ane', 'ane')
-assert rc == 0 and 'UNTESTED' not in out and 'firmware' not in out, out
-for soc, board, compat, mod in (('t6000', 'j314s', 'apple,t6000-ane', 'ane'),
+for soc, board, compat, mod in (('t8103', 'j293', 'apple,t8103-ane', 'ane'),
+                                ('t6000', 'j314s', 'apple,t6000-ane', 'ane'),
                                 ('t6002', 'j375d', 'apple,t6000-ane', 'ane'),
                                 ('t6020', 'j414s', 'apple,t6020-ane', 'ane_t6021'),
+                                ('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021'),
                                 ('t6022', 'j180d', 'apple,t6022-ane', 'ane_t6021'),
                                 ('t8112', 'j413', 'apple,t8112-ane', 'ane_t6021')):
     rc, out = check(soc, board, compat, mod)
-    base = f'UNTESTED SoC: {soc}. {mod} has not run on it.'
-    if soc in TESTED:  # promoted: on by default, no UNTESTED line
-        assert rc == 0 and 'UNTESTED' not in out, out
+    assert f'  ok    {mod} is bound to ane.1' in out, out
+    # ane_t6021 SoCs need the firmware that Linux starts; ane.ko SoCs need none
+    assert '  ok    ANE firmware: ' in out if mod == 'ane_t6021' else 'firmware' not in out, out
+    if soc in TESTED:  # on by default: no UNTESTED line
+        assert rc == 0 and out.endswith('omarchy-ane-check: ready\n') and 'UNTESTED' not in out, out
         continue
-    assert rc == 0 and base in out, out
+    assert rc == 0 and f'UNTESTED SoC: {soc}. {mod} has not run on it.' in out, out
     assert f'  To bring the chip up:' in out, out
     assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in' in out, out
     n = 2

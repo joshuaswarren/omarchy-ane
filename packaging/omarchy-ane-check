@@ -86,7 +86,7 @@ case $soc in
   t6000|t6002|t6020|t6022|t8112)
     echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in."
     steps=("echo ane-$soc | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in")
-    case $soc in t6020|t6022|t8112) steps+=("sudo omarchy-ane-firmware-fetch") ;; esac
+    [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
     steps+=("sudo omarchy-ane-dt apply" "sudo update-m1n1" "sudo reboot")
     echo "  To bring the chip up:"
     for i in "${!steps[@]}"; do printf '    %d. %s\n' "$((i + 1))" "${steps[$i]}"; done
