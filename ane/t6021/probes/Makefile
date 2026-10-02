@@ -1,5 +1,6 @@
 ifneq ($(KERNELRELEASE),)
-	obj-m := ane_afbridge_probe.o ane_dart_probe.o ane_dcs_ps_probe.o
+	obj-m := ane_afbridge_probe.o ane_dart_probe.o ane_dcs_ps_probe.o \
+		 ane_dsid_tm_probe.o
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 
