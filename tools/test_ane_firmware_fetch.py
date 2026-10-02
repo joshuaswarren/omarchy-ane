@@ -125,6 +125,10 @@ with contextlib.redirect_stdout(io.StringIO()):
 # good vendor copy the tool still installs ours (the fetch is a stub here).
 good, other = b'pinned bytes', b'other bytes'
 fetch.FETCH['apple,t6021'] = (*fetch.SELENE[:2], len(good), hashlib.sha256(good).hexdigest())
+# This section tests the fetch mechanics of an on-by-default chip; the
+# table-derived hook behaviour is covered in the section above. Pinned, so a
+# promotion flip (tools/promote_chip.py) does not change what is under test.
+fetch.DEFAULT_ON = ('apple,t6021',)
 fetch.fetch_member = lambda url, member: der(0x30, der(0x16, b'IM4P') + der(0x16, b'anef') + der(0x16, b'1') +
                                              der(0x04, good))
 name = fetch.SELENE[1]
