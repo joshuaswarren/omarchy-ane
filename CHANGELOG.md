@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Data-only records for twelve SoCs no driver binds: H15 (T8122, T6030, T6031, T6034), H16 (T8132, T6040, T6041), H17 (T8140, T8142, T6050) and H18 (T8150, T8152) in `data/ane-soc/`, with data-only overlays for T8132, T6040, T6041, T8140 and T8152 and a receipt per generation. The README data-only table now lists SoC, internal name, board count and whether an overlay exists; the file paths moved to the line above it, so the README stays above the reading-ease fail line. The README chip-coverage note names the four post-M2 ANE shapes.
+
 - `omarchy-ane-probe` (`tools/omarchy-ane-probe`) prints the ANE state of any Apple Silicon Linux machine as one JSON document. It reports the ANE, DART, power-domain and mailbox device-tree nodes (also unknown generations), the `ane*` modules and interrupts, runtime-PM state, the pacman versions, the DKMS module files, and the `omarchy-ane-check` and `omarchy-ane-firmware-fetch --check` results. It also compares the device tree with `data/ane-soc/<soc>.json`. It is read-only, needs no root and no network, exits 0 and keeps the document within 8 KiB. The community collector embeds the document as `ane_linux.ane_probe`. See `docs/ane-probe.md`.
 
 - The `promotion` workflow runs the promotion flow with no person in the loop: a daily cron judges the community rows, opens or updates one auto-promotion PR per PROMOTE or REVERT verdict, runs the host tests plus a fresh-verdict comparison in the gate, squash-merges, and cuts the patch release (CHANGELOG move, tag on the merge commit, GitHub release with the row shas and the tarball sha256 in the summary). `dry_run` prints the plan. Synthetic verdict fixtures are refused in this repo.

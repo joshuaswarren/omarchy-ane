@@ -1,0 +1,398 @@
+{
+  "soc": "t8132",
+  "marketing": {
+    "v": "Apple M4 family base SoC; Aurora t8132.dtsi:3 names T8132 as M4. Board identifiers and Mac16,x mappings are listed separately. The 27.0 IPSW corpus contains Mac boards, not an iPad board.",
+    "src": "S4"
+  },
+  "generation": {
+    "v": "H16",
+    "src": "S2"
+  },
+  "boards": [
+    {
+      "v": "J604 / Mac16,1",
+      "src": "S3"
+    },
+    {
+      "v": "J623 / Mac16,2",
+      "src": "S6"
+    },
+    {
+      "v": "J624 / Mac16,3",
+      "src": "S7"
+    },
+    {
+      "v": "J713 / Mac16,12",
+      "src": "S8"
+    },
+    {
+      "v": "J715 / Mac16,13",
+      "src": "S9"
+    },
+    {
+      "v": "J773g / Mac16,10",
+      "src": "S10"
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "buildmanifest",
+      "ref": "macOS 27.0 26A428 IPSW BuildManifest.plist; ApChipID 0x8132 and associated DeviceClass entries",
+      "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7"
+    },
+    {
+      "id": "S2",
+      "kind": "ipsw-firmware",
+      "ref": "macOS 27.0 26A428 IPSW Firmware/ane/h16_ane_fw_leto_j7x.im4p wrapper; payload not decrypted or unpacked",
+      "sha256": "594fb62ef07a628c37e22c9d91b1d96855c72a6471eb9d25a260998c9496904d"
+    },
+    {
+      "id": "S3",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j604ap.adt; /arm-io/ane, /arm-io/dart-ane, /arm-io/pmgr",
+      "sha256": "fa30e1c7dfd19d71d5483cc5690617e098ddac319c50657cd53722cb97dca1dd"
+    },
+    {
+      "id": "S4",
+      "kind": "aurora-dts",
+      "ref": "aurora-wip b3a55ee68bfb arch/arm64/boot/dts/apple/t8132.dtsi:3; T8132 to M4 family",
+      "sha256": "4bcfc07b11c957a5525ddb4606559cd481525365baf9c4f84694d144966bf0bf"
+    },
+    {
+      "id": "S5",
+      "kind": "community-row",
+      "ref": "mil-hwx-compiler receipts/2026-09-05-ane-community/h16g-w8a8-inspection.log; H16G subtype 7, ISA 17",
+      "sha256": "62ecd1abb031568432bd3e91ba47f8d1d8566ee2291b7db5fc886084c448b853"
+    },
+    {
+      "id": "S6",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j623ap.adt; extracted board root and ANE node",
+      "sha256": "b1ea7673bb96e22f2e5fcb755045c9c96de8e0fd3d3c30b7251f22d080b19f9d"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j624ap.adt; extracted board root and ANE node",
+      "sha256": "21286eb2e7186a90106d75a38659e2081f22f514b49b884cb5e92e28d05383bc"
+    },
+    {
+      "id": "S8",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j713ap.adt; extracted board root and ANE node",
+      "sha256": "e9e7ccc35687e65d7e94113de6b9bcc95ef7ad3bae53c455cc4f0225bb7099e1"
+    },
+    {
+      "id": "S9",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j715ap.adt; extracted board root and ANE node",
+      "sha256": "cd040867477db601f34a203422cc52523e7e2d0c2a897d513d0bbb858129f754"
+    },
+    {
+      "id": "S10",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j773gap.adt; extracted board root and ANE node",
+      "sha256": "2f7a214a7e09b180af18e78d4f7fea13efccea5f43f51cc590469c099293e4e7"
+    }
+  ],
+  "ane": {
+    "compatible": {
+      "v": "ane,t8020",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "name": {
+          "v": "engine",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x500000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x2000000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x380700000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x18000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr_aux",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x380724000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux0",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x3803c0000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x30000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux1",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x211000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0xff4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux2",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x3882c8000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      }
+    ],
+    "interrupts": {
+      "v": [
+        629,
+        642
+      ],
+      "src": "S3"
+    },
+    "power_domains": [
+      {
+        "v": "ANE-SYS-V",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP",
+        "src": "S3"
+      }
+    ],
+    "clock_ids": [
+      {
+        "v": 349,
+        "src": "S3"
+      },
+      {
+        "v": 348,
+        "src": "S3"
+      },
+      {
+        "v": 347,
+        "src": "S3"
+      }
+    ],
+    "iommus": {
+      "compatible": {
+        "v": "dart,t8110",
+        "src": "S3"
+      },
+      "reg": [
+        {
+          "v": "0x501800000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501820000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501840000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501810000+0x4000",
+          "src": "S3"
+        }
+      ],
+      "interrupt": {
+        "v": 630,
+        "src": "S3"
+      },
+      "sid": {
+        "v": [
+          "0x0a00000000",
+          "0x0f0000000b"
+        ],
+        "src": "S3"
+      },
+      "vm_base": {
+        "v": "0x10000000000",
+        "src": "S3"
+      },
+      "vm_size": {
+        "v": "0x30000000000",
+        "src": "S3"
+      },
+      "page_size": {
+        "v": 16384,
+        "src": "S3"
+      }
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "v": "0x501800000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501820000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501840000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501810000+0x4000",
+        "src": "S3"
+      }
+    ],
+    "sid": {
+      "v": [
+        "0x0a00000000",
+        "0x0f0000000b"
+      ],
+      "src": "S3"
+    },
+    "vm_base": {
+      "v": "0x10000000000",
+      "src": "S3"
+    },
+    "vm_size": {
+      "v": "0x30000000000",
+      "src": "S3"
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S3"
+    },
+    "type": {
+      "v": "dart,t8110",
+      "src": "S3"
+    }
+  },
+  "mailbox": {
+    "v": null,
+    "reason": "No H16 mailbox node in IPSW ADT; the ANE entry names no mailbox reg or protocol. Need macOS ADT/ioreg and kernelcache register-path analysis."
+  },
+  "pmgr": {
+    "v": [
+      {
+        "v": "ANE_SYS@0x380700570 parent=AFISOCNI5",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_MPM@0x38070c000 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_CPU@0x38070c008 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_TD@0x38070c010 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_BASE@0x38070c018 parent=ANE_TD",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V (no_ps)",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP (no_ps)",
+        "src": "S3"
+      }
+    ],
+    "src": "S3"
+  },
+  "firmware": {
+    "name": {
+      "v": "h16_ane_fw_leto_j7x.im4p",
+      "src": "S2"
+    },
+    "size": {
+      "v": 1556505,
+      "src": "S2"
+    },
+    "sha256": {
+      "v": "594fb62ef07a628c37e22c9d91b1d96855c72a6471eb9d25a260998c9496904d",
+      "src": "S2"
+    },
+    "format": {
+      "v": "IM4P: SEQUENCE has IM4P/anef/1 plus one OCTET STRING (1556480 bytes) beginning Mach-O MH_MAGIC_64 cffaedfe; no KBAG or additional keybag field; no LZFSE marker observed.",
+      "src": "S2"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S2"
+    },
+    "loaded_by": {
+      "v": null,
+      "reason": "No boot or kernelcache trace in this static survey establishes how H16 firmware is loaded."
+    }
+  },
+  "kext": {
+    "class": {
+      "v": null,
+      "reason": "No H16 kernelcache kext was extracted or inspected in this pass."
+    },
+    "protocol": {
+      "v": null,
+      "reason": "No H16 kernelcache kext binary or symbol analysis is available in this static survey."
+    }
+  },
+  "driver_family": {
+    "v": "unknown pending mailbox/firmware probe; H14 ane_t6021-like RTKit/ASC is a working hypothesis only",
+    "src": "S3"
+  },
+  "hwx_generation": {
+    "v": "H16G; CPU subtype 7, ISA 17. mil-hwx-compiler emits and inspects H16G objects; this is compiler evidence, not ANE runtime proof.",
+    "src": "S5"
+  },
+  "state": "data-only"
+}

@@ -1,0 +1,353 @@
+{
+  "soc": "t6030",
+  "state": "data-only",
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 26A428 ADT facts as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt; SHA-256 is of that cited receipt.",
+      "sha256": "04fe38b8ee009700f02e2c01e83bf608afab5e843f5878a83f162973a1ffdb84"
+    },
+    {
+      "id": "S2",
+      "kind": "buildmanifest",
+      "ref": "macOS 27.0 26A428 BuildManifest ANE entries as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt; SHA-256 is of that cited receipt.",
+      "sha256": "3e17bc4d66bd523251436f46281495ff30baa9abf81e772270feb24c05594f7d"
+    },
+    {
+      "id": "S3",
+      "kind": "ipsw-firmware",
+      "ref": "macOS 27.0 26A428 IPSW member Firmware/ane/t603x_ane0_fw_erebus_ls5x.im4p; SHA-256 of the 1605632-byte Mach-O payload after IM4P ASN.1 unwrap; payload bytes not retained.",
+      "sha256": "43da9d566a880bab1bd8ef9cd3dd3ea4a55ae6c016d2ec7f4f97f4fda99867a0"
+    },
+    {
+      "id": "S4",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334, arch/arm64/boot/dts/apple/t6030.dtsi; SHA-256 of this source file.",
+      "sha256": "202e562dbb0b6f57618c1e68748165b277e7d97327bebaa48a66775445968b17"
+    },
+    {
+      "id": "S5",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334, arch/arm64/boot/dts/apple/t6030-pmgr.dtsi; SHA-256 of this source file.",
+      "sha256": "9c71287c3fb2378f59da415185b9a87431bfc62073e7fa0546e9c44cd9a70adb"
+    },
+    {
+      "id": "S6",
+      "kind": "compiler-oracle",
+      "ref": "receipts/2026-09-05-ane-community/anecompile-cross-target.json; H15 cross-target compile and Mach-O CPU subtype observations.",
+      "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-adt",
+      "ref": "macOS 13.5 ANE DART page-size evidence as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/adt-13.5.txt; used only for the explicitly marked T8110-family inference.",
+      "sha256": "e4628cbf45c5735c8cd2d67b937421d4098870a36a1920cf7ac21855441412d8"
+    }
+  ],
+  "marketing": {
+    "v": "M3 Pro",
+    "src": "S2"
+  },
+  "generation": {
+    "v": "H15J",
+    "src": "S6"
+  },
+  "boards": [
+    {
+      "v": {
+        "value": "j514s",
+        "marketing_product": "MacBook Pro 14-inch M3 Pro (Nov 2023, 11/12-core)"
+      },
+      "src": "S1"
+    },
+    {
+      "v": {
+        "value": "j516s",
+        "marketing_product": "MacBook Pro 16-inch M3 Pro (Nov 2023, 11/12-core)"
+      },
+      "src": "S1"
+    }
+  ],
+  "ane": {
+    "compatible": {
+      "v": "iop,ascwrap-v6",
+      "src": "S1"
+    },
+    "reg": [
+      {
+        "v": {
+          "name": "ane",
+          "base": "0x309400000",
+          "size": "0x6c000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane_alt",
+          "base": "0x309050000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "engine",
+          "base": "0x308000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr",
+          "base": "0x350700000",
+          "size": "0x18000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr_ps",
+          "base": "0x350724000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr_sub2",
+          "base": "0x3503c0000",
+          "size": "0x24000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "engine_alias",
+          "base": "0x211000000",
+          "size": "0xf74000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "fw_data",
+          "base": "0x3642c8000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
+    ],
+    "interrupts": {
+      "v": [
+        559,
+        558,
+        561,
+        560,
+        576
+      ],
+      "src": "S1"
+    },
+    "ane_type": {
+      "v": 192,
+      "src": "S1"
+    },
+    "power_gates": {
+      "v": [
+        "ANE_CPU",
+        "ANE-SYS-V"
+      ],
+      "src": "S1"
+    },
+    "iommus": {
+      "v": null,
+      "reason": "see t8122.json dart_phandle_field; ADT summary did not preserve the iommu-parent phandle."
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S1"
+    },
+    "reg": [
+      {
+        "v": {
+          "name": "ttbr0",
+          "base": "0x309800000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr1",
+          "base": "0x309810000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr2",
+          "base": "0x309820000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr3",
+          "base": "0x309804000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
+    ],
+    "interrupts": {
+      "v": [
+        577
+      ],
+      "src": "S1"
+    },
+    "sid": {
+      "v": null,
+      "reason": "see t8122.json dart.sid; ADT detail not re-extracted."
+    },
+    "vm_base": {
+      "v": null,
+      "reason": "see t8122.json dart.vm_base."
+    },
+    "vm_size": {
+      "v": null,
+      "reason": "see t8122.json dart.vm_size."
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S7"
+    }
+  },
+  "mailbox": {
+    "compatible": {
+      "v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4 (T6030 reuses the T6031 mailbox compatible per the kernel S4 — T6030 has no MTP/AOP DARTs of its own at this address, but the ANE ascwrap-v6 mailbox is the same 0x6c000 region; the 0x4000 'ane_alt' window is the apple,asc-mailbox-v4 doorbell block, shared class with T6031/T6021)",
+      "src": "S4"
+    },
+    "reg": [
+      {
+        "v": {
+          "name": "mbox",
+          "base": "0x309050000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
+    ],
+    "interrupts": {
+      "v": [
+        558,
+        560,
+        561,
+        559,
+        576
+      ],
+      "src": "S1"
+    }
+  },
+  "pmgr": {
+    "ANE_SYS": {
+      "v": "0x350700498",
+      "src": "S1"
+    },
+    "ANE_SYS_parents": {
+      "v": [
+        "LW20"
+      ],
+      "src": "S1"
+    },
+    "ANE_MPM": {
+      "v": "0x35070c000",
+      "src": "S1"
+    },
+    "ANE_CPU": {
+      "v": "0x35070c008",
+      "src": "S1"
+    },
+    "ANE_TD": {
+      "v": "0x35070c010",
+      "src": "S1"
+    },
+    "ANE_BASE": {
+      "v": "0x35070c018",
+      "src": "S1"
+    },
+    "power_domain_compatibles": {
+      "v": [
+        "apple,t6030-pmgr-pwrstate",
+        "apple,t8103-pmgr-pwrstate"
+      ],
+      "src": "S5"
+    },
+    "ane_cpu_count": {
+      "v": 1,
+      "src": "S1"
+    }
+  },
+  "firmware": {
+    "name": {
+      "v": "t603x_ane0_fw_erebus_ls5x.im4p",
+      "src": "S2"
+    },
+    "size": {
+      "v": 1605657,
+      "src": "S2"
+    },
+    "sha256": {
+      "v": "43da9d566a880bab1bd8ef9cd3dd3ea4a55ae6c016d2ec7f4f97f4fda99867a0",
+      "src": "S3"
+    },
+    "format": {
+      "v": "Mach-O (IM4P payload type anef)",
+      "src": "S2"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S2"
+    },
+    "loaded_by": {
+      "v": {
+        "IsFUDFirmware": true,
+        "IsLoadedByiBoot": true,
+        "IsLoadedByiBootStage1": false,
+        "IsiBootEANFirmware": false
+      },
+      "src": "S2"
+    }
+  },
+  "kext": {
+    "class": {
+      "v": null,
+      "reason": "see t8122.json kext.class"
+    },
+    "protocol": {
+      "v": null,
+      "reason": "see t8122.json kext.protocol"
+    },
+    "host_interface": {
+      "v": null,
+      "reason": "The macOS 27.0 M3 kernelcache was not fetched; host interface version not extracted."
+    }
+  },
+  "driver_family": {
+    "v": "ane_t6021's RTKit/firmware model — extended",
+    "src": "S6"
+  },
+  "hwx_generation": {
+    "v": {
+      "target": "h15",
+      "mach_o_cpusubtype": 6,
+      "hwx_bytes": 49152
+    },
+    "src": "S6"
+  }
+}

@@ -1,0 +1,375 @@
+{
+  "soc": "t6040",
+  "marketing": {
+    "v": "Unverified marketing tier: macOS 27.0 BuildManifest maps ApChipID 0x6040 to j614sap/j616sap/j773sap and shared t604x firmware, but gives no M4 Pro/Max marketing name.",
+    "src": "S1"
+  },
+  "generation": {
+    "v": "H16",
+    "src": "S2"
+  },
+  "boards": [
+    {
+      "v": "J614s / Mac16,8",
+      "src": "S3"
+    },
+    {
+      "v": "J616s / Mac16,7",
+      "src": "S7"
+    },
+    {
+      "v": "J773s / Mac16,11",
+      "src": "S8"
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "buildmanifest",
+      "ref": "macOS 27.0 26A428 IPSW BuildManifest.plist; ApChipID 0x6040 DeviceClass entries",
+      "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7"
+    },
+    {
+      "id": "S2",
+      "kind": "ipsw-firmware",
+      "ref": "macOS 27.0 IPSW Firmware/ane/t604x_ane_fw_aether_brvx.im4p shared wrapper; payload not decrypted or unpacked",
+      "sha256": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3"
+    },
+    {
+      "id": "S3",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j614sap.adt; /arm-io/ane0, /arm-io/dart-ane, /arm-io/pmgr",
+      "sha256": "7f0ace882bd5a090224329dc3a7049de8febd754890ae8e25b92277216e1b136"
+    },
+    {
+      "id": "S6",
+      "kind": "community-row",
+      "ref": "mil-hwx-compiler receipts/2026-09-05-ane-community/h16g-w8a8-inspection.log; H16G subtype 7, ISA 17",
+      "sha256": "62ecd1abb031568432bd3e91ba47f8d1d8566ee2291b7db5fc886084c448b853"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j616sap.adt; extracted board root and ANE node",
+      "sha256": "7521c6a204c7cb9326e4a8072855df9ce7b2a4e6e99bdb4fcad9770693243de3"
+    },
+    {
+      "id": "S8",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j773sap.adt; extracted board root and ANE node",
+      "sha256": "49f629c93ea457eb67e86a4dc31145ac42d626025af458216ddc480540298d14"
+    }
+  ],
+  "ane": {
+    "compatible": {
+      "v": "ane,t8020",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "name": {
+          "v": "engine",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x484000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x2000000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x502280000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x18000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr_aux",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x5022a0000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux0",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x5003c0000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x30000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux1",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x212000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0xff4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux2",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x522000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x2000000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux3",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x508374000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      }
+    ],
+    "interrupts": {
+      "v": [
+        1054
+      ],
+      "src": "S3"
+    },
+    "power_domains": [
+      {
+        "v": "ANE-SYS-V",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP",
+        "src": "S3"
+      }
+    ],
+    "clock_ids": [
+      {
+        "v": 352,
+        "src": "S3"
+      },
+      {
+        "v": 351,
+        "src": "S3"
+      },
+      {
+        "v": 350,
+        "src": "S3"
+      }
+    ],
+    "iommus": {
+      "compatible": {
+        "v": "dart,t8110",
+        "src": "S3"
+      },
+      "reg": [
+        {
+          "v": "0x485800000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x485820000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x485840000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x485810000+0x4000",
+          "src": "S3"
+        }
+      ],
+      "interrupt": {
+        "v": 1055,
+        "src": "S3"
+      },
+      "sid": {
+        "v": [
+          "0x0a00000000",
+          "0x0f0000000b"
+        ],
+        "src": "S3"
+      },
+      "vm_base": {
+        "v": "0x10000000000",
+        "src": "S3"
+      },
+      "vm_size": {
+        "v": "0x30000000000",
+        "src": "S3"
+      },
+      "page_size": {
+        "v": 16384,
+        "src": "S3"
+      }
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "v": "0x485800000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x485820000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x485840000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x485810000+0x4000",
+        "src": "S3"
+      }
+    ],
+    "sid": {
+      "v": [
+        "0x0a00000000",
+        "0x0f0000000b"
+      ],
+      "src": "S3"
+    },
+    "vm_base": {
+      "v": "0x10000000000",
+      "src": "S3"
+    },
+    "vm_size": {
+      "v": "0x30000000000",
+      "src": "S3"
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S3"
+    },
+    "type": {
+      "v": "dart,t8110",
+      "src": "S3"
+    }
+  },
+  "mailbox": {
+    "v": null,
+    "reason": "No H16 mailbox node in IPSW ADT; ANE node contains no mailbox reg/protocol."
+  },
+  "pmgr": {
+    "v": [
+      {
+        "v": "ANE_SYS@0x5022803c0 parent=FAB5_SOC,FAB4_SOC",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_MPM@0x50228c000 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_CPU@0x50228c008 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_TD@0x50228c010 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_BASE@0x50228c018 parent=ANE_TD",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V (no_ps)",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP (no_ps)",
+        "src": "S3"
+      }
+    ],
+    "src": "S3"
+  },
+  "firmware": {
+    "name": {
+      "v": "t604x_ane_fw_aether_brvx.im4p",
+      "src": "S1"
+    },
+    "size": {
+      "v": 1556505,
+      "src": "S1"
+    },
+    "sha256": {
+      "v": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3",
+      "src": "S2"
+    },
+    "format": {
+      "v": "IM4P: SEQUENCE has IM4P/anef/1 plus one OCTET STRING (1556480 bytes) beginning Mach-O MH_MAGIC_64 cffaedfe; no KBAG or additional keybag field; no LZFSE marker observed.",
+      "src": "S2"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S2"
+    },
+    "loaded_by": {
+      "v": null,
+      "reason": "No iBoot/kernelcache trace establishes the H16 loader."
+    }
+  },
+  "kext": {
+    "class": {
+      "v": null,
+      "reason": "H16 kernelcache was not extracted or inspected."
+    },
+    "protocol": {
+      "v": null,
+      "reason": "H16 kernelcache was not extracted or inspected."
+    }
+  },
+  "driver_family": {
+    "v": "unknown pending mailbox/firmware probe; H14 RTKit/ASC is a hypothesis, not established.",
+    "src": "S3"
+  },
+  "hwx_generation": {
+    "v": "H16G; subtype 7, ISA 17; compiler emits H16G HWX but this does not prove runtime compatibility.",
+    "src": "S6"
+  },
+  "state": "data-only"
+}

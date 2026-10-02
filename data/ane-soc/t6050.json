@@ -1,0 +1,484 @@
+{
+  "soc": "t6050",
+  "marketing": {
+    "v": "Mac17,7 (j714c) family; the marketing name is not in the IPSW",
+    "src": "A1"
+  },
+  "generation": {
+    "v": "H17",
+    "src": "F1"
+  },
+  "boards": [
+    {
+      "v": "j714c (J714cAP, Mac17,7)",
+      "src": "B1"
+    },
+    {
+      "v": "j714s (same ANE firmware)",
+      "src": "B1"
+    },
+    {
+      "v": "j716c (same ANE firmware)",
+      "src": "B1"
+    },
+    {
+      "v": "j716s (same ANE firmware)",
+      "src": "B1"
+    },
+    {
+      "v": "j775c (same ANE firmware)",
+      "src": "B1"
+    },
+    {
+      "v": "j775d (same ANE firmware)",
+      "src": "B1"
+    },
+    {
+      "v": "j873s (same ANE firmware)",
+      "src": "B1"
+    }
+  ],
+  "chip_ids": {
+    "v": {
+      "ApChipID": "0x6050",
+      "ApBoardID": "0x0A",
+      "arm-io": "arm-io,t6050"
+    },
+    "src": "B1"
+  },
+  "sources": [
+    {
+      "id": "A1",
+      "kind": "ipsw-adt",
+      "sha256": "5a9dff3c68350fe50c00a1c6d2522d76ecea2471b005d4657bfd5d767b6e05fd",
+      "ref": "macOS 27.0 (26A428) UniversalMac_27.0_26A428_Restore.ipsw, member Firmware/all_flash/DeviceTree.j714cap.im4p (hdr_off=0x5dbf17a33, size=102280 B, member sha256 14e893d2caed414dde4b0b1d6012729e8aaf0756ffc283b9e7f42f53c554e678); LZFSE payload of the IM4P, 883044 B; parsed with AsahiLinux m1n1 proxyclient adt.py (local checkout 647ae30); same bytes as AneAllSoc/every-soc/hashes/ipsw-members.sha256"
+    },
+    {
+      "id": "B1",
+      "kind": "buildmanifest",
+      "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7",
+      "ref": "macOS 27.0 (26A428) UniversalMac_27.0_26A428_Restore.ipsw, member BuildManifest.plist (hdr_off=0x5cf9d8824, size=31194642 B, member sha256 22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7); BuildIdentities for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap"
+    },
+    {
+      "id": "F1",
+      "kind": "ipsw-firmware",
+      "sha256": "ac48eb953c68752d0b4f69ac830adf5ad60019325a48bf1ee72997cf97b9c5a8",
+      "ref": "macOS 27.0 (26A428) UniversalMac_27.0_26A428_Restore.ipsw, member Firmware/ane/h17_ane0_fw_hyperion_j71y.im4p (hdr_off=0x5f9d28434, size=1556505 B, member sha256 ac48eb953c68752d0b4f69ac830adf5ad60019325a48bf1ee72997cf97b9c5a8); IM4P, 4 DER fields (no KBAG), payload is the raw Mach-O"
+    },
+    {
+      "id": "K1",
+      "kind": "kernelcache-kext",
+      "sha256": "a691760372651464138779c3201c1886a385ca656397362d8e7701ba19ebf436",
+      "ref": "macOS 27.0 (26A428) UniversalMac_27.0_26A428_Restore.ipsw, member kernelcache.release.mac17j (hdr_off=0x62be4d7db, size=32462739 B, member sha256 145d18f9fe9eb347eeeb9a5ce6fb63a0fab428a5e37e41f7062b6facca7b1da9); IM4P (krnl, LZFSE) decompressed to 123568128 B; kext list from `ipsw kernel kexts`, personalities from __PRELINK_INFO, strings from `ipsw kernel extract`"
+    },
+    {
+      "id": "F2",
+      "kind": "ipsw-firmware",
+      "sha256": "ad9151af4e732575a67ce007d385413b3d55a8eecffc562085678daa5bac151a",
+      "ref": "macOS 27.0 (26A428) UniversalMac_27.0_26A428_Restore.ipsw, member Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p (hdr_off=0x5fa04d3de, size=1720345 B, member sha256 ad9151af4e732575a67ce007d385413b3d55a8eecffc562085678daa5bac151a); the 27.0 H14 (T602x) image, used here only for the command-set comparison"
+    },
+    {
+      "id": "O1",
+      "kind": "compiler-oracle",
+      "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b",
+      "ref": "ane-research-mirror mil-hwx-compiler receipts/2026-09-05-ane-community/anecompile-cross-target.json (ANECCompile on an M1 Ultra, macOS 26.6.2 25G83; targets h13..h17)"
+    },
+    {
+      "id": "O2",
+      "kind": "compiler-oracle",
+      "sha256": "ed8912530c7fecbaeb1b17a55974acbf23e4485c0d4030438009261468b0f6af",
+      "ref": "NeoAne2 2026-10-02 rerun of the same ANECCompile tool on the same host for targets h16 and h17, cases add [1,64,1,1] and mul [1,256,1,16] fp16; structure and byte-diff counts only (lab notebook artifacts/NeoAne2/oracle/hwx-h16-vs-h17.txt)"
+    }
+  ],
+  "ane": {
+    "node": {
+      "v": "/arm-io/ane0",
+      "src": "A1"
+    },
+    "compatible": {
+      "v": "ane,t8132exclave",
+      "src": "A1"
+    },
+    "ane_type": {
+      "v": 544,
+      "src": "A1"
+    },
+    "reg": {
+      "v": [
+        {
+          "name": "reg[0]",
+          "base": "0x508000000",
+          "size": "0x2000000"
+        },
+        {
+          "name": "reg[1]",
+          "base": "0x280900000",
+          "size": "0x18000"
+        },
+        {
+          "name": "reg[2]",
+          "base": "0x280920000",
+          "size": "0x4000"
+        },
+        {
+          "name": "reg[3]",
+          "base": "0x284240000",
+          "size": "0x40000"
+        },
+        {
+          "name": "reg[4]",
+          "base": "0x212000000",
+          "size": "0xff4000"
+        },
+        {
+          "name": "reg[5]",
+          "base": "0x584000000",
+          "size": "0x2000000"
+        },
+        {
+          "name": "reg[6]",
+          "base": "0x288374000",
+          "size": "0x4000"
+        }
+      ],
+      "src": "A1"
+    },
+    "reg_names": {
+      "v": null,
+      "reason": "The ADT gives no window names. By position the layout equals the M4 (T8132) `ane,t8020` node; window roles are not measured."
+    },
+    "interrupts": {
+      "v": {
+        "lines": [
+          954,
+          967
+        ],
+        "controller": "aic,3 at 0x280400000+0x1cc000"
+      },
+      "src": "A1"
+    },
+    "power_domains": {
+      "v": [
+        "ANE_SYS_V (no_ps)",
+        "ANE_SYS_V_PMP (no_ps)"
+      ],
+      "src": "A1"
+    },
+    "clock_ids": {
+      "v": [
+        335,
+        334,
+        381
+      ],
+      "src": "A1"
+    },
+    "iommus": {
+      "v": {
+        "dart": "dart-ane0",
+        "streams": [
+          {
+            "mapper": "mapper-ane0",
+            "stream": 0
+          },
+          {
+            "mapper": "mapper-ane0-mpm",
+            "stream": 11
+          }
+        ]
+      },
+      "src": "A1"
+    },
+    "exclave": {
+      "v": {
+        "exclave-assigned": true,
+        "exclave-service": "com.apple.service.ANEExclave",
+        "exclave-edk-service": "com.apple.service.ANEExclave_EDK",
+        "exclave-reg": "0x549c00000+0x88000"
+      },
+      "src": "A1"
+    },
+    "other_props": {
+      "v": {
+        "pmp-virt-notify": 1,
+        "ane-subtype": 0,
+        "ane-id": 0,
+        "die-ane-id": 0
+      },
+      "src": "A1"
+    },
+    "segment_ranges": {
+      "v": null,
+      "reason": "No segment-ranges on the ANE node in the IPSW ADT. iBoot adds it at boot (T6021 precedent). Needs the live ADT of a booted machine (phram \"adt\" region, read-only)."
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "A1"
+    },
+    "type": {
+      "v": "t8110",
+      "src": "A1"
+    },
+    "reg": {
+      "v": [
+        "0x509800000+0xc000",
+        "0x509820000+0xc000",
+        "0x509840000+0xc000",
+        "0x509810000+0x4000"
+      ],
+      "src": "A1"
+    },
+    "interrupts": {
+      "v": [
+        955
+      ],
+      "src": "A1"
+    },
+    "sid": {
+      "v": [
+        0,
+        10,
+        11,
+        13,
+        15
+      ],
+      "src": "A1"
+    },
+    "exclave_sid": {
+      "v": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "src": "A1"
+    },
+    "sid_count": {
+      "v": 16,
+      "src": "A1"
+    },
+    "vm_base": {
+      "v": "0x10000000000",
+      "src": "A1"
+    },
+    "vm_size": {
+      "v": "0x30000000000",
+      "src": "A1"
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "A1"
+    },
+    "dart_options": {
+      "v": 37,
+      "src": "A1"
+    },
+    "flush_by_dva": {
+      "v": 1,
+      "src": "A1"
+    },
+    "bypass": {
+      "v": [
+        "bypass-10",
+        "bypass-13"
+      ],
+      "src": "A1"
+    },
+    "mappers": {
+      "v": {
+        "mapper-ane0": 0,
+        "mapper-ane0-iso1": 1,
+        "mapper-ane0-iso2": 2,
+        "mapper-ane0-iso3": 3,
+        "mapper-ane0-iso4": 4,
+        "mapper-ane0-iso5": 5,
+        "mapper-ane0-iso6": 6,
+        "mapper-ane0-iso7": 7,
+        "mapper-ane0-mpm": 11
+      },
+      "src": "A1"
+    },
+    "dapf_ranges": {
+      "v": [
+        "0x2809003a8-0x2809003ab",
+        "0x2809003c0-0x2809003d3",
+        "0x581668000-0x581668003",
+        "0x2302668000-0x2302668003",
+        "0x6302668000-0x6302668003"
+      ],
+      "src": "A1"
+    },
+    "power_domains": {
+      "v": [
+        "ANE_SYS_DART"
+      ],
+      "src": "A1"
+    },
+    "tunables": {
+      "v": null,
+      "reason": "No tunable properties on dart-ane in the IPSW ADT. ANE tunables are compiled into the per-SoC HAL kext (tunableh_* tables, see kext.hal); their values are not extracted."
+    }
+  },
+  "mailbox": {
+    "node": {
+      "v": null,
+      "reason": "No ANE mailbox or ASC node in the IPSW ADT (searched /arm-io for ane*, *exclave*, and compatibles with \"ane\"). The macOS class binds the ane node itself, as on T6021, where the ASC and its mailbox sit inside reg[0] (engine+0x1400000/+0x1408000). For H17 that offset is not measured."
+    },
+    "protocol": {
+      "v": "RTKit (RTBuddy endpoints) with the CSNE_CMD host command set: 96 CSNE_CMD names, including EXCLAVE_MODE_START/STOP and SECURE_MODE_*; RTKit string RTKit_release-3514.0.15.",
+      "src": "F1"
+    },
+    "protocol_vs_h14": {
+      "v": "The 27.0 H14 image (t602x selene) has the same 96 CSNE_CMD names and the same RTKit_release-3514.0.15 string; its PowerControl, TM and engine-loop sources are the H14 variants",
+      "src": "F2"
+    }
+  },
+  "pmgr": {
+    "ane_devices": {
+      "v": [
+        {
+          "name": "ANE_MPM",
+          "id": 222,
+          "ps": "0x2809003c0",
+          "parents": [
+            219
+          ]
+        },
+        {
+          "name": "ANE_CPU",
+          "id": 223,
+          "ps": "0x2809003c8",
+          "parents": [
+            219
+          ]
+        },
+        {
+          "name": "ANE_TDBASE",
+          "id": 224,
+          "ps": "0x2809003d0",
+          "parents": [
+            219
+          ]
+        },
+        {
+          "name": "ANE_SYS_V",
+          "id": 569,
+          "ps": "none (no_ps flag)"
+        },
+        {
+          "name": "ANE_SYS_V_PMP",
+          "id": 664,
+          "ps": "none (no_ps flag)"
+        },
+        {
+          "name": "ANE_SYS_DART",
+          "id": 568,
+          "ps": "none (no_ps flag)"
+        }
+      ],
+      "src": "A1"
+    }
+  },
+  "firmware": {
+    "name": {
+      "v": "h17_ane0_fw_hyperion_j71y.im4p",
+      "src": "B1"
+    },
+    "buildmanifest": {
+      "v": {
+        "ANE": {
+          "path": "Firmware/ane/h17_ane0_fw_hyperion_j71y.im4p",
+          "IsLoadedByiBoot": true,
+          "IsFUDFirmware": true,
+          "IsLoadedByiBootStage1": false,
+          "IsiBootNonEssentialFirmware": false,
+          "Personalize": true
+        }
+      },
+      "src": "B1"
+    },
+    "im4p_size": {
+      "v": 1556505,
+      "src": "F1"
+    },
+    "im4p_sha256": {
+      "v": "ac48eb953c68752d0b4f69ac830adf5ad60019325a48bf1ee72997cf97b9c5a8",
+      "src": "F1"
+    },
+    "fourcc": {
+      "v": "anef",
+      "src": "F1"
+    },
+    "payload_size": {
+      "v": 1556480,
+      "src": "F1"
+    },
+    "payload_sha256": {
+      "v": "97f08f91a533eeb96cdf1dde47e58b748ca309384727128a432a667edd9a4209",
+      "src": "F1"
+    },
+    "format": {
+      "v": "Mach-O arm64e cputype 0x100000c cpusubtype 0x80000002 filetype 5 (MH_PRELOAD)",
+      "src": "F1"
+    },
+    "segments": {
+      "v": [
+        "__TEXT vm 0x0+0xc0000 file 0x4000+0xc0000",
+        "__DATA vm 0xc0000+0x2ac000 file 0xc4000+0xb8000",
+        "__DATA_CONST vm 0x36c000+0x0 file 0x17c000+0x0"
+      ],
+      "src": "F1"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "F1"
+    },
+    "loaded_by": {
+      "v": "iBoot (IsLoadedByiBoot true, IsFUDFirmware true)",
+      "src": "B1"
+    }
+  },
+  "kext": {
+    "bundle": {
+      "v": "com.apple.driver.AppleH16ANEInterface 10.19.2",
+      "src": "K1"
+    },
+    "class": {
+      "v": "H11ANEIn, personality t8132exclave: IONameMatch ane,t8132exclave, provider AppleARMIODevice, IOProbeScore 10000 (the t8020 personality binds the same class to ane,t8020)",
+      "src": "K1"
+    },
+    "hal": {
+      "v": "com.apple.driver.AppleT6050ANEHAL 10.19.0 (IOResources); kernelcache also has com.apple.driver.AppleANELoadBalancer 10.19.2",
+      "src": "K1"
+    },
+    "exclave": {
+      "v": "ANEExclaveProxy (IONameMatch ane,ane-exclave-proxy / ane,ane1-exclave-proxy; no such node in this ADT); H11ANEIn strings: exclaveSetup, CSNE_CMD_EXCLAVE_MODE_START/STOP, checkExclaveEnablementStatus, exclave-assigned",
+      "src": "K1"
+    },
+    "protocol": {
+      "v": "rtbuddy endpoints (ANEEndpoint, SetupEndpoints, EnableRTBuddyEndpoints) and CSNE_CMD commands; reads segment-ranges and ane-type",
+      "src": "K1"
+    }
+  },
+  "driver_family": {
+    "v": "ane_t6021-like",
+    "src": "K1"
+  },
+  "hwx_generation": {
+    "v": "H17: ANECCompile target h17 emits HWX Mach-O cpusubtype 9 (h16: 7, h15: 6, h14: 5, h13: 4)",
+    "src": "O1"
+  },
+  "state": "data-only",
+  "aurora": {
+    "v": null,
+    "reason": "No t6050 file in aurora-wip arch/arm64/boot/dts/apple (listed with git ls-tree at the aurora-wip head used for t8140)."
+  },
+  "ane1_j775d": {
+    "v": null,
+    "reason": "Not fetched in this run. AneAllSoc receipt adt-27.0.txt:197-199 lists j775d ane1 as ane,t8020 (no exclave) with Ap,ANE1 not IsLoadedByiBoot."
+  }
+}
