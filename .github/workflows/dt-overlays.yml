@@ -67,6 +67,9 @@ jobs:
         run: |
           export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
           dtc --version
+          # make check first: it is timing-sensitive on 2-core runners and must
+          # not run after the heavier python suites (promote_chip flips trees)
+          make check
           python3 tools/test_ane_dt.py
           python3 tools/test_ane_firmware_fetch.py
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
@@ -76,4 +79,3 @@ jobs:
           python3 tools/test_ane_smoke.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1
-          make check
