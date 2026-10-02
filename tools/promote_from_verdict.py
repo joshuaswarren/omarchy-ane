@@ -97,8 +97,11 @@ def repo_slug():
 
 def load_verdict(path):
     if path is None:
-        return json.loads(sh(sys.executable, str(REPO / "tools/promotion_check.py"),
-                             "--remote", "--json"))
+        p = subprocess.run([sys.executable, str(REPO / "tools/promotion_check.py"),
+                            "--remote", "--json"], cwd=REPO, capture_output=True, text=True)
+        if p.returncode:
+            raise Fail(f"promotion_check --remote --json failed: {p.stderr.strip()}")
+        return json.loads(p.stdout)
     if os.environ.get("GITHUB_REPOSITORY") == PRODUCTION:
         raise Fail("a synthetic verdict file is refused in " + PRODUCTION)
     text = sys.stdin.read() if path == "-" else Path(path).read_text()
