@@ -1,0 +1,72 @@
+{
+ "p6": {
+  "probe": "P6",
+  "layers": 64,
+  "shape": [
+   1,
+   512,
+   16,
+   32
+  ],
+  "macs": 8589934592,
+  "weight_bytes": 524288,
+  "activation_bytes": 524288,
+  "seed": 20261002,
+  "sha256": {
+   "model.mil": "80ecf66359ee65e452c798f74147ae75262a9fb20b4c94e31bc9970c1bbb111a",
+   "weights/weight.bin": "cc0bb784ba0bd1e841db0a516abd60844806da8c9aa6eba9b5af5e4396fbd67c",
+   "in/x.npy": "fd4fb853e1e4d9f423fdc973f07aa7b6f274479a8fc27bf129355a24abb5b7f9",
+   "in/golden.npy": "c521f996a676738866f259037436689d6b66dc936aa04cfada1a38f82d5e132b",
+   "golden_fp16_sha256": "1c5be6e207b9bff2f4cf7f177e79a12898d4eaa82b95a8346d31cfbc8e497935"
+  },
+  "program": "p6_conv64",
+  "hwx_sha256": "7716e0bcb3596bd675ef50411648214f10ddfd26337c62d55f7a7a0d1ac086f7",
+  "hwx_bytes": 573440,
+  "tasks": 64,
+  "anec_sha256": "429f81c79a262511c9be76b181a28be79d97a31e4fdb37dd43731cb6688997c4",
+  "anec_bytes": 550336,
+  "ports_sha256": "2789de6581f475891b5e5df40255114809f7aeb3f5a365e52dbbbbf286f11edc",
+  "surface_bytes": {
+   "x": 524288,
+   "y63": 524288
+  }
+ },
+ "p7": {
+  "probe": "P7",
+  "shape": [
+   1,
+   1024,
+   128,
+   128
+  ],
+  "tensor_bytes": 33554432,
+  "seed": 20261002,
+  "sha256": {
+   "model.mil": "d8b40f5f7cf0dc781c9631b90c936d0ef845c45485cbddb9b536fd48777f2756",
+   "weights/weight.bin": "f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b",
+   "in/x.npy": "62e10b06c31464df5f3c0a2b7ee12e5531ff04e5a5e9503b561b274a08cfb572",
+   "in/z.npy": "b9dac92a850aa2e1c997d6ee078e30b0a6225504a09574bff98c8042911d299a",
+   "in/golden.npy": "8e7839335ff2450344f3a383cbca8a46c083cf6e906278dffa920aa28ce1d2d9",
+   "golden_fp16_sha256": "8bbe87a5db933e88ccd10c732baff89015965d9d79e656422a518c04fd7923c0"
+  },
+  "program": "p7_add32m",
+  "hwx_sha256": "b7c3622ce526f01d551d3a8c17db5d1eb894d7b52e736a83516c9dd6d7004542",
+  "hwx_bytes": 49152,
+  "tasks": 1,
+  "anec_sha256": "aed8d37a646f04fabc227f7d87b8f73efb7b007a06be38b6b9e35b9e94ddaecb",
+  "anec_bytes": 20800,
+  "ports_sha256": "4e32c89940be4f93e1500f1290f9c298d9b3c7b0b5ef407e7dbb7991af4ec0f0",
+  "surface_bytes": {
+   "x": 33554432,
+   "z": 33554432,
+   "y": 33554432
+  }
+ },
+ "compiler": {
+  "tool": "ane-compile-hwx sha256 2060776c98e385d091ca244a2083be25919ed0c340ba1c8c89840208473b05d5",
+  "macos": "26.6.2 25G83",
+  "ModuleVersion": "9.509.0",
+  "target": "h14",
+  "deterministic": "two compiles at different paths: SAME after provenance normalization (hwx_sections.py), 2/2"
+ }
+}
