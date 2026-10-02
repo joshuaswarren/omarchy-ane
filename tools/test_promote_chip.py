@@ -59,9 +59,12 @@ def run(root, chip, to, mode):
 for chip in UNTESTED + DEFAULT_ON:
     base = make_tree()
     before = tree(base)
-    to = "default-on" if chip in UNTESTED else "opt-in"
-    back = "opt-in" if chip in UNTESTED else "default-on"
-
+    # the direction that changes something on this tree, whatever it is
+    state = next(st for p, src, st in
+                 (l.split() for l in (base / 'packaging/dt/overlays').read_text().splitlines()
+                  if l and l[0] != '#') if p == chip and src == f'{chip}-ane.dts')
+    to = "opt-in" if state == "enabled" else "default-on"
+    back = "default-on" if to == "opt-in" else "opt-in"
     p = run(base, chip, to, "--apply")
     assert p.returncode == 0, (chip, p.stderr)
     after = tree(base)
@@ -84,15 +87,15 @@ for chip in UNTESTED + DEFAULT_ON:
         assert len(added) == 1 and f"{chip.upper()} (" in added[0], (chip, added)
     print(f"promote_chip test: {chip} {to} -> {back}: round trip ok")
 
-# One flipped tree (t8112: the widest flip, it also touches DEFAULT_ON) must
-# pass the offline packaging suites.
-flipped = make_tree()
-p = run(flipped, "t8112", "default-on", "--apply")
-assert p.returncode == 0, p.stderr
-for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py"):
-    q = subprocess.run([sys.executable, str(flipped / "tools" / suite)],
-                       capture_output=True, text=True, cwd=flipped)
-    assert q.returncode == 0, (suite, q.stdout[-2000:], q.stderr[-2000:])
-    print(f"promote_chip test: {suite} green on the flipped tree")
+    # the flip-sensitive offline suites on this chip's flipped tree
+    for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py",
+                  "test_ane_overlays.py", "test_ane_smoke.py"):
+        q = subprocess.run([sys.executable, str(base / "tools" / suite)],
+                           capture_output=True, text=True, cwd=base)
+        assert q.returncode == 0, (chip, suite, q.stdout[-2000:], q.stderr[-2000:])
+
+# The full pytest host suite on a flipped tree runs in the promotion gate
+# (dt-overlays CI stays hermetic); here: the flip-sensitive offline suites per
+# chip, already run above.
 
 print(f"promote_chip test: ok ({len(UNTESTED) + len(DEFAULT_ON)} chips)")
