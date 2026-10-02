@@ -5,6 +5,8 @@ Time box: ~120 min. Branch: `agent/ane-gen-h15` from `origin/main` 87e1df9.
 
 ## Source ledger
 
+The IDs in this report ledger are report-local. Each JSON file has its own `sources[]` list with exact hashed citations; its leaf `src` values reference only that file's IDs.
+
 | id | kind | ref | sha256 |
 | --- | --- | --- | --- |
 | S1 | ipsw-adt | macOS 27.0 26A428 ADTs (j433, j434, j504, j613, j615 for T8122; j514s, j516s for T6030; j514c, j514m, j516c, j516m, j575d for T6031; j514m, j516m for T6034) under artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt and adt-13.5-ane.txt | per artifacts/AneAllSoc/every-soc/SHA256SUMS |

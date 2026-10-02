@@ -1,112 +1,453 @@
 {
   "soc": "t6031",
+  "state": "data-only",
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 26A428 ADT facts as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt; SHA-256 is of that cited receipt.",
+      "sha256": "04fe38b8ee009700f02e2c01e83bf608afab5e843f5878a83f162973a1ffdb84"
+    },
+    {
+      "id": "S2",
+      "kind": "buildmanifest",
+      "ref": "macOS 27.0 26A428 BuildManifest ANE entries as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt; SHA-256 is of that cited receipt.",
+      "sha256": "3e17bc4d66bd523251436f46281495ff30baa9abf81e772270feb24c05594f7d"
+    },
+    {
+      "id": "S3",
+      "kind": "ipsw-firmware",
+      "ref": "macOS 27.0 26A428 IPSW member Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p; SHA-256 of the 1605632-byte Mach-O payload after IM4P ASN.1 unwrap; payload bytes not retained.",
+      "sha256": "ddac37c70bdcaedc6239d5cc85d848e606cd66df454e8a432c24fd7730a1f977"
+    },
+    {
+      "id": "S4",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334, arch/arm64/boot/dts/apple/t6031-die0.dtsi; SHA-256 of this source file.",
+      "sha256": "417ea802824a583d94a1b4c9933c629444d199faf4aa2edd87f5e1a9c7c3975f"
+    },
+    {
+      "id": "S5",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334, arch/arm64/boot/dts/apple/t6031-pmgr.dtsi; SHA-256 of this source file.",
+      "sha256": "d14dff6ac71140b534dbaa43b22208a960eb1b7258df1760f0b53f91f562d817"
+    },
+    {
+      "id": "S6",
+      "kind": "compiler-oracle",
+      "ref": "receipts/2026-09-05-ane-community/anecompile-cross-target.json; H15 cross-target compile and Mach-O CPU subtype observations.",
+      "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-adt",
+      "ref": "macOS 13.5 ANE DART page-size evidence as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/adt-13.5.txt; used only for the explicitly marked T8110-family inference.",
+      "sha256": "e4628cbf45c5735c8cd2d67b937421d4098870a36a1920cf7ac21855441412d8"
+    }
+  ],
   "marketing": {
     "v": "M3 Max",
     "src": "S2"
   },
   "generation": {
     "v": "H15J",
-    "src": "S5"
+    "src": "S6"
   },
   "boards": [
-    {"v": "j514c", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023, 14/16-core)"},
-    {"v": "j514m", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023)"},
-    {"v": "j516c", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, 14/16-core)"},
-    {"v": "j516m", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023)"},
-    {"v": "j575d", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, dual-die, 28/30-core)"}
-  ],
-  "sources": [
-    {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: DeviceTree.j514cap.adt, j514map.adt, j516cap.adt, j516map.adt, j575dap.adt; receipt artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt arm-io,t6031 section"},
-    {"id": "S2", "kind": "buildmanifest", "ref": "macOS 27.0 26A428 BuildManifest.plist; receipt artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt (t6031 j514cap/j516cap ANE=t603x_ane0_fw_erebus_pc5x.im4p; j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p, ANE1=t603x_ane1_fw_erebus_pc5x.im4p)"},
-    {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334; arch/arm64/boot/dts/apple/t6031.dtsi, t6031-die0.dtsi, t6031-dieX.dtsi, t6031-pmgr.dtsi"},
-    {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 (private) + receipts/2026-09-05-ane-community/anecompile-cross-target.json"}
+    {
+      "v": {
+        "value": "j514c",
+        "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023, 14/16-core)"
+      },
+      "src": "S1"
+    },
+    {
+      "v": {
+        "value": "j514m",
+        "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023)"
+      },
+      "src": "S1"
+    },
+    {
+      "v": {
+        "value": "j516c",
+        "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, 14/16-core)"
+      },
+      "src": "S1"
+    },
+    {
+      "v": {
+        "value": "j516m",
+        "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023)"
+      },
+      "src": "S1"
+    },
+    {
+      "v": {
+        "value": "j575d",
+        "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, dual-die, 28/30-core)"
+      },
+      "src": "S1"
+    }
   ],
   "ane": {
-    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "compatible": {
+      "v": "iop,ascwrap-v6",
+      "src": "S1"
+    },
     "reg": [
-      {"name": "ane", "base": "0x3c9400000", "size": "0x6c000", "src": "S1"},
-      {"name": "ane_alt", "base": "0x3c9050000", "size": "0x4000", "src": "S1"},
-      {"name": "engine", "base": "0x3c8000000", "size": "0x2000000", "src": "S1"},
-      {"name": "pmgr", "base": "0x292280000", "size": "0x10000", "src": "S1"},
-      {"name": "pmgr_ps", "base": "0x292290000", "size": "0x4000", "src": "S1"},
-      {"name": "pmgr_sub2", "base": "0x2903c0000", "size": "0x30000", "src": "S1 (third pmgr region, larger than T6030's 0x24000 — T6031 has more SET states)"},
-      {"name": "engine_alias", "base": "0x404000000", "size": "0x2000000", "src": "S1 (a second 32 MiB engine aperture at a different base; on T6031 j514c. Probably the firmware-side aliased view of the engine, since the host aperture is at 0x3c8000000+0x2000000.)"},
-      {"name": "fw_data", "base": "0x2a02dc000", "size": "0x4000", "src": "S1 (a fourth window, possibly the firmware private memory-mapped window or scratch region)"}
+      {
+        "v": {
+          "name": "ane",
+          "base": "0x3c9400000",
+          "size": "0x6c000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane_alt",
+          "base": "0x3c9050000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "engine",
+          "base": "0x3c8000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr",
+          "base": "0x292280000",
+          "size": "0x10000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr_ps",
+          "base": "0x292290000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr_sub2",
+          "base": "0x2903c0000",
+          "size": "0x30000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "engine_alias",
+          "base": "0x404000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "fw_data",
+          "base": "0x2a02dc000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
     ],
-    "interrupts": {"v": [965, 964, 967, 966, 983], "src": "S1"},
-    "ane_type": {"v": 224, "src": "S1"},
-    "ane_id": {"v": 0, "src": "S1"},
-    "die_id": {"v": 0, "src": "S1"},
-    "power_gates": {"v": ["ANE_CPU", "ANE-SYS-V"], "src": "S1"},
-    "iommus": {"v": null, "reason": "see t8122.json dart_phandle_field."}
+    "interrupts": {
+      "v": [
+        965,
+        964,
+        967,
+        966,
+        983
+      ],
+      "src": "S1"
+    },
+    "ane_type": {
+      "v": 224,
+      "src": "S1"
+    },
+    "ane_id": {
+      "v": 0,
+      "src": "S1"
+    },
+    "die_id": {
+      "v": 0,
+      "src": "S1"
+    },
+    "power_gates": {
+      "v": [
+        "ANE_CPU",
+        "ANE-SYS-V"
+      ],
+      "src": "S1"
+    },
+    "iommus": {
+      "v": null,
+      "reason": "see t8122.json dart_phandle_field."
+    }
   },
   "ane1_j575d": {
-    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "compatible": {
+      "v": "iop,ascwrap-v6",
+      "src": "S1"
+    },
     "reg": [
-      {"name": "ane1", "base": "0x23c9400000", "size": "0x6c000", "src": "S1"},
-      {"name": "ane1_alt", "base": "0x23c9050000", "size": "0x4000", "src": "S1"},
-      {"name": "engine1", "base": "0x23c8000000", "size": "0x2000000", "src": "S1"},
-      {"name": "pmgr1", "base": "0x2292280000", "size": "0x10000", "src": "S1"},
-      {"name": "pmgr1_ps", "base": "0x2292290000", "size": "0x4000", "src": "S1"}
+      {
+        "v": {
+          "name": "ane1",
+          "base": "0x23c9400000",
+          "size": "0x6c000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_alt",
+          "base": "0x23c9050000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "engine1",
+          "base": "0x23c8000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr1",
+          "base": "0x2292280000",
+          "size": "0x10000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "pmgr1_ps",
+          "base": "0x2292290000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
     ],
-    "interrupts": {"v": [5061, 5060, 5063, 5062, 5079], "src": "S1"},
-    "ane_type": {"v": 224, "src": "S1"},
-    "ane_id": {"v": 1, "src": "S1"},
-    "die_id": {"v": 1, "src": "S1 (dual-die on M3 Max j575d; the high-IRQ set is the second-die variant)"}
+    "interrupts": {
+      "v": [
+        5061,
+        5060,
+        5063,
+        5062,
+        5079
+      ],
+      "src": "S1"
+    },
+    "ane_type": {
+      "v": 224,
+      "src": "S1"
+    },
+    "ane_id": {
+      "v": 1,
+      "src": "S1"
+    },
+    "die_id": {
+      "v": 1,
+      "src": "S1"
+    }
   },
   "dart": {
-    "compatible": {"v": "dart,t8110", "src": "S1"},
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S1"
+    },
     "reg": [
-      {"name": "ttbr0", "base": "0x3c9800000", "size": "0x4000", "src": "S1"},
-      {"name": "ttbr1", "base": "0x3c9810000", "size": "0x4000", "src": "S1"},
-      {"name": "ttbr2", "base": "0x3c9820000", "size": "0x4000", "src": "S1"},
-      {"name": "ttbr3", "base": "0x3c9804000", "size": "0x4000", "src": "S1"}
+      {
+        "v": {
+          "name": "ttbr0",
+          "base": "0x3c9800000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr1",
+          "base": "0x3c9810000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr2",
+          "base": "0x3c9820000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ttbr3",
+          "base": "0x3c9804000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
     ],
-    "interrupts": {"v": [984], "src": "S1"},
-    "sid": {"v": null, "reason": "see t8122.json dart.sid."},
-    "vm_base": {"v": null, "reason": "see t8122.json dart.vm_base."},
-    "vm_size": {"v": null, "reason": "see t8122.json dart.vm_size."},
-    "page_size": {"v": 16384, "src": "S1 (T8110 family inference)"}
+    "interrupts": {
+      "v": [
+        984
+      ],
+      "src": "S1"
+    },
+    "sid": {
+      "v": null,
+      "reason": "see t8122.json dart.sid."
+    },
+    "vm_base": {
+      "v": null,
+      "reason": "see t8122.json dart.vm_base."
+    },
+    "vm_size": {
+      "v": null,
+      "reason": "see t8122.json dart.vm_size."
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S7"
+    }
   },
   "mailbox": {
-    "compatible": {"v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4", "src": "S4 (t6031-die0.dtsi:121)"},
+    "compatible": {
+      "v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4",
+      "src": "S4"
+    },
     "reg": [
-      {"name": "mbox", "base": "0x3c9050000", "size": "0x4000", "src": "S1"}
+      {
+        "v": {
+          "name": "mbox",
+          "base": "0x3c9050000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      }
     ],
-    "interrupts": {"v": [964, 966, 967, 965, 983], "src": "S1 (raw `ane` node interrupt cells; function mapping not established)"}
+    "interrupts": {
+      "v": [
+        964,
+        966,
+        967,
+        965,
+        983
+      ],
+      "src": "S1"
+    }
   },
   "pmgr": {
-    "ANE_SYS": {"v": "0x292280520", "src": "S1"},
-    "ANE_SYS_parents": {"v": ["AFNC5_LW0", "AFNC6_LW0"], "src": "S1"},
-    "ANE_MPM": {"v": "0x2922805a0", "src": "S1"},
-    "ANE_CPU": {"v": "0x2922805a8", "src": "S1"},
-    "ANE_TD": {"v": "0x2922805b8", "src": "S1"},
-    "ANE_BASE": {"v": "0x2922805c0", "src": "S1"},
-    "power_domain_compatibles": {"v": ["apple,t6031-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate"], "src": "S4 (t6031-pmgr.dtsi:828)"},
-    "ane_cpu_count": {"v": 2, "src": "S1 (j575d has ane0 on die 0 and ane1 on die 1)"}
+    "ANE_SYS": {
+      "v": "0x292280520",
+      "src": "S1"
+    },
+    "ANE_SYS_parents": {
+      "v": [
+        "AFNC5_LW0",
+        "AFNC6_LW0"
+      ],
+      "src": "S1"
+    },
+    "ANE_MPM": {
+      "v": "0x2922805a0",
+      "src": "S1"
+    },
+    "ANE_CPU": {
+      "v": "0x2922805a8",
+      "src": "S1"
+    },
+    "ANE_TD": {
+      "v": "0x2922805b8",
+      "src": "S1"
+    },
+    "ANE_BASE": {
+      "v": "0x2922805c0",
+      "src": "S1"
+    },
+    "power_domain_compatibles": {
+      "v": [
+        "apple,t6031-pmgr-pwrstate",
+        "apple,t8103-pmgr-pwrstate"
+      ],
+      "src": "S5"
+    },
+    "ane_cpu_count": {
+      "v": 2,
+      "src": "S1"
+    }
   },
   "firmware": {
-    "name": {"v": "t603x_ane0_fw_erebus_pc5x.im4p", "src": "S2 (BuildManifest: t6031 j514cap/j514map/j516cap/j516map/j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p; j575dap ANE1=t603x_ane1_fw_erebus_pc5x.im4p)"},
-    "size": {"v": 1605657, "src": "S2 (r27.fetch.log line 'firmware Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p 1605657')"},
-    "sha256": {"v": "ddac37c70bdcaedc6239d5cc85d848e606cd66df454e8a432c24fd7730a1f977", "src": "S2 (HTTP range-read macOS 27.0 IPSW member Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p; IM4P payload is 1605632-byte Mach-O, SHA256 after unwrap; no raw bytes retained)"},
-    "format": {"v": "Mach-O (IM4P payload type anef)", "src": "S2 (DER fields IM4P/anef/1; payload begins cffaedfe)"},
-    "encrypted": {"v": false, "src": "S2 (IM4P ASN.1 contains IM4P/anef/1 and a plain Mach-O payload beginning cffaedfe; no KBAG in wrapper or payload)"},
-    "loaded_by": {"v": {"IsFUDFirmware": true, "IsLoadedByiBoot": true, "IsLoadedByiBootStage1": false, "IsiBootEANFirmware": false}, "src": "S2 (BuildManifest.plist BuildIdentities j514cap/j514map/j516cap/j516map/j575dap, Manifest.ANE.Info)"}
+    "name": {
+      "v": "t603x_ane0_fw_erebus_pc5x.im4p",
+      "src": "S2"
+    },
+    "size": {
+      "v": 1605657,
+      "src": "S2"
+    },
+    "sha256": {
+      "v": "ddac37c70bdcaedc6239d5cc85d848e606cd66df454e8a432c24fd7730a1f977",
+      "src": "S3"
+    },
+    "format": {
+      "v": "Mach-O (IM4P payload type anef)",
+      "src": "S2"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S2"
+    },
+    "loaded_by": {
+      "v": {
+        "IsFUDFirmware": true,
+        "IsLoadedByiBoot": true,
+        "IsLoadedByiBootStage1": false,
+        "IsiBootEANFirmware": false
+      },
+      "src": "S2"
+    }
   },
   "kext": {
-    "class": {"v": null, "reason": "see t8122.json kext.class."},
-    "protocol": {"v": null, "reason": "see t8122.json kext.protocol."},
-    "host_interface": {"v": null, "reason": "The macOS 27.0 M3 kernelcache was not fetched; host interface version not extracted."}
+    "class": {
+      "v": null,
+      "reason": "see t8122.json kext.class."
+    },
+    "protocol": {
+      "v": null,
+      "reason": "see t8122.json kext.protocol."
+    },
+    "host_interface": {
+      "v": null,
+      "reason": "The macOS 27.0 M3 kernelcache was not fetched; host interface version not extracted."
+    }
   },
   "driver_family": {
     "v": "ane_t6021's RTKit/firmware model — extended",
-    "src": "S5 + design inference"
+    "src": "S6"
   },
   "hwx_generation": {
-    "target": "h15",
-    "mach_o_cpusubtype": 6,
-    "hwx_bytes": 49152,
-    "src": "S5"
-  },
-  "state": "data-only"
+    "v": {
+      "target": "h15",
+      "mach_o_cpusubtype": 6,
+      "hwx_bytes": 49152
+    },
+    "src": "S6"
+  }
 }
