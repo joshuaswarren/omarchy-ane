@@ -16,7 +16,9 @@
 # Env:   ANE_RUN_BIN             (default /var/tmp/abi-verify/bundle/ane-run,
 #                                 the pad-fixed ane-run from omarchy-ane main)
 #        GAP7_BENCH              (default /var/tmp/ane-perf/gap7-bench.sh)
-#        ANE_MATVEC_WEIGHTS      (fp16 [N,K]; without it matvec is skipped)
+#        ANE_FIXTURE_DIR         (default /var/tmp/abi-verify/bundle; must
+#                                 hold the h13-explicit-chain-add-mul package:
+#                                 manifest.json + program-0/1.anec)
 set -uo pipefail
 
 KIT=${1:?usage: gates.sh <kit-dir>}
@@ -30,7 +32,7 @@ BAD_RE='tm completion|quarantin|EXCH|DART fault|translation fault|Oops|BUG:|kern
 
 boot_id_0="" boot_id_now=""
 base_srcversion="" base_installed_sha=""
-swapped=0 restored=0
+restored=0
 fails=0 step=init
 
 say() { echo "[gates] $*"; }
@@ -47,13 +49,24 @@ fail() {
 }
 
 # Restore the packaged module. Runs once per exit path, never retried.
+# Covers every state the window can leave behind: kit module loaded, kit
+# insmod FAILED after a clean rmmod (packaged module left unloaded), or
+# packaged module already back.
 restore_once() {
 	[ "$restored" -eq 0 ] || return 0
 	restored=1
-	[ "$swapped" -eq 1 ] || return 0
-	say "restore: rmmod kit ane, modprobe packaged ane"
-	sudo -n rmmod ane || { say "restore: rmmod kit ane FAILED"; return 1; }
-	sudo -n modprobe ane || { say "restore: modprobe packaged ane FAILED"; return 1; }
+	local cur
+	cur=$(cat /sys/module/ane/srcversion 2>/dev/null)
+	if [ -n "$base_srcversion" ] && [ "$cur" = "$base_srcversion" ]; then
+		say "restore: packaged module already in place"
+		return 0
+	fi
+	if [ -n "$cur" ]; then
+		say "restore: rmmod loaded ane (srcversion '$cur')"
+		sudo -n rmmod ane || { say "restore: rmmod FAILED"; return 1; }
+	fi
+	say "restore: modprobe packaged ane"
+	sudo -n modprobe ane || { say "restore: modprobe FAILED"; return 1; }
 	if [ "$(cat /sys/module/ane/srcversion 2>/dev/null)" = "$base_srcversion" ] \
 		&& [ "$(sha256sum "/lib/modules/$(uname -r)/updates/dkms/ane.ko" 2>/dev/null | awk '{print $1}')" \
 			= "$base_installed_sha" ]; then
@@ -114,7 +127,6 @@ say "baseline: boot $boot_id_0 srcversion $base_srcversion installed-sha $base_i
 step=swap
 sudo -n rmmod ane || fail "rmmod packaged ane failed (device held open?)"
 sudo -n insmod "$KIT/ane/ane.ko" || fail "insmod kit ane.ko failed"
-swapped=1
 kit_file_src=$(modinfo -F srcversion "$KIT/ane/ane.ko")
 [ "$(cat /sys/module/ane/srcversion)" = "$kit_file_src" ] \
 	|| fail "loaded srcversion '$(cat /sys/module/ane/srcversion)' != built file srcversion '$kit_file_src'"
@@ -137,19 +149,84 @@ say "kit module loaded: srcversion '$kit_file_src', bound"
 step=abi
 "$KIT/ane_get_caps" || fail "GET_CAPS probe failed"
 
-# ---- op gates (pad-fixed ane-run) ---------------------------------------------
+# ---- op gates (pad-fixed ane-run + the H13 abi-verify fixtures) ---------------
+# ane-run's --check OP needs the fixture inputs at channels 0/1 and assumes
+# the H14 packed [1,512,1,1] checker layout. The H13 abi-verify fixtures put
+# a,b on channels 5/6 and the result on 4 (manifest.json), so the gate drives
+# the runner per program and direct-compares each output surface against an
+# exact fp16 oracle built from the manifest (add and mul-by-0.5 are exact in
+# fp16: no rounding anywhere in the chain; padding lanes must stay zero, so
+# the whole surface is compared byte-for-byte).
 step=ops
-for op in add mul relu; do
-	"$ANE_RUN_BIN" --check "$op" || fail "ane-run --check $op failed"
-	say "ane-run --check $op: ok"
-done
-if [ -n "${ANE_MATVEC_WEIGHTS:-}" ]; then
-	"$ANE_RUN_BIN" --check matvec --weights "$ANE_MATVEC_WEIGHTS" \
-		|| fail "ane-run --check matvec failed"
-	say "ane-run --check matvec: ok"
-else
-	say "SKIP matvec (set ANE_MATVEC_WEIGHTS to run it)"
-fi
+command -v python3 >/dev/null || fail "python3 needed to read the fixture manifest and build the fp16 oracle"
+ANE_FIXTURE_DIR=${ANE_FIXTURE_DIR:-/var/tmp/abi-verify/bundle}
+[ -f "$ANE_FIXTURE_DIR/manifest.json" ] || fail "fixture manifest missing: $ANE_FIXTURE_DIR/manifest.json"
+ops_work=$(mktemp -d /var/tmp/ane-ops.XXXXXX)
+python3 - "$ANE_FIXTURE_DIR/manifest.json" "$ops_work" <<'PY' || fail "fixture manifest is not the H13 add->mul chain"
+import json, struct, sys
+
+man, work = sys.argv[1], sys.argv[2]
+man = json.load(open(man))
+progs = man["programs"]
+ops = [p["operation"] for p in progs]
+if ops != ["add", "mul"]:
+    sys.exit("manifest ops %r, want ['add', 'mul']" % ops)
+# Both programs share the channel plan (H13: a/sum on ch5, b on ch6,
+# result on ch4); ch5 carries `sum` into the mul program.
+for p in progs:
+    ins = sorted(x["index"] for x in p["inputs"])
+    outs = [x["index"] for x in p["outputs"]]
+    if len(ins) != 2 or len(outs) != 1:
+        sys.exit("program %s: want 2 inputs + 1 output" % p["file"])
+plan_ins = sorted(x["index"] for x in progs[0]["inputs"])
+plan_out = progs[0]["outputs"][0]["index"]
+for p in progs:
+    if sorted(x["index"] for x in p["inputs"]) != plan_ins \
+            or [x["index"] for x in p["outputs"]] != [plan_out]:
+        sys.exit("program %s deviates from the channel plan" % p["file"])
+ch_a, ch_b = plan_ins[0], plan_ins[1]
+alloc, count = progs[0]["inputs"][0]["allocationBytes"], progs[0]["inputs"][0]["logicalBytes"] // 2
+
+def half(x):
+    return struct.unpack("<H", struct.pack("<e", x))[0]
+
+# Floats in, fp16 bit patterns out; every value below is a multiple of
+# 0.25 in [0.75, 3.25], so add and mul-by-0.5 are exact in fp16.
+af = [1.0 + (i % 8) * 0.25 for i in range(count)]
+a = [half(v) for v in af]
+b = [half(0.5)] * count
+s = [half(v + 0.5) for v in af]
+y = [half(v * 0.5) for v in [x + 0.5 for x in af]]
+
+def surface(vals):
+    buf = bytearray(alloc)
+    for i, v in enumerate(vals):
+        struct.pack_into("<H", buf, i * 64, v)  # one fp16 per 64-byte plane
+    return bytes(buf)
+
+open(work + "/a.fp16", "wb").write(surface(a))
+open(work + "/b.fp16", "wb").write(surface(b))
+open(work + "/want-sum.fp16", "wb").write(surface(s))
+open(work + "/want-y.fp16", "wb").write(surface(y))
+open(work + "/chan.json", "w").write(json.dumps(
+    {"a": ch_a, "b": ch_b, "out": plan_out}))
+PY
+read -r CH_A CH_B CH_OUT <<< "$(python3 -c 'import json;d=json.load(open("'"$ops_work"'/chan.json"));print(d["a"],d["b"],d["out"])')"
+"$ANE_RUN_BIN" --anec "$ANE_FIXTURE_DIR/program-0.anec" \
+	--in "$CH_A=$ops_work/a.fp16" --in "$CH_B=$ops_work/b.fp16" \
+	--out "$CH_OUT=$ops_work/sum.fp16" || fail "ane-run add fixture (program-0) failed"
+cmp -s "$ops_work/sum.fp16" "$ops_work/want-sum.fp16" \
+	|| fail "add output surface mismatch vs exact fp16 oracle"
+say "fixture add (program-0): exact surface match"
+"$ANE_RUN_BIN" --anec "$ANE_FIXTURE_DIR/program-1.anec" \
+	--in "$CH_A=$ops_work/sum.fp16" --in "$CH_B=$ops_work/b.fp16" \
+	--out "$CH_OUT=$ops_work/y.fp16" || fail "ane-run mul fixture (program-1) failed"
+cmp -s "$ops_work/y.fp16" "$ops_work/want-y.fp16" \
+	|| fail "mul output surface mismatch vs exact fp16 oracle"
+say "fixture mul (program-1): exact surface match"
+rm -rf "$ops_work"
+say "SKIP relu (no H13 relu fixture exists on this host - named missing prerequisite)"
+say "SKIP matvec (no H13 matvec fixture; if you hold one, run it separately as: ane-run --anec <prog> --in/--out per its manifest, compared against --check matvec --weights <fp16 [N,K]>)"
 
 # ---- whole-encoder bit-exact on the kit module --------------------------------
 step=encoder

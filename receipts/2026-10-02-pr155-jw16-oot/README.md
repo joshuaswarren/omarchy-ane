@@ -19,7 +19,7 @@ end of the window.
 | `ane/Kbuild` | out-of-tree makefile: `obj-m += ane.o ane_t6021.o`, object lists verbatim from the in-tree Makefile, `ccflags-y += -I$(src)/uapi -I$(srctree)/include/uapi/drm` so `<drm/ane_accel.h>` resolves to the branch header (stock headers ship none; it is required, not optional) and the branch header's sibling `#include "drm.h"` resolves from the kernel headers, not from a copied kernel header. The driver has no MODULE_VERSION and this kernel yields no srcversion — an empty `modinfo -F version`/`srcversion` is expected; the module identity is the sha256 build.sh prints |
 | `build.sh` | run from the extracted kit root; sanity checks (running release vs header tree, `include/uapi/drm/drm.h`, gcc, `ane/` sources), then `make -C /usr/lib/modules/$(uname -r)/build M=$PWD/ane modules` (module root is `ane/`), then sha256 + vermagic + srcversion + alias checks per module (ane.ko must alias `apple,t8103-ane` + `apple,t6000-ane` and NOT t602x/t8112), and builds the GET_CAPS probe when `/usr/include/drm/drm.h` exists |
 | `ane_get_caps.c` | GET_CAPS probe: opens `/dev/accel/accel0`, expects DRM driver `ane` version major 1, GET_CAPS `abi_version=1 chip_family=13 sizes=0/0/0`, nonzero flags refused with EINVAL (built with `-I ane/uapi -I /usr/include/drm`) |
-| `gates.sh` | the in-window gate run: lock, pre-record, module swap, ABI probe, `ane-run --check add/mul/relu[/matvec]`, whole-encoder n1 (`fca96f1355485ec3`), restore, boot_id + dmesg + final smoke |
+| `gates.sh` | the in-window gate run: lock, pre-record, module swap, ABI probe, H13 fixture ops (manifest-driven `ane-run --anec` runs over `h13-explicit-chain-add-mul` with byte-exact fp16 oracle compares; relu/matvec are named skips — no H13 fixtures exist), whole-encoder n1 (`fca96f1355485ec3`), restore, boot_id + dmesg + final smoke |
 | `mk-tarball.sh` | regenerates the tarball from a linux checkout (`git archive f088ca5c86ed`) — the tarball is never committed |
 
 `ane_t6021.ko` also builds (the packaged dkms MAKE[0] builds both; proven on jw16
@@ -61,11 +61,14 @@ aliases. Nothing here insmods, depmods, installs, or runs dkms.
      the loaded srcversion equals the built file's and the driver binds;
    - ABI gate: `ane_get_caps` (expect its `ANE_GET_CAPS: PASS ... abi=1
      family=13 sizes=0/0/0` line);
-   - ops gate: `ane-run --check add`, `--check mul`, `--check relu`; matvec runs
-     only with `ANE_MATVEC_WEIGHTS=<fp16 [N,K] file>` set (skip is reported, not
-     a failure) — `ane-run` defaults to
-     `/var/tmp/abi-verify/bundle/ane-run`, the pad-fixed build from omarchy-ane
-     main;
+   - ops gate: drives the pad-fixed `ane-run` over the H13 abi-verify
+     fixtures in `ANE_FIXTURE_DIR` (default `/var/tmp/abi-verify/bundle`,
+     manifest + program-0/1.anec): add then the chained mul, each compared
+     byte-exact against an fp16 oracle built from the manifest (the old
+     bare `--check` contract is gone from main, and `--check OP` needs the
+     fixture inputs at channels 0/1 — these H13 fixtures use 5/6/4, so the
+     gate runs and compares surfaces directly); relu and matvec are named
+     skips (no H13 fixtures exist on jw16);
    - encoder gate: `gap7-bench OUT 1` on the kit module; hidden16 must be
      `fca96f1355485ec3` (hard); n1 ~1075 ms (band 1055-1219 warn-only);
    - restore: `rmmod` kit module, `modprobe ane` (the packaged module from
@@ -94,5 +97,6 @@ rule as every lane run: report, do not cure.
 - No loadability or runtime claim exists until the jw16 window runs: binding,
   GET_CAPS values, op bit-exactness, and the encoder golden are all in-window
   gates.
-- The `matvec` gate needs a weights fixture on jw16; without
-  `ANE_MATVEC_WEIGHTS` it is skipped and reported.
+- The `relu` and `matvec` gates have no H13 fixtures on jw16 (the lead searched
+  every `*.anec` < 2 MB); gates.sh reports both as named skips, not failures. A
+  `matvec` run additionally needs a weights file (`--check matvec --weights`).
