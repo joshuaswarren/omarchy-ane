@@ -1,0 +1,11 @@
+--- labstate-pre
++++ labstate-post
+@@ -117,7 +117,7 @@
+ /usr/src:
+ linux-asahi
+ == disk
+-/dev/nvme0n1p6  234G  224G  8.4G  97% /
++/dev/nvme0n1p6  234G  224G  8.3G  97% /
+ /dev/nvme0n1p5  2.0G  121M  1.7G   7% /boot
+ /dev/nvme0n1p4  499M  252M  247M  51% /boot/efi
+ == gpu-turn

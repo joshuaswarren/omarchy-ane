@@ -1,0 +1,24 @@
+[    0.076304] ------------[ cut here ]------------
+[    0.076305] WARNING: drivers/iommu/iommu.c:3243 at iommu_setup_default_domain+0x43c/0x550, CPU#4: swapper/0/1
+[    0.076319] pc : iommu_setup_default_domain+0x43c/0x550
+[    0.076321] lr : iommu_setup_default_domain+0x434/0x550
+[    0.076340] Call trace:
+[    0.076341]  iommu_setup_default_domain+0x43c/0x550 (P)
+[    0.076347]  apple_dart_probe+0x9b4/0xc84
+[    0.076421] apple-dart 38930c000.iommu: probe with driver apple-dart failed with error -16
+[    0.153214] ------------[ cut here ]------------
+[    0.153215] WARNING: drivers/iommu/iommu.c:3243 at iommu_setup_default_domain+0x43c/0x550, CPU#7: kworker/u50:5/113
+[    0.153228] pc : iommu_setup_default_domain+0x43c/0x550
+[    0.153229] lr : iommu_setup_default_domain+0x434/0x550
+[    0.153241] Call trace:
+[    0.153242]  iommu_setup_default_domain+0x43c/0x550 (P)
+[    0.153245]  apple_dart_probe+0x9b4/0xc84
+[    0.153285] apple-dart 289304000.iommu: probe with driver apple-dart failed with error -16
+[    0.153489] ------------[ cut here ]------------
+[    0.153490] WARNING: drivers/iommu/iommu.c:3243 at iommu_setup_default_domain+0x43c/0x550, CPU#7: kworker/u50:5/113
+[    0.153496] pc : iommu_setup_default_domain+0x43c/0x550
+[    0.153497] lr : iommu_setup_default_domain+0x434/0x550
+[    0.153508] Call trace:
+[    0.153508]  iommu_setup_default_domain+0x43c/0x550 (P)
+[    0.153511]  apple_dart_probe+0x9b4/0xc84
+[    0.153555] apple-dart 28930c000.iommu: probe with driver apple-dart failed with error -16

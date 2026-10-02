@@ -1,0 +1,96 @@
+== lock pre-check: flock-free; fcntl holders: 
+== smoke 20/20 (new runner via packaging/omarchy-ane-run symlink; the smoke holds the fcntl lock itself, like gates.sh does for qwen_prog_run)
+{"name": "add-fixture", "chip": "t6021", "available": true, "sha256": ["94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"], "golden_sha256": "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b", "errors": 0, "min_ms": 1.465, "median_ms": 1.479}
+
+smoke rc=0 stderr: omarchy-ane-smoke: add-fixture on t6021: 20/20 calls bit-exact, min 1.465 ms, median 1.479 ms
+PASS smoke-20of20
+== old runner negative-compat observation (pad-bug libane v0.4.0, /var/tmp/ownmem/b6ef8f1) LAST
+old runner: f687a7abe3749b17 140376 B
+inputs written
+old runner rc=1 stdout tail: 
+old runner stderr tail: LIBANE: M2: ERR: DRM_IOCTL_ANE_PROG_LOAD failed: Invalid argument
+LIBANE: ERR: failed to load ABI-2 program from /var/tmp/ane-intree-test/fixtures/h14-anec/add/program-0.anec
+ane_init failed on /var/tmp/ane-intree-test/fixtures/h14-anec/add/program-0.anec
+old-runner-observation rc=1 (expected nonzero with EINVAL from the ABI-2 pad checks; libane v0.4.0 leaves pads uninitialized)
+PASS old-runner-einval
+== device still alive after the old runner: control add gate with the new runner
+control gate-add rc=0 GATE PASS
+PASS post-old-gate-add
+== interrupts after all activity
+CPU0 cpu-sum 0 CPU11
+33: cpu-sum 0 vgic
+34: cpu-sum 0 ptimer
+35: cpu-sum 0 vtimer
+36: cpu-sum 528420 arch_timer
+53: cpu-sum 0 285408000.mailbox-recv
+54: cpu-sum 0 285408000.mailbox-send
+55: cpu-sum 910 2a2408000.mbox-recv
+56: cpu-sum 0 2a2408000.mbox-send
+57: cpu-sum 3701 2a6408000.mbox-recv
+58: cpu-sum 1 2a6408000.mbox-send
+59: cpu-sum 35 2a9408000.mbox-recv
+60: cpu-sum 0 2a9408000.mbox-send
+61: cpu-sum 0 396408000.mbox-recv
+62: cpu-sum 0 396408000.mbox-send
+63: cpu-sum 3973 406408000.mbox-recv
+64: cpu-sum 0 406408000.mbox-send
+66: cpu-sum 0 handler
+67: cpu-sum 0 handler
+68: cpu-sum 0 handler
+69: cpu-sum 0 handler
+70: cpu-sum 0 handler
+71: cpu-sum 0 handler
+72: cpu-sum 0 handler
+73: cpu-sum 0 handler
+74: cpu-sum 0 handler
+75: cpu-sum 0 handler
+76: cpu-sum 0 handler
+77: cpu-sum 0 handler
+78: cpu-sum 0 handler
+79: cpu-sum 0 arm-pmu
+87: cpu-sum 0 2a6980000.dma-controller
+88: cpu-sum 0 28ec08000.mbox-recv
+89: cpu-sum 0 28ec08000.mbox-send
+90: cpu-sum 0 389c08000.mbox-recv
+91: cpu-sum 0 389c08000.mbox-send
+92: cpu-sum 73 347408000.mbox-recv
+93: cpu-sum 0 347408000.mbox-send
+95: cpu-sum 34037 nvme-apple
+104: cpu-sum 0 up
+105: cpu-sum 0 down
+107: cpu-sum 0 up
+108: cpu-sum 0 down
+110: cpu-sum 0 bwctrl
+112: cpu-sum 0 bwctrl
+113: cpu-sum 0 39b400000.dma-controller
+114: cpu-sum 0 289c08000.mbox-recv
+115: cpu-sum 0 289c08000.mbox-send
+116: cpu-sum 38 39bc08000.mbox-recv
+117: cpu-sum 0 39bc08000.mbox-send
+118: cpu-sum 0 39b104000.spi
+119: cpu-sum 150 pasemi_apple_i2c
+120: cpu-sum 226 pasemi_apple_i2c
+121: cpu-sum 60 pasemi_apple_i2c
+122: cpu-sum 228 pasemi_apple_i2c
+123: cpu-sum 0 apple-dockchannel-tx
+124: cpu-sum 34 apple-dockchannel-rx
+125: cpu-sum 0 0-003f
+127: cpu-sum 132 mmc0
+128: cpu-sum 0 tas2764
+129: cpu-sum 2 cs42l84
+132: cpu-sum 15053 brcmf_pcie_intr
+133: cpu-sum 340 bcm4377
+135: cpu-sum 10410 xhci-hcd:usb1
+IPI0: cpu-sum 4513 interrupts
+IPI1: cpu-sum 268039 interrupts
+IPI2: cpu-sum 0 interrupts
+IPI3: cpu-sum 0 NMIs
+IPI4: cpu-sum 0 interrupts
+IPI5: cpu-sum 305 interrupts
+IPI6: cpu-sum 0 interrupts
+IPI7: cpu-sum 0 interrupts
+Err: cpu-sum 0 0
+dmesg new lines 0 bad-new 0 crash-new 0
+PASS dmesg-new-ane-clean
+== summary 2026-10-02T09:14:45Z /var/tmp/ane-intree/g-intree-cont2-20261002T091444Z
+CONT2-PASS

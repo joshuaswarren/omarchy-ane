@@ -1,0 +1,68 @@
+== identity 2026-10-02T09:04:12Z
+boot_id 051f23d5-ae64-4f76-9ddd-e5532bccddee uname 7.1.12-ane-intree up 366.12
+BOOT_IMAGE=/vmlinuz-ane-intree root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash panic=30 systemd.watchdog_sec=120 systemd.crash_action=reboot ane_intree_oneshot=intree
+marker intree (want intree); grubenv [next_entry=]
+PASS marker
+PASS grubenv-read
+PASS grubenv-consumed
+PASS kernel
+PASS failed-units
+m1n1 stage 2 v1.6.1-pdtrace; ESP 62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin
+soc t6021 device 284000000.ane driver ane_t6021 (want ane_t6021, ABI major 2)
+/soc/ane@284000000: differs: iommus, mboxes, memory-region, phandle, power-domains, resets
+/soc/mailbox@285408000: differs: interrupt-names, interrupts, phandle
+dt-source other (not the in-tree DTB: boot.bin not swapped)
+PASS bound
+== in-tree modules
+ane: /usr/lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane.ko intree=Y loaded=no taint=[] version=[]
+PASS ane-path
+ane_t6021: /usr/lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane_t6021.ko intree=Y loaded=yes taint=[] version=[]
+PASS ane_t6021-path
+PASS ane_t6021-not-oot
+PASS modules-sha
+PASS no-updates-dir
+PASS no-modprobe-override
+PASS autoload
+[    4.431468] [drm] Initialized ane 2.0.0 for 284000000.ane on minor 0
+ane: loaded=no bound=0
+crw-rw-rw- 1 root render 261, 0 Oct  2 03:58 /dev/accel/accel0
+PASS accel-node
+== DRM ABI
+driver ane version 2.0.0
+PASS drm-major
+== firmware
+[    3.219131] ane_t6021 284000000.ane: BOOT-PHASE fwload stage+alias begin
+[    3.227224] ane_t6021 284000000.ane: fwload: apple/ane/t602x_ane0_fw_selene_rc4x.macho PRELOAD validated + DART-mapped: entry 0x0, iova 0x00000000ff800000 size 0x700000
+[    3.227230] ane_t6021 284000000.ane: fwload: own memory: iBoot patches replayed (soc 0x6021 rev 0x11 DATA 0x100000c4000 cpu 0x285000000 wrapper 0x285400000)
+a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc  /lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho
+firmware loaded: apple/ane/t602x_ane0_fw_selene_rc4x.macho
+PASS firmware-load
+PASS firmware-no-error
+== interrupts
+53: cpu-sum 0: AIC2 66420 Level 285408000.mailbox-recv
+54: cpu-sum 0: AIC2 67369 Level 285408000.mailbox-send
+PASS irq-line
+== dmesg
+[    0.076421] apple-dart 38930c000.iommu: probe with driver apple-dart failed with error -16
+[    0.153285] apple-dart 289304000.iommu: probe with driver apple-dart failed with error -16
+[    0.153555] apple-dart 28930c000.iommu: probe with driver apple-dart failed with error -16
+[    0.076340] Call trace:
+[    0.153241] Call trace:
+[    0.153508] Call trace:
+err-level lines 68 (dmesg-err.txt), WARNING lines 3
+FAIL dmesg-ane-bad
+FAIL dmesg-crash
+== omarchy-ane-check
+omarchy-ane-check: kernel 7.1.12-ane-intree
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (from a device tree outside the kernel package and omarchy-ane)
+  ok    ane_t6021.ko built for 7.1.12-ane-intree: //lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane_t6021.ko (version )
+  ok    ane_t6021 is loaded
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+PASS omarchy-ane-check
+NOT-RUN ane-jobs: not started: dmesg-ane-bad dmesg-crash failed
+== summary 2026-10-02T09:04:13Z /var/tmp/ane-intree/g-intree-20261002T090412Z
+not run: ane-jobs
+GATES FAIL: dmesg-ane-bad dmesg-crash

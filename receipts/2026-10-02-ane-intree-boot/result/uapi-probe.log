@@ -1,0 +1,8 @@
+GET_CAPS flags=0: rc=0
+GET_CAPS: size=32 abi_version=2 chip_family=14 section_size=24 bind_size=24 exec_io_size=32
+GET_CAPS flags=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)
+BO_INIT 4096: rc=0
+BO_INIT: handle=171 offset=2801664
+BO_FREE pad=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)
+BO_FREE pad=0: rc=0
+PROG_LOAD pad=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)

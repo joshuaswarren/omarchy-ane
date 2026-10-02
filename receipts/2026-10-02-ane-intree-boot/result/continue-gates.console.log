@@ -1,0 +1,40 @@
+== ane-run gates (new runner /var/tmp/ane-intree-test/tools/ane-run 644a2dd9f62cbae3)
+job gate-add rc=0 GATE PASS 
+PASS gate-add
+job gate-mul rc=0 GATE PASS 
+PASS gate-mul
+job gate-relu rc=0 GATE PASS 
+PASS gate-relu
+job gate-matvec5120 rc=0 GATE PASS 
+PASS gate-matvec5120
+== GET_CAPS probe and ABI-2 pad checks (ane-caps, branch header f088ca5c)
+job uapi-probe rc=0 
+PASS uapi-probe
+GET_CAPS flags=0: rc=0
+GET_CAPS: size=32 abi_version=2 chip_family=14 section_size=24 bind_size=24 exec_io_size=32
+GET_CAPS flags=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)
+BO_INIT 4096: rc=0
+BO_INIT: handle=171 offset=2801664
+BO_FREE pad=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)
+BO_FREE pad=0: rc=0
+PROG_LOAD pad=1 (want EINVAL): rc=-1 errno=22 (Invalid argument)
+== encoder x3 and smoke 20/20 (new runner)
+conditions 09:08:36: up 629.33 s, loadavg 0.00 0.12 0.13, cpu some avg10=0.00 avg60=0.00 avg300=0.00 total=308556
+enc1 09:08:36 up 629.34 load 0.00 0.12 0.13 psi 0.00
+job encoder-1 rc=0 exec ms over 20 calls: min 254.397 p10 254.405 p25 254.419 median 254.458 p75 254.598 p90 254.646 p99 254.678 max 254.678 linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1 
+PASS encoder-1
+encoder 1 hidden fp16 sha256 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+PASS encoder-1-bit-exact
+enc2 09:08:42 up 635.26 load 0.15 0.15 0.14 psi 0.00
+job encoder-2 rc=0 exec ms over 20 calls: min 254.395 p10 254.412 p25 254.458 median 254.501 p75 254.605 p90 254.637 p99 254.674 max 254.674 linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1 
+PASS encoder-2
+encoder 2 hidden fp16 sha256 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+PASS encoder-2-bit-exact
+enc3 09:08:47 up 641.02 load 0.22 0.16 0.14 psi 0.00
+job encoder-3 rc=0 exec ms over 20 calls: min 254.369 p10 254.420 p25 254.437 median 254.479 p75 254.564 p90 254.625 p99 254.637 max 254.637 linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1 
+PASS encoder-3
+encoder 3 hidden fp16 sha256 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+PASS encoder-3-bit-exact
+job smoke rc=2 
+FAIL smoke
+STOP after smoke: no further ANE job
