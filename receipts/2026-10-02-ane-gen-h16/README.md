@@ -138,3 +138,7 @@ a stop condition; do not skip the prior proof.
 The complete end-to-end effort is not complete. This assignment delivers the
 static records and data-only entries only. Driver implementation, firmware
 interpretation, mailbox protocol, boot, and inference remain unverified.
+
+## Restored framework-base validation
+
+The H16 files were replayed onto `bbc41a6` after the data-only framework was restored. The SoC records now use the framework’s plain-string `soc` and `state` fields and contain full SHA-256 source digests. The scoped JSON validator accepted all three records, and `dtc` compiled all three disabled data-only overlays. This verifies schema and DTS syntax only; it does not verify a kernel DTB or hardware.

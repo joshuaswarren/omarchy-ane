@@ -1,11 +1,8 @@
 {
-  "soc": {
-    "v": "t6041",
-    "src": "S1"
-  },
+  "soc": "t6041",
   "marketing": {
- "v": "Unverified marketing tier: macOS 27.0 BuildManifest maps ApChipID 0x6041 to j575cap/j614cap/j616cap and shared t604x firmware, but gives no M4 Pro/Max marketing name.",
- "src": "S1"
+    "v": "Unverified marketing tier: macOS 27.0 BuildManifest maps ApChipID 0x6041 to j575cap/j614cap/j616cap and shared t604x firmware, but gives no M4 Pro/Max marketing name.",
+    "src": "S1"
   },
   "generation": {
     "v": "H16",
@@ -14,53 +11,53 @@
   "boards": [
     {
       "v": "J575c / Mac16,9",
-      "src": "S1"
+      "src": "S3"
     },
     {
       "v": "J614c / Mac16,6",
-      "src": "S1"
+      "src": "S7"
     },
     {
       "v": "J616c / Mac16,5",
-      "src": "S1"
+      "src": "S8"
     }
   ],
   "sources": [
     {
       "id": "S1",
       "kind": "buildmanifest",
-      "ref": "macOS 27.0 26A428 IPSW BuildManifest.plist; ApChipID 0x6041 DeviceClass j575cap/j614cap/j616cap; Firmware/ane/t604x_ane_fw_aether_brvx.im4p",
-      "sha256": "see private artifact SHA256SUMS; extracted member hashes not retained in public tree"
+      "ref": "macOS 27.0 26A428 IPSW BuildManifest.plist; ApChipID 0x6041 DeviceClass entries",
+      "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7"
     },
     {
       "id": "S2",
-      "kind": "buildmanifest",
- "ref": "Firmware/ane/t604x_ane_fw_aether_brvx.im4p; shared T604x image, 1556505 B; IM4P ASN.1 inspected by HTTP range read",
- "sha256": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3"
+      "kind": "ipsw-firmware",
+      "ref": "macOS 27.0 IPSW Firmware/ane/t604x_ane_fw_aether_brvx.im4p shared wrapper; payload not decrypted or unpacked",
+      "sha256": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3"
     },
     {
       "id": "S3",
       "kind": "ipsw-adt",
-      "ref": "DeviceTree.j575cap.adt /arm-io/ane0, /arm-io/dart-ane, /arm-io/pmgr; same ANE fields on j614cap/j616cap",
-      "sha256": "44b4f151b2dffbd987f4dde7797b969a4be42f16f9c7e00a5297e210e741fbb6"
-    },
-    {
-      "id": "S4",
-      "kind": "aurora-dts",
- "ref": "aurora-wip b3a55ee68bfb arch/arm64/boot/dts/apple: no t6040/t6041 DTS or board file; no model strings available to map the Mac16,x IDs to marketed chip tiers",
- "sha256": "n/a"
-    },
-    {
-      "id": "S5",
-      "kind": "ipsw-adt",
-      "ref": "DeviceTree.j575cap.adt decoded root: target-type J575c; root Mac16,9; arm-io,t6041",
+      "ref": "macOS 27.0 IPSW DeviceTree.j575cap.adt; /arm-io/ane0, /arm-io/dart-ane, /arm-io/pmgr",
       "sha256": "44b4f151b2dffbd987f4dde7797b969a4be42f16f9c7e00a5297e210e741fbb6"
     },
     {
       "id": "S6",
       "kind": "community-row",
-      "ref": "mil-hwx-compiler receipts/2026-09-05-ane-community/h16g-w8a8-inspection.log and research/inspect_hwx.py; H16G subtype 7, ISA 17",
-      "sha256": "n/a"
+      "ref": "mil-hwx-compiler receipts/2026-09-05-ane-community/h16g-w8a8-inspection.log; H16G subtype 7, ISA 17",
+      "sha256": "62ecd1abb031568432bd3e91ba47f8d1d8566ee2291b7db5fc886084c448b853"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j614cap.adt; extracted board root and ANE node",
+      "sha256": "d91252105f7335211ee5e2a6975cd0602b5de0725c47374aeb29811567de3971"
+    },
+    {
+      "id": "S8",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j616cap.adt; extracted board root and ANE node",
+      "sha256": "b1ea42ac9780776fbfdc3d82a89ca19a0db2e188b197eee779922207c00b520f"
     }
   ],
   "ane": {
@@ -340,17 +337,17 @@
       "src": "S1"
     },
     "sha256": {
- "v": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3",
- "src": "S2"
- },
- "format": {
- "v": "IM4P: SEQUENCE has IM4P/anef/1 plus one OCTET STRING (1556480 bytes) beginning Mach-O MH_MAGIC_64 cffaedfe; no KBAG or additional keybag field; no LZFSE marker observed.",
- "src": "S2"
- },
- "encrypted": {
- "v": false,
- "src": "S2"
- },
+      "v": "976c31a5c0ea3d3110293cb99b30342d085e0b1bf1d5f015d811938b0981d4a3",
+      "src": "S2"
+    },
+    "format": {
+      "v": "IM4P: SEQUENCE has IM4P/anef/1 plus one OCTET STRING (1556480 bytes) beginning Mach-O MH_MAGIC_64 cffaedfe; no KBAG or additional keybag field; no LZFSE marker observed.",
+      "src": "S2"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S2"
+    },
     "loaded_by": {
       "v": null,
       "reason": "No iBoot/kernelcache trace establishes the H16 loader."
@@ -374,8 +371,5 @@
     "v": "H16G; subtype 7, ISA 17; compiler emits H16G HWX but this does not prove runtime compatibility.",
     "src": "S6"
   },
-  "state": {
-    "v": "data-only",
-    "src": "S3"
-  }
+  "state": "data-only"
 }
