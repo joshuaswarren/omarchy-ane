@@ -10,6 +10,11 @@
 #   omarchy-ane-check --installed  check that ane.ko and ane_t6021.ko exist
 #                                  for every installed kernel with headers
 #                                  (pacman hook)
+#   omarchy-ane-check --smoke      the same checks, then, when all pass, run
+#                                  omarchy-ane-smoke (the shipped add program,
+#                                  20 calls through libane) and print its
+#                                  result line. An unavailable smoke is a
+#                                  note, not a failure.
 #
 # --root DIR (first argument) reads the system below DIR (tests).
 # Read-only. It never loads, unloads, or binds the module.
@@ -46,14 +51,16 @@ tool() {
   printf '%s\n' "$path"
 }
 
+smoke=0
 case "${1:-}" in
   --installed)
     kernels=("$root"/usr/lib/modules/*/build)
     (( ${#kernels[@]} )) || { bad "no kernel headers are installed, so DKMS cannot build ane.ko"; finish; }
     for b in "${kernels[@]}"; do k=${b%/build}; built "${k##*/}" ane; built "${k##*/}" ane_t6021; done
     finish ;;
+  --smoke) smoke=1 ;;
   "") ;;
-  *) echo "usage: omarchy-ane-check [--root DIR] [--installed]" >&2; exit 2 ;;
+  *) echo "usage: omarchy-ane-check [--root DIR] [--installed | --smoke]" >&2; exit 2 ;;
 esac
 
 kver=$(uname -r)
@@ -165,6 +172,21 @@ else
     ok "$node present ($mode); every user can open it"
   else
     bad "$node is $mode, so not every user can open it. systemd's default rule makes accel nodes mode 0666. A udev rule on this system changed that."
+  fi
+fi
+
+# 7. Execution: omarchy-ane-smoke prints one line for people on stderr.
+if (( smoke && !fail )); then
+  st=$(tool omarchy-ane-smoke)
+  if [[ -z $st ]]; then
+    bad "cannot run the smoke: omarchy-ane-smoke is missing"
+  else
+    line=$("$st" ${root:+--root "$root"} 2>&1 >/dev/null)
+    case $? in
+      0) ok "smoke: ${line#omarchy-ane-smoke: }" ;;
+      2) echo "  note  smoke: ${line#omarchy-ane-smoke: }" ;;
+      *) bad "smoke: ${line#omarchy-ane-smoke: }" ;;
+    esac
   fi
 fi
 

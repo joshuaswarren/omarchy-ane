@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
-"""Judge community collect rows against the README "Promotion rule".
+"""Judge community collect rows against the README "Promotion" and "Regression" rules.
 
 Reads published mlx-omarchy community rows (the JSON of /v1/results/<sha256>,
 one row per file, or a JSONL file of such rows) and prints, per SoC, each
-judged row with its failures and the promotion verdict:
+judged row with its failures and the verdict: PROMOTE or STAY for an opt-in
+SoC, ON or REVERT for a SoC whose overlay is enabled in packaging/dt/overlays:
 
     tools/promotion_check.py ROW.json [ROW.json | ROWS.jsonl ...]
     tools/promotion_check.py --remote [URL]     # every row of the public dataset
 
 A row is judged only when it carries the omarchy-ane block
-(summary.ane_port_detail.runtime.omarchy_ane, README "Promotion rule").
-Exit 0 always: the output is a report, not a gate.
+(summary.ane_port_detail.runtime.omarchy_ane). Exit 0 always: the output is
+a report, not a gate.
 """
 import argparse
 import json
@@ -20,18 +21,26 @@ import re
 import sys
 import urllib.request
 from collections import defaultdict
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.dont_write_bytecode = True  # no __pycache__ beside the extensionless packaging/omarchy-ane-smoke
+_spec = spec_from_loader("smoke", SourceFileLoader("smoke", str(REPO / "packaging/omarchy-ane-smoke")))
+SMOKE = module_from_spec(_spec)
+_spec.loader.exec_module(SMOKE)
 
 DATASET = "https://mlx-omarchy-community-data.joshua-s-warren.workers.dev"
 # Cloudflare bot protection refuses the default Python user agent.
 USER_AGENT = "omarchy-ane-promotion-check/1 (+https://github.com/joshuaswarren/omarchy-ane)"
 
-# Parakeet encoder, fp16 output (receipts/2026-10-01-t6021-release-boot).
-ENCODER_SHA256 = "fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063"
 DRIVER = {"t8103": "ane", "t6000": "ane", "t6001": "ane", "t6002": "ane",
           "t6020": "ane_t6021", "t6021": "ane_t6021", "t6022": "ane_t6021",
           "t8112": "ane_t6021"}
-# The smoke golden per SoC. A SoC without one cannot pass a row.
-GOLDEN = {"t6020": ENCODER_SHA256, "t6021": ENCODER_SHA256, "t6022": ENCODER_SHA256}
+# The smoke golden per SoC: the add-fixture golden where omarchy-ane-smoke
+# has a fixture. A SoC without one cannot pass a row.
+GOLDEN = {s: SMOKE.GOLDEN for s in SMOKE.FIXTURE}
 # Board device trees per SoC in linux-asahi 7.1.13-3 (arch/arm64/boot/dts/apple).
 BOARDS = {"t8103": 5, "t6000": 2, "t6001": 3, "t6002": 1, "t6020": 3,
           "t6021": 3, "t6022": 2, "t8112": 4}
@@ -61,13 +70,34 @@ def soc(row):
     return chip.split(",", 1)[1] if chip.startswith("apple,t") else None
 
 
-def failures(row):
-    """Reasons a judged row fails; empty list = the row passes."""
-    s, oa = soc(row), block(row)
+def default_on():
+    """SoCs whose ANE overlay is enabled in packaging/dt/overlays."""
+    lines = (REPO / "packaging/dt/overlays").read_text().splitlines()
+    return {p for p, src, state in (l.split() for l in lines if l and l[0] != "#")
+            if src == f"{p}-ane.dts" and state == "enabled"}
+
+
+ON = default_on()
+
+
+def unclean(oa):
+    """Reasons a row is not clean (the regression rule): check not ready, or fault lines."""
     out = []
     check = oa.get("check") or {}
     if check.get("exit") != 0 or check.get("status") != "ready":
         out.append(f"omarchy-ane-check not ready (exit {check.get('exit')}, {check.get('status')})")
+    faults = list(oa.get("dmesg_faults") or [])
+    faults += [l for l in oa.get("dmesg") or [] if ANE_LINE.search(l) and FAULT.search(l)
+               and l not in faults]
+    if faults:
+        out.append(f"{len(faults)} ANE/DART/mailbox fault line(s): {faults[0][:120]}")
+    return out
+
+
+def failures(row):
+    """Reasons a judged row fails; empty list = the row passes."""
+    s, oa = soc(row), block(row)
+    out = unclean(oa)
     module = (oa.get("module") or {}).get("name")
     if module != DRIVER.get(s):
         out.append(f"module {module}, want {DRIVER.get(s)}")
@@ -80,11 +110,6 @@ def failures(row):
         bad = sum(h != golden for h in hashes)
         out.append(f"smoke {len(hashes)} calls, {bad} not bit-exact, {smoke.get('errors')} errors "
                    f"(want {MIN_SMOKE_CALLS} bit-exact, 0 errors)")
-    faults = list(oa.get("dmesg_faults") or [])
-    faults += [l for l in oa.get("dmesg") or [] if ANE_LINE.search(l) and FAULT.search(l)
-               and l not in faults]
-    if faults:
-        out.append(f"{len(faults)} ANE/DART/mailbox fault line(s): {faults[0][:120]}")
     if (oa.get("uptime_s") or 0) < MIN_UPTIME_S:
         out.append(f"uptime {oa.get('uptime_s')} s < {MIN_UPTIME_S} s")
     if not board(row):
@@ -93,7 +118,7 @@ def failures(row):
 
 
 def verdict(rows):
-    """{soc: dict(counts, passing/failing row ids, promote, needs)} over judged rows."""
+    """{soc: dict(counts, passing/failing row ids, promote, needs, on, latest, revert)} over judged rows."""
     by_soc = defaultdict(list)
     for row in rows:
         if soc(row) and block(row):
@@ -115,10 +140,13 @@ def verdict(rows):
                 needs.append(f"{what} {have}/{want}")
         if bad:
             needs.append(f"{len(bad)} failing row(s) to explain")
+        latest = max(judged, key=lambda r: r.get("received_at") or "")
         out[s] = {"judged": len(judged), "passing": [r["content_sha256"][:12] for r in ok],
                   "failing": {r["content_sha256"][:12]: failures(r) for r in bad},
                   "machines": len(machines), "owners": len(owners), "boards": len(boards),
-                  "kernels": len(kernels), "promote": not needs, "needs": needs}
+                  "kernels": len(kernels), "promote": not needs, "needs": needs,
+                  "on": s in ON, "latest": latest["content_sha256"][:12],
+                  "revert": unclean(block(latest)) if s in ON else []}
     return out
 
 
@@ -158,17 +186,21 @@ def main(argv=None):
             per_soc[soc(row)] += 1
     result = verdict(rows)
     print(f"promotion_check: {len(rows)} rows; rule: {N_ROWS} passing rows, {N_MACHINES} machines, "
-          f"{N_OWNERS} owners, 2 boards (1 if the SoC has one), {N_KERNELS} kernel releases, 0 failing rows")
+          f"{N_OWNERS} owners, 2 boards (1 if the SoC has one), {N_KERNELS} kernel releases, 0 failing rows; "
+          f"on by default ({', '.join(sorted(ON))}): REVERT when the latest row is not clean")
     for s in sorted(per_soc):
         r = result.get(s)
         if r is None:
-            print(f"{s}: {per_soc[s]} rows, 0 judged (no omarchy-ane block) -> STAY")
+            print(f"{s}: {per_soc[s]} rows, 0 judged (no omarchy-ane block) -> {'ON' if s in ON else 'STAY'}")
             continue
-        state = "PROMOTE" if r["promote"] else "STAY"
+        if r["on"]:
+            state = f"REVERT (latest row {r['latest']}: {'; '.join(r['revert'])})" if r["revert"] else "ON"
+        else:
+            state = ("PROMOTE" if r["promote"] else "STAY") + \
+                (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
         print(f"{s}: {per_soc[s]} rows, {r['judged']} judged, {len(r['passing'])} pass, "
               f"{len(r['failing'])} fail, machines {r['machines']}, owners {r['owners']}, "
-              f"boards {r['boards']}, kernels {r['kernels']} -> {state}"
-              + (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else ""))
+              f"boards {r['boards']}, kernels {r['kernels']} -> {state}")
         for sha, why in r["failing"].items():
             print(f"  FAIL {sha}: {'; '.join(why)}")
         for sha in r["passing"]:

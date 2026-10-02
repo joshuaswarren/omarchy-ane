@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright 2026 Joshua Warren
+"""omarchy-ane-smoke: run the shipped add program 20 times on this Mac's ANE.
+
+omarchy-ane-check proves a bound driver; this proves execution. Each call is
+one omarchy-ane-run process (libane): it opens /dev/accel, loads the 20 KiB
+add ANEC, sends two fixed fp16 inputs, runs the program once, reads the
+output and checks it with --check add. A new process gets new zeroed
+buffers, so every call writes its own output. The golden is the exact model
+of the fixed inputs (fp16 sum, ties away from zero), not a device capture;
+tools/test_ane_smoke.py recomputes it.
+
+  omarchy-ane-smoke [--root DIR] [--timeout SECONDS]
+
+stdout: one JSON line {name, chip, available, sha256 (one per call: the 512
+valid fp16 output lanes), golden_sha256, errors, min_ms, median_ms}. stderr:
+one line for people. Exit 0: 20 of 20 calls bit-exact. Exit 1: a call failed,
+was not bit-exact, or ran past the time limit (JSON adds "reason"). Exit 2:
+no smoke on this Mac ({name, chip, available: false, reason}): no fixture for
+this chip, the driver is not bound, the firmware is missing, or a file of the
+package is missing. It holds /var/tmp/ane-run.lock, when that file exists and
+is writable, for the whole run. It never loads, unloads or binds a module.
+--root reads the system below DIR (tests).
+"""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import shutil
+import statistics
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+NAME = "add-fixture"
+CALLS = 20
+LANES, PLANE = 512, 64  # nchw [1,512,1,1]: one fp16 at the start of each 64-byte plane
+SURFACE = LANES * PLANE
+# The H14 add ANEC, sha256 b416b9d1...: mil-hwx-compiler output (encoder
+# h14-oracle-parity), not Apple compiler bytes. It ran 512 of 512 lanes exact
+# on T6021 (receipts/2026-09-29-t6021-installed-path). T6020, T6022 and T8112
+# have the same ANE generation and driver.
+H14_ADD = "h14-anec/add/program-0.anec"
+FIXTURE = {"t6020": H14_ADD, "t6021": H14_ADD, "t6022": H14_ADD, "t8112": H14_ADD}
+MODULE = "ane_t6021"  # the driver of every FIXTURE chip
+# No M1-family (H13) add package has run through ane-run on a device
+# (receipts/2026-10-02-omarchy-ane-smoke).
+H13 = ("t8103", "t6000", "t6001", "t6002")
+# sha256 of the 512 exact sums of inputs("a") + inputs("b"), fp16, ties away
+# from zero, little-endian, lane order (the ane-run --check add oracle).
+GOLDEN = "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"
+FIXTURES = "usr/share/omarchy-ane/fixtures"
+DT = "sys/firmware/devicetree/base"
+LOCK = "var/tmp/ane-run.lock"
+TIME = re.compile(r"exec ms over 1 calls: min ([0-9.]+)")
+HERE = Path(__file__).resolve().parent
+
+
+class Unavailable(Exception):
+    pass
+
+
+def inputs(tag):
+    """512 fixed fp16 values: sign and mantissa from sha256, magnitude 2^-4 to 8."""
+    bits = []
+    for j in range(LANES):
+        r = int.from_bytes(hashlib.sha256(f"{tag}{j}".encode()).digest()[:4], "little")
+        bits.append((r >> 31) << 15 | (11 + (r >> 10) % 7) << 10 | (r & 0x3FF))
+    return bits
+
+
+def surface(bits):
+    buf = bytearray(SURFACE)
+    for j, v in enumerate(bits):
+        struct.pack_into("<H", buf, j * PLANE, v)
+    return bytes(buf)
+
+
+def valid(data):
+    return b"".join(data[j * PLANE:j * PLANE + 2] for j in range(LANES))
+
+
+def tool(name, repo=None):
+    """The installed tool next to this script or on PATH, else the checkout's."""
+    for path in (HERE / name, shutil.which(name), repo and HERE.parent / repo):
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return Path(path)
+    return None
+
+
+def soc(root):
+    try:
+        names = (root / DT / "compatible").read_bytes().decode("ascii", "replace").split("\0")
+    except OSError:
+        return None
+    return next((m.group(1) for m in map(re.compile(r"apple,(t\d+)").fullmatch, names) if m), None)
+
+
+def prepare(root, chip):
+    """(anec, runner) for this Mac, or Unavailable with the reason."""
+    if chip is None:
+        raise Unavailable(f"no Apple SoC in {root / DT}/compatible")
+    if chip in H13:
+        raise Unavailable(f"{chip}: no M1-family (H13) add fixture has run through omarchy-ane-run yet")
+    if chip not in FIXTURE:
+        raise Unavailable(f"{chip}: no omarchy-ane driver for this chip")
+    anec = next((d / FIXTURE[chip] for d in (root / FIXTURES, HERE.parent / "fixtures")
+                 if (d / FIXTURE[chip]).is_file()), None)
+    if anec is None:
+        raise Unavailable(f"{root / FIXTURES / FIXTURE[chip]} is missing. Reinstall omarchy-ane-dkms.")
+    runner = tool("omarchy-ane-run", "tools/ane-run")
+    if runner is None:
+        raise Unavailable("omarchy-ane-run is missing. Reinstall omarchy-ane-dkms.")
+    drivers = root / "sys/bus/platform/drivers" / MODULE
+    if not any(p.is_symlink() and p.name != "module" for p in drivers.glob("*")):
+        why = f"{MODULE} is bound to no device. Read the reason with: journalctl -k -g {MODULE}"
+        fetch = tool("omarchy-ane-firmware-fetch")
+        if fetch:
+            p = subprocess.run([str(fetch), "--check", "--root", str(root)], capture_output=True, text=True,
+                               timeout=30)
+            if p.returncode and p.stderr.strip():
+                why = p.stderr.strip().splitlines()[-1].removeprefix("omarchy-ane-firmware-fetch: ")
+        raise Unavailable(why)
+    return anec, runner
+
+
+@contextmanager
+def lock(path, deadline):
+    if not os.access(path, os.W_OK):
+        yield
+        return
+    with open(path, "a") as fh:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise Unavailable(f"another ANE job held {path} past the time limit")
+                time.sleep(0.1)
+        yield
+
+
+def last(text):
+    lines = text.strip().splitlines()
+    return lines[-1] if lines else ""
+
+
+def calls(runner, anec, deadline, limit):
+    """(sha256 per call, exec ms per call, bit-exact calls, first problem)."""
+    hashes, times, exact, problem = [], [], 0, None
+    work = Path(tempfile.mkdtemp(prefix="omarchy-ane-smoke."))
+    try:
+        a, b, y = work / "a.fp16", work / "b.fp16", work / "y.fp16"
+        a.write_bytes(surface(inputs("a")))
+        b.write_bytes(surface(inputs("b")))
+        cmd = [str(runner), "--anec", str(anec), "--in", f"0={a}", "--in", f"1={b}", "--out", f"0={y}",
+               "--check", "add", "--time"]
+        for n in range(1, CALLS + 1):
+            y.unlink(missing_ok=True)
+            left = deadline - time.monotonic()
+            if left <= 0:
+                problem = problem or f"the {limit:g} s limit passed before call {n}"
+                break
+            try:
+                p = subprocess.run(cmd, capture_output=True, text=True, timeout=left)
+            except subprocess.TimeoutExpired:
+                problem = problem or f"call {n} ran past the {limit:g} s limit"
+                break
+            out = y.read_bytes() if y.exists() else b""
+            if len(out) < SURFACE:
+                problem = problem or f"call {n}: no output ({last(p.stderr) or f'exit {p.returncode}'})"
+                break
+            digest = hashlib.sha256(valid(out)).hexdigest()
+            hashes.append(digest)
+            m = TIME.search(p.stdout)
+            if m:
+                times.append(float(m.group(1)))
+            if p.returncode == 0 and digest == GOLDEN:
+                exact += 1
+            else:
+                problem = problem or f"call {n}: not bit-exact ({last(p.stdout) or last(p.stderr) or digest[:16]})"
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return hashes, times, exact, problem
+
+
+def emit(result, line, code):
+    print(json.dumps(result))
+    print(f"omarchy-ane-smoke: {line}", file=sys.stderr)
+    return code
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--root", type=Path, default=Path("/"), help="system root (tests)")
+    ap.add_argument("--timeout", type=float, default=60.0, help="limit for the whole run, in seconds")
+    args = ap.parse_args(argv)
+    deadline = time.monotonic() + args.timeout
+    chip = soc(args.root)
+    try:
+        anec, runner = prepare(args.root, chip)
+        with lock(args.root / LOCK, deadline):
+            hashes, times, exact, problem = calls(runner, anec, deadline, args.timeout)
+    except Unavailable as e:
+        return emit({"name": NAME, "chip": chip, "available": False, "reason": str(e)}, f"unavailable: {e}", 2)
+    errors = CALLS - exact
+    result = {"name": NAME, "chip": chip, "available": True, "sha256": hashes, "golden_sha256": GOLDEN,
+              "errors": errors, "min_ms": round(min(times), 3) if times else None,
+              "median_ms": round(statistics.median(times), 3) if times else None}
+    line = f"{NAME} on {chip}: {exact}/{CALLS} calls bit-exact"
+    if times:
+        line += f", min {result['min_ms']:.3f} ms, median {result['median_ms']:.3f} ms"
+    if errors:
+        result["reason"] = problem
+        return emit(result, f"{line}; {problem}", 1)
+    return emit(result, line, 0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
