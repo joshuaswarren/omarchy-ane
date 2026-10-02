@@ -87,12 +87,15 @@ for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
         assert fetch.main(['--root', str(system(compat, b'13.5'))]) == 1
     assert ('cannot fetch' in err.getvalue()) == gate, (compat, err.getvalue())
 
-# 5. --hook (pacman): only T6021, where the ANE is on by default, fetches; a
-# failed fetch or a system without a device tree is a note, exit 0.
-for compat, tries in (([b'apple,j414c', b'apple,t6021'], True),
-                      ([b'apple,j414s', b'apple,t6020'], False),
-                      ([b'apple,j413', b'apple,t8112'], False),
-                      ([b'apple,j293', b'apple,t8103'], False)):
+# 5. --hook (pacman): the hook fetches where the ANE is on by default
+# (firmware-fetch DEFAULT_ON, which mirrors the overlays table); a failed
+# fetch or a system without a device tree is a note, exit 0. Derived, so a
+# promotion flip (tools/promote_chip.py) keeps this suite green.
+for compat, chip in (([b'apple,j414c', b'apple,t6021'], 'apple,t6021'),
+                     ([b'apple,j414s', b'apple,t6020'], 'apple,t6020'),
+                     ([b'apple,j413', b'apple,t8112'], 'apple,t8112'),
+                     ([b'apple,j293', b'apple,t8103'], 'apple,t8103')):
+    tries = chip in fetch.DEFAULT_ON
     t, out, err = system(compat, b'13.5'), io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         assert fetch.main(['--hook', '--root', str(t)]) == 0
