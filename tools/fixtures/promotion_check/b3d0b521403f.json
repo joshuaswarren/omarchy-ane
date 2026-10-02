@@ -1,0 +1,39 @@
+{
+ "chip": "apple,t8112",
+ "content_sha256": "b3d0b521403f6d26fe2756adea24c6955873d15d9c8901afec762bfd4a97ec7a",
+ "kernel": "7.1.13-3-2-ARCH",
+ "received_at": "2026-10-02T06:28:42.000Z",
+ "summary": {
+  "ane_port_detail": {
+   "devicetree": {
+    "boot": {
+     "compatible": [
+      "apple,j413",
+      "apple,t8112",
+      "apple,arm-platform"
+     ]
+    }
+   },
+   "runtime": {
+    "omarchy_ane": {
+     "check": {
+      "available": false,
+      "unavailable": "omarchy-ane-check not installed"
+     },
+     "dmesg": [],
+     "dmesg_faults": [],
+     "machine_id": "e8b68f474c9a4c5e",
+     "module": {
+      "available": false,
+      "unavailable": "no /sys/module/ane* module"
+     },
+     "owner_id": "a6acbac5eab22a22",
+     "smoke": {
+      "requested": false
+     },
+     "uptime_s": 619
+    }
+   }
+  }
+ }
+}

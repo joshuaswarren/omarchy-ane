@@ -1,0 +1,50 @@
+{
+ "chip": "apple,t6000",
+ "content_sha256": "a994fe80c99462709b2fcc59ea48fd34338e23efa049e5b4003608d7488d8506",
+ "kernel": "7.1.13-3-2-ARCH",
+ "received_at": "2026-10-02T06:51:49.000Z",
+ "summary": {
+  "ane_port_detail": {
+   "devicetree": {
+    "boot": {
+     "compatible": [
+      "apple,j316s",
+      "apple,t6000",
+      "apple,arm-platform"
+     ]
+    }
+   },
+   "runtime": {
+    "omarchy_ane": {
+     "check": {
+      "available": false,
+      "unavailable": "omarchy-ane-check not installed"
+     },
+     "dmesg": [
+      "Sep 27 21:14:55 [host] kernel: apple-dart 581008000.iommu: DART [pagesize 4000, 16 streams, bypass support: 0, bypass forced: 0, locked: 0, AS 32 -> 42] initial",
+      "Sep 30 10:07:19 [host] kernel: apple-dart 581008000.iommu: translation fault: status:0x81000404 stream:1 code:0x404 (unknown) at 0xbe889fcc",
+      "Sep 30 10:07:19 [host] kernel: apple-dart 581008000.iommu: translation fault: status:0x81000404 stream:1 code:0x404 (unknown) at 0xbf35e94c",
+      "Sep 30 10:07:19 [host] kernel: apple-dart 581008000.iommu: translation fault: status:0x81000404 stream:1 code:0x404 (unknown) at 0xbceab2cc",
+      "Sep 30 10:07:19 [host] kernel: apple-dart 581008000.iommu: translation fault: status:0x81000404 stream:1 code:0x404 (unknown) at 0xbb8400cc"
+     ],
+     "dmesg_faults": [
+      "Sep 28 11:50:25 [host] kernel: apple-dcp 38bc00000.dcp: RTKit: syslog message: FBPropertyManager.h:189: value_t<P> IOMFB::PropMgr::getVal(IOMFB::RuntimeProperty",
+      "Sep 28 12:01:24 [host] kernel: apple-dcp 38bc00000.dcp: RTKit: syslog message: FBPropertyManager.h:189: value_t<P> IOMFB::PropMgr::getVal(IOMFB::RuntimeProperty"
+     ],
+     "machine_id": "552a52863ab7504b",
+     "module": {
+      "available": false,
+      "unavailable": "no /sys/module/ane* module"
+     },
+     "owner_id": "c7801602cb050391",
+     "smoke": {
+      "available": false,
+      "reason": "omarchy-ane-check is not ready; the smoke needs omarchy-ane installed and the module bound",
+      "requested": true
+     },
+     "uptime_s": 340948
+    }
+   }
+  }
+ }
+}

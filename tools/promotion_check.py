@@ -5,15 +5,22 @@
 
 Reads published mlx-omarchy community rows (the JSON of /v1/results/<sha256>,
 one row per file, or a JSONL file of such rows) and prints, per SoC, each
-judged row with its failures and the verdict: PROMOTE or STAY for an opt-in
-SoC, ON or REVERT for a SoC whose overlay is enabled in packaging/dt/overlays:
+judged row with its failures and the verdict: PROMOTE, CONFLICT or STAY for an
+opt-in SoC, ON or REVERT for a SoC whose overlay is enabled in
+packaging/dt/overlays:
 
     tools/promotion_check.py ROW.json [ROW.json | ROWS.jsonl ...]
     tools/promotion_check.py --remote [URL]     # every row of the public dataset
 
-A row is judged only when it carries the omarchy-ane block
-(summary.ane_port_detail.runtime.omarchy_ane). Exit 0 always: the output is
-a report, not a gate.
+A row is judged only when it carries the omarchy-ane block and provides
+evidence: an unready check, an ANE fault, a wrong driver, or an attempted smoke.
+An uninstalled row, or a clean ready row with no smoke attempt, is not judged
+and counts neither for nor against a chip. One passing
+row promotes an opt-in SoC. A passing row has omarchy-ane-check ready, the
+chip's driver loaded, 20 bit-exact smoke calls against the golden, and no
+ANE/DART/mailbox fault line. A chip with both a passing and a failing row is a
+CONFLICT: it does not promote until the failing row is explained or superseded.
+Exit 0 always: the output is a report, not a gate.
 """
 import argparse
 import json
@@ -41,15 +48,19 @@ DRIVER = {"t8103": "ane", "t6000": "ane", "t6001": "ane", "t6002": "ane",
 # The smoke golden per SoC: the add-fixture golden where omarchy-ane-smoke
 # has a fixture. A SoC without one cannot pass a row.
 GOLDEN = SMOKE.GOLDEN
-# Board device trees per SoC in linux-asahi 7.1.13-3 (arch/arm64/boot/dts/apple).
-BOARDS = {"t8103": 5, "t6000": 2, "t6001": 3, "t6002": 1, "t6020": 3,
-          "t6021": 3, "t6022": 2, "t8112": 4}
-
-N_ROWS, N_MACHINES, N_OWNERS, N_KERNELS = 3, 3, 2, 2
-MIN_UPTIME_S, MIN_SMOKE_CALLS = 1800, 20
-ANE_LINE = re.compile(r"\bane(_t6021)?\b|\bane@|\.ane\b|apple-dart.*(2858[0-2]0000|26b8[0-2]0000)"
-                      r"|apple-mailbox.*(285408000|26b408000)|mailbox@(285408000|26b408000)")
-FAULT = re.compile(r"fault|error|timed? ?out|abort|oops|warn|bug|call trace|stall|hung",
+MIN_SMOKE_CALLS = 20
+# A line counts as an ANE line only when it names the ANE platform device
+# (<addr>.ane, bare or with the driver prefix "ane"/"ane_t6021:"), one of the
+# ANE DARTs (285800000/285810000/285820000 on T600x and T602x,
+# 26b800000/26b810000/26b820000 on T8103 and T8112, per packaging/dt/)
+# or the ANE mailbox (285408000 T602x, 26b408000 T8112). Other devices log
+# look-alike lines (apple-dcp RTKit syslog chatter, other DARTs), and the
+# collector's dmesg_faults list is not scoped to the ANE: a line decides a
+# row only through this matcher, never by being listed.
+ANE_LINE = re.compile(r"\b[0-9a-f]+\.ane\b|\bane(_t6021)?:"
+                      r"|apple-dart (2858[0-2]0000|26b8[0-2]0000)\.iommu"
+                      r"|apple-mailbox (285408000|26b408000)\.mailbox")
+FAULT = re.compile(r"fault|error|fail(?:ed|ure)?|timed? ?out|abort|oops|warn|bug|call trace|stall|hung",
                    re.IGNORECASE)
 
 
@@ -59,15 +70,33 @@ def block(row):
     return oa if isinstance(oa, dict) else None
 
 
-def board(row):
-    dt = ((row.get("summary") or {}).get("ane_port_detail") or {}).get("devicetree") or {}
-    compat = (dt.get("boot") or {}).get("compatible") or []
-    return compat[0] if compat else None
-
-
 def soc(row):
     chip = row.get("chip") or ""
     return chip.split(",", 1)[1] if chip.startswith("apple,t") else None
+
+
+def installed(oa):
+    """True unless the collector explicitly says omarchy-ane is unavailable."""
+    return (oa.get("check") or {}).get("available") is not False
+
+
+def smoke_attempted(smoke):
+    """Whether the collector tried the smoke rather than skipping or deferring it."""
+    if smoke.get("busy") or smoke.get("attempted") is False or smoke.get("requested") is False:
+        return False
+    if smoke.get("attempted") is True or smoke.get("requested") is True:
+        return True
+    return "sha256" in smoke or smoke.get("available") is True or (
+        smoke.get("available") is False and "name" in smoke)
+
+
+def judged(row):
+    """Rows with failure evidence count even when no smoke ran; clean skips do not."""
+    oa, s = block(row), soc(row)
+    if not oa or not installed(oa):
+        return False
+    module = (oa.get("module") or {}).get("name")
+    return bool(unclean(oa)) or module != DRIVER.get(s) or smoke_attempted(oa.get("smoke") or {})
 
 
 def default_on():
@@ -86,10 +115,10 @@ def unclean(oa):
     check = oa.get("check") or {}
     if check.get("exit") != 0 or check.get("status") != "ready":
         out.append(f"omarchy-ane-check not ready (exit {check.get('exit')}, {check.get('status')})")
-    faults = list(oa.get("dmesg_faults") or [])
-    faults += [l for l in oa.get("dmesg") or [] if ANE_LINE.search(l) and FAULT.search(l)
-               and l not in faults]
+    faults = [l for l in (oa.get("dmesg_faults") or []) + (oa.get("dmesg") or [])
+              if ANE_LINE.search(l) and FAULT.search(l)]
     if faults:
+        faults = list(dict.fromkeys(faults))
         out.append(f"{len(faults)} ANE/DART/mailbox fault line(s): {faults[0][:120]}")
     return out
 
@@ -106,47 +135,40 @@ def failures(row):
     golden = GOLDEN.get(s)
     if golden is None:
         out.append(f"no smoke golden for {s}")
-    elif len(hashes) < MIN_SMOKE_CALLS or smoke.get("errors") or any(h != golden for h in hashes):
+    elif len(hashes) != MIN_SMOKE_CALLS or smoke.get("errors") or any(h != golden for h in hashes):
         bad = sum(h != golden for h in hashes)
         out.append(f"smoke {len(hashes)} calls, {bad} not bit-exact, {smoke.get('errors')} errors "
-                   f"(want {MIN_SMOKE_CALLS} bit-exact, 0 errors)")
-    if (oa.get("uptime_s") or 0) < MIN_UPTIME_S:
-        out.append(f"uptime {oa.get('uptime_s')} s < {MIN_UPTIME_S} s")
-    if not board(row):
-        out.append("no board compatible")
+                   f"(want exactly {MIN_SMOKE_CALLS} bit-exact, 0 errors)")
     return out
 
 
 def verdict(rows):
-    """{soc: dict(counts, passing/failing row ids, promote, needs, on, latest, revert)} over judged rows."""
+    """{soc: judged/passing/failing ids, promote/conflict, latest, revert}."""
     by_soc = defaultdict(list)
     for row in rows:
-        if soc(row) and block(row):
+        if soc(row) and judged(row):
             by_soc[soc(row)].append(row)
     out = {}
-    for s, judged in sorted(by_soc.items()):
-        ok = [r for r in judged if not failures(r)]
-        bad = [r for r in judged if failures(r)]
-        machines = {block(r).get("machine_id") for r in ok} - {None}
-        owners = {block(r).get("owner_id") for r in ok} - {None}
-        boards = {board(r) for r in ok}
-        kernels = {r.get("kernel") for r in ok} - {None}
-        want_boards = min(2, BOARDS.get(s, 1))
-        needs = []
-        for have, want, what in ((len(ok), N_ROWS, "passing rows"), (len(machines), N_MACHINES, "machines"),
-                                 (len(owners), N_OWNERS, "owners"), (len(boards), want_boards, "boards"),
-                                 (len(kernels), N_KERNELS, "kernel releases")):
-            if have < want:
-                needs.append(f"{what} {have}/{want}")
-        if bad:
-            needs.append(f"{len(bad)} failing row(s) to explain")
-        latest = max(judged, key=lambda r: r.get("received_at") or "")
-        out[s] = {"judged": len(judged), "passing": [r["content_sha256"][:12] for r in ok],
+    for s, judged_rows in sorted(by_soc.items()):
+        ok = [r for r in judged_rows if not failures(r)]
+        bad = [r for r in judged_rows if failures(r)]
+        latest = max(judged_rows, key=lambda r: r.get("received_at") or "")
+        out[s] = {"judged": len(judged_rows), "passing": [r["content_sha256"][:12] for r in ok],
                   "failing": {r["content_sha256"][:12]: failures(r) for r in bad},
-                  "machines": len(machines), "owners": len(owners), "boards": len(boards),
-                  "kernels": len(kernels), "promote": not needs, "needs": needs,
+                  "promote": bool(ok) and not bad, "conflict": bool(ok) and bool(bad),
+                  "needs": ([f"{len(bad)} failing row(s) to explain"] if ok and bad else
+                            ["one passing row"] if not ok else []),
                   "on": s in ON, "latest": latest["content_sha256"][:12],
                   "revert": unclean(block(latest)) if s in ON else []}
+    return out
+
+
+def unattempted(rows):
+    """{soc: count of rows with no judgment evidence}."""
+    out = defaultdict(int)
+    for row in rows:
+        if soc(row) and block(row) and not judged(row):
+            out[soc(row)] += 1
     return out
 
 
@@ -185,22 +207,23 @@ def main(argv=None):
         if soc(row):
             per_soc[soc(row)] += 1
     result = verdict(rows)
-    print(f"promotion_check: {len(rows)} rows; rule: {N_ROWS} passing rows, {N_MACHINES} machines, "
-          f"{N_OWNERS} owners, 2 boards (1 if the SoC has one), {N_KERNELS} kernel releases, 0 failing rows; "
-          f"on by default ({', '.join(sorted(ON))}): REVERT when the latest row is not clean")
+    unjudged = unattempted(rows)
+    print(f"promotion_check: {len(rows)} rows; rule: one passing row promotes; a passing row has a ready check, "
+          f"the chip driver, exactly 20 bit-exact smoke calls and no ANE/DART/mailbox fault; uninstalled or clean no-smoke rows are not judged; "
+          f"a passing and failing row conflict; on by default ({', '.join(sorted(ON))}): REVERT when the latest judged row is not clean")
     for s in sorted(per_soc):
         r = result.get(s)
+        extra = f", {unjudged[s]} not judged (uninstalled or no smoke attempt)" if unjudged[s] else ""
         if r is None:
-            print(f"{s}: {per_soc[s]} rows, 0 judged (no omarchy-ane block) -> {'ON' if s in ON else 'STAY'}")
+            print(f"{s}: {per_soc[s]} rows, 0 judged{extra} -> {'ON' if s in ON else 'STAY'}")
             continue
         if r["on"]:
-            state = f"REVERT (latest row {r['latest']}: {'; '.join(r['revert'])})" if r["revert"] else "ON"
+            state = f"REVERT (latest judged row {r['latest']}: {'; '.join(r['revert'])})" if r["revert"] else "ON"
         else:
-            state = ("PROMOTE" if r["promote"] else "STAY") + \
-                (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
-        print(f"{s}: {per_soc[s]} rows, {r['judged']} judged, {len(r['passing'])} pass, "
-              f"{len(r['failing'])} fail, machines {r['machines']}, owners {r['owners']}, "
-              f"boards {r['boards']}, kernels {r['kernels']} -> {state}")
+            label = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
+            state = label + (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
+        print(f"{s}: {per_soc[s]} rows, {r['judged']} judged{extra}, {len(r['passing'])} pass, "
+              f"{len(r['failing'])} fail -> {state}")
         for sha, why in r["failing"].items():
             print(f"  FAIL {sha}: {'; '.join(why)}")
         for sha in r["passing"]:

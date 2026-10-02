@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""tools/promotion_check.py on synthetic rows: each criterion of the README
-"Promotion" rule can fail a row, the chip verdict counts only passing rows, and
-an on-by-default chip reverts when its latest row is not clean."""
+"""Promotion rule, fault scoping, and real community-row classification."""
 import copy
+import json
 import sys
 from pathlib import Path
 
@@ -11,20 +10,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import promotion_check as pc  # noqa: E402
 
 
-def row(n, soc='t6020', board='j414s', kernel='7.1.13-3-1-ARCH', machine=None, owner=None, at=None):
+def row(n, soc='t6020', at=None):
     return {
-        'content_sha256': f'{n:02x}' + '0' * 62, 'chip': f'apple,{soc}', 'kernel': kernel,
+        'content_sha256': f'{n:02x}' + '0' * 62, 'chip': f'apple,{soc}',
         'received_at': at or f'2026-10-0{n % 9 + 1}T00:00:00.000Z',
         'summary': {'ane_port_detail': {
-            'devicetree': {'boot': {'compatible': [f'apple,{board}', f'apple,{soc}']}},
             'runtime': {'omarchy_ane': {
-                'machine_id': machine or f'm{n}', 'owner_id': owner or f'o{n}',
-                'check': {'exit': 0, 'status': 'ready'},
+                'check': {'available': True, 'exit': 0, 'status': 'ready'},
                 'module': {'name': pc.DRIVER[soc]},
-                'smoke': {'sha256': [pc.GOLDEN[soc]] * 20, 'errors': 0},
-                'uptime_s': 1800,
-                'dmesg': ['[    3.1] ane_t6021 284000000.ane: fwload: own memory'],
-                'dmesg_faults': [],
+                'smoke': {'requested': True, 'available': True,
+                          'sha256': [pc.GOLDEN[soc]] * 20, 'errors': 0},
+                'dmesg': [], 'dmesg_faults': [],
             }}}}}
 
 
@@ -32,77 +28,119 @@ def oa(r):
     return r['summary']['ane_port_detail']['runtime']['omarchy_ane']
 
 
-good = [row(1, board='j414s', owner='a'), row(2, board='j416s', owner='a'),
-        row(3, board='j414s', kernel='7.1.13-3-2-ARCH', owner='b')]
+# The checker reads the same per-chip golden mapping that the smoke runner uses.
+assert pc.GOLDEN is pc.SMOKE.GOLDEN
 
-# 1. Three passing rows: three machines, two owners, two boards, two kernels -> promote.
-assert all(pc.failures(r) == [] for r in good)
-v = pc.verdict(good)['t6020']
-assert v['promote'] and v['needs'] == [], v
+# One passing row is enough to promote an untested H14 or H13 chip.
+good = row(1)
+v = pc.verdict([good])['t6020']
+assert v['promote'] and not v['conflict'] and v['passing'] == ['010000000000'], v
+assert pc.failures(good) == []
+h13_good = row(7, soc='t6000')
+assert pc.failures(h13_good) == []
+assert pc.verdict([h13_good])['t6000']['promote']
 
-# 2. Each per-row criterion fails the row on its own, at its boundary.
+# Each part of the passing-row definition is enforced.
 def broken(change):
-    r = copy.deepcopy(good[0])
+    r = copy.deepcopy(good)
     change(oa(r))
     return pc.failures(r)
 
 assert broken(lambda o: o['check'].update(exit=1, status='FAILED'))
 assert broken(lambda o: o['module'].update(name='ane'))
 assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN['t6020']] * 19))
+assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN['t6020']] * 21))
 assert broken(lambda o: o['smoke']['sha256'].__setitem__(7, '0' * 64))
 assert broken(lambda o: o['smoke'].update(errors=1))
-assert broken(lambda o: o.update(uptime_s=1799))
 assert broken(lambda o: o['dmesg'].append('[ 900.2] apple-dart 285800000.iommu: DART fault: STT_FAULT'))
-assert broken(lambda o: o.update(dmesg_faults=['[ 9.0] ane_t6021: timeout']))
-# A fault word on a line that is not about the ANE does not count.
-assert not broken(lambda o: o['dmesg'].append('[ 2.0] apple-dart 3860e8000.iommu: DART fault'))
+assert broken(lambda o: o['dmesg_faults'].append('[ 9.0] ane_t6021: timeout'))
 
-# 3. Counting: each diversity count is short on its own.
-assert pc.verdict(good[:2])['t6020']['needs'] == ['passing rows 2/3', 'machines 2/3', 'owners 1/2',
-                                                  'kernel releases 1/2']
-same = [row(i, machine='m', board='j414s' if i % 2 else 'j416s', kernel=f'k{i % 2}') for i in (1, 2, 3)]
-assert pc.verdict(same)['t6020']['needs'] == ['machines 1/3']
-one_owner = [row(i, owner='a', board='j414s' if i % 2 else 'j416s', kernel=f'k{i % 2}') for i in (1, 2, 3)]
-assert pc.verdict(one_owner)['t6020']['needs'] == ['owners 1/2']
-one_board = [row(i, board='j414s', kernel=f'k{i % 2}') for i in (1, 2, 3)]
-assert pc.verdict(one_board)['t6020']['needs'] == ['boards 1/2']
+# Faults from another device do not count, including apple-dcp RTKit syslog
+# lines in either collector list and DARTs outside the ANE address set.
+dcp = '[ 9.0] apple-dcp 38bc00000.dcp: RTKit: syslog message: FBPropertyManager.h:189'
+assert not broken(lambda o: o['dmesg'].append(dcp))
+assert not broken(lambda o: o['dmesg_faults'].append(dcp))
+assert not broken(lambda o: o['dmesg'].append('[ 2.0] apple-dart 581008000.iommu: DART fault'))
+assert not broken(lambda o: o['dmesg'].append('[ 2.0] systemd[1]: ane.service: failed'))
 
-# 4. A failing row blocks a chip that otherwise has enough passing rows.
-bad = row(4)
-oa(bad)['smoke']['sha256'][0] = '0' * 64
-v = pc.verdict(good + [bad])['t6020']
-assert not v['promote'] and v['needs'] == ['1 failing row(s) to explain'], v
+# A clean installed row with no smoke attempt is not judged. Busy/explicitly
+# unattempted rows are also skipped, but not-ready or fault rows still fail.
+clean_skip = row(3)
+oa(clean_skip)['smoke'] = {'requested': False}
+assert not pc.judged(clean_skip)
+assert dict(pc.unattempted([clean_skip])) == {'t6020': 1}
+assert pc.verdict([clean_skip]) == {}
+busy = row(4)
+oa(busy)['smoke'] = {'requested': True, 'attempted': False, 'busy': True}
+assert not pc.judged(busy)
+no_smoke_fault = copy.deepcopy(clean_skip)
+oa(no_smoke_fault)['dmesg'].append('[ 900.2] apple-dart 285800000.iommu: translation fault')
+assert pc.judged(no_smoke_fault) and pc.failures(no_smoke_fault)
+no_smoke_not_ready = copy.deepcopy(clean_skip)
+oa(no_smoke_not_ready)['check'].update(exit=1, status='FAILED')
+assert pc.judged(no_smoke_not_ready) and pc.failures(no_smoke_not_ready)
+unavailable_attempt = row(5)
+oa(unavailable_attempt)['smoke'] = {'requested': True, 'available': False, 'sha256': [], 'errors': 0}
+assert pc.judged(unavailable_attempt) and pc.failures(unavailable_attempt)
 
-# 5. SoC tables: H13 chips use the H13 golden; T602x/T8112 use H14.
-t6002 = [row(i, soc='t6002', board='j375d', kernel=f'k{i % 2}') for i in (1, 2, 3)]
-assert all(pc.failures(r) == [] for r in t6002)
-assert pc.failures(row(8, soc='t6000', board='j375c')) == []
-assert pc.failures(row(9, soc='t8112', board='j413')) == []
+# One passing and one failing row on an opt-in chip is a conflict, not promotion.
+failed = row(2, at='2026-10-09T00:00:00.000Z')
+oa(failed)['smoke']['sha256'][0] = '0' * 64
+v = pc.verdict([good, failed])['t6020']
+assert not v['promote'] and v['conflict'] and len(v['passing']) == len(v['failing']) == 1, v
+v = pc.verdict([failed])['t6020']
+assert not v['promote'] and not v['conflict'] and v['needs'] == ['one passing row'], v
 
-# 6. Rows without the omarchy-ane block are not judged.
-legacy = copy.deepcopy(good[0])
+# Rows without an ANE block or without installation are not judged.
+legacy = copy.deepcopy(good)
 del legacy['summary']['ane_port_detail']['runtime']['omarchy_ane']
 assert pc.verdict([legacy]) == {}
 
-
-# 7. Regression: an on-by-default chip (T6021) reverts when its latest row
-# shows check not ready or a fault line, and stays on once a clean row lands.
-# An opt-in chip never reverts.
+# Default-on chips revert when their latest judged row is unclean; a later
+# clean judged row clears the regression.
 assert pc.ON == {'t8103', 't6001', 't6021'}, pc.ON
-# Listed newest first, so "latest" must come from received_at, not list order.
-on = [row(i, soc='t6021', board='j414c', at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
-new, older = oa(on[0]), oa(on[1])
+on = [row(i, soc='t6021', at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
 v = pc.verdict(on)['t6021']
 assert v['on'] and v['latest'] == '010000000000' and v['revert'] == [], v
-new['check'].update(exit=1, status='FAILED')
+oa(on[0])['check'].update(exit=1, status='FAILED')
 assert pc.verdict(on)['t6021']['revert'] == ['omarchy-ane-check not ready (exit 1, FAILED)']
-new['check'].update(exit=0, status='ready')
-new['dmesg_faults'] = ['[ 9.0] ane_t6021: call completion wait failed -110']
+oa(on[0])['check'].update(exit=0, status='ready')
+oa(on[0])['dmesg_faults'] = ['[ 9.0] ane_t6021: call completion wait failed -110']
 assert pc.verdict(on)['t6021']['revert'][0].startswith('1 ANE/DART/mailbox fault line(s)')
-older['dmesg_faults'], new['dmesg_faults'] = new['dmesg_faults'], []
-assert pc.verdict(on)['t6021']['revert'] == [], 'a clean latest row lands after a bad one'
-late = row(4, at='2026-10-09T00:00:00.000Z')
-oa(late)['check'].update(exit=1, status='FAILED')
-v = pc.verdict(good + [late])['t6020']
-assert not v['on'] and v['revert'] == [], v
+oa(on[1])['dmesg_faults'] = list(oa(on[0])['dmesg_faults'])
+oa(on[0])['dmesg_faults'] = []
+assert pc.verdict(on)['t6021']['revert'] == [], 'a clean latest judged row clears the revert'
+
+# Four real rows from the live dataset reproduce both reported defects.
+fixture_dir = Path(__file__).parent / 'fixtures' / 'promotion_check'
+real = [json.loads(p.read_text()) for p in sorted(fixture_dir.glob('*.json'))]
+real_by_id = {r['content_sha256'][:12]: r for r in real}
+assert set(real_by_id) == {'66091f89cef6', 'b3d0b521403f', 'a994fe80c994', 'aec69f796113'}
+t6001 = real_by_id['66091f89cef6']
+assert pc.installed(oa(t6001)) and pc.unclean(oa(t6001)) == []
+assert not pc.judged(t6001), 'clean T6001 row with requested:false smoke is not judged'
+for sha in ('a994fe80c994', 'aec69f796113', 'b3d0b521403f'):
+    assert not pc.installed(oa(real_by_id[sha]))
+assert dict(pc.unattempted(real)) == {'t6000': 2, 't6001': 1, 't8112': 1}
+assert pc.verdict(real) == {}, 'none of the four real rows is a promotion attempt'
+
+# Synthetic positive controls prove each real ANE fault source still counts.
+def injected(line, base, field='dmesg'):
+    r = copy.deepcopy(base)
+    oa(r)[field].append(line)
+    return r
+
+assert pc.failures(injected('[ 900.2] apple-dart 285800000.iommu: translation fault: status:0x81000404', good))
+t8112_attempt = row(42, soc='t8112')
+assert pc.failures(injected('[ 900.3] apple-dart 26b800000.iommu: translation fault: status:0x81000404', t8112_attempt))
+assert pc.failures(injected('[ 901.1] ane 285c04000.ane: command timed out', t6001))
+assert pc.failures(injected('[ 901.2] apple-mailbox 285408000.mailbox: fifo error', good))
+assert not pc.unclean(oa(injected(dcp, good)))
+assert not pc.unclean(oa(injected(dcp, t6001, 'dmesg_faults')))
+assert not pc.unclean(oa(injected('[ 903.1] apple-dart 581008000.iommu: translation fault: status:0x81000404', good)))
+
+# Not-installed rows stay unjudged even when the raw dmesg has unrelated faults.
+not_installed = copy.deepcopy(real_by_id['a994fe80c994'])
+assert dict(pc.unattempted([not_installed])) == {'t6000': 1}
+assert pc.verdict([not_installed]) == {}
 print('test_promotion_check: ok')
