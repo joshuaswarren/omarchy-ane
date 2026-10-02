@@ -1,0 +1,3 @@
+1	254.298	254.414	0.21 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.300	254.443	0.43 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.282	254.414	0.47 0.00 10	golden max_abs=0 relL2=0 exact=1

@@ -1,0 +1,6 @@
+ports:
+  x: input slot4 bufferId=5 channel=5 shape=[1, 512, 16, 32]
+  y63: output slot5 bufferId=4 channel=4 shape=[1, 512, 16, 32]
+exec ms over 16 calls: min 5.511 p10 5.512 p25 5.512 median 5.514 p75 5.519 p90 5.558 p99 5.594 max 5.594
+unpacked y63 (1, 512, 16, 32) -> /var/tmp/gapwin/runs/s1-20261002T103251Z/p6_conv6420/y63.npy
+y63 golden max_abs=inf relL2=inf exact=0

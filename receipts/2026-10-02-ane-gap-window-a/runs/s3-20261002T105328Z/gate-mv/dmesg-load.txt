@@ -1,0 +1,40 @@
+[    3.689369] ane_t6021 284000000.ane: BOOT-PHASE P-1g eng+0x798
+[    3.720375] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.751398] ane_t6021 284000000.ane: BOOT-PHASE P-1h eng+0x7f8
+[    3.782378] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.813381] ane_t6021 284000000.ane: BOOT-PHASE P-1i eng+0x900
+[    3.844374] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.875375] ane_t6021 284000000.ane: BOOT-PHASE P-1j eng+0x410
+[    3.906362] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.937363] ane_t6021 284000000.ane: BOOT-PHASE P-1k eng+0x420
+[    3.969361] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.001354] ane_t6021 284000000.ane: BOOT-PHASE P-1l eng+0x430
+[    4.032381] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    4.063380] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables end
+[    4.094382] ane_t6021 284000000.ane: BOOT-PHASE P1 scratch-clear+pulse
+[    4.125385] ane_t6021 284000000.ane: BOOT-PHASE P1 S1 SCRATCH6=1 (legacy ChMan/MBI select)
+[    4.156383] ane_t6021 284000000.ane: BOOT-PHASE P2 rvbar
+[    4.187378] ane_t6021 284000000.ane: BOOT-PHASE P3 cpu-release
+[    4.218378] ane_t6021 284000000.ane: BOOT-PHASE P3b cpu-release RUN=0x10
+[    4.249374] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA-READY
+[    4.281364] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA READY observed
+[    4.312370] ane_t6021 284000000.ane: BOOT-PHASE P5 prepare+publish
+[    4.344273] ane_t6021 284000000.ane: LAB init resource[0x84] bit0=1: prevent nap
+[    4.344279] ane_t6021 284000000.ane: BOOT-PHASE P6 wake
+[    4.374377] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB-DONE
+[    4.406357] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB DONE observed
+[    4.437359] ane_t6021 284000000.ane: boot: module PINNED until reboot (started CPU; wedged-pin)
+[    4.437368] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\x94 not a success claim; transport stays fenced until response validation)
+[    4.437377] ane_t6021 284000000.ane: BOOT-PHASE sequence returned 0000000000000000 (cpu_started=1 fw_alive=1 booted=1) CPU_STATUS=0x2c
+[    4.437387] ane_t6021 284000000.ane: chman[0]: name="TERMINAL" type=2 bit=0 size=0x300 OK (static: TERMINAL/2/0/0x300/ipc+0x800)
+[    4.437396] ane_t6021 284000000.ane: chman[1]: name="IO" type=0 bit=1 size=0x10 OK (static: IO/0/1/0x10/ipc+0xc800)
+[    4.437403] ane_t6021 284000000.ane: chman[2]: name="DEBUG" type=0 bit=2 size=0x8 OK (static: DEBUG/0/2/0x8/ipc+0xcc00)
+[    4.437410] ane_t6021 284000000.ane: chman[3]: name="BUF_H2T" type=0 bit=3 size=0x40 OK (static: BUF_H2T/0/3/0x40/ipc+0xce00)
+[    4.437417] ane_t6021 284000000.ane: chman[4]: name="BUF_T2H" type=1 bit=4 size=0x40 OK (static: BUF_T2H/1/4/0x40/ipc+0xde00)
+[    4.437422] ane_t6021 284000000.ane: chman[5]: name="SHAREDMALLOC" type=1 bit=5 size=0x8 OK (static: SHAREDMALLOC/1/5/0x8/ipc+0xee00)
+[    4.437428] ane_t6021 284000000.ane: chman[6]: name="IO_T2H" type=1 bit=6 size=0x40 OK (static: IO_T2H/1/6/0x40/ipc+0xf000)
+[    4.437434] ane_t6021 284000000.ane: chman[7]: name="DATA_CHAIN_H2T" type=0 bit=7 size=0x10 OK (static: DATA_CHAIN_H2T/0/7/0x10/ipc+0x10000)
+[    4.437440] ane_t6021 284000000.ane: chman: table VALIDATED (mismatch mask 0x0)
+[    4.437447] ane_t6021 284000000.ane: LEGACY P8 host ack: SCRATCH3 <- 08042006
+[    4.448297] ane_t6021 284000000.ane: LEGACY CONFIG_GET words 00000003 016e3600 result=0 (DMA remains held)
+[    4.448453] ane_t6021 284000000.ane: loaded ane_t6021 90b800c (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)

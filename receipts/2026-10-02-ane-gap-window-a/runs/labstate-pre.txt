@@ -1,0 +1,129 @@
+== identity 2026-10-02T09:43:30.576Z
+boot_id 66aabef0-2214-4aa9-b803-10e5f7da0b7d up 1525.55 uname 7.1.13-3-1-ARCH
+load 0.00 0.04 0.11 psi_cpu some avg10=0.00 avg60=0.00 avg300=0.00 total=657099
+BOOT_IMAGE=/vmlinuz-linux-asahi root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash
+system running failed_units 0
+m1n1_stage2 v1.6.1-pdtrace
+== ESP
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin.62ba3010.bak
+total 138872
+-rwx------ 1 root root  6280733 Oct  1 20:07 boot.bin
+-rwx------ 1 root root  6279764 Sep 25 05:55 boot.bin.43ec6090.bak
+-rwx------ 1 root root  6278158 Sep 26 13:44 boot.bin.5c5a25c8.bak
+-rwx------ 1 root root  6280733 Oct  1 11:53 boot.bin.62ba3010.bak
+-rwx------ 1 root root  6231126 Sep 22 07:12 boot.bin.dead-hook-65d1e8ae.bak
+-rwx------ 1 root root  6280673 Sep 30 23:45 boot.bin.e1c37287.bak
+-rwx------ 1 root root  6214216 Sep 22 20:21 boot.bin.old
+-rwx------ 1 root root  1114112 Sep 22 09:22 boot.bin.park-9ad08653.bak
+-rwx------ 1 root root  6214228 Sep 23 09:05 boot.bin.pre-dry.bak
+-rwx------ 1 root root  6213907 Sep 22 09:53 boot.bin.pre-proxy.on-esp
+-rwx------ 1 root root  1114112 Sep 22 03:53 boot.bin.proxy-only.bak
+-rwx------ 1 root root   884736 Sep 22 03:53 boot.bin.proxy-swuf
+-rwx------ 1 root root   884736 Sep 22 04:42 boot.bin.proxy-swuf.installed
+-rwx------ 1 root root  6214228 Sep 22 22:14 boot.bin.stock-a3f533b9.bak
+-rwx------ 1 root root  6231126 Sep 22 10:02 boot.bin.v4dry-b0feef2f.bak
+-rwx------ 1 root root  7951446 Sep 22 14:19 boot.bin.v6-fd30afea.bak
+-rwx------ 1 root root 34812701 Sep 24 07:30 kc.level9.gz
+-rwx------ 1 root root 26684146 Sep 24 14:46 kc13.level9.gz
+/dev/nvme0n1p4 523132928 264232960 258899968  51% /boot/efi
+== /boot
+e339c992eef9bb879680513efee54aec68b39f14cba78f96b6db3a5c1d68533c  /boot/vmlinuz-linux-asahi
+c66827162ad7637e3482f2ee09b404d717fa319eb563d7ec6dbe9f4782f1b509  /boot/vmlinuz-linux-asahi-m2mbox
+52a926d2bb26f25edce9a4fed630587f802e7c88b5a43f7b9f528a9a65595e3d  /boot/initramfs-linux-asahi-m2mbox.img
+a413bc1ec0eb24940e8d298fbf4e1dc9fb5fee102dc1259f76c2367f05824b3d  /boot/initramfs-linux-asahi.img
+b2d697a214ee85798335e8fb795eae73984c480b266bd7c7118f67b2393a6d78  /boot/grub/grub.cfg
+f64122858064885ef0733e42c6a3d2d3fd642671f714db0d974b880c0f087430  /boot/grub/grubenv
+grubenv: 
+bbc074f744b8d1f9dea5444ac37f8d8119c545867c0ce34723a24679c100c945  /etc/default/grub
+== ANE module and firmware
+ls: cannot access '/usr/lib/modules/7.1.13-3-1-ARCH/updates/dkms': No such file or directory
+/usr/lib/modules/7.1.13-3-1-ARCH/updates/:
+total 1192
+-rw-r--r-- 1 root root 1219080 Oct  1 19:52 ane_t6021.ko
+af2cee6c3962e642d3de485131a118b71852c9d215503757efa626795a9b3b7a  /usr/lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko
+kernel/drivers/gpu/drm/panel/panel-simple.ko:
+kernel/drivers/gpu/drm/panel/panel-summit.ko:
+kernel/net/netfilter/nf_conntrack_sane.ko: kernel/net/netfilter/nf_conntrack.ko kernel/net/ipv6/netfilter/nf_defrag_ipv6.ko kernel/net/ipv4/netfilter/nf_defrag_ipv4.ko
+updates/ane_t6021.ko:
+7c624f4b90163e3b9c3dc3e4afa7ccc94af1335e41d186efd904937c63198d9a  /usr/lib/modules/7.1.13-3-1-ARCH/modules.alias
+b65a0624be4cf175113e0fdb08895e50933651bf0604e837f03e23c9131caba1  /usr/lib/modules/7.1.13-3-1-ARCH/modules.dep
+7.1.13-3-1-ARCH
+loaded: ane_t6021 98304 2;
+sysfs ane_t6021 0.4.0-main-b6ef8f1 6783D1DE1FAE8D064F84FD0
+bound: ../../../../bus/platform/drivers/ane_t6021
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  2 04:18 accel0
+a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc  /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho
+h14conv
+seq
+t602x_ane0_fw_selene_rc4x.macho
+== DT path (omarchy-ane hand install)
+5eed69f6a4ee197456fa09718fba4a6780902f24908a195a310239e5406765d0  /usr/bin/omarchy-ane-check
+e21f0c67da72602646554236317da67fe0e2b0abbfbcc26ea22706192ecf3fa8  /usr/bin/omarchy-ane-dt
+430d38c781865223a4962097c08a8a71083ce7cd256a6441c7f2f270f35b59ba  /usr/bin/omarchy-ane-firmware-fetch
+sha256sum: /usr/bin/omarchy-ane-smoke: No such file or directory
+sha256sum: /usr/bin/omarchy-ane-run: No such file or directory
+9e7901ec5aea63adcb54d3c89d3840acc5f6ff26104bbf6c45561f43f9ee1187  /usr/lib/omarchy-ane/update-m1n1-dtbs
+7f19a2cb1a84a8da98ad7d2909550423653c882e2ed75b2cba8d10593252f5fc  /usr/share/libalpm/hooks/90-omarchy-ane-dt-remove.hook
+bef8ce7539f574dd0d8438926b1a9209e084a9fa4de47d6e6deb42ed48a1b79b  /usr/share/libalpm/hooks/90-omarchy-ane-dt.hook
+e7dd8233b28531faef3b9ea270a97a2e83811c5eee2cd322f9b0822aba5602b3  /usr/share/libalpm/hooks/90-omarchy-ane-firmware.hook
+3a12f3b916320ccafab4632bd30f8c207008500041ef194a973fa148b8f47d30  /etc/default/update-m1n1
+7dbae17cd7e609afe95a10f3906af12d53faee76f2618b46ffe7f2ac81eb0b7c  /etc/omarchy-platform/dtb-overlays.opt-in
+9491d8a1e2824db9a2e2d0320b47fb96458e29f1a7f3aef351c05ce2f07b068c  /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+63d6872aacd5658c2455c168ae00f1ced223112dde7685f85da4eb89b62aa732  /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+2bd4ceca54da1468ada20e43f5720bf61cc95aa4849b0538b08800301eeefd28  /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+78646647ad1108591b3bbaf60adde4f0763dcc63aa2b530e70f1299da3c323ae  /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+734b2daa132ac933a7097761c027e5fa4c4fbb07c1c30afdaac0a33641997d9a  /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+da22067888090c6d269d5ed098c9b6fa122a1860df4d30ae67bc4771cc5e8e32  /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+0bfa023c500068ba39ccff6b8aa98eab3dede8437d20f7d73be685534a0929a3  /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+8037475416a4d0092b05856a10afd7dabfc5ad154a533c1e6e22652c92746a58  /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+35d88554e661869e8fdadf4bc8c6a40d0e6f39637ee0c2ecd802f35c03b12cc2  /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b  /var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+05e06fec52e02fac2b20585931c2d4c36c478cfb6464dede3a658fbce1e69eb5  /var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb.src
+find: '/usr/share/omarchy-ane': No such file or directory
+stock=ea6c9a8a347bc4813719717455442a1635339113e57fc677acbd430b3b257667
+overlays=a73436f4b8496de416af6a0b74f14ce4e2d6ae8b27cc341587e662d2a269bcc9
+dt status: node=present source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-1-ARCH path=/soc/ane@284000000
+== modprobe.d
+/etc/modprobe.d/:
+hid_apple.conf
+netconsole.conf
+
+/usr/lib/modprobe.d/:
+README
+bluetooth-usb.conf
+gsr-nvidia.conf
+systemd.conf
+== packages
+error: package 'dkms' was not found
+error: package 'omarchy-ane-dkms' was not found
+error: package 'mil-hwx-compiler' was not found
+error: package 'omarchy-mlx' was not found
+error: package 'omarchy-mlx-vulkan' was not found
+error: package 'omarchy-mac-ml' was not found
+error: package 'python-mako' was not found
+error: package 'meson' was not found
+linux-asahi 7.1.13.asahi3-1
+linux-asahi-headers 7.1.13.asahi3-1
+mkinitcpio 42-1
+systemd 261.3-1
+grub 2:2.14-1.1
+m1n1 1.6.1-1
+uboot-asahi 2026.07.asahi2-1
+mesa 1:26.2.3-1
+vulkan-asahi 1:26.2.3-1
+pacman_Q_count 1017 pacman_Q_sha 38d878c088e634ed
+f42fcf62c0d971ad
+ls: cannot access '/usr/lib/omarchy-mlx': No such file or directory
+ls: cannot access '/usr/lib/mil-hwx-compiler': No such file or directory
+ls: cannot access '/usr/bin/mil-hwxc': No such file or directory
+/usr/src:
+linux-asahi
+== disk
+/dev/nvme0n1p6  234G  224G  8.3G  97% /
+/dev/nvme0n1p5  2.0G  121M  1.7G   7% /boot
+/dev/nvme0n1p4  499M  252M  247M  51% /boot/efi
+== gpu-turn
+queue (oldest first):
+lock holders:

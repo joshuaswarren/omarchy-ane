@@ -1,0 +1,21 @@
+== cpufreq restore 11:58:56
+/var/tmp/gapwin/bin/s5_restore.sh: line 13: /sys/devices/system/cpu/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory
+/var/tmp/gapwin/bin/s5_restore.sh: line 14: /sys/devices/system/cpu/cpu/cpu0/cpufreq/scaling_min_freq: No such file or directory
+/var/tmp/gapwin/bin/s5_restore.sh: line 13: /sys/devices/system/cpu/cpu/cpu4/cpufreq/scaling_max_freq: No such file or directory
+/var/tmp/gapwin/bin/s5_restore.sh: line 14: /sys/devices/system/cpu/cpu/cpu4/cpufreq/scaling_min_freq: No such file or directory
+/var/tmp/gapwin/bin/s5_restore.sh: line 13: /sys/devices/system/cpu/cpu/cpu8/cpufreq/scaling_max_freq: No such file or directory
+/var/tmp/gapwin/bin/s5_restore.sh: line 14: /sys/devices/system/cpu/cpu/cpu8/cpufreq/scaling_min_freq: No such file or directory
+cat: /sys/devices/system/cpu/cpu/cpu0/cpufreq/scaling_min_freq: No such file or directory
+cat: /sys/devices/system/cpu/cpu/cpu0/cpufreq/scaling_max_freq: No such file or directory
+policy0 min  max 
+cat: /sys/devices/system/cpu/cpu/cpu4/cpufreq/scaling_min_freq: No such file or directory
+cat: /sys/devices/system/cpu/cpu/cpu4/cpufreq/scaling_max_freq: No such file or directory
+policy4 min  max 
+cat: /sys/devices/system/cpu/cpu/cpu8/cpufreq/scaling_min_freq: No such file or directory
+cat: /sys/devices/system/cpu/cpu/cpu8/cpufreq/scaling_max_freq: No such file or directory
+policy8 min  max 
+== module restore 11:58:56
+af2cee6c3962e642d3de485131a118b71852c9d215503757efa626795a9b3b7a  /var/tmp/gapwin/backup/ane_t6021.ko
+af2cee6c3962e642d3de485131a118b71852c9d215503757efa626795a9b3b7a  /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko
+6783D1DE1FAE8D064F84FD0
+== s5 done (reboot queued separately)

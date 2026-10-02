@@ -1,0 +1,12 @@
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf
+kernel 7.1.13-3-1-ARCH
+anec /var/tmp/large-matvec-fixtures/matvec-2048-5120-m1/out/program-0.anec
+weights /var/tmp/gapwin/runs/s3-20261002T110929Z/mv-weights.fp16
+/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho: OK
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  2 04:56 accel0
+matvec M=1 K=2048 N=5120: 1920/5120 lanes within 2 ulp or 4 cond-units (0 bit-exact), max 34619.000 ulp, max 608.905 cond-units; padding lanes zero: FAIL
+trial 1 FAIL
+matvec M=1 K=2048 N=5120: 1920/5120 lanes within 2 ulp or 4 cond-units (0 bit-exact), max 34619.000 ulp, max 608.905 cond-units; padding lanes zero: FAIL
+reopen+repeat FAIL
+GATE FAIL

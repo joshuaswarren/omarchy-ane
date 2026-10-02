@@ -1,0 +1,13 @@
+== state start 2026-10-02T10:32:05.404Z
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf uname 7.1.13-3-1-ARCH up 2138.55
+module 90b800c 4FE12EFABEDAACF4DF38AA8 584e7ac2b06069b5
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 511852544
+load 0.02 0.03 0.03 psi some avg10=0.00 avg60=0.00 avg300=0.00 total=1451732
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1296
+no ane-run
+== E1 p6_conv64 blocks 10:32:05
+/var/tmp/gapwin/bin/s1_e1.sh: line 11: tag: unbound variable

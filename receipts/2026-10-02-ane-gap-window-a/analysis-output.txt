@@ -1,0 +1,23 @@
+== baseline
+min-of-min 254.26 median-of-medians 254.4115 blocks 20 flagged []
+settle-corrected min 253.210 med 253.361 (call_settle_us ~1000-1100)
+== E1
+p6_conv64: min 5.468 med 5.5275 blocks 20 flagged [] corrected-min 4.418 ms -> 1.944 TMAC/s (8.59e9 MAC)
+p7_add32m: min 4.12 med 4.1685 blocks 20 flagged [] corrected-min 3.070 ms -> 32.8 GB/s (96 MiB moved)
+== cpufreq sweep
+P= 702000 E= 912000 enc-min  254.294 enc-med  254.428 meas-MHz p0 912 p4 702 p8 702 blocks 3 flagged []
+P= 948000 E= 912000 enc-min  254.269 enc-med  254.431 meas-MHz p0 912 p4 948 p8 948 blocks 3 flagged []
+P=1452000 E=1284000 enc-min  254.248 enc-med  254.417 meas-MHz p0 1284 p4 1452 p8 1452 blocks 3 flagged []
+P=1968000 E=2004000 enc-min  254.267 enc-med  254.407 meas-MHz p0 2004 p4 1968 p8 1968 blocks 3 flagged []
+P=2400000 E=2424000 enc-min  254.282 enc-med  254.388 meas-MHz p0 2424 p4 2400 p8 2400 blocks 3 flagged []
+P=3000000 E=2424000 enc-min  254.265 enc-med  254.465 meas-MHz p0 2424 p4 3000 p8 3000 blocks 3 flagged []
+P=3264000 E=2424000 enc-min  254.258 enc-med  254.408 meas-MHz p0 2424 p4 3264 p8 3264 blocks 3 flagged []
+Pearson r(enc-median, p4-freq) = -0.019 n=7
+lowest/highest ratio (enc-median) = 1.0001  (min 254.294/254.2580)
+decision: REJECTED (>=0.98)
+== E2
+enc: A arm-medians [254.418, 254.418, 254.418] B arm-medians [254.438, 254.438, 254.438]
+enc: B/A per pair [1.0001, 1.0001, 1.0001] overall 1.0001 -> REJECTED (<=1.03)
+mv: A arm-medians [2.385, 2.385, 2.385] B arm-medians [2.386, 2.386, 2.386]
+mv: B/A per pair [1.0006, 1.0006, 1.0006] overall 1.0006 -> REJECTED (<=1.03)
+hog hog-B.log: n=88 median 46.3 GB/s max 60.0 (cap 60)

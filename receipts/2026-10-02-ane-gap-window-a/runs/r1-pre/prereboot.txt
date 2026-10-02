@@ -1,0 +1,13 @@
+2026-10-02T09:54:05.298Z
+boot_id 66aabef0-2214-4aa9-b803-10e5f7da0b7d
+next ane_t6021 /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko 584e7ac2b06069b5c4aeda3994dfc1b8b703ed182479fb7556e734b77373551c 90b800c 4FE12EFABEDAACF4DF38AA8
+next ane modinfo: ERROR: Module ane not found.
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin
+a413bc1ec0eb24940e8d298fbf4e1dc9fb5fee102dc1259f76c2367f05824b3d  /boot/initramfs-linux-asahi.img
+e339c992eef9bb879680513efee54aec68b39f14cba78f96b6db3a5c1d68533c  /boot/vmlinuz-linux-asahi
+== /etc/modprobe.d/hid_apple.conf
+options hid_apple fnmode=2
+== /etc/modprobe.d/netconsole.conf
+options netconsole netconsole=6668@192.168.3.103/wlan0,6666@192.168.10.235/04:f4:1c:92:4c:c8
+grubenv: 
+T0 2026-10-02T09:54:45.425Z reboot

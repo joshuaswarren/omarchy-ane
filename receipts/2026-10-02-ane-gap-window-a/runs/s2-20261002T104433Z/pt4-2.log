@@ -1,0 +1,9 @@
+ports:
+  attention_mask: input slot4 bufferId=5 channel=5 shape=[1, 1, 1, 3000]
+  input_features: input slot5 bufferId=6 channel=6 shape=[1, 1, 3000, 128]
+  linear_217_cast_fp16: output slot6 bufferId=4 channel=4 shape=[1, 1, 375, 640]
+  output_mask_f: output slot7 bufferId=7 channel=7 shape=[1, 1, 1, 375]
+exec ms over 16 calls: min 254.282 p10 254.286 p25 254.334 median 254.403 p75 254.462 p90 254.506 p99 254.518 max 254.518
+unpacked linear_217_cast_fp16 (1, 1, 375, 640) -> /var/tmp/gapwin/runs/s2-20261002T104433Z/w-pt4-2/hidden.npy
+linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1
+unpacked output_mask_f (1, 1, 1, 375) -> /var/tmp/gapwin/runs/s2-20261002T104433Z/w-pt4-2/mask.npy

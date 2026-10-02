@@ -1,0 +1,8 @@
+enc-B	1	254.288	254.412	0.61	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	2	254.293	254.381	0.88	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	3	254.317	254.367	1.05	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	4	254.309	254.446	1.45	0.00	golden max_abs=0 relL2=0 exact=1
+mv-B	1	2.357	2.389	1.45	0.00
+mv-B	2	2.310	2.387	1.45	0.00
+mv-B	3	2.345	2.385	1.45	0.00
+mv-B	4	2.296	2.391	1.45	0.00

@@ -1,0 +1,97 @@
+== state start 2026-10-02T11:11:09.536Z
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf uname 7.1.13-3-1-ARCH up 4482.68
+module 90b800c 4FE12EFABEDAACF4DF38AA8 584e7ac2b06069b5
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 636502016
+load 0.40 0.34 0.24 psi some avg10=0.00 avg60=0.00 avg300=0.00 total=3089378
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1413
+no ane-run
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf
+kernel 7.1.13-3-1-ARCH
+anec /var/tmp/large-matvec-fixtures/matvec-2048-5120-m1/out/program-0.anec
+weights /var/tmp/large-matvec-fixtures/matvec-2048-5120-m1/model/weights.bin
+/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho: OK
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  2 04:56 accel0
+matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+trial 1 PASS
+matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+reopen+repeat PASS
+GATE PASS
+hog built
+== arm A 11:11:10
+enc-A	1	254.306	254.408	0.45	0.00	golden max_abs=0 relL2=0 exact=1
+enc-A	2	254.306	254.428	0.49	0.18	golden max_abs=0 relL2=0 exact=1
+enc-A	3	254.292	254.419	0.53	0.30	golden max_abs=0 relL2=0 exact=1
+enc-A	4	254.280	254.417	0.57	0.35	golden max_abs=0 relL2=0 exact=1
+mv-A	1	2.338	2.386	0.57	0.28
+mv-A	2	2.315	2.381	0.57	0.28
+mv-A	3	2.296	2.386	0.57	0.28
+mv-A	4	2.291	2.307	0.57	0.28
+== arm B 11:11:29
+hog pid 84798 rate 2.8 51.5 14000
+enc-B	1	254.334	254.446	0.75	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	2	254.276	254.432	1.25	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	3	254.310	254.411	1.47	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	4	254.302	254.446	1.59	0.00	golden max_abs=0 relL2=0 exact=1
+mv-B	1	2.297	2.396	1.59	0.00
+mv-B	2	2.297	2.395	1.59	0.00
+mv-B	3	2.364	2.385	1.59	0.00
+mv-B	4	2.372	2.392	1.59	0.00
+hog end rate 23.0 48.2 8400
+== arm A 11:12:32
+enc-A	1	254.309	254.438	0.53	0.18	golden max_abs=0 relL2=0 exact=1
+enc-A	2	254.277	254.392	0.57	0.30	golden max_abs=0 relL2=0 exact=1
+enc-A	3	254.318	254.436	0.61	0.20	golden max_abs=0 relL2=0 exact=1
+enc-A	4	254.312	254.405	0.64	0.41	golden max_abs=0 relL2=0 exact=1
+mv-A	1	2.293	2.387	0.64	0.41
+mv-A	2	2.295	2.387	0.64	0.41
+mv-A	3	2.296	2.391	0.64	0.41
+mv-A	4	2.287	2.382	0.64	0.41
+== arm B 11:14:02
+hog pid 85437 rate 2.8 50.7 14000
+enc-B	1	254.299	254.446	0.97	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	2	254.274	254.373	1.37	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	3	254.317	254.445	1.82	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	4	254.347	254.492	2.08	0.00	golden max_abs=0 relL2=0 exact=1
+mv-B	1	2.290	2.307	2.08	0.00
+mv-B	2	2.297	2.385	2.08	0.00
+mv-B	3	2.339	2.383	2.08	0.00
+mv-B	4	2.375	2.385	2.08	0.00
+hog end rate 22.8 48.2 8200
+== arm A 11:15:05
+enc-A	1	254.313	254.408	0.50	0.00	golden max_abs=0 relL2=0 exact=1
+enc-A	2	254.323	254.428	0.54	0.18	golden max_abs=0 relL2=0 exact=1
+enc-A	3	254.342	254.427	0.58	0.55	golden max_abs=0 relL2=0 exact=1
+enc-A	4	254.322	254.399	0.61	0.36	golden max_abs=0 relL2=0 exact=1
+mv-A	1	2.294	2.311	0.61	0.36
+mv-A	2	2.294	2.383	0.61	0.36
+mv-A	3	2.295	2.331	0.61	0.36
+mv-A	4	2.285	2.387	0.61	0.36
+== arm B 11:16:54
+hog pid 85916 rate 2.8 55.8 11200
+enc-B	1	254.288	254.412	0.61	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	2	254.293	254.381	0.88	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	3	254.317	254.367	1.05	0.00	golden max_abs=0 relL2=0 exact=1
+enc-B	4	254.309	254.446	1.45	0.00	golden max_abs=0 relL2=0 exact=1
+mv-B	1	2.357	2.389	1.45	0.00
+mv-B	2	2.310	2.387	1.45	0.00
+mv-B	3	2.345	2.385	1.45	0.00
+mv-B	4	2.296	2.391	1.45	0.00
+hog end rate 22.8 44.7 11200
+== state end 2026-10-02T11:17:57.600Z
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf uname 7.1.13-3-1-ARCH up 4890.74
+module 90b800c 4FE12EFABEDAACF4DF38AA8 584e7ac2b06069b5
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 636600320
+load 1.45 0.82 0.49 psi some avg10=0.00 avg60=0.03 avg300=0.01 total=3790943
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1434
+no ane-run
+dmesg new 21 non-UFW 0
+== s3 done /var/tmp/gapwin/runs/s3-20261002T111109Z

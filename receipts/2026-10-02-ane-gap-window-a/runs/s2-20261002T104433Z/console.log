@@ -1,0 +1,64 @@
+== state start 2026-10-02T10:44:33.843Z
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf uname 7.1.13-3-1-ARCH up 2886.99
+module 90b800c 4FE12EFABEDAACF4DF38AA8 584e7ac2b06069b5
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 615104512
+load 0.01 0.12 0.08 psi some avg10=0.00 avg60=0.00 avg300=0.00 total=1962542
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1334
+no ane-run
+policy0 min 912000 max 2424000 gov schedutil
+policy4 min 702000 max 3264000 gov schedutil
+policy8 min 702000 max 3264000 gov schedutil
+== point 1 P=702000 E=912000 10:44:34 pinned ok=1
+1	254.310	254.428	0.00 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.303	254.444	0.08 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.294	254.375	0.16 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 2 P=948000 E=912000 10:45:19 pinned ok=1
+1	254.282	254.398	0.27 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.269	254.431	0.33 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.299	254.434	0.39 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 3 P=1452000 E=1284000 10:46:04 pinned ok=1
+1	254.248	254.417	0.31 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.253	254.400	0.37 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.292	254.461	0.42 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 4 P=1968000 E=2004000 10:46:49 pinned ok=1
+1	254.289	254.407	0.28 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.293	254.381	0.34 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.267	254.427	0.39 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 5 P=2400000 E=2424000 10:47:34 pinned ok=1
+1	254.289	254.374	0.32 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.282	254.403	0.37 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.306	254.388	0.42 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 6 P=3000000 E=2424000 10:48:19 pinned ok=1
+1	254.295	254.465	0.28 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.275	254.425	0.34 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.265	254.494	0.39 0.00 0	golden max_abs=0 relL2=0 exact=1
+== point 7 P=3264000 E=2424000 10:49:04 pinned ok=1
+1	254.307	254.403	0.27 0.00 0	golden max_abs=0 relL2=0 exact=1
+2	254.258	254.412	0.33 0.00 0	golden max_abs=0 relL2=0 exact=1
+3	254.290	254.408	0.46 0.00 0	golden max_abs=0 relL2=0 exact=1
+== restore 10:49:49
+policy0 min 912000 max 2424000
+policy4 min 702000 max 3264000
+policy8 min 702000 max 3264000
+== ane_boost evidence 10:49:49
+0
+no boost param
+no boost sysfs param
+ane.ko (H13, owns ane_boost) not loaded
+== state end 2026-10-02T10:49:49.132Z
+boot_id 9bb646d3-9c5a-47e4-b3a1-16ebeef33fcf uname 7.1.13-3-1-ARCH up 3202.28
+module 90b800c 4FE12EFABEDAACF4DF38AA8 584e7ac2b06069b5
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 615104512
+load 0.43 0.31 0.18 psi some avg10=0.00 avg60=0.00 avg300=0.00 total=2284831
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1350
+no ane-run
+dmesg new 16 non-UFW 0
+== s2 done /var/tmp/gapwin/runs/s2-20261002T104433Z
