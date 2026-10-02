@@ -1,0 +1,96 @@
+{
+  "soc": "t8122",
+  "marketing": {
+    "v": "M3",
+    "src": "S2"
+  },
+  "generation": {
+    "v": "H15G",
+    "src": "S5"
+  },
+  "boards": [
+    {"v": "j433", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023, 8-core)"},
+    {"v": "j434", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023, 8-core)"},
+    {"v": "j504", "src": "S1", "marketing_product": "iMac 24-inch M3 (Oct 2023)"},
+    {"v": "j613", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023)"},
+    {"v": "j615", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023)"}
+  ],
+  "sources": [
+    {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: DeviceTree.j433ap.adt through DeviceTree.j615ap.adt; receipt artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt; sha256 of adt under artifacts/AneAllSoc/every-soc/SHA256SUMS"},
+    {"id": "S2", "kind": "buildmanifest", "ref": "macOS 27.0 26A428 BuildManifest.plist, ProductBuildVersion 26A428; receipt artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt"},
+    {"id": "S3", "kind": "kernelcache-kext", "ref": "not fetched this run; ANE class names from the H15-class kernelcache: macOS 27.0 26A428 kernelcache.im4p (kernelcache.release.mac1?) — see not_verified"},
+    {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334; arch/arm64/boot/dts/apple/t8122.dtsi, t8122-pmgr.dtsi, t6030.dtsi, t6031.dtsi, t6034.dtsi (read-only via git show REF:path)"},
+    {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 (private) + receipts/2026-09-05-ane-community/anecompile-cross-target.json (h15 = subtype 6, hwx_bytes=49152, ISA 17/subtype 7)"}
+  ],
+  "ane": {
+    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "reg": [
+      {"name": "ane", "base": "0x311400000", "size": "0x6c000", "src": "S1"},
+      {"name": "ane_alt", "base": "0x311050000", "size": "0x4000", "src": "S1"},
+      {"name": "engine", "base": "0x310000000", "size": "0x2000000", "src": "S1"},
+      {"name": "pmgr", "base": "0x2d0700000", "size": "0x18000", "src": "S1"},
+      {"name": "pmgr_ps", "base": "0x2d0724000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [507, 506, 509, 508, 524], "src": "S1"},
+    "ane_type": {"v": 176, "src": "S1"},
+    "power_gates": {"v": ["ANE_CPU", "ANE-SYS-V"], "src": "S1"},
+    "iommus": {"v": null, "reason": "ADT ane node names no phandle for iommu-parent; the DART sibling is the iommu parent (see dart)." },
+    "dart_phandle_field": {"v": null, "reason": "ADT ane node in 27.0 (j433 et al) has no iommu-parent field; the T8122 DART sibling 'dart-ane' is on a separate node path with a 0x311800000+0x4000 base."}
+  },
+  "dart": {
+    "compatible": {"v": "dart,t8110", "src": "S1"},
+    "reg": [
+      {"name": "ttbr0", "base": "0x311800000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr1", "base": "0x311810000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr2", "base": "0x311820000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr3", "base": "0x311804000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [525], "src": "S1"},
+    "sid": {"v": null, "reason": "T8110 DART instance field captured in 13.5 detail (line 'sid = 64424509440' on dart-ane j180d); the T8122 detail ADT was summarized not full-parsed (the receipt script condenses), so the T8122 sid byte string is not in the lab notebook. The T8110 family sid value for ANE (sids 40961 in T8103/T6000; the T8110/T6020/T6021/T6030 family uses a different encoding per the T6020 detail 0x28e084000..0x28e084033 dapf-instance-0 byte range that is identical in shape to T6020/T6021) is consistent across the T8110 family. Field is present in ADT but the receipt script did not preserve it. Re-extract the T8122 ADT detail with the same script used for j180d to obtain the sid byte string. Not verified."},
+    "vm_base": {"v": null, "reason": "not in receipt summary; needs full ADT re-extraction."},
+    "vm_size": {"v": null, "reason": "not in receipt summary; needs full ADT re-extraction."},
+    "page_size": {"v": 16384, "src": "S1 (inferred from T8110 family: T8110/T6020/T6021/T6030 all share the T8110 DART compatible; T6020 dart detail 'page-size = 16384' from adt-13.5-ane.txt)"}
+  },
+  "mailbox": {
+    "compatible": {"v": null, "reason": "no ane-mailbox node in the ADT; the ascwrap-v6 mailbox is the second reg window 0x311050000+0x4000 (matches apple,t6031-asc-mailbox + apple,asc-mailbox-v4 from kernel dtsi S4). Compatible name not in ADT — inferred from aurora S4."},
+    "reg": [
+      {"name": "mbox", "base": "0x311050000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [506, 508, 509, 507, 524], "src": "S1 (the 5 interrupts of the ane node, ordered as in ADT: the 506/508/509/507/524 set is a best-guess mapping to the 4 doorbells + the ane ring; not directly labelled in the summary. Need full ADT re-extraction.)"}
+  },
+  "pmgr": {
+    "ANE_SYS": {"v": "0x2d0700438", "src": "S1"},
+    "ANE_SYS_parents": {"v": ["LMX4"], "src": "S1"},
+    "ANE_MPM": {"v": "0x2d070c000", "src": "S1"},
+    "ANE_CPU": {"v": "0x2d070c008", "src": "S1"},
+    "ANE_TD": {"v": "0x2d070c010", "src": "S1"},
+    "ANE_BASE": {"v": "0x2d070c018", "src": "S1", "parents": ["ANE_TD", "ANE_CPU"]},
+    "ane_cpu_count": {"v": 1, "reason": "ANE_BASE has only one TD-driven child; T8122 is M3 base, single ANE. T6030 has ANE_BASE+ANE_MPM+ANE_CPU+ANE_TD as separate parents; T8122 collapses the four into one parent 'ANE_BASE < ANE_TD, ANE_CPU'."},
+    "power_domain_compatibles": {"v": ["apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate"], "src": "S4"}
+  },
+  "firmware": {
+    "name": {"v": "h15_ane_fw_themis_j51y.im4p", "src": "S2"},
+    "size": {"v": 1605657, "src": "S2 (im4p wrapper, fetched via HTTP range; receipt r27.fetch.log line 'firmware Firmware/ane/h15_ane_fw_themis_j51y.im4p 1605657')"},
+    "sha256": {"v": null, "reason": "im4p wrapper not unwrapped; the payload-after-im4p hash is not in the lab notebook for the M3 case. The M2 (t602x_ane0_fw_selene_rc4x) hash a9c4b771… is published in ane/t6021 source (driver sha-pin), but the M3 fw is fetched on demand via omarchy-ane-firmware-fetch; its payload sha256 is computed by the fetch script and stored, not by this run."},
+    "format": {"v": "im4p", "src": "S2 (im4p is the Apple firmware wrapper, decrypted to an ANEC container)" },
+    "encrypted": {"v": true, "src": "S2 (im4p is the encrypted form; omarchy-ane-firmware-fetch decrypts via the manifest key)"},
+    "loaded_by": {"v": "host-Linux or iBoot", "reason": "BuildManifest key 'IsFUDFirmware' (FUD = firmware update daemon) is true on M3 family per receipt log; the M2 selene was FUD-loaded by iBoot on the 13.5 stub. Whether the M3 themis image can be hosted on Linux without FUD requires the BuildManifest key + the ANE-class firmware path; not verified in this run."}
+  },
+  "kext": {
+    "class": {"v": null, "reason": "macOS 27.0 26A428 kernelcache not fetched; the kext binary name is the AppleHxxANEInterface family (T6001 = AppleH11ANEInterface per AneQosMap artifact; the M3 class is presumably AppleH15ANEInterface or AppleH15ANEIn — see AneQosMap pattern). Not verified."},
+    "protocol": {"v": null, "reason": "kext strings not extracted this run; the M2 kext exposes CSNE_CMD_* and ANEProgramLegacyResource class symbols (T8112/22G74 kext: 6.602.1). The M3 kext is the same family but possibly with ascwrap-v6 mailbox doorbells. Not verified."},
+    "host_interface": {"v": "AppleHxxANEInterface-x.y.z-mac1N-26A428", "src": "S2 (assumed pattern; needs verification)"}
+  },
+  "driver_family": {
+    "v": "ane_t6021's RTKit/firmware model — extended",
+    "src": "S5 + design inference"
+  },
+  "hwx_generation": {
+    "target": "h15",
+    "mach_o_cpusubtype": 6,
+    "hwx_bytes": 49152,
+    "isa_subtype_observed": 17,
+    "src": "S5 (receipts/2026-09-05-ane-community/anecompile-cross-target.json, observed 2026-09-05 on macstudio M1 Ultra macOS 26.6.2 build 25G83, ane-compile-hwx ./ane-compile-hwx add64 fp16; exit 0; hwx 49152; subtype 6)"
+  },
+  "state": "data-only"
+}

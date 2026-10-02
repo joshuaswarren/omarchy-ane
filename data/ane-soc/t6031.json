@@ -1,0 +1,112 @@
+{
+  "soc": "t6031",
+  "marketing": {
+    "v": "M3 Max",
+    "src": "S2"
+  },
+  "generation": {
+    "v": "H15J",
+    "src": "S5"
+  },
+  "boards": [
+    {"v": "j514c", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023, 14/16-core)"},
+    {"v": "j514m", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023)"},
+    {"v": "j516c", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, 14/16-core)"},
+    {"v": "j516m", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023)"},
+    {"v": "j575d", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, dual-die, 28/30-core)"}
+  ],
+  "sources": [
+    {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: DeviceTree.j514cap.adt, j514map.adt, j516cap.adt, j516map.adt, j575dap.adt; receipt artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt arm-io,t6031 section"},
+    {"id": "S2", "kind": "buildmanifest", "ref": "macOS 27.0 26A428 BuildManifest.plist; receipt artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt (t6031 j514cap/j516cap ANE=t603x_ane0_fw_erebus_pc5x.im4p; j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p, ANE1=t603x_ane1_fw_erebus_pc5x.im4p)"},
+    {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334; arch/arm64/boot/dts/apple/t6031.dtsi, t6031-die0.dtsi, t6031-dieX.dtsi, t6031-pmgr.dtsi"},
+    {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 (private) + receipts/2026-09-05-ane-community/anecompile-cross-target.json"}
+  ],
+  "ane": {
+    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "reg": [
+      {"name": "ane", "base": "0x3c9400000", "size": "0x6c000", "src": "S1"},
+      {"name": "ane_alt", "base": "0x3c9050000", "size": "0x4000", "src": "S1"},
+      {"name": "engine", "base": "0x3c8000000", "size": "0x2000000", "src": "S1"},
+      {"name": "pmgr", "base": "0x292280000", "size": "0x10000", "src": "S1"},
+      {"name": "pmgr_ps", "base": "0x292290000", "size": "0x4000", "src": "S1"},
+      {"name": "pmgr_sub2", "base": "0x2903c0000", "size": "0x30000", "src": "S1 (third pmgr region, larger than T6030's 0x24000 — T6031 has more SET states)"},
+      {"name": "engine_alias", "base": "0x404000000", "size": "0x2000000", "src": "S1 (a second 32 MiB engine aperture at a different base; on T6031 j514c. Probably the firmware-side aliased view of the engine, since the host aperture is at 0x3c8000000+0x2000000.)"},
+      {"name": "fw_data", "base": "0x2a02dc000", "size": "0x4000", "src": "S1 (a fourth window, possibly the firmware private memory-mapped window or scratch region)"}
+    ],
+    "interrupts": {"v": [965, 964, 967, 966, 983], "src": "S1"},
+    "ane_type": {"v": 224, "src": "S1"},
+    "ane_id": {"v": 0, "src": "S1"},
+    "die_id": {"v": 0, "src": "S1"},
+    "power_gates": {"v": ["ANE_CPU", "ANE-SYS-V"], "src": "S1"},
+    "iommus": {"v": null, "reason": "see t8122.json dart_phandle_field."}
+  },
+  "ane1_j575d": {
+    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "reg": [
+      {"name": "ane1", "base": "0x23c9400000", "size": "0x6c000", "src": "S1"},
+      {"name": "ane1_alt", "base": "0x23c9050000", "size": "0x4000", "src": "S1"},
+      {"name": "engine1", "base": "0x23c8000000", "size": "0x2000000", "src": "S1"},
+      {"name": "pmgr1", "base": "0x2292280000", "size": "0x10000", "src": "S1"},
+      {"name": "pmgr1_ps", "base": "0x2292290000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [5061, 5060, 5063, 5062, 5079], "src": "S1"},
+    "ane_type": {"v": 224, "src": "S1"},
+    "ane_id": {"v": 1, "src": "S1"},
+    "die_id": {"v": 1, "src": "S1 (dual-die on M3 Max j575d; the high-IRQ set is the second-die variant)"}
+  },
+  "dart": {
+    "compatible": {"v": "dart,t8110", "src": "S1"},
+    "reg": [
+      {"name": "ttbr0", "base": "0x3c9800000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr1", "base": "0x3c9810000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr2", "base": "0x3c9820000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr3", "base": "0x3c9804000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [984], "src": "S1"},
+    "sid": {"v": null, "reason": "see t8122.json dart.sid."},
+    "vm_base": {"v": null, "reason": "see t8122.json dart.vm_base."},
+    "vm_size": {"v": null, "reason": "see t8122.json dart.vm_size."},
+    "page_size": {"v": 16384, "src": "S1 (T8110 family inference)"}
+  },
+  "mailbox": {
+    "compatible": {"v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4", "src": "S4 (t6031-die0.dtsi:121)"},
+    "reg": [
+      {"name": "mbox", "base": "0x3c9050000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [964, 966, 967, 965, 983], "src": "S1 (5 interrupts; the four doorbells + ane ring)"}
+  },
+  "pmgr": {
+    "ANE_SYS": {"v": "0x292280520", "src": "S1"},
+    "ANE_SYS_parents": {"v": ["AFNC5_LW0", "AFNC6_LW0"], "src": "S1"},
+    "ANE_MPM": {"v": "0x2922805a0", "src": "S1"},
+    "ANE_CPU": {"v": "0x2922805a8", "src": "S1"},
+    "ANE_TD": {"v": "0x2922805b8", "src": "S1"},
+    "ANE_BASE": {"v": "0x2922805c0", "src": "S1"},
+    "power_domain_compatibles": {"v": ["apple,t6031-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate"], "src": "S4 (t6031-pmgr.dtsi:828)"},
+    "ane_cpu_count": {"v": 2, "src": "S1 (j575d has ane0 on die 0 and ane1 on die 1)"}
+  },
+  "firmware": {
+    "name": {"v": "t603x_ane0_fw_erebus_pc5x.im4p", "src": "S2 (BuildManifest: t6031 j514cap/j514map/j516cap/j516map/j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p; j575dap ANE1=t603x_ane1_fw_erebus_pc5x.im4p)"},
+    "size": {"v": 1605657, "src": "S2 (r27.fetch.log line 'firmware Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p 1605657')"},
+    "sha256": {"v": null, "reason": "see t8122.json firmware.sha256."},
+    "format": {"v": "im4p", "src": "S2"},
+    "encrypted": {"v": true, "src": "S2"},
+    "loaded_by": {"v": "host-Linux or iBoot", "reason": "see t8122.json firmware.loaded_by."}
+  },
+  "kext": {
+    "class": {"v": null, "reason": "see t8122.json kext.class."},
+    "protocol": {"v": null, "reason": "see t8122.json kext.protocol."},
+    "host_interface": {"v": "AppleHxxANEInterface-x.y.z-mac1N-26A428", "src": "S2 (assumed pattern)"}
+  },
+  "driver_family": {
+    "v": "ane_t6021's RTKit/firmware model — extended",
+    "src": "S5 + design inference"
+  },
+  "hwx_generation": {
+    "target": "h15",
+    "mach_o_cpusubtype": 6,
+    "hwx_bytes": 49152,
+    "src": "S5"
+  },
+  "state": "data-only"
+}
