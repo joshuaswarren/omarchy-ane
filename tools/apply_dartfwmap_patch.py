@@ -202,8 +202,10 @@ s = s.replace(
     anchor2,
     T + "if (dart_fw_map) {\n"
     + T + T + "err = ane_dart_fw_map(ane);\n"
-    + T + T + "if (err)\n"
+    + T + T + "if (err) {\n"
+    + T + T + T + "drm_dev_unregister(drm);\n"
     + T + T + T + "goto put_pm;\n"
+    + T + T + "}\n"
     + T + "}\n\n"
     + anchor2,
 )

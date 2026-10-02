@@ -1259,8 +1259,10 @@ static int ane_platform_probe(struct platform_device *pdev)
 
 	if (dart_fw_map) {
 		err = ane_dart_fw_map(ane);
-		if (err)
+		if (err) {
+			drm_dev_unregister(drm);
 			goto put_pm;
+		}
 	}
 
 	dev_info(dev, "loaded ane\n");
