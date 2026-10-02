@@ -127,7 +127,10 @@ This preparation (2026-10-02 05:25-05:47Z): `build.sh 9f99ebd9c6de…`, rc 0,
 1,351 s at nice 19 on 16 CPUs that other jobs held
 at load 45-65. A second run at the same ref took 21 s ("No change to
 .config", no compile). The work directory takes 5.6 GB on disk (11 GB before
-ZFS compression: `out/` 9.0 GB, `src/` 1.5 GB); the stage 147 MB.
+ZFS compression: `out/` 9.0 GB, `src/` 1.5 GB); the stage 147 MB. The
+unpacked module tree that `build.sh` checks, `mod-<release>-<commit>/`
+(107 MB), can go with its stage; delete both before packing the same commit
+again.
 
 | Staged file | sha256 | Note |
 |---|---|---|
