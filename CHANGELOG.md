@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Changed
+
+- `omarchy-ane-firmware-fetch` (the install, `--check` and `--hook`) and
+  `omarchy-ane-check` accept the Asahi vendor firmware copy. The kernel loads
+  `/usr/lib/firmware/vendor/apple/ane/<name>` before
+  `/usr/lib/firmware/apple/ane/<name>`. A vendor copy that matches the pin is
+  enough, and the tool fetches nothing. A vendor copy that does not match is a
+  problem: it shadows the fetched copy, so the driver refuses the firmware.
+  Then `--check` and `omarchy-ane-check` fail, the install exits 1, and
+  `--hook` prints a note. Without a matching vendor copy, the tool still
+  installs to `/usr/lib/firmware/apple/ane/`.
+
+### Added
+
+- `make check` also runs `tools/test_libane_ioctl`. It builds libane with
+  `-ftrivial-auto-var-init=pattern` against a fake DRM node, which refuses a
+  nonzero pad, flags or reserved member as the in-tree drivers do. It is a
+  host check only: no device runs the program.
+
 ### Fixed
 
 - libane sets the `pad` member of `struct drm_ane_bo_free` and of each
@@ -10,10 +29,6 @@
   so ABI 2 `PROG_LOAD` could fail and `BO_FREE` could keep the BO until the fd
   closed. The DKMS drivers of 0.4.0 accept the zero pads. All other ioctl
   arguments in libane were already zero-initialised.
-- `make check` also runs `tools/test_libane_ioctl`. It builds libane with
-  `-ftrivial-auto-var-init=pattern` against a fake DRM node, which refuses a
-  nonzero pad, flags or reserved member as the in-tree drivers do. It is a
-  host check only: no device runs the program.
 
 ## 0.4.0 (2026-10-01)
 
