@@ -73,7 +73,7 @@
     "reg": [
       {"name": "mbox", "base": "0x3c9050000", "size": "0x4000", "src": "S1"}
     ],
-    "interrupts": {"v": [964, 966, 967, 965, 983], "src": "S1 (5 interrupts; the four doorbells + ane ring)"}
+    "interrupts": {"v": [964, 966, 967, 965, 983], "src": "S1 (raw `ane` node interrupt cells; function mapping not established)"}
   },
   "pmgr": {
     "ANE_SYS": {"v": "0x292280520", "src": "S1"},
@@ -96,7 +96,7 @@
   "kext": {
     "class": {"v": null, "reason": "see t8122.json kext.class."},
     "protocol": {"v": null, "reason": "see t8122.json kext.protocol."},
-    "host_interface": {"v": "AppleHxxANEInterface-x.y.z-mac1N-26A428", "src": "S2 (assumed pattern)"}
+    "host_interface": {"v": null, "reason": "The macOS 27.0 M3 kernelcache was not fetched; host interface version not extracted."}
   },
   "driver_family": {
     "v": "ane_t6021's RTKit/firmware model — extended",
