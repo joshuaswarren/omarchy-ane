@@ -3,22 +3,13 @@
 # SOURCE PREFIX-NAME.dts becomes
 #   DESTDIR/OVERLAY_DIR/PREFIX/omarchy-NAME.dtbo
 # OVERLAY_DIR is the constant in packaging/omarchy-ane-dt.
-# Data-only overlays (packaging/dt/SOC-ane-dataonly.dts, root property
-# "omarchy,data-only") only compile here, as a check. They are never installed:
-# omarchy-mac-boot applies every overlay in OVERLAY_DIR. The per-SoC data files
-# data/ane-soc/SOC.json install to SOC_DIR (omarchy-ane-dt), where
-# omarchy-ane-dt status reads them.
-# For a package recipe: packaging/build-dtbo "$pkgdir". Needs dtc and fdtget.
+# For a package recipe: packaging/build-dtbo "$pkgdir". Needs dtc.
 set -euo pipefail
-shopt -s nullglob
 destdir=${1:?usage: build-dtbo DESTDIR}
 here=$(dirname -- "$(realpath -- "$0")")
 dt=$here/dt
 overlay_dir=$(sed -n 's/^OVERLAY_DIR = "\(.*\)"$/\1/p' "$here/omarchy-ane-dt")
-soc_dir=$(sed -n 's/^SOC_DIR = "\(.*\)"$/\1/p' "$here/omarchy-ane-dt")
-[[ -n $overlay_dir && -n $soc_dir ]] || { echo "build-dtbo: no OVERLAY_DIR or SOC_DIR in $here/omarchy-ane-dt" >&2; exit 1; }
-marked() { grep -qx 'omarchy,data-only' <<<"$(fdtget -p "$1" /)"; }
-installed=" "
+[[ -n $overlay_dir ]] || { echo "build-dtbo: no OVERLAY_DIR in $here/omarchy-ane-dt" >&2; exit 1; }
 while read -r prefix source state; do
   [[ -n $prefix && $prefix != \#* ]] || continue
   [[ $state == enabled || $state == opt-in ]] || { echo "build-dtbo: $prefix: $state, not installed"; continue; }
@@ -27,20 +18,5 @@ while read -r prefix source state; do
   out=$destdir/$overlay_dir/$prefix/omarchy-${name#"$prefix"-}.dtbo
   install -d "${out%/*}"
   dtc -q -@ -I dts -O dtb -o "$out" "$dt/$source"
-  if marked "$out"; then rm "$out"; echo "build-dtbo: $source is data-only; it is never installed" >&2; exit 1; fi
-  installed+="$prefix "
   echo "build-dtbo: $prefix ($state): ${out#"$destdir"}"
 done <"$dt/overlays"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-for source in "$dt"/*-ane-dataonly.dts; do
-  dtc -q -@ -I dts -O dtb -o "$tmp/check.dtbo" "$source"
-  marked "$tmp/check.dtbo" || { echo "build-dtbo: ${source##*/}: no omarchy,data-only root property" >&2; exit 1; }
-  echo "build-dtbo: ${source##*/} (data-only): compiled, not installed"
-done
-for data in "$here"/../data/ane-soc/*.json; do
-  soc=${data##*/} soc=${soc%.json}
-  [[ $installed != *" $soc "* ]] || { echo "build-dtbo: data/ane-soc/$soc.json: $soc has an installed overlay, so it is not data-only" >&2; exit 1; }
-  install -Dm0644 "$data" "$destdir/$soc_dir/$soc.json"
-  echo "build-dtbo: $soc (data-only): /$soc_dir/$soc.json"
-done

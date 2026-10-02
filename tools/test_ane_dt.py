@@ -87,8 +87,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # The packaged overlays: build-dtbo names, the hook's Target, and the
     # enabled/opt-in behaviour asserted below from the overlays table itself.
     pkg = Path(tmp) / 'pkg'
-    built_out = subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True,
-                               text=True).stdout
+    subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True)
     pkg_lib = pkg / oadt.OVERLAY_DIR
     assert sorted(p.relative_to(pkg_lib).as_posix() for p in pkg_lib.glob('*/*.dtbo')) == [
         't6000/omarchy-ane.dtbo', 't6001/omarchy-ane.dtbo', 't6002/omarchy-ane.dtbo',
@@ -120,41 +119,6 @@ with tempfile.TemporaryDirectory() as tmp:
     opt_in.write_text('uboot-serial-stdin-t6021\n')
     want = [f't6021/omarchy-ane.dtbo'] * ('t6021' in enabled) + ['t6021/omarchy-uboot-serial-stdin.dtbo']
     assert chosen('t6021-j414c.dtb') == want, 'the U-Boot input waits for its own key'
-
-    # Data-only overlays: build-dtbo compiles each and installs none (the
-    # overlay list above), and installs every data file.
-    for dts in sorted((root / 'packaging/dt').glob('*-ane-dataonly.dts')):
-        assert f'build-dtbo: {dts.name} (data-only): compiled, not installed' in built_out, built_out
-    assert sorted(p.name for p in (pkg / oadt.SOC_DIR).glob('*.json')) == \
-        sorted(p.name for p in (root / 'data/ane-soc').glob('*.json'))
-    # The gate is the "omarchy,data-only" root property: the same overlay with
-    # its opt-in key applies without it and never with it.
-    fake = Path(tmp) / 'dataonly'
-    (fake / 'sys/firmware/devicetree/base').mkdir(parents=True)
-    (fake / 'sys/firmware/devicetree/base/compatible').write_bytes(b'apple,j999\0apple,t9999\0')
-    (fake / oadt.OPT_IN).parent.mkdir(parents=True)
-    (fake / oadt.OPT_IN).write_text('ane-t9999\n')
-    dtbo = fake / oadt.OVERLAY_DIR / 't9999/omarchy-ane.dtbo'
-    dtbo.parent.mkdir(parents=True)
-    for marker, want in (('', [dtbo]), ('omarchy,data-only = "true";', [])):
-        subprocess.run(['dtc', '-q', '-@', '-I', 'dts', '-O', 'dtb', '-o', str(dtbo), '-'], check=True,
-                       input=(f'/dts-v1/; /plugin/; / {{ {marker} omarchy,opt-in = "ane-t9999"; '
-                              'fragment@0 { target-path = "/"; __overlay__ { }; }; };').encode())
-        assert oadt.overlays_for(fake, 't9999-j999.dtb') == want, marker
-    oadt.apply(fake, None)
-    assert not (fake / 'var/lib/omarchy-ane').exists(), 'apply wrote a copy from a data-only overlay'
-    check = lambda: subprocess.run([str(root / 'packaging/omarchy-ane-check'), '--root', str(fake)],
-                                   capture_output=True, text=True)
-    p = check()
-    assert p.returncode == 1 and 'UNTESTED SoC: t9999\n' in p.stdout, p.stdout
-    (fake / oadt.SOC_DIR).mkdir(parents=True)
-    (fake / oadt.SOC_DIR / 't9999.json').write_text('{"soc": "t9999", "state": "data-only"}')
-    p = subprocess.run([str(root / 'packaging/omarchy-ane-dt'), 'status', '--root', str(fake)],
-                       capture_output=True, text=True)
-    assert p.returncode == 1 and p.stdout.endswith('data-only (no driver): t9999\n'), p.stdout
-    p = check()
-    assert p.returncode == 1 and 'DATA-ONLY SoC: t9999 (no driver yet)\n' in p.stdout and 'UNTESTED' not in p.stdout, \
-        p.stdout
 
     # Overlays left in the old directory (a hand install): apply refuses and
     # keeps the current copy and the update-m1n1 line.

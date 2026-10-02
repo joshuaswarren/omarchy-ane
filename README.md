@@ -7,7 +7,6 @@ Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs. It ships DRM k
 - on by default: tested on real hardware. The overlay applies at install and the driver binds at boot.
 - opt-in, untested: a driver binds the `compatible`, and an overlay with cited values exists. Nobody has run it on that silicon yet. You add the opt-in key yourself. `omarchy-ane-check` prints `UNTESTED SoC` for it.
 - unsupported: no driver binds this ANE.
-- data-only: no driver binds this ANE, but the repo keeps cited data for it in `data/ane-soc/` ([docs/ane-soc-data.md](docs/ane-soc-data.md)). No opt-in key applies its overlay. `omarchy-ane-check` prints `DATA-ONLY SoC` for it.
 
 To opt in, append the key as one line to `/etc/omarchy-platform/dtb-overlays.opt-in`, then:
 
@@ -29,12 +28,6 @@ sudo reboot
 | M2 Ultra | T6022 | H14J | `apple,t6022-ane` | `ane_t6021` | opt-in, untested (die 0) | `ane-t6022` + note | nothing on T6022 silicon |
 
 The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. M3 and later are unsupported. Their ANE is a different generation. Apple's own firmware describes it as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1 and M2 ANE presents. No Linux driver exists for that design.
-
-Data-only chips (`tools/gen_coverage_table.py` writes this table from `data/ane-soc/`):
-
-<!-- BEGIN DATA-ONLY TABLE -->
-No chip has a data file yet.
-<!-- END DATA-ONLY TABLE -->
 
 Promotion. One passing community row promotes an untested chip. A passing row has a ready `omarchy-ane-check`, the chip's driver loaded, 20 smoke calls (`add-fixture`) that match the golden bit for bit, and no ANE, ANE-DART or ANE-mailbox fault. A row from a machine without omarchy-ane installed is not judged and counts neither for nor against promotion. If an opt-in chip has both passing and failing rows, the result is `CONFLICT`; it does not promote until the failing row is explained or superseded. H13 chips (T8103, T6000, T6001 and T6002) use the H13 smoke golden; H14 chips use the H14 golden. The Parakeet encoder hash is a developer check, not a collector field. `tools/promotion_check.py --remote` prints the live verdict. When it says `PROMOTE`, a PR can set that chip's line in `packaging/dt/overlays` to `enabled`.
 

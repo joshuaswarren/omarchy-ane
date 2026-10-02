@@ -12,14 +12,7 @@ enabled provider. An ANE overlay must leave exactly one enabled ANE node, with
 its own compatible. The kernel tree with that node enabled skips the overlay;
 with the overlay's nodes disabled (aurora-silicon/linux #65) the overlay
 applies again and gives the same tree. Needs dtc and fdtoverlay 1.7.1 or
-newer, and fdtput. Without ANE_DTBS it does nothing.
-
-Then every packaging/dt/PREFIX-ane-dataonly.dts: it must have the
-"omarchy,data-only" root property, and on each OUT/dtbs/PREFIX-*.dtb
-fdtoverlay must apply it and dtc must read the result, with the board
-compatible and every stock node kept. No PREFIX-*.dtb is a notice, not a
-failure. --data-only checks only these (the aurora-wip trees,
-.github/workflows/aurora-dtbs.yml)."""
+newer, and fdtput. Without ANE_DTBS it does nothing."""
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
@@ -39,8 +32,7 @@ if not dtbs:
     print('test_ane_overlays: ANE_DTBS is not set; nothing checked (see tools/asahi-dtbs)')
 else:
     dt = root / 'packaging/dt'
-    rows = [] if sys.argv[1:] == ['--data-only'] else \
-        [line.split() for line in (dt / 'overlays').read_text().splitlines() if line and line[0] != '#']
+    rows = [line.split() for line in (dt / 'overlays').read_text().splitlines() if line and line[0] != '#']
     applied = 0
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
@@ -78,23 +70,4 @@ else:
                 assert oadt.Tree(again[0]).nodes == result.nodes, f'{source} on {board.name}: re-apply differs'
             print(f'test_ane_overlays: {source} ({state}): {len(boards)} boards: '
                   + ' '.join(b.stem for b in boards))
-        data_only = sorted(dt.glob('*-ane-dataonly.dts'))
-        for source in data_only:
-            prefix = source.name.removesuffix('-ane-dataonly.dts')
-            dtbo = work / f'{source.name}.dtbo'
-            subprocess.run(['dtc', '-q', '-@', '-I', 'dts', '-O', 'dtb', '-o', str(dtbo), str(source)], check=True)
-            assert oadt.data_only(dtbo), f'{source.name}: no omarchy,data-only root property'
-            boards = sorted(Path(dtbs).glob(f'{prefix}-*.dtb'))
-            if not boards:
-                print(f'::notice::test_ane_overlays: {source.name}: no {prefix}-*.dtb in {dtbs}; compiled, not applied')
-            for board in boards:
-                out = work / 'data-only.dtb'
-                oadt.run('fdtoverlay', '-i', str(board), '-o', str(out), str(dtbo))
-                oadt.run('dtc', '-q', '-I', 'dtb', '-O', 'dtb', '-o', os.devnull, str(out))
-                stock, result = oadt.Tree(board.read_bytes()), oadt.Tree(out.read_bytes())
-                assert result.strings('/', 'compatible') == stock.strings('/', 'compatible'), (source.name, board.name)
-                assert set(stock.nodes) <= set(result.nodes), (source.name, board.name)
-                applied += 1
-            print(f'test_ane_overlays: {source.name} (data-only): {len(boards)} boards: '
-                  + ' '.join(b.stem for b in boards))
-    print(f'test_ane_overlays: ok ({len(rows)} overlays, {len(data_only)} data-only, {applied} applications)')
+    print(f'test_ane_overlays: ok ({len(rows)} overlays, {applied} applications)')
