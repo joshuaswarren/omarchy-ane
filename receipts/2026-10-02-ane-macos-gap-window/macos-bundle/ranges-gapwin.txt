@@ -1,0 +1,36 @@
+# Runtime request for ANERegDump - gap-window variant of ranges.txt.
+# Base: tools/macos-regdump/ranges.txt (unchanged) plus exactly two ungated non-engine 4-byte
+# perf-state words for the E1 clock question (fabric-ps, dcs-ps; DESIRED[3:0] is the low nibble).
+# No kext rebuild: ranges are runtime data. Do not add engine-window ranges here.
+# Every number is hexadecimal, with or without 0x. poll_us 0x1e8480 is 2 s.
+poll_us 0x1e8480
+pmgr 0x28e080000 0x10000
+gate 0xf0 0xf0
+island 0x2e0
+island 0x4000
+island 0x4008
+island 0x4010
+island 0x4018
+island 0x4020
+island 0x4028
+island 0x4030
+range pmgr-ps 0x28e080000 0x4040
+range wrapper 0x285400000 0x14000 gated
+range mailbox 0x285408000 0x1000 gated
+range rvbar 0x285050000 0x8 gated
+range scratch 0x285840048 0x28 gated
+range dart0 0x285800000 0x2000 gated
+range dart1 0x285810000 0x2000 gated
+range dart2 0x285820000 0x2000 gated
+range patchbay 0x10001406870 0x40
+# Firmware carveouts, T6021 segment-ranges (omarchy-ane
+# docs/t6021-ane-bringup-findings.md section 3): TEXT and DATA are no-map
+# DRAM, always readable, not engine-window. The kext ADT lookup misses on
+# the ane0@84000000 unit address, so they are listed here instead.
+range fw-text 0x10000848000 0xc4000
+range fw-data 0x10001400000 0x438000
+# Gap-window additions (read-only, 4 bytes each, idle + mid-loop):
+range fabric-ps 0x28e20c000 0x4
+range dcs-ps 0x28e20c400 0x4
+handoff 1
+adt 1

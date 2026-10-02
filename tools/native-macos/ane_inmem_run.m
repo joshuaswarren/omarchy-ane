@@ -7,6 +7,9 @@
 // Inputs and outputs bind in MIL signature / return order. Each input file's bytes go to the start of
 // its surface (zero padding after), so a dense tensor or a single padded row binds as is. Each output
 // surface is written whole to OUT_DIR/NAME.bin. stdout: one JSON line with compile, load and per-call ms.
+// PERFSTATS=1 passes a mutable dict as _ANERequest perfStats so the firmware's per-call stats buffer
+// (ANE_NE_COMPUTE/NOMINAL/THROTTLE_CYCLES class counters) lands host-side; its description is added to
+// the JSON line as perf_stats_first / perf_stats_last. Best effort: any refusal falls back to nil.
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurface.h>
 #import <dlfcn.h>
@@ -32,6 +35,7 @@ int main(int argc, char **argv) {
     NSData *weights = [NSData dataWithContentsOfFile:@(argv[2]) options:NSDataReadingMappedIfSafe error:nil];
     NSString *outDir = @(argv[3]);
     int warmup = atoi(argv[4]), repeat = atoi(argv[5]);
+    NSMutableDictionary *perfStats = getenv("PERFSTATS") ? [NSMutableDictionary dictionary] : nil;
     if (!mil || !weights) { fprintf(stderr, "cannot read MIL or weights\n"); return 4; }
 
     NSMutableArray *ins = [NSMutableArray array], *inIdx = [NSMutableArray array];
@@ -81,6 +85,7 @@ int main(int argc, char **argv) {
     double compileMs = ms_since(t);
     double loadMs = 0;
     NSMutableArray *times = [NSMutableArray array];
+    NSString *statsFirst = nil, *statsLast = nil;
     if (!ok) { fprintf(stderr, "compile: %s\n", error.description.UTF8String); rc = 8; goto done; }
     t = CFAbsoluteTimeGetCurrent();
     ok = ((BOOL (*)(id, SEL, unsigned int, id, NSError **))objc_msgSend)(model, @selector(loadWithQoS:options:error:),
@@ -88,17 +93,34 @@ int main(int argc, char **argv) {
     loadMs = ms_since(t);
     if (!ok) { fprintf(stderr, "load: %s\n", error.description.UTF8String); rc = 9; goto done; }
     {
-      id request = ((id (*)(Class, SEL, id, id, id, id, id, id, id))objc_msgSend)(NSClassFromString(@"_ANERequest"),
-          @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
-          ins, inIdx, outs, outIdx, nil, nil, @0);
+      id (^makeRequest)(id) = ^(id ps) {
+        return ((id (*)(Class, SEL, id, id, id, id, id, id, id))objc_msgSend)(NSClassFromString(@"_ANERequest"),
+            @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
+            ins, inIdx, outs, outIdx, nil, ps, @0);
+      };
+      __block id request;
+      @try { request = makeRequest(perfStats); }
+      @catch (NSException *ex) {
+        fprintf(stderr, "perfStats request rejected (%s); continuing without it\n", ex.name.UTF8String);
+        perfStats = nil; request = makeRequest(nil);
+      }
       for (int i = 0; i < warmup + repeat; i++) {
         t = CFAbsoluteTimeGetCurrent();
         ok = ((BOOL (*)(id, SEL, unsigned int, id, id, NSError **))objc_msgSend)(model,
             @selector(evaluateWithQoS:options:request:error:), 21, @{}, request, &error);
         double ms = ms_since(t);
-        if (!ok) { fprintf(stderr, "evaluate %d: %s\n", i, error.description.UTF8String); rc = 10; break; }
+        if (!ok) {
+          if (perfStats) {  // the dict's type may not be what this macOS build wants: retry nil once
+            fprintf(stderr, "evaluate with perfStats failed (%s); retrying without it\n",
+                    error.description.UTF8String);
+            perfStats = nil; request = makeRequest(nil); i--; continue;
+          }
+          fprintf(stderr, "evaluate %d: %s\n", i, error.description.UTF8String); rc = 10; break;
+        }
+        if (i == warmup) statsFirst = perfStats ? [perfStats description] : nil;
         if (i >= warmup) [times addObject:@(ms)];
       }
+      if (perfStats) statsLast = [perfStats description];
     }
     for (NSUInteger i = 0; rc == 0 && i < outSurfaces.count; i++) {
       IOSurfaceRef s = (__bridge IOSurfaceRef)outSurfaces[i];
@@ -111,7 +133,9 @@ int main(int argc, char **argv) {
   done:
     [fm removeItemAtPath:staging error:nil];
     NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"rc": @(rc), @"identifier": ident,
-        @"compile_ms": @(compileMs), @"load_ms": @(loadMs), @"exec_ms": times} options:0 error:nil];
+        @"compile_ms": @(compileMs), @"load_ms": @(loadMs), @"exec_ms": times,
+        @"perf_stats_first": statsFirst ?: [NSNull null],
+        @"perf_stats_last": statsLast ?: [NSNull null]} options:0 error:nil];
     printf("%s\n", [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding].UTF8String);
     return rc;
   }
