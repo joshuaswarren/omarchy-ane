@@ -102,12 +102,10 @@ Rationale (S1 + S4 + S5):
   iBoot loading and FUD classification; they do not prove Linux can load it.
   The payloads are plain Mach-O inside IM4P (anef type, cffaedfe magic, no KBAG).
   Do not claim host-side Linux loading until implemented and tested.
-- H14 has RTKit-class mailbox semantics; H15 is the same doorbell layout.
-- H14's ane_t6021 driver does pmgr power-domain sequencing with
-  ps_ane_sys, ps_ane_mpm, ps_ane_cpu, ps_ane_td, ps_ane_base; the
-  M3 Pro/Max/Ultra family has the same set (kernel S4 t6031-pmgr.dtsi
-  has all five labels at addresses 0x520/0x5a0/0x5a8/0x5b8/0x5c0
-  matching the ADT pmgr list at S1).
+- H14's `ane_t6021` driver sequences five named power domains. The H15
+  kernel DTS exposes all five only for T6031. T6030 and T8122 expose only
+  `ps_ane_sys` in the kernel DTS, although their ADT summaries list other
+  ANE power gates/words; the H15 sequence is not established by these sources.
 
 What is new for H15 (vs H14):
 
@@ -116,8 +114,8 @@ What is new for H15 (vs H14):
 | ANE node compatible | `ane,t8020` | `iop,ascwrap-v6` | S1 (ADT 27.0 ane0/ane nodes) |
 | Number of ANE reg windows | 3 (engine 0x284000000+0x2000000, pmgr 0x28e080000+0x4034, pmgr_ps 0x28e08c000+0x4000) | T8122: 5, T6030: 8, T6031: 8 (an extra 0x6c000 ascwrap block at the ane base, plus 0x4000 mailbox, plus a firmware-data window) | S1 |
 | DART compatible | `dart,t8110` | `dart,t8110` (same; T8110 family) | S1 |
-| Mailbox compatible | `apple,t6021-ane-mailbox,apple,asc-mailbox-v4` | `apple,t6031-asc-mailbox,apple,asc-mailbox-v4` (T6030/T6031); T8122 will likely use `apple,t8122-asc-mailbox,apple,asc-mailbox-v4` (kernel dtsi pattern) | S4 |
-| DART IOVA width | 40-bit (0x100_0000_0000 base) | 40-bit (T8110 family); no evidence in the lab of a wider window yet | S1 + S4 (no IOVA width change) |
+| Mailbox compatible | `apple,t6021-ane-mailbox,apple,asc-mailbox-v4` | T6030/T6031: `apple,t6031-asc-mailbox,apple,asc-mailbox-v4`; T8122: unknown (kernel DTS has no ANE mailbox node) | S4 |
+| DART IOVA width | 40-bit for H14 | Not verified for H15: T8110-family 13.5 evidence is only an analogy; the 27.0 H15 DART `sid`/`vm_base`/`vm_size` were not parsed | S1 + S4 |
 | Tunables (pmgr word offset) | 0x260/0x2e0/0x4000/0x4008/0x4010/0x4018/0x4020/0x4028/0x4030 (9 ps words) | T6031: 0x520/0x5a0/0x5a8/0x5b8/0x5c0 (5 ps words); T6030: 0x498 only (1 ps word); T8122: 0x438 only (1 ps word) | S1 + S4 |
 | Power sequencing | sys-mpm-td-base-set1-set2-set3-set4-cpu (H14 J-class) | sys-mpm-cpu-td-base (T6031); sys-cpu (T6030/T8122 collapses mpm/td/base into sys-cpu) | S1 + S4 |
 | ANE clock-ids | 4 (318-321) | ADT 27.0 receipt summary does not preserve clock-ids; T8110/T6020/T6021 family has 4. Not verified for T8122/T6030/T6031. | S1 (13.5 has them; 27.0 receipt summary omits) |
