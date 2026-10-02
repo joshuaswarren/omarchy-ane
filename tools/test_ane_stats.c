@@ -593,7 +593,8 @@ static int test_randomized_stress(void)
 	 * this test exists for (H217 round 1: whole submit paths uncounted) errs
 	 * by whole intervals. AneStatsFix2, 2026-10-02 gate-flake thread
 	 * (correction: the continuous busy_ns rewrite, omarchy-ane#63, is the
-	 * merged algorithm being bounded here). */
+	 * merged algorithm being bounded here — omarchy-ane main 5febec3,
+	 * in-tree origin/ane-driver-aurora 761fc46f134b). */
 	uint64_t delta = busy > union_ns ? busy - union_ns : union_ns - busy;
 	uint64_t tol = union_ns / 1000;
 	if (tol < 10000000)
