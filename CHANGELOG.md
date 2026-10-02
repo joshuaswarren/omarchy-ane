@@ -34,8 +34,8 @@ version.
   data. T6020 (M2 Pro) and the T6022 (M2 Ultra) die 0 get the T6021 nodes,
   behind `ane-t6020` and `ane-t6022`. The macOS 13.5 ADTs give the same values
   on these SoCs (#28). M3 and later get no overlay.
-- `ane_t6021` binds `apple,t6020-ane`, `apple,t6022-ane` and
-  `apple,t8112-ane` as UNTESTED opt-ins (`32b916c`, #47). T8112 (M2) runs the
+- `ane_t6021` binds `apple,t6020-ane` and `apple,t6022-ane` (`32b916c`) and
+  `apple,t8112-ane` (`e91d350`, #47) as UNTESTED opt-ins. T8112 (M2) runs the
   13.5 `h14_ane_fw_bia_j4xx` image. `packaging/dt/t8112-ane.dts` (key
   `ane-t8112`) has the ANE, its three DARTs, its seven power states, the
   mailbox and the eFuse window; the chip revision and the ASC tunables come
@@ -82,10 +82,10 @@ version.
     (T8103).
   - `ane/t6021/probes/ane_afbridge_probe.c` reads the 26 ANE0 AXI2AF bridge
     registers that macOS programs. Under Linux 0 of the 26 hold the macOS
-    values (#25, #33).
+    values (`17e3bdc`; #25, #33).
   - `ane/t6021/probes/ane_dart_probe.c` reads the ANE DART tunable and PERF
     words and can apply the bulk-DART tunables by group in the macOS order
-    (#36, #37).
+    (`3ec8a28`, `61637ff`; #36, #37).
   - A prepared apple-dart kernel patch that writes the bulk-DART tunables at
     DART reset, and its boot record (#38, #41, #42, #46).
   - Candidate U-Boot `mtpkbd` patches in
@@ -159,7 +159,7 @@ version.
   `ane_t8103_fw`, after it caused a hard reset of the M1.
 - T6020 uses chip revision 0x01 and its own iBoot ASC tunables. Before, it ran
   with the T6021 revision (0x11) and tunables, which differ in 13 of 24 values.
-  T6022 keeps the T6021 values (#45, #47).
+  T6022 keeps the T6021 values (`e91d350`; #45, #47).
 
 ### Known limits
 
@@ -180,11 +180,13 @@ version.
 - Speed: the whole Parakeet encoder takes 254 ms per CALL on the M2 under
   Linux and about 139 ms on the M1 (T8103). On the same M2 under macOS, the
   same MIL takes 89 ms with the same output bits (#29). The cause is under
-  investigation. Rejected causes, each with a receipt: the compiled program
-  (the M2's native program also takes 253 ms under Linux, #32), the AXI2AF
-  bridge tunables (#33), the bulk-DART tunables 0x220, 0x224 and the SID words
-  (#37), the ten Linux-only P-1 writes (#40), and the firmware perf mode
-  (findings section 19). DART 0x20c at DART reset is still open (#38, #46).
+  investigation. Rejected causes, each with a receipt commit: the compiled
+  program (the M2's native program also takes 253 ms under Linux; `3b6fcf4`,
+  #32), the AXI2AF bridge tunables (`17e3bdc`, #33), the bulk-DART tunables
+  0x220, 0x224 and the SID words (`ec6ab5a`, #37), and the ten Linux-only P-1
+  writes (`ee469e2`, #40). Writing DART 0x20c on a live DART breaks
+  translation (`ec6ab5a`); a write at DART reset is still open (`a332e6a`,
+  `d5a0e74`).
 - Qwen: all 38 programs conform, but STAGED-QWEN-REF passes 3 of 10 prompts
   against the M1 reference. The M2's own macOS compile and runtime give the
   same tokens as Linux on 10 of 10 prompts, with a logit difference of 0, so
