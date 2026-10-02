@@ -3,6 +3,7 @@
 
 #include <linux/atomic.h>
 #include <linux/debugfs.h>
+#include <linux/device.h>
 #include <linux/iommu.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
@@ -10,6 +11,7 @@
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/seq_file.h>
+#include <linux/slab.h>
 #include <linux/sysfs.h>
 
 #include <drm/drm_accel.h>

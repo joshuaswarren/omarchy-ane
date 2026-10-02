@@ -40,6 +40,7 @@
 #ifdef __KERNEL__
 #include <linux/atomic.h>
 #include <linux/ktime.h>
+#include <linux/string.h>
 #define ane_stats_atomic_u64	atomic64_t
 #define ane_stats_atomic_u32	atomic_t
 static inline u64 ane_stats_atomic64_read(const atomic64_t *v) { return atomic64_read(v); }
