@@ -1,9 +1,16 @@
 /* aneregdump: open the ANERegDump user client and write the dump.
  *
- * Usage: aneregdump <outdir>
- * Writes dump.bin (header + bytes) and index.json (one row per range:
+ * Usage: aneregdump <outdir> [ranges.txt [count period_us]]
+ * One dump: dump.bin (header + bytes) and index.json (one row per range:
  * name, physical address, length, status, sha256).
+ * With count: <outdir>/series.bin, count dumps from one open connection,
+ * one started every period_us (0 = back to back), stopped early by SIGINT
+ * or SIGTERM. Each record is {u64 t0_ns, u64 t1_ns, u32 kr, u32 len} with
+ * CLOCK_REALTIME times around the call, then len bytes of header + data.
  */
+#include <signal.h>
+#include <time.h>
+#include <unistd.h>
 #include <CommonCrypto/CommonDigest.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +136,70 @@ static int load_req(const char *path, struct ane_req *req)
 	return 0;
 }
 
+static volatile sig_atomic_t stop;
+
+static void on_stop(int sig)
+{
+	(void)sig;
+	stop = 1;
+}
+
+/* Dumps back to back from one connection; every record is written before
+ * the next call, so a stop leaves a complete file. */
+static int series(io_connect_t conn, struct ane_req *req, const char *dir,
+    unsigned long count, unsigned long period_us)
+{
+	struct { uint64_t t0, t1; uint32_t kr, len; } rec;
+	struct ane_dump_hdr *hdr;
+	unsigned long i, ok = 0, up = 0;
+	uint64_t spent = 0, next, now;
+	size_t outsz;
+	uint8_t *buf;
+	char path[512];
+	FILE *f;
+
+	buf = malloc(sizeof(*hdr) + ANE_DUMP_MAX);
+	snprintf(path, sizeof(path), "%s/series.bin", dir);
+	f = fopen(path, "wb");
+	if (!buf || !f) {
+		perror(path);
+		return 1;
+	}
+	signal(SIGINT, on_stop);
+	signal(SIGTERM, on_stop);
+	hdr = (struct ane_dump_hdr *)buf;
+	next = clock_gettime_nsec_np(CLOCK_REALTIME);
+	for (i = 0; i < count && !stop; i++) {
+		outsz = sizeof(*hdr) + ANE_DUMP_MAX;
+		rec.t0 = clock_gettime_nsec_np(CLOCK_REALTIME);
+		rec.kr = IOConnectCallStructMethod(conn, 0, req, sizeof(*req),
+		    buf, &outsz);
+		rec.t1 = clock_gettime_nsec_np(CLOCK_REALTIME);
+		rec.len = 0;
+		if (!rec.kr && hdr->magic == ANE_DUMP_MAGIC &&
+		    hdr->nranges <= ANE_RANGE_MAX) {
+			rec.len = sizeof(*hdr) + hdr->data_bytes;
+			ok++;
+			up += hdr->islands_up != 0;
+		}
+		spent += rec.t1 - rec.t0;
+		if (fwrite(&rec, sizeof(rec), 1, f) != 1 ||
+		    fwrite(buf, 1, rec.len, f) != rec.len || fflush(f)) {
+			perror(path);
+			fclose(f);
+			return 1;
+		}
+		next += (uint64_t)period_us * 1000;
+		now = clock_gettime_nsec_np(CLOCK_REALTIME);
+		if (period_us && next > now)
+			usleep((useconds_t)((next - now) / 1000));
+	}
+	fclose(f);
+	printf("series n=%lu ok=%lu islands_up=%lu mean_call_us=%llu\n", i, ok,
+	    up, i ? (unsigned long long)(spent / i / 1000) : 0ull);
+	return ok == i ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
 	io_service_t svc;
@@ -141,13 +212,15 @@ int main(int argc, char **argv)
 	char path[512], digest[65];
 	FILE *f, *idx;
 	uint32_t i;
+	int rc;
 
-	if (argc != 2 && argc != 3) {
-		fprintf(stderr, "usage: aneregdump <outdir> [ranges.txt]\n");
+	if (argc != 2 && argc != 3 && argc != 5) {
+		fprintf(stderr,
+		    "usage: aneregdump <outdir> [ranges.txt [count period_us]]\n");
 		return 2;
 	}
 	ane_req_default(&req);
-	if (argc == 3 && load_req(argv[2], &req))
+	if (argc >= 3 && load_req(argv[2], &req))
 		return 1;
 	if (!ane_req_acceptable(&req)) {
 		fprintf(stderr, "rejected poll=%u pmgr=%#llx/%u islands=%u "
@@ -168,6 +241,12 @@ int main(int argc, char **argv)
 	if (kr) {
 		fprintf(stderr, "IOServiceOpen: 0x%x\n", kr);
 		return 1;
+	}
+	if (argc == 5) {
+		rc = series(conn, &req, argv[1], strtoul(argv[3], NULL, 0),
+		    strtoul(argv[4], NULL, 0));
+		IOServiceClose(conn);
+		return rc;
 	}
 	buf = malloc(sizeof(*hdr) + ANE_DUMP_MAX);
 	if (!buf)

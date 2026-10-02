@@ -1,0 +1,52 @@
+# ANERegDump request for macOS window 2 (T6021 ANE clock-state words). Runtime data for the
+# frozen kext 932d3b9b; no rebuild. Named 4-byte words only, never a block dump.
+# w2sample.py derives every per-phase file from this one (block subsets, gated or raw, poll).
+# Block = name prefix: t1 = fabric-ps/dcs-ps (read on macOS and Linux before),
+# set- / clk6 / pll- dev- ev- / ane0- = tier 2 (never read on macOS; gated here, so the kext
+# reads them only while every island reads ACTUAL=0xf).
+# Addresses: AneClockHunt out/t6021-macos27-decode.txt (DEC) from the live 27.0 ADT.
+poll_us 0xa
+pmgr 0x28e080000 0x10000
+gate 0xf0 0xf0
+island 0x260
+island 0x2e0
+island 0x4008
+island 0x4010
+island 0x4018
+island 0x4020
+island 0x4028
+island 0x4030
+handoff 0
+adt 0
+# t1: pmgr reg[40] CLKGEN words (DT pmgr-misc fabric-ps/dcs-ps), macOS 0x666/0x999.
+range fabric-ps 0x28e20c000 0x4
+range dcs-ps 0x28e20c400 0x4
+# set: ane0 reg[2] SET window (DEC ane0 reg); the 13.5 kext writes 0x80000000 to +0/+30/+34/+38.
+# Never past +0x38: the T6001 read past its SET+0x38 hard-reset the M1 Max.
+range set-000 0x28e08c000 0x4 gated
+range set-030 0x28e08c030 0x4 gated
+range set-034 0x28e08c034 0x4 gated
+range set-038 0x28e08c038 0x4 gated
+# clk: ane0 clock-ids 0x13e-0x141 = boot clocks 62-65, type 0x33, pmgr reg[5] (DEC).
+range clk62-33c 0x29e24033c 0x4 gated
+range clk63-340 0x29e240340 0x4 gated
+range clk64-344 0x29e240344 0x4 gated
+range clk65-348 0x29e240348 0x4 gated
+# perf1: perf-regs[1] = 0x28e0e0000 slots (base + 0x100 + idx*0x10; stride INFERENCE):
+# PLL_ANE0_OFF 1:0x2b, PLL_ANE1_OFF 1:0x2c, ANE_SYS 1:0x26, ANE_CPU 1:0x27, CLVR_EXT_ANE 1:0xa8.
+range pll-ane0 0x28e0e03b0 0x4 gated
+range pll-ane1 0x28e0e03c0 0x4 gated
+range dev-anesys 0x28e0e0360 0x4 gated
+range dev-anecpu 0x28e0e0370 0x4 gated
+range ev-clvr-ane 0x28e0e0b80 0x4 gated
+# dvfm: perf-regs[2] = 0x28e0e8000, ANE0_ADCLK/DITHR/EXT_TRG0-2 events ids 120-124, 2 slots each.
+range ane0-adclk-0 0x28e0e8100 0x4 gated
+range ane0-adclk-1 0x28e0e8110 0x4 gated
+range ane0-dithr-0 0x28e0e8120 0x4 gated
+range ane0-dithr-1 0x28e0e8130 0x4 gated
+range ane0-ext0-0 0x28e0e8140 0x4 gated
+range ane0-ext0-1 0x28e0e8150 0x4 gated
+range ane0-ext1-0 0x28e0e8160 0x4 gated
+range ane0-ext1-1 0x28e0e8170 0x4 gated
+range ane0-ext2-0 0x28e0e8180 0x4 gated
+range ane0-ext2-1 0x28e0e8190 0x4 gated
