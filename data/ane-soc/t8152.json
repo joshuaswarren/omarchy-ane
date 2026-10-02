@@ -1,0 +1,135 @@
+{
+  "soc": "t8152",
+  "generation": {
+    "v": "H18",
+    "src": "S1"
+  },
+  "boards": [
+    {
+      "v": "j873g",
+      "src": "S1"
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 (26A428), DeviceTree.j873gap.adt, 614344 bytes; extracted-member SHA-256 from AneAllSoc/every-soc/hashes/ipsw-members.sha256.",
+      "sha256": "3252a3f13dc025ffa8551c7a5da6a71501f76ea6c5d38aa35390f9268a6dc378"
+    },
+    {
+      "id": "S2",
+      "kind": "buildmanifest",
+      "ref": "macOS 27.0 (26A428), BuildManifest.plist; extracted-member SHA-256 from AneAllSoc/every-soc/hashes/ipsw-members.sha256. Row: 0x8152 j873gap ANE=h18_ane0_fw_kirkland_j8xx.im4p; Ap,ANE1=h18_ane1_fw_kirkland_j8xx.im4p.",
+      "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7"
+    },
+    {
+      "id": "S3",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux aurora-wip arch/arm64/boot/dts/apple/t8152-j873g.dts, blob bd259e3f7e364aa6d9777d829c33548dd738c968; SHA-256 computed over git-show bytes.",
+      "sha256": "d5afaf1b8c05748fab7db1c6b2059946299d30ede3b05f999f595c0a778275a5"
+    }
+  ],
+  "marketing": {
+    "v": "Apple Mac mini (M6), board j873g; H18/T8152. Source DTS model string says Mac mini (M6). The generation name H18 comes from firmware h18; T8152 is not claimed to be M5.",
+    "src": "S3"
+  },
+  "other_h18_ids": {
+    "v": null,
+    "reason": "Searched the complete macOS 27.0 (26A428) IPSW ADT and BuildManifest extracts recorded in AneAllSoc receipts. The 27.0 ADT list has T8152 as the only H18 SoC id; no T8160/T8162 or other newer SoC id appears. Also checked the macOS 13.5 (22G74) extracted ADT/BuildManifest set; no T8152/H18 row there. This only establishes absence in these searched restore images, not future catalog availability."
+  },
+  "ane_compatible": {
+    "v": "iop-ane,ascwrap-v8",
+    "src": "S1"
+  },
+  "ane_name": {
+    "v": "ane; no numeric suffix",
+    "src": "S1"
+  },
+  "ane_type": {
+    "v": 784,
+    "src": "S1"
+  },
+  "ane_die_id": {
+    "v": 0,
+    "src": "S1"
+  },
+  "ane_reg": {
+    "v": [
+      "0x419600000+0x74000",
+      "0x419050000+0x4000",
+      "0x316000000+0x1c000",
+      "0x418000000+0x2000000",
+      "0x300700000+0x1c000",
+      "0x300724000+0x4000",
+      "0x3003c0000+0x40000",
+      "0x211000000+0xff4000",
+      "0x3082c8000+0x4000",
+      "0x301200000+0x8000"
+    ],
+    "src": "S1"
+  },
+  "ane_interrupts": {
+    "v": [
+      311,
+      271,
+      788,
+      801,
+      765
+    ],
+    "src": "S1"
+  },
+  "ane1": {
+    "v": "Same iop-ane,ascwrap-v8 compatible, ane-type 784, die-id 0; reg: 0x481600000+0x74000, 0x481050000+0x4000, 0x316000000+0x1c000, 0x480000000+0x2000000, 0x300700000+0x1c000, 0x300724000+0x4000, 0x3003c0000+0x40000, 0x211000000+0xff4000, 0x3082c8000+0x4000, 0x301200000+0x8000; interrupts 312,272,836,813,813.",
+    "src": "S1"
+  },
+  "ane_segment_ranges": {
+    "v": null,
+    "reason": "No segment-ranges property in the IPSW j873g ADT. A live macOS IORegistry/m1n1 ADT observation is required to discover iBoot's runtime firmware placement; not measured offline."
+  },
+  "ane_domains": {
+    "v": "ADT names DCS2 and DCS3 clock gates; it does not show the T6021-style ANE_SYS/CPU/SET state sequence.",
+    "src": "S1"
+  },
+  "dart_compatible": {
+    "v": "dart,gen3",
+    "src": "S1"
+  },
+  "dart_regs": {
+    "v": "dart-ane reg 0x419800000+0xc000, 0x419820000+0xc000, 0x419840000+0xc000, 0x419860000+0xc000, 0x419810000+0x4000; dart-ane1 reg 0x481800000+0xc000, 0x481820000+0xc000, 0x481840000+0xc000, 0x481860000+0xc000, 0x481810000+0x4000.",
+    "src": "S1"
+  },
+  "dart_interrupts": {
+    "v": "dart-ane IRQ 789; dart-ane1 IRQ 837.",
+    "src": "S1"
+  },
+  "dart_sid": {
+    "v": null,
+    "reason": "No sid property in the IPSW ADT; a live IORegistry or trace is needed."
+  },
+  "mailbox": {
+    "v": null,
+    "reason": "No separate mailbox node appears in the T8152 IPSW ADT. The host/ASC mailbox protocol and addresses are not identified by static ADT data; do not infer that the interface is integrated."
+  },
+  "firmware": {
+    "v": "BuildManifest maps j873gap to h18_ane0_fw_kirkland_j8xx.im4p and h18_ane1_fw_kirkland_j8xx.im4p. AneAllSoc fetch receipt reports each IPSW member as 1,572,889 bytes. Encrypted payload: not decrypted or copied. The exact per-member firmware SHA-256 is not present in the fetched hash list.",
+    "src": "S2"
+  },
+  "kext": {
+    "v": null,
+    "reason": "AneAllSoc's 27.0 fetch receipt contains BuildManifest and ADT members but no j873g kernelcache member; no T8152 kernelcache kext class was measured."
+  },
+  "driver_family": {
+    "v": "New family indicated by iop-ane,ascwrap-v8 and dart,gen3. No existing omarchy-ane driver matches this compatible. No H18 driver or mailbox protocol has been implemented or tested.",
+    "src": "S1"
+  },
+  "compiler": {
+    "v": "H18 target absent from the measured cross-target compile. Existing receipt gives CPU subtypes h13=4, h14=5, h15=6, h16=7, h17=9. Any H18 subtype/ISA mapping is unknown; no extrapolated subtype is claimed.",
+    "src": "S3"
+  },
+  "aurora": {
+    "v": "aurora-wip contains t8152-j873g.dts, titled Apple Mac mini (M6), but no ANE node or H18 ANE driver. The file is a minimal RAM-boot DT. No ANE overlay target exists in linux-asahi 7.1.13.",
+    "src": "S3"
+  },
+  "state": "data-only"
+}
