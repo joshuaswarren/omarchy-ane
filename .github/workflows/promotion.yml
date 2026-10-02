@@ -106,6 +106,8 @@ jobs:
             python3 tools/test_promotion_check.py
             python3 tools/test_promote_chip.py
             python3 tools/test_ane_smoke.py
+            python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
+            python3 tools/gen_coverage_table.py --check
             make -C tools ane-run
             python3 -m pytest -q tests tools \
               --ignore=tools/test_promote_chip.py \
