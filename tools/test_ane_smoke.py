@@ -23,6 +23,14 @@ spec = spec_from_loader('smoke', SourceFileLoader('smoke', str(repo / 'packaging
 smoke = module_from_spec(spec)
 spec.loader.exec_module(smoke)
 
+# The H13 manifest lists ANEC channel IDs, while the runner API uses input/output positions.
+H13_MANIFEST = json.loads((repo / "fixtures/h13-anec/add/manifest.json").read_text())
+H13_INPUT_CHANNELS = tuple(H13_MANIFEST["input_channels"])
+H13_INPUT_INDEXES = tuple(str(i) for i in range(len(H13_INPUT_CHANNELS)))
+H13_OUTPUT_INDEXES = tuple(str(i) for i in range(1 if H13_MANIFEST.get("output_channel") is not None else 0))
+assert H13_INPUT_CHANNELS == (5, 6) and H13_MANIFEST["output_channel"] == 4
+assert H13_INPUT_INDEXES == ("0", "1") and H13_OUTPUT_INDEXES == ("0",)
+
 # The device model, shared by the golden check and the stub.
 MODEL = '''
 import struct
@@ -59,7 +67,12 @@ h13 = "--check" not in d
 if argv[-1] != "--time" or not Path(d["--anec"]).is_file(): sys.exit(2)
 ins = [Path(v.split("=", 1)[1]).read_bytes() for k, v in pairs if k == "--in"]
 if h13:
-    if not all(any(v.startswith(f"{idx}=") for k,v in pairs if k=="--in") for idx in ("5","6")) or not d["--out"].startswith("4="): sys.exit(3)
+    # Fixture manifest carries channel IDs 5/6 and 4; ane-run takes positional 0/1/0.
+    # This rejects channel-ID arguments such as --in 5=; see libane/ane.c and tools/ane-run.c.
+    # T8103 mapping was proven by w71 H220: entries/jwm1-parity/20261002T180000Z-jwm1-h13-add-smoke-h220.md.
+    expected = os.environ["H13_INPUT_INDEXES"].split(",")
+    actual = [v.split("=", 1)[0] for k, v in pairs if k == "--in"]
+    if actual != expected or d["--out"].split("=", 1)[0] != os.environ["H13_OUTPUT_INDEX"] or "--check" in d: sys.exit(3)
 else:
     if not all(any(v.startswith(f"{idx}=") for k,v in pairs if k=="--in") for idx in ("0","1")) or not d["--out"].startswith("0=") or d.get("--check") != "add": sys.exit(4)
 count = Path(os.environ["STUB_COUNT"])
@@ -125,7 +138,8 @@ def machine(soc='t6021', board='j414c', bound=True, fixture=True, firmware='echo
 
 def run(root, *args, mode='', tool='omarchy-ane-smoke'):
     env = {**os.environ, 'STUB': mode, 'STUB_COUNT': str(root / 'count'),
-           'PATH': f"{root / 'bin'}:{os.environ['PATH']}", 'SMOKE_SCRIPT': str(repo / 'packaging/omarchy-ane-smoke')}
+           'PATH': f"{root / 'bin'}:{os.environ['PATH']}", 'SMOKE_SCRIPT': str(repo / 'packaging/omarchy-ane-smoke'),
+           'H13_INPUT_INDEXES': ','.join(H13_INPUT_INDEXES), 'H13_OUTPUT_INDEX': H13_OUTPUT_INDEXES[0]}
     return subprocess.run([str(root / 'bin' / tool), '--root', str(root), *args], capture_output=True, text=True,
                           env=env)
 
@@ -201,3 +215,7 @@ print('test_ane_smoke: ok')
 def test_h13_golden_mapping():
     assert smoke.GOLDEN['t6001'] == smoke.H13_GOLDEN
     assert smoke.GOLDEN['t6021'] == smoke.H14_GOLDEN
+
+def test_h13_runner_indices_are_positions_not_anec_channels():
+    assert H13_INPUT_CHANNELS == (5, 6) and H13_MANIFEST['output_channel'] == 4
+    assert H13_INPUT_INDEXES == ('0', '1') and H13_OUTPUT_INDEXES == ('0',)

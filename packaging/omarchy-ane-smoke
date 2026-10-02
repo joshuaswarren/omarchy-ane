@@ -178,7 +178,7 @@ def calls(runner, anec, chip, deadline, limit):
         a, b, y = work / "a.fp16", work / "b.fp16", work / "y.fp16"
         a.write_bytes(surface(a_bits, lanes))
         b.write_bytes(surface(b_bits, lanes))
-        io = ("5", "6", "4") if h13 else ("0", "1", "0")
+        io = ("0", "1", "0")
         cmd = [str(runner), "--anec", str(anec), "--in", f"{io[0]}={a}", "--in", f"{io[1]}={b}",
                "--out", f"{io[2]}={y}"]
         if not h13:
