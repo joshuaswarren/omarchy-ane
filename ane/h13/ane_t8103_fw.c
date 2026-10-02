@@ -86,6 +86,19 @@ static bool fill_pt;
 module_param(fill_pt, bool, 0444);
 MODULE_PARM_DESC(fill_pt, "stage 2+: fill DATA 0x1c000..0x24000 with 0xa5 so a fw write there is visible");
 module_param(settle_ms, uint, 0444);
+/* H195: map the iBoot-STAGED TEXT/DATA (found by the userspace scan, H178) instead of a copy of the payload DATA. */
+static bool staged;
+module_param(staged, bool, 0444);
+MODULE_PARM_DESC(staged, "stage 2+: map the iBoot-staged TEXT (text_phys) and DATA (data_phys) in the DART instead of a payload copy (H195)");
+static unsigned long long data_phys;
+module_param(data_phys, ullong, 0444);
+MODULE_PARM_DESC(data_phys, "PA of the iBoot-staged DATA segment (from the H178 scan; moves per boot)");
+static bool dry;
+module_param(dry, bool, 0444);
+MODULE_PARM_DESC(dry, "staged: verify and report only, map nothing");
+static bool map_text = true;
+module_param(map_text, bool, 0444);
+MODULE_PARM_DESC(map_text, "staged: also map the staged TEXT at IOVA 0");
 
 struct fw_ctx {
 	struct device *dev;
@@ -96,6 +109,8 @@ struct fw_ctx {
 	struct iommu_domain *dom;
 	struct page **pages;
 	unsigned long npages, mapped;
+	unsigned long st_text_mapped, st_data_mapped;
+	u8 *pre_text, *pre_data;
 	bool pm_held;
 	void *snap;
 	struct debugfs_blob_wrapper blob;
@@ -264,6 +279,209 @@ out:
 	return err;
 }
 
+/* H195 ---------------------------------------------------------------------------------------------------------- */
+static int fw_region_ok(struct fw_ctx *c, const char *what, u64 pa, size_t len)
+{
+	int r = region_intersects(pa, len, IORESOURCE_MEM, IORES_DESC_NONE);
+
+	dev_info(c->dev, "fw-start: %s [%#llx, %#llx) region_intersects(IORESOURCE_MEM) = %d (REGION_DISJOINT = %d)\n",
+		 what, pa, pa + len, r, REGION_DISJOINT);
+	return r == REGION_DISJOINT ? 0 : -EBUSY;
+}
+
+static void fw_unstage_staged(struct fw_ctx *c)
+{
+	for (unsigned long i = 0; i < c->st_data_mapped; i++)
+		iommu_unmap(c->dom, FW_DATA_IOVA + i * PAGE_SIZE, PAGE_SIZE);
+	for (unsigned long i = 0; i < c->st_text_mapped; i++)
+		iommu_unmap(c->dom, i * PAGE_SIZE, PAGE_SIZE);
+	c->st_data_mapped = c->st_text_mapped = 0;
+	kvfree(c->pre_data);
+	kvfree(c->pre_text);
+	c->pre_data = c->pre_text = NULL;
+}
+
+/* Verify the staged DATA against the payload (read-only), hash it twice, and unless dry map TEXT and DATA. */
+static int fw_stage_staged(struct fw_ctx *c, const struct firmware *fw)
+{
+	int prot = IOMMU_READ | IOMMU_WRITE;
+	unsigned long i, npg = FW_DATA_VMSZ / PAGE_SIZE, eqnz = 0, eqz = 0, diff = 0;
+	u8 h1[32], h2[32];
+	u8 *va, *tx;
+	int err;
+
+	if (!data_phys || (data_phys & (PAGE_SIZE - 1))) {
+		dev_err(c->dev, "fw-start: staged needs a page-aligned data_phys\n");
+		return -EINVAL;
+	}
+	err = fw_region_ok(c, "TEXT", text_phys, FW_TEXT_SZ);
+	if (err)
+		return err;
+	err = fw_region_ok(c, "DATA", data_phys, FW_DATA_VMSZ);
+	if (err)
+		return err;
+	va = memremap(data_phys, FW_DATA_VMSZ, MEMREMAP_WB);
+	if (!va)
+		return -ENOMEM;
+	for (i = 0; i < npg; i++) {
+		const u8 *p = va + i * PAGE_SIZE;
+		const u8 *w = i * PAGE_SIZE < FW_DATA_FSZ ? fw->data + FW_DATA_FOFF + i * PAGE_SIZE : NULL;
+		bool zero = !memchr_inv(p, 0, PAGE_SIZE);
+
+		if (w ? !memcmp(p, w, PAGE_SIZE) : zero) {
+			if (zero)
+				eqz++;
+			else
+				eqnz++;
+			continue;
+		}
+		diff++;
+		if (diff <= 16) {
+			unsigned long j, n = 0;
+
+			for (j = 0; j < PAGE_SIZE; j++)
+				if (p[j] != (w ? w[j] : 0))
+					n++;
+			dev_info(c->dev, "fw-start: staged DATA page %lu (+%#lx) differs from the payload in %lu bytes\n", i,
+				 i * PAGE_SIZE, n);
+		}
+	}
+	sha256(va, FW_DATA_FSZ, h1);
+	memunmap(va);
+	va = memremap(data_phys, FW_DATA_VMSZ, MEMREMAP_WB);
+	if (!va)
+		return -ENOMEM;
+	sha256(va, FW_DATA_FSZ, h2);
+	memunmap(va);
+	dev_info(c->dev, "fw-start: staged DATA at %#llx: pages equal-nonzero %lu, equal-zero %lu, differing %lu of %lu; sha256 read1 %*phN read2 %*phN (%s)\n",
+		 data_phys, eqnz, eqz, diff, npg, 8, h1, 8, h2, memcmp(h1, h2, 32) ? "UNSTABLE" : "stable");
+	if (memcmp(h1, h2, 32) || eqnz < 6 || diff > 4) {
+		dev_err(c->dev, "fw-start: staged DATA does not look like the payload (stable=%d eqnz=%lu diff=%lu): refusing\n",
+			!memcmp(h1, h2, 32), eqnz, diff);
+		return -EILSEQ;
+	}
+	tx = memremap(text_phys, FW_TEXT_SZ, MEMREMAP_WB);
+	if (!tx)
+		return -ENOMEM;
+	dev_info(c->dev, "fw-start: staged TEXT at %#llx: word +%#lx = %#x, +%#lx = %#x\n", text_phys, TEXT_PATCH0,
+		 *(u32 *)(tx + TEXT_PATCH0), TEXT_PATCH1, *(u32 *)(tx + TEXT_PATCH1));
+	memunmap(tx);
+	if (dry) {
+		dev_info(c->dev, "fw-start: dry run, nothing mapped\n");
+		return 0;
+	}
+
+	c->dom = iommu_get_domain_for_dev(c->dev);
+	if (!c->dom)
+		return -EPROBE_DEFER;
+	if (FW_DATA_IOVA + FW_DATA_VMSZ - 1 > c->dom->geometry.aperture_end)
+		return -ERANGE;
+	if (dev_is_dma_coherent(c->dev))
+		prot |= IOMMU_CACHE;
+	for (i = 0; i < npg; i++)
+		if (iommu_iova_to_phys(c->dom, FW_DATA_IOVA + i * PAGE_SIZE)) {
+			dev_err(c->dev, "fw-start: IOVA %#lx already mapped, refusing\n", FW_DATA_IOVA + i * PAGE_SIZE);
+			return -EEXIST;
+		}
+	if (map_text)
+		for (i = 0; i < FW_TEXT_SZ / PAGE_SIZE; i++)
+			if (iommu_iova_to_phys(c->dom, i * PAGE_SIZE)) {
+				dev_err(c->dev, "fw-start: TEXT IOVA %#lx already mapped, refusing\n", i * PAGE_SIZE);
+				return -EEXIST;
+			}
+	/* pre-RUN snapshots of the staged regions, for the post-RUN diff */
+	c->pre_data = kvmalloc(FW_DATA_VMSZ, GFP_KERNEL);
+	c->pre_text = kvmalloc(FW_TEXT_SZ, GFP_KERNEL);
+	if (!c->pre_data || !c->pre_text) {
+		err = -ENOMEM;
+		goto fail;
+	}
+	va = memremap(data_phys, FW_DATA_VMSZ, MEMREMAP_WB);
+	tx = memremap(text_phys, FW_TEXT_SZ, MEMREMAP_WB);
+	if (!va || !tx) {
+		if (va)
+			memunmap(va);
+		if (tx)
+			memunmap(tx);
+		err = -ENOMEM;
+		goto fail;
+	}
+	memcpy(c->pre_data, va, FW_DATA_VMSZ);
+	memcpy(c->pre_text, tx, FW_TEXT_SZ);
+	memunmap(va);
+	memunmap(tx);
+	for (i = 0; i < npg; i++) {
+		err = iommu_map(c->dom, FW_DATA_IOVA + i * PAGE_SIZE, data_phys + i * PAGE_SIZE, PAGE_SIZE, prot, GFP_KERNEL);
+		if (err)
+			goto fail;
+		c->st_data_mapped++;
+	}
+	if (map_text)
+		for (i = 0; i < FW_TEXT_SZ / PAGE_SIZE; i++) {
+			err = iommu_map(c->dom, i * PAGE_SIZE, text_phys + i * PAGE_SIZE, PAGE_SIZE, prot, GFP_KERNEL);
+			if (err)
+				goto fail;
+			c->st_text_mapped++;
+		}
+	dma_wmb();
+	for (i = 0; i < c->st_data_mapped; i++)
+		if (iommu_iova_to_phys(c->dom, FW_DATA_IOVA + i * PAGE_SIZE) != data_phys + i * PAGE_SIZE)
+			err = -EFAULT;
+	for (i = 0; i < c->st_text_mapped; i++)
+		if (iommu_iova_to_phys(c->dom, i * PAGE_SIZE) != text_phys + i * PAGE_SIZE)
+			err = -EFAULT;
+	dev_info(c->dev, "fw-start: staged mapped: DATA %lu pages IOVA %#lx -> PA %#llx, TEXT %lu pages IOVA 0 -> PA %#llx, prot %#x, err %d\n",
+		 c->st_data_mapped, FW_DATA_IOVA, data_phys, c->st_text_mapped, text_phys, prot, err);
+	if (!err)
+		return 0;
+fail:
+	fw_unstage_staged(c);
+	return err;
+}
+
+/* Post-RUN diff of the staged regions against the pre-RUN snapshots (read-only). */
+static void fw_readback_staged(struct fw_ctx *c, const char *label)
+{
+	u8 *d = memremap(data_phys, FW_DATA_VMSZ, MEMREMAP_WB);
+	u8 *t = memremap(text_phys, FW_TEXT_SZ, MEMREMAP_WB);
+	unsigned long i, ch_d = 0, ch_t = 0;
+
+	if (!d || !t || !c->pre_data || !c->pre_text) {
+		dev_err(c->dev, "fw-start: %s staged readback unavailable\n", label);
+		goto out;
+	}
+	for (i = 0; i < FW_DATA_VMSZ; i += PAGE_SIZE) {
+		if (!memcmp(d + i, c->pre_data + i, PAGE_SIZE))
+			continue;
+		ch_d++;
+		if (ch_d <= 24) {
+			unsigned long j, n = 0, first = 0;
+
+			for (j = 0; j < PAGE_SIZE; j++)
+				if (d[i + j] != c->pre_data[i + j]) {
+					if (!n)
+						first = j;
+					n++;
+				}
+			dev_info(c->dev, "fw-start: %s staged DATA page %lu (+%#lx) written: %lu bytes, first at +%#lx (%#x -> %#x)\n",
+				 label, i / PAGE_SIZE, i, n, i + first, c->pre_data[i + first], d[i + first]);
+		}
+	}
+	for (i = 0; i < FW_TEXT_SZ; i += PAGE_SIZE)
+		if (memcmp(t + i, c->pre_text + i, PAGE_SIZE)) {
+			ch_t++;
+			if (ch_t <= 8)
+				dev_info(c->dev, "fw-start: %s staged TEXT page %lu (+%#lx) written\n", label, i / PAGE_SIZE, i);
+		}
+	dev_info(c->dev, "fw-start: %s staged DATA: %lu of %lu pages written since pre-RUN; staged TEXT: %lu of %lu pages\n",
+		 label, ch_d, FW_DATA_VMSZ / PAGE_SIZE, ch_t, FW_TEXT_SZ / PAGE_SIZE);
+out:
+	if (d)
+		memunmap(d);
+	if (t)
+		memunmap(t);
+}
+
 /* H175: the three ANE DARTs' error latch (ERROR, ADDR lo/hi) and the per-stream TCR words, non-posted reads. The standard
  * apple-dart T8020 offsets (0x40/0x50/0x54, TCR 0x100 + 4*sid) are an assumption; H167 read nonzero latched values at rest. */
 static void fw_dart_dump(struct fw_ctx *c, const char *label)
@@ -381,9 +599,15 @@ static void fw_stage3(struct fw_ctx *c, const struct firmware *fw)
 	dev_info(c->dev, "fw-start: S3 mailbox A2I %#x I2A %#x tick %#x pending %#x\n", rd(c, R_MBOX_A2I),
 		 rd(c, R_MBOX_I2A), rd(c, R_TICK), rd(c, R_DB_PENDING));
 	fw_dart_dump(c, "post-RUN");
-	fw_readback(c, fw, "t+0.2s");
+	if (staged)
+		fw_readback_staged(c, "t+0.2s");
+	else
+		fw_readback(c, fw, "t+0.2s");
 	msleep(1800);
-	fw_readback(c, fw, "t+2s");
+	if (staged)
+		fw_readback_staged(c, "t+2s");
+	else
+		fw_readback(c, fw, "t+2s");
 	dev_info(c->dev, "fw-start: S3 later: CPU_STATUS %#x SCRATCH7 %#x tick %#x\n", rd(c, R_CPU_STATUS), rd(c, R_SCRATCH0 + 28), rd(c, R_TICK));
 }
 
@@ -465,7 +689,7 @@ static int fw_probe(struct platform_device *pdev)
 	if (err)
 		goto unmap_eng;
 	if (stage >= 2)
-		err = fw_stage_data(c, fw);
+		err = staged ? fw_stage_staged(c, fw) : fw_stage_data(c, fw);
 	if (err)
 		goto unmap_eng;
 	if (stage >= 3) {
@@ -496,6 +720,7 @@ static void fw_remove(struct platform_device *pdev)
 	debugfs_remove(c->dbg);
 	kvfree(c->snap);
 	fw_unstage_data(c);
+	fw_unstage_staged(c);
 	iounmap(c->eng);
 	pm_runtime_disable(c->dev);
 	pm_runtime_put_noidle(c->dev);
