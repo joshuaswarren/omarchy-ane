@@ -264,25 +264,31 @@ static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 	uint64_t ticket = ane_stats_atomic64_fetch_add(1ull, &ring->head) + 1ull;
 	struct ane_stats_ring_entry *e =
 		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
-	/* A period never starts before the previous one folded: a
-	 * caller sample can be stale (taken before the transition),
-	 * so the latch is max(submit_ns, max_end). */
-	uint64_t latch = ane_stats_atomic64_read(&ctrs->max_end);
-	uint32_t cur;
-
-	if (submit_ns > latch)
-		latch = submit_ns;
-	cur = ane_stats_atomic_read(&ctrs->inflight);
+	uint32_t cur = ane_stats_atomic_read(&ctrs->inflight);
 
 	for (;;) {
 		if (cur == ANE_STATS_INFLIGHT_TRANS) {
 			cur = ane_stats_atomic_read(&ctrs->inflight);
 		} else if (!cur) {
+			uint64_t latch;
+
 			if (ane_stats_atomic_cmpxchg(&ctrs->inflight, 0u,
 						     ANE_STATS_INFLIGHT_TRANS) != 0u) {
 				cur = ane_stats_atomic_read(&ctrs->inflight);
 				continue;
 			}
+			/* Read max_end only now. The drainer of the
+			 * previous period fed its end sample into
+			 * max_end before its release store of
+			 * inflight = 0, and every other member fed
+			 * before its decrement. The fully ordered
+			 * cmpxchg above read that 0, so this read
+			 * sees every feed and the latch is never
+			 * below the previous fold end: periods cannot
+			 * overlap. */
+			latch = ane_stats_atomic64_read(&ctrs->max_end);
+			if (submit_ns > latch)
+				latch = submit_ns;
 			ane_stats_atomic64_set_release(&ctrs->last_busy_end,
 						       latch);
 			ane_stats_atomic_set_release(&ctrs->inflight, 1u);
