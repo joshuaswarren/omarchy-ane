@@ -15,6 +15,14 @@
   command line). The outcome lines are info, and the dump when the ANE CPU
   starts but never reports READY is an error. aurora-silicon/linux #155 has
   the same change (Chris Kearney).
+- `ane` and `ane_t6021` log register and address tracing at debug level:
+  the `ANERD`/`ANEWR` recovery trace, the `ps probe` SET-window reads, the
+  `ANE-resume` progress lines, each DART, the ChMan table entries, RTKit
+  endpoint starts and messages, and the firmware alias and staging
+  addresses. Dynamic debug shows them (`ane.dyndbg=+p`,
+  `ane_t6021.dyndbg=+p`). The only info lines left on the `ane` probe path
+  are `DART containment armed` and `loaded ane`. Faults stay at error and
+  warning level.
 - `modinfo ane_t6021` shows one license and one description. Each of the
   three objects of the module carried its own.
 - The T6000, T6001 and T6002 overlays have no `ane_set5` power state at

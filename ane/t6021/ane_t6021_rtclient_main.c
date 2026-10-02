@@ -444,12 +444,12 @@ static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
 		const struct ane_t6021_chman_desc *d = &t[i];
 		const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
 
-		dev_info(ane->dev,
-			 "chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
-			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
-			 d->size,
-			 (bad & BIT(i)) ? "MISMATCH" : "OK",
-			 s->name, s->type, s->bit, s->size, s->off);
+		dev_dbg(ane->dev,
+			"chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
+			i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
+			d->size,
+			(bad & BIT(i)) ? "MISMATCH" : "OK",
+			s->name, s->type, s->bit, s->size, s->off);
 	}
 
 	ane->chman_ok = !bad;
@@ -1702,8 +1702,8 @@ static void ane_rtclient_recv(void *cookie, u8 ep, u64 message)
 {
 	struct ane_rtclient *ane = cookie;
 
-	dev_info(ane->dev,
-		 "rtkit app msg: ep=%#x msg=%016llx\n", ep, message);
+	dev_dbg(ane->dev,
+		"rtkit app msg: ep=%#x msg=%016llx\n", ep, message);
 }
 
 static void ane_rtclient_crashed(void *cookie, const void *crashlog,
@@ -1801,8 +1801,8 @@ static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
 		if (!apple_rtkit_has_endpoint(ane->rtk, ep))
 			continue;
 		ret = apple_rtkit_start_ep(ane->rtk, ep);
-		dev_info(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n",
-			 ep, ERR_PTR(ret));
+		dev_dbg(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n",
+			ep, ERR_PTR(ret));
 	}
 }
 
@@ -2207,11 +2207,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 								     command,
 								     16, 0x03,
 								     1, 3000);
-				dev_info(dev,
-					 "LEGACY CONFIG_GET words %08x %08x result=%d (DMA remains held)\n",
-					 READ_ONCE(((u32 *)command->cpu)[1]),
-					 READ_ONCE(((u32 *)command->cpu)[2]),
-					 qret);
+				dev_dbg(dev,
+					"LEGACY CONFIG_GET words %08x %08x result=%d (DMA remains held)\n",
+					READ_ONCE(((u32 *)command->cpu)[1]),
+					READ_ONCE(((u32 *)command->cpu)[2]),
+					qret);
 				if (qret)
 					cfg_err = qret;
 				else if (!READ_ONCE(((u32 *)command->cpu)[2])) {

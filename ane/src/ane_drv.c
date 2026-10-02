@@ -1269,13 +1269,13 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		struct resource *eng = platform_get_resource_byname(
 			to_platform_device(dev), IORESOURCE_MEM, "engine");
 
-		dev_info(dev,
-			 "ANE-resume: genpd raise complete; SET window probe next\n");
+		dev_dbg(dev,
+			"ANE-resume: genpd raise complete; SET window probe next\n");
 		ane_ps_act_probe(ane);
 
-		dev_info(dev,
-			 "ANE-resume: SET window probed; first engine access next (TM_TQ_EN tm+0x0c @ engine %pr + 0x2000c)\n",
-			 eng);
+		dev_dbg(dev,
+			"ANE-resume: SET window probed; first engine access next (TM_TQ_EN tm+0x0c @ engine %pr + 0x2000c)\n",
+			eng);
 	}
 
 	ane_tm_enable(ane, first);
@@ -1283,7 +1283,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	/* First enable is the engine's fresh signature; recovery compares
 	 * its post-reset status against it. */
 	if (!ane->tm_status_known) {
-		dev_info(dev, "ANE-resume: enable writes survived; TM_STATUS read next\n");
+		dev_dbg(dev, "ANE-resume: enable writes survived; TM_STATUS read next\n");
 		ane->tm_status_fresh = ane_tm_status(ane);
 		ane->tm_status_known = true;
 		/* Linux-side pwrstate probe: ACTUAL nibbles read through
@@ -1291,7 +1291,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		 * raised. 0xffffff means the mapped window is the live
 		 * pmgr SET block with every word on; anything else names
 		 * the t6021 word layout to fix before promotion. */
-		dev_info(dev, "ANERD ps probe act=%#x\n", ane_ps_act(ane));
+		dev_dbg(dev, "ANERD ps probe act=%#x\n", ane_ps_act(ane));
 	}
 
 	return 0;
