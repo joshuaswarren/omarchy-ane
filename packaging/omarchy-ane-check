@@ -69,9 +69,7 @@ dt=$root/sys/firmware/devicetree/base
 echo "omarchy-ane-check: kernel $kver"
 
 # 0. SoC. The ANE has run on T8103, T6001 and T6021 only. Every other SoC
-#    gets an "UNTESTED SoC" line (README.md, "Chip coverage"), or a
-#    "DATA-ONLY SoC" line when omarchy-ane-dt status finds the package's data
-#    file for it (data/ane-soc/SOC.json): data, no driver.
+#    gets an "UNTESTED SoC" line (README.md, "Chip coverage").
 soc=""
 if [[ -r $dt/compatible ]]; then
   while IFS= read -r -d '' c; do
@@ -80,7 +78,6 @@ if [[ -r $dt/compatible ]]; then
 fi
 mod=ane
 [[ $soc == t602? || $soc == t8112 ]] && mod=ane_t6021
-dtool=$(tool omarchy-ane-dt)
 case $soc in
   t8103|t6001|t6021|"") ;;
   t6000|t6002|t6020|t6022|t8112)
@@ -94,11 +91,7 @@ case $soc in
     echo "    python3 scripts/collect_deep.py --ane-smoke --submit"
     echo "  One passing judged row promotes the chip. tools/promotion_check.py prints the verdict." ;;
   *)
-    if [[ -n $dtool ]] && "$dtool" status ${root:+--root "$root"} 2>/dev/null | grep -qx "data-only (no driver): $soc"; then
-      echo "DATA-ONLY SoC: $soc (no driver yet)"
-    else
-      echo "UNTESTED SoC: $soc"
-    fi
+    echo "UNTESTED SoC: $soc"
     bad "no omarchy-ane driver supports the $soc ANE"; finish ;;
 esac
 
@@ -127,6 +120,7 @@ for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
 done
 # Where the node comes from: omarchy-ane-dt status compares the running
 # kernel's board device tree with omarchy-ane's overlay.
+dtool=$(tool omarchy-ane-dt)
 origin=""
 [[ -z $dtool ]] || origin=$("$dtool" status ${root:+--root "$root"} 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
 if [[ ! -d $dt ]]; then

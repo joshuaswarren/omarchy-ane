@@ -1,8 +1,6 @@
 #!/bin/bash
-# asahi-dtbs OUT [URL REF]: the linux-asahi 7.1.13 board device trees, or with
-# URL and REF those of that kernel tree at that tag or branch, for every PREFIX
-# in packaging/dt/overlays and every packaging/dt/PREFIX-ane-dataonly.dts, for
-# tools/test_ane_overlays.py. A PREFIX with no board device tree gets none.
+# asahi-dtbs OUT: the linux-asahi 7.1.13 board device trees for every PREFIX in
+# packaging/dt/overlays, for tools/test_ane_overlays.py.
 #
 # OUT/bin gets the kernel tree's dtc and fdtoverlay (dtc 1.7.2 with the Asahi
 # changes; libfdt linked in, so no older system libfdt.so can renumber
@@ -12,17 +10,14 @@
 # linux-asahi-7.1.13.asahi3-2 (usr/lib/modules/7.1.13-3-2-ARCH/dtbs) byte for byte.
 # Needs git, gcc, flex and bison. About 20 MB on disk, nothing installed.
 set -euo pipefail
-shopt -s nullglob
-url=https://github.com/AsahiLinux/linux tag=asahi-7.1.13-3
-(( $# == 1 || $# == 3 )) || { echo "usage: asahi-dtbs OUT [URL REF]" >&2; exit 2; }
-(( $# == 1 )) || url=$2 tag=$3
-out=$(realpath -m -- "$1")
+tag=asahi-7.1.13-3
+out=$(realpath -m -- "${1:?usage: asahi-dtbs OUT}")
 repo=$(dirname -- "$(realpath -- "$0")")/..
 src=$out/linux d=$out/linux/scripts/dtc
 mkdir -p "$out/bin" "$out/dtbs"
 if [[ ! -d $src/.git ]]; then
   git -c advice.detachedHead=false clone -q --depth 1 --branch "$tag" --filter=blob:none --sparse \
-    "$url" "$src"
+    https://github.com/AsahiLinux/linux "$src"
   git -C "$src" sparse-checkout set --no-cone /arch/arm64/boot/dts/apple/ /include/dt-bindings/ /scripts/dtc/
 fi
 
@@ -35,9 +30,7 @@ cc=(gcc -O2 -I "$d" -I "$d/libfdt" -I "$out" -DNO_YAML)
   "$d"/libfdt/fdt{,_ro,_wip,_sw,_rw,_strerror,_empty_tree,_addresses,_overlay}.c
 
 dts=$src/arch/arm64/boot/dts/apple inc=$src/scripts/dtc/include-prefixes
-prefixes=$({ awk '/^[^#]/ { print $1 }' "$repo/packaging/dt/overlays"
-             for f in "$repo"/packaging/dt/*-ane-dataonly.dts; do f=${f##*/}; echo "${f%-ane-dataonly.dts}"; done; } | sort -u)
-for prefix in $prefixes; do
+for prefix in $(awk '/^[^#]/ { print $1 }' "$repo/packaging/dt/overlays" | sort -u); do
   for f in "$dts/$prefix"-*.dts; do
     b=$(basename "$f" .dts)
     gcc -E -nostdinc -I "$inc" -undef -D__DTS__ -x assembler-with-cpp -o "$out/$b.dts.tmp" "$f"
