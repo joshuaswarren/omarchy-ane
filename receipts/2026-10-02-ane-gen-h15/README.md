@@ -41,13 +41,10 @@ See data/ane-soc/t6034.json.
 | data/ane-soc/t8122.json | S1, S2, S4, S5 | data-only |
 | data/ane-soc/t6030.json | S1, S2, S4, S5 | data-only |
 | data/ane-soc/t6031.json | S1, S2, S4, S5 | data-only |
-| data/ane-soc/t6034.json | S1, S2, S4, S5 | data-only (no shipped SKU) |
+| data/ane-soc/t6034.json | S1, S2, S4, S5 | data-only (M3 Max firmware/platform variant; ADT-compatible T6031) |
 
 Every leaf value is `{v, src}` or `{v: null, reason}` per the shared schema.
-Null values: dart.sid, dart.vm_base, dart.vm_size, mailbox.interrupts ordering
-detail, kext.class, kext.protocol, firmware.sha256, iommu-parent phandle.
-Each null has a reason describing what would unblock it (HTTP range re-extract
-of the ADT, or kernelcache fetch S3).
+Null values: dart.sid, dart.vm_base, dart.vm_size, mailbox interrupt-order detail, kext.class, kext.protocol, iommu-parent phandle. Each null includes its reason and the missing source step.
 
 ## Missing for a future overlay (re-extract / re-fetch)
 
