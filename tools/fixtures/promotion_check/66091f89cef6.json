@@ -1,0 +1,67 @@
+{
+ "chip": "apple,t6001",
+ "content_sha256": "66091f89cef62b35e6215c68404ef93a872568810c36ffbf560f7d002219db75",
+ "kernel": "7.1.13-3-2-ARCH",
+ "received_at": "2026-10-02T04:10:25.000Z",
+ "summary": {
+  "ane_port_detail": {
+   "devicetree": {
+    "boot": {
+     "compatible": [
+      "apple,j316c",
+      "apple,t6001",
+      "apple,arm-platform"
+     ]
+    }
+   },
+   "runtime": {
+    "omarchy_ane": {
+     "check": {
+      "available": true,
+      "exit": 0,
+      "lines": [
+       "omarchy-ane-check: kernel 7.1.13-3-2-ARCH",
+       "  ok    ANE device-tree node: apple,t6000-ane (DTB has node: omarchy-ane overlay)",
+       "  ok    ane.ko built for 7.1.13-3-2-ARCH: /lib/modules/7.1.13-3-2-ARCH/updates/dkms/ane.ko (version 0.2.0.r14.g87f427f)",
+       "  ok    ane is loaded (version 0.2.0.r14.g87f427f)",
+       "  ok    ane is bound to 285c04000.ane",
+       "  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it",
+       "omarchy-ane-check: ready"
+      ],
+      "status": "ready",
+      "untested": false
+     },
+     "dmesg": [
+      "Oct 01 21:58:39 archlinux kernel: apple-dart 285820000.iommu: DART [pagesize 4000, 16 streams, bypass support: 1, bypass forced: 0, locked: 0, AS 32 -> 42] init",
+      "Oct 01 21:58:39 archlinux kernel: apple-dart 285810000.iommu: DART [pagesize 4000, 16 streams, bypass support: 0, bypass forced: 0, locked: 0, AS 32 -> 42] init",
+      "Oct 01 21:58:39 archlinux kernel: platform 285c04000.ane: Adding to iommu group 0",
+      "Oct 01 21:58:39 archlinux kernel: apple-dart 285800000.iommu: DART [pagesize 4000, 16 streams, bypass support: 1, bypass forced: 0, locked: 0, AS 32 -> 42] init",
+      "Oct 01 21:58:42 [host] kernel: ane: loading out-of-tree module taints kernel.",
+      "Oct 01 21:58:42 [host] kernel: ane 285c04000.ane: ANE-resume: genpd raise complete; SET window probe next",
+      "Oct 01 21:58:42 [host] kernel: [drm] Initialized ane 1.0.0 for 285c04000.ane on minor 0"
+     ],
+     "dmesg_faults": [
+      "Oct 01 21:58:44 [host] kernel: apple-dcp 38bc00000.dcp: RTKit: syslog message: FBPropertyManager.h:189: value_t<P> IOMFB::PropMgr::getVal(IOMFB::RuntimeProperty"
+     ],
+     "machine_id": "2f595859e17e57eb",
+     "module": {
+      "name": "ane",
+      "params": {
+       "allow_unqualified": "N",
+       "boost_idle_ms": "100",
+       "dart_contain": "Y",
+       "map_mode": "3"
+      },
+      "srcversion": "9109B200A150B27F484F718",
+      "version": "0.2.0.r14.g87f427f"
+     },
+     "owner_id": "877679309e889b45",
+     "smoke": {
+      "requested": false
+     },
+     "uptime_s": 4296
+    }
+   }
+  }
+ }
+}
