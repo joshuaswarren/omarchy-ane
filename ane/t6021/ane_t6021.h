@@ -60,7 +60,9 @@
 #include <linux/string.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
+#include <linux/sysfs.h>
 
+#include "ane_stats.h"
 #include "ane_t6021_boot.h"
 
 /* reg windows (packaging/dt/t6021-ane.dts reg-names order) */
@@ -407,6 +409,20 @@ struct ane_t6021 {
 	bool irq_requested;
 
 	struct ane_t6021_ep ep[ANE_T6021_EP_COUNT];
+
+	/*
+	 * ane_stats producer (coreglass producer contract). Counters
+	 * and ring are preallocated at probe; the `stats` module
+	 * parameter governs file creation and the hot-path branch.
+	 * tmst is unavailable on T6021 (no host TM path; the firmware
+	 * writes completion back into the ring slot, not the TMST
+	 * register); the file header line states 0 = unavailable.
+	 */
+	struct ane_stats_counters stats_ctrs;
+	struct ane_stats_ring stats_ring;
+	struct ane_stats_ring_entry *stats_slots;
+	uint32_t stats_ring_n;
+	struct dentry *stats_debugfs;
 
 	/* W13 fw surface (fw_load=1): coherent, DART-mapped via the
 	 * device's iommu group. NULL unless loaded. */

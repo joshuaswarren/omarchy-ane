@@ -1,13 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/* SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
 
 #include <linux/atomic.h>
+#include <linux/debugfs.h>
 #include <linux/iommu.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/seq_file.h>
 #include <linux/sysfs.h>
 
 #include <drm/drm_accel.h>
@@ -52,6 +54,18 @@ static int map_mode = 3;
 module_param(map_mode, int, 0644);
 MODULE_PARM_DESC(map_mode,
 		 "BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback)");
+
+/*
+ * Stats module parameter (ane_stats / ane_timeline producer side).
+ * Default 1: producer enabled, sysfs/debugfs files exposed, counters
+ * update on the hot path. stats=0 makes the hot path one predictable
+ * branch and skips file creation entirely (the kernel still allocates
+ * the struct fields; the branch is a single read on a non-atomic bool).
+ */
+static bool stats = true;
+module_param(stats, bool, 0444);
+MODULE_PARM_DESC(stats,
+		 "Enable ane_stats sysfs and ane_timeline debugfs (default 1; 0 = hot path is a single predictable branch and no files are created)");
 
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
@@ -541,7 +555,25 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 		goto unlock;
 
 	ane_boost_begin(ane);
+	/* Hot-path producer contract (ane_stats.h): record submit time,
+	 * run, record completion with the captured TM timestamp. The
+	 * stats branch is a single predictable if on a bool (default 1);
+	 * stats=0 makes this no-op. engine_lock serializes the producer
+	 * for this driver, so the union rule reduces to (end - start). */
+	uint32_t stats_idx = UINT_MAX;
+	uint64_t stats_submit_ns = 0;
+	if (stats) {
+		stats_submit_ns = ktime_get_ns();
+		stats_idx = ane_stats_begin(&ane->stats_ctrs,
+					    &ane->stats_ring,
+					    stats_submit_ns, req.td_count);
+	}
 	err = ane_tm_execute(ane, &req);
+	if (stats)
+		ane_stats_complete(&ane->stats_ctrs, &ane->stats_ring,
+				   stats_idx, ktime_get_ns(),
+				   err ? (uint32_t)err : 0u,
+				   ane_last_tmst);
 	ane_boost_end(ane);
 
 unlock:
@@ -594,6 +626,66 @@ static struct attribute *ane_dev_attrs[] = {
 	NULL,
 };
 ATTRIBUTE_GROUPS(ane_dev);
+
+/*
+ * ane_stats sysfs file (coreglass producer contract, no root needed):
+ * mode 0444, ASCII "key value" lines, integers only. The shared show
+ * function lives in ane/ane_stats_show.c; ane_stats_show uses the
+ * per-device ctrs via dev_get_drvdata(). dev_attr_ane_stats and
+ * ane_timeline_fops are exported from that file.
+ */
+extern struct device_attribute dev_attr_ane_stats;
+extern const struct file_operations ane_timeline_fops;
+
+/*
+ * Allocate the producer state and create the sysfs/debugfs files when
+ * the module parameter is set. stats=0 means no allocation and no
+ * files; the hot path then takes the `if (stats)` branch to a no-op.
+ */
+static int ane_stats_init(struct ane_device *ane)
+{
+	struct dentry *root;
+	int err;
+
+	if (!stats)
+		return 0;
+	ane->stats_ring_n = 1u << ANE_STATS_RING_ORDER_DEFAULT;
+	ane->stats_slots = kcalloc(ane->stats_ring_n,
+				   sizeof(*ane->stats_slots), GFP_KERNEL);
+	if (!ane->stats_slots)
+		return -ENOMEM;
+	ane_stats_init(&ane->stats_ctrs, &ane->stats_ring,
+		       ANE_STATS_RING_ORDER_DEFAULT);
+	ane->stats_ring.slots = ane->stats_slots;
+	err = device_create_file(ane->dev, &dev_attr_ane_stats);
+	if (err) {
+		kfree(ane->stats_slots);
+		ane->stats_slots = NULL;
+		return err;
+	}
+	root = debugfs_create_dir("ane", NULL);
+	if (IS_ERR(root)) {
+		device_remove_file(ane->dev, &dev_attr_ane_stats);
+		kfree(ane->stats_slots);
+		ane->stats_slots = NULL;
+		return PTR_ERR(root);
+	}
+	debugfs_create_file("ane_timeline", 0444, root, &ane->stats_ring,
+			    &ane_timeline_fops);
+	ane->stats_debugfs = root;
+	return 0;
+}
+
+static void ane_stats_exit(struct ane_device *ane)
+{
+	if (!stats || !ane->stats_slots)
+		return;
+	debugfs_remove_recursive(ane->stats_debugfs);
+	device_remove_file(ane->dev, &dev_attr_ane_stats);
+	ane->stats_debugfs = NULL;
+	kfree(ane->stats_slots);
+	ane->stats_slots = NULL;
+}
 
 static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 {
@@ -1079,10 +1171,16 @@ static int ane_platform_probe(struct platform_device *pdev)
 	if (err < 0)
 		goto put_pm;
 
+	err = ane_stats_init(ane);
+	if (err < 0)
+		goto unregister;
+
 	dev_info(dev, "loaded ane\n");
 
 	return 0;
 
+unregister:
+	drm_dev_unregister(drm);
 put_pm:
 	pm_runtime_put_noidle(dev);
 disable_pm:
@@ -1109,6 +1207,8 @@ static void ane_platform_remove(struct platform_device *pdev)
 		mutex_unlock(&ane->engine_lock);
 		return;
 	}
+
+	ane_stats_exit(ane);
 
 	list_for_each_entry_safe(bo, tmp, &ane->bo_list, node)
 		ane_iommu_unmap_pages(ane, bo);

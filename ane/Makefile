@@ -1,9 +1,10 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane.o
-	ane-objs := src/ane_drv.o src/ane_tm.o src/ane_dart.o src/ane_boost.o
+	ane-objs := src/ane_drv.o src/ane_tm.o src/ane_dart.o src/ane_boost.o ane_stats_show.o
 	# DKMS sources carry no .git: dkms.conf passes ANE_VERSION instead.
 	ANE_VERSION ?= $(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)
 	ccflags-y += -DANE_MODULE_VERSION='"$(ANE_VERSION)"'
+	ccflags-y += -I$(src)/include
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
  	PWD := $(shell pwd)

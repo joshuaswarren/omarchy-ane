@@ -74,6 +74,7 @@
 #include <linux/overflow.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
+#include <linux/seq_file.h>
 #include <linux/pm_runtime.h>
 #include <linux/reset.h>
 #include <linux/sizes.h>
@@ -171,6 +172,21 @@ static unsigned int hello_wait_ms;
 module_param(hello_wait_ms, uint, 0444);
 MODULE_PARM_DESC(hello_wait_ms,
 		 "RTKit HELLO wait in legacy mode; 0 (default) skips RTKit and leaves the mailbox stopped. A firmware that speaks RTKit needs 1000.");
+
+/*
+ * Stats module parameter (ane_stats / ane_timeline producer side).
+ * Default 1: producer enabled, sysfs/debugfs files exposed, counters
+ * update on the hot path. stats=0 makes the hot path one predictable
+ * branch and skips file creation entirely.
+ *
+ * Identical name and shape to ane.ko's stats parameter so a reader
+ * always knows which knob the producer exposes, regardless of which
+ * kernel-side driver happened to bind on this box.
+ */
+static bool stats = true;
+module_param(stats, bool, 0444);
+MODULE_PARM_DESC(stats,
+		 "Enable ane_stats sysfs and ane_timeline debugfs (default 1; 0 = hot path is a single predictable branch and no files are created)");
 
 #define ANE_LEGACY_ALLOCS 8192
 #define ANE_LEGACY_BYTES SZ_512M
@@ -867,10 +883,30 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		ane_t6021_trace->calls++;
 		ane_t6021_trace_add(ANE_TR_CALL, 0);
 	}
+	/* Producer contract hot path (ane_stats.h): record submit at
+	 * command enqueue, completion after the call returns. The T6021
+	 * path can run concurrently (MBI per-channel rings), so the
+	 * ane_stats_complete() union rule handles overlapping windows.
+	 * tmst is 0 (no host TM on T6021; documented in the file header
+	 * line). tasks = 1 (one command per submission); rc = ret; the
+	 * busy_ns = end - start when no other submission overlaps. */
+	uint32_t stats_idx = UINT_MAX;
+	uint64_t stats_submit_ns = 0;
+	if (stats) {
+		stats_submit_ns = ktime_get_ns();
+		stats_idx = ane_stats_begin(&ane->fw->stats_ctrs,
+					    &ane->fw->stats_ring,
+					    stats_submit_ns, 1u);
+	}
 	ret = ane_rtclient_legacy_exchange(ane, command, length, opcode,
 					   channel, timeout_ms);
 	if (ret) {
 		ane_t6021_tracing = false;
+		if (stats)
+			ane_stats_complete(&ane->fw->stats_ctrs,
+					   &ane->fw->stats_ring, stats_idx,
+					   ktime_get_ns(),
+					   (uint32_t)ret, 0ull);
 		dev_info(ane->dev, "EXCH op=%#x failed %d (fw allocs %u, %zu bytes)\n",
 			 opcode, ret, ane->legacy_allocated, ane->legacy_bytes);
 		atomic_set(&ane_t6021_quarantined, 1);
@@ -884,12 +920,22 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		if (!ret && call_settle_us)
 			usleep_range(call_settle_us, call_settle_us + 100);
 		if (ret) {
+			if (stats)
+				ane_stats_complete(&ane->fw->stats_ctrs,
+						   &ane->fw->stats_ring,
+						   stats_idx,
+						   ktime_get_ns(),
+						   (uint32_t)ret, 0ull);
 			dev_info(ane->dev, "call completion wait failed %d\n",
 				 ret);
 			atomic_set(&ane_t6021_quarantined, 1);
 			return ret;
 		}
 	}
+	if (stats)
+		ane_stats_complete(&ane->fw->stats_ctrs,
+				   &ane->fw->stats_ring, stats_idx,
+				   ktime_get_ns(), 0u, 0ull);
 	/* The fw talks back on the target-to-host rings (fwlog, perf);
 	 * hand those slots back so the rings never fill (the sequencer
 	 * did this per step; same ack, channels 4 and 6). */
@@ -2232,6 +2278,36 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			 legacy_only, ane->chman_ok,
 			 ane->fw ? ane->fw->booted : 0,
 			 ane->held ? "HELD" : "ready", bo_total_max_mb);
+	}
+
+	if (ane->fw && stats) {
+		ane->fw->stats_ring_n = 1u << ANE_STATS_RING_ORDER_DEFAULT;
+		ane->fw->stats_slots = kcalloc(ane->fw->stats_ring_n,
+					       sizeof(*ane->fw->stats_slots),
+					       GFP_KERNEL);
+		if (ane->fw->stats_slots) {
+			struct dentry *root;
+
+			ane_stats_init(&ane->fw->stats_ctrs,
+				       &ane->fw->stats_ring,
+				       ANE_STATS_RING_ORDER_DEFAULT);
+			ane->fw->stats_slots = ane->fw->stats_ring.slots;
+			/* Sysfs ane_stats: per-device file in the
+			 * module's existing sysfs group (the same group
+			 * that exposes wedged/reset today). */
+			ret = device_create_file(dev, &dev_attr_ane_stats);
+			if (ret)
+				dev_warn(dev,
+					 "ane_stats sysfs create failed %d\n",
+					 ret);
+			root = debugfs_create_dir("ane_t6021", NULL);
+			if (!IS_ERR(root)) {
+				ane->fw->stats_debugfs = root;
+				debugfs_create_file("ane_timeline", 0444,
+						    root, ane->fw,
+						    &ane_timeline_fops);
+			}
+		}
 	}
 
 	return 0;
