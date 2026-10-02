@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Out-of-tree build of the PR155 ANE driver (joshuaswarren/linux
+# ane-driver-aurora @ f088ca5c86ed) against stock distribution headers.
+# Object lists are verbatim from drivers/accel/ane/Makefile in that tree.
+#
+# ccflags: <drm/ane_accel.h> must resolve to the branch header in ./uapi/,
+# not to any installed copy (stock headers ship none; other trees may ship
+# a stale one). The branch header's own `#include "drm.h"` is a sibling
+# include: it resolves in-tree from include/uapi/drm/, so give it the same
+# directory from the kernel headers here.
+ccflags-y += -I$(src)/uapi -I$(srctree)/include/uapi/drm
+
+obj-m += ane.o ane_t6021.o
+
+ane-y := \
+	ane_drv.o \
+	ane_tm.o \
+	ane_dart.o \
+	ane_boost.o
+
+ane_t6021-y := \
+	ane_t6021_rtclient_main.o \
+	ane_t6021_fwload.o \
+	ane_t6021_boot.o
