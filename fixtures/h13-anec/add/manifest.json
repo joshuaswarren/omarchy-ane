@@ -1,0 +1,18 @@
+{
+  "artifact": "program-0.anec",
+  "bytes": 20992,
+  "sha256": "9a6a6a9a701ce207d4a8ea80ee1ca6d5ade076be2115b73a9aed6f4236aa56ab",
+  "provenance": {
+    "source_fixture": "omarchy-mlx/overlay/tests/omarchy/ane/fixtures/h13-explicit-chain-add-mul/program-0.anec",
+    "compiler": "mil-hwx-compiler",
+    "encoder": "h13-oracle-parity",
+    "operation": "add [1,64,1,1]",
+    "apple_compiler_bytes": false
+  },
+  "shape": [1, 64, 1, 1],
+  "logical_elements": 64,
+  "tile_bytes_per_channel": 16384,
+  "input_channels": [5, 6],
+  "output_channel": 4,
+  "output_type": "fp16"
+}

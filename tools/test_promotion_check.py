@@ -21,7 +21,7 @@ def row(n, soc='t6020', board='j414s', kernel='7.1.13-3-1-ARCH', machine=None, o
                 'machine_id': machine or f'm{n}', 'owner_id': owner or f'o{n}',
                 'check': {'exit': 0, 'status': 'ready'},
                 'module': {'name': pc.DRIVER[soc]},
-                'smoke': {'sha256': [pc.GOLDEN['t6020']] * 20, 'errors': 0},
+                'smoke': {'sha256': [pc.GOLDEN[soc]] * 20, 'errors': 0},
                 'uptime_s': 1800,
                 'dmesg': ['[    3.1] ane_t6021 284000000.ane: fwload: own memory'],
                 'dmesg_faults': [],
@@ -73,15 +73,10 @@ oa(bad)['smoke']['sha256'][0] = '0' * 64
 v = pc.verdict(good + [bad])['t6020']
 assert not v['promote'] and v['needs'] == ['1 failing row(s) to explain'], v
 
-# 5. SoC tables: T6002 has one board; the M1 family has no smoke fixture, so
-# T6000 and T6002 cannot pass; T8112 runs the same add fixture as T6020.
+# 5. SoC tables: H13 chips use the H13 golden; T602x/T8112 use H14.
 t6002 = [row(i, soc='t6002', board='j375d', kernel=f'k{i % 2}') for i in (1, 2, 3)]
-for r in t6002:
-    oa(r)['smoke']['sha256'] = []
-assert pc.verdict(t6002)['t6002']['needs'] == ['passing rows 0/3', 'machines 0/3', 'owners 0/2',
-                                               'boards 0/1', 'kernel releases 0/2', '3 failing row(s) to explain']
-assert 'no smoke golden for t6002' in pc.failures(t6002[0])
-assert 'no smoke golden for t6000' in pc.failures(row(8, soc='t6000', board='j314s'))
+assert all(pc.failures(r) == [] for r in t6002)
+assert pc.failures(row(8, soc='t6000', board='j375c')) == []
 assert pc.failures(row(9, soc='t8112', board='j413')) == []
 
 # 6. Rows without the omarchy-ane block are not judged.

@@ -40,7 +40,7 @@ DRIVER = {"t8103": "ane", "t6000": "ane", "t6001": "ane", "t6002": "ane",
           "t8112": "ane_t6021"}
 # The smoke golden per SoC: the add-fixture golden where omarchy-ane-smoke
 # has a fixture. A SoC without one cannot pass a row.
-GOLDEN = {s: SMOKE.GOLDEN for s in SMOKE.FIXTURE}
+GOLDEN = SMOKE.GOLDEN
 # Board device trees per SoC in linux-asahi 7.1.13-3 (arch/arm64/boot/dts/apple).
 BOARDS = {"t8103": 5, "t6000": 2, "t6001": 3, "t6002": 1, "t6020": 3,
           "t6021": 3, "t6022": 2, "t8112": 4}

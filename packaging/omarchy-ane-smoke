@@ -1,33 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
-"""omarchy-ane-smoke: run the shipped add program 20 times on this Mac's ANE.
+"""Run the packaged add fixture 20 times on this Mac's ANE.
 
-omarchy-ane-check proves a bound driver; this proves execution. Each call is
-one omarchy-ane-run process (libane): it opens /dev/accel, loads the 20 KiB
-add ANEC, sends two fixed fp16 inputs, runs the program once, reads the
-output and checks it with --check add. A new process gets new zeroed
-buffers, so every call writes its own output. The golden is the exact model
-of the fixed inputs (fp16 sum, ties away from zero), not a device capture;
-tools/test_ane_smoke.py recomputes it.
+Each result hashes only the valid fp16 planes, in plane order as little-endian
+16-bit values. H14 has 512 planes in a 32 KiB output; H13 has 64 planes in a
+16 KiB tile. For H13 the complete output tile is compared with the model, including
+zero padding. H13 inputs use channels 5 and 6 and output channel 4. H14 keeps
+its valid-plane golden check.
 
-  omarchy-ane-smoke [--root DIR] [--timeout SECONDS]
-
-stdout: one JSON line {name, chip, available, sha256 (one per call: the 512
-valid fp16 output lanes), golden_sha256, errors, min_ms, median_ms}. stderr:
-one line for people. Exit 0: 20 of 20 calls bit-exact. Exit 1: a call failed,
-was not bit-exact, or ran past the time limit (JSON adds "reason"). Exit 2:
-no smoke on this Mac ({name, chip, available: false, reason}): no fixture for
-this chip, the driver is not bound, the firmware is missing, or a file of the
-package is missing. It holds /var/tmp/ane-run.lock, when that file exists and
-is writable, for the whole run. It never loads, unloads or binds a module.
---root reads the system below DIR (tests).
+Exit 0: every call is bit-exact. Exit 1: a call failed or mismatched. Exit 2:
+no fixture, driver, firmware, or packaged file is available.
 """
 import argparse
 import fcntl
 import hashlib
 import json
-import os
 import re
 import shutil
 import statistics
@@ -41,21 +29,17 @@ from pathlib import Path
 
 NAME = "add-fixture"
 CALLS = 20
-LANES, PLANE = 512, 64  # nchw [1,512,1,1]: one fp16 at the start of each 64-byte plane
-SURFACE = LANES * PLANE
-# The H14 add ANEC, sha256 b416b9d1...: mil-hwx-compiler output (encoder
-# h14-oracle-parity), not Apple compiler bytes. It ran 512 of 512 lanes exact
-# on T6021 (receipts/2026-09-29-t6021-installed-path). T6020, T6022 and T8112
-# have the same ANE generation and driver.
+H14_LANES, H13_LANES, PLANE = 512, 64, 64
+H14_SURFACE, H13_SURFACE = H14_LANES * PLANE, 16384
 H14_ADD = "h14-anec/add/program-0.anec"
-FIXTURE = {"t6020": H14_ADD, "t6021": H14_ADD, "t6022": H14_ADD, "t8112": H14_ADD}
-MODULE = "ane_t6021"  # the driver of every FIXTURE chip
-# No M1-family (H13) add package has run through ane-run on a device
-# (receipts/2026-10-02-omarchy-ane-smoke).
-H13 = ("t8103", "t6000", "t6001", "t6002")
-# sha256 of the 512 exact sums of inputs("a") + inputs("b"), fp16, ties away
-# from zero, little-endian, lane order (the ane-run --check add oracle).
-GOLDEN = "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"
+H13_ADD = "h13-anec/add/program-0.anec"
+FIXTURE = {"t6020": H14_ADD, "t6021": H14_ADD, "t6022": H14_ADD, "t8112": H14_ADD,
+           "t8103": H13_ADD, "t6000": H13_ADD, "t6001": H13_ADD, "t6002": H13_ADD}
+H13 = {"t8103", "t6000", "t6001", "t6002"}
+MODULE = {**{c: "ane" for c in H13}, **{c: "ane_t6021" for c in ("t6020", "t6021", "t6022", "t8112")}}
+H14_GOLDEN = "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"
+H13_GOLDEN = "5ad7eccd2977a88a375f123fe42c6780855953a1e9df4ac442cae383bc240dd6"
+GOLDEN = {chip: H13_GOLDEN if chip in H13 else H14_GOLDEN for chip in FIXTURE}
 FIXTURES = "usr/share/omarchy-ane/fixtures"
 DT = "sys/firmware/devicetree/base"
 LOCK = "var/tmp/ane-run.lock"
@@ -67,32 +51,57 @@ class Unavailable(Exception):
     pass
 
 
-def inputs(tag):
-    """512 fixed fp16 values: sign and mantissa from sha256, magnitude 2^-4 to 8."""
+def inputs(tag, lanes):
     bits = []
-    for j in range(LANES):
+    for j in range(lanes):
         r = int.from_bytes(hashlib.sha256(f"{tag}{j}".encode()).digest()[:4], "little")
         bits.append((r >> 31) << 15 | (11 + (r >> 10) % 7) << 10 | (r & 0x3FF))
     return bits
 
 
-def surface(bits):
-    buf = bytearray(SURFACE)
+def fp16_units(bits):
+    sign, exp, frac = bits >> 15, (bits >> 10) & 31, bits & 1023
+    value = frac if exp == 0 else (1024 + frac) << (exp - 1)
+    return -value if sign else value
+
+
+def round_fp16_units(value):
+    """Encode exact 2^-24 units, rounding to nearest and ties away from zero."""
+    sign = 0x8000 if value < 0 else 0
+    n = abs(value)
+    if n < 1024:
+        return sign | n
+    shift = max(n.bit_length() - 11, 0)
+    quantum = 1 << shift
+    n = ((n + quantum // 2) // quantum) * quantum
+    exponent = n.bit_length() - 10
+    significand = n >> (exponent - 1)
+    if significand == 2048:
+        exponent += 1
+        significand = 1024
+    return sign | (exponent << 10) | (significand - 1024)
+
+
+def add_fp16(a, b):
+    return round_fp16_units(fp16_units(a) + fp16_units(b))
+
+
+def surface(bits, lanes):
+    buf = bytearray(H13_SURFACE if lanes == H13_LANES else lanes * PLANE)
     for j, v in enumerate(bits):
         struct.pack_into("<H", buf, j * PLANE, v)
     return bytes(buf)
 
 
-def valid(data):
-    return b"".join(data[j * PLANE:j * PLANE + 2] for j in range(LANES))
+def valid(data, lanes):
+    return b"".join(data[j * PLANE:j * PLANE + 2] for j in range(lanes))
 
 
-def tool(name, repo=None):
-    """The installed tool next to this script or on PATH, else the checkout's."""
-    for path in (HERE / name, shutil.which(name), repo and HERE.parent / repo):
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
-            return Path(path)
-    return None
+def h13_inputs(tag):
+    """64 exact quarter values, placed in the first fp16 of each H13 plane."""
+    vals = [struct.unpack("<H", struct.pack("<e", (3 + (i * (1 if tag == "a" else 3)) % 11) / 4))[0]
+            for i in range(H13_LANES)]
+    return vals
 
 
 def soc(root):
@@ -103,25 +112,32 @@ def soc(root):
     return next((m.group(1) for m in map(re.compile(r"apple,(t\d+)").fullmatch, names) if m), None)
 
 
+def tool(name, repo=None):
+    import os
+    from shutil import which
+    for path in (HERE / name, which(name), repo and HERE.parent / repo):
+        if path and path.is_file() and os.access(path, os.X_OK):
+            return Path(path)
+    return None
+
+
 def prepare(root, chip):
-    """(anec, runner) for this Mac, or Unavailable with the reason."""
     if chip is None:
         raise Unavailable(f"no Apple SoC in {root / DT}/compatible")
-    if chip in H13:
-        raise Unavailable(f"{chip}: no M1-family (H13) add fixture has run through omarchy-ane-run yet")
     if chip not in FIXTURE:
         raise Unavailable(f"{chip}: no omarchy-ane driver for this chip")
-    anec = next((d / FIXTURE[chip] for d in (root / FIXTURES, HERE.parent / "fixtures")
-                 if (d / FIXTURE[chip]).is_file()), None)
+    rel = FIXTURE[chip]
+    anec = next((d / rel for d in (root / FIXTURES, HERE.parent / "fixtures") if (d / rel).is_file()), None)
     if anec is None:
-        raise Unavailable(f"{root / FIXTURES / FIXTURE[chip]} is missing. Reinstall omarchy-ane-dkms.")
+        raise Unavailable(f"{root / FIXTURES / rel} is missing. Reinstall omarchy-ane-dkms.")
     runner = tool("omarchy-ane-run", "tools/ane-run")
     if runner is None:
         raise Unavailable("omarchy-ane-run is missing. Reinstall omarchy-ane-dkms.")
-    drivers = root / "sys/bus/platform/drivers" / MODULE
+    module = MODULE[chip]
+    drivers = root / "sys/bus/platform/drivers" / module
     if not any(p.is_symlink() and p.name != "module" for p in drivers.glob("*")):
-        why = f"{MODULE} is bound to no device. Read the reason with: journalctl -k -g {MODULE}"
-        fetch = tool("omarchy-ane-firmware-fetch")
+        why = f"{module} is bound to no device. Read the reason with: journalctl -k -g {module}"
+        fetch = tool("omarchy-ane-firmware-fetch") if module == "ane_t6021" else None
         if fetch:
             p = subprocess.run([str(fetch), "--check", "--root", str(root)], capture_output=True, text=True,
                                timeout=30)
@@ -133,6 +149,7 @@ def prepare(root, chip):
 
 @contextmanager
 def lock(path, deadline):
+    import os
     if not os.access(path, os.W_OK):
         yield
         return
@@ -148,21 +165,25 @@ def lock(path, deadline):
         yield
 
 
-def last(text):
-    lines = text.strip().splitlines()
-    return lines[-1] if lines else ""
-
-
-def calls(runner, anec, deadline, limit):
-    """(sha256 per call, exec ms per call, bit-exact calls, first problem)."""
+def calls(runner, anec, chip, deadline, limit):
+    h13 = chip in H13
+    lanes = H13_LANES if h13 else H14_LANES
+    a_bits, b_bits = ((h13_inputs("a"), h13_inputs("b")) if h13 else (inputs("a", lanes), inputs("b", lanes)))
+    expected_bits = [add_fp16(a, b) for a, b in zip(a_bits, b_bits)]
+    expected = surface(expected_bits, lanes)
+    golden = hashlib.sha256(valid(expected, lanes)).hexdigest()
     hashes, times, exact, problem = [], [], 0, None
     work = Path(tempfile.mkdtemp(prefix="omarchy-ane-smoke."))
     try:
         a, b, y = work / "a.fp16", work / "b.fp16", work / "y.fp16"
-        a.write_bytes(surface(inputs("a")))
-        b.write_bytes(surface(inputs("b")))
-        cmd = [str(runner), "--anec", str(anec), "--in", f"0={a}", "--in", f"1={b}", "--out", f"0={y}",
-               "--check", "add", "--time"]
+        a.write_bytes(surface(a_bits, lanes))
+        b.write_bytes(surface(b_bits, lanes))
+        io = ("5", "6", "4") if h13 else ("0", "1", "0")
+        cmd = [str(runner), "--anec", str(anec), "--in", f"{io[0]}={a}", "--in", f"{io[1]}={b}",
+               "--out", f"{io[2]}={y}"]
+        if not h13:
+            cmd += ["--check", "add"]
+        cmd += ["--time"]
         for n in range(1, CALLS + 1):
             y.unlink(missing_ok=True)
             left = deadline - time.monotonic()
@@ -174,22 +195,22 @@ def calls(runner, anec, deadline, limit):
             except subprocess.TimeoutExpired:
                 problem = problem or f"call {n} ran past the {limit:g} s limit"
                 break
-            out = y.read_bytes() if y.exists() else b""
-            if len(out) < SURFACE:
-                problem = problem or f"call {n}: no output ({last(p.stderr) or f'exit {p.returncode}'})"
+            data = y.read_bytes() if y.exists() else b""
+            if len(data) != len(expected):
+                problem = problem or f"call {n}: output surface has {len(data)} bytes; expected {len(expected)}"
                 break
-            digest = hashlib.sha256(valid(out)).hexdigest()
+            digest = hashlib.sha256(valid(data, lanes)).hexdigest()
             hashes.append(digest)
             m = TIME.search(p.stdout)
             if m:
                 times.append(float(m.group(1)))
-            if p.returncode == 0 and digest == GOLDEN:
+            if p.returncode == 0 and (data == expected if h13 else digest == golden):
                 exact += 1
             else:
-                problem = problem or f"call {n}: not bit-exact ({last(p.stdout) or last(p.stderr) or digest[:16]})"
+                problem = problem or f"call {n}: output surface or runner status differs ({p.returncode})"
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    return hashes, times, exact, problem
+    return hashes, times, exact, problem, golden
 
 
 def emit(result, line, code):
@@ -208,11 +229,11 @@ def main(argv=None):
     try:
         anec, runner = prepare(args.root, chip)
         with lock(args.root / LOCK, deadline):
-            hashes, times, exact, problem = calls(runner, anec, deadline, args.timeout)
+            hashes, times, exact, problem, golden = calls(runner, anec, chip, deadline, args.timeout)
     except Unavailable as e:
         return emit({"name": NAME, "chip": chip, "available": False, "reason": str(e)}, f"unavailable: {e}", 2)
     errors = CALLS - exact
-    result = {"name": NAME, "chip": chip, "available": True, "sha256": hashes, "golden_sha256": GOLDEN,
+    result = {"name": NAME, "chip": chip, "available": True, "sha256": hashes, "golden_sha256": golden,
               "errors": errors, "min_ms": round(min(times), 3) if times else None,
               "median_ms": round(statistics.median(times), 3) if times else None}
     line = f"{NAME} on {chip}: {exact}/{CALLS} calls bit-exact"
