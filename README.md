@@ -33,7 +33,11 @@ The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-fir
 Data-only chips (`tools/gen_coverage_table.py` writes this table from `data/ane-soc/`):
 
 <!-- BEGIN DATA-ONLY TABLE -->
-No chip has a data file yet.
+| SoC | Internal | Boards | Data | Data-only overlay |
+| --- | --- | --- | --- | --- |
+| T6040 | H16 | 3 | [t6040.json](data/ane-soc/t6040.json) | [t6040-ane-dataonly.dts](packaging/dt/t6040-ane-dataonly.dts) |
+| T6041 | H16 | 3 | [t6041.json](data/ane-soc/t6041.json) | [t6041-ane-dataonly.dts](packaging/dt/t6041-ane-dataonly.dts) |
+| T8132 | H16 | 6 | [t8132.json](data/ane-soc/t8132.json) | [t8132-ane-dataonly.dts](packaging/dt/t8132-ane-dataonly.dts) |
 <!-- END DATA-ONLY TABLE -->
 
 Promotion. One passing community row promotes an untested chip. A passing row has a ready `omarchy-ane-check`, the chip's driver loaded, 20 smoke calls (`add-fixture`) that match the golden bit for bit, and no ANE, ANE-DART or ANE-mailbox fault. A row from a machine without omarchy-ane installed is not judged and counts neither for nor against promotion. If an opt-in chip has both passing and failing rows, the result is `CONFLICT`; it does not promote until the failing row is explained or superseded. H13 chips (T8103, T6000, T6001 and T6002) use the H13 smoke golden; H14 chips use the H14 golden. The Parakeet encoder hash is a developer check, not a collector field. `tools/promotion_check.py --remote` prints the live verdict. When it says `PROMOTE`, a PR can set that chip's line in `packaging/dt/overlays` to `enabled`.
