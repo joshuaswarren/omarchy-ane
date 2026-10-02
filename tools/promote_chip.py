@@ -287,4 +287,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:  # the reader closed the pipe (promote_chip --check | head)
+        sys.exit(0)
