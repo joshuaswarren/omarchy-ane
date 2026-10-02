@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline checks for the M2-family ANE defaults. The T6021 ANE is on by
 default: its overlay applies with no opt-in file and omarchy-ane-check reports
-ready. The untested T6020 and T6022 stay opt-in, so without their key no node
+ready. The untested T6020, T6022 and T8112 stay opt-in, so without their key no node
 carries a compatible from a driver alias table, and the driver, which udev
 autoloads by that compatible, does not load there. No network and no module
 loads. Needs dtc and fdtoverlay 1.7.1 or newer."""
@@ -31,7 +31,11 @@ def load(name, path):
 oadt = load('oadt', 'packaging/omarchy-ane-dt')
 fetch = load('fetch', 'packaging/omarchy-ane-firmware-fetch')
 KVER = '7.1.13-3-2-ARCH'
-TESTED = {'t8103', 't6001', 't6021'}  # README "Chip coverage": tested
+# README "Chip coverage": derived from the overlays table, so a promotion flip
+# (tools/promote_chip.py) keeps this suite green without editing it.
+TESTED = {p for p, src, state in (l.split() for l in
+          (repo / 'packaging/dt/overlays').read_text().splitlines()
+          if l and l[0] != '#') if src == f'{p}-ane.dts' and state == 'enabled'}
 
 # 1. The packaged overlays against the driver alias tables. modpost makes each
 # MODULE_DEVICE_TABLE(of, ...) entry the alias of:N*T*C<compatible>C*, which
@@ -173,7 +177,22 @@ for soc, board, compat, mod in (('t6000', 'j314s', 'apple,t6000-ane', 'ane'),
                                 ('t6022', 'j180d', 'apple,t6022-ane', 'ane_t6021'),
                                 ('t8112', 'j413', 'apple,t8112-ane', 'ane_t6021')):
     rc, out = check(soc, board, compat, mod)
-    assert rc == 0 and f'UNTESTED SoC: {soc}. {mod} has not run on it.' in out, out
+    base = f'UNTESTED SoC: {soc}. {mod} has not run on it.'
+    if soc in TESTED:  # promoted: on by default, no UNTESTED line
+        assert rc == 0 and 'UNTESTED' not in out, out
+        continue
+    assert rc == 0 and base in out, out
+    assert f'  To bring the chip up:' in out, out
+    assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in' in out, out
+    n = 2
+    if f'apple,{soc}' in fetch.FETCH:  # the M2 family fetches its firmware before apply
+        assert f'    {n}. sudo omarchy-ane-firmware-fetch' in out, out
+        n += 1
+    assert f'    {n}. sudo omarchy-ane-dt apply' in out, out
+    assert f'    {n + 1}. sudo update-m1n1' in out, out
+    assert f'    {n + 2}. sudo reboot' in out, out
+    assert 'when the machine is idle (load1 < 0.5 and PSI cpu avg10 0.00; no fixed uptime)' in out, out
+    assert 'python3 scripts/collect_deep.py --ane-smoke --submit' in out, out
 rc, out = check('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021', real_fetch=True)
 assert rc == 1 and 't602x_ane0_fw_selene_rc4x.macho is missing. Run: sudo omarchy-ane-firmware-fetch' in out, out
 rc, out = check('t6021', 'j414c', 'apple,t6021-ane', 'ane_t6021', bound=False)
