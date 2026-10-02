@@ -84,11 +84,6 @@
 #include "ane_t6021_boot.h"
 #include "ane_fw_validate.h"
 
-/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
- * per-object metadata keeps modpost happy for either composition. */
-MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("T6021 ANE firmware staging + entry alias");
-
 static bool fw_load = true;
 module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load,
