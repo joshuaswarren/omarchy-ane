@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
  * Static ANE data for T8152 (j873g, Apple Mac mini M6), from the macOS 27.0
- * IPSW DeviceTree.j873gap.adt. Data-only: no driver binds this; the runtime
- * must refuse to apply this overlay, even if an opt-in key exists. Nodes are
- * disabled and deliberately have no compatible or phandles. The aurora-wip
- * j873g DTS has no ANE nodes yet; therefore there is no base DTB to apply
- * this overlay to in the current kernel tree.
+ * IPSW DeviceTree.j873gap.adt. Data-only: no driver binds this; runtime must
+ * refuse to apply it, even if an opt-in key exists. Nodes are disabled and
+ * have no ANE compatible or phandles. The AIC target path matches aurora-wip's
+ * j873g DTS; its current minimal boot tree has no ANE base nodes.
  */
 /dts-v1/;
 /plugin/;
@@ -13,6 +12,16 @@
 / {
 	omarchy,data-only = "true";
 	compatible = "apple,j873g";
+
+	fragment@aic {
+		target-path = "/soc/interrupt-controller@301000000";
+		__overlay__ {
+			aic: __overlay__ {
+				interrupt-controller;
+				#interrupt-cells = <3>;
+			};
+		};
+	};
 
 	fragment@0 {
 		target-path = "/soc";
