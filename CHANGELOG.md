@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- `ane` powers the ANE off when it is idle. Before, probe kept a runtime-PM
+  reference until the driver unbound, so the ANE power domains (`ane_sys`,
+  `ane_sys_cpu`, `ane_base`, `ane_set*`) and its three DARTs stayed on all the
+  time. Now the device suspends `autosuspend_ms` after the last open, ioctl
+  or close (module parameter, default 1500), and the next one powers it up
+  again. `autosuspend_ms=0` keeps the old behavior. At run time,
+  `power/autosuspend_delay_ms` on the ANE platform device changes the delay,
+  and `echo on > power/control` keeps the ANE powered. A write to the
+  `reset` attribute and a file close now hold the device powered while they
+  run. See `receipts/2026-10-03-ane-autosuspend/README.md`. `ane_t6021` does
+  not change.
+
 ### Fixed
 
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up

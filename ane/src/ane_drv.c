@@ -69,6 +69,19 @@ module_param(stats, bool, 0444);
 MODULE_PARM_DESC(stats,
 		 "Enable ane_stats sysfs and ane_timeline debugfs (default 1; 0 = hot path is a single predictable branch and no files are created)");
 
+/*
+ * Runtime PM autosuspend delay. The ANE power domains and its DARTs go
+ * off this long after the last file open, ioctl or close, and the next
+ * one powers them up again through ane_runtime_resume. 0 keeps the
+ * device powered while the driver is bound. The live value is
+ * power/autosuspend_delay_ms; "on" in power/control holds the device
+ * powered without a reload.
+ */
+static int autosuspend_ms = 1500;
+module_param(autosuspend_ms, int, 0444);
+MODULE_PARM_DESC(autosuspend_ms,
+		 "Power the ANE off this many ms after its last use (default 1500; 0 = keep it powered while the driver is bound)");
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -612,10 +625,17 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 	struct ane_device *ane = dev_get_drvdata(dev);
 	int err = 0;
 
+	/* Recovery power-cycles the partitions and then writes the engine:
+	 * hold a reference so autosuspend cannot gate it in between. */
+	err = pm_runtime_resume_and_get(dev);
+	if (err < 0)
+		return err;
 	mutex_lock(&ane->engine_lock);
 	if (!ane->removed)
 		err = ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 	if (err)
 		return err;
 	return count;
@@ -712,7 +732,8 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	if (err < 0)
 		return err;
 
-	pm_runtime_put(ane->dev);
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 	return 0;
 }
 
@@ -794,8 +815,30 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 
 	err = drm_ioctl(file, cmd, arg);
 
-	pm_runtime_put(ane->dev);
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 
+	return err;
+}
+
+/*
+ * Hold power across the close: drm_release frees the file's BOs, and
+ * each unmap flushes the DART TLBs. With the device suspended, apple-dart
+ * would power the DARTs up and down again for every page. The device
+ * reference outlives drm_release, which can drop the last drm_device
+ * reference and free ane.
+ */
+static int ane_drm_release(struct inode *inode, struct file *file)
+{
+	struct drm_file *priv = file->private_data;
+	struct device *dev = get_device(priv->minor->dev->dev);
+	int err;
+
+	pm_runtime_get_sync(dev);
+	err = drm_release(inode, file);
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
+	put_device(dev);
 	return err;
 }
 
@@ -845,7 +888,7 @@ static const struct file_operations ane_drm_fops = {
 	.owner = THIS_MODULE,
 	.fop_flags = FOP_UNSIGNED_OFFSET,
 	.open = accel_open,
-	.release = drm_release,
+	.release = ane_drm_release,
 	.unlocked_ioctl = ane_drm_unlocked_ioctl,
 	.compat_ioctl = drm_compat_ioctl,
 	.poll = drm_poll,
@@ -1168,9 +1211,13 @@ static int ane_platform_probe(struct platform_device *pdev)
 	 * supplier links for several), and .runtime_resume then does the
 	 * first engine MMIO. Marking the device active up front skips that
 	 * resume, and on T6001 the engine window external-aborts while its
-	 * partition is gated. The reference is held until remove: the device
-	 * stays powered for the whole lifetime, autosuspend stays disabled.
+	 * partition is gated. Probe drops its reference at the end and the
+	 * device autosuspends autosuspend_ms after its last use; a negative
+	 * delay (autosuspend_ms=0) makes the PM core hold it powered.
 	 */
+	pm_runtime_set_autosuspend_delay(dev,
+					 autosuspend_ms > 0 ? autosuspend_ms : -1);
+	pm_runtime_use_autosuspend(dev);
 	pm_runtime_enable(dev);
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
@@ -1191,6 +1238,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 
 	dev_info(dev, "loaded ane\n");
 
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 	return 0;
 
 unregister:
@@ -1199,6 +1248,7 @@ put_pm:
 	pm_runtime_put_noidle(dev);
 disable_pm:
 	pm_runtime_disable(dev);
+	pm_runtime_dont_use_autosuspend(dev);
 	drm_mm_takedown(&ane->mm);
 detach_genpd:
 	ane_boost_exit(ane);
@@ -1210,6 +1260,10 @@ static void ane_platform_remove(struct platform_device *pdev)
 {
 	struct ane_device *ane = platform_get_drvdata(pdev);
 	struct ane_bo *bo, *tmp;
+
+	/* Powered and pinned for the teardown: the unmaps below flush the
+	 * DART TLBs, and no autosuspend may race the genpd detach. */
+	pm_runtime_get_sync(ane->dev);
 
 	mutex_lock(&ane->engine_lock);
 	ane->removed = true;
@@ -1233,6 +1287,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane_detach_genpd(ane);
 
 	pm_runtime_disable(ane->dev);
+	pm_runtime_dont_use_autosuspend(ane->dev);
 	pm_runtime_put_noidle(ane->dev);
 	mutex_unlock(&ane->engine_lock);
 }
