@@ -10,7 +10,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import promotion_check as pc  # noqa: E402
 
 
-def row(n, soc='t6020', at=None):
+# The opt-in H14 specimen: derived from the on set, so a promotion flip
+# (tools/promote_chip.py) keeps this suite green.
+OPT = min((s for s, d in pc.DRIVER.items() if d == 'ane_t6021' and s not in pc.ON), default=None)
+assert OPT, 'the scenarios below need an opt-in H14 chip'
+
+
+def row(n, soc=OPT, at=None):
     return {
         'content_sha256': f'{n:02x}' + '0' * 62, 'chip': f'apple,{soc}',
         'received_at': at or f'2026-10-0{n % 9 + 1}T00:00:00.000Z',
@@ -33,7 +39,7 @@ assert pc.GOLDEN is pc.SMOKE.GOLDEN
 
 # One passing row is enough to promote an untested H14 or H13 chip.
 good = row(1)
-v = pc.verdict([good])['t6020']
+v = pc.verdict([good])[OPT]
 assert v['promote'] and not v['conflict'] and v['passing'] == ['010000000000'], v
 assert pc.failures(good) == []
 h13_good = row(7, soc='t6000')
@@ -48,8 +54,8 @@ def broken(change):
 
 assert broken(lambda o: o['check'].update(exit=1, status='FAILED'))
 assert broken(lambda o: o['module'].update(name='ane'))
-assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN['t6020']] * 19))
-assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN['t6020']] * 21))
+assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN[OPT]] * 19))
+assert broken(lambda o: o['smoke'].update(sha256=[pc.GOLDEN[OPT]] * 21))
 assert broken(lambda o: o['smoke']['sha256'].__setitem__(7, '0' * 64))
 assert broken(lambda o: o['smoke'].update(errors=1))
 assert broken(lambda o: o['dmesg'].append('[ 900.2] apple-dart 285800000.iommu: DART fault: STT_FAULT'))
@@ -68,7 +74,7 @@ assert not broken(lambda o: o['dmesg'].append('[ 2.0] systemd[1]: ane.service: f
 clean_skip = row(3)
 oa(clean_skip)['smoke'] = {'requested': False}
 assert not pc.judged(clean_skip)
-assert dict(pc.unattempted([clean_skip])) == {'t6020': 1}
+assert dict(pc.unattempted([clean_skip])) == {OPT: 1}
 assert pc.verdict([clean_skip]) == {}
 busy = row(4)
 oa(busy)['smoke'] = {'requested': True, 'attempted': False, 'busy': True}
@@ -86,9 +92,9 @@ assert pc.judged(unavailable_attempt) and pc.failures(unavailable_attempt)
 # One passing and one failing row on an opt-in chip is a conflict, not promotion.
 failed = row(2, at='2026-10-09T00:00:00.000Z')
 oa(failed)['smoke']['sha256'][0] = '0' * 64
-v = pc.verdict([good, failed])['t6020']
+v = pc.verdict([good, failed])[OPT]
 assert not v['promote'] and v['conflict'] and len(v['passing']) == len(v['failing']) == 1, v
-v = pc.verdict([failed])['t6020']
+v = pc.verdict([failed])[OPT]
 assert not v['promote'] and not v['conflict'] and v['needs'] == ['one passing row'], v
 
 # Rows without an ANE block or without installation are not judged.
@@ -152,10 +158,10 @@ assert dict(pc.unattempted([not_installed])) == {'t6000': 1}
 assert pc.verdict([not_installed]) == {}
 # The machine verdict: one chip object per verdict class.
 jv = pc.json_verdict([good, h13_good])
-t6020 = next(c for c in jv['chips'] if c['chip'] == 't6020')
-assert t6020 == {'chip': 't6020', 'state': 'opt-in', 'verdict': 'PROMOTE',
-                 'rows': [{'row_sha': '010000000000', 'judged': True, 'passed': True,
-                           'reasons': []}]}, t6020
+optj = next(c for c in jv['chips'] if c['chip'] == OPT)
+assert optj == {'chip': OPT, 'state': 'opt-in', 'verdict': 'PROMOTE',
+                'rows': [{'row_sha': '010000000000', 'judged': True, 'passed': True,
+                          'reasons': []}]}, optj
 jchips = pc.json_verdict(on)['chips']
 specj = next(c for c in jchips if c['chip'] == spec)
 assert specj['verdict'] == 'ON' and specj['state'] == 'on', specj
@@ -164,9 +170,9 @@ specj = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == spec)
 assert specj['verdict'] == 'REVERT' and specj['rows'][0]['passed'] is False, specj
 conflict_row = copy.deepcopy(good)
 oa(conflict_row)['smoke']['errors'] = 1
-t6020 = next(c for c in pc.json_verdict([good, conflict_row])['chips'] if c['chip'] == 't6020')
-assert t6020['verdict'] == 'CONFLICT', t6020
-unjudged = next(c for c in pc.json_verdict([legacy])['chips'] if c['chip'] == 't6020')
+optj = next(c for c in pc.json_verdict([good, conflict_row])['chips'] if c['chip'] == OPT)
+assert optj['verdict'] == 'CONFLICT', optj
+unjudged = next(c for c in pc.json_verdict([legacy])['chips'] if c['chip'] == OPT)
 assert unjudged['verdict'] == 'STAY' and unjudged['rows'] == [
     {'row_sha': '010000000000', 'judged': False, 'passed': False, 'reasons': []}], unjudged
 t6000 = next(c for c in pc.json_verdict([not_installed])['chips'] if c['chip'] == 't6000')

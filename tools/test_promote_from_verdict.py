@@ -6,6 +6,7 @@ compare-and-merge on the recorded verdict block, its refusal on a changed
 verdict, and the release plan. No network; gh is a stub."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -80,16 +81,12 @@ STUB.chmod(0o755)
 
 
 def make_work():
-    """A git clone with origin, the tool files, and main checked out."""
+    """A git clone of a working-tree copy, with origin and main checked out."""
     tmp = Path(tempfile.mkdtemp())
     bare, work = tmp / "origin.git", tmp / "work"
+    shutil.copytree(repo, work, ignore=shutil.ignore_patterns(".git"))
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
-    archive = subprocess.run(["git", "-C", str(repo), "archive", "HEAD"], check=True,
-                             capture_output=True).stdout
-    subprocess.run(["tar", "-x", "-C", str(work)], input=archive, check=True)
-    for tool in ("promote_from_verdict.py", "promote_chip.py"):
-        subprocess.run(["cp", str(repo / "tools" / tool), str(work / "tools" / tool)], check=True)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True)
     subprocess.run(["git", "-c", "user.name=Joshua Warren",
                     "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",

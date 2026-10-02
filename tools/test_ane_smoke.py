@@ -59,6 +59,7 @@ STUB = r'''#!/usr/bin/env python3
 import os, struct, sys, time
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
+sys.dont_write_bytecode = True  # keep packaging/ free of __pycache__
 smoke = SourceFileLoader("smoke", os.environ["SMOKE_SCRIPT"]).load_module()
 argv = sys.argv[1:]
 pairs = list(zip(argv[::2], argv[1::2]))
@@ -208,7 +209,7 @@ assert p.returncode == 0 and '  ok    smoke: add-fixture on t8103: 20/20 calls b
 p = run(machine(), '--smoke', mode='flip:1', tool='omarchy-ane-check')
 assert p.returncode == 1 and '  FAIL  smoke: add-fixture on t6021: 19/20 calls bit-exact' in p.stdout, p.stdout
 p = run(machine(), tool='omarchy-ane-check')
-assert p.returncode == 0 and 'smoke' not in p.stdout, p.stdout
+assert p.returncode == 0 and 'smoke:' not in p.stdout, p.stdout
 print('test_ane_smoke: ok')
 
 

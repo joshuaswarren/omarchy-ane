@@ -123,15 +123,14 @@ with contextlib.redirect_stdout(io.StringIO()):
 # <name>) before ours (usr/lib/firmware/<name>). A vendor copy that matches the
 # pin is enough; one that does not shadows ours and is a problem. Without a
 # good vendor copy the tool still installs ours (the fetch is a stub here).
+# Every FETCH chip runs; --hook does the same on a DEFAULT_ON chip and fetches
+# nothing on the others. Both come from the tables at run time, so a promotion
+# flip (tools/promote_chip.py) changes nothing here.
 good, other = b'pinned bytes', b'other bytes'
-fetch.FETCH['apple,t6021'] = (*fetch.SELENE[:2], len(good), hashlib.sha256(good).hexdigest())
-# This section tests the fetch mechanics of an on-by-default chip; the
-# table-derived hook behaviour is covered in the section above. Pinned, so a
-# promotion flip (tools/promote_chip.py) does not change what is under test.
-fetch.DEFAULT_ON = ('apple,t6021',)
+for chip, (member, name, _, _) in fetch.FETCH.items():
+    fetch.FETCH[chip] = (member, name, len(good), hashlib.sha256(good).hexdigest())
 fetch.fetch_member = lambda url, member: der(0x30, der(0x16, b'IM4P') + der(0x16, b'anef') + der(0x16, b'1') +
                                              der(0x04, good))
-name = fetch.SELENE[1]
 bin_dir = Path(tempfile.mkdtemp())
 shutil.copy(root / 'packaging/omarchy-ane-check', bin_dir)
 (bin_dir / 'omarchy-ane-firmware-fetch').write_text(f'''#!/usr/bin/env python3
@@ -142,20 +141,25 @@ sys.dont_write_bytecode = True
 spec = spec_from_loader('fetch', SourceFileLoader('fetch', {str(root / 'packaging/omarchy-ane-firmware-fetch')!r}))
 fetch = module_from_spec(spec)
 spec.loader.exec_module(fetch)
-fetch.FETCH['apple,t6021'] = {fetch.FETCH['apple,t6021']!r}
+fetch.FETCH = {fetch.FETCH!r}
 sys.exit(fetch.main())
 ''')
 (bin_dir / 'omarchy-ane-firmware-fetch').chmod(0o755)
 SHADOW = 'The kernel loads this vendor copy before'
 
 
-def files(vendor, ours):
-    t = system([b'apple,j414c', b'apple,t6021'], b'13.5')
+def files(chip, name, vendor, ours):
+    t = system([chip.encode()], b'13.5')
     for sub, data in (('usr/lib/firmware/vendor', vendor), ('usr/lib/firmware', ours)):
         if data is not None:
             (t / sub / name).parent.mkdir(parents=True, exist_ok=True)
             (t / sub / name).write_bytes(data)
     return t
+
+
+def installed(t, name):
+    f = t / 'usr/lib/firmware' / name
+    return f.read_bytes() if f.exists() else None
 
 
 def call(*args):
@@ -165,26 +169,32 @@ def call(*args):
     return rc, out.getvalue() + err.getvalue()
 
 
-# (vendor, ours) -> --check exit and line; install exit, line, and our file after
-CASES = (
-    ('vendor only', good, None, 0, '(Asahi vendor firmware) matches the pin', 0, 'Nothing to fetch', None),
-    ('ours only', None, good, 0, f'firmware/{name} matches the pin', 0, 'already installed', good),
-    ('both', good, good, 0, '(Asahi vendor firmware) matches the pin', 0, 'Nothing to fetch', good),
-    ('wrong vendor, ours good', other, good, 1, SHADOW, 1, SHADOW, good),
-    ('wrong vendor, no ours', other, None, 1, SHADOW, 1, SHADOW, good),
-    ('neither', None, None, 1, 'is missing. Run: sudo omarchy-ane-firmware-fetch', 0, 'installed', good),
-)
-for case, vendor, ours, check_rc, check_line, run_rc, run_line, after in CASES:
-    t = files(vendor, ours)
-    rc, out = call('--check', '--root', str(t))
-    assert rc == check_rc and check_line in out, (case, out)
-    p = subprocess.run([str(bin_dir / 'omarchy-ane-check'), '--root', str(t)], capture_output=True, text=True)
-    line = next(l for l in p.stdout.splitlines() if 'ANE firmware' in l or name in l)
-    assert line.startswith('  ok    ANE firmware: ' if check_rc == 0 else '  FAIL  ') and check_line in line, (case, line)
-    rc, out = call('--root', str(t))
-    assert rc == run_rc and run_line in out, (case, out)
-    ours_after = t / 'usr/lib/firmware' / name
-    assert (ours_after.read_bytes() if ours_after.exists() else None) == after, case
-    rc, out = call('--hook', '--root', str(files(vendor, ours)))
-    assert rc == 0 and run_line in out, (case, out)
+for chip, (_, name, _, _) in fetch.FETCH.items():
+    # (vendor, ours) -> --check exit and line; install exit, line, and our file after
+    CASES = (
+        ('vendor only', good, None, 0, '(Asahi vendor firmware) matches the pin', 0, 'Nothing to fetch', None),
+        ('ours only', None, good, 0, f'firmware/{name} matches the pin', 0, 'already installed', good),
+        ('both', good, good, 0, '(Asahi vendor firmware) matches the pin', 0, 'Nothing to fetch', good),
+        ('wrong vendor, ours good', other, good, 1, SHADOW, 1, SHADOW, good),
+        ('wrong vendor, no ours', other, None, 1, SHADOW, 1, SHADOW, good),
+        ('neither', None, None, 1, 'is missing. Run: sudo omarchy-ane-firmware-fetch', 0, 'installed', good),
+    )
+    for case, vendor, ours, check_rc, check_line, run_rc, run_line, after in CASES:
+        case = (chip, case)
+        t = files(chip, name, vendor, ours)
+        rc, out = call('--check', '--root', str(t))
+        assert rc == check_rc and check_line in out, (case, out)
+        p = subprocess.run([str(bin_dir / 'omarchy-ane-check'), '--root', str(t)], capture_output=True, text=True)
+        line = next(l for l in p.stdout.splitlines() if 'ANE firmware' in l or name in l)
+        assert line.startswith('  ok    ANE firmware: ' if check_rc == 0 else '  FAIL  ') and check_line in line, \
+            (case, line)
+        rc, out = call('--root', str(t))
+        assert rc == run_rc and run_line in out, (case, out)
+        assert installed(t, name) == after, case
+        t = files(chip, name, vendor, ours)
+        rc, out = call('--hook', '--root', str(t))
+        on = chip in fetch.DEFAULT_ON
+        assert rc == 0 and (run_line if on else 'the ANE is not on by default here. Nothing fetched.') in out, \
+            (case, out)
+        assert installed(t, name) == (after if on else ours), case
 print('test_ane_firmware_fetch: ok')
