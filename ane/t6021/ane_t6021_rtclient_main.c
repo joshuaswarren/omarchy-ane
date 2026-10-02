@@ -902,15 +902,22 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		ane_t6021_trace_add(ANE_TR_CALL, 0);
 	}
 	/* Producer contract hot path (ane_stats.h): record submit at
-	 * command enqueue, completion after the call returns. The T6021
-	 * path can run concurrently (MBI per-channel rings), so the
-	 * ane_stats_complete() union rule handles overlapping windows.
-	 * tmst is 0 (no host TM on T6021; documented in the file header
-	 * line). tasks = 1 (one command per submission); rc = ret; the
-	 * busy_ns = end - start when no other submission overlaps. */
+	 * command enqueue, completion after the call returns, one
+	 * begin/complete pair per engine submission. Only
+	 * CSNE_CMD_PROCEDURE_CALL is engine work; the control-plane
+	 * exchanges that ride this function (LOAD_PROGRAM,
+	 * CREATE_PROCESS, CH_PROPERTY_WRITE, CONFIG_GET) are not
+	 * counted, so jobs matches the engine calls the workload made.
+	 * The T6021 path can run concurrently (MBI per-channel rings),
+	 * so overlapping calls share a busy period and busy_ns is the
+	 * union of the submit-to-completion windows. tmst is 0 (no
+	 * host TM on T6021; documented in the file header line).
+	 * tasks = 1 (one call per submission); rc = ret. */
 	uint64_t stats_ticket = 0;
 	uint64_t stats_submit_ns = 0;
-	if (stats) {
+	bool stats_call = stats && opcode == CSNE_CMD_PROCEDURE_CALL;
+
+	if (stats_call) {
 		stats_submit_ns = ktime_get_ns();
 		stats_ticket = ane_stats_begin(&ane->fw->stats_ctrs,
 					       &ane->fw->stats_ring,
@@ -920,7 +927,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 					   channel, timeout_ms);
 	if (ret) {
 		ane_t6021_tracing = false;
-		if (stats)
+		if (stats_call)
 			ane_stats_complete(&ane->fw->stats_ctrs,
 					   &ane->fw->stats_ring, stats_ticket,
 					   ktime_get_ns(),
@@ -938,7 +945,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		if (!ret && call_settle_us)
 			usleep_range(call_settle_us, call_settle_us + 100);
 		if (ret) {
-			if (stats)
+			if (stats_call)
 				ane_stats_complete(&ane->fw->stats_ctrs,
 						   &ane->fw->stats_ring,
 						   stats_ticket,
@@ -950,7 +957,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 			return ret;
 		}
 	}
-	if (stats)
+	if (stats_call)
 		ane_stats_complete(&ane->fw->stats_ctrs,
 				   &ane->fw->stats_ring, stats_ticket,
 				   ktime_get_ns(), 0u, 0ull);
