@@ -6,8 +6,10 @@
 poll_us 0x1e8480
 pmgr 0x28e080000 0x10000
 gate 0xf0 0xf0
+# Gate = the set proven on this M2 under macOS 27 on 2026-09-25 (receipt 2026-09-25-macos-ane-engine-dump):
+# macOS never raises ane_sys_mpm@4000 (0x300 at 4.8 W ANE load), so a gate on it can never pass.
+island 0x260
 island 0x2e0
-island 0x4000
 island 0x4008
 island 0x4010
 island 0x4018

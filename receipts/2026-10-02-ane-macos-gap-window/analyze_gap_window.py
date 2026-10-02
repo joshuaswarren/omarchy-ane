@@ -4,22 +4,22 @@
 """Host-side analysis for the T6021 ANE gap window (runnable standalone on synthetic data).
 
 Takes the macOS capture directory (the bundle's out/) plus the Linux E1 results JSON and prints:
-  - the per-probe ratio table (Linux/macOS minmin and medmed, P6 / P7 / Parakeet encoder),
-  - the E1 decision per the GapRank H1 rule (P6 ratio >= 2.0 supports the low-clock hypothesis,
-    <= 1.15 while the activation-bound arms carry the ratio falsifies it),
-  - the fabric-ps / dcs-ps words (DESIRED[3:0]) idle vs load per OS.
+  - the per-probe ratio table (Linux/macOS minmin corrected + raw, medmed; P6, P6', P7, encoder),
+  - the E1 decision per the GapRank H1 rule on P6' (P6 when P6' is absent): ratio >= 2.0 supports
+    the low-clock hypothesis, <= 1.15 while the activation-bound arms carry the ratio falsifies it,
+  - fabric-ps / dcs-ps (DESIRED[3:0]) and the DSID word per ANERegDump dump (idle, mid-loop attempts),
+    read by the per-range status in each index.json; perfStats per probe; golden compares.
 
 Inputs:
   --macos-capture DIR   bundle out/ (timings/<probe>/blocks.tsv + block-*.json, 03-/04- regdump)
-  --linux-e1 FILE       Linux E1 results JSON:
-                        {"p6": {"blocks": [[min_ms, median_ms], ...]},
-                         "p7": {...}, "pk": {...}}   (empty/absent = "pending")
-  --linux-ps FILE       optional Linux ps-words JSON:
-                        {"idle": {"fabric_ps": "0x777", "dcs_ps": "0x999"},
-                         "load": {...}}           (absent = printed as n/a)
+  --linux-e1 FILE       Linux E1 results JSON (raw ms; settle_ms is subtracted from the Linux min):
+                        {"settle_ms": 1.05, "p6prime": {"blocks": [[min_ms, median_ms], ...]},
+                         "p6": {...}, "p7": {...}, "pk": {...}}   (absent probe = "pending")
+  --linux-ps FILE       optional Linux words JSON, printed as given:
+                        {"idle": {"fabric_ps": "0x555", "dcs_ps": "0x999", "dsid": "0x80"}, ...}
+  --e1 / --e1-prime DIR E1 probe trees for the P6/P7 and P6' golden compares
   --synthetic           generate a self-consistent fake capture + fake Linux result and analyze
                         that (no hardware needed; exercises every code path)
-
 macOS numbers are upper bounds when captured under load; the report says so (the stamps carry load).
 """
 import argparse
@@ -28,8 +28,9 @@ import struct
 import sys
 from pathlib import Path
 
-PROBES = ("p6", "p7", "pk")
-NAMES = {"p6": "P6 compute-bound (64x conv1x1, L2-resident weights)",
+PROBES = ("p6", "p6prime", "p7", "pk")
+NAMES = {"p6": "P6 compute-bound (64x conv1x1, L2-resident weights; Linux output invalid, P6Fix)",
+         "p6prime": "P6' = P6 program with input x0.8 (the E1 decision probe)",
          "p7": "P7 activation stream (2x32 MiB fp16 add)",
          "pk": "Parakeet whole encoder (reference: Linux 254.3 / macOS 89.3 ms)"}
 
@@ -57,31 +58,37 @@ def macos_stats(cap: Path):
     return out
 
 
-def ps_words(regdump_dir: Path):
-    """fabric-ps / dcs-ps 4-byte words from an aneregdump output dir (index.json + name.bin)."""
-    words = {}
-    for name in ("fabric-ps", "dcs-ps"):
-        f = regdump_dir / f"{name}.bin"
-        if f.exists() and f.stat().st_size >= 4:
-            words[name] = "0x%08x" % struct.unpack("<I", f.read_bytes()[:4])[0]
-        elif f.exists():
-            words[name] = f"short-read:{f.stat().st_size}B"
+def regdump_words(regdump_dir: Path):
+    """fabric-ps / dcs-ps / dsid words of one aneregdump output dir, by the per-range status in
+    index.json (a gated range is written as an empty .bin)."""
     idx = regdump_dir / "index.json"
-    if idx.exists():
-        try:
-            j = json.loads(idx.read_text())
-            words["islands_up"] = j.get("islands_up")
-        except json.JSONDecodeError:
-            pass
-    return words or None
+    if not idx.exists():
+        return None
+    j = json.loads(idx.read_text())
+    status = {r["name"]: r["status"] for r in j.get("ranges", [])}
+    words = {"islands_up": j.get("islands_up"), "ps": j.get("ps")}
+    for name in ("fabric-ps", "dcs-ps", "dsid"):
+        f = regdump_dir / f"{name}.bin"
+        if status.get(name) == "ok" and f.exists() and f.stat().st_size >= 4:
+            words[name] = "0x%08x" % struct.unpack("<I", f.read_bytes()[:4])[0]
+        else:
+            words[name] = status.get(name, "absent")
+    return words
 
 
-def dsid_field(regdump_dir: Path):
-    """0x285c2046c 4-byte word; None if the kext gated the read or the file is missing."""
-    f = regdump_dir / "dsid.bin"
-    if f.exists() and f.stat().st_size >= 4:
-        return "0x%08x" % struct.unpack("<I", f.read_bytes()[:4])[0]
-    return None
+def phase_dumps(cap: Path, tag: str):
+    """[(label, words-or-reason)] for 03-regdump-idle (one dump) or 04-regdump-load (attempts a1..a8)."""
+    base = cap / tag
+    if (base / "SKIPPED").exists():
+        return [("phase", {"skipped": (base / "SKIPPED").read_text().strip()})]
+    dirs = [base] if (base / "regdump").is_dir() else sorted(base.glob("a[0-9]*"), key=lambda p: int(p.name[1:]))
+    out = []
+    for d in dirs:
+        if (d / "SKIPPED").exists():
+            out.append((d.name, {"skipped": (d / "SKIPPED").read_text().strip()}))
+        else:
+            out.append((d.name, regdump_words(d / "regdump") or {"skipped": "no index.json"}))
+    return out
 
 
 def dsid_decode(word: str):
@@ -107,83 +114,72 @@ def fmt_side(stats, os_name):
             f"({stats['blocks']} blocks)")
 
 
-def decision(r6, r7, rpk):
+def decision(r6, r7, rpk, name="P6"):
     if r6 is None:
-        return "P6 missing - no E1 decision possible"
+        return f"{name} missing - no E1 decision possible"
     lines = []
     if r6 >= 2.0:
-        lines.append(f"P6 ratio {r6:.2f} >= 2.0: SUPPORTS H1 (ANE operating point left low under "
+        lines.append(f"{name} ratio {r6:.2f} >= 2.0: SUPPORTS H1 (ANE operating point left low under "
                      "Linux; the compute-bound probe carries the ratio)")
     elif r6 <= 1.15:
         if (r7 is not None and r7 >= 2.0) or (rpk is not None and rpk >= 2.0):
-            lines.append(f"P6 ratio {r6:.2f} <= 1.15 while activation-bound arms carry the ratio: "
+            lines.append(f"{name} ratio {r6:.2f} <= 1.15 while activation-bound arms carry the ratio: "
                          "FALSIFIES H1 (clock is not the cause; memory-side H3/H12 class)")
         else:
-            lines.append(f"P6 ratio {r6:.2f} <= 1.15 but nothing else carries the ratio: "
+            lines.append(f"{name} ratio {r6:.2f} <= 1.15 but nothing else carries the ratio: "
                          "H1 unsupported, cause likely driver/firmware-path shared cost")
     else:
-        lines.append(f"P6 ratio {r6:.2f} in the unresolved band (1.15, 2.0): mixed; report both")
-    if r7 is not None and r6 is not None:
+        lines.append(f"{name} ratio {r6:.2f} in the unresolved band (1.15, 2.0): mixed; report both")
+    if r7 is not None:
         if r7 > r6 * 1.5:
-            lines.append(f"P7 {r7:.2f} >> P6 {r6:.2f}: the gap concentrates in the DMA/activation "
+            lines.append(f"P7 {r7:.2f} >> {name} {r6:.2f}: the gap concentrates in the DMA/activation "
                          "path (H3 DCS/fabric QoS or H12 non-cacheable BO mappings)")
         elif r6 > r7 * 1.5:
-            lines.append(f"P6 {r6:.2f} >> P7 {r7:.2f}: the gap concentrates in compute, consistent "
+            lines.append(f"{name} {r6:.2f} >> P7 {r7:.2f}: the gap concentrates in compute, consistent "
                          "with a low NE clock rather than memory side")
         else:
-            lines.append(f"P7 {r7:.2f} ~ P6 {r6:.2f}: uniform ratio, one shared cause (clock-class)")
+            lines.append(f"P7 {r7:.2f} ~ {name} {r6:.2f}: uniform ratio, one shared cause (clock-class)")
     if rpk is not None:
         lines.append(f"encoder ratio {rpk:.2f} vs the whole-encoder reference 2.83 "
                      "(NativeVsCross/NativeMacRun)")
     return "\n  ".join(lines)
 
 
-def print_ps(os_name, words_idle, words_load):
-    if not words_idle and not words_load:
-        print(f"  {os_name}: n/a (no capture)")
-        return
-    for tag, w in (("idle", words_idle), ("load", words_load)):
-        if not w:
-            print(f"  {os_name} {tag}: missing")
+def print_dumps(label, dumps):
+    if not dumps:
+        print(f"  macOS {label}: no capture")
+    for name, w in dumps:
+        if "skipped" in w:
+            print(f"  macOS {label} {name}: SKIPPED ({w['skipped']})")
             continue
-        if w.get("skipped"):
-            print(f"  {os_name} {tag}: SKIPPED ({w['skipped']})")
-            continue
-        fab, dcs = w.get("fabric-ps"), w.get("dcs-ps")
-        iu = w.get("islands_up")
-        print(f"  {os_name} {tag}: fabric-ps {fab} (DESIRED={desired(fab)}) "
-              f"dcs-ps {dcs} (DESIRED={desired(dcs)}) islands_up={iu}")
+        fab, dcs, ds = w["fabric-ps"], w["dcs-ps"], w["dsid"]
+        dsid = f"{ds} dsid={dsid_decode(ds)}" if ds.startswith("0x") else f"{ds} (not read)"
+        print(f"  macOS {label} {name}: islands_up={w['islands_up']} fabric-ps {fab} "
+              f"(DESIRED={desired(fab)}) dcs-ps {dcs} (DESIRED={desired(dcs)}) dsid-word {dsid}"
+              f"\n    ps {w['ps']}")
 
 
-def load_capture(cap: Path):
-    idle, load = None, None
-    for tag, store in (("03-regdump-idle", "idle"), ("04-regdump-load", "load")):
-        if (cap / tag / "gated").exists():
-            out = {"state": "gated", "reason": (cap / tag / "gated").read_text().strip()}
-        elif (cap / tag / "SKIPPED").exists():
-            out = {"skipped": (cap / tag / "SKIPPED").read_text().strip()}
-        else:
-            out = ps_words(cap / tag / "regdump")
-        if store == "idle":
-            idle = out
-        else:
-            load = out
-    return idle, load
+def perfstats(cap: Path):
+    """perf_stats_last of every block JSON: how many blocks carried it, and the last one."""
+    for probe in PROBES:
+        got, last = 0, None
+        for f in sorted((cap / "timings" / probe).glob("block-*.json")):
+            try:
+                ps = json.loads(f.read_text()).get("perf_stats_last")
+            except json.JSONDecodeError:
+                continue
+            if ps:
+                got, last = got + 1, ps
+        print(f"  {probe}: {got} block(s) with perfStats" + (f"; last: {' '.join(str(last).split())[:600]}"
+                                                             if last else ""))
 
 
-def load_dsid(cap: Path):
-    idle, load = {}, {}
-    for tag, store in (("03-regdump-idle", "idle"), ("04-regdump-load", "load")):
-        rd = cap / tag / "regdump"
-        state = "gated" if (cap / tag / "gated").exists() \
-                else "skipped" if (cap / tag / "SKIPPED").exists() \
-                else "ok" if rd.is_dir() else "missing"
-        if state == "ok":
-            store_d = dsid_field(rd)
-        else:
-            store_d = None
-        (idle if store == "idle" else load)[state] = store_d
-    return idle, load
+def macos_load(cap: Path, probe: str):
+    """1-min load average range over the block stamps of one probe."""
+    tsv = cap / "timings" / probe / "blocks.tsv"
+    loads = [float(p.split("load=")[1].split()[0]) for p in
+             (tsv.read_text().splitlines() if tsv.exists() else []) if "load=" in p]
+    return (min(loads), max(loads)) if loads else None
 
 
 def main() -> int:
@@ -192,6 +188,7 @@ def main() -> int:
     ap.add_argument("--linux-e1", type=Path)
     ap.add_argument("--linux-ps", type=Path)
     ap.add_argument("--e1", type=Path, help="E1 probe tree for golden output compares")
+    ap.add_argument("--e1-prime", type=Path, help="P6' probe tree (p6prime/) for its golden compare")
     ap.add_argument("--synthetic", action="store_true")
     a = ap.parse_args()
 
@@ -203,7 +200,7 @@ def main() -> int:
         import numpy as np
         rng = np.random.default_rng(7)
         # macOS ms, Linux/macOS ratio - shaped like the real record (pk: 89.3 / 2.84).
-        shape = {"p6": (2.4, 2.2), "p7": (7.0, 2.9), "pk": (89.3, 2.84)}
+        shape = {"p6": (2.4, 2.2), "p6prime": (2.4, 2.2), "p7": (7.0, 2.9), "pk": (89.3, 2.84)}
         (cap / "timings").mkdir(parents=True)
         for probe, (mac_base, ratio) in shape.items():
             d = cap / "timings" / probe
@@ -212,31 +209,31 @@ def main() -> int:
                 for b in range(20):
                     mac = mac_base * float(rng.uniform(0.99, 1.01))
                     f.write(f"block-{b:02d}.json\t{mac:.3f}\t{mac * 1.01:.3f}\t20\t"
-                            f"ts=synth load=2.1 uptime_s=900\n")
-        for tag, fab, dcs in (("03-regdump-idle", 0xF, 0x9), ("04-regdump-load", 0xE, 0x8)):
-            rd = cap / tag / "regdump"
+                            f"ts=synth load=2.1 1.9 1.8 uptime_s=900\n")
+        for rd, iu, dsid in ((cap / "03-regdump-idle/regdump", 0, None),
+                             (cap / "04-regdump-load/a1/regdump", 0, None),
+                             (cap / "04-regdump-load/a2/regdump", 1, 0x2480)):
             rd.mkdir(parents=True)
-            (rd / "fabric-ps.bin").write_bytes(struct.pack("<I", fab))
-            (rd / "dcs-ps.bin").write_bytes(struct.pack("<I", dcs))
-            (rd / "dsid.bin").write_bytes(struct.pack("<I", 0x42 << 10))   # dsid = 0x42
-            (rd / "index.json").write_text('{"islands_up": 15}')
-        # and one gated phase (mid-loop, the ANE being busy may drop islands; here we mark load
-        # as gated to exercise the gated-state branch in the printer)
-        (cap / "04-regdump-load").mkdir(parents=True, exist_ok=True)
-        (cap / "04-regdump-load" / "gated").write_text(
-            "islands gated (ANE power not all up at the moment of poll; this is the expected "
-            "idle state for engine ranges)\n")
+            (rd / "fabric-ps.bin").write_bytes(struct.pack("<I", 0x555))
+            (rd / "dcs-ps.bin").write_bytes(struct.pack("<I", 0x999))
+            (rd / "dsid.bin").write_bytes(struct.pack("<I", dsid) if dsid else b"")
+            ranges = [{"name": n, "status": "ok"} for n in ("fabric-ps", "dcs-ps")]
+            ranges.append({"name": "dsid", "status": "ok" if dsid else "gated"})
+            (rd / "index.json").write_text(json.dumps({"islands_up": iu, "ps": ["0x300"] * 8,
+                                                       "ranges": ranges}))
         lin = {}
         for p in PROBES:
             mac_base, ratio = shape[p]
             lin[p] = {"minmin": mac_base * ratio, "medmed": mac_base * ratio * 1.01, "blocks": 3}
-        lps = {"idle": {"fabric_ps": "0x00000777", "dcs_ps": "0x00000999"},
-               "load": {"fabric_ps": "0x00000777", "dcs_ps": "0x00000999"}}
+        settle = 0.0
+        lps = {"idle": {"fabric_ps": "0x00000555", "dcs_ps": "0x00000999"},
+               "load": {"fabric_ps": "0x00000555", "dcs_ps": "0x00000999"}}
     else:
         if not a.macos_capture or not a.linux_e1:
             ap.error("need --macos-capture and --linux-e1 (or --synthetic)")
         cap = a.macos_capture
         lin_raw = json.loads(a.linux_e1.read_text())
+        settle = float(lin_raw.get("settle_ms", 0.0))
         lin = {p: ({"minmin": min(b[0] for b in lin_raw[p]["blocks"]),
                     "medmed": sorted(b[1] for b in lin_raw[p]["blocks"])[len(lin_raw[p]["blocks"]) // 2],
                     "blocks": len(lin_raw[p]["blocks"])} if lin_raw.get(p, {}).get("blocks") else None)
@@ -244,60 +241,49 @@ def main() -> int:
         lps = json.loads(a.linux_ps.read_text()) if a.linux_ps else None
 
     mac = macos_stats(cap)
-    idle, load = load_capture(cap)
-    dsid_idle, dsid_load = load_dsid(cap)
 
-    print("== E1 ratio table (Linux / macOS, minmin and medmed) ==")
+    print(f"== E1 ratio table (Linux / macOS; corrected = Linux minus {settle} ms call settle) ==")
     ratios = {}
     for p in PROBES:
-        r = None
+        line = "\n    ratio: pending"
         if mac[p] and lin[p]:
-            r = lin[p]["minmin"] / mac[p]["minmin"]
-            ratios[p] = r
+            raw = lin[p]["minmin"] / mac[p]["minmin"]
+            ratios[p] = (lin[p]["minmin"] - settle) / mac[p]["minmin"]
+            line = (f"\n    ratio minmin corrected {ratios[p]:.3f} raw {raw:.3f}; medmed raw "
+                    f"{lin[p]['medmed'] / mac[p]['medmed']:.3f}")
+        ld = macos_load(cap, p)
         print(f"  {NAMES[p]}\n    {fmt_side(lin[p], 'Linux')}\n    {fmt_side(mac[p], 'macOS')}"
-              + (f"\n    ratio minmin {r:.3f}" if r else "\n    ratio: pending"))
-    print("== E1 decision (GapRank H1 rule) ==")
-    print("  " + decision(ratios.get("p6"), ratios.get("p7"), ratios.get("pk")))
-    print("== fabric-ps / dcs-ps words (DESIRED[3:0]) idle vs load per OS ==")
-    print_ps("macOS", idle, load)
-    if lps:
-        lw = {}
-        for tag, src in (("idle", lps.get("idle")), ("load", lps.get("load"))):
-            if src:
-                lw = {"fabric-ps": src.get("fabric_ps"), "dcs-ps": src.get("dcs_ps")}
-                print(f"  Linux {tag}: fabric-ps {lw['fabric-ps']} (DESIRED={desired(lw['fabric-ps'])}) "
-                      f"dcs-ps {lw['dcs-ps']} (DESIRED={desired(lw['dcs-ps'])})")
-            else:
-                print(f"  Linux {tag}: missing")
-    else:
-        print("  Linux: n/a (no read route staged; a T6021 read-only sysps module does not exist yet)")
-    print("== ANE SLC DSID (engine 0x285c2046c, bits[17:10]) per phase ==")
-    for tag, src in (("idle", dsid_idle), ("load", dsid_load)):
-        state, word = next(iter(src.items())) if src else ("missing", None)
-        if state == "ok" and word is not None:
-            print(f"  macOS {tag}: {word} dsid=0x{dsid_decode(word):02x}")
-        elif state == "gated":
-            print(f"  macOS {tag}: gated (ANE power not all up; engine range denied at poll time)")
-        elif state == "skipped":
-            print(f"  macOS {tag}: skipped (capture deferred; see SKIPPED)")
-        else:
-            print(f"  macOS {tag}: no capture")
-    print("  Linux: n/a (no engine-window read route on the M2 Linux - not staged)")
+              + (f" load1 {ld[0]:.2f}-{ld[1]:.2f}" if ld else "") + line)
+    d6 = "p6prime" if "p6prime" in ratios else "p6"
+    print(f"== E1 decision (GapRank H1 rule, on {d6}) ==")
+    print("  " + decision(ratios.get(d6), ratios.get("p7"), ratios.get("pk"), "P6'" if d6 == "p6prime" else "P6"))
+    print("== fabric-ps / dcs-ps (DESIRED[3:0]) and DSID word 0x285c2046c (bits[17:10]) per OS ==")
+    print_dumps("idle", phase_dumps(cap, "03-regdump-idle"))
+    print_dumps("load", phase_dumps(cap, "04-regdump-load"))
+    for tag, src in ((lps or {}).items()):
+        print(f"  Linux {tag}: " + " ".join(f"{k} {v}" + (f" (DESIRED={desired(v)})" if k != "dsid" else
+                                                         f" dsid={dsid_decode(v)}") for k, v in src.items()))
+    if not lps:
+        print("  Linux: n/a (no --linux-ps)")
+    print("== perfStats (perf_stats_last per block) ==")
+    perfstats(cap)
     print("== caveats ==")
     print("  macOS numbers carry the load stamps next to each block; load lengthens times, so a")
     print("  macOS min is an upper bound and every ratio a lower bound (NativeMacRun precedent).")
     if a.e1:
-        golden_check(cap, a.e1)
+        golden_check(cap, a.e1, a.e1_prime)
     return 0
 
 
-def golden_check(cap: Path, e1: Path):
+def golden_check(cap: Path, e1: Path, e1_prime: Path = None):
     """macOS outputs vs the E1 CPU goldens (P6/P7 rel L2; the encoder vs the bit-exact fca96f13)."""
     import hashlib
     import numpy as np
     print("== golden compares (macOS last-block outputs) ==")
-    checks = (("p6", "y63.last.bin", e1 / "p6/in/golden.npy"),
-              ("p7", "y.last.bin", e1 / "p7/in/golden.npy"))
+    checks = [("p6", "y63.last.bin", e1 / "p6/in/golden.npy"),
+              ("p7", "y.last.bin", e1 / "p7/in/golden.npy")]
+    if e1_prime:
+        checks.insert(1, ("p6prime", "y63.last.bin", e1_prime / "p6prime/in/golden.npy"))
     for probe, out_name, golden in checks:
         out = cap / "timings" / probe / out_name
         if not out.exists():

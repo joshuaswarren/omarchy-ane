@@ -3,19 +3,20 @@
 # P7 activation stream), the whole Parakeet encoder, ANERegDump snapshots of the fabric/dcs perf-state
 # words idle and mid-loop, live iBoot ADT items via ioreg, and firmware perfStats through _ANERequest.
 #
-# Userspace except the ANERegDump kext route (needs root, a prior user approval, and one reboot the
-# first time the kext is allowed). Idempotent: every phase leaves out/<phase>.done and is skipped on
+# Userspace except the ANERegDump kext route (root plus the already-approved frozen kext; this script
+# never builds or loads another kext). Idempotent: every phase leaves out/<phase>.done and is skipped on
 # re-run; timing blocks are numbered and reused. Inputs are verified against stage_manifest.sha256
-# before anything runs. Every timing block records load and uptime with it.
+# before anything runs. Every timing block records load and uptime with it. The register phases run
+# last, so a kext fault cannot cost the timings (fetch them before the register phases).
 #
 #   SCRATCH=/Users/<user>/oracle-mint-scratch/gap-window bash macos_window.sh
-#   PHASES="env ioreg inputs regdump-idle timings regdump-load powermetrics sums" (this default order)
+#   PHASES="env ioreg inputs timings powermetrics regdump-idle regdump-load sums" (this default order)
 set -u
 S=${SCRATCH:?set SCRATCH to the staged scratch dir}
 O=$S/out
 BIN=$S/ane_inmem_run
 mkdir -p "$O"
-PHASES=${PHASES:-"env ioreg inputs regdump-idle timings regdump-load powermetrics sums"}
+PHASES=${PHASES:-"env ioreg inputs timings powermetrics regdump-idle regdump-load sums"}
 LOAD_MAX=${LOAD_MAX:-30}            # lower it for strictly quiet-machine timings if the window allows
 BLOCKS=${BLOCKS:-20}
 WARMUP=${WARMUP:-3}
@@ -100,7 +101,7 @@ run_probe() { # run_probe <probe> <mil> <weights> <surface args...> - one number
   shift 3
   local dir=$O/timings/$probe
   mkdir -p "$dir"
-  blk=$(grep -l '"rc": 0' "$dir"/block-*.json 2>/dev/null | wc -l | tr -d ' ')
+  blk=$(grep -lE '"rc": ?0[,}]' "$dir"/block-*.json 2>/dev/null | wc -l | tr -d ' ')
   [ "$blk" -ge "$BLOCKS" ] && return 0
   blk=$(printf %02d $((blk + 1)))
   stamp >"$dir/block-$blk.stamp"
@@ -128,6 +129,8 @@ phase_timings() { # items 1 and 4: P6/P7/encoder, 20 blocks each, perfStats on e
   for i in $(seq 1 "$BLOCKS"); do
     run_probe p6 "$S/p6/model.mil" "$S/p6/weights/weight.bin" \
       "in:$S/p6/in/p6-x.bin:524288" "out:y63:524288" || rc=$?
+    [ -d "$S/p6prime" ] && { run_probe p6prime "$S/p6prime/model.mil" "$S/p6prime/weights/weight.bin" \
+      "in:$S/p6prime/in/p6prime-x.bin:524288" "out:y63:524288" || rc=$?; }
     run_probe p7 "$S/p7/model.mil" "$S/p7/weights/weight.bin" \
       "in:$S/p7/in/p7-x.bin:33554432" "in:$S/p7/in/p7-z.bin:33554432" "out:y:33554432" || rc=$?
     if [ -f "$S/parakeet/in-in-features.bin" ]; then
@@ -140,79 +143,102 @@ phase_timings() { # items 1 and 4: P6/P7/encoder, 20 blocks each, perfStats on e
   done
   # keep the last block's outputs for host-side golden compare
   cp -p "$O/timings/p6/y63.bin" "$O/timings/p6/y63.last.bin" 2>/dev/null || true
+  cp -p "$O/timings/p6prime/y63.bin" "$O/timings/p6prime/y63.last.bin" 2>/dev/null || true
   cp -p "$O/timings/p7/y.bin" "$O/timings/p7/y.last.bin" 2>/dev/null || true
   cp -p "$O/timings/pk/hidden.bin" "$O/timings/pk/hidden.last.bin" 2>/dev/null || true
   stamp >"$O/timings/timings-end.stamp"
   return "$rc"
 }
 
-regdump_run() { # $1 = outdir; kext built on-box on first use; graceful when root is unavailable
+# The installed, approved frozen kext (932d3b9b, sections 16-18 of the T6021 findings) and its CLI.
+# Never build or load another kext: a new build needs an Allow click and a reboot (physical hands).
+KEXT=/Library/Extensions/ANERegDump.kext
+KEXT_SHA=932d3b9b70671a7eb35d6a3c0c3ebc991dac1024d71118efe5749f5ddbefdf2a
+REGDUMP_CLI=${REGDUMP_CLI:-$HOME/ane-cap3/aneregdump}
+
+regdump_run() { # $1 = outdir; graceful SKIP when root, the approved kext or its service is unavailable
   local out=$1
-  mkdir -p "$out"
+  mkdir -p "$out/regdump"
   stamp >"$out/capture.stamp"
   if ! sudo -n true >/dev/null 2>&1; then
     echo "SKIP: sudo needs a password on this host; the kext regdump is not possible user-space" |
       tee "$out/SKIPPED"
     return 0
   fi
-  if [ ! -x "$S/regdump-build/aneregdump" ]; then
-    log "building ANERegDump on-box (kext + CLI + filter self-test)"
-    zsh "$S/src/macos-regdump/build.sh" "$S/regdump-build" >"$out/regdump-build.log" 2>&1 || {
-      echo "regdump build FAILED - see regdump-build.log" | tee "$out/SKIPPED"
-      return 0
-    }
+  shasum -a 256 "$KEXT/Contents/MacOS/ANERegDump" >"$out/kext.sha256" 2>&1
+  if ! grep -q "^$KEXT_SHA " "$out/kext.sha256"; then
+    echo "SKIP: installed kext is not the approved frozen build ${KEXT_SHA:0:8} ($(cat "$out/kext.sha256"));" \
+      "a rebuilt kext needs an Allow click + reboot" | tee "$out/SKIPPED"
+    return 0
   fi
-  cp "$S/ranges-gapwin.txt" "$S/regdump-build/ranges.txt" 2>/dev/null || true
+  if [ ! -x "$REGDUMP_CLI" ]; then # CLI source is unchanged since the frozen kext's commit 14620db
+    REGDUMP_CLI=$S/regdump-build/aneregdump
+    mkdir -p "$S/regdump-build"
+    xcrun -sdk macosx clang -target arm64-apple-macosx14.0 -Wall -Werror -o "$REGDUMP_CLI" \
+      "$S/src/macos-regdump/aneregdump.c" -framework IOKit >"$out/cli-build.log" 2>&1 &&
+      codesign -s - --force "$REGDUMP_CLI" >>"$out/cli-build.log" 2>&1 ||
+      { echo "SKIP: aneregdump CLI build failed (cli-build.log)" | tee "$out/SKIPPED"; return 0; }
+  fi
+  shasum -a 256 "$REGDUMP_CLI" >>"$out/kext.sha256"
   if ! kmutil showloaded --list-only 2>/dev/null | grep -qi ANERegDump; then
-    echo "kext not loaded; attempting kmutil load (needs a prior user approval)" | tee "$out/kmutil-attempt.txt"
-    sudo -n kmutil load -p "$S/regdump-build/ANERegDump.kext" >"$out/kmutil.err" 2>&1 || {
-      tee -a "$out/kmutil-attempt.txt" <"$out/kmutil.err"
-      echo "If the error asks for approval: System Settings > Privacy & Security > Allow, reboot once," \
-        "re-run this phase. Skipping the register capture this window." | tee -a "$out/kmutil-attempt.txt"
+    sudo -n kmutil load -p "$KEXT" >"$out/kmutil.err" 2>&1 || {
+      echo "SKIP: kmutil load of the approved kext refused: $(cat "$out/kmutil.err")" | tee "$out/SKIPPED"
       return 0
     }
   fi
-  sudo -n "$S/regdump-build/aneregdump" "$out/regdump" "$S/regdump-build/ranges.txt" </dev/null
+  kmutil showloaded --list-only 2>/dev/null | grep -i ANERegDump >"$out/kext-loaded.txt"
+  sudo -n "$REGDUMP_CLI" "$out/regdump" "$S/ranges-gapwin.txt" </dev/null
   local rc=$?
+  sudo -n chown -R "$(id -u)" "$out"
   echo "regdump rc=$rc (0 = islands up, 3 = islands gated)"
   if [ "$rc" = 3 ]; then
-    echo "islands gated (ANE power not all up at the moment of poll; this is the expected idle state for engine ranges)" >"$out/gated"
-  else
+    echo "islands gated (ANE power not all up at the moment of poll; gated ranges not read)" >"$out/gated"
+  elif [ "$rc" = 0 ]; then
     echo "ok" >"$out/state"
-    [ -f "$out/regdump/fabric-ps.bin" ] && wc -c "$out/regdump"/fabric-ps.bin "$out/regdump"/dcs-ps.bin "$out/regdump"/dsid.bin 2>/dev/null
+  else
+    echo "aneregdump rc=$rc" | tee "$out/SKIPPED"
   fi
   return 0
 }
 
-phase_regdump_load() { # item 2 mid-loop: keep P6 evaluating while the kext samples the words
-  local out=$O/04-regdump-load
+phase_regdump_load() { # item 2 mid-loop: P6/P7 evaluating while the kext samples; up to 8 attempts, stop after 2 passes
+  local out=$O/04-regdump-load i ok=0
   mkdir -p "$out"
   [ -f "$O/03-regdump-idle/SKIPPED" ] && { echo "SKIP: idle regdump was skipped" | tee "$out/SKIPPED"; return 0; }
   ensure_bin || return 1
   bash "$S/loopload.sh" >"$out/loop.log" 2>&1 &
   local lpid=$!
   sleep 3
-  regdump_run "$out"
+  for i in $(seq 1 8); do
+    regdump_run "$out/a$i"
+    [ -f "$out/a$i/SKIPPED" ] && break
+    [ -f "$out/a$i/state" ] && ok=$((ok + 1))
+    [ "$ok" -ge 2 ] && break
+    sleep 1
+  done
+  echo "mid-loop attempts=$i passes=$ok"
   touch "$S/loopload.stop"
   wait "$lpid" || true
   stamp >"$out/loop-end.stamp"
 }
 
-phase_powermetrics() { # item 5: whatever the tool prints on this build; no invented options
-  mkdir -p "$O/05-powermetrics"
+phase_powermetrics() { # item 5: cpu_power prints "ANE Power" on this box (2026-09-25); ane_power attempted too
+  local pm=$O/05-powermetrics
+  mkdir -p "$pm"
   if sudo -n true >/dev/null 2>&1; then
-    bash "$S/loopload.sh" >"$O/05-powermetrics/loop.log" 2>&1 &
+    bash "$S/loopload.sh" >"$pm/loop.log" 2>&1 &
     local lpid=$!
     sleep 2
-    sudo -n powermetrics --samplers ane_power -i 500 -n 10 </dev/null \
-      >"$O/05-powermetrics/powermetrics.txt" 2>&1
+    sudo -n powermetrics --samplers cpu_power -i 500 -n 10 </dev/null >"$pm/powermetrics.txt" 2>&1
+    echo "cpu_power rc=$?"
+    sudo -n powermetrics --samplers ane_power -i 500 -n 3 </dev/null >"$pm/powermetrics-ane_power.txt" 2>&1
+    echo "ane_power rc=$?"
     touch "$S/loopload.stop"; wait "$lpid" || true
   else
-    powermetrics --samplers ane_power -i 500 -n 3 </dev/null \
-      >"$O/05-powermetrics/powermetrics-unsudoed.txt" 2>&1
+    powermetrics --samplers cpu_power -i 500 -n 3 </dev/null >"$pm/powermetrics-unsudoed.txt" 2>&1
     echo "powermetrics without sudo rc=$? (refusal recorded; no root, no invented options)"
   fi
-  [ -s "$O/05-powermetrics/powermetrics.txt" ] || [ -s "$O/05-powermetrics/powermetrics-unsudoed.txt" ]
+  [ -s "$pm/powermetrics.txt" ] || [ -s "$pm/powermetrics-unsudoed.txt" ]
 }
 
 phase_sums() {
@@ -232,8 +258,7 @@ for p in $PHASES; do
     powermetrics) phase powermetrics phase_powermetrics ;;
     sums) phase sums phase_sums ;;
     *) log "unknown phase $p"; exit 2 ;;
-  esac
-  [ $? -ne 0 ] && rc_all=$?
+  esac || rc_all=$?
 done
 log "bundle done rc=$rc_all"
 exit "$rc_all"
