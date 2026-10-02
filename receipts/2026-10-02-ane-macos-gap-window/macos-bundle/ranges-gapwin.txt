@@ -32,5 +32,11 @@ range fw-data 0x10001400000 0x438000
 # Gap-window additions (read-only, 4 bytes each, idle + mid-loop):
 range fabric-ps 0x28e20c000 0x4
 range dcs-ps 0x28e20c400 0x4
+# DSID: T6021 engine 0x284000000 + 0x1c2046c; firmware updateDSID rmw at 0x32c00, SLC
+# data-set id in bits[17:10] of the word (evidence: AneDsidRe2). Gated (engine window): the
+# kext reads only when pmgr islands ACTUAL matches `gate 0xf0 0xf0`. Idle-after-boot is
+# almost always power-gated on this M2; the bundle records `gated` when it is, which is a
+# real finding, not a failure.
+range dsid 0x285c2046c 0x4 gated
 handoff 1
 adt 1

@@ -76,6 +76,22 @@ def ps_words(regdump_dir: Path):
     return words or None
 
 
+def dsid_field(regdump_dir: Path):
+    """0x285c2046c 4-byte word; None if the kext gated the read or the file is missing."""
+    f = regdump_dir / "dsid.bin"
+    if f.exists() and f.stat().st_size >= 4:
+        return "0x%08x" % struct.unpack("<I", f.read_bytes()[:4])[0]
+    return None
+
+
+def dsid_decode(word: str):
+    """SLC data-set id from the 0x285c2046c word; bits[17:10] per AneDsidRe2."""
+    try:
+        return (int(word, 16) >> 10) & 0xff
+    except (ValueError, TypeError):
+        return None
+
+
 def desired(word: str):
     """DESIRED[3:0] of a ps word like 0x00000777 (format per the T6001 sysps reads)."""
     try:
@@ -140,16 +156,33 @@ def print_ps(os_name, words_idle, words_load):
 
 
 def load_capture(cap: Path):
-    idle = ps_words(cap / "03-regdump-idle" / "regdump")
-    load = ps_words(cap / "04-regdump-load" / "regdump")
-    for tag in ("03-regdump-idle", "04-regdump-load"):
-        skipped = cap / tag / "SKIPPED"
-        if skipped.exists():
-            note = {"skipped": skipped.read_text().strip()}
-            if tag.endswith("idle"):
-                idle = note
-            else:
-                load = note
+    idle, load = None, None
+    for tag, store in (("03-regdump-idle", "idle"), ("04-regdump-load", "load")):
+        if (cap / tag / "gated").exists():
+            out = {"state": "gated", "reason": (cap / tag / "gated").read_text().strip()}
+        elif (cap / tag / "SKIPPED").exists():
+            out = {"skipped": (cap / tag / "SKIPPED").read_text().strip()}
+        else:
+            out = ps_words(cap / tag / "regdump")
+        if store == "idle":
+            idle = out
+        else:
+            load = out
+    return idle, load
+
+
+def load_dsid(cap: Path):
+    idle, load = {}, {}
+    for tag, store in (("03-regdump-idle", "idle"), ("04-regdump-load", "load")):
+        rd = cap / tag / "regdump"
+        state = "gated" if (cap / tag / "gated").exists() \
+                else "skipped" if (cap / tag / "SKIPPED").exists() \
+                else "ok" if rd.is_dir() else "missing"
+        if state == "ok":
+            store_d = dsid_field(rd)
+        else:
+            store_d = None
+        (idle if store == "idle" else load)[state] = store_d
     return idle, load
 
 
@@ -185,7 +218,14 @@ def main() -> int:
             rd.mkdir(parents=True)
             (rd / "fabric-ps.bin").write_bytes(struct.pack("<I", fab))
             (rd / "dcs-ps.bin").write_bytes(struct.pack("<I", dcs))
+            (rd / "dsid.bin").write_bytes(struct.pack("<I", 0x42 << 10))   # dsid = 0x42
             (rd / "index.json").write_text('{"islands_up": 15}')
+        # and one gated phase (mid-loop, the ANE being busy may drop islands; here we mark load
+        # as gated to exercise the gated-state branch in the printer)
+        (cap / "04-regdump-load").mkdir(parents=True, exist_ok=True)
+        (cap / "04-regdump-load" / "gated").write_text(
+            "islands gated (ANE power not all up at the moment of poll; this is the expected "
+            "idle state for engine ranges)\n")
         lin = {}
         for p in PROBES:
             mac_base, ratio = shape[p]
@@ -205,6 +245,7 @@ def main() -> int:
 
     mac = macos_stats(cap)
     idle, load = load_capture(cap)
+    dsid_idle, dsid_load = load_dsid(cap)
 
     print("== E1 ratio table (Linux / macOS, minmin and medmed) ==")
     ratios = {}
@@ -230,6 +271,18 @@ def main() -> int:
                 print(f"  Linux {tag}: missing")
     else:
         print("  Linux: n/a (no read route staged; a T6021 read-only sysps module does not exist yet)")
+    print("== ANE SLC DSID (engine 0x285c2046c, bits[17:10]) per phase ==")
+    for tag, src in (("idle", dsid_idle), ("load", dsid_load)):
+        state, word = next(iter(src.items())) if src else ("missing", None)
+        if state == "ok" and word is not None:
+            print(f"  macOS {tag}: {word} dsid=0x{dsid_decode(word):02x}")
+        elif state == "gated":
+            print(f"  macOS {tag}: gated (ANE power not all up; engine range denied at poll time)")
+        elif state == "skipped":
+            print(f"  macOS {tag}: skipped (capture deferred; see SKIPPED)")
+        else:
+            print(f"  macOS {tag}: no capture")
+    print("  Linux: n/a (no engine-window read route on the M2 Linux - not staged)")
     print("== caveats ==")
     print("  macOS numbers carry the load stamps next to each block; load lengthens times, so a")
     print("  macOS min is an upper bound and every ratio a lower bound (NativeMacRun precedent).")

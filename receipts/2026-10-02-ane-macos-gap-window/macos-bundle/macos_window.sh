@@ -175,7 +175,12 @@ regdump_run() { # $1 = outdir; kext built on-box on first use; graceful when roo
   sudo -n "$S/regdump-build/aneregdump" "$out/regdump" "$S/regdump-build/ranges.txt" </dev/null
   local rc=$?
   echo "regdump rc=$rc (0 = islands up, 3 = islands gated)"
-  [ -f "$out/regdump/fabric-ps.bin" ] && wc -c "$out/regdump/fabric-ps.bin" "$out/regdump/dcs-ps.bin"
+  if [ "$rc" = 3 ]; then
+    echo "islands gated (ANE power not all up at the moment of poll; this is the expected idle state for engine ranges)" >"$out/gated"
+  else
+    echo "ok" >"$out/state"
+    [ -f "$out/regdump/fabric-ps.bin" ] && wc -c "$out/regdump"/fabric-ps.bin "$out/regdump"/dcs-ps.bin "$out/regdump"/dsid.bin 2>/dev/null
+  fi
   return 0
 }
 

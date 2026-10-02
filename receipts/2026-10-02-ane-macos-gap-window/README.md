@@ -19,16 +19,20 @@ memory-side cause (P7 >> P6, H3/H12 class). The Parakeet encoder is the referenc
 | 1 | P6/P7 timings on macOS, same inputs | `timings` | `out/timings/{p6,p7}/block-*.json` + `blocks.tsv` |
 | 1b | Parakeet encoder, same procedure as the prior native run | `timings` | `out/timings/pk/` |
 | 2 | fabric-ps 0x28e20c000 + dcs-ps 0x28e20c400 (4-byte words, DESIRED[3:0]) idle and mid-loop | `regdump-idle`, `regdump-load` | `out/03-regdump-idle/regdump/{fabric-ps,dcs-ps}.bin`, `out/04-regdump-load/...` |
+| 2b | ANE SLC DSID at engine 0x285c2046c (4 bytes, SLC data-set id in bits[17:10], per AneDsidRe2); idle-after-boot and mid-loop, gated with the ANE power state (a real finding if gated idle) | `regdump-idle`, `regdump-load` | `out/03-regdump-idle/regdump/dsid.bin` (or `gated` marker) |
 | 3 | iBoot-filled ADT items via ioreg (mcc, iop-pmp-nub, ane0, pmgr, dart-ane0) | `ioreg` | `out/01-ioreg-*.txt` |
 | 4 | firmware perfStats through `_ANERequest` (NE compute/nominal/throttle cycles) | `timings` | `perf_stats_first/last` fields in every `block-*.json` |
 | 5 | ANE power/frequency snapshot tool output, whatever this build prints | `powermetrics` | `out/05-powermetrics/` |
 
 The reg words need the ANERegDump kext: `ranges-gapwin.txt` = the committed runtime request plus
-exactly the two ungated non-engine 4-byte ranges - no kext rebuild. The kext + CLI build on-box
-from the staged `src/macos-regdump` (proven path), need root (`sudo -n`), and the FIRST allow needs
-one user approval in System Settings plus one reboot inside the window. Every phase degrades
-gracefully: without root or approval the bundle records `SKIPPED` with the exact refusal text and
-the rest of the window proceeds.
+exactly the two ungated non-engine 4-byte ranges (fabric-ps, dcs-ps) and one GATED engine-window
+4-byte range (DSID at 0x285c2046c) - no kext rebuild. The kext + CLI build on-box from the
+staged `src/macos-regdump` (proven path), need root (`sudo -n`), and the FIRST allow needs one
+user approval in System Settings plus one reboot inside the window. Every phase degrades
+gracefully: without root or approval the bundle records `SKIPPED` with the exact refusal text
+and the rest of the window proceeds. If the kext gates the DSID read because the ANE power
+domains are not all up, the bundle writes a `gated` marker file with the kext's reason and
+the analysis prints the gated state instead of a word - that is a real finding, not a failure.
 
 PerfStats is best-effort by design: `ane_inmem_run` (this branch, `PERFSTATS=1`) passes a mutable
 dict as `_ANERequest perfStats`; if this macOS build rejects the type at request creation or at the
@@ -129,9 +133,11 @@ is banned after the 3/3 hard-reset record; READS were safe) - without it the Lin
 as n/a and the macOS idle-vs-load delta carries the comparison alone.
 
 Output: the per-probe ratio table (Linux/macOS minmin + medmed), the E1 decision per GapRank's
-rule, the fabric/dcs words idle vs load per OS, golden compares (P6/P7 rel L2 vs CPU goldens,
-encoder vs the bit-exact fca96f13), and the load-stamp caveat (macOS numbers are upper bounds
-under load; every ratio is therefore a lower bound).
+rule, the fabric/dcs words idle vs load per OS, the ANE SLC DSID (engine 0x285c2046c,
+SLC data-set id in bits[17:10], per AneDsidRe2) per phase - with a `gated` marker when the
+kext denied the engine-window read because the ANE power domains were not all up - golden
+compares (P6/P7 rel L2 vs CPU goldens, encoder vs the bit-exact fca96f13), and the load-stamp
+caveat (macOS numbers are upper bounds under load; every ratio is therefore a lower bound).
 
 ## What is verified vs not
 
