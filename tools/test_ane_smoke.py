@@ -40,41 +40,46 @@ exec(MODEL)
 
 # 1. The pinned golden is the exact model of the pinned inputs, and those
 # inputs hold ties, so the golden tells ties-away from ties-to-even.
-a, b = smoke.inputs('a'), smoke.inputs('b')
+a, b = smoke.inputs('a', smoke.H14_LANES), smoke.inputs('b', smoke.H14_LANES)
 y = [add(p, q) for p, q in zip(a, b)]
-assert hashlib.sha256(struct.pack('<512H', *y)).hexdigest() == smoke.GOLDEN
+assert hashlib.sha256(struct.pack('<512H', *y)).hexdigest() == smoke.H14_GOLDEN
 even = [struct.unpack('<H', struct.pack('<e', sum(struct.unpack('<e', struct.pack('<H', h))[0] for h in pq)))[0]
         for pq in zip(a, b)]
 assert sum(p != q for p, q in zip(y, even)) > 0
 
-STUB = '#!/usr/bin/env python3' + MODEL + '''
-import os, sys, time
+STUB = r'''#!/usr/bin/env python3
+import os, struct, sys, time
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-
+smoke = SourceFileLoader("smoke", os.environ["SMOKE_SCRIPT"]).load_module()
 argv = sys.argv[1:]
 pairs = list(zip(argv[::2], argv[1::2]))
-if ("--check", "add") not in pairs or argv[-1] != "--time" or not Path(dict(pairs)["--anec"]).is_file():
-    sys.exit(2)
+d = dict(pairs)
+h13 = "--check" not in d
+if argv[-1] != "--time" or not Path(d["--anec"]).is_file(): sys.exit(2)
+ins = [Path(v.split("=", 1)[1]).read_bytes() for k, v in pairs if k == "--in"]
+if h13:
+    if not all(any(v.startswith(f"{idx}=") for k,v in pairs if k=="--in") for idx in ("5","6")) or not d["--out"].startswith("4="): sys.exit(3)
+else:
+    if not all(any(v.startswith(f"{idx}=") for k,v in pairs if k=="--in") for idx in ("0","1")) or not d["--out"].startswith("0=") or d.get("--check") != "add": sys.exit(4)
 count = Path(os.environ["STUB_COUNT"])
 n = int(count.read_text()) + 1 if count.exists() else 1
 count.write_text(str(n))
 mode, _, at = os.environ.get("STUB", "").partition(":")
 hit = at and n == int(at)
-if mode == "sleep" and hit:
-    time.sleep(30)
-ins = [Path(v.split("=", 1)[1]).read_bytes() for k, v in pairs if k == "--in"]
+if mode == "sleep" and hit: time.sleep(30)
+lanes = 64 if h13 else 512
 out = bytearray(len(ins[0]))
-for i in range(0, len(out), 64):
-    struct.pack_into("<H", out, i, add(*(struct.unpack_from("<H", d, i)[0] for d in ins)))
-if mode == "flip" and hit:
-    out[64 * 7] ^= 1
-Path(dict(pairs)["--out"].split("=", 1)[1]).write_bytes(out)
-bad = mode == "flip" and hit
-# ane-run's order: the timing line after the calls, the --check line last.
+for i in range(lanes):
+    offset = i * 64
+    a = struct.unpack_from("<H", ins[0], offset)[0]
+    b = struct.unpack_from("<H", ins[1], offset)[0]
+    struct.pack_into("<H", out, offset, smoke.add_fp16(a, b))
+if mode == "flip" and hit: out[64 * (7 if not h13 else 7)] ^= 1
+if mode == "pad" and hit: out[2] = 1
+Path(d["--out"].split("=", 1)[1]).write_bytes(out)
 print("exec ms over 1 calls: min %.3f p10 0 p25 0 median 0 p75 0 p90 0 p99 0 max 0" % (1 + n / 100))
-print("%d/512 lanes bit-exact vs the add reference, padding lanes zero: %s" % (511 if bad else 512,
-      "FAIL" if bad else "PASS"))
-sys.exit(255 if bad else 0)
+sys.exit(7 if mode == "error" and hit else 0)
 '''
 FW_MISSING = ('echo "omarchy-ane-firmware-fetch: /usr/lib/firmware/apple/ane/x is missing. '
               'Run: sudo omarchy-ane-firmware-fetch" >&2; exit 1')
@@ -87,7 +92,7 @@ def stub(path, body):
 
 def machine(soc='t6021', board='j414c', bound=True, fixture=True, firmware='echo ok'):
     """A fake running system with the ANE driver loaded and the package's tools."""
-    mod = smoke.MODULE if soc in smoke.FIXTURE else 'ane'
+    mod = smoke.MODULE[soc]
     root = Path(tempfile.mkdtemp())
     base = root / 'sys/firmware/devicetree/base'
     (base / 'soc/ane@1').mkdir(parents=True)
@@ -103,9 +108,9 @@ def machine(soc='t6021', board='j414c', bound=True, fixture=True, firmware='echo
     (root / 'dev/accel').mkdir(parents=True)
     (root / 'dev/accel/accel0').symlink_to('/dev/null')
     if fixture:
-        dest = root / smoke.FIXTURES / smoke.H14_ADD
+        dest = root / smoke.FIXTURES / smoke.FIXTURE[soc]
         dest.parent.mkdir(parents=True)
-        shutil.copy(repo / 'fixtures' / smoke.H14_ADD, dest)
+        shutil.copy(repo / 'fixtures' / smoke.FIXTURE[soc], dest)
     bin_dir = root / 'bin'
     bin_dir.mkdir()
     for tool in ('omarchy-ane-check', 'omarchy-ane-smoke'):
@@ -120,7 +125,7 @@ def machine(soc='t6021', board='j414c', bound=True, fixture=True, firmware='echo
 
 def run(root, *args, mode='', tool='omarchy-ane-smoke'):
     env = {**os.environ, 'STUB': mode, 'STUB_COUNT': str(root / 'count'),
-           'PATH': f'{root / "bin"}:{os.environ["PATH"]}'}
+           'PATH': f"{root / 'bin'}:{os.environ['PATH']}", 'SMOKE_SCRIPT': str(repo / 'packaging/omarchy-ane-smoke')}
     return subprocess.run([str(root / 'bin' / tool), '--root', str(root), *args], capture_output=True, text=True,
                           env=env)
 
@@ -132,22 +137,29 @@ def smoke_run(root, *args, mode=''):
 
 # 2. Pass: 20 processes, each output equal to the golden, timings parsed.
 rc, out, err = smoke_run(machine())
-assert rc == 0 and out['errors'] == 0 and out['sha256'] == [smoke.GOLDEN] * 20, (rc, out, err)
-assert out['name'] == 'add-fixture' and out['chip'] == 't6021' and out['golden_sha256'] == smoke.GOLDEN, out
+assert rc == 0 and out['errors'] == 0 and out['sha256'] == [smoke.H14_GOLDEN] * 20, (rc, out, err)
+assert out['name'] == 'add-fixture' and out['chip'] == 't6021' and out['golden_sha256'] == smoke.H14_GOLDEN, out
 assert out['min_ms'] == 1.01 and out['median_ms'] == 1.105 and 'reason' not in out, out
 assert err == 'omarchy-ane-smoke: add-fixture on t6021: 20/20 calls bit-exact, min 1.010 ms, median 1.105 ms\n', err
 
 # 3. One call off by one bit in one lane: exit 1, that call alone counts.
 rc, out, err = smoke_run(machine(), mode='flip:7')
 assert rc == 1 and out['errors'] == 1 and len(out['sha256']) == 20, (rc, out)
-assert [i for i, h in enumerate(out['sha256']) if h != smoke.GOLDEN] == [6], out
-assert out['reason'].startswith('call 7: not bit-exact (511/512 lanes'), out
+assert [i for i, h in enumerate(out['sha256']) if h != smoke.H14_GOLDEN] == [6], out
+assert out['reason'].startswith('call 7: output surface or runner status differs'), out
 
-# 4. Unavailable: the M1 family, an unbound driver (with and without the
-# firmware), a missing fixture.
+# H13 rejects padding corruption and runner errors.
+for mode in ('pad:4', 'error:3'):
+    rc, out, err = smoke_run(machine('t6001', 'j316c'), mode=mode)
+    assert rc == 1 and out['errors'] == 1 and len(out['sha256']) == 20, (mode, out)
+
+# 4. H13 routes to the new fixture; other missing setup remains unavailable.
 rc, out, err = smoke_run(machine('t8103', 'j293'))
-assert rc == 2 and out == {'name': 'add-fixture', 'chip': 't8103', 'available': False,
-                           'reason': 't8103: no M1-family (H13) add fixture has run through omarchy-ane-run yet'}, out
+assert rc == 0 and out['chip'] == 't8103' and out['errors'] == 0 and out['sha256'] == [smoke.H13_GOLDEN] * 20, out
+for chip, board in (('t6000', 'j375c'), ('t6001', 'j316c'), ('t6002', 'j375d')):
+    rc, out, err = smoke_run(machine(chip, board))
+    assert rc == 0 and out['chip'] == chip and out['sha256'] == [smoke.H13_GOLDEN] * 20, out
+# firmware, unbound driver and missing fixture.
 rc, out, err = smoke_run(machine(bound=False))
 assert rc == 2 and out['reason'] == ('ane_t6021 is bound to no device. Read the reason with: '
                                      'journalctl -k -g ane_t6021'), out
@@ -160,7 +172,7 @@ assert not (root / 'count').exists(), 'no call without the fixture'
 
 # 5. A call that hangs: the run stops at the limit and reports the calls so far.
 rc, out, err = smoke_run(machine(), '--timeout', '2', mode='sleep:3')
-assert rc == 1 and out['errors'] == 18 and out['sha256'] == [smoke.GOLDEN] * 2, out
+assert rc == 1 and out['errors'] == 18 and out['sha256'] == [smoke.H14_GOLDEN] * 2, out
 assert out['reason'] == 'call 3 ran past the 2 s limit', out
 
 # 6. Another job holds /var/tmp/ane-run.lock: no call runs.
@@ -178,9 +190,14 @@ assert p.returncode == 0 and p.stdout.endswith(
     '  ok    smoke: add-fixture on t6021: 20/20 calls bit-exact, min 1.010 ms, median 1.105 ms\n'
     'omarchy-ane-check: ready\n'), p.stdout
 p = run(machine('t8103', 'j293'), '--smoke', tool='omarchy-ane-check')
-assert p.returncode == 0 and '  note  smoke: unavailable: t8103: no M1-family' in p.stdout, p.stdout
+assert p.returncode == 0 and '  ok    smoke: add-fixture on t8103: 20/20 calls bit-exact' in p.stdout, p.stdout
 p = run(machine(), '--smoke', mode='flip:1', tool='omarchy-ane-check')
 assert p.returncode == 1 and '  FAIL  smoke: add-fixture on t6021: 19/20 calls bit-exact' in p.stdout, p.stdout
 p = run(machine(), tool='omarchy-ane-check')
 assert p.returncode == 0 and 'smoke' not in p.stdout, p.stdout
 print('test_ane_smoke: ok')
+
+
+def test_h13_golden_mapping():
+    assert smoke.GOLDEN['t6001'] == smoke.H13_GOLDEN
+    assert smoke.GOLDEN['t6021'] == smoke.H14_GOLDEN

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `omarchy-ane-smoke` now routes T8103/T6000/T6001/T6002 to the packaged H13 add fixture and T6020/T6021/T6022/T8112 to H14. H13 checks 64 valid little-endian fp16 planes and zero padding across the full 16 KiB tile. See `receipts/2026-10-02-h13-smoke/README.md`.
+
 - ane_stats: producer-side counters and ring for the coreglass ANE
   dashboard. Adds sysfs `/sys/class/accel/accel*/device/ane_stats`
   (busy_ns, jobs) and debugfs `ane_timeline` (last N submissions,
