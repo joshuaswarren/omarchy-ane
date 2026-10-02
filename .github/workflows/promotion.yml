@@ -89,19 +89,14 @@ jobs:
         run: |
           git config user.name omarchy-ane-automation
           git config user.email 816217+joshuaswarren@users.noreply.github.com
-          tools/asahi-dtbs "$RUNNER_TEMP/asahi"
-          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
           : > merged.txt
           for pr in $(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
                         --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number'); do
-            echo "== gate PR #$pr"
+            echo "== gate PR #$pr (phase 1: the stress-sensitive C suites run before the asahi-dtbs churn)"
             git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
             make -C tools check
             python3 tools/test_ane_dt.py
             python3 tools/test_ane_firmware_fetch.py
-            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
-            python3 tools/test_t8112_kit.py
-            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
             python3 tools/test_promotion_check.py
             python3 tools/test_promote_chip.py
             python3 tools/test_ane_smoke.py
@@ -109,6 +104,17 @@ jobs:
             python3 -m pytest -q tests tools \
               --ignore=tools/test_promote_chip.py \
               --ignore=tools/test_promote_from_verdict.py
+            git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
+          done
+          tools/asahi-dtbs "$RUNNER_TEMP/asahi"
+          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
+          for pr in $(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+                        --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number'); do
+            echo "== gate PR #$pr (phase 2: the device-tree suites, then the fresh-verdict merge)"
+            git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
+            python3 tools/test_t8112_kit.py
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
             out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" \
               ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }})
             echo "$out"
