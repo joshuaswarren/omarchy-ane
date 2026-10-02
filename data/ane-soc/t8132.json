@@ -1,0 +1,374 @@
+{
+  "soc": {
+    "v": "t8132",
+    "src": "S1"
+  },
+  "marketing": {
+ "v": "Apple M4 (base tier). Aurora t8132.dtsi:3 names T8132 as M4; board DTS models: J604 MacBook Pro 14-inch M4 (Mac16,1), J623/J624 iMac M4 (Mac16,2/3), J713/J715 MacBook Air M4 (Mac16,12/13), J773g Mac mini M4 (Mac16,10). This macOS IPSW corpus contains Mac boards, not an iPad board.",
+ "src": "S4"
+  },
+  "generation": {
+    "v": "H16",
+    "src": "S2"
+  },
+  "boards": [
+    {
+      "v": "J604 / Mac16,1",
+      "src": "S1"
+    },
+    {
+      "v": "J623 / Mac16,2",
+      "src": "S1"
+    },
+    {
+      "v": "J624 / Mac16,3",
+      "src": "S1"
+    },
+    {
+      "v": "J713 / Mac16,12",
+      "src": "S1"
+    },
+    {
+      "v": "J715 / Mac16,13",
+      "src": "S1"
+    },
+    {
+      "v": "J773g / Mac16,10",
+      "src": "S1"
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 26A428 IPSW; Firmware/all_flash/DeviceTree.j604ap.im4p, j623ap, j624ap, j713ap, j715ap, j773gap; extracted ADT root target-type and compatible",
+      "sha256": "fa30e1c7dfd19d71d5483cc5690617e098ddac319c50657cd53722cb97dca1dd (DeviceTree.j604ap.adt)"
+    },
+    {
+      "id": "S2",
+      "kind": "buildmanifest",
+ "ref": "macOS 27.0 26A428 IPSW BuildManifest.plist; ApChipID 0x8132 / DeviceClass J604AP etc; Firmware/ane/h16_ane_fw_leto_j7x.im4p; wrapper SHA-256 below",
+ "sha256": "594fb62ef07a628c37e22c9d91b1d96855c72a6471eb9d25a260998c9496904d"
+    },
+    {
+      "id": "S3",
+      "kind": "ipsw-adt",
+      "ref": "DeviceTree.j604ap.adt /arm-io/ane, /arm-io/dart-ane, /arm-io/pmgr; same ANE fields on J623/J624/J713/J715/J773g",
+      "sha256": "fa30e1c7dfd19d71d5483cc5690617e098ddac319c50657cd53722cb97dca1dd (DeviceTree.j604ap.adt)"
+    },
+    {
+      "id": "S4",
+      "kind": "aurora-dts",
+ "ref": "aurora-wip b3a55ee68bfb: arch/arm64/boot/dts/apple/t8132.dtsi:3 and t8132-j604.dts, t8132-j623.dts, t8132-j624.dts, t8132-j713.dts, t8132-j715.dts, t8132-j773g.dts model strings",
+ "sha256": "n/a"
+    },
+    {
+      "id": "S5",
+      "kind": "community-row",
+      "ref": "mil-hwx-compiler receipts/2026-09-05-ane-community/h16g-w8a8-inspection.log; H16G subtype 7, ISA 17",
+      "sha256": "n/a"
+    }
+  ],
+  "ane": {
+    "compatible": {
+      "v": "ane,t8020",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "name": {
+          "v": "engine",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x500000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x2000000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x380700000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x18000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "pmgr_aux",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x380724000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux0",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x3803c0000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x30000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux1",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x211000000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0xff4000",
+          "src": "S3"
+        }
+      },
+      {
+        "name": {
+          "v": "ane_aux2",
+          "src": "S3"
+        },
+        "base": {
+          "v": "0x3882c8000",
+          "src": "S3"
+        },
+        "size": {
+          "v": "0x4000",
+          "src": "S3"
+        }
+      }
+    ],
+    "interrupts": {
+      "v": [
+        629,
+        642
+      ],
+      "src": "S3"
+    },
+    "power_domains": [
+      {
+        "v": "ANE-SYS-V",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP",
+        "src": "S3"
+      }
+    ],
+    "clock_ids": [
+      {
+        "v": 349,
+        "src": "S3"
+      },
+      {
+        "v": 348,
+        "src": "S3"
+      },
+      {
+        "v": 347,
+        "src": "S3"
+      }
+    ],
+    "iommus": {
+      "compatible": {
+        "v": "dart,t8110",
+        "src": "S3"
+      },
+      "reg": [
+        {
+          "v": "0x501800000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501820000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501840000+0xc000",
+          "src": "S3"
+        },
+        {
+          "v": "0x501810000+0x4000",
+          "src": "S3"
+        }
+      ],
+      "interrupt": {
+        "v": 630,
+        "src": "S3"
+      },
+      "sid": {
+        "v": [
+          "0x0a00000000",
+          "0x0f0000000b"
+        ],
+        "src": "S3"
+      },
+      "vm_base": {
+        "v": "0x10000000000",
+        "src": "S3"
+      },
+      "vm_size": {
+        "v": "0x30000000000",
+        "src": "S3"
+      },
+      "page_size": {
+        "v": 16384,
+        "src": "S3"
+      }
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S3"
+    },
+    "reg": [
+      {
+        "v": "0x501800000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501820000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501840000+0xc000",
+        "src": "S3"
+      },
+      {
+        "v": "0x501810000+0x4000",
+        "src": "S3"
+      }
+    ],
+    "sid": {
+      "v": [
+        "0x0a00000000",
+        "0x0f0000000b"
+      ],
+      "src": "S3"
+    },
+    "vm_base": {
+      "v": "0x10000000000",
+      "src": "S3"
+    },
+    "vm_size": {
+      "v": "0x30000000000",
+      "src": "S3"
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S3"
+    },
+    "type": {
+      "v": "dart,t8110",
+      "src": "S3"
+    }
+  },
+  "mailbox": {
+    "v": null,
+    "reason": "No H16 mailbox node in IPSW ADT; the ANE entry names no mailbox reg or protocol. Need macOS ADT/ioreg and kernelcache register-path analysis."
+  },
+  "pmgr": {
+    "v": [
+      {
+        "v": "ANE_SYS@0x380700570 parent=AFISOCNI5",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_MPM@0x38070c000 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_CPU@0x38070c008 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_TD@0x38070c010 parent=ANE_SYS",
+        "src": "S3"
+      },
+      {
+        "v": "ANE_BASE@0x38070c018 parent=ANE_TD",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V (no_ps)",
+        "src": "S3"
+      },
+      {
+        "v": "ANE-SYS-V-PMP (no_ps)",
+        "src": "S3"
+      }
+    ],
+    "src": "S3"
+  },
+  "firmware": {
+    "name": {
+      "v": "h16_ane_fw_leto_j7x.im4p",
+      "src": "S2"
+    },
+    "size": {
+      "v": 1556505,
+      "src": "S2"
+    },
+    "sha256": {
+      "v": "594fb62ef07a628c37e22c9d91b1d96855c72a6471eb9d25a260998c9496904d",
+      "src": "S2"
+    },
+ "format": {
+ "v": "IM4P: SEQUENCE has IM4P/anef/1 plus one OCTET STRING (1556480 bytes) beginning Mach-O MH_MAGIC_64 cffaedfe; no KBAG or additional keybag field; no LZFSE marker observed.",
+ "src": "S2"
+ },
+ "encrypted": {
+ "v": false,
+ "src": "S2"
+ },
+    "loaded_by": {
+      "v": "unknown",
+      "reason": "No iBoot/kernelcache trace yet establishes the H16 loader."
+    }
+  },
+  "kext": {
+    "class": {
+      "v": null,
+      "reason": "No H16 kernelcache kext was extracted or inspected in this pass."
+    },
+    "protocol": {
+      "v": "unknown",
+      "reason": "No H16 kext binary/string or symbol analysis yet."
+    }
+  },
+  "driver_family": {
+    "v": "unknown pending mailbox/firmware probe; H14 ane_t6021-like RTKit/ASC is a working hypothesis only",
+    "src": "S3"
+  },
+  "hwx_generation": {
+    "v": "H16G; CPU subtype 7, ISA 17. mil-hwx-compiler emits and inspects H16G objects; this is compiler evidence, not ANE runtime proof.",
+    "src": "S5"
+  },
+  "state": {
+    "v": "data-only",
+    "src": "S3"
+  }
+}
