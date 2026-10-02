@@ -89,7 +89,7 @@ for chip in UNTESTED + DEFAULT_ON:
 flipped = make_tree()
 p = run(flipped, "t8112", "default-on", "--apply")
 assert p.returncode == 0, p.stderr
-for suite in ("test_ane_dt.py", "test_ane_m2.py"):
+for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py"):
     q = subprocess.run([sys.executable, str(flipped / "tools" / suite)],
                        capture_output=True, text=True, cwd=flipped)
     assert q.returncode == 0, (suite, q.stdout[-2000:], q.stderr[-2000:])
