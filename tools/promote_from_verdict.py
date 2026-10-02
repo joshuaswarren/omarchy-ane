@@ -172,7 +172,8 @@ def propose(verdict):
         title = f"{c['verdict']}: {c['chip']} ({MARKETING.get(c['chip'], c['chip'])}) ANE -> {to}"
         body = ("Automatic promotion-flow PR from the promotion_check verdict.\n\n"
                 f"```\n{chip_text(c)}\n```\n\n{body_block(c)}")
-        found = gh(f"repos/{slug}/pulls?state=open&head={slug.replace('/', '%2F')}:{branch}")
+        found = [p for p in gh(f"repos/{slug}/pulls?state=open&per_page=100")
+                 if p["head"]["ref"] == branch]
         if found:
             n = found[0]["number"]
             gh(f"repos/{slug}/pulls/{n}", "PATCH", {"title": title, "body": body})
