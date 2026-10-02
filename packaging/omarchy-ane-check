@@ -5,8 +5,9 @@
 #                                  device-tree node, the driver built, loaded,
 #                                  bound, and the /dev/accel node. On T602x the
 #                                  driver is ane_t6021, and it also checks the
-#                                  firmware that omarchy-ane-firmware-fetch
-#                                  installs.
+#                                  firmware the kernel loads: the Asahi vendor
+#                                  firmware copy, else the one that
+#                                  omarchy-ane-firmware-fetch installs.
 #   omarchy-ane-check --installed  check that ane.ko and ane_t6021.ko exist
 #                                  for every installed kernel with headers
 #                                  (pacman hook)
@@ -86,9 +87,10 @@ case $soc in
     bad "no omarchy-ane driver supports the $soc ANE"; finish ;;
 esac
 
-# 1. T602x firmware: Linux starts it there, from the file that
+# 1. T602x firmware: Linux starts it there. The kernel loads the Asahi vendor
+#    firmware copy (/usr/lib/firmware/vendor) first, else the file that
 #    omarchy-ane-firmware-fetch installs (90-omarchy-ane-firmware.hook on
-#    T6021).
+#    T6021). fetch --check checks the copy the kernel loads.
 if [[ $mod == ane_t6021 ]]; then
   fwtool=$(tool omarchy-ane-firmware-fetch)
   if [[ -z $fwtool ]]; then

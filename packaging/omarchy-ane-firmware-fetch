@@ -22,9 +22,13 @@ Mach-O payload uncompressed, so no LZFSE decoder is needed.
   omarchy-ane-firmware-fetch --hook            (90-omarchy-ane-firmware.hook)
 
 --root reads the device tree from DIR/sys/... and installs under DIR/usr/lib/
-firmware (for tests). Exit 0: installed, already installed, or not needed.
-Exit 1: refused; nothing was written. --check reads only the installed file:
-exit 0 when it matches the pin. --hook fetches only on a chip whose ANE is on
+firmware (for tests). The kernel loads the Asahi vendor firmware copy
+(usr/lib/firmware/vendor/<name>) before usr/lib/firmware/<name>. A vendor copy
+that matches the pin is enough: nothing is fetched. A vendor copy that does not
+match is a problem, because the driver refuses it and never sees our copy.
+Exit 0: installed, already installed, or not needed. Exit 1: refused; nothing
+was written. --check reads only the installed files: exit 0 when the copy the
+kernel loads matches the pin. --hook fetches only on a chip whose ANE is on
 by default (DEFAULT_ON); what it cannot do there is a note, not an error, and
 the ANE stays off until a fetch succeeds and the Mac reboots.
 """
@@ -60,6 +64,9 @@ NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
 # others are opt-in or not installed); tools/test_ane_m2.py checks that the
 # two agree.
 DEFAULT_ON = ("apple,t6021",)
+# The Asahi initramfs mounts the vendor firmware package (vendorfw on the ESP)
+# here, and the kernel firmware loader searches it before usr/lib/firmware.
+VENDOR = "usr/lib/firmware/vendor"
 TIMEOUT = 30
 
 
@@ -182,24 +189,44 @@ def soc(root):
     return next((c for c in chips if re.fullmatch(r"apple,t\d+", c)), "unknown")
 
 
+def vendor_copy(root, name, size, sha256):
+    """(path, None) when the vendor copy matches the pin, (None, None) when
+    there is none, and (None, problem) when it does not match."""
+    path = root / VENDOR / name
+    try:
+        verify(path.read_bytes(), size, sha256)
+    except FileNotFoundError:
+        return None, None
+    except (OSError, Refuse) as e:
+        return None, (f"{path}: {e}. The kernel loads this vendor copy before {root / 'usr/lib/firmware' / name}, "
+                      "so the driver refuses the firmware. Rebuild the vendor firmware package so that it holds "
+                      "the pinned file or none (sudo asahi-fwupdate), then reboot")
+    return path, None
+
+
 def run(root, hook=False):
+    """Install the firmware. Returns the vendor-copy problem, or None."""
     dt = root / "sys/firmware/devicetree/base"
     chip = soc(root)
     if chip in NO_FETCH:
         print(f"{chip}: iBoot preloads the ANE firmware on M1 chips. Nothing to fetch.")
-        return
+        return None
     if hook and chip not in DEFAULT_ON:
         print(f"{chip}: the ANE is not on by default here. Nothing fetched.")
-        return
+        return None
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
 
     member, name, size, sha256 = FETCH[chip]
+    vendor, shadow = vendor_copy(root, name, size, sha256)
+    if vendor:
+        print(f"{vendor} (Asahi vendor firmware) matches the pin. Nothing to fetch.")
+        return None
     dest = root / "usr/lib/firmware" / name
     try:
         verify(dest.read_bytes(), size, sha256)
         print(f"{dest} is already installed and matches the pin.")
-        return
+        return shadow
     except (OSError, Refuse):
         pass
     parent = dest.parent
@@ -225,6 +252,7 @@ def run(root, hook=False):
     except OSError as e:
         raise Refuse(f"cannot write {dest}: {e.strerror}")
     print(f"installed {dest} ({len(data)} bytes, sha256 {digest})")
+    return shadow
 
 
 def check(root):
@@ -232,6 +260,12 @@ def check(root):
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
     _, name, size, sha256 = FETCH[chip]
+    vendor, shadow = vendor_copy(root, name, size, sha256)
+    if shadow:
+        raise Refuse(shadow)
+    if vendor:
+        print(f"{vendor} (Asahi vendor firmware) matches the pin")
+        return
     dest = root / "usr/lib/firmware" / name
     try:
         verify(dest.read_bytes(), size, sha256)
@@ -246,14 +280,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, default=Path("/"), help="system root (tests)")
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true", help="check the installed file only (no network)")
+    mode.add_argument("--check", action="store_true", help="check the installed files only (no network)")
     mode.add_argument("--hook", action="store_true", help="run from the pacman hook")
     args = ap.parse_args(argv)
     try:
         if args.check:
             check(args.root)
         else:
-            run(args.root, args.hook)
+            shadow = run(args.root, args.hook)
+            if shadow:
+                print(f"omarchy-ane-firmware-fetch: {shadow}", file=sys.stderr)
+                return 0 if args.hook else 1
     except Refuse as e:
         if args.check:
             print(f"omarchy-ane-firmware-fetch: {e}", file=sys.stderr)
