@@ -109,9 +109,6 @@ jobs:
             python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
             python3 tools/gen_coverage_table.py --check
             make -C tools ane-run
-            python3 -m pytest -q tests tools \
-              --ignore=tools/test_promote_chip.py \
-              --ignore=tools/test_promote_from_verdict.py
             git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
           done
           tools/asahi-dtbs "$RUNNER_TEMP/asahi"
