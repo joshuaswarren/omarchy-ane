@@ -1,0 +1,9 @@
+warning: pahole version differs from the one used to build the kernel
+ane_t6021_rtclient_main.c:455:24: warning: variable 't2h_ioq' set but not used [-Wunused-but-set-variable=]
+ane_t6021_rtclient_main.c:455:14: warning: variable 't2h_buf' set but not used [-Wunused-but-set-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]
+0218af8dd525a89f52659ef1e1baf016efb55283e543453d96fae45a5f4a147f  ane/t6021/ane_t6021.ko
+fw_alias_reserved:Lab, T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it (probe refuses unless no-map /reserved-memory nodes cover both); 0 (default) = run the staged copy with iBoot's patches replayed (own memory, the only mode on T6020/T6022). (bool)
+Same 6 W=1 warnings; only the line numbers of the two rtclient_main.c lines differ (453 on main, 455 on the flip: two added comment lines above).

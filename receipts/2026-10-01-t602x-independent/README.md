@@ -17,7 +17,7 @@ UNTESTED opt-ins).
 | `tools/test_t6021_alias_rollback.py`, `test_ane_firmware_fetch.py`, `test_ane_dt.py`, `test_ane_m2.py` | ok |
 | `tools/test_ane_overlays.py` (19 linux-asahi 7.1.13 board DTBs) | ok, 8 overlays, 22 applications; T6020/T6021/T6022 `.dtbo` bytes unchanged |
 | aarch64 module build against linux-asahi 7.1.13-3-2, W=1 | exit 0, no new warning; aliases `apple,t6020-ane`, `apple,t6021-ane`, `apple,t6022-ane` |
-| Device run | NOT RUN. Test plan below. |
+| Device run | Passed on the M2 Max: boots A (reserved) and B (own memory) of the plan below, and a boot with the packaged m1n1 1.6.1; see [2026-10-01-t6021-default-on-gate](../2026-10-01-t6021-default-on-gate/README.md). |
 
 ## What iBoot's preload is
 

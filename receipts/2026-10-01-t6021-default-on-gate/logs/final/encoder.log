@@ -1,0 +1,9 @@
+ports:
+  attention_mask: input slot4 bufferId=5 channel=5 shape=[1, 1, 1, 3000]
+  input_features: input slot5 bufferId=6 channel=6 shape=[1, 1, 3000, 128]
+  linear_217_cast_fp16: output slot6 bufferId=4 channel=4 shape=[1, 1, 375, 640]
+  output_mask_f: output slot7 bufferId=7 channel=7 shape=[1, 1, 1, 375]
+exec ms over 20 calls: min 254.214 p10 254.302 p25 254.331 median 254.365 p75 254.406 p90 254.435 p99 254.906 max 254.906
+unpacked linear_217_cast_fp16 (1, 1, 375, 640) -> /var/tmp/ownmem/win-final-20261002T012151Z/enc/hidden.npy
+linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1
+unpacked output_mask_f (1, 1, 1, 375) -> /var/tmp/ownmem/win-final-20261002T012151Z/enc/mask.npy

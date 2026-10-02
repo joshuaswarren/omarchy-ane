@@ -1,0 +1,8 @@
+lines: 65 vs 65; BOOT-PHASE 44 vs 44
+--- A/A-boot/dmesg-ane.txt
++++ B/B-boot/dmesg-ane.txt
+@@ -7,2 +7,2 @@
+-ane_t6021 H.ane: fwalias: reserved SEG0/SEGi at entry H (H+c4000 H+H, preloaded placement)
+-ane_t6021 H.ane: fwalias: owned heap [H,H) roundtrip verified
++ane_t6021 H.ane: fwload: own memory: iBoot patches replayed (soc H rev H DATA H cpu H wrapper H)
++ane_t6021 H.ane: fwalias: entry H <- N dart pages aliased from fw H (first H, roundtrip OK)

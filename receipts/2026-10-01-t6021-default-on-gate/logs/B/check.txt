@@ -1,0 +1,13 @@
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.0-main-73da8f8)
+  ok    ane_t6021 is loaded (version 0.4.0-main-73da8f8)
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+omarchy-ane-check rc=0
+node=present source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-1-ARCH path=/soc/ane@284000000
+omarchy-ane-dt status rc=0
+/usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+firmware-fetch --check rc=0

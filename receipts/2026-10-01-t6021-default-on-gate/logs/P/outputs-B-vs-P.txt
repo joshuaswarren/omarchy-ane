@@ -1,0 +1,3 @@
+gate output files B vs P: 63 byte-identical, 0 different
+prog_020 t15 B vs P byte-identical
+encoder hidden B vs P equal: True

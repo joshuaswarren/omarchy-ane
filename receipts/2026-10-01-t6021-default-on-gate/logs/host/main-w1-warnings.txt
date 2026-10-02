@@ -1,0 +1,6 @@
+warning: pahole version differs from the one used to build the kernel
+ane_t6021_rtclient_main.c:453:24: warning: variable 't2h_ioq' set but not used [-Wunused-but-set-variable=]
+ane_t6021_rtclient_main.c:453:14: warning: variable 't2h_buf' set but not used [-Wunused-but-set-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]
+ane_t6021.h:622:1: warning: 'ane_t6021_load_sec_name' defined but not used [-Wunused-const-variable=]

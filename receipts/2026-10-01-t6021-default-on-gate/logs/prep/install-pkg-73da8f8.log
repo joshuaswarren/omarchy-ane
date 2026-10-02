@@ -1,0 +1,59 @@
+2026-10-01T23:55:26Z
+/var/tmp/ownmem/ane_t6021-main-73da8f8.ko: OK
+hid_apple.conf
+netconsole.conf
+== module
+/lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko: OK
+0.4.0-main-73da8f8
+== tools and hooks
+build-dtbo: t8103 (enabled): /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+build-dtbo: t6000 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+build-dtbo: t6001 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+build-dtbo: t6002 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+build-dtbo: t8112 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+build-dtbo: t6020 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+build-dtbo: t6021 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+build-dtbo: t6021 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+build-dtbo: t6022 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+== old overlay directory out (backup /var/tmp/ownmem/pre/old-dtb-overlays)
+== opt-in: ane-t6021 out
+uboot-serial-stdin-t6021
+== what 90-omarchy-ane-firmware.hook runs
+/usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho is already installed and matches the pin.
+/usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+== omarchy-ane-dt apply
+omarchy-ane-dt: 7.1.13-3-1-ARCH: t6021-j414c.dtb copy is current
+stock=ea6c9a8a347bc4813719717455442a1635339113e57fc677acbd430b3b257667
+overlays=a73436f4b8496de416af6a0b74f14ce4e2d6ae8b27cc341587e662d2a269bcc9
+c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b  /var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+e21f0c67da72602646554236317da67fe0e2b0abbfbcc26ea22706192ecf3fa8  /usr/bin/omarchy-ane-dt
+5eed69f6a4ee197456fa09718fba4a6780902f24908a195a310239e5406765d0  /usr/bin/omarchy-ane-check
+430d38c781865223a4962097c08a8a71083ce7cd256a6441c7f2f270f35b59ba  /usr/bin/omarchy-ane-firmware-fetch
+9e7901ec5aea63adcb54d3c89d3840acc5f6ff26104bbf6c45561f43f9ee1187  /usr/lib/omarchy-ane/update-m1n1-dtbs
+7f19a2cb1a84a8da98ad7d2909550423653c882e2ed75b2cba8d10593252f5fc  /usr/share/libalpm/hooks/90-omarchy-ane-dt-remove.hook
+bef8ce7539f574dd0d8438926b1a9209e084a9fa4de47d6e6deb42ed48a1b79b  /usr/share/libalpm/hooks/90-omarchy-ane-dt.hook
+e7dd8233b28531faef3b9ea270a97a2e83811c5eee2cd322f9b0822aba5602b3  /usr/share/libalpm/hooks/90-omarchy-ane-firmware.hook
+9491d8a1e2824db9a2e2d0320b47fb96458e29f1a7f3aef351c05ce2f07b068c  /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+63d6872aacd5658c2455c168ae00f1ced223112dde7685f85da4eb89b62aa732  /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+2bd4ceca54da1468ada20e43f5720bf61cc95aa4849b0538b08800301eeefd28  /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+78646647ad1108591b3bbaf60adde4f0763dcc63aa2b530e70f1299da3c323ae  /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+734b2daa132ac933a7097761c027e5fa4c4fbb07c1c30afdaac0a33641997d9a  /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+da22067888090c6d269d5ed098c9b6fa122a1860df4d30ae67bc4771cc5e8e32  /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+0bfa023c500068ba39ccff6b8aa98eab3dede8437d20f7d73be685534a0929a3  /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+8037475416a4d0092b05856a10afd7dabfc5ad154a533c1e6e22652c92746a58  /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+35d88554e661869e8fdadf4bc8c6a40d0e6f39637ee0c2ecd802f35c03b12cc2  /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+3a12f3b916320ccafab4632bd30f8c207008500041ef194a973fa148b8f47d30  /etc/default/update-m1n1
+e77c3c75aed66b1ca03c6ab725230458055c4f37ffa887f1e24d5b7365cf2b52  /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin
+DTB copy bytes unchanged (c31a54c3): no ESP write
+node=present source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-1-ARCH path=/soc/ane@284000000
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.0-main-73da8f8)
+  ok    ane_t6021 is loaded (version 0.4.0)
+  note  the loaded ane_t6021 differs from the installed ane_t6021.ko. Reboot to load the new one. Do not rmmod ane_t6021.
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+INSTALL-OK

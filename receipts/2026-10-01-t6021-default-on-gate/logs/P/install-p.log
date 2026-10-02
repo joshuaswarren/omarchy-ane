@@ -1,0 +1,18 @@
+2026-10-02T00:52:57Z
+/var/tmp/ownmem/ane_t6021-main-b6ef8f1.ko: OK
+/var/tmp/ownmem/P/boot.bin.P: OK
+/var/tmp/ownmem/pre/boot.bin.62ba3010.bak: OK
+/boot/efi/m1n1/boot.bin: OK
+== module
+/lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko: OK
+0.4.0-main-b6ef8f1
+== ESP backup of the lab boot.bin
+/boot/efi/m1n1/boot.bin.62ba3010.bak: OK
+== ESP install
+/boot/efi/m1n1/boot.bin: OK
+/boot/efi/m1n1/boot.bin: OK
+-rwx------ 1 root root 6215197 Oct  1 19:52 /boot/efi/m1n1/boot.bin
+-rwx------ 1 root root 6280733 Oct  1 11:53 /boot/efi/m1n1/boot.bin.62ba3010.bak
+/dev/nvme0n1p4  499M  252M  247M  51% /boot/efi
+2026-10-02T00:53:43Z
+INSTALL-P-OK
