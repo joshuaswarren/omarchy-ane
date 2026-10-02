@@ -101,6 +101,13 @@
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
+/*
+ * ane_stats sysfs attribute and ane_timeline fops live in
+ * ane/ane_stats_show.c, which links into this module.
+ */
+extern struct device_attribute dev_attr_ane_stats;
+extern const struct file_operations ane_timeline_fops;
+
 /* Doorbell (IPI) block, engine + 0x1844000: set +0, pending +0x8000,
  * ack +0xc000 (kext aneInterruptHandler reads +0x184c000 and writes
  * +0x1850000 with no SoC branch, receipts/2026-10-01-t8112-ane). */
@@ -2291,7 +2298,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			ane_stats_counters_init(&ane->fw->stats_ctrs,
 					       &ane->fw->stats_ring,
 					       ANE_STATS_RING_ORDER_DEFAULT);
-			ane->fw->stats_slots = ane->fw->stats_ring.slots;
+			/* counters_init zeroes the ring including the
+			 * slots pointer; attach the preallocated array
+			 * after it (the order ane_drv.c uses). */
+			ane->fw->stats_ring.slots = ane->fw->stats_slots;
 			/* Sysfs ane_stats: per-device file in the
 			 * module's existing sysfs group (the same group
 			 * that exposes wedged/reset today). */

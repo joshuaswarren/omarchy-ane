@@ -10,12 +10,12 @@
  * driver pair.
  */
 
-#include <linux/debugfs.h>
 #include <linux/device.h>
-#include <linux/seq_file.h>
-#include <linux/string.h>
-#include <linux/sysfs.h>
 #include <linux/export.h>
+#include <linux/fs.h>
+#include <linux/module.h>
+#include <linux/seq_file.h>
+#include <linux/sysfs.h>
 
 #include "ane_stats.h"
 
@@ -84,16 +84,22 @@ static int ane_timeline_show(struct seq_file *m, void *v)
 	}
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(ane_timeline);
-EXPORT_SYMBOL_GPL(ane_timeline_fops);
+
+static int ane_timeline_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ane_timeline_show, inode->i_private);
+}
 
 /*
- * ane_timeline debugfs file (per-submission ring). Header line gives
- * fields and labels tmst as a raw tick (unit unknown on ane.ko; 0 =
- * unavailable on ane_t6021). Lines are space-separated integers:
- *   seq submit_ns start_ns end_ns tasks rc tmst
- * The reader is built so torn reads are detected via the per-slot
- * seqlock; if seq is odd the line is omitted. Format stays
- * parseable: unknown keys pass through and unknown fields are skipped.
+ * Non-static on purpose: ane_drv.c and ane_t6021_rtclient_main.c link
+ * this TU and open the file through this symbol. DEFINE_SHOW_ATTRIBUTE
+ * emits the fops static, so the cross-file extern would not link.
  */
-EXPORT_SYMBOL_GPL(ane_timeline_show);
+const struct file_operations ane_timeline_fops = {
+	.owner		= THIS_MODULE,
+	.open		= ane_timeline_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+EXPORT_SYMBOL_GPL(ane_timeline_fops);
