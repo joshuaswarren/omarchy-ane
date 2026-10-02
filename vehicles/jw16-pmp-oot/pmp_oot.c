@@ -13,11 +13,20 @@
  *
  * Staging (module param pmp_stage, cumulative):
  *   0 = A: in-tree behaviour only (class-0/2 messages logged, not answered)
- *   1 = B: + answer Startup with Configure (64 KiB coherent shmem)
- *   2 = C: + after Configure_Ack: PM PING, then cmd-6 SET-DVFS-STATES x16
+ *   1 = B: + answer a firmware Startup with Configure (64 KiB coherent shmem)
  *   3 = D: + PTD SOC-DEV-PS-REQ arm (ANE bits) + PTD row dump
- * pmp_map113=1 (own cycle): + map113 DVFS_ON write-1 attempt (Pmp5
- * discriminator; the page has a silent external-abort fixup on this kernel).
+ * PM-class engagement ladder (Jw16PmpOot2; the firmware never sends Startup
+ * under Linux, so the stages act WITHOUT waiting for one - one insmod runs
+ * C1..C4 sequentially, NO rmmod until close-out):
+ *   C1 (pmp_c1): +pmp_c1_delay_ms after probe send Configure
+ *       0x100000000000 | shmem_dva; retry every pmp_c1_retry_ms up to
+ *       pmp_c1_retries times without a Configure_Ack.
+ *   C2 (pmp_c2): then PM PING cmd 0 (expect ack 0x201).
+ *   C3 (pmp_c3): REFUSED - the CISP_CMD_PMP_CTRL_SET scratch value layout
+ *       (0x28e3d0868) is not pinnable offline (Jw16PmpOot2 entry); no guesses.
+ *   C4 (pmp_c4): then cmd-6 SET-DVFS-STATES x16 (nub dvfs-domain table).
+ *   C5 is stage-script side (proven pmp_dvfs.ko + granted ladder), gated on an
+ *       ack being seen; pmp_map113=1 keeps only the raw write-1 discriminator.
  */
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -100,6 +109,34 @@ static bool pmp_map113;
 module_param(pmp_map113, bool, 0444);
 MODULE_PARM_DESC(pmp_map113, "attempt map113 DVFS_ON write-1 (stage D probe)");
 
+static bool pmp_c1 = true;
+module_param(pmp_c1, bool, 0444);
+MODULE_PARM_DESC(pmp_c1, "C1: proactive class-0 Configure without a Startup");
+
+static bool pmp_c2 = true;
+module_param(pmp_c2, bool, 0444);
+MODULE_PARM_DESC(pmp_c2, "C2: PM PING cmd 0 after C1 (expect ack 0x201)");
+
+static bool pmp_c3;
+module_param(pmp_c3, bool, 0444);
+MODULE_PARM_DESC(pmp_c3, "C3: refused - ISP scratch layout unpinnable offline");
+
+static bool pmp_c4 = true;
+module_param(pmp_c4, bool, 0444);
+MODULE_PARM_DESC(pmp_c4, "C4: cmd-6 SET-DVFS-STATES for all nub domains");
+
+static unsigned int pmp_c1_delay_ms = 3000;
+module_param(pmp_c1_delay_ms, uint, 0444);
+MODULE_PARM_DESC(pmp_c1_delay_ms, "delay after probe before the first C1 send");
+
+static unsigned int pmp_c1_retry_ms = 1000;
+module_param(pmp_c1_retry_ms, uint, 0444);
+MODULE_PARM_DESC(pmp_c1_retry_ms, "C1 retry spacing without a Configure_Ack");
+
+static unsigned int pmp_c1_retries = 5;
+module_param(pmp_c1_retries, uint, 0444);
+MODULE_PARM_DESC(pmp_c1_retries, "C1 retry count without a Configure_Ack");
+
 static u64 pmp_ane_bits = BIT(10) | BIT(31);	/* ANE_SYS id1=11, ANE1_SYS id1=32 */
 module_param(pmp_ane_bits, ullong, 0444);
 MODULE_PARM_DESC(pmp_ane_bits, "SOC-DEV-PS-REQ bitmask to arm");
@@ -137,8 +174,14 @@ struct pmp_dev {
 	/* Configure shmem */
 	dma_addr_t shmem_dma;
 	void *shmem;
+	u64 config_word;
 
-	bool ping_sent, ping_acked, dvfs_sent, ptd_armed;
+	/* PM-class engagement ladder (C1..C4) */
+	bool c1_sent, c2_sent, c4_sent, config_acked, ping_acked, ladder_done;
+	unsigned int c1_retries;
+	struct delayed_work ladder_work;
+
+	bool ptd_armed;
 	struct delayed_work ptd_work;
 
 	spinlock_t report_lock;	/* guards map113/PTD cycles vs remove */
@@ -425,7 +468,7 @@ static u64 handle_set_ioreg(struct pmp_dev *p, u64 index)
 }
 
 /* ---- class 0 Configure handshake ---- */
-static u64 handle_startup(struct pmp_dev *p)
+static u64 configure_build(struct pmp_dev *p, const char *why)
 {
 	__le64 *maps;
 	int i;
@@ -458,13 +501,84 @@ static u64 handle_startup(struct pmp_dev *p)
 	}
 	p->shmem = shmem;
 	p->shmem_dma = dma;
+	p->config_word = ((u64)OPC_STARTUP + 1) << OPC_SHIFT |
+			 (dma & MSG_IOVA_MASK);
 	mutex_unlock(&p->lock);
-	dev_info(p->dev, "PMP Startup -> Configure shmem dva %#llx\n",
-		 (u64)dma);
-	return ((u64)OPC_STARTUP + 1) << OPC_SHIFT | (dma & MSG_IOVA_MASK);
+	dev_info(p->dev, "%s -> Configure shmem dva %#llx\n", why, (u64)dma);
+	return p->config_word;
 }
 
-/* ---- PM class (stage C) ---- */
+static u64 handle_startup(struct pmp_dev *p)
+{
+	return configure_build(p, "PMP Startup");
+}
+
+static void send_dvfs_states(struct pmp_dev *p);
+
+/* ---- PM-class engagement ladder (C1..C4, no Startup needed) ---- */
+static void ladder_work_fn(struct work_struct *work)
+{
+	struct pmp_dev *p = container_of(work, struct pmp_dev, ladder_work.work);
+	u64 ts;
+
+	if (p->ladder_done)
+		return;
+
+	if (!p->c1_sent) {
+		p->c1_sent = true;
+		p->c1_retries = pmp_c1_retries;
+		if (pmp_c1) {
+			u64 word = configure_build(p, "C1: proactive (no Startup)");
+
+			if ((s64)word >= 0 && !pmp_send(p, PMP_ENDPOINT, word))
+				dev_info(p->dev,
+					 "C1: Configure %#llx sent; %u retries every %u ms until ack\n",
+					 word, p->c1_retries,
+					 pmp_c1_retry_ms);
+		}
+		schedule_delayed_work(&p->ladder_work,
+				      msecs_to_jiffies(pmp_c1_retry_ms));
+		return;
+	}
+	if (!p->config_acked) {
+		if (p->c1_retries) {
+			p->c1_retries--;
+			dev_info(p->dev, "C1: no Configure_Ack, retry %u/%u\n",
+				 pmp_c1_retries - p->c1_retries,
+				 pmp_c1_retries);
+			pmp_send(p, PMP_ENDPOINT, p->config_word);
+			schedule_delayed_work(&p->ladder_work,
+					      msecs_to_jiffies(pmp_c1_retry_ms));
+			return;
+		}
+		dev_info(p->dev, "C1: retry window exhausted\n");
+	}
+	if (!p->c2_sent) {
+		p->c2_sent = true;
+		if (pmp_c2) {
+			ts = div_u64(ktime_get_ns(), NSEC_PER_MSEC) & 0xffffffff;
+
+			if (!pmp_send(p, PMP_ENDPOINT,
+				      PM_MSG(0, 0, 0, ts >> 16, ts & 0xffff)))
+				dev_info(p->dev,
+					 "C2: PM PING sent (expect ack 0x201), ts %#llx\n",
+					 ts);
+		}
+		schedule_delayed_work(&p->ladder_work, msecs_to_jiffies(1000));
+		return;
+	}
+	/* C4: after C2 (ping acked or the 1 s observation window) */
+	if (pmp_c4 && !p->c4_sent) {
+		p->c4_sent = true;
+		send_dvfs_states(p);
+	}
+	p->ladder_done = true;
+	dev_info(p->dev,
+		 "C1..C4 ladder complete: config_acked=%d ping_acked=%d cmd6_sent=%d\n",
+		 p->config_acked, p->ping_acked, p->c4_sent);
+}
+
+/* ---- PM class: C4 cmd-6 SET-DVFS-STATES (nub dvfs-domain table) ---- */
 static void send_dvfs_states(struct pmp_dev *p)
 {
 	const u8 *dom;
@@ -573,27 +687,23 @@ static void pmp_recv_message(void *cookie, u8 ep, u64 msg)
 		break;
 	case OPC_STARTUP:
 		if (pmp_stage >= 1) {
-			reply = handle_startup(p);
+			u64 reply = handle_startup(p);
+
+			/* the answer IS the first Configure: seed the ladder */
+			if ((s64)reply >= 0 && !p->c1_sent) {
+				p->c1_sent = true;
+				p->c1_retries = pmp_c1_retries;
+			}
 		} else {
 			dev_info(p->dev,
 				 "PMP Startup (class0) seen, stage A: not answering\n");
-			return;
 		}
 		break;
 	case OPC_CONFIGURE_ACK:
+		p->config_acked = true;
 		dev_info(p->dev,
-			 "PMP Configure ack: fw memory base %#llx raw %#llx\n",
+			 "C1: Configure_Ack: fw memory base %#llx raw %#llx\n",
 			 (msg & 0x3ffffff) << 12, msg);
-		if (pmp_stage >= 2 && !p->ping_sent) {
-			u64 ts = div_u64(ktime_get_ns(), NSEC_PER_MSEC) &
-				 0xffffffff;
-
-			p->ping_sent = true;
-			if (!pmp_send(p, PMP_ENDPOINT, PM_MSG(0, 0, 0, ts >> 16, ts & 0xffff)))
-				return;	/* wait for the ack before cmd6 */
-			send_dvfs_states(p);
-			p->dvfs_sent = true;
-		}
 		return;
 	case OPC_PM:
 	case OPC_PM_CMD16:
@@ -604,9 +714,10 @@ static void pmp_recv_message(void *cookie, u8 ep, u64 msg)
 			 (unsigned)((msg >> 32) & 0xff),
 			 (unsigned)((msg >> 16) & 0xffff),
 			 (unsigned)(msg & 0xffff));
-		if (PM_CMD(msg) == 1 && pmp_stage >= 2 && !p->dvfs_sent) {
-			send_dvfs_states(p);
-			p->dvfs_sent = true;
+		if (PM_CMD(msg) == 1) {
+			p->ping_acked = true;
+			dev_info(p->dev, "C2: PING acked (0x201) raw %#llx\n",
+				 msg);
 		}
 		return;
 	default:
@@ -660,6 +771,7 @@ static int pmp_oot_probe(struct platform_device *pdev)
 	mutex_init(&p->lock);
 	spin_lock_init(&p->report_lock);
 	INIT_DELAYED_WORK(&p->ptd_work, ptd_work_fn);
+	INIT_DELAYED_WORK(&p->ladder_work, ladder_work_fn);
 	platform_set_drvdata(pdev, p);
 
 	p->pmp = devm_platform_ioremap_resource_byname(pdev, "pmp");
@@ -715,6 +827,12 @@ static int pmp_oot_probe(struct platform_device *pdev)
 				 PMP_CTRL_ENDPOINT, ret);
 	}
 	dev_info(dev, "apple_pmp_oot: probe done (stage %u)\n", pmp_stage);
+	if (pmp_c3)
+		dev_info(dev,
+			 "C3 refused: ISP scratch 0x28e3d0868 value layout unpinnable offline (Jw16PmpOot2); not writing\n");
+	if (pmp_c1 || pmp_c2 || pmp_c4)
+		schedule_delayed_work(&p->ladder_work,
+				      msecs_to_jiffies(pmp_c1_delay_ms));
 	if (pmp_stage >= 3)
 		schedule_delayed_work(&p->ptd_work,
 				      msecs_to_jiffies(3000));
@@ -730,6 +848,7 @@ static void pmp_oot_remove(struct platform_device *pdev)
 	struct pmp_dev *p = platform_get_drvdata(pdev);
 	int i;
 
+	cancel_delayed_work_sync(&p->ladder_work);
 	cancel_delayed_work_sync(&p->ptd_work);
 	if (p->rtk) {
 		apple_rtkit_shutdown(p->rtk);
