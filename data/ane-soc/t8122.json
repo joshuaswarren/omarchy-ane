@@ -18,7 +18,7 @@
   "sources": [
     {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: DeviceTree.j433ap.adt through DeviceTree.j615ap.adt; receipt artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt; sha256 of adt under artifacts/AneAllSoc/every-soc/SHA256SUMS"},
     {"id": "S2", "kind": "buildmanifest", "ref": "macOS 27.0 26A428 BuildManifest.plist, ProductBuildVersion 26A428; receipt artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt"},
-    {"id": "S3", "kind": "kernelcache-kext", "ref": "not fetched this run; ANE class names from the H15-class kernelcache: macOS 27.0 26A428 kernelcache.im4p (kernelcache.release.mac1?) — see not_verified"},
+    {"id": "S3", "kind": "kernelcache-kext", "ref": "macOS 27.0 26A428 M3-class kernelcache not fetched; class/protocol are not known in this run."},
     {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334; arch/arm64/boot/dts/apple/t8122.dtsi, t8122-pmgr.dtsi, t6030.dtsi, t6031.dtsi, t6034.dtsi (read-only via git show REF:path)"},
     {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 (private) + receipts/2026-09-05-ane-community/anecompile-cross-target.json (h15 = subtype 6, hwx_bytes=49152, ISA 17/subtype 7)"}
   ],
@@ -56,7 +56,7 @@
     "reg": [
       {"name": "mbox", "base": "0x311050000", "size": "0x4000", "src": "S1"}
     ],
-    "interrupts": {"v": [506, 508, 509, 507, 524], "src": "S1 (the 5 interrupts of the ane node, ordered as in ADT: the 506/508/509/507/524 set is a best-guess mapping to the 4 doorbells + the ane ring; not directly labelled in the summary. Need full ADT re-extraction.)"}
+    "interrupts": {"v": [506, 508, 509, 507, 524], "src": "S1 (raw `ane` node interrupt cells; function mapping not established)"}
   },
   "pmgr": {
     "ANE_SYS": {"v": "0x2d0700438", "src": "S1"},
@@ -77,9 +77,9 @@
     "loaded_by": {"v": {"IsFUDFirmware": true, "IsLoadedByiBoot": true, "IsLoadedByiBootStage1": false, "IsiBootEANFirmware": false}, "src": "S2 (BuildManifest.plist BuildIdentities j433ap/j434ap/j504ap/j613ap/j615ap, Manifest.ANE.Info)"}
   },
   "kext": {
-    "class": {"v": null, "reason": "macOS 27.0 26A428 kernelcache not fetched; the kext binary name is the AppleHxxANEInterface family (T6001 = AppleH11ANEInterface per AneQosMap artifact; the M3 class is presumably AppleH15ANEInterface or AppleH15ANEIn — see AneQosMap pattern). Not verified."},
-    "protocol": {"v": null, "reason": "kext strings not extracted this run; the M2 kext exposes CSNE_CMD_* and ANEProgramLegacyResource class symbols (T8112/22G74 kext: 6.602.1). The M3 kext is the same family but possibly with ascwrap-v6 mailbox doorbells. Not verified."},
-    "host_interface": {"v": "AppleHxxANEInterface-x.y.z-mac1N-26A428", "src": "S2 (assumed pattern; needs verification)"}
+    "class": {"v": null, "reason": "macOS 27.0 26A428 kernelcache not fetched; no H15 ANE kext binary name extracted."},
+    "protocol": {"v": null, "reason": "macOS 27.0 26A428 kernelcache not fetched; no CSNE_CMD, ascwrap, or DART host-protocol strings extracted."},
+    "host_interface": {"v": null, "reason": "The macOS 27.0 M3 kernelcache was not fetched; host interface version not extracted."}
   },
   "driver_family": {
     "v": "ane_t6021's RTKit/firmware model — extended",
