@@ -11,7 +11,9 @@
  */
 
 #include <linux/debugfs.h>
+#include <linux/device.h>
 #include <linux/seq_file.h>
+#include <linux/string.h>
 #include <linux/sysfs.h>
 #include <linux/export.h>
 
