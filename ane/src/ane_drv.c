@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only OR MIT
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* Copyright 2022 Eileen Yoon <eyn@gmx.com> */
 
 #include <linux/atomic.h>
