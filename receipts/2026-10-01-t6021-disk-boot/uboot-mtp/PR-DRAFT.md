@@ -1,7 +1,11 @@
 # Draft PR for AsahiLinux/u-boot — DO NOT OPEN before the hardware test passes
 
-Head: `joshuaswarren/u-boot:mtp-kbd-filter`. Base: `AsahiLinux/u-boot:asahi`
-(`b33034a515a0`). Commit 1 is patch A. Commit 2 (patch B) goes in only if the
+Head: `joshuaswarren/aurora-u-boot:mtp-kbd-filter-a`. Base: `AsahiLinux/u-boot:asahi`
+(`b33034a515a0`). The old fork `joshuaswarren/u-boot` is archived (2026-10-02);
+if this PR is opened after a hardware pass, open a fresh fork of AsahiLinux/u-boot
+and cherry-pick the commit from `joshuaswarren/aurora-u-boot`.
+
+Commit 1 is patch A. Commit 2 (patch B) goes in only if the
 hardware test shows that the input is a keyboard report queued at start.
 Fill in the "Hardware test" section with the real results before opening.
 Confirm the `Signed-off-by` lines with Joshua first.
