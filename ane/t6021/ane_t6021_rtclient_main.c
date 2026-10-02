@@ -101,24 +101,6 @@
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
-/*
- * ane_stats sysfs attribute wrapper. The counters are fetched through
- * the real drvdata type (struct ane_rtclient *, counters at
- * ->fw->stats_ctrs) and formatted by the typed accessor
- * ane_stats_emit() (ane/include/ane_stats.h), which never sees the
- * device pointer. ane_timeline_fops lives in ane/ane_stats_show.c.
- */
-static ssize_t ane_t6021_stats_show(struct device *dev,
-				    struct device_attribute *attr, char *buf)
-{
-	struct ane_rtclient *ane = dev_get_drvdata(dev);
-
-	return ane_stats_emit(buf, &ane->fw->stats_ctrs);
-}
-static DEVICE_ATTR_RO(ane_stats);
-
-extern const struct file_operations ane_timeline_fops;
-
 /* Doorbell (IPI) block, engine + 0x1844000: set +0, pending +0x8000,
  * ack +0xc000 (kext aneInterruptHandler reads +0x184c000 and writes
  * +0x1850000 with no SoC branch, receipts/2026-10-01-t8112-ane). */
@@ -1918,6 +1900,25 @@ out:
 	mutex_unlock(&ane_rtclient_pd_lock);
 	return err;
 }
+
+/*
+ * ane_stats sysfs attribute. The counters are fetched through the real
+ * drvdata type (struct ane_rtclient *, counters at ->fw->stats_ctrs)
+ * and formatted by the typed accessor ane_stats_emit()
+ * (ane/include/ane_stats.h), which never sees the device pointer.
+ * Defined here because struct ane_rtclient is complete at this point;
+ * ane_timeline_fops lives in ane/ane_stats_show.c.
+ */
+extern const struct file_operations ane_timeline_fops;
+
+static ssize_t ane_stats_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct ane_rtclient *ane = dev_get_drvdata(dev);
+
+	return ane_stats_emit(buf, &ane->fw->stats_ctrs);
+}
+static DEVICE_ATTR_RO(ane_stats);
 
 static int ane_rtclient_probe(struct platform_device *pdev)
 {
