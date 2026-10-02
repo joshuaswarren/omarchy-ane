@@ -97,6 +97,7 @@
 
 #include "ane_t6021.h"
 #include "ane_t6021_boot.h"
+#include "ane_t6021_fwcmd.h"
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
@@ -1574,6 +1575,84 @@ module_param_cb(fw_perf_mode, &ane_t6021_perf_mode_ops, &fw_perf_mode, 0644);
 MODULE_PARM_DESC(fw_perf_mode,
 		 "Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent");
 
+/* fw_dsid_set: replicate the macOS 13.5 power-on CSNE_CMD sequence
+ * (McacheDriverClient::powerOnMcacheRequest, T6021 ane-type 0xa0;
+ * receipts/2026-10-02-ane-dsid): 0x26 MCACHE_SIZE_GET (reply logged),
+ * then with fw_dsid_defaults=1 0x2e ANE_DEFAULT_SETTING_SET
+ * {regId=4,0x33},{regId=3,0xe}, then 0x25 DSID_SET with this dsid —
+ * once, after CONFIG_GET and before any program load (the 13.5 fw
+ * asserts !isProgramLoaded for 0x25/0x2e). macOS takes the dsid from
+ * the MCC (kANE_Victims = 9); Linux programs no MCC, so the operator
+ * pins the value. -1 = off (default); 0..255 = the 8-bit TM field at
+ * 0x285c2046c bits [17:10]. A failed step logs and aborts (probe then
+ * refuses the DRM device, same as a CONFIG_GET failure); no retries. */
+static int fw_dsid_set = -1;
+static bool fw_dsid_defaults;
+
+static int ane_t6021_dsid_set_param(const char *val,
+				    const struct kernel_param *kp)
+{
+	int v, ret;
+
+	ret = kstrtoint(val, 0, &v);
+	if (ret)
+		return ret;
+	if (v < -1 || v > 0xff)
+		return -EINVAL;
+	return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops ane_t6021_dsid_ops = {
+	.set = ane_t6021_dsid_set_param,
+	.get = param_get_int,
+};
+module_param_cb(fw_dsid_set, &ane_t6021_dsid_ops, &fw_dsid_set, 0444);
+MODULE_PARM_DESC(fw_dsid_set,
+		 "Send the 13.5 power-on CSNE_CMD sequence ending in DSID_SET with this dsid 0-255 before the first program load (-1 = off, default; T602x only)");
+module_param(fw_dsid_defaults, bool, 0444);
+MODULE_PARM_DESC(fw_dsid_defaults,
+		 "With fw_dsid_set >= 0: also send ANE_DEFAULT_SETTING_SET {regId=4,0x33},{regId=3,0xe} (macOS 13.5 values; default off)");
+
+static int ane_rtclient_dsid_sequence(struct ane_rtclient *ane)
+{
+	struct ane_legacy_buffer *command = ane->cmd_buf;
+	int ret;
+
+	if (!command)
+		return -ENODEV;
+
+	memset(command->cpu, 0, SZ_16K);
+	ane_fwcmd_mcache_size_get(command->cpu);
+	ret = ane_rtclient_legacy_exchange(ane, command,
+					   ANE_FWCMD_SIZE_GET_LEN,
+					   ANE_FWCMD_MCACHE_SIZE_GET, 1, 3000);
+	dev_info(ane->dev, "fw MCACHE_SIZE_GET reply %#x result=%d\n",
+		 READ_ONCE(((u32 *)command->cpu)[2]), ret);
+	if (ret)
+		return ret;
+
+	if (fw_dsid_defaults) {
+		memset(command->cpu, 0, SZ_16K);
+		ane_fwcmd_default_setting_set(command->cpu);
+		ret = ane_rtclient_legacy_exchange(ane, command,
+						   ANE_FWCMD_DEFSETTING_LEN,
+						   ANE_FWCMD_DEFAULT_SETTING_SET,
+						   1, 3000);
+		dev_info(ane->dev, "fw ANE_DEFAULT_SETTING_SET result=%d\n",
+			 ret);
+		if (ret)
+			return ret;
+	}
+
+	ane_fwcmd_dsid_set(command->cpu, (u32)fw_dsid_set);
+	ret = ane_rtclient_legacy_exchange(ane, command,
+					   ANE_FWCMD_DSID_SET_LEN,
+					   ANE_FWCMD_DSID_SET, 1, 3000);
+	dev_info(ane->dev, "fw DSID_SET dsid=%d result=%d\n", fw_dsid_set,
+		 ret);
+	return ret;
+}
+
 static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 				       struct drm_file *file)
 {
@@ -2151,10 +2230,14 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				cfg_err = -ENOMEM;
 			}
 		}
+		/* Before the DRM node exists, so before any program
+		 * load (the fw asserts !isProgramLoaded for 0x25/0x2e). */
+		if (!cfg_err && fw_dsid_set >= 0)
+			cfg_err = ane_rtclient_dsid_sequence(ane);
 		ane->boot_done = true;
 		if (cfg_err) {
 			dev_err(dev,
-				"install: CONFIG_GET failed (%d) — refusing to register DRM device (ioctls would run on an unproven ring)\n",
+				"install: boot command failed (%d) — refusing to register DRM device (ioctls would run on an unproven ring)\n",
 				cfg_err);
 			if (!ane->held) {
 				pm_runtime_put_sync_suspend(dev);

@@ -29,9 +29,13 @@ test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_libane_ioctl.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl
+test_ane_fwcmd: test_ane_fwcmd.c ../ane/t6021/ane_t6021_fwcmd.h
+	$(CC) $(CFLAGS) -o $@ test_ane_fwcmd.c
+
+check: ane-selfcheck test_libane_ioctl test_ane_fwcmd
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
+	./test_ane_fwcmd
 
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl
+	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_fwcmd
