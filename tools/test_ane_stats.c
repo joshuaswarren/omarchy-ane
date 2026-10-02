@@ -748,6 +748,89 @@ static int test_model_check(void)
 	return fails ? 1 : 0;
 }
 
+/* ---- Begin-internal step model: the drain-inside-begin race. ----
+ *
+ * The single-threaded real begin() cannot interleave, so this harness
+ * splits begin() into its atomic steps and lets the interleaving
+ * driver run the previous period's drain between them. PRE latches
+ * from max_end before the 0->TRANS cmpxchg (the pre-fix order); POST
+ * latches after winning it (the fix). Times: A = [1000,2000],
+ * B = [1500,2500] - overlapping windows, so the union is 1500 and any
+ * period overlap double-counts toward 2000.
+ */
+enum mb_step {
+	MB_B_LATCH,   /* read max_end for the latch candidate */
+	MB_B_TRANS,   /* win 0->TRANS, write latch, inflight = 1 */
+	MB_B_FEED,    /* completion: feed end into max_end */
+	MB_B_DRAIN,   /* completion: fold period A, inflight = 0 */
+};
+
+static int mb_latch_post; /* 0 = pre-fix order, 1 = post-fix order */
+
+static uint64_t mb_busy;
+
+static void mb_run(const int *steps, int n, int post)
+{
+	struct fixture f;
+
+	fx_init(&f);
+	mb_busy = 0;
+	mb_latch_post = post;
+	for (int i = 0; i < n; i++) {
+		uint64_t s;
+
+		switch (steps[i]) {
+		case MB_B_LATCH:
+			/* Pre-fix reads the candidate here; post-fix
+			 * ignores it (re-read after the transition). */
+			break;
+		case MB_B_TRANS:
+			if (post)
+				s = 2000ull; /* sees A's feed */
+			else
+				s = 0ull;    /* pre-drain max_end */
+			if (s < 1500ull)
+				s = 1500ull;
+			ane_stats_atomic64_set_release(&f.ctrs.last_busy_end, s);
+			ane_stats_atomic_set_release(&f.ctrs.inflight, 1u);
+			break;
+		case MB_B_FEED:
+			ane_stats_atomic64_max(2000ull, &f.ctrs.max_end);
+			break;
+		case MB_B_DRAIN:
+			ane_stats_atomic64_add(2000ull - 1000ull, &f.ctrs.busy_ns);
+			break;
+		}
+	}
+	/* B's completion folds [latch, 2500]. */
+	{
+		uint64_t l = ane_stats_atomic64_read(&f.ctrs.last_busy_end);
+
+		mb_busy = ane_stats_atomic64_read(&f.ctrs.busy_ns) +
+			  (2500ull - l);
+	}
+}
+
+static int test_drain_inside_begin(void)
+{
+	/* A drains between B's latch read and B's transition. */
+	const int race[] = { MB_B_LATCH, MB_B_FEED, MB_B_DRAIN, MB_B_TRANS };
+	const int nobrace[] = { MB_B_FEED, MB_B_DRAIN, MB_B_LATCH, MB_B_TRANS };
+	uint64_t pre, post;
+
+	mb_run(race, 4, 0);
+	pre = mb_busy;
+	mb_run(race, 4, 1);
+	post = mb_busy;
+	/* Serialized control: no drain inside the window. */
+	mb_run(nobrace, 4, 0);
+	int ok = pre == 2000ull && post == 1500ull;
+	printf("drain_inside_begin: pre_fix_busy=%lu (double-counts; union 1500) post_fix_busy=%lu %s\n",
+	       (unsigned long)pre, (unsigned long)post,
+	       ok ? "fixed" : "MISMATCH");
+	return ok ? 0 : 1;
+}
+
 int main(void)
 {
 	int rc = 0;
@@ -765,6 +848,7 @@ int main(void)
 	rc |= test_period_gap_no_accrual();
 	rc |= test_fold_only_at_drain();
 	rc |= test_stale_submit_sample();
+	rc |= test_drain_inside_begin();
 	rc |= test_model_check();
 	rc |= test_randomized_stress();
 	rc |= test_timeline_idle();
