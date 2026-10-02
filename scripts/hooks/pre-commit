@@ -1,5 +1,6 @@
 #!/bin/sh
 # COS-290: never commit as AneRecover / machine hostname / bot identity.
+id="$HOME/.config/git/identity-check"; if [ -x "$id" ]; then "$id" || exit 1; fi
 set -e
 NAME=$(git config --get user.name || true)
 EMAIL=$(git config --get user.email || true)
@@ -16,20 +17,23 @@ bad() {
   exit 1
 }
 
-echo "$AUTHOR_NAME$COMMITTER_NAME" | grep -Eqi 'AneRecover|ane-recover' && bad
-echo "$AUTHOR_EMAIL$COMMITTER_EMAIL" | grep -Eqi 'AneRecover|ane-recover@|@homelab\.local$' && bad
+echo "$AUTHOR_NAME$COMMITTER_NAME" | grep -Eqi 'AneRecover|ane-recover|homelab\.local|omp-|@.*local$' && bad
+echo "$AUTHOR_EMAIL$COMMITTER_EMAIL" | grep -Eqi 'AneRecover|ane-recover@|@homelab\.local$|localhost' && bad
 
+# Expected Joshua identity (GitHub noreply)
 case "$AUTHOR_EMAIL" in
-  ""|816217+joshuaswarren@users.noreply.github.com) ;;
+  816217+joshuaswarren@users.noreply.github.com) ;;
   *)
-    echo "COS-290 git identity guard: author email must be 816217+joshuaswarren@users.noreply.github.com (got $AUTHOR_EMAIL)" >&2
-    exit 1
+    # Allow empty only if global will fill — still require Joshua-shaped email when set
+    if [ -n "$AUTHOR_EMAIL" ]; then
+      echo "COS-290 git identity guard: author email must be 816217+joshuaswarren@users.noreply.github.com (got $AUTHOR_EMAIL)" >&2
+      exit 1
+    fi
     ;;
 esac
 
 REPO=$(git rev-parse --show-toplevel) || exit 1
-export PRIVACY_REPO="$REPO"
-if [ -f "$REPO/.git/hooks/privacy_check.py" ]; then
+if [ -x "$REPO/.git/hooks/privacy_check.py" ] || [ -f "$REPO/.git/hooks/privacy_check.py" ]; then
   python3 "$REPO/.git/hooks/privacy_check.py" --staged 2>&1 || exit $?
 fi
 exit 0
