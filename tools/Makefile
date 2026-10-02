@@ -4,6 +4,10 @@ CFLAGS = -I../libane -I../ane/src/uapi/drm -Wall -Werror -Wextra \
 
 LIB = ../libane/libane.a
 
+# ane_stats is built with its own flags because it links against the
+# host shim in ane_stats.h and uses C11 threads (pthread).
+ANE_STATS_CFLAGS = -I.. -Wall -Werror -Wextra -O2 -std=gnu11 -pthread
+
 .PHONY: tools check clean
 
 tools: ane-run ane-selfcheck
@@ -29,9 +33,16 @@ test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_libane_ioctl.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl
+# ane_stats host unit test: pure host compile of the shared header
+# (counters + ring + torn-read + union rule + stats=0 path).
+test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h
+	$(CC) $(ANE_STATS_CFLAGS) -o $@ test_ane_stats.c
+
+
+check: ane-selfcheck test_libane_ioctl test_ane_stats
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
+	./test_ane_stats
 
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl
+	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats

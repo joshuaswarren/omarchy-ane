@@ -1,6 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_t6021.o
-	ane_t6021-objs := ane_t6021_rtclient_main.o ane_t6021_fwload.o ane_t6021_boot.o
+	ane_t6021-objs := ane_t6021_rtclient_main.o ane_t6021_fwload.o ane_t6021_boot.o ../ane_stats_show.o
 	# One module: the installed-path rtclient surface plus the shared
 	# boot/fwload contract units. The probe file is _main.c so no
 	# object shares the module name (composite/single-object collision).
@@ -9,7 +9,7 @@ ifneq ($(KERNELRELEASE),)
 	ccflags-y += -DANE_T6021_MODULE_VERSION='"$(ANE_VERSION)"'
 	# The ABI-2 UAPI lives at ane/src/uapi/drm/ane_accel.h; the quoted
 	# include "uapi/drm/ane_accel.h" resolves through this path.
-	ccflags-y += -I$(src)/../src
+	ccflags-y += -I$(src)/../src -I$(src)/../include
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
  	PWD := $(shell pwd)

@@ -8,10 +8,13 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/pm_qos.h>
+#include <linux/sysfs.h>
 #include <linux/workqueue.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_mm.h>
+
+#include "ane_stats.h"
 
 /* Quoted so this tree's copy wins over any stray one in the kernel
  * headers; the kernel include path is searched before ccflags. */
@@ -108,6 +111,20 @@ struct ane_device {
 		bool busy;
 		bool on;
 	} boost;
+
+	/*
+	 * ane_stats producer (out-of-tree coreglass producer contract).
+	 * Counters and ring are preallocated at probe and read-only over
+	 * sysfs/debugfs. The `stats` module parameter governs creation
+	 * and the hot-path branch; see ane_stats.h for the union-rule
+	 * contract. tmst is the raw TM timestamp ane_tm.c reads today
+	 * (unknown unit: file header labels it as a raw tick).
+	 */
+	struct ane_stats_counters stats_ctrs;
+	struct ane_stats_ring stats_ring;
+	struct ane_stats_ring_entry *stats_slots;
+	uint32_t stats_ring_n;
+	struct dentry *stats_debugfs;
 };
 
 struct ane_request {
