@@ -71,10 +71,10 @@
   "firmware": {
     "name": {"v": "h15_ane_fw_themis_j51y.im4p", "src": "S2"},
     "size": {"v": 1605657, "src": "S2 (im4p wrapper, fetched via HTTP range; receipt r27.fetch.log line 'firmware Firmware/ane/h15_ane_fw_themis_j51y.im4p 1605657')"},
-    "sha256": {"v": null, "reason": "im4p wrapper not unwrapped; the payload-after-im4p hash is not in the lab notebook for the M3 case. The M2 (t602x_ane0_fw_selene_rc4x) hash a9c4b771… is published in ane/t6021 source (driver sha-pin), but the M3 fw is fetched on demand via omarchy-ane-firmware-fetch; its payload sha256 is computed by the fetch script and stored, not by this run."},
-    "format": {"v": "im4p", "src": "S2 (im4p is the Apple firmware wrapper, decrypted to an ANEC container)" },
-    "encrypted": {"v": true, "src": "S2 (im4p is the encrypted form; omarchy-ane-firmware-fetch decrypts via the manifest key)"},
-    "loaded_by": {"v": "host-Linux or iBoot", "reason": "BuildManifest key 'IsFUDFirmware' (FUD = firmware update daemon) is true on M3 family per receipt log; the M2 selene was FUD-loaded by iBoot on the 13.5 stub. Whether the M3 themis image can be hosted on Linux without FUD requires the BuildManifest key + the ANE-class firmware path; not verified in this run."}
+    "sha256": {"v": "19b6a49997ecf3eb4ec15960f42ab6a79fecd34c8e1448d2e5c1034e2ec47808", "src": "S2 (HTTP range-read macOS 27.0 IPSW member Firmware/ane/h15_ane_fw_themis_j51y.im4p; IM4P payload 1605632-byte Mach-O, SHA256 after unwrap; no raw bytes retained)"},
+    "format": {"v": "Mach-O (IM4P payload type anef)", "src": "S2 (DER fields IM4P/anef/1; payload begins cffaedfe)"},
+    "encrypted": {"v": false, "src": "S2 (IM4P ASN.1 contains IM4P/anef/1 and a plain Mach-O payload beginning cffaedfe; no KBAG in wrapper or payload)"},
+    "loaded_by": {"v": {"IsFUDFirmware": true, "IsLoadedByiBoot": true, "IsLoadedByiBootStage1": false, "IsiBootEANFirmware": false}, "src": "S2 (BuildManifest.plist BuildIdentities j433ap/j434ap/j504ap/j613ap/j615ap, Manifest.ANE.Info)"}
   },
   "kext": {
     "class": {"v": null, "reason": "macOS 27.0 26A428 kernelcache not fetched; the kext binary name is the AppleHxxANEInterface family (T6001 = AppleH11ANEInterface per AneQosMap artifact; the M3 class is presumably AppleH15ANEInterface or AppleH15ANEIn — see AneQosMap pattern). Not verified."},

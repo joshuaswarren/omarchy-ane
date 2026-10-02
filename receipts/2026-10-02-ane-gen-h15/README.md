@@ -24,12 +24,15 @@ device-class identifiers in BuildManifest).
 | M3 | T8122 | H15G | j433, j434, j504, j613, j615 | S1 (ADT arm-io,t8122), S2 (BuildManifest: t8122 j433ap..j615ap), S5 (H15G = "M3 base") |
 | M3 Pro | T6030 | H15J (Lobos) | j514s, j516s | S1 (ADT arm-io,t6030), S2 (BuildManifest: t6030 j514sap/j516sap ANE=t603x_ane0_fw_erebus_ls5x.im4p), S4 (t6030.dtsi comment: 'Apple T6030 "M3 Pro" SoC, Other names: H15J, "Lobos"') |
 | M3 Max | T6031 | H15J | j514c, j514m, j516c, j516m, j575d | S1 (ADT arm-io,t6031), S2 (BuildManifest), S4 (t6031.dtsi comment: 'Apple T6031 "M3 Max" SoC') |
-| M3 Ultra (not shipped) | T6034 | H15J (dual-die T6031) | j514m, j516m (T6034 .dtsi exists in kernel S4; no shipped board) | S4 (t6034.dtsi includes t6031.dtsi), S1 (no shipped T6034 board in 27.0) |
+| M3 Max variant | T6034 (BuildManifest firmware platform) | H15J / ADT-compatible T6031 | j514m, j516m | S1 (ADT nodes are under arm-io,t6031), S2 (Manifest.ANE firmware selection), S4 (t6034.dtsi includes t6031.dtsi) |
 
-The lab survey 2026-08-27 had T6034 as "M3 Ultra"; that is wrong — M3 Ultra
-never shipped. T6034 is a kernel-reserved SoC for a future M3 Ultra (analog
-to T6022 = M2 Ultra or T6002 = M1 Ultra). See data/ane-soc/t6034.json for the
-note.
+T6034 is not evidenced as M3 Ultra. The macOS 27.0 BuildManifest maps the
+j514map/j516map M3 Max configurations to the T603x erebus_pc5x firmware,
+while their ADT entries are reported under arm-io,t6031; the kernel's
+t6034.dtsi includes t6031.dtsi. Treat T6034 as an M3 Max platform/firmware
+variant whose ADT-compatible is T6031. The available evidence does not establish
+whether it represents different die topology; do not call it a dual-die Ultra.
+See data/ane-soc/t6034.json.
 
 ## Per-SoC data files
 
@@ -76,10 +79,14 @@ of the ADT, or kernelcache fetch S3).
    pattern. The T8112 22G74 kext was fetched that way
    (artifacts/T8112Data/t8112-ane/kext, 1.07 MB); M3 kext is the
    same fetch pattern.
-6. All M3 SoCs: firmware payload sha256 after im4p unwrap. The fetch
-   script produces this; the M2 selene hash a9c4b771… is published
-   in ane/t6021 source (driver sha-pin). M3 hash is fetched on demand
-   and not in this run's notebook.
+6. The H15 payload hashes are now measured from IPSW HTTP range reads:
+   themis 19b6a49997ecf3eb4ec15960f42ab6a79fecd34c8e1448d2e5c1034e2ec47808;
+   erebus_ls5x 43da9d566a880bab1bd8ef9cd3dd3ea4a55ae6c016d2ec7f4f97f4fda99867a0;
+   erebus_pc5x ddac37c70bdcaedc6239d5cc85d848e606cd66df454e8a432c24fd7730a1f977.
+   Each is SHA256 of the 1605632-byte Mach-O payload after IM4P ASN.1 unwrap.
+   The IM4P payload begins cffaedfe and no KBAG is present; these payloads are
+   not encrypted. The M3 firmware BuildManifest flags are IsFUDFirmware=true
+   and IsLoadedByiBoot=true (see below).
 
 ## Driver family and new-for-generation
 
@@ -91,9 +98,11 @@ Rationale (S1 + S4 + S5):
   t6031-die0.dtsi:269, t6031-die0.dtsi:283; t8122.dtsi:833, t8122.dtsi:899,
   t8122.dtsi:995, t8122.dtsi:1059). The poll-TX apple-mailbox fix on
   omarchy-linux `86c727e6e` (per AGENTS.md lineage) covers both.
-- H14 firmware is FUD-loaded (selene on 13.5 stub). H15 firmware (themis /
-  erebus) is FUD-loaded too per BuildManifest pattern; the driver can boot
-  the ASC firmware from a host-side fetch the same way ane_t6021 does.
+- H15 BuildManifest entries set IsFUDFirmware=true and IsLoadedByiBoot=true;
+  IsLoadedByiBootStage1=false and IsiBootEANFirmware=false. These flags identify
+  iBoot loading and FUD classification; they do not prove Linux can load it.
+  The payloads are plain Mach-O inside IM4P (anef type, cffaedfe magic, no KBAG).
+  Do not claim host-side Linux loading until implemented and tested.
 - H14 has RTKit-class mailbox semantics; H15 is the same doorbell layout.
 - H14's ane_t6021 driver does pmgr power-domain sequencing with
   ps_ane_sys, ps_ane_mpm, ps_ane_cpu, ps_ane_td, ps_ane_base; the
@@ -212,9 +221,9 @@ RTKit client cannot drive it. The mitigations: (a) the apple,asc-mailbox-v4
 class is shared (kernel S4), so the doorbell layout should match; (b) the
 27.0 kext extract (stage 1) confirms before any hardware work.
 
-Out of scope: T6034 / M3 Ultra. No shipped SKU. Kernel has t6034.dtsi but
-the T6034 hardware was never sold. The data-only state for T6034 documents
-this and the JSON has nulls where appropriate.
+T6034 is represented by j514map/j516map M3 Max BuildManifest configurations
+using the T603x PC5x firmware; the corresponding ADTs are compatible with
+T6031 and the kernel's T6034 DTS includes T6031. Die topology is not established.
 
 ## Files in this branch
 
@@ -222,7 +231,7 @@ this and the JSON has nulls where appropriate.
 data/ane-soc/t8122.json     # M3 base; reg/IRQ/pmgr/firmware cited; dart.sid + kext = null + reason
 data/ane-soc/t6030.json     # M3 Pro; same shape
 data/ane-soc/t6031.json     # M3 Max; same shape; j575d ane1 included
-data/ane-soc/t6034.json     # M3 Ultra placeholder; no shipped SKU
+data/ane-soc/t6034.json     # T6034 M3 Max firmware/platform variant; ADT-compatible T6031
 receipts/2026-10-02-ane-gen-h15/README.md   # this file
 ```
 
@@ -248,11 +257,9 @@ detail; stage 2/3 produce the overlays.
 - 27.0 ADT detail (dart sid, vm_base, vm_size, iommu-parent phandle,
   clock-ids) not in this run's notebook. Receipt script preserves a
   subset; the 13.5 detail script was not re-run for 27.0.
-- Firmware payload sha256 (after im4p unwrap) for h15_ane_fw_themis_j51y
-  / t603x_ane0_fw_erebus_ls5x / t603x_ane0_fw_erebus_pc5x. The fetch
-  script produces this; the M2 selene hash a9c4b771… is published; M3
-  hash is not yet captured.
+The three M3 firmware payload hashes are captured in this run (see source
+ledger and BuildManifest flag evidence above). They were computed from the
+plain Mach-O payloads after IM4P ASN.1 unwrap; no Apple payload bytes were retained.
 - M3 / M3 Pro / M3 Max hardware is not in the lab fleet. No M3 Linux
   boot was attempted. The driver plan is stages 5–7; stages 0–4 are
   static.
-- T6034 / M3 Ultra: no shipped SKU in 27.0. The data is a placeholder.

@@ -88,10 +88,10 @@
   "firmware": {
     "name": {"v": "t603x_ane0_fw_erebus_pc5x.im4p", "src": "S2 (BuildManifest: t6031 j514cap/j514map/j516cap/j516map/j575dap ANE=t603x_ane0_fw_erebus_pc5x.im4p; j575dap ANE1=t603x_ane1_fw_erebus_pc5x.im4p)"},
     "size": {"v": 1605657, "src": "S2 (r27.fetch.log line 'firmware Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p 1605657')"},
-    "sha256": {"v": null, "reason": "see t8122.json firmware.sha256."},
-    "format": {"v": "im4p", "src": "S2"},
-    "encrypted": {"v": true, "src": "S2"},
-    "loaded_by": {"v": "host-Linux or iBoot", "reason": "see t8122.json firmware.loaded_by."}
+    "sha256": {"v": "ddac37c70bdcaedc6239d5cc85d848e606cd66df454e8a432c24fd7730a1f977", "src": "S2 (HTTP range-read macOS 27.0 IPSW member Firmware/ane/t603x_ane0_fw_erebus_pc5x.im4p; IM4P payload is 1605632-byte Mach-O, SHA256 after unwrap; no raw bytes retained)"},
+    "format": {"v": "Mach-O (IM4P payload type anef)", "src": "S2 (DER fields IM4P/anef/1; payload begins cffaedfe)"},
+    "encrypted": {"v": false, "src": "S2 (IM4P ASN.1 contains IM4P/anef/1 and a plain Mach-O payload beginning cffaedfe; no KBAG in wrapper or payload)"},
+    "loaded_by": {"v": {"IsFUDFirmware": true, "IsLoadedByiBoot": true, "IsLoadedByiBootStage1": false, "IsiBootEANFirmware": false}, "src": "S2 (BuildManifest.plist BuildIdentities j514cap/j514map/j516cap/j516map/j575dap, Manifest.ANE.Info)"}
   },
   "kext": {
     "class": {"v": null, "reason": "see t8122.json kext.class."},
