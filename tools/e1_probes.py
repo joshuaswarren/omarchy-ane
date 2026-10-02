@@ -4,18 +4,22 @@
 
 """Write the E1 clock probes: MIL, weights, seeded inputs and fp16 goldens.
 
-P6 (compute-bound): LAYERS stacked 1x1 convs [1,C,H,W] -> [1,C,H,W] that all
-share one orthogonal fp16 C x C weight, so the weight is 512 KiB, each
-activation is 512 KiB and the program does LAYERS * C * C * H * W MACs.
+P6 (compute-bound, legacy): LAYERS stacked 1x1 convs [1,C,H,W] -> [1,C,H,W] that all
+share one orthogonal fp16 C x C weight, so the weight is 512 KiB, each activation is
+512 KiB and the program does LAYERS * C * C * H * W MACs.
+P6' (compute-bound, current): same shape class (64 stacked 1x1 convs 512->512 on
+[1,512,16,32], one shared 512 KiB weight, 8.59e9 MAC, 64 tasks), input scaled by
+INPUT_SCALE so the CPU fp16 reference max abs stays <= ~4 and the largest
+intermediate (across all 64 layers) leaves a >= 100x margin against the fp16 ceiling
+65504. Per-layer stats are written into the manifest.
 P7 (activation stream): add of two [1,1024,128,128] fp16 tensors (32 MiB each).
 
-  e1_probes.py OUT            # OUT/p6, OUT/p7: model.mil, weights/weight.bin,
-                              # weights.bin (ane-compile-hwx), in/*.npy, golden.npy
-  e1_probes.py OUT --check    # also run the self-check
+  e1_probes.py OUT [--variant p6|p6prime|p7] [--check] [--only PROBE]
 
-The golden is a CPU reference: fp32 accumulate, fp16 rounding after every op,
-the storage the ANE uses between layers. Every file is a pure function of
-SEED, so the inputs and goldens can be rebuilt on any host.
+The goldens are CPU references: fp32 accumulate, fp16 rounding after every op, the
+storage the ANE uses between layers. Every file is a pure function of SEED, so the
+inputs and goldens can be rebuilt on any host. P6 and P6' are independent draws; P6
+remains reproducible exactly.
 """
 
 import argparse
@@ -29,8 +33,9 @@ import numpy as np
 SEED = 20261002
 C, H, W, LAYERS = 512, 16, 32, 64
 P7_SHAPE = (1, 1024, 128, 128)
-HEADER = 64  # blob file header; BLOBFILE offset 64 points at the 64-byte metadata
+HEADER = 64
 WEIGHT_PATH = "@model_path/weights/weight.bin"
+INPUT_SCALE = 0.8  # P6' input scale: leaves the CPU fp16 reference max abs <= ~4
 
 
 def blob(payload: bytes) -> bytes:
@@ -77,7 +82,7 @@ def p7_mil() -> str:
 def p6_data():
     rng = np.random.default_rng(SEED)
     q, r = np.linalg.qr(rng.standard_normal((C, C)))
-    w = (q * np.sign(np.diag(r))).astype(np.float16)  # orthogonal: the norm survives 64 layers
+    w = (q * np.sign(np.diag(r))).astype(np.float16)
     x = rng.standard_normal((1, C, H, W)).astype(np.float16)
     w32 = w.astype(np.float32)
     y = x.reshape(C, H * W)
@@ -86,23 +91,55 @@ def p6_data():
     return w, x, y.reshape(1, C, H, W)
 
 
+def p6prime_data():
+    """Same shape class and weight generation as P6, but with a scaled input so the
+    CPU fp16 reference stays bounded. Per-layer stats are returned alongside the
+    arrays so the manifest can record them.
+    """
+    rng = np.random.default_rng(SEED)
+    q, r = np.linalg.qr(rng.standard_normal((C, C)))
+    w = (q * np.sign(np.diag(r))).astype(np.float16)
+    x = (INPUT_SCALE * rng.standard_normal((1, C, H, W))).astype(np.float16)
+    w32 = w.astype(np.float32)
+    y = x.astype(np.float32).reshape(C, H * W).copy()
+    layer_abs = []
+    for L in range(LAYERS):
+        y = w32 @ y
+        y_fp16 = y.astype(np.float16)
+        layer_abs.append(float(np.abs(y_fp16).max()))
+        y = y_fp16.astype(np.float32)
+    golden = y_fp16.reshape(1, C, H, W)
+    stats = {
+        "input_scale": INPUT_SCALE,
+        "weight_seed_digest": hashlib.sha256(w.tobytes()).hexdigest()[:16],
+        "per_layer_absmax": layer_abs,
+        "max_intermediate": max(layer_abs),
+        "final_absmax": float(np.abs(golden).max()),
+        "norm_ratio": float(np.linalg.norm(golden.astype(np.float32)) /
+                            np.linalg.norm(x.astype(np.float32))),
+        "fp16_margin_against_65504": 65504.0 / max(layer_abs),
+    }
+    return w, x, golden, stats
+
+
 def p7_data():
     rng = np.random.default_rng(SEED + 7)
     a = rng.standard_normal(P7_SHAPE, dtype=np.float32).astype(np.float16)
     b = rng.standard_normal(P7_SHAPE, dtype=np.float32).astype(np.float16)
-    return a, b, (a.astype(np.float64) + b).astype(np.float16)  # one rounding: the fp64 sum is exact
+    return a, b, (a.astype(np.float64) + b).astype(np.float16)
 
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def write_probe(d: Path, mil: str, weights: bytes, inputs: dict, golden: np.ndarray, info: dict) -> dict:
+def write_probe(d: Path, mil: str, weights: bytes, inputs: dict, golden: np.ndarray,
+                info: dict) -> dict:
     (d / "weights").mkdir(parents=True, exist_ok=True)
     (d / "in").mkdir(exist_ok=True)
     (d / "model.mil").write_text(mil)
     (d / "weights" / "weight.bin").write_bytes(weights)
-    (d / "weights.bin").write_bytes(weights)  # ane-compile-hwx checks this name
+    (d / "weights.bin").write_bytes(weights)
     files = {"model.mil": sha(mil.encode()), "weights/weight.bin": sha(weights)}
     for name, arr in {**inputs, "golden": golden}.items():
         path = d / "in" / f"{name}.npy"
@@ -117,10 +154,17 @@ def write_probe(d: Path, mil: str, weights: bytes, inputs: dict, golden: np.ndar
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("out", type=Path)
+    ap.add_argument("--variant", choices=("p6", "p6prime", "p7", "all"),
+                    default="all",
+                    help="which probe(s) to write; default 'all' keeps P6 reproducible")
     ap.add_argument("--check", action="store_true")
-    ap.add_argument("--only", choices=("p6", "p7"))
+    ap.add_argument("--only", choices=("p6", "p6prime", "p7"))
     a = ap.parse_args()
-    if a.only != "p7":
+    variants = ("p6", "p6prime", "p7") if a.variant == "all" else (a.variant,)
+    if a.only:
+        variants = (a.only,)
+
+    if "p6" in variants:
         w, x, y = p6_data()
         macs = LAYERS * C * C * H * W
         m6 = write_probe(a.out / "p6", p6_mil(), blob(w.tobytes()), {"x": x}, y, {
@@ -133,7 +177,30 @@ def main() -> int:
             assert p6_mil().count("conv(") == LAYERS and p6_mil().count("BLOBFILE") == 1
             print(f"P6 ok macs={macs:.3e} norm_ratio={ratio:.4f}")
         print(json.dumps(m6))
-    if a.only != "p6":
+
+    if "p6prime" in variants:
+        w, x, y, stats = p6prime_data()
+        macs = LAYERS * C * C * H * W
+        mp = write_probe(a.out / "p6prime", p6_mil(), blob(w.tobytes()), {"x": x}, y, {
+            "probe": "P6'", "variant_of": "P6", "layers": LAYERS,
+            "shape": [1, C, H, W], "macs": macs,
+            "weight_bytes": w.nbytes, "activation_bytes": x.nbytes,
+            "layer_stats": stats})
+        if a.check:
+            assert macs >= 5e9 and w.nbytes <= 1e6 and x.nbytes <= 1e6, mp
+            assert np.isfinite(y).all(), "p6prime golden has non-finite lanes"
+            assert stats["final_absmax"] <= 4.0, stats["final_absmax"]
+            assert stats["max_intermediate"] <= 5.0, stats["max_intermediate"]
+            assert stats["fp16_margin_against_65504"] >= 100.0, stats
+            assert 0.9 < stats["norm_ratio"] < 1.1, stats
+            assert p6_mil().count("conv(") == LAYERS and p6_mil().count("BLOBFILE") == 1
+            print(f"P6' ok macs={macs:.3e} norm_ratio={stats['norm_ratio']:.4f} "
+                  f"max_intermediate={stats['max_intermediate']:.3f} "
+                  f"final_absmax={stats['final_absmax']:.3f} "
+                  f"margin={stats['fp16_margin_against_65504']:.0f}x")
+        print(json.dumps(mp))
+
+    if "p7" in variants:
         x, z, y = p7_data()
         m7 = write_probe(a.out / "p7", p7_mil(), bytes(HEADER), {"x": x, "z": z}, y, {
             "probe": "P7", "shape": list(P7_SHAPE), "tensor_bytes": x.nbytes})
