@@ -151,12 +151,20 @@ step=abi
 
 # ---- op gates (pad-fixed ane-run + the H13 abi-verify fixtures) ---------------
 # ane-run's --check OP needs the fixture inputs at channels 0/1 and assumes
-# the H14 packed [1,512,1,1] checker layout. The H13 abi-verify fixtures put
-# a,b on channels 5/6 and the result on 4 (manifest.json), so the gate drives
-# the runner per program and direct-compares each output surface against an
-# exact fp16 oracle built from the manifest (add and mul-by-0.5 are exact in
-# fp16: no rounding anywhere in the chain; padding lanes must stay zero, so
-# the whole surface is compared byte-for-byte).
+# the H14 packed [1,512,1,1] checker layout, so it does not apply here.
+# ane-run's --in/--out IDX are libane PORT POSITIONS, not driver channel
+# numbers: ane.c INDEX_CHECKs idx against ane_src_count/ane_dst_count and
+# indexes chans[src_bdx(idx)], where ane_bind_init orders each direction's
+# roles by ASCENDING CHANNEL (ane_bind.h). The H13 fixtures put their
+# sources on channels 5,6 and the destination on 4 (the manifest records
+# those channel numbers; it does not record ane-run indices), so the
+# positional contract is --in 0=a --in 1=b --out 0=y. Hardware-evidenced on
+# jwm1 (boot H220): 20/20 bit-exact with those indices; --in 5 refuses with
+# "tried to index 5 but max is 2" (src_count = 2).
+# The gate drives the runner per program and direct-compares each output
+# surface against an exact fp16 oracle built from the manifest (add and
+# mul-by-0.5 are exact in fp16: no rounding anywhere in the chain; padding
+# lanes must stay zero, so the whole surface is compared byte-for-byte).
 step=ops
 command -v python3 >/dev/null || fail "python3 needed to read the fixture manifest and build the fp16 oracle"
 ANE_FIXTURE_DIR=${ANE_FIXTURE_DIR:-/var/tmp/abi-verify/bundle}
@@ -171,8 +179,9 @@ progs = man["programs"]
 ops = [p["operation"] for p in progs]
 if ops != ["add", "mul"]:
     sys.exit("manifest ops %r, want ['add', 'mul']" % ops)
-# Both programs share the channel plan (H13: a/sum on ch5, b on ch6,
-# result on ch4); ch5 carries `sum` into the mul program.
+# Both programs share the channel plan (H13: sources on ch5,ch6; result on
+# ch4; ch5 carries `sum` into the mul program). ane-run indices are the
+# per-direction POSITIONS of those roles, hence 0,1 in and 0 out.
 for p in progs:
     ins = sorted(x["index"] for x in p["inputs"])
     outs = [x["index"] for x in p["outputs"]]
@@ -184,7 +193,6 @@ for p in progs:
     if sorted(x["index"] for x in p["inputs"]) != plan_ins \
             or [x["index"] for x in p["outputs"]] != [plan_out]:
         sys.exit("program %s deviates from the channel plan" % p["file"])
-ch_a, ch_b = plan_ins[0], plan_ins[1]
 alloc, count = progs[0]["inputs"][0]["allocationBytes"], progs[0]["inputs"][0]["logicalBytes"] // 2
 
 def half(x):
@@ -208,18 +216,17 @@ open(work + "/a.fp16", "wb").write(surface(a))
 open(work + "/b.fp16", "wb").write(surface(b))
 open(work + "/want-sum.fp16", "wb").write(surface(s))
 open(work + "/want-y.fp16", "wb").write(surface(y))
-open(work + "/chan.json", "w").write(json.dumps(
-    {"a": ch_a, "b": ch_b, "out": plan_out}))
+open(work + "/chan.json", "w").write(json.dumps({"in0": 0, "in1": 1, "out": 0}))
 PY
-read -r CH_A CH_B CH_OUT <<< "$(python3 -c 'import json;d=json.load(open("'"$ops_work"'/chan.json"));print(d["a"],d["b"],d["out"])')"
+read -r CH_IN0 CH_IN1 CH_OUT <<< "$(python3 -c 'import json;d=json.load(open("'"$ops_work"'/chan.json"));print(d["in0"],d["in1"],d["out"])')"
 "$ANE_RUN_BIN" --anec "$ANE_FIXTURE_DIR/program-0.anec" \
-	--in "$CH_A=$ops_work/a.fp16" --in "$CH_B=$ops_work/b.fp16" \
+	--in "$CH_IN0=$ops_work/a.fp16" --in "$CH_IN1=$ops_work/b.fp16" \
 	--out "$CH_OUT=$ops_work/sum.fp16" || fail "ane-run add fixture (program-0) failed"
 cmp -s "$ops_work/sum.fp16" "$ops_work/want-sum.fp16" \
 	|| fail "add output surface mismatch vs exact fp16 oracle"
 say "fixture add (program-0): exact surface match"
 "$ANE_RUN_BIN" --anec "$ANE_FIXTURE_DIR/program-1.anec" \
-	--in "$CH_A=$ops_work/sum.fp16" --in "$CH_B=$ops_work/b.fp16" \
+	--in "$CH_IN0=$ops_work/sum.fp16" --in "$CH_IN1=$ops_work/b.fp16" \
 	--out "$CH_OUT=$ops_work/y.fp16" || fail "ane-run mul fixture (program-1) failed"
 cmp -s "$ops_work/y.fp16" "$ops_work/want-y.fp16" \
 	|| fail "mul output surface mismatch vs exact fp16 oracle"
