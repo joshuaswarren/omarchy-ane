@@ -25,6 +25,10 @@ node's properties and enable it. When no overlay is left, apply retires the copy
 An overlay whose root has the string "omarchy,opt-in" applies only when that
 string is a line of /etc/omarchy-platform/dtb-overlays.opt-in, which the owner
 writes (the untested T6000, T6002, T6020, T6022 and T8112 nodes: "ane-t6000", "ane-t6002", "ane-t6020", "ane-t6022" and "ane-t8112"; the T6021 U-Boot input: "uboot-serial-stdin-t6021").
+An overlay whose root has "omarchy,data-only" carries SoC data for a chip that
+no driver binds: apply never applies it, whatever the opt-in file says. status
+adds "data-only (no driver): SOC" when SOC_DIR/SOC.json, the package's copy of
+data/ane-soc/SOC.json, says data-only.
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
 
@@ -36,6 +40,7 @@ device trees are in place.
 import argparse
 import glob
 import hashlib
+import json
 import os
 import re
 import struct
@@ -59,6 +64,9 @@ FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
 OPT_IN = "etc/omarchy-platform/dtb-overlays.opt-in"
+# The per-SoC data files (data/ane-soc/*.json); packaging/build-dtbo reads
+# this line.
+SOC_DIR = "usr/share/omarchy-ane/soc"
 REFS = {"power-domains": "#power-domain-cells", "iommus": "#iommu-cells",
         "mboxes": "#mbox-cells", "resets": "#reset-cells"}
 
@@ -135,6 +143,11 @@ def fdt_string(overlay, prop):
     return out.stdout.decode().split() if out.returncode == 0 else []
 
 
+def data_only(overlay):
+    out = subprocess.run(["fdtget", "-p", str(overlay), "/"], capture_output=True)
+    return "omarchy,data-only" in out.stdout.decode().split()
+
+
 def opted_in(root):
     try:
         return {line.strip() for line in (root / OPT_IN).read_text().splitlines()} - {""}
@@ -147,7 +160,7 @@ def overlays_for(root, name):
     found, allowed = [], opted_in(root)
     for overlay in sorted(glob.glob(str(root / OVERLAY_DIR / "*/*.dtbo"))):
         prefix = Path(overlay).parent.name
-        if name != f"{prefix}.dtb" and not name.startswith(f"{prefix}-"):
+        if name != f"{prefix}.dtb" and not name.startswith(f"{prefix}-") or data_only(overlay):
             continue
         if all(key in allowed for key in fdt_string(overlay, "omarchy,opt-in")):
             found.append(Path(overlay))
@@ -376,6 +389,12 @@ def status(root, kver):
         source = "other"
     print(f"node={'present' if live else 'absent'} source={source} dtb={name} kernel={kver}"
           + (f" path=/{live[0]}" if live else ""))
+    soc = name.split("-")[0]
+    try:
+        if json.loads((root / SOC_DIR / f"{soc}.json").read_text()).get("state") == "data-only":
+            print(f"data-only (no driver): {soc}")
+    except (OSError, ValueError):
+        pass
     return 0 if live else 1
 
 
