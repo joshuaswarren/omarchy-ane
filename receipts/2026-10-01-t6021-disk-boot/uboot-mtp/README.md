@@ -2,9 +2,22 @@
 
 Status: two candidate patches for AsahiLinux/u-boot, built and tested on a
 host only. **Not tested on the laptop.** The upstream PR stays unopened until
-the hardware test below passes. Branch: `joshuaswarren/u-boot`
-`mtp-kbd-filter` (`31244bcbeba2` = A, `8e844eccf63c` = B), base AsahiLinux
-`asahi` `b33034a515a0`.
+the hardware test below passes. Branches: `joshuaswarren/aurora-u-boot`
+`mtp-kbd-filter-a` (`4fa9f2a88b41` = A) and `mtp-kbd-filter-b`
+(`913ea4373ec4` = B, with A as its parent), base aurora-silicon/u-boot
+`aurora-stable` `b33034a515a0`. That base commit is the same commit as
+AsahiLinux `asahi` `b33034a515a0`: the trees are identical, so the
+cherry-picks changed no code. `git diff` from each original commit to its
+rebase is empty, and the `git format-patch` bodies are byte-identical. Both
+branches compile `drivers/input/apple_mtp_kbd.o` and `drivers/input/apple_kbd.o`
+clean with the lab recipe toolchain (`aarch64-linux-gnu-gcc` 12.2.0,
+`uboot-lab.config`). This is a compile check only; no aurora-based image was
+built or run.
+
+The old fork `joshuaswarren/u-boot` (branch `mtp-kbd-filter`, `31244bcbeba2`
+= A, `8e844eccf63c` = B, base `b33034a515a0`) was archived on 2026-10-02
+after the pushes above were verified. Joshua's rule: no work lives on
+AsahiLinux forks.
 
 The parent receipt (`../README.md`) shows that the input comes from `mtpkbd`:
 with stdin set to `serial` only, the disk kernel boots; with stdin set to
