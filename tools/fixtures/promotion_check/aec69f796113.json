@@ -1,0 +1,41 @@
+{
+ "chip": "apple,t6000",
+ "content_sha256": "aec69f796113b0038aeaf4cf5aa1053b18bf4696f21de52e5c3b3cc97e395a99",
+ "kernel": "7.1.12-2-11.16-sep-ARCH",
+ "received_at": "2026-10-02T10:58:51.000Z",
+ "summary": {
+  "ane_port_detail": {
+   "devicetree": {
+    "boot": {
+     "compatible": [
+      "apple,j314s",
+      "apple,t6000",
+      "apple,arm-platform"
+     ]
+    }
+   },
+   "runtime": {
+    "omarchy_ane": {
+     "check": {
+      "available": false,
+      "unavailable": "omarchy-ane-check not installed"
+     },
+     "dmesg": [],
+     "dmesg_faults": [
+      "Oct 01 16:46:52 [host] kernel: apple-dcp 38bc00000.dcp: RTKit: syslog message: FBPropertyManager.h:189: value_t<P> IOMFB::PropMgr::getVal(IOMFB::RuntimeProperty"
+     ],
+     "machine_id": "54da2ae25b9c0eaf",
+     "module": {
+      "available": false,
+      "unavailable": "no /sys/module/ane* module"
+     },
+     "owner_id": "13c0187e02de9043",
+     "smoke": {
+      "requested": false
+     },
+     "uptime_s": 72688
+    }
+   }
+  }
+ }
+}
