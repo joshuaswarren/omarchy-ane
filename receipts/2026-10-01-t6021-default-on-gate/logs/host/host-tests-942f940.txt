@@ -1,0 +1,19 @@
+2026-10-01T23:49:04Z
+942f940dad3ecfdce431c16d4401697c2fa8ae05
+$ python3 tools/test_t6021_alias_rollback.py
+PASS actual alias function: map/roundtrip failure at every page and success
+PASS actual reserved-memory coverage check: both windows, no-map, kernel-taken, no leaked node refs
+rc=0
+$ python3 tools/test_ane_m2.py
+test_ane_m2: ok
+rc=0
+$ python3 tools/test_ane_dt.py
+test_ane_dt: ok
+rc=0
+$ python3 tools/test_ane_firmware_fetch.py
+Nothing was installed.
+stub macOS 13.5: fetching Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p
+stub macOS 13.5: fetching Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p
+stub macOS 13.5: fetching Firmware/ane/h14_ane_fw_bia_j4xx.im4p
+test_ane_firmware_fetch: ok
+rc=0

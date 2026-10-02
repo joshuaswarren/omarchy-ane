@@ -1,0 +1,4 @@
+$ test_t6021_alias_rollback.py on 0494f9f (main 73da8f8 + fix)
+PASS actual alias function: map/roundtrip failure at every page and success
+PASS actual reserved-memory coverage check: both windows, no-map, kernel-taken, no leaked node refs
+rc=0

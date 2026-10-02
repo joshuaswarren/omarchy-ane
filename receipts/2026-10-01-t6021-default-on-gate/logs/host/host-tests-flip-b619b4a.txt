@@ -1,0 +1,17 @@
+2026-10-01T23:57:31Z
+b619b4adc730f61a848c264ec5a82df86ba80f57
+$ python3 tools/test_ane_m2.py
+test_ane_m2: ok
+rc=0
+$ python3 tools/test_ane_dt.py
+test_ane_dt: ok
+rc=0
+$ python3 tools/test_ane_firmware_fetch.py
+test_ane_firmware_fetch: ok
+rc=0
+$ h14_boot_regression
+PASSED: 127 checks, 0 failures
+$ test_t6021_alias_rollback.py (0494f9f) on the flip fwload.c
+PASS actual alias function: map/roundtrip failure at every page and success
+PASS actual reserved-memory coverage check: both windows, no-map, kernel-taken, no leaked node refs
+rc=0

@@ -1,0 +1,24 @@
+2026-10-01T23:53:35Z
+c2b7408b621c7e5a19ea39efaf513170bfebaaba
+$ python3 tools/test_t6021_alias_rollback.py
+    subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-but-set-variable', str(c), '-o', str(exe)], check=True)
+  File "/usr/lib/python3.11/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['cc', '-Wall', '-Wextra', '-Werror', '-Wno-unused-but-set-variable', '/tmp/tmpyvezopd7/test.c', '-o', '/tmp/tmpyvezopd7/test']' returned non-zero exit status 1.
+rc=1
+$ python3 tools/test_ane_m2.py
+test_ane_m2: ok
+rc=0
+$ python3 tools/test_ane_dt.py
+test_ane_dt: ok
+rc=0
+$ python3 tools/test_ane_firmware_fetch.py
+stub macOS 13.5: fetching Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p
+stub macOS 13.5: fetching Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p
+stub macOS 13.5: fetching Firmware/ane/h14_ane_fw_bia_j4xx.im4p
+test_ane_firmware_fetch: ok
+rc=0
+$ h14_boot_regression
+PASS T8112 fuse 37ffffff fffffffe                 (decode = iBoot j413 0x40270)
+PASS T8112 fuse 12345678 9abcdef1                 (decode = iBoot j413 0x40270)
+PASSED: 127 checks, 0 failures

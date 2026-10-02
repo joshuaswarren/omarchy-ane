@@ -1,0 +1,69 @@
+== state start 2026-10-02T00:25:53.318Z A
+boot_id ebecc9b3-9bcd-4f7b-be43-e14a2f72ac11 uname 7.1.13-3-1-ARCH up 25.98
+module 0.4.0-main-73da8f8 B074D69A3514549D61CFFBA file e77c3c75aed66b1ca03c6ab725230458055c4f37ffa887f1e24d5b7365cf2b52  /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko
+fw_alias_reserved Y
+fw_extra_ram 2097152
+fw_load Y
+fw_start Y
+call_settle_us 1000
+bo_total_bytes 0
+bo_total_max_mb 12288
+modprobe.d: hid_apple.conf netconsole.conf 
+dmesg_bad 0 dmesg_lines 1201
+irq 53: cpu-sum 0 285408000.mailbox-recv
+irq 54: cpu-sum 0 285408000.mailbox-send
+no ane-run
+ 19:25:53 up 0 min,  1 user,  load average: 0.91, 0.24, 0.08
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.0-main-73da8f8)
+  ok    ane_t6021 is loaded (version 0.4.0-main-73da8f8)
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+omarchy-ane-check rc=0
+node=present source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-1-ARCH path=/soc/ane@284000000
+omarchy-ane-dt status rc=0
+/usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+firmware-fetch --check rc=0
+== 1. gates 00:25:53
+gate add rc=0 GATE PASS 
+gate mul rc=0 GATE PASS 
+gate relu rc=0 GATE PASS 
+gate add-scalar rc=0 GATE PASS 
+gate mul-scalar rc=0 GATE PASS 
+gate real-div-scalar rc=0 GATE PASS 
+gate clip-low rc=0 GATE PASS 
+gate clip-high rc=0 GATE PASS 
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+gate island-c-pv rc=0 GATE PASS seeds_pass=4
+gate island-a-kt rc=0 GATE PASS seeds_pass=4
+gate island-a-attn-p1 rc=0 GATE PASS seeds_pass=4
+gate island-b-select-runtime rc=0 GATE PASS seeds_pass=4
+gate island-b-select-constfill rc=0 GATE PASS seeds_pass=4
+gate rms-c2048-gamma rc=0 GATE PASS seeds_pass=4
+== 2. prog_020 00:26:00
+prog_020 rc=0 exec ms over 1 calls: min 4.860 p10 4.860 p25 4.860 median 4.860 p75 4.860 p90 4.860 p99 4.860 max 4.860 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+== 3. encoder, one process, 20 calls 00:26:00
+encoder rc=0 exec ms over 20 calls: min 254.354 p10 254.382 p25 254.402 median 254.457 p75 254.530 p90 254.610 p99 254.647 max 254.647 linear_217_cast_fp16 golden max_abs=0 relL2=0 exact=1  sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+== 4. burst 60 s 00:26:07
+burst rc=0 w1 runs=3244 pass=3244 fail=0 w2 runs=3236 pass=3236 fail=0 w3 runs=3249 pass=3249 fail=0 w4 runs=3244 pass=3244 fail=0 exact lines: 12973 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+== state end 2026-10-02T00:27:07.067Z A
+boot_id ebecc9b3-9bcd-4f7b-be43-e14a2f72ac11 uname 7.1.13-3-1-ARCH up 99.21
+module 0.4.0-main-73da8f8 B074D69A3514549D61CFFBA file e77c3c75aed66b1ca03c6ab725230458055c4f37ffa887f1e24d5b7365cf2b52  /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko
+fw_alias_reserved Y
+fw_extra_ram 2097152
+fw_load Y
+fw_start Y
+call_settle_us 1000
+bo_total_bytes 655228928
+bo_total_max_mb 12288
+modprobe.d: hid_apple.conf netconsole.conf 
+dmesg_bad 0 dmesg_lines 1205
+irq 53: cpu-sum 0 285408000.mailbox-recv
+irq 54: cpu-sum 0 285408000.mailbox-send
+no ane-run
+ 19:27:07 up 1 min,  1 user,  load average: 2.84, 0.93, 0.33
+dmesg new lines 4, non-UFW 0, bad new 0, bad whole boot 0, refusing whole boot 0
+== window done 00:27:07 /var/tmp/ownmem/win-A-20261002T002553Z

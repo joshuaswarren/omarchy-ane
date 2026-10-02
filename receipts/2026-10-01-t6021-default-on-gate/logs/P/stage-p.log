@@ -1,0 +1,21 @@
+2026-10-02T00:51:51Z
+m1n1 1.6.1-1
+uboot-asahi 2026.07.asahi2-1
+asahi-scripts 20260127.1-1
+m1n1: 16 total files, 0 altered files
+uboot-asahi: 28 total files, 0 altered files
+asahi-scripts: 39 total files, 0 altered files
+9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd  m1n1.bin in the cached m1n1-1.6.1-1 package
+b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1  u-boot-nodtb.bin in the cached uboot-asahi package
+9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd  /usr/lib/asahi-boot/m1n1.bin
+b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1  /usr/lib/asahi-boot/u-boot-nodtb.bin
+8a350e7ec6aa5bb6d445dfdffa4e1a420e8705719e342135c1e6b30fe642b1e1  /usr/bin/update-m1n1
+[ -r /usr/lib/omarchy-ane/update-m1n1-dtbs ] && . /usr/lib/omarchy-ane/update-m1n1-dtbs  # omarchy-ane
+[ -r /usr/lib/omarchy-ane/update-m1n1-dtbs ] && . /usr/lib/omarchy-ane/update-m1n1-dtbs  # omarchy-ane
+m1n1 updated at /var/tmp/ownmem/P/boot.bin.P
+M1N1=/var/lib/omarchy-ane-lab/m1n1-v1.6.1-pdtrace.bin  # lab only, keeps PROXY60 and ANE reservations
+[ -r /usr/lib/omarchy-ane/update-m1n1-dtbs ] && . /usr/lib/omarchy-ane/update-m1n1-dtbs  # omarchy-ane
+59a47dbfa70e1b83125dfd6a507a1ab64667eb4db1411897adcca0df9d0830ae  /var/tmp/ownmem/P/boot.bin.P
+c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b  /var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  /boot/efi/m1n1/boot.bin
+STAGE-P-OK

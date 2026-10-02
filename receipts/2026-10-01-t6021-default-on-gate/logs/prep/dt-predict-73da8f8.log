@@ -1,0 +1,28 @@
+2026-10-01T23:55:21Z
+uboot-serial-stdin-t6021
+build-dtbo: t8103 (enabled): /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+build-dtbo: t6000 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+build-dtbo: t6001 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+build-dtbo: t6002 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+build-dtbo: t8112 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+build-dtbo: t6020 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+build-dtbo: t6021 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+build-dtbo: t6021 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+build-dtbo: t6022 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+omarchy-ane-dt: 7.1.13-3-1-ARCH: t6021-j414c.dtb + t6021/omarchy-ane.dtbo t6021/omarchy-uboot-serial-stdin.dtbo -> /var/tmp/ownmem/dtroot-73da8f8/var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+m1n1 still has the old device tree. Run: sudo update-m1n1, then reboot.
+stock=ea6c9a8a347bc4813719717455442a1635339113e57fc677acbd430b3b257667
+overlays=a73436f4b8496de416af6a0b74f14ce4e2d6ae8b27cc341587e662d2a269bcc9
+c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b  /var/tmp/ownmem/dtroot-73da8f8/var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b  /var/lib/omarchy-ane/dtbs/7.1.13-3-1-ARCH/t6021-j414c.dtb
+9491d8a1e2824db9a2e2d0320b47fb96458e29f1a7f3aef351c05ce2f07b068c  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+63d6872aacd5658c2455c168ae00f1ced223112dde7685f85da4eb89b62aa732  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+2bd4ceca54da1468ada20e43f5720bf61cc95aa4849b0538b08800301eeefd28  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+78646647ad1108591b3bbaf60adde4f0763dcc63aa2b530e70f1299da3c323ae  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+734b2daa132ac933a7097761c027e5fa4c4fbb07c1c30afdaac0a33641997d9a  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+da22067888090c6d269d5ed098c9b6fa122a1860df4d30ae67bc4771cc5e8e32  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+0bfa023c500068ba39ccff6b8aa98eab3dede8437d20f7d73be685534a0929a3  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+8037475416a4d0092b05856a10afd7dabfc5ad154a533c1e6e22652c92746a58  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+35d88554e661869e8fdadf4bc8c6a40d0e6f39637ee0c2ecd802f35c03b12cc2  /var/tmp/ownmem/dtroot-73da8f8/usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+DTB-SAME: no ESP write needed
+node=absent source=overlay dtb=t6021-j414c.dtb kernel=7.1.13-3-1-ARCH

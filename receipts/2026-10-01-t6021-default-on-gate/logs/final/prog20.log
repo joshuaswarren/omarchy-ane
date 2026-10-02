@@ -1,0 +1,9 @@
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+ports:
+  t0: input slot4 bufferId=5 channel=5 shape=[1, 1, 16, 128]
+  t15: output slot5 bufferId=4 channel=4 shape=[1, 1, 1, 2048]
+  t2: input slot6 bufferId=6 channel=6 shape=[1, 1, 16, 128]
+  t7: input slot7 bufferId=7 channel=7 shape=[1, 1, 1, 2048]
+exec ms over 1 calls: min 4.889 p10 4.889 p25 4.889 median 4.889 p75 4.889 p90 4.889 p99 4.889 max 4.889
+unpacked t15 (1, 1, 1, 2048) -> /var/tmp/ownmem/win-final-20261002T012151Z/prog20-t15.f16
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852

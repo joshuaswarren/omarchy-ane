@@ -1,0 +1,15 @@
+Boot P (boot ea7503c1), read at 01:05Z with `tr -d '\0' </proc/device-tree/chosen/asahi,*version*` and
+`ls /proc/device-tree/reserved-memory/ | grep ane`:
+asahi,iboot1-version = mBoot-20457.1.29
+asahi,iboot2-version = iBoot-8422.141.2
+asahi,m1n1-stage1-version = v1.6.1-dirty
+asahi,m1n1-stage2-version = v1.6.1
+asahi,os-fw-version = 13.5
+reserved-memory ane nodes: ane-alias-iova (no ane-firmware@ node)
+ESP boot.bin: 59a47dbfa70e1b83125dfd6a507a1ab64667eb4db1411897adcca0df9d0830ae
+
+Final boot (boot 62d5ebd3), lab boot.bin restored:
+asahi,m1n1-stage2-version = v1.6.1-pdtrace
+reserved-memory ane nodes: ane-alias-iova, ane-firmware@10000848000, ane-firmware@10001400000
+ESP boot.bin: 62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540
+fw_alias_reserved: N

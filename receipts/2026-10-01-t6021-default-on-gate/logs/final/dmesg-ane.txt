@@ -1,0 +1,69 @@
+[    0.000000] OF: reserved mem: 0x0000010001400000..0x0000010001837fff (4320 KiB) nomap non-reusable ane-firmware@10001400000
+[    0.000000] OF: reserved mem: 0x0000010000848000..0x000001000090bfff (784 KiB) nomap non-reusable ane-firmware@10000848000
+[    0.072109] platform 284000000.ane: Adding to iommu group 0
+[    3.026709] ane_t6021: loading out-of-tree module taints kernel.
+[    3.053674] ane_t6021 284000000.ane: BOOT-PHASE genpd domains attached: 8
+[    3.053808] ane_t6021 284000000.ane: ane_cpu ACTUAL = 0x1f0003ff
+[    3.054117] ane_t6021 284000000.ane: BOOT-PHASE engine reads ok: CPU_STATUS = 0x2a, RVBAR = 0000010000000001 (bit0=1)
+[    3.054267] ane_t6021 284000000.ane: BOOT-PHASE fwload stage+alias begin
+[    3.062185] ane_t6021 284000000.ane: fwload: apple/ane/t602x_ane0_fw_selene_rc4x.macho PRELOAD validated + DART-mapped: entry 0x0, iova 0x00000000ff800000 size 0x700000
+[    3.062421] ane_t6021 284000000.ane: fwload: own memory: iBoot patches replayed (soc 0x6021 rev 0x11 DATA 0x100000c4000 cpu 0x285000000 wrapper 0x285400000)
+[    3.064787] ane_t6021 284000000.ane: fwalias: entry 0x10000000000 <- 448 dart pages aliased from fw 0x00000000ff800000 (first 0x000001001f7c0000, roundtrip OK)
+[    3.065002] ane_t6021 284000000.ane: pmu: DART map 0x28e084000 (IOVA == PA, 0x4000 bytes): 0
+[    3.065168] ane_t6021 284000000.ane: BOOT-PHASE dispatch (table_mode=2)
+[    3.065277] ane_t6021 284000000.ane: BOOT-PHASE dispatch (stop_after=0)
+[    3.065388] ane_t6021 284000000.ane: BOOT-PHASE P0 table SKIPPED (diagnostic)
+[    3.097357] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables begin
+[    3.129353] ane_t6021 284000000.ane: BOOT-PHASE P-1a eng+0x000
+[    3.163381] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.196486] ane_t6021 284000000.ane: BOOT-PHASE P-1b eng+0x038
+[    3.228353] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.259351] ane_t6021 284000000.ane: BOOT-PHASE P-1c eng+0x03c
+[    3.289543] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.320537] ane_t6021 284000000.ane: BOOT-PHASE P-1d eng+0x400
+[    3.351535] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.383351] ane_t6021 284000000.ane: BOOT-PHASE P-1e eng+0x600
+[    3.413440] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.444439] ane_t6021 284000000.ane: BOOT-PHASE P-1f eng+0x738
+[    3.475544] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.506539] ane_t6021 284000000.ane: BOOT-PHASE P-1g eng+0x798
+[    3.537537] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.568364] ane_t6021 284000000.ane: BOOT-PHASE P-1h eng+0x7f8
+[    3.599361] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.630372] ane_t6021 284000000.ane: BOOT-PHASE P-1i eng+0x900
+[    3.661376] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.692390] ane_t6021 284000000.ane: BOOT-PHASE P-1j eng+0x410
+[    3.723377] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.754370] ane_t6021 284000000.ane: BOOT-PHASE P-1k eng+0x420
+[    3.785380] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.816384] ane_t6021 284000000.ane: BOOT-PHASE P-1l eng+0x430
+[    3.848370] ane_t6021 284000000.ane: BOOT-PHASE P-1 write done
+[    3.879354] ane_t6021 284000000.ane: BOOT-PHASE P-1 grant-tunables end
+[    3.911361] ane_t6021 284000000.ane: BOOT-PHASE P1 scratch-clear+pulse
+[    3.942379] ane_t6021 284000000.ane: BOOT-PHASE P1 S1 SCRATCH6=1 (legacy ChMan/MBI select)
+[    3.973361] ane_t6021 284000000.ane: BOOT-PHASE P2 rvbar
+[    4.004383] ane_t6021 284000000.ane: BOOT-PHASE P3 cpu-release
+[    4.035379] ane_t6021 284000000.ane: BOOT-PHASE P3b cpu-release RUN=0x10
+[    4.066364] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA-READY
+[    4.098364] ane_t6021 284000000.ane: BOOT-PHASE P4 pollA READY observed
+[    4.129365] ane_t6021 284000000.ane: BOOT-PHASE P5 prepare+publish
+[    4.162884] ane_t6021 284000000.ane: LAB init resource[0x84] bit0=1: prevent nap
+[    4.162887] ane_t6021 284000000.ane: BOOT-PHASE P6 wake
+[    4.193366] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB-DONE
+[    4.224365] ane_t6021 284000000.ane: BOOT-PHASE P7 pollB DONE observed
+[    4.255368] ane_t6021 284000000.ane: boot: module PINNED until reboot (started CPU; wedged-pin)
+[    4.255371] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\x94 not a success claim; transport stays fenced until response validation)
+[    4.255376] ane_t6021 284000000.ane: BOOT-PHASE sequence returned 0000000000000000 (cpu_started=1 fw_alive=1 booted=1) CPU_STATUS=0x2c
+[    4.255381] ane_t6021 284000000.ane: chman[0]: name="TERMINAL" type=2 bit=0 size=0x300 OK (static: TERMINAL/2/0/0x300/ipc+0x800)
+[    4.255386] ane_t6021 284000000.ane: chman[1]: name="IO" type=0 bit=1 size=0x10 OK (static: IO/0/1/0x10/ipc+0xc800)
+[    4.255390] ane_t6021 284000000.ane: chman[2]: name="DEBUG" type=0 bit=2 size=0x8 OK (static: DEBUG/0/2/0x8/ipc+0xcc00)
+[    4.255393] ane_t6021 284000000.ane: chman[3]: name="BUF_H2T" type=0 bit=3 size=0x40 OK (static: BUF_H2T/0/3/0x40/ipc+0xce00)
+[    4.255396] ane_t6021 284000000.ane: chman[4]: name="BUF_T2H" type=1 bit=4 size=0x40 OK (static: BUF_T2H/1/4/0x40/ipc+0xde00)
+[    4.255399] ane_t6021 284000000.ane: chman[5]: name="SHAREDMALLOC" type=1 bit=5 size=0x8 OK (static: SHAREDMALLOC/1/5/0x8/ipc+0xee00)
+[    4.255402] ane_t6021 284000000.ane: chman[6]: name="IO_T2H" type=1 bit=6 size=0x40 OK (static: IO_T2H/1/6/0x40/ipc+0xf000)
+[    4.255405] ane_t6021 284000000.ane: chman[7]: name="DATA_CHAIN_H2T" type=0 bit=7 size=0x10 OK (static: DATA_CHAIN_H2T/0/7/0x10/ipc+0x10000)
+[    4.255409] ane_t6021 284000000.ane: chman: table VALIDATED (mismatch mask 0x0)
+[    4.255414] ane_t6021 284000000.ane: LEGACY P8 host ack: SCRATCH3 <- 08042006
+[    4.266170] ane_t6021 284000000.ane: LEGACY CONFIG_GET words 00000003 016e3600 result=0 (DMA remains held)
+[    4.266307] [drm] Initialized ane 2.0.0 for 284000000.ane on minor 0
+[    4.266313] ane_t6021 284000000.ane: loaded ane_t6021 0.4.0-main-b6ef8f1 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)

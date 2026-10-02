@@ -1,0 +1,9 @@
+lines: 65 vs 65; BOOT-PHASE 44 vs 44
+--- ../P1Groups/R3-A-after/R3-boot/dmesg-ane.txt
++++ A/A-boot/dmesg-ane.txt
+@@ -6 +6 @@
+-ane_t6021 H.ane: fwload: selene PRELOAD validated + DART-mapped: N segs, entry H, iova H size H
++ane_t6021 H.ane: fwload: apple/ane/t602x_ane0_fw_selene_rc4x.macho PRELOAD validated + DART-mapped: entry H, iova H size H
+@@ -65 +65 @@
+-ane_t6021 H.ane: loaded ane_t6021 N.N (DRM major N minor N; ABI N; legacy_only=N chman_ok=N booted=N; state HELD; BO cap N MiB)
++ane_t6021 H.ane: loaded ane_t6021 N.N-main-H (DRM major N minor N; ABI N; legacy_only=N chman_ok=N booted=N; state HELD; BO cap N MiB)

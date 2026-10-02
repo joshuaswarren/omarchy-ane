@@ -1498,3 +1498,21 @@ Record: [receipts/2026-10-01-t6021-p1-groups](../receipts/2026-10-01-t6021-p1-gr
   4 KiB units. LLT holds them; on BRD and BWR bit 0 is off and the bound
   words change from boot to boot. BO IOVAs sit below 4 GiB (32-bit DMA
   mask); a 42-bit mask would put them inside the window.
+
+## 32. Own memory is the default: device gate with the lab and the stock m1n1 (2026-10-01)
+
+Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021-default-on-gate/README.md).
+
+- The firmware runs from a driver-owned copy with iBoot's runtime patches
+  replayed (`fw_alias_reserved=0`, the default since #49), aliased at the
+  latched entry 0x10000000000 (448 DART pages). It starts like the reserved
+  preload: READY at 4.2-4.3 s, DONE at 4.4 s, the same ane_t6021 kernel lines
+  except the two fwalias lines.
+- With the stock m1n1 1.6.1 stage 2 and the packaged boot.bin (no
+  `ane-firmware` reservation), the M2 Max passes the 16 gates, the encoder is
+  bit-exact (254.318 ms median of 20 calls), and all outputs are
+  byte-identical to the reserved mode. Only the reserved mode still needs the
+  lab m1n1.
+- The marker contradiction of the 2026-09-27 staged trials did not occur in
+  the three own-memory boots. [INFERENCE] Those trials ran a copy without
+  iBoot's patches (receipt 2026-10-01-t602x-independent); the replay closes it.
