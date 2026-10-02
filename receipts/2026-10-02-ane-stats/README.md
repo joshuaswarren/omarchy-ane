@@ -189,3 +189,46 @@ threshold is exceeded, abort the run and wait for a quiet window.
   ane_t6021_rtclient_main.c to read it at call completion.
 - In-tree driver port is verified by build + checkpatch only; the
   M2/jw16 in-tree gate is the lane owner's.
+
+## Fix record (2026-10-02; PR #63 round 2)
+
+Continuous busy_ns and procedure-call-only accounting land as
+7ec42cd ("ane/t6021: define the stats show where its types are
+complete") on top of 901896f ("ane/stats: report busy time
+continuously; count only engine work"). The new state on the
+producers is `{inflight, last_busy_end, busy_ns, jobs}` with the
+first submission onto an idle engine opening a period under a
+transition sentinel, the last completion folding the whole period
+span, and the show callback adding the open period's live tail from
+a consistent `(inflight, busy_ns)` snapshot taken with the
+transition sentinel spun out. Reads never decrease and the final
+busy_ns equals the union of the submit-to-completion windows: the
+host randomized stress (4 producers x 300 overlapping jobs with a
+continuous reader) ends with `busy_ns == merged interval union`
+exactly and `jobs == 1200` exactly. On ane_t6021 the four
+`ane_stats_begin/complete` sites are gated to
+`opcode == CSNE_CMD_PROCEDURE_CALL`, so jobs matches the workload's
+engine calls; the prior round counted LOAD_PROGRAM,
+CREATE_PROCESS, and CH_PROPERTY_WRITE.
+
+0bf0373 (PR #63 as it stood) had never been build-proven. The M2
+3-1 proof build on macstudio rejected it with "invalid use of
+undefined type 'struct ane_rtclient'" in `ane_t6021_stats_show`
+(defined above the type) and "'ane_stats_show' undeclared" at the
+`DEVICE_ATTR_RO` expansion (the function was named
+`ane_t6021_stats_show`). 7ec42cd moves the show block next to the
+probe that uses it and renames it `ane_stats_show`. After that fix
+both trees build W=1 with the exact baseline warning set.
+
+| tree | module | sha256 | vermagic |
+|---|---|---|---|
+| m2-31 (7.1.13-3-1-ARCH) | ane.ko | 183b7ef6a7796c86b055e21f5a5314e57f26e6062a362fe7daff939c84075b5f | 7.1.13-3-1-ARCH SMP preempt mod_unload aarch64 |
+| m2-31 (7.1.13-3-1-ARCH) | ane_t6021.ko | 1dd17373cf213261a3ae55abfc94c22cff6b4591faf1aacfb0ff12e3bf3de570 | 7.1.13-3-1-ARCH SMP preempt mod_unload aarch64 |
+| aurora 7.1.12-class | ane.ko | f11acbc099e9e9969055c962fb202fe159330e3e1e059380102f5f3ce3738d4a | 7.1.12-ARCH+ SMP preempt mod_unload aarch64 |
+| aurora 7.1.12-class | ane_t6021.ko | 6a8c977d7aa58f0a02073e5b4d5a23f79c8b82e32dcf2bad1f0bde323eaa531c | 7.1.12-ARCH+ SMP preempt mod_unload aarch64 |
+
+What only hardware can prove: live probe + drvdata wiring on the
+class device, that the firmware completion path actually reaches
+`ane_stats_complete` on the T6021 firmware boot, sampler-visible
+duty with real 137 ms jobs, file modes/paths at runtime, tmst for
+M1 (currently collected), 0 by design on M2.

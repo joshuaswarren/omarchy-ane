@@ -562,18 +562,18 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	 * stats branch is a single predictable if on a bool (default 1);
 	 * stats=0 makes this no-op. engine_lock serializes the producer
 	 * for this driver, so the union rule reduces to (end - start). */
-	uint32_t stats_idx = UINT_MAX;
+	uint64_t stats_ticket = 0;
 	uint64_t stats_submit_ns = 0;
 	if (stats) {
 		stats_submit_ns = ktime_get_ns();
-		stats_idx = ane_stats_begin(&ane->stats_ctrs,
-					    &ane->stats_ring,
-					    stats_submit_ns, req.td_count);
+		stats_ticket = ane_stats_begin(&ane->stats_ctrs,
+					       &ane->stats_ring,
+					       stats_submit_ns, req.td_count);
 	}
 	err = ane_tm_execute(ane, &req);
 	if (stats)
 		ane_stats_complete(&ane->stats_ctrs, &ane->stats_ring,
-				   stats_idx, ktime_get_ns(),
+				   stats_ticket, ktime_get_ns(),
 				   err ? (uint32_t)err : 0u,
 				   ane_last_tmst);
 	ane_boost_end(ane);
@@ -631,12 +631,24 @@ ATTRIBUTE_GROUPS(ane_dev);
 
 /*
  * ane_stats sysfs file (coreglass producer contract, no root needed):
- * mode 0444, ASCII "key value" lines, integers only. The shared show
- * function lives in ane/ane_stats_show.c; ane_stats_show uses the
- * per-device ctrs via dev_get_drvdata(). dev_attr_ane_stats and
- * ane_timeline_fops are exported from that file.
+ * mode 0444, ASCII "key value" lines, integers only. This wrapper is
+ * the only place the platform drvdata is dereferenced, with its real
+ * struct ane_device * type; formatting goes through the typed
+ * accessor ane_stats_emit() (ane/include/ane_stats.h), which never
+ * sees the device pointer — the first round's shared callback cast
+ * dev_get_drvdata() to the counters and read the head of ane_device
+ * instead (H217 defect 1). ane_timeline_fops lives in
+ * ane/ane_stats_show.c.
  */
-extern struct device_attribute dev_attr_ane_stats;
+static ssize_t ane_stats_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct ane_device *ane = dev_get_drvdata(dev);
+
+	return ane_stats_emit(buf, &ane->stats_ctrs);
+}
+static DEVICE_ATTR_RO(ane_stats);
+
 extern const struct file_operations ane_timeline_fops;
 
 /*

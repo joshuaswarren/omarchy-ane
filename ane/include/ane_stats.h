@@ -13,8 +13,9 @@
  *   - sysfs under /sys/class/accel/accel<digit>/device/ane_stats,
  *     mode 0444, ASCII "key value" lines, integers only: busy_ns
  *     (cumulative u64), jobs (cumulative u64). busy_ns counts only
- *     nanoseconds the engine was busy (sum/union of submit-to-
- *     completion windows) since the device was bound.
+ *     nanoseconds the engine was busy (union of submit-to-completion
+ *     windows) since the device was bound, and advances while work is
+ *     in flight: the show callback adds the open period's live tail.
  *   - debugfs ane_timeline: preallocated ring of the last N submissions
  *     with seq, submit_ns, start_ns, end_ns, tasks, rc (and tmst raw
  *     when known). Head counter is atomic; per-slot seqlock so the
@@ -26,10 +27,12 @@
  * show callback formats in process context; the ring writer commits
  * the slot with a release store, and the reader does an acquire load
  * on begin/end. Counters update with atomics only. busy_ns is the
- * union of busy intervals: for an engine that serializes submissions
- * (ane.ko, behind engine_lock) it equals sum(end - start); for an
- * engine that can run submissions in parallel (ane_t6021) it is the
- * union measure, advanced by max(0, end - max(start, last_end)).
+ * union of busy intervals: a busy period opens when the first
+ * submission lands on an idle engine and closes when the last one
+ * completes, and its whole span folds once at close; overlapping
+ * submissions share the period, so a serialized engine (ane.ko,
+ * behind engine_lock) reports sum(end - start) and a parallel engine
+ * (ane_t6021) reports the union, never the sum.
  */
 
 #ifndef __ANE_STATS_H__
@@ -41,15 +44,29 @@
 #include <linux/atomic.h>
 #include <linux/ktime.h>
 #include <linux/string.h>
+#include <linux/sysfs.h>
 #define ane_stats_atomic_u64	atomic64_t
 #define ane_stats_atomic_u32	atomic_t
 static inline u64 ane_stats_atomic64_read(const atomic64_t *v) { return atomic64_read(v); }
 static inline void ane_stats_atomic64_add(u64 i, atomic64_t *v) { atomic64_add(i, v); }
+static inline u64 ane_stats_atomic64_fetch_add(u64 i, atomic64_t *v) { return atomic64_fetch_add(i, v); }
 static inline bool ane_stats_atomic64_try_cmpxchg(atomic64_t *v, u64 *old, u64 new) {
 	return atomic64_try_cmpxchg(v, old, new);
 }
 static inline void ane_stats_atomic_set(atomic_t *v, int i) { atomic_set(v, i); }
+static inline void ane_stats_atomic_set_release(atomic_t *v, u32 i) {
+	atomic_set_release(v, (int)i);
+}
 static inline int ane_stats_atomic_read(const atomic_t *v) { return atomic_read(v); }
+static inline u32 ane_stats_atomic_cmpxchg(atomic_t *v, u32 old, u32 new) {
+	return (u32)atomic_cmpxchg(v, (int)old, (int)new);
+}
+static inline bool ane_stats_atomic_try_cmpxchg(atomic_t *v, u32 *old, u32 new) {
+	return atomic_try_cmpxchg(v, (int *)old, (int)new);
+}
+static inline u32 ane_stats_atomic_read_acquire(const atomic_t *v) {
+	return (u32)atomic_read_acquire(v);
+}
 static inline u64 ane_stats_atomic64_read_acquire(const atomic64_t *v) {
 	return atomic64_read_acquire(v);
 }
@@ -62,8 +79,14 @@ static inline u64 ane_stats_now_ns(void) { return ktime_get_ns(); }
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <time.h>
 #include <string.h>
+
+/* ane_stats_emit writes at most this many bytes (kernel side sysfs_emit
+ * asserts a page buffer; the bound documents the format size: two u64
+ * keys can reach 8 + 20 + 1 + 5 + 20 + 1 = 55 bytes). */
+#define ANE_STATS_EMIT_MAX 64
 
 /*
  * On the host we use GCC __atomic_* builtins (or C11 atomics via
@@ -81,6 +104,9 @@ static inline uint64_t ane_stats_atomic64_read(const ane_stats_atomic_u64 *v) {
 static inline void ane_stats_atomic64_add(uint64_t i, ane_stats_atomic_u64 *v) {
 	__atomic_add_fetch(v, i, __ATOMIC_RELAXED);
 }
+static inline uint64_t ane_stats_atomic64_fetch_add(uint64_t i, ane_stats_atomic_u64 *v) {
+	return __atomic_fetch_add(v, i, __ATOMIC_RELAXED);
+}
 static inline bool ane_stats_atomic64_try_cmpxchg(ane_stats_atomic_u64 *v,
 						  uint64_t *old, uint64_t new) {
 	return __atomic_compare_exchange_n(v, old, new, 0,
@@ -89,8 +115,26 @@ static inline bool ane_stats_atomic64_try_cmpxchg(ane_stats_atomic_u64 *v,
 static inline void ane_stats_atomic_set(ane_stats_atomic_u32 *v, uint32_t i) {
 	__atomic_store_n(v, i, __ATOMIC_RELAXED);
 }
+static inline void ane_stats_atomic_set_release(ane_stats_atomic_u32 *v,
+						uint32_t i) {
+	__atomic_store_n(v, i, __ATOMIC_RELEASE);
+}
 static inline uint32_t ane_stats_atomic_read(const ane_stats_atomic_u32 *v) {
 	return __atomic_load_n(v, __ATOMIC_RELAXED);
+}
+static inline uint32_t ane_stats_atomic_cmpxchg(ane_stats_atomic_u32 *v,
+						uint32_t old, uint32_t new) {
+	__atomic_compare_exchange_n(v, &old, new, 0,
+				    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+	return old;
+}
+static inline bool ane_stats_atomic_try_cmpxchg(ane_stats_atomic_u32 *v,
+						uint32_t *old, uint32_t new) {
+	return __atomic_compare_exchange_n(v, old, new, 0,
+					   __ATOMIC_ACQ_REL, __ATOMIC_RELAXED);
+}
+static inline uint32_t ane_stats_atomic_read_acquire(const ane_stats_atomic_u32 *v) {
+	return __atomic_load_n(v, __ATOMIC_ACQUIRE);
 }
 static inline uint64_t ane_stats_atomic64_read_acquire(const ane_stats_atomic_u64 *v) {
 	return __atomic_load_n(v, __ATOMIC_ACQUIRE);
@@ -109,20 +153,28 @@ static inline uint64_t ane_stats_now_ns(void) {
 #endif /* __KERNEL__ */
 
 /*
- * Per-device counters. busy_ns holds the cumulative union of busy
- * intervals (nanoseconds the engine was working) since the device was
- * bound. jobs counts completed submissions. last_busy_end is the
- * union helper: the latest end timestamp of a busy window currently
- * incorporated in busy_ns; concurrent submissions add only the part
- * of their window that lies past last_busy_end.
+ * Per-device counters. busy_ns holds the busy time folded from closed
+ * busy periods: a period opens when the first submission arrives on an
+ * idle engine and closes when the last one completes, and its whole
+ * span folds once at close. Overlapping submissions share the period,
+ * so busy_ns is the union of the submit-to-completion intervals, not
+ * their sum. The show callback adds the live tail of the still-open
+ * period, so the reported value advances while engine work is in
+ * flight. jobs counts completed submissions. last_busy_end is the open
+ * period's start timestamp; inflight is the number of in-flight
+ * submissions, with ANE_STATS_INFLIGHT_TRANS as the transient close/
+ * open sentinel that keeps a fold and a period start from interleaving.
  *
  * Module-level `stats` parameter governs whether these counters and
  * the ring are created and whether the hot path branches out.
  */
+#define ANE_STATS_INFLIGHT_TRANS 0xFFFFFFFFu
+
 struct ane_stats_counters {
 	ane_stats_atomic_u64	busy_ns;
 	ane_stats_atomic_u64	jobs;
 	ane_stats_atomic_u64	last_busy_end;
+	ane_stats_atomic_u32	inflight;
 };
 
 /*
@@ -180,88 +232,194 @@ static inline void ane_stats_counters_init(struct ane_stats_counters *ctrs,
 /*
  * Hot-path submission start. Caller holds the device's submission
  * serialization if the engine is single-producer (ane.ko); concurrent
- * drivers (ane_t6021) pass ring/ctrs and rely on the cmpxchg in
- * complete(). Returns the per-slot index (always in [0, N)) for the
- * caller to later call ane_stats_complete() with the same index.
+ * drivers (ane_t6021) pass ring/ctrs and rely on the cmpxchg loops.
+ * Returns the submission ticket (head + 1, starting at 1) for the
+ * caller to later call ane_stats_complete() with. The ticket, not a
+ * slot index, identifies the submission: slots are shared after wrap,
+ * tickets are not.
+ *
+ * Counter side: the first submission onto an idle engine opens a busy
+ * period by latching last_busy_end = submit_ns under the transition
+ * sentinel; later overlapping submissions only increment inflight.
+ * The sentinel window is a handful of instructions, so the bounded
+ * cmpxchg retries never observe a half-open period.
  */
-static inline uint32_t ane_stats_begin(struct ane_stats_counters *ctrs,
+static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 				       struct ane_stats_ring *ring,
 				       uint64_t submit_ns, uint32_t tasks)
 {
-	uint64_t head = ane_stats_atomic64_read(&ring->head);
-	uint32_t idx = (uint32_t)(head & ring->mask);
-	struct ane_stats_ring_entry *e = &ring->slots[idx];
+	uint64_t ticket = ane_stats_atomic64_fetch_add(1ull, &ring->head) + 1ull;
+	struct ane_stats_ring_entry *e =
+		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
+	uint32_t cur = ane_stats_atomic_read(&ctrs->inflight);
 
-	(void)ctrs;
+	for (;;) {
+		if (cur == ANE_STATS_INFLIGHT_TRANS) {
+			cur = ane_stats_atomic_read(&ctrs->inflight);
+		} else if (!cur) {
+			if (ane_stats_atomic_cmpxchg(&ctrs->inflight, 0u,
+						     ANE_STATS_INFLIGHT_TRANS) != 0u) {
+				cur = ane_stats_atomic_read(&ctrs->inflight);
+				continue;
+			}
+			ane_stats_atomic64_set_release(&ctrs->last_busy_end,
+						       submit_ns);
+			ane_stats_atomic_set_release(&ctrs->inflight, 1u);
+			break;
+		} else if (ane_stats_atomic_try_cmpxchg(&ctrs->inflight, &cur,
+							cur + 1u)) {
+			break;
+		}
+	}
+
 	ane_stats_smp_wmb();
 	(void)ane_stats_atomic64_read_acquire(&e->seq); /* pair with reader */
-	/* Open a write window: bump seq to an odd value (in flight). */
-	ane_stats_atomic64_set_release(&e->seq, (head + 2ull) | 1ull);
+	/* In flight: seq stays odd (2*ticket - 1) until complete()
+	 * commits the even final value 2*ticket. The reader only prints
+	 * even seqs it can match, so an unfinished submission never
+	 * prints and a torn write is never visible. */
+	ane_stats_atomic64_set_release(&e->seq, 2ull * ticket - 1ull);
 	ane_stats_atomic64_set_release(&e->submit_ns, submit_ns);
 	ane_stats_atomic64_set_release(&e->start_ns, submit_ns);
 	ane_stats_atomic64_set_release(&e->end_ns, submit_ns);
 	ane_stats_atomic_set(&e->tasks, tasks);
 	ane_stats_atomic_set(&e->rc, (uint32_t)0xFFFFFFFFu); /* sentinel: not done */
 	ane_stats_atomic64_set_release(&e->tmst, 0ull);
-	ane_stats_atomic64_set_release(&e->seq, (head + 4ull)); /* even = committed */
-	/* Reserve the slot: increment after commit so the reader can
-	 * distinguish an in-flight write (seq odd on this slot) from a
-	 * committed slot waiting to be reused). */
-	ane_stats_atomic64_add(1ull, &ring->head);
-	return idx;
+	return ticket;
 }
-
 /*
- * Hot-path submission completion. Computes the busy interval and
- * folds it into busy_ns (union rule). Updates the slot's end_ns/rc/
- * tmst. Increments jobs.
- *
- * Busy_ns accounting: each submission's [start_ns, end_ns] window is
- * folded into busy_ns with the union rule
- *       add max(0, end - max(start, last_end))
- *   where last_end is updated to max(last_end, end). On a
- *   single-producer engine start >= last_end always, so the
- *   contribution is end - start.
+ * Hot-path submission completion. The last submission out of a busy
+ * period closes it: under the transition sentinel it folds the whole
+ * period span [last_busy_end, end_ns] into busy_ns before reopening
+ * the counter, so no reader can see a period both live and folded.
+ * Overlapping submissions share the period, so busy_ns is the union
+ * of the submit-to-completion intervals, not their sum. Updates the
+ * slot's end_ns/rc/tmst and increments jobs.
  */
 static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 				      struct ane_stats_ring *ring,
-				      uint32_t idx, uint64_t end_ns,
+				      uint64_t ticket, uint64_t end_ns,
 				      uint32_t rc, uint64_t tmst)
 {
-	struct ane_stats_ring_entry *e = &ring->slots[idx];
-	uint64_t start = ane_stats_atomic64_read(&e->start_ns);
-	uint64_t prev, add_ns;
+	struct ane_stats_ring_entry *e =
+		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
+	uint32_t cur = ane_stats_atomic_read(&ctrs->inflight);
 
-	/* Union rule: with last_busy_end = L, submission [s,e] contributes
-	 * max(0, e - max(s, L)) and updates L = max(L, e). On a
-	 * single-producer engine s >= L always, so the contribution is
-	 * e - s. */
-	prev = ane_stats_atomic64_read(&ctrs->last_busy_end);
 	for (;;) {
-		uint64_t lo = (start > prev) ? start : prev;
-		uint64_t hi = end_ns;
-		uint64_t nxt = (hi > prev) ? hi : prev;
-
-		add_ns = (hi > lo) ? (hi - lo) : 0ull;
-		if (ane_stats_atomic64_try_cmpxchg(&ctrs->last_busy_end, &prev, nxt))
+		if (cur == ANE_STATS_INFLIGHT_TRANS) {
+			cur = ane_stats_atomic_read(&ctrs->inflight);
+		} else if (cur > 1u) {
+			if (ane_stats_atomic_try_cmpxchg(&ctrs->inflight, &cur,
+							 cur - 1u))
+				break;
+		} else if (!cur) {
+			/* Unbalanced complete (cannot happen with the
+			 * documented one-begin-per-complete pairing):
+			 * count the job, fold nothing, never hang. */
 			break;
+		} else if (ane_stats_atomic_cmpxchg(&ctrs->inflight, 1u,
+						    ANE_STATS_INFLIGHT_TRANS) == 1u) {
+			uint64_t s = ane_stats_atomic64_read(&ctrs->last_busy_end);
+
+			if (end_ns > s)
+				ane_stats_atomic64_add(end_ns - s, &ctrs->busy_ns);
+			ane_stats_atomic_set_release(&ctrs->inflight, 0u);
+			break;
+		} else {
+			cur = ane_stats_atomic_read(&ctrs->inflight);
+		}
 	}
-	if (add_ns)
-		ane_stats_atomic64_add(add_ns, &ctrs->busy_ns);
 	ane_stats_atomic64_add(1ull, &ctrs->jobs);
 
-	/* Commit ring slot. */
+	/* Commit ring slot with the even final seq 2*ticket. The value
+	 * must not depend on the current ring->head: concurrent
+	 * submissions (ane_t6021) advance it, and a head-derived seq
+	 * would mislabel the slot. */
 	ane_stats_smp_wmb();
 	ane_stats_atomic64_set_release(&e->end_ns, end_ns);
 	ane_stats_atomic_set(&e->rc, rc);
 	ane_stats_atomic64_set_release(&e->tmst, tmst);
 	ane_stats_smp_wmb();
-	/* Final even seq at the slot's completion; reader sees a
-	 * snapshot at (h * 2 - 1) where h is the slot's reserved head. */
-	ane_stats_atomic64_set_release(&e->seq, ane_stats_atomic64_read(&ring->head) * 2ull);
+	ane_stats_atomic64_set_release(&e->seq, 2ull * ticket);
 }
 
 #define ANE_STATS_RING_ORDER_DEFAULT 8  /* 256 slots */
 #define ANE_STATS_RING_ORDER_MAX     10 /* 1024 slots */
+
+/*
+ * Accounting rule (coreglass producer contract): jobs counts completed
+ * submissions, one begin/complete pair per engine submission — one per
+ * ANE_SUBMIT on ane.ko (so libane ane_exec is 1 job and ane_exec_loop
+ * with N iterations is N jobs) and one per firmware PROCEDURE_CALL
+ * (CSNE_CMD_PROCEDURE_CALL) on ane_t6021.ko: that opcode is the only
+ * engine work on the shared ane_rtclient_command path. The control-
+ * plane exchanges that ride the same function — LOAD_PROGRAM,
+ * CREATE_PROCESS, CH_PROPERTY_WRITE, install-time CONFIG_GET — and the
+ * boot transport are not engine submissions and are not counted; jobs
+ * must match the number of engine calls the workload made (+-1 at the
+ * sampler boundary). A submission that completes with an error still
+ * completes its begin/complete pair, so the counter stays balanced.
+ *
+ * Typed sysfs formatter for the ane_stats attribute. The per-driver
+ * show callbacks fetch the counters from their real drvdata type
+ * (struct ane_device * on ane.ko, struct ane_rtclient * on
+ * ane_t6021.ko) and pass &...->stats_ctrs here. The formatter never
+ * sees the device pointer, so the drvdata type confusion that shipped
+ * in the first round (reading the head of ane_device as counters)
+ * cannot compile again: there is no cast to remove.
+ */
+/*
+ * Consistent counter snapshot across the tiny close/open transition:
+ * the transition sentinel is never accepted, and (inflight, busy_ns)
+ * must read back unchanged, so a value is only reported between
+ * transitions. The value is busy_ns plus the live tail of the
+ * still-open period, so it advances while engine work is in flight.
+ * Over the timeline the reported value is non-decreasing: folds only
+ * add, and at a close the live tail equals the fold.
+ */
+static inline uint64_t ane_stats_snapshot(const struct ane_stats_counters *ctrs,
+					  uint64_t now)
+{
+	uint64_t raw, busy;
+	uint32_t inflight;
+
+	for (;;) {
+		inflight = ane_stats_atomic_read_acquire(&ctrs->inflight);
+		if (inflight == ANE_STATS_INFLIGHT_TRANS)
+			continue; /* close/open in progress: spin it out */
+		raw = ane_stats_atomic64_read(&ctrs->busy_ns);
+		busy = raw;
+		if (inflight) {
+			uint64_t s = ane_stats_atomic64_read(&ctrs->last_busy_end);
+
+			if (now > s)
+				busy += now - s;
+		}
+		if (ane_stats_atomic_read(&ctrs->inflight) != inflight ||
+		    ane_stats_atomic64_read(&ctrs->busy_ns) != raw)
+			continue;
+		break;
+	}
+	return busy;
+}
+
+#ifdef __KERNEL__
+static inline ssize_t ane_stats_emit(char *buf,
+				     const struct ane_stats_counters *ctrs)
+{
+	return sysfs_emit(buf, "busy_ns %llu\njobs %llu\n",
+			  (unsigned long long)ane_stats_snapshot(ctrs, ane_stats_now_ns()),
+			  (unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
+}
+#else
+static inline int ane_stats_emit(char *buf,
+				 const struct ane_stats_counters *ctrs)
+{
+	return snprintf(buf, ANE_STATS_EMIT_MAX,
+			"busy_ns %llu\njobs %llu\n",
+			(unsigned long long)ane_stats_snapshot(ctrs, ane_stats_now_ns()),
+			(unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
+}
+#endif /* __KERNEL__ */
 
 #endif /* __ANE_STATS_H__ */
