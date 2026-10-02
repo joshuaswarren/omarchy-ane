@@ -170,40 +170,62 @@ kext's subrange, which is why ane135.read() returned None for writePTD/copyDSIDs
   value=0x33}, {regId=3, value=0xe} → 0x25 DSID_SET, all within
   powerOnMcacheRequest.
 
-## Pre-registered A/B protocol (NOT LANDED)
+## Pre-registered A/B protocol (LANDED on agent/ane-dsid-probe @ 90b800c)
 
-Reason: the numeric dsid value for kANE_Victims was not derived from the
-data on disk in this pass (see missing_data, above). The
-ane_t6021_rtclient_main.c `fw_dsid` module-param patch lives uncommitted
-(stashed as `AneDsidRe2: fw_dsid param, NOT landed`); it ships when the
-value lands.
+The numeric dsid was derived by AneDsidRe3 (kANE_Victims = 9, single id, from
+the static stream→dsid table at kernelcache file 0xbbe8f8); the param ships in
+ane_t6021_rtclient_main.c as `fw_dsid_set` (int, -1 = off = default, 0..255)
+with `fw_dsid_defaults` (bool, default off). The AneDsidRe2 stash
+(`AneDsidRe2: fw_dsid param, NOT landed`) is superseded by that commit and has
+been dropped.
 
-Arms:
-  - default               = `fw_dsid=0` (no cmd 0x25; identical to mainline)
-  - `fw_dsid_set=<v>`     = send CSNE_CMD 0x25 once after firmware boot and
-                            before the first program load, where <v> = the
-                            numeric dsid kANE_Victims MCDataStream object
-                            first id (range: 1..255, the 8-bit field at
-                            MMIO 0x285c2046c bits [17:10]). Default 0 =
-                            not sent; T602x only.
+Arms (one arm per boot; reboot between arms; the module cannot be reloaded):
+  - A default        = no param (fw_dsid_set = -1; no command sent;
+                       identical to previous mainline behaviour)
+  - B                = `fw_dsid_set=9` — sends 0x26 MCACHE_SIZE_GET (reply
+                       logged), then 0x25 DSID_SET dsid=9
+  - B2               = `fw_dsid_set=9 fw_dsid_defaults=1` — sends 0x26, then
+                       0x2e ANE_DEFAULT_SETTING_SET {regId=4,0x33},{regId=3,
+                       0xe}, then 0x25 DSID_SET dsid=9
 
-Workload: 20 blocks × 16 calls of the production encoder (severity matches
-the existing parity sweeps under `omarchy/tools`).
+Workload: whole encoder, 20 blocks × 16 calls of the production encoder
+(severity matches the existing parity sweeps under `omarchy/tools`).
+
+Boot gate per arm (record before loading):
+  - settled boot: uptime > 25 min
+  - load average < 0.5
+  - PSI cpu avg10 = 0 (recorded)
 
 Gate to record:
-  - load average < 0.5 throughout (MPStat/PSI read)
-  - PSI cpu avg10 = 0 throughout
   - golden sha fca96f13 exact across all 20×16 outputs
-  - the firmware's reply to 0x25 in this boot must not wedge the engine
-    (ASC wedge ⇒ immediate reboot, never recover)
+  - the firmware's replies (each exchange logs its result) must not wedge the
+    engine (ASC wedge ⇒ immediate reboot, never recover)
 
 Abort rules:
   - any load > 0.5 or PSI cpu avg10 > 0 → abort, do not record
   - any encoder output sha ≠ fca96f13 → abort
+  - any translation fault in dmesg → reboot immediately
   - any dmesg line "CSNE_CMD_DSID_SET Failed" (kext side) → abort
   - any ASC wedge (firmware reaches CmdProcessor 0x28/0x2a and stops
     replying, or `dcs-ps`/`fabric-ps` both read 0/0xffffffff while ane_sys
     ACTUAL = 0xf) → reboot immediately, log wedge time + last seq
+
+## 0x285c2046c readback protocol (LANDED on agent/ane-dsid-probe)
+
+ane_dsid_tm_probe (ane/t6021/probes, ane_dcs_ps_probe rules) reads the one
+named TM word the 13.5 fw DSID_SET programs — updateDSID's read-modify-write
+target 0x285c2046c, dsid at bits [17:10] — as an exact 4-byte ioremap_np map
+under the PS guard (ane_sys ACTUAL=0xf + seven island words 0x3ff), address
+logged before the read, no writes, no module_exit. No other window is read.
+
+  - before (baseline): arm A boot (fw_dsid_set off — Linux never writes the
+    word), `insmod ane_dsid_tm_probe.ko`, record the init line
+  - after: arms B/B2 boot, `insmod ane_dsid_tm_probe.ko` any time after boot
+    (the dsid sequence ran at driver probe), record the init line; extra
+    re-reads with `echo 1 > /sys/module/ane_dsid_tm_probe/parameters/start`
+  - pass shape: word unchanged except bits [17:10] = dsid << 10 (9 → 0x2400)
+  - the read is evidence only; abort rules above are unchanged (a probe
+    fault is a translation fault → reboot)
 
 ## dcs-ps probe protocol (LANDED on agent/ane-dsid-probe)
 
@@ -250,31 +272,42 @@ dg-alarm-py314:sep23) is available on macstudio. On this CT the in-tree
 kernel at /var/tmp/ane-kbuild (7.1.12-ane-intree) builds the probes with
 CROSS_COMPILE set; the upstream kernel build did the same.
 
+fw_dsid_set A/B build (2026-10-02, AneDsidBuild) — the same chroot recipe
+on macstudio, kernel build tree m2-headers/7.1.13-3-1-ARCH, sources =
+agent/ane-dsid-probe clones at 90b800c (module) and b435a9d (probes);
+clean build, only the documented pahole warning:
+
+  ane_t6021.ko        584e7ac2b06069b5c4aeda3994dfc1b8b703ed182479fb7556e734b77373551c
+  ane_dsid_tm_probe.ko 24bbaadb0e164a054dce31da516b042087d4772f368ca2653dc3415ec8f71167
+  (vermagic both 7.1.13-3-1-ARCH SMP preempt mod_unload aarch64)
+
+  Host tests: python3 tools/test_ane_m2.py → "test_ane_m2: ok";
+  make -C tools test_ane_fwcmd && tools/test_ane_fwcmd → "test_ane_fwcmd: ok"
+
 ## Branch / commit
 
   branch agent/ane-dsid-probe @ ~/src/omarchy-ane-dsid-wt
 
-  files carried (uncommitted):
-    ane/t6021/probes/ane_dcs_ps_probe.c     (new — review PASSES the bans)
-    ane/t6021/probes/Makefile               (adds ane_dcs_ps_probe.o)
-    receipts/2026-10-02-ane-dsid/README.md  (this file)
+  carried (committed, pushed):
+    90b800c ane/t6021: default-off fw_dsid_set replicates the 13.5 power-on
+            DSID sequence (ane_t6021_fwcmd.h, ane_t6021_rtclient_main.c,
+            tools/test_ane_fwcmd.c, tools/Makefile)
+    b435a9d ane/t6021: PS-guarded read-only probe for the TM dsid word
+            0x285c2046c (ane_dsid_tm_probe.c, probes/Makefile)
+    ane_dcs_ps_probe.c + its Makefile entry landed earlier on this branch.
 
-  NOT carried (stashed, see top of this README):
-    ane/t6021/ane_t6021_rtclient_main.c `fw_dsid` module-param — A/B not
-    landed because the kANE_Victims numeric dsid is not derived from on-disk
-    data in this pass.
+  Superseded and dropped: the AneDsidRe2 stash (`AneDsidRe2: fw_dsid param,
+  NOT landed`) — its param re-enters as `fw_dsid_set` in 90b800c after
+  AneDsidRe3 derived the dsid value.
 
 ## Missing data / why
 
-  1. mcc kext MCDataStreamConfig default table — the per-stream DSID:[first,
-     last] fields for kANE_Victims live in __DATA_CONST of the mcc kext and
-     are accessed through chained-fixup pointers (LC_DYLD_CHAINED_FIXUPS at
-     file 0x5c08000, dyld_chained_ptr_64_offset format 7, segment
-     __DATA_CONST fileoff 0x98c000). Chaining was started and not finished.
-     A ~30-line capstone-format sweep + a pointer lookup for the cstring
-     VA 0xfffffe000714acdc (kANE_Victims) in the resolved chain would yield
-     the numeric first/last. Required to lift the A/B protocol above from
-     STAGED to LANDED.
+  1. mcc kext MCDataStreamConfig default table — CLOSED by AneDsidRe3
+     (notebook entry 20261002T082000Z-ct-ane-dsid-final): the static
+     stream→dsid table at kernelcache file 0xbbe8b8..0xbbeaa8 gives
+     kANE_Victims = 9 (single id, first==last; copyDSIDs is called with
+     count=1). The auth=1 (PAC-signed) chain slots of the default table
+     itself remain undecoded, but the value is derived.
   2. Live boot trace of cmd 0x25 — only the ANE kext debug log
      "kANE_Victims dsid: 0x%x" or an iBoot/JT trace of the M$DS function
      dispatcher would give the runtime value without decoding the config
