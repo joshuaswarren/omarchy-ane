@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `omarchy-ane-check` prints the bring-up steps after its `UNTESTED SoC` line: add the opt-in key, on T6020/T6022/T8112 run `omarchy-ane-firmware-fetch` first, then `omarchy-ane-dt apply`, `update-m1n1`, reboot, and submit a collector row with `--ane-smoke` when the machine is idle. The machine-parsed lines are unchanged.
 - `omarchy-ane-smoke` now routes T8103/T6000/T6001/T6002 to the packaged H13 add fixture and T6020/T6021/T6022/T8112 to H14. H13 checks 64 valid little-endian fp16 planes and zero padding across the full 16 KiB tile. See `receipts/2026-10-02-h13-smoke/README.md`.
 - Fix promotion verdicts: scope fault lines to the ANE device, its DARTs and mailbox; report uninstalled rows and clean no-smoke rows as not judged. One passing row promotes an opt-in chip; pass/fail conflicts block promotion. A default-on chip reverts when its latest judged row is not clean. Remove machine, owner, board, kernel and uptime thresholds.
 
