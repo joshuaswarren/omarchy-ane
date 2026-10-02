@@ -10,10 +10,12 @@ omarchy-ane-probe --pretty   # the same, indented
 ```
 
 It exits 0 also when parts cannot be read. Each such part is listed in
-`unreadable` with the reason, for example `dmesg: unreadable without root
-(kernel.dmesg_restrict)` or `genpd: no debugfs`. It needs no network. On the
-T6021 test fixture the probe itself took 12 to 28 ms (`elapsed_ms`), and the
-whole process about 0.2 s.
+`unreadable` with the reason, for example `dmesg: exit 1: dmesg: read kernel
+buffer failed: Operation not permitted` or `genpd: no debugfs`. A section
+that fails, for example because a table value is malformed, is listed there
+too, and the other sections still report. It needs no network. On the T6021
+test fixture the probe itself took 12 to 28 ms (`elapsed_ms`), and the whole
+process about 0.2 s.
 
 ## What it reads
 
@@ -69,17 +71,23 @@ no table file, `soc_table.reason` says why.
   keys. Text from dmesg, debugfs and the tools has MAC, IPv4 and UUID
   strings replaced by `[redacted]`.
 
-`tools/test_ane_probe.py` checks the tool source for write, map, module,
-shell and network calls. It also checks that the check catches each of these
-cases.
+`tools/test_ane_probe.py` checks the tool source with allowlists: only nine
+standard modules can be imported, only `os.path`, `os.readlink` and `os.walk`
+and three `subprocess` names can be used, no write method and no `open` can be
+called, and `subprocess.run` occurs once. The test also checks that this check
+catches each forbidden case, for example `os.makedirs`, `open("/dev/mem")` and
+`import socket`.
 
 ## Size
 
 `--max-kib N` (default 8, 0 for no limit) keeps the compact document within
-N KiB. To do this, it sets fields to null in this order: `dmesg`, `check`,
-`genpd`, `debug_ane`, `platform_devices`, `unknown_ane_like`, `interrupts`,
-then the node lists. It then sets `truncated` to true. A T6021 or T8103
-document without dmesg is about 5 KiB.
+N KiB. To do this, it sets fields to null in this order until the document
+fits: `dmesg`, `check`, `genpd`, `debug_ane`, `platform_devices`,
+`unknown_ane_like`, `interrupts`, the node lists, `accel`, `modules`,
+`packages`, `firmware`, `soc_table`, `compatible`, `cmdline`, `installed`. It
+then sets `truncated` to true. If the document is still too large, only
+`schema_version`, `tool`, `generated_at`, `elapsed_ms`, `soc` and `board`
+remain. A T6021 or T8103 document without dmesg is about 5 KiB.
 
 ## Community collector
 
