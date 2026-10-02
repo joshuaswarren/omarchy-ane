@@ -30,6 +30,8 @@ on:
       - tools/test_promotion_check.py
       - tools/test_promote_chip.py
       - tools/test_ane_smoke.py
+      - tools/omarchy-ane-probe
+      - tools/test_ane_probe.py
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
@@ -52,6 +54,8 @@ on:
       - tools/test_promotion_check.py
       - tools/test_promote_chip.py
       - tools/test_ane_smoke.py
+      - tools/omarchy-ane-probe
+      - tools/test_ane_probe.py
       - .github/workflows/dt-overlays.yml
 
 jobs:
@@ -77,5 +81,6 @@ jobs:
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
           python3 tools/test_promotion_check.py
           python3 tools/test_ane_smoke.py
+          python3 tools/test_ane_probe.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1

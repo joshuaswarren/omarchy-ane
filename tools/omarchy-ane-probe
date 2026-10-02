@@ -1,0 +1,512 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright 2026 Joshua Warren
+"""omarchy-ane-probe: read-only ANE state of an Apple Silicon Linux machine.
+
+  omarchy-ane-probe [--json | --pretty] [--max-kib N] [--root DIR] [--data-dir DIR]
+
+Prints one JSON object and exits 0, also when parts cannot be read: each such
+part is named in "unreadable" with the reason. Needs no root and no network.
+It reads files under /proc, /sys, /usr/lib/modules and /var/lib/pacman/local,
+follows sysfs links, and runs only the three commands in ALLOWED_ARGV. It
+never opens a file for writing, never loads a module and never maps a register
+(tools/test_ane_probe.py checks the source for this).
+
+--root DIR reads the system below DIR (tests); the commands then do not run,
+because they would describe this host and not DIR.
+--data-dir DIR is the per-SoC table directory (data/ane-soc/<soc>.json). The
+default is ../data/ane-soc next to this file, else
+/usr/share/omarchy-ane/soc. With no table, soc_table says why.
+--max-kib N caps the compact JSON at N KiB (default 8, 0 = no cap): the bulky
+fields are set to null in a fixed order and "truncated" becomes true.
+"""
+import argparse
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SCHEMA_VERSION = 1
+ALLOWED_ARGV = frozenset({
+    ("dmesg", "--color=never"),
+    ("omarchy-ane-check",),
+    ("omarchy-ane-firmware-fetch", "--check"),
+})
+CMD_PATH = "/usr/bin:/bin:/usr/local/bin"
+# The ANE word in a node name, label or compatible: "ane", "ane0", "apple,t8103-ane",
+# "ane,t8132exclave", "iop-ane,ascwrap-v8", "ane_sys"; not "plane" or "lane".
+ANE_TOKEN = re.compile(r"(?<![a-z0-9])ane(?![a-z])")
+ANE_NAME = re.compile(r"^ane\d*(@|$)")
+ANE_COMPAT = re.compile(r"^apple,t[0-9a-z]+-ane$")
+DMESG_MATCH = re.compile(r"(?<![a-z0-9])ane(?![a-z])|dart-ane|apple-dart.*ane|ascwrap", re.I)
+SENSITIVE = re.compile(
+    r"\b(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}\b"
+    r"|\b(?:\d{1,3}\.){3}\d{1,3}\b"
+    r"|\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b")
+CMDLINE_KEYS = frozenset({"console", "quiet", "loglevel", "mitigations"})
+CMDLINE_PREFIXES = ("arm64.", "ane.", "ane_t6021.", "apple_dart.")
+NODE_PROPS = ("reg", "interrupts", "iommus", "power-domains", "clocks", "memory-region", "mboxes")
+UEVENT_KEYS = ("DRIVER", "OF_NAME", "OF_COMPATIBLE_0", "MODALIAS")
+# Set to null in this order until the document fits --max-kib.
+CAP_ORDER = ("dmesg", "check", "genpd", "debug_ane", "platform_devices", "unknown_ane_like",
+             "interrupts", "pmgr_ane_nodes", "mailbox_nodes", "dart_ane_nodes", "ane_nodes")
+
+
+def read_bytes(path):
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def read_text(path):
+    data = read_bytes(path)
+    return None if data is None else data.decode("utf-8", "replace")
+
+
+def listdir(path):
+    try:
+        return sorted(path.iterdir())
+    except OSError:
+        return []
+
+
+def link_name(path):
+    try:
+        return os.path.basename(os.readlink(path))
+    except OSError:
+        return None
+
+
+def strings(data):
+    return [s.decode("utf-8", "replace") for s in (data or b"").split(b"\0") if s]
+
+
+def cells(data):
+    data = data or b""
+    return [int.from_bytes(data[i:i + 4], "big") for i in range(0, len(data) - 3, 4)]
+
+
+def redact(text):
+    return SENSITIVE.sub("[redacted]", text)
+
+
+class DeviceTree:
+    def __init__(self, base):
+        self.base = base
+        self.nodes = {}  # "/soc/ane@26bc04000" -> {prop: bytes}
+        self.phandles = {}
+        stack = [base]
+        while stack:
+            d = stack.pop()
+            props = {}
+            for entry in listdir(d):
+                if entry.is_dir() and not entry.is_symlink():
+                    stack.append(entry)
+                elif entry.is_file():
+                    data = read_bytes(entry)
+                    if data is not None:
+                        props[entry.name] = data
+            path = "/" + d.relative_to(base).as_posix() if d != base else "/"
+            self.nodes[path] = props
+            for key in ("phandle", "linux,phandle"):
+                if key in props:
+                    self.phandles[cells(props[key])[0]] = path
+
+    def parent_cells(self, path, key, default):
+        parent = self.nodes.get(path.rsplit("/", 1)[0] or "/", {})
+        return cells(parent[key])[0] if key in parent else default
+
+    def targets(self, path, prop, count_prop, default_count):
+        """Nodes named by a phandle list such as iommus or power-domains."""
+        out, values, i = [], cells(self.nodes[path].get(prop)), 0
+        while i < len(values):
+            target = self.phandles.get(values[i])
+            if target is None:
+                break
+            out.append(target)
+            spec = self.nodes[target].get(count_prop)
+            i += 1 + (cells(spec)[0] if spec else default_count)
+        return out
+
+    def describe(self, path):
+        props = self.nodes[path]
+        rec = {"path": path, "compatible": strings(props.get("compatible")),
+               "status": (strings(props.get("status")) or [None])[0]}
+        for prop in NODE_PROPS:
+            if prop in props:
+                rec[prop] = {"hex": props[prop].hex(), "cells": cells(props[prop])}
+        if "label" in props:
+            rec["label"] = strings(props["label"])[0]
+        if "reg" in props:
+            ac = self.parent_cells(path, "#address-cells", 2)
+            sc = self.parent_cells(path, "#size-cells", 1)
+            values, step, regs = cells(props["reg"]), ac + sc, []
+            for i in range(0, len(values) - step + 1, step if step else 1):
+                base = size = 0
+                for v in values[i:i + ac]:
+                    base = base << 32 | v
+                for v in values[i + ac:i + step]:
+                    size = size << 32 | v
+                regs.append({"base": hex(base), "size": hex(size)})
+            rec["reg_decoded"] = regs
+        return rec
+
+    def ane_family(self):
+        ane = [p for p, props in self.nodes.items()
+               if ANE_NAME.search(p.rsplit("/", 1)[-1])
+               or any(ANE_COMPAT.match(c) for c in strings(props.get("compatible")))]
+        dart, pmgr, mbox = [], [], []
+        for p in ane:
+            dart += self.targets(p, "iommus", "#iommu-cells", 1)
+            pmgr += self.targets(p, "power-domains", "#power-domain-cells", 0)
+            mbox += self.targets(p, "mboxes", "#mbox-cells", 0)
+        known = set(ane) | set(dart) | set(pmgr) | set(mbox)
+        unknown = []
+        for p, props in self.nodes.items():
+            if p in known or p == "/":
+                continue
+            words = [p.rsplit("/", 1)[-1]] + strings(props.get("compatible")) + strings(props.get("label"))
+            if not any(ANE_TOKEN.search(w.lower()) for w in words):
+                continue
+            compat = " ".join(strings(props.get("compatible")))
+            if "dart" in compat or "dart" in p:
+                dart.append(p)
+            elif "pmgr" in compat or "power-controller" in p:
+                pmgr.append(p)
+            elif "mailbox" in compat or "mbox" in p:
+                mbox.append(p)
+            else:
+                unknown.append(p)
+        uniq = lambda paths: [self.describe(p) for p in dict.fromkeys(paths)]
+        return {"ane_nodes": uniq(ane), "dart_ane_nodes": uniq(dart), "pmgr_ane_nodes": uniq(pmgr),
+                "mailbox_nodes": uniq(mbox), "unknown_ane_like": uniq(unknown)}
+
+
+def run(argv, timeout, unreadable, label):
+    """Run one allowlisted read-only command. Returns (rc, stdout, stderr) or None."""
+    if tuple(argv) not in ALLOWED_ARGV:
+        raise ValueError(f"not an allowed command: {argv}")
+    try:
+        p = subprocess.run(list(argv), capture_output=True, text=True, timeout=timeout,
+                           env={"PATH": CMD_PATH, "LC_ALL": "C"}, stdin=subprocess.DEVNULL)
+    except FileNotFoundError:
+        unreadable.append(f"{label}: not installed")
+        return None
+    except (OSError, subprocess.TimeoutExpired) as e:
+        unreadable.append(f"{label}: {type(e).__name__}")
+        return None
+    return p.returncode, p.stdout, p.stderr
+
+
+def filter_cmdline(text):
+    kept, dropped = [], 0
+    for tok in text.split():
+        key = tok.split("=", 1)[0]
+        if (key in CMDLINE_KEYS or key.startswith(CMDLINE_PREFIXES)) and not SENSITIVE.search(tok):
+            kept.append(tok)
+        else:
+            dropped += 1
+    return " ".join(kept), dropped
+
+
+def dmesg_matches(text, limit=20):
+    lines = [redact(l)[:160] for l in text.splitlines() if DMESG_MATCH.search(l)]
+    return len(lines), lines[-limit:]
+
+
+def interrupts(text):
+    rows = (text or "").splitlines()
+    if not rows:
+        return []
+    ncpu = len(rows[0].split())
+    out = []
+    for row in rows[1:]:
+        tok = row.split()
+        if not tok or not tok[0].endswith(":"):
+            continue
+        counts = [int(t) for t in tok[1:1 + ncpu] if t.isdigit()]
+        desc = " ".join(tok[1 + len(counts):])
+        if re.search(r"ane|dart|mailbox|mbox|ascwrap", desc, re.I):
+            out.append({"irq": tok[0][:-1], "count": sum(counts), "desc": desc[:80]})
+    return out[:32]
+
+
+def modules(root):
+    out = []
+    for row in (read_text(root / "proc/modules") or "").splitlines():
+        f = row.split()
+        if len(f) >= 5 and f[0].startswith("ane"):
+            sysmod = root / "sys/module" / f[0]
+            out.append({"name": f[0], "size": int(f[1]), "refcount": int(f[2]) if f[2].isdigit() else None,
+                        "deps": [d for d in f[3].split(",") if d and d != "-"], "state": f[4],
+                        "version": (read_text(sysmod / "version") or "").strip() or None,
+                        "srcversion": (read_text(sysmod / "srcversion") or "").strip() or None})
+    return out
+
+
+def module_files(root, release):
+    """ane.ko / ane_t6021.ko (any compression) under the running kernel's modules."""
+    base = root / "usr/lib/modules"
+    if not base.is_dir():
+        base = root / "lib/modules"
+    kdirs = [base / release] if release and (base / release).is_dir() else listdir(base)
+    found = []
+    for kdir in kdirs:
+        for dirpath, _, files in os.walk(kdir):
+            found += [os.path.relpath(os.path.join(dirpath, f), root) for f in files
+                      if re.match(r"^ane(_t6021)?\.ko(\.(zst|xz|gz))?$", f)]
+    return sorted(found)[:8]
+
+
+def accel(root):
+    out = []
+    for entry in listdir(root / "sys/class/accel"):
+        dev = entry / "device"
+        driver = link_name(dev / "driver")
+        compat = strings(read_bytes(dev / "of_node/compatible"))
+        if not ((driver or "").startswith("ane") or any(ANE_TOKEN.search(c) for c in compat)):
+            continue
+        out.append({"name": entry.name, "device": link_name(dev), "driver": driver,
+                    "runtime_status": (read_text(dev / "power/runtime_status") or "").strip() or None,
+                    "ane_stats": (dev / "ane_stats").exists()})
+    return out
+
+
+def platform_devices(root):
+    out = []
+    for entry in listdir(root / "sys/bus/platform/devices"):
+        if not ANE_TOKEN.search(entry.name.lower()):
+            continue
+        uevent = {}
+        for row in (read_text(entry / "uevent") or "").splitlines():
+            key, _, value = row.partition("=")
+            if key in UEVENT_KEYS:
+                uevent[key] = redact(value)[:96]
+        out.append({"name": entry.name, "driver": link_name(entry / "driver"), "uevent": uevent,
+                    "runtime_status": (read_text(entry / "power/runtime_status") or "").strip() or None,
+                    "runtime_control": (read_text(entry / "power/control") or "").strip() or None})
+    return out
+
+
+def debugfs_reason(debug):
+    return "unreadable without root" if debug.exists() else "no debugfs"
+
+
+def genpd(root, unreadable):
+    debug = root / "sys/kernel/debug"
+    text = read_text(debug / "pm_genpd/pm_genpd_summary")
+    if text is None:
+        unreadable.append("genpd: " + debugfs_reason(debug))
+        return None
+    return [redact(l)[:120] for l in text.splitlines() if ANE_TOKEN.search(l.lower())][:24]
+
+
+def debug_ane(root, unreadable):
+    debug = root / "sys/kernel/debug"
+    try:
+        entries = [e for e in debug.iterdir() if e.name.startswith("ane")]
+    except OSError:
+        unreadable.append("debug_ane: " + debugfs_reason(debug))
+        return None
+    out = {}
+    for e in sorted(entries)[:8]:
+        if e.is_dir():
+            out[e.name] = sorted(c.name for c in listdir(e))[:16]
+        else:
+            text = read_text(e)
+            out[e.name] = None if text is None else redact(text)[:256]
+    return out
+
+
+def packages(root):
+    out = {}
+    for entry in listdir(root / "var/lib/pacman/local"):
+        if not entry.name.startswith("omarchy-ane"):
+            continue
+        desc = (read_text(entry / "desc") or "").split("\n")
+        fields = {desc[i]: desc[i + 1] for i in range(len(desc) - 1) if desc[i] in ("%NAME%", "%VERSION%")}
+        if "%NAME%" in fields:
+            out[fields["%NAME%"]] = fields.get("%VERSION%")
+    return out
+
+
+def tool_report(argv, timeout, unreadable, label, limit):
+    res = run(argv, timeout, unreadable, label)
+    if res is None:
+        return None
+    rc, out, err = res
+    lines = [redact(l)[:200] for l in (out + err).splitlines() if l.strip()]
+    text, kept = 0, []
+    for l in lines:
+        text += len(l) + 1
+        if text > limit:
+            break
+        kept.append(l)
+    return {"rc": rc, "lines": kept, "lines_total": len(lines)}
+
+
+def table_dir(arg, root):
+    if arg:
+        return Path(arg)
+    for d in (Path(__file__).resolve().parent.parent / "data/ane-soc", root / "usr/share/omarchy-ane/soc"):
+        if d.is_dir():
+            return d
+    return None
+
+
+def v(leaf):
+    return leaf.get("v") if isinstance(leaf, dict) else leaf
+
+
+def soc_table(soc, board, family, tdir):
+    """dt_vs_table: the live device tree against data/ane-soc/<soc>.json."""
+    if not soc:
+        return {"table": None, "reason": "no apple,tNNNN compatible in the device tree"}
+    if tdir is None:
+        return {"table": None, "reason": "no data/ane-soc next to the tool and no /usr/share/omarchy-ane/soc"}
+    path = tdir / f"{soc}.json"
+    try:
+        table = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {"table": None, "reason": f"no {path.name} in {tdir}"}
+    except (OSError, ValueError) as e:
+        return {"table": path.name, "reason": f"unreadable: {e}"}
+    diffs, compared = [], 0
+
+    def check(field, dt, tbl, ok):
+        nonlocal compared
+        if tbl is None:
+            return
+        compared += 1
+        if not ok:
+            diffs.append({"field": field, "dt": dt, "table": tbl})
+
+    boards = [v(b) for b in table.get("boards") or []]
+    if boards:
+        check("boards", board, boards, board in boards)
+    for key, nodes in (("ane", "ane_nodes"), ("dart", "dart_ane_nodes"), ("mailbox", "mailbox_nodes")):
+        spec = table.get(key) or {}
+        node = (family[nodes] or [None])[0]
+        compat = v(spec.get("compatible"))
+        dt_compat = node["compatible"] if node else None
+        check(f"{key}.compatible", dt_compat, compat, bool(node) and compat in node["compatible"])
+        dt_regs = (node or {}).get("reg_decoded") or []
+        for i, reg in enumerate(spec.get("reg") or []):
+            for part in ("base", "size"):
+                want = v(reg.get(part))
+                have = dt_regs[i][part] if i < len(dt_regs) else None
+                ok = have is not None and want is not None and int(str(want), 0) == int(have, 0)
+                check(f"{key}.reg[{i}].{part}", have, want, ok)
+        irqs = v(spec.get("interrupts"))
+        if irqs is not None:
+            want = irqs if isinstance(irqs, list) else [irqs]
+            have = (node or {}).get("interrupts", {}).get("cells", [])
+            check(f"{key}.interrupts", have, want, all(v(i) in have for i in want))
+    return {"table": path.name, "marketing": v(table.get("marketing")), "generation": v(table.get("generation")),
+            "state": v(table.get("state")), "compared": compared, "match": not diffs, "dt_vs_table": diffs[:16]}
+
+
+def probe(root, data_dir):
+    unreadable = []
+    live = root == Path("/")
+    dt_base = next((d for d in (root / "proc/device-tree", root / "sys/firmware/devicetree/base") if d.is_dir()), None)
+    out = {"schema_version": SCHEMA_VERSION, "tool": "omarchy-ane-probe",
+           "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if dt_base is None:
+        unreadable.append("device-tree: no /proc/device-tree (not a device-tree system)")
+        tree, compat = None, []
+    else:
+        tree = DeviceTree(dt_base)
+        compat = strings(tree.nodes["/"].get("compatible"))
+    out["soc"] = next((m.group(1) for c in compat for m in [re.match(r"^apple,(t\d{4})$", c)] if m), None)
+    out["board"] = next((c for c in compat if re.match(r"^apple,j\w+$", c)), None)
+    out["model"] = (strings(tree.nodes["/"].get("model")) or [None])[0] if tree else None
+    out["compatible"] = compat
+    family = tree.ane_family() if tree else {k: [] for k in ("ane_nodes", "dart_ane_nodes", "pmgr_ane_nodes",
+                                                               "mailbox_nodes", "unknown_ane_like")}
+    out.update(family)
+
+    release = (read_text(root / "proc/sys/kernel/osrelease") or "").strip() or None
+    out["kernel"] = {"release": release,
+                     "version": (read_text(root / "proc/sys/kernel/version") or "").strip()[:120] or None}
+    out["cmdline"], out["cmdline_dropped"] = filter_cmdline(read_text(root / "proc/cmdline") or "")
+    out["modules"] = modules(root)
+    out["interrupts"] = interrupts(read_text(root / "proc/interrupts"))
+    out["accel"] = accel(root)
+    out["platform_devices"] = platform_devices(root)
+    out["genpd"] = genpd(root, unreadable)
+    out["debug_ane"] = debug_ane(root, unreadable)
+    out["packages"] = packages(root)
+    files = module_files(root, release)
+    out["installed"] = {
+        "dkms_module_present": bool(files),
+        "module_files": files,
+        "driver_loaded": any(m["name"] in ("ane", "ane_t6021") for m in out["modules"]),
+        "omarchy_ane_check_present": None,
+        "firmware_present": None,
+    }
+
+    out["dmesg"] = None
+    out["check"] = None
+    out["firmware"] = None
+    if not live:
+        unreadable.append("dmesg, omarchy-ane-check, firmware: not run with --root")
+    else:
+        res = run(("dmesg", "--color=never"), 1, unreadable, "dmesg")
+        if res and res[0] == 0:
+            count, lines = dmesg_matches(res[1])
+            out["dmesg"] = {"matched": count, "lines": lines}
+        elif res:
+            unreadable.append("dmesg: unreadable without root (kernel.dmesg_restrict)")
+        out["check"] = tool_report(("omarchy-ane-check",), 2.5, unreadable, "omarchy-ane-check", 1536)
+        out["installed"]["omarchy_ane_check_present"] = out["check"] is not None
+        out["firmware"] = tool_report(("omarchy-ane-firmware-fetch", "--check"), 1, unreadable,
+                                      "omarchy-ane-firmware-fetch", 512)
+        if out["firmware"] is not None:
+            out["installed"]["firmware_present"] = out["firmware"]["rc"] == 0
+
+    out["soc_table"] = soc_table(out["soc"], out["board"], family, table_dir(data_dir, root))
+    out["unreadable"] = unreadable
+    return out
+
+
+def cap(doc, max_kib):
+    if max_kib <= 0:
+        return doc
+    for key in CAP_ORDER:
+        if len(json.dumps(doc, separators=(",", ":"))) <= max_kib * 1024:
+            break
+        doc[key] = None
+        doc["truncated"] = True
+    return doc
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    fmt = ap.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true", help="compact JSON (the default)")
+    fmt.add_argument("--pretty", action="store_true", help="indented JSON")
+    ap.add_argument("--max-kib", type=int, default=8)
+    ap.add_argument("--root", type=Path, default=Path("/"))
+    ap.add_argument("--data-dir")
+    args = ap.parse_args(argv)
+    t0 = time.monotonic()
+    try:
+        doc = probe(args.root, args.data_dir)
+    except Exception as e:  # exit 0 is the contract: report, do not crash
+        doc = {"schema_version": SCHEMA_VERSION, "tool": "omarchy-ane-probe",
+               "error": f"{type(e).__name__}: {e}", "unreadable": ["probe: internal error"]}
+    doc["elapsed_ms"] = int((time.monotonic() - t0) * 1000)
+    doc = cap(doc, args.max_kib)
+    print(json.dumps(doc, indent=2 if args.pretty else None,
+                     separators=None if args.pretty else (",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
