@@ -1,0 +1,24 @@
+# analyze.py run-dk-C (C2: -dart kernel, ane_tunables=0) run-dk-S (S: stock kernel and stock module).
+# Not the X result (X has no timing). The VERDICT line here measures the toolchain confounder: C2 vs stock.
+== run-dk-C-20261002T034651Z: DONE True, encoder blocks 20, minmin 254.362, medmed 254.572 ms; prog_020 4.770 / 4.832, prog_006 10.550 / 10.634; not bit-exact: none
+  gate add rc=0 GATE PASS
+  gate mul rc=0 GATE PASS
+  gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+  prog_020 exec ms over 1 calls: min 4.824 p10 4.824 p25 4.824 median 4.824 p75 4.824 p90 4.824 p99 4.824 max 4.824 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+  prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+  burst rc=0 w1 runs=3318 pass=3318 fail=0 w2 runs=3330 pass=3330 fail=0 w3 runs=3315 pass=3315 fail=0 w4 runs=3325 pass=3325 fail=0 exact lines: 13288 new ANE/mailbox dmesg lines: 0 bad dmesg lines (wh
+  dmesg new lines 8, non-UFW 0, bad 0
+== run-dk-S-20261002T042916Z: DONE True, encoder blocks 20, minmin 254.378, medmed 254.520 ms; prog_020 4.760 / 4.821, prog_006 10.538 / 10.602; not bit-exact: none
+  gate add rc=0 GATE PASS
+  gate mul rc=0 GATE PASS
+  gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+  prog_020 exec ms over 1 calls: min 4.843 p10 4.843 p25 4.843 median 4.843 p75 4.843 p90 4.843 p99 4.843 max 4.843 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+  prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+  burst rc=0 w1 runs=3305 pass=3305 fail=0 w2 runs=3295 pass=3295 fail=0 w3 runs=3277 pass=3277 fail=0 w4 runs=3293 pass=3293 fail=0 exact lines: 13170 new ANE/mailbox dmesg lines: 0 bad dmesg lines (wh
+  dmesg new lines 9, non-UFW 0, bad 0
+control: minmin 254.362 vs 254.0 ms +-1%: PASS
+encoder minmin: 254.362 -> 254.378 ms, drop -0.01% -> REJECTED
+encoder medmed: 254.572 -> 254.520 ms, drop +0.02% -> REJECTED
+VERDICT REJECTED
+prog_020: other/control minmin 0.9979, medmed 0.9978
+prog_006: other/control minmin 0.9989, medmed 0.9969

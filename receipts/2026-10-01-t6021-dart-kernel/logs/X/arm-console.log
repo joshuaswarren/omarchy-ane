@@ -1,0 +1,37 @@
+== state start 2026-10-02T04:09:24.770Z arm dk-X
+boot_id ccd52858-fe25-4541-86b4-14333844b289 uname 7.1.13-3-1-ARCH-dart up 35.44
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 0
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 1553
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 23:09:24 up 0 min,  1 user,  load average: 0.68, 0.17, 0.06
+== 1. gates 04:09:24
+gate add rc=1 GATE FAIL
+STOP after /var/tmp/dart/run-dk-X-20261002T040924Z/gate-add.log: rc=1
+[   35.711097] apple-dart 285810000.iommu: translation fault: status:0x800c0002 stream:0 code:0x2 (NO PGD FOR IOVA) at 0xfd68be00
+[   65.945869] ane_t6021 284000000.ane: call completion wait failed -110
+== state stop 2026-10-02T04:09:55.239Z arm dk-X
+boot_id ccd52858-fe25-4541-86b4-14333844b289 uname 7.1.13-3-1-ARCH-dart up 65.91
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 344064
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 2 dmesg_lines 1557
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 23:09:55 up 1 min,  1 user,  load average: 0.88, 0.27, 0.10

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """DartKernel analysis: per-arm encoder / prog_020 / prog_006 minmin and medmed
-(AfBridgeRun method), correctness, and the pre-registered rule: C within
-254 ms +-1%, X against C (>= 15% supported, 3-15% partial, < 3% rejected).
+(AfBridgeRun method), correctness, and the pre-registered rule: the control
+within 254 ms +-1%, the other arm against it (>= 15% supported, 3-15%
+partial, < 3% rejected).
 
-usage: analyze.py C_RUN X_RUN [S_RUN]   (ab-turn.sh run-*/ dirs)"""
+usage: analyze.py CONTROL_RUN OTHER_RUN   (ab-turn.sh run-*/ dirs, each with DONE)"""
 import re
 import statistics as st
 import sys
@@ -40,27 +41,27 @@ def band(drop):
 
 
 def main():
-    names = ["C ane_tunables=0", "X ane_tunables=1", "S stock"]
-    res = {n: arm(Path(p)) for n, p in zip(names, sys.argv[1:])}
-    for n, a in res.items():
+    runs = [Path(p) for p in sys.argv[1:3]]
+    c, x = (arm(r) for r in runs)
+    for r, a in zip(runs, (c, x)):
         e = a["enc"]
-        print(f"== {n}: DONE {a['done']}, encoder blocks {e['n']}, minmin {e['minmin']:.3f}, medmed {e['medmed']:.3f} ms; "
+        print(f"== {r.name}: DONE {a['done']}, encoder blocks {e['n']}, minmin {e['minmin']:.3f}, medmed {e['medmed']:.3f} ms; "
               + ", ".join(f"{p} {s['minmin']:.3f} / {s['medmed']:.3f}" for p, s in a["q"].items())
               + f"; not bit-exact: {a['bad'] or 'none'}")
-        for c in a["checks"]:
-            print("  " + c[:200])
-    c, x = res[names[0]], res[names[1]]
+        for line in a["checks"]:
+            print("  " + line[:200])
     ok = abs(c["enc"]["minmin"] / BASE - 1) <= TOL
-    print(f"C control: minmin {c['enc']['minmin']:.3f} vs {BASE} ms +-1%: {'PASS' if ok else 'FAIL'}")
+    print(f"control: minmin {c['enc']['minmin']:.3f} vs {BASE} ms +-1%: {'PASS' if ok else 'FAIL'}")
     v = []
     for k in ("minmin", "medmed"):
         drop = 1 - x["enc"][k] / c["enc"][k]
         v.append(band(drop))
-        print(f"encoder {k}: C {c['enc'][k]:.3f} -> X {x['enc'][k]:.3f} ms, drop {drop * 100:+.2f}% -> {v[-1]}")
+        print(f"encoder {k}: {c['enc'][k]:.3f} -> {x['enc'][k]:.3f} ms, drop {drop * 100:+.2f}% -> {v[-1]}")
     print(f"VERDICT {v[0] if v[0] == v[1] else f'unresolved (minmin {v[0]}, medmed {v[1]})'}"
-          f"{'' if ok else ' (C control FAILED: not comparable)'}")
+          f"{'' if ok else ' (control FAILED: not comparable)'}")
     for p in ("prog_020", "prog_006"):
-        print(f"{p}: X/C minmin {x['q'][p]['minmin'] / c['q'][p]['minmin']:.4f}, medmed {x['q'][p]['medmed'] / c['q'][p]['medmed']:.4f}")
+        print(f"{p}: other/control minmin {x['q'][p]['minmin'] / c['q'][p]['minmin']:.4f}, "
+              f"medmed {x['q'][p]['medmed'] / c['q'][p]['medmed']:.4f}")
 
 
 if __name__ == "__main__":

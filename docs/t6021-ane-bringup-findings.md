@@ -1516,3 +1516,29 @@ Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021
 - The marker contradiction of the 2026-09-27 staged trials did not occur in
   the three own-memory boots. [INFERENCE] Those trials ran a copy without
   iBoot's patches (receipt 2026-10-01-t602x-independent); the replay closes it.
+
+## 33. The DART tunables at DART reset: 0x20c faults in the macOS order too (2026-10-02)
+
+Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dart-kernel/README.md).
+
+- `kernel/patches/apple-dart-ane-tunables.patch` (asahi-7.1.13-3, parameter
+  `apple_dart.ane_tunables`, default off) writes the 19 macOS words per bulk
+  DART in `apple_dart_hw_reset()`: TTBRs cleared, full TLB flush, the words,
+  then streams and TTBR, as macOS does. The kernel is a cross build of the
+  package source and config; with the parameter off it runs the encoder at
+  the stock time (254.362 vs 254.378 ms minmin) and passes every gate.
+- With the parameter on, both bulk DARTs read back all 19 words (0x20c
+  0xe40000ff) and the firmware boots, but the first CALL gives `NO PGD FOR
+  IOVA` on BRD stream 0 at 0xfd68be00, the CALL times out, and every later
+  program load times out until a reboot. Same fault as the live write in
+  section 30. 0x20c with the macOS value does not work with the Linux page
+  tables in any write order. Rejected as a lever on this path; the only open
+  test is 0x20c together with the DVA window and BOs above 4 GiB (E3).
+- A stock Omarchy boot deletes every module tree under `/usr/lib/modules`
+  that is not the running kernel's and that no package owns
+  (`linux-modules-cleanup.service`, kernel-modules-hook): it is moved to
+  `.old` and deleted at the next boot. A custom kernel needs its module tree
+  copied in by the stock boot right before the reboot into it.
+- GRUB on the M2 consumes a `grub-reboot` entry before the boot (tested with
+  the stock kernel), and `systemd.watchdog_sec=120` on the kernel command
+  line arms the SoC watchdog in the initramfs at about 1.0 s.
