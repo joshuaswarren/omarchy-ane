@@ -1,0 +1,93 @@
+{
+  "soc": "t6030",
+  "marketing": {
+    "v": "M3 Pro",
+    "src": "S2"
+  },
+  "generation": {
+    "v": "H15J",
+    "src": "S5"
+  },
+  "boards": [
+    {"v": "j514s", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Pro (Nov 2023, 11/12-core)"},
+    {"v": "j516s", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Pro (Nov 2023, 11/12-core)"}
+  ],
+  "sources": [
+    {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: DeviceTree.j514sap.adt, DeviceTree.j516sap.adt; receipt artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt arm-io,t6030 section"},
+    {"id": "S2", "kind": "buildmanifest", "ref": "macOS 27.0 26A428 BuildManifest.plist, ProductBuildVersion 26A428; receipt artifacts/AneAllSoc/every-soc/receipt/firmware-27.0.txt (t6030 j514sap/j516sap ANE=t603x_ane0_fw_erebus_ls5x.im4p)"},
+    {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3 tag 94fb2334; arch/arm64/boot/dts/apple/t6030.dtsi, t6030-pmgr.dtsi, t6030-j514s.dts, t6030-j516s.dts"},
+    {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 (private) + receipts/2026-09-05-ane-community/anecompile-cross-target.json"}
+  ],
+  "ane": {
+    "compatible": {"v": "iop,ascwrap-v6", "src": "S1"},
+    "reg": [
+      {"name": "ane", "base": "0x309400000", "size": "0x6c000", "src": "S1"},
+      {"name": "ane_alt", "base": "0x309050000", "size": "0x4000", "src": "S1"},
+      {"name": "engine", "base": "0x308000000", "size": "0x2000000", "src": "S1"},
+      {"name": "pmgr", "base": "0x350700000", "size": "0x18000", "src": "S1"},
+      {"name": "pmgr_ps", "base": "0x350724000", "size": "0x4000", "src": "S1"},
+      {"name": "pmgr_sub2", "base": "0x3503c0000", "size": "0x24000", "src": "S1 (third pmgr region, smaller than the T6031 0x30000 — T6030 has fewer SET states)"},
+      {"name": "engine_alias", "base": "0x211000000", "size": "0xf74000", "src": "S1 (the remap-alias / engine aperture in the SoC address space, 992 KiB; appears on T6030 j514s/j516s and T6031 j514c)"},
+      {"name": "fw_data", "base": "0x3642c8000", "size": "0x4000", "src": "S1 (a fourth window, possibly the firmware private memory-mapped window or scratch region)"}
+    ],
+    "interrupts": {"v": [559, 558, 561, 560, 576], "src": "S1"},
+    "ane_type": {"v": 192, "src": "S1"},
+    "power_gates": {"v": ["ANE_CPU", "ANE-SYS-V"], "src": "S1"},
+    "iommus": {"v": null, "reason": "see t8122.json dart_phandle_field; ADT summary did not preserve the iommu-parent phandle."}
+  },
+  "dart": {
+    "compatible": {"v": "dart,t8110", "src": "S1"},
+    "reg": [
+      {"name": "ttbr0", "base": "0x309800000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr1", "base": "0x309810000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr2", "base": "0x309820000", "size": "0x4000", "src": "S1"},
+      {"name": "ttbr3", "base": "0x309804000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [577], "src": "S1"},
+    "sid": {"v": null, "reason": "see t8122.json dart.sid; ADT detail not re-extracted."},
+    "vm_base": {"v": null, "reason": "see t8122.json dart.vm_base."},
+    "vm_size": {"v": null, "reason": "see t8122.json dart.vm_size."},
+    "page_size": {"v": 16384, "src": "S1 (T8110 family inference)"}
+  },
+  "mailbox": {
+    "compatible": {"v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4 (T6030 reuses the T6031 mailbox compatible per the kernel S4 — T6030 has no MTP/AOP DARTs of its own at this address, but the ANE ascwrap-v6 mailbox is the same 0x6c000 region; the 0x4000 'ane_alt' window is the apple,asc-mailbox-v4 doorbell block, shared class with T6031/T6021)", "src": "S4"},
+    "reg": [
+      {"name": "mbox", "base": "0x309050000", "size": "0x4000", "src": "S1"}
+    ],
+    "interrupts": {"v": [558, 560, 561, 559, 576], "src": "S1 (5 interrupts in ADT; 4 doorbells + ane ring)"}
+  },
+  "pmgr": {
+    "ANE_SYS": {"v": "0x350700498", "src": "S1"},
+    "ANE_SYS_parents": {"v": ["LW20"], "src": "S1"},
+    "ANE_MPM": {"v": "0x35070c000", "src": "S1"},
+    "ANE_CPU": {"v": "0x35070c008", "src": "S1"},
+    "ANE_TD": {"v": "0x35070c010", "src": "S1"},
+    "ANE_BASE": {"v": "0x35070c018", "src": "S1"},
+    "power_domain_compatibles": {"v": ["apple,t6030-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate"], "src": "S4 (t6030-pmgr.dtsi:822)"},
+    "ane_cpu_count": {"v": 1, "src": "S1 (T6030 has a single ANE; no ane1/ane2 nodes in j514s/j516s ADTs)"}
+  },
+  "firmware": {
+    "name": {"v": "t603x_ane0_fw_erebus_ls5x.im4p", "src": "S2 (BuildManifest: t6030 j514sap/j516sap ANE=t603x_ane0_fw_erebus_ls5x.im4p; the 'ls5x' suffix is the J514s/J516s board-id pattern)"},
+    "size": {"v": 1605657, "src": "S2 (r27.fetch.log line 'firmware Firmware/ane/t603x_ane0_fw_erebus_ls5x.im4p 1605657')"},
+    "sha256": {"v": null, "reason": "see t8122.json firmware.sha256"},
+    "format": {"v": "im4p", "src": "S2"},
+    "encrypted": {"v": true, "src": "S2"},
+    "loaded_by": {"v": "host-Linux or iBoot", "reason": "see t8122.json firmware.loaded_by"}
+  },
+  "kext": {
+    "class": {"v": null, "reason": "see t8122.json kext.class"},
+    "protocol": {"v": null, "reason": "see t8122.json kext.protocol"},
+    "host_interface": {"v": "AppleHxxANEInterface-x.y.z-mac1N-26A428", "src": "S2 (assumed pattern)"}
+  },
+  "driver_family": {
+    "v": "ane_t6021's RTKit/firmware model — extended",
+    "src": "S5 + design inference"
+  },
+  "hwx_generation": {
+    "target": "h15",
+    "mach_o_cpusubtype": 6,
+    "hwx_bytes": 49152,
+    "src": "S5"
+  },
+  "state": "data-only"
+}

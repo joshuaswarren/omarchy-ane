@@ -1,0 +1,55 @@
+{
+  "soc": "t6034",
+  "marketing": {
+    "v": "M3 Ultra (M3 Max dual-die)",
+    "src": "S2 + design inference"
+  },
+  "generation": {
+    "v": "H15J (T6034 = T6031 + die-1 mirror; no new silicon generation)",
+    "src": "S5"
+  },
+  "boards": [
+    {"v": "j514m", "src": "S1", "marketing_product": "MacBook Pro 14-inch M3 Max (Nov 2023, no Ultra variant in 14-inch form)"},
+    {"v": "j516m", "src": "S1", "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, no Ultra variant in 16-inch form)"}
+  ],
+  "sources": [
+    {"id": "S1", "kind": "ipsw-adt", "ref": "macOS 27.0 26A428: t6034 is dual-die T6031; j514map.adt and j516map.adt are listed in the 27.0 fetch log but t6034 is not a separate SoC in the arm-io ADT — T6031 j514m/j516m are M3 Max laptops. There is NO M3 Ultra board in 27.0; M3 Ultra did not ship. The t6034 .dtsi exists in the kernel S4 (T6034 is a future-marketing-name SoC that the kernel reserves).", "note": "see note below"},
+    {"id": "S2", "kind": "buildmanifest", "ref": "BuildManifest 27.0 lists t6034 j514map/j516map as MacBook Pro M3 Max (no Ultra product). M3 Ultra did not ship in 2023/2024 with macOS 27.0."},
+    {"id": "S4", "kind": "aurora-dts", "ref": "aurora-silicon/linux asahi-7.1.13-3; arch/arm64/boot/dts/apple/t6034.dtsi (#include t6031.dtsi), t6034-j514m.dts, t6034-j516m.dts"},
+    {"id": "S5", "kind": "community-row", "ref": "lab survey 2026-08-27 + receipts/2026-09-05-ane-community/anecompile-cross-target.json"}
+  ],
+  "note": "M3 Ultra was never sold. T6034 is a t6031 dual-die SKU reserved by the kernel but has no M3 Ultra board. The closest analog is M2 Ultra (T6022) which is a true dual-die SKU with T6022 j180d/j475d boards (artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt arm-io,t6020 section: ane1 + dart-ane1 on die 1). The T6034 j514m/j516m 'M3 Ultra' assumption in the lab survey is wrong — these are M3 Max boards. The actual M3 Ultra SKU, if it ships, will be T6034 j7xx-d or similar with two T6031 dies and ane0/ane1/ane2/ane3 (analogous to T6002 ane0/ane1/ane2/ane3).",
+  "ane": {
+    "compatible": {"v": "iop,ascwrap-v6", "src": "S1 (T6034 is dual-die T6031; ANE is the same T6031 IP)"},
+    "reg": {"v": null, "reason": "no shipped T6034 board; the M3 Ultra SoC is not in the 27.0 ADT corpus. The T6031 j575d ADT (ane0 die 0 + ane1 die 1) is the closest analog. INFERRED: T6034 will have ane0/ane1/ane2/ane3 in the same die-0/die-1 split as T6002 (M1 Ultra) and T6022 (M2 Ultra)."},
+    "ane_type": {"v": 224, "src": "S5 (T6034 = T6031 + dual-die, same ane-type as T6031)"}
+  },
+  "dart": {
+    "compatible": {"v": "dart,t8110", "src": "S1 (T8110 family)"}
+  },
+  "mailbox": {
+    "compatible": {"v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4", "src": "S4 (kernel dtsi is T6031's)"}
+  },
+  "pmgr": {
+    "ANE_SYS": {"v": null, "reason": "no shipped T6034 board."},
+    "ane_cpu_count": {"v": 2, "src": "S5 (dual-die analog of T6002 ane0/ane1/ane2/ane3)"}
+  },
+  "firmware": {
+    "name": {"v": null, "reason": "no shipped T6034 board; t6034 j514map/j516map use t603x_ane0_fw_erebus_pc5x.im4p (T6031 firmware), no separate T6034 firmware. M3 Ultra never shipped."},
+    "size": {"v": null, "reason": "see name."}
+  },
+  "kext": {
+    "class": {"v": null, "reason": "no shipped T6034 board."}
+  },
+  "driver_family": {
+    "v": "ane_t6021's RTKit/firmware model — extended (dual-die path analog of T6022/T6002)",
+    "src": "S5 + design inference"
+  },
+  "hwx_generation": {
+    "target": "h15",
+    "mach_o_cpusubtype": 6,
+    "hwx_bytes": 49152,
+    "src": "S5"
+  },
+  "state": "data-only (no shipped M3 Ultra SKU; T6034 placeholder for the future chip)"
+}
