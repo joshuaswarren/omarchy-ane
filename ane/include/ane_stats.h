@@ -46,6 +46,7 @@
 #define ane_stats_atomic_u32	atomic_t
 static inline u64 ane_stats_atomic64_read(const atomic64_t *v) { return atomic64_read(v); }
 static inline void ane_stats_atomic64_add(u64 i, atomic64_t *v) { atomic64_add(i, v); }
+static inline u64 ane_stats_atomic64_fetch_add(u64 i, atomic64_t *v) { return atomic64_fetch_add(i, v); }
 static inline bool ane_stats_atomic64_try_cmpxchg(atomic64_t *v, u64 *old, u64 new) {
 	return atomic64_try_cmpxchg(v, old, new);
 }
@@ -86,6 +87,9 @@ static inline uint64_t ane_stats_atomic64_read(const ane_stats_atomic_u64 *v) {
 }
 static inline void ane_stats_atomic64_add(uint64_t i, ane_stats_atomic_u64 *v) {
 	__atomic_add_fetch(v, i, __ATOMIC_RELAXED);
+}
+static inline uint64_t ane_stats_atomic64_fetch_add(uint64_t i, ane_stats_atomic_u64 *v) {
+	return __atomic_fetch_add(v, i, __ATOMIC_RELAXED);
 }
 static inline bool ane_stats_atomic64_try_cmpxchg(ane_stats_atomic_u64 *v,
 						  uint64_t *old, uint64_t new) {
@@ -196,8 +200,7 @@ static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 				       struct ane_stats_ring *ring,
 				       uint64_t submit_ns, uint32_t tasks)
 {
-	uint64_t head = ane_stats_atomic64_read(&ring->head);
-	uint64_t ticket = head + 1ull;
+	uint64_t ticket = ane_stats_atomic64_fetch_add(1ull, &ring->head) + 1ull;
 	struct ane_stats_ring_entry *e =
 		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
 
@@ -215,12 +218,8 @@ static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 	ane_stats_atomic_set(&e->tasks, tasks);
 	ane_stats_atomic_set(&e->rc, (uint32_t)0xFFFFFFFFu); /* sentinel: not done */
 	ane_stats_atomic64_set_release(&e->tmst, 0ull);
-	/* Reserve the slot: increment after the fields are written so
-	 * the reader starts from the head the writer used. */
-	ane_stats_atomic64_add(1ull, &ring->head);
 	return ticket;
 }
-
 /*
  * Hot-path submission completion. Computes the busy interval and
  * folds it into busy_ns (union rule). Updates the slot's end_ns/rc/
