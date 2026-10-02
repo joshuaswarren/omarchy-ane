@@ -29,7 +29,9 @@ sudo reboot
 
 The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. The M2 Max needs one more driver change first. With the packaged m1n1 1.6.1, `ane_t6021` refuses at probe (`fw_alias_reserved` guard) until the own-memory default merges. M3 and later are unsupported. Their ANE is a different generation. Apple's own firmware describes it as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1 and M2 ANE presents. No Linux driver exists for that design.
 
-Promotion. An untested chip turns on by default once community runs prove it. That takes 3 passing rows from 3 different machines, 2 owners, 2 boards and 2 kernel releases, with no failing row. `tools/promotion_check.py --remote` prints the live verdict per chip. When it says `PROMOTE`, a PR flips that chip's line in `packaging/dt/overlays` to `enabled`.
+Promotion. An untested chip turns on by default once community runs prove it. The proof is 3 passing rows of the deep collector's `omarchy_ane` block. They must come from 3 machines (`machine_id`), 2 owners (`owner_id`), 2 boards and 2 kernel releases, with no failing row. In a passing row, `omarchy-ane-check` is ready and the chip's driver is loaded. The row has no ANE, DART or mailbox fault line and 30 minutes of uptime. Its smoke (`omarchy-ane-smoke`, name `add-fixture`) has 20 calls, and each output hash equals the golden. The M1 family has no smoke fixture yet, so a T6000 or T6002 row cannot pass. The Parakeet encoder hash is a developer check, not a collector field. `tools/promotion_check.py --remote` prints the live verdict per chip. When it says `PROMOTE`, a PR flips that chip's line in `packaging/dt/overlays` to `enabled`.
+
+Regression. A chip that is on by default goes back to opt-in when its latest row is not clean. Not clean means `omarchy-ane-check` is not ready, or the row has a fault line. The chip stays opt-in until a clean row lands. `promotion_check.py` prints `REVERT` for such a chip, and a PR sets its line back to `opt-in`.
 
 ## Install
 
@@ -40,7 +42,7 @@ Install `omarchy-ane-dkms` (`sudo pacman -S omarchy-ane-dkms`), or pick the Inst
 - builds `ane.ko` (M1 family) and `ane_t6021.ko` (M2 family) with DKMS for every kernel that has headers. It rebuilds them after each kernel update. Install the headers for the kernel you run (`linux-aurora-headers`, `linux-asahi-headers`).
 - installs the device-tree overlays to `/usr/share/omarchy-platform/dtb-overlays` and re-applies them after every kernel update (pacman hook `90-omarchy-ane-dt.hook`).
 - fetches the ANE firmware at install and upgrade on the M2 Max (pacman hook `90-omarchy-ane-firmware.hook`).
-- ships the tools: `omarchy-ane-check`, `omarchy-ane-dt`, `omarchy-ane-firmware-fetch`.
+- ships the tools: `omarchy-ane-check`, `omarchy-ane-dt`, `omarchy-ane-firmware-fetch`, `omarchy-ane-smoke`, and `omarchy-ane-run` (the `tools/ane-run` program runner).
 
 On M1, M1 Max and M2 Max nothing else is needed. The overlay applies at install and the driver binds at boot. The package adds no udev rule: systemd's default rule makes `/dev/accel/*` mode `0666`, so every user can open the ANE node.
 
@@ -68,7 +70,9 @@ M1-family chips need no firmware from Linux. iBoot preloads it before the kernel
 omarchy-ane-check
 ```
 
-Read-only; it never loads a module. It checks, in order, that this Mac's SoC is one the drivers know. That the device tree has an enabled `apple,t*-ane` node. The check names where the node came from. Sources seen in practice: the kernel DTB, an omarchy-ane overlay, a hand-built DTB, or something else. That the driver is built for the running kernel. That it is loaded. That it is bound to the ANE platform device. That the `/dev/accel` node exists, mode `0666`. On the M2 family it also checks that the installed firmware matches the pin. `ready` (exit 0) means all of that passed: the driver is built, loaded, bound, and open. From there, run a real program through `libane` to prove execution. After a kernel update, run `omarchy-ane-check --installed` to confirm both modules rebuilt for every installed kernel. `omarchy-ane-dt status` gives the device-tree detail.
+Read-only; it never loads a module. It checks, in order, that this Mac's SoC is one the drivers know. That the device tree has an enabled `apple,t*-ane` node. The check names where the node came from. Sources seen in practice: the kernel DTB, an omarchy-ane overlay, a hand-built DTB, or something else. That the driver is built for the running kernel. That it is loaded. That it is bound to the ANE platform device. That the `/dev/accel` node exists, mode `0666`. On the M2 family it also checks that the installed firmware matches the pin. `ready` (exit 0) means all of that passed: the driver is built, loaded, bound, and open. After a kernel update, run `omarchy-ane-check --installed` to confirm both modules rebuilt for every installed kernel. `omarchy-ane-dt status` gives the device-tree detail.
+
+`omarchy-ane-check --smoke` also proves execution. After the checks pass, it runs `omarchy-ane-smoke`. That tool sends the shipped add program through `libane` 20 times, one `omarchy-ane-run` process per call. Each output must equal the exact fp16 sum of fixed inputs, bit for bit. The tool prints one JSON line for the community collector (`name`, `chip`, `sha256`, `golden_sha256`, `errors`, `min_ms`, `median_ms`). It exits 0 when all 20 calls are exact, 1 when one is not, and 2 when this Mac has no smoke. The M2 family has the fixture. The M1 family gets exit 2 until an M1 add program has run through `omarchy-ane-run` on a device.
 
 One separate opt-in overlay, `t6021-uboot-serial-stdin` (key `uboot-serial-stdin-t6021`), exists for M2 Max laptops that stop at the U-Boot prompt on every disk boot. It is off by default and unrelated to the ANE.
 

@@ -2,7 +2,7 @@ name: dt-overlays
 
 # The ANE device tree overlays against every linux-asahi board device tree they
 # select (tools/asahi-dtbs, tools/test_ane_overlays.py), plus the offline
-# omarchy-ane-dt, omarchy-ane-check, omarchy-ane-firmware-fetch and T8112 kit
+# omarchy-ane-dt, omarchy-ane-check, omarchy-ane-smoke, omarchy-ane-firmware-fetch and T8112 kit
 # checks, the driver alias tables against the default overlays
 # (tools/test_ane_m2.py), and the boot regression of ane/t6021 (images, iBoot
 # patches, ASC tunables).
@@ -23,6 +23,7 @@ on:
       - tools/t8112-kit/**
       - tools/promotion_check.py
       - tools/test_promotion_check.py
+      - tools/test_ane_smoke.py
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
@@ -39,6 +40,7 @@ on:
       - tools/t8112-kit/**
       - tools/promotion_check.py
       - tools/test_promotion_check.py
+      - tools/test_ane_smoke.py
       - .github/workflows/dt-overlays.yml
 
 jobs:
@@ -60,5 +62,6 @@ jobs:
           python3 tools/test_t8112_kit.py
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
           python3 tools/test_promotion_check.py
+          python3 tools/test_ane_smoke.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1
