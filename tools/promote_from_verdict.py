@@ -152,6 +152,10 @@ def propose(verdict):
                   "move the CHANGELOG Unreleased section and publish")
             continue
         sh("git", "fetch", "origin", "main")
+        # a fresh runner has no remote-tracking ref for the auto branch; without
+        # it, --force-with-lease refuses to update an existing branch
+        sh("git", "fetch", "origin", f"refs/heads/{branch}:refs/remotes/origin/{branch}",
+           check=False)
         sh("git", "checkout", "-B", branch, "origin/main")
         sh(sys.executable, str(REPO / "tools/promote_chip.py"), "--chip", c["chip"],
            "--to", to, "--apply", "--note", commit_note(c))
