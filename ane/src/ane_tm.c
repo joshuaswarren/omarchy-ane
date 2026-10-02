@@ -233,6 +233,12 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
+/* Experiment (H194): completion-poll sleep in microseconds. The stock value 1 turns the
+ * wait into a ~1 us loop of engine register accesses for the whole ANE run. */
+static unsigned int poll_us = 1;
+module_param(poll_us, uint, 0644);
+MODULE_PARM_DESC(poll_us, "completion poll interval in us (stock 1)");
+
 /* read_poll_timeout op: consult the DART latch before any engine access.
  * Returns 1 to end the poll when a fault is latched; the caller then
  * handles the fault without ever reading the wedged engine. */
@@ -272,7 +278,7 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		 * engine is touched. Residual hazard: a fault landing
 		 * between one iteration's latch read and engine read. */
 		err = read_poll_timeout(ane_tm_poll_step, status,
-					status != 0, 1, 1000000, false,
+					status != 0, poll_us, 1000000, false,
 					ane, req, &finished);
 		if (!err && status < 0)
 			err = status;
