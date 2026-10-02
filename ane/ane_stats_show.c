@@ -1,55 +1,35 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * ane/ane_stats_show.c — sysfs/debugfs show functions shared by
- * ane.ko and ane_t6021.ko. The file operations and device_attribute
- * definitions live here so both drivers expose identical files (same
- * mode, same fields, same parser-friendly header line).
- *
- * Compiled into both out-of-tree ko builds (ane/Makefile adds the
- * source; ane/t6021/Makefile adds it too) and into the in-tree
+ * ane/ane_stats_show.c — ane_timeline debugfs show function shared by
+ * ane.ko and ane_t6021.ko. The fops live here so both drivers expose
+ * the same file (same mode, same fields, same parser-friendly header
+ * line). Compiled into both out-of-tree ko builds (ane/Makefile adds
+ * the source; ane/t6021/Makefile adds it too) and into the in-tree
  * driver pair.
+ *
+ * The ane_stats sysfs attribute is NOT here on purpose: each driver
+ * defines its own device_attribute wrapper so the counters are fetched
+ * through the real drvdata type and formatted by the typed accessor
+ * ane_stats_emit() (ane/include/ane_stats.h). A shared callback would
+ * have to cast dev_get_drvdata(), which read the head of struct
+ * ane_device as counters on ane.ko (H217 defect 1).
  */
 
-#include <linux/device.h>
-#include <linux/export.h>
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/seq_file.h>
-#include <linux/sysfs.h>
 
 #include "ane_stats.h"
-
-/*
- * ane_stats sysfs file (coreglass producer contract, no root needed).
- * Mode 0444, ASCII "key value" lines, integers only:
- *   busy_ns <cumulative u64>
- *   jobs    <cumulative u64>
- * Cumulative counters never reset while the device is bound. The
- * sampler (coreglass/coreglass/sampler.py) parses these keys to
- * compute busy = Δbusy_ns / Δt and jobs/s = Δjobs / Δt.
- */
-static ssize_t ane_stats_show(struct device *dev,
-			      struct device_attribute *attr, char *buf)
-{
-	struct ane_stats_counters *ctrs = dev_get_drvdata(dev);
-
-	if (!ctrs)
-		return -EINVAL;
-	return sysfs_emit(buf, "busy_ns %llu\njobs %llu\n",
-			  (unsigned long long)ane_stats_atomic64_read(&ctrs->busy_ns),
-			  (unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
-}
-DEVICE_ATTR_RO(ane_stats);
-EXPORT_SYMBOL_GPL(dev_attr_ane_stats);
 
 /*
  * ane_timeline debugfs file (per-submission ring). Header line gives
  * fields and labels tmst as a raw tick (unit unknown on ane.ko; 0 =
  * unavailable on ane_t6021). Lines are space-separated integers:
  *   seq submit_ns start_ns end_ns tasks rc tmst
- * The reader is built so torn reads are detected via the per-slot
- * seqlock; if seq is odd the line is omitted. Format stays
- * parseable: unknown keys pass through and unknown fields are skipped.
+ * seq is 2 * the submission ticket, committed by ane_stats_complete();
+ * an in-flight slot carries an odd seq and is never printed, so torn
+ * reads are impossible by construction. Format stays parseable:
+ * unknown keys pass through and unknown fields are skipped.
  */
 static int ane_timeline_show(struct seq_file *m, void *v)
 {
@@ -57,13 +37,16 @@ static int ane_timeline_show(struct seq_file *m, void *v)
 	struct ane_stats_ring_entry *ring_slots = ring->slots;
 	uint32_t mask = ring->mask;
 	uint64_t head = ane_stats_atomic64_read(&ring->head);
-	uint64_t start_seq;
+	uint64_t live = head < (uint64_t)mask + 1ull ? head : (uint64_t)mask + 1ull;
 
 	seq_printf(m, "# ane_timeline: seq submit_ns start_ns end_ns tasks rc tmst (tmst raw tick on ane.ko, 0 = unavailable on ane_t6021)\n");
-	start_seq = (head > (mask + 1) * 2) ? (head - (mask + 1) * 2) : 0;
-	start_seq &= ~(uint64_t)1;
-	for (uint64_t s = head & ~(uint64_t)1; s > start_seq; s -= 2) {
-		struct ane_stats_ring_entry *e = &ring_slots[s & mask];
+	/* Newest first. Submission ticket t lives in slot (t - 1) & mask
+	 * and prints once complete() commits seq = 2*t; anything else
+	 * (odd in-flight seq, stale slot) is skipped. */
+	for (uint64_t i = 0; i < live; i++) {
+		uint64_t ticket = head - i;
+		struct ane_stats_ring_entry *e =
+			&ring_slots[(size_t)(ticket - 1ull) & mask];
 		uint64_t seq = ane_stats_atomic64_read_acquire(&e->seq);
 		uint64_t submit = ane_stats_atomic64_read(&e->submit_ns);
 		uint64_t st = ane_stats_atomic64_read(&e->start_ns);
@@ -72,10 +55,10 @@ static int ane_timeline_show(struct seq_file *m, void *v)
 		uint32_t rc = ane_stats_atomic_read(&e->rc);
 		uint64_t tmst = ane_stats_atomic64_read(&e->tmst);
 
-		if (seq != s)
-			continue; /* torn write or in-flight; never printed */
+		if (seq != 2ull * ticket)
+			continue; /* in flight or stale; never printed */
 		seq_printf(m, "%llu %llu %llu %llu %u %u %llu\n",
-			   (unsigned long long)s,
+			   (unsigned long long)(2ull * ticket),
 			   (unsigned long long)submit,
 			   (unsigned long long)st,
 			   (unsigned long long)en,
@@ -92,8 +75,8 @@ static int ane_timeline_open(struct inode *inode, struct file *file)
 
 /*
  * Non-static on purpose: ane_drv.c and ane_t6021_rtclient_main.c link
- * this TU and open the file through this symbol. DEFINE_SHOW_ATTRIBUTE
- * emits the fops static, so the cross-file extern would not link.
+ * this TU (same module) and open the file through this symbol. Each
+ * driver passes its own &...->stats_ring as the per-file data.
  */
 const struct file_operations ane_timeline_fops = {
 	.owner		= THIS_MODULE,
@@ -102,4 +85,3 @@ const struct file_operations ane_timeline_fops = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
-EXPORT_SYMBOL_GPL(ane_timeline_fops);

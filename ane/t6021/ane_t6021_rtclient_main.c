@@ -102,10 +102,21 @@
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
 /*
- * ane_stats sysfs attribute and ane_timeline fops live in
- * ane/ane_stats_show.c, which links into this module.
+ * ane_stats sysfs attribute wrapper. The counters are fetched through
+ * the real drvdata type (struct ane_rtclient *, counters at
+ * ->fw->stats_ctrs) and formatted by the typed accessor
+ * ane_stats_emit() (ane/include/ane_stats.h), which never sees the
+ * device pointer. ane_timeline_fops lives in ane/ane_stats_show.c.
  */
-extern struct device_attribute dev_attr_ane_stats;
+static ssize_t ane_t6021_stats_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct ane_rtclient *ane = dev_get_drvdata(dev);
+
+	return ane_stats_emit(buf, &ane->fw->stats_ctrs);
+}
+static DEVICE_ATTR_RO(ane_stats);
+
 extern const struct file_operations ane_timeline_fops;
 
 /* Doorbell (IPI) block, engine + 0x1844000: set +0, pending +0x8000,
@@ -897,13 +908,13 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 	 * tmst is 0 (no host TM on T6021; documented in the file header
 	 * line). tasks = 1 (one command per submission); rc = ret; the
 	 * busy_ns = end - start when no other submission overlaps. */
-	uint32_t stats_idx = UINT_MAX;
+	uint64_t stats_ticket = 0;
 	uint64_t stats_submit_ns = 0;
 	if (stats) {
 		stats_submit_ns = ktime_get_ns();
-		stats_idx = ane_stats_begin(&ane->fw->stats_ctrs,
-					    &ane->fw->stats_ring,
-					    stats_submit_ns, 1u);
+		stats_ticket = ane_stats_begin(&ane->fw->stats_ctrs,
+					       &ane->fw->stats_ring,
+					       stats_submit_ns, 1u);
 	}
 	ret = ane_rtclient_legacy_exchange(ane, command, length, opcode,
 					   channel, timeout_ms);
@@ -911,7 +922,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		ane_t6021_tracing = false;
 		if (stats)
 			ane_stats_complete(&ane->fw->stats_ctrs,
-					   &ane->fw->stats_ring, stats_idx,
+					   &ane->fw->stats_ring, stats_ticket,
 					   ktime_get_ns(),
 					   (uint32_t)ret, 0ull);
 		dev_info(ane->dev, "EXCH op=%#x failed %d (fw allocs %u, %zu bytes)\n",
@@ -930,7 +941,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 			if (stats)
 				ane_stats_complete(&ane->fw->stats_ctrs,
 						   &ane->fw->stats_ring,
-						   stats_idx,
+						   stats_ticket,
 						   ktime_get_ns(),
 						   (uint32_t)ret, 0ull);
 			dev_info(ane->dev, "call completion wait failed %d\n",
@@ -941,7 +952,7 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 	}
 	if (stats)
 		ane_stats_complete(&ane->fw->stats_ctrs,
-				   &ane->fw->stats_ring, stats_idx,
+				   &ane->fw->stats_ring, stats_ticket,
 				   ktime_get_ns(), 0u, 0ull);
 	/* The fw talks back on the target-to-host rings (fwlog, perf);
 	 * hand those slots back so the rings never fill (the sequencer
@@ -2314,7 +2325,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			if (!IS_ERR(root)) {
 				ane->fw->stats_debugfs = root;
 				debugfs_create_file("ane_timeline", 0444,
-						    root, ane->fw,
+						    root,
+						    &ane->fw->stats_ring,
 						    &ane_timeline_fops);
 			}
 		}

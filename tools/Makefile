@@ -34,9 +34,16 @@ test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
 		-o $@ test_libane_ioctl.c $(LIBANE_SRC) -lm
 
 # ane_stats host unit test: pure host compile of the shared header
-# (counters + ring + torn-read + union rule + stats=0 path).
-test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h
-	$(CC) $(ANE_STATS_CFLAGS) -o $@ test_ane_stats.c
+# (counters + ring + torn-read + union rule + stats=0 path) plus the
+# REAL ane/ane_stats_show.c against the stub kernel headers in
+# ane_stats_shim/ (emit output, timeline render, ticket/seq protocol).
+test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h \
+		../ane/ane_stats_show.c ane_stats_shim/linux/fs.h \
+		ane_stats_shim/linux/module.h \
+		ane_stats_shim/linux/seq_file.h
+	$(CC) $(ANE_STATS_CFLAGS) -Iane_stats_shim -I../ane/include \
+		-Wno-unused-parameter -o $@ \
+		test_ane_stats.c ../ane/ane_stats_show.c
 
 
 check: ane-selfcheck test_libane_ioctl test_ane_stats

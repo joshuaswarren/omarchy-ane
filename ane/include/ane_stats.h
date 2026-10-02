@@ -41,6 +41,7 @@
 #include <linux/atomic.h>
 #include <linux/ktime.h>
 #include <linux/string.h>
+#include <linux/sysfs.h>
 #define ane_stats_atomic_u64	atomic64_t
 #define ane_stats_atomic_u32	atomic_t
 static inline u64 ane_stats_atomic64_read(const atomic64_t *v) { return atomic64_read(v); }
@@ -62,8 +63,13 @@ static inline u64 ane_stats_now_ns(void) { return ktime_get_ns(); }
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <time.h>
 #include <string.h>
+
+/* ane_stats_emit writes at most this many bytes (kernel side sysfs_emit
+ * asserts a page buffer; the bound documents the format size). */
+#define ANE_STATS_EMIT_MAX 32
 
 /*
  * On the host we use GCC __atomic_* builtins (or C11 atomics via
@@ -181,34 +187,38 @@ static inline void ane_stats_counters_init(struct ane_stats_counters *ctrs,
  * Hot-path submission start. Caller holds the device's submission
  * serialization if the engine is single-producer (ane.ko); concurrent
  * drivers (ane_t6021) pass ring/ctrs and rely on the cmpxchg in
- * complete(). Returns the per-slot index (always in [0, N)) for the
- * caller to later call ane_stats_complete() with the same index.
+ * complete(). Returns the submission ticket (head + 1, starting at 1)
+ * for the caller to later call ane_stats_complete() with. The ticket,
+ * not a slot index, identifies the submission: slots are shared after
+ * wrap, tickets are not.
  */
-static inline uint32_t ane_stats_begin(struct ane_stats_counters *ctrs,
+static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 				       struct ane_stats_ring *ring,
 				       uint64_t submit_ns, uint32_t tasks)
 {
 	uint64_t head = ane_stats_atomic64_read(&ring->head);
-	uint32_t idx = (uint32_t)(head & ring->mask);
-	struct ane_stats_ring_entry *e = &ring->slots[idx];
+	uint64_t ticket = head + 1ull;
+	struct ane_stats_ring_entry *e =
+		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
 
 	(void)ctrs;
 	ane_stats_smp_wmb();
 	(void)ane_stats_atomic64_read_acquire(&e->seq); /* pair with reader */
-	/* Open a write window: bump seq to an odd value (in flight). */
-	ane_stats_atomic64_set_release(&e->seq, (head + 2ull) | 1ull);
+	/* In flight: seq stays odd (2*ticket - 1) until complete()
+	 * commits the even final value 2*ticket. The reader only prints
+	 * even seqs it can match, so an unfinished submission never
+	 * prints and a torn write is never visible. */
+	ane_stats_atomic64_set_release(&e->seq, 2ull * ticket - 1ull);
 	ane_stats_atomic64_set_release(&e->submit_ns, submit_ns);
 	ane_stats_atomic64_set_release(&e->start_ns, submit_ns);
 	ane_stats_atomic64_set_release(&e->end_ns, submit_ns);
 	ane_stats_atomic_set(&e->tasks, tasks);
 	ane_stats_atomic_set(&e->rc, (uint32_t)0xFFFFFFFFu); /* sentinel: not done */
 	ane_stats_atomic64_set_release(&e->tmst, 0ull);
-	ane_stats_atomic64_set_release(&e->seq, (head + 4ull)); /* even = committed */
-	/* Reserve the slot: increment after commit so the reader can
-	 * distinguish an in-flight write (seq odd on this slot) from a
-	 * committed slot waiting to be reused). */
+	/* Reserve the slot: increment after the fields are written so
+	 * the reader starts from the head the writer used. */
 	ane_stats_atomic64_add(1ull, &ring->head);
-	return idx;
+	return ticket;
 }
 
 /*
@@ -225,10 +235,11 @@ static inline uint32_t ane_stats_begin(struct ane_stats_counters *ctrs,
  */
 static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 				      struct ane_stats_ring *ring,
-				      uint32_t idx, uint64_t end_ns,
+				      uint64_t ticket, uint64_t end_ns,
 				      uint32_t rc, uint64_t tmst)
 {
-	struct ane_stats_ring_entry *e = &ring->slots[idx];
+	struct ane_stats_ring_entry *e =
+		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
 	uint64_t start = ane_stats_atomic64_read(&e->start_ns);
 	uint64_t prev, add_ns;
 
@@ -250,18 +261,56 @@ static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 		ane_stats_atomic64_add(add_ns, &ctrs->busy_ns);
 	ane_stats_atomic64_add(1ull, &ctrs->jobs);
 
-	/* Commit ring slot. */
+	/* Commit ring slot with the even final seq 2*ticket. The value
+	 * must not depend on the current ring->head: concurrent
+	 * submissions (ane_t6021) advance it, and a head-derived seq
+	 * would mislabel the slot. */
 	ane_stats_smp_wmb();
 	ane_stats_atomic64_set_release(&e->end_ns, end_ns);
 	ane_stats_atomic_set(&e->rc, rc);
 	ane_stats_atomic64_set_release(&e->tmst, tmst);
 	ane_stats_smp_wmb();
-	/* Final even seq at the slot's completion; reader sees a
-	 * snapshot at (h * 2 - 1) where h is the slot's reserved head. */
-	ane_stats_atomic64_set_release(&e->seq, ane_stats_atomic64_read(&ring->head) * 2ull);
+	ane_stats_atomic64_set_release(&e->seq, 2ull * ticket);
 }
 
 #define ANE_STATS_RING_ORDER_DEFAULT 8  /* 256 slots */
 #define ANE_STATS_RING_ORDER_MAX     10 /* 1024 slots */
+
+/*
+ * Accounting rule (coreglass producer contract): jobs counts completed
+ * submissions, one begin/complete pair per engine submission — one per
+ * ANE_SUBMIT on ane.ko (so libane ane_exec is 1 job and ane_exec_loop
+ * with N iterations is N jobs) and one per firmware CSNE command on
+ * ane_t6021.ko (LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL,
+ * CH_PROPERTY_WRITE all ride the shared ane_rtclient_command path).
+ * Install-time control exchanges (CONFIG_GET) and the boot transport
+ * are not engine submissions and are not counted.
+ *
+ * Typed sysfs formatter for the ane_stats attribute. The per-driver
+ * show callbacks fetch the counters from their real drvdata type
+ * (struct ane_device * on ane.ko, struct ane_rtclient * on
+ * ane_t6021.ko) and pass &...->stats_ctrs here. The formatter never
+ * sees the device pointer, so the drvdata type confusion that shipped
+ * in the first round (reading the head of ane_device as counters)
+ * cannot compile again: there is no cast to remove.
+ */
+#ifdef __KERNEL__
+static inline ssize_t ane_stats_emit(char *buf,
+				     const struct ane_stats_counters *ctrs)
+{
+	return sysfs_emit(buf, "busy_ns %llu\njobs %llu\n",
+			  (unsigned long long)ane_stats_atomic64_read(&ctrs->busy_ns),
+			  (unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
+}
+#else
+static inline int ane_stats_emit(char *buf,
+				 const struct ane_stats_counters *ctrs)
+{
+	return snprintf(buf, ANE_STATS_EMIT_MAX,
+			"busy_ns %llu\njobs %llu\n",
+			(unsigned long long)ane_stats_atomic64_read(&ctrs->busy_ns),
+			(unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
+}
+#endif /* __KERNEL__ */
 
 #endif /* __ANE_STATS_H__ */
