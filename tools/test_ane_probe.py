@@ -12,9 +12,9 @@ iop-ane,ascwrap-v8) to show that unknown generations are reported, not lost.
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
+import ast
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -263,9 +263,32 @@ def test_empty_root_and_cap():
         assert any(u.startswith("device-tree:") for u in doc["unreadable"])
         root = fixture(tmp, "t6021")
         system(root, "ane_t6021", "284000000.ane")
-        doc = probe.cap(run_probe(root, tmp, "--max-kib", "0"), 1)
-        assert doc["truncated"] is True and doc["genpd"] is None
-        assert len(json.dumps(doc, separators=(",", ":"))) <= 1024 or doc["ane_nodes"] is None
+        full = run_probe(root, tmp, "--max-kib", "0")
+        for kib in (4, 2, 1):
+            doc = probe.cap(json.loads(json.dumps(full)), kib)
+            assert doc["truncated"] is True and doc["genpd"] is None, kib
+            assert len(json.dumps(doc, separators=(",", ":")).encode()) <= kib * 1024, kib
+        assert probe.cap(json.loads(json.dumps(full)), 8) == full  # fits: untouched
+        tiny = probe.cap(json.loads(json.dumps(full)), 0.1)  # below the identity fields: keep only those
+        assert set(tiny) == {"schema_version", "tool", "generated_at", "elapsed_ms", "soc", "board",
+                             "truncated", "unreadable"} and tiny["soc"] == "t6021", tiny
+
+
+def test_bad_table_value_does_not_blank_the_document():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = fixture(tmp, "t8103")
+        tables = Path(tmp, "tables")
+        tables.mkdir()
+        (tables / "t8103.json").write_text(json.dumps({"soc": "t8103", "ane": {
+            "reg": [{"base": leaf("0x26bc04000"), "size": leaf("144 KiB")}], "interrupts": leaf({"odd": 1})}}))
+        doc = run_probe(root, tables, "--max-kib", "0")
+        assert "error" not in doc and len(doc["ane_nodes"]) == 1
+        fields = {d["field"]: d for d in doc["soc_table"]["dt_vs_table"]}
+        assert fields["ane.reg[0].size"]["table"] == "144 KiB" and "ane.reg[0].base" not in fields
+        (tables / "t8103.json").write_text(json.dumps({"soc": "t8103", "ane": ["not", "an", "object"]}))
+        doc = run_probe(root, tables, "--max-kib", "0")
+        assert doc["soc_table"] is None and len(doc["ane_nodes"]) == 1
+        assert any(u.startswith("soc_table: AttributeError") for u in doc["unreadable"]), doc["unreadable"]
 
 
 def test_dmesg_filter():
@@ -277,18 +300,39 @@ def test_dmesg_filter():
     assert count == 3 and "[redacted]" in lines[1] and all("plane" not in l for l in lines)
 
 
+IMPORTS = {"argparse", "datetime", "json", "os", "re", "subprocess", "sys", "time", "pathlib"}
+OS_CALLS = {"path", "readlink", "walk"}
+SUBPROCESS = {"run", "DEVNULL", "TimeoutExpired"}
+WRITE_METHODS = {"write_text", "write_bytes", "open", "touch", "mkdir", "unlink", "rmdir", "rename", "replace",
+                 "symlink_to", "hardlink_to", "link_to", "chmod", "lchmod", "write", "truncate"}
+
+
 def violations(src):
-    """Write, map, load, network or shell paths in the tool's code."""
-    code = re.sub(r'"""(?s:.*?)"""', "", src)
-    code = "\n".join(line.split("#", 1)[0] if not line.lstrip().startswith(("r\"", "\"")) else line
-                     for line in code.splitlines())
-    bad = [t for t in ("open(", "write_text", "write_bytes", ".write(", "os.remove", "unlink", "mkdir",
-                       "rmtree", "os.rename", "os.replace", "chmod", "chown", "os.symlink", "touch(", ".truncate(",
-                       "mmap", "ctypes", "fcntl", "ioctl", "ioremap", "/dev/", "insmod", "modprobe", "rmmod",
-                       "os.system", "os.popen", "os.exec", "os.spawn", "Popen", "shell=True", "shutil",
-                       "socket", "urllib", "http", "ssl")
-           if t in code]
-    if code.count("subprocess.run(") != 1:
+    """Write, map, load, network or shell paths in the tool's code. Allowlists, so
+    a spelling nobody listed (os.makedirs, os.utime, ...) is still caught."""
+    tree, bad = ast.parse(src), []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            bad += [f"import {a.name}" for a in node.names if a.name.split(".")[0] not in IMPORTS]
+        elif isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] not in IMPORTS:
+            bad.append(f"from {node.module} import")
+        elif isinstance(node, ast.Attribute):
+            owner = node.value.id if isinstance(node.value, ast.Name) else None
+            if owner == "os" and node.attr not in OS_CALLS:
+                bad.append(f"os.{node.attr}")
+            elif owner == "subprocess" and node.attr not in SUBPROCESS:
+                bad.append(f"subprocess.{node.attr}")
+            elif node.attr in WRITE_METHODS:
+                bad.append(f".{node.attr}")
+        elif isinstance(node, ast.Name) and node.id in {"open", "exec", "eval", "compile", "__import__"}:
+            bad.append(node.id)
+        elif isinstance(node, ast.keyword) and node.arg == "shell":
+            bad.append("shell=")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            bad += [s for s in ("/dev/", "insmod", "modprobe", "rmmod", "ioremap") if s in node.value]
+    runs = [n for n in ast.walk(tree) if isinstance(n, ast.Attribute) and n.attr == "run"
+            and isinstance(n.value, ast.Name) and n.value.id == "subprocess"]
+    if len(runs) != 1:
         bad.append("subprocess.run outside run()")
     return bad
 
@@ -305,17 +349,21 @@ def test_source_is_read_only():
         pass
     # The check itself must catch the obvious regressions.
     for patch in ('Path("/sys/bus/platform/drivers/ane/bind").write_text("x")', 'open("/dev/mem", "rb")',
-                  'subprocess.run(["insmod", "ane.ko"])', "import mmap"):
+                  'subprocess.run(["insmod", "ane.ko"])', "import mmap", 'os.makedirs("x")', 'os.rmdir("x")',
+                  'os.utime("x")', 'os.ftruncate(3, 0)', 'Path("x").touch()', 'subprocess.Popen(["ls"])',
+                  "import socket", 'from shutil import copy', 'subprocess.call(["ls"], shell=True)'):
         assert violations(src + "\n" + patch + "\n"), patch
 
 
 def test_live_host():
-    """This host, whatever it is: exit 0, valid JSON, within the 8 KiB contract."""
+    """This host, whatever it is: exit 0, a full document, within the 8 KiB contract."""
     t0 = time.monotonic()
     p = subprocess.run([sys.executable, str(TOOL), "--json"], capture_output=True, text=True, timeout=10)
     assert p.returncode == 0 and time.monotonic() - t0 < 5
     assert len(p.stdout.encode()) <= 8 * 1024 + 1
     doc = json.loads(p.stdout)
+    assert "error" not in doc, doc["error"]
+    assert {"soc", "ane_nodes", "installed", "soc_table", "kernel", "cmdline"} <= set(doc), sorted(doc)
     assert doc["schema_version"] == 1 and isinstance(doc["unreadable"], list)
 
 

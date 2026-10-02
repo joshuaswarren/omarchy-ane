@@ -53,7 +53,8 @@ NODE_PROPS = ("reg", "interrupts", "iommus", "power-domains", "clocks", "memory-
 UEVENT_KEYS = ("DRIVER", "OF_NAME", "OF_COMPATIBLE_0", "MODALIAS")
 # Set to null in this order until the document fits --max-kib.
 CAP_ORDER = ("dmesg", "check", "genpd", "debug_ane", "platform_devices", "unknown_ane_like",
-             "interrupts", "pmgr_ane_nodes", "mailbox_nodes", "dart_ane_nodes", "ane_nodes")
+             "interrupts", "pmgr_ane_nodes", "mailbox_nodes", "dart_ane_nodes", "ane_nodes",
+             "accel", "modules", "packages", "firmware", "soc_table", "compatible", "cmdline", "installed")
 
 
 def read_bytes(path):
@@ -363,6 +364,13 @@ def v(leaf):
     return leaf.get("v") if isinstance(leaf, dict) else leaf
 
 
+def as_int(value):
+    try:
+        return int(str(value), 0)
+    except (TypeError, ValueError):
+        return None
+
+
 def soc_table(soc, board, family, tdir):
     """dt_vs_table: the live device tree against data/ane-soc/<soc>.json."""
     if not soc:
@@ -400,7 +408,7 @@ def soc_table(soc, board, family, tdir):
             for part in ("base", "size"):
                 want = v(reg.get(part))
                 have = dt_regs[i][part] if i < len(dt_regs) else None
-                ok = have is not None and want is not None and int(str(want), 0) == int(have, 0)
+                ok = as_int(want) is not None and as_int(want) == as_int(have)
                 check(f"{key}.reg[{i}].{part}", have, want, ok)
         irqs = v(spec.get("interrupts"))
         if irqs is not None:
@@ -413,36 +421,46 @@ def soc_table(soc, board, family, tdir):
 
 def probe(root, data_dir):
     unreadable = []
+
+    def guard(name, fn, default):
+        """One section that fails is reported; the other sections still run."""
+        try:
+            return fn()
+        except Exception as e:
+            unreadable.append(f"{name}: {type(e).__name__}: {e}"[:200])
+            return default
+
     live = root == Path("/")
     dt_base = next((d for d in (root / "proc/device-tree", root / "sys/firmware/devicetree/base") if d.is_dir()), None)
     out = {"schema_version": SCHEMA_VERSION, "tool": "omarchy-ane-probe",
            "generated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    tree = None
     if dt_base is None:
         unreadable.append("device-tree: no /proc/device-tree (not a device-tree system)")
-        tree, compat = None, []
     else:
-        tree = DeviceTree(dt_base)
-        compat = strings(tree.nodes["/"].get("compatible"))
+        tree = guard("device-tree", lambda: DeviceTree(dt_base), None)
+    root_props = tree.nodes.get("/", {}) if tree else {}
+    compat = strings(root_props.get("compatible"))
     out["soc"] = next((m.group(1) for c in compat for m in [re.match(r"^apple,(t\d{4})$", c)] if m), None)
     out["board"] = next((c for c in compat if re.match(r"^apple,j\w+$", c)), None)
-    out["model"] = (strings(tree.nodes["/"].get("model")) or [None])[0] if tree else None
+    out["model"] = (strings(root_props.get("model")) or [None])[0]
     out["compatible"] = compat
-    family = tree.ane_family() if tree else {k: [] for k in ("ane_nodes", "dart_ane_nodes", "pmgr_ane_nodes",
-                                                               "mailbox_nodes", "unknown_ane_like")}
+    empty = {k: [] for k in ("ane_nodes", "dart_ane_nodes", "pmgr_ane_nodes", "mailbox_nodes", "unknown_ane_like")}
+    family = guard("ane-nodes", tree.ane_family, empty) if tree else empty
     out.update(family)
 
     release = (read_text(root / "proc/sys/kernel/osrelease") or "").strip() or None
     out["kernel"] = {"release": release,
                      "version": (read_text(root / "proc/sys/kernel/version") or "").strip()[:120] or None}
     out["cmdline"], out["cmdline_dropped"] = filter_cmdline(read_text(root / "proc/cmdline") or "")
-    out["modules"] = modules(root)
-    out["interrupts"] = interrupts(read_text(root / "proc/interrupts"))
-    out["accel"] = accel(root)
-    out["platform_devices"] = platform_devices(root)
-    out["genpd"] = genpd(root, unreadable)
-    out["debug_ane"] = debug_ane(root, unreadable)
-    out["packages"] = packages(root)
-    files = module_files(root, release)
+    out["modules"] = guard("modules", lambda: modules(root), [])
+    out["interrupts"] = guard("interrupts", lambda: interrupts(read_text(root / "proc/interrupts")), [])
+    out["accel"] = guard("accel", lambda: accel(root), [])
+    out["platform_devices"] = guard("platform_devices", lambda: platform_devices(root), [])
+    out["genpd"] = guard("genpd", lambda: genpd(root, unreadable), None)
+    out["debug_ane"] = guard("debug_ane", lambda: debug_ane(root, unreadable), None)
+    out["packages"] = guard("packages", lambda: packages(root), {})
+    files = guard("module_files", lambda: module_files(root, release), [])
     out["installed"] = {
         "dkms_module_present": bool(files),
         "module_files": files,
@@ -462,7 +480,8 @@ def probe(root, data_dir):
             count, lines = dmesg_matches(res[1])
             out["dmesg"] = {"matched": count, "lines": lines}
         elif res:
-            unreadable.append("dmesg: unreadable without root (kernel.dmesg_restrict)")
+            reason = (res[2].strip().splitlines() or ["no message"])[0]
+            unreadable.append(f"dmesg: exit {res[0]}: {redact(reason)[:120]}")
         out["check"] = tool_report(("omarchy-ane-check",), 2.5, unreadable, "omarchy-ane-check", 1536)
         out["installed"]["omarchy_ane_check_present"] = out["check"] is not None
         out["firmware"] = tool_report(("omarchy-ane-firmware-fetch", "--check"), 1, unreadable,
@@ -470,19 +489,27 @@ def probe(root, data_dir):
         if out["firmware"] is not None:
             out["installed"]["firmware_present"] = out["firmware"]["rc"] == 0
 
-    out["soc_table"] = soc_table(out["soc"], out["board"], family, table_dir(data_dir, root))
+    out["soc_table"] = guard("soc_table", lambda: soc_table(out["soc"], out["board"], family,
+                                                             table_dir(data_dir, root)), None)
     out["unreadable"] = unreadable
     return out
 
 
 def cap(doc, max_kib):
+    """Null CAP_ORDER fields until the compact document fits; if it still does
+    not, keep only the identity fields."""
+    limit = max_kib * 1024
+    size = lambda d: len(json.dumps(d, separators=(",", ":")).encode())
     if max_kib <= 0:
         return doc
     for key in CAP_ORDER:
-        if len(json.dumps(doc, separators=(",", ":"))) <= max_kib * 1024:
-            break
+        if size(doc) <= limit:
+            return doc
         doc[key] = None
         doc["truncated"] = True
+    if size(doc) > limit:
+        doc = {k: doc.get(k) for k in ("schema_version", "tool", "generated_at", "elapsed_ms", "soc", "board")}
+        doc.update(truncated=True, unreadable=["size: over --max-kib with every optional field dropped"])
     return doc
 
 
