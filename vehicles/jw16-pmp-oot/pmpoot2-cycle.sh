@@ -40,9 +40,9 @@ echo "== stop llm-inference for the window (flock discipline) =="
 ssh "$JW16" 'sudo systemctl stop llm-inference; sleep 2; systemctl is-active llm-inference || true'
 
 echo "== ladder window (soak $SOAK s, extra: C1..C4, no rmmod) =="
-ssh "$JW16" "sudo flock -w 900 /tmp/m1-gpu.lock bash /var/tmp/pmpoot2/pmpoot2-stage.sh $SOAK"
+ssh "$JW16" "flock -w 900 /tmp/m1-gpu.lock sudo bash /var/tmp/pmpoot2/pmpoot2-stage.sh $SOAK"
 echo "== C5 map113 ladder (top $TOP, ack-gated) =="
-ssh "$JW16" "sudo flock -w 900 /tmp/m1-gpu.lock bash /var/tmp/pmpoot2/pmpoot2-ladder.sh $TOP"
+ssh "$JW16" "flock -w 900 /tmp/m1-gpu.lock sudo bash /var/tmp/pmpoot2/pmpoot2-ladder.sh $TOP"
 echo "== evidence pull =="
 mkdir -p /tmp/pmpoot2-pull
 scp -q "$JW16:/var/tmp/pmpoot2/logs/ladder-*.log" /tmp/pmpoot2-pull/ 2>/dev/null || true
