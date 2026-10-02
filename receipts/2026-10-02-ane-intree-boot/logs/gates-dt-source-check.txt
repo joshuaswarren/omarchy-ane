@@ -1,0 +1,9 @@
+== overlay-base: live tree from tree-base.dtb, compared with the staged t6021-j414c.dtb
+/soc/ane@284000000: differs: iommus, mboxes, memory-region, phandle, power-domains, resets
+/soc/mailbox@285408000: differs: interrupt-names, interrupts, phandle
+dt-source other (not the in-tree DTB: boot.bin not swapped)
+
+== candidate: live tree from t6021-j414c.dtb, compared with the staged t6021-j414c.dtb
+/soc/ane@284000000: equal to the in-tree DTB
+/soc/mailbox@285408000: equal to the in-tree DTB
+dt-source in-tree

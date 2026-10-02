@@ -1,0 +1,34 @@
+$ BOOTBIN=boot.bin.pre-pmpoot3 COMPAT=<j316c compatible> OPTIN=(none) bootbin.sh make STAGE omarchy-ane
+rc=0
+build-dtbo: t8103 (enabled): /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+build-dtbo: t6000 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+build-dtbo: t6001 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+build-dtbo: t6002 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+build-dtbo: t8112 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+build-dtbo: t6020 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+build-dtbo: t6021 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+build-dtbo: t6021 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+build-dtbo: t6022 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+omarchy-ane-dt: 7.1.12-ane-intree: the kernel's t6001-j316c.dtb has the overlays' nodes enabled; no copy needed
+base   6e8f90c895d83d9f1a91a0a067f45a0190e300e6a9a018e02c39851578b21d01 6207502 B: m1n1 1114112 B 9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd, 110 trees, u-boot ef3a78ee1820d5fb296a957e34affa4c64a14fa274e069f6fec46d125354e14c
+j316c tree 7b6ac97aa67de56489b50a172a8c9f769bc9f4cf97d69a65dfc3587c34331f28 98305 B -> f234fd7e6c811657c57cb28cffd1df04260ebf2aa430cb6e6a3216afbae91c4c 110555 B at 0x1cdc9a
+intree 98b4b63acc98880eedf9d29938eebfe2ffaecaddcb9f0fa468304530f2798ead 6219752 B: m1n1, the other 109 trees and u-boot byte-identical
+tree diff: 1848 changed lines (tree.diff); new tree: ane -, /config bootcmd -
+6e8f90c895d83d9f1a91a0a067f45a0190e300e6a9a018e02c39851578b21d01  boot.bin.base
+98b4b63acc98880eedf9d29938eebfe2ffaecaddcb9f0fa468304530f2798ead  boot.bin.intree
+BOOTBIN-MAKE-OK
+
+$ compare_bootbin.py boot.bin.base boot.bin.intree
+old: m1n1 1114112 B 9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd; 110 trees; u-boot 639624 B ef3a78ee1820d5fb296a957e34affa4c64a14fa274e069f6fec46d125354e14c; tail b''
+new: m1n1 1114112 B 9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd; 110 trees; u-boot 639624 B ef3a78ee1820d5fb296a957e34affa4c64a14fa274e069f6fec46d125354e14c; tail b''
+only old: j316c 7b6ac97aa67de56489b50a172a8c9f769bc9f4cf97d69a65dfc3587c34331f28 ane=False
+only new: j316c f234fd7e6c811657c57cb28cffd1df04260ebf2aa430cb6e6a3216afbae91c4c ane=False
+m1n1, u-boot and tail identical: True; trees differing: 2
+
+$ bootbin_parse.py boot.bin.intree j316c
+boot.bin sha256 98b4b63acc98880eedf9d29938eebfe2ffaecaddcb9f0fa468304530f2798ead
+m1n1 0x0..0x110000 sha256 9ad086536d4b4f871530ad5231bf8eea8063bbf5ff9189ae713584ed74158fdd
+device trees 110
+board tree at 0x1cdc9a size 110555 sha256 f234fd7e6c811657c57cb28cffd1df04260ebf2aa430cb6e6a3216afbae91c4c ane-node False
+u-boot 639624 B sha256 ef3a78ee1820d5fb296a957e34affa4c64a14fa274e069f6fec46d125354e14c
+config tail ''

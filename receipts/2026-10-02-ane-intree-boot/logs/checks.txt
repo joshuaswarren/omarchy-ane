@@ -1,0 +1,1 @@
+1863 modules, depmod -e clean, ane/ane_t6021 in-tree, vermagic 7.1.12-ane-intree SMP preempt mod_unload aarch64

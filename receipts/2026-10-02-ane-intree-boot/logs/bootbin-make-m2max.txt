@@ -1,0 +1,35 @@
+$ BOOTBIN=boot.bin.62ba3010 COMPAT=<j414c compatible> OPTIN=uboot-serial-stdin-t6021 bootbin.sh make STAGE omarchy-ane
+rc=0
+build-dtbo: t8103 (enabled): /usr/share/omarchy-platform/dtb-overlays/t8103/omarchy-ane.dtbo
+build-dtbo: t6000 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6000/omarchy-ane.dtbo
+build-dtbo: t6001 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6001/omarchy-ane.dtbo
+build-dtbo: t6002 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6002/omarchy-ane.dtbo
+build-dtbo: t8112 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t8112/omarchy-ane.dtbo
+build-dtbo: t6020 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6020/omarchy-ane.dtbo
+build-dtbo: t6021 (enabled): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-ane.dtbo
+build-dtbo: t6021 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6021/omarchy-uboot-serial-stdin.dtbo
+build-dtbo: t6022 (opt-in): /usr/share/omarchy-platform/dtb-overlays/t6022/omarchy-ane.dtbo
+omarchy-ane-dt: 7.1.12-ane-intree: t6021-j414c.dtb + t6021/omarchy-uboot-serial-stdin.dtbo -> STAGE/dtroot/var/lib/omarchy-ane/dtbs/7.1.12-ane-intree/t6021-j414c.dtb
+m1n1 still has the old device tree. Run: sudo update-m1n1, then reboot.
+base   62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540 6280733 B: m1n1 1179648 B 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c, 110 trees, u-boot b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1
+j414c tree c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b 110754 B -> 1743e5150e2b91fe68862bed6d2df8c8ce83572805188b9d1a6e3fadb0f61ea2 128604 B at 0x277276
+intree b95dbc3e8207e17b15a2ce9542194ac93a99ad753d2be6746cc82c658852d2f8 6298583 B: m1n1, the other 109 trees and u-boot byte-identical
+tree diff: 2215 changed lines (tree.diff); new tree: ane apple,t6021-ane, /config bootcmd setenv stdin serial; bootflow scan -b
+62ba3010847146347ae572987482f04f6443dd80719f0d9fca58af25fe4bd540  boot.bin.base
+b95dbc3e8207e17b15a2ce9542194ac93a99ad753d2be6746cc82c658852d2f8  boot.bin.intree
+BOOTBIN-MAKE-OK
+
+$ compare_bootbin.py boot.bin.base boot.bin.intree
+old: m1n1 1179648 B 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c; 110 trees; u-boot 660216 B b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1; tail b''
+new: m1n1 1179648 B 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c; 110 trees; u-boot 660216 B b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1; tail b''
+only old: j414c c31a54c3fc917059af9aa4531ec319ef5e438799805b87f0a133834afc6c8a5b ane=True
+only new: j414c 1743e5150e2b91fe68862bed6d2df8c8ce83572805188b9d1a6e3fadb0f61ea2 ane=True
+m1n1, u-boot and tail identical: True; trees differing: 2
+
+$ bootbin_parse.py boot.bin.intree j414c
+boot.bin sha256 b95dbc3e8207e17b15a2ce9542194ac93a99ad753d2be6746cc82c658852d2f8
+m1n1 0x0..0x120000 sha256 6fdf8bbada70c607afafb487dca99c0c22191baeae1c2e94bcbba411bf24cc7c
+device trees 110
+board tree at 0x277276 size 128604 sha256 1743e5150e2b91fe68862bed6d2df8c8ce83572805188b9d1a6e3fadb0f61ea2 ane-node True
+u-boot 660216 B sha256 b8d52d16a56f4bc9640e6c210a1414f94f06d1aa0e1fa9845b69979b006c52b1
+config tail ''

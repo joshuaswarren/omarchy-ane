@@ -1,0 +1,59 @@
+== ane.ko 61612042d5de2e2a3a9436132eb4e142fcdb74db7ae0383f6c48bc773731a5bc
+filename:       /lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane.ko
+license:        Dual MIT/GPL
+description:    Apple Neural Engine driver
+author:         Eileen Yoon <eyn@gmx.com>
+alias:          of:N*T*Capple,t6021-aneC*
+alias:          of:N*T*Capple,t6021-ane
+alias:          of:N*T*Capple,t6020-aneC*
+alias:          of:N*T*Capple,t6020-ane
+alias:          of:N*T*Capple,t6000-aneC*
+alias:          of:N*T*Capple,t6000-ane
+alias:          of:N*T*Capple,t8103-aneC*
+alias:          of:N*T*Capple,t8103-ane
+depends:        
+intree:         Y
+name:           ane
+vermagic:       7.1.12-ane-intree SMP preempt mod_unload aarch64
+parm:           boost_idle_ms:hold every CPU cluster at its top p-state while a submit runs and this long after the last one completes (0 = off) (uint)
+parm:           dart_contain:Mask ANE DART fault IRQs during a job and restore the stream after a fault (default: on) (bool)
+parm:           map_mode:BO mapping: bit0=IOMMU_CACHE DART descriptors, bit1=cacheable CPU vmas (default 3 = cached; 0 = writecombine + non-cacheable rollback) (int)
+parm:           allow_unqualified:Bind recognized-but-unproven ANE SoCs (unverified SET base: external-abort risk) (bool)
+== ane_t6021.ko 4240045230d71d6e66e20b1f25557234387fbc585f6bb88b7f725f786d44d58c
+filename:       /lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane_t6021.ko
+description:    Apple Neural Engine (T6021/M2) installed module
+license:        Dual MIT/GPL
+description:    T6021 ANE firmware staging + entry alias
+license:        Dual MIT/GPL
+description:    T6021 ANE contract-pinned boot sequence core
+license:        Dual MIT/GPL
+alias:          of:N*T*Capple,t8112-aneC*
+alias:          of:N*T*Capple,t8112-ane
+alias:          of:N*T*Capple,t6022-aneC*
+alias:          of:N*T*Capple,t6022-ane
+alias:          of:N*T*Capple,t6021-aneC*
+alias:          of:N*T*Capple,t6021-ane
+alias:          of:N*T*Capple,t6020-aneC*
+alias:          of:N*T*Capple,t6020-ane
+depends:        
+intree:         Y
+name:           ane_t6021
+vermagic:       7.1.12-ane-intree SMP preempt mod_unload aarch64
+parm:           boot_prevent_nap:Retain firmware nap-prevention counter via init resource bit (default on: proven add-path value) (bool)
+parm:           fw_load:Validate + DART-map the 13.5 PRELOAD payload (default on: the proven add-path configuration). (bool)
+parm:           fw_extra_ram:Page-aligned owned RAM after the 5 MiB firmware allocation (default 0x200000, the proven add-path grant; maximum 16 MiB). (uint)
+parm:           fw_alias_reserved:Lab, T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and SEG1 0x10001400000+0x438000 after it (probe refuses unless no-map /reserved-memory nodes cover both); 0 (default) = run the staged copy with iBoot's patches replayed (own memory, the only mode on T6020/T6022). (bool)
+parm:           fw_start:Fenced Linux-context firmware start: stage + alias, then the boot sequence; default on (proven add-path config). (bool)
+parm:           fw_start_table_mode:Pre-CPU engine table block: 0 abort, 1 write, 2 skip (default, proven config). (int)
+parm:           fw_start_rtb_mode:RTBuddy/RTKit-app-endpoint select; default off (legacy ChMan transport). (bool)
+parm:           poll_rx:Drive RX by apple_rtkit_poll from a workqueue (default on, proven config). (bool)
+parm:           start_app_eps:STARTEP every fw-announced app endpoint after the handshake (default on). (bool)
+parm:           scratch3_ack:After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc, kext 0x95eaee4). Default on; 0 withholds. (bool)
+parm:           legacy_only:Use the pinned 13.5 legacy ChMan transport (default on, proven add-path config). (bool)
+parm:           legacy_query:Service bounded startup allocations and CONFIG_GET; default on (proven config). (bool)
+parm:           hello_wait_ms:RTKit HELLO wait in legacy mode; 0 (default) skips RTKit and leaves the mailbox stopped. A firmware that speaks RTKit needs 1000. (uint)
+parm:           bo_total_max_mb:Cap on the BO bytes held at one time, in MiB (default 12288) (uint)
+parm:           bo_total_bytes:Read only: the BO bytes counted against bo_total_max_mb now
+parm:           call_settle_us:Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none) (uint)
+parm:           trace_td:Record a read-only per-CALL TD-word timeline in debugfs ane_t6021/trace_td (default 0; T602x only)
+parm:           fw_perf_mode:Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent

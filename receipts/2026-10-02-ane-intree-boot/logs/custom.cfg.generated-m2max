@@ -1,0 +1,22 @@
+# ane-intree one-shot entries (omarchy-ane receipts/2026-10-02-ane-intree-boot). Only grub-reboot
+# selects them; the default stays the stock entry of grub.cfg.
+menuentry 'ane-intree T: stock kernel, one-shot test' --class os --id ane-intree-oneshot-test {
+	load_video
+	set gfxpayload=keep
+	insmod gzio
+	insmod part_gpt
+	insmod ext2
+	search --no-floppy --fs-uuid --set=root 4f4d5801-424f-4f54-8000-000000000001
+	linux	/vmlinuz-linux-asahi root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash panic=30 systemd.watchdog_sec=120 systemd.crash_action=reboot ane_intree_oneshot=test
+	initrd	/initramfs-linux-asahi.img
+}
+menuentry 'ane-intree I: 7.1.12-ane-intree' --class os --id ane-intree {
+	load_video
+	set gfxpayload=keep
+	insmod gzio
+	insmod part_gpt
+	insmod ext2
+	search --no-floppy --fs-uuid --set=root 4f4d5801-424f-4f54-8000-000000000001
+	linux	/vmlinuz-ane-intree root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash panic=30 systemd.watchdog_sec=120 systemd.crash_action=reboot ane_intree_oneshot=intree
+	initrd	/initramfs-ane-intree.img
+}

@@ -1,0 +1,61 @@
+# tar -d as a non-root user: only Uid/Gid lines differ (count of other lines printed below)
+0
+depmod-rc=0
+TREE/lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+TREE/lib/modules/7.1.12-ane-intree/kernel/drivers/accel/ane/ane_t6021.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+TREE/lib/modules/7.1.12-ane-intree/kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+TREE/lib/modules/7.1.12-ane-intree/kernel/drivers/block/zram/zram.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+TREE/lib/modules/7.1.12-ane-intree/kernel/drivers/net/tun.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+TREE/lib/modules/7.1.12-ane-intree/kernel/fs/btrfs/btrfs.ko
+7.1.12-ane-intree SMP preempt mod_unload aarch64
+Y
+kernel/drivers/accel/ane/ane.ko: OK
+kernel/drivers/accel/ane/ane_t6021.ko: OK
+no-updates-dir
+alias of:N*T*Capple,t6021-ane ane
+alias of:N*T*Capple,t6000-ane ane
+alias of:N*T*Capple,t6021-ane ane_t6021
++ tar -x -C TREE/lib/modules/7.1.12-ane-intree -f STAGE/modules.tar
++ tar -d -C TREE/lib/modules/7.1.12-ane-intree -f STAGE/modules.tar
++ grep -vc -E 'Uid differs|Gid differs'
++ depmod -b TREE -F STAGE/System.map -e -a 7.1.12-ane-intree
++ echo depmod-rc=0
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n ane
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic ane
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree ane
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n ane_t6021
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic ane_t6021
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree ane_t6021
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n brcmfmac
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic brcmfmac
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree brcmfmac
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n zram
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic zram
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree zram
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n tun
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic tun
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree tun
++ for m in ane ane_t6021 brcmfmac zram tun btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -n btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -F vermagic btrfs
++ modinfo -b TREE -k 7.1.12-ane-intree -F intree btrfs
++ cd TREE/lib/modules/7.1.12-ane-intree
++ sha256sum -c STAGE/ane-modules.sha256
++ test '!' -e TREE/lib/modules/7.1.12-ane-intree/updates
++ echo no-updates-dir
++ grep -E 'apple,t60(21|00)-ane ' TREE/lib/modules/7.1.12-ane-intree/modules.alias
