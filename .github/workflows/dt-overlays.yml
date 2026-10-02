@@ -4,12 +4,16 @@ name: dt-overlays
 # select (tools/asahi-dtbs, tools/test_ane_overlays.py), plus the offline
 # omarchy-ane-dt, omarchy-ane-check, omarchy-ane-smoke, omarchy-ane-firmware-fetch and T8112 kit
 # checks, the driver alias tables against the default overlays
-# (tools/test_ane_m2.py), and the boot regression of ane/t6021 (images, iBoot
-# patches, ASC tunables).
+# (tools/test_ane_m2.py), the boot regression of ane/t6021 (images, iBoot
+# patches, ASC tunables), and the libane host checks (make check: ane-selfcheck
+# and the ioctl argument check against a fake DRM node).
 on:
   push:
     branches: [main]
     paths:
+      - libane/**
+      - tools/Makefile
+      - tools/test_libane_ioctl.c
       - packaging/**
       - ane/src/ane_drv.c
       - ane/t6021/**
@@ -27,6 +31,9 @@ on:
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
+      - libane/**
+      - tools/Makefile
+      - tools/test_libane_ioctl.c
       - packaging/**
       - ane/src/ane_drv.c
       - ane/t6021/**
@@ -50,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # fdtget and fdtput; dtc and fdtoverlay come from the kernel tree.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev
       - run: tools/asahi-dtbs "$RUNNER_TEMP/asahi"
       - name: tests (kernel dtc 1.7.2, libfdt linked in)
         run: |
@@ -65,3 +72,4 @@ jobs:
           python3 tools/test_ane_smoke.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1
+          make check

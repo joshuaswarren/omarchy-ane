@@ -2051,7 +2051,7 @@ static uint64_t ane_m2_guard(void)
 static int bo_alloc(struct ane_nn *nn, struct ane_bo *bo, uint64_t size)
 {
 	struct drm_ane_bo_init args = { .size = size + ANE_M2_BO_GUARD };
-	struct drm_ane_bo_free f;
+	struct drm_ane_bo_free f = { 0 };
 
 	if (ioctl(nn->fd, DRM_IOCTL_ANE_BO_INIT, &args) < 0) {
 		ane_m2_err("DRM_IOCTL_ANE_BO_INIT failed for %llu bytes\n",
@@ -2080,7 +2080,7 @@ static int bo_alloc(struct ane_nn *nn, struct ane_bo *bo, uint64_t size)
  * is safe and the program stays kernel-visible. */
 static void bo_release(struct ane_nn *nn, struct ane_bo *bo)
 {
-	struct drm_ane_bo_free f;
+	struct drm_ane_bo_free f = { 0 };
 
 	if (bo->map) {
 		munmap(bo->map, bo->size);
@@ -2150,7 +2150,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 {
 	struct ane_m2_ctx *ctx;
 	struct drm_ane_section sec_args[ANE_M2_SEC_COUNT];
-	struct drm_ane_generic_bind binds[ANE_M2_MAX_BINDS];
+	struct drm_ane_generic_bind binds[ANE_M2_MAX_BINDS] = { 0 };
 	struct drm_ane_prog_load load;
 	struct drm_ane_proc_create create;
 	uint8_t *buf = NULL;
