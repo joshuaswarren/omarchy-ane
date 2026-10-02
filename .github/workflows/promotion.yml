@@ -56,9 +56,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: verdict
       - name: propose (or print the plan, with dry_run)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,8 +63,14 @@ jobs:
         run: |
           git config user.name omarchy-ane-automation
           git config user.email 816217+joshuaswarren@users.noreply.github.com
-          python3 tools/promote_from_verdict.py propose --verdict-file verdict.json \
-            ${{ inputs.dry_run && '--dry-run' || '' }}
+          # The verdict artifact is the record; propose judges its own source:
+          # the live dataset, or the fixture in a test repo only.
+          if [ "${{ inputs.synthetic }}" = "true" ]; then
+            python3 tools/promote_from_verdict.py propose --verdict-file tools/promotion_synthetic.json \
+              ${{ inputs.dry_run && '--dry-run' || '' }}
+          else
+            python3 tools/promote_from_verdict.py propose ${{ inputs.dry_run && '--dry-run' || '' }}
+          fi
 
   gate:
     needs: propose
@@ -77,9 +80,6 @@ jobs:
       merged: ${{ steps.gate.outputs.merged }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: verdict
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev
       - name: gate every auto-promotion PR (host tests, fresh verdict, squash-merge)
         id: gate
@@ -105,12 +105,8 @@ jobs:
             python3 tools/test_promote_chip.py
             python3 tools/test_ane_smoke.py
             make -C tools check
-            if [ "${{ inputs.synthetic }}" = "true" ]; then
-              python3 tools/promotion_check.py --json tools/promotion_synthetic.json > fresh.json
-            else
-              python3 tools/promotion_check.py --remote --json > fresh.json
-            fi
-            out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" --verdict-file fresh.json)
+            out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" \
+              ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }})
             echo "$out"
             grep '^MERGED' <<<"$out" | cut -f2- >> merged.txt || true
             git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
