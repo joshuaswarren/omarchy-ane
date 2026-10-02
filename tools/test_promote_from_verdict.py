@@ -58,7 +58,7 @@ if "pulls?state=open" in ep:
     out(s["open"])
 elif ep.endswith("/pulls") and method == "POST":
     n = s["next"]; s["next"] += 1
-    s["open"] = s["open"] + [{{"number": n, "labels": []}}]
+    s["open"] = s["open"] + [{{"number": n, "labels": [], "head": {{"ref": body["head"]}}}}]
     s["bodies"][str(n)] = body["body"]
     out({{"number": n, "body": body["body"]}})
 elif "/pulls/" in ep and method == "PATCH":
