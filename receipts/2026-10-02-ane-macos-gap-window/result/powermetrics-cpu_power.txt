@@ -1,0 +1,50 @@
+*** Sampled system activity (Fri Oct  2 14:50:36 2026 -0500) (507.66ms elapsed) ***
+CPU Power: 2407 mW
+GPU Power: 8 mW
+ANE Power: 9148 mW
+Combined Power (CPU + GPU + ANE): 11563 mW
+*** Sampled system activity (Fri Oct  2 14:50:37 2026 -0500) (508.12ms elapsed) ***
+CPU Power: 3174 mW
+GPU Power: 6 mW
+ANE Power: 2210 mW
+Combined Power (CPU + GPU + ANE): 5390 mW
+*** Sampled system activity (Fri Oct  2 14:50:37 2026 -0500) (508.42ms elapsed) ***
+CPU Power: 4528 mW
+GPU Power: 8 mW
+ANE Power: 2020 mW
+Combined Power (CPU + GPU + ANE): 6556 mW
+*** Sampled system activity (Fri Oct  2 14:50:38 2026 -0500) (508.13ms elapsed) ***
+CPU Power: 2533 mW
+GPU Power: 6 mW
+ANE Power: 9116 mW
+Combined Power (CPU + GPU + ANE): 11654 mW
+*** Sampled system activity (Fri Oct  2 14:50:38 2026 -0500) (508.21ms elapsed) ***
+CPU Power: 2493 mW
+GPU Power: 8 mW
+ANE Power: 9046 mW
+Combined Power (CPU + GPU + ANE): 11547 mW
+*** Sampled system activity (Fri Oct  2 14:50:39 2026 -0500) (508.14ms elapsed) ***
+CPU Power: 2491 mW
+GPU Power: 6 mW
+ANE Power: 9058 mW
+Combined Power (CPU + GPU + ANE): 11556 mW
+*** Sampled system activity (Fri Oct  2 14:50:39 2026 -0500) (508.03ms elapsed) ***
+CPU Power: 2488 mW
+GPU Power: 8 mW
+ANE Power: 9051 mW
+Combined Power (CPU + GPU + ANE): 11547 mW
+*** Sampled system activity (Fri Oct  2 14:50:40 2026 -0500) (508.15ms elapsed) ***
+CPU Power: 2480 mW
+GPU Power: 6 mW
+ANE Power: 9052 mW
+Combined Power (CPU + GPU + ANE): 11538 mW
+*** Sampled system activity (Fri Oct  2 14:50:40 2026 -0500) (508.37ms elapsed) ***
+CPU Power: 3193 mW
+GPU Power: 8 mW
+ANE Power: 2687 mW
+Combined Power (CPU + GPU + ANE): 5887 mW
+*** Sampled system activity (Fri Oct  2 14:50:41 2026 -0500) (508.47ms elapsed) ***
+CPU Power: 4565 mW
+GPU Power: 6 mW
+ANE Power: 1668 mW
+Combined Power (CPU + GPU + ANE): 6238 mW

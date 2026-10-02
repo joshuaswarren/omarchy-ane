@@ -26,7 +26,7 @@ log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$O/run.log"; }
 
 stamp() { # load + uptime recorded next to every timing artifact
   local boot now
-  boot=$(sysctl -n kern.boottime | sed -E 's/.*sec = ([0-9]+).*/\1/')
+  boot=$(sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+),.*/\1/')
   case "$boot" in (*[!0-9]*|"") boot="";; esac
   now=$(date +%s)
   printf 'ts=%s load=%s uptime_s=%s\n' "$(date -u +%FT%TZ)" \

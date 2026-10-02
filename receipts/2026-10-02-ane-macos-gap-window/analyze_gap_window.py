@@ -18,6 +18,7 @@ Inputs:
   --linux-ps FILE       optional Linux words JSON, printed as given:
                         {"idle": {"fabric_ps": "0x555", "dcs_ps": "0x999", "dsid": "0x80"}, ...}
   --e1 / --e1-prime DIR E1 probe trees for the P6/P7 and P6' golden compares
+  --linux-out P=NPY     Linux output of probe P (e.g. p6prime=y63.npy) for a bitwise cross-OS compare
   --synthetic           generate a self-consistent fake capture + fake Linux result and analyze
                         that (no hardware needed; exercises every code path)
 macOS numbers are upper bounds when captured under load; the report says so (the stamps carry load).
@@ -160,18 +161,20 @@ def print_dumps(label, dumps):
 
 
 def perfstats(cap: Path):
-    """perf_stats_last of every block JSON: how many blocks carried it, and the last one."""
+    """perf_stats_last of every block JSON: blocks that carried the dict, blocks where it had content."""
     for probe in PROBES:
-        got, last = 0, None
+        carried, filled, last = 0, 0, None
         for f in sorted((cap / "timings" / probe).glob("block-*.json")):
             try:
                 ps = json.loads(f.read_text()).get("perf_stats_last")
             except json.JSONDecodeError:
                 continue
-            if ps:
-                got, last = got + 1, ps
-        print(f"  {probe}: {got} block(s) with perfStats" + (f"; last: {' '.join(str(last).split())[:600]}"
-                                                             if last else ""))
+            if ps is not None:
+                carried += 1
+                if ps.strip("{} \n"):
+                    filled, last = filled + 1, ps
+        print(f"  {probe}: perfStats dict accepted on {carried} block(s), non-empty on {filled}"
+              + (f"; last: {' '.join(str(last).split())[:600]}" if last else ""))
 
 
 def macos_load(cap: Path, probe: str):
@@ -189,6 +192,8 @@ def main() -> int:
     ap.add_argument("--linux-ps", type=Path)
     ap.add_argument("--e1", type=Path, help="E1 probe tree for golden output compares")
     ap.add_argument("--e1-prime", type=Path, help="P6' probe tree (p6prime/) for its golden compare")
+    ap.add_argument("--linux-out", action="append", default=[], metavar="PROBE=NPY",
+                    help="Linux output of the same probe (fp16 .npy) for a bitwise cross-OS compare")
     ap.add_argument("--synthetic", action="store_true")
     a = ap.parse_args()
 
@@ -271,11 +276,11 @@ def main() -> int:
     print("  macOS numbers carry the load stamps next to each block; load lengthens times, so a")
     print("  macOS min is an upper bound and every ratio a lower bound (NativeMacRun precedent).")
     if a.e1:
-        golden_check(cap, a.e1, a.e1_prime)
+        golden_check(cap, a.e1, a.e1_prime, dict(s.split("=", 1) for s in a.linux_out))
     return 0
 
 
-def golden_check(cap: Path, e1: Path, e1_prime: Path = None):
+def golden_check(cap: Path, e1: Path, e1_prime: Path = None, linux_out: dict = None):
     """macOS outputs vs the E1 CPU goldens (P6/P7 rel L2; the encoder vs the bit-exact fca96f13)."""
     import hashlib
     import numpy as np
@@ -299,8 +304,13 @@ def golden_check(cap: Path, e1: Path, e1_prime: Path = None):
         b = np.frombuffer(want, "<f2").astype(np.float64)
         n = min(a.size, b.size)
         rel = float(np.linalg.norm(a[:n] - b[:n]) / max(np.linalg.norm(b[:n]), 1e-30))
-        print(f"  {probe}: NOT bit-exact, rel L2 vs CPU golden {rel:.3e} "
-              "(ANE accumulation order may differ; band like the Linux leg's golden line)")
+        bad = int((~np.isfinite(a[:n])).sum())
+        print(f"  {probe}: NOT bit-exact, rel L2 vs CPU golden {rel:.3e}, non-finite lanes {bad}/{n}")
+        if probe in (linux_out or {}):
+            lin = np.ascontiguousarray(np.load(linux_out[probe]), "<f2").tobytes()
+            diff = int((np.frombuffer(got[:len(lin)], "<u2") != np.frombuffer(lin, "<u2")).sum())
+            print(f"    vs the Linux output {linux_out[probe]}: "
+                  + ("bitwise identical" if got[:len(lin)] == lin else f"{diff} fp16 lanes differ"))
     hid = cap / "timings" / "pk" / "hidden.last.bin"
     if hid.exists():
         sha = hashlib.sha256(hid.read_bytes()[:375 * 640 * 2]).hexdigest()

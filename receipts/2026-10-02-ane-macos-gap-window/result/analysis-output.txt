@@ -1,0 +1,43 @@
+== E1 ratio table (Linux / macOS; corrected = Linux minus 1.05 ms call settle) ==
+  P6 compute-bound (64x conv1x1, L2-resident weights; Linux output invalid, P6Fix)
+    Linux: minmin 5.468 ms, medmed 5.529 ms (20 blocks)
+    macOS: minmin 1.178 ms, medmed 1.306 ms (20 blocks) load1 18.88-27.31
+    ratio minmin corrected 3.750 raw 4.642; medmed raw 4.234
+  P6' = P6 program with input x0.8 (the E1 decision probe)
+    Linux: minmin 5.465 ms, medmed 5.530 ms (20 blocks)
+    macOS: minmin 1.180 ms, medmed 1.307 ms (20 blocks) load1 18.88-27.35
+    ratio minmin corrected 3.741 raw 4.631; medmed raw 4.231
+  P7 activation stream (2x32 MiB fp16 add)
+    Linux: minmin 4.120 ms, medmed 4.169 ms (20 blocks)
+    macOS: minmin 1.233 ms, medmed 1.278 ms (20 blocks) load1 18.88-27.35
+    ratio minmin corrected 2.490 raw 3.341; medmed raw 3.262
+  Parakeet whole encoder (reference: Linux 254.3 / macOS 89.3 ms)
+    Linux: minmin 254.260 ms, medmed 254.412 ms (20 blocks)
+    macOS: minmin 89.138 ms, medmed 89.232 ms (20 blocks) load1 18.88-27.35
+    ratio minmin corrected 2.841 raw 2.852; medmed raw 2.851
+== E1 decision (GapRank H1 rule, on p6prime) ==
+  P6' ratio 3.74 >= 2.0: SUPPORTS H1 (ANE operating point left low under Linux; the compute-bound probe carries the ratio)
+  P6' 3.74 >> P7 2.49: the gap concentrates in compute, consistent with a low NE clock rather than memory side
+  encoder ratio 2.84 vs the whole-encoder reference 2.83 (NativeVsCross/NativeMacRun)
+== fabric-ps / dcs-ps (DESIRED[3:0]) and DSID word 0x285c2046c (bits[17:10]) per OS ==
+  macOS idle 03-regdump-idle: islands_up=0 fabric-ps 0x00000666 (DESIRED=6) dcs-ps 0x00000999 (DESIRED=9) dsid-word gated (not read)
+    ps ['0xf000300', '0xf000300', '0x300', '0x300', '0x300', '0x300', '0x300', '0x300']
+  macOS load a1: islands_up=1 fabric-ps 0x00000666 (DESIRED=6) dcs-ps 0x00000999 (DESIRED=9) dsid-word 0x00003880 dsid=14
+    ps ['0x1f0003ff', '0x1f0003ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff']
+  macOS load a2: islands_up=1 fabric-ps 0x00000666 (DESIRED=6) dcs-ps 0x00000999 (DESIRED=9) dsid-word 0x00003880 dsid=14
+    ps ['0x1f0003ff', '0x1f0003ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff', '0x3ff']
+  Linux: n/a (no --linux-ps)
+== perfStats (perf_stats_last per block) ==
+  p6: perfStats dict accepted on 20 block(s), non-empty on 0
+  p6prime: perfStats dict accepted on 20 block(s), non-empty on 0
+  p7: perfStats dict accepted on 20 block(s), non-empty on 0
+  pk: perfStats dict accepted on 20 block(s), non-empty on 0
+== caveats ==
+  macOS numbers carry the load stamps next to each block; load lengthens times, so a
+  macOS min is an upper bound and every ratio a lower bound (NativeMacRun precedent).
+== golden compares (macOS last-block outputs) ==
+  p6: NOT bit-exact, rel L2 vs CPU golden inf, non-finite lanes 257748/262144
+  p6prime: NOT bit-exact, rel L2 vs CPU golden inf, non-finite lanes 257646/262144
+    vs the Linux output linux-p6prime/w20/y63.npy: bitwise identical
+  p7: NOT bit-exact, rel L2 vs CPU golden 2.654e-04, non-finite lanes 0/16777216
+  pk: encoder_hidden fp16 sha fca96f13 == fca96f13 (bit-exact, golden)

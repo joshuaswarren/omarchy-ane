@@ -16,36 +16,38 @@ memory-side cause (P7 >> P6, H3/H12 class). The Parakeet encoder is the referenc
 
 | # | Item | Phase(s) | Artifact |
 |---|------|----------|----------|
-| 1 | P6/P7 timings on macOS, same inputs | `timings` | `out/timings/{p6,p7}/block-*.json` + `blocks.tsv` |
+| 1 | P6/P6'/P7 timings on macOS, same inputs | `timings` | `out/timings/{p6,p6prime,p7}/block-*.json` + `blocks.tsv` |
 | 1b | Parakeet encoder, same procedure as the prior native run | `timings` | `out/timings/pk/` |
-| 2 | fabric-ps 0x28e20c000 + dcs-ps 0x28e20c400 (4-byte words, DESIRED[3:0]) idle and mid-loop | `regdump-idle`, `regdump-load` | `out/03-regdump-idle/regdump/{fabric-ps,dcs-ps}.bin`, `out/04-regdump-load/...` |
-| 2b | ANE SLC DSID at engine 0x285c2046c (4 bytes, SLC data-set id in bits[17:10], per AneDsidRe2); idle-after-boot and mid-loop, gated with the ANE power state (a real finding if gated idle) | `regdump-idle`, `regdump-load` | `out/03-regdump-idle/regdump/dsid.bin` (or `gated` marker) |
+| 2 | fabric-ps 0x28e20c000 + dcs-ps 0x28e20c400 (4-byte words, DESIRED[3:0]) idle and mid-loop | `regdump-idle`, `regdump-load` | `out/03-regdump-idle/regdump/{fabric-ps,dcs-ps}.bin`, `out/04-regdump-load/a<N>/regdump/...` |
+| 2b | ANE SLC DSID at engine 0x285c2046c (4 bytes, SLC data-set id in bits[17:10], per AneDsidRe2); idle and mid-loop, gated with the ANE power state | `regdump-idle`, `regdump-load` | `dsid.bin` + its status in each `index.json` (a gated range is an empty `.bin`) |
 | 3 | iBoot-filled ADT items via ioreg (mcc, iop-pmp-nub, ane0, pmgr, dart-ane0) | `ioreg` | `out/01-ioreg-*.txt` |
 | 4 | firmware perfStats through `_ANERequest` (NE compute/nominal/throttle cycles) | `timings` | `perf_stats_first/last` fields in every `block-*.json` |
 | 5 | ANE power/frequency snapshot tool output, whatever this build prints | `powermetrics` | `out/05-powermetrics/` |
 
 The reg words need the ANERegDump kext: `ranges-gapwin.txt` = the committed runtime request plus
 exactly the two ungated non-engine 4-byte ranges (fabric-ps, dcs-ps) and one GATED engine-window
-4-byte range (DSID at 0x285c2046c) - no kext rebuild. The kext + CLI build on-box from the
-staged `src/macos-regdump` (proven path), need root (`sudo -n`), and the FIRST allow needs one
-user approval in System Settings plus one reboot inside the window. Every phase degrades
-gracefully: without root or approval the bundle records `SKIPPED` with the exact refusal text
-and the rest of the window proceeds. If the kext gates the DSID read because the ANE power
-domains are not all up, the bundle writes a `gated` marker file with the kext's reason and
-the analysis prints the gated state instead of a word - that is a real finding, not a failure.
+4-byte range (DSID at 0x285c2046c), with the gate set this M2 passed on 2026-09-25 (0x260, 0x2e0,
+0x4008-0x4030; macOS never raises ane_sys_mpm 0x4000). The bundle uses only the installed, approved
+frozen kext (`/Library/Extensions/ANERegDump.kext`, sha256 932d3b9b) and its CLI
+(`~/ane-cap3/aneregdump`, else built from the staged `src/macos-regdump/aneregdump.c`); it never
+builds or loads another kext, because a new build needs an Allow click and a reboot. Without root,
+the approved kext or its service, the phase records `SKIPPED` with the reason and the rest of the
+window proceeds. A dump taken while the islands are down writes a `gated` marker; the ungated words
+are still read. Mid-loop, the bundle makes up to 8 attempts and stops after 2 passes.
 
 PerfStats is best-effort by design: `ane_inmem_run` (this branch, `PERFSTATS=1`) passes a mutable
 dict as `_ANERequest perfStats`; if this macOS build rejects the type at request creation or at the
 first evaluate, the tool logs the refusal and finishes the block with the previous nil behaviour.
 Item 1's timings therefore never depend on item 4 succeeding.
 
-## Window order (one boot; ~35 min median, ~50 min with the kext-approval reboot)
+## Window order (one boot; ~35 min with the post-boot load gate)
 
-1. `env` `ioreg` `inputs` `regdump-idle` - untimed setup, ~4 min (inputs verified before anything runs).
-2. `timings` - 20 blocks per arm x 3 arms, 3 warm-up + 20 calls per block, ~8-15 min
-   (each block = one in-process compile + 23 calls; block stamps carry load + uptime).
-3. `regdump-load` `powermetrics` - register words and power snapshots under a sustained P6/P7 loop, ~3 min.
-4. `sums` - SHA256SUMS over everything.
+1. `env` `ioreg` `inputs` - untimed setup, ~1 min (inputs verified before anything runs).
+2. `timings` - 20 blocks per arm x 4 arms, 3 warm-up + 20 calls per block, ~6 min after the load
+   gate (which waits up to 10 min); each block = one in-process compile + 23 calls, stamped with load.
+3. `powermetrics` - `cpu_power` (prints "ANE Power" on this box) and `ane_power` under the P6/P7 loop.
+4. Fetch the timings, then `regdump-idle` `regdump-load` `sums`: the register phases run last, so a
+   kext fault cannot cost the timings.
 5. Fetch artifacts, return to Linux (below).
 
 Each phase leaves `out/<phase>.done`; a re-run resumes. A failed probe (for example the macOS
@@ -65,6 +67,7 @@ MIL 4e3d2e8d + weights 295dccd4, the Linux fixtures 38dce85b/e50598dd):
       --fixtures <dir-with-input_features.npy-and-attention_mask.npy> \
       --inmem-src <worktree>/tools/native-macos/ane_inmem_run.m \
       [--inmem-bin <Studio-built ane_inmem_run>] \
+      [--regdump-src <repo>/tools/macos-regdump] \
       --out /var/tmp/gapwin-stage
 
 The `--e1-prime` flag stages the P6' probe (p6prime/) produced by the generator's `--variant p6prime`
@@ -86,9 +89,11 @@ Ship it (both-end hash verification; ~450 MB, ~1 min on LAN):
     TARGET=<m2-macos-ssh-alias> SCRATCH=/Users/<user>/oracle-mint-scratch/gap-window \
       bash macos-bundle/staging.sh
 
-On the Mac:
+On the Mac (two passes, so the timings are fetched before any kext read):
 
-    SCRATCH=/Users/<user>/oracle-mint-scratch/gap-window bash macos_window.sh
+    SCRATCH=... LOAD_MAX=4 PHASES="env ioreg inputs timings powermetrics" caffeinate -dimsu bash macos_window.sh
+    # fetch out/ (tar over ssh + shasum list), then:
+    SCRATCH=... PHASES="regdump-idle regdump-load sums" caffeinate -dimsu bash macos_window.sh
     # then: SCRATCH=... TARGET=... OUT=/var/tmp/gapwin-results bash macos-bundle/staging.sh fetch
 
 Fetch verifies the returned `out/SHA256SUMS` locally and removes the remote scratch.
@@ -121,8 +126,8 @@ unchanged, module hash unchanged, no new dmesg bad lines, locks released.
 
 Worst-known recovery path (recorded, not expected): a macOS boot that never answers SSH on any
 route for > 6 min -> STOP, report to Main with the three probe results (both SSH routes + camera
-frame). The one extra branch: the kext-approval reboot above happens INSIDE the macOS window and
-returns to macOS, not Linux.
+frame). The macOS WiFi route can drop mid-session while the wired USB-LAN route keeps answering
+(2026-10-02): wrap every macOS ssh in `timeout`, and try the wired route before calling it a failure.
 
 ## (d) Analysis (runs now, on this host, no hardware)
 
@@ -131,43 +136,33 @@ returns to macOS, not Linux.
       --macos-capture /var/tmp/gapwin-results/out \
       --linux-e1 /var/tmp/e1-linux/results.json \
       [--linux-ps /var/tmp/e1-linux/ps-words.json] \
-      --e1 /var/tmp/e1-probes
+      --e1 /var/tmp/e1-probes [--e1-prime /var/tmp/e1-probes-prime] \
+      [--linux-out p6prime=<Linux y63.npy>]
 
-`--linux-e1` JSON contract (produced by the Linux E1 leg; `{}` if pending):
-`{"p6": {"blocks": [[block_min_ms, block_median_ms], ...]}, "p7": {...}, "pk": {...}}`.
-`--linux-ps` optional: `{"idle": {"fabric_ps": "0x777", "dcs_ps": "0x999"}, "load": {...}}`.
-There is no T6021 read-only sysps module yet (the T6001 one is driver-specific and its WRITE path
-is banned after the 3/3 hard-reset record; READS were safe) - without it the Linux words print
-as n/a and the macOS idle-vs-load delta carries the comparison alone.
+`--linux-e1` JSON contract (raw Linux ms; `settle_ms` is subtracted from the Linux min for the
+corrected ratio, GapRank's r_p): `{"settle_ms": 1.05, "p6prime": {"blocks": [[block_min_ms,
+block_median_ms], ...]}, "p6": {...}, "p7": {...}, "pk": {...}}`. `--linux-ps` is printed as given.
 
-Output: the per-probe ratio table (Linux/macOS minmin + medmed), the E1 decision per GapRank's
-rule, the fabric/dcs words idle vs load per OS, the ANE SLC DSID (engine 0x285c2046c,
-SLC data-set id in bits[17:10], per AneDsidRe2) per phase - with a `gated` marker when the
-kext denied the engine-window read because the ANE power domains were not all up - golden
-compares (P6/P7 rel L2 vs CPU goldens, encoder vs the bit-exact fca96f13), and the load-stamp
-caveat (macOS numbers are upper bounds under load; every ratio is therefore a lower bound).
+Output: the per-probe ratio table (corrected and raw minmin, medmed), the E1 decision on P6' (P6
+when P6' is absent), fabric-ps / dcs-ps / DSID per dump with each range's kext status, perfStats per
+probe, golden compares (P6/P6'/P7 rel L2 and non-finite lanes, encoder vs the bit-exact fca96f13,
+optional bitwise compare against a Linux output), and the load-stamp caveat.
 
-## What is verified vs not
+## Results
 
-Verified without hardware (this branch, 2026-10-02):
-- `bash -n` on every shell script; `python3 -m py_compile` on both Python files.
-- The modified `tools/native-macos/ane_inmem_run.m` compiles on the build Studio
-  (Xcode clang, `-mmacosx-version-min=14.0`): binary sha256 2bbc237bd505cfebccd8f40aaca854ac0a7e6fbea6e48da0ba73df8b9d7a27ef.
-- `prepare_stage.py` ran for real against the E1 tree + encoder sources on this host (hashes pass).
-- `analyze_gap_window.py --synthetic` produces the table, decision, and ps-word sections.
-NOT verified (needs the window): anything on the device - the macOS-side compile of the P6/P7
-MILs, the perfStats dict acceptance, the kext build/load on macOS 27 on the M2, the two ps words'
-filter acceptance, powermetrics behaviour, and the real timings themselves.
+The window ran on 2026-10-02: see [result/README.md](result/README.md).
 
 ## Known risks, in window-cost order
 
-1. Kext approval + reboot (first allow only): +10-15 min, one extra reboot inside macOS. Probe:
-   `kmutil showloaded | grep -i ANERegDump` - if already loaded, no cost.
+1. The approved frozen kext is not installed or not loadable: the register phases SKIP with the
+   reason (a rebuilt kext needs an Allow click and a reboot). Probe: the kext binary sha256 and
+   `kmutil showloaded | grep -i ANERegDump`.
 2. macOS in-process compiler refuses P7's 32 MiB add (e5rt refused the encoder MIL on 26.6.2):
-   per-block failure recorded, P6 + encoder continue. The h14 direct compile accepted both.
+   per-block failure recorded, the other arms continue.
 3. perfStats dict type wrong for this build: automatic nil fallback; item 4 empty, items 1/2 intact.
 4. No passwordless sudo on macOS: reg words + powermetrics skip with recorded refusals; probe is
    `sudo -n true` in `env`.
 5. Load on the M2 (Spotlight et al. after boot): the gate waits up to 10 min, then proceeds with
    stamps recording the load (the prior native run's 89 ms was itself taken at load 25).
-6. The M2 macOS sometimes answers on LAN only (Tailscale lags after boot): try both routes.
+6. The M2 macOS sometimes answers on LAN only (Tailscale lags after boot), and the WiFi route can
+   drop while the wired route answers: try every route.

@@ -1,0 +1,58 @@
+{
+ "macos": {
+  "idle": {
+   "islands_up": 0,
+   "ps": [
+    "0xf000300",
+    "0xf000300",
+    "0x300",
+    "0x300",
+    "0x300",
+    "0x300",
+    "0x300",
+    "0x300"
+   ],
+   "fabric-ps": "0x00000666",
+   "dcs-ps": "0x00000999",
+   "dsid": "gated"
+  },
+  "load_a1": {
+   "islands_up": 1,
+   "ps": [
+    "0x1f0003ff",
+    "0x1f0003ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff"
+   ],
+   "fabric-ps": "0x00000666",
+   "dcs-ps": "0x00000999",
+   "dsid": "0x00003880"
+  },
+  "load_a2": {
+   "islands_up": 1,
+   "ps": [
+    "0x1f0003ff",
+    "0x1f0003ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff",
+    "0x3ff"
+   ],
+   "fabric-ps": "0x00000666",
+   "dcs-ps": "0x00000999",
+   "dsid": "0x00003880"
+  }
+ },
+ "linux": {
+  "fabric_ps": "0x00000555",
+  "dcs_ps": "0x00000999",
+  "dsid_word": "0x00000080",
+  "source": "GapWinA probe modules (idle/during/after), GapWinB arm A; constant in every sample"
+ }
+}
