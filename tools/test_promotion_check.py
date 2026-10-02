@@ -97,19 +97,26 @@ del legacy['summary']['ane_port_detail']['runtime']['omarchy_ane']
 assert pc.verdict([legacy]) == {}
 
 # Default-on chips revert when their latest judged row is unclean; a later
-# clean judged row clears the regression.
-assert pc.ON == {'t8103', 't6001', 't6021'}, pc.ON
-on = [row(i, soc='t6021', at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
-v = pc.verdict(on)['t6021']
+# clean judged row clears the regression. The on set is the overlays table's
+# enabled rows (derived, so a promotion flip keeps this suite green); the
+# scenario below runs against whatever default-on chip is on the tree.
+rows = [l.split() for l in (Path(__file__).resolve().parents[1] /
+        'packaging/dt/overlays').read_text().splitlines() if l and l[0] != '#']
+assert pc.ON == {p for p, src, state in rows
+                 if src == f'{p}-ane.dts' and state == 'enabled'}, pc.ON
+assert pc.ON, 'the scenario below needs a default-on chip'
+spec = 't6021' if 't6021' in pc.ON else sorted(pc.ON)[0]
+on = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
+v = pc.verdict(on)[spec]
 assert v['on'] and v['latest'] == '010000000000' and v['revert'] == [], v
 oa(on[0])['check'].update(exit=1, status='FAILED')
-assert pc.verdict(on)['t6021']['revert'] == ['omarchy-ane-check not ready (exit 1, FAILED)']
+assert pc.verdict(on)[spec]['revert'] == ['omarchy-ane-check not ready (exit 1, FAILED)']
 oa(on[0])['check'].update(exit=0, status='ready')
 oa(on[0])['dmesg_faults'] = ['[ 9.0] ane_t6021: call completion wait failed -110']
-assert pc.verdict(on)['t6021']['revert'][0].startswith('1 ANE/DART/mailbox fault line(s)')
+assert pc.verdict(on)[spec]['revert'][0].startswith('1 ANE/DART/mailbox fault line(s)')
 oa(on[1])['dmesg_faults'] = list(oa(on[0])['dmesg_faults'])
 oa(on[0])['dmesg_faults'] = []
-assert pc.verdict(on)['t6021']['revert'] == [], 'a clean latest judged row clears the revert'
+assert pc.verdict(on)[spec]['revert'] == [], 'a clean latest judged row clears the revert'
 
 # Four real rows from the live dataset reproduce both reported defects.
 fixture_dir = Path(__file__).parent / 'fixtures' / 'promotion_check'
@@ -149,11 +156,12 @@ t6020 = next(c for c in jv['chips'] if c['chip'] == 't6020')
 assert t6020 == {'chip': 't6020', 'state': 'opt-in', 'verdict': 'PROMOTE',
                  'rows': [{'row_sha': '010000000000', 'judged': True, 'passed': True,
                            'reasons': []}]}, t6020
-t6021 = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == 't6021')
-assert t6021['verdict'] == 'ON' and t6021['state'] == 'on', t6021
+jchips = pc.json_verdict(on)['chips']
+specj = next(c for c in jchips if c['chip'] == spec)
+assert specj['verdict'] == 'ON' and specj['state'] == 'on', specj
 oa(on[0])['check'].update(exit=1, status='FAILED')
-t6021 = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == 't6021')
-assert t6021['verdict'] == 'REVERT' and t6021['rows'][0]['passed'] is False, t6021
+specj = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == spec)
+assert specj['verdict'] == 'REVERT' and specj['rows'][0]['passed'] is False, specj
 conflict_row = copy.deepcopy(good)
 oa(conflict_row)['smoke']['errors'] = 1
 t6020 = next(c for c in pc.json_verdict([good, conflict_row])['chips'] if c['chip'] == 't6020')
