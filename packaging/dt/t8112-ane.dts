@@ -34,6 +34,11 @@
  *    and GPU fuses from. No linux-asahi node claims it.
  * Stock T8112 trees already carry AIC and ane_sys. Their phandles differ
  * between kernels and boards, so they are reached by path.
+ * The seven power states set status "okay": aurora-silicon/linux #155 ships
+ * them at the same paths, disabled with its disabled T8112 ANE. The ane node
+ * needs all seven as power-domains, so they stay in this overlay; a node
+ * without a status here would stay disabled when the overlay merges into
+ * the kernel's (receipts/2026-10-01-ane-dt-disabled-nodes).
  */
 /dts-v1/;
 /plugin/;
@@ -67,6 +72,7 @@
 				#reset-cells = <0>;
 				label = "ane_sys_cpu";
 				power-domains = <&ps_ane_sys>;
+				status = "okay";
 			};
 
 			ps_ane_td: power-controller@c010 {
@@ -76,6 +82,7 @@
 				#reset-cells = <0>;
 				label = "ane_td";
 				power-domains = <&ps_ane_sys_cpu>;
+				status = "okay";
 			};
 
 			ps_ane_base: power-controller@c018 {
@@ -85,6 +92,7 @@
 				#reset-cells = <0>;
 				label = "ane_base";
 				power-domains = <&ps_ane_td>;
+				status = "okay";
 			};
 
 			ps_ane_set1: power-controller@c020 {
@@ -94,6 +102,7 @@
 				#reset-cells = <0>;
 				label = "ane_set1";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set2: power-controller@c028 {
@@ -103,6 +112,7 @@
 				#reset-cells = <0>;
 				label = "ane_set2";
 				power-domains = <&ps_ane_set1>;
+				status = "okay";
 			};
 
 			ps_ane_set3: power-controller@c030 {
@@ -112,6 +122,7 @@
 				#reset-cells = <0>;
 				label = "ane_set3";
 				power-domains = <&ps_ane_set2>;
+				status = "okay";
 			};
 
 			ps_ane_set4: power-controller@c038 {
@@ -121,6 +132,7 @@
 				#reset-cells = <0>;
 				label = "ane_set4";
 				power-domains = <&ps_ane_set3>;
+				status = "okay";
 			};
 		};
 	};
