@@ -3,8 +3,8 @@
  * Static ANE data for T8152 (j873g, Apple Mac mini M6), from the macOS 27.0
  * IPSW DeviceTree.j873gap.adt. Data-only: no driver binds this; runtime must
  * refuse to apply it, even if an opt-in key exists. Nodes are disabled and
- * have no ANE compatible or phandles. The AIC target path matches aurora-wip's
- * j873g DTS; its current minimal boot tree has no ANE base nodes.
+ * have no ANE compatible or phandles. IRQ values remain in the JSON because
+ * the checked target does not export an AIC symbol for this overlay.
  */
 /dts-v1/;
 /plugin/;
@@ -12,16 +12,6 @@
 / {
 	omarchy,data-only = "true";
 	compatible = "apple,j873g";
-
-	fragment@aic {
-		target-path = "/soc/interrupt-controller@301000000";
-		__overlay__ {
-			aic: __overlay__ {
-				interrupt-controller;
-				#interrupt-cells = <3>;
-			};
-		};
-	};
 
 	fragment@0 {
 		target-path = "/soc";
@@ -39,8 +29,6 @@
 				      <0x2 0x11000000 0x0 0xff4000>,
 				      <0x3 0x082c8000 0x0 0x4000>,
 				      <0x3 0x01200000 0x0 0x8000>;
-				interrupt-parent = <&aic>;
-				interrupts = <0 311 4>, <0 271 4>, <0 788 4>, <0 801 4>, <0 765 4>;
 				status = "disabled";
 			};
 
@@ -55,8 +43,6 @@
 				      <0x2 0x11000000 0x0 0xff4000>,
 				      <0x3 0x082c8000 0x0 0x4000>,
 				      <0x3 0x01200000 0x0 0x8000>;
-				interrupt-parent = <&aic>;
-				interrupts = <0 312 4>, <0 272 4>, <0 836 4>, <0 813 4>, <0 813 4>;
 				status = "disabled";
 			};
 
@@ -66,8 +52,6 @@
 				      <0x4 0x19840000 0x0 0xc000>,
 				      <0x4 0x19860000 0x0 0xc000>,
 				      <0x4 0x19810000 0x0 0x4000>;
-				interrupt-parent = <&aic>;
-				interrupts = <0 789 4>;
 				status = "disabled";
 			};
 
@@ -77,8 +61,6 @@
 				      <0x4 0x81840000 0x0 0xc000>,
 				      <0x4 0x81860000 0x0 0xc000>,
 				      <0x4 0x81810000 0x0 0x4000>;
-				interrupt-parent = <&aic>;
-				interrupts = <0 837 4>;
 				status = "disabled";
 			};
 		};
