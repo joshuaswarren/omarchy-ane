@@ -84,8 +84,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert names('t6001-j316c.dtb') == ['t6001/omarchy-ane.dtbo']
     assert names('t6021-j414c.dtb') == []
 
-    # The packaged overlays: build-dtbo names, the hook's Target, T6021 on by
-    # default, and the opt-in keys of the untested T6000, T6002, T6020, T6022 and T8112.
+    # The packaged overlays: build-dtbo names, the hook's Target, and the
+    # enabled/opt-in behaviour asserted below from the overlays table itself.
     pkg = Path(tmp) / 'pkg'
     subprocess.run([str(root / 'packaging/build-dtbo'), str(pkg)], check=True, capture_output=True)
     pkg_lib = pkg / oadt.OVERLAY_DIR
@@ -98,23 +98,27 @@ with tempfile.TemporaryDirectory() as tmp:
     opt_in = pkg / oadt.OPT_IN
     opt_in.parent.mkdir(parents=True)
     chosen = lambda dtb: [f'{p.parent.name}/{p.name}' for p in oadt.overlays_for(pkg, dtb)]
-    assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo'], 'the T6021 ANE applies by default'
-    assert chosen('t6000-j314s.dtb') == chosen('t6002-j375d.dtb') == chosen('t6020-j414s.dtb') == \
-        chosen('t6022-j180d.dtb') == chosen('t8112-j413.dtb') == [], 'untested SoCs wait for the opt-in'
-    assert chosen('t6001-j316c.dtb') == ['t6001/omarchy-ane.dtbo']
-    opt_in.write_text('uboot-serial-stdin-t6021\nane-t6000\n')
-    assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo']
-    assert chosen('t6000-j314s.dtb') == ['t6000/omarchy-ane.dtbo']
-    assert chosen('t6002-j375d.dtb') == [], 'ane-t6000 does not opt T6002 in'
-    opt_in.write_text('ane-t8112\n')
-    assert chosen('t8112-j413.dtb') == ['t8112/omarchy-ane.dtbo']
-    opt_in.write_text('ane-t6002\n')
-    assert chosen('t6002-j375d.dtb') == ['t6002/omarchy-ane.dtbo']
-    assert chosen('t6021-j414c.dtb') == ['t6021/omarchy-ane.dtbo'], 'the U-Boot input waits for its own key'
-    opt_in.write_text('ane-t6020\nane-t6022\n')
-    assert chosen('t6020-j414s.dtb') == ['t6020/omarchy-ane.dtbo']
-    assert chosen('t6022-j180d.dtb') == ['t6022/omarchy-ane.dtbo']
-    assert chosen('t6000-j314s.dtb') == chosen('t6002-j375d.dtb') == [], 'ane-t6020/ane-t6022 do not opt T600x in'
+    board = {'t8103': 't8103-j293', 't6000': 't6000-j314s', 't6001': 't6001-j316c',
+             't6002': 't6002-j375d', 't8112': 't8112-j413', 't6020': 't6020-j414s',
+             't6021': 't6021-j414c', 't6022': 't6022-j180d'}
+    # Derived from the overlays table, so a promotion flip (tools/promote_chip.py)
+    # keeps this suite green: an enabled row applies with no key; an opt-in row
+    # waits for its own key and never for another chip's.
+    rows = [(p, src, state) for p, src, state in
+            (l.split() for l in (root / 'packaging/dt/overlays').read_text().splitlines()
+             if l and l[0] != '#') if src == f'{p}-ane.dts']
+    enabled = {p for p, src, state in rows if state == 'enabled'}
+    optin = {p for p, src, state in rows if state == 'opt-in'}
+    for p in sorted(enabled):
+        assert chosen(f'{board[p]}.dtb') == [f'{p}/omarchy-ane.dtbo'], p
+    for p in sorted(optin):
+        assert chosen(f'{board[p]}.dtb') == [], p
+        opt_in.write_text(f'ane-{p}\n')
+        for q in sorted(optin):
+            assert chosen(f'{board[q]}.dtb') == ([f'{q}/omarchy-ane.dtbo'] if q == p else []), (p, q)
+    opt_in.write_text('uboot-serial-stdin-t6021\n')
+    want = [f't6021/omarchy-ane.dtbo'] * ('t6021' in enabled) + ['t6021/omarchy-uboot-serial-stdin.dtbo']
+    assert chosen('t6021-j414c.dtb') == want, 'the U-Boot input waits for its own key'
 
     # Overlays left in the old directory (a hand install): apply refuses and
     # keeps the current copy and the update-m1n1 line.

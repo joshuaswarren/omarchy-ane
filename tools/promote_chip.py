@@ -57,6 +57,9 @@ README_OPTIN = {
 # revert restores the original token order byte for byte.
 CHECK_LIST_INDEX = {"t6000": 0, "t6002": 1, "t6020": 2, "t6022": 3, "t8112": 4,
                     "t8103": None, "t6001": None, "t6021": None}
+# The seat of the chips that are on by default today, in the tested-header list
+# and the check's on list, so a re-promote after a revert restores it.
+FIRST_CLASS = {"t8103": 0, "t6001": 1, "t6021": 2}
 
 
 class Refuse(Exception):
@@ -103,7 +106,7 @@ def edit_overlays(text, chip, promote):
     names = [n for n in header.group(1).split(", ") if n]
     up = chip.upper()
     if promote and up not in names:
-        names.append(up)
+        names.insert(min(FIRST_CLASS.get(chip, len(names)), len(names)), up)
     if not promote and up in names:
         names.remove(up)
     text = text[:header.start(1)] + ", ".join(names) + text[header.end(1):]
@@ -141,7 +144,7 @@ def edit_check(text, chip, promote):
         if chip in off_list:
             off_list.remove(chip)
             if chip not in on_list:
-                on_list.append(chip)
+                on_list.insert(min(FIRST_CLASS.get(chip, len(on_list)), len(on_list)), chip)
         if not off_list:
             raise Refuse("packaging/omarchy-ane-check: the UNTESTED case arm would be empty "
                          "(every untested chip would be on); remove the arm by hand")
