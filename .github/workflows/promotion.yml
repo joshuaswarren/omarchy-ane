@@ -105,6 +105,10 @@ jobs:
             python3 tools/test_promote_chip.py
             python3 tools/test_ane_smoke.py
             make -C tools check
+            make -C tools ane-run
+            python3 -m pytest -q tests tools \
+              --ignore=tools/test_promote_chip.py \
+              --ignore=tools/test_promote_from_verdict.py
             out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" \
               ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }})
             echo "$out"

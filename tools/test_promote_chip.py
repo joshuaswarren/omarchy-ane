@@ -94,18 +94,8 @@ for chip in UNTESTED + DEFAULT_ON:
                            capture_output=True, text=True, cwd=base)
         assert q.returncode == 0, (chip, suite, q.stdout[-2000:], q.stderr[-2000:])
 
-# The full host suite on one flipped tree (the gate runs it again per PR), then
-# the flip-sensitive offline suites on every flipped tree.
-flipped = make_tree()
-p = run(flipped, "t8112", "default-on", "--apply")
-assert p.returncode == 0, p.stderr
-subprocess.run(["make", "-C", "tools", "ane-run"], cwd=flipped, check=True,
-               capture_output=True)  # tests/test_qwen_prog_run runs the built runner
-q = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests", "tools",
-                    "--ignore=tools/test_promote_chip.py",
-                    "--ignore=tools/test_promote_from_verdict.py"],
-                   capture_output=True, text=True, cwd=flipped)
-assert q.returncode == 0, ("pytest tests tools", q.stdout[-3000:], q.stderr[-2000:])
-print("promote_chip test: pytest -q tests tools green on the flipped tree")
+# The full pytest host suite on a flipped tree runs in the promotion gate
+# (dt-overlays CI stays hermetic); here: the flip-sensitive offline suites per
+# chip, already run above.
 
 print(f"promote_chip test: ok ({len(UNTESTED) + len(DEFAULT_ON)} chips)")
