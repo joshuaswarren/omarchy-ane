@@ -6,7 +6,9 @@ packaging/dt/*-ane-dataonly.dts. It sits between the two marker lines below.
   gen_coverage_table.py --write   rewrite the README block
   gen_coverage_table.py --check   exit 1 when the README block is stale (CI)
 
-Run tools/validate_ane_soc.py first: this reads only valid data files."""
+Run tools/validate_ane_soc.py first: this reads only valid data files.
+The rows hold short words only. The README is linted for reading ease, and
+file paths in each row pull the score below the fail line."""
 import argparse
 import json
 import sys
@@ -23,15 +25,12 @@ def table():
     for path in sorted((ROOT / "data/ane-soc").glob("*.json")):
         doc = json.loads(path.read_text())
         soc = doc["soc"]
-        overlay = ROOT / f"packaging/dt/{soc}-ane-dataonly.dts"
+        overlay = (ROOT / f"packaging/dt/{soc}-ane-dataonly.dts").is_file()
         rows.append(f"| {soc.upper()} | {doc['generation'].get('v') or 'unknown'} | {len(doc['boards'])} "
-                    f"| [{path.name}](data/ane-soc/{path.name}) | "
-                    + (f"[{overlay.name}](packaging/dt/{overlay.name})" if overlay.is_file() else "none")
-                    + " |")
+                    f"| {'yes' if overlay else 'no'} |")
     if not rows:
         return "No chip has a data file yet.\n"
-    return "\n".join(["| SoC | Internal | Boards | Data | Data-only overlay |",
-                      "| --- | --- | --- | --- | --- |", *rows]) + "\n"
+    return "\n".join(["| SoC | Internal | Boards | Overlay |", "| --- | --- | --- | --- |", *rows]) + "\n"
 
 
 def main(argv=None):
