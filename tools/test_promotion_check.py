@@ -170,5 +170,9 @@ unjudged = next(c for c in pc.json_verdict([legacy])['chips'] if c['chip'] == 't
 assert unjudged['verdict'] == 'STAY' and unjudged['rows'] == [
     {'row_sha': '010000000000', 'judged': False, 'passed': False, 'reasons': []}], unjudged
 t6000 = next(c for c in pc.json_verdict([not_installed])['chips'] if c['chip'] == 't6000')
-assert t6000['verdict'] == 'STAY', t6000
+# an uninstalled row is never judged: on an on-by-default chip the chip verdict
+# is ON (nothing judged, nothing to revert), elsewhere STAY
+assert t6000['verdict'] == ('ON' if 't6000' in pc.ON else 'STAY'), t6000
+assert t6000['rows'] == [{'row_sha': 'a994fe80c994', 'judged': False,
+                          'passed': False, 'reasons': []}], t6000
 print('test_promotion_check: ok')
