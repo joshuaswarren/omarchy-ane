@@ -194,14 +194,46 @@ def load(paths):
             yield from (json.loads(l) for l in text.splitlines() if l.strip())
 
 
+def json_verdict(rows):
+    """Stable machine verdict: {chips: [{chip, state, verdict, rows: [...]}]}.
+
+    verdict is PROMOTE | REVERT | STAY | ON | CONFLICT; rows carry the 12-char
+    row sha, whether the row was judged, and (judged rows) pass and reasons.
+    """
+    result, per_soc = verdict(rows), defaultdict(list)
+    for row in rows:
+        if soc(row):
+            per_soc[soc(row)].append(row)
+    chips = []
+    for s in sorted(per_soc):
+        r = result.get(s)
+        rows_out = [{"row_sha": row["content_sha256"][:12], "judged": (j := judged(row)),
+                     "passed": (not failures(row)) if j else False,
+                     "reasons": failures(row) if j else []} for row in per_soc[s]]
+        if r is None:
+            chips.append({"chip": s, "state": "on" if s in ON else "opt-in",
+                          "verdict": "ON" if s in ON else "STAY", "rows": rows_out})
+        elif r["on"]:
+            chips.append({"chip": s, "state": "on", "verdict": "REVERT" if r["revert"] else "ON",
+                          "rows": rows_out})
+        else:
+            v = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
+            chips.append({"chip": s, "state": "opt-in", "verdict": v, "rows": rows_out})
+    return {"chips": chips}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("rows", nargs="*", help="row JSON or JSONL files")
     ap.add_argument("--remote", nargs="?", const=DATASET, help="read every row of the public dataset")
+    ap.add_argument("--json", action="store_true", help="print the verdict as JSON instead of text")
     args = ap.parse_args(argv)
     if not args.rows and not args.remote:
         ap.error("give row files or --remote")
     rows = list(remote_rows(args.remote)) if args.remote else list(load(args.rows))
+    if args.json:
+        print(json.dumps(json_verdict(rows), indent=2))
+        return 0
     per_soc = defaultdict(int)
     for row in rows:
         if soc(row):

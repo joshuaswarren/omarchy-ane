@@ -143,4 +143,24 @@ assert not pc.unclean(oa(injected('[ 903.1] apple-dart 581008000.iommu: translat
 not_installed = copy.deepcopy(real_by_id['a994fe80c994'])
 assert dict(pc.unattempted([not_installed])) == {'t6000': 1}
 assert pc.verdict([not_installed]) == {}
+# The machine verdict: one chip object per verdict class.
+jv = pc.json_verdict([good, h13_good])
+t6020 = next(c for c in jv['chips'] if c['chip'] == 't6020')
+assert t6020 == {'chip': 't6020', 'state': 'opt-in', 'verdict': 'PROMOTE',
+                 'rows': [{'row_sha': '010000000000', 'judged': True, 'passed': True,
+                           'reasons': []}]}, t6020
+t6021 = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == 't6021')
+assert t6021['verdict'] == 'ON' and t6021['state'] == 'on', t6021
+oa(on[0])['check'].update(exit=1, status='FAILED')
+t6021 = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == 't6021')
+assert t6021['verdict'] == 'REVERT' and t6021['rows'][0]['passed'] is False, t6021
+conflict_row = copy.deepcopy(good)
+oa(conflict_row)['smoke']['errors'] = 1
+t6020 = next(c for c in pc.json_verdict([good, conflict_row])['chips'] if c['chip'] == 't6020')
+assert t6020['verdict'] == 'CONFLICT', t6020
+unjudged = next(c for c in pc.json_verdict([legacy])['chips'] if c['chip'] == 't6020')
+assert unjudged['verdict'] == 'STAY' and unjudged['rows'] == [
+    {'row_sha': '010000000000', 'judged': False, 'passed': False, 'reasons': []}], unjudged
+t6000 = next(c for c in pc.json_verdict([not_installed])['chips'] if c['chip'] == 't6000')
+assert t6000['verdict'] == 'STAY', t6000
 print('test_promotion_check: ok')
