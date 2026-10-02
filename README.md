@@ -28,12 +28,16 @@ sudo reboot
 | M2 Max | T6021 | H14J | `apple,t6021-ane` | `ane_t6021` | on by default | none | firmware starts under Linux. fp16 ops and matvec to 2048x5120 exact. The whole Parakeet encoder is bit-exact. All 38 Qwen programs conform to the M1. |
 | M2 Ultra | T6022 | H14J | `apple,t6022-ane` | `ane_t6021` | opt-in, untested (die 0) | `ane-t6022` + note | nothing on T6022 silicon |
 
-The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. M3 and later are unsupported. Their ANE is a different generation. Apple's own firmware describes it as an ASC IOP (`iop,ascwrap-v6`), not the `ane,t8020` block every M1 and M2 ANE presents. No Linux driver exists for that design.
+The T6020, T6022 and T8112 note: after adding the key, run `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The install hook fetches firmware on the M2 Max only. M3 and later are unsupported: no driver binds them. The macOS 27.0 ADTs give three shapes. The M3 family (H15) ANE is an ASC IOP (`iop,ascwrap-v6`). The M4 family (H16) keeps `ane,t8020`. The MacBook Neo, the M5 MacBook and T6050 (H17) use `ane,t8132exclave`, which the macOS kernel binds to the same `H11ANEIn` class as `ane,t8020`, so `ane_t6021` is the closer model for H16 and H17 ([receipts/2026-10-02-neo-ane](receipts/2026-10-02-neo-ane/README.md)).
 
 Data-only chips (`tools/gen_coverage_table.py` writes this table from `data/ane-soc/`):
 
 <!-- BEGIN DATA-ONLY TABLE -->
-No chip has a data file yet.
+| SoC | Internal | Boards | Data | Data-only overlay |
+| --- | --- | --- | --- | --- |
+| T6050 | H17 | 7 | [t6050.json](data/ane-soc/t6050.json) | none |
+| T8140 | H17 | 1 | [t8140.json](data/ane-soc/t8140.json) | [t8140-ane-dataonly.dts](packaging/dt/t8140-ane-dataonly.dts) |
+| T8142 | H17 | 3 | [t8142.json](data/ane-soc/t8142.json) | none |
 <!-- END DATA-ONLY TABLE -->
 
 Promotion. One passing community row promotes an untested chip. A passing row has a ready `omarchy-ane-check`, the chip's driver loaded, 20 smoke calls (`add-fixture`) that match the golden bit for bit, and no ANE, ANE-DART or ANE-mailbox fault. A row from a machine without omarchy-ane installed is not judged and counts neither for nor against promotion. If an opt-in chip has both passing and failing rows, the result is `CONFLICT`; it does not promote until the failing row is explained or superseded. H13 chips (T8103, T6000, T6001 and T6002) use the H13 smoke golden; H14 chips use the H14 golden. The Parakeet encoder hash is a developer check, not a collector field. `tools/promotion_check.py --remote` prints the live verdict. When it says `PROMOTE`, a PR can set that chip's line in `packaging/dt/overlays` to `enabled`.
