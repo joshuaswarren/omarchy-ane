@@ -50,17 +50,13 @@ static inline bool ane_stats_atomic64_try_cmpxchg(atomic64_t *v, u64 *old, u64 n
 static inline void ane_stats_atomic_set(atomic_t *v, int i) { atomic_set(v, i); }
 static inline int ane_stats_atomic_read(const atomic_t *v) { return atomic_read(v); }
 static inline u64 ane_stats_atomic64_read_acquire(const atomic64_t *v) {
-	return smp_load_acquire(v);
+	return atomic64_read_acquire(v);
 }
 static inline void ane_stats_atomic64_set_release(atomic64_t *v, u64 i) {
-	smp_store_release(v, i);
+	atomic64_set_release(v, i);
 }
 static inline void ane_stats_smp_wmb(void) { smp_wmb(); }
 static inline u64 ane_stats_now_ns(void) { return ktime_get_ns(); }
-static inline void ane_stats_module_param(bool *p, const char *desc) {
-	module_param(*p, bool, 0444);
-	MODULE_PARM_DESC(*p, desc);
-}
 #else
 #include <stdint.h>
 #include <stdbool.h>
@@ -109,7 +105,6 @@ static inline uint64_t ane_stats_now_ns(void) {
 }
 #define module_param(name, type, perm)
 #define MODULE_PARM_DESC(name, desc)
-static inline void ane_stats_module_param(bool *p, const char *desc) { (void)p; (void)desc; }
 #endif /* __KERNEL__ */
 
 /*
@@ -163,11 +158,14 @@ struct ane_stats_ring {
 
 /*
  * Initialize counters and ring from zero. The ring slots array must
- * be preallocated (probe-time) and zeroed.
+ * be preallocated (probe-time) and zeroed. Named
+ * ane_stats_counters_init (not ane_stats_init) so the per-driver
+ * glue function (ane_stats_init(struct ane_device *) etc.) can name
+ * its own static initializer without conflicting with the prototype.
  */
-static inline void ane_stats_init(struct ane_stats_counters *ctrs,
-				  struct ane_stats_ring *ring,
-				  uint32_t n_shift)
+static inline void ane_stats_counters_init(struct ane_stats_counters *ctrs,
+					   struct ane_stats_ring *ring,
+					   uint32_t n_shift)
 {
 	uint32_t n_total = (1u << n_shift);
 

@@ -2288,9 +2288,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		if (ane->fw->stats_slots) {
 			struct dentry *root;
 
-			ane_stats_init(&ane->fw->stats_ctrs,
-				       &ane->fw->stats_ring,
-				       ANE_STATS_RING_ORDER_DEFAULT);
+			ane_stats_counters_init(&ane->fw->stats_ctrs,
+					       &ane->fw->stats_ring,
+					       ANE_STATS_RING_ORDER_DEFAULT);
 			ane->fw->stats_slots = ane->fw->stats_ring.slots;
 			/* Sysfs ane_stats: per-device file in the
 			 * module's existing sysfs group (the same group

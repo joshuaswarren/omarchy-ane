@@ -38,9 +38,9 @@ static void fx_init(struct fixture *f)
 {
 	memset(f, 0, sizeof(*f));
 	f->ring.slots = f->slots;
-	/* ane_stats_init zeroes ring including the slots pointer; set it
-	 * after. */
-	ane_stats_init(&f->ctrs, &f->ring, 6); /* 64 slots */
+	/* ane_stats_counters_init zeroes ring including the slots pointer;
+	 * set it after. */
+	ane_stats_counters_init(&f->ctrs, &f->ring, 6); /* 64 slots */
 	f->ring.slots = f->slots;
 }
 

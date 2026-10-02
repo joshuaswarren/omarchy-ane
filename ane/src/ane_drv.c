@@ -654,8 +654,8 @@ static int ane_stats_init(struct ane_device *ane)
 				   sizeof(*ane->stats_slots), GFP_KERNEL);
 	if (!ane->stats_slots)
 		return -ENOMEM;
-	ane_stats_init(&ane->stats_ctrs, &ane->stats_ring,
-		       ANE_STATS_RING_ORDER_DEFAULT);
+	ane_stats_counters_init(&ane->stats_ctrs, &ane->stats_ring,
+				 ANE_STATS_RING_ORDER_DEFAULT);
 	ane->stats_ring.slots = ane->stats_slots;
 	err = device_create_file(ane->dev, &dev_attr_ane_stats);
 	if (err) {
