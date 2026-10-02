@@ -4,8 +4,9 @@
 
 The ANE is on by default on M1 (T8103), M1 Max (T6001) and M2 Max (T6021).
 On T6021 the driver starts the ANE firmware from its own memory and replays
-iBoot's runtime patches, so it needs no reserved-memory node from m1n1. The
-U-Boot serial-stdin overlay stays an opt-in. This release also runs whole
+iBoot's runtime patches, so it needs no reserved-memory node from m1n1. This
+is verified with the packaged m1n1 1.6.1 on one M2 Max laptop. The U-Boot
+serial-stdin overlay stays an opt-in. This release also runs whole
 models on the M2, adds ANE overlays with cited values for every M1 and M2 SoC
 (the untested ones behind opt-in keys), and gives `ane_t6021` the package
 version.
@@ -52,7 +53,8 @@ version.
 - README "Promotion" and `tools/promotion_check.py`: an untested SoC goes on
   by default after 3 passing community rows from 3 machines, 2 owners,
   2 boards and 2 kernel releases, with no failing row. A row's smoke golden is
-  the add fixture's, so T8112 rows can pass. The regression rule: a chip that
+  the add fixture's, so T8112 rows can pass; the Parakeet encoder hash stays a
+  developer check. The regression rule: a chip that
   is on by default goes back to opt-in when its latest row shows
   `omarchy-ane-check` not ready or a fault line, until a clean row lands
   (`promotion_check.py` prints `REVERT`). The community rows agree with every
@@ -165,9 +167,9 @@ version.
 
 - Each on-by-default chip is tested on one machine: one M1 (T8103), one
   M1 Max (T6001) and one M2 Max (T6021).
-- T6021 disk boot: proven on one M2 Max laptop, with the opt-in U-Boot
-  serial-stdin overlay and the lab m1n1 stage 2. The own-memory default needs
-  no reserved-memory node. A boot with the packaged m1n1 1.6.1 is pending.
+- T6021 disk boot: verified with the packaged m1n1 1.6.1 on one M2 Max laptop
+  (with the opt-in U-Boot stdin overlay for that laptop's phantom keyboard
+  input). The own-memory default needs no reserved-memory node.
 - On Omarchy, the overlays apply only through an omarchy-mac-boot with device
   tree overlay support (omacom/omarchy-mac#677, not merged). With an older
   omarchy-mac-boot, `omarchy-ane-dt` refuses, and the ANE node must come from
@@ -202,9 +204,11 @@ version.
   be6b352: `ane.ko` is byte-identical to the earlier builds, the smoke tests
   pass, and `ane_t6021` cannot autoload on T6001. T6021 passed two disk boots
   on 73da8f8 with the lab m1n1, in the reserved mode and in the own-memory
-  mode that is now the default (#49): the device gate passed, Qwen program 20
-  matched the M1 golden (rel L2 0.00117), and the whole encoder was bit-exact
-  at a 254.5 ms median.
+  mode (#49): the device gate passed, Qwen program 20 matched the M1 golden
+  (rel L2 0.00117), and the whole encoder was bit-exact at a 254.5 ms median.
+  A third disk boot ran b6ef8f1 with the packaged m1n1 1.6.1 and the default
+  own-memory mode: 16 gates passed, and the whole encoder was bit-exact at a
+  254.3 ms median, with outputs byte-identical to the own-memory lab boot.
 
 ## 0.3.0 (2026-09-30)
 
