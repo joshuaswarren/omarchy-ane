@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- libane sets the `pad` member of `struct drm_ane_bo_free` and of each
+  `struct drm_ane_generic_bind` to zero. Before, these members held stack
+  bytes. The in-tree `ane_t6021` driver refuses a nonzero pad with `-EINVAL`,
+  so ABI 2 `PROG_LOAD` could fail and `BO_FREE` could keep the BO until the fd
+  closed. The DKMS drivers of 0.4.0 accept the zero pads. All other ioctl
+  arguments in libane were already zero-initialised.
+- `make check` also runs `tools/test_libane_ioctl`. It builds libane with
+  `-ftrivial-auto-var-init=pattern` against a fake DRM node, which refuses a
+  nonzero pad, flags or reserved member as the in-tree drivers do. It is a
+  host check only: no device runs the program.
+
 ## 0.4.0 (2026-10-01)
 
 The ANE is on by default on M1 (T8103), M1 Max (T6001) and M2 Max (T6021).
