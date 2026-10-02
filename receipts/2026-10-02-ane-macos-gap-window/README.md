@@ -59,12 +59,20 @@ MIL 4e3d2e8d + weights 295dccd4, the Linux fixtures 38dce85b/e50598dd):
 
     python3 macos-bundle/prepare_stage.py \
       --e1 /var/tmp/e1-probes \
+      [--e1-prime /var/tmp/e1-probes-prime] \
       --parakeet-mil <repo>/ane-linux-experiments/receipts/2026-09-22-encoder-island-cost/capture/model.mil \
       --parakeet-weights <home>/.local/state/omarchy-private-evidence/encoder-v10/weights/weight.bin \
       --fixtures <dir-with-input_features.npy-and-attention_mask.npy> \
       --inmem-src <worktree>/tools/native-macos/ane_inmem_run.m \
       [--inmem-bin <Studio-built ane_inmem_run>] \
       --out /var/tmp/gapwin-stage
+
+The `--e1-prime` flag stages the P6' probe (p6prime/) produced by the generator's `--variant p6prime`
+on branch `agent/ane-e1-p6-fix` (`tools/e1_probes.py OUT --variant p6prime --check`). The MIL is
+byte-identical to P6's MIL by design (the input scale 0.8 lives in p6prime/in/x.npy); the weight
+blob is the same `cc0bb784…` and is pinned against the manifest. Omitting `--e1-prime` prints a
+PENDING notice and stages the rest of the window without P6' -- the Mac then runs the P6 / P7 /
+encoder arms only.
 
 The encoder sources above are the ParakeetFull originals (hash-verified here). The encoder
 fixtures (fp16 [1,3000,128] + [1,3000]) are not on this analysis host; pull them from the M2

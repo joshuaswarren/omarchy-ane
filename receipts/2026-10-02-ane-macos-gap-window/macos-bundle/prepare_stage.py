@@ -27,6 +27,14 @@ FEATURES_SHA = "38dce85bf2cfab3fda6e0034fbe7534fc175047c21e00729b6599bfdeeeffa0c
 MASK_SHA = "e50598dd6ea415de61485666659fa648d026dc3351b50ae3a49137bee69687cb"
 P6_X_BYTES = 512 * 16 * 32 * 2        # 524,288
 P7_BYTES = 1024 * 128 * 128 * 2       # 33,554,432
+# P6' hashes pinned 2026-10-02 (P6Fix, branch agent/ane-e1-p6-fix).
+P6PRIME_WEIGHT_SHA = "cc0bb784ba0bd1e841db0a516abd60844806da8c9aa6eba9b5af5e4396fbd67c"
+P6PRIME_X_NPY_SHA = "768a855e9c162e78c489fd311d4d51c35c824ddf63c3760a5d8cd24e8882daf9"
+P6PRIME_GOLDEN_NPY_SHA = "a646a9cd5b3fbe049e1a4eca23e3b09acbd8cca73152fe9556d06bb9973e4039"
+P6PRIME_GOLDEN_FP16_SHA = "754d6318d2f88ab13d6271d47a6b26b50fe4014f727e468c94da66fbd01dffe9"
+# The p6prime MIL is byte-identical to P6's MIL by design (the input scale change lives in
+# the per-run x.npy, not the program text). Reusing the P6 MIL is therefore the correct
+# staging path; both probes share model.mil sha 80ecf66359ee65e452c798f74147ae75262a9fb20b4c94e31bc9970c1bbb111a.
 
 
 def sha256(path: Path) -> str:
@@ -66,6 +74,8 @@ def main() -> int:
                          "omit to stage without the encoder input bins (a PENDING notice prints)")
     ap.add_argument("--allow-missing-fixtures", action="store_true", dest="allow_missing",
                     help="with --fixtures: mismatch prints PENDING and stages the rest instead of failing")
+    ap.add_argument("--e1-prime", type=Path, default=None,
+                    help="P6' probe tree (p6prime/) with its own manifest; staged by verify.sh")
     ap.add_argument("--inmem-src", type=Path, required=True,
                     help="path to the gap-window ane_inmem_run.m (tools/native-macos on the branch)")
     ap.add_argument("--regdump-src", type=Path, default=None,
@@ -88,6 +98,31 @@ def main() -> int:
     tofile(out / "p7/in/z.npy", out / "p7/in/p7-z.bin")
     for p in ("p6/in/p6-x.bin", "p7/in/p7-x.bin", "p7/in/p7-z.bin"):
         assert (out / p).stat().st_size in (P6_X_BYTES, P7_BYTES), f"{p} size"
+    # 1b. P6' probe against its own manifest, then copy with raw .bin fixture.
+    if not a.e1_prime:
+        print("P6' PENDING: pass --e1-prime <out>/var/tmp/e1-probes-prime to stage the p6prime/ "
+              "tree (its manifest pins x.npy " + P6PRIME_X_NPY_SHA[:12] + " and golden.npy "
+              + P6PRIME_GOLDEN_NPY_SHA[:12] + " against the CPU fp16 reference).")
+    else:
+        check_manifest_probe(a.e1_prime / "p6prime")
+        # MIL is byte-identical to P6's MIL by design (only x.npy changes), so we still copy it
+        # so p6prime is self-contained on the Mac.
+        shutil.copytree(a.e1_prime / "p6prime", out / "p6prime")
+        tofile(out / "p6prime/in/x.npy", out / "p6prime/in/p6prime-x.bin")
+        assert (out / "p6prime/in/p6prime-x.bin").stat().st_size == P6_X_BYTES, "p6prime-x.bin size"
+        # Pin the weight blob against the generator's manifest (the converter + ANEC pipeline
+        # does NOT keep weight.bin on the Mac; the in-process compiler compiles from MIL +
+        # weight.bin together -- see receipts/.../README.md for the macOS leg commands).
+        w_path = out / "p6prime/weights/weight.bin"
+        if sha256(w_path) != P6PRIME_WEIGHT_SHA:
+            sys.exit(f"FATAL: p6prime/weights/weight.bin sha {sha256(w_path)[:8]} != pinned "
+                     f"{P6PRIME_WEIGHT_SHA[:8]}")
+        # Pin x.npy and golden.npy against the P6' manifest.
+        m = json.loads((a.e1_prime / "p6prime" / "manifest.json").read_text())
+        x_got = sha256(out / "p6prime/in/x.npy")
+        g_got = sha256(out / "p6prime/in/golden.npy")
+        if x_got != m["sha256"]["in/x.npy"] or g_got != m["sha256"]["in/golden.npy"]:
+            sys.exit("FATAL: p6prime x.npy / golden.npy sha mismatch vs its manifest")
 
     # 2. Parakeet encoder against the pinned NativeMacRun/ParakeetFull hashes.
     if not (a.parakeet_mil and a.parakeet_weights):
