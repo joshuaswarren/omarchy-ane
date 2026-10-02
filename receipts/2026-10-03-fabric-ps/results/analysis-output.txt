@@ -1,0 +1,30 @@
+== per-arm (ms; min-of-min / median-of-medians; output sha16; idle-gate flags)
+  A1 enc   254.2010 /  254.4040  sha fca96f1355485ec3  flags 0
+  A1 p7      4.1240 /    4.1890  sha d95bd62bf7729f2c  flags 0
+  A1 p6p     5.4150 /    5.5270  sha 103f96b29b08c210  flags 0
+  A1 mv      2.2400 /    2.3515  sha ddc66dc89a27d3c6  flags 0
+  B  enc   254.7720 /  254.8585  sha fca96f1355485ec3  flags 0
+  B  p7      4.1040 /    4.1550  sha d95bd62bf7729f2c  flags 0
+  B  p6p     5.4460 /    5.5220  sha 103f96b29b08c210  flags 0
+  B  mv      2.1860 /    2.2965  sha ddc66dc89a27d3c6  flags 0
+  A2 enc   254.2220 /  254.4110  sha fca96f1355485ec3  flags 0
+  A2 p7      4.1110 /    4.1930  sha d95bd62bf7729f2c  flags 0
+  A2 p6p     5.4740 /    5.5305  sha 103f96b29b08c210  flags 0
+  A2 mv      2.2750 /    2.3655  sha ddc66dc89a27d3c6  flags 0
+  C  enc   254.3790 /  254.5040  sha fca96f1355485ec3  flags 0
+  C  p7      4.1130 /    4.1615  sha d95bd62bf7729f2c  flags 0
+  C  p6p     5.4570 /    5.5340  sha 103f96b29b08c210  flags 0
+  C  mv      2.2070 /    2.3055  sha ddc66dc89a27d3c6  flags 0
+== Exp 1 (fabric-ps 5 -> 6 -> 5, one boot)
+  enc: B/A1 1.00225 (+0.225%) none(<1%); A2/A1 1.00008 (ok); B/A2 1.00216; medmed B/A1 1.00179
+  p7: B/A1 0.99515 (-0.485%) none(<1%); A2/A1 0.99685 (ok); B/A2 0.99830; medmed B/A1 0.99188
+  p6p: B/A1 1.00572 (+0.572%) none(<1%); A2/A1 1.01090 (DRIFT); B/A2 0.99488; medmed B/A1 0.99910
+  mv: B/A1 0.97589 (-2.411%) unresolved(1-3%); A2/A1 1.01562 (DRIFT); B/A2 0.96088; medmed B/A1 0.97661
+  decision: SMALL/UNRESOLVED (some 1-3%, none >= 3%); drift-flagged: ['p6p', 'mv']
+  secondary (AneClockHunt rule, needs readback 0x666 throughout B): UNRESOLVED
+== Exp 2 (DSID=14 boot) vs mean(A1, A2)
+  enc: C/A 1.00066 (+0.066%) none(<1%); medmed C/A 1.00038
+  p7: C/A 0.99891 (-0.109%) none(<1%); medmed C/A 0.99296
+  p6p: C/A 1.00230 (+0.230%) none(<1%); medmed C/A 1.00095
+  mv: C/A 0.97763 (-2.237%) unresolved(1-3%); medmed C/A 0.97753
+  decision: UNRESOLVED (some 1-3%, none >= 3%)

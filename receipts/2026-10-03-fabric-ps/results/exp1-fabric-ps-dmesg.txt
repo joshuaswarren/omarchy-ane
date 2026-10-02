@@ -1,0 +1,88 @@
+[  824.596416] ane_dcs_ps_probe: read 0x28e20c000
+[  824.647419] ane_dcs_ps_probe: read 0x28e20c400
+[  824.698413] ane_dcs_ps_probe: s=0 t=824658052555 fabric-ps=0x00000555 dcs-ps=0x00000999 (idle)
+[  828.708643] ane_fabric_ps_set: read 0x28e20c000
+[  828.759348] ane_fabric_ps_set: ready: word 0x00000555
+[  829.851230] ane_fabric_ps_set: write 0x28e20c000: 0x00000555 -> 0x00000556
+[  829.901360] ane_fabric_ps_set: poll t=+50130us word=0x80000666
+[  829.912339] ane_fabric_ps_set: poll t=+61111us word=0x00000666
+[  829.912348] ane_fabric_ps_set: go=6 done: word=0x00000666
+[  829.919214] ane_dcs_ps_probe: s=1 t=829929888543 fabric-ps=0x00000666 dcs-ps=0x00000999
+[  830.020372] ane_dcs_ps_probe: s=2 t=830031046722 fabric-ps=0x00000666 dcs-ps=0x00000999
+[  830.124345] ane_dcs_ps_probe: s=3 t=830135020463 fabric-ps=0x00000666 dcs-ps=0x00000999
+[  830.228376] ane_dcs_ps_probe: s=4 t=830239052704 fabric-ps=0x00000666 dcs-ps=0x00000999
+[  830.332352] ane_dcs_ps_probe: s=5 t=830343028695 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1047.547658] ane_dcs_ps_probe: s=6 t=1047559406326 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1047.651299] ane_dcs_ps_probe: s=7 t=1047663047926 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1047.756286] ane_dcs_ps_probe: s=8 t=1047768035027 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1047.859274] ane_dcs_ps_probe: s=9 t=1047871022298 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1047.963291] ane_dcs_ps_probe: s=10 t=1047975039442 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.067293] ane_dcs_ps_probe: s=11 t=1048079041211 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.171297] ane_dcs_ps_probe: s=12 t=1048183044814 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.275285] ane_dcs_ps_probe: s=13 t=1048287033541 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.379269] ane_dcs_ps_probe: s=14 t=1048391017144 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.483284] ane_dcs_ps_probe: s=15 t=1048495032163 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.588270] ane_dcs_ps_probe: s=16 t=1048600017889 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.691286] ane_dcs_ps_probe: s=17 t=1048703033578 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.795270] ane_dcs_ps_probe: s=18 t=1048807017017 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1048.899293] ane_dcs_ps_probe: s=19 t=1048911039789 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.003302] ane_dcs_ps_probe: s=20 t=1049015048811 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.107294] ane_dcs_ps_probe: s=21 t=1049119040833 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.211295] ane_dcs_ps_probe: s=22 t=1049223041856 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.315294] ane_dcs_ps_probe: s=23 t=1049327040420 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.419295] ane_dcs_ps_probe: s=24 t=1049431041984 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.523296] ane_dcs_ps_probe: s=25 t=1049535042048 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.627295] ane_dcs_ps_probe: s=26 t=1049639041070 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.731290] ane_dcs_ps_probe: s=27 t=1049743035636 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.835291] ane_dcs_ps_probe: s=28 t=1049847037203 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1049.939295] ane_dcs_ps_probe: s=29 t=1049951040895 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.044289] ane_dcs_ps_probe: s=30 t=1050056034502 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.147289] ane_dcs_ps_probe: s=31 t=1050159034487 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.251296] ane_dcs_ps_probe: s=32 t=1050263041387 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.355293] ane_dcs_ps_probe: s=33 t=1050367038538 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.459312] ane_dcs_ps_probe: s=34 t=1050471056688 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.564281] ane_dcs_ps_probe: s=35 t=1050576026337 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.667287] ane_dcs_ps_probe: s=36 t=1050679032239 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.771274] ane_dcs_ps_probe: s=37 t=1050783018725 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.875297] ane_dcs_ps_probe: s=38 t=1050887041462 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1050.979289] ane_dcs_ps_probe: s=39 t=1050991033448 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.083292] ane_dcs_ps_probe: s=40 t=1051095036602 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.187290] ane_dcs_ps_probe: s=41 t=1051199034088 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.291283] ane_dcs_ps_probe: s=42 t=1051303027367 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.395285] ane_dcs_ps_probe: s=43 t=1051407028895 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.499291] ane_dcs_ps_probe: s=44 t=1051511035048 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.603296] ane_dcs_ps_probe: s=45 t=1051615039993 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.707292] ane_dcs_ps_probe: s=46 t=1051719035397 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.811284] ane_dcs_ps_probe: s=47 t=1051823027387 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1051.915304] ane_dcs_ps_probe: s=48 t=1051927047043 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.019310] ane_dcs_ps_probe: s=49 t=1052031053366 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.123303] ane_dcs_ps_probe: s=50 t=1052135046106 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.227290] ane_dcs_ps_probe: s=51 t=1052239032720 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.331297] ane_dcs_ps_probe: s=52 t=1052343039460 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.435293] ane_dcs_ps_probe: s=53 t=1052447035783 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.539320] ane_dcs_ps_probe: s=54 t=1052551062647 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.643302] ane_dcs_ps_probe: s=55 t=1052655044220 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.841166] ane_dcs_ps_probe: s=56 t=1052852906968 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1052.947319] ane_dcs_ps_probe: s=57 t=1052959058082 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.051294] ane_dcs_ps_probe: s=58 t=1053063035325 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.155309] ane_dcs_ps_probe: s=59 t=1053167049943 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.259295] ane_dcs_ps_probe: s=60 t=1053271036602 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.407048] ane_dcs_ps_probe: s=61 t=1053418789705 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.507301] ane_dcs_ps_probe: s=62 t=1053519042536 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.611290] ane_dcs_ps_probe: s=63 t=1053623030903 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.715307] ane_dcs_ps_probe: s=64 t=1053727047981 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1053.819292] ane_dcs_ps_probe: s=65 t=1053831033060 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1112.778404] ane_dcs_ps_probe: s=66 t=1112790117241 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1112.883329] ane_dcs_ps_probe: s=67 t=1112895041850 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1112.987332] ane_dcs_ps_probe: s=68 t=1112999044334 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1113.091321] ane_dcs_ps_probe: s=69 t=1113103033901 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1113.195328] ane_dcs_ps_probe: s=70 t=1113207041010 fabric-ps=0x00000666 dcs-ps=0x00000999
+[ 1113.260210] ane_fabric_ps_set: write 0x28e20c000: 0x00000666 -> 0x00000665
+[ 1113.310312] ane_fabric_ps_set: poll t=+50103us word=0x80000555
+[ 1113.321315] ane_fabric_ps_set: poll t=+61105us word=0x00000555
+[ 1113.321322] ane_fabric_ps_set: go=5 done: word=0x00000555
+[ 1113.329314] ane_dcs_ps_probe: s=71 t=1113341025877 fabric-ps=0x00000555 dcs-ps=0x00000999
+[ 1113.435329] ane_dcs_ps_probe: s=72 t=1113447041403 fabric-ps=0x00000555 dcs-ps=0x00000999
+[ 1113.539352] ane_dcs_ps_probe: s=73 t=1113551064179 fabric-ps=0x00000555 dcs-ps=0x00000999
+[ 1113.643334] ane_dcs_ps_probe: s=74 t=1113655047080 fabric-ps=0x00000555 dcs-ps=0x00000999
+[ 1113.747321] ane_dcs_ps_probe: s=75 t=1113759033857 fabric-ps=0x00000555 dcs-ps=0x00000999

@@ -1,0 +1,7 @@
+[  680.547855] ane_dcs_ps_probe: read 0x28e20c000
+[  680.598848] ane_dcs_ps_probe: read 0x28e20c400
+[  680.649830] ane_dcs_ps_probe: s=0 t=680338061961 fabric-ps=0x00000555 dcs-ps=0x00000999 (idle)
+[  683.683846] ane_dsid_tm_probe: read 0x285c2046c
+[  683.734832] ane_dsid_tm_probe: s=0 t=683474036106 tm-dsid=0x00003880
+[  685.749127] ane_dsid_tm_probe: s=1 t=685488329272 tm-dsid=0x00003880
+[  689.490333] ane_dsid_tm_probe: s=2 t=689229525667 tm-dsid=0x00003880

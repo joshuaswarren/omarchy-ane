@@ -51,3 +51,40 @@ missing)"; >= 3% on any program => EFFECT. Confounder: different module binary a
 
 Start module back, options file removed, reboot to the stock default; verify module hash/srcversion, bound, ESP
 boot.bin unchanged, no lab modules, dmesg clean, one bit-exact encoder block.
+
+## Results (2026-10-02 21:47-22:43Z)
+
+Start state: linux-asahi 7.1.13-3-1-ARCH, hand module ane_t6021.ko af2cee6c (0.4.0-main-b6ef8f1). Every arm:
+20 blocks x 16 calls per program, each block idle-gated; every block of every arm produced the same outputs
+(encoder fp16 fca96f13 bit-exact, P7 d95bd62b, P6' 103f96b2 = the earlier Linux P6' output, matvec gate PASS +
+ddc66dc8); dmesg clean; no fault. Per-block data: `results/arm-*.tsv`; ratios: `results/analysis-output.txt`.
+
+### Experiment 1: fabric-ps 5 -> 6 -> 5 (one boot)
+
+The write (`results/exp1-fabric-ps-dmesg.txt`): `0x00000555 -> 0x00000556`, the word read `0x80000666` after
+50 ms and `0x00000666` after 61 ms; it read 0x666 in all 70 samples while raised (~4.7 min, including during an
+encoder block); the revert returned `0x00000555` the same way.
+
+| program (ms, min-of-min) | A1 (5) | B (6) | A2 (5) | B/A1 |
+|---|---|---|---|---|
+| Parakeet encoder | 254.201 | 254.772 | 254.222 | +0.22% |
+| P7 2x32 MiB add | 4.124 | 4.104 | 4.111 | -0.49% |
+| P6' 64x conv1x1 | 5.415 | 5.446 | 5.474 | +0.57% |
+| matvec 2048x5120 | 2.240 | 2.186 | 2.275 | -2.41% |
+
+No program moved by 3% or more. Matvec sits in the 1-3% band, but its A1/A2 differ by 1.6% and the DSID boot
+(fabric back at 5) reads 2.2% faster too, so that deviation is not tied to the fabric state. By the
+pre-registered rule the result is "small/unresolved" (matvec only). The macOS/Linux ratios on this chip are 2.84
+(encoder), 2.49 (P7) and 3.74 (P6'), so the fabric pstate is not a material part of that gap.
+
+### Experiment 2: fw_dsid_set=14 (second boot, module 584e7ac2)
+
+dmesg: `fw MCACHE_SIZE_GET reply 0x300000 result=0`, `fw DSID_SET dsid=14 result=0`. The TM word 0x285c2046c
+read `0x00003880` (dsid bits [17:10] = 14, other bits 0x80 unchanged) idle, during an encoder block and after.
+Against the mean of A1/A2: encoder +0.07%, P7 -0.11%, P6' +0.23%, matvec -2.24%. The value macOS uses lands and
+changes nothing beyond the matvec band, as dsid 9 did before: DSID tagging alone has no effect on Linux.
+
+### Restore
+
+Hand module af2cee6c back, options file removed, reboot to the stock default: module hash/srcversion verified and
+bound, ESP boot.bin unchanged, no lab modules, dmesg clean, 0 failed units, encoder smoke bit-exact (min 254.315 ms).

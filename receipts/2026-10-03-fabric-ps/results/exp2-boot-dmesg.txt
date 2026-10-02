@@ -1,0 +1,4 @@
+[    4.351416] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\x94 not a success claim; transport stays fenced until response validation)
+[    4.362423] ane_t6021 284000000.ane: LEGACY CONFIG_GET words 00000003 016e3600 result=0 (DMA remains held)
+[    4.362534] ane_t6021 284000000.ane: fw MCACHE_SIZE_GET reply 0x300000 result=0
+[    4.362641] ane_t6021 284000000.ane: fw DSID_SET dsid=14 result=0
