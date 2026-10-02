@@ -1,0 +1,94 @@
+== state start 2026-10-02T03:46:39.718Z
+boot_id 9a54411c-48c8-4f0f-a410-5708bda276fd uname 7.1.13-3-1-ARCH-dart up 20.39
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 0 dmesg_lines 1204
+no ane-run
+ 22:46:39 up 0 min,  1 user,  load average: 0.94, 0.22, 0.07
+probe r-dk-C  start 03:46:39.840
+probe r-dk-C insmod rc=0 end 03:46:51.938
+probe r-dk-C rmmod rc=0
+[   32.611537] ane_dart_probe: done, 177 of 177 read, no write
+== state start 2026-10-02T03:46:52.012Z arm dk-C
+boot_id 9a54411c-48c8-4f0f-a410-5708bda276fd uname 7.1.13-3-1-ARCH-dart up 32.68
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 0
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 1559
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 22:46:52 up 0 min,  1 user,  load average: 1.02, 0.27, 0.09
+== 1. gates 03:46:52
+gate add rc=0 GATE PASS
+gate mul rc=0 GATE PASS
+gate matvec5120 rc=0 GATE PASS matvec M=1 K=2048 N=5120: 5120/5120 lanes within 2 ulp or 4 cond-units (5120 bit-exact), max 0.000 ulp, max 0.187 cond-units; padding lanes zero: PASS
+== 2. correctness 03:46:53
+enc w1 min 254.424 median 254.424 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+prog_020 exec ms over 1 calls: min 4.824 p10 4.824 p25 4.824 median 4.824 p75 4.824 p90 4.824 p99 4.824 max 4.824 t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852 
+prog_006 vs NativeVsCross X outputs: 10 byte-identical, 0 different
+== 3. encoder timing, 20 blocks x 16 03:46:55
+enc b01 min 259.604 median 261.620 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b02 min 257.286 median 258.287 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b03 min 255.946 median 256.427 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b04 min 255.225 median 255.525 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b05 min 254.856 median 255.011 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b06 min 254.566 median 254.789 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b07 min 254.519 median 254.700 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b08 min 254.542 median 254.633 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b09 min 254.461 median 254.632 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b10 min 254.479 median 254.574 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b11 min 254.452 median 254.551 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b12 min 254.428 median 254.569 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b13 min 254.398 median 254.548 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b14 min 254.370 median 254.522 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b15 min 254.375 median 254.522 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b16 min 254.380 median 254.540 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b17 min 254.370 median 254.504 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b18 min 254.375 median 254.516 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b19 min 254.380 median 254.466 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+enc b20 min 254.362 median 254.536 golden max_abs=0 relL2=0 exact=1 sha16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+== 4. Qwen timing 03:48:31
+q prog_020 blocks done 03:48:35
+q prog_006 blocks done 03:48:45
+== 5. burst 60 s 03:48:45
+burst rc=0 w1 runs=3318 pass=3318 fail=0 w2 runs=3330 pass=3330 fail=0 w3 runs=3315 pass=3315 fail=0 w4 runs=3325 pass=3325 fail=0 exact lines: 13288 new ANE/mailbox dmesg lines: 0 bad dmesg lines (whole boot): 0 
+== state end 2026-10-02T03:49:45.074Z arm dk-C
+boot_id 9a54411c-48c8-4f0f-a410-5708bda276fd uname 7.1.13-3-1-ARCH-dart up 205.74
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+fw_start Y
+trace_td N
+fw_perf_mode N
+call_settle_us 1000
+bo_total_bytes 842858496
+bo_total_max_mb 12288
+hid_apple.conf netconsole.conf 
+governor schedutil
+dmesg_bad 0 dmesg_lines 1567
+ 53: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 66420 Level 285408000.mailbox-recv
+ 54: 0 0 0 0 0 0 0 0 0 0 0 0 AIC2 67369 Level 285408000.mailbox-send
+no ane-run
+ 22:49:45 up 3 min,  1 user,  load average: 2.96, 1.19, 0.46
+dmesg new lines 8, non-UFW 0, bad 0
+== window done 03:49:45 /var/tmp/dart/run-dk-C-20261002T034651Z
+arm dk-C rc=0 03:49:45
+add latency rc=0 exec ms over 200 calls: min 1.434 p10 1.486 p25 1.490 median 1.494 p75 1.498 p90 1.508 p99 1.565 max 1.602 512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS 
+== state end 2026-10-02T03:49:45.494Z
+boot_id 9a54411c-48c8-4f0f-a410-5708bda276fd uname 7.1.13-3-1-ARCH-dart up 206.16
+module 0.4.0 1FEE1B2BCF064C6109E1904 aa7cef6e265bddc5
+ane_t6021              98304  2
+hid_apple.conf netconsole.conf 
+accel0
+dmesg_bad 0 dmesg_lines 1567
+no ane-run
+ 22:49:45 up 3 min,  1 user,  load average: 2.96, 1.19, 0.46
+dmesg bad 0
+== window dk-C done 03:49:45

@@ -1,0 +1,2 @@
+exec ms over 200 calls: min 1.372 p10 1.472 p25 1.478 median 1.478 p75 1.480 p90 1.485 p99 1.550 max 1.565
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS

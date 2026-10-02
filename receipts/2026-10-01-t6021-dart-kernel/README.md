@@ -1,9 +1,13 @@
 # T6021: the ANE DART tunables written by apple-dart at DART reset (2026-10-01)
 
-Status: INSTALLED, ONE-SHOT PROVEN, CONTROL BOOT C FAILED ON A MISSING
-MODULE TREE (cause found, fix staged, not re-run). The decision rule, the
-one-shot plan and its fallback were written before the first boot; the boot
-record is below.
+Status: done, **rejected**. With the macOS tunables written by apple-dart at
+DART reset, in the macOS order, the first ANE CALL faults with `NO PGD FOR
+IOVA` on the BRD stream 0 and the ANE stops until a reboot: the same fault
+as the live write of 0x20c in DartTune. So 0x20c with the macOS value does
+not work with the Linux page tables in any write order, and the patch gives
+no speed to measure. The patch is not worth upstreaming. The decision rule,
+the one-shot plan and its fallback were written before the first boot; the
+boot record and the result are below.
 
 ## Question
 
@@ -275,6 +279,9 @@ to a stock-kernel image built at the same time, release normalized),
 | T | `04731cc7` | `grub-reboot dart-oneshot-test`, T0 23:07:44Z | ssh after 110 s. Stock kernel, cmdline with `ane_dart_oneshot=test`. `grubenv` now `next_entry=` (empty): GRUB consumed the entry and wrote `grubenv`. The initramfs systemd armed the watchdog at 1.081 s (`systemd.watchdog_sec=120` works). PASS |
 | D0 | `e8b280ed` | none, T0 23:13:40Z | ssh after 110 s. Stock default, no marker. PASS |
 | C | `6899c555` | `grub-reboot dart-ctl`, T0 23:19:41Z | no ssh in 6.6 min (Tailscale and wlan routes), no netconsole line. STOP. A camera frame (Main) showed the login screen; a hard reset over USB-C (Main) at 23:36Z booted the stock default (boot `5498f953`), as planned |
+| C2 | `9a54411c` | `modules.sh` 03:43:57Z, then `grub-reboot dart-ctl`, T0 03:44:37Z (2026-10-02) | ssh after 112 s. -dart kernel, `ane_tunables N`, 0 module-load failures, brcmfmac/tun/zram/netconsole loaded, ane_t6021 `aa7cef6e…` from the -dart `updates/`. Control window, below. PASS |
+| X | `ccd52858` | `grub-reboot dart-tun` from C2, T0 04:07:07Z | ssh after 115 s. `ane_tunables Y`; `apple-dart 285820000.iommu: T6021 ANE tunables on` (0.072 s) and the same for 285810000, no other DART; firmware `booted=1`. First CALL faults, below |
+| S | `ef549357` | none, T0 04:26:03Z | ssh after 115 s. Stock default, stock module. The cleanup service moved the -dart tree to `.old` at 5.1-5.7 s, as predicted. Stock window, below. PASS |
 
 Cause of the C failure, from the C boot's persistent journal (read on the
 stock boot): the custom kernel booted normally (no Oops or warning, the
@@ -302,7 +309,7 @@ failure showed only after the switch to it. [INFERENCE] The same service is
 the likely cause of the earlier loss of the `7.1.13-ARCH-m2mbox` module tree
 on this M2 (not checked against that boot's journal).
 
-Fix (staged, not run): `scripts/modules.sh` puts the tree back and checks
+Fix (run on 2026-10-02): `scripts/modules.sh` puts the tree back and checks
 vermagic of ane_t6021, brcmfmac, zram, tun, netconsole, r8152 and btrfs.
 It runs in the stock boot right before the reboot into C (after that
 boot's cleanup has run); the C and X boots keep the tree because it is the
@@ -311,19 +318,88 @@ those modules resolve for the -dart release. X follows C with no stock boot
 between. At S the cleanup moves the tree to `.old`; `revert.sh` removes it
 there too.
 
+## Result (2026-10-02)
+
+Each window ran in one `gpu-turn` ticket: the read probe (`ane_dart_probe`,
+read only), then the AfBridgeRun/DartTune arm (`ab-turn.sh`: gates add, mul
+and matvec 2048x5120; 21 encoder processes, 20 blocks of 16 CALLs; prog_020
+and prog_006; 60 s burst), then 200 `add` CALLs with `--time`.
+
+| arm | DART words (BRD, BWR) | gates and correctness | encoder minmin / medmed (ms) | prog_020 / prog_006 minmin (ms) | add median / p90 (ms) | load1, cpu PSI avg10 at start |
+|---|---|---|---|---|---|---|
+| C2 (-dart, `ane_tunables=0`) | 0 of 22 applied each, as in DartTune E1 | all PASS, 21/21 encoder outputs golden-exact, burst 0 fail, 0 bad kernel lines | 254.362 / 254.572 | 4.770 / 10.550 | 1.494 / 1.508 | 1.02, not recorded (up 33 s) |
+| X (-dart, `ane_tunables=1`) | 19 of 22 applied each (the 3 others are 0x300-0x310, not written by design); 0x20c reads 0xe40000ff | gate `add` trial 1 FAIL, then STOP | none | none | none | not gated (the arm stopped at its first CALL) |
+| S (stock, stock module `af2cee6c…`) | 0 of 22 applied each | all PASS, 21/21 golden-exact, burst 0 fail, 0 bad kernel lines | 254.378 / 254.520 | 4.760 / 10.538 | 1.478 / 1.485 | 0.43, 0.00 (up 91 s) |
+
+X, the first gate CALL (35 s after boot, 0.3 s after the read probe):
+
+    apple-dart 285810000.iommu: translation fault: status:0x800c0002 stream:0 code:0x2 (NO PGD FOR IOVA) at 0xfd68be00
+    ane_t6021 284000000.ane: call completion wait failed -110
+
+`DRM_IOCTL_ANE_EXEC failed: Connection timed out`, then every
+`DRM_IOCTL_ANE_PROG_LOAD` timed out (trials 2-4 and the reopen). This is the
+fault line, the DART and the stream of the DartTune live write of 0x20c
+(`NO PGD FOR IOVA` at 0xfd68c580). The run stopped at the first failed
+gate, submitted nothing more, and the S reboot restored the ANE.
+
+Verdict by the pre-registered rule: a fault in X. Reading (a), stale walker
+state from a write on a live DART, is false: the write at DART reset, with
+the TTBRs cleared and a full TLB flush before it and the streams and TTBR
+after it, gives the same fault. Reading (b) holds: 0x20c with the macOS
+value does not work with the page tables Linux gives the bulk DARTs, in any
+write order. [INFERENCE] macOS sets 0x20c together with the 0x300-0x310 DVA
+window and puts the ANE buffers inside that window
+([0x100_0000_0000, 0x400_0000_0000)); Linux BOs sit below 4 GiB with the
+window off. 0x20c can only be tested again together with E3 (a 42-bit DMA
+mask, BOs in the window, the window words on). The other 18 words were
+already shown to have no effect (DartTune E2'). So the DART tunables are
+rejected as the cause of the 254 ms vs 89 ms encoder gap on this path, and
+the patch is not worth upstreaming.
+
+C2 against S: the cross-built kernel (gcc 12.2) and the stock kernel (gcc
+16.1.1) give the same encoder time (254.362 vs 254.378 ms minmin, -0.01%),
+so the toolchain confounder is below 0.1%. C2 ran at 0.5-3.4 min uptime with
+load 1.02 at its start and 2.96 at its end, so under the fleet rule of
+2026-10-02 (time only at load1 < 0.5 and cpu PSI avg10 = 0) it is not an
+equal-condition number; X has no timing, so no A/B needs a re-check. The S
+window waited for the rule (met at 91 s uptime) and recorded both values.
+S ran the stock module of the own-memory default (`0.4.0-main-b6ef8f1`),
+not the 0.4.0 release build of C2 and X.
+
+Back to the default: `revert.sh` on boot S removed the -dart kernel,
+initramfs, `custom.cfg` and the `.old` tree and unset `next_entry`. Against
+the pre-install hashes, the only difference is the stock module tree
+manifest (another run installed its module in between); `grubenv` is again
+`f6412285…` (no variable). The M2 runs the stock default boot `ef549357`,
+which passed every gate above.
+
+What remains of the gap, from the ranked list of
+[2026-10-01-t6021-macos-vs-linux-mmio](../2026-10-01-t6021-macos-vs-linux-mmio/README.md):
+rank 1 (DART tunables) and rank 4 (the ten P-1 writes,
+[2026-10-01-t6021-p1-groups](../2026-10-01-t6021-p1-groups/README.md)) and
+the AXI2AF bridge words
+([2026-10-01-t6021-af-bridge-run](../2026-10-01-t6021-af-bridge-run/README.md))
+are rejected. Open: rank 2, the DVA window with BOs above 4 GiB (E3, with
+0x20c); rank 3, the PMP (ANE DVFS, its DT node is disabled under Linux, not
+in the trace); rank 6, the DAPF on LLT and the TCR[15] bypass; and the blocks
+the hv trace did not cover (DCS/AMCC, fabric QoS, CLPC).
+
 ## Files
 
 | file | content |
 |---|---|
 | `scripts/build.sh` | source download and check, patch, config, cross build, module builds, stage and `SHA256SUMS` |
-| `scripts/analyze.py` | per-arm encoder / prog_020 / prog_006 minmin and medmed, correctness lines, the C control band and the X verdict |
+| `scripts/analyze.py` | two arms (control, other): encoder / prog_020 / prog_006 minmin and medmed, correctness lines, the control band and the verdict band |
 | `scripts/install.sh`, `scripts/modules.sh`, `scripts/revert.sh` | install next to the stock kernel with stock-hash proof; module tree (again before each stock-to-custom reboot); removal |
 | `scripts/custom.cfg` | the three GRUB entries (`dart-oneshot-test`, `dart-ctl`, `dart-tun`) |
 | `scripts/reboot.sh` | lock checks, sync, 40 s, `grub-reboot` last, reboot |
 | `scripts/boot-check.sh` | post-boot identity: cmdline marker, `grubenv`, `ane_tunables`, dmesg lines, module |
-| `scripts/window.sh` | one device window: read probe, then the DartTune/AfBridgeRun arm; it runs the M2 copies `/var/tmp/dart/lib.sh` and `ab-turn.sh` only if their sha256 equal the DartTune receipt copies (`e6c54bcc…`, `5f959368…`) |
+| `scripts/window.sh` | one device window: read probe, the load/PSI wait (load1 < 0.5, cpu PSI avg10 = 0, up to 15 min), the DartTune/AfBridgeRun arm, then 200 timed `add` CALLs; it runs the M2 copies `/var/tmp/dart/lib.sh` and `ab-turn.sh` only if their sha256 equal the DartTune receipt copies (`e6c54bcc…`, `5f959368…`) |
 | `logs/config.diff` | olddefconfig against the M2 config |
 | `logs/hw_reset.disasm.txt` | compiled `apple_dart_hw_reset` |
 | `logs/boot-T-C-excerpt.txt` | the module cleanup in boot T and the C-boot lines that show the missing module tree |
+| `logs/C2/`, `logs/X/`, `logs/S/` | per arm: window and arm consoles, the DART read, encoder `enc.summary`, prog_020/prog_006 blocks, `add-time.log`, `conditions.txt` (S); X: the failed `gate-add.log` and `dmesg-excerpt.txt` |
+| `logs/dart-reads.txt` | `dart_compare.py` over the C2, X and S reads |
+| `logs/analysis-C2-vs-S.txt` | `analyze.py` with C2 as control and S as the other arm (the toolchain confounder, not the X result) |
 | `logs/stage-SHA256SUMS` | the staged files |
 | `SHA256SUMS` | sha256 of every file here |

@@ -1,0 +1,26 @@
+boot_id ccd52858-fe25-4541-86b4-14333844b289
+kernel 7.1.13-3-1-ARCH-dart
+anec /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho: OK
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  1 23:08 accel0
+LIBANE: M2: ERR: DRM_IOCTL_ANE_EXEC failed: Connection timed out
+ane_exec failed
+trial 1 FAIL
+LIBANE: M2: ERR: DRM_IOCTL_ANE_PROG_LOAD failed: Connection timed out
+LIBANE: ERR: failed to load ABI-2 program from /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+ane_init failed on /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+trial 2 FAIL
+LIBANE: M2: ERR: DRM_IOCTL_ANE_PROG_LOAD failed: Connection timed out
+LIBANE: ERR: failed to load ABI-2 program from /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+ane_init failed on /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+trial 3 FAIL
+LIBANE: M2: ERR: DRM_IOCTL_ANE_PROG_LOAD failed: Connection timed out
+LIBANE: ERR: failed to load ABI-2 program from /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+ane_init failed on /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+trial 4 FAIL
+LIBANE: M2: ERR: DRM_IOCTL_ANE_PROG_LOAD failed: Connection timed out
+LIBANE: ERR: failed to load ABI-2 program from /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+ane_init failed on /var/tmp/rel-0.4.0r/fixtures/h14-anec/add/program-0.anec
+reopen+repeat FAIL
+GATE FAIL

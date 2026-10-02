@@ -1,0 +1,7 @@
+[    0.000000] Linux version 7.1.13-3-1-ARCH-dart (linux-asahi@dartkern) (aarch64-linux-gnu-gcc (Debian 12.2.0-14) 12.2.0, GNU ld (GNU Binutils for Debian) 2.40) #1 SMP PREEMPT_DYNAMIC Thu Oct  1 17:10:49 CDT 2026
+[    0.000000] Kernel command line: BOOT_IMAGE=/vmlinuz-linux-asahi-dart root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash ane_dart_oneshot=tun panic=30 systemd.watchdog_sec=120 systemd.crash_action=reboot apple_dart.ane_tunables=1
+[    0.072428] apple-dart 285820000.iommu: T6021 ANE tunables on
+[    0.072946] apple-dart 285810000.iommu: T6021 ANE tunables on
+[    4.453693] ane_t6021 284000000.ane: loaded ane_t6021 0.4.0 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)
+[   35.711097] apple-dart 285810000.iommu: translation fault: status:0x800c0002 stream:0 code:0x2 (NO PGD FOR IOVA) at 0xfd68be00
+[   65.945869] ane_t6021 284000000.ane: call completion wait failed -110
