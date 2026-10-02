@@ -259,7 +259,11 @@ int main(int argc, char **argv)
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	char path[512];
 
+	/* One stream, so libane's expected mmap errors print in order, above the
+	 * scenario that injected them, under any log collector (CI keeps stdout
+	 * and stderr apart and merges them out of order). */
 	setvbuf(stdout, NULL, _IOLBF, 0);
+	dup2(STDOUT_FILENO, STDERR_FILENO);
 	snprintf(path, sizeof(path), "%s/add/program-0.anec", dir);
 	run_case("ABI 2: load, exec and free", ANE_ABI_M2_MAJOR, path, 0);
 	run_case("ABI 2: first BO mmap fails", ANE_ABI_M2_MAJOR, path, 1);
