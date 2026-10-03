@@ -164,7 +164,7 @@ assert optj == {'chip': OPT, 'state': 'opt-in', 'verdict': 'PROMOTE', 'targets':
                           'reasons': []}]}, optj
 jchips = pc.json_verdict(on)['chips']
 specj = next(c for c in jchips if c['chip'] == spec)
-assert specj['verdict'] == 'ON' and specj['state'] == 'on', specj
+assert specj['verdict'] == 'ON' and specj['state'] == 'on' and specj['targets'] == [], specj
 oa(on[0])['check'].update(exit=1, status='FAILED')
 specj = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == spec)
 assert specj['verdict'] == 'REVERT' and specj['rows'][0]['passed'] is False, specj
@@ -205,13 +205,25 @@ oa(no_driver)['driver_source'] = 'none'
 oa(no_driver)['check'].update(exit=1, status='FAILED')
 assert not pc.judged(no_driver) and dict(pc.unattempted([no_driver])) == {OPT: 1}
 assert pc.verdict([no_driver, intree])[OPT]['promote']
-# A default-on chip reverts on its latest judged row, in-tree or not.
+# A default-on chip with a passing in-tree row has the aurora-dt target alone:
+# its overlay is already on, and aurora's device tree decides whether there is
+# a node to enable (promote_from_verdict.py aurora-plan). Rows that ran the
+# DKMS driver never add it. A default-on chip still reverts on its latest
+# judged row, in-tree or not, and a revert changes the overlay only.
 on_rows = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2)]
+assert pc.targets(pc.verdict(on_rows)[spec]) == [], 'dkms passing rows: no aurora-dt'
+oa(on_rows[1])['driver_source'] = 'intree'
+v = pc.verdict(on_rows)[spec]
+assert v['on'] and not v['revert'] and v['intree'] == ['020000000000'] and pc.targets(v) == ['aurora-dt'], v
+specj = next(c for c in pc.json_verdict(on_rows)['chips'] if c['chip'] == spec)
+assert specj['verdict'] == 'ON' and specj['targets'] == ['aurora-dt'], specj
+oa(on_rows[1])['driver_source'] = 'dkms'
 oa(on_rows[0])['driver_source'] = 'intree'
-assert pc.targets(pc.verdict(on_rows)[spec]) == []
 oa(on_rows[0])['dmesg_faults'] = ['[ 9.0] ane 26bc04000.ane: command timed out']
 v = pc.verdict(on_rows)[spec]
 assert v['revert'] and pc.targets(v) == ['overlay'] and v['intree'] == [], v
+oa(on_rows[1])['driver_source'] = 'intree'
+assert pc.targets(pc.verdict(on_rows)[spec]) == ['overlay'], 'a REVERT never adds aurora-dt'
 optj = next(c for c in pc.json_verdict([intree])['chips'] if c['chip'] == OPT)
 assert optj['verdict'] == 'PROMOTE' and optj['targets'] == ['overlay', 'aurora-dt'], optj
 assert optj['rows'][0]['driver_source'] == 'intree', optj
