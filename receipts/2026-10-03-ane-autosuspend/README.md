@@ -45,7 +45,7 @@ Line numbers are `ane/src/ane_drv.c` at `ae4f177` unless a file is named.
 
 | Path | Where | PM reference before | PM reference after |
 |---|---|---|---|
-| First engine MMIO (`ane_tm_enable`, `ane_tm_status`) | resume callback 1309-1350, from probe 1222 | probe `resume_and_get`, kept | same `resume_and_get`, released at 1241-1242 |
+| First engine MMIO (`ane_tm_enable`, `ane_tm_status`) | resume callback 1309-1353, from probe 1222 | probe `resume_and_get`, kept | same `resume_and_get`, released at 1241-1242 |
 | Stale DART mapping purge | 1226 | probe reference | probe reference |
 | `ane_dart_init` (ioremap only, no MMIO) | 1227 | not needed | not needed |
 | File open | 731-736 | `resume_and_get` + `put` (lifetime kept it on) | `resume_and_get` + `put_autosuspend` |
@@ -148,8 +148,8 @@ tree and flags. No warning in a fix build is absent from its base build.
 
 - Warnings: 7.1.13 `ane.ko` has no compiler warning (only the pahole
   version notice). 7.1.12 `ane.ko` has one, `ane_tm.c` 530
-  `-Wformat-truncation`, in base and fix. `ane_t6021.ko` has the same five or
-  six unused-variable warnings in base and fix.
+  `-Wformat-truncation`, in base and fix. `ane_t6021.ko` has the same five
+  unused-variable warnings in base and fix on both trees.
 - The two `ane_t6021.ko` hashes on 7.1.13 differ only because the base and
   fix sources were built in different directories; their srcversion is equal,
   and the same-path build on 7.1.12 is byte-identical.
@@ -163,16 +163,20 @@ tree and flags. No warning in a fix build is absent from its base build.
 
 ## Host tests
 
-`make -C tools check` passes on `ae4f177`. The first full
-`pytest -v tests tools` run (44 min; 1/5/15-minute load average 59/63/89
-just after it ended) stopped at
-collection: `tools/test_ane_smoke.py` got exit 1 from the fake T6002 smoke
-run although all 20 hashes were golden. The same file run alone
-(`python3 tools/test_ane_smoke.py`) passes in 25 s. That suite drives
-`tools/omarchy-ane-smoke` against a fake machine root and does not build or
-read the driver. The change is PM glue with no pure logic to unit-test on a
-host: the only computation is `autosuspend_ms > 0 ? autosuspend_ms : -1`.
-The hardware protocol below is the test.
+`make -C tools check` passes on `ae4f177`. After `make -C tools ane-run`
+(a build product that `tests/test_qwen_prog_run.py` runs),
+`pytest -q tests tools` gives 51 passed, 1 skipped (the only skip marker
+in `tests/` is `test_hwx_ports.py`, which needs staged Qwen inputs that
+this host does not have). An earlier full run, at a 1-minute load average
+near 60, stopped at collection: `tools/test_ane_smoke.py` got exit 1 from
+the fake T6002 smoke run although all 20 hashes were golden. That suite
+drives `tools/omarchy-ane-smoke` against a fake machine root and does not
+read the driver; alone it passes in 25 s, and it passed in both later full
+runs.
+
+The change is PM glue with no pure logic to unit-test on a host: the only
+computation is `autosuspend_ms > 0 ? autosuspend_ms : -1`. The hardware
+protocol below is the test.
 
 ## Recipe for the hardware lanes
 
@@ -223,15 +227,15 @@ and the sha256 of the loaded `ane.ko` at the start.
      `insmod ... autosuspend_ms=0` also gives `-1` and `active`.
    - C: `ane` loaded, `echo 1500 > $DEV/power/autosuspend_delay_ms`, and no
      ANE use for at least 10 s before the arm starts.
-   - Each arm: `sudo HW=... ./idle-sample.sh C 300 > C1.tsv`. Report mean and
-     standard deviation of `total_uW` per arm, and C minus B with the pooled
-     interval. Also save `pm_genpd_summary` once per arm.
+   - Each arm: `sudo HW=... ./idle-sample.sh C 300 > C1.tsv`. Report the
+     mean and standard deviation of `total_uW` for each 5-minute block.
+     Also save `pm_genpd_summary` once per block.
    - Pass: in C, `runtime_status` reads `suspended` and the ANE domains
      (T8103: `ane_set1..5`, `ane_base`, `ane_sys_cpu`, `ane_sys`; T6001:
      `ane_set1..4`, `ane_base`, `ane_set0`, `ane_sys_cpu`, `ane_sys`) read
-     off in every sample. In B they read `active` and on. Mean C is lower
-     than mean B by more than twice the pooled standard error. A domain that
-     stays on in C is a finding: record which one and its other users from
+     off in every sample. In B they read `active` and on. Each C block mean
+     is lower than each B block mean. A domain that stays on in C is a
+     finding: record which one and its other users from
      `pm_genpd_summary`.
 2. Wake-up latency, with the delay at 1500:
    - Open latency, 20 cycles of 5 s idle then one `open` of
