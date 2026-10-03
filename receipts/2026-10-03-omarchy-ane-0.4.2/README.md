@@ -130,7 +130,6 @@ Power per block; T6001 gives the mean of `total_uW` per block.
 | B, ANE held on | 3455.9 / 3434.6 mW | 20.451 / 14.910 W |
 | C, autosuspend | 3327.8 / 3283.2 mW | 12.808 / 12.804 W |
 | B minus C, per block | 107 to 173 mW (block medians) | 2.10 to 7.65 W (block means) |
-| mean of the block means, B / C | 3469 / 3313 mW | 17.68 / 12.81 W (from the rows above) |
 | C runtime state | suspended in 300 of 300 samples per block | suspended in 300 of 300 samples per block |
 | first open after 5 s idle | median 330 µs (warm: 10 µs) | 0.35 ms |
 | whole encoder | 40 blocks of 16 calls bit-exact; per-call engine time min-of-min 136.885 ms in both arms | 40 blocks of 16 calls, one output digest; jobs +640 exact |
