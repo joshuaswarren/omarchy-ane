@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The release step cuts the release it should: one release per run covering
+  every promotion merged since the last tag (verdict, chip, row shas,
+  driver_source, merge sha), tagging the release commit so the tarball
+  carries its own CHANGELOG section, with `## Unreleased` kept as the first
+  section.
+- The promotion flip is state-independent: the check's case lists and the
+  tested-header list derive their order from rules instead of absolute seats
+  into the v0.4.2 five-chip list, each overlay dts carries one
+  tool-written `Overlay state:` line, the offline suites pick their chips
+  from the overlays table, and `test_promote_chip` runs in the promotion
+  gate. Any promotion state round-trips and passes.
+- `propose` stages only the tracked files the flip wrote; `git add -A` had
+  shipped a committed `__pycache__` blob in v0.4.3 (removed, and
+  `__pycache__/` and `*.pyc` are ignored now).
+- The T6000/T6020 prose matches 0.4.3: the README's default-on line and the
+  evidence cells name the passing rows 6eb94f49985b and 3c9389040f51, the
+  overlay dts headers and the libane receipt stop claiming untested/opt-in,
+  and the libane entry and receipt carry the hardware numbers (#111) instead
+  of "not merged before hardware" and lab aliases.
+
 ## 0.4.3 (2026-10-03)
 
 - T6000 (M1 Pro) ANE on by default. (row 6eb94f49985b)
