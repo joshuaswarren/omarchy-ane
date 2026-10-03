@@ -144,7 +144,7 @@
     "reason": "No segment-ranges property in the IPSW j873g ADT. A live macOS IORegistry/m1n1 ADT observation is required to discover iBoot's runtime firmware placement; not measured offline."
   },
   "ane_domains": {
-    "v": "ADT names DCS2 and DCS3 clock gates; it does not show the T6021-style ANE_SYS/CPU/SET state sequence.",
+    "v": "The ane clock-gates resolve to DCS2 and DCS3 and the ane1 clock-gates to AFIMCCNI1 and AFINS0 in the main pmgr device table, which has no power-state device with ANE in its name (AneAllSoc adt-27.0.txt summary). It does not show the T6021-style ANE_SYS/CPU/SET state sequence.",
     "src": "S1"
   },
   "dart_compatible": {
@@ -217,7 +217,19 @@
       "src": "S4"
     },
     "macho": {
-      "v": "ARM64E MH_PRELOAD (filetype 5), 7 load commands. __TEXT vmaddr 0x0/vmsize 0xc4000/fileoff 0x4000/filesize 0xc4000; __DATA vmaddr 0xc4000/vmsize 0x2ac000/fileoff 0xc8000/filesize 0xb8000; __DATA_CONST vmaddr 0x370000/vmsize 0/fileoff 0x180000/filesize 0. Same layout in both H18 firmware payloads.",
+      "v": "ARM64E MH_PRELOAD (filetype 5), flags 0x200001, entry PC 0, 7 load commands (sizeofcmds 0xb38): three LC_SEGMENT_64, LC_SYMTAB with 0 symbols, LC_DYSYMTAB, LC_UUID, LC_UNIXTHREAD. __TEXT vmaddr 0x0/vmsize 0xc4000/fileoff 0x4000/filesize 0xc4000; __DATA vmaddr 0xc4000/vmsize 0x2ac000/fileoff 0xc8000/filesize 0xb8000; __DATA_CONST vmaddr 0x370000/vmsize 0/fileoff 0x180000/filesize 0. Same layout in both H18 firmware payloads.",
+      "src": "S4"
+    },
+    "patchbay_records": {
+      "v": ["BECA", "SECA", "1IEC", "2IEC", "GKTS", "otcd", "oscd", "oecd", "DILS", "SRSA", "GFCM", "SSSC", "qF8v", "LRSD", "SVSD", "LCSD", "ZSTR", "BPTP", "TNGI", "oeNS", "SEBC", "ECAP", "BVTP", "sP1T", "BtpG", "StpG", "BlpP", "SPTP", "SZSD", "LZSD", "S2xG", "SNUT", "ZNUT", "OTTR", "LLTR", "RIrW", "_COS", "RCOS", "dApC", "dArW", "fVED", "GLFp", "ABOI", "ZSOI", "ARcM"],
+      "src": "S4"
+    },
+    "patchbay_vs_selene": {
+      "v": "__DATA._rtk_patchbay (0x282 bytes) parses as 45 {tag, u32 len, value} records, tags in memory byte order, the same list in both H18 payloads. The 27.0 H14 Selene payload (S7) has 40 records; H18 keeps all 40 tags and adds BECA, SECA, 1IEC, 2IEC and RIrW. Record values are not recorded.",
+      "src": "S4"
+    },
+    "power_control_names": {
+      "v": "CPowerControlServiceAneH18g / PowerControl_H18g. The H18 payloads contain InitPMUBaseAddress; the 27.0 Selene payload (S7) does not. A log string in the H18 payloads marks SetPMUBaseAddress deprecated.",
       "src": "S4"
     },
     "rtkit_release": {
@@ -292,12 +304,8 @@
     }
   },
   "driver_family": {
-    "v": "Apple uses AppleA7IOP-ASCWrap-v8.kext personality AppleASCWrapV8ANE to match iop-ane,ascwrap-v8. This verifies the H18 ASCWrap-v8 host family on macOS. It remains a new Linux driver family for omarchy-ane: no existing Linux driver matches it, and no Linux driver/runtime bring-up was implemented or tested. The general H14 AppleH16ANEInterface H11ANEIn path does not itself match this H18 compatible.",
-    "src": "S6"
-  },
-  "compiler": {
-    "v": "H18 target absent from the measured cross-target compile. Existing receipt gives CPU subtypes h13=4, h14=5, h15=6, h16=7, h17=9. Any H18 subtype/ISA mapping is unknown; no extrapolated subtype is claimed.",
-    "src": "S3"
+    "v": "Firmware-booted ASC with RTKit and CSNE: the ane_t6021 model, as a new ascwrap-v8 variant. The H18 payloads carry the RTKit release, the 97 CSNE_CMD names and every _rtk_patchbay record tag of the 27.0 H14 Selene payload (S7). Apple matches iop-ane,ascwrap-v8 with AppleASCWrapV8ANE in AppleA7IOP-ASCWrap-v8.kext (S6), not with the H11ANEIn interface. No Linux driver binds it; the per-SoC values a variant needs, and which of them are missing, are in receipts/2026-10-03-ane-h18.",
+    "src": "S4"
   },
   "aurora": {
     "v": "aurora-wip contains t8152-j873g.dts, titled Apple Mac mini (M6), but no ANE node or H18 ANE driver. The file is a minimal RAM-boot DT. No ANE overlay target exists in linux-asahi 7.1.13.",
