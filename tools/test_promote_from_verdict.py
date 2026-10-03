@@ -308,6 +308,13 @@ work = make_work()
 git = lambda *a: subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
                                  "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", *a],
                                 check=True, capture_output=True, text=True).stdout.strip()
+# an entry under Unreleased, so the release has entries to move (the repo's own
+# Unreleased can be empty, right after a release)
+cl = work / "CHANGELOG.md"
+cl.write_text(cl.read_text().replace("## Unreleased\n\n",
+                                     "## Unreleased\n\n- T6020 (M2 Pro) ANE on by default.\n\n", 1))
+git("commit", "-qam", "Unreleased entry")
+git("push", "-q", "origin", "main")
 git("tag", "v0.4.0")
 for msg in ("PROMOTE: t6020 ANE -> default-on (row 3c9389040f51; intree)",
             "PROMOTE: t6000 ANE -> default-on (row 6eb94f49985b; intree)"):
@@ -328,6 +335,7 @@ before = git("show", "v0.4.0:CHANGELOG.md")
 cut = before.index("## Unreleased\n") + len("## Unreleased\n")
 new = re.match(r"\n## 0\.4\.1 \(\d{4}-\d{2}-\d{2}\)\n", changelog[cut:])
 assert new and changelog == before[:cut] + new.group(0) + before[cut:], changelog[:400]
+assert "- T6020 (M2 Pro) ANE on by default." in changelog[cut:].split("\n## ")[1], changelog[:400]
 release_calls = [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines())
                  if c[0].endswith("/releases") and c[1] == "POST"]
 assert len(release_calls) == 1, release_calls

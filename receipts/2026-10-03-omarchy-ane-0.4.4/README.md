@@ -22,14 +22,21 @@ commit, made by hand, not by the promotion workflow.
 ## What changed since v0.4.3
 
 `git log --first-parent v0.4.3..89c2088`: `fd97719` (the 0.4.3 CHANGELOG move)
-and #117. The release PR adds one code fix: `release()` in
-`tools/promote_from_verdict.py` now writes the `## X.Y.Z (date)` heading when
-Unreleased moves. As merged in #117 it rebuilt the file as `## Unreleased`
-plus the old entries, so the heading never reached the file. A run of the
-real `release()` on this CHANGELOG, with git and GitHub stubbed, gave the
-headings `Unreleased`, `0.4.3`, `0.4.2` before the fix and `Unreleased`,
-`0.4.4`, `0.4.3` after it. `test_promote_from_verdict` failed with the new
-byte-for-byte check before the fix and passes after it.
+and #117. The release PR adds two code fixes to the promotion tools:
+
+- `release()` in `tools/promote_from_verdict.py` writes the `## X.Y.Z (date)`
+  heading when Unreleased moves. As merged in #117 it rebuilt the file as
+  `## Unreleased` plus the old entries, so the heading never reached the
+  file. A run of the real `release()` on this CHANGELOG, with git and GitHub
+  stubbed, gave the headings `Unreleased`, `0.4.3`, `0.4.2` before the fix
+  and `Unreleased`, `0.4.4`, `0.4.3` after it. `test_promote_from_verdict`
+  now seeds an entry under Unreleased and compares the moved text byte for
+  byte; it fails with the #117 `release()` and passes with the fix.
+- `edit_changelog()` in `tools/promote_chip.py` keeps a blank line between a
+  new Unreleased entry and the released heading below it, which is where an
+  empty Unreleased sits after a release. Before, the entry went directly
+  above that heading. `test_promote_chip` checks the shape after every flip;
+  it failed before the fix.
 
 ## The bytes that the hardware gates ran
 

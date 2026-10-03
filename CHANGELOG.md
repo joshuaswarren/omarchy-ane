@@ -21,8 +21,11 @@ supersedes it: its tarball carries the 0.4.3 and 0.4.4 notes.
   CHANGELOG move and named only T6000. As merged in #117, the move left the
   entries under `## Unreleased` and wrote no version heading; this release
   writes the heading, and `test_promote_from_verdict` checks the moved text
-  byte for byte. Its fixture already held a `## 0.4.1` heading, so the old
-  check passed without one.
+  byte for byte, with an entry to move. Its fixture already held a
+  `## 0.4.1` heading, so the old check passed without one. After a release,
+  `## Unreleased` sits empty right above the released heading, and
+  `promote_chip.py` keeps a blank line between a new entry and that heading
+  (`test_promote_chip` checks it).
 - The promotion flip is state-independent (#117). The check's case lists and
   the tested-header list take their order from rules (T8103, T6001 and T6021
   first, promoted chips sorted after them), not from seats in the v0.4.2

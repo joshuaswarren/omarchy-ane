@@ -73,6 +73,12 @@ for chip in sorted(_chips):
     after = tree(base)
     changed = {k for k in after if before.get(k) != after[k]}
     assert changed == set(flip_files(chip)), (chip, sorted(changed))
+    # the entry lands under Unreleased, and the released section below it keeps
+    # its blank line (after a release, Unreleased sits empty right above it)
+    cl = after["CHANGELOG.md"].decode().splitlines()
+    h = cl.index("## Unreleased")
+    nxt = next(n for n in range(h + 1, len(cl)) if cl[n].startswith("## "))
+    assert cl[nxt - 1] == "" and any(f"{chip.upper()} (" in l for l in cl[h + 1:nxt]), (chip, cl[h:nxt + 1])
 
     p = run(base, chip, to, "--apply")  # idempotent
     assert p.returncode == 0 and tree(base) == after, (chip, p.stdout, p.stderr)
