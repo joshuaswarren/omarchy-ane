@@ -84,8 +84,7 @@
     },
     {
       "v": {
-        "value": "j575d",
-        "marketing_product": "MacBook Pro 16-inch M3 Max (Nov 2023, dual-die, 28/30-core)"
+        "value": "j575d"
       },
       "src": "S1"
     }
@@ -196,6 +195,10 @@
     }
   },
   "ane1_j575d": {
+    "buildmanifest_chip_id": {
+      "v": "0x6032 (board j575dap, two ANE images: ANE and Ap,ANE1)",
+      "src": "S2"
+    },
     "compatible": {
       "v": "iop,ascwrap-v6",
       "src": "S1"
@@ -237,6 +240,30 @@
         "v": {
           "name": "pmgr1_ps",
           "base": "0x2292290000",
+          "size": "0x4000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg5",
+          "base": "0x2903c0000",
+          "size": "0x30000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg6",
+          "base": "0x2404000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg7",
+          "base": "0x22a02dc000",
           "size": "0x4000"
         },
         "src": "S1"
@@ -329,28 +356,18 @@
   },
   "mailbox": {
     "compatible": {
-      "v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4",
-      "src": "S4"
+      "v": null,
+      "reason": "INFERENCE, not measured: no ANE mailbox node exists in the ADT summary (S1) or in the kernel tree (S4). Every other T6031 ASC mailbox in S4 (smc, aop, mtp; t6031-die0.dtsi:120-278) is apple,t6031-asc-mailbox + apple,asc-mailbox-v4, so that class is expected; S4 has no ANE node to cite for it. Detail: receipts/2026-10-03-ane-h15."
     },
     "reg": [
       {
-        "v": {
-          "name": "mbox",
-          "base": "0x3c9050000",
-          "size": "0x4000"
-        },
-        "src": "S1"
+        "v": null,
+        "reason": "INFERENCE, not measured: no ADT window is named as the mailbox. On T6021 the ANE mailbox is the ASC wrapper + 0x8000 (engine + 0x1408000) and engine + 0x1050000 is RVBAR (ane/t6021/ane_t6021.h:104-147); every T6031 ASC mailbox in S4 is its ASC base + 0x8000. ANE reg[0] (S1) is engine + 0x1400000, so the expected mailbox is 0x3c9408000+0x4000 (die 1 on j575d: 0x23c9408000), inside reg[0]. The earlier value 0x3c9050000 (reg[1], the T6021 RVBAR offset) had no source for the mailbox role."
       }
     ],
     "interrupts": {
-      "v": [
-        964,
-        966,
-        967,
-        965,
-        983
-      ],
-      "src": "S1"
+      "v": null,
+      "reason": "INFERENCE, not measured: the ADT ane0 node lists 965 964 967 966 983 (S1, kept in ane.interrupts). The first four are the block 964..967; the last is the DART IRQ 984 minus one, as T6021's single ANE IRQ 884 is DART 885 minus one (j575d ane1: 5060..5063 and 5079, DART 5080). Each T6031 ASC mailbox in S4 takes four consecutive lines named send-empty, send-not-empty, recv-empty, recv-not-empty in that order, which would make 964..967 the ANE mailbox in that order. The ADT does not name the roles. The earlier list 964, 966, 967, 965, 983 had no source."
     }
   },
   "pmgr": {
@@ -439,8 +456,8 @@
     }
   },
   "driver_family": {
-    "v": "ane_t6021's RTKit/firmware model — extended",
-    "src": "S6"
+    "v": null,
+    "reason": "INFERENCE (b0 decision, receipts/2026-10-03-ane-h15): ane_t6021-like at the ASC layer, no new ASC-IOP client. S1 gives reg[0] = engine + 0x1400000 (the ASC wrapper whose CPU_CONTROL ane_t6021 sets at +0x44), reg[1] = engine + 0x1050000 (the T6021 RVBAR offset) and the DART at engine + 0x1800000 with the T6021 four-window shape; S4 uses apple,asc-mailbox-v4 for every M3 ASC mailbox. Not measured: whether the firmware that iBoot preloads on an M3 Linux boot sends RTKit HELLO. The T6021 13.5 image never did, and its working path is the legacy ChMan ring, which is tied to that image."
   },
   "hwx_generation": {
     "v": {
