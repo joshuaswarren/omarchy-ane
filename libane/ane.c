@@ -271,8 +271,9 @@ static inline int ane_fwrite(const char *fname, void *data, uint64_t size)
 	return 0;
 }
 
-static inline int ane_pread(const char *fname, void *data, uint64_t size,
-			    uint64_t offset)
+/* Bytes read (a short file reads fewer than size), or -EINVAL. */
+static inline int64_t ane_pread(const char *fname, void *data, uint64_t size,
+				uint64_t offset)
 {
 	uint64_t done;
 	FILE *fp = fopen(fname, "rb");
@@ -294,7 +295,7 @@ static inline int ane_pread(const char *fname, void *data, uint64_t size,
 	}
 
 	fclose(fp);
-	return 0;
+	return (int64_t)done;
 }
 
 static inline int is_ane_device(int fd, int *abi_major)
@@ -420,6 +421,7 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 	uint64_t need;
 	uint64_t have;
 	uint64_t t = timing_start();
+	int64_t got;
 
 	if (ane_fread(path, anec, sizeof(struct anec)) < 0) {
 		return -EINVAL;
@@ -430,19 +432,21 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		return -EINVAL;
 	}
 
-	/* Zeroed as before, but glibc calloc skips the memset pass over the
-	 * fresh mmap'd pages of a large request. */
-	nn->data = calloc(1, anec->size);
-	if (!nn->data) {
+	/* 16 KiB aligned and zero past a short read, as before. pread fills
+	 * the rest, so a full program pays no memset pass. */
+	if (posix_memalign(&nn->data, TILE_ALIGN, anec->size)) {
 		ane_err("failed to allocate 0x%llx bytes for %s\n",
 			(unsigned long long)anec->size, path);
+		nn->data = NULL;
 		return -ENOMEM;
 	}
 
-	if (ane_pread(path, nn->data, anec->size, ANEC_HEADER_SIZE) < 0) {
+	got = ane_pread(path, nn->data, anec->size, ANEC_HEADER_SIZE);
+	if (got < 0) {
 		free(nn->data);
 		return -EINVAL;
 	}
+	memset((uint8_t *)nn->data + got, 0, anec->size - (uint64_t)got);
 	timing_end("model_read", t, anec->size);
 
 	t = timing_start();

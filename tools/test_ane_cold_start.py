@@ -77,6 +77,11 @@ class IdleGateTests(unittest.TestCase):
         self.assertFalse(idle_ok("0.50 0.3 0.2 1/100 5", self.PSI.format("0.00"))[0])
         self.assertFalse(idle_ok("0.10 0.3 0.2 1/100 5", self.PSI.format("0.01"))[0])
 
+    def test_unreadable_inputs_fail_the_gate_without_raising(self):
+        missing = "unavailable: [Errno 2] No such file or directory"
+        self.assertEqual(idle_ok("0.10 0.1 0.1 1/100 5", missing), (False, None, None))
+        self.assertEqual(idle_ok(missing, self.PSI.format("0.00")), (False, None, None))
+
 
 if __name__ == "__main__":
     unittest.main()

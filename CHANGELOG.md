@@ -40,9 +40,9 @@
   its `include/uapi/drm/ane_accel.h` hides ours and lacks
   `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both
   kinds of kernel.
-- libane allocates the program staging buffer with `calloc`. The buffer is
-  zero as before, but a large program no longer pays a `memset` pass over
-  fresh pages.
+- libane fills the program staging buffer with one `pread` and zeroes only
+  the tail past a short read, instead of a `memset` over the whole buffer
+  first. The buffer stays 16 KiB aligned and zero past the file end.
 
 ### Fixed
 

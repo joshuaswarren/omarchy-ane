@@ -114,7 +114,7 @@ each process; its compiler cache is keyed and kept by the system service.
 | 2 | one DART TLB sync per buffer object instead of one per page (`iommu_map_sg` or a batched sync in `ane_iommu_map_pages`) | the invalidate share of 352 ms; unmeasured, harness `kprof` measures it | small: one driver function | medium: DMA map path, stray-PTE repair logic, needs hardware |
 | 3 | hash while loading: one pass that reads, hashes and copies into the buffer object, through a new libane load-from-fd entry point | up to the copy part of the 435 ms seal (INFERENCE: 100 to 200 ms) | medium: additive libane API and worker change | low to medium |
 | 4 | no libane staging copy: read the file into the buffer object and validate there | one 458 MB copy, 27,955 faults and 458 MB of resident memory (INFERENCE: 50 to 120 ms) | small | medium: `nn->data` is a public field; its meaning changes |
-| 5 | `calloc` for the staging buffer (done in this branch) | one memset pass over 458 MB (INFERENCE: below 20 ms); harness `main` vs `branch` arms measure it | none | none: same zeroed buffer, same `free()` |
+| 5 | staging buffer without the full `memset` (done in this branch) | one memset pass over 458 MB (INFERENCE: below 20 ms); harness `main` vs `branch` arms measure it | none | none: same 16 KiB-aligned buffer, and a short file still gets a zero tail (host test) |
 | - | kernel program cache that keeps buffer objects after close | rejected | | unsafe: breaks the per-file teardown boundary (`ane_drm_postclose`) and the wedge accounting |
 
 The daemon is not implemented. The T6001 split is not measured yet, the
@@ -128,9 +128,10 @@ daemon changes the seal contract, and the worker lives in omarchy-mlx.
   `device_open`, `model_read`, `bind_check`, `bo_init`, `bo_mmap`, `copy`,
   `init_total`, `m2_open` (ABI 2), `exec`. The ABI and `ane.h` do not change.
   Unset, each stage costs one branch.
-- `libane/ane.c`: the staging buffer comes from `calloc` instead of
-  `posix_memalign` plus `memset`. glibc returns the fresh pages of a large
-  request already zero, so the memset pass goes away.
+- `libane/ane.c`: the staging buffer keeps its 16 KiB alignment
+  (`posix_memalign`) but loses the full `memset`. `pread` fills every byte,
+  and only the tail past a short read is zeroed. `tools/test_libane_ioctl.c`
+  checks the alignment and the zero tail on a truncated program.
 - `tools/ane_cold_start.py`: the harness. `tools/test_ane_cold_start.py`
   checks its parsers and its idle gate.
 
@@ -180,19 +181,21 @@ battery; nothing retries.
 
    ```sh
    L=/var/tmp/ane-cold
-   python3 $H --out $OUT --label prod   --worker $W --share $S --libane $S/libane/libane-strict.so --runs 10
+   python3 $H --out $OUT --label prod   --worker $W --share $S --libane $S/libane/libane-strict.so --runs 10 --require-sealed
    python3 $H --out $OUT --label main   --worker $W --share $S --libane $L/libane-strict-main.so --runs 10
    python3 $H --out $OUT --label branch --worker $W --share $S --libane $L/libane-strict-branch.so --runs 10
    python3 $H --out $OUT --label trace  --worker $W --share $S --libane $L/libane-strict-branch.so --runs 10 --trace
    python3 $H --out $OUT --label whole  --worker $W --share $S --libane $L/libane-strict-branch.so --runs 5 --trace --no-islands
-   strace -V && python3 $H --out $OUT --label strace --worker $W --share $S --libane $S/libane/libane-strict.so --runs 3 --strace
+   strace -V && python3 $H --out $OUT --label strace --worker $W --share $S --libane $S/libane/libane-strict.so --runs 3 --strace --require-sealed
    ```
 
    - `prod`: the CLI open as shipped (sealed libane). Compare its `open_ms`
-     with the CLI's 867.8 ms.
+     with the CLI's 867.8 ms. `--require-sealed` stops the arm before any run
+     when the libane does not match the runtime pin. Every result line
+     records `libane_sealed`.
    - `main` and `branch`: libane from origin/main and from this branch, both
      unsealed and both without `ANE_TRACE_TIMING`. The `ane_init:N`
-     difference is the `calloc` gain.
+     difference is the gain of the staging change.
    - `trace`: `branch` with `ANE_TRACE_TIMING=1`: the libane stage lines.
      `trace` minus `branch` is the cost of the trace itself.
    - `whole`: the encoder bundle alone, without the island bundles.
@@ -239,6 +242,6 @@ battery; nothing retries.
 - The stage split is from one m1-test-host sample, not from the T6001.
 - The (a), (b) and (c) shares inside the 352 ms are INFERENCE until the
   `trace`, `strace` and `kprof` arms run.
-- The `calloc` gain is not measured.
+- The gain of the staging change is not measured.
 - The macOS model-load figure covers all Parakeet models, not the encoder
   alone.

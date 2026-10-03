@@ -53,11 +53,18 @@ DRM_NR = {0x00: "drm_version", 0x41: "bo_init", 0x42: "bo_free",
 
 
 def idle_ok(loadavg_text, psi_text):
-    """(ok, load1, avg10) for the idle-benchmark rule."""
-    load1 = float(loadavg_text.split()[0])
-    some = next(line for line in psi_text.splitlines()
-                if line.startswith("some"))
-    avg10 = float(re.search(r"avg10=([0-9.]+)", some).group(1))
+    """(ok, load1, avg10) for the idle-benchmark rule.
+
+    Unreadable or unparseable inputs (no PSI in the kernel, for example)
+    fail the gate with load1 and avg10 None; they never raise.
+    """
+    try:
+        load1 = float(loadavg_text.split()[0])
+        some = next(line for line in psi_text.splitlines()
+                    if line.startswith("some"))
+        avg10 = float(re.search(r"avg10=([0-9.]+)", some).group(1))
+    except (ValueError, IndexError, StopIteration, AttributeError):
+        return False, None, None
     return load1 < 0.5 and avg10 == 0.0, load1, avg10
 
 
@@ -145,12 +152,13 @@ def ane_state():
 
 
 def wait_idle():
+    """(ok, load1, avg10, raw inputs of the last check)."""
     deadline = time.monotonic() + GATE_S
     while True:
-        ok, load1, avg10 = idle_ok(read("/proc/loadavg"),
-                                   read("/proc/pressure/cpu"))
-        if ok or time.monotonic() > deadline:
-            return ok, load1, avg10
+        raw = (read("/proc/loadavg"), read("/proc/pressure/cpu"))
+        ok, load1, avg10 = idle_ok(*raw)
+        if ok or load1 is None or time.monotonic() > deadline:
+            return ok, load1, avg10, raw
         time.sleep(2)
 
 
@@ -169,7 +177,8 @@ def take_lock():
 
 
 def session_args(args):
-    """Worker argv tail for the CLI's bundle set, sealed like the CLI."""
+    """Worker argv tail for the CLI's bundle set, sealed like the CLI, and
+    whether the libane pin applies (it does only to the pinned bytes)."""
     pin = json.loads((args.share / "parakeet-runtime-pin.json").read_text())
     tail = []
     for name, files in sorted(pin["assets"]["bundles"].items()):
@@ -183,13 +192,15 @@ def session_args(args):
         for file, digest in sorted(files.items()):
             tail += ["--seal-expect", f"{name}:{file}={digest}"]
     libane_sha = sha256(args.libane)
+    sealed = False
     for file, digest in pin["assets"]["libane"].items():
         if args.libane.name == file and libane_sha == digest:
             tail += ["--seal-expect-libane", f"{file}={digest}"]
-    return tail, libane_sha
+            sealed = True
+    return tail, libane_sha, sealed
 
 
-def environment(args, libane_sha):
+def environment(args, libane_sha, sealed):
     lines = [f"utc {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}",
              f"uname {' '.join(platform.uname())}",
              f"boot_id {read('/proc/sys/kernel/random/boot_id').strip()}",
@@ -198,7 +209,7 @@ def environment(args, libane_sha):
              f"thp_enabled {read('/sys/kernel/mm/transparent_hugepage/enabled').strip()}",
              f"thp_defrag {read('/sys/kernel/mm/transparent_hugepage/defrag').strip()}",
              f"worker {args.worker} sha256 {sha256(args.worker)}",
-             f"libane {args.libane} sha256 {libane_sha}",
+             f"libane {args.libane} sha256 {libane_sha} sealed {int(sealed)}",
              f"ane_trace_timing {int(args.trace)} strace {int(args.strace)} "
              f"islands {int(not args.no_islands)} gap_s {args.gap_s}",
              f"whole {args.whole} program-0.anec sha256 "
@@ -245,6 +256,8 @@ def one_run(args, tail, run_dir):
     timer = threading.Timer(limit_s, proc.kill)
     timer.start()
     lines = []
+    error = None
+    finished = False
     try:
         for line in proc.stdout:
             lines.append(line)
@@ -257,12 +270,26 @@ def one_run(args, tail, run_dir):
             proc.stdin.flush()
             lines += proc.stdout.readlines()
             result["release_ms"] = (time.monotonic_ns() - released) / 1e6
-        result["rc"] = proc.wait()
+        finished = True
+    except OSError as e:  # e.g. the worker exited before "quit"
+        error = f"{type(e).__name__}: {e}"
     finally:
+        if not finished and proc.poll() is None:
+            proc.kill()
+        result["worker_rc"] = proc.wait()
         timer.cancel()
-    if result["rc"] == -9:
+        stderr.close()
+    if not error and result["worker_rc"] == 0:
+        if "open_ms" not in result:
+            error = "the worker exited 0 without 'resident loaded'"
+        elif not any(line.startswith("resident released") for line in lines):
+            error = "the worker exited 0 without 'resident released'"
+    if error:
+        result["rc"] = f"harness error: {error}"
+    elif result["worker_rc"] == -9:
         result["rc"] = f"killed by the harness after {limit_s} s"
-    stderr.close()
+    else:
+        result["rc"] = result["worker_rc"]
     result["wall_ms"] = (time.monotonic_ns() - started) / 1e6
     result["post"] = ane_state()
     (run_dir / "stdout.txt").write_text("".join(lines))
@@ -316,47 +343,65 @@ def main():
                    help="set ANE_TRACE_TIMING=1 for the libane stage lines")
     p.add_argument("--strace", action="store_true")
     p.add_argument("--no-islands", action="store_true")
+    p.add_argument("--require-sealed", action="store_true",
+                   help="refuse to run unless --libane matches the runtime "
+                        "pin, so the worker seals it as the CLI does")
     p.add_argument("--deadline-ms", type=int, default=60000)
     args = p.parse_args()
     args.whole = args.whole or args.share / "bundles" / "parakeet-encoder-whole"
 
+    tail, libane_sha, sealed = session_args(args)
+    if args.require_sealed and not sealed:
+        p.error(f"{args.libane} (sha256 {libane_sha}) does not match the "
+                "libane pin in parakeet-runtime-pin.json; the open would "
+                "be unsealed")
     out = args.out / args.label
     out.mkdir(parents=True, exist_ok=False)
-    tail, libane_sha = session_args(args)
-    (out / "env.txt").write_text(environment(args, libane_sha))
+    (out / "env.txt").write_text(environment(args, libane_sha, sealed))
     results = []
-    for i in range(args.runs):
-        if args.gap_s:
-            time.sleep(args.gap_s)
-        lock = take_lock()
-        if lock is None:
-            results.append({"run": i, "rc": "lock timeout"})
-            break
-        ok, load1, avg10 = wait_idle()
-        if not ok:
-            os.close(lock)
-            results.append({"run": i, "load1": load1, "psi_avg10": avg10,
-                            "rc": "idle gate not met"})
-            break
-        try:
-            r = one_run(args, tail, out / f"run-{i:02d}")
-        finally:
-            os.close(lock)
-        r.update(run=i, load1=load1, psi_avg10=avg10)
+
+    def record(r):
+        r["libane_sealed"] = sealed
         results.append(r)
-        print(f"{args.label} run {i}: rc={r['rc']} open_ms={r.get('open_ms')}",
-              file=sys.stderr)
-        if r["rc"] != 0:
-            break  # never retry a failed open
-    with open(out / "results.jsonl", "w") as f:
-        for r in results:
+        with open(out / "results.jsonl", "a") as f:
             f.write(json.dumps(r) + "\n")
-    (out / "summary.tsv").write_text(summary(results))
-    sums = [f"{sha256(f)}  {f.relative_to(out)}" for f in sorted(out.rglob("*"))
-            if f.is_file() and f.name != "SHA256SUMS"]
-    (out / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+
+    try:
+        for i in range(args.runs):
+            if args.gap_s:
+                time.sleep(args.gap_s)
+            lock = take_lock()
+            if lock is None:
+                record({"run": i, "rc": "lock timeout"})
+                break
+            try:
+                ok, load1, avg10, raw = wait_idle()
+                gate = {"run": i, "load1": load1, "psi_avg10": avg10}
+                if not ok:
+                    reason = "idle gate not met"
+                    if load1 is None:
+                        reason = f"idle gate inputs unreadable: {raw!r}"[:400]
+                    record(dict(gate, rc=reason))
+                    break
+                try:
+                    r = one_run(args, tail, out / f"run-{i:02d}")
+                except Exception as error:  # keep every earlier run
+                    r = {"rc": f"harness error: {error!r}"}
+            finally:
+                os.close(lock)
+            r.update(gate)
+            record(r)
+            print(f"{args.label} run {i}: rc={r['rc']} open_ms={r.get('open_ms')}",
+                  file=sys.stderr)
+            if r["rc"] != 0:
+                break  # never retry a failed open
+    finally:
+        (out / "summary.tsv").write_text(summary(results))
+        sums = [f"{sha256(f)}  {f.relative_to(out)}" for f in sorted(out.rglob("*"))
+                if f.is_file() and f.name != "SHA256SUMS"]
+        (out / "SHA256SUMS").write_text("\n".join(sums) + "\n")
     print((out / "summary.tsv").read_text())
-    return 0 if all(r.get("rc") == 0 for r in results) else 1
+    return 0 if results and all(r.get("rc") == 0 for r in results) else 1
 
 
 if __name__ == "__main__":
