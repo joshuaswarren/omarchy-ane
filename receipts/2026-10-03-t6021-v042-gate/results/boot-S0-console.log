@@ -1,0 +1,81 @@
+== item1 first read 2026-10-03T05:26:42.420Z up 29.08
+ST=/sys/class/accel/accel0/device/ane_stats
+ls: cannot access '/sys/class/accel/accel0/device/ane_stats': No such file or directory
+-- as nobody:
+cat: /sys/class/accel/accel0/device/ane_stats: No such file or directory
+rc=1
+-- debugfs (root):
+ls: cannot access '/sys/kernel/debug/ane_t6021/': No such file or directory
+cat: /sys/kernel/debug/ane_t6021/ane_timeline: No such file or directory
+timeline lines: 0
+-- ane_pg_state x3 (1 s apart):
+  05:26:42 absent
+  05:26:43 absent
+  05:26:44 absent
+== identity
+== state boot 2026-10-03T05:26:45.510Z
+boot_id 09c1eb8b-210d-43df-a9d2-1e2199d7f778 uname 7.1.13-3-1-ARCH up 32.18
+module 0.4.2-main-5a457a3 59494CBC56F28ED8D1122C6 4f6c939b4a8ea678
+stats N
+dyn_pg N
+boot_prevent_nap Y
+call_settle_us 1000
+bo_total_bytes 0
+trace_td N
+oneshot-file: none
+/var/tmp/v042gate/bin/common.sh: line 55: /sys/class/accel/accel0/device/ane_stats: No such file or directory
+ane_stats: absent
+ane_pg_state: absent
+runtime_status: active
+load 0.69 0.17 0.06 psi some avg10=0.04 avg60=0.07 avg300=0.02 total=105532
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1135
+no ane-run
+BOOT_IMAGE=/vmlinuz-linux-asahi root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash
+system running failed_units 0
+module file /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko 4f6c939b4a8ea6780a0edb565e9e0542806596a90580174d55d97ad662c08cb6
+modinfo license lines: 1 [Dual MIT/GPL|]
+modinfo description lines: 1 [Apple Neural Engine (T6021/M2) installed module|]
+loaded: ane_t6021 98304 2;
+bound: ../../../../bus/platform/drivers/ane_t6021
+total 0
+crw-rw-rw- 1 root render 261, 0 Oct  3 00:26 accel0
+-- genpd (ane):
+ane_set4                        on                              0
+ane_set3                        on                              0
+ane_set2                        on                              0
+ane_set1                        on                              0
+ane_base                        on                              0
+ane_td                          on                              0
+ane_sys_mpm                     on                              0
+ane_cpu                         on                              0
+ane_sys                         on                              0
+== dmesg ane lines at default log level (8 lines), by level:
+  info 6
+  warn 2
+ANERD|ANEWR|ps probe in full dmesg: 0
+BOOT-PHASE lines: 1
+BAD: 0
+-- every ane line (chman[i] rows folded):
+kern  :info  : [    0.072163] platform 284000000.ane: Adding to iommu group 0
+kern  :warn  : [    3.194430] ane_t6021: loading out-of-tree module taints kernel.
+kern  :info  : [    4.344565] ane_t6021 284000000.ane: LAB init resource[0x84] bit0=1: prevent nap
+kern  :warn  : [    4.438407] ane_t6021 284000000.ane: boot: module PINNED until reboot (started CPU; wedged-pin)
+kern  :info  : [    4.438418] ane_t6021 284000000.ane: boot: run returned 0 (booted=1 fw_alive=1) \xe2\x80\x94 DONE observed \xe2\x80\x94 handshake complete; scratch_result=00000000ff7a0000 (raw device address, semantics UNSOURCED \xe2\x80\
+kern  :info  : [    4.438429] ane_t6021 284000000.ane: BOOT-PHASE sequence returned 0000000000000000 (cpu_started=1 fw_alive=1 booted=1) CPU_STATUS=0x2c
+kern  :info  : [    4.438438] ane_t6021 284000000.ane: chman: table VALIDATED (mismatch mask 0x0)
+kern  :info  : [    4.449578] ane_t6021 284000000.ane: loaded ane_t6021 0.4.2-main-5a457a3 (DRM major 2 minor 0; ABI 2; legacy_only=1 chman_ok=1 booted=1; state HELD; BO cap 12288 MiB)
+  chman[i] rows: 0
+== omarchy-ane-check (candidate tree)
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  dtbs_source=overlay
+  driver_source=dkms (ane_t6021: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko)
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.2-main-5a457a3)
+  ok    ane_t6021 is loaded (version 0.4.2-main-5a457a3)
+  ok    ane_t6021 is bound to 284000000.ane
+  ok    /dev/accel/accel0 present (crw-rw-rw- root:render); every user can open it
+omarchy-ane-check: ready
+check rc=0
+== boot.sh done /var/tmp/v042gate/runs/boot-S0-20261003T052642Z

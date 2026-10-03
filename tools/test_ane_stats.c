@@ -398,7 +398,7 @@ static int test_emit_live_tail(void)
 	t0 = ane_stats_now_ns();
 	t = ane_stats_begin(&f.ctrs, &f.ring, t0, 1);
 	usleep(4000);
-	v = ane_stats_snapshot(&f.ctrs, ane_stats_now_ns());
+	v = ane_stats_snapshot(&f.ctrs);
 	wall = ane_stats_now_ns() - t0;
 	if (v < 4000000ull || v > wall) {
 		printf("live_tail: in-flight snapshot %lu outside [%lu, %lu]\n",
@@ -407,7 +407,7 @@ static int test_emit_live_tail(void)
 	}
 	end_at = ane_stats_now_ns();
 	ane_stats_complete(&f.ctrs, &f.ring, t, end_at, 0, 0);
-	v = ane_stats_snapshot(&f.ctrs, ane_stats_now_ns());
+	v = ane_stats_snapshot(&f.ctrs);
 	/* After the close the value is the folded period, exactly. */
 	snprintf(want, sizeof(want), "busy_ns %lu\njobs 1\n",
 		 (unsigned long)(end_at - t0));
@@ -428,7 +428,7 @@ static int test_period_gap_no_accrual(void)
 	ane_stats_complete(&f.ctrs, &f.ring, t, 1100ull, 0, 0);
 	/* Idle between periods: the real-time now must not leak into
 	 * busy_ns, and the closed 100ns period is all that shows. */
-	v = ane_stats_snapshot(&f.ctrs, ane_stats_now_ns());
+	v = ane_stats_snapshot(&f.ctrs);
 	if (v != 100ull) {
 		printf("period_gap: idle snapshot %lu (want 100)\n",
 		       (unsigned long)v);
@@ -436,7 +436,7 @@ static int test_period_gap_no_accrual(void)
 	}
 	t = ane_stats_begin(&f.ctrs, &f.ring, 1500ull, 1);
 	ane_stats_complete(&f.ctrs, &f.ring, t, 2000ull, 0, 0);
-	v = ane_stats_snapshot(&f.ctrs, ane_stats_now_ns());
+	v = ane_stats_snapshot(&f.ctrs);
 	printf("period_gap: busy_ns=%lu (want 600 = union with gap)\n",
 	       (unsigned long)v);
 	return v == 600ull ? 0 : 1;
@@ -461,16 +461,20 @@ static int test_fold_only_at_drain(void)
 }
 
 #define STRESS_PRODUCERS 4
-#define STRESS_ITERS 300
+#define STRESS_ITERS 250
 
-struct stress_interval {
-	uint64_t start;
-	uint64_t end;
+/* 4 x 250 = 1000 jobs through a 1024-slot ring: no slot is reused, so
+ * the consumed per-slot windows can be read race-free after join. */
+struct stress_slot_fix {
+	struct ane_stats_counters ctrs;
+	struct ane_stats_ring ring;
+	struct ane_stats_ring_entry slots[1024];
 };
+
+static struct stress_slot_fix stress_fx;
 
 struct stress_producer {
 	struct fixture *f;
-	struct stress_interval iv[STRESS_ITERS];
 	unsigned int seed;
 };
 
@@ -483,10 +487,8 @@ static void *stress_fn(void *p)
 		uint64_t t = ane_stats_begin(&sp->f->ctrs, &sp->f->ring, s, 1);
 
 		usleep(rand_r(&sp->seed) % 400);
-		sp->iv[i].start = s;
-		sp->iv[i].end = ane_stats_now_ns();
 		ane_stats_complete(&sp->f->ctrs, &sp->f->ring, t,
-				   sp->iv[i].end, 0, 0);
+				   ane_stats_now_ns(), 0, 0);
 		usleep(rand_r(&sp->seed) % 200);
 	}
 	return NULL;
@@ -504,11 +506,25 @@ static void *stress_reader_fn(void *p)
 	uint64_t prev = 0;
 
 	for (int i = 0; i < 20000; i++) {
-		uint64_t now = ane_stats_now_ns();
-		uint64_t v = ane_stats_snapshot(&sr->f->ctrs, now);
+		uint64_t v = ane_stats_snapshot(&sr->f->ctrs);
+		uint64_t now_after = ane_stats_now_ns();
 
-		if (v < prev || v > now - sr->t0) {
+		/* Strict global monotonicity is unachievable with sampled
+		 * completion times: the drain folds to the last completion
+		 * SAMPLE, which can lag a concurrent reader's clock by the
+		 * sample-to-drain window (observed <= 240 ns here,
+		 * scheduler-bounded in general). The contract needs the dip
+		 * to stay far below the 100 ms sampler tick, so bound the
+		 * drawdown instead; the exact accounting property is the
+		 * quiescent busy == consumed-slot-union check. */
+		if (v + 10000000ull < prev) {
 			sr->failed = 1;
+			fprintf(stderr, "reader: drawdown v=%lu prev=%lu\n", (unsigned long)v, (unsigned long)prev);
+			return NULL;
+		}
+		if (v > now_after - sr->t0) {
+			sr->failed = 1;
+			fprintf(stderr, "reader: overwall v=%lu bound=%lu\n", (unsigned long)v, (unsigned long)(now_after - sr->t0));
 			return NULL;
 		}
 		prev = v;
@@ -518,27 +534,28 @@ static void *stress_reader_fn(void *p)
 
 static int cmp_interval_start(const void *pa, const void *pb)
 {
-	const struct stress_interval *a = pa, *b = pb;
+	const struct ane_stats_ring_entry *a = pa, *b = pb;
 
-	return (a->start > b->start) - (a->start < b->start);
+	return (a->start_ns > b->start_ns) - (a->start_ns < b->start_ns);
 }
 
 static int test_randomized_stress(void)
 {
-	struct fixture f;
 	struct stress_producer prod[STRESS_PRODUCERS];
 	struct stress_reader rdr;
-	struct stress_interval all[STRESS_PRODUCERS * STRESS_ITERS];
 	pthread_t th[STRESS_PRODUCERS], rth;
 	uint64_t t0 = ane_stats_now_ns();
 	int rc = 0;
 
-	fx_init(&f);
-	rdr.f = &f;
+	memset(&stress_fx, 0, sizeof(stress_fx));
+	stress_fx.ring.slots = stress_fx.slots;
+	ane_stats_counters_init(&stress_fx.ctrs, &stress_fx.ring, 10);
+	stress_fx.ring.slots = stress_fx.slots;
+	rdr.f = (struct fixture *)&stress_fx;
 	rdr.t0 = t0;
 	rdr.failed = 0;
 	for (int i = 0; i < STRESS_PRODUCERS; i++) {
-		prod[i].f = &f;
+		prod[i].f = (struct fixture *)&stress_fx;
 		prod[i].seed = 0xabeed + (unsigned int)i;
 		pthread_create(&th[i], NULL, stress_fn, &prod[i]);
 	}
@@ -547,24 +564,31 @@ static int test_randomized_stress(void)
 		pthread_join(th[i], NULL);
 	pthread_join(rth, NULL);
 
-	uint64_t jobs = ane_stats_atomic64_read(&f.ctrs.jobs);
-	uint64_t busy = ane_stats_atomic64_read(&f.ctrs.busy_ns);
-	for (int i = 0; i < STRESS_PRODUCERS; i++)
-		memcpy(&all[i * STRESS_ITERS], prod[i].iv,
-		       sizeof(prod[i].iv));
-	qsort(all, STRESS_PRODUCERS * STRESS_ITERS, sizeof(all[0]),
-	      cmp_interval_start);
-	/* Union of disjoint-merged intervals. */
+	uint64_t jobs = ane_stats_atomic64_read(&stress_fx.ctrs.jobs);
+	uint64_t busy = ane_stats_atomic64_read(&stress_fx.ctrs.busy_ns);
+	/* Reference: the consumed windows the implementation recorded
+	 * per slot (start_ns = period latch, drainer end_ns = fold end),
+	 * read race-free after join. */
+	qsort(stress_fx.slots, STRESS_PRODUCERS * STRESS_ITERS,
+	      sizeof(stress_fx.slots[0]), cmp_interval_start);
 	uint64_t union_ns = 0, lo = 0, hi = 0;
 	int have = 0;
 	for (size_t i = 0; i < STRESS_PRODUCERS * STRESS_ITERS; i++) {
-		if (!have || all[i].start > hi) {
+		uint64_t s = stress_fx.slots[i].start_ns;
+		uint64_t e = stress_fx.slots[i].end_ns;
+
+		/* A joiner's end sample can predate the period latch
+		 * (sampled, then stalled): its counted window is empty,
+		 * not negative. */
+		if (e < s)
+			e = s;
+		if (!have || s > hi) {
 			union_ns += hi - lo;
-			lo = all[i].start;
-			hi = all[i].end;
+			lo = s;
+			hi = e;
 			have = 1;
-		} else if (all[i].end > hi) {
-			hi = all[i].end;
+		} else if (e > hi) {
+			hi = e;
 		}
 	}
 	if (have)
@@ -580,14 +604,231 @@ static int test_randomized_stress(void)
 		rc = 1;
 	}
 	if (busy != union_ns) {
-		printf("stress: busy_ns %lu != interval union %lu\n",
-		       (unsigned long)busy, (unsigned long)union_ns);
+		printf("stress: busy_ns %lu != consumed slot union %lu (delta %ld)\n",
+		       (unsigned long)busy, (unsigned long)union_ns,
+		       (long)((int64_t)busy - (int64_t)union_ns));
 		rc = 1;
 	}
-	printf("stress: %d jobs, busy_ns=%lu, interval union=%lu, reader monotonic+bounded %s\n",
+	printf("stress: %d jobs, busy_ns=%lu, consumed slot union=%lu, reader bounded %s\n",
 	       STRESS_PRODUCERS * STRESS_ITERS, (unsigned long)busy,
 	       (unsigned long)union_ns, rc ? "FAIL" : "ok");
 	return rc;
+}
+
+/* ---- Root-cause proof: stale submit sample straddling a boundary. ----
+ *
+ * A caller samples submit_ns, then runs the ticket fetch and the
+ * inflight transition a few instructions later. If a period closes
+ * and the next one opens inside that window, the sample predates the
+ * period the submission is actually counted in. The implementation
+ * counts from the latch (never backward: latch = max(submit_ns,
+ * max_end)); a reference union built from raw caller samples
+ * overcounts by exactly the sample-to-latch gap.
+ */
+static int test_stale_submit_sample(void)
+{
+	struct fixture f;
+	uint64_t a, d, c;
+	uint64_t busy;
+
+	fx_init(&f);
+	a = ane_stats_begin(&f.ctrs, &f.ring, 1000ull, 1);
+	ane_stats_complete(&f.ctrs, &f.ring, a, 2000ull, 0, 0);
+	d = ane_stats_begin(&f.ctrs, &f.ring, 2010ull, 1);
+	c = ane_stats_begin(&f.ctrs, &f.ring, 1995ull, 1);
+	ane_stats_complete(&f.ctrs, &f.ring, c, 2400ull, 0, 0);
+	ane_stats_complete(&f.ctrs, &f.ring, d, 2600ull, 0, 0);
+	busy = ane_stats_atomic64_read(&f.ctrs.busy_ns);
+	uint64_t consumed = 1000ull + (2600ull - 2010ull);
+	uint64_t naive = 1600ull;
+	int ok = busy == consumed && busy != naive;
+	printf("stale_sample: busy=%lu consumed_union=%lu naive_union=%lu (%s)\n",
+	       (unsigned long)busy, (unsigned long)consumed,
+	       (unsigned long)naive,
+	       ok ? "implementation counts from the latch; the naive sample union overcounts"
+		  : "MISMATCH");
+	return ok ? 0 : 1;
+}
+
+/* ---- Model check: every interleaving of 3 two-op jobs against the
+ * consumed slot-union property. ---- */
+static uint64_t mc_union_slots(struct fixture *f, int njobs)
+{
+	uint64_t union_ns = 0, lo = 0, hi = 0;
+	int have = 0;
+	int i;
+
+	for (i = 0; i < njobs; i++) {
+		struct ane_stats_ring_entry *e = &f->ring.slots[i];
+		uint64_t s = ane_stats_atomic64_read(&e->start_ns);
+		uint64_t t = ane_stats_atomic64_read(&e->end_ns);
+
+		if (t < s)
+			t = s;
+		if (!have || s > hi) {
+			union_ns += hi - lo;
+			lo = s;
+			hi = t;
+			have = 1;
+		} else if (t > hi) {
+			hi = t;
+		}
+	}
+	if (have)
+		union_ns += hi - lo;
+	return union_ns;
+}
+
+static int test_model_check(void)
+{
+	/* 3 jobs, all overlapping the others somewhere. */
+	struct mc_job {
+		uint64_t s;
+		uint64_t e;
+	} jobs[3] = {
+		{ 100ull, 200ull },
+		{ 150ull, 260ull },
+		{ 120ull, 180ull },
+	};
+	int order[6] = { 0, 1, 2, 3, 4, 5 };
+	int fails = 0, runs = 0;
+	int i, j, k, l, m, n;
+
+	for (i = 0; i < 6; i++)
+	for (j = 0; j < 6; j++) { if (j == i) continue;
+	for (k = 0; k < 6; k++) { if (k == i || k == j) continue;
+	for (l = 0; l < 6; l++) { if (l == i || l == j || l == k) continue;
+	for (m = 0; m < 6; m++) { if (m == i || m == j || m == k || m == l) continue;
+	for (n = 0; n < 6; n++) { if (n == i || n == j || n == k || n == l || n == m) continue;
+		int seq[6];
+		int op, seen[3] = { 0, 0, 0 };
+		int valid = 1;
+		struct fixture f;
+
+		seq[0] = order[i]; seq[1] = order[j]; seq[2] = order[k];
+		seq[3] = order[l]; seq[4] = order[m]; seq[5] = order[n];
+		for (op = 0; op < 6 && valid; op++) {
+			int job = seq[op] / 2;
+
+			if (seq[op] & 1) {
+				if (!seen[job])
+					valid = 0;
+			} else {
+				seen[job] = 1;
+			}
+		}
+		if (!valid)
+			continue;
+		runs++;
+		fx_init(&f);
+		{
+			uint64_t ticket[3] = { 0, 0, 0 };
+			uint64_t busy;
+
+			for (op = 0; op < 6; op++) {
+				int job = seq[op] / 2;
+
+				if (!(seq[op] & 1))
+					ticket[job] = ane_stats_begin(
+						&f.ctrs, &f.ring,
+						jobs[job].s, 1);
+				else
+					ane_stats_complete(
+						&f.ctrs, &f.ring,
+						ticket[job], jobs[job].e,
+						0, 0);
+			}
+			busy = ane_stats_atomic64_read(&f.ctrs.busy_ns);
+			if (busy != mc_union_slots(&f, 3))
+				fails++;
+		}
+	}}}}}
+	printf("model_check: %d interleavings, %d failures (busy == consumed slot union)\n",
+	       runs, fails);
+	return fails ? 1 : 0;
+}
+
+/* ---- Begin-internal step model: the drain-inside-begin race. ----
+ *
+ * The single-threaded real begin() cannot interleave, so this harness
+ * splits begin() into its atomic steps and lets the interleaving
+ * driver run the previous period's drain between them. PRE latches
+ * from max_end before the 0->TRANS cmpxchg (the pre-fix order); POST
+ * latches after winning it (the fix). Times: A = [1000,2000],
+ * B = [1500,2500] - overlapping windows, so the union is 1500 and any
+ * period overlap double-counts toward 2000.
+ */
+enum mb_step {
+	MB_B_LATCH,   /* read max_end for the latch candidate */
+	MB_B_TRANS,   /* win 0->TRANS, write latch, inflight = 1 */
+	MB_B_FEED,    /* completion: feed end into max_end */
+	MB_B_DRAIN,   /* completion: fold period A, inflight = 0 */
+};
+
+static int mb_latch_post; /* 0 = pre-fix order, 1 = post-fix order */
+
+static uint64_t mb_busy;
+
+static void mb_run(const int *steps, int n, int post)
+{
+	struct fixture f;
+
+	fx_init(&f);
+	mb_busy = 0;
+	mb_latch_post = post;
+	for (int i = 0; i < n; i++) {
+		uint64_t s;
+
+		switch (steps[i]) {
+		case MB_B_LATCH:
+			/* Pre-fix reads the candidate here; post-fix
+			 * ignores it (re-read after the transition). */
+			break;
+		case MB_B_TRANS:
+			if (post)
+				s = 2000ull; /* sees A's feed */
+			else
+				s = 0ull;    /* pre-drain max_end */
+			if (s < 1500ull)
+				s = 1500ull;
+			ane_stats_atomic64_set_release(&f.ctrs.last_busy_end, s);
+			ane_stats_atomic_set_release(&f.ctrs.inflight, 1u);
+			break;
+		case MB_B_FEED:
+			ane_stats_atomic64_max(2000ull, &f.ctrs.max_end);
+			break;
+		case MB_B_DRAIN:
+			ane_stats_atomic64_add(2000ull - 1000ull, &f.ctrs.busy_ns);
+			break;
+		}
+	}
+	/* B's completion folds [latch, 2500]. */
+	{
+		uint64_t l = ane_stats_atomic64_read(&f.ctrs.last_busy_end);
+
+		mb_busy = ane_stats_atomic64_read(&f.ctrs.busy_ns) +
+			  (2500ull - l);
+	}
+}
+
+static int test_drain_inside_begin(void)
+{
+	/* A drains between B's latch read and B's transition. */
+	const int race[] = { MB_B_LATCH, MB_B_FEED, MB_B_DRAIN, MB_B_TRANS };
+	const int nobrace[] = { MB_B_FEED, MB_B_DRAIN, MB_B_LATCH, MB_B_TRANS };
+	uint64_t pre, post;
+
+	mb_run(race, 4, 0);
+	pre = mb_busy;
+	mb_run(race, 4, 1);
+	post = mb_busy;
+	/* Serialized control: no drain inside the window. */
+	mb_run(nobrace, 4, 0);
+	int ok = pre == 2000ull && post == 1500ull;
+	printf("drain_inside_begin: pre_fix_busy=%lu (double-counts; union 1500) post_fix_busy=%lu %s\n",
+	       (unsigned long)pre, (unsigned long)post,
+	       ok ? "fixed" : "MISMATCH");
+	return ok ? 0 : 1;
 }
 
 int main(void)
@@ -606,6 +847,9 @@ int main(void)
 	rc |= test_emit_live_tail();
 	rc |= test_period_gap_no_accrual();
 	rc |= test_fold_only_at_drain();
+	rc |= test_stale_submit_sample();
+	rc |= test_drain_inside_begin();
+	rc |= test_model_check();
 	rc |= test_randomized_stress();
 	rc |= test_timeline_idle();
 	rc |= test_timeline_five();

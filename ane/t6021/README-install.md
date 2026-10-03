@@ -248,7 +248,13 @@ bisection only.
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
 | `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
 | `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
-| `trace_td` | `0` | rtclient | Runtime switch (0644). 1 records a read-only timeline of each CALL (ack, each new value of the last-taken-TD word, the IO_T2H events, the finish) in debugfs `ane_t6021/trace_td`; each switch to 1 empties it. The TD word is read only while the ANE pmgr PS words read 0x3ff. 0 leaves the CALL path unchanged. |
+| `trace_td` | `0` | rtclient | Runtime switch (0644). 1 records a read-only timeline of each CALL (ack, each new value of the last-taken-TD word, the IO_T2H events, the finish) in debugfs `ane_t6021/trace_td`; each switch to 1 empties it. The TD word is read only while the ANE pmgr PS words read 0x3ff, and never with `dyn_pg=1`. 0 leaves the CALL path unchanged. |
+| `dyn_pg` | `0` | rtclient | Lab, selene 13.5 (T602x) only; probe refuses it on other SoCs. 1 sends `SET_DYNAMIC_POWERGATE` (0x2d) = 1 once after CONFIG_GET, so the firmware turns the compute islands (td, base, set1-4) off between jobs. The driver keeps its runtime-PM reference. Unproven on hardware: see receipts/2026-10-03-t6021-dynpg. |
+
+With `stats=1`, T602x probe also creates debugfs `ane_t6021/ane_pg_state`
+(0400). Each read prints the seven ANE PS words that `trace_td` checks
+(`ane_sys_mpm`, `ane_td`, `ane_base`, `ane_set1`..`ane_set4`), one
+`name value` line each. ACTUAL is bits 7:4 (0xf = on).
 
 Lab knobs that stayed at their inert values in every proven run are
 deleted outright, not kept at 0: `fw_diag_marker`, `fw_load_stamp_base`,

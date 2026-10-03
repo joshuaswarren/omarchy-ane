@@ -1,0 +1,279 @@
+{
+  "soc": "t8150",
+  "generation": {
+    "v": "H18",
+    "src": "S4"
+  },
+  "boards": [
+    {
+      "v": "V53AP (iPhone18,1, iPhone 17 Pro; ADT inspected)",
+      "src": "S1"
+    },
+    {
+      "v": "V54AP (iPhone18,2, iPhone 17 Pro Max)",
+      "src": "S3"
+    },
+    {
+      "v": "V57AP (iPhone18,3, iPhone 17)",
+      "src": "S3"
+    },
+    {
+      "v": "D23AP (iPhone18,4, iPhone Air)",
+      "src": "S3"
+    },
+    {
+      "v": "V159AP (iPhone18,5, iPhone 17e)",
+      "src": "S3"
+    }
+  ],
+  "sources": [
+    {
+      "id": "S1",
+      "kind": "ipsw-adt",
+      "ref": "iOS 27.0.1 (24A446), iPhone18,1 Restore IPSW member Firmware/all_flash/DeviceTree.V53AP.im4p; range-read and unwrapped to DeviceTree.v53ap.adt, 361112 bytes.",
+      "sha256": "5035f4fa421eac3e8e83b23962a4d680af6919e3909149e470731efb84fe97c1"
+    },
+    {
+      "id": "S2",
+      "kind": "buildmanifest",
+      "ref": "iOS 27.0.1 (24A446), BuildManifest.plist, 816945 bytes. BuildIdentity: ApChipID 0x8150, ApBoardID 0x0C, DeviceClass v53ap; ANE path Firmware/ane/h18_ane_fw_apollo_v5x.im4p.",
+      "sha256": "4e91acd9a28cb98b322c8e14904ff501da1406fa40fed3a2dfece9cf9299052d"
+    },
+    {
+      "id": "S3",
+      "kind": "community-row",
+      "ref": "Public IPSW catalog endpoint https://api.ipsw.me/v4/devices; response lists iPhone18,1-5 model names and boards, all platform t8150. Catalog response SHA-256 is over the 57790-byte JSON response.",
+      "sha256": "636ba1b8c0b34e374cb625e2dce9266ec58dcdfe5da986e12da162bf287ccf61"
+    },
+    {
+      "id": "S4",
+      "kind": "compiler-oracle",
+      "ref": "mil-hwx-compiler/docs/ane/generations.md lines 21-39, 55-56; reverse-engineered H18 association with A19/A19 Pro and T8150, subtype 10 / ISA 20. File SHA-256 from local checkout.",
+      "sha256": "cae6e16cc6f9afc6b18d3937e314448bc8fd1b45a56a86d9cf67dbe707930cd4"
+    },
+    {
+      "id": "S5",
+      "kind": "compiler-oracle",
+      "ref": "mil-hwx-compiler/receipts/2026-09-05-ane-community/anecompile-cross-target.json; measured compile targets h13-h17 and h11 only, no h18 request/result. File SHA-256 from local checkout.",
+      "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b"
+    },
+    {
+      "id": "S6",
+      "kind": "kernelcache-kext",
+      "ref": "iOS 27.0.1 (24A446) IPSW member kernelcache.release.v53; 23390449 bytes, no KBAG; IM4P bvx2 LZFSE payload expanded in memory to Mach-O fileset for PrelinkInfo inspection.",
+      "sha256": "594bb83a240f165b2f7494e442287c4957ac60b45034588cbffaf8bc7b88ae8f"
+    },
+    {
+      "id": "S7",
+      "kind": "ipsw-firmware",
+      "ref": "iOS 27.0.1 (24A446) IPSW member Firmware/ane/h18_ane_fw_apollo_v5x.im4p; member bytes read in memory only; no decryption.",
+      "sha256": "67514a8f50e130d39d842be28a22c969b087572eb4e42723c418f9ecfbdff12c"
+    }
+  ],
+  "marketing": {
+    "product": {
+      "v": "iPhone 17 Pro (A19 Pro), model iPhone18,1; catalog platform t8150; board V53AP.",
+      "src": "S3"
+    },
+    "chip_id": {
+      "v": "0x8150; BuildManifest DeviceClass v53ap, ApBoardID 0x0C.",
+      "src": "S2"
+    }
+  },
+  "ane": {
+    "node_count": {
+      "v": 1,
+      "src": "S1"
+    },
+    "compatible": {
+      "v": "ane,t8132exclave",
+      "src": "S1"
+    },
+    "reg": {
+      "v": [
+        "0x480000000+0x2000000",
+        "0x300700000+0x18000",
+        "0x300724000+0x4000",
+        "0x3003c0000+0x40000",
+        "0x211000000+0xff4000",
+        "0x3082c8000+0x4000"
+      ],
+      "src": "S1"
+    },
+    "interrupts": {
+      "v": [607, 620],
+      "src": "S1"
+    },
+    "ane_type": {
+      "v": 768,
+      "src": "S1"
+    },
+    "clock_gate_ids": {
+      "v": [331, 414],
+      "src": "S1"
+    },
+    "clock_gate_names": {
+      "v": ["ANE-SYS-V", "ANE-SYS-V-PMP"],
+      "src": "S1"
+    },
+    "clock_ids": {
+      "v": [318, 317, 357],
+      "src": "S1"
+    },
+    "power_gate_ids": {
+      "v": [331, 414],
+      "src": "S1"
+    },
+    "exclave_edk_service": {
+      "v": "com.apple.service.ANEExclave_EDK",
+      "src": "S1"
+    },
+    "iommu_parent": {
+      "v": "0x101000000f9",
+      "src": "S1"
+    },
+    "segment_ranges": {
+      "v": null,
+      "reason": "No segment-ranges property appears in DeviceTree.v53ap.adt."
+    }
+  },
+  "dart": {
+    "compatible": {
+      "v": "dart,t8110",
+      "src": "S1"
+    },
+    "reg": {
+      "v": [
+        "0x481800000+0xc000",
+        "0x481820000+0xc000",
+        "0x481840000+0xc000",
+        "0x481810000+0x4000"
+      ],
+      "src": "S1"
+    },
+    "interrupts": {
+      "v": [608],
+      "src": "S1"
+    },
+    "sid_raw_hex": {
+      "v": "000000000a0000000b0000000d0000000f000000",
+      "src": "S1"
+    },
+    "sid_count": {
+      "v": 16,
+      "src": "S1"
+    },
+    "vm_base": {
+      "v": "0x10000000000",
+      "src": "S1"
+    },
+    "vm_size": {
+      "v": "0x30000000000",
+      "src": "S1"
+    },
+    "page_size": {
+      "v": 16384,
+      "src": "S1"
+    },
+    "type": {
+      "v": "T8110 DART compatible (dart,t8110); no DART-gen3 compatible.",
+      "src": "S1"
+    }
+  },
+  "mailbox": {
+    "v": null,
+    "reason": "The ADT has no separate mailbox node or mailbox property for this ANE. The Apple H11ANEIn class indicates an IOKit interface but does not disclose its mailbox registers or Linux protocol."
+  },
+  "pmgr": {
+    "ane_domains": {
+      "v": [
+        "ANE_SYS at 0x300700210 (parent AFISOCNI3)",
+        "ANE_CPU at 0x30070c000 (parent ANE_SYS)",
+        "ANE_TDBASE at 0x30070c008 (parent ANE_SYS)",
+        "ANE_MPM at 0x30070c010 (parent ANE_SYS)"
+      ],
+      "src": "S1"
+    }
+  },
+  "firmware": {
+    "name": {
+      "v": "h18_ane_fw_apollo_v5x.im4p",
+      "src": "S2"
+    },
+    "size": {
+      "v": 1556505,
+      "src": "S7"
+    },
+    "sha256": {
+      "v": "67514a8f50e130d39d842be28a22c969b087572eb4e42723c418f9ecfbdff12c",
+      "src": "S7"
+    },
+    "payload_size": {
+      "v": 1556480,
+      "src": "S7"
+    },
+    "payload_sha256": {
+      "v": "616dcc616f3b7165363971c1ca7a198023c81f120a75ef764459d88668e1679f",
+      "src": "S7"
+    },
+    "encrypted": {
+      "v": false,
+      "src": "S7"
+    },
+    "encryption_evidence": {
+      "v": "Four DER fields (three IA5String plus one OCTET STRING), no KBAG; payload begins with ARM64 Mach-O magic cffaedfe. No decryption was performed.",
+      "src": "S7"
+    },
+    "macho": {
+      "v": "CPU type 0x0100000c, subtype 0x80000002, filetype MH_PRELOAD (5).",
+      "src": "S7"
+    }
+  },
+  "kext": {
+    "kernelcache_member": {
+      "v": "kernelcache.release.v53",
+      "src": "S6"
+    },
+    "kernelcache_size": {
+      "v": 23390449,
+      "src": "S6"
+    },
+    "kernelcache_sha256": {
+      "v": "594bb83a240f165b2f7494e442287c4957ac60b45034588cbffaf8bc7b88ae8f",
+      "src": "S6"
+    },
+    "kernelcache_unencrypted": {
+      "v": true,
+      "src": "S6"
+    },
+    "kernelcache_decompressed_size": {
+      "v": 78135296,
+      "src": "S6"
+    },
+    "kernelcache_decompressed_sha256": {
+      "v": "349c4692a6a85df0d396681f28d2d48dc04b95c6d60df0f94d84501e3d0c57e3",
+      "src": "S6"
+    },
+    "bundle": {
+      "v": "com.apple.driver.AppleH16ANEInterface, path /System/Library/Extensions/AppleH16ANEInterface.kext.",
+      "src": "S6"
+    },
+    "personality": {
+      "v": "t8132exclave; IOClass H11ANEIn; IOProviderClass AppleARMIODevice; IONameMatch ane,t8132exclave; IOExclaveProxy true.",
+      "src": "S6"
+    }
+  },
+  "driver_family": {
+    "v": "T8150 is H18 by the community HWX generation table, but its ANE uses ane,t8132exclave and Apple's AppleH16ANEInterface/H11ANEIn ExclaveProxy personality. This differs from M6/T8152's iop-ane,ascwrap-v8 and AppleASCWrapV8ANE path. Neither observation establishes a Linux driver or safe runtime protocol.",
+    "src": "S4"
+  },
+  "hwx_generation": {
+    "v": "Community table: H18 / A19-A19 Pro / T8150, CPU subtype 10, ANE ISA 20 (medium evidence); not a measured target result for this particular IPSW or T8152.",
+    "src": "S4"
+  },
+  "lab_cross_target": {
+    "v": "M1 Ultra cross-target receipt measured h13=4, h14=5, h15=6, h16=7, h17=9; no h18 request/result.",
+    "src": "S5"
+  },
+  "state": "data-only"
+}

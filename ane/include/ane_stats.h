@@ -174,8 +174,21 @@ struct ane_stats_counters {
 	ane_stats_atomic_u64	busy_ns;
 	ane_stats_atomic_u64	jobs;
 	ane_stats_atomic_u64	last_busy_end;
+	ane_stats_atomic_u64	max_end;
 	ane_stats_atomic_u32	inflight;
 };
+
+/* max_end tracks the latest completion sample fed to complete(); the
+ * draining completion folds against max(end_ns, max_end) so a stale
+ * sample on the last completer cannot truncate the period. */
+static inline void ane_stats_atomic64_max(uint64_t i,
+					  ane_stats_atomic_u64 *v)
+{
+	uint64_t old = ane_stats_atomic64_read(v);
+
+	while (i > old && !ane_stats_atomic64_try_cmpxchg(v, &old, i))
+		;
+}
 
 /*
  * Ring slot: seqlock-style per-slot sequence. Writer bumps seq at
@@ -257,13 +270,27 @@ static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 		if (cur == ANE_STATS_INFLIGHT_TRANS) {
 			cur = ane_stats_atomic_read(&ctrs->inflight);
 		} else if (!cur) {
+			uint64_t latch;
+
 			if (ane_stats_atomic_cmpxchg(&ctrs->inflight, 0u,
 						     ANE_STATS_INFLIGHT_TRANS) != 0u) {
 				cur = ane_stats_atomic_read(&ctrs->inflight);
 				continue;
 			}
+			/* Read max_end only now. The drainer of the
+			 * previous period fed its end sample into
+			 * max_end before its release store of
+			 * inflight = 0, and every other member fed
+			 * before its decrement. The fully ordered
+			 * cmpxchg above read that 0, so this read
+			 * sees every feed and the latch is never
+			 * below the previous fold end: periods cannot
+			 * overlap. */
+			latch = ane_stats_atomic64_read(&ctrs->max_end);
+			if (submit_ns > latch)
+				latch = submit_ns;
 			ane_stats_atomic64_set_release(&ctrs->last_busy_end,
-						       submit_ns);
+						       latch);
 			ane_stats_atomic_set_release(&ctrs->inflight, 1u);
 			break;
 		} else if (ane_stats_atomic_try_cmpxchg(&ctrs->inflight, &cur,
@@ -280,7 +307,12 @@ static inline uint64_t ane_stats_begin(struct ane_stats_counters *ctrs,
 	 * prints and a torn write is never visible. */
 	ane_stats_atomic64_set_release(&e->seq, 2ull * ticket - 1ull);
 	ane_stats_atomic64_set_release(&e->submit_ns, submit_ns);
-	ane_stats_atomic64_set_release(&e->start_ns, submit_ns);
+	/* start_ns is the busy-period start this submission is counted
+	 * from (the latch), not the caller's sample: a sample taken
+	 * before the transition can predate period entry, and the
+	 * union reference must use consumed values. */
+	ane_stats_atomic64_set_release(&e->start_ns,
+				       ane_stats_atomic64_read(&ctrs->last_busy_end));
 	ane_stats_atomic64_set_release(&e->end_ns, submit_ns);
 	ane_stats_atomic_set(&e->tasks, tasks);
 	ane_stats_atomic_set(&e->rc, (uint32_t)0xFFFFFFFFu); /* sentinel: not done */
@@ -304,6 +336,12 @@ static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 	struct ane_stats_ring_entry *e =
 		&ring->slots[(size_t)(ticket - 1ull) & ring->mask];
 	uint32_t cur = ane_stats_atomic_read(&ctrs->inflight);
+	uint64_t fold_end = 0ull;
+
+	/* Feed this completion's end sample before the transition: a
+	 * drainer can only observe inflight == 1 after every other
+	 * completer has fed, so the fold below sees the whole period. */
+	ane_stats_atomic64_max(end_ns, &ctrs->max_end);
 
 	for (;;) {
 		if (cur == ANE_STATS_INFLIGHT_TRANS) {
@@ -321,8 +359,15 @@ static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 						    ANE_STATS_INFLIGHT_TRANS) == 1u) {
 			uint64_t s = ane_stats_atomic64_read(&ctrs->last_busy_end);
 
-			if (end_ns > s)
-				ane_stats_atomic64_add(end_ns - s, &ctrs->busy_ns);
+			/* The period ends at the latest completion sample
+			 * in it, not at this caller's (possibly stale)
+			 * sample: every member fed max_end before the
+			 * drain could observe inflight == 1. */
+			fold_end = ane_stats_atomic64_read(&ctrs->max_end);
+			if (fold_end < end_ns)
+				fold_end = end_ns;
+			if (fold_end > s)
+				ane_stats_atomic64_add(fold_end - s, &ctrs->busy_ns);
 			ane_stats_atomic_set_release(&ctrs->inflight, 0u);
 			break;
 		} else {
@@ -334,9 +379,14 @@ static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
 	/* Commit ring slot with the even final seq 2*ticket. The value
 	 * must not depend on the current ring->head: concurrent
 	 * submissions (ane_t6021) advance it, and a head-derived seq
-	 * would mislabel the slot. */
+	 * would mislabel the slot. The drainer records the consumed
+	 * fold end, not its own sample, so the slot union equals
+	 * busy_ns exactly. */
 	ane_stats_smp_wmb();
-	ane_stats_atomic64_set_release(&e->end_ns, end_ns);
+	if (fold_end)
+		ane_stats_atomic64_set_release(&e->end_ns, fold_end);
+	else
+		ane_stats_atomic64_set_release(&e->end_ns, end_ns);
 	ane_stats_atomic_set(&e->rc, rc);
 	ane_stats_atomic64_set_release(&e->tmst, tmst);
 	ane_stats_smp_wmb();
@@ -377,10 +427,9 @@ static inline void ane_stats_complete(struct ane_stats_counters *ctrs,
  * Over the timeline the reported value is non-decreasing: folds only
  * add, and at a close the live tail equals the fold.
  */
-static inline uint64_t ane_stats_snapshot(const struct ane_stats_counters *ctrs,
-					  uint64_t now)
+static inline uint64_t ane_stats_snapshot(const struct ane_stats_counters *ctrs)
 {
-	uint64_t raw, busy;
+	uint64_t raw, busy = 0, now, s = 0;
 	uint32_t inflight;
 
 	for (;;) {
@@ -388,16 +437,22 @@ static inline uint64_t ane_stats_snapshot(const struct ane_stats_counters *ctrs,
 		if (inflight == ANE_STATS_INFLIGHT_TRANS)
 			continue; /* close/open in progress: spin it out */
 		raw = ane_stats_atomic64_read(&ctrs->busy_ns);
-		busy = raw;
 		if (inflight) {
-			uint64_t s = ane_stats_atomic64_read(&ctrs->last_busy_end);
-
-			if (now > s)
-				busy += now - s;
+			s = ane_stats_atomic64_read(&ctrs->last_busy_end);
 		}
-		if (ane_stats_atomic_read(&ctrs->inflight) != inflight ||
-		    ane_stats_atomic64_read(&ctrs->busy_ns) != raw)
+		now = ane_stats_now_ns();
+		/* Recheck after the timestamp: a fold that landed before
+		 * `now` changes busy_ns and retries; one that lands
+		 * after is genuinely later than `now`, so the value is
+		 * exact, never an overshoot. */
+		if (ane_stats_atomic64_read(&ctrs->busy_ns) != raw ||
+		    ane_stats_atomic_read(&ctrs->inflight) != inflight ||
+		    (inflight &&
+		     ane_stats_atomic64_read(&ctrs->last_busy_end) != s))
 			continue;
+		busy = raw;
+		if (inflight && now > s)
+			busy += now - s;
 		break;
 	}
 	return busy;
@@ -408,7 +463,7 @@ static inline ssize_t ane_stats_emit(char *buf,
 				     const struct ane_stats_counters *ctrs)
 {
 	return sysfs_emit(buf, "busy_ns %llu\njobs %llu\n",
-			  (unsigned long long)ane_stats_snapshot(ctrs, ane_stats_now_ns()),
+			  (unsigned long long)ane_stats_snapshot(ctrs),
 			  (unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
 }
 #else
@@ -417,7 +472,7 @@ static inline int ane_stats_emit(char *buf,
 {
 	return snprintf(buf, ANE_STATS_EMIT_MAX,
 			"busy_ns %llu\njobs %llu\n",
-			(unsigned long long)ane_stats_snapshot(ctrs, ane_stats_now_ns()),
+			(unsigned long long)ane_stats_snapshot(ctrs),
 			(unsigned long long)ane_stats_atomic64_read(&ctrs->jobs));
 }
 #endif /* __KERNEL__ */

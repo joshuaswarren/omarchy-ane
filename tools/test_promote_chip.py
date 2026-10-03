@@ -2,9 +2,10 @@
 """Offline checks for tools/promote_chip.py.
 
 Per chip: a flip edits exactly the flip file set, a second apply changes
-nothing, --check writes nothing, and the revert round-trips the tree
-byte-identically (the one CHANGELOG direction-log line excepted). One flipped
-tree must also pass the offline packaging suites (test_ane_dt, test_ane_m2).
+nothing, --check writes nothing, the flip-sensitive offline suites pass on the
+flipped tree, and the revert round-trips the tree byte-identically (the one
+CHANGELOG direction-log line excepted). The tree is a copy of the working tree,
+so this runs the same in a checkout and in a git archive extraction.
 No network and no module loads; needs dtc and fdtoverlay (test_ane_dt).
 """
 from importlib.machinery import SourceFileLoader
@@ -36,18 +37,14 @@ def flip_files(chip):
 
 
 def make_tree():
-    tmp = Path(tempfile.mkdtemp())
-    archive = subprocess.run(["git", "-C", str(repo), "archive", "HEAD"],
-                             check=True, capture_output=True).stdout
-    subprocess.run(["tar", "-x", "-C", str(tmp)], input=archive, check=True)
-    # the script is live even before it is committed
-    shutil.copy(repo / "tools/promote_chip.py", tmp / "tools/promote_chip.py")
+    tmp = Path(tempfile.mkdtemp()) / "tree"
+    shutil.copytree(repo, tmp, ignore=shutil.ignore_patterns(".git"))
     return tmp
 
 
 def tree(root):
     return {p.relative_to(root).as_posix(): p.read_bytes()
-            for p in Path(root).rglob("*") if p.is_file() and ".git" not in p.parts}
+            for p in Path(root).rglob("*") if p.is_file()}
 
 
 def run(root, chip, to, mode):
@@ -76,6 +73,14 @@ for chip in UNTESTED + DEFAULT_ON:
     p = run(base, chip, to, "--check")  # writes nothing
     assert p.returncode == 0 and tree(base) == after, (chip, p.stderr)
 
+    # the flip-sensitive offline suites on this chip's flipped tree
+    for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py", "test_t8112_kit.py",
+                  "test_ane_overlays.py", "test_promotion_check.py", "test_ane_smoke.py", "test_ane_intree.py"):
+        q = subprocess.run([sys.executable, str(base / "tools" / suite)],
+                           capture_output=True, text=True, cwd=base)
+        assert q.returncode == 0, (chip, to, suite, q.stdout[-2000:], q.stderr[-2000:])
+    assert tree(base) == after, (chip, "a suite wrote into the tree")
+
     p = run(base, chip, back, "--apply")
     assert p.returncode == 0, (chip, p.stderr)
     rt = tree(base)
@@ -85,17 +90,6 @@ for chip in UNTESTED + DEFAULT_ON:
         added = [l for l in rt["CHANGELOG.md"].decode().splitlines()
                  if l not in before["CHANGELOG.md"].decode().splitlines()]
         assert len(added) == 1 and f"{chip.upper()} (" in added[0], (chip, added)
-    print(f"promote_chip test: {chip} {to} -> {back}: round trip ok")
-
-    # the flip-sensitive offline suites on this chip's flipped tree
-    for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py",
-                  "test_ane_overlays.py", "test_ane_smoke.py"):
-        q = subprocess.run([sys.executable, str(base / "tools" / suite)],
-                           capture_output=True, text=True, cwd=base)
-        assert q.returncode == 0, (chip, suite, q.stdout[-2000:], q.stderr[-2000:])
-
-# The full pytest host suite on a flipped tree runs in the promotion gate
-# (dt-overlays CI stays hermetic); here: the flip-sensitive offline suites per
-# chip, already run above.
+    print(f"promote_chip test: {chip} {to} -> {back}: suites on the flipped tree, round trip ok")
 
 print(f"promote_chip test: ok ({len(UNTESTED) + len(DEFAULT_ON)} chips)")

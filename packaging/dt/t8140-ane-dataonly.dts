@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * Static ANE data for T8140 (j700, MacBook Neo, H17), from the macOS 27.0
+ * (26A428) IPSW DeviceTree.j700ap.adt (data/ane-soc/t8140.json, source A1).
+ * Data-only: no driver binds it, and omarchy-ane-dt refuses to apply it.
+ * The nodes are disabled and have no compatible.
+ *
+ * ADT /arm-io/ane: compatible ane,t8132exclave, ane-type 512, six reg
+ * windows, interrupts 655 and 668, iommu-parent = mapper-ane (stream 0) and
+ * mapper-ane-mpm (stream 11). ADT /arm-io/dart-ane: instances DARTLLT,
+ * DARTBRD, DARTBWR (reg[0..2], one node each here) and DAPFLLT (reg[3]
+ * 0x401810000+0x4000, not described), interrupt 656. ADT pmgr ANE_SYS:
+ * ps 0x300700290, inside the aurora pmgr block at 0x300700000. The ADT
+ * gives no trigger type; level-high follows the other aurora t8140 nodes.
+ * Not described (no ADT data): the ANE mailbox, the ANE_CPU power state
+ * (no_ps in this ADT), the window names, and segment-ranges (iBoot adds it).
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,data-only = "true";
+	compatible = "apple,j700";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@301000000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@300700000";
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ps_ane_sys: power-controller@290 {
+				reg = <0x290 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_sys";
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc";
+		__overlay__ {
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+			ane_dart0: iommu@401800000 {
+				reg = <0x4 0x01800000 0x0 0xc000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 656 4>;
+				status = "disabled";
+			};
+
+			ane_dart1: iommu@401820000 {
+				reg = <0x4 0x01820000 0x0 0x20000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 656 4>;
+				status = "disabled";
+			};
+
+			ane_dart2: iommu@401840000 {
+				reg = <0x4 0x01840000 0x0 0x20000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 656 4>;
+				status = "disabled";
+			};
+
+			ane@400000000 {
+				reg = <0x4 0x00000000 0x0 0x2000000>,
+				      <0x3 0x00700000 0x0 0x18000>,
+				      <0x3 0x00724000 0x0 0x4000>,
+				      <0x3 0x003c0000 0x0 0x30000>,
+				      <0x2 0x11000000 0x0 0xff4000>,
+				      <0x3 0x082c8000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 655 4>, <0 668 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>,
+					 <&ane_dart0 11>, <&ane_dart1 11>, <&ane_dart2 11>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+		};
+	};
+};

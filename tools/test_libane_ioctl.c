@@ -4,9 +4,11 @@
 #include <drm.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <malloc.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -254,18 +256,95 @@ static void run_case(const char *name, int abi, const char *path,
 	printf("  [%s] %s\n", failures == before ? "ok" : "FAIL", name);
 }
 
+/* A program file shorter than its header's size: libane loads it with the
+ * unread tail of nn->data zero (not leftover heap bytes) and the buffer
+ * 16 KiB aligned. M_PERTURB fills new heap memory with nonzero bytes, so a
+ * tail that nothing zeroes is seen on every run. */
+static void run_short_file(const char *path)
+{
+	const uint64_t cut = 64;
+	char tmp[] = "/tmp/test_libane_short-XXXXXX";
+	int before = failures;
+	struct ane_nn *nn;
+	uint8_t buf[4096];
+	uint64_t size, left;
+	FILE *in = fopen(path, "rb");
+	int fd = mkstemp(tmp);
+	FILE *out = fd < 0 ? NULL : fdopen(fd, "wb");
+	size_t got;
+
+	if (!in || !out) {
+		printf("FAIL short file: cannot copy %s\n", path);
+		failures++;
+		goto done;
+	}
+	if (fread(buf, 1, 0x1000, in) != 0x1000) {
+		printf("FAIL short file: %s has no 4 KiB header\n", path);
+		failures++;
+		goto done;
+	}
+	memcpy(&size, buf, sizeof(size)); /* struct anec: size comes first */
+	fwrite(buf, 1, 0x1000, out);
+	for (left = size - cut; left; left -= got) {
+		got = fread(buf, 1, left < sizeof(buf) ? left : sizeof(buf), in);
+		if (!got)
+			break;
+		fwrite(buf, 1, got, out);
+	}
+	fclose(out);
+	out = NULL;
+
+	abi_major = ANE_ABI_MAJOR;
+	mallopt(M_PERTURB, 0x5a);
+	nn = ane_init(tmp);
+	mallopt(M_PERTURB, 0);
+	if (!nn) {
+		printf("FAIL short file: init failed\n");
+		failures++;
+		goto done;
+	}
+	if ((uintptr_t)nn->data & 0x3fff) {
+		printf("FAIL short file: nn->data %p is not 16 KiB aligned\n",
+		       nn->data);
+		failures++;
+	}
+	for (uint64_t i = size - cut; i < size; i++) {
+		if (((uint8_t *)nn->data)[i]) {
+			printf("FAIL short file: byte %#llx past the file end is %#x\n",
+			       (unsigned long long)i, ((uint8_t *)nn->data)[i]);
+			failures++;
+			break;
+		}
+	}
+	ane_free(nn);
+done:
+	if (in)
+		fclose(in);
+	if (out)
+		fclose(out);
+	if (fd >= 0)
+		unlink(tmp);
+	printf("  [%s] ABI 1: short program file, zero tail\n",
+	       failures == before ? "ok" : "FAIL");
+}
+
 int main(int argc, char **argv)
 {
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
 	char path[512];
 
+	/* One stream, so libane's expected mmap errors print in order, above the
+	 * scenario that injected them, under any log collector (CI keeps stdout
+	 * and stderr apart and merges them out of order). */
 	setvbuf(stdout, NULL, _IOLBF, 0);
+	dup2(STDOUT_FILENO, STDERR_FILENO);
 	snprintf(path, sizeof(path), "%s/add/program-0.anec", dir);
 	run_case("ABI 2: load, exec and free", ANE_ABI_M2_MAJOR, path, 0);
 	run_case("ABI 2: first BO mmap fails", ANE_ABI_M2_MAJOR, path, 1);
 	run_case("ABI 2: third BO mmap fails", ANE_ABI_M2_MAJOR, path, 3);
 	run_case("ABI 1: load, submit and free", ANE_ABI_MAJOR, path, 0);
 	run_case("ABI 1: third BO mmap fails", ANE_ABI_MAJOR, path, 3);
+	run_short_file(path);
 	printf(failures ? "IOCTL-CHECK FAIL\n" : "IOCTL-CHECK PASS\n");
 	return failures != 0;
 }

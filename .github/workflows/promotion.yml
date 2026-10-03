@@ -3,15 +3,23 @@ name: promotion
 # The promotion flow with no person in the loop: judge the community rows,
 # open PRs for PROMOTE (untested chip) and REVERT (default-on chip) verdicts,
 # run the host tests, require the fresh verdict to still match, squash-merge,
-# and cut the patch release. A dry_run dispatch prints every step instead.
+# and cut the patch release. A dry_run dispatch prints the propose plan, runs
+# the gate's host tests on the dispatched ref, and gates and merges nothing.
 # Synthetic verdict fixtures are refused in the production repo.
+# For a PROMOTE whose passing row ran the kernel's own driver (target
+# aurora-dt), two jobs open the aurora-silicon/linux device-tree PR. aurora-plan
+# builds that tree's dtc and holds no credential: read-only GITHUB_TOKEN, none
+# kept by checkout. aurora-pr, on a fresh runner, builds nothing; its last step
+# alone gets the secret AURORA_PR_TOKEN (README "Promotion"). Without the
+# secret, or on a dry_run or synthetic dispatch, DRY_RUN=1 and it prints the
+# PR. Nothing waits on them.
 on:
   schedule:
     - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "print the propose/merge/release actions without doing them"
+        description: "print the propose plan and run the gate's host tests on this ref; open, merge and release nothing"
         type: boolean
         default: false
       synthetic:
@@ -72,6 +80,66 @@ jobs:
             python3 tools/promote_from_verdict.py propose ${{ inputs.dry_run && '--dry-run' || '' }}
           fi
 
+  aurora-plan:
+    needs: verdict
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: verdict
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison
+      - name: plan the aurora-dt change (no credential in this job; it builds the aurora tree)
+        id: plan
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          if ! python3 -c 'import json, sys; sys.exit(not any(c["verdict"] == "PROMOTE" and "aurora-dt" in c.get("targets", [])
+                                                               for c in json.load(open("verdict.json"))["chips"]))'; then
+            echo "aurora-plan: no PROMOTE chip with a passing in-tree row"; exit 0
+          fi
+          read -r repo base <<< "$(cd tools && python3 -c 'import promote_from_verdict as p; print(p.AURORA, p.AURORA_BASE)')"
+          tools/asahi-dtbs "$RUNNER_TEMP/aurora" "https://github.com/$repo" "$base"
+          export PATH="$RUNNER_TEMP/aurora/bin:$PATH"
+          python3 tools/promote_from_verdict.py aurora-plan --tree "$RUNNER_TEMP/aurora/linux" \
+            --out "$RUNNER_TEMP/aurora-plan.json" \
+            ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }} | tee "$RUNNER_TEMP/plan.log"
+          if grep -q '^PLANNED' "$RUNNER_TEMP/plan.log"; then
+            echo "plan=$(cat "$RUNNER_TEMP/aurora-plan.json")" >> "$GITHUB_OUTPUT"
+          fi
+
+  aurora-pr:
+    needs: aurora-plan
+    if: needs.aurora-plan.outputs.plan != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: open or update the aurora-silicon/linux PR from the plan (the only step with AURORA_PR_TOKEN)
+        env:
+          GH_TOKEN: ${{ secrets.AURORA_PR_TOKEN }}
+          DRY_RUN: ${{ (inputs.dry_run || inputs.synthetic || secrets.AURORA_PR_TOKEN == '') && '1' || '0' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PLAN: ${{ needs.aurora-plan.outputs.plan }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/aurora-plan.json"
+          [ "$DRY_RUN" = 0 ] || echo "aurora-pr: DRY_RUN=1 (dry_run, synthetic, or no AURORA_PR_TOKEN): print the PR, write nothing"
+          python3 tools/promote_from_verdict.py aurora-pr --plan "$RUNNER_TEMP/aurora-plan.json" \
+            ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }} \
+            $([ "$DRY_RUN" = 0 ] || echo --dry-run)
+
   gate:
     needs: propose
     runs-on: ubuntu-24.04
@@ -81,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev
-      - name: gate every auto-promotion PR (host tests, fresh verdict, squash-merge)
+      - name: gate every auto-promotion PR (host tests, fresh verdict, squash-merge); a dry run tests the dispatched ref and gates no PR
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,49 +157,44 @@ jobs:
         run: |
           git config user.name omarchy-ane-automation
           git config user.email 816217+joshuaswarren@users.noreply.github.com
-          : > merged.txt
-          echo "== phase 0: make check on the unflipped default checkout (discriminator)"
-          nproc
-          make -C tools check || { echo "phase-0 make check FAILED on the unflipped tree"; exit 1; }
-          for pr in $(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-                        --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number'); do
-            echo "== gate PR #$pr (phase 1: the stress-sensitive C suites run before the asahi-dtbs churn)"
-            git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
-            # the ane_stats stress reader (1200 jobs) and the libane ioctl
-            # fake-DRM mmap scenarios are timing-sensitive on 2-core runners:
-            # they failed 4/4 in this gate and 0/3 locally. One transparent retry.
-            make -C tools check || { sleep 10; make -C tools check; }
+          tools/asahi-dtbs "$RUNNER_TEMP/asahi"
+          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
+          host_suites() {
+            make -C tools check
             python3 tools/test_ane_dt.py
             python3 tools/test_ane_firmware_fetch.py
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
+            python3 tools/test_t8112_kit.py
+            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
             python3 tools/test_promotion_check.py
-            python3 tools/test_promote_chip.py
+            python3 tools/test_ane_intree.py
+            python3 tools/test_aurora_dt.py
             python3 tools/test_ane_smoke.py
             python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
             python3 tools/gen_coverage_table.py --check
             make -C tools ane-run
-            python3 -m pytest -q tests tools \
-              --ignore=tools/test_promote_chip.py \
-              --ignore=tools/test_promote_from_verdict.py
-            git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
-          done
-          tools/asahi-dtbs "$RUNNER_TEMP/asahi"
-          export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
-          for pr in $(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
-                        --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number'); do
-            echo "== gate PR #$pr (phase 2: the device-tree suites, then the fresh-verdict merge)"
+          }
+          : > "$RUNNER_TEMP/merged.txt"
+          prs=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+                  --jq '.[] | select(any(.labels[]; .name == "auto-promotion")) | .number')
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "== dry run: host suites on $(git rev-parse --short HEAD); open auto-promotion PRs, not gated:" ${prs:-none}
+            host_suites
+            prs=
+          fi
+          for pr in $prs; do
+            echo "== gate PR #$pr"
             git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
-            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_m2.py
-            python3 tools/test_t8112_kit.py
-            ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
+            host_suites
             out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" \
               ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }})
             echo "$out"
-            grep '^MERGED' <<<"$out" | cut -f2- >> merged.txt || true
+            grep '^MERGED' <<<"$out" | cut -f2- >> "$RUNNER_TEMP/merged.txt" || true
             git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
           done
           {
             echo 'merged<<EOF'
-            cat merged.txt
+            cat "$RUNNER_TEMP/merged.txt"
             echo EOF
           } >> "$GITHUB_OUTPUT"
 
@@ -151,6 +214,7 @@ jobs:
         run: |
           git config user.name omarchy-ane-automation
           git config user.email 816217+joshuaswarren@users.noreply.github.com
+          git pull --rebase -q origin main
           while read -r chip sha; do
             [ -n "$chip" ] || continue
             python3 tools/promote_from_verdict.py release --chip "$chip" --merge-sha "$sha"

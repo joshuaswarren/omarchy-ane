@@ -113,8 +113,8 @@ int ane_dart_init(struct ane_device *ane)
 		dart->irq = irq;
 		dart->sid = args.args_count ? args.args[0] : 0;
 		dart->masked = false;
-		dev_info(ane->dev, "DART containment: %pOFn sid %u irq %d\n",
-			 args.np, dart->sid, irq);
+		dev_dbg(ane->dev, "DART containment: %pOFn sid %u irq %d\n",
+			args.np, dart->sid, irq);
 		put_device(&pdev->dev);
 		of_node_put(args.np);
 	}

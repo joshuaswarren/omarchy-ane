@@ -10,6 +10,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
@@ -69,6 +70,31 @@ module_param(stats, bool, 0444);
 MODULE_PARM_DESC(stats,
 		 "Enable ane_stats sysfs and ane_timeline debugfs (default 1; 0 = hot path is a single predictable branch and no files are created)");
 
+/*
+ * Runtime PM autosuspend delay. The ANE power domains and its DARTs go
+ * off this long after the last file open, ioctl or close, and the next
+ * one powers them up again through ane_runtime_resume. 0 keeps the
+ * device powered while the driver is bound. The live value is
+ * power/autosuspend_delay_ms; "on" in power/control holds the device
+ * powered without a reload.
+ */
+static int autosuspend_ms = 1500;
+module_param(autosuspend_ms, int, 0444);
+MODULE_PARM_DESC(autosuspend_ms,
+		 "Power the ANE off this many ms after its last use (default 1500; 0 = keep it powered while the driver is bound)");
+
+/*
+ * 1 (default): BO_INIT maps a buffer object with one iommu_map_sg, so
+ * apple-dart invalidates the TLB of each DART once per BO. 0: one
+ * iommu_map, and one TLB invalidate per DART, per page (the 458 MB
+ * encoder program: 27,955 pages x 3 DARTs = 83,865 invalidates). Read
+ * once per BO_INIT; BOs mapped either way unmap the same way.
+ */
+static bool map_batch = true;
+module_param(map_batch, bool, 0644);
+MODULE_PARM_DESC(map_batch,
+		 "BO_INIT DART mapping: 1 = one TLB sync per buffer object (default); 0 = one TLB sync per page");
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -91,62 +117,44 @@ static struct ane_bo *bo_lookup(struct drm_file *file, u32 handle)
 	return to_bo(gem);
 }
 
-/*
- * Buffers are mapped and unmapped only through the kernel-owned IOMMU
- * domain the device was attached to by its providers. apple-dart
- * programs every DART in the device's "iommus" list (TTBRs, stream
- * setup, invalidation and fault IRQs are all provider-owned);
- * iommu_unmap() flushes through the provider before returning, so pages
- * may be reclaimed once it succeeds.
- */
-static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
+/* Unmap every valid PTE in [start, end); returns how many. */
+static unsigned long ane_iommu_clear_range(struct ane_device *ane, u64 start,
+					   u64 end)
 {
-	int err;
+	unsigned long cleared = 0;
 
-	lockdep_assert_held(&ane->engine_lock);
-	if (bo->mm)
-		return -EBUSY;
-
-	bo->mm = kzalloc(sizeof(*bo->mm), GFP_KERNEL);
-	if (!bo->mm)
-		return -ENOMEM;
-
-	mutex_lock(&ane->iommu_lock);
-
-	/* reserve area from ANE address space */
-	err = drm_mm_insert_node_generic(&ane->mm, bo->mm,
-					 bo->npages << ane->shift,
-					 1UL << ane->shift, 0, 0);
-	if (err < 0) {
-		dev_err(ane->dev, "out of ANE space: %d\n", err);
-		goto unlock;
+	for (u64 iova = start; iova < end; iova += 1UL << ane->shift) {
+		if (!iommu_iova_to_phys(ane->domain, iova))
+			continue;
+		iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+		cleared++;
 	}
+	return cleared;
+}
 
-	bo->iova = bo->mm->start;
+/*
+ * Every PTE inside a reserved drm_mm node must be ours-or-absent:
+ * scratch drains reserve before mapping and wedge-preserved nodes stay
+ * inserted. A VALID PTE in a just-reserved range is therefore a stray
+ * from a torn-down session or a lost unmap. Both map paths clear it once
+ * and retry instead of poisoning every later BO_INIT until reload
+ * (m1-test-host 2026-09-25: dart_init_pte -EEXIST at 0x4000 for the rest
+ * of the session).
+ */
+static int ane_iommu_map_each(struct ane_device *ane, struct ane_bo *bo,
+			      int prot)
+{
+	int err = 0;
 
-	/* map into ANE address space */
 	for (u32 i = 0; i < bo->npages; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
-		int prot = IOMMU_READ | IOMMU_WRITE;
 		bool healed = false;
-		int prot_cache = map_mode & 1;
 
 retry:
-		if (prot_cache)
-			prot |= IOMMU_CACHE;
 		err = iommu_map(ane->domain, iova, page_to_phys(bo->pages[i]),
 				1UL << ane->shift, prot, GFP_KERNEL);
 		if (err < 0) {
 			dev_err(ane->dev, "iommu_map failed at 0x%llx", iova);
-			/* Every PTE inside a reserved drm_mm node must be
-			 * ours-or-absent: scratch drains reserve before
-			 * mapping and wedge-preserved nodes stay inserted.
-			 * A VALID PTE in a just-reserved range is therefore
-			 * a stray from a torn-down session or a lost
-			 * unmap. Clear it once and retry instead of
-			 * poisoning every later BO_INIT until reload
-			 * (m1-test-host 2026-09-25: dart_init_pte -EEXIST at
-			 * 0x4000 for the rest of the session). */
 			if (err == -EEXIST && !healed &&
 			    iommu_iova_to_phys(ane->domain, iova)) {
 				dev_warn(ane->dev,
@@ -170,26 +178,115 @@ retry:
 						bo->iova + (i << ane->shift),
 						unmapped);
 			}
-			drm_mm_remove_node(bo->mm);
-			bo->iova = 0;
 			break;
 		}
 	}
+	return err;
+}
 
-	mutex_unlock(&ane->iommu_lock);
+/*
+ * iommu_map_sg writes the PTEs of each physically contiguous run and
+ * syncs the DART TLBs once for the whole range. On failure it has
+ * already unmapped everything it mapped, so after an -EEXIST every valid
+ * PTE left in the range is a stray.
+ */
+static int ane_iommu_map_batch(struct ane_device *ane, struct ane_bo *bo,
+			       int prot)
+{
+	size_t size = (size_t)bo->npages << ane->shift;
+	struct sg_table sgt;
+	unsigned long strays;
+	ssize_t mapped;
+	int err;
 
-	if (err < 0) {
-		kfree(bo->mm);
-		bo->mm = NULL;
+	err = sg_alloc_table_from_pages(&sgt, bo->pages, bo->npages, 0, size,
+					GFP_KERNEL);
+	if (err)
 		return err;
+
+	mapped = iommu_map_sgtable(ane->domain, bo->iova, &sgt, prot);
+	if (mapped == -EEXIST) {
+		strays = ane_iommu_clear_range(ane, bo->iova, bo->iova + size);
+		if (strays) {
+			dev_warn(ane->dev,
+				 "cleared %lu stray DART PTE(s) in %#llx+%#zx (no node owns them)\n",
+				 strays, bo->iova, size);
+			mapped = iommu_map_sgtable(ane->domain, bo->iova, &sgt,
+						   prot);
+		}
+	}
+	sg_free_table(&sgt);
+
+	/*
+	 * A short map would hand out a BO whose tail has no PTEs. The
+	 * mapped part may have holes, so clear page by page, not with one
+	 * range unmap that stops at the first hole.
+	 */
+	if (mapped >= 0 && (size_t)mapped != size) {
+		ane_iommu_clear_range(ane, bo->iova, bo->iova + size);
+		mapped = -EIO;
 	}
 
+	if (mapped < 0) {
+		dev_err(ane->dev, "iommu_map_sg failed at %#llx+%#zx: %zd\n",
+			bo->iova, size, mapped);
+		return mapped;
+	}
 	return 0;
+}
+
+/*
+ * Buffers are mapped and unmapped only through the kernel-owned IOMMU
+ * domain the device was attached to by its providers. apple-dart
+ * programs every DART in the device's "iommus" list (TTBRs, stream
+ * setup, invalidation and fault IRQs are all provider-owned);
+ * iommu_unmap() flushes through the provider before returning, so pages
+ * may be reclaimed once it succeeds.
+ */
+static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
+{
+	int prot = IOMMU_READ | IOMMU_WRITE;
+	int err;
+
+	lockdep_assert_held(&ane->engine_lock);
+	if (bo->mm)
+		return -EBUSY;
+
+	if (map_mode & 1)
+		prot |= IOMMU_CACHE;
+
+	bo->mm = kzalloc(sizeof(*bo->mm), GFP_KERNEL);
+	if (!bo->mm)
+		return -ENOMEM;
+
+	mutex_lock(&ane->iommu_lock);
+
+	/* reserve area from ANE address space */
+	err = drm_mm_insert_node_generic(&ane->mm, bo->mm,
+					 bo->npages << ane->shift,
+					 1UL << ane->shift, 0, 0);
+	if (err < 0) {
+		dev_err(ane->dev, "out of ANE space: %d\n", err);
+		goto unlock;
+	}
+
+	bo->iova = bo->mm->start;
+
+	if (READ_ONCE(map_batch))
+		err = ane_iommu_map_batch(ane, bo, prot);
+	else
+		err = ane_iommu_map_each(ane, bo, prot);
+	if (err < 0) {
+		drm_mm_remove_node(bo->mm);
+		bo->iova = 0;
+	}
 
 unlock:
 	mutex_unlock(&ane->iommu_lock);
-	kfree(bo->mm);
-	bo->mm = NULL;
+	if (err < 0) {
+		kfree(bo->mm);
+		bo->mm = NULL;
+	}
 	return err;
 }
 
@@ -612,10 +709,17 @@ static ssize_t reset_store(struct device *dev, struct device_attribute *attr,
 	struct ane_device *ane = dev_get_drvdata(dev);
 	int err = 0;
 
+	/* Recovery power-cycles the partitions and then writes the engine:
+	 * hold a reference so autosuspend cannot gate it in between. */
+	err = pm_runtime_resume_and_get(dev);
+	if (err < 0)
+		return err;
 	mutex_lock(&ane->engine_lock);
 	if (!ane->removed)
 		err = ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 	if (err)
 		return err;
 	return count;
@@ -712,7 +816,8 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	if (err < 0)
 		return err;
 
-	pm_runtime_put(ane->dev);
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 	return 0;
 }
 
@@ -764,8 +869,10 @@ static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
  * from before DRM_ACCEL_FOPS landed drm_ioctl defaults), so this is a
  * belt-and-suspenders gate on top of the existing ioctls table.
  */
-static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
-				   unsigned long arg)
+static long ane_drm_ioctl(struct file *file, unsigned int cmd,
+			  unsigned long arg,
+			  long (*dispatch)(struct file *, unsigned int,
+					   unsigned long))
 {
 	struct drm_file *filp = file->private_data;
 	struct drm_device *drm = filp->minor->dev;
@@ -792,10 +899,49 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	if (err < 0)
 		return err;
 
-	err = drm_ioctl(file, cmd, arg);
+	err = dispatch(file, cmd, arg);
 
-	pm_runtime_put(ane->dev);
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 
+	return err;
+}
+
+static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
+				   unsigned long arg)
+{
+	return ane_drm_ioctl(file, cmd, arg, drm_ioctl);
+}
+
+/* 32-bit callers get the same command filter and PM reference. */
+#ifdef CONFIG_COMPAT
+static long ane_drm_compat_ioctl(struct file *file, unsigned int cmd,
+				 unsigned long arg)
+{
+	return ane_drm_ioctl(file, cmd, arg, drm_compat_ioctl);
+}
+#else
+#define ane_drm_compat_ioctl NULL
+#endif
+
+/*
+ * Hold power across the close: drm_release frees the file's BOs, and
+ * each unmap flushes the DART TLBs. With the device suspended, apple-dart
+ * would power the DARTs up and down again for every page. The device
+ * reference outlives drm_release, which can drop the last drm_device
+ * reference and free ane.
+ */
+static int ane_drm_release(struct inode *inode, struct file *file)
+{
+	struct drm_file *priv = file->private_data;
+	struct device *dev = get_device(priv->minor->dev->dev);
+	int err;
+
+	pm_runtime_get_sync(dev);
+	err = drm_release(inode, file);
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
+	put_device(dev);
 	return err;
 }
 
@@ -845,9 +991,9 @@ static const struct file_operations ane_drm_fops = {
 	.owner = THIS_MODULE,
 	.fop_flags = FOP_UNSIGNED_OFFSET,
 	.open = accel_open,
-	.release = drm_release,
+	.release = ane_drm_release,
 	.unlocked_ioctl = ane_drm_unlocked_ioctl,
-	.compat_ioctl = drm_compat_ioctl,
+	.compat_ioctl = ane_drm_compat_ioctl,
 	.poll = drm_poll,
 	.read = drm_read,
 	.llseek = noop_llseek,
@@ -904,17 +1050,11 @@ static int ane_iommu_domain_init(struct ane_device *ane)
 static void ane_iommu_purge_stale(struct ane_device *ane)
 {
 	struct drm_mm_node *hole;
-	u64 start, end, iova;
+	u64 start, end;
 	unsigned long stale = 0;
 
-	drm_mm_for_each_hole(hole, &ane->mm, start, end) {
-		for (iova = start; iova < end; iova += 1UL << ane->shift) {
-			if (!iommu_iova_to_phys(ane->domain, iova))
-				continue;
-			iommu_unmap(ane->domain, iova, 1UL << ane->shift);
-			stale++;
-		}
-	}
+	drm_mm_for_each_hole(hole, &ane->mm, start, end)
+		stale += ane_iommu_clear_range(ane, start, end);
 	if (stale)
 		dev_warn(ane->dev,
 			 "cleared %lu stale DART mappings from a previous instance\n",
@@ -1168,9 +1308,13 @@ static int ane_platform_probe(struct platform_device *pdev)
 	 * supplier links for several), and .runtime_resume then does the
 	 * first engine MMIO. Marking the device active up front skips that
 	 * resume, and on T6001 the engine window external-aborts while its
-	 * partition is gated. The reference is held until remove: the device
-	 * stays powered for the whole lifetime, autosuspend stays disabled.
+	 * partition is gated. Probe drops its reference at the end and the
+	 * device autosuspends autosuspend_ms after its last use; a negative
+	 * delay (autosuspend_ms=0) makes the PM core hold it powered.
 	 */
+	pm_runtime_set_autosuspend_delay(dev,
+					 autosuspend_ms > 0 ? autosuspend_ms : -1);
+	pm_runtime_use_autosuspend(dev);
 	pm_runtime_enable(dev);
 	err = pm_runtime_resume_and_get(dev);
 	if (err < 0)
@@ -1191,6 +1335,8 @@ static int ane_platform_probe(struct platform_device *pdev)
 
 	dev_info(dev, "loaded ane\n");
 
+	pm_runtime_mark_last_busy(dev);
+	pm_runtime_put_autosuspend(dev);
 	return 0;
 
 unregister:
@@ -1199,6 +1345,7 @@ put_pm:
 	pm_runtime_put_noidle(dev);
 disable_pm:
 	pm_runtime_disable(dev);
+	pm_runtime_dont_use_autosuspend(dev);
 	drm_mm_takedown(&ane->mm);
 detach_genpd:
 	ane_boost_exit(ane);
@@ -1210,6 +1357,10 @@ static void ane_platform_remove(struct platform_device *pdev)
 {
 	struct ane_device *ane = platform_get_drvdata(pdev);
 	struct ane_bo *bo, *tmp;
+
+	/* Powered and pinned for the teardown: the unmaps below flush the
+	 * DART TLBs, and no autosuspend may race the genpd detach. */
+	pm_runtime_get_sync(ane->dev);
 
 	mutex_lock(&ane->engine_lock);
 	ane->removed = true;
@@ -1233,6 +1384,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane_detach_genpd(ane);
 
 	pm_runtime_disable(ane->dev);
+	pm_runtime_dont_use_autosuspend(ane->dev);
 	pm_runtime_put_noidle(ane->dev);
 	mutex_unlock(&ane->engine_lock);
 }
@@ -1269,13 +1421,13 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		struct resource *eng = platform_get_resource_byname(
 			to_platform_device(dev), IORESOURCE_MEM, "engine");
 
-		dev_info(dev,
-			 "ANE-resume: genpd raise complete; SET window probe next\n");
+		dev_dbg(dev,
+			"ANE-resume: genpd raise complete; SET window probe next\n");
 		ane_ps_act_probe(ane);
 
-		dev_info(dev,
-			 "ANE-resume: SET window probed; first engine access next (TM_TQ_EN tm+0x0c @ engine %pr + 0x2000c)\n",
-			 eng);
+		dev_dbg(dev,
+			"ANE-resume: SET window probed; first engine access next (TM_TQ_EN tm+0x0c @ engine %pr + 0x2000c)\n",
+			eng);
 	}
 
 	ane_tm_enable(ane, first);
@@ -1283,7 +1435,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 	/* First enable is the engine's fresh signature; recovery compares
 	 * its post-reset status against it. */
 	if (!ane->tm_status_known) {
-		dev_info(dev, "ANE-resume: enable writes survived; TM_STATUS read next\n");
+		dev_dbg(dev, "ANE-resume: enable writes survived; TM_STATUS read next\n");
 		ane->tm_status_fresh = ane_tm_status(ane);
 		ane->tm_status_known = true;
 		/* Linux-side pwrstate probe: ACTUAL nibbles read through
@@ -1291,7 +1443,7 @@ static int __maybe_unused ane_runtime_resume(struct device *dev)
 		 * raised. 0xffffff means the mapped window is the live
 		 * pmgr SET block with every word on; anything else names
 		 * the t6021 word layout to fix before promotion. */
-		dev_info(dev, "ANERD ps probe act=%#x\n", ane_ps_act(ane));
+		dev_dbg(dev, "ANERD ps probe act=%#x\n", ane_ps_act(ane));
 	}
 
 	return 0;
