@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * ane/h15 OPT-IN EXPERIMENTAL overlay for T6030 (M3 Pro) board device
+ * trees. Mirrors ane/h15/t8122-ane-experimental.dts; the engine and
+ * pmgr bases are MEASURED (ADT 27.0): engine 0x308000000+0x2000000,
+ * pmgr 0x350700000+0x18000. The ps word set is the same five words,
+ * the ANE_SYS word at +0x498 (parent LW20), the others at
+ * +0xc000..+0xc018. IRQ lines and DART reg are per the ADT order.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h15-experimental";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@351000000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@350700000/power-controller@498";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@350700000";
+		__overlay__ {
+			ps_ane_mpm: power-controller@c000 {
+				compatible = "apple,t6030-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_mpm";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_cpu: power-controller@c008 {
+				compatible = "apple,t6030-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_cpu";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_td: power-controller@c010 {
+				compatible = "apple,t6030-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_td";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_base: power-controller@c018 {
+				compatible = "apple,t6030-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_td>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@309800000 {
+				compatible = "apple,t6030-dart", "apple,t8110-dart";
+				reg = <0x3 0x09800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 577 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart1: iommu@309810000 {
+				compatible = "apple,t6030-dart", "apple,t8110-dart";
+				reg = <0x3 0x09810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 577 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart2: iommu@309820000 {
+				compatible = "apple,t6030-dart", "apple,t8110-dart";
+				reg = <0x3 0x09820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 577 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart3: iommu@309804000 {
+				compatible = "apple,t6030-dart", "apple,t8110-dart";
+				reg = <0x3 0x09804000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 577 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane: ane@308000000 {
+				compatible = "apple,t6030-ane";
+				reg-names = "engine", "pmgr";
+				reg = <0x3 0x08000000 0x0 0x2000000>,
+				      <0x3 0x50700000 0x0 0x18000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 559 4>, <0 558 4>, <0 561 4>, <0 560 4>, <0 576 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
+						<&ps_ane_cpu>, <&ps_ane_td>,
+						<&ps_ane_base>;
+				apple,ane-type = <0xc0>;
+				status = "okay";
+			};
+		};
+	};
+};

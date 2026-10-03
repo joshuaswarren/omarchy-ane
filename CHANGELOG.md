@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- H15 (M3) opt-in experimental bring-up module: `ane/h15/` (4 soc
+  rows, four-stage module, host ADT self test), three experimental
+  overlays, three data-only overlays (`packaging/dt/`), the volunteer
+  runbook, and `tools/omarchy-ane-h15-stage`. No M3 silicon has run
+  the module. Stage 1 is the only stage that touches MMIO and it
+  reads only the kernel-mapped PMGR window. Stages 2 and 3 refuse
+  on H15 until a macOS capture clears the INFERENCE words. Branch
+  `agent/ane-h15-module`, not merged.
+
 ## 0.4.4 (2026-10-03)
 
 This release fixes the packaging defects of v0.4.3 and changes no driver or
