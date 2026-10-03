@@ -14,8 +14,6 @@
 / {
 	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
 	omarchy,skip-if-compatible = "apple,t6000-ane";
-	/* dtb-overlays.sh: applies only when opted in. */
-	omarchy,opt-in = "ane-t6000";
 };
 
 /include/ "t600x-ane.dtsi"

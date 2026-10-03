@@ -22,7 +22,7 @@ Some installers set `DTBS=` in `/etc/default/update-m1n1` (iconidentify/aurora-l
 | Marketing | SoC | Internal | Linux `compatible` | Driver | State | Opt-in key | Tested by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | M1 | T8103 | H13G | `apple,t8103-ane` | `ane` | on by default | none | bind plus exact fp16 execution. Qwen staged decode and the Parakeet contract bit-exact against same-SoC macOS. |
-| M1 Pro | T6000 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested | `ane-t6000` | nothing on T6000 silicon |
+| M1 Pro | T6000 | H13J | `apple,t6000-ane` | `ane` | on by default | none | nothing on T6000 silicon |
 | M1 Max | T6001 | H13J | `apple,t6000-ane` | `ane` | on by default | none | bind plus exact fp16 execution. Task-queue recovery validated. |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | nothing on T6002 silicon |
 | M2 | T8112 | H14G | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | nothing on T8112 silicon |
