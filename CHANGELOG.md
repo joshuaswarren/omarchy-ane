@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- `omarchy-ane-probe` has a `reachability` section (`schema_version` 2).
+  From `/proc/device-tree` and `/sys` only, it tells whether this machine's
+  device tree gives the ANE to the OS: `reachable`, `owned-elsewhere` (the
+  node has the ADT property `exclave-assigned`), `not-exposed` (no ANE
+  node, a disabled node, or no `reg`, `iommus` or `power-domains`) or
+  `unknown`, with the reason and, for each ANE node, the status,
+  compatible, windows, IOMMU, power-domain and mailbox targets, `exclave*`
+  properties and the bound driver. It also gives the `exclave` record of
+  `data/ane-soc/<soc>.json` and the `adt` phram region. It reads no
+  register. One run on a MacBook Neo or an M5 Mac answers the question.
+
 ### Changed
 
 - DKMS skips a kernel that ships the ANE driver itself
@@ -46,6 +59,16 @@
   names ..., which is disabled") and the ANE stayed off.
   `tools/test_ane_overlays.py` now also disables the power states when it
   checks the overlay over disabled kernel nodes.
+
+### Research and receipts
+
+- H17 b0 (`receipts/2026-10-03-ane-h17`): T8140 (MacBook Neo), T8142 (M5)
+  and T6050 (M5 Pro/Max) are the `ane_t6021` firmware-boot family, with the
+  M4 (T8132) window layout plus the `exclave-*` properties. The receipt
+  compares the 27 per-SoC entries of `ane_t6021` (10 have no local value),
+  names what the probe and the owner's macOS can supply, and plans the b1
+  firmware-boot smoke module. `data/ane-soc/t6050.json` no longer says
+  that the j775d `ane1` has no exclave marking: no source measured it.
 
 ## 0.4.1 (2026-10-02)
 
