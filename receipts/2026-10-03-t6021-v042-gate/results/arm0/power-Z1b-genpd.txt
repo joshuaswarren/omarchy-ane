@@ -1,0 +1,9 @@
+ane_set4                        off-0                           0
+ane_set3                        off-0                           0
+ane_set2                        off-0                           0
+ane_set1                        off-0                           0
+ane_base                        off-0                           0
+ane_td                          off-0                           0
+ane_sys_mpm                     off-0                           0
+ane_cpu                         on                              0
+ane_sys                         on                              0

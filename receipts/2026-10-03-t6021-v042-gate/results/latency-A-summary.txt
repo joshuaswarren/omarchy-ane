@@ -1,0 +1,4 @@
+cold (first call after 5 s idle, new process) n=20 min 1.447 median 1.549 max 1.627 ms
+steady (one process --repeat 20) min 1.461 median 1.513 ms
+jobs 863 -> 903 delta 40 (expect 40)
+timeline end-submit ms: cold min 1.443 median 1.547; steady min 1.460 median 1.512; first steady 1.603
