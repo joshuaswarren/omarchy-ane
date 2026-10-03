@@ -16,8 +16,9 @@ The T6021 device tree's pmgr `reg[41]` is 0x285868000 + 0x4000. With the observe
 **PA = 0x285868000 + 0x1200 = 0x285869200.**
 
 Cross-checks: RegMap 0 → reg[0] = 0x28e080000 reproduces the observed 0x28e080260/0x28e0802e0/0x28e08800c, and
-RegMap 92 → reg[40] is the known fabric-ps word. The earlier round-1 note that reg[41] sits inside the
-fatal-read window was an arithmetic error: the window starts at 0x285854000, and the word is 0x1e000 below it.
+RegMap 92 → reg[40] is the known fabric-ps word. CORRECTION (see CORRECTION.md): the first issue of this receipt said the word was below the fatal-read
+window and called round-1's exclusion an arithmetic error. That was wrong: 0x285869200 - 0x285854000 = +0x15200,
+so the word and the whole reg[41] window sit INSIDE the W10 fatal-read window. Round 1 and round 2 were right.
 
 The die argument in the trace (d=3) is a logical selector the per-die map table resolves to the same window on
 this single-die part (inference; the PA does not depend on it).
@@ -34,12 +35,11 @@ t = 0.117 ms + 2249.7 ms·MHz / f across the device tree ladder `voltage-states8
 
 ## What follows
 
-- E2: a guarded read-only Linux probe of 0x285869200 (plus +0x1000/+0x2000 for context). Expected 0x0 if the
-  surface is dead on Linux, as the T6001 equivalent was when the PMP firmware is off.
-- E3: a gated one-word write of `0x80000012` (macOS's observed 0→1 rung, target 852 MHz @ 618 mV), readback
-  poll, A/B timing, revert to the saved word, reboot fallback. An unchanged readback is recorded as inert —
-  the PMP-served class — with no retry.
-- Both fit one Linux slot. The lab report holds the exact protocols and risks.
+- E2 is WITHDRAWN: the word is inside the W10 fatal-read window, so Linux may not read it under the standing
+  ban (the draft was stopped before any hardware access). The replacement is a macOS-side ANERegDump snapshot
+  of the same word, gated on the proven island set — one macOS window, no kext build.
+- E3 is BLOCKED: a Linux write needs an explicit written W10-class exception from Main; without it the lane
+  closes as "operating point identified, Linux access banned by W10".
 
 ## Tools
 
