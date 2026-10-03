@@ -11,7 +11,8 @@ dev=$(readlink -f /sys/class/accel/accel0/device 2>/dev/null || true)
 for ((i = 0; i < n; i++)); do
 	st=unbound
 	[ -n "$dev" ] && st=$(cat "$dev/power/runtime_status")
-	pd=$(awk '/^ane/ { printf "%s=%s,", $1, $2 }' "$GENPD")
+	pd=$(awk '/^ane/ { printf "%s=%s,", $1, $2 }' "$GENPD" 2>/dev/null) ||
+		pd=none
 	printf '%s\t%s\t%s\t%s\t%s\n' "$arm" "$EPOCHREALTIME" \
 		"$(cat "$HW/power1_input")" "$st" "$pd"
 	sleep 1

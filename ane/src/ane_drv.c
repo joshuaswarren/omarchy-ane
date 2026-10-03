@@ -785,8 +785,10 @@ static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
  * from before DRM_ACCEL_FOPS landed drm_ioctl defaults), so this is a
  * belt-and-suspenders gate on top of the existing ioctls table.
  */
-static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
-				   unsigned long arg)
+static long ane_drm_ioctl(struct file *file, unsigned int cmd,
+			  unsigned long arg,
+			  long (*dispatch)(struct file *, unsigned int,
+					   unsigned long))
 {
 	struct drm_file *filp = file->private_data;
 	struct drm_device *drm = filp->minor->dev;
@@ -813,13 +815,30 @@ static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
 	if (err < 0)
 		return err;
 
-	err = drm_ioctl(file, cmd, arg);
+	err = dispatch(file, cmd, arg);
 
 	pm_runtime_mark_last_busy(ane->dev);
 	pm_runtime_put_autosuspend(ane->dev);
 
 	return err;
 }
+
+static long ane_drm_unlocked_ioctl(struct file *file, unsigned int cmd,
+				   unsigned long arg)
+{
+	return ane_drm_ioctl(file, cmd, arg, drm_ioctl);
+}
+
+/* 32-bit callers get the same command filter and PM reference. */
+#ifdef CONFIG_COMPAT
+static long ane_drm_compat_ioctl(struct file *file, unsigned int cmd,
+				 unsigned long arg)
+{
+	return ane_drm_ioctl(file, cmd, arg, drm_compat_ioctl);
+}
+#else
+#define ane_drm_compat_ioctl NULL
+#endif
 
 /*
  * Hold power across the close: drm_release frees the file's BOs, and
@@ -890,7 +909,7 @@ static const struct file_operations ane_drm_fops = {
 	.open = accel_open,
 	.release = ane_drm_release,
 	.unlocked_ioctl = ane_drm_unlocked_ioctl,
-	.compat_ioctl = drm_compat_ioctl,
+	.compat_ioctl = ane_drm_compat_ioctl,
 	.poll = drm_poll,
 	.read = drm_read,
 	.llseek = noop_llseek,
