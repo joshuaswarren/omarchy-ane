@@ -61,7 +61,7 @@ To submit a judged row for an untested chip, install `omarchy-ane-dkms` and add 
 
 Install `omarchy-ane-dkms` (`sudo pacman -S omarchy-ane-dkms`), or pick the Install menu's "MLX + Core ML (Apple Silicon)" row. The row installs it with the rest of the MLX stack. The package:
 
-- builds `ane.ko` (M1 family) and `ane_t6021.ko` (M2 family) with DKMS for every kernel that has headers. It rebuilds them after each kernel update. Install the headers for the kernel you run (`linux-aurora-headers`, `linux-asahi-headers`).
+- builds `ane.ko` (M1 family) and `ane_t6021.ko` (M2 family) with DKMS for every kernel that has headers. It rebuilds them after each kernel update. Install the headers for the kernel you run (`linux-aurora-headers`, `linux-asahi-headers`). A kernel that ships the ANE driver itself (`CONFIG_DRM_ACCEL_ANE`, aurora-silicon/linux #155) keeps its own modules: DKMS skips that kernel.
 - installs the device-tree overlays to `/usr/share/omarchy-platform/dtb-overlays` and re-applies them after every kernel update (pacman hook `90-omarchy-ane-dt.hook`).
 - fetches the ANE firmware at install and upgrade on the M2 Max (pacman hook `90-omarchy-ane-firmware.hook`).
 - ships the tools: `omarchy-ane-check`, `omarchy-ane-dt`, `omarchy-ane-firmware-fetch`, `omarchy-ane-probe` (a read-only JSON report of the ANE state, [docs/ane-probe.md](docs/ane-probe.md)), `omarchy-ane-smoke`, and `omarchy-ane-run` (the `tools/ane-run` program runner).
