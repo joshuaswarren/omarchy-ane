@@ -89,13 +89,13 @@ changes.
   reference as native ones. `ane_t6021` does not change. Measured on one M1
   laptop (T8103) and one M1 Max laptop (T6001), with `ane.ko` from the #95
   head `198db99`, before #104 changed the map path: with the ANE suspended,
-  idle system power equals the level with the module removed (T8103 within
-  45 mW, T6001 within 7 mW). With the ANE held on, T8103 used 156 mW more
-  (mean of the block means, 3469 against 3313 mW), and T6001 used 14.91 and
-  20.45 W against 12.80 and 12.81 W. The first open after idle takes about
-  0.33 ms (T8103) and 0.35 ms (T6001) more. Whole-encoder outputs stayed
-  bit-exact, smoke runs from the suspended state passed 20 of 20, and about
-  300 suspend and wake cycles per machine gave no error. Design:
+  idle system power per 5-minute block equals the level with the module
+  removed (T8103 within 33 mW, T6001 within 7 mW). With the ANE held on, it
+  was 107 to 173 mW higher on T8103 and 2.10 to 7.65 W higher on T6001. The
+  first open after 5 s of idle took a median of 330 µs on T8103 (10 µs when
+  warm) and 0.35 ms on T6001. Whole-encoder outputs stayed bit-exact, smoke
+  runs from the suspended state passed 20 of 20, and about 300 suspend and
+  wake cycles per machine gave no error. Design:
   `receipts/2026-10-03-ane-autosuspend/README.md`; measurements:
   `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 - DKMS skips a kernel that ships the ANE driver itself
@@ -215,7 +215,8 @@ changes.
   release of the whole encoder program took about 178 ms on T8103 and
   241 ms on T6001, the same with and without `map_batch`.
 - No silicon has run `ane_h16`.
-- The hardware gates of this release are in the GitHub release notes.
+- The hardware results of this release are in
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 
 ## 0.4.1 (2026-10-02)
 

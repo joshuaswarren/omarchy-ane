@@ -127,6 +127,8 @@ Power per block; T6001 gives the mean of `total_uW` per block.
 | A, module removed | 3315.4 / 3307.7 mW | 12.811 W |
 | B, ANE held on | 3455.9 / 3434.6 mW | 20.451 / 14.910 W |
 | C, autosuspend | 3327.8 / 3283.2 mW | 12.808 / 12.804 W |
+| B minus C, per block | 107 to 173 mW (block medians) | 2.10 to 7.65 W (block means) |
+| mean of the block means, B / C | 3469 / 3313 mW | 17.68 / 12.81 W (from the rows above) |
 | C runtime state | suspended in 300 of 300 samples per block | suspended in 300 of 300 samples per block |
 | first open after 5 s idle | median 330 µs (warm: 10 µs) | 0.35 ms |
 | whole encoder | 40 blocks of 16 calls bit-exact; per-call engine time min-of-min 136.885 ms in both arms | 40 blocks of 16 calls, one output digest; jobs +640 exact |
@@ -142,7 +144,9 @@ libane built from the same tree (`tools/ane_cold_start.py --trace`).
 | --- | --- | --- |
 | BO_INIT, `map_batch=1` | 22.772 ms median (22.727 min) | 24.75 ms min |
 | BO_INIT, `map_batch=0` (per page) | 179.852 ms median (179.778 min) | 232.74 ms min |
-| whole open, `map_batch` 1 / 0 | 585.288 / 758.617 ms median | 574.25 / 787.89 ms min |
+| BO_INIT, `map_batch=1`, second arm | 22.757 ms median (22.725 min) | 24.59 ms min |
+| whole open, `map_batch` 1 / 0 / 1 (second arm) | 585.288 / 758.617 / 593.406 ms median | 574.25 / 787.89 / 571.44 ms min |
+| whole open, `map_batch=0` minus `map_batch=1` | 165.2 to 173.3 ms (medians) | 213.6 to 216.5 ms (minimums) |
 | release (close), 1 / 0 | 177.830 / 177.977 ms median | 241.40 / 241.20 ms min |
 | whole encoder, 20 blocks of 16 per arm | bit-exact, jobs 16 per block; per-call min 136.599 / 136.613 ms | bit-exact, jobs +640 exact; block min 7431 / 7641 ms |
 | smoke with `map_batch=1` | 20/20 bit-exact | 20 runs, each 20/20 bit-exact |
