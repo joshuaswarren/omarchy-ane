@@ -7,10 +7,16 @@
   overlay flip. The aurora tree decides: a disabled node is planned, an
   enabled node is a no-op, and no node is `SKIPPED`. Before, the target was
   lost once the overlay PROMOTE merged.
-- The promotion gate compares the evidence of a verdict: chip, verdict,
-  targets and the judged rows (sha, passed, driver_source). A new row that
-  is not judged no longer refuses a proposal. Promotion run 37144741326
-  refused PR #113 that way.
+- The promotion gate computes the fresh verdict on the base branch. It ran
+  on the PR head, where the chip is already flipped, so every PROMOTE PR
+  failed (runs 37144741326 and 37146125714, PR #113). The gate now merges
+  while the verdict and the targets stay the same, every judged row keeps
+  its outcome, and no new judged row fails; new passing rows and rows that
+  are not judged do not refuse a PR. It refuses to run on a checkout that
+  already has the PR's flip.
+- `propose` closes its own open promotion PR (labeled `auto-promotion`, from
+  this repository) whose chip it no longer proposes, with a comment, so no
+  stale PR reaches the gate.
 - `promote_from_verdict.py aurora-plan` skips a chip that has no ANE node on
   any board of the aurora base branch, as `aurora-wip` before #155 merges.
   It prints a line that starts with `SKIPPED`, writes no plan entry and

@@ -21,14 +21,23 @@ flip on auto/promote-<chip> and opens or updates one PR labeled auto-promotion
 whose body hides the exact verdict block in an HTML comment; gate compares
 that block against a fresh verdict and refuses when new evidence landed. Every
 REVERT chip (state on) gets the reverse PR, additionally labeled urgent. A
-second run updates the same PR, never opens a second one.
+second run updates the same PR and rewrites its block, never opens a second
+one. An open auto/promote-* or auto/revert-* PR labeled auto-promotion from
+this repository whose chip this run does not propose (no longer PROMOTE or
+REVERT, or already flipped on main) is closed with a comment, so no stale PR
+is left for the gate. A same-named PR without the label or from a fork stays.
 
-gate: (the workflow runs the host tests first) each open auto-promotion PR's
-recorded chip verdict must have the same evidence as the fresh verdict: chip,
-verdict, targets, and the judged rows (sha, passed, driver_source). Rows that
-are not judged arrive all the time and change nothing. Same evidence means
-squash-merge via REST. Other evidence (a judged row landed or changed) fails
-the run; the next proposal supersedes the PR.
+gate: (the workflow runs the host tests on the PR head first, then returns to
+the base branch) each open auto-promotion PR's recorded chip verdict is
+checked against a fresh verdict computed on the base branch: on the PR head
+the chip is already flipped, so its verdict there is ON or STAY, never the
+PROMOTE or REVERT the PR was proposed from. gate refuses to run on a checkout
+that already has the PR's flip. The fresh verdict still backs the PR when the
+verdict and the targets are the same, every judged row the PR was proposed
+from is still judged with the same outcome (passed, driver_source), and no new
+judged row fails. A new judged passing row adds support (one passing row
+promotes), and rows that are not judged never count. Then it squash-merges via
+REST; otherwise the run fails and the next proposal supersedes the PR.
 
 release: compute the next patch version from the latest v* tag, move the
 CHANGELOG Unreleased section under "## X.Y.Z (UTC date)", push that to main,
@@ -80,7 +89,7 @@ import urllib.request
 from pathlib import Path
 
 import aurora_dt
-from promotion_check import AURORA_DT, DRIVER_SOURCE, INTREE
+from promotion_check import AURORA_DT, DRIVER_SOURCE, INTREE, ON
 
 REPO = Path(__file__).resolve().parents[1]
 PRODUCTION = "joshuaswarren/omarchy-ane"
@@ -172,10 +181,20 @@ def body_block(c):
     return MARK + json.dumps(c, sort_keys=True) + "\n-->"
 
 
-def evidence(c):
-    """What a verdict decision rests on: rows that are not judged do not count."""
-    return {"chip": c["chip"], "verdict": c["verdict"], "targets": c.get("targets", []),
-            "judged": sorted((r["row_sha"], r["passed"], r.get(DRIVER_SOURCE)) for r in c["rows"] if r["judged"])}
+def judged_rows(c):
+    return {r["row_sha"]: (r["passed"], r.get(DRIVER_SOURCE)) for r in c["rows"] if r["judged"]}
+
+
+def new_evidence(recorded, fresh):
+    """Why FRESH no longer backs the decision RECORDED was proposed from; empty
+    when it still does. A new judged passing row only adds support."""
+    out = [f"{key} {recorded.get(key, [])} -> {fresh.get(key, [])}" for key in ("verdict", "targets")
+           if recorded.get(key, []) != fresh.get(key, [])]
+    old, new = judged_rows(recorded), judged_rows(fresh)
+    show = lambda o: "gone" if o is None else f"passed={str(o[0]).lower()} driver_source={o[1]}"
+    out += [f"judged row {sha} {show(old[sha])} -> {show(new.get(sha))}" for sha in sorted(old) if new.get(sha) != old[sha]]
+    out += [f"new judged failing row {sha}" for sha in sorted(new) if sha not in old and not new[sha][0]]
+    return out
 
 
 def read_block(body):
@@ -190,6 +209,7 @@ def commit_note(c):
 
 def propose(verdict):
     slug = repo_slug()
+    proposed = set()
     for c in verdict["chips"]:
         if c["verdict"] not in ("PROMOTE", "REVERT"):
             continue
@@ -238,21 +258,42 @@ def propose(verdict):
                {"labels": [LABEL] + (["urgent"] if c["verdict"] == "REVERT" else [])})
             print(f"propose: opened PR #{n}")
         print(f"PROPOSED\t{n}\t{c['chip']}")
+        proposed.add(branch)
         sh("git", "checkout", "main")
     if not [c for c in verdict["chips"] if c["verdict"] in ("PROMOTE", "REVERT")]:
         print("propose: nothing to do (no PROMOTE or REVERT chip)")
+    if DRY:
+        return
+    flip = re.compile(r"auto/(promote|revert)-(t[0-9]+)")
+    for p in gh(f"repos/{slug}/pulls?state=open&per_page=100"):
+        m = flip.fullmatch(p["head"]["ref"])
+        ours = (any(label["name"] == LABEL for label in p.get("labels", []))
+                and (p["head"].get("repo") or {}).get("full_name") == slug)
+        if not m or not ours or p["head"]["ref"] in proposed:
+            continue
+        chip = m.group(2)
+        now = next((c["verdict"] for c in verdict["chips"] if c["chip"] == chip), "no rows")
+        gh(f"repos/{slug}/issues/{p['number']}/comments", "POST",
+           {"body": f"Superseded: the fresh verdict for {chip} is {now}, so this run proposes no "
+                    f"{m.group(1)} for it. Closing; the next PROMOTE or REVERT opens a new PR."})
+        gh(f"repos/{slug}/pulls/{p['number']}", "PATCH", {"state": "closed"})
+        print(f"propose: closed stale PR #{p['number']} ({chip} is {now})")
 
 
 def gate(verdict, pr):
     slug = repo_slug()
     body = gh(f"repos/{slug}/pulls/{pr}")["body"]
     recorded = read_block(body)
-    fresh = chip_verdict(verdict, recorded["chip"])
-    print(f"gate: PR #{pr} chip {recorded['chip']}: "
-          f"recorded={recorded['verdict']} fresh={fresh['verdict']}")
-    if evidence(recorded) != evidence(fresh):
-        raise Fail(f"PR #{pr}: the fresh verdict's evidence differs from the one the PR was proposed from (a judged "
-                   f"row, the verdict or the targets changed); supersede with a new proposal")
+    chip = recorded["chip"]
+    if (recorded["verdict"] == "PROMOTE") == (chip in ON):
+        raise Fail(f"PR #{pr}: packaging/dt/overlays in this checkout already has {chip} "
+                   f"{'enabled' if chip in ON else 'opt-in'}, the PR's flip, so a fresh verdict here judges the "
+                   "flipped tree; run the gate from the base branch, where the flip is not merged")
+    fresh = chip_verdict(verdict, chip)
+    print(f"gate: PR #{pr} chip {chip}: recorded={recorded['verdict']} fresh={fresh['verdict']}")
+    why = new_evidence(recorded, fresh)
+    if why:
+        raise Fail(f"PR #{pr}: the fresh verdict no longer backs it ({'; '.join(why)}); supersede with a new proposal")
     merge = gh(f"repos/{slug}/pulls/{pr}/merge", "PUT",
                {"merge_method": "squash",
                 "commit_title": f"{recorded['verdict']}: {recorded['chip']} ANE ({commit_note(recorded)})"})

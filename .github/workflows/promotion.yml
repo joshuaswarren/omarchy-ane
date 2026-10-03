@@ -186,11 +186,14 @@ jobs:
             echo "== gate PR #$pr"
             git fetch -q origin "refs/pull/$pr/head" && git checkout -q --force "FETCH_HEAD"
             host_suites
+            # The fresh verdict must come from the PR's base branch: on the PR
+            # head the chip is already flipped, so its verdict there is never the PR's.
+            base=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .base.ref)
+            git fetch -q origin "refs/heads/$base" && git checkout -q --force FETCH_HEAD && git clean -fdxq
             out=$(python3 tools/promote_from_verdict.py gate --pr "$pr" \
               ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }})
             echo "$out"
             grep '^MERGED' <<<"$out" | cut -f2- >> "$RUNNER_TEMP/merged.txt" || true
-            git checkout -q --force "$GITHUB_REF_NAME" && git clean -fdxq
           done
           {
             echo 'merged<<EOF'
