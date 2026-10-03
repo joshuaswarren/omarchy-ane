@@ -15,6 +15,14 @@
 
 ### Changed
 
+- DKMS skips a kernel that ships the ANE driver itself
+  (`CONFIG_DRM_ACCEL_ANE=y` or `=m`, aurora-silicon/linux #155): that
+  kernel keeps its own `ane.ko` and `ane_t6021.ko`. `dkms.conf` sets
+  `BUILD_EXCLUSIVE_CONFIG="!CONFIG_DRM_ACCEL_ANE"`, so `dkms build` exits 77
+  (excluded) there. Before, `ane_t6021` failed to build on such a kernel:
+  its `include/uapi/drm/ane_accel.h` hides ours and lacks
+  `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both
+  kinds of kernel.
 - libane allocates the program staging buffer with `calloc`. The buffer is
   zero as before, but a large program no longer pays a `memset` pass over
   fresh pages.
@@ -24,6 +32,34 @@
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
   steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
   revert made opt-in again got no firmware step.
+- `ane_t6021` logs its probe and firmware boot progress at debug and info
+  level, not at emergency level. Emergency lines go to every console and
+  terminal at any loglevel, on every M2 Max boot. The `BOOT-PHASE`
+  markers and the register readouts are debug messages now: turn them on
+  with dynamic debug (for example `ane_t6021.dyndbg=+p` on the kernel
+  command line). The outcome lines are info, and the dump when the ANE CPU
+  starts but never reports READY is an error. aurora-silicon/linux #155 has
+  the same change (Chris Kearney).
+- `ane` and `ane_t6021` log register and address tracing at debug level:
+  the `ANERD`/`ANEWR` recovery trace, the `ps probe` SET-window reads, the
+  `ANE-resume` progress lines, each DART, the ChMan table entries, RTKit
+  endpoint starts and messages, and the firmware alias and staging
+  addresses. Dynamic debug shows them (`ane.dyndbg=+p`,
+  `ane_t6021.dyndbg=+p`). The only info lines left on the `ane` probe path
+  are `DART containment armed` and `loaded ane`. Faults stay at error and
+  warning level.
+- `modinfo ane_t6021` shows one license and one description. Each of the
+  three objects of the module carried its own.
+- The T6000, T6001 and T6002 overlays have no `ane_set5` power state at
+  pmgr 0xc030. It is past the end of the ANE pmgr range in the ADT
+  (0x28e080000+0xc02c), and the ane node does not use it.
+- The T8103, T600x and T8112 overlays set `status = "okay"` on their ANE
+  power states. aurora-silicon/linux #155 has these nodes at the same
+  paths, disabled where its ANE is disabled (T8103, T6000, T6002, T8112).
+  On such a kernel `omarchy-ane-dt` refused the overlay ("power-domains
+  names ..., which is disabled") and the ANE stayed off.
+  `tools/test_ane_overlays.py` now also disables the power states when it
+  checks the overlay over disabled kernel nodes.
 
 ## 0.4.1 (2026-10-02)
 

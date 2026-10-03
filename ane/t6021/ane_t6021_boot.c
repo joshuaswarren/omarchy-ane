@@ -148,11 +148,6 @@ module_param(boot_prevent_nap, bool, 0444);
 MODULE_PARM_DESC(boot_prevent_nap,
 		 "Retain firmware nap-prevention counter via init resource bit (default on: proven add-path value)");
 
-/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
- * per-object metadata keeps modpost happy for either composition. */
-MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("T6021 ANE contract-pinned boot sequence core");
-
 /* Boot-write gates — ITEMIZED, each a HARD gate: the ENTIRE write
  * sequence (preboot engine table, scratch clear + pulse, RVBAR
  * resolution, CPU release, publication, wake) runs start-to-finish
@@ -318,13 +313,14 @@ static void ane_boot_phase(void *ctx, const char *what)
 {
 	struct ane_t6021_boot_mmio *mm = ctx;
 
-	/* bounded phase marker: one line per block boundary, survives
-	 * netconsole for crash attribution (never per-poll). KERN_EMERG
-	 * + a short drain so the line reaches tty0/netconsole/ssh
-	 * BEFORE the risky write it announces (fw-start-debug
-	 * 2026-09-22: fwstart#2 died with zero capture — the marker
-	 * must beat the write). */
-	dev_emerg(mm->ane->dev, "BOOT-PHASE %s\n", what);
+	/* bounded phase marker: one line per block boundary (never
+	 * per-poll), for crash attribution. It is a debug message: turn
+	 * it on with dynamic debug, and raise the console loglevel to
+	 * see it there. The short drain lets the line reach
+	 * tty0/netconsole/ssh BEFORE the risky write it announces
+	 * (fw-start-debug 2026-09-22: fwstart#2 died with zero capture —
+	 * the marker must beat the write). */
+	dev_dbg(mm->ane->dev, "BOOT-PHASE %s\n", what);
 	msleep(30);
 }
 
@@ -434,14 +430,14 @@ static void ane_t6021_boot_progress_dump(struct ane_t6021 *ane)
 	tick1 = readl(eng + ANE_T6021_BOOT_REG_TICK);
 
 	for (i = 0; i < 8; i++)
-		dev_emerg(ane->dev, "PROGRESS SCRATCH%u=%08x\n", i,
-			  readl(eng + ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i));
-	dev_emerg(ane->dev,
-		  "PROGRESS rvbar=%016llx cpu_status=%08x tick %08x->%08x (%s)\n",
-		  readq(eng + ANE_ASC_RVBAR),
-		  readl(eng + ANE_ASC_CPU_STATUS),
-		  tick0, tick1,
-		  tick1 != tick0 ? "24MHz domain clocked" : "tick STATIC");
+		dev_err(ane->dev, "PROGRESS SCRATCH%u=%08x\n", i,
+			readl(eng + ANE_T6021_BOOT_REG_SCRATCH0 + 4 * i));
+	dev_err(ane->dev,
+		"PROGRESS rvbar=%016llx cpu_status=%08x tick %08x->%08x (%s)\n",
+		readq(eng + ANE_ASC_RVBAR),
+		readl(eng + ANE_ASC_CPU_STATUS),
+		tick0, tick1,
+		tick1 != tick0 ? "24MHz domain clocked" : "tick STATIC");
 }
 
 int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, int rtb_mode)
@@ -477,9 +473,9 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 		return -EBUSY;
 	}
 
-	dev_emerg(ane->dev,
-		  "BOOT-PHASE dispatch (stop_after=%d%s)\n", stop_after,
-		  stop_after ? " BISECT STOP ARMED" : "");
+	dev_dbg(ane->dev,
+		"BOOT-PHASE dispatch (stop_after=%d%s)\n", stop_after,
+		stop_after ? " BISECT STOP ARMED" : "");
 
 	r = ane_t6021_boot_run(&io, &cfg, &cs, &fa, &bo, &sres);
 
@@ -498,9 +494,9 @@ int ane_t6021_boot_start(struct ane_t6021 *ane, int stop_after, int table_mode, 
 	if (!cs) {
 		/* no CPU start: full release path, normal ownership */
 		module_put(THIS_MODULE);
-		dev_emerg(ane->dev,
-			  "BOOT-PHASE done r=%d cpu_started=0 (no CPU release: state clean, module unpinned)\n",
-			  r);
+		dev_info(ane->dev,
+			 "BOOT-PHASE done r=%d cpu_started=0 (no CPU release: state clean, module unpinned)\n",
+			 r);
 		return r;
 	}
 

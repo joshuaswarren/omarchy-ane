@@ -88,26 +88,27 @@ u32 ane_ps_act(struct ane_device *ane)
 /* Bisect probe: per-word named reads of the SET window. Each word logs
  * before its readl, so a window whose address does not decode on this
  * SoC is named by the last off-box line (word index + byte offset)
- * instead of a silent hard reset between two other prints. */
+ * instead of a silent hard reset between two other prints. The lines
+ * are debug messages: dynamic debug turns them on. */
 u32 ane_ps_act_probe(struct ane_device *ane)
 {
 	u32 v = 0;
 	int i;
 
 	if (!ane->ps) {
-		dev_info(ane->dev, "ps probe: SET window unmapped\n");
+		dev_dbg(ane->dev, "ps probe: SET window unmapped\n");
 		return 0;
 	}
-	dev_info(ane->dev, "ps probe: SET window at %pap, %d words\n",
-		 &ane->ps_base, ANE_PS_WORDS);
+	dev_dbg(ane->dev, "ps probe: SET window at %pap, %d words\n",
+		&ane->ps_base, ANE_PS_WORDS);
 	for (i = 0; i < ANE_PS_WORDS; i++) {
 		u32 w;
 
-		dev_info(ane->dev, "ps probe: word %d @ ps+0x%02x reading\n",
-			 i, i * 8);
+		dev_dbg(ane->dev, "ps probe: word %d @ ps+0x%02x reading\n",
+			i, i * 8);
 		w = readl(ane->ps + i * 8);
 		v |= ((w & ANE_PS_ACTUAL_MASK) >> 4) << (i * 4);
-		dev_info(ane->dev, "ps probe: word %d -> %#x\n", i, w);
+		dev_dbg(ane->dev, "ps probe: word %d -> %#x\n", i, w);
 	}
 	return v;
 }
@@ -116,15 +117,16 @@ u32 ane_ps_act_probe(struct ane_device *ane)
  * every engine read prints its value, each line carrying the pmgr
  * ACTUAL of the owning partitions. A write that external-aborts the
  * SoC is then named by the last line the off-box netconsole carried,
- * and the bisect starts from that register instead of a guess. */
+ * and the bisect starts from that register instead of a guess. The
+ * lines are debug messages: dynamic debug turns them on. */
 static void ane_rec_writel(struct ane_device *ane, const char *reg,
 			   void __iomem *addr, u32 val)
 {
-	dev_info(ane->dev, "ANEWR %s <- %#x (ps act %#x)\n", reg, val,
-		 ane_ps_act(ane));
+	dev_dbg(ane->dev, "ANEWR %s <- %#x (ps act %#x)\n", reg, val,
+		ane_ps_act(ane));
 	writel(val, addr);
-	dev_info(ane->dev, "ANEWR %s wrote (ps act %#x)\n", reg,
-		 ane_ps_act(ane));
+	dev_dbg(ane->dev, "ANEWR %s wrote (ps act %#x)\n", reg,
+		ane_ps_act(ane));
 }
 
 static u32 ane_rec_read32(struct ane_device *ane, const char *reg,
@@ -132,8 +134,8 @@ static u32 ane_rec_read32(struct ane_device *ane, const char *reg,
 {
 	u32 val = readl(addr);
 
-	dev_info(ane->dev, "ANERD %s -> %#x (ps act %#x)\n", reg, val,
-		 ane_ps_act(ane));
+	dev_dbg(ane->dev, "ANERD %s -> %#x (ps act %#x)\n", reg, val,
+		ane_ps_act(ane));
 	return val;
 }
 
@@ -404,7 +406,7 @@ static int ane_ps_verify_on(struct ane_device *ane)
 		}
 		usleep_range(1000, 2000);
 	}
-	dev_info(ane->dev, "ANERD ps verify act=%#x err=%d\n", act, err);
+	dev_dbg(ane->dev, "ANERD ps verify act=%#x err=%d\n", act, err);
 	return err;
 }
 
@@ -419,26 +421,26 @@ static int ane_pd_cycle(struct ane_device *ane)
 		for (int i = 0; i < ane->pd_count; i++) {
 			pm_runtime_get_noresume(ane->pd_dev[i]);
 			gated = i + 1;
-			dev_info(ane->dev,
-				 "ANERD pd[%d] %s force_suspend begin (ps act %#x)\n",
-				 i, dev_name(ane->pd_dev[i]), ane_ps_act(ane));
+			dev_dbg(ane->dev,
+				"ANERD pd[%d] %s force_suspend begin (ps act %#x)\n",
+				i, dev_name(ane->pd_dev[i]), ane_ps_act(ane));
 			err = pm_runtime_force_suspend(ane->pd_dev[i]);
-			dev_info(ane->dev,
-				 "ANERD pd[%d] force_suspend -> %d (ps act %#x)\n",
-				 i, err, ane_ps_act(ane));
+			dev_dbg(ane->dev,
+				"ANERD pd[%d] force_suspend -> %d (ps act %#x)\n",
+				i, err, ane_ps_act(ane));
 			if (err)
 				break;
 		}
 		if (!err)
 			for (int i = 0; i < ane->pd_count; i++) {
-				dev_info(ane->dev,
-					 "ANERD pd[%d] %s force_resume begin (ps act %#x)\n",
-					 i, dev_name(ane->pd_dev[i]),
-					 ane_ps_act(ane));
+				dev_dbg(ane->dev,
+					"ANERD pd[%d] %s force_resume begin (ps act %#x)\n",
+					i, dev_name(ane->pd_dev[i]),
+					ane_ps_act(ane));
 				err = pm_runtime_force_resume(ane->pd_dev[i]);
-				dev_info(ane->dev,
-					 "ANERD pd[%d] force_resume -> %d (ps act %#x)\n",
-					 i, err, ane_ps_act(ane));
+				dev_dbg(ane->dev,
+					"ANERD pd[%d] force_resume -> %d (ps act %#x)\n",
+					i, err, ane_ps_act(ane));
 				if (err)
 					break;
 			}
@@ -450,14 +452,14 @@ static int ane_pd_cycle(struct ane_device *ane)
 		 * is held, and without that mark force_resume would leave
 		 * the partition gated. */
 		pm_runtime_get_noresume(ane->dev);
-		dev_info(ane->dev, "ANERD dev force_suspend begin\n");
+		dev_dbg(ane->dev, "ANERD dev force_suspend begin\n");
 		err = pm_runtime_force_suspend(ane->dev);
-		dev_info(ane->dev, "ANERD dev force_suspend -> %d\n", err);
+		dev_dbg(ane->dev, "ANERD dev force_suspend -> %d\n", err);
 		if (!err) {
-			dev_info(ane->dev, "ANERD dev force_resume begin\n");
+			dev_dbg(ane->dev, "ANERD dev force_resume begin\n");
 			err = pm_runtime_force_resume(ane->dev);
-			dev_info(ane->dev, "ANERD dev force_resume -> %d\n",
-				 err);
+			dev_dbg(ane->dev, "ANERD dev force_resume -> %d\n",
+				err);
 		}
 		pm_runtime_put_noidle(ane->dev);
 	}

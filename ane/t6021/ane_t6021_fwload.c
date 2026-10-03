@@ -84,11 +84,6 @@
 #include "ane_t6021_boot.h"
 #include "ane_fw_validate.h"
 
-/* This object links into both ane_t6021.ko and ane_t6021_rtclient.ko;
- * per-object metadata keeps modpost happy for either composition. */
-MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("T6021 ANE firmware staging + entry alias");
-
 static bool fw_load = true;
 module_param(fw_load, bool, 0444);
 MODULE_PARM_DESC(fw_load,
@@ -244,8 +239,8 @@ static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom)
 			prot, GFP_KERNEL);
 	if (!ret && iommu_iova_to_phys(dom, soc->pmu_pa) != soc->pmu_pa)
 		ret = -EIO;
-	dev_info(ane->dev, "pmu: DART map %#llx (IOVA == PA, %#x bytes): %d\n",
-		 soc->pmu_pa, ANE_T6021_FW_ALIAS_PAGE, ret);
+	dev_dbg(ane->dev, "pmu: DART map %#llx (IOVA == PA, %#x bytes): %d\n",
+		soc->pmu_pa, ANE_T6021_FW_ALIAS_PAGE, ret);
 	return ret;
 }
 
@@ -265,9 +260,9 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane, bool reserved)
 	if (!ane_t6021_rvbar_latched(rvbar) || !entry) {
 		/* Unlatched branch: the boot path programs RVBAR to the
 		 * fw DVA itself (ane_t6021_rvbar_compose), no alias. */
-		dev_info(ane->dev,
-			 "fwalias: rvbar %016llx not latched/entry 0 — skip (boot reprograms RVBAR)\n",
-			 rvbar);
+		dev_dbg(ane->dev,
+			"fwalias: rvbar %016llx not latched/entry 0 — skip (boot reprograms RVBAR)\n",
+			rvbar);
 		return 0;
 	}
 	if (!ane_t6021_rvbar_entry_ok(entry) ||
@@ -362,14 +357,14 @@ static int ane_t6021_fw_alias_map(struct ane_t6021 *ane, bool reserved)
 		}
 		ane->fw_alias_extn = windows;
 		ane->fw_alias_iova = entry;
-		dev_info(ane->dev,
-			 "fwalias: reserved SEG0/SEGi at entry %#llx (%llx+%zx %llx+%zx, preloaded placement)\n",
-			 entry,
-			 ane->fw_alias_ext_iova[0], ane->fw_alias_ext_len[0],
-			 ane->fw_alias_ext_iova[1], ane->fw_alias_ext_len[1]);
+		dev_dbg(ane->dev,
+			"fwalias: reserved SEG0/SEGi at entry %#llx (%llx+%zx %llx+%zx, preloaded placement)\n",
+			entry,
+			ane->fw_alias_ext_iova[0], ane->fw_alias_ext_len[0],
+			ane->fw_alias_ext_iova[1], ane->fw_alias_ext_len[1]);
 		if (fw_extra_ram)
-			dev_info(ane->dev, "fwalias: owned heap [%#llx,%#llx) roundtrip verified\n",
-				 win[2].iova, win[2].iova + win[2].len);
+			dev_dbg(ane->dev, "fwalias: owned heap [%#llx,%#llx) roundtrip verified\n",
+				win[2].iova, win[2].iova + win[2].len);
 		return ane_t6021_pmu_map(ane, dom);
 
 err_unmap_mapped:
@@ -433,10 +428,10 @@ err_unmap_mapped:
 	ane->fw_alias_ext_iova[0] = entry;
 	ane->fw_alias_ext_len[0] = ane->fw_size;
 	ane->fw_alias_extn = 1;
-	dev_info(ane->dev,
-		 "fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
-		 entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
-		 &ane->fw_iova, &pa0);
+	dev_dbg(ane->dev,
+		"fwalias: entry %#llx <- %u dart pages aliased from fw %pad (first %pa, roundtrip OK)\n",
+		entry, ane->fw_size / ANE_T6021_FW_ALIAS_PAGE,
+		&ane->fw_iova, &pa0);
 	/* The firmware's power service needs the pmgr sub-block mapped
 	 * IOVA == PA in every vehicle (NO PMD FOR IOVA 0x28e084008,
 	 * 2026-09-29); the staged-DMA alias branch skipped it and left
@@ -517,11 +512,11 @@ static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 			p.soc_revision);
 		return -EINVAL;
 	}
-	dev_info(ane->dev,
-		 "fwload: own memory: iBoot patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
-		 p.soc, p.soc_revision,
-		 p.exec_base + soc->fw->segs[1].vmaddr, p.cpu_pa,
-		 p.wrapper_pa);
+	dev_dbg(ane->dev,
+		"fwload: own memory: iBoot patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
+		p.soc, p.soc_revision,
+		p.exec_base + soc->fw->segs[1].vmaddr, p.cpu_pa,
+		p.wrapper_pa);
 	return 0;
 }
 
@@ -584,9 +579,9 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	ane->fw_iova = iova;
 	ane->fw_size = alloc_size;
 
-	dev_info(ane->dev,
-		 "fwload: %s PRELOAD validated + DART-mapped: entry %#llx, iova %pad size %#x\n",
-		 img->name, entry, &iova, alloc_size);
+	dev_dbg(ane->dev,
+		"fwload: %s PRELOAD validated + DART-mapped: entry %#llx, iova %pad size %#x\n",
+		img->name, entry, &iova, alloc_size);
 
 	ret = reserved ? 0 : ane_t6021_fw_patch(ane, buf);
 	if (!ret)
