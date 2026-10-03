@@ -33,7 +33,7 @@ islands between jobs. This is design (c) of the offline power study (private not
   the protocol sets it to 0.
 
 With `dyn_pg=0` and `boot_prevent_nap=1` (the defaults), probe sends the same firmware commands
-and makes the same register accesses as origin/main 160b209. The only new item is the debugfs
+and makes the same register accesses as origin/main `16cfa87`. The only new item is the debugfs
 file, which reads the seven PS words when someone opens it and at no other time.
 
 ### Firmware facts this relies on (selene 13.5, 22G74)
@@ -180,14 +180,36 @@ Every ANE call runs as `flock /var/tmp/ane-run.lock timeout 120 ...`.
   same directory for `ane_timeline` when `stats=1`. `debugfs_create_dir` returns -EEXIST for the
   second creator. So with the default `stats=1`, switching `trace_td` on after probe gives no
   `trace_td` file, and `trace_td=1` at load leaves no `ane_timeline` (and no `ane_pg_state`).
-- The out-of-tree module does not build against a kernel tree that carries the in-tree
-  `include/uapi/drm/ane_accel.h` (omarchy-linux `josh/ane-driver-aurora` f227145f50e4): the
-  quoted include `"uapi/drm/ane_accel.h"` resolves through the kernel's `-I include` before the
-  module's `-I ane/src`, and the in-tree header lacks `ANE_M2_MAX_BINDS` and
-  `ANE_ABI_M2_MAJOR`. Origin/main 160b209 fails the same way. The host proof below adds
-  `KCFLAGS=-iquote <src>/ane/src` to both the base and the branch builds.
+- On a kernel tree that carries the in-tree `include/uapi/drm/ane_accel.h` (omarchy-linux
+  `josh/ane-driver-aurora` f227145f50e4, `CONFIG_DRM_ACCEL_ANE=m`), the quoted include
+  `"uapi/drm/ane_accel.h"` resolves through the kernel's `-I include` before the module's
+  `-I ane/src`, and the in-tree header lacks `ANE_M2_MAX_BINDS` and `ANE_ABI_M2_MAJOR`. Main
+  already handles this for installs: DKMS skips such a kernel (`BUILD_EXCLUSIVE_CONFIG`, #94).
+  The aurora build below is therefore a compile check only, with `KCFLAGS=-iquote <src>/ane/src`
+  on both the base and the branch builds.
 
-## Host proof
+## Host proof (MEASURED, 2026-10-03 UTC)
 
-The build proofs, hashes and host test results are in the pull request description. Private
-notebook: `AnePmT6021Dyn/dynpg/`.
+Base = origin/main `16cfa87` (after #94), branch = `14196ef` (the driver commit). Same tree and
+flags for both builds of each tree; `ANE_VERSION` was `dynpg-base` and `dynpg-fix`.
+
+| Tree | Build | rc | W=1 diagnostics | sha256 | srcversion |
+|---|---|---|---|---|---|
+| M2 3-1 headers `7.1.13-3-1-ARCH`, ALARM chroot, gcc 16.1.1 | base | 0 | 6 | `73854fa9d6aba20730a9373fca3a2418cd2ac80d26bad5aad0e47b7ebeebc8a0` | `421C74FF4D6BC3A3660B61C` |
+| same | branch | 0 | 6, none new | `921998e678afc392da273f9467e947222423299f268ac65c987dd99c9eac4ec6` | `DA73BC8411DFADE4E7E0FA1` |
+| omarchy-linux `josh/ane-driver-aurora` `f227145f50e4` (`7.1.12-ARCH+`), aarch64-linux-gnu-gcc 12.2.0, `modules_prepare`, `-iquote` | base | 0 | 5 | `509836df6b77b96c20b4c6a976ba81fcc90ef81a0946e2de5ca411c0d8523014` | `421C74FF4D6BC3A3660B61C` |
+| same | branch | 0 | 5, none new | `40dd6ea1b8c9cc99acf561f6cc5db0a9ab1e55cc4e7d16d610cd71c94de27365` | `DA73BC8411DFADE4E7E0FA1` |
+
+- vermagic: `7.1.13-3-1-ARCH SMP preempt mod_unload aarch64` (M2 3-1) and
+  `7.1.12-ARCH+ SMP preempt mod_unload aarch64` (aurora).
+- The diagnostics are the same lines in base and branch (compared with line numbers removed):
+  `ane_t6021_load_sec_name` defined but not used (3), `t2h_buf` and `t2h_ioq` set but not used,
+  and on the M2 3-1 tree the pahole version note.
+- `modinfo -F parm` of the branch module lists `dyn_pg` (bool) and `boot_prevent_nap` (bool).
+- Without the `-iquote` flag, base `160b209` fails on the aurora tree with the three UAPI errors
+  above (rc 2).
+- The same builds before the rebase onto #94 (base `160b209`, branch `585af4b`) were also rc 0
+  with no new diagnostic on either tree.
+- Host tests on the rebased branch (driver code of `14196ef`): `make -C tools check` rc 0;
+  `pytest -q tests tools` after `make -C tools ane-run` (the CI host suite builds it too):
+  51 passed, 1 skipped (`tests/test_hwx_ports.py`: staged Qwen inputs not on this host).
