@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- T6000 (M1 Pro) ANE on by default. (row 6eb94f49985b)
 - T6020 (M2 Pro) ANE on by default. (row 3c9389040f51)
 - A chip that is on by default and has a passing in-tree row gets the
   `aurora-dt` target, so its aurora-silicon/linux PR still comes after the

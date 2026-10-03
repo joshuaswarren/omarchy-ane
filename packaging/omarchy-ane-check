@@ -120,8 +120,8 @@ line="  $DRIVER_SOURCE=$src${file:+ ($mod: $file)}"
 echo "$line"
 
 case $soc in
-  t8103|t6001|t6021|t6020|"") ;;
-  t6000|t6002|t6022|t8112)
+  t8103|t6001|t6021|t6020|t6000|"") ;;
+  t6002|t6022|t8112)
     steps=()
     if [[ $dtbs == kernel* ]]; then
       echo "UNTESTED SoC: $soc. $mod has not run on it. ${dtbs#kernel: }."
