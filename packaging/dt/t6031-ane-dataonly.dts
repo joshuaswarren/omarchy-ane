@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,data-only;
+	omarchy,ane-soc = "t6031";
+	omarchy,ane-generation = "H15";
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			omarchy_ane_data: omarchy-ane-data-t6031 {
+				omarchy,data-only;
+				compatible = "omarchy,ane-data-only";
+				status = "disabled";
+				ane-compatible = "iop,ascwrap-v6";
+				ane-reg = <0x3 0xc8000000 0x0 0x02000000>,
+					  <0x2 0x92280000 0x0 0x00010000>;
+				ane-interrupts = <965 964 967 966 983>;
+				dart-compatible = "dart,t8110";
+				dart-reg = <0x3 0xc9800000 0x0 0x00004000>,
+					   <0x3 0xc9810000 0x0 0x00004000>,
+					   <0x3 0xc9820000 0x0 0x00004000>,
+					   <0x3 0xc9804000 0x0 0x00004000>;
+				dart-interrupt = <984>;
+				ane-type = <224>;
+			};
+		};
+	};
+};

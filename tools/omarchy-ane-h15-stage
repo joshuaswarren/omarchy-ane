@@ -1,0 +1,114 @@
+#!/bin/bash
+# tools/omarchy-ane-h15-stage <soc> <stage> [--optin OPT] [--confirm-boot]
+#                                  [--fw-path PATH] [--hello-wait-ms MS]
+#                                  [--ps-wait-ms MS] [--dry-run] [--root-check]
+#                                  [--idle] [--out PATH]
+#
+# Run a stage of ane_h15.ko under the b0 guards. Captures the
+# RESULT line and dmesg | grep ane_h15 into a JSON file whose
+# field 'h15_stage' names the stage. The collector owner reads
+# that field; this tool does not touch the collector.
+#
+# Pre-conditions (in order, --dry-run skips all of them):
+#   * Linux host with the ane_h15 module path passed via --module
+#     (default ./ane/h15/ane_h15.ko).
+#   * the b0 opt-in opt (default ane-h15-experimental) is in
+#     /etc/omarchy-platform/dtb-overlays.opt-in on the M3 host
+#     the volunteer is targeting; this tool does not edit it.
+#   * root for the insmod (or CAP_SYS_MODULE); --root-check is
+#     a hard fail otherwise.
+#   * the system was idle for at least 30 s when --idle is set
+#     (load average check), to keep the receipt deterministic.
+set -euo pipefail
+
+soc=""; stage=""; optin=""; confirm_boot=0; fw_path=""
+hello_wait_ms=0; ps_wait_ms=500
+module_path="./ane/h15/ane_h15.ko"
+out=""; dry_run=0; root_check=0; idle=0
+
+usage() { sed -n '2,15p' "$0"; exit 2; }
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--optin) optin="$2"; shift 2;;
+		--confirm-boot) confirm_boot=1; shift;;
+		--fw-path) fw_path="$2"; shift 2;;
+		--hello-wait-ms) hello_wait_ms="$2"; shift 2;;
+		--ps-wait-ms) ps_wait_ms="$2"; shift 2;;
+		--module) module_path="$2"; shift 2;;
+		--out) out="$2"; shift 2;;
+		--dry-run) dry_run=1; shift;;
+		--root-check) root_check=1; shift;;
+		--idle) idle=1; shift;;
+		-*) usage;;
+		*)
+			if [[ -z "$soc" ]]; then soc="$1"; shift;
+			elif [[ -z "$stage" ]]; then stage="$1"; shift;
+			else usage; fi
+			;;
+	esac
+done
+
+[[ -n "$soc" && -n "$stage" ]] || usage
+[[ -z "$optin" ]] && optin="ane-h15-experimental"
+
+stage_name="$stage"
+case "$stage" in
+	0|dt) stage_name="dt";;
+	1|status) stage_name="status";;
+	2|wrapper) stage_name="wrapper";;
+	3|boot) stage_name="boot";;
+esac
+
+started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [[ -z "$out" ]]; then
+	out="artifacts/AneH15Module/${started_utc//:/-}-${soc}-${stage_name}.json"
+fi
+mkdir -p "$(dirname "$out")"
+
+insmod_args=("$module_path" "optin=$soc" "stage=$stage_name"
+	"ps_wait_ms=$ps_wait_ms" "hello_wait_ms=$hello_wait_ms")
+[[ -n "$fw_path" ]] && insmod_args+=("fw_path=$fw_path")
+[[ $confirm_boot -eq 1 ]] && insmod_args+=("confirm_boot=1")
+
+if [[ $dry_run -eq 1 ]]; then
+	cat >"$out" <<EOF
+{"tool":"omarchy-ane-h15-stage","h15_stage":"$stage_name","soc":"$soc",
+ "optin":"$optin","started_utc":"$started_utc","dry_run":true,
+ "insmod_args":[$(printf '"%s",' "${insmod_args[@]}" | sed 's/,$//')]}
+EOF
+	echo "$out"
+	exit 0
+fi
+
+[[ $root_check -eq 1 ]] && [[ $EUID -ne 0 ]] && { echo "refuse: not root" >&2; exit 1; }
+[[ $idle -eq 1 ]] && {
+	load=$(cut -d' ' -f1 /proc/loadavg)
+	awk -v l="$load" 'BEGIN{ exit !(l<0.5) }' \
+		|| { echo "refuse: load=$load not < 0.5" >&2; exit 1; }
+}
+[[ -r "$module_path" ]] || { echo "refuse: missing $module_path" >&2; exit 1; }
+
+rmmod ane_h15 2>/dev/null || true
+dmesg -c >/dev/null
+insmod "${insmod_args[@]}"
+sleep 1
+dmesg_lines=$(dmesg | grep ane_h15 || true)
+result_line=$(printf '%s\n' "$dmesg_lines" | grep -F 'ane_h15 RESULT' | head -1 || true)
+rmmod ane_h15 2>/dev/null || true
+
+# JSON-safe dmesg dump (one line per dmesg entry, quote escapes)
+dm=$(printf '%s' "$dmesg_lines" | python3 -c '
+import json, sys
+print(json.dumps(sys.stdin.read().splitlines()))
+')
+res=$(printf '%s' "${result_line:-no-result-line}" | python3 -c '
+import json, sys
+print(json.dumps(sys.stdin.read().rstrip("\n")))
+')
+cat >"$out" <<EOF
+{"tool":"omarchy-ane-h15-stage","h15_stage":"$stage_name","soc":"$soc",
+ "optin":"$optin","started_utc":"$started_utc","result":$res,
+ "dmesg":$dm,"path":"$module_path"}
+EOF
+echo "$out"

@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * ane/h15 OPT-IN EXPERIMENTAL overlay for T8122 (M3) board device
+ * trees, for ane_h15 (apple,t8122-ane). NOT installed by the package:
+ * it is not a row of packaging/dt/overlays and omarchy-ane-dt never
+ * applies it. The first owner of an M3 Linux box compiles it and
+ * copies it into the overlay directory by hand, with the opt-in key
+ * ane-h15-experimental in /etc/omarchy-platform/dtb-overlays.opt-in.
+ *
+ * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). ADT 27.0
+ * 26A428:
+ *   ane reg engine 0x310000000+0x2000000, pmgr 0x2d0700000+0x18000;
+ *   ANE ps words at +0x438 (ANE_SYS, parent LMX4), +0xc000/+0xc008/
+ *   +0xc010/+0xc018 (ANE_MPM/CPU/TD/BASE).
+ *   dart-ane 0x311800000/0x311810000/0x311820000/0x311804000 (each
+ *   0x4000); IRQ 525; the ADT names a "no gate" line for the DARTs
+ *   and the M3 family uses apple,t8110-dart as the bindable fallback.
+ * The kernel tree's aurora t8122 dtsi has only ps_ane_sys at +0x438;
+ * this overlay adds the four MPM/CPU/TD/BASE ps nodes and the
+ * DART+ANE device nodes. AIC is 3-cell on t8122.
+ * The mailbox is not described: ane_h15 drives the ASC v4 mailbox
+ * (wrapper+0x8000, INFERENCE on H15) by polling, with no IRQ.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h15-experimental";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@2d1000000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@2d0700000/power-controller@438";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	/* aurora t8122-pmgr.dtsi ships only ps_ane_sys; add the four
+	 * MPM/CPU/TD/BASE ps nodes that the ADT lists. Parents mirror
+	 * the aurora t6031-pmgr.dtsi chain (kernel-shaped; the pmgr
+	 * driver reads these, and stage=status re-reads ACTUAL=0xf on
+	 * every word behind the genpd get so an order mismatch is
+	 * caught, not masked). */
+	fragment@2 {
+		target-path = "/soc/power-management@2d0700000";
+		__overlay__ {
+			ps_ane_mpm: power-controller@c000 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_mpm";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_cpu: power-controller@c008 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_cpu";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_td: power-controller@c010 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_td";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_base: power-controller@c018 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_td>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@311800000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart1: iommu@311810000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart2: iommu@311820000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart3: iommu@311804000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11804000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane: ane@310000000 {
+				compatible = "apple,t8122-ane";
+				reg-names = "engine", "pmgr";
+				reg = <0x3 0x10000000 0x0 0x2000000>,
+				      <0x2 0xd0700000 0x0 0x18000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 507 4>, <0 506 4>, <0 509 4>, <0 508 4>, <0 524 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
+						<&ps_ane_cpu>, <&ps_ane_td>,
+						<&ps_ane_base>;
+				apple,ane-type = <0xb0>;
+				status = "okay";
+			};
+		};
+	};
+};
