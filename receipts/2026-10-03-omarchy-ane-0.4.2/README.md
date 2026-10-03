@@ -43,10 +43,12 @@ A DKMS-tree build of this tree (below) gives `ane.ko` srcversion
 
 On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order and the kernel tree's dtc
-(`DTC 1.7.2-g53373d13`) first in `PATH`, on two trees: the worktree at
-`d4aa669` (`dc174cd` plus the CHANGELOG and README edits of this release,
-without this receipt) and a fresh `git archive` of `40f3317` (the same plus
-this receipt). Every step exited 0 on both:
+(`DTC 1.7.2-g53373d13`) first in `PATH`, on a fresh `git archive` of
+`f9ef8be`. That commit is this release except for the last edit of this
+receipt: `git diff f9ef8be..<release commit> -- .
+':!receipts/2026-10-03-omarchy-ane-0.4.2'` is empty. So the CHANGELOG,
+README and code of the release are the gated bytes. Every step exited 0
+(earlier runs on `d4aa669` and on `40f3317` gave the same results):
 
 | Step | Result |
 | --- | --- |
