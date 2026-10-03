@@ -62,7 +62,7 @@ Run in this order; stop at the first unexpected result and send the
 dmesg lines back.
 
 1. `stage=status` (`insmod ane_h16.ko optin=t8132 stage=status`).
-   Expected: five ps words logged with ACTUAL bits set, RVBAR probably
+   Expected: five ps words logged with ACTUAL (bits 7:4) = 0xf, RVBAR probably
    latched, CPU_STATUS reads 0x2a-shaped, SCRATCH all zero. Send
    `dmesg | grep ane_h16`.
 2. `stage=boot hello_wait_ms=1000`. Expected: preload diffs only

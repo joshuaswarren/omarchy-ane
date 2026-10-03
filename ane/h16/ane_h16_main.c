@@ -158,10 +158,25 @@ struct ane_h16 {
 
 /* ---- pmgr state words (the read-only-after-ACTUAL=0xf rule) ---- */
 
+/* apple-pmgr-pwrstate word: TARGET bits 3:0, ACTUAL bits 7:4; 0xf is
+ * fully on (ane/t6021/ane_t6021.h ANE_PS_TARGET/ANE_PS_ACTUAL/ANE_PS_ON;
+ * docs/t6021-ane-bringup-findings.md section 4 gate). */
+#define ANE_H16_PS_ACTUAL	GENMASK(7, 4)
+#define ANE_H16_PS_ON		0xf
+
 static const char *const ane_h16_ps_names[] = {
 	"ANE_SYS", "ANE_MPM", "ANE_CPU", "ANE_TD", "ANE_BASE",
 };
 
+static bool ane_h16_ps_on(struct ane_h16 *ane, unsigned int i, u32 *v)
+{
+	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
+	return FIELD_GET(ANE_H16_PS_ACTUAL, *v) == ANE_H16_PS_ON;
+}
+
+/* Every ANE word must read ACTUAL == 0xf, all at once, before any
+ * engine MMIO: each word is polled to 0xf, then all five are read
+ * again so a domain that dropped while a later one came up refuses. */
 static int ane_h16_ps_wait(struct ane_h16 *ane)
 {
 	unsigned long deadline = jiffies + msecs_to_jiffies(ps_wait_ms);
@@ -169,19 +184,26 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	u32 v;
 
 	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
-		while (!((v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i])) & 0xf0)) {
+		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
-					"%s word %#x stuck at %#x (ACTUAL not 0xf); refusing to touch the engine window\n",
-					ane_h16_ps_names[i],
-					ane->soc->ps_off[i], v);
+					"%s word %#x stuck at %#x (ACTUAL %#lx, not 0xf); refusing to touch the engine window\n",
+					ane_h16_ps_names[i], ane->soc->ps_off[i],
+					v, FIELD_GET(ANE_H16_PS_ACTUAL, v));
 				return -ETIMEDOUT;
 			}
 			usleep_range(100, 200);
 		}
-		dev_info(ane->dev, "%s word %#x = %#x\n", ane_h16_ps_names[i],
-			 ane->soc->ps_off[i],
-			 readl_relaxed(ane->pmgr + ane->soc->ps_off[i]));
+	}
+	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
+		if (!ane_h16_ps_on(ane, i, &v)) {
+			dev_err(ane->dev,
+				"%s word %#x dropped to %#x after the wait; refusing to touch the engine window\n",
+				ane_h16_ps_names[i], ane->soc->ps_off[i], v);
+			return -EIO;
+		}
+		dev_info(ane->dev, "%s word %#x = %#x (ACTUAL 0xf)\n",
+			 ane_h16_ps_names[i], ane->soc->ps_off[i], v);
 	}
 	return 0;
 }

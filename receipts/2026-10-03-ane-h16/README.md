@@ -110,8 +110,11 @@ tunables bytes from the iBoot preload instead of replaying values.
 
 - No `MODULE_DEVICE_TABLE` (no autoload); probe returns -EPERM unless
   `optin=<soc>`; not in `make all`, `dkms.conf` or the package.
-- `stage=status`: power-domains up, wait ACTUAL=0xf on all five ANE ps
-  words, log RVBAR/CPU_STATUS/SCRATCH/mbox controls.
+- `stage=status`: power-domains up, wait until ACTUAL (bits 7:4) == 0xf
+  on all five ANE ps words and re-read all five, then log
+  RVBAR/CPU_STATUS/SCRATCH/mbox controls. Correction 2026-10-03: the
+  first merged version (afd5e62) only waited for ACTUAL nonzero
+  (`v & 0xf0`); agent/ane-h16-ps-fix makes the code match this gate.
 - `stage=boot`: pin the payload by SHA-256, parse the boot ADT from the
   reserved-memory phram `adt` region, read `segment-ranges`, diff the
   iBoot preload against the file (only patchbay/tunables and
