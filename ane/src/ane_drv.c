@@ -217,9 +217,13 @@ static int ane_iommu_map_batch(struct ane_device *ane, struct ane_bo *bo,
 	}
 	sg_free_table(&sgt);
 
-	/* A short map would hand out a BO whose tail has no PTEs. */
+	/*
+	 * A short map would hand out a BO whose tail has no PTEs. The
+	 * mapped part may have holes, so clear page by page, not with one
+	 * range unmap that stops at the first hole.
+	 */
 	if (mapped >= 0 && (size_t)mapped != size) {
-		iommu_unmap(ane->domain, bo->iova, mapped);
+		ane_iommu_clear_range(ane, bo->iova, bo->iova + size);
 		mapped = -EIO;
 	}
 
