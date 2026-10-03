@@ -220,7 +220,10 @@ def one_run(args, tail, run_dir):
     argv = [str(args.worker), "--serve", "--libane", str(args.libane),
             "--deadline-ms", str(args.deadline_ms)] + tail
     if args.strace:
-        argv = ["strace", "-ff", "-T", "-ttt", "-e", "raw=ioctl",
+        # --seccomp-bpf: only the traced calls stop, not the ~14,000 seal
+        # read/write calls, so the open stays close to the untraced arm.
+        argv = ["strace", "-ff", "--seccomp-bpf", "-T", "-ttt",
+                "-e", "raw=ioctl",
                 "-e", "trace=openat,memfd_create,ioctl,mmap,munmap",
                 "-o", str(run_dir / "strace")] + argv
     env = dict(os.environ, MLX_OMARCHY_OPEN_TIMING="1", ANE_TRACE_TIMING="1")
