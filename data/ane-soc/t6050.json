@@ -479,6 +479,6 @@
   },
   "ane1_j775d": {
     "v": null,
-    "reason": "Not fetched in this run. AneAllSoc receipt adt-27.0.txt:197-199 lists j775d ane1 as ane,t8020 (no exclave) with Ap,ANE1 not IsLoadedByiBoot."
+    "reason": "The j775d ADT was not read. receipts/2026-10-01-ane-every-soc/adt-27.0.txt:197-199 lists j775d ane1 as ane,t8020 at 0x4308000000+0x2000000 (die-id 1, interrupt 4058; dart-ane1 at 0x4309800000, interrupt 4059). That summary prints no exclave property for any node (ane0 shows none there, but the full j714c ADT has exclave-assigned on ane0), so whether ane1 is exclave-assigned is not measured. The BuildManifest gives Ap,ANE1 IsLoadedByiBoot false (source B1)."
   }
 }

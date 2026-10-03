@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ALLOWED_ARGV = frozenset({
     ("dmesg", "--color=never"),
     ("omarchy-ane-check",),
@@ -54,7 +54,8 @@ UEVENT_KEYS = ("DRIVER", "OF_NAME", "OF_COMPATIBLE_0", "MODALIAS")
 # Set to null in this order until the document fits --max-kib.
 CAP_ORDER = ("dmesg", "check", "genpd", "debug_ane", "platform_devices", "unknown_ane_like",
              "interrupts", "pmgr_ane_nodes", "mailbox_nodes", "dart_ane_nodes", "ane_nodes",
-             "accel", "modules", "packages", "firmware", "soc_table", "compatible", "cmdline", "installed")
+             "accel", "modules", "packages", "firmware", "soc_table", "compatible", "cmdline", "installed",
+             "reachability")
 
 
 def read_bytes(path):
@@ -134,6 +135,20 @@ class DeviceTree:
             i += 1 + (cells(spec)[0] if spec else default_count)
         return out
 
+    def regs(self, path, prop="reg"):
+        """(base, size) pairs of PROP, decoded with the parent's #address-cells and #size-cells."""
+        ac = self.parent_cells(path, "#address-cells", 2)
+        sc = self.parent_cells(path, "#size-cells", 1)
+        values, step, out = cells(self.nodes[path].get(prop)), ac + sc, []
+        for i in range(0, len(values) - step + 1, step if step else 1):
+            base = size = 0
+            for word in values[i:i + ac]:
+                base = base << 32 | word
+            for word in values[i + ac:i + step]:
+                size = size << 32 | word
+            out.append((base, size))
+        return out
+
     def describe(self, path):
         props = self.nodes[path]
         rec = {"path": path, "compatible": strings(props.get("compatible")),
@@ -144,17 +159,7 @@ class DeviceTree:
         if "label" in props:
             rec["label"] = strings(props["label"])[0]
         if "reg" in props:
-            ac = self.parent_cells(path, "#address-cells", 2)
-            sc = self.parent_cells(path, "#size-cells", 1)
-            values, step, regs = cells(props["reg"]), ac + sc, []
-            for i in range(0, len(values) - step + 1, step if step else 1):
-                base = size = 0
-                for v in values[i:i + ac]:
-                    base = base << 32 | v
-                for v in values[i + ac:i + step]:
-                    size = size << 32 | v
-                regs.append({"base": hex(base), "size": hex(size)})
-            rec["reg_decoded"] = regs
+            rec["reg_decoded"] = [{"base": hex(b), "size": hex(s)} for b, s in self.regs(path)]
         return rec
 
     def ane_family(self):
@@ -371,19 +376,27 @@ def as_int(value):
         return None
 
 
-def soc_table(soc, board, family, tdir):
-    """dt_vs_table: the live device tree against data/ane-soc/<soc>.json."""
+def read_table(soc, tdir):
+    """(table, None) for data/ane-soc/<soc>.json, else (None, {table, reason})."""
     if not soc:
-        return {"table": None, "reason": "no apple,tNNNN compatible in the device tree"}
+        return None, {"table": None, "reason": "no apple,tNNNN compatible in the device tree"}
     if tdir is None:
-        return {"table": None, "reason": "no data/ane-soc next to the tool and no /usr/share/omarchy-ane/soc"}
+        return None, {"table": None, "reason": "no data/ane-soc next to the tool and no /usr/share/omarchy-ane/soc"}
     path = tdir / f"{soc}.json"
     try:
-        table = json.loads(path.read_text())
+        return json.loads(path.read_text()), None
     except FileNotFoundError:
-        return {"table": None, "reason": f"no {path.name} in {tdir}"}
+        return None, {"table": None, "reason": f"no {path.name} in {tdir}"}
     except (OSError, ValueError) as e:
-        return {"table": path.name, "reason": f"unreadable: {e}"}
+        return None, {"table": path.name, "reason": f"unreadable: {e}"}
+
+
+def soc_table(soc, board, family, tdir):
+    """dt_vs_table: the live device tree against data/ane-soc/<soc>.json."""
+    table, failed = read_table(soc, tdir)
+    if failed:
+        return failed
+    path = tdir / f"{soc}.json"
     diffs, compared = [], 0
 
     def check(field, dt, tbl, ok):
@@ -417,6 +430,86 @@ def soc_table(soc, board, family, tdir):
             check(f"{key}.interrupts", have, want, all(v(i) in have for i in want))
     return {"table": path.name, "marketing": v(table.get("marketing")), "generation": v(table.get("generation")),
             "state": v(table.get("state")), "compared": compared, "match": not diffs, "dt_vs_table": diffs[:16]}
+
+
+def devices_by_node(root):
+    """DT path -> /sys/bus/platform/devices entry, by each device's of_node link."""
+    out = {}
+    for entry in listdir(root / "sys/bus/platform/devices"):
+        try:
+            target = os.readlink(entry / "of_node")
+        except OSError:
+            continue
+        if "devicetree/base" in target:
+            out["/" + target.split("devicetree/base", 1)[1].strip("/")] = entry
+    return out
+
+
+# The ADT property that assigns the ANE to the exclave, an execution environment other
+# than the OS (data/ane-soc/t8140.json ane.exclave). Matched with or without a vendor prefix.
+OWNER_PROP = "exclave-assigned"
+ENABLED = ("okay", "ok")
+VERDICTS = ("reachable", "owned-elsewhere", "not-exposed")
+
+
+def node_reachability(tree, path, devs):
+    props, regs = tree.nodes[path], tree.regs(path)
+    ref = lambda p: {"path": p, "status": (strings(tree.nodes[p].get("status")) or ["okay"])[0]}
+    refs = lambda prop, count, default: [ref(p) for p in dict.fromkeys(tree.targets(path, prop, count, default))]
+    dev = devs.get(path)
+    rec = {"path": path, "compatible": strings(props.get("compatible")),
+           "status": (strings(props.get("status")) or ["okay"])[0],
+           "reg_windows": len(regs), "engine": f"{regs[0][0]:#x}+{regs[0][1]:#x}" if regs else None,
+           "iommus": refs("iommus", "#iommu-cells", 1),
+           "power_domains": refs("power-domains", "#power-domain-cells", 0),
+           "mboxes": refs("mboxes", "#mbox-cells", 0), "exclave_props": sorted(k for k in props if "exclave" in k),
+           "device": dev.name if dev else None, "driver": link_name(dev / "driver") if dev else None}
+    owner = [k for k in props if k.split(",")[-1] == OWNER_PROP]
+    disabled = [r["path"] for r in rec["iommus"] + rec["power_domains"] if r["status"] not in ENABLED]
+    if owner:
+        verdict, reason = "owned-elsewhere", f"{owner[0]}: the ADT assigns the engine to the exclave"
+    elif rec["status"] not in ENABLED:
+        verdict, reason = "not-exposed", f"status {rec['status']}"
+    elif not regs:
+        verdict, reason = "not-exposed", "no reg window"
+    elif not rec["iommus"]:
+        verdict, reason = "not-exposed", "no iommus target"
+    elif not rec["power_domains"]:
+        verdict, reason = "not-exposed", "no power-domains target"
+    elif disabled:
+        verdict, reason = "not-exposed", "disabled: " + ", ".join(disabled)
+    else:
+        verdict, reason = "reachable", "enabled, with reg, iommus and power-domains"
+    rec.update(verdict=verdict, reason=reason)
+    return rec
+
+
+def reachability(tree, family, soc, root, table):
+    """Does this machine's device tree give the ANE to the OS? Device tree and sysfs
+    only: no register is read, so "reachable" means described, not that the engine answers."""
+    ane = table.get("ane") if isinstance(table, dict) else None
+    adt = v(ane.get("exclave")) if isinstance(ane, dict) else None
+    out = {"verdict": "unknown", "reason": None, "nodes": [],
+           "soc_table_exclave": adt if isinstance(adt, dict) else None, "adt_region": None,
+           "adt_mtd": next((e.name for e in listdir(root / "sys/class/mtd")
+                            if (read_text(e / "name") or "").strip() == "adt"), None)}
+    if tree is None:
+        out["reason"] = "no /proc/device-tree"
+        return out
+    adt_regs = [r for p, props in tree.nodes.items()
+                if p.startswith("/reserved-memory/") and "adt" in strings(props.get("label")) for r in tree.regs(p)]
+    out["adt_region"] = f"{adt_regs[0][0]:#x}+{adt_regs[0][1]:#x}" if adt_regs else None
+    if soc is None:
+        out["reason"] = "no apple,tNNNN compatible in the device tree"
+        return out
+    devs = devices_by_node(root)
+    out["nodes"] = [node_reachability(tree, n["path"], devs) for n in family["ane_nodes"]]
+    if not out["nodes"]:
+        out["verdict"], out["reason"] = "not-exposed", "the device tree has no ANE node"
+    else:
+        best = min(out["nodes"], key=lambda n: VERDICTS.index(n["verdict"]))
+        out["verdict"], out["reason"] = best["verdict"], f"{best['path']}: {best['reason']}"
+    return out
 
 
 def probe(root, data_dir):
@@ -489,8 +582,10 @@ def probe(root, data_dir):
         if out["firmware"] is not None:
             out["installed"]["firmware_present"] = out["firmware"]["rc"] == 0
 
-    out["soc_table"] = guard("soc_table", lambda: soc_table(out["soc"], out["board"], family,
-                                                             table_dir(data_dir, root)), None)
+    tdir = table_dir(data_dir, root)
+    out["soc_table"] = guard("soc_table", lambda: soc_table(out["soc"], out["board"], family, tdir), None)
+    out["reachability"] = guard("reachability", lambda: reachability(tree, family, out["soc"], root,
+                                                                     read_table(out["soc"], tdir)[0]), None)
     out["unreadable"] = unreadable
     return out
 

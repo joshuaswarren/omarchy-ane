@@ -5,9 +5,10 @@ The T8103 and T6021 fixtures are a minimal stock tree (the nodes the shipped
 overlay targets) with packaging/dt/<soc>-ane.dts applied by fdtoverlay, then
 unpacked the way the kernel shows it in /proc/device-tree. So the ANE, DART,
 mailbox and power-domain shapes are the shipped ones, not test inventions.
-The T8140 tree is synthetic: no Linux device tree for it exists; it carries
-the ADT node kinds AneAllSoc recorded for H17/H18 (ane,t8132exclave and
-iop-ane,ascwrap-v8) to show that unknown generations are reported, not lost.
+The first T8140 tree is synthetic: it carries the ADT node kinds AneAllSoc
+recorded for H17/H18 (ane,t8132exclave and iop-ane,ascwrap-v8) to show that
+unknown generations are reported, not lost. The Neo (T8140) and M5 (T8142,
+T6050) reachability trees carry the shapes of data/ane-soc/<soc>.json.
 """
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -141,6 +142,7 @@ def system(root, driver, ane_dev):
     os.symlink(dev, root / "sys/bus/platform/devices" / ane_dev)
     (root / "sys/class/accel/accel0").mkdir(parents=True)
     os.symlink(dev, root / "sys/class/accel/accel0/device")
+    os.symlink(root / "sys/firmware/devicetree/base/soc" / ("ane@" + ane_dev.split(".")[0]), dev / "of_node")
     w("sys/kernel/debug/pm_genpd/pm_genpd_summary",
       "domain  status  children\nane_sys  on  ane_sys_cpu\ndisp0  off\n")
 
@@ -202,6 +204,16 @@ def test_t8103_overlay_tree():
         assert doc["genpd"] == ["ane_sys  on  ane_sys_cpu"]
         assert doc["packages"] == {"omarchy-ane-dkms": "0.4.0-1"}
         assert doc["kernel"]["release"] == RELEASE
+        r = doc["reachability"]
+        assert (r["verdict"], r["reason"]) == ("reachable", "/soc/ane@26bc04000: enabled, with reg, iommus and "
+                                                             "power-domains"), r
+        [n] = r["nodes"]
+        assert (n["device"], n["driver"], n["mboxes"], len(n["iommus"])) == ("26bc04000.ane", "ane", [], 3), n
+        # The stock M1 tree without the overlay has no ANE node.
+        stock = Path(tmp, "stock")
+        unpack_fdt(Path(tmp, "t8103-base.dtb").read_bytes(), stock / "sys/firmware/devicetree/base")
+        r = run_probe(stock, tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"], r["nodes"]) == ("not-exposed", "the device tree has no ANE node", []), r
 
 
 def test_t6021_overlay_tree_and_table_diff():
@@ -241,6 +253,15 @@ def test_t6021_overlay_tree_and_table_diff():
         text = json.dumps(doc)
         for secret in ("PARTUUID", "192.168.1.5", "0b6e0a7e", "C02XYZ123", "10.1.2.3", "10.0.0.1"):
             assert secret not in text, secret
+        r = doc["reachability"]
+        assert (r["verdict"], r["reason"]) == ("reachable", "/soc/ane@284000000: enabled, with reg, iommus and "
+                                                             "power-domains"), r
+        [n] = r["nodes"]
+        assert (n["device"], n["driver"], n["engine"], n["reg_windows"]) == (
+            "284000000.ane", "ane_t6021", "0x284000000+0x2000000", 3), n
+        assert (len(n["iommus"]), len(n["power_domains"]), n["mboxes"]) == (
+            3, 8, [{"path": "/soc/mailbox@285408000", "status": "okay"}]), n
+        assert r["soc_table_exclave"] is None and n["exclave_props"] == []
 
 
 def test_t8140_unknown_generation():
@@ -254,6 +275,150 @@ def test_t8140_unknown_generation():
         assert doc["soc_table"]["table"] is None and "no t8140.json" in doc["soc_table"]["reason"]
         assert doc["installed"]["driver_loaded"] is False and doc["installed"]["dkms_module_present"] is False
         assert any(u.startswith("genpd: no debugfs") for u in doc["unreadable"])
+        r = doc["reachability"]
+        assert (r["verdict"], r["reason"]) == ("not-exposed", "/soc/ane@2a0000000: status disabled"), r
+        assert r["nodes"][0]["compatible"] == ["ane,t8132exclave"] and r["nodes"][0]["exclave_props"] == []
+
+
+NEO_BASE = '''/dts-v1/;
+/ { compatible = "apple,j700", "apple,t8140", "apple,arm-platform"; model = "Apple MacBook Neo";
+  #address-cells = <2>; #size-cells = <2>;
+  reserved-memory { #address-cells = <2>; #size-cells = <2>; ranges;
+    flash@10004834000 { compatible = "phram"; label = "adt"; reg = <0x100 0x04834000 0x0 0x68000>; no-map; };
+  };
+  soc { #address-cells = <2>; #size-cells = <2>; ranges;
+    interrupt-controller@301000000 { interrupt-controller; #interrupt-cells = <3>; };
+    power-management@300700000 { #address-cells = <1>; #size-cells = <1>; };
+  };
+};'''
+
+
+def test_t8140_neo_reachability():
+    """A Neo as the aurora tree boots it (no ANE node), then with the shipped data-only
+    overlay (disabled nodes), then with those nodes enabled, then with the ADT's
+    exclave-assigned property copied in. The table is the shipped data/ane-soc/t8140.json."""
+    tables = REPO / "data/ane-soc"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        dtb(NEO_BASE, tmp / "base.dtb", "-@")
+        dtb((REPO / "packaging/dt/t8140-ane-dataonly.dts").read_text(), tmp / "ane.dtbo", "-@")
+        subprocess.run(["fdtoverlay", "-i", str(tmp / "base.dtb"), "-o", str(tmp / "ane.dtb"),
+                        str(tmp / "ane.dtbo")], check=True)
+
+        def neo(name, blob):
+            root = tmp / name
+            unpack_fdt(blob.read_bytes(), root / "sys/firmware/devicetree/base")
+            for mtd in ("mtd0", "mtd0ro"):
+                (root / "sys/class/mtd" / mtd).mkdir(parents=True)
+                (root / "sys/class/mtd" / mtd / "name").write_text("adt\n")
+            return root
+
+        r = run_probe(neo("stock", tmp / "base.dtb"), tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"], r["nodes"]) == ("not-exposed", "the device tree has no ANE node", []), r
+        assert (r["adt_region"], r["adt_mtd"]) == ("0x10004834000+0x68000", "mtd0"), r
+        assert r["soc_table_exclave"]["exclave-assigned"] is True
+        assert r["soc_table_exclave"]["exclave-reg"] == "0x441c00000+0x88000"
+
+        root = neo("dataonly", tmp / "ane.dtb")
+        r = run_probe(root, tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"]) == ("not-exposed", "/soc/ane@400000000: status disabled"), r
+        [n] = r["nodes"]
+        assert (n["compatible"], n["reg_windows"], n["engine"]) == ([], 6, "0x400000000+0x2000000"), n
+        assert n["iommus"] == [{"path": f"/soc/iommu@4018{i}0000", "status": "disabled"} for i in "024"], n
+        assert n["power_domains"] == [{"path": "/soc/power-management@300700000/power-controller@290",
+                                       "status": "disabled"}], n
+        assert (n["mboxes"], n["device"], n["driver"]) == ([], None, None), n
+
+        dt = root / "sys/firmware/devicetree/base/soc"
+        (dt / "ane@400000000/status").write_bytes(b"okay\0")
+        r = run_probe(root, tables, "--max-kib", "0")["reachability"]
+        assert r["verdict"] == "not-exposed" and r["reason"].startswith(
+            "/soc/ane@400000000: disabled: /soc/iommu@401800000, "), r
+        for node in ("iommu@401800000", "iommu@401820000", "iommu@401840000",
+                     "power-management@300700000/power-controller@290"):
+            (dt / node / "status").write_bytes(b"okay\0")
+        dev = root / "sys/devices/platform/soc/400000000.ane"
+        dev.mkdir(parents=True)
+        os.symlink(dt / "ane@400000000", dev / "of_node")
+        (root / "sys/bus/platform/devices").mkdir(parents=True)
+        os.symlink(dev, root / "sys/bus/platform/devices/400000000.ane")
+        r = run_probe(root, tables, "--max-kib", "0")["reachability"]
+        assert r["verdict"] == "reachable" and r["nodes"][0]["device"] == "400000000.ane", r
+
+        (dt / "ane@400000000/exclave-assigned").write_bytes(b"")
+        r = run_probe(root, tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"]) == (
+            "owned-elsewhere", "/soc/ane@400000000: exclave-assigned: the ADT assigns the engine to the exclave"), r
+        assert r["nodes"][0]["exclave_props"] == ["exclave-assigned"]
+
+
+M5_TREES = {
+    # T8142 (M5): the ADT node as data/ane-soc/t8142.json has it, with a vendor-prefixed marking.
+    "t8142": '''/dts-v1/;
+/ { compatible = "apple,j704", "apple,t8142", "apple,arm-platform"; model = "M5-like (t8142)";
+  #address-cells = <2>; #size-cells = <2>;
+  soc { #address-cells = <2>; #size-cells = <2>; ranges;
+    power-management@380700000 { #address-cells = <1>; #size-cells = <1>;
+      ps_ane_sys: power-controller@2e8 { reg = <0x2e8 4>; #power-domain-cells = <0>; label = "ane_sys"; };
+    };
+    dart: iommu@421800000 { reg = <0x4 0x21800000 0x0 0xc000>; #iommu-cells = <1>; };
+    ane@420000000 { compatible = "ane,t8132exclave"; reg = <0x4 0x20000000 0x0 0x2000000>;
+      iommus = <&dart 0>, <&dart 11>; power-domains = <&ps_ane_sys>;
+      apple,exclave-assigned; exclave-reg = <0x4 0x61c00000 0x0 0x88000>; };
+  };
+};''',
+    # T6050 j775d (two dies): ane0 ane,t8132exclave, marked here; ane1 ane,t8020 on die 1, no IOMMU yet.
+    # Addresses from receipts/2026-10-01-ane-every-soc/adt-27.0.txt; the die-1 pmgr offsets are die 0's.
+    "t6050": '''/dts-v1/;
+/ { compatible = "apple,j775d", "apple,t6050", "apple,arm-platform"; model = "M5-like (t6050)";
+  #address-cells = <2>; #size-cells = <2>;
+  soc { #address-cells = <2>; #size-cells = <2>; ranges;
+    power-management@280900000 { #address-cells = <1>; #size-cells = <1>;
+      ps_ane_mpm: power-controller@3c0 { reg = <0x3c0 4>; #power-domain-cells = <0>; };
+      ps_ane_cpu: power-controller@3c8 { reg = <0x3c8 4>; #power-domain-cells = <0>; };
+    };
+    power-management@4080900000 { #address-cells = <1>; #size-cells = <1>;
+      ps_ane1_mpm: power-controller@3c0 { reg = <0x3c0 4>; #power-domain-cells = <0>; };
+    };
+    dart1: iommu@4309800000 { reg = <0x43 0x09800000 0x0 0xc000>; #iommu-cells = <1>; };
+    ane0@508000000 { compatible = "ane,t8132exclave"; reg = <0x5 0x08000000 0x0 0x2000000>;
+      power-domains = <&ps_ane_mpm>, <&ps_ane_cpu>; exclave-assigned; exclave-reg = <0x5 0x49c00000 0x0 0x88000>; };
+    ane1@4308000000 { compatible = "ane,t8020"; reg = <0x43 0x08000000 0x0 0x2000000>;
+      power-domains = <&ps_ane1_mpm>; };
+  };
+};''',
+}
+
+
+def test_m5_reachability():
+    tables = REPO / "data/ane-soc"
+    with tempfile.TemporaryDirectory() as tmp:
+        roots = {}
+        for soc, src in M5_TREES.items():
+            dtb(src, Path(tmp, f"{soc}.dtb"), "-@")
+            roots[soc] = Path(tmp, soc)
+            unpack_fdt(Path(tmp, f"{soc}.dtb").read_bytes(), roots[soc] / "sys/firmware/devicetree/base")
+        r = run_probe(roots["t8142"], tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"]) == (
+            "owned-elsewhere", "/soc/ane@420000000: apple,exclave-assigned: the ADT assigns the engine to the "
+                               "exclave"), r
+        [n] = r["nodes"]
+        assert n["iommus"] == [{"path": "/soc/iommu@421800000", "status": "okay"}], n
+        assert n["exclave_props"] == ["apple,exclave-assigned", "exclave-reg"], n
+        assert r["soc_table_exclave"]["exclave-reg"] == "0x461c00000+0x88000" and r["adt_mtd"] is None
+        (roots["t8142"] / "sys/firmware/devicetree/base/soc/ane@420000000/apple,exclave-assigned").unlink()
+        assert run_probe(roots["t8142"], tables, "--max-kib", "0")["reachability"]["verdict"] == "reachable"
+
+        r = run_probe(roots["t6050"], tables, "--max-kib", "0")["reachability"]
+        assert sorted((n["path"], n["verdict"], n["reason"]) for n in r["nodes"]) == [
+            ("/soc/ane0@508000000", "owned-elsewhere", "exclave-assigned: the ADT assigns the engine to the exclave"),
+            ("/soc/ane1@4308000000", "not-exposed", "no iommus target")], r
+        assert (r["verdict"], r["soc_table_exclave"]["exclave-reg"]) == ("owned-elsewhere", "0x549c00000+0x88000"), r
+        dt = roots["t6050"] / "sys/firmware/devicetree/base/soc"
+        (dt / "ane1@4308000000/iommus").write_bytes((dt / "iommu@4309800000/phandle").read_bytes() + bytes(4))
+        r = run_probe(roots["t6050"], tables, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"]) == (
+            "reachable", "/soc/ane1@4308000000: enabled, with reg, iommus and power-domains"), r
 
 
 def test_empty_root_and_cap():
@@ -261,6 +426,12 @@ def test_empty_root_and_cap():
         doc = run_probe(Path(tmp), Path(tmp))
         assert doc["soc"] is None and doc["ane_nodes"] == []
         assert any(u.startswith("device-tree:") for u in doc["unreadable"])
+        assert doc["reachability"] == {"verdict": "unknown", "reason": "no /proc/device-tree", "nodes": [],
+                                       "soc_table_exclave": None, "adt_region": None, "adt_mtd": None}
+        dtb('/dts-v1/;\n/ { compatible = "raspberrypi,4-model-b"; };', Path(tmp, "pi.dtb"))
+        unpack_fdt(Path(tmp, "pi.dtb").read_bytes(), Path(tmp, "pi/sys/firmware/devicetree/base"))
+        r = run_probe(Path(tmp, "pi"), tmp, "--max-kib", "0")["reachability"]
+        assert (r["verdict"], r["reason"]) == ("unknown", "no apple,tNNNN compatible in the device tree"), r
         root = fixture(tmp, "t6021")
         system(root, "ane_t6021", "284000000.ane")
         full = run_probe(root, tmp, "--max-kib", "0")
@@ -363,8 +534,9 @@ def test_live_host():
     assert len(p.stdout.encode()) <= 8 * 1024 + 1
     doc = json.loads(p.stdout)
     assert "error" not in doc, doc["error"]
-    assert {"soc", "ane_nodes", "installed", "soc_table", "kernel", "cmdline"} <= set(doc), sorted(doc)
-    assert doc["schema_version"] == 1 and isinstance(doc["unreadable"], list)
+    assert {"soc", "ane_nodes", "installed", "soc_table", "reachability", "kernel", "cmdline"} <= set(doc), sorted(doc)
+    assert doc["reachability"]["verdict"] in ("reachable", "owned-elsewhere", "not-exposed", "unknown")
+    assert doc["schema_version"] == 2 and isinstance(doc["unreadable"], list)
 
 
 if __name__ == "__main__":
