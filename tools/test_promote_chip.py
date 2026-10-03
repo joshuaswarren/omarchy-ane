@@ -5,11 +5,11 @@ The chip sets derive from packaging/dt/overlays (the flip source of truth), so
 the suite runs on any tree state: before or after any promotion. Per chip: a
 flip edits exactly the flip file set, a second apply changes nothing, --check
 writes nothing, and the revert round-trips the tree byte-identically (the one
-CHANGELOG direction-log line excepted). Flipping two chips in either order
-lands the same canonical lists, and a promote with --note writes the Evidence
-cell and the overlay's state line. One flipped tree must also pass the offline
-packaging suites (test_ane_dt, test_ane_m2). No network and no module loads;
-needs dtc and fdtoverlay (test_ane_dt).
+CHANGELOG direction-log line excepted). The tree is a copy of the working
+tree, so this runs the same in a checkout and in a git archive extraction.
+Flipping two chips in either order lands the same canonical lists, and a
+promote with --note writes the Evidence cell and the overlay's state line.
+No network and no module loads; needs dtc and fdtoverlay (test_ane_dt).
 """
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
@@ -44,12 +44,8 @@ def flip_files(chip):
 
 
 def make_tree():
-    tmp = Path(tempfile.mkdtemp())
-    archive = subprocess.run(["git", "-C", str(repo), "archive", "HEAD"],
-                             check=True, capture_output=True).stdout
-    subprocess.run(["tar", "-x", "-C", str(tmp)], input=archive, check=True)
-    # the script is live even before it is committed
-    shutil.copy(repo / "tools/promote_chip.py", tmp / "tools/promote_chip.py")
+    tmp = Path(tempfile.mkdtemp()) / "tree"
+    shutil.copytree(repo, tmp, ignore=shutil.ignore_patterns(".git"))
     return tmp
 
 
@@ -61,7 +57,7 @@ def tree(root):
 def run(root, chip, to, mode, note=None):
     cmd = [sys.executable, str(root / "tools/promote_chip.py"), "--chip", chip, "--to", to, mode]
     if note:
-        cmd[5:5] = ["--note", note]
+        cmd += ["--note", note]
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
