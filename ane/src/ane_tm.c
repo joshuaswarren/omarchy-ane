@@ -448,9 +448,9 @@ static int ane_pd_cycle(struct ane_device *ane)
 			pm_runtime_put_noidle(ane->pd_dev[gated]);
 	} else {
 		/* Pin a second usage ref for the cycle: force_suspend only
-		 * marks needs_force_resume when a ref beyond the probe one
-		 * is held, and without that mark force_resume would leave
-		 * the partition gated. */
+		 * marks needs_force_resume when a ref beyond the caller's
+		 * one (submit ioctl or reset write) is held, and without
+		 * that mark force_resume would leave the partition gated. */
 		pm_runtime_get_noresume(ane->dev);
 		dev_dbg(ane->dev, "ANERD dev force_suspend begin\n");
 		err = pm_runtime_force_suspend(ane->dev);
