@@ -1,5 +1,15 @@
 #!/bin/sh
+# Locate the privacy_check.py shipped next to this hook script. This works
+# for both the standard .git/hooks/ layout and `core.hooksPath=hooks` (the
+# checker is installed in the same directory as the hook). If no checker is
+# present, allow the push -- the privacy guard is opt-in per repo.
 set -e
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ -f "$HOOK_DIR/privacy_check.py" ]; then
+  exec python3 "$HOOK_DIR/privacy_check.py" --hook
+fi
+# Last-resort: legacy hardcoded .git/hooks/ location (kept so a manual
+# install to .git/hooks/privacy_check.py still works).
 REPO=$(git rev-parse --show-toplevel) || exit 1
 if [ -f "$REPO/.git/hooks/privacy_check.py" ]; then
   exec python3 "$REPO/.git/hooks/privacy_check.py" --hook
