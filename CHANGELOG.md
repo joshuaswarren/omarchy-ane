@@ -57,10 +57,7 @@ changes.
   `dyn_pg=1 boot_prevent_nap=0`, the firmware boots but does not answer
   CONFIG_GET (-110), and `ane_t6021` registers no device. Design:
   `receipts/2026-10-03-t6021-dynpg/README.md`; measurements:
-  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
-- PLACEHOLDER (#106, not merged; remove this line if #106 does not merge
-  before the tag): the measured run is in
-  `receipts/2026-10-03-t6021-v042-gate/README.md`.
+  `receipts/2026-10-03-t6021-v042-gate/README.md` (#106).
 - `ane/h16`: an opt-in experimental bring-up module, `ane_h16`, for the M4
   family (T8132, T6040, T6041) (#100, #103). It is not part of the package
   or the DKMS build, nothing autoloads it, and it refuses to probe without
@@ -202,6 +199,18 @@ changes.
 - The T6021 power-down study (`receipts/2026-10-03-t6021-powerdown`, #105):
   the state that a power-domain cycle loses, the firmware power commands, and
   ranked designs. Offline, no hardware.
+- The T6021 gate of this release (`receipts/2026-10-03-t6021-v042-gate`,
+  #106), on one M2 Max laptop with the `ane_t6021` of `5a457a3` (srcversion
+  `59494CBC56F28ED8D1122C6`): at the default parameters the release gate
+  passed (smoke, 9 gate ops, `ane_stats` items 1-4), and the whole encoder
+  was bit-exact at 254.306 ms min-of-min. `dyn_pg=1` was accepted but did
+  not gate, and `dyn_pg=1 boot_prevent_nap=0` was refused at probe
+  (CONFIG_GET -110). On two boots with the driver never loaded, idle power
+  was 14.46 to 14.50 W (5-minute block medians, fans off), against 14.69 to
+  14.77 W with the driver bound: holding the driver costs 227 mW (95 %
+  interval 207 to 246 mW, same session) to 275 mW (260 to 290 mW, against
+  the gate run's blocks). With the driver never loaded, `ane_cpu` and
+  `ane_sys` stay on and the other seven ANE power domains are off.
 
 ### Known limits
 
@@ -211,12 +220,15 @@ changes.
 - `dyn_pg=1` does not gate the compute islands on the tested M2 Max firmware,
   and `dyn_pg=1 boot_prevent_nap=0` makes probe fail. Keep the defaults.
 - `ane_t6021` keeps the ANE powered while it is bound; only `ane` suspends.
+  On one M2 Max laptop that costs about 0.23 to 0.27 W at idle against a
+  boot where the driver never loads (#106).
 - Closing a program still unmaps its buffer objects page by page: the
   release of the whole encoder program took about 178 ms on T8103 and
   241 ms on T6001, the same with and without `map_batch`.
 - No silicon has run `ane_h16`.
 - The hardware results of this release are in
-  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md` and
+  `receipts/2026-10-03-t6021-v042-gate/README.md`.
 
 ## 0.4.1 (2026-10-02)
 

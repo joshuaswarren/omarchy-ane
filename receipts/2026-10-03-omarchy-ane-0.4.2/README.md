@@ -1,23 +1,20 @@
 # omarchy-ane 0.4.2: release receipt
 
-The release commit moves the CHANGELOG to `## 0.4.2 (2026-10-03)` on top of
-main `dc174cd` (#104) and fixes one README sentence about the chips after the
+The release commits move the CHANGELOG to `## 0.4.2 (2026-10-03)` on top of
+main `d31f059` (#106) and fix one README sentence about the chips after the
 M2. The project keeps no version number in the tree: the recipe passes the
 package version to `dkms.conf` (`@PKGVER@`), as in 0.4.1.
 
 ## What changed since v0.4.1
 
 The tag v0.4.1 is on `4f01bb3`, a branch of `6608721`. So
-`git log --first-parent v0.4.1..dc174cd` also holds #89, which v0.4.1 does
-not contain. The merges: #89 and #91 to #105. #89 and #91 change only the
-promotion workflow, `tools/promote_from_verdict.py` (one import) and the
-promotion tests; the CHANGELOG names every other one.
-`git diff v0.4.1..dc174cd -- ane/src/uapi libane/ane.h libane/ane_m2.h` is
+`git log --first-parent v0.4.1..d31f059` also holds #89, which v0.4.1 does
+not contain. The merges: #89 to #106. #90 merged the 0.4.1 release commit
+itself. #89 and #91 change only the promotion workflow,
+`tools/promote_from_verdict.py` (one import) and the promotion tests; the
+CHANGELOG names every other one.
+`git diff v0.4.1..d31f059 -- ane/src/uapi libane/ane.h libane/ane_m2.h` is
 empty: the ioctl interface does not change.
-
-One entry is a placeholder for an open PR. It starts with `PLACEHOLDER`, so
-`grep -n PLACEHOLDER CHANGELOG.md` finds it: #106, the T6021 0.4.2 gate
-receipt. Remove the line if #106 does not merge before the tag.
 
 ## The bytes that the hardware gates ran
 
@@ -28,15 +25,15 @@ A DKMS-tree build of this tree (below) gives `ane.ko` srcversion
 - `ane.ko`, T8103 (one M1 laptop) and T6001 (one M1 Max laptop): the
   `map_batch` runs built `ane.ko` and the test libane from the #104 head
   `13c684a`, and loaded srcversion `B4AE691E569A2BBD37E18E3`.
-  `git diff 13c684a..dc174cd` changes only
-  `receipts/2026-10-03-t6021-powerdown/README.md`, so `ane/`, `libane/`,
-  `packaging/`, `tools/`, `fixtures/` and `dkms.conf` are the bytes of this
-  release. The autosuspend runs before them (#95 head `198db99`, srcversion
-  `B94A022ECB6F0FF27D17BB8`) cover the power behavior: #104 changes only the
-  map path.
+  `git diff 13c684a..d31f059` changes only two receipt directories
+  (`2026-10-03-t6021-powerdown`, #105, and `2026-10-03-t6021-v042-gate`,
+  #106), so `ane/`, `libane/`, `packaging/`, `tools/`, `fixtures/` and
+  `dkms.conf` are the bytes of this release. The autosuspend runs before them
+  (#95 head `198db99`, srcversion `B94A022ECB6F0FF27D17BB8`) cover the power
+  behavior: #104 changes only the map path.
 - `ane_t6021.ko`, T6021 (one M2 Max laptop): the run on `5a457a3` loaded
   srcversion `59494CBC56F28ED8D1122C6`.
-  `git diff 5a457a3..dc174cd -- ane/t6021 ane/include ane/ane_stats_show.c
+  `git diff 5a457a3..d31f059 -- ane/t6021 ane/include ane/ane_stats_show.c
   libane dkms.conf packaging/omarchy-ane-smoke fixtures` is empty.
 
 ## Host gate
@@ -111,12 +108,13 @@ H13 fixture that is byte-equal to the source.
 
 ## Hardware results (MEASURED by the hardware lanes)
 
-One machine per chip ran each lane. The lane records are in the private lab
-notebook; this section copies their numbers. Nothing here was measured again
-for this receipt. The design receipts that the CHANGELOG also cites
-(`2026-10-03-ane-autosuspend`, `2026-10-03-ane-iommu-batch`,
-`2026-10-03-t6021-dynpg`) were written before these runs, so their "not
-verified" sections predate this data.
+One machine per chip ran each lane. The T6021 lane has its own receipt in
+the tree, `receipts/2026-10-03-t6021-v042-gate/README.md` (#106); the T8103
+and T6001 lane records are in the private lab notebook, and this section
+copies their numbers. Nothing here was measured again for this receipt. The
+design receipts that the CHANGELOG also cites (`2026-10-03-ane-autosuspend`,
+`2026-10-03-ane-iommu-batch`, `2026-10-03-t6021-dynpg`) were written before
+these runs, so their "not verified" sections predate this data.
 
 ### Autosuspend (#95): `198db99`, `ane.ko` srcversion `B94A022ECB6F0FF27D17BB8`
 
@@ -160,6 +158,9 @@ change and asked for the bar to be reviewed.
 
 ### T6021 (one M2 Max laptop): `5a457a3`, `ane_t6021` srcversion `59494CBC56F28ED8D1122C6`
 
+From `receipts/2026-10-03-t6021-v042-gate/README.md` (#106), which has the
+boot records, block tables and intervals.
+
 - Default parameters: boot and bind; 8 `ane` lines at the default log level
   (6 info, 2 warning) and no `ANERD`, `ANEWR`, `ps probe` or emergency line;
   one license and one description in `modinfo`; smoke 20/20 bit-exact; nine
@@ -172,3 +173,18 @@ change and asked for the bar to be reviewed.
   matched the defaults.
 - `dyn_pg=1 boot_prevent_nap=0`: the firmware booted, CONFIG_GET timed out
   (-110), and probe failed with -110, so no device registered.
+- Driver never loaded (arm 0, two boots), against the driver bound with the
+  default parameters. Idle Total System Power, 5-minute block medians, fans
+  off in every block:
+
+  | blocks | median per block |
+  | --- | --- |
+  | driver never loaded (Z1a-c, Z2a-b) | 14461.2 to 14502.6 mW |
+  | driver bound, same session (As1-3) | 14692.0 to 14721.9 mW |
+  | driver bound, gate run (A3, Aend1, Aend2) | 14750.5 to 14766.0 mW |
+
+  Bound minus never loaded (means of block medians, 95 % bootstrap interval
+  over blocks): +226.7 mW [+206.8, +245.6] against the same session,
+  +274.6 mW [+260.0, +290.1] against the gate run's blocks. With the driver
+  never loaded, genpd keeps `ane_cpu` and `ane_sys` on and the other seven
+  ANE domains off; with it bound, all nine are on.
