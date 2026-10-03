@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 (2026-10-03)
 
 - T6000 (M1 Pro) ANE on by default. (row 6eb94f49985b)
 - T6020 (M2 Pro) ANE on by default. (row 3c9389040f51)
@@ -35,6 +35,9 @@
   header are unchanged; the T6021 (ABI 2) loader is untouched. Not merged
   before hardware: the A/B protocol for w71 (jwm1) and w72 (jw16) is in
   `receipts/2026-10-03-libane-no-staging/README.md`.
+
+
+## Unreleased
 
 ## 0.4.2 (2026-10-03)
 
