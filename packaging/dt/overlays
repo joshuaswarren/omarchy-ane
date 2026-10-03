@@ -4,7 +4,7 @@
 # trees by file name. STATE: enabled applies by default; opt-in applies only
 # after the owner opts in (the overlay's "omarchy,opt-in" string, listed in
 # /etc/omarchy-platform/dtb-overlays.opt-in); disabled is not installed.
-# Tested SoCs are enabled (T8103, T6001, T6021, T6020, T6000). Untested SoCs are opt-in.
+# Tested SoCs are enabled (T8103, T6001, T6021, T6000, T6020). Untested SoCs are opt-in.
 # SoCs that no driver binds are disabled. The SoC table is in README.md,
 # "Chip coverage".
 #

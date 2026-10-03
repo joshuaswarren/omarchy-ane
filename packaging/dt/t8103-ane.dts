@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
+ * Overlay state: on by default.
  * ANE for T8103 (M1) board device trees, for kernels whose trees lack it.
  *
  * DERIVED, NOT YET BOOTED FROM THIS OVERLAY. The nodes reproduce the tree the

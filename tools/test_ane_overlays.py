@@ -100,3 +100,16 @@ else:
             print(f'test_ane_overlays: {source.name} (data-only): {len(boards)} boards: '
                   + ' '.join(b.stem for b in boards))
     print(f'test_ane_overlays: ok ({len(rows)} overlays, {len(data_only)} data-only, {applied} applications)')
+
+# The "Overlay state:" line every ANE overlay carries says what the overlays
+# table says (promote_chip writes the line; this catches a hand edit or a
+# promote that skipped the dts). Runs with or without ANE_DTBS.
+for prefix, source, state in (line.split() for line in (root / 'packaging/dt/overlays').read_text().splitlines()
+                              if line and line[0] != '#'):
+    if source != f'{prefix}-ane.dts':
+        continue  # auxiliary overlays (t6021 U-Boot stdin) carry no state line
+    lines = [l for l in (root / 'packaging/dt' / source).read_text().splitlines()
+             if l.startswith(' * Overlay state:')]
+    assert len(lines) == 1, (source, lines)
+    assert ('on by default' in lines[0]) == (state == 'enabled'), (source, lines[0], state)
+print('test_ane_overlays: overlay state lines ok')

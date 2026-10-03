@@ -12,15 +12,23 @@ A flip touches, and nothing else:
 
   packaging/dt/overlays             the chip's row: opt-in <-> enabled, and the
                                     "Tested SoCs are enabled (...)" header list
-  packaging/dt/<chip>-ane.dts       the overlay's "omarchy,opt-in" marker
-                                    (removed on default-on, restored on opt-in)
+  packaging/dt/<chip>-ane.dts       the "Overlay state:" line (state and, on a
+                                    promote, the --note evidence) and the
+                                    overlay's "omarchy,opt-in" marker (removed
+                                    on default-on, restored on opt-in)
   packaging/omarchy-ane-check       the SoC moves between the case lists that
                                     decide whether UNTESTED prints
   packaging/omarchy-ane-dt          the docstring's opt-in key enumeration
   packaging/omarchy-ane-firmware-fetch   DEFAULT_ON (chips the install hook
                                     fetches firmware for; M2 family only)
-  README.md                         the chip table row: State and Opt-in key
+  README.md                         the chip table row: State, Opt-in key and,
+                                    on a promote, the Evidence cell
   CHANGELOG.md                      one Unreleased line (the direction log)
+
+The case lists and the tested-header list stay in a canonical order from any
+tree state (the default-on trio first, then promoted chips sorted; the opt-in
+list sorted), so a flip round-trips byte for byte no matter which chips are
+already promoted. The suites derive their chip sets from the overlays table.
 
 Driver qualification lives in the kernel (ane.ko ane_of_match, ane_t6021
 ane_rtclient_of_match) and no flip needs it: T6000/T6002 are ANE_QUALIFIED in
@@ -31,6 +39,7 @@ a chip whose overlay is disabled.
 refused, the tree is unchanged.
 """
 import argparse
+import bisect
 import difflib
 import re
 import sys
@@ -42,24 +51,44 @@ MARKETING = {"t8103": "M1", "t6000": "M1 Pro", "t6001": "M1 Max", "t6002": "M1 U
              "t8112": "M2", "t6020": "M2 Pro", "t6021": "M2 Max", "t6022": "M2 Ultra"}
 # The State and Opt-in key cells a revert writes (README.md, "Chip coverage").
 # The default-on chips have no opt-in row today: their revert cell is the plain
-# opt-in form. A promote always writes ("on by default", "none").
+# opt-in form. A promote writes ("on by default", "none") and, with --note, the
+# Evidence cell.
 README_OPTIN = {
-    "t6000": ("opt-in, untested", "`ane-t6000`"),
+    "t6000": ("opt-in", "`ane-t6000`"),
     "t6002": ("opt-in, untested (die 0)", "`ane-t6002`"),
     "t8112": ("opt-in, untested", "`ane-t8112` + note"),
-    "t6020": ("opt-in, untested", "`ane-t6020` + note"),
+    "t6020": ("opt-in", "`ane-t6020` + note"),
     "t6022": ("opt-in, untested (die 0)", "`ane-t6022` + note"),
     "t8103": ("opt-in", "`ane-t8103`"),
     "t6001": ("opt-in", "`ane-t6001`"),
     "t6021": ("opt-in", "`ane-t6021`"),
 }
-# Where each chip sits in packaging/omarchy-ane-check's opt-in case list, so a
-# revert restores the original token order byte for byte.
-CHECK_LIST_INDEX = {"t6000": 0, "t6002": 1, "t6020": 2, "t6022": 3, "t8112": 4,
-                    "t8103": None, "t6001": None, "t6021": None}
-# The seat of the chips that are on by default today, in the tested-header list
-# and the check's on list, so a re-promote after a revert restores it.
-FIRST_CLASS = {"t8103": 0, "t6001": 1, "t6021": 2}
+# The default-on chips keep their seats in the tested-header list and the
+# check's on list in this order; a promoted chip joins them sorted, and the
+# check's opt-in list stays sorted. insert_on() derives every seat from the
+# list itself, so a re-promote after a revert restores the list byte for byte
+# from any tree state.
+FIRST_CLASS = ("t8103", "t6001", "t6021")
+
+
+def insert_on(on_list, chip):
+    """Insert chip into an on list at its canonical seat and return nothing:
+    the FIRST_CLASS chips keep their order, promoted chips sort in after them.
+    The list may hold either letter case (the overlays header is upper, the
+    check's lists lower); the item keeps the case it came in with."""
+    up = str.upper
+    first = [c.upper() for c in FIRST_CLASS]
+    if chip.upper() in first:
+        seat = 0
+        for i, c in enumerate(on_list):
+            if c.upper() in first and first.index(c.upper()) < first.index(chip.upper()):
+                seat = i + 1
+        on_list.insert(seat, chip)
+    else:
+        head = sorted((c for c in on_list if c.upper() in first), key=lambda c: first.index(c.upper()))
+        promoted = sorted((c for c in on_list if c.upper() not in first), key=up)
+        bisect.insort(promoted, chip, key=up)
+        on_list[:] = head + promoted
 
 
 class Refuse(Exception):
@@ -106,7 +135,7 @@ def edit_overlays(text, chip, promote):
     names = [n for n in header.group(1).split(", ") if n]
     up = chip.upper()
     if promote and up not in names:
-        names.insert(min(FIRST_CLASS.get(chip, len(names)), len(names)), up)
+        insert_on(names, up)
     if not promote and up in names:
         names.remove(up)
     text = text[:header.start(1)] + ", ".join(names) + text[header.end(1):]
@@ -115,23 +144,36 @@ def edit_overlays(text, chip, promote):
 
 MARKER = ("\t/* dtb-overlays.sh: applies only when opted in. */\n"
           '\tomarchy,opt-in = "ane-{chip}";\n')
+STATE_OPTIN = ' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-platform/dtb-overlays.opt-in).\n'
 
 
-def edit_dts(text, chip, promote):
-    marker = MARKER.format(chip=chip)
+def state_line(text, chip):
+    lines = [l for l in text.splitlines(keepends=True) if l.startswith(" * Overlay state:")]
+    if len(lines) != 1:
+        raise Refuse(f"packaging/dt/{chip}-ane.dts: the file must carry exactly one "
+                     f"' * Overlay state:' line to flip (found {len(lines)})")
+    return lines[0]
+
+
+def edit_dts(text, chip, promote, note=None):
+    line = state_line(text, chip)
     if promote:
+        marker = MARKER.format(chip=chip)
         if marker not in text:
             if f'omarchy,opt-in = "ane-{chip}"' not in text:
                 return text  # already enabled
             raise Refuse(f"packaging/dt/{chip}-ane.dts: the opt-in marker is not in the expected shape")
-        return text.replace(marker, "")
+        state = f" * Overlay state: on by default ({note}).\n" if note \
+            else " * Overlay state: on by default.\n"
+        return text.replace(line, state).replace(marker, "")
     if f'omarchy,opt-in = "ane-{chip}"' in text:
         return text  # already opt-in
     m = re.search(r'(?m)^\tomarchy,skip-if-compatible = "apple,[a-z0-9]+-ane";\n', text)
     if not m:
         raise Refuse(f"packaging/dt/{chip}-ane.dts: no skip-if-compatible line to anchor the marker")
     marker = MARKER.format(chip=chip)
-    return text[:m.end()] + marker + text[m.end():]
+    text = text[:m.end()] + marker + text[m.end():]
+    return text.replace(line, STATE_OPTIN.format(chip=chip))
 
 
 def edit_check(text, chip, promote):
@@ -144,18 +186,14 @@ def edit_check(text, chip, promote):
         if chip in off_list:
             off_list.remove(chip)
             if chip not in on_list:
-                on_list.insert(min(FIRST_CLASS.get(chip, len(on_list)), len(on_list)), chip)
+                insert_on(on_list, chip)
         if not off_list:
             raise Refuse("packaging/omarchy-ane-check: the UNTESTED case arm would be empty "
                          "(every untested chip would be on); remove the arm by hand")
     elif chip in on_list:
         on_list.remove(chip)
         if chip not in off_list:
-            index = CHECK_LIST_INDEX[chip]
-            if index is None:  # a default-on chip reverting: it was never opt-in
-                off_list.append(chip)
-            else:
-                off_list.insert(min(index, len(off_list)), chip)
+            bisect.insort(off_list, chip)
     on_expr = ("|".join(on_list) + '|""') if on_list else '""'
     new = f'  {on_expr}) ;;\n  {"|".join(off_list)})\n'
     return text[:m.start()] + new + text[m.end():]
@@ -186,7 +224,7 @@ def edit_dt_docstring(text, chip, promote):
     return text[:m.start()] + new + text[m.end():]
 
 
-def edit_readme(text, chip, promote):
+def edit_readme(text, chip, promote, note=None):
     lines = text.splitlines(keepends=True)
     hit = None
     for i, line in enumerate(lines):
@@ -199,6 +237,8 @@ def edit_readme(text, chip, promote):
     cells = lines[hit].split("|")
     if promote:
         cells[6], cells[7] = " on by default ", " none "
+        if note:
+            cells[8] = f" {note} "
     else:
         state, key = README_OPTIN[chip]
         cells[6], cells[7] = f" {state} ", f" {key} "
@@ -227,10 +267,10 @@ def edit_changelog(text, chip, promote, note):
 
 def files(chip, promote, note):
     edits = [("packaging/dt/overlays", edit_overlays),
-             (f"packaging/dt/{chip}-ane.dts", edit_dts),
+             (f"packaging/dt/{chip}-ane.dts", lambda t, c, p: edit_dts(t, c, p, note)),
              ("packaging/omarchy-ane-check", edit_check),
              ("packaging/omarchy-ane-dt", lambda t, c, p: edit_dt_docstring(t, c, p)),
-             ("README.md", edit_readme),
+             ("README.md", lambda t, c, p: edit_readme(t, c, p, note)),
              ("CHANGELOG.md", lambda t, c, p: edit_changelog(t, c, p, note))]
     if f"apple,{chip}" in re.search(r'(?m)^FETCH = \{([^}]*)\}', read("packaging/omarchy-ane-firmware-fetch")).group(1):
         edits.insert(3, ("packaging/omarchy-ane-firmware-fetch", edit_firmware_fetch))

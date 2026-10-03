@@ -120,7 +120,7 @@ line="  $DRIVER_SOURCE=$src${file:+ ($mod: $file)}"
 echo "$line"
 
 case $soc in
-  t8103|t6001|t6021|t6020|t6000|"") ;;
+  t8103|t6001|t6021|t6000|t6020|"") ;;
   t6002|t6022|t8112)
     steps=()
     if [[ $dtbs == kernel* ]]; then
