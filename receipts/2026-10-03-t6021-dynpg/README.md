@@ -197,15 +197,15 @@ Every ANE call runs as `flock /var/tmp/ane-run.lock timeout 120 ...`.
 
 ## Host proof (MEASURED, 2026-10-03 UTC)
 
-Base = origin/main `16cfa87` (after #94), branch = `14196ef` (the driver commit). Same tree and
-flags for both builds of each tree; `ANE_VERSION` was `dynpg-base` and `dynpg-fix`.
+Base = origin/main `16cfa87` (after #94), branch = `9aa98f5` (the last driver commit). Same tree
+and flags for both builds of each tree; `ANE_VERSION` was `dynpg-base` and `dynpg-fix`.
 
 | Tree | Build | rc | W=1 diagnostics | sha256 | srcversion |
 |---|---|---|---|---|---|
 | M2 3-1 headers `7.1.13-3-1-ARCH`, ALARM chroot, gcc 16.1.1 | base | 0 | 6 | `73854fa9d6aba20730a9373fca3a2418cd2ac80d26bad5aad0e47b7ebeebc8a0` | `421C74FF4D6BC3A3660B61C` |
-| same | branch | 0 | 6, none new | `921998e678afc392da273f9467e947222423299f268ac65c987dd99c9eac4ec6` | `DA73BC8411DFADE4E7E0FA1` |
+| same | branch | 0 | 6, none new | `d1261aae5aedbfbdee1e0a20fe7c1eddf5de26aa13ab5288d9f267676c32dac3` | `59494CBC56F28ED8D1122C6` |
 | omarchy-linux `josh/ane-driver-aurora` `f227145f50e4` (`7.1.12-ARCH+`), aarch64-linux-gnu-gcc 12.2.0, `modules_prepare`, `-iquote` | base | 0 | 5 | `509836df6b77b96c20b4c6a976ba81fcc90ef81a0946e2de5ca411c0d8523014` | `421C74FF4D6BC3A3660B61C` |
-| same | branch | 0 | 5, none new | `40dd6ea1b8c9cc99acf561f6cc5db0a9ab1e55cc4e7d16d610cd71c94de27365` | `DA73BC8411DFADE4E7E0FA1` |
+| same | branch | 0 | 5, none new | `b647b8e0323ae594b973010436e49c9ca56578f0b3012858a53ba1f042e38a73` | `59494CBC56F28ED8D1122C6` |
 
 - vermagic: `7.1.13-3-1-ARCH SMP preempt mod_unload aarch64` (M2 3-1) and
   `7.1.12-ARCH+ SMP preempt mod_unload aarch64` (aurora).
@@ -215,8 +215,11 @@ flags for both builds of each tree; `ANE_VERSION` was `dynpg-base` and `dynpg-fi
 - `modinfo -F parm` of the branch module lists `dyn_pg` (bool) and `boot_prevent_nap` (bool).
 - Without the `-iquote` flag, base `160b209` fails on the aurora tree with the three UAPI errors
   above (rc 2).
-- The same builds before the rebase onto #94 (base `160b209`, branch `585af4b`) were also rc 0
-  with no new diagnostic on either tree.
-- Host tests on the rebased branch (driver code of `14196ef`): `make -C tools check` rc 0;
+- The same builds of the earlier driver commits (`585af4b` on `160b209`, `14196ef` on `16cfa87`)
+  were also rc 0 with no new diagnostic on either tree.
+- Host tests on `9aa98f5`: `make -C tools check` rc 0;
   `pytest -q tests tools` after `make -C tools ane-run` (the CI host suite builds it too):
-  51 passed, 1 skipped (`tests/test_hwx_ports.py`: staged Qwen inputs not on this host).
+  51 passed, 1 skipped (`tests/test_hwx_ports.py`: staged Qwen inputs not on this host). A first
+  run during a kernel `modules_prepare` on the same host (load average about 100) took 26 min and
+  stopped at collection: `tools/test_promote_chip.py` saw a `test_ane_smoke.py` call pass its
+  60 s limit. The rerun at lower load passed. No Python or tool file differs from main.
