@@ -6,10 +6,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <ane_accel.h>
@@ -18,13 +20,43 @@
 #include "ane_m2.h"
 
 #ifndef LIBANE_CONFIG_NO_ERR
-#include <stdio.h>
 #define ane_err(a, ...) fprintf(stderr, "LIBANE: ERR: " a, ##__VA_ARGS__)
 #else
 #define ane_err(...) \
 	do {         \
 	} while (0)
 #endif
+
+/*
+ * ANE_TRACE_TIMING set to anything but "" or "0": one stderr line per load
+ * stage and per ane_exec, "LIBANE: TIMING stage=NAME ms=MS bytes=N"
+ * (CLOCK_MONOTONIC; tools/ane_cold_start.py parses it). Unset: one
+ * predictable branch per stage, no clock read, no output.
+ */
+static int trace_timing = -1;
+
+static uint64_t timing_start(void)
+{
+	struct timespec ts;
+
+	if (trace_timing < 0) {
+		const char *v = getenv("ANE_TRACE_TIMING");
+
+		trace_timing = v && *v && strcmp(v, "0");
+	}
+	if (!trace_timing)
+		return 0;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
+
+static void timing_end(const char *stage, uint64_t start, uint64_t bytes)
+{
+	if (start)
+		fprintf(stderr, "LIBANE: TIMING stage=%s ms=%.3f bytes=%llu\n",
+			stage, (double)(timing_start() - start) / 1e6,
+			(unsigned long long)bytes);
+}
 
 #define TILE_SHIFT_DEFAULT 0xEUL /* H13 island containers: 0x4000-B units */
 #define TILE_ALIGN	   0x4000UL
@@ -55,27 +87,6 @@ static inline void *ane_zmalloc(const uint64_t size)
 	void *ptr = malloc(size);
 	if (ptr == NULL) {
 		ane_err("failed to malloc size 0x%lx\n", size);
-		return NULL;
-	}
-	memset(ptr, 0, size);
-	return ptr;
-}
-
-static inline void *ane_memalign(const uint64_t size)
-{
-	void *ptr = NULL;
-	if (posix_memalign(&ptr, TILE_ALIGN, size)) {
-		ane_err("failed to memalign size 0x%zx\n", size);
-		return NULL;
-	}
-	return ptr;
-}
-
-static inline void *ane_zmemalign(const uint64_t size)
-{
-	void *ptr = NULL;
-	if (posix_memalign(&ptr, TILE_ALIGN, size)) {
-		ane_err("failed to memalign size 0x%lx\n", size);
 		return NULL;
 	}
 	memset(ptr, 0, size);
@@ -150,21 +161,26 @@ static inline void bo_munmap(struct ane_nn *nn, struct ane_bo *bo)
 
 static inline int ane_bo_init(struct ane_nn *nn, struct ane_bo *bo)
 {
+	uint64_t t;
 	int err;
 
 	if (!bo->size)
 		return -EINVAL;
 
+	t = timing_start();
 	err = bo_init(nn, bo);
 	if (err < 0) {
 		return err;
 	}
+	timing_end("bo_init", t, bo->size);
 
+	t = timing_start();
 	err = bo_mmap(nn, bo);
 	if (err < 0) {
 		bo_free(nn, bo);
 		return err;
 	}
+	timing_end("bo_mmap", t, bo->size);
 
 	return 0;
 }
@@ -188,6 +204,7 @@ static inline int ane_chan_init(struct ane_nn *nn)
 {
 	const struct anec *anec = to_anec(nn);
 	struct ane_bo *bo;
+	uint64_t t;
 	int err;
 
 	for (int bdx = 0; bdx < ANE_TILE_COUNT; bdx++) {
@@ -206,7 +223,9 @@ static inline int ane_chan_init(struct ane_nn *nn)
 	if (err < 0)
 		goto error;
 
+	t = timing_start();
 	set_btsp_and_command(nn);
+	timing_end("copy", t, anec->size + anec->td_size);
 
 	return 0;
 
@@ -252,8 +271,9 @@ static inline int ane_fwrite(const char *fname, void *data, uint64_t size)
 	return 0;
 }
 
-static inline int ane_pread(const char *fname, void *data, uint64_t size,
-			    uint64_t offset)
+/* Bytes read (a short file reads fewer than size), or -EINVAL. */
+static inline int64_t ane_pread(const char *fname, void *data, uint64_t size,
+				uint64_t offset)
 {
 	uint64_t done;
 	FILE *fp = fopen(fname, "rb");
@@ -275,7 +295,7 @@ static inline int ane_pread(const char *fname, void *data, uint64_t size,
 	}
 
 	fclose(fp);
-	return 0;
+	return (int64_t)done;
 }
 
 static inline int is_ane_device(int fd, int *abi_major)
@@ -400,6 +420,8 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 	uint32_t channel;
 	uint64_t need;
 	uint64_t have;
+	uint64_t t = timing_start();
+	int64_t got;
 
 	if (ane_fread(path, anec, sizeof(struct anec)) < 0) {
 		return -EINVAL;
@@ -410,16 +432,24 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		return -EINVAL;
 	}
 
-	nn->data = ane_zmemalign(anec->size);
-	if (!nn->data) {
+	/* 16 KiB aligned and zero past a short read, as before. pread fills
+	 * the rest, so a full program pays no memset pass. */
+	if (posix_memalign(&nn->data, TILE_ALIGN, anec->size)) {
+		ane_err("failed to allocate 0x%llx bytes for %s\n",
+			(unsigned long long)anec->size, path);
+		nn->data = NULL;
 		return -ENOMEM;
 	}
 
-	if (ane_pread(path, nn->data, anec->size, ANEC_HEADER_SIZE) < 0) {
+	got = ane_pread(path, nn->data, anec->size, ANEC_HEADER_SIZE);
+	if (got < 0) {
 		free(nn->data);
 		return -EINVAL;
 	}
+	memset((uint8_t *)nn->data + got, 0, anec->size - (uint64_t)got);
+	timing_end("model_read", t, anec->size);
 
+	t = timing_start();
 	if (!ane_bind_init(anec, nn->data, anec->size, &nn->bind)) {
 		ane_err("%s: task stream does not name every surface; "
 			"channel map is positional\n", path);
@@ -439,6 +469,7 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 		return -EINVAL;
 	}
 
+	timing_end("bind_check", t, anec->size);
 	return 0;
 }
 
@@ -454,6 +485,8 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 {
 	struct ane_nn *nn;
 	int abi_major = 0;
+	uint64_t total = timing_start();
+	uint64_t t;
 
 	if (!tile_shift || tile_shift > 20) {
 		ane_err("refusing tile shift %u (must be 1..20)\n",
@@ -467,15 +500,18 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 	}
 	nn->tile_shift = tile_shift;
 
+	t = timing_start();
 	if (ane_device_open(nn, dev_id, &abi_major) < 0) {
 		ane_err("failed to open device with dev_id %d\n", dev_id);
 		free(nn);
 		return NULL;
 	}
+	timing_end("device_open", t, 0);
 
 	/* ABI 2 (T6021): sections + program/procedure on the accel node; the
 	 * M1 channel machinery does not apply. */
 	if (abi_major == ANE_ABI_M2_MAJOR) {
+		t = timing_start();
 		if (ane_m2_open(nn, path, ports, port_count) < 0) {
 			ane_err("failed to load ABI-2 program from %s\n",
 				path);
@@ -483,6 +519,8 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 			free(nn);
 			return NULL;
 		}
+		timing_end("m2_open", t, 0);
+		timing_end("init_total", total, 0);
 		return nn;
 	}
 
@@ -508,6 +546,7 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 		return NULL;
 	}
 
+	timing_end("init_total", total, to_anec(nn)->size);
 	return nn;
 }
 
@@ -575,10 +614,12 @@ static int ane_exec_with_state_swap(struct ane_nn *nn, int swap_state,
 
 int ane_exec(struct ane_nn *nn)
 {
-	if (nn->m2) {
-		return ane_m2_exec(nn);
-	}
-	return ane_exec_with_state_swap(nn, 0, 0, 0);
+	uint64_t t = timing_start();
+	int ret = nn->m2 ? ane_m2_exec(nn) :
+			   ane_exec_with_state_swap(nn, 0, 0, 0);
+
+	timing_end("exec", t, 0);
+	return ret;
 }
 
 int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
