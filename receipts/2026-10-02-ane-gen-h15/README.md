@@ -275,3 +275,11 @@ plain Mach-O payloads after IM4P ASN.1 unwrap; no Apple payload bytes were retai
 - M3 / M3 Pro / M3 Max hardware is not in the lab fleet. No M3 Linux
   boot was attempted. The driver plan is stages 5–7; stages 0–4 are
   static.
+
+Addendum (2026-10-03, AneH15Driver2): `receipts/2026-10-03-ane-h15`
+corrects three points above. The ANE mailbox is not the 0x4000 window at
+engine + 0x1050000. That offset is RVBAR on T6021, and the expected mailbox
+is the ASC wrapper + 0x8000 (INFERENCE). The ADT lists MPM, CPU, TD and
+BASE power words on T8122 and T6030 too. The "sys-cpu" collapse and the
+"0x438 / 0x498 only" rows describe the kernel tree, not the ADT. The
+driver family is now an INFERENCE leaf in the data files, with its basis.
