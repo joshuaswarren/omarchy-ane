@@ -102,9 +102,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -o pipefail
-          if ! python3 -c 'import json, sys; sys.exit(not any(c["verdict"] == "PROMOTE" and "aurora-dt" in c.get("targets", [])
-                                                               for c in json.load(open("verdict.json"))["chips"]))'; then
-            echo "aurora-plan: no PROMOTE chip with a passing in-tree row"; exit 0
+          if ! (cd tools && python3 -c 'import json, sys, promote_from_verdict as p
+          sys.exit(not p.aurora_chips(json.load(open("../verdict.json"))))'); then
+            echo "aurora-plan: no chip with the aurora-dt target"; exit 0
           fi
           read -r repo base <<< "$(cd tools && python3 -c 'import promote_from_verdict as p; print(p.AURORA, p.AURORA_BASE)')"
           tools/asahi-dtbs "$RUNNER_TEMP/aurora" "https://github.com/$repo" "$base"

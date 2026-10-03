@@ -166,8 +166,51 @@ print("promote_from_verdict test: gate compares and merges")
 # gate refuses when the fresh verdict changed (a new row landed).
 CHANGED = verdict([chip("t8112", "PROMOTE", sha="cafe567890ab")])
 p = run(["gate", "--pr", "7", "--verdict-file", CHANGED], work)
-assert p.returncode == 1 and "fresh verdict differs" in p.stderr, (p.returncode, p.stderr)
+assert p.returncode == 1 and "fresh verdict's evidence differs" in p.stderr, (p.returncode, p.stderr)
 print("promote_from_verdict test: gate refuses a changed verdict")
+
+
+# gate compares evidence only: chip, verdict, targets and the judged rows. The
+# dataset gains rows that are not judged all the time (uninstalled, no smoke,
+# no driver); those must not invalidate a proposal (run 37144741326, PR #113).
+def rows(*specs):
+    return [{"row_sha": s, "judged": j, "driver_source": d, "passed": ok, "reasons": [] if ok or not j else ["x"]}
+            for s, j, ok, d in specs]
+
+
+UNJUDGED = [(f"{i:012x}", False, False, "dkms") for i in range(1, 4)]
+PASS = ("aaaaaaaaaaaa", True, True, "intree")
+
+
+def t8112_and_t6020(t8112_rows, t8112_verdict="PROMOTE", targets=("overlay", "aurora-dt"), t6020_rows=()):
+    t6020_judged = any(r[1] for r in t6020_rows)
+    return verdict([{"chip": "t8112", "state": "opt-in", "verdict": t8112_verdict, "targets": list(targets),
+                     "rows": rows(*t8112_rows)},
+                    {"chip": "t6020", "state": "opt-in", "verdict": "PROMOTE" if t6020_judged else "STAY",
+                     "targets": ["overlay"] if t6020_judged else [], "rows": rows(*t6020_rows)}])
+
+
+PROPOSED = t8112_and_t6020([PASS, *UNJUDGED], t6020_rows=UNJUDGED[:1])
+p = run(["propose", "--verdict-file", PROPOSED], work)
+assert p.returncode == 0 and "updated PR #7" in p.stdout, p
+for name, fresh, ok in (
+        ("a new unjudged row, rows in another order", t8112_and_t6020([*UNJUDGED[::-1], ("bbbbbbbbbbbb", False, False, None),
+                                                                       PASS], t6020_rows=UNJUDGED[:1]), True),
+        ("a judged passing row for another chip", t8112_and_t6020([PASS, *UNJUDGED],
+                                                                   t6020_rows=[("cccccccccccc", True, True, "dkms")]), True),
+        ("a new judged failing row (CONFLICT)", t8112_and_t6020([PASS, ("dddddddddddd", True, False, "dkms"), *UNJUDGED],
+                                                                 t8112_verdict="CONFLICT", targets=()), False),
+        ("a new judged failing row, same verdict", t8112_and_t6020([PASS, ("dddddddddddd", True, False, "dkms"),
+                                                                    *UNJUDGED]), False),
+        ("the judged row now fails", t8112_and_t6020([(PASS[0], True, False, "intree"), *UNJUDGED]), False),
+        ("the judged row's driver_source changed", t8112_and_t6020([(*PASS[:3], "dkms"), *UNJUDGED]), False),
+        ("the targets changed", t8112_and_t6020([PASS, *UNJUDGED], targets=("overlay",)), False)):
+    p = run(["gate", "--pr", "7", "--verdict-file", fresh], work)
+    if ok:
+        assert p.returncode == 0 and "MERGED\tt8112\tstub0merge1sha" in p.stdout, (name, p.stdout, p.stderr)
+    else:
+        assert p.returncode == 1 and "evidence differs" in p.stderr and "MERGED" not in p.stdout, (name, p.stderr)
+print("promote_from_verdict test: gate ignores unjudged rows and other chips, refuses changed judged evidence")
 
 # the release plan: next patch version from the tags, no writes in dry-run.
 subprocess.run(["git", "-C", str(work), "tag", "v0.4.0"], check=True)
@@ -224,7 +267,7 @@ plan_file = FIXTURES / "aurora-plan.json"
 
 # No aurora-dt target: an empty plan, and aurora-pr has nothing to do.
 p = run(["aurora-plan", "--tree", str(tree), "--out", str(plan_file), "--verdict-file", PROMOTE], work)
-assert p.returncode == 0 and "nothing to do (no PROMOTE chip with a passing in-tree row)" in p.stdout, p
+assert p.returncode == 0 and "nothing to do (no chip with the aurora-dt target)" in p.stdout, p
 assert json.loads(plan_file.read_text())["chips"] == [] and "PLANNED" not in p.stdout
 p = run(["aurora-pr", "--plan", str(plan_file), "--verdict-file", INTREE_PROMOTE], work, env=PR_ENV)
 assert p.returncode == 0 and "the plan has no chip; nothing to do" in p.stdout, p
@@ -381,6 +424,35 @@ p = run(["aurora-plan", "--tree", str(partial), "--out", str(plan_file), "--verd
 assert p.returncode == 1 and "t8112-j413.dts has no apple,*-ane node at this tree, but another t8112 board has one" \
     in p.stderr and not plan_lines(p), p
 print("promote_from_verdict test: aurora-plan skips a chip without a node, plans one with it, fails a broken tree")
+
+# A chip that is already on by default in omarchy-ane, with a passing in-tree
+# row: promotion_check gives it the aurora-dt target alone. The aurora tree
+# decides: a disabled node is planned, an enabled node is a no-op, and no node
+# is SKIPPED. A verdict without the target (no in-tree pass) plans nothing.
+on_verdict = {"chip": "t8112", "state": "on", "verdict": "ON", "targets": ["aurora-dt"],
+              "rows": [{"row_sha": "1a2b3c4d5e6f", "judged": True, "driver_source": "intree", "passed": True,
+                        "reasons": []}]}
+INTREE_ON, DKMS_ON = verdict([on_verdict]), verdict([{**on_verdict, "targets": []}])
+for name, t, want in (("disabled", tree, "PLANNED"), ("enabled", aurora_tree("okay"), None), ("no node", bare, "SKIPPED")):
+    p = run(["aurora-plan", "--tree", str(t), "--out", str(plan_file), "--verdict-file", INTREE_ON], work)
+    assert p.returncode == 0 and [l.split("\t")[:2] for l in plan_lines(p)] == ([[want, "t8112"]] if want else []), \
+        (name, p.stdout, p.stderr)
+    assert ("already enables the ANE; no PR" in p.stdout) == (want is None), (name, p.stdout)
+    assert [e["chip"] for e in json.loads(plan_file.read_text())["chips"]] == (["t8112"] if want == "PLANNED" else [])
+p = run(["aurora-plan", "--tree", str(tree), "--out", str(plan_file), "--verdict-file", DKMS_ON], work)
+assert p.returncode == 0 and "nothing to do (no chip with the aurora-dt target)" in p.stdout and not plan_lines(p), p
+
+# Its PR text names no auto/promote PR, and a run reuses the chip's branch, PR
+# and #155 marker: it updates PR 900 and posts no second comment.
+run(["aurora-plan", "--tree", str(tree), "--out", str(plan_file), "--verdict-file", INTREE_ON], work)
+p = run(["aurora-pr", "--plan", str(plan_file), "--verdict-file", INTREE_ON, "--dry-run"], work, env=PR_ENV)
+assert p.returncode == 0 and "omarchy-ane already enables the T8112 overlay by default." in p.stdout, p
+assert "auto/promote-t8112" not in p.stdout, p.stdout
+STUB_LOG.write_text("")
+p = run(["aurora-pr", "--plan", str(plan_file), "--verdict-file", INTREE_ON], work, env=PR_ENV)
+assert p.returncode == 0 and "updated aurora-silicon/linux#900" in p.stdout, (p.stdout, p.stderr)
+assert "already has the comment for #900" in p.stdout and (f"{up}/issues/155/comments", "POST") not in writes(), p
+print("promote_from_verdict test: an ON chip with an in-tree pass plans, no-ops or skips by the aurora tree")
 
 # The workflow: AURORA_PR_TOKEN reaches one job, and that job builds nothing;
 # the job that builds the aurora tree holds no credential.

@@ -24,7 +24,10 @@ ANE/DART/mailbox fault line. The driver is the kernel's own
 is a dkms row); both count the same. A chip with both a passing and a failing
 row is a CONFLICT: it does not promote until the failing row is explained or
 superseded. A PROMOTE has targets: overlay (tools/promote_chip.py), plus
-aurora-dt (tools/aurora_dt.py) when a passing row is intree.
+aurora-dt (tools/aurora_dt.py) when a passing row is intree. An ON chip with a
+passing intree row has the target aurora-dt alone, so its aurora-silicon/linux
+PR still comes after the overlay flip; the aurora tree decides whether there is
+anything to enable (tools/promote_from_verdict.py aurora-plan).
 Exit 0 always: the output is a report, not a gate.
 """
 import argparse
@@ -182,10 +185,13 @@ def verdict(rows):
 
 
 def targets(r):
-    """What a PROMOTE or REVERT verdict changes."""
+    """What a verdict changes: PROMOTE the overlay and, with a passing in-tree
+    row, aurora's device tree; REVERT the overlay; ON with a passing in-tree
+    row aurora's device tree."""
+    aurora = [AURORA_DT] if r["intree"] else []
     if r["on"]:
-        return [OVERLAY] if r["revert"] else []
-    return ([OVERLAY] + ([AURORA_DT] if r["intree"] else [])) if r["promote"] else []
+        return [OVERLAY] if r["revert"] else aurora
+    return [OVERLAY] + aurora if r["promote"] else []
 
 
 def unattempted(rows):

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A chip that is on by default and has a passing in-tree row gets the
+  `aurora-dt` target, so its aurora-silicon/linux PR still comes after the
+  overlay flip. The aurora tree decides: a disabled node is planned, an
+  enabled node is a no-op, and no node is `SKIPPED`. Before, the target was
+  lost once the overlay PROMOTE merged.
+- The promotion gate compares the evidence of a verdict: chip, verdict,
+  targets and the judged rows (sha, passed, driver_source). A new row that
+  is not judged no longer refuses a proposal. Promotion run 37144741326
+  refused PR #113 that way.
 - `promote_from_verdict.py aurora-plan` skips a chip that has no ANE node on
   any board of the aurora base branch, as `aurora-wip` before #155 merges.
   It prints a line that starts with `SKIPPED`, writes no plan entry and
