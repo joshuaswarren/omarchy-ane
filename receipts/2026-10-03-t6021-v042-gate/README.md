@@ -265,6 +265,9 @@ its genpd snapshot, and that session's end-state console and lab-state diff.
 - Three later "no answer" alarms (05:42-05:47Z, 05:51-05:57Z, 06:09-06:14Z) were a bug
   in my poller: it counted grep's "no match yet" exit status as an ssh failure. Fixed;
   the device answered throughout.
+- 08:53Z: the second arm-0 install failed before writing anything (my install script ran
+  with `set -e` and stopped when it found no `/sys/class/accel` on the arm-0 boot). The new
+  install-then-reboot guard did not reboot; the script was fixed and the step rerun.
 
 ## Not covered
 
