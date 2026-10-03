@@ -308,6 +308,13 @@ work = make_work()
 git = lambda *a: subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
                                  "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", *a],
                                 check=True, capture_output=True, text=True).stdout.strip()
+# an entry under Unreleased, so the release has entries to move (the repo's own
+# Unreleased can be empty, right after a release)
+cl = work / "CHANGELOG.md"
+cl.write_text(cl.read_text().replace("## Unreleased\n\n",
+                                     "## Unreleased\n\n- T6020 (M2 Pro) ANE on by default.\n\n", 1))
+git("commit", "-qam", "Unreleased entry")
+git("push", "-q", "origin", "main")
 git("tag", "v0.4.0")
 for msg in ("PROMOTE: t6020 ANE -> default-on (row 3c9389040f51; intree)",
             "PROMOTE: t6000 ANE -> default-on (row 6eb94f49985b; intree)"):
@@ -320,7 +327,15 @@ assert p.returncode == 0, (p.stdout, p.stderr)
 assert git("rev-parse", "v0.4.1^{commit}") == git("rev-parse", "main") != git("rev-parse", "v0.4.0^{commit}")
 assert git("log", "--format=%s", "-1", "v0.4.1") == "Release 0.4.1: t6020, t6000 ANE", git("log", "-1", "v0.4.1")
 changelog = git("show", "v0.4.1:CHANGELOG.md")
-assert changelog.index("## Unreleased") < changelog.index("## 0.4.1") < changelog.index("## 0.4.0"), changelog[:300]
+# The version heading goes directly under an empty Unreleased, over the old
+# Unreleased entries, and nothing else changes. (The fixture is this repo's
+# CHANGELOG, which already holds a "## 0.4.1 (...)" section, so an index
+# check alone passes even when no heading is written.)
+before = git("show", "v0.4.0:CHANGELOG.md")
+cut = before.index("## Unreleased\n") + len("## Unreleased\n")
+new = re.match(r"\n## 0\.4\.1 \(\d{4}-\d{2}-\d{2}\)\n", changelog[cut:])
+assert new and changelog == before[:cut] + new.group(0) + before[cut:], changelog[:400]
+assert "- T6020 (M2 Pro) ANE on by default." in changelog[cut:].split("\n## ")[1], changelog[:400]
 release_calls = [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines())
                  if c[0].endswith("/releases") and c[1] == "POST"]
 assert len(release_calls) == 1, release_calls

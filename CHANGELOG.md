@@ -2,25 +2,64 @@
 
 ## Unreleased
 
-- The release step cuts the release it should: one release per run covering
-  every promotion merged since the last tag (verdict, chip, row shas,
-  driver_source, merge sha), tagging the release commit so the tarball
-  carries its own CHANGELOG section, with `## Unreleased` kept as the first
-  section.
-- The promotion flip is state-independent: the check's case lists and the
-  tested-header list derive their order from rules instead of absolute seats
-  into the v0.4.2 five-chip list, each overlay dts carries one
-  tool-written `Overlay state:` line, the offline suites pick their chips
-  from the overlays table, and `test_promote_chip` runs in the promotion
-  gate. Any promotion state round-trips and passes.
-- `propose` stages only the tracked files the flip wrote; `git add -A` had
-  shipped a committed `__pycache__` blob in v0.4.3 (removed, and
-  `__pycache__/` and `*.pyc` are ignored now).
-- The T6000/T6020 prose matches 0.4.3: the README's default-on line and the
-  evidence cells name the passing rows 6eb94f49985b and 3c9389040f51, the
-  overlay dts headers and the libane receipt stop claiming untested/opt-in,
-  and the libane entry and receipt carry the hardware numbers (#111) instead
-  of "not merged before hardware" and lab aliases.
+## 0.4.4 (2026-10-03)
+
+This release fixes the packaging defects of v0.4.3 and changes no driver or
+libane code: `git diff v0.4.3..v0.4.4 -- ane libane dkms.conf` is empty, so
+`ane.ko`, `ane_t6021.ko`, libane and the ioctl interface (ABI 1 and ABI 2)
+are the bytes of v0.4.3. The v0.4.3 tag sits on `0477f72`, the merge of the
+T6000 promotion, one commit before its CHANGELOG move. So the v0.4.3 tarball
+has no 0.4.3 section, and it carries a committed `__pycache__` file, stale
+T6000/T6020 wording and a failing `test_promote_chip`. This release
+supersedes it: its tarball carries the 0.4.3 and 0.4.4 notes.
+
+- The promotion release step cuts the release it should (#117). The release
+  notes cover every promotion merged since the last tag (verdict, chip, row
+  shas, driver_source, merge sha), and the tag goes on the release commit,
+  so the tarball carries its own CHANGELOG section, with `## Unreleased`
+  kept as the first section. v0.4.3 tagged the T6000 merge before the
+  CHANGELOG move and named only T6000. As merged in #117, the move left the
+  entries under `## Unreleased` and wrote no version heading; this release
+  writes the heading, and `test_promote_from_verdict` checks the moved text
+  byte for byte, with an entry to move. Its fixture already held a
+  `## 0.4.1` heading, so the old check passed without one. After a release,
+  `## Unreleased` sits empty right above the released heading, and
+  `promote_chip.py` keeps a blank line between a new entry and that heading
+  (`test_promote_chip` checks it).
+- The promotion flip is state-independent (#117). The check's case lists and
+  the tested-header list take their order from rules (T8103, T6001 and T6021
+  first, promoted chips sorted after them), not from seats in the v0.4.2
+  five-chip list. Each `<chip>-ane.dts` carries one tool-written
+  `Overlay state:` line, the offline suites take their chips from the
+  overlays table, and `test_promote_chip` runs in the promotion gate. In
+  v0.4.3 a T6002 promote and revert reordered the check's opt-in list, and
+  the suite failed.
+- `propose` stages only the tracked files that the flip wrote (#117).
+  `git add -A` had shipped a committed `__pycache__` file in v0.4.3; it is
+  removed, and `__pycache__/` and `*.pyc` are ignored now.
+- The T6000/T6020 prose matches 0.4.3 (#117): the README's default-on line
+  and the evidence cells name the passing rows 6eb94f49985b and
+  3c9389040f51, the overlay dts headers and the libane receipt stop calling
+  them untested or opt-in, and the libane entry and receipt carry the
+  hardware numbers of #111.
+- The 0.4.3 section below lists the rest of what v0.4.3 shipped: the probe
+  change (#79), the T6020 firmware fetch at install, and the development-only
+  changes (#108, #109).
+
+### Research
+
+- `docs/ultra-die1.md`: a design for the die-1 ANE of T6002 (M1 Ultra) and
+  T6022 (M2 Ultra), from a read-only capture on one M1 Ultra under macOS and
+  the ADT decode of both Ultra boards (`receipts/2026-10-03-ultra-die1`).
+  Design only, no code: no Ultra runs Linux today.
+
+### Known limits
+
+- T6000 and T6020 are on by default from one passing community row each.
+  Both rows ran the kernel's own ANE driver and device tree; on these chips
+  the overlay and the DKMS modules of this package have not run.
+- The hardware results of this release are in
+  `receipts/2026-10-03-omarchy-ane-0.4.4/README.md`.
 
 ## 0.4.3 (2026-10-03)
 
@@ -60,6 +99,14 @@
   `open_ms` 67-72 ms less; on T6001 from 361.4 to 286.5 ms, `open_ms` 828.5 to
   760.1 ms; encoder output bit-exact across arms and smoke 20/20 on both
   chips. Protocol and runs: `receipts/2026-10-03-libane-no-staging/README.md`.
+- `omarchy-ane-probe` reads data-only tables whose sections or `reg` lists
+  are wrapped as `{v, src}` leaves (#79). Before, a wrapped `reg` list failed
+  the whole `soc_table` section.
+- On T6020 the pacman hook fetches the ANE firmware at install and upgrade:
+  `omarchy-ane-firmware-fetch` has `apple,t6020` in its default list.
+- Development only, not installed by the package: every shell script runs
+  with `set -euo pipefail`, the H13 program-load verifier is split and has a
+  golden test (#108), and the pre-push hook finds `privacy_check.py` (#109).
 
 ## 0.4.2 (2026-10-03)
 
