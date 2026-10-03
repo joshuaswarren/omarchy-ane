@@ -1,0 +1,72 @@
+== item1 first read 2026-10-03T08:57:02.670Z up 29.34
+ST=/ane_stats
+ls: cannot access '/ane_stats': No such file or directory
+-- as nobody:
+cat: /ane_stats: No such file or directory
+rc=1
+-- debugfs (root):
+ls: cannot access '/sys/kernel/debug/ane_t6021/': No such file or directory
+cat: /sys/kernel/debug/ane_t6021/ane_timeline: No such file or directory
+timeline lines: 0
+-- ane_pg_state x3 (1 s apart):
+  08:57:02 absent
+  08:57:03 absent
+  08:57:04 absent
+== identity
+== state boot 2026-10-03T08:57:05.754Z
+boot_id a4271d49-1e9a-4127-a319-c7a22c65aa17 uname 7.1.13-3-1-ARCH up 32.42
+module   4f6c939b4a8ea678
+stats 
+dyn_pg 
+boot_prevent_nap 
+call_settle_us 
+bo_total_bytes 
+trace_td 
+oneshot-file: none
+/var/tmp/v042gate/bin/common.sh: line 55: /ane_stats: No such file or directory
+ane_stats: absent
+ane_pg_state: absent
+runtime_status: unsupported
+load 0.38 0.09 0.03 psi some avg10=0.02 avg60=0.03 avg300=0.00 total=103465
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1131
+no ane-run
+BOOT_IMAGE=/vmlinuz-linux-asahi root=UUID=4f4d5801-524f-4f54-8000-000000000001 rw rootflags=subvol=@ zswap.enabled=0 rootfstype=btrfs quiet loglevel=3 splash
+system running failed_units 0
+module file /lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko 4f6c939b4a8ea6780a0edb565e9e0542806596a90580174d55d97ad662c08cb6
+modinfo license lines: 1 [Dual MIT/GPL|]
+modinfo description lines: 1 [Apple Neural Engine (T6021/M2) installed module|]
+loaded: 
+bound: unbound
+ls: cannot access '/dev/accel/': No such file or directory
+-- genpd (ane):
+ane_set4                        off-0                           0
+ane_set3                        off-0                           0
+ane_set2                        off-0                           0
+ane_set1                        off-0                           0
+ane_base                        off-0                           0
+ane_td                          off-0                           0
+ane_sys_mpm                     off-0                           0
+ane_cpu                         on                              0
+ane_sys                         on                              0
+== dmesg ane lines at default log level (1 lines), by level:
+  info 1
+ANERD|ANEWR|ps probe in full dmesg: 0
+BOOT-PHASE lines: 0
+BAD: 0
+-- every ane line (chman[i] rows folded):
+kern  :info  : [    0.075161] platform 284000000.ane: Adding to iommu group 0
+  chman[i] rows: 0
+== omarchy-ane-check (candidate tree)
+omarchy-ane-check: kernel 7.1.13-3-1-ARCH
+  dtbs_source=overlay
+  driver_source=dkms (ane_t6021: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko)
+  ok    ANE firmware: /usr/lib/firmware/apple/ane/t602x_ane0_fw_selene_rc4x.macho matches the pin
+  ok    ANE device-tree node: apple,t6021-ane (DTB has node: omarchy-ane overlay)
+  ok    ane_t6021.ko built for 7.1.13-3-1-ARCH: //lib/modules/7.1.13-3-1-ARCH/updates/ane_t6021.ko (version 0.4.2-main-5a457a3)
+  FAIL  ane_t6021 is not loaded. It loads at boot when the ANE node is present. Reboot.
+  FAIL  ane_t6021 is bound to no device. Read the reason with: journalctl -k -g ane_t6021
+  FAIL  no /dev/accel node from ane_t6021
+omarchy-ane-check: FAILED
+check rc=1
+== boot.sh done /var/tmp/v042gate/runs/boot-Z2-20261003T085702Z

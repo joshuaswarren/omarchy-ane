@@ -1,0 +1,16 @@
+== 05:51:35 up 50.23 params dyn_pg Y boot_prevent_nap Y; sleeping 30 s
+05:52:05.572 ane_sys_mpm 0x000003ff ane_td 0x000003ff ane_base 0x000003ff ane_set1 0x000003ff ane_set2 0x000003ff ane_set3 0x000003ff ane_set4 0x000003ff 
+05:52:06.587 ane_sys_mpm 0x000003ff ane_td 0x000003ff ane_base 0x000003ff ane_set1 0x000003ff ane_set2 0x000003ff ane_set3 0x000003ff ane_set4 0x000003ff 
+05:52:07.597 ane_sys_mpm 0x000003ff ane_td 0x000003ff ane_base 0x000003ff ane_set1 0x000003ff ane_set2 0x000003ff ane_set3 0x000003ff ane_set4 0x000003ff 
+runtime_status active
+ane_set4                        on                              0
+ane_set3                        on                              0
+ane_set2                        on                              0
+ane_set1                        on                              0
+ane_base                        on                              0
+ane_td                          on                              0
+ane_sys_mpm                     on                              0
+ane_cpu                         on                              0
+ane_sys                         on                              0
+ane_stats 83 129481511
+== pgread done /var/tmp/v042gate/runs/pgread-B-20261003T055135Z

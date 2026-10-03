@@ -1,0 +1,26 @@
+start_utc 2026-10-03T09:23:26Z
+uptime 363.98
+bat_status Full
+bat_capacity 100
+backlight {'/sys/class/backlight/apple-panel-bl/brightness': '400', '/sys/class/backlight/apple-panel-bl/bl_power': '0'}
+end_utc 2026-10-03T09:28:25Z
+bat_status_end Full
+backlight_end {'/sys/class/backlight/apple-panel-bl/brightness': '400', '/sys/class/backlight/apple-panel-bl/bl_power': '0'}
+macsmc_battery:power1 n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0 (mW)
+macsmc_battery:temp n=295 median=31900.0 mean=31972.9 sd=277.5 min=31500.0 max=32500.0
+macsmc_hwmon:Fan 1 n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0
+macsmc_hwmon:Fan 2 n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0
+macsmc_hwmon:Total System Power n=295 median=14692.0 mean=14710.8 sd=60.7 min=14626.4 max=15026.7 (mW)
+macsmc_hwmon:AC Input Power n=295 median=14692.4 mean=14710.9 sd=60.6 min=14626.4 max=15026.7 (mW)
+macsmc_hwmon:3.8 V Rail Power n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0 (mW)
+macsmc_hwmon:Heatpipe Power n=295 median=3719.4 mean=3750.8 sd=176.4 min=3537.9 max=5838.5 (mW)
+macsmc_hwmon:NAND Flash Temperature n=295 median=36253.0 mean=36257.2 sd=204.0 min=35902.0 max=36710.0
+macsmc_hwmon:Battery Hotspot n=295 median=31899.0 mean=31969.6 sd=276.8 min=31500.0 max=32500.0
+macsmc_hwmon:Charge Regulator Temp n=295 median=38833.0 mean=38831.6 sd=613.2 min=36603.0 max=40869.0
+macsmc_hwmon:WiFi/BT Module Temp n=295 median=39459.0 mean=39482.1 sd=347.9 min=38513.0 max=40548.0
+battery:power_now n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0 (mW)
+battery:current_now n=295 median=0.0 mean=0.0 sd=0.0 min=0.0 max=0.0
+battery:voltage_now n=295 median=12542000.0 mean=12541600.0 sd=529.8 min=12541000.0 max=12543000.0
+ac:online n=295 median=1.0 mean=1.0 sd=0.0 min=1.0 max=1.0
+load1 start 0.00 end 0.00 max 0.00; psi_cpu avg10 start 0.00 end 0.00 max 0.00
+WINDOW VALID
