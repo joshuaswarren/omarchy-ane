@@ -114,7 +114,7 @@ each process; its compiler cache is keyed and kept by the system service.
 | 2 | one DART TLB sync per buffer object instead of one per page (`iommu_map_sg` or a batched sync in `ane_iommu_map_pages`) | the invalidate share of 352 ms; unmeasured, harness `kprof` measures it | small: one driver function | medium: DMA map path, stray-PTE repair logic, needs hardware |
 | 3 | hash while loading: one pass that reads, hashes and copies into the buffer object, through a new libane load-from-fd entry point | up to the copy part of the 435 ms seal (INFERENCE: 100 to 200 ms) | medium: additive libane API and worker change | low to medium |
 | 4 | no libane staging copy: read the file into the buffer object and validate there | one 458 MB copy, 27,955 faults and 458 MB of resident memory (INFERENCE: 50 to 120 ms) | small | medium: `nn->data` is a public field; its meaning changes |
-| 5 | `calloc` for the staging buffer (done in this branch) | one memset pass over 458 MB (INFERENCE: below 20 ms); harness `main` vs `trace` arms measure it | none | none: same zeroed buffer, same `free()` |
+| 5 | `calloc` for the staging buffer (done in this branch) | one memset pass over 458 MB (INFERENCE: below 20 ms); harness `main` vs `branch` arms measure it | none | none: same zeroed buffer, same `free()` |
 | - | kernel program cache that keeps buffer objects after close | rejected | | unsafe: breaks the per-file teardown boundary (`ane_drm_postclose`) and the wedge accounting |
 
 The daemon is not implemented. The T6001 split is not measured yet, the
@@ -138,10 +138,11 @@ daemon changes the seal contract, and the worker lives in omarchy-mlx.
 
 The harness starts the production worker once per run with the CLI's bundle
 set and seal pins, waits for `resident loaded`, sends `quit`, and records the
-open. It does no submit, sends no tensor and does no GPU work. Each run waits
+open. It does no submit, sends no tensor and does no GPU work. Each run takes
+`/var/tmp/ane-run.lock` (at most 120 s). Then, with the lock held, it waits
 for the idle rule (load1 below 0.5 and PSI cpu `some avg10` = 0.00, at most
-120 s), then takes `/var/tmp/ane-run.lock` (at most 120 s). It records both
-values. An unmet gate or a failed open stops the battery; nothing retries.
+120 s) and records both values. An unmet gate or a failed open stops the
+battery; nothing retries.
 
 1. Set the paths. `S` is the CLI share directory that holds
    `parakeet-runtime-pin.json`, `bundles/` and `libane/`. `W` is the
@@ -154,7 +155,7 @@ values. An unmet gate or a failed open stops the battery; nothing retries.
    mkdir -p /var/tmp/ane-cold
    ```
 
-2. Build two libane copies from omarchy-ane: `trace` from this branch and
+2. Build two libane copies from omarchy-ane: `branch` from this branch and
    `main` from origin/main. Use git worktrees; do not switch branches in a
    shared checkout.
 
@@ -164,7 +165,7 @@ values. An unmet gate or a failed open stops the battery; nothing retries.
      +refs/heads/agent/ane-cold-start:refs/remotes/origin/agent/ane-cold-start
    git -C ~/src/omarchy-ane worktree add /var/tmp/ane-cold/src origin/agent/ane-cold-start
    git -C ~/src/omarchy-ane worktree add /var/tmp/ane-cold/main origin/main
-   for v in src:trace main:main; do
+   for v in src:branch main:main; do
      gcc -O3 -fPIC -shared -std=gnu99 -DLIBANE_CONFIG_STRICT_BIND \
        -I /var/tmp/ane-cold/${v%%:*}/libane -I /usr/include/libdrm \
        -I /var/tmp/ane-cold/${v%%:*}/ane/src/uapi/drm \
@@ -178,18 +179,22 @@ values. An unmet gate or a failed open stops the battery; nothing retries.
 3. Run the arms, in this order, with nothing else on the ANE.
 
    ```sh
+   L=/var/tmp/ane-cold
    python3 $H --out $OUT --label prod   --worker $W --share $S --libane $S/libane/libane-strict.so --runs 10
-   python3 $H --out $OUT --label main   --worker $W --share $S --libane /var/tmp/ane-cold/libane-strict-main.so --runs 10
-   python3 $H --out $OUT --label trace  --worker $W --share $S --libane /var/tmp/ane-cold/libane-strict-trace.so --runs 10
-   python3 $H --out $OUT --label whole  --worker $W --share $S --libane /var/tmp/ane-cold/libane-strict-trace.so --runs 5 --no-islands
+   python3 $H --out $OUT --label main   --worker $W --share $S --libane $L/libane-strict-main.so --runs 10
+   python3 $H --out $OUT --label branch --worker $W --share $S --libane $L/libane-strict-branch.so --runs 10
+   python3 $H --out $OUT --label trace  --worker $W --share $S --libane $L/libane-strict-branch.so --runs 10 --trace
+   python3 $H --out $OUT --label whole  --worker $W --share $S --libane $L/libane-strict-branch.so --runs 5 --trace --no-islands
    strace -V && python3 $H --out $OUT --label strace --worker $W --share $S --libane $S/libane/libane-strict.so --runs 3 --strace
    ```
 
    - `prod`: the CLI open as shipped (sealed libane). Compare its `open_ms`
      with the CLI's 867.8 ms.
-   - `main` and `trace`: libane from origin/main and from this branch. Both
-     are unsealed. The `ane_init:N` difference is the `calloc` gain. `trace`
-     also prints the libane stages.
+   - `main` and `branch`: libane from origin/main and from this branch, both
+     unsealed and both without `ANE_TRACE_TIMING`. The `ane_init:N`
+     difference is the `calloc` gain.
+   - `trace`: `branch` with `ANE_TRACE_TIMING=1`: the libane stage lines.
+     `trace` minus `branch` is the cost of the trace itself.
    - `whole`: the encoder bundle alone, without the island bundles.
    - `strace`: `BO_INIT` ioctl time and `mmap` time per run. Compare its
      `open_ms` with `prod` to see the tracer cost.
@@ -200,7 +205,7 @@ values. An unmet gate or a failed open stops the battery; nothing retries.
 
    ```sh
    G=$(( $(cat /sys/module/ane/parameters/autosuspend_ms) / 1000 + 2 ))
-   python3 $H --out $OUT --label gap --worker $W --share $S --libane /var/tmp/ane-cold/libane-strict-trace.so --runs 5 --gap-s $G
+   python3 $H --out $OUT --label gap --worker $W --share $S --libane $L/libane-strict-branch.so --runs 5 --trace --gap-s $G
    ```
 
 5. Optional, root, inside a GPU window with the inference service stopped
@@ -213,7 +218,7 @@ values. An unmet gate or a failed open stops the battery; nothing retries.
      echo $f | sudo tee -a $T/set_ftrace_filter || echo "no $f"
    done
    echo 1 | sudo tee $T/function_profile_enabled
-   python3 $H --out $OUT --label kprof --worker $W --share $S --libane /var/tmp/ane-cold/libane-strict-trace.so --runs 1
+   python3 $H --out $OUT --label kprof --worker $W --share $S --libane $L/libane-strict-branch.so --runs 1 --trace
    echo 0 | sudo tee $T/function_profile_enabled
    sudo cat $T/trace_stat/function* > $OUT/kprof/trace_stat.txt
    echo | sudo tee $T/set_ftrace_filter

@@ -7,12 +7,13 @@ bundle set, waits for "resident loaded", sends "quit" and waits for
 pays (seal, fork, dlopen, ane_init) and nothing else: no submit, no input
 tensor, no GPU work. A completed open is followed by the normal release.
 
-Every run takes /var/tmp/ane-run.lock (wait <= 120 s) after the idle gate
-(load1 < 0.5 and PSI cpu some avg10 = 0.00, wait <= 120 s); both values are
-recorded per run and an unmet gate stops the battery. The worker prints
-MLX_OMARCHY_OPEN_TIMING lines; a libane built with ANE_TRACE_TIMING
-support adds per-stage lines; --strace adds per-syscall times for the
-ioctl/mmap path. See receipts/2026-10-03-ane-cold-start/README.md.
+Every run takes /var/tmp/ane-run.lock (wait <= 120 s), then holds it through
+the idle gate (load1 < 0.5 and PSI cpu some avg10 = 0.00, wait <= 120 s), so
+the recorded values are the ones the run starts under. An unmet gate stops
+the battery. The worker prints MLX_OMARCHY_OPEN_TIMING lines; --trace adds
+ANE_TRACE_TIMING lines from a libane that has them; --strace adds
+per-syscall times for the ioctl/mmap path.
+See receipts/2026-10-03-ane-cold-start/README.md.
 """
 
 import argparse
@@ -198,6 +199,8 @@ def environment(args, libane_sha):
              f"thp_defrag {read('/sys/kernel/mm/transparent_hugepage/defrag').strip()}",
              f"worker {args.worker} sha256 {sha256(args.worker)}",
              f"libane {args.libane} sha256 {libane_sha}",
+             f"ane_trace_timing {int(args.trace)} strace {int(args.strace)} "
+             f"islands {int(not args.no_islands)} gap_s {args.gap_s}",
              f"whole {args.whole} program-0.anec sha256 "
              f"{sha256(args.whole / 'program-0.anec')}"]
     for p in sorted(glob.glob("/sys/module/ane/parameters/*")):
@@ -226,7 +229,10 @@ def one_run(args, tail, run_dir):
                 "-e", "raw=ioctl",
                 "-e", "trace=openat,memfd_create,ioctl,mmap,munmap",
                 "-o", str(run_dir / "strace")] + argv
-    env = dict(os.environ, MLX_OMARCHY_OPEN_TIMING="1", ANE_TRACE_TIMING="1")
+    env = dict(os.environ, MLX_OMARCHY_OPEN_TIMING="1")
+    env.pop("ANE_TRACE_TIMING", None)
+    if args.trace:
+        env["ANE_TRACE_TIMING"] = "1"
     (run_dir / "argv.json").write_text(json.dumps(argv, indent=1) + "\n")
     result = {"pre": ane_state()}
     stderr = open(run_dir / "stderr.txt", "wb")
@@ -306,6 +312,8 @@ def main():
     p.add_argument("--runs", type=int, default=10)
     p.add_argument("--gap-s", type=float, default=0.0,
                    help="sleep before each run (runtime-PM autosuspend arm)")
+    p.add_argument("--trace", action="store_true",
+                   help="set ANE_TRACE_TIMING=1 for the libane stage lines")
     p.add_argument("--strace", action="store_true")
     p.add_argument("--no-islands", action="store_true")
     p.add_argument("--deadline-ms", type=int, default=60000)
@@ -320,11 +328,15 @@ def main():
     for i in range(args.runs):
         if args.gap_s:
             time.sleep(args.gap_s)
-        ok, load1, avg10 = wait_idle()
-        lock = take_lock() if ok else None
+        lock = take_lock()
         if lock is None:
+            results.append({"run": i, "rc": "lock timeout"})
+            break
+        ok, load1, avg10 = wait_idle()
+        if not ok:
+            os.close(lock)
             results.append({"run": i, "load1": load1, "psi_avg10": avg10,
-                            "rc": "idle gate not met" if not ok else "lock timeout"})
+                            "rc": "idle gate not met"})
             break
         try:
             r = one_run(args, tail, out / f"run-{i:02d}")
