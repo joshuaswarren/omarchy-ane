@@ -32,6 +32,7 @@ typedef uint64_t phys_addr_t;
 #define IOMMU_CACHE 4
 #define GFP_KERNEL 0
 #define dev_info(...) ((void)0)
+#define dev_dbg(...) ((void)0)
 #define dev_err(...) ((void)0)
 #define ENTRY (1ULL << 40)
 #define SOURCE 0x100000ULL
