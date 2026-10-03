@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- libane prints per-stage load times and per-`ane_exec` times on stderr when
+  `ANE_TRACE_TIMING` is set (not empty, not `0`): one line
+  `LIBANE: TIMING stage=NAME ms=MS bytes=N` per stage. Unset, each stage
+  costs one branch. The ABI does not change.
+- `tools/ane_cold_start.py` measures the per-process program open of the
+  resident worker (seal, fork, `dlopen`, `ane_init`) without a submit, under
+  the ANE lock and the idle rule. `docs/ane-worker.md` designs a persistent
+  worker. See `receipts/2026-10-03-ane-cold-start/README.md`.
+
+### Changed
+
+- libane allocates the program staging buffer with `calloc`. The buffer is
+  zero as before, but a large program no longer pays a `memset` pass over
+  fresh pages.
+
 ### Fixed
 
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
