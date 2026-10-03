@@ -64,23 +64,27 @@ file (sha256 in artifacts), `anec->size` = 458,014,720 B payload, shmem-backed
 
 | shape | median ms | MB/s |
 |---|---:|---:|
-| staged: read into staging + memcpy to mapping | 207.9 | 2203 |
-| direct: read into mapping | 131.0 | 3496 |
-| direct (chosen): mmap file + memcpy into mapping | 52.7 | 8689 |
+| staged: read into staging + memcpy to mapping | 102.1 | 4484 |
+| direct: read into mapping | 72.0 | 6361 |
+| direct (chosen): mmap file + memcpy into mapping | 30.1 | 15230 |
 
-`staged - direct(mmap) = 155.2 ms` on this host. LIMITATIONS (INFERENCE for
-hardware): 4K pages with THP, a cached stand-in mapping, and x86 copy paths;
-`preadv` into a mapping returned `EOPNOTSUPP` on this PVE kernel, so the read
-arm used `readinto` (the same single-copy shape as libane's `fread` for large
-blocks). The T8103/T6001 gap is expected to be smaller than 155 ms but in the
-same direction. Artifacts:
-`apple-silicon-lab/artifacts/LibaneNoCopy/no-staging/transcript.txt`.
+`staged - direct(mmap) = 72.0 ms` on this host. LIMITATIONS (INFERENCE for
+hardware): host pages are 4K (the anonymous `MAP_SHARED` BO stand-in was
+explicitly 16 KiB virtual-address aligned), THP is enabled, mapping is cached,
+and copy paths are x86-specific. This CT does not provide 16 KiB physical pages
+or the Apple BO cache attributes. `preadv` into a mapping returned `EOPNOTSUPP`
+on this PVE kernel, so the read arm used `readinto` (the same single-copy
+shape as libane's `fread` for large blocks). A first, not-explicitly-aligned
+run measured 207.9/131.0/52.7 ms (staged/readinto/mmap+memcpy); both runs are
+retained separately in `apple-silicon-lab/artifacts/LibaneNoCopy/no-staging/transcript.txt`.
+The exact hardware result is unknown until w71/w72 run the A/B.
 
-Expected saving (INFERENCE until the hardware A/B): the staged path's extra
-DRAM pass is one 458 MB read + one 458 MB write; at M1-class bandwidth that is
-order 10-25 ms with cached mappings (map_mode=3), and the CT directional
-measurement is 155 ms against a slower host. The cold-start receipt's lever-4
-estimate (50-120 ms) predates the cached default. The exact number comes from
+Expected saving (INFERENCE until the hardware A/B): one less 458 MB copy and
+the corresponding page touches. A bandwidth-only estimate for a cached M1 BO
+mapping (map_mode=3) is order 10-25 ms; the host measured 72.0 ms for the
+staged-minus-mmap+memcpy shape on a slower x86/ZFS CT, which cannot be mapped
+directly to the Apple hardware. The cold-start receipt's prior 50-120 ms
+estimate predates the cached default. The exact number comes from
 `libane:init_total` staged vs direct on w71/w72.
 
 ## Host gates (MEASURED)
