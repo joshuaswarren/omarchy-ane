@@ -278,7 +278,8 @@ static struct bo_snap bo_snap_chan(struct ane_bo *bo)
 
 static int bo_snap_same(const struct bo_snap *a, const struct bo_snap *b)
 {
-	return a->size == b->size && !memcmp(a->bytes, b->bytes, a->size);
+	return a->size == b->size &&
+	       (!a->size || !memcmp(a->bytes, b->bytes, a->size));
 }
 
 static void bo_snap_free(struct bo_snap *s)
@@ -315,6 +316,9 @@ static void run_ab(const char *path)
 
 	if (staged_nn->data == NULL) {
 		printf("FAIL A/B: staged mode left nn->data NULL\n");
+		failures++;
+	} else if ((uintptr_t)staged_nn->data & 0x3fff) {
+		printf("FAIL A/B: staged nn->data is not 16 KiB aligned\n");
 		failures++;
 	}
 	if (direct_nn->data != NULL) {
@@ -392,6 +396,9 @@ static void run_short_file(const char *path, uint64_t cut, int staged)
 	fclose(out);
 	out = NULL;
 
+	if (!staged) {
+		run_ab(tmp);
+	}
 	if (staged) {
 		setenv("ANE_LOAD_STAGED", "1", 1);
 	} else {

@@ -85,18 +85,15 @@ estimate (50-120 ms) predates the cached default. The exact number comes from
 
 ## Host gates (MEASURED)
 
-- `make -C libane` -- clean (-Wall -Werror -Wextra
-  -Wdeclaration-after-statement).
+- `make -C libane` -- clean (`-Wall -Werror -Wextra -Wdeclaration-after-statement`).
 - `make -C tools check` -- PASS, including the new cases:
-  - `A/B: staged vs direct BO bytes, and nn->data` (fake-ioctl harness,
-    byte-identical `chans[]` + bootstrap channel on the H14 fixture).
-  - short program file, 64 B cut, zero tail, direct and staged modes.
-  - short program file, 1 MiB cut (truncated payload), direct mode.
-  - ABI 1 load/submit and mmap-fail cases in both modes (staged fallback
-    coverage).
+  - staged/direct byte-identical `chans[]` + bootstrap channel on the full H14
+    fixture, the 64 B short file, and the 1 MiB truncated payload.
+  - short-file zero-tail checks in direct and staged modes; staged `nn->data`
+    remains 16 KiB aligned.
+  - ABI 1 load/submit and mmap-fail cases in both modes (staged fallback).
 - `gcc -DLIBANE_CONFIG_STRICT_BIND` build of the harness -- PASS.
-- `pytest -q tests tools` -- see the PR's CI run for the final numbers; run
-  locally before push.
+- `pytest -q tests tools` -- 100 passed, 1 skipped.
 
 ## A/B protocol for w71 (jwm1, T8103) and w72 (jw16, T6001)
 
