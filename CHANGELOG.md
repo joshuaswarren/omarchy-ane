@@ -55,8 +55,9 @@ changes.
   through the idle blocks, so it does not gate them. Smoke, gates, encoder
   time and output bits are the same as with the defaults. With
   `dyn_pg=1 boot_prevent_nap=0`, the firmware boots but does not answer
-  CONFIG_GET (-110), and `ane_t6021` registers no device. See
-  `receipts/2026-10-03-t6021-dynpg/README.md`.
+  CONFIG_GET (-110), and `ane_t6021` registers no device. Design:
+  `receipts/2026-10-03-t6021-dynpg/README.md`; measurements:
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 - PLACEHOLDER (#106, not merged; remove this line if #106 does not merge
   before the tag): the measured run is in
   `receipts/2026-10-03-t6021-v042-gate/README.md`.
@@ -86,16 +87,17 @@ changes.
   `reset` attribute and a file close now hold the device powered while they
   run. 32-bit (compat) ioctls go through the same command filter and power
   reference as native ones. `ane_t6021` does not change. Measured on one M1
-  laptop (T8103) and one M1 Max laptop (T6001), with the `ane.ko` sources of
-  this release: with the ANE suspended, idle system power equals the level
-  with the module removed (T8103 within 45 mW, T6001 within 7 mW). With the
-  ANE held on, T8103 used 156 mW more (mean of the block means, 3469 against
-  3313 mW), and T6001 used 14.91 and 20.45 W against 12.80 and 12.81 W. The
-  first open after idle takes about 0.33 ms (T8103) and 0.35 ms (T6001)
-  more. Whole-encoder outputs stayed bit-exact, smoke runs from the
-  suspended state passed 20 of 20, and about 300 suspend and wake cycles
-  per machine gave no error. See
-  `receipts/2026-10-03-ane-autosuspend/README.md`.
+  laptop (T8103) and one M1 Max laptop (T6001), with `ane.ko` from the #95
+  head `198db99`, before #104 changed the map path: with the ANE suspended,
+  idle system power equals the level with the module removed (T8103 within
+  45 mW, T6001 within 7 mW). With the ANE held on, T8103 used 156 mW more
+  (mean of the block means, 3469 against 3313 mW), and T6001 used 14.91 and
+  20.45 W against 12.80 and 12.81 W. The first open after idle takes about
+  0.33 ms (T8103) and 0.35 ms (T6001) more. Whole-encoder outputs stayed
+  bit-exact, smoke runs from the suspended state passed 20 of 20, and about
+  300 suspend and wake cycles per machine gave no error. Design:
+  `receipts/2026-10-03-ane-autosuspend/README.md`; measurements:
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 - DKMS skips a kernel that ships the ANE driver itself
   (`CONFIG_DRM_ACCEL_ANE=y` or `=m`, aurora-silicon/linux #155): that kernel
   keeps its own `ane.ko` and `ane_t6021.ko` (#94). `dkms.conf` sets
@@ -121,8 +123,9 @@ changes.
   Max laptop (T6001), BO_INIT took 24.75 ms instead of 232.74 ms (minimum),
   and the whole open took 574.25 ms instead of 787.89 ms. Outputs stayed
   bit-exact, the job count exact, and the smoke passed 20 of 20. Stress runs
-  of 10 minutes that flipped `map_batch` every 60 s gave no error. See
-  `receipts/2026-10-03-ane-iommu-batch/README.md`.
+  of 10 minutes that flipped `map_batch` every 60 s gave no error. Design:
+  `receipts/2026-10-03-ane-iommu-batch/README.md`; measurements:
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 
 ### Fixed
 

@@ -41,10 +41,12 @@ A DKMS-tree build of this tree (below) gives `ane.ko` srcversion
 
 ## Host gate
 
-On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), on the release tree
-before the commit (this README excluded), with the steps of
+On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order and the kernel tree's dtc
-(`DTC 1.7.2-g53373d13`) first in `PATH`. Every step exited 0:
+(`DTC 1.7.2-g53373d13`) first in `PATH`, on two trees: the worktree at
+`d4aa669` (`dc174cd` plus the CHANGELOG and README edits of this release,
+without this receipt) and a fresh `git archive` of `40f3317` (the same plus
+this receipt). Every step exited 0 on both:
 
 | Step | Result |
 | --- | --- |
@@ -64,9 +66,8 @@ before the commit (this README excluded), with the steps of
 | `python3 -m pytest -q tests tools` | 58 passed, 1 skipped |
 | `voice_lint.py --mode article README.md` | fail=0 before and after (one Flesch warning, also on main) |
 
-The same steps on a `git archive` of the tree (no `.git`, as the tag
-tarball) also all exit 0, `test_promote_chip` and `test_promote_from_verdict`
-included.
+The archive has no `.git`, like the tag tarball, so `test_promote_chip` and
+`test_promote_from_verdict` passing there shows the #92 change.
 
 ## Package recipe (omarchy-pkgs `omarchy-ane-dkms`)
 
@@ -106,11 +107,63 @@ The 0.4.1 `package()` lines, into a scratch `$pkgdir`, exit 0 and install 34
 files, including the twelve `usr/share/omarchy-ane/soc/*.json` tables and an
 H13 fixture that is byte-equal to the source.
 
-## Hardware gates
+## Hardware results (MEASURED by the hardware lanes)
 
-- T8103 (M1) and T6001 (M1 Max): the `map_batch` runs on `13c684a` (the
-  bytes of this release, above) passed: smoke 20/20 bit-exact, whole encoder
-  bit-exact with the job count exact, 10-minute stress with no error. The
-  autosuspend runs on `198db99` passed before them.
-- T6021 (M2 Max): passed at the default parameters on `5a457a3`, with the
-  `ane_t6021`, libane and tools of this release.
+One machine per chip ran each lane. The lane records are in the private lab
+notebook; this section copies their numbers. Nothing here was measured again
+for this receipt. The design receipts that the CHANGELOG also cites
+(`2026-10-03-ane-autosuspend`, `2026-10-03-ane-iommu-batch`,
+`2026-10-03-t6021-dynpg`) were written before these runs, so their "not
+verified" sections predate this data.
+
+### Autosuspend (#95): `198db99`, `ane.ko` srcversion `B94A022ECB6F0FF27D17BB8`
+
+Idle power in 5-minute blocks at 1 Hz, arms A (module removed), B (ANE held
+on) and C (`autosuspend_ms` 1500). T8103 gives the median of Total System
+Power per block; T6001 gives the mean of `total_uW` per block.
+
+| | T8103 (one M1 laptop) | T6001 (one M1 Max laptop) |
+| --- | --- | --- |
+| A, module removed | 3315.4 / 3307.7 mW | 12.811 W |
+| B, ANE held on | 3455.9 / 3434.6 mW | 20.451 / 14.910 W |
+| C, autosuspend | 3327.8 / 3283.2 mW | 12.808 / 12.804 W |
+| C runtime state | suspended in 300 of 300 samples per block | suspended in 300 of 300 samples per block |
+| first open after 5 s idle | median 330 µs (warm: 10 µs) | 0.35 ms |
+| whole encoder | 40 blocks of 16 calls bit-exact; per-call engine time min-of-min 136.885 ms in both arms | 40 blocks of 16 calls, one output digest; jobs +640 exact |
+| smoke from the suspended state | 20/20 bit-exact | 20 runs, each 20/20 bit-exact |
+| stress, 10 min, random idle 0-4 s | 295 cycles, 0 failures | 304 cycles, 0 failures |
+
+### `map_batch` (#104): `13c684a`, `ane.ko` srcversion `B4AE691E569A2BBD37E18E3`
+
+The whole Parakeet encoder program, 10 cold opens per arm, with the test
+libane built from the same tree (`tools/ane_cold_start.py --trace`).
+
+| | T8103 (one M1 laptop) | T6001 (one M1 Max laptop) |
+| --- | --- | --- |
+| BO_INIT, `map_batch=1` | 22.772 ms median (22.727 min) | 24.75 ms min |
+| BO_INIT, `map_batch=0` (per page) | 179.852 ms median (179.778 min) | 232.74 ms min |
+| whole open, `map_batch` 1 / 0 | 585.288 / 758.617 ms median | 574.25 / 787.89 ms min |
+| release (close), 1 / 0 | 177.830 / 177.977 ms median | 241.40 / 241.20 ms min |
+| whole encoder, 20 blocks of 16 per arm | bit-exact, jobs 16 per block; per-call min 136.599 / 136.613 ms | bit-exact, jobs +640 exact; block min 7431 / 7641 ms |
+| smoke with `map_batch=1` | 20/20 bit-exact | 20 runs, each 20/20 bit-exact |
+| stress, 10 min, `map_batch` flipped every 60 s | 223 cycles, 0 failures | 236 cycles, 0 failures |
+| new kernel error lines | 0 | 0 |
+
+On T6001 the protocol's encoder bar (min-of-min within 1 % between the arms)
+failed at 2.748 %, because `map_batch=1` is faster; the lane accepted the
+change and asked for the bar to be reviewed.
+
+### T6021 (one M2 Max laptop): `5a457a3`, `ane_t6021` srcversion `59494CBC56F28ED8D1122C6`
+
+- Default parameters: boot and bind; 8 `ane` lines at the default log level
+  (6 info, 2 warning) and no `ANERD`, `ANEWR`, `ps probe` or emergency line;
+  one license and one description in `modinfo`; smoke 20/20 bit-exact; nine
+  gate ops; whole encoder bit-exact at 254.306 ms min-of-min (+0.004 %
+  against v0.4.1); `ane_stats` items 1-4 (stats cost +0.017 %).
+- `dyn_pg=1`: the firmware answered `SET_DYNAMIC_POWERGATE` with status 0.
+  `ane_pg_state` read 0x3ff (ACTUAL 0xf) in all seven words before the first
+  job, 30 s after the last gate, and in every 10 s sample of three idle
+  blocks. Smoke, gates, job counts, encoder time (+0.005 %) and output bits
+  matched the defaults.
+- `dyn_pg=1 boot_prevent_nap=0`: the firmware booted, CONFIG_GET timed out
+  (-110), and probe failed with -110, so no device registered.
