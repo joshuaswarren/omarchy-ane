@@ -188,6 +188,21 @@ module_param(stats, bool, 0444);
 MODULE_PARM_DESC(stats,
 		 "Enable ane_stats sysfs and ane_timeline debugfs (default 1; 0 = hot path is a single predictable branch and no files are created)");
 
+/* Firmware-managed idle (receipts/2026-10-03-t6021-dynpg). 1 sends
+ * CSNE_CMD_SET_DYNAMIC_POWERGATE = 1 once, after CONFIG_GET: the selene
+ * 13.5 firmware then turns the six compute islands (td, base, set1-4)
+ * off between jobs and on for each job. There is no runtime switch,
+ * because the firmware's off path powers the islands on. The driver keeps
+ * its runtime-PM reference, so genpd never powers on an island that the
+ * firmware gated (that trips the firmware's PowerUp ASSERT). With dyn_pg=1,
+ * trace_td takes no TD sample: a TM read while the islands are off hangs
+ * the SoC, and a PS-word check cannot exclude a firmware gate between the
+ * check and the read. */
+static bool dyn_pg;
+module_param(dyn_pg, bool, 0444);
+MODULE_PARM_DESC(dyn_pg,
+		 "Firmware dynamic power gating of the compute islands between jobs (selene 13.5 only; default 0: islands held on)");
+
 #define ANE_LEGACY_ALLOCS 8192
 #define ANE_LEGACY_BYTES SZ_512M
 
@@ -586,7 +601,8 @@ MODULE_PARM_DESC(call_settle_us,
  * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
  * CALL path is unchanged. On, the completion wait polls every 20-40 us
  * and also reads the last-committed-TD word. It reads that word only
- * while the seven ANE pmgr PS words read 0x3ff. No register is written.
+ * while the seven ANE pmgr PS words read 0x3ff, and never with dyn_pg=1
+ * (no PS map, so no TD or GATE record). No register is written.
  *
  * Provenance (omarchy-ane commits):
  * - The TD word: engine + ane_t602x_soc.trace_td_off; on T602x TM
@@ -802,12 +818,14 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 
 /* The completion wait with trace_td on: the same finish-event test with a
  * 20-40 us poll, and one TD-word sample per poll under the PS-word guard
- * (see trace_td). */
+ * (see trace_td). With dyn_pg=1 the PS words are not mapped, so the loop
+ * takes no PS or TD sample. */
 static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 					 unsigned long deadline)
 {
 	void __iomem *td = ane->engine + ane->soc->trace_td_off;
-	void __iomem *ps = ioremap_np(ane->soc->pmu_pa + ane->soc->ps_off,
+	void __iomem *ps = dyn_pg ? NULL :
+			   ioremap_np(ane->soc->pmu_pa + ane->soc->ps_off,
 				      ANE_PMGR_PS_LAST_OFF + 4);
 	unsigned int i, gate = ANE_PMGR_PS_LAST_OFF + 8;
 	u32 last = U32_MAX, samples = 0;
@@ -1627,6 +1645,33 @@ module_param_cb(fw_perf_mode, &ane_t6021_perf_mode_ops, &fw_perf_mode, 0644);
 MODULE_PARM_DESC(fw_perf_mode,
 		 "Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent");
 
+/* dyn_pg=1, once at probe after CONFIG_GET: CSNE_CMD_SET_DYNAMIC_POWERGATE
+ * on channel 1, the u32 value 1 at +0x08, 0x0c bytes. The selene 13.5
+ * handler (0x28178, image sha256 a9c4b771...) passes the low byte to
+ * setDynamicPowerGate, which switches the gate on and powers the islands
+ * down when no job runs. Decode: omarchy-ane 8cae3ad,
+ * receipts/2026-10-03-t6021-powerdown. */
+static int ane_t6021_dyn_pg_on(struct ane_rtclient *ane)
+{
+	struct ane_legacy_buffer *command = ane->cmd_buf;
+	int ret;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	memset(command->cpu, 0, SZ_16K);
+	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(1);
+	ret = ane_rtclient_command(ane, command, 0x0c,
+				   CSNE_CMD_SET_DYNAMIC_POWERGATE, 1, 3000);
+	mutex_unlock(&ane_t6021_fw_lock);
+	if (ret)
+		dev_err(ane->dev,
+			"dyn_pg: SET_DYNAMIC_POWERGATE failed %d; device quarantined\n",
+			ret);
+	else
+		dev_info(ane->dev,
+			 "dyn_pg: firmware dynamic power gating on (SET_DYNAMIC_POWERGATE = 1)\n");
+	return ret;
+}
+
 static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 				       struct drm_file *file)
 {
@@ -1901,6 +1946,33 @@ out:
 	return err;
 }
 
+/* debugfs ane_t6021/ane_pg_state (T602x, with stats=1): the seven ANE PS
+ * words that trace_td checks, through the same non-posted map of pmu_pa
+ * + ps_off, one "name value" line each (DT power-controller@4000..4030).
+ * They live in the always-on pmgr block, so the read is legal whatever
+ * state the firmware left the islands in; genpd's pm_genpd_summary does
+ * not see firmware writes. No other register is read. */
+static int ane_t6021_pg_state_show(struct seq_file *m, void *unused)
+{
+	static const char *const name[] = {
+		"ane_sys_mpm", "ane_td", "ane_base", "ane_set1",
+		"ane_set2", "ane_set3", "ane_set4",
+	};
+	struct ane_rtclient *ane = m->private;
+	void __iomem *ps = ioremap_np(ane->soc->pmu_pa + ane->soc->ps_off,
+				      ANE_PMGR_PS_LAST_OFF + 4);
+	unsigned int i;
+
+	BUILD_BUG_ON(8 * (ARRAY_SIZE(name) - 1) != ANE_PMGR_PS_LAST_OFF);
+	if (!ps)
+		return -ENOMEM;
+	for (i = 0; i < ARRAY_SIZE(name); i++)
+		seq_printf(m, "%s %#010x\n", name[i], readl(ps + 8 * i));
+	iounmap(ps);
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(ane_t6021_pg_state);
+
 /*
  * ane_stats sysfs attribute. The counters are fetched through the real
  * drvdata type (struct ane_rtclient *, counters at ->fw->stats_ctrs)
@@ -1965,6 +2037,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	ane->dev = dev;
 	ane->soc = of_device_get_match_data(dev);
+	if (dyn_pg && ane->soc->fw != ane_t6021_soc.fw) {
+		dev_err(dev,
+			"dyn_pg=1 needs the selene 13.5 firmware (T602x); refusing before power access\n");
+		return -EINVAL;
+	}
 	platform_set_drvdata(pdev, ane);
 	INIT_DELAYED_WORK(&ane->poll_work, ane_rtclient_post_boot);
 
@@ -2276,6 +2353,17 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return -EPROTO;
 	}
 
+	/* chman_ok implies that the legacy branch above allocated cmd_buf
+	 * (after CONFIG_GET when legacy_query=1) and that this driver started
+	 * the firmware, so the failure path holds. */
+	if (dyn_pg) {
+		ret = ane_t6021_dyn_pg_on(ane);
+		if (ret) {
+			cancel_delayed_work_sync(&ane->poll_work);
+			goto err_pm_or_hold;
+		}
+	}
+
 	{
 		struct ane_t6021_drm *adrm;
 		int drmret;
@@ -2336,6 +2424,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 						    root,
 						    &ane->fw->stats_ring,
 						    &ane_timeline_fops);
+				if (ane->soc->trace_td_off)
+					debugfs_create_file("ane_pg_state", 0400,
+							    root, ane,
+							    &ane_t6021_pg_state_fops);
 			}
 		}
 	}

@@ -160,11 +160,11 @@
     },
     "iommus": {
       "v": null,
-      "reason": "ADT ane node names no phandle for iommu-parent; the DART sibling is the iommu parent (see dart)."
+      "reason": "Unknown: the ADT receipt summary (S1) does not print iommu-parent, so its absence there says nothing about the ADT. The DART is the sibling dart-ane (see dart); the phandle needs a full ADT read."
     },
     "dart_phandle_field": {
       "v": null,
-      "reason": "ADT ane node in 27.0 (j433 et al) has no iommu-parent field; the T8122 DART sibling 'dart-ane' is on a separate node path with a 0x311800000+0x4000 base."
+      "reason": "Unknown: not preserved by the ADT receipt summary (S1). The earlier reason ('the ADT ane node has no iommu-parent field') had no source; the AneGenH15 notebook entry records the field as not preserved, not as absent."
     }
   },
   "dart": {
@@ -232,27 +232,17 @@
   "mailbox": {
     "compatible": {
       "v": null,
-      "reason": "no ane-mailbox node in the ADT; the ascwrap-v6 mailbox is the second reg window 0x311050000+0x4000 (matches apple,t6031-asc-mailbox + apple,asc-mailbox-v4 from kernel dtsi S4). Compatible name not in ADT — inferred from aurora S4."
+      "reason": "INFERENCE, not measured: no ANE mailbox node exists in the ADT summary (S1) or in the kernel tree (S4). Every other T8122 ASC mailbox in S4 (smc, aop, mtp, ans; t8122.dtsi:833-1069) is apple,t8122-asc-mailbox + apple,asc-mailbox-v4, so that class is expected. Detail: receipts/2026-10-03-ane-h15."
     },
     "reg": [
       {
-        "v": {
-          "name": "mbox",
-          "base": "0x311050000",
-          "size": "0x4000"
-        },
-        "src": "S1"
+        "v": null,
+        "reason": "INFERENCE, not measured: no ADT window is named as the mailbox. On T6021 the ANE mailbox is the ASC wrapper + 0x8000 (engine + 0x1408000) and engine + 0x1050000 is RVBAR (ane/t6021/ane_t6021.h:104-147); every T8122 ASC mailbox in S4 is its ASC base + 0x8000. ANE reg[0] (S1) is engine + 0x1400000, so the expected mailbox is 0x311408000+0x4000, inside reg[0]. The earlier value 0x311050000 (reg[1], the T6021 RVBAR offset) had no source for the mailbox role."
       }
     ],
     "interrupts": {
-      "v": [
-        506,
-        508,
-        509,
-        507,
-        524
-      ],
-      "src": "S1"
+      "v": null,
+      "reason": "INFERENCE, not measured: the ADT ane node lists 507 506 509 508 524 (S1, kept in ane.interrupts). The first four are the block 506..509; the last is the DART IRQ 525 minus one, as T6021's single ANE IRQ 884 is DART 885 minus one. Each T8122 ASC mailbox in S4 takes four consecutive lines named send-empty, send-not-empty, recv-empty, recv-not-empty in that order, which would make 506..509 the ANE mailbox in that order. The ADT does not name the roles. The earlier list 506, 508, 509, 507, 524 had no source."
     }
   },
   "pmgr": {
@@ -350,8 +340,8 @@
     }
   },
   "driver_family": {
-    "v": "ane_t6021's RTKit/firmware model — extended",
-    "src": "S6"
+    "v": null,
+    "reason": "INFERENCE (b0 decision, receipts/2026-10-03-ane-h15): ane_t6021-like at the ASC layer, no new ASC-IOP client. S1 gives reg[0] = engine + 0x1400000 (the ASC wrapper whose CPU_CONTROL ane_t6021 sets at +0x44), reg[1] = engine + 0x1050000 (the T6021 RVBAR offset) and the DART at engine + 0x1800000 with the T6021 four-window shape; S4 uses apple,asc-mailbox-v4 for every M3 ASC mailbox. Not measured: whether the firmware that iBoot preloads on an M3 Linux boot sends RTKit HELLO. The T6021 13.5 image never did, and its working path is the legacy ChMan ring, which is tied to that image."
   },
   "hwx_generation": {
     "v": {

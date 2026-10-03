@@ -14,6 +14,23 @@
   properties and the bound driver. It also gives the `exclave` record of
   `data/ane-soc/<soc>.json` and the `adt` phram region. It reads no
   register. One run on a MacBook Neo or an M5 Mac answers the question.
+- `omarchy-ane-check` prints `dtbs_source` and `driver_source`, the fields
+  the community collector records. When `DTBS=` is set in
+  `/etc/default/update-m1n1` (`dtbs_source=kernel`), it names no opt-in key:
+  overlay opt-in has no effect there, and `omarchy-ane-dt apply` refuses.
+- The promotion checker judges in-tree rows (`driver_source=intree`) like
+  DKMS rows. A PROMOTE with a passing in-tree row also has the target
+  `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora-plan`
+  and `aurora-pr` make the aurora-silicon/linux device-tree PR. The job that
+  builds the aurora tree holds no credential; only the PR step, which builds
+  nothing, gets the secret `AURORA_PR_TOKEN` (a dry run without it).
+- `ane_t6021` has a lab parameter `dyn_pg` (default 0, T602x only). With
+  `dyn_pg=1`, probe sends the selene firmware command
+  `SET_DYNAMIC_POWERGATE` = 1 after CONFIG_GET, so the firmware turns the
+  compute islands off between jobs. With `dyn_pg=1`, `trace_td` reads no TD
+  word. The debugfs file `ane_t6021/ane_pg_state` prints the seven ANE
+  power-state words. Hardware results are pending; see
+  `receipts/2026-10-03-t6021-dynpg/README.md`.
 
 ### Changed
 
@@ -28,6 +45,15 @@
 
 ### Fixed
 
+- The M3 data files `data/ane-soc/t8122.json`, `t6030.json` and `t6031.json`
+  no longer name the 0x4000 window at engine + 0x1050000 as the ANE mailbox,
+  or give a reordered mailbox IRQ list. No source gave either. That offset is
+  RVBAR on T6021. Both values are now null, with the expected wrapper + 0x8000
+  address in the reason. Also corrected: the mailbox compatible in all four M3
+  files (the T6030 one contradicted its own source), the j575d board
+  (BuildManifest chip id 0x6032) and its three missing die-1 windows, the
+  T8122 iommu-parent reason, and the driver family. See
+  `receipts/2026-10-03-ane-h15`.
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
   steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
   revert made opt-in again got no firmware step.
@@ -69,6 +95,14 @@
   names what the probe and the owner's macOS can supply, and plans the b1
   firmware-boot smoke module. `data/ane-soc/t6050.json` no longer says
   that the j775d `ane1` has no exclave marking: no source measured it.
+- H18 b0 (`receipts/2026-10-03-ane-h18`): T8152 (M6) is the `ane_t6021`
+  firmware-boot model as a new `ascwrap-v8` variant, and T8150 (A19 Pro) is
+  Exclave-owned. The receipt lists the 28 per-SoC entries a T8152 smoke module
+  needs (13 have no local value), the macOS `ioreg` commands an M6 owner can
+  run to supply some of them, and the b1 module plan. `data/ane-soc/t8152.json`
+  records the firmware `_rtk_patchbay` tags and load commands, the `ane1`
+  clock-gates, and the new family statement. Its `compiler` leaf is gone: it
+  cited the aurora DT and repeated `hwx_lab_cross_target`.
 
 ## 0.4.1 (2026-10-02)
 

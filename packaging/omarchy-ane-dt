@@ -11,7 +11,8 @@ U-Boot console input from serial only.
   omarchy-ane-dt apply    overlay this Mac's board device tree, for every
                           installed kernel, and have update-m1n1 use the copy
   omarchy-ane-dt remove   undo apply
-  omarchy-ane-dt status   say where the running device tree's ANE node is from
+  omarchy-ane-dt status   say where the running device tree's ANE node is from,
+                          and print dtbs_source=kernel|overlay|unknown
 
 apply never changes a file a package owns and never runs update-m1n1. It
 writes the overlaid copy to /var/lib/omarchy-ane/dtbs/KERNEL/ and adds one line
@@ -31,6 +32,10 @@ adds "data-only (no driver): SOC" when SOC_DIR/SOC.json, the package's copy of
 data/ane-soc/SOC.json, says data-only.
 With omarchy-mac-boot, the overlays are its business: newer omarchy-mac-boot
 applies them itself, and older omarchy-mac-boot refuses changed device trees.
+A non-empty DTBS= line in /etc/default/update-m1n1 (dtbs_source=kernel) makes
+m1n1 boot the device trees it names: update-m1n1-dtbs and omarchy-mac-boot's
+overlays both step aside, so no overlay or opt-in reaches m1n1 and apply
+refuses. Empty or unset DTBS is dtbs_source=overlay; no file is unknown.
 
 --root DIR reads and writes below DIR (tests). --hook is for the pacman hook:
 what it cannot do here is a note, not an error. Needs dtc (dtc, fdtoverlay,
@@ -64,6 +69,12 @@ FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
 OPT_IN = "etc/omarchy-platform/dtb-overlays.opt-in"
+CONFIG = "etc/default/update-m1n1"
+DTBS = re.compile(r"\s*(?:export\s+)?DTBS=(.*)")
+# The community collector's field (omarchy-mlx scripts/collect_deep.py), also
+# printed by status and omarchy-ane-check.
+DTBS_SOURCE = "dtbs_source"
+KERNEL_DT = "overlay opt-in has no effect, chip enabled only by its node in the kernel DT"
 # The per-SoC data files (data/ane-soc/*.json); packaging/build-dtbo reads
 # this line.
 SOC_DIR = "usr/share/omarchy-ane/soc"
@@ -249,13 +260,22 @@ def omarchy_mac(root):
 
 def config_lines(root):
     try:
-        return (root / "etc/default/update-m1n1").read_text().splitlines()
+        return (root / CONFIG).read_text().splitlines()
     except FileNotFoundError:
         return []
 
 
+def dtbs_source(root):
+    """kernel when the last DTBS= line of CONFIG is not empty, overlay when it
+    is empty or absent, unknown without CONFIG (the collector's rule)."""
+    if not (root / CONFIG).is_file():
+        return "unknown"
+    values = [m.group(1).strip().strip("\"'") for m in map(DTBS.fullmatch, config_lines(root)) if m]
+    return "kernel" if values and values[-1] else "overlay"
+
+
 def set_line(root, present):
-    config = root / "etc/default/update-m1n1"
+    config = root / CONFIG
     lines = config_lines(root)
     kept = [line for line in lines if line != LINE]
     if present:
@@ -289,6 +309,9 @@ def remove_tree(path):
 
 
 def apply(root, hook_targets):
+    if dtbs_source(root) == "kernel":
+        remove(root, quiet=True)
+        raise Refuse(f"DTBS= in /{CONFIG} names the device trees m1n1 boots, so {KERNEL_DT}")
     mac = omarchy_mac(root)
     if mac is not None:
         remove(root, quiet=True)
@@ -379,9 +402,10 @@ def status(root, kver):
     copy_has = copy.is_file() and bool(Tree(copy.read_bytes()).ane_nodes())
     mac_overlay = omarchy_mac(root) and any(ANE.fullmatch(c) for o in overlays_for(root, name)
                                             for c in skip_compatibles(o))
+    mode = dtbs_source(root)
     if kernel_has:
         source = "kernel"
-    elif copy_has or mac_overlay:
+    elif (copy_has or mac_overlay) and mode != "kernel":
         source = "overlay"
     else:
         source = "none"
@@ -389,6 +413,7 @@ def status(root, kver):
         source = "other"
     print(f"node={'present' if live else 'absent'} source={source} dtb={name} kernel={kver}"
           + (f" path=/{live[0]}" if live else ""))
+    print(f"{DTBS_SOURCE}={mode}" + (f": {KERNEL_DT}" if mode == "kernel" else ""))
     soc = name.split("-")[0]
     try:
         if json.loads((root / SOC_DIR / f"{soc}.json").read_text()).get("state") == "data-only":

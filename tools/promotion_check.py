@@ -14,12 +14,17 @@ packaging/dt/overlays:
 
 A row is judged only when it carries the omarchy-ane block and provides
 evidence: an unready check, an ANE fault, a wrong driver, or an attempted smoke.
-An uninstalled row, or a clean ready row with no smoke attempt, is not judged
+An uninstalled row, a row whose driver_source is none (no driver for its
+kernel), or a clean ready row with no smoke attempt, is not judged
 and counts neither for nor against a chip. One passing
 row promotes an opt-in SoC. A passing row has omarchy-ane-check ready, the
 chip's driver loaded, 20 bit-exact smoke calls against the golden, and no
-ANE/DART/mailbox fault line. A chip with both a passing and a failing row is a
-CONFLICT: it does not promote until the failing row is explained or superseded.
+ANE/DART/mailbox fault line. The driver is the kernel's own
+(driver_source=intree) or omarchy-ane-dkms's (dkms; a row without the field
+is a dkms row); both count the same. A chip with both a passing and a failing
+row is a CONFLICT: it does not promote until the failing row is explained or
+superseded. A PROMOTE has targets: overlay (tools/promote_chip.py), plus
+aurora-dt (tools/aurora_dt.py) when a passing row is intree.
 Exit 0 always: the output is a report, not a gate.
 """
 import argparse
@@ -45,6 +50,13 @@ USER_AGENT = "omarchy-ane-promotion-check/1 (+https://github.com/joshuaswarren/o
 DRIVER = {"t8103": "ane", "t6000": "ane", "t6001": "ane", "t6002": "ane",
           "t6020": "ane_t6021", "t6021": "ane_t6021", "t6022": "ane_t6021",
           "t8112": "ane_t6021"}
+# The community collector's field (omarchy-mlx scripts/collect_deep.py), also
+# the omarchy-ane-check line: whose driver module the row ran.
+DRIVER_SOURCE = "driver_source"
+INTREE, DKMS, NONE = "intree", "dkms", "none"
+# What a PROMOTE changes: the omarchy-ane overlay (tools/promote_chip.py) and,
+# for an in-tree passing row, the kernel's own device tree (tools/aurora_dt.py).
+OVERLAY, AURORA_DT = "overlay", "aurora-dt"
 # The smoke golden per SoC: the add-fixture golden where omarchy-ane-smoke
 # has a fixture. A SoC without one cannot pass a row.
 GOLDEN = SMOKE.GOLDEN
@@ -90,10 +102,15 @@ def smoke_attempted(smoke):
         smoke.get("available") is False and "name" in smoke)
 
 
+def driver_source(oa):
+    """intree, dkms or none; a legacy row without the field is a dkms row."""
+    return oa.get(DRIVER_SOURCE) or DKMS
+
+
 def judged(row):
     """Rows with failure evidence count even when no smoke ran; clean skips do not."""
     oa, s = block(row), soc(row)
-    if not oa or not installed(oa):
+    if not oa or not installed(oa) or driver_source(oa) == NONE:
         return False
     module = (oa.get("module") or {}).get("name")
     return bool(unclean(oa)) or module != DRIVER.get(s) or smoke_attempted(oa.get("smoke") or {})
@@ -158,9 +175,17 @@ def verdict(rows):
                   "promote": bool(ok) and not bad, "conflict": bool(ok) and bool(bad),
                   "needs": ([f"{len(bad)} failing row(s) to explain"] if ok and bad else
                             ["one passing row"] if not ok else []),
+                  "intree": [r["content_sha256"][:12] for r in ok if driver_source(block(r)) == INTREE],
                   "on": s in ON, "latest": latest["content_sha256"][:12],
                   "revert": unclean(block(latest)) if s in ON else []}
     return out
+
+
+def targets(r):
+    """What a PROMOTE or REVERT verdict changes."""
+    if r["on"]:
+        return [OVERLAY] if r["revert"] else []
+    return ([OVERLAY] + ([AURORA_DT] if r["intree"] else [])) if r["promote"] else []
 
 
 def unattempted(rows):
@@ -195,10 +220,11 @@ def load(paths):
 
 
 def json_verdict(rows):
-    """Stable machine verdict: {chips: [{chip, state, verdict, rows: [...]}]}.
+    """Stable machine verdict: {chips: [{chip, state, verdict, targets, rows: [...]}]}.
 
-    verdict is PROMOTE | REVERT | STAY | ON | CONFLICT; rows carry the 12-char
-    row sha, whether the row was judged, and (judged rows) pass and reasons.
+    verdict is PROMOTE | REVERT | STAY | ON | CONFLICT; targets is what the
+    verdict changes (targets()); rows carry the 12-char row sha, the row's
+    driver_source, whether the row was judged, and (judged rows) pass and reasons.
     """
     result, per_soc = verdict(rows), defaultdict(list)
     for row in rows:
@@ -208,17 +234,18 @@ def json_verdict(rows):
     for s in sorted(per_soc):
         r = result.get(s)
         rows_out = [{"row_sha": row["content_sha256"][:12], "judged": (j := judged(row)),
+                     DRIVER_SOURCE: driver_source(block(row)) if block(row) else None,
                      "passed": (not failures(row)) if j else False,
                      "reasons": failures(row) if j else []} for row in per_soc[s]]
         if r is None:
             chips.append({"chip": s, "state": "on" if s in ON else "opt-in",
-                          "verdict": "ON" if s in ON else "STAY", "rows": rows_out})
+                          "verdict": "ON" if s in ON else "STAY", "targets": [], "rows": rows_out})
         elif r["on"]:
             chips.append({"chip": s, "state": "on", "verdict": "REVERT" if r["revert"] else "ON",
-                          "rows": rows_out})
+                          "targets": targets(r), "rows": rows_out})
         else:
             v = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
-            chips.append({"chip": s, "state": "opt-in", "verdict": v, "rows": rows_out})
+            chips.append({"chip": s, "state": "opt-in", "verdict": v, "targets": targets(r), "rows": rows_out})
     return {"chips": chips}
 
 
@@ -241,11 +268,12 @@ def main(argv=None):
     result = verdict(rows)
     unjudged = unattempted(rows)
     print(f"promotion_check: {len(rows)} rows; rule: one passing row promotes; a passing row has a ready check, "
-          f"the chip driver, exactly 20 bit-exact smoke calls and no ANE/DART/mailbox fault; uninstalled or clean no-smoke rows are not judged; "
+          f"the chip driver, exactly 20 bit-exact smoke calls and no ANE/DART/mailbox fault; in-tree and dkms "
+          f"driver rows count alike; uninstalled, driver_source none or clean no-smoke rows are not judged; "
           f"a passing and failing row conflict; on by default ({', '.join(sorted(ON))}): REVERT when the latest judged row is not clean")
     for s in sorted(per_soc):
         r = result.get(s)
-        extra = f", {unjudged[s]} not judged (uninstalled or no smoke attempt)" if unjudged[s] else ""
+        extra = f", {unjudged[s]} not judged (uninstalled, no driver or no smoke attempt)" if unjudged[s] else ""
         if r is None:
             print(f"{s}: {per_soc[s]} rows, 0 judged{extra} -> {'ON' if s in ON else 'STAY'}")
             continue
@@ -254,12 +282,14 @@ def main(argv=None):
         else:
             label = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
             state = label + (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
+        if targets(r):
+            state += f" -> targets: {', '.join(targets(r))}"
         print(f"{s}: {per_soc[s]} rows, {r['judged']} judged{extra}, {len(r['passing'])} pass, "
               f"{len(r['failing'])} fail -> {state}")
         for sha, why in r["failing"].items():
             print(f"  FAIL {sha}: {'; '.join(why)}")
         for sha in r["passing"]:
-            print(f"  pass {sha}")
+            print(f"  pass {sha}" + (f" ({INTREE})" if sha in r["intree"] else ""))
     return 0
 
 
