@@ -47,6 +47,17 @@
   `tools/test_ane_overlays.py` now also disables the power states when it
   checks the overlay over disabled kernel nodes.
 
+### Research and receipts
+
+- H18 b0 (`receipts/2026-10-03-ane-h18`): T8152 (M6) is the `ane_t6021`
+  firmware-boot model as a new `ascwrap-v8` variant, and T8150 (A19 Pro) is
+  Exclave-owned. The receipt lists the 28 per-SoC entries a T8152 smoke module
+  needs (13 have no local value), the macOS `ioreg` commands an M6 owner can
+  run to supply some of them, and the b1 module plan. `data/ane-soc/t8152.json`
+  records the firmware `_rtk_patchbay` tags and load commands, the `ane1`
+  clock-gates, and the new family statement. Its `compiler` leaf is gone: it
+  cited the aurora DT and repeated `hwx_lab_cross_target`.
+
 ## 0.4.1 (2026-10-02)
 
 Both drivers count ANE work for monitoring, and the M1 family has its own
