@@ -781,7 +781,10 @@ static int ane_stats_init(struct ane_device *ane)
 		ane->stats_slots = NULL;
 		return err;
 	}
-	root = debugfs_create_dir("ane", NULL);
+	/* Per-device directory (dev_name: 284000000.ane, 2284000000.ane, …):
+	 * two Ultra dies are two devices; a fixed name hands the second
+	 * probe -EEXIST. */
+	root = debugfs_create_dir(dev_name(ane->dev), NULL);
 	if (IS_ERR(root)) {
 		device_remove_file(ane->dev, &dev_attr_ane_stats);
 		kfree(ane->stats_slots);

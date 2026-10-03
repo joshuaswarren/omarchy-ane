@@ -170,6 +170,19 @@ assert re.search(r'struct ane_nn \*ane_m2_init_ports\(const char \*path,\s*'
 assert 'DIE_STRIDE = 0x20_0000_0000' in smoke
 assert smoke.count('"die": bound') == 2, smoke.count('"die": bound')
 
+# 5. Two-device plumbing: the one global name (the debugfs dir) is per
+# device; everything else audited per device (wedged/boost/stats/IOMMU/PM
+# take ane->dev; only module params stay module-level).
+assert 'debugfs_create_dir(dev_name(ane->dev), NULL)' in drv
+assert 'debugfs_create_dir("ane", NULL)' not in drv
+# The die-1 firmware pin reaches request_firmware, validated against the
+# die-0 pin: a non-identical ane1 image refuses at load.
+assert 'const char *fw_name = soc->fw_pin ? soc->fw_pin : img->name;' in fwload
+assert 'request_firmware(&fw, fw_name, ane->dev)' in fwload
+fetch_tool = (root / 'packaging/omarchy-ane-firmware-fetch').read_text()
+assert 'no pin for T6022 die 1' in fetch_tool
+assert 'soc@2200000000/ane@284000000' in fetch_tool
+
 # 5. promotion_check: per-die keys exist and the die field is read from the
 # collector block; deep details live in tools/test_promotion_check.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))

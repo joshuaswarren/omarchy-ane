@@ -300,9 +300,10 @@ def gate(verdict, pr):
     body = gh(f"repos/{slug}/pulls/{pr}")["body"]
     recorded = read_block(body)
     chip = recorded["chip"]
-    if (recorded["verdict"] == "PROMOTE") == (chip in ON):
+    # ON keys (soc, die): a chip is "enabled" through its die-0 row.
+    if (recorded["verdict"] == "PROMOTE") == ((chip, 0) in ON):
         raise Fail(f"PR #{pr}: packaging/dt/overlays in this checkout already has {chip} "
-                   f"{'enabled' if chip in ON else 'opt-in'}, the PR's flip, so a fresh verdict here judges the "
+                   f"{'enabled' if (chip, 0) in ON else 'opt-in'}, the PR's flip, so a fresh verdict here judges the "
                    "flipped tree; run the gate from the base branch, where the flip is not merged")
     fresh = chip_verdict(verdict, chip)
     print(f"gate: PR #{pr} chip {chip}: recorded={recorded['verdict']} fresh={fresh['verdict']}")

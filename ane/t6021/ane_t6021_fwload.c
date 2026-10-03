@@ -569,6 +569,12 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 {
 	const struct ane_t602x_soc *soc = ane_t6021_soc_for(ane->dev);
 	const struct ane_fw_image *img = soc->fw;
+	/* The die's own image pin (ane_t6022_soc_die1.fw_pin): request the
+	 * die's BuildManifest name, still validated against soc->fw's pinned
+	 * sha256 below — an ane1 image that is not byte-identical to ane0
+	 * (a missing fact, docs/ultra-die1.md §9.2) fails validation here,
+	 * so no unproven bytes boot. Die 0 rows carry no pin. */
+	const char *fw_name = soc->fw_pin ? soc->fw_pin : img->name;
 	const struct firmware *fw = NULL;
 	struct ane_fw_seg segs[ANE_FW_NSEGS];
 	u64 entry = 0;
@@ -588,11 +594,11 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 	/* The 64-bit coherent mask is set once in ane_t6021_probe,
 	 * BEFORE rtkit_init allocates the rings (W15 review). */
 
-	ret = request_firmware(&fw, img->name, ane->dev);
+	ret = request_firmware(&fw, fw_name, ane->dev);
 	if (ret) {
 		dev_err(ane->dev,
 			"fwload: request_firmware(%s): %d — stage the payload "
-			"with omarchy-ane-firmware-fetch\n", img->name, ret);
+			"with omarchy-ane-firmware-fetch\n", fw_name, ret);
 		return ret;
 	}
 
@@ -626,7 +632,7 @@ int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 
 	dev_dbg(ane->dev,
 		"fwload: %s PRELOAD validated + DART-mapped: entry %#llx, iova %pad size %#x\n",
-		img->name, entry, &iova, alloc_size);
+		fw_name, entry, &iova, alloc_size);
 
 	ret = reserved ? 0 : ane_t6021_fw_patch(ane, buf);
 	if (!ret)
