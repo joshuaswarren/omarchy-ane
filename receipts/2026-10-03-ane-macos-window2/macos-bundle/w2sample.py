@@ -32,7 +32,8 @@ import threading
 import time
 
 BLOCKS = {"t1": ("fabric-ps", "dcs-ps"), "set": ("set-",), "clk": ("clk6",),
-          "perf1": ("pll-", "dev-", "ev-"), "dvfm": ("ane0-",)}
+          "perf1": ("pll-", "dev-", "ev-"), "dvfm": ("ane0-",),
+          "opp": ("opp-",), "ctx": ("ctx-",)}  # window 4: the op-point token word and its two neighbours
 TIER1 = BLOCKS["t1"]
 STATUS = {0: "ok", 1: "gated", 2: "nomap", 3: "absent"}
 REC = struct.Struct("<QQII")                  # aneregdump.c series record head

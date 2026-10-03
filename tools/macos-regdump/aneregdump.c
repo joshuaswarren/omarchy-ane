@@ -216,7 +216,8 @@ int main(int argc, char **argv)
 
 	if (argc != 2 && argc != 3 && argc != 5) {
 		fprintf(stderr,
-		    "usage: aneregdump <outdir> [ranges.txt [count period_us]]\n");
+		    "usage: aneregdump <outdir> [ranges.txt [count period_us]]\n"
+		    "       aneregdump -n ranges.txt   (rule check only: no service call, no read)\n");
 		return 2;
 	}
 	ane_req_default(&req);
@@ -229,6 +230,14 @@ int main(int argc, char **argv)
 		    req.gate_mask, req.gate_want, req.nranges,
 		    req.range[0].name, req.range[0].pa, req.range[0].len);
 		return 1;
+	}
+	if (!strcmp(argv[1], "-n")) {
+		for (i = 0; i < req.nranges; i++)
+			printf("accepted %s pa=%#llx len=%u %s\n", req.range[i].name,
+			    req.range[i].pa, req.range[i].len,
+			    ane_range_must_gate(&req.range[i]) ? "gated" : "ungated");
+		printf("accepted nranges=%u\n", req.nranges);
+		return 0;
 	}
 	svc = IOServiceGetMatchingService(kIOMainPortDefault,
 	    IOServiceMatching("ANERegDump"));

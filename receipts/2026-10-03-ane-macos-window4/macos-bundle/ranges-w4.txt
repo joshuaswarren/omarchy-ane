@@ -1,0 +1,27 @@
+# ANERegDump request for macOS window 4 (T6021): the ANE op-point token word macOS writes
+# (AppleT6021PMGR::initRegMaps RegMap 113 -> ADT pmgr reg[41] 0x285868000+0x4000; observed offset
+# 0x1200; token 0x80000000 | prev<<4 | new; round-3 report) and its two neighbours (+0x1000, +0x2000:
+# the latter is written 0x0 at power-off). Runtime data for the frozen kext 932d3b9b; no rebuild.
+# The three words lie inside the kext's engine window (0x284000000+0x2000000), so the kext forces
+# them gated: it maps and reads them only while every island reads ACTUAL=0xf, whatever this file
+# says. They are NOT the pop-on-read words and not CoreSight. On Linux they are inside the W10
+# fatal-read window and are never read there.
+# w2sample.py derives the per-phase files (blocks t1 / opp / ctx, poll, gated or raw).
+poll_us 0xa
+pmgr 0x28e080000 0x10000
+gate 0xf0 0xf0
+island 0x260
+island 0x2e0
+island 0x4008
+island 0x4010
+island 0x4018
+island 0x4020
+island 0x4028
+island 0x4030
+handoff 0
+adt 0
+range fabric-ps 0x28e20c000 0x4
+range dcs-ps 0x28e20c400 0x4
+range opp-1200 0x285869200 0x4 gated
+range ctx-1000 0x285869000 0x4 gated
+range ctx-2000 0x28586a000 0x4 gated
