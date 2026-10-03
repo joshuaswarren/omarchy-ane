@@ -1,0 +1,305 @@
+{
+ "chip": "t6020",
+ "rows": [
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "3ad4d2a3195f"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "1319df259aa4"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "937408d666f0"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "d8ecfb5c539a"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ac3a490f4a54"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "3da1006071b9"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c87c37aeeb56"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ea77e7262970"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "f5921d4118c5"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ae5ad35dada4"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ced4e658bd42"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "cb3645e8aabc"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "98c8ae50814e"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "d923ea2cf033"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "11054fa1f96b"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "9872e600f4d8"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "124a7a8020f4"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "029744bb886f"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c9e31ba48266"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "bdf79c562aa5"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "8fee8ac23938"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "f5de4d281989"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "95c59a744577"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "5c803596fd75"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "896d5915f7cc"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "cfe664e62064"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c724a5247d3a"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "9b4e8ea5f347"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c9d196953d7b"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "31e1e3110ad8"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c7e65506de7f"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "d9967a3bdfaf"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ce7148e302ba"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "bf6768e10158"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "c919f9e2d914"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ababc7f7889e"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "d27bfce56779"
+  },
+  {
+   "driver_source": null,
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "3ffbc3f62df4"
+  },
+  {
+   "driver_source": "dkms",
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "ca6c3a7cb356"
+  },
+  {
+   "driver_source": "dkms",
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "e439e4ad3af3"
+  },
+  {
+   "driver_source": "dkms",
+   "judged": false,
+   "passed": false,
+   "reasons": [],
+   "row_sha": "0e1ca7e04b8d"
+  },
+  {
+   "driver_source": "intree",
+   "judged": true,
+   "passed": true,
+   "reasons": [],
+   "row_sha": "3c9389040f51"
+  }
+ ],
+ "state": "opt-in",
+ "targets": [
+  "overlay",
+  "aurora-dt"
+ ],
+ "verdict": "PROMOTE"
+}

@@ -7,6 +7,7 @@ verdict, the release plan, and the aurora-plan/aurora-pr split: the plan calls
 no API, the PR step builds nothing, checks the base tip and re-derives the
 change, and comments on the tracking PR once. No network; gh is a stub."""
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -86,7 +87,12 @@ elif ep.endswith("/pulls") and method == "POST":
     s["bodies"][str(n)] = body["body"]
     out({{"number": n, "body": body["body"]}})
 elif "/pulls/" in ep and method == "PATCH":
-    n = ep.rsplit("/", 1)[1]; s["bodies"][n] = body["body"]; out({{"number": int(n)}})
+    n = ep.rsplit("/", 1)[1]
+    if body.get("state") == "closed":
+        s["open"] = [p for p in s["open"] if p["number"] != int(n)]
+    else:
+        s["bodies"][n] = body["body"]
+    out({{"number": int(n)}})
 elif "/labels" in ep:
     n = ep.split("/issues/")[1].split("/")[0]
     for p in s["open"]:
@@ -163,54 +169,104 @@ assert p.returncode == 0 and "recorded=PROMOTE fresh=PROMOTE" in p.stdout, p
 assert "MERGED\tt8112\tstub0merge1sha" in p.stdout, p.stdout
 print("promote_from_verdict test: gate compares and merges")
 
-# gate refuses when the fresh verdict changed (a new row landed).
+# gate refuses when the judged row the PR rests on is gone (a different row landed).
 CHANGED = verdict([chip("t8112", "PROMOTE", sha="cafe567890ab")])
 p = run(["gate", "--pr", "7", "--verdict-file", CHANGED], work)
-assert p.returncode == 1 and "fresh verdict's evidence differs" in p.stderr, (p.returncode, p.stderr)
+assert p.returncode == 1 and "judged row deadbeef1234 passed=true driver_source=None -> gone" in p.stderr, p.stderr
 print("promote_from_verdict test: gate refuses a changed verdict")
 
-
-# gate compares evidence only: chip, verdict, targets and the judged rows. The
-# dataset gains rows that are not judged all the time (uninstalled, no smoke,
-# no driver); those must not invalidate a proposal (run 37144741326, PR #113).
-def rows(*specs):
-    return [{"row_sha": s, "judged": j, "driver_source": d, "passed": ok, "reasons": [] if ok or not j else ["x"]}
-            for s, j, ok, d in specs]
-
-
-UNJUDGED = [(f"{i:012x}", False, False, "dkms") for i in range(1, 4)]
-PASS = ("aaaaaaaaaaaa", True, True, "intree")
-
-
-def t8112_and_t6020(t8112_rows, t8112_verdict="PROMOTE", targets=("overlay", "aurora-dt"), t6020_rows=()):
-    t6020_judged = any(r[1] for r in t6020_rows)
-    return verdict([{"chip": "t8112", "state": "opt-in", "verdict": t8112_verdict, "targets": list(targets),
-                     "rows": rows(*t8112_rows)},
-                    {"chip": "t6020", "state": "opt-in", "verdict": "PROMOTE" if t6020_judged else "STAY",
-                     "targets": ["overlay"] if t6020_judged else [], "rows": rows(*t6020_rows)}])
+# The real shape: PR #113's block (t6020 PROMOTE, targets overlay and aurora-dt,
+# 42 rows, 1 judged: 3c9389040f51 in-tree pass), on an opt-in chip of this tree
+# so a promotion flip keeps the suite green. gate accepts what still backs the
+# PROMOTE: new unjudged rows, new judged passing rows, rows of another chip.
+# It refuses a changed verdict or target, a new judged failing row, and a
+# judged row that changed or went away.
+OPT_CHIP = sorted(p for p, src, st in (l.split() for l in (repo / "packaging/dt/overlays").read_text().splitlines()
+                                       if l and l[0] != "#") if src == f"{p}-ane.dts" and st == "opt-in")[0]
+PR113 = {**json.loads((repo / "tools/fixtures/promote_from_verdict/pr113-block.json").read_text()), "chip": OPT_CHIP}
+JUDGED = "3c9389040f51"
 
 
-PROPOSED = t8112_and_t6020([PASS, *UNJUDGED], t6020_rows=UNJUDGED[:1])
-p = run(["propose", "--verdict-file", PROPOSED], work)
-assert p.returncode == 0 and "updated PR #7" in p.stdout, p
-for name, fresh, ok in (
-        ("a new unjudged row, rows in another order", t8112_and_t6020([*UNJUDGED[::-1], ("bbbbbbbbbbbb", False, False, None),
-                                                                       PASS], t6020_rows=UNJUDGED[:1]), True),
-        ("a judged passing row for another chip", t8112_and_t6020([PASS, *UNJUDGED],
-                                                                   t6020_rows=[("cccccccccccc", True, True, "dkms")]), True),
-        ("a new judged failing row (CONFLICT)", t8112_and_t6020([PASS, ("dddddddddddd", True, False, "dkms"), *UNJUDGED],
-                                                                 t8112_verdict="CONFLICT", targets=()), False),
-        ("a new judged failing row, same verdict", t8112_and_t6020([PASS, ("dddddddddddd", True, False, "dkms"),
-                                                                    *UNJUDGED]), False),
-        ("the judged row now fails", t8112_and_t6020([(PASS[0], True, False, "intree"), *UNJUDGED]), False),
-        ("the judged row's driver_source changed", t8112_and_t6020([(*PASS[:3], "dkms"), *UNJUDGED]), False),
-        ("the targets changed", t8112_and_t6020([PASS, *UNJUDGED], targets=("overlay",)), False)):
-    p = run(["gate", "--pr", "7", "--verdict-file", fresh], work)
-    if ok:
-        assert p.returncode == 0 and "MERGED\tt8112\tstub0merge1sha" in p.stdout, (name, p.stdout, p.stderr)
+def pr7_body(block):
+    s = json.loads(STUB_STATE.read_text())
+    s["bodies"]["7"] = f"Automatic promotion-flow PR.\n\n<!-- promotion-verdict\n{json.dumps(block, sort_keys=True)}\n-->"
+    STUB_STATE.write_text(json.dumps(s))
+
+
+def fresh(rows=None, other=None, **change):
+    c = {**copy.deepcopy(PR113), **change}
+    if rows is not None:
+        c["rows"] = rows
+    return verdict([c] + ([other] if other else []))
+
+
+def r(sha, judged=True, passed=True, ds="intree"):
+    return {"row_sha": sha, "judged": judged, "passed": passed, "driver_source": ds,
+            "reasons": [] if passed or not judged else ["smoke 20 calls, 1 not bit-exact"]}
+
+
+same = PR113["rows"]
+edited = lambda **kw: [{**x, **kw} if x["row_sha"] == JUDGED else x for x in same]
+pr7_body(PR113)
+for name, v, why in (
+        ("as proposed", fresh(), None),
+        ("a new unjudged row, rows in another order", fresh([*same[::-1], r("bbbbbbbbbbbb", judged=False, passed=False,
+                                                                             ds=None)]), None),
+        ("a new judged passing in-tree row", fresh([*same, r("cccccccccccc")]), None),
+        ("a new judged passing dkms row", fresh([*same, r("dddddddddddd", ds="dkms")]), None),
+        ("a judged row of another chip", fresh(other={"chip": "t8140", "state": "opt-in", "verdict": "CONFLICT",
+                                                      "targets": [], "rows": [r("eeeeeeeeeeee", passed=False)]}), None),
+        ("a new judged failing row (CONFLICT)", fresh([*same, r("ffffffffffff", passed=False)], verdict="CONFLICT",
+                                                      targets=[]), "verdict PROMOTE -> CONFLICT"),
+        ("a new judged failing row, same verdict", fresh([*same, r("ffffffffffff", passed=False)]),
+         "new judged failing row ffffffffffff"),
+        ("the judged row now fails", fresh(edited(passed=False)),
+         f"judged row {JUDGED} passed=true driver_source=intree -> passed=false driver_source=intree"),
+        ("the judged row's driver_source changed", fresh(edited(driver_source="dkms")),
+         f"judged row {JUDGED} passed=true driver_source=intree -> passed=true driver_source=dkms"),
+        ("the judged row is gone", fresh([x for x in same if x["row_sha"] != JUDGED]),
+         f"judged row {JUDGED} passed=true driver_source=intree -> gone"),
+        ("the targets changed", fresh(targets=["overlay"]), "targets ['overlay', 'aurora-dt'] -> ['overlay']"),
+        ("the verdict a flipped tree gives (run 37146125714)", fresh(state="on", verdict="ON", targets=["aurora-dt"]),
+         "verdict PROMOTE -> ON")):
+    p = run(["gate", "--pr", "7", "--verdict-file", v], work)
+    if why is None:
+        assert p.returncode == 0 and f"MERGED\t{OPT_CHIP}\tstub0merge1sha" in p.stdout, (name, p.stdout, p.stderr)
     else:
-        assert p.returncode == 1 and "evidence differs" in p.stderr and "MERGED" not in p.stdout, (name, p.stderr)
-print("promote_from_verdict test: gate ignores unjudged rows and other chips, refuses changed judged evidence")
+        assert p.returncode == 1 and why in p.stderr and "MERGED" not in p.stdout, (name, p.stderr)
+
+# gate refuses to run on a checkout that already carries the PR's flip (the PR
+# head): there the chip is enabled, and any fresh verdict judges the flipped tree.
+subprocess.run([sys.executable, "tools/promote_chip.py", "--chip", OPT_CHIP, "--to", "default-on", "--apply"],
+               cwd=work, check=True, capture_output=True)
+STUB_LOG.write_text("")
+p = run(["gate", "--pr", "7", "--verdict-file", fresh()], work)
+assert p.returncode == 1 and f"already has {OPT_CHIP} enabled, the PR's flip" in p.stderr, p.stderr
+assert not [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines()) if c[0].endswith("/merge")]
+subprocess.run(["git", "-C", str(work), "checkout", "-q", "--", "."], check=True)
+print("promote_from_verdict test: gate accepts more support, refuses changed evidence and a flipped checkout")
+
+# propose closes an open auto-promotion PR whose chip it no longer proposes,
+# and rewrites the block of a PR it does propose, legacy body or not.
+s = json.loads(STUB_STATE.read_text())
+s["open"] = [{"number": 7, "labels": [{"name": "auto-promotion"}], "head": {"ref": "auto/promote-t8112"}},
+             {"number": 5, "labels": [{"name": "auto-promotion"}], "head": {"ref": "auto/promote-t6000"}},
+             {"number": 4, "labels": [], "head": {"ref": "someone/else"}}]
+s["bodies"]["7"] = "A legacy body with no promotion-verdict block."
+STUB_STATE.write_text(json.dumps(s))
+STUB_LOG.write_text("")
+p = run(["propose", "--verdict-file", verdict([chip("t8112", "PROMOTE"), chip("t6000", "CONFLICT", passed=False,
+                                                                           reasons=["x"])])], work)
+assert p.returncode == 0 and "updated PR #7" in p.stdout and "closed stale PR #5 (t6000 is CONFLICT)" in p.stdout, p
+calls = [json.loads(l) for l in STUB_LOG.read_text().splitlines()]
+assert ["repos/t/repo/pulls/5", "PATCH", {"state": "closed"}] in calls, calls
+assert any(c[0] == "repos/t/repo/issues/5/comments" and "t6000 is CONFLICT" in c[2]["body"] for c in calls), calls
+assert not [c for c in calls if "/pulls/4" in c[0] or "/issues/4/" in c[0]], "a PR that is not a flip stays"
+s = json.loads(STUB_STATE.read_text())
+assert [x["number"] for x in s["open"]] == [7, 4], s["open"]
+block7 = json.loads(s["bodies"]["7"].split("<!-- promotion-verdict\n", 1)[1].split("\n-->", 1)[0])
+assert block7["chip"] == "t8112" and block7["verdict"] == "PROMOTE", s["bodies"]["7"]
+print("promote_from_verdict test: propose closes a stale flip PR and rewrites a legacy block")
 
 # the release plan: next patch version from the tags, no writes in dry-run.
 subprocess.run(["git", "-C", str(work), "tag", "v0.4.0"], check=True)
