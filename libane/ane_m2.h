@@ -159,10 +159,11 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 void ane_m2_close(struct ane_nn *nn);
 
 /* ane_init() for an explicit port table (ABI-2 only; the M1 path
- * refuses). Inputs and outputs are each indexed in port order. */
+ * refuses). Inputs and outputs are each indexed in port order.
+ * dev_id picks the accel node (ane-run --dev). */
 struct ane_nn *ane_m2_init_ports(const char *path,
 				 const struct ane_m2_port_spec *ports,
-				 uint32_t port_count);
+				 uint32_t port_count, int dev_id);
 
 int ane_m2_exec(struct ane_nn *nn);
 int ane_m2_send(struct ane_nn *nn, const void *from, uint32_t idx);

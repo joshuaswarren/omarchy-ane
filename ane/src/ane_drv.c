@@ -1122,14 +1122,17 @@ static int ane_attach_genpd(struct ane_device *ane)
  * device tree by design: DART topology from "iommus", power wiring from
  * "power-domains", the engine window from "reg", the IRQ by name. Board
  * facts belong in the overlay, not in compiled constants. The SET block
- * is the one exception: the live overlays carry no range for it, so it
- * is compiled in per SoC — and only from a source that has proven the
- * address on hardware (m1n1 proxyclient ANE.ps_map, then a bound device).
- * A guessed SET base is not a bug but a brick: direct writes to the
- * block external-abort the SoC (T6001 named by netconsole 2026-09-16,
- * PS_SET0 down at 0x28e08c000; T8103 same mechanism at 0x23b70c000),
- * which is why a SoC without proven constants must refuse to bind
- * instead of carrying a guess.
+ * base comes from the node's own "set" reg window (the T602x overlays
+ * have always named it; the T600x overlays name it since the die-1
+ * overlays, docs/ultra-die1.md §2) and falls back to the descriptor's
+ * die-0 constant for trees without one. Only a base that has proven the
+ * address on hardware (m1n1 proxyclient ANE.ps_map, then a bound device)
+ * or decodes one from a measured capture may enter the qualification
+ * table. A guessed SET base is not a bug but a brick: direct writes to
+ * the block external-abort the SoC (T6001 named by netconsole
+ * 2026-09-16, PS_SET0 down at 0x28e08c000; T8103 same mechanism at
+ * 0x23b70c000), which is why a base outside the table refuses to bind
+ * instead of being carried as a guess.
  *
  * Qualification tiers:
  *  ANE_QUALIFIED   — execution proven on this silicon; binds normally.
@@ -1145,12 +1148,42 @@ enum ane_qual {
 };
 
 struct ane_soc {
+	/* Die-0 SET base; the fallback when the node has no "set" reg. */
 	phys_addr_t ps_base;
 	enum ane_qual qual;
 	/* True when the tm/tq register file survives a genpd cycle in
 	 * retention and recovery must drain it (see ane_tm_drain_retained). */
 	bool tm_retention;
 };
+
+/* Die-keyed qualification (docs/ultra-die1.md §2): (compatible, SET base)
+ * -> tier. The T600x die-1 rows carry the measured +0x20_0000_0000
+ * translation of die 0 (receipts/2026-10-03-ultra-die1: engine, pmgr and
+ * SET windows of ane2 on the live M1 Ultra); they stay RECOGNIZED until a
+ * die-1 run proves them. The die-0 rows are the descriptors' tiers. */
+struct ane_soc_qual {
+	const char *compatible;
+	phys_addr_t ps_base;
+	enum ane_qual qual;
+};
+
+static const struct ane_soc_qual ane_qual_table[] = {
+	{ "apple,t8103-ane", 0x23b70c000ULL, ANE_QUALIFIED },
+	{ "apple,t6000-ane", 0x28e08c000ULL, ANE_QUALIFIED },
+	{ "apple,t6000-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
+	{ "apple,t6021-ane", 0x28e08c000ULL, ANE_RECOGNIZED },
+};
+
+static enum ane_qual ane_qual_for(const char *compatible, phys_addr_t ps_base)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(ane_qual_table); i++)
+		if (!strcmp(ane_qual_table[i].compatible, compatible) &&
+		    ane_qual_table[i].ps_base == ps_base)
+			return ane_qual_table[i].qual;
+	return ANE_UNSUPPORTED;
+}
 
 static bool allow_unqualified;
 module_param(allow_unqualified, bool, 0444);
@@ -1212,25 +1245,40 @@ static int ane_platform_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	const struct of_device_id *id = of_match_device(ane_of_match, dev);
 	const struct ane_soc *soc = id->data;
+	struct resource *set;
+	phys_addr_t ps_base;
+	enum ane_qual qual;
 	struct ane_device *ane;
 	struct drm_device *drm;
 	int err;
 
+	/* The SET base is the node's own window when the overlay names one
+	 * ("set"), else the descriptor's die-0 constant — and only a base
+	 * in the qualification table may bind (see the table above). */
+	set = platform_get_resource_byname(pdev, IORESOURCE_MEM, "set");
+	ps_base = set ? set->start : soc->ps_base;
+	qual = ane_qual_for(id->compatible, ps_base);
+
 	/* Tier gate before any power-domain, MMIO or IRQ interaction: an
 	 * unqualified SoC must fail cleanly, never half-probe. */
-	if (soc->qual == ANE_UNSUPPORTED) {
-		dev_err(dev,
-			"%s: unsupported ANE: no proven SET-block base (a guessed base external-aborts the SoC); not binding. To advance this port, run the mlx-omarchy quick collector (scripts/collect_quick.py: captures ANE/DART/PMGR/AIC device-tree data, no driver needed) and submit the capture\n",
-			id->compatible);
+	if (qual == ANE_UNSUPPORTED) {
+		if (soc->qual == ANE_UNSUPPORTED)
+			dev_err(dev,
+				"%s: unsupported ANE: no proven SET-block base (a guessed base external-aborts the SoC); not binding. To advance this port, run the mlx-omarchy quick collector (scripts/collect_quick.py: captures ANE/DART/PMGR/AIC device-tree data, no driver needed) and submit the capture\n",
+				id->compatible);
+		else
+			dev_err(dev,
+				"%ps: SET base not a proven die base for %s (ane_qual_table); not binding\n",
+				&ps_base, id->compatible);
 		return -ENODEV;
 	}
-	if (soc->qual == ANE_RECOGNIZED && !allow_unqualified) {
+	if (qual == ANE_RECOGNIZED && !allow_unqualified) {
 		dev_err(dev,
 			"%s: recognized but unqualified: constants present, execution never proven on this silicon; not binding. Override with ane.allow_unqualified=1, or prove a run and report it\n",
 			id->compatible);
 		return -ENODEV;
 	}
-	if (soc->qual == ANE_RECOGNIZED)
+	if (qual == ANE_RECOGNIZED)
 		dev_warn(dev,
 			 "%s: UNQUALIFIED bind forced by allow_unqualified: no execution proven on this silicon — SET-block base and board topology unverified\n",
 			 id->compatible);
@@ -1272,13 +1320,13 @@ static int ane_platform_probe(struct platform_device *pdev)
 		goto detach_genpd;
 	}
 
-	/* m1n1 keys the SET block by ADT node name (ANE.ps_map); the live
-	 * overlays carry no range for it, so the SoC descriptor picks the
-	 * base (see the tier table above). Mapped read-only, always:
+	/* M1n1 keys the SET block by ADT node name (ANE.ps_map); the base
+	 * comes from the node's "set" reg or the descriptor (the gate
+	 * above). Mapped read-only, always:
 	 * recovery logs its ACTUAL nibbles beside every engine write and
 	 * refuses engine MMIO unless the islands read powered on. Unmapped
 	 * is tolerated: recovery then just skips the check. */
-	ane->ps_base = soc->ps_base;
+	ane->ps_base = ps_base;
 	if (ane->ps_base)
 		ane->ps = devm_ioremap(dev, ane->ps_base, 0x38);
 

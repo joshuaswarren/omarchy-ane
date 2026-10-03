@@ -1765,9 +1765,11 @@ static void usage(void)
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
 		"[--out IDX=FILE]... [--repeat N] [--time] [--check OP] "
-		"[--weights FILE]\n"
+		"[--weights FILE] [--dev N]\n"
 		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
-		"                                  [--out NAME=FILE]... [--dry-run]\n"
+		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
+		"  --dev N: the accel node to open (/dev/accel/accelN; default 0,\n"
+		"    or ANE_DEVICE); die 1 of an Ultra board is dev 1.\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
 		"    select bmm rms\n"
@@ -1818,6 +1820,9 @@ int main(int argc, char **argv)
 	struct port_read pr = { 0 };
 	int ret;
 	int k;
+	/* The accel node libane opens (/dev/accel/accelN, the dev_id-th
+	 * "ane" DRM device): --dev wins over ANE_DEVICE, default 0. */
+	int dev = getenv("ANE_DEVICE") ? (int)strtoul(getenv("ANE_DEVICE"), NULL, 0) : 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
@@ -1905,6 +1910,8 @@ int main(int argc, char **argv)
 		} else if (!strcmp(argv[i], "--ports") && i + 1 < argc) {
 			ports_path = argv[++i];
 			ports_mode = 1;
+		} else if (!strcmp(argv[i], "--dev") && i + 1 < argc) {
+			dev = (int)strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "--dry-run")) {
 			dry_run = 1;
 		} else {
@@ -1926,8 +1933,8 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count)
-			: ane_init(anec);
+	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count, dev)
+			: __ane_init(anec, dev);
 	if (!nn) {
 		fprintf(stderr, "ane_init failed on %s\n", anec);
 		free_port_read(&pr);

@@ -73,8 +73,8 @@ MIN_SMOKE_CALLS = 20
 # collector's dmesg_faults list is not scoped to the ANE: a line decides a
 # row only through this matcher, never by being listed.
 ANE_LINE = re.compile(r"\b[0-9a-f]+\.ane\b|\bane(_t6021)?:"
-                      r"|apple-dart (2858[0-2]0000|26b8[0-2]0000)\.iommu"
-                      r"|apple-mailbox (285408000|26b408000)\.mailbox")
+                      r"|apple-dart (2858[0-2]0000|26b8[0-2]0000|22858[0-2]0000)\.iommu"
+                      r"|apple-mailbox (285408000|26b408000|2285408000)\.mailbox")
 FAULT = re.compile(r"fault|error|fail(?:ed|ure)?|timed? ?out|abort|oops|warn|bug|call trace|stall|hung",
                    re.IGNORECASE)
 
@@ -88,6 +88,26 @@ def block(row):
 def soc(row):
     chip = row.get("chip") or ""
     return chip.split(",", 1)[1] if chip.startswith("apple,t") else None
+
+
+def die_of(row):
+    """The row's die index: the collector field `die` in the omarchy_ane
+    block (docs/collector-die-field.md), sourced from the bound device's
+    DT node reg. Absent (every legacy row) means die 0; a die-1 row never
+    rides a die-0 pass and the other way (docs/ultra-die1.md §7)."""
+    die = (block(row) or {}).get("die")
+    return die if isinstance(die, int) and not isinstance(die, bool) and die >= 0 else 0
+
+
+def die_key(row):
+    s = soc(row)
+    return None if s is None else (s, die_of(row))
+
+
+def label(key):
+    """The text-output chip name: plain soc for die 0 (the historical
+    line), 'soc die N' for a die-1 key."""
+    return f"{key[0]} die {key[1]}" if key[1] else key[0]
 
 
 def installed(oa):
@@ -120,9 +140,12 @@ def judged(row):
 
 
 def default_on():
-    """SoCs whose ANE overlay is enabled in packaging/dt/overlays."""
+    """(soc, die) keys whose ANE overlay is enabled in packaging/dt/overlays.
+    Only the per-SoC overlay rows (PREFIX-ane.dts) can be enabled, and those
+    are die 0: a die-1 overlay key flips only through its own passing rows
+    (docs/ultra-die1.md §7)."""
     lines = (REPO / "packaging/dt/overlays").read_text().splitlines()
-    return {p for p, src, state in (l.split() for l in lines if l and l[0] != "#")
+    return {(p, 0) for p, src, state in (l.split() for l in lines if l and l[0] != "#")
             if src == f"{p}-ane.dts" and state == "enabled"}
 
 
@@ -163,24 +186,28 @@ def failures(row):
 
 
 def verdict(rows):
-    """{soc: judged/passing/failing ids, promote/conflict, latest, revert}."""
-    by_soc = defaultdict(list)
+    """{(soc, die): judged/passing/failing ids, promote/conflict, latest,
+    revert}. The die-1 key of a chip is its own verdict; a chip is fully
+    ON only when both dies pass their own rows."""
+    by_key = defaultdict(list)
     for row in rows:
-        if soc(row) and judged(row):
-            by_soc[soc(row)].append(row)
+        key = die_key(row)
+        if key and judged(row):
+            by_key[key].append(row)
     out = {}
-    for s, judged_rows in sorted(by_soc.items()):
+    for key, judged_rows in sorted(by_key.items()):
+        s = key[0]
         ok = [r for r in judged_rows if not failures(r)]
         bad = [r for r in judged_rows if failures(r)]
         latest = max(judged_rows, key=lambda r: r.get("received_at") or "")
-        out[s] = {"judged": len(judged_rows), "passing": [r["content_sha256"][:12] for r in ok],
-                  "failing": {r["content_sha256"][:12]: failures(r) for r in bad},
-                  "promote": bool(ok) and not bad, "conflict": bool(ok) and bool(bad),
-                  "needs": ([f"{len(bad)} failing row(s) to explain"] if ok and bad else
-                            ["one passing row"] if not ok else []),
-                  "intree": [r["content_sha256"][:12] for r in ok if driver_source(block(r)) == INTREE],
-                  "on": s in ON, "latest": latest["content_sha256"][:12],
-                  "revert": unclean(block(latest)) if s in ON else []}
+        out[key] = {"judged": len(judged_rows), "passing": [r["content_sha256"][:12] for r in ok],
+                    "failing": {r["content_sha256"][:12]: failures(r) for r in bad},
+                    "promote": bool(ok) and not bad, "conflict": bool(ok) and bool(bad),
+                    "needs": ([f"{len(bad)} failing row(s) to explain"] if ok and bad else
+                              ["one passing row"] if not ok else []),
+                    "intree": [r["content_sha256"][:12] for r in ok if driver_source(block(r)) == INTREE],
+                    "on": key in ON, "latest": latest["content_sha256"][:12],
+                    "revert": unclean(block(latest)) if key in ON else []}
     return out
 
 
@@ -195,11 +222,12 @@ def targets(r):
 
 
 def unattempted(rows):
-    """{soc: count of rows with no judgment evidence}."""
+    """{(soc, die): count of rows with no judgment evidence}."""
     out = defaultdict(int)
     for row in rows:
-        if soc(row) and block(row) and not judged(row):
-            out[soc(row)] += 1
+        key = die_key(row)
+        if key and block(row) and not judged(row):
+            out[key] += 1
     return out
 
 
@@ -226,32 +254,37 @@ def load(paths):
 
 
 def json_verdict(rows):
-    """Stable machine verdict: {chips: [{chip, state, verdict, targets, rows: [...]}]}.
+    """Stable machine verdict: {chips: [{chip, die, state, verdict, targets, rows: [...]}]}.
 
     verdict is PROMOTE | REVERT | STAY | ON | CONFLICT; targets is what the
     verdict changes (targets()); rows carry the 12-char row sha, the row's
     driver_source, whether the row was judged, and (judged rows) pass and reasons.
+    One chips entry per (chip, die); a die-1 row never rides a die-0 pass.
     """
-    result, per_soc = verdict(rows), defaultdict(list)
+    result, per_key = verdict(rows), defaultdict(list)
     for row in rows:
-        if soc(row):
-            per_soc[soc(row)].append(row)
+        key = die_key(row)
+        if key:
+            per_key[key].append(row)
     chips = []
-    for s in sorted(per_soc):
-        r = result.get(s)
+    for key in sorted(per_key):
+        s = key[0]
+        r = result.get(key)
         rows_out = [{"row_sha": row["content_sha256"][:12], "judged": (j := judged(row)),
                      DRIVER_SOURCE: driver_source(block(row)) if block(row) else None,
                      "passed": (not failures(row)) if j else False,
-                     "reasons": failures(row) if j else []} for row in per_soc[s]]
+                     "reasons": failures(row) if j else []} for row in per_key[key]]
         if r is None:
-            chips.append({"chip": s, "state": "on" if s in ON else "opt-in",
-                          "verdict": "ON" if s in ON else "STAY", "targets": [], "rows": rows_out})
+            chips.append({"chip": s, "die": key[1], "state": "on" if key in ON else "opt-in",
+                          "verdict": "ON" if key in ON else "STAY", "targets": [], "rows": rows_out})
         elif r["on"]:
-            chips.append({"chip": s, "state": "on", "verdict": "REVERT" if r["revert"] else "ON",
+            chips.append({"chip": s, "die": key[1], "state": "on",
+                          "verdict": "REVERT" if r["revert"] else "ON",
                           "targets": targets(r), "rows": rows_out})
         else:
             v = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
-            chips.append({"chip": s, "state": "opt-in", "verdict": v, "targets": targets(r), "rows": rows_out})
+            chips.append({"chip": s, "die": key[1], "state": "opt-in", "verdict": v,
+                          "targets": targets(r), "rows": rows_out})
     return {"chips": chips}
 
 
@@ -267,30 +300,33 @@ def main(argv=None):
     if args.json:
         print(json.dumps(json_verdict(rows), indent=2))
         return 0
-    per_soc = defaultdict(int)
+    per_key = defaultdict(int)
     for row in rows:
-        if soc(row):
-            per_soc[soc(row)] += 1
+        key = die_key(row)
+        if key:
+            per_key[key] += 1
     result = verdict(rows)
     unjudged = unattempted(rows)
     print(f"promotion_check: {len(rows)} rows; rule: one passing row promotes; a passing row has a ready check, "
           f"the chip driver, exactly 20 bit-exact smoke calls and no ANE/DART/mailbox fault; in-tree and dkms "
           f"driver rows count alike; uninstalled, driver_source none or clean no-smoke rows are not judged; "
-          f"a passing and failing row conflict; on by default ({', '.join(sorted(ON))}): REVERT when the latest judged row is not clean")
-    for s in sorted(per_soc):
-        r = result.get(s)
-        extra = f", {unjudged[s]} not judged (uninstalled, no driver or no smoke attempt)" if unjudged[s] else ""
+          f"a passing and failing row conflict; on by default ({', '.join(label(k) for k in sorted(ON))}): "
+          f"REVERT when the latest judged row is not clean")
+    for key in sorted(per_key):
+        r = result.get(key)
+        extra = (f", {unjudged[key]} not judged (uninstalled, no driver or no smoke attempt)"
+                 if unjudged[key] else "")
         if r is None:
-            print(f"{s}: {per_soc[s]} rows, 0 judged{extra} -> {'ON' if s in ON else 'STAY'}")
+            print(f"{label(key)}: {per_key[key]} rows, 0 judged{extra} -> {'ON' if key in ON else 'STAY'}")
             continue
         if r["on"]:
             state = f"REVERT (latest judged row {r['latest']}: {'; '.join(r['revert'])})" if r["revert"] else "ON"
         else:
-            label = "PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY"
-            state = label + (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
+            state = ("PROMOTE" if r["promote"] else "CONFLICT" if r["conflict"] else "STAY") \
+                + (f" (needs: {'; '.join(r['needs'])})" if r["needs"] else "")
         if targets(r):
             state += f" -> targets: {', '.join(targets(r))}"
-        print(f"{s}: {per_soc[s]} rows, {r['judged']} judged{extra}, {len(r['passing'])} pass, "
+        print(f"{label(key)}: {per_key[key]} rows, {r['judged']} judged{extra}, {len(r['passing'])} pass, "
               f"{len(r['failing'])} fail -> {state}")
         for sha, why in r["failing"].items():
             print(f"  FAIL {sha}: {'; '.join(why)}")

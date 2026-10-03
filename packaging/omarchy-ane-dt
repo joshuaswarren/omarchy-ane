@@ -412,7 +412,7 @@ def status(root, kver):
     if live and source == "none":
         source = "other"
     print(f"node={'present' if live else 'absent'} source={source} dtb={name} kernel={kver}"
-          + (f" path=/{live[0]}" if live else ""))
+          + (f" path={','.join('/' + p for p in live)}" if live else ""))
     print(f"{DTBS_SOURCE}={mode}" + (f": {KERNEL_DT}" if mode == "kernel" else ""))
     soc = name.split("-")[0]
     try:

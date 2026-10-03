@@ -91,7 +91,8 @@ with tempfile.TemporaryDirectory() as tmp:
                                text=True).stdout
     pkg_lib = pkg / oadt.OVERLAY_DIR
     assert sorted(p.relative_to(pkg_lib).as_posix() for p in pkg_lib.glob('*/*.dtbo')) == [
-        't6000/omarchy-ane.dtbo', 't6001/omarchy-ane.dtbo', 't6002/omarchy-ane.dtbo',
+        't6000/omarchy-ane.dtbo', 't6001/omarchy-ane.dtbo', 't6002/omarchy-ane-die1.dtbo',
+        't6002/omarchy-ane.dtbo',
         't6020/omarchy-ane.dtbo', 't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo',
         't6022/omarchy-ane.dtbo', 't8103/omarchy-ane.dtbo', 't8112/omarchy-ane.dtbo']
     hook = (root / 'packaging/90-omarchy-ane-dt.hook').read_text().splitlines()

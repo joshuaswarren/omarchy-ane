@@ -2036,7 +2036,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane->legacy_buffers)
 		return -ENOMEM;
 	ane->dev = dev;
-	ane->soc = of_device_get_match_data(dev);
+	ane->soc = ane_t6021_soc_for(dev);
 	if (dyn_pg && ane->soc->fw != ane_t6021_soc.fw) {
 		dev_err(dev,
 			"dyn_pg=1 needs the selene 13.5 firmware (T602x); refusing before power access\n");

@@ -220,6 +220,51 @@ const struct ane_t602x_soc ane_t6022_soc = {
 	.trace_td_off = 0x1c20458,
 };
 
+/* T6022 die 1 (docs/ultra-die1.md §2): the pure +0x20_0000_0000 die
+ * translation (receipts/2026-10-03-ultra-die1), so pmu_pa is die 0's
+ * +0x20_0000_0000 and the BuildManifest pins Ap,ANE1
+ * (t602x_ane1_fw_selene_rc4x). Data only for now: the loader keeps
+ * staging soc->fw->name (the ane1 image's byte identity against ane0 is
+ * a missing fact), and the die-1 overlay stays data-only until a die-1
+ * run (M4) proves the boot. */
+const struct ane_t602x_soc ane_t6022_soc_die1 = {
+	.soc = 0x6022, .soc_revision = 0x11,
+	.fw = &ane_fw_selene, .tunables = &ane_t602x_asc_tunables,
+	.ps_cpu_off = 0x2e0, .pmu_pa = 0x228e084000ull,
+	.trace_td_off = 0x1c20458,
+	.fw_pin = "t602x_ane1_fw_selene_rc4x",
+};
+
+/* Per-die T6022 data keyed by the node's SET reg, the same die key as
+ * ane.ko's qualification table. Die 0 keeps ane_t6022_soc: every caller
+ * that sees no "set" reg, a non-T6022 SoC (T8112 keeps its compiled
+ * pmu_pa + ps_off; the T6020/T6021 rows are die 0 only) or a SET base
+ * outside the table gets the compatible's own row. */
+static const struct { u64 set_base; const struct ane_t602x_soc *soc; } ane_t6022_dies[] = {
+	{ 0x28e08c000ull, &ane_t6022_soc },
+	{ 0x228e08c000ull, &ane_t6022_soc_die1 },
+};
+
+const struct ane_t602x_soc *ane_t6021_soc_for(struct device *dev)
+{
+	const struct ane_t602x_soc *soc = of_device_get_match_data(dev);
+	const struct resource *res;
+	unsigned int i;
+
+	if (soc != &ane_t6022_soc)
+		return soc;
+	res = platform_get_resource_byname(to_platform_device(dev),
+					   IORESOURCE_MEM, "set");
+	if (!res)
+		return soc;
+	for (i = 0; i < ARRAY_SIZE(ane_t6022_dies); i++)
+		if (res->start == ane_t6022_dies[i].set_base)
+			return ane_t6022_dies[i].soc;
+	/* ponytail: an unknown SET base rides the die-0 row; M4 makes this
+	 * a refusal when the die-1 overlay stops being data-only. */
+	return soc;
+}
+
 const struct ane_t602x_soc ane_t8112_soc = {
 	.soc = 0x8112, .revision_fuse = true,
 	.fw = &ane_fw_bia, .tunables = &ane_t8112_asc_tunables,
@@ -229,7 +274,7 @@ const struct ane_t602x_soc ane_t8112_soc = {
 
 static int ane_t6021_pmu_map(struct ane_t6021 *ane, struct iommu_domain *dom)
 {
-	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	const struct ane_t602x_soc *soc = ane_t6021_soc_for(ane->dev);
 	int prot = IOMMU_READ | IOMMU_WRITE;
 	int ret;
 
@@ -486,7 +531,7 @@ static int ane_t6021_soc_revision(struct ane_t6021 *ane,
  * already refused a node without it), the compatible, a fresh guard. */
 static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 {
-	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	const struct ane_t602x_soc *soc = ane_t6021_soc_for(ane->dev);
 	struct resource *res = platform_get_resource(to_platform_device(ane->dev),
 						     IORESOURCE_MEM, 0);
 	u64 rvbar = readq(ane->base[ANE_T6021_REG_ENGINE] + ANE_ASC_RVBAR);
@@ -522,7 +567,7 @@ static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 {
-	const struct ane_t602x_soc *soc = of_device_get_match_data(ane->dev);
+	const struct ane_t602x_soc *soc = ane_t6021_soc_for(ane->dev);
 	const struct ane_fw_image *img = soc->fw;
 	const struct firmware *fw = NULL;
 	struct ane_fw_seg segs[ANE_FW_NSEGS];
