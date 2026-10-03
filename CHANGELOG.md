@@ -10,9 +10,10 @@
   overlay opt-in has no effect there, and `omarchy-ane-dt apply` refuses.
 - The promotion checker judges in-tree rows (`driver_source=intree`) like
   DKMS rows. A PROMOTE with a passing in-tree row also has the target
-  `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora` make
-  the aurora-silicon/linux device-tree PR (secret `AURORA_PR_TOKEN`; a dry
-  run without it).
+  `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora-plan`
+  and `aurora-pr` make the aurora-silicon/linux device-tree PR. The job that
+  builds the aurora tree holds no credential; only the PR step, which builds
+  nothing, gets the secret `AURORA_PR_TOKEN` (a dry run without it).
 
 ### Changed
 

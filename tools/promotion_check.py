@@ -186,7 +186,6 @@ def targets(r):
     if r["on"]:
         return [OVERLAY] if r["revert"] else []
     return ([OVERLAY] + ([AURORA_DT] if r["intree"] else [])) if r["promote"] else []
-    return out
 
 
 def unattempted(rows):

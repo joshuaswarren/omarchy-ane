@@ -3,7 +3,8 @@
 # Copyright 2026 Joshua Warren
 """Enable one chip's ANE in an aurora-silicon/linux tree: the device-tree half
 of a PROMOTE verdict whose passing row ran the kernel's own driver
-(driver_source=intree). tools/promote_from_verdict.py aurora opens the PR.
+(driver_source=intree). tools/promote_from_verdict.py aurora-plan and
+aurora-pr open the PR.
 
   aurora_dt.py --tree LINUX --chip t6000 --check   print the diff, write nothing
   aurora_dt.py --tree LINUX --chip t6000 --apply   edit the tree
@@ -48,6 +49,8 @@ DTS = "arch/arm64/boot/dts/apple"
 INC = "scripts/dtc/include-prefixes"
 SWITCH = "#define APPLE_ANE_UNTESTED"
 PLAIN = ("interrupt-parent", "memory-region")
+# A block's target: a label, or a node path (dtc's &{/path} form).
+REF = re.compile(r"&(?:[A-Za-z_][A-Za-z0-9_]*|\{/[A-Za-z0-9@,._+/-]*\})")
 MARKETING = {"t8103": "M1", "t6000": "M1 Pro", "t6001": "M1 Max", "t6002": "M1 Ultra",
              "t8112": "M2", "t6020": "M2 Pro", "t6021": "M2 Max", "t6022": "M2 Ultra"}
 
@@ -105,7 +108,9 @@ def labels(tree):
 
 def drop_switch(text):
     lines = text.splitlines(keepends=True)
-    i = next(n for n, l in enumerate(lines) if l.rstrip("\n") == SWITCH)
+    i = next((n for n, l in enumerate(lines) if l.rstrip("\n") == SWITCH), None)
+    if i is None:
+        raise Refuse(f"no {SWITCH} line to drop")
     j = i
     if i and lines[i - 1].rstrip().endswith("*/"):
         j = i - 1
@@ -123,8 +128,20 @@ def add_blocks(text, chip, refs):
             f"enable it and the nodes it uses. */" + blocks)
 
 
+def render(old, chip, how, refs):
+    """CHIP.dtsi after the change: the only edits this tool makes. tools/
+    promote_from_verdict.py aurora-pr calls it on the file it reads from
+    GitHub, so the token-holding job never trusts a plan's file content."""
+    if how == "switch" and not refs:
+        return drop_switch(old)
+    bad = [r for r in refs if not REF.fullmatch(r)]
+    if how != "blocks" or not refs or bad:
+        raise Refuse(f"not a change this tool makes: how={how!r}, refs={refs!r}")
+    return add_blocks(old, chip, refs)
+
+
 def plan(tree_dir, chip):
-    """{file, old, new, how, enabled, boards}, or None when the ANE is already on."""
+    """{file, old, new, how, refs, enabled, boards}, or None when the ANE is already on."""
     tree_dir = Path(tree_dir)
     dts_dir, inc = tree_dir / DTS, tree_dir / INC
     soc_file = dts_dir / f"{chip}.dtsi"
@@ -150,13 +167,13 @@ def plan(tree_dir, chip):
         old = soc_file.read_text()
         first = before[boards[0].name]
         if any(l.rstrip("\n") == SWITCH for l in old.splitlines()):
-            how, new = "switch", drop_switch(old)
+            how, refs = "switch", []
         else:
             names = labels(first)
             ane = set(ane_paths(first))
-            refs = [f"&{names[p]}" if p in names else f"&{{{p}}}"
-                    for p in sorted(off, key=lambda p: (p not in ane, names.get(p, p)))]
-            how, new = "blocks", add_blocks(old, chip, refs)
+            how, refs = "blocks", [f"&{names[p]}" if p in names else f"&{{{p}}}"
+                                   for p in sorted(off, key=lambda p: (p not in ane, names.get(p, p)))]
+        new = render(old, chip, how, refs)
         changed = work / "tree" / DTS
         shutil.copytree(dts_dir, changed)
         (changed / soc_file.name).write_text(new)
@@ -168,8 +185,8 @@ def plan(tree_dir, chip):
                 raise Refuse(f"{b.name}: still disabled after the {how} change: {', '.join(still)}")
             enabled |= {p for p in after.nodes if after.enabled(p) and not before[b.name].enabled(p)}
         names = labels(first)
-        return {"file": f"{DTS}/{soc_file.name}", "old": old, "new": new, "how": how, "boards": [b.name for b in boards],
-                "enabled": sorted(names.get(p, p) for p in enabled)}
+        return {"file": f"{DTS}/{soc_file.name}", "old": old, "new": new, "how": how, "refs": refs,
+                "boards": [b.name for b in boards], "enabled": sorted(names.get(p, p) for p in enabled)}
 
 
 def diff(p):
