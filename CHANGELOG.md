@@ -14,8 +14,9 @@
   its outcome, and no new judged row fails; new passing rows and rows that
   are not judged do not refuse a PR. It refuses to run on a checkout that
   already has the PR's flip.
-- `propose` closes an open promotion PR whose chip it no longer proposes,
-  with a comment, so no stale PR reaches the gate.
+- `propose` closes its own open promotion PR (labeled `auto-promotion`, from
+  this repository) whose chip it no longer proposes, with a comment, so no
+  stale PR reaches the gate.
 - `promote_from_verdict.py aurora-plan` skips a chip that has no ANE node on
   any board of the aurora base branch, as `aurora-wip` before #155 merges.
   It prints a line that starts with `SKIPPED`, writes no plan entry and

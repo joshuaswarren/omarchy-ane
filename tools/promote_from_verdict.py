@@ -22,9 +22,10 @@ whose body hides the exact verdict block in an HTML comment; gate compares
 that block against a fresh verdict and refuses when new evidence landed. Every
 REVERT chip (state on) gets the reverse PR, additionally labeled urgent. A
 second run updates the same PR and rewrites its block, never opens a second
-one. An open auto/promote-* or auto/revert-* PR whose chip this run does not
-propose (no longer PROMOTE or REVERT, or already flipped on main) is closed
-with a comment, so no stale PR is left for the gate.
+one. An open auto/promote-* or auto/revert-* PR labeled auto-promotion from
+this repository whose chip this run does not propose (no longer PROMOTE or
+REVERT, or already flipped on main) is closed with a comment, so no stale PR
+is left for the gate. A same-named PR without the label or from a fork stays.
 
 gate: (the workflow runs the host tests on the PR head first, then returns to
 the base branch) each open auto-promotion PR's recorded chip verdict is
