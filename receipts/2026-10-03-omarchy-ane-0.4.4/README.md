@@ -54,19 +54,34 @@ byte-for-byte check before the fix and passes after it.
   the comment line of `packaging/dt/overlays`, and the order of two `case`
   patterns in `packaging/omarchy-ane-check` (`t6000|t6020` for
   `t6020|t6000`), which does not change what it prints.
-- Still owed at the time of this commit: a T8103 run of
-  `packaging/omarchy-ane-smoke` from a source tree with the libane of this
-  release. The H239 run of #111 ran the smoke from its tree (20 of 20
-  bit-exact), but `omarchy-ane-smoke` prefers an `omarchy-ane-run` on `PATH`
-  to the tree's `tools/ane-run`, and that run does not record which runner it
-  used. The GitHub release notes give the result.
+- T8103 smoke of this release's libane (H246, one M1 laptop, run on
+  `89c2088`, whose `libane/`, `tools/ane-run.c`, `tools/Makefile`,
+  `packaging/omarchy-ane-smoke` and fixtures equal this release's). libane and
+  `tools/ane-run` built from a `git archive` of that commit with `-Werror`
+  (`libane.a` `6cac307d…`, `ane-run` `82349ca5…`, the same bytes as the
+  T6021 build of v0.4.3). `packaging/omarchy-ane-smoke` from that tree: exit
+  0, 20 of 20 calls bit-exact against the H13 golden `5ad7eccd…`, 0 errors,
+  min 0.030 ms, median 0.031 ms. The tree has no `packaging/omarchy-ane-run`,
+  and no package that installs `omarchy-ane-run` was installed on that laptop,
+  so the smoke ran the tree's `tools/ane-run`; the run did not log the path it
+  resolved. The kernel module was the installed stock 0.4.0 `ane.ko`
+  (srcversion `9109B200A150B27F484F718`), not this release's module. A
+  development worker with libane from the same tree ran the whole encoder
+  for 8 calls in each of three cold sessions (direct load, `ANE_LOAD_STAGED=1`,
+  direct again): every session exited 0 with the same output sha256
+  (`5259688c…`, as in H239), and dmesg had no ANE, DART or runtime-PM error.
+  The job count rests on the worker's own status lines (8 iterations, three
+  times); the stock 0.4.0 module has no `ane_stats`, so no kernel counter
+  confirms it. Which load path ran in each session was not traced.
 
 ## Host gate
 
 On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order and the kernel tree's dtc
-(`DTC 1.7.2-g53373d13`) first in `PATH`, on the release tree before the commit
-(this receipt excluded). Every step exited 0:
+(`DTC 1.7.2-g53373d13`) first in `PATH`, on a fresh `git archive` of
+`d1f1f46`. That commit is this release except for the last edit of this
+receipt: `git diff d1f1f46..<release commit> -- .
+':!receipts/2026-10-03-omarchy-ane-0.4.4'` is empty. Every step exited 0:
 
 | Step | Result |
 | --- | --- |
