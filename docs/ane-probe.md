@@ -78,7 +78,7 @@ device from an enabled node.
 
 `nodes` has one record for each ANE node: `path`, `compatible` (for example
 `ane,t8132exclave`), `status`, `reg_windows`, the first window (`engine`,
-`base+size`), each `iommus`, `power-domains` and `mboxes` target with its
+`base+size`), each `iommus`, `power_domains` and `mboxes` target with its
 status, `exclave_props` (each node property with `exclave` in its name, for
 example `exclave-reg`), the platform `device` whose `of_node` links to the
 node, its `driver`, and the node's `verdict` and `reason`.

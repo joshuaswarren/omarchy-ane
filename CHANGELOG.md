@@ -89,12 +89,15 @@
 ### Research and receipts
 
 - H17 b0 (`receipts/2026-10-03-ane-h17`): T8140 (MacBook Neo), T8142 (M5)
-  and T6050 (M5 Pro/Max) are the `ane_t6021` firmware-boot family, with the
-  M4 (T8132) window layout plus the `exclave-*` properties. The receipt
-  compares the 27 per-SoC entries of `ane_t6021` (10 have no local value),
-  names what the probe and the owner's macOS can supply, and plans the b1
-  firmware-boot smoke module. `data/ane-soc/t6050.json` no longer says
-  that the j775d `ane1` has no exclave marking: no source measured it.
+  and T6050 (M5 Pro/Max) are the `ane_t6021` firmware-boot family, on the
+  H16 window and DART layout plus the `exclave-*` properties. T8140 has
+  the six M4 (T8132) windows with the same sizes; T8142 differs in one
+  window size; T6050 has the seven-window shape of the M4 Max (T6041). The
+  receipt compares the 27 per-SoC entries of `ane_t6021` with the H16 b0
+  values (7 have no local value), names what the probe and the owner's
+  macOS can supply, and plans b1 as H17 rows in `ane_h16`.
+  `data/ane-soc/t6050.json` no longer says that the j775d `ane1` has no
+  exclave marking: no source measured it.
 - H18 b0 (`receipts/2026-10-03-ane-h18`): T8152 (M6) is the `ane_t6021`
   firmware-boot model as a new `ascwrap-v8` variant, and T8150 (A19 Pro) is
   Exclave-owned. The receipt lists the 28 per-SoC entries a T8152 smoke module
