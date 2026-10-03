@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -56,6 +57,22 @@ static void timing_end(const char *stage, uint64_t start, uint64_t bytes)
 		fprintf(stderr, "LIBANE: TIMING stage=%s ms=%.3f bytes=%llu\n",
 			stage, (double)(timing_start() - start) / 1e6,
 			(unsigned long long)bytes);
+}
+
+/*
+ * ANE_LOAD_STAGED=1 restores the two-pass load: pread the payload into a
+ * malloc'd staging buffer, parse the task stream there, memcpy it into the
+ * buffer objects. Default (unset, empty, "0"): one pass -- the payload is
+ * loaded straight into the chans[0] mapping (mmap the file and memcpy)
+ * and parsed there, so a program is copied once, not twice, and no
+ * staging buffer stays resident. Read once per load, not a hot path.
+ * The M1 (ABI 1) path only.
+ */
+static int load_staged(void)
+{
+	const char *v = getenv("ANE_LOAD_STAGED");
+
+	return v && *v && strcmp(v, "0");
 }
 
 #define TILE_SHIFT_DEFAULT 0xEUL /* H13 island containers: 0x4000-B units */
@@ -200,7 +217,10 @@ static inline void ane_chan_free(struct ane_nn *nn)
 	}
 }
 
-static inline int ane_chan_init(struct ane_nn *nn)
+static inline int ane_place_program(struct ane_nn *nn, const char *path);
+
+static inline int ane_chan_init(struct ane_nn *nn, const char *path,
+				int staged)
 {
 	const struct anec *anec = to_anec(nn);
 	struct ane_bo *bo;
@@ -222,6 +242,14 @@ static inline int ane_chan_init(struct ane_nn *nn)
 	err = ane_bo_init(nn, bo);
 	if (err < 0)
 		goto error;
+
+	if (!staged) {
+		err = ane_place_program(nn, path);
+		if (err < 0) {
+			ane_chan_free(nn);
+		}
+		return err;
+	}
 
 	t = timing_start();
 	set_btsp_and_command(nn);
@@ -296,6 +324,92 @@ static inline int64_t ane_pread(const char *fname, void *data, uint64_t size,
 
 	fclose(fp);
 	return (int64_t)done;
+}
+
+/* Bulk payload into the program buffer object (direct path). mmap the file
+ * and memcpy: one userspace pass, no intermediate buffer (a pread makes the
+ * kernel copy per page-cache page; the memcpy runs at mapping speed). Short
+ * file: copy only what is there, the caller zeroes the tail -- the same
+ * bytes the staged path's fread + memset produced. Falls back to ane_pread
+ * when the file cannot be mapped. Returns bytes copied, or -EINVAL. */
+static inline int64_t ane_load_payload(const char *path, void *dst,
+				       uint64_t size)
+{
+	struct stat st;
+	void *src;
+	uint64_t have;
+	int64_t done = -EINVAL;
+	int fd = open(path, O_RDONLY | O_CLOEXEC);
+
+	if (fd >= 0 && fstat(fd, &st) == 0 && st.st_size > (off_t)ANEC_HEADER_SIZE) {
+		src = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE,
+			   fd, 0);
+		if (src != MAP_FAILED) {
+			have = (uint64_t)st.st_size - ANEC_HEADER_SIZE;
+			if (have > size) {
+				have = size;
+			}
+			memcpy(dst, (uint8_t *)src + ANEC_HEADER_SIZE, have);
+			done = (int64_t)have;
+			munmap(src, (size_t)st.st_size);
+		}
+	}
+	if (fd >= 0) {
+		close(fd);
+	}
+	if (done >= 0) {
+		return done;
+	}
+	return ane_pread(path, dst, size, ANEC_HEADER_SIZE);
+}
+
+/* Direct load (default): the payload is loaded straight into the chans[0]
+ * mapping -- the file's bytes land in the buffer object once, no staging
+ * buffer -- then the task stream is parsed in place, and only the td copy
+ * to the bootstrap channel remains. Byte-identical to the staged path: a
+ * short file leaves the same zero tail, because fresh BO pages are zero. */
+static inline int ane_place_program(struct ane_nn *nn, const char *path)
+{
+	const struct anec *anec = to_anec(nn);
+	uint32_t channel;
+	uint64_t need;
+	uint64_t have;
+	uint64_t t = timing_start();
+	int64_t got;
+
+	got = ane_load_payload(path, nn->chans[0].map, anec->size);
+	if (got < 0) {
+		return -EINVAL;
+	}
+	memset((uint8_t *)nn->chans[0].map + got, 0,
+	       anec->size - (uint64_t)got);
+	timing_end("model_read", t, anec->size);
+
+	t = timing_start();
+	if (!ane_bind_init(anec, nn->chans[0].map, anec->size, &nn->bind)) {
+		ane_err("%s: task stream does not name every surface; "
+			"channel map is positional\n", path);
+#ifdef LIBANE_CONFIG_STRICT_BIND
+		return -EINVAL;
+#endif
+	}
+
+	if (ane_bind_overrun(anec, nn->chans[0].map, anec->size,
+			     nn->tile_shift, &channel, &need, &have)) {
+		ane_err("%s: surface channel %u needs %llu bytes but is allocated "
+			"%llu; refusing the program\n",
+			path, channel, (unsigned long long)need,
+			(unsigned long long)have);
+		return -EINVAL;
+	}
+	timing_end("bind_check", t, anec->size);
+
+	t = timing_start();
+	memcpy(nn->btsp_chan.map, nn->chans[0].map, anec->td_size);
+	set_nid(nn->btsp_chan.map, ANE_FIFO_NID);
+	timing_end("copy", t, anec->td_size);
+
+	return 0;
 }
 
 static inline int is_ane_device(int fd, int *abi_major)
@@ -414,7 +528,8 @@ static inline void ane_device_close(struct ane_nn *nn)
 	nn->fd = 0;
 }
 
-static inline int ane_model_init(struct ane_nn *nn, const char *path)
+static inline int ane_model_init(struct ane_nn *nn, const char *path,
+				 int staged)
 {
 	struct anec *anec = to_anec(nn);
 	uint32_t channel;
@@ -430,6 +545,14 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path)
 	if (!anec->size) {
 		ane_err("invalid anec at %s\n", path);
 		return -EINVAL;
+	}
+
+	if (!staged) {
+		/* Direct load: the payload lands in the chans[0] buffer
+		 * object and is parsed there (ane_chan_init), so no
+		 * staging buffer exists and nn->data stays NULL. */
+		timing_end("model_read", t, 0);
+		return 0;
 	}
 
 	/* 16 KiB aligned and zero past a short read, as before. pread fills
@@ -485,8 +608,11 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 {
 	struct ane_nn *nn;
 	int abi_major = 0;
+	int staged;
 	uint64_t total = timing_start();
 	uint64_t t;
+
+	staged = load_staged();
 
 	if (!tile_shift || tile_shift > 20) {
 		ane_err("refusing tile shift %u (must be 1..20)\n",
@@ -531,14 +657,14 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 		return NULL;
 	}
 
-	if (ane_model_init(nn, path) < 0) {
+	if (ane_model_init(nn, path, staged) < 0) {
 		ane_err("failed to load anec from %s\n", path);
 		ane_device_close(nn);
 		free(nn);
 		return NULL;
 	}
 
-	if (ane_chan_init(nn) < 0) {
+	if (ane_chan_init(nn, path, staged) < 0) {
 		ane_err("failed to init memory-mapped chans\n");
 		ane_device_close(nn);
 		ane_model_free(nn);

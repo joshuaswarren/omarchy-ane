@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- libane (M1/ABI 1) loads the ANEC payload straight into the command buffer
+  object and parses the task stream there: one pass instead of two and no
+  458 MB staging buffer resident for the life of the network. `nn->data` is
+  `NULL` on this path. `ANE_LOAD_STAGED=1` restores the previous staged load
+  for A/B. The ABI and every header are unchanged; the T6021 (ABI 2) loader
+  is untouched. Not merged before hardware: the A/B protocol for w71 (jwm1)
+  and w72 (jw16) is in `receipts/2026-10-03-libane-no-staging/README.md`.
+
 ## 0.4.2 (2026-10-03)
 
 `ane` powers the ANE off when it is idle and maps each buffer object with one
