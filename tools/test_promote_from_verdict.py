@@ -340,11 +340,12 @@ subprocess.run(["git", "-C", str(bad), "tag", "v0.4.0"], check=True)
 text = (bad / "CHANGELOG.md").read_text()
 head, mark, rest = text.partition("## Unreleased\n\n")
 (bad / "CHANGELOG.md").write_text(head + rest.replace("## 0.4.2", "## Unreleased\n\n## 0.4.2", 1))
-subprocess.run(["git", "-C", str(bad), "commit", "-qam", "misplaced",
-                "-c", "user.name=Joshua Warren",
-                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com"], check=True)
-subprocess.run(["git", "-C", str(bad), "commit", "-q", "--allow-empty", "-c", "user.name=Joshua Warren",
-                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", "-m",
+subprocess.run(["git", "-C", str(bad), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-qam", "misplaced"], check=True)
+subprocess.run(["git", "-C", str(bad), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-q", "--allow-empty", "-m",
                 "PROMOTE: t8112 ANE -> default-on (row deadbeef1234; intree)"], check=True)
 subprocess.run(["git", "-C", str(bad), "push", "-q", "origin", "main"], check=True)
 p = run(["release", "--verdict-file", PROMOTE], bad)
