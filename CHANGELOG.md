@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.4.3 (2026-10-03)
 
 - T6000 (M1 Pro) ANE on by default. (row 6eb94f49985b)
@@ -32,12 +34,12 @@
   `NULL` on this path. `ANE_LOAD_STAGED=1` restores the old staged load for
   A/B. The direct path reports `model_header`, `model_map`, `model_map_copy`
   (or `model_pread_fallback`), and `model_zero_tail` stages. The ABI and every
-  header are unchanged; the T6021 (ABI 2) loader is untouched. Not merged
-  before hardware: the A/B protocol for w71 (jwm1) and w72 (jw16) is in
-  `receipts/2026-10-03-libane-no-staging/README.md`.
-
-
-## Unreleased
+  header are unchanged; the T6021 (ABI 2) loader is untouched. Verified on
+  hardware before the merge (#111): on T8103 the whole-encoder cold open went
+  from 178.3 to 107.9 ms `init_total` (182.4 to 101.1 ms on the repeat arm),
+  `open_ms` 67-72 ms less; on T6001 from 361.4 to 286.5 ms, `open_ms` 828.5 to
+  760.1 ms; encoder output bit-exact across arms and smoke 20/20 on both
+  chips. Protocol and runs: `receipts/2026-10-03-libane-no-staging/README.md`.
 
 ## 0.4.2 (2026-10-03)
 

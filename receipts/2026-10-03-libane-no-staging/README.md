@@ -1,10 +1,12 @@
 # libane no-staging load: payload straight into the command buffer object
 
-Status: host-only code + host microbenchmark. No hardware ran in this work and
-the PR is NOT merged: it waits on the w71 (jwm1, T8103) and w72 (jw16, T6001)
-A/B below. MEASURED means a number from a run log or command output here;
-INFERENCE means derived from source, arithmetic, or the directional CT
-microbenchmark.
+Status: MERGED as #111 (shipped in 0.4.3) after both A/B lanes passed. On the
+T8103 lane the whole-encoder cold open went from 178.3 to 107.9 ms
+`libane:init_total` (182.4 to 101.1 ms on the repeat arm), `open_ms` 67-72 ms
+less; on the T6001 lane from 361.4 to 286.5 ms, `open_ms` 828.5 to 760.1 ms.
+Encoder output bit-exact across arms, smoke 20/20 on both chips. MEASURED
+means a number from a run log or command output here; INFERENCE means derived
+from source, arithmetic, or the directional CT microbenchmark.
 
 ## Design
 
@@ -77,7 +79,8 @@ on this PVE kernel, so the read arm used `readinto` (the same single-copy
 shape as libane's `fread` for large blocks). A first, not-explicitly-aligned
 run measured 207.9/131.0/52.7 ms (staged/readinto/mmap+memcpy); both runs are
 retained separately in `apple-silicon-lab/artifacts/LibaneNoCopy/no-staging/transcript.txt`.
-The exact hardware result is unknown until w71/w72 run the A/B.
+The exact hardware result is in the Status line above: both lanes ran the
+A/B below and passed.
 
 Expected saving (INFERENCE until the hardware A/B): one less 458 MB copy and
 the corresponding page touches. A bandwidth-only estimate for a cached M1 BO
@@ -85,7 +88,7 @@ mapping (map_mode=3) is order 10-25 ms; the host measured 72.0 ms for the
 staged-minus-mmap+memcpy shape on a slower x86/ZFS CT, which cannot be mapped
 directly to the Apple hardware. The cold-start receipt's prior 50-120 ms
 estimate predates the cached default. The exact number comes from
-`libane:init_total` staged vs direct on w71/w72.
+`libane:init_total` staged vs direct per lane.
 
 ## Host gates (MEASURED)
 
@@ -102,9 +105,9 @@ estimate predates the cached default. The exact number comes from
 - `gcc -DLIBANE_CONFIG_STRICT_BIND` build of the harness -- PASS.
 - `pytest -q tests tools` -- 100 passed, 1 skipped (final run after trace-stage change).
 
-## A/B protocol for w71 (jwm1, T8103) and w72 (jw16, T6001)
+## A/B protocol (T8103 lane and T6001 lane)
 
-Lane owners: w71 and w72. One libane build serves both arms; the env var
+Lane owners ran one lane each. One libane build serves both arms; the env var
 selects the path, and `tools/ane_cold_start.py` inherits the environment, so
 no harness change is needed. Build exactly as the cold-start receipt
 (receipts/2026-10-03-ane-cold-start) prescribes, from this branch:
@@ -128,7 +131,7 @@ Arms (S, W, OUT as in the cold-start receipt; >= 9 valid cold runs each;
 thermal/boot-age drift (H186 side finding) does not line up with one arm:
 
 ```sh
-# w71: staged first; w72: direct first
+# T8103 lane: staged first; T6001 lane: direct first
 ANE_LOAD_STAGED=1 python3 $H --out $OUT --label staged \
   --worker $W --share $S --libane /var/tmp/ane-nostag/libane-strict-branch.so \
   --runs 10 --trace
