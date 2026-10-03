@@ -266,7 +266,9 @@ def propose(verdict):
     flip = re.compile(r"auto/(promote|revert)-(t[0-9]+)")
     for p in gh(f"repos/{slug}/pulls?state=open&per_page=100"):
         m = flip.fullmatch(p["head"]["ref"])
-        if not m or p["head"]["ref"] in proposed:
+        ours = (any(label["name"] == LABEL for label in p.get("labels", []))
+                and (p["head"].get("repo") or {}).get("full_name") == slug)
+        if not m or not ours or p["head"]["ref"] in proposed:
             continue
         chip = m.group(2)
         now = next((c["verdict"] for c in verdict["chips"] if c["chip"] == chip), "no rows")

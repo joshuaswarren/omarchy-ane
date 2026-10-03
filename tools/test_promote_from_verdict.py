@@ -83,7 +83,7 @@ elif "pulls?state=open" in ep:
     out(s["open"])
 elif ep.endswith("/pulls") and method == "POST":
     n = s["next"]; s["next"] += 1
-    s["open"] = s["open"] + [{{"number": n, "labels": [], "head": {{"ref": body["head"]}}}}]
+    s["open"] = s["open"] + [{{"number": n, "labels": [], "head": {{"ref": body["head"], "repo": {{"full_name": "t/repo"}}}}}}]
     s["bodies"][str(n)] = body["body"]
     out({{"number": n, "body": body["body"]}})
 elif "/pulls/" in ep and method == "PATCH":
@@ -247,11 +247,16 @@ subprocess.run(["git", "-C", str(work), "checkout", "-q", "--", "."], check=True
 print("promote_from_verdict test: gate accepts more support, refuses changed evidence and a flipped checkout")
 
 # propose closes an open auto-promotion PR whose chip it no longer proposes,
-# and rewrites the block of a PR it does propose, legacy body or not.
+# and rewrites the block of a PR it does propose, legacy body or not. Only its
+# own PRs: labeled auto-promotion, from this repository.
+own, fork = {"full_name": "t/repo"}, {"full_name": "someone/fork"}
+label = [{"name": "auto-promotion"}]
 s = json.loads(STUB_STATE.read_text())
-s["open"] = [{"number": 7, "labels": [{"name": "auto-promotion"}], "head": {"ref": "auto/promote-t8112"}},
-             {"number": 5, "labels": [{"name": "auto-promotion"}], "head": {"ref": "auto/promote-t6000"}},
-             {"number": 4, "labels": [], "head": {"ref": "someone/else"}}]
+s["open"] = [{"number": 7, "labels": label, "head": {"ref": "auto/promote-t8112", "repo": own}},
+             {"number": 5, "labels": label, "head": {"ref": "auto/promote-t6000", "repo": own}},
+             {"number": 6, "labels": label, "head": {"ref": "auto/promote-t6002", "repo": fork}},
+             {"number": 3, "labels": [], "head": {"ref": "auto/promote-t6022", "repo": own}},
+             {"number": 4, "labels": [], "head": {"ref": "someone/else", "repo": own}}]
 s["bodies"]["7"] = "A legacy body with no promotion-verdict block."
 STUB_STATE.write_text(json.dumps(s))
 STUB_LOG.write_text("")
@@ -261,9 +266,9 @@ assert p.returncode == 0 and "updated PR #7" in p.stdout and "closed stale PR #5
 calls = [json.loads(l) for l in STUB_LOG.read_text().splitlines()]
 assert ["repos/t/repo/pulls/5", "PATCH", {"state": "closed"}] in calls, calls
 assert any(c[0] == "repos/t/repo/issues/5/comments" and "t6000 is CONFLICT" in c[2]["body"] for c in calls), calls
-assert not [c for c in calls if "/pulls/4" in c[0] or "/issues/4/" in c[0]], "a PR that is not a flip stays"
+assert not [c for c in calls if re.search(r"/(pulls|issues)/[346](/|$)", c[0])], "not our flip PR: left alone"
 s = json.loads(STUB_STATE.read_text())
-assert [x["number"] for x in s["open"]] == [7, 4], s["open"]
+assert [x["number"] for x in s["open"]] == [7, 6, 3, 4], s["open"]
 block7 = json.loads(s["bodies"]["7"].split("<!-- promotion-verdict\n", 1)[1].split("\n-->", 1)[0])
 assert block7["chip"] == "t8112" and block7["verdict"] == "PROMOTE", s["bodies"]["7"]
 print("promote_from_verdict test: propose closes a stale flip PR and rewrites a legacy block")
