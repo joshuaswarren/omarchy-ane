@@ -4,6 +4,16 @@
 
 ### Added
 
+- `omarchy-ane-check` prints `dtbs_source` and `driver_source`, the fields
+  the community collector records. When `DTBS=` is set in
+  `/etc/default/update-m1n1` (`dtbs_source=kernel`), it names no opt-in key:
+  overlay opt-in has no effect there, and `omarchy-ane-dt apply` refuses.
+- The promotion checker judges in-tree rows (`driver_source=intree`) like
+  DKMS rows. A PROMOTE with a passing in-tree row also has the target
+  `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora-plan`
+  and `aurora-pr` make the aurora-silicon/linux device-tree PR. The job that
+  builds the aurora tree holds no credential; only the PR step, which builds
+  nothing, gets the secret `AURORA_PR_TOKEN` (a dry run without it).
 - `ane_t6021` has a lab parameter `dyn_pg` (default 0, T602x only). With
   `dyn_pg=1`, probe sends the selene firmware command
   `SET_DYNAMIC_POWERGATE` = 1 after CONFIG_GET, so the firmware turns the

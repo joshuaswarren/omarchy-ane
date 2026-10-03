@@ -75,7 +75,7 @@ for chip in UNTESTED + DEFAULT_ON:
 
     # the flip-sensitive offline suites on this chip's flipped tree
     for suite in ("test_ane_dt.py", "test_ane_m2.py", "test_ane_firmware_fetch.py", "test_t8112_kit.py",
-                  "test_ane_overlays.py", "test_promotion_check.py", "test_ane_smoke.py"):
+                  "test_ane_overlays.py", "test_promotion_check.py", "test_ane_smoke.py", "test_ane_intree.py"):
         q = subprocess.run([sys.executable, str(base / "tools" / suite)],
                            capture_output=True, text=True, cwd=base)
         assert q.returncode == 0, (chip, to, suite, q.stdout[-2000:], q.stderr[-2000:])
