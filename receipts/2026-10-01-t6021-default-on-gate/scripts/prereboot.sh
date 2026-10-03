@@ -4,7 +4,7 @@
 # Run inside `gpu-turn` with IN_TICKET=1: the ticket holds the GPU lock, so only
 # the ANE lock and ane-run are checked.
 # usage: prereboot.sh OUTDIR
-set -u
+set -euo pipefail
 O=${1:?outdir}
 mkdir -p "$O"
 locks() {

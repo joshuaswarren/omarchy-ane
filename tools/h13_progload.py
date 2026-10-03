@@ -14,6 +14,7 @@ Offline static tool. Python stdlib only. No fleet access, no hardware.
 from __future__ import annotations
 
 import struct
+from typing import NamedTuple
 
 CMD_LEN = 0x1C0
 LOAD_CMD_ID = 0x200          # kext map section 0: ZinComputeInitSneProgram 0x9529584
@@ -346,19 +347,28 @@ def _grp(cmd: bytes, base: int) -> tuple[int, int, int, int]:
     return valid, count, buffer, size
 
 
-def verify_progload(cmd: bytes, blobs: dict[str, bytes],
-                    buffers: list | None = None) -> list[str]:
-    """Return a list of rule-violation strings; empty == firmware would accept.
+class _ProgView(NamedTuple):
+    """Group-header fields and blob views shared by the content checks."""
+    gen_valid: int
+    gen_count: int
+    gen_size: int
+    text_count: int
+    text_size: int
+    kern_valid: int
+    kern_count: int
+    op_size: int
+    generic: bytes
+    operation: bytes
+    procedure: bytes
+    tdprop: bytes
+    text: bytes
+    kernelprop: bytes
 
-    Order follows verifyProgramSection (0x4a1fc) then verifyProgram (0x4b9f8):
-    boundary pre-filter, presence matrix, then content in the firmware's order
-    generic -> operation -> procedure -> kernelProp -> tdProp -> descriptors
-    -> BAR (0x4bb48-0x4bbc4).
-    """
+
+def _verify_section_bounds(cmd: bytes) -> list[str]:
+    """verifyProgramSection 0x4a1fc: buffer+size <= 0xE0000000 for the seven
+    real section groups, checked at 0x4a234-0x4a29c (upper bound only)."""
     v: list[str] = []
-
-    # --- verifyProgramSection 0x4a1fc: buffer+size <= 0xE0000000 for the seven
-    # real section groups, checked at 0x4a234-0x4a29c (upper bound only).
     real_groups = [(G_GENERIC, "genericSection"), (G_KERNEL, "kernelSection"),
                    (G_TEXT, "textSection"), (G_OPERATION, "operationSection"),
                    (G_PROCEDURE, "procedureSection"), (G_KERNELPROP, "kernelPropSection"),
@@ -369,20 +379,24 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
             v.append(f"verifyProgramSection@0x4a234: {name}.buffer=0x{buffer:x} + "
                      f"size=0x{size:x} exceeds maxAddr=0x{MAX_ADDR:x} "
                      f"('buffer address out of boundary, load_program failed')")
+    return v
 
-    # --- verifyProgram 0x4b9f8 presence matrix (0x4ba08-0x4bb98).
+
+def _verify_presence(cmd: bytes) -> list[str]:
+    """verifyProgram 0x4b9f8 presence matrix (0x4ba08-0x4bb98) plus the
+    verifyBAR non-zero asserts (0xb38c2). Non-empty output means the firmware
+    returns before content verification (0x4bb48 gate order)."""
+    v: list[str] = []
     mandatory = [(G_GENERIC, "genericSection", "[No] Generic Section", 0x1D0, 0x4BA10),
                  (G_TEXT, "textSection", "[No] TD Section", 0x1D4, 0x4BA50),
                  (G_TDPROP, "tdPropSection", "[No] TD Prop Section", 0x1D8, 0x4BA90),
                  (G_OPERATION, "operationSection", "[No] Operation Section", 0x1DC, 0x4BAD0),
                  (G_PROCEDURE, "procedureSection", "[No] Procedure Section", 0x1E0, 0x4BB10)]
-    missing = False
     for base, name, err, line, at in mandatory:
         valid, _, buffer, _ = _grp(cmd, base)
         if not (valid & 1 and buffer):
             v.append(f"verifyProgram@{at:x}: {name} missing "
                      f"(valid bit0/buffer==0): '{err}' (line {line})")
-            missing = True
     for base, name, err, line, at in [(G_KERNELPROP, "kernelPropSection",
                                        "[X] kernelPropSection is valid but no buffer!", 0x1FF, 0x4bb70),
                                       (G_KERNEL, "kernelSection",
@@ -391,25 +405,35 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
         if valid & 1:
             if not buffer:
                 v.append(f"verifyProgram@{at:x}: '{err}' (line {line})")
-                missing = True
             if not size:
                 # verifyBAR asserts 0xb38c2 (kernel) — size must be non-zero when valid
                 v.append(f"verifyBAR assert@0xb38c2: {name}.size == 0 while valid")
-                missing = True
-    if missing:
-        return v   # fw returns before content verification (0x4bb48 gate order)
+    return v
 
+
+def _prog_view(cmd: bytes, blobs: dict[str, bytes]) -> _ProgView:
+    """Read the group headers and blob views the content checks share."""
     gen_valid, gen_count, _, gen_size = _grp(cmd, G_GENERIC)
     _, text_count, _, text_size = _grp(cmd, G_TEXT)
     kern_valid, kern_count, _, _ = _grp(cmd, G_KERNEL)
     _, _, _, op_size = _grp(cmd, G_OPERATION)
-    generic = blobs.get("generic", b"")
-    operation = blobs.get("operation", b"")
-    procedure = blobs.get("procedure", b"")
-    tdprop = blobs.get("tdprop", b"")
+    return _ProgView(gen_valid=gen_valid, gen_count=gen_count, gen_size=gen_size,
+                     text_count=text_count, text_size=text_size,
+                     kern_valid=kern_valid, kern_count=kern_count,
+                     op_size=op_size,
+                     generic=blobs.get("generic", b""),
+                     operation=blobs.get("operation", b""),
+                     procedure=blobs.get("procedure", b""),
+                     tdprop=blobs.get("tdprop", b""),
+                     text=blobs.get("text", b""),
+                     kernelprop=blobs.get("kernelprop", b""))
 
-    # --- verifyGenericSection 0x4a428 --------------------------------------
-    if gen_size >= 8:
+
+def _verify_generic_section(p: _ProgView) -> tuple[list[str], int]:
+    """verifyGenericSection 0x4a428. Returns (violations, totalBufferNbr)."""
+    v: list[str] = []
+    generic = p.generic
+    if p.gen_size >= 8:
         max_ane, nbr_ne = struct.unpack_from("<II", generic, 0)
         if max_ane != 1:
             v.append(f"verifyGenericSection@0x4a438: maxAneUsed {max_ane} != 1 "
@@ -422,9 +446,9 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
         # 0x4a4d8-0x4a4e4 ('totalBufferNbr %d :: range should 0 < # < ECSneProgramMaxBuf')
         v.append(f"verifyGenericSection@0x4a4d8: totalBufferNbr {total_buffers} "
                  "outside 1..0x200")
-    if len(generic) >= 0x208 and 0x208 + total_buffers * 0x30 > gen_size:
+    if len(generic) >= 0x208 and 0x208 + total_buffers * 0x30 > p.gen_size:
         v.append(f"verifyGenericSection@0x4a510: 0x208+{total_buffers}*0x30 > "
-                 f"section size 0x{gen_size:x}")
+                 f"section size 0x{p.gen_size:x}")
     for i in range(min(total_buffers, (len(generic) - 0x208) // 0x30 if len(generic) >= 0x208 else 0)):
         off = 0x208 + 0x30 * i
         valid = generic[off]
@@ -436,14 +460,20 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
             # 0x4a55c-0x4a564 ('Generic section buffer[%d] is wrong type %d!')
             v.append(f"verifyGenericSection@0x4a55c: buffer[{i}] bufferIndex "
                      f"{index} >= 6")
+    return v, total_buffers
 
-    # --- verifyOperationSection 0x4a724 ------------------------------------
+
+def _verify_operation_section(p: _ProgView) -> tuple[list[str], int, list]:
+    """verifyOperationSection 0x4a724. Returns (violations, tot, bar_ops);
+    bar_ops rows are (op index, td_start, td_end, [(barIndex, bufIndex)])."""
+    v: list[str] = []
+    operation = p.operation
     op_tot = struct.unpack_from("<I", operation, 0)[0] if len(operation) >= 4 else 0
     if op_tot > 0x80:
         # 0x4a7a4-0x4a7a8 ('Operation number %d exceeds MAX Operation number (%d)!')
         v.append(f"verifyOperationSection@0x4a7a4: tot {op_tot} > 0x80")
-    if 4 + op_tot * 0x110 > op_size:
-        v.append(f"verifyOperationSection@0x4a738: 4+{op_tot}*0x110 > size 0x{op_size:x}")
+    if 4 + op_tot * 0x110 > p.op_size:
+        v.append(f"verifyOperationSection@0x4a738: 4+{op_tot}*0x110 > size 0x{p.op_size:x}")
     bar_ops: list[tuple[int, int, int, list[tuple[int, int]]]] = []
     for i in range(min(op_tot, max(0, (len(operation) - 4) // 0x110))):
         base = 4 + i * 0x110
@@ -474,8 +504,13 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
                          f"index {bar_index} >= 0x20")
             bars.append((bar_index, buf_index))
         bar_ops.append((i, td_start, td_end, bars))
+    return v, op_tot, bar_ops
 
-    # --- verifyProcedureSection 0x4ad38 ------------------------------------
+
+def _verify_procedure_section(p: _ProgView) -> list[str]:
+    """verifyProcedureSection 0x4ad38: entry count, tiling and bounds."""
+    v: list[str] = []
+    procedure = p.procedure
     proc_n = struct.unpack_from("<I", procedure, 0)[0] if len(procedure) >= 4 else 0
     if proc_n == 0:
         v.append("verifyProcedureSection@0x4ad4c: entry count == 0 (FAIL)")
@@ -491,27 +526,37 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
             v.append(f"verifyProcedureSection@0x4ad78: procedure[{i}] "
                      f"0x{off:x}+0x{ln:x} > size 0x{len(procedure):x}")
         prev_end = off + ln
+    return v
 
-    # --- verifyKernelPropSection 0x4a5d4 (only runs when group valid) ------
+
+def _verify_kernelprop_section(cmd: bytes, p: _ProgView) -> list[str]:
+    """verifyKernelPropSection 0x4a5d4 (only runs when the group is valid)."""
+    v: list[str] = []
     kp_valid, kp_count, _, kp_size = _grp(cmd, G_KERNELPROP)
-    if kp_valid & 1:
-        kp = blobs.get("kernelprop", b"")
-        if kp_count == 0:
-            v.append("verifyKernelPropSection@0x4a5e8: entry count == 0 (FAIL)")
-        prev_end = 0
-        for i in range(min(kp_count, max(0, (len(kp) - 8) // 0x18))):
-            _unk, off, ln = struct.unpack_from("<QQQ", kp, 8 + 0x18 * i)
-            if i > 0 and off < prev_end:
-                # 0x4a600-0x4a610 ('KernelProp[%d] offset ... is overlapped ...')
-                v.append(f"verifyKernelPropSection@0x4a600: kernelProp[{i}] offset "
-                         f"0x{off:x} overlaps previous end 0x{prev_end:x}")
-            if off + ln > kp_size:
-                # 0x4a614-0x4a638 ('KernelProp[%d] exceeds limit ...')
-                v.append(f"verifyKernelPropSection@0x4a614: kernelProp[{i}] "
-                         f"0x{off:x}+0x{ln:x} > size 0x{kp_size:x}")
-            prev_end = off + ln
+    if not kp_valid & 1:
+        return v
+    kp = p.kernelprop
+    if kp_count == 0:
+        v.append("verifyKernelPropSection@0x4a5e8: entry count == 0 (FAIL)")
+    prev_end = 0
+    for i in range(min(kp_count, max(0, (len(kp) - 8) // 0x18))):
+        _unk, off, ln = struct.unpack_from("<QQQ", kp, 8 + 0x18 * i)
+        if i > 0 and off < prev_end:
+            # 0x4a600-0x4a610 ('KernelProp[%d] offset ... is overlapped ...')
+            v.append(f"verifyKernelPropSection@0x4a600: kernelProp[{i}] offset "
+                     f"0x{off:x} overlaps previous end 0x{prev_end:x}")
+        if off + ln > kp_size:
+            # 0x4a614-0x4a638 ('KernelProp[%d] exceeds limit ...')
+            v.append(f"verifyKernelPropSection@0x4a614: kernelProp[{i}] "
+                     f"0x{off:x}+0x{ln:x} > size 0x{kp_size:x}")
+        prev_end = off + ln
+    return v
 
-    # --- verifyDescriptorPropSection 0x4ae88 -------------------------------
+
+def _verify_descriptor_prop_section(p: _ProgView) -> tuple[list[str], int, bool]:
+    """verifyDescriptorPropSection 0x4ae88. Returns (violations, tdTotal, td_ok)."""
+    v: list[str] = []
+    tdprop = p.tdprop
     td_total = struct.unpack_from("<I", tdprop, 0)[0] if len(tdprop) >= 4 else 0
     td_ok = True
     if td_total:
@@ -529,27 +574,33 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
                     v.append(f"verifyDescriptorPropSection@0x4afac: TD[{i}] offset "
                              f"0x{off:x} overlaps previous end 0x{prev_end:x}")
                     td_ok = False
-                if off + ln > text_size:
+                if off + ln > p.text_size:
                     # 0x4afc0-0x4afcc ('TD[%d] exceeds limit (offset, len) ...')
                     v.append(f"verifyDescriptorPropSection@0x4afc0: TD[{i}] "
-                             f"0x{off:x}+0x{ln:x} > textSize 0x{text_size:x}")
+                             f"0x{off:x}+0x{ln:x} > textSize 0x{p.text_size:x}")
                     td_ok = False
                 else:
-                    tde = (struct.unpack_from("<I", blobs.get("text", b""), off + 0x18)[0] >> 24) & 1 \
-                        if len(blobs.get("text", b"")) >= off + 0x1C else 0
+                    tde = (struct.unpack_from("<I", p.text, off + 0x18)[0] >> 24) & 1 \
+                        if len(p.text) >= off + 0x1C else 0
                     if ln < (0x28 if tde else 0x2C):
                         # 0x4afe8-0x4aff8 ('TD[%d] len %d is smaller than ane_TD_HEADER_t (TDE %d)!')
                         v.append(f"verifyDescriptorPropSection@0x4afe8: TD[{i}] len "
                                  f"0x{ln:x} < min for TDE={tde}")
                         td_ok = False
                 prev_end = off + ln
+    return v, td_total, td_ok
 
-    # --- verifyDescriptors 0x4b098 ------------------------------------------
+
+def _verify_descriptors(p: _ProgView, op_tot: int,
+                        bar_ops: list, td_total: int, td_ok: bool) -> list[str]:
+    """verifyDescriptors 0x4b098: operation tot, per-op TD-range rule, then the
+    TD chain walk (0x4b120 umaddl, 0x4b148/0x4b164/0x4b178)."""
+    v: list[str] = []
     # 1. op.tot == 0 -> FAIL (0x4b0b4-0x4b0b8) even though verifyOperationSection passes.
     if op_tot == 0:
         v.append("verifyDescriptors@0x4b0b4: operation tot == 0 (FAIL)")
-    if td_ok and op_tot and len(blobs.get("text", b"")) >= 0x1C:
-        text = blobs["text"]
+    if td_ok and op_tot and len(p.text) >= 0x1C:
+        text = p.text
         # 2. Range rule (0x4b104-0x4b110): FAIL iff start < tdTotal <= end.
         for i, td_start, td_end, _ in bar_ops:
             if td_start < td_total <= td_end:
@@ -562,15 +613,15 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
             for k in range(td_end - td_start + 1):
                 idx = td_start + k
                 base = 8 + 0x30 * idx
-                if base + 0x30 > len(tdprop):
+                if base + 0x30 > len(p.tdprop):
                     # quirk (spec section 2.6.3): fw walks bytes past the counted
                     # table; we flag instead of reading out of the blob.
                     v.append(f"verifyDescriptors@0x4b120: prop[{idx}] outside "
                              f"tdProp blob (range past table, spec section 6.9 quirk)")
                     break
-                off, ln = struct.unpack_from("<II", tdprop, base)
-                chain = struct.unpack_from("<I", tdprop, 4)[0] if idx == 0 \
-                    else struct.unpack_from("<I", tdprop, 8 + 0x30 * (idx - 1) + 0x2C)[0]
+                off, ln = struct.unpack_from("<II", p.tdprop, base)
+                chain = struct.unpack_from("<I", p.tdprop, 4)[0] if idx == 0 \
+                    else struct.unpack_from("<I", p.tdprop, 8 + 0x30 * (idx - 1) + 0x2C)[0]
                 tid = struct.unpack_from("<H", text, off)[0]
                 if tid != chain or tid != k:
                     # 0x4b148-0x4b158 ('TD[%d] (headerTID:TdPropTID:index)=(%d:%d:%d)', 0xb3583)
@@ -589,36 +640,69 @@ def verify_progload(cmd: bytes, blobs: dict[str, bytes],
                                  f"!= prev NextPointer "
                                  f"0x{struct.unpack_from('<I', text, prev_off + 0x1C)[0]:x}")
                 prev_off = off
+    return v
 
-    # --- verifyBAR 0x4b708 + checkBarEachAneOp 0x4b310 -----------------------
-    # Asserts (0xb2baf..0xb38c2): presence/non-zero of the fields the loop reads.
-    if not (gen_valid & 1) or gen_count == 0:
+
+def _verify_bar(p: _ProgView, total_buffers: int, bar_ops: list) -> list[str]:
+    """verifyBAR 0x4b708 asserts (0xb2baf..0xb38c2) + checkBarEachAneOp 0x4b310."""
+    v: list[str] = []
+    if not (p.gen_valid & 1) or p.gen_count == 0:
         v.append("verifyBAR assert@0xb3871: genericSection.totalBufferNbr == 0")
-    if text_size == 0:
+    if p.text_size == 0:
         v.append("verifyBAR assert@0xb38a8: textSection.size == 0")
     entries = []
-    if len(generic) >= 0x208:
-        for j in range(min(total_buffers, (len(generic) - 0x208) // 0x30)):
+    if len(p.generic) >= 0x208:
+        for j in range(min(total_buffers, (len(p.generic) - 0x208) // 0x30)):
             off = 0x208 + 0x30 * j
-            entries.append((generic[off], struct.unpack_from("<I", generic, off + 8)[0]))
+            entries.append((p.generic[off], struct.unpack_from("<I", p.generic, off + 8)[0]))
     for i, _, _, bars in bar_ops:
         for k, (bar_index, buf_index) in enumerate(bars):
             if bar_index >= 0x20:
                 # 0x4b444-0x4b450 ('BAR[%d] index %d should <= %d!')
                 v.append(f"checkBarEachAneOp@0x4b444: operation[{i}] BAR[{k}] "
                          f"index {bar_index} >= 0x20")
-            if kern_valid & 1 and kern_count == buf_index:
+            if p.kern_valid & 1 and p.kern_count == buf_index:
                 # 0x4b458-0x4b47c ('BAR[%d] bufferIndex %d is matched with buffers
                 # more than one!', line 0x16b)
                 v.append(f"checkBarEachAneOp@0x4b458: operation[{i}] BAR[{k}] "
-                         f"bufferIndex {buf_index} == kernelSection.count {kern_count}")
+                         f"bufferIndex {buf_index} == kernelSection.count {p.kern_count}")
             matches = [j for j, (valid_j, idx_j) in enumerate(entries) if valid_j & 1 and idx_j == buf_index]
             if not matches:
                 # 0x4b4bc-0x4b4f4 ('BAR[%d] bufferIndex %d is NOT matched with any buffer!', 0xb376a)
                 v.append(f"checkBarEachAneOp@0x4b4bc: operation[{i}] BAR[{k}] "
                          f"bufferIndex {buf_index} matches no valid generic buffer")
-            elif text_count == buf_index:
+            elif p.text_count == buf_index:
                 # 0x4b4e0-0x4b4ec (same string 0xb36f9, line 0x178)
                 v.append(f"checkBarEachAneOp@0x4b4e0: operation[{i}] BAR[{k}] "
-                         f"bufferIndex {buf_index} == textSection.count {text_count}")
+                         f"bufferIndex {buf_index} == textSection.count {p.text_count}")
+    return v
+
+
+def verify_progload(cmd: bytes, blobs: dict[str, bytes],
+                    buffers: list | None = None) -> list[str]:
+    """Return a list of rule-violation strings; empty == firmware would accept.
+
+    Named steps in firmware order (verifyProgramSection 0x4a1fc then
+    verifyProgram 0x4b9f8): section bounds, presence matrix, then content —
+    generic -> operation -> procedure -> kernelProp -> tdProp -> descriptors
+    -> BAR (0x4bb48-0x4bbc4). Presence failures return before content checks,
+    matching the firmware's gate order. Behavior locked by
+    tools/test_h13_progload_verify.py against the pre-split implementation.
+    """
+    v = _verify_section_bounds(cmd)
+    presence = _verify_presence(cmd)
+    v += presence
+    if presence:
+        return v
+    p = _prog_view(cmd, blobs)
+    step, total_buffers = _verify_generic_section(p)
+    v += step
+    step, op_tot, bar_ops = _verify_operation_section(p)
+    v += step
+    v += _verify_procedure_section(p)
+    v += _verify_kernelprop_section(cmd, p)
+    step, td_total, td_ok = _verify_descriptor_prop_section(p)
+    v += step
+    v += _verify_descriptors(p, op_tot, bar_ops, td_total, td_ok)
+    v += _verify_bar(p, total_buffers, bar_ops)
     return v

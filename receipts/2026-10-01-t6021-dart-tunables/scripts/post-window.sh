@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartTune post-reboot window (one gpu-turn ticket, read only): the DART words on the default
 # boot, then one default arm (gates, correctness, timing, burst).
 # usage: post-window.sh OUTDIR
@@ -9,8 +10,8 @@ exec > >(tee -a "$O/console.log") 2>&1
 . /var/tmp/dart/lib.sh
 state start | tee "$O/state-start.txt"
 probe rPost
-/var/tmp/dart/ab-turn.sh default-post
-rc=$?
+rc=0
+/var/tmp/dart/ab-turn.sh default-post || rc=$?
 echo "arm default-post rc=$rc $(date -u +%T)"
 [ "$rc" = 0 ] || stop "arm default-post rc=$rc"
 badcheck

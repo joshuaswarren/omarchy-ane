@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # boot-campaign.sh — m1max-host ASC boot + perf-mode campaign (Main-authorized).
 # PHASES env: "0" probe only (read-only), "0 1" + boot/handshake capture,
 # "0 1 2 2b" full (default). Hard-reset risk confined to phases 1-2
@@ -54,7 +55,7 @@ for n in 1 32; do
     --input input_features=$W/smoke/in_input_features.bin \
     --save encoder_hidden=/tmp/anep-x/h.bin --save output_mask=/tmp/anep-x/m.bin \
     > "$OUT/worker-after-n$n.log" 2>&1
-  echo "LEG after-n$n rc=$? $(grep -oE 'elapsed_ms=[0-9]+' "$OUT/worker-after-n$n.log" | tail -1) hidden16=$(sha256sum /tmp/anep-x/h.bin 2>/dev/null | cut -c1-16)"
+  echo "LEG after-n$n rc=$rc $(grep -oE 'elapsed_ms=[0-9]+' "$OUT/worker-after-n$n.log" | tail -1) hidden16=$(sha256sum /tmp/anep-x/h.bin 2>/dev/null | cut -c1-16)"
 done
 
 echo "=== done $(date -Iseconds) ==="

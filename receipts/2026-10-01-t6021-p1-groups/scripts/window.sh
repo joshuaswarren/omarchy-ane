@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # P1Groups device window (run inside gpu-turn): optional read-only probes (bridge 26 + the ten
 # P-1 words; the three ANE DARTs, apply=0), then one timing arm (ab-turn.sh).
 # usage: window.sh TAG [noprobe]

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartTune E2' window (one gpu-turn ticket): read; A arm; apply GROUPS in the macOS order; read;
 # G arm; undo GROUPS (not for 0); read. GROUPS=final: read and A arm only.
 # A failed G arm (fault or check) is recorded and undone (pre-registered rule a); for G0, a failed
@@ -30,9 +31,8 @@ badcheck() {
 }
 
 arm() {
-	local rc
-	/var/tmp/dart/ab-turn.sh "$1"
-	rc=$?
+	local rc=0
+	/var/tmp/dart/ab-turn.sh "$1" || rc=$?
 	echo "arm $1 rc=$rc $(date -u +%T)"
 	return "$rc"
 }
@@ -49,7 +49,7 @@ if [ "$G" != final ]; then
 	else
 		echo "GROUP-FAULT G$G $(date -u +%T)"
 		badlines | tee "$O/group-fault.txt"
-		[ "$G" = 0 ] && stop "G0 (procedure control) failed"
+		[ "$G" = 0 ] && stop "G0 (procedure control) failed" || true
 		T0=$(($(date +%s) + 1))
 	fi
 	if [ "$G" != 0 ]; then

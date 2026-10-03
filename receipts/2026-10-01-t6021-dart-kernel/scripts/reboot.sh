@@ -3,7 +3,7 @@
 # ane-run, sync, 40 s, check again, then set the one-shot GRUB entry (if given) as the last
 # step before a plain systemctl reboot. Exit 3 (no reboot, grubenv untouched) if busy.
 # usage: reboot.sh STAGEDIR [dart-oneshot-test|dart-ctl|dart-tun]
-set -u
+set -euo pipefail
 S=$(realpath "${1:?stagedir}")
 E=${2:-}
 case "$E" in "" | dart-oneshot-test | dart-ctl | dart-tun) ;; *) echo "bad entry $E"; exit 2 ;; esac

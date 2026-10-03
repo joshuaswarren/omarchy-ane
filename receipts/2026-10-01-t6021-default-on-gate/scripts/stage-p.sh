@@ -1,10 +1,10 @@
 #!/bin/bash
+set -euo pipefail
 # OwnMemGate boot P staging: build the boot.bin a packaged install makes, to a NEW path. It runs the
 # packaged update-m1n1 (asahi-scripts) in a private mount namespace where /etc/default/update-m1n1 is
 # the packaged-flow file: only the line omarchy-ane-dt adds (no lab M1N1 pin), so M1N1 and U_BOOT are
 # the package defaults /usr/lib/asahi-boot/m1n1.bin and u-boot-nodtb.bin. Writes no ESP file and no
 # system file. usage: bash stage-p.sh
-set -euo pipefail
 P=/var/tmp/ownmem/P
 test ! -e "$P"
 mkdir -p "$P"

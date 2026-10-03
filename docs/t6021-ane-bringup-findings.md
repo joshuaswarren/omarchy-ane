@@ -78,8 +78,8 @@ lost. Cite the source repo and the commit SHA next to every number.
 
 1. Gate: all eight ANE pmgr islands read ACTUAL = `0xf` (bits [7:4]).
 2. Map both segment-ranges entries at their remap IOVAs, iBoot pages in
-   place. T6021 only: the T6001 runs were unmapped (T6001 map staged in
-   agent/ane-boundaries `receipts/2026-09-24-ane-perf-mode-h13` §10).
+   place. T6021 only: the T6001 runs were unmapped (the remap finding is
+   documented in section 3 above).
 3. Set bit 0 of the I2A control register (engine + `0x1408114`).
 4. Write CPU_CONTROL (engine + `0x1400044`) = 0, barrier, then `0x10`.
 5. RVBAR (engine + `0x1050000`) is latched (bit 0 set, `0x10000000001`).
@@ -746,8 +746,8 @@ code, and m1n1's dapf_init_all skips dart-ane0, so nothing opens those
 windows under Linux. Why the first writes were ignored: DART8110 PROTECT
 (0x200) bit 1 (LOCK_REG_4xx) write-protects the +0x4000 DAPF aperture,
 and Linux boots with dart0 PROTECT = 0x2 — every write to 0x285804000 was
-dropped by silicon. The unlock protocol (M2PreRunRE; m1n1
-`hw/dart8110.py`): write 0x2 to UNPROTECT (0x285800204), verify PROTECT
+dropped by silicon. The unlock protocol (M2PreRunRE; m1n1): write 0x2 to
+UNPROTECT (0x285800204), verify PROTECT
 bit 1 clear, write the DAPF slices (+0x04 r4, +0x08 start, +0x10 end,
 +0x00 r0 enable, +0x20 r20, stride 0x40), then re-protect by writing 0x6
 to PROTECT (0x285800200) — the macOS working-state value (section 17).
@@ -790,8 +790,8 @@ T6001 macOS boot log.
 ### T6001: CSNE wire protocol (static kext RE)
 
 Source: ane-linux-experiments `lane/kext-re-clean` d4b9b3e,
-`kext-re/FINDINGS.md` (AppleH11ANEInterface 9.512.0, macOS 25G83 build).
-T6001-derived.
+ane-linux-experiments:kext-re/FINDINGS.md (AppleH11ANEInterface 9.512.0,
+macOS 25G83 build). T6001-derived.
 
 - Command packet: u32 0 at +0, u16 opcode at +4, u16 0 at +6 (zeroed by the
   sender), opcode payload from +8. Copied verbatim into the command-buffer
@@ -817,7 +817,7 @@ T6001-derived.
 ### T6001: DART, CTRR and RTKit decode
 
 Source: ane-linux-experiments `lane/kext-re-clean` dfd628e,
-`kext-re/DART-DECODE.md`. T6001-derived.
+ane-linux-experiments:kext-re/DART-DECODE.md. T6001-derived.
 
 - The kext never writes DART PTEs. IODARTVMAllocator and the DART framework
   fill them. Bare-metal code must do that work itself.
@@ -1354,7 +1354,8 @@ Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-
 
 - `ane_t6021.trace_td` (runtime switch, default 0, omarchy-ane `7ae53e0`)
   samples the last-committed-TD word every 20-40 us during the completion
-  wait, under the PS-word guard, into debugfs `ane_t6021/trace_td`. Trace on
+  wait, under the PS-word guard, into debugfs `ane_t6021/trace_td`
+  (ane/t6021/ane_t6021_rtclient_main.c, `debugfs_create_blob("trace_td", ...)`). Trace on
   changes the encoder exec time by less than 0.1%.
 - The TD word moves when the task manager takes a task. The manager keeps
   19 tasks in flight: task k+1 is taken when task k+1-19 finishes (r 0.985

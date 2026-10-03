@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # collect-macos.sh: read-only ANE facts from macOS on a T8112 Mac, for the omarchy-ane lab.
 #
 #   bash collect-macos.sh     # writes ./t8112-macos-<model>-<UTC>.tar.gz
@@ -7,7 +8,6 @@
 # pmgr nodes (ioreg -a), four /arm-io and four /chosen properties, sw_vers,
 # sysctl hw.model, and the model and chip lines of system_profiler (not the
 # serial number or the UUIDs), with SHA256SUMS. ingest.py --macos reads it.
-set -euo pipefail
 
 [[ $(uname -s) == Darwin ]] || { echo "collect-macos.sh: run this on macOS" >&2; exit 1; }
 start=$PWD

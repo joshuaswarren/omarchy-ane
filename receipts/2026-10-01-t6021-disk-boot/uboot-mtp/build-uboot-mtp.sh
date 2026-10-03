@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Build uboot-asahi 2026.07.asahi2-1 (AsahiLinux/u-boot tag asahi-v2026.07-2 plus the
 # 18 asahi-alarm PKGBUILD patches) with the DiskBoot run-2 lab recipe, once per
 # variant of drivers/input. Output: u-boot-nodtb.<name>.bin, W=1 logs, build logs.
@@ -7,7 +8,6 @@
 #   SPEC is "tag" (unchanged sources), a comma-separated list of git format-patch
 #   files applied in order, or one replacement apple_mtp_kbd.c file.
 #   "tag" must give e898992fb3c6f55a03fde082c7651af7b6fec6fc7fddf97b0d8f01c468aa5dea.
-set -euo pipefail
 
 # PKG_DIR: asahi-alarm PKGBUILDs uboot-asahi (2026.07.asahi2-1) saved as PKGBUILD.asahi-alarm,
 # its .patch files, and u-boot-asahi-v2026.07-2.tar.gz. Checked against the PKGBUILD sums.

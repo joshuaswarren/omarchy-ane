@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartTune shared helpers for the M2 windows (sourced). Needs O (outdir) set.
 K=/var/tmp/dart/2f943fe/src/ane/t6021/probes/ane_dart_probe.ko
 KSHA=3227a0507dfced0aaa4eb8abd1afacab1f1f5559c4f420b3cf2e0fbe59f6590c
@@ -15,10 +16,10 @@ state() {
 	echo "== state $1 $(date -u +%FT%T.%3NZ)"
 	echo "boot_id $(cat /proc/sys/kernel/random/boot_id) uname $(uname -r) up $(cut -d' ' -f1 /proc/uptime)"
 	echo "module $(cat /sys/module/ane_t6021/version) $(cat /sys/module/ane_t6021/srcversion) $(sha256sum "$(modinfo -n ane_t6021)" | cut -c1-16)"
-	lsmod | grep -E '^(ane_t6021|ane_dart_probe) '
+	lsmod | grep -E '^(ane_t6021|ane_dart_probe) ' || echo "no ane modules loaded"
 	ls /etc/modprobe.d/ | tr '\n' ' '
 	echo
-	ls /dev/accel/
+	ls /dev/accel/ 2>&1 || echo "no /dev/accel nodes"
 	echo "dmesg_bad $(sudo -n dmesg | grep -c -i -E "$BAD") dmesg_lines $(sudo -n dmesg | wc -l)"
 	pgrep -a -x ane-run || echo "no ane-run"
 	uptime
@@ -34,7 +35,7 @@ stop() {
 
 badcheck() {
 	local new
-	new=$(sudo -n dmesg | tail -n +"$((N0 + 1))" | grep -i -E "$BAD")
+	new=$(sudo -n dmesg | tail -n +"$((N0 + 1))" | grep -i -E "$BAD" || true)
 	[ -z "$new" ] || stop "bad dmesg: $new"
 	[ "$(cat /proc/sys/kernel/random/boot_id)" = "$BOOT" ] || stop "boot_id changed"
 }
@@ -48,15 +49,15 @@ probe() {
 	sync
 	m0=$(sudo -n dmesg | wc -l)
 	echo "probe $t $* start $(date -u +%T.%3N)"
-	flock "$L" timeout 120 bash -c '! pgrep -x ane-run >/dev/null || { echo "ane-run running"; exit 9; }; sudo -n insmod "$0" "$@"' "$K" "$@"
-	rc=$?
+	rc=0
+	flock "$L" timeout 120 bash -c '! pgrep -x ane-run >/dev/null || { echo "ane-run running"; exit 9; }; sudo -n insmod "$0" "$@"' "$K" "$@" || rc=$?
 	echo "probe $t insmod rc=$rc end $(date -u +%T.%3N)"
 	if lsmod | grep -q '^ane_dart_probe '; then
 		sudo -n rmmod ane_dart_probe
 		echo "probe $t rmmod rc=$?"
 	fi
-	sudo -n dmesg | tail -n +"$((m0 + 1))" | grep 'ane_dart_probe' >"$O/$t.log"
-	tail -1 "$O/$t.log"
+	sudo -n dmesg | tail -n +"$((m0 + 1))" | grep 'ane_dart_probe' >"$O/$t.log" || true
+	tail -1 "$O/$t.log" || true
 	[ "$rc" = 0 ] || stop "probe $t rc=$rc"
 	badcheck
 }
@@ -72,11 +73,11 @@ enc() {
 	local w=$O/enc/$1 log=$O/enc/$1.log rc
 	mkdir -p "$w"
 	echo "start $(date -u +%T.%3N)" >"$log"
+	rc=0
 	python3 "$QPR" --prog parakeet_encoder --anec-dir "$PK" --ane-run "$R/tools/ane-run" --timeout 120 --repeat "$2" \
 		--work "$w" --in attention_mask="$PK/in/attention_mask.npy" --in input_features="$PK/in/input_features.npy" \
 		--out linear_217_cast_fp16="$w/hidden.npy" --out output_mask_f="$w/mask.npy" \
-		--golden linear_217_cast_fp16="$PK/in/golden_hidden16.npy" >>"$log" 2>&1
-	rc=$?
+		--golden linear_217_cast_fp16="$PK/in/golden_hidden16.npy" >>"$log" 2>&1 || rc=$?
 	echo "rc=$rc end $(date -u +%T.%3N)" >>"$log"
 	[ "$rc" = 0 ] || stop "enc $1 rc=$rc"
 	rm -f "$w"/*.surface

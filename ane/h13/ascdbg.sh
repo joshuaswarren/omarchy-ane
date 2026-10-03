@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # ascdbg.sh — drives ane_ascdbg.ko one bounded access at a time.
 # Every command is appended to $LOG and fsynced BEFORE it runs, so a
 # hard reset leaves the hostile address on disk (and on netconsole via

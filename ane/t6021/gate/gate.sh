@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Installed-path gate for the T6021 ANE: checks the install, then runs the
 # selected fixture program through libane (ane-run) with seeded random
 # sparse inputs (same surface shapes as the lab oracle inputs) and checks
@@ -18,7 +19,6 @@
 #   --insmod KO  load KO with no parameters first (for a boot where the
 #                module is installed but not yet in modules.dep).
 # Run from a fresh boot. The module cannot be unloaded, so this never rmmods.
-set -euo pipefail
 OUT=${1:?output dir required}
 OP=${2:-add}
 EXPLICIT_ANEC=""
@@ -66,7 +66,7 @@ if [[ -n $KO ]]; then
 fi
 [[ -d /sys/module/ane_t6021 ]] || { echo "ane_t6021 not loaded (autoload failed)"; exit 3; }
 for _ in {1..50}; do
-	compgen -G '/dev/accel/accel*' >/dev/null && break
+	if compgen -G '/dev/accel/accel*' >/dev/null; then break; fi
 	sleep 0.2
 done
 ls -l /dev/accel/
@@ -82,9 +82,11 @@ dmesg | grep -iE 'ane_t6021|ane:' | tail -40 > "$OUT/dmesg-load.txt" || true
 case "$OP" in
 island-*|rms-c2048-gamma)
 	for s in 0 1 2; do
+		rc=0
 		python3 "$ROOT/tools/island_ref.py" --island "$OP" --seed "$s" \
 			${ANEC:+--anec "$ANEC"} --out-dir "$OUT" --in-dir "$OUT" |
-			tee -a "$OUT/gate.log" | tail -1
+			tee -a "$OUT/gate.log" | tail -1 || rc=$?
+		[ "$rc" = 0 ] || echo "FAIL: island_ref seed $s rc=$rc" >> "$OUT/gate.log"
 	done
 	if grep -q "FAIL" "$OUT/gate.log"; then echo "GATE FAIL"; exit 1; fi
 	echo "GATE PASS"

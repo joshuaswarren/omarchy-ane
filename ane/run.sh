@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 function logs(){
 	dmesg -k --color=always | grep ane

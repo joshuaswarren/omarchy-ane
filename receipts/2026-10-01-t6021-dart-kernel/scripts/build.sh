@@ -1,11 +1,11 @@
 #!/bin/bash
+set -euo pipefail
 # DartKernel: cross-build the M2 stock kernel (linux-asahi 7.1.13.asahi3-1) with
 # kernel/patches/apple-dart-ane-tunables.patch as release 7.1.13-3-1-ARCH-dart,
 # rebuild ane_t6021 (release tree 9f37b47) and ane_dart_probe (origin/main) against it,
 # and pack the stage directory for install.sh.
 # usage: build.sh WORKDIR M2_CONFIG OMARCHY_ANE_REPO
 #   M2_CONFIG = /proc/config.gz of the running stock kernel, decompressed.
-set -euo pipefail
 W=$(realpath "${1:?workdir}")
 CFG=$(realpath "${2:?m2 config}")
 REPO=$(realpath "${3:?omarchy-ane repo}")

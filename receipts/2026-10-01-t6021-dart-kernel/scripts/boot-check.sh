@@ -1,10 +1,10 @@
 #!/bin/bash
 # DartKernel post-boot identity (read only). usage: boot-check.sh test|ctl|tun|none
-set -u
+set -euo pipefail
 want=${1:?test|ctl|tun|none}
 echo "== $(date -u +%FT%TZ) boot_id $(cat /proc/sys/kernel/random/boot_id) uname $(uname -r) up $(cut -d' ' -f1 /proc/uptime)"
 cat /proc/cmdline
-got=$(grep -o 'ane_dart_oneshot=[a-z]*' /proc/cmdline | cut -d= -f2)
+got=$(grep -o 'ane_dart_oneshot=[a-z]*' /proc/cmdline | cut -d= -f2 || true)
 echo "marker ${got:-none} (want $want)"
 echo "grubenv: [$(sudo -n grub-editenv /boot/grub/grubenv list | tr '\n' ' ')] $(sudo -n sha256sum /boot/grub/grubenv | cut -c1-16)"
 echo "apple_dart.ane_tunables $(cat /sys/module/apple_dart/parameters/ane_tunables 2>&1)"

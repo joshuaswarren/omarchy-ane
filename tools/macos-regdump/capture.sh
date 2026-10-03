@@ -1,4 +1,5 @@
 #!/bin/zsh
+set -euo pipefail
 # One-shot T6021 ANE capture on macOS 27. Run from the staged directory.
 #
 # First load of a user kext needs approval and a reboot. macOS 27 shows the

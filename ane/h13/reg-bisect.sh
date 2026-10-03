@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # reg-bisect.sh — one unproven read per insmod; identifies the T6001
 # ASCWRAP-class lethal register by which iteration survives.
 cd /var/tmp/ane-perf
