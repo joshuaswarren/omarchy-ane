@@ -217,6 +217,12 @@ static int ane_iommu_map_batch(struct ane_device *ane, struct ane_bo *bo,
 	}
 	sg_free_table(&sgt);
 
+	/* A short map would hand out a BO whose tail has no PTEs. */
+	if (mapped >= 0 && (size_t)mapped != size) {
+		iommu_unmap(ane->domain, bo->iova, mapped);
+		mapped = -EIO;
+	}
+
 	if (mapped < 0) {
 		dev_err(ane->dev, "iommu_map_sg failed at %#llx+%#zx: %zd\n",
 			bo->iova, size, mapped);
