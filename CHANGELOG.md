@@ -13,8 +13,10 @@
   `power/autosuspend_delay_ms` on the ANE platform device changes the delay,
   and `echo on > power/control` keeps the ANE powered. A write to the
   `reset` attribute and a file close now hold the device powered while they
-  run. See `receipts/2026-10-03-ane-autosuspend/README.md`. `ane_t6021` does
-  not change.
+  run. 32-bit (compat) ioctls go through the same command filter and power
+  reference as native ones. See
+  `receipts/2026-10-03-ane-autosuspend/README.md`. `ane_t6021` does not
+  change.
 
 ### Fixed
 
