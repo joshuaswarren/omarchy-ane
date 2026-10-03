@@ -162,7 +162,7 @@ W=1, `ane.ko` only (no `ane_t6021` input changes). Base is origin/main
   - A valid PTE outside the BO range stays.
   - No sanitizer report.
 
-## Hardware A/B protocol (T6001 jw16 lane, T8103 jwm1 lane)
+## Hardware A/B protocol (T6001 lane, T8103 lane)
 
 Each lane runs this inside its own pre-registered window, with its usual
 owner, guards and off-box console. `AGENTS.md` forbids loading a modified
@@ -198,8 +198,8 @@ P=/sys/module/ane/parameters/map_batch
 ```
 
 `tools/ane_cold_start.py` takes the same lock and checks the same gate
-itself for each run. On jw16, also hold `flock /tmp/m1-gpu.lock` for the
-`kprof` arm, because the GPU also maps through DARTs.
+itself for each run. On the T6001 lane, also hold `flock /tmp/m1-gpu.lock`
+for the `kprof` arm, because the GPU also maps through DARTs.
 
 0. Build on the lane against the running kernel's headers, and load:
 
