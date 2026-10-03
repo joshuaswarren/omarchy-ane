@@ -1,0 +1,131 @@
+{
+ "clean": [],
+ "boundary_text": [
+  "verifyProgramSection@0x4a234: textSection.buffer=0xe0000000 + size=0x80 exceeds maxAddr=0xe0000000 ('buffer address out of boundary, load_program failed')"
+ ],
+ "boundary_plus_missing": [
+  "verifyProgramSection@0x4a234: procedureSection.buffer=0xe0000000 + size=0x48 exceeds maxAddr=0xe0000000 ('buffer address out of boundary, load_program failed')",
+  "verifyProgram@4ba10: genericSection missing (valid bit0/buffer==0): '[No] Generic Section' (line 464)"
+ ],
+ "missing_generic": [
+  "verifyProgram@4ba10: genericSection missing (valid bit0/buffer==0): '[No] Generic Section' (line 464)"
+ ],
+ "missing_text": [
+  "verifyProgram@4ba50: textSection missing (valid bit0/buffer==0): '[No] TD Section' (line 468)"
+ ],
+ "missing_tdprop": [
+  "verifyProgram@4ba90: tdPropSection missing (valid bit0/buffer==0): '[No] TD Prop Section' (line 472)"
+ ],
+ "missing_operation": [
+  "verifyProgram@4bad0: operationSection missing (valid bit0/buffer==0): '[No] Operation Section' (line 476)"
+ ],
+ "missing_procedure": [
+  "verifyProgram@4bb10: procedureSection missing (valid bit0/buffer==0): '[No] Procedure Section' (line 480)"
+ ],
+ "missing_two_order": [
+  "verifyProgram@4ba10: genericSection missing (valid bit0/buffer==0): '[No] Generic Section' (line 464)",
+  "verifyProgram@4bad0: operationSection missing (valid bit0/buffer==0): '[No] Operation Section' (line 476)"
+ ],
+ "kernelprop_no_buffer": [
+  "verifyProgram@4bb70: '[X] kernelPropSection is valid but no buffer!' (line 511)"
+ ],
+ "kernel_valid_no_size": [
+  "verifyBAR assert@0xb38c2: kernelSection.size == 0 while valid"
+ ],
+ "generic_max_ane": [
+  "verifyGenericSection@0x4a438: maxAneUsed 2 != 1 ('[VERIFICATION] maxAneUsed %d :: H11 maxAneUsed should be %d!')"
+ ],
+ "generic_nbr_ne": [
+  "verifyGenericSection@0x4a444: nbrOfNe 17 > 0x10 ('Generic ANE[%d] nbrOfNe %d exceeds H11 max NE %d!')"
+ ],
+ "generic_total_buffers_zero": [
+  "verifyGenericSection@0x4a4d8: totalBufferNbr 0 outside 1..0x200",
+  "checkBarEachAneOp@0x4b4bc: operation[0] BAR[0] bufferIndex 0 matches no valid generic buffer"
+ ],
+ "generic_entry_invalid": [
+  "verifyGenericSection@0x4a554: buffer[0] valid bit0 clear",
+  "checkBarEachAneOp@0x4b4bc: operation[0] BAR[0] bufferIndex 0 matches no valid generic buffer"
+ ],
+ "generic_entry_index6": [
+  "verifyGenericSection@0x4a55c: buffer[0] bufferIndex 6 >= 6",
+  "checkBarEachAneOp@0x4b4bc: operation[0] BAR[0] bufferIndex 0 matches no valid generic buffer"
+ ],
+ "op_tot_0x81": [
+  "verifyOperationSection@0x4a7a4: tot 129 > 0x80",
+  "verifyOperationSection@0x4a738: 4+129*0x110 > size 0x118"
+ ],
+ "op_type_4": [
+  "verifyOperationSection@0x4a828: operation[0] opType 4 > 3"
+ ],
+ "op_td_range_straddle": [
+  "verifyDescriptors@0x4b104: OP[0] TD range 0:65535 straddles tdTotal 2"
+ ],
+ "op_nbr_ne": [
+  "verifyOperationSection@0x4a83c: operation[0] nbrOfNe 17 > 0x10"
+ ],
+ "op_nbars_0x21": [
+  "verifyOperationSection@0x4a84c: operation[0] nbrOfLocalbarSetup 33 > 0x20"
+ ],
+ "op_bar_index_0x20": [
+  "verifyOperationSection@0x4a860: operation[0] bar[0] index 32 >= 0x20",
+  "checkBarEachAneOp@0x4b444: operation[0] BAR[0] index 32 >= 0x20"
+ ],
+ "op_bar_no_match": [
+  "checkBarEachAneOp@0x4b4bc: operation[0] BAR[0] bufferIndex 5 matches no valid generic buffer"
+ ],
+ "op_bar_text_count": [
+  "checkBarEachAneOp@0x4b4e0: operation[0] BAR[0] bufferIndex 1 == textSection.count 1"
+ ],
+ "bar_kernel_index": [
+  "checkBarEachAneOp@0x4b458: operation[0] BAR[0] bufferIndex 2 == kernelSection.count 2",
+  "checkBarEachAneOp@0x4b4bc: operation[0] BAR[0] bufferIndex 2 matches no valid generic buffer"
+ ],
+ "proc_count_zero": [
+  "verifyProcedureSection@0x4ad4c: entry count == 0 (FAIL)"
+ ],
+ "proc_overlap_exceed": [
+  "verifyProcedureSection@0x4ad64: procedure[1] offset 0x20 overlaps previous end 0x48",
+  "verifyProcedureSection@0x4ad78: procedure[1] 0x20+0x30 > size 0x48"
+ ],
+ "kp_count_zero": [
+  "verifyKernelPropSection@0x4a5e8: entry count == 0 (FAIL)"
+ ],
+ "kp_overlap": [
+  "verifyKernelPropSection@0x4a600: kernelProp[1] offset 0x28 overlaps previous end 0x30"
+ ],
+ "kp_exceed": [
+  "verifyKernelPropSection@0x4a614: kernelProp[1] 0x30+0x10 > size 0x38"
+ ],
+ "tdprop_short": [
+  "verifyDescriptorPropSection@0x4af60: tdProp size 0x68 < 4+3*0x30"
+ ],
+ "tdprop_overlap": [
+  "verifyDescriptorPropSection@0x4afac: TD[1] offset 0x20 overlaps previous end 0x40"
+ ],
+ "tdprop_exceed_text": [
+  "verifyDescriptorPropSection@0x4afc0: TD[1] 0x40+0x50 > textSize 0x80"
+ ],
+ "tdprop_len_min": [
+  "verifyDescriptorPropSection@0x4afe8: TD[0] len 0x10 < min for TDE=0"
+ ],
+ "op_tot_zero": [
+  "verifyDescriptors@0x4b0b4: operation tot == 0 (FAIL)"
+ ],
+ "chain_mismatch": [
+  "verifyDescriptors@0x4b148: TD[0] (headerTID:TdPropTID:index)=(0:1:0)"
+ ],
+ "len_vs_nextsize": [
+  "verifyDescriptors@0x4b164: TD[1] len 0x40 != 4*prev NextSize(0xc)+4"
+ ],
+ "nextptr_mismatch": [
+  "verifyDescriptors@0x4b178: TD[1] offset 0x40 != prev NextPointer 0x50"
+ ],
+ "walk_past_table": [
+  "verifyDescriptors@0x4b120: prop[1] outside tdProp blob (range past table, spec section 6.9 quirk)"
+ ],
+ "text_size_zero": [
+  "verifyDescriptorPropSection@0x4afc0: TD[0] 0x0+0x40 > textSize 0x0",
+  "verifyDescriptorPropSection@0x4afc0: TD[1] 0x40+0x34 > textSize 0x0",
+  "verifyBAR assert@0xb38a8: textSection.size == 0"
+ ]
+}
