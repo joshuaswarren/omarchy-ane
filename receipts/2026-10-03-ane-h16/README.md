@@ -123,8 +123,9 @@ tunables bytes from the iBoot preload instead of replaying values.
   refuses after the CPU is released.
 - Builds: `josh/ane-driver-aurora` tree (f227145f50e4), W=1, rc=0,
   zero warnings, `ane_h16.ko` sha256 `086d2263…` vermagic
-  7.1.12-ARCH+; M2 3-1 tree (macstudio ALARM chroot, niced) — see the
-  artifacts log for that hash. The overlay compiles with dtc 1.7.2 and
+  7.1.12-ARCH+; M2 3-1 tree (macstudio ALARM chroot, niced), W=1,
+  rc=0, `ane_h16.ko` sha256 `09f2337e…` vermagic 7.1.13-3-1-ARCH, no
+  modinfo alias (no autoload). The overlay compiles with dtc 1.7.2 and
   applies with fdtoverlay to an aurora `t8132-j604.dtb` (phandles
   resolve; artifacts log `overlay-apply`).
 
