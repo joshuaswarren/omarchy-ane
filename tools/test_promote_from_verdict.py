@@ -305,8 +305,9 @@ print("promote_from_verdict test: release plan ok")
 # and released -- so the release must cover the tag range, not the run, and
 # must tag the release commit (the promotion merge carried no CHANGELOG move).
 work = make_work()
-git = lambda *a: subprocess.run(["git", "-C", str(work), *a], check=True,
-                                capture_output=True, text=True).stdout.strip()
+git = lambda *a: subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
+                                 "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", *a],
+                                check=True, capture_output=True, text=True).stdout.strip()
 git("tag", "v0.4.0")
 for msg in ("PROMOTE: t6020 ANE -> default-on (row 3c9389040f51; intree)",
             "PROMOTE: t6000 ANE -> default-on (row 6eb94f49985b; intree)"):
@@ -339,8 +340,11 @@ subprocess.run(["git", "-C", str(bad), "tag", "v0.4.0"], check=True)
 text = (bad / "CHANGELOG.md").read_text()
 head, mark, rest = text.partition("## Unreleased\n\n")
 (bad / "CHANGELOG.md").write_text(head + rest.replace("## 0.4.2", "## Unreleased\n\n## 0.4.2", 1))
-subprocess.run(["git", "-C", str(bad), "commit", "-qam", "misplaced"], check=True)
-subprocess.run(["git", "-C", str(bad), "commit", "-q", "--allow-empty", "-m",
+subprocess.run(["git", "-C", str(bad), "commit", "-qam", "misplaced",
+                "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com"], check=True)
+subprocess.run(["git", "-C", str(bad), "commit", "-q", "--allow-empty", "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", "-m",
                 "PROMOTE: t8112 ANE -> default-on (row deadbeef1234; intree)"], check=True)
 subprocess.run(["git", "-C", str(bad), "push", "-q", "origin", "main"], check=True)
 p = run(["release", "--verdict-file", PROMOTE], bad)
