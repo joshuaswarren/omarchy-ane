@@ -46,6 +46,13 @@ supersedes it: its tarball carries the 0.4.3 and 0.4.4 notes.
   change (#79), the T6020 firmware fetch at install, and the development-only
   changes (#108, #109).
 
+### Research
+
+- `docs/ultra-die1.md`: a design for the die-1 ANE of T6002 (M1 Ultra) and
+  T6022 (M2 Ultra), from a read-only capture on one M1 Ultra under macOS and
+  the ADT decode of both Ultra boards (`receipts/2026-10-03-ultra-die1`).
+  Design only, no code: no Ultra runs Linux today.
+
 ### Known limits
 
 - T6000 and T6020 are on by default from one passing community row each.

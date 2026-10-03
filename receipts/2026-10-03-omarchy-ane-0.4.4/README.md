@@ -1,6 +1,6 @@
 # omarchy-ane 0.4.4: release receipt
 
-0.4.4 is a cleanup release on top of main `89c2088` (#117). It changes no
+0.4.4 is a cleanup release on top of main `4c41fa9`. It changes no
 driver or libane code. It fixes the packaging defects of v0.4.3, including
 the promotion release step, which #117 left without a version heading. The
 project keeps no version number in the tree: the recipe passes the package
@@ -21,8 +21,9 @@ commit, made by hand, not by the promotion workflow.
 
 ## What changed since v0.4.3
 
-`git log --first-parent v0.4.3..89c2088`: `fd97719` (the 0.4.3 CHANGELOG move)
-and #117. The release PR adds two code fixes to the promotion tools:
+`git log --first-parent v0.4.3..4c41fa9`: `fd97719` (the 0.4.3 CHANGELOG move),
+#117, and `4c41fa9` (docs only: `docs/ultra-die1.md` and its receipt). The
+release PR adds two code fixes to the promotion tools:
 
 - `release()` in `tools/promote_from_verdict.py` writes the `## X.Y.Z (date)`
   heading when Unreleased moves. As merged in #117 it rebuilt the file as
@@ -40,7 +41,7 @@ and #117. The release PR adds two code fixes to the promotion tools:
 
 ## The bytes that the hardware gates ran
 
-- `git diff v0.4.3..89c2088 -- ane libane dkms.conf` is empty, and the
+- `git diff v0.4.3..4c41fa9 -- ane libane dkms.conf` is empty, and the
   release PR changes none of these paths. So `ane.ko`, `ane_t6021.ko` and
   libane are the bytes of v0.4.3.
 - The module sources (`dkms.conf`, `ane/Makefile`, `ane/src`, `ane/include`,
@@ -49,7 +50,7 @@ and #117. The release PR adds two code fixes to the promotion tools:
   `ane.ko` srcversion `B4AE691E569A2BBD37E18E3` and `ane_t6021.ko` srcversion
   `59494CBC56F28ED8D1122C6`; the v0.4.2 receipt has the hardware runs of
   those modules on T8103, T6001 and T6021.
-- libane: `git diff 471c03d..89c2088 -- libane` is empty. `471c03d` is the
+- libane: `git diff 471c03d..4c41fa9 -- libane` is empty. `471c03d` is the
   #111 head that ran on T8103 and T6001 (receipt
   `receipts/2026-10-03-libane-no-staging/README.md`). On T6021, libane and
   `ane-run` were built from the v0.4.3 tree and ran the smoke (20 of 20
