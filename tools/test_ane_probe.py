@@ -462,6 +462,22 @@ def test_bad_table_value_does_not_blank_the_document():
         assert any(u.startswith("soc_table: AttributeError") for u in doc["unreadable"]), doc["unreadable"]
 
 
+def test_enveloped_containers():
+    """validate_ane_soc.py allows a whole list or object as one {v, src} leaf."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = fixture(tmp, "t8103")
+        tables = Path(tmp, "tables")
+        tables.mkdir()
+        (tables / "t8103.json").write_text(json.dumps({"soc": "t8103", "state": "data-only", "boards": [leaf("apple,j293")],
+            "ane": {"compatible": leaf("apple,t8103-ane"),
+                    "reg": leaf([{"base": "0x26bc04000", "size": "0x30000"}]),
+                    "interrupts": {"v": None, "reason": "not read"}},
+            "dart": leaf({"compatible": "apple,t8103-dart"})}))
+        st = run_probe(root, tables, "--max-kib", "0")["soc_table"]
+        assert st["compared"] == 5, st
+        assert st["dt_vs_table"] == [{"field": "ane.reg[0].size", "dt": "0x24000", "table": "0x30000"}], st
+
+
 def test_dmesg_filter():
     count, lines = probe.dmesg_matches(
         "[ 1.0] ane_t6021 284000000.ane: firmware booted\n"
