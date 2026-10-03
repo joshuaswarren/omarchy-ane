@@ -7,7 +7,7 @@ calls this; every step is also runnable by hand.
 
   promote_from_verdict.py propose  --verdict-file verdict.json [--dry-run]
   promote_from_verdict.py gate     --verdict-file verdict.json [--dry-run]
-  promote_from_verdict.py release  --chip t8112 --merge-sha <sha> [--verdict-file F] [--dry-run]
+  promote_from_verdict.py release  [--verdict-file F] [--dry-run]
   promote_from_verdict.py aurora-plan --tree LINUX --out PLAN [--verdict-file F]
   promote_from_verdict.py aurora-pr   --plan PLAN [--verdict-file F] [--dry-run]
 
@@ -40,9 +40,15 @@ promotes), and rows that are not judged never count. Then it squash-merges via
 REST; otherwise the run fails and the next proposal supersedes the PR.
 
 release: compute the next patch version from the latest v* tag, move the
-CHANGELOG Unreleased section under "## X.Y.Z (UTC date)", push that to main,
-tag the merge commit, publish the GitHub release naming the chip and the row
-shas, and print the source-tarball sha256 for the job summary.
+CHANGELOG Unreleased section under "## X.Y.Z (UTC date)" (Unreleased stays the
+first section), push that to main, tag that release commit (so the tag carries
+its own release notes), and publish the GitHub release. The body lists every
+promotion squash-merged on main since the latest tag -- an earlier run can
+merge one promotion and fail on the next, so the tag range, not the run, is
+the unit -- each with its verdict, chip, row shas, driver_source and merge
+sha, plus the checker artifact. The source-tarball sha256 goes to the job
+summary (ANE_RELEASE_TARBALL_URL overrides the archive URL, for offline
+runs).
 
 aurora-plan and aurora-pr: for every chip whose targets include aurora-dt (a
 PROMOTE, or an ON chip, with a passing row that ran the kernel's own driver,
@@ -204,7 +210,11 @@ def read_block(body):
 
 
 def commit_note(c):
-    return "row " + (",".join(r["row_sha"] for r in c["rows"] if r["judged"]) or "none")
+    """'row <sha>[,<sha>][; <source>[,<source>]]' over the judged rows."""
+    rows = [r for r in c["rows"] if r["judged"]]
+    shas = ",".join(r["row_sha"] for r in rows) or "none"
+    sources = ",".join(sorted({r[DRIVER_SOURCE] for r in rows if r.get(DRIVER_SOURCE)}))
+    return "row " + shas + (f"; {sources}" if sources else "")
 
 
 def propose(verdict):
@@ -231,12 +241,17 @@ def propose(verdict):
         sh("git", "checkout", "-B", branch, "origin/main")
         sh(sys.executable, str(REPO / "tools/promote_chip.py"), "--chip", c["chip"],
            "--to", to, "--apply", "--note", commit_note(c))
-        changed = sh("git", "status", "--porcelain").strip()
+        # tracked files only: untracked build output (a __pycache__ left by an
+        # earlier step of the same runner) must never stage; `add -A` shipped
+        # one in v0.4.3. A flip renames nothing, so line[3:] is the path (the
+        # two status letters and their separator).
+        changed = [l for l in sh("git", "status", "--porcelain", "--untracked-files=no").splitlines()
+                   if l.strip()]
         if not changed:
             print(f"propose: {c['chip']} is already {to} on main; nothing to propose")
             sh("git", "checkout", "main")
             continue
-        sh("git", "add", "-A")
+        sh("git", "add", "--", *[line[3:] for line in changed])
         sh("git", "-c", "user.name=omarchy-ane-automation",
            "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
            "commit", "-m", f"{c['verdict']}: {c['chip']} ANE -> {to} ({commit_note(c)})")
@@ -308,45 +323,77 @@ def next_version():
     tags = [t for t in sh("git", "tag", "--list", "v*").split() if t]
     latest = max(tags, key=lambda t: [int(x) for x in t[1:].split(".")]) if tags else "v0.0.0"
     x, y, z = (int(v) for v in latest[1:].split("."))
-    return f"v{x}.{y}.{z + 1}"
+    return latest, f"v{x}.{y}.{z + 1}"
 
 
-def release(verdict, chip, merge_sha):
+PROMO_SUBJECT = re.compile(r"^(PROMOTE|REVERT): (\S+) ANE -> (default-on|opt-in) "
+                           r"\(row ([0-9a-f,]+|none)(?:; ([a-z,]+))?\)$")
+
+
+def merged_promotions(since):
+    """Every promotion squash-merge on origin/main since tag `since`, oldest
+    first: {sha, verdict, chip, to, rows, sources}. The release reports the
+    tag range, not the run: an earlier run can merge one promotion and fail on
+    the next, and the release that finally runs must cover both."""
+    log = sh("git", "log", "--format=%H %s", f"{since}..origin/main")
+    out = []
+    for line in log.splitlines():
+        sha, _, subject = line.partition(" ")
+        m = PROMO_SUBJECT.match(subject)
+        if m:
+            out.append({"sha": sha, "verdict": m[1], "chip": m[2], "to": m[3],
+                        "rows": m[4], "sources": m[5] or ""})
+    out.reverse()
+    return out
+
+
+def release(verdict):
     slug = repo_slug()
-    c = chip_verdict(verdict, chip)
-    version = next_version() if not DRY else "vX.Y.Z"
+    latest, version = ("vX.Y-1", "vX.Y.Z") if DRY else next_version()
+    promos = [] if DRY else merged_promotions(latest)
+    if not DRY and not promos:
+        raise Fail(f"release: no promotion commit on origin/main since {latest}")
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     heading = f"## {version[1:]} ({date})"
     changelog = (REPO / "CHANGELOG.md").read_text()
-    if "## Unreleased" not in changelog:
+    head, mark, rest = changelog.partition("## Unreleased")
+    if not mark:
         raise Fail("CHANGELOG.md has no Unreleased section")
-    head, rest = changelog.split("## Unreleased", 1)
-    section, tail = rest.split("\n## ", 1) if "\n## " in rest else (rest, "")
-    moved = f"{head}{heading}{section}\n\n## Unreleased\n\n## {tail}" if tail \
-        else f"{head}{heading}{section}\n\n## Unreleased\n"
+    if re.search(r"(?m)^## ", head):
+        raise Fail("CHANGELOG.md: Unreleased must be the first section")
+    section, sep, tail = rest.partition("\n## ")
+    moved = f"{head}## Unreleased\n\n{heading}{section}" + (f"\n\n## {tail}" if sep else "\n")
     print(f"release: CHANGELOG Unreleased moves under {heading}")
-    if not DRY:
-        (REPO / "CHANGELOG.md").write_text(moved)
-        sh("git", "add", "CHANGELOG.md")
-        sh("git", "-c", "user.name=omarchy-ane-automation",
-           "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
-           "commit", "-m", f"Release {version[1:]}: {chip} ANE")
-        sh("git", "push", "origin", "HEAD:main")
-        sh("git", "tag", version, merge_sha)
-        sh("git", "push", "origin", version)
-        notes = (f"{chip} ({MARKETING.get(chip, chip)}) ANE release {version[1:]}.\n\n"
-                 f"Verdict: {c['verdict']}. Judged rows: {commit_note(c)}\n"
-                 f"Checker artifact: https://github.com/{slug}/actions/runs/"
-                 f"{os.environ.get('GITHUB_RUN_ID', '')}")
-        gh(f"repos/{slug}/releases", "POST", {"tag_name": version, "name": version, "body": notes})
-        tarball = urllib.request.urlopen(f"https://github.com/{slug}/archive/refs/tags/{version}.tar.gz",
-                                         timeout=60).read()
-        digest = hashlib.sha256(tarball).hexdigest()
-        print(f"release: published {version} for {chip}; tarball sha256 {digest}")
-        summary = os.environ.get("GITHUB_STEP_SUMMARY")
-        if summary:
-            with open(summary, "a") as f:
-                f.write(f"`{version}` {chip}: tarball sha256 `{digest}`\n")
+    lines = [f"- {p['verdict']}: {p['chip']} ({MARKETING.get(p['chip'], p['chip'])}) ANE -> {p['to']}, "
+             f"rows {p['rows']}" + (f", driver_source {p['sources']}" if p["sources"] else "")
+             + f", merged as {p['sha'][:12]}" for p in promos]
+    notes = (f"Promotions in {version[1:]} (every promotion merged since {latest}):\n\n"
+             + "\n".join(lines)
+             + f"\n\nThe CHANGELOG section {version[1:]} has the details. Checker artifact: "
+               f"https://github.com/{slug}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}")
+    print(notes)
+    if DRY:
+        return
+    (REPO / "CHANGELOG.md").write_text(moved)
+    sh("git", "add", "CHANGELOG.md")
+    sh("git", "-c", "user.name=omarchy-ane-automation",
+       "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+       "commit", "-m", f"Release {version[1:]}: {', '.join(p['chip'] for p in promos)} ANE")
+    sh("git", "push", "origin", "HEAD:main")
+    # the tag goes on the release commit, so the tagged tree carries its own
+    # release notes and tarball
+    sh("git", "tag", version)
+    sh("git", "push", "origin", version)
+    gh(f"repos/{slug}/releases", "POST", {"tag_name": version, "name": version, "body": notes})
+    url = os.environ.get("ANE_RELEASE_TARBALL_URL") \
+        or f"https://github.com/{slug}/archive/refs/tags/{version}.tar.gz"
+    tarball = urllib.request.urlopen(url, timeout=60).read()
+    digest = hashlib.sha256(tarball).hexdigest()
+    print(f"release: published {version} ({len(promos)} promotion(s)); tarball sha256 {digest}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as f:
+            f.write(f"`{version}` ({', '.join(p['chip'] for p in promos)}): tarball sha256 `{digest}`\n")
 
 
 def aurora_texts(c, p, base, pr_url="the new PR"):
@@ -515,8 +562,6 @@ def main(argv=None):
     ap.add_argument("mode", choices=("propose", "gate", "release", "aurora-plan", "aurora-pr"))
     ap.add_argument("--verdict-file", help="verdict JSON file ('-' is stdin); default: fresh --remote verdict")
     ap.add_argument("--pr", type=int, help="gate: the auto-promotion PR number to gate and merge")
-    ap.add_argument("--chip", help="release: the chip that merged")
-    ap.add_argument("--merge-sha", help="release: the squash-merge commit to tag")
     ap.add_argument("--tree", type=Path, help=f"aurora-plan: a checkout of {AURORA} {AURORA_BASE}")
     ap.add_argument("--out", type=Path, help="aurora-plan: the plan file to write")
     ap.add_argument("--plan", type=Path, help="aurora-pr: the plan file aurora-plan wrote")
@@ -539,9 +584,7 @@ def main(argv=None):
             ap.error("aurora-pr needs --plan")
         aurora_pr(verdict, args.plan)
     else:
-        if not args.chip or not args.merge_sha:
-            ap.error("release needs --chip and --merge-sha")
-        release(verdict, args.chip, args.merge_sha)
+        release(verdict)
     return 0
 
 
