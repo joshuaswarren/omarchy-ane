@@ -24,7 +24,7 @@ This b0 record uses only data that was already on the lab host. No IPSW member o
 | aurora-wip T8152 board DT | aurora-silicon/linux `aurora-wip` 9845b1b9a313, `arch/arm64/boot/dts/apple/t8152-j873g.dts` (blob `6b5e1403`) | `9f56c85ced3ba443f7b62f31c92d284aa25f82ee8f2f9e86bf5ab0f2be904e00` |
 | Linux DART driver | omarchy-linux 57f8f6deaa3a and aurora-ane-wt bc41726b524d, `drivers/iommu/apple-dart.c` | `f48a05cf…`, `8978b46a…` |
 
-The four firmware member hashes equal the predecessor's IPSW member hashes (`data/ane-soc/t8152.json` S4, S5, S7). Three notebook scripts made the measurements: `h18_fw_names.py` (IM4P fields, Mach-O header, section names, `_rtk_patchbay` tags and lengths, keyword identifier names; no values, no addresses), `h18_layout.py` (engine-relative arithmetic on the ADT tuples) and `irq_pairs.py` (ANE/DART interrupt pairing over the ADT summary). Their outputs are `fw-names.json`, `layout.txt` and `irq_pairs.txt` in notebook `artifacts/AneH18Driver2/h18-b0/`, listed in its `SHA256SUMS`.
+The four firmware member hashes equal the predecessor's IPSW member hashes: `data/ane-soc/t8152.json` S4, S5 and S7 for ANE0, ANE1 and Selene, and `data/ane-soc/t6050.json` F1 for Hyperion. Three notebook scripts made the measurements: `h18_fw_names.py` (IM4P fields, Mach-O header, section names, `_rtk_patchbay` tags and lengths, keyword identifier names; no values, no addresses), `h18_layout.py` (engine-relative arithmetic on the ADT tuples) and `irq_pairs.py` (ANE/DART interrupt pairing over the ADT summary). Their outputs are `fw-names.json`, `layout.txt` and `irq_pairs.txt` in notebook `artifacts/AneH18Driver2/h18-b0/`, listed in its `SHA256SUMS`.
 
 ## T8152: what is known
 
@@ -118,7 +118,7 @@ Missing for Linux: everything at run time. The ANE belongs to the exclave on iOS
 omarchy-ane-probe --pretty --max-kib 0
 ```
 
-That output confirms the board (j873g), the SoC and the kernel. It cannot supply any entry of the table above. After a base DT gets ANE, DART and pmgr nodes, the same command reports those nodes and compares them with `data/ane-soc/t8152.json` (`soc_table`). That is the b1 acceptance check for the DT half.
+That output confirms the board (j873g), the SoC and the kernel. It cannot supply any entry of the table above. Its `soc_table` section cannot check T8152 either: it compares only `boards` and the `ane`, `dart` and `mailbox` objects of the data file (`tools/omarchy-ane-probe:397-417`), while `t8152.json` keeps its ANE and DART facts under flat keys (`ane_compatible`, `ane_reg`, `dart_regs`, …), and the probe's board string is `apple,j873g` (`:445`) against the table's `j873g`. So `soc_table` becomes the DT acceptance check for b1 only after the record moves to that shape and the board formats agree (b1 prerequisite).
 
 ### What the owner can supply from macOS (read-only, no sudo, no network)
 

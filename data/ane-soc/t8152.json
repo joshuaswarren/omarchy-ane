@@ -229,7 +229,7 @@
       "src": "S4"
     },
     "power_control_names": {
-      "v": "CPowerControlServiceAneH18g / PowerControl_H18g. InitPMUBaseAddress is present and absent from the 27.0 Selene payload (S7); a log string marks SetPMUBaseAddress deprecated.",
+      "v": "CPowerControlServiceAneH18g / PowerControl_H18g. The H18 payloads contain InitPMUBaseAddress; the 27.0 Selene payload (S7) does not. A log string in the H18 payloads marks SetPMUBaseAddress deprecated.",
       "src": "S4"
     },
     "rtkit_release": {
