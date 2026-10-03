@@ -159,8 +159,8 @@ assert pc.verdict([not_installed]) == {}
 # The machine verdict: one chip object per verdict class.
 jv = pc.json_verdict([good, h13_good])
 optj = next(c for c in jv['chips'] if c['chip'] == OPT)
-assert optj == {'chip': OPT, 'state': 'opt-in', 'verdict': 'PROMOTE',
-                'rows': [{'row_sha': '010000000000', 'judged': True, 'passed': True,
+assert optj == {'chip': OPT, 'state': 'opt-in', 'verdict': 'PROMOTE', 'targets': ['overlay'],
+                'rows': [{'row_sha': '010000000000', 'judged': True, 'driver_source': 'dkms', 'passed': True,
                           'reasons': []}]}, optj
 jchips = pc.json_verdict(on)['chips']
 specj = next(c for c in jchips if c['chip'] == spec)
@@ -168,17 +168,51 @@ assert specj['verdict'] == 'ON' and specj['state'] == 'on', specj
 oa(on[0])['check'].update(exit=1, status='FAILED')
 specj = next(c for c in pc.json_verdict(on)['chips'] if c['chip'] == spec)
 assert specj['verdict'] == 'REVERT' and specj['rows'][0]['passed'] is False, specj
+assert specj['targets'] == ['overlay'], specj
 conflict_row = copy.deepcopy(good)
 oa(conflict_row)['smoke']['errors'] = 1
 optj = next(c for c in pc.json_verdict([good, conflict_row])['chips'] if c['chip'] == OPT)
-assert optj['verdict'] == 'CONFLICT', optj
+assert optj['verdict'] == 'CONFLICT' and optj['targets'] == [], optj
 unjudged = next(c for c in pc.json_verdict([legacy])['chips'] if c['chip'] == OPT)
-assert unjudged['verdict'] == 'STAY' and unjudged['rows'] == [
-    {'row_sha': '010000000000', 'judged': False, 'passed': False, 'reasons': []}], unjudged
+assert unjudged['verdict'] == 'STAY' and unjudged['targets'] == [] and unjudged['rows'] == [
+    {'row_sha': '010000000000', 'judged': False, 'driver_source': None, 'passed': False, 'reasons': []}], unjudged
 t6000 = next(c for c in pc.json_verdict([not_installed])['chips'] if c['chip'] == 't6000')
 # an uninstalled row is never judged: on an on-by-default chip the chip verdict
 # is ON (nothing judged, nothing to revert), elsewhere STAY
 assert t6000['verdict'] == ('ON' if 't6000' in pc.ON else 'STAY'), t6000
-assert t6000['rows'] == [{'row_sha': 'a994fe80c994', 'judged': False,
+assert t6000['rows'] == [{'row_sha': 'a994fe80c994', 'judged': False, 'driver_source': 'dkms',
                           'passed': False, 'reasons': []}], t6000
+
+# In-tree rows (driver_source=intree: the kernel's own driver, aurora-silicon/
+# linux#155) count exactly like dkms rows; a passing one adds the aurora-dt
+# target to PROMOTE. A row without the field is a legacy dkms row, and
+# driver_source none (no driver for the row's kernel) is not judged.
+intree = row(11)
+oa(intree)['driver_source'] = 'intree'
+assert pc.driver_source(oa(intree)) == 'intree' and pc.driver_source(oa(good)) == 'dkms'
+assert pc.judged(intree) and pc.failures(intree) == []
+v = pc.verdict([intree])[OPT]
+assert v['promote'] and v['intree'] == ['0b0000000000'] and pc.targets(v) == ['overlay', 'aurora-dt'], v
+assert pc.targets(pc.verdict([good, intree])[OPT]) == ['overlay', 'aurora-dt']
+bad_intree = copy.deepcopy(intree)
+oa(bad_intree)['smoke']['sha256'][3] = '0' * 64
+v = pc.verdict([good, bad_intree])[OPT]
+assert v['conflict'] and not v['promote'] and pc.targets(v) == [], v
+v = pc.verdict([bad_intree])[OPT]
+assert not v['promote'] and v['needs'] == ['one passing row'] and pc.targets(v) == [], v
+no_driver = row(12)
+oa(no_driver)['driver_source'] = 'none'
+oa(no_driver)['check'].update(exit=1, status='FAILED')
+assert not pc.judged(no_driver) and dict(pc.unattempted([no_driver])) == {OPT: 1}
+assert pc.verdict([no_driver, intree])[OPT]['promote']
+# A default-on chip reverts on its latest judged row, in-tree or not.
+on_rows = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2)]
+oa(on_rows[0])['driver_source'] = 'intree'
+assert pc.targets(pc.verdict(on_rows)[spec]) == []
+oa(on_rows[0])['dmesg_faults'] = ['[ 9.0] ane 26bc04000.ane: command timed out']
+v = pc.verdict(on_rows)[spec]
+assert v['revert'] and pc.targets(v) == ['overlay'] and v['intree'] == [], v
+optj = next(c for c in pc.json_verdict([intree])['chips'] if c['chip'] == OPT)
+assert optj['verdict'] == 'PROMOTE' and optj['targets'] == ['overlay', 'aurora-dt'], optj
+assert optj['rows'][0]['driver_source'] == 'intree', optj
 print('test_promotion_check: ok')

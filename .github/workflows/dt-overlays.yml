@@ -40,6 +40,11 @@ on:
       - tools/promote_chip.py
       - tools/test_promotion_check.py
       - tools/test_promote_chip.py
+      - tools/promote_from_verdict.py
+      - tools/test_promote_from_verdict.py
+      - tools/aurora_dt.py
+      - tools/test_aurora_dt.py
+      - tools/test_ane_intree.py
       - tools/test_ane_smoke.py
       - tools/omarchy-ane-probe
       - tools/test_ane_probe.py
@@ -72,6 +77,11 @@ on:
       - tools/promote_chip.py
       - tools/test_promotion_check.py
       - tools/test_promote_chip.py
+      - tools/promote_from_verdict.py
+      - tools/test_promote_from_verdict.py
+      - tools/aurora_dt.py
+      - tools/test_aurora_dt.py
+      - tools/test_ane_intree.py
       - tools/test_ane_smoke.py
       - tools/omarchy-ane-probe
       - tools/test_ane_probe.py
@@ -113,6 +123,9 @@ jobs:
           python3 tools/test_t8112_kit.py
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
           python3 tools/test_promotion_check.py
+          python3 tools/test_ane_intree.py
+          python3 tools/test_aurora_dt.py
+          python3 tools/test_promote_from_verdict.py
           python3 tools/test_ane_smoke.py
           python3 tools/test_ane_probe.py
           python3 tools/test_dkms_exclusive.py

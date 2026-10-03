@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # omarchy-ane-check: report whether the Apple Neural Engine driver is ready.
 #
-#   omarchy-ane-check              check the running kernel: the SoC, the ANE
+#   omarchy-ane-check              check the running kernel: the SoC, where
+#                                  m1n1's device trees come from (dtbs_source),
+#                                  whose driver it runs (driver_source), the ANE
 #                                  device-tree node, the driver built, loaded,
 #                                  bound, and the /dev/accel node. On T602x the
 #                                  driver is ane_t6021, and it also checks the
@@ -22,6 +24,12 @@
 # Exit 0 when every check passes, 1 when a check fails, 2 on bad usage.
 set -u
 shopt -s nullglob
+
+# The community collector's vocabulary (omarchy-mlx scripts/collect_deep.py):
+# it records driver_source and dtbs_source, and tools/promotion_check.py judges
+# driver_source. omarchy-ane-dt status owns the dtbs_source line and statement.
+DRIVER_SOURCE=driver_source
+INTREE_KERNEL="userspace + smoke + firmware fetch only; do not install omarchy-ane-dkms"
 
 root=""
 [[ ${1:-} == --root ]] && { root=${2:?--root needs a directory}; shift 2; }
@@ -81,20 +89,57 @@ fi
 mod=ane
 [[ $soc == t602? || $soc == t8112 ]] && mod=ane_t6021
 dtool=$(tool omarchy-ane-dt)
+dtstatus=""
+[[ -z $dtool ]] || dtstatus=$("$dtool" status ${root:+--root "$root"} 2>/dev/null)
+
+# dtbs_source: kernel when DTBS= in /etc/default/update-m1n1 makes m1n1 boot
+# the kernel's own device trees, so no overlay or opt-in key reaches it.
+dtbs=$(sed -n 's/^dtbs_source=//p' <<<"$dtstatus")
+[[ -z $dtbs ]] || echo "  dtbs_source=$dtbs"
+
+# driver_source: whose $mod this kernel runs. intree: the kernel's own, built
+# in or under kernel/ (kernel/drivers/accel/ane); dkms: another file,
+# omarchy-ane-dkms's under updates/dkms; none: no $mod for this kernel. A
+# loaded $mod counts by srcversion, so a DKMS copy installed over a loaded
+# in-tree driver reads intree until the reboot.
+mods=$root/usr/lib/modules/$kver
+own=("$mods"/kernel/drivers/accel/ane/"$mod".ko*)
+file=$(modinfo -b "${root:-/}" -k "$kver" -F filename "$mod" 2>/dev/null)
+grep -qx "kernel/drivers/accel/ane/$mod.ko" "$mods/modules.builtin" 2>/dev/null && own=("(builtin)") file="(builtin)"
+live=$(cat "$root/sys/module/$mod/srcversion" 2>/dev/null)
+for f in "${own[@]}"; do
+  [[ -n $live && $(modinfo -F srcversion "$f" 2>/dev/null) == "$live" ]] && file=$f
+done
+case $file in
+  "") src=none ;;
+  "(builtin)"|*/kernel/*) src=intree ;;
+  *) src=dkms ;;
+esac
+line="  $DRIVER_SOURCE=$src${file:+ ($mod: $file)}"
+(( ${#own[@]} )) && line+="; in-tree kernel: $INTREE_KERNEL"
+echo "$line"
+
 case $soc in
   t8103|t6001|t6021|"") ;;
   t6000|t6002|t6020|t6022|t8112)
-    echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in."
-    steps=("echo ane-$soc | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in")
-    [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
-    steps+=("sudo omarchy-ane-dt apply" "sudo update-m1n1" "sudo reboot")
+    steps=()
+    if [[ $dtbs == kernel* ]]; then
+      echo "UNTESTED SoC: $soc. $mod has not run on it. ${dtbs#kernel: }."
+      [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
+      steps+=("boot a kernel whose own device tree enables the $soc ANE node")
+    else
+      echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in."
+      steps+=("echo ane-$soc | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in")
+      [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
+      steps+=("sudo omarchy-ane-dt apply" "sudo update-m1n1" "sudo reboot")
+    fi
     echo "  To bring the chip up:"
     for i in "${!steps[@]}"; do printf '    %d. %s\n' "$((i + 1))" "${steps[$i]}"; done
     echo "  Then, from an omarchy-mlx checkout, when the machine is idle (load1 < 0.5 and PSI cpu avg10 0.00; no fixed uptime), submit a row:"
     echo "    python3 scripts/collect_deep.py --ane-smoke --submit"
     echo "  One passing judged row promotes the chip. tools/promotion_check.py prints the verdict." ;;
   *)
-    if [[ -n $dtool ]] && "$dtool" status ${root:+--root "$root"} 2>/dev/null | grep -qx "data-only (no driver): $soc"; then
+    if grep -qx "data-only (no driver): $soc" <<<"$dtstatus"; then
       echo "DATA-ONLY SoC: $soc (no driver yet)"
     else
       echo "UNTESTED SoC: $soc"
@@ -127,15 +172,18 @@ for f in "$dt"/ane*@*/compatible "$dt"/*/ane*@*/compatible; do
 done
 # Where the node comes from: omarchy-ane-dt status compares the running
 # kernel's board device tree with omarchy-ane's overlay.
-origin=""
-[[ -z $dtool ]] || origin=$("$dtool" status ${root:+--root "$root"} 2>/dev/null | sed -n 's/.* source=\([a-z]*\) .*/\1/p')
+origin=$(sed -n 's/.* source=\([a-z]*\) .*/\1/p' <<<"$dtstatus")
 if [[ ! -d $dt ]]; then
   bad "no device tree: this is not an Apple Silicon Linux system"; finish
 elif [[ -z $compat ]]; then
   case $origin in
     kernel) bad "no ANE node in the running device tree, but the kernel's DTB has one. m1n1 has an older device tree. Run: sudo update-m1n1, then reboot." ;;
     overlay) bad "no ANE node in the running device tree, but the omarchy-ane overlay has one. m1n1 has an older device tree. Run: sudo update-m1n1, then reboot." ;;
-    *) bad "no ANE node: neither the kernel's DTB nor the omarchy-ane overlay has one. Run: sudo omarchy-ane-dt apply" ;;
+    *) if [[ $dtbs == kernel* ]]; then
+         bad "no ANE node in the running device tree, and ${dtbs#kernel: }"
+       else
+         bad "no ANE node: neither the kernel's DTB nor the omarchy-ane overlay has one. Run: sudo omarchy-ane-dt apply"
+       fi ;;
   esac
   finish
 fi
