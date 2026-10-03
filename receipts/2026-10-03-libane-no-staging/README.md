@@ -39,11 +39,11 @@ program load no longer keeps a staging buffer:
   `__ane_init` signature unchanged. The ABI 2 (T6021) `ane_m2_open` path is
   untouched.
 - Fallback and trace: `ANE_LOAD_STAGED=1` (unset/empty/`0` = direct) restores
-  the staged path verbatim for A/B. `ANE_TRACE_TIMING` stage names: direct
-  path uses `bo_init`, `bo_mmap`, `model_read` (payload into the BO,
-  `bytes=anec->size`), `bind_check`, `copy` (`td_size`), `init_total`;
-  staged path keeps its existing names (`model_read`, `bind_check`, `copy`
-  at `size+td_size`). tools/ane_cold_start.py parses stages generically.
+  the staged path verbatim for A/B. Direct `ANE_TRACE_TIMING` stages are
+  `model_header`, `model_map`, `model_map_copy` (or `model_pread_fallback`),
+  `model_zero_tail`, `bind_check`, `copy`, and `init_total`; BO stages remain
+  unchanged. Staged path keeps `model_read`, `bind_check`, and `copy`.
+  `tools/ane_cold_start.py` parses stages generically.
 
 ## Mapping-mode finding (ane/src/ane_drv.c)
 
@@ -96,6 +96,9 @@ estimate predates the cached default. The exact number comes from
   - short-file zero-tail checks in direct and staged modes; staged `nn->data`
     remains 16 KiB aligned.
   - ABI 1 load/submit and mmap-fail cases in both modes (staged fallback).
+- `ANE_TRACE_TIMING=1 ./test_libane_ioctl` -- PASS; direct traces show
+  `model_header`, `model_map`, `model_map_copy`, and `model_zero_tail`; the
+  staged path keeps `model_read`.
 - `gcc -DLIBANE_CONFIG_STRICT_BIND` build of the harness -- PASS.
 - `pytest -q tests tools` -- 100 passed, 1 skipped.
 

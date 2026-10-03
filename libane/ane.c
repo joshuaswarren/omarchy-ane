@@ -333,15 +333,17 @@ static inline int64_t ane_pread(const char *fname, void *data, uint64_t size,
  * bytes the staged path's fread + memset produced. Falls back to ane_pread
  * when the file cannot be mapped. Returns bytes copied, or -EINVAL. */
 static inline int64_t ane_load_payload(const char *path, void *dst,
-				       uint64_t size)
+					       uint64_t size)
 {
 	struct stat st;
 	void *src;
 	uint64_t have;
+	uint64_t t;
 	int64_t done = -EINVAL;
 	int fd = open(path, O_RDONLY | O_CLOEXEC);
 
 	if (fd >= 0 && fstat(fd, &st) == 0 && st.st_size > (off_t)ANEC_HEADER_SIZE) {
+		t = timing_start();
 		src = mmap(NULL, (size_t)st.st_size, PROT_READ, MAP_PRIVATE,
 			   fd, 0);
 		if (src != MAP_FAILED) {
@@ -349,7 +351,10 @@ static inline int64_t ane_load_payload(const char *path, void *dst,
 			if (have > size) {
 				have = size;
 			}
+			timing_end("model_map", t, 0);
+			t = timing_start();
 			memcpy(dst, (uint8_t *)src + ANEC_HEADER_SIZE, have);
+			timing_end("model_map_copy", t, have);
 			done = (int64_t)have;
 			munmap(src, (size_t)st.st_size);
 		}
@@ -360,7 +365,10 @@ static inline int64_t ane_load_payload(const char *path, void *dst,
 	if (done >= 0) {
 		return done;
 	}
-	return ane_pread(path, dst, size, ANEC_HEADER_SIZE);
+	t = timing_start();
+	done = ane_pread(path, dst, size, ANEC_HEADER_SIZE);
+	timing_end("model_pread_fallback", t, size);
+	return done;
 }
 
 /* Direct load (default): the payload is loaded straight into the chans[0]
@@ -374,16 +382,17 @@ static inline int ane_place_program(struct ane_nn *nn, const char *path)
 	uint32_t channel;
 	uint64_t need;
 	uint64_t have;
-	uint64_t t = timing_start();
+	uint64_t t;
 	int64_t got;
 
 	got = ane_load_payload(path, nn->chans[0].map, anec->size);
 	if (got < 0) {
 		return -EINVAL;
 	}
+	t = timing_start();
 	memset((uint8_t *)nn->chans[0].map + got, 0,
 	       anec->size - (uint64_t)got);
-	timing_end("model_read", t, anec->size);
+	timing_end("model_zero_tail", t, anec->size - (uint64_t)got);
 
 	t = timing_start();
 	if (!ane_bind_init(anec, nn->chans[0].map, anec->size, &nn->bind)) {
@@ -551,7 +560,7 @@ static inline int ane_model_init(struct ane_nn *nn, const char *path,
 		/* Direct load: the payload lands in the chans[0] buffer
 		 * object and is parsed there (ane_chan_init), so no
 		 * staging buffer exists and nn->data stays NULL. */
-		timing_end("model_read", t, 0);
+		timing_end("model_header", t, sizeof(*anec));
 		return 0;
 	}
 
