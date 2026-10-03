@@ -104,18 +104,28 @@ reboot each way (window 4: 11:19Z-11:27Z; boots recorded at 46-53 s); the window
 runs about 2 min on-box; the offline round-2 analysis of the equivalent T6021 set was estimated at
 0.6 agent-day from the same kind of durations.
 
-**E1a — macOS in-process encoder run with perfStats (0.4 agent-day, risk low).**
+**E1a — macOS in-window measurement: perfStats attempt + cold-call plateaus (0.4 agent-day, risk low).**
 One reversible macOS window (asahi-bless next-boot; return by `shutdown -r`; announce start/end to
 the M2 lane — this host carries the M2 USB proxy). Run the NativeMacRun-style `_ANEInMemoryModel`
-harness (already built for T6002/T6021) on this chip and request the firmware `perfStats` buffer
-(the register-free path that carries the NE cycle counters to macOS). Linux twin in the same
-session: one h223-style 20-submit batch for engine busy. PASS: nonzero cycles -> macOS effective
-ANE clock MEASURED; compare against the 1464/1380/1236/1164 rungs. FAIL: perfStats unavailable on
-27.0 -> fall through to E1b. Nothing writes a register.
+harness (already built for T6002/T6021) on this chip and request the firmware `perfStats` buffer.
+Caveat from the T6021 lane: on macOS 27.0 26A428, `_ANERequest` accepted the dict but perfStats
+came back empty in all 80 blocks (MacWinRun entry), so this may return nothing here too. The
+fallback in the same window is the ramp-2 method applied to the whole encoder: time cold calls in
+one fresh process as macOS's DVFS climbs and fit the plateau sequence against the decoded
+432-1464 MHz ladder (the T6021 plateau fit was t = 0.117 ms + 2249.7 ms*MHz/f). Linux twin in the
+same session: one h223-style 20-submit batch for engine busy. PASS: nonzero perfStats cycles, or
+>= 3 plateaus that fit the ladder -> macOS effective ANE clock MEASURED. FAIL: flat cold-call
+times (CLPC pre-boosted) -> the window answers via E1b instead. Nothing writes a register.
 
 **E1b — dtrace window-3 mirror on this host (0.8 agent-day, risk low-medium).**
-Port `agent/ane-macos-window3-prep` (615080e) receipts/2026-10-03-ane-macos-window3 to the T8103
-kext name set (AppleT810xPMGR `_handlePerfStateRequest`/`_setPerfState`, the
+Port `origin/agent/ane-macos-window3` (615080e) receipts/2026-10-03-ane-macos-window3 to the
+T8103 name set. Three named edit sites from the bundle author: w3gen.py TARGETS hardcodes module
+r"T60\d\dPMGR" and function r"AppleT60\d\dPMGR..." (lines 55-57), so AppleT810xPMGR::_handlePerfStateRequest/
+_setPerfState would only be listed as absent — add module r"T8\d{3}PMGR" and function
+r"AppleT810xPMGR..." rows (the ApplePMGR/ApplePMC/CLPC rows match by module name and carry over,
+verify against this box's fbt listing); macos_window3.sh set_runner hardcodes the p6prime runner
+(line 47); the w3gen SEG counter keys on execname == "ane_inmem_run" (line 107) — both need the
+whole-encoder runner (AppleT810xPMGR `_handlePerfStateRequest`/`_setPerfState`, the
 readANEClkGenReg/waitANEClkGenReg/writeANEClkGenReg/enableFANE family, `ApplePMGR::_sendPMPCommand`,
 `clpc ane::DVFManager::requestPerformanceChange`, `PMCVoterInterface::setANEPerfStateFloor`,
 `ApplePMC::setPerfStateAgent`); stimulus is three cold whole-encoder runs (no P6' exists here).
@@ -154,7 +164,7 @@ Total: **2.0 agent-days** for the full set; **1.5** if E1a answers and E3 is ski
   the T6001 macOS-window entries; NativeMacRun; AneColdStart.
 - Repo: receipts/2026-10-03-ane-cold-start/README.md; receipts/2026-10-03-ane-iommu-batch/README.md
   (PR #104 merged as dc174cd); receipts/2026-10-03-ane-macos-window3/README.md (branch
-  agent/ane-macos-window3-prep 615080e); ane/src/ane_boost.c; libane/ane.c ANE_TRACE_TIMING;
+  agent/ane-macos-window3 615080e); ane/src/ane_boost.c; libane/ane.c ANE_TRACE_TIMING;
   ane/t6021/ane_t6021.h fatal-read window note.
 - New offline decode: T8103 pmgr voltage-states8 / perf-domains from the window-4 ADT artifact
   (script + output + SHA256SUMS in the lab notebook under artifacts/JwmEncGap/voltage-states8-decode/).
