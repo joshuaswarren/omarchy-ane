@@ -13,13 +13,17 @@ islands between jobs. This is design (c) of the offline power study (private not
 `AnePmT6021Study/report.md`, sections 5 and 6(c)).
 
 - New load-time parameter `dyn_pg` (bool, 0444, default 0). With `dyn_pg=1`, probe sends
-  `CSNE_CMD_SET_DYNAMIC_POWERGATE` (0x2d) once, right after CONFIG_GET: channel 1, length 0x0c,
-  the u32 value 1 at +0x08, timeout 3000 ms, under `ane_t6021_fw_lock`, through
-  `ane_rtclient_command` (the path that `fw_perf_mode` uses). There is no runtime switch: the
-  firmware's off path powers the islands on again.
-- If that command fails, `ane_rtclient_command` quarantines the device, probe does not register
-  the DRM device, and the power, rings and IRQ stay held until reboot (the existing
-  `err_pm_or_hold` path).
+  `CSNE_CMD_SET_DYNAMIC_POWERGATE` (0x2d) once, after CONFIG_GET and the ChMan gate and before the
+  DRM device registers: channel 1, length 0x0c, the u32 value 1 at +0x08, timeout 3000 ms, under
+  `ane_t6021_fw_lock`, through `ane_rtclient_command` (the path that `fw_perf_mode` uses). There
+  is no runtime switch: the firmware's off path powers the islands on again.
+- Every registered device with `dyn_pg=1` has sent the command. A probe that does not reach that
+  point registers no device at all: the RTKit mode (`legacy_only=0`) never validates the ChMan
+  table and refuses, and a failed command-buffer allocation fails CONFIG_GET first.
+- If the command fails, `ane_rtclient_command` quarantines the device and probe does not register
+  the DRM device. The command runs only after this driver started the firmware (`held` is set:
+  the ChMan table exists only on that path), so `err_pm_or_hold` keeps the power, rings and IRQ
+  until reboot.
 - Probe refuses `dyn_pg=1` with -EINVAL before any power access on a SoC whose firmware is not
   selene 13.5 (today: T8112, firmware bia). The command is decoded only for selene.
 - `trace_td` takes no PS or TD sample when `dyn_pg=1` (see the audit, row 7).
@@ -38,7 +42,10 @@ file, which reads the seven PS words when someone opens it and at no other time.
 
 ### Firmware facts this relies on (selene 13.5, 22G74)
 
-Summary of the private disassembly listings; no listing is published here.
+Summary of the private disassembly listings of the selene image (sha256 `a9c4b771…427bc`, pinned in
+`ane/t6021/ane_fw_validate.h`); no listing is published here. The public decode receipt is
+omarchy-ane `8cae3ad` (`receipts/2026-10-03-t6021-powerdown/README.md`, branch
+`agent/ane-t6021-powerdown-study`).
 
 - The 0x2d handler (0x28178) reads the u8 at command +0x08 and calls
   `CAneEngineExeLoopH14::setDynamicPowerGate` (vtable +0xe0).
@@ -71,12 +78,12 @@ means ane_td, ane_base and ane_set1-4 (the islands that the firmware gates). Lin
 | 5 | `:812` writel doorbell (T2H drain) | IPI | no | same |
 | 6 | `:841` readl PS words (traced CALL wait) | pmgr page `pmu_pa` | no | runs only with `trace_td=1` and `dyn_pg=0` |
 | 7 | `:844` readl TD word (traced CALL wait) | TM, engine +0x1c20458 | **yes** | `dyn_pg=0` (no PS map otherwise, so the loop never reaches it) AND all seven PS words read 0x3ff in the same iteration. With `dyn_pg=0` the firmware does not gate (INFERENCE above), so the check cannot go stale. With `dyn_pg=1` a check-then-read can race a firmware gate, so the read is removed. |
-| 8 | `:1968` readl PS words (`ane_pg_state`) | pmgr page `pmu_pa` | no | T602x only; reads on open only |
-| 9 | `:1823` `apple_rtkit_poll` | ASC mailbox | no | scheduled only with an RTKit instance (`hello_wait_ms` > 0 or `legacy_only=0`); never in the default legacy mode |
-| 10 | `ane_stats_begin/complete` `:922-963`, `ane_stats_emit` `:1989`, `ane_timeline_fops` | host memory | no | no MMIO: `ane/include/ane_stats.h` and `ane/ane_stats_show.c` contain no readl/writel/readq/writeq/ioread/iowrite; tmst is 0 on T6021 (`:963`) |
+| 8 | `:1970` readl PS words (`ane_pg_state`) | pmgr page `pmu_pa` | no | T602x only; reads on open only |
+| 9 | `:1825` `apple_rtkit_poll` | ASC mailbox | no | scheduled only with an RTKit instance (`hello_wait_ms` > 0 or `legacy_only=0`); never in the default legacy mode |
+| 10 | `ane_stats_begin/complete` `:922-963`, `ane_stats_emit` `:1991`, `ane_timeline_fops` | host memory | no | no MMIO: `ane/include/ane_stats.h` and `ane/ane_stats_show.c` contain no readl/writel/readq/writeq/ioread/iowrite; tmst is 0 on T6021 (`:963`) |
 
-Probe-only accesses, all before the 0x2d command: `:2079` (ane_cpu PS, G1 gate), `:2092` (PWGATE,
-T8112), `:2103-2104` and `:2182` (ASC CPU_STATUS, RVBAR), `:2227` (SCRATCH3 host ack), and the
+Probe-only accesses, all before the 0x2d command: `:2081` (ane_cpu PS, G1 gate), `:2094` (PWGATE,
+T8112), `:2105-2106` and `:2184` (ASC CPU_STATUS, RVBAR), `:2229` (SCRATCH3 host ack), and the
 boot and staging units (`ane_t6021_boot.c` and `ane_t6021_fwload.c` MMIO), which run only from
 `ane_t6021_fwload_probe` and `ane_t6021_boot_start` inside probe. `remove()` cancels the poll
 work and touches no register. DART TLB maintenance on BO map and unmap goes to dart0 (always-on

@@ -1647,8 +1647,10 @@ MODULE_PARM_DESC(fw_perf_mode,
 
 /* dyn_pg=1, once at probe after CONFIG_GET: CSNE_CMD_SET_DYNAMIC_POWERGATE
  * on channel 1, the u32 value 1 at +0x08, 0x0c bytes. The selene 13.5
- * handler (0x28178) passes the low byte to setDynamicPowerGate, which
- * switches the gate on and powers the islands down when no job runs. */
+ * handler (0x28178, image sha256 a9c4b771...) passes the low byte to
+ * setDynamicPowerGate, which switches the gate on and powers the islands
+ * down when no job runs. Decode: omarchy-ane 8cae3ad,
+ * receipts/2026-10-03-t6021-powerdown. */
 static int ane_t6021_dyn_pg_on(struct ane_rtclient *ane)
 {
 	struct ane_legacy_buffer *command = ane->cmd_buf;
@@ -2309,11 +2311,6 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			}
 			return cfg_err;
 		}
-		if (dyn_pg && ane->cmd_buf) {
-			ret = ane_t6021_dyn_pg_on(ane);
-			if (ret)
-				goto err_pm_or_hold;
-		}
 	} else {
 		unsigned long deadline;
 		int boot_ret;
@@ -2354,6 +2351,17 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			pm_runtime_disable(dev);
 		}
 		return -EPROTO;
+	}
+
+	/* chman_ok implies that the legacy branch above allocated cmd_buf
+	 * (after CONFIG_GET when legacy_query=1) and that this driver started
+	 * the firmware, so the failure path holds. */
+	if (dyn_pg) {
+		ret = ane_t6021_dyn_pg_on(ane);
+		if (ret) {
+			cancel_delayed_work_sync(&ane->poll_work);
+			goto err_pm_or_hold;
+		}
 	}
 
 	{
