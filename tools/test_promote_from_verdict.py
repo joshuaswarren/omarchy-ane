@@ -331,17 +331,56 @@ assert pr["head"] == "joshuaswarren:omarchy-ane/enable-t8112-ane" and pr["base"]
 assert not TRAP_LOG.exists(), f"aurora-pr ran a build tool: {TRAP_LOG.read_text()}"
 print("promote_from_verdict test: aurora PR opened once, then updated; the comment posted once, after a failure")
 
-# Already enabled at the base: no plan entry. No ANE node there: the plan fails.
+# Already enabled at the base: no plan entry.
 STUB_LOG.write_text("")
 p = run(["aurora-plan", "--tree", str(aurora_tree("okay")), "--out", str(plan_file), "--verdict-file",
          INTREE_PROMOTE], work)
 assert p.returncode == 0 and "already enables the ANE; no PR" in p.stdout, p
 assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == ""
+
+
+def plan_lines(p):
+    return [l for l in p.stdout.splitlines() if l.startswith(("PLANNED", "SKIPPED"))]
+
+
+# No board of the chip has an ANE node (the base predates the in-tree driver,
+# as aurora-wip did before #155): SKIPPED, exit 0, no plan entry, so the
+# aurora-pr job does not run. Another chip in the same verdict still plans.
+TWO_PROMOTE = verdict([{**json.loads(Path(INTREE_PROMOTE).read_text())["chips"][0], "chip": c}
+                       for c in ("t6000", "t8112")])
+mixed = aurora_tree("disabled")
+dts = mixed / "arch/arm64/boot/dts/apple"
+(dts / "t6000.dtsi").write_text('/ { compatible = "apple,t6000"; soc { pmgr@100 { status = "disabled"; }; }; };\n')
+(dts / "t6000-j314s.dts").write_text('/dts-v1/;\n#include "t6000.dtsi"\n')
+p = run(["aurora-plan", "--tree", str(mixed), "--out", str(plan_file), "--verdict-file", TWO_PROMOTE], work)
+assert p.returncode == 0, p
+lines = plan_lines(p)
+assert [l.split("\t")[:2] for l in lines] == [["SKIPPED", "t6000"], ["PLANNED", "t8112"]], lines
+assert "no t6000 board has an apple,*-ane node at this tree (t6000-j314s.dts)" in lines[0], lines
+assert "only after the in-tree driver lands there; the overlay PR is not affected" in lines[0], lines
+assert [e["chip"] for e in json.loads(plan_file.read_text())["chips"]] == ["t8112"]
 bare = aurora_tree("okay")
 (bare / "arch/arm64/boot/dts/apple/t8112.dtsi").write_text('/ { compatible = "apple,t8112"; };\n')
 p = run(["aurora-plan", "--tree", str(bare), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
-assert p.returncode == 1 and "has no apple,*-ane node" in p.stderr and STUB_LOG.read_text() == "", p
-print("promote_from_verdict test: aurora-plan skips an enabled chip, fails without a node")
+assert p.returncode == 0 and [l.split("\t")[:2] for l in plan_lines(p)] == [["SKIPPED", "t8112"]], p
+assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == "", p
+
+# Every other refusal still fails the plan: a tree that does not build, and a
+# chip with the node on one board but not on another.
+broken = aurora_tree("disabled")
+(broken / "arch/arm64/boot/dts/apple/t8112.dtsi").write_text('/ { compatible = "apple,t8112"; soc { ane@400 {\n')
+p = run(["aurora-plan", "--tree", str(broken), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 1 and "aurora-plan: t8112: dtc failed on t8112-j413.dts" in p.stderr and not plan_lines(p), p
+partial = aurora_tree("disabled")
+dts = partial / "arch/arm64/boot/dts/apple"
+(dts / "t8112.dtsi").write_text('/ { compatible = "apple,t8112"; #address-cells = <2>; #size-cells = <2>;\n'
+                                '  soc { #address-cells = <2>; #size-cells = <2>; ranges; }; };\n')
+(dts / "t8112-j415.dts").write_text('/dts-v1/;\n#include "t8112.dtsi"\n'
+                                    '/ { soc { ane@400 { compatible = "apple,t8112-ane"; status = "disabled"; }; }; };\n')
+p = run(["aurora-plan", "--tree", str(partial), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 1 and "t8112-j413.dts has no apple,*-ane node at this tree, but another t8112 board has one" \
+    in p.stderr and not plan_lines(p), p
+print("promote_from_verdict test: aurora-plan skips a chip without a node, plans one with it, fails a broken tree")
 
 # The workflow: AURORA_PR_TOKEN reaches one job, and that job builds nothing;
 # the job that builds the aurora tree holds no credential.

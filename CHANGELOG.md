@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `promote_from_verdict.py aurora-plan` skips a chip that has no ANE node on
+  any board of the aurora base branch, as `aurora-wip` before #155 merges.
+  It prints a line that starts with `SKIPPED`, writes no plan entry and
+  exits 0, so `aurora-pr` does not run and the promotion run stays green.
+  Before, the run failed (promotion run 37143877823, T6000). A build error,
+  a node on some boards only, or a node that the change cannot enable still
+  fails the plan.
 - libane (M1/ABI 1) loads the ANEC payload straight into the command buffer
   object and parses the task stream there: one pass instead of two and no
   458 MB staging buffer resident for the life of the network. `nn->data` is
