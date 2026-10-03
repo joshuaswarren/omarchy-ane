@@ -182,8 +182,15 @@ N, `boot_prevent_nap` Y, `stats` Y, bound, `/dev/accel/accel0`, no test file in
 `/etc/modprobe.d/`, boot.bin `62ba3010`. After 360 s of uptime: smoke 20/20 bit-exact, a
 4-call whole-encoder block bit-exact (median 254.490 ms), jobs +24 exact, no error line.
 A lab-state snapshot from before the window differs only in the module file, its
-version string, the boot identity and the `accel0` mtime. The previous lab module
-(`af2cee6c...`) is kept as a backup.
+version string, the boot identity and load line, the `accel0` mtime, and the GPU-lock
+ticket of the check itself. The previous lab module (`af2cee6c...`) is kept as a backup.
+
+## Files
+
+`results/`: the boot records of all five boots (state, `dmesg -x` ane lines, check), the
+arm B `ane_pg_state` read, per-block encoder tables and summaries for A, S0 and B, the
+three-process encoder runs and the item-3 summary, both latency runs, every power block
+summary, and the end-state console with its lab-state diff.
 
 ## Incidents
 
@@ -191,9 +198,9 @@ version string, the boot identity and the `accel0` mtime. The previous lab modul
   closed`, then connect timeouts). The device kept running on the same boot. The S0
   timing run was attached to that ssh session; it stopped after 18 of 20 blocks when the
   session died, and was rerun in full. Every later step ran detached with a log file.
-- Two later "no answer" alarms (05:51-05:57Z and 06:09-06:14Z) were a bug in my
-  poller: it counted grep's "no match yet" exit status as an ssh failure. Fixed; the
-  device answered throughout.
+- Three later "no answer" alarms (05:42-05:47Z, 05:51-05:57Z, 06:09-06:14Z) were a bug
+  in my poller: it counted grep's "no match yet" exit status as an ssh failure. Fixed;
+  the device answered throughout.
 
 ## Not covered
 
