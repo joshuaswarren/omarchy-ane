@@ -11,7 +11,14 @@
  *  - The pmgr window is 0x1c000. The lab file sets 0x14000 to cover SET0 at
  *    0xc000. linux-asahi 7.1.13 ships 0x4000, but linux-aurora 7.1.12 already
  *    ships 0x1c000 with a child past 0x14000, so 0x14000 would cut that off.
- * set5@c030 stays out of the ane node: it is past ADT range1 0xc02c.
+ * No set5@c030: it is past ADT range1 0xc02c, and the lab overlay records a
+ * genpd timeout with it in the ane power-domains. aurora-silicon/linux #155
+ * dropped it too.
+ * The power states set status "okay": #155 ships them at the same paths,
+ * disabled, on every T600x but the M1 Max. On such a kernel omarchy-ane-dt
+ * applies the overlay, fdtoverlay merges each node into the kernel's, and a
+ * node without a status here would stay disabled
+ * (receipts/2026-10-01-ane-dt-disabled-nodes).
  *
  * T6000 and T6002 have the same die-0 values as T6001: in the macOS 13.5
  * ADTs (j314s, j316s, j375d against j316c) /arm-io/ane0 has reg
@@ -61,6 +68,7 @@
 				#reset-cells = <0>;
 				label = "ane_set0";
 				power-domains = <&ane_cpu_pd>;
+				status = "okay";
 			};
 
 			ps_ane_base: power-controller@c008 {
@@ -70,6 +78,7 @@
 				#reset-cells = <0>;
 				label = "ane_base";
 				power-domains = <&ps_ane_set0>;
+				status = "okay";
 			};
 
 			ps_ane_set1: power-controller@c010 {
@@ -79,6 +88,7 @@
 				#reset-cells = <0>;
 				label = "ane_set1";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set2: power-controller@c018 {
@@ -88,6 +98,7 @@
 				#reset-cells = <0>;
 				label = "ane_set2";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set3: power-controller@c020 {
@@ -97,6 +108,7 @@
 				#reset-cells = <0>;
 				label = "ane_set3";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set4: power-controller@c028 {
@@ -106,15 +118,7 @@
 				#reset-cells = <0>;
 				label = "ane_set4";
 				power-domains = <&ps_ane_base>;
-			};
-
-			ps_ane_set5: power-controller@c030 {
-				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
-				reg = <0xc030 4>;
-				#power-domain-cells = <0>;
-				#reset-cells = <0>;
-				label = "ane_set5";
-				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 		};
 	};

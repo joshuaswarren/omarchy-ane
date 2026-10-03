@@ -9,6 +9,12 @@
  *       -> ane_sys (470); the DARTs -> ane_sys.
  * Stock T8103 trees already carry AIC, ane_sys and ane_sys_cpu. Their phandles
  * differ between kernels and boards, so this overlay reaches them by path.
+ * set5 (c030) is inside this ANE's ADT pmgr window (ane reg[1]
+ * 0x23b700000+0x8c000), unlike on T600x. The power states set status
+ * "okay": aurora-silicon/linux #155 ships them at the same paths, disabled
+ * with its untested T8103 ANE, and a node without a status here would stay
+ * disabled when the overlay merges into it
+ * (receipts/2026-10-01-ane-dt-disabled-nodes).
  *
  * apple-dart owns the three DARTs, and the ane node names them in iommus:
  * ane.ko maps through that IOMMU domain and never requests an IRQ.
@@ -49,6 +55,7 @@
 				#reset-cells = <0>;
 				label = "ane_base";
 				power-domains = <&ps_ane_sys_cpu>;
+				status = "okay";
 			};
 
 			ps_ane_set1: power-controller@c010 {
@@ -58,6 +65,7 @@
 				#reset-cells = <0>;
 				label = "ane_set1";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set2: power-controller@c018 {
@@ -67,6 +75,7 @@
 				#reset-cells = <0>;
 				label = "ane_set2";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set3: power-controller@c020 {
@@ -76,6 +85,7 @@
 				#reset-cells = <0>;
 				label = "ane_set3";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set4: power-controller@c028 {
@@ -85,6 +95,7 @@
 				#reset-cells = <0>;
 				label = "ane_set4";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 
 			ps_ane_set5: power-controller@c030 {
@@ -94,6 +105,7 @@
 				#reset-cells = <0>;
 				label = "ane_set5";
 				power-domains = <&ps_ane_base>;
+				status = "okay";
 			};
 		};
 	};

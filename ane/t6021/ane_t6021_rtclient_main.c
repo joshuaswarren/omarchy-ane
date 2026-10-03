@@ -444,12 +444,12 @@ static void ane_rtclient_validate_chman(struct ane_rtclient *ane)
 		const struct ane_t6021_chman_desc *d = &t[i];
 		const struct ane_t6021_chman_static *s = &ane_t6021_chman_layout[i];
 
-		dev_info(ane->dev,
-			 "chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
-			 i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
-			 d->size,
-			 (bad & BIT(i)) ? "MISMATCH" : "OK",
-			 s->name, s->type, s->bit, s->size, s->off);
+		dev_dbg(ane->dev,
+			"chman[%u]: name=\"%.*s\" type=%u bit=%u size=%#llx %s (static: %s/%u/%u/%#llx/ipc+%#x)\n",
+			i, ANE_T6021_CHMAN_NAME_LEN, d->name, d->type, d->bit,
+			d->size,
+			(bad & BIT(i)) ? "MISMATCH" : "OK",
+			s->name, s->type, s->bit, s->size, s->off);
 	}
 
 	ane->chman_ok = !bad;
@@ -1702,8 +1702,8 @@ static void ane_rtclient_recv(void *cookie, u8 ep, u64 message)
 {
 	struct ane_rtclient *ane = cookie;
 
-	dev_info(ane->dev,
-		 "rtkit app msg: ep=%#x msg=%016llx\n", ep, message);
+	dev_dbg(ane->dev,
+		"rtkit app msg: ep=%#x msg=%016llx\n", ep, message);
 }
 
 static void ane_rtclient_crashed(void *cookie, const void *crashlog,
@@ -1801,8 +1801,8 @@ static void ane_rtclient_start_app_eps(struct ane_rtclient *ane)
 		if (!apple_rtkit_has_endpoint(ane->rtk, ep))
 			continue;
 		ret = apple_rtkit_start_ep(ane->rtk, ep);
-		dev_info(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n",
-			 ep, ERR_PTR(ret));
+		dev_dbg(ane->dev, "rtkit: STARTEP app ep %#x -> %pe\n",
+			ep, ERR_PTR(ret));
 	}
 }
 
@@ -1895,7 +1895,7 @@ found:
 		pd->count = i + 1;
 	}
 
-	dev_emerg(dev, "BOOT-PHASE genpd domains attached: %d\n", count);
+	dev_dbg(dev, "BOOT-PHASE genpd domains attached: %d\n", count);
 out:
 	mutex_unlock(&ane_rtclient_pd_lock);
 	return err;
@@ -2002,7 +2002,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				     "pmgr window map failed; G1 gate cannot run\n");
 	}
 	ps_cpu = readl(ane->pmgr + ane->soc->ps_cpu_off);
-	dev_emerg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
+	dev_dbg(dev, "ane_cpu ACTUAL = 0x%x\n", ps_cpu);
 	if (FIELD_GET(ANE_PS_ACTUAL, ps_cpu) != ANE_PS_ON) {
 		pm_runtime_put_sync_suspend(dev);
 		pm_runtime_disable(dev);
@@ -2016,7 +2016,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		u32 gate = IS_ERR(set) ? U32_MAX :
 			   readl(set + ane->soc->pwgate_off);
 
-		dev_emerg(dev, "PWGATE = 0x%x\n", gate);
+		dev_dbg(dev, "PWGATE = 0x%x\n", gate);
 		if (gate & GENMASK(29, 28)) {
 			pm_runtime_put_sync_suspend(dev);
 			pm_runtime_disable(dev);
@@ -2027,9 +2027,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 	cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
 	rvbar = readq(ane->engine + ANE_ASC_RVBAR);
-	dev_emerg(dev,
-		  "BOOT-PHASE engine reads ok: CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u)\n",
-		  cpu_status, rvbar, (u32)(rvbar & 1));
+	dev_dbg(dev,
+		"BOOT-PHASE engine reads ok: CPU_STATUS = 0x%x, RVBAR = %016llx (bit0=%u)\n",
+		cpu_status, rvbar, (u32)(rvbar & 1));
 
 	if (!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)) {
 		if (!fw_start) {
@@ -2070,7 +2070,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		a->power_gated = true;
 		ane->fw = a;
 
-		dev_emerg(dev, "BOOT-PHASE fwload stage+alias begin\n");
+		dev_dbg(dev, "BOOT-PHASE fwload stage+alias begin\n");
 		ret = ane_t6021_fwload_probe(a);
 		if (ret) {
 			dev_err_probe(dev, ret, "fw_start: staging failed\n");
@@ -2090,8 +2090,8 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			return -EINVAL;
 		}
 
-		dev_emerg(dev, "BOOT-PHASE dispatch (table_mode=%d)\n",
-			  fw_start_table_mode);
+		dev_dbg(dev, "BOOT-PHASE dispatch (table_mode=%d)\n",
+			fw_start_table_mode);
 		ret = ane_t6021_boot_start(a, 0, fw_start_table_mode,
 					   fw_start_rtb_mode);
 		if (ret == -ENODATA || ret == -EAGAIN ||
@@ -2105,10 +2105,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 		ane->held = true;
 		cpu_status = readl(ane->engine + ANE_ASC_CPU_STATUS);
-		dev_emerg(dev,
-			  "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
-			  ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
-			  cpu_status);
+		dev_info(dev,
+			 "BOOT-PHASE sequence returned %pe (cpu_started=%u fw_alive=%u booted=%u) CPU_STATUS=0x%x\n",
+			 ERR_PTR(ret), a->cpu_started, a->fw_alive, a->booted,
+			 cpu_status);
 		if (!a->fw_alive && !fw_start_rtb_mode) {
 			dev_err(dev,
 				"fw_start: poll A timeout, no READY — HELD until reboot, RTKit handshake skipped\n");
@@ -2128,9 +2128,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			int hello_ret = 0;
 
 			dma_wmb();
-			dev_emerg(dev,
-				  "LEGACY P8 host ack: SCRATCH3 <- %08x\n",
-				  ANE_T6021_BOOT_ACK);
+			dev_dbg(dev,
+				"LEGACY P8 host ack: SCRATCH3 <- %08x\n",
+				ANE_T6021_BOOT_ACK);
 			/* hello_wait_ms > 0 only: init rtkit and arm the RX
 			 * poll worker BEFORE writing the ack, so a HELLO
 			 * after the ack is not missed. The 13.5 fw sent none
@@ -2155,17 +2155,17 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				unsigned long hello_deadline =
 					jiffies + msecs_to_jiffies(hello_wait_ms);
 
-				dev_emerg(dev, "LEGACY hello: boot begin (%u ms)\n",
-					  hello_wait_ms);
+				dev_dbg(dev, "LEGACY hello: boot begin (%u ms)\n",
+					hello_wait_ms);
 				do {
 					hello_ret = apple_rtkit_boot(ane->rtk);
 				} while (hello_ret == -ETIME &&
 					 time_before(jiffies, hello_deadline));
-				dev_emerg(dev,
-					  "LEGACY hello: boot %pe running=%d crashed=%d\n",
-					  ERR_PTR(hello_ret),
-					  apple_rtkit_is_running(ane->rtk),
-					  apple_rtkit_is_crashed(ane->rtk));
+				dev_info(dev,
+					 "LEGACY hello: boot %pe running=%d crashed=%d\n",
+					 ERR_PTR(hello_ret),
+					 apple_rtkit_is_running(ane->rtk),
+					 apple_rtkit_is_crashed(ane->rtk));
 				if (!hello_ret) {
 					ane->boot_done = true;
 					if (start_app_eps)
@@ -2207,11 +2207,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 								     command,
 								     16, 0x03,
 								     1, 3000);
-				dev_info(dev,
-					 "LEGACY CONFIG_GET words %08x %08x result=%d (DMA remains held)\n",
-					 READ_ONCE(((u32 *)command->cpu)[1]),
-					 READ_ONCE(((u32 *)command->cpu)[2]),
-					 qret);
+				dev_dbg(dev,
+					"LEGACY CONFIG_GET words %08x %08x result=%d (DMA remains held)\n",
+					READ_ONCE(((u32 *)command->cpu)[1]),
+					READ_ONCE(((u32 *)command->cpu)[2]),
+					qret);
 				if (qret)
 					cfg_err = qret;
 				else if (!READ_ONCE(((u32 *)command->cpu)[2])) {

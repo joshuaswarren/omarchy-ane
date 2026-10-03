@@ -10,9 +10,9 @@ board compatible kept, no node removed, no stock phandle renumbered (an
 fdtoverlay that runs an older libfdt fails here), every new reference on an
 enabled provider. An ANE overlay must leave exactly one enabled ANE node, with
 its own compatible. The kernel tree with that node enabled skips the overlay;
-with the overlay's nodes disabled (aurora-silicon/linux #65) the overlay
-applies again and gives the same tree. Needs dtc and fdtoverlay 1.7.1 or
-newer, and fdtput. Without ANE_DTBS it does nothing.
+with the overlay's nodes and power states disabled (aurora-silicon/linux #65,
+#155) the overlay applies again and gives the same tree. Needs dtc and
+fdtoverlay 1.7.1 or newer, and fdtput. Without ANE_DTBS it does nothing.
 
 Then every packaging/dt/PREFIX-ane-dataonly.dts: it must have the
 "omarchy,data-only" root property, and on each OUT/dtbs/PREFIX-*.dtb
@@ -66,8 +66,10 @@ else:
                 (work / 'enabled.dtb').write_bytes(data)
                 assert oadt.build(work / 'enabled.dtb', [dtbo], work) is None, f'{source} on {board.name}: not skipped'
 
-                # Disabled kernel nodes: every node the overlay added, disabled.
-                added = [p for p in result.nodes if p not in stock.nodes and 'status' in result.nodes[p]]
+                # Disabled kernel nodes: every node the overlay added with a status,
+                # and every power state it added (#155 ships them disabled).
+                added = [p for p in result.nodes if p not in stock.nodes
+                         and ('status' in result.nodes[p] or '#power-domain-cells' in result.nodes[p])]
                 for path in added:
                     subprocess.run(['fdtput', '-t', 's', str(work / 'enabled.dtb'), path, 'status', 'disabled'],
                                    check=True)
