@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `ane_t6021` has a lab parameter `dyn_pg` (default 0, T602x only). With
+  `dyn_pg=1`, probe sends the selene firmware command
+  `SET_DYNAMIC_POWERGATE` = 1 after CONFIG_GET, so the firmware turns the
+  compute islands off between jobs. With `dyn_pg=1`, `trace_td` reads no TD
+  word. The debugfs file `ane_t6021/ane_pg_state` prints the seven ANE
+  power-state words. Hardware results are pending; see
+  `receipts/2026-10-03-t6021-dynpg/README.md`.
+
 ### Changed
 
 - DKMS skips a kernel that ships the ANE driver itself
