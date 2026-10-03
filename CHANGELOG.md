@@ -10,7 +10,9 @@ DKMS steps aside on a kernel that ships the ANE driver itself. This release
 also adds a reachability verdict to `omarchy-ane-probe`, in-tree rows to the
 promotion checker, a lab `dyn_pg` parameter to `ane_t6021`, and data and an
 experimental bring-up module for chips after the M2. The ioctl interface
-(ABI 1 and ABI 2) does not change.
+(ABI 1 and ABI 2) does not change: from `4f01bb3` (v0.4.1) to `dc174cd`, no
+line of `ane/src/uapi/drm/ane_accel.h`, `libane/ane.h` or `libane/ane_m2.h`
+changes.
 
 ### Added
 
