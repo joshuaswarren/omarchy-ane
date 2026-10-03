@@ -6,6 +6,10 @@ name: promotion
 # and cut the patch release. A dry_run dispatch prints the propose plan, runs
 # the gate's host tests on the dispatched ref, and gates and merges nothing.
 # Synthetic verdict fixtures are refused in the production repo.
+# The aurora job opens the aurora-silicon/linux device-tree PR for a PROMOTE
+# whose passing row ran the kernel's own driver (target aurora-dt). It needs
+# the secret AURORA_PR_TOKEN (README "Promotion"); without it, or on a dry_run
+# or synthetic dispatch, DRY_RUN=1 and it prints the plan. Nothing waits on it.
 on:
   schedule:
     - cron: "23 5 * * *"
@@ -73,6 +77,34 @@ jobs:
             python3 tools/promote_from_verdict.py propose ${{ inputs.dry_run && '--dry-run' || '' }}
           fi
 
+  aurora:
+    needs: verdict
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: verdict
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison
+      - name: aurora-dt PR for every in-tree PROMOTE (DRY_RUN=1 prints it)
+        env:
+          GH_TOKEN: ${{ secrets.AURORA_PR_TOKEN }}
+          DRY_RUN: ${{ (inputs.dry_run || inputs.synthetic || secrets.AURORA_PR_TOKEN == '') && '1' || '0' }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if ! python3 -c 'import json, sys; sys.exit(not any(c["verdict"] == "PROMOTE" and "aurora-dt" in c.get("targets", [])
+                                                               for c in json.load(open("verdict.json"))["chips"]))'; then
+            echo "aurora: no PROMOTE chip with a passing in-tree row"; exit 0
+          fi
+          [ "$DRY_RUN" = 0 ] || echo "aurora: DRY_RUN=1 (dry_run, synthetic, or no AURORA_PR_TOKEN): print the plan, write nothing"
+          read -r repo base <<< "$(cd tools && python3 -c 'import promote_from_verdict as p; print(p.AURORA, p.AURORA_BASE)')"
+          tools/asahi-dtbs "$RUNNER_TEMP/aurora" "https://github.com/$repo" "$base"
+          export PATH="$RUNNER_TEMP/aurora/bin:$PATH"
+          python3 tools/promote_from_verdict.py aurora --tree "$RUNNER_TEMP/aurora/linux" \
+            ${{ inputs.synthetic && '--verdict-file tools/promotion_synthetic.json' || '' }} \
+            $([ "$DRY_RUN" = 0 ] || echo --dry-run)
+
   gate:
     needs: propose
     runs-on: ubuntu-24.04
@@ -100,6 +132,8 @@ jobs:
             python3 tools/test_t8112_kit.py
             ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
             python3 tools/test_promotion_check.py
+            python3 tools/test_ane_intree.py
+            python3 tools/test_aurora_dt.py
             python3 tools/test_ane_smoke.py
             python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
             python3 tools/gen_coverage_table.py --check

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- `omarchy-ane-check` prints `dtbs_source` and `driver_source`, the fields
+  the community collector records. When `DTBS=` is set in
+  `/etc/default/update-m1n1` (`dtbs_source=kernel`), it names no opt-in key:
+  overlay opt-in has no effect there, and `omarchy-ane-dt apply` refuses.
+- The promotion checker judges in-tree rows (`driver_source=intree`) like
+  DKMS rows. A PROMOTE with a passing in-tree row also has the target
+  `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora` make
+  the aurora-silicon/linux device-tree PR (secret `AURORA_PR_TOKEN`; a dry
+  run without it).
+
 ### Changed
 
 - DKMS skips a kernel that ships the ANE driver itself

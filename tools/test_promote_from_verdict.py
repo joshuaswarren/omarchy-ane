@@ -55,7 +55,17 @@ body = json.loads(sys.stdin.read()) if "--input" in a else None
 s = json.load(open(os.environ["STUB_STATE"]))
 open(os.environ["STUB_LOG"], "a").write(json.dumps([ep, method, body]) + "\\n")
 def out(o): print(json.dumps(o))
-if "pulls?state=open" in ep:
+if ep.startswith("repos/aurora-silicon/linux/") or "/git/" in ep:
+    if "/git/trees" in ep: out({{"sha": "stubtree"}})
+    elif "/git/commits" in ep: out({{"sha": "stubcommit"}})
+    elif "/git/matching-refs/" in ep: out(s.get("refs", []))
+    elif ep.endswith("/git/refs"): s["refs"] = [{{"ref": body["ref"]}}]; out({{}})
+    elif "pulls?state=open" in ep: out(s.get("aurora", []))
+    elif ep.endswith("/pulls"):
+        s["aurora"] = [{{"number": 900}}]
+        out({{"number": 900, "html_url": "https://github.com/aurora-silicon/linux/pull/900"}})
+    else: out({{}})
+elif "pulls?state=open" in ep:
     out(s["open"])
 elif ep.endswith("/pulls") and method == "POST":
     n = s["next"]; s["next"] += 1
@@ -154,5 +164,79 @@ p = run(["release", "--chip", "t8112", "--merge-sha", "head", "--verdict-file", 
 assert p.returncode == 0 and "X.Y.Z" in p.stdout, p.stdout
 assert (work / "CHANGELOG.md").read_text() == before
 print("promote_from_verdict test: release plan ok")
+
+# aurora: the aurora-silicon/linux PR for a PROMOTE whose passing row is
+# in-tree, on a fake t8112-shaped aurora tree (git, so the base commit is known).
+def aurora_tree(status):
+    t = Path(tempfile.mkdtemp())
+    dts = t / "arch/arm64/boot/dts/apple"
+    dts.mkdir(parents=True)
+    (t / "scripts/dtc/include-prefixes").mkdir(parents=True)
+    (dts / "t8112.dtsi").write_text(
+        '/ { compatible = "apple,t8112"; #address-cells = <2>; #size-cells = <2>;\n'
+        '  soc { #address-cells = <2>; #size-cells = <2>; ranges;\n'
+        f'    ane_dart0: iommu@300 {{ #iommu-cells = <1>; status = "{status}"; }};\n'
+        f'    ane: ane@400 {{ compatible = "apple,t8112-ane"; iommus = <&ane_dart0 0>; status = "{status}"; }};\n'
+        '  };\n};\n')
+    (dts / "t8112-j413.dts").write_text('/dts-v1/;\n#include "t8112.dtsi"\n')
+    subprocess.run(["git", "init", "-q", str(t)], check=True)
+    subprocess.run(["git", "-C", str(t), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(t), "-c", "user.name=Joshua Warren",
+                    "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", "commit", "-qm", "base"],
+                   check=True)
+    return t
+
+
+INTREE_PROMOTE = verdict([{"chip": "t8112", "state": "opt-in", "verdict": "PROMOTE",
+                           "targets": ["overlay", "aurora-dt"],
+                           "rows": [{"row_sha": "1a2b3c4d5e6f", "judged": True, "driver_source": "intree",
+                                     "passed": True, "reasons": []}]}])
+work = make_work()
+tree = aurora_tree("disabled")
+p = run(["aurora", "--tree", str(tree), "--verdict-file", PROMOTE, "--dry-run"], work)
+assert p.returncode == 0 and "nothing to do (no PROMOTE chip with a passing in-tree row)" in p.stdout, p
+p = run(["aurora", "--tree", str(tree), "--verdict-file", INTREE_PROMOTE, "--dry-run"], work)
+assert p.returncode == 0, p.stderr
+assert "branch joshuaswarren/aurorasilicon-linux:omarchy-ane/enable-t8112-ane" in p.stdout, p.stdout
+assert "+&ane_dart0 {" in p.stdout and "--- title\narm64: dts: apple: t8112: Enable the ANE\n" in p.stdout, p.stdout
+assert "1a2b3c4d5e6f passed the omarchy-ane promotion rule" in " ".join(p.stdout.split()), p.stdout
+assert "--- comment\n@iconidentify In-tree row(s) 1a2b3c4d5e6f on the M2 (T8112) passed" in p.stdout, p.stdout
+assert "Signed-off-by: Joshua Warren <816217+joshuaswarren@users.noreply.github.com>" in p.stdout, p.stdout
+assert STUB_LOG.read_text() == "", "a dry run calls nothing"
+assert subprocess.run(["git", "-C", str(tree), "status", "--porcelain"], capture_output=True,
+                      text=True).stdout == "", "a dry run writes nothing"
+print("promote_from_verdict test: aurora dry run ok")
+
+# A live run against the stub: one commit, one ref, one PR, one comment for
+# the in-tree tester; a second run moves the ref and updates the same PR.
+for i in (1, 2):
+    p = run(["aurora", "--tree", str(tree), "--verdict-file", INTREE_PROMOTE], work)
+    assert p.returncode == 0 and "AURORA\t900\tt8112\tstubcommit" in p.stdout, (i, p.stdout, p.stderr)
+calls = [json.loads(l) for l in STUB_LOG.read_text().splitlines()]
+fork, up = "repos/joshuaswarren/aurorasilicon-linux", "repos/aurora-silicon/linux"
+writes = [(ep, m) for ep, m, _ in calls if m != "GET"]
+assert writes == [(f"{fork}/git/trees", "POST"), (f"{fork}/git/commits", "POST"), (f"{fork}/git/refs", "POST"),
+                  (f"{up}/pulls", "POST"), (f"{up}/issues/155/comments", "POST"),
+                  (f"{fork}/git/trees", "POST"), (f"{fork}/git/commits", "POST"),
+                  (f"{fork}/git/refs/heads/omarchy-ane/enable-t8112-ane", "PATCH"),
+                  (f"{up}/pulls/900", "PATCH")], writes
+base = subprocess.run(["git", "-C", str(tree), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+commit = next(b for ep, m, b in calls if ep.endswith("/git/commits"))
+assert commit["parents"] == [base] and commit["author"]["name"] == "Joshua Warren", commit
+pr = next(b for ep, m, b in calls if ep == f"{up}/pulls")
+assert pr["head"] == "joshuaswarren:omarchy-ane/enable-t8112-ane" and pr["base"] == "aurora-wip", pr
+comment = next(b for ep, m, b in calls if ep.endswith("/comments"))["body"]
+assert comment.startswith("@iconidentify ") and "https://github.com/aurora-silicon/linux/pull/900" in comment
+print("promote_from_verdict test: aurora PR opened once, then updated")
+
+# Already enabled at the base: no PR. No ANE node there: the run fails.
+STUB_LOG.write_text("")
+p = run(["aurora", "--tree", str(aurora_tree("okay")), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 0 and "already enables the ANE; no PR" in p.stdout and STUB_LOG.read_text() == "", p
+bare = aurora_tree("okay")
+(bare / "arch/arm64/boot/dts/apple/t8112.dtsi").write_text('/ { compatible = "apple,t8112"; };\n')
+p = run(["aurora", "--tree", str(bare), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 1 and "has no apple,*-ane node" in p.stderr and STUB_LOG.read_text() == "", p
+print("promote_from_verdict test: aurora skips an enabled chip, fails without a node")
 
 print("promote_from_verdict test: ok")
