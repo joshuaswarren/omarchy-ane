@@ -23,7 +23,8 @@ The M3 ANE is `ane_t6021`-like at the ASC layer. It does not need a new ASC-IOP 
   ASC base + 0x8000, the same hardware class and offset as the T6021 ANE mailbox.
 - So the plan reuses the kernel `apple_rtkit` client (HELLO, EPMAP and STARTEP live in
   `rtkit.c`), `apple-mailbox`, and the `ane_t6021` ASC start sequence. Only the per-SoC data
-  changes, and the M3 ADT also names the mailbox interrupts, which the T6021 ADT does not.
+  changes. The M3 ADT also lists a block of four interrupts that has the shape of an ASC
+  mailbox, which the T6021 ADT does not. It does not name their roles.
 - INFERENCE, not measured: the ANE mailbox at wrapper + 0x8000, the mailbox interrupt roles,
   and that the M3 firmware speaks RTKit at all. The T6021 transport that works today does not
   carry over by default. On the 13.5 selene image, RTKit HELLO never arrived on any recorded
@@ -190,32 +191,34 @@ Gates:
 
 - No module alias and no autoload. It binds only to `apple,t8122-ane`, `apple,t6030-ane` or
   `apple,t6031-ane` from a non-data-only overlay that the owner applies with an explicit
-  opt-in key. The shipped data-only overlays never apply.
-- The module parameter `i_have_an_m3=1` is required. Without it, probe returns `-EPERM`
+  opt-in key. The shipped data-only overlays never apply. On T8122 and T6030 that overlay
+  also adds the MPM, CPU, TD and BASE power-controller nodes from the ADT words, because the
+  kernel tree has only `ps_ane_sys` there.
+- The module parameter `experimental=1` is required. Without it, probe returns `-EPERM`
   before any MMIO.
 
 Probe sequence (every step logs, and every failure undoes the steps before it):
 
 1. Power up the ANE domains through genpd in ADT parent order (SYS, then MPM, CPU and TD,
-   then BASE). Read each pmgr word, which lies outside the engine aperture, and require
-   ACTUAL = 0xf. Otherwise stop.
+   then BASE). Never write pmgr words directly (R4 §7). Read each pmgr word, which lies
+   outside the engine aperture, and require ACTUAL = 0xf. Otherwise stop.
 2. Do a read-only preflight inside the engine aperture, only after step 1: CPU_STATUS
    (wrapper + 0x48), RVBAR (engine + 0x1050000), the mailbox A2I and I2A CTRL words
    (wrapper + 0x8110 and + 0x8114). Log the raw values. Do not read CPU_CONTROL (hostile on
    T6001), never touch engine + 0x1010000 (R4 §7), and keep out of the T6021 fatal-read range
    (R1:158-163) until H15 data clears it.
 3. If CPU_STATUS shows the core running, iBoot started it. Then skip RUN and only attach
-   RTKit. If the core is stopped, require a DART translation for the RVBAR entry IOVA. With
-   the segment-ranges from the owner, map the preloaded segments as `ane_t6021_fwload` does.
-   Without them, refuse.
+   RTKit. If the core is stopped, require the RVBAR valid bit, the owner's segment-ranges,
+   and both ranges reserved `no-map` in the running tree, as on T6021 (R4 §3). Then map the
+   preloaded segments at their remap IOVAs, as `ane_t6021_fwload` does. Otherwise refuse.
 4. Set CPU_CONTROL RUN. `apple_rtkit_boot` waits for HELLO with a 2 s deadline. Log the
    HELLO versions and the EPMAP bitmap. Start only the system endpoints that `rtkit.c` starts
    (crashlog, syslog, ioreport). Start no app endpoints and send no CSNE command.
 5. On timeout or crash: clear RUN, quiesce, power down, and fail probe. Unload does the same.
 
 Pass: HELLO in the 11 to 12 window, the EPMAP bitmap logged, and syslog lines from the
-firmware. Fail: no HELLO within the deadline (which, as on T6021, points to a non-RTKit
-contract), a DART fault, or any probe refusal. Either result fills the missing rows above.
+firmware. Fail: no HELLO within the deadline (on T6021 this was the first sign of the legacy
+ChMan contract), a DART fault, or any probe refusal. Either result fills missing rows above.
 
 Before b1 becomes code, these must be MEASURED: the mailbox address and IRQ roles, the DART
 sid and firmware IOVA map, the stub firmware pin, and the RVBAR value at handoff. Then the
