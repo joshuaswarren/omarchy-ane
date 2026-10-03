@@ -243,6 +243,30 @@
           "size": "0x4000"
         },
         "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg5",
+          "base": "0x2903c0000",
+          "size": "0x30000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg6",
+          "base": "0x2404000000",
+          "size": "0x2000000"
+        },
+        "src": "S1"
+      },
+      {
+        "v": {
+          "name": "ane1_reg7",
+          "base": "0x22a02dc000",
+          "size": "0x4000"
+        },
+        "src": "S1"
       }
     ],
     "interrupts": {

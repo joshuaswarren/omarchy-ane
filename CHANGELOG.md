@@ -21,8 +21,9 @@
   RVBAR on T6021. Both values are now null, with the expected wrapper + 0x8000
   address in the reason. Also corrected: the mailbox compatible in all four M3
   files (the T6030 one contradicted its own source), the j575d board
-  (BuildManifest chip id 0x6032), the T8122 iommu-parent reason, and the
-  driver family. See `receipts/2026-10-03-ane-h15`.
+  (BuildManifest chip id 0x6032) and its three missing die-1 windows, the
+  T8122 iommu-parent reason, and the driver family. See
+  `receipts/2026-10-03-ane-h15`.
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
   steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
   revert made opt-in again got no firmware step.
