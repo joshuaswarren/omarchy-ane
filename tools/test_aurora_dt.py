@@ -64,11 +64,13 @@ def fake_tree(files):
     return root
 
 
-def refused(root, chip, why):
+def refused(root, chip, why, no_node=False):
+    """A refusal; NoNode (the tree predates the in-tree driver) only when NO_NODE."""
     try:
         aurora_dt.plan(root, chip)
     except aurora_dt.Refuse as e:
         assert why in str(e), (why, str(e))
+        assert isinstance(e, aurora_dt.NoNode) == no_node, (why, type(e))
         return
     raise AssertionError(f'{chip}: no refusal ({why})')
 
@@ -119,7 +121,7 @@ for chip in ('t6000', 't8112'):
 
 # Refusals; the tree stays as it was.
 root = fake_tree(base)
-refused(root, 't6022', 't6022-j180d.dts has no apple,*-ane node')
+refused(root, 't6022', 'no t6022 board has an apple,*-ane node at this tree (t6022-j180d.dts)', no_node=True)
 refused(fake_tree({**base, 't8112-variant.dtsi': '#include "t8112.dtsi"\n'}), 't8112',
         't8112-variant.dtsi include t8112.dtsi')
 short = fake_tree({**base, 't6001.dtsi': base['t6001.dtsi'].replace('&ps_ane_base { status = "okay"; };\n', '')})

@@ -24,7 +24,9 @@ the disabled ones, in CHIP.dtsi only:
 
 Then it builds the boards again from the changed tree and refuses unless every
 collected node is enabled. It also refuses when another file includes CHIP.dtsi
-(the change would reach another chip) or when no board has an apple,*-ane node.
+(the change would reach another chip) or when a board has no apple,*-ane node.
+When no board of the chip has one, the refusal is NoNode: the tree does not
+have the in-tree driver's nodes yet, so there is nothing to enable.
 Exit 0: done, or nothing to do (every collected node is already enabled).
 Exit 1: refused; the tree is unchanged.
 """
@@ -57,6 +59,10 @@ MARKETING = {"t8103": "M1", "t6000": "M1 Pro", "t6001": "M1 Max", "t6002": "M1 U
 
 class Refuse(Exception):
     pass
+
+
+class NoNode(Refuse):
+    """No board of the chip has an apple,*-ane node: the tree predates the in-tree driver."""
 
 
 def build(dts_dir, inc, board, work):
@@ -151,12 +157,13 @@ def plan(tree_dir, chip):
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         before = {b.name: build(dts_dir, inc, b, work) for b in boards}
-        want = {}
-        for name, t in before.items():
-            ane = ane_paths(t)
-            if not ane:
-                raise Refuse(f"{name} has no apple,*-ane node at this tree")
-            want[name] = sorted(reached(t, ane))
+        missing = [name for name, t in before.items() if not ane_paths(t)]
+        if len(missing) == len(before):
+            raise NoNode(f"no {chip} board has an apple,*-ane node at this tree ({', '.join(missing)})")
+        if missing:
+            raise Refuse(f"{', '.join(missing)} {'has' if len(missing) == 1 else 'have'} no apple,*-ane node at "
+                         f"this tree, but another {chip} board has one")
+        want = {name: sorted(reached(t, ane_paths(t))) for name, t in before.items()}
         off = {p for name, t in before.items() for p in want[name] if not t.enabled(p)}
         if not off:
             return None

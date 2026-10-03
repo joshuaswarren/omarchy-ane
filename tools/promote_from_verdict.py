@@ -42,8 +42,10 @@ aurora-plan builds LINUX, a checkout of AURORA_BASE (tools/asahi-dtbs
 OUT/linux; its dtc on PATH), with tools/aurora_dt.py, and writes PLAN: the
 checkout's HEAD and, per chip, the file, the change (how and refs), the boards
 and nodes it checked, and the sha256 of the new file. It calls no GitHub API
-and needs no token. A chip whose ANE LINUX already enables gets no entry; a
-refusal from aurora_dt.py fails the run.
+and needs no token. A chip whose ANE LINUX already enables gets no entry. A
+chip with no apple,*-ane node on any board (LINUX predates the in-tree driver)
+gets no entry and a line that starts with SKIPPED; the run still exits 0. Any
+other refusal from aurora_dt.py fails the run.
 
 aurora-pr builds and runs nothing from LINUX. It checks that AURORA_BASE's tip
 is the PLAN's HEAD, reads the chip's file at that commit from the GitHub API,
@@ -340,6 +342,10 @@ def aurora_plan(verdict, tree, out):
         chip = c["chip"]
         try:
             p = aurora_dt.plan(tree, chip)
+        except aurora_dt.NoNode as e:
+            print(f"SKIPPED\t{chip}\t{AURORA} {AURORA_BASE} {plan['base'][:12]}: {e}. The aurora PR can be made only "
+                  "after the in-tree driver lands there; the overlay PR is not affected")
+            continue
         except aurora_dt.Refuse as e:
             raise Fail(f"aurora-plan: {chip}: {e}")
         if p is None:
