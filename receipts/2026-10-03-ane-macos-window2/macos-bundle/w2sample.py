@@ -217,7 +217,7 @@ def dtrace_gen(listing, max_clauses=300):
     picked = {tag: set() for tag, *_ in rules}
     for line in open(listing):
         f = line.split()
-        if len(f) < 5 or f[1] != "fbt" or f[4] != "entry":
+        if len(f) < 5 or f[1] != "fbt" or f[-1] != "entry":  # a "[demangled]" column may sit before the kind
             continue
         mod, fn = f[2], f[3]
         if not re.fullmatch(r"[A-Za-z0-9_]+", fn) or "MetaClass" in fn:
