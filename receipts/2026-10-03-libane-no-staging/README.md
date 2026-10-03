@@ -100,7 +100,7 @@ estimate predates the cached default. The exact number comes from
   `model_header`, `model_map`, `model_map_copy`, and `model_zero_tail`; the
   staged path keeps `model_read`.
 - `gcc -DLIBANE_CONFIG_STRICT_BIND` build of the harness -- PASS.
-- `pytest -q tests tools` -- 100 passed, 1 skipped.
+- `pytest -q tests tools` -- 100 passed, 1 skipped (final run after trace-stage change).
 
 ## A/B protocol for w71 (jwm1, T8103) and w72 (jw16, T6001)
 
