@@ -26,7 +26,7 @@ Some installers set `DTBS=` in `/etc/default/update-m1n1` (iconidentify/aurora-l
 | M1 Max | T6001 | H13J | `apple,t6000-ane` | `ane` | on by default | none | bind plus exact fp16 execution. Task-queue recovery validated. |
 | M1 Ultra | T6002 | H13J | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | nothing on T6002 silicon |
 | M2 | T8112 | H14G | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | nothing on T8112 silicon |
-| M2 Pro | T6020 | H14J | `apple,t6020-ane` | `ane_t6021` | opt-in, untested | `ane-t6020` + note | nothing on T6020 silicon |
+| M2 Pro | T6020 | H14J | `apple,t6020-ane` | `ane_t6021` | on by default | none | nothing on T6020 silicon |
 | M2 Max | T6021 | H14J | `apple,t6021-ane` | `ane_t6021` | on by default | none | firmware starts under Linux. fp16 ops and matvec to 2048x5120 exact. The whole Parakeet encoder is bit-exact. All 38 Qwen programs conform to the M1. |
 | M2 Ultra | T6022 | H14J | `apple,t6022-ane` | `ane_t6021` | opt-in, untested (die 0) | `ane-t6022` + note | nothing on T6022 silicon |
 
