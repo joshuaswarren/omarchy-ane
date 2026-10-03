@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # test-perf-mode.sh — before/after per-iter measurement for the ANE FW
 # perf-mode write (m1max-host / T6001). Run ONLY by the host owner lane, inside
 # a GPU-lock window, with llama-server left running (lock coordinates).
@@ -37,8 +38,8 @@ worker_run () { # n tag
       --iterations "$n" \
       --input attention_mask="$INA" --input input_features="$INF" \
       --save encoder_hidden=/tmp/anep-x/h.bin --save output_mask=/tmp/anep-x/m.bin \
-      > "$OUT/worker-$tag.log" 2>&1
-  local rc=$?
+      > "$OUT/worker-$tag.log" 2>&1 || rc=$?
+  local rc=0
   local el line
   line=$(grep -oE "elapsed_ms=[0-9]+" "$OUT/worker-$tag.log" | tail -1)
   el=${line#elapsed_ms=}

@@ -3,7 +3,7 @@
 # TCR15 bypass x3, PS raise 0x28e088008/10/18 <- 0xf with ACTUAL poll,
 # then PWGATE set+0x12cc <- 3, set+0x13cc <- 0 with readback.
 # Prints LATCHED or NOT-LATCHED. No release here.
-set -u
+set -euo pipefail
 cd /var/tmp/ascdbg
 one() { echo "$*" | ./ascdbg.sh cmds 2>&1 | grep -v '^===\|ane_ascdbg:'; }
 val() { one "$@" | awk '{print $NF}'; }

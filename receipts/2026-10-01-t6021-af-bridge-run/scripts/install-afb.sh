@@ -1,9 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 # AfBridgeRun S3: install the d3b8561 module and a ONE-SHOT af_bridge_macos=1 option for the
 # next load. The modprobe.d `install` line deletes its own file (and syncs) before it loads the
 # module with the parameter, so a reset during the bridge writes falls back to a default load
 # on the next boot instead of a reset loop.
-set -euo pipefail
 K=/var/tmp/ane_t6021-160f3ebd.ko
 SHA=160f3ebda8123c23fac1d711b1aac470d6beb77506b6aab16f1f24e70c4a1009
 REL=/var/tmp/ane_t6021-54c1da56.ko

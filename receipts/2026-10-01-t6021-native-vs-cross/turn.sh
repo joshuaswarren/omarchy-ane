@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # NativeVsCross device window on the M2 (run inside one gpu-turn ticket).
 # Arms: X = Mac Studio h14 cross-compiled ANEC, N = the M2's native ANEC.
 # 1. correctness: one process per arm (encoder golden + fp16 sha; Qwen

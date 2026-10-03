@@ -1,9 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 # P1Groups: install the 46636d3 module and a ONE-SHOT p1_groups=MASK option for the next load.
 # The modprobe.d `install` line deletes its own file (and syncs) before it loads the module with
 # the parameter, so a reset during the boot falls back to p1_groups=0 (today's P-1) on the next
 # boot instead of a reset loop. usage: install-p1g.sh MASK   (0x1..0x1f)
-set -euo pipefail
 MASK=${1:?mask}
 [[ "$MASK" =~ ^0x(1[0-9a-f]|[1-9a-f])$ ]] || { echo "bad mask $MASK"; exit 2; }
 K=/var/tmp/ane_t6021-e865dec3.ko

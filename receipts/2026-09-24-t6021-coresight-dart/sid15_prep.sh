@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fresh boot, before the first release: read state, then set TCR15 = 0x2
 # (bypass, macOS value) on all three dart-ane instances. No release here.
-set -u
+set -euo pipefail
 cd /var/tmp/ascdbg
 one() { echo "$*" | ./ascdbg.sh cmds 2>&1 | grep -v '^===\|ane_ascdbg:'; }
 

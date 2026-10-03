@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartTune E1 window (one gpu-turn ticket, read only): probe x2 on the idle ANE, encoder
 # --repeat 1, probe, encoder --repeat 20, probe. Stops at the first stop condition.
 # usage: e1-window.sh OUTDIR

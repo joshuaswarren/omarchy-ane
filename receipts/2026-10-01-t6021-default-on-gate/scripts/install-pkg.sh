@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # OwnMemGate boot A install: main 73da8f8 as the omarchy-ane package installs it (DefaultOn receipt,
 # omarchy-pkgs list): module, /usr/bin tools (no omarchy-ane-m2-enable), update-m1n1-dtbs, the three
 # pacman hooks, overlays via build-dtbo / (new directory), the old hand-installed overlay directory
@@ -6,7 +7,6 @@
 # omarchy-ane-firmware-fetch --hook and omarchy-ane-dt apply. Refuses unless the DTB copy bytes stay
 # c31a54c3 (no ESP write; no update-m1n1 here).
 # usage: bash install-pkg.sh (on the M2)
-set -euo pipefail
 R=/var/tmp/ownmem/73da8f8
 P=/var/tmp/ownmem/pre
 K=7.1.13-3-1-ARCH

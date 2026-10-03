@@ -1,7 +1,7 @@
 #!/bin/bash
 # Wait for the M2 m1n1 proxy gadget on jwm1 macOS, clear foreign holders,
 # then start the hv guest trace inside the 60 s proxy window.
-set -u
+set -euo pipefail
 HV=/Users/joshuawarren/m2hv
 OUT=$HV/out
 mkdir -p "$OUT"
@@ -11,7 +11,7 @@ echo "$(date -u +%T) armed, waiting for /dev/cu.usbmodem*" >> "$LOG"
 dev=""
 for _ in $(seq 1 240); do
     dev=$(ls /dev/cu.usbmodem* 2>/dev/null | sort | head -1)
-    [ -n "$dev" ] && break
+    [ -n "$dev" ] && break || true
     sleep 0.5
 done
 if [ -z "$dev" ]; then
@@ -29,7 +29,8 @@ if [ -n "$holders" ]; then
 fi
 cd "$HV/proxyclient" || exit 1
 echo "$(date -u +%T) launching run_guest" >> "$LOG"
+rc=0
 M1N1DEVICE="$dev" M1N1TIMEOUT=10 python3 tools/run_guest.py \
     -m "$HV/trace_ane_v2.py" -l "$OUT/trace.log" "$HV/kernelcache.mac14j" \
-    > "$OUT/run.log" 2>&1 < /dev/null
-echo "$(date -u +%T) run_guest exited rc=$?" >> "$LOG"
+    > "$OUT/run.log" 2>&1 < /dev/null || rc=$?
+echo "$(date -u +%T) run_guest exited rc=$rc" >> "$LOG"

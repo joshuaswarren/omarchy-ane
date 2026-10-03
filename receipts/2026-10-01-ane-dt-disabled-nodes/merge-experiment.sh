@@ -1,10 +1,10 @@
 #!/bin/bash
+set -euo pipefail
 # The T6021 overlay over a trimmed kernel tree that has the five ANE nodes
 # disabled. Usage: merge-experiment.sh OVERLAY_DTS OMARCHY_ANE_DT OUTDIR
 # NEW_DTC: a directory with dtc and fdtoverlay 1.7.1 or newer (kbuild's
 # scripts/dtc works); /usr/bin has the old pair. DIE0_EXCERPT: see
 # kernel-t6021-excerpt.dts.
-set -euo pipefail
 here=$(dirname -- "$(realpath -- "$0")")
 overlay_src=$(realpath -- "$1")
 oadt=$(realpath -- "$2")

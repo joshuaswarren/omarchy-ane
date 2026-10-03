@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # OwnMemGate device window (run inside gpu-turn), from P1Groups ab-turn.sh and T6021ReleaseBoot rb-gate.sh.
 # Every device process under flock /var/tmp/ane-run.lock timeout 120 (qwen_prog_run.py takes the lock itself).
 # Stops at the first stop condition, no retry.
@@ -25,7 +26,7 @@ state() {
 	echo "boot_id $(cat /proc/sys/kernel/random/boot_id) uname $(uname -r) up $(cut -d' ' -f1 /proc/uptime)"
 	echo "module $(cat /sys/module/ane_t6021/version) $(cat /sys/module/ane_t6021/srcversion) file $(sha256sum "$(modinfo -n ane_t6021)")"
 	for p in fw_alias_reserved fw_extra_ram fw_load fw_start call_settle_us bo_total_bytes bo_total_max_mb; do
-		[ -e "$P/$p" ] && echo "$p $(cat "$P/$p")"
+		[ -e "$P/$p" ] && echo "$p $(cat "$P/$p")" || true
 	done
 	echo "modprobe.d: $(ls /etc/modprobe.d/ | tr '\n' ' ')"
 	echo "dmesg_bad $(sudo -n dmesg | grep -c -i -E "$BAD") dmesg_lines $(sudo -n dmesg | wc -l)"

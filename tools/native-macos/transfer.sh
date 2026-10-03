@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Stage the native run on a Mac. Run on the analysis host. TARGET and SOURCE are ssh aliases: TARGET is the
 # Mac under test, SOURCE the Mac that holds the M1 reference runtime. Large inputs stream host to host and are
 # never staged on the analysis host:
@@ -9,7 +10,6 @@
 #                        weight.bin (444 MB) and the fp16 fixture inputs.
 #   TARGET=<m2> SOURCE=<studio> SOURCE_GGUF=<path> SOURCE_BUILD=<dir> SCRATCH=<dir on TARGET> PREP=<dir> \
 #     PK_MIL=<model.mil> PK_W=<weight.bin> bash transfer.sh
-set -euo pipefail
 : "${TARGET:?}" "${SOURCE:?}" "${SOURCE_GGUF:?}" "${SOURCE_BUILD:?}" "${SCRATCH:?}" "${PREP:?}" "${PK_MIL:?}" "${PK_W:?}"
 here=$(cd "$(dirname "$0")" && pwd)
 tools=$(cd "$here/.." && pwd)

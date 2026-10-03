@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # run-manual.sh — window runner, executed ON m1max-host (non-root except insmod).
 # Stage 1 BEFORE slopes, stage 2 capture (perf_mode=0), stage 3 write
 # (perf_mode=1), stage 4 AFTER slopes, stage 5 rmmod. All output in
@@ -24,8 +25,8 @@ leg () { # phase n
       --iterations "$n" \
       --input attention_mask="$INA" --input input_features="$INF" \
       --save encoder_hidden=/tmp/anep-x/h.bin --save output_mask=/tmp/anep-x/m.bin \
-      > "$OUT/worker-$phase-n$n.log" 2>&1
-  local rc=$?
+      > "$OUT/worker-$phase-n$n.log" 2>&1 || rc=$?
+  local rc=0
   local el
   el=$(grep -oE "elapsed_ms=[0-9]+" "$OUT/worker-$phase-n$n.log" | tail -1)
   el=${el#elapsed_ms=}

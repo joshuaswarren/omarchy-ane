@@ -33,7 +33,10 @@ stock_hashes | tee pre-stock.txt
 sudo -n install -m644 Image "$K"
 sudo -n mkinitcpio -k "$REL" -g "$I"
 sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$REL/kernel/fs/btrfs/btrfs.ko$"
-! sudo -n lsinitcpio "$I" | grep -q "^usr/lib/modules/$STOCK/"
+# Assert stock-kernel modules are absent; lsinitcpio must not be conflated
+# with the grep verdict under pipefail, so capture then grep the capture.
+mods=$(sudo -n lsinitcpio "$I")
+! grep -q "^usr/lib/modules/$STOCK/" <<<"$mods"
 # Reference: a stock-kernel initramfs built now into STAGEDIR (the installed stock image is from
 # 2026-09-19 and lists ramoops/reed_solomon that autodetect no longer selects).
 sudo -n mkinitcpio -k "$STOCK" -g "$S/stock-ref.img" >"$S/stock-ref.log" 2>&1

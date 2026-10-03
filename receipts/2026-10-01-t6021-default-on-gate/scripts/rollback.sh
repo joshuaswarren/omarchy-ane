@@ -1,9 +1,9 @@
 #!/bin/bash
+set -euo pipefail
 # OwnMemGate rollback: the pre-gate state for the next boot (release module 54c1da56, the old dt tool,
 # the old overlay directory, the old opt-in file, the old DTB copy; no ane_t6021 option file; the files
 # that the package install added removed). Does not touch the ESP (the install never wrote it).
 # usage: bash rollback.sh (on the M2)
-set -euo pipefail
 P=/var/tmp/ownmem/pre
 K=7.1.13-3-1-ARCH
 S=/var/lib/omarchy-ane/dtbs/$K

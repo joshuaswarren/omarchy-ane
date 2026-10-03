@@ -2,7 +2,7 @@
 # Run inside tmux on jwm1 Linux. Waits for the M2 m1n1 proxy on ttyACM0,
 # kills and logs any foreign holder, then starts the hv guest trace. The
 # live session keeps the hv shell reachable (tmux send-keys C-c).
-set -u
+set -euo pipefail
 OUT=/tmp/m2hv2
 PX=/home/joshuawarren/m2proxy
 mkdir -p "$OUT"
@@ -10,7 +10,7 @@ LOG=$OUT/catch.log
 : > "$LOG"
 echo "$(date -u +%T) armed, waiting for /dev/ttyACM0" | tee -a "$LOG"
 for _ in $(seq 1 240); do
-    [ -e /dev/ttyACM0 ] && break
+    [ -e /dev/ttyACM0 ] && break || true
     sleep 0.5
 done
 if [ ! -e /dev/ttyACM0 ]; then

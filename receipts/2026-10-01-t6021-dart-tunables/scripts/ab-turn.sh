@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # AfBridgeRun device window, reused by DartTune (only change: output under /var/tmp/dart): gates, correctness, timing, burst
 # for one arm on the running boot. Method = NativeVsCross turn.sh (X arm only) plus
 # the T6021ReleaseBoot gates (rb-gate.sh: add, mul, matvec 2048x5120) and burst.
@@ -30,7 +31,7 @@ state() {
 	echo "boot_id $(cat /proc/sys/kernel/random/boot_id) uname $(uname -r) up $(cut -d' ' -f1 /proc/uptime)"
 	echo "module $(cat /sys/module/ane_t6021/version) $(cat /sys/module/ane_t6021/srcversion) $(sha256sum "$(modinfo -n ane_t6021)" | cut -c1-16)"
 	for p in fw_start af_bridge_macos trace_td fw_perf_mode call_settle_us bo_total_bytes bo_total_max_mb; do
-		[ -e "$P/$p" ] && echo "$p $(cat "$P/$p")"
+		[ -e "$P/$p" ] && echo "$p $(cat "$P/$p")" || true
 	done
 	ls /etc/modprobe.d/ | tr '\n' ' '; echo
 	echo "governor $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor)"
@@ -99,9 +100,9 @@ qblock() { # prog k
 		s=${s%.surface}
 		packs+=(--in "${s#in-}=$w/$s.surface")
 	done
+	rc=0
 	flock "$L" timeout 120 "$RUN" --anec "$QX/$1/program-0.anec" --ports "$QX/$1/ports.json" "${packs[@]}" \
-		--repeat 16 --time >"$log" 2>&1
-	rc=$?
+		--repeat 16 --time >"$log" 2>&1 || rc=$?
 	stopcheck "$log" "$rc"
 	echo "$2 $(grep -h -o 'min [0-9.]*\|median [0-9.]*' "$log" | awk '{printf "%s ", $2}')" >>"$O/q/$1.blocks"
 }
@@ -110,32 +111,32 @@ state start | tee "$O/state-start.txt"
 
 echo "== 1. gates $(date -u +%T)"
 for op in add mul; do
-	flock "$L" timeout 120 bash "$R/ane/t6021/gate/gate.sh" "$O/gate-$op" "$op" >"$O/gate-$op.log" 2>&1
-	rc=$?
+	rc=0
+	flock "$L" timeout 120 bash "$R/ane/t6021/gate/gate.sh" "$O/gate-$op" "$op" >"$O/gate-$op.log" 2>&1 || rc=$?
 	echo "gate $op rc=$rc $(grep -E '^GATE' "$O/gate-$op.log")"
 	stopcheck "$O/gate-$op.log" "$rc"
 done
+rc=0
 flock "$L" timeout 120 bash "$R/ane/t6021/gate/gate.sh" "$O/gate-matvec5120" matvec \
-	--anec "$MV/out/program-0.anec" --weights "$MV/model/weights.bin" >"$O/gate-matvec5120.log" 2>&1
-rc=$?
+	--anec "$MV/out/program-0.anec" --weights "$MV/model/weights.bin" >"$O/gate-matvec5120.log" 2>&1 || rc=$?
 echo "gate matvec5120 rc=$rc $(grep -E '^GATE' "$O/gate-matvec5120.log") $(grep -m1 -E 'lanes within' "$O/gate-matvec5120.log")"
 stopcheck "$O/gate-matvec5120.log" "$rc"
 
 echo "== 2. correctness $(date -u +%T)"
 enc w1 1
+rc=0
 python3 "$QPR" --prog prog_020 --anec-dir "$QX" \
 	--in t0="$P20/input-0-t0.f16" --in t2="$P20/input-1-t2.f16" --in t7="$P20/input-2-t7.f16" \
 	--golden t15="$P20/golden-t15.f16" --out t15="$O/q/prog20-t15.f16" --work "$O/q/prog20-work" \
-	--ane-run "$RUN" --timeout 120 --repeat 1 >"$O/q/prog20-correct.log" 2>&1
-rc=$?
+	--ane-run "$RUN" --timeout 120 --repeat 1 >"$O/q/prog20-correct.log" 2>&1 || rc=$?
 stopcheck "$O/q/prog20-correct.log" "$rc"
 echo "prog_020 $(grep -E 'exec ms|golden' "$O/q/prog20-correct.log" | tr '\n' ' ')"
 w=$O/q/prog_006-correct
 mkdir -p "$w"
 mapfile -t ins < <(qins prog_006)
+rc=0
 python3 "$QPR" --prog prog_006 --anec-dir "$QX" --ane-run "$RUN" --timeout 120 --repeat 1 --work "$w" "${ins[@]}" \
-	>"$w.log" 2>&1
-rc=$?
+	>"$w.log" 2>&1 || rc=$?
 stopcheck "$w.log" "$rc"
 same=0 diff=0
 for f in "$X006"/t*.f16; do
@@ -159,8 +160,8 @@ for prog in prog_020 prog_006; do
 done
 
 echo "== 5. burst 60 s $(date -u +%T)"
-flock "$L" timeout 120 env ROOT="$R" GATE="$O/gate-add" bash /var/tmp/rb-burst.sh "$O/burst" 60 >"$O/burst.log" 2>&1
-rc=$?
+rc=0
+flock "$L" timeout 120 env ROOT="$R" GATE="$O/gate-add" bash /var/tmp/rb-burst.sh "$O/burst" 60 >"$O/burst.log" 2>&1 || rc=$?
 echo "burst rc=$rc $(tr '\n' ' ' <"$O/burst.log")"
 stopcheck "$O/burst.log" "$rc"
 

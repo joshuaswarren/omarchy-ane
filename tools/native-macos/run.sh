@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Native macOS ANE run: staged Qwen decode (p001 port dump, 10-prompt chunk) and the whole Parakeet
 # encoder, compiled by this host's own ANE compiler through e5rt, plus direct compiles for HWX identity.
 # Userspace only; everything stays under $SCRATCH and /tmp/qwen-real-full-1790790164. Resumable: a
@@ -6,7 +7,6 @@
 #
 #   SCRATCH=/path/to/scratch PHASES="env dump chunk50 parakeet hwx chunkpp" bash run.sh
 #   dry run: PROMPTS=1 NEW_TOKENS=2 WARMUP=0 HWX_PROGS=001 PHASES="env chunk50 parakeet hwx" ...
-set -euo pipefail
 S=${SCRATCH:?set SCRATCH}
 T=$S/tools
 O=$S/out

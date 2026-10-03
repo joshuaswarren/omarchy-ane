@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Catch the M2 m1n1 proxy on the proxy host and boot a macOS kernelcache
 # under the m1n1 hypervisor, with the guest console captured.
 #
@@ -32,7 +33,7 @@ DBG=$(cd "$(dirname "$0")" && pwd)/m2hv_guest_debug.py
 # hv shell for recovery). The default keeps the recovery property: no
 # debugger bits, so a panic resets the SoC and the M2 reboots itself.
 BOOTARGS="${M2HV_BOOTARGS:-serial=3 apcie=0xfffffffe -enable-kprintf-spam clpc=0 amfi_get_out_of_my_way=1 amfi_allow_any_signature=1 amfi_unrestricted_local_signing=1 rd=md0 -rootdmg-ramdisk rp=file:///ane-root.dmg}"
-[ -n "${M2HV_DEBUG:-}" ] && BOOTARGS="$BOOTARGS debug=0x14e wdt=-1"
+[ -n "${M2HV_DEBUG:-}" ] && BOOTARGS="$BOOTARGS debug=0x14e wdt=-1" || true
 mkdir -p "$OUT"
 LOG=$OUT/catch.log
 : > "$LOG"
@@ -50,7 +51,7 @@ say "armed, waiting for two $glob ports"
 ports=
 for _ in $(seq 1 240); do
     ports=$(ls $glob 2>/dev/null | sort)
-    [ "$(printf '%s\n' "$ports" | grep -c .)" -ge 2 ] && break
+    [ "$(printf '%s\n' "$ports" | grep -c .)" -ge 2 ] && break || true
     sleep 0.5
 done
 proxy=$(printf '%s\n' "$ports" | sed -n 1p)
@@ -114,8 +115,8 @@ tailpid=$!
       fi
   fi ) &
 wdpid=$!
-wait "$rgpid"
-rc=$?
+rc=0
+wait "$rgpid" || rc=$?
 say "run_guest exited rc=$rc"
 if [ ! -e "$OUT/timeout.fired" ] && [ -e "$proxy" ]; then
     say "run_guest gone on its own with the proxy port present: tools/reboot.py"

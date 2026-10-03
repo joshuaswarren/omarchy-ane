@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartKernel device window (run inside one gpu-turn ticket): read the three ANE DARTs with
 # ane_dart_probe (read only), then one arm of the DartTune/AfBridgeRun harness (gates,
 # correctness, encoder 20 x 16, prog_020/prog_006 blocks, burst), then add latency: one

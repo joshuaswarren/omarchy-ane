@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartKernel: put the 7.1.13-3-1-ARCH-dart module tree in place (from STAGEDIR/modules.tar and
 # ane_t6021.ko), depmod, and check it. Run from the stock kernel.
 # linux-modules-cleanup.service (kernel-modules-hook, WantedBy=basic.target) moves every module
@@ -7,7 +8,6 @@
 # run this script in the stock boot right before the reboot into the -dart kernel (the -dart boot
 # keeps it as the running kernel's tree).
 # usage: modules.sh STAGEDIR
-set -euo pipefail
 trap 'echo "FAIL line $LINENO: $BASH_COMMAND"' ERR
 S=$(realpath "${1:?stagedir}")
 REL=7.1.13-3-1-ARCH-dart

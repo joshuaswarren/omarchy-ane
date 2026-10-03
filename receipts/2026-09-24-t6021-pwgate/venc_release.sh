@@ -1,7 +1,7 @@
 #!/bin/bash
 # VENC-up first release: scratch clear, RVBAR skip, CPU_CONTROL 0 -> 0x10,
 # 60 s SCRATCH7 poll. VENC_SYS/VENC_DMA/leaves are already 0x3ff.
-set -u
+set -euo pipefail
 cd /var/tmp/ascdbg
 one() { echo "$*" | ./ascdbg.sh cmds 2>&1 | grep -v '^===\|ane_ascdbg:'; }
 

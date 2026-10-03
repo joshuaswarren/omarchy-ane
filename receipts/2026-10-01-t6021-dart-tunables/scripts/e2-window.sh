@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # DartTune E2 window (one gpu-turn ticket, one boot): A-before; apply the 38 bulk-DART RMWs;
 # read; B; write back the E1 values; read; A-after; read. Stops at the first stop condition
 # and then writes nothing more (a reboot restores the DART reset state).
@@ -11,9 +12,8 @@ exec > >(tee -a "$O/console.log") 2>&1
 # E1 r0 values in probe table order (0x20c, 0x220, 0x224, 0x800..0x83c), equal on BRD and BWR.
 ORIG=0x1e000048,0x00020202,0x00000000$(printf ',0x000f0000%.0s' $(seq 16))
 arm() {
-	local rc
-	/var/tmp/dart/ab-turn.sh "$1"
-	rc=$?
+	local rc=0
+	/var/tmp/dart/ab-turn.sh "$1" || rc=$?
 	echo "arm $1 rc=$rc $(date -u +%T)"
 	[ "$rc" = 0 ] || stop "arm $1 rc=$rc"
 	badcheck

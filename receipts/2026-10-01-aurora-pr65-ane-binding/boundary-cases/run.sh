@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # usage: run.sh <processed-schema.json> <dtc>   -> one line per case: case expected result
 set -uo pipefail
 cd "$(dirname "$0")"
@@ -13,6 +14,6 @@ for f in [PF]_*.dts; do
 	want=${c%%_*}
 	[ "$got" = "$want" ] && r=ok || { r=MISMATCH; bad=1; }
 	echo "$c want=$want got=$got $r"
-	[ -n "$out" ] && echo "$out" | sed 's/^/    /'
+	[ -n "$out" ] && echo "$out" | sed 's/^/    /' || true
 done
 exit $bad

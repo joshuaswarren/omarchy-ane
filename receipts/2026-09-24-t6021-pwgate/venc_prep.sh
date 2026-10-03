@@ -3,7 +3,7 @@
 # VENC_SYS 0x2902803e0 <- 0xf, poll low byte 0xff, then the leaf gates
 # 0x290288008/10/18 <- 0xf (each polled 0xff), then PWGATE 3/0 with readback.
 # Prints LATCHED or NOT-LATCHED. No release here.
-set -u
+set -euo pipefail
 cd /var/tmp/ascdbg
 one() { echo "$*" | ./ascdbg.sh cmds 2>&1 | grep -v '^===\|ane_ascdbg:'; }
 val() { one "$@" | awk '{print $NF}'; }

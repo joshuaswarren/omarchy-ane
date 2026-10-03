@@ -1,7 +1,7 @@
 #!/bin/bash
 # TCR15 = 0x2 (bypass) on dart-ane1 and dart-ane2 (macOS value), then
 # release and a 60 s poll. Every access is pre-logged by ascdbg.sh.
-set -u
+set -euo pipefail
 cd /var/tmp/ascdbg
 A=./ascdbg.sh
 one() { echo "$*" | $A cmds 2>&1 | grep -v '^===\|ane_ascdbg:'; }
@@ -42,7 +42,7 @@ for t in $(seq 0 5 60); do
 		echo "SCRATCH7 CHANGED"
 		break
 	fi
-	[ "$t" -lt 60 ] && sleep 5
+	[ "$t" -lt 60 ] && sleep 5 || true
 done
 echo "--- post"
 for r in 0x1800170 0x1800174 0x1810170 0x1810174 0x1820170 0x1820174; do
