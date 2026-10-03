@@ -256,13 +256,115 @@ static void run_case(const char *name, int abi, const char *path,
 	printf("  [%s] %s\n", failures == before ? "ok" : "FAIL", name);
 }
 
-/* A program file shorter than its header's size: libane loads it with the
- * unread tail of nn->data zero (not leftover heap bytes) and the buffer
- * 16 KiB aligned. M_PERTURB fills new heap memory with nonzero bytes, so a
- * tail that nothing zeroes is seen on every run. */
-static void run_short_file(const char *path)
+/* A/B: load the same program through the staged fallback (ANE_LOAD_STAGED=1)
+ * and the direct path (default), and require byte-identical buffer object
+ * contents -- chans[] and the bootstrap channel -- plus the documented
+ * nn->data meaning (staging pointer in staged mode, NULL in direct mode). */
+struct bo_snap {
+	uint64_t size;
+	uint8_t *bytes;
+};
+
+static struct bo_snap bo_snap_chan(struct ane_bo *bo)
 {
-	const uint64_t cut = 64;
+	struct bo_snap s = { .size = bo->size, .bytes = NULL };
+
+	if (bo->size) {
+		s.bytes = malloc(bo->size);
+		memcpy(s.bytes, bo->map, bo->size);
+	}
+	return s;
+}
+
+static int bo_snap_same(const struct bo_snap *a, const struct bo_snap *b)
+{
+	return a->size == b->size &&
+	       (!a->size || !memcmp(a->bytes, b->bytes, a->size));
+}
+
+static void bo_snap_free(struct bo_snap *s)
+{
+	free(s->bytes);
+	s->bytes = NULL;
+}
+
+static void run_ab(const char *path)
+{
+	const int before = failures;
+	struct ane_nn *staged_nn, *direct_nn;
+	struct bo_snap staged_chans[TILE_COUNT], direct_chans[TILE_COUNT];
+	struct bo_snap staged_btsp, direct_btsp;
+	int bdx;
+
+	setenv("ANE_LOAD_STAGED", "1", 1);
+	staged_nn = ane_init(path);
+	unsetenv("ANE_LOAD_STAGED");
+	direct_nn = ane_init(path);
+
+	if (!staged_nn || !direct_nn) {
+		printf("FAIL A/B: init failed (staged %p direct %p)\n",
+		       (void *)staged_nn, (void *)direct_nn);
+		failures++;
+		if (staged_nn) {
+			ane_free(staged_nn);
+		}
+		if (direct_nn) {
+			ane_free(direct_nn);
+		}
+		return;
+	}
+
+	if (staged_nn->data == NULL) {
+		printf("FAIL A/B: staged mode left nn->data NULL\n");
+		failures++;
+	} else if ((uintptr_t)staged_nn->data & 0x3fff) {
+		printf("FAIL A/B: staged nn->data is not 16 KiB aligned\n");
+		failures++;
+	}
+	if (direct_nn->data != NULL) {
+		printf("FAIL A/B: direct mode allocated a staging buffer "
+		       "(nn->data %p)\n", direct_nn->data);
+		failures++;
+	}
+
+	for (bdx = 0; bdx < TILE_COUNT; bdx++) {
+		staged_chans[bdx] = bo_snap_chan(&staged_nn->chans[bdx]);
+		direct_chans[bdx] = bo_snap_chan(&direct_nn->chans[bdx]);
+		if (!bo_snap_same(&staged_chans[bdx], &direct_chans[bdx])) {
+			printf("FAIL A/B: chans[%d] bytes differ (staged %llu B "
+			       "vs direct %llu B)\n", bdx,
+			       (unsigned long long)staged_chans[bdx].size,
+			       (unsigned long long)direct_chans[bdx].size);
+			failures++;
+		}
+	}
+	staged_btsp = bo_snap_chan(&staged_nn->btsp_chan);
+	direct_btsp = bo_snap_chan(&direct_nn->btsp_chan);
+	if (!bo_snap_same(&staged_btsp, &direct_btsp)) {
+		printf("FAIL A/B: btsp_chan bytes differ\n");
+		failures++;
+	}
+
+	for (bdx = 0; bdx < TILE_COUNT; bdx++) {
+		bo_snap_free(&staged_chans[bdx]);
+		bo_snap_free(&direct_chans[bdx]);
+	}
+	bo_snap_free(&staged_btsp);
+	bo_snap_free(&direct_btsp);
+	ane_free(staged_nn);
+	ane_free(direct_nn);
+	printf("  [%s] A/B: staged vs direct BO bytes, and nn->data\n",
+	       failures == before ? "ok" : "FAIL");
+}
+
+/* A program file shorter than its header's size: libane loads it with the
+ * unread tail zero (not leftover bytes) -- in the staging buffer in staged
+ * mode (16 KiB aligned), in the chans[0] buffer object in direct mode.
+ * M_PERTURB fills new heap memory with nonzero bytes, so a tail that
+ * nothing zeroes is seen on every run. */
+static void run_short_file(const char *path, uint64_t cut, int staged)
+{
+	const uint64_t cut_amt = cut;
 	char tmp[] = "/tmp/test_libane_short-XXXXXX";
 	int before = failures;
 	struct ane_nn *nn;
@@ -285,7 +387,7 @@ static void run_short_file(const char *path)
 	}
 	memcpy(&size, buf, sizeof(size)); /* struct anec: size comes first */
 	fwrite(buf, 1, 0x1000, out);
-	for (left = size - cut; left; left -= got) {
+	for (left = size - cut_amt; left; left -= got) {
 		got = fread(buf, 1, left < sizeof(buf) ? left : sizeof(buf), in);
 		if (!got)
 			break;
@@ -294,26 +396,54 @@ static void run_short_file(const char *path)
 	fclose(out);
 	out = NULL;
 
+	if (!staged) {
+		run_ab(tmp);
+	}
+	if (staged) {
+		setenv("ANE_LOAD_STAGED", "1", 1);
+	} else {
+		unsetenv("ANE_LOAD_STAGED");
+	}
 	abi_major = ANE_ABI_MAJOR;
 	mallopt(M_PERTURB, 0x5a);
 	nn = ane_init(tmp);
 	mallopt(M_PERTURB, 0);
+	unsetenv("ANE_LOAD_STAGED");
 	if (!nn) {
 		printf("FAIL short file: init failed\n");
 		failures++;
 		goto done;
 	}
-	if ((uintptr_t)nn->data & 0x3fff) {
-		printf("FAIL short file: nn->data %p is not 16 KiB aligned\n",
-		       nn->data);
-		failures++;
-	}
-	for (uint64_t i = size - cut; i < size; i++) {
-		if (((uint8_t *)nn->data)[i]) {
-			printf("FAIL short file: byte %#llx past the file end is %#x\n",
-			       (unsigned long long)i, ((uint8_t *)nn->data)[i]);
+	if (staged) {
+		if ((uintptr_t)nn->data & 0x3fff) {
+			printf("FAIL short file: nn->data %p is not 16 KiB "
+			       "aligned\n", nn->data);
 			failures++;
-			break;
+		}
+		for (uint64_t i = size - cut_amt; i < size; i++) {
+			if (((uint8_t *)nn->data)[i]) {
+				printf("FAIL short file: byte %#llx past the "
+				       "file end is %#x\n", (unsigned long long)i,
+				       ((uint8_t *)nn->data)[i]);
+				failures++;
+				break;
+			}
+		}
+	} else {
+		if (nn->data != NULL) {
+			printf("FAIL short file: direct mode allocated a "
+			       "staging buffer\n");
+			failures++;
+		}
+		for (uint64_t i = size - cut_amt; i < size; i++) {
+			if (((uint8_t *)nn->chans[0].map)[i]) {
+				printf("FAIL short file: chans[0] byte %#llx "
+				       "past the file end is %#x\n",
+				       (unsigned long long)i,
+				       ((uint8_t *)nn->chans[0].map)[i]);
+				failures++;
+				break;
+			}
 		}
 	}
 	ane_free(nn);
@@ -324,8 +454,9 @@ done:
 		fclose(out);
 	if (fd >= 0)
 		unlink(tmp);
-	printf("  [%s] ABI 1: short program file, zero tail\n",
-	       failures == before ? "ok" : "FAIL");
+	printf("  [%s] ABI 1: short program file (%llu B cut), zero tail, "
+	       "%s mode\n", failures == before ? "ok" : "FAIL",
+	       (unsigned long long)cut_amt, staged ? "staged" : "direct");
 }
 
 int main(int argc, char **argv)
@@ -342,9 +473,14 @@ int main(int argc, char **argv)
 	run_case("ABI 2: load, exec and free", ANE_ABI_M2_MAJOR, path, 0);
 	run_case("ABI 2: first BO mmap fails", ANE_ABI_M2_MAJOR, path, 1);
 	run_case("ABI 2: third BO mmap fails", ANE_ABI_M2_MAJOR, path, 3);
-	run_case("ABI 1: load, submit and free", ANE_ABI_MAJOR, path, 0);
-	run_case("ABI 1: third BO mmap fails", ANE_ABI_MAJOR, path, 3);
-	run_short_file(path);
+	run_case("ABI 1: load, submit and free (direct)", ANE_ABI_MAJOR, path, 0);
+	run_case("ABI 1: third BO mmap fails (direct)", ANE_ABI_MAJOR, path, 3);
+	run_case("ABI 1: load, submit and free (staged)", ANE_ABI_MAJOR, path, 0);
+	run_case("ABI 1: third BO mmap fails (staged)", ANE_ABI_MAJOR, path, 3);
+	run_ab(path);
+	run_short_file(path, 64, 0);
+	run_short_file(path, 64, 1);
+	run_short_file(path, (1 << 20), 0);
 	printf(failures ? "IOCTL-CHECK FAIL\n" : "IOCTL-CHECK PASS\n");
 	return failures != 0;
 }
