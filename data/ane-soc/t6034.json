@@ -95,8 +95,8 @@
   },
   "mailbox": {
     "compatible": {
-      "v": "apple,t6031-asc-mailbox,apple,asc-mailbox-v4",
-      "src": "S4"
+      "v": null,
+      "reason": "INFERENCE, not measured: no ANE mailbox node exists in the ADT summary (S1) or in the kernel tree. t6034.dtsi (S4) includes t6031.dtsi, whose ASC mailboxes (smc, aop, mtp) are apple,t6031-asc-mailbox + apple,asc-mailbox-v4; that class is expected for the ANE, but no ANE node carries it. See t6031.json mailbox and receipts/2026-10-03-ane-h15."
     }
   },
   "pmgr": {
@@ -141,8 +141,8 @@
     }
   },
   "driver_family": {
-    "v": "ane_t6021 RTKit/firmware model extended",
-    "src": "S1"
+    "v": null,
+    "reason": "INFERENCE (b0 decision, receipts/2026-10-03-ane-h15): ane_t6021-like at the ASC layer, no new ASC-IOP client; the j514m/j516m ANE nodes are the T6031 ones (S1), so the t6031.json driver_family reason applies unchanged. Not measured: whether the firmware that iBoot preloads on an M3 Linux boot sends RTKit HELLO."
   },
   "hwx_generation": {
     "v": {

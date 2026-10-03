@@ -15,6 +15,13 @@
 
 ### Fixed
 
+- The M3 data files (`data/ane-soc/t8122.json`, `t6030.json`, `t6031.json`,
+  `t6034.json`) no longer name the 0x4000 window at engine + 0x1050000 as the
+  ANE mailbox, or give a reordered mailbox IRQ list. No source gave either.
+  That offset is RVBAR on T6021. Both values are now null, with the expected
+  wrapper + 0x8000 address in the reason. The T6030 mailbox compatible, the
+  j575d board (BuildManifest chip id 0x6032) and the driver family are also
+  corrected. See `receipts/2026-10-03-ane-h15`.
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
   steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
   revert made opt-in again got no firmware step.
