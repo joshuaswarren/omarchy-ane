@@ -41,22 +41,28 @@ Only the number of TLB syncs changes.
 
 ## Change
 
-`ane/src/ane_drv.c` at `fd3bee8`:
+`ane/src/ane_drv.c` at `16a1bc3` (the map path landed in `fd3bee8`; the
+short-return check came from the PR #104 review):
 
-- `ane_iommu_map_batch` (193-226): `sg_alloc_table_from_pages` over
+- `ane_iommu_map_batch` (193-232): `sg_alloc_table_from_pages` over
   `bo->pages`, one `iommu_map_sgtable`, `sg_free_table`. The sg table is
   transient: at most one 32-byte entry for each page (about 0.9 MB for the
-  encoder), freed before the ioctl returns.
+  encoder), freed before the ioctl returns. `iommu_map_sg` returns the
+  bytes it mapped. It skips only segments marked as PCI P2P bus
+  addresses, which a shmem page array never has. A return other than the
+  BO size is still treated as a failure: the driver unmaps what was
+  mapped and BO_INIT returns `-EIO`, so no BO goes out with a tail that
+  has no PTEs.
 - Stray PTEs: after an `-EEXIST`, `iommu_map_sg` has already unmapped what
   it mapped, so every valid PTE left in the just-reserved range is a stray
   (a PTE that no `drm_mm` node owns). `ane_iommu_clear_range` (121-133)
   clears them, the driver logs one warning with the count, and it retries
   the map once. The per-page path clears one stray for each page; the
   batch path clears all of them in one scan. The same helper now does the
-  probe-time purge of stale mappings (`ane_iommu_purge_stale`, 1040-1052).
+  probe-time purge of stale mappings (`ane_iommu_purge_stale`, 1046-1058).
 - `ane_iommu_map_each` (144-185): the old per-page loop, moved without a
   change in behavior.
-- `ane_iommu_map_pages` (236-281) reserves the IOVA node as before, reads
+- `ane_iommu_map_pages` (242-287) reserves the IOVA node as before, reads
   `map_mode` and `map_batch` once, calls one of the two paths, and on
   failure removes the node and frees it. Before, `map_mode` was read again
   for each page.
@@ -64,12 +70,12 @@ Only the number of TLB syncs changes.
   once for each BO_INIT. `echo 0 > /sys/module/ane/parameters/map_batch`
   selects the per-page path for the next BO_INIT, with no reload.
 
-Not changed: the unmap paths (`ane_iommu_unmap_pages` 283-309,
-`ane_reclaim_preserved` 348-385, `ane_gem_free_object` 417-447), the
+Not changed: the unmap paths (`ane_iommu_unmap_pages` 289-315,
+`ane_reclaim_preserved` 354-391, `ane_gem_free_object` 423-453), the
 `drm_mm` IOVA allocation and its alignment, the wedge preserve logic, the
 DART containment in `ane_dart.c`, runtime PM, `ane_stats`, the UAPI and
-`ane_t6021`. `git diff 5a457a3 fd3bee8` touches only `ane/src/ane_drv.c`
-and `CHANGELOG.md`.
+`ane_t6021`. The code diff (`git diff 5a457a3 16a1bc3 -- ane`) touches
+only `ane/src/ane_drv.c`.
 
 ## Expected saving
 
@@ -106,8 +112,8 @@ below measure the real number as `libane:bo_init`.
 - Unwind. On any failure, `iommu_map_sg` leaves no PTE of its own; the
   driver then removes and frees the node. A second failure after a stray
   clear also leaves nothing mapped (host model, below).
-- Runtime PM. BO_INIT runs inside `ane_drm_ioctl` (`ane_drv.c` 862-898 at
-  `fd3bee8`), which holds a usage reference from line 888 until the ioctl
+- Runtime PM. BO_INIT runs inside `ane_drm_ioctl` (`ane_drv.c` 868-904 at
+  `16a1bc3`), which holds a usage reference from line 894 until the ioctl
   returns. apple-dart also takes its own DART reference for each sync. The
   batch path makes fewer PM get/put pairs, not more.
 - DART containment. BO_INIT holds `engine_lock`, so no job runs and no
@@ -122,33 +128,36 @@ below measure the real number as `libane:bo_init`.
 ## Build proofs
 
 W=1, `ane.ko` only (no `ane_t6021` input changes). Base is origin/main
-`5a457a3`, fix is `fd3bee8`, same tree and flags.
+`5a457a3`, fix is `fd3bee8` and `16a1bc3`, same tree and flags.
 
 | Tree | Build | sha256 | vermagic | srcversion |
 |---|---|---|---|---|
 | Arch Linux ARM 7.1.13-3-1-ARCH headers, ALARM chroot, gcc 16.1.1 | base | `f91c72b4adda2185463ef98390559527801295de52a7f4f3243abc5e34c2da46` | 7.1.13-3-1-ARCH SMP preempt mod_unload aarch64 | `B94A022ECB6F0FF27D17BB8` |
-| same | fix | `1dec6c9741576d7bdd1cb543f608abc3fa77210df8defa4701f56357037c7f3a` | same | `02D7B063016CE56355CE136` |
+| same | `fd3bee8` | `1dec6c9741576d7bdd1cb543f608abc3fa77210df8defa4701f56357037c7f3a` | same | `02D7B063016CE56355CE136` |
+| same | `16a1bc3` | `71c7528a2d21b27227cf44107f65c0ac20d165eca0addd7ca6dbd91dc3652fc3` | same | `E34A43E76C2EF977D82E9F4` |
 | linux-aurora 7.1.12 `f227145f50e4`, aarch64-linux-gnu-gcc 12.2.0 | base | `f8150b6df5adee62828f7b8e7c81dbe3eb7a048d672a4a92b8fe9b5ed7aafb94` | 7.1.12-ARCH+ SMP preempt mod_unload aarch64 | `B94A022ECB6F0FF27D17BB8` |
-| same | fix | `a536c2b31f31958fc99ee97902afca1d4073f377707e3bc1a3e9091e77aa7f2e` | same | `02D7B063016CE56355CE136` |
+| same | `fd3bee8` | `a536c2b31f31958fc99ee97902afca1d4073f377707e3bc1a3e9091e77aa7f2e` | same | `02D7B063016CE56355CE136` |
+| same | `16a1bc3` | `355c240927ffaf9524c7cbfb6ab36ed6f0eb263f69accad533d43b8e1d078197` | same | `E34A43E76C2EF977D82E9F4` |
 
-- 7.1.13: no compiler warning in base or fix (only the pahole version
+- 7.1.13: no compiler warning in any build (only the pahole version
   notice). `modpost` ran against the full `Module.symvers` with no
   warning, so every new import resolves: `iommu_map_sg`
   (`EXPORT_SYMBOL_GPL`), `sg_alloc_table_from_pages_segment` and
   `sg_free_table` (`EXPORT_SYMBOL`). `modinfo -F parm` lists `map_batch`
-  on the fix only.
-- 7.1.12: the same single compiler warning in base and fix (`ane_tm.c`
+  on the fix builds only.
+- 7.1.12: the same single compiler warning in every build (`ane_tm.c`
   532, `-Wformat-truncation`, older than this change). That config has
   `CONFIG_MODVERSIONS` off and no `Module.symvers`, so `modpost` reports
-  114 unresolved symbols for base and 117 for fix. `nm -u` shows that the
-  difference is exactly the three new imports, and the tree exports all
-  three (`iommu.c` 2930, `lib/scatterlist.c` 264 and 599).
+  114 unresolved symbols for base and 117 for each fix build. `nm -u`
+  shows that the difference is exactly the three new imports, and the
+  tree exports all three (`iommu.c` 2930, `lib/scatterlist.c` 264 and
+  599).
 
 ## Host tests and host model
 
-- `make -C tools check`: rc 0 on `fd3bee8`.
+- `make -C tools check`: rc 0 on `fd3bee8` and on `16a1bc3`.
 - `pytest -q tests tools` (after `make -C tools ane-run`): 58 passed,
-  1 skipped, on `fd3bee8`.
+  1 skipped, on `fd3bee8` and on `16a1bc3`.
 - Host model (not committed; private lab record). It compiles the
   driver's map functions, extracted verbatim from `ane_drv.c`, with ASan
   and UBSan. The functions run against a PTE model with io-pgtable-dart
@@ -160,6 +169,8 @@ W=1, `ane.ko` only (no `ane_t6021` input changes). Base is origin/main
   - An `-ENOMEM` at page 12,345 leaves 0 PTEs and no node.
   - A stray followed by a failing retry leaves 0 PTEs.
   - A valid PTE outside the BO range stays.
+  - A short `iommu_map_sg` return (`16a1bc3`) gives `-EIO`, 0 PTEs and no
+    node.
   - No sanitizer report.
 
 ## Hardware A/B protocol (T6001 lane, T8103 lane)
@@ -207,8 +218,9 @@ for the `kprof` arm, because the GPU also maps through DARTs.
    git -C ~/src/omarchy-ane fetch origin \
      +refs/heads/agent/ane-iommu-batch:refs/remotes/origin/agent/ane-iommu-batch
    git -C ~/src/omarchy-ane worktree add /var/tmp/ane-iommu-batch origin/agent/ane-iommu-batch
-   make -C /lib/modules/$(uname -r)/build M=/var/tmp/ane-iommu-batch/ane \
-        ANE_VERSION=0.4.1.r59.gfd3bee8 modules
+   git -C /var/tmp/ane-iommu-batch rev-parse HEAD   # record it
+   make -C /lib/modules/$(uname -r)/build M=/var/tmp/ane-iommu-batch/ane modules
+   modinfo -F version /var/tmp/ane-iommu-batch/ane/ane.ko   # git describe of that HEAD
    modinfo -F parm /var/tmp/ane-iommu-batch/ane/ane.ko | grep map_batch
    sha256sum /var/tmp/ane-iommu-batch/ane/ane.ko
    sudo rmmod ane && sudo insmod /var/tmp/ane-iommu-batch/ane/ane.ko
@@ -304,9 +316,12 @@ for the `kprof` arm, because the GPU also maps through DARTs.
    `iommu_map|stray DART PTE|unmap short|rollback unmap|dart_init_pte|WARNING:|SError|external abort|Internal error|tm completion failed|recovering|DART.*fault|busy bit did not clear|Unbalanced pm_runtime`.
    A "cleared ... stray DART PTE" line is a finding to report, not a pass.
 
-8. Close-out: `echo 1 | sudo tee $P`, then restore the packaged module
-   (`sudo rmmod ane && sudo modprobe ane`) and confirm the bind with
-   `omarchy-ane-check`. Clean up with `git worktree remove` and
+8. Close-out: `echo 1 | sudo tee $P`, then reboot to restore the packaged
+   module. Do not `rmmod` and `modprobe`: the remove path is the reload
+   case that `AGENTS.md` and the T6001 `-EACCES` record above warn about.
+   After the reboot, confirm the bind with `omarchy-ane-check` and run one
+   `omarchy-ane-smoke --timeout 900` (it does a BO_INIT, which the bind
+   check does not). Clean up with `git worktree remove` and
    `git worktree prune`.
 
 Save the harness output tree (`tar czf ane-iommu-batch-out.tgz -C
@@ -325,10 +340,6 @@ their only use.
 - The host model checks the driver's control flow against models of
   io-pgtable-dart and `iommu_map_sg`. It does not test apple-dart, the
   DART hardware, or memory ordering.
-- `iommu_map_sg` returns the sum of the segment lengths that it mapped.
-  It skips only segments marked as PCI P2P bus addresses, which a shmem
-  page array never has, so the driver does not compare the return value
-  with the BO size.
 - The per-page unmap at close keeps its 83,865 invalidates. One
   `iommu_unmap` per BO would batch it, but that is a separate change.
   `iommu_unmap` stops at the first hole. A range unmap therefore needs a
