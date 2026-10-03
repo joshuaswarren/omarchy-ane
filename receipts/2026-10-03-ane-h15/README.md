@@ -89,7 +89,7 @@ arithmetic on A1 values (A3).
 | Mailbox and endpoint names in local excerpts | RTKit system EPs 1, 2, 3, 4, 8, 0xa; app EPs INIT, T2FC, T2FH, T2HS, T2HC, T2HT | none: the ADT summary has no mailbox or endpoint fields, and no H15 firmware strings are local | none | none | MEASURED (absence in local data) | R1:286-303, A1 |
 | RTKit versions the kernel client accepts | 11 to 12 | same client | same | same | MEASURED (kernel) | A4 `rtkit.c:75-76` |
 | Host transport that works today | legacy ChMan ring + IPI doorbell engine + 0x1844000 after the SCRATCH handshake; no HELLO on any recorded 13.5 boot | unknown | unknown | unknown | T6021 MEASURED | R3, R4 §20 |
-| Other ADT windows | reg[1] 0x28e080000+0x4034, reg[2] 0x28e08c000+0x4000 (pmgr, SET) | reg[3] 0x2d0700000+0x18000, reg[4] 0x2d0724000+0x4000 | reg[3] 0x350700000+0x18000, reg[4] 0x350724000+0x4000, reg[5] 0x3503c0000+0x24000, reg[6] 0x211000000+0xf74000, reg[7] 0x3642c8000+0x4000 | reg[3] 0x292280000+0x10000, reg[4] 0x292290000+0x4000, reg[5] 0x2903c0000+0x30000 (the same address on die 1), reg[6] 0x404000000+0x2000000, reg[7] 0x2a02dc000+0x4000 | address MEASURED; reg[5..7] role unknown | A1, A3 |
+| Other ADT windows | reg[1] 0x28e080000+0x4034, reg[2] 0x28e08c000+0x4000 (pmgr, SET) | reg[3] 0x2d0700000+0x18000, reg[4] 0x2d0724000+0x4000 | reg[3] 0x350700000+0x18000, reg[4] 0x350724000+0x4000, reg[5] 0x3503c0000+0x24000, reg[6] 0x211000000+0xf74000, reg[7] 0x3642c8000+0x4000 | reg[3] 0x292280000+0x10000, reg[4] 0x292290000+0x4000, reg[5] 0x2903c0000+0x30000, reg[6] 0x404000000+0x2000000, reg[7] 0x2a02dc000+0x4000. On die 1, A1 gives every window at die 0 + 0x2000000000 except reg[5], which it lists at the die-0 address 0x2903c0000 | address MEASURED; reg[5..7] role unknown; the reg[5] die-1 value is as A1 prints it, not checked against a full ADT | A1, A3 |
 
 ### Power and DART
 
@@ -119,7 +119,8 @@ the old value.
   `t6030.dtsi`, uses `apple,t6030-asc-mailbox`. The T6031 and T6034 compatibles are now null
   too, because no ANE mailbox node exists to cite.
 - `t6031.json` called j575d a "MacBook Pro 16-inch M3 Max, dual-die". The BuildManifest gives
-  j575dap chip id 0x6032 with two ANE images. The board now records that chip id.
+  j575dap chip id 0x6032 with two ANE images. The board leaf now cites only the ADT, and
+  `ane1_j575d.buildmanifest_chip_id` records 0x6032 from the BuildManifest.
 - `t8122.json` said the ADT ane node has no iommu-parent. The receipt summary does not print
   that field, so absence is not shown. The reason now says unknown.
 - `driver_family` cited the compiler oracle. It is now a null leaf whose reason holds this
@@ -189,15 +190,16 @@ unchecked release of the ANE CPU is the hazard that this plan must exclude.
 
 Gates:
 
-- No module alias and no autoload. It binds only to `apple,t8122-ane`, `apple,t6030-ane` or
-  `apple,t6031-ane` from a non-data-only overlay that the owner applies with an explicit
-  opt-in key. The shipped data-only overlays never apply. On T8122 and T6030 that overlay
-  also adds the MPM, CPU, TD and BASE power-controller nodes from the ADT words, because the
-  kernel tree has only `ps_ane_sys` there.
+- No module alias and no autoload. It binds only to `apple,t8122-ane`, `apple,t6030-ane`,
+  `apple,t6031-ane` or `apple,t6034-ane` (j514m and j516m), from a non-data-only overlay
+  that the owner applies with an explicit opt-in key. The shipped data-only overlays never
+  apply. On T8122 and T6030 that overlay also adds the MPM, CPU, TD and BASE
+  power-controller nodes from the ADT words, because the kernel tree has only `ps_ane_sys`
+  there.
 - The module parameter `experimental=1` is required. Without it, probe returns `-EPERM`
   before any MMIO.
 
-Probe sequence (every step logs, and every failure undoes the steps before it):
+Probe sequence (every step logs; before RUN, a failure undoes the earlier steps):
 
 1. Power up the ANE domains through genpd in ADT parent order (SYS, then MPM, CPU and TD,
    then BASE). Never write pmgr words directly (R4 §7). Read each pmgr word, which lies
@@ -214,7 +216,11 @@ Probe sequence (every step logs, and every failure undoes the steps before it):
 4. Set CPU_CONTROL RUN. `apple_rtkit_boot` waits for HELLO with a 2 s deadline. Log the
    HELLO versions and the EPMAP bitmap. Start only the system endpoints that `rtkit.c` starts
    (crashlog, syslog, ioreport). Start no app endpoints and send no CSNE command.
-5. On timeout or crash: clear RUN, quiesce, power down, and fail probe. Unload does the same.
+5. After RUN, or after RTKit attaches to a core that iBoot started, there is no unwind, as
+   in `ane_t6021` (`ane_t6021_boot.c:505-514`): the firmware may still read or write the
+   mapped memory. On a timeout or a crash, keep every mapping, buffer, IRQ and power link,
+   pin the module, log the state, and require a reboot. Before that point, a refusal undoes
+   the earlier steps in reverse order.
 
 Pass: HELLO in the 11 to 12 window, the EPMAP bitmap logged, and syslog lines from the
 firmware. Fail: no HELLO within the deadline (on T6021 this was the first sign of the legacy

@@ -84,10 +84,9 @@
     },
     {
       "v": {
-        "value": "j575d",
-        "buildmanifest_chip_id": "0x6032"
+        "value": "j575d"
       },
-      "src": "S2"
+      "src": "S1"
     }
   ],
   "ane": {
@@ -196,6 +195,10 @@
     }
   },
   "ane1_j575d": {
+    "buildmanifest_chip_id": {
+      "v": "0x6032 (board j575dap, two ANE images: ANE and Ap,ANE1)",
+      "src": "S2"
+    },
     "compatible": {
       "v": "iop,ascwrap-v6",
       "src": "S1"
