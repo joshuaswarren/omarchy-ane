@@ -1,0 +1,330 @@
+{
+ "source": "macOS 27.0 26A428 IODeviceTree pmgr@3B700000 'reg' (window 4, artifacts/jwm1-parity/macos-window4/adt-pmgr.txt, sha256 ab37739a32594aa11f24a8dfd5f3550155138bed19f0108f77c8e8f7a174689f); PA = /arm-io child base 0x200000000 + offset (same translation as the T6021 decode; the T8103 pmgr unit address 0x3B700000 -> 0x23b700000 = the Linux DT pmgr node, matching FIND \u00a719 T8103 notes)",
+ "assumption": "ApplePMGR::RegMap index == ADT pmgr reg index (T6001 map113 precedent) -- INFERENCE; no IOService IODeviceMemory capture exists for T8103 (window 4 took the IODeviceTree plane only)",
+ "regs": [
+  {
+   "index": 0,
+   "pa": "0x23b700000",
+   "len": "0x8c000",
+   "adt_offset": "0x3b700000"
+  },
+  {
+   "index": 1,
+   "pa": "0x23d280000",
+   "len": "0x74000",
+   "adt_offset": "0x3d280000"
+  },
+  {
+   "index": 2,
+   "pa": "0x23b000000",
+   "len": "0x70000",
+   "adt_offset": "0x3b000000"
+  },
+  {
+   "index": 3,
+   "pa": "0x23d200000",
+   "len": "0x80000",
+   "adt_offset": "0x3d200000"
+  },
+  {
+   "index": 4,
+   "pa": "0x23d004000",
+   "len": "0x1000",
+   "adt_offset": "0x3d004000"
+  },
+  {
+   "index": 5,
+   "pa": "0x210e20000",
+   "len": "0x2000",
+   "adt_offset": "0x10e20000"
+  },
+  {
+   "index": 6,
+   "pa": "0x210050000",
+   "len": "0xef1000",
+   "adt_offset": "0x10050000"
+  },
+  {
+   "index": 7,
+   "pa": "0x210e40000",
+   "len": "0x9000",
+   "adt_offset": "0x10e40000"
+  },
+  {
+   "index": 8,
+   "pa": "0x210e50000",
+   "len": "0xe81000",
+   "adt_offset": "0x10e50000"
+  },
+  {
+   "index": 9,
+   "pa": "0x210e70000",
+   "len": "0x1000",
+   "adt_offset": "0x10e70000"
+  },
+  {
+   "index": 10,
+   "pa": "0x210050000",
+   "len": "0x10000",
+   "adt_offset": "0x10050000"
+  },
+  {
+   "index": 11,
+   "pa": "0x210150000",
+   "len": "0x10000",
+   "adt_offset": "0x10150000"
+  },
+  {
+   "index": 12,
+   "pa": "0x210250000",
+   "len": "0x10000",
+   "adt_offset": "0x10250000"
+  },
+  {
+   "index": 13,
+   "pa": "0x210350000",
+   "len": "0x10000",
+   "adt_offset": "0x10350000"
+  },
+  {
+   "index": 14,
+   "pa": "0x211e20000",
+   "len": "0x2000",
+   "adt_offset": "0x11e20000"
+  },
+  {
+   "index": 15,
+   "pa": "0x211050000",
+   "len": "0xef1000",
+   "adt_offset": "0x11050000"
+  },
+  {
+   "index": 16,
+   "pa": "0x211e40000",
+   "len": "0xb000",
+   "adt_offset": "0x11e40000"
+  },
+  {
+   "index": 17,
+   "pa": "0x211e50000",
+   "len": "0xe81000",
+   "adt_offset": "0x11e50000"
+  },
+  {
+   "index": 18,
+   "pa": "0x211e70000",
+   "len": "0x1000",
+   "adt_offset": "0x11e70000"
+  },
+  {
+   "index": 19,
+   "pa": "0x211050000",
+   "len": "0x10000",
+   "adt_offset": "0x11050000"
+  },
+  {
+   "index": 20,
+   "pa": "0x211150000",
+   "len": "0x10000",
+   "adt_offset": "0x11150000"
+  },
+  {
+   "index": 21,
+   "pa": "0x23b280000",
+   "len": "0x8000",
+   "adt_offset": "0x3b280000"
+  },
+  {
+   "index": 22,
+   "pa": "0x23bc2c000",
+   "len": "0x40000",
+   "adt_offset": "0x3bc2c000"
+  },
+  {
+   "index": 23,
+   "pa": "0x23d100000",
+   "len": "0x88000",
+   "adt_offset": "0x3d100000"
+  },
+  {
+   "index": 24,
+   "pa": "0x211250000",
+   "len": "0x10000",
+   "adt_offset": "0x11250000"
+  },
+  {
+   "index": 25,
+   "pa": "0x211350000",
+   "len": "0x10000",
+   "adt_offset": "0x11350000"
+  },
+  {
+   "index": 26,
+   "pa": "0x210000000",
+   "len": "0xf64000",
+   "adt_offset": "0x10000000"
+  },
+  {
+   "index": 27,
+   "pa": "0x211000000",
+   "len": "0xf64000",
+   "adt_offset": "0x11000000"
+  },
+  {
+   "index": 28,
+   "pa": "0x26b8f0000",
+   "len": "0x4000",
+   "adt_offset": "0x6b8f0000"
+  },
+  {
+   "index": 29,
+   "pa": "0x26b8f4000",
+   "len": "0x4000",
+   "adt_offset": "0x6b8f4000"
+  },
+  {
+   "index": 30,
+   "pa": "0x26b908000",
+   "len": "0x4000",
+   "adt_offset": "0x6b908000"
+  },
+  {
+   "index": 31,
+   "pa": "0x23b204000",
+   "len": "0x4000",
+   "adt_offset": "0x3b204000"
+  },
+  {
+   "index": 32,
+   "pa": "0x23b800000",
+   "len": "0x280000",
+   "adt_offset": "0x3b800000"
+  },
+  {
+   "index": 33,
+   "pa": "0x262000000",
+   "len": "0x1000000",
+   "adt_offset": "0x62000000"
+  },
+  {
+   "index": 34,
+   "pa": "0x264000000",
+   "len": "0x1000000",
+   "adt_offset": "0x64000000"
+  },
+  {
+   "index": 35,
+   "pa": "0x266000000",
+   "len": "0x1000000",
+   "adt_offset": "0x66000000"
+  },
+  {
+   "index": 36,
+   "pa": "0x268000000",
+   "len": "0x1000000",
+   "adt_offset": "0x68000000"
+  },
+  {
+   "index": 37,
+   "pa": "0x26a000000",
+   "len": "0x1000000",
+   "adt_offset": "0x6a000000"
+  },
+  {
+   "index": 38,
+   "pa": "0x22a000000",
+   "len": "0x1000000",
+   "adt_offset": "0x2a000000"
+  },
+  {
+   "index": 39,
+   "pa": "0x232000000",
+   "len": "0x1000000",
+   "adt_offset": "0x32000000"
+  },
+  {
+   "index": 40,
+   "pa": "0x205000000",
+   "len": "0x1000000",
+   "adt_offset": "0x5000000"
+  },
+  {
+   "index": 41,
+   "pa": "0x88c000000",
+   "len": "0x1000000",
+   "adt_offset": "0x68c000000"
+  },
+  {
+   "index": 42,
+   "pa": "0x580000000",
+   "len": "0x1000000",
+   "adt_offset": "0x380000000"
+  },
+  {
+   "index": 43,
+   "pa": "0x700000000",
+   "len": "0x1000000",
+   "adt_offset": "0x500000000"
+  },
+  {
+   "index": 44,
+   "pa": "0x272000000",
+   "len": "0x1000000",
+   "adt_offset": "0x72000000"
+  },
+  {
+   "index": 45,
+   "pa": "0x229000000",
+   "len": "0x1000000",
+   "adt_offset": "0x29000000"
+  },
+  {
+   "index": 46,
+   "pa": "0x234000000",
+   "len": "0x1000000",
+   "adt_offset": "0x34000000"
+  },
+  {
+   "index": 47,
+   "pa": "0x279000000",
+   "len": "0x1000000",
+   "adt_offset": "0x79000000"
+  },
+  {
+   "index": 48,
+   "pa": "0x225000000",
+   "len": "0x4000",
+   "adt_offset": "0x25000000"
+  },
+  {
+   "index": 49,
+   "pa": "0x225004000",
+   "len": "0x4000",
+   "adt_offset": "0x25004000"
+  },
+  {
+   "index": 50,
+   "pa": "0x225008000",
+   "len": "0x4000",
+   "adt_offset": "0x25008000"
+  },
+  {
+   "index": 51,
+   "pa": "0x226000000",
+   "len": "0x4000",
+   "adt_offset": "0x26000000"
+  },
+  {
+   "index": 52,
+   "pa": "0x226004000",
+   "len": "0x4000",
+   "adt_offset": "0x26004000"
+  },
+  {
+   "index": 53,
+   "pa": "0x226008000",
+   "len": "0x4000",
+   "adt_offset": "0x26008000"
+  }
+ ]
+}
