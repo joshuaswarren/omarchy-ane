@@ -87,8 +87,8 @@ release PR adds two code fixes to the promotion tools:
 On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order and the kernel tree's dtc
 (`DTC 1.7.2-g53373d13`) first in `PATH`, on a fresh `git archive` of
-`d1f1f46`. That commit is this release except for the last edit of this
-receipt: `git diff d1f1f46..<release commit> -- .
+`b74e8f9`. That commit is this release except for the last edit of this
+receipt: `git diff b74e8f9..<release commit> -- .
 ':!receipts/2026-10-03-omarchy-ane-0.4.4'` is empty. Every step exited 0:
 
 | Step | Result |
