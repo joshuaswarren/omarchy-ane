@@ -63,7 +63,7 @@ NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
 # FETCH chips whose ANE overlay is enabled in packaging/dt/overlays (the
 # others are opt-in or not installed); tools/test_ane_m2.py checks that the
 # two agree.
-DEFAULT_ON = ("apple,t6021",)
+DEFAULT_ON = ("apple,t6020", "apple,t6021")
 # The Asahi initramfs mounts the vendor firmware package (vendorfw on the ESP)
 # here, and the kernel firmware loader searches it before usr/lib/firmware.
 VENDOR = "usr/lib/firmware/vendor"

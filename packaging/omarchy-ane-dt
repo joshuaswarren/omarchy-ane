@@ -25,7 +25,7 @@ count: the overlay applies, and its nodes of the same name replace the kernel
 node's properties and enable it. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
 string is a line of /etc/omarchy-platform/dtb-overlays.opt-in, which the owner
-writes (the untested T6000, T6002, T6020, T6022 and T8112 nodes: "ane-t6000", "ane-t6002", "ane-t6020", "ane-t6022" and "ane-t8112"; the T6021 U-Boot input: "uboot-serial-stdin-t6021").
+writes (the untested T6000, T6002, T6022 and T8112 nodes: "ane-t6000", "ane-t6002", "ane-t6022" and "ane-t8112"; the T6021 U-Boot input: "uboot-serial-stdin-t6021").
 An overlay whose root has "omarchy,data-only" carries SoC data for a chip that
 no driver binds: apply never applies it, whatever the opt-in file says. status
 adds "data-only (no driver): SOC" when SOC_DIR/SOC.json, the package's copy of
