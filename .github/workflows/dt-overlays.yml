@@ -10,7 +10,8 @@ name: dt-overlays
 # suites again on the tree of every promote_chip flip (tools/test_promote_chip.py). The ane-soc-data job
 # checks data/ane-soc/*.json and the README data-only table
 # (docs/ane-soc-data.md); the overlays job compiles and applies the data-only
-# overlays where a linux-asahi board device tree exists.
+# overlays where a linux-asahi board device tree exists. The overlays job also
+# runs dkms against dkms.conf (tools/test_dkms_exclusive.py).
 on:
   push:
     branches: [main]
@@ -42,6 +43,8 @@ on:
       - tools/test_ane_smoke.py
       - tools/omarchy-ane-probe
       - tools/test_ane_probe.py
+      - dkms.conf
+      - tools/test_dkms_exclusive.py
       - .github/workflows/dt-overlays.yml
   pull_request:
     paths:
@@ -72,6 +75,8 @@ on:
       - tools/test_ane_smoke.py
       - tools/omarchy-ane-probe
       - tools/test_ane_probe.py
+      - dkms.conf
+      - tools/test_dkms_exclusive.py
       - .github/workflows/dt-overlays.yml
 
 jobs:
@@ -91,8 +96,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      # fdtget and fdtput; dtc and fdtoverlay come from the kernel tree.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev
+      # fdtget and fdtput; dtc and fdtoverlay come from the kernel tree. dkms
+      # for tools/test_dkms_exclusive.py.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends device-tree-compiler flex bison libdrm-dev dkms
       - run: tools/asahi-dtbs "$RUNNER_TEMP/asahi"
       - name: tests (kernel dtc 1.7.2, libfdt linked in)
         run: |
@@ -109,6 +115,7 @@ jobs:
           python3 tools/test_promotion_check.py
           python3 tools/test_ane_smoke.py
           python3 tools/test_ane_probe.py
+          python3 tools/test_dkms_exclusive.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1
           # every promote_chip flip: the flip-sensitive suites above on each flipped tree

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- DKMS skips a kernel that ships the ANE driver itself
+  (`CONFIG_DRM_ACCEL_ANE=y` or `=m`, aurora-silicon/linux #155): that
+  kernel keeps its own `ane.ko` and `ane_t6021.ko`. `dkms.conf` sets
+  `BUILD_EXCLUSIVE_CONFIG="!CONFIG_DRM_ACCEL_ANE"`, so `dkms build` exits 77
+  (excluded) there. Before, `ane_t6021` failed to build on such a kernel:
+  its `include/uapi/drm/ane_accel.h` hides ours and lacks
+  `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both
+  kinds of kernel.
+
 ### Fixed
 
 - `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
