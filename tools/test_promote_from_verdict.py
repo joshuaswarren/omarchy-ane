@@ -33,7 +33,8 @@ def verdict(chips):
 
 def chip(c, v, state="opt-in", sha="deadbeef1234", passed=True, reasons=None):
     return {"chip": c, "state": state, "verdict": v,
-            "rows": [{"row_sha": sha, "judged": True, "passed": passed, "reasons": reasons or []}]}
+            "rows": [{"row_sha": sha, "judged": True, "passed": passed, "reasons": reasons or [],
+                      "driver_source": "intree"}]}
 
 
 PROMOTE = verdict([chip("t8112", "PROMOTE")])
@@ -146,7 +147,13 @@ assert p.returncode == 1 and "refused" in p.stderr, (p.returncode, p.stderr)
 print("promote_from_verdict test: production refuses synthetic verdicts")
 
 # a real propose opens one PR; a second run updates it, never duplicates it.
+# It stages only the tracked files the flip wrote: untracked build output left
+# by earlier steps of the same runner never lands in the PR (v0.4.3 shipped a
+# committed __pycache__ blob because propose ran `git add -A`).
 work = make_work()
+(work / "tools/__pycache__").mkdir(exist_ok=True)
+(work / "tools/__pycache__/aurora_dt.cpython-312.pyc").write_bytes(b"\x00stub")
+(work / "tools/stray.blob").write_bytes(b"\x00stub")
 for i in (1, 2):
     p = run(["propose", "--verdict-file", PROMOTE], work)
     assert p.returncode == 0, (i, p.stderr)
@@ -161,7 +168,19 @@ assert [l["name"] for l in labels] == ["auto-promotion"], labels
 body = state["bodies"]["7"]
 assert "<!-- promotion-verdict" in body and '"verdict": "PROMOTE"' in body.replace("'", '"') or \
     '"verdict": "PROMOTE"' in body, body[:200]
-print("promote_from_verdict test: double propose updates PR 7, no duplicate")
+pushed = subprocess.run(["git", "-C", str(work), "ls-tree", "-r", "--name-only",
+                         "origin/auto/promote-t8112"], check=True, capture_output=True,
+                        text=True).stdout.splitlines()
+assert not [f for f in pushed if "__pycache__" in f or f.endswith((".pyc", ".o", ".blob"))], pushed
+for f in ("packaging/dt/overlays", "packaging/dt/t8112-ane.dts", "packaging/omarchy-ane-check",
+          "packaging/omarchy-ane-dt", "README.md", "CHANGELOG.md",
+          "packaging/omarchy-ane-firmware-fetch"):
+    assert f in pushed, (f, pushed)
+subject = subprocess.run(["git", "-C", str(work), "log", "--format=%s", "-1",
+                          "origin/auto/promote-t8112"], check=True,
+                         capture_output=True, text=True).stdout.strip()
+assert subject == "PROMOTE: t8112 ANE -> default-on (row deadbeef1234; intree)", subject
+print("promote_from_verdict test: double propose updates PR 7, stages only the flip files")
 
 # gate merges the open PR when the fresh verdict matches the recorded block.
 p = run(["gate", "--pr", "7", "--verdict-file", PROMOTE], work)
@@ -172,7 +191,7 @@ print("promote_from_verdict test: gate compares and merges")
 # gate refuses when the judged row the PR rests on is gone (a different row landed).
 CHANGED = verdict([chip("t8112", "PROMOTE", sha="cafe567890ab")])
 p = run(["gate", "--pr", "7", "--verdict-file", CHANGED], work)
-assert p.returncode == 1 and "judged row deadbeef1234 passed=true driver_source=None -> gone" in p.stderr, p.stderr
+assert p.returncode == 1 and "judged row deadbeef1234 passed=true driver_source=intree -> gone" in p.stderr, p.stderr
 print("promote_from_verdict test: gate refuses a changed verdict")
 
 # The real shape: PR #113's block (t6020 PROMOTE, targets overlay and aurora-dt,
@@ -276,11 +295,62 @@ print("promote_from_verdict test: propose closes a stale flip PR and rewrites a 
 # the release plan: next patch version from the tags, no writes in dry-run.
 subprocess.run(["git", "-C", str(work), "tag", "v0.4.0"], check=True)
 before = (work / "CHANGELOG.md").read_text()
-p = run(["release", "--chip", "t8112", "--merge-sha", "head", "--verdict-file", PROMOTE,
-         "--dry-run"], work)
+p = run(["release", "--verdict-file", PROMOTE, "--dry-run"], work)
 assert p.returncode == 0 and "X.Y.Z" in p.stdout, p.stdout
 assert (work / "CHANGELOG.md").read_text() == before
 print("promote_from_verdict test: release plan ok")
+
+# a real release, in the shape that shipped v0.4.3 broken: run 37148592200
+# merged #113 (t6020) and failed merging #112, the next run merged #112 (t6000)
+# and released -- so the release must cover the tag range, not the run, and
+# must tag the release commit (the promotion merge carried no CHANGELOG move).
+work = make_work()
+git = lambda *a: subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
+                                 "-c", "user.email=816217+joshuaswarren@users.noreply.github.com", *a],
+                                check=True, capture_output=True, text=True).stdout.strip()
+git("tag", "v0.4.0")
+for msg in ("PROMOTE: t6020 ANE -> default-on (row 3c9389040f51; intree)",
+            "PROMOTE: t6000 ANE -> default-on (row 6eb94f49985b; intree)"):
+    git("commit", "--allow-empty", "-qm", msg)
+    git("push", "-q", "origin", "main")
+tarball = Path(tempfile.mkdtemp()) / "t.tar.gz"
+tarball.write_bytes(b"tarball-bytes")
+p = run(["release", "--verdict-file", PROMOTE], work, env={"ANE_RELEASE_TARBALL_URL": tarball.as_uri()})
+assert p.returncode == 0, (p.stdout, p.stderr)
+assert git("rev-parse", "v0.4.1^{commit}") == git("rev-parse", "main") != git("rev-parse", "v0.4.0^{commit}")
+assert git("log", "--format=%s", "-1", "v0.4.1") == "Release 0.4.1: t6020, t6000 ANE", git("log", "-1", "v0.4.1")
+changelog = git("show", "v0.4.1:CHANGELOG.md")
+assert changelog.index("## Unreleased") < changelog.index("## 0.4.1") < changelog.index("## 0.4.0"), changelog[:300]
+release_calls = [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines())
+                 if c[0].endswith("/releases") and c[1] == "POST"]
+assert len(release_calls) == 1, release_calls
+published = release_calls[0][2]
+assert published["tag_name"] == "v0.4.1" and published["name"] == "v0.4.1", published
+for want in ("PROMOTE: t6020", "t6020 (M2 Pro)", "rows 3c9389040f51", "driver_source intree",
+             "PROMOTE: t6000", "t6000 (M1 Pro)", "rows 6eb94f49985b", "merged as",
+             "0.4.1", "CHANGELOG"):
+    assert want in published["body"], (want, published["body"])
+assert "t6020" in p.stdout and "tarball sha256" in p.stdout, p.stdout
+# a second release with nothing new merged refuses.
+p = run(["release", "--verdict-file", PROMOTE], work, env={"ANE_RELEASE_TARBALL_URL": tarball.as_uri()})
+assert p.returncode == 1 and "no promotion commit" in p.stderr, p.stderr
+# Unreleased below an older section (the v0.4.3 heading-order bug) refuses.
+bad = make_work()
+subprocess.run(["git", "-C", str(bad), "tag", "v0.4.0"], check=True)
+text = (bad / "CHANGELOG.md").read_text()
+head, mark, rest = text.partition("## Unreleased\n\n")
+(bad / "CHANGELOG.md").write_text(head + rest.replace("## 0.4.2", "## Unreleased\n\n## 0.4.2", 1))
+subprocess.run(["git", "-C", str(bad), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-qam", "misplaced"], check=True)
+subprocess.run(["git", "-C", str(bad), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-q", "--allow-empty", "-m",
+                "PROMOTE: t8112 ANE -> default-on (row deadbeef1234; intree)"], check=True)
+subprocess.run(["git", "-C", str(bad), "push", "-q", "origin", "main"], check=True)
+p = run(["release", "--verdict-file", PROMOTE], bad)
+assert p.returncode == 1 and "Unreleased must be the first section" in p.stderr, p.stderr
+print("promote_from_verdict test: release covers the tag range, tags the release commit, keeps order")
 
 # aurora-plan and aurora-pr: the aurora-silicon/linux PR for a PROMOTE whose
 # passing row is in-tree, on a fake t8112-shaped aurora tree (git, so the base

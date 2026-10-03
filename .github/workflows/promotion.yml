@@ -169,6 +169,7 @@ jobs:
             python3 tools/test_promotion_check.py
             python3 tools/test_ane_intree.py
             python3 tools/test_aurora_dt.py
+            python3 tools/test_promote_chip.py
             python3 tools/test_ane_smoke.py
             python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
             python3 tools/gen_coverage_table.py --check
@@ -209,7 +210,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: release every merged promotion (tag, changelog, publish)
+      - name: release every promotion merged since the last tag (tag the release commit)
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -218,7 +219,8 @@ jobs:
           git config user.name omarchy-ane-automation
           git config user.email 816217+joshuaswarren@users.noreply.github.com
           git pull --rebase -q origin main
-          while read -r chip sha; do
-            [ -n "$chip" ] || continue
-            python3 tools/promote_from_verdict.py release --chip "$chip" --merge-sha "$sha"
-          done <<< "${{ needs.gate.outputs.merged }}"
+          # One release per run, from the tag range: an earlier run can merge
+          # one promotion and fail on the next (v0.4.3 shipped that way), and
+          # the tag goes on the release commit, not the promotion merge, so
+          # the tarball carries its own CHANGELOG section.
+          python3 tools/promote_from_verdict.py release

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
+ * Overlay state: on by default.
  * ANE for T6001 (M1 Max) board device trees, for kernels whose trees lack it.
  * Tested: the nodes of t600x-ane.dtsi bound ane.ko and ran exact fp16
  * programs on the M1 Max host.

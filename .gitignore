@@ -54,6 +54,10 @@ build/*
 tmp/*
 *.tmp
 
+# Byte-compiled Python (a committed __pycache__ blob shipped in v0.4.3)
+__pycache__/
+*.pyc
+
 .omp/
 .private-patterns
 test/*

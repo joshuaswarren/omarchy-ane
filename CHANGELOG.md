@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- The release step cuts the release it should: one release per run covering
+  every promotion merged since the last tag (verdict, chip, row shas,
+  driver_source, merge sha), tagging the release commit so the tarball
+  carries its own CHANGELOG section, with `## Unreleased` kept as the first
+  section.
+- The promotion flip is state-independent: the check's case lists and the
+  tested-header list derive their order from rules instead of absolute seats
+  into the v0.4.2 five-chip list, each overlay dts carries one
+  tool-written `Overlay state:` line, the offline suites pick their chips
+  from the overlays table, and `test_promote_chip` runs in the promotion
+  gate. Any promotion state round-trips and passes.
+- `propose` stages only the tracked files the flip wrote; `git add -A` had
+  shipped a committed `__pycache__` blob in v0.4.3 (removed, and
+  `__pycache__/` and `*.pyc` are ignored now).
+- The T6000/T6020 prose matches 0.4.3: the README's default-on line and the
+  evidence cells name the passing rows 6eb94f49985b and 3c9389040f51, the
+  overlay dts headers and the libane receipt stop claiming untested/opt-in,
+  and the libane entry and receipt carry the hardware numbers (#111) instead
+  of "not merged before hardware" and lab aliases.
+
 ## 0.4.3 (2026-10-03)
 
 - T6000 (M1 Pro) ANE on by default. (row 6eb94f49985b)
@@ -32,12 +54,12 @@
   `NULL` on this path. `ANE_LOAD_STAGED=1` restores the old staged load for
   A/B. The direct path reports `model_header`, `model_map`, `model_map_copy`
   (or `model_pread_fallback`), and `model_zero_tail` stages. The ABI and every
-  header are unchanged; the T6021 (ABI 2) loader is untouched. Not merged
-  before hardware: the A/B protocol for w71 (jwm1) and w72 (jw16) is in
-  `receipts/2026-10-03-libane-no-staging/README.md`.
-
-
-## Unreleased
+  header are unchanged; the T6021 (ABI 2) loader is untouched. Verified on
+  hardware before the merge (#111): on T8103 the whole-encoder cold open went
+  from 178.3 to 107.9 ms `init_total` (182.4 to 101.1 ms on the repeat arm),
+  `open_ms` 67-72 ms less; on T6001 from 361.4 to 286.5 ms, `open_ms` 828.5 to
+  760.1 ms; encoder output bit-exact across arms and smoke 20/20 on both
+  chips. Protocol and runs: `receipts/2026-10-03-libane-no-staging/README.md`.
 
 ## 0.4.2 (2026-10-03)
 
