@@ -1,0 +1,35 @@
+== state end 2026-10-03T09:18:03.131Z
+boot_id 3d3b1e2e-438a-41b7-9946-d1f3aa5c07fc uname 7.1.13-3-1-ARCH up 40.80
+module 0.4.2-main-5a457a3 59494CBC56F28ED8D1122C6 4f6c939b4a8ea678
+stats Y
+dyn_pg N
+boot_prevent_nap Y
+call_settle_us 1000
+bo_total_bytes 0
+trace_td N
+oneshot-file: none
+ane_stats: busy_ns 0 jobs 0 
+ane_pg_state: ane_sys_mpm 0x000003ff ane_td 0x000003ff ane_base 0x000003ff ane_set1 0x000003ff ane_set2 0x000003ff ane_set3 0x000003ff ane_set4 0x000003ff 
+runtime_status: active
+load 0.54 0.15 0.05 psi some avg10=0.01 avg60=0.04 avg300=0.01 total=105780
+esp 62ba301084714634
+dmesg_bad 0 dmesg_lines 1136
+no ane-run
+module file sha 4f6c939b4a8ea6780a0edb565e9e0542806596a90580174d55d97ad662c08cb6 (candidate 4f6c939b4a8ea6780a0edb565e9e0542806596a90580174d55d97ad662c08cb6)
+params dyn_pg N boot_prevent_nap Y stats Y
+bound: ../../../../bus/platform/drivers/ane_t6021
+lsmod ane*: ane_t6021 98304 2;
+ane.ko under /lib/modules/7.1.13-3-1-ARCH: 0
+modprobe.d: hid_apple.conf netconsole.conf 
+modprobe -c ane_t6021 options/install lines: 0
+system running failed_units 0
+BAD 0 chman VALIDATED 1
+labstate written /var/tmp/v042gate/runs/labstate-end.txt (131 lines)
+labstate diff lines: 10
+settle: up 361.68 s OK
+smoke rc=0 omarchy-ane-smoke: add-fixture on t6021: 20/20 calls bit-exact, min 1.378 ms, median 1.468 ms
+smoke 20 True True 0
+encoder rc=0 gate=[0.00 0.00 0 361.69] exec ms over 4 calls: min 254.299 p10 254.299 p25 254.321 median 254.394 p75 254 golden max_abs=0 relL2=0 exact=1 fp16 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+stats [0 0] -> [24 1046933745] (expect +24)
+dmesg new 15 non-UFW 0 BAD 0
+== end done /var/tmp/v042gate/runs/end-20261003T091803Z

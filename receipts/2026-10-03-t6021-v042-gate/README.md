@@ -1,8 +1,9 @@
 # omarchy-ane v0.4.2 candidate on T6021 (M2 Max): release gate and the `dyn_pg` arms
 
-Date: 2026-10-03, 04:50-07:04Z. Device: the M2 Max lab laptop (T6021, j414c), stock
-linux-asahi `7.1.13-3-1-ARCH`, stock GRUB default, lab m1n1 boot.bin `62ba3010` (never
-written). This is the first hardware run of the `dyn_pg` protocol in
+Date: 2026-10-03, 04:50-07:04Z, plus an arm-0 session 08:30-09:39Z. Device: the M2 Max
+lab laptop (T6021, j414c), stock linux-asahi `7.1.13-3-1-ARCH`, stock GRUB default, lab
+m1n1 boot.bin `62ba3010` (never written). This is the first hardware run of the `dyn_pg`
+protocol in
 `receipts/2026-10-03-t6021-dynpg/README.md`.
 
 Verdicts:
@@ -13,6 +14,9 @@ Verdicts:
   0xf before and after jobs, so there is no idle-power or latency effect to measure.
 - **Arm C (`dyn_pg=1 boot_prevent_nap=0`): REFUSED at probe.** The firmware boots, then
   does not answer CONFIG_GET; the driver refuses the device. Not retried.
+- **Arm 0 (driver never loaded): 251 mW below the held driver** at idle (pooled; 227 mW
+  against same-session held blocks, 275 mW against the gate run's), far above the boot-to-boot
+  noise seen for either arm (28 and 48 mW). This is the ceiling for any ANE power-down work.
 
 ## Module under test
 
@@ -174,9 +178,67 @@ agrees within 16 mW (14766.0 vs 14750.5 / 14757.2). Readings:
 - The Heatpipe rail moves the other way between some of these states; its meaning on this
   SMC is not verified, so it is reported in the artifacts but not used.
 
+## Arm 0: driver not loaded (08:30-09:39Z)
+
+The idle-power ceiling for any power-down design: the same module file installed, but
+`ane_t6021` kept from loading for one boot by the same self-deleting one-shot file,
+`install ane_t6021 /usr/bin/rm -f <file> && /usr/bin/sync && /usr/bin/true`. The
+initramfs carries no ane module, so udev's autoload on the root file system reads that
+line; nothing loads and the device is never probed. No GRUB or command-line change was
+needed. Two such boots (Z1, Z2), then the default boot (held, "As" blocks, same session).
+
+Each arm-0 boot was checked at boot and at the start and end of every block: no
+`ane_t6021` in `lsmod`, no `/sys/module/ane_t6021`, no `/dev/accel`, no driver link on
+`284000000.ane`, the one-shot file gone, runtime status `unsupported`. The only ane line
+in dmesg is `platform 284000000.ane: Adding to iommu group 0`.
+
+Genpd with the driver never loaded (both Z boots): `ane_set1`-`4`, `ane_base`, `ane_td` and
+`ane_sys_mpm` `off-0`; `ane_cpu` and `ane_sys` `on`. The kernel logs `PM: genpd: Disabling
+unused power domains` at 0.64 s, and later the eight pmgr power controllers report
+`sync_state() pending due to 284000000.ane`. With the driver loaded all nine are `on`.
+
+Same sampler, statistic and quiet gates as above; every block below had the fans off for
+all 300 samples.
+
+| block | boot | Total System Power median (mW) |
+|---|---|---|
+| Z1a | Z1 (arm 0) | 14502.6 |
+| Z1b | Z1 (arm 0) | 14494.8 |
+| Z1c | Z1 (arm 0) | 14486.5 |
+| Z2a | Z2 (arm 0) | 14471.2 |
+| Z2b | Z2 (arm 0) | 14461.2 |
+| As1 | held, default | 14692.0 |
+| As2 | held, default | 14715.9 |
+| As3 | held, default | 14721.9 |
+
+| difference (means of block medians, 95 % bootstrap over blocks) | Total System Power |
+|---|---|
+| held − arm 0, same session (As vs Z) | **+226.7 mW** [+206.8, +245.6] |
+| held − arm 0, gate-run held blocks (A3, Aend1, Aend2 vs Z) | +274.6 mW [+260.0, +290.1] |
+| held − arm 0, all six held blocks | +250.7 mW [+225.4, +274.8] |
+| arm 0 boot to boot (Z1 − Z2) | +28.4 mW |
+| held, session to session (As − gate-run held) | −48.0 mW |
+| refused C − arm 0 | +181.1 mW |
+
+The block intervals do not cover boot-to-boot noise. The measured boot and session
+spreads (28 and 48 mW) are each under a quarter of the smallest held − arm-0 estimate.
+The sessions drifted downward over time (Z1 > Z2, As < gate-run held), and the held
+blocks came last, so drift works against the difference rather than creating it.
+
+Reading: holding the driver costs about 0.23-0.27 W at idle on this machine. The refused
+C state (firmware booted, all nine domains on per genpd, no prevent-nap) sits 181 mW above
+arm 0. INFERENCE: most of the gap comes with the powered compute islands and the running
+firmware, and only part of it (the 94 mW refused-C step) is reachable by letting the ASC nap.
+
+The arm-0 session ended on the default boot 3d3b1e2e with the same checks as the end
+state below: candidate `4f6c939b...` bound with default parameters, smoke 20/20, a 4-call
+encoder block bit-exact (median 254.394 ms), jobs +24 exact, no error line, and a lab-state
+diff against 08:30Z of identity, load, the `accel0` mtime and the check's own ticket only.
+
 ## End state
 
-The device was left on boot A-end with the candidate as the lab module and default
+The gate session left the device on boot A-end, and the arm-0 session left it on boot
+3d3b1e2e in the same state: the candidate as the lab module with default
 parameters: `updates/ane_t6021.ko` `4f6c939b...`, version `0.4.2-main-5a457a3`, `dyn_pg`
 N, `boot_prevent_nap` Y, `stats` Y, bound, `/dev/accel/accel0`, no test file in
 `/etc/modprobe.d/`, boot.bin `62ba3010`. After 360 s of uptime: smoke 20/20 bit-exact, a
@@ -190,7 +252,9 @@ ticket of the check itself. The previous lab module (`af2cee6c...`) is kept as a
 `results/`: the boot records of all five boots (state, `dmesg -x` ane lines, check), the
 arm B `ane_pg_state` read, per-block encoder tables and summaries for A, S0 and B, the
 three-process encoder runs and the item-3 summary, both latency runs, every power block
-summary, and the end-state console with its lab-state diff.
+summary, and the end-state console with its lab-state diff. `results/arm0/`: the three
+arm-0-session boot records, every arm-0 and same-session held power block summary with
+its genpd snapshot, and that session's end-state console and lab-state diff.
 
 ## Incidents
 
