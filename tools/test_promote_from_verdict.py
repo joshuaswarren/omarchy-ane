@@ -320,7 +320,14 @@ assert p.returncode == 0, (p.stdout, p.stderr)
 assert git("rev-parse", "v0.4.1^{commit}") == git("rev-parse", "main") != git("rev-parse", "v0.4.0^{commit}")
 assert git("log", "--format=%s", "-1", "v0.4.1") == "Release 0.4.1: t6020, t6000 ANE", git("log", "-1", "v0.4.1")
 changelog = git("show", "v0.4.1:CHANGELOG.md")
-assert changelog.index("## Unreleased") < changelog.index("## 0.4.1") < changelog.index("## 0.4.0"), changelog[:300]
+# The version heading goes directly under an empty Unreleased, over the old
+# Unreleased entries, and nothing else changes. (The fixture is this repo's
+# CHANGELOG, which already holds a "## 0.4.1 (...)" section, so an index
+# check alone passes even when no heading is written.)
+before = git("show", "v0.4.0:CHANGELOG.md")
+cut = before.index("## Unreleased\n") + len("## Unreleased\n")
+new = re.match(r"\n## 0\.4\.1 \(\d{4}-\d{2}-\d{2}\)\n", changelog[cut:])
+assert new and changelog == before[:cut] + new.group(0) + before[cut:], changelog[:400]
 release_calls = [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines())
                  if c[0].endswith("/releases") and c[1] == "POST"]
 assert len(release_calls) == 1, release_calls

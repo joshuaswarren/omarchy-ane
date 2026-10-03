@@ -356,14 +356,15 @@ def release(verdict):
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     heading = f"## {version[1:]} ({date})"
     changelog = (REPO / "CHANGELOG.md").read_text()
-    mark = re.search(r"(?m)^## Unreleased\s*$", changelog)
+    mark = re.search(r"(?m)^## Unreleased[ \t]*\n", changelog)
     if not mark:
         raise Fail("CHANGELOG.md has no Unreleased section")
     head, rest = changelog[:mark.start()], changelog[mark.end():]
     if re.search(r"(?m)^## ", head):
         raise Fail("CHANGELOG.md: Unreleased must be the first section")
-    section, sep, tail = rest.partition("\n## ")
-    moved = f"{head}## Unreleased{section}" + (f"\n## {tail}" if sep else "")
+    # The Unreleased entries become the version section; an empty Unreleased
+    # stays on top.
+    moved = f"{head}## Unreleased\n\n{heading}\n{rest}"
     print(f"release: CHANGELOG Unreleased moves under {heading}")
     lines = [f"- {p['verdict']}: {p['chip']} ({MARKETING.get(p['chip'], p['chip'])}) ANE -> {p['to']}, "
              f"rows {p['rows']}" + (f", driver_source {p['sources']}" if p["sources"] else "")
