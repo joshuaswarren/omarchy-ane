@@ -1,8 +1,8 @@
 {
   "soc": "t6041",
   "marketing": {
-    "v": "Unverified marketing tier: macOS 27.0 BuildManifest maps ApChipID 0x6041 to j575cap/j614cap/j616cap and shared t604x firmware, but gives no M4 Pro/Max marketing name.",
-    "src": "S1"
+    "v": "Apple M4 Max (/product product-soc-name on j575c/j614c/j616c; gpu compatible gpu,t6041; aic #main-cpus 16; mcc amcc-count 8; apr1 ProRes engines present)",
+    "src": "S13"
   },
   "generation": {
     "v": "H16",
@@ -58,6 +58,78 @@
       "kind": "ipsw-adt",
       "ref": "macOS 27.0 IPSW DeviceTree.j616cap.adt; extracted board root and ANE node",
       "sha256": "b1ea42ac9780776fbfdc3d82a89ca19a0db2e188b197eee779922207c00b520f"
+    },
+    {
+      "id": "S11",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j604ap.adt payload; /product product-soc-name",
+      "sha256": "fa30e1c7dfd19d71d5483cc5690617e098ddac319c50657cd53722cb97dca1dd"
+    },
+    {
+      "id": "S12",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j614sap.adt payload; /product product-soc-name, /arm-io/aic #main-cpus, /arm-io/mcc amcc-count",
+      "sha256": "7f0ace882bd5a090224329dc3a7049de8febd754890ae8e25b92277216e1b136"
+    },
+    {
+      "id": "S13",
+      "kind": "ipsw-adt",
+      "ref": "macOS 27.0 IPSW DeviceTree.j614cap.adt payload; /product product-soc-name, /arm-io/aic #main-cpus, /arm-io/mcc amcc-count, /arm-io/apr1",
+      "sha256": "d91252105f7335211ee5e2a6975cd0602b5de0735c47374aeb29811567de3971"
+    },
+    {
+      "id": "S14",
+      "kind": "kernelcache-kext",
+      "ref": "kernelcache.release.mac16g decompressed; com.apple.driver.AppleH16ANEInterface 10.19.2 personalities and ane-type switch",
+      "sha256": "803a5408e877b1b0602d39614b613ce4f381274e0590d61c81d6b6ad602a0ecd"
+    },
+    {
+      "id": "S15",
+      "kind": "kernelcache-kext",
+      "ref": "kernelcache.release.mac16j decompressed; com.apple.driver.AppleH16ANEInterface 10.19.2 personalities",
+      "sha256": "425443373a0fd1a7f5cac5a772aa18e43f40e6f71fe0f21cf8a468b33180983f"
+    },
+    {
+      "id": "S16",
+      "kind": "kernelcache-kext",
+      "ref": "ipsw kernel extract, mac16g com.apple.driver.AppleH16ANEInterface",
+      "sha256": "99e16f1e28132d5ef731fabaaa999be8f60af05e50491d1dd77827f872da390d"
+    },
+    {
+      "id": "S17",
+      "kind": "kernelcache-kext",
+      "ref": "ipsw kernel extract, mac16g com.apple.driver.AppleT8132ANEHAL",
+      "sha256": "dc394980a26ba6e4b879450ef19f1f0b0a24e19be390b3799b33ad0d217e00a4"
+    },
+    {
+      "id": "S18",
+      "kind": "kernelcache-kext",
+      "ref": "ipsw kernel extract, mac16j com.apple.driver.AppleT6041ANEHAL",
+      "sha256": "f5cfad15bd87231ea8393ab71e778cfe793a9f59d05d18b748c7a6e34b8bba29"
+    },
+    {
+      "id": "S19",
+      "kind": "ipsw-firmware",
+      "ref": "iBoot.j604.RELEASE.im4p payload (mBoot-20457.1.29): coprocessor table entry id 4 and its ASC mailbox register table",
+      "sha256": "a53b470628e4d2e56a1673aa707f6d9b912643ded14e83cd347541e4a82722b6"
+    },
+    {
+      "id": "S20",
+      "kind": "ipsw-firmware",
+      "ref": "iBoot.j614c.RELEASE.im4p payload: coprocessor table entry id 4",
+      "sha256": "538c53c4b68b5300b2aa0bbffa0c0534717e9e355fb832820b2eac4e27d1ff40"
+    },
+    {
+      "id": "S21",
+      "kind": "ipsw-firmware",
+      "ref": "Firmware/ane/h16_ane_fw_leto_j7x.im4p payload (raw Mach-O, RTKit_release-3514.0.15, __DATA,_rtk_patchbay 43 records)",
+      "sha256": "4b330c5fd3548fb534ded5e7030c64b2ee3c3feb8ad859c23d87dcb82947abd2"
+    },
+    {
+      "id": "S22",
+      "kind": "ipsw-firmware",
+      "ref": "Firmware/ane/t604x_ane_fw_aether_brvx.im4p payload (raw Mach-O, RTKit_release-3514.0.15, __DATA,_rtk_patchbay 43 records)",
+      "sha256": "8659271a3173ca1c816841b212ac406a6516f74f51d08f196327560cb1f6b925"
     }
   ],
   "ane": {
@@ -241,6 +313,32 @@
         "v": 16384,
         "src": "S3"
       }
+    },
+    "kext_reg_map": {
+      "cpu_control": {
+        "v": "0x1600044",
+        "src": "S15"
+      },
+      "cpu_status": {
+        "v": "0x1600048",
+        "src": "S15"
+      },
+      "rvbar": {
+        "v": "0x1050000 (read64OneShot in ANE_Init; written only when bit0 clear)",
+        "src": "S15"
+      },
+      "scratch0": {
+        "v": "0x1880020 (SCRATCHn = +4n)",
+        "src": "S15"
+      },
+      "doorbell": {
+        "v": "0x1884000 (MBI doorbell; H14 T6021 value 0x1844000)",
+        "src": "S15"
+      },
+      "irq_status": {
+        "v": "0x188c000 read / 0x1890000 write ack (H14 0x184c000/0x1850000)",
+        "src": "S15"
+      }
     }
   },
   "dart": {
@@ -291,8 +389,8 @@
     }
   },
   "mailbox": {
-    "v": null,
-    "reason": "No H16 mailbox node in IPSW ADT; ANE node contains no mailbox reg/protocol."
+    "v": "ASC v4 mailbox at engine+0x1608000 (iBoot coprocessor table ANE entry id 4: wrapper PA engine+0x1600000; its register table lists a2i/i2a ctrl 0x110/0x114, send 0x800/0x808, recv 0x830/0x838 relative to +0x8000)",
+    "src": "S20"
   },
   "pmgr": {
     "v": [
@@ -349,23 +447,41 @@
       "src": "S2"
     },
     "loaded_by": {
-      "v": null,
-      "reason": "No iBoot/kernelcache trace establishes the H16 loader."
+      "v": "iBoot (BuildManifest ANE component IsLoadedByiBoot true, IsFUDFirmware true; placement via the live ADT segment-ranges, not in the IPSW ADT)",
+      "src": "S1"
+    },
+    "payload_facts": {
+      "sha256": {
+        "v": "8659271a3173ca1c816841b212ac406a6516f74f51d08f196327560cb1f6b925",
+        "src": "S22"
+      },
+      "size": {
+        "v": 1556480,
+        "src": "S22"
+      },
+      "rtkit": {
+        "v": "RTKit_release-3514.0.15 (string in the payload); MH_PRELOAD arm64e, __TEXT vm 0xc0000, __DATA vm 0xc0000+0x2ac000; __DATA,_rtk_patchbay 43 records at vm 0xc5a08 (leto) / 0xc5a18 (aether); _rtk_tunables 0x6a0 bytes; iBoot fills SOC_/SOCR/CpAd/WrAd/STKG/TUNS/TUNZ per the iBoot patch writer sites",
+        "src": "S22"
+      }
     }
   },
   "kext": {
-    "class": {
-      "v": null,
-      "reason": "H16 kernelcache was not extracted or inspected."
+    "interface": {
+      "v": "com.apple.driver.AppleH16ANEInterface 10.19.2; personality t8020 (IONameMatch ane,t8020) binds the ADT node with IOClass H11ANEIn on AppleARMIODevice; RTBuddyBringup personalities exist but require an RTBuddyService provider the H16 ADT does not have",
+      "src": "S14"
+    },
+    "hal": {
+      "v": "AppleT6041ANEHAL 10.19.3 (IOResources)",
+      "src": "S18"
     },
     "protocol": {
-      "v": null,
-      "reason": "H16 kernelcache was not extracted or inspected."
+      "v": "ANE_Init (27.0): SCRATCH7=0 cold boot, RVBAR engine+0x1050000 written only if bit0 clear, CPU_CONTROL 0 then 0x10, poll SCRATCH7==0x08042006, then channel-description-table / SHAREDMALLOC TERMINAL BUF_H2T BUF_T2H IO_T2H DEBUG DATA_CHAIN_H2T IPC channels (kext ANE_Init disassembly, initializeANESoCConfig ane-type 0x100/0x110 register map)",
+      "src": "S16"
     }
   },
   "driver_family": {
-    "v": "unknown pending mailbox/firmware probe; H14 RTKit/ASC is a hypothesis, not established.",
-    "src": "S3"
+    "v": "ane_h16 (new opt-in experimental module, ane/h16/): ane_t6021-like ASC bring-up with an H16-specific register map (CPU_CONTROL +0x1600044, SCRATCH +0x1880020, mailbox +0x1608000); the 27.0 ANE_Init contract is the scratch + channel-manager path, so the CSNE transport family is the ane_t6021 legacy ChMan one; untested on silicon",
+    "src": "S16"
   },
   "hwx_generation": {
     "v": "H16G; subtype 7, ISA 17; compiler emits H16G HWX but this does not prove runtime compatibility.",
