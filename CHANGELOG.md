@@ -66,6 +66,15 @@
 - libane fills the program staging buffer with one `pread` and zeroes only
   the tail past a short read, instead of a `memset` over the whole buffer
   first. The buffer stays 16 KiB aligned and zero past the file end.
+- `ane` maps a buffer object into the ANE DARTs with one `iommu_map_sg`
+  call, so apple-dart invalidates the TLB of each DART once per BO_INIT.
+  Before, BO_INIT called `iommu_map` once per 16 KiB page, and each call
+  invalidated the TLB of all three DARTs: 83,865 invalidates for the
+  458 MB Parakeet encoder program. A stray PTE in the new range is still
+  cleared once and the map retried. Module parameter `map_batch` (0644,
+  default 1); `echo 0 > /sys/module/ane/parameters/map_batch` selects the
+  old per-page path for the next BO_INIT, without a reload. The unmap path
+  does not change. See `receipts/2026-10-03-ane-iommu-batch/README.md`.
 
 ### Fixed
 

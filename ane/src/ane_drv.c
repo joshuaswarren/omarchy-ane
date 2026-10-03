@@ -10,6 +10,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
+#include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
@@ -82,6 +83,18 @@ module_param(autosuspend_ms, int, 0444);
 MODULE_PARM_DESC(autosuspend_ms,
 		 "Power the ANE off this many ms after its last use (default 1500; 0 = keep it powered while the driver is bound)");
 
+/*
+ * 1 (default): BO_INIT maps a buffer object with one iommu_map_sg, so
+ * apple-dart invalidates the TLB of each DART once per BO. 0: one
+ * iommu_map, and one TLB invalidate per DART, per page (the 458 MB
+ * encoder program: 27,955 pages x 3 DARTs = 83,865 invalidates). Read
+ * once per BO_INIT; BOs mapped either way unmap the same way.
+ */
+static bool map_batch = true;
+module_param(map_batch, bool, 0644);
+MODULE_PARM_DESC(map_batch,
+		 "BO_INIT DART mapping: 1 = one TLB sync per buffer object (default); 0 = one TLB sync per page");
+
 #define CMD_BUF_BDX 0
 #define KRN_BUF_BDX 1
 
@@ -104,62 +117,44 @@ static struct ane_bo *bo_lookup(struct drm_file *file, u32 handle)
 	return to_bo(gem);
 }
 
-/*
- * Buffers are mapped and unmapped only through the kernel-owned IOMMU
- * domain the device was attached to by its providers. apple-dart
- * programs every DART in the device's "iommus" list (TTBRs, stream
- * setup, invalidation and fault IRQs are all provider-owned);
- * iommu_unmap() flushes through the provider before returning, so pages
- * may be reclaimed once it succeeds.
- */
-static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
+/* Unmap every valid PTE in [start, end); returns how many. */
+static unsigned long ane_iommu_clear_range(struct ane_device *ane, u64 start,
+					   u64 end)
 {
-	int err;
+	unsigned long cleared = 0;
 
-	lockdep_assert_held(&ane->engine_lock);
-	if (bo->mm)
-		return -EBUSY;
-
-	bo->mm = kzalloc(sizeof(*bo->mm), GFP_KERNEL);
-	if (!bo->mm)
-		return -ENOMEM;
-
-	mutex_lock(&ane->iommu_lock);
-
-	/* reserve area from ANE address space */
-	err = drm_mm_insert_node_generic(&ane->mm, bo->mm,
-					 bo->npages << ane->shift,
-					 1UL << ane->shift, 0, 0);
-	if (err < 0) {
-		dev_err(ane->dev, "out of ANE space: %d\n", err);
-		goto unlock;
+	for (u64 iova = start; iova < end; iova += 1UL << ane->shift) {
+		if (!iommu_iova_to_phys(ane->domain, iova))
+			continue;
+		iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+		cleared++;
 	}
+	return cleared;
+}
 
-	bo->iova = bo->mm->start;
+/*
+ * Every PTE inside a reserved drm_mm node must be ours-or-absent:
+ * scratch drains reserve before mapping and wedge-preserved nodes stay
+ * inserted. A VALID PTE in a just-reserved range is therefore a stray
+ * from a torn-down session or a lost unmap. Both map paths clear it once
+ * and retry instead of poisoning every later BO_INIT until reload
+ * (m1-test-host 2026-09-25: dart_init_pte -EEXIST at 0x4000 for the rest
+ * of the session).
+ */
+static int ane_iommu_map_each(struct ane_device *ane, struct ane_bo *bo,
+			      int prot)
+{
+	int err = 0;
 
-	/* map into ANE address space */
 	for (u32 i = 0; i < bo->npages; i++) {
 		dma_addr_t iova = bo->iova + (i << ane->shift);
-		int prot = IOMMU_READ | IOMMU_WRITE;
 		bool healed = false;
-		int prot_cache = map_mode & 1;
 
 retry:
-		if (prot_cache)
-			prot |= IOMMU_CACHE;
 		err = iommu_map(ane->domain, iova, page_to_phys(bo->pages[i]),
 				1UL << ane->shift, prot, GFP_KERNEL);
 		if (err < 0) {
 			dev_err(ane->dev, "iommu_map failed at 0x%llx", iova);
-			/* Every PTE inside a reserved drm_mm node must be
-			 * ours-or-absent: scratch drains reserve before
-			 * mapping and wedge-preserved nodes stay inserted.
-			 * A VALID PTE in a just-reserved range is therefore
-			 * a stray from a torn-down session or a lost
-			 * unmap. Clear it once and retry instead of
-			 * poisoning every later BO_INIT until reload
-			 * (m1-test-host 2026-09-25: dart_init_pte -EEXIST at
-			 * 0x4000 for the rest of the session). */
 			if (err == -EEXIST && !healed &&
 			    iommu_iova_to_phys(ane->domain, iova)) {
 				dev_warn(ane->dev,
@@ -183,26 +178,115 @@ retry:
 						bo->iova + (i << ane->shift),
 						unmapped);
 			}
-			drm_mm_remove_node(bo->mm);
-			bo->iova = 0;
 			break;
 		}
 	}
+	return err;
+}
 
-	mutex_unlock(&ane->iommu_lock);
+/*
+ * iommu_map_sg writes the PTEs of each physically contiguous run and
+ * syncs the DART TLBs once for the whole range. On failure it has
+ * already unmapped everything it mapped, so after an -EEXIST every valid
+ * PTE left in the range is a stray.
+ */
+static int ane_iommu_map_batch(struct ane_device *ane, struct ane_bo *bo,
+			       int prot)
+{
+	size_t size = (size_t)bo->npages << ane->shift;
+	struct sg_table sgt;
+	unsigned long strays;
+	ssize_t mapped;
+	int err;
 
-	if (err < 0) {
-		kfree(bo->mm);
-		bo->mm = NULL;
+	err = sg_alloc_table_from_pages(&sgt, bo->pages, bo->npages, 0, size,
+					GFP_KERNEL);
+	if (err)
 		return err;
+
+	mapped = iommu_map_sgtable(ane->domain, bo->iova, &sgt, prot);
+	if (mapped == -EEXIST) {
+		strays = ane_iommu_clear_range(ane, bo->iova, bo->iova + size);
+		if (strays) {
+			dev_warn(ane->dev,
+				 "cleared %lu stray DART PTE(s) in %#llx+%#zx (no node owns them)\n",
+				 strays, bo->iova, size);
+			mapped = iommu_map_sgtable(ane->domain, bo->iova, &sgt,
+						   prot);
+		}
+	}
+	sg_free_table(&sgt);
+
+	/*
+	 * A short map would hand out a BO whose tail has no PTEs. The
+	 * mapped part may have holes, so clear page by page, not with one
+	 * range unmap that stops at the first hole.
+	 */
+	if (mapped >= 0 && (size_t)mapped != size) {
+		ane_iommu_clear_range(ane, bo->iova, bo->iova + size);
+		mapped = -EIO;
 	}
 
+	if (mapped < 0) {
+		dev_err(ane->dev, "iommu_map_sg failed at %#llx+%#zx: %zd\n",
+			bo->iova, size, mapped);
+		return mapped;
+	}
 	return 0;
+}
+
+/*
+ * Buffers are mapped and unmapped only through the kernel-owned IOMMU
+ * domain the device was attached to by its providers. apple-dart
+ * programs every DART in the device's "iommus" list (TTBRs, stream
+ * setup, invalidation and fault IRQs are all provider-owned);
+ * iommu_unmap() flushes through the provider before returning, so pages
+ * may be reclaimed once it succeeds.
+ */
+static int ane_iommu_map_pages(struct ane_device *ane, struct ane_bo *bo)
+{
+	int prot = IOMMU_READ | IOMMU_WRITE;
+	int err;
+
+	lockdep_assert_held(&ane->engine_lock);
+	if (bo->mm)
+		return -EBUSY;
+
+	if (map_mode & 1)
+		prot |= IOMMU_CACHE;
+
+	bo->mm = kzalloc(sizeof(*bo->mm), GFP_KERNEL);
+	if (!bo->mm)
+		return -ENOMEM;
+
+	mutex_lock(&ane->iommu_lock);
+
+	/* reserve area from ANE address space */
+	err = drm_mm_insert_node_generic(&ane->mm, bo->mm,
+					 bo->npages << ane->shift,
+					 1UL << ane->shift, 0, 0);
+	if (err < 0) {
+		dev_err(ane->dev, "out of ANE space: %d\n", err);
+		goto unlock;
+	}
+
+	bo->iova = bo->mm->start;
+
+	if (READ_ONCE(map_batch))
+		err = ane_iommu_map_batch(ane, bo, prot);
+	else
+		err = ane_iommu_map_each(ane, bo, prot);
+	if (err < 0) {
+		drm_mm_remove_node(bo->mm);
+		bo->iova = 0;
+	}
 
 unlock:
 	mutex_unlock(&ane->iommu_lock);
-	kfree(bo->mm);
-	bo->mm = NULL;
+	if (err < 0) {
+		kfree(bo->mm);
+		bo->mm = NULL;
+	}
 	return err;
 }
 
@@ -966,17 +1050,11 @@ static int ane_iommu_domain_init(struct ane_device *ane)
 static void ane_iommu_purge_stale(struct ane_device *ane)
 {
 	struct drm_mm_node *hole;
-	u64 start, end, iova;
+	u64 start, end;
 	unsigned long stale = 0;
 
-	drm_mm_for_each_hole(hole, &ane->mm, start, end) {
-		for (iova = start; iova < end; iova += 1UL << ane->shift) {
-			if (!iommu_iova_to_phys(ane->domain, iova))
-				continue;
-			iommu_unmap(ane->domain, iova, 1UL << ane->shift);
-			stale++;
-		}
-	}
+	drm_mm_for_each_hole(hole, &ane->mm, start, end)
+		stale += ane_iommu_clear_range(ane, start, end);
 	if (stale)
 		dev_warn(ane->dev,
 			 "cleared %lu stale DART mappings from a previous instance\n",
