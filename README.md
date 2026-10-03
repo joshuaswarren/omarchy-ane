@@ -37,13 +37,13 @@ Data-only chips. Each row is a file `data/ane-soc/SOC.json`. Overlay is yes when
 <!-- BEGIN DATA-ONLY TABLE -->
 | SoC | Internal | Boards | Overlay |
 | --- | --- | --- | --- |
-| T6030 | H15J | 2 | no |
-| T6031 | H15J | 5 | no |
+| T6030 | H15J | 2 | yes |
+| T6031 | H15J | 5 | yes |
 | T6034 | H15J | 2 | no |
 | T6040 | H16 | 3 | yes |
 | T6041 | H16 | 3 | yes |
 | T6050 | H17 | 7 | no |
-| T8122 | H15G | 5 | no |
+| T8122 | H15G | 5 | yes |
 | T8132 | H16 | 6 | yes |
 | T8140 | H17 | 1 | yes |
 | T8142 | H17 | 3 | no |
