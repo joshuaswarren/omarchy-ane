@@ -14,6 +14,14 @@
   properties and the bound driver. It also gives the `exclave` record of
   `data/ane-soc/<soc>.json` and the `adt` phram region. It reads no
   register. One run on a MacBook Neo or an M5 Mac answers the question.
+- libane prints per-stage load times and per-`ane_exec` times on stderr when
+  `ANE_TRACE_TIMING` is set (not empty, not `0`): one line
+  `LIBANE: TIMING stage=NAME ms=MS bytes=N` per stage. Unset, each stage
+  costs one branch. The ABI does not change.
+- `tools/ane_cold_start.py` measures the per-process program open of the
+  resident worker (seal, fork, `dlopen`, `ane_init`) without a submit, under
+  the ANE lock and the idle rule. `docs/ane-worker.md` designs a persistent
+  worker. See `receipts/2026-10-03-ane-cold-start/README.md`.
 - `omarchy-ane-check` prints `dtbs_source` and `driver_source`, the fields
   the community collector records. When `DTBS=` is set in
   `/etc/default/update-m1n1` (`dtbs_source=kernel`), it names no opt-in key:
@@ -42,6 +50,9 @@
   its `include/uapi/drm/ane_accel.h` hides ours and lacks
   `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both
   kinds of kernel.
+- libane fills the program staging buffer with one `pread` and zeroes only
+  the tail past a short read, instead of a `memset` over the whole buffer
+  first. The buffer stays 16 KiB aligned and zero past the file end.
 
 ### Fixed
 
