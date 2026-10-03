@@ -2,128 +2,184 @@
 
 ## Unreleased
 
+## 0.4.2 (2026-10-03)
+
+`ane` powers the ANE off when it is idle and maps each buffer object with one
+DART TLB sync, both drivers log their register tracing at debug level, and
+DKMS steps aside on a kernel that ships the ANE driver itself. This release
+also adds a reachability verdict to `omarchy-ane-probe`, in-tree rows to the
+promotion checker, a lab `dyn_pg` parameter to `ane_t6021`, and data and an
+experimental bring-up module for chips after the M2. The ioctl interface
+(ABI 1 and ABI 2) does not change: from `4f01bb3` (v0.4.1) to `dc174cd`, no
+line of `ane/src/uapi/drm/ane_accel.h`, `libane/ane.h` or `libane/ane_m2.h`
+changes.
+
 ### Added
 
-- `omarchy-ane-probe` has a `reachability` section (`schema_version` 2).
-  From `/proc/device-tree` and `/sys` only, it tells whether this machine's
-  device tree gives the ANE to the OS: `reachable`, `owned-elsewhere` (the
-  node has the ADT property `exclave-assigned`), `not-exposed` (no ANE
-  node, a disabled node, or no `reg`, `iommus` or `power-domains`) or
-  `unknown`, with the reason and, for each ANE node, the status,
-  compatible, windows, IOMMU, power-domain and mailbox targets, `exclave*`
-  properties and the bound driver. It also gives the `exclave` record of
-  `data/ane-soc/<soc>.json` and the `adt` phram region. It reads no
-  register. One run on a MacBook Neo or an M5 Mac answers the question.
+- `omarchy-ane-probe` has a `reachability` section (`schema_version` 2)
+  (#102). From `/proc/device-tree` and `/sys` only, it tells whether this
+  machine's device tree gives the ANE to the OS: `reachable`,
+  `owned-elsewhere` (the node has the ADT property `exclave-assigned`),
+  `not-exposed` (no ANE node, a disabled node, or no `reg`, `iommus` or
+  `power-domains`) or `unknown`, with the reason and, for each ANE node, the
+  status, compatible, windows, IOMMU, power-domain and mailbox targets,
+  `exclave*` properties and the bound driver. It also gives the `exclave`
+  record of `data/ane-soc/<soc>.json` and the `adt` phram region. It reads
+  no register. One run on a MacBook Neo or an M5 Mac answers the question.
 - libane prints per-stage load times and per-`ane_exec` times on stderr when
   `ANE_TRACE_TIMING` is set (not empty, not `0`): one line
-  `LIBANE: TIMING stage=NAME ms=MS bytes=N` per stage. Unset, each stage
-  costs one branch. The ABI does not change.
+  `LIBANE: TIMING stage=NAME ms=MS bytes=N` per stage (#101). Unset, each
+  stage costs one branch.
 - `tools/ane_cold_start.py` measures the per-process program open of the
   resident worker (seal, fork, `dlopen`, `ane_init`) without a submit, under
   the ANE lock and the idle rule. `docs/ane-worker.md` designs a persistent
-  worker. See `receipts/2026-10-03-ane-cold-start/README.md`.
+  worker (#101). See `receipts/2026-10-03-ane-cold-start/README.md`.
 - `omarchy-ane-check` prints `dtbs_source` and `driver_source`, the fields
-  the community collector records. When `DTBS=` is set in
+  the community collector records (#97). When `DTBS=` is set in
   `/etc/default/update-m1n1` (`dtbs_source=kernel`), it names no opt-in key:
   overlay opt-in has no effect there, and `omarchy-ane-dt apply` refuses.
 - The promotion checker judges in-tree rows (`driver_source=intree`) like
-  DKMS rows. A PROMOTE with a passing in-tree row also has the target
+  DKMS rows (#97). A PROMOTE with a passing in-tree row also has the target
   `aurora-dt`: `tools/aurora_dt.py` and `promote_from_verdict.py aurora-plan`
   and `aurora-pr` make the aurora-silicon/linux device-tree PR. The job that
   builds the aurora tree holds no credential; only the PR step, which builds
   nothing, gets the secret `AURORA_PR_TOKEN` (a dry run without it).
-- `ane_t6021` has a lab parameter `dyn_pg` (default 0, T602x only). With
-  `dyn_pg=1`, probe sends the selene firmware command
-  `SET_DYNAMIC_POWERGATE` = 1 after CONFIG_GET, so the firmware turns the
-  compute islands off between jobs. With `dyn_pg=1`, `trace_td` reads no TD
-  word. The debugfs file `ane_t6021/ane_pg_state` prints the seven ANE
-  power-state words. Hardware results are pending; see
-  `receipts/2026-10-03-t6021-dynpg/README.md`.
+- `ane_t6021` has a lab parameter `dyn_pg` (default 0, T602x only) (#96).
+  With `dyn_pg=1`, probe sends the selene firmware command
+  `SET_DYNAMIC_POWERGATE` = 1 after CONFIG_GET, so that the firmware can turn
+  the compute islands off between jobs. With `dyn_pg=1`, `trace_td` reads no
+  TD word. The debugfs file `ane_t6021/ane_pg_state` prints the seven ANE
+  power-state words. Measured on one M2 Max laptop: the firmware answers the
+  command with status 0, but `ane_pg_state` shows the islands fully on
+  (ACTUAL 0xf) before the first job, 30 s after the last one, and every 10 s
+  through the idle blocks, so it does not gate them. Smoke, gates, encoder
+  time and output bits are the same as with the defaults. With
+  `dyn_pg=1 boot_prevent_nap=0`, the firmware boots but does not answer
+  CONFIG_GET (-110), and `ane_t6021` registers no device. Design:
+  `receipts/2026-10-03-t6021-dynpg/README.md`; measurements:
+  `receipts/2026-10-03-t6021-v042-gate/README.md` (#106).
+- `ane/h16`: an opt-in experimental bring-up module, `ane_h16`, for the M4
+  family (T8132, T6040, T6041) (#100, #103). It is not part of the package
+  or the DKMS build, nothing autoloads it, and it refuses to probe without
+  `optin=SOC`. `stage=status` powers the ANE domains, waits until every pmgr
+  ANE state word reads ACTUAL 0xf, and logs the CPU and mailbox registers.
+  `stage=boot` also validates the iBoot-preloaded firmware against the
+  pinned image, maps it at the ADT addresses, releases the ASC CPU and
+  answers the RTKit start. It registers no DRM device and sends no ANE
+  command. No silicon has run it. `data/ane-soc/t8132.json`, `t6040.json`
+  and `t6041.json` carry the H16 values from the macOS 27.0 images, with
+  T6040 as the M4 Pro and T6041 as the M4 Max. See
+  `receipts/2026-10-03-ane-h16/README.md` and `ane/h16/README-bringup.md`.
 
 ### Changed
 
-- `ane` powers the ANE off when it is idle. Before, probe kept a runtime-PM
-  reference until the driver unbound, so the ANE power domains (`ane_sys`,
-  `ane_sys_cpu`, `ane_base`, `ane_set*`) and its three DARTs stayed on all the
-  time. Now the device suspends `autosuspend_ms` after the last open, ioctl
-  or close (module parameter, default 1500), and the next one powers it up
-  again. `autosuspend_ms=0` keeps the old behavior. At run time,
-  `power/autosuspend_delay_ms` on the ANE platform device changes the delay,
-  and `echo on > power/control` keeps the ANE powered. A write to the
+- `ane` powers the ANE off when it is idle (#95). Before, probe kept a
+  runtime-PM reference until the driver unbound, so the ANE power domains
+  (`ane_sys`, `ane_sys_cpu`, `ane_base`, `ane_set*`) and its three DARTs
+  stayed on all the time. Now the device suspends `autosuspend_ms` after the
+  last open, ioctl or close (module parameter, default 1500), and the next
+  one powers it up again. `autosuspend_ms=0` keeps the old behavior. At run
+  time, `power/autosuspend_delay_ms` on the ANE platform device changes the
+  delay, and `echo on > power/control` keeps the ANE powered. A write to the
   `reset` attribute and a file close now hold the device powered while they
   run. 32-bit (compat) ioctls go through the same command filter and power
-  reference as native ones. See
-  `receipts/2026-10-03-ane-autosuspend/README.md`. `ane_t6021` does not
-  change.
+  reference as native ones. `ane_t6021` does not change. Measured on one M1
+  laptop (T8103) and one M1 Max laptop (T6001), with `ane.ko` from the #95
+  head `198db99`, before #104 changed the map path: with the ANE suspended,
+  idle system power per 5-minute block equals the level with the module
+  removed (T8103 within 33 mW, T6001 within 7 mW). With the ANE held on, it
+  was 107 to 173 mW higher on T8103 and 2.10 to 7.65 W higher on T6001. The
+  first open after 5 s of idle took a median of 330 µs on T8103 (10 µs when
+  warm) and 0.35 ms on T6001. Whole-encoder outputs stayed bit-exact, smoke
+  runs from the suspended state passed 20 of 20, and about 300 suspend and
+  wake cycles per machine gave no error. Design:
+  `receipts/2026-10-03-ane-autosuspend/README.md`; measurements:
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 - DKMS skips a kernel that ships the ANE driver itself
-  (`CONFIG_DRM_ACCEL_ANE=y` or `=m`, aurora-silicon/linux #155): that
-  kernel keeps its own `ane.ko` and `ane_t6021.ko`. `dkms.conf` sets
+  (`CONFIG_DRM_ACCEL_ANE=y` or `=m`, aurora-silicon/linux #155): that kernel
+  keeps its own `ane.ko` and `ane_t6021.ko` (#94). `dkms.conf` sets
   `BUILD_EXCLUSIVE_CONFIG="!CONFIG_DRM_ACCEL_ANE"`, so `dkms build` exits 77
   (excluded) there. Before, `ane_t6021` failed to build on such a kernel:
   its `include/uapi/drm/ane_accel.h` hides ours and lacks
-  `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both
-  kinds of kernel.
+  `ANE_ABI_M2_MAJOR`. `tools/test_dkms_exclusive.py` runs dkms on both kinds
+  of kernel.
 - libane fills the program staging buffer with one `pread` and zeroes only
   the tail past a short read, instead of a `memset` over the whole buffer
-  first. The buffer stays 16 KiB aligned and zero past the file end.
+  first (#101). The buffer stays 16 KiB aligned and zero past the file end.
 - `ane` maps a buffer object into the ANE DARTs with one `iommu_map_sg`
-  call, so apple-dart invalidates the TLB of each DART once per BO_INIT.
-  Before, BO_INIT called `iommu_map` once per 16 KiB page, and each call
-  invalidated the TLB of all three DARTs: 83,865 invalidates for the
+  call, so apple-dart invalidates the TLB of each DART once per BO_INIT
+  (#104). Before, BO_INIT called `iommu_map` once per 16 KiB page, and each
+  call invalidated the TLB of all three DARTs: 83,865 invalidates for the
   458 MB Parakeet encoder program. A stray PTE in the new range is still
   cleared once and the map retried. Module parameter `map_batch` (0644,
   default 1); `echo 0 > /sys/module/ane/parameters/map_batch` selects the
   old per-page path for the next BO_INIT, without a reload. The unmap path
-  does not change. See `receipts/2026-10-03-ane-iommu-batch/README.md`.
+  does not change. Measured with the whole Parakeet encoder, 10 cold opens
+  per arm: on one M1 laptop (T8103), BO_INIT took 22.77 ms instead of
+  179.85 ms (median), and the whole open took 165 to 173 ms less; on one M1
+  Max laptop (T6001), BO_INIT took 24.75 ms instead of 232.74 ms (minimum),
+  and the whole open took 574.25 ms instead of 787.89 ms. Outputs stayed
+  bit-exact, the job count exact, and the smoke passed 20 of 20. Stress runs
+  of 10 minutes that flipped `map_batch` every 60 s gave no error. Design:
+  `receipts/2026-10-03-ane-iommu-batch/README.md`; measurements:
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md`.
 
 ### Fixed
 
+- `ane_stats`: a submission that opened a busy period while the previous
+  period was closing could read the previous end too early, so `busy_ns`
+  could count the overlap twice. The start of a busy period is now read
+  after the submission wins the transition, so periods never overlap (#93).
+  Both drivers.
 - The M3 data files `data/ane-soc/t8122.json`, `t6030.json` and `t6031.json`
   no longer name the 0x4000 window at engine + 0x1050000 as the ANE mailbox,
-  or give a reordered mailbox IRQ list. No source gave either. That offset is
-  RVBAR on T6021. Both values are now null, with the expected wrapper + 0x8000
-  address in the reason. Also corrected: the mailbox compatible in all four M3
-  files (the T6030 one contradicted its own source), the j575d board
-  (BuildManifest chip id 0x6032) and its three missing die-1 windows, the
-  T8122 iommu-parent reason, and the driver family. See
-  `receipts/2026-10-03-ane-h15`.
-- `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the bring-up
-  steps of every SoC that `ane_t6021` drives. Before, a T6021 that a promotion
-  revert made opt-in again got no firmware step.
+  or give a reordered mailbox IRQ list (#98). No source gave either. That
+  offset is RVBAR on T6021. Both values are now null, with the expected
+  wrapper + 0x8000 address in the reason. Also corrected: the mailbox
+  compatible in all four M3 files (the T6030 one contradicted its own
+  source), the j575d board (BuildManifest chip id 0x6032) and its three
+  missing die-1 windows, the T8122 iommu-parent reason, and the driver
+  family. See `receipts/2026-10-03-ane-h15`.
+- `omarchy-ane-check` lists `sudo omarchy-ane-firmware-fetch` in the
+  bring-up steps of every SoC that `ane_t6021` drives (#92). Before, a T6021
+  that a promotion revert made opt-in again got no firmware step.
 - `ane_t6021` logs its probe and firmware boot progress at debug and info
-  level, not at emergency level. Emergency lines go to every console and
-  terminal at any loglevel, on every M2 Max boot. The `BOOT-PHASE`
+  level, not at emergency level (#94). Emergency lines go to every console
+  and terminal at any loglevel, on every M2 Max boot. The `BOOT-PHASE`
   markers and the register readouts are debug messages now: turn them on
   with dynamic debug (for example `ane_t6021.dyndbg=+p` on the kernel
   command line). The outcome lines are info, and the dump when the ANE CPU
   starts but never reports READY is an error. aurora-silicon/linux #155 has
   the same change (Chris Kearney).
-- `ane` and `ane_t6021` log register and address tracing at debug level:
-  the `ANERD`/`ANEWR` recovery trace, the `ps probe` SET-window reads, the
-  `ANE-resume` progress lines, each DART, the ChMan table entries, RTKit
-  endpoint starts and messages, and the firmware alias and staging
-  addresses. Dynamic debug shows them (`ane.dyndbg=+p`,
+- `ane` and `ane_t6021` log register and address tracing at debug level
+  (#94): the `ANERD`/`ANEWR` recovery trace, the `ps probe` SET-window
+  reads, the `ANE-resume` progress lines, each DART, the ChMan table
+  entries, RTKit endpoint starts and messages, and the firmware alias and
+  staging addresses. Dynamic debug shows them (`ane.dyndbg=+p`,
   `ane_t6021.dyndbg=+p`). The only info lines left on the `ane` probe path
   are `DART containment armed` and `loaded ane`. Faults stay at error and
   warning level.
-- `modinfo ane_t6021` shows one license and one description. Each of the
-  three objects of the module carried its own.
+- `modinfo ane_t6021` shows one license and one description (#94). Each of
+  the three objects of the module carried its own.
 - The T6000, T6001 and T6002 overlays have no `ane_set5` power state at
-  pmgr 0xc030. It is past the end of the ANE pmgr range in the ADT
+  pmgr 0xc030 (#94). It is past the end of the ANE pmgr range in the ADT
   (0x28e080000+0xc02c), and the ane node does not use it.
 - The T8103, T600x and T8112 overlays set `status = "okay"` on their ANE
-  power states. aurora-silicon/linux #155 has these nodes at the same
+  power states (#94). aurora-silicon/linux #155 has these nodes at the same
   paths, disabled where its ANE is disabled (T8103, T6000, T6002, T8112).
   On such a kernel `omarchy-ane-dt` refused the overlay ("power-domains
   names ..., which is disabled") and the ANE stayed off.
   `tools/test_ane_overlays.py` now also disables the power states when it
   checks the overlay over disabled kernel nodes.
+- The host suites run from a `git archive` of the tree, as in the release
+  tarball: `tools/test_promote_chip.py` and `tools/test_promote_from_verdict.py`
+  no longer need `.git` (#92).
 
 ### Research and receipts
 
-- H17 b0 (`receipts/2026-10-03-ane-h17`): T8140 (MacBook Neo), T8142 (M5)
-  and T6050 (M5 Pro/Max) are the `ane_t6021` firmware-boot family, on the
-  H16 window and DART layout plus the `exclave-*` properties. T8140 has
+- H17 b0 (`receipts/2026-10-03-ane-h17`, #102): T8140 (MacBook Neo), T8142
+  (M5) and T6050 (M5 Pro/Max) are the `ane_t6021` firmware-boot family, on
+  the H16 window and DART layout plus the `exclave-*` properties. T8140 has
   the six M4 (T8132) windows with the same sizes; T8142 differs in one
   window size; T6050 has the seven-window shape of the M4 Max (T6041). The
   receipt compares the 27 per-SoC entries of `ane_t6021` with the H16 b0
@@ -131,14 +187,48 @@
   macOS can supply, and plans b1 as H17 rows in `ane_h16`.
   `data/ane-soc/t6050.json` no longer says that the j775d `ane1` has no
   exclave marking: no source measured it.
-- H18 b0 (`receipts/2026-10-03-ane-h18`): T8152 (M6) is the `ane_t6021`
+- H18 b0 (`receipts/2026-10-03-ane-h18`, #99): T8152 (M6) is the `ane_t6021`
   firmware-boot model as a new `ascwrap-v8` variant, and T8150 (A19 Pro) is
-  Exclave-owned. The receipt lists the 28 per-SoC entries a T8152 smoke module
-  needs (13 have no local value), the macOS `ioreg` commands an M6 owner can
-  run to supply some of them, and the b1 module plan. `data/ane-soc/t8152.json`
-  records the firmware `_rtk_patchbay` tags and load commands, the `ane1`
-  clock-gates, and the new family statement. Its `compiler` leaf is gone: it
-  cited the aurora DT and repeated `hwx_lab_cross_target`.
+  Exclave-owned. The receipt lists the 28 per-SoC entries a T8152 smoke
+  module needs (13 have no local value), the macOS `ioreg` commands an M6
+  owner can run to supply some of them, and the b1 module plan.
+  `data/ane-soc/t8152.json` records the firmware `_rtk_patchbay` tags and
+  load commands, the `ane1` clock-gates, and the new family statement. Its
+  `compiler` leaf is gone: it cited the aurora DT and repeated
+  `hwx_lab_cross_target`.
+- The T6021 power-down study (`receipts/2026-10-03-t6021-powerdown`, #105):
+  the state that a power-domain cycle loses, the firmware power commands, and
+  ranked designs. Offline, no hardware.
+- The T6021 gate of this release (`receipts/2026-10-03-t6021-v042-gate`,
+  #106), on one M2 Max laptop with the `ane_t6021` of `5a457a3` (srcversion
+  `59494CBC56F28ED8D1122C6`): at the default parameters the release gate
+  passed (smoke, 9 gate ops, `ane_stats` items 1-4), and the whole encoder
+  was bit-exact at 254.306 ms min-of-min. `dyn_pg=1` was accepted but did
+  not gate, and `dyn_pg=1 boot_prevent_nap=0` was refused at probe
+  (CONFIG_GET -110). On two boots with the driver never loaded, idle power
+  was 14.46 to 14.50 W (5-minute block medians, fans off), against 14.69 to
+  14.77 W with the driver bound: holding the driver costs 227 mW (95 %
+  interval 207 to 246 mW, same session) to 275 mW (260 to 290 mW, against
+  the gate run's blocks). With the driver never loaded, `ane_cpu` and
+  `ane_sys` stay on and the other seven ANE power domains are off.
+
+### Known limits
+
+- Each on-by-default chip is tested on one machine.
+- On Omarchy, the overlays apply only through an omarchy-mac-boot with device
+  tree overlay support (omacom/omarchy-mac#677, not merged).
+- `dyn_pg=1` does not gate the compute islands on the tested M2 Max firmware,
+  and `dyn_pg=1 boot_prevent_nap=0` makes probe fail. Keep the defaults.
+- `ane_t6021` keeps the ANE powered while it is bound; only `ane` suspends.
+  On one M2 Max laptop that costs about 0.23 to 0.27 W at idle against a
+  boot where the driver never loads (#106).
+- Closing a program still unmaps its buffer objects page by page: the
+  release of the whole encoder program took about 178 ms on T8103 and
+  241 ms on T6001, the same with and without `map_batch`.
+- No silicon has run `ane_h16`.
+- The hardware results of this release are in
+  `receipts/2026-10-03-omarchy-ane-0.4.2/README.md` and
+  `receipts/2026-10-03-t6021-v042-gate/README.md`.
 
 ## 0.4.1 (2026-10-02)
 
