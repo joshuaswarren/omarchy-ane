@@ -1,14 +1,15 @@
-# agx_stats M2 (T6021) validation protocol — aurora-silicon/linux PR #157
+# agx_stats M2 (T6021) validation protocol — drm/asahi AGX firmware stats export (aurora draft PR, replacement for #157)
 
-Branch `agent/jw16-agx-stats2` (`joshuaswarren/aurorasilicon-linux`), tip
-`7c5300d16efc`, 6 commits on `aurora-wip`, draft PR
-https://github.com/aurora-silicon/linux/pull/157. PR #157 exports the AGX
-firmware statistics (`StatsMsg`: `Utilization`, `PowerState`, `PowerOn/Off`,
-`FwBusy`, `AvgPower`, `Temperature`) as
+Branch `agent/jw16-agx-stats4` (replacement for the original PR head, see
+`builds.md`), 8 commits on the same `aurora-wip` base `3bb0a6104a11`. The
+series exports the AGX firmware statistics (`StatsMsg`: `Utilization`,
+`PowerState`, `PowerOn/Off`, `FwBusy`, `AvgPower`, `Temperature`) as
 `/sys/class/drm/card*/device/agx_stats` (`key value` lines, mode 0444), with a
-cumulative `busy_ns` integrated from `FwBusy` timestamp deltas and an opt-out
-module parameter `asahi.stats_export` (default 1). Producer contract:
-`coreglass` reads it at 10 Hz as the GPU busy source.
+cumulative `busy_ns` integrated from `FwBusy` timestamp deltas, a host-side
+completed-submission counter `jobs` (bumped at fence signal in
+`JobFence::command_complete`), and an opt-out module parameter
+`asahi.stats_export` (default 1). Producer contract: `coreglass` reads it at
+10 Hz as the GPU busy source.
 
 Prepared 2026-10-04 by AgxStatsM2Prep (offline). Executor: Main with the M2 GPU
 lane (w6Z). The executor pre-registers its own notebook entry before the first
@@ -32,14 +33,17 @@ reboot. Private record: `apple-silicon-lab entries/AgxStatsM2Prep/`.
   touched.
 - GPU is bound and busy on the M2 stock kernel (H253: qwen38-2B decode
   109.59 tok/s d64, GPU OPP table live). The agx series must not change that.
-- `jobs` is dead code in this series (`note_job` has no call site); the ABI doc
-  says it stays 0. The producer contract's "jobs matches submissions ±1" is NOT
-  met by #157. Pre-registered here: `jobs` == 0 is the expected value, and the
-  deviation is reported, not tuned around.
-- ABI doc/code mismatches found by read (fix before merge, branch owner):
-  (1) doc lists `temperature_tmin`/`temperature_tmax` keys, `sysfs.c` never
-  prints them; (2) doc says `busy_ns` "saturates at u64::MAX", the code wraps.
-  Neither affects the M2 gates below.
+- `jobs` is counted on the host: `JobFence::command_complete` bumps the
+  snapshot counter when the last command of a submission completes. The exact
+  "jobs matches submissions ±1" contract check is NOT computable from
+  userspace (the number of internal driver submissions per cell is
+  Mesa/driver-defined), so the M2 gate checks: `jobs` stable while idle,
+  strictly increasing through the decode cells, and `jobs/s` from the
+  coreglass phases output in a plausible range (H253-class decode: tens of
+  submissions/s).
+- The original series' doc/code mismatches (unprinted `temperature_tmin/tmax`
+  keys; a saturation claim versus wrap semantics) are fixed in this series:
+  the ABI document now names exactly the printed keys and states the wrap.
 
 ## What ships to the window (build proof products)
 
@@ -48,11 +52,11 @@ From `builds.md` and the private artifacts
 
 | file | use |
 |---|---|
-| `Image-m2` (29.6 MB, sha `895bbbbf...`) | the test kernel |
-| `modules-m2.tar.zst` (492 MB, sha `360c5560...`) | `/lib/modules/<release>` |
+| `Image-m2` (29,657,600 B, sha `82eb46a8...`) | the test kernel |
+| `modules-m2.tar.zst` (491,434,304 B, sha `9203537a...`) | `/lib/modules/<release>` |
 | `RELEASE` (contains `7.1.12-ARCH-agxstats+`) | exact release string, read by the scripts |
 | `SHA256SUMS-stage` | copy to `SHA256SUMS` in the device stage dir (verified pre-install) |
-| `asahi-m2.ko`, `asahi-aurora.ko` + modinfo receipts | record only (built-in at runtime) |
+| `asahi4-m2.ko` `62dac78d...`, `asahi4-aurora.ko` `a469a9c1...` + modinfo receipts | record only (built-in at runtime) |
 
 Full sha256 list: `builds.md` and the artifacts `SHA256SUMS`. The aurora-config
 build (proof B) exists as the second W=1 proof; the A1 build (M2 config) is the
@@ -133,7 +137,7 @@ exists, `agx_stats` exists. FAIL (any): reboot to stock, record, stop.
 
 PASS (all): key set is exactly `busy_ns jobs pstate power_mw util1 util2
 util3 util4 temperature_raw temperature_scale` (one `key value` line each,
-ASCII integers); `jobs` == 0 in both samples (pre-registered deviation);
+ASCII integers); `jobs` unchanged across the idle window (no submissions);
 `busy_ns` monotonic non-decreasing; `busy_ns(s2)-busy_ns(s1) <= 60 s in ns`
 with idle fraction <= 0.05. A `busy_ns` fraction > 1 or stuck at 0 under load
 in S2 refutes the T6021 nanoseconds-unit hypothesis — record it, change
@@ -171,7 +175,8 @@ reps, adds a 10 Hz `agx_stats` reader loop during reps 2 and 4, and writes
 `<tok_s> <digest> <reader>` lines.
 
 PASS: all 5 digests identical; median(E1 reps 1,3,5) vs median(E1 reps 2,4)
-within 0.5%.
+within 0.5%; `jobs` strictly increased across the cells (capture before/after
+with capture-stats.sh).
 
 ### S5 — dmesg clean
 

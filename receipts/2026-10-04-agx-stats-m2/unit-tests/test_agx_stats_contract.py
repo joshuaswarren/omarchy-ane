@@ -50,6 +50,7 @@ def main() -> int:
     rust = read(wt, "drivers/gpu/drm/asahi/stats.rs")
     c = read(wt, "drivers/gpu/drm/asahi/sysfs.c")
     doc = read(wt, "Documentation/ABI/testing/sysfs-driver-asahi-agx-stats")
+    queue = read(wt, "drivers/gpu/drm/asahi/queue/mod.rs")
     fail = []
 
     rf = snapshot_fields_rust(rust)
@@ -74,6 +75,14 @@ def main() -> int:
 
     if "DEVICE_ATTR_RO(agx_stats)" not in c:
         fail.append("sysfs file is not DEVICE_ATTR_RO (read-only)")
+
+    # jobs call-site drift guard: the counter must be bumped at submission
+    # completion (JobFence::command_complete), reachable via the fence's
+    # snapshot handle.
+    if "stats.note_job()" not in queue:
+        fail.append("queue/mod.rs no longer bumps stats.note_job() at completion")
+    if "note_job" not in rust:
+        fail.append("stats.rs lost the note_job counter entry point")
 
     for key in sorted(CONTRACT_KEYS):
         if not re.search(rf'"{key} %\w+\\n"', c):
