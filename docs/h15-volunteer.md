@@ -29,8 +29,8 @@ git clone https://github.com/joshuaswarren/omarchy-ane
 cd omarchy-ane/ane/h15
 dtc -@ -I dts -O dtb -o ane-h15-t8122.dtbo t8122-ane-experimental.dts
 sudo install -D -m 600 ane-h15-t8122.dtbo \
-    /usr/share/omarchy-platform/dtb-overlays/t8122/ane-h15-t8122.dtbo
-echo ane-h15-experimental | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in
+    /usr/lib/omarchy-mac-boot/dtb-overlays/t8122/ane-h15-t8122.dtbo
+echo ane-h15-experimental | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in
 sudo omarchy-ane-dt apply && sudo omarchy-ane-dt status
 ```
 

@@ -2,7 +2,7 @@
 /*
  * U-Boot console input for T6021 (M2 Max) disk boots: serial only. OPT-IN:
  * installed, but it applies only when "uboot-serial-stdin-t6021" is a line of
- * /etc/omarchy-platform/dtb-overlays.opt-in. It is a workaround, not an ANE
+ * /etc/omarchy-mac-boot/dtb-overlays.opt-in. It is a workaround, not an ANE
  * part.
  *
  * Problem, seen on one M2 Max laptop (receipts/2026-10-01-t6021-disk-boot):

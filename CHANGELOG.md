@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Breaking: the overlays and the opt-in file move with omarchy-mac-boot's
+  overlay contract (omacom/omarchy-mac-pkgs#3, the port of
+  omacom/omarchy-mac#677). Overlays install to
+  `/usr/lib/omarchy-mac-boot/dtb-overlays`, the directory omarchy-mac-boot
+  ships for package-owned overlays, and its pacman hook now watches
+  `usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo`. They were
+  `/usr/share/omarchy-platform/dtb-overlays`. A package upgrade moves the
+  files. A hand install in either old directory (`packaging/build-dtbo /`;
+  `usr/lib/omarchy-platform/dtb-overlays` and
+  `usr/share/omarchy-platform/dtb-overlays` both refuse) must
+  move: while `.dtbo` files are in an old directory, `omarchy-ane-dt apply`
+  refuses, keeps the current copies, and names the steps. The opt-in file
+  moves with them: `/etc/omarchy-platform/dtb-overlays.opt-in` is now
+  `/etc/omarchy-mac-boot/dtb-overlays.opt-in`. Re-add your opt-in lines to
+  the new file; nothing reads the old one. On Arch Linux ARM
+  installs without omarchy-mac-boot the package creates the overlay
+  directory, and apply, `update-m1n1-dtbs` and the two
+  `90-omarchy-ane-dt` hooks stay.
 - H15 (M3) opt-in experimental bring-up module: `ane/h15/` (4 soc
   rows, four-stage module, host ADT self test), three experimental
   overlays, three data-only overlays (`packaging/dt/`), and

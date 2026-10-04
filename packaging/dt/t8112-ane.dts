@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * Overlay state: opt-in ("ane-t8112" in /etc/omarchy-platform/dtb-overlays.opt-in).
+ * Overlay state: opt-in ("ane-t8112" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).
  * ANE for T8112 (M2) board device trees, for ane_t6021 (apple,t8112-ane).
  *
  * Values and sources (receipts/2026-10-01-t8112-ane, the table, and

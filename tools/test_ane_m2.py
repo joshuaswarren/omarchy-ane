@@ -182,7 +182,7 @@ for soc, board, compat, mod in (('t8103', 'j293', 'apple,t8103-ane', 'ane'),
         continue
     assert rc == 0 and f'UNTESTED SoC: {soc}. {mod} has not run on it.' in out, out
     assert f'  To bring the chip up:' in out, out
-    assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in' in out, out
+    assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in' in out, out
     n = 2
     if f'apple,{soc}' in fetch.FETCH:  # the M2 family fetches its firmware before apply
         assert f'    {n}. sudo omarchy-ane-firmware-fetch' in out, out

@@ -39,7 +39,7 @@ The first M4 owner:
    (or take the compiled dtbo from the receipt),
 2. copy it into the overlay directory with owner-only permissions,
 3. add the line `ane-h16-experimental` to
-   `/etc/omarchy-platform/dtb-overlays.opt-in`,
+   `/etc/omarchy-mac-boot/dtb-overlays.opt-in`,
 4. reboot.
 
 T6040/T6041 have no board device tree in aurora yet; this overlay is

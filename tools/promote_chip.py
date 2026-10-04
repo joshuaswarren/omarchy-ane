@@ -144,7 +144,7 @@ def edit_overlays(text, chip, promote):
 
 MARKER = ("\t/* dtb-overlays.sh: applies only when opted in. */\n"
           '\tomarchy,opt-in = "ane-{chip}";\n')
-STATE_OPTIN = ' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-platform/dtb-overlays.opt-in).\n'
+STATE_OPTIN = ' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).\n'
 
 
 def state_line(text, chip):

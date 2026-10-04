@@ -5,7 +5,7 @@
  * it is not a row of packaging/dt/overlays and omarchy-ane-dt never
  * applies it. The first owner of an M3 Linux box compiles it and
  * copies it into the overlay directory by hand, with the opt-in key
- * ane-h15-experimental in /etc/omarchy-platform/dtb-overlays.opt-in.
+ * ane-h15-experimental in /etc/omarchy-mac-boot/dtb-overlays.opt-in.
  *
  * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). ADT 27.0
  * 26A428:

@@ -1,0 +1,40 @@
+Applied to omacom/omarchy-pkgs PR #745 (head 80adc10c6cf6262ab796063d3377c7521b1779e5,
+pkgbuilds/omarchy-ane-dkms) when the omarchy-ane release carrying the cutover lands.
+Guards from the maintainer's checklist (#745 comment by maralcbr, 2026-10-04 04:55Z)
+and the merged layout (omacom/omarchy-mac-pkgs#3, commit 2a3ed89eb20c):
+- conflicts=('omarchy-mac-boot<20261004-2'): an older boot package reads no overlay
+  directory, so the overlays would install where nothing reads them.
+- the package() comment names the new overlay path and the ALARM dir creation.
+The install line `packaging/build-dtbo "$pkgdir"` needs no change: it reads OVERLAY_DIR
+from packaging/omarchy-ane-dt. The .install file needs no change: pacman removes the
+package-owned .dtbo files at the old path on upgrade; hand installs in either retired
+directory (usr/lib/omarchy-platform, usr/share/omarchy-platform) are covered by the
+`omarchy-ane-dt apply` refusal that names the old directory.
+
+--- a/pkgbuilds/omarchy-ane-dkms/PKGBUILD
++++ b/pkgbuilds/omarchy-ane-dkms/PKGBUILD
+@@ -12,6 +12,9 @@
+ # dtc 1.7.1 is the first release that keeps a labelled node's phandle when it
+ # applies an overlay (libfdt 1fad0650, 61e88fdc). Arch's dtc carries epoch 1.
+ depends=('dkms' 'dtc>=1:1.7.1' 'python')
++# omarchy-mac-boot<20261004-2 reads no overlay directory, so this package's
++# overlays would install where nothing reads them (omarchy-pkgs#745 comment).
++conflicts=('omarchy-mac-boot<20261004-2')
+ # libdrm: drm.h for libane, which omarchy-ane-run links statically.
+ makedepends=('dtc' 'libdrm')
+ checkdepends=('fakeroot' 'linux-aurora-headers')
+@@ -91,9 +94,11 @@
+   install -Dm644 -t "$pkgdir/usr/share/libalpm/hooks" \
+     packaging/90-omarchy-ane-dt.hook packaging/90-omarchy-ane-dt-remove.hook \
+     packaging/90-omarchy-ane-firmware.hook
+-  # Overlays to /usr/share/omarchy-platform/dtb-overlays/PREFIX/omarchy-NAME.dtbo,
+-  # and data/ane-soc/SOC.json to /usr/share/omarchy-ane/soc/. The data-only
+-  # overlays compile as a check and are never installed.
++  # Overlays to /usr/lib/omarchy-mac-boot/dtb-overlays/PREFIX/omarchy-NAME.dtbo
++  # (omarchy-mac-boot ships the directory; on Arch Linux ARM installs without
++  # omarchy-mac-boot this package creates it), and data/ane-soc/SOC.json to
++  # /usr/share/omarchy-ane/soc/. The data-only overlays compile as a check and
++  # are never installed.
+   packaging/build-dtbo "$pkgdir"
+ 
+   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

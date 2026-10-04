@@ -5,7 +5,7 @@
  * a row of packaging/dt/overlays and omarchy-ane-dt never applies it.
  * The first owner of an M4 Linux box compiles it and copies it into the
  * overlay directory by hand, with the opt-in key ane-h16-experimental
- * in /etc/omarchy-platform/dtb-overlays.opt-in. See ane/h16/README-bringup.
+ * in /etc/omarchy-mac-boot/dtb-overlays.opt-in. See ane/h16/README-bringup.
  *
  * Sources (receipts/2026-10-03-ane-h16): ADT j604ap (27.0 26A428):
  * ane reg engine 0x500000000+0x2000000, pmgr 0x380700000+0x18000 with

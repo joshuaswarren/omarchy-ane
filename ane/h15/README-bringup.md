@@ -73,7 +73,7 @@ installed by the package; the first M3 owner:
 2. Copy the `dtbo` into the overlay directory with owner-only
    permissions.
 3. Add the line `ane-h15-experimental` to
-   `/etc/omarchy-platform/dtb-overlays.opt-in`.
+   `/etc/omarchy-mac-boot/dtb-overlays.opt-in`.
 4. Reboot.
 
 T6034 boards (j514m, j516m) use the t6031 ADT nodes — a t6034

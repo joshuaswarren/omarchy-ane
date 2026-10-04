@@ -128,8 +128,8 @@ case $soc in
       [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
       steps+=("boot a kernel whose own device tree enables the $soc ANE node")
     else
-      echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-platform/dtb-overlays.opt-in."
-      steps+=("echo ane-$soc | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in")
+      echo "UNTESTED SoC: $soc. $mod has not run on it. Its overlay applies only when ane-$soc is a line of /etc/omarchy-mac-boot/dtb-overlays.opt-in."
+      steps+=("echo ane-$soc | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in")
       [[ $mod == ane_t6021 ]] && steps+=("sudo omarchy-ane-firmware-fetch")
       steps+=("sudo omarchy-ane-dt apply" "sudo update-m1n1" "sudo reboot")
     fi

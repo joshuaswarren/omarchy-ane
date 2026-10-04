@@ -95,7 +95,7 @@ with tempfile.TemporaryDirectory() as tmp:
         't6020/omarchy-ane.dtbo', 't6021/omarchy-ane.dtbo', 't6021/omarchy-uboot-serial-stdin.dtbo',
         't6022/omarchy-ane.dtbo', 't8103/omarchy-ane.dtbo', 't8112/omarchy-ane.dtbo']
     hook = (root / 'packaging/90-omarchy-ane-dt.hook').read_text().splitlines()
-    assert f'Target = {oadt.OVERLAY_DIR}/*' in hook, 'the hook must watch OVERLAY_DIR'
+    assert f'Target = {oadt.OVERLAY_DIR}/*/*.dtbo' in hook, 'the hook must watch OVERLAY_DIR'
     opt_in = pkg / oadt.OPT_IN
     opt_in.parent.mkdir(parents=True)
     chosen = lambda dtb: [f'{p.parent.name}/{p.name}' for p in oadt.overlays_for(pkg, dtb)]
@@ -156,23 +156,26 @@ with tempfile.TemporaryDirectory() as tmp:
     assert p.returncode == 1 and 'DATA-ONLY SoC: t9999 (no driver yet)\n' in p.stdout and 'UNTESTED' not in p.stdout, \
         p.stdout
 
-    # Overlays left in the old directory (a hand install): apply refuses and
-    # keeps the current copy and the update-m1n1 line.
-    old = Path(tmp) / 'old'
-    (old / 'sys/firmware/devicetree/base').mkdir(parents=True)
-    (old / 'sys/firmware/devicetree/base/compatible').write_bytes(b'apple,j414c\0apple,t6021\0')
-    (old / oadt.OLD_OVERLAY_DIR / 't6021').mkdir(parents=True)
-    (old / oadt.OLD_OVERLAY_DIR / 't6021/omarchy-ane.dtbo').write_bytes(b'')
-    copy = old / 'var/lib/omarchy-ane/dtbs/7.1.13-3-2-ARCH/t6021-j414c.dtb'
-    copy.parent.mkdir(parents=True)
-    copy.write_bytes(b'copy')
-    oadt.set_line(old, True)
-    try:
-        oadt.apply(old, None)
-        raise AssertionError('apply ran with overlays in the old directory')
-    except oadt.Refuse as e:
-        assert 'old directory' in str(e), e
-    assert copy.read_bytes() == b'copy' and oadt.LINE in oadt.config_lines(old)
+    # Overlays left in an old directory (a hand install): apply refuses and
+    # keeps the current copy and the update-m1n1 line. Both retired locations
+    # refuse: usr/lib/omarchy-platform (before 2026-10-01) and
+    # usr/share/omarchy-platform (the #677 location).
+    for i, old_dir in enumerate(oadt.OLD_OVERLAY_DIRS):
+        old = Path(tmp) / f'old{i}'
+        (old / 'sys/firmware/devicetree/base').mkdir(parents=True)
+        (old / 'sys/firmware/devicetree/base/compatible').write_bytes(b'apple,j414c\0apple,t6021\0')
+        (old / old_dir / 't6021').mkdir(parents=True)
+        (old / old_dir / 't6021/omarchy-ane.dtbo').write_bytes(b'')
+        copy = old / 'var/lib/omarchy-ane/dtbs/7.1.13-3-2-ARCH/t6021-j414c.dtb'
+        copy.parent.mkdir(parents=True)
+        copy.write_bytes(b'copy')
+        oadt.set_line(old, True)
+        try:
+            oadt.apply(old, None)
+            raise AssertionError(f'apply ran with overlays in the old directory /{old_dir}')
+        except oadt.Refuse as e:
+            assert 'old directory' in str(e) and old_dir in str(e), e
+        assert copy.read_bytes() == b'copy' and oadt.LINE in oadt.config_lines(old)
 
     # A kernel tree that has the ANE node keeps it; an overlay without
     # omarchy,skip-if-compatible still applies.
