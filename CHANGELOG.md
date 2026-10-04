@@ -9,8 +9,10 @@
   ships for package-owned overlays, and its pacman hook now watches
   `usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo`. They were
   `/usr/share/omarchy-platform/dtb-overlays`. A package upgrade moves the
-  files. A hand install in the old directory (`packaging/build-dtbo /`) must
-  move: while `.dtbo` files are in the old directory, `omarchy-ane-dt apply`
+  files. A hand install in either old directory (`packaging/build-dtbo /`;
+  `usr/lib/omarchy-platform/dtb-overlays` and
+  `usr/share/omarchy-platform/dtb-overlays` both refuse) must
+  move: while `.dtbo` files are in an old directory, `omarchy-ane-dt apply`
   refuses, keeps the current copies, and names the steps. The opt-in file
   moves with them: `/etc/omarchy-platform/dtb-overlays.opt-in` is now
   `/etc/omarchy-mac-boot/dtb-overlays.opt-in`. Re-add your opt-in lines to

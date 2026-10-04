@@ -62,10 +62,13 @@ from pathlib import Path
 # Linux ARM installs have no omarchy-mac-boot, so there apply,
 # update-m1n1-dtbs and the hooks stay.
 OVERLAY_DIR = "usr/lib/omarchy-mac-boot/dtb-overlays"
-# The directory before 2026-10-04. apply refuses while it has overlays, so a
-# hand install there (the lab M2) keeps its copies until it moves them.
-# Remove with its check in apply when no install uses it.
-OLD_OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"
+# The directories before 2026-10-04: usr/lib/omarchy-platform (until
+# 2026-10-01) and usr/share/omarchy-platform (the omacom/omarchy-mac#677
+# location). apply refuses while either has overlays, so a hand install there
+# (the lab M2) keeps its copies until it moves them. Remove with its check in
+# apply when no install uses them.
+OLD_OVERLAY_DIRS = ("usr/lib/omarchy-platform/dtb-overlays",
+                    "usr/share/omarchy-platform/dtb-overlays")
 FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
@@ -323,11 +326,12 @@ def apply(root, hook_targets):
         raise Refuse("this omarchy-mac-boot refuses a changed device tree (omarchy update's boot check) and has "
                      "no overlay support (omacom/omarchy-mac#677); the ANE node must come from the kernel or an "
                      "omarchy-mac-boot with that support")
-    old = glob.glob(str(root / OLD_OVERLAY_DIR / "*/*.dtbo"))
-    if old:
-        raise Refuse(f"overlays are in the old directory /{OLD_OVERLAY_DIR} ({len(old)} files). Install them in "
-                     f"/{OVERLAY_DIR} (the omarchy-ane package, or packaging/build-dtbo /), remove "
-                     f"/{OLD_OVERLAY_DIR}, then run apply again. The current copies stay until then")
+    for old_dir in OLD_OVERLAY_DIRS:
+        old = glob.glob(str(root / old_dir / "*/*.dtbo"))
+        if old:
+            raise Refuse(f"overlays are in the old directory /{old_dir} ({len(old)} files). Install them in "
+                         f"/{OVERLAY_DIR} (the omarchy-ane package, or packaging/build-dtbo /), remove "
+                         f"/{old_dir}, then run apply again. The current copies stay until then")
     name = board(root)
     overlays = overlays_for(root, name)
     state_root = root / "var/lib/omarchy-ane/dtbs"

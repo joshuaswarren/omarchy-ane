@@ -1,13 +1,14 @@
 # Before 95-m1n1-install.hook (asahi-scripts), so the update-m1n1 it runs after
 # a kernel update reads the overlaid board device tree. The second Target is
-# OVERLAY_DIR of omarchy-ane-dt.
+# OVERLAY_DIR of omarchy-ane-dt, with the glob of omarchy-mac-boot's
+# 95-omarchy-mac-dtb-overlays.hook.
 [Trigger]
 Type = Path
 Operation = Install
 Operation = Upgrade
 Operation = Remove
 Target = usr/lib/modules/*/dtbs/*
-Target = usr/lib/omarchy-mac-boot/dtb-overlays/*
+Target = usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo
 
 [Action]
 Description = Adding the ANE node to the board device tree...

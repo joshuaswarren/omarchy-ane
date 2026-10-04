@@ -6,12 +6,13 @@ and tester step moved in one change.
 
 ## Upstream matched (read-only)
 
-- `omacom/omarchy-mac-pkgs#3`, head commit `2dc0ad6c28f3ac77536bb809befe5eaaafe51965`
+- `omacom/omarchy-mac-pkgs#3`, MERGED as `2a3ed89eb20c5695f6291698b6646a49f8f6489d`
   ("Apply package-owned device tree overlays to m1n1 stage 2"), the port of
-  `omacom/omarchy-mac#677` (`a76179cd`). Files API + contents API read at that
-  commit: `omarchy-mac-boot/lib/dtb-overlays.sh`,
-  `files/usr/share/libalpm/hooks/95-omarchy-mac-dtb-overlays.hook`,
-  `files/etc/default/update-m1n1`, `install`, `README.md`, and its tests.
+  `omacom/omarchy-mac#677` (`a76179cd`). The final merged `lib/dtb-overlays.sh`
+  is byte-identical to the PR-head `2dc0ad6c` file this branch first matched;
+  the hook, `etc/default/update-m1n1` and `install` are unchanged too. The
+  maintainer's checklist (omacom/omarchy-pkgs#745 comment by maralcbr,
+  2026-10-04 04:55Z) is ticked item by item below.
 - Contract taken from that diff: overlays at
   `/usr/lib/omarchy-mac-boot/dtb-overlays/PREFIX/NAME.dtbo` (glob `*/*.dtbo`),
   opt-in `/etc/omarchy-mac-boot/dtb-overlays.opt-in` (one string per line,
@@ -35,34 +36,57 @@ and tester step moved in one change.
 | --- | --- |
 | `/usr/share/omarchy-platform/dtb-overlays/PREFIX/NAME.dtbo` | `/usr/lib/omarchy-mac-boot/dtb-overlays/PREFIX/NAME.dtbo` |
 | `/etc/omarchy-platform/dtb-overlays.opt-in` | `/etc/omarchy-mac-boot/dtb-overlays.opt-in` |
-| `Target = usr/share/omarchy-platform/dtb-overlays/*` (90-omarchy-ane-dt.hook) | `Target = usr/lib/omarchy-mac-boot/dtb-overlays/*` |
+| `Target = usr/share/omarchy-platform/dtb-overlays/*` (90-omarchy-ane-dt.hook) | `Target = usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo` (the glob of omarchy-mac-boot's 95 hook) |
 | `OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"` | `OVERLAY_DIR = "usr/lib/omarchy-mac-boot/dtb-overlays"` |
-| `OLD_OVERLAY_DIR = "usr/lib/omarchy-platform/dtb-overlays"` (refusal guard, pre-2026-10-01 dir) | `OLD_OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"` (the dir this cutover vacates) |
+| `OLD_OVERLAY_DIR = "usr/lib/omarchy-platform/dtb-overlays"` (one retired dir) | `OLD_OVERLAY_DIRS = ("usr/lib/omarchy-platform/dtb-overlays", "usr/share/omarchy-platform/dtb-overlays")` (both retired dirs refuse) |
 
 Pacman removes package-owned `.dtbo` files at the old path on upgrade, so a
-package upgrade moves the files. A hand install in the old directory
+package upgrade moves the files. A hand install in either old directory
 (`packaging/build-dtbo /`, the lab M2) keeps its copies: `apply` refuses while
-files remain in `OLD_OVERLAY_DIR`, keeps the current m1n1 copies and the
-update-m1n1 line, and names the steps - the same one-generation guard the
-2026-10-01 move used. The opt-in file is the owner's `/etc` file and is not
-migrated by the package: re-add your opt-in lines to the new file (CHANGELOG
-Unreleased says so). An absent opt-in file means not opted in, which fails
-safe (hardware off).
+files remain in either `OLD_OVERLAY_DIRS` location, keeps the current m1n1
+copies and the update-m1n1 line, and names the steps - the same one-step guard
+the 2026-10-01 move used, now covering both retired locations. The opt-in file
+is the owner's `/etc` file and is not migrated by the package: re-add your
+opt-in lines to the new file (CHANGELOG Unreleased says so). An absent opt-in
+file means not opted in, which fails safe (hardware off).
 
-## Files changed (21)
+## Maintainer checklist (omarchy-pkgs#745 comment, maralcbr)
 
-- `packaging/omarchy-ane-dt` - `OVERLAY_DIR`, `OLD_OVERLAY_DIR`, `OPT_IN`,
-  docstring, constant comments (the one place that names the directory).
-- `packaging/90-omarchy-ane-dt.hook` - second `Target`.
+1. `OVERLAY_DIR` + `OPT_IN` in `omarchy-ane-dt` - done; re-verified against
+   the merged `2a3ed89` files: same dir, same one-string-per-line opt-in
+   format.
+2. Old-dir refusal covers both retired locations (`usr/lib/omarchy-platform`
+   and `usr/share/omarchy-platform`), with a test for each
+   (`tools/test_ane_dt.py` loops both).
+3. `build-dtbo` reads `OVERLAY_DIR` from `packaging/omarchy-ane-dt`
+   (`sed -n 's/^OVERLAY_DIR = ...'`), nothing hardcoded - consistent.
+4. `90-omarchy-ane-dt.hook` keeps both Targets: kernel dtbs and the new
+   overlay glob `usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo`, the same
+   pattern as omarchy-mac-boot's `95-omarchy-mac-dtb-overlays.hook`.
+5. Opt-in path in `omarchy-ane-check` and every doc - done; `receipts/` are
+   point-in-time evidence and untouched.
+6. `DTBS=` behavior: upstream's `dtb_overlays_update_m1n1` returns early when
+   the admin set `DTBS=` (warning only, overlays left out). Our text already
+   matches: `omarchy-ane-check` prints `dtbs_source=kernel: overlay opt-in
+   has no effect, chip enabled only by its node in the kernel DT` and
+   `apply` refuses rather than build something m1n1 will not boot.
+
+## Files changed
+
+- `packaging/omarchy-ane-dt` - `OVERLAY_DIR`, `OPT_IN`, `OLD_OVERLAY_DIRS`
+  (both retired dirs), docstring, constant comments (the one place that names
+  the directory).
+- `packaging/90-omarchy-ane-dt.hook` - second `Target`, now the
+  `*/*.dtbo` glob.
 - `packaging/omarchy-ane-check` - both UNTESTED-SoC opt-in hint lines.
 - `packaging/dt/overlays` - comment.
 - `packaging/dt/t6002-ane.dts`, `t6022-ane.dts`, `t8112-ane.dts`,
   `t6021-uboot-serial-stdin.dts` - "Overlay state" header comments.
 - `tools/promote_chip.py` - `STATE_OPTIN` template (promoted DTS headers).
 - `tools/omarchy-ane-h15-stage` - pre-condition comment.
-- `tools/test_ane_dt.py` - no edit needed: it derives paths from the
-  `oadt.OVERLAY_DIR` / `oadt.OLD_OVERLAY_DIR` / `oadt.OPT_IN` constants and
-  asserts the hook watches `OVERLAY_DIR`.
+- `tools/test_ane_dt.py` - derives paths from the `oadt.OVERLAY_DIR` /
+  `oadt.OPT_IN` constants and asserts the hook watches `OVERLAY_DIR` with the
+  `*/*.dtbo` glob; the old-directory refusal test loops both retired dirs.
 - `tools/test_ane_intree.py`, `tools/test_ane_m2.py` - literal assertions of
   the check's opt-in step line.
 - `tools/test_promote_chip.py` - literal assertion of the promoted DTS header.
@@ -131,12 +155,20 @@ own (the recipe patch keeps it that way).
 ## Recipe changes for omarchy-pkgs #745
 
 `omarchy-pkgs-745.patch` (next to this README), against PR head
-`80adc10c6cf6262ab796063d3377c7521b1779e5`: one comment block in
-`package()` names the new overlay path and the ALARM directory creation.
+`80adc10c6cf6262ab796063d3377c7521b1779e5`:
+
+- the `package()` comment block names the new overlay path and the ALARM
+  directory creation;
+- `conflicts=('omarchy-mac-boot<20261004-2')` (the maintainer's guard from the
+  #745 comment: an older omarchy-mac-boot reads no overlay directory, so this
+  package's overlays would install where nothing reads them);
+
 No install line changes: `packaging/build-dtbo "$pkgdir"` reads `OVERLAY_DIR`
 from the tree it packages. `omarchy-ane-dkms.install` needs no change (pacman
 removes the old package-owned files on upgrade). Not pushed - it applies when
 the omarchy-ane release carrying this cutover lands and #745 bumps `pkgver`.
+Whether that release cuts from the 0.4.2 line or keeps T6000/T6020 on is the
+release step's call (maintainer's note), not this PR's.
 
 ## Open questions
 
@@ -144,10 +176,6 @@ the omarchy-ane release carrying this cutover lands and #745 bumps `pkgver`.
    owner's file). If Joshua prefers the package to carry opt-in lines over
    (post_upgrade `cat old >> new`), that is a one-line addition to the #745
    `.install` - say the word.
-2. Our hook watches `usr/lib/omarchy-mac-boot/dtb-overlays/*` while
-   upstream's 95-hook targets `*/*.dtbo`; pacman's fnmatch makes both match
-   the same installed files. Left as-is to keep the one-target form
-   `test_ane_dt.py` asserts; harmless either way.
-3. `OLD_OVERLAY_DIR` is again a one-generation guard (the pre-2026-10-01
-   `usr/lib/omarchy-platform` dir is no longer named). Its own comment says
+2. `OLD_OVERLAY_DIRS` now covers two retired locations; the even-older
+   pre-2026-10-01 dir is not separately versioned - the guard's comment says
    when to remove the check.
