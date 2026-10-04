@@ -73,6 +73,16 @@ BUILD_BUG_ON assert guard, unsupported-string guard) — PASS.
 (`bbfb96f309c8`, `01d19b8a4f55`, `91c24dc11b09`, `dbc8b48aeb06`,
 `8ca5289bec3a` from round 3, `4189501b643f` from this round).
 
+## Module-receipt proof (aurora config, round 4 code)
+
+`asahi.ko` (config.used, `CONFIG_DRM_ASAHI=m`): sha256
+`c0beffdad7caa43f6047f687f1cde98932746cfd19acc464dc317ad8b2f2840f`,
+24,221,736 bytes — a REAL module now (26 GPU-driver string hits, agx_stats
+symbols present) versus the round-2 shim-only 326 KB artifact. The
+`stats_export` parameter appears in `parm=` (param registration returns with
+the crate linked in). vermagic `7.1.12-ARCH-agxstats+ SMP preempt mod_unload
+aarch64`. vmlinux rc=0, modules rc=0, zero series warnings.
+
 ---
 
 # Round 3 — boot-kernel fix (window B boot 1 failure) and verified products
