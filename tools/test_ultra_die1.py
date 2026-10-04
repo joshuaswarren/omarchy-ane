@@ -170,10 +170,15 @@ assert re.search(r'struct ane_nn \*ane_m2_init_ports\(const char \*path,\s*'
 assert 'DIE_STRIDE = 0x20_0000_0000' in smoke
 assert smoke.count('"die": bound') == 2, smoke.count('"die": bound')
 
-# 5. Two-device plumbing: the one global name (the debugfs dir) is per
-# device; everything else audited per device (wedged/boost/stats/IOMMU/PM
-# take ane->dev; only module params stay module-level).
-assert 'debugfs_create_dir(dev_name(ane->dev), NULL)' in drv
+# 5. Two-device plumbing: the stats debugfs name is die-keyed and
+# deterministic from the node — die 0 keeps the legacy name every die-0
+# consumer reads (/sys/kernel/debug/ane, ane_t6021 for the M2 family);
+# die >= 1 names by dev_name, so a lone die-1 node is suffixed too.
+assert 'dev_name(ane->dev) : "ane"' in drv and 'eng->start >> 37' in drv
+assert re.search(r'dev_name\(dev\)\s*:\s*"ane_t6021"',
+                 (root / 'ane/t6021/ane_t6021_rtclient_main.c').read_text())
+rtmain = (root / 'ane/t6021/ane_t6021_rtclient_main.c').read_text()
+assert 'debugfs_create_dir("ane_t6021", NULL)' in rtmain  # the trace_td dir
 assert 'debugfs_create_dir("ane", NULL)' not in drv
 # The die-1 firmware pin reaches request_firmware, validated against the
 # die-0 pin: a non-identical ane1 image refuses at load.
