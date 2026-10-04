@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * Overlay state: opt-in ("ane-t6002-die1" in /etc/omarchy-platform/dtb-overlays.opt-in).
+ * The die-1 ANE of T6002 (M1 Ultra): the second accel device, after the
+ * die-0 overlay (t6002-ane.dts, key ane-t6002). Shapes and values:
+ * receipts/2026-10-03-ultra-die1 (MEASURED on the live M1 Ultra desktop:
+ * die 1 is the pure +0x20_0000_0000 translation of die 0 for every
+ * window) and the aurora t600x.dtsi multi-die template. No
+ * omarchy,skip-if-compatible: the die-0 overlay and a kernel tree that
+ * has the die-0 node must not skip this one.
+ *
+ * Node names and regs stay in the die-1 bus's untranslated (child)
+ * address space; the bus ranges (t6002.dtsi: soc@2200000000, 0x2_x ->
+ * 0x22_x) do the translation, so the ane engine reg 0x284000000 reads
+ * 0x2284000000 and the SET window 0x28e08c000 reads 0x228e08c000. ane.ko
+ * takes the SET base from this node and finds it RECOGNIZED, not
+ * QUALIFIED: a die-1 bind needs ane.allow_unqualified=1 until a die-1
+ * run proves it (ane/src/ane_drv.c ane_qual_table).
+ *
+ * Interrupts keep the die-0 line numbers with the die in the AIC
+ * specifier (770 ane, 771 DART; the aurora AIC_IRQ DIE_NO column does
+ * the routing). The die-1 pmgr states: ANE_SYS@268 and ANE_SYS_CPU@2c8
+ * exist on the stock trees (aurora DIE_NODE(ps_ane_sys/ps_ane_sys_cpu),
+ * both dies) and only need status; ANE_SET0..4@0xc000..0xc028 do not
+ * (aurora keeps the set states in its DIE_NO == 0 pass), so this
+ * overlay adds them under the die-1 pmgr, parents per the die-0 chain.
+ * The die-1 AFR parent of @268 is the stock die-1 pass node.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6002-die1";
+};
+
+/ {
+	fragment@0 {
+		target-path = "/soc@200000000/interrupt-controller@28e100000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc@2200000000/power-management@28e080000/power-controller@268";
+		ps_ane_sys: __overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc@2200000000/power-management@28e080000/power-controller@2c8";
+		ane_cpu_pd: __overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc@2200000000/power-management@28e080000";
+
+		__overlay__ {
+			ps_ane_set0: power-controller@c000 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set0";
+				power-domains = <&ane_cpu_pd>;
+				status = "okay";
+			};
+
+			ps_ane_base: power-controller@c008 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_set0>;
+				status = "okay";
+			};
+
+			ps_ane_set1: power-controller@c010 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set1";
+				power-domains = <&ps_ane_base>;
+				status = "okay";
+			};
+
+			ps_ane_set2: power-controller@c018 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set2";
+				power-domains = <&ps_ane_base>;
+				status = "okay";
+			};
+
+			ps_ane_set3: power-controller@c020 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc020 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set3";
+				power-domains = <&ps_ane_base>;
+				status = "okay";
+			};
+
+			ps_ane_set4: power-controller@c028 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0xc028 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_set4";
+				power-domains = <&ps_ane_base>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@4 {
+		target-path = "/soc@2200000000";
+
+		__overlay__ {
+			ane_dart0: iommu@285800000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 1 771 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane_dart1: iommu@285810000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 1 771 4>;
+				power-domains = <&ane_cpu_pd>;
+				status = "okay";
+			};
+
+			ane_dart2: iommu@285820000 {
+				compatible = "apple,t6000-dart";
+				reg = <0x2 0x85820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 1 771 4>;
+				power-domains = <&ane_cpu_pd>;
+				status = "okay";
+			};
+
+			ane1: ane@284000000 {
+				compatible = "apple,t6000-ane";
+				reg-names = "engine", "set";
+				reg = <0x2 0x84000000 0x0 0x2000000>,
+				      <0x2 0x8e08c000 0x0 0x38>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "ane";
+				interrupts = <0 1 770 4>;
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ane_cpu_pd>,
+						<&ps_ane_set1>,
+						<&ps_ane_set2>,
+						<&ps_ane_set3>,
+						<&ps_ane_set4>;
+				status = "okay";
+			};
+		};
+	};
+};

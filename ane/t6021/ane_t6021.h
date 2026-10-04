@@ -747,6 +747,10 @@ struct ane_asc_tunables;
  *  pmu_pa: the page of the seven ANE ps words; the firmware's power
  *    service writes them through its DART at IOVA == PA. ps_off: the
  *    first of the seven in that page.
+ *  fw_pin: the die's firmware image name in the 13.5 BuildManifest
+ *    (Ap,ANE1 for T6022 die 1), data only until a die-1 run: the loader
+ *    still stages soc->fw->name (docs/ultra-die1.md §2). NULL = no
+ *    per-die pin recorded.
  *  trace_td_off: engine offset of the TM last-committed-TD word read by
  *    trace_td; 0 = trace_td unsupported. */
 struct ane_t602x_soc {
@@ -761,9 +765,14 @@ struct ane_t602x_soc {
 	u64 pmu_pa;
 	u32 ps_off;
 	u32 trace_td_off;
+	const char *fw_pin;
 };
 
 extern const struct ane_t602x_soc ane_t6020_soc, ane_t6021_soc,
-	ane_t6022_soc, ane_t8112_soc;
+	ane_t6022_soc, ane_t6022_soc_die1, ane_t8112_soc;
+
+/* The per-die T6022 data (ane_t6022_dies in ane_t6021_fwload.c): the
+ * node's SET reg keys the die, like ane.ko's qualification table. */
+const struct ane_t602x_soc *ane_t6021_soc_for(struct device *dev);
 
 #endif /* __ANE_T6021_H__ */

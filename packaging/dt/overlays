@@ -18,3 +18,4 @@ t6020     t6020-ane.dts                   enabled
 t6021     t6021-ane.dts                   enabled
 t6021     t6021-uboot-serial-stdin.dts    opt-in
 t6022     t6022-ane.dts                   opt-in
+t6002     t6002-ane-die1.dts              opt-in

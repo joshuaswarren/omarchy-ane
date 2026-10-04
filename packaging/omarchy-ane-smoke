@@ -45,10 +45,28 @@ DT = "sys/firmware/devicetree/base"
 LOCK = "var/tmp/ane-run.lock"
 TIME = re.compile(r"exec ms over 1 calls: min ([0-9.]+)")
 HERE = Path(__file__).resolve().parent
+# Die 1 is the pure +0x20_0000_0000 translation of die 0 for every window
+# (receipts/2026-10-03-ultra-die1), so the bound device's DT node reg[0]
+# (engine base) floor-divided by it names the die.
+DIE_STRIDE = 0x20_0000_0000
 
 
 class Unavailable(Exception):
     pass
+
+
+def die(root, module):
+    """Die index of the module's first bound device: its DT node reg[0]
+    // DIE_STRIDE. 0 (the default the promotion rule gives a row without
+    the field) when no device is bound or the node has no reg (tests)."""
+    try:
+        drivers = root / "sys/bus/platform/drivers" / module
+        bound = sorted(p for p in drivers.glob("*")
+                       if p.is_symlink() and p.name != "module")[0]
+        cells = struct.unpack(f">{8 // 4}I", (bound / "of_node/reg").read_bytes()[:8])
+        return (cells[0] << 32 | cells[1]) // DIE_STRIDE
+    except (OSError, IndexError):
+        return 0
 
 
 def inputs(tag, lanes):
@@ -226,14 +244,16 @@ def main(argv=None):
     args = ap.parse_args(argv)
     deadline = time.monotonic() + args.timeout
     chip = soc(args.root)
+    bound = die(args.root, MODULE.get(chip, ""))
     try:
         anec, runner = prepare(args.root, chip)
         with lock(args.root / LOCK, deadline):
             hashes, times, exact, problem, golden = calls(runner, anec, chip, deadline, args.timeout)
     except Unavailable as e:
-        return emit({"name": NAME, "chip": chip, "available": False, "reason": str(e)}, f"unavailable: {e}", 2)
+        return emit({"name": NAME, "chip": chip, "die": bound, "available": False, "reason": str(e)},
+                    f"unavailable: {e}", 2)
     errors = CALLS - exact
-    result = {"name": NAME, "chip": chip, "available": True, "sha256": hashes, "golden_sha256": golden,
+    result = {"name": NAME, "chip": chip, "die": bound, "available": True, "sha256": hashes, "golden_sha256": golden,
               "errors": errors, "min_ms": round(min(times), 3) if times else None,
               "median_ms": round(statistics.median(times), 3) if times else None}
     line = f"{NAME} on {chip}: {exact}/{CALLS} calls bit-exact"

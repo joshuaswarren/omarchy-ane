@@ -1995,7 +1995,7 @@ static DEVICE_ATTR_RO(ane_stats);
 static int ane_rtclient_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct resource *res;
+	struct resource *res, *eng;
 	struct ane_rtclient *ane;
 	struct ane_t6021 *a;
 	u32 cpu_status, ps_cpu;
@@ -2036,7 +2036,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (!ane->legacy_buffers)
 		return -ENOMEM;
 	ane->dev = dev;
-	ane->soc = of_device_get_match_data(dev);
+	ane->soc = ane_t6021_soc_for(dev);
 	if (dyn_pg && ane->soc->fw != ane_t6021_soc.fw) {
 		dev_err(dev,
 			"dyn_pg=1 needs the selene 13.5 firmware (T602x); refusing before power access\n");
@@ -2417,7 +2417,15 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 				dev_warn(dev,
 					 "ane_stats sysfs create failed %d\n",
 					 ret);
-			root = debugfs_create_dir("ane_t6021", NULL);
+			/* Die-keyed name, deterministic from the node: die 0
+			 * keeps the legacy "ane_t6021"; die >= 1 names by
+			 * dev_name (2284000000.ane). */
+			eng = platform_get_resource(
+				to_platform_device(dev), IORESOURCE_MEM, 0);
+			root = debugfs_create_dir(
+				(eng && (eng->start >> 37)) ?
+					dev_name(dev) : "ane_t6021",
+				NULL);
 			if (!IS_ERR(root)) {
 				ane->fw->stats_debugfs = root;
 				debugfs_create_file("ane_timeline", 0444,
