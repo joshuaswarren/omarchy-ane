@@ -61,7 +61,7 @@ From `builds.md` and the private artifacts
 | `verify-boot-product.txt` | offline verification receipt; install REFUSES without it (see below) |
 
 HARD GATE (added after window B boot 1 shipped a kernel without a working
-driver): `scripts/verify-boot-product.sh <stage-dir> <kernel-tree>` runs on
+driver; EXTENDED after the retry found the repr(Rust) readout skew): `scripts/verify-boot-product.sh <stage-dir> <kernel-tree>` runs on
 the CT before the window and proves, offline, that the Image carries the
 built-in AGX driver (`asahi: Probing` / `MMU:` strings), the agx_stats
 symbols, matching vermagic across the tarball, and the checksums. It writes

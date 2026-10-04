@@ -84,6 +84,29 @@ def main() -> int:
     if "note_job" not in rust:
         fail.append("stats.rs lost the note_job counter entry point")
 
+    # Layout contract guard: the snapshot is repr(C) so the C mirror's
+    # declared offsets are binding, and sysfs.c asserts them at build time.
+    # Without this, rustc reorders the repr(Rust) struct and the readout
+    # crosses field boundaries (observed on T6021: busy_ns bouncing in
+    # 2^32 steps, jobs reading 0 while incrementing).
+    decl_lines = [
+        line for line in rust.split("pub(crate) struct StatsSnapshot", 1)[0].splitlines()
+        if not line.strip().startswith("//")
+    ]
+    if "#[repr(C)]" not in "\n".join(decl_lines[-6:]):
+        fail.append("StatsSnapshot lost #[repr(C)] — the C mirror offsets are no longer binding")
+    for needle in (
+        "offsetof(struct asahi_stats_snapshot, busy_ns) != 48",
+        "offsetof(struct asahi_stats_snapshot, jobs) != 56",
+    ):
+        if needle not in c:
+            fail.append(f"sysfs.c lost the layout assert: {needle}")
+
+    # Off-arm guard: the file must print exactly "unsupported" when the
+    # export is disabled (ABI document and producer contract).
+    if "!READ_ONCE(asahi_stats_export_enabled)" not in c or '"unsupported\\n"' not in c:
+        fail.append("sysfs.c no longer prints 'unsupported' for the disabled export")
+
     for key in sorted(CONTRACT_KEYS):
         if not re.search(rf'"{key} %\w+\\n"', c):
             fail.append(f"key {key} not printed as a single-space key value line")
