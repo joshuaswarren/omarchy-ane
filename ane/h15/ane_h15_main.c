@@ -23,12 +23,12 @@
  *   3 boot   : refuses without fw_path=; with fw_path=, refuses at
  *              the first missing fact (iBoot preload absent, no
  *              measured Mach-O vm layout, no measured RVBAR compose
- *              value, no measured SCRATCH wake word). When iBoot
- *              preloaded firmware into ANE memory (live ADT has
- *              segment-ranges), stage 3 maps the preload at the ADT
- *              remap IOVAs and polls CPU_STATUS, with a bounded
- *              hello_wait_ms RTKit HELLO/EPMAP poll (same wire
- *              format as the H16 module's polled RTKit).
+ *              value, no measured SCRATCH wake word). This version
+ *              implements no boot path: it always refuses. The
+ *              planned path (iBoot preload mapped at the ADT
+ *              remap IOVAs, bounded hello_wait_ms RTKit HELLO/EPMAP
+ *              poll, same wire format as the H16 module) stays a
+ *              plan until a volunteer records the missing facts.
  *
  * No MODULE_DEVICE_TABLE: nothing autoloads. probe() returns
  * -EPERM unless `optin=<soc>` matches. Insmod line:
@@ -102,7 +102,10 @@ MODULE_PARM_DESC(fw_path,
  * findings.md §4 gate). */
 #define ANE_H15_PS_ACTUAL	GENMASK(7, 4)
 #define ANE_H15_PS_ON		0xfu
-#define ANE_H15_PS_NAMES	{ "ANE_SYS", "ANE_MPM", "ANE_CPU", "ANE_TD", "ANE_BASE" }
+
+static const char * const ane_h15_ps_names[] = {
+	"ANE_SYS", "ANE_MPM", "ANE_CPU", "ANE_TD", "ANE_BASE"
+};
 
 struct ane_h15 {
 	struct device *dev;
@@ -146,17 +149,18 @@ static bool ane_h15_ps_on(struct ane_h15 *ane, unsigned int i, u32 *v)
 
 static int ane_h15_ps_wait(struct ane_h15 *ane)
 {
-	static const char *names[] = ANE_H15_PS_NAMES;
-	unsigned long deadline = jiffies + msecs_to_jiffies(ps_wait_ms);
+
 	unsigned int i;
 	u32 v;
 
 	for (i = 0; i < 5; i++) {
+		unsigned long deadline = jiffies + msecs_to_jiffies(ps_wait_ms);
+
 		while (!ane_h15_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
 					"pmgr %s @+%#x stuck at %#x (ACTUAL=%#lx); refusing to touch the engine window\n",
-					names[i], ane->soc->ps_off[i], v,
+					ane_h15_ps_names[i], ane->soc->ps_off[i], v,
 					FIELD_GET(ANE_H15_PS_ACTUAL, v));
 				return -ETIMEDOUT;
 			}
@@ -167,11 +171,11 @@ static int ane_h15_ps_wait(struct ane_h15 *ane)
 		if (!ane_h15_ps_on(ane, i, &v)) {
 			dev_err(ane->dev,
 				"pmgr %s @+%#x dropped to %#x after the wait\n",
-				names[i], ane->soc->ps_off[i], v);
+				ane_h15_ps_names[i], ane->soc->ps_off[i], v);
 			return -EIO;
 		}
 		dev_info(ane->dev, "pmgr %s @+%#x = %#x (ACTUAL 0xf)\n",
-			 names[i], ane->soc->ps_off[i], v);
+			 ane_h15_ps_names[i], ane->soc->ps_off[i], v);
 	}
 	return 0;
 }
@@ -186,7 +190,7 @@ static int ane_h15_stage_dt(struct ane_h15 *ane)
 	dev_info(ane->dev, "engine  pa=%#llx size=%#x", s->engine_pa, s->engine_size);
 	dev_info(ane->dev, "pmgr    pa=%#llx size=%#x", s->pmgr_pa, s->pmgr_size);
 	for (i = 0; i < 5; i++)
-		dev_info(ane->dev, "pmgr.%s offset=%#x", ANE_H15_PS_NAMES[i],
+		dev_info(ane->dev, "pmgr.%s offset=%#x", ane_h15_ps_names[i],
 			 s->ps_off[i]);
 	for (i = 0; i < 5; i++) {
 		u64 pa = (s->words[i].where == ANE15_WHERE_ENGINE) ? s->engine_pa : s->pmgr_pa;
@@ -211,7 +215,7 @@ static int ane_h15_stage_dt(struct ane_h15 *ane)
 /* ---- stage 1: pm up, log the SAFE pmgr words ---- */
 static int ane_h15_stage_status(struct ane_h15 *ane)
 {
-	static const char *names[] = ANE_H15_PS_NAMES;
+
 	unsigned int i;
 	u32 v;
 	int ret;
@@ -226,12 +230,12 @@ static int ane_h15_stage_status(struct ane_h15 *ane)
 	 * address in the log. */
 	for (i = 0; i < 5; i++) {
 		dev_crit(ane->dev, "ane_h15 read pmgr.%s pa=%#llx off=%#x",
-			 names[i], ane->soc->pmgr_pa + ane->soc->ps_off[i],
+			 ane_h15_ps_names[i], ane->soc->pmgr_pa + ane->soc->ps_off[i],
 			 ane->soc->ps_off[i]);
 		v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
 		dev_info(ane->dev,
-			 "ane_h15 word=%s pa=%#llx value=%#x actual=%#x pass=true",
-			 names[i], ane->soc->pmgr_pa + ane->soc->ps_off[i],
+			 "ane_h15 word=%s pa=%#llx value=%#x actual=%#lx pass=true",
+			 ane_h15_ps_names[i], ane->soc->pmgr_pa + ane->soc->ps_off[i],
 			 v, FIELD_GET(ANE_H15_PS_ACTUAL, v));
 	}
 	ane_h15_result(ane, 1, "PASS", "ps-guard+reads");
@@ -338,8 +342,15 @@ static int ane_h15_probe(struct platform_device *pdev)
 	 * when the parent bus advertises nonposted-mmio). */
 	ane->engine = of_iomap(pdev->dev.of_node, 0);
 	ane->pmgr   = of_iomap(pdev->dev.of_node, 1);
-	if (IS_ERR(ane->engine)) { ret = PTR_ERR(ane->engine); goto rpm_off; }
-	if (IS_ERR(ane->pmgr))   { ret = PTR_ERR(ane->pmgr);   goto rpm_off; }
+	/* of_iomap returns NULL (not ERR_PTR) when the reg property is
+	 * missing or bad; a NULL + offset read would oops. Refuse. */
+	if (!ane->engine || !ane->pmgr) {
+		dev_err(&pdev->dev,
+			"of_iomap failed (engine=%s, pmgr=%s): node reg property missing?\n",
+			ane->engine ? "ok" : "NULL", ane->pmgr ? "ok" : "NULL");
+		ret = -ENXIO;
+		goto rpm_off;
+	}
 
 	pm_runtime_enable(&pdev->dev);
 	ret = pm_runtime_get_sync(&pdev->dev);

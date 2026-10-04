@@ -79,7 +79,9 @@ static struct ane_h15_adt_node ane_h15_adt_node_at(const struct ane_h15_adt *a,
 	}
 	n.nprops = ane_h15_adt_rd32(a, off);
 	n.nchildren = ane_h15_adt_rd32(a, off + 4);
-	if (n.nprops == 0 || n.nprops > 4096 || n.nchildren > 4096) {
+	/* A node may legally carry zero props (the ADT root does in
+	 * some trees); only a garbage count is malformed. */
+	if (n.nprops > 4096 || n.nchildren > 4096) {
 		*err = ANE_H15_EFORMAT;
 		n.nprops = 0;
 		n.nchildren = 0;
@@ -198,11 +200,10 @@ static int ane_h15_adt_child_named(const struct ane_h15_adt *a,
 			return err;
 		if (ane_h15_adt_prop(a, c, "name", &nm, &size))
 			continue;
-		if (size > 0 && !strncmp((const char *)nm, name, size) &&
-		    !name[size - 1])
-			continue; /* names match by length, but check exact NUL */
-		if (strncmp((const char *)nm, name, strlen(name)) == 0 &&
-		    (size <= strlen(name) || nm[strlen(name)] == 0)) {
+		/* ADT name props are NUL-terminated (size counts the
+		 * NUL): match the whole string, reject a mere prefix. */
+		if (size > 0 && strncmp((const char *)nm, name, strlen(name)) == 0 &&
+		    nm[strlen(name)] == 0) {
 			*out = c;
 			return ANE_H15_OK;
 		}
@@ -211,19 +212,19 @@ static int ane_h15_adt_child_named(const struct ane_h15_adt *a,
 }
 
 /* /arm-io's child whose ane-type is @ane_type. */
-static int ane_h15_adt_find_ane(const struct ane_h15_adt *a, u32 ane_type,
+static inline int ane_h15_adt_find_ane(const struct ane_h15_adt *a, u32 ane_type,
 				struct ane_h15_adt_node *out)
 {
 	struct ane_h15_adt_node root, arm_io;
 	unsigned int i;
-	int err;
+	int err = ANE_H15_OK;
 
 	if (a->len < 8)
 		return ANE_H15_EFORMAT;
 	root = ane_h15_adt_node_at(a, 0, &err);
 	if (err)
 		return err;
-	err = ane_h15_adt_subtree_end(a, root, &err);
+	ane_h15_adt_subtree_end(a, root, &err);	/* upfront EFORMAT walk */
 	if (err)
 		return err;
 	err = ane_h15_adt_child_named(a, root, "arm-io", &arm_io);
@@ -263,7 +264,7 @@ static int ane_h15_adt_find_ane(const struct ane_h15_adt *a, u32 ane_type,
  * logs the decoded numbers so a wrong pick is visible. @text_expect
  * is the pinned TEXT size (0 skips); @data_min the pinned DATA size
  * floor (0 skips). */
-static int ane_h15_adt_segments(const struct ane_h15_adt *a,
+static inline int ane_h15_adt_segments(const struct ane_h15_adt *a,
 				struct ane_h15_adt_node ane,
 				struct ane_h15_seg *segs,
 				u64 text_expect, u64 data_min)
@@ -289,8 +290,8 @@ static int ane_h15_adt_segments(const struct ane_h15_adt *a,
 
 		if (row + stride > a->len)
 			return ANE_H15_EFORMAT;
-		for (k = 0; k < stride / 4; k++)
-			v[k] = ane_h15_adt_rd32(a, row + 4u * k);
+		for (k = 0; k < stride / 8; k++)
+			v[k] = ane_h15_adt_rd64(a, row + 8u * k);
 		segs[i].phys = v[0];
 		segs[i].iova = stride == 32 ? v[2] : v[1];
 		segs[i].size = stride == 32 ? v[3] : v[2];

@@ -47,10 +47,15 @@ static void bs32(struct buf *b, const char *s)
 
 static void bprop(struct buf *b, const char *name, const void *data, uint32_t size)
 {
+	uint32_t n = size;
+
 	bs32(b, name);
 	b32(b, size);
-	bN(b, data, size);
-	while (size & 3) bw(b, 0);
+	bN(b, data, n);
+	while (n & 3) {
+		bw(b, 0);
+		n++;
+	}
 }
 
 static struct ane_h15_adt build_blob(void)
