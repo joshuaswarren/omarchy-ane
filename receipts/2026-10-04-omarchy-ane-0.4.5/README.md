@@ -50,9 +50,9 @@ the header comments of four `packaging/dt/*.dts` files. The new
 `packaging/dt/*-ane-dataonly.dts` files (#121) compile as a check and are
 never installed (`packaging/build-dtbo`).
 
-A fake-root check (`pkgsmoke.py` in the notebook artifacts) ran
-`packaging/build-dtbo` from a `git archive` of v0.4.4 and of this release,
-and `packaging/omarchy-ane-dt` against fake roots with board DTBs from
+A fake-root check (a throwaway script, not in the tree) ran
+`packaging/build-dtbo` from a `git archive` of v0.4.4 and of `46f7c8f`, and
+`packaging/omarchy-ane-dt` against fake roots with board DTBs from
 `tools/asahi-dtbs` and the kernel tree's dtc and fdtoverlay. All 19 checks
 passed:
 
@@ -89,8 +89,8 @@ j504, j613, j615). Each result has `ane@310000000` with compatible
 On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order (the workflow is unchanged since
 v0.4.4) and the kernel tree's dtc (`DTC 1.7.2-g53373d13`) first in `PATH`,
-on the release worktree (main `fe936a3` plus the CHANGELOG move). Every step
-exited 0:
+on a fresh `git archive` of `46f7c8f`. That commit is this release except
+for the last edit of this receipt. Every step exited 0:
 
 | Step | Result |
 | --- | --- |
@@ -108,6 +108,13 @@ exited 0:
 | `tools/h14_boot_regression.c` | PASSED: 127 checks, 0 failures |
 | `test_promote_chip` (with `ANE_DTBS`) | ok (8 chips, every promote or revert round-trips) |
 | `python3 -m pytest -q tests tools` | 100 passed, 1 skipped |
+
+CI: `dt-overlays` (`overlays`, `ane-soc-data`, run 37179585594) and
+`aurora-dtbs` (`data-only`, run 37179585567) passed on main `fe936a3`. The
+release PR changes only `CHANGELOG.md` and this receipt. Both are outside
+the path filters of the two workflows, so CI does not run those jobs on the
+release PR or on its merge. The host gate above ran every step of both
+`dt-overlays` jobs on the content of the release PR.
 
 ## Package recipe (omarchy-pkgs `omarchy-ane-dkms`)
 
