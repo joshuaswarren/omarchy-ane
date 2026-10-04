@@ -693,9 +693,9 @@ struct ane_nn *__ane_init_shift(const char *path, int dev_id,
 
 struct ane_nn *ane_m2_init_ports(const char *path,
 				 const struct ane_m2_port_spec *ports,
-				 uint32_t port_count)
+				 uint32_t port_count, int dev_id)
 {
-	return ane_init_common(path, 0, TILE_SHIFT_DEFAULT, ports,
+	return ane_init_common(path, dev_id, TILE_SHIFT_DEFAULT, ports,
 			       port_count);
 }
 

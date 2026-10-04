@@ -4,13 +4,17 @@
  * the overlays t6000-ane.dts, t6001-ane.dts and t6002-ane.dts.
  *
  * The nodes are those of the lab overlay ane/t6001-j316c-set-domains.dts,
- * which bound ane.ko and ran exact fp16 programs on the M1 Max host. Two
- * changes make it safe on every stock T600x tree:
+ * which bound ane.ko and ran exact fp16 programs on the M1 Max host. Three
+ * facts make it safe on every stock T600x tree:
  *  - AIC and ane_sys@268 are reached by path. The lab file uses their raw
  *    phandles 0x13 and 0x18, which are right only while the kernel keeps them.
  *  - The pmgr window is 0x1c000. The lab file sets 0x14000 to cover SET0 at
  *    0xc000. linux-asahi 7.1.13 ships 0x4000, but linux-aurora 7.1.12 already
  *    ships 0x1c000 with a child past 0x14000, so 0x14000 would cut that off.
+ *  - The node names its SET window ("set", pmgr + 0xc000, the 0x38 bytes
+ *    ane.ko maps): the driver takes the SET base from the node and keeps the
+ *    descriptor constant only for trees without the window
+ *    (docs/ultra-die1.md §2). The value is the proven die-0 base.
  * No set5@c030: it is past ADT range1 0xc02c, and the lab overlay records a
  * genpd timeout with it in the ane power-domains. aurora-silicon/linux #155
  * dropped it too.
@@ -159,8 +163,9 @@
 
 			ane@284000000 {
 				compatible = "apple,t6000-ane";
-				reg-names = "engine";
-				reg = <0x2 0x85c04000 0x0 0x0024000>;
+				reg-names = "engine", "set";
+				reg = <0x2 0x85c04000 0x0 0x0024000>,
+				      <0x2 0x8e08c000 0x0 0x38>;
 				interrupt-parent = <&aic>;
 				interrupt-names = "ane";
 				interrupts = <0 0 770 4>;

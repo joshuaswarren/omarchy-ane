@@ -12,7 +12,7 @@ import promotion_check as pc  # noqa: E402
 
 # The opt-in H14 specimen: derived from the on set, so a promotion flip
 # (tools/promote_chip.py) keeps this suite green.
-OPT = min((s for s, d in pc.DRIVER.items() if d == 'ane_t6021' and s not in pc.ON), default=None)
+OPT = min((s for s, d in pc.DRIVER.items() if d == 'ane_t6021' and (s, 0) not in pc.ON), default=None)
 assert OPT, 'the scenarios below need an opt-in H14 chip'
 
 
@@ -39,12 +39,12 @@ assert pc.GOLDEN is pc.SMOKE.GOLDEN
 
 # One passing row is enough to promote an untested H14 or H13 chip.
 good = row(1)
-v = pc.verdict([good])[OPT]
+v = pc.verdict([good])[(OPT, 0)]
 assert v['promote'] and not v['conflict'] and v['passing'] == ['010000000000'], v
 assert pc.failures(good) == []
 h13_good = row(7, soc='t6000')
 assert pc.failures(h13_good) == []
-assert pc.verdict([h13_good])['t6000']['promote']
+assert pc.verdict([h13_good])[('t6000', 0)]['promote']
 
 # Each part of the passing-row definition is enforced.
 def broken(change):
@@ -74,7 +74,7 @@ assert not broken(lambda o: o['dmesg'].append('[ 2.0] systemd[1]: ane.service: f
 clean_skip = row(3)
 oa(clean_skip)['smoke'] = {'requested': False}
 assert not pc.judged(clean_skip)
-assert dict(pc.unattempted([clean_skip])) == {OPT: 1}
+assert dict(pc.unattempted([clean_skip])) == {(OPT, 0): 1}
 assert pc.verdict([clean_skip]) == {}
 busy = row(4)
 oa(busy)['smoke'] = {'requested': True, 'attempted': False, 'busy': True}
@@ -92,9 +92,9 @@ assert pc.judged(unavailable_attempt) and pc.failures(unavailable_attempt)
 # One passing and one failing row on an opt-in chip is a conflict, not promotion.
 failed = row(2, at='2026-10-09T00:00:00.000Z')
 oa(failed)['smoke']['sha256'][0] = '0' * 64
-v = pc.verdict([good, failed])[OPT]
+v = pc.verdict([good, failed])[(OPT, 0)]
 assert not v['promote'] and v['conflict'] and len(v['passing']) == len(v['failing']) == 1, v
-v = pc.verdict([failed])[OPT]
+v = pc.verdict([failed])[(OPT, 0)]
 assert not v['promote'] and not v['conflict'] and v['needs'] == ['one passing row'], v
 
 # Rows without an ANE block or without installation are not judged.
@@ -108,21 +108,21 @@ assert pc.verdict([legacy]) == {}
 # scenario below runs against whatever default-on chip is on the tree.
 rows = [l.split() for l in (Path(__file__).resolve().parents[1] /
         'packaging/dt/overlays').read_text().splitlines() if l and l[0] != '#']
-assert pc.ON == {p for p, src, state in rows
+assert pc.ON == {(p, 0) for p, src, state in rows
                  if src == f'{p}-ane.dts' and state == 'enabled'}, pc.ON
 assert pc.ON, 'the scenario below needs a default-on chip'
-spec = 't6021' if 't6021' in pc.ON else sorted(pc.ON)[0]
+spec = 't6021' if ('t6021', 0) in pc.ON else sorted(pc.ON)[0][0]
 on = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
-v = pc.verdict(on)[spec]
+v = pc.verdict(on)[(spec, 0)]
 assert v['on'] and v['latest'] == '010000000000' and v['revert'] == [], v
 oa(on[0])['check'].update(exit=1, status='FAILED')
-assert pc.verdict(on)[spec]['revert'] == ['omarchy-ane-check not ready (exit 1, FAILED)']
+assert pc.verdict(on)[(spec, 0)]['revert'] == ['omarchy-ane-check not ready (exit 1, FAILED)']
 oa(on[0])['check'].update(exit=0, status='ready')
 oa(on[0])['dmesg_faults'] = ['[ 9.0] ane_t6021: call completion wait failed -110']
-assert pc.verdict(on)[spec]['revert'][0].startswith('1 ANE/DART/mailbox fault line(s)')
+assert pc.verdict(on)[(spec, 0)]['revert'][0].startswith('1 ANE/DART/mailbox fault line(s)')
 oa(on[1])['dmesg_faults'] = list(oa(on[0])['dmesg_faults'])
 oa(on[0])['dmesg_faults'] = []
-assert pc.verdict(on)[spec]['revert'] == [], 'a clean latest judged row clears the revert'
+assert pc.verdict(on)[(spec, 0)]['revert'] == [], 'a clean latest judged row clears the revert'
 
 # Four real rows from the live dataset reproduce both reported defects.
 fixture_dir = Path(__file__).parent / 'fixtures' / 'promotion_check'
@@ -134,7 +134,7 @@ assert pc.installed(oa(t6001)) and pc.unclean(oa(t6001)) == []
 assert not pc.judged(t6001), 'clean T6001 row with requested:false smoke is not judged'
 for sha in ('a994fe80c994', 'aec69f796113', 'b3d0b521403f'):
     assert not pc.installed(oa(real_by_id[sha]))
-assert dict(pc.unattempted(real)) == {'t6000': 2, 't6001': 1, 't8112': 1}
+assert dict(pc.unattempted(real)) == {('t6000', 0): 2, ('t6001', 0): 1, ('t8112', 0): 1}
 assert pc.verdict(real) == {}, 'none of the four real rows is a promotion attempt'
 
 # Synthetic positive controls prove each real ANE fault source still counts.
@@ -154,12 +154,12 @@ assert not pc.unclean(oa(injected('[ 903.1] apple-dart 581008000.iommu: translat
 
 # Not-installed rows stay unjudged even when the raw dmesg has unrelated faults.
 not_installed = copy.deepcopy(real_by_id['a994fe80c994'])
-assert dict(pc.unattempted([not_installed])) == {'t6000': 1}
+assert dict(pc.unattempted([not_installed])) == {('t6000', 0): 1}
 assert pc.verdict([not_installed]) == {}
 # The machine verdict: one chip object per verdict class.
 jv = pc.json_verdict([good, h13_good])
 optj = next(c for c in jv['chips'] if c['chip'] == OPT)
-assert optj == {'chip': OPT, 'state': 'opt-in', 'verdict': 'PROMOTE', 'targets': ['overlay'],
+assert optj == {'chip': OPT, 'die': 0, 'state': 'opt-in', 'verdict': 'PROMOTE', 'targets': ['overlay'],
                 'rows': [{'row_sha': '010000000000', 'judged': True, 'driver_source': 'dkms', 'passed': True,
                           'reasons': []}]}, optj
 jchips = pc.json_verdict(on)['chips']
@@ -179,7 +179,7 @@ assert unjudged['verdict'] == 'STAY' and unjudged['targets'] == [] and unjudged[
 t6000 = next(c for c in pc.json_verdict([not_installed])['chips'] if c['chip'] == 't6000')
 # an uninstalled row is never judged: on an on-by-default chip the chip verdict
 # is ON (nothing judged, nothing to revert), elsewhere STAY
-assert t6000['verdict'] == ('ON' if 't6000' in pc.ON else 'STAY'), t6000
+assert t6000['verdict'] == ('ON' if ('t6000', 0) in pc.ON else 'STAY'), t6000
 assert t6000['rows'] == [{'row_sha': 'a994fe80c994', 'judged': False, 'driver_source': 'dkms',
                           'passed': False, 'reasons': []}], t6000
 
@@ -191,40 +191,79 @@ intree = row(11)
 oa(intree)['driver_source'] = 'intree'
 assert pc.driver_source(oa(intree)) == 'intree' and pc.driver_source(oa(good)) == 'dkms'
 assert pc.judged(intree) and pc.failures(intree) == []
-v = pc.verdict([intree])[OPT]
+v = pc.verdict([intree])[(OPT, 0)]
 assert v['promote'] and v['intree'] == ['0b0000000000'] and pc.targets(v) == ['overlay', 'aurora-dt'], v
-assert pc.targets(pc.verdict([good, intree])[OPT]) == ['overlay', 'aurora-dt']
+assert pc.targets(pc.verdict([good, intree])[(OPT, 0)]) == ['overlay', 'aurora-dt']
 bad_intree = copy.deepcopy(intree)
 oa(bad_intree)['smoke']['sha256'][3] = '0' * 64
-v = pc.verdict([good, bad_intree])[OPT]
+v = pc.verdict([good, bad_intree])[(OPT, 0)]
 assert v['conflict'] and not v['promote'] and pc.targets(v) == [], v
-v = pc.verdict([bad_intree])[OPT]
+v = pc.verdict([bad_intree])[(OPT, 0)]
 assert not v['promote'] and v['needs'] == ['one passing row'] and pc.targets(v) == [], v
 no_driver = row(12)
 oa(no_driver)['driver_source'] = 'none'
 oa(no_driver)['check'].update(exit=1, status='FAILED')
-assert not pc.judged(no_driver) and dict(pc.unattempted([no_driver])) == {OPT: 1}
-assert pc.verdict([no_driver, intree])[OPT]['promote']
+assert not pc.judged(no_driver) and dict(pc.unattempted([no_driver])) == {(OPT, 0): 1}
+assert pc.verdict([no_driver, intree])[(OPT, 0)]['promote']
 # A default-on chip with a passing in-tree row has the aurora-dt target alone:
 # its overlay is already on, and aurora's device tree decides whether there is
 # a node to enable (promote_from_verdict.py aurora-plan). Rows that ran the
 # DKMS driver never add it. A default-on chip still reverts on its latest
 # judged row, in-tree or not, and a revert changes the overlay only.
 on_rows = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2)]
-assert pc.targets(pc.verdict(on_rows)[spec]) == [], 'dkms passing rows: no aurora-dt'
+assert pc.targets(pc.verdict(on_rows)[(spec, 0)]) == [], 'dkms passing rows: no aurora-dt'
 oa(on_rows[1])['driver_source'] = 'intree'
-v = pc.verdict(on_rows)[spec]
+v = pc.verdict(on_rows)[(spec, 0)]
 assert v['on'] and not v['revert'] and v['intree'] == ['020000000000'] and pc.targets(v) == ['aurora-dt'], v
 specj = next(c for c in pc.json_verdict(on_rows)['chips'] if c['chip'] == spec)
 assert specj['verdict'] == 'ON' and specj['targets'] == ['aurora-dt'], specj
 oa(on_rows[1])['driver_source'] = 'dkms'
 oa(on_rows[0])['driver_source'] = 'intree'
 oa(on_rows[0])['dmesg_faults'] = ['[ 9.0] ane 26bc04000.ane: command timed out']
-v = pc.verdict(on_rows)[spec]
+v = pc.verdict(on_rows)[(spec, 0)]
 assert v['revert'] and pc.targets(v) == ['overlay'] and v['intree'] == [], v
 oa(on_rows[1])['driver_source'] = 'intree'
-assert pc.targets(pc.verdict(on_rows)[spec]) == ['overlay'], 'a REVERT never adds aurora-dt'
+assert pc.targets(pc.verdict(on_rows)[(spec, 0)]) == ['overlay'], 'a REVERT never adds aurora-dt'
 optj = next(c for c in pc.json_verdict([intree])['chips'] if c['chip'] == OPT)
 assert optj['verdict'] == 'PROMOTE' and optj['targets'] == ['overlay', 'aurora-dt'], optj
 assert optj['rows'][0]['driver_source'] == 'intree', optj
+
+# Per-die keys (docs/ultra-die1.md §7): a row without `die` counts as die 0;
+# the die-1 key is its own verdict — a die-0 pass never flips it and a die-1
+# failure never poisons the die-0 key. The die field is the collector's
+# `die` in the omarchy_ane block (docs/collector-die-field.md).
+assert pc.die_of(copy.deepcopy(good)) == 0, 'legacy rows count as die 0'
+strdie = copy.deepcopy(good)
+oa(strdie)['die'] = '1'
+assert pc.die_of(strdie) == 0, 'a non-integer die is not a die index'
+baddie = copy.deepcopy(good)
+oa(baddie)['die'] = -1
+assert pc.die_of(baddie) == 0, 'a negative die is not a die index'
+d1 = row(11)
+oa(d1)['die'] = 1
+assert pc.die_of(d1) == 1
+v = pc.verdict([good, d1])
+assert v[(OPT, 0)]['passing'] == ['010000000000'] and v[(OPT, 0)]['promote'], v
+assert v[(OPT, 1)]['passing'] == ['0b0000000000'] and v[(OPT, 1)]['promote'], v
+d1_bad = copy.deepcopy(d1)
+oa(d1_bad)['smoke']['sha256'][5] = '0' * 64
+v = pc.verdict([good, d1_bad])
+assert v[(OPT, 0)]['promote'] and v[(OPT, 0)]['conflict'] is False, v
+assert v[(OPT, 1)]['promote'] is False and v[(OPT, 1)]['failing'], v
+# ...and the other way: a die-0 failing row leaves a die-1 pass intact.
+bad0 = copy.deepcopy(good)
+oa(bad0)['smoke']['errors'] = 1
+v = pc.verdict([bad0, d1])
+assert v[(OPT, 0)]['promote'] is False and v[(OPT, 1)]['promote'], v
+# The ON set is die-0 only: a die-1 row never rides an enabled overlay.
+assert all(d == 0 for _, d in pc.ON), pc.ON
+assert ('t8103', 1) not in pc.ON and ('t6002', 1) not in pc.ON
+# Die-1 scoping of the ANE fault matcher: the die-1 DART and mailbox
+# addresses decide a row, look-alikes from other devices still do not.
+t6002_attempt = row(21, soc='t6002')
+assert pc.failures(injected('[ 910.0] apple-dart 2285800000.iommu: translation fault: status:0x81000404', t6002_attempt))
+assert pc.failures(injected('[ 910.1] apple-dart 2285820000.iommu: translation fault', t6002_attempt))
+assert pc.failures(injected('[ 910.2] apple-mailbox 2285408000.mailbox: fifo error', t6002_attempt))
+assert not pc.unclean(oa(injected('[ 911.0] apple-dart 2285900000.iommu: translation fault', t6002_attempt)))
+assert not pc.unclean(oa(injected('[ 911.1] apple-dart 581008000.iommu: DART fault', t6002_attempt)))
 print('test_promotion_check: ok')
