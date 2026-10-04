@@ -144,13 +144,20 @@ on that route. No ownership conflict on Omarchy: our package installs files
 under the directory omarchy-mac-boot owns; it ships no empty-dir entry of its
 own (the recipe patch keeps it that way).
 
-## Gates (run in the worktree at 51151df + this diff)
+## Gates (final tree, commit 6f1c837)
 
-- `pytest -q tests tools` - result recorded below.
+- `pytest -q tests tools` - `100 passed, 1 skipped` (163.04 s). Round-2
+  history: the first run of the two-old-dir loop had a collection error (the
+  test reused one temp root, `FileExistsError`); fixed with a fresh root per
+  iteration, then green. The very first round had one failure from an unbuilt
+  `tools/ane-run` binary in the fresh worktree; after `make -C tools`, green.
 - `make -C tools check` - OK (ane_stats host unit test suite, 0 failures).
 - `python3 ~/src/voice-program/scripts/voice_lint.py --mode article README.md`
   - `fail=0 warn=1` (one pre-existing Flesch warn at the title, below the
   fail threshold; the gate is fail=0).
+- PR CI on 6f1c837 (observed via the check-runs API): overlays success,
+  ane-soc-data success (both required), data-only success, Kilo Code Review
+  success; mergeable_state clean.
 
 ## Recipe changes for omarchy-pkgs #745
 
