@@ -68,7 +68,8 @@ the existing ps nodes by path. None of these overlays are
 installed by the package; the first M3 owner:
 
 1. Compile against the aurora tree with the system dtc 1.7.2+:
-   `dtc -@ -I dts -O dtb -o ane-h15.dtbo t8122-ane-experimental.dts`.
+   `dtc -@ -I dts -O dtb -o ane-h15-t8122.dtbo t8122-ane-experimental.dts`
+   (dtc has no `-O dtbo` output format; the `.dtbo` name is enough).
 2. Copy the `dtbo` into the overlay directory with owner-only
    permissions.
 3. Add the line `ane-h15-experimental` to

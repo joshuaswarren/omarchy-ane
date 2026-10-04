@@ -4,12 +4,23 @@
 
 - H15 (M3) opt-in experimental bring-up module: `ane/h15/` (4 soc
   rows, four-stage module, host ADT self test), three experimental
-  overlays, three data-only overlays (`packaging/dt/`), the volunteer
-  runbook, and `tools/omarchy-ane-h15-stage`. No M3 silicon has run
-  the module. Stage 1 is the only stage that touches MMIO and it
-  reads only the kernel-mapped PMGR window. Stages 2 and 3 refuse
-  on H15 until a macOS capture clears the INFERENCE words. Branch
-  `agent/ane-h15-module`, not merged.
+  overlays, three data-only overlays (`packaging/dt/`), and
+  `tools/omarchy-ane-h15-stage` (merged as PR #121). No M3 silicon
+  has run the module. Stage 1 is the only stage that touches MMIO and
+  it reads only the kernel-mapped PMGR window. Stages 2 and 3 refuse
+  on H15 until a macOS capture clears the INFERENCE words.
+- H15 verification pass (host-side): `make -C ane/h15 check` now
+  passes and the W=1 build is clean against the aurora
+  `ane-driver-aurora` tree and the M2 3-1 tree. Fixes: the ADT walker
+  never matched a child name, rejected prop-less roots, misread
+  segment-ranges as 32-bit words, and used an uninitialized error;
+  the self test hung on unaligned property sizes; the probe leaked a
+  NULL `of_iomap` into a pointer read; the ps-name macro was used as
+  an expression (the module did not compile); `ps_wait_ms` now times
+  out per word as documented; `ane/h15/README-bringup.md` had a
+  `dtc -O dtbo` line that no dtc accepts. The t8122 overlay compiles
+  and applies onto all five aurora t8122 board DTBs with resolved
+  phandles. New volunteer runbook: `docs/h15-volunteer.md`.
 
 ## 0.4.4 (2026-10-03)
 
