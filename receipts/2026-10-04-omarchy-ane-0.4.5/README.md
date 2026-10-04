@@ -53,7 +53,7 @@ the header comments of four `packaging/dt/*.dts` files. The new
 never installed (`packaging/build-dtbo`).
 
 A fake-root check (a throwaway script, not in the tree) ran
-`packaging/build-dtbo` from a `git archive` of v0.4.4 and of `46f7c8f`, and
+`packaging/build-dtbo` from a `git archive` of v0.4.4 and of `4ab0a1d`, and
 `packaging/omarchy-ane-dt` against fake roots with board DTBs from
 `tools/asahi-dtbs` and the kernel tree's dtc and fdtoverlay. All 19 checks
 passed:
@@ -91,7 +91,7 @@ j504, j613, j615). Each result has `ane@310000000` with compatible
 On x86_64 (gcc 12.2.0, Python 3.11.2, pytest 9.1.1), with the steps of
 `.github/workflows/dt-overlays.yml` in order (the workflow is unchanged since
 v0.4.4) and the kernel tree's dtc (`DTC 1.7.2-g53373d13`) first in `PATH`,
-on a fresh `git archive` of `46f7c8f`. That commit is this release except
+on a fresh `git archive` of `4ab0a1d`. That commit is this release except
 for the last edit of this receipt. Every step exited 0:
 
 | Step | Result |
