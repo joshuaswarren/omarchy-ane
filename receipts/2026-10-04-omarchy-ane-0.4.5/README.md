@@ -35,10 +35,12 @@ receipt.
   `ane/h15/` or `tools/omarchy-ane-h15-stage`.
 - `tools/ane-run.c`, `tools/Makefile`, `packaging/omarchy-ane-smoke`, the
   fixtures and the ABI headers are unchanged since v0.4.4.
-- No driver, libane or firmware code changed, so no hardware ran this
-  release. The path move changes only the userspace tools and the pacman
-  hook. It is tested on the host (below). The release gates did not install
-  the package on a Mac.
+- The packaged drivers, libane and the firmware fetch are unchanged, so no
+  hardware ran this release. The new H15 driver code in `ane/h15/` is not
+  packaged, and no M3 has run it. Of the packaged files, the path move
+  changes only userspace tools, the pacman hook and comments. It is tested
+  on the host (below). The release gates did not install the package on a
+  Mac.
 
 ## Packaged files
 

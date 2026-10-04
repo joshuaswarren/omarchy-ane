@@ -12,8 +12,9 @@ code: `git diff v0.4.4..v0.4.5 -- dkms.conf ane/Makefile ane/src
 ane/include ane/ane_stats_show.c ane/t6021 libane` is empty, so `ane.ko`,
 `ane_t6021.ko`, libane and the ioctl interface (ABI 1 and ABI 2) are the
 bytes of v0.4.4. The new `ane/h15/` tree is not in `dkms.conf`, and the
-package does not build it. No driver, libane or firmware code changed, so
-this release has no new hardware run. The path move is tested on the host.
+package does not build it. The packaged drivers, libane and the firmware
+fetch are unchanged, so this release has no new hardware run. The path move
+is tested on the host only.
 
 - Breaking: the overlays move to the overlay contract of omarchy-mac-boot
   (#124; omacom/omarchy-mac-pkgs#3, the port of omacom/omarchy-mac#677).
