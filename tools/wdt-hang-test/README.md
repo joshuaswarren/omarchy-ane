@@ -5,18 +5,44 @@ arm the Apple SoC watchdog (WD1), pet it from a kernel thread while the
 system is healthy, then deliberately hang the CPU with interrupts off so
 the watchdog fires and firmware resets the machine.
 
-After the reset the bootloader must pick the stock default entry. That
-requires the experimental boot to be one-shot:
+Reset to the STOCK entry requires the bootloader to pick the stock default
+on the next boot. The two rigs differ, and both halves are proven
+separately, boot-once first:
 
-- Limine rigs: one-shot via the Boot Loader Interface variable
-  `LoaderEntryOneShot` (Limine reads and consumes it; entry named by its
-  config ID or path).
-- GRUB rigs: `grub-reboot <entry-id>` (one-shot `next_entry` in
-  `grubenv`, consumed by GRUB on the next boot).
+- GRUB rigs (T6021-class): `grub-reboot <entry-id>` (one-shot `next_entry`
+  in `grubenv`, consumed by GRUB on the next boot). MEASURED: consumed on
+  a stock-kernel reboot, and the full reset half is proven end-to-end
+  (see Hardware results).
+- Limine rigs (T8103-class, Limine over U-Boot): a `LoaderEntryOneShot`
+  variable written FROM LINUX DOES NOT WORK, measured: U-Boot's runtime
+  variable store is RAM-volatile (`CONFIG_EFI_RT_VOLATILE_STORE`: the
+  write is accepted in memory and readback succeeds, but the on-disk
+  `ubootefi.var` store is written only by boot-time services), so the
+  variable never survives the reset and never reaches Limine; Limine also
+  erases the one-shot variable at start by design. Consequences:
+  - a `wdt_hang_test` run on the STOCK default boot needs no one-shot at
+    all (the reset lands in the same stock default entry);
+  - experimental ENTRIES need a `limine.conf` `default_entry` edit with a
+    guarded early revert plus a boot counter, or a boot-time `ubootefi.var`
+    edit (boot-chain file write; needs the owner's go, not tried).
 
 Run both halves separately before combining them: first prove the one-shot
-boot with a harmless cmdline marker, then run this module under a one-shot
-boot.
+boot with a harmless cmdline marker where a one-shot is needed at all.
+
+## Hardware results (measured, 2026-10-04)
+
+- T6021 rig, window A: stage 1 (arm/pet/restore, `hang_delay_sec=300`) -
+  WD1 armed at 30 s through the registered `apple_wdt` device, the petter
+  kept the box alive, `rmmod` restored the previous timeout and the box
+  survived well beyond one ping interval afterwards. Stage 2 (defaults) -
+  emerg marker at the wedge (12:13:43Z), SoC reset, first message of the
+  new boot at 12:15:48Z (2 min 05 s marker-to-first-boot-message),
+  UNATTENDED return on the stock default entry, one-shot consumed, ESP
+  `boot.bin` unchanged.
+- T8103 Limine rig: `LoaderEntryOneShot` from Linux FAILS as described
+  above (written NV|BS|RT, efivarfs readback ok, `ubootefi.var` bytes
+  unchanged, next boot selected the default). The stock-default hang
+  procedure on this rig is NOT RUN.
 
 ## Parameters
 

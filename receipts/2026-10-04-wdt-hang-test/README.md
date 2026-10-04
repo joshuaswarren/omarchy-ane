@@ -1,10 +1,11 @@
 # wdt-hang-test: unattended reset-to-stock prototype receipt
 
-Status: EXPERIMENTAL and HARDWARE-GATED. This PR is not merged until the
-hardware windows below pass. The module never autoloads: nothing in this
-change installs a modules-load file, a DKMS package, or a modprobe
-configuration, and it is not packaged. It runs only when a window operator
-explicitly `insmod`s it.
+Status: EXPERIMENTAL and HARDWARE-GATED. The RESET HALF is proven on the
+T6021 rig (window A, 2026-10-04: clean arm/pet/restore, then an unattended
+SoC reset back to the stock default entry in 2 min 05 s). This PR stays
+UNMERGED: the module is still experimental, it never autoloads, and it is
+not packaged; the T8103 Limine-rig hang procedure is NOT RUN. It runs only
+when a window operator explicitly `insmod`s it.
 
 ## What it is
 
@@ -34,12 +35,28 @@ Reset to the STOCK entry requires the experimental boot to be one-shot. The
 two halves are proven separately, boot-once first:
 
 - Boot-once half: a marked, otherwise-stock entry must boot exactly once
-  and revert. On the Limine rig (T8103-class, Limine 12.x) the one-shot is
-  the Boot Loader Interface variable `LoaderEntryOneShot`
-  (vendor GUID 4a67b082-0a4c-41cf-b6c7-440b29bb8c4f; `LoaderFeatures` bit 3
-  advertises oneshot entry control; Limine consumes the variable). On the
-  GRUB rig (T6021-class) the one-shot is `grub-reboot` (`next_entry` in
-  `grubenv`, already proven consumed on a stock-kernel reboot).
+  and revert, where a one-shot is needed at all. The rigs differ,
+  MEASURED:
+  - GRUB rig (T6021-class): `grub-reboot` (`next_entry` in `grubenv`) is
+    proven consumed on a stock-kernel reboot, and window A proved the full
+    chain with it: reset -> default entry, one-shot consumed.
+    One-shot entries must copy the DEFAULT SUBMENU CHILD, not the first
+    top-level entry (`GRUB_DEFAULT` resolves a submenu path to the plain
+    pair; the first top-level entry is the no-wireless m2mbox pair).
+  - Limine rig (T8103-class, Limine 12.9.1-1 over U-Boot): a
+    `LoaderEntryOneShot` variable written FROM LINUX DOES NOT WORK.
+    Measured (H262): written NV|BS|RT, efivarfs readback identical, but
+    the on-disk U-Boot store `ubootefi.var` kept its old bytes and the
+    next boot selected the default entry. Cause: U-Boot's runtime
+    SetVariable only updates the in-memory table
+    (`CONFIG_EFI_RT_VOLATILE_STORE`); `ubootefi.var` is written only by
+    boot-time services, so Linux-written variables never survive the
+    reset; Limine additionally erases the one-shot variable at start by
+    design. Consequences: a hang test on the STOCK default boot needs no
+    one-shot (the reset lands in the same stock entry); experimental
+    entries need a `limine.conf` `default_entry` edit with a guarded
+    early revert plus a boot counter, or a boot-time `ubootefi.var` edit
+    (boot-chain file write; needs the owner's go; not tried).
 - Reset half: under a one-shot boot, `insmod`, hang, watchdog reset, and
   the machine must return to the stock default entry unattended, inside a
   6-minute no-return bound, with the one-shot state consumed and the boot
@@ -66,6 +83,36 @@ this receipt carries the rig-independent procedure.
   (31-45 s) and independent of that chain.
 - iBoot handover watchdog state is not known (recorded unknown; no sysfs
   status on these kernels).
+
+## Hardware results (measured, 2026-10-04)
+
+- T6021 rig, window A (pre-registered, hard stop 12:45Z, 12-minute reboot
+  notices): stage 1 — `insmod hang_delay_sec=300`: WD1 armed at 30 s in
+  core mode (identity `"Apple SoC Watchdog"`), petter kept the box alive,
+  `rmmod` restored the previous timeout and the box survived well beyond
+  one ping interval afterwards (a stuck 30 s hardware timeout with 60 s
+  systemd pings would have bitten). Stage 2 — defaults: emerg marker at
+  the wedge 12:13:43Z, ssh loss, SoC reset, first message of the new boot
+  12:15:48Z (2 min 05 s), UNATTENDED return on the stock DEFAULT entry
+  with the one-shot consumed and the ESP `boot.bin` sha unchanged.
+  Post-reset end state: ane_t6021 bound, failed units 0, smoke 20/20
+  bit-exact. Full record: lab notebook entries/M2WdtRecovery/
+  20261004T105500Z-jw14m2-linux-wdt-recovery-window-a.md (+ artifacts).
+- T8103 Limine rig (H262): the boot-once check FAILED as described above;
+  config restored in-window (`limine.conf` sha back to pre, no OneShot
+  variable, `boot.bin`/`ubootefi.var` unchanged). The stock-default hang
+  procedure on this rig is NOT RUN.
+
+## Protocol lessons (measured)
+
+- On the GRUB rig, a one-shot entry must copy the DEFAULT SUBMENU CHILD:
+  `GRUB_DEFAULT` resolves a submenu path; the first top-level entry is the
+  no-wireless m2mbox pair.
+- Every reboot step needs an explicit UTC gate checked against the notice
+  (a timezone-aware `date` arithmetic slip has already burned a window).
+- Return probes must compare `boot_id`: the DERP relay makes TCP connect
+  succeed during an outage, so "ssh connected" alone is not evidence of a
+  new boot.
 
 ## Build receipts (W=1, offline, no hardware run)
 
