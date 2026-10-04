@@ -10,6 +10,25 @@ REL=$(cat "$S/RELEASE")
 ENTRY="AgxStats M2 validation"
 OFFARG=${OFF:+asahi.stats_export=0}
 
+# HARD GATE: the staged products must carry the offline verification receipt
+# (AGX_VERIFY_OK) and its Image sha must match the staged Image bit-for-bit.
+# The first window's test kernel shipped the sysfs shim without the GPU
+# driver and cost a full boot; this gate exists so that class of defect can
+# never reach an install again.
+if [ ! -f "$S/verify-boot-product.txt" ] || ! grep -q '^AGX_VERIFY_OK' "$S/verify-boot-product.txt"; then
+  echo "REFUSED: no AGX_VERIFY_OK receipt in the stage dir (run verify-boot-product.sh offline first)" >&2
+  exit 1
+fi
+STAGED_SHA=$(awk '/^Image-m2 sha256:/ {print $4}' "$S/verify-boot-product.txt")
+ACTUAL_SHA=$(sha256sum "$S/Image-m2" | awk '{print $1}')
+if [ -z "$STAGED_SHA" ] || [ "$STAGED_SHA" != "$ACTUAL_SHA" ]; then
+  echo "REFUSED: staged Image-m2 does not match the verified sha ($STAGED_SHA != $ACTUAL_SHA)" >&2
+  exit 1
+fi
+if strings "$S/Image-m2" | grep -q agx_stats_show || [ -s "$S/System.map" ] && grep -qE ' (asahi_probe|agx_stats_show)$' "$S/System.map"; then
+  : # strings hit (uncompressed) or System.map check done offline; receipt governs
+fi
+
 FST=$(findmnt -n -o FSTYPE /boot)
 if [ "$FST" = "vfat" ] && [ ! -f /var/tmp/agx-window/ESP_GO ]; then
   echo "REFUSED: /boot is the ESP and no Main GO file exists (/var/tmp/agx-window/ESP_GO)" >&2

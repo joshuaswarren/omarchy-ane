@@ -52,15 +52,22 @@ From `builds.md` and the private artifacts
 
 | file | use |
 |---|---|
-| `Image-m2` (29,657,600 B, sha `82eb46a8...`) | the test kernel |
-| `modules-m2.tar.zst` (491,434,304 B, sha `9203537a...`) | `/lib/modules/<release>` |
+| `Image-m2` | the test kernel (asahi BUILT-IN, like stock) |
+| `System.map` | offline symbol verification (asahi_probe / agx_stats_show / asahi_sysfs_register) |
+| `kernel.config` | the exact .config the Image was built from |
+| `modules-m2.tar.zst` | `/lib/modules/<release>` (no asahi.ko in it — the driver is built-in) |
 | `RELEASE` (contains `7.1.12-ARCH-agxstats+`) | exact release string, read by the scripts |
 | `SHA256SUMS-stage` | copy to `SHA256SUMS` in the device stage dir (verified pre-install) |
-| `asahi4-m2.ko` `62dac78d...`, `asahi4-aurora.ko` `a469a9c1...` + modinfo receipts | record only (built-in at runtime) |
+| `verify-boot-product.txt` | offline verification receipt; install REFUSES without it (see below) |
 
-Full sha256 list: `builds.md` and the artifacts `SHA256SUMS`. The aurora-config
-build (proof B) exists as the second W=1 proof; the A1 build (M2 config) is the
-boot kernel because it matches the box's driver/DT expectations.
+HARD GATE (added after window B boot 1 shipped a kernel without a working
+driver): `scripts/verify-boot-product.sh <stage-dir> <kernel-tree>` runs on
+the CT before the window and proves, offline, that the Image carries the
+built-in AGX driver (`asahi: Probing` / `MMU:` strings), the agx_stats
+symbols, matching vermagic across the tarball, and the checksums. It writes
+`verify-boot-product.txt` (`AGX_VERIFY_OK` + Image sha). The device-side
+`install-test-kernel.sh` REFUSES to install unless that receipt is staged and
+the staged Image's sha256 matches it bit-for-bit.
 
 ## Window plan (about 100-120 min wall, 3 reboots)
 
