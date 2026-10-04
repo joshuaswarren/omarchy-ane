@@ -2,43 +2,77 @@
 
 ## Unreleased
 
-- Breaking: the overlays and the opt-in file move with omarchy-mac-boot's
-  overlay contract (omacom/omarchy-mac-pkgs#3, the port of
-  omacom/omarchy-mac#677). Overlays install to
-  `/usr/lib/omarchy-mac-boot/dtb-overlays`, the directory omarchy-mac-boot
-  ships for package-owned overlays, and its pacman hook now watches
-  `usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo`. They were
-  `/usr/share/omarchy-platform/dtb-overlays`. A package upgrade moves the
-  files. A hand install in either old directory (`packaging/build-dtbo /`;
-  `usr/lib/omarchy-platform/dtb-overlays` and
-  `usr/share/omarchy-platform/dtb-overlays` both refuse) must
-  move: while `.dtbo` files are in an old directory, `omarchy-ane-dt apply`
-  refuses, keeps the current copies, and names the steps. The opt-in file
-  moves with them: `/etc/omarchy-platform/dtb-overlays.opt-in` is now
-  `/etc/omarchy-mac-boot/dtb-overlays.opt-in`. Re-add your opt-in lines to
-  the new file; nothing reads the old one. On Arch Linux ARM
-  installs without omarchy-mac-boot the package creates the overlay
-  directory, and apply, `update-m1n1-dtbs` and the two
-  `90-omarchy-ane-dt` hooks stay.
-- H15 (M3) opt-in experimental bring-up module: `ane/h15/` (4 soc
-  rows, four-stage module, host ADT self test), three experimental
-  overlays, three data-only overlays (`packaging/dt/`), and
-  `tools/omarchy-ane-h15-stage` (merged as PR #121). No M3 silicon
-  has run the module. Stage 1 is the only stage that touches MMIO and
-  it reads only the kernel-mapped PMGR window. Stages 2 and 3 refuse
-  on H15 until a macOS capture clears the INFERENCE words.
-- H15 verification pass (host-side): `make -C ane/h15 check` now
-  passes and the W=1 build is clean against the aurora
-  `ane-driver-aurora` tree and the M2 3-1 tree. Fixes: the ADT walker
-  never matched a child name, rejected prop-less roots, misread
-  segment-ranges as 32-bit words, and used an uninitialized error;
-  the self test hung on unaligned property sizes; the probe leaked a
-  NULL `of_iomap` into a pointer read; the ps-name macro was used as
-  an expression (the module did not compile); `ps_wait_ms` now times
-  out per word as documented; `ane/h15/README-bringup.md` had a
-  `dtc -O dtbo` line that no dtc accepts. The t8122 overlay compiles
-  and applies onto all five aurora t8122 board DTBs with resolved
-  phandles. New volunteer runbook: `docs/h15-volunteer.md`.
+## 0.4.5 (2026-10-04)
+
+This release moves the device tree overlays and the opt-in file to the
+overlay contract of omarchy-mac-boot. The move breaks hand installs and
+opt-in files from earlier releases. The release also adds the opt-in H15
+(M3) bring-up module. It changes no code that DKMS builds and no libane
+code: `git diff v0.4.4..v0.4.5 -- dkms.conf ane/Makefile ane/src
+ane/include ane/ane_stats_show.c ane/t6021 libane` is empty, so `ane.ko`,
+`ane_t6021.ko`, libane and the ioctl interface (ABI 1 and ABI 2) are the
+bytes of v0.4.4. The new `ane/h15/` tree is not in `dkms.conf`, and the
+package does not build it. The packaged drivers, libane and the firmware
+fetch are unchanged, so this release has no new hardware run. The path move
+is tested on the host only.
+
+- Breaking: the overlays move to the overlay contract of omarchy-mac-boot
+  (#124; omacom/omarchy-mac-pkgs#3, the port of omacom/omarchy-mac#677).
+  They install to `/usr/lib/omarchy-mac-boot/dtb-overlays/PREFIX/`, the
+  directory that omarchy-mac-boot ships for package-owned overlays. They
+  were in `/usr/share/omarchy-platform/dtb-overlays`. The second `Target`
+  of `90-omarchy-ane-dt.hook` is now
+  `usr/lib/omarchy-mac-boot/dtb-overlays/*/*.dtbo`, the glob of the
+  omarchy-mac-boot hook. A package upgrade moves the files. A hand install
+  (`packaging/build-dtbo /`) must move: while `.dtbo` files are in
+  `/usr/lib/omarchy-platform/dtb-overlays` or
+  `/usr/share/omarchy-platform/dtb-overlays`, `omarchy-ane-dt apply`
+  refuses, keeps the current copies, and names the steps.
+- Breaking: the opt-in file is now
+  `/etc/omarchy-mac-boot/dtb-overlays.opt-in`. It was
+  `/etc/omarchy-platform/dtb-overlays.opt-in`. Re-add your opt-in lines to
+  the new file. Nothing reads the old file, and the package does not copy
+  its lines. `omarchy-ane-check`, the docs and the H15 and H16 runbooks
+  name the new file (#124).
+- On Arch Linux ARM installs without omarchy-mac-boot, the package creates
+  the overlay directory, and `omarchy-ane-dt apply`, `update-m1n1-dtbs`
+  and the two `90-omarchy-ane-dt` hooks work as before (#124).
+- H15 (M3) opt-in experimental bring-up module (#121): `ane/h15/` with
+  four SoC rows (T8122, T6030, T6031, T6034), a module with four stages
+  (dt, status, wrapper, boot) and a host self test of its ADT walker
+  (`make -C ane/h15 check`); three experimental overlays in `ane/h15/`
+  (T8122, T6030, T6031; opt-in key `ane-h15-experimental`); three
+  data-only overlays in `packaging/dt/`; and `tools/omarchy-ane-h15-stage`.
+  The README data-only table marks the new overlays (#122). The module has
+  no `MODULE_DEVICE_TABLE`, so nothing loads it automatically, and its
+  probe refuses unless `optin=` names the SoC. No M3 has run it. Only
+  stage 1 touches MMIO: it reads the PMGR power-state words and writes no
+  register. Stages 2 and 3 refuse on H15 until a macOS capture clears the
+  words that are INFERENCE now.
+- H15 host-side fixes (#123): the module compiles (a macro that holds a
+  list was used as an expression); the ADT walker matches child names,
+  accepts nodes with no properties, reads segment-ranges as 64-bit fields
+  and no longer reads an uninitialized error; the self test no longer hangs
+  on property sizes that are not a multiple of 4; the probe refuses
+  (`-ENXIO`) when `of_iomap` returns NULL; `ps_wait_ms` is a limit for each
+  word, as documented; the compile line in `ane/h15/README-bringup.md`
+  uses `-O dtb`. #123 reports a clean W=1 build against the aurora
+  `ane-driver-aurora` tree. The T8122 overlay applies to all five T8122
+  board device trees. New volunteer runbook: `docs/h15-volunteer.md`.
+
+### Known limits
+
+- No hardware ran this release. The code that DKMS builds and libane are
+  the bytes of v0.4.4, whose hardware results are in
+  `receipts/2026-10-03-omarchy-ane-0.4.4/README.md`. The path move is
+  tested on the host only, with fake roots
+  (`receipts/2026-10-04-omarchy-ane-0.4.5/README.md`). The release gates
+  did not install it on a Mac.
+- T6000 and T6020 stay on by default in the overlays table of this release.
+  The Omarchy package (omacom/omarchy-pkgs#745) keeps them opt-in through
+  its recipe until a passing row from the DKMS modules of this package
+  exists. On these chips, the overlay and the DKMS modules of this package
+  have not run: their rows ran the kernel's own ANE driver and device tree.
 
 ## 0.4.4 (2026-10-03)
 
