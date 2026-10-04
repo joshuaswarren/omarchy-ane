@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `tools/wdt-hang-test`: an out-of-tree test module that arms the Apple SoC
+  watchdog (WD1) through the kernel-registered `apple_wdt` device (DT-window
+  fallback only), pets it from a kernel thread, then hangs the CPU with
+  interrupts off, to prove the unattended reset-to-stock recovery under a
+  one-shot boot (Limine `LoaderEntryOneShot`, GRUB `next_entry`). W=1 clean
+  on the 7.1.13-3-1-ARCH and aurora trees; experimental and hardware-gated:
+  it never autoloads and is not packaged. Receipt:
+  `receipts/2026-10-04-wdt-hang-test/README.md`.
+
 ## 0.4.5 (2026-10-04)
 
 This release moves the device tree overlays and the opt-in file to the
