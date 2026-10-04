@@ -13,7 +13,7 @@
 #   * Linux host with the ane_h15 module path passed via --module
 #     (default ./ane/h15/ane_h15.ko).
 #   * the b0 opt-in opt (default ane-h15-experimental) is in
-#     /etc/omarchy-platform/dtb-overlays.opt-in on the M3 host
+#     /etc/omarchy-mac-boot/dtb-overlays.opt-in on the M3 host
 #     the volunteer is targeting; this tool does not edit it.
 #   * root for the insmod (or CAP_SYS_MODULE); --root-check is
 #     a hard fail otherwise.

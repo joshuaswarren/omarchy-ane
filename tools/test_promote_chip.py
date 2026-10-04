@@ -116,7 +116,7 @@ assert "| row roundtrip1 |" in row, row
 p = run(base, chip, "opt-in", "--apply")
 assert p.returncode == 0, p.stderr
 dts = (base / f"packaging/dt/{chip}-ane.dts").read_text()
-assert f' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-platform/dtb-overlays.opt-in).\n' in dts
+assert f' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).\n' in dts
 row = next(l for l in (base / "README.md").read_text().splitlines() if f"| {chip.upper()} |" in l)
 assert "| row roundtrip1 |" in row, row
 print(f"promote_chip test: {chip} --note writes the Evidence cell and state line, revert keeps them")

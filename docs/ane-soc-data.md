@@ -19,7 +19,7 @@ A data-only SoC is a chip that no omarchy-ane driver binds, but whose ANE data t
 ## What the package does
 
 - `packaging/build-dtbo` installs each data file as `/usr/share/omarchy-ane/soc/SOC.json`. It compiles each `SOC-ane-dataonly.dts` as a check and installs none: omarchy-mac-boot applies every overlay in the overlay directory. It refuses an overlay without the root marker, a manifest row whose overlay has the marker, and a data file for a SoC that has an installed overlay.
-- `omarchy-ane-dt apply` never applies an overlay with `omarchy,data-only`, even when its opt-in key is in `/etc/omarchy-platform/dtb-overlays.opt-in`. `omarchy-ane-dt status` adds the line `data-only (no driver): SOC` when the installed data file for this SoC says data-only.
+- `omarchy-ane-dt apply` never applies an overlay with `omarchy,data-only`, even when its opt-in key is in `/etc/omarchy-mac-boot/dtb-overlays.opt-in`. `omarchy-ane-dt status` adds the line `data-only (no driver): SOC` when the installed data file for this SoC says data-only.
 - `omarchy-ane-check` prints `DATA-ONLY SoC: SOC (no driver yet)` in place of `UNTESTED SoC: SOC` for such a SoC, and fails: no driver binds it.
 
 ## Checks

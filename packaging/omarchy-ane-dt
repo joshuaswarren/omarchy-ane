@@ -24,7 +24,7 @@ or "ok") with one of them: the kernel's node wins. A disabled node does not
 count: the overlay applies, and its nodes of the same name replace the kernel
 node's properties and enable it. When no overlay is left, apply retires the copy.
 An overlay whose root has the string "omarchy,opt-in" applies only when that
-string is a line of /etc/omarchy-platform/dtb-overlays.opt-in, which the owner
+string is a line of /etc/omarchy-mac-boot/dtb-overlays.opt-in, which the owner
 writes (the untested T6002, T6022 and T8112 nodes: "ane-t6002", "ane-t6022" and "ane-t8112"; the T6021 U-Boot input: "uboot-serial-stdin-t6021").
 An overlay whose root has "omarchy,data-only" carries SoC data for a chip that
 no driver binds: apply never applies it, whatever the opt-in file says. status
@@ -54,21 +54,22 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Where the package installs its overlays: the directory that
-# omacom/omarchy-mac#677 (dtb-overlays.sh) applies on Omarchy Macs.
-# packaging/build-dtbo reads this line, and 90-omarchy-ane-dt.hook's second
-# Target names the same directory (tools/test_ane_dt.py checks both). Arch
+# Where the package installs its overlays: the directory omarchy-mac-boot
+# ships for package-owned overlays and its dtb-overlays.sh applies (omacom/
+# omarchy-mac-pkgs#3, the port of omacom/omarchy-mac#677). packaging/build-dtbo
+# reads this line, and 90-omarchy-ane-dt.hook's second Target names the same
+# directory (tools/test_ane_dt.py checks both). Arch
 # Linux ARM installs have no omarchy-mac-boot, so there apply,
 # update-m1n1-dtbs and the hooks stay.
-OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"
-# The directory before 2026-10-01. apply refuses while it has overlays, so a
+OVERLAY_DIR = "usr/lib/omarchy-mac-boot/dtb-overlays"
+# The directory before 2026-10-04. apply refuses while it has overlays, so a
 # hand install there (the lab M2) keeps its copies until it moves them.
 # Remove with its check in apply when no install uses it.
-OLD_OVERLAY_DIR = "usr/lib/omarchy-platform/dtb-overlays"
+OLD_OVERLAY_DIR = "usr/share/omarchy-platform/dtb-overlays"
 FRAGMENT = "/usr/lib/omarchy-ane/update-m1n1-dtbs"
 LINE = f"[ -r {FRAGMENT} ] && . {FRAGMENT}  # omarchy-ane"
 ANE = re.compile(r"apple,t[0-9a-z]+-ane")
-OPT_IN = "etc/omarchy-platform/dtb-overlays.opt-in"
+OPT_IN = "etc/omarchy-mac-boot/dtb-overlays.opt-in"
 CONFIG = "etc/default/update-m1n1"
 DTBS = re.compile(r"\s*(?:export\s+)?DTBS=(.*)")
 # The community collector's field (omarchy-mlx scripts/collect_deep.py), also

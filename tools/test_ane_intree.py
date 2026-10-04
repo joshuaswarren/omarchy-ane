@@ -187,7 +187,7 @@ for soc in OPT:
     # The same chip without DTBS=: the opt-in steps as before.
     rc, out, _ = check(soc, config='export LC_ALL=C\n', node=False)
     assert '  dtbs_source=overlay' in out.splitlines(), out
-    assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in' in out, out
+    assert f'    1. echo ane-{soc} | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in' in out, out
     assert 'Run: sudo omarchy-ane-dt apply' in out and oadt.KERNEL_DT not in out, out
 
 # 4b. The in-tree driver from the kernel's own device tree: ready.
