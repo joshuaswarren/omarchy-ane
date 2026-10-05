@@ -96,8 +96,10 @@ def main() -> int:
     if "#[repr(C)]" not in "\n".join(decl_lines[-6:]):
         fail.append("StatsSnapshot lost #[repr(C)] — the C mirror offsets are no longer binding")
     for needle in (
-        "offsetof(struct asahi_stats_snapshot, busy_ns) != 48",
-        "offsetof(struct asahi_stats_snapshot, jobs) != 56",
+        "offsetof(struct asahi_stats_snapshot, busy_ns) != 40",
+        "offsetof(struct asahi_stats_snapshot, jobs) != 48",
+        "offsetof(struct asahi_stats_snapshot, pstate) != 16",
+        "sizeof(struct asahi_stats_snapshot) != 56",
     ):
         if needle not in c:
             fail.append(f"sysfs.c lost the layout assert: {needle}")
