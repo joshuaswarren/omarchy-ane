@@ -1645,6 +1645,68 @@ module_param_cb(fw_perf_mode, &ane_t6021_perf_mode_ops, &fw_perf_mode, 0644);
 MODULE_PARM_DESC(fw_perf_mode,
 		 "Write 1 once to send CH_PROPERTY_WRITE 0x10aa = 1 (fw perf mode); reads back whether it was sent");
 
+/* fw_ppt=1: CH_PROPERTY_WRITE (0x1f), channel 1, property 0x1701, value 1,
+ * same 20-byte packet as fw_perf_mode. The selene 13.5 dispatcher routes
+ * property group 0x1700 to CPowerControlServiceAneH14::propertyWrite
+ * (0x6350c, image a9c4b771...): it stores (val == 1) in the service's PPT
+ * flag byte and writes that flag to the DPE word [0x2858f4004]. The
+ * firmware's own powerUpAne -> TurnOnDPE writes the same word with the
+ * flag still 0, so under Linux the flag has never been 1. The macOS 27.0
+ * kext never sends 0x1701 (kext scan, AneClockHunt round 2), so this is
+ * not a macOS-faithful send: it is the last untested firmware perf
+ * property on T6021 and the discriminator named by the trace_td receipt
+ * (clock/power limit vs DMA path). Runtime switch like fw_perf_mode so
+ * the A/B needs no reboot. Only 1 is accepted: no other value is known
+ * to be safe. */
+static struct ane_rtclient *ane_t6021_ppt_ane;
+static bool fw_ppt;
+
+static int ane_t6021_ppt_set(const char *val,
+			     const struct kernel_param *kp)
+{
+	struct ane_rtclient *ane = READ_ONCE(ane_t6021_ppt_ane);
+	struct ane_legacy_buffer *command;
+	bool on;
+	int ret;
+
+	ret = kstrtobool(val, &on);
+	if (ret)
+		return ret;
+	if (!on || fw_ppt)
+		return on ? 0 : -EINVAL;
+	if (!ane)
+		return -ENODEV;
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	command = ane->cmd_buf;
+	if (!command) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ENODEV;
+	}
+	memset(command->cpu, 0, SZ_16K);
+	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(0);
+	*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(0x1701);
+	*(u32 *)((u8 *)command->cpu + 0x10) = cpu_to_le32(1);
+	ret = ane_rtclient_command(ane, command, 0x14, 0x001f, 1, 3000);
+	if (!ret) {
+		fw_ppt = true;
+		dev_info(ane->dev, "fw ppt set (property 0x1701 = 1)\n");
+	}
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+static const struct kernel_param_ops ane_t6021_ppt_ops = {
+	.set = ane_t6021_ppt_set,
+	.get = param_get_bool,
+};
+module_param_cb(fw_ppt, &ane_t6021_ppt_ops, &fw_ppt, 0644);
+MODULE_PARM_DESC(fw_ppt,
+		 "Write 1 once to send CH_PROPERTY_WRITE 0x1701 = 1 (fw PPT flag); reads back whether it was sent");
+
 /* dyn_pg=1, once at probe after CONFIG_GET: CSNE_CMD_SET_DYNAMIC_POWERGATE
  * on channel 1, the u32 value 1 at +0x08, 0x0c bytes. The selene 13.5
  * handler (0x28178, image sha256 a9c4b771...) passes the low byte to
@@ -2380,6 +2442,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		adrm->dev = dev;
 		adrm->ane = ane;
 		WRITE_ONCE(ane_t6021_perf_ane, ane);
+		WRITE_ONCE(ane_t6021_ppt_ane, ane);
 		drmret = drm_dev_register(&adrm->drm, 0);
 		if (drmret) {
 			dev_err_probe(dev, drmret, "drm_dev_register\n");
@@ -2459,6 +2522,8 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	struct ane_rtclient *ane = platform_get_drvdata(pdev);
 	if (READ_ONCE(ane_t6021_perf_ane) == ane)
 		WRITE_ONCE(ane_t6021_perf_ane, NULL);
+	if (READ_ONCE(ane_t6021_ppt_ane) == ane)
+		WRITE_ONCE(ane_t6021_ppt_ane, NULL);
 
 	cancel_delayed_work_sync(&ane->poll_work);
 
