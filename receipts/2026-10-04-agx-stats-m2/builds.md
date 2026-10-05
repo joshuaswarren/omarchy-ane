@@ -28,9 +28,15 @@ Two Signed-off-by commits on LOCAL branch `agent/jw16-agx-stats7` (on top of
   the tick conversion + split (1 s of 24 MHz ticks at 100% = 1e9 ns; 50% =
   5e8; 48 MHz rate invariance; sentinel skip; matmul shape 30e9 ns) — PASS.
 
-- Product (AGX_VERIFY_OK pending this build): Image/System.map shas printed
-  by the build log; big files stay local at `/tmp/agxbusy/stage2/`; receipts
-  in `artifacts/AgxStatsM2Prep/20261005T<UTC>-busy-ticks/`.
+- Product VERIFIED (`AGX_VERIFY_OK 2026-10-05T09:33:08Z`): `Image-m2` sha256
+  `c7f4dabed42bddedb13d62864b064f54999e61ae55b3aa3bd1d53767d8b945cc`
+  (36,278,656 B), `System.map` `a838c092f1f3af5836b10a76a5d764927ec05828f90a
+  4377d0555bfebe27f870`; big files stay local at `/tmp/agxbusy/stage2/`
+  (the round-5 `/tmp/agxbusy/stage` is preserved); receipts in
+  `artifacts/AgxStatsM2Prep/20261005T0933Z-busy-ticks/` (SHA256SUMS verified).
+  Note: the first tick-conversion attempt (u128 division) failed the vmlinux
+  link (`__udivti3` undefined) — that failure is what `993288b37ec4` fixes;
+  the receipt above is the fixed 64-bit-split build.
 
 - Expected T6021 after this fix: matmul busy fraction 0.94-1.0 (the 0.9375
   window-C coverage x correct units), idle 0.0002-0.01. The 6.25% coverage
