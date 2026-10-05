@@ -19,8 +19,9 @@ struct chan {
 	uint64_t busy_ns;
 };
 
-/* Mirrors the StatsChannel::poll Utilization arm (u128 intermediate in the
- * kernel; unsigned long long is sufficient for these vectors). */
+/* Mirrors the StatsChannel::poll Utilization arm: whole seconds x util x
+ * 1e7 ns plus the tick remainder x util x 1e9 / (100 x ts_hz) — the exact
+ * 64-bit split the kernel uses (no 128-bit division in the runtime). */
 static void on_utilization(struct chan *c, uint64_t ts, uint32_t u1,
 			   uint32_t u2, uint32_t u3, uint32_t u4)
 {
@@ -34,10 +35,11 @@ static void on_utilization(struct chan *c, uint64_t ts, uint32_t u1,
 	if (util > 100)
 		util = 100;
 	if (c->last_util_ts != 0 && ts > c->last_util_ts) {
-		unsigned long long busy =
-			((unsigned long long)(ts - c->last_util_ts) * util *
-			 1000000000ULL) /
-			(100ULL * c->ts_hz);
+		uint64_t delta = ts - c->last_util_ts;
+		uint64_t whole_s = delta / c->ts_hz;
+		uint64_t rem = delta % c->ts_hz;
+		uint64_t busy = whole_s * util * 10000000ULL +
+				rem * util * 1000000000ULL / (100ULL * c->ts_hz);
 		c->busy_ns += busy;
 	}
 	c->last_util_ts = ts;

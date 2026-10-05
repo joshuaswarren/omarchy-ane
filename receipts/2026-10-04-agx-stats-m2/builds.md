@@ -1,3 +1,43 @@
+# Round 6 — the firmware tick: stats timestamps are 24 MHz, busy_ns converts to ns (unpushed)
+
+Window C proved the v1 utilization producer monotonic and clean but LOW by a
+constant: 22.5e6 raw ticks/s across a saturated matmul = 0.9375 of the base
+clock. AgxBusySemantics' addendum
+(`entries/AgxBusySemantics/20261005T090442Z-ct-agx-busy-semantics-addendum.md`)
+proved from sources that `HwConfig.base_clock_hz` is 24_000_000 on every
+supported SoC and that ns is a chosen unit in this driver (user command
+timestamps are converted into base-clock ticks in file.rs). The round-3
+"0.024 idle busy" was full-time coverage misread as ns (1e9/24e6 = 1/41.667
+exactly).
+
+Two Signed-off-by commits on LOCAL branch `agent/jw16-agx-stats7` (on top of
+`0b923fb29c84`; branch NOT pushed, no hosts, no PR comments):
+
+- `9250872b1f33` drm/asahi: convert stats timestamps from base-clock ticks
+  to ns — `StatsChannel.ts_hz` plumbed from `cfg.base_clock_hz` at the gpu.rs
+  call site; window integration `(ts - prev) * util * 1e9 / (100 * ts_hz)`.
+- `993288b37ec4` drm/asahi: split the tick window to avoid 128-bit division —
+  the u128 intermediate divided, and the kernel runtime has no `__udivti3`
+  (vmlinux link failure, observed): the window now splits into whole seconds
+  (`util x 1e7 ns` each) plus a tick remainder
+  (`rem x util x 1e9 / (100 x ts_hz)`), exact against the u128 formula, all
+  64-bit. Also drops an `unnecessary unsafe` rustc flagged in the sysfs
+  exports wrapper.
+
+- checkpatch --strict 0/0 on both; rustfmt clean. Mirror tests rewritten for
+  the tick conversion + split (1 s of 24 MHz ticks at 100% = 1e9 ns; 50% =
+  5e8; 48 MHz rate invariance; sentinel skip; matmul shape 30e9 ns) — PASS.
+
+- Product (AGX_VERIFY_OK pending this build): Image/System.map shas printed
+  by the build log; big files stay local at `/tmp/agxbusy/stage2/`; receipts
+  in `artifacts/AgxStatsM2Prep/20261005T<UTC>-busy-ticks/`.
+
+- Expected T6021 after this fix: matmul busy fraction 0.94-1.0 (the 0.9375
+  window-C coverage x correct units), idle 0.0002-0.01. The 6.25% coverage
+  gap is unattributed (AgxBusySemantics A4) — window discriminators A5.
+
+---
+
 # Round 5 — busy_ns producer change: utilization-weighted time (unpushed)
 
 Main's order after the round-3 window measured busy_ns accumulating only
