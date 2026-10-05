@@ -6,8 +6,8 @@ system is healthy, then deliberately hang the CPU with interrupts off so
 the watchdog fires and firmware resets the machine.
 
 Reset to the STOCK entry requires the bootloader to pick the stock default
-on the next boot. The two rigs differ, and both halves are proven
-separately, boot-once first:
+on the next boot. The two rigs differ, and the boot-once half is proven
+per rig:
 
 - GRUB rigs (T6021-class): `grub-reboot <entry-id>` (one-shot `next_entry`
   in `grubenv`, consumed by GRUB on the next boot). MEASURED: consumed on
@@ -52,11 +52,14 @@ boot with a harmless cmdline marker where a one-shot is needed at all.
 | `ping_interval_sec` | 7 | kernel-thread pet interval (max timeout/2) |
 | `hang_delay_sec` | 15 | seconds of healthy petting before the hang |
 | `hang_cpu` | -1 | pin the hang thread to a CPU (-1 = no pin) |
-| `disarm_on_unload` | false | stop the WDT on clean unload instead of restoring the previous timeout |
+| `disarm_on_unload` | false | stop the WDT on clean unload instead of restoring the pre-insmod hardware state |
 | `mode` | auto | `core` (registered apple_wdt device) or `dt` (map the DT "apple,wdt" window directly) |
 
 Reset latency from `insmod`: `hang_delay_sec` + up to `wdt_timeout_sec +
-ping_interval_sec` (defaults: about 31-45 s).
+ping_interval_sec` (defaults: about 31-45 s). This bound holds only while
+no other keepalive producer pings the WDT faster than `wdt_timeout_sec`
+(measured on the M2 rig: systemd pings every 60 s against the 30 s module
+timeout, and the reset fired inside the bound).
 
 ## Register access policy
 
@@ -65,17 +68,31 @@ The module drives the watchdog only through the device the in-kernel
 `watchdog_device`, found via the `apple-watchdog` platform driver and
 verified by the `"Apple SoC Watchdog"` identity string). If that device
 is not registered, it maps ONLY the DT-described `apple,wdt` window
-(reg[0]) and uses the same WD1 layout as `drivers/watchdog/apple_wdt.c`.
-It never touches an address outside that window.
+(reg[0]) and uses the same WD1 layout as `drivers/watchdog/apple_wdt.c`
+(pinned: omarchy-linux `josh/ane-driver-aurora` commit `efe6e359`,
+lines 42-44 and 52). It never touches an address outside that window.
 
-On a clean unload the previous hardware timeout is restored (not stopped)
-so the owner of `/dev/watchdog0` (systemd) keeps its watchdog healthy.
-`disarm_on_unload=1` stops the hardware instead; use it only when no
+A clean unload restores the pre-insmod hardware state. Core mode: if the
+watchdog was running before `insmod` (the normal case - systemd owns
+`/dev/watchdog0`), the previous timeout is written back and the watchdog
+keeps running; if it was stopped, it is stopped again. DT mode: the
+`WD1_BITE_TIME` and `WD1_CTRL` values read at arm time are written back.
+`disarm_on_unload=1` stops the hardware instead (core: `ops->stop`;
+DT: `WD1_CTRL` = 0) regardless of the prior state; use it only when no
 other watchdog user exists.
 
-After the hang the thread is unkillable and `rmmod` blocks; only the
-watchdog reset (or a hard reset) ends it. Run `sync` and record all
-pre-state before `insmod`.
+Second keepalive producers: on an SMP host the hang wedges one CPU, so a
+userspace owner of `/dev/watchdog0` (systemd with `RuntimeWatchdogSec`)
+keeps pinging from the other CPUs. The reset bound above holds only while
+its ping interval stays above `wdt_timeout_sec`; the module detects an
+existing owner at load and logs a warning naming this condition. It does
+not quiesce the owner (that would change machine state outside the test);
+check `RuntimeWatchdogSec` before a window.
+
+The hang spin polls `kthread_stop`, so `rmmod` ends the test cleanly at
+any time (mid-hang included) and restores the pre-insmod state; during a
+window the protocol forbids unloading, and the WDT reset is the expected
+end. Run `sync` and record all pre-state before `insmod`.
 
 ## Build
 

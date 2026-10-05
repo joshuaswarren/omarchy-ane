@@ -59,7 +59,8 @@ two halves are proven separately, boot-once first:
     (boot-chain file write; needs the owner's go; not tried).
 - Reset half: under a one-shot boot, `insmod`, hang, watchdog reset, and
   the machine must return to the stock default entry unattended, inside a
-  6-minute no-return bound, with the one-shot state consumed and the boot
+  6-minute no-return bound (marker-to-first-boot-message, not
+  marker-to-WDT-fire), with the one-shot state consumed and the boot
   store (ESP `boot.bin`) unchanged.
 
 The full host-specific protocol (exact commands, timings, stop rules
@@ -79,8 +80,11 @@ this receipt carries the rig-independent procedure.
   (`CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y`, `CONFIG_WATCHDOG_OPEN_TIMEOUT=0`)
   pings a firmware-armed watchdog until userspace takes over; the root
   systemd then arms a 120 s hardware timeout with 60 s pings
-  (`RuntimeWatchdogSec=120`). The module makes the reset latency explicit
-  (31-45 s) and independent of that chain.
+  (`RuntimeWatchdogSec=120`). The module's own bound is `hang_delay_sec`
+  plus up to `wdt_timeout_sec + ping_interval_sec` (31-45 s at defaults);
+  it holds while no other keepalive producer pings faster than
+  `wdt_timeout_sec` (on the M2 rig: systemd's 60 s ping against the 30 s
+  module timeout).
 - iBoot handover watchdog state is not known (recorded unknown; no sysfs
   status on these kernels).
 
@@ -93,7 +97,10 @@ this receipt carries the rig-independent procedure.
   one ping interval afterwards (a stuck 30 s hardware timeout with 60 s
   systemd pings would have bitten). Stage 2 — defaults: emerg marker at
   the wedge 12:13:43Z, ssh loss, SoC reset, first message of the new boot
-  12:15:48Z (2 min 05 s), UNATTENDED return on the stock DEFAULT entry
+  12:15:48Z — 2 min 05 s is marker-to-first-boot-message; the WDT fire
+  itself has no direct timestamp (the pre-reset log ends at the marker;
+  the module bound puts the bite <= 37 s after it, inside the ssh-loss
+  window) — then an UNATTENDED return on the stock DEFAULT entry
   with the one-shot consumed and the ESP `boot.bin` sha unchanged.
   Post-reset end state: ane_t6021 bound, failed units 0, smoke 20/20
   bit-exact. Full record: lab notebook entries/M2WdtRecovery/
@@ -102,6 +109,33 @@ this receipt carries the rig-independent procedure.
   config restored in-window (`limine.conf` sha back to pre, no OneShot
   variable, `boot.bin`/`ubootefi.var` unchanged). The stock-default hang
   procedure on this rig is NOT RUN.
+
+## Pending hardware retest (required after the review-fix commit)
+
+The review-fix commit changes unload and arm behavior; the 2026-10-04
+window A run predates it and does not cover the new paths. Retest on one
+M2 stock-kernel boot with the one-shot armed (grub-reboot to a stock+
+marker entry), in this order:
+
+1. Warm unload path (core/running): `insmod hang_delay_sec=300`, expect
+   the armed line and the owner warning (systemd holds the device), then
+   `rmmod` at +30 s; expect a clean unload line, prior timeout restored,
+   box alive 140 s, no reset.
+2. Unload-during-hang: `insmod wdt_timeout_sec=30 hang_delay_sec=8`,
+   `rmmod` at ~T0+3 s; expect the spin to abort via `kthread_stop`, a
+   clean unload, no reset, box alive 140 s.
+3. The real reset: `insmod` (defaults); expect the emerg marker at about
+   T0+15 s, unattended reset inside the module bound (<= 80 s worst case
+   with the 60 s systemd ping), return on the stock default entry,
+   one-shot consumed, ESP sha unchanged.
+4. DT-mode path (`mode=dt`), separate scheduled window (it drives the WDT
+   window directly while the built-in apple_wdt also binds on the M2):
+   arm, log the clock source and tick, `rmmod`, verify the box stays
+   healthy; the pre/post register readback needs an operator-decided
+   policy because raw reads are out of scope for this module.
+
+Items 1-3 fit one window (notice, camera, 6-minute watch, stop rules as
+in window A).
 
 ## Protocol lessons (measured)
 

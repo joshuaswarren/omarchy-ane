@@ -11,16 +11,21 @@
  *   3. after hang_delay_sec (default 15 s) spins forever with IRQs off,
  *      so the pings stop and the WDT resets the machine.
  *
- * After the reset, firmware must boot the stock default entry because the
- * experimental boot was selected one-shot (Limine LoaderEntryOneShot on the
- * M1 rig, GRUB next_entry/grubenv on the M2 rig).
+ * After the reset, the machine must land on the stock default entry. On
+ * the M2/GRUB rig the test boot is selected one-shot (grub-reboot ->
+ * next_entry in grubenv, consumed by GRUB on the next boot) - measured
+ * 2026-10-04. On the M1 Limine rig a LoaderEntryOneShot variable written
+ * from Linux does NOT survive the reset (U-Boot's runtime EFI variable
+ * store is RAM-volatile, measured in this PR): there, run the hang test
+ * on the stock default boot (no one-shot involved) or edit the boot-time
+ * variable store. See tools/wdt-hang-test/README.md.
  *
  * Register access policy: the module drives the WDT only through the
  * watchdog device the kernel's apple_wdt driver already registered
  * (ops->set_timeout/start/ping on the core-owned watchdog_device). If no
  * apple_wdt device is registered, it falls back to mapping ONLY the
  * DT-described "apple,wdt" window (reg[0]) - never a raw address outside
- * that window. Register layout follows drivers/watchdog/apple_wdt.c.
+ * that window.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -41,7 +46,12 @@
 #include <linux/string.h>
 #include <linux/watchdog.h>
 
-/* WD1 block offsets and CTRL bits, from drivers/watchdog/apple_wdt.c */
+/*
+ * WD1 block offsets and CTRL bits, pinned to drivers/watchdog/apple_wdt.c
+ * at omarchy-linux branch josh/ane-driver-aurora, commit efe6e359 (lines
+ * 42-44: WD1_CUR_TIME 0x10, WD1_BITE_TIME 0x14, WD1_CTRL 0x1c; line 52:
+ * APPLE_WDT_CTRL_RESET_EN BIT(2)).
+ */
 #define APPLE_WDT_WD1_CUR_TIME		0x10
 #define APPLE_WDT_WD1_BITE_TIME		0x14
 #define APPLE_WDT_WD1_CTRL		0x1c
@@ -69,7 +79,7 @@ MODULE_PARM_DESC(hang_delay_sec, "seconds of healthy petting before hanging");
 module_param(hang_cpu, int, 0444);
 MODULE_PARM_DESC(hang_cpu, "CPU the hang thread runs on (-1 = don't pin)");
 module_param(disarm_on_unload, bool, 0444);
-MODULE_PARM_DESC(disarm_on_unload, "stop the WDT on clean unload instead of restoring the previous timeout");
+MODULE_PARM_DESC(disarm_on_unload, "stop the WDT on clean unload instead of restoring the pre-insmod hardware state");
 module_param(mode, charp, 0444);
 MODULE_PARM_DESC(mode, "wdt access: auto | core (registered device) | dt (DT window)");
 
@@ -88,11 +98,13 @@ struct wdt_ctrl {
 	struct device *dev;		/* non-NULL in core mode */
 	void __iomem *dt_base;		/* non-NULL in dt mode */
 	u64 dt_clk_rate;
+	u32 dt_prior_ctrl;		/* DT mode: WD1_CTRL read at arm time */
+	u32 dt_prior_bite;		/* DT mode: WD1_BITE_TIME read at arm time */
 	struct watchdog_device *wdd;	/* core mode only */
 	const struct watchdog_ops *ops;
 	unsigned int old_timeout;
+	bool old_running;		/* core mode: HW running before insmod */
 	struct task_struct *petter;
-	bool hung;
 	/* serialize access to whichever control path was chosen */
 	struct mutex lock;
 };
@@ -112,11 +124,16 @@ static int wdt_arm(unsigned int timeout_sec)
 		return wdt.ops->start(wdt.wdd);
 	}
 
+	/* Snapshot the pre-insmod WD1 state before changing anything. */
+	wdt.dt_prior_ctrl = readl_relaxed(wdt.dt_base + APPLE_WDT_WD1_CTRL);
+	wdt.dt_prior_bite = readl_relaxed(wdt.dt_base + APPLE_WDT_WD1_BITE_TIME);
 	writel_relaxed(0, wdt.dt_base + APPLE_WDT_WD1_CUR_TIME);
 	writel_relaxed((u32)(wdt.dt_clk_rate * timeout_sec),
 		       wdt.dt_base + APPLE_WDT_WD1_BITE_TIME);
 	writel_relaxed(APPLE_WDT_CTRL_RESET_EN,
 		       wdt.dt_base + APPLE_WDT_WD1_CTRL);
+	pr_info("DT arm: clk %llu Hz, BITE tick %u\n", wdt.dt_clk_rate,
+		(u32)(wdt.dt_clk_rate * timeout_sec));
 	return 0;
 }
 
@@ -136,30 +153,43 @@ static void wdt_disarm_or_restore(void)
 	guard(mutex)(&wdt.lock);
 
 	if (wdt.wdd) {
-		if (disarm_on_unload) {
+		if (disarm_on_unload || !wdt.old_running) {
+			/* Leave the hardware as it was found: stopped. */
 			wdt.ops->stop(wdt.wdd);
 			return;
 		}
 		/*
-		 * Do not just stop petting: the hardware keeps the short
-		 * test timeout, and the owner of /dev/watchdog0 (systemd)
-		 * may ping slower than that, which would reset the box
-		 * shortly after a clean unload. Put the previous timeout
-		 * back so the healthy system keeps running unchanged.
+		 * The watchdog was running before insmod (its owner, e.g.
+		 * systemd, keeps pinging it): put the previous timeout back
+		 * and leave it running. Dropping only the petting would
+		 * leave the short test timeout latched, which the slower
+		 * owner ping could miss.
 		 */
 		wdt.ops->set_timeout(wdt.wdd, wdt.old_timeout);
 		return;
 	}
-	writel_relaxed(0, wdt.dt_base + APPLE_WDT_WD1_CTRL);
+	if (disarm_on_unload) {
+		writel_relaxed(0, wdt.dt_base + APPLE_WDT_WD1_CTRL);
+		return;
+	}
+	/* Restore the exact pre-insmod WD1 state: bite first, then ctrl. */
+	writel_relaxed(wdt.dt_prior_bite,
+		       wdt.dt_base + APPLE_WDT_WD1_BITE_TIME);
+	writel_relaxed(wdt.dt_prior_ctrl, wdt.dt_base + APPLE_WDT_WD1_CTRL);
 }
 
 static int hang_thread(void *arg __always_unused)
 {
 	unsigned long deadline;
 	unsigned long next_pet = jiffies + ping_interval_sec * HZ;
+	int ret;
 
-	if (hang_cpu >= 0)
-		set_cpus_allowed_ptr(current, cpumask_of(hang_cpu));
+	if (hang_cpu >= 0) {
+		ret = set_cpus_allowed_ptr(current, cpumask_of(hang_cpu));
+		if (ret)
+			pr_warn("could not pin to cpu %d (%d); running unpinned\n",
+				hang_cpu, ret);
+	}
 
 	pr_info("armed: timeout %us, petting every %us, hang in %us (cpu %d)\n",
 		wdt_timeout_sec, ping_interval_sec, hang_delay_sec, hang_cpu);
@@ -177,19 +207,22 @@ static int hang_thread(void *arg __always_unused)
 
 	/*
 	 * Deliberate hard hang. The last pet was at most ping_interval_sec
-	 * ago, so the WDT fires within wdt_timeout_sec + ping_interval_sec.
-	 * From here the thread is unkillable; only the WDT reset (or a
-	 * hard reset) ends it. rmmod during the spin just blocks.
+	 * ago, so the WDT fires within wdt_timeout_sec + ping_interval_sec,
+	 * provided no other keepalive producer pings faster than
+	 * wdt_timeout_sec. The spin polls kthread_stop, so an emergency
+	 * rmmod can always end the test cleanly; during a window nobody
+	 * unloads and the WDT reset is the expected end.
 	 */
-	WRITE_ONCE(wdt.hung, true);
-	pr_emerg("hanging now on cpu %d: pings stopped, WDT reset expected in <= %us; next boot must be the stock default entry\n",
+	pr_emerg("hanging now on cpu %d: pings stopped, WDT reset expected in <= %us; with a one-shot boot selection the reset lands on the stock default entry\n",
 		 raw_smp_processor_id(), wdt_timeout_sec + ping_interval_sec);
 
 	local_irq_disable();
 	preempt_disable();
-	for (;;)
+	while (!kthread_should_stop())
 		cpu_relax();
-	return 0;			/* not reached */
+	local_irq_enable();
+	preempt_enable();
+	return 0;
 }
 
 static int __init wdt_hang_test_init(void)
@@ -197,6 +230,7 @@ static int __init wdt_hang_test_init(void)
 	struct device *dev = NULL;
 	struct watchdog_device *wdd = NULL;
 	bool want_core, want_dt;
+	u32 freq;
 	int ret;
 
 	if (wdt_timeout_sec < TIMEOUT_MIN_SEC || wdt_timeout_sec > TIMEOUT_MAX_SEC) {
@@ -211,6 +245,11 @@ static int __init wdt_hang_test_init(void)
 	}
 	if (hang_delay_sec > 300) {
 		pr_err("hang_delay_sec %u too large (max 300)\n", hang_delay_sec);
+		return -EINVAL;
+	}
+	if (hang_cpu >= (int)nr_cpu_ids) {
+		pr_err("hang_cpu %d outside [0, %d]\n", hang_cpu,
+		       (int)nr_cpu_ids - 1);
 		return -EINVAL;
 	}
 
@@ -255,15 +294,29 @@ static int __init wdt_hang_test_init(void)
 			return -ENODEV;
 		}
 		wdt.dt_base = of_iomap(np, 0);
+		/*
+		 * apple_wdt takes the reference clock from the clock
+		 * framework; the plain DT node has no clk object, so read
+		 * "clock-frequency" when present and fall back to the
+		 * documented 24 MHz clkref. The arm path logs the
+		 * programmed tick so a window operator can compare the
+		 * observed reset time against it.
+		 */
+		ret = of_property_read_u32(np, "clock-frequency", &freq);
 		of_node_put(np);
 		if (!wdt.dt_base) {
 			pr_err("failed to map the DT apple-wdt window\n");
 			put_device(dev);
 			return -ENOMEM;
 		}
-		/* 24 MHz reference clock (clkref) on all released Apple SoCs */
-		wdt.dt_clk_rate = 24000000;
-		pr_info("core path unavailable; using DT window fallback at 24 MHz\n");
+		if (!ret && freq) {
+			wdt.dt_clk_rate = freq;
+			pr_info("core path unavailable; DT fallback, clock-frequency %u Hz\n",
+				freq);
+		} else {
+			wdt.dt_clk_rate = 24000000;
+			pr_info("core path unavailable; DT fallback, no clock-frequency in the node, assuming the documented 24 MHz clkref\n");
+		}
 	}
 
 	wdt.dev = dev;
@@ -271,12 +324,16 @@ static int __init wdt_hang_test_init(void)
 	if (wdd) {
 		wdt.ops = wdd->ops;
 		wdt.old_timeout = wdd->timeout;
+		wdt.old_running = watchdog_hw_running(wdd);
+		if (watchdog_active(wdd))
+			pr_warn("/dev/watchdog0 has a userspace owner: its keepalive interval must stay above wdt_timeout_sec (%us) or it defeats the hang test; measured on the M2 rig (systemd RuntimeWatchdogSec=120, 60 s ping, 30 s module timeout) the reset fired inside the module bound\n",
+				wdt_timeout_sec);
 	}
 
 	ret = wdt_arm(wdt_timeout_sec);
 	if (ret) {
 		pr_err("failed to arm the watchdog: %d\n", ret);
-		goto err_unmap;
+		goto err_restore;
 	}
 
 	wdt.petter = kthread_run(hang_thread, NULL, "wdt_hang_test");
@@ -290,7 +347,6 @@ static int __init wdt_hang_test_init(void)
 
 err_restore:
 	wdt_disarm_or_restore();
-err_unmap:
 	if (wdt.dt_base)
 		iounmap(wdt.dt_base);
 	if (dev)
@@ -300,14 +356,11 @@ err_unmap:
 
 static void __exit wdt_hang_test_exit(void)
 {
-	if (READ_ONCE(wdt.hung)) {
-		/*
-		 * Unload during the hang: kthread_stop() would block forever
-		 * and the machine is about to reset anyway. Leave it be.
-		 */
-		pr_emerg("unload during hang; WDT reset imminent\n");
-		return;
-	}
+	/*
+	 * kthread_stop() always completes: the hang spin polls
+	 * kthread_should_stop(), so even a mid-hang unload aborts the spin
+	 * cleanly and the pre-insmod watchdog state is restored.
+	 */
 	kthread_stop(wdt.petter);
 	wdt_disarm_or_restore();
 	if (wdt.dt_base)
