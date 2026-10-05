@@ -1,3 +1,39 @@
+# Round 5 — busy_ns producer change: utilization-weighted time (unpushed)
+
+Main's order after the round-3 window measured busy_ns accumulating only
+51.1 ms across a saturated 30 s matmul (fraction 0.0017). AgxBusySemantics'
+analysis (`apple-silicon-lab entries/AgxBusySemantics/20261005T050025Z-*`):
+FwBusy timestamp deltas are the wrong field — the Utilization message (tag
+0x04, per-subqueue 0-100 percentages) tracks T6021 compute exactly (100 x4
+across the matmul, 0-2 idle, decode on subqueue 3), and no T6001 validation
+of the FwBusy producer ever existed. Applied as ONE commit on
+`agent/jw16-agx-stats7` (local, from `4189501b643f`; branch NOT pushed, no
+hosts, no PR comments):
+
+- `0b923fb29c84` drm/asahi: integrate utilization-weighted time into
+  agx_stats busy_ns — each Utilization window adds
+  `(ts - prev) / 100 * max(util1..4).min(100)`; `last_util_ts` is
+  channel-local; the FwBusy arm and `StatsSnapshot.last_busy_ts` are deleted;
+  the C mirror and asserts shrink (busy_ns 40, jobs 48, size 56); ABI doc
+  rewritten (monotonic, wall-bounded, tick-invariant, T6001 magnitude claim
+  gated on its own window).
+
+- checkpatch --strict 0/0, rustfmt clean. Product (AGX_VERIFY_OK
+  `2026-10-05T05:24:35Z`): `Image-m2` sha256
+  `abe23df12ee36a25a10058f8a41ddd694e55061e1b9dae5c916f796f3c51b88c`
+  (36,278,528 B), `System.map` `4490f9b725d8a1311875a82891e58b310e603f486fa6
+  f6b845fbec82110e6977`; big files stay local (`/tmp/agxbusy/stage/`), small
+  receipts in `artifacts/AgxStatsM2Prep/20261005T0524Z-busy-utilization/`.
+  Mirror tests rewritten for the weighted producer (weighting, wall bound,
+  tick invariance) — PASS; bundle branch `fb8053b`.
+- Next-window protocol: the AgxBusySemantics report's steps 1-8 (S1 idle
+  fraction <= 0.05 expected ~0.01, S2 >= 0.9 expected ~1.0 with utils x4 at
+  100 + power >= 40 W + pstate 8 + jobs +>= 600, S3/S4 unchanged, LLM-phase
+  sanity count-not-gate, follow-up T6001 one-shot window; fraction > 1.05 =
+  faster-than-ns tick, record and add a per-chip constant, do not tune).
+
+---
+
 # Round 4 — readout layout fix (window B retry findings) and verified products
 
 ## What the retry measured and the root cause (proven, not inferred)
