@@ -81,10 +81,11 @@ this receipt carries the rig-independent procedure.
   pings a firmware-armed watchdog until userspace takes over; the root
   systemd then arms a 120 s hardware timeout with 60 s pings
   (`RuntimeWatchdogSec=120`). The module's own bound is `hang_delay_sec`
-  plus up to `wdt_timeout_sec + ping_interval_sec` (31-45 s at defaults);
-  it holds while no other keepalive producer pings faster than
-  `wdt_timeout_sec` (on the M2 rig: systemd's 60 s ping against the 30 s
-  module timeout).
+  plus up to `wdt_timeout_sec + ping_interval_sec` (31-45 s at defaults),
+  valid when the module is the only keepalive producer; every keepalive
+  write resets WD1, so another producer defers the reset by up to its own
+  ping interval (M2 rig: 60 s systemd ping + 30 s module timeout -> up to
+  90 s after the pings stop).
 - iBoot handover watchdog state is not known (recorded unknown; no sysfs
   status on these kernels).
 
@@ -99,7 +100,8 @@ this receipt carries the rig-independent procedure.
   the wedge 12:13:43Z, ssh loss, SoC reset, first message of the new boot
   12:15:48Z — 2 min 05 s is marker-to-first-boot-message; the WDT fire
   itself has no direct timestamp (the pre-reset log ends at the marker;
-  the module bound puts the bite <= 37 s after it, inside the ssh-loss
+  with the 60 s systemd producer the bite can land up to 90 s after it -
+  30 s timeout + one 60 s ping interval - inside the ssh-loss
   window) — then an UNATTENDED return on the stock DEFAULT entry
   with the one-shot consumed and the ESP `boot.bin` sha unchanged.
   Post-reset end state: ane_t6021 bound, failed units 0, smoke 20/20
@@ -121,12 +123,13 @@ marker entry), in this order:
    the armed line and the owner warning (systemd holds the device), then
    `rmmod` at +30 s; expect a clean unload line, prior timeout restored,
    box alive 140 s, no reset.
-2. Unload-during-hang: `insmod wdt_timeout_sec=30 hang_delay_sec=8`,
-   `rmmod` at ~T0+3 s; expect the spin to abort via `kthread_stop`, a
-   clean unload, no reset, box alive 140 s.
+2. Unload-during-hang: `insmod` (defaults); at ~T0+17 s, just AFTER the
+   emerg marker (T0+15 s), `rmmod`; expect the spin itself to abort via
+   `kthread_stop` (the pet loop has already ended), a clean unload with
+   the pre-insmod state restored, no reset, box alive 140 s.
 3. The real reset: `insmod` (defaults); expect the emerg marker at about
-   T0+15 s, unattended reset inside the module bound (<= 80 s worst case
-   with the 60 s systemd ping), return on the stock default entry,
+   T0+15 s, unattended reset within 90 s of the marker (30 s timeout +
+   up to the 60 s systemd ping interval), return on the stock default entry,
    one-shot consumed, ESP sha unchanged.
 4. DT-mode path (`mode=dt`), separate scheduled window (it drives the WDT
    window directly while the built-in apple_wdt also binds on the M2):

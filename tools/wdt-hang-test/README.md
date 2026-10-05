@@ -56,10 +56,12 @@ boot with a harmless cmdline marker where a one-shot is needed at all.
 | `mode` | auto | `core` (registered apple_wdt device) or `dt` (map the DT "apple,wdt" window directly) |
 
 Reset latency from `insmod`: `hang_delay_sec` + up to `wdt_timeout_sec +
-ping_interval_sec` (defaults: about 31-45 s). This bound holds only while
-no other keepalive producer pings the WDT faster than `wdt_timeout_sec`
-(measured on the M2 rig: systemd pings every 60 s against the 30 s module
-timeout, and the reset fired inside the bound).
+ping_interval_sec` (defaults: about 31-45 s) when this module is the only
+keepalive producer. Every keepalive write resets WD1's counter, so the
+bite fires `wdt_timeout_sec` after the LAST pet, whoever made it: another
+producer defers the reset by up to its own ping interval (measured M2
+rig: 60 s systemd ping + 30 s module timeout -> up to 90 s after the
+pings stop).
 
 ## Register access policy
 
@@ -75,7 +77,9 @@ lines 42-44 and 52). It never touches an address outside that window.
 A clean unload restores the pre-insmod hardware state. Core mode: if the
 watchdog was running before `insmod` (the normal case - systemd owns
 `/dev/watchdog0`), the previous timeout is written back and the watchdog
-keeps running; if it was stopped, it is stopped again. DT mode: the
+keeps running; if it was stopped, it is stopped again. DT mode: `WD1_CTRL`
+is cleared first (a live watchdog is never left armed while the prior
+`WD1_BITE_TIME` - often 0 in the fallback path - goes back), then the
 `WD1_BITE_TIME` and `WD1_CTRL` values read at arm time are written back.
 `disarm_on_unload=1` stops the hardware instead (core: `ops->stop`;
 DT: `WD1_CTRL` = 0) regardless of the prior state; use it only when no
@@ -83,11 +87,14 @@ other watchdog user exists.
 
 Second keepalive producers: on an SMP host the hang wedges one CPU, so a
 userspace owner of `/dev/watchdog0` (systemd with `RuntimeWatchdogSec`)
-keeps pinging from the other CPUs. The reset bound above holds only while
-its ping interval stays above `wdt_timeout_sec`; the module detects an
-existing owner at load and logs a warning naming this condition. It does
-not quiesce the owner (that would change machine state outside the test);
-check `RuntimeWatchdogSec` before a window.
+keeps pinging from the other CPUs. Each write resets WD1's counter: a
+producer pinging every I seconds defers the reset by up to I (worst case
+I + `wdt_timeout_sec`; 60 + 30 = 90 s on the measured M2 rig), and a
+producer with I < `wdt_timeout_sec` defeats the test - the counter never
+expires. The module detects an existing owner at load and logs a warning
+naming this condition. It does not quiesce the owner (that would change
+machine state outside the test); check `RuntimeWatchdogSec` before a
+window.
 
 The hang spin polls `kthread_stop`, so `rmmod` ends the test cleanly at
 any time (mid-hang included) and restores the pre-insmod state; during a

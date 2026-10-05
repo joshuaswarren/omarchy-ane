@@ -172,7 +172,15 @@ static void wdt_disarm_or_restore(void)
 		writel_relaxed(0, wdt.dt_base + APPLE_WDT_WD1_CTRL);
 		return;
 	}
-	/* Restore the exact pre-insmod WD1 state: bite first, then ctrl. */
+	/*
+	 * Restore the exact pre-insmod WD1 state, CTRL first: WD1_CTRL may
+	 * still hold the RESET_EN written by wdt_arm() and dt_prior_bite is
+	 * typically 0 in the fallback path (nothing has armed the WDT since
+	 * boot), so writing BITE_TIME into the still-armed watchdog would
+	 * program a zero-length bite on a live counter. CTRL = 0 stops it;
+	 * only then do the prior pair go back.
+	 */
+	writel_relaxed(0, wdt.dt_base + APPLE_WDT_WD1_CTRL);
 	writel_relaxed(wdt.dt_prior_bite,
 		       wdt.dt_base + APPLE_WDT_WD1_BITE_TIME);
 	writel_relaxed(wdt.dt_prior_ctrl, wdt.dt_base + APPLE_WDT_WD1_CTRL);
@@ -206,14 +214,20 @@ static int hang_thread(void *arg __always_unused)
 		return 0;
 
 	/*
-	 * Deliberate hard hang. The last pet was at most ping_interval_sec
-	 * ago, so the WDT fires within wdt_timeout_sec + ping_interval_sec,
-	 * provided no other keepalive producer pings faster than
-	 * wdt_timeout_sec. The spin polls kthread_stop, so an emergency
-	 * rmmod can always end the test cleanly; during a window nobody
-	 * unloads and the WDT reset is the expected end.
+	 * Deliberate hard hang. Every keepalive write resets WD1's counter,
+	 * so the bite fires wdt_timeout_sec after the last pet, whoever
+	 * made it. With no other producer the last pet was at most
+	 * ping_interval_sec ago: <= wdt_timeout_sec + ping_interval_sec.
+	 * Another producer (systemd) keeps resetting the counter after
+	 * these pings stop, deferring the reset by up to its own ping
+	 * interval -- worst case on the M2 rig (60 s ping, 30 s timeout):
+	 * 90 s. A producer pinging FASTER than wdt_timeout_sec defeats the
+	 * test entirely: the counter never expires. The spin polls
+	 * kthread_stop, so an emergency rmmod can always end the test
+	 * cleanly; during a window nobody unloads and the WDT reset is the
+	 * expected end.
 	 */
-	pr_emerg("hanging now on cpu %d: pings stopped, WDT reset expected in <= %us; with a one-shot boot selection the reset lands on the stock default entry\n",
+	pr_emerg("hanging now on cpu %d: pings stopped, WDT reset expected in <= %us with no other keepalive producer (another producer defers it by up to its own ping interval); with a one-shot boot selection the reset lands on the stock default entry\n",
 		 raw_smp_processor_id(), wdt_timeout_sec + ping_interval_sec);
 
 	local_irq_disable();
@@ -326,7 +340,7 @@ static int __init wdt_hang_test_init(void)
 		wdt.old_timeout = wdd->timeout;
 		wdt.old_running = watchdog_hw_running(wdd);
 		if (watchdog_active(wdd))
-			pr_warn("/dev/watchdog0 has a userspace owner: its keepalive interval must stay above wdt_timeout_sec (%us) or it defeats the hang test; measured on the M2 rig (systemd RuntimeWatchdogSec=120, 60 s ping, 30 s module timeout) the reset fired inside the module bound\n",
+			pr_warn("/dev/watchdog0 has a userspace owner: its keepalive interval must stay above wdt_timeout_sec (%us) or it defeats the hang test; a slower producer defers the reset by up to its own interval (M2 rig: 60 s systemd ping + 30 s timeout -> up to 90 s)\n",
 				wdt_timeout_sec);
 	}
 
