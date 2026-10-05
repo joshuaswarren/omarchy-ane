@@ -1,4 +1,1 @@
-== contract test
-PASS: struct mirror, producer keys, RO attr, format all consistent
-== busy_ns mirror test
-PASS: busy_ns mirror (first-skip, oOO-skip, monotonic, <= wall, weighted, tick-invariant)
+bash: run.sh: No such file or directory
