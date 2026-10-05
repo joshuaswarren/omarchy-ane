@@ -1865,6 +1865,8 @@ struct ane_rtclient_pd {
 static LIST_HEAD(ane_rtclient_pd_list);
 static DEFINE_MUTEX(ane_rtclient_pd_lock);
 static bool ane_rtclient_pinned;
+static bool ane_rtclient_probe_failed_dirty;
+static DEFINE_MUTEX(ane_rtclient_probe_guard_lock);
 
 static void ane_rtclient_pd_free(struct ane_rtclient_pd *pd)
 {
@@ -1949,6 +1951,36 @@ out:
 	return err;
 }
 
+static void ane_rtclient_detach_genpd(struct device *dev)
+{
+	struct ane_rtclient_pd *pd, *tmp;
+	int count, i;
+
+	count = of_count_phandle_with_args(dev->of_node, "power-domains",
+					   "#power-domain-cells");
+	if (count <= 1)
+		return;
+
+	mutex_lock(&ane_rtclient_pd_lock);
+	list_for_each_entry_safe(pd, tmp, &ane_rtclient_pd_list, list) {
+		if (pd->dev != dev)
+			continue;
+		for (i = count - 1; i >= 0; i--) {
+			if (pd->pd_link[i])
+				device_link_del(pd->pd_link[i]);
+			if (pd->pd_dev[i])
+				dev_pm_domain_detach(pd->pd_dev[i], true);
+		}
+		ane_rtclient_pd_free(pd);
+		if (list_empty(&ane_rtclient_pd_list) && ane_rtclient_pinned) {
+			module_put(THIS_MODULE);
+			ane_rtclient_pinned = false;
+		}
+		break;
+	}
+	mutex_unlock(&ane_rtclient_pd_lock);
+}
+
 /* debugfs ane_t6021/ane_pg_state (T602x, with stats=1): the seven ANE PS
  * words that trace_td checks, through the same non-posted map of pmu_pa
  * + ps_off, one "name value" line each (DT power-controller@4000..4030).
@@ -1995,7 +2027,8 @@ static ssize_t ane_stats_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(ane_stats);
 
-static int ane_rtclient_probe(struct platform_device *pdev)
+static int ane_rtclient_probe_inner(struct platform_device *pdev,
+				    bool *hardware_touched)
 {
 	struct device *dev = &pdev->dev;
 	struct resource *res, *eng;
@@ -2029,7 +2062,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		dev_err(dev, "legacy_query requires legacy_only=1\n");
 		return -EINVAL;
 	}
-
+	if (fw_start && ane_t6021_fwload_requested()) {
+		ret = ane_t6021_fwload_check(dev);
+		if (ret)
+			return dev_err_probe(dev, ret, "firmware preflight failed\n");
+	}
 	ane = devm_kzalloc(dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
 		return -ENOMEM;
@@ -2053,9 +2090,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return -ENODEV;
 	if (!(res->flags & IORESOURCE_MEM_NONPOSTED))
 		dev_warn(dev, "engine window is not flagged non-posted\n");
-	ane->engine = ioremap_np(res->start, resource_size(res));
-	if (!ane->engine)
-		return -ENOMEM;
+	ane->engine = devm_ioremap_resource(dev, res);
+	if (IS_ERR(ane->engine))
+		return dev_err_probe(dev, PTR_ERR(ane->engine),
+				     "engine window map failed\n");
 	ane->cpu_rst = devm_reset_control_get_optional_exclusive(dev, NULL);
 	if (IS_ERR(ane->cpu_rst))
 		return dev_err_probe(dev, PTR_ERR(ane->cpu_rst),
@@ -2065,13 +2103,16 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	*hardware_touched = true;
 	ret = ane_rtclient_attach_genpd(ane);
 	if (ret)
 		return dev_err_probe(dev, ret, "extra genpd attach\n");
 	pm_runtime_enable(dev);
 	ret = pm_runtime_resume_and_get(dev);
-	if (ret)
+	if (ret) {
+		pm_runtime_disable(dev);
 		return dev_err_probe(dev, ret, "genpd raise failed\n");
+	}
 
 	ane->pmgr = devm_of_iomap(dev, dev->of_node, 1, NULL);
 	if (IS_ERR(ane->pmgr)) {
@@ -2457,6 +2498,35 @@ err_pm_or_hold:
 	return ret;
 }
 
+static int ane_rtclient_probe(struct platform_device *pdev)
+{
+	bool hardware_touched = false;
+	int ret;
+
+	mutex_lock(&ane_rtclient_probe_guard_lock);
+	if (ane_rtclient_probe_failed_dirty) {
+		mutex_unlock(&ane_rtclient_probe_guard_lock);
+		dev_err(&pdev->dev,
+			"previous probe failed after touching the hardware: reboot required\n");
+		return -EBUSY;
+	}
+
+	ret = ane_rtclient_probe_inner(pdev, &hardware_touched);
+	if (ret) {
+		struct ane_rtclient *ane = platform_get_drvdata(pdev);
+
+		if (hardware_touched) {
+			ane_rtclient_probe_failed_dirty = true;
+			dev_err(&pdev->dev,
+				"probe failed after hardware access; reboot required before retry\n");
+		}
+		if (!ane || !ane->held)
+			ane_rtclient_detach_genpd(&pdev->dev);
+	}
+	mutex_unlock(&ane_rtclient_probe_guard_lock);
+	return ret;
+}
+
 static void ane_rtclient_remove(struct platform_device *pdev)
 {
 	struct ane_rtclient *ane = platform_get_drvdata(pdev);
@@ -2491,8 +2561,10 @@ static struct platform_driver ane_rtclient_driver = {
 
 static int __init ane_rtclient_init(void)
 {
-	int ret = platform_driver_register(&ane_rtclient_driver);
+	int ret;
 
+	WRITE_ONCE(ane_rtclient_probe_failed_dirty, false);
+	ret = platform_driver_register(&ane_rtclient_driver);
 	if (ret)
 		ane_t6021_trace_free();
 	return ret;

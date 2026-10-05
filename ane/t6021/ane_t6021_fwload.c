@@ -565,6 +565,37 @@ static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 	return 0;
 }
 
+int ane_t6021_fwload_check(struct device *dev)
+{
+	const struct ane_t602x_soc *soc = ane_t6021_soc_for(dev);
+	const struct ane_fw_image *img = soc->fw;
+	const char *fw_name = soc->fw_pin ? soc->fw_pin : img->name;
+	const struct firmware *fw = NULL;
+	struct ane_fw_seg segs[ANE_FW_NSEGS];
+	u64 entry = 0;
+	u8 actual_sha[32];
+	const char *reason = NULL;
+	int ret;
+
+	if (!fw_load)
+		return 0;
+	ret = request_firmware(&fw, fw_name, dev);
+	if (ret) {
+		dev_err(dev,
+			"fwload: request_firmware(%s): %d - stage the payload with omarchy-ane-firmware-fetch\n",
+			fw_name, ret);
+		return ret;
+	}
+
+	sha256(fw->data, fw->size, actual_sha);
+	ret = ane_fw_validate_blob(fw->data, fw->size, img, actual_sha,
+				   segs, &entry, &reason);
+	if (ret)
+		dev_err(dev, "fwload: validation failed: %s\n",
+			reason ? reason : "?");
+	release_firmware(fw);
+	return ret;
+}
 int ane_t6021_fwload_probe(struct ane_t6021 *ane)
 {
 	const struct ane_t602x_soc *soc = ane_t6021_soc_for(ane->dev);
