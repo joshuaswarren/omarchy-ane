@@ -594,6 +594,23 @@ module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
 		 "Microseconds to sleep after a CALL's finish event (default 0: the event marks the output in DRAM)");
 
+/* The finish-event wait polls the IO_T2H ring coherently, so poll
+ * cadence is the whole detection lag. The uniform 50-100 us sleep put
+ * 0-100 us of pure wait on every CALL (the measured add latency is
+ * bimodal, p10 ~0.21 ms vs median ~0.31 ms, receipts/2026-10-06-
+ * t6021-call-settle); the M1-family reference polls its TM event at a
+ * 1 us cadence (ane/src/ane_tm.c). call_poll_us is how long the head
+ * of the wait polls at that 1 us cadence before falling back to the
+ * 50-100 us sleep that keeps long programs (Parakeet encoder ~254 ms)
+ * from burning CPU on hrtimer wakeups. 0 restores the uniform
+ * 50-100 us cadence everywhere. Runtime (0644) so a busy box can
+ * trade the CPU cost against the per-call lag without a reload.
+ */
+static unsigned int call_poll_us = 1000;
+module_param(call_poll_us, uint, 0644);
+MODULE_PARM_DESC(call_poll_us,
+		 "Microseconds of 1-us-cadence polling at the head of the CALL finish-event wait, then 50-100 us (default 1000; 0 = uniform 50-100 us)");
+
 /* trace_td: a read-only timeline of each CALL for performance work. Off
  * by default; switch it at runtime with
  * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
@@ -877,6 +894,8 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 				  unsigned int timeout_ms)
 {
 	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	ktime_t tight_end = ktime_add_ns(ktime_get(),
+					 (u64)call_poll_us * NSEC_PER_USEC);
 
 	if (ane_t6021_tracing)
 		return ane_rtclient_call_wait_traced(ane, deadline);
@@ -884,7 +903,10 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 	do {
 		if (ane_rtclient_drain_t2h(ane, 6))
 			return 0;
-		usleep_range(50, 100);
+		if (call_poll_us && ktime_before(ktime_get(), tight_end))
+			usleep_range(1, 2);
+		else
+			usleep_range(50, 100);
 	} while (time_before(jiffies, deadline));
 	return ane_rtclient_drain_t2h(ane, 6) ? 0 : -ETIMEDOUT;
 }
