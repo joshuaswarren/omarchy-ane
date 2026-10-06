@@ -611,6 +611,25 @@ module_param(call_poll_us, uint, 0644);
 MODULE_PARM_DESC(call_poll_us,
 		 "Microseconds of 1-us-cadence polling at the head of the CALL finish-event wait, then 50-100 us (default 1000; 0 = uniform 50-100 us)");
 
+/* Optional bounded busy-spin at the very head of the same wait, ahead
+ * of call_poll_us's sleep polling. No IRQ exists on this path (the DT
+ * "ane" line is never fetched by this driver; starting the RTKit
+ * mailbox to get near it turns AIC2 884 into a ~700,000/s level
+ * storm, receipts/2026-09-30-t6021-stock-mailbox), so the ring can
+ * only be watched. Spinning removes the hrtimer wakeup from the
+ * detection path entirely: one call burns the spinning CPU for up to
+ * call_spin_us, and a continuous loop of short calls holds that core
+ * near 100% for the whole loop, while the 50-100 us fallback of the
+ * long-program tail stays unchanged (a 254 ms encoder call spins at
+ * most the first call_spin_us of its wait). 0 (default) never spins:
+ * the shipped arm is the call_poll_us sleep poll; the spin arm is a
+ * measured A/B choice, not the default.
+ */
+static unsigned int call_spin_us;
+module_param(call_spin_us, uint, 0644);
+MODULE_PARM_DESC(call_spin_us,
+		 "Microseconds of bounded busy-spin at the head of the CALL finish-event wait, before the call_poll_us sleep poll (default 0: never spin)");
+
 /* trace_td: a read-only timeline of each CALL for performance work. Off
  * by default; switch it at runtime with
  * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
@@ -894,7 +913,9 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 				  unsigned int timeout_ms)
 {
 	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
-	ktime_t tight_end = ktime_add_ns(ktime_get(),
+	ktime_t now = ktime_get();
+	ktime_t spin_end = ktime_add_ns(now, (u64)call_spin_us * NSEC_PER_USEC);
+	ktime_t tight_end = ktime_add_ns(now,
 					 (u64)call_poll_us * NSEC_PER_USEC);
 
 	if (ane_t6021_tracing)
@@ -903,7 +924,10 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 	do {
 		if (ane_rtclient_drain_t2h(ane, 6))
 			return 0;
-		if (call_poll_us && ktime_before(ktime_get(), tight_end))
+		now = ktime_get();
+		if (call_spin_us && ktime_before(now, spin_end))
+			udelay(1);
+		else if (call_poll_us && ktime_before(now, tight_end))
 			usleep_range(1, 2);
 		else
 			usleep_range(50, 100);
