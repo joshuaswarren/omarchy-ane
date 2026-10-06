@@ -7,9 +7,12 @@ ifneq ($(KERNELRELEASE),)
 	# DKMS sources carry no .git: dkms.conf passes ANE_VERSION instead.
 	ANE_VERSION ?= $(shell git -C $(src) describe --always --dirty 2>/dev/null || echo unknown)
 	ccflags-y += -DANE_T6021_MODULE_VERSION='"$(ANE_VERSION)"'
-	# The ABI-2 UAPI lives at ane/src/uapi/drm/ane_accel.h; the quoted
-	# include "uapi/drm/ane_accel.h" resolves through this path.
-	ccflags-y += -I$(src)/../src -I$(src)/../include
+	# The ABI-2 UAPI lives at ane/src/uapi/drm/ane_accel.h. A kernel
+	# header package can ship a different include/uapi/drm/ane_accel.h
+	# (linux-aurora-headers does), and kbuild searches the kernel -I
+	# dirs before ccflags -I, so -I alone lets that header shadow ours.
+	# -iquote is searched before every -I for quoted includes.
+	ccflags-y += -iquote $(src)/../src -I$(src)/../src -I$(src)/../include
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
  	PWD := $(shell pwd)
