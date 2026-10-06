@@ -1887,6 +1887,8 @@ struct ane_rtclient_pd {
 static LIST_HEAD(ane_rtclient_pd_list);
 static DEFINE_MUTEX(ane_rtclient_pd_lock);
 static bool ane_rtclient_pinned;
+static bool ane_rtclient_probe_failed_dirty;
+static DEFINE_MUTEX(ane_rtclient_probe_guard_lock);
 
 static void ane_rtclient_pd_free(struct ane_rtclient_pd *pd)
 {
@@ -1971,6 +1973,36 @@ out:
 	return err;
 }
 
+static void ane_rtclient_detach_genpd(struct device *dev)
+{
+	struct ane_rtclient_pd *pd, *tmp;
+	int count, i;
+
+	count = of_count_phandle_with_args(dev->of_node, "power-domains",
+					   "#power-domain-cells");
+	if (count <= 1)
+		return;
+
+	mutex_lock(&ane_rtclient_pd_lock);
+	list_for_each_entry_safe(pd, tmp, &ane_rtclient_pd_list, list) {
+		if (pd->dev != dev)
+			continue;
+		for (i = count - 1; i >= 0; i--) {
+			if (pd->pd_link[i])
+				device_link_del(pd->pd_link[i]);
+			if (pd->pd_dev[i])
+				dev_pm_domain_detach(pd->pd_dev[i], true);
+		}
+		ane_rtclient_pd_free(pd);
+		if (list_empty(&ane_rtclient_pd_list) && ane_rtclient_pinned) {
+			module_put(THIS_MODULE);
+			ane_rtclient_pinned = false;
+		}
+		break;
+	}
+	mutex_unlock(&ane_rtclient_pd_lock);
+}
+
 /* debugfs ane_t6021/ane_pg_state (T602x, with stats=1): the seven ANE PS
  * words that trace_td checks, through the same non-posted map of pmu_pa
  * + ps_off, one "name value" line each (DT power-controller@4000..4030).
@@ -2017,7 +2049,18 @@ static ssize_t ane_stats_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(ane_stats);
 
-static int ane_rtclient_probe(struct platform_device *pdev)
+/* The T602x engine window contains the ANE mailbox and IOMMU platform
+ * devices, so request_mem_region over the full window always conflicts
+ * with the already-inserted siblings (measured -EBUSY on a bound attempt).
+ * Map without claiming, like the in-tree add-path driver; the devm action
+ * keeps the unmap on the error and remove paths. */
+static void ane_engine_unmap(void *engine)
+{
+	iounmap(engine);
+}
+
+static int ane_rtclient_probe_inner(struct platform_device *pdev,
+				    bool *hardware_touched)
 {
 	struct device *dev = &pdev->dev;
 	struct resource *res, *eng;
@@ -2051,7 +2094,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		dev_err(dev, "legacy_query requires legacy_only=1\n");
 		return -EINVAL;
 	}
-
+	if (fw_start && ane_t6021_fwload_requested()) {
+		ret = ane_t6021_fwload_check(dev);
+		if (ret)
+			return dev_err_probe(dev, ret, "firmware preflight failed\n");
+	}
 	ane = devm_kzalloc(dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
 		return -ENOMEM;
@@ -2077,7 +2124,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		dev_warn(dev, "engine window is not flagged non-posted\n");
 	ane->engine = ioremap_np(res->start, resource_size(res));
 	if (!ane->engine)
-		return -ENOMEM;
+		return dev_err_probe(dev, -ENOMEM,
+				     "engine window map failed\n");
+	ret = devm_add_action_or_reset(dev, ane_engine_unmap, ane->engine);
+	if (ret)
+		return ret;
 	ane->cpu_rst = devm_reset_control_get_optional_exclusive(dev, NULL);
 	if (IS_ERR(ane->cpu_rst))
 		return dev_err_probe(dev, PTR_ERR(ane->cpu_rst),
@@ -2092,8 +2143,10 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, ret, "extra genpd attach\n");
 	pm_runtime_enable(dev);
 	ret = pm_runtime_resume_and_get(dev);
-	if (ret)
+	if (ret) {
+		pm_runtime_disable(dev);
 		return dev_err_probe(dev, ret, "genpd raise failed\n");
+	}
 
 	ane->pmgr = devm_of_iomap(dev, dev->of_node, 1, NULL);
 	if (IS_ERR(ane->pmgr)) {
@@ -2172,6 +2225,11 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 		a->power_gated = true;
 		ane->fw = a;
 
+		/* From here the probe writes the engine and stages the
+		 * firmware: a failure is no longer fully unwound. Every
+		 * earlier exit only reads registers and releases what it took,
+		 * so a deferred retry stays safe. */
+		*hardware_touched = true;
 		dev_dbg(dev, "BOOT-PHASE fwload stage+alias begin\n");
 		ret = ane_t6021_fwload_probe(a);
 		if (ret) {
@@ -2217,6 +2275,7 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 			return 0;
 		}
 	}
+	*hardware_touched = true;
 
 	if (legacy_only) {
 		int cfg_err = 0;
@@ -2476,6 +2535,38 @@ err_pm_or_hold:
 		pm_runtime_put_sync_suspend(dev);
 		pm_runtime_disable(dev);
 	}
+	return ret;
+}
+
+static int ane_rtclient_probe(struct platform_device *pdev)
+{
+	bool hardware_touched = false;
+	int ret;
+
+	mutex_lock(&ane_rtclient_probe_guard_lock);
+	if (ane_rtclient_probe_failed_dirty) {
+		mutex_unlock(&ane_rtclient_probe_guard_lock);
+		dev_err(&pdev->dev,
+			"previous probe failed after touching the hardware: reboot required\n");
+		return -EBUSY;
+	}
+
+	ret = ane_rtclient_probe_inner(pdev, &hardware_touched);
+	if (ret) {
+		struct ane_rtclient *ane = platform_get_drvdata(pdev);
+
+		if (hardware_touched) {
+			ane_rtclient_probe_failed_dirty = true;
+			/* Never released: rmmod and a fresh module_init would
+			 * clear the flag and allow the unsafe same-boot retry. */
+			__module_get(THIS_MODULE);
+			dev_err(&pdev->dev,
+				"probe failed after hardware access; reboot required before retry\n");
+		}
+		if (!ane || !ane->held)
+			ane_rtclient_detach_genpd(&pdev->dev);
+	}
+	mutex_unlock(&ane_rtclient_probe_guard_lock);
 	return ret;
 }
 
