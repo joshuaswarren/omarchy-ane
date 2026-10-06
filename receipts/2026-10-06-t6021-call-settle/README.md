@@ -86,11 +86,47 @@ a reboot.
   program 20 deadlocked until the per-run timeout; the attempt was
   stopped and wrote no program 20 output. Its add timing matched the
   second attempt (1.478-1.479 ms).
-- A module built from this branch for the 11.36 headers on the M2 links
-  cleanly: sha256 `01626f2d`, vermagic `7.1.12-2-11.36-sep-ARCH SMP preempt
-  mod_unload aarch64`, no `call_settle_us` parameter. The out-of-tree build
-  needs `KCFLAGS="-iquote <tree>/ane/src"`, because the aurora headers ship
-  their own `uapi/drm/ane_accel.h`. It has not been loaded.
+
+## Staged on the M2 for the 10:40Z reboot (not loaded)
+
+02:23Z, jw14m2 boot `772d212d`, no reboot, the running module untouched
+(`call_settle_us` reads 1000):
+
+- Built from the `ane/` tree of `a43639a` against the M2's own headers:
+  `make ANE_VERSION=a43639a KCFLAGS="-iquote <tree>/ane/src"` (the aurora
+  headers ship their own `uapi/drm/ane_accel.h`, which kbuild would find
+  first). No warnings. `ane_t6021.ko` sha256 `7f15b4a8f259eae6...`, vermagic
+  `7.1.12-2-11.36-sep-ARCH SMP preempt mod_unload aarch64` = `uname -r`,
+  version `a43639a`, `call_settle_us` present (default 0), the same four
+  `apple,{t6020,t6021,t6022,t8112}-ane` aliases as the in-tree module.
+- Backup of the in-tree module: `/var/tmp/keep-ane/settle/backup/ane_t6021-intree-8ca4e257.ko`
+  (sha256 `8ca4e257...`, equal to `kernel/drivers/accel/ane/ane_t6021.ko`,
+  which stays in place).
+- `sudo install -D -m 0644 ane_t6021.ko /lib/modules/$(uname -r)/updates/ane_t6021.ko`,
+  `sudo depmod -a -e -E /lib/modules/$(uname -r)/build/Module.symvers` (no
+  unresolved symbols), `sync`. `modinfo -n ane_t6021` now resolves to
+  `updates/ane_t6021.ko` (depmod search order: updates, extramodules,
+  built-in). The initramfs (`/boot/initramfs-linux-aurora.img`) holds no
+  ane module, so the next boot loads the staged file from the root.
+
+Revert, before or after the reboot:
+
+```sh
+sudo rm /lib/modules/$(uname -r)/updates/ane_t6021.ko
+sudo depmod -a && sync
+modinfo -n ane_t6021   # .../kernel/drivers/accel/ane/ane_t6021.ko, sha256 8ca4e257
+```
+
+The running module never unloads, so a revert takes effect at the next
+boot. Never rmmod or insmod `ane_t6021`.
+
+After the reboot, check before any other ANE work:
+`modinfo -F version ane_t6021` is `a43639a`;
+`/sys/module/ane_t6021/parameters/call_settle_us` is `0`; dmesg shows the
+usual boot chain and no `EXCH`, quarantine or DART fault line; then the
+gates (`gates-1136.sh`: add, mul, matvec, islands, encoder `fca96f13`) and
+the `after.sh` checks. `after.sh` restores 1000 when it exits; on the new
+module change that restore to 0 first.
 
 ## Limits
 
@@ -98,7 +134,7 @@ a reboot.
   have not recurred, so this run cannot show what such a boot does without
   the settle.
 - The after numbers come from the in-tree module with the parameter at 0,
-  not from a build of this branch.
+  not from a build of this branch; that build runs from the 10:40Z boot.
 - The add latency is bimodal (p10 about 0.21 ms, median about 0.31 ms).
   The finish-event poll sleeps 50-100 us per turn, so part of each call is
   poll granularity. It was not changed.
