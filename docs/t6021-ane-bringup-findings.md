@@ -1310,6 +1310,15 @@ Record: [receipts/2026-09-30-t6021-call-wait](../receipts/2026-09-30-t6021-call-
   no TM or pmgr register.
 - Program 20 then matches the M1 golden with one call: relative L2
   0.00117, 50 of 50 runs identical.
+- The finish event is also the output-landed signal. With no sleep after
+  it, 6000 add calls with new inputs per call each read their own result
+  right after the ioctl returned, program 20 (10 one-call processes) and
+  the Parakeet encoder stayed bit-identical, and dmesg stayed clean. The
+  1 ms post-call settle (`call_settle_us`) was the whole fixed cost: H14
+  add went from 1.478 to 0.308-0.319 ms median per call, the ledger ANE
+  cell from 674 to 3,206 jobs/s (boot `772d212d`, aurora 11.36).
+  `call_settle_us` now defaults to 0
+  ([receipts/2026-10-06-t6021-call-settle](../receipts/2026-10-06-t6021-call-settle/README.md)).
 
 ## 23. Qwen per-program conformance against the M1 (2026-10-01)
 
