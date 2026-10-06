@@ -2027,6 +2027,16 @@ static ssize_t ane_stats_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(ane_stats);
 
+/* The T602x engine window contains the ANE mailbox and IOMMU platform
+ * devices, so request_mem_region over the full window always conflicts
+ * with the already-inserted siblings (measured -EBUSY on a bound attempt).
+ * Map without claiming, like the in-tree add-path driver; the devm action
+ * keeps the unmap on the error and remove paths. */
+static void ane_engine_unmap(void *engine)
+{
+	iounmap(engine);
+}
+
 static int ane_rtclient_probe_inner(struct platform_device *pdev,
 				    bool *hardware_touched)
 {
@@ -2090,10 +2100,13 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 		return -ENODEV;
 	if (!(res->flags & IORESOURCE_MEM_NONPOSTED))
 		dev_warn(dev, "engine window is not flagged non-posted\n");
-	ane->engine = devm_ioremap_resource(dev, res);
-	if (IS_ERR(ane->engine))
-		return dev_err_probe(dev, PTR_ERR(ane->engine),
+	ane->engine = ioremap_np(res->start, resource_size(res));
+	if (!ane->engine)
+		return dev_err_probe(dev, -ENOMEM,
 				     "engine window map failed\n");
+	ret = devm_add_action_or_reset(dev, ane_engine_unmap, ane->engine);
+	if (ret)
+		return ret;
 	ane->cpu_rst = devm_reset_control_get_optional_exclusive(dev, NULL);
 	if (IS_ERR(ane->cpu_rst))
 		return dev_err_probe(dev, PTR_ERR(ane->cpu_rst),
