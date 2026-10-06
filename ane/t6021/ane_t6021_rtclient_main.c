@@ -2116,7 +2116,6 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 	if (ret)
 		return ret;
 
-	*hardware_touched = true;
 	ret = ane_rtclient_attach_genpd(ane);
 	if (ret)
 		return dev_err_probe(dev, ret, "extra genpd attach\n");
@@ -2204,6 +2203,11 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 		a->power_gated = true;
 		ane->fw = a;
 
+		/* From here the probe writes the engine and stages the
+		 * firmware: a failure is no longer fully unwound. Every
+		 * earlier exit only reads registers and releases what it took,
+		 * so a deferred retry stays safe. */
+		*hardware_touched = true;
 		dev_dbg(dev, "BOOT-PHASE fwload stage+alias begin\n");
 		ret = ane_t6021_fwload_probe(a);
 		if (ret) {
@@ -2249,6 +2253,7 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 			return 0;
 		}
 	}
+	*hardware_touched = true;
 
 	if (legacy_only) {
 		int cfg_err = 0;
@@ -2530,6 +2535,9 @@ static int ane_rtclient_probe(struct platform_device *pdev)
 
 		if (hardware_touched) {
 			ane_rtclient_probe_failed_dirty = true;
+			/* Never released: rmmod and a fresh module_init would
+			 * clear the flag and allow the unsafe same-boot retry. */
+			__module_get(THIS_MODULE);
 			dev_err(&pdev->dev,
 				"probe failed after hardware access; reboot required before retry\n");
 		}
@@ -2574,10 +2582,8 @@ static struct platform_driver ane_rtclient_driver = {
 
 static int __init ane_rtclient_init(void)
 {
-	int ret;
+	int ret = platform_driver_register(&ane_rtclient_driver);
 
-	WRITE_ONCE(ane_rtclient_probe_failed_dirty, false);
-	ret = platform_driver_register(&ane_rtclient_driver);
 	if (ret)
 		ane_t6021_trace_free();
 	return ret;
