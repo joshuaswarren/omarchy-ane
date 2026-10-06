@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## 0.4.6 (2026-10-06)
+
+This release makes each H14 (T6021, M2 Max) CALL faster and adds the first
+Ultra (two-die) plumbing. The CALL change is in `ane/t6021` only. On one
+M2 Max boot (aurora 11.38) with the same sampler, the ledger ANE cell goes
+from 2,932.5 to 3,348.0 jobs/s (+14.1 %) and the add median from 0.359 to
+0.257 ms with `call_poll_us=1000` on top of `call_settle_us=0`. The Ultra
+change also touches `ane.ko` and libane (see its entry). The M1 and M2
+drivers keep ABI 1 and ABI 2. The earlier removal of the 1,000 us settle
+(about 674 to about 3,206 jobs/s on the aurora 11.36 install, the
+`call_settle_us` entry below) did not reproduce its absolute figure on
+11.38: the same configuration measured 2,933 there. Quote the paired
+numbers from one boot.
+
+- `ane_t6021`: the CALL finish-event wait polls at a 1 us cadence for the
+  first `call_poll_us` microseconds (default 1000), then falls back to the
+  50-100 us sleep, so the 254 ms encoder does not spend its wait on timer
+  wakeups. `call_poll_us=0` restores the old cadence at run time. A 300 us
+  busy-spin head added +0.4 % for about one core and is not included.
+  Receipt: `receipts/2026-10-06-t6021-call-poll/README.md`.
+
+- Ultra die-1 plumbing (#120, static: no T6002 or T6022 hardware run).
+  `ane.ko` takes the SET base from the node's set `reg` window and
+  qualifies (compatible, SET base) pairs through a die-keyed table; T6002
+  die 1 is recognized behind `allow_unqualified`, and an unknown base
+  refuses. `ane.ko` names its stats debugfs directory per device, and die 0
+  keeps the legacy name. `ane_t6021` keys the T6022 per-die data on the same
+  window. `omarchy-ane-firmware-fetch` refuses on a die-1 node (no pin).
+  New opt-in overlays `t6002-ane-die1` and `t6022-ane-die1`. libane:
+  `ane_m2_init_ports()` takes a new `dev_id` argument, and `ane-run` gains
+  `--dev` / `ANE_DEVICE`. Callers of `ane_m2_init_ports()` must pass the
+  device id (0 for the first accel node).
+
+- `ane_t6021`: the Makefile searches `ane/src` with `-iquote`, so a kernel
+  header package that ships its own `include/uapi/drm/ane_accel.h`
+  (linux-aurora-headers does) no longer shadows the in-tree UAPI header.
+  Before the fix the out-of-tree `ane_t6021` build failed on stock aurora
+  11.36 headers with `ANE_M2_MAX_BINDS` and `ANE_ABI_M2_MAJOR` undeclared.
+  The M1-family module was not affected (#132).
+
 - `ane_t6021`: a CALL returns on the firmware's IO_T2H finish event with
   no fixed sleep after it. `call_settle_us` now defaults to 0 (was 1000
   us per call): the finish event already marks the output in DRAM. H14
