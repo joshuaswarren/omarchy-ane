@@ -585,16 +585,14 @@ out:
 	return result;
 }
 
-/* Time to let the output writes land after the completion signal.
- * Measured 2026-09-29 on some boots: the fw ack, the TD counter and the
- * TQ words all report done ~0.13 ms before the output reaches DRAM (the
- * output read as zeros in about 1 of 5 calls). The finish event arrives
- * at the same time for short programs. No signal for "output landed" is
- * known, so the wait is a fixed margin of about 8x the lag. */
-static unsigned int call_settle_us = 1000;
+/* Extra sleep after a CALL's finish event. 0 by default: the finish event
+ * already marks the output in DRAM (ane_rtclient_call_wait). The 1 ms
+ * default it replaces dated from a wait on dispatch signals; set it only
+ * to test a suspected late output write. */
+static unsigned int call_settle_us;
 module_param(call_settle_us, uint, 0644);
 MODULE_PARM_DESC(call_settle_us,
-		 "Microseconds to wait after a CALL completes so its output lands (default 1000, 0 = none)");
+		 "Microseconds to sleep after a CALL's finish event (default 0: the event marks the output in DRAM)");
 
 /* trace_td: a read-only timeline of each CALL for performance work. Off
  * by default; switch it at runtime with
@@ -869,8 +867,12 @@ static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
  * been dispatched, not when it has run: measured 2026-09-30, Qwen program
  * 20 (20 tasks) showed its last task index 0.22 ms after the ack, posted
  * its finish event 3.5 ms after the ack, and a caller that returned at
- * the first signal read an all-zero output. Returns 0 when the event
- * arrived, -ETIMEDOUT else. */
+ * the first signal read an all-zero output. The finish event is also the
+ * output-landed signal, so call_settle_us defaults to 0: measured 2026-10-06,
+ * 6000 add calls with new inputs per call each read their own result
+ * right after the event, and program 20 and the Parakeet encoder stayed
+ * bit-identical (receipts/2026-10-06-t6021-call-settle). Returns 0 when
+ * the event arrived, -ETIMEDOUT else. */
 static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 				  unsigned int timeout_ms)
 {
@@ -951,8 +953,9 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 						   stats_ticket,
 						   ktime_get_ns(),
 						   (uint32_t)ret, 0ull);
-			dev_info(ane->dev, "call completion wait failed %d\n",
-				 ret);
+			dev_err(ane->dev,
+				"call completion wait failed %d: no finish event in %u ms\n",
+				ret, timeout_ms);
 			atomic_set(&ane_t6021_quarantined, 1);
 			return ret;
 		}

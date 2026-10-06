@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `ane_t6021`: a CALL returns on the firmware's IO_T2H finish event with
+  no fixed sleep after it. `call_settle_us` now defaults to 0 (was 1000
+  us per call): the finish event already marks the output in DRAM. H14
+  add on the M2 Max drops from 1.478 to about 0.31 ms per call. A
+  completion timeout now logs at error level and quarantines as before.
+  Receipt: `receipts/2026-10-06-t6021-call-settle/README.md`.
+
 - `tools/wdt-hang-test`: an out-of-tree test module that arms the Apple SoC
   watchdog (WD1) through the kernel-registered `apple_wdt` device (DT-window
   fallback only), pets it from a kernel thread, then hangs the CPU with

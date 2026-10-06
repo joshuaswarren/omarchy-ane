@@ -162,9 +162,13 @@ Not proven:
   2048, so the program does not qualify for a model run (receipt
   [2026-09-30-t6021-island-select-rms](../../receipts/2026-09-30-t6021-island-select-rms/README.md)).
 - An explanation for the intermittent all-zero output seen on three
-  boots (about 1 call in 5 on those boots). The 1 ms post-call
-  settle is the mitigation. On the finish-event wait, 5000 single add
-  processes gave 0 all-zero outputs; the failing boots have not recurred.
+  boots in 2026-09 (about 1 call in 5 on those boots). The CALL wait
+  then returned at dispatch, before the finish event existed in the
+  driver. On the finish-event wait with no post-call sleep, 6000 add
+  calls with new inputs per call read their own result right after the
+  ioctl returned
+  ([2026-10-06-t6021-call-settle](../../receipts/2026-10-06-t6021-call-settle/README.md));
+  the failing boots have not recurred.
 - A bit-exact model of the C pv accumulator. It is fp32-class, but
   no tested model reproduces it; the strict per-lane bound fails on
   1.3 to 52.4 percent of lanes per layer and the deviation does not
@@ -248,6 +252,7 @@ bisection only.
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
 | `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
 | `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
+| `call_settle_us` | `0` | rtclient | Runtime (0644). Microseconds to sleep after a CALL's finish event. The event already marks the output in DRAM (receipts/2026-10-06-t6021-call-settle); a nonzero value only tests a suspected late output write. Was 1000 before 2026-10-06. |
 | `trace_td` | `0` | rtclient | Runtime switch (0644). 1 records a read-only timeline of each CALL (ack, each new value of the last-taken-TD word, the IO_T2H events, the finish) in debugfs `ane_t6021/trace_td`; each switch to 1 empties it. The TD word is read only while the ANE pmgr PS words read 0x3ff, and never with `dyn_pg=1`. 0 leaves the CALL path unchanged. |
 | `dyn_pg` | `0` | rtclient | Lab, selene 13.5 (T602x) only; probe refuses it on other SoCs. 1 sends `SET_DYNAMIC_POWERGATE` (0x2d) = 1 once after CONFIG_GET, so the firmware turns the compute islands (td, base, set1-4) off between jobs. The driver keeps its runtime-PM reference. Unproven on hardware: see receipts/2026-10-03-t6021-dynpg. |
 

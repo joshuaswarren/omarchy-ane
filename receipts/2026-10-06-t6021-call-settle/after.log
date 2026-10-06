@@ -1,0 +1,118 @@
+2026-10-06T02:10:46Z
+7.1.12-2-11.36-sep-ARCH
+boot_id 772d212d-5172-4a08-b5de-7fcfb5fe7264
+8ca4e25791f94009647584cbbec1acecedebc92b986fe4ef2a1023b1cedc789b  /lib/modules/7.1.12-2-11.36-sep-ARCH/kernel/drivers/accel/ane/ane_t6021.ko
+943ae8c67598175a542f9a2c370852d60ba9a810cb1e8db11fed92efc2daf2e1  /var/tmp/keep-ane/libane-fix/tree/tools/ane-run
+2bc06ff789972cfc191ca44bde9b0c04c16d672519de947706f8faadc63d659e  /var/tmp/keep-ane/settle/landing
+call_settle_us 1000
+trace_td N
+stats Y
+fw_perf_mode N
+bo_total_bytes 596246528
+ 21:10:46 up  4:54,  2 users,  load average: 0.05, 0.16, 0.25
+some avg10=0.00 avg60=0.00 avg300=0.00 total=24419312
+/dev/nvme0n1p6  234G  224G  8.2G  97% /
+busy_ns 81978220529
+jobs 52225
+call_settle_us 0
+calls 5000 mismatched 0 stale 0 all-zero 0
+exec ms: min 0.206 median 0.320 p90 0.418 p99 0.426 max 0.775
+landing 50 processes x 20 calls: 0 failed
+calls 20 mismatched 0 stale 0 all-zero 0
+exec ms: min 0.307 median 0.358 p90 0.410 p99 0.464 max 0.464
+exec ms over 200 calls: min 0.209 p10 0.214 p25 0.275 median 0.319 p75 0.324 p90 0.370 p99 0.421 max 0.430
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.208 p10 0.214 p25 0.282 median 0.314 p75 0.321 p90 0.366 p99 0.422 max 0.555
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.206 p10 0.257 p25 0.308 median 0.310 p75 0.313 p90 0.360 p99 0.430 max 0.433
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.208 p10 0.220 p25 0.310 median 0.315 p75 0.361 p90 0.366 p99 0.452 max 0.473
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.205 p10 0.256 p25 0.306 median 0.308 p75 0.313 p90 0.359 p99 0.412 max 0.459
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.207 p10 0.212 p25 0.260 median 0.311 p75 0.314 p90 0.362 p99 0.426 max 0.465
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+exec ms over 200 calls: min 0.207 p10 0.255 p25 0.309 median 0.312 p75 0.314 p90 0.363 p99 0.400 max 0.467
+512/512 lanes bit-exact vs the add reference, padding lanes zero: PASS
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.798 p10 3.798 p25 3.798 median 3.798 p75 3.798 p90 3.798 p99 3.798 max 3.798
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.779 p10 3.779 p25 3.779 median 3.779 p75 3.779 p90 3.779 p99 3.779 max 3.779
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.760 p10 3.760 p25 3.760 median 3.760 p75 3.760 p90 3.760 p99 3.760 max 3.760
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.752 p10 3.752 p25 3.752 median 3.752 p75 3.752 p90 3.752 p99 3.752 max 3.752
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.715 p10 3.715 p25 3.715 median 3.715 p75 3.715 p90 3.715 p99 3.715 max 3.715
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.772 p10 3.772 p25 3.772 median 3.772 p75 3.772 p90 3.772 p99 3.772 max 3.772
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.712 p10 3.712 p25 3.712 median 3.712 p75 3.712 p90 3.712 p99 3.712 max 3.712
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.782 p10 3.782 p25 3.782 median 3.782 p75 3.782 p90 3.782 p99 3.782 max 3.782
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.710 p10 3.710 p25 3.710 median 3.710 p75 3.710 p90 3.710 p99 3.710 max 3.710
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+WARNING unresolved port identity: {'direction': 'input', 'shape': [1, 1, 16, 128], 'strides': [4096, 4096, 256, 2], 'ports': ['t0', 't2'], 'bar_slots': [4, 6], 'reason': 'same direction, shape and strides, so neither the tensor descriptors nor the task DMA tell these slots apart; only the LC 0x40 name at each IOVA assigns a name to a slot', 'discriminator': 'run A binds the golden inputs by name; run B swaps the files of t0 and t2. A predicts rel L2 <= 0.02 on every output, B predicts more unless the graph is symmetric in the two (check with the fp16 MIL re-evaluation of the swap first)', 'resolved_by': 'Prog20Map: the run that left slot 4 on the zeroed output buffer matched the fp16 MIL graph with t0 := 0 (rel L2 0.0122), so slot 4 is t0 (receipts/2026-09-30-t6021-qwen-chain/prog20-port-binding.md)'}
+exec ms over 1 calls: min 3.729 p10 3.729 p25 3.729 median 3.729 p75 3.729 p90 3.729 p99 3.729 max 3.729
+t15 golden max_abs=0.0007324219 relL2=0.001174227 exact=0.172852
+exec ms over 20 calls: min 253.291 p10 253.339 p25 253.381 median 253.438 p75 253.457 p90 253.507 p99 253.523 max 253.523
+encoder golden fp16 fca96f13 bit-exact: True sha256 fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-1.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-2.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-3.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-4.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-5.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-6.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/before/y-7.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-1.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-2.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-3.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-4.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-5.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-6.f16
+1262ed81505f1292c6c2de3c8a84b2904d4bb7975fd9107d898c559e427e2b98  /var/tmp/keep-ane/settle/after/y-7.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/before/prog20-1.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/before/prog20-2.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/before/prog20-3.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/before/prog20-4.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/before/prog20-5.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-1.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-10.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-2.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-3.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-4.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-5.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-6.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-7.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-8.f16
+b58be2a427b9fcc1345c0cf92af5683dfccd10d606dc5714c73778f06c7846ab  /var/tmp/keep-ane/settle/after/prog20-9.f16
+distinct add outputs, before+after: 1
+distinct prog20 outputs, before+after: 1
+restored call_settle_us 1000
+2026-10-06T02:10:56Z
+7.1.12-2-11.36-sep-ARCH
+boot_id 772d212d-5172-4a08-b5de-7fcfb5fe7264
+8ca4e25791f94009647584cbbec1acecedebc92b986fe4ef2a1023b1cedc789b  /lib/modules/7.1.12-2-11.36-sep-ARCH/kernel/drivers/accel/ane/ane_t6021.ko
+943ae8c67598175a542f9a2c370852d60ba9a810cb1e8db11fed92efc2daf2e1  /var/tmp/keep-ane/libane-fix/tree/tools/ane-run
+2bc06ff789972cfc191ca44bde9b0c04c16d672519de947706f8faadc63d659e  /var/tmp/keep-ane/settle/landing
+call_settle_us 1000
+trace_td N
+stats Y
+fw_perf_mode N
+bo_total_bytes 596377600
+ 21:10:56 up  4:54,  2 users,  load average: 1.07, 0.37, 0.32
+some avg10=0.00 avg60=0.00 avg300=0.00 total=24452048
+/dev/nvme0n1p6  234G  224G  8.2G  97% /
+busy_ns 89370773537
+jobs 59655
+AFTER_DONE
+restored call_settle_us 1000
