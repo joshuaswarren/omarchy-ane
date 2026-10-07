@@ -58,6 +58,26 @@ compiles `ane_h15_adt_test.c` (the pure ADT walker in
 `ane_h15_adt.h`) and runs it on a hand-built IODeviceTree-shaped
 blob.
 
+The userspace sim (no kernel build, no hardware; the PMP vehicle
+harness pattern):
+
+    make -C ane/h15 sim-test
+
+compiles the real module sources against `sim/shim.h` and asserts
+the stage behavior: stage=0 does zero MMIO, stage=1 passes the
+ACTUAL=0xf gate and reads only pmgr words, stages 2 and 3 refuse,
+and the stage=3 refusal enumerates exactly the unfilled rows of
+the fact table. The named negative controls each exit 0 only when
+the module fails the induced fault correctly:
+
+    make -C ane/h15 sim-negative-ps-stuck       # ANE_CPU word stuck at 0x30
+    make -C ane/h15 sim-negative-wrong-stage    # unknown stage, wrong optin
+    make -C ane/h15 sim-negative-truncated-dt   # reg property missing
+    make -C ane/h15 sim-negative-nopsguard      # a guard-deleted build must fail
+
+A sim is not silicon: a green sim proves control flow and gate
+logic in the module code, not any M3 hardware behavior.
+
 ## Device tree (one overlay per SoC)
 
 `ane/h15/t8122-ane-experimental.dts`,
