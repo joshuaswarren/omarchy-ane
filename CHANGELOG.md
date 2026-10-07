@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `tools`: batched-add packages for lever R-A. `build_add_batch.py` turns
+  the proven single-add H14 fixture into an N-task program (N in
+  {1,2,4,8,16,32}) where task i reads its input planes at offset
+  i*0x8000 in channels 5/6 and writes channel 4 at the same offset, so
+  one CALL runs N independent adds; N=1 is byte-identical to the source
+  fixture. `check_add_batch.py` is the offline sim test (header, task
+  walk, ref union {4:5, 5:4, 6:6}, per-task offsets, fp16 half-away
+  reference, self-test with three refused corruptions),
+  `batch_build_check.c` proves the shipped ane_m2_program_build()
+  accepts every package, and `batch_landing_check.py` is the per-call
+  bit-exact landing gate for the device run. Fixtures under
+  `fixtures/h14-anec/add-batch-N/`. The mil-hwx-compiler H14 backend
+  cannot emit this form (per-op compiles one program per operation;
+  chain fuses exactly two ops; composePrograms refuses multi-program
+  relinks), which is why the hand-built route exists. No device has run
+  these packages yet.
+
 ## 0.4.6 (2026-10-06)
 
 This release makes each H14 (T6021, M2 Max) CALL faster and adds the first

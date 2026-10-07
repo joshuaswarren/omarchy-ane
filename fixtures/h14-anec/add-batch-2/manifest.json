@@ -1,0 +1,41 @@
+{
+  "bar_refs": [
+    {
+      "channel": 5,
+      "reg": 4368,
+      "slot": 4
+    },
+    {
+      "channel": 6,
+      "reg": 4392,
+      "slot": 6
+    },
+    {
+      "channel": 4,
+      "reg": 5384,
+      "slot": 5
+    }
+  ],
+  "io_channels": {
+    "in_a": 5,
+    "in_b": 6,
+    "out": 4
+  },
+  "n": 2,
+  "per_task_offsets": [
+    0,
+    32768
+  ],
+  "risk": "no Apple oracle carries N independent same-op tasks; task_id and inter-task dependency words are unresolved (docs/ane/task-descriptors.md open questions)",
+  "schema": "omarchy-ane.add-batch.v1",
+  "source": "fixtures/h14-anec/add/program-0.anec",
+  "source_sha256": "b416b9d14059a0918f6b05bfcf4a8ba982dd92e7b25f2b042c1a15f1ab2a439a",
+  "stacked_bytes": 65536,
+  "surface_bytes": 32768,
+  "task_ids": [
+    0,
+    1
+  ],
+  "task_stride_bytes": 256,
+  "task_words": 61
+}
