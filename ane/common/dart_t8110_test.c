@@ -292,6 +292,41 @@ int main(void)
 	d = diff_words(exp_leaf, (u64 *)(unsigned long)leaf_pa, 2048);
 	check(d > 0, "N5-corruption-caught", "one flipped bit detected");
 
+	/* N6: cfg_init refusals. The 4-level -ERANGE row guards the
+	 * walk-level derivation: dropping the levels > 3 check must
+	 * fail this suite (mutation-tested). Boundaries: a window with
+	 * top 2^47-1 is the largest 3-level shape (33 va bits, 11 per
+	 * level), top 2^48-1 needs 4.
+	 */
+	{
+		struct dart8_cfg cn;
+
+		check(dart8_cfg_init(&cn, 0, 1ULL << 47, sids, 4, talloc,
+				     tfree) == 0,
+		      "N6-max-3level", "top 2^47-1 still 3 levels");
+		check(dart8_cfg_init(&cn, 0, 1ULL << 48, sids, 4, talloc,
+				     tfree) == -ERANGE,
+		      "N6-4level-erange", "top 2^48-1 needs 4 levels");
+		check(dart8_cfg_init(&cn, 0xffffffffffff0000ULL, 0x20000,
+				     sids, 4, talloc, tfree) == -ERANGE,
+		      "N6-top-wrap", "top wraps below vm_base");
+		check(dart8_cfg_init(&cn, 8, 16384, sids, 4, talloc,
+				     tfree) == -EINVAL,
+		      "N6-unaligned-base", "vm_base not granule aligned");
+		check(dart8_cfg_init(&cn, 0, 16392, sids, 4, talloc,
+				     tfree) == -EINVAL,
+		      "N6-unaligned-size", "vm_size not granule aligned");
+		check(dart8_cfg_init(&cn, 0, 0, sids, 4, talloc,
+				     tfree) == -EINVAL,
+		      "N6-zero-size", "empty window refused");
+		check(dart8_cfg_init(&cn, 0, 16384, sids, 4, NULL,
+				     tfree) == -EINVAL,
+		      "N6-null-alloc", "alloc callback required");
+		check(dart8_cfg_init(&cn, 0, 16384, sids, 4, talloc,
+				     NULL) == -EINVAL,
+		      "N6-null-free", "free callback required");
+	}
+
 	free(exp_root);
 	free(exp_l2);
 	free(exp_leaf);
