@@ -954,7 +954,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	ret = ane_h16_stage(ane, fw);
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "preload-diff");
-		goto rel_fw;
+		goto free_stage;
 	}
 	ret = ane_h16_map_stage(ane);
 	if (ret) {
@@ -1004,6 +1004,11 @@ static int ane_h16_boot(struct ane_h16 *ane)
 					boot_wait_ms, ack);
 				ane_h16_result(ane, 3, "FAIL", "boot-timeout");
 				ret = -ETIMEDOUT;
+				/* deliberate: mapping and staged buffer
+				 * stay in place - the wedged firmware
+				 * may still DMA into them; reboot to
+				 * park
+				 */
 				goto rel_fw;
 			}
 			usleep_range(1000, 2000);
@@ -1027,9 +1032,11 @@ static int ane_h16_boot(struct ane_h16 *ane)
 unmap:
 	ane_h16_unmap_stage(ane);
 free_stage:
-	dma_free_coherent(ane->dev, ane->stage_size, ane->stage_cpu,
-			  ane->stage_dma);
-	ane->stage_cpu = NULL;
+	if (ane->stage_cpu) {
+		dma_free_coherent(ane->dev, ane->stage_size, ane->stage_cpu,
+				  ane->stage_dma);
+		ane->stage_cpu = NULL;
+	}
 rel_fw:
 	release_firmware(fw);
 	return ret;

@@ -402,6 +402,7 @@ static inline void pm_runtime_get_noresume(struct device *dev) { (void)dev; }
 
 /* ---- DMA ---- */
 extern int sim_dma_outstanding;
+extern int sim_dma_allocs, sim_dma_frees;
 static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 				       dma_addr_t *dma, int gfp)
 {
@@ -416,6 +417,7 @@ static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 	memset(p, 0, size);
 	*dma = (u64)(uintptr_t)p;
 	sim_dma_outstanding++;
+	sim_dma_allocs++;
 	return p;
 }
 static inline void dma_free_coherent(struct device *dev, size_t size,
@@ -425,6 +427,7 @@ static inline void dma_free_coherent(struct device *dev, size_t size,
 	(void)size;
 	(void)dma;
 	sim_dma_outstanding--;
+	sim_dma_frees++;
 	free(cpu);
 }
 static inline u64 virt_to_phys(void *p)

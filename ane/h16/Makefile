@@ -57,7 +57,14 @@ sim-discriminate: $(SIM_OUT)
 	@if $(SIM_OUT).d2 neg-ps-stuck >/dev/null 2>&1; then \
 		echo "DISCRIMINATION FAILED: skipped ps gate was not caught"; exit 1; \
 	else echo "ok: ps-gate mutation caught by neg-ps-stuck"; fi
-	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2
+	@sed 's/ane_h16_result(ane, 3, "REFUSED", "preload-diff");/ane_h16_result(ane, 3, "REFUSED", "preload-diff"); goto rel_fw;/' \
+	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
+	@$(CC) -g -O1 -I /tmp/ane-h16-discrim/sim -I /tmp/ane-h16-discrim/sim/inc \
+	  -o $(SIM_OUT).d3 /tmp/ane-h16-discrim/sim/sim_harness.c
+	@if $(SIM_OUT).d3 neg-foreign-preload >/dev/null 2>&1; then \
+		echo "DISCRIMINATION FAILED: reintroduced DMA leak was not caught"; exit 1; \
+	else echo "ok: leak mutation caught by neg-foreign-preload"; fi
+	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3
 
 sim: sim-test sim-negative sim-discriminate
 

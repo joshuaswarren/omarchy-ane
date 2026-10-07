@@ -45,6 +45,7 @@ struct sim_phys sim_phys_maps[8];
 int sim_n_phys_maps;
 int sim_rpm_gets, sim_rpm_puts;
 int sim_dma_outstanding;
+int sim_dma_allocs, sim_dma_frees;
 struct iommu_domain sim_dart_storage;
 struct iommu_domain *sim_dart;
 const struct firmware *sim_fw_file;
@@ -678,6 +679,8 @@ static void sc_neg_bad_pin(void)
 	    "RESULT REFUSED fw-pin");
 	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
 	chk(sim_dart_storage.n == 0, "nothing mapped");
+	chk(sim_dma_allocs == 0 && sim_dma_frees == 0,
+	    "refused before any allocation");
 }
 
 static void sc_neg_foreign_preload(void)
@@ -698,6 +701,12 @@ static void sc_neg_foreign_preload(void)
 	    "RESULT REFUSED preload-diff");
 	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
 	chk(sim_dart_storage.n == 0, "nothing mapped");
+	/* a refusal must NOT leak the staged buffer: allocs == frees.
+	 * (The deliberate exception is a post-release timeout, where the
+	 * buffer stays because the wedged firmware may still DMA.)
+	 */
+	chk(sim_dma_allocs == sim_dma_frees,
+	    "refusal frees the staged buffer (no DMA leak)");
 }
 
 static void sc_neg_unknown_stage(void)
