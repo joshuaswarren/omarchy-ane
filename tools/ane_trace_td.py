@@ -4,7 +4,7 @@ the H14 task descriptors of the program's ANEC.
 
 usage: ane_trace_td.py TRACE [ANEC]
 
-TRACE is the debugfs file ane_t6021/trace_td copied after the run (the
+TRACE is the debugfs file ane_t6021_trace/trace_td copied after the run (the
 whole blob, or its header plus the used records). Layout: header <6I + Q
 (magic "ATD1", rec_size, capacity, n, dropped, calls), then n records
 <QIHH (ktime ns, word, kind, call). Kinds: 1 CALL, 2 ACK, 3 TD (TD word:

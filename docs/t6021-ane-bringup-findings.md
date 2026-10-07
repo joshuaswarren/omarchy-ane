@@ -1366,6 +1366,11 @@ Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-
   wait, under the PS-word guard, into debugfs `ane_t6021/trace_td`
   (ane/t6021/ane_t6021_rtclient_main.c, `debugfs_create_blob("trace_td", ...)`). Trace on
   changes the encoder exec time by less than 0.1%.
+  2026-10-07: the blob moved to debugfs `ane_t6021_trace/trace_td` — the
+  probe (`stats=1`) owns `ane_t6021/` (ane_timeline, ane_pg_state), and the
+  setter's create of the same name collided, so the blob was never created
+  (measured on the M2, slot 2026-10-07; dmesg
+  `debugfs: 'ane_t6021' already exists in '/'`).
 - The TD word moves when the task manager takes a task. The manager keeps
   19 tasks in flight: task k+1 is taken when task k+1-19 finishes (r 0.985
   with the weight bytes of that task in Qwen prog_006, 0.871 with the

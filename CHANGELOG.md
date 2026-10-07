@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `ane_t6021`: `trace_td=1` now creates the debugfs blob in its own
+  directory, `ane_t6021_trace/trace_td` (was `ane_t6021/trace_td`). The
+  probe (`stats=1`, the default) owns the `ane_t6021` debugfs directory;
+  the trace setter created the same name again, lost the collision
+  (`debugfs: 'ane_t6021' already exists`), and the parameter flipped with
+  no `trace_td` file to read (measured on the M2, 2026-10-07). The trace
+  now owns its directory outright, so any load order works and neither
+  side removes the other's files. Update readers of the old path.
+
 ## 0.4.6 (2026-10-06)
 
 This release makes each H14 (T6021, M2 Max) CALL faster and adds the first

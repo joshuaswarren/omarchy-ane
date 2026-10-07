@@ -641,7 +641,7 @@ MODULE_PARM_DESC(call_poll_us,
  * when the wait ends (word = the TD samples taken). The buffer is
  * allocated at the first switch-on and kept until unload; each switch-on
  * empties it, and records past its end are counted in `dropped`. Read
- * it, while no CALL runs, from debugfs ane_t6021/trace_td (0400). All
+ * it, while no CALL runs, from debugfs ane_t6021_trace/trace_td (0400). All
  * trace state is protected by ane_t6021_fw_lock. */
 #define ANE_TRACE_MAGIC		0x31445441	/* "ATD1" */
 #define ANE_TRACE_RECS		(1U << 18)
@@ -715,9 +715,15 @@ static int ane_t6021_trace_set(const char *val, const struct kernel_param *kp)
 		ane_t6021_trace->capacity = ANE_TRACE_RECS;
 		ane_t6021_trace_blob.data = ane_t6021_trace;
 		ane_t6021_trace_blob.size = size;
-		ane_t6021_trace_dir = debugfs_create_dir("ane_t6021", NULL);
-		debugfs_create_blob("trace_td", 0400, ane_t6021_trace_dir,
-				    &ane_t6021_trace_blob);
+		/* Own directory: the probe's "ane_t6021" (stats=1) must stay
+		 * untouched, at any load order.
+		 */
+		ane_t6021_trace_dir =
+			debugfs_create_dir("ane_t6021_trace", NULL);
+		if (!IS_ERR(ane_t6021_trace_dir))
+			debugfs_create_blob("trace_td", 0400,
+					    ane_t6021_trace_dir,
+					    &ane_t6021_trace_blob);
 	}
 	if (on && !trace_td) {
 		ane_t6021_trace->n = 0;
@@ -736,7 +742,7 @@ static const struct kernel_param_ops ane_t6021_trace_ops = {
 };
 module_param_cb(trace_td, &ane_t6021_trace_ops, &trace_td, 0644);
 MODULE_PARM_DESC(trace_td,
-		 "Record a read-only per-CALL TD-word timeline in debugfs ane_t6021/trace_td (default 0; T602x only)");
+		 "Record a read-only per-CALL TD-word timeline in debugfs ane_t6021_trace/trace_td (default 0; T602x only)");
 
 static void ane_t6021_trace_free(void)
 {
