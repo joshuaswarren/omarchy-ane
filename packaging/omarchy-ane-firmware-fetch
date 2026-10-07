@@ -15,7 +15,9 @@ reads the stub version from the device tree, maps it to a pinned IPSW URL,
 range-fetches only the ANE member (about 5 MB of a 12.9 GB IPSW), unwraps the
 IM4P, and installs the payload only when its size and SHA-256 equal the pin.
 The stub version must also be the version of the IPSW a chip's pin comes from:
-a Mac preloads its ANE firmware from its own stub.
+a Mac preloads its ANE firmware from its own stub. H15 chips (T8122, T6030,
+T6031, T6034) refuse: their stub image identity and payload SHA-256 are
+unmeasured (ane/h15/README-bringup.md).
 M1-family chips need nothing: iBoot preloads their ANE firmware.
 
 We never redistribute Apple firmware. Each Mac fetches its own copy.
@@ -63,6 +65,11 @@ AETHER = ("Firmware/ane/t604x_ane_fw_aether_brvx.im4p", "apple/ane/t604x_ane_fw_
 FETCH = {"apple,t6020": SELENE, "apple,t6021": SELENE, "apple,t6022": SELENE, "apple,t8112": BIA,
          "apple,t8132": LETO, "apple,t6040": AETHER, "apple,t6041": AETHER}
 MEMBER_MAX = 16 << 20
+# The M3 family: the 27.0 IPSW carries h15_ane_fw_themis_j51y and
+# t603x_ane0_fw_erebus_* (IM4P hashes in the b0 receipts), but the stub image
+# iBoot preloads on an H15 Linux boot is unmeasured and no raw payload SHA-256
+# is pinned (ane/h15/README-bringup.md). Refuse until a receipt pins both.
+H15 = frozenset(("apple,t8122", "apple,t6030", "apple,t6031", "apple,t6034"))
 
 # Stub macOS version -> IPSW, from AsahiLinux/asahi-installer src/main.py
 # IPSW_VERSIONS. Apple's mesu catalog no longer lists 13.5, so the URL is pinned.
@@ -217,6 +224,14 @@ def vendor_copy(root, name, size, sha256):
     return path, None
 
 
+def h15_refusal(chip):
+    return (f"{chip}: no pinned ANE payload. The IPSW records the H15 members "
+            "(h15_ane_fw_themis_j51y, t603x_ane0_fw_erebus_ls5x/pc5x), but the stub image iBoot "
+            "preloads on an H15 Linux boot is unmeasured and no raw payload SHA-256 is pinned "
+            "(ane/h15/README-bringup.md). Run omarchy-ane-probe and send its os_fw_version with "
+            "the first H15 report. Nothing was installed")
+
+
 def run(root, hook=False):
     """Install the firmware. Returns the vendor-copy problem, or None."""
     dt = root / "sys/firmware/devicetree/base"
@@ -227,6 +242,8 @@ def run(root, hook=False):
     if hook and chip not in DEFAULT_ON:
         print(f"{chip}: the ANE is not on by default here. Nothing fetched.")
         return None
+    if chip in H15:
+        raise Refuse(h15_refusal(chip))
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
     # The die-1 ANE of an Ultra board boots its own image (Ap,ANE1,
@@ -285,6 +302,8 @@ def run(root, hook=False):
 
 def check(root):
     chip = soc(root)
+    if chip in H15:
+        raise Refuse(h15_refusal(chip))
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
     _, name, size, sha256 = FETCH[chip][:4]

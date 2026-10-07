@@ -107,6 +107,18 @@ for compat, version, want in (([b'apple,j604', b'apple,t8132'], b'27.0', 'cannot
     assert want in err.getvalue(), (version, err.getvalue())
     assert not (t / 'usr').exists()
 
+# The M3 family (H15) refuses by name until a receipt pins its stub image and
+# payload SHA-256; the refusal names the probe field that fills the hole.
+for compat in ([b'apple,j433', b'apple,t8122'], [b'apple,j514s', b'apple,t6030'],
+               [b'apple,j514c', b'apple,t6031'], [b'apple,j514m', b'apple,t6034']):
+    t = system(compat, b'27.0')
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert fetch.main(['--root', str(t)]) == 1
+        assert fetch.main(['--check', '--root', str(t)]) == 1
+    assert 'no pinned ANE payload' in err.getvalue() and 'os_fw_version' in err.getvalue(), err.getvalue()
+    assert not (t / 'usr').exists()
+
 # 5. --hook (pacman): the hook fetches where the ANE is on by default
 # (firmware-fetch DEFAULT_ON, which mirrors the overlays table); a failed
 # fetch or a system without a device tree is a note, exit 0. Derived, so a
