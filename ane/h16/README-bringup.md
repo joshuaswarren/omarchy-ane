@@ -12,8 +12,10 @@ Every stage ends with one machine-readable record on the console:
 
     ane_h16 RESULT stage=<0|1|3> soc=<soc> verdict=<PASS|FAIL|REFUSED> reason=<reason>
 
-(the same grammar as `ane_h15`), and every refusal carries one too, so a
-volunteer log can be judged line-by-line. Stage numbers: 0=dt, 1=status,
+(the same grammar as `ane_h15`), and every stage-level refusal carries
+one too, so a volunteer log can be judged line-by-line. A refused probe
+(wrong opt-in key, ane-type mismatch, unknown stage) runs no stage and
+prints no RESULT. Stage numbers: 0=dt, 1=status,
 3=boot; 2 is the firmware-pin ladder step, which runs in userspace
 (`omarchy-ane-firmware-fetch`), not in this module.
 
