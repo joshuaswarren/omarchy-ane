@@ -141,7 +141,7 @@ class RangeFile:
         with self._get(self.pos, self.pos + n - 1) as r:
             if r.status != 206:
                 raise OSError(f"range request at {self.pos} got HTTP {r.status}")
-            data = r.read()
+            data = r.read(n)
         if len(data) != n:
             raise OSError(f"short range read at {self.pos}: {len(data)} of {n} bytes")
         self.pos += n

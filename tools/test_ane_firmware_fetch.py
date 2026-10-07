@@ -235,4 +235,39 @@ for chip, row in fetch.FETCH.items():
         assert rc == 0 and (run_line if on else 'the ANE is not on by default here. Nothing fetched.') in out, \
             (case, out)
         assert installed(t, name) == (after if on else ours), case
+
+# 8. RangeFile reads a 206 body only up to the range it asked for: a body
+# longer than the request is truncated, not slurped (offline: _get is faked).
+seen = []
+
+class fake_206:
+    def __init__(self, status, body):
+        self.status, self.body = status, body
+    def read(self, n=-1):
+        seen.append(n)
+        return self.body if n < 0 else self.body[:n]
+    def __enter__(self):
+        return self
+    def __exit__(self, *exc):
+        return False
+
+def range_file(status, body):
+    rf = fetch.RangeFile.__new__(fetch.RangeFile)
+    rf.url, rf.pos, rf.size = 'http://127.0.0.1:9/x', 0, 100
+    rf._get = lambda start, end: fake_206(status, body)
+    return rf
+
+rf = range_file(206, b'x' * 4096)  # a body far longer than the range
+seen.clear()
+assert rf.read(8) == b'x' * 8 and rf.pos == 8 and seen == [8], (seen, rf.pos)
+try:
+    range_file(206, b'short').read(8)
+    raise AssertionError('accepted a short 206 body')
+except OSError:
+    pass
+try:
+    range_file(200, b'x' * 8).read(8)
+    raise AssertionError('accepted a non-206 body')
+except OSError:
+    pass
 print('test_ane_firmware_fetch: ok')
