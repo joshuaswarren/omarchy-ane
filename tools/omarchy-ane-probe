@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ALLOWED_ARGV = frozenset({
     ("dmesg", "--color=never"),
     ("omarchy-ane-check",),
@@ -558,10 +558,14 @@ def probe(root, data_dir):
     else:
         tree = guard("device-tree", lambda: DeviceTree(dt_base), None)
     root_props = tree.nodes.get("/", {}) if tree else {}
+    chosen = tree.nodes.get("/chosen", {}) if tree else {}
     compat = strings(root_props.get("compatible"))
     out["soc"] = next((m.group(1) for c in compat for m in [re.match(r"^apple,(t\d{4})$", c)] if m), None)
     out["board"] = next((c for c in compat if re.match(r"^apple,j\w+$", c)), None)
     out["model"] = (strings(root_props.get("model")) or [None])[0]
+    # The stub OS firmware version (m1n1 writes /chosen/asahi,os-fw-version): which
+    # macOS image iBoot preloaded the ANE firmware from.
+    out["os_fw_version"] = (strings(chosen.get("asahi,os-fw-version")) or [None])[0]
     out["compatible"] = compat
     empty = {k: [] for k in ("ane_nodes", "dart_ane_nodes", "pmgr_ane_nodes", "mailbox_nodes", "unknown_ane_like")}
     family = guard("ane-nodes", tree.ane_family, empty) if tree else empty
@@ -628,7 +632,8 @@ def cap(doc, max_kib):
         doc[key] = None
         doc["truncated"] = True
     if size(doc) > limit:
-        doc = {k: doc.get(k) for k in ("schema_version", "tool", "generated_at", "elapsed_ms", "soc", "board")}
+        doc = {k: doc.get(k) for k in ("schema_version", "tool", "generated_at", "elapsed_ms", "soc", "board",
+                                       "os_fw_version")}
         doc.update(truncated=True, unreadable=["size: over --max-kib with every optional field dropped"])
     return doc
 

@@ -442,12 +442,13 @@ def test_empty_root_and_cap():
         assert probe.cap(json.loads(json.dumps(full)), 8) == full  # fits: untouched
         tiny = probe.cap(json.loads(json.dumps(full)), 0.1)  # below the identity fields: keep only those
         assert set(tiny) == {"schema_version", "tool", "generated_at", "elapsed_ms", "soc", "board",
-                             "truncated", "unreadable"} and tiny["soc"] == "t6021", tiny
+                             "os_fw_version", "truncated", "unreadable"} and tiny["soc"] == "t6021", tiny
 
 
-def test_soc_table_object_shapes():
-    """The tables whose boards rows are objects and whose ane/dart reg rows are
-    "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150) compare instead of
+def test_os_fw_version_and_object_table_shapes():
+    """The stub firmware version (/chosen/asahi,os-fw-version, the H1 field) is
+    reported; the tables whose boards rows are objects and whose ane/dart reg rows
+    are "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150) compare instead of
     crashing with an AttributeError."""
     tables = REPO / "data/ane-soc"
     empty = {"ane_nodes": [], "dart_ane_nodes": [], "mailbox_nodes": []}
@@ -472,13 +473,15 @@ def test_soc_table_object_shapes():
             <0x2 0x11000000 0x0 0xff4000>, <0x3 0x082c8000 0x0 0x4000>;
       interrupts = <607 4 620 4>; iommus = <&dart 0>; };
   };
+  chosen { asahi,os-fw-version = "27.0 (26A434)"; };
 };'''
     with tempfile.TemporaryDirectory() as tmp:
         dtb(src, Path(tmp, "t.dtb"))
         root = Path(tmp, "t8150")
         unpack_fdt(Path(tmp, "t.dtb").read_bytes(), root / "sys/firmware/devicetree/base")
         doc = run_probe(root, tables, "--max-kib", "0")
-        assert (doc["soc"], doc["board"]) == ("t8150", "apple,j8001"), (doc["soc"], doc["board"])
+        assert doc["os_fw_version"] == "27.0 (26A434)", doc["os_fw_version"]
+        assert doc["soc"] == "t8150" and doc["board"] == "apple,j8001"
         st = doc["soc_table"]
         assert st is not None and not any(u.startswith("soc_table:") for u in doc["unreadable"]), doc["unreadable"]
         assert st["match"] is True and st["dt_vs_table"] == [] and st["compared"] >= 20, st
@@ -591,7 +594,7 @@ def test_live_host():
     assert "error" not in doc, doc["error"]
     assert {"soc", "ane_nodes", "installed", "soc_table", "reachability", "kernel", "cmdline"} <= set(doc), sorted(doc)
     assert doc["reachability"]["verdict"] in ("reachable", "owned-elsewhere", "not-exposed", "unknown")
-    assert doc["schema_version"] == 2 and isinstance(doc["unreadable"], list)
+    assert doc["schema_version"] == 3 and isinstance(doc["unreadable"], list)
 
 
 if __name__ == "__main__":
