@@ -24,7 +24,33 @@
 #include "shim.h"
 
 /* the module's real sources, unmodified */
+#ifdef ANE15_SIM_FILL_FACTS
+/* P7 build: compile the real soc file with its fact table renamed
+ * aside, then substitute a synthetic fully-filled table, so the REAL
+ * probe + stage_boot run their every-fact-filled fall-through. The
+ * renamed real table stays in the binary for the substitution check.
+ */
+#define ane_h15_facts ane_h15_facts_real_unfilled
+#define ane_h15_n_facts ane_h15_n_facts_real_unfilled
 #include "../ane_h15_soc.c"
+#undef ane_h15_facts
+#undef ane_h15_n_facts
+const struct ane_h15_fact ane_h15_facts[] = {
+	{ "H1", "synthetic row, filled for the P7 probe control",
+	  "sim only, never a receipt", true },
+	{ "H2", "synthetic row, filled for the P7 probe control",
+	  "sim only, never a receipt", true },
+	{ "H3", "synthetic row, filled for the P7 probe control",
+	  "sim only, never a receipt", true },
+	{ "H4", "synthetic row, filled for the P7 probe control",
+	  "sim only, never a receipt", true },
+	{ "H5", "synthetic row, filled for the P7 probe control",
+	  "sim only, never a receipt", true },
+};
+const unsigned int ane_h15_n_facts = ARRAY_SIZE(ane_h15_facts);
+#else
+#include "../ane_h15_soc.c"
+#endif
 #include "../ane_h15_main.c"
 
 /* ---- shim storage ---- */
@@ -390,6 +416,48 @@ static void pos_other_socs(void)
 	}
 }
 
+/* ---- P7 filled-table probe control (filled build only) ---- */
+#ifdef ANE15_SIM_FILL_FACTS
+/* P7: the gate logic driven through the REAL probe path with a fully
+ * filled table. The fall-through must refuse (-ENOSYS) with zero bus
+ * writes: this build has no boot path, no CPU release.
+ */
+static void pos_filled_probe(void)
+{
+	unsigned int rstage;
+	char verdict[32], reason[128];
+	int ret;
+
+	reset_all();
+	optin = "t8122";
+	stage = "boot";
+	confirm_boot = true;
+	fw_path = "/lib/firmware/synthetic-macho-for-sim";
+	build_node(&ane_t8122_soc, 2, "apple,t8122-ane");
+
+	chk(ane_h15_facts_ready(ane_h15_facts, ane_h15_n_facts),
+	    "P7 filled: substituted table is ready (gate open)");
+	chk(ane_h15_n_facts_real_unfilled == 5 &&
+	    !ane_h15_facts_ready(ane_h15_facts_real_unfilled,
+				 ane_h15_n_facts_real_unfilled),
+	    "P7 filled: real table renamed aside, still 5 unfilled");
+
+	ret = probe_now();
+	chk(ret == -ENOSYS, "P7 filled: probe returns -ENOSYS");
+	chk(parse_result(&rstage, verdict, sizeof(verdict),
+			 reason, sizeof(reason)) &&
+	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
+	    !strcmp(reason, "facts-filled-boot-path-not-built"),
+	    "P7 filled: RESULT stage=3 REFUSED facts-filled-boot-path-not-built");
+	chk(log_count("ane_h15 hole=") == 0,
+	    "P7 filled: no hole lines from a filled table");
+	chk(sim_pm_get == 1 && sim_pm_put == 1, "P7 filled: power released");
+	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
+	    "P7 filled: refused probe unmaps its windows");
+	chk_global_invariants(cur_soc, "P7 filled");
+}
+#endif
+
 /* ---- negative controls: exit 0 iff the module correctly refuses ---- */
 static int neg_ps_stuck(void)
 {
@@ -530,8 +598,6 @@ static int neg_truncated_dt(void)
 
 static int neg_rpm_fail(void)
 {
-	unsigned int rstage;
-	char verdict[32], reason[128];
 	int ret, bad = 0;
 
 	reset_all();
@@ -591,6 +657,13 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "neg-truncated-dt")) {
 		printf("sim-h15 negative control: truncated DT\n");
 		fails = neg_truncated_dt();
+#ifdef ANE15_SIM_FILL_FACTS
+	} else if (!strcmp(mode, "pos-filled")) {
+		printf("sim-h15 filled-table probe control (P7):\n");
+		pos_filled_probe();
+		printf("%s\n", fails ? "SIM-TEST: FAILED"
+				     : "SIM-TEST: filled-table probe control PASS");
+#endif
 	} else if (!strcmp(mode, "neg-rpm-fail")) {
 		printf("sim-h15 negative control: pm_runtime_get_sync failure\n");
 		fails = neg_rpm_fail();

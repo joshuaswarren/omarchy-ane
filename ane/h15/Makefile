@@ -42,6 +42,14 @@ SIM_HDRS := ane_h15.h ane_h15_adt.h sim/shim.h \
 sim/sim_h15: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS)
 	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ sim/sim_harness.c
 
+# P7 build: the fact table is substituted (synthetic, fully filled) so
+# the real probe + stage_boot run the every-fact-filled fall-through.
+sim/sim_h15_filled: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS)
+	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I sim -I sim/inc -o $@ sim/sim_harness.c
+
+sim-probe-filled: sim/sim_h15_filled
+	./sim/sim_h15_filled pos-filled
+
 sim-test: sim/sim_h15
 	./sim/sim_h15 pos
 
@@ -86,12 +94,28 @@ sim-mutation-nounmap:
 	if [ $$s -eq 0 ]; then echo "SIM-MUT-NOUNMAP BAD: unmap-deleted build PASSED the harness (harness does not discriminate)"; exit 1; \
 	else echo "SIM-MUT-NOUNMAP OK: unmap-deleted build FAILS the harness (leak class caught)"; fi
 
+# Mutation control for P7: the filled-table fall-through refusal
+# deleted (return -ENOSYS -> return 0) MUST fail the filled probe.
+sim-mutation-nofillrefusal:
+	rm -rf /tmp/ane_h15-nofillref && mkdir -p /tmp/ane_h15-nofillref
+	cp -r sim /tmp/ane_h15-nofillref/sim
+	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-nofillref/
+	sed 's/return -ENOSYS;/return 0; \/* NEG: filled-table fall-through deleted *\//' ane_h15_main.c > /tmp/ane_h15-nofillref/ane_h15_main.c
+	grep -q 'NEG: filled-table fall-through deleted' /tmp/ane_h15-nofillref/ane_h15_main.c
+	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I /tmp/ane_h15-nofillref/sim -I /tmp/ane_h15-nofillref/sim/inc -o /tmp/ane_h15-nofillref/sim_h15_filled /tmp/ane_h15-nofillref/sim/sim_harness.c
+	@/tmp/ane_h15-nofillref/sim_h15_filled pos-filled > /tmp/ane_h15-nofillref/run.log 2>&1; \
+	s=$$?; \
+	echo "--- nofillrefusal mutant harness tail ---"; tail -4 /tmp/ane_h15-nofillref/run.log; \
+	if [ $$s -eq 0 ]; then echo "SIM-MUT-NOFILLREF BAD: fall-through-deleted build PASSED P7 (harness does not discriminate)"; exit 1; \
+	else echo "SIM-MUT-NOFILLREF OK: fall-through-deleted build FAILS P7 (gate class caught)"; fi
+
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -f ane_h15_adt_test sim/sim_h15
+	rm -f ane_h15_adt_test sim/sim_h15 sim/sim_h15_filled
 
 .PHONY: default modules check sim-test sim-negative-ps-stuck \
 	sim-negative-wrong-stage sim-negative-truncated-dt \
 	sim-negative-rpm-fail sim-negative-nopsguard \
-	sim-mutation-nounmap clean
+	sim-probe-filled sim-mutation-nounmap \
+	sim-mutation-nofillrefusal clean
 endif
