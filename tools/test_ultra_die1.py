@@ -178,7 +178,10 @@ assert 'dev_name(ane->dev) : "ane"' in drv and 'eng->start >> 37' in drv
 assert re.search(r'dev_name\(dev\)\s*:\s*"ane_t6021"',
                  (root / 'ane/t6021/ane_t6021_rtclient_main.c').read_text())
 rtmain = (root / 'ane/t6021/ane_t6021_rtclient_main.c').read_text()
-assert 'debugfs_create_dir("ane_t6021", NULL)' in rtmain  # the trace_td dir
+# The trace_td blob owns its own debugfs dir (37ffb57); the probe's die-0
+# stats dir keeps the legacy "ane_t6021" name through the die-keyed expression.
+assert 'debugfs_create_dir("ane_t6021_trace", NULL)' in rtmain
+assert '(eng && (eng->start >> 37)) ?' in rtmain and '"ane_t6021",' in rtmain
 assert 'debugfs_create_dir("ane", NULL)' not in drv
 # The die-1 firmware pin reaches request_firmware, validated against the
 # die-0 pin: a non-identical ane1 image refuses at load.
