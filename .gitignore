@@ -64,3 +64,4 @@ test/*
 
 # userspace sim harness build output
 ane/h15/sim/sim_h15
+ane/h15/sim/sim_h15_filled
