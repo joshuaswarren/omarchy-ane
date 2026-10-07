@@ -43,6 +43,8 @@
 
 #ifdef __KERNEL__
 #include <linux/bits.h>
+#include <linux/errno.h>
+#include <linux/string.h>
 #include <linux/types.h>
 #else
 #include <errno.h>
