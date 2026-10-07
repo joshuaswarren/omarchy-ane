@@ -172,7 +172,8 @@ extern struct sim_event sim_events[SIM_MAX_EVENTS];
 extern int sim_n_events;
 extern int sim_bus_faults;
 /* window map/unmap counts: the harness asserts a failed probe (and
- * remove) releases exactly the windows it mapped */
+ * remove) releases exactly the windows it mapped
+ */
 extern int sim_n_iomap;
 extern int sim_n_iounmap;
 
@@ -251,6 +252,7 @@ static inline void iounmap(void *p)
 	(void)p;
 	sim_n_iounmap++;
 }
+
 static inline void *of_iomap(struct device_node *n, int idx)
 {
 	if (!n || idx < 0 || idx >= n->n_reg || !n->reg_size[idx])

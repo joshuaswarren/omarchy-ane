@@ -517,8 +517,9 @@ static int neg_truncated_dt(void)
 			bad = 1;
 		}
 		if (sim_n_iomap != sim_n_iounmap) {
-			printf("    NEG-TRUNCATED-DT(nreg=%d): failed probe leaked a window (iomap=%d iounmap=%d)\n",
-			       nregs_variants[i], sim_n_iomap, sim_n_iounmap);
+			printf("    NEG-TRUNCATED-DT(%d): window leak (iomap=%d iounmap=%d)\n",
+			       nregs_variants[i], sim_n_iomap,
+			       sim_n_iounmap);
 			bad = 1;
 		}
 	}
