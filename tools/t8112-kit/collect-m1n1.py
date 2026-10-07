@@ -87,7 +87,7 @@ def fetch_tool():
 def load_archive(soc, path):
     """The pinned 13.5 image for soc; fetched from Apple's CDN into path when path is absent."""
     fetch = fetch_tool()
-    member, _, size, sha256 = fetch.FETCH[IMAGES[soc].fetch_key]
+    member, _, size, sha256 = fetch.FETCH[IMAGES[soc].fetch_key][:4]
     path = Path(path)
     try:
         if not path.exists():

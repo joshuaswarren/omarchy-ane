@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """omarchy-ane-firmware-fetch: install this Mac's ANE firmware from Apple.
 
-M2 family only. T6020, T6021 and T6022 (M2 Pro, Max, Ultra): Linux must start
-the ANE firmware there, and the driver accepts exactly one image: the selene
-payload from the macOS 13.5 (22G74) stub that every Omarchy M1/M2 install
-boots; its BuildManifest gives that one file to the die-0 ANE of all three.
-T8112 (M2): the 13.5 BuildManifest gives h14_ane_fw_bia_j4xx to j413, j415,
-j473 and j493 (receipts/2026-10-01-t8112-ane); ane_t6021 loads it (UNTESTED,
-receipts/2026-10-01-t8112-optin). This tool
+M2 family and H16 (M4) family. T6020, T6021 and T6022 (M2 Pro, Max, Ultra):
+Linux must start the ANE firmware there, and the driver accepts exactly one
+image: the selene payload from the macOS 13.5 (22G74) stub that every Omarchy
+M1/M2 install boots; its BuildManifest gives that one file to the die-0 ANE of
+all three. T8112 (M2): the 13.5 BuildManifest gives h14_ane_fw_bia_j4xx to
+j413, j415, j473 and j493 (receipts/2026-10-01-t8112-ane); ane_t6021 loads it
+(UNTESTED, receipts/2026-10-01-t8112-optin). T8132, T6040, T6041 (M4 family):
+the macOS 27.0 (26A428) BuildManifest gives h16_ane_fw_leto_j7x to T8132 and
+t604x_ane_fw_aether_brvx to T6040/T6041 (receipts/2026-10-03-ane-h16); the
+ane_h16 module pins those payload bytes. This tool
 reads the stub version from the device tree, maps it to a pinned IPSW URL,
 range-fetches only the ANE member (about 5 MB of a 12.9 GB IPSW), unwraps the
 IM4P, and installs the payload only when its size and SHA-256 equal the pin.
+The stub version must also be the version of the IPSW a chip's pin comes from:
+a Mac preloads its ANE firmware from its own stub.
 M1-family chips need nothing: iBoot preloads their ANE firmware.
 
 We never redistribute Apple firmware. Each Mac fetches its own copy.
-Dependencies: Python 3, stdlib only. Both pinned IM4Ps ("anef") store their
+Dependencies: Python 3, stdlib only. The pinned IM4Ps ("anef") store their
 Mach-O payload uncompressed, so no LZFSE decoder is needed.
 
   sudo omarchy-ane-firmware-fetch [--root DIR]
@@ -43,14 +48,20 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-# chip -> (IPSW member, installed name, payload size, payload SHA-256).
-# These are the driver's pins: ane/t6021/ane_fw_validate.h ane_fw_selene and
-# ane_fw_bia. Change them together (tools/test_ane_firmware_fetch.py).
+# chip -> (IPSW member, installed name, payload size, payload SHA-256, IPSW
+# macOS version). These are the driver's pins: ane/t6021/ane_fw_validate.h
+# ane_fw_selene and ane_fw_bia; ane/h16/ane_h16_soc.c ane_fw_leto and
+# ane_fw_aether. Change them together (tools/test_ane_firmware_fetch.py).
 SELENE = ("Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p", "apple/ane/t602x_ane0_fw_selene_rc4x.macho",
-          0x4C5B28, "a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc")
+          0x4C5B28, "a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc", "13.5")
 BIA = ("Firmware/ane/h14_ane_fw_bia_j4xx.im4p", "apple/ane/h14_ane_fw_bia_j4xx.macho",
-       0x4B5B38, "af587dfa96b1e01d2b2e0f9f776e5dbefebb44c7968b86fff7d2b19c4cbef0dd")
-FETCH = {"apple,t6020": SELENE, "apple,t6021": SELENE, "apple,t6022": SELENE, "apple,t8112": BIA}
+       0x4B5B38, "af587dfa96b1e01d2b2e0f9f776e5dbefebb44c7968b86fff7d2b19c4cbef0dd", "13.5")
+LETO = ("Firmware/ane/h16_ane_fw_leto_j7x.im4p", "apple/ane/h16_ane_fw_leto_j7x.macho",
+        0x17C000, "4b330c5fd3548fb534ded5e7030c64b2ee3c3feb8ad859c23d87dcb82947abd2", "27.0")
+AETHER = ("Firmware/ane/t604x_ane_fw_aether_brvx.im4p", "apple/ane/t604x_ane_fw_aether_brvx.macho",
+          0x17C000, "8659271a3173ca1c816841b212ac406a6516f74f51d08f196327560cb1f6b925", "27.0")
+FETCH = {"apple,t6020": SELENE, "apple,t6021": SELENE, "apple,t6022": SELENE, "apple,t8112": BIA,
+         "apple,t8132": LETO, "apple,t6040": AETHER, "apple,t6041": AETHER}
 MEMBER_MAX = 16 << 20
 
 # Stub macOS version -> IPSW, from AsahiLinux/asahi-installer src/main.py
@@ -58,6 +69,8 @@ MEMBER_MAX = 16 << 20
 IPSW = {
     "13.5": "https://updates.cdn-apple.com/2023SummerFCS/fullrestores/032-69606/"
             "D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw",
+    "27.0": "https://updates.cdn-apple.com/2026FallFCS/afcfc88e-bbe6-44bf-a5da-07c56eebc06c/"
+            "UniversalMac_27.0_26A428_Restore.ipsw",
 }
 NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
 # FETCH chips whose ANE overlay is enabled in packaging/dt/overlays (the
@@ -227,7 +240,7 @@ def run(root, hook=False):
                      "node is present and the driver will validate its image "
                      "against the die-0 pin at load")
 
-    member, name, size, sha256 = FETCH[chip]
+    member, name, size, sha256, ipsw_version = FETCH[chip]
     vendor, shadow = vendor_copy(root, name, size, sha256)
     if vendor:
         print(f"{vendor} (Asahi vendor firmware) matches the pin. Nothing to fetch.")
@@ -248,7 +261,12 @@ def run(root, hook=False):
     version = stub_version("".join(dt_strings(dt / "chosen/asahi,os-fw-version")))
     url = IPSW.get(version)
     if url is None:
-        raise Refuse(f"stub macOS {version}: no pinned ANE image. Only the 13.5 (22G74) image is pinned")
+        raise Refuse(f"stub macOS {version}: no pinned ANE image. Pinned stub versions: "
+                     f"{', '.join(sorted(IPSW))}")
+    if version != ipsw_version:
+        raise Refuse(f"stub macOS {version}: the pinned {name} payload is from the macOS "
+                     f"{ipsw_version} IPSW. A Mac preloads its ANE firmware from its own stub, "
+                     "so only the stub version a pin was measured on applies")
 
     print(f"stub macOS {version}: fetching {member}")
     try:
@@ -269,7 +287,7 @@ def check(root):
     chip = soc(root)
     if chip not in FETCH:
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
-    _, name, size, sha256 = FETCH[chip]
+    _, name, size, sha256 = FETCH[chip][:4]
     vendor, shadow = vendor_copy(root, name, size, sha256)
     if shadow:
         raise Refuse(shadow)

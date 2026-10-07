@@ -22,19 +22,26 @@ fetch = module_from_spec(spec)
 spec.loader.exec_module(fetch)
 
 # 1. Each chip's pin, size and file name agree with the driver's image
-# (ane/t6021/ane_fw_validate.h, through ane_t602x_soc.fw in ane_t6021_fwload.c).
+# (ane/t6021/ane_fw_validate.h through ane_t602x_soc.fw in ane_t6021_fwload.c;
+# ane/h16/ane_h16_soc.c ane_h16_soc.fw for the H16 chips).
 validate = (root / 'ane/t6021/ane_fw_validate.h').read_text()
 fwload = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
-def image(var):
-    body = validate.split(f'static const struct ane_fw_image {var} = {{', 1)[1].split('\n};', 1)[0]
+h16soc = (root / 'ane/h16/ane_h16_soc.c').read_text()
+def image(text, struct, var):
+    body = text.split(f'static const struct {struct} {var} = {{', 1)[1].split('\n};', 1)[0]
     sha = body.split('.sha256 = {', 1)[1].split('}', 1)[0]
     return (re.search(r'\.name = "([^"]+)"', body).group(1),
             int(re.search(r'\.size = (0x[0-9a-f]+)', body).group(1), 16),
             bytes(int(b, 16) for b in re.findall(r'0x([0-9a-f]{2})', sha)).hex())
-for chip, member, name, size, sha256 in ((c, *v) for c, v in fetch.FETCH.items()):
-    soc = fwload.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('};', 1)[0]
-    var = re.search(r'\.fw = &(\w+)', soc).group(1)
-    assert image(var) == (name, size, sha256), (chip, var)
+for chip, row in fetch.FETCH.items():
+    assert row[4] in fetch.IPSW, chip
+    if chip.split(',')[1] in ('t8132', 't6040', 't6041'):
+        soc = h16soc.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('\n};', 1)[0]
+        got = image(h16soc, 'ane_h16_fw', re.search(r'\.fw = &(\w+)', soc).group(1))
+    else:
+        soc = fwload.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('\n};', 1)[0]
+        got = image(validate, 'ane_fw_image', re.search(r'\.fw = &(\w+)', soc).group(1))
+    assert got == row[1:4], (chip, got)
 
 # 2. IM4P unwrap: short and long DER lengths; anything else is refused.
 def der(tag, body):
@@ -54,7 +61,7 @@ for bad in (im4p[:-1], der(0x30, der(0x16, b'IMG4') + im4p[2:]), b''):
 
 # 3. Wrong bytes never pass verify.
 try:
-    fetch.verify(bytes(size), size, sha256)
+    fetch.verify(bytes(fetch.SELENE[2]), fetch.SELENE[2], fetch.SELENE[3])
     raise AssertionError('verify accepted unpinned bytes')
 except fetch.Refuse:
     pass
@@ -87,6 +94,19 @@ for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
         assert fetch.main(['--root', str(system(compat, b'13.5'))]) == 1
     assert ('cannot fetch' in err.getvalue()) == gate, (compat, err.getvalue())
 
+# H16 chips pin the macOS 27.0 payloads: a 27.0 stub fetches (offline here), a
+# stub whose version is not pinned refuses before the network, and a stub that
+# is not the pin's own IPSW version refuses: iBoot preloads from the stub.
+for compat, version, want in (([b'apple,j604', b'apple,t8132'], b'27.0', 'cannot fetch'),
+                              ([b'apple,j604', b'apple,t8132'], b'13.5', 'is from the macOS 27.0 IPSW'),
+                              ([b'apple,j614s', b'apple,t6040'], b'26.0.1', 'no pinned ANE image')):
+    t = system(compat, version)
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        assert fetch.main(['--root', str(t)]) == 1
+    assert want in err.getvalue(), (version, err.getvalue())
+    assert not (t / 'usr').exists()
+
 # 5. --hook (pacman): the hook fetches where the ANE is on by default
 # (firmware-fetch DEFAULT_ON, which mirrors the overlays table); a failed
 # fetch or a system without a device tree is a note, exit 0. Derived, so a
@@ -115,7 +135,8 @@ dest.parent.mkdir(parents=True)
 dest.write_bytes(b'not the pin')
 with contextlib.redirect_stderr(io.StringIO()):
     assert fetch.main(['--check', '--root', str(t)]) == 1
-fetch.FETCH['apple,t6021'] = (*fetch.SELENE[:2], len(b'not the pin'), hashlib.sha256(b'not the pin').hexdigest())
+fetch.FETCH['apple,t6021'] = (*fetch.SELENE[:2], len(b'not the pin'), hashlib.sha256(b'not the pin').hexdigest(),
+                              fetch.SELENE[4])
 with contextlib.redirect_stdout(io.StringIO()):
     assert fetch.main(['--check', '--root', str(t)]) == 0
 
@@ -127,8 +148,8 @@ with contextlib.redirect_stdout(io.StringIO()):
 # nothing on the others. Both come from the tables at run time, so a promotion
 # flip (tools/promote_chip.py) changes nothing here.
 good, other = b'pinned bytes', b'other bytes'
-for chip, (member, name, _, _) in fetch.FETCH.items():
-    fetch.FETCH[chip] = (member, name, len(good), hashlib.sha256(good).hexdigest())
+for chip, row in fetch.FETCH.items():
+    fetch.FETCH[chip] = (row[0], row[1], len(good), hashlib.sha256(good).hexdigest(), row[4])
 fetch.fetch_member = lambda url, member: der(0x30, der(0x16, b'IM4P') + der(0x16, b'anef') + der(0x16, b'1') +
                                              der(0x04, good))
 bin_dir = Path(tempfile.mkdtemp())
@@ -149,7 +170,7 @@ SHADOW = 'The kernel loads this vendor copy before'
 
 
 def files(chip, name, vendor, ours):
-    t = system([chip.encode()], b'13.5')
+    t = system([chip.encode()], fetch.FETCH[chip][4].encode())
     for sub, data in (('usr/lib/firmware/vendor', vendor), ('usr/lib/firmware', ours)):
         if data is not None:
             (t / sub / name).parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +190,8 @@ def call(*args):
     return rc, out.getvalue() + err.getvalue()
 
 
-for chip, (_, name, _, _) in fetch.FETCH.items():
+for chip, row in fetch.FETCH.items():
+    name = row[1]
     # (vendor, ours) -> --check exit and line; install exit, line, and our file after
     CASES = (
         ('vendor only', good, None, 0, '(Asahi vendor firmware) matches the pin', 0, 'Nothing to fetch', None),
@@ -184,10 +206,12 @@ for chip, (_, name, _, _) in fetch.FETCH.items():
         t = files(chip, name, vendor, ours)
         rc, out = call('--check', '--root', str(t))
         assert rc == check_rc and check_line in out, (case, out)
-        p = subprocess.run([str(bin_dir / 'omarchy-ane-check'), '--root', str(t)], capture_output=True, text=True)
-        line = next(l for l in p.stdout.splitlines() if 'ANE firmware' in l or name in l)
-        assert line.startswith('  ok    ANE firmware: ' if check_rc == 0 else '  FAIL  ') and check_line in line, \
-            (case, line)
+        # omarchy-ane-check prints the firmware line for the ane_t6021 family only.
+        if chip.split(',')[1] not in ('t8132', 't6040', 't6041'):
+            p = subprocess.run([str(bin_dir / 'omarchy-ane-check'), '--root', str(t)], capture_output=True, text=True)
+            line = next(l for l in p.stdout.splitlines() if 'ANE firmware' in l or name in l)
+            assert line.startswith('  ok    ANE firmware: ' if check_rc == 0 else '  FAIL  ') and check_line in line, \
+                (case, line)
         rc, out = call('--root', str(t))
         assert rc == run_rc and run_line in out, (case, out)
         assert installed(t, name) == after, case
