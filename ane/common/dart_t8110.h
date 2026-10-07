@@ -26,7 +26,8 @@
  *     BYPASS_DART bit1, BYPASS_DAPF bit2, FOUR_LEVEL bit3.
  *     MEASURED: working macOS dart-ane sid0 TCR = 0x9
  *     (TRANSLATE|FOUR_LEVEL, REMAP_EN clear) and TTBR 0x1004102d on
- *     T6001 (docs/t6021-ane-bringup-findings.md section 17); T6021
+ *     the T6021 (JW14M2 macOS working-state dump,
+ *     docs/t6021-ane-bringup-findings.md section 17);
  *     TCR15 = 0x2 (BYPASS_DART).
  *   - Geometry: 16 KiB granule, 2048 entries per table, index shifts
  *     leaf 14, level2 25, level1 36. A 2-level walk covers 2^36;

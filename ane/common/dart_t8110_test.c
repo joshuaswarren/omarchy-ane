@@ -199,9 +199,18 @@ int main(void)
 	root_pa = (u64)(unsigned long)pt.root;
 	rc = dart8_stream_program(&cfg, 0, root_pa, &ttbr, &tcr);
 	check(rc == 0 && tcr == 0x9, "P3-tcr-word",
-	      "TRANSLATE|FOUR_LEVEL = 0x9 (measured T6001 sid0)");
+	      "TRANSLATE|FOUR_LEVEL = 0x9 (measured T6021 sid0)");
 	check(ttbr == (((root_pa >> 14) << 2) | 1), "P3-ttbr-word",
 	      "t8110 TTBR form");
+	/* Pin the measured macOS working word byte-exact: T6021 (JW14M2)
+	 * dart-ane sid0 TTBR 0x1004102d with the engine running under
+	 * macOS (ane-linux-experiments receipts/2026-09-25-macos-ane
+	 * -engine-dump, findings doc section 17). Root recovered by
+	 * inverting the register form: ((0x1004102d >> 2) << 14).
+	 */
+	check(dart8_ttbr(0x1004102c000ULL) == 0x1004102dULL,
+	      "P3-ttbr-measured",
+	      "0x1004102d = 2026-09-25-macos-ane-engine-dump, T6021");
 
 	/* P4: 2-level mode, same leaf format, DERIVED structure. */
 	{
