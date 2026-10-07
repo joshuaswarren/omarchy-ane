@@ -80,11 +80,6 @@ module_param(ps_wait_ms, uint, 0444);
 MODULE_PARM_DESC(ps_wait_ms,
 		 "Per-word pmgr ACTUAL=0xf wait, ms. Default 500.");
 
-static unsigned int hello_wait_ms;
-module_param(hello_wait_ms, uint, 0444);
-MODULE_PARM_DESC(hello_wait_ms,
-		 "After the wake word, poll the ASC mailbox for an RTKit HELLO this long. Default 0 (skip). 1000 is the lab value.");
-
 static bool confirm_boot;
 module_param(confirm_boot, bool, 0444);
 MODULE_PARM_DESC(confirm_boot,

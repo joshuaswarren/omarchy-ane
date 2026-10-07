@@ -189,7 +189,6 @@ static void reset_all(void)
 	optin = NULL;
 	stage = "status";
 	ps_wait_ms = 500;
-	hello_wait_ms = 0;
 	confirm_boot = false;
 	fw_path = NULL;
 }
