@@ -65,6 +65,51 @@ struct ane_h15_word {
 	const char *src;	/* short evidence label for the log */
 };
 
+/* One unmeasured fact that stage=boot needs before it could even think
+ * about a CPU release. Rows mirror plan section 1.5 holes H1-H5; a
+ * later PR flips `filled` only with a receipt (pin row, capture, or
+ * disassembly) named in `fill`. The table is data: the refusal text is
+ * generated from it, one line per unfilled row.
+ */
+struct ane_h15_fact {
+	const char *id;		/* hole id: H1..H5 */
+	const char *what;	/* the missing fact, one line */
+	const char *fill;	/* the artifact that fills the row */
+	bool filled;
+};
+
+/* Walk a fact table, emit one line per unfilled row through emit(),
+ * return the unfilled count. Pure data walk: no MMIO, no power, no
+ * side effects beyond the caller's emit.
+ */
+static inline int ane_h15_facts_report(const struct ane_h15_fact *facts,
+				       unsigned int n,
+				       void (*emit)(void *ctx,
+						    const struct ane_h15_fact *f),
+				       void *ctx)
+{
+	unsigned int i, unfilled = 0;
+
+	for (i = 0; i < n; i++) {
+		if (facts[i].filled)
+			continue;
+		unfilled++;
+		if (emit)
+			emit(ctx, &facts[i]);
+	}
+	return (int)unfilled;
+}
+
+/* True only when every row is filled. Testing this does not open any
+ * path: stage=boot still refuses by design until a boot path lands in
+ * a future change with silicon evidence.
+ */
+static inline bool ane_h15_facts_ready(const struct ane_h15_fact *facts,
+				       unsigned int n)
+{
+	return ane_h15_facts_report(facts, n, NULL, NULL) == 0;
+}
+
 /* One SoC row. */
 struct ane_h15_soc {
 	const char *name;	/* opt-in key and log name */
@@ -86,5 +131,11 @@ extern const struct ane_h15_soc ane_t8122_soc;
 extern const struct ane_h15_soc ane_t6030_soc;
 extern const struct ane_h15_soc ane_t6031_soc;
 extern const struct ane_h15_soc ane_t6034_soc;
+
+/* Family-wide unmeasured facts (holes H1-H5); every H15 SoC row
+ * refuses stage=boot on the same set until rows are filled.
+ */
+extern const struct ane_h15_fact ane_h15_facts[];
+extern const unsigned int ane_h15_n_facts;
 
 #endif /* __ANE_H15_SOC_H__ */

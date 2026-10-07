@@ -20,15 +20,13 @@
  *   2 wrapper: refuses on H15 (no MEASURED-safe word beyond the pmgr
  *              words; CPU_STATUS/RVBAR are MEASURED-address,
  *              INFERENCE-role). Prints what would clear it.
- *   3 boot   : refuses without fw_path=; with fw_path=, refuses at
- *              the first missing fact (iBoot preload absent, no
- *              measured Mach-O vm layout, no measured RVBAR compose
- *              value, no measured SCRATCH wake word). This version
- *              implements no boot path: it always refuses. The
- *              planned path (iBoot preload mapped at the ADT
- *              remap IOVAs, bounded hello_wait_ms RTKit HELLO/EPMAP
- *              poll, same wire format as the H16 module) stays a
- *              plan until a volunteer records the missing facts.
+ *   3 boot   : refuses without fw_path=; with fw_path=, prints one
+ *              line per still-unmeasured fact from the ane_h15_facts
+ *              table (stub firmware identity H1, mailbox/IRQ roles H2,
+ *              segment-ranges/DART geometry H3, RVBAR compose H4,
+ *              SCRATCH wake word H5) and refuses. Even with every row
+ *              filled this build has no boot path: no engine write,
+ *              no CPU release, ever.
  *
  * No MODULE_DEVICE_TABLE: nothing autoloads. probe() returns
  * -EPERM unless `optin=<soc>` matches. Insmod line:
@@ -277,9 +275,23 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 	return 0;
 }
 
-/* ---- stage 3: see header ---- */
+/* ---- stage 3: see header. The refusal is generated from the
+ * family-wide fact table (ane_h15_facts, plan section 1.5): one line
+ * per still-unmeasured fact, then the RESULT line. Even when every
+ * row is filled, THIS build has no boot path: it refuses with a
+ * distinct reason and releases no CPU.
+ * ----
+ */
+static void ane_h15_fact_emit(void *ctx, const struct ane_h15_fact *f)
+{
+	dev_crit((struct device *)ctx, "ane_h15 hole=%s %s (fill: %s)\n",
+		 f->id, f->what, f->fill);
+}
+
 static int ane_h15_stage_boot(struct ane_h15 *ane)
 {
+	int unfilled;
+
 	if (!confirm_boot) {
 		ane_h15_result(ane, 3, "REFUSED",
 			       "confirm_boot=1 required");
@@ -287,14 +299,20 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 	}
 	if (!fw_path) {
 		ane_h15_result(ane, 3, "REFUSED",
-			       "no firmware pin for this SoC: omarchy-ane-firmware-fetch has no M3 row. Pass fw_path=<file under /lib/firmware> to override; the only known pin is the 27.0 IPSW payload (unmeasured for the stub image).");
+			       "no firmware pin for this SoC: omarchy-ane-firmware-fetch has no M3 row. Pass fw_path=<file under /lib/firmware> to override; the only known pin is the 27.0 IPSW payload (unmeasured for the stub image). See the runbook.");
 		return -ENOENT;
 	}
-	/* Even with fw_path=, we lack a measured Mach-O vm layout and
-	 * a measured RVBAR compose value. Refuse with the missing
-	 * facts named. */
-	ane_h15_result(ane, 3, "REFUSED",
-		       "stage=boot is experimental: no measured Mach-O vm layout (text/data vm size, file offsets, patchbay/tunables vm) for the H15 images, no measured RVBAR compose value, no measured SCRATCH wake word. iBoot-preload mapping path requires a live ADT with segment-ranges; on a stub image identity that is unmeasured, the preload-diff check is disabled. Send the dmesg back.");
+	unfilled = ane_h15_facts_report(ane_h15_facts, ane_h15_n_facts,
+					ane_h15_fact_emit, ane->dev);
+	if (unfilled) {
+		ane_h15_result(ane, 3, "REFUSED", "unfilled-facts");
+		return -ENOENT;
+	}
+	/* Every fact row is filled: the gate would open for a build
+	 * that implements the boot path. This one does not; there is
+	 * no CPU release, no engine write, anywhere in this file.
+	 */
+	ane_h15_result(ane, 3, "REFUSED", "facts-filled-boot-path-not-built");
 	return -ENOSYS;
 }
 

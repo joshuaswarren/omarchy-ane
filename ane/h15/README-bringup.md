@@ -25,15 +25,19 @@ template is `ane/h16/`.
   kernel driver already maps. The wrapper window is neither. The
   stage prints the word list and the clearing condition.
 - `stage=3` or `stage=boot`: refused without `fw_path=` and
-  `confirm_boot=1`. The H15 b0 doc has no firmware pin (the IPSW
-  payload is recorded, but the stub image identity is unmeasured);
-  no measured Mach-O vm layout (text/data fileoff, patchbay,
-  tunables); no measured RVBAR compose value; no measured SCRATCH
-  wake word. Even with `fw_path=`, the stage names every missing
-  fact and stops. When iBoot preloads firmware into ANE DRAM, the
-  live ADT's `segment-ranges` describes it; on a measured H15 boot
-  the same preload + map + CPU-release path that the T6021 W-series
-  uses is the only mechanically proven route, and a volunteer
+  `confirm_boot=1`. With them, the stage prints one line per
+  still-unmeasured fact from the `ane_h15_facts` table (stub
+  firmware identity, mailbox base and IRQ roles,
+  segment-ranges/DART geometry, RVBAR compose value, SCRATCH wake
+  word) and stops with `verdict=REFUSED reason=unfilled-facts`.
+  The table is data: a later change fills a row only with the
+  receipt named in the row. Even with every row filled, THIS
+  build implements no boot path and releases no CPU; it refuses
+  with `reason=facts-filled-boot-path-not-built`. When iBoot
+  preloads firmware into ANE DRAM, the live ADT's
+  `segment-ranges` describes it; on a measured H15 boot the same
+  preload + map + CPU-release path that the T6021 W-series uses
+  is the only mechanically proven route, and a volunteer
   recording it is what fills the missing rows in the b0 table.
 
 ## Build (host cross build)
@@ -120,9 +124,9 @@ the dmesg back.
    macOS capture; role INFERENCE"`. This is the expected
    outcome on H15.
 4. **stage=3** (`stage=3 confirm_boot=1 fw_path=…`): the refusal
-   names every missing fact (firmware pin for the stub image,
-   measured Mach-O vm layout, measured RVBAR compose value,
-   measured SCRATCH wake word). Send the dmesg.
+   prints one line per unfilled row of the `ane_h15_facts` table
+   (`ane_h15 hole=H… …`), then
+   `verdict=REFUSED reason=unfilled-facts`. Send the dmesg.
 5. Remove the opt-in key and reboot before any other experiment.
 
 ## Stop rules

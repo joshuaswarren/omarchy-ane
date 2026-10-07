@@ -4,6 +4,7 @@
  * Sources in ane_h15.h and data/ane-soc/{t8122,t6030,t6031,t6034}.json
  * (post-b0 corrected records, receipts/2026-10-03-ane-h15).
  */
+#include <linux/array_size.h>
 #include "ane_h15.h"
 
 /* ANE_SYS, ANE_MPM, ANE_CPU, ANE_TD, ANE_BASE offsets into the pmgr
@@ -197,3 +198,29 @@ const struct ane_h15_soc ane_t6034_soc = {
 	.words       = ane_h15_words_6031,
 	.fw          = &ane_fw_t6031,
 };
+
+/* Family-wide unmeasured facts for stage=boot (holes H1-H5 of the
+ * M3/M4 plan section 1.5). `filled=false` means no MEASURED artifact
+ * backs the row yet; stage=boot refuses while any row is unfilled and
+ * prints one line per unfilled row. A later PR flips a row only with
+ * the receipt named in `fill`. NO row may be marked filled without
+ * that receipt: this table is the machine-checkable form of
+ * "stage=boot stays REFUSED on H15".
+ */
+const struct ane_h15_fact ane_h15_facts[] = {
+	{ "H1", "H15 stub-OS firmware identity (which IPSW image iBoot preloads)",
+	  "omarchy-ane-probe os-fw-version + omarchy-ane-firmware-fetch pin row",
+	  false },
+	{ "H2", "mailbox base + IRQ roles",
+	  "S2 probe /proc/interrupts + S3 raw mbox CTRL reads", false },
+	{ "H3", "firmware segment-ranges + DART sid/vm-base/vm-size",
+	  "owner IODeviceTree capture (ane + dart-ane) beside the b0 receipts",
+	  false },
+	{ "H4", "RVBAR entry compose value",
+	  "ascwrap kext RE in the H15 kernelcache, then S3 live observation",
+	  false },
+	{ "H5", "SCRATCH wake word + protocol role (never reuse T6021 0xf7fbdff9)",
+	  "same kext RE as H4, then live observation", false },
+};
+
+const unsigned int ane_h15_n_facts = ARRAY_SIZE(ane_h15_facts);
