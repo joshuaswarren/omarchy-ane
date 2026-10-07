@@ -88,7 +88,7 @@ MODULE_PARM_DESC(confirm_boot,
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
-		 "Stage=boot only. Path under /lib/firmware of a Mach-O payload to hash and compare against the row pin. No pin exists for the H15 stub image; the row pin is the 27.0 IPSW payload (unmeasured for stub). See the runbook.");
+		 "Stage=boot only. This build checks that the value is set; it does not read or hash the file. No pin exists for the H15 stub image. See the runbook.");
 
 /* apple-pmgr-pwrstate word: TARGET bits 3:0, ACTUAL bits 7:4;
  * 0xf is fully on (ane_t6021.h ANE_PS_*; docs/t6021-ane-bringup-
