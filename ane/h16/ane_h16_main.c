@@ -959,7 +959,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	ret = ane_h16_map_stage(ane);
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "dart-map");
-		goto free_stage;
+		goto unmap;
 	}
 
 	rvbar = ane_h16_rd64(ane, s->rvbar);

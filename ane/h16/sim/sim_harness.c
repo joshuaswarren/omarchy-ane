@@ -709,6 +709,41 @@ static void sc_neg_foreign_preload(void)
 	    "refusal frees the staged buffer (no DMA leak)");
 }
 
+/* A DART map that fails midway must unwind the pages it already
+ * mapped before the staged buffer is freed: partial IOVA mappings
+ * over freed memory hand the next map a stale translation. The
+ * alias guard (iova already mapped -> -EBUSY) supplies the mid-loop
+ * failure: pre-seed one colliding page in the DATA segment, so 48
+ * TEXT pages and 100 DATA pages map, then page 101 refuses.
+ */
+static void sc_neg_dart_map_partial(void)
+{
+	struct iommu_domain *d = &sim_dart_storage;
+	u64 alias = DATA_IOVA + 100 * SZ_16K;
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	d->map[d->n].iova = alias;
+	d->map[d->n].pa = 0xdead0000;
+	d->map[d->n].len = SZ_16K;
+	d->n++;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -EBUSY, "probe returns -EBUSY");
+	chk(sim_log_count("verdict=REFUSED reason=dart-map") == 1,
+	    "RESULT REFUSED dart-map");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	chk(sim_dma_allocs == sim_dma_frees,
+	    "refusal frees the staged buffer (no DMA leak)");
+	chk(iommu_iova_to_phys(d, TEXT_IOVA) == 0 &&
+	    iommu_iova_to_phys(d, TEXT_IOVA + 47 * SZ_16K) == 0 &&
+	    iommu_iova_to_phys(d, DATA_IOVA) == 0 &&
+	    iommu_iova_to_phys(d, DATA_IOVA + 99 * SZ_16K) == 0,
+	    "partial map unwound before free_stage");
+}
+
 static void sc_neg_unknown_stage(void)
 {
 	int ret;
@@ -750,6 +785,8 @@ int main(int argc, char **argv)
 		sc_neg_bad_pin();
 	else if (!strcmp(sc, "neg-foreign-preload"))
 		sc_neg_foreign_preload();
+	else if (!strcmp(sc, "neg-dart-map"))
+		sc_neg_dart_map_partial();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else {

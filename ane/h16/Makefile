@@ -23,7 +23,8 @@ modules:
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello
-NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload neg-unknown-stage
+NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
+	neg-dart-map neg-unknown-stage
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c
@@ -64,7 +65,14 @@ sim-discriminate: $(SIM_OUT)
 	@if $(SIM_OUT).d3 neg-foreign-preload >/dev/null 2>&1; then \
 		echo "DISCRIMINATION FAILED: reintroduced DMA leak was not caught"; exit 1; \
 	else echo "ok: leak mutation caught by neg-foreign-preload"; fi
-	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3
+	@sed '/"REFUSED", "dart-map");/{n;s/goto unmap;/goto free_stage;/}' \
+	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
+	@$(CC) -g -O1 -I /tmp/ane-h16-discrim/sim -I /tmp/ane-h16-discrim/sim/inc \
+	  -o $(SIM_OUT).d4 /tmp/ane-h16-discrim/sim/sim_harness.c
+	@if $(SIM_OUT).d4 neg-dart-map >/dev/null 2>&1; then \
+		echo "DISCRIMINATION FAILED: reintroduced partial-map leak was not caught"; exit 1; \
+	else echo "ok: partial-map-leak mutation caught by neg-dart-map"; fi
+	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3 sim/sim_h16.d4
 
 sim: sim-test sim-negative sim-discriminate
 

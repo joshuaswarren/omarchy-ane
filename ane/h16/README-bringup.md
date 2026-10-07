@@ -63,10 +63,12 @@ HELLO) and runs:
   (no wake word -> FAIL boot-timeout, mapping left, reboot required),
   `neg-bad-pin` (sha mismatch refused before any write),
   `neg-foreign-preload` (diff outside patchbay/tunables refused),
+  `neg-dart-map` (DART map fails midway; the partial map must unwind),
   `neg-unknown-stage` (-EINVAL, no RESULT line);
 - `sim-discriminate`: mutates a copy of the module (pin check neutered,
-  ps gate skipped) and requires the matching negative to FAIL the
-  harness, proving the harness discriminates.
+  ps gate skipped, one of the two refusal leaks reintroduced) and
+  requires the matching negative to FAIL the harness, proving the
+  harness discriminates.
 
 A green sim proves the harness logic only - stage dispatch, the ps
 guard, the pin/diff gates, the boot state machine and the RESULT
