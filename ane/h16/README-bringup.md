@@ -45,6 +45,34 @@ Verified W=1-clean against the `josh/ane-driver-aurora` tree
 chroot. The module is not part of `make all`, `dkms.conf` or the
 package.
 
+## Simulation (host, userspace)
+
+`make -C ane/h16 sim` builds the REAL module source against a userspace
+shim (`sim/shim.h`: fake MMIO bus, fake boot ADT, fake DART, firmware
+model that raises SCRATCH7 0x08042006 after N polls, optional RTKit
+HELLO) and runs:
+
+- positives: `pos-dt` (stage=dt with ZERO bus accesses, asserted),
+  `pos-dt-noadt` (missing ADT is a finding), `pos-status` (five ps
+  words ACTUAL=0xf, zero engine writes), `pos-boot` (boot reaches the
+  wake word; RVBAR compose, SCRATCH7=0, CPU_CONTROL 0->0x10, 219-page
+  DART map at the ADT IOVAs), `pos-boot-hello` (HELLO answered with
+  version 2);
+- negatives that MUST refuse: `neg-ps-stuck` (word stuck 0x30 ->
+  FAIL pmgr-actual-stuck, zero engine accesses), `neg-mbox-silent`
+  (no wake word -> FAIL boot-timeout, mapping left, reboot required),
+  `neg-bad-pin` (sha mismatch refused before any write),
+  `neg-foreign-preload` (diff outside patchbay/tunables refused),
+  `neg-unknown-stage` (-EINVAL, no RESULT line);
+- `sim-discriminate`: mutates a copy of the module (pin check neutered,
+  ps gate skipped) and requires the matching negative to FAIL the
+  harness, proving the harness discriminates.
+
+A green sim proves the harness logic only - stage dispatch, the ps
+guard, the pin/diff gates, the boot state machine and the RESULT
+grammar. It is NOT silicon: no claim about a real M4 comes out of this
+directory.
+
 ## Device tree (T8132 only for now)
 
 `t8132-ane-experimental.dts` builds `t8132-ane-experimental.dtbo`
