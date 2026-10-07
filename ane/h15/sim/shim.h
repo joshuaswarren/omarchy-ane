@@ -171,6 +171,10 @@ extern int sim_n_regions;
 extern struct sim_event sim_events[SIM_MAX_EVENTS];
 extern int sim_n_events;
 extern int sim_bus_faults;
+/* window map/unmap counts: the harness asserts a failed probe (and
+ * remove) releases exactly the windows it mapped */
+extern int sim_n_iomap;
+extern int sim_n_iounmap;
 
 static inline struct sim_region *sim_region_find(u64 pa)
 {
@@ -242,11 +246,18 @@ static inline void bus_write(u64 pa, u32 v)
 
 #define ioremap_np(pa, size) sim_bus_map((pa), (size))
 #define ioremap(pa, size) sim_bus_map((pa), (size))
-#define iounmap(p) ((void)(p))
-#define of_iomap(n, idx) \
-	(!(n) || (idx) < 0 || (idx) >= (n)->n_reg || !(n)->reg_size[idx] \
-		 ? NULL \
-		 : sim_bus_map((n)->reg_pa[idx], (n)->reg_size[idx]))
+static inline void iounmap(void *p)
+{
+	(void)p;
+	sim_n_iounmap++;
+}
+static inline void *of_iomap(struct device_node *n, int idx)
+{
+	if (!n || idx < 0 || idx >= n->n_reg || !n->reg_size[idx])
+		return NULL;
+	sim_n_iomap++;
+	return sim_bus_map(n->reg_pa[idx], n->reg_size[idx]);
+}
 #define readl(a) bus_read((u64)(uintptr_t)(a))
 #define readl_relaxed(a) bus_read((u64)(uintptr_t)(a))
 #define writel(v, a) bus_write((u64)(uintptr_t)(a), (v))
@@ -272,11 +283,15 @@ static inline void msleep(unsigned int ms) { sim_jiffies += ms; }
  */
 extern int sim_pm_get;
 extern int sim_pm_put;
+/* when nonzero, get_sync returns this (induced power-domains failure) */
+extern int sim_pm_get_fail;
 static inline void pm_runtime_enable(struct device *d) { (void)d; }
 static inline void pm_runtime_disable(struct device *d) { (void)d; }
 static inline int pm_runtime_get_sync(struct device *d)
 {
 	(void)d;
+	if (sim_pm_get_fail)
+		return sim_pm_get_fail;
 	return ++sim_pm_get;
 }
 static inline int pm_runtime_put_sync(struct device *d)

@@ -33,11 +33,14 @@ int sim_n_regions;
 struct sim_event sim_events[SIM_MAX_EVENTS];
 int sim_n_events;
 int sim_bus_faults;
+int sim_n_iomap;
+int sim_n_iounmap;
 char sim_log[SIM_LOG_SZ];
 size_t sim_log_len;
 unsigned long sim_jiffies;
 int sim_pm_get;
 int sim_pm_put;
+int sim_pm_get_fail;
 
 /* ---- helpers ---- */
 static int fails;
@@ -147,10 +150,13 @@ static void reset_all(void)
 	sim_n_regions = 0;
 	sim_n_events = 0;
 	sim_bus_faults = 0;
+	sim_n_iomap = 0;
+	sim_n_iounmap = 0;
 	sim_log_reset();
 	sim_jiffies = 0;
 	sim_pm_get = 0;
 	sim_pm_put = 0;
+	sim_pm_get_fail = 0;
 	memset(&pdev, 0, sizeof(pdev));
 	memset(&node, 0, sizeof(node));
 	optin = NULL;
@@ -259,6 +265,11 @@ static void pos_ps_pass(void)
 	chk(sim_pm_get == 1 && sim_pm_put == 1,
 	    "P2 ps: genpd claim released (get==put==1)");
 	chk_global_invariants(cur_soc, "P2 ps");
+
+	/* remove() must release the windows the successful probe kept */
+	ane_h15_remove(&pdev);
+	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
+	    "P2 ps: remove unmaps both windows");
 }
 
 static void pos_refusals(void)
@@ -282,6 +293,8 @@ static void pos_refusals(void)
 	chk(sim_n_events == 0,
 	    "P3 wrapper: refusal precedes any MMIO access");
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "P3 wrapper: power released");
+	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
+	    "P3 wrapper: refused probe unmaps its windows");
 	chk_global_invariants(cur_soc, "P3 wrapper");
 
 	/* stage=3 boot: REFUSED, enumerates exactly the unfilled facts */
@@ -303,6 +316,8 @@ static void pos_refusals(void)
 	    !strcmp(ids[2], "H3") && !strcmp(ids[3], "H4") &&
 	    !strcmp(ids[4], "H5"),
 	    "P4 boot: refusal enumerates exactly H1,H2,H3,H4,H5");
+	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
+	    "P4 boot: refused probe unmaps its windows");
 	chk_global_invariants(cur_soc, "P4 boot");
 }
 
@@ -409,6 +424,11 @@ static int neg_ps_stuck(void)
 		printf("    NEG-PS-STUCK: engine access, fault, or write on stuck word\n");
 		bad = 1;
 	}
+	if (sim_n_iomap != sim_n_iounmap) {
+		printf("    NEG-PS-STUCK: failed probe leaked a window (iomap=%d iounmap=%d)\n",
+		       sim_n_iomap, sim_n_iounmap);
+		bad = 1;
+	}
 	printf("%s\n", bad ? "  neg-ps-stuck: harness FAILED the module (BAD)"
 			   : "  neg-ps-stuck: module refuses as required");
 	return bad;
@@ -496,9 +516,55 @@ static int neg_truncated_dt(void)
 			       nregs_variants[i]);
 			bad = 1;
 		}
+		if (sim_n_iomap != sim_n_iounmap) {
+			printf("    NEG-TRUNCATED-DT(nreg=%d): failed probe leaked a window (iomap=%d iounmap=%d)\n",
+			       nregs_variants[i], sim_n_iomap, sim_n_iounmap);
+			bad = 1;
+		}
 	}
 	printf("%s\n", bad ? "  neg-truncated-dt: harness FAILED (BAD)"
 			   : "  neg-truncated-dt: module refuses as required");
+	return bad;
+}
+
+static int neg_rpm_fail(void)
+{
+	unsigned int rstage;
+	char verdict[32], reason[128];
+	int ret, bad = 0;
+
+	reset_all();
+	optin = "t8122";
+	stage = "status";
+	build_node(&ane_t8122_soc, 2, "apple,t8122-ane");
+	set_ps_words(&ane_t8122_soc, -1);
+	sim_pm_get_fail = -EIO;		/* power-domains bring-up fails */
+	ret = probe_now();
+
+	if (ret != -EIO) {
+		printf("    NEG-RPM-FAIL: expected -EIO, got %d\n", ret);
+		bad = 1;
+	}
+	if (log_count("ane_h15 RESULT") != 0) {
+		printf("    NEG-RPM-FAIL: RESULT line before the stage ran\n");
+		bad = 1;
+	}
+	if (sim_pm_get != 0 || sim_pm_put != 0) {
+		printf("    NEG-RPM-FAIL: power claim taken on a failed get_sync\n");
+		bad = 1;
+	}
+	if (sim_n_iomap != 2 || sim_n_iounmap != 2) {
+		printf("    NEG-RPM-FAIL: failed probe leaked a window (iomap=%d iounmap=%d)\n",
+		       sim_n_iomap, sim_n_iounmap);
+		bad = 1;
+	}
+	if (events_in(ane_t8122_soc.engine_pa, ane_t8122_soc.engine_size, 0) ||
+	    sim_bus_faults || events_in(0, ~0ULL, 1)) {
+		printf("    NEG-RPM-FAIL: engine access, fault, or write\n");
+		bad = 1;
+	}
+	printf("%s\n", bad ? "  neg-rpm-fail: harness FAILED (BAD)"
+			   : "  neg-rpm-fail: module refuses as required");
 	return bad;
 }
 
@@ -524,9 +590,12 @@ int main(int argc, char **argv)
 	} else if (!strcmp(mode, "neg-truncated-dt")) {
 		printf("sim-h15 negative control: truncated DT\n");
 		fails = neg_truncated_dt();
+	} else if (!strcmp(mode, "neg-rpm-fail")) {
+		printf("sim-h15 negative control: pm_runtime_get_sync failure\n");
+		fails = neg_rpm_fail();
 	} else {
 		fprintf(stderr,
-			"usage: sim_h15 [pos|neg-ps-stuck|neg-wrong-stage|neg-truncated-dt]\n");
+			"usage: sim_h15 [pos|neg-ps-stuck|neg-wrong-stage|neg-truncated-dt|neg-rpm-fail]\n");
 		return 2;
 	}
 	return fails ? 1 : 0;

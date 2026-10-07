@@ -54,6 +54,9 @@ sim-negative-wrong-stage: sim/sim_h15
 sim-negative-truncated-dt: sim/sim_h15
 	./sim/sim_h15 neg-truncated-dt
 
+sim-negative-rpm-fail: sim/sim_h15
+	./sim/sim_h15 neg-rpm-fail
+
 sim-negative-nopsguard:
 	rm -rf /tmp/ane_h15-nopsguard && mkdir -p /tmp/ane_h15-nopsguard
 	cp -r sim /tmp/ane_h15-nopsguard/sim
@@ -67,11 +70,28 @@ sim-negative-nopsguard:
 	if [ $$s -eq 0 ]; then echo "SIM-NEGNOPSGUARD: guard-skipped build PASSED the harness (BAD: harness does not discriminate)"; exit 1; \
 	else echo "SIM-NEGNOPSGUARD OK: guard-skipped build FAILS the harness (guard class caught)"; fi
 
+# Mutation control for the window-release fix: the unmap calls deleted
+# from the real module MUST fail the harness (pos mode carries the
+# balance checks). Exit 0 iff the harness catches the leak.
+sim-mutation-nounmap:
+	rm -rf /tmp/ane_h15-nounmap && mkdir -p /tmp/ane_h15-nounmap
+	cp -r sim /tmp/ane_h15-nounmap/sim
+	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-nounmap/
+	sed 's/ane_h15_unmap_windows(ane);/\/* NEG: window unmap deleted *\//' ane_h15_main.c > /tmp/ane_h15-nounmap/ane_h15_main.c
+	grep -q 'NEG: window unmap deleted' /tmp/ane_h15-nounmap/ane_h15_main.c
+	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-nounmap/sim -I /tmp/ane_h15-nounmap/sim/inc -o /tmp/ane_h15-nounmap/sim_h15 /tmp/ane_h15-nounmap/sim/sim_harness.c
+	@/tmp/ane_h15-nounmap/sim_h15 pos > /tmp/ane_h15-nounmap/run.log 2>&1; \
+	s=$$?; \
+	echo "--- nounmap mutant harness tail ---"; tail -4 /tmp/ane_h15-nounmap/run.log; \
+	if [ $$s -eq 0 ]; then echo "SIM-MUT-NOUNMAP BAD: unmap-deleted build PASSED the harness (harness does not discriminate)"; exit 1; \
+	else echo "SIM-MUT-NOUNMAP OK: unmap-deleted build FAILS the harness (leak class caught)"; fi
+
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f ane_h15_adt_test sim/sim_h15
 
 .PHONY: default modules check sim-test sim-negative-ps-stuck \
 	sim-negative-wrong-stage sim-negative-truncated-dt \
-	sim-negative-nopsguard clean
+	sim-negative-rpm-fail sim-negative-nopsguard \
+	sim-mutation-nounmap clean
 endif

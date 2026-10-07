@@ -317,6 +317,14 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 }
 
 /* ---- driver ---- */
+static void ane_h15_unmap_windows(struct ane_h15 *ane)
+{
+	if (ane->pmgr)
+		iounmap(ane->pmgr);
+	if (ane->engine)
+		iounmap(ane->engine);
+}
+
 static int ane_h15_probe(struct platform_device *pdev)
 {
 	const struct ane_h15_soc *soc = of_device_get_match_data(&pdev->dev);
@@ -366,8 +374,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev,
 			"of_iomap failed (engine=%s, pmgr=%s): node reg property missing?\n",
 			ane->engine ? "ok" : "NULL", ane->pmgr ? "ok" : "NULL");
-		ret = -ENXIO;
-		goto rpm_off;
+		ane_h15_unmap_windows(ane);
+		return -ENXIO;
 	}
 
 	pm_runtime_enable(&pdev->dev);
@@ -375,7 +383,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 	if (ret < 0) {
 		dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
 		pm_runtime_disable(&pdev->dev);
-		goto rpm_off;
+		ane_h15_unmap_windows(ane);
+		return ret;
 	}
 
 	if (stage_idx == 1)       ret = ane_h15_stage_status(ane);
@@ -386,7 +395,9 @@ static int ane_h15_probe(struct platform_device *pdev)
 	if (ane->fw_started)
 		dev_emerg(&pdev->dev,
 			  "firmware started: do NOT unload; reboot to park the ANE\n");
-rpm_off:
+	/* a failed probe never reaches remove(); release the windows */
+	if (ret)
+		ane_h15_unmap_windows(ane);
 	return ret;
 }
 
@@ -400,6 +411,7 @@ static void ane_h15_remove(struct platform_device *pdev)
 		return;
 	}
 	pm_runtime_disable(&pdev->dev);
+	ane_h15_unmap_windows(ane);
 }
 
 static const struct of_device_id ane_h15_of_match[] = {
