@@ -8,6 +8,22 @@ module from `ane/h17/` (AneH17Driver). Facts and receipts:
 
 ## What it does
 
+Every stage ends with one machine-readable record on the console:
+
+    ane_h16 RESULT stage=<0|1|3> soc=<soc> verdict=<PASS|FAIL|REFUSED> reason=<reason>
+
+(the same grammar as `ane_h15`), and every refusal carries one too, so a
+volunteer log can be judged line-by-line. Stage numbers: 0=dt, 1=status,
+3=boot; 2 is the firmware-pin ladder step, which runs in userspace
+(`omarchy-ane-firmware-fetch`), not in this module.
+
+- `stage=dt` (or `stage=0`, safe): parses the running DT (reg windows,
+  IRQ and iommu cell counts) and prints every word group with its
+  evidence tier, plus the boot-ADT segment-ranges when the reserved-
+  memory `adt` region exists on this boot. NO MMIO access of any kind:
+  the first run on a volunteer machine is hardware-silent. The absence
+  of segment-ranges is a finding (iBoot preload presence unknown), not
+  a failure: the stage still ends `verdict=PASS reason=dt-parse-only`.
 - `stage=status` (default, safe): powers the ANE domains listed in the
   device node, waits for every pmgr ANE word to read ACTUAL=0xf, then
   logs RVBAR, CPU_STATUS, SCRATCH0..7 and the mailbox control words.

@@ -5,7 +5,12 @@
  * live in ane/h17/). No silicon has run this module. It registers no
  * DRM device, performs no inference and sends no CSNE command.
  *
- * Two stages, selected by the "stage" module parameter:
+ * Three stages, selected by the "stage" module parameter:
+ *
+ *   stage=dt: parse the running DT (engine/pmgr windows from the soc
+ *   row, ps word offsets, the firmware pin) and print the word groups
+ *   with their evidence tier. No MMIO access of any kind: the first
+ *   run on a volunteer machine is hardware-silent.
  *
  *   stage=status (default): enable the ANE power domains named in the
  *   device node, wait until every pmgr ANE state word reads ACTUAL=0xf
@@ -71,7 +76,7 @@ MODULE_PARM_DESC(optin,
 static char *stage = "status";
 module_param(stage, charp, 0444);
 MODULE_PARM_DESC(stage,
-		 "status (default): power up and log registers only. boot: firmware-boot smoke (EXPERIMENTAL).");
+		 "dt/0: parse the DT and print word groups, no MMIO. status/1 (default): power up and log registers only. boot/3: firmware-boot smoke (EXPERIMENTAL). 2 is not an H16 module stage (the ladder's fw-pin step runs in userspace).");
 
 static unsigned int ps_wait_ms = 500;
 module_param(ps_wait_ms, uint, 0444);
@@ -168,6 +173,45 @@ static const char *const ane_h16_ps_names[] = {
 	"ANE_SYS", "ANE_MPM", "ANE_CPU", "ANE_TD", "ANE_BASE",
 };
 
+/* ---- RESULT line: the machine-readable record every stage emits,
+ * same grammar as ane_h15_main.c ("ane_h16 RESULT stage=%u soc=%s
+ * verdict=%s reason=%s"). collect_deep.py scoops these from dmesg and
+ * the ladder judges them; every refusal carries one too.
+ */
+
+static void ane_h16_result(struct ane_h16 *ane, unsigned int stage_idx,
+			   const char *verdict, const char *reason)
+{
+	if (ane && ane->dev)
+		dev_crit(ane->dev,
+			 "ane_h16 RESULT stage=%u soc=%s verdict=%s reason=%s\n",
+			 stage_idx, ane->soc->name, verdict, reason);
+	else
+		pr_crit("ane_h16 RESULT stage=%u soc=%s verdict=%s reason=%s\n",
+			stage_idx, "?", verdict, reason);
+}
+
+/* Module stages: 0=dt, 1=status, 3=boot. 2 is the ladder's fw-pin
+ * step, which runs in userspace (omarchy-ane-firmware-fetch), not in
+ * this module, so stage=2 is refused as unknown.
+ */
+static int ane_h16_stage_idx(const char *name, unsigned int *out)
+{
+	if (!strcmp(name, "dt") || !strcmp(name, "0")) {
+		*out = 0;
+		return 0;
+	}
+	if (!strcmp(name, "status") || !strcmp(name, "1")) {
+		*out = 1;
+		return 0;
+	}
+	if (!strcmp(name, "boot") || !strcmp(name, "3")) {
+		*out = 3;
+		return 0;
+	}
+	return -EINVAL;
+}
+
 static bool ane_h16_ps_on(struct ane_h16 *ane, unsigned int i, u32 *v)
 {
 	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
@@ -187,7 +231,7 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
-					"%s word %#x stuck at %#x (ACTUAL %#lx, not 0xf); refusing to touch the engine window\n",
+					"ane_h16 ps word=%s off=%#x stuck value=%#x actual=%#lx; refusing to touch the engine window\n",
 					ane_h16_ps_names[i], ane->soc->ps_off[i],
 					v, FIELD_GET(ANE_H16_PS_ACTUAL, v));
 				return -ETIMEDOUT;
@@ -198,11 +242,12 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
 		if (!ane_h16_ps_on(ane, i, &v)) {
 			dev_err(ane->dev,
-				"%s word %#x dropped to %#x after the wait; refusing to touch the engine window\n",
+				"ane_h16 ps word=%s off=%#x dropped value=%#x after the wait; refusing to touch the engine window\n",
 				ane_h16_ps_names[i], ane->soc->ps_off[i], v);
 			return -EIO;
 		}
-		dev_info(ane->dev, "%s word %#x = %#x (ACTUAL 0xf)\n",
+		dev_info(ane->dev,
+			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=true\n",
 			 ane_h16_ps_names[i], ane->soc->ps_off[i], v);
 	}
 	return 0;
@@ -400,13 +445,42 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 	return -ENOENT;
 }
 
+/* Decode one segment-ranges property (two entries) into segs[2].
+ * Entry is {phys, iova, remap, size} (u64 each); the ASC sees
+ * "remap". The 3-word form {phys, remap, size} is accepted too; the
+ * log keeps the decoded values so a wrong pick is visible.
+ */
+static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
+			      u32 size, struct ane_h16_seg *segs)
+{
+	unsigned int stride = size / 2;
+	unsigned int i;
+
+	if (size % 2 || (stride != 24 && stride != 32)) {
+		dev_err(ane->dev,
+			"segment-ranges: %u bytes is not two 3- or 4-word entries\n",
+			size);
+		return -EINVAL;
+	}
+	for (i = 0; i < 2; i++) {
+		u64 v[4] = {};
+
+		memcpy(v, data + i * stride, stride);
+		segs[i].phys = le64_to_cpu(v[0]);
+		segs[i].iova = stride == 32 ?
+			le64_to_cpu(v[2]) : le64_to_cpu(v[1]);
+		segs[i].size = le64_to_cpu(v[stride / 8 - 1]);
+	}
+	return 0;
+}
+
 static int ane_h16_segments(struct ane_h16 *ane)
 {
 	const struct ane_h16_fw *fw = ane->soc->fw;
 	struct adt_node ane_node;
 	const void *data;
 	u32 size;
-	unsigned int i;
+	int ret;
 
 	if (ane_h16_adt_open(ane))
 		return -ENODEV;
@@ -421,28 +495,9 @@ static int ane_h16_segments(struct ane_h16 *ane)
 			"ADT: /arm-io ane node has no segment-ranges: iBoot did not preload ANE firmware for this boot, or the ADT differs; refusing\n");
 		return -ENOENT;
 	}
-	/* Entry is {phys, iova, remap, size} (u64 each); the ASC sees
-	 * "remap". The 3-word form {phys, remap, size} is accepted too; the
-	 * log keeps the decoded values so a wrong pick is visible. */
-	{
-		unsigned int stride = size / 2;
-
-		if (size % 2 || (stride != 24 && stride != 32)) {
-			dev_err(ane->dev,
-				"segment-ranges: %u bytes is not two 3- or 4-word entries\n",
-				size);
-			return -EINVAL;
-		}
-		for (i = 0; i < 2; i++) {
-			u64 v[4] = {};
-
-			memcpy(v, data + i * stride, stride);
-			ane->segs[i].phys = le64_to_cpu(v[0]);
-			ane->segs[i].iova = stride == 32 ?
-				le64_to_cpu(v[2]) : le64_to_cpu(v[1]);
-			ane->segs[i].size = le64_to_cpu(v[stride / 8 - 1]);
-		}
-	}
+	ret = ane_h16_seg_decode(ane, data, size, ane->segs);
+	if (ret)
+		return ret;
 	if ((ane->segs[0].size != ane->soc->fw->text_vmsize) ||
 	    (ane->segs[1].size < fw->data_filesize)) {
 		dev_err(ane->dev,
@@ -456,6 +511,90 @@ static int ane_h16_segments(struct ane_h16 *ane)
 		 ane->segs[0].phys, ane->segs[0].iova, ane->segs[0].size,
 		 ane->segs[1].phys, ane->segs[1].iova, ane->segs[1].size);
 	return 0;
+}
+
+/* ---- stage 0: dt-only parse, no MMIO ---- */
+
+static void ane_h16_stage_dt(struct ane_h16 *ane)
+{
+	const struct ane_h16_soc *s = ane->soc;
+	unsigned int i;
+
+	dev_info(ane->dev, "stage=dt: soc=%s ane-type=%#x", s->name,
+		 s->ane_type);
+	for (i = 0; i < 2; i++) {
+		struct resource res;
+
+		if (!of_address_to_resource(ane->dev->of_node, i, &res))
+			dev_info(ane->dev, "reg[%u] pa=%#llx size=%#llx (%s)",
+				 i, (unsigned long long)res.start,
+				 (unsigned long long)resource_size(&res),
+				 i ? "pmgr" : "engine");
+	}
+	dev_info(ane->dev, "ane_h16 dt irq cells=%d iommu cells=%d",
+		 of_property_count_u32_elems(ane->dev->of_node, "interrupts"),
+		 of_property_count_u32_elems(ane->dev->of_node, "iommus"));
+	/* Word groups with their evidence tier (h15 tier scale: 0 =
+	 * measured address and role, touched only behind the ps guard;
+	 * 3 = forbidden). The H16 rows are kext-derived and calibrated
+	 * against the known T6021 row, hence tier 0.
+	 */
+	for (i = 0; i < 5; i++)
+		dev_info(ane->dev,
+			 "ane_h16 group=pmgr tier=0 word=%s off=%#x (ps guard word)",
+			 ane_h16_ps_names[i], s->ps_off[i]);
+	dev_info(ane->dev, "ane_h16 group=engine-ro tier=0 word=RVBAR off=%#x",
+		 s->rvbar);
+	dev_info(ane->dev,
+		 "ane_h16 group=engine-ro tier=0 word=CPU_STATUS off=%#x",
+		 s->cpu_status);
+	dev_info(ane->dev,
+		 "ane_h16 group=engine-ro tier=0 word=SCRATCH0 off=%#x (+4n, n<8)",
+		 s->scratch0);
+	dev_info(ane->dev,
+		 "ane_h16 group=engine-ro tier=0 word=MBOX off=%#x (a2i/i2a ctrl +0x110/+0x114, send +0x800/+0x808, recv +0x830/+0x838)",
+		 s->mbox);
+	dev_info(ane->dev,
+		 "ane_h16 group=engine-boot tier=0 word=CPU_CONTROL off=%#x (write 0 then 0x10, stage=boot only)",
+		 s->cpu_control);
+	dev_info(ane->dev,
+		 "ane_h16 group=engine-boot tier=0 word=SCRATCH7 off=%#x (cleared, then polled for 0x08042006 at stage=boot)",
+		 s->scratch0 + 7 * 4);
+	dev_info(ane->dev,
+		 "ane_h16 group=forbidden tier=3 word=CORESIGHT off=0x1010000 (never touched)");
+	if (s->fw)
+		dev_info(ane->dev, "fw pin: name=%s size=%#x", s->fw->name,
+			 s->fw->size);
+	else
+		dev_info(ane->dev, "fw pin: none (stage=boot refuses)");
+	/* The boot ADT, when the reserved-memory phram region exists on
+	 * this boot: whether iBoot preloaded ANE firmware on a Linux
+	 * boot is an open question (H9), and its absence here is a
+	 * finding, not a failure.
+	 */
+	{
+		struct ane_h16_seg segs[2];
+		struct adt_node ane_node;
+		const void *data;
+		u32 size;
+
+		if (!ane_h16_adt_open(ane) &&
+		    !adt_find_ane(s->ane_type, &ane_node) &&
+		    !adt_prop(ane_node, "segment-ranges", &data, &size) &&
+		    !ane_h16_seg_decode(ane, data, size, segs)) {
+			unsigned int e;
+
+			for (e = 0; e < 2; e++)
+				dev_info(ane->dev,
+					 "adt seg%u phys=%#llx remap=%#llx size=%#llx (iBoot preload present)",
+					 e, segs[e].phys, segs[e].iova,
+					 segs[e].size);
+		} else {
+			dev_info(ane->dev,
+				 "adt: no reserved-memory \"adt\" region, ane node or segment-ranges: iBoot preload presence on this boot is unknown; stage=boot refuses");
+		}
+	}
+	ane_h16_result(ane, 0, "PASS", "dt-parse-only");
 }
 
 /* ---- firmware: pin check, preload diff, staged copy ---- */
@@ -803,17 +942,25 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	int ret;
 
 	ret = ane_h16_segments(ane);
-	if (ret)
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "segment-ranges");
 		return ret;
+	}
 	ret = ane_h16_fw_pin(ane, &fw);
-	if (ret)
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "fw-pin");
 		return ret;
+	}
 	ret = ane_h16_stage(ane, fw);
-	if (ret)
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "preload-diff");
 		goto rel_fw;
+	}
 	ret = ane_h16_map_stage(ane);
-	if (ret)
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "dart-map");
 		goto free_stage;
+	}
 
 	rvbar = ane_h16_rd64(ane, s->rvbar);
 	if (rvbar & 1) {
@@ -823,6 +970,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 			dev_err(ane->dev,
 				"RVBAR latched at %#llx but the staged TEXT iova is %#llx; refusing\n",
 				entry, ane->segs[0].iova);
+			ane_h16_result(ane, 3, "REFUSED", "rvbar-latched");
 			ret = -EBUSY;
 			goto unmap;
 		}
@@ -854,6 +1002,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 				dev_emerg(ane->dev,
 					"no SCRATCH7 wake word within %u ms (last %#x); firmware did not start; leaving the mapping in place, reboot before retrying\n",
 					boot_wait_ms, ack);
+				ane_h16_result(ane, 3, "FAIL", "boot-timeout");
 				ret = -ETIMEDOUT;
 				goto rel_fw;
 			}
@@ -870,6 +1019,9 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	else
 		dev_info(ane->dev,
 			 "RTKit poll skipped (hello_wait_ms=0); set 1000 to probe for HELLO/EPMAP/STARTEP\n");
+	ane_h16_result(ane, 3, "PASS",
+		       ane->hello_done ? "boot-hello" :
+		       hello_wait_ms ? "boot-nortkit" : "boot-wake");
 	ret = 0;
 	goto rel_fw;
 unmap:
@@ -889,6 +1041,7 @@ static int ane_h16_probe(struct platform_device *pdev)
 {
 	const struct ane_h16_soc *soc = of_device_get_match_data(&pdev->dev);
 	struct ane_h16 *ane;
+	unsigned int stage_idx;
 	u32 ane_type;
 	int ret;
 
@@ -905,11 +1058,11 @@ static int ane_h16_probe(struct platform_device *pdev)
 			soc->name);
 		return -EINVAL;
 	}
-
-	if (strcmp(stage, "status") && strcmp(stage, "boot")) {
-		dev_err(&pdev->dev, "unknown stage \"%s\" (want status or boot)\n",
+	ret = ane_h16_stage_idx(stage, &stage_idx);
+	if (ret) {
+		dev_err(&pdev->dev, "unknown stage \"%s\" (want dt, status or boot)\n",
 			stage);
-		return -EINVAL;
+		return ret;
 	}
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
@@ -918,6 +1071,11 @@ static int ane_h16_probe(struct platform_device *pdev)
 	ane->dev = &pdev->dev;
 	ane->soc = soc;
 	platform_set_drvdata(pdev, ane);
+
+	if (stage_idx == 0) {
+		ane_h16_stage_dt(ane);
+		return 0;
+	}
 
 	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
 	ane->pmgr = devm_platform_ioremap_resource_byname(pdev, "pmgr");
@@ -934,12 +1092,18 @@ static int ane_h16_probe(struct platform_device *pdev)
 		return ret;
 	}
 	ret = ane_h16_ps_wait(ane);
-	if (ret)
+	if (ret) {
+		ane_h16_result(ane, 1, "FAIL", "pmgr-actual-stuck");
 		goto rpm_off;
+	}
 
 	ret = ane_h16_status(ane);
-	if (ret || strcmp(stage, "boot"))
+	if (ret)
 		goto rpm_off;
+	if (stage_idx == 1) {
+		ane_h16_result(ane, 1, "PASS", "ps-guard+reads");
+		goto rpm_off;
+	}
 	ret = ane_h16_boot(ane);
 rpm_off:
 	pm_runtime_put_sync(&pdev->dev);
