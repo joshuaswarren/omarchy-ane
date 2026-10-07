@@ -47,6 +47,7 @@ const struct ane_h15_fact ane_h15_facts[] = {
 	{ "H5", "synthetic row, filled for the P7 probe control",
 	  "sim only, never a receipt", true },
 };
+
 const unsigned int ane_h15_n_facts = ARRAY_SIZE(ane_h15_facts);
 #else
 #include "../ane_h15_soc.c"
@@ -419,8 +420,8 @@ static void pos_other_socs(void)
 /* ---- P7 filled-table probe control (filled build only) ---- */
 #ifdef ANE15_SIM_FILL_FACTS
 /* P7: the gate logic driven through the REAL probe path with a fully
- * filled table. The fall-through must refuse (-ENOSYS) with zero bus
- * writes: this build has no boot path, no CPU release.
+ * filled table. The filled-table run must refuse (-ENOSYS) with zero
+ * bus writes: this build has no boot path, no CPU release.
  */
 static void pos_filled_probe(void)
 {
