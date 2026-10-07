@@ -112,11 +112,13 @@ for compat, version, want in (([b'apple,j604', b'apple,t8132'], b'27.0', 'cannot
 for compat in ([b'apple,j433', b'apple,t8122'], [b'apple,j514s', b'apple,t6030'],
                [b'apple,j514c', b'apple,t6031'], [b'apple,j514m', b'apple,t6034']):
     t = system(compat, b'27.0')
-    err = io.StringIO()
-    with contextlib.redirect_stderr(err):
-        assert fetch.main(['--root', str(t)]) == 1
-        assert fetch.main(['--check', '--root', str(t)]) == 1
-    assert 'no pinned ANE payload' in err.getvalue() and 'os_fw_version' in err.getvalue(), err.getvalue()
+    for args in (['--root', str(t)], ['--check', '--root', str(t)]):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            assert fetch.main(args) == 1
+        # One buffer per call: each of run() and --check must refuse by itself.
+        assert 'no pinned ANE payload' in err.getvalue() and 'os_fw_version' in err.getvalue(), \
+            (args[0], err.getvalue())
     assert not (t / 'usr').exists()
 
 # 5. --hook (pacman): the hook fetches where the ANE is on by default
