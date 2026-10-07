@@ -377,6 +377,29 @@ def as_int(value):
         return None
 
 
+def board_tokens(entry):
+    """Board tokens ("j433", "j614s", ...) from one data-file boards row. Rows are
+    plain strings, {value, marketing_product} objects or compound strings."""
+    row = v(entry)
+    if isinstance(row, dict):
+        row = " ".join(s for s in row.values() if isinstance(s, str))
+    if not isinstance(row, str):
+        return set()
+    return {m.group(0).lower() for m in re.finditer(r"\bj\d+[a-z0-9]*", row, re.I)}
+
+
+def reg_rows(spec):
+    """Reg rows in {base, size} form. Data-file rows are {base, size} objects or
+    "0x...+0x..." strings; anything else is not a row."""
+    for row in v(spec) or []:
+        row = v(row)
+        if isinstance(row, str):
+            base, _, size = row.partition("+")
+            row = {"base": base.strip(), "size": size.strip()}
+        if isinstance(row, dict):
+            yield row
+
+
 def read_table(soc, tdir):
     """(table, None) for data/ane-soc/<soc>.json, else (None, {table, reason})."""
     if not soc:
@@ -408,9 +431,10 @@ def soc_table(soc, board, family, tdir):
         if not ok:
             diffs.append({"field": field, "dt": dt, "table": tbl})
 
-    boards = [v(b) for b in table.get("boards") or []]
-    if boards:
-        check("boards", board, boards, board in boards)
+    if board is not None:
+        tokens = set().union(*(board_tokens(b) for b in table.get("boards") or []))
+        if tokens:
+            check("boards", board, sorted(tokens), board.rsplit(",", 1)[-1].lower() in tokens)
     for key, nodes in (("ane", "ane_nodes"), ("dart", "dart_ane_nodes"), ("mailbox", "mailbox_nodes")):
         spec = v(table.get(key)) or {}
         node = (family[nodes] or [None])[0]
@@ -418,8 +442,7 @@ def soc_table(soc, board, family, tdir):
         dt_compat = node["compatible"] if node else None
         check(f"{key}.compatible", dt_compat, compat, bool(node) and compat in node["compatible"])
         dt_regs = (node or {}).get("reg_decoded") or []
-        for i, reg in enumerate(v(spec.get("reg")) or []):
-            reg = v(reg) or {}
+        for i, reg in enumerate(reg_rows(spec.get("reg"))):
             for part in ("base", "size"):
                 want = v(reg.get(part))
                 have = dt_regs[i][part] if i < len(dt_regs) else None

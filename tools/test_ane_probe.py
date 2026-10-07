@@ -445,6 +445,45 @@ def test_empty_root_and_cap():
                              "truncated", "unreadable"} and tiny["soc"] == "t6021", tiny
 
 
+def test_soc_table_object_shapes():
+    """The tables whose boards rows are objects and whose ane/dart reg rows are
+    "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150) compare instead of
+    crashing with an AttributeError."""
+    tables = REPO / "data/ane-soc"
+    empty = {"ane_nodes": [], "dart_ane_nodes": [], "mailbox_nodes": []}
+    for soc in ("t6034", "t6050", "t8140", "t8142", "t8150"):
+        st = probe.soc_table(soc, "apple,j700", empty, tables)
+        assert st is not None and st["table"] == f"{soc}.json", st
+    assert next(d["field"] for d in
+                probe.soc_table("t6034", "apple,j514m", empty, tables)["dt_vs_table"]) != "boards"
+    # End to end: an ane and a dart node whose reg windows equal every t8150 table
+    # row (the rows are "0x...+0x..." strings), and a board the table has no j-token
+    # for (iPhone boards only), so the whole table matches with zero diffs.
+    src = '''/dts-v1/;
+/ { compatible = "apple,j8001", "apple,t8150", "apple,arm-platform"; model = "synthetic t8150";
+  #address-cells = <2>; #size-cells = <2>;
+  soc { #address-cells = <2>; #size-cells = <2>; ranges;
+    dart: dart@481800000 { compatible = "dart,t8110"; reg = <0x4 0x81800000 0x0 0xc000>,
+      <0x4 0x81820000 0x0 0xc000>, <0x4 0x81840000 0x0 0xc000>, <0x4 0x81810000 0x0 0x4000>;
+      interrupts = <608 4>; #iommu-cells = <1>; };
+    ane@480000000 { compatible = "ane,t8132exclave";
+      reg = <0x4 0x80000000 0x0 0x2000000>, <0x3 0x00700000 0x0 0x18000>,
+            <0x3 0x00724000 0x0 0x4000>, <0x3 0x003c0000 0x0 0x40000>,
+            <0x2 0x11000000 0x0 0xff4000>, <0x3 0x082c8000 0x0 0x4000>;
+      interrupts = <607 4 620 4>; iommus = <&dart 0>; };
+  };
+};'''
+    with tempfile.TemporaryDirectory() as tmp:
+        dtb(src, Path(tmp, "t.dtb"))
+        root = Path(tmp, "t8150")
+        unpack_fdt(Path(tmp, "t.dtb").read_bytes(), root / "sys/firmware/devicetree/base")
+        doc = run_probe(root, tables, "--max-kib", "0")
+        assert (doc["soc"], doc["board"]) == ("t8150", "apple,j8001"), (doc["soc"], doc["board"])
+        st = doc["soc_table"]
+        assert st is not None and not any(u.startswith("soc_table:") for u in doc["unreadable"]), doc["unreadable"]
+        assert st["match"] is True and st["dt_vs_table"] == [] and st["compared"] >= 20, st
+
+
 def test_bad_table_value_does_not_blank_the_document():
     with tempfile.TemporaryDirectory() as tmp:
         root = fixture(tmp, "t8103")
