@@ -47,6 +47,9 @@ PROVEN_UNION = {4: 5, 5: 4, 6: 6}
 # H14 header word 2 position flags. Independent copy (not imported from
 # build_add_batch.py) so a builder bug cannot hide behind a shared constant.
 FLAG_ONLY, FLAG_FIRST, FLAG_MIDDLE, FLAG_LAST = 0x2A, 0x08, 0x00, 0x22
+# H14 header word 4, bits 3/5/6: set in 2,099/2,099 non-middle oracle
+# tasks, clear in 2,887/2,887 middles (independent copy, not imported).
+WORD4_MIDDLE_CLEAR = 0x68
 
 
 def position_flag(i, n):
@@ -169,6 +172,20 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
         for off, words in split_tasks(
                 bytes(pkg[HEADER_BYTES:HEADER_BYTES + tsk_bytes])):
             struct.pack_into("<I", pkg, HEADER_BYTES + off + 8, FLAG_ONLY)
+    elif corrupt == "word4" and n > 2:
+        # The pre-fix bug: every task copies the single-add word 4
+        # (0xfff868); a middle task must clear bits 3/5/6 (0x68).
+        tsk_bytes = struct.unpack_from("<Q", pkg, 0x10)[0]
+        src_stream = source_bytes[HEADER_BYTES:HEADER_BYTES
+                                  + struct.unpack_from("<Q", source_bytes,
+                                                       0x10)[0]]
+        s_off, _ = split_tasks(src_stream)[0]
+        src_w4 = struct.unpack_from("<I", src_stream, s_off + 16)[0]
+        need(src_w4 & 0x68 == 0x68,
+             f"fixture word 4 {src_w4:#x} lacks the non-middle bits")
+        for off, words in split_tasks(
+                bytes(pkg[HEADER_BYTES:HEADER_BYTES + tsk_bytes])):
+            struct.pack_into("<I", pkg, HEADER_BYTES + off + 16, src_w4)
     elif corrupt == "tiles":
         struct.pack_into("<I", pkg, 0x28 + 5 * 4, src_tiles[5])  # unscaled
     elif corrupt == "golden":
@@ -214,10 +231,16 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
     stream = bytes(pkg[HEADER_BYTES:HEADER_BYTES + tsk])
     tasks = split_tasks(stream)
     need(len(tasks) == n, f"walked {len(tasks)} tasks != {n}")
+    # The only allowed deltas vs the source task: the three BAR
+    # payload[0] offsets (i * surf), the task id in header word 0, the
+    # position flag in header word 2, and the middle-task word-4 clear
+    # (all normalized back to the source's only-task values before the
+    # byte compare).
     src_body = bytearray(src_task)
     for rec_idx, payload_words in src_recs.values():
         struct.pack_into("<II", src_body, (rec_idx + 1) * 4, 0, 0)
     struct.pack_into("<I", src_body, 0, (TASK_WORDS << 16) | 0)
+    src_w4 = struct.unpack_from("<I", src_task, 16)[0]
 
     for i, (off, words) in enumerate(tasks):
         need(words == TASK_WORDS, f"task {i}: {words} words")
@@ -228,6 +251,11 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
         flag = position_flag(i, n)
         need(w2 == flag,
              f"task {i}: header word 2 {w2:#x} != position flag {flag:#x}")
+        w4 = struct.unpack_from("<I", stream, off + 16)[0]
+        want_w4 = src_w4 & ~WORD4_MIDDLE_CLEAR if 0 < i < n - 1 else src_w4
+        need(w4 == want_w4,
+             f"task {i}: header word 4 {w4:#x} != position rule "
+             f"{want_w4:#x}")
         task = bytearray(stream[off:off + words * 4])
         recs = task_bar_records(bytes(task))
         need(set(recs) == {(s, a) for s, a, _ in BAR_REFS},
@@ -240,6 +268,7 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
             struct.pack_into("<II", task, (rec_idx + 1) * 4, 0, 0)
         struct.pack_into("<I", task, 0, (TASK_WORDS << 16) | 0)
         struct.pack_into("<I", task, 8, FLAG_ONLY)
+        struct.pack_into("<I", task, 16, src_w4)
         need(task == src_body, f"task {i}: bytes outside the intended edits")
         for (slot, addr), (rec_idx, pl) in sorted(recs.items()):
             need(pl[1] == 0, f"task {i}: BAR ({slot:#x},{addr:#x}) high word")
@@ -289,7 +318,8 @@ def main(argv=None):
     ap.add_argument("--out-y", type=Path, default=None,
                     help="device output file to compare bit-exact")
     ap.add_argument("--corrupt",
-                    choices=("task-offset", "flags", "tiles", "golden"))
+                    choices=("task-offset", "flags", "word4", "tiles",
+                             "golden"))
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -297,8 +327,8 @@ def main(argv=None):
     if args.self_test:
         failures = []
         for label, corrupt in (("clean", None), ("task-offset", "task-offset"),
-                               ("flags", "flags"), ("tiles", "tiles"),
-                               ("golden", "golden")):
+                               ("flags", "flags"), ("word4", "word4"),
+                               ("tiles", "tiles"), ("golden", "golden")):
             n = args.n or 4
             anec = (args.anec or
                     REPO / f"fixtures/h14-anec/add-batch-{n}"
@@ -315,7 +345,7 @@ def main(argv=None):
                 failures.append(label)
         if failures:
             raise SystemExit(f"self-test failures: {failures}")
-        print("self-test: clean pass accepted, all four corruptions refused")
+        print("self-test: clean pass accepted, all five corruptions refused")
         return 0
 
     n = args.n or 1

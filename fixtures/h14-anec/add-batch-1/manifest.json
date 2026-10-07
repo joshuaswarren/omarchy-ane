@@ -25,7 +25,7 @@
   "per_task_offsets": [
     0
   ],
-  "risk": "no Apple oracle carries N independent same-op tasks; header word 2 is set by position (decoded flag, zero violations over 4,986 oracle tasks) but header word 4 of a middle task is undecoded: no middle oracle task carries the 0x868-family low byte the copied single-add task has",
+  "risk": "no Apple oracle carries N independent same-op tasks; header words 2 and 4 are set by position per the decoded corpus (word 2 zero violations over 4,986 tasks; word-4 bits 3/5/6 clear in 2,887/2,887 middles), but no middle ADD oracle exists - the M2 N=3 cell decides",
   "schema": "omarchy-ane.add-batch.v1",
   "source": "fixtures/h14-anec/add/program-0.anec",
   "source_sha256": "b416b9d14059a0918f6b05bfcf4a8ba982dd92e7b25f2b042c1a15f1ab2a439a",
@@ -38,5 +38,8 @@
     0
   ],
   "task_stride_bytes": 256,
+  "task_word4": [
+    "0x003d0000"
+  ],
   "task_words": 61
 }

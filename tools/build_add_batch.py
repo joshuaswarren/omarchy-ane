@@ -19,6 +19,11 @@ edits:
      task follows that pattern (4,986 tasks, zero violations;
      research/oracles/h14 + research/h14-td-fields.md). The pre-fix bug
      copied 0x2a into every task, contradicting all 676 multi-task oracles.
+     Header word 4 of a middle task is the source word 4 with bits 3/5/6
+     (0x68) cleared: those bits are set in 2,099/2,099 non-middle oracle
+     tasks and clear in 2,887/2,887 middles, so the add middle carries
+     0xfff800 (op bits 0xfff and bit 11 preserved, as in every observed
+     PE-writing middle).
   3. per-task copy i: the three dense BAR-ref records' first payload word
      (the byte offset inside the bound channel) set to i * 0x8000:
        slot 4 @ 0x1110 (input a, ch 5), slot 6 @ 0x1128 (input b, ch 6),
@@ -61,6 +66,16 @@ BAR_REFS = ((4, 0x1110, 5), (6, 0x1128, 6), (5, 0x1508, 4))
 # tasks (747 only=0x2a, 676 first=0x8, 2,887 middle=0x0, 676 last=0x22,
 # zero violations). Unknown for header word 4 of a middle task: open risk.
 FLAG_ONLY, FLAG_FIRST, FLAG_MIDDLE, FLAG_LAST = 0x2A, 0x08, 0x00, 0x22
+# H14 header word 4: bits 3, 5 and 6 (0x68) are set in every non-middle
+# task and clear in every middle task - 2,887/2,887 middles vs 2,099/2,099
+# others over the same 4,986-task census, including the elementwise binary
+# pow middles (0xffd800). Bits 23:12 and bit 11 are per-task-body (op
+# bits): PE-or-KernelDMA-writing middles keep bit 11 in 2,712/2,712 cases,
+# and every same-op first->middle transition keeps bits 23:12
+# (layer_norm 0xfff868->0xfff800, conv/matvec splits). A middle task is
+# therefore the source word 4 with 0x68 cleared; non-middle positions
+# copy it unchanged. The M2 N=3 cell decides.
+WORD4_MIDDLE_CLEAR = 0x68
 
 
 def position_flag(i, n):
@@ -154,6 +169,9 @@ def build_stream(source: bytes, n: int) -> bytes:
             struct.pack_into("<II", t, (rec_idx + 1) * 4, i * surf, 0)
         struct.pack_into("<I", t, 0, (TASK_WORDS << 16) | i)
         struct.pack_into("<I", t, 8, position_flag(i, n))
+        if 0 < i < n - 1:
+            w4 = struct.unpack_from("<I", t, 16)[0]
+            struct.pack_into("<I", t, 16, w4 & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF)
         body += t
         if i + 1 < n:
             body += b"\0" * (TASK_STRIDE - len(t))
@@ -191,13 +209,17 @@ def main(argv=None):
         "task_ids": list(range(args.n)),
         "task_flags_word2": [f"{position_flag(i, args.n):#04x}"
                              for i in range(args.n)],
+        "task_word4": [f"{struct.unpack_from('<I', source, HEADER_BYTES + 16)[0] & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF:#010x}"
+                       if 0 < i < args.n - 1 else
+                       f"{struct.unpack_from('<I', source, HEADER_BYTES + 16)[0]:#010x}"
+                       for i in range(args.n)],
         "bar_refs": [{"slot": s, "reg": a, "channel": c}
                      for s, a, c in BAR_REFS],
         "risk": "no Apple oracle carries N independent same-op tasks; "
-                "header word 2 is set by position (decoded flag, zero "
-                "violations over 4,986 oracle tasks) but header word 4 of "
-                "a middle task is undecoded: no middle oracle task carries "
-                "the 0x868-family low byte the copied single-add task has",
+                "header words 2 and 4 are set by position per the decoded "
+                "corpus (word 2 zero violations over 4,986 tasks; word-4 "
+                "bits 3/5/6 clear in 2,887/2,887 middles), but no middle "
+                "ADD oracle exists - the M2 N=3 cell decides",
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n")
