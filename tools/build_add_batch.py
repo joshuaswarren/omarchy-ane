@@ -86,6 +86,18 @@ def position_flag(i, n):
     return FLAG_LAST if i == n - 1 else FLAG_MIDDLE
 
 
+def source_task_word4(source: bytes) -> int:
+    """Header word 4 of the fixture's single task, via the stream walk.
+
+    The stream opens with a zero-size 16-byte frame, so the task's word 4
+    is not at a fixed offset from HEADER_BYTES.
+    """
+    tsk_size = struct.unpack_from("<Q", source, 0x10)[0]
+    stream = source[HEADER_BYTES:HEADER_BYTES + tsk_size]
+    off, _words = split_tasks(stream)[0]
+    return struct.unpack_from("<I", stream, off + 16)[0]
+
+
 def split_tasks(stream: bytes):
     """The driver's split_h14_tasks walk (16-byte frames, header word 0)."""
     tasks, off = [], 0
@@ -195,6 +207,7 @@ def main(argv=None):
     out.write_bytes(anec)
 
     surf = struct.unpack_from("<16I", source, 0x28)[4] << TILE_UNIT_SHIFT
+    src_w4 = source_task_word4(source)
     manifest = {
         "schema": "omarchy-ane.add-batch.v1",
         "source": str(args.anec.relative_to(REPO)),
@@ -209,9 +222,8 @@ def main(argv=None):
         "task_ids": list(range(args.n)),
         "task_flags_word2": [f"{position_flag(i, args.n):#04x}"
                              for i in range(args.n)],
-        "task_word4": [f"{struct.unpack_from('<I', source, HEADER_BYTES + 16)[0] & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF:#010x}"
-                       if 0 < i < args.n - 1 else
-                       f"{struct.unpack_from('<I', source, HEADER_BYTES + 16)[0]:#010x}"
+        "task_word4": [f"{src_w4 & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF:#010x}"
+                       if 0 < i < args.n - 1 else f"{src_w4:#010x}"
                        for i in range(args.n)],
         "bar_refs": [{"slot": s, "reg": a, "channel": c}
                      for s, a, c in BAR_REFS],

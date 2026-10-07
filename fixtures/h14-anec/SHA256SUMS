@@ -102,9 +102,9 @@ b6d01d521867e9e3a898a8bdaf495bcd4f8264ede0fb1db816b22db9be16c84c  ./rms-c2048-ga
 e1b5d004fbc7d729f6915d4c727a276bb4f1f2ead1b9b20c17897aa995d0e42d  ./rms-c2048-gamma/procedure.bin
 2c02a3216690c2d4d5db967c74bfd6c3db04c41e36a22f229851e375272fc022  ./rms-c2048-gamma/program-0.anec
 916bbcedaa2615995f5c1c1e9fc769d481d7184b5b50314d274236155f6ba21b  ./rms-c2048-gamma/tdprop.bin
-58f6fefacf0ab8c62d1f6ee78c52f1255aafb214fbed2c9008ca48d7c41d539a  ./add-batch-1/manifest.json
-ec0a11a053fc5911321c7a068a7609bb33cde259ca2569c4ae6636cf35ea1386  ./add-batch-16/manifest.json
-b3ed988b0f1332ef4f2c883428b711429c7b80d9d1cffd179d4adbf4eb616bdb  ./add-batch-2/manifest.json
-d84eb20d9354380eceb9005fd15d2e476a1edc521d3c4906785cb2d7167689d4  ./add-batch-32/manifest.json
-ebfac6cb41e9f3636c676b8bea1d1e38883deae7ca733a0af56f897def19598d  ./add-batch-4/manifest.json
-c62c77472e552ec9d7ffc49dd86a16fb0f919cd8278bd6fcc5dd149026a031cb  ./add-batch-8/manifest.json
+4d7c90586fe44862b7117431b30ce01ec6e67931e2239a80f216da6b89543959  ./add-batch-1/manifest.json
+a19a4acbc9bf2238e7fcbe4e05d5c15ea329ff47cc85b2a7d34d75a5043550be  ./add-batch-16/manifest.json
+3b89ab12994c6b983bae74496bd362dfc11a29b47ab2bbb2cd41b3b225590573  ./add-batch-2/manifest.json
+10bdab0c650353c6a258c735d161ab3b30f731431c3086dae00f83cf9e24e7a0  ./add-batch-32/manifest.json
+faf929d2c97280244f73cdacb28734be5a3c3a767c089c45dcb69443b9be423b  ./add-batch-4/manifest.json
+ba4b8a5aeee3b65f880b022a85017bcc24b4106f46848bed01641a8194984e2b  ./add-batch-8/manifest.json

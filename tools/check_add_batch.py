@@ -29,6 +29,7 @@ usage: check_add_batch.py --n N [--anec FILE] [--seed S]
 """
 import argparse
 import hashlib
+import json
 import math
 import struct
 import sys
@@ -151,7 +152,7 @@ def task_bar_records(task):
 
 
 # ---------------------------------------------------------------- main
-def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
+def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
     """Run every structural + reference check; raise Fail on any problem.
     `corrupt` applies one negative-control mutation before checking."""
     src_tiles = struct.unpack_from("<16I", source_bytes, 0x28)
@@ -186,6 +187,15 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
         for off, words in split_tasks(
                 bytes(pkg[HEADER_BYTES:HEADER_BYTES + tsk_bytes])):
             struct.pack_into("<I", pkg, HEADER_BYTES + off + 16, src_w4)
+    elif corrupt == "manifest-word4" and manifest is not None:
+        # A manifest whose task_word4 disagrees with the package bytes
+        # (one entry flipped by exactly the middle-bit mask 0x68).
+        m = dict(manifest)
+        lst = list(m["task_word4"])
+        k = len(lst) // 2
+        lst[k] = f"{int(lst[k], 16) ^ 0x68:#010x}"
+        m["task_word4"] = lst
+        manifest = m
     elif corrupt == "tiles":
         struct.pack_into("<I", pkg, 0x28 + 5 * 4, src_tiles[5])  # unscaled
     elif corrupt == "golden":
@@ -280,6 +290,15 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
             need(pl[0] < (surf * n),
                  f"task {i}: BAR slot {slot} offset outside its channel")
 
+    if manifest is not None:
+        want4 = [f"{struct.unpack_from('<I', stream, off + 16)[0]:#010x}"
+                 for off, _ in tasks]
+        got4 = manifest.get("task_word4")
+        need(isinstance(got4, list) and len(got4) == n,
+             f"manifest task_word4 {got4} is not a length-{n} list")
+        need(got4 == want4,
+             f"manifest task_word4 {got4} != package word 4 {want4}")
+
     # Reference: the seeded stacked inputs and the half-away outputs.
     rng = np.random.default_rng(seed + n)
     planes = []
@@ -318,23 +337,32 @@ def main(argv=None):
     ap.add_argument("--out-y", type=Path, default=None,
                     help="device output file to compare bit-exact")
     ap.add_argument("--corrupt",
-                    choices=("task-offset", "flags", "word4", "tiles",
-                             "golden"))
+                    choices=("task-offset", "flags", "word4",
+                             "manifest-word4", "tiles", "golden"))
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
     source = SOURCE_ANEC.read_bytes()
+
+    def manifest_for(anec_path):
+        man = anec_path.parent / "manifest.json"
+        return json.loads(man.read_text()) if man.exists() else None
+
     if args.self_test:
         failures = []
         for label, corrupt in (("clean", None), ("task-offset", "task-offset"),
                                ("flags", "flags"), ("word4", "word4"),
+                               ("manifest-word4", "manifest-word4"),
                                ("tiles", "tiles"), ("golden", "golden")):
             n = args.n or 4
             anec = (args.anec or
                     REPO / f"fixtures/h14-anec/add-batch-{n}"
                     / "program-0.anec").read_bytes()
             try:
-                check(source, anec, n, corrupt=corrupt, seed=args.seed)
+                check(source, anec, n, corrupt=corrupt, seed=args.seed,
+                      manifest=manifest_for(args.anec or
+                                            REPO / f"fixtures/h14-anec/add-batch-{n}"
+                                            / "program-0.anec"))
                 ok = corrupt is None
             except Fail as e:
                 ok = corrupt is not None
@@ -345,14 +373,14 @@ def main(argv=None):
                 failures.append(label)
         if failures:
             raise SystemExit(f"self-test failures: {failures}")
-        print("self-test: clean pass accepted, all five corruptions refused")
+        print("self-test: clean pass accepted, all six corruptions refused")
         return 0
 
     n = args.n or 1
     anec_path = args.anec or (REPO / f"fixtures/h14-anec/add-batch-{n}"
                               / "program-0.anec")
     r = check(source, anec_path.read_bytes(), n, corrupt=args.corrupt,
-              seed=args.seed)
+              seed=args.seed, manifest=manifest_for(anec_path))
     print(f"{anec_path}: tasks {r['tasks']} surfaces {r['surface_bytes']:#x} "
           f"sha256 {r['package_sha256']}")
     if args.golden_dir:
