@@ -6,14 +6,19 @@
 
 Lever R-A (FwRoundTrip): one CALL that runs N add tasks instead of one, to
 amortize the ~0.23-0.25 ms firmware round trip. The package is the proven
-fixtures/h14-anec/add/program-0.anec template with exactly three kinds of
+fixtures/h14-anec/add/program-0.anec template with exactly four kinds of
 edits:
 
   1. header: taskCount = N, tiles[4..6] = 2N (each add surface is 0x8000 B),
      content tile 0 recomputed, sizes rebuilt.
   2. task stream: the single 61-word add task duplicated N times at the
      16-byte alignment stride, task_id = i (Apple's own two-task matvec
-     oracle uses ids 0,1: research/oracles/h14/matmul_m1_k256_n512_ty1.json).
+     oracle uses ids 0,1: research/oracles/h14/matmul_m1_k256_n512_ty1.json),
+     and header word 2 set by position: 0x2a for the only task (N = 1);
+     0x8 first, 0x0 middle, 0x22 last for N > 1. Every decoded H14 oracle
+     task follows that pattern (4,986 tasks, zero violations;
+     research/oracles/h14 + research/h14-td-fields.md). The pre-fix bug
+     copied 0x2a into every task, contradicting all 676 multi-task oracles.
   3. per-task copy i: the three dense BAR-ref records' first payload word
      (the byte offset inside the bound channel) set to i * 0x8000:
        slot 4 @ 0x1110 (input a, ch 5), slot 6 @ 0x1128 (input b, ch 6),
@@ -52,6 +57,18 @@ TASK_WORDS = 61
 TASK_STRIDE = 256
 # (slot, register word address, bound channel) of the three BAR refs.
 BAR_REFS = ((4, 0x1110, 5), (6, 0x1128, 6), (5, 0x1508, 4))
+# H14 header word 2 position flags, verified over all 4,986 decoded oracle
+# tasks (747 only=0x2a, 676 first=0x8, 2,887 middle=0x0, 676 last=0x22,
+# zero violations). Unknown for header word 4 of a middle task: open risk.
+FLAG_ONLY, FLAG_FIRST, FLAG_MIDDLE, FLAG_LAST = 0x2A, 0x08, 0x00, 0x22
+
+
+def position_flag(i, n):
+    if n == 1:
+        return FLAG_ONLY
+    if i == 0:
+        return FLAG_FIRST
+    return FLAG_LAST if i == n - 1 else FLAG_MIDDLE
 
 
 def split_tasks(stream: bytes):
@@ -136,6 +153,7 @@ def build_stream(source: bytes, n: int) -> bytes:
         for rec_idx in bar_at.values():
             struct.pack_into("<II", t, (rec_idx + 1) * 4, i * surf, 0)
         struct.pack_into("<I", t, 0, (TASK_WORDS << 16) | i)
+        struct.pack_into("<I", t, 8, position_flag(i, n))
         body += t
         if i + 1 < n:
             body += b"\0" * (TASK_STRIDE - len(t))
@@ -171,11 +189,15 @@ def main(argv=None):
         "io_channels": {"in_a": 5, "in_b": 6, "out": 4},
         "per_task_offsets": [i * surf for i in range(args.n)],
         "task_ids": list(range(args.n)),
+        "task_flags_word2": [f"{position_flag(i, args.n):#04x}"
+                             for i in range(args.n)],
         "bar_refs": [{"slot": s, "reg": a, "channel": c}
                      for s, a, c in BAR_REFS],
         "risk": "no Apple oracle carries N independent same-op tasks; "
-                "task_id and inter-task dependency words are unresolved "
-                "(docs/ane/task-descriptors.md open questions)",
+                "header word 2 is set by position (decoded flag, zero "
+                "violations over 4,986 oracle tasks) but header word 4 of "
+                "a middle task is undecoded: no middle oracle task carries "
+                "the 0x868-family low byte the copied single-add task has",
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n")

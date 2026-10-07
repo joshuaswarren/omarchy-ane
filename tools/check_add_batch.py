@@ -6,7 +6,9 @@
 
 Proves, for fixtures/h14-anec/add-batch-N/program-0.anec:
   1. header: taskCount, tiles[4..6] = 2N, sizes, version, input count;
-  2. task stream: exactly N add tasks, ids 0..N-1, zero frames and gaps;
+  2. task stream: exactly N add tasks, ids 0..N-1, header word 2 set by
+     position (0x2a only / 0x8 first / 0x0 middle / 0x22 last), zero
+     frames and gaps;
   3. wiring: the three dense BAR refs per task are the proven single-add
      set (slot 4 @ 0x1110 -> ch 5, slot 6 @ 0x1128 -> ch 6, slot 5 @
      0x1508 -> ch 4 under the driver's legacy elementwise rule), with
@@ -16,9 +18,9 @@ Proves, for fixtures/h14-anec/add-batch-N/program-0.anec:
   5. reference: the seeded stacked inputs and the fp16 half-away expected
      outputs (the device-proven rounding of tools/ane_f16_add.h).
 
---self-test runs the clean pass plus three corruptions (wrong task
-offset, under-sized tile, flipped golden byte) and requires each
-corruption to fail the check.
+--self-test runs the clean pass plus four corruptions (wrong task
+offset, all-0x2a position flags, under-sized tile, flipped golden byte)
+and requires each corruption to fail the check.
 
 usage: check_add_batch.py --n N [--anec FILE] [--seed S]
                           [--golden-dir DIR] [--out-y FILE]
@@ -42,6 +44,17 @@ LANES = 512
 PLANE_WORDS = 16384  # fp16 words per add surface: 512 valid x 64 B
 BAR_REFS = ((4, 0x1110, 5), (6, 0x1128, 6), (5, 0x1508, 4))
 PROVEN_UNION = {4: 5, 5: 4, 6: 6}
+# H14 header word 2 position flags. Independent copy (not imported from
+# build_add_batch.py) so a builder bug cannot hide behind a shared constant.
+FLAG_ONLY, FLAG_FIRST, FLAG_MIDDLE, FLAG_LAST = 0x2A, 0x08, 0x00, 0x22
+
+
+def position_flag(i, n):
+    if n == 1:
+        return FLAG_ONLY
+    if i == 0:
+        return FLAG_FIRST
+    return FLAG_LAST if i == n - 1 else FLAG_MIDDLE
 
 
 class Fail(Exception):
@@ -149,6 +162,13 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
         t1 = pkg[base:base + 244]
         idx, _ = task_bar_records(bytes(t1))[(5, 0x1508)]
         struct.pack_into("<I", pkg, base + (idx + 1) * 4, 0)
+    elif corrupt == "flags" and n > 1:
+        # The pre-fix bug: every task claims "only" (0x2a) regardless of
+        # its position, contradicting every decoded multi-task oracle.
+        tsk_bytes = struct.unpack_from("<Q", pkg, 0x10)[0]
+        for off, words in split_tasks(
+                bytes(pkg[HEADER_BYTES:HEADER_BYTES + tsk_bytes])):
+            struct.pack_into("<I", pkg, HEADER_BYTES + off + 8, FLAG_ONLY)
     elif corrupt == "tiles":
         struct.pack_into("<I", pkg, 0x28 + 5 * 4, src_tiles[5])  # unscaled
     elif corrupt == "golden":
@@ -204,15 +224,22 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000):
         hdr0 = struct.unpack_from("<I", stream, off)[0]
         need(hdr0 == (TASK_WORDS << 16) | i,
              f"task {i}: header word 0 {hdr0:#x}")
+        w2 = struct.unpack_from("<I", stream, off + 8)[0]
+        flag = position_flag(i, n)
+        need(w2 == flag,
+             f"task {i}: header word 2 {w2:#x} != position flag {flag:#x}")
         task = bytearray(stream[off:off + words * 4])
         recs = task_bar_records(bytes(task))
         need(set(recs) == {(s, a) for s, a, _ in BAR_REFS},
              f"task {i}: BAR set moved")
         # The only allowed deltas vs the source task: the three BAR
-        # payload[0] offsets (i * surf) and the task id in header word 0.
+        # payload[0] offsets (i * surf), the task id in header word 0, and
+        # the position flag in header word 2 (normalized to the source's
+        # only-task 0x2a below before the byte compare).
         for rec_idx, _ in src_recs.values():
             struct.pack_into("<II", task, (rec_idx + 1) * 4, 0, 0)
         struct.pack_into("<I", task, 0, (TASK_WORDS << 16) | 0)
+        struct.pack_into("<I", task, 8, FLAG_ONLY)
         need(task == src_body, f"task {i}: bytes outside the intended edits")
         for (slot, addr), (rec_idx, pl) in sorted(recs.items()):
             need(pl[1] == 0, f"task {i}: BAR ({slot:#x},{addr:#x}) high word")
@@ -261,7 +288,8 @@ def main(argv=None):
     ap.add_argument("--golden-dir", type=Path, default=None)
     ap.add_argument("--out-y", type=Path, default=None,
                     help="device output file to compare bit-exact")
-    ap.add_argument("--corrupt", choices=("task-offset", "tiles", "golden"))
+    ap.add_argument("--corrupt",
+                    choices=("task-offset", "flags", "tiles", "golden"))
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -269,7 +297,8 @@ def main(argv=None):
     if args.self_test:
         failures = []
         for label, corrupt in (("clean", None), ("task-offset", "task-offset"),
-                               ("tiles", "tiles"), ("golden", "golden")):
+                               ("flags", "flags"), ("tiles", "tiles"),
+                               ("golden", "golden")):
             n = args.n or 4
             anec = (args.anec or
                     REPO / f"fixtures/h14-anec/add-batch-{n}"
@@ -286,7 +315,7 @@ def main(argv=None):
                 failures.append(label)
         if failures:
             raise SystemExit(f"self-test failures: {failures}")
-        print("self-test: clean pass accepted, all three corruptions refused")
+        print("self-test: clean pass accepted, all four corruptions refused")
         return 0
 
     n = args.n or 1
