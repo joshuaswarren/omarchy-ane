@@ -15,10 +15,13 @@ this script in another flock (that deadlock cost two boots).
 
 usage: batch_landing_check.py --n N [--calls K] [--seed S]
                               [--anec FILE] [--ane-run BIN] [--work DIR]
+                              [--timeout SECS]
 exit 0 iff every call landed all N planes bit-exact.
 """
 import argparse
 import fcntl
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +46,11 @@ def main(argv=None):
     ap.add_argument("--ane-run", type=Path,
                     default=Path(__file__).resolve().parent / "ane-run")
     ap.add_argument("--work", type=Path, default=None)
+    ap.add_argument("--timeout", type=float, default=60.0,
+                    help="per-CALL ane-run deadline in seconds; expiry "
+                         "kills the whole ane-run process group and "
+                         "fails the check (a hung CALL must not hold "
+                         "/var/tmp/ane-run.lock)")
     args = ap.parse_args(argv)
     anec = Path(str(args.anec).replace("add-batch-N",
                                        f"add-batch-{args.n}"))
@@ -72,10 +80,27 @@ def main(argv=None):
                "--out", f"0={out}"]
         with open(LOCK, "w") as lockf:
             fcntl.flock(lockf, fcntl.LOCK_EX)
-            r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode:
+            # start_new_session: a hung ane-run may have children; kill
+            # the whole process group so nothing outlives the deadline
+            # while this process still holds the lock.
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 start_new_session=True)
+            try:
+                r_out, r_err = p.communicate(timeout=args.timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                p.wait()
+                print(f"land n={args.n} call {call}: TIMEOUT after "
+                      f"{args.timeout:g}s, killed ane-run process group "
+                      f"{p.pid}")
+                return 1
+        if p.returncode:
             print(f"land n={args.n} call {call}: ane-run rc "
-                  f"{r.returncode}: {r.stderr.strip()[:300]}")
+                  f"{p.returncode}: {r_err.strip()[:300]}")
             return 1
         got = np.fromfile(out, dtype=np.uint16)
         if got.size != want.size:
