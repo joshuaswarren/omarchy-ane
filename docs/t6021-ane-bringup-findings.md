@@ -33,7 +33,7 @@ lost. Cite the source repo and the commit SHA next to every number.
 
 ## 2. Firmware version: match the version, not the installed macOS
 
-- Under Linux, iBoot preloads the ANE firmware from the Asahi stub's macOS
+- Under Linux, iBoot preloads the ANE firmware from the stub's macOS
   version, not from the main macOS install. On the test laptop the stub is
   **macOS 13.5 (22G74)** (`/sys/firmware/devicetree/base/chosen/asahi,os-fw-version`).
 - Firmware: `Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p` from the 13.5 IPSW
@@ -194,7 +194,7 @@ ane-linux-experiments abb63dd, closure omarchy-ane ee14b27).
   to ANE engine/DART/pmgr registers from trace-135, with per-write flags
   for ps-off/SET-window/hook and the Linux-same mark.
 - Every 13.5 hv run loses the proxy ACM 34-36 s after launch when booted
-  against the stub, whose System volume has no root filesystem (asahi-installer
+  against the stub, whose System volume has no root filesystem (the vendor installer's
   `src/stub.py`), so XNU cannot mount root and panics. `tools/m2hv_catch_and_run.sh`
   logs the console from the opened hv vuart (`serial=3`).
 - v7 ramdisk route: the 22G74 restore root (`022-15462-082.dmg`) was staged as
@@ -217,8 +217,8 @@ ane-linux-experiments abb63dd, closure omarchy-ane ee14b27).
    so longer runs of the same guest add nothing. What would work instead:
    a 13.5 guest whose userspace opens the ANE (aned/CoreML workload). That
    needs a full macOS 13.5 install in its own APFS volume on the M2, with
-   m1n1 as that volume's boot object (Asahi m1n1-hypervisor guide:
-   `bputil -nkcas`, `kmutil configure-boot`); the Asahi stub cannot host it.
+   m1n1 as that volume's boot object (the upstream m1n1-hypervisor guide:
+   `bputil -nkcas`, `kmutil configure-boot`); the stub cannot host it.
 2. Reverse the 13.5 firmware reset path: find the first loop that waits on an
    external value (MMIO, SCRATCH, a DATA boot-args field, a mailbox bit).
 3. Whichever answer comes first gets tested on T6001 as well, because the
@@ -321,7 +321,7 @@ its own timer nor a mailbox doorbell wakes it.
 
 ### The zero timer frequency is a real gap, and not the cause
 
-iBoot patches the RTKit patchbay on the Asahi path too (live image differs
+iBoot patches the RTKit patchbay on the stub path too (live image differs
 from the file in the stack guard, `RTK_soc` = 0x6021, `RTK_soc_revision` =
 0x11, `RTK_cpu_physical_address` = 0x285000000, `RTK_cpu_wrapper_physical_address`
 = 0x285400000, and the tunables block). It leaves one field the timer path
@@ -359,10 +359,10 @@ address or reserved memory. No T6021 has run it yet (receipt
 
 ### What the host must do, from the working drivers
 
-- Asahi's ISP driver (`isp-fw.c`) writes the coprocessor IRQ mask registers
+- The vendor tree's ISP driver (`isp-fw.c`) writes the coprocessor IRQ mask registers
   0x1400a00-0x1400a14 to 0xffffffff and polls the coprocessor status word at
   +0x818 for zero before it releases the CPU. The ANE kext does neither.
-- The ANE mailbox is the ASC variant: Asahi's `mailbox.c` gives it
+- The ANE mailbox is the ASC variant: the vendor tree's `mailbox.c` gives it
   `has_irq_controls = false`. There is no host-side mailbox IRQ-enable
   register to write; the doorbell is the inbox write itself, and the
   coprocessor's own controller decides whether that raises a core interrupt.
@@ -381,7 +381,7 @@ physical timer. The payload never writes it. The firmware drops EL3 to EL1 at
 reset (payload 0x214-0x224, SPSR_EL3 = 0x3c5) and runs at EL1, so it cannot
 set an EL2 register, and T6021 CoreSight is fused off (section 13), so the
 host cannot set it either. On macOS, iBoot sets it before the firmware runs;
-the Asahi stub's iBoot does not touch the ANE (its DART is powered off at
+the stub's iBoot does not touch the ANE (its DART is powered off at
 handoff). No Linux register write reaches this bit. Confirming it is the
 difference needs the hypervisor trace of a macOS boot, not another register
 guess.
@@ -923,7 +923,7 @@ domain 8 (see the T8103 clock lead above).
 `AppleT6020PMGR::setPerfState` (0xfffffe0009b7ef14-0xfffffe0009b7f684)
 dispatches on the domain ID. Only IDs 2, 5 and 13 reach the write path: the
 CPU-cluster DVFS command word at block+0xe20020, written as
-`(old & ~0x1f) | BIT(25) | (state & 0x1f)` — Asahi's
+`(old & ~0x1f) | BIT(25) | (state & 0x1f)` — the vendor tree's
 `apple-soc-cpufreq.c` shape. Every other ID, including the ANE perf-domain
 index 8, branches to an assert panic. The host's only perf-state entry
 point therefore has no ANE path on M2: the host never sets the ANE clock
@@ -1037,7 +1037,7 @@ Source: ane-linux-experiments d733cd1,
   431.5-438.8 ms — the 440 ms run is 99.97% engine window (gold
   `fca96f13` bit-exact x3). Host-side work is not the gap.
 - Why T6001 differs: m1n1's `tunables_apply_static` seeds ANE op-point,
-  DPE and perf tables for T8103 only (AsahiLinux/m1n1 2abf3af3, from
+  DPE and perf tables for T8103 only (upstream m1n1 2abf3af3, from
   eiln). T6001's iBoot-preloaded firmware self-manages from a low default
   op point. The T6001 ADT ladder tops at 1500 MHz (300-1500, with mV
   values); 1500/540 = 2.78, and with a T8103-class 1.25x residual that is
@@ -1083,7 +1083,7 @@ Source: ane-linux-experiments a3641215,
   table manages DCS, FAB, AFR, SOC0, SOC0_ANE_SYS, SOC0_AVD, DISP and
   AVEMSR, with pmgr flagging ANE_SYS notify_pmp=1. DVFS_CMD and DVFS_ON
   act only while the PMP firmware runs: macOS boots ApplePMPFirmware
-  (RTBuddy role PMP); Asahi leaves the pmp node disabled, so under Linux
+  (RTBuddy role PMP); macOS leaves the pmp node disabled, so under Linux
   the window is dead (reads 0, writes no-op). The 22G74 side is decoded
   too: its BIT(29) ORR is a value flag on a 10-entry PS-reg table and
   never touches map113, and 22G74 setPerfState accepts 1-5/13 — domain 8
@@ -1119,7 +1119,7 @@ Source: ane-linux-experiments a3641215,
 
 ## 20. 13.5 (22G74) legacy ChMan transport — verified evidence (2026-09-27)
 
-The T6021 ANE bring-up splits along the macOS-Asahi-stub's preloaded
+The T6021 ANE bring-up splits along the macOS stub's preloaded
 firmware version. The 13.5 (22G74) selene image
 (`a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc`,
 sha-256) does NOT speak RTKit HELLO when brought up by the mainline
@@ -1247,7 +1247,7 @@ the actual log captured this time).
 
 Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-stock-mailbox/README.md).
 
-- The stock linux-asahi kernel `7.1.13-3-1-ARCH` runs the ANE; the poll-TX
+- The stock Arch ARM kernel `7.1.13-3-1-ARCH` runs the ANE; the poll-TX
   kernel is not needed. The mailbox node needs a second, never-firing
   `send-empty` IRQ (AIC2 1833) for stock apple-mailbox to bind.
 - `packaging/dt/t6021-ane.dts` (omarchy-ane `9c925cd`) on the pristine
@@ -1536,7 +1536,7 @@ Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021
 
 Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dart-kernel/README.md).
 
-- `kernel/patches/apple-dart-ane-tunables.patch` (asahi-7.1.13-3, parameter
+- `kernel/patches/apple-dart-ane-tunables.patch` (vendor 7.1.13-3 series, parameter
   `apple_dart.ane_tunables`, default off) writes the 19 macOS words per bulk
   DART in `apple_dart_hw_reset()`: TTBRs cleared, full TLB flush, the words,
   then streams and TTBR, as macOS does. The kernel is a cross build of the

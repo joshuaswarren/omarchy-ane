@@ -630,7 +630,7 @@ load belongs to the lead. Risks named:
 - **Vendor risk:** Apple's macOS 13.5 (22G74) selene firmware is the
   pinned 13.5 image (`a9c4b771…`); 14.x/15.x/26/27 paths are NOT
   covered (omarchy-ane README "T6021 legacy ChMan transport"). The M2
-  must boot from the Asahi stub ESP for the duration of this plan;
+  must boot from the stub ESP for the duration of this plan;
   if Joshua reboots into a different macOS image, every inference
   is invalid until the stub is restored.
 - **H14 ANEC layout risk:** `firstTaskBytes % 16` in `{4, 8, 12}` was

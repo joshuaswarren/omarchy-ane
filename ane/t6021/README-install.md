@@ -7,7 +7,7 @@ the T6021 overlay applies, the firmware hook fetches the firmware, and
 the module autoloads at the next boot (top-level README, "M2 Max
 (T6021)"). Once the firmware starts, the only reclamation is reboot.
 
-Boot path status: the module works on the stock linux-asahi kernel
+Boot path status: the module works on the stock Arch ARM kernel
 `7.1.13-3-1-ARCH` (three boots; the third used the complete overlay
 `packaging/dt/t6021-ane.dts`, the first two a lab overlay with the
 same ANE nodes; receipt
@@ -34,12 +34,12 @@ On that laptop the disk boot also needs the opt-in overlay
 keyboard driver (`mtpkbd`) stops the boot at the U-Boot prompt. With it, the
 internal keyboard does not work at the U-Boot prompt or in the GRUB menu;
 only serial gives input there. This input may be specific to that laptop.
-The overlay goes away when uboot-asahi passes only keyboard reports from
+The overlay goes away when the packaged U-Boot passes only keyboard reports from
 `mtpkbd` to stdin.
 
 ## Prerequisites
 
-- Kernel: stock linux-asahi `7.1.13-3-1-ARCH` (proven 2026-09-30 with the
+- Kernel: stock Arch ARM `7.1.13-3-1-ARCH` (proven 2026-09-30 with the
   packaged overlay, receipts/2026-09-30-t6021-stock-mailbox) or
   `7.1.13-ARCH-polltx`. The module builds against
   `/lib/modules/$(uname -r)/build`.
