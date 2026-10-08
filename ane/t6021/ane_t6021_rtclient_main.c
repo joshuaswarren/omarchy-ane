@@ -65,6 +65,7 @@
 #include <linux/iommu.h>
 #include <linux/jiffies.h>
 #include <linux/kref.h>
+#include <linux/kthread.h>
 #include <linux/ktime.h>
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -98,6 +99,7 @@
 
 #include "ane_t6021.h"
 #include "ane_t6021_boot.h"
+#include "ane_t6021_keepwarm.h"
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
@@ -611,6 +613,158 @@ module_param(call_poll_us, uint, 0644);
 MODULE_PARM_DESC(call_poll_us,
 		 "Microseconds of 1-us-cadence polling at the head of the CALL finish-event wait, then 50-100 us (default 1000; 0 = uniform 50-100 us)");
 
+/*
+ * Keep-warm tickle: after a completed PROCEDURE_CALL, and only inside
+ * keepwarm_tail_us of that completion, ring ONE spurious IO-ring
+ * doorbell every keepwarm_us. keepwarm_us = 0 (default) runs nothing:
+ * the params are the only change, and every decision sits in
+ * ane_t6021_keepwarm_plan (ane_t6021_keepwarm.h, host-tested).
+ *
+ * Why a doorbell with an empty head slot is benign [the scan path is
+ * MEASURED static decode; the wake benefit is INFERENCE until the M2
+ * run; artifacts/FwPipeline/fw-crpc-intake-decode.md, 13.5 selene
+ * a9c4b771]: the write is the register the exchange and every T2H
+ * slot handback already write (writel(BIT(bit)), engine +
+ * ANE_IPI_OFF). The doorbell ISR, CChannelManager::Signal (0xd938),
+ * runs no command work: it scans the channels and posts one semaphore
+ * ([chmgr+0x78], RTK_semaphore_signal 0x6aff4). The server task,
+ * CChannelManager::Task (0xd638), wakes from RTK_semaphore_wait_multiple
+ * (0x6b56c) and asks per channel _IOProcessorChannelMessageAvailable
+ * (0x2576c: head-slot owner bit vs channel parity). After a completed
+ * exchange every IO (channel 1) slot is host-owned again, so the scan
+ * finds no message and the task returns to its wait: no slot is
+ * consumed, the request pool is untouched (CController::CmdProcess
+ * 0xe4a0 returns at the first empty _IOProcessorChannelReceive
+ * 0x25920, so CAneCallManagerH11::SendCall 0x3f308 never runs), and
+ * extra doorbells coalesce in the same semaphore. The driver already
+ * rings this doorbell against empty slots after every T2H handback
+ * (ane_rtclient_drain_t2h). NOT measured: whether this wake also
+ * flushes the firmware idle state the EVENT leg pays for after ~100 us
+ * of quiet (the ~+106 us cold step). That is the experiment.
+ */
+static unsigned int keepwarm_us;
+static unsigned int keepwarm_tail_us = 2000;
+
+static atomic64_t ane_t6021_keepwarm_done_ns = ATOMIC64_INIT(0);
+static atomic64_t ane_t6021_keepwarm_tickles = ATOMIC64_INIT(0);
+static DECLARE_WAIT_QUEUE_HEAD(ane_t6021_keepwarm_wq);
+static struct task_struct *ane_t6021_keepwarm_task;
+static struct dentry *ane_t6021_keepwarm_dir;
+/* The device the tickle rings. Registered only after probe fully
+ * succeeded; remove clears it first.
+ */
+static struct ane_rtclient *ane_t6021_keepwarm_ane;
+
+static int ane_t6021_keepwarm_param_set(const char *val,
+					const struct kernel_param *kp)
+{
+	int ret;
+
+	ret = param_set_uint(val, kp);
+	if (ret)
+		return ret;
+	if (kp->arg == &keepwarm_tail_us &&
+	    keepwarm_tail_us > ANE_T6021_KEEPWARM_TAIL_MAX_US)
+		WRITE_ONCE(keepwarm_tail_us, ANE_T6021_KEEPWARM_TAIL_MAX_US);
+	wake_up(&ane_t6021_keepwarm_wq);
+	return 0;
+}
+
+static const struct kernel_param_ops ane_t6021_keepwarm_ops = {
+	.set = ane_t6021_keepwarm_param_set,
+	.get = param_get_uint,
+};
+module_param_cb(keepwarm_us, &ane_t6021_keepwarm_ops, &keepwarm_us, 0644);
+MODULE_PARM_DESC(keepwarm_us,
+		 "Keep-warm tickle interval in us; 0 (default) = off. Inside keepwarm_tail_us after the last CALL, ring one empty IO-channel doorbell per interval");
+
+module_param_cb(keepwarm_tail_us, &ane_t6021_keepwarm_ops, &keepwarm_tail_us,
+		0644);
+MODULE_PARM_DESC(keepwarm_tail_us,
+		 "Keep the firmware warm this many us after the last CALL completion (default 2000, hard cap 20000)");
+
+/* Record a completed PROCEDURE_CALL and wake the keep-warm thread. */
+static void ane_t6021_keepwarm_complete(void)
+{
+	atomic64_set(&ane_t6021_keepwarm_done_ns, ktime_get_ns());
+	if (READ_ONCE(keepwarm_us))
+		wake_up(&ane_t6021_keepwarm_wq);
+}
+
+static int ane_t6021_keepwarm_tickles_get(void *data, u64 *val)
+{
+	*val = atomic64_read(&ane_t6021_keepwarm_tickles);
+	return 0;
+}
+DEFINE_DEBUGFS_ATTRIBUTE(ane_t6021_keepwarm_tickles_fops,
+			 ane_t6021_keepwarm_tickles_get, NULL, "%llu\n");
+
+static int ane_t6021_keepwarm_fn(void *unused)
+{
+	long long last_tickle_ns = 0;
+
+	while (!kthread_should_stop()) {
+		struct ane_t6021_keepwarm_in in;
+		struct ane_t6021_keepwarm_out out;
+		struct ane_rtclient *ane;
+		u64 done;
+		long long now = ktime_get_ns();
+
+		ane = READ_ONCE(ane_t6021_keepwarm_ane);
+		done = atomic64_read(&ane_t6021_keepwarm_done_ns);
+		in.keepwarm_us = READ_ONCE(keepwarm_us);
+		in.keepwarm_tail_us = READ_ONCE(keepwarm_tail_us);
+		in.last_done_ns = done;
+		in.last_tickle_ns = last_tickle_ns;
+		in.now_ns = now;
+		in.device_ready = ane && READ_ONCE(ane->held) &&
+				  READ_ONCE(ane->chman_ok) && ane->fw &&
+				  ane->fw->boot_ipc &&
+				  !atomic_read(&ane_t6021_quarantined);
+		/* Try the lock only when a device is there to ring; the
+		 * plan still re-checks every condition on the answer.
+		 */
+		in.lock_free = in.device_ready &&
+			       mutex_trylock(&ane_t6021_fw_lock);
+		ane_t6021_keepwarm_plan(&in, &out);
+		if (in.lock_free && !out.tickle)
+			mutex_unlock(&ane_t6021_fw_lock);
+		if (out.tickle) {
+			/* See the block comment above: the head slot is
+			 * empty (host-owned), so the firmware scan finds
+			 * no message and returns to its wait.
+			 */
+			writel(BIT(ane_t6021_chman_layout[1].bit),
+			       ane->engine + ANE_IPI_OFF);
+			atomic64_inc(&ane_t6021_keepwarm_tickles);
+			last_tickle_ns = now;
+			mutex_unlock(&ane_t6021_fw_lock);
+		}
+		if (out.sleep_us) {
+			/* Bounded slices so kthread_stop never waits out
+			 * a long keepwarm_us.
+			 */
+			long long left = out.sleep_us;
+
+			while (left > 0 && !kthread_should_stop()) {
+				long long chunk = min(left, 20000ll);
+
+				usleep_range(chunk, chunk + 20);
+				left -= chunk;
+			}
+			continue;
+		}
+		/* Off or past the tail: wait for the next completion, a
+		 * param change, or stop.
+		 */
+		wait_event_interruptible(ane_t6021_keepwarm_wq,
+					 kthread_should_stop() ||
+					 atomic64_read(&ane_t6021_keepwarm_done_ns) != done ||
+					 READ_ONCE(keepwarm_us) != in.keepwarm_us);
+	}
+	return 0;
+}
+
 /* trace_td: a read-only timeline of each CALL for performance work. Off
  * by default; switch it at runtime with
  * /sys/module/ane_t6021/parameters/trace_td (no device needed). Off, the
@@ -992,6 +1146,8 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 		ane_stats_complete(&ane->fw->stats_ctrs,
 				   &ane->fw->stats_ring, stats_ticket,
 				   ktime_get_ns(), 0u, 0ull);
+	if (opcode == CSNE_CMD_PROCEDURE_CALL)
+		ane_t6021_keepwarm_complete();
 	/* The fw talks back on the target-to-host rings (fwlog, perf);
 	 * hand those slots back so the rings never fill (the sequencer
 	 * did this per step; same ack, channels 4 and 6). */
@@ -2530,6 +2686,8 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 		}
 	}
 
+	WRITE_ONCE(ane_t6021_keepwarm_ane, ane);
+
 	return 0;
 
 err_pm_or_hold:
@@ -2581,6 +2739,13 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	struct ane_rtclient *ane = platform_get_drvdata(pdev);
 	if (READ_ONCE(ane_t6021_perf_ane) == ane)
 		WRITE_ONCE(ane_t6021_perf_ane, NULL);
+	if (READ_ONCE(ane_t6021_keepwarm_ane) == ane) {
+		WRITE_ONCE(ane_t6021_keepwarm_ane, NULL);
+		/* Re-plan now so the tickle cannot touch a removed
+		 * device behind the cleared pointer.
+		 */
+		wake_up(&ane_t6021_keepwarm_wq);
+	}
 
 	cancel_delayed_work_sync(&ane->poll_work);
 
@@ -2612,17 +2777,38 @@ static int __init ane_rtclient_init(void)
 {
 	int ret = platform_driver_register(&ane_rtclient_driver);
 
-	if (ret)
+	if (ret) {
 		ane_t6021_trace_free();
-	return ret;
+		return ret;
+	}
+
+	ane_t6021_keepwarm_dir = debugfs_create_dir("ane_t6021_keepwarm",
+						    NULL);
+	if (!IS_ERR(ane_t6021_keepwarm_dir))
+		debugfs_create_file("tickles", 0444, ane_t6021_keepwarm_dir,
+				    NULL, &ane_t6021_keepwarm_tickles_fops);
+	ane_t6021_keepwarm_task = kthread_run(ane_t6021_keepwarm_fn, NULL,
+					      "ane_t6021_keepwarm");
+	if (IS_ERR(ane_t6021_keepwarm_task)) {
+		pr_warn("ane_t6021: keep-warm kthread failed %pe — the feature stays off\n",
+			ane_t6021_keepwarm_task);
+		ane_t6021_keepwarm_task = NULL;
+	}
+	return 0;
 }
-module_init(ane_rtclient_init);
 
 static void __exit ane_rtclient_exit(void)
 {
+	if (ane_t6021_keepwarm_task) {
+		kthread_stop(ane_t6021_keepwarm_task);
+		ane_t6021_keepwarm_task = NULL;
+	}
 	platform_driver_unregister(&ane_rtclient_driver);
+	debugfs_remove_recursive(ane_t6021_keepwarm_dir);
+	ane_t6021_keepwarm_dir = NULL;
 	ane_t6021_trace_free();
 }
+module_init(ane_rtclient_init);
 module_exit(ane_rtclient_exit);
 
 MODULE_LICENSE("Dual MIT/GPL");
