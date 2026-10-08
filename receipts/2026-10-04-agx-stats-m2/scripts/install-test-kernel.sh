@@ -19,17 +19,14 @@ if [ ! -f "$S/verify-boot-product.txt" ] || ! grep -q '^AGX_VERIFY_OK' "$S/verif
   echo "REFUSED: no AGX_VERIFY_OK receipt in the stage dir (run verify-boot-product.sh offline first)" >&2
   exit 1
 fi
-STAGED_SHA=$(awk '/^Image-m2 sha256:/ {print $4}' "$S/verify-boot-product.txt")
+STAGED_SHA=$(awk '/^Image-m2 sha256:/ {print $3}' "$S/verify-boot-product.txt")
 ACTUAL_SHA=$(sha256sum "$S/Image-m2" | awk '{print $1}')
 if [ -z "$STAGED_SHA" ] || [ "$STAGED_SHA" != "$ACTUAL_SHA" ]; then
   echo "REFUSED: staged Image-m2 does not match the verified sha ($STAGED_SHA != $ACTUAL_SHA)" >&2
   exit 1
 fi
-if strings "$S/Image-m2" | grep -q agx_stats_show || [ -s "$S/System.map" ] && grep -qE ' (asahi_probe|agx_stats_show)$' "$S/System.map"; then
-  : # strings hit (uncompressed) or System.map check done offline; receipt governs
-fi
 
-FST=$(findmnt -n -o FSTYPE /boot)
+FST=$(findmnt -n -o FSTYPE --target /boot)
 if [ "$FST" = "vfat" ] && [ ! -f /var/tmp/agx-window/ESP_GO ]; then
   echo "REFUSED: /boot is the ESP and no Main GO file exists (/var/tmp/agx-window/ESP_GO)" >&2
   exit 1
@@ -53,8 +50,11 @@ STOCK_LINUX=$(grep -m1 '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg)
 [ -n "$STOCK_LINUX" ] || { echo "no stock linux line found in grub.cfg" >&2; exit 1; }
 STOCK_ARGS=$(echo "$STOCK_LINUX" | awk '{for (i=3; i<=NF; i++) printf "%s ", $i; print ""}')
 
-if ! grep -q 'BEGIN agxstats-one-shot' /etc/grub.d/40_custom 2>/dev/null; then
-  cat >> /etc/grub.d/40_custom <<EOF
+# Rewrite the marked block on every run: the OFF=1 arm must replace the
+# entry's kernel line, not leave the export-on version in place.
+touch /etc/grub.d/40_custom
+sed -i '/^# BEGIN agxstats-one-shot$/,/^# END agxstats-one-shot$/d' /etc/grub.d/40_custom
+cat >> /etc/grub.d/40_custom <<EOF
 # BEGIN agxstats-one-shot
 menuentry "$ENTRY" {
 	linux /vmlinuz-$REL $STOCK_ARGS $OFFARG
@@ -62,7 +62,6 @@ menuentry "$ENTRY" {
 }
 # END agxstats-one-shot
 EOF
-fi
 grub-mkconfig -o /boot/grub/grub.cfg
 grub-reboot "$ENTRY"
 sync

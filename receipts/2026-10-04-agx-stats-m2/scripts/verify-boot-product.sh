@@ -58,7 +58,7 @@ fi
 if [ "$FAIL" = 0 ]; then
   {
     echo "AGX_VERIFY_OK $(date -u +%FT%TZ)"
-    echo "Image-m2 sha256: $(sha256sum Image-m2)"
+    echo "Image-m2 sha256: $(sha256sum Image-m2 | awk '{print $1}')"
     echo "System.map asahi_probe/agx_stats_show/asahi_sysfs_register: built-in text symbols"
     echo "driver strings + agx_stats symbols: present"
     echo "release: $REL"

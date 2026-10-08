@@ -1,4 +1,4 @@
-# agx_stats M2 (T6021) validation protocol — drm/asahi AGX firmware stats export (aurora draft PR, replacement for #157)
+# agx_stats M2 (T6021) validation protocol: AGX firmware stats export (aurora draft PR, replacement for #157)
 
 Branch `agent/jw16-agx-stats4` (replacement for the original PR head, see
 `builds.md`), 8 commits on the same `aurora-wip` base `3bb0a6104a11`. The
@@ -7,8 +7,8 @@ series exports the AGX firmware statistics (`StatsMsg`: `Utilization`,
 `/sys/class/drm/card*/device/agx_stats` (`key value` lines, mode 0444), with a
 cumulative `busy_ns` integrated from `FwBusy` timestamp deltas, a host-side
 completed-submission counter `jobs` (bumped at fence signal in
-`JobFence::command_complete`), and an opt-out module parameter
-`asahi.stats_export` (default 1). Producer contract: `coreglass` reads it at
+`JobFence::command_complete`), and an opt-out `stats_export` module
+parameter (default 1). Producer contract: `coreglass` reads it at
 10 Hz as the GPU busy source.
 
 Prepared 2026-10-04 by AgxStatsM2Prep (offline). Executor: Main with the M2 GPU
@@ -17,8 +17,8 @@ reboot. Private record: `apple-silicon-lab entries/AgxStatsM2Prep/`.
 
 ## Fact base (measured offline)
 
-- The M2's running stock kernel `7.1.13-3-1-ARCH` has `CONFIG_DRM_ASAHI=y`
-  (macstudio headers `.config`, the config of every proven ane.ko build). The
+- The M2's running stock kernel `7.1.13-3-1-ARCH` has the AGX driver built in
+  (`CONFIG` key =y; macstudio headers `.config`, the config of every proven ane.ko build). The
   driver is built-in on jw16 `3-2-ARCH` too (Jw16AgxStats entry). A module-only
   swap gate is therefore INFEASIBLE: a built-in driver cannot be unloaded and a
   second same-name module cannot bind the claimed device.
@@ -52,18 +52,19 @@ From `builds.md` and the private artifacts
 
 | file | use |
 |---|---|
-| `Image-m2` | the test kernel (asahi BUILT-IN, like stock) |
-| `System.map` | offline symbol verification (asahi_probe / agx_stats_show / asahi_sysfs_register) |
+| `Image-m2` | the test kernel (AGX driver built in, like stock) |
+| `System.map` | offline symbol verification (driver probe and agx_stats sysfs symbols) |
 | `kernel.config` | the exact .config the Image was built from |
-| `modules-m2.tar.zst` | `/lib/modules/<release>` (no asahi.ko in it — the driver is built-in) |
+| `modules-m2.tar.zst` | `/lib/modules/<release>` (no AGX module in it — the driver is built-in) |
 | `RELEASE` (contains `7.1.12-ARCH-agxstats+`) | exact release string, read by the scripts |
 | `SHA256SUMS-stage` | copy to `SHA256SUMS` in the device stage dir (verified pre-install) |
 | `verify-boot-product.txt` | offline verification receipt; install REFUSES without it (see below) |
 
 HARD GATE (added after window B boot 1 shipped a kernel without a working
-driver; EXTENDED after the retry found the repr(Rust) readout skew): `scripts/verify-boot-product.sh <stage-dir> <kernel-tree>` runs on
+driver; EXTENDED after the retry found the repr(Rust) readout skew):
+`receipts/2026-10-04-agx-stats-m2/scripts/verify-boot-product.sh <stage-dir> <kernel-tree>` runs on
 the CT before the window and proves, offline, that the Image carries the
-built-in AGX driver (`asahi: Probing` / `MMU:` strings), the agx_stats
+built-in AGX driver (its probe banner / `MMU:` strings), the agx_stats
 symbols, matching vermagic across the tarball, and the checksums. It writes
 `verify-boot-product.txt` (`AGX_VERIFY_OK` + Image sha). The device-side
 `install-test-kernel.sh` REFUSES to install unless that receipt is staged and
@@ -76,7 +77,7 @@ the staged Image's sha256 matches it bit-for-bit.
 | 0 | stage files, preflight (read-only) | 10 min |
 | 1 | install test kernel + one-shot boot (12-min notice) | 8 min |
 | 2 | T1 block: export on — identity, S1 idle, S2 matmul, S3 coreglass, S4 cells E1 (2 with 10 Hz reader), S5 dmesg | 40 min |
-| 3 | one-shot boot with `asahi.stats_export=0` (12-min notice) | 8 min |
+| 3 | one-shot boot with `stats_export=0` appended (12-min notice) | 8 min |
 | 4 | T0 block: off-arm identity, unsupported file, S4 cells E0, S5 dmesg | 20 min |
 | 5 | reboot to stock (12-min notice), smoke, remove test kernel, records | 15 min |
 
@@ -87,14 +88,15 @@ otherwise. Never rmmod anything; `ane_t6021` is never touched.
 
 ## Step 0 — preflight (read-only, on the M2)
 
-    ssh jw14m2-linux 'bash -s' < scripts/preflight.sh
+    ssh jw14m2-linux 'bash -s' < receipts/2026-10-04-agx-stats-m2/scripts/preflight.sh
 
 The script saves a baseline to `/var/tmp/agx-window/baseline/` (dmesg -x,
 journalctl -k -p warning, uname, cmdline, boot id, GPU card + of_node,
-`/sys/module/asahi/parameters/` listing, `findmnt /boot`, `grub-editenv list`,
+the driver's module parameters directory listing, `findmnt /boot`, `grub-editenv list`,
 load1, PSI) and prints the GO/NO-GO lines:
 
-- `CONFIG_DRM_ASAHI=y` in `/proc/config.gz` — expected (built-in).
+- the AGX driver config is `=y` in `/proc/config.gz` (exact key in
+  preflight.sh) — expected (built-in).
 - A DRM card whose `device/of_node` ends in `gpu@406400000` — the AGX device.
 - `findmnt /boot`: if FSTYPE is `vfat` (ESP), the install step in step 1 is an
   ESP write and needs Main's explicit GO recorded at `/var/tmp/agx-window/ESP_GO`
@@ -110,9 +112,10 @@ load1, PSI) and prints the GO/NO-GO lines:
 
 Copy the staged files to the M2 (`/var/tmp/agx-window/stage/`: `Image-m2`,
 `modules-m2.tar.zst`, `RELEASE`, and `SHA256SUMS-stage` renamed to
-`SHA256SUMS`), then:
+`SHA256SUMS`, plus this receipt's `scripts/` directory as
+`stage/scripts/`), then:
 
-    ssh jw14m2-linux 'sudo bash -s' < scripts/install-test-kernel.sh
+    ssh jw14m2-linux 'sudo bash -s' < receipts/2026-10-04-agx-stats-m2/scripts/install-test-kernel.sh
 
 The script: verifies sha256 of the staged Image and modules tarball, installs
 `/boot/vmlinuz-7.1.12-ARCH-agxstats`, runs `mkinitcpio -k 7.1.12-ARCH-agxstats`
@@ -138,9 +141,9 @@ exists, `agx_stats` exists. FAIL (any): reboot to stock, record, stop.
     F=$(ls /sys/class/drm/card*/device/agx_stats)
     stat -c '%a' "$F"                         # PASS: 444
     sudo -u nobody cat "$F" >/dev/null        # PASS: readable without root
-    scripts/capture-stats.sh                  # sample 1
+    bash /var/tmp/agx-window/stage/scripts/capture-stats.sh   # sample 1
     sleep 60                                  # quiet idle
-    scripts/capture-stats.sh                  # sample 2
+    bash /var/tmp/agx-window/stage/scripts/capture-stats.sh   # sample 2
 
 PASS (all): key set is exactly `busy_ns jobs pstate power_mw util1 util2
 util3 util4 temperature_raw temperature_scale` (one `key value` line each,
@@ -155,7 +158,7 @@ nothing in-window.
 Run the coreglass built-in probe matmul step (or a pinned MLX 4096x4096 fp16
 loop, 30 s) under the GPU lock, captures before/after:
 
-    scripts/capture-stats.sh && <matmul 30 s> && scripts/capture-stats.sh
+    bash /var/tmp/agx-window/stage/scripts/capture-stats.sh && <matmul 30 s> && bash /var/tmp/agx-window/stage/scripts/capture-stats.sh
 
 PASS: busy fraction (delta busy_ns / delta wall) >= 0.9; `util1..util4`
 and `power_mw` rise >= 10x over the S1 idle sample (observation — the raw
@@ -173,7 +176,7 @@ PASS: `coreglass hosts` lists `agx_stats` under the host's `stats`;
 
 ### S4 — decode cells, E1 arm (export on)
 
-    ssh jw14m2-linux 'CELL_CMD="<lane d64 cell>" bash -s' < scripts/decode-ab.sh E1 5 reader-on-reps-2,4
+    ssh jw14m2-linux 'CELL_CMD="<lane d64 cell>" bash -s' < receipts/2026-10-04-agx-stats-m2/scripts/decode-ab.sh E1 5 2,4
 
 `CELL_CMD` is the lane's existing d64 decode cell (qwen38-2B, uclampset 1024,
 gpu-turn ticket, digest printed) — w6Z supplies it; H253 is the shape
@@ -190,23 +193,23 @@ with capture-stats.sh).
     dmesg -x > /var/tmp/agx-window/t1-dmesg.txt
 
 PASS: zero lines at emerg/alert/crit/err on the test boot; new warning lines
-vs the step-0 baseline are recorded and named (the asahi probe lines are
+vs the step-0 baseline are recorded and named (the driver probe lines are
 info-level and expected). No ANE line changes: `ane_t6021` behavior on this
 kernel is out of scope but any ANE error line is a FAIL.
 
 ## Step 3-4 — T0 block (export off)
 
-Announce 12 minutes, then add `asahi.stats_export=0` to the one-shot entry's
-command line (install script option `OFF=1` appends it to the 40_custom
-entry), reboot, repeat identity checks. The `stats_export` parameter has no
-sysfs file (all asahi params omit `permissions`), so the command line is the
+Announce 12 minutes, then arm the off command line: the install script's
+`OFF=1` option appends `stats_export=0` to the 40_custom
+entry, reboot, repeat identity checks. The `stats_export` parameter has no
+sysfs file (the driver's parameters all omit `permissions`), so the command line is the
 only switch — this boot is why the window has a second reboot.
 
 PASS additions: `cat agx_stats` prints exactly `unsupported`; S4 cells E0
 (5 reps, no reader) all digests identical to E1.
 
-    ssh jw14m2-linux 'OFF=1 CELL_CMD="..." bash -s' -c 'sudo env OFF=1 bash -s' \
-      < scripts/install-test-kernel.sh   # idempotent; only edits cmdline + grub-reboot
+    ssh jw14m2-linux 'sudo env OFF=1 bash -s' \
+      < receipts/2026-10-04-agx-stats-m2/scripts/install-test-kernel.sh   # idempotent; rewrites the block with the off cmdline + grub-reboot
 
 ## Overhead verdict (the 0.5% gate)
 
@@ -221,8 +224,8 @@ kernel base): E medians within about 1% of the H253 stock d64 values.
 Announce 12 minutes, `grub-editenv unset default` (or `grub-reboot 0`), reboot:
 the stock `7.1.13-3-1-ARCH` default returns. Then:
 
-    ssh jw14m2-linux 'sudo bash -s' < scripts/remove-test-kernel.sh
-    ssh jw14m2-linux 'bash -s' < scripts/preflight.sh   # re-run: stock identity + GPU bound
+    ssh jw14m2-linux 'sudo bash -s' < receipts/2026-10-04-agx-stats-m2/scripts/remove-test-kernel.sh
+    ssh jw14m2-linux 'bash -s' < receipts/2026-10-04-agx-stats-m2/scripts/preflight.sh   # re-run: stock identity + GPU bound
 
 PASS: stock kernel back, GPU card bound, one 1-cell decode smoke inside the
 session noise, `/lib/modules/7.1.12-ARCH-agxstats` gone, `40_custom` block
