@@ -43,6 +43,12 @@
       "kind": "ipsw-adt",
       "ref": "macOS 13.5 ANE DART page-size evidence as recorded in ~/.local/share/apple-silicon-lab/artifacts/AneAllSoc/every-soc/receipt/adt-13.5.txt; used only for the explicitly marked T8110-family inference.",
       "sha256": "e4628cbf45c5735c8cd2d67b937421d4098870a36a1920cf7ac21855441412d8"
+    },
+    {
+      "id": "S8",
+      "kind": "community-row",
+      "ref": "Community-data worker record 3bec43ce7fff370df201e18fcf78d27ad7c50c4b9419a64ae092a49668b20348 (deep, Linux, 2026-10-02): running device tree reports model 'Apple MacBook Air (13-inch, 2024)', compatible apple,j613 apple,t8122, os-fw-version 14.7. SHA-256 is the record content hash.",
+      "sha256": "3bec43ce7fff370df201e18fcf78d27ad7c50c4b9419a64ae092a49668b20348"
     }
   ],
   "marketing": {
@@ -78,9 +84,9 @@
     {
       "v": {
         "value": "j613",
-        "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023)"
+        "marketing_product": "MacBook Air 13-inch M3 (2024)"
       },
-      "src": "S1"
+      "src": "S8"
     },
     {
       "v": {

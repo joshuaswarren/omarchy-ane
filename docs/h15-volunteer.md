@@ -22,6 +22,14 @@ The module binds only to an `ane` node in the device tree, so without
 the overlay it cannot bind. The overlay adds the four missing ps
 nodes (MPM/CPU/TD/BASE), four DART nodes, and the `ane` node.
 
+First M3 record (a MacBook Air 13-inch 2024, board j613, published in
+the community data on 2026-10-02): the running device tree has no `ane`
+node (`ane_node_present` is false), the `/chosen` stub OS version is
+14.7, and the boot loader is m1n1 v1.6.1-omarchy.aurora1. This matches
+the paragraph above. That record has no ANE module and no ANE log
+lines, so it says nothing yet about the register windows. Stage 0 and
+stage 1 are still the first test of those.
+
 ## Step 1 — build and install the overlay
 
 ```
