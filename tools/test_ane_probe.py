@@ -446,7 +446,7 @@ def test_empty_root_and_cap():
 
 
 def test_os_fw_version_and_object_table_shapes():
-    """The stub firmware version (/chosen/asahi,os-fw-version, the H1 field) is
+    """The stub firmware version (a /chosen property, the H1 field) is
     reported; the tables whose boards rows are objects and whose ane/dart reg rows
     are "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150) compare instead of
     crashing with an AttributeError."""

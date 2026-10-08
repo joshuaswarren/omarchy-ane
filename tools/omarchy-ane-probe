@@ -563,7 +563,7 @@ def probe(root, data_dir):
     out["soc"] = next((m.group(1) for c in compat for m in [re.match(r"^apple,(t\d{4})$", c)] if m), None)
     out["board"] = next((c for c in compat if re.match(r"^apple,j\w+$", c)), None)
     out["model"] = (strings(root_props.get("model")) or [None])[0]
-    # The stub OS firmware version (m1n1 writes /chosen/asahi,os-fw-version): which
+    # The stub OS firmware version, a property of /chosen that m1n1 writes: which
     # macOS image iBoot preloaded the ANE firmware from.
     out["os_fw_version"] = (strings(chosen.get("asahi,os-fw-version")) or [None])[0]
     out["compatible"] = compat
