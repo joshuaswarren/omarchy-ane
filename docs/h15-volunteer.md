@@ -30,6 +30,16 @@ the paragraph above. That record has no ANE module and no ANE log
 lines, so it says nothing yet about the register windows. Stage 0 and
 stage 1 are still the first test of those.
 
+The ANE firmware that iBoot preloads comes from the stub macOS image,
+and it changes with the macOS version. We measured the T8122 member
+`h15_ane_fw_themis_j51y.im4p` in the full restore images: 14.4, 14.5
+and 14.6.1 each differ from each other and from 15.0 and 27.0, and the
+27.0 file equals the 27.0.1 file only. macOS 14.7 never shipped as a
+full restore image, so the firmware of a stub at 14.7 is not measured
+and not pinned. Stage 0 and stage 1 do not need the firmware. A boot
+stage (stage 3) is refused until a pin matches your stub version.
+Please send the `/chosen` stub OS version string with your logs.
+
 ## Step 1 — build and install the overlay
 
 ```
