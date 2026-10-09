@@ -15,6 +15,7 @@
 
 #include <ane_accel.h>
 #include "ane.h"
+#include "ane_m2.h"
 
 /*
 // HOST-ONLY ioctl argument check: no device, no kernel, no hardware.
@@ -78,6 +79,12 @@ static uint8_t is_sec[MAX_BOS + 1]; /* rode a PROG_LOAD section list */
 static unsigned live_sec_bos;
 static uint8_t *bo_map[MAX_BOS + 1]; /* fake mmap base per handle */
 static uint64_t bo_map_len[MAX_BOS + 1];
+
+/* Every BO_INIT size in order: the section-allocation order test reads
+ * the first six of an open. */
+#define MAX_INIT_SIZES 64
+static uint64_t init_sizes[MAX_INIT_SIZES];
+static unsigned n_init_sizes;
 
 static struct {
 	uint64_t digest;
@@ -185,6 +192,9 @@ static int fake_bo_init(struct drm_ane_bo_init *a)
 	live[a->handle] = 1;
 	bo_bytes[a->handle] = page_align64(a->size);
 	held_bytes += bo_bytes[a->handle];
+	if (n_init_sizes < MAX_INIT_SIZES) {
+		init_sizes[n_init_sizes++] = a->size;
+	}
 	return 0;
 }
 
@@ -614,6 +624,7 @@ static void fake_reset(void)
 	next_handle = 0;
 	next_prog_id = 0;
 	fake_nprogs = 0;
+	n_init_sizes = 0;
 }
 
 static void run_section_release(const char *path)
@@ -680,6 +691,53 @@ static void run_section_release(const char *path)
 	       "section copies\n", failures == before ? "ok" : "FAIL");
 }
 
+/* The open allocates the six section BOs in DESCENDING size order: the
+ * big contiguous request must land while the dma32 window's largest
+ * hole is fresh. The fake records every BO_INIT size in order. */
+static void run_sec_order(const char *path)
+{
+	const int before = failures;
+	struct ane_nn *nn;
+	unsigned k;
+
+	abi_major = ANE_ABI_M2_MAJOR;
+	fake_reset();
+	nn = ane_init(path);
+	if (!nn) {
+		printf("FAIL section-order: init failed\n");
+		failures++;
+		return;
+	}
+	if (n_init_sizes < ANE_M2_SEC_COUNT) {
+		printf("FAIL section-order: only %u BO_INITs recorded\n",
+		       n_init_sizes);
+		failures++;
+		ane_free(nn);
+		return;
+	}
+	for (k = 1; k < ANE_M2_SEC_COUNT; k++) {
+		if (init_sizes[k] > init_sizes[k - 1]) {
+			printf("FAIL section-order: BO_INIT %u (%llu B) is "
+			       "larger than BO_INIT %u (%llu B) -- sections "
+			       "are not allocated largest first\n",
+			       k, (unsigned long long)init_sizes[k],
+			       k - 1, (unsigned long long)init_sizes[k - 1]);
+			failures++;
+			break;
+		}
+	}
+	ane_free(nn);
+	printf("  [%s] ABI 2: section BOs allocated descending by size "
+	       "(%llu, %llu, %llu, %llu, %llu, %llu)\n",
+	       failures == before ? "ok" : "FAIL",
+	       (unsigned long long)init_sizes[0],
+	       (unsigned long long)init_sizes[1],
+	       (unsigned long long)init_sizes[2],
+	       (unsigned long long)init_sizes[3],
+	       (unsigned long long)init_sizes[4],
+	       (unsigned long long)init_sizes[5]);
+}
+
 int main(int argc, char **argv)
 {
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
@@ -703,6 +761,7 @@ int main(int argc, char **argv)
 	run_short_file(path, 64, 1);
 	run_short_file(path, (1 << 20), 0);
 	run_section_release(path);
+	run_sec_order(path);
 	printf(failures ? "IOCTL-CHECK FAIL\n" : "IOCTL-CHECK PASS\n");
 	return failures != 0;
 }
