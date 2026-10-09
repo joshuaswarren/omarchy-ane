@@ -45,12 +45,12 @@ def idle(seconds):
     time.sleep(seconds)
 
 
-def run_arm(tag, cmd, out):
+def run_arm(tag, cmd, out, idle_s):
     out.mkdir(parents=True, exist_ok=True)
     logits = Path(cmd[cmd.index("--logits-file") + 1])
     logits.unlink(missing_ok=True)
     before = bo_total_bytes()
-    idle(args.idle)
+    idle(idle_s)
     start = time.monotonic()
     run = sh(cmd)
     wall = time.monotonic() - start
@@ -69,7 +69,7 @@ def step_records(out):
     steps, prompts = [], []
     for line in path.read_text().splitlines():
         rec = json.loads(line)
-        if rec["type"] == "step" and "token_out" in rec:
+        if rec["type"] == "step":
             steps.append(rec)
         elif rec["type"] == "prompt":
             prompts.append(rec)
@@ -107,15 +107,17 @@ def compare(a_out, b_out, args):
         failures.append(f"logits sha256 {a_sha} != {b_sha}")
 
     def stats(steps, out):
-        walls = [r["step_wall_s"] for r in steps]
-        ane = [r["ane_wall_s"] for r in steps]
-        tokens = sum(1 for r in steps if "token_out" in r)
-        return {"steps": len(steps), "tok": tokens,
-                "tok_s": round(tokens / sum(walls), 3) if walls else 0.0,
+        gen = [r for r in steps if "token_out" in r]
+        walls = [r["ane_wall_s"] + r.get("host_head_s", 0.0) for r in gen]
+        everything = sum(r["ane_wall_s"] + r.get("host_head_s", 0.0) for r in steps)
+        return {"steps": len(gen), "prefill_steps": len(steps) - len(gen),
+                "tok": len(gen),
+                "decode_tok_s": round(len(gen) / sum(walls), 3) if walls else 0.0,
+                "tok_s_incl_prefill": round(len(gen) / everything, 3) if everything else 0.0,
                 "step_wall_p10_s": pct(walls, 0.1),
                 "step_wall_p50_s": pct(walls, 0.5),
                 "step_wall_p90_s": pct(walls, 0.9),
-                "ane_wall_p50_s": pct(ane, 0.5)}
+                "ane_wall_p50_s": pct([r["ane_wall_s"] for r in gen], 0.5)}
     summary = {"per_call": stats(a_steps, a_out), "resident": stats(b_steps, b_out),
                "bit_identical": not failures,
                "logits_sha256": a_sha, "failures": failures}
@@ -177,8 +179,8 @@ def main(argv=None):
         return 0
 
     exch_before = len(kernel_exch_lines(0))
-    rc_a = run_arm("per-call", per_call_cmd, a_out)
-    rc_b = run_arm("resident", resident_cmd, b_out)
+    rc_a = run_arm("per-call", per_call_cmd, a_out, args.idle)
+    rc_b = run_arm("resident", resident_cmd, b_out, args.idle)
     failures = []
     if rc_a:
         failures.append(f"per-call arm exit {rc_a}")
