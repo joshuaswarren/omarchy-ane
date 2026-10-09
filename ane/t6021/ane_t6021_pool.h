@@ -87,11 +87,14 @@ ane_t6021_pool_evict_oldest(struct ane_t6021_pool *p)
 }
 
 /* Park ENT (uncharged class: an io BO the firmware may write again).
- * It keeps its memory and IOVA; a quarantined firmware is the caller's
- * concern (the take side refuses while quarantined). */
+ * SIZE is recorded here for the same reason as in park(). It keeps its
+ * memory and IOVA; a quarantined firmware is the caller's concern (the
+ * take side refuses while quarantined). */
 static inline void ane_t6021_pool_park_uncharged(struct ane_t6021_pool *p,
-						 struct ane_t6021_pool_ent *ent)
+						 struct ane_t6021_pool_ent *ent,
+						 size_t size)
 {
+	ent->size = size;
 	ent->pooled_sec = false;
 	spin_lock(&p->lock);
 	list_add_tail(&ent->node, &p->list);
@@ -99,46 +102,56 @@ static inline void ane_t6021_pool_park_uncharged(struct ane_t6021_pool *p,
 }
 
 /* Park ENT under the section budget, evicting the oldest budgeted
- * entries (RELEASE really frees each) until it fits. Returns 0 parked,
- * -EINVAL when the budget is off (the budgeted pool drains first) or
- * the size is below the floor, and -ENOSPC when the entry alone would
- * exceed the budget or the pool cannot make room. On 0 the memory
- * stays allocated and counted; the entry leaves the pool again only
- * through take() or eviction. */
+ * entries (RELEASE really frees each) until it fits. SIZE is the raw
+ * BO size and is recorded on the entry here — the driver has no other
+ * place to set it, and a zeroed entry once made every park refuse
+ * (measured 2026-10-09: bo_pool_bytes stayed 0 through a whole A/B).
+ * Returns 0 parked, -EINVAL when the budget is off (the budgeted pool
+ * drains first) or the size is below the floor, and -ENOSPC when the
+ * entry alone would exceed the budget or the pool cannot make room.
+ * On 0 the memory stays allocated and counted; the entry leaves the
+ * pool again only through take() or eviction. */
 static inline int ane_t6021_pool_park(struct ane_t6021_pool *p,
 				      struct ane_t6021_pool_ent *ent,
+				      size_t size,
 				      ane_t6021_pool_release_fn release)
 {
 	struct ane_t6021_pool_ent *old;
-	size_t pg = PAGE_ALIGN(ent->size);
-	size_t budget = (size_t)p->max_mb << 20;
 
-	if (budget == 0) {
-		/* Budget switched off: the pool drains instead of
-		 * growing. The parameter callback drains too; this
-		 * covers any park attempt that still arrives. */
-		while ((old = ane_t6021_pool_evict_oldest(p)) != NULL)
-			release(old);
-		return -EINVAL;
-	}
-	if (!ane_t6021_pool_admits(p, ent->size))
-		return -EINVAL;
-	if (pg > budget)
-		return -ENOSPC;
-	/* Charge FIRST, then make room: a concurrent unmap (vm_close
-	 * drops its kref without the BO lock) runs the same eviction,
-	 * so check-then-add would let two chargers pass a budget only
-	 * one fits. If the pool cannot make room, undo the charge. */
-	if ((size_t)atomic64_add_return(pg, &p->sec_bytes) > budget) {
-		while ((size_t)atomic64_read(&p->sec_bytes) > budget) {
-			old = ane_t6021_pool_evict_oldest(p);
-			if (!old)
-				break;
-			release(old);
+	ent->size = size;
+	{
+		size_t pg = PAGE_ALIGN(ent->size);
+		size_t budget = (size_t)p->max_mb << 20;
+
+		if (budget == 0) {
+			/* Budget switched off: the pool drains instead
+			 * of growing. The parameter callback drains too;
+			 * this covers any park attempt that still
+			 * arrives. */
+			while ((old = ane_t6021_pool_evict_oldest(p)) != NULL)
+				release(old);
+			return -EINVAL;
 		}
-		if ((size_t)atomic64_read(&p->sec_bytes) > budget) {
-			atomic64_sub(pg, &p->sec_bytes);
+		if (!ane_t6021_pool_admits(p, ent->size))
+			return -EINVAL;
+		if (pg > budget)
 			return -ENOSPC;
+		/* Charge FIRST, then make room: a concurrent unmap
+		 * (vm_close drops its kref without the BO lock) runs the
+		 * same eviction, so check-then-add would let two
+		 * chargers pass a budget only one fits. If the pool
+		 * cannot make room, undo the charge. */
+		if ((size_t)atomic64_add_return(pg, &p->sec_bytes) > budget) {
+			while ((size_t)atomic64_read(&p->sec_bytes) > budget) {
+				old = ane_t6021_pool_evict_oldest(p);
+				if (!old)
+					break;
+				release(old);
+			}
+			if ((size_t)atomic64_read(&p->sec_bytes) > budget) {
+				atomic64_sub(pg, &p->sec_bytes);
+				return -ENOSPC;
+			}
 		}
 	}
 	ent->pooled_sec = true;

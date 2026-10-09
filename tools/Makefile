@@ -63,6 +63,15 @@ test_t6021_pool: test_t6021_pool.c ../ane/t6021/ane_t6021_pool.h \
 	ane_pool_shim/linux/mm.h
 	$(CC) $(CFLAGS) -Iane_pool_shim -o $@ test_t6021_pool.c
 
+# ane-session LOAD cache: drives the real session main over the fake
+# DRM node and counts the BO_INITs a repeated LOAD issues.
+test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c \
+	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
+	../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I../libane -I../ane/src/uapi/drm -I/usr/include/libdrm \
+		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
+		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
+
 check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec

@@ -56,18 +56,31 @@
 
 struct session_prog {
 	char *name;
+	struct session_key *key;	/* shared, owned by the key cache */
+	uint64_t in_total;
+	uint64_t out_total;
+};
+
+/* One loaded program per DISTINCT (anec bytes, ports bytes) pair. A
+ * LOAD whose key is already here returns the existing program with no
+ * device work, so configure passes that FREE and re-LOAD the same
+ * table cost nothing (measured 2026-10-09: each pass's duplicate
+ * sections needed a fresh 223 MiB dma32 hole and the second pass had
+ * none left). FREE drops the name binding only; the key dies at QUIT. */
+struct session_key {
+	char *key;
 	struct ane_nn *nn;
 	struct port_read pr;
 	uint32_t n_in;
 	uint32_t n_out;
-	uint64_t in_total;
-	uint64_t out_total;
-	uint64_t demand; /* page-aligned BO bytes this program holds */
+	uint64_t demand;	/* page-aligned BO bytes this program holds */
 };
 
 struct session {
 	struct session_prog progs[ANE_SESSION_MAX_PROGS];
 	uint32_t nprogs;
+	struct session_key keys[ANE_SESSION_MAX_PROGS];
+	uint32_t nkeys;
 	uint64_t demand;
 	uint64_t bo_cap;  /* bytes; 0 = no cap known */
 	uint64_t bo_used; /* driver-wide counter, 0 when unreadable */
@@ -206,18 +219,45 @@ static struct session_prog *session_prog_find(struct session *s,
 	return NULL;
 }
 
+/* FNV-1a 64 over a file's bytes: LOAD cache-key material. */
+static int fnv_file(const char *path, uint64_t *out)
+{
+	void *buf;
+	uint64_t size;
+	uint64_t h = 0xcbf29ce484222325ull;
+	uint8_t *b;
+	uint64_t i;
+
+	if (read_file_all(path, &buf, &size))
+		return -1;
+	b = buf;
+	for (i = 0; i < size; i++)
+		h = (h ^ b[i]) * 0x100000001b3ull;
+	free(buf);
+	*out = h;
+	return 0;
+}
+
+static struct session_key *session_key_find(struct session *s,
+					    const char *key)
+{
+	uint32_t i;
+
+	for (i = 0; i < s->nkeys; i++) {
+		if (!strcmp(s->keys[i].key, key))
+			return &s->keys[i];
+	}
+	return NULL;
+}
+
 static void session_prog_free(struct session *s, struct session_prog *p)
 {
-	char *name = p->name;
-
-	if (p->nn) {
-		ane_free(p->nn);
-	}
-	free_port_read(&p->pr);
-	s->demand -= p->demand;
+	/* The key cache owns the program: FREE drops the name binding
+	 * only, so a configure pass that FREEs and re-LOADs the same
+	 * table does no device work at all. */
+	free(p->name);
 	s->nprogs--;
 	memset(p, 0, sizeof(*p));
-	free(name);
 }
 
 static void replyf(const char *fmt, ...)
@@ -240,11 +280,13 @@ static int cmd_load(struct session *s, const char *name, const char *anec,
 		    const char *ports_path)
 {
 	struct session_prog *p = NULL;
+	struct session_key *k;
 	struct port_read pr;
 	struct ane_nn *nn;
+	uint64_t ha = 0, hp = 0;
 	uint64_t demand = 0;
-	uint64_t in_total = 0, out_total = 0;
 	uint32_t i;
+	char keybuf[48];
 
 	if (session_prog_find(s, name)) {
 		replyf("ERR LOAD %s already-loaded\n", name);
@@ -266,77 +308,94 @@ static int cmd_load(struct session *s, const char *name, const char *anec,
 		s->failed = 1;
 		return -1;
 	}
-	/* Guard 2: exact BO projection, still host-side (this build opens
-	 * no device). */
-	if (program_demand(anec, &pr, &demand)) {
-		replyf("ERR LOAD %s build-failed\n", name);
+	if (fnv_file(anec, &ha) || fnv_file(ports_path, &hp)) {
+		replyf("ERR LOAD %s unreadable\n", name);
 		free_port_read(&pr);
 		s->failed = 1;
 		return -1;
 	}
-	if (s->bo_cap && s->demand + demand + s->bo_used > s->bo_cap) {
-		replyf("ERR LOAD %s bo-cap: need %llu bytes, live %llu plus "
-		       "driver %llu exceeds cap %llu (refusing before the "
-		       "device)\n",
-		       name, (unsigned long long)demand,
-		       (unsigned long long)s->demand,
-		       (unsigned long long)s->bo_used,
-		       (unsigned long long)s->bo_cap);
-		free_port_read(&pr);
-		s->failed = 1;
-		return -1;
+	snprintf(keybuf, sizeof(keybuf), "%llx:%llx",
+		 (unsigned long long)ha, (unsigned long long)hp);
+	k = session_key_find(s, keybuf);
+	if (k) {
+		/* Cache hit: a repeated (anec, ports) pair rebinds the
+		 * name with no device work -- a configure pass that
+		 * FREEs and re-LOADs the same table must not allocate
+		 * anything (measured 2026-10-09: every pass's duplicate
+		 * sections needed a fresh 223 MiB dma32 hole and the
+		 * window had none left). */
+	} else {
+		/* Guard 2: exact BO projection, still host-side (this
+		 * build opens no device). */
+		if (program_demand(anec, &pr, &demand)) {
+			replyf("ERR LOAD %s build-failed\n", name);
+			free_port_read(&pr);
+			s->failed = 1;
+			return -1;
+		}
+		if (s->bo_cap &&
+		    s->demand + demand + s->bo_used > s->bo_cap) {
+			replyf("ERR LOAD %s bo-cap: need %llu bytes, live "
+			       "%llu plus driver %llu exceeds cap %llu "
+			       "(refusing before the device)\n",
+			       name, (unsigned long long)demand,
+			       (unsigned long long)s->demand,
+			       (unsigned long long)s->bo_used,
+			       (unsigned long long)s->bo_cap);
+			free_port_read(&pr);
+			s->failed = 1;
+			return -1;
+		}
+		nn = ane_m2_init_ports(anec, pr.ports, pr.count, s->dev);
+		if (!nn) {
+			replyf("ERR LOAD %s device-open-failed\n", name);
+			free_port_read(&pr);
+			s->failed = 1;
+			return -1;
+		}
+		k = &s->keys[s->nkeys++];
+		k->key = strdup(keybuf);
+		k->nn = nn;
+		k->pr = pr;	/* the port table moves to the key */
+		k->demand = demand;
+		for (i = 0; i < pr.count; i++) {
+			if (pr.ports[i].dir == 0)
+				k->n_in++;
+			else if (pr.ports[i].dir == 1)
+				k->n_out++;
+		}
+		s->demand += demand;
 	}
-	nn = ane_m2_init_ports(anec, pr.ports, pr.count, s->dev);
-	if (!nn) {
-		replyf("ERR LOAD %s device-open-failed\n", name);
-		free_port_read(&pr);
-		s->failed = 1;
-		return -1;
-	}
+	/* Bind the name to the cached program. Guard 1 bounds nprogs, so
+	 * a slot exists. */
 	for (i = 0; i < ANE_SESSION_MAX_PROGS; i++) {
 		if (!s->progs[i].name) {
 			p = &s->progs[i];
 			break;
 		}
 	}
-	if (!p) {
-		/* Unreachable: guard 1 bounds nprogs <= max_progs <= 250. */
-		ane_free(nn);
-		free_port_read(&pr);
-		replyf("ERR LOAD %s registry-full\n", name);
-		s->failed = 1;
-		return -1;
-	}
-	memset(p, 0, sizeof(*p));
 	p->name = strdup(name);
-	p->nn = nn;
-	p->pr = pr;
-	p->n_in = 0;
-	p->n_out = 0;
-	for (i = 0; i < pr.count; i++) {
-		if (pr.ports[i].dir == 0) {
-			p->n_in++;
-			in_total += pr.ports[i].tile_bytes;
-		} else if (pr.ports[i].dir == 1) {
-			p->n_out++;
-			out_total += pr.ports[i].tile_bytes;
-		}
+	p->key = k;
+	p->in_total = 0;
+	p->out_total = 0;
+	for (i = 0; i < k->pr.count; i++) {
+		if (k->pr.ports[i].dir == 0)
+			p->in_total += k->pr.ports[i].tile_bytes;
+		else if (k->pr.ports[i].dir == 1)
+			p->out_total += k->pr.ports[i].tile_bytes;
 	}
-	p->in_total = in_total;
-	p->out_total = out_total;
-	p->demand = demand;
-	s->demand += demand;
 	s->nprogs++;
-	replyf("OK LOAD %s %u %u\n", name, (unsigned)p->n_in,
-	       (unsigned)p->n_out);
+	replyf("OK LOAD %s %u %u\n", name, (unsigned)k->n_in,
+	       (unsigned)k->n_out);
 	return 0;
 }
 
 static int cmd_call(struct session *s, const char *name)
 {
 	struct session_prog *p = session_prog_find(s, name);
+	struct session_key *k;
 	uint64_t off;
-	uint32_t k;
+	uint32_t k2;
 	struct timespec t0, t1;
 	uint8_t *buf;
 
@@ -351,6 +410,7 @@ static int cmd_call(struct session *s, const char *name)
 		replyf("ERR CALL %s session-failed\n", name);
 		return -1;
 	}
+	k = p->key;
 	buf = malloc(p->in_total ? (size_t)p->in_total : 1);
 	if (!buf) {
 		replyf("ERR CALL %s no-mem\n", name);
@@ -364,17 +424,17 @@ static int cmd_call(struct session *s, const char *name)
 		return -1;
 	}
 	off = 0;
-	for (k = 0; k < p->pr.count; k++) {
-		if (p->pr.ports[k].dir != 0) {
+	for (k2 = 0; k2 < k->pr.count; k2++) {
+		if (k->pr.ports[k2].dir != 0) {
 			continue;
 		}
-		ane_m2_send(p->nn, buf + off,
-			    port_dir_index(&p->pr, k, 0));
-		off += p->pr.ports[k].tile_bytes;
+		ane_m2_send(k->nn, buf + off,
+			    port_dir_index(&k->pr, k2, 0));
+		off += k->pr.ports[k2].tile_bytes;
 	}
 	free(buf);
 	clock_gettime(CLOCK_MONOTONIC, &t0);
-	if (ane_m2_exec(p->nn) < 0) {
+	if (ane_m2_exec(k->nn) < 0) {
 		replyf("ERR CALL %s exec-failed\n", name);
 		s->failed = 1;
 		return -1;
@@ -389,13 +449,13 @@ static int cmd_call(struct session *s, const char *name)
 		return -1;
 	}
 	off = 0;
-	for (k = 0; k < p->pr.count; k++) {
-		if (p->pr.ports[k].dir != 1) {
+	for (k2 = 0; k2 < k->pr.count; k2++) {
+		if (k->pr.ports[k2].dir != 1) {
 			continue;
 		}
-		ane_m2_read(p->nn, buf + off,
-			    port_dir_index(&p->pr, k, 1));
-		off += p->pr.ports[k].tile_bytes;
+		ane_m2_read(k->nn, buf + off,
+			    port_dir_index(&k->pr, k2, 1));
+		off += k->pr.ports[k2].tile_bytes;
 	}
 	if (p->out_total && fwrite(buf, 1, (size_t)p->out_total, stdout) !=
 				    (size_t)p->out_total) {
@@ -447,6 +507,11 @@ static void session_free(struct session *s)
 			session_prog_free(s, &s->progs[i]);
 		}
 	}
+	for (i = 0; i < s->nkeys; i++) {
+		ane_free(s->keys[i].nn);
+		free_port_read(&s->keys[i].pr);
+		free(s->keys[i].key);
+	}
 	if (s->lock_fd >= 0) {
 		flock(s->lock_fd, LOCK_UN);
 		close(s->lock_fd);
@@ -454,7 +519,11 @@ static void session_free(struct session *s)
 	}
 }
 
+#ifdef ANE_SESSION_TEST
+int ane_session_main(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
 	struct session s = { .lock_fd = -1, .dev = 0,
 			     .max_progs = ANE_SESSION_MAX_PROGS };
