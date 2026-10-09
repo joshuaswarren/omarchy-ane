@@ -2,14 +2,31 @@
 
 ## Unreleased
 
+- `tools`: the batch packager is generalized to a second op. `build_batch.py
+  --op add|mul --n N` builds an N-task program from the proven single-op
+  fixture; `build_add_batch.py` keeps working as the add entry
+  (byte-identical packages AND manifests for N=1..32, gated by
+  `fixtures/h14-anec/SHA256SUMS` and `tools/test_build_batch.py`). The mul
+  fixture decodes byte-identical to add except one task word (word 43:
+  0x80004 vs 0x80000), so the same per-task BAR-offset, word-2 position and
+  word-4 middle-clear edits apply unchanged. `check_add_batch.py` is
+  renamed `check_batch.py` (--op); the mul reference is the device-proven
+  half-away rounding of `tools/ane-run.c` CHK_MUL, not RNE.
+  `batch_landing_check.py` gains --op mul. New fixtures
+  `fixtures/h14-anec/mul-batch-{1,2,4,8}/` (small ladder), and
+  `tools/ane-mul-batch-ticket.sh`: one M2 ticket = landing N=1,2,4,8 (12
+  calls each, bit-exact) then timed cells x3 windows with 60 s idle and the
+  t=a+bN fit printed next to the add fit (a=269 us, b=12.2 us/job); DRY=1
+  makes no ANE call. No device has run the mul packages yet.
 - `tools`: batched-add packages for lever R-A. `build_add_batch.py` turns
   the proven single-add H14 fixture into an N-task program (N in
   {1,2,4,8,16,32}) where task i reads its input planes at offset
   i*0x8000 in channels 5/6 and writes channel 4 at the same offset, so
   one CALL runs N independent adds; N=1 is byte-identical to the source
-  fixture. `check_add_batch.py` is the offline sim test (header, task
+  fixture. `check_batch.py` (formerly `check_add_batch.py`) is the offline
+  sim test (header, task
   walk, ref union {4:5, 5:4, 6:6}, per-task offsets, fp16 half-away
-  reference, self-test with three refused corruptions),
+  reference, self-test with refused corruptions),
   `batch_build_check.c` proves the shipped ane_m2_program_build()
   accepts every package, and `batch_landing_check.py` is the per-call
   bit-exact landing gate for the device run. Fixtures under

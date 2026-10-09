@@ -67,6 +67,10 @@ bbb4541c3e46eb6dc9fd14690291f155fbd427118a3d25ce3836729e4457d7d8  ./matvec/opera
 e1b5d004fbc7d729f6915d4c727a276bb4f1f2ead1b9b20c17897aa995d0e42d  ./matvec/procedure.bin
 cfb057c907695747c37aadf4b9e2695fdf7d4916dcc3957289aad487c4712e52  ./matvec/program-0.anec
 02a3a53b9f5e2792550500dfccc9157ffb3a3038193808728f960d774eccab36  ./matvec/tdprop.bin
+b32fef9f18eaf2a92bbef1ce14d92c37c430af70f08f6506b0993be9a1e3cc67  ./mul-batch-1/program-0.anec
+6ae9e5b71d09404d9657d37d2e97f11e1a265c744dce582694cb43ca885de7d3  ./mul-batch-2/program-0.anec
+9f8d7f08d358f34d74f8fa9f48399a55d71c913426d6c15990cc52a79cb965a4  ./mul-batch-4/program-0.anec
+af45210ba105d08f1e9f1577e056398bf842a878ca016e856b5f06c14d8e8945  ./mul-batch-8/program-0.anec
 7f1a7b2aae549e588a102b19a467b2eb2d8aa48bbfbbf4a3e7aecc8daca811a5  ./mul-scalar/descriptor.bin
 96d6473f0238c03971e61367e8adfeb40c2b69a653ba9aa176b075bb1f730715  ./mul-scalar/generic.bin
 4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe  ./mul-scalar/kernel.bin
@@ -108,3 +112,7 @@ a19a4acbc9bf2238e7fcbe4e05d5c15ea329ff47cc85b2a7d34d75a5043550be  ./add-batch-16
 10bdab0c650353c6a258c735d161ab3b30f731431c3086dae00f83cf9e24e7a0  ./add-batch-32/manifest.json
 faf929d2c97280244f73cdacb28734be5a3c3a767c089c45dcb69443b9be423b  ./add-batch-4/manifest.json
 ba4b8a5aeee3b65f880b022a85017bcc24b4106f46848bed01641a8194984e2b  ./add-batch-8/manifest.json
+e2441c55cade87f989dfaddc2206d7c025c6aadc97f920e843ba7c498ff264a8  ./mul-batch-1/manifest.json
+b4579450be48a56eacfdc66a7c448fbdb497711faac38c4c252528acd5bab99d  ./mul-batch-2/manifest.json
+af9ef184ec12dd7687f438536407578d2a9b4e0995765c3326f82dbefb271a98  ./mul-batch-4/manifest.json
+c82f1dd5b0848aea01832931904ddc3d1b0a387e1f5dbb92c55aac148e35b76e  ./mul-batch-8/manifest.json

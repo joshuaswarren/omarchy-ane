@@ -2,27 +2,33 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
 
-"""Offline sim test for the N-add batch packages (no device).
+"""Offline sim test for the N-task batch packages (no device).
 
-Proves, for fixtures/h14-anec/add-batch-N/program-0.anec:
-  1. header: taskCount, tiles[4..6] = 2N, sizes, version, input count;
-  2. task stream: exactly N add tasks, ids 0..N-1, header word 2 set by
-     position (0x2a only / 0x8 first / 0x0 middle / 0x22 last), zero
-     frames and gaps;
-  3. wiring: the three dense BAR refs per task are the proven single-add
-     set (slot 4 @ 0x1110 -> ch 5, slot 6 @ 0x1128 -> ch 6, slot 5 @
-     0x1508 -> ch 4 under the driver's legacy elementwise rule), with
-     per-task payload[0] offset i * 0x8000 inside every bound channel;
+Proves, for fixtures/h14-anec/{op}-batch-N/program-0.anec (--op add|mul):
+  1. header: taskCount, tiles[4..6] = N x source surface, sizes, version,
+     input count;
+  2. task stream: exactly N copies of the source task, ids 0..N-1, header
+     word 2 set by position (0x2a only / 0x8 first / 0x0 middle / 0x22
+     last), zero frames and gaps;
+  3. wiring: the three dense BAR refs per task are the proven
+     single-op set (slot 4 @ 0x1110 -> ch 5, slot 6 @ 0x1128 -> ch 6,
+     slot 5 @ 0x1508 -> ch 4 under the driver's legacy elementwise rule),
+     with per-task payload[0] offset i * surface bytes inside every bound
+     channel;
   4. byte discipline: every other word of every task equals the source
      fixture task, and the constant region is bit-identical;
   5. reference: the seeded stacked inputs and the fp16 half-away expected
-     outputs (the device-proven rounding of tools/ane_f16_add.h).
+     outputs (the device-proven rounding: tools/ane_f16_add.h for add,
+     tools/ane-run.c CHK_MUL for mul - both round ties away from zero on
+     the exact f64 result; mul products of two fp16 are exact before the
+     rounding).
 
---self-test runs the clean pass plus four corruptions (wrong task
-offset, all-0x2a position flags, under-sized tile, flipped golden byte)
-and requires each corruption to fail the check.
+--self-test runs the clean pass plus six corruptions (wrong task
+offset, all-0x2a position flags, un-cleared middle word 4, manifest
+word-4 mismatch, under-sized tile, flipped golden byte) and requires
+each corruption to fail the check.
 
-usage: check_add_batch.py --n N [--anec FILE] [--seed S]
+usage: check_batch.py --op add|mul [--n N] [--anec FILE] [--seed S]
                           [--golden-dir DIR] [--out-y FILE]
                           [--corrupt task-offset|tiles|golden]
                           [--self-test]
@@ -38,11 +44,10 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parent.parent
-SOURCE_ANEC = REPO / "fixtures/h14-anec/add/program-0.anec"
+OPS = ("add", "mul")
+SOURCE_ANEC = {op: REPO / f"fixtures/h14-anec/{op}/program-0.anec"
+               for op in OPS}
 HEADER_BYTES = 0x1000
-TASK_WORDS = 61
-LANES = 512
-PLANE_WORDS = 16384  # fp16 words per add surface: 512 valid x 64 B
 BAR_REFS = ((4, 0x1110, 5), (6, 0x1128, 6), (5, 0x1508, 4))
 PROVEN_UNION = {4: 5, 5: 4, 6: 6}
 # H14 header word 2 position flags. Independent copy (not imported from
@@ -113,6 +118,21 @@ def add_ref(a, b):
                      for x, y in zip(a, b)], dtype=np.uint16)
 
 
+def mul_ref(a, b):
+    """tools/ane-run.c CHK_MUL, verbatim semantics: half-away on the exact
+    product (a product of two fp16 is exact in f64 before the rounding)."""
+    return np.array([f16_round_half_away(f16_to_f64(x) * f16_to_f64(y))
+                     for x, y in zip(a, b)], dtype=np.uint16)
+
+
+REFS = {"add": add_ref, "mul": mul_ref}
+
+
+def surface_words(anec_bytes):
+    """fp16 words per plane: header tile[4] x 16384 B per tile unit / 2."""
+    return (struct.unpack_from("<16I", anec_bytes, 0x28)[4] << 14) // 2
+
+
 # --------------------------------------------------------------- walks
 def split_tasks(stream):
     tasks, off = [], 0
@@ -152,18 +172,23 @@ def task_bar_records(task):
 
 
 # ---------------------------------------------------------------- main
-def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
+def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None,
+          op="add"):
     """Run every structural + reference check; raise Fail on any problem.
     `corrupt` applies one negative-control mutation before checking."""
     src_tiles = struct.unpack_from("<16I", source_bytes, 0x28)
     surf = src_tiles[4] << 14
+    plane = surf // 2
     pkg = bytearray(pkg_bytes)
 
     if corrupt == "task-offset" and n > 1:
         # Point task 1's dst BAR offset back at plane 0 (collides with
         # task 0's write; also breaks the monotonic offset pattern).
-        base = HEADER_BYTES + 16 + 256  # frame + task 0
-        t1 = pkg[base:base + 244]
+        src_tsk = struct.unpack_from("<Q", source_bytes, 0x10)[0]
+        s_off, s_words = split_tasks(
+            source_bytes[HEADER_BYTES:HEADER_BYTES + src_tsk])[0]
+        base = HEADER_BYTES + 16 + ((s_words * 4 + 15) & ~15)
+        t1 = pkg[base:base + s_words * 4]
         idx, _ = task_bar_records(bytes(t1))[(5, 0x1508)]
         struct.pack_into("<I", pkg, base + (idx + 1) * 4, 0)
     elif corrupt == "flags" and n > 1:
@@ -206,17 +231,18 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
     payload, first_task, task_count = struct.unpack_from("<QII", pkg, 0)
     tsk, krn = struct.unpack_from("<QQ", pkg, 0x10)
     input_count, version = struct.unpack_from("<II", pkg, 0x20)
+    src_first = struct.unpack_from("<QII", source_bytes, 0)[1]
+    src_krn_size = struct.unpack_from("<Q", source_bytes, 0x18)[0]
     need(version == 1, f"version {version}")
     need(input_count == 2, f"input count {input_count}")
     need(task_count == n, f"taskCount {task_count} != {n}")
     need(payload == len(pkg) - HEADER_BYTES, "payload size vs file size")
-    need(first_task == TASK_WORDS * 4, "firstTaskBytes != 244")
+    need(first_task == src_first, "firstTaskBytes moved vs the source")
     const_off = payload - krn
     need(const_off == (tsk + 63) & ~63, "constant offset misaligned")
     need(const_off >= tsk, "task stream reaches the constant region")
 
-    src_krn = source_bytes[HEADER_BYTES + (len(source_bytes)
-                                           - HEADER_BYTES - 16384):]
+    src_krn = source_bytes[len(source_bytes) - src_krn_size:]
     need(pkg[HEADER_BYTES + const_off:] == src_krn,
          "constant region is not bit-identical to the source fixture")
 
@@ -230,8 +256,9 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
          == struct.unpack_from("<96Q", source_bytes, 0x68),
          "nchw layouts moved")
 
-    src_stream = source_bytes[HEADER_BYTES:HEADER_BYTES + struct.unpack_from(
-        "<Q", source_bytes, 0x10)[0]]
+    src_stream = source_bytes[HEADER_BYTES:HEADER_BYTES
+                              + struct.unpack_from("<Q", source_bytes,
+                                                   0x10)[0]]
     src_task_off, src_words = split_tasks(src_stream)[0]
     src_task = src_stream[src_task_off:src_task_off + src_words * 4]
     src_recs = task_bar_records(src_task)
@@ -249,13 +276,13 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
     src_body = bytearray(src_task)
     for rec_idx, payload_words in src_recs.values():
         struct.pack_into("<II", src_body, (rec_idx + 1) * 4, 0, 0)
-    struct.pack_into("<I", src_body, 0, (TASK_WORDS << 16) | 0)
+    struct.pack_into("<I", src_body, 0, (src_words << 16) | 0)
     src_w4 = struct.unpack_from("<I", src_task, 16)[0]
 
     for i, (off, words) in enumerate(tasks):
-        need(words == TASK_WORDS, f"task {i}: {words} words")
+        need(words == src_words, f"task {i}: {words} words")
         hdr0 = struct.unpack_from("<I", stream, off)[0]
-        need(hdr0 == (TASK_WORDS << 16) | i,
+        need(hdr0 == (src_words << 16) | i,
              f"task {i}: header word 0 {hdr0:#x}")
         w2 = struct.unpack_from("<I", stream, off + 8)[0]
         flag = position_flag(i, n)
@@ -276,7 +303,7 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
         # only-task 0x2a below before the byte compare).
         for rec_idx, _ in src_recs.values():
             struct.pack_into("<II", task, (rec_idx + 1) * 4, 0, 0)
-        struct.pack_into("<I", task, 0, (TASK_WORDS << 16) | 0)
+        struct.pack_into("<I", task, 0, (src_words << 16) | 0)
         struct.pack_into("<I", task, 8, FLAG_ONLY)
         struct.pack_into("<I", task, 16, src_w4)
         need(task == src_body, f"task {i}: bytes outside the intended edits")
@@ -303,25 +330,25 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
     rng = np.random.default_rng(seed + n)
     planes = []
     for k in range(2):
-        x = np.zeros(PLANE_WORDS * n, dtype=np.float16)
+        x = np.zeros(plane * n, dtype=np.float16)
         for i in range(n):
-            x[i * PLANE_WORDS:(i + 1) * PLANE_WORDS:32] = \
-                rng.uniform(-8, 8, LANES).astype(np.float16)
+            x[i * plane:(i + 1) * plane:32] = \
+                rng.uniform(-8, 8, plane // 32).astype(np.float16)
         planes.append(x)
-    want = np.zeros(PLANE_WORDS * n, dtype=np.uint16)
+    want = np.zeros(plane * n, dtype=np.uint16)
     for i in range(n):
-        lo, hi = i * PLANE_WORDS, (i + 1) * PLANE_WORDS
-        want[lo:hi] = add_ref(planes[0][lo:hi].view(np.uint16),
-                              planes[1][lo:hi].view(np.uint16))
+        lo, hi = i * plane, (i + 1) * plane
+        want[lo:hi] = REFS[op](planes[0][lo:hi].view(np.uint16),
+                               planes[1][lo:hi].view(np.uint16))
     if corrupt == "golden":
         # One flipped bit stands in for a wrong device output word; the
         # bit-exact comparison the landing check performs refuses it.
-        want[n * PLANE_WORDS // 2] ^= 1
+        want[n * plane // 2] ^= 1
         raise Fail("simulated device bit flip caught by the bit-exact "
                    "comparison")
     return {
         "n": n, "tasks": len(tasks), "surface_bytes": surf,
-        "input_words": int(PLANE_WORDS * n),
+        "input_words": int(plane * n),
         "inputs": [p.view(np.uint16).copy() for p in planes],
         "expected": want,
         "package_sha256": hashlib.sha256(bytes(pkg)).hexdigest(),
@@ -330,6 +357,7 @@ def check(source_bytes, pkg_bytes, n, corrupt=None, seed=1000, manifest=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--op", choices=OPS, default="add")
     ap.add_argument("--n", type=int, default=None)
     ap.add_argument("--anec", type=Path, default=None)
     ap.add_argument("--seed", type=int, default=1000)
@@ -342,7 +370,7 @@ def main(argv=None):
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args(argv)
 
-    source = SOURCE_ANEC.read_bytes()
+    source = SOURCE_ANEC[args.op].read_bytes()
 
     def manifest_for(anec_path):
         man = anec_path.parent / "manifest.json"
@@ -355,14 +383,13 @@ def main(argv=None):
                                ("manifest-word4", "manifest-word4"),
                                ("tiles", "tiles"), ("golden", "golden")):
             n = args.n or 4
-            anec = (args.anec or
-                    REPO / f"fixtures/h14-anec/add-batch-{n}"
-                    / "program-0.anec").read_bytes()
+            pkg_path = (args.anec or
+                        REPO / f"fixtures/h14-anec/{args.op}-batch-{n}"
+                        / "program-0.anec")
+            anec = pkg_path.read_bytes()
             try:
                 check(source, anec, n, corrupt=corrupt, seed=args.seed,
-                      manifest=manifest_for(args.anec or
-                                            REPO / f"fixtures/h14-anec/add-batch-{n}"
-                                            / "program-0.anec"))
+                      manifest=manifest_for(pkg_path), op=args.op)
                 ok = corrupt is None
             except Fail as e:
                 ok = corrupt is not None
@@ -377,10 +404,10 @@ def main(argv=None):
         return 0
 
     n = args.n or 1
-    anec_path = args.anec or (REPO / f"fixtures/h14-anec/add-batch-{n}"
+    anec_path = args.anec or (REPO / f"fixtures/h14-anec/{args.op}-batch-{n}"
                               / "program-0.anec")
     r = check(source, anec_path.read_bytes(), n, corrupt=args.corrupt,
-              seed=args.seed, manifest=manifest_for(anec_path))
+              seed=args.seed, manifest=manifest_for(anec_path), op=args.op)
     print(f"{anec_path}: tasks {r['tasks']} surfaces {r['surface_bytes']:#x} "
           f"sha256 {r['package_sha256']}")
     if args.golden_dir:

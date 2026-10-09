@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright 2026 Joshua Warren
+
+"""Build an N-independent-task H14 ANEC batch from a proven single-op fixture.
+
+Lever R-A (FwRoundTrip), generalized over ops: one CALL that runs N copies of
+a single-task elementwise program, to amortize the ~0.23-0.25 ms firmware
+round trip. build_add_batch.py proved the shape for add on the M2
+(N=1..32, bit-exact; artifacts/AneBacklog/20261008T1910Z-m2-fixed-cost). The
+mul fixture (fixtures/h14-anec/mul) decodes byte-identical to the add fixture
+except ONE task word (word 43: 0x80004 vs 0x80000, the op select) - same
+61-word task, same BAR refs, same kernel/constant region - so the same four
+kinds of edits apply unchanged:
+
+  1. header: taskCount = N, tiles[4..6] = N x per-op surface (0x8000 B),
+     content tile 0 recomputed, sizes rebuilt.
+  2. task stream: the single task duplicated N times at the 16-byte
+     alignment stride, task_id = i (Apple's own two-task matvec oracle uses
+     ids 0,1: research/oracles/h14/matmul_m1_k256_n512_ty1.json), and header
+     word 2 set by position: 0x2a for the only task (N = 1); 0x8 first,
+     0x0 middle, 0x22 last for N > 1. Every decoded H14 oracle task follows
+     that pattern (4,986 tasks, zero violations; research/oracles/h14 +
+     research/h14-td-fields.md). Header word 4 of a middle task is the
+     source word 4 with bits 3/5/6 (0x68) cleared: those bits are set in
+     2,099/2,099 non-middle oracle tasks and clear in 2,887/2,887 middles,
+     so the add middle carries 0xfff800 (op bits preserved, as in every
+     observed PE-writing middle).
+  3. per-task copy i: the three dense BAR-ref records' first payload word
+     (the byte offset inside the bound channel) set to i * surface_bytes:
+       slot 4 @ 0x1110 (input a, ch 5), slot 6 @ 0x1128 (input b, ch 6),
+       slot 5 @ 0x1508 (output, ch 4).
+     Offsets within one bound channel are the hardware-proven pattern
+     (island-b-select-runtime: per-task offsets 0/0x226c80/0x459480; the
+     driver's check_bound_slots enforces off < channel alloc). Slots stay
+     unique across tasks, so the driver's cross-task ref union stays the
+     proven {4:5, 5:4, 6:6} and the operation section is byte-identical to
+     the single-op run.
+
+Everything else - the kernel/constant section, all other task words, the
+nchw layouts, and the op-select word itself (copied from the source task
+body) - is copied byte-for-byte from the fixture.
+
+Risk (marked, no oracle): no Apple record carries N independent same-op
+tasks; task_id semantics and inter-task dependency words are unresolved in
+the decoded corpus. The M2 run decides.
+
+usage: build_batch.py --op add|mul --n N [--anec SRC] [--out DIR]   (N > 0)
+"""
+import argparse
+import hashlib
+import json
+import struct
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+OPS = ("add", "mul")
+HEADER_BYTES = 0x1000
+FRAME_BYTES = 16
+TILE_UNIT_SHIFT = 14
+# 16-byte-aligned stride of the duplicated task (61-word add/mul task:
+# 244 B rounded up).
+TASK_STRIDE = 256
+# (slot, register word address, bound channel) of the three BAR refs.
+BAR_REFS = ((4, 0x1110, 5), (6, 0x1128, 6), (5, 0x1508, 4))
+# H14 header word 2 position flags, verified over all 4,986 decoded oracle
+# tasks (747 only=0x2a, 676 first=0x8, 2,887 middle=0x0, 676 last=0x22,
+# zero violations). Unknown for header word 4 of a middle task: open risk.
+FLAG_ONLY, FLAG_FIRST, FLAG_MIDDLE, FLAG_LAST = 0x2A, 0x08, 0x00, 0x22
+# H14 header word 4: bits 3, 5 and 6 (0x68) are set in every non-middle
+# task and clear in every middle task - 2,887/2,887 middles vs 2,099/2,099
+# others over the same 4,986-task census, including the elementwise binary
+# pow middles (0xffd800). Bits 23:12 and bit 11 are per-task-body (op
+# bits): PE-or-KernelDMA-writing middles keep bit 11 in 2,712/2,712 cases,
+# and every same-op first->middle transition keeps bits 23:12
+# (layer_norm 0xfff868->0xfff800, conv/matvec splits). A middle task is
+# therefore the source word 4 with 0x68 cleared; non-middle positions
+# copy it unchanged. The M2 N=3 cell decides.
+WORD4_MIDDLE_CLEAR = 0x68
+
+
+def position_flag(i, n):
+    if n == 1:
+        return FLAG_ONLY
+    if i == 0:
+        return FLAG_FIRST
+    return FLAG_LAST if i == n - 1 else FLAG_MIDDLE
+
+
+def source_task_word4(source: bytes) -> int:
+    """Header word 4 of the fixture's single task, via the stream walk.
+
+    The stream opens with a zero-size 16-byte frame, so the task's word 4
+    is not at a fixed offset from HEADER_BYTES.
+    """
+    tsk_size = struct.unpack_from("<Q", source, 0x10)[0]
+    stream = source[HEADER_BYTES:HEADER_BYTES + tsk_size]
+    off, _words = split_tasks(stream)[0]
+    return struct.unpack_from("<I", stream, off + 16)[0]
+
+
+def split_tasks(stream: bytes):
+    """The driver's split_h14_tasks walk (16-byte frames, header word 0)."""
+    tasks, off = [], 0
+    while off < len(stream):
+        if len(stream) - off < 4:
+            if any(stream[off:]):
+                raise ValueError("nonzero trailing bytes after the last task")
+            break
+        words = struct.unpack_from("<H", stream, off + 2)[0] & 0x7FF
+        if not words:
+            off += FRAME_BYTES
+            continue
+        if words < 8:
+            raise ValueError("task declares fewer words than the H14 header")
+        end = min((off + words * 4 + 15) & ~15, len(stream))
+        if any(stream[off + words * 4:end]):
+            raise ValueError("nonzero bytes in a 16-byte task alignment gap")
+        tasks.append((off, words))
+        off = end
+    return tasks
+
+
+def build(source: bytes, n: int) -> bytes:
+    """Assemble header + N-task stream + the original constant region."""
+    payload0, first_task, _ = struct.unpack_from("<QII", source, 0)
+    tsk_size = struct.unpack_from("<Q", source, 0x10)[0]
+    krn_size = struct.unpack_from("<Q", source, 0x18)[0]
+    const_off0 = payload0 - krn_size
+    if any(source[HEADER_BYTES + tsk_size:HEADER_BYTES + const_off0]):
+        raise ValueError("source constant-offset pad is not zero")
+    const_src = source[HEADER_BYTES + const_off0:HEADER_BYTES + payload0]
+    if len(const_src) != krn_size:
+        raise ValueError("constant region length disagrees with the header")
+    stream = build_stream(source, n)
+    const_off = (len(stream) + 63) & ~63
+    content = const_off + krn_size
+    out = bytearray(source[:HEADER_BYTES])
+    struct.pack_into("<QII", out, 0, content, first_task, n)
+    struct.pack_into("<QQII", out, 0x10, len(stream), krn_size,
+                     struct.unpack_from("<I", source, 0x20)[0],
+                     struct.unpack_from("<I", source, 0x24)[0])
+    tiles = list(struct.unpack_from("<16I", source, 0x28))
+    surf = tiles[4]
+    tiles[0] = (content + (1 << TILE_UNIT_SHIFT) - 1) >> TILE_UNIT_SHIFT
+    for ch in (4, 5, 6):
+        tiles[ch] = surf * n
+    struct.pack_into("<16I", out, 0x28, *tiles)
+    out += stream
+    out += b"\0" * (const_off - len(stream))  # 64-byte constant offset pad
+    out += const_src
+    return bytes(out)
+
+
+def build_stream(source: bytes, n: int) -> bytes:
+    tsk_size = struct.unpack_from("<Q", source, 0x10)[0]
+    stream = source[HEADER_BYTES:HEADER_BYTES + tsk_size]
+    tasks = split_tasks(stream)
+    if len(tasks) != 1:
+        raise ValueError("source task stream does not hold exactly one task")
+    off, words = tasks[0]
+    task = bytearray(stream[off:off + words * 4])
+    bar_at = {}
+    idx = 8 + (1 if (struct.unpack_from("<I", task, 28)[0] & 3) == 3 else 0)
+    while idx < words:
+        h = struct.unpack_from("<I", task, idx * 4)[0]
+        if h & 0x80000000:
+            count = 1 + bin((h >> 15) & 0xFFFF).count("1")
+        else:
+            count = ((h >> 15) & 0x3F) + 1
+        if not (h & 0x80000000) and (h & 0x20000000):
+            bar_at[((h >> 23) & 0x3F, (h & 0x7FFF) * 4)] = idx
+        idx += 1 + count
+    if set(bar_at) != {(s, a) for s, a, _ in BAR_REFS}:
+        raise ValueError(f"unexpected BAR ref set {sorted(bar_at)}")
+    surf = struct.unpack_from("<16I", source, 0x28)[4] << TILE_UNIT_SHIFT
+
+    body = bytearray()
+    for i in range(n):
+        t = bytearray(task)
+        for rec_idx in bar_at.values():
+            struct.pack_into("<II", t, (rec_idx + 1) * 4, i * surf, 0)
+        struct.pack_into("<I", t, 0, (words << 16) | i)
+        struct.pack_into("<I", t, 8, position_flag(i, n))
+        if 0 < i < n - 1:
+            w4 = struct.unpack_from("<I", t, 16)[0]
+            struct.pack_into("<I", t, 16, w4 & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF)
+        body += t
+        if i + 1 < n:
+            body += b"\0" * (TASK_STRIDE - len(t))
+    return bytes(FRAME_BYTES) + bytes(body)
+
+
+# Manifest risk tail per op: the first M2 cell with a middle task (N >= 3)
+# is the one that decides the word-2/word-4 position rules on device.
+RISK_TAIL = {"add": "the M2 N=3 cell decides",
+             "mul": "the M2 N=4 cell decides"}
+
+
+def build_manifest(source: bytes, src: Path, n: int, op: str) -> dict:
+    surf = struct.unpack_from("<16I", source, 0x28)[4] << TILE_UNIT_SHIFT
+    src_w4 = source_task_word4(source)
+    _, words = split_tasks(
+        source[HEADER_BYTES:HEADER_BYTES
+               + struct.unpack_from("<Q", source, 0x10)[0]])[0]
+    return {
+        "schema": f"omarchy-ane.{op}-batch.v1",
+        "source": str(src.relative_to(REPO)),
+        "source_sha256": hashlib.sha256(source).hexdigest(),
+        "n": n,
+        "task_words": words,
+        "task_stride_bytes": TASK_STRIDE,
+        "surface_bytes": surf,
+        "stacked_bytes": surf * n,
+        "io_channels": {"in_a": 5, "in_b": 6, "out": 4},
+        "per_task_offsets": [i * surf for i in range(n)],
+        "task_ids": list(range(n)),
+        "task_flags_word2": [f"{position_flag(i, n):#04x}"
+                             for i in range(n)],
+        "task_word4": [f"{src_w4 & ~WORD4_MIDDLE_CLEAR & 0xFFFFFFFF:#010x}"
+                       if 0 < i < n - 1 else f"{src_w4:#010x}"
+                       for i in range(n)],
+        "bar_refs": [{"slot": s, "reg": a, "channel": c}
+                     for s, a, c in BAR_REFS],
+        "risk": "no Apple oracle carries N independent same-op tasks; "
+                "header words 2 and 4 are set by position per the decoded "
+                "corpus (word 2 zero violations over 4,986 tasks; word-4 "
+                "bits 3/5/6 clear in 2,887/2,887 middles), but no middle "
+                f"{op.upper()} oracle exists - {RISK_TAIL[op]}",
+    }
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--op", choices=OPS, required=True)
+    ap.add_argument("--anec", type=Path, default=None)
+    ap.add_argument("--n", type=int, required=True)
+    ap.add_argument("--out", type=Path, default=None)
+    args = ap.parse_args(argv)
+    if args.n <= 0:
+        ap.error("--n must be > 0")
+    src = args.anec or REPO / f"fixtures/h14-anec/{args.op}/program-0.anec"
+
+    source = src.read_bytes()
+    anec = build(source, args.n)
+    out_dir = args.out or (REPO / f"fixtures/h14-anec/{args.op}-batch-{args.n}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / "program-0.anec"
+    out.write_bytes(anec)
+
+    manifest = build_manifest(source, src, args.n, args.op)
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    surf = manifest["surface_bytes"]
+    print(f"{out} {len(anec)} bytes "
+          f"sha256 {hashlib.sha256(anec).hexdigest()}")
+    print(f"  op {args.op}: {args.n} x {manifest['task_words']} words, "
+          f"surfaces {surf:#x} x {args.n} per channel, "
+          f"ids 0..{args.n - 1}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

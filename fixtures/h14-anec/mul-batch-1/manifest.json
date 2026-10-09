@@ -1,0 +1,45 @@
+{
+  "bar_refs": [
+    {
+      "channel": 5,
+      "reg": 4368,
+      "slot": 4
+    },
+    {
+      "channel": 6,
+      "reg": 4392,
+      "slot": 6
+    },
+    {
+      "channel": 4,
+      "reg": 5384,
+      "slot": 5
+    }
+  ],
+  "io_channels": {
+    "in_a": 5,
+    "in_b": 6,
+    "out": 4
+  },
+  "n": 1,
+  "per_task_offsets": [
+    0
+  ],
+  "risk": "no Apple oracle carries N independent same-op tasks; header words 2 and 4 are set by position per the decoded corpus (word 2 zero violations over 4,986 tasks; word-4 bits 3/5/6 clear in 2,887/2,887 middles), but no middle MUL oracle exists - the M2 N=4 cell decides",
+  "schema": "omarchy-ane.mul-batch.v1",
+  "source": "fixtures/h14-anec/mul/program-0.anec",
+  "source_sha256": "b32fef9f18eaf2a92bbef1ce14d92c37c430af70f08f6506b0993be9a1e3cc67",
+  "stacked_bytes": 32768,
+  "surface_bytes": 32768,
+  "task_flags_word2": [
+    "0x2a"
+  ],
+  "task_ids": [
+    0
+  ],
+  "task_stride_bytes": 256,
+  "task_word4": [
+    "0x00fff868"
+  ],
+  "task_words": 61
+}

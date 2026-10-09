@@ -2,18 +2,18 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
 
-"""Landing check for the N-add batch packages (runs on the M2).
+"""Landing check for the N-task batch packages (runs on the M2).
 
-Per call, with fresh seeded inputs: pack the stacked [N x 32768 B]
-input surfaces, run one CALL of the batch package through ane-run,
-read the output, and compare every output plane bit-exact against the
-device-proven fp16 half-away add reference (tools/ane_f16_add.h
-semantics, shared with check_add_batch.py).
+Per call, with fresh seeded inputs: pack the stacked [N x surface] input
+planes, run one CALL of the batch package through ane-run, read the output,
+and compare every output plane bit-exact against the device-proven fp16
+half-away reference for the op (--op add: tools/ane_f16_add.h add semantics;
+--op mul: tools/ane-run.c CHK_MUL semantics), shared with check_batch.py.
 
 Takes /var/tmp/ane-run.lock itself around every ane-run; never wrap
 this script in another flock (that deadlock cost two boots).
 
-usage: batch_landing_check.py --n N [--calls K] [--seed S]
+usage: batch_landing_check.py --op add|mul --n N [--calls K] [--seed S]
                               [--anec FILE] [--ane-run BIN] [--work DIR]
                               [--timeout SECS]
 exit 0 iff every call landed all N planes bit-exact.
@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_add_batch import PLANE_WORDS, add_ref  # noqa: E402
+from check_batch import REFS, surface_words  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 LOCK = "/var/tmp/ane-run.lock"
@@ -37,11 +37,12 @@ LOCK = "/var/tmp/ane-run.lock"
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--op", choices=("add", "mul"), default="add")
     ap.add_argument("--n", type=int, required=True)
     ap.add_argument("--calls", type=int, default=12)
     ap.add_argument("--seed", type=int, default=17000)
     ap.add_argument("--anec", type=Path,
-                    default=REPO / "fixtures/h14-anec/add-batch-N"
+                    default=REPO / "fixtures/h14-anec/{op}-batch-N"
                     / "program-0.anec")
     ap.add_argument("--ane-run", type=Path,
                     default=Path(__file__).resolve().parent / "ane-run")
@@ -52,27 +53,29 @@ def main(argv=None):
                          "fails the check (a hung CALL must not hold "
                          "/var/tmp/ane-run.lock)")
     args = ap.parse_args(argv)
-    anec = Path(str(args.anec).replace("add-batch-N",
-                                       f"add-batch-{args.n}"))
-    work = args.work or Path(f"/var/tmp/batch-lever/land-{args.n}")
+    anec = Path(str(args.anec).replace("{op}", args.op)
+                .replace(f"{args.op}-batch-N", f"{args.op}-batch-{args.n}"))
+    ref = REFS[args.op]
+    plane = surface_words(anec.read_bytes())
+    work = args.work or Path(f"/var/tmp/batch-lever/land-{args.op}-{args.n}")
     work.mkdir(parents=True, exist_ok=True)
 
     for call in range(args.calls):
         rng = np.random.default_rng(args.seed + 1000 * args.n + call)
         ins = []
         for k in range(2):
-            x = np.zeros(PLANE_WORDS * args.n, dtype=np.float16)
+            x = np.zeros(plane * args.n, dtype=np.float16)
             for i in range(args.n):
-                x[i * PLANE_WORDS:(i + 1) * PLANE_WORDS:32] = \
-                    rng.uniform(-8, 8, 512).astype(np.float16)
+                x[i * plane:(i + 1) * plane:32] = \
+                    rng.uniform(-8, 8, plane // 32).astype(np.float16)
             name = work / f"in-{k}.f16"
             x.tofile(name)
             ins.append(x)
-        want = np.zeros(PLANE_WORDS * args.n, dtype=np.uint16)
+        want = np.zeros(plane * args.n, dtype=np.uint16)
         for i in range(args.n):
-            lo, hi = i * PLANE_WORDS, (i + 1) * PLANE_WORDS
-            want[lo:hi] = add_ref(ins[0][lo:hi].view(np.uint16),
-                                  ins[1][lo:hi].view(np.uint16))
+            lo, hi = i * plane, (i + 1) * plane
+            want[lo:hi] = ref(ins[0][lo:hi].view(np.uint16),
+                              ins[1][lo:hi].view(np.uint16))
         out = work / "out.f16"
         cmd = [str(args.ane_run), "--anec", str(anec),
                "--in", f"0={work / 'in-0.f16'}",
@@ -111,8 +114,8 @@ def main(argv=None):
         if bad.size:
             w = int(bad[0])
             print(f"land n={args.n} call {call}: {bad.size} mismatched "
-                  f"words, first word {w} (plane {w // PLANE_WORDS}, "
-                  f"lane {(w % PLANE_WORDS) // 32}): got "
+                  f"words, first word {w} (plane {w // plane}, "
+                  f"lane {(w % plane) // 32}): got "
                   f"{got[w]:#06x} want {want[w]:#06x}")
             return 1
         print(f"land n={args.n} call {call}: {args.n}/{args.n} planes "
