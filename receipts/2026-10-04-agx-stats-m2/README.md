@@ -250,14 +250,19 @@ executor reads it read-only).
 1. Kernel base 7.1.12 (aurora) under the M2's 7.1.13-era userland and the
    stock boot.bin DT: the one-shot pattern bounds the blast radius, but a
    Vulkan bind failure makes S4 impossible — that is an abort-with-rollback,
-   not a tuned workaround. Fallback (Main decision): rebase the 6 commits on
+   not a tuned workaround. Fallback (Main decision): rebase the commits on
    the 7.1.13-based branch and rebuild.
-2. `FwBusy` timestamp units on T6021 are unvalidated (the code assumes
-   nanoseconds from T6001). S1/S2 exist to test exactly this; a refuted unit is
-   a finding, not a failure of the window.
-3. `jobs` stays 0 (no call site in the series) — contract deviation, reported.
-4. ABI doc mismatches (temperature keys, saturation claim) — fix in the PR
-   before merge; branch-owner action, not window work.
+2. `util1..util4` semantics on T6021 are unvalidated (the raw power-state
+   counters were never read on this chip). S1/S2 exist to observe exactly
+   this; a surprise is a finding, not a failure of the window. `busy_ns` no
+   longer depends on the unit assumption: the round-6 build integrates
+   utilization over 24 MHz tick deltas, exact in 64 bits (see `builds.md`).
+3. `jobs` counts internal submissions at `JobFence::command_complete`, so
+   its rate tracks Mesa's internal submission count, not user cells; the
+   window gates only on stable-while-idle and strictly-increasing (S1/S4).
+4. ABI doc mismatches (unprinted temperature keys, the old saturation claim)
+   are fixed in the current series; if the contract test's doc-only NOTE
+   reappears against the staged tree, stop and re-check the branch head.
 5. GRUB one-shot prerequisites (saved default) — preflight checks; if absent,
    stop before touching boot config.
 6. ESP-resident `/boot` — install gated on Main's GO file.

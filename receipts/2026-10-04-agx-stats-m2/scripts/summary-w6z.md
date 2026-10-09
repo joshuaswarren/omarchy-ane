@@ -1,6 +1,6 @@
 # Handoff summary for the M2 GPU lane (w6Z) — agx_stats M2 validation
 
-The drm/asahi agx_stats series (replacement for draft PR #157: branch
+The agx_stats series for the GPU driver (replacement for draft PR #157: branch
 `agent/jw16-agx-stats4`, 8 commits, every commit Signed-off-by, checkpatch
 --strict 0 errors 0 checks) exports the AGX firmware stats the driver already
 polls as `/sys/class/drm/card*/device/agx_stats` (`busy_ns jobs pstate

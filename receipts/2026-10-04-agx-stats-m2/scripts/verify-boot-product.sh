@@ -40,20 +40,23 @@ echo "Image driver strings hits: $DRV  agx_stats symbol hits: $AGX"
 [ "$AGX" -ge 1 ] || { echo "NO-GO: no agx_stats symbols in the kernel image"; FAIL=1; }
 rm -f .vmlinux.x
 
-# Every module in the tarball must match the release's vermagic.
-KO=$(tar --zstd -xf modules-m2.tar.zst -O "$REL/kernel/drivers/gpu/drm/asahi/asahi.ko" 2>/dev/null | tr -c '[:print:]' '\n' | grep -m1 '^vermagic=' || true)
-if [ -n "$KO" ]; then
-  echo "tarball asahi.ko vermagic: $KO"
-  case "${KO#vermagic=}" in "$REL "*) : ;; *) echo "NO-GO: tarball asahi.ko vermagic mismatch"; FAIL=1 ;; esac
-else
-  echo "tarball carries no asahi.ko (expected for the built-in driver build)"
-  ONE=$(tar --zstd -tf modules-m2.tar.zst | grep -m1 '\.ko$' || true)
-  if [ -n "$ONE" ]; then
-    OV=$(tar --zstd -xf modules-m2.tar.zst -O "$ONE" 2>/dev/null | tr -c '[:print:]' '\n' | grep -m1 '^vermagic=' || true)
-    echo "spot vermagic ($ONE): ${OV:-none}"
-    case "${OV#vermagic=}" in "$REL "*) : ;; *) echo "NO-GO: tarball module vermagic mismatch"; FAIL=1 ;; esac
-  fi
-fi
+# Every module in the tarball must match the release's vermagic. The driver
+# is built-in, so the archive normally carries no asahi.ko; whatever modules
+# it does carry are all checked, not a spot sample.
+VMOD=$(mktemp -d "$S/.vmod.XXXXXX")
+tar --zstd -xf modules-m2.tar.zst -C "$VMOD"
+NMOD=0
+while IFS= read -r -d '' f; do
+  case $f in *.ko) ;; *) continue ;; esac
+  NMOD=$((NMOD + 1))
+  OV=$(tr -c '[:print:]' '\n' < "$f" | grep -m1 '^vermagic=' || true)
+  case "${OV#vermagic=}" in
+    "$REL "*) : ;;
+    *) echo "NO-GO: module vermagic mismatch: ${f#"$VMOD"/} (${OV:-none})"; FAIL=1 ;;
+  esac
+done < <(find "$VMOD" -type f -print0)
+rm -rf "$VMOD"
+echo "vermagic checked on $NMOD modules"
 
 if [ "$FAIL" = 0 ]; then
   {

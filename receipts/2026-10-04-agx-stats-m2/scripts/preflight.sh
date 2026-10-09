@@ -25,7 +25,7 @@ echo "== asahi module parameters (stats_export file expected absent)"
 ls -l /sys/module/asahi/parameters/ 2>/dev/null | tee "$B/asahi-params.txt"
 
 echo "== boot layout"
-findmnt /boot 2>/dev/null || findmnt / | tee "$B/findmnt-boot.txt"
+{ findmnt /boot 2>/dev/null || findmnt /; } | tee "$B/findmnt-boot.txt"
 grub-editenv list 2>&1 | tee "$B/grubenv.txt"
 grep -E '^GRUB_DEFAULT=' /etc/default/grub 2>/dev/null | tee -a "$B/grubenv.txt"
 
@@ -43,7 +43,7 @@ journalctl -k -p warning --no-pager > "$B/journal-warning.txt" 2>&1
 echo "== GO/NO-GO"
 grep -q '^CONFIG_DRM_ASAHI=y' "$B/config.txt" && echo "GO: asahi built-in as expected (boot gate required)" \
   || echo "NO-GO: unexpected asahi config, stop"
-FST=$(findmnt -n -o FSTYPE /boot 2>/dev/null)
+FST=$(findmnt -n -o FSTYPE --target /boot 2>/dev/null)
 [ "$FST" = "vfat" ] && echo "ESP: /boot is vfat — install needs Main's GO file /var/tmp/agx-window/ESP_GO" \
   || echo "ESP: /boot is not vfat (${FST:-unknown}) — rootfs install, no ESP GO needed"
 grep -q '^GRUB_DEFAULT=saved' /etc/default/grub 2>/dev/null && echo "GO: grub one-shot (saved default) available" \

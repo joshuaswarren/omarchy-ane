@@ -13,6 +13,7 @@ exactly).
 Two Signed-off-by commits on LOCAL branch `agent/jw16-agx-stats7` (on top of
 `0b923fb29c84`; branch NOT pushed, no hosts, no PR comments):
 
+```text
 - `9250872b1f33` drm/asahi: convert stats timestamps from base-clock ticks
   to ns — `StatsChannel.ts_hz` plumbed from `cfg.base_clock_hz` at the gpu.rs
   call site; window integration `(ts - prev) * util * 1e9 / (100 * ts_hz)`.
@@ -23,6 +24,7 @@ Two Signed-off-by commits on LOCAL branch `agent/jw16-agx-stats7` (on top of
   (`rem x util x 1e9 / (100 x ts_hz)`), exact against the u128 formula, all
   64-bit. Also drops an `unnecessary unsafe` rustc flagged in the sysfs
   exports wrapper.
+```
 
 - checkpatch --strict 0/0 on both; rustfmt clean. Mirror tests rewritten for
   the tick conversion + split (1 s of 24 MHz ticks at 100% = 1e9 ns; 50% =
@@ -56,6 +58,7 @@ of the FwBusy producer ever existed. Applied as ONE commit on
 `agent/jw16-agx-stats7` (local, from `4189501b643f`; branch NOT pushed, no
 hosts, no PR comments):
 
+```text
 - `0b923fb29c84` drm/asahi: integrate utilization-weighted time into
   agx_stats busy_ns — each Utilization window adds
   `(ts - prev) / 100 * max(util1..4).min(100)`; `last_util_ts` is
@@ -63,6 +66,7 @@ hosts, no PR comments):
   the C mirror and asserts shrink (busy_ns 40, jobs 48, size 56); ABI doc
   rewritten (monotonic, wall-bounded, tick-invariant, T6001 magnitude claim
   gated on its own window).
+```
 
 - checkpatch --strict 0/0, rustfmt clean. Product (AGX_VERIFY_OK
   `2026-10-05T05:24:35Z`): `Image-m2` sha256
@@ -171,6 +175,7 @@ aarch64`. vmlinux rc=0, modules rc=0, zero series warnings.
 
 ## What failed on the M2 and why (root cause chain)
 
+```text
 1. `asahi-y := sysfs.o` (original series) made Kbuild build asahi.o as a
    composite whose only part was sysfs.o. The composite link overwrote the
    object rustc emits for the crate root (both named asahi.o): every earlier
@@ -183,6 +188,7 @@ aarch64`. vmlinux rc=0, modules rc=0, zero series warnings.
    never compiled its own driver code. Four further defects surfaced and are
    fixed, each by a Signed-off-by commit on `agent/jw16-agx-stats4`
    (fast-forward pushes only):
+```
 
 | commit | fix |
 |---|---|
@@ -221,8 +227,10 @@ aarch64`. vmlinux rc=0, modules rc=0, zero series warnings.
   this tree, so presence is asserted by the strings check instead).
 - Image strings: 34 GPU-driver hits (`MMU: map:`, `MMU: KernelMapping`, ...),
   `agx_stats_show` present.
+```text
 - Modules tarball: no asahi.ko (built-in build — correct), spot module
   vermagic matches the release string.
+```
 - W=1: zero warnings in the series' files (base-tree coda/usbip/rtkit
   warnings are pre-existing and untouched by the series).
 - checkpatch --strict: 0 errors, 0 checks on the five new commits; rustfmt
