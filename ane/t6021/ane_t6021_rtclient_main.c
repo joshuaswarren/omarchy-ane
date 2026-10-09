@@ -386,7 +386,7 @@ static const struct kernel_param_ops ane_t6021_bo_pool_max_mb_ops = {
 module_param_cb(bo_pool_max_mb, &ane_t6021_bo_pool_max_mb_ops,
 		&bo_pool_max_mb, 0644);
 MODULE_PARM_DESC(bo_pool_max_mb,
-		 "Budget for parked section BOs in MiB; 0 disables section parking and drains it (default 512)");
+		 "Budget for parked section BOs in MiB; 0 disables section parking and drains it (default 512). The budget counts BYTES; the dma32 window is spent in power-of-two size classes, so 512 MiB of budget is not 512 MiB of window");
 
 module_param(bo_pool_min_kb, uint, 0444);
 MODULE_PARM_DESC(bo_pool_min_kb,

@@ -325,6 +325,15 @@ static int cmd_load(struct session *s, const char *name, const char *anec,
 		 * sections needed a fresh 223 MiB dma32 hole and the
 		 * window had none left). */
 	} else {
+		/* New key: the cache is bounded by the same knob as the
+		 * name registry -- a session never needs more distinct
+		 * programs than names. */
+		if (s->nkeys >= s->max_progs) {
+			replyf("ERR LOAD %s key-cache-full\n", name);
+			free_port_read(&pr);
+			s->failed = 1;
+			return -1;
+		}
 		/* Guard 2: exact BO projection, still host-side (this
 		 * build opens no device). */
 		if (program_demand(anec, &pr, &demand)) {
