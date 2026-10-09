@@ -10,7 +10,7 @@ ANE_STATS_CFLAGS = -I.. -Wall -Werror -Wextra -O2 -std=gnu11 -pthread
 
 .PHONY: tools check clean
 
-tools: ane-run ane-session ane-selfcheck
+tools: ane-run ane-session ane-selfcheck ane-session-h13
 
 $(LIB):
 	$(MAKE) -C ../libane libane
@@ -23,6 +23,9 @@ ane-run: ane-run.c ane_f16_add.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
 ane-session: ane-session.c ane-run.c ane_f16_add.h $(LIB) ../libane/ane.h \
 	../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-session.c $(LIB) -lm
+
+ane-session-h13: ane-session-h13.c $(LIB) ../libane/ane.h
+	$(CC) $(CFLAGS) -o $@ ane-session-h13.c $(LIB) -lm
 
 ane-selfcheck: ane-selfcheck.c ane_f16_add.h $(LIB) ../libane/ane.h \
 	../libane/ane_m2.h
