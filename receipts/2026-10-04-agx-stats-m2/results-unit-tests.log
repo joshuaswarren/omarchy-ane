@@ -1,0 +1,7 @@
+# kernel tree: aurora-silicon/linux PR 168 head 993288b37ec4368bbf2debbbd73124d8a2652410 (round-6 product); files: stats.rs, sysfs.c, queue/mod.rs, ABI doc
+# run: unit-tests/run.sh <tree> on the prep CT, 2026-10-09
+== contract test
+PASS: struct mirror, producer keys, RO attr, format all consistent
+== busy_ns mirror test
+PASS: busy_ns mirror (first-skip, oOO-skip, monotonic, <= wall, weighted, tick conversion, rate invariance)
+run.sh exit: 0
