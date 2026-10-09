@@ -10,7 +10,7 @@ ANE_STATS_CFLAGS = -I.. -Wall -Werror -Wextra -O2 -std=gnu11 -pthread
 
 .PHONY: tools check clean
 
-tools: ane-run ane-selfcheck
+tools: ane-run ane-selfcheck ane-cycle
 
 $(LIB):
 	$(MAKE) -C ../libane libane
@@ -21,6 +21,9 @@ ane-run: ane-run.c ane_f16_add.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
 ane-selfcheck: ane-selfcheck.c ane_f16_add.h $(LIB) ../libane/ane.h \
 	../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-selfcheck.c $(LIB) -lm
+
+ane-cycle: ane-cycle.c $(LIB) ../libane/ane.h
+	$(CC) $(CFLAGS) -o $@ ane-cycle.c $(LIB) -lm
 
 # libane sources rebuilt with every unset stack variable filled with 0xfe,
 # and linked against the fake DRM node in test_libane_ioctl.c.
