@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 	uint64_t before, size, offset;
 	uint32_t handle;
 	char path[64];
-	char *tok, *end, *sizes;
+	char *tok, *end, *sizes, *save;
 	int repeat = 1, dev = 0, largest = 0, r;
 	drm_version_t ver = { 0 };
 	char name[8] = { 0 };
@@ -113,23 +113,24 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
-	sizes = strdup(sizes_arg);
-	if (!sizes) {
-		fprintf(stderr, "out of memory\n");
-		return 2;
-	}
 	before = bo_total();
 	for (r = 0; r < repeat; r++) {
 		largest = 0;
-		tok = strtok(sizes, ",");
-		while (tok) {
+		sizes = strdup(sizes_arg);
+		if (!sizes) {
+			fprintf(stderr, "out of memory\n");
+			return 2;
+		}
+		for (tok = strtok_r(sizes, ",", &save); tok;
+		     tok = strtok_r(NULL, ",", &save)) {
 			size = (uint64_t)strtoul(tok, &end, 10) << 20;
-			tok = *end ? strtok(NULL, ",") : NULL;
 			if (!size) {
 				continue;
 			}
 			if (!bo_init(size, &handle, &offset)) {
-				largest = (int)(size >> 20);
+				if ((int)(size >> 20) > largest) {
+					largest = (int)(size >> 20);
+				}
 				if (bo_free(handle)) {
 					printf("LEAK size %llu MiB: "
 					       "BO_FREE failed: %s\n",
@@ -153,6 +154,7 @@ int main(int argc, char **argv)
 				       strerror(errno));
 			}
 		}
+		free(sizes);
 		printf("r%d largest=%d MiB\n", r, largest);
 	}
 	if (bo_total() != before) {
