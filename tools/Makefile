@@ -72,7 +72,16 @@ test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool
+# ane-bo-probe net check: parked vs leaked, over a fake sysfs.
+test_ane_bo_probe: test_ane_bo_probe.c ane-bo-probe.c \
+	../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -DANE_BO_PROBE_TEST -I../ane/src/uapi/drm \
+		-I/usr/include/libdrm \
+		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
+		-o $@ test_ane_bo_probe.c -lm
+
+check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
+	test_ane_session_cache test_ane_bo_probe
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
