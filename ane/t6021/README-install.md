@@ -218,6 +218,15 @@ reference kinds: its handle (dropped by `BO_FREE` or fd close) and each
 live user mapping (`mmap`; fork takes one more, unmap drops one). A BO
 freed while mapped stays allocated until the mapping is torn down.
 
+A client has no reason to keep a section BO open past `PROG_LOAD`: on a
+cache miss the driver holds the section bytes anyway, and on a cache hit
+the caller's copy is memory the firmware never reads. `libane` frees its
+section BOs as soon as `PROG_LOAD` + `PROC_CREATE` succeed. A client
+that keeps them open pins a duplicate of every loaded program inside the
+sub-4-GiB window for the life of the client; a long-lived session that
+loads the whole Qwen set then runs out of `BO_INIT` room at prog_006
+(measured 2026-10-09, boot 2105990f).
+
 The held memory is therefore the loaded program sections plus the peak
 number of io BOs in use at the same time, not the sum over every
 process. Before the pool, every process held its io BOs until reboot, and

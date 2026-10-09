@@ -2248,6 +2248,18 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	}
 	ctx->proc_id = create.proc_id_out;
 
+	/* The firmware owns the section bytes now: on a first load the
+	 * driver keeps the section BOs held until reboot (fw_ref), and on
+	 * a dedup hit this BO is a copy the firmware never reads. Either
+	 * way the client copy is dead; holding it pins a full duplicate
+	 * of every loaded program inside the sub-4-GiB window for the
+	 * life of the nn, which is what refuses a resident session's
+	 * later BO_INIT once the unique set is cached. bo_release zeroes
+	 * handle and map, so ane_m2_close frees nothing twice. */
+	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+		bo_release(nn, &ctx->sec_bo[i]);
+	}
+
 	nn->m2 = ctx;
 	return 0;
 
