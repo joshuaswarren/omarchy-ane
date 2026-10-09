@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `ane_t6021`: a freed duplicate section BO of at least `bo_pool_min_kb`
+  (default 2048 KiB) now parks in the BO pool under a runtime budget
+  `bo_pool_max_mb` (default 512 MiB, 0644), evicting the oldest park by
+  real free. `BO_INIT` of the same page-aligned size gets the same dma
+  range back, so repeated configure passes stop churning the dma32
+  window into fragments no 224 MiB section fits: measured 2026-10-09 on
+  boot 2105990f, a 222,980,416-byte `BO_INIT` failed in every process
+  at `bo_total_bytes` 2.76 GB after the passes had run. New read-only
+  `bo_pool_bytes`. The policy lives in `ane/t6021/ane_t6021_pool.h`
+  with a host unit test (`tools/test_t6021_pool`).
+- `libane`: the ABI-2 open allocates its six section BOs in descending
+  size order, so the largest contiguous request lands while the
+  window's largest hole is still fresh. The ioctl regression records
+  the `BO_INIT` order and fails on the old order.
 - `libane`: the ABI-2 (M2) client releases its six section BOs as soon as
   `PROG_LOAD` + `PROC_CREATE` succeed. On a first load the driver holds
   the section bytes anyway (`fw_ref`); on a dedup hit the client's copy

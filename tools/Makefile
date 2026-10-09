@@ -52,10 +52,22 @@ test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h \
 		test_ane_stats.c ../ane/ane_stats_show.c
 
 
-check: ane-selfcheck test_libane_ioctl test_ane_stats
+ane-bo-probe: ane-bo-probe.c ../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I../ane/src/uapi/drm -I/usr/include/libdrm -o $@ ane-bo-probe.c
+
+# Pool policy unit test: compiles the driver's ane_t6021_pool.h against
+# the stub kernel headers in ane_pool_shim/linux (ane_stats_shim pattern).
+test_t6021_pool: test_t6021_pool.c ../ane/t6021/ane_t6021_pool.h \
+	ane_pool_shim/linux/list.h ane_pool_shim/linux/types.h \
+	ane_pool_shim/linux/spinlock.h ane_pool_shim/linux/atomic.h \
+	ane_pool_shim/linux/mm.h
+	$(CC) $(CFLAGS) -Iane_pool_shim -o $@ test_t6021_pool.c
+
+check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
+	./test_t6021_pool
 
 clean:
 	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats
