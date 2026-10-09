@@ -49,6 +49,14 @@ mkinitcpio -k "$REL" -g "/boot/initramfs-$REL.img"
 STOCK_LINUX=$(grep -m1 '^[[:space:]]*linux[[:space:]]' /boot/grub/grub.cfg)
 [ -n "$STOCK_LINUX" ] || { echo "no stock linux line found in grub.cfg" >&2; exit 1; }
 STOCK_ARGS=$(echo "$STOCK_LINUX" | awk '{for (i=3; i<=NF; i++) printf "%s ", $i; print ""}')
+# GRUB reads kernel paths from its own root, not from the mounted /boot:
+# a separate ESP root takes /vmlinuz-*, a rootfs-backed /boot takes
+# /boot/vmlinuz-*. Follow the stock entry's prefix.
+STOCK_KPATH=$(echo "$STOCK_LINUX" | awk '{print $2}')
+case $STOCK_KPATH in
+  /boot/*) KPATH="/boot/vmlinuz-$REL"; IPATH="/boot/initramfs-$REL.img" ;;
+  *) KPATH="/vmlinuz-$REL"; IPATH="/initramfs-$REL.img" ;;
+esac
 
 # Rewrite the marked block on every run: the OFF=1 arm must replace the
 # entry's kernel line, not leave the export-on version in place.
@@ -57,8 +65,8 @@ sed -i '/^# BEGIN agxstats-one-shot$/,/^# END agxstats-one-shot$/d' /etc/grub.d/
 cat >> /etc/grub.d/40_custom <<EOF
 # BEGIN agxstats-one-shot
 menuentry "$ENTRY" {
-	linux /vmlinuz-$REL $STOCK_ARGS $OFFARG
-	initrd /initramfs-$REL.img
+	linux $KPATH $STOCK_ARGS $OFFARG
+	initrd $IPATH
 }
 # END agxstats-one-shot
 EOF
@@ -66,5 +74,5 @@ grub-mkconfig -o /boot/grub/grub.cfg
 grub-reboot "$ENTRY"
 sync
 echo "armed: $(grub-editenv list)"
-echo "entry cmdline: /vmlinuz-$REL $STOCK_ARGS $OFFARG"
+echo "entry cmdline: $KPATH $STOCK_ARGS $OFFARG"
 echo "NEXT: announce the 12-minute reboot notice, then: sudo reboot"

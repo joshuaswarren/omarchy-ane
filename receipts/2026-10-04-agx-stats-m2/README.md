@@ -8,7 +8,7 @@ series exports the AGX firmware statistics (`StatsMsg`: `Utilization`,
 cumulative `busy_ns` integrated from `FwBusy` timestamp deltas, a host-side
 completed-submission counter `jobs` (bumped at fence signal in
 `JobFence::command_complete`), and an opt-out `stats_export` module
-parameter (default 1). Producer contract: `coreglass` reads it at
+parameter (the kernel command line takes the module-prefixed form; default 1). Producer contract: `coreglass` reads it at
 10 Hz as the GPU busy source.
 
 Prepared 2026-10-04 by AgxStatsM2Prep (offline). Executor: Main with the M2 GPU
@@ -48,7 +48,8 @@ reboot. Private record: `apple-silicon-lab entries/AgxStatsM2Prep/`.
 ## What ships to the window (build proof products)
 
 From `builds.md` and the private artifacts
-`apple-silicon-lab artifacts/AgxStatsM2Prep/20261004T0942Z-build-proof/`:
+`apple-silicon-lab artifacts/AgxStatsM2Prep/20261005T0933Z-busy-ticks/`
+(the round-6 tick-conversion product, Image sha `c7f4dabe...`):
 
 | file | use |
 |---|---|
@@ -77,7 +78,7 @@ the staged Image's sha256 matches it bit-for-bit.
 | 0 | stage files, preflight (read-only) | 10 min |
 | 1 | install test kernel + one-shot boot (12-min notice) | 8 min |
 | 2 | T1 block: export on — identity, S1 idle, S2 matmul, S3 coreglass, S4 cells E1 (2 with 10 Hz reader), S5 dmesg | 40 min |
-| 3 | one-shot boot with `stats_export=0` appended (12-min notice) | 8 min |
+| 3 | one-shot boot with the module-prefixed off parameter appended (12-min notice) | 8 min |
 | 4 | T0 block: off-arm identity, unsupported file, S4 cells E0, S5 dmesg | 20 min |
 | 5 | reboot to stock (12-min notice), smoke, remove test kernel, records | 15 min |
 
@@ -200,7 +201,8 @@ kernel is out of scope but any ANE error line is a FAIL.
 ## Step 3-4 — T0 block (export off)
 
 Announce 12 minutes, then arm the off command line: the install script's
-`OFF=1` option appends `stats_export=0` to the 40_custom
+`OFF=1` option appends the module-prefixed off parameter (exact form in the
+script's `OFFARG`) to the 40_custom
 entry, reboot, repeat identity checks. The `stats_export` parameter has no
 sysfs file (the driver's parameters all omit `permissions`), so the command line is the
 only switch — this boot is why the window has a second reboot.

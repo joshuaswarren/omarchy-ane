@@ -21,11 +21,18 @@ for i in $(seq 1 "$REPS"); do
       RPID=$!
     fi ;;
   esac
-  LINE=$(eval "$CELL_CMD" 2>&1 | tail -1)
+  LINE=$(eval "$CELL_CMD" 2>&1 | tail -1) || {
+    [ -z "$RPID" ] || kill "$RPID" 2>/dev/null || true
+    echo "rep $i: cell command failed" >&2
+    exit 1
+  }
   [ -z "$RPID" ] || kill "$RPID" 2>/dev/null || true
   TOK=$(printf '%s' "$LINE" | awk '{print $1}')
   DIG=$(printf '%s' "$LINE" | awk '{print $2}')
-  case "$TOK" in ''|*[!0-9.]) echo "rep $i unparsable: $LINE" >&2; exit 1 ;; esac
+  NFIELD=$(printf '%s' "$LINE" | awk '{print NF}')
+  case "$TOK" in ''|*[!0-9.]*) echo "rep $i unparsable: $LINE" >&2; exit 1 ;; esac
+  [ -n "$DIG" ] || { echo "rep $i missing digest: $LINE" >&2; exit 1; }
+  [ "$NFIELD" -eq 2 ] || { echo "rep $i expected 2 fields: $LINE" >&2; exit 1; }
   R=quiet
   case ",$READER_REPS," in *",$i,"*) R=reader ;; esac
   echo "$i $TOK $DIG $R" >> "$OUT"
