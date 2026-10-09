@@ -30,6 +30,7 @@
 
 struct fake_bo {
 	struct ane_t6021_pool_ent ent;
+	size_t req_size;	/* the size the case asked to park */
 	int id;
 	int freed;
 };
@@ -64,12 +65,17 @@ static int retry_attempt(void *data)
 
 static struct fake_bo fake_bo_new(int id, size_t size)
 {
-	struct fake_bo b = { .id = id };
+	struct fake_bo b = { .id = id, .req_size = size };
 
-	memset(&b, 0, sizeof(b));
-	b.id = id;
-	b.ent.size = size;
+	/* ent.size stays 0 on purpose: the pool API must record the size
+	 * itself (the driver once forgot, and nothing ever parked). */
 	return b;
+}
+
+static int park_bo(struct ane_t6021_pool *p, struct fake_bo *b,
+		   ane_t6021_pool_release_fn release)
+{
+	return ane_t6021_pool_park(p, &b->ent, b->req_size, release);
 }
 
 static int failures;
@@ -105,7 +111,7 @@ int main(void)
 
 	/* Same-size reuse: the charge clears, the entry comes back. */
 	a = fake_bo_new(1, 16u << 20);
-	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	check(park_bo(&p, &a, fake_release) == 0,
 	      "park: 16 MiB parks");
 	check(ane_t6021_pool_sec_bytes(&p) == (s64)PAGE_ALIGN(16u << 20),
 	      "park: budget charged once");
@@ -123,12 +129,12 @@ int main(void)
 	b = fake_bo_new(2, 200u << 20);
 	c = fake_bo_new(3, 300u << 20);
 	u = fake_bo_new(9, 8u << 20);
-	ane_t6021_pool_park_uncharged(&p, &u.ent);
-	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	ane_t6021_pool_park_uncharged(&p, &u.ent, u.req_size);
+	check(park_bo(&p, &a, fake_release) == 0,
 	      "evict: 100 MiB parks");
-	check(ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	check(park_bo(&p, &b, fake_release) == 0,
 	      "evict: 200 MiB parks");
-	check(ane_t6021_pool_park(&p, &c.ent, fake_release) == 0,
+	check(park_bo(&p, &c, fake_release) == 0,
 	      "evict: 300 MiB parks after evicting to fit");
 	check(n_freed == 2 && freed_log[0] == &a && freed_log[1] == &b,
 	      "evict: the OLDEST budgeted entries freed, in order");
@@ -143,7 +149,7 @@ int main(void)
 	/* Quarantine: nothing leaves the pool while quarantined. */
 	d = fake_bo_new(4, 64u << 20);
 	ane_t6021_pool_init(&p, POOL_TEST_MAX_MIB, POOL_TEST_MIN_KIB);
-	check(ane_t6021_pool_park(&p, &d.ent, fake_release) == 0,
+	check(park_bo(&p, &d, fake_release) == 0,
 	      "quarantine: 64 MiB parks");
 	check(ane_t6021_pool_take(&p, 64u << 20, true) == NULL,
 	      "quarantine: take refuses");
@@ -154,7 +160,7 @@ int main(void)
 	n_freed = 0;
 	ane_t6021_pool_init(&p, 1, POOL_TEST_MIN_KIB);
 	e = fake_bo_new(5, 4u << 20);
-	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -ENOSPC,
+	check(park_bo(&p, &e, fake_release) == -ENOSPC,
 	      "unreachable: park fails with -ENOSPC");
 	check(n_freed == 0 && ane_t6021_pool_sec_bytes(&p) == 0,
 	      "unreachable: nothing freed, nothing parked");
@@ -164,7 +170,7 @@ int main(void)
 	 * loop has to free the pool's way clear. */
 	ane_t6021_pool_init(&p, 32, POOL_TEST_MIN_KIB);
 	a = fake_bo_new(11, 16u << 20);
-	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	check(park_bo(&p, &a, fake_release) == 0,
 	      "retry: 16 MiB parks");
 	{
 		struct retry_ctx rc = { .p = &p, .calls = 0 };
@@ -184,12 +190,12 @@ int main(void)
 	n_freed = 0;
 	ane_t6021_pool_init(&p, 4, POOL_TEST_MIN_KIB);
 	u = fake_bo_new(9, 8u << 20);
-	ane_t6021_pool_park_uncharged(&p, &u.ent);
+	ane_t6021_pool_park_uncharged(&p, &u.ent, u.req_size);
 	b = fake_bo_new(2, 2u << 20);
-	check(ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	check(park_bo(&p, &b, fake_release) == 0,
 	      "oversize: 2 MiB parks under a 4 MiB budget");
 	e = fake_bo_new(5, 8u << 20);
-	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -ENOSPC,
+	check(park_bo(&p, &e, fake_release) == -ENOSPC,
 	      "oversize: 8 MiB against a 4 MiB budget refuses");
 	check(n_freed == 0, "oversize: nothing was evicted for it");
 	check(ane_t6021_pool_take(&p, 2u << 20, false) == &b.ent,
@@ -200,15 +206,15 @@ int main(void)
 	n_freed = 0;
 	ane_t6021_pool_init(&p, 4, POOL_TEST_MIN_KIB);
 	a = fake_bo_new(1, 2u << 20);
-	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	check(park_bo(&p, &a, fake_release) == 0,
 	      "undo: 2 MiB parks");
 	b = fake_bo_new(2, 4u << 20);
-	check(ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	check(park_bo(&p, &b, fake_release) == 0,
 	      "undo: 4 MiB parks after evicting to fit");
 	check(n_freed == 1 && freed_log[0] == &a,
 	      "undo: the overflow evicted the oldest");
 	e = fake_bo_new(5, 8u << 20);
-	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -ENOSPC,
+	check(park_bo(&p, &e, fake_release) == -ENOSPC,
 	      "undo: 8 MiB alone over the budget is undone");
 	check(ane_t6021_pool_sec_bytes(&p) == (s64)PAGE_ALIGN(4u << 20),
 	      "undo: failed charge did not stick");
@@ -217,12 +223,12 @@ int main(void)
 	ane_t6021_pool_init(&p, 40, POOL_TEST_MIN_KIB);
 	a = fake_bo_new(1, 16u << 20);
 	b = fake_bo_new(2, 16u << 20);
-	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0 &&
-	      ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	check(park_bo(&p, &a, fake_release) == 0 &&
+	      park_bo(&p, &b, fake_release) == 0,
 	      "drain: both 16 MiB parks land");
 	p.max_mb = 0;
 	e = fake_bo_new(5, 2u << 20);
-	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -EINVAL,
+	check(park_bo(&p, &e, fake_release) == -EINVAL,
 	      "drain: park with the budget off refuses");
 	check(a.freed == 1 && b.freed == 1,
 	      "drain: every budgeted park was really freed");
