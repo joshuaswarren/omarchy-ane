@@ -323,7 +323,10 @@ static int cmd_load(struct session *s, const char *name, const char *anec,
 		 * FREEs and re-LOADs the same table must not allocate
 		 * anything (measured 2026-10-09: every pass's duplicate
 		 * sections needed a fresh 223 MiB dma32 hole and the
-		 * window had none left). */
+		 * window had none left). The port table read above is a
+		 * duplicate of the cached key's: release it, or every hit
+		 * leaks one table. */
+		free_port_read(&pr);
 	} else {
 		/* Guard 2: exact BO projection, still host-side (this
 		 * build opens no device). */

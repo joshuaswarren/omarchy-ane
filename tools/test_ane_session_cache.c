@@ -195,8 +195,18 @@ int main(void)
 			anec, ports, anec, ports, anec, ports);
 		fclose(fp);
 	}
-	mkstemp(outpath);
-	mkstemp(lockpath);
+	fd = mkstemp(outpath);
+	if (fd < 0) {
+		printf("FAIL session-cache: cannot create the output file\n");
+		return 1;
+	}
+	close(fd);
+	fd = mkstemp(lockpath);
+	if (fd < 0) {
+		printf("FAIL session-cache: cannot create the lock file\n");
+		return 1;
+	}
+	close(fd);
 	if (freopen(cmdpath, "r", stdin) != stdin ||
 	    freopen(outpath, "w", stdout) != stdout) {
 		printf("FAIL session-cache: cannot redirect streams\n");
