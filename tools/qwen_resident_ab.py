@@ -147,6 +147,15 @@ def main(argv=None):
     ap.add_argument("--session-bin", default="/var/tmp/inst/tools/ane-session")
     ap.add_argument("--resident-lock", choices=("call", "step"), default="call")
     ap.add_argument("--idle", type=int, default=60)
+    ap.add_argument("--order", choices=("resident-first", "per-call-first"),
+                    default="resident-first",
+                    help="program sections stay held in the driver until "
+                         "reboot and every BO needs IOVA below 4 GiB, so the "
+                         "resident arm must load before anything else on a "
+                         "fresh boot")
+    ap.add_argument("--max-start-bo-mb", type=float, default=100.0,
+                    help="refuse to start when the driver already holds more "
+                         "BO bytes than this (stale program sections)")
     ap.add_argument("--out", default="/var/tmp/qres-ab")
     ap.add_argument("--bo-growth-mb", type=float, default=512.0,
                     help="abort if bo_total_bytes grows more than this "
@@ -170,17 +179,29 @@ def main(argv=None):
                             "--resident-lock", args.resident_lock], b_out)
     if args.dry_run:
         print("DRY: no ANE call. The plan:")
-        print(f"  1. idle {args.idle}s; run: {' '.join(map(str, per_call_cmd))}")
-        print(f"  2. idle {args.idle}s; run: {' '.join(map(str, resident_cmd))}")
+        first, second = ((resident_cmd, per_call_cmd) if args.order == "resident-first"
+                         else (per_call_cmd, resident_cmd))
+        print(f"  0. refuse unless bo_total_bytes <= {args.max_start_bo_mb} MiB")
+        print(f"  1. idle {args.idle}s; run: {' '.join(map(str, first))}")
+        print(f"  2. idle {args.idle}s; run: {' '.join(map(str, second))}")
         print("  3. compare token ids, top1/top2/margin floats and the "
               "logits.f32 sha256; report step p10/p50/p90 and tok/s")
         print("  4. abort nonzero on any mismatch, EXCH line or BO growth "
               f"> {args.bo_growth_mb} MiB")
         return 0
 
+    held = bo_total_bytes()
+    if held is not None and held > args.max_start_bo_mb * (1 << 20):
+        print(f"REFUSE: driver holds {held} BO bytes before the A/B "
+              f"(limit {int(args.max_start_bo_mb)} MiB); reboot first")
+        return 2
     exch_before = len(kernel_exch_lines(0))
-    rc_a = run_arm("per-call", per_call_cmd, a_out, args.idle)
-    rc_b = run_arm("resident", resident_cmd, b_out, args.idle)
+    arms = {"per-call": (per_call_cmd, a_out), "resident": (resident_cmd, b_out)}
+    rcs = {}
+    for tag in (("resident", "per-call") if args.order == "resident-first"
+                else ("per-call", "resident")):
+        rcs[tag] = run_arm(tag, *arms[tag], args.idle)
+    rc_a, rc_b = rcs["per-call"], rcs["resident"]
     failures = []
     if rc_a:
         failures.append(f"per-call arm exit {rc_a}")
@@ -195,7 +216,7 @@ def main(argv=None):
     for arm in arms:
         before, after = arm["bo_total_bytes_before"], arm["bo_total_bytes_after"]
         if before is not None and after is not None and \
-                after - before > args.bo_growth_mb << 20:
+                after - before > args.bo_growth_mb * (1 << 20):
             failures.append(f"{arm['tag']}: bo_total_bytes grew "
                             f"{(after - before) >> 20} MiB")
     (out / "summary.json").write_text(json.dumps(

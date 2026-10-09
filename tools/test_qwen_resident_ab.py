@@ -33,6 +33,8 @@ ap.add_argument("--resident", action="store_true"); ap.add_argument("--session-b
 ap.add_argument("--resident-lock")
 a = ap.parse_args()
 out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+with open(Path(a.out).parent.parent / "order.txt", "a") as f:
+    f.write(("resident" if a.resident else "per-call") + "\n")
 flip = {FLIP}
 recs = []
 for step in range(2):
@@ -54,16 +56,16 @@ Path(a.logits_file).write_bytes(data)
 '''
 
 
-def run_ab(flip):
+def run_ab(flip, extra=(), held=None):
     root = Path(tempfile.mkdtemp(prefix="qres-ab-test-"))
     fake = root / "fake_decode.py"
     fake.write_text(FAKE.replace("{FLIP}", "True" if flip else "False"))
     ab.DECODE = fake
-    ab.bo_total_bytes = lambda: None
+    ab.bo_total_bytes = lambda: held
     ab.kernel_exch_lines = lambda since: []
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        rc = ab.main(["--idle", "0", "--out", str(root / "out")])
+        rc = ab.main(["--idle", "0", "--out", str(root / "out"), *extra])
     return rc, buf.getvalue(), root / "out"
 
 
@@ -93,9 +95,35 @@ def check_logit_flip():
     return failures
 
 
+def check_order():
+    failures = []
+    for extra, want in (((), ["resident", "per-call"]),
+                        (("--order", "per-call-first"), ["per-call", "resident"])):
+        rc, text, out = run_ab(flip=False, extra=extra)
+        got = (out.parent / "order.txt").read_text().split()
+        if got != want:
+            failures.append(f"{extra}: arm order {got}, want {want}")
+    return failures
+
+
+def check_stale_sections_refused():
+    failures = []
+    rc, text, out = run_ab(flip=False, held=2766340096)
+    if rc == 0 or "REFUSE" not in text:
+        failures.append(f"2.7 GB already held: rc {rc}, text {text[:80]!r}")
+    if (out.parent / "order.txt").exists():
+        failures.append("an arm ran although the driver held stale sections")
+    rc, _, _ = run_ab(flip=False, held=50 << 20)
+    if rc != 0:
+        failures.append(f"50 MiB held (under the limit): rc {rc}")
+    return failures
+
+
 def main():
     failed = 0
-    for name, fn in (("agreeing-arms", check_pass), ("flipped-logit", check_logit_flip)):
+    for name, fn in (("agreeing-arms", check_pass), ("flipped-logit", check_logit_flip),
+                     ("arm-order", check_order),
+                     ("stale-sections-refused", check_stale_sections_refused)):
         failures = fn()
         print(("PASS " if not failures else "FAIL ") + name)
         for f in failures:
