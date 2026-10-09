@@ -2156,7 +2156,8 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	uint8_t *buf = NULL;
 	uint64_t size = 0;
 	uint32_t i;
-	int created_secs = 0;
+	uint32_t order[ANE_M2_SEC_COUNT];
+	uint32_t tmp;
 	int created_ios = 0;
 	int err;
 
@@ -2186,13 +2187,35 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 		return err;
 	}
 
-	for (i = 0; i < ANE_M2_SEC_COUNT; i++, created_secs++) {
-		err = bo_alloc(nn, &ctx->sec_bo[i], ctx->secs.sec[i].size);
+	/* Largest section first: the dma32 window serves the big
+	 * contiguous request while its largest hole is still fresh, and
+	 * the small sections fill what remains. ctx->sec_bo[] stays
+	 * indexed by section slot; only the visit order changes. */
+	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+		order[i] = i;
+	}
+	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+		uint32_t j;
+
+		for (j = i + 1; j < ANE_M2_SEC_COUNT; j++) {
+			if (ctx->secs.sec[order[j]].size >
+			    ctx->secs.sec[order[i]].size) {
+				tmp = order[i];
+				order[i] = order[j];
+				order[j] = tmp;
+			}
+		}
+	}
+	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+		uint32_t slot = order[i];
+
+		err = bo_alloc(nn, &ctx->sec_bo[slot],
+			       ctx->secs.sec[slot].size);
 		if (err) {
 			goto error;
 		}
-		memcpy(ctx->sec_bo[i].map, ctx->secs.sec[i].data,
-		       ctx->secs.sec[i].size);
+		memcpy(ctx->sec_bo[slot].map, ctx->secs.sec[slot].data,
+		       ctx->secs.sec[slot].size);
 	}
 
 	for (i = 0; i < ctx->model.io_count; i++, created_ios++) {
@@ -2264,7 +2287,9 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	return 0;
 
 error:
-	ane_m2_ctx_free(nn, ctx, created_secs, created_ios);
+	/* Slot indices are visited out of size order, so free every slot:
+	 * bo_release is a no-op on the never-created ones. */
+	ane_m2_ctx_free(nn, ctx, ANE_M2_SEC_COUNT, created_ios);
 	return err;
 }
 
