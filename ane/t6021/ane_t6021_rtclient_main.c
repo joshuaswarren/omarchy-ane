@@ -100,6 +100,7 @@
 #include "ane_t6021.h"
 #include "ane_t6021_boot.h"
 #include "ane_t6021_keepwarm.h"
+#include "ane_t6021_pipeline.h"
 
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
@@ -655,6 +656,25 @@ static struct dentry *ane_t6021_keepwarm_dir;
  */
 static struct ane_rtclient *ane_t6021_keepwarm_ane;
 
+/* Take both pipeline slots: no armed (pipeline=2) call can be in
+ * flight after this, and none can start until the slots return (each
+ * call downs one slot before its armed test). Uncontended when
+ * pipeline == 1.
+ */
+static DEFINE_SEMAPHORE(ane_t6021_pipe_sem, 2);
+
+static void ane_t6021_pipe_quiesce(void)
+{
+	down(&ane_t6021_pipe_sem);
+	down(&ane_t6021_pipe_sem);
+}
+
+static void ane_t6021_pipe_resume(void)
+{
+	up(&ane_t6021_pipe_sem);
+	up(&ane_t6021_pipe_sem);
+}
+
 static int ane_t6021_keepwarm_param_set(const char *val,
 					const struct kernel_param *kp)
 {
@@ -862,6 +882,11 @@ static int ane_t6021_trace_set(const char *val, const struct kernel_param *kp)
 	ret = kstrtobool(val, &on);
 	if (ret)
 		return ret;
+	/* Same quiesce as a pipeline switch: no armed call may be in
+	 * flight while trace_td changes, or a serialized traced call
+	 * could overlap an armed waiter on the same ring.
+	 */
+	ane_t6021_pipe_quiesce();
 	mutex_lock(&ane_t6021_fw_lock);
 	if (on && !ane_t6021_trace) {
 		ane_t6021_trace = vzalloc(size);
@@ -892,6 +917,7 @@ static int ane_t6021_trace_set(const char *val, const struct kernel_param *kp)
 	trace_td = on;
 out:
 	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
 	return ret;
 }
 
@@ -921,8 +947,91 @@ static void ane_t6021_trace_free(void)
  * receipts/2026-10-01-t6021-trace-td), and state 1 when the procedure has
  * finished. */
 #define ANE_T2H_CALL_COOKIE_OFF		0x08
+#define ANE_T2H_CALL_PROG_OFF		0x10
+#define ANE_T2H_CALL_PROC_OFF		0x14
 #define ANE_T2H_CALL_STATE_OFF		0x1c
 #define ANE_T2H_CALL_FINISHED		1
+
+/* Pipelining: two PROCEDURE_CALLs in flight. The decoded selene CRPC
+ * path acks a command before its procedure runs and drains the whole
+ * ring per wake (artifacts/FwPipeline/fw-crpc-intake-decode.md, 13.5
+ * selene a9c4b771), so with pipeline=2 the firmware lock covers only
+ * build + exchange + ACK and each call waits for its own finish event
+ * outside the lock, matched by T2H program/process id. pipeline=1 (the
+ * default) is today's fully serialized path, byte for byte. The armed
+ * path exists only where all of this is decoded fact: the T602x selene
+ * family (soc->trace_td_off set), with trace_td off and the device
+ * validated. Three named conditions from the decode:
+ * - the call-manager request pool depth is unpinned and its exhaustion
+ *   is a firmware assert spin (= device wedge), so the in-flight count
+ *   is capped at 2 by a semaphore taken before any submission and the
+ *   pool depth question stays open until a one-boot probe;
+ * - finish events are matched by T2H +0x10 program id and +0x14 process
+ *   id, never by the cookie alone, because completion order across
+ *   processes is not guaranteed (one TQ FIFO); events of one
+ *   (program, process) key are counted positionally in submit order,
+ *   which relies on same-process FIFO delivery — unproven on hardware,
+ *   so a timeout still quarantines like the serialized path;
+ * - the IO slot cursor advances only at ACK inside the exchange, which
+ *   stays under the firmware lock; a slot is never resent. Mode
+ *   switches take both pipeline slots (no armed call in flight) and
+ *   then the firmware lock (no serialized call inside exchange+wait);
+ *   every control-plane command does the same, so no command of either
+ *   kind can overlap an armed wait.
+ */
+static unsigned int pipeline = 1;
+static struct ane_t6021_pipe_demux ane_t6021_pipe;
+static DEFINE_SPINLOCK(ane_t6021_pipe_lock);
+/* ane_rtclient_drain_t2h walks the ring cursor and hands slots back; it
+ * is not reentrant, so every drain holds this lock.
+ */
+static DEFINE_SPINLOCK(ane_t6021_t2h_lock);
+
+/* Armed pipelining: the value the user set, gated on everything the
+ * decode proved.
+ */
+static bool ane_t6021_pipeline_armed(const struct ane_rtclient *ane)
+{
+	return READ_ONCE(pipeline) == 2 && !READ_ONCE(trace_td) &&
+	       ane->soc->trace_td_off && ane->held && ane->chman_ok &&
+	       ane->fw && ane->fw->boot_ipc &&
+	       !atomic_read(&ane_t6021_quarantined);
+}
+
+static int ane_t6021_pipeline_set(const char *val,
+				  const struct kernel_param *kp)
+{
+	unsigned int v;
+	int ret;
+
+	ret = kstrtouint(val, 0, &v);
+	if (ret)
+		return ret;
+	if (v > 2)
+		v = 2;
+	else if (v < 1)
+		v = 1;
+	/* Quiesce, then write: a serialized call is inside its
+	 * exchange+wait under the firmware lock, an armed call inside its
+	 * armed window holding one slot; after both takes neither kind is
+	 * in flight and no new call can pass its armed test until the
+	 * write is done and the slots are back.
+	 */
+	ane_t6021_pipe_quiesce();
+	mutex_lock(&ane_t6021_fw_lock);
+	WRITE_ONCE(pipeline, v);
+	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
+	return 0;
+}
+
+static const struct kernel_param_ops ane_t6021_pipeline_ops = {
+	.set = ane_t6021_pipeline_set,
+	.get = param_get_uint,
+};
+module_param_cb(pipeline, &ane_t6021_pipeline_ops, &pipeline, 0644);
+MODULE_PARM_DESC(pipeline,
+		 "PROCEDURE_CALLs in flight: 1 (default) = serialized as today; 2 = two calls in flight (fw lock held to the ACK, finish wait outside it). Runtime; the write waits for in-flight calls");
 
 /* The CPU address of LEN bytes at the firmware IOVA, or NULL. The firmware
  * places T2H payloads in memory the host gave it: a SHAREDMALLOC buffer or
@@ -982,8 +1091,36 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 
 				if (ane_t6021_tracing)
 					ane_t6021_trace_add(ANE_TR_EVENT, state);
-				if (state == ANE_T2H_CALL_FINISHED)
+				if (state == ANE_T2H_CALL_FINISHED) {
+					u32 prog, proc;
+
 					finished = true;
+					/* Hand the finish to the waiting
+					 * armed calls by program/process
+					 * id. The decision sits under
+					 * the demux lock: an event can
+					 * only be in the ring after its
+					 * command's doorbell, and the
+					 * doorbell only rings after the
+					 * submit took its ticket under
+					 * the same lock, so a ticket is
+					 * always visible here before
+					 * its event. When nothing is
+					 * owed the event is credited to
+					 * nobody.
+					 */
+					spin_lock(&ane_t6021_pipe_lock);
+					if (ane_t6021_pipe_outstanding(&ane_t6021_pipe)) {
+						prog = get_unaligned_le32(ev +
+								 ANE_T2H_CALL_PROG_OFF);
+						proc = get_unaligned_le32(ev +
+								 ANE_T2H_CALL_PROC_OFF);
+
+						ane_t6021_pipe_finish(&ane_t6021_pipe,
+								      prog, proc);
+					}
+					spin_unlock(&ane_t6021_pipe_lock);
+				}
 			}
 		}
 		n++;
@@ -993,6 +1130,21 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		slot_i = (slot_i + 1) % c->size;
 		ane->legacy_cmd_cursor[channel] = slot_i;
 	}
+	return finished;
+}
+
+/* The one way any caller drains a target-to-host ring: the walk mutates
+ * the ring cursor and hands slots back, so it must never run
+ * concurrently with itself.
+ */
+static bool ane_t6021_t2h_drain(struct ane_rtclient *ane, unsigned int channel)
+{
+	unsigned long flags;
+	bool finished;
+
+	spin_lock_irqsave(&ane_t6021_t2h_lock, flags);
+	finished = ane_rtclient_drain_t2h(ane, channel);
+	spin_unlock_irqrestore(&ane_t6021_t2h_lock, flags);
 	return finished;
 }
 
@@ -1012,7 +1164,7 @@ static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 	int ret = -ETIMEDOUT;
 
 	do {
-		if (ane_rtclient_drain_t2h(ane, 6)) {
+		if (ane_t6021_t2h_drain(ane, 6)) {
 			ret = 0;
 			break;
 		}
@@ -1034,7 +1186,7 @@ static int ane_rtclient_call_wait_traced(struct ane_rtclient *ane,
 		}
 		usleep_range(20, 40);
 	} while (time_before(jiffies, deadline));
-	if (ret && ane_rtclient_drain_t2h(ane, 6))
+	if (ret && ane_t6021_t2h_drain(ane, 6))
 		ret = 0;
 	ane_t6021_trace_add(ANE_TR_DONE, samples);
 	if (ps)
@@ -1066,14 +1218,50 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 		return ane_rtclient_call_wait_traced(ane, deadline);
 
 	do {
-		if (ane_rtclient_drain_t2h(ane, 6))
+		if (ane_t6021_t2h_drain(ane, 6))
 			return 0;
 		if (call_poll_us && ktime_before(ktime_get(), tight_end))
 			usleep_range(1, 2);
 		else
 			usleep_range(50, 100);
 	} while (time_before(jiffies, deadline));
-	return ane_rtclient_drain_t2h(ane, 6) ? 0 : -ETIMEDOUT;
+	return ane_t6021_t2h_drain(ane, 6) ? 0 : -ETIMEDOUT;
+}
+
+/* Finish wait for one ARMED (pipelined) PROCEDURE_CALL: the same
+ * call_poll_us cadence as the serialized wait, but the finish is this
+ * call's demux ticket (program id, process id, submit position), not
+ * any state-1 event on the ring. The drain runs under the t2h lock so
+ * two waiters share one ring walk.
+ */
+static int ane_rtclient_pipeline_wait(struct ane_rtclient *ane, u32 prog_id,
+				      u32 proc_id, u64 ticket,
+				      unsigned int timeout_ms)
+{
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	ktime_t tight_end = ktime_add_ns(ktime_get(),
+					 (u64)call_poll_us * NSEC_PER_USEC);
+	bool released;
+
+	do {
+		ane_t6021_t2h_drain(ane, 6);
+		spin_lock(&ane_t6021_pipe_lock);
+		released = ane_t6021_pipe_released(&ane_t6021_pipe, prog_id,
+						   proc_id, ticket);
+		spin_unlock(&ane_t6021_pipe_lock);
+		if (released)
+			return 0;
+		if (call_poll_us && ktime_before(ktime_get(), tight_end))
+			usleep_range(1, 2);
+		else
+			usleep_range(50, 100);
+	} while (time_before(jiffies, deadline));
+	ane_t6021_t2h_drain(ane, 6);
+	spin_lock(&ane_t6021_pipe_lock);
+	released = ane_t6021_pipe_released(&ane_t6021_pipe, prog_id, proc_id,
+					   ticket);
+	spin_unlock(&ane_t6021_pipe_lock);
+	return released ? 0 : -ETIMEDOUT;
 }
 
 static int ane_rtclient_command(struct ane_rtclient *ane,
@@ -1156,8 +1344,8 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 	/* The fw talks back on the target-to-host rings (fwlog, perf);
 	 * hand those slots back so the rings never fill (the sequencer
 	 * did this per step; same ack, channels 4 and 6). */
-	ane_rtclient_drain_t2h(ane, 4);
-	ane_rtclient_drain_t2h(ane, 6);
+	ane_t6021_t2h_drain(ane, 4);
+	ane_t6021_t2h_drain(ane, 6);
 	/* BOs are dma_alloc_coherent memory mapped write-combined for the
 	 * CPU, so no cache maintenance is needed on either side. */
 	return 0;
@@ -1464,49 +1652,24 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 	return ret;
 }
 
-static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
-				       struct drm_file *file,
-				       const struct drm_ane_exec *user)
+/* Build the PROCEDURE_CALL image in ane->cmd_buf. Called with
+ * ane_t6021_fw_lock held. The reply rides the same buffer and is read
+ * by the exchange; at the ACK the firmware has copied the request into
+ * its request pool, so the buffer is free again.
+ */
+static int ane_rtclient_call_build(struct ane_rtclient *ane,
+				   struct ane_t6021_fd *fd,
+				   const struct drm_ane_exec *user,
+				   const struct drm_ane_exec_io *ios,
+				   size_t cmd_size,
+				   struct ane_legacy_buffer **command_out)
 {
-	struct drm_ane_exec_io *ios;
-	struct ane_legacy_buffer *command;
-	struct ane_t6021_fd *fd = file->driver_priv;
-	size_t ios_size;
-	size_t cmd_size;
-	int ret, i;
+	struct ane_legacy_buffer *command = ane->cmd_buf;
+	int i;
 
-	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS ||
-	    user->priority < 2 || user->priority > 7 || !fd)
-		return -EINVAL;
-
-	ios_size = (size_t)user->count * sizeof(*ios);
-	ios = kmalloc(ios_size, GFP_KERNEL);
-	if (!ios)
-		return -ENOMEM;
-	if (copy_from_user(ios, u64_to_user_ptr(user->io_ptr), ios_size)) {
-		kfree(ios);
-		return -EFAULT;
-	}
-
-	cmd_size = sizeof(struct ane_csne_cmd_procedure_call) +
-		   (size_t)user->count * sizeof(struct ane_csne_io_elem);
-	if (cmd_size > SZ_16K) {
-		kfree(ios);
-		return -E2BIG;
-	}
-
-	mutex_lock(&ane_t6021_fw_lock);
-	if (atomic_read(&ane_t6021_quarantined)) {
-		mutex_unlock(&ane_t6021_fw_lock);
-		kfree(ios);
-		return -ETIMEDOUT;
-	}
-	command = ane->cmd_buf;
-	if (!command) {
-		mutex_unlock(&ane_t6021_fw_lock);
-		kfree(ios);
+	if (!command)
 		return -ENODEV;
-	}
+	*command_out = command;
 	memset(command->cpu, 0, SZ_16K);
 	{
 		u8 *cmd = command->cpu;
@@ -1531,8 +1694,7 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 			}
 			if (!bo || ios[i].size > bo->size) {
 				mutex_unlock(&ane_t6021_bo_lock);
-				ret = -EINVAL;
-				goto unlock;
+				return -EINVAL;
 			}
 			/* The IOVA below is about to be published to the
 			 * firmware, so mark the BO before the exchange.
@@ -1555,15 +1717,176 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		 * filled through its uncached mapping are in DRAM before
 		 * the fw starts reading them. */
 		wmb();
-		ret = ane_rtclient_command(ane, command,
-							       cmd_size,
-							       CSNE_CMD_PROCEDURE_CALL,
-							       1,
-							       user->timeout_ms ?
-							       user->timeout_ms : 5000);
 	}
-unlock:
+	return 0;
+}
+
+/* The serialized CALL: today's path. The firmware lock is held from
+ * build to the finish event, so calls serialize completely.
+ */
+static int ane_rtclient_procedure_call_serial(struct ane_rtclient *ane,
+					      struct ane_t6021_fd *fd,
+					      const struct drm_ane_exec *user,
+					      struct drm_ane_exec_io *ios,
+					      size_t cmd_size)
+{
+	struct ane_legacy_buffer *command;
+	int ret;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ETIMEDOUT;
+	}
+	ret = ane_rtclient_call_build(ane, fd, user, ios, cmd_size, &command);
+	if (ret) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return ret;
+	}
+	ret = ane_rtclient_command(ane, command, cmd_size,
+				   CSNE_CMD_PROCEDURE_CALL, 1,
+				   user->timeout_ms ?
+				   user->timeout_ms : 5000);
 	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
+/* The ARMED (pipelined) CALL: build + exchange + ACK under the firmware
+ * lock, the finish wait outside it. The caller holds one pipeline slot
+ * for the whole armed window; it is returned at the single exit.
+ */
+static int ane_rtclient_procedure_call_pipelined(struct ane_rtclient *ane,
+						 struct ane_t6021_fd *fd,
+						 const struct drm_ane_exec *user,
+						 struct drm_ane_exec_io *ios,
+						 size_t cmd_size)
+{
+	struct ane_legacy_buffer *command = NULL;
+	unsigned int timeout_ms = user->timeout_ms ?
+				  user->timeout_ms : 5000;
+	u32 prog_id = user->prog_id, proc_id = user->proc_id;
+	u64 stats_ticket = 0, ev_ticket = 0;
+	bool stats_call = stats;
+	int ret;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		ret = -ETIMEDOUT;
+		goto out_locked;
+	}
+	ret = ane_rtclient_call_build(ane, fd, user, ios, cmd_size, &command);
+	if (ret)
+		goto out_locked;
+	/* The ticket is taken under the firmware lock, before the
+	 * exchange, so submit order is exchange order and no finish
+	 * event of this call can arrive uncounted.
+	 */
+	spin_lock(&ane_t6021_pipe_lock);
+	ret = ane_t6021_pipe_submit(&ane_t6021_pipe, prog_id, proc_id,
+				    &ev_ticket);
+	spin_unlock(&ane_t6021_pipe_lock);
+	if (ret) {
+		/* Host accounting full: a clean per-call failure, not a
+		 * device fault — no quarantine.
+		 */
+		dev_warn(ane->dev,
+			 "PIPE table full (%u keys): one CALL rejected\n",
+			 (unsigned int)ANE_T6021_PIPE_KEYS);
+		ret = -EAGAIN;
+		goto out_locked;
+	}
+	if (stats_call)
+		stats_ticket = ane_stats_begin(&ane->fw->stats_ctrs,
+					       &ane->fw->stats_ring,
+					       ktime_get_ns(), 1u);
+	ret = ane_rtclient_legacy_exchange(ane, command, cmd_size,
+					   CSNE_CMD_PROCEDURE_CALL, 1,
+					   timeout_ms);
+	if (ret) {
+		if (stats_call)
+			ane_stats_complete(&ane->fw->stats_ctrs,
+					   &ane->fw->stats_ring, stats_ticket,
+					   ktime_get_ns(), (u32)ret, 0ull);
+		dev_info(ane->dev, "EXCH op=%#x failed %d (fw allocs %u, %zu bytes)\n",
+			 CSNE_CMD_PROCEDURE_CALL, ret, ane->legacy_allocated,
+			 ane->legacy_bytes);
+		atomic_set(&ane_t6021_quarantined, 1);
+		goto out_locked;
+	}
+	/* ACK observed: the slot is host-owned again, the cursor has
+	 * advanced, and the request lives in the firmware pool. The
+	 * firmware lock is free for the next build+exchange while this
+	 * call waits for its own finish event.
+	 */
+	mutex_unlock(&ane_t6021_fw_lock);
+	ret = ane_rtclient_pipeline_wait(ane, prog_id, proc_id, ev_ticket,
+					 timeout_ms);
+	if (stats_call)
+		ane_stats_complete(&ane->fw->stats_ctrs, &ane->fw->stats_ring,
+				   stats_ticket, ktime_get_ns(), (u32)ret,
+				   0ull);
+	if (!ret && call_settle_us)
+		usleep_range(call_settle_us, call_settle_us + 100);
+	if (ret) {
+		dev_err(ane->dev,
+			"call completion wait failed %d: no finish event in %u ms\n",
+			ret, timeout_ms);
+		atomic_set(&ane_t6021_quarantined, 1);
+		goto out;
+	}
+	ane_t6021_keepwarm_complete();
+	ane_t6021_t2h_drain(ane, 4);
+	ane_t6021_t2h_drain(ane, 6);
+out:
+	up(&ane_t6021_pipe_sem);
+	return ret;
+out_locked:
+	mutex_unlock(&ane_t6021_fw_lock);
+	goto out;
+}
+
+static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
+				       struct drm_file *file,
+				       const struct drm_ane_exec *user)
+{
+	struct drm_ane_exec_io *ios;
+	struct ane_t6021_fd *fd = file->driver_priv;
+	size_t ios_size;
+	size_t cmd_size;
+	int ret;
+
+	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS ||
+	    user->priority < 2 || user->priority > 7 || !fd)
+		return -EINVAL;
+
+	ios_size = (size_t)user->count * sizeof(*ios);
+	ios = kmalloc(ios_size, GFP_KERNEL);
+	if (!ios)
+		return -ENOMEM;
+	if (copy_from_user(ios, u64_to_user_ptr(user->io_ptr), ios_size)) {
+		kfree(ios);
+		return -EFAULT;
+	}
+
+	cmd_size = sizeof(struct ane_csne_cmd_procedure_call) +
+		   (size_t)user->count * sizeof(struct ane_csne_io_elem);
+	if (cmd_size > SZ_16K) {
+		kfree(ios);
+		return -E2BIG;
+	}
+
+	/* One slot per call, taken before the armed test: the mode
+	 * switchers (pipeline, trace_td, control plane) cannot complete
+	 * their quiesce while it is held, so the answer is final.
+	 */
+	down(&ane_t6021_pipe_sem);
+	if (ane_t6021_pipeline_armed(ane))
+		ret = ane_rtclient_procedure_call_pipelined(ane, fd, user,
+							    ios, cmd_size);
+	else
+		ret = ane_rtclient_procedure_call_serial(ane, fd, user, ios,
+							 cmd_size);
+	up(&ane_t6021_pipe_sem);
 	kfree(ios);
 	return ret;
 }
@@ -1770,14 +2093,17 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 	struct drm_ane_prog_load *args = data;
 	int ret;
 
+	ane_t6021_pipe_quiesce();
 	mutex_lock(&ane_t6021_fw_lock);
 	if (atomic_read(&ane_t6021_quarantined)) {
 		mutex_unlock(&ane_t6021_fw_lock);
+		ane_t6021_pipe_resume();
 		return -ETIMEDOUT;
 	}
 	ret = ane_rtclient_load_program(adrm->ane, file, args,
 					&args->prog_id_out);
 	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
 	return ret;
 }
 
@@ -1806,14 +2132,17 @@ static int ane_t6021_perf_mode_set(const char *val,
 		return on ? 0 : -EINVAL;
 	if (!ane)
 		return -ENODEV;
+	ane_t6021_pipe_quiesce();
 	mutex_lock(&ane_t6021_fw_lock);
 	if (atomic_read(&ane_t6021_quarantined)) {
 		mutex_unlock(&ane_t6021_fw_lock);
+		ane_t6021_pipe_resume();
 		return -ETIMEDOUT;
 	}
 	command = ane->cmd_buf;
 	if (!command) {
 		mutex_unlock(&ane_t6021_fw_lock);
+		ane_t6021_pipe_resume();
 		return -ENODEV;
 	}
 	memset(command->cpu, 0, SZ_16K);
@@ -1826,6 +2155,7 @@ static int ane_t6021_perf_mode_set(const char *val,
 		dev_info(ane->dev, "fw perf mode set (property 0x10aa = 1)\n");
 	}
 	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
 	return ret;
 }
 
@@ -1848,12 +2178,14 @@ static int ane_t6021_dyn_pg_on(struct ane_rtclient *ane)
 	struct ane_legacy_buffer *command = ane->cmd_buf;
 	int ret;
 
+	ane_t6021_pipe_quiesce();
 	mutex_lock(&ane_t6021_fw_lock);
 	memset(command->cpu, 0, SZ_16K);
 	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(1);
 	ret = ane_rtclient_command(ane, command, 0x0c,
 				   CSNE_CMD_SET_DYNAMIC_POWERGATE, 1, 3000);
 	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
 	if (ret)
 		dev_err(ane->dev,
 			"dyn_pg: SET_DYNAMIC_POWERGATE failed %d; device quarantined\n",
@@ -1871,15 +2203,18 @@ static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 	struct drm_ane_proc_create *args = data;
 	int ret;
 
+	ane_t6021_pipe_quiesce();
 	mutex_lock(&ane_t6021_fw_lock);
 	if (atomic_read(&ane_t6021_quarantined)) {
 		mutex_unlock(&ane_t6021_fw_lock);
+		ane_t6021_pipe_resume();
 		return -ETIMEDOUT;
 	}
 	args->proc_id_out = 0;
 	ret = ane_rtclient_create_process(adrm->ane, args->prog_id,
 					  &args->proc_id_out);
 	mutex_unlock(&ane_t6021_fw_lock);
+	ane_t6021_pipe_resume();
 	return ret;
 }
 
