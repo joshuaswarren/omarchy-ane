@@ -23,9 +23,8 @@ OUT=${OUT:-/var/tmp/qwen-decode/section-release-$(date -u +%Y%m%dT%H%M%SZ)}
 
 [ -e "$BT" ] || { echo "no ane_t6021 module loaded" >&2; exit 2; }
 [ -e "$P6" ] || { echo "missing $P6" >&2; exit 2; }
-set -- "$PORTS"/prog_006*/ports.json
-[ -e "$1" ] || { echo "no ports.json for prog_006 under $PORTS" >&2; exit 2; }
-P6PORTS=$1
+P6PORTS=$PORTS/prog_006/ports.resolved.json
+[ -e "$P6PORTS" ] || { echo "no ports.resolved.json for prog_006 under $PORTS" >&2; exit 2; }
 mkdir -p "$OUT"
 
 bo() { cat "$BT"; }
@@ -56,7 +55,9 @@ T1=$(bo)
 echo "T1 after_${K}_same_program_loads=$T1" | tee -a "$OUT/bo_total.tsv"
 
 # Stage 2: resident decode, two prompts -> three configure passes.
-if flock "$LOCK" python3 "$DECODE" \
+# No outer flock here: the resident session takes $LOCK itself around every CALL, so
+# wrapping the decode in flock on the same file would deadlock it.
+if python3 "$DECODE" \
 	--manifest "$MANIFEST" --anec-dir "$ANEC" --ports-dir "$PORTS" \
 	--ane-run "$QRES/ane-run" --session-bin "$SESSION" \
 	--resident --prompts p001 p002 --new-tokens 1 \
@@ -72,7 +73,7 @@ T2=$(bo)
 echo "T2 after_resident_configures=$T2" | tee -a "$OUT/bo_total.tsv"
 
 # Stage 3: the same decode again, back to back, still no reboot.
-if flock "$LOCK" python3 "$DECODE" \
+if python3 "$DECODE" \
 	--manifest "$MANIFEST" --anec-dir "$ANEC" --ports-dir "$PORTS" \
 	--ane-run "$QRES/ane-run" --session-bin "$SESSION" \
 	--resident --prompts p001 p002 --new-tokens 1 \
