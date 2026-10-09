@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- `ane_t6021`: the parked-BO pool never parked anything: the pool entry's
+  size was never recorded, so every admission check saw 0 bytes and every
+  freed duplicate section was really freed (measured on the M2,
+  2026-10-09, boot 6fcfac08: `bo_pool_bytes` stayed 0 through a whole
+  A/B). `ane_t6021_pool_park()` and `ane_t6021_pool_park_uncharged()` now
+  take the size and record it on the entry themselves, so the caller
+  cannot forget it.
+- `tools/ane-session`: a LOAD whose (anec bytes, ports bytes) pair is
+  already loaded rebinds the name with no device work; FREE drops the
+  name binding only and the cached program dies at QUIT. A configure
+  pass that FREEs and re-LOADs the same 38-program table now costs zero
+  `BO_INIT`s (measured 2026-10-09: every pass's duplicate sections had
+  asked for a fresh 223 MiB dma32 hole the window no longer had).
+- `tools/ane-bo-probe`: each step now prints the power-of-two IOVA size
+  class the request lands in (the dma32 IOVA allocator rounds and
+  naturally aligns every coherent allocation to that class, so a
+  223 MiB BO needs a free 256 MiB window).
 - `ane_t6021`: a freed duplicate section BO of at least `bo_pool_min_kb`
   (default 2048 KiB) now parks in the BO pool under a runtime budget
   `bo_pool_max_mb` (default 512 MiB, 0644), evicting the oldest park by

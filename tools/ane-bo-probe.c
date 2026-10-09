@@ -74,6 +74,16 @@ static uint64_t bo_total(void)
 	return v;
 }
 
+static uint64_t pow2_mib(uint64_t mib)
+{
+	uint64_t c = 1;
+
+	while (c < mib) {
+		c <<= 1;
+	}
+	return c;
+}
+
 int main(int argc, char **argv)
 {
 	const char *sizes_arg = "256,240,224,208,192,176,160,144,128,112,96,"
@@ -144,13 +154,15 @@ int main(int argc, char **argv)
 					       (unsigned long long)before,
 					       (unsigned long long)bo_total());
 				}
-				printf("r%d %4llu MiB ok (handle off "
-				       "%#llx)\n", r,
+				printf("r%d %4llu MiB (iova class %3llu MiB)"
+				       " ok\n", r,
 				       (unsigned long long)(size >> 20),
-				       (unsigned long long)offset);
+				       (unsigned long long)pow2_mib(size >> 20));
 			} else {
-				printf("r%d %4llu MiB fail (%s)\n", r,
+				printf("r%d %4llu MiB (iova class %3llu MiB)"
+				       " fail (%s)\n", r,
 				       (unsigned long long)(size >> 20),
+				       (unsigned long long)pow2_mib(size >> 20),
 				       strerror(errno));
 			}
 		}
