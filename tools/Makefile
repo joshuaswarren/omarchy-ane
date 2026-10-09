@@ -66,11 +66,38 @@ test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool
+# ane-bo-probe net check: parked vs leaked, over a fake sysfs.
+test_ane_bo_probe: test_ane_bo_probe.c ane-bo-probe.c \
+	../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -DANE_BO_PROBE_TEST -I../ane/src/uapi/drm \
+		-I/usr/include/libdrm \
+		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
+		-o $@ test_ane_bo_probe.c -lm
+
+# The same session-cache test under LeakSanitizer: the cache-hit path once
+# leaked one port table per hit and no plain run could see it. Skipped when
+# the compiler has no AddressSanitizer.
+ASAN_OK := $(shell echo 'int main(void){return 0;}' | $(CC) -fsanitize=address -x c - -o /dev/null 2>/dev/null && echo yes)
+test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
+	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
+	../ane/src/uapi/drm/ane_accel.h
+	$(CC) -I../libane -I../ane/src/uapi/drm -I/usr/include/libdrm -std=gnu99 -O1 -g \
+		-fsanitize=address -fno-omit-frame-pointer \
+		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
+		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
+
+check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
+	test_ane_session_cache test_ane_bo_probe
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
 	./test_t6021_pool
+	./test_ane_session_cache
+	./test_ane_bo_probe
+ifeq ($(ASAN_OK),yes)
+	$(MAKE) test_ane_session_cache_lsan
+	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
+endif
 
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats
+	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_bo_probe

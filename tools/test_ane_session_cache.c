@@ -229,8 +229,14 @@ int main(void)
 	char *out = NULL;
 	int rc;
 	unsigned inits_before;
-	FILE *fp = fopen(anec2path, "wb");
-	int fd = fileno(fp);
+	FILE *fp;
+	int fd = mkstemp(anec2path);
+
+	if (fd < 0) {
+		printf("FAIL session-cache: cannot create the second anec\n");
+		return 1;
+	}
+	fp = fdopen(fd, "wb");
 
 	/* A byte-different copy of the fixture: a second cache key. */
 	if (fp) {
@@ -247,11 +253,20 @@ int main(void)
 		}
 		fclose(fp);
 		fp = NULL;
-		(void)fd;
 	}
-	mkstemp(cmdpath);
-	mkstemp(outpath);
-	mkstemp(lockpath);
+	{
+		char *tmp[3] = { cmdpath, outpath, lockpath };
+		int i;
+
+		for (i = 0; i < 3; i++) {
+			fd = mkstemp(tmp[i]);
+			if (fd < 0) {
+				printf("FAIL session-cache: cannot create a temp file\n");
+				return 1;
+			}
+			close(fd);
+		}
+	}
 
 	/* Scenario 1: three LOADs of one key across a FREE -- one
 	 * program's worth of device work, then none. */
