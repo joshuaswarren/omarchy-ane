@@ -55,14 +55,21 @@ static int bo_free(uint32_t handle)
 	return ioctl(fd, DRM_IOCTL_ANE_BO_FREE, &args) < 0 ? -1 : 0;
 }
 
-static uint64_t bo_total(void)
+static const char *sysfs_dir(void)
 {
-	char path[128];
+	/* Test hook: the host test points this at a fake parameter dir. */
+	return getenv("ANE_BO_PROBE_SYSFS") ?
+		       getenv("ANE_BO_PROBE_SYSFS") :
+		       "/sys/module/ane_t6021/parameters";
+}
+
+static unsigned long long rd_param(const char *name)
+{
+	char path[256];
 	FILE *fp;
 	unsigned long long v = 0;
 
-	snprintf(path, sizeof(path),
-		 "/sys/module/ane_t6021/parameters/bo_total_bytes");
+	snprintf(path, sizeof(path), "%s/%s", sysfs_dir(), name);
 	fp = fopen(path, "r");
 	if (!fp) {
 		return 0;
@@ -72,6 +79,16 @@ static uint64_t bo_total(void)
 	}
 	fclose(fp);
 	return v;
+}
+
+static uint64_t bo_total(void)
+{
+	return rd_param("bo_total_bytes");
+}
+
+static uint64_t bo_pool(void)
+{
+	return rd_param("bo_pool_bytes");
 }
 
 static uint64_t pow2_mib(uint64_t mib)
@@ -84,11 +101,16 @@ static uint64_t pow2_mib(uint64_t mib)
 	return c;
 }
 
+#ifdef ANE_BO_PROBE_TEST
+int ane_bo_probe_main(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
 	const char *sizes_arg = "256,240,224,208,192,176,160,144,128,112,96,"
 				"80,64,48,40,32,24,16,12,8,4,2,1";
-	uint64_t before, size, offset;
+	uint64_t before, after, pool_before, pool_after, size, offset;
+	long long delta_total, delta_pool;
 	uint32_t handle;
 	char path[64];
 	char *tok, *end, *sizes, *save;
@@ -124,6 +146,7 @@ int main(int argc, char **argv)
 	}
 
 	before = bo_total();
+	pool_before = bo_pool();
 	for (r = 0; r < repeat; r++) {
 		largest = 0;
 		sizes = strdup(sizes_arg);
@@ -148,12 +171,6 @@ int main(int argc, char **argv)
 					       strerror(errno));
 					return 1;
 				}
-				if (bo_total() != before && r == repeat - 1) {
-					printf("NOTE bo_total moved %llu -> "
-					       "%llu during the probe\n",
-					       (unsigned long long)before,
-					       (unsigned long long)bo_total());
-				}
 				printf("r%d %4llu MiB (iova class %3llu MiB)"
 				       " ok\n", r,
 				       (unsigned long long)(size >> 20),
@@ -169,11 +186,28 @@ int main(int argc, char **argv)
 		free(sizes);
 		printf("r%d largest=%d MiB\n", r, largest);
 	}
-	if (bo_total() != before) {
-		printf("LEAK net bo_total delta %lld bytes\n",
-		       (long long)(bo_total() - before));
-		return 1;
+	pool_after = bo_pool();
+	after = bo_total();
+	printf("bo_pool_bytes %llu -> %llu\n",
+	       (unsigned long long)pool_before,
+	       (unsigned long long)pool_after);
+	/* The driver PARKS freed BOs of >= bo_pool_min_kb: their bytes
+	 * stay counted and their IOVA stays mapped (that is the reuse
+	 * this probe wants to observe). A net bo_total move that equals
+	 * the pool move is parking, not a leak; only a mismatch is. */
+	delta_total = (long long)(after - before);
+	delta_pool = (long long)(pool_after - pool_before);
+	if (delta_total == 0 && delta_pool == 0) {
+		printf("PROBE DONE largest=%d MiB net-delta=0\n", largest);
+		return 0;
 	}
-	printf("PROBE DONE largest=%d MiB net-delta=0\n", largest);
-	return 0;
+	if (delta_total == delta_pool) {
+		printf("PARKED net-delta=%lld (bo_pool_bytes moved by the "
+		       "same amount; drain with bo_pool_max_mb=0 to "
+		       "release)\n", delta_pool);
+		return 0;
+	}
+	printf("LEAK net bo_total delta %lld with pool delta %lld\n",
+	       delta_total, delta_pool);
+	return 1;
 }
