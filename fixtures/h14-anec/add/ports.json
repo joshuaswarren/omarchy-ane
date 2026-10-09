@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "program": "add",
+  "anec": "add/program-0.anec",
+  "notes": "Binding from the task stream (slot 4 srcA, slot 6 srcB, slot 5 dst) and the hardware-proven ref set {4,5},{5,4},{6,6} (ane_m2.c header, boot 8f468602). Port list order is the wire order: inputs a, b, then output y.",
+  "ports": [
+    {
+      "name": "a",
+      "direction": "input",
+      "shape": [1, 1, 128, 128],
+      "dtype": "fp16",
+      "strides": [32768, 32768, 256, 2],
+      "surface_bytes": 32768,
+      "tile_bytes": 32768,
+      "bar_slot": 4,
+      "buffer_id": 5,
+      "channel": 5
+    },
+    {
+      "name": "b",
+      "direction": "input",
+      "shape": [1, 1, 128, 128],
+      "dtype": "fp16",
+      "strides": [32768, 32768, 256, 2],
+      "surface_bytes": 32768,
+      "tile_bytes": 32768,
+      "bar_slot": 6,
+      "buffer_id": 6,
+      "channel": 6
+    },
+    {
+      "name": "y",
+      "direction": "output",
+      "shape": [1, 1, 128, 128],
+      "dtype": "fp16",
+      "strides": [32768, 32768, 256, 2],
+      "surface_bytes": 32768,
+      "tile_bytes": 32768,
+      "bar_slot": 5,
+      "buffer_id": 4,
+      "channel": 4
+    }
+  ],
+  "dma_coverage": [
+    {
+      "bar_slot": 4,
+      "buffer_id": 5,
+      "kind": "port",
+      "port": "a",
+      "dma_classes": ["srcA"],
+      "tasks": [0],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 5,
+      "buffer_id": 4,
+      "kind": "port",
+      "port": "y",
+      "dma_classes": ["dst"],
+      "tasks": [0],
+      "max_offset": 0
+    },
+    {
+      "bar_slot": 6,
+      "buffer_id": 6,
+      "kind": "port",
+      "port": "b",
+      "dma_classes": ["srcB"],
+      "tasks": [0],
+      "max_offset": 0
+    }
+  ],
+  "ambiguities": [],
+  "exceptions": []
+}
