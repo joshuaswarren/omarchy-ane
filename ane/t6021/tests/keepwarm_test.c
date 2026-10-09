@@ -99,6 +99,18 @@ int main(void)
 	ane_t6021_keepwarm_plan(&in, &out);
 	check("T5c tickle sleep floored at 20 us", out.sleep_us == 20);
 
+	/* T5d not due: the sleep is the remaining interval, not the
+	 * floor (keepwarm_us 100, 30 us since the last tickle).
+	 */
+	in = (struct ane_t6021_keepwarm_in){
+		.keepwarm_us = 100, .keepwarm_tail_us = 2000,
+		.last_done_ns = now - US(500), .last_tickle_ns = now - US(30),
+		.now_ns = now, .lock_free = true, .device_ready = true,
+	};
+	ane_t6021_keepwarm_plan(&in, &out);
+	check("T5d not due: sleeps the remaining interval",
+	      out.sleep_us == 70);
+
 	/* T6 device not ready: never ring the doorbell. */
 	in = (struct ane_t6021_keepwarm_in){
 		.keepwarm_us = 50, .keepwarm_tail_us = 2000,

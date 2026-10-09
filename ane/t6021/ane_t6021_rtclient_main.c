@@ -717,15 +717,20 @@ static int ane_t6021_keepwarm_fn(void *unused)
 		in.last_done_ns = done;
 		in.last_tickle_ns = last_tickle_ns;
 		in.now_ns = now;
-		in.device_ready = ane && READ_ONCE(ane->held) &&
-				  READ_ONCE(ane->chman_ok) && ane->fw &&
-				  ane->fw->boot_ipc &&
-				  !atomic_read(&ane_t6021_quarantined);
-		/* Try the lock only when a device is there to ring; the
-		 * plan still re-checks every condition on the answer.
+		in.device_ready = false;
+		in.lock_free = false;
+		/* Quarantine is set under fw_lock, so the ready test
+		 * runs under the same lock: a tickle must not reach a
+		 * transport just declared wedged.
 		 */
-		in.lock_free = in.device_ready &&
-			       mutex_trylock(&ane_t6021_fw_lock);
+		if (ane && mutex_trylock(&ane_t6021_fw_lock)) {
+			in.lock_free = true;
+			in.device_ready = READ_ONCE(ane->held) &&
+					  READ_ONCE(ane->chman_ok) &&
+					  ane->fw && ane->fw->boot_ipc &&
+					  !atomic_read(&ane_t6021_quarantined) &&
+					  READ_ONCE(ane_t6021_keepwarm_ane) == ane;
+		}
 		ane_t6021_keepwarm_plan(&in, &out);
 		if (in.lock_free && !out.tickle)
 			mutex_unlock(&ane_t6021_fw_lock);
@@ -2740,10 +2745,13 @@ static void ane_rtclient_remove(struct platform_device *pdev)
 	if (READ_ONCE(ane_t6021_perf_ane) == ane)
 		WRITE_ONCE(ane_t6021_perf_ane, NULL);
 	if (READ_ONCE(ane_t6021_keepwarm_ane) == ane) {
-		WRITE_ONCE(ane_t6021_keepwarm_ane, NULL);
-		/* Re-plan now so the tickle cannot touch a removed
-		 * device behind the cleared pointer.
+		/* Under fw_lock: the tickle thread tests the pointer
+		 * under the same lock, so a remove cannot race a
+		 * tickle in flight.
 		 */
+		mutex_lock(&ane_t6021_fw_lock);
+		WRITE_ONCE(ane_t6021_keepwarm_ane, NULL);
+		mutex_unlock(&ane_t6021_fw_lock);
 		wake_up(&ane_t6021_keepwarm_wq);
 	}
 

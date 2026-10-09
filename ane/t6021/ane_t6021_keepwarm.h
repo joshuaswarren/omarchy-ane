@@ -56,6 +56,7 @@ ane_t6021_keepwarm_plan(const struct ane_t6021_keepwarm_in *in,
 {
 	long long interval = ane_t6021_keepwarm_interval_us(in->keepwarm_us);
 	long long tail = ane_t6021_keepwarm_cap_us(in->keepwarm_tail_us);
+	long long remaining;
 
 	out->tickle = false;
 	out->sleep_us = 0;	/* 0 = wait for the next completion or stop */
@@ -72,10 +73,15 @@ ane_t6021_keepwarm_plan(const struct ane_t6021_keepwarm_in *in,
 		return;
 
 	/* Inside the tail, but the interval has not elapsed since the
-	 * last tickle: re-decide at the floor interval.
+	 * last tickle: sleep the remaining time, floored at 20 us, so a
+	 * long interval does not re-decide at the floor cadence.
 	 */
 	if (in->now_ns - in->last_tickle_ns < interval * 1000ll) {
-		out->sleep_us = ANE_T6021_KEEPWARM_MIN_US;
+		remaining = interval -
+			    (in->now_ns - in->last_tickle_ns) / 1000ll;
+		if (remaining < ANE_T6021_KEEPWARM_MIN_US)
+			remaining = ANE_T6021_KEEPWARM_MIN_US;
+		out->sleep_us = remaining;
 		return;
 	}
 
