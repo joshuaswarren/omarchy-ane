@@ -60,7 +60,7 @@ echo "T1 after_${K}_same_program_loads=$T1" | tee -a "$OUT/bo_total.tsv"
 if python3 "$DECODE" \
 	--manifest "$MANIFEST" --anec-dir "$ANEC" --ports-dir "$PORTS" \
 	--ane-run "$QRES/ane-run" --session-bin "$SESSION" \
-	--resident --prompts p001 p002 --new-tokens 1 \
+	--resident --prompts p001,p002 --new-tokens 1 \
 	--out "$OUT/resident" > "$OUT/resident.log" 2> "$OUT/resident.err"; then
 	echo "stage 2: resident decode ok"
 else
@@ -76,7 +76,7 @@ echo "T2 after_resident_configures=$T2" | tee -a "$OUT/bo_total.tsv"
 if python3 "$DECODE" \
 	--manifest "$MANIFEST" --anec-dir "$ANEC" --ports-dir "$PORTS" \
 	--ane-run "$QRES/ane-run" --session-bin "$SESSION" \
-	--resident --prompts p001 p002 --new-tokens 1 \
+	--resident --prompts p001,p002 --new-tokens 1 \
 	--out "$OUT/resident-2" > "$OUT/resident-2.log" 2> "$OUT/resident-2.err"; then
 	echo "stage 3: second resident decode ok"
 else
