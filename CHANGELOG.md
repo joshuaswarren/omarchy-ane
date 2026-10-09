@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `libane`: the ABI-2 (M2) client releases its six section BOs as soon as
+  `PROG_LOAD` + `PROC_CREATE` succeed. On a first load the driver holds
+  the section bytes anyway (`fw_ref`); on a dedup hit the client's copy
+  is memory the firmware never reads. Before, every live `ane_nn` pinned
+  a full duplicate of its program's sections inside the sub-4-GiB window
+  until close, so a resident session failed `BO_INIT` for prog_006's
+  222,980,416 B kernel section once the 38-program set was cached:
+  measured 2026-10-09 on boot 2105990f, `REFUSE: prog_006` with
+  `bo_total_bytes` at 2,757,607,424. The host regression
+  (`tools/test_libane_ioctl`, "resident pattern" case) fails on the old
+  libane and passes now.
 - `ane_t6021`: `trace_td=1` now creates the debugfs blob in its own
   directory, `ane_t6021_trace/trace_td` (was `ane_t6021/trace_td`). The
   probe (`stats=1`, the default) owns the `ane_t6021` debugfs directory;

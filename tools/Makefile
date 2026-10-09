@@ -46,6 +46,9 @@ test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h \
 		test_ane_stats.c ../ane/ane_stats_show.c
 
 
+ane-bo-probe: ane-bo-probe.c ../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I../ane/src/uapi/drm -I/usr/include/libdrm -o $@ ane-bo-probe.c
+
 check: ane-selfcheck test_libane_ioctl test_ane_stats
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
