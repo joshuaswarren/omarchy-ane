@@ -336,13 +336,58 @@ static atomic_t ane_t6021_quarantined = ATOMIC_INIT(0);
  * process at bo_total 2.76 GB). BO_INIT of the same page-aligned size
  * takes one, so held memory stays at the peak instead of growing with
  * every process. */
-static struct ane_t6021_pool ane_t6021_bo_pool;
+static struct ane_t6021_pool ane_t6021_bo_pool = {
+	.list = LIST_HEAD_INIT(ane_t6021_bo_pool.list),
+	.lock = __SPIN_LOCK_UNLOCKED(ane_t6021_bo_pool.lock),
+	.sec_bytes = ATOMIC64_INIT(0),
+	.max_mb = 512,
+	.min_kb = 2048,
+};
 static unsigned int bo_pool_max_mb = 512;
-module_param(bo_pool_max_mb, uint, 0644);
-MODULE_PARM_DESC(bo_pool_max_mb,
-		 "Budget for parked section BOs in MiB; 0 disables section parking (default 512)");
-
 static unsigned int bo_pool_min_kb = 2048;
+
+/* Real free of one evicted park: the memory leaves the pool and the
+ * counter (a parked BO's bytes stay counted until here). */
+static void ane_t6021_pool_release_ent(struct ane_t6021_pool_ent *ent)
+{
+	struct ane_t6021_bo *bo = container_of(ent, struct ane_t6021_bo,
+					       pool);
+
+	atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
+	dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
+	kfree(bo);
+}
+
+static int ane_t6021_bo_pool_max_mb_set(const char *val,
+					const struct kernel_param *kp)
+{
+	struct ane_t6021_pool_ent *e;
+	int ret;
+
+	ret = param_set_uint(val, kp);
+	if (ret)
+		return ret;
+	ane_t6021_bo_pool.max_mb = bo_pool_max_mb;
+	/* Budget off means the pool drains now: every budgeted park is
+	 * freed for real. Uncharged io parks stay (the firmware may
+	 * write them again). */
+	if (!bo_pool_max_mb) {
+		while ((e = ane_t6021_pool_evict_oldest(&ane_t6021_bo_pool)) !=
+		       NULL)
+			ane_t6021_pool_release_ent(e);
+	}
+	return 0;
+}
+
+static const struct kernel_param_ops ane_t6021_bo_pool_max_mb_ops = {
+	.set = ane_t6021_bo_pool_max_mb_set,
+	.get = param_get_uint,
+};
+module_param_cb(bo_pool_max_mb, &ane_t6021_bo_pool_max_mb_ops,
+		&bo_pool_max_mb, 0644);
+MODULE_PARM_DESC(bo_pool_max_mb,
+		 "Budget for parked section BOs in MiB; 0 disables section parking and drains it (default 512)");
+
 module_param(bo_pool_min_kb, uint, 0444);
 MODULE_PARM_DESC(bo_pool_min_kb,
 		 "Smallest freed section BO that is parked instead of freed, in KiB (default 2048)");
@@ -361,18 +406,6 @@ module_param_cb(bo_pool_bytes, &ane_t6021_bo_pool_bytes_ops, NULL, 0444);
 MODULE_PARM_DESC(bo_pool_bytes,
 		 "Read only: section bytes parked under the bo_pool_max_mb budget now");
 
-/* Real free of one evicted park: the memory leaves the pool and the
- * counter (a parked BO's bytes stay counted until here). */
-static void ane_t6021_pool_release_ent(struct ane_t6021_pool_ent *ent)
-{
-	struct ane_t6021_bo *bo = container_of(ent, struct ane_t6021_bo,
-					       pool);
-
-	atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
-	dma_free_coherent(bo->dev, bo->size, bo->cpu, bo->dma);
-	kfree(bo);
-}
-
 /* Final put: the last handle or mapping is gone. The firmware never sees
  * a freed IOVA (lab rule), so a fw_ref BO is never freed: a program
  * section stays held, because a cached firmware program keeps reading
@@ -389,7 +422,6 @@ static void ane_t6021_bo_release(struct kref *ref)
 		/* Safe to park while quarantined: the firmware never
 		 * received this IOVA. Parked BOs are only handed out
 		 * once the quarantine is lifted (see the take side). */
-		ane_t6021_bo_pool.max_mb = READ_ONCE(bo_pool_max_mb);
 		if (!ane_t6021_pool_park(&ane_t6021_bo_pool, &bo->pool,
 					 ane_t6021_pool_release_ent))
 			return;
@@ -1450,6 +1482,59 @@ static struct ane_t6021_drm *to_ane_t6021_drm(struct drm_device *drm)
 	return container_of(drm, struct ane_t6021_drm, drm);
 }
 
+/* One BO allocation attempt for the retry loop: charge the counter,
+ * allocate, check the alignment and firmware-alias contract. Only
+ * -ENOMEM and -ENOSPC make the retry loop evict a parked duplicate;
+ * -ERANGE (alias overlap) is a contract failure and propagates. */
+struct ane_t6021_bo_alloc_ctx {
+	struct drm_device *drm;
+	struct ane_rtclient *ane;
+	u64 size;
+	struct ane_t6021_bo *bo_out;
+};
+
+static int ane_t6021_bo_alloc_attempt(void *data)
+{
+	struct ane_t6021_bo_alloc_ctx *c = data;
+	struct ane_t6021_bo *bo;
+
+	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned;
+	 * a BO whose IOVA reaches the firmware is never freed (held or
+	 * pooled), so this bound caps the memory that outlives its
+	 * users. */
+	if (atomic64_add_return(PAGE_ALIGN(c->size),
+				&ane_t6021_bo_total_bytes) >
+	    (s64)bo_total_max_mb << 20) {
+		atomic64_sub(PAGE_ALIGN(c->size), &ane_t6021_bo_total_bytes);
+		return -ENOSPC;
+	}
+	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
+	if (!bo) {
+		atomic64_sub(PAGE_ALIGN(c->size), &ane_t6021_bo_total_bytes);
+		return -ENOMEM;
+	}
+	bo->cpu = dma_alloc_coherent(c->drm->dev, c->size, &bo->dma,
+				     GFP_KERNEL);
+	if (!bo->cpu) {
+		atomic64_sub(PAGE_ALIGN(c->size), &ane_t6021_bo_total_bytes);
+		kfree(bo);
+		return -ENOMEM;
+	}
+	/* Every fw-visible DMA surface must be 16 KiB aligned and clear
+	 * of the firmware entry alias (receipt 2026-09-20-t6021-entry-alias:
+	 * the same invariant ane_rtclient_legacy_alloc enforces). */
+	if (!IS_ALIGNED(bo->dma, SZ_16K) ||
+	    (c->ane->fw && !ane_t6021_fw_alias_iova_ok(c->ane->fw, bo->dma,
+						       c->size))) {
+		dma_free_coherent(c->drm->dev, c->size, bo->cpu, bo->dma);
+		atomic64_sub(PAGE_ALIGN(c->size), &ane_t6021_bo_total_bytes);
+		kfree(bo);
+		return -ERANGE;
+	}
+	c->bo_out = bo;
+	return 0;
+}
+
 static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 				   struct drm_file *file)
 {
@@ -1457,7 +1542,8 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	struct ane_t6021_fd *fd = file->driver_priv;
 	struct ane_t6021_pool_ent *ent;
 	struct ane_t6021_bo *bo;
-	struct ane_rtclient *ane;
+	struct ane_t6021_bo_alloc_ctx ac;
+	int ret;
 
 	if (args->size == 0 || args->size > ANE_T6021_BO_MAX || !fd)
 		return -EINVAL;
@@ -1472,39 +1558,19 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 		memset(bo->cpu, 0, PAGE_ALIGN(args->size));
 		goto publish;
 	}
-	/* Global coherent-memory accounting. Each BO is 16 KiB-aligned;
-	 * a BO whose IOVA reaches the firmware is never freed (held or
-	 * pooled), so this bound caps the memory that outlives its
-	 * users. */
-	if (atomic64_add_return(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes) >
-	    (s64)bo_total_max_mb << 20) {
-		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
-		return -ENOSPC;
-	}
-	ane = to_ane_t6021_drm(drm)->ane;
-	bo = kzalloc(sizeof(*bo), GFP_KERNEL);
-	if (!bo) {
-		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
-		return -ENOMEM;
-	}
-	bo->cpu = dma_alloc_coherent(drm->dev, args->size, &bo->dma,
-				     GFP_KERNEL);
-	if (!bo->cpu) {
-		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
-		kfree(bo);
-		return -ENOMEM;
-	}
-	/* Every fw-visible DMA surface must be 16 KiB aligned and clear
-	 * of the firmware entry alias (receipt 2026-09-20-t6021-entry-alias:
-	 * the same invariant ane_rtclient_legacy_alloc enforces). */
-	if (!IS_ALIGNED(bo->dma, SZ_16K) ||
-	    (ane->fw && !ane_t6021_fw_alias_iova_ok(ane->fw, bo->dma,
-						    args->size))) {
-		dma_free_coherent(drm->dev, args->size, bo->cpu, bo->dma);
-		atomic64_sub(PAGE_ALIGN(args->size), &ane_t6021_bo_total_bytes);
-		kfree(bo);
-		return -ERANGE;
-	}
+	/* A failed attempt evicts the oldest parked duplicate (real
+	 * free) and retries until nothing budgeted is left, so the pool
+	 * is never the reason a BO_INIT fails. */
+	ac.drm = drm;
+	ac.ane = to_ane_t6021_drm(drm)->ane;
+	ac.size = args->size;
+	ac.bo_out = NULL;
+	ret = ane_t6021_pool_alloc_retry(&ane_t6021_bo_pool,
+					 ane_t6021_bo_alloc_attempt, &ac,
+					 ane_t6021_pool_release_ent);
+	if (ret)
+		return ret;
+	bo = ac.bo_out;
 publish:
 	bo->size = args->size;
 	bo->owner = fd;
@@ -2140,8 +2206,11 @@ static int ane_rtclient_probe_inner(struct platform_device *pdev,
 		if (ret)
 			return dev_err_probe(dev, ret, "firmware preflight failed\n");
 	}
-	ane_t6021_pool_init(&ane_t6021_bo_pool, bo_pool_max_mb,
-			    bo_pool_min_kb);
+	/* The pool is statically initialized: a re-probe must not reset
+	 * a live list or a live lock. Only the knobs follow the
+	 * parameters here. */
+	ane_t6021_bo_pool.max_mb = bo_pool_max_mb;
+	ane_t6021_bo_pool.min_kb = bo_pool_min_kb;
 	ane = devm_kzalloc(dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
 		return -ENOMEM;

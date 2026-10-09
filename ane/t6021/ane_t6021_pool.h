@@ -100,28 +100,48 @@ static inline void ane_t6021_pool_park_uncharged(struct ane_t6021_pool *p,
 
 /* Park ENT under the section budget, evicting the oldest budgeted
  * entries (RELEASE really frees each) until it fits. Returns 0 parked,
- * -EINVAL when the size is below the floor or the budget is off, and
- * -ENOSPC when the budget cannot be reached by eviction. On 0 the
- * memory stays allocated and counted; the entry leaves the pool again
- * only through take() or eviction. */
+ * -EINVAL when the budget is off (the budgeted pool drains first) or
+ * the size is below the floor, and -ENOSPC when the entry alone would
+ * exceed the budget or the pool cannot make room. On 0 the memory
+ * stays allocated and counted; the entry leaves the pool again only
+ * through take() or eviction. */
 static inline int ane_t6021_pool_park(struct ane_t6021_pool *p,
 				      struct ane_t6021_pool_ent *ent,
 				      ane_t6021_pool_release_fn release)
 {
 	struct ane_t6021_pool_ent *old;
 	size_t pg = PAGE_ALIGN(ent->size);
+	size_t budget = (size_t)p->max_mb << 20;
 
+	if (budget == 0) {
+		/* Budget switched off: the pool drains instead of
+		 * growing. The parameter callback drains too; this
+		 * covers any park attempt that still arrives. */
+		while ((old = ane_t6021_pool_evict_oldest(p)) != NULL)
+			release(old);
+		return -EINVAL;
+	}
 	if (!ane_t6021_pool_admits(p, ent->size))
 		return -EINVAL;
-	while ((size_t)atomic64_read(&p->sec_bytes) + pg >
-	       (size_t)p->max_mb << 20) {
-		old = ane_t6021_pool_evict_oldest(p);
-		if (!old)
+	if (pg > budget)
+		return -ENOSPC;
+	/* Charge FIRST, then make room: a concurrent unmap (vm_close
+	 * drops its kref without the BO lock) runs the same eviction,
+	 * so check-then-add would let two chargers pass a budget only
+	 * one fits. If the pool cannot make room, undo the charge. */
+	if ((size_t)atomic64_add_return(pg, &p->sec_bytes) > budget) {
+		while ((size_t)atomic64_read(&p->sec_bytes) > budget) {
+			old = ane_t6021_pool_evict_oldest(p);
+			if (!old)
+				break;
+			release(old);
+		}
+		if ((size_t)atomic64_read(&p->sec_bytes) > budget) {
+			atomic64_sub(pg, &p->sec_bytes);
 			return -ENOSPC;
-		release(old);
+		}
 	}
 	ent->pooled_sec = true;
-	atomic64_add(pg, &p->sec_bytes);
 	spin_lock(&p->lock);
 	list_add_tail(&ent->node, &p->list);
 	spin_unlock(&p->lock);
@@ -154,6 +174,36 @@ ane_t6021_pool_take(struct ane_t6021_pool *p, size_t size, bool quarantined)
 	}
 	spin_unlock(&p->lock);
 	return NULL;
+}
+
+/* Retry ATTEMPT until it stops failing with -ENOMEM or -ENOSPC, or the
+ * pool has no budgeted entry left to evict. Every failed attempt evicts
+ * one OLDEST budgeted entry (RELEASE really frees it), so the pool is
+ * never the reason an allocation fails while it holds evictable bytes:
+ * BO_INIT must not refuse while a parked duplicate could have been
+ * returned for the same dma range (measured 2026-10-09: 223 MiB
+ * BO_INIT refused at bo_total 2.76 GB after configure passes). Any
+ * other status (-EINVAL, -ERANGE, 0) returns untouched. */
+static inline int ane_t6021_pool_alloc_retry(struct ane_t6021_pool *p,
+					     int (*attempt)(void *ctx),
+					     void *ctx,
+					     ane_t6021_pool_release_fn release)
+{
+	int ret;
+
+	for (;;) {
+		ret = attempt(ctx);
+		if (ret != -ENOMEM && ret != -ENOSPC)
+			return ret;
+		{
+			struct ane_t6021_pool_ent *old =
+				ane_t6021_pool_evict_oldest(p);
+
+			if (!old)
+				return ret;
+			release(old);
+		}
+	}
 }
 
 static inline s64 ane_t6021_pool_sec_bytes(const struct ane_t6021_pool *p)

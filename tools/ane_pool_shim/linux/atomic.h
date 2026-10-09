@@ -6,9 +6,17 @@ typedef struct {
 	long long counter;
 } atomic64_t;
 
+#define ATOMIC64_INIT(i) { (i) }
+
 static inline void atomic64_set(atomic64_t *v, long long i)
 {
 	v->counter = i;
+}
+
+static inline long long atomic64_add_return(long long i, atomic64_t *v)
+{
+	v->counter += i;
+	return v->counter;
 }
 
 static inline void atomic64_add(long long i, atomic64_t *v)

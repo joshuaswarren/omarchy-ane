@@ -45,6 +45,23 @@ static void fake_release(struct ane_t6021_pool_ent *ent)
 	freed_log[n_freed++] = b;
 }
 
+/* An allocator that refuses while any budgeted byte is parked: the
+ * shape the review MUST covers (BO_INIT must evict, not fail). */
+struct retry_ctx {
+	struct ane_t6021_pool *p;
+	int calls;
+};
+
+static int retry_attempt(void *data)
+{
+	struct retry_ctx *c = data;
+
+	c->calls++;
+	if (ane_t6021_pool_sec_bytes(c->p) > 0)
+		return -ENOMEM;
+	return 0;
+}
+
 static struct fake_bo fake_bo_new(int id, size_t size)
 {
 	struct fake_bo b = { .id = id };
@@ -141,6 +158,76 @@ int main(void)
 	      "unreachable: park fails with -ENOSPC");
 	check(n_freed == 0 && ane_t6021_pool_sec_bytes(&p) == 0,
 	      "unreachable: nothing freed, nothing parked");
+
+	/* Review MUST: BO_INIT must evict instead of failing. The fake
+	 * allocator refuses while any budgeted byte is parked; the retry
+	 * loop has to free the pool's way clear. */
+	ane_t6021_pool_init(&p, 32, POOL_TEST_MIN_KIB);
+	a = fake_bo_new(11, 16u << 20);
+	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	      "retry: 16 MiB parks");
+	{
+		struct retry_ctx rc = { .p = &p, .calls = 0 };
+
+		check(ane_t6021_pool_alloc_retry(&p, retry_attempt, &rc,
+						 fake_release) == 0,
+		      "retry: allocation succeeds after eviction");
+		check(rc.calls == 2,
+		      "retry: exactly one retry after one eviction");
+	}
+	check(a.freed == 1, "retry: the parked entry was really freed");
+	check(ane_t6021_pool_sec_bytes(&p) == 0,
+	      "retry: bo_pool_bytes dropped to zero");
+
+	/* Review SHOULD: an entry bigger than the whole budget fails
+	 * WITHOUT evicting anything. */
+	n_freed = 0;
+	ane_t6021_pool_init(&p, 4, POOL_TEST_MIN_KIB);
+	u = fake_bo_new(9, 8u << 20);
+	ane_t6021_pool_park_uncharged(&p, &u.ent);
+	b = fake_bo_new(2, 2u << 20);
+	check(ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	      "oversize: 2 MiB parks under a 4 MiB budget");
+	e = fake_bo_new(5, 8u << 20);
+	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -ENOSPC,
+	      "oversize: 8 MiB against a 4 MiB budget refuses");
+	check(n_freed == 0, "oversize: nothing was evicted for it");
+	check(ane_t6021_pool_take(&p, 2u << 20, false) == &b.ent,
+	      "oversize: the parked 2 MiB entry survives");
+
+	/* Review SHOULD: charge first, then evict to fit; undo when the
+	 * pool cannot make room. */
+	n_freed = 0;
+	ane_t6021_pool_init(&p, 4, POOL_TEST_MIN_KIB);
+	a = fake_bo_new(1, 2u << 20);
+	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0,
+	      "undo: 2 MiB parks");
+	b = fake_bo_new(2, 4u << 20);
+	check(ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	      "undo: 4 MiB parks after evicting to fit");
+	check(n_freed == 1 && freed_log[0] == &a,
+	      "undo: the overflow evicted the oldest");
+	e = fake_bo_new(5, 8u << 20);
+	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -ENOSPC,
+	      "undo: 8 MiB alone over the budget is undone");
+	check(ane_t6021_pool_sec_bytes(&p) == (s64)PAGE_ALIGN(4u << 20),
+	      "undo: failed charge did not stick");
+
+	/* Review SHOULD: budget off drains the budgeted pool. */
+	ane_t6021_pool_init(&p, 40, POOL_TEST_MIN_KIB);
+	a = fake_bo_new(1, 16u << 20);
+	b = fake_bo_new(2, 16u << 20);
+	check(ane_t6021_pool_park(&p, &a.ent, fake_release) == 0 &&
+	      ane_t6021_pool_park(&p, &b.ent, fake_release) == 0,
+	      "drain: both 16 MiB parks land");
+	p.max_mb = 0;
+	e = fake_bo_new(5, 2u << 20);
+	check(ane_t6021_pool_park(&p, &e.ent, fake_release) == -EINVAL,
+	      "drain: park with the budget off refuses");
+	check(a.freed == 1 && b.freed == 1,
+	      "drain: every budgeted park was really freed");
+	check(ane_t6021_pool_sec_bytes(&p) == 0,
+	      "drain: the budget emptied");
 
 	printf(failures == before ? "POOL-CHECK PASS\n" :
 				    "POOL-CHECK FAIL\n");

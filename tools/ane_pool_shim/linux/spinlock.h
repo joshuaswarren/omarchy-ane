@@ -6,6 +6,8 @@ typedef struct {
 	int unused;
 } spinlock_t;
 
+#define __SPIN_LOCK_UNLOCKED(name) { 0 }
+
 static inline void spin_lock_init(spinlock_t *lock)
 {
 	lock->unused = 0;
