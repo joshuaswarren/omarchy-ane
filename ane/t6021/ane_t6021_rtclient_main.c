@@ -1752,8 +1752,9 @@ static int ane_rtclient_procedure_call_serial(struct ane_rtclient *ane,
 }
 
 /* The ARMED (pipelined) CALL: build + exchange + ACK under the firmware
- * lock, the finish wait outside it. The caller holds one pipeline slot
- * for the whole armed window; it is returned at the single exit.
+ * lock, the finish wait outside it. The caller downs one pipeline slot
+ * before the armed test and ups it after this returns, so the slot
+ * covers the whole armed window; this function touches no semaphore.
  */
 static int ane_rtclient_procedure_call_pipelined(struct ane_rtclient *ane,
 						 struct ane_t6021_fd *fd,
@@ -1832,17 +1833,15 @@ static int ane_rtclient_procedure_call_pipelined(struct ane_rtclient *ane,
 			"call completion wait failed %d: no finish event in %u ms\n",
 			ret, timeout_ms);
 		atomic_set(&ane_t6021_quarantined, 1);
-		goto out;
+		return ret;
 	}
 	ane_t6021_keepwarm_complete();
 	ane_t6021_t2h_drain(ane, 4);
 	ane_t6021_t2h_drain(ane, 6);
-out:
-	up(&ane_t6021_pipe_sem);
 	return ret;
 out_locked:
 	mutex_unlock(&ane_t6021_fw_lock);
-	goto out;
+	return ret;
 }
 
 static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
