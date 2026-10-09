@@ -56,7 +56,10 @@ def main(argv=None):
     anec = Path(str(args.anec).replace("{op}", args.op)
                 .replace(f"{args.op}-batch-N", f"{args.op}-batch-{args.n}"))
     ref = REFS[args.op]
-    plane = surface_words(anec.read_bytes())
+    # Header tile[4] already scales with N (2N for an N-job package), so surface_words() is the whole batch;
+    # one job's plane is that divided by N. Multiplying by N again expected N times too many words for N >= 2
+    # (2026-10-09 M2 landing: 'output 32768 words != 65536' at N=2 on a correct device output).
+    plane = surface_words(anec.read_bytes()) // args.n
     work = args.work or Path(f"/var/tmp/batch-lever/land-{args.op}-{args.n}")
     work.mkdir(parents=True, exist_ok=True)
 

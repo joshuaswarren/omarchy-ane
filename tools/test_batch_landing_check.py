@@ -85,5 +85,55 @@ def main():
           f"{r2.returncode})")
 
 
+STUB_DEVICE = r"""#!/usr/bin/env python3
+# Device-faithful stub ane-run: reads the two --in files, applies the package's op per fp16 word
+# (the same reference the checker uses), writes N planes to --out. N comes from the package header.
+import struct, sys
+import os
+sys.path.insert(0, os.environ["BATCH_TOOLS"])
+import numpy as np
+from check_batch import REFS
+a = sys.argv[1:]
+anec = a[a.index("--anec") + 1]
+ins = {}
+for i, v in enumerate(a):
+    if v == "--in":
+        k, f = a[i + 1].split("=", 1)
+        ins[int(k)] = np.fromfile(f, dtype=np.uint16)
+out = a[a.index("--out") + 1].split("=", 1)[1]
+op = "mul" if "/mul-batch-" in anec else "add"
+# The device returns exactly N planes of 16384 fp16 words, N = header tile[4] // 2, whatever size the input files are.
+with open(anec, "rb") as f:
+    hdr = f.read(0x80)
+words = (struct.unpack_from("<16I", hdr, 0x28)[4] // 2) * 16384
+REFS[op](ins[0][:words], ins[1][:words]).astype(np.uint16).tofile(out)
+"""
+
+
+def check_all_n(work):
+    """The real checker over the real committed packages with a device-faithful stub, for every N the
+    ticket runs. Before the fix N >= 2 failed with 'output 32768 words != 65536': the header field
+    tile[4] already scales with N, and the checker multiplied by N a second time."""
+    stub = work / "ane-run-faithful"
+    stub.write_text(STUB_DEVICE)
+    stub.chmod(0o755)
+    fixtures = TOOL.parent.parent / "fixtures" / "h14-anec"
+    for op in ("add", "mul"):
+        for n in (1, 2, 4, 8):
+            anec = fixtures / f"{op}-batch-{n}" / "program-0.anec"
+            if not anec.is_file():
+                continue
+            r = subprocess.run(
+                [sys.executable, str(TOOL), "--op", op, "--n", str(n), "--calls", "2",
+                 "--anec", str(anec), "--timeout", "60", "--ane-run", str(stub),
+                 "--work", str(work / f"faithful-{op}-{n}")],
+                capture_output=True, text=True, timeout=300,
+                env=dict(os.environ, BATCH_TOOLS=str(TOOL.parent)))
+            assert r.returncode == 0, f"{op} N={n} must land bit-exact:\n{r.stdout}{r.stderr}"
+            assert f"{n}/{n} planes bit-exact" in r.stdout, r.stdout
+    print("PASS: add and mul landings bit-exact for N = 1, 2, 4, 8 against a device-faithful stub")
+
+
 if __name__ == "__main__":
     main()
+    check_all_n(Path(tempfile.mkdtemp(prefix="landing-faithful-")))
