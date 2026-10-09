@@ -60,6 +60,13 @@ static int fail(const char *what, uint32_t cycle)
 	return 1;
 }
 
+static int usage(void)
+{
+	fprintf(stderr, "usage: ane-cycle --anec F --cycles N "
+			"[--in IDX=FILE]... [--expect FILE]\n");
+	return 2;
+}
+
 int main(int argc, char **argv)
 {
 	const char *anec = NULL;
@@ -81,17 +88,19 @@ int main(int argc, char **argv)
 			cycles = (uint32_t)strtoul(argv[++i], NULL, 0);
 		} else if (!strcmp(argv[i], "--expect") && i + 1 < argc) {
 			expect_path = argv[++i];
-		} else if (!strncmp(argv[i], "--in ", 5) && i + 1 < argc) {
-			unsigned idx = (unsigned)strtoul(argv[i] + 5, NULL, 0);
+		} else if (!strcmp(argv[i], "--in") && i + 1 < argc) {
+			const char *spec = argv[++i];
+			char *eq = strchr(spec, '=');
+			unsigned idx;
 
+			if (!eq)
+				return usage();
+			idx = (unsigned)strtoul(spec, NULL, 0);
 			if (idx >= ANE_CYCLE_MAX_CH)
 				return fail("channel index out of range", 0);
-			in_path[idx] = argv[++i];
+			in_path[idx] = eq + 1;
 		} else {
-			fprintf(stderr,
-				"usage: ane-cycle --anec F --cycles N "
-				"[--in IDX=FILE]... [--expect FILE]\n");
-			return 2;
+			return usage();
 		}
 	}
 	if (!anec || !cycles)
