@@ -423,6 +423,7 @@ static void ane_t6021_bo_release(struct kref *ref)
 		 * received this IOVA. Parked BOs are only handed out
 		 * once the quarantine is lifted (see the take side). */
 		if (!ane_t6021_pool_park(&ane_t6021_bo_pool, &bo->pool,
+					 bo->size,
 					 ane_t6021_pool_release_ent))
 			return;
 		atomic64_sub(PAGE_ALIGN(bo->size), &ane_t6021_bo_total_bytes);
@@ -432,7 +433,7 @@ static void ane_t6021_bo_release(struct kref *ref)
 		kfree(bo);
 	} else {
 		ane_t6021_pool_park_uncharged(&ane_t6021_bo_pool,
-					      &bo->pool);
+					      &bo->pool, bo->size);
 	}
 }
 
