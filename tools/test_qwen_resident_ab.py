@@ -32,6 +32,12 @@ ap.add_argument("--out"); ap.add_argument("--logits-file")
 ap.add_argument("--resident", action="store_true"); ap.add_argument("--session-bin")
 ap.add_argument("--resident-lock")
 a = ap.parse_args()
+import os
+if a.resident and os.environ.get("FAKE_RESIDENT_REFUSE"):
+    Path(a.out).mkdir(parents=True, exist_ok=True)
+    (Path(a.out) / "results.jsonl").write_text(json.dumps({"type": "start"}) + "\n")
+    print("REFUSE: prog_006: session refused LOAD")
+    sys.exit(2)
 out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
 with open(Path(a.out).parent.parent / "order.txt", "a") as f:
     f.write(("resident" if a.resident else "per-call") + "\n")
@@ -119,11 +125,29 @@ def check_stale_sections_refused():
     return failures
 
 
+def check_failed_arm():
+    import os
+    os.environ["FAKE_RESIDENT_REFUSE"] = "1"
+    try:
+        rc, text, _ = run_ab(flip=False)
+    except Exception as e:  # the pre-fix harness died in stats() with IndexError
+        return [f"harness crashed on a failed arm: {type(e).__name__}: {e}"]
+    finally:
+        del os.environ["FAKE_RESIDENT_REFUSE"]
+    failures = []
+    if rc == 0:
+        failures.append("resident arm exit 2: rc 0")
+    if "resident arm exit 2" not in text:
+        failures.append("failed arm not named in the output")
+    return failures
+
+
 def main():
     failed = 0
     for name, fn in (("agreeing-arms", check_pass), ("flipped-logit", check_logit_flip),
                      ("arm-order", check_order),
-                     ("stale-sections-refused", check_stale_sections_refused)):
+                     ("stale-sections-refused", check_stale_sections_refused),
+                     ("failed-arm-reported", check_failed_arm)):
         failures = fn()
         print(("PASS " if not failures else "FAIL ") + name)
         for f in failures:

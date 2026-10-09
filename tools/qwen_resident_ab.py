@@ -207,8 +207,10 @@ def main(argv=None):
         failures.append(f"per-call arm exit {rc_a}")
     if rc_b:
         failures.append(f"resident arm exit {rc_b}")
-    bit_failures, summary = compare(a_out, b_out, args)
-    failures += bit_failures
+    summary = None
+    if not failures:
+        bit_failures, summary = compare(a_out, b_out, args)
+        failures += bit_failures
     exch = kernel_exch_lines(exch_before)
     if exch:
         failures.append(f"new EXCH kernel lines: {exch[:2]}")
