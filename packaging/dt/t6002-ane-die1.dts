@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * Overlay state: opt-in ("ane-t6002-die1" in /etc/omarchy-platform/dtb-overlays.opt-in).
+ * Overlay state: opt-in ("ane-t6002-die1" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).
  * The die-1 ANE of T6002 (M1 Ultra): the second accel device, after the
  * die-0 overlay (t6002-ane.dts, key ane-t6002). Shapes and values:
  * receipts/2026-10-03-ultra-die1 (MEASURED on the live M1 Ultra desktop:
