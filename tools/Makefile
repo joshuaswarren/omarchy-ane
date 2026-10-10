@@ -93,6 +93,10 @@ test_t6021_prog_lookup: test_t6021_prog_lookup.c ../libane/ane_sha256.c \
 # The same session-cache test under LeakSanitizer: the cache-hit path once
 # leaked one port table per hit and no plain run could see it. Skipped when
 # the compiler has no AddressSanitizer.
+# The resident Python tests import numpy. Run them only when it is installed (the overlays CI job installs none).
+PYTHON ?= python3
+NUMPY_OK := $(shell $(PYTHON) -c 'import numpy' >/dev/null 2>&1 && echo yes)
+
 ASAN_OK := $(shell echo 'int main(void){return 0;}' | $(CC) -fsanitize=address -x c - -o /dev/null 2>/dev/null && echo yes)
 test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
@@ -102,7 +106,7 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
+check: ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool \
 	test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
@@ -111,6 +115,13 @@ check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
 	./test_ane_session_cache
 	./test_ane_bo_probe
 	./test_t6021_prog_lookup
+ifeq ($(NUMPY_OK),yes)
+	$(PYTHON) test_qwen_resident.py
+	$(PYTHON) test_qwen_resident_ab.py
+	$(PYTHON) test_qwen_resident_proxy.py
+else
+	@echo "SKIP resident Python tests: numpy is not installed"
+endif
 ifeq ($(ASAN_OK),yes)
 	$(MAKE) test_ane_session_cache_lsan
 	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
@@ -146,4 +157,4 @@ else
 endif
 
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log
+	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log
