@@ -115,6 +115,16 @@ extern const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT];
 int ane_m2_program_digest(const struct ane_m2_sections *secs,
 			  uint8_t out[32]);
 
+struct ane_sha256_ctx;
+
+/* Same digest with the compression path chosen by the caller:
+ * PORTABLE_ONLY = 1 forces the reference C block (tests). */
+int ane_m2_program_digest_ex(const struct ane_m2_sections *secs,
+			     uint8_t out[32], int portable_only);
+int ane_m2_program_digest_ctx(struct ane_sha256_ctx *c,
+			      const struct ane_m2_sections *secs,
+			      uint8_t out[32]);
+
 /* bufferId of the scratch io record (above the channel ids, not 2/3). */
 #define ANE_M2_SCRATCH_BUFID 0x40u
 

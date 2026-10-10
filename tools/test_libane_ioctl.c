@@ -100,6 +100,11 @@ static uint32_t next_prog_id;
  * libane uses (u64 id, u64 size, bytes, sections in order). */
 static int fake_lookup_enotty;	/* kernel without PROG_LOOKUP */
 static int fake_quarantine;	/* quarantined firmware refuses */
+static int fake_quarantine_on_lookup;
+/* Models the race w7K called out: the device quarantines WHILE a
+ * lookup sits in its critical section. The fake's lookup handler
+ * flips the flag itself, so a check outside the critical section
+ * would miss it and wrongly return a hit. */
 static int fail_next_prog_load;	/* a failed load publishes nothing */
 
 static uint64_t page_align64(uint64_t v)
@@ -337,6 +342,15 @@ static int fake_prog_lookup(struct drm_ane_prog_lookup *a)
 	}
 	if (fake_quarantine) {
 		/* Quarantine invalidates eligibility before any lookup. */
+		errno = ENODEV;
+		return -1;
+	}
+	if (fake_quarantine_on_lookup) {
+		/* The race w7K called out: the device quarantines while
+		 * this lookup sits in its critical section (the real
+		 * handler checks INSIDE the fw lock). Flip here, then
+		 * refuse -- the lookup must never publish a hit. */
+		fake_quarantine = 1;
 		errno = ENODEV;
 		return -1;
 	}
@@ -1013,6 +1027,39 @@ static void run_prog_lookup(const char *path)
 		} else {
 			check(held_bytes == held_pass1,
 			      "lookup: held bytes flat");
+		}
+	}
+
+	/* Quarantine racing a lookup: the flip happens inside the fake's
+	 * lookup handler (the modeled critical section), so the lookup
+	 * must be refused (-ENODEV), never a hit, and the fallback must
+	 * fail at PROG_LOAD the same way a real quarantined load does.
+	 * A wrongful hit would make ane_init succeed instead. */
+	{
+		struct ane_nn *q = ane_init(paths[0]);
+		unsigned nprogs_before;
+
+		check(q != NULL, "quarantine: program loads first");
+		ane_free(q);
+		nprogs_before = fake_nprogs;
+		fake_quarantine_on_lookup = 1;
+		q = ane_init(paths[0]);
+		check(q == NULL,
+		      "quarantine: lookup racing the flip is refused, "
+		      "not a hit");
+		check(fake_quarantine == 1,
+		      "quarantine: the flag is set by the race");
+		check(fake_nprogs == nprogs_before,
+		      "quarantine: the raced load published nothing");
+		fake_quarantine = 1;
+		q = ane_init(paths[0]);
+		check(q == NULL, "quarantine: still refused after the race");
+		fake_quarantine = 0;
+		fake_quarantine_on_lookup = 0;
+		q = ane_init(paths[0]);
+		check(q != NULL, "quarantine: loads again once lifted");
+		if (q) {
+			ane_free(q);
 		}
 	}
 

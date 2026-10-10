@@ -42,7 +42,7 @@ static int failures;
 static void check(int cond, const char *what)
 {
 	if (!cond) {
-		printf("FAIL %s\n", what);
+		fprintf(stderr, "FAIL %s\n", what);
 		failures++;
 	}
 }
@@ -132,6 +132,12 @@ static int fake_ioctl(int fd, unsigned long request, void *arg)
 		((struct drm_ane_proc_create *)arg)->proc_id_out = 1;
 		return 0;
 	case DRM_IOCTL_ANE_EXEC:
+		return 0;
+	case DRM_IOCTL_ANE_PROG_LOOKUP:
+		/* Older behavior is fine for this test: a miss sends
+		 * libane down the classic load path. */
+		((struct drm_ane_prog_lookup *)arg)->found_out = 0;
+		((struct drm_ane_prog_lookup *)arg)->prog_id_out = 0;
 		return 0;
 	}
 	return refuse("unknown ioctl");

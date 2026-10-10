@@ -2147,15 +2147,28 @@ static int ane_m2_fread_all(const char *path, void **out, uint64_t *out_size)
 }
 
 /* The driver's PROG_LOAD dedup key: SHA-256 over every section's
- * (u64 id, u64 size, bytes), sections in id order. A PROG_LOOKUP with
- * this digest finds the program across processes. */
+ * (u64 id, u64 size, bytes), sections in id order. Uses the automatic
+ * compression path. */
 int ane_m2_program_digest(const struct ane_m2_sections *secs,
 			  uint8_t out[ANE_SHA256_LEN])
 {
-	struct ane_sha256_ctx c;
+	return ane_m2_program_digest_ctx(NULL, secs, out);
+}
+
+/* Same, with the compression path chosen by the caller: PORTABLE = 1
+ * forces the reference C block (tests), 0 uses the context's default.
+ * CTX may be NULL for the automatic path. */
+int ane_m2_program_digest_ctx(struct ane_sha256_ctx *c,
+			      const struct ane_m2_sections *secs,
+			      uint8_t out[ANE_SHA256_LEN])
+{
+	struct ane_sha256_ctx local;
 	unsigned i;
 
-	ane_sha256_init(&c);
+	if (!c) {
+		ane_sha256_init(&local);
+		c = &local;
+	}
 	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
 		uint64_t hdr[2] = { ane_m2_section_ids[i],
 				    secs->sec[i].size };
@@ -2163,12 +2176,26 @@ int ane_m2_program_digest(const struct ane_m2_sections *secs,
 		if (!secs->sec[i].data || !secs->sec[i].size) {
 			return -EINVAL;
 		}
-		ane_sha256_update(&c, hdr, sizeof(hdr));
-		ane_sha256_update(&c, secs->sec[i].data,
+		ane_sha256_update(c, hdr, sizeof(hdr));
+		ane_sha256_update(c, secs->sec[i].data,
 				  secs->sec[i].size);
 	}
-	ane_sha256_final(&c, out);
+	ane_sha256_final(c, out);
 	return 0;
+}
+
+/* Context-controlled compression path: PORTABLE_ONLY = 1 forces the
+ * reference C block (tests), 0 uses the automatic selection. */
+int ane_m2_program_digest_ex(const struct ane_m2_sections *secs,
+			     uint8_t out[ANE_SHA256_LEN], int portable_only)
+{
+	struct ane_sha256_ctx c;
+	int err;
+
+	ane_sha256_init(&c);
+	ane_sha256_ctx_force_portable(&c, portable_only);
+	err = ane_m2_program_digest_ctx(&c, secs, out);
+	return err;
 }
 
 int ane_m2_open(struct ane_nn *nn, const char *path,
