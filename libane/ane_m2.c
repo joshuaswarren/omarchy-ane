@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <ane_accel.h>
+#include "ane_sha256.h"
 #include "ane.h"
 #include "ane_m2.h"
 
@@ -2145,6 +2146,58 @@ static int ane_m2_fread_all(const char *path, void **out, uint64_t *out_size)
 	return 0;
 }
 
+/* The driver's PROG_LOAD dedup key: SHA-256 over every section's
+ * (u64 id, u64 size, bytes), sections in id order. Uses the automatic
+ * compression path. */
+int ane_m2_program_digest(const struct ane_m2_sections *secs,
+			  uint8_t out[ANE_SHA256_LEN])
+{
+	return ane_m2_program_digest_ctx(NULL, secs, out);
+}
+
+/* Same, with the compression path chosen by the caller: PORTABLE = 1
+ * forces the reference C block (tests), 0 uses the context's default.
+ * CTX may be NULL for the automatic path. */
+int ane_m2_program_digest_ctx(struct ane_sha256_ctx *c,
+			      const struct ane_m2_sections *secs,
+			      uint8_t out[ANE_SHA256_LEN])
+{
+	struct ane_sha256_ctx local;
+	unsigned i;
+
+	if (!c) {
+		ane_sha256_init(&local);
+		c = &local;
+	}
+	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+		uint64_t hdr[2] = { ane_m2_section_ids[i],
+				    secs->sec[i].size };
+
+		if (!secs->sec[i].data || !secs->sec[i].size) {
+			return -EINVAL;
+		}
+		ane_sha256_update(c, hdr, sizeof(hdr));
+		ane_sha256_update(c, secs->sec[i].data,
+				  secs->sec[i].size);
+	}
+	ane_sha256_final(c, out);
+	return 0;
+}
+
+/* Context-controlled compression path: PORTABLE_ONLY = 1 forces the
+ * reference C block (tests), 0 uses the automatic selection. */
+int ane_m2_program_digest_ex(const struct ane_m2_sections *secs,
+			     uint8_t out[ANE_SHA256_LEN], int portable_only)
+{
+	struct ane_sha256_ctx c;
+	int err;
+
+	ane_sha256_init(&c);
+	ane_sha256_ctx_force_portable(&c, portable_only);
+	err = ane_m2_program_digest_ctx(&c, secs, out);
+	return err;
+}
+
 int ane_m2_open(struct ane_nn *nn, const char *path,
 		const struct ane_m2_port_spec *ports, uint32_t port_count)
 {
@@ -2158,6 +2211,8 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	uint32_t i;
 	uint32_t order[ANE_M2_SEC_COUNT];
 	uint32_t tmp;
+	uint8_t digest[ANE_SHA256_LEN];
+	int found = 0;
 	int created_ios = 0;
 	int err;
 
@@ -2187,14 +2242,33 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 		return err;
 	}
 
+	/* Cross-process reuse: this digest is the driver's own PROG_LOAD
+	 * dedup key (u64 id, u64 size, bytes, sections in id order). On
+	 * a hit the program is already HELD -- skip the six section BOs
+	 * entirely (a 223 MiB duplicate once had no dma32 window to land
+	 * in) and reuse the held program's identity; the firmware keeps
+	 * reading the sections the first loader supplied, so it never
+	 * sees a different IOVA. No lookup support (-ENOTTY, older
+	 * kernel) or a miss falls through to the classic path. */
+	if (ane_m2_program_digest(&ctx->secs, digest) == 0) {
+		struct drm_ane_prog_lookup lk = { 0 };
+
+		lk.digest_ptr = (uint64_t)(uintptr_t)digest;
+		lk.digest_len = ANE_SHA256_LEN;
+		if (ioctl(nn->fd, DRM_IOCTL_ANE_PROG_LOOKUP, &lk) == 0) {
+			found = lk.found_out;
+			ctx->prog_id = found ? lk.prog_id_out : 0;
+		}
+	}
+
 	/* Largest section first: the dma32 window serves the big
 	 * contiguous request while its largest hole is still fresh, and
 	 * the small sections fill what remains. ctx->sec_bo[] stays
 	 * indexed by section slot; only the visit order changes. */
-	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+	for (i = 0; i < ANE_M2_SEC_COUNT && !found; i++) {
 		order[i] = i;
 	}
-	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+	for (i = 0; i < ANE_M2_SEC_COUNT && !found; i++) {
 		uint32_t j;
 
 		for (j = i + 1; j < ANE_M2_SEC_COUNT; j++) {
@@ -2206,7 +2280,7 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 			}
 		}
 	}
-	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+	for (i = 0; i < ANE_M2_SEC_COUNT && !found; i++) {
 		uint32_t slot = order[i];
 
 		err = bo_alloc(nn, &ctx->sec_bo[slot],
@@ -2230,14 +2304,15 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	 * The M2 driver accepts the binds for ABI compatibility and
 	 * ignores them: the LOAD record already carries each section's
 	 * IOVA and size, and the generic section image inside
-	 * generic.bin is fully prepared here. */
-	for (i = 0; i < ANE_M2_SEC_COUNT; i++) {
+	 * generic.bin is fully prepared here. Skipped on a lookup hit:
+	 * the held program already has its identity. */
+	for (i = 0; i < ANE_M2_SEC_COUNT && !found; i++) {
 		sec_args[i].id = ane_m2_section_ids[i];
 		sec_args[i].bo_handle = ctx->sec_bo[i].handle;
 		sec_args[i].size = ctx->secs.sec[i].size;
 		sec_args[i].offset = 0;
 	}
-	for (i = 0; i < ctx->model.io_count; i++) {
+	for (i = 0; i < ctx->model.io_count && !found; i++) {
 		binds[i].buffer_id = ctx->model.io[i].buffer_id;
 		binds[i].bo_handle = ctx->io_bo[i].handle;
 		/* The host's scratch entry (model.io[i].dir == 2) is
@@ -2255,12 +2330,13 @@ int ane_m2_open(struct ane_nn *nn, const char *path,
 	load.generic_count = ctx->model.io_count;
 	load.prog_id_out = 0;
 	load.pad = 0;
-	if (ioctl(nn->fd, DRM_IOCTL_ANE_PROG_LOAD, &load) < 0) {
+	if (!found && ioctl(nn->fd, DRM_IOCTL_ANE_PROG_LOAD, &load) < 0) {
 		err = -errno;
 		ane_m2_err("DRM_IOCTL_ANE_PROG_LOAD failed: %s\n", strerror(errno));
 		goto error;
 	}
-	ctx->prog_id = load.prog_id_out;
+	if (!found)
+		ctx->prog_id = load.prog_id_out;
 
 	create.prog_id = ctx->prog_id;
 	create.proc_id_out = 0;

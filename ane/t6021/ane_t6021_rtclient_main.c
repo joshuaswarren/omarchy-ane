@@ -1072,8 +1072,11 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
  * boot answered with a protocol error and quarantined the device. Two
  * loads of byte-identical sections therefore share one firmware program
  * and one process. The key is SHA-256 over every section's id, size and
- * bytes, so a client can only reach a program whose bytes it also
- * supplied. Protected by ane_t6021_fw_lock. */
+ * bytes. PROG_LOOKUP lets any client of this device learn whether such
+ * a digest is held and reuse its program identity (EXEC and CREATE
+ * always accepted global ids, so this adds no new reach): a same-uid
+ * single-tenant lab scope, NOT tenant isolation. Protected by
+ * ane_t6021_fw_lock. */
 #define ANE_T6021_MAX_PROGRAMS 250
 
 struct ane_t6021_prog {
@@ -1805,6 +1808,36 @@ static int ane_t6021_dyn_pg_on(struct ane_rtclient *ane)
 	return ret;
 }
 
+static int ane_t6021_prog_lookup_ioctl(struct drm_device *drm, void *data,
+				       struct drm_file *file)
+{
+	struct drm_ane_prog_lookup *args = data;
+	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
+	struct ane_t6021_prog *prog;
+	u8 digest[SHA256_DIGEST_SIZE];
+
+	if (!ane || args->pad || args->digest_len != SHA256_DIGEST_SIZE)
+		return -EINVAL;
+	if (copy_from_user(digest, u64_to_user_ptr(args->digest_ptr),
+			   SHA256_DIGEST_SIZE))
+		return -EFAULT;
+	/* The quarantine check runs INSIDE the fw lock: the lock is what
+	 * serializes lookup against a command that times out and
+	 * quarantines the device, so eligibility can never be published
+	 * across a quarantine (w7K review of aef7381). The quarantined
+	 * firmware is the same firmware that would refuse the load. */
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		mutex_unlock(&ane_t6021_fw_lock);
+		return -ENODEV;
+	}
+	prog = ane_t6021_prog_find(digest);
+	args->found_out = prog ? 1 : 0;
+	args->prog_id_out = prog ? prog->prog_id : 0;
+	mutex_unlock(&ane_t6021_fw_lock);
+	return 0;
+}
+
 static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 				       struct drm_file *file)
 {
@@ -1840,6 +1873,7 @@ static const struct drm_ioctl_desc ane_t6021_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ANE_PROG_LOAD, ane_t6021_prog_load_ioctl, 0),
 	DRM_IOCTL_DEF_DRV(ANE_PROC_CREATE, ane_t6021_proc_create_ioctl, 0),
 	DRM_IOCTL_DEF_DRV(ANE_EXEC, ane_t6021_exec_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_PROG_LOOKUP, ane_t6021_prog_lookup_ioctl, 0),
 };
 
 /* Driver fops: the accel-core entry points plus our BO mmap (the core

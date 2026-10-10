@@ -32,6 +32,7 @@ extern "C" {
 #define DRM_ANE_PROG_LOAD	0x4
 #define DRM_ANE_PROC_CREATE	0x5
 #define DRM_ANE_EXEC		0x6
+#define DRM_ANE_PROG_LOOKUP	0x7
 
 struct drm_ane_bo_init {
 	__u32 handle;
@@ -106,6 +107,23 @@ struct drm_ane_exec {
 	__u64 io_ptr;		/* struct drm_ane_exec_io[count] */
 };
 
+/*
+ * DRM_ANE_PROG_LOOKUP: is this exact program already loaded? The key is
+ * the same digest PROG_LOAD computes (SHA-256 over every section's id,
+ * size and bytes, sections in ascending id order). On a hit the caller
+ * may skip section BO allocation entirely and go straight to
+ * PROC_CREATE + EXEC with the returned ProgramId -- the firmware keeps
+ * reading the sections the first loader supplied. A miss publishes
+ * nothing; the caller loads as before.
+ */
+struct drm_ane_prog_lookup {
+	__u64 digest_ptr;	/* 32-byte SHA-256 */
+	__u32 digest_len;	/* must be 32 */
+	__u32 pad;
+	__u32 found_out;	/* 1 when prog_id_out is usable */
+	__u32 prog_id_out;
+};
+
 #define DRM_IOCTL_ANE_BO_INIT \
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_BO_INIT, struct drm_ane_bo_init)
 #define DRM_IOCTL_ANE_BO_FREE \
@@ -119,6 +137,9 @@ struct drm_ane_exec {
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_PROC_CREATE, struct drm_ane_proc_create)
 #define DRM_IOCTL_ANE_EXEC \
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_EXEC, struct drm_ane_exec)
+#define DRM_IOCTL_ANE_PROG_LOOKUP \
+	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_PROG_LOOKUP, \
+		 struct drm_ane_prog_lookup)
 
 #if defined(__cplusplus)
 }
