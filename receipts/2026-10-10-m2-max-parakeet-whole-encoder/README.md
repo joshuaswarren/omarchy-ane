@@ -16,6 +16,14 @@ Facts from one run. Raw files are in this directory.
 - Greedy TDT decode of that output, run on a separate machine (`ct-report.json`): 104 tokens, tokens equal golden, transcript equal golden, word error rate 0.0, mask equal golden.
 - The same output against the CPU NumPy reference (`hidden_vs_cpu_reference` in `ct-report.json`): relative L2 0.02465, not bit-exact. This is a different comparison from the bit-exact one above.
 
+## Run conditions
+- Not a quiet machine. Other work ran on the same M2 during the timed cell (about 16:34:45 to 16:34:51Z): a GPU test battery from another lane (two parts in flight) and two other ANE tickets from the same lane as this run. The device calls were serialized by the ane-run lock (this 20-call process held it for its whole run), so no other ANE call ran in between. The timing is a beside-GPU number; the bit-exact result does not depend on it. No isolated timing was taken.
+- Command as run: `flock /var/tmp/ane-run.lock timeout 120 ane-run --anec program-0.anec --ports ports.json --in attention_mask=... --in input_features=... --out linear_217_cast_fp16=... --out output_mask_f=... --repeat 20 --time`, started after a 60 s sleep. No CPU pinning, no governor change.
+- Runner source: the test tree on the M2 had no git metadata. Its build files match omarchy-ane commit e1a2780b1 (2026-10-08) by git blob id; `libane/ane_m2.c` differs from the current main. The `ane-run` binary was rebuilt for the run: sha256 943ae8c67598175a542f9a2c370852d60ba9a810cb1e8db11fed92efc2daf2e1, gcc 16.1.1, `-O3`. `ane-selfcheck` passed before the run.
+- Program origin: the ANEC was converted on the M2 from an HWX that Apple's compiler produced (H14 target, on a Mac Studio with macOS 26.6.2). It was compiled on 2026-10-01 and reused for this run.
+- Temperature and CPU frequency were not recorded during the run.
+- ANE only: this run made no GPU API call. No ANE worker process was involved (plain `ane-run`).
+
 ## Earlier run
 2026-10-01, kernel 7.1.13-3-1-ARCH, an earlier module build: median 254.497 and 254.517 ms in two processes of 20 calls, output equal to the golden. One run each, so the 1 ms (0.4 percent) difference is not a speed claim.
 
