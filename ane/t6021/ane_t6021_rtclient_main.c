@@ -1805,6 +1805,31 @@ static int ane_t6021_dyn_pg_on(struct ane_rtclient *ane)
 	return ret;
 }
 
+static int ane_t6021_prog_lookup_ioctl(struct drm_device *drm, void *data,
+				       struct drm_file *file)
+{
+	struct drm_ane_prog_lookup *args = data;
+	struct ane_rtclient *ane = to_ane_t6021_drm(drm)->ane;
+	struct ane_t6021_prog *prog;
+	u8 digest[SHA256_DIGEST_SIZE];
+
+	if (!ane || args->pad || args->digest_len != SHA256_DIGEST_SIZE)
+		return -EINVAL;
+	/* A quarantined firmware is the same firmware that would refuse
+	 * the load: never publish eligibility across a quarantine. */
+	if (atomic_read(&ane_t6021_quarantined))
+		return -ENODEV;
+	if (copy_from_user(digest, u64_to_user_ptr(args->digest_ptr),
+			   SHA256_DIGEST_SIZE))
+		return -EFAULT;
+	mutex_lock(&ane_t6021_fw_lock);
+	prog = ane_t6021_prog_find(digest);
+	args->found_out = prog ? 1 : 0;
+	args->prog_id_out = prog ? prog->prog_id : 0;
+	mutex_unlock(&ane_t6021_fw_lock);
+	return 0;
+}
+
 static int ane_t6021_proc_create_ioctl(struct drm_device *drm, void *data,
 				       struct drm_file *file)
 {
@@ -1840,6 +1865,7 @@ static const struct drm_ioctl_desc ane_t6021_ioctls[] = {
 	DRM_IOCTL_DEF_DRV(ANE_PROG_LOAD, ane_t6021_prog_load_ioctl, 0),
 	DRM_IOCTL_DEF_DRV(ANE_PROC_CREATE, ane_t6021_proc_create_ioctl, 0),
 	DRM_IOCTL_DEF_DRV(ANE_EXEC, ane_t6021_exec_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(ANE_PROG_LOOKUP, ane_t6021_prog_lookup_ioctl, 0),
 };
 
 /* Driver fops: the accel-core entry points plus our BO mmap (the core
