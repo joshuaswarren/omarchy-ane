@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `docs/ultra-test-runbook.md`, `docs/h15-volunteer.md`: audit against the
+  code they describe. Opt-in path is `/etc/omarchy-mac-boot/dtb-overlays.opt-in`
+  (`omarchy-ane-dt` has read that since 2026-10-04; the runbook still named the
+  `omarchy-platform` one). Stage 2 names the die-1 smoke honestly: the shipped
+  smoke measures the runner's default device and its `die` field is computed
+  from the first bound node, so the die-1 run is `ANE_DEVICE=1` and the report
+  must say which run each JSON came from; the stop rule adds the die-1 mailbox
+  (0x2285408000), which `promotion_check.py` counts as an ANE line; the
+  `ultra-die1.md §9.2` anchors point at §9 fact 2, the only numbering that
+  section has. `h15-volunteer.md`: the kernel fork is
+  `joshuaswarren/aurora-linux-tbnet` (branch `ane-driver-aurora` at `efe6e359`
+  re-verified via the old name's redirect), and the collector-not-wired check
+  is re-dated 2026-10-10.
+
 - `ane_t6021`: the parked-BO pool never parked anything: the pool entry's
   size was never recorded, so every admission check saw 0 bytes and every
   freed duplicate section was really freed (measured on the M2,

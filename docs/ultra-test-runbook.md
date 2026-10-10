@@ -3,7 +3,7 @@
 For a volunteer with an M1 Ultra (T6002) or M2 Ultra (T6022) Mac running
 Omarchy (or willing to install it). Everything here is opt-in: nothing turns
 on by itself, and every stage is reversible by removing one line from
-`/etc/omarchy-platform/dtb-overlays.opt-in` and running `sudo omarchy-ane-dt
+`/etc/omarchy-mac-boot/dtb-overlays.opt-in` and running `sudo omarchy-ane-dt
 apply && sudo update-m1n1 && reboot`. Stages build on each other; do not skip.
 
 Rules that keep this safe:
@@ -43,7 +43,7 @@ ANE node means the kernel tree needs the overlay first — go to stage 1.
 Purpose: the known-good die. This is the M0/M1-proven path.
 
 ```
-echo ane-t6002 | sudo tee /etc/omarchy-platform/dtb-overlays.opt-in
+echo ane-t6002 | sudo tee /etc/omarchy-mac-boot/dtb-overlays.opt-in
 sudo omarchy-ane-dt apply && sudo update-m1n1 && sudo reboot
 # after boot:
 omarchy-ane-dt status
@@ -70,20 +70,25 @@ power-island ACTUAL nibbles through the SET window before every engine write
 so the first resume names the die-1 word layout.
 
 ```
-echo ane-t6002-die1 | sudo tee -a /etc/omarchy-platform/dtb-overlays.opt-in
+echo ane-t6002-die1 | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in
 echo 'options ane allow_unqualified=1' | sudo tee /etc/modprobe.d/ane-unqualified.conf
 sudo omarchy-ane-dt apply && sudo update-m1n1 && sudo reboot
 # after boot:
 omarchy-ane-dt status                 # node= now lists BOTH ane nodes
 ls -l /dev/accel/                     # expect accel0 AND accel1
 sudo dmesg | grep -E 'loaded ane|UNQUALIFIED|ps probe'
-omarchy-ane-smoke --timeout 120       # die field says which device it ran
+omarchy-ane-smoke --timeout 120       # die field names the die it measured
+sudo ANE_DEVICE=1 omarchy-ane-smoke --timeout 120   # the same run on die 1
 sudo omarchy-ane-run --dev 1 --anec /usr/share/omarchy-ane/fixtures/h13-anec/add/program-0.anec \
   --in 0=/tmp/a.fp16 --in 1=/tmp/b.fp16 --out /tmp/y.fp16
 ```
 
 (`a.fp16`/`b.fp16`: any 16 KiB fp16 files; the smoke tool is the check that
-matters — the `--dev 1` run above is the manual "die 1 opens" probe.)
+matters — the `--dev 1` run above is the manual "die 1 opens" probe. One
+caveat: the smoke `die` field is computed from the module's first bound
+device, not from the device `ANE_DEVICE` opens, so on a both-dies box it may
+read `0` even for the die-1 run until the smoke grows a device selector. Say
+in your report which run each JSON came from.)
 
 What to send back: `omarchy-ane-dt status`, `ls -l /dev/accel/`, the dmesg
 lines above (especially the ACTUAL-nibble probe lines and the
@@ -92,12 +97,13 @@ lines above (especially the ACTUAL-nibble probe lines and the
 
 Verdict:
 - **Die-1 bind** = two `loaded ane` lines, two accel nodes, no DART fault.
-- **Die-1 passing row** = the smoke run against die 1 (the smoke `die` field
-  says 1) with 20/20 bit-exact against the same H13 golden, and no
-  ANE/DART/mailbox fault line. Promotion rules judge dies separately: die 1
-  never rides the die-0 row.
-- A genpd timeout, an external abort, or a DART fault on die-1 addresses
-  (0x2285800000-0x2285820000) = STOP, power-cycle, send everything. Do not
+- **Die-1 passing row** = the `ANE_DEVICE=1` smoke run with 20/20 bit-exact
+  against the same H13 golden, and no ANE/DART/mailbox fault line (the smoke
+  `die` field caveat above applies; name the run in your report).
+  Promotion rules judge dies separately: die 1 never rides the die-0 row.
+- A genpd timeout, an external abort, or a DART fault on the die-1 DARTs
+  (0x2285800000-0x2285820000) or a fault naming the die-1 mailbox
+  (0x2285408000) = STOP, power-cycle, send everything. Do not
   retry: the die-1 ps word layout is the open measurement, and the ACTUAL
   log from the first attempt is exactly what we need.
 
@@ -106,12 +112,12 @@ Verdict:
 Die 0 uses key `ane-t6022`; die 1 would use `ane-t6022-die1`, which ships
 **data-only** today: nothing installs or applies it, by design. The die-1
 firmware image (`t602x_ane1_fw_selene_rc4x`, BuildManifest `Ap,ANE1`) has no
-recorded SHA-256 (docs/ultra-die1.md §9.2), `omarchy-ane-firmware-fetch`
+recorded SHA-256 (docs/ultra-die1.md §9, fact 2), `omarchy-ane-firmware-fetch`
 refuses with `no pin for T6022 die 1` when it sees a die-1 node, and the
 driver validates whatever it stages against the die-0 pin — a non-identical
 image refuses at load. So the honest state is: **T6022 die 1 is unproven end
 to end** (firmware boot, RTKit handshake, mailbox, pmu page 0x228e084000 all
-INFERENCE until a live capture). A T6022 volunteer's useful stage 0 is the
+INFERENCE until a live capture; docs/ultra-die1.md §9, fact 2). A T6022 volunteer's useful stage 0 is the
 same probe-only capture as above; do not fabricate a die-1 run.
 
 ## What each verdict means (promotion rule, per die)

@@ -10,7 +10,7 @@ unexpected line.
 
 - An M3 Linux box with root. T8122 boards: j433, j434, j504, j613,
   j615. T6030/T6031: same steps, matching overlay and `optin` key.
-- A kernel from `joshuaswarren/aurorasilicon-linux`, branch
+- A kernel from `joshuaswarren/aurora-linux-tbnet`, branch
   `ane-driver-aurora` (commit `efe6e359`) or a newer `aurora-wip`
   branch, with its t8122 board DTBs installed. Check `uname -r`.
 - `dtc` and `fdtoverlay` 1.7.x on PATH.
@@ -170,4 +170,4 @@ Send: both JSON files (field `h15_stage` names the stage), the full
 `dmesg | grep ane_h15` output, `uname -r`, and your board model from
 `/proc/device-tree/model`. Collector status: NOT WIRED. No code in
 this repository reads the `h15_stage` JSON today (checked
-2026-10-03), so send the files to the ANE thread directly.
+2026-10-10), so send the files to the ANE thread directly.
