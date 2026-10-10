@@ -26,7 +26,7 @@ The run started after a 60 s idle. It used one decoder process. It used one `ane
 ## Result
 - The decode finished with exit code 0 in 35.0 s. It ran 27 steps: 11 prefill steps and 16 generated tokens.
 - The sha256 of the logits file is 7384c10e4d21db0246ff853a0afbe03669de84c315af211388fa2c256ab83ea3. It equals the sha256 of the per-call baseline run.
-- Decode step wall time: p10 0.819 s, p50 0.826 s, p90 0.835 s. That is 1.2118 tokens per second. The ANE part of a step was p50 0.163 s.
+- Decode step wall time: p10 0.819 s, p50 0.826 s, p90 0.835 s. The rate is 1.2118 tokens per second. It is 16 tokens divided by the sum of the 16 step times, which is a mean step of about 0.825 s. It is not 1 divided by the p50. The ANE part of a step was p50 0.163 s.
 - `bo_total_bytes` after the run was 2,805,055,488. The 38 unique program sections take 2,754,388,032 of that.
 - A memory probe after the run found a largest free window of 240 MiB.
 - Before and after the run, no dmesg line matched these patterns. The patterns were a fence wait, a hung task, an `ane_t6021` fault or error, `EXCH`, `DART fault` and `quarantin`.
