@@ -102,7 +102,7 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
+check: ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool \
 	test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
@@ -111,6 +111,9 @@ check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
 	./test_ane_session_cache
 	./test_ane_bo_probe
 	./test_t6021_prog_lookup
+	python3 test_qwen_resident.py
+	python3 test_qwen_resident_ab.py
+	python3 test_qwen_resident_proxy.py
 ifeq ($(ASAN_OK),yes)
 	$(MAKE) test_ane_session_cache_lsan
 	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
@@ -146,4 +149,4 @@ else
 endif
 
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log
+	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log
