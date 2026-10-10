@@ -1,0 +1,20 @@
+== qwen-resident-only 2026-10-10T22:04:14Z dry=0 nt=16 kernel=7.1.12-2-12.6-sep-ARCH boot=ed0b2fd7
+module version=bd34a12 srcversion=C133FDFAB7C937204AE2186 bo_total=0 pool_bytes=0
+bo_total BEFORE the run: 0
+-- idle 60 s
+-- resident decode (one process) 22:05:14
+decode run1 rc=0 wall_s=35.0 logits_sha=7384c10e4d21db0246ff853a0afbe03669de84c315af211388fa2c256ab83ea3
+steps 27 generated 16 prefill 11
+decode step wall s p10/p50/p90 [0.819, 0.826, 0.835]
+ane wall s p10/p50/p90 [0.162, 0.163, 0.172]
+prefill step ane s p50 0.182
+decode tok/s 1.2118
+bo_total RIGHT AFTER THE RUN (process still holding its session if any): 2805055488 pool_bytes=0
+bo_total AFTER EXIT: 2805055488 (after exit minus floor = io memory 329b9da holds for ever for one session; unique 38-program sections floor = 2754388032 B)
+io memory held for ever for one session, estimate = 50667456 B
+BIT-IDENTICAL run1 == per-call baseline sha
+-- probe after (one more open, after everything else) 22:05:49
+r0    2 MiB (iova class   2 MiB) ok
+r0    1 MiB (iova class   1 MiB) ok
+r0 largest=240 MiB
+== qwen-resident-only END rc=0 2026-10-10T22:05:49Z
