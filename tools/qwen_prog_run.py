@@ -14,6 +14,8 @@ to <work>/<name>.f16; use --out NAME=FILE to select another destination.
 
 import argparse
 import json
+import os
+import select
 import shlex
 import subprocess
 import sys
@@ -133,6 +135,153 @@ def ane_call(anec, ports_path, ports, arrays, work, ane_run, timeout, repeat=1, 
             raise Refuse(f"{name}: output bytes do not match tile_bytes")
         outputs[name] = unpack_surface(raw, tuple(ports[name]["shape"]), ports[name]["strides"])
     return run.returncode, run.stdout + run.stderr, outputs
+
+
+class ResidentSession:
+    """One long-lived ane-session process holding the programs open.
+
+    Line protocol with raw surface bytes on the same stream (tools/
+    ane-session.c): LOAD/FREE once per configure, then per call CALL with
+    the packed input surfaces (pack_surface bytes, ports.json order) and
+    the raw output surfaces back; no per-call file pack/unpack. The
+    device lock is taken by the session on LOCK/UNLOCK (per call or per
+    step, the caller's choice) and is released by the kernel if the
+    session dies. A Refuse from LOAD is a pre-device guard (max-progs,
+    bo-cap) or table rejection; any CALL failure raises SystemExit with
+    the STOP text and the session stderr tail in <work>/failed-ane-run.log,
+    like ane_call's failure path.
+    """
+
+    def __init__(self, session_bin, work, timeout, lock_path="/var/tmp/ane-run.lock",
+                 dev=0):
+        self.work = Path(work)
+        self.work.mkdir(parents=True, exist_ok=True)
+        self.log_path = self.work / "ane-session.log"
+        self.log = open(self.log_path, "ab")
+        self.proc = subprocess.Popen(
+            [str(session_bin), "--dev", str(dev), "--lock", str(lock_path)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
+            bufsize=0)
+        self.timeout = timeout
+        self.names = []
+
+    def _line(self):
+        ready, _, _ = select.select([self.proc.stdout], [], [], self.timeout)
+        if not ready:
+            self.kill()
+            raise SystemExit(f"STOP session: no reply within {self.timeout}s")
+        line = self.proc.stdout.readline()
+        if not line:
+            self.kill()
+            raise SystemExit("STOP session: exited early")
+        return line.decode(errors="replace").strip()
+
+    def _read(self, n):
+        buf = bytearray()
+        while len(buf) < n:
+            chunk = self.proc.stdout.read(n - len(buf))
+            if not chunk:
+                self.kill()
+                raise SystemExit("STOP session: short output read")
+            buf.extend(chunk)
+        return bytes(buf)
+
+    def _write_all(self, data):
+        """stdin is an unbuffered pipe (bufsize=0): write() may be short."""
+        view = memoryview(data)
+        while view:
+            n = self.proc.stdin.write(view)
+            if not n:
+                raise BrokenPipeError("session stdin closed")
+            view = view[n:]
+
+    def _command(self, text):
+        self._write_all((text + "\n").encode())
+
+    def _fail(self, tag, name, detail):
+        self.log.flush()
+        (self.work / "failed-ane-run.log").write_text(
+            f"{tag} {name}: {detail}\n" +
+            self.log_path.read_text(errors="replace")[-4000:])
+        raise SystemExit(f"STOP {tag} {name}: {detail}")
+
+    def ping(self):
+        self._command("PING")
+        if self._line() != "OK PONG":
+            self._fail("PING", "", "bad reply")
+
+    def load(self, name, anec, ports_path):
+        self._command(f"LOAD {name} {anec} {ports_path}")
+        line = self._line()
+        if not line.startswith("OK LOAD "):
+            raise Refuse(f"{name}: session refused LOAD: {line}")
+        parts = line.split()
+        if len(parts) != 5:
+            raise Refuse(f"{name}: malformed LOAD reply: {line}")
+        n_in, n_out = parts[3], parts[4]
+        self.names.append(name)
+        return int(n_in), int(n_out)
+
+    def free(self, name):
+        self._command(f"FREE {name}")
+        line = self._line()
+        if not line.startswith("OK FREE "):
+            raise Refuse(f"{name}: session refused FREE: {line}")
+        self.names.remove(name)
+
+    def lock(self):
+        self._command("LOCK")
+        if self._line() != "OK LOCK":
+            self._fail("LOCK", "", "bad reply")
+
+    def unlock(self):
+        self._command("UNLOCK")
+        if self._line() != "OK UNLOCK":
+            self._fail("UNLOCK", "", "bad reply")
+
+    def call(self, name, ports, arrays):
+        """Pack arrays into the CALL payload; returns (outputs, exec_ms)."""
+        ins = [(n, p) for n, p in ports.items() if p["direction"] == "input"]
+        outs = [(n, p) for n, p in ports.items() if p["direction"] == "output"]
+        payload = b"".join(
+            pack_surface(arrays[n].reshape(p["shape"]), p["strides"],
+                         p["tile_bytes"]).tobytes() for n, p in ins)
+        self._command(f"CALL {name}")
+        self._write_all(payload)
+        line = self._line()
+        if not line.startswith("OK CALL "):
+            self._fail("CALL", name, line)
+        parts = line.split()
+        if len(parts) != 4 or parts[2] != name:
+            self._fail("CALL", name, f"bad reply {line!r}")
+        raw = self._read(sum(p["tile_bytes"] for _, p in outs))
+        outputs, off = {}, 0
+        for n, p in outs:
+            size = p["tile_bytes"]
+            outputs[n] = unpack_surface(raw[off:off + size],
+                                        tuple(p["shape"]), p["strides"])
+            off += size
+        return outputs, int(parts[3]) / 1000.0
+
+    def kill(self):
+        if self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+
+    def close(self):
+        """QUIT; the exit status reports any failed CALL."""
+        if self.proc.poll() is None:
+            try:
+                self._command("QUIT")
+                self._line()
+            except (SystemExit, BrokenPipeError, OSError):
+                pass
+            self.proc.stdin.close()
+            rc = self.proc.wait(timeout=30)
+            self.log.close()
+            return rc
+        self.log.close()
+        return self.proc.returncode
 
 
 def main(argv=None):
