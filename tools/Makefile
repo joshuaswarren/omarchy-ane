@@ -24,7 +24,7 @@ ane-selfcheck: ane-selfcheck.c ane_f16_add.h $(LIB) ../libane/ane.h \
 
 # libane sources rebuilt with every unset stack variable filled with 0xfe,
 # and linked against the fake DRM node in test_libane_ioctl.c.
-LIBANE_SRC = ../libane/ane.c ../libane/ane_m2.c
+LIBANE_SRC = ../libane/ane.c ../libane/ane_m2.c ../libane/ane_sha256.c
 
 test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
 	../libane/ane_m2.h ../libane/ane_bind.h ../libane/ane_f16.h \
@@ -74,6 +74,16 @@ test_ane_bo_probe: test_ane_bo_probe.c ane-bo-probe.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_bo_probe.c -lm
 
+# PROG_LOOKUP digest tests: NIST SHA-256 vectors and the driver's
+# program-digest construction over a real fixture (host only).
+test_t6021_prog_lookup: test_t6021_prog_lookup.c ../libane/ane_sha256.c \
+	../libane/ane_sha256.h ../libane/ane_m2.h ../libane/ane.h \
+	../libane/ane_bind.h ../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I../libane -I../ane/src/uapi/drm \
+		-I/usr/include/libdrm -o $@ \
+		test_t6021_prog_lookup.c ../libane/ane_sha256.c \
+		../libane/ane_m2.c ../libane/ane.c -lm
+
 # The same session-cache test under LeakSanitizer: the cache-hit path once
 # leaked one port table per hit and no plain run could see it. Skipped when
 # the compiler has no AddressSanitizer.
@@ -87,13 +97,14 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
 check: ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool \
-	test_ane_session_cache test_ane_bo_probe
+	test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
 	./test_t6021_pool
 	./test_ane_session_cache
 	./test_ane_bo_probe
+	./test_t6021_prog_lookup
 ifeq ($(ASAN_OK),yes)
 	$(MAKE) test_ane_session_cache_lsan
 	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
