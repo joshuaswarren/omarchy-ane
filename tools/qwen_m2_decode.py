@@ -18,6 +18,18 @@ table from qwen_m2_conform.py when --ports-dir is given) must hold exactly the
 manifest's inputs, lane outputs and state outputs. Each call is
 `flock /var/tmp/ane-run.lock timeout T ane-run --ports` (qwen_prog_run.ane_call).
 
+--resident replaces the per-call subprocess with one ane-session process
+(tools/ane-session.c): the programs LOAD once per configure, then each step
+issues its CALLs in-process with packed surfaces over the pipe (no per-call
+file pack/unpack). The device lock is held per CALL (--resident-lock call,
+default) or across the step (--resident-lock step), and is always released
+between steps. The session guards refuse a LOAD before any device open when
+the program count would pass --max-progs (default 250, the driver's program
+table bound) or the page-aligned BO projection would pass the bo_total cap
+(module sysfs or --bo-cap-mb): those are REFUSE (exit 2). A CALL failure (ERR
+reply, short read, or no reply within the timeout) is a STOP: the run ends and
+the session stderr goes to <out>/surf/failed-ane-run.log.
+
 --dump compares every port of every program at the dump's steps with the M1
 execution when the prompt is the dump's prompt: host-built inputs (context
 tables, the program-0 embedding, zero states at step 0) must be bit-exact;
@@ -56,7 +68,7 @@ import numpy as np
 
 from qwen_m2_conform import (BAND_FACTOR, FLOOR, KERNEL_TS, STOP_KERNEL, STOP_LOG,
                              compare)
-from qwen_prog_run import Refuse, ane_call, port_map_from_table
+from qwen_prog_run import Refuse, ResidentSession, ane_call, port_map_from_table
 
 f16 = np.float16
 
@@ -142,6 +154,12 @@ class Decoder:
         self.manifest = manifest
         self.work = Path(args.out) / "surf"
         self.work.mkdir(parents=True, exist_ok=True)
+        self.session = ResidentSession(args.session_bin, self.work,
+                                       args.timeout,
+                                       lock_path=getattr(args, "session_lock",
+                                                         None)
+                                       or "/var/tmp/ane-run.lock") \
+            if args.resident else None
         self.configure(int(manifest["max_len"]))
 
     def configure(self, m):
@@ -172,6 +190,18 @@ class Decoder:
             if got != want:
                 raise Refuse(f"{path}: ports {sorted(got.items())} do not match the manifest {sorted(want.items())}")
             self.tables.append((anec, path, ports))
+        if self.session is not None:
+            for name in list(self.session.names):
+                self.session.free(name)
+            for i, (anec, path, ports) in enumerate(self.tables):
+                n_in = len([p for p in ports.values()
+                            if p["direction"] == "input"])
+                n_out = len([p for p in ports.values()
+                             if p["direction"] == "output"])
+                got = self.session.load(f"prog_{i:03d}", anec, path)
+                if got != (n_in, n_out):
+                    raise Refuse(f"prog_{i:03d}: session reports {got}, "
+                                 f"table holds ({n_in}, {n_out})")
         self.reset()
 
     def reset(self):
@@ -180,6 +210,18 @@ class Decoder:
 
     def call(self, i, arrays):
         anec, table_path, ports = self.tables[i]
+        if self.session is not None:
+            name = f"prog_{i:03d}"
+            if self.args.resident_lock == "call":
+                self.session.lock()
+            try:
+                return self.session.call(name, ports, arrays)
+            finally:
+                if self.args.resident_lock == "call":
+                    try:
+                        self.session.unlock()
+                    except (BrokenPipeError, OSError):
+                        pass  # the session died; the STOP carries the error
         status, log, outputs = ane_call(anec, table_path, ports, arrays, self.work,
                                         self.args.ane_run, self.args.timeout)
         stop = [s for s in STOP_LOG if s in log] + (["timeout"] if status == 124 else [])
@@ -195,6 +237,9 @@ class Decoder:
         [wall s, exec ms]). check(i, arrays, outputs) sees every execution."""
         vals = ctx_vals(pos, self.max_len, cos, sin)
         lanes, hidden, timing = {}, embed[token][None], []
+        step_lock = self.session is not None and self.args.resident_lock == "step"
+        if step_lock:
+            self.session.lock()
         for i, pr in enumerate(self.progs):
             if pr["group_start"]:
                 lanes["x"] = hidden
@@ -212,7 +257,17 @@ class Decoder:
                 self.states[i][s["in_port"]] = outs[s["out_port"]].reshape(s["in_shape"])
             if pr["group_end"]:
                 hidden = lanes["h"]
+        if step_lock:
+            self.session.unlock()
         return hidden.reshape(-1).astype(np.float32), timing
+
+    def close_session(self):
+        """QUIT the resident session; nonzero exit reports a failed CALL."""
+        if self.session is not None:
+            rc = self.session.close()
+            self.session = None
+            if rc:
+                print(f"ane-session exit {rc}", file=sys.stderr)
 
 
 class DumpCheck:
@@ -291,6 +346,9 @@ def run(args):
     sha = lambda path: hashlib.sha256(Path(path).read_bytes()).hexdigest()
     record({"type": "start", "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "argv": " ".join(sys.argv[1:]), "ane_run_sha256": sha(args.ane_run),
+            "ane_session_sha256": sha(args.session_bin) if args.resident else None,
+            "resident": bool(args.resident), "resident_lock": args.resident_lock
+            if args.resident else None,
             "ref_sha256": sha(args.ref), "manifest_sha256": sha(args.manifest),
             "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
             "head_load_s": round(time.monotonic() - start, 2), "rope": f"dh={dh} rotary={rotary} base={base}"})
@@ -322,6 +380,9 @@ def run(args):
             if pos >= len(ids) - 1:
                 host_start = time.monotonic()
                 logits = head @ hidden
+                if args.logits_file:
+                    with open(args.logits_file, "ab") as f:
+                        logits.astype(np.float32).tofile(f)
                 top1, v1, top2_id, v2 = top2(logits)
                 k = len(gen)
                 rec.update({"gen_index": k, "token_out": top1, "top1": v1, "top2_id": top2_id,
@@ -347,6 +408,7 @@ def run(args):
                 raise SystemExit(f"STOP kernel: {stop[0]}")
             pos += 1
         if args.max_steps is not None:
+            decoder.close_session()
             return 1 if dump and dump.failed else 0
         div = first_divergence(gen, want)
         rec = {"type": "prompt", "prompt": pid, "max_len": decoder.max_len, "match": div is None,
@@ -364,6 +426,7 @@ def run(args):
               f"wall={rec['wall_s']}s min_margin={rec['min_margin']:.4f}", flush=True)
     if dump:
         print(f"dump ports failing: {dump.failed}")
+    decoder.close_session()
     return 0
 
 
@@ -388,9 +451,20 @@ def main(argv=None):
     ap.add_argument("--dump", help="M1 per-step dump (index.json) to compare every port against")
     ap.add_argument("--band", default="/var/tmp/qwen-conform-band.jsonl")
     ap.add_argument("--ref-logits", help="reference logits .npz (prompt_NNN arrays)")
+    ap.add_argument("--logits-file", help="append the raw fp32 logits of every "
+                    "generated step here (for bit-identical A/B comparisons)")
     ap.add_argument("--out", default="/var/tmp/qwen-decode/run")
     ap.add_argument("--ane-run", default="/var/tmp/inst/tools/ane-run")
     ap.add_argument("--timeout", type=int, default=120)
+    ap.add_argument("--resident", action="store_true",
+                    help="decode through one ane-session process (programs "
+                         "loaded once, 38 CALLs in-process per step) instead "
+                         "of one ane-run per call")
+    ap.add_argument("--session-bin", default="/var/tmp/inst/tools/ane-session",
+                    help="ane-session binary for --resident")
+    ap.add_argument("--resident-lock", choices=("call", "step"), default="call",
+                    help="hold /var/tmp/ane-run.lock per CALL or per step; "
+                         "always released between steps")
     ap.add_argument("--summary", action="store_true")
     ap.add_argument("--m-per-prompt", action="store_true",
                     help="max_len = len(prompt) + new tokens per prompt (ANEForge generate without max_len)")
