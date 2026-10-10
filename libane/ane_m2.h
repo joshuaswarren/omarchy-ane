@@ -108,6 +108,13 @@ struct ane_m2_sections {
 
 extern const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT];
 
+/* The driver's PROG_LOAD dedup key over the built sections: SHA-256 of
+ * (u64 id, u64 size, bytes) per section in id order. On 0, out[32]
+ * can be sent with DRM_IOCTL_ANE_PROG_LOOKUP to reuse an
+ * already-held program without allocating its section BOs. */
+int ane_m2_program_digest(const struct ane_m2_sections *secs,
+			  uint8_t out[32]);
+
 /* bufferId of the scratch io record (above the channel ids, not 2/3). */
 #define ANE_M2_SCRATCH_BUFID 0x40u
 
