@@ -248,12 +248,12 @@ def run(root, hook=False):
         raise Refuse(f"{chip}: no pinned ANE firmware for this chip")
     # The die-1 ANE of an Ultra board boots its own image (Ap,ANE1,
     # t602x_ane1_fw_selene_rc4x) whose SHA-256 is a missing fact
-    # (docs/ultra-die1.md §9.2): the driver requests it by name and
+    # (docs/ultra-die1.md section 9, item 2): the driver requests it by name and
     # validates against the die-0 pin, so a non-identical image refuses at
     # load. Nothing to fetch until a capture pins the bytes.
     if (dt / "soc@2200000000/ane@284000000").is_dir():
         raise Refuse("no pin for T6022 die 1: t602x_ane1_fw_selene_rc4x has "
-                     "no recorded SHA-256 (docs/ultra-die1.md §9.2); the die-1 "
+                     "no recorded SHA-256 (docs/ultra-die1.md section 9, item 2); the die-1 "
                      "node is present and the driver will validate its image "
                      "against the die-0 pin at load")
 
