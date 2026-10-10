@@ -246,7 +246,8 @@ def main(argv=None):
     rng = np.random.default_rng(args.x0_seed)
     x0 = np.round(rng.uniform(-2.0, 2.0, n), 3).astype(F16)
     const_plane = np.full(n, F16(args.const), F16)
-    expect = model_chain_plane(x0, const_plane, args.calls)
+    # Both arms chain x through every step, so the run applies calls * steps adds (608 by default), not one step's worth.
+    expect = model_chain_plane(x0, const_plane, args.calls * args.steps)
     expect_sha = sha256_plane(expect)
 
     out = Path(args.out)
