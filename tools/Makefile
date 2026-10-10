@@ -110,5 +110,34 @@ ifeq ($(ASAN_OK),yes)
 	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
 endif
 
+# aarch64 cross-check for the SHA-2 crypto block in ane_sha256.c:
+# compile -Werror for aarch64 and run the digest suite under
+# qemu-aarch64-static (-cpu max enables the extension). Runs in `make
+# check` only when both tools exist; silent skip otherwise.
+CROSS_CC := $(shell command -v aarch64-linux-gnu-gcc 2>/dev/null)
+CROSS_QEMU := $(shell command -v qemu-aarch64-static 2>/dev/null)
+
+cross-check:
+ifneq ($(CROSS_CC),)
+ifneq ($(CROSS_QEMU),)
+	$(CROSS_CC) -std=gnu11 -Wall -Wextra -Werror -O2 \
+		-I../libane -I../ane/src/uapi/drm \
+		-I/usr/aarch64-linux-gnu/include \
+		-I/usr/aarch64-linux-gnu/include/drm \
+		-o test_t6021_prog_lookup_a64 test_t6021_prog_lookup.c \
+		../libane/ane_sha256.c ../libane/ane_m2.c ../libane/ane.c -lm
+	(cd ../fixtures && qemu-aarch64-static -cpu max \
+		-L /usr/aarch64-linux-gnu \
+		$(abspath test_t6021_prog_lookup_a64) 2>&1) | tee test_sha256_a64.log
+	grep -q "LOOKUP-DIGEST PASS" test_sha256_a64.log
+	grep -q "path disagreement" test_sha256_a64.log && exit 1 || true
+	@echo "cross-check PASS (aarch64 qemu: both paths agree)"
+else
+	@echo "cross-check SKIP: qemu-aarch64-static not installed"
+endif
+else
+	@echo "cross-check SKIP: aarch64-linux-gnu-gcc not installed"
+endif
+
 clean:
-	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_bo_probe
+	rm -f ane-run ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log
