@@ -272,12 +272,7 @@ static void sha256_block_neon(uint32_t st[8], const uint8_t data[64])
 int ane_sha256_hw_supported(void)
 {
 #if defined(__aarch64__)
-	static int neon_ok = -1;	/* one-time probe, idempotent */
-
-	if (neon_ok < 0) {
-		neon_ok = (getauxval(AT_HWCAP) & HWCAP_SHA2) != 0;
-	}
-	return neon_ok;
+	return (getauxval(AT_HWCAP) & HWCAP_SHA2) != 0;
 #else
 	return 0;
 #endif
@@ -285,9 +280,9 @@ int ane_sha256_hw_supported(void)
 
 void ane_sha256_init(struct ane_sha256_ctx *c)
 {
-	/* Per-context choice: never a global, so concurrent contexts
-	 * cannot race on it (w7K review, PR-lookup round). The one-time
-	 * HWCAP probe inside hw_supported is idempotent. */
+	/* Per-context choice, no mutable global: getauxval only reads the
+	 * immutable auxiliary vector, so concurrent first inits cannot race
+	 * (w7K review of 69731a8, finding 2). */
 	c->neon = ane_sha256_hw_supported();
 	c->portable_forced = 0;
 	c->st[0] = 0x6a09e667;
