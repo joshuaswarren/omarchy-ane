@@ -19,7 +19,7 @@ This is one run. The raw files are in this directory.
 - The same output against the CPU NumPy reference (`hidden_vs_cpu_reference` in `ct-report.json`) has relative L2 0.02465 and is not bit-exact. That is a different comparison from the bit-exact one above.
 
 ## Run conditions
-- The machine was not quiet. Another lane's GPU test battery ran beside the timed cell, with two parts in flight, from about 16:34:45 to 16:34:51Z. Two other ANE tickets from the same lane were also queued. The effect was not measured, so no claim is made about it.
+- The machine was not quiet. Another lane's GPU test battery ran beside the timed cell, with two parts in flight, from about 16:34:45 to 16:34:51Z. Two other ANE tickets from the same lane as this run were also on the machine. The guard submitted them at 16:24:22Z and 16:33:39Z. The effect was not measured, so no claim is made about it.
 - The ane-run lock serialized the device calls. This 20-call process held the lock for its whole run. No other ANE call ran in between.
 - The bit-exact result does not depend on the other work. No isolated timing was taken.
 - The literal command line is below. It is line 85 of `run.log`, copied unchanged. That line came from the validation step, which adds `--dry` and prints the command instead of running it. The timed call builds its argument list with the same function, `ane_call` in `tools/qwen_prog_run.py`. The timed call's own argument list was not logged. The run started after a 60 s sleep, with no CPU pinning and no governor change.
