@@ -1,0 +1,16 @@
+{"ev": "A.load", "bo_before": 120455168, "bo_after": 343834624, "delta": 223379456, "t": "16:13:57"}
+{"ev": "baseline", "distinct": true, "out_bytes": 638976, "t": "16:13:57"}
+{"ev": "B.load", "bo_before": 343834624, "bo_after": 344686592, "delta": 851968, "section_bytes": 223006144, "lookup_hit": true, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "a", "step": "B-a", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "b", "step": "B-b", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "A", "input": "b", "step": "A-b", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "a", "step": "B-a2", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "A", "input": "a", "step": "A-a", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "b", "step": "B-b2", "match": true, "t": "16:13:57"}
+{"ev": "A.exit", "rc": 0, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "b", "step": "B-b-after-A-exit", "match": true, "t": "16:13:57"}
+{"ev": "call", "session": "B", "input": "a", "step": "B-a-after-A-exit", "match": true, "t": "16:13:57"}
+{"ev": "C.load", "delta": 0, "lookup_hit": true, "t": "16:13:58"}
+{"ev": "call", "session": "C", "input": "a", "step": "C-a", "match": true, "t": "16:13:58"}
+{"ev": "call", "session": "C", "input": "b", "step": "C-b", "match": true, "t": "16:13:58"}
+{"ev": "exit", "rc_b": 0, "rc_c": 0, "bo_end": 344686592, "t": "16:13:58"}
