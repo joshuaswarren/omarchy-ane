@@ -1,0 +1,21 @@
+== parakeet whole encoder 2026-10-11T03:05:17Z dry=0 kernel=7.1.12-2-12.6-sep-ARCH boot=861c1ef8 chip_dt=apple,j316capple,t6001apple,arm-platform
+module ane srcversion= file=7.1.12-2-12.6-sep-ARCH/kernel/drivers/accel/ane/ane.ko
+ane-run sha256 480040b5f700f407f11563f5349e7614df9fefe0efe57327c68ebc35b9779805 (omarchy-ane main 75c8829 plus the --tile-shift patch); tile-shift 9
+anec bytes 458018816 sha256 13c744231524d440b0a774155343df9ade0bbcbc37edc4b1ccf9698e580d5453
+omarchy-mlx  numpy 2.5.3 blas blas-openblas 0.3.34-1
+92a2b2a19a63aad35d8809b08320fdcc710fd8197c406dbf719e58ba55807b21  feat.f16
+fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063  gold-hidden.f1
+fcfc523447ffc5690ca1424dc71aaf9533f7c255757a99cb9d657f163ba9cb64  mask.f16
+-- idle 60 s
+-- load snapshot (before): dri holders: Hyprland omarchy-launch- omarchy-hyprlan quickshell udiskie Xwayland inotifywait xdg-desktop-por wl-paste wl-paste socat llama-bench 
+   top cpu: 37.9 llama-bench; 1.9 tailscaled; 1.6 wireplumber; 0.9 speakersafetyd;
+ane_stats before: busy_ns 2757971862472 jobs 111075995 
+ane-run rc=0 total_s=8.93
+exec ms over 20 calls: min 431.158 p10 431.176 p25 431.187 median 431.197 p75 431.209 p90 431.255 p99 431.294 max 431.294
+-- load snapshot (after): dri holders: Hyprland omarchy-launch- omarchy-hyprlan quickshell udiskie Xwayland inotifywait xdg-desktop-por wl-paste wl-paste socat llama-bench 
+   top cpu: 28.8 llama-bench; 1.9 tailscaled; 1.6 wireplumber; 0.9 speakersafetyd;
+ane_stats after:  busy_ns 2766595510443 jobs 111076015 
+busy_ns delta 8623647971 jobs delta 20
+hidden: 240000 fp16 words compared, mismatched words 0, max ulp delta 0, sha256(first 240000 words) fca96f1355485ec3 gold fca96f1355485ec3
+BIT-EXACT against the macOS gold
+engine busy per job 431.18 ms over 20 jobs
