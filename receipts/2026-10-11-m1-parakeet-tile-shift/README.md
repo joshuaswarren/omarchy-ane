@@ -1,6 +1,6 @@
 # 13-inch M1 (T8103): Parakeet whole encoder with `ane-run --tile-shift 9`, 2026-10-11
 
-Eight single-process runs on one boot. The raw `exec.txt` and `results.txt` of each run are in `runs/`. Each of the six successful runs also wrote two output files of 480,256 bytes. These are not stored. Their hashes are in `results.txt`.
+Eight single-process runs on one boot. The raw `exec.txt` and `results.txt` of each run are in `runs/`. Each of the six successful runs also wrote two output files of 480,256 bytes. These are not stored. `results.txt` holds the hashes of the input and reference files and one comparison line. That line gives the sha256 of the first 240,000 fp16 words of the hidden output.
 
 ## Setup
 - Chip: Apple M1 (T8103), 13-inch laptop.
