@@ -1,0 +1,10 @@
+decode rc=0 wall_s=22.8 logits_sha=5c359d366ad883ea911e2bfba5f2e600dc6b22fd34eaad5c12059ef5c35ab37a
+steps 27 generated 16 prefill 11
+decode step wall s p10/p50/p90 [0.206, 0.226, 0.246]
+ane wall s p10/p50/p90 [0.18, 0.2, 0.219]
+prefill step ane s p50 0.184
+decode tok/s 4.483
+bo_total 3258482688
+(no dmesg line matched EXCH.*failed, DART.*(fault|error), quarantin or BO_INIT)
+
+Copied unchanged from the output of head-bench/decode2.sh run on the same boot, back to back after run1, one decoder process and one ane-session process.

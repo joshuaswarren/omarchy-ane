@@ -1,0 +1,12 @@
+== direct run 2026-10-10T23:43:25Z kernel=7.1.12-2-12.6-sep-ARCH nproc=12
+numpy 2.5.3
+threads=      1 head@hidden f32 [248320x2048]: best   604.1 ms  median   604.3 ms
+threads=      1 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=      4 head@hidden f32 [248320x2048]: best   604.0 ms  median   604.6 ms
+threads=      4 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=      8 head@hidden f32 [248320x2048]: best   604.1 ms  median   604.1 ms
+threads=      8 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=     12 head@hidden f32 [248320x2048]: best   604.3 ms  median   604.4 ms
+threads=     12 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=     12 head@hidden f16 numpy [248320x2048]: best   785.9 ms  median   824.7 ms
+threads=     12 head@hidden f16->f32 chunked : best   754.8 ms  median   759.2 ms

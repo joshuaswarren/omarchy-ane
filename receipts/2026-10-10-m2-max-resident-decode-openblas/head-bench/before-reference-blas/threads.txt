@@ -1,0 +1,5 @@
+workers= 2 chunked f32 matvec: best   302.2 ms  median   302.4 ms  equal=True  max_abs_diff=0.00e+00
+workers= 4 chunked f32 matvec: best   151.4 ms  median   151.4 ms  equal=True  max_abs_diff=0.00e+00
+workers= 8 chunked f32 matvec: best    75.9 ms  median    76.0 ms  equal=True  max_abs_diff=0.00e+00
+workers=12 chunked f32 matvec: best    64.6 ms  median    64.8 ms  equal=True  max_abs_diff=0.00e+00
+cpu count 12

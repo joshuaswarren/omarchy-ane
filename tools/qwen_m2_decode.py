@@ -72,6 +72,27 @@ from qwen_prog_run import Refuse, ResidentSession, ane_call, port_map_from_table
 
 f16 = np.float16
 
+REFERENCE_BLAS_WARNING = (
+    "qwen_m2_decode: numpy is using the reference BLAS, which runs on one thread. The output projection "
+    "(head @ hidden) then takes about 600 ms per generated token on the M2 Max instead of about 20 ms, "
+    "and the decode is about 4 times slower. Arch: sudo pacman -S blas-openblas "
+    "(see docs/qwen-m2-decoder-requirements.md).")
+
+
+def reference_blas(maps_text=None):
+    """True when numpy's BLAS is the reference implementation (no OpenBLAS mapped after one matvec).
+
+    A numpy wheel with its own OpenBLAS maps a library named *openblas*; Arch numpy maps libcblas.so.3, which
+    resolves to libopenblas when blas-openblas is installed and to the reference libcblas.so.3.x otherwise.
+    Returns False when /proc/self/maps cannot be read, so a non-Linux host never warns."""
+    if maps_text is None:
+        np.ones((8, 8), np.float32) @ np.ones(8, np.float32)
+        try:
+            maps_text = Path("/proc/self/maps").read_text()
+        except OSError:
+            return False
+    return "openblas" not in maps_text and ("libcblas" in maps_text or "libblas" in maps_text)
+
 
 def load_head(path):
     """(fp16 embedding, float32 tied head, rope (dh, rotary dim, base)) from
@@ -319,6 +340,8 @@ class DumpCheck:
 
 
 def run(args):
+    if reference_blas():
+        print(REFERENCE_BLAS_WARNING, file=sys.stderr)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     results = out / "results.jsonl"

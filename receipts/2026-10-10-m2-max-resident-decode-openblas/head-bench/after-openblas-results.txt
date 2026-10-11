@@ -1,0 +1,18 @@
+== after blas-openblas 2026-10-10T23:49:42Z
+numpy 2.5.3 cblas
+threads=      1 head@hidden f32 [248320x2048]: best    20.2 ms  median    21.9 ms
+threads=      1 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=      4 head@hidden f32 [248320x2048]: best    21.6 ms  median    22.0 ms
+threads=      4 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=      8 head@hidden f32 [248320x2048]: best    21.0 ms  median    23.5 ms
+threads=      8 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+threads=     12 head@hidden f32 [248320x2048]: best    21.1 ms  median    22.1 ms
+threads=     12 top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+-- default threads
+threads=default head@hidden f32 [248320x2048]: best    20.2 ms  median    22.0 ms
+threads=default top2 (copy + 2 argmax)   : best     0.1 ms  median     0.1 ms
+workers= 2 chunked f32 matvec: best    23.1 ms  median    24.0 ms  equal=True  max_abs_diff=0.00e+00
+workers= 4 chunked f32 matvec: best    24.0 ms  median    24.4 ms  equal=True  max_abs_diff=0.00e+00
+workers= 8 chunked f32 matvec: best    24.4 ms  median    24.9 ms  equal=True  max_abs_diff=0.00e+00
+workers=12 chunked f32 matvec: best    28.2 ms  median    33.8 ms  equal=True  max_abs_diff=0.00e+00
+cpu count 12
