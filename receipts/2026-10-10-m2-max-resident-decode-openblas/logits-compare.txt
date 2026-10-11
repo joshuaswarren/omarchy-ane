@@ -1,0 +1,21 @@
+== previous receipt run (reference BLAS) vs new run1 (OpenBLAS)
+logits floats 3973120 3973120 vocab guess 248320
+bit-identical: False
+max abs diff 4.00543212890625e-05 mean abs diff 1.3680430583917769e-06 max rel (vs max|logit|) 1.520048272141139e-06
+differing floats 3836967 of 3973120
+tokens old [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 35003, 314, 279, 8964]
+tokens new [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 35003, 314, 279, 8964]
+token streams equal: True
+both equal the reference tokens: False
+top1 margin old/new first 4: [(2.573, 2.573), (1.8409, 1.8409), (1.5308, 1.5308), (9.5555, 9.5555)]
+
+== new run1 vs new run2 (both OpenBLAS)
+logits floats 3973120 3973120 vocab guess 248320
+bit-identical: True
+max abs diff 0.0 mean abs diff 0.0 max rel (vs max|logit|) 0.0
+differing floats 0 of 3973120
+tokens old [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 35003, 314, 279, 8964]
+tokens new [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 35003, 314, 279, 8964]
+token streams equal: True
+both equal the reference tokens: False
+top1 margin old/new first 4: [(2.573, 2.573), (1.8409, 1.8409), (1.5308, 1.5308), (9.5555, 9.5555)]

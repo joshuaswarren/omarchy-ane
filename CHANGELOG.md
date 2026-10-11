@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `tools/qwen_m2_decode.py` warns at the start of a run when numpy uses the reference BLAS, and
+  `docs/qwen-m2-decoder-requirements.md` says to install `blas-openblas`. Measured on the M2 Max
+  (2026-10-10, module `bd34a12`): the output projection took 604 ms per generated token on the reference
+  BLAS (any thread count) and 20 ms on OpenBLAS; the resident Qwen3.8-2B decode went from a generation
+  step p50 of 0.826 s (1.21 tokens per second) to 0.211 s and 0.226 s in two runs (4.64 and 4.48), with
+  the same decoder files and the same 16 generated tokens. The float32 logits differ at the rounding
+  level (largest difference 4.0e-5, so the old logits hash no longer matches); the new hash is the same in
+  both runs. Receipt: `receipts/2026-10-10-m2-max-resident-decode-openblas/`. Verified the same package
+  swap on an M1 Max and an M1 (matvec 21 ms and 47.5 ms).
+
 - `docs/ultra-test-runbook.md`, `docs/h15-volunteer.md`: audit against the
   code they describe. Opt-in path is `/etc/omarchy-mac-boot/dtb-overlays.opt-in`
   (`omarchy-ane-dt` has read that since 2026-10-04; the runbook still named the
