@@ -7,6 +7,9 @@
 #   2. --tile-shift together with --ports is refused with exit 2 (index mode only);
 #   3. the usage text names the option;
 #   4. a valid shift reaches the load: with no such file the exit is 1 and the message is ane_init failed, not a usage error.
+# This test guards option parsing and the refusals. It does not show that the shift reaches libane:
+# with a missing file both init calls fail the same way. The shift itself is shown by the device runs in
+# receipts/2026-10-11-m1-parakeet-tile-shift/.
 # Usage: test_ane_run_tile_shift.sh ./ane-run
 set -u
 run=${1:-./ane-run}
