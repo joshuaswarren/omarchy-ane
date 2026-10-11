@@ -22,12 +22,18 @@ processes, 20 calls each.
 | record-4 | 137.789 | 137.399 | 138.180 | 137.82 |
 | record-5 | 137.888 | 137.386 | 138.955 | 137.98 |
 
-Median of the five medians 137.914 ms, best 137.789 ms, spread 0.18 ms (0.13 percent). Against the macOS
-`cpuAndNeuralEngine` median of 113.12 ms on the same 13-inch M1 (2026-09-23, 3 warmups and 10 repetitions, CoreML placement
-1,345 ANE ops and 29 CPU ops, bit-exact; 113.23 ms with all units, 272.80 ms CPU only) the Linux cell is 0.820x in calls
-per second (best run 0.821x). That is 24.8 ms, or 21.9 percent, slower. The macOS figures come from the fixed harness
-(`MLModel` loaded with its configuration). That macOS run began at a load average of 10.07, so it was not a quiet run. A
-quiet paired rerun on the same day is booked.
+Median of the five medians 137.914 ms, best 137.789 ms, spread 0.18 ms (0.13 percent).
+
+Paired macOS run on the same 13-inch M1, 2026-10-11 (fixed harness, `MLModel` loaded with its configuration, 3 warmups and
+15 repetitions per arm, CoreML placement 1,345 ANE ops and 29 CPU ops, bit-exact: 0 of 240,000 words differ):
+`cpuAndNeuralEngine` 111.62 and 111.52 ms, pooled median 111.56 ms over 30 repetitions; all units 111.61 and 111.68 ms. The Linux
+cell is 0.809x of 111.56 ms in calls per second (best Linux run 0.810x). That is 26.4 ms, or 23.6 percent, slower.
+The raw data, identity file and harness are in `receipts/2026-10-11-m1-macos-parakeet-paired/` in ane-linux-experiments (main).
+The macOS arm was not as quiet as the Linux arm: the load average was 2.76 at the start, and two system daemons (audiomxd and
+configd) used CPU for the whole window and could not be stopped. The two arms agree within 0.1 percent.
+
+The earlier corrected macOS figure, 113.12 ms (2026-09-23, 10 repetitions, load average 10.07 at start; 113.23 ms all units,
+272.80 ms CPU only), reproduced within 1.4 percent. Against it the Linux cell is 0.820x.
 
 Correction: the first version of this receipt used a 122.12 ms macOS median (ratio 0.8855x). That figure came from a harness
 that set the compute units but never applied them when loading the model, so it was not an ANE timing. The relabel note is
