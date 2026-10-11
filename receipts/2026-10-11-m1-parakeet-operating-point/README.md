@@ -30,8 +30,11 @@ per second (best run 0.821x). That is 24.8 ms, or 21.9 percent, slower. The macO
 quiet paired rerun on the same day is booked.
 
 Correction: the first version of this receipt used a 122.12 ms macOS median (ratio 0.8855x). That figure came from a harness
-that set the compute units but never applied them when loading the model, so it was not an ANE timing. The macOS lane
-recorded the relabel in a note that is not yet published. Do not use 122.12 or 119.56 ms as an ANE denominator.
+that set the compute units but never applied them when loading the model, so it was not an ANE timing. The relabel note is
+`receipts/2026-09-22-t8103-divisor/RELABEL-INCORRECTLY-ATTRIBUTED.md` in ane-linux-experiments (main). The corrected raw
+timings are `receipts/2026-09-24-jwm1-macos-baselines/raw/core/bench_ane.json` (median 113.12 ms, 10 repetitions, placement
+1,345 ANE ops and 29 CPU ops) and the parity table is `receipts/2026-09-23-m1-mac-denominator/`, both in the same
+repository. Do not use 122.12 or 119.56 ms as an ANE denominator.
 
 In the record runs the driver's engine busy time per job is within 0.2 percent of the median call time, so the
 host share is under 0.5 ms per call.
