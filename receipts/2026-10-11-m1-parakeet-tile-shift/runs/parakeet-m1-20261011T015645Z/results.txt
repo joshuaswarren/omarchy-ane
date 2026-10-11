@@ -1,0 +1,17 @@
+== parakeet whole encoder 2026-10-11T01:56:45Z dry=0 kernel=7.1.12-2-12.6-sep-ARCH boot=30178ff6 chip_dt=apple,j293apple,t8103apple,arm-platform
+module ane srcversion= file=7.1.12-2-12.6-sep-ARCH/kernel/drivers/accel/ane/ane.ko
+ane-run sha256 480040b5f700f407f11563f5349e7614df9fefe0efe57327c68ebc35b9779805 (omarchy-ane main 75c8829 plus the --tile-shift patch); tile-shift 9
+anec bytes 458018816 sha256 13c744231524d440b0a774155343df9ade0bbcbc37edc4b1ccf9698e580d5453
+omarchy-mlx omarchy-mlx 0.7.28-2 numpy 2.5.3 blas blas-openblas 0.3.34-1
+92a2b2a19a63aad35d8809b08320fdcc710fd8197c406dbf719e58ba55807b21  feat.f16
+fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063  gold-hidden.f1
+fcfc523447ffc5690ca1424dc71aaf9533f7c255757a99cb9d657f163ba9cb64  mask.f16
+-- idle 60 s
+ane_stats before: busy_ns 501597011078 jobs 30711489 
+ane-run rc=0 total_s=3.02
+exec ms over 20 calls: min 137.700 p10 137.712 p25 137.774 median 137.878 p75 138.061 p90 139.528 p99 141.321 max 141.321
+ane_stats after:  busy_ns 504360276701 jobs 30711509 
+busy_ns delta 2763265623 jobs delta 20
+hidden: 240000 fp16 words compared, mismatched words 0, max ulp delta 0, sha256(first 240000 words) fca96f1355485ec3 gold fca96f1355485ec3
+BIT-EXACT against the macOS gold
+engine busy per job 138.16 ms over 20 jobs

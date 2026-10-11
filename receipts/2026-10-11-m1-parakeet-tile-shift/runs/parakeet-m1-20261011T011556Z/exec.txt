@@ -1,0 +1,4 @@
+LIBANE: ERR: DRM_IOCTL_ANE_BO_INIT failed with 0xffffffff
+LIBANE: ERR: failed to init memory-mapped channels
+LIBANE: ERR: failed to init memory-mapped chans
+ane_init failed on /usr/lib/omarchy-mlx/venv/lib/python3.14/site-packages/mlx/share/mlx-omarchy/parakeet-1/bundles/parakeet-encoder-whole/program-0.anec

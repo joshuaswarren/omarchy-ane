@@ -1,0 +1,18 @@
+== parakeet whole encoder 2026-10-11T01:15:56Z dry=0 kernel=7.1.12-2-12.6-sep-ARCH boot=30178ff6 chip_dt=apple,j293apple,t8103apple,arm-platform
+module ane srcversion= file=7.1.12-2-12.6-sep-ARCH/kernel/drivers/accel/ane/ane.ko
+ane-run sha256 0465fd67d4b97577ede54615659356d70e449e80cfb089e95a16b1c7f6f17db0 (built from omarchy-ane main 75c8829)
+anec bytes 458018816 sha256 13c744231524d440b0a774155343df9ade0bbcbc37edc4b1ccf9698e580d5453
+omarchy-mlx omarchy-mlx 0.7.28-2 numpy 2.5.3 blas blas-openblas 0.3.34-1
+92a2b2a19a63aad35d8809b08320fdcc710fd8197c406dbf719e58ba55807b21  feat.f16
+fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063  gold-hidden.f1
+dd5a5ba387bb706c3bd3a44e150f4aaafbe9051feb7b7e634adfc75eaf25f633  mask.f16
+-- idle 60 s
+ane_stats before: busy_ns 668296 jobs 35 
+ane-run rc=1 total_s=2.44
+LIBANE: ERR: DRM_IOCTL_ANE_BO_INIT failed with 0xffffffff
+LIBANE: ERR: failed to init memory-mapped channels
+LIBANE: ERR: failed to init memory-mapped chans
+ane_init failed on /usr/lib/omarchy-mlx/venv/lib/python3.14/site-packages/mlx/share/mlx-omarchy/parakeet-1/bundles/parakeet-encoder-whole/program-0.anec
+ane_stats after:  busy_ns 668296 jobs 35 
+busy_ns delta 0 jobs delta 0
+FAIL ane-run rc=1

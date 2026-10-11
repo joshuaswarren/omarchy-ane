@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane-run --tile-shift N` (1 to 20, index mode only, M1-family path only) sets the tile-count unit of the program header as a power of two. The whole-program containers written by the hwxv2 converter count tiles in 512-byte units (`--tile-shift 9`). The default is unchanged (0x4000-byte units), so existing callers behave as before. Without the option the Parakeet whole encoder (458,018,816 bytes) is sized 32 times too large, about 14.7 GB, and on the 13-inch M1 both runs failed with `DRM_IOCTL_ANE_BO_INIT failed`. With `--tile-shift 9` six runs on the same machine were bit-exact against the macOS output, with medians of 20 calls from 137.4 to 158.2 ms (receipt `receipts/2026-10-11-m1-parakeet-tile-shift/`). Offline test: `tools/test_ane_run_tile_shift.sh` (part of `make check`). It guards option parsing, not the delivery of the shift.
+
 ## 0.4.8 (2026-10-10)
 
 This release is for the Apple M2 Max (T6021). It also holds the v0.4.7 changes below, which were tagged without a changelog heading. The GitHub release notes list the hardware evidence and its limits.

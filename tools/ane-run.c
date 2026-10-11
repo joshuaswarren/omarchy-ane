@@ -1765,11 +1765,15 @@ static void usage(void)
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
 		"[--out IDX=FILE]... [--repeat N] [--time] [--check OP] "
-		"[--weights FILE] [--dev N]\n"
+		"[--weights FILE] [--dev N] [--tile-shift N]\n"
 		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
 		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
 		"  --dev N: the accel node to open (/dev/accel/accelN; default 0,\n"
 		"    or ANE_DEVICE); die 1 of an Ultra board is dev 1.\n"
+		"  --tile-shift N: log2 of the byte unit of the ANEC header's tile counts\n"
+		"    (default 14 = 0x4000 bytes, the H13 island containers; 9 = 512 bytes,\n"
+		"    the whole-program containers from the hwxv2 converter). Index mode only,\n"
+		"    and M1-family index path only: the T6021 path does not read it.\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
 		"    select bmm rms\n"
@@ -1823,6 +1827,8 @@ int main(int argc, char **argv)
 	/* The accel node libane opens (/dev/accel/accelN, the dev_id-th
 	 * "ane" DRM device): --dev wins over ANE_DEVICE, default 0. */
 	int dev = getenv("ANE_DEVICE") ? (int)strtoul(getenv("ANE_DEVICE"), NULL, 0) : 0;
+	/* 0 = libane's default unit (__ane_init); else __ane_init_shift. */
+	uint32_t tile_shift = 0;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
@@ -1912,6 +1918,12 @@ int main(int argc, char **argv)
 			ports_mode = 1;
 		} else if (!strcmp(argv[i], "--dev") && i + 1 < argc) {
 			dev = (int)strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--tile-shift") && i + 1 < argc) {
+			tile_shift = (uint32_t)strtoul(argv[++i], NULL, 0);
+			if (tile_shift < 1 || tile_shift > 20) {
+				fprintf(stderr, "--tile-shift must be 1..20\n");
+				return 2;
+			}
 		} else if (!strcmp(argv[i], "--dry-run")) {
 			dry_run = 1;
 		} else {
@@ -1933,8 +1945,14 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
+	if (ports_mode && tile_shift) {
+		fprintf(stderr, "--tile-shift applies to index mode, not --ports\n");
+		free_port_read(&pr);
+		return 2;
+	}
 	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count, dev)
-			: __ane_init(anec, dev);
+			: (tile_shift ? __ane_init_shift(anec, dev, tile_shift)
+				      : __ane_init(anec, dev));
 	if (!nn) {
 		fprintf(stderr, "ane_init failed on %s\n", anec);
 		free_port_read(&pr);
