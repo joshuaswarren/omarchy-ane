@@ -70,7 +70,7 @@ existed; their numbers come from the ticket logs and have no CSV.
 | `idle60-compile-load` | 438.618 | idle 60 s, compile load (load average 4.5), GPU compositor attached |
 | `idle60-load-54w` | 431.197 | idle 60 s, system power 54 W, no cap |
 | `cpu-cap-600mhz-boost-off` | 430.979 | CPU capped at 600 MHz, `ane_boost` off; other lanes' load kept the chip at 64 W |
-| 10 other runs, ticket logs only, no CSV | 438.468 to 438.915 | idle 5 s to 240 s, system power 15 to 50 W |
+| 9 other runs, ticket logs only, no CSV | 438.468 to 438.915 | idle 5 s to 240 s, system power 15 to 48 W |
 
 The M1 Max time does not move with idle gap (5 to 240 s), system power (15 to 64 W), temperature, or CPU load. Capping
 every CPU cluster at its 600 MHz minimum with `ane_boost` off did not raise it: 430.979 ms against 438.577 ms in the
