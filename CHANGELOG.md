@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ane-run --tile-shift N` (1 to 20, index mode only) sets the tile-count unit of the program header as a power of two. The whole-program containers written by the hwxv2 converter count tiles in 512-byte units (`--tile-shift 9`); the default is unchanged (0x4000-byte units), so existing callers behave as before. Without it the Parakeet whole encoder asked the driver to map about 14.6 GB and failed with `iommu_map_sg failed -17` and `DRM_IOCTL_ANE_BO_INIT failed`. Offline test: `tools/test_ane_run_tile_shift.sh` (part of `make check`).
 - `tools/qwen_m2_decode.py` warns at the start of a run when numpy uses the reference BLAS, and
   `docs/qwen-m2-decoder-requirements.md` says to install `blas-openblas`. Measured on the M2 Max
   (2026-10-10, module `bd34a12`): the output projection took 604 ms per generated token on the reference

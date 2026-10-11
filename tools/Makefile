@@ -106,8 +106,9 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool \
+check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool \
 	test_ane_session_cache test_ane_bo_probe test_t6021_prog_lookup
+	sh test_ane_run_tile_shift.sh ./ane-run
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
