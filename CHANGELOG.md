@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.4.8 (2026-10-10)
+
+This release is for the Apple M2 Max (T6021). It also holds the v0.4.7 changes below, which were tagged without a changelog heading. The GitHub release notes list the hardware evidence and its limits.
+
+- `ane_t6021`, `libane`: new `DRM_IOCTL_ANE_PROG_LOOKUP` (0x7, appended to the
+  uAPI). A process asks the driver for a program by the SHA-256 digest of its
+  sections. If the driver already holds that program, the process skips the
+  section allocation. A kernel module that lacks the call, or a miss, falls
+  back to the old load path. Measured on one M2 Max, module build `bd34a12`
+  (#141, `receipts/2026-10-10-m2-max-prog-lookup`): three passes over the
+  38 Qwen3.8-2B programs, one process each, loaded 38 of 38 every time. The
+  allocator total grew by 2,416,623,616 B, 196,608 B and 0 B. On `ca09ce8` the
+  second pass failed 5 times with `BO_INIT failed`. One run, zero-valued
+  inputs.
+- `tools/qwen_m2_decode.py --resident`, `ResidentSession` and the proxy A/B
+  harness, with host tests (#144). A resident decode on `bd34a12` gave logits
+  that equal the per-call baseline (`receipts/2026-10-10-m2-max-resident-qwen-decode`).
+- Receipts for the Parakeet whole encoder on the M2 Max (#138, #142).
+
 - `tools/qwen_m2_decode.py` warns at the start of a run when numpy uses the reference BLAS, and
   `docs/qwen-m2-decoder-requirements.md` says to install `blas-openblas`. Measured on the M2 Max
   (2026-10-10, module `bd34a12`): the output projection took 604 ms per generated token on the reference
