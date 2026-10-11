@@ -26,12 +26,12 @@ Median of the five medians 137.914 ms, best 137.789 ms, spread 0.18 ms (0.13 per
 `cpuAndNeuralEngine` median of 113.12 ms on the same 13-inch M1 (2026-09-23, 3 warmups and 10 repetitions, CoreML placement
 1,345 ANE ops and 29 CPU ops, bit-exact; 113.23 ms with all units, 272.80 ms CPU only) the Linux cell is 0.820x in calls
 per second (best run 0.821x). That is 24.8 ms, or 21.9 percent, slower. The macOS figures come from the fixed harness
-(`MLModel` loaded with its configuration); a paired rerun on the same day is booked.
+(`MLModel` loaded with its configuration). That macOS run began at a load average of 10.07, so it was not a quiet run. A
+quiet paired rerun on the same day is booked.
 
 Correction: the first version of this receipt used a 122.12 ms macOS median (ratio 0.8855x). That figure came from a harness
-that set the compute units but never applied them when loading the model, so it was not an ANE timing. The relabel note is
-`receipts/2026-09-22-t8103-divisor/RELABEL-INCORRECTLY-ATTRIBUTED.md` in ane-linux-experiments (branch
-`agent/jwm1-macos-baselines`). Do not use 122.12 or 119.56 ms as an ANE denominator.
+that set the compute units but never applied them when loading the model, so it was not an ANE timing. The macOS lane
+recorded the relabel in a note that is not yet published. Do not use 122.12 or 119.56 ms as an ANE denominator.
 
 In the record runs the driver's engine busy time per job is within 0.2 percent of the median call time, so the
 host share is under 0.5 ms per call.
