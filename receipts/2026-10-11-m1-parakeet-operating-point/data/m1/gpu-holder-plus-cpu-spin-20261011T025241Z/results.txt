@@ -1,0 +1,22 @@
+== parakeet whole encoder 2026-10-11T02:52:41Z dry=0 kernel=7.1.12-2-12.6-sep-ARCH boot=30178ff6 chip_dt=apple,j293apple,t8103apple,arm-platform
+module ane srcversion= file=7.1.12-2-12.6-sep-ARCH/kernel/drivers/accel/ane/ane.ko
+ane-run sha256 480040b5f700f407f11563f5349e7614df9fefe0efe57327c68ebc35b9779805 (omarchy-ane main 75c8829 plus the --tile-shift patch); tile-shift 9
+anec bytes 458018816 sha256 13c744231524d440b0a774155343df9ade0bbcbc37edc4b1ccf9698e580d5453
+omarchy-mlx omarchy-mlx 0.7.28-2 numpy 2.5.3 blas blas-openblas 0.3.34-1
+92a2b2a19a63aad35d8809b08320fdcc710fd8197c406dbf719e58ba55807b21  feat.f16
+fca96f1355485ec3e72f314c9e44f72c968f8eb2b88e101043a818114a752063  gold-hidden.f1
+fcfc523447ffc5690ca1424dc71aaf9533f7c255757a99cb9d657f163ba9cb64  mask.f16
+-- idle 20 s
+-- load snapshot (before): dri holders: llama-bench 
+   top cpu:  5.7 llama-bench; 0.4 tailscaled; 0.3 kworker/u34:2-btrfs-endio; 0.3 systemd;
+-- LOAD=cpu: 8 busy loops started
+ane_stats before: busy_ns 1456683913110 jobs 89749341 
+ane-run rc=0 total_s=3.83
+exec ms over 20 calls: min 163.778 p10 164.539 p25 164.642 median 165.000 p75 165.462 p90 166.001 p99 167.276 max 167.276
+-- load snapshot (after): dri holders: llama-bench 
+   top cpu: 99.3 sh;99.3 sh;99.1 sh;97.7 sh;
+ane_stats after:  busy_ns 1459985517145 jobs 89749361 
+busy_ns delta 3301604035 jobs delta 20
+hidden: 240000 fp16 words compared, mismatched words 0, max ulp delta 0, sha256(first 240000 words) fca96f1355485ec3 gold fca96f1355485ec3
+BIT-EXACT against the macOS gold
+engine busy per job 165.08 ms over 20 jobs
