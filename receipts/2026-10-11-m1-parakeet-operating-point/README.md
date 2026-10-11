@@ -23,13 +23,22 @@ processes, 20 calls each.
 | record-5 | 137.888 | 137.386 | 138.955 | 137.98 |
 
 Median of the five medians 137.914 ms, best 137.789 ms, spread 0.18 ms (0.13 percent). Against the macOS
-`cpuAndNeuralEngine` median of 122.12 ms (2026-09-22 pair): 0.8855x in calls per second (best run 0.8863x); against the
-all-units arm, 119.56 ms: 0.867x. The paired macOS rerun is booked separately; until it lands, 122.12 ms is the older
-figure. In the record runs the driver's engine busy time per job is within 0.2 percent of the median call time, so the
+`cpuAndNeuralEngine` median of 113.12 ms on the same 13-inch M1 (2026-09-23, 3 warmups and 10 repetitions, CoreML placement
+1,345 ANE ops and 29 CPU ops, bit-exact; 113.23 ms with all units, 272.80 ms CPU only) the Linux cell is 0.820x in calls
+per second (best run 0.821x). That is 24.8 ms, or 21.9 percent, slower. The macOS figures come from the fixed harness
+(`MLModel` loaded with its configuration). That macOS run began at a load average of 10.07, so it was not a quiet run. A
+quiet paired rerun on the same day is booked.
+
+Correction: the first version of this receipt used a 122.12 ms macOS median (ratio 0.8855x). That figure came from a harness
+that set the compute units but never applied them when loading the model, so it was not an ANE timing. The macOS lane
+recorded the relabel in a note that is not yet published. Do not use 122.12 or 119.56 ms as an ANE denominator.
+
+In the record runs the driver's engine busy time per job is within 0.2 percent of the median call time, so the
 host share is under 0.5 ms per call.
 
 This replaces the 141.4 ms Linux figure of the 2026-09-22 pair for scoreboard use: that run was not taken in a quiet
-window, and 141 ms is inside the range a loaded chip gives (section 2).
+window, and 141 ms is inside the range a loaded chip gives (section 2). That pair is withdrawn on both sides: the macOS
+side is the mislabelled figure above.
 
 ## 2. The 13-inch M1 slows when the rest of the chip is busy
 
