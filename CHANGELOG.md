@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `docs/ane-constants-t6021-t8152.md` lists every numeric constant of `ane/t6021` with its T8152 (M6) value and, where known, its H15 value, each marked kext, ADT, board, inferred or not decoded, and `tools/test_ane_constants_table.py` (run in the dt-overlays workflow) re-reads the T6021 values and the `ane/h18` and `ane/h15` references from the source. It records the places where the T6021 values cannot be reused on T8152: the wrapper, SCRATCH and doorbell offsets, the Postoffice mailbox, the firmware's channel table (TERMINAL has 0x200 slots, not 0x300) and the CPU_STATUS value after RUN.
+
 ## 0.5.1 (2026-10-24)
 
 This release turns the T6021 program unload on by default again. It adds START and RESOURCE_INFO_GET to the M6 module, answered on the board, and a shorter kernel log for its channel snapshots. It also adds the H15 channel stage and a C surface pack that `qwen_prog_run.py` uses by default. The lab decoders reach the pack only through a shim, so its measured gains are shim runs. The unload proof is one M2 and one workload. The H18 results are board measurements on one Mac mini M6, and the H15 stage has not run on an H15 part.
