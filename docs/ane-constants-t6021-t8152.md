@@ -96,8 +96,8 @@ Evidence tags in the last column:
 | `ANE_T6021_INIT_COUNT` | `0x40` | `0x40` | `0x40` | kext; host-written |
 | `ANE_T6021_INIT_TEMPLATE_OFF` | `0x6c` | `0x6c` | `0x6c` | kext |
 | `ANE_T6021_INIT_TEMPLATE_SIZE` | `0x100` | `0x100` | `0x100` | kext |
-| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | kext (template word +0xc0 is OR-ed with 4); host-written at block +0x12c (= 0x6c + 0xc0) |
-| `ANE_T6021_INIT_TBIT_VAL` | `0x4` | `0x4` | `0x4` | kext; host-written `0x4` |
+| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | the T6021 value; an M6 kext decode (ANE_Init, template word +0xc0 OR-ed with 4) gives the same, a second reading to confirm; host-written at block +0x12c (= 0x6c + 0xc0). The template's first word (config + 0x1d8) is the one the decode does not give; the module writes 0 |
+| `ANE_T6021_INIT_TBIT_VAL` | `0x4` | `0x4` | `0x4` | the T6021 value, same decode as the row above; host-written `0x4` |
 | `ANE_T6021_BOOT_IPC_CEILING` | `0x100000` | `0x100000` [ANE_H18_HS_IPC_MAX] | `0x100000` [ANE_H15_HS_IPC_MAX] | driver limit, not a chip value; the firmware's request on the board gave `0xc441` (SCRATCH1 + 1) |
 | `ANE_T6021_BOOT_HEAP_CEILING` | `0x2000000` | `0x4000000` [ANE_H18_HS_HEAP_MAX] | `0x4000000` [ANE_H15_HS_HEAP_MAX] | driver limit; the board heap request is `0xf00000`, which fits both |
 | `ANE_T6021_BOOT_REG_TABLE0` | `0xb38` | ? | ? | T6021 register table, not decoded for T8152 |
