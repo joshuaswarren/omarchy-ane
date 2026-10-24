@@ -28,6 +28,9 @@ on:
       - ane/include/**
       - ane/ane_stats_show.c
       - ane/t6021/**
+      - ane/h18/**
+      - ane/h15/**
+      - docs/ane-constants-t6021-t8152.md
       - dkms.conf
       - .github/workflows/dt-overlays.yml
   pull_request:
@@ -44,6 +47,9 @@ on:
       - ane/include/**
       - ane/ane_stats_show.c
       - ane/t6021/**
+      - ane/h18/**
+      - ane/h15/**
+      - docs/ane-constants-t6021-t8152.md
       - dkms.conf
       - .github/workflows/dt-overlays.yml
 
@@ -63,6 +69,7 @@ jobs:
           python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
           python3 tools/test_validate_ane_soc.py
           python3 tools/gen_coverage_table.py --check
+          python3 tools/test_ane_constants_table.py
 
   overlays:
     runs-on: ubuntu-24.04
