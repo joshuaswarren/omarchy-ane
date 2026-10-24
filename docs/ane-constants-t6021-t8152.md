@@ -5,7 +5,8 @@ One row per chip-specific constant of `ane/t6021`, with the T8152 (Mac mini M6, 
 Evidence tags in the last column:
 - **ADT**: read in the M6 ADT (`/arm-io/ane`, `/arm-io/dart-ane`) or the IPSW data file `data/ane-soc/t8152.json`.
 - **kext**: decoded from the macOS 27.0 `mac18g` kernelcache (sha256 `09746d1f442153956ba00b385f49bc245460c1ebea92cae7e9e0e4f240745b85`), `AppleH16ANEInterface` for the engine words, `AppleA7IOP-ASCWrap-v8` for the mailbox. Static reading, nothing run.
-- **board**: printed by `ane_h18` on the M6 (boot `ee8a53d1`, 2026-10-24; the log is not checked in).
+- **board**: a register or a firmware message that `ane_h18` printed on the M6 (the logs are not checked in): boot `ee8a53d1` of 2026-10-24 for everything except the first two runs, boots `235c8ff4` (re-read) and `5f6aa530` (not re-read), which had no firmware mapped.
+- **host-written**: a value the module wrote and printed. The log shows what was written, not what the firmware wants; the only evidence beyond the value's source is that the firmware then published its channel table.
 - **Revisions** the T6021, H18 and H15 columns were checked against (main `8693d41`): `ane/t6021` last changed in `e0630c887d3e12341c0cfef9b0ec2a03f39cd891`, `ane/h18` in `30f3c31271d40bf049c64680d1b6fe3d8d18ca86`, `ane/h15` in `9b22d1135296e66db01fa3a2aed3236b75c7439d`, `data/ane-soc/t8152.json` in `78fa806eee4f65028091917085a4155d7d0db652`. The ADT is the M6 live capture with sha256 `6d6827271263e12da4ae103c18708051156586aced2a0472ff78d5985183d254`. The board log is boot `ee8a53d1` of kernel `7.1.12-aurora-m6usb-ARCH #27` with `ane_h18.ko` sha256 `8cda95318d9cfb48bd047e9c8993212b49f8f0299877efa7ebf345d4b56c4790`. The test only checks the current source; these hashes say which source the evidence tags refer to.
 - **I**: inferred, no source reads it. **?**: not decoded; the T6021 value must not be copied.
 
@@ -15,7 +16,7 @@ Evidence tags in the last column:
 2. **The SCRATCH, doorbell, pending and ack block moved.** T8152: SCRATCH0 at engine + `0x18a0024`, doorbell `0x18a4000`, pending `0x18ac000`, ack `0x18b0000`. The block base is `0x18a0000` (T6021 `0x1840000`) and SCRATCH sits at +`0x24` in it (T6021 +`0x48`). All of them lie inside `ANE_FATAL_READ_LO..HI`, the range the T6021 guard forbids. Board reads of SCRATCH at `0x4198a0024` did not fault; the range is not otherwise measured on T8152.
 3. **There is no wrapper mailbox.** T8152 uses a Postoffice (`msgbox-using-postoffice`, mailbox number 12): channel 24, second 64 KiB half of reg[2], aperture `0x316010c00`. RX at +0x00, TX at +0x10, STATUS at +0x20 (kext, ADT). The T6021 `ANE_ASC_MBOX*` registers have no counterpart there.
 4. **The channel layout is not the T6021 one.** The firmware's table on the board has TERMINAL with `0x200` slots (T6021 `0x300`), so every later ring offset and the total differ (second table below). `ane_t6021_chman_check` would reject the M6 table.
-5. **`CPU_STATUS` after RUN.** Board: `0xa` before RUN, `0x8` after the write of RUN (bit 1 STOPPED clear, bit 0 RUNNING not set). The probe's `!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)` test is true on T8152 after RUN.
+5. **`CPU_STATUS` after RUN.** Board: `0xa` before RUN. With the firmware mapped through the DART it reads `0xd` after RUN (bit 0 RUNNING set; `0xc` between polls, one `0x8` poll in boot `ee8a53d1`), and `0xe` (STOPPED) after the stop. With no firmware mapped (boot `235c8ff4`) it reads `0x8`, RUNNING never set. The probe's `!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)` test is therefore true only when no firmware is mapped, and a single poll can read RUNNING clear while the core runs.
 6. **iBoot loads the firmware** (`pre-loaded = 1`, BuildManifest `IsLoadedByiBoot`), so the loader rows (pinned image, ASC tunables, RTK patch addresses, alias windows) do not apply to T8152; IORVBAR is already `0x10000000001` (IOVA `0x10000000000` with the valid bit), which the T6021 entry fold accepts (checked by the test).
 7. **The channel and handshake words match.** READY, wake, the 0x21 request limit, the 0x174 byte init block and the RTKit management types are the same constants.
 
@@ -81,23 +82,23 @@ Evidence tags in the last column:
 | `ANE_OPSEC_OP_REC_SIZE` | `0x40c` | ? | ? | same |
 | `ANE_OPSEC_MAX_OPS` | `0x80` | ? | ? | same |
 | `ANE_T6021_MAX_PROGRAMS` | `250` | ? | ? | T6021: measured; firmware table size on T8152 not read |
-| `ANE_ASC_CPU_STATUS_RUNNING` | `BIT(0)` | `BIT(0)` not set after RUN (see 5 above) | `BIT(0)` [ANE_H15_ST_RUNNING] | board |
-| `ANE_ASC_CPU_STATUS_STOPPED` | `BIT(1)` | `BIT(1)` set before RUN, clear after | `BIT(1)` [ANE_H15_ST_STOPPED] | board |
+| `ANE_ASC_CPU_STATUS_RUNNING` | `BIT(0)` | `BIT(0)` set after RUN with the firmware mapped, flickering between polls; not set without firmware (see 5 above) | `BIT(0)` [ANE_H15_ST_RUNNING] | board |
+| `ANE_ASC_CPU_STATUS_STOPPED` | `BIT(1)` | `BIT(1)` set before RUN (`0xa`), clear while running (`0xc`/`0xd`), set again after the stop (`0xe`) | `BIT(1)` [ANE_H15_ST_STOPPED] | board |
 | `ANE_T6021_CPU_RUN_RELEASE` | `0x10` | `0x10` | `0x10` | kext write 0 then 0x10; H15: `ANE_H15_CPU_RUN` is BIT(4) |
 | `ANE_T6021_RVBAR_ENTRY_BASE` | `0x0081000000000001` | `0x0081000000000001` | ? | kext reads IORVBAR with the T6021 constants |
 | `ANE_T6021_RVBAR_ADDR_MASK` | `0xff7efffffffff800` | `0xff7efffffffff800` | ? | kext; iBoot's `0x10000000001` folds to `0x10000000000` |
 | `ANE_T6021_BOOT_IPC_REQ_THRESHOLD` | `0x21` | `0x21` [ANE_H18_HS_REQ_LIMIT] | `0x21` [ANE_H15_HS_REQ_LIMIT] | kext both |
 | `ANE_T6021_BOOT_WAKE_REQ` | `0xf7fbdff9` | `0xf7fbdff9` [ANE_H18_HS_WAKE] | `0xf7fbdff9` [ANE_H15_HS_WAKE] | kext both |
 | `ANE_T6021_BOOT_ACK` | `0x08042006` | `0x08042006` [ANE_H18_HS_READY] | `0x08042006` [ANE_H15_HS_READY] | kext; T8152 SCRATCH7 already reads READY before the wake |
-| `ANE_T6021_INIT_STRUCT_SIZE` | `0x174` | `0x174` [ANE_H18_HS_BLOCK_SIZE] | `0x174` | board block; kext |
-| `ANE_T6021_INIT_FW_DVA_OFF` | `0x00` | `0x00` | `0x00` | board block +0x0 = `0x10000000000` (firmware IOVA) |
-| `ANE_T6021_INIT_COUNT_OFF` | `0x68` | `0x68` | `0x68` | board block +0x68 = `0x40` |
-| `ANE_T6021_INIT_COUNT` | `0x40` | `0x40` | `0x40` | board |
+| `ANE_T6021_INIT_STRUCT_SIZE` | `0x174` | `0x174` [ANE_H18_HS_BLOCK_SIZE] | `0x174` | kext; host-written: the module wrote a block of this size and the firmware then published its table |
+| `ANE_T6021_INIT_FW_DVA_OFF` | `0x00` | `0x00` | `0x00` | kext (+0x0 is the IOVA of the firmware surface); host-written on the M6: `0x10000000000`, iBoot's TEXT IOVA |
+| `ANE_T6021_INIT_COUNT_OFF` | `0x68` | `0x68` | `0x68` | kext; host-written `0x40` |
+| `ANE_T6021_INIT_COUNT` | `0x40` | `0x40` | `0x40` | kext; host-written |
 | `ANE_T6021_INIT_TEMPLATE_OFF` | `0x6c` | `0x6c` | `0x6c` | kext |
 | `ANE_T6021_INIT_TEMPLATE_SIZE` | `0x100` | `0x100` | `0x100` | kext |
-| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | board: +0x12c (= 0x6c + 0xc0) = `0x4` |
-| `ANE_T6021_INIT_TBIT_VAL` | `0x4` | `0x4` | `0x4` | board |
-| `ANE_T6021_BOOT_IPC_CEILING` | `0x100000` | `0x100000` [ANE_H18_HS_IPC_MAX] | `0x100000` [ANE_H15_HS_IPC_MAX] | driver limit, not a chip value; board IPC request was `0xc441` |
+| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | kext (template word +0xc0 is OR-ed with 4); host-written at block +0x12c (= 0x6c + 0xc0) |
+| `ANE_T6021_INIT_TBIT_VAL` | `0x4` | `0x4` | `0x4` | kext; host-written `0x4` |
+| `ANE_T6021_BOOT_IPC_CEILING` | `0x100000` | `0x100000` [ANE_H18_HS_IPC_MAX] | `0x100000` [ANE_H15_HS_IPC_MAX] | driver limit, not a chip value; the firmware's request on the board gave `0xc441` (SCRATCH1 + 1) |
 | `ANE_T6021_BOOT_HEAP_CEILING` | `0x2000000` | `0x4000000` [ANE_H18_HS_HEAP_MAX] | `0x4000000` [ANE_H15_HS_HEAP_MAX] | driver limit; the board heap request is `0xf00000`, which fits both |
 | `ANE_T6021_BOOT_REG_TABLE0` | `0xb38` | ? | ? | T6021 register table, not decoded for T8152 |
 | `ANE_T6021_BOOT_REG_TABLE1` | `0xb98` | ? | ? | same |
@@ -112,7 +113,7 @@ Evidence tags in the last column:
 | `ANE_T6021_CHMAN_ENTRY_SIZE` | `0x100` | `0x100` [ANE_H18_CH_ENTRY] | `0x100` [ANE_H15_CH_ENTRY] | board table |
 | `ANE_T6021_CHMAN_NAME_LEN` | `0x40` | `0x40` [ANE_H18_CH_NAME_LEN] | `0x40` [ANE_H15_CH_NAME_LEN] | board table |
 | `ANE_T6021_CHMAN_COUNT` | `8` | `8` [ANE_H18_CH_COUNT] | `8` [ANE_H15_CH_COUNT] | board table |
-| `ANE_T6021_CHMAN_TOTAL` | `0x10440` | `0xc440` | ? | board SCRATCH1 `0xc440` (init block +0x50 = S1 + 1 = `0xc441`); equals the last ring end `0xc400` + 0x40, the slack T6021 has too; see 4 above |
+| `ANE_T6021_CHMAN_TOTAL` | `0x10440` | `0xc440` | ? | SCRATCH1 + 1 = `0xc441` in init block +0x50, so SCRATCH1 = `0xc440` (the module's own computation from the word it read); equals the last ring end `0xc400` + 0x40, the slack T6021 has too; see 4 above |
 | `ANE_FW_BUF_SIZE` | `0x500000` | n/a (iBoot loads); payload `0x180000` | ? | `data/ane-soc/t8152.json` firmware.ane0_payload_size 1572864 |
 | `ANE_FW_NCMDS` | `5` | `7` | ? | json firmware.macho |
 | `ANE_FW_SIZEOF_CMDS` | `0x960` | `0xb38` | ? | json firmware.macho |
