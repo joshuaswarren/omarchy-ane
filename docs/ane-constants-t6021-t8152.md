@@ -6,6 +6,7 @@ Evidence tags in the last column:
 - **ADT**: read in the M6 ADT (`/arm-io/ane`, `/arm-io/dart-ane`) or the IPSW data file `data/ane-soc/t8152.json`.
 - **kext**: decoded from the macOS 27.0 `mac18g` kernelcache (sha256 `09746d1f442153956ba00b385f49bc245460c1ebea92cae7e9e0e4f240745b85`), `AppleH16ANEInterface` for the engine words, `AppleA7IOP-ASCWrap-v8` for the mailbox. Static reading, nothing run.
 - **board**: printed by `ane_h18` on the M6 (boot `ee8a53d1`, 2026-10-24; the log is not checked in).
+- **Revisions** the T6021, H18 and H15 columns were checked against (main `4819ce9`): `ane/t6021` last changed in `1a0fcc677ff797eace37d783b47ecc1d8723105e`, `ane/h18` in `c418dd6b325f86a34db79f954dc3c89752c23e81`, `ane/h15` in `9b22d1135296e66db01fa3a2aed3236b75c7439d`, `data/ane-soc/t8152.json` in `78fa806eee4f65028091917085a4155d7d0db652`. The ADT is the M6 live capture with sha256 `6d6827271263e12da4ae103c18708051156586aced2a0472ff78d5985183d254`. The board log is boot `ee8a53d1` of kernel `7.1.12-aurora-m6usb-ARCH #27` with `ane_h18.ko` sha256 `8cda95318d9cfb48bd047e9c8993212b49f8f0299877efa7ebf345d4b56c4790`. The test only checks the current source; these hashes say which source the evidence tags refer to.
 - **I**: inferred, no source reads it. **?**: not decoded; the T6021 value must not be copied.
 
 ## What does not carry over (read this before the table)
