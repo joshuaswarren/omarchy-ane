@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * J700/T8140 H17 stage 3, source-only power-domain probe overlay.
+ * Applied only by a manual boot opt-in; never packaged or auto-installed.
+ * The probe device votes for the existing ps_ane_sys provider. It does not
+ * enable the ANE or any DART node.
+ * Source: aurora-linux b6f070c911934c9c377c4be939b883bf32f37acf,
+ * arch/arm64/boot/dts/apple/t8140-pmgr.dtsi: ps_ane_sys at +0x290.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h17-ps-probe";
+
+	fragment@0 {
+		target-path = "/soc/power-management@300700000/power-controller@290";
+		ps_ane_sys: __overlay__ {
+			#power-domain-cells = <0>;
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc";
+		__overlay__ {
+			ane-h17-ps-probe {
+				compatible = "omarchy,t8140-ane-ps-probe";
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+		};
+	};
+};

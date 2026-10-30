@@ -1,0 +1,24 @@
+# Maintainer: omarchy-ane
+# Manual J700 H17 stage 3 overlay. Opt-in key: ane-h17-ps-probe.
+# Build from this checkout: cd packaging/arch/omarchy-ane-h17-ps-probe-dt && makepkg -f
+pkgname=omarchy-ane-h17-ps-probe-dt
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Opt-in J700 ANE_SYS power-state probe overlay"
+arch=('aarch64')
+url="https://github.com/3j27/omarchy-ane"
+license=('MIT' 'GPL-2.0-only')
+depends=('omarchy-mac-boot>=20261024' 'dtc>=1.7.1' 'linux-aurora')
+makedepends=('dtc')
+options=(!strip)
+_repo=$startdir/../../..
+
+build() {
+	dtc -q -@ -I dts -O dtb -o t8140-ane-ps-probe.dtbo \
+		"$_repo/ane/h17/t8140-ane-ps-probe.dts"
+}
+
+package() {
+	install -Dm644 t8140-ane-ps-probe.dtbo \
+		"$pkgdir/usr/lib/omarchy-mac-boot/dtb-overlays/t8140/omarchy-ane-h17-ps-probe.dtbo"
+}

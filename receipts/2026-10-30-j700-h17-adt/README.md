@@ -125,3 +125,73 @@ but the live genpd state was `off-0`. The source is aurora-linux
 `data/ane-soc/t8140.json`. No power request, ANE MMIO or DART access
 occurred. This gate is a prerequisite to designing stage 3, not stage 3
 itself.
+
+## Stage 3 source and current-boot refusal
+
+`ane/h17/t8140-ane-ps-probe.dts` creates one synthetic ANE_SYS consumer;
+it does not change the disabled ANE or DART nodes. The new
+`ane_h17_ps_probe.ko` calls Linux PM runtime on that consumer, reads only
+the PMGR state word at offset `0x290`, checks ACTUAL bits 7:4 for `0xf`,
+then releases the vote. The PMGR semantics and 100 microsecond poll
+timeout come from aurora-linux
+`b6f070c911934c9c377c4be939b883bf32f37acf`,
+`drivers/pmdomain/apple/pmgr-pwrstate.c`. The module itself does not
+map ANE or DART registers.
+
+`make -C ane/h17` exited 0 against the running kernel headers; the
+source had no W=1 warning (GCC emitted existing kernel-header attribute
+warnings). The module SHA-256 is
+`062131061c4a521bb06c1a145b0fcf72ee22fb3a4b0f56c0409e2c7eb16c9053`.
+The kernel's `dtc -q -@` compiled the overlay (SHA-256
+`e7de0de7ec934c44ec88756bc2d399bd83d3728ed4259b6dc7e143bedf7f2d67`),
+and `fdtoverlay` merged it with `/sys/firmware/fdt` offline. In that
+merged blob the consumer's `power-domains` is `<0xa0>`, the existing
+ANE_SYS phandle; the ANE remains `disabled`.
+
+On the unchanged live tree, `sudo insmod ane/h17/ane_h17_ps_probe.ko
+optin=1` refused with `error=-22`, `reason=board-optin-or-dt`, because
+the synthetic node is absent. The module was not loaded and the live
+genpd summary still read `ane_sys off-0`. No power vote or ANE MMIO
+occurred. This is a refusal-path result, **not a stage 3 power PASS**.
+
+The host has `omarchy-mac-boot 20261024-1` and its
+`/usr/lib/omarchy-mac/boot/dtb-overlays.sh` hook. `dtc 1.8.1` was
+installed because the hook requires `dtc`, `fdtoverlay`, and `fdtget`
+at version 1.7.1 or newer. Its own `dtb_overlays_build` merged the
+opted-in overlay with the installed `t8140-j700.dtb`: the synthetic
+consumer and ANE_SYS both held phandle `0xa0`, while the ANE remained
+`disabled`. The overlay was installed at
+`/usr/lib/omarchy-mac-boot/dtb-overlays/t8140/omarchy-ane-h17-ps-probe.dtbo`,
+and the key `ane-h17-ps-probe` was written to
+`/etc/omarchy-mac-boot/dtb-overlays.opt-in`.
+
+`sudo update-m1n1` exited 0 and wrote `/boot/efi/m1n1/boot.bin` with
+SHA-256 `5da129f0a4edde5c9bc30e0565c140bb167eb5ded739bab25d2fca785d839648`.
+Its strings include `omarchy,t8140-ane-ps-probe`. The previous boot
+image SHA-256 was
+`f4ae3c12689f81cf136802c9ed70a8457f1593e68366cf58126458d5988c44c6`.
+This is staged for the **next boot**; the current running tree still lacks
+the probe node and ANE_SYS is still `off-0`. No reboot or live power
+transition has occurred yet.
+
+`omarchy-apple-silicon-boot-check --boot-chain` initially refused the
+manually copied overlay because it was not owned by a package. A local
+`omarchy-ane-h17-ps-probe-dt 0.1.0-1` package was built from
+`packaging/arch/omarchy-ane-h17-ps-probe-dt/PKGBUILD` and installed;
+`pacman -Qo` now names that package for the overlay, and its installed
+SHA-256 remains `e7de0de7ec934c44ec88756bc2d399bd83d3728ed4259b6dc7e143bedf7f2d67`.
+The package hook rebuilt m1n1. `sudo omarchy-apple-silicon-boot-check
+--boot-chain` then exited 0: `running linux-aurora 7.2.11-6-1-ARCH;
+installed boot files match`.
+
+The one-time `ane/h17/run-stage3.sh` was exercised on the current boot.
+It re-ran firmware `--check`, stages 0, 1, and 2, and the eleven-check
+DT preflight successfully, then stopped because the synthetic node is
+absent until reboot. It unloaded the ADT probe and made no power vote.
+
+`omarchy-ane-h17-stage3.service` was installed under `/etc/systemd/system`
+and enabled. Its one-time marker is
+`/var/lib/omarchy-ane/h17-stage3.pending`. On the next boot it removes
+that marker before the runner starts. The runner writes a log under
+`/var/log/omarchy-ane/` keyed by boot ID, and stops at the first failed
+rung. The service has not run yet.

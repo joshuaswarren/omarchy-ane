@@ -87,13 +87,52 @@ debugfs is readable. `PASS` means the DT wiring matches this source; it
 does not power the ANE or prove the register map. A missing or changed
 node returns `REFUSED` and exit 2.
 
-Stage 3 still needs a reviewed T8140 power sequence and a read-only status
-probe. The ADT has one ANE_SYS power-state word at PMGR `0x300700290`
-(`data/ane-soc/t8140.json` source A1); it does not have the five separate
-power-state words that the H16 module waits for. The H16 status stage must
-therefore not be run on T8140 as-is. Stage 4 would be a bounded firmware
-wake and RTKit handshake. A smoke inference and exact fp16 comparison are
-needed before claiming working ANE support.
+Stage 3 is implemented as `ane_h17_ps_probe.ko` and
+`t8140-ane-ps-probe.dts`. The overlay adds only a synthetic consumer of
+the existing ANE_SYS power domain; it leaves the ANE and DART nodes
+disabled. The module requires `optin=1` on J700, checks that DT layout,
+uses the aurora-linux PMGR driver to vote the one domain on, reads only
+the PMGR word at offset `0x290`, requires ACTUAL bits 7:4 to be `0xf`,
+and releases the vote. The PMGR field and transition are from
+aurora-linux `b6f070c911934c9c377c4be939b883bf32f37acf`,
+`drivers/pmdomain/apple/pmgr-pwrstate.c`; the ADT address is
+`data/ane-soc/t8140.json` source A1. It does not use H16's five-word
+assumption or touch ANE registers.
+
+This host's original boot tree had no synthetic probe node, so
+`insmod ... optin=1` refused before a power vote. For the next boot, the
+overlay is manually installed under
+`/usr/lib/omarchy-mac-boot/dtb-overlays/t8140/` with key
+`ane-h17-ps-probe` in `/etc/omarchy-mac-boot/dtb-overlays.opt-in`, and
+`update-m1n1` has rebuilt `boot.bin`. The overlay is owned by the local
+`omarchy-ane-h17-ps-probe-dt` package; the Apple Silicon boot integrity
+check passes. The boot hook's offline merge
+resolved the synthetic consumer to the existing ANE_SYS phandle and left
+the ANE node disabled. This source-only overlay is not part of the package.
+A stage 3 PASS still needs the next boot and a live power read. Stop on
+any PMGR timeout, external abort, or DART fault; a hang requires reboot
+before retry.
+
+After that boot, `ane/h17/run-stage3.sh` repeats stages 0, 1, and 2 on
+the new ADT, checks the tree, and runs the power probe only if each check
+passes. It writes `/var/log/omarchy-ane/h17-stage3-BOOT_ID.log`. A
+one-time systemd service is armed for that boot and removes its pending
+marker before running, so it cannot retry automatically. The manual
+stage 3 command, after the same checks, is:
+
+```sh
+sudo insmod ane/h17/ane_h17_ps_probe.ko optin=1
+sudo dmesg --color=never | grep 'ane_h17_ps' | tail -10
+sudo rmmod ane_h17_ps_probe
+```
+
+Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
+passes this rung. Record the full PMGR word and the post-unload genpd
+state. Do not proceed to firmware wake on a failed or missing result.
+
+Stage 4 would be a bounded firmware wake and RTKit handshake. A smoke
+inference and exact fp16 comparison are needed before claiming working
+ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on
