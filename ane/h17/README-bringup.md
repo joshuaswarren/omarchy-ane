@@ -108,16 +108,19 @@ overlay is manually installed under
 `omarchy-ane-h17-ps-probe-dt` package; the Apple Silicon boot integrity
 check passes. The boot hook's offline merge
 resolved the synthetic consumer to the existing ANE_SYS phandle and left
-the ANE node disabled. This source-only overlay is not part of the package.
-A stage 3 PASS still needs the next boot and a live power read. Stop on
-any PMGR timeout, external abort, or DART fault; a hang requires reboot
-before retry.
+the ANE node disabled. This source-only overlay is not part of the main
+ANE package. The live stage 3 run on boot
+`3322fb33-90fb-473e-8eff-5668ac9a9f4c` passed: PMGR word `0x23ff`
+at offset `0x290` had TARGET and ACTUAL both `0xf`, and the domain
+returned to `off-0` after the vote was released. Stop on any PMGR
+timeout, external abort, or DART fault; a hang requires reboot before
+retry.
 
-After that boot, `ane/h17/run-stage3.sh` repeats stages 0, 1, and 2 on
+For later checks, `ane/h17/run-stage3.sh` repeats stages 0, 1, and 2 on
 the new ADT, checks the tree, and runs the power probe only if each check
 passes. It writes `/var/log/omarchy-ane/h17-stage3-BOOT_ID.log`. A
-one-time systemd service is armed for that boot and removes its pending
-marker before running, so it cannot retry automatically. The manual
+one-time systemd service removed its pending marker before running and
+was disabled after success, so it cannot retry automatically. The manual
 stage 3 command, after the same checks, is:
 
 ```sh

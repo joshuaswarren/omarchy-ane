@@ -194,4 +194,38 @@ and enabled. Its one-time marker is
 `/var/lib/omarchy-ane/h17-stage3.pending`. On the next boot it removes
 that marker before the runner starts. The runner writes a log under
 `/var/log/omarchy-ane/` keyed by boot ID, and stops at the first failed
-rung. The service has not run yet.
+rung. The service had not run at this point.
+
+## Stage 3 live result after reboot
+
+Boot ID `3322fb33-90fb-473e-8eff-5668ac9a9f4c`, still kernel
+`7.2.11-6-1-ARCH`. The one-time service exited 0. Its complete log is
+`/var/log/omarchy-ane/h17-stage3-3322fb33-90fb-473e-8eff-5668ac9a9f4c.log`,
+SHA-256 `72b7af3dbc75f2e666b84f50d3bf30465d035fec4ae25314f9fc32eb2909d899`.
+It re-ran the 26.6.2 firmware pin, stages 0, 1, and 2, and all eleven
+tree checks before any power request. The boot ADT named the same TEXT
+and DATA physical ranges; the TEXT digest remained
+`cda09ec1aee68b88b47edc0eebc810452532a855563fbd650b95e2846c345310`.
+The DATA digest was
+`85c38477bb5921bbf1524ce3daa109ae658b80399f9ade0699dbadd4ac587e71`.
+The preload comparison found 1,730 allowed TEXT differences and 335
+allowed DATA differences, with zero forbidden differences. The DATA
+digest and difference count changed by one byte since the previous boot;
+all differences remain inside the three pinned environment sections.
+
+The live power read was:
+
+```text
+ane_h17_ps pmgr off=0x290 word=0x23ff target=0xf actual=0xf
+ane_h17_ps RESULT stage=3 verdict=PASS reason=ane-sys-on
+ane_sys                         off-0                           0
+H17_STAGE3_PASS
+```
+
+This proves the Linux PMGR provider can turn the ANE_SYS domain on and
+off on J700. It does not prove the ANE CPU, DARTs, mailbox, or inference
+work. The staged run submitted no task and touched no ANE or DART MMIO.
+No ANE, DART, external-abort, or PMGR fault appeared around the stage 3
+run. The pending marker was consumed, the modules are unloaded, and the
+one-time service was disabled. `omarchy-apple-silicon-boot-check
+--boot-chain` still exits 0.
