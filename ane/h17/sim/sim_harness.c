@@ -24,6 +24,7 @@ int sim_genpd_on;
 int sim_genpd_disabled;
 unsigned long sim_writes_ctl;
 unsigned long sim_regmap_writes;
+u32 sim_child_word = 0x00;	/* pmgr pwrstate: TARGET 3:0, ACTUAL 7:4 */
 void __iomem *sim_engine_base = (void __iomem *)0x40000000ull;
 struct sim_fw sim_fw;
 
@@ -103,7 +104,7 @@ static int run_mode(const char *mode)
 		chk(ret == 0);
 		chk(log_contains("verdict=PASS reason=asc-snapshot"));
 		chk(sim_writes_ctl == 0);
-		chk(sim_regmap_writes == 0);
+		chk(sim_regmap_writes == 1);
 		chk(sim_genpd_on == 0);
 	} else if (strcmp(mode, "pos-wake") == 0) {
 		scenario_reset(0, 0xa);
@@ -143,6 +144,14 @@ static int run_mode(const char *mode)
 		return 2;
 	}
 
+	if (failures == 0 && getenv("SIM_ORDER")) {
+		const char *wr = strstr(sim_log, "pmgr write off=0xc008");
+		const char *rd = strstr(sim_log, "read off=0x1600048");
+		if (wr && rd && wr > rd) {
+			printf("%s: child write AFTER engine read\n", mode);
+			failures++;
+		}
+	}
 	printf("%s: %s (%d check failures)\n", mode,
 	       failures ? "FAIL" : "ok", failures);
 	if (failures && getenv("SIM_DEBUG"))

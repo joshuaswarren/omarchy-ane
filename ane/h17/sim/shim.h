@@ -156,9 +156,12 @@ static inline int of_address_to_resource(struct device_node *n, int idx, struct 
 	return -EINVAL;
 }
 
-/* fake PMGR regmap: word at 0x290 is 0x23ff only while the domain is on */
+/* fake PMGR regmap: word at 0x290 is 0x23ff only while the domain is on;
+ * the child state at 0xc008 reads 0x00 until the module writes 0xf to it,
+ * after which it reads 0x2f (TARGET 0xf, ACTUAL 0xf). */
 struct regmap;
 extern unsigned long sim_regmap_writes;
+extern u32 sim_child_word;
 static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 {
 	(void)m;
@@ -166,13 +169,19 @@ static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 		*v = sim_genpd_on ? 0x23ff : 0x2000;
 		return 0;
 	}
+	if (off == 0xc008) {
+		*v = sim_child_word;
+		return 0;
+	}
 	*v = 0;
 	return 0;
 }
 static inline int regmap_write(struct regmap *m, u32 off, u32 v)
 {
-	(void)m; (void)off; (void)v;
+	(void)m;
 	sim_regmap_writes++;
+	if (off == 0xc008 && (v & 0xf) == 0xf)
+		sim_child_word = 0xff;
 	return 0;
 }
 

@@ -137,31 +137,34 @@ state. Do not proceed to firmware wake on a failed or missing result.
 
 `ane_h17_wake.ko` binds the same synthetic `ane-h17-ps-probe` consumer
 node as the stage 3 module (the two must not be loaded together). It
-takes the ANE_SYS vote, then reads, every address logged before the
-read: CPU_STATUS `0x1600048`, CPU_CONTROL `0x1600044`, RVBAR
-`0x1050000`, SCRATCH words `0x1880020..0x1880044` (nine words: the
-h16g table carries both a `+0x20` and a `+0x24` SCRATCH0 alignment and
-no h17-specific row, so both stay candidates), and the mailbox control
-words of both candidates (`0x1608110/0x1608114` and
-`0x196c110/0x196c114`). Without `confirm_wake=1` the stage ends
-`verdict=PASS reason=asc-snapshot` with zero engine writes. The read
-pass also dumps the pmgr words at `0x2e0`, `0x4000..0x4030` and
-`0xc000..0xc020` (reads only), so the first run maps the child
-power-state picture. Register provenance and the boot/panic events of
-2026-10-30 are in the
+takes the ANE_SYS vote, dumps the pmgr words at `0x2e0`,
+`0x4000..0x4030` and `0xc000..0xc020` (reads only), then — unless
+`child_ps=0` — raises the child state at pmgr `0xc008` (idempotent,
+skipped when ACTUAL is already `0xf`, bounded wait) exactly as the
+macOS power-up path does before it touches the ASC. Only then does it
+read, every address logged before the read: CPU_STATUS `0x1600048`,
+CPU_CONTROL `0x1600044`, RVBAR `0x1050000`, SCRATCH words
+`0x1880020..0x1880044` (nine words: the h16g table carries both a
+`+0x20` and a `+0x24` SCRATCH0 alignment and no h17-specific row, so
+both stay candidates), and the mailbox control words of both
+candidates (`0x1608110/0x1608114` and `0x196c110/0x196c114`). Without
+`confirm_wake=1` the stage ends `verdict=PASS reason=asc-snapshot`.
+The child raise matters: the first snapshot attempt on 2026-10-30, run
+with ANE_SYS alone, hung the machine during the engine read pass
+(the log lines were lost with the unclean reset; the stage 4 log file
+never appeared, so the run used the manual insmod command). Register
+provenance and the boot/panic events of that day are in the
 [stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
 
 With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape,
-the module optionally raises the `0xc008` pmgr child state
-(`child_ps=1`, default off — the macOS power-up path for ane-type
-`0x200`/`0x210` writes `0xf` there), writes RUN once to CPU_CONTROL,
-polls CPU_STATUS and both SCRATCH7 candidates for the wake word
-`0x08042006` (`wake_wait_ms`, default 500), peeks the mailbox picked
-by `mbox_off` (default `0x1608000`, alt `0x196c000`; reads pop
-messages and nothing is replied) for `mbox_wait_ms`, clears RUN, and
-waits `stop_wait_ms` for STOPPED. A core that does not stop keeps the
-power vote held and requires a reboot (observed on the M6); the stage
-ends `verdict=FAIL reason=core-not-stopped`. PASS reasons:
+the module writes RUN once to CPU_CONTROL, polls CPU_STATUS and both
+SCRATCH7 candidates for the wake word `0x08042006` (`wake_wait_ms`,
+default 500), peeks the mailbox picked by `mbox_off` (default
+`0x1608000`, alt `0x196c000`; reads pop messages and nothing is
+replied) for `mbox_wait_ms`, clears RUN, and waits `stop_wait_ms` for
+STOPPED. A core that does not stop keeps the power vote held and
+requires a reboot (observed on the M6); the stage ends
+`verdict=FAIL reason=core-not-stopped`. PASS reasons:
 `wake-word-hello`, `wake-word`, `hello-msgs`, `quiet-stop`. The module
 never programs a DART, maps firmware, or submits a task.
 

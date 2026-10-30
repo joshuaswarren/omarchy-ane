@@ -89,8 +89,7 @@ and three mutation controls all behave as required. It is not silicon.
 
 ## Today's reboots and the PMU panic record
 
-Four boot boundaries today, none caused by ANE access and none with any
-`ane_h17*` module loaded:
+Five boot boundaries today; the last one is the stage 4 hang:
 
 | boot start | end | evidence |
 | --- | --- | --- |
@@ -98,23 +97,36 @@ Four boot boundaries today, none caused by ANE access and none with any
 | 12:45:25 | ~14:15:0x | unclean end |
 | 14:15:08 | 14:17:52 | **panic** — the next boot's PMU read "1 boot error(s), 1 panic(s)" at 14:18:02 |
 | 14:17:52 | 14:22:59 | unclean end, no panic |
-| 14:22:59 | current | |
+| 14:22:59 | ~15:39:20 | **stage 4 hang** — see below |
+| 15:39:33 | current | |
 
-The ANE work's only hardware touch was the stage 3 power vote at 09:09
-on the first boot (clean; the domain returned to off). The stage 4
-module was compiled at 12:45 and never loaded. The panic text was not
-captured: `/sys/fs/pstore` is absent, the journal of the panicking boot
-ends before the panic, and the SMC driver prints only the panic count
-from its nvmem cells. Netconsole is not an option on this machine
-today (wlan0 only; the classical netconsole needs a pollable NIC).
+The ANE work's only hardware touch before the hang was the stage 3
+power vote at 09:09 on the first boot (clean; the domain returned to
+off). The stage 4 module was compiled at 12:45 and first loaded in the
+afternoon, on the boot that started 14:22:59: the read-only snapshot
+(`optin=1`, no `confirm_wake`) hung the machine during the engine read
+pass. The hang point is bounded but not named: the stage 4 log file
+never appeared, so the run used the manual insmod command, and the
+kernel log lines died with the unclean reset (no pstore, journal
+unsynced, PMU logged no panic). The first engine MMIO read in the pass
+is CPU_STATUS at `0x1600048`; the macOS power-up path raises the
+`0xc008` child state before it touches the ASC, and the first attempt
+ran with ANE_SYS alone — the prime suspect. The module was reworked
+the same evening: the `0xc008` raise (idempotent, bounded wait) now
+happens before the first engine access, `child_ps=1` by default, and
+`child_ps=0` keeps a run write-free with the hang risk it carries.
 `panic_console_replay` is set to `1` at runtime so a future panic
 replays the console on the built-in display; the setting reverts at
-reboot.
+reboot. Netconsole is not an option on this machine today (wlan0 only;
+the classical netconsole needs a pollable NIC).
 
 ## What remains before stage 4 runs
 
-Hardware authorization for one `insmod` of `ane_h17_wake.ko optin=1`
-(read-only) and then, if that passes, `run-stage4.sh GO` on a boot
-where the preflight passes. A hang costs one reboot; a core that does
-not stop costs one reboot too (the module says so and keeps the domain
-powered).
+Hardware authorization for one `insmod` of the reworked
+`ane_h17_wake.ko optin=1` (one pmgr child write, then the read pass)
+and then, if that passes, `run-stage4.sh GO` on a boot where the
+preflight passes. A hang costs one reboot; a core that does not stop
+costs one reboot too (the module says so and keeps the domain
+powered). If the snapshot hangs again, the suspect moves from "child
+state missing" to "wrapper base wrong" — the next candidate is the
+h16g row's `0x1880044/0x1880048` pair instead of `0x1600044/48`.
