@@ -40,3 +40,32 @@ ane_h17_adt_probe RESULT stage=0 soc=t8140 verdict=PASS reason=segments
 module afterward. This establishes that iBoot left ANE segment metadata
 in the live ADT. It does not establish that the preload bytes are valid,
 that the ANE can power up, or that inference runs.
+
+## Stage 1: reserved-RAM preload read
+
+The first `inspect_preload=1` attempt refused `reason=outside-dram` before
+mapping a segment. Linux's `memory@10000000000/reg` begins at
+`0x10003438000` on this boot, after the iBoot-reserved firmware area. The
+probe was corrected to admit only ADT-named ranges in the first 64 MiB of
+the J700 DRAM aperture that end before the first Linux RAM range. The
+corrected build had SHA-256
+`dc4f00b7a3235a906654182ada4ecaac6b463fe9fc65cebf98fbe3f33c1f6eae`
+when loaded. `sudo insmod ... optin=1 inspect_preload=1` exited 0 and
+printed:
+
+```text
+ane_h17_adt_probe preload segment=TEXT sha256=cda09ec1aee68b88b47edc0eebc810452532a855563fbd650b95e2846c345310 nonzero=1
+ane_h17_adt_probe preload segment=DATA sha256=ceea79eadab680c3a849dc93442a8d5bec6d43b5e304fa88673e89969c721f5c nonzero=1
+ane_h17_adt_probe RESULT stage=1 soc=t8140 verdict=PASS reason=preload-readable
+```
+
+`sudo rmmod ane_h17_adt_probe` exited 0. This proves the two named ranges
+hold readable, nonzero bytes on this boot. It does not compare them with
+the pinned firmware payload or prove that ANE hardware can run them.
+
+After the empty-segment refusal was added, the final module built without
+source warnings (SHA-256
+`0cebd48a202ed52689bf29f570212568abfb746512e48447783b4d9c882bbaf0`).
+The same stage 0 and stage 1 outputs passed again, with the same two
+segment digests. `sudo rmmod` exited 0. An `insmod` without `optin=1`
+then refused with `reason=board-or-optin`, and no module remained loaded.
