@@ -247,24 +247,18 @@ result read after a hang is not evidence.
   `~/src/ane-linux-experiments` (M1 ANE experiments and Qwen-shaped
   kernels).
 
-## Git identity (COS-290 — standing)
+## Git identity (COS-290)
 
-All commits on this repo MUST be authored and committed as:
+Use the actual contributor's global Git name and email for both author and
+committer. Do not set a repository-local `user.name` or `user.email`, and do
+not impersonate Joshua Warren. Before committing, check `git config --global
+--get user.name` and `git config --global --get user.email`, then unset
+`GIT_AUTHOR_*` and `GIT_COMMITTER_*` overrides.
 
-- **Name:** Joshua Warren
-- **Email:** 816217+joshuaswarren@users.noreply.github.com
-
-Never use AneRecover, ane-recover@homelab.local, machine hostname, omp pane name, or any bot/subagent name as `user.name` / `user.email` / `GIT_AUTHOR_*` / `GIT_COMMITTER_*`.
-
-Before the first commit in a worktree or subagent:
-
-```bash
-git config user.name "Joshua Warren"
-git config user.email "816217+joshuaswarren@users.noreply.github.com"
-unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
-```
-
-`core.hooksPath=scripts/hooks` enforces this via `pre-commit` (hard reject) for every clone that keeps that config.
+Never use AneRecover, ane-recover@homelab.local, a machine hostname, an omp
+pane name, or a bot/subagent name as the Git identity. `scripts/hooks` checks
+that the commit uses the contributor's global identity when that hook path is
+enabled. The `prepare-commit-msg` hook must not rewrite identity variables.
 
 ## Review and merge rule (2026-10-10)
 
