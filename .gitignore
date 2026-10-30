@@ -67,3 +67,6 @@ ane/test/_build/
 ane/h15/sim/sim_h15
 ane/h15/sim/sim_h15_filled
 ane/h18/sim/sim_h18
+
+# ane/h17 userspace sim binary
+ane/h17/sim/sim_h17_wake
