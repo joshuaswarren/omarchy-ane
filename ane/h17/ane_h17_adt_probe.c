@@ -7,6 +7,8 @@
  * aurora-linux 68df87370aba t8140.dtsi provides the reserved ADT node.
  */
 #include <crypto/sha2.h>
+#include <linux/firmware.h>
+#include <linux/hex.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/ioport.h>
@@ -18,10 +20,9 @@
 #include <linux/string.h>
 
 #include "../h15/ane_h15_adt.h"
+#include "ane_h17_fw.h"
 
 #define H17_ANE_TYPE		0x200
-#define H17_TEXT_SIZE		0xc0000
-#define H17_DATA_SIZE		0x2ac000
 #define H17_ADT_MAX_SIZE	(2 * 1024 * 1024)
 /* aurora-linux 68df873 t8140-j700.dts starts DRAM at this PA. The
  * boot loader carves the firmware preload out of its leading 64 MiB. */
@@ -36,6 +37,11 @@ static bool inspect_preload;
 module_param(inspect_preload, bool, 0444);
 MODULE_PARM_DESC(inspect_preload,
 		 "Also hash the two reserved-RAM firmware segments; no ANE MMIO");
+
+static bool compare_preload;
+module_param(compare_preload, bool, 0444);
+MODULE_PARM_DESC(compare_preload,
+		 "Compare the two preloaded ranges with the pinned 26.6.2 payload; implies inspect_preload");
 
 static bool ane_h17_in_dram(u64 phys, u64 size)
 {
@@ -73,21 +79,48 @@ static bool ane_h17_in_dram(u64 phys, u64 size)
 
 static int ane_h17_preload(const struct ane_h15_seg segs[2])
 {
+	const struct firmware *fw = NULL;
+	u8 expected_digest[SHA256_DIGEST_SIZE];
+	u8 digest[SHA256_DIGEST_SIZE];
 	unsigned int i;
+	int ret = 0;
+	bool forbidden_diff = false;
+
+	if (compare_preload) {
+		ret = request_firmware_direct(&fw, ANE_H17_FW_NAME, NULL);
+		if (ret) {
+			pr_err("ane_h17_adt_probe RESULT stage=2 soc=t8140 verdict=REFUSED reason=firmware-missing error=%d\n", ret);
+			return ret;
+		}
+		if (fw->size != ANE_H17_FW_SIZE ||
+		    hex2bin(expected_digest, ANE_H17_FW_SHA256,
+			    SHA256_DIGEST_SIZE)) {
+			ret = -EINVAL;
+			goto bad_pin;
+		}
+		sha256(fw->data, fw->size, digest);
+		if (memcmp(digest, expected_digest, sizeof(digest))) {
+			ret = -EBADMSG;
+			goto bad_pin;
+		}
+		pr_info("ane_h17_adt_probe firmware name=%s bytes=%zu sha256=%*phN pin=PASS\n",
+			ANE_H17_FW_NAME, fw->size, SHA256_DIGEST_SIZE, digest);
+	}
 
 	for (i = 0; i < 2; i++) {
 		void *mapped;
-		u8 digest[SHA256_DIGEST_SIZE];
 		bool nonzero;
 
 		if (!ane_h17_in_dram(segs[i].phys, segs[i].size)) {
 			pr_err("ane_h17_adt_probe RESULT stage=1 soc=t8140 verdict=REFUSED reason=outside-dram segment=%u\n", i);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto release;
 		}
 		mapped = memremap(segs[i].phys, segs[i].size, MEMREMAP_WB);
 		if (!mapped) {
 			pr_err("ane_h17_adt_probe RESULT stage=1 soc=t8140 verdict=REFUSED reason=preload-map segment=%u\n", i);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto release;
 		}
 		sha256(mapped, segs[i].size, digest);
 		nonzero = memchr_inv(mapped, 0, segs[i].size) != NULL;
@@ -97,12 +130,64 @@ static int ane_h17_preload(const struct ane_h15_seg segs[2])
 		if (!nonzero) {
 			memunmap(mapped);
 			pr_err("ane_h17_adt_probe RESULT stage=1 soc=t8140 verdict=FAIL reason=empty-preload segment=%u\n", i);
-			return -ENODATA;
+			ret = -ENODATA;
+			goto release;
+		}
+		if (fw) {
+			const u8 *actual = mapped;
+			const u8 *file = fw->data + (i ? ANE_H17_DATA_FILE_OFFSET :
+						 ANE_H17_TEXT_FILE_OFFSET);
+			u64 j, first = U64_MAX, last = 0, differences = 0;
+			u64 allowed = 0, forbidden = 0, first_forbidden = U64_MAX;
+			u64 file_len = i ? ANE_H17_DATA_FILE_SIZE : ANE_H17_TEXT_SIZE;
+
+			for (j = 0; j < segs[i].size; j++) {
+				u8 expected = j < file_len ? file[j] : 0;
+
+				if (actual[j] == expected)
+					continue;
+				if (first == U64_MAX)
+					first = j;
+				last = j;
+				differences++;
+				if ((!i && j >= ANE_H17_CE_ENV_VM &&
+				     j < ANE_H17_CE_ENV_VM + ANE_H17_CE_ENV_SIZE) ||
+				    (i && ((j + ANE_H17_TEXT_SIZE >= ANE_H17_PATCHBAY_VM &&
+					    j + ANE_H17_TEXT_SIZE < ANE_H17_PATCHBAY_VM + ANE_H17_PATCHBAY_SIZE) ||
+					   (j + ANE_H17_TEXT_SIZE >= ANE_H17_TUNABLES_VM &&
+					    j + ANE_H17_TEXT_SIZE < ANE_H17_TUNABLES_VM + ANE_H17_TUNABLES_SIZE)))) {
+					allowed++;
+				} else {
+					if (first_forbidden == U64_MAX)
+						first_forbidden = j;
+					forbidden++;
+				}
+			}
+			pr_info("ane_h17_adt_probe comparison segment=%s differing_bytes=%llu allowed=%llu forbidden=%llu first=%#llx last=%#llx first_forbidden=%#llx file_bytes=%#llx\n",
+				i ? "DATA" : "TEXT", differences, allowed, forbidden,
+				first == U64_MAX ? 0 : first, last,
+				first_forbidden == U64_MAX ? 0 : first_forbidden, file_len);
+			if (forbidden)
+				forbidden_diff = true;
 		}
 		memunmap(mapped);
 	}
 	pr_info("ane_h17_adt_probe RESULT stage=1 soc=t8140 verdict=PASS reason=preload-readable\n");
-	return 0;
+	if (fw) {
+		if (forbidden_diff) {
+			pr_err("ane_h17_adt_probe RESULT stage=2 soc=t8140 verdict=REFUSED reason=preload-diff\n");
+			ret = -EBADMSG;
+		} else {
+			pr_info("ane_h17_adt_probe RESULT stage=2 soc=t8140 verdict=PASS reason=preload-whitelist\n");
+		}
+	}
+	goto release;
+bad_pin:
+	pr_err("ane_h17_adt_probe RESULT stage=2 soc=t8140 verdict=REFUSED reason=firmware-pin error=%d\n", ret);
+release:
+	if (fw)
+		release_firmware(fw);
+	return ret;
 }
 
 static int __init ane_h17_adt_probe_init(void)
@@ -201,14 +286,14 @@ found:
 		(unsigned long long)segs[1].phys,
 		(unsigned long long)segs[1].iova,
 		(unsigned long long)segs[1].size);
-	if (segs[0].size != H17_TEXT_SIZE ||
-	    segs[1].size < H17_DATA_SIZE) {
+	if (segs[0].size != ANE_H17_TEXT_SIZE ||
+	    segs[1].size < ANE_H17_DATA_VM_SIZE) {
 		pr_info("ane_h17_adt_probe RESULT stage=0 soc=t8140 verdict=PASS reason=unexpected-segment-size\n");
 		ret = 0;
 		goto unmap;
 	}
 	pr_info("ane_h17_adt_probe RESULT stage=0 soc=t8140 verdict=PASS reason=segments\n");
-	ret = inspect_preload ? ane_h17_preload(segs) : 0;
+	ret = (inspect_preload || compare_preload) ? ane_h17_preload(segs) : 0;
 	if (ret) {
 		memunmap(mapped);
 		of_node_put(reserved);
@@ -236,5 +321,5 @@ static void __exit ane_h17_adt_probe_exit(void)
 module_init(ane_h17_adt_probe_init);
 module_exit(ane_h17_adt_probe_exit);
 
-MODULE_DESCRIPTION("Opt-in read-only T8140 boot ADT and ANE preload probe");
+MODULE_DESCRIPTION("Opt-in read-only T8140 boot ADT and ANE preload comparison probe");
 MODULE_LICENSE("Dual MIT/GPL");
