@@ -59,10 +59,15 @@ sim-mutation-nowake:
 
 sim-all: sim-test sim-negative sim-mutation-noconfirm sim-mutation-nohalt sim-mutation-nowake
 
+# Off-device check of run-stage4.sh: fake uname, model, DT node, preflight,
+# insmod, rmmod, dmesg and lsmod. Loads no module.
+script-test:
+	./test-stage4.sh
+
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f sim/sim_h17_wake
 
 .PHONY: all sim-test sim-negative sim-mutation-noconfirm sim-mutation-nohalt \
-	sim-mutation-nowake sim-all clean
+	sim-mutation-nowake sim-all script-test clean
 endif

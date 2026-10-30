@@ -173,10 +173,14 @@ sudo ane/h17/run-stage4.sh GO     # adds the confirm_wake=1 run
 The script gates on preflight and the probe node, refuses when any
 `ane_h17*` module is loaded, logs to
 `/var/log/omarchy-ane/h17-stage4-BOOT_ID.log`, and unloads the module
-after each rung. `make -C ane/h17 sim-all` runs the module's userspace
-sim (two positives, three refusals, three mutation controls); a green
-sim is not silicon. A smoke inference and exact fp16 comparison are
-still needed before claiming working ANE support.
+after each rung. `test-stage4.sh` checks the script off device with
+fake `insmod`, `rmmod`, `dmesg`, `lsmod`, preflight and device-tree
+files (`make -C ane/h17 script-test`); it caught a leaked
+`confirm_wake` argument and a wrong exit code before any hardware run.
+`make -C ane/h17 sim-all` runs the module's userspace sim (two
+positives, three refusals, three mutation controls); a green sim is
+not silicon. A smoke inference and exact fp16 comparison are still
+needed before claiming working ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on

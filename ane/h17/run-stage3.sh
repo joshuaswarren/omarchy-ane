@@ -28,8 +28,10 @@ run_rung() {
     insmod "$module_dir/ane_h17_adt_probe.ko" optin=1 "$@"
     lines=$(dmesg --color=never | tail -n +"$((before + 1))")
     printf '%s\n' "$lines" | grep 'ane_h17_adt_probe'
-    printf '%s\n' "$lines" | grep -Fq "RESULT stage=$stage soc=t8140 verdict=PASS reason=$expected"
-    rmmod ane_h17_adt_probe
+    case "$lines" in
+    *"RESULT stage=$stage soc=t8140 verdict=PASS reason=$expected"*) rmmod ane_h17_adt_probe ;;
+    *) echo "H17_STAGE${stage}_NO_RESULT"; exit 1 ;;
+    esac
 }
 
 printf 'boot_id=%s kernel=%s repo=%s\n' "$boot_id" "$(uname -r)" "$(git -C "$repo" rev-parse HEAD)"
@@ -49,8 +51,10 @@ before=$(dmesg --color=never | wc -l)
 insmod "$module_dir/ane_h17_ps_probe.ko" optin=1
 lines=$(dmesg --color=never | tail -n +"$((before + 1))")
 printf '%s\n' "$lines" | grep 'ane_h17_ps'
-printf '%s\n' "$lines" | grep -Fq 'RESULT stage=3 verdict=PASS reason=ane-sys-on'
-rmmod ane_h17_ps_probe
+case "$lines" in
+*"RESULT stage=3 verdict=PASS reason=ane-sys-on"*) rmmod ane_h17_ps_probe ;;
+*) echo 'H17_STAGE3_NO_RESULT'; exit 1 ;;
+esac
 if test -r /sys/kernel/debug/pm_genpd/pm_genpd_summary; then
     grep '^ane_sys' /sys/kernel/debug/pm_genpd/pm_genpd_summary || true
 fi
