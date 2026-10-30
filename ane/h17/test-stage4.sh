@@ -1,71 +1,92 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-only OR MIT
-# Off-device check of run-stage4.sh: fake uname, model, boot id, device-tree
-# node, preflight, insmod, rmmod, dmesg and lsmod, in a temp dir. Exits 0 iff
-# every refusal fires and the rung order holds. It loads no module.
-set -u
-here=$(cd "$(dirname "$0")" && pwd)
-T=$(mktemp -d /dev/shm/h17-stage4-test.XXXXXX)
-trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/dt/soc/ane-h17-ps-probe" "$T/work"
-printf 'omarchy,t8140-ane-ps-probe\0' > "$T/dt/soc/ane-h17-ps-probe/compatible"
+# Offline containment regression: use fixture diagnostics and stateful module
+# commands that fail the test if the runner attempts any hardware lifecycle.
+set -euo pipefail
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+T=$(mktemp -d "${TMPDIR:-/tmp}/h17-stage4-test.XXXXXX")
+trap 'rm -rf -- "$T"' EXIT
+mkdir -p "$T/bin" "$T/repo/ane/h17"
 printf 'Apple MacBook Neo\0' > "$T/model"
-echo "0123abcd-4567-89ab-cdef-0123456789ab" > "$T/bootid"
-printf 'module-bytes' > "$T/ane_h17_wake.ko"
-printf '#!/bin/bash\necho "$@" > "%s/insmod.args"\nif [ -n "${FAKE_STUCK:-}" ]; then\n  echo "[1.0] ane_h17_wake soc:ane-h17-ps-probe: ane_h17_wake read off=0x1600048 CPU_STATUS" >> "%s/dmesg.txt"\n  echo "[1.1] ane_h17_wake soc:ane-h17-ps-probe: ane_h17_wake RESULT stage=4 verdict=FAIL reason=core-not-stopped status=8" >> "%s/dmesg.txt"\n  echo "[1.2] ane_h17_wake core did not return to STOPPED" >> "%s/dmesg.txt"\nelse\n  echo "[1.0] ane_h17_wake soc:ane-h17-ps-probe: ane_h17_wake read off=0x1600048 CPU_STATUS" >> "%s/dmesg.txt"\n  echo "[1.1] ane_h17_wake soc:ane-h17-ps-probe: ane_h17_wake RESULT stage=4 verdict=${FAKE_VERDICT:-PASS} reason=${FAKE_REASON:-asc-snapshot}" >> "%s/dmesg.txt"\nfi\nexit 0\n' "$T" "$T" "$T" "$T" "$T" "$T" > "$T/insmod"
-printf '#!/bin/bash\ntrue\n' > "$T/rmmod"
-printf '#!/bin/bash\ncat "%s/dmesg.txt" 2>/dev/null\nexit 0\n' "$T" > "$T/dmesg"
-printf '#!/bin/bash\nif [ -e "%s/loaded" ]; then echo "ane_h17_wake 1 0"; fi\n' "$T" > "$T/lsmod"
-printf '#!/bin/bash\necho prefetched\n' > "$T/preflight"
-chmod +x "$T"/insmod "$T"/rmmod "$T/dmesg" "$T/lsmod" "$T/preflight"
-fails=0
-run() {
-  local xtrace=""
-  [ -n "${H17_TEST_XTRACE:-}" ] && xtrace="-x"
-  env H17_REPO="$here/../.." UNAME_R=7.2.11-6-1-ARCH H17_MODEL_FILE="$T/model" \
-      H17_BOOT_ID_FILE="$T/bootid" H17_PROBE_NODE="$T/dt/soc/ane-h17-ps-probe/compatible" \
-      H17_PREFLIGHT="$T/preflight" H17_LOG_DIR="$T/log" \
-      INSMOD="$T/insmod" RMMOD="$T/rmmod" DMESG="$T/dmesg" LSMOD="$T/lsmod" \
-      bash $xtrace "$here/run-stage4.sh" "$@" > "$T/out" 2>&1
-}
-expect() { # name, want rc, command...
-  local name=$1 want=$2 rc
-  shift 2
-  rm -f "$T/dmesg.txt" "$T/insmod.args"
-  run "$@"
-  rc=$?
-  if [ "$rc" = "$want" ]; then echo "  PASS $name"; else echo "  FAIL $name (rc $rc, want $want)"; tail -3 "$T/out"; fails=$((fails + 1)); fi
-}
-expect "snapshot rung passes without GO" 0
-grep -q 'ane_h17_wake.ko optin=1$' "$T/insmod.args" && echo "  PASS snapshot loads optin=1 only" || { echo "  FAIL snapshot args: $(cat "$T/insmod.args")"; fails=$((fails + 1)); }
-if grep -q 'confirm_wake' "$T/insmod.args"; then echo "  FAIL confirm_wake leaked: $(cat "$T/insmod.args")"; fails=$((fails + 1)); else echo "  PASS no confirm_wake without GO"; fi
-FAKE_REASON=actual-not-on FAKE_VERDICT=FAIL expect "a failed snapshot rung gives rc 1" 1
-FAKE_REASON=asc-snapshot expect "snapshot rung passes again" 0
-FAKE_REASON=asc-snapshot FAKE_STUCK=1 expect "core-not-stopped gives rc 3" 3
-env H17_REPO="$here/../.." UNAME_R=other-kernel H17_MODEL_FILE="$T/model" \
-    H17_BOOT_ID_FILE="$T/bootid" H17_PROBE_NODE="$T/dt/soc/ane-h17-ps-probe/compatible" \
-    H17_PREFLIGHT="$T/preflight" H17_LOG_DIR="$T/log" \
-    INSMOD="$T/insmod" RMMOD="$T/rmmod" DMESG="$T/dmesg" LSMOD="$T/lsmod" \
-    bash "$here/run-stage4.sh" > "$T/out" 2>&1
-[ "$?" = 1 ] && echo "  PASS wrong kernel refused" || { echo "  FAIL wrong kernel not refused"; fails=$((fails + 1)); }
-env H17_REPO="$here/../.." UNAME_R=7.2.11-6-1-ARCH H17_MODEL_FILE="$T/model" \
-    H17_BOOT_ID_FILE="$T/bootid" H17_PROBE_NODE="$T/missing" \
-    H17_PREFLIGHT="$T/preflight" H17_LOG_DIR="$T/log" \
-    INSMOD="$T/insmod" RMMOD="$T/rmmod" DMESG="$T/dmesg" LSMOD="$T/lsmod" \
-    bash "$here/run-stage4.sh" GO > "$T/out" 2>&1
-grep -q 'probe-node-missing' "$T/out" && echo "  PASS missing probe node refused" || { echo "  FAIL probe-node check"; fails=$((fails + 1)); }
-rm -f "$T/dmesg.txt"
-FAKE_REASON=wake-word FAKE_VERDICT=PASS expect "GO run passes with a wake-word result" 0 GO
-grep -q 'confirm_wake=1' "$T/insmod.args" && echo "  PASS GO loads confirm_wake=1" || { echo "  FAIL GO args: $(cat "$T/insmod.args")"; fails=$((fails + 1)); }
-printf 'loaded\n' > "$T/loaded"
-expect "a loaded module is refused" 1
-rm -f "$T/loaded"
-printf '#!/bin/bash\nfalse\n' > "$T/preflight.bad"
-env H17_REPO="$here/../.." UNAME_R=7.2.11-6-1-ARCH H17_MODEL_FILE="$T/model" \
-    H17_BOOT_ID_FILE="$T/bootid" H17_PROBE_NODE="$T/dt/soc/ane-h17-ps-probe/compatible" \
-    H17_PREFLIGHT="$T/preflight.bad" H17_LOG_DIR="$T/log" \
-    INSMOD="$T/insmod" RMMOD="$T/rmmod" DMESG="$T/dmesg" LSMOD="$T/lsmod" \
-    bash "$here/run-stage4.sh" > "$T/out" 2>&1
-grep -q 'insmod' "$T/insmod.args" 2>/dev/null && { echo "  FAIL preflight ran after failure"; fails=$((fails + 1)); } || echo "  PASS failed preflight refuses before insmod"
+printf '0123abcd-4567-89ab-cdef-0123456789ab\n' > "$T/bootid"
+: > "$T/modules"
+cat > "$T/repo/ane/h17/preflight.py" <<'PY'
+import json
+import os
+from pathlib import Path
 
-if [ "$fails" = 0 ]; then echo "test-stage4: ok"; else echo "test-stage4: $fails failures"; exit 1; fi
+root = Path(os.environ["H17_TEST_ROOT"])
+with (root / "preflight.calls").open("a") as log:
+    log.write("preflight\n")
+status = int(os.environ.get("H17_TEST_PREFLIGHT_EXIT", "0"))
+print(json.dumps({"verdict": "PASS" if status == 0 else "REFUSED"}))
+raise SystemExit(status)
+PY
+cat > "$T/bin/insmod" <<'SH'
+#!/usr/bin/env bash
+printf 'insmod %s\n' "$*" >> "$H17_TEST_ROOT/module.calls"
+printf 'ane_h17_wake 1 0 - Live 0x0\n' > "$H17_TEST_ROOT/modules"
+exit 99
+SH
+cat > "$T/bin/rmmod" <<'SH'
+#!/usr/bin/env bash
+printf 'rmmod %s\n' "$*" >> "$H17_TEST_ROOT/module.calls"
+: > "$H17_TEST_ROOT/modules"
+exit 99
+SH
+cat > "$T/bin/modprobe" <<'SH'
+#!/usr/bin/env bash
+printf 'modprobe %s\n' "$*" >> "$H17_TEST_ROOT/module.calls"
+exit 99
+SH
+chmod +x "$T/bin/insmod" "$T/bin/rmmod" "$T/bin/modprobe"
+
+# Export the legacy override names too: the retired runner honored these.
+export H17_TEST_ROOT="$T" H17_REPO="$T/repo" UNAME_R=7.2.11-6-1-ARCH
+export H17_MODEL_FILE="$T/model" H17_BOOT_ID_FILE="$T/bootid" H17_MODULES_FILE="$T/modules"
+export INSMOD="$T/bin/insmod" RMMOD="$T/bin/rmmod"
+export PATH="$T/bin:$PATH"
+# No log directory is created, even if the old logging destination is invalid.
+export H17_LOG_DIR="$T/missing-parent/log"
+fails=0
+expect() {
+    local name=$1 rc=0
+    shift
+    : > "$T/preflight.calls"
+    : > "$T/module.calls"
+    cp "$T/modules" "$T/modules.before"
+    bash "$here/run-stage4.sh" "$@" > "$T/out" 2>&1 || rc=$?
+    if [[ $rc == 2 ]] &&
+       grep -qx 'H17_STAGE4_REFUSED reason=unqualified-register-map' "$T/out" &&
+       [[ $(wc -l < "$T/preflight.calls") == ${H17_TEST_PREFLIGHT_CALLS:-1} ]] &&
+       [[ ! -s $T/module.calls ]] &&
+       cmp -s "$T/modules.before" "$T/modules" &&
+       [[ ! -e $H17_LOG_DIR ]]; then
+        printf 'PASS %s\n' "$name"
+    else
+        printf 'FAIL %s (exit %s)\n' "$name" "$rc"
+        cat "$T/out" "$T/module.calls"
+        fails=$((fails + 1))
+    fi
+}
+
+expect 'default diagnostics refuse before hardware'
+expect 'former GO argument cannot enable hardware' GO
+expect 'unknown arguments cannot enable hardware' anything
+printf 'ane_h17_wake 1 0 - Live 0x0\n' > "$T/modules"
+expect 'an existing wake module remains loaded' GO
+if ! grep -q '^loaded_module=ane_h17_wake ' "$T/out"; then
+    printf 'FAIL loaded module missing from diagnostics\n'
+    fails=$((fails + 1))
+fi
+H17_TEST_PREFLIGHT_EXIT=2 expect 'failed preflight still refuses without cleanup'
+H17_TEST_PREFLIGHT_EXIT=1 expect 'preflight error still refuses without cleanup' GO
+UNAME_R=other-kernel expect 'kernel mismatch cannot bypass containment'
+H17_MODEL_FILE="$T/missing-model" expect 'missing model remains diagnostic only'
+rm "$T/repo/ane/h17/preflight.py"
+H17_TEST_PREFLIGHT_CALLS=0 expect 'missing preflight still refuses without hardware' GO
+if [[ $fails != 0 ]]; then
+    printf 'test-stage4: %s failures\n' "$fails"
+    exit 1
+fi
+printf 'test-stage4: ok\n'

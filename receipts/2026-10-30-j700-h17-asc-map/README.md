@@ -105,16 +105,19 @@ power vote at 09:09 on the first boot (clean; the domain returned to
 off). The stage 4 module was compiled at 12:45 and first loaded in the
 afternoon, on the boot that started 14:22:59: the read-only snapshot
 (`optin=1`, no `confirm_wake`) hung the machine during the engine read
-pass. The hang point is bounded but not named: the stage 4 log file
-never appeared, so the run used the manual insmod command, and the
-kernel log lines died with the unclean reset (no pstore, journal
-unsynced, PMU logged no panic). The first engine MMIO read in the pass
-is CPU_STATUS at `0x1600048`; the macOS power-up path raises the
-`0xc008` child state before it touches the ASC, and the first attempt
-ran with ANE_SYS alone — the prime suspect. The module was reworked
-the same evening: the `0xc008` raise (idempotent, bounded wait) now
-happens before the first engine access, `child_ps=1` by default, and
-`child_ps=0` keeps a run write-free with the hang risk it carries.
+pass. The run reached the script's boot-id output and froze before the
+module's first RESULT line; the stage 4 log file was lost with the
+unclean reset (tee's create was unsynced), and the kernel log lines
+died the same way (no pstore, journal tail unsynced, PMU logged no
+panic) — so the hang point is bounded, not named. The first engine
+MMIO read in the pass is CPU_STATUS at `0x1600048`; the macOS
+power-up path raises the `0xc008` child state before it touches the
+ASC, and the hung run preceded that raise — the prime suspect, but the
+map itself is also under suspicion. The module was reworked the same
+evening (the `0xc008` raise moved before the first engine access,
+`child_ps=1` by default) and is now quarantined pending register-map
+qualification; see the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md).
 `panic_console_replay` is set to `1` at runtime so a future panic
 replays the console on the built-in display; the setting reverts at
 reboot. Netconsole is not an option on this machine today (wlan0 only;

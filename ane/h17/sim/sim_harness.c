@@ -1,25 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
-/*
- * sim/sim_harness.c: runs the real ane_h17_wake.c against the fake bus,
- * genpd and firmware model of sim/shim.h. One mode per run:
- *
- *   pos-snapshot    read-only run (confirm_wake=0): zero engine writes,
- *                   domain released, PASS reason=asc-snapshot
- *   pos-wake        confirm_wake=1 against a responsive model: exactly two
- *                   CPU_CONTROL writes (RUN, clear), wake word seen, one
- *                   mailbox message read, clean stop, domain released
- *   neg-not-stopped the core is already RUNNING: the RUN write must be
- *                   refused (asc-not-stopped), no writes, domain released
- *   neg-core-stuck  the model ignores the RUN clear: FAIL core-not-stopped,
- *                   the power vote stays held, module stays
- *   neg-bad-optin   no optin=1: REFUSED before any read or write
- *
- * A green run proves the harness logic only, never T8140 behaviour.
+/* Regression of the real module-init refusal. The historical fake firmware
+ * below the shim must never be reached: it does not establish J700 behaviour.
  */
 #include "shim.h"
 
 char sim_log[SIM_LOG_SZ];
 size_t sim_log_len;
+bool sim_j700 = true;
+unsigned long sim_registrations, sim_maps, sim_mmio_reads, sim_pmgr_reads;
 int sim_genpd_on;
 int sim_genpd_disabled;
 unsigned long sim_writes_ctl;
@@ -73,89 +61,49 @@ static int log_contains(const char *s)
 	return strstr(sim_log, s) != NULL;
 }
 
-static void scenario_reset(int stuck, u32 status0)
-{
-	sim_log_reset();
-	memset(&sim_fw, 0, sizeof(sim_fw));
-	sim_fw.cpu_status = status0;
-	sim_fw.i2a = 0x1; /* ENABLE, the shape the T6021 mailbox showed */
-	sim_fw.stuck = stuck;
-	sim_genpd_on = 0;
-	sim_genpd_disabled = 1;
-	sim_writes_ctl = 0;
-	sim_regmap_writes = 0;
-	optin = 1;
-	confirm_wake = 0;
-	poll_ms = 10;
-	wake_wait_ms = 500;
-	mbox_wait_ms = 500;
-	stop_wait_ms = 500;
-}
-
 static int run_mode(const char *mode)
 {
 	int ret;
+	const char *reason = "REFUSED reason=unqualified-register-map";
+	int expected = -EOPNOTSUPP;
 
-	failures = 0;
-
-	if (strcmp(mode, "pos-snapshot") == 0) {
-		scenario_reset(0, 0xa);
-		ret = sim_init_fn();
-		chk(ret == 0);
-		chk(log_contains("verdict=PASS reason=asc-snapshot"));
-		chk(sim_writes_ctl == 0);
-		chk(sim_regmap_writes == 1);
-		chk(sim_genpd_on == 0);
-	} else if (strcmp(mode, "pos-wake") == 0) {
-		scenario_reset(0, 0xa);
+	optin = 1;
+	sim_fw.cpu_status = 0xa;
+	if (!strcmp(mode, "snapshot")) {
+		confirm_wake = 0;
+	} else if (!strcmp(mode, "wake")) {
 		confirm_wake = 1;
-		ret = sim_init_fn();
-		chk(ret == 0);
-		chk(log_contains("verdict=PASS reason=wake-word-hello msgs=1"));
-		chk(sim_writes_ctl == 2);
-		chk(sim_genpd_on == 0);
-		chk(log_contains("I2A_RECV0"));
-	} else if (strcmp(mode, "neg-not-stopped") == 0) {
-		scenario_reset(0, 0x8);
+	} else if (!strcmp(mode, "legacy-overrides")) {
+		/* None of the old escape hatches may reach hardware, even with
+		 * parameters that would have caused divide-by-zero or bad MMIO. */
 		confirm_wake = 1;
-		ret = sim_init_fn();
-		chk(ret == -EIO);
-		chk(log_contains("reason=asc-not-stopped"));
-		chk(sim_writes_ctl == 0);
-		chk(sim_genpd_on == 0);
-	} else if (strcmp(mode, "neg-core-stuck") == 0) {
-		scenario_reset(1, 0xa);
-		confirm_wake = 1;
-		ret = sim_init_fn();
-		chk(ret == 0);
-		chk(log_contains("reason=core-not-stopped"));
-		chk(sim_genpd_on == 1);
-		chk(sim_writes_ctl == 2);
-	} else if (strcmp(mode, "neg-bad-optin") == 0) {
-		scenario_reset(0, 0xa);
+		child_ps = 0;
+		poll_ms = 0;
+		mbox_off = 0xffffffff;
+	} else if (!strcmp(mode, "no-optin")) {
 		optin = 0;
-		ret = sim_init_fn();
-		chk(ret != 0);
-		chk(log_contains("REFUSED reason=board-optin-or-dt"));
-		chk(sim_writes_ctl == 0);
-		chk(!log_contains("read off="));
+		expected = -EPERM;
+		reason = "REFUSED reason=board-optin-or-dt";
+	} else if (!strcmp(mode, "wrong-board")) {
+		sim_j700 = false;
+		expected = -EPERM;
+		reason = "REFUSED reason=board-optin-or-dt";
 	} else {
 		fprintf(stderr, "unknown mode %s\n", mode);
 		return 2;
 	}
 
-	if (failures == 0 && getenv("SIM_ORDER")) {
-		const char *wr = strstr(sim_log, "pmgr write off=0xc008");
-		const char *rd = strstr(sim_log, "read off=0x1600048");
-		if (wr && rd && wr > rd) {
-			printf("%s: child write AFTER engine read\n", mode);
-			failures++;
-		}
-	}
+	ret = sim_init_fn();
+	chk(ret == expected);
+	chk(log_contains(reason));
+	chk(!log_contains("verdict=PASS"));
+	chk(sim_registrations == 0);
+	chk(sim_maps == 0);
+	chk(sim_pmgr_reads == 0 && sim_regmap_writes == 0);
+	chk(sim_mmio_reads == 0 && sim_writes_ctl == 0);
+	chk(sim_genpd_on == 0);
 	printf("%s: %s (%d check failures)\n", mode,
 	       failures ? "FAIL" : "ok", failures);
-	if (failures && getenv("SIM_DEBUG"))
-		fputs(sim_log, stderr);
 	return failures ? 1 : 0;
 }
 

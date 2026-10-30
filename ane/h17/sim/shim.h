@@ -90,13 +90,15 @@ struct device_node {
 
 extern int sim_genpd_on;
 extern int sim_genpd_disabled;
+extern bool sim_j700;
+extern unsigned long sim_registrations, sim_maps, sim_mmio_reads, sim_pmgr_reads;
 
 static inline int of_device_is_available(struct device_node *n) { return n && n->available; }
 static inline int of_device_is_compatible(struct device_node *n, const char *c)
 {
 	return n && n->compatible && strcmp(n->compatible, c) == 0;
 }
-static inline int of_machine_is_compatible(const char *c) { return strcmp(c, "apple,j700") == 0; }
+static inline int of_machine_is_compatible(const char *c) { return sim_j700 && strcmp(c, "apple,j700") == 0; }
 static inline void of_node_put(struct device_node *n) { (void)n; }
 
 extern struct device_node sim_ane_node, sim_ps_node, sim_probe_node,
@@ -165,6 +167,7 @@ extern u32 sim_child_word;
 static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 {
 	(void)m;
+	sim_pmgr_reads++;
 	if (off == 0x290) {
 		*v = sim_genpd_on ? 0x23ff : 0x2000;
 		return 0;
@@ -315,6 +318,7 @@ static inline void sim_write(u32 off, u32 v)
 static inline u32 readl(const void __iomem *addr)
 {
 	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
+	sim_mmio_reads++;
 	rec_log("sim: read off=%#x\n", off);
 	return sim_read(off);
 }
@@ -329,6 +333,7 @@ extern void __iomem *sim_engine_base;
 static inline void __iomem *devm_ioremap_resource(struct device *d, struct resource *r)
 {
 	(void)d; (void)r;
+	sim_maps++;
 	return (void __iomem *)(uintptr_t)SIM_MMIO_BASE;
 }
 
@@ -339,13 +344,14 @@ struct platform_driver {
 	int (*probe)(struct platform_device *);
 	struct {
 		const char *name;
-		struct of_device_id *of_match_table;
+		const struct of_device_id *of_match_table;
 	} driver;
 };
 static struct platform_device sim_pdev = { { 0, (void *)1 } };
 
 static inline int platform_driver_register(struct platform_driver *drv)
 {
+	sim_registrations++;
 	return drv->probe(&sim_pdev);
 }
 static inline void platform_driver_unregister(struct platform_driver *drv) { (void)drv; }

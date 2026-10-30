@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * J700/T8140 H17 stage 4: bounded firmware wake and mailbox peek.
+ * J700/T8140 H17 stage 4: QUARANTINED firmware-wake experiment.
+ *
+ * The experiment below is retained for source review, but module init
+ * refuses it before registering a driver, taking power or mapping MMIO.
+ * At 670e0bbfe054384763d039cda4d8af1683420e85 the register map mixed
+ * H16 constants and two mailbox guesses. J700 snapshot attempts hung;
+ * no surviving log identifies the failing transaction. A polling timeout
+ * cannot bound an individual MMIO transaction that never completes.
+ * See receipts/2026-10-30-j700-h17-hang/README.md for the release criteria.
+ * This gate has deliberately no module-parameter override.
  *
  * One runtime-PM vote on the existing ps_ane_sys domain, one MMIO read
  * pass over the ASC wrapper, and — only with confirm_wake=1 — one RUN
@@ -39,6 +48,8 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
+
+#define H17_REGISTER_MAP_QUALIFIED 0
 
 #define H17_ANE_NODE "/soc/ane@400000000"
 #define H17_PMGR_PS_NODE "/soc/power-management@300700000/power-controller@290"
@@ -395,6 +406,12 @@ static int __init ane_h17_wake_init(void)
 
 	if (!optin || !of_machine_is_compatible("apple,j700"))
 		goto refused;
+
+	if (!H17_REGISTER_MAP_QUALIFIED) {
+		pr_err("ane_h17_wake RESULT stage=4 verdict=REFUSED reason=unqualified-register-map; no power or MMIO access; H17 execution is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
 	ane = of_find_node_by_path(H17_ANE_NODE);
 	ps = of_find_node_by_path(H17_PMGR_PS_NODE);
 	probe = of_find_compatible_node(NULL, NULL, H17_PROBE_COMPAT);
@@ -431,4 +448,4 @@ static void __exit ane_h17_wake_exit(void)
 module_init(ane_h17_wake_init);
 module_exit(ane_h17_wake_exit);
 MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("J700 H17 bounded firmware wake and mailbox peek; no DART or task");
+MODULE_DESCRIPTION("J700 H17 wake experiment quarantined pending register/power qualification");

@@ -133,57 +133,60 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-## Stage 4: bounded firmware wake (module staged, not yet run)
+## Stage 4: firmware wake — quarantined after the first-run hang
 
-`ane_h17_wake.ko` binds the same synthetic `ane-h17-ps-probe` consumer
-node as the stage 3 module (the two must not be loaded together). It
-takes the ANE_SYS vote, dumps the pmgr words at `0x2e0`,
-`0x4000..0x4030` and `0xc000..0xc020` (reads only), then — unless
-`child_ps=0` — raises the child state at pmgr `0xc008` (idempotent,
+The first run of the snapshot on 2026-10-30 printed the script's boot
+id line and froze the machine completely; the boot ended unclean (PMU
+boot error, no panic) and the log lines were lost with it. The module
+is therefore **quarantined**: `ane_h17_wake.c` refuses at init
+(`reason=unqualified-register-map`) before it registers a driver,
+takes power or maps MMIO, under `H17_REGISTER_MAP_QUALIFIED`
+(deliberately without a parameter override). The hang report and the
+release criteria for lifting the gate are in the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md); the
+register-map provenance and that day's boot/panic events are in the
+[stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
+
+The retained experiment, for when the map is qualified: it binds the
+same synthetic `ane-h17-ps-probe` consumer node as the stage 3 module
+(the two must not be loaded together), takes the ANE_SYS vote, dumps
+the pmgr words at `0x2e0`, `0x4000..0x4030` and `0xc000..0xc020`
+(reads only), raises the child state at pmgr `0xc008` (idempotent,
 skipped when ACTUAL is already `0xf`, bounded wait) exactly as the
-macOS power-up path does before it touches the ASC. Only then does it
-read, every address logged before the read: CPU_STATUS `0x1600048`,
+macOS power-up path does before it touches the ASC, and only then
+reads — every address logged before the read: CPU_STATUS `0x1600048`,
 CPU_CONTROL `0x1600044`, RVBAR `0x1050000`, SCRATCH words
 `0x1880020..0x1880044` (nine words: the h16g table carries both a
 `+0x20` and a `+0x24` SCRATCH0 alignment and no h17-specific row, so
 both stay candidates), and the mailbox control words of both
-candidates (`0x1608110/0x1608114` and `0x196c110/0x196c114`). Without
-`confirm_wake=1` the stage ends `verdict=PASS reason=asc-snapshot`.
-The child raise matters: the first snapshot attempt on 2026-10-30, run
-with ANE_SYS alone, hung the machine during the engine read pass
-(the log lines were lost with the unclean reset; the stage 4 log file
-never appeared, so the run used the manual insmod command). Register
-provenance and the boot/panic events of that day are in the
-[stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
-
-With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape,
-the module writes RUN once to CPU_CONTROL, polls CPU_STATUS and both
-SCRATCH7 candidates for the wake word `0x08042006` (`wake_wait_ms`,
-default 500), peeks the mailbox picked by `mbox_off` (default
-`0x1608000`, alt `0x196c000`; reads pop messages and nothing is
-replied) for `mbox_wait_ms`, clears RUN, and waits `stop_wait_ms` for
+candidates (`0x1608110/0x1608114` and `0x196c110/0x196c114`). With
+`confirm_wake=1` it writes RUN once, polls CPU_STATUS and both
+SCRATCH7 candidates for the wake word `0x08042006`, peeks the mailbox
+picked by `mbox_off` (default `0x1608000`, alt `0x196c000`; reads pop
+messages and nothing is replied), clears RUN and waits bounded for
 STOPPED. A core that does not stop keeps the power vote held and
-requires a reboot (observed on the M6); the stage ends
-`verdict=FAIL reason=core-not-stopped`. PASS reasons:
-`wake-word-hello`, `wake-word`, `hello-msgs`, `quiet-stop`. The module
-never programs a DART, maps firmware, or submits a task.
+requires a reboot (observed on the M6). The module never programs a
+DART, maps firmware, or submits a task.
 
 ```sh
-sudo ane/h17/run-stage4.sh        # read-only snapshot only
-sudo ane/h17/run-stage4.sh GO     # adds the confirm_wake=1 run
+sudo ane/h17/run-stage4.sh   # read-only diagnostics; exits 2, touches no hardware
 ```
 
-The script gates on preflight and the probe node, refuses when any
-`ane_h17*` module is loaded, logs to
-`/var/log/omarchy-ane/h17-stage4-BOOT_ID.log`, and unloads the module
-after each rung. `test-stage4.sh` checks the script off device with
-fake `insmod`, `rmmod`, `dmesg`, `lsmod`, preflight and device-tree
-files (`make -C ane/h17 script-test`); it caught a leaked
-`confirm_wake` argument and a wrong exit code before any hardware run.
-`make -C ane/h17 sim-all` runs the module's userspace sim (two
-positives, three refusals, three mutation controls); a green sim is
-not silicon. A smoke inference and exact fp16 comparison are still
-needed before claiming working ANE support.
+`run-stage4.sh` is diagnostics only while the gate is closed: it
+prints the boot id, model, commit and loaded `ane_h17*` modules, runs
+preflight, and ends `H17_STAGE4_REFUSED
+reason=unqualified-register-map`. The former `GO` argument enables
+nothing. `test-stage4.sh` checks the script off device with fake
+`insmod`, `rmmod`, `dmesg`, `lsmod`, preflight and device-tree files
+(`make -C ane/h17 script-test`). `make -C ane/h17 sim-all` runs the
+quarantined module's userspace sim: every mode asserts zero driver
+registrations, zero ioremaps, zero pmgr reads, zero regmap writes,
+zero engine reads and writes and no genpd vote — including under the
+legacy parameters (`child_ps=0`, `poll_ms=0`,
+`mbox_off=0xffffffff`) — and the mutation control flips the gate and
+requires the harness to reject the ungated hardware access. A smoke
+inference and exact fp16 comparison are still needed before claiming
+working ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on
