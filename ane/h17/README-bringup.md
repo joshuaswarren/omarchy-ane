@@ -144,19 +144,24 @@ h16g table carries both a `+0x20` and a `+0x24` SCRATCH0 alignment and
 no h17-specific row, so both stay candidates), and the mailbox control
 words of both candidates (`0x1608110/0x1608114` and
 `0x196c110/0x196c114`). Without `confirm_wake=1` the stage ends
-`verdict=PASS reason=asc-snapshot` with zero engine writes. Register
-provenance and the boot/panic events of 2026-10-30 are in the
+`verdict=PASS reason=asc-snapshot` with zero engine writes. The read
+pass also dumps the pmgr words at `0x2e0`, `0x4000..0x4030` and
+`0xc000..0xc020` (reads only), so the first run maps the child
+power-state picture. Register provenance and the boot/panic events of
+2026-10-30 are in the
 [stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
 
 With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape,
-the module writes RUN once to CPU_CONTROL, polls CPU_STATUS and both
-SCRATCH7 candidates for the wake word `0x08042006` (`wake_wait_ms`,
-default 500), peeks the mailbox picked by `mbox_off` (default
-`0x1608000`, alt `0x196c000`; reads pop messages and nothing is
-replied) for `mbox_wait_ms`, clears RUN, and waits `stop_wait_ms` for
-STOPPED. A core that does not stop keeps the power vote held and
-requires a reboot (observed on the M6); the stage ends
-`verdict=FAIL reason=core-not-stopped`. PASS reasons:
+the module optionally raises the `0xc008` pmgr child state
+(`child_ps=1`, default off — the macOS power-up path for ane-type
+`0x200`/`0x210` writes `0xf` there), writes RUN once to CPU_CONTROL,
+polls CPU_STATUS and both SCRATCH7 candidates for the wake word
+`0x08042006` (`wake_wait_ms`, default 500), peeks the mailbox picked
+by `mbox_off` (default `0x1608000`, alt `0x196c000`; reads pop
+messages and nothing is replied) for `mbox_wait_ms`, clears RUN, and
+waits `stop_wait_ms` for STOPPED. A core that does not stop keeps the
+power vote held and requires a reboot (observed on the M6); the stage
+ends `verdict=FAIL reason=core-not-stopped`. PASS reasons:
 `wake-word-hello`, `wake-word`, `hello-msgs`, `quiet-stop`. The module
 never programs a DART, maps firmware, or submits a task.
 

@@ -23,6 +23,7 @@ size_t sim_log_len;
 int sim_genpd_on;
 int sim_genpd_disabled;
 unsigned long sim_writes_ctl;
+unsigned long sim_regmap_writes;
 void __iomem *sim_engine_base = (void __iomem *)0x40000000ull;
 struct sim_fw sim_fw;
 
@@ -81,6 +82,7 @@ static void scenario_reset(int stuck, u32 status0)
 	sim_genpd_on = 0;
 	sim_genpd_disabled = 1;
 	sim_writes_ctl = 0;
+	sim_regmap_writes = 0;
 	optin = 1;
 	confirm_wake = 0;
 	poll_ms = 10;
@@ -101,6 +103,7 @@ static int run_mode(const char *mode)
 		chk(ret == 0);
 		chk(log_contains("verdict=PASS reason=asc-snapshot"));
 		chk(sim_writes_ctl == 0);
+		chk(sim_regmap_writes == 0);
 		chk(sim_genpd_on == 0);
 	} else if (strcmp(mode, "pos-wake") == 0) {
 		scenario_reset(0, 0xa);

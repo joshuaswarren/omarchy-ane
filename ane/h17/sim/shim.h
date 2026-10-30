@@ -158,6 +158,7 @@ static inline int of_address_to_resource(struct device_node *n, int idx, struct 
 
 /* fake PMGR regmap: word at 0x290 is 0x23ff only while the domain is on */
 struct regmap;
+extern unsigned long sim_regmap_writes;
 static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 {
 	(void)m;
@@ -165,7 +166,14 @@ static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 		*v = sim_genpd_on ? 0x23ff : 0x2000;
 		return 0;
 	}
-	return -EINVAL;
+	*v = 0;
+	return 0;
+}
+static inline int regmap_write(struct regmap *m, u32 off, u32 v)
+{
+	(void)m; (void)off; (void)v;
+	sim_regmap_writes++;
+	return 0;
 }
 
 static inline struct regmap *syscon_node_to_regmap(struct device_node *n)

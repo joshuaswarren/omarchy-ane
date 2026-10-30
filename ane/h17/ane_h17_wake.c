@@ -111,6 +111,22 @@ static unsigned int mbox_off = H17_MBOX;
 module_param(mbox_off, uint, 0444);
 MODULE_PARM_DESC(mbox_off, "ASC mailbox base, engine-relative (default 0x1608000, alt 0x196c000)");
 
+/* The macOS power-up path for ane-type 0x200/0x210 raises one more pmgr
+ * power state, 0xf at offset 0xc008 of the ANE pmgr window, beyond
+ * ANE_SYS@0x290 (the h16g branch raises 0xc018/0xc020, a t6021-shaped
+ * branch 0x4008..0x4030). child_ps=1 writes the same word after the
+ * ANE_SYS vote is confirmed; the default is off. */
+#define H17_PMGR_CHILD_OFF 0xc008
+
+static bool child_ps;
+module_param(child_ps, bool, 0444);
+MODULE_PARM_DESC(child_ps, "confirm_wake only: also raise the 0xc008 pmgr state (macOS behaviour)");
+
+static const u32 h17_pmgr_dump_offs[] = {
+	0x2e0, 0x4000, 0x4008, 0x4010, 0x4018, 0x4020, 0x4028, 0x4030,
+	0xc000, 0xc008, 0xc010, 0xc018, 0xc020,
+};
+
 struct ane_h17_wake {
 	struct device *dev;
 	void __iomem *engine;
@@ -210,6 +226,17 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		goto release;
 	}
 
+	/* Map the child power-state picture: reads only, PMGR block. */
+	for (i = 0; i < ARRAY_SIZE(h17_pmgr_dump_offs); i++) {
+		dev_info(&pdev->dev, "ane_h17_wake pmgr read off=%#x\n", h17_pmgr_dump_offs[i]);
+		if (regmap_read(w->pmgr, h17_pmgr_dump_offs[i], &word))
+			dev_info(&pdev->dev, "ane_h17_wake pmgr off=%#x read-failed\n",
+				 h17_pmgr_dump_offs[i]);
+		else
+			dev_info(&pdev->dev, "ane_h17_wake pmgr off=%#x word=%#x\n",
+				 h17_pmgr_dump_offs[i], word);
+	}
+
 	/* Read-only pass over the ASC wrapper. No write yet. */
 	status = h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
 	ctrl = h17_rd(w, H17_CPU_CONTROL, "CPU_CONTROL");
@@ -236,7 +263,22 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		goto release;
 	}
 
-	/* The one RUN write, then bounded polls. */
+	/* The one RUN write, then bounded polls. Optional child state first. */
+	if (child_ps) {
+		dev_info(&pdev->dev, "ane_h17_wake pmgr write off=%#x val=%#x child\n",
+			 H17_PMGR_CHILD_OFF, 0xfu);
+		regmap_write(w->pmgr, H17_PMGR_CHILD_OFF, 0xf);
+		polls = (stop_wait_ms + poll_ms - 1) / poll_ms;
+		for (i = 0; i < polls; i++) {
+			msleep(poll_ms);
+			if (regmap_read(w->pmgr, H17_PMGR_CHILD_OFF, &word))
+				break;
+			if (FIELD_GET(H17_PS_ACTUAL, word) == 0xf)
+				break;
+		}
+		dev_info(&pdev->dev, "ane_h17_wake pmgr off=%#x word=%#x child\n",
+			 H17_PMGR_CHILD_OFF, word);
+	}
 	dev_info(&pdev->dev, "ane_h17_wake write off=%#x val=%#x RUN\n", H17_CPU_CONTROL, H17_CPU_RUN);
 	writel(H17_CPU_RUN, w->engine + H17_CPU_CONTROL);
 	polls = (wake_wait_ms + poll_ms - 1) / poll_ms;

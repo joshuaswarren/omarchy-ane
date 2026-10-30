@@ -43,6 +43,16 @@ per the 2026-10-29 rule.
   HAL's `+0x1960000`/`+0x1970000` windows this makes engine
   `+0x196c000` the second mailbox candidate beside the h16g row's
   `+0x1608000`.
+- The macOS power-up path dispatches on the ANE type value read from
+  its own state: for `0x200`/`0x210` it raises one more pmgr power
+  state, writing `0xf` at offset `0xc008` of the ANE pmgr window and
+  polling it to `0xf` (the h16g branch raises `0xc018` and `0xc020`
+  the same way; a t6021-shaped branch raises `0x4008` through
+  `0x4030`). The aurora tree has no power controller at pmgr
+  `0xc008` on t8140 — only the ADT names it — so the aurora comment
+  "The T8140 firmware and child power sequence need their own backend"
+  now has concrete addresses. On this machine the word is pmgr
+  `0x30070c008`, in the same block as `ANE_SYS` at `0x290`.
 
 ## What the stage 4 module does with this
 
@@ -57,7 +67,8 @@ candidates' control words at `0x1608110/0x1608114` and
 ends `verdict=PASS reason=asc-snapshot`.
 
 With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape
-(RUNNING clear, STOPPED set) that M1/M2/M6 boots showed, it writes RUN
+(RUNNING clear, STOPPED set) that M1/M2/M6 boots showed, it optionally
+raises the `0xc008` child state (`child_ps=1`, default off), writes RUN
 (`0x10`) once to CPU_CONTROL, polls CPU_STATUS and both SCRATCH7
 candidates (`0x188003c`, `0x1880040`) for the wake word `0x08042006`
 for `wake_wait_ms` (default 500), peeks the mailbox selected by
@@ -65,7 +76,10 @@ for `wake_wait_ms` (default 500), peeks the mailbox selected by
 (reads pop messages; nothing is replied), clears RUN, and waits up to
 `stop_wait_ms` for STOPPED. A core that does not stop keeps the power
 vote held and asks for a reboot (the M6 behaved this way). It never
-programs a DART, maps firmware, or submits a task.
+programs a DART, maps firmware, or submits a task. The read pass also
+dumps the pmgr words at `0x2e0`, `0x4000..0x4030` and
+`0xc000..0xc020`, so the first run maps the whole child power-state
+picture before anything is written.
 
 `ane/h17/run-stage4.sh` gates on preflight and runs the snapshot
 first; `GO` as the first argument adds the confirm_wake run. The
