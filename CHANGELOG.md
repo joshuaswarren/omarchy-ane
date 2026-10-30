@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- ane/h17: the stage 4 module `ane_h17_wake.ko` is staged for the J700 (T8140, MacBook Neo) bring-up: the ANE_SYS vote, a logged read pass over the ASC wrapper (CPU_STATUS `0x1600048`, CPU_CONTROL `0x1600044`, RVBAR, nine SCRATCH words covering both h16g/h18g-style SCRATCH0 alignments, both mailbox candidates), and only with `confirm_wake=1` one RUN write, bounded polls for the `0x08042006` wake word, a read-only mailbox peek, one RUN clear and a bounded STOPPED wait; a core that does not stop keeps the power vote and asks for a reboot. It never programs a DART or submits a task, and it has not run on the machine yet. Register provenance comes from the macOS build's own kernelcache on the machine (engine base `0x400000000`, an `+0x1880000` window, the M6-shaped doorbell `+0x18a4000` and IPI `+0x18ac000`, the h16g `(0x1884000, 0x1600048)` row); receipt `receipts/2026-10-30-j700-h17-asc-map`. The userspace sim runs the real module against a fake bus, genpd and firmware model, with three mutation controls. The same receipt records four unexplained reboots on the machine that day, one of them a PMU-logged panic on a boot with no ANE module loaded.
+- docs: the J700 stage 0 receipt loses its restore-image locator wording, per the public-text rule of 2026-10-29.
 - docs: the README and the level 5 receipt now give the Qwen decode at levels 3 and 4 and a 31 minute decode soak at level 5: the S1-GPTQ step reaches its floor at level 3 (0.0790 s, then 0.0788 and 0.0787 s), the fp16 step does not follow the clock, and the logits are identical at every level.
 
 ## 0.5.7 (2026-10-30)

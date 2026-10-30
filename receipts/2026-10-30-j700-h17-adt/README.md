@@ -74,9 +74,9 @@ then refused with `reason=board-or-optin`, and no module remained loaded.
 
 The host's `asahi,os-fw-version` is 26.6.2. The earlier T8140 pin in
 `data/ane-soc/t8140.json` is for macOS 27.0 and must not be used on this
-boot. A range request to Apple's
-[`UniversalMac_26.6.2_25G83_Restore.ipsw`](https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw)
-extracted `Firmware/ane/h17_ane_fw_theia_d9x.im4p`. The ZIP member's CRC
+boot. A range request to Apple's restore image for this build (the
+address `packaging/omarchy-ane-firmware-fetch` carries) extracted
+`Firmware/ane/h17_ane_fw_theia_d9x.im4p`. The ZIP member's CRC
 passed. The IM4P is 1,572,889 bytes, SHA-256
 `1694f0dd3157dc887e58cdb09b01c874fcf2ec3b5c201f4a08d6564afb7f669c`;
 its raw Mach-O payload is 1,572,864 bytes, SHA-256

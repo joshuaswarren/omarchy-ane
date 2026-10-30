@@ -56,9 +56,20 @@
 #define H17_CPU_CONTROL 0x1600044
 #define H17_CPU_STATUS 0x1600048
 #define H17_RVBAR 0x1050000
+/* SCRATCH0 candidates: the h16g row puts SCRATCH0 at +0x20 (ane/h16/ane_h16_soc.c,
+ * corroborated by 0x1880020 in the interface kext const table); the h18g table puts
+ * its first handshake word at +0x24 (ane/h18/ane_h18.h). Both are read, so the
+ * wake-ack check covers both alignments. */
 #define H17_SCRATCH0 0x1880020
-#define H17_SCRATCH_N 8
+#define H17_SCRATCH_N 9
+#define H17_SCRATCH7_A (H17_SCRATCH0 + 4 * 7)
+#define H17_SCRATCH7_B (H17_SCRATCH0 + 4 * 8)
+/* Mailbox: the h16g row puts the ASC mailbox at +0x1608000; the interface kext's
+ * const table also names a block at +0x196c000, and the T8140 HAL windows sit in
+ * the +0x1960000/+0x1970000 area. The h16g row is the default; mbox_off switches
+ * the peek to the other candidate without a rebuild. */
 #define H17_MBOX 0x1608000
+#define H17_MBOX_ALT 0x196c000
 #define H17_MBOX_A2I_CTRL 0x110
 #define H17_MBOX_I2A_CTRL 0x114
 #define H17_MBOX_I2A_RECV0 0x830
@@ -95,6 +106,10 @@ MODULE_PARM_DESC(mbox_wait_ms, "Bounded mailbox peek window after the wake polls
 static unsigned int stop_wait_ms = 500;
 module_param(stop_wait_ms, uint, 0444);
 MODULE_PARM_DESC(stop_wait_ms, "Bounded STOPPED wait after RUN clear (default 500)");
+
+static unsigned int mbox_off = H17_MBOX;
+module_param(mbox_off, uint, 0444);
+MODULE_PARM_DESC(mbox_off, "ASC mailbox base, engine-relative (default 0x1608000, alt 0x196c000)");
 
 struct ane_h17_wake {
 	struct device *dev;
@@ -204,6 +219,8 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		h17_rd(w, H17_SCRATCH0 + 4 * i, "SCRATCH");
 	h17_rd(w, H17_MBOX + H17_MBOX_A2I_CTRL, "A2I_CTRL");
 	h17_rd(w, H17_MBOX + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+	h17_rd(w, H17_MBOX_ALT + H17_MBOX_A2I_CTRL, "A2I_CTRL_ALT");
+	h17_rd(w, H17_MBOX_ALT + H17_MBOX_I2A_CTRL, "I2A_CTRL_ALT");
 
 	if (!confirm_wake) {
 		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n");
@@ -224,10 +241,13 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 	writel(H17_CPU_RUN, w->engine + H17_CPU_CONTROL);
 	polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
 	for (i = 0; i < polls; i++) {
+		u32 ack_b;
+
 		msleep(poll_ms);
 		status = h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
-		scratch7 = h17_rd(w, H17_SCRATCH0 + 4 * 7, "SCRATCH7");
-		if (scratch7 == H17_WAKE_ACK) {
+		scratch7 = h17_rd(w, H17_SCRATCH7_A, "SCRATCH7_A");
+		ack_b = h17_rd(w, H17_SCRATCH7_B, "SCRATCH7_B");
+		if (scratch7 == H17_WAKE_ACK || ack_b == H17_WAKE_ACK) {
 			wake_seen = true;
 			break;
 		}
@@ -241,18 +261,18 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		u32 ctrl_i2a;
 
 		msleep(poll_ms);
-		ctrl_i2a = h17_rd(w, H17_MBOX + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+		ctrl_i2a = h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
 		if (ctrl_i2a & H17_MBOX_EMPTY)
 			continue;
 		if (!(ctrl_i2a & H17_MBOX_ENABLE)) {
 			dev_info(&pdev->dev, "ane_h17_wake mailbox not enabled ctrl=%#x\n", ctrl_i2a);
 			break;
 		}
-		h17_rd(w, H17_MBOX + H17_MBOX_I2A_RECV0, "I2A_RECV0");
-		h17_rd(w, H17_MBOX + H17_MBOX_I2A_RECV1, "I2A_RECV1");
+		h17_rd(w, mbox_off + H17_MBOX_I2A_RECV0, "I2A_RECV0");
+		h17_rd(w, mbox_off + H17_MBOX_I2A_RECV1, "I2A_RECV1");
 		msgs++;
 	}
-	dev_info(&pdev->dev, "ane_h17_wake mailbox peek done msgs=%u\n", msgs);
+	dev_info(&pdev->dev, "ane_h17_wake mailbox peek done mbox_off=%#x msgs=%u\n", mbox_off, msgs);
 
 	/* The one RUN clear, then the bounded STOPPED wait. */
 	dev_info(&pdev->dev, "ane_h17_wake write off=%#x val=%#x RUN-clear\n", H17_CPU_CONTROL, 0u);

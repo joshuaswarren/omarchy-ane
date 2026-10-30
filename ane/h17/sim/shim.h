@@ -214,7 +214,7 @@ enum {
 struct sim_fw {
 	u32 cpu_control;
 	u32 cpu_status;
-	u32 scratch[8];
+	u32 scratch[9];		/* index 7 = SCRATCH7_A, 8 = SCRATCH7_B */
 	u32 a2i;
 	u32 i2a;
 	int t;
@@ -259,17 +259,21 @@ static inline u32 sim_read(u32 off)
 	case 0x1600048:
 		return sim_fw.cpu_status;
 	case 0x1608110:
+	case 0x196c110:
 		return sim_fw.a2i;
 	case 0x1608114:
+	case 0x196c114:
 		return sim_fw.i2a | (sim_fw.pend_msg ? 0 : 0x20000);
 	case 0x1608830:
+	case 0x196c830:
 		sim_fw.i2a |= 0x20000; /* message popped */
 		return sim_fw.recv0;
 	case 0x1608838:
+	case 0x196c838:
 		sim_fw.pend_msg = 0;
 		return sim_fw.recv1;
 	default:
-		if (off >= 0x1880020 && off < 0x1880020 + 8 * 4)
+		if (off >= 0x1880020 && off < 0x1880020 + 9 * 4)
 			return sim_fw.scratch[(off - 0x1880020) / 4];
 		return 0;
 	}

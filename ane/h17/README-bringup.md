@@ -133,9 +133,45 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-Stage 4 would be a bounded firmware wake and RTKit handshake. A smoke
-inference and exact fp16 comparison are needed before claiming working
-ANE support.
+## Stage 4: bounded firmware wake (module staged, not yet run)
+
+`ane_h17_wake.ko` binds the same synthetic `ane-h17-ps-probe` consumer
+node as the stage 3 module (the two must not be loaded together). It
+takes the ANE_SYS vote, then reads, every address logged before the
+read: CPU_STATUS `0x1600048`, CPU_CONTROL `0x1600044`, RVBAR
+`0x1050000`, SCRATCH words `0x1880020..0x1880044` (nine words: the
+h16g table carries both a `+0x20` and a `+0x24` SCRATCH0 alignment and
+no h17-specific row, so both stay candidates), and the mailbox control
+words of both candidates (`0x1608110/0x1608114` and
+`0x196c110/0x196c114`). Without `confirm_wake=1` the stage ends
+`verdict=PASS reason=asc-snapshot` with zero engine writes. Register
+provenance and the boot/panic events of 2026-10-30 are in the
+[stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
+
+With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape,
+the module writes RUN once to CPU_CONTROL, polls CPU_STATUS and both
+SCRATCH7 candidates for the wake word `0x08042006` (`wake_wait_ms`,
+default 500), peeks the mailbox picked by `mbox_off` (default
+`0x1608000`, alt `0x196c000`; reads pop messages and nothing is
+replied) for `mbox_wait_ms`, clears RUN, and waits `stop_wait_ms` for
+STOPPED. A core that does not stop keeps the power vote held and
+requires a reboot (observed on the M6); the stage ends
+`verdict=FAIL reason=core-not-stopped`. PASS reasons:
+`wake-word-hello`, `wake-word`, `hello-msgs`, `quiet-stop`. The module
+never programs a DART, maps firmware, or submits a task.
+
+```sh
+sudo ane/h17/run-stage4.sh        # read-only snapshot only
+sudo ane/h17/run-stage4.sh GO     # adds the confirm_wake=1 run
+```
+
+The script gates on preflight and the probe node, refuses when any
+`ane_h17*` module is loaded, logs to
+`/var/log/omarchy-ane/h17-stage4-BOOT_ID.log`, and unloads the module
+after each rung. `make -C ane/h17 sim-all` runs the module's userspace
+sim (two positives, three refusals, three mutation controls); a green
+sim is not silicon. A smoke inference and exact fp16 comparison are
+still needed before claiming working ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on

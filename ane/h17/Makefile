@@ -55,7 +55,7 @@ sim-mutation-nohalt:
 
 # the wake word is never recorded, so the reason degrades to hello-msgs
 sim-mutation-nowake:
-	$(call mutant,nowake,s/if (scratch7 == H17_WAKE_ACK) {/if (0 \/* NEG: wake word ignored *\/) {/,NEG: wake word ignored,pos-wake)
+	$(call mutant,nowake,s/if (scratch7 == H17_WAKE_ACK || ack_b == H17_WAKE_ACK) {/if (0 \/* NEG: wake word ignored *\/) {/,NEG: wake word ignored,pos-wake)
 
 sim-all: sim-test sim-negative sim-mutation-noconfirm sim-mutation-nohalt sim-mutation-nowake
 
