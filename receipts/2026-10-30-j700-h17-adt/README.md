@@ -109,3 +109,19 @@ ane_h17_adt_probe RESULT stage=2 soc=t8140 verdict=PASS reason=preload-whitelist
 the 26.6.2 file outside the three named environment sections. This result
 does not prove that the patched values are correct, that ANE power is
 available, or that any program executed.
+
+## Before stage 3: running device-tree gate
+
+`sudo python3 ane/h17/preflight.py` exited 0 with `verdict=PASS` on all
+11 checks. The script read `/proc/device-tree` and the genpd debugfs
+summary only. It found J700; a disabled `apple,t8140-ane` at
+`0x400000000+0x2000000` with IRQs 655 and 668; three disabled DARTs at
+`0x401800000+0xc000`, `0x401820000+0x20000`, and
+`0x401840000+0x20000`; and all four nodes linked to the same ANE_SYS
+domain. The domain is enabled in the source DT at PMGR offset `0x290`,
+but the live genpd state was `off-0`. The source is aurora-linux
+`b6f070c911934c9c377c4be939b883bf32f37acf`, files
+`t8140.dtsi` and `t8140-pmgr.dtsi`, hashes D4 and D5 in
+`data/ane-soc/t8140.json`. No power request, ANE MMIO or DART access
+occurred. This gate is a prerequisite to designing stage 3, not stage 3
+itself.

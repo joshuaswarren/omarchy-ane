@@ -72,6 +72,18 @@
       "ref": "aurora-silicon/linux aurora-wip b3a55ee68bfb arch/arm64/boot/dts/apple/t8140-j700.dts, blob cc9f115adb7ab203b7de9a6e7122440f86550720; SHA-256 over git-show bytes"
     },
     {
+      "id": "D4",
+      "kind": "aurora-dts",
+      "sha256": "c7f86b87f781ee9eeb80bfdfb5903865761334765312a1ecf65ea960e97a409a",
+      "ref": "aurora-linux b6f070c911934c9c377c4be939b883bf32f37acf arch/arm64/boot/dts/apple/t8140.dtsi, blob bc008518b3463437ea747ca9953d980cd7baa1fc; SHA-256 over source bytes"
+    },
+    {
+      "id": "D5",
+      "kind": "aurora-dts",
+      "sha256": "5719b5140b2688dbb0b89d3f2fe01c18fa4bd4eee19ecb82e7432bdc01a4032b",
+      "ref": "aurora-linux b6f070c911934c9c377c4be939b883bf32f37acf arch/arm64/boot/dts/apple/t8140-pmgr.dtsi, blob 0a479f7e8e8e5bf31e66f136f01feb08f4d9e1b6; SHA-256 over source bytes"
+    },
+    {
       "id": "O1",
       "kind": "compiler-oracle",
       "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b",
@@ -432,6 +444,14 @@
   "aurora_pmgr": {
     "v": "aurora-wip t8140-pmgr.dtsi has no ANE power domain: no child at pmgr offset 0x290 (ANE_SYS) and none at 0xc000..0xc013.",
     "src": "D2"
+  },
+  "aurora_current": {
+    "v": "aurora-linux t8140.dtsi now has disabled apple,t8140-ane at 0x400000000+0x2000000 and three disabled apple,t8140-dart nodes at 0x401800000/0x401820000/0x401840000; all refer to ps_ane_sys. The running J700 DT matches this layout. This source does not establish a working H17 driver.",
+    "src": "D4"
+  },
+  "aurora_pmgr_current": {
+    "v": "aurora-linux t8140-pmgr.dtsi now has enabled ps_ane_sys at PMGR offset 0x290, with apple,t8140-pmgr-pwrstate and apple,t8103-pmgr-pwrstate compatibles.",
+    "src": "D5"
   },
   "community_row": {
     "v": "Scott Jones deep row: kernel 7.1.12-2-11.16-sep-ARCH, m1n1 0a33275c, iBoot mBoot-18000.161.9, os-fw-version unknown; no ANE DT node, 8 DARTs none ANE, no ANE pmgr domain; no ane/dart fault lines; omarchy-ane not installed; no /lib/firmware/apple/ane; reserved-memory has a phram \"adt\" region at 0x10004834000+0x68000",

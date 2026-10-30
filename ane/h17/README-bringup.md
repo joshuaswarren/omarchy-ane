@@ -78,13 +78,22 @@ execution or the meaning of the patched values.
 
 ## Next rungs
 
-Stage 3 needs a reviewed T8140 power sequence and a read-only status
+Before a power-stage experiment, run `sudo python3 ane/h17/preflight.py`.
+This read-only gate checks the running J700 tree against aurora-linux
+`b6f070c911934c9c377c4be939b883bf32f37acf`: the ANE and three DART
+windows, interrupts, disabled state, DART links, and shared `ps_ane_sys`
+phandle at PMGR offset `0x290`. It reports the current genpd state when
+debugfs is readable. `PASS` means the DT wiring matches this source; it
+does not power the ANE or prove the register map. A missing or changed
+node returns `REFUSED` and exit 2.
+
+Stage 3 still needs a reviewed T8140 power sequence and a read-only status
 probe. The ADT has one ANE_SYS power-state word at PMGR `0x300700290`
 (`data/ane-soc/t8140.json` source A1); it does not have the five separate
 power-state words that the H16 module waits for. The H16 status stage must
 therefore not be run on T8140 as-is. Stage 4 would be a bounded firmware
-wake and RTKit handshake. A smoke inference
-and exact fp16 comparison are needed before claiming working ANE support.
+wake and RTKit handshake. A smoke inference and exact fp16 comparison are
+needed before claiming working ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on
