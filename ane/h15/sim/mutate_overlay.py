@@ -12,6 +12,8 @@ from pathlib import Path
 
 H15 = Path(__file__).resolve().parent.parent
 MUTANTS = {
+    "no-t8122-overlay": ('\t{ "t8122", "apple,t8122", "apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob),\n\t  ane_h15_ovl_t8122_syms, ARRAY_SIZE(ane_h15_ovl_t8122_syms) },\n', ""),
+    "wrong-blob-for-t8122": ('"apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob)', '"apple,t8122-ane", ane_h15_ovl_t6031_blob, sizeof(ane_h15_ovl_t6031_blob)'),
     "no-phandle-assignment": ("targets[i]->phandle = next++;", "next++;"),
     "driver-before-overlay": ("\tif (apply_overlay)\n\t\tret = ane_h15_overlay_apply(optin);\n\tif (ret)\n\t\treturn ret;\n\tret = platform_driver_register(drv);",
                               "\tret = platform_driver_register(drv);\n\tif (apply_overlay && !ret)\n\t\tret = ane_h15_overlay_apply(optin);"),

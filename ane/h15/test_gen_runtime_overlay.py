@@ -16,6 +16,38 @@ HAVE_DTC = shutil.which("dtc") is not None and shutil.which("fdtdump") is not No
 
 
 class GenTests(unittest.TestCase):
+    def test_t8122_power_graph_and_disabled_darts(self):
+        if not HAVE_DTC or not shutil.which("fdtget"):
+            self.skipTest("no DT tools")
+        with tempfile.TemporaryDirectory() as tmp:
+            blob = Path(tmp) / "t8122.dtbo"
+            blob.write_bytes(gen.compile_blob((HERE / "t8122-ane-experimental.dts").read_text()))
+
+            def prop(node, name):
+                return subprocess.check_output(
+                    ["fdtget", "-t", "x", str(blob), node, name], text=True
+                ).split()
+
+            power = "/fragment@2/__overlay__/"
+            cpu = prop(power + "power-controller@c008", "phandle")
+            td = prop(power + "power-controller@c010", "phandle")
+            self.assertEqual(
+                set(prop(power + "power-controller@c018", "power-domains")),
+                set(td + cpu),
+                "T8122 ADT: ANE_BASE requires both ANE_TD and ANE_CPU",
+            )
+            for addr in ("311800000", "311810000", "311820000", "311804000"):
+                status = subprocess.check_output(
+                    ["fdtget", str(blob), "/fragment@3/__overlay__/iommu@" + addr, "status"],
+                    text=True,
+                ).strip()
+                self.assertEqual(status, "disabled")
+            props = subprocess.check_output(
+                ["fdtget", "-p", str(blob), "/fragment@3/__overlay__/ane@310000000"],
+                text=True,
+            ).splitlines()
+            self.assertNotIn("iommus", props)
+
     def test_only_the_empty_label_fragments_are_removed(self):
         for soc, info in gen.SOCS.items():
             with self.subTest(soc=soc):

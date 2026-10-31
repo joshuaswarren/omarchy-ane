@@ -2,10 +2,10 @@
 /*
  * ane_h15_overlay.h: run-time device-tree overlay for ane_h15 (opt-in, off by default).
  *
- * The module binds only to an apple,t603x-ane node. On a boot whose device tree has none (a lab boot cannot carry a
- * device-tree change), apply_overlay=1 gives the module its own: the DART-variant overlay compiled into the module is
- * applied with the kernel's overlay call, then the driver is registered and the normal probe runs. Nothing on the
- * machine is written outside the live device tree, and unloading removes it again.
+ * The module binds to its opt-in SoC's ANE node. On a boot whose device tree has none (a lab boot cannot carry a
+ * device-tree change), apply_overlay=1 gives the module its own: the compiled per-SoC overlay is
+ * applied with the kernel's overlay call, then the driver is registered and the normal probe runs.
+ * Added devices can trigger provider and power activity. Unloading removes the overlay.
  */
 #ifndef __ANE_H15_OVERLAY_H__
 #define __ANE_H15_OVERLAY_H__
