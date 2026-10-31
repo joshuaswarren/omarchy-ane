@@ -87,3 +87,9 @@ including GO with a stale PASS and an existing module file. The rebuilt
 `of_machine_compatible_match`, `param_ops_bool`, `_printk`,
 `__stack_chk_fail`. There is no linked driver registration, timer,
 watchdog, MMIO or filesystem implementation in that binary.
+
+**Superseded the same day:** containment v2 (see the
+[containment-v2 receipt](../2026-10-31-j700-h17-containment-v2/README.md))
+re-implements the experiment per the requirements above, adds the
+rehearsal rung, and keeps the gate closed for engine access until the
+rehearsal has run on hardware.

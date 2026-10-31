@@ -133,18 +133,29 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-## Stage 4: quarantined — current status (2026-10-31)
+## Stage 4: containment v2 — rehearsal rung pending (2026-10-31)
 
-`ane_h17_wake` refuses initialization. `run-stage4.sh` is diagnostics-only
-and exits 2 for every argument, including `GO`. It performs no module or
-watchdog lifecycle. All four release criteria remain open; the previous
-gate lift and containment claims were premature. See the
-[correction receipt](../../receipts/2026-10-31-j700-h17-containment-correction/README.md).
-The experimental probe and timer code have been removed from the module;
-Git history retains them for review. The sim now verifies refusal, not
-firmware behavior or recovery.
+The v1 containment did not establish recovery, and the correction
+receipt
+([correction](../../receipts/2026-10-31-j700-h17-containment-correction/README.md))
+listed its defects. Containment v2 answers them: the engine phase runs
+in a kthread bound to one CPU, the containment timer is pinned to a
+different online CPU with an absolute expiry set before arming, the
+module owns the SoC watchdog (`apple,t8140-wdt` WD1 — verified
+disowned, ticking, armed, petted per access, disarmed with readback),
+the O_SYNC marker is mandatory and storage failures abort before the
+next access, and the runner raises `kernel.panic` (verified) so the
+containment panic reboots. See the
+[containment-v2 receipt](../../receipts/2026-10-31-j700-h17-containment-v2/README.md).
 
-### Superseded 2026-10-30 account — not current run instructions
+The gate stays closed for engine access until the rehearsal rung has
+run on hardware: `run-stage4.sh REHEARSE` arms the containment without
+touching any ANE register and waits for the containment timer to panic
+(`ane_h17_wake REHEARSAL …`) — the machine reboots by design, and the
+marker plus the journal are the evidence. A rehearsal that returns
+alive is a recorded FAIL (`rehearsal-no-fire`).
+
+### Superseded 2026-10-30 account — historical experiment description
 
 The first run of the snapshot on 2026-10-30 printed the script's boot
 id line and froze the machine completely; the boot ended unclean (PMU
