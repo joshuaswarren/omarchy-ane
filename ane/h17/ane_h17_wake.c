@@ -11,30 +11,33 @@
  * See receipts/2026-10-30-j700-h17-hang/README.md for the release criteria.
  * This gate has deliberately no module-parameter override.
  *
- * One runtime-PM vote on the existing ps_ane_sys domain, one MMIO read
- * pass over the ASC wrapper, and — only with confirm_wake=1 — one RUN
- * write to CPU_CONTROL, a bounded poll of CPU_STATUS and SCRATCH7, a
- * read-only peek at the ASC mailbox, one RUN clear, and a bounded wait
- * for STOPPED. It never programs a DART, maps firmware, answers the
- * firmware, or submits a task.
+ * One runtime-PM vote on the existing ps_ane_sys domain, the pmgr child
+ * raise, one MMIO read pass over the T8140-sourced engine block and —
+ * only with confirm_wake=1 — the AppleT8140ANEHAL control path: the
+ * mailbox-setup writes, one doorbell ring, a bounded poll of the
+ * doorbell ack and SCRATCH7, and the ack write. It never programs a
+ * DART, maps firmware, answers the firmware, or submits a task.
  *
- * Register provenance (engine-relative offsets):
- * - CPU_CONTROL 0x1600044 / CPU_STATUS 0x1600048 / RVBAR 0x1050000 /
- *   SCRATCH0 0x1880020 / mailbox 0x1608000: the H16 rows of
- *   ane/h16/ane_h16_soc.c (the macOS 27.0 H16 interface kext owns the
- *   H17 ANE; see data/ane-soc/t8140.json "compatible":
- *   ane,t8132exclave), and ane/t6021/ane_t6021.h: "the 0x1600044 value
- *   belongs to the h16g/h17/h18g variant".
- * - The engine-relative SCRATCH block 0x1880000 on this SoC is
- *   corroborated by the AppleT8140ANEHAL kext of the mac17p kernelcache
- *   (macOS 26A428), which composes the physical address 0x401880000
- *   (engine 0x400000000 + 0x1880000); see the stage 4 receipt.
- * - CPU_CONTROL bit 4 RUN, CPU_STATUS bit 0 RUNNING / bit 1 STOPPED,
- *   the mailbox control and message offsets, and the wake word
- *   0x08042006 follow the H14/H16 modules (ane/t6021/ane_t6021.h,
- *   ane/h16/README-bringup.md). None of it is measured on T8140 yet;
- *   every read address is logged before the read so a hang names the
- *   word, and a hang costs one reboot.
+ * Register provenance (engine-relative offsets), per the hal-map
+ * receipt (receipts/2026-10-30-j700-h17-hal-map/README.md):
+ * - T8140-sourced, from the AppleT8140ANEHAL kext of this machine's
+ *   macOS 26.6.2 build: doorbell 0x18a4000 / ack 0x18a4008 / state
+ *   0x18a4010 and 0x18a4018 (64-bit words), IPI pending 0x18ac000, the
+ *   mailbox-setup writes 0x1960000 <- 1, 0x1974200 <- 0 then <- 1,
+ *   0x195c284 <- 1, 0x195c288 <- 1, and the SCRATCH page 0x1880000
+ *   (exported window 0x401880000; the h16g interface rows put SCRATCH0
+ *   at +0x20 and the h18g table at +0x24 — scratch0_off selects). The
+ *   pmgr rows 0x290 and 0xc008 are the macOS power-up path.
+ * - Unsourced on T8140 (h16g-row / M6 family parity only) and behind
+ *   opt-in parameters, default off: CPU_CONTROL 0x1600044, CPU_STATUS
+ *   0x1600048, RVBAR 0x1050000 (read_wrapper=1) and the ASC mailbox
+ *   peek at mbox_off + 0x110/0x114/0x830/0x838 (mbox_peek=1, mbox_off
+ *   0x1608000 or 0x196c000). The h16g/M6 RUN write to CPU_CONTROL is
+ *   retired with them.
+ * - The wake word 0x08042006 follows the H14/H16 modules
+ *   (ane/t6021/ane_t6021.h, ane/h16/README-bringup.md); it is a
+ *   checked value, not an access. Every access is logged before it
+ *   happens so a hang names the word, and a hang costs one reboot.
  */
 #include <linux/bitfield.h>
 #include <linux/delay.h>
@@ -49,7 +52,12 @@
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
 
+/* The quarantine gate: deliberately no module-parameter override. The
+ * qualified sim build (-DH17_REGISTER_MAP_QUALIFIED=1) flips it to
+ * exercise the probe against the fake bus only. */
+#ifndef H17_REGISTER_MAP_QUALIFIED
 #define H17_REGISTER_MAP_QUALIFIED 0
+#endif
 
 #define H17_ANE_NODE "/soc/ane@400000000"
 #define H17_PMGR_PS_NODE "/soc/power-management@300700000/power-controller@290"
@@ -64,21 +72,29 @@
 #define H17_ENGINE_BASE 0x400000000ull
 #define H17_ENGINE_MIN_SIZE 0x1900000
 
+/* T8140-sourced rows (hal-map receipt): the doorbell block, IPI word,
+ * mailbox-setup writes and the SCRATCH page are composed or exported by
+ * the AppleT8140ANEHAL kext of this machine's macOS build. */
+#define H17_DOORBELL 0x18a4000
+#define H17_DOORBELL_ACK 0x18a4008
+#define H17_DOORBELL_STATE0 0x18a4010
+#define H17_DOORBELL_STATE1 0x18a4018
+#define H17_IPI_PENDING 0x18ac000
+#define H17_MBOX_SETUP0 0x1960000
+#define H17_MBOX_SETUP1 0x1974200
+#define H17_MBOX_SETUP2 0x195c284
+#define H17_MBOX_SETUP3 0x195c288
+/* SCRATCH0 candidates: the h16g rows put SCRATCH0 at +0x20 of the page,
+ * the h18g table at +0x24. Both alignments are covered by scratch0_off. */
+#define H17_SCRATCH_PAGE 0x1880000
+#define H17_SCRATCH0 (H17_SCRATCH_PAGE + 0x20)
+#define H17_SCRATCH0_ALT (H17_SCRATCH_PAGE + 0x24)
+#define H17_SCRATCH_N 9
+/* Unsourced on T8140 (h16g-row / M6 family parity only): behind
+ * read_wrapper / mbox_peek, default off. */
 #define H17_CPU_CONTROL 0x1600044
 #define H17_CPU_STATUS 0x1600048
 #define H17_RVBAR 0x1050000
-/* SCRATCH0 candidates: the h16g row puts SCRATCH0 at +0x20 (ane/h16/ane_h16_soc.c,
- * corroborated by 0x1880020 in the interface kext const table); the h18g table puts
- * its first handshake word at +0x24 (ane/h18/ane_h18.h). Both are read, so the
- * wake-ack check covers both alignments. */
-#define H17_SCRATCH0 0x1880020
-#define H17_SCRATCH_N 9
-#define H17_SCRATCH7_A (H17_SCRATCH0 + 4 * 7)
-#define H17_SCRATCH7_B (H17_SCRATCH0 + 4 * 8)
-/* Mailbox: the h16g row puts the ASC mailbox at +0x1608000; the interface kext's
- * const table also names a block at +0x196c000, and the T8140 HAL windows sit in
- * the +0x1960000/+0x1970000 area. The h16g row is the default; mbox_off switches
- * the peek to the other candidate without a rebuild. */
 #define H17_MBOX 0x1608000
 #define H17_MBOX_ALT 0x196c000
 #define H17_MBOX_A2I_CTRL 0x110
@@ -86,9 +102,6 @@
 #define H17_MBOX_I2A_RECV0 0x830
 #define H17_MBOX_I2A_RECV1 0x838
 
-#define H17_CPU_RUN (1u << 4)
-#define H17_ST_RUNNING (1u << 0)
-#define H17_ST_STOPPED (1u << 1)
 #define H17_MBOX_EMPTY BIT(17)
 #define H17_MBOX_ENABLE BIT(0)
 #define H17_WAKE_ACK 0x08042006u
@@ -100,7 +113,7 @@ MODULE_PARM_DESC(optin, "Must be 1 on J700 after preflight and stage 3 pass");
 
 static bool confirm_wake;
 module_param(confirm_wake, bool, 0444);
-MODULE_PARM_DESC(confirm_wake, "1 = write RUN to CPU_CONTROL (one write, then one clear)");
+MODULE_PARM_DESC(confirm_wake, "1 = run the HAL control path: mailbox-setup writes, doorbell ring, ack");
 
 static unsigned int poll_ms = 10;
 module_param(poll_ms, uint, 0444);
@@ -108,7 +121,7 @@ MODULE_PARM_DESC(poll_ms, "Poll interval in ms (default 10)");
 
 static unsigned int wake_wait_ms = 500;
 module_param(wake_wait_ms, uint, 0444);
-MODULE_PARM_DESC(wake_wait_ms, "Bounded CPU_STATUS/SCRATCH7 poll window after RUN (default 500)");
+MODULE_PARM_DESC(wake_wait_ms, "Bounded DOORBELL_ACK/SCRATCH7 poll window after the ring (default 500)");
 
 static unsigned int mbox_wait_ms = 500;
 module_param(mbox_wait_ms, uint, 0444);
@@ -116,11 +129,23 @@ MODULE_PARM_DESC(mbox_wait_ms, "Bounded mailbox peek window after the wake polls
 
 static unsigned int stop_wait_ms = 500;
 module_param(stop_wait_ms, uint, 0444);
-MODULE_PARM_DESC(stop_wait_ms, "Bounded STOPPED wait after RUN clear (default 500)");
+MODULE_PARM_DESC(stop_wait_ms, "Bounded wait for the raised child state to read back on (default 500)");
 
 static unsigned int mbox_off = H17_MBOX;
 module_param(mbox_off, uint, 0444);
-MODULE_PARM_DESC(mbox_off, "ASC mailbox base, engine-relative (default 0x1608000, alt 0x196c000)");
+MODULE_PARM_DESC(mbox_off, "ASC mailbox base for mbox_peek, engine-relative (default 0x1608000, alt 0x196c000)");
+
+static unsigned int scratch0_off = H17_SCRATCH0;
+module_param(scratch0_off, uint, 0444);
+MODULE_PARM_DESC(scratch0_off, "SCRATCH0 offset, 0x1880020 (default) or 0x1880024");
+
+static bool read_wrapper;
+module_param(read_wrapper, bool, 0444);
+MODULE_PARM_DESC(read_wrapper, "1 = also read the unsourced h16g/M6 CPU wrapper trio");
+
+static bool mbox_peek;
+module_param(mbox_peek, bool, 0444);
+MODULE_PARM_DESC(mbox_peek, "1 = peek the unsourced ASC mailbox at mbox_off");
 
 /* The macOS power-up path for ane-type 0x200/0x210 raises one more pmgr
  * power state, 0xf at offset 0xc008 of the ANE pmgr window, beyond
@@ -158,6 +183,23 @@ static u32 h17_rd(struct ane_h17_wake *w, u32 off, const char *what)
 	return v;
 }
 
+/* The HAL's doorbell words are 64-bit (ldr/str). */
+static u64 h17_rdq(struct ane_h17_wake *w, u32 off, const char *what)
+{
+	u64 v;
+
+	dev_info(w->dev, "ane_h17_wake read off=%#x %s\n", off, what);
+	v = readq(w->engine + off);
+	dev_info(w->dev, "ane_h17_wake value off=%#x %s=%#llx\n", off, what, v);
+	return v;
+}
+
+static void h17_wrq(struct ane_h17_wake *w, u32 off, u64 v, const char *what)
+{
+	dev_info(w->dev, "ane_h17_wake write off=%#x val=%#llx %s\n", off, v, what);
+	writeq(v, w->engine + off);
+}
+
 static bool ane_h17_darts_disabled(void)
 {
 	static const char *const paths[] = {
@@ -182,9 +224,10 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 	struct device_node *ane, *ps;
 	struct ane_h17_wake *w;
 	struct resource res;
-	u32 word, status, ctrl, scratch7 = 0;
+	u32 word, scratch7 = 0, s7a, s7b;
+	u64 state, state1, ring = 0;
 	unsigned int i, msgs = 0, polls;
-	bool wake_seen = false;
+	bool wake_seen = false, ring_acked = false;
 	int ret;
 
 	if (!pdev->dev.pm_domain) {
@@ -215,6 +258,11 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 	if (res.start != H17_ENGINE_BASE || resource_size(&res) < H17_ENGINE_MIN_SIZE) {
 		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=engine-window start=%#llx size=%#llx\n",
 			(unsigned long long)res.start, (unsigned long long)resource_size(&res));
+		return -EINVAL;
+	}
+	if (scratch0_off != H17_SCRATCH0 && scratch0_off != H17_SCRATCH0_ALT) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=scratch0-off val=%#x\n",
+			scratch0_off);
 		return -EINVAL;
 	}
 	w->engine = devm_ioremap_resource(&pdev->dev, &res);
@@ -284,96 +332,116 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* Read-only pass over the ASC wrapper. No write yet. */
-	status = h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
-	ctrl = h17_rd(w, H17_CPU_CONTROL, "CPU_CONTROL");
-	h17_rd(w, H17_RVBAR, "RVBAR_LO");
-	h17_rd(w, H17_RVBAR + 4, "RVBAR_HI");
+	/* Read-only pass over the T8140-sourced engine block. No write yet. */
 	for (i = 0; i < H17_SCRATCH_N; i++)
-		h17_rd(w, H17_SCRATCH0 + 4 * i, "SCRATCH");
-	h17_rd(w, H17_MBOX + H17_MBOX_A2I_CTRL, "A2I_CTRL");
-	h17_rd(w, H17_MBOX + H17_MBOX_I2A_CTRL, "I2A_CTRL");
-	h17_rd(w, H17_MBOX_ALT + H17_MBOX_A2I_CTRL, "A2I_CTRL_ALT");
-	h17_rd(w, H17_MBOX_ALT + H17_MBOX_I2A_CTRL, "I2A_CTRL_ALT");
+		h17_rd(w, scratch0_off + 4 * i, "SCRATCH");
+	h17_rd(w, H17_IPI_PENDING, "IPI_PENDING");
+	h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0");
+	h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+	if (read_wrapper) {
+		h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
+		h17_rd(w, H17_CPU_CONTROL, "CPU_CONTROL");
+		h17_rd(w, H17_RVBAR, "RVBAR_LO");
+		h17_rd(w, H17_RVBAR + 4, "RVBAR_HI");
+	}
+	if (mbox_peek) {
+		h17_rd(w, mbox_off + H17_MBOX_A2I_CTRL, "A2I_CTRL");
+		h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+	}
 
 	if (!confirm_wake) {
 		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n");
 		goto release;
 	}
 
-	/* Gate the single RUN write on the stopped shape M1/M2/M6 showed. */
-	if (status & H17_ST_RUNNING || !(status & H17_ST_STOPPED) ||
-	    ctrl & H17_CPU_RUN) {
-		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=asc-not-stopped status=%#x ctrl=%#x\n",
-			status, ctrl);
+	/*
+	 * The T8140 HAL's own control path, decoded from the same build:
+	 * the mailbox-setup writes, then ring the doorbell with the
+	 * complement of (STATE0 & 3) once that value is clear in STATE1,
+	 * a bounded poll of the ack, the ack write, then the bounded
+	 * SCRATCH7 wake-word poll. The child state is already raised
+	 * above (or child_ps=0).
+	 */
+	state = h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0") & 3;
+	state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+	ring = state ^ 3;
+	if (ring & state1) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-conflict state=%llu state1=%llu\n",
+			state, state1);
 		ret = -EIO;
 		goto release;
 	}
+	if (state != 3) {
+		h17_wrq(w, H17_DOORBELL, ring, "DOORBELL");
+		polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
+		for (i = 0; i < polls; i++) {
+			msleep(poll_ms);
+			if ((h17_rdq(w, H17_DOORBELL_ACK, "DOORBELL_ACK") & 3) == ring)
+				break;
+		}
+		state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+		if (ring & state1) {
+			dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-unclear state1=%llu\n",
+				state1);
+			ret = -EIO;
+			goto release;
+		}
+		h17_wrq(w, H17_DOORBELL_ACK, ring, "DOORBELL_ACK");
+		ring_acked = true;
+	} else {
+		dev_info(&pdev->dev, "ane_h17_wake doorbell state already 3, no ring\n");
+	}
 
-	/* The one RUN write, then bounded polls. The child state is
-	 * already raised above (or child_ps=0). */
-	dev_info(&pdev->dev, "ane_h17_wake write off=%#x val=%#x RUN\n", H17_CPU_CONTROL, H17_CPU_RUN);
-	writel(H17_CPU_RUN, w->engine + H17_CPU_CONTROL);
+	h17_wrq(w, H17_MBOX_SETUP0, 1, "MBOX_SETUP0");
+	h17_wrq(w, H17_MBOX_SETUP1, 0, "MBOX_SETUP1");
+	h17_wrq(w, H17_MBOX_SETUP1, 1, "MBOX_SETUP1");
+	h17_wrq(w, H17_MBOX_SETUP2, 1, "MBOX_SETUP2");
+	h17_wrq(w, H17_MBOX_SETUP3, 1, "MBOX_SETUP3");
+
+	/* Bounded SCRATCH7 wake-word poll; s7a/s7b cover the alignment
+	 * chosen by scratch0_off. */
+	s7a = scratch0_off + 4 * 7;
+	s7b = scratch0_off + 4 * 8;
 	polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
 	for (i = 0; i < polls; i++) {
 		u32 ack_b;
 
 		msleep(poll_ms);
-		status = h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
-		scratch7 = h17_rd(w, H17_SCRATCH7_A, "SCRATCH7_A");
-		ack_b = h17_rd(w, H17_SCRATCH7_B, "SCRATCH7_B");
+		scratch7 = h17_rd(w, s7a, "SCRATCH7_A");
+		ack_b = h17_rd(w, s7b, "SCRATCH7_B");
 		if (scratch7 == H17_WAKE_ACK || ack_b == H17_WAKE_ACK) {
 			wake_seen = true;
 			break;
 		}
 	}
-	dev_info(&pdev->dev, "ane_h17_wake wake wait done wake_seen=%d status=%#x scratch7=%#x\n",
-		 wake_seen, status, scratch7);
+	dev_info(&pdev->dev, "ane_h17_wake wake wait done wake_seen=%d scratch7=%#x ring=%llx acked=%d\n",
+		 wake_seen, scratch7, ring, ring_acked);
 
-	/* Read-only mailbox peek. Reads pop the message; nothing is replied. */
-	polls = (mbox_wait_ms + poll_ms - 1) / poll_ms;
-	for (i = 0; i < polls && msgs < H17_MBOX_MAXMSG; i++) {
-		u32 ctrl_i2a;
+	/* Opt-in read-only mailbox peek. Reads pop the message; nothing is replied. */
+	if (mbox_peek) {
+		polls = (mbox_wait_ms + poll_ms - 1) / poll_ms;
+		for (i = 0; i < polls && msgs < H17_MBOX_MAXMSG; i++) {
+			u32 ctrl_i2a;
 
-		msleep(poll_ms);
-		ctrl_i2a = h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
-		if (ctrl_i2a & H17_MBOX_EMPTY)
-			continue;
-		if (!(ctrl_i2a & H17_MBOX_ENABLE)) {
-			dev_info(&pdev->dev, "ane_h17_wake mailbox not enabled ctrl=%#x\n", ctrl_i2a);
-			break;
+			msleep(poll_ms);
+			ctrl_i2a = h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+			if (ctrl_i2a & H17_MBOX_EMPTY)
+				continue;
+			if (!(ctrl_i2a & H17_MBOX_ENABLE)) {
+				dev_info(&pdev->dev, "ane_h17_wake mailbox not enabled ctrl=%#x\n", ctrl_i2a);
+				break;
+			}
+			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV0, "I2A_RECV0");
+			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV1, "I2A_RECV1");
+			msgs++;
 		}
-		h17_rd(w, mbox_off + H17_MBOX_I2A_RECV0, "I2A_RECV0");
-		h17_rd(w, mbox_off + H17_MBOX_I2A_RECV1, "I2A_RECV1");
-		msgs++;
+		dev_info(&pdev->dev, "ane_h17_wake mailbox peek done mbox_off=%#x msgs=%u\n", mbox_off, msgs);
 	}
-	dev_info(&pdev->dev, "ane_h17_wake mailbox peek done mbox_off=%#x msgs=%u\n", mbox_off, msgs);
 
-	/* The one RUN clear, then the bounded STOPPED wait. */
-	dev_info(&pdev->dev, "ane_h17_wake write off=%#x val=%#x RUN-clear\n", H17_CPU_CONTROL, 0u);
-	writel(0, w->engine + H17_CPU_CONTROL);
-	polls = (stop_wait_ms + poll_ms - 1) / poll_ms;
-	for (i = 0; i < polls; i++) {
-		msleep(poll_ms);
-		status = h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
-		if (!(status & H17_ST_RUNNING) && (status & H17_ST_STOPPED))
-			break;
-	}
-	if (status & H17_ST_RUNNING || !(status & H17_ST_STOPPED)) {
-		/* Leave the power vote held: the domain stays on, as on the M6. */
-		pm_runtime_disable(&pdev->dev);
-		dev_crit(&pdev->dev, "ane_h17_wake core did not return to STOPPED (status=%#x): ANE_SYS stays on, a reboot is required, the vote is not released\n",
-			 status);
-		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=core-not-stopped status=%#x wake_seen=%d msgs=%u\n",
-			status, wake_seen, msgs);
-		return 0;
-	}
-	if (wake_seen && msgs)
-		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=wake-word-hello msgs=%u\n", msgs);
-	else if (wake_seen)
-		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=wake-word\n");
-	else if (msgs)
-		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=hello-msgs msgs=%u\n", msgs);
+	if (wake_seen)
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=wake-word msgs=%u\n", msgs);
+	else if (ring_acked)
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=doorbell-ack\n");
 	else
 		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=quiet-stop\n");
 

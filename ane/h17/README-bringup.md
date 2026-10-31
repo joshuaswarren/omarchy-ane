@@ -147,26 +147,29 @@ release criteria for lifting the gate are in the
 register-map provenance and that day's boot/panic events are in the
 [stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
 
-The retained experiment, for when the map is qualified: it binds the
+The re-derived experiment, for when the map is qualified: it binds the
 same synthetic `ane-h17-ps-probe` consumer node as the stage 3 module
 (the two must not be loaded together), takes the ANE_SYS vote, dumps
 the pmgr words at `0x2e0`, `0x4000..0x4030` and `0xc000..0xc020`
 (reads only), raises the child state at pmgr `0xc008` (idempotent,
 skipped when ACTUAL is already `0xf`, bounded wait) exactly as the
 macOS power-up path does before it touches the ASC, and only then
-reads — every address logged before the read: CPU_STATUS `0x1600048`,
-CPU_CONTROL `0x1600044`, RVBAR `0x1050000`, SCRATCH words
-`0x1880020..0x1880044` (nine words: the h16g table carries both a
-`+0x20` and a `+0x24` SCRATCH0 alignment and no h17-specific row, so
-both stay candidates), and the mailbox control words of both
-candidates (`0x1608110/0x1608114` and `0x196c110/0x196c114`). With
-`confirm_wake=1` it writes RUN once, polls CPU_STATUS and both
-SCRATCH7 candidates for the wake word `0x08042006`, peeks the mailbox
-picked by `mbox_off` (default `0x1608000`, alt `0x196c000`; reads pop
-messages and nothing is replied), clears RUN and waits bounded for
-STOPPED. A core that does not stop keeps the power vote held and
-requires a reboot (observed on the M6). The module never programs a
-DART, maps firmware, or submits a task.
+touches the engine — every access logged before it happens, and by
+default only T8140-sourced rows (see the
+[hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md)):
+SCRATCH words `scratch0_off..+8` (`0x1880020` default, `0x1880024`
+alt), IPI pending `0x18ac000`, the doorbell state words
+`0x18a4010/0x18a4018`. The h16g/M6 CPU wrapper trio
+(`0x1600048`/`0x1600044`/`0x1050000`) and the mailbox candidates are
+**unsourced on T8140** and read only behind `read_wrapper=1` /
+`mbox_peek=1`. With `confirm_wake=1` it runs the HAL's own control
+path: the mailbox-setup writes (`0x1960000 <- 1`, `0x1974200 <- 0`
+then `<- 1`, `0x195c284 <- 1`, `0x195c288 <- 1`), one doorbell ring
+with the complement of `(STATE0 & 3)` once clear in `STATE1`, a
+bounded poll of the ack `0x18a4008`, the ack write, and a bounded
+poll of both SCRATCH7 views for the wake word `0x08042006`. The
+h16g/M6 RUN write to CPU_CONTROL is retired. The module never
+programs a DART, maps firmware, or submits a task.
 
 ```sh
 sudo ane/h17/run-stage4.sh   # read-only diagnostics; exits 2, touches no hardware
@@ -179,14 +182,18 @@ reason=unqualified-register-map`. The former `GO` argument enables
 nothing. `test-stage4.sh` checks the script off device with fake
 `insmod`, `rmmod`, `dmesg`, `lsmod`, preflight and device-tree files
 (`make -C ane/h17 script-test`). `make -C ane/h17 sim-all` runs the
-quarantined module's userspace sim: every mode asserts zero driver
-registrations, zero ioremaps, zero pmgr reads, zero regmap writes,
-zero engine reads and writes and no genpd vote — including under the
-legacy parameters (`child_ps=0`, `poll_ms=0`,
-`mbox_off=0xffffffff`) — and the mutation control flips the gate and
-requires the harness to reject the ungated hardware access. A smoke
-inference and exact fp16 comparison are still needed before claiming
-working ANE support.
+quarantined module's userspace sim in two builds: the default build
+asserts every mode refuses with zero driver registrations, zero
+ioremaps, zero pmgr reads, zero regmap writes, zero engine reads and
+writes and no genpd vote — including under the legacy parameters
+(`child_ps=0`, `poll_ms=0`, `mbox_off=0xffffffff`); the qualified
+build (`-DH17_REGISTER_MAP_QUALIFIED=1`, sim only) runs the probe
+against the fake bus and asserts every MMIO access it makes sits
+inside the qualified map (`q-snapshot`, `q-wake`, `q-peek` with the
+gated reads), and the mutation control flips the gate and requires
+the harness to reject the ungated hardware access. A smoke inference
+and exact fp16 comparison are still needed before claiming working
+ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on

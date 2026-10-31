@@ -18,6 +18,12 @@ all:
 sim/sim_h17_wake: sim/sim_harness.c sim/shim.h ane_h17_wake.c $(wildcard sim/inc/linux/*.h) sim/inc/linux/mfd/syscon.h
 	$(SIM_CC) $(SIM_CFLAGS) -I sim/inc -o $@ sim/sim_harness.c
 
+# The qualified build flips the quarantine gate inside the sim only: the
+# probe runs against the fake bus and every MMIO access is asserted to sit
+# inside the qualified map (sim/sim_harness.c: scan_unqualified).
+sim/sim_h17_wake_q: sim/sim_harness.c sim/shim.h ane_h17_wake.c $(wildcard sim/inc/linux/*.h) sim/inc/linux/mfd/syscon.h
+	$(SIM_CC) $(SIM_CFLAGS) -DH17_REGISTER_MAP_QUALIFIED=1 -I sim/inc -o $@ sim/sim_harness.c
+
 sim-test: sim/sim_h17_wake
 	./sim/sim_h17_wake snapshot
 	./sim/sim_h17_wake wake
@@ -27,6 +33,11 @@ sim-negative: sim/sim_h17_wake
 	./sim/sim_h17_wake no-optin
 	./sim/sim_h17_wake wrong-board
 
+sim-qualified: sim/sim_h17_wake_q
+	./sim/sim_h17_wake_q q-snapshot
+	./sim/sim_h17_wake_q q-wake
+	./sim/sim_h17_wake_q q-peek
+
 # Prove the harness detects removal of the live hardware gate. Build errors
 # do not count as a killed mutant. Use a unique directory, clean on exit.
 sim-mutation-ungated:
@@ -35,10 +46,10 @@ sim-mutation-ungated:
 	sed 's/^#define H17_REGISTER_MAP_QUALIFIED 0$$/#define H17_REGISTER_MAP_QUALIFIED 1/' ane_h17_wake.c > "$$tmp/ane_h17_wake.c"; \
 	grep -q '^#define H17_REGISTER_MAP_QUALIFIED 1$$' "$$tmp/ane_h17_wake.c"; \
 	$(SIM_CC) $(SIM_CFLAGS) -I "$$tmp/sim/inc" -o "$$tmp/sim_h17" "$$tmp/sim/sim_harness.c"; \
-	if "$$tmp/sim_h17" snapshot; then echo 'FAIL: ungated mutant escaped'; exit 1; \
+	if "$$tmp/sim_h17" snapshot 2>/dev/null; then echo 'FAIL: ungated mutant escaped'; exit 1; \
 	else echo 'PASS: harness rejects ungated hardware access'; fi
 
-sim-all: sim-test sim-negative sim-mutation-ungated
+sim-all: sim-test sim-negative sim-qualified sim-mutation-ungated
 
 # Off-device check of run-stage4.sh: fake uname, model, DT node, preflight,
 # insmod, rmmod, dmesg and lsmod. Loads no module.
@@ -49,5 +60,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f sim/sim_h17_wake
 
-.PHONY: all sim-test sim-negative sim-mutation-ungated sim-all script-test clean
+.PHONY: all sim-test sim-negative sim-qualified sim-mutation-ungated sim-all script-test clean
 endif

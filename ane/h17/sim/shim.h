@@ -5,7 +5,9 @@
  * firmware model raises CPU_STATUS.RUNNING two polls after the RUN write,
  * publishes the wake word in SCRATCH7 three polls after it, leaves one
  * mailbox message pending, and honours (or, in the stuck scenario, ignores)
- * the RUN clear. The PMGR word reads 0x23ff while the domain is voted on.
+ * the RUN clear; the doorbell model acknowledges a ring two polls after it
+ * and publishes the wake word one poll after that. The PMGR word reads
+ * 0x23ff while the domain is voted on.
  * A sim is not silicon: it proves control flow, ordering and gating of this
  * module, never T8140 behaviour.
  */
@@ -234,7 +236,8 @@ enum {
 struct sim_fw {
 	u32 cpu_control;
 	u32 cpu_status;
-	u32 scratch[9];		/* index 7 = SCRATCH7_A, 8 = SCRATCH7_B */
+	u32 scratch[10];	/* 0x1880020 .. 0x1880044; 7..9 = the wake-word
+				 * views of both scratch0_off alignments */
 	u32 a2i;
 	u32 i2a;
 	int t;
@@ -243,8 +246,15 @@ struct sim_fw {
 	int stuck;
 	int pend_msg;
 	u32 recv0, recv1;
+	u32 doorbell_state0;	/* engine + 0x18a4010, & 3 */
+	u32 doorbell_state1;	/* engine + 0x18a4018 */
+	u32 doorbell_rung;	/* last value written to engine + 0x18a4000 */
+	int ring_requested, ring_t0;
+	int ring_acked;		/* engine + 0x18a4008 reads back ring_val */
+	u32 ring_val;
 };
 extern struct sim_fw sim_fw;
+extern unsigned long sim_setup_writes;
 
 static inline void sim_apply(void)
 {
@@ -256,6 +266,16 @@ static inline void sim_apply(void)
 		sim_fw.pend_msg = 1;
 	if (sim_fw.clear_requested && !sim_fw.stuck && sim_fw.t >= sim_fw.clear_t0 + 2)
 		sim_fw.cpu_status = 0xa;
+	if (sim_fw.ring_requested && sim_fw.t >= sim_fw.ring_t0 + 2)
+		sim_fw.ring_acked = 1;
+	if (sim_fw.ring_requested && sim_fw.t >= sim_fw.ring_t0 + 3) {
+		/* published at both scratch0_off alignments' SCRATCH7 words */
+		sim_fw.scratch[7] = 0x08042006;
+		sim_fw.scratch[8] = 0x08042006;
+		sim_fw.scratch[9] = 0x08042006;
+		sim_fw.pend_msg = 1;
+		sim_fw.i2a |= 1;	/* the mailbox enable rises with the wake */
+	}
 }
 
 static inline void sim_msleep(unsigned int ms)
@@ -278,6 +298,16 @@ static inline u32 sim_read(u32 off)
 		return sim_fw.cpu_control;
 	case 0x1600048:
 		return sim_fw.cpu_status;
+	case 0x18a4000:
+		return sim_fw.doorbell_rung;
+	case 0x18a4008:
+		return sim_fw.ring_acked ? sim_fw.ring_val : 0;
+	case 0x18a4010:
+		return sim_fw.doorbell_state0;
+	case 0x18a4018:
+		return sim_fw.doorbell_state1;
+	case 0x18ac000:
+		return 0;	/* IPI pending: none */
 	case 0x1608110:
 	case 0x196c110:
 		return sim_fw.a2i;
@@ -293,7 +323,7 @@ static inline u32 sim_read(u32 off)
 		sim_fw.pend_msg = 0;
 		return sim_fw.recv1;
 	default:
-		if (off >= 0x1880020 && off < 0x1880020 + 9 * 4)
+		if (off >= 0x1880020 && off < 0x1880020 + 10 * 4)
 			return sim_fw.scratch[(off - 0x1880020) / 4];
 		return 0;
 	}
@@ -312,6 +342,16 @@ static inline void sim_write(u32 off, u32 v)
 			sim_fw.clear_t0 = sim_fw.t;
 		}
 		sim_fw.cpu_control = v;
+	} else if (off == 0x18a4000) {
+		sim_fw.doorbell_rung = v;
+		if (v && !sim_fw.ring_requested) {
+			sim_fw.ring_requested = 1;
+			sim_fw.ring_val = v;
+			sim_fw.ring_t0 = sim_fw.t;
+		}
+	} else if (off == 0x1960000 || off == 0x1974200 ||
+		   off == 0x195c284 || off == 0x195c288) {
+		sim_setup_writes++;
 	}
 }
 
@@ -327,6 +367,23 @@ static inline void writel(u32 v, void __iomem *addr)
 	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
 	rec_log("sim: write off=%#x val=%#x\n", off, v);
 	sim_write(off, v);
+}
+/* The HAL's doorbell words are 64-bit (ldr/str): the module's readq/writeq
+ * reach the same fake bus. */
+static inline u64 readq(const void __iomem *addr)
+{
+	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
+
+	sim_mmio_reads++;
+	rec_log("sim: readq off=%#x\n", off);
+	return sim_read(off);
+}
+static inline void writeq(u64 v, void __iomem *addr)
+{
+	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
+
+	rec_log("sim: writeq off=%#x val=%#llx\n", off, (unsigned long long)v);
+	sim_write(off, (u32)v);
 }
 extern void __iomem *sim_engine_base;
 #define SIM_MMIO_BASE 0x40000000ull
