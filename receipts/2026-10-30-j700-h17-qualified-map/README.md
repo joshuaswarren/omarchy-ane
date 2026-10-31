@@ -1,5 +1,9 @@
 # J700 H17: the qualified register map, and the re-derived stage-4 module
 
+**Correction 2026-10-31:** qualification claims below are withdrawn.
+Criteria 1–4 remain open, the gate is closed and the experimental probe
+was removed. See the [correction](../2026-10-31-j700-h17-containment-correction/README.md).
+
 2026-10-30. MacBook Neo J700/T8140, Linux `7.2.11-6-1-ARCH`, branch
 `neo/h17-bringup`. Offline work only: no ANE MMIO, no module load, no
 reboot. This receipt lands release criteria 1–3 of the

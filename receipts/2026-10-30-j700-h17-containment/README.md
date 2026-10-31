@@ -1,5 +1,9 @@
 # J700 H17: hang containment shipped, register-map gate lifted
 
+**Retracted 2026-10-31:** the implementation did not establish containment.
+The gate is closed and GO refuses. The account below is historical, not
+execution guidance. See the [correction](../2026-10-31-j700-h17-containment-correction/README.md).
+
 2026-10-30. MacBook Neo J700/T8140, Linux `7.2.11-6-1-ARCH`, branch
 `neo/h17-bringup`. Offline work only: no ANE MMIO, no module load, no
 reboot. This receipt lands criterion 4 of the

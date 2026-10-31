@@ -1,5 +1,10 @@
 # J700 H17: the T8140 ANE build's register map, and the M6 cross-check
 
+**Correction 2026-10-31:** the complete-inventory, pinned-SCRATCH,
+cannot-fault and qualification conclusions below are withdrawn. Window
+presence and literal-search absence do not prove register roles or safe
+access. The gate is closed; see the [correction](../2026-10-31-j700-h17-containment-correction/README.md).
+
 2026-10-30. MacBook Neo J700/T8140, Linux `7.2.11-6-1-ARCH`, branch
 `neo/h17-bringup`. Offline work on this machine's live device tree and
 the retained kernelcache of its macOS 26.6.2 build (file SHA-256

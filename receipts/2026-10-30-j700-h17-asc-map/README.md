@@ -1,5 +1,9 @@
 # J700 H17: ASC register-map mining and the stage 4 module
 
+**Correction 2026-10-31:** the gate is closed. The later claims below
+that containment was established, SCRATCH was pinned, and mapped MMIO
+cannot fault are withdrawn. See the [correction](../2026-10-31-j700-h17-containment-correction/README.md).
+
 2026-10-30. MacBook Neo J700/T8140, Linux `7.2.11-6-1-ARCH`. This receipt
 records one day of offline work (no ANE MMIO, no module load, no reboot by
 the ANE work) after the stage 3 power pass in

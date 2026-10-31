@@ -133,7 +133,18 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-## Stage 4: firmware wake — re-derived and contained after the first-run hang
+## Stage 4: quarantined — current status (2026-10-31)
+
+`ane_h17_wake` refuses initialization. `run-stage4.sh` is diagnostics-only
+and exits 2 for every argument, including `GO`. It performs no module or
+watchdog lifecycle. All four release criteria remain open; the previous
+gate lift and containment claims were premature. See the
+[correction receipt](../../receipts/2026-10-31-j700-h17-containment-correction/README.md).
+The experimental probe and timer code have been removed from the module;
+Git history retains them for review. The sim now verifies refusal, not
+firmware behavior or recovery.
+
+### Superseded 2026-10-30 account — not current run instructions
 
 The first run of the snapshot on 2026-10-30 printed the script's boot
 id line and froze the machine completely; the boot ended unclean (PMU
