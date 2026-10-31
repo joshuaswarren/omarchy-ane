@@ -133,16 +133,22 @@ the reworked `ane_h17_wake.ko optin=1` (one pmgr child write, then
 the read pass) and then `run-stage4.sh GO`; that plan is retired
 until the map is qualified.
 
-The 2026-10-30 evening cross-check of the build's interface table
-and HAL against the M6 (T8152) table
+The 2026-10-30 evening cross-check of the live device tree, the
+build's interface table and the T8140 HAL against the M6 (T8152)
+table
 ([hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md))
-weakens the "wrapper base wrong" fallback: ASC `+0x44`/`+0x48`
-(`0x1600044`/`0x1600048`) and RVBAR `+0x1050000` are the same
-layout on M6 and h16g, and the T8140 HAL's doorbell is the M6
-`0x18a4000`. The hung run's first three engine accesses were
-therefore M6-consistent, and the missing `0xc008` child state
-remains the prime suspect. What the hang does disqualify is the
-h16g-shaped SCRATCH list (`0x1880020…0x1880044`) and the mailbox
-candidates (`0x1608000`, `0x196c110/114`): no T8140 support exists
-for either. The T8140 SCRATCH page and postoffice base are still
-open.
+settles what the T8140 build supports: the doorbell `0x18a4000`, IPI
+`0x18ac000` and the SCRATCH page `0x1880000` are T8140-sourced (the
+exported window `0x401880000` is the h16g scratch page; the M6
+scratch page `0x18a0000` never appears in the T8140 build), and the
+mailbox-setup sequence runs through `0x1960000`/`0x1974000`/
+`0x195c000`. What has **no** T8140 source is the h16g/M6
+CPU-wrapper trio this module reads first — `0x1600044`, `0x1600048`,
+`0x1050000` — and both mailbox candidates (`0x1608000`,
+`0x196c000`). The "wrapper base wrong" fallback is therefore back in
+play alongside the missing `0xc008` child state; and since the
+engine window (`0x2000000`) is fully mapped, those reads cannot
+fault — the suspect list is "wrong-base garbage, missing child
+state, or the mailbox sequence". The re-derived module should follow
+the T8140 HAL's control path and drop or gate the inherited
+CPU-wrapper and mailbox reads.
