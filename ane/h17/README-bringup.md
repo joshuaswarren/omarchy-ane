@@ -106,6 +106,9 @@ See the [source-evidence receipt](../../receipts/2026-10-31-j700-h17-source-evid
 The [path-guard follow-up](../../receipts/2026-10-31-j700-h17-path-guards/README.md)
 records the separate RTBuddy/exclave decisions, provider-index binding,
 and partial power ordering; none is an executable bring-up recipe.
+The [provider-contract follow-up](../../receipts/2026-10-31-j700-h17-provider-contract/README.md)
+adds the explicit direct-provider match, resource-0 candidate, and named
+provider power/RPC dependencies. Its range-fit tests are not safe-access proof.
 
 Before a power-stage experiment, run `sudo python3 ane/h17/preflight.py`.
 This read-only gate checks the running J700 tree against aurora-linux

@@ -40,6 +40,33 @@ class PlannerTests(unittest.TestCase):
                 result = plan.check(self.evidence, digest)
                 self.assertIn("artifact-bytes", [b["id"] for b in result["blockers"]])
 
+    def test_retained_window_fit_is_not_rtbuddy_index_binding(self):
+        soc = json.loads((ROOT / "data/ane-soc/t8140.json").read_text())
+        resources = soc["ane"]["reg"]["v"]
+        # Only arithmetic over retained JSON; no DT, /sys or device reads.
+        fits = [index for index, resource in enumerate(resources)
+                if all(plan.integer(reg["offset"]) + reg["widthBytes"] <=
+                       plan.integer(resource["size"]) for reg in BASE["registers"])]
+        candidate = BASE["pathObservations"]["directBindingCandidate"]
+        self.assertEqual(fits, [0])
+        self.assertEqual(candidate["registerOffsetsFitAdtResources"], fits)
+        self.assertEqual(plan.integer(BASE["snapshotProposal"]["resourceBytes"]),
+                         plan.integer(resources[0]["size"]))
+        rtbuddy_index = BASE["pathObservations"]["rtbuddyIndices"]["aneType0x200"]["object888"]
+        self.assertNotIn(rtbuddy_index, fits)
+        # Fitting a window cannot remove the actual binding prerequisite.
+        result = plan.check(BASE, BASE["artifact"]["sha256"])
+        self.assertIn("register-window-binding", [b["id"] for b in result["blockers"]])
+        self.assertFalse(result["hardwareExecutionAllowed"])
+
+    def test_recorded_compatible_has_distinct_direct_match(self):
+        soc = json.loads((ROOT / "data/ane-soc/t8140.json").read_text())
+        personalities = BASE["pathObservations"]["matchingMetadata"]["personalities"]
+        matched = [p for p in personalities if p.get("nameMatch") == soc["ane"]["compatible"]["v"]]
+        self.assertEqual(len(matched), 1)
+        self.assertEqual(matched[0]["providerClass"], "AppleARMIODevice")
+        self.assertEqual(len([p for p in personalities if p["providerClass"] == "RTBuddyService"]), 2)
+
     def test_missing_prerequisites_cannot_shrink_required_set(self):
         self.evidence["prerequisites"] = {}
         result = plan.check(self.evidence)

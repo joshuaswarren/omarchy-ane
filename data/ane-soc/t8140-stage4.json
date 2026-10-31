@@ -123,6 +123,49 @@
       "setupAddress": "0xfffffe0008f67da8",
       "observation": "separate object flags, exclaves_get_status, provider exclave-assigned property, and proxy acquisition participate; this is not synonymous with the RTBuddy flag",
       "limit": "ADT exclave assignment is evidence of ownership constraints, not proof of active ownership or Linux access permission"
+    },
+    "matchingMetadata": {
+      "artifactSection": "__PRELINK_INFO,__info",
+      "bundle": "com.apple.driver.AppleH16ANEInterface",
+      "personalities": [
+        {"name": "t8132exclave", "class": "H11ANEIn", "providerClass": "AppleARMIODevice", "nameMatch": "ane,t8132exclave"},
+        {"name": "RTBuddyBringup", "class": "H11ANEIn", "providerClass": "RTBuddyService", "roleMatch": "ANE"},
+        {"name": "RTBuddyBringup1", "class": "H11ANEIn", "providerClass": "RTBuddyService", "roleMatch": "ANE1"},
+        {"name": "ANEExclaveProxy", "class": "ANEExclaveProxy", "providerClass": "AppleARMIODevice", "nameMatch": "ane,ane-exclave-proxy"}
+      ],
+      "limit": "static matching declarations, not a captured running registry or proof of active ownership"
+    },
+    "directBindingCandidate": {
+      "constructorAddress": "0xfffffe0008efa04c",
+      "observation": "constructor clears bytes 512/513 and index fields 888..900; the direct ane provider branch stores the ARM device without setting the RTBuddy flag",
+      "candidateAneIndex": 0,
+      "recordedAdtCompatible": "ane,t8132exclave",
+      "recordedAdtResourceIndex": 0,
+      "registerOffsetsFitAdtResources": [0],
+      "linuxSourceCommit": "b6f070c911934c9c377c4be939b883bf32f37acf",
+      "linuxResourceName": "engine",
+      "limit": "matching declaration, defaults and range fit support this candidate; they do not certify provider runtime state or safe MMIO"
+    },
+    "providerMethodIdentities": {
+      "baseClass": "AppleARMIODevice",
+      "vtableAddress": "0xfffffe0007e28058",
+      "methods": [
+        {"dispatchSlot": "0x710", "symbol": "IOService::mapDeviceMemoryWithIndex(unsigned int, unsigned int)", "address": "0xfffffe000bbb3404"},
+        {"dispatchSlot": "0x8a8", "symbol": "AppleARMIODevice::enableDeviceClock(unsigned int, unsigned int)", "address": "0xfffffe000896a304"},
+        {"dispatchSlot": "0x8b0", "symbol": "AppleARMIODevice::enableDevicePower(unsigned int, unsigned int*, unsigned int)", "address": "0xfffffe000896a414"},
+        {"dispatchSlot": "0x8c8", "symbol": "AppleARMIODevice::enablePsdService(unsigned int, unsigned int, unsigned int)", "address": "0xfffffe000896a200"}
+      ],
+      "observation": "clock, power and PSD methods bounds-check local indices and translate them through separate stored tables before delegating to a provider",
+      "limit": "base-class method identities; dynamic subclass overrides and platform-table values remain unresolved; indices are not PMGR offsets"
+    },
+    "exclaveTransport": {
+      "setupSymbol": "ANEExclaveProxy::exclaveSetup()",
+      "setupAddress": "0xfffffe0008f3a74c",
+      "observation": "calls IOService::exclaveStart and exclaveEndpoint, creates transport endpoints and initializes generated ANE RPC interfaces",
+      "preparePowerOffSymbol": "ANEExclaveProxy::ANEDriverECCmdPreparePowerOff(bool*)",
+      "preparePowerOffAddress": "0xfffffe0008f3bcd0",
+      "preparePowerOffTransport": "_aneexclave_aneexclavexnu_preparepoweroff",
+      "limit": "service/RPC dependency, not an established replacement using a direct register write or a Linux RTKit endpoint"
     }
   },
   "prerequisites": {
