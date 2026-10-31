@@ -1,5 +1,9 @@
 # J700 H17: containment v2 and the rehearsal rung
 
+**Superseded:** the current module and runner refuse engine and watchdog
+rehearsal execution. The lifecycle observation below does not qualify
+ownership or recovery. See the [offline correction](../2026-10-31-j700-h17-offline-draft/README.md).
+
 2026-10-31. Branch `neo/h17-bringup`. Offline work only; no ANE MMIO, no
 module load. This receipt closes the
 [correction receipt](../2026-10-31-j700-h17-containment-correction/README.md):

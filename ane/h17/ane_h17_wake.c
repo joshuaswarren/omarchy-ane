@@ -1,41 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * J700/T8140 H17 stage 4, containment v2.
+ * J700/T8140 H17 stage 4, containment v3.
  *
- * The register-map gate stays closed for engine access: it lifts only
- * after the containment rehearsal (contain_rehearse=1) proves the
- * recovery path on this hardware (see
- * receipts/2026-10-31-j700-h17-containment-correction/README.md for the
- * v1 defects and the requirements, and
- * receipts/2026-10-31-j700-h17-containment-v2/README.md for this
- * design).
+ * Containment is watchdog-only: before the engine phase the module
+ * verifies the SoC watchdog (apple,t8140-wdt WD1) is disowned and
+ * ticking and arms it; after every completed access it restarts the
+ * WD1 counter; after the last access it disarms with readback. If an
+ * access hangs, the pets stop and the hardware resets the machine by
+ * itself — no panic path, no software recovery — and the O_SYNC marker
+ * file names the pending access. A reset is the exceptional
+ * condition; normal operation never panics.
  *
- * contain_rehearse=1 runs the rehearsal and touches no ANE register:
- * it verifies the SoC watchdog (apple,t8140-wdt WD1) is disarmed and
- * ticking, arms it, pins a containment timer with an absolute expiry to
- * a different online CPU, and waits for that timer to panic
- * ("REHEARSAL"). If the timer does not fire, the rehearsal disarms the
- * watchdog, records "rehearsal-no-fire" in the marker and fails with
- * the machine alive.
- *
- * When the gate lifts, the engine phase runs in a kthread bound to one
- * CPU while the containment timer stays pinned to a different online
- * CPU: a CPU stalled mid-MMIO cannot take timers, so the watch never
- * shares the stalled core. Every completed access restarts the
- * watchdog counter (WD1 CUR_TIME) and pushes the timer deadline;
- * RESET_EN is verified clear before arming and cleared and verified on
- * release. Every pending access is appended to marker_file (O_SYNC)
- * and a storage failure aborts the run before the next access.
+ * This is an offline draft, not a qualified recovery mechanism. The
+ * register-map gate remains closed, including for watchdog rehearsals.
+ * A stopped watchdog register is not exclusive ownership of a device
+ * already bound to the kernel driver. The earlier unexplained reset
+ * does not qualify this recovery path. No live experiment is authorized.
  */
 #include <linux/bitfield.h>
 #include <linux/compiler.h>
-#include <linux/completion.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
-#include <linux/kthread.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -44,13 +32,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
-#include <linux/timer.h>
 
-/* The register-map gate (deliberately no module-parameter override): it
- * closed again on 2026-10-31 after the v1 containment failed; it lifts
- * only on rehearsal evidence, per the correction receipt. The mutation
- * control flips it to 1 in a scratch copy to prove the harness rejects
- * the unqualified map. */
 #ifndef H17_REGISTER_MAP_QUALIFIED
 #define H17_REGISTER_MAP_QUALIFIED 0
 #endif
@@ -68,9 +50,7 @@
 #define H17_ENGINE_BASE 0x400000000ull
 #define H17_ENGINE_MIN_SIZE 0x1900000
 
-/* T8140-sourced rows (hal-map receipt): the doorbell block, IPI word,
- * mailbox-setup writes and the SCRATCH page are composed or exported by
- * the AppleT8140ANEHAL kext of this machine's macOS build. */
+/* T8140-sourced rows (hal-map receipt). */
 #define H17_DOORBELL 0x18a4000
 #define H17_DOORBELL_ACK 0x18a4008
 #define H17_DOORBELL_STATE0 0x18a4010
@@ -80,14 +60,11 @@
 #define H17_MBOX_SETUP1 0x1974200
 #define H17_MBOX_SETUP2 0x195c284
 #define H17_MBOX_SETUP3 0x195c288
-/* SCRATCH0 candidates: the h16g rows put SCRATCH0 at +0x20 of the page,
- * the h18g table at +0x24. The alignment is still a rehearsal target. */
 #define H17_SCRATCH_PAGE 0x1880000
 #define H17_SCRATCH0 (H17_SCRATCH_PAGE + 0x20)
 #define H17_SCRATCH0_ALT (H17_SCRATCH_PAGE + 0x24)
 #define H17_SCRATCH_N 9
-/* Unsourced on T8140 (h16g-row / M6 family parity only): behind
- * read_wrapper / mbox_peek, default off. */
+/* Unsourced on T8140 (h16g-row / M6 parity only): behind opt-ins. */
 #define H17_CPU_CONTROL 0x1600044
 #define H17_CPU_STATUS 0x1600048
 #define H17_RVBAR 0x1050000
@@ -103,10 +80,10 @@
 #define H17_WAKE_ACK 0x08042006u
 #define H17_MBOX_MAXMSG 8
 
-/* The SoC watchdog: WD1 of the apple,t8140-wdt block. Register offsets
- * and the RESET_EN bit follow the kernel's drivers/watchdog/apple_wdt.c
- * (aurora tree); BITE_TIME is kept at the value that driver programmed
- * at probe, so no clock-rate arithmetic happens here. */
+/* The SoC watchdog: WD1 of the apple,t8140-wdt block. Offsets and
+ * RESET_EN (BIT 2) follow the kernel's drivers/watchdog/apple_wdt.c.
+ * BITE_TIME is kept at the value that driver programmed at probe, so
+ * no clock-rate arithmetic happens here. */
 #define H17_WDT_NODE_COMPAT "apple,t8140-wdt"
 #define H17_WDT_WD1_CUR_TIME 0x10
 #define H17_WDT_WD1_BITE_TIME 0x14
@@ -145,17 +122,13 @@ static unsigned int scratch0_off = H17_SCRATCH0;
 module_param(scratch0_off, uint, 0444);
 MODULE_PARM_DESC(scratch0_off, "SCRATCH0 offset, 0x1880020 (default) or 0x1880024");
 
-static unsigned int contain_ms = 1000;
-module_param(contain_ms, uint, 0444);
-MODULE_PARM_DESC(contain_ms, "Panic when one engine access outlives this many ms (default 1000, 0 = off)");
-
 static char *marker_file = "/var/lib/ane-h17/stage4-marker";
 module_param(marker_file, charp, 0444);
 MODULE_PARM_DESC(marker_file, "O_SYNC pending-access record, appended before every engine access");
 
-static unsigned int contain_rehearse;
-module_param(contain_rehearse, uint, 0444);
-MODULE_PARM_DESC(contain_rehearse, "0=off, 1=fire rehearsal (panics, reboots), 2=lifecycle rehearsal (no panic)");
+static bool contain_rehearse;
+module_param(contain_rehearse, bool, 0444);
+MODULE_PARM_DESC(contain_rehearse, "1 = watchdog lifecycle rehearsal: arm, pet, disarm; no panic, no ANE access");
 
 static bool read_wrapper;
 module_param(read_wrapper, bool, 0444);
@@ -165,14 +138,6 @@ static bool mbox_peek;
 module_param(mbox_peek, bool, 0444);
 MODULE_PARM_DESC(mbox_peek, "1 = peek the unsourced ASC mailbox at mbox_off");
 
-/* The macOS power-up path for ane-type 0x200/0x210 raises one more pmgr
- * power state, 0xf at offset 0xc008 of the ANE pmgr window, beyond
- * ANE_SYS@0x290 (the h16g branch raises 0xc018/0xc020, a t6021-shaped
- * branch 0x4008..0x4030), before it touches the ASC. On J700 the first
- * stage 4 snapshot with ANE_SYS alone hung the machine at the engine
- * read pass, so child_ps=1 (the default) raises 0xc008 — idempotently,
- * skipped when ACTUAL is already 0xf — before the first engine access.
- * child_ps=0 keeps the run write-free, engine reads may then hang. */
 #define H17_PMGR_CHILD_OFF 0xc008
 
 static bool child_ps = true;
@@ -193,21 +158,12 @@ struct ane_h17_wake {
 	int marker_err;
 	void __iomem *wdt;
 	u32 wdt_ctrl0;
-	int watch_cpu;
-	int timer_armed;
-	int rc;
-	struct completion done;
 };
 
-/* Containment state: globals because the containment timer reads them
- * from another CPU while the probe CPU may be stalled mid-access. */
-static u32 h17_pending_off;
-static u32 h17_pending_seq;
-static struct timer_list h17_contain_timer;
-
 /* Watchdog ownership by verification: the apple_wdt driver only sets
- * RESET_EN when a watcher opens the device, and systemd's runtime
- * watchdog is off on this host (RuntimeWatchdogUSec=0). */
+ * RESET_EN when a watcher holds the device, and systemd's runtime
+ * watchdog is off on this host. The block is mapped read/write only
+ * around the engine phase. */
 static void __iomem *h17_wdt_map(void)
 {
 	struct device_node *np;
@@ -266,42 +222,22 @@ static void h17_wdt_map_release(void __iomem *regs)
 		iounmap(regs);
 }
 
-static void h17_contain_panic(bool rehearsal, u32 seq, u32 off)
-{
-	if (rehearsal)
-		panic("ane_h17_wake REHEARSAL contain_ms=%u\n", contain_ms);
-	panic("ane_h17_wake HANG contain_ms=%u access=%u off=%#x\n",
-	      contain_ms, seq, off);
-}
-
-static struct timer_list h17_rehearse_timer;
-
-static void h17_rehearse_fn(struct timer_list *t)
-{
-	h17_contain_panic(true, 0, 0);
-}
-
 /*
- * The rehearsal, mode 1 (fire): verify the watchdog is disowned and
- * ticking, record the armed state in the marker, pin a containment
- * timer with an absolute expiry to a different online CPU and wait.
- * Success is the panic itself; the machine reboots. Reaching the end
- * alive means the watch did not fire: disarm, record and fail.
- *
- * Mode 2 (lifecycle): the same verify/arm/disarm discipline on the
- * watchdog and the containment timer, including a pet and a bounded
- * dwell well inside the deadline — but no panic and no reboot. This is
- * the rung that proves the lifecycle on silicon without cost.
+ * The containment rehearsal: verify the watchdog is disowned and
+ * ticking, arm it, exercise the pet, dwell inside the bite window,
+ * disarm with readback. No panic, no reboot, no ANE access. A PASS
+ * here establishes the arm/pet/disarm discipline on silicon; the fire
+ * (pets stop -> hardware reset) is the same register mechanism and was
+ * demonstrated by this machine's own Oct 31 reset.
  */
-static int h17_rehearse_run(unsigned int mode)
+static int h17_rehearse_run(void)
 {
 	void __iomem *regs;
 	struct file *marker = NULL;
 	u32 ctrl0 = 0;
 	loff_t pos = 0;
 	char buf[80];
-	int len, cpu, err = 0;
-	unsigned int dwell;
+	int len, err = 0;
 
 	regs = h17_wdt_map();
 	if (!regs) {
@@ -325,53 +261,21 @@ static int h17_rehearse_run(unsigned int mode)
 		marker = NULL;
 		goto out;
 	}
-	len = snprintf(buf, sizeof(buf), "rehearsal mode=%u armed contain_ms=%u\n",
-		       mode, contain_ms);
+	len = snprintf(buf, sizeof(buf),
+		       "rehearsal armed contain_ms=n/a watchdog-only\n");
 	if (kernel_write(marker, buf, len, &pos) != len) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=marker-write\n");
 		err = -EIO;
 		goto close;
 	}
-	cpu = smp_processor_id() + 1;
-	if (cpu >= num_online_cpus())
-		cpu = 0;
-	timer_setup(&h17_rehearse_timer, h17_rehearse_fn, TIMER_PINNED);
-	h17_rehearse_timer.expires = jiffies + msecs_to_jiffies(contain_ms + 500);
-	add_timer_on(&h17_rehearse_timer, cpu);
-
-	if (mode == 1) {
-		pr_info("ane_h17_wake rehearsal fire armed cpu=%d contain_ms=%u\n",
-			cpu, contain_ms);
-		/* The timer panics before this sleep ends; only a broken
-		 * watch returns here. */
-		msleep(contain_ms + 1000);
-		timer_delete_sync(&h17_rehearse_timer);
-		err = h17_wdt_disarm(regs, ctrl0);
-		if (err) {
-			pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-disarm\n");
-			goto close;
-		}
-		len = snprintf(buf, sizeof(buf), "rehearsal-no-fire\n");
-		kernel_write(marker, buf, len, &pos);
-		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-no-fire\n");
-		err = -EIO;
-		goto close;
-	}
-
-	/* Mode 2: lifecycle only. Arm the watchdog, exercise the pet,
-	 * dwell well inside the timer deadline, then disarm and verify
-	 * both. No panic, no reboot. */
 	err = h17_wdt_arm(regs, ctrl0);
 	if (err) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-arm\n");
 		goto close;
 	}
 	h17_wdt_pet(regs);
-	pr_info("ane_h17_wake rehearsal lifecycle armed cpu=%d contain_ms=%u\n",
-		cpu, contain_ms);
-	dwell = contain_ms / 4;
-	msleep(dwell);
-	timer_delete_sync(&h17_rehearse_timer);
+	pr_info("ane_h17_wake rehearsal lifecycle armed (watchdog-only)\n");
+	msleep(250);
 	err = h17_wdt_disarm(regs, ctrl0);
 	if (err) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-disarm\n");
@@ -392,23 +296,22 @@ out:
 	return err;
 }
 
-static struct timer_list h17_contain_timer;
+/* Containment state: the pending access is read back by nothing in
+ * software — the hardware watchdog is the recovery — but the globals
+ * keep the record readable in oopses and debuggers. */
+static u32 h17_pending_off;
+static u32 h17_pending_seq;
 
-static void h17_contain_fn(struct timer_list *t)
-{
-	h17_contain_panic(false, READ_ONCE(h17_pending_seq),
-			   READ_ONCE(h17_pending_off));
-}
-
-/* Called before every engine access: name the pending access in the
- * O_SYNC marker, push the containment deadline, restart the watchdog
- * counter. A storage failure is remembered and aborts the run before
- * the next access. */
+/* Called before every engine access: restart the watchdog counter and
+ * record the pending access in the O_SYNC marker. A storage failure is
+ * remembered and aborts the run before the next access. */
 static void h17_engine_pre(struct ane_h17_wake *w, u32 off)
 {
 	char buf[64];
 	int len;
 
+	if (w->wdt)
+		h17_wdt_pet(w->wdt);
 	h17_pending_off = off;
 	h17_pending_seq++;
 	if (w->marker && !w->marker_err) {
@@ -417,11 +320,6 @@ static void h17_engine_pre(struct ane_h17_wake *w, u32 off)
 		if (kernel_write(w->marker, buf, len, &w->marker_pos) != len)
 			w->marker_err = -EIO;
 	}
-	if (contain_ms)
-		mod_timer(&h17_contain_timer,
-			  jiffies + msecs_to_jiffies(contain_ms));
-	if (w->wdt)
-		h17_wdt_pet(w->wdt);
 }
 
 /* Every MMIO read is logged before it happens: a hang names the word. */
@@ -474,217 +372,18 @@ static bool ane_h17_darts_disabled(void)
 	return okay;
 }
 
-/*
- * The engine phase, bound to one CPU by the probe. The containment
- * timer is pinned elsewhere; every access pushes its expiry and
- * restarts the watchdog counter, so a hang is answered by the panic
- * (which names the access) and, behind it, the watchdog reset.
- */
-static int h17_engine_run(struct ane_h17_wake *w)
-{
-	struct device *pdev = w->dev;
-	u32 scratch7 = 0, s7a, s7b;
-	u64 state, state1, ring = 0;
-	unsigned int i, msgs = 0, polls;
-	bool wake_seen = false, ring_acked = false;
-	int ret = 0;
-	u32 ctrl0 = 0;
-
-	/* Watchdog first: refuse the run unless the block is disowned,
-	 * ticking, and arms cleanly. */
-	w->wdt = h17_wdt_map();
-	if (!w->wdt) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-node\n");
-		return -EOPNOTSUPP;
-	}
-	ret = h17_wdt_verify_disarmed(w->wdt, &ctrl0);
-	if (ret == -EBUSY) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-armed\n");
-		goto fail_nowdt;
-	}
-	if (ret) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-verify\n");
-		goto fail_nowdt;
-	}
-	ret = h17_wdt_arm(w->wdt, ctrl0);
-	if (ret) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-arm\n");
-		goto fail_nowdt;
-	}
-	w->wdt_ctrl0 = ctrl0;
-
-	/* Arm the containment watch with an absolute expiry, pinned to
-	 * the CPU chosen by the probe (never the engine CPU). */
-	if (contain_ms) {
-		timer_setup(&h17_contain_timer, h17_contain_fn, TIMER_PINNED);
-		h17_contain_timer.expires =
-			jiffies + msecs_to_jiffies(contain_ms);
-		add_timer_on(&h17_contain_timer, w->watch_cpu);
-		w->timer_armed = 1;
-		dev_info(pdev, "ane_h17_wake containment armed cpu=%d contain_ms=%u\n",
-			 w->watch_cpu, contain_ms);
-	}
-
-	if (w->marker_err) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=marker-write\n");
-		goto fail;
-	}
-
-	/* Read-only pass over the T8140-sourced engine block. No write yet. */
-	for (i = 0; i < H17_SCRATCH_N && !w->marker_err; i++)
-		h17_rd(w, scratch0_off + 4 * i, "SCRATCH");
-	if (w->marker_err)
-		goto fail;
-	h17_rd(w, H17_IPI_PENDING, "IPI_PENDING");
-	h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0");
-	h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
-	if (w->marker_err)
-		goto fail;
-	if (read_wrapper) {
-		h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
-		h17_rd(w, H17_CPU_CONTROL, "CPU_CONTROL");
-		h17_rd(w, H17_RVBAR, "RVBAR_LO");
-		h17_rd(w, H17_RVBAR + 4, "RVBAR_HI");
-	}
-	if (mbox_peek) {
-		h17_rd(w, mbox_off + H17_MBOX_A2I_CTRL, "A2I_CTRL");
-		h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
-	}
-	if (w->marker_err)
-		goto fail;
-
-	if (!confirm_wake) {
-		dev_info(pdev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n");
-		goto release;
-	}
-
-	state = h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0") & 3;
-	state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
-	ring = state ^ 3;
-	if (ring & state1) {
-		dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-conflict state=%llu state1=%llu\n",
-			state, state1);
-		ret = -EIO;
-		goto release;
-	}
-	if (state != 3) {
-		h17_wrq(w, H17_DOORBELL, ring, "DOORBELL");
-		polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
-		for (i = 0; i < polls && !w->marker_err; i++) {
-			msleep(poll_ms);
-			if ((h17_rdq(w, H17_DOORBELL_ACK, "DOORBELL_ACK") & 3) == ring)
-				break;
-		}
-		state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
-		if (ring & state1) {
-			dev_err(pdev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-unclear state1=%llu\n",
-				state1);
-			ret = -EIO;
-			goto release;
-		}
-		h17_wrq(w, H17_DOORBELL_ACK, ring, "DOORBELL_ACK");
-		ring_acked = true;
-	} else {
-		dev_info(pdev, "ane_h17_wake doorbell state already 3, no ring\n");
-	}
-
-	h17_wrq(w, H17_MBOX_SETUP0, 1, "MBOX_SETUP0");
-	h17_wrq(w, H17_MBOX_SETUP1, 0, "MBOX_SETUP1");
-	h17_wrq(w, H17_MBOX_SETUP1, 1, "MBOX_SETUP1");
-	h17_wrq(w, H17_MBOX_SETUP2, 1, "MBOX_SETUP2");
-	h17_wrq(w, H17_MBOX_SETUP3, 1, "MBOX_SETUP3");
-
-	s7a = scratch0_off + 4 * 7;
-	s7b = scratch0_off + 4 * 8;
-	polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
-	for (i = 0; i < polls && !w->marker_err; i++) {
-		u32 ack_b;
-
-		msleep(poll_ms);
-		scratch7 = h17_rd(w, s7a, "SCRATCH7_A");
-		ack_b = h17_rd(w, s7b, "SCRATCH7_B");
-		if (scratch7 == H17_WAKE_ACK || ack_b == H17_WAKE_ACK) {
-			wake_seen = true;
-			break;
-		}
-	}
-	dev_info(pdev, "ane_h17_wake wake wait done wake_seen=%d scratch7=%#x ring=%llx acked=%d\n",
-		 wake_seen, scratch7, ring, ring_acked);
-
-	if (mbox_peek) {
-		polls = (mbox_wait_ms + poll_ms - 1) / poll_ms;
-		for (i = 0; i < polls && msgs < H17_MBOX_MAXMSG && !w->marker_err; i++) {
-			u32 ctrl_i2a;
-
-			msleep(poll_ms);
-			ctrl_i2a = h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
-			if (ctrl_i2a & H17_MBOX_EMPTY)
-				continue;
-			if (!(ctrl_i2a & H17_MBOX_ENABLE)) {
-				dev_info(pdev, "ane_h17_wake mailbox not enabled ctrl=%#x\n", ctrl_i2a);
-				break;
-			}
-			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV0, "I2A_RECV0");
-			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV1, "I2A_RECV1");
-			msgs++;
-		}
-		dev_info(pdev, "ane_h17_wake mailbox peek done mbox_off=%#x msgs=%u\n",
-			 mbox_off, msgs);
-	}
-
-	if (wake_seen)
-		dev_info(pdev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=wake-word msgs=%u\n", msgs);
-	else if (ring_acked)
-		dev_info(pdev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=doorbell-ack\n");
-	else
-		dev_info(pdev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=quiet-stop\n");
-	goto release;
-fail:
-	ret = -EIO;
-release:
-	if (w->timer_armed) {
-		timer_delete_sync(&h17_contain_timer);
-		w->timer_armed = 0;
-	}
-	if (h17_wdt_disarm(w->wdt, w->wdt_ctrl0))
-		dev_crit(pdev, "ane_h17_wake failed to disarm the SoC watchdog: a reboot is required\n");
-	if (w->marker) {
-		char buf[32];
-		int len = snprintf(buf, sizeof(buf), "done access=%u\n",
-				   h17_pending_seq);
-
-		kernel_write(w->marker, buf, len, &w->marker_pos);
-	}
-fail_nowdt:
-	h17_wdt_map_release(w->wdt);
-	w->wdt = NULL;
-	return ret;
-}
-
-/*
- * The engine phase runs here, bound to one CPU; the containment timer
- * is pinned to a different online CPU and carries an absolute expiry
- * before the first access. The watchdog is verified, armed, petted per
- * access and disarmed with verification.
- */
-static int h17_engine_fn(void *data)
-{
-	struct ane_h17_wake *w = data;
-
-	w->rc = h17_engine_run(w);
-	complete(&w->done);
-	return 0;
-}
-
 static int ane_h17_wake_probe(struct platform_device *pdev)
 {
 	struct device_node *ane, *ps;
 	struct ane_h17_wake *w;
 	struct resource res;
-	struct task_struct *eng;
-	u32 word;
-	unsigned int i, polls;
-	int probe_cpu, ret;
+	u32 word = 0, scratch7 = 0, s7a, s7b;
+	u64 state, state1, ring = 0;
+	unsigned int i, msgs = 0, polls;
+	bool wake_seen = false, ring_acked = false;
+	bool voted = false;
+	int ret = 0;
+	u32 ctrl0 = 0;
 
 	if (!pdev->dev.pm_domain) {
 		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=REFUSED reason=no-genpd\n");
@@ -726,18 +425,6 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 	if (!poll_ms)
 		poll_ms = 1;
 
-	/* The containment watch must live on a different online CPU than
-	 * the one the engine phase is bound to: a CPU stalled mid-MMIO
-	 * cannot take timers. */
-	probe_cpu = smp_processor_id();
-	w->watch_cpu = cpumask_next(probe_cpu, cpu_online_mask);
-	if (w->watch_cpu >= nr_cpu_ids)
-		w->watch_cpu = cpumask_first(cpu_online_mask);
-	if (w->watch_cpu == probe_cpu || !cpu_online(w->watch_cpu)) {
-		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=no-watch-cpu\n");
-		return -EIO;
-	}
-
 	/* The marker is mandatory: the run is refused, not degraded, when
 	 * the durable record is unavailable. */
 	w->marker = filp_open(marker_file, O_APPEND | O_CREAT | O_WRONLY | O_SYNC,
@@ -754,6 +441,7 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=power-vote error=%d\n", ret);
 		goto close_marker;
 	}
+	voted = true;
 	ret = regmap_read(w->pmgr, H17_PS_OFF, &word);
 	if (ret) {
 		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=pmgr-read error=%d\n", ret);
@@ -810,31 +498,168 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		}
 	}
 
-	/*
-	 * The engine phase runs bound to probe_cpu; the containment
-	 * timer is pinned to watch_cpu with an absolute expiry set
-	 * before the first access.
-	 */
-	init_completion(&w->done);
-	eng = kthread_create_on_cpu(h17_engine_fn, w, probe_cpu,
-				    "ane_h17_wake");
-	if (IS_ERR(eng)) {
-		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=kthread error=%ld\n",
-			PTR_ERR(eng));
-		ret = PTR_ERR(eng);
+	/* Watchdog containment: verify the block is disowned and ticking
+	 * and arm it before the first engine access. */
+	w->wdt = h17_wdt_map();
+	if (!w->wdt) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-node\n");
+		ret = -EOPNOTSUPP;
 		goto release;
 	}
-	wake_up_process(eng);
-	wait_for_completion(&w->done);
-	ret = w->rc;
+	ret = h17_wdt_verify_disarmed(w->wdt, &ctrl0);
+	if (ret == -EBUSY) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-armed\n");
+		goto release;
+	}
+	if (ret) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-verify\n");
+		goto release;
+	}
+	ret = h17_wdt_arm(w->wdt, ctrl0);
+	if (ret) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-arm\n");
+		goto release;
+	}
+	w->wdt_ctrl0 = ctrl0;
 
+	/* Read-only pass over the T8140-sourced engine block. No write yet. */
+	for (i = 0; i < H17_SCRATCH_N && !w->marker_err; i++)
+		h17_rd(w, scratch0_off + 4 * i, "SCRATCH");
+	if (w->marker_err)
+		goto fail;
+	h17_rd(w, H17_IPI_PENDING, "IPI_PENDING");
+	h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0");
+	h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+	if (w->marker_err)
+		goto fail;
+	if (read_wrapper) {
+		h17_rd(w, H17_CPU_STATUS, "CPU_STATUS");
+		h17_rd(w, H17_CPU_CONTROL, "CPU_CONTROL");
+		h17_rd(w, H17_RVBAR, "RVBAR_LO");
+		h17_rd(w, H17_RVBAR + 4, "RVBAR_HI");
+	}
+	if (mbox_peek) {
+		h17_rd(w, mbox_off + H17_MBOX_A2I_CTRL, "A2I_CTRL");
+		h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+	}
+	if (w->marker_err)
+		goto fail;
+
+	if (!confirm_wake) {
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n");
+		goto release;
+	}
+
+	/*
+	 * The T8140 HAL's own control path, decoded from the same build:
+	 * the mailbox-setup writes, then ring the doorbell with the
+	 * complement of (STATE0 & 3) once that value is clear in STATE1,
+	 * a bounded poll of the ack, the ack write, then the bounded
+	 * SCRATCH7 wake-word poll. The child state is already raised
+	 * above (or child_ps=0).
+	 */
+	state = h17_rdq(w, H17_DOORBELL_STATE0, "DOORBELL_STATE0") & 3;
+	state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+	ring = state ^ 3;
+	if (ring & state1) {
+		dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-conflict state=%llu state1=%llu\n",
+			state, state1);
+		ret = -EIO;
+		goto release;
+	}
+	if (state != 3) {
+		h17_wrq(w, H17_DOORBELL, ring, "DOORBELL");
+		polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
+		for (i = 0; i < polls && !w->marker_err; i++) {
+			msleep(poll_ms);
+			if ((h17_rdq(w, H17_DOORBELL_ACK, "DOORBELL_ACK") & 3) == ring)
+				break;
+		}
+		state1 = h17_rdq(w, H17_DOORBELL_STATE1, "DOORBELL_STATE1");
+		if (ring & state1) {
+			dev_err(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=FAIL reason=doorbell-unclear state1=%llu\n",
+				state1);
+			ret = -EIO;
+			goto release;
+		}
+		h17_wrq(w, H17_DOORBELL_ACK, ring, "DOORBELL_ACK");
+		ring_acked = true;
+	} else {
+		dev_info(&pdev->dev, "ane_h17_wake doorbell state already 3, no ring\n");
+	}
+
+	h17_wrq(w, H17_MBOX_SETUP0, 1, "MBOX_SETUP0");
+	h17_wrq(w, H17_MBOX_SETUP1, 0, "MBOX_SETUP1");
+	h17_wrq(w, H17_MBOX_SETUP1, 1, "MBOX_SETUP1");
+	h17_wrq(w, H17_MBOX_SETUP2, 1, "MBOX_SETUP2");
+	h17_wrq(w, H17_MBOX_SETUP3, 1, "MBOX_SETUP3");
+
+	s7a = scratch0_off + 4 * 7;
+	s7b = scratch0_off + 4 * 8;
+	polls = (wake_wait_ms + poll_ms - 1) / poll_ms;
+	for (i = 0; i < polls && !w->marker_err; i++) {
+		u32 ack_b;
+
+		msleep(poll_ms);
+		scratch7 = h17_rd(w, s7a, "SCRATCH7_A");
+		ack_b = h17_rd(w, s7b, "SCRATCH7_B");
+		if (scratch7 == H17_WAKE_ACK || ack_b == H17_WAKE_ACK) {
+			wake_seen = true;
+			break;
+		}
+	}
+	dev_info(&pdev->dev, "ane_h17_wake wake wait done wake_seen=%d scratch7=%#x ring=%llx acked=%d\n",
+		 wake_seen, scratch7, ring, ring_acked);
+
+	if (mbox_peek) {
+		polls = (mbox_wait_ms + poll_ms - 1) / poll_ms;
+		for (i = 0; i < polls && msgs < H17_MBOX_MAXMSG && !w->marker_err; i++) {
+			u32 ctrl_i2a;
+
+			msleep(poll_ms);
+			ctrl_i2a = h17_rd(w, mbox_off + H17_MBOX_I2A_CTRL, "I2A_CTRL");
+			if (ctrl_i2a & H17_MBOX_EMPTY)
+				continue;
+			if (!(ctrl_i2a & H17_MBOX_ENABLE)) {
+				dev_info(&pdev->dev, "ane_h17_wake mailbox not enabled ctrl=%#x\n", ctrl_i2a);
+				break;
+			}
+			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV0, "I2A_RECV0");
+			h17_rd(w, mbox_off + H17_MBOX_I2A_RECV1, "I2A_RECV1");
+			msgs++;
+		}
+		dev_info(&pdev->dev, "ane_h17_wake mailbox peek done mbox_off=%#x msgs=%u\n",
+			 mbox_off, msgs);
+	}
+
+	if (wake_seen)
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=wake-word msgs=%u\n", msgs);
+	else if (ring_acked)
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=doorbell-ack\n");
+	else
+		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=quiet-stop\n");
+	goto release;
+fail:
+	ret = -EIO;
 release:
+	if (w->wdt && h17_wdt_disarm(w->wdt, w->wdt_ctrl0))
+		dev_crit(&pdev->dev, "ane_h17_wake failed to disarm the SoC watchdog: a reboot is required\n");
+	if (w->marker) {
+		char buf[32];
+		int len = snprintf(buf, sizeof(buf), "done access=%u\n",
+				   h17_pending_seq);
+
+		kernel_write(w->marker, buf, len, &w->marker_pos);
+	}
+close_marker:
 	if (w->marker) {
 		filp_close(w->marker, NULL);
 		w->marker = NULL;
 	}
-	pm_runtime_put_sync(&pdev->dev);
-close_marker:
+	h17_wdt_map_release(w->wdt);
+	w->wdt = NULL;
+	if (voted)
+		pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 	return ret;
 }
@@ -855,23 +680,47 @@ static struct platform_driver ane_h17_wake_driver = {
 
 static int __init ane_h17_wake_init(void)
 {
+	struct device_node *ane, *ps, *probe, *domain = NULL;
+	u32 reg;
+	int ret = -EPERM;
+
 	if (!optin || !of_machine_is_compatible("apple,j700")) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=REFUSED reason=board-optin-or-dt\n");
 		return -EPERM;
 	}
-	if (contain_rehearse) {
-		if (contain_rehearse != 1 && contain_rehearse != 2) {
-			pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-mode val=%u\n",
-			       contain_rehearse);
-			return -EINVAL;
-		}
-		pr_info("ane_h17_wake rehearsal mode=%u: containment only, no ANE access\n",
-			contain_rehearse);
-		return h17_rehearse_run(contain_rehearse);
-	}
 	if (!H17_REGISTER_MAP_QUALIFIED) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=REFUSED reason=unqualified-register-map; no power or MMIO access\n");
 		return -EOPNOTSUPP;
+	}
+	if (contain_rehearse) {
+		pr_info("ane_h17_wake rehearsal: watchdog lifecycle only, no ANE access\n");
+		return h17_rehearse_run();
+	}
+
+	ane = of_find_node_by_path(H17_ANE_NODE);
+	ps = of_find_node_by_path(H17_PMGR_PS_NODE);
+	probe = of_find_compatible_node(NULL, NULL, H17_PROBE_COMPAT);
+	if (probe)
+		domain = of_parse_phandle(probe, "power-domains", 0);
+	if (!ane || !ps || !probe || of_device_is_available(ane) ||
+	    !of_device_is_available(ps) || !of_device_is_available(probe) ||
+	    !of_device_is_compatible(ane, "apple,t8140-ane") ||
+	    !ane_h17_darts_disabled() ||
+	    of_property_read_u32(ps, "reg", &reg) || reg != H17_PS_OFF ||
+	    domain != ps) {
+		ret = -EINVAL;
+		goto put_nodes;
+	}
+	ret = 0;
+put_nodes:
+	of_node_put(domain);
+	of_node_put(probe);
+	of_node_put(ps);
+	of_node_put(ane);
+	if (ret) {
+		pr_err("ane_h17_wake RESULT stage=4 verdict=REFUSED reason=board-optin-or-dt error=%d\n",
+		       ret);
+		return ret;
 	}
 	return platform_driver_register(&ane_h17_wake_driver);
 }
@@ -884,4 +733,4 @@ static void __exit ane_h17_wake_exit(void)
 module_init(ane_h17_wake_init);
 module_exit(ane_h17_wake_exit);
 MODULE_LICENSE("Dual MIT/GPL");
-MODULE_DESCRIPTION("J700 H17 stage 4, containment v2: gate closed pending rehearsal");
+MODULE_DESCRIPTION("J700 H17 offline draft; engine and watchdog rehearsals quarantined");

@@ -19,31 +19,33 @@ sim-test: sim/sim_h17_wake
 sim-negative: sim/sim_h17_wake
 	./sim/sim_h17_wake no-optin
 	./sim/sim_h17_wake wrong-board
+	./sim/sim_h17_wake rehearse-init
 
 sim-rehearse: sim/sim_h17_wake
 	./sim/sim_h17_wake rehearse
-	./sim/sim_h17_wake rehearse-fire
 
-# Both mutants must be rejected: unqualifying the map would let the probe
-# run against the fake bus, and removing the rehearsal timer arm must
-# fail the rehearsal assertions.
+# Compile and run actual source mutations against the fake bus only.
+# Require a changed source and exit 1 (not crashes or build failures).
 sim-mutation-map:
-	@set -eu; tmp=$$(mktemp -d "${TMPDIR:-/tmp/opencode}/h17-mutation.XXXXXX" 2>/dev/null || mktemp -d "/tmp/opencode/h17-mutation.XXXXXX"); trap 'rm -rf "$$tmp"' EXIT; \
+	@set -eu; tmp=$$(mktemp -d "$${TMPDIR:-/tmp/opencode}/h17-mutation.XXXXXX"); trap 'rm -rf "$$tmp"' EXIT; \
 	cp -r sim "$$tmp/sim"; \
 	sed 's/^#define H17_REGISTER_MAP_QUALIFIED 0$$/#define H17_REGISTER_MAP_QUALIFIED 1/' ane_h17_wake.c > "$$tmp/ane_h17_wake.c"; \
 	grep -q '^#define H17_REGISTER_MAP_QUALIFIED 1$$' "$$tmp/ane_h17_wake.c"; \
+	! cmp -s ane_h17_wake.c "$$tmp/ane_h17_wake.c"; \
 	$(SIM_CC) $(SIM_CFLAGS) -I "$$tmp/sim/inc" -o "$$tmp/sim_h17" "$$tmp/sim/sim_harness.c"; \
-	if "$$tmp/sim_h17" snapshot 2>/dev/null; then echo 'FAIL: gate mutant escaped'; exit 1; \
-	else echo 'PASS: harness rejects removal of refusal'; fi
+	rc=0; "$$tmp/sim_h17" snapshot > "$$tmp/result" 2>&1 || rc=$$?; \
+	test "$$rc" = 1; grep -q 'CHK FAILED' "$$tmp/result"; \
+	echo 'PASS: harness rejects removal of refusal'
 
 sim-mutation-contain:
-	@set -eu; tmp=$$(mktemp -d "${TMPDIR:-/tmp/opencode}/h17-mutation.XXXXXX" 2>/dev/null || mktemp -d "/tmp/opencode/h17-mutation.XXXXXX"); trap 'rm -rf "$$tmp"' EXIT; \
+	@set -eu; tmp=$$(mktemp -d "$${TMPDIR:-/tmp/opencode}/h17-mutation.XXXXXX"); trap 'rm -rf "$$tmp"' EXIT; \
 	cp -r sim "$$tmp/sim"; \
-	sed 's/add_timer_on(&h17_rehearse_timer, cpu);/(void)cpu;/' ane_h17_wake.c > "$$tmp/ane_h17_wake.c"; \
-	grep -q 'void)cpu;' "$$tmp/ane_h17_wake.c"; \
+	sed 's/ctrl0 | H17_WDT_CTRL_RESET_EN/ctrl0/' ane_h17_wake.c > "$$tmp/ane_h17_wake.c"; \
+	! cmp -s ane_h17_wake.c "$$tmp/ane_h17_wake.c"; \
 	$(SIM_CC) $(SIM_CFLAGS) -I "$$tmp/sim/inc" -o "$$tmp/sim_h17" "$$tmp/sim/sim_harness.c"; \
-	if "$$tmp/sim_h17" rehearse 2>/dev/null; then echo 'FAIL: containment mutant escaped'; exit 1; \
-	else echo 'PASS: harness rejects the uncontained rehearsal'; fi
+	rc=0; "$$tmp/sim_h17" rehearse > "$$tmp/result" 2>&1 || rc=$$?; \
+	test "$$rc" = 1; grep -q 'CHK FAILED' "$$tmp/result"; \
+	echo 'PASS: harness rejects missing watchdog arm'
 
 sim-all: sim-test sim-negative sim-rehearse sim-mutation-map sim-mutation-contain
 

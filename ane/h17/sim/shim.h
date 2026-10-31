@@ -1,17 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
  * sim/shim.h: userspace shim so the real ane_h17_wake.c compiles and
- * runs unmodified. The gate is 0, so only the rehearsal and refusal
- * paths execute here; the engine paths exist to prove they compile and
- * are exercised by the gate-removal mutant. A sim is not silicon: it
- * proves control flow, ordering and gating of this module, never T8140
- * behaviour.
+ * runs unmodified. The gate is 1, so the engine probe runs here against
+ * a fake bus and the rehearsal mode runs against a fake WD1 block. A
+ * sim is not silicon: it proves control flow, ordering and gating of
+ * this module, never T8140 behaviour. Deliberately absent: timers,
+ * kthreads, panic — containment v3 has no software recovery path, so
+ * the shim must not grow one.
  */
 #ifndef SIM_SHIM_H
 #define SIM_SHIM_H
 
 #include <errno.h>
-#include <setjmp.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -85,14 +85,9 @@ static inline bool of_machine_is_compatible(const char *name)
 #define dev_warn(d, ...) do { (void)(d); rec_log(__VA_ARGS__); } while (0)
 #define dev_crit(d, ...) do { (void)(d); rec_log(__VA_ARGS__); } while (0)
 
-extern int sim_panic_count;
-extern jmp_buf sim_panic_jb;
-extern unsigned long sim_registrations, sim_maps;
-#define panic(...) do { rec_log(__VA_ARGS__); sim_panic_count++; \
-			longjmp(sim_panic_jb, 1); } while (0)
-
 /* kernel marker file */
 struct file;
+extern unsigned long sim_registrations, sim_maps;
 extern unsigned long sim_marker_opens, sim_marker_writes, sim_marker_closed;
 static inline struct file *filp_open(const char *path, int flags, int mode)
 {
@@ -115,98 +110,15 @@ static inline int filp_close(struct file *f, void *cred)
 	return 0;
 }
 
-/* kernel timers */
-struct timer_list {
-	int armed;
-	unsigned long expires;
-};
-#define TIMER_PINNED 0
-extern unsigned long sim_timer_armed, sim_timer_disarmed, sim_timer_mods;
-unsigned long sim_jiffies;
-#define jiffies sim_jiffies
-static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
-static inline void timer_setup(struct timer_list *t,
-			       void (*fn)(struct timer_list *), int flags)
-{
-	(void)fn; (void)flags;
-	t->armed = 0;
-}
-static inline void add_timer_on(struct timer_list *t, int cpu)
-{
-	(void)cpu;
-	t->armed = 1;
-	sim_timer_armed++;
-}
-static inline int mod_timer(struct timer_list *t, unsigned long expires)
-{
-	(void)expires;
-	if (!t->armed)
-		sim_timer_mods++;
-	return 0;
-}
-static inline int timer_delete_sync(struct timer_list *t)
-{
-	int was = t->armed;
-
-	t->armed = 0;
-	if (was)
-		sim_timer_disarmed++;
-	return was;
-}
-
-/* cpus */
-#define nr_cpu_ids 4U
-extern int sim_processor_id;
-static inline int smp_processor_id(void) { return sim_processor_id; }
-static inline int num_online_cpus(void) { return nr_cpu_ids; }
-typedef struct { unsigned int bits; } cpumask_t;
-typedef cpumask_t cpumask;
-#define cpu_online_mask ((const cpumask *)0)
-static inline unsigned int cpumask_next(unsigned int n, const cpumask *s)
-{
-	(void)s;
-	return n + 1 < nr_cpu_ids ? n + 1 : nr_cpu_ids;
-}
-static inline unsigned int cpumask_first(const cpumask *s)
-{
-	(void)s;
-	return 0;
-}
-static inline bool cpu_online(unsigned int cpu) { return cpu < nr_cpu_ids; }
-
-/* kthreads + completion: the shim runs the thread body synchronously at
- * wake, so a gate-1 mutant exercises the whole engine phase inline. */
-struct task_struct;
-extern int (*sim_kthread_fn)(void *);
-extern void *sim_kthread_data;
-static inline struct task_struct *kthread_create_on_cpu(
-	int (*fn)(void *), void *data, int cpu, const char *name)
-{
-	(void)cpu; (void)name;
-	sim_kthread_fn = fn;
-	sim_kthread_data = data;
-	return (struct task_struct *)fn;
-}
-static inline int wake_up_process(struct task_struct *t)
-{
-	(void)t;
-	return sim_kthread_fn(sim_kthread_data);
-}
-struct completion {
-	int done;
-};
-static inline void init_completion(struct completion *c) { c->done = 0; }
-static inline void complete(struct completion *c) { c->done = 1; }
-static inline void wait_for_completion(struct completion *c) { (void)c; }
-
 /* device tree */
-extern u32 sim_wdt_regs[12];
 struct device_node {
 	const char *name;
 	const char *compatible;
 	int available;
 	struct device_node *parent;
 };
+extern struct device_node sim_ane_node, sim_ps_node, sim_pmgr_ctl,
+	sim_probe_node, sim_dart_nodes[3], sim_wdt_node;
 static inline int of_device_is_available(struct device_node *n)
 {
 	return n && n->available;
@@ -216,8 +128,6 @@ static inline int of_device_is_compatible(struct device_node *n, const char *c)
 	return n && n->compatible && strcmp(n->compatible, c) == 0;
 }
 static inline void of_node_put(struct device_node *n) { (void)n; }
-extern struct device_node sim_ane_node, sim_ps_node, sim_probe_node,
-	sim_dart_nodes[3], sim_wdt_node;
 static inline struct device_node *of_find_node_by_path(const char *p)
 {
 	if (strcmp(p, "/soc/ane@400000000") == 0)
@@ -258,6 +168,24 @@ static inline int of_address_to_resource(struct device_node *n, int idx,
 	}
 	return -EINVAL;
 }
+extern u32 sim_wdt_regs[12];
+static inline struct device_node *of_parse_phandle(struct device_node *n,
+						   const char *prop, int idx)
+{
+	(void)prop; (void)idx;
+	if (n == &sim_probe_node)
+		return &sim_ps_node;
+	return NULL;
+}
+static inline int of_property_read_u32(struct device_node *n, const char *p,
+				       u32 *v)
+{
+	if (n == &sim_ps_node && strcmp(p, "reg") == 0) {
+		*v = 0x290;
+		return 0;
+	}
+	return -EINVAL;
+}
 static inline void __iomem *of_iomap(struct device_node *np, int index)
 {
 	(void)np; (void)index;
@@ -265,10 +193,13 @@ static inline void __iomem *of_iomap(struct device_node *np, int index)
 }
 static inline void iounmap(void __iomem *addr) { (void)addr; }
 
+/* genpd */
+extern int sim_genpd_on, sim_genpd_disabled;
+
 /* regmap (PMGR) */
 struct regmap;
-extern int sim_genpd_on, sim_genpd_disabled;
 extern unsigned long sim_regmap_writes, sim_pmgr_reads;
+extern unsigned long sim_setup_writes;
 extern u32 sim_child_word;
 static inline int regmap_read(struct regmap *m, u32 off, u32 *v)
 {
@@ -299,7 +230,6 @@ static inline struct regmap *syscon_node_to_regmap(struct device_node *n)
 	return (struct regmap *)1;
 }
 
-/* genpd */
 static inline int pm_runtime_enable(void *dev)
 {
 	(void)dev;
@@ -330,15 +260,22 @@ static inline void pm_runtime_disable(void *dev)
 
 /* fake MMIO engine + watchdog registers */
 extern void __iomem *sim_engine_base;
+extern u32 sim_wdt_regs[12];
 extern unsigned long sim_mmio_reads, sim_mmio_writes;
+extern unsigned long sim_wdt_armed_latch;
 static inline bool sim_is_wdt(const void __iomem *addr)
 {
 	return (uintptr_t)addr >= (uintptr_t)sim_wdt_regs &&
 	       (uintptr_t)addr < (uintptr_t)sim_wdt_regs + sizeof(sim_wdt_regs);
 }
+static inline u32 off_wdt(const void __iomem *addr)
+{
+	return (u32)((uintptr_t)addr - (uintptr_t)sim_wdt_regs);
+}
 static inline void *__iomem devm_ioremap_resource(void *dev, struct resource *r)
 {
 	(void)dev; (void)r;
+	sim_maps++;
 	return sim_engine_base;
 }
 static inline u32 sim_read(u32 off)
@@ -349,6 +286,9 @@ static inline u32 sim_read(u32 off)
 static inline void sim_write(u32 off, u32 v)
 {
 	(void)off; (void)v;
+	if (off == 0x1960000 || off == 0x1974200 ||
+	    off == 0x195c284 || off == 0x195c288)
+		sim_setup_writes++;
 }
 static inline u32 readl(const void __iomem *addr)
 {
@@ -367,6 +307,8 @@ static inline void writel(u32 v, void __iomem *addr)
 
 	if (sim_is_wdt(addr)) {
 		*(volatile u32 *)addr = v;
+		if (off_wdt(addr) == 0x1c && (v & BIT(2)))
+			sim_wdt_armed_latch++;
 		return;
 	}
 	off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);

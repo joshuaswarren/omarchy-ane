@@ -133,7 +133,16 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-## Stage 4: containment v2 — rehearsal rung pending (2026-10-31)
+## Stage 4: offline development only — current status
+
+The module refuses before engine access **or watchdog rehearsal**. The
+runner is diagnostics-only for every argument, including GO, REHEARSE and
+REHEARSE-FIRE. No panic/reboot test is required as a normal-operation goal.
+The watchdog-only rewrite is an unqualified offline draft; functional
+T8140 initialization and device-local error handling remain unresolved.
+See the [offline correction](../../receipts/2026-10-31-j700-h17-offline-draft/README.md).
+
+### Superseded containment-v2 account — not current execution guidance
 
 The v1 containment did not establish recovery, and the correction
 receipt
