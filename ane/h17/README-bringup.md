@@ -138,106 +138,26 @@ state. Do not proceed to firmware wake on a failed or missing result.
 The module refuses before engine access **or watchdog rehearsal**. The
 runner is diagnostics-only for every argument, including GO, REHEARSE and
 REHEARSE-FIRE. No panic/reboot test is required as a normal-operation goal.
-The watchdog-only rewrite is an unqualified offline draft; functional
-T8140 initialization and device-local error handling remain unresolved.
-See the [offline correction](../../receipts/2026-10-31-j700-h17-offline-draft/README.md).
+The reviewed watchdog-only probe has been removed from the live module:
+there is no executable engine, power, watchdog or file-I/O path to enable
+by changing a qualification macro. Functional T8140 initialization and
+device-local error handling remain unresolved. See the
+[review-fix receipt](../../receipts/2026-10-31-j700-h17-review-fixes/README.md).
 
-### Superseded containment-v2 account — not current execution guidance
+`transaction.h` implements read-only transaction control for a future
+qualified adapter. It validates every step before acquiring resources,
+requires durable pending records before reads, distinguishes real match
+from polling timeout, and commits results only after verified cleanup and
+durable completion. It rejects writes, including the old wake sequence.
+There is no production adapter, register map or power protocol in it.
 
-The v1 containment did not establish recovery, and the correction
-receipt
-([correction](../../receipts/2026-10-31-j700-h17-containment-correction/README.md))
-listed its defects. Containment v2 answers them: the engine phase runs
-in a kthread bound to one CPU, the containment timer is pinned to a
-different online CPU with an absolute expiry set before arming, the
-module owns the SoC watchdog (`apple,t8140-wdt` WD1 — verified
-disowned, ticking, armed, petted per access, disarmed with readback),
-the O_SYNC marker is mandatory and storage failures abort before the
-next access, and the runner raises `kernel.panic` (verified) so the
-containment panic reboots. See the
-[containment-v2 receipt](../../receipts/2026-10-31-j700-h17-containment-v2/README.md).
-
-The gate stays closed for engine access until the rehearsal rung has
-run on hardware: `run-stage4.sh REHEARSE` arms the containment without
-touching any ANE register and waits for the containment timer to panic
-(`ane_h17_wake REHEARSAL …`) — the machine reboots by design, and the
-marker plus the journal are the evidence. A rehearsal that returns
-alive is a recorded FAIL (`rehearsal-no-fire`).
-
-### Superseded 2026-10-30 account — historical experiment description
-
-The first run of the snapshot on 2026-10-30 printed the script's boot
-id line and froze the machine completely; the boot ended unclean (PMU
-boot error, no panic) and the log lines were lost with it. The module
-was therefore **quarantined** (`ane_h17_wake.c` refused at init,
-`reason=unqualified-register-map`, before any driver, power or MMIO
-step). The gate lifted the same day when the release criteria of the
-[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md) were
-met: the register map was qualified from this machine's build
-([hal-map](../../receipts/2026-10-30-j700-h17-hal-map/README.md),
-[qualified-map](../../receipts/2026-10-30-j700-h17-qualified-map/README.md)
-receipts; the stage 4 receipt
-[stage-4](../../receipts/2026-10-30-j700-h17-asc-map/README.md) carries
-the boot/panic events), the module and sim were re-derived row by row,
-and hang containment shipped with the module.
-
-The re-derived experiment: it binds the
-same synthetic `ane-h17-ps-probe` consumer node as the stage 3 module
-(the two must not be loaded together), takes the ANE_SYS vote, dumps
-the pmgr words at `0x2e0`, `0x4000..0x4030` and `0xc000..0xc020`
-(reads only), raises the child state at pmgr `0xc008` (idempotent,
-skipped when ACTUAL is already `0xf`, bounded wait) exactly as the
-macOS power-up path does before it touches the ASC, and only then
-touches the engine — every access logged before it happens, and by
-default only T8140-sourced rows (see the
-[hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md)):
-SCRATCH words `scratch0_off..+8` (`0x1880020` default, `0x1880024`
-alt), IPI pending `0x18ac000`, the doorbell state words
-`0x18a4010/0x18a4018`. The h16g/M6 CPU wrapper trio
-(`0x1600048`/`0x1600044`/`0x1050000`) and the mailbox candidates are
-**unsourced on T8140** and read only behind `read_wrapper=1` /
-`mbox_peek=1`. With `confirm_wake=1` it runs the HAL's own control
-path: the mailbox-setup writes (`0x1960000 <- 1`, `0x1974200 <- 0`
-then `<- 1`, `0x195c284 <- 1`, `0x195c288 <- 1`), one doorbell ring
-with the complement of `(STATE0 & 3)` once clear in `STATE1`, a
-bounded poll of the ack `0x18a4008`, the ack write, and a bounded
-poll of both SCRATCH7 views for the wake word `0x08042006`. The
-h16g/M6 RUN write to CPU_CONTROL is retired. The module never
-programs a DART, maps firmware, or submits a task.
-
-Hang containment (the criterion-4 design): before every engine access
-the module appends `pending access=<n> off=<x>` to the O_SYNC marker
-file (`marker_file`, default `/var/lib/ane-h17/stage4-marker`) — the
-record that survives a reset, unlike the unsynced tee log the first
-hang lost — and pushes a deadline. A containment timer pinned to
-another CPU panics naming the pending access if one access outlives
-`contain_ms` (default 1000): a CPU stalled mid-MMIO cannot take
-timers, so the watch must not live on the same core. With `panic=` on
-the cmdline the panic reboots automatically and the SoC watchdog
-(`CONFIG_APPLE_WATCHDOG`) is the second layer.
-
-```sh
-sudo ane/h17/run-stage4.sh    # diagnostics + preflight; exits 2, touches no hardware
-sudo ane/h17/run-stage4.sh GO # the contained experiment: one insmod, one rmmod
-```
-
-`run-stage4.sh` without arguments prints the boot id, model, commit,
-loaded `ane_h17*` modules, the marker tail and the preflight verdict,
-and exits 2 without touching hardware. `GO` requires a passing
-preflight and an unloaded module, records the run header in the
-marker file, runs the snapshot once (`confirm_wake` defaults off),
-prints the dmesg tail and the verdict (`H17_STAGE4_PASS`/
-`H17_STAGE4_FAIL`), and removes the module on success. `test-stage4.sh`
-checks both paths off device with fixture `insmod`, `rmmod`, dmesg,
-preflight and device-tree files (`make -C ane/h17 script-test`).
-`make -C ane/h17 sim-all` runs the module's userspace sim: every
-running mode asserts each MMIO access sits inside the qualified map,
-the marker records every pending access, the containment timer arms
-before the first engine access and disarms after the last, the `hang`
-mode exercises the real panic path naming the pending access, and two
-mutation controls (map unqualification, containment-timer removal) are
-rejected. A smoke inference and exact fp16 comparison are still needed
-before claiming working ANE support.
+`make -C ane/h17 sim-all script-test` exercises module refusal, independent
+callback traces and failure injection, five source mutations, and runner
+refusal. These checks establish software behavior only. They do not
+qualify register addresses, firmware execution, storage durability on this
+host or hardware recovery. Historical experiments and their corrections
+remain in the dated receipts and Git history, not as runnable instructions
+in this guide.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on
