@@ -297,18 +297,20 @@ prepared to bind either compatible.
 
 ### Run-time overlay: `apply_overlay=1` (no boot-image change)
 
-A test boot that cannot carry a device-tree change (a lab boot takes its tree from the boot image on the Mac) has no
-`apple,t6030-ane` or `apple,t6031-ane` node, so the driver is never probed and the module logs only the kernel's taint line.
-`apply_overlay=1` gives the module its own node. It needs `optin=t6030` or `optin=t6031`, and a kernel built with
-`CONFIG_OF_OVERLAY`:
+A test boot without its SoC's ANE node cannot probe the driver.
+`apply_overlay=1` supplies that node for `optin=t8122`, `optin=t6030` or `optin=t6031`.
+It requires `CONFIG_OF_OVERLAY` and remains off by default.
 
     insmod ane/h15/ane_h15.ko optin=t6031 apply_overlay=1 stage=5 confirm_run=1 map_fw=1 fw_seg=TEXTPA:SIZE,DATAPA:SIZE
 
 In this order, and only after every check passes: it publishes the few labels the overlay refers to in `/__symbols__`,
-gives a target node that has no phandle one, applies the compiled DART-variant overlay with `of_overlay_fdt_apply`, and then
-registers the driver so the normal probe runs. The overlay is the one in `t603x-ane-dart-experimental.dts` with only its
-empty label-minting fragments removed (`gen-runtime-overlay.py` writes `ane_h15_overlay_data.h`; `make sim-overlay` fails if
-the committed header is not what it writes). It refuses, touching nothing, when the optin key has no overlay, the machine is
+gives a target node that has no phandle one, applies the compiled overlay with `of_overlay_fdt_apply`, and then
+registers the driver so the normal probe runs. T8122 derives from `t8122-ane-experimental.dts`; T6030/T6031 use their
+DART variants. Only empty label-minting fragments are removed (`gen-runtime-overlay.py` writes the header; `make sim-overlay`
+checks it). T8122 retains four disabled DART nodes and no `iommus` property, so it cannot supply firmware mappings.
+Its power graph comes from the T8122/J613 ADT, including both ANE_TD and ANE_CPU parents of ANE_BASE.
+No T8122 hardware result is established by these offline checks.
+It refuses, touching nothing, when the optin key has no overlay, the machine is
 not that chip, or a node the overlay refers to is missing. It does nothing when the tree already has the ANE node. Unloading
 removes the overlay and its labels. Minted target phandles remain in the live tree after removal.
 Nothing is written to a boot image or to disk.

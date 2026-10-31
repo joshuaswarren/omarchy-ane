@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * ane_h15_overlay.c: apply the compiled DART-variant ANE overlay to the live device tree (apply_overlay=1), see ane_h15_overlay.h.
+ * ane_h15_overlay.c: apply the compiled ANE overlay to the live device tree (apply_overlay=1), see ane_h15_overlay.h.
  *
  * Why this is more than one call. The kernel's run-time overlay code resolves a reference from the overlay to a node that is
  * already in the live tree through the live /__symbols__ table, and uses that node's own phandle. Neither is there on these
@@ -12,7 +12,7 @@
  *   3. apply the overlay; the kernel patches each reference with the target's phandle;
  *   4. the caller registers the driver. Devices already exist, so the normal probe runs here and not inside the overlay lock.
  * ane_h15_overlay_data.h is generated from the boot-time overlays by gen-runtime-overlay.py, which removes only the empty
- * label-minting fragments; every node and property of the overlay is otherwise the one that was booted on the owners' Macs.
+ * label-minting fragments; every other node and property comes from that source, without implying hardware validation.
  */
 #include <linux/errno.h>
 #include <linux/of.h>
@@ -44,6 +44,8 @@ struct ane_h15_ovl {
 #include "ane_h15_overlay_data.h"
 
 static const struct ane_h15_ovl ane_h15_ovls[] = {
+	{ "t8122", "apple,t8122", "apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob),
+	  ane_h15_ovl_t8122_syms, ARRAY_SIZE(ane_h15_ovl_t8122_syms) },
 	{ "t6030", "apple,t6030", "apple,t6030-ane", ane_h15_ovl_t6030_blob, sizeof(ane_h15_ovl_t6030_blob),
 	  ane_h15_ovl_t6030_syms, ARRAY_SIZE(ane_h15_ovl_t6030_syms) },
 	{ "t6031", "apple,t6031", "apple,t6031-ane", ane_h15_ovl_t6031_blob, sizeof(ane_h15_ovl_t6031_blob),
@@ -167,7 +169,7 @@ static int ane_h15_overlay_apply(const char *optin)
 	int ret;
 
 	if (!o) {
-		pr_err(OVL "refused: optin=%s has no overlay (t6030 and t6031 do)\n", optin ? optin : "(unset)");
+		pr_err(OVL "refused: optin=%s has no overlay (t8122, t6030 and t6031 do)\n", optin ? optin : "(unset)");
 		return -EINVAL;
 	}
 	if (o->nsyms > OVL_MAX_SYMS) {

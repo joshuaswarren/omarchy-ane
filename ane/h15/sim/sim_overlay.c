@@ -346,6 +346,32 @@ static void test_t6030_happy(void)
 	chk(tree[2].phandle != 0 && tree[2].phandle != 7, "T3 t6030: ps_ane_sys had no phandle and got one");
 }
 
+static void test_t8122(void)
+{
+	reset();
+	machine = "apple,t8122";
+	add_node("/soc/interrupt-controller@2d1000000", NULL, 7);
+	add_node("/soc/power-management@2d0700000/power-controller@438", NULL, 0);
+	chk(ane_h15_register(&drv, "t8122", true) == 0,
+	    "B1 t8122: own-chip overlay registers");
+	chk(ovl_blob && ovl_blob != ane_h15_ovl_t6030_blob && ovl_blob != ane_h15_ovl_t6031_blob,
+	    "B2 t8122: neither Pro nor Max payload is applied");
+	chk(idx("cs-apply") < idx("overlay-apply") && idx("overlay-apply") < idx("driver-register"),
+	    "B3 t8122: labels and overlay precede driver registration");
+	ane_h15_unregister(&drv);
+	chk(idx("driver-unregister") < idx("overlay-remove 7") && idx("overlay-remove 7") < idx("cs-revert"),
+	    "B4 t8122: removal reverses registration");
+	reset();
+	machine = "apple,t6031";
+	chk(ane_h15_register(&drv, "t8122", true) == -ENODEV && !writes() && !count_prefix("driver"),
+	    "B5 t8122: Max machine refuses before any write");
+	reset();
+	machine = "apple,t8122";
+	add_node("/soc/interrupt-controller@2d1000000", NULL, 7);
+	chk(ane_h15_register(&drv, "t8122", true) == -ENOENT && !writes() && !count_prefix("driver"),
+	    "B6 t8122: missing own-chip power target refuses before any write");
+}
+
 static void test_guards(void)
 {
 	reset();
@@ -439,6 +465,7 @@ int main(void)
 	test_off_by_default();
 	test_t6031_happy();
 	test_t6030_happy();
+	test_t8122();
 	test_guards();
 	test_failures();
 	printf(fails ? "SIM-OVERLAY: %d FAILED\n" : "SIM-OVERLAY: all checks PASS\n", fails);

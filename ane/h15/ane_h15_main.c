@@ -200,7 +200,7 @@ module_param_named(kb_wait_ms, sb_wait_ms, uint, 0);
 static bool apply_overlay;
 module_param(apply_overlay, bool, 0444);
 MODULE_PARM_DESC(apply_overlay,
-		 "Off by default. For a boot whose device tree has no ANE node (a maclab lab boot cannot carry one): apply the compiled DART-variant overlay for optin=t6030 or t6031 to the live device tree with the kernel's overlay call, then register the driver, so the normal probe runs. Refuses, touching nothing, unless optin names a row with an overlay, the machine matches it and every node the overlay refers to exists; does nothing when the tree already has the ANE node. Unloading removes it again. Never touches a boot image.");
+		 "Off by default. For a boot whose device tree has no ANE node (a maclab lab boot cannot carry one): apply the compiled overlay for optin=t8122, t6030 or t6031 to the live device tree with the kernel's overlay call, then register the driver, so the normal probe runs. T8122 keeps DART nodes disabled and has no IOMMU client. Refuses, touching nothing, unless optin names a row with an overlay, the machine matches it and every node the overlay refers to exists; does nothing when the tree already has the ANE node. Unloading removes it again. Never touches a boot image.");
 
 static unsigned int pwgate_t6031;
 module_param(pwgate_t6031, uint, 0444);

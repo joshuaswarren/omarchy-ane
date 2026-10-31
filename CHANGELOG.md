@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane_h15`: add the off-by-default T8122 runtime overlay from its own J613/T8122 DT evidence. Keep DARTs disabled and omit `iommus`; correct ANE_BASE to depend on both ANE_TD and ANE_CPU. Offline checks do not establish hardware execution.
+
 - `ane_h15`: stage 2 can compare the current domain's RVBAR entry with TEXT from the same boot's ADT. It refuses a missing domain, changed RVBAR or zero translation and fails a different address. It creates no mapping and starts no core; a match proves only that entry.
 - tools: the M3 part 2 scorer isolates each run's messages and gate state. It rejects malformed page indices and comparison records. An empty capture no longer implies a missing device-tree node.
 
