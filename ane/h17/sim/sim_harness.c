@@ -112,8 +112,13 @@ static int run_mode(const char *mode)
 		expected = -EPERM;
 		reason = "REFUSED reason=board-optin-or-dt";
 	} else if (!strcmp(mode, "rehearse")) {
-		contain_rehearse = true;
-		expected = -EIO;	/* the no-fire failure branch */
+		contain_rehearse = 2;	/* lifecycle: no panic */
+		expected = 0;
+		reason = "verdict=PASS reason=rehearsal-lifecycle";
+	} else if (!strcmp(mode, "rehearse-fire")) {
+		contain_rehearse = 1;	/* fire: the timer never fires in the
+					 * sim, so the no-fire branch runs */
+		expected = -EIO;
 		reason = "verdict=FAIL reason=rehearsal-no-fire";
 	} else {
 		fprintf(stderr, "unknown mode %s\n", mode);
@@ -132,13 +137,14 @@ static int run_mode(const char *mode)
 		chk(sim_genpd_on == 0);
 	} else {
 		/* rehearsal: the watch verified, armed once, disarmed once,
-		 * two marker lines, no ANE MMIO at all, WD1 left disarmed. */
+		 * two marker lines, no engine MMIO, genpd untouched, WD1
+		 * left disarmed. */
 		chk(sim_registrations == 0 && sim_maps == 0);
 		chk(sim_mmio_reads == 0 && sim_mmio_writes == 0);
 		chk(!(sim_wdt_regs[7] & BIT(2)));	/* WD1 CTRL: RESET_EN clear */
 		chk(sim_wdt_regs[5] != 0);		/* BITE_TIME kept */
-		chk(sim_marker_opens == 1 && sim_marker_writes == 2);
-		chk(sim_marker_closed == 1);
+		chk(sim_marker_opens == 1 && sim_marker_closed == 1);
+		chk(sim_marker_writes == 2);	/* armed line + final line */
 		chk(sim_timer_armed == 1 && sim_timer_disarmed == 1);
 		chk(sim_genpd_on == 0 && sim_genpd_disabled == 0);
 	}

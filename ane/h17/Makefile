@@ -22,6 +22,7 @@ sim-negative: sim/sim_h17_wake
 
 sim-rehearse: sim/sim_h17_wake
 	./sim/sim_h17_wake rehearse
+	./sim/sim_h17_wake rehearse-fire
 
 # Both mutants must be rejected: unqualifying the map would let the probe
 # run against the fake bus, and removing the rehearsal timer arm must

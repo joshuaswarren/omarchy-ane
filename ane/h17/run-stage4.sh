@@ -71,7 +71,7 @@ else
 fi
 
 mode=${1:-}
-if [[ $mode != REHEARSE && $mode != GO ]]; then
+if [[ $mode != REHEARSE && $mode != REHEARSE-FIRE && $mode != GO ]]; then
     printf '%s\n' \
         'H17_STAGE4_READY reason=containment-v2' \
         'No hardware access: REHEARSE runs the containment rehearsal; GO stays refused.'
@@ -96,7 +96,15 @@ if [[ $mode == GO ]]; then
     exit 2
 fi
 
-# REHEARSE: the contained rehearsal.
+# REHEARSE / REHEARSE-FIRE: the contained rehearsal. Mode 2 (default)
+# arms and disarms the watchdog and the containment timer without any
+# panic; mode 1 adds the fire test, which panics and reboots by design.
+rehearse_mode=2
+want_verdict='verdict=PASS reason=rehearsal-lifecycle'
+if [[ $mode == REHEARSE-FIRE ]]; then
+    rehearse_mode=1
+    want_verdict=''
+fi
 if ! mkdir -p -- "$(dirname -- "$marker_file")"; then
     printf 'H17_STAGE4_REFUSED reason=marker-dir\n'
     exit 2
@@ -121,21 +129,35 @@ if [[ $(cat "$panic_sysctl" 2>/dev/null) != 30 ]]; then
 fi
 printf 'kernel.panic raised to 30 (was %s); the containment panic reboots\n' "$old_panic"
 
-printf 'insmod %s optin=1 contain_rehearse=1 marker_file=%s\n' \
-    "$module_ko" "$marker_file"
-if "$INSMOD" "$module_ko" optin=1 contain_rehearse=1 marker_file="$marker_file"; then
-    # The rehearsal panics before init returns; surviving means the
-    # containment did not fire.
-    printf 'H17_STAGE4_FAIL reason=rehearsal-survived\n'
-    verdict=1
-else
-    printf 'H17_STAGE4_FAIL reason=rehearsal-no-fire\n'
-    verdict=1
+printf 'insmod %s optin=1 contain_rehearse=%u marker_file=%s\n' \
+    "$module_ko" "$rehearse_mode" "$marker_file"
+loaded=0
+if "$INSMOD" "$module_ko" optin=1 contain_rehearse="$rehearse_mode" \
+        marker_file="$marker_file"; then
+    loaded=1
 fi
 if [[ -n $dmesg_file ]]; then
-    printf '%s\n' "$(tail -n 20 -- "$dmesg_file")" || true
+    dmesg_out=$(tail -n 20 -- "$dmesg_file")
 else
-    "$DMESG" | tail -n 20 || true
+    dmesg_out=$("$DMESG" | tail -n 20)
+fi
+printf '%s\n' "$dmesg_out" | grep 'ane_h17_wake' | tail -n 10 || true
+verdict=1
+if [[ $loaded != 1 ]]; then
+    printf 'H17_STAGE4_FAIL reason=insmod\n'
+elif [[ $rehearse_mode == 1 ]]; then
+    # The fire rehearsal panics before init returns; surviving means the
+    # containment did not fire.
+    printf 'H17_STAGE4_FAIL reason=rehearsal-survived\n'
+elif printf '%s\n' "$dmesg_out" | grep -q "$want_verdict"; then
+    printf 'H17_STAGE4_PASS reason=rehearsal-lifecycle\n'
+    verdict=0
+else
+    printf 'H17_STAGE4_FAIL reason=verdict\n'
+fi
+if [[ $loaded == 1 ]] && ! "$RMMOD" ane_h17_wake; then
+    printf 'H17_STAGE4_FAIL reason=rmmod\n'
+    verdict=1
 fi
 if [[ $old_panic != unknown ]]; then
     printf '%s' "$old_panic" > "$panic_sysctl" 2>/dev/null || true

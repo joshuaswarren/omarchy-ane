@@ -153,9 +153,9 @@ static char *marker_file = "/var/lib/ane-h17/stage4-marker";
 module_param(marker_file, charp, 0444);
 MODULE_PARM_DESC(marker_file, "O_SYNC pending-access record, appended before every engine access");
 
-static bool contain_rehearse;
-module_param(contain_rehearse, bool, 0444);
-MODULE_PARM_DESC(contain_rehearse, "1 = containment rehearsal: arm watch + timer, panic; no ANE access");
+static unsigned int contain_rehearse;
+module_param(contain_rehearse, uint, 0444);
+MODULE_PARM_DESC(contain_rehearse, "0=off, 1=fire rehearsal (panics, reboots), 2=lifecycle rehearsal (no panic)");
 
 static bool read_wrapper;
 module_param(read_wrapper, bool, 0444);
@@ -282,20 +282,26 @@ static void h17_rehearse_fn(struct timer_list *t)
 }
 
 /*
- * The rehearsal: verify the watchdog is disowned and ticking, record
- * the armed state in the marker, pin a containment timer with an
- * absolute expiry to a different online CPU and wait. Success is the
- * panic itself; the machine reboots. Reaching the end alive means the
- * watch did not fire: disarm, record and fail.
+ * The rehearsal, mode 1 (fire): verify the watchdog is disowned and
+ * ticking, record the armed state in the marker, pin a containment
+ * timer with an absolute expiry to a different online CPU and wait.
+ * Success is the panic itself; the machine reboots. Reaching the end
+ * alive means the watch did not fire: disarm, record and fail.
+ *
+ * Mode 2 (lifecycle): the same verify/arm/disarm discipline on the
+ * watchdog and the containment timer, including a pet and a bounded
+ * dwell well inside the deadline — but no panic and no reboot. This is
+ * the rung that proves the lifecycle on silicon without cost.
  */
-static int h17_rehearse_run(void)
+static int h17_rehearse_run(unsigned int mode)
 {
 	void __iomem *regs;
 	struct file *marker = NULL;
 	u32 ctrl0 = 0;
 	loff_t pos = 0;
-	char buf[64];
+	char buf[80];
 	int len, cpu, err = 0;
+	unsigned int dwell;
 
 	regs = h17_wdt_map();
 	if (!regs) {
@@ -319,8 +325,8 @@ static int h17_rehearse_run(void)
 		marker = NULL;
 		goto out;
 	}
-	len = snprintf(buf, sizeof(buf), "rehearsal armed contain_ms=%u\n",
-		       contain_ms);
+	len = snprintf(buf, sizeof(buf), "rehearsal mode=%u armed contain_ms=%u\n",
+		       mode, contain_ms);
 	if (kernel_write(marker, buf, len, &pos) != len) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=marker-write\n");
 		err = -EIO;
@@ -332,21 +338,53 @@ static int h17_rehearse_run(void)
 	timer_setup(&h17_rehearse_timer, h17_rehearse_fn, TIMER_PINNED);
 	h17_rehearse_timer.expires = jiffies + msecs_to_jiffies(contain_ms + 500);
 	add_timer_on(&h17_rehearse_timer, cpu);
-	pr_info("ane_h17_wake rehearsal armed cpu=%d contain_ms=%u marker=%s\n",
-		cpu, contain_ms, marker_file);
-	/* The timer panics before this sleep ends; only a broken watch
-	 * returns here. */
-	msleep(contain_ms + 1000);
+
+	if (mode == 1) {
+		pr_info("ane_h17_wake rehearsal fire armed cpu=%d contain_ms=%u\n",
+			cpu, contain_ms);
+		/* The timer panics before this sleep ends; only a broken
+		 * watch returns here. */
+		msleep(contain_ms + 1000);
+		timer_delete_sync(&h17_rehearse_timer);
+		err = h17_wdt_disarm(regs, ctrl0);
+		if (err) {
+			pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-disarm\n");
+			goto close;
+		}
+		len = snprintf(buf, sizeof(buf), "rehearsal-no-fire\n");
+		kernel_write(marker, buf, len, &pos);
+		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-no-fire\n");
+		err = -EIO;
+		goto close;
+	}
+
+	/* Mode 2: lifecycle only. Arm the watchdog, exercise the pet,
+	 * dwell well inside the timer deadline, then disarm and verify
+	 * both. No panic, no reboot. */
+	err = h17_wdt_arm(regs, ctrl0);
+	if (err) {
+		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-arm\n");
+		goto close;
+	}
+	h17_wdt_pet(regs);
+	pr_info("ane_h17_wake rehearsal lifecycle armed cpu=%d contain_ms=%u\n",
+		cpu, contain_ms);
+	dwell = contain_ms / 4;
+	msleep(dwell);
 	timer_delete_sync(&h17_rehearse_timer);
 	err = h17_wdt_disarm(regs, ctrl0);
 	if (err) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=wdt-disarm\n");
 		goto close;
 	}
-	len = snprintf(buf, sizeof(buf), "rehearsal-no-fire\n");
-	kernel_write(marker, buf, len, &pos);
-	pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-no-fire\n");
-	err = -EIO;
+	len = snprintf(buf, sizeof(buf), "rehearsal-lifecycle-ok\n");
+	if (kernel_write(marker, buf, len, &pos) != len) {
+		pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=marker-write\n");
+		err = -EIO;
+		goto close;
+	}
+	pr_info("ane_h17_wake RESULT stage=4 verdict=PASS reason=rehearsal-lifecycle\n");
+	err = 0;
 close:
 	filp_close(marker, NULL);
 out:
@@ -822,8 +860,14 @@ static int __init ane_h17_wake_init(void)
 		return -EPERM;
 	}
 	if (contain_rehearse) {
-		pr_info("ane_h17_wake rehearsal: containment only, no ANE access\n");
-		return h17_rehearse_run();
+		if (contain_rehearse != 1 && contain_rehearse != 2) {
+			pr_err("ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-mode val=%u\n",
+			       contain_rehearse);
+			return -EINVAL;
+		}
+		pr_info("ane_h17_wake rehearsal mode=%u: containment only, no ANE access\n",
+			contain_rehearse);
+		return h17_rehearse_run(contain_rehearse);
 	}
 	if (!H17_REGISTER_MAP_QUALIFIED) {
 		pr_err("ane_h17_wake RESULT stage=4 verdict=REFUSED reason=unqualified-register-map; no power or MMIO access\n");

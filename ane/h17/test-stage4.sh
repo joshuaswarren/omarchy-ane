@@ -27,17 +27,24 @@ PY
 cat > "$T/bin/insmod" <<'SH'
 #!/usr/bin/env bash
 printf 'insmod %s\n' "$*" >> "$H17_TEST_ROOT/module.calls"
+cr=0
+for a in "$@"; do case "$a" in contain_rehearse=*) cr="${a#contain_rehearse=}" ;; esac; done
 if [[ ${H17_TEST_INSMOD_EXIT:-0} != 0 ]]; then
     printf 'ane_h17_wake RESULT stage=4 verdict=FAIL reason=rehearsal-no-fire\n' >> "$H17_TEST_ROOT/dmesg"
     exit "$H17_TEST_INSMOD_EXIT"
 fi
 printf 'ane_h17_wake 1 0 - Live 0x0\n' >> "$H17_TEST_ROOT/modules"
-printf 'ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n' >> "$H17_TEST_ROOT/dmesg"
+if [[ $cr == 2 ]]; then
+    printf 'ane_h17_wake RESULT stage=4 verdict=PASS reason=rehearsal-lifecycle\n' >> "$H17_TEST_ROOT/dmesg"
+else
+    printf 'ane_h17_wake RESULT stage=4 verdict=PASS reason=asc-snapshot\n' >> "$H17_TEST_ROOT/dmesg"
+fi
 SH
 cat > "$T/bin/rmmod" <<'SH'
 #!/usr/bin/env bash
 printf 'rmmod %s\n' "$*" >> "$H17_TEST_ROOT/module.calls"
-exit 99
+if [[ ${H17_TEST_RMMOD_EXIT:-0} != 0 ]]; then exit "$H17_TEST_RMMOD_EXIT"; fi
+: > "$H17_TEST_ROOT/modules"
 SH
 chmod +x "$T/bin/insmod" "$T/bin/rmmod"
 
@@ -122,24 +129,40 @@ else
 fi
 pass_or_dump 'REHEARSE refused on a failed preflight'
 
-# --- REHEARSE: the alive (containment-did-not-fire) path ---
+# --- REHEARSE: the lifecycle rung (no panic, no reboot) ---
 : > "$T/modules"
 : > "$T/dmesg"
-H17_TEST_INSMOD_EXIT=99 run REHEARSE
-if [[ $rc == 1 ]] &&
-   grep -q 'H17_STAGE4_FAIL reason=rehearsal-no-fire' "$T/out" &&
-   grep -q 'insmod .*ane_h17_wake.ko optin=1 contain_rehearse=1' "$T/module.calls" &&
+run REHEARSE
+if [[ $rc == 0 ]] &&
+   grep -q 'H17_STAGE4_PASS reason=rehearsal-lifecycle' "$T/out" &&
+   grep -q 'insmod .*ane_h17_wake.ko optin=1 contain_rehearse=2' "$T/module.calls" &&
+   grep -q 'rmmod ane_h17_wake' "$T/module.calls" &&
    grep -q 'kernel.panic raised to 30 (was 0)' "$T/out" &&
    [[ $(cat "$T/panic_sysctl") == 0 ]] &&
-   grep -q '^rehearsal kernel=' "$H17_MARKER_FILE" &&
-   [[ $(wc -l < "$T/dmesg") -gt 0 ]]; then
+   grep -q '^rehearsal kernel=' "$H17_MARKER_FILE"; then
     :
 else
     fails=$((fails + 1))
-    printf 'FAIL REHEARSE alive path\n' >&2
+    printf 'FAIL REHEARSE lifecycle\n' >&2
     cat "$T/out" "$T/module.calls" >&2
 fi
-pass_or_dump 'REHEARSE alive path: recorded FAIL, panic timeout restored'
+pass_or_dump 'REHEARSE lifecycle: single insmod, rmmod, panic timeout restored'
+
+# --- REHEARSE-FIRE: the alive (timer-did-not-fire) path is a recorded FAIL ---
+: > "$T/dmesg"
+H17_TEST_INSMOD_EXIT=99 run REHEARSE-FIRE
+if [[ $rc == 1 ]] &&
+   grep -q 'H17_STAGE4_FAIL reason=insmod' "$T/out" &&
+   grep -q 'contain_rehearse=1' "$T/module.calls" &&
+   ! grep -q rmmod "$T/module.calls" &&
+   [[ $(cat "$T/panic_sysctl") == 0 ]]; then
+    :
+else
+    fails=$((fails + 1))
+    printf 'FAIL REHEARSE-FIRE alive path\n' >&2
+    cat "$T/out" "$T/module.calls" >&2
+fi
+pass_or_dump 'REHEARSE-FIRE alive path: recorded FAIL, no rmmod'
 
 if [[ $fails != 0 ]]; then
     printf 'test-stage4: %s failures\n' "$fails"

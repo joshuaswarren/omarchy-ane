@@ -60,6 +60,28 @@ recorded FAIL.
   the engine experiment (kthread, marker, watchdog, sourced rows) is
   compiled and gated behind `H17_REGISTER_MAP_QUALIFIED`.
 
+## Rehearsal attempt 2 (2026-10-31): lifecycle PASS on silicon, no reboot
+
+`run-stage4.sh REHEARSE` (mode 2) ran the containment lifecycle on the
+real WD1 block: verify disowned and ticking → arm (`RESET_EN` set,
+`CUR_TIME=0`, readback verified) → pet → dwell 250 ms (observed
+8706.939 → 8707.202, boot-relative) with the containment timer pinned
+to CPU 1 at a 1.5 s deadline → timer deleted → disarm with readback.
+The module logged `verdict=PASS reason=rehearsal-lifecycle`, the runner
+returned 0 after removing the module, the marker carries the run header
+plus `rehearsal mode=2 armed contain_ms=1000` plus
+`rehearsal-lifecycle-ok`, and a post-run `/dev/mem` readback confirmed
+`WD1_CTRL=0x0` (disarmed). No panic, no reboot; `genpd_ane_sys` stayed
+off and no ANE register was touched (the rehearsal path never maps the
+engine).
+
+What this rung establishes on silicon: the watchdog map/verify/arm/pet/
+disarm discipline, the O_SYNC marker writes, and the timer
+arm/disarm-with-expiry all work on this machine. What it does not
+establish: that the timer fires and the panic reaches the console and
+reboots (mode 1, `REHEARSE-FIRE`) — that rung reboots the machine by
+design and is next, on the operator's go.
+
 ## Rehearsal attempt 1 (2026-10-31, 06:48): refused on a pre-armed watchdog
 
 The first `REHEARSE` attempt failed safely, as designed: the module
