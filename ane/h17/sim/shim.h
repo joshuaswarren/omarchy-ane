@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <errno.h>
+#include <setjmp.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -38,11 +39,18 @@ typedef int32_t s32;
 #define EIO 5
 #define EPERM 1
 #define EBUSY 16
+#define O_APPEND 0x400
+#define O_CREAT 0x40
+#define O_TRUNC 0x200
+#define O_WRONLY 1
+#define O_SYNC 0x101000
 
 #define GENMASK(h, l) (((~0u) - (1u << (l)) + 1) & ((~0u) >> (31 - (h))))
 #define BIT(n) (1u << (n))
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #define FIELD_GET(m, v) (((v) & (m)) >> (__builtin_ffs(m) - 1))
+#define WRITE_ONCE(x, v) (x = (v))
+#define READ_ONCE(x) (x)
 
 #define SIM_LOG_SZ (1 << 19)
 extern char sim_log[SIM_LOG_SZ];
@@ -93,7 +101,8 @@ struct device_node {
 extern int sim_genpd_on;
 extern int sim_genpd_disabled;
 extern bool sim_j700;
-extern unsigned long sim_registrations, sim_maps, sim_mmio_reads, sim_pmgr_reads;
+extern unsigned long sim_registrations, sim_maps, sim_mmio_reads;
+extern unsigned long sim_mmio_writes, sim_pmgr_reads;
 
 static inline int of_device_is_available(struct device_node *n) { return n && n->available; }
 static inline int of_device_is_compatible(struct device_node *n, const char *c)
@@ -228,6 +237,73 @@ static inline int pm_runtime_disable(struct device *d)
 	return 0;
 }
 
+/* fake kernel marker file + containment timer + panic (longjmp) */
+struct file;
+extern unsigned long sim_marker_opens, sim_marker_writes, sim_marker_closed;
+extern unsigned long sim_timer_armed, sim_timer_disarmed, sim_timer_mods;
+extern int sim_panic_count;
+extern jmp_buf sim_panic_jb;
+void sim_hang_hook(void);
+#define panic(...) do { rec_log(__VA_ARGS__); sim_panic_count++; \
+			longjmp(sim_panic_jb, 1); } while (0)
+
+static inline struct file *filp_open(const char *path, int flags, int mode)
+{
+	(void)path; (void)flags; (void)mode;
+	sim_marker_opens++;
+	return (struct file *)1;
+}
+static inline ssize_t kernel_write(struct file *f, const char *buf, size_t len,
+				   loff_t *pos)
+{
+	(void)f; (void)pos;
+	sim_marker_writes++;
+	rec_log("sim: marker %.*s", (int)len - 1, buf);
+	return (ssize_t)len;
+}
+static inline int filp_close(struct file *f, void *cred)
+{
+	(void)f; (void)cred;
+	sim_marker_closed++;
+	return 0;
+}
+
+struct timer_list {
+	int armed;
+};
+#define TIMER_PINNED 0
+extern unsigned long jiffies_ignored;
+static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
+#define jiffies 0UL
+static inline int smp_processor_id(void) { return 0; }
+static inline int num_online_cpus(void) { return 4; }
+static inline void timer_setup(struct timer_list *t,
+			       void (*fn)(struct timer_list *), int flags)
+{
+	(void)t; (void)fn; (void)flags;
+}
+static inline void add_timer_on(struct timer_list *t, int cpu)
+{
+	(void)cpu;
+	t->armed = 1;
+	sim_timer_armed++;
+}
+static inline int mod_timer(struct timer_list *t, unsigned long exp)
+{
+	(void)t; (void)exp;
+	sim_timer_mods++;
+	return 0;
+}
+static inline int timer_delete_sync(struct timer_list *t)
+{
+	int was = t->armed;
+
+	t->armed = 0;
+	if (was)
+		sim_timer_disarmed++;
+	return was;
+}
+
 /* fake MMIO engine + firmware model */
 enum {
 	H17_OFF_CPU_CONTROL = 0x1600044,
@@ -252,6 +328,7 @@ struct sim_fw {
 	int ring_requested, ring_t0;
 	int ring_acked;		/* engine + 0x18a4008 reads back ring_val */
 	u32 ring_val;
+	u32 hang_off;		/* when set, an access here never completes */
 };
 extern struct sim_fw sim_fw;
 extern unsigned long sim_setup_writes;
@@ -293,6 +370,8 @@ extern void __iomem *sim_engine_base;
 
 static inline u32 sim_read(u32 off)
 {
+	if (sim_fw.hang_off && off == sim_fw.hang_off)
+		sim_hang_hook();	/* never returns: panic via longjmp */
 	switch (off) {
 	case 0x1600044:
 		return sim_fw.cpu_control;
@@ -331,6 +410,8 @@ static inline u32 sim_read(u32 off)
 
 static inline void sim_write(u32 off, u32 v)
 {
+	if (sim_fw.hang_off && off == sim_fw.hang_off)
+		sim_hang_hook();
 	if (off == 0x1600044) {
 		sim_writes_ctl++;
 		if ((v & 0x10) && !(sim_fw.cpu_control & 0x10)) {
@@ -365,6 +446,7 @@ static inline u32 readl(const void __iomem *addr)
 static inline void writel(u32 v, void __iomem *addr)
 {
 	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
+	sim_mmio_writes++;
 	rec_log("sim: write off=%#x val=%#x\n", off, v);
 	sim_write(off, v);
 }
@@ -382,6 +464,7 @@ static inline void writeq(u64 v, void __iomem *addr)
 {
 	u32 off = (u32)((uintptr_t)addr - (uintptr_t)sim_engine_base);
 
+	sim_mmio_writes++;
 	rec_log("sim: writeq off=%#x val=%#llx\n", off, (unsigned long long)v);
 	sim_write(off, (u32)v);
 }

@@ -125,13 +125,15 @@ the classical netconsole needs a pollable NIC).
 
 ## What remains before stage 4 runs
 
-None of this is authorized yet: the module is quarantined and refuses
-at init (`reason=unqualified-register-map`); see the
-[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md) for
-the release criteria. Before the hang, the plan was one `insmod` of
-the reworked `ane_h17_wake.ko optin=1` (one pmgr child write, then
-the read pass) and then `run-stage4.sh GO`; that plan is retired
-until the map is qualified.
+The module is no longer quarantined: the map was qualified and the
+containment shipped on 2026-10-30 (see the
+[containment receipt](../../receipts/2026-10-30-j700-h17-containment/README.md);
+the release criteria are in the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md)).
+The re-derived module runs the snapshot with containment defaults:
+every pending access recorded in the O_SYNC marker, a containment
+timer on another CPU, and the inherited CPU-wrapper and mailbox reads
+gated behind opt-in parameters.
 
 The 2026-10-30 evening cross-check of the live device tree, the
 build's interface table and the T8140 HAL against the M6 (T8152)
@@ -143,12 +145,13 @@ exported window `0x401880000` is the h16g scratch page; the M6
 scratch page `0x18a0000` never appears in the T8140 build), and the
 mailbox-setup sequence runs through `0x1960000`/`0x1974000`/
 `0x195c000`. What has **no** T8140 source is the h16g/M6
-CPU-wrapper trio this module reads first — `0x1600044`, `0x1600048`,
+CPU-wrapper trio the old module read first — `0x1600044`, `0x1600048`,
 `0x1050000` — and both mailbox candidates (`0x1608000`,
-`0x196c000`). The "wrapper base wrong" fallback is therefore back in
-play alongside the missing `0xc008` child state; and since the
-engine window (`0x2000000`) is fully mapped, those reads cannot
-fault — the suspect list is "wrong-base garbage, missing child
-state, or the mailbox sequence". The re-derived module should follow
-the T8140 HAL's control path and drop or gate the inherited
-CPU-wrapper and mailbox reads.
+`0x196c000`): the re-derived module gates them behind `read_wrapper`
+and `mbox_peek`, and follows the T8140 HAL's control path instead.
+The "wrapper base wrong" hypothesis is now testable under containment
+with `read_wrapper=1` on a later rung, and since the engine window
+(`0x2000000`) is fully mapped those reads cannot fault — the first
+hang's suspect list was "wrong-base garbage, missing child state, or
+the mailbox sequence", and the missing `0xc008` child state remains
+the lead suspect.

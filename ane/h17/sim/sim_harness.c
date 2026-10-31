@@ -1,22 +1,26 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
-/* Regression of the real module. Compiled twice: without
- * H17_REGISTER_MAP_QUALIFIED it must refuse every mode before hardware
- * (the historical fake firmware below the shim is never reached: it does
- * not establish J700 behaviour); with -DH17_REGISTER_MAP_QUALIFIED=1 the
- * probe runs against the fake bus and every MMIO access it makes must sit
- * inside the qualified map — the quarantine assertion is replaced by
- * per-access assertions. */
+/* Regression of the real module. With the register map qualified the
+ * default build runs the probe against the fake bus; every MMIO access
+ * it makes must sit inside the qualified map (scan_unqualified), the
+ * containment watch must be armed before the first engine access and
+ * disarmed after the last (marker/timer counters), and the hang mode
+ * exercises the real panic path through the shim's longjmp. */
 #include "shim.h"
 
 char sim_log[SIM_LOG_SZ];
 size_t sim_log_len;
 bool sim_j700 = true;
-unsigned long sim_registrations, sim_maps, sim_mmio_reads, sim_pmgr_reads;
+unsigned long sim_registrations, sim_maps, sim_mmio_reads;
+unsigned long sim_mmio_writes, sim_pmgr_reads;
 int sim_genpd_on;
 int sim_genpd_disabled;
 unsigned long sim_writes_ctl;
 unsigned long sim_regmap_writes;
 unsigned long sim_setup_writes;
+unsigned long sim_marker_opens, sim_marker_writes, sim_marker_closed;
+unsigned long sim_timer_armed, sim_timer_disarmed, sim_timer_mods;
+int sim_panic_count;
+jmp_buf sim_panic_jb;
 u32 sim_child_word = 0x00;	/* pmgr pwrstate: TARGET 3:0, ACTUAL 7:4 */
 void __iomem *sim_engine_base = (void __iomem *)0x40000000ull;
 struct sim_fw sim_fw;
@@ -64,6 +68,11 @@ static void chk(int cond)
 static int log_contains(const char *s)
 {
 	return strstr(sim_log, s) != NULL;
+}
+
+void sim_hang_hook(void)
+{
+	h17_contain_fn(NULL);
 }
 
 /* The qualified map: the T8140-sourced rows plus, only when their opt-in
@@ -114,15 +123,12 @@ static int scan_unqualified(u32 scratch0, int wrapper, int mbox, u32 mbox_base)
 	return bad;
 }
 
-static int run_mode(const char *mode)
+static void reset_sim(void)
 {
-	int ret, expected = -EOPNOTSUPP, is_qualified = 0;
-	const char *reason = "REFUSED reason=unqualified-register-map";
-
-	optin = 1;
 	memset(&sim_fw, 0, sizeof(sim_fw));
 	sim_fw.cpu_status = 0xa;
 	sim_fw.doorbell_state0 = 1;	/* HAL shape: state&3 = 1, ring = 2 */
+	optin = 1;
 	confirm_wake = 0;
 	read_wrapper = 0;
 	mbox_peek = 0;
@@ -130,40 +136,53 @@ static int run_mode(const char *mode)
 	poll_ms = 10;
 	mbox_off = H17_MBOX;
 	scratch0_off = H17_SCRATCH0;
+	contain_ms = 1000;
+	sim_registrations = sim_maps = sim_mmio_reads = sim_mmio_writes = 0;
+	sim_pmgr_reads = 0;
+	sim_writes_ctl = sim_regmap_writes = sim_setup_writes = 0;
+	sim_marker_opens = sim_marker_writes = sim_marker_closed = 0;
+	sim_timer_armed = sim_timer_disarmed = sim_timer_mods = 0;
+	sim_genpd_on = sim_genpd_disabled = 0;
+	sim_panic_count = 0;
+}
+
+static int run_mode(const char *mode)
+{
+	int volatile ret = 0;
+	int expected = 0, refused = 0;
+	const char *reason;
+
+	reset_sim();
 
 	if (!strcmp(mode, "snapshot")) {
-		confirm_wake = 0;
+		reason = "verdict=PASS reason=asc-snapshot";
 	} else if (!strcmp(mode, "wake")) {
 		confirm_wake = 1;
+		reason = "verdict=PASS reason=wake-word";
+	} else if (!strcmp(mode, "peek")) {
+		confirm_wake = 1;
+		read_wrapper = 1;
+		mbox_peek = 1;
+		reason = "verdict=PASS reason=wake-word";
+	} else if (!strcmp(mode, "hang")) {
+		sim_fw.hang_off = H17_SCRATCH0;
+		reason = "HANG contain_ms=";
 	} else if (!strcmp(mode, "legacy-overrides")) {
-		/* None of the old escape hatches may reach hardware, even with
-		 * parameters that would have caused divide-by-zero or bad MMIO. */
+		/* The legacy parameter shape still produces a contained run:
+		 * no child raise, degenerate poll interval, far mailbox. */
 		confirm_wake = 1;
 		child_ps = 0;
 		poll_ms = 0;
 		mbox_off = 0xffffffff;
-	} else if (!strcmp(mode, "q-snapshot")) {
-		is_qualified = 1;
-		expected = 0;
-		reason = "verdict=PASS reason=asc-snapshot";
-	} else if (!strcmp(mode, "q-wake")) {
-		is_qualified = 1;
-		confirm_wake = 1;
-		expected = 0;
-		reason = "verdict=PASS reason=wake-word";
-	} else if (!strcmp(mode, "q-peek")) {
-		is_qualified = 1;
-		confirm_wake = 1;
-		read_wrapper = 1;
-		mbox_peek = 1;
-		expected = 0;
 		reason = "verdict=PASS reason=wake-word";
 	} else if (!strcmp(mode, "no-optin")) {
 		optin = 0;
+		refused = 1;
 		expected = -EPERM;
 		reason = "REFUSED reason=board-optin-or-dt";
 	} else if (!strcmp(mode, "wrong-board")) {
 		sim_j700 = false;
+		refused = 1;
 		expected = -EPERM;
 		reason = "REFUSED reason=board-optin-or-dt";
 	} else {
@@ -171,36 +190,55 @@ static int run_mode(const char *mode)
 		return 2;
 	}
 
-	ret = sim_init_fn();
-	chk(ret == expected);
+	if (!refused)
+		ret = setjmp(sim_panic_jb);
+	if (refused || ret == 0)
+		ret = sim_init_fn();
+
+	chk(refused ? ret == expected : sim_panic_count || ret == expected);
 	chk(log_contains(reason));
-	if (is_qualified) {
+
+	if (refused) {
+		chk(!log_contains("verdict=PASS"));
+		chk(sim_registrations == 0);
+		chk(sim_maps == 0);
+		chk(sim_pmgr_reads == 0 && sim_regmap_writes == 0);
+		chk(sim_mmio_reads == 0 && sim_writes_ctl == 0);
+	} else if (sim_panic_count) {
+		/* The hang mode: the panic names the pending access and the
+		 * probe never reached its cleanup, so the vote is held. */
+		chk(sim_panic_count == 1);
+		chk(sim_marker_opens == 1 && sim_marker_closed == 0);
+		chk(sim_timer_armed == 1 && sim_timer_disarmed == 0);
+		chk(sim_genpd_on == 1);
+	} else {
+		unsigned long accesses = sim_mmio_reads + sim_mmio_writes;
+
 		chk(sim_registrations == 1);
 		chk(sim_maps == 1);
-		chk(sim_mmio_reads > 0);
-		chk(sim_writes_ctl == 0);	/* the RUN path is retired */
 		chk(sim_genpd_on == 0);		/* the vote is released */
+		chk(sim_marker_opens == 1 && sim_marker_closed == 1);
+		chk(sim_timer_armed == 1 && sim_timer_disarmed == 1);
+		/* one pending-marker line per access plus the done line, and
+		 * one deadline push per access */
+		chk(sim_marker_writes == accesses + 1);
+		chk(sim_timer_mods == accesses);
+		chk(sim_writes_ctl == 0);	/* the RUN path is retired */
 		chk(scan_unqualified(scratch0_off, read_wrapper, mbox_peek,
 				     mbox_off) == 0);
 		if (confirm_wake) {
 			chk(sim_setup_writes == 5);	/* SETUP1 pulses 0 then 1 */
 			chk(log_contains("wake_seen=1"));
 		} else {
-			chk(sim_setup_writes == 0);
 			chk(!log_contains("ane_h17_wake write off="));
+			chk(sim_setup_writes == 0);
 		}
 		if (read_wrapper)
 			chk(log_contains("read off=0x1600048 CPU_STATUS"));
 		if (mbox_peek)
 			chk(log_contains("mailbox peek done mbox_off=0x1608000 msgs=1"));
-	} else {
-		chk(!log_contains("verdict=PASS"));
-		chk(sim_registrations == 0);
-		chk(sim_maps == 0);
-		chk(sim_pmgr_reads == 0 && sim_regmap_writes == 0);
-		chk(sim_mmio_reads == 0 && sim_writes_ctl == 0);
 	}
-	chk(sim_genpd_on == 0);
+	chk(sim_genpd_on == (sim_panic_count ? 1 : 0));
 	if (failures)
 		fprintf(stderr, "---- %s log ----\n%s", mode, sim_log);
 	printf("%s: %s (%d check failures)\n", mode,

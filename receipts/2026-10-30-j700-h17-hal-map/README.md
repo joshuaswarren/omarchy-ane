@@ -165,9 +165,11 @@ wrapper window. Two consequences:
 
 ## Status
 
-Quarantine stays closed: the module still refuses
-(`reason=unqualified-register-map`) and no register access is
-authorized. Progress against the hang receipt's release criteria:
+At this receipt's commit the quarantine was closed (the module still
+refused, `reason=unqualified-register-map`, and no register access
+was authorized); it lifted the same day — see the
+[containment receipt](../../receipts/2026-10-30-j700-h17-containment/README.md).
+Progress against the hang receipt's release criteria:
 
 - Criterion 1 (source-backed map): the build-side inventory is
   complete and each module address now has a verdict. T8140-sourced:

@@ -41,6 +41,7 @@
  */
 #include <linux/bitfield.h>
 #include <linux/delay.h>
+#include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/mfd/syscon.h>
@@ -52,11 +53,13 @@
 #include <linux/pm_runtime.h>
 #include <linux/regmap.h>
 
-/* The quarantine gate: deliberately no module-parameter override. The
- * qualified sim build (-DH17_REGISTER_MAP_QUALIFIED=1) flips it to
- * exercise the probe against the fake bus only. */
+/* The register-map gate (deliberately no module-parameter override):
+ * lifted 2026-10-30 when criteria 1-3 landed (hal-map + qualified-map
+ * receipts) and criterion 4, the hang containment, shipped with this
+ * change. The sim mutation control flips it back to 0 to prove the
+ * harness rejects the unqualified module. */
 #ifndef H17_REGISTER_MAP_QUALIFIED
-#define H17_REGISTER_MAP_QUALIFIED 0
+#define H17_REGISTER_MAP_QUALIFIED 1
 #endif
 
 #define H17_ANE_NODE "/soc/ane@400000000"
@@ -139,6 +142,21 @@ static unsigned int scratch0_off = H17_SCRATCH0;
 module_param(scratch0_off, uint, 0444);
 MODULE_PARM_DESC(scratch0_off, "SCRATCH0 offset, 0x1880020 (default) or 0x1880024");
 
+/* Hang containment (criterion 4 of the hang receipt): before every engine
+ * access the module records the pending access in marker_file (opened
+ * O_SYNC, so the record survives a watchdog reset -- the unsynced tee log
+ * is what the first hang lost), and a pinned timer on another CPU panics
+ * with the pending access if one access outlives contain_ms. A panic with
+ * panic= on the cmdline reboots automatically; the SoC watchdog
+ * (CONFIG_APPLE_WATCHDOG) is the second layer. */
+static unsigned int contain_ms = 1000;
+module_param(contain_ms, uint, 0444);
+MODULE_PARM_DESC(contain_ms, "Panic when one engine access outlives this many ms (default 1000, 0 = off)");
+
+static char *marker_file = "/var/lib/ane-h17/stage4-marker";
+module_param(marker_file, charp, 0444);
+MODULE_PARM_DESC(marker_file, "O_SYNC pending-access record, appended before every engine access");
+
 static bool read_wrapper;
 module_param(read_wrapper, bool, 0444);
 MODULE_PARM_DESC(read_wrapper, "1 = also read the unsourced h16g/M6 CPU wrapper trio");
@@ -170,13 +188,59 @@ struct ane_h17_wake {
 	struct device *dev;
 	void __iomem *engine;
 	struct regmap *pmgr;
+	struct file *marker;
+	loff_t marker_pos;
 };
+
+/* Hang-containment state: globals because the containment timer reads
+ * them from another CPU while the probe CPU may be stalled mid-access. */
+static u32 h17_pending_off;
+static u32 h17_pending_seq;
+static int h17_phase_active;
+static struct timer_list h17_contain_timer;
+static int h17_contain_cpu = -1;
+
+/*
+ * The containment timer: fires only if an engine access outlives
+ * contain_ms, because every access pushes the deadline forward. A
+ * stalled CPU cannot take timers, so the watch must not live on the
+ * same core as the MMIO; with panic= on the cmdline the panic reboots
+ * automatically (recorded FAIL) and the SoC watchdog is the second
+ * layer.
+ */
+static void h17_contain_fn(struct timer_list *t)
+{
+	panic("ane_h17_wake HANG contain_ms=%u access=%u off=%#x\n",
+	      contain_ms, READ_ONCE(h17_pending_seq), READ_ONCE(h17_pending_off));
+}
+
+/* Called before every engine access: name the pending access in the
+ * O_SYNC marker (survives a watchdog reset) and push the containment
+ * deadline forward. Marker-write failures are non-fatal: the printk log
+ * and the panic message name the access too. */
+static void h17_engine_pre(struct ane_h17_wake *w, u32 off)
+{
+	char buf[64];
+	int len;
+
+	h17_pending_off = off;
+	h17_pending_seq++;
+	if (w->marker) {
+		len = snprintf(buf, sizeof(buf), "pending access=%u off=%#x\n",
+			       h17_pending_seq, off);
+		kernel_write(w->marker, buf, len, &w->marker_pos);
+	}
+	if (contain_ms)
+		mod_timer(&h17_contain_timer,
+			  jiffies + msecs_to_jiffies(contain_ms));
+}
 
 /* Every MMIO read is logged before it happens: a hang names the word. */
 static u32 h17_rd(struct ane_h17_wake *w, u32 off, const char *what)
 {
 	u32 v;
 
+	h17_engine_pre(w, off);
 	dev_info(w->dev, "ane_h17_wake read off=%#x %s\n", off, what);
 	v = readl(w->engine + off);
 	dev_info(w->dev, "ane_h17_wake value off=%#x %s=%#x\n", off, what, v);
@@ -188,6 +252,7 @@ static u64 h17_rdq(struct ane_h17_wake *w, u32 off, const char *what)
 {
 	u64 v;
 
+	h17_engine_pre(w, off);
 	dev_info(w->dev, "ane_h17_wake read off=%#x %s\n", off, what);
 	v = readq(w->engine + off);
 	dev_info(w->dev, "ane_h17_wake value off=%#x %s=%#llx\n", off, what, v);
@@ -196,6 +261,7 @@ static u64 h17_rdq(struct ane_h17_wake *w, u32 off, const char *what)
 
 static void h17_wrq(struct ane_h17_wake *w, u32 off, u64 v, const char *what)
 {
+	h17_engine_pre(w, off);
 	dev_info(w->dev, "ane_h17_wake write off=%#x val=%#llx %s\n", off, v, what);
 	writeq(v, w->engine + off);
 }
@@ -332,6 +398,38 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		}
 	}
 
+	/*
+	 * Hang containment (criterion 4): record every pending access in
+	 * the O_SYNC marker file and pin a containment timer on another
+	 * CPU -- a CPU stalled mid-MMIO cannot take timers, so the watch
+	 * must live elsewhere. contain_ms=0 disables the timer but never
+	 * the marker.
+	 */
+	if (marker_file) {
+		w->marker = filp_open(marker_file,
+				      O_APPEND | O_CREAT | O_WRONLY | O_SYNC,
+				      0600);
+		if (IS_ERR(w->marker)) {
+			dev_warn(&pdev->dev, "ane_h17_wake marker %s open failed (%ld), continuing without it\n",
+				 marker_file, PTR_ERR(w->marker));
+			w->marker = NULL;
+		}
+	}
+	h17_phase_active = 1;
+	if (contain_ms) {
+		h17_contain_cpu = smp_processor_id() + 1;
+		if (h17_contain_cpu >= num_online_cpus())
+			h17_contain_cpu = 0;
+		timer_setup(&h17_contain_timer, h17_contain_fn, TIMER_PINNED);
+		add_timer_on(&h17_contain_timer, h17_contain_cpu);
+		dev_info(&pdev->dev, "ane_h17_wake containment armed cpu=%d contain_ms=%u marker=%s\n",
+			 h17_contain_cpu, contain_ms,
+			 w->marker ? marker_file : "none");
+	}
+
+	if (!poll_ms)
+		poll_ms = 1;
+
 	/* Read-only pass over the T8140-sourced engine block. No write yet. */
 	for (i = 0; i < H17_SCRATCH_N; i++)
 		h17_rd(w, scratch0_off + 4 * i, "SCRATCH");
@@ -446,6 +544,21 @@ static int ane_h17_wake_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "ane_h17_wake RESULT stage=4 verdict=PASS reason=quiet-stop\n");
 
 release:
+	if (h17_phase_active) {
+		char buf[32];
+		int len;
+
+		if (contain_ms)
+			timer_delete_sync(&h17_contain_timer);
+		h17_phase_active = 0;
+		if (w->marker) {
+			len = snprintf(buf, sizeof(buf), "done access=%u\n",
+				       h17_pending_seq);
+			kernel_write(w->marker, buf, len, &w->marker_pos);
+			filp_close(w->marker, NULL);
+			w->marker = NULL;
+		}
+	}
 	pm_runtime_put_sync(&pdev->dev);
 disable:
 	pm_runtime_disable(&pdev->dev);

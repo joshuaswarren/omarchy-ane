@@ -133,21 +133,24 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
-## Stage 4: firmware wake — quarantined after the first-run hang
+## Stage 4: firmware wake — re-derived and contained after the first-run hang
 
 The first run of the snapshot on 2026-10-30 printed the script's boot
 id line and froze the machine completely; the boot ended unclean (PMU
 boot error, no panic) and the log lines were lost with it. The module
-is therefore **quarantined**: `ane_h17_wake.c` refuses at init
-(`reason=unqualified-register-map`) before it registers a driver,
-takes power or maps MMIO, under `H17_REGISTER_MAP_QUALIFIED`
-(deliberately without a parameter override). The hang report and the
-release criteria for lifting the gate are in the
-[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md); the
-register-map provenance and that day's boot/panic events are in the
-[stage 4 receipt](../../receipts/2026-10-30-j700-h17-asc-map/README.md).
+was therefore **quarantined** (`ane_h17_wake.c` refused at init,
+`reason=unqualified-register-map`, before any driver, power or MMIO
+step). The gate lifted the same day when the release criteria of the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md) were
+met: the register map was qualified from this machine's build
+([hal-map](../../receipts/2026-10-30-j700-h17-hal-map/README.md),
+[qualified-map](../../receipts/2026-10-30-j700-h17-qualified-map/README.md)
+receipts; the stage 4 receipt
+[stage-4](../../receipts/2026-10-30-j700-h17-asc-map/README.md) carries
+the boot/panic events), the module and sim were re-derived row by row,
+and hang containment shipped with the module.
 
-The re-derived experiment, for when the map is qualified: it binds the
+The re-derived experiment: it binds the
 same synthetic `ane-h17-ps-probe` consumer node as the stage 3 module
 (the two must not be loaded together), takes the ANE_SYS vote, dumps
 the pmgr words at `0x2e0`, `0x4000..0x4030` and `0xc000..0xc020`
@@ -171,29 +174,39 @@ poll of both SCRATCH7 views for the wake word `0x08042006`. The
 h16g/M6 RUN write to CPU_CONTROL is retired. The module never
 programs a DART, maps firmware, or submits a task.
 
+Hang containment (the criterion-4 design): before every engine access
+the module appends `pending access=<n> off=<x>` to the O_SYNC marker
+file (`marker_file`, default `/var/lib/ane-h17/stage4-marker`) — the
+record that survives a reset, unlike the unsynced tee log the first
+hang lost — and pushes a deadline. A containment timer pinned to
+another CPU panics naming the pending access if one access outlives
+`contain_ms` (default 1000): a CPU stalled mid-MMIO cannot take
+timers, so the watch must not live on the same core. With `panic=` on
+the cmdline the panic reboots automatically and the SoC watchdog
+(`CONFIG_APPLE_WATCHDOG`) is the second layer.
+
 ```sh
-sudo ane/h17/run-stage4.sh   # read-only diagnostics; exits 2, touches no hardware
+sudo ane/h17/run-stage4.sh    # diagnostics + preflight; exits 2, touches no hardware
+sudo ane/h17/run-stage4.sh GO # the contained experiment: one insmod, one rmmod
 ```
 
-`run-stage4.sh` is diagnostics only while the gate is closed: it
-prints the boot id, model, commit and loaded `ane_h17*` modules, runs
-preflight, and ends `H17_STAGE4_REFUSED
-reason=unqualified-register-map`. The former `GO` argument enables
-nothing. `test-stage4.sh` checks the script off device with fake
-`insmod`, `rmmod`, `dmesg`, `lsmod`, preflight and device-tree files
-(`make -C ane/h17 script-test`). `make -C ane/h17 sim-all` runs the
-quarantined module's userspace sim in two builds: the default build
-asserts every mode refuses with zero driver registrations, zero
-ioremaps, zero pmgr reads, zero regmap writes, zero engine reads and
-writes and no genpd vote — including under the legacy parameters
-(`child_ps=0`, `poll_ms=0`, `mbox_off=0xffffffff`); the qualified
-build (`-DH17_REGISTER_MAP_QUALIFIED=1`, sim only) runs the probe
-against the fake bus and asserts every MMIO access it makes sits
-inside the qualified map (`q-snapshot`, `q-wake`, `q-peek` with the
-gated reads), and the mutation control flips the gate and requires
-the harness to reject the ungated hardware access. A smoke inference
-and exact fp16 comparison are still needed before claiming working
-ANE support.
+`run-stage4.sh` without arguments prints the boot id, model, commit,
+loaded `ane_h17*` modules, the marker tail and the preflight verdict,
+and exits 2 without touching hardware. `GO` requires a passing
+preflight and an unloaded module, records the run header in the
+marker file, runs the snapshot once (`confirm_wake` defaults off),
+prints the dmesg tail and the verdict (`H17_STAGE4_PASS`/
+`H17_STAGE4_FAIL`), and removes the module on success. `test-stage4.sh`
+checks both paths off device with fixture `insmod`, `rmmod`, dmesg,
+preflight and device-tree files (`make -C ane/h17 script-test`).
+`make -C ane/h17 sim-all` runs the module's userspace sim: every
+running mode asserts each MMIO access sits inside the qualified map,
+the marker records every pending access, the containment timer arms
+before the first engine access and disarms after the last, the `hang`
+mode exercises the real panic path naming the pending access, and two
+mutation controls (map unqualification, containment-timer removal) are
+rejected. A smoke inference and exact fp16 comparison are still needed
+before claiming working ANE support.
 
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on

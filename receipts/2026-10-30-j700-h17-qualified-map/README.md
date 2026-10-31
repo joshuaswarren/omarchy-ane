@@ -37,10 +37,11 @@ Every row the re-derived module may touch, with its source:
   with `doorbell-conflict`/`doorbell-unclear` otherwise), a bounded
   poll of the ack, the ack write, and the bounded SCRATCH7 wake-word
   poll.
-- The quarantine gate stays `0`: module init still refuses
-  (`reason=unqualified-register-map`), `run-stage4.sh` stays
-  diagnostics-only (exit 2, no lifecycle). The gate lifts only when
-  criterion 4 (hang containment) has a design.
+- The quarantine gate stays `0` at this receipt's commit: module init
+  still refuses (`reason=unqualified-register-map`), `run-stage4.sh`
+  stays diagnostics-only (exit 2, no lifecycle). The gate lifts when
+  criterion 4 (hang containment) ships — see the
+  [containment receipt](../../receipts/2026-10-30-j700-h17-containment/README.md).
 
 ## Verification (off device)
 
@@ -73,5 +74,6 @@ T8140 ASC.
   CPU_CONTROL ordering question.
 - Criterion 3 (module/sim re-derived row by row): met — this receipt.
 - Criterion 4 (hang containment: pending marker + panic
-  timeout/watchdog): **open — the gate stays closed until it is
-  designed.**
+  timeout/watchdog): **open at this receipt's commit — the gate stays
+  closed until it is designed**; it shipped the same evening, see the
+  [containment receipt](../../receipts/2026-10-30-j700-h17-containment/README.md).

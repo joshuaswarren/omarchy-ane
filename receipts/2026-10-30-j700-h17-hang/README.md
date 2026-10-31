@@ -64,9 +64,11 @@ each with a receipt:
 Nothing in this receipt is measured behaviour of the T8140 ASC; the
 hang itself is the only hardware datum it adds.
 
-Criteria 1–3 landed 2026-10-30 with the
+All four criteria landed 2026-10-30: criteria 1–3 with the
 [hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md)
 and the [qualified-map
-receipt](../../receipts/2026-10-30-j700-h17-qualified-map/README.md);
-criterion 4 (hang containment) is open and the gate stays closed
-until it is designed.
+receipt](../../receipts/2026-10-30-j700-h17-qualified-map/README.md),
+criterion 4 with the [containment
+receipt](../../receipts/2026-10-30-j700-h17-containment/README.md).
+The gate is open; the first hardware run is the contained snapshot
+described there.
