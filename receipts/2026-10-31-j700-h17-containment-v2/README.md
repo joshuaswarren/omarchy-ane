@@ -59,3 +59,43 @@ recorded FAIL.
 - Register map: gate stays closed until the rehearsal evidence exists;
   the engine experiment (kthread, marker, watchdog, sourced rows) is
   compiled and gated behind `H17_REGISTER_MAP_QUALIFIED`.
+
+## Rehearsal attempt 1 (2026-10-31, 06:48): refused on a pre-armed watchdog
+
+The first `REHEARSE` attempt failed safely, as designed: the module
+read WD1 `CTRL` with `RESET_EN` set and refused
+(`reason=wdt-armed`) before arming anything. The machine stayed up,
+the runner recorded the FAIL and restored `kernel.panic`.
+
+Register evidence gathered read-only through `/dev/mem`
+(`watchdog@3082b0000`, PA from the live DT):
+
+- WD1 `CTRL=0x4` (`RESET_EN` set), `BITE_TIME=0x2aea5400` (the
+  apple_wdt probe's 30 s at the ~24 MHz reference clock — measured
+  23,991,636 ticks/s), `CUR_TIME` climbing: the watchdog was **armed
+  and ~21 s from reset** at measurement time.
+- The machine stayed up well past that, and a 5 s trace showed no
+  pet: the kernel watchdog **core** is the petter — at boot,
+  apple_wdt found `RESET_EN` set, marked the device
+  `WDOG_HW_RUNNING`, and `watchdog_worker_should_ping()` keeps the
+  core pinging a hardware-running watchdog (`watchdog_dev.c` of the
+  same tree). So the hardware watchdog is owned by the kernel core on
+  this boot, and the module's exclusive-ownership check correctly
+  refused to fight it.
+- The cause of the earlier 05:09 watchdog reset remains unattributed;
+  the same core-and-firmware interaction is the candidate space.
+
+## Ownership handoff (verified, no reboot)
+
+The core's ownership was released through the proper API rather than
+by register writes: open `/dev/watchdog` (exclusive),
+`WDIOC_SETTIMEOUT` 30 (readback confirmed 30), write the magic `'V'`
+and close — the core calls `apple_wdt_stop` (`CTRL <- 0`) and clears
+`WDOG_HW_RUNNING`. Register readback after the close: `WD1_CTRL=0x0`,
+`RESET_EN` clear — **disarmed and verified**. The machine stayed up.
+
+With the watchdog disowned, the rehearsal rung is unblocked. It still
+reboots the machine by design when run; it has not been run. Note: a
+reboot may re-arm the watchdog through the same firmware/core path —
+the handoff check (read `CTRL`, refuse if `RESET_EN` is set) must run
+before every rehearsal and engine run.
