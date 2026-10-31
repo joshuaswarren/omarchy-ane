@@ -125,11 +125,24 @@ the classical netconsole needs a pollable NIC).
 
 ## What remains before stage 4 runs
 
-Hardware authorization for one `insmod` of the reworked
-`ane_h17_wake.ko optin=1` (one pmgr child write, then the read pass)
-and then, if that passes, `run-stage4.sh GO` on a boot where the
-preflight passes. A hang costs one reboot; a core that does not stop
-costs one reboot too (the module says so and keeps the domain
-powered). If the snapshot hangs again, the suspect moves from "child
-state missing" to "wrapper base wrong" — the next candidate is the
-h16g row's `0x1880044/0x1880048` pair instead of `0x1600044/48`.
+None of this is authorized yet: the module is quarantined and refuses
+at init (`reason=unqualified-register-map`); see the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md) for
+the release criteria. Before the hang, the plan was one `insmod` of
+the reworked `ane_h17_wake.ko optin=1` (one pmgr child write, then
+the read pass) and then `run-stage4.sh GO`; that plan is retired
+until the map is qualified.
+
+The 2026-10-30 evening cross-check of the build's interface table
+and HAL against the M6 (T8152) table
+([hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md))
+weakens the "wrapper base wrong" fallback: ASC `+0x44`/`+0x48`
+(`0x1600044`/`0x1600048`) and RVBAR `+0x1050000` are the same
+layout on M6 and h16g, and the T8140 HAL's doorbell is the M6
+`0x18a4000`. The hung run's first three engine accesses were
+therefore M6-consistent, and the missing `0xc008` child state
+remains the prime suspect. What the hang does disqualify is the
+h16g-shaped SCRATCH list (`0x1880020…0x1880044`) and the mailbox
+candidates (`0x1608000`, `0x196c110/114`): no T8140 support exists
+for either. The T8140 SCRATCH page and postoffice base are still
+open.
