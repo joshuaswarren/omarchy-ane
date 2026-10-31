@@ -25,7 +25,7 @@
     "legacy-init": {
       "address": "0xfffffe0008f3dc28",
       "symbol": "ANEHWDevice::ANE_Init()",
-      "observation": "a legacy path writes the configured control field and reads scratch7 for 0x08042006; applicability to Linux and the exclave/RTBuddy path is not established"
+      "observation": "a legacy path writes the configured control field; RTBuddy and legacy paths then join before the scratch7 check for 0x08042006; applicability to Linux is not established"
     },
     "status-diagnostic": {
       "symbol": "ANEHWDevice diagnostics",
@@ -67,12 +67,70 @@
     "completeEntrySequenceQualified": false,
     "completeExitSequenceQualified": false
   },
+  "pathObservations": {
+    "evidenceKind": "compiled-artifact-control-flow; not Linux access qualification",
+    "artifactReference": "artifact.sha256",
+    "providerSelection": {
+      "symbol": "ANEHWDevice::InitializeProvider(IOService*)",
+      "address": "0xfffffe0008f5293c",
+      "observation": "provider name comparisons against RTBuddyService and ane select initialization paths; successful InitializeRTBuddyClient sets the byte at object offset 512",
+      "rtbuddyClientAddress": "0xfffffe0008f52634",
+      "rtbuddyProviderObservation": "RTBuddyService cast, IOSlaveProcessor cast and provider traversal lead to an AppleARMIODevice cast stored at object offset 688; its resource ordering must not be equated with the original caller's resources"
+    },
+    "rtbuddyIndices": {
+      "symbol": "ANEHWDevice::initializeRTBuddyIndices()",
+      "address": "0xfffffe0008f6765c",
+      "condition": "object byte 512 bit 0 set; called before ane-type configuration branches",
+      "aneType0x200": {"object888": 2, "object892": 4, "object896": 1, "object900": 1},
+      "limit": "provider indices, not physical addresses or Linux resource numbers"
+    },
+    "registerConstruction": {
+      "symbol": "ANEHWDevice::start(IOService*)",
+      "aneConstructorCall": "0xfffffe0008f53b1c",
+      "aneIndexField": 888,
+      "aneRegisterControlField": "0xe320",
+      "conditionalControls": [
+        {"label": "PS", "index": "object888 + 1", "call": "0xfffffe0008f53b54"},
+        {"label": "PWGATE", "index": "object888 + 2", "call": "0xfffffe0008f53b84"},
+        {"label": "PTD", "index": "object888 + 3", "call": "0xfffffe0008f53bb4"}
+      ],
+      "limit": "constructor conditions and provider ancestry still require Linux-side correspondence; labels alone do not establish roles"
+    },
+    "firmwareInitSplit": {
+      "symbol": "ANEHWDevice::ANE_Init()",
+      "branchAddress": "0xfffffe0008f3dd28",
+      "rtbuddy": "byte 512 bit 0 set: InitializeRTBuddyEndpoints; successful endpoint initialization branches past the legacy direct-boot sequence",
+      "legacy": "byte 512 bit 0 clear: InitANEScratchRegisters and subsequent direct-boot sequence",
+      "commonJoin": "0xfffffe0008f3e168: both paths continue to the scratch7 read at 0xfffffe0008f3e190; the scratch7 handshake is not exclusive to legacy init",
+      "limit": "ane-type 0x200 alone does not select a firmware ownership path"
+    },
+    "powerEntry": {
+      "symbol": "ANEHWDevice::EnableANEClocksAndPower(bool, bool)",
+      "address": "0xfffffe0008f29ec4",
+      "observation": "recursive lock and reference count; first entry chooses a provider power operation using byte 513 (origin not yet established); the separate byte 242 populated from pmp-virt-notify guards additional provider operations; RTBuddy flag bypasses setActive and forces the CPU-enable branch after optional HAL configuration and scratch initialization",
+      "limit": "not a complete Linux sequence; provider virtual methods and conditional child-state behavior remain to be qualified"
+    },
+    "powerExit": {
+      "symbol": "ANEHWDevice::DisableANEClocksAndPower(bool)",
+      "address": "0xfffffe0008f2a9c8",
+      "exclavePreparationCall": "0xfffffe0008f2af7c",
+      "observation": "reference-counted, guarded shutdown has child-state and performance-counter handling before ANE_ExclavePreparePowerOff, then byte-513-selected provider power release",
+      "limit": "the preparation wrapper dispatches only with its own flag and handle; this caller does not test its return value, so the call is not proof of acknowledged quiescence"
+    },
+    "exclaveEnablement": {
+      "symbol": "ANEHWDevice::checkExclaveEnablementStatus() / setupANEExclaveProxyService()",
+      "checkAddress": "0xfffffe0008f67b90",
+      "setupAddress": "0xfffffe0008f67da8",
+      "observation": "separate object flags, exclaves_get_status, provider exclave-assigned property, and proxy acquisition participate; this is not synonymous with the RTBuddy flag",
+      "limit": "ADT exclave assignment is evidence of ownership constraints, not proof of active ownership or Linux access permission"
+    }
+  },
   "prerequisites": {
     "artifact-provenance": {"state": "unresolved", "receipt": "", "reason": "Retained-byte identity verified, but relationship to the original receipt hash and boot bundle is unresolved."},
     "register-window-binding": {"state": "partial", "receipt": "", "reason": "Compiled register offsets found; provider-index and Linux resource binding need confirmation for the selected path."},
     "power-entry": {"state": "partial", "receipt": "", "reason": "Conditional child-state operation found, but complete power/clock/tunable and path ordering is unqualified."},
     "power-exit": {"state": "unresolved", "receipt": "", "reason": "Quiesce and state restoration sequence is unqualified."},
-    "firmware-ownership": {"state": "unresolved", "receipt": "", "reason": "Exclave/RTBuddy versus direct legacy firmware path applicability is unresolved."},
+    "firmware-ownership": {"state": "partial", "receipt": "", "reason": "Distinct RTBuddy/direct-boot and exclave guards traced; active ownership and Linux path applicability remain unresolved."},
     "recovery-ownership": {"state": "unresolved", "receipt": "", "reason": "No subsystem-coordinated recovery adapter; no direct watchdog ownership is permitted."},
     "durable-record-adapter": {"state": "unimplemented", "receipt": "", "reason": "Generic transaction callbacks tested, but no durable host adapter is implemented."},
     "adapter-review": {"state": "unimplemented", "receipt": "", "reason": "No production snapshot adapter exists or has been reviewed."}

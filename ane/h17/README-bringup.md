@@ -103,6 +103,9 @@ No production adapter exists. Do not use planner output to bypass the
 refusal-only wake module or diagnostics-only runner. The current work
 authorizes no hardware experiments, including the historical commands below.
 See the [source-evidence receipt](../../receipts/2026-10-31-j700-h17-source-evidence/README.md).
+The [path-guard follow-up](../../receipts/2026-10-31-j700-h17-path-guards/README.md)
+records the separate RTBuddy/exclave decisions, provider-index binding,
+and partial power ordering; none is an executable bring-up recipe.
 
 Before a power-stage experiment, run `sudo python3 ane/h17/preflight.py`.
 This read-only gate checks the running J700 tree against aurora-linux
