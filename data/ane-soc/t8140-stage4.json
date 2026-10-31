@@ -1,0 +1,87 @@
+{
+  "schema": "omarchy-ane.h17-stage4-evidence.v1",
+  "target": {"soc": "t8140", "board": "j700", "aneType": 512},
+  "artifact": {
+    "pathHint": "/var/tmp/neo/kernelcache.bin",
+    "sha256": "7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe",
+    "kernelUuid": "f324857e-1cef-366d-9931-2007ba08afcc",
+    "halUuid": "3bdfba52-0e90-3cef-86e6-8f08d7cd170f",
+    "interfaceUuid": "374de710-3b1a-3e44-af61-14c857999217",
+    "kernelVersion": "Darwin Kernel Version 25.6.0: Sat Jul 11 15:27:21 PDT 2026; root:xnu-12377.161.13~4/RELEASE_ARM64_T8140",
+    "originalReceiptSha256": "9d7dd347fc96cd0cb27a14b6dbc6f02c6354dc531668cdbdd2e50c641d86bbc5",
+    "originalReceiptRelationship": "unresolved"
+  },
+  "sources": {
+    "compiled-config": {
+      "address": "0xfffffe0008f64ae0",
+      "symbol": "ANEHWDevice::initializeANESoCConfig()",
+      "observation": "ane-type 0x200 selects the h17 string, internal family 0xe0, and the scratch/control fields recorded here"
+    },
+    "scratch-initializer": {
+      "address": "0xfffffe0008f6121c",
+      "symbol": "ANEHWDevice::InitANEScratchRegisters()",
+      "observation": "eight 32-bit writes using the configured scratch fields; no ninth scratch word"
+    },
+    "legacy-init": {
+      "address": "0xfffffe0008f3dc28",
+      "symbol": "ANEHWDevice::ANE_Init()",
+      "observation": "a legacy path writes the configured control field and reads scratch7 for 0x08042006; applicability to Linux and the exclave/RTBuddy path is not established"
+    },
+    "status-diagnostic": {
+      "symbol": "ANEHWDevice diagnostics",
+      "observation": "the configured 0x1600048 field is read32 and labeled rANE_ASCWRAP_IDLE_STATUS; inherited CPU_STATUS bit meanings are not qualified"
+    },
+    "register-binding": {
+      "rtbuddyIndicesAddress": "0xfffffe0008f6765c",
+      "symbol": "ANEHWDevice::start(IOService*) / initializeRTBuddyIndices()",
+      "observation": "register controls use provider indices; the RTBuddy path changes indices, so a physical Linux window cannot be inferred from the offsets alone"
+    }
+  },
+  "registers": [
+    {"id": "scratch0", "offset": "0x1880020", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch1", "offset": "0x1880024", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch2", "offset": "0x1880028", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch3", "offset": "0x188002c", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch4", "offset": "0x1880030", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch5", "offset": "0x1880034", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch6", "offset": "0x1880038", "widthBytes": 4, "source": "scratch-initializer", "readSafetyQualified": false},
+    {"id": "scratch7", "offset": "0x188003c", "widthBytes": 4, "source": "legacy-init", "readSafetyQualified": false},
+    {"id": "asc-control", "offset": "0x1600044", "widthBytes": 4, "source": "legacy-init", "readSafetyQualified": false},
+    {"id": "ascwrap-idle-status", "offset": "0x1600048", "widthBytes": 4, "source": "status-diagnostic", "readSafetyQualified": false}
+  ],
+  "rejectedRoleInferences": [
+    {"offset": "0x1880000", "observedSymbolSuffix": "sne_sne_ctrl", "unsupportedRole": "SCRATCH proven solely by a HAL window getter"},
+    {"offset": "0x18ac000", "observedSymbolSuffix": "sne_sne_iso_gapf", "unsupportedRole": "IPI_PENDING proven by M6 analogy"},
+    {"offset": "0x1960000", "observedSymbolSuffix": "sne_anedpeppt_soc_dpe_lee", "unsupportedRole": "firmware mailbox setup"},
+    {"offset": "0x195c000", "observedSymbolSuffix": "sne_ane_dpe_sys", "unsupportedRole": "Postoffice base proven by alias arithmetic"},
+    {"offset": "0x1974000", "observedSymbolSuffix": "sne_ane_dpe_cpms", "unsupportedRole": "firmware mailbox setup"},
+    {"offset": "0x18a4000", "observedSymbolSuffix": "AppleT8140ANEHAL::AppleANETunableApplyFunction", "unsupportedRole": "firmware wake proven by a tunable handshake"}
+  ],
+  "powerObservations": {
+    "sourceSymbols": ["ANEHWDevice::EnableSubblocksClocksAndPower()", "ANEHWDevice::EnableCPUClocksAndPower()"],
+    "conditionalStateOffset": "0xc008",
+    "writeWidthBytes": 4,
+    "target": "0xf",
+    "validationMask": "0xff",
+    "validationExpected": "0xff",
+    "completeEntrySequenceQualified": false,
+    "completeExitSequenceQualified": false
+  },
+  "prerequisites": {
+    "artifact-provenance": {"state": "unresolved", "receipt": "", "reason": "Retained-byte identity verified, but relationship to the original receipt hash and boot bundle is unresolved."},
+    "register-window-binding": {"state": "partial", "receipt": "", "reason": "Compiled register offsets found; provider-index and Linux resource binding need confirmation for the selected path."},
+    "power-entry": {"state": "partial", "receipt": "", "reason": "Conditional child-state operation found, but complete power/clock/tunable and path ordering is unqualified."},
+    "power-exit": {"state": "unresolved", "receipt": "", "reason": "Quiesce and state restoration sequence is unqualified."},
+    "firmware-ownership": {"state": "unresolved", "receipt": "", "reason": "Exclave/RTBuddy versus direct legacy firmware path applicability is unresolved."},
+    "recovery-ownership": {"state": "unresolved", "receipt": "", "reason": "No subsystem-coordinated recovery adapter; no direct watchdog ownership is permitted."},
+    "durable-record-adapter": {"state": "unimplemented", "receipt": "", "reason": "Generic transaction callbacks tested, but no durable host adapter is implemented."},
+    "adapter-review": {"state": "unimplemented", "receipt": "", "reason": "No production snapshot adapter exists or has been reviewed."}
+  },
+  "snapshotProposal": {
+    "kind": "single-read-only-observation",
+    "registerIds": ["scratch7"],
+    "resourceBytes": "0x2000000",
+    "purpose": "One candidate 32-bit scratch7 read after all prerequisites are qualified, not a wake attempt or computation.",
+    "hardwareExecutionAllowed": false
+  }
+}

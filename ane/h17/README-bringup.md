@@ -78,6 +78,32 @@ execution or the meaning of the patched values.
 
 ## Next rungs
 
+### Offline stage-4 planning (not hardware permission)
+
+The symbol-backed evidence ledger is `data/ane-soc/t8140-stage4.json`.
+Check it without touching the device:
+
+```sh
+make -C ane/h17 planner-test
+python3 ane/h17/plan-stage4.py --artifact /var/tmp/neo/kernelcache.bin
+```
+
+The current result is **BLOCKED**, exit 2, even when the retained hash
+matches. Omitting `--artifact` adds an unverified-bytes blocker. Invalid
+evidence also exits 2, with verdict `INVALID`. The planner never consumes
+the artifact's path hint automatically and rejects special artifact files
+and symlinks. It emits a candidate register offset, **not a physical
+address or an executable command**. `resourceBytes` is only a proposed
+bound; it is not proof of a Linux window binding.
+
+Even synthetic evidence with every prerequisite marked qualified can only
+produce `READY_FOR_REVIEW`; `hardwareExecutionAllowed` is always false.
+Receipt strings are review assertions, not independently verified proofs.
+No production adapter exists. Do not use planner output to bypass the
+refusal-only wake module or diagnostics-only runner. The current work
+authorizes no hardware experiments, including the historical commands below.
+See the [source-evidence receipt](../../receipts/2026-10-31-j700-h17-source-evidence/README.md).
+
 Before a power-stage experiment, run `sudo python3 ane/h17/preflight.py`.
 This read-only gate checks the running J700 tree against aurora-linux
 `b6f070c911934c9c377c4be939b883bf32f37acf`: the ANE and three DART
