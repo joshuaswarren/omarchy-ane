@@ -833,21 +833,7 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	return 0;
 }
 
-/*
- * Per-session teardown: every file context open is a fresh boundary.
- * Anything the previous session left on the device (wedged flag, tm
- * completion counters, in-flight recovery state) belongs to that
- * session and must not survive into the next one.
- *
- * drm_gem_release runs before us and has dropped every handle this
- * file held. BOs leaked by `ane_gem_free_object under wedge` stay on
- * ane->bo_list until module teardown (their backing `drm_gem_object`s
- * are already gone, and touching them here would be use-after-free).
- * We do not try to drain them; we only clear the session-leaving
- * state (wedged + tm counters + recovering flag) so the next opener
- * sees a clean device. The orphan BOs remain inert: they are not in
- * any drm_file's handle table.
- */
+/* Failed recovery must retain the wedge, module pin and preserved BOs. */
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
@@ -858,13 +844,6 @@ static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 		return;
 	}
 
-	/* Drop the wedge pin first: a wedged engine that cannot be
-	 * recovered in software must NOT keep the module pinned, or the
-	 * operator cannot unload the ko for an updated build without a
-	 * reboot. ane_wedge_clear releases both the wedged flag and the
-	 * module_refcount; ane_tm_recover then attempts a power-cycle
-	 * recovery (succeeds only if the engine is actually idle-able). */
-	ane_wedge_clear(ane);
 	ane_tm_recover(ane);
 
 	mutex_unlock(&ane->engine_lock);

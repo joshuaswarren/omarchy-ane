@@ -95,6 +95,9 @@ completion and CPU-visible outputs, as today.
 - A wedged engine refuses every later submit (`-ECANCELED`). The daemon
   exits on the failed submit, and the close of its file runs the driver's
   per-file cleanup (`ane_drm_postclose`).
+  Close attempts recovery without first clearing the wedge. Failed recovery
+  retains the module pin and preserved mappings; process exit does not prove
+  that device work has retired.
 
 ## Device and runtime PM
 

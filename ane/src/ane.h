@@ -150,15 +150,6 @@ struct ane_request {
 };
 
 /*
- * Drop the wedge pin (module refcount) without requiring a successful
- * recovery. Used by ane_drm_postclose so a wedged engine cannot leave
- * the module un-unloadable after a clean session close. Recovery stays
- * safe to call afterwards; if it returns error, the postclose path has
- * already unlocked the module count so the operator can swap the ko.
- */
-void ane_wedge_clear(struct ane_device *ane);
-
-/*
  * Reclaim wedge-preserved BO ranges (unmap, release nodes and pages).
  * Only legal once DMA is provably quiescent: after a successful
  * recovery power cycle, or at driver remove. Callers hold engine_lock.

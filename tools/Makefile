@@ -151,6 +151,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	./test_t6021_prog_lookup
 	./test_check_band
 	./test_ane_timing
+	$(PYTHON) ../ane/test/retirement_model_test.py
 ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_resident.py
 	$(PYTHON) test_qwen_resident_ab.py

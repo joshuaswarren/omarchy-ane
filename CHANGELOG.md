@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The H13 driver attempts recovery before clearing a wedged session. Failed recovery retains the wedge, module pin and preserved buffer mappings. CPU state tests cover close, recovery failures and successful release; hardware retirement is not qualified by these tests.
+
 - `ane_h15`: add the off-by-default T8122 runtime overlay from its own J613/T8122 DT evidence. Keep DARTs disabled and omit `iommus`; correct ANE_BASE to depend on both ANE_TD and ANE_CPU. Offline checks do not establish hardware execution.
 
 - `ane_h15`: stage 2 can compare the current domain's RVBAR entry with TEXT from the same boot's ADT. It refuses a missing domain, changed RVBAR or zero translation and fails a different address. It creates no mapping and starts no core; a match proves only that entry.

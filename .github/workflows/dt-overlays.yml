@@ -25,6 +25,7 @@ on:
       - tests/fixtures/ane-soc/**
       - README.md
       - ane/src/**
+      - ane/test/**
       - ane/include/**
       - ane/ane_stats_show.c
       - ane/t6021/**
@@ -44,6 +45,7 @@ on:
       - tests/fixtures/ane-soc/**
       - README.md
       - ane/src/**
+      - ane/test/**
       - ane/include/**
       - ane/ane_stats_show.c
       - ane/t6021/**
