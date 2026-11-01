@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `omarchy-ane-smoke`: refuse a run before launching the runner when bound devices span multiple dies or their die identity is unreadable. Report no die instead of guessing die 0.
+- docs: correct the M2 Pro default list and Ultra volunteer steps. Preserve other opt-in keys when adding a key. Remove the die-1 promotion sequence whose smoke result can name the wrong die.
 - `promotion_check`: do not judge a block whose check output binds both dies. This covers runtime and fallback rows in either line order, even with a scalar die field. Rows that bind one die keep their old behavior.
 - T6020 (M2 Pro) ANE back to opt-in. (row 3c9389040f51,02ba4b462a7d; dkms,intree)
 - The H13 driver attempts recovery before clearing a wedged session. Failed recovery retains the wedge, module pin and preserved buffer mappings. CPU state tests cover close, recovery failures and successful release; hardware retirement is not qualified by these tests.
