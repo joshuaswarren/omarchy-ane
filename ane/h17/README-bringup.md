@@ -149,7 +149,13 @@ the ANE node disabled. This source-only overlay is not part of the main
 ANE package. The live stage 3 run on boot
 `3322fb33-90fb-473e-8eff-5668ac9a9f4c` passed: PMGR word `0x23ff`
 at offset `0x290` had TARGET and ACTUAL both `0xf`, and the domain
-returned to `off-0` after the vote was released. Stop on any PMGR
+returned to `off-0` after the vote was released. Re-confirmed on boot
+`1d31ba24-5f08-4962-ae99-37accde4ad5c` with module SHA-256
+`062131061c4a521bb06c1a145b0fcf72ee22fb3a4b0f56c0409e2c7eb16c9053`:
+same word `0x23ff`, TARGET and ACTUAL `0xf`, `WAS_GATED` `0x3`,
+`BUSY` clear; the post-unload genpd summary was unavailable because
+debugfs was not readable. Receipt:
+`receipts/2026-11-01-j700-h17-stage3-ps-pass/`. Stop on any PMGR
 timeout, external abort, or DART fault; a hang requires reboot before
 retry.
 
