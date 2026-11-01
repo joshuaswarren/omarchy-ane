@@ -47,4 +47,19 @@ int ane_h15_load_build(const struct ane_h15_payload payload[ANE_H15_LOAD_SECTION
  * device ownership is proved released; an ambiguous completion is not release. */
 void ane_h15_load_free(struct ane_h15_load *load);
 
+struct ane_h15_firmware {
+	void *storage;
+	uint64_t size;
+	uint64_t entry;
+};
+
+/* Exact 26A428 payloads only. Initialize out to zero; errors preserve it.
+ * Success owns the full Mach-O VM layout, including zero-fill. This is host
+ * storage, not DMA residency or a bootable image: no runtime patches, device
+ * access or publication occurs. T6034 selects the T6031 image only.
+ * The caller must retain a published owner until device retirement is proved. */
+int ane_h15_firmware_stage(uint32_t soc, const void *payload, uint64_t size,
+			   struct ane_h15_firmware *out);
+void ane_h15_firmware_free(struct ane_h15_firmware *image);
+
 #endif

@@ -7,6 +7,25 @@ row in the same module (j514m / j516m). Facts and the b0 family
 decision: `receipts/2026-10-03-ane-h15/README.md`. The structural
 template is `ane/h16/`.
 
+## Host-owned firmware staging
+
+`ane_h15_firmware_stage()` validates the complete 26A428 payload against the
+shared chip pin before allocation. It stages the measured TEXT and DATA file
+segments into one owned host buffer and zeroes the remaining VM extent.
+T6034 selects the T6031 image; this does not qualify T6034 hardware.
+
+This API performs no DMA mapping, runtime patch, publication or device access.
+It does not connect `fw_path` to a loader or change the module's boot refusals.
+`ane_h15_firmware_free()` frees host storage only. After any future publication,
+the caller must retain storage until device retirement is proved.
+
+The input images remain private and are not distributed in this repository.
+Run the real-image host checks with the three measured payload files:
+
+```
+make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/input-directory
+```
+
 ## What it does
 
 - `stage=0` or `stage=dt` (safe, no MMIO): parse the running DT and

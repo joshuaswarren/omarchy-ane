@@ -36,7 +36,7 @@ ane_h15_adt_test: ane_h15_adt_test.c ane_h15_adt.h
 # harness to fail it (PMP sim-negative semantics).
 SIM_CC ?= cc
 SIM_CFLAGS ?= -g -O0 -Wall -Wextra -std=gnu11
-SIM_HDRS := ane_h15.h ane_h15_adt.h sim/shim.h \
+SIM_HDRS := ane_h15.h ane_h15_adt.h ane_h15_fw_pins.h sim/shim.h \
 	$(wildcard sim/inc/linux/*.h) sim/inc/crypto/sha2.h
 
 sim/sim_h15: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS)
