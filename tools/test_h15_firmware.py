@@ -89,6 +89,16 @@ class H15FirmwareTest(unittest.TestCase):
             if len(blob) != 1605632 or hashlib.sha256(blob).hexdigest() != digest:
                 raise ValueError(f"private input does not match actual measured profile: {name}")
             cls.images[soc] = blob
+        ane1_location = os.environ.get("H15_FW_ANE1_INPUT_DIR")
+        if not ane1_location:
+            raise unittest.SkipTest("set H15_FW_ANE1_INPUT_DIR to the separate private ANE1 acquisition")
+        cls.ane1 = (Path(ane1_location) / "t603x_ane1_fw_erebus_pc5x.im4p.payload").read_bytes()
+        if (
+            len(cls.ane1) != 1605632
+            or hashlib.sha256(cls.ane1).hexdigest()
+            != "0e0a01ec3b4ef08050cae2df75d19c531254f7e1ec109ff6bb05ff575c7c13d4"
+        ):
+            raise ValueError("private input does not match the measured ANE1 profile")
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         library = Path(cls.temp.name) / "libane.so"
@@ -125,7 +135,7 @@ class H15FirmwareTest(unittest.TestCase):
 
     def consumer(self):
         stage = self.library.ane_h15_firmware_stage
-        stage.argtypes = [ct.c_uint32, ct.c_void_p, ct.c_uint64, ct.POINTER(Firmware)]
+        stage.argtypes = [ct.c_uint32, ct.c_uint32, ct.c_void_p, ct.c_uint64, ct.POINTER(Firmware)]
         stage.restype = ct.c_int
         release = self.library.ane_h15_firmware_free
         release.argtypes = [ct.POINTER(Firmware)]
@@ -140,7 +150,7 @@ class H15FirmwareTest(unittest.TestCase):
                 expected, entry = macho_image(blob)
                 source = ct.create_string_buffer(blob)
                 image = Firmware()
-                self.assertEqual(stage(soc, source, len(blob), ct.byref(image)), 0)
+                self.assertEqual(stage(soc, 0, source, len(blob), ct.byref(image)), 0)
                 try:
                     ct.memset(source, 0xA5, len(blob))
                     self.assertEqual(image.size, len(expected))
@@ -161,36 +171,75 @@ class H15FirmwareTest(unittest.TestCase):
             image = Firmware(None, 0x1234, 0x5678)
             before = bytes(image)
             self.assertEqual(
-                stage(0x8122, ct.create_string_buffer(bytes(damaged)), len(blob), ct.byref(image)), -errno.EBADMSG
+                stage(0x8122, 0, ct.create_string_buffer(bytes(damaged)), len(blob), ct.byref(image)), -errno.EBADMSG
             )
             self.assertEqual(bytes(image), before)
         source = ct.create_string_buffer(blob)
         for size in (0, len(blob) - 1, len(blob) + 1, 2**64 - 1):
             image = Firmware(None, 0x1234, 0x5678)
             before = bytes(image)
-            self.assertEqual(stage(0x8122, source, size, ct.byref(image)), -errno.EINVAL)
+            self.assertEqual(stage(0x8122, 0, source, size, ct.byref(image)), -errno.EINVAL)
             self.assertEqual(bytes(image), before)
         for soc in (0x6030, 0x6031, 0x6034):
             image = Firmware()
-            self.assertEqual(stage(soc, source, len(blob), ct.byref(image)), -errno.EBADMSG)
+            self.assertEqual(stage(soc, 0, source, len(blob), ct.byref(image)), -errno.EBADMSG)
             self.assertEqual(bytes(image), bytes(ct.sizeof(image)))
         image = Firmware()
-        self.assertEqual(stage(0x9999, source, len(blob), ct.byref(image)), -errno.ENODEV)
-        self.assertEqual(stage(0x8122, None, len(blob), ct.byref(image)), -errno.EINVAL)
-        self.assertEqual(stage(0x8122, source, len(blob), None), -errno.EINVAL)
+        self.assertEqual(stage(0x9999, 0, source, len(blob), ct.byref(image)), -errno.ENODEV)
+        self.assertEqual(stage(0x8122, 0, None, len(blob), ct.byref(image)), -errno.EINVAL)
+        self.assertEqual(stage(0x8122, 0, source, len(blob), None), -errno.EINVAL)
 
     def test_live_owner_is_not_replaced(self):
         stage, release = self.consumer()
         blob = self.images[0x6030]
         source = ct.create_string_buffer(blob)
         image = Firmware()
-        self.assertEqual(stage(0x6030, source, len(blob), ct.byref(image)), 0)
+        self.assertEqual(stage(0x6030, 0, source, len(blob), ct.byref(image)), 0)
         try:
             before = bytes(image)
-            self.assertEqual(stage(0x6030, source, len(blob), ct.byref(image)), -errno.EBUSY)
+            self.assertEqual(stage(0x6030, 0, source, len(blob), ct.byref(image)), -errno.EBUSY)
             self.assertEqual(bytes(image), before)
         finally:
             release(ct.byref(image))
+
+    def test_ultra_engines_use_distinct_images_and_independent_host_owners(self):
+        payloads = (self.images[0x6031], self.ane1)
+        self.assertNotEqual(payloads[0], payloads[1])
+        stage, release = self.consumer()
+        images = (Firmware(), Firmware())
+        try:
+            for engine, payload in enumerate(payloads):
+                source = ct.create_string_buffer(payload)
+                self.assertEqual(stage(0x6032, engine, source, len(payload), ct.byref(images[engine])), 0)
+                ct.memset(source, 0xA5, len(payload))
+                expected, entry = macho_image(payload)
+                self.assertEqual(images[engine].entry, entry)
+                self.assertEqual(ct.string_at(images[engine].storage, images[engine].size), expected)
+            first, second = sorted((image.storage, image.storage + image.size) for image in images)
+            self.assertLessEqual(first[1], second[0])
+            release(ct.byref(images[0]))
+            self.assertEqual(bytes(images[0]), bytes(ct.sizeof(images[0])))
+            expected, _ = macho_image(payloads[1])
+            self.assertEqual(ct.string_at(images[1].storage, images[1].size), expected)
+        finally:
+            for image in images:
+                release(ct.byref(image))
+
+    def test_engine_identity_refuses_aliases_and_missing_engines(self):
+        stage, _ = self.consumer()
+        source = ct.create_string_buffer(self.images[0x6031])
+        for soc, engine in ((0x8122, 1), (0x6030, 1), (0x6031, 1), (0x6034, 1), (0x6032, 2), (0x6032, 0xFFFFFFFF)):
+            image = Firmware(None, 0x1234, 0x5678)
+            before = bytes(image)
+            self.assertEqual(stage(soc, engine, source, len(self.images[0x6031]), ct.byref(image)), -errno.ENODEV)
+            self.assertEqual(bytes(image), before)
+        for engine, wrong in ((0, self.ane1), (1, self.images[0x6031])):
+            image = Firmware(None, 0x1234, 0x5678)
+            before = bytes(image)
+            self.assertEqual(
+                stage(0x6032, engine, ct.create_string_buffer(wrong), len(wrong), ct.byref(image)), -errno.EBADMSG
+            )
+            self.assertEqual(bytes(image), before)
 
     def test_validation_precedes_allocation_and_failure_is_transactional(self):
         stage, _ = self.consumer()
@@ -201,9 +250,9 @@ class H15FirmwareTest(unittest.TestCase):
         flag.value = 1
         try:
             damaged = ct.create_string_buffer(bytes(len(blob)))
-            self.assertEqual(stage(0x6031, damaged, len(blob), ct.byref(image)), -errno.EBADMSG)
+            self.assertEqual(stage(0x6031, 0, damaged, len(blob), ct.byref(image)), -errno.EBADMSG)
             self.assertEqual(flag.value, 1)
-            self.assertEqual(stage(0x6031, ct.create_string_buffer(blob), len(blob), ct.byref(image)), -errno.ENOMEM)
+            self.assertEqual(stage(0x6031, 0, ct.create_string_buffer(blob), len(blob), ct.byref(image)), -errno.ENOMEM)
             self.assertEqual(bytes(image), before)
         finally:
             flag.value = 0

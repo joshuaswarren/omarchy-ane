@@ -18,7 +18,8 @@ $(LIB):
 .PHONY: check-h15-firmware
 check-h15-firmware:
 	test -n "$(H15_FW_INPUT_DIR)"
-	H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" python3 test_h15_firmware.py -v
+	test -n "$(H15_FW_ANE1_INPUT_DIR)"
+	H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" H15_FW_ANE1_INPUT_DIR="$(H15_FW_ANE1_INPUT_DIR)" python3 test_h15_firmware.py -v
 
 ane-run: ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-run.c $(LIB) -lm
