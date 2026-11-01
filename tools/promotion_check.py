@@ -87,26 +87,26 @@ BOUND = re.compile(r"bound to ([0-9a-f]+)\.ane\b")
 
 
 def block(row):
-    """The row's omarchy_ane block. The collector drops the runtime section of
-    ane_port_detail when it is over its byte budget (marked runtime:over_budget;
-    an Ultra's DARTs do that). summary.ane_linux carries the same check, module,
-    smoke and fault fields, so it stands in for the dropped block. Its die comes
-    from the bound engine base in the check output (floor-divided by 0x20_0000_0000,
-    as the collector computes it); without that line the die is unknown and the
-    row is not judged."""
+    """Return unambiguous evidence from runtime, or the over-budget fallback.
+
+    A multi-die binding cannot scope the aggregate smoke/fault fields, even
+    with a scalar runtime die. Leave that row unjudged until evidence is
+    collected per die. Legacy runtime rows without bound lines keep die 0.
+    """
     summary = row.get("summary") or {}
     detail = summary.get("ane_port_detail") or {}
     oa = (detail.get("runtime") or {}).get("omarchy_ane")
-    if isinstance(oa, dict):
-        return oa
-    linux = summary.get("ane_linux")
-    if "runtime:over_budget" not in (detail.get("truncated") or []) or not isinstance(linux, dict):
+    fallback = not isinstance(oa, dict)
+    if fallback:
+        oa = summary.get("ane_linux")
+        if "runtime:over_budget" not in (detail.get("truncated") or []) or not isinstance(oa, dict):
+            return None
+    dies = {int(base, 16) // 0x2000000000
+            for line in (oa.get("check") or {}).get("lines") or []
+            for base in BOUND.findall(line)}
+    if len(dies) > 1 or (fallback and not dies):
         return None
-    lines = (linux.get("check") or {}).get("lines") or []
-    m = next((BOUND.search(l) for l in lines if BOUND.search(l)), None)
-    if not m:
-        return None
-    return {**linux, "die": int(m.group(1), 16) // 0x2000000000}
+    return {**oa, "die": next(iter(dies))} if fallback else oa
 
 
 def soc(row):

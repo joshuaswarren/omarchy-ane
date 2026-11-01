@@ -315,4 +315,34 @@ both = copy.deepcopy(good)
 both['summary']['ane_linux'] = copy.deepcopy(oa(good))
 both['summary']['ane_linux']['smoke']['errors'] = 1
 assert pc.failures(both) == []
+
+for chip, bases in (('t6002', ('285c04000', '2285c04000')),
+                    ('t6022', ('284000000', '2284000000'))):
+    for ordered_bases in (bases, bases[::-1]):
+        bound_lines = [f'  ok    {pc.DRIVER[chip]} is bound to {base}.ane' for base in ordered_bases]
+        for check_lines in (bound_lines, ['; '.join(bound_lines)]):
+            for runtime_present in (False, True):
+                for reported_die in (None, 0, 1):
+                    ambiguous = fallback_row(40, soc=chip)
+                    candidate = ambiguous['summary']['ane_linux']
+                    candidate['check']['lines'] = check_lines
+                    if reported_die is not None:
+                        candidate['die'] = reported_die
+                    if runtime_present:
+                        ambiguous['summary']['ane_port_detail']['runtime'] = {'omarchy_ane': candidate}
+                    assert not pc.judged(ambiguous), (chip, ordered_bases, runtime_present, reported_die)
+                    assert pc.verdict([ambiguous]) == {}
+                    report = pc.json_verdict([ambiguous])
+                    assert all(not r['judged'] and not r['passed'] for c in report['chips'] for r in c['rows'])
+                    assert all(not c['targets'] for c in report['chips'])
+                    candidate['smoke']['errors'] = 1
+                    candidate['dmesg_faults'] = [f'ane {bases[1]}.ane: command timed out']
+                    assert not pc.judged(ambiguous) and pc.verdict([ambiguous]) == {}
+    for die, base in enumerate(bases):
+        single_die = fallback_row(41, soc=chip, base=base)
+        candidate = single_die['summary']['ane_linux']
+        candidate['check']['lines'] *= 2
+        assert pc.die_of(single_die) == die
+        assert pc.verdict([single_die])[(chip, die)]['passing'] == ['290000000000']
+
 print('test_promotion_check: ok')
