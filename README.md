@@ -35,7 +35,7 @@ device-tree overlays and verification tools.
 | M1 Max | T6001 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
 | M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | not tested |
 | M2 | T8112 | not recorded | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | not tested |
-| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
+| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | opt-in | `ane-t6020` + note | fp16 execution verified |
 | M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
 | M2 Ultra | T6022 | not recorded | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) |
 

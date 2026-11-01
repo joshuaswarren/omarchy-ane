@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * Overlay state: on by default.
+ * Overlay state: opt-in ("ane-t6020" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).
  * ANE for T6020 (M2 Pro) board device trees.
  * The node values are the T6021 ones (t602x-ane.dtsi, same in the macOS 13.5
  * ADTs of j414s, j416s and j474s), and the 13.5 firmware list gives these
@@ -20,6 +20,8 @@
 / {
 	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
 	omarchy,skip-if-compatible = "apple,t6020-ane";
+	/* dtb-overlays.sh: applies only when opted in. */
+	omarchy,opt-in = "ane-t6020";
 };
 
 /include/ "t602x-ane.dtsi"
