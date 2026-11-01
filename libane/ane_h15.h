@@ -56,10 +56,11 @@ struct ane_h15_firmware {
 /* Exact 26A428 payloads only. Initialize out to zero; errors preserve it.
  * Success owns the full Mach-O VM layout, including zero-fill. This is host
  * storage, not DMA residency or a bootable image: no runtime patches, device
- * access or publication occurs. T6034 selects the T6031 image only.
+ * access or publication occurs. Engine must be zero except on T6032, whose
+ * ANE0 and ANE1 select distinct files. This does not qualify either engine.
  * The caller must retain a published owner until device retirement is proved. */
-int ane_h15_firmware_stage(uint32_t soc, const void *payload, uint64_t size,
-			   struct ane_h15_firmware *out);
+int ane_h15_firmware_stage(uint32_t soc, uint32_t engine, const void *payload,
+			   uint64_t size, struct ane_h15_firmware *out);
 void ane_h15_firmware_free(struct ane_h15_firmware *image);
 
 #endif

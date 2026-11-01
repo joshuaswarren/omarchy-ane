@@ -38,4 +38,39 @@ static const struct ane_h15_fw ane_fw_t6031 = {
 	.manifest_size = 1605657,
 };
 
+static const struct ane_h15_fw ane_fw_t6032_ane1 = {
+	.name = "t603x_ane1_fw_erebus_pc5x",
+	.sha256 = { 0x0e,0x0a,0x01,0xec, 0x3b,0x4e,0xf0,0x80, 0x50,0xca,0xe2,0xdf,
+		    0x75,0xd1,0x9c,0x53, 0x12,0x54,0xf7,0xe1, 0xec,0x10,0x9f,0xf6,
+		    0xbb,0x05,0xff,0x57, 0x5c,0x7c,0x13,0xd4 },
+	.size = 1605632,
+	.manifest_size = 1605657,
+};
+
+/* Image identity only; this does not select resources or qualify an engine. */
+static inline const struct ane_h15_fw *
+ane_h15_fw_for_engine(unsigned int soc, unsigned int engine)
+{
+	if (soc == 0x6032) {
+		if (engine == 0)
+			return &ane_fw_t6031;
+		if (engine == 1)
+			return &ane_fw_t6032_ane1;
+		return 0;
+	}
+	if (engine)
+		return 0;
+	switch (soc) {
+	case 0x8122:
+		return &ane_fw_t8122;
+	case 0x6030:
+		return &ane_fw_t6030;
+	case 0x6031:
+	case 0x6034:
+		return &ane_fw_t6031;
+	default:
+		return 0;
+	}
+}
+
 #endif

@@ -12,7 +12,10 @@ template is `ane/h16/`.
 `ane_h15_firmware_stage()` validates the complete 26A428 payload against the
 shared chip pin before allocation. It stages the measured TEXT and DATA file
 segments into one owned host buffer and zeroes the remaining VM extent.
-T6034 selects the T6031 image; this does not qualify T6034 hardware.
+The engine argument is zero on single-engine chips. T6032/J575D explicitly selects
+ANE0 or ANE1, with distinct image pins and independent host owners.
+T6034 selects the T6031 image. Image selection does not qualify hardware resources,
+startup or device retirement for either Ultra engine or any other chip.
 
 This API performs no DMA mapping, runtime patch, publication or device access.
 It does not connect `fw_path` to a loader or change the module's boot refusals.
@@ -20,10 +23,11 @@ It does not connect `fw_path` to a loader or change the module's boot refusals.
 the caller must retain storage until device retirement is proved.
 
 The input images remain private and are not distributed in this repository.
-Run the real-image host checks with the three measured payload files:
+Run the real-image host checks with all four measured payload files:
 
 ```
-make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/input-directory
+make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
+    H15_FW_ANE1_INPUT_DIR=/private/ane1-inputs
 ```
 
 ## What it does
