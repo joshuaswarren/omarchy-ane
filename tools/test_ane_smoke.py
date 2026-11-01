@@ -117,6 +117,9 @@ def machine(soc='t6021', board='j414c', bound=True, fixture=True, firmware='echo
     drivers.mkdir(parents=True)
     if bound:
         (drivers / 'ane.1').symlink_to('../../../../devices/platform/ane.1')
+        reg = root / 'sys/devices/platform/ane.1/of_node/reg'
+        reg.parent.mkdir(parents=True)
+        reg.write_bytes(struct.pack('>QQ', 0x284000000, 0x1000000))
     (root / 'sys/class/accel/accel0/device').mkdir(parents=True)
     (root / 'sys/class/accel/accel0/device/driver').symlink_to(f'../../../../bus/platform/drivers/{mod}')
     (root / 'dev/accel').mkdir(parents=True)
@@ -166,22 +169,38 @@ for chip, board, base in (('t6002', 'j375d', 0x38E000000),
         module = smoke.MODULE[chip]
         drivers = root / 'sys/bus/platform/drivers' / module
         reg = (drivers / 'ane.1').resolve() / 'of_node/reg'
-        reg.parent.mkdir(parents=True)
+        reg.parent.mkdir(parents=True, exist_ok=True)
         reg.write_bytes(struct.pack('>QQ', base + smoke.DIE_STRIDE, 0x1000000))
         assert smoke.die(root, module) == 1, chip
         rc, out, err = smoke_run(root)
         assert rc == 0 and out['die'] == 1, (chip, rc, out, err)
 
-        # A driver module link is not a bound device. The first device in
-        # sorted order wins even when another bound device was created first.
         (drivers / 'module').symlink_to((drivers / 'ane.1').resolve())
         reg0 = root / 'sys/devices/platform/ane.0/of_node/reg'
         reg0.parent.mkdir(parents=True)
         reg0.write_bytes(struct.pack('>QQ', base, smoke.DIE_STRIDE))
         (drivers / 'ane.0').symlink_to(reg0.parent.parent)
-        assert smoke.die(root, module) == 0, chip
+        count_before = (root / 'count').read_text()
+        for first, second in ((base, base + smoke.DIE_STRIDE), (base + smoke.DIE_STRIDE, base)):
+            reg0.write_bytes(struct.pack('>QQ', first, 0x1000000))
+            reg.write_bytes(struct.pack('>QQ', second, 0x1000000))
+            rc, out, err = smoke_run(root)
+            assert rc == 2 and not out['available'] and out['die'] is None, (chip, rc, out, err)
+            assert (root / 'count').read_text() == count_before
+        reg0.write_bytes(struct.pack('>QQ', base, 0x1000000))
+        reg.write_bytes(struct.pack('>QQ', base, 0x1000000))
+        rc, out, err = smoke_run(root)
+        assert rc == 0 and out['die'] == 0, (chip, rc, out, err)
+        count_before = (root / 'count').read_text()
+        for bad_reg in (b'', b'\0' * 7):
+            reg0.write_bytes(bad_reg)
+            rc, out, err = smoke_run(root)
+            assert rc == 2 and not out['available'] and out['die'] is None, (chip, rc, out, err)
+            assert (root / 'count').read_text() == count_before
         reg0.unlink()
-        assert smoke.die(root, module) == 0, 'missing reg defaults to die 0'
+        rc, out, err = smoke_run(root)
+        assert rc == 2 and not out['available'] and out['die'] is None, (chip, rc, out, err)
+        assert (root / 'count').read_text() == count_before
         (drivers / 'ane.0').unlink()
         (drivers / 'ane.1').unlink()
         assert smoke.die(root, module) == 0, 'module link alone is not a device'

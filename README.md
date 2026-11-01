@@ -9,7 +9,7 @@ device-tree overlays and verification tools.
 
 ## Support at a glance
 
-- Enabled by default: M1, M1 Pro, M1 Max, M2 Pro, M2 Max, M2 Ultra (die 0
+- Enabled by default: M1, M1 Pro, M1 Max, M2 Max, M2 Ultra (die 0
   only; one passing row). The overlay
   applies at install and the driver binds at boot. Each of these chips has run
   exact fp16 execution on real hardware. Enabled by default still requires a
@@ -19,6 +19,8 @@ device-tree overlays and verification tools.
 - Opt in, untested: M1 Ultra (die 0), plain M2. A driver
   and a cited overlay exist; nobody has run them on that silicon. You add one
   opt-in key.
+- M2 Pro is back to opt-in after a failing row. Keep its regression evidence
+  separate from the chips enabled by default.
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
   `ane/h18` (Mac mini M6). None is packaged or autoloaded; each loads by hand
