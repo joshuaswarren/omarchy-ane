@@ -30,7 +30,7 @@ CPU-power functions, the traced layout is:
 | ANE | `0xe320` | `object888` | none observed | `0xfffffe0008f53b1c` |
 | PS | `0xe328` | `object888 + 1` | byte 912 (1) | `0xfffffe0008f53b54` |
 | PWGATE | `0xe330` | `object888 + 2` | byte 243 (1) | `0xfffffe0008f53b84` |
-| PTD | `0xe338` | `object888 + 3` | byte 14036 (0, no store found) | `0xfffffe0008f53bb4` |
+| PTD | `0xe338` | `object888 + 3` | byte 14036 (0; a whole-driver-text immediate-offset store scan finds no writer) | `0xfffffe0008f53bb4` |
 | ANEHAL1 | `0xe348` | field 916 = `object888 + 4` | byte 235 (1) | `0xfffffe0008f53be8` |
 | ANEHAL2 | `0xe350` | field 928 = `object888 + 5` | byte 235 (1) | `0xfffffe0008f53c1c` |
 | ANEHAL3 | `0xe358` | field 944 = 0 | byte 235 (1) | `0xfffffe0008f53c50` |
@@ -116,6 +116,13 @@ DT properties `clock-ids`, `clock-gates`, `power-gates`, `service-gates`,
 `service-reset`, `service-name`, `pin-groups` — none of which exist on the
 Linux `ane` node.
 
+Byte 242 itself is traced to `initializeANESoCConfig`: the prologue stores
+0 at `0xfffffe0008f64b64` (before the ane-type switch), fetches the provider
+property `"pmp-virt-notify"` (string `0xfffffe00073b4f5d`), calls through
+slot `0x198` on the result, and stores that call's boolean result at
+`0xfffffe0008f64b9c`. The recorded ADT carries `pmp-virt-notify = 1`, so on
+J700 the flag is expected set — the runtime call result is not qualified.
+
 ## Linux ownership/handoff contract requirements
 
 Drafted against the traced Apple dependencies. Each item is **unresolved**
@@ -154,6 +161,19 @@ until source-qualified and device-qualified; none is satisfied by this round.
 8. **Second-function flag.** Field 14880 bit 1 selects the extended
    sequences; J700 resolves it set. Its hardware meaning ("child/second
    function") and the single-ANE Linux equivalent are unresolved.
+
+## Follow-up confirmations in this round
+
+- Byte 14036 (PTD guard): zero covering stores in the entire
+  `com.apple.driver.AppleH16ANEInterface` text under immediate-offset store
+  encodings — the PTD control is not created on this configuration.
+- Byte 242: resolved to the `pmp-virt-notify` provider lookup result
+  (stores `0xfffffe0008f64b64`/`0xfffffe0008f64b9c`); it gates the second
+  `enableDeviceClock` vote (clock id 326).
+- Field 14181 (the CPU-power status byte Enable/Disable write through
+  `x22 = this + 0x3765`) is written only through register-indexed
+  addressing, which the immediate-offset scan does not enumerate; its
+  semantics stay unresolved.
 
 ## What this round does not prove
 

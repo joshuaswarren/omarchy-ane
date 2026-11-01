@@ -155,6 +155,23 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(requests["enableDevicePowerSlot"], "0x8b0")
         self.assertIn("325 has no attributed call site", requests["resolvedVotes"])
 
+    def test_byte242_flag_is_pmp_virt_notify_result(self):
+        flag = BASE["pathObservations"]["byte242Flag"]
+        self.assertEqual(flag["flagByte"], 242)
+        self.assertEqual(flag["stores"][0]["address"], "0xfffffe0008f64b64")
+        self.assertEqual(flag["stores"][0]["value"], 0)
+        self.assertIn("pmp-virt-notify", flag["lookup"])
+        soc = json.loads((ROOT / "data/ane-soc/t8140.json").read_text())
+        self.assertEqual(soc["ane"]["other_props"]["v"]["pmp-virt-notify"], 1)
+        requests = BASE["pathObservations"]["clockPowerRequests"]
+        guarded = [s for s in requests["sites"] if "byte-242" in s["function"]]
+        self.assertEqual(len(guarded), 2)
+
+    def test_ptd_guard_absence_backed_by_whole_text_scan(self):
+        fit = BASE["pathObservations"]["registerWindowFit"]
+        self.assertTrue(fit["ptdControlNotCreated"])
+        self.assertTrue(fit["ptdGuardWholeTextScan"])
+
     def test_missing_prerequisites_cannot_shrink_required_set(self):
         self.evidence["prerequisites"] = {}
         result = plan.check(self.evidence)

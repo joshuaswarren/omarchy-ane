@@ -157,7 +157,7 @@
         {"label": "ANE", "objectField": "0xe320", "index": "object888", "guard": "none observed in this block", "call": "0xfffffe0008f53b1c", "baseStoredField": 904},
         {"label": "PS", "objectField": "0xe328", "index": "object888 + 1", "guardByte": 912, "guardValueOn0x200": 1, "call": "0xfffffe0008f53b54"},
         {"label": "PWGATE", "objectField": "0xe330", "index": "object888 + 2", "guardByte": 243, "guardValueOn0x200": 1, "call": "0xfffffe0008f53b84"},
-        {"label": "PTD", "objectField": "0xe338", "index": "object888 + 3", "guardByte": 14036, "guardValueOn0x200": 0, "call": "0xfffffe0008f53bb4", "note": "no store to byte 14036 was found in the driver text, so the PTD control is not created on this configuration"},
+        {"label": "PTD", "objectField": "0xe338", "index": "object888 + 3", "guardByte": 14036, "guardValueOn0x200": 0, "call": "0xfffffe0008f53bb4", "note": "a whole-driver-text immediate-offset store scan finds no store covering byte 14036, so the PTD control is not created on this configuration"},
         {"label": "ANEHAL1", "objectField": "0xe348", "indexField": 916, "guardByte": 235, "call": "0xfffffe0008f53be8", "baseStoredField": 920},
         {"label": "ANEHAL2", "objectField": "0xe350", "indexField": 928, "guardByte": 235, "call": "0xfffffe0008f53c1c", "baseStoredField": 936},
         {"label": "ANEHAL3", "objectField": "0xe358", "indexField": 944, "guardByte": 235, "call": "0xfffffe0008f53c50", "baseStoredField": 952}
@@ -183,9 +183,21 @@
         {"controller": "ANEHAL3", "directPathIndex": 0, "resourceSize": "0x2000000", "maxOffset": null}
       ],
       "ptdControlNotCreated": true,
+      "ptdGuardWholeTextScan": true,
       "linuxWindowsMapped": ["engine"],
       "linuxGap": "the Linux ane node maps only resource 0; the PS (resource 1) and PWGATE (resource 2) windows the J700 power sequences write have no Linux representation",
       "limit": "arithmetic against retained ADT sizes at linux source b6f070c911934c9c377c4be939b883bf32f37acf; not a runtime window binding and not safe-access proof"
+    },
+    "byte242Flag": {
+      "flagByte": 242,
+      "stores": [
+        {"address": "0xfffffe0008f64b64", "value": 0, "function": "ANEHWDevice::initializeANESoCConfig() prologue", "note": "default clear before the ane-type switch at 0xfffffe0008f64e3c"},
+        {"address": "0xfffffe0008f64b9c", "value": "provider call result (cset ne)"}
+      ],
+      "lookup": "provider property \"pmp-virt-notify\" (string 0xfffffe00073b4f5d) fetched through slot 0x2d8, then a call through slot 0x198 on the result",
+      "adtProperty": "pmp-virt-notify = 1",
+      "consumers": "byte-242-guarded enableDeviceClock(…, object896 + 1) votes recorded in clockPowerRequests",
+      "limit": "the property lookup and vtable call are traced; the runtime call result and a Linux equivalent remain unresolved"
     },
     "psdFlag": {
       "flagByte": 513,
