@@ -109,6 +109,11 @@ and partial power ordering; none is an executable bring-up recipe.
 The [provider-contract follow-up](../../receipts/2026-10-31-j700-h17-provider-contract/README.md)
 adds the explicit direct-provider match, resource-0 candidate, and named
 provider power/RPC dependencies. Its range-fit tests are not safe-access proof.
+The [power-contract follow-up](../../receipts/2026-10-31-j700-h17-power-contract/README.md)
+traces the J700 CPU power-on/off register sequences to their PS and PWGATE
+windows, resolves the byte-513 PSD branch as unreachable in the retained
+build, and drafts the Linux ownership/handoff requirements. Compiled-source
+observations only; the Linux DTS still maps none of the PS/PWGATE windows.
 
 Before a power-stage experiment, run `sudo python3 ane/h17/preflight.py`.
 This read-only gate checks the running J700 tree against aurora-linux

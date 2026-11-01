@@ -35,6 +35,11 @@
       "rtbuddyIndicesAddress": "0xfffffe0008f6765c",
       "symbol": "ANEHWDevice::start(IOService*) / initializeRTBuddyIndices()",
       "observation": "register controls use provider indices; the RTBuddy path changes indices, so a physical Linux window cannot be inferred from the offsets alone"
+    },
+    "provider-tables": {
+      "address": "0xfffffe000896a8c0",
+      "symbol": "AppleARMIODevice::initDeviceWithProvider(AppleARMIO*, IORegistryEntry*)",
+      "observation": "parses the per-node property arrays clock-ids, clock-gates, power-gates, service-gates, service-reset, service-name and pin-groups into the index-addressed tables the enable methods translate through"
     }
   },
   "registers": [
@@ -58,14 +63,72 @@
     {"offset": "0x18a4000", "observedSymbolSuffix": "AppleT8140ANEHAL::AppleANETunableApplyFunction", "unsupportedRole": "firmware wake proven by a tunable handshake"}
   ],
   "powerObservations": {
-    "sourceSymbols": ["ANEHWDevice::EnableSubblocksClocksAndPower()", "ANEHWDevice::EnableCPUClocksAndPower()"],
-    "conditionalStateOffset": "0xc008",
-    "writeWidthBytes": 4,
-    "target": "0xf",
-    "validationMask": "0xff",
-    "validationExpected": "0xff",
-    "completeEntrySequenceQualified": false,
-    "completeExitSequenceQualified": false
+    "validate": {
+      "address": "0xfffffe0008f74194",
+      "symbol": "ANERegisterControl::validate(unsigned int, unsigned int, unsigned int, int, bool) const",
+      "semantics": "polls read32(offset) & mask until it equals expected, one _IODelay(10) per poll, timeout+1 polls; returns 0 on success and 0xe00002bc on timeout when the bool argument is nonzero, and panics when it is zero",
+      "observedCallsBoolArgument": 0,
+      "limit": "call-site disassembly of the retained artifact; no device timing observation"
+    },
+    "secondFunctionFlag": {
+      "field": 14880,
+      "init": {"address": "0xfffffe0008f64294", "value": 3, "function": "ANEHWDevice::initializeANEProperties()"},
+      "aneType0x200BranchStore": "none",
+      "startModify": {"address": "0xfffffe0008f53258", "operation": "clears bit 2 only"},
+      "resolvedJ700Value": "value 3 with bit 2 cleared by start leaves bit 1 set",
+      "consumers": "EnableCPUClocksAndPower branches on bit 1 at 0xfffffe0008f294e8 and DisableCPUClocksAndPower at 0xfffffe0008f2b854",
+      "limit": "the flag's hardware role (child/second function) is inferred from branch structure only"
+    },
+    "cpuPowerOnJ700": {
+      "symbol": "ANEHWDevice::EnableCPUClocksAndPower()",
+      "entryAddress": "0xfffffe0008f29080",
+      "aneType0x200Block": "0xfffffe0008f294b0",
+      "controllers": {
+        "ps": "object+0xe328 (provider index object888+1)",
+        "pwgate": "object+0xe330 (provider index object888+2)"
+      },
+      "sequence": [
+        "PS write32(0xc000, 0xf) at 0xfffffe0008f294b0",
+        "PS validate(0xc000, expected 0xff, mask 0xff, 5000) at 0xfffffe0008f294c0",
+        "if field 14880 bit 1 set: PWGATE write32(0x268c, 0) at 0xfffffe0008f294f0",
+        "PWGATE validate(0x268c, expected 0, mask 3, 5000) at 0xfffffe0008f29968",
+        "PS write32(0xc000, 0x1000000f) at 0xfffffe0008f2997c",
+        "PS validate(0xc000, expected 0x100000ff, mask 0x100000ff, 5000) at 0xfffffe0008f29b0c",
+        "if field 14880 bit 1 clear: stop after the first write/validate pair (branch 0xfffffe0008f29220)"
+      ],
+      "limit": "compiled sequence only; register semantics, clock dependencies and device timing are unqualified"
+    },
+    "cpuPowerOffJ700": {
+      "symbol": "ANEHWDevice::DisableCPUClocksAndPower()",
+      "entryAddress": "0xfffffe0008f2b3d8",
+      "aneType0x200Block": "0xfffffe0008f2b848",
+      "controllers": {
+        "ps": "object+0xe328 (provider index object888+1)",
+        "pwgate": "object+0xe330 (provider index object888+2)"
+      },
+      "sequence": [
+        "if field 14880 bit 1 set: PS read32(0xc000) at 0xfffffe0008f2bf80",
+        "PS write32(0xc000, value & ~0x10000000) at 0xfffffe0008f2bf9c",
+        "PS validate(0xc000, expected 0, mask 0x10000000, 5000) at 0xfffffe0008f2bfa8",
+        "PWGATE write32(0x268c, 3) at 0xfffffe0008f2bfc0 (reached on both bit-1 outcomes)",
+        "PWGATE validate(0x268c, expected 3, mask 3, 5000) at 0xfffffe0008f2bfd8",
+        "PWGATE write32(0x26b0, 0) at 0xfffffe0008f2bff0",
+        "PWGATE validate(0x26b0, expected 0, mask 1, 5000) at 0xfffffe0008f2c2c4",
+        "PS write32(0xc000, 0x300) at 0xfffffe0008f2c2d8",
+        "PS validate(0xc000, expected 0, mask 0x8ff, 5000) at 0xfffffe0008f2c2fc"
+      ],
+      "limit": "compiled sequence only; the bit-1-clear path skips only the 0xc000 read-modify-write and still runs the PWGATE/PS tail"
+    },
+    "generic0xc008Observation": {
+      "conditionalStateOffset": "0xc008",
+      "writeWidthBytes": 4,
+      "target": "0xf",
+      "validationMask": "0xff",
+      "validationExpected": "0xff",
+      "note": "traced conditional 0xc008 writes belong to other ane-type branches; the J700/0x200 sequence is recorded in cpuPowerOnJ700",
+      "completeEntrySequenceQualified": false,
+      "completeExitSequenceQualified": false
+    }
   },
   "pathObservations": {
     "evidenceKind": "compiled-artifact-control-flow; not Linux access qualification",
@@ -86,15 +149,98 @@
     },
     "registerConstruction": {
       "symbol": "ANEHWDevice::start(IOService*)",
+      "basePointer": {"start": "x23 = this + 0xe228", "enableDisableCpu": "x23 = this + 0xe270"},
       "aneConstructorCall": "0xfffffe0008f53b1c",
       "aneIndexField": 888,
       "aneRegisterControlField": "0xe320",
-      "conditionalControls": [
-        {"label": "PS", "index": "object888 + 1", "call": "0xfffffe0008f53b54"},
-        {"label": "PWGATE", "index": "object888 + 2", "call": "0xfffffe0008f53b84"},
-        {"label": "PTD", "index": "object888 + 3", "call": "0xfffffe0008f53bb4"}
+      "controls": [
+        {"label": "ANE", "objectField": "0xe320", "index": "object888", "guard": "none observed in this block", "call": "0xfffffe0008f53b1c", "baseStoredField": 904},
+        {"label": "PS", "objectField": "0xe328", "index": "object888 + 1", "guardByte": 912, "guardValueOn0x200": 1, "call": "0xfffffe0008f53b54"},
+        {"label": "PWGATE", "objectField": "0xe330", "index": "object888 + 2", "guardByte": 243, "guardValueOn0x200": 1, "call": "0xfffffe0008f53b84"},
+        {"label": "PTD", "objectField": "0xe338", "index": "object888 + 3", "guardByte": 14036, "guardValueOn0x200": 0, "call": "0xfffffe0008f53bb4", "note": "no store to byte 14036 was found in the driver text, so the PTD control is not created on this configuration"},
+        {"label": "ANEHAL1", "objectField": "0xe348", "indexField": 916, "guardByte": 235, "call": "0xfffffe0008f53be8", "baseStoredField": 920},
+        {"label": "ANEHAL2", "objectField": "0xe350", "indexField": 928, "guardByte": 235, "call": "0xfffffe0008f53c1c", "baseStoredField": 936},
+        {"label": "ANEHAL3", "objectField": "0xe358", "indexField": 944, "guardByte": 235, "call": "0xfffffe0008f53c50", "baseStoredField": 952}
       ],
-      "limit": "constructor conditions and provider ancestry still require Linux-side correspondence; labels alone do not establish roles"
+      "aneType0x200IndexResolution": {
+        "ANEHAL1": "object888 + 4",
+        "ANEHAL2": "object888 + 5",
+        "ANEHAL3": 0,
+        "byte235Halfword": 257,
+        "addresses": "0xfffffe0008f650f8 stores 916 = object888+4, 0xfffffe0008f65104 stores 928 = object888+5; field 944 keeps the zero from initializeANEProperties at 0xfffffe0008f64420"
+      },
+      "directPathIndices": {"ANE": 0, "PS": 1, "PWGATE": 2, "PTD": null, "ANEHAL1": 4, "ANEHAL2": 5, "ANEHAL3": 0},
+      "limit": "constructor guards and index arithmetic read from compiled code; no runtime registry capture; labels do not establish hardware roles"
+    },
+    "registerWindowFit": {
+      "crossCheck": "every traced control offset fits the retained ADT resource size at its direct-path index",
+      "fits": [
+        {"controller": "ANE", "directPathIndex": 0, "resourceSize": "0x2000000", "maxOffset": "0x188003c"},
+        {"controller": "PS", "directPathIndex": 1, "resourceSize": "0x18000", "maxOffset": "0xc008"},
+        {"controller": "PWGATE", "directPathIndex": 2, "resourceSize": "0x4000", "maxOffset": "0x26b0"},
+        {"controller": "ANEHAL1", "directPathIndex": 4, "resourceSize": "0xff4000", "maxOffset": null},
+        {"controller": "ANEHAL2", "directPathIndex": 5, "resourceSize": "0x4000", "maxOffset": null},
+        {"controller": "ANEHAL3", "directPathIndex": 0, "resourceSize": "0x2000000", "maxOffset": null}
+      ],
+      "ptdControlNotCreated": true,
+      "linuxWindowsMapped": ["engine"],
+      "linuxGap": "the Linux ane node maps only resource 0; the PS (resource 1) and PWGATE (resource 2) windows the J700 power sequences write have no Linux representation",
+      "limit": "arithmetic against retained ADT sizes at linux source b6f070c911934c9c377c4be939b883bf32f37acf; not a runtime window binding and not safe-access proof"
+    },
+    "psdFlag": {
+      "flagByte": 513,
+      "reads": [
+        {"address": "0xfffffe0008f2913c", "function": "EnableCPUClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f29fb8", "function": "EnableANEClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f2a474", "function": "EnableANEClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f2acd0", "function": "DisableANEClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f2af80", "function": "DisableANEClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f2b5e0", "function": "DisableCPUClocksAndPower", "testsBit0": true},
+        {"address": "0xfffffe0008f424d4", "function": "ANE_deInit", "testsBit0": true},
+        {"address": "0xfffffe0008f53180", "function": "start", "testsBit0": true},
+        {"address": "0xfffffe0008f53f00", "function": "start", "testsBit0": true}
+      ],
+      "nonzeroStores": [],
+      "zeroingStores": [
+        {"address": "0xfffffe0008efa09c", "form": "strh wzr at 512 (clears bytes 512-513)", "function": "ANEHWDevice::ANEHWDevice(OSMetaClass const*)"},
+        {"address": "0xfffffe0008efa3ac", "form": "strh wzr at 512", "function": "ANEHWDevice::ANEHWDevice()"},
+        {"address": "0xfffffe0008f64498", "form": "stpq zero block at 512", "function": "ANEHWDevice::initializeANEProperties()"}
+      ],
+      "byte512Write": {"address": "0xfffffe0008f52b84", "value": 1, "function": "InitializeProvider RTBuddy branch", "note": "sets byte 512 only; byte 513 is untouched"},
+      "observation": "all nine byte-513 reads test bit 0; no immediate-offset store in com.apple.driver.AppleH16ANEInterface text stores a nonzero byte 513, so every PSD-first branch is dead in this artifact",
+      "scanLimit": "immediate-offset store encodings only; register-indexed stores and other drivers' stores are not excluded by this scan",
+      "unreachableConsequence": "AppleARMIODevice::enablePsdService (vtable slot 0x8c8) is never dispatched by this driver"
+    },
+    "clockPowerRequests": {
+      "enableDeviceClockSlot": "0x8a8",
+      "enableDevicePowerSlot": "0x8b0",
+      "sites": [
+        {"address": "0xfffffe0008f2a034", "call": "enableDeviceClock(1, object896)", "function": "EnableANEClocksAndPower"},
+        {"address": "0xfffffe0008f2a090", "call": "enableDevicePower(1, &out, object896)", "function": "EnableANEClocksAndPower"},
+        {"address": "0xfffffe0008f2a908", "call": "enableDeviceClock(1, object896 + 1)", "function": "EnableANEClocksAndPower (byte-242-guarded)"},
+        {"address": "0xfffffe0008f2af10", "call": "enableDeviceClock(0, object896 + 1)", "function": "DisableANEClocksAndPower (byte-242-guarded)"},
+        {"address": "0xfffffe0008f2afc8", "call": "enableDeviceClock(0, object896)", "function": "DisableANEClocksAndPower"}
+      ],
+      "directPathIndex": "object896 = 0",
+      "adtClockIds": [327, 326, 325],
+      "resolvedVotes": "clock-ids[0] = 327 is requested unconditionally on power enter/exit; clock-ids[1] = 326 only when the byte-242 flag is set; 325 has no attributed call site",
+      "limit": "index arithmetic only; AppleARMIODevice translates indices through the initDeviceWithProvider tables; no device call observed"
+    },
+    "providerTables": {
+      "symbol": "AppleARMIODevice::initDeviceWithProvider(AppleARMIO*, IORegistryEntry*)",
+      "address": "0xfffffe000896a8c0",
+      "properties": ["clock-ids", "clock-gates", "power-gates", "service-gates", "service-reset", "service-name", "pin-groups"],
+      "stringAddresses": {
+        "clock-ids": "0xfffffe0007162d3f",
+        "clock-gates": "0xfffffe0007162d49",
+        "service-gates": "0xfffffe0007162d55",
+        "service-reset": "0xfffffe0007162d63",
+        "service-name": "0xfffffe0007162d71",
+        "power-gates": "0xfffffe0007162d88",
+        "pin-groups": "0xfffffe0007162d94"
+      },
+      "observation": "the per-node tables that enableDeviceClock/enableDevicePower/enablePsdService index are populated from these DT properties; the recorded ADT ane node carries clock-ids [327, 326, 325], power_domains ANE-SYS-V and ANE-SYS-V-PMP, and service entries, while the Linux ane node carries none of these properties",
+      "limit": "property-name references resolved inside the parser; table value semantics remain unqualified"
     },
     "firmwareInitSplit": {
       "symbol": "ANEHWDevice::ANE_Init()",
@@ -107,14 +253,14 @@
     "powerEntry": {
       "symbol": "ANEHWDevice::EnableANEClocksAndPower(bool, bool)",
       "address": "0xfffffe0008f29ec4",
-      "observation": "recursive lock and reference count; first entry chooses a provider power operation using byte 513 (origin not yet established); the separate byte 242 populated from pmp-virt-notify guards additional provider operations; RTBuddy flag bypasses setActive and forces the CPU-enable branch after optional HAL configuration and scratch initialization",
+      "observation": "recursive lock and reference count; the byte-513-guarded provider operation (enablePsdService at slot 0x8c8) is unreachable because no store sets byte 513 nonzero; the byte-242 flag guards a second enableDeviceClock vote; RTBuddy flag bypasses setActive and forces the CPU-enable branch after optional HAL configuration and scratch initialization",
       "limit": "not a complete Linux sequence; provider virtual methods and conditional child-state behavior remain to be qualified"
     },
     "powerExit": {
       "symbol": "ANEHWDevice::DisableANEClocksAndPower(bool)",
       "address": "0xfffffe0008f2a9c8",
       "exclavePreparationCall": "0xfffffe0008f2af7c",
-      "observation": "reference-counted, guarded shutdown has child-state and performance-counter handling before ANE_ExclavePreparePowerOff, then byte-513-selected provider power release",
+      "observation": "reference-counted, guarded shutdown has child-state and performance-counter handling before ANE_ExclavePreparePowerOff, then the byte-513-guarded provider power release, which is unreachable in this artifact",
       "limit": "the preparation wrapper dispatches only with its own flag and handle; this caller does not test its return value, so the call is not proof of acknowledged quiescence"
     },
     "exclaveEnablement": {
@@ -170,11 +316,11 @@
   },
   "prerequisites": {
     "artifact-provenance": {"state": "unresolved", "receipt": "", "reason": "Retained-byte identity verified, but relationship to the original receipt hash and boot bundle is unresolved."},
-    "register-window-binding": {"state": "partial", "receipt": "", "reason": "Compiled register offsets found; provider-index and Linux resource binding need confirmation for the selected path."},
-    "power-entry": {"state": "partial", "receipt": "", "reason": "Conditional child-state operation found, but complete power/clock/tunable and path ordering is unqualified."},
-    "power-exit": {"state": "unresolved", "receipt": "", "reason": "Quiesce and state restoration sequence is unqualified."},
-    "firmware-ownership": {"state": "partial", "receipt": "", "reason": "Distinct RTBuddy/direct-boot and exclave guards traced; active ownership and Linux path applicability remain unresolved."},
-    "recovery-ownership": {"state": "unresolved", "receipt": "", "reason": "No subsystem-coordinated recovery adapter; no direct watchdog ownership is permitted."},
+    "register-window-binding": {"state": "partial", "receipt": "", "reason": "Compiled index arithmetic now binds control labels to provider indices and every traced offset fits the ADT resource size at its direct-path index; the runtime provider binding and the missing Linux PS/PWGATE windows keep this partial."},
+    "power-entry": {"state": "partial", "receipt": "", "reason": "J700 CPU power-on register sequences, their PS/PWGATE controllers and validate polling semantics are traced; device qualification, clock votes and Linux window availability remain open."},
+    "power-exit": {"state": "partial", "receipt": "", "reason": "J700 CPU power-off sequence is traced at compiled level; quiesce acknowledgment, exclave prepare-power-off, and state restoration remain unqualified."},
+    "firmware-ownership": {"state": "partial", "receipt": "", "reason": "Distinct RTBuddy/direct-boot and exclave guards traced; active ownership and a Linux firmware-load path remain unresolved."},
+    "recovery-ownership": {"state": "unresolved", "receipt": "", "reason": "No subsystem-coordinated recovery adapter; no direct watchdog ownership is permitted. Apple's validate helper panics on timeout, which a Linux port must not copy."},
     "durable-record-adapter": {"state": "unimplemented", "receipt": "", "reason": "Generic transaction callbacks tested, but no durable host adapter is implemented."},
     "adapter-review": {"state": "unimplemented", "receipt": "", "reason": "No production snapshot adapter exists or has been reviewed."}
   },

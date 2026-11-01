@@ -67,6 +67,94 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(matched[0]["providerClass"], "AppleARMIODevice")
         self.assertEqual(len([p for p in personalities if p["providerClass"] == "RTBuddyService"]), 2)
 
+    def test_control_construction_index_arithmetic(self):
+        construction = BASE["pathObservations"]["registerConstruction"]
+        self.assertEqual(construction["aneIndexField"], 888)
+        labels = {control["label"]: control for control in construction["controls"]}
+        self.assertEqual(labels["ANE"]["index"], "object888")
+        self.assertEqual(labels["PS"]["index"], "object888 + 1")
+        self.assertEqual(labels["PWGATE"]["index"], "object888 + 2")
+        self.assertEqual(labels["PTD"]["index"], "object888 + 3")
+        self.assertEqual(labels["ANEHAL1"]["indexField"], 916)
+        self.assertEqual(labels["ANEHAL2"]["indexField"], 928)
+        self.assertEqual(labels["ANEHAL3"]["indexField"], 944)
+        resolution = construction["aneType0x200IndexResolution"]
+        self.assertEqual(resolution["ANEHAL1"], "object888 + 4")
+        self.assertEqual(resolution["ANEHAL2"], "object888 + 5")
+        self.assertEqual(resolution["ANEHAL3"], 0)
+        # Byte 512 selects the RTBuddy path; the PSD byte 513 never gains a
+        # nonzero store, and byte 512/513 are cleared together by strh.
+        self.assertEqual(construction["directPathIndices"],
+                         {"ANE": 0, "PS": 1, "PWGATE": 2, "PTD": None,
+                          "ANEHAL1": 4, "ANEHAL2": 5, "ANEHAL3": 0})
+        self.assertEqual(labels["PTD"]["guardValueOn0x200"], 0)
+        self.assertEqual(labels["PS"]["guardValueOn0x200"], 1)
+        self.assertEqual(labels["PWGATE"]["guardValueOn0x200"], 1)
+
+    def test_traced_offsets_fit_direct_path_resources_but_do_not_qualify(self):
+        soc = json.loads((ROOT / "data/ane-soc/t8140.json").read_text())
+        sizes = [plan.integer(resource["size"]) for resource in soc["ane"]["reg"]["v"]]
+        fit = BASE["pathObservations"]["registerWindowFit"]
+        by_name = {item["controller"]: item for item in fit["fits"]}
+        for controller, resource in (("ANE", 0), ("PS", 1), ("PWGATE", 2)):
+            self.assertLess(plan.integer(by_name[controller]["maxOffset"]), sizes[resource])
+        self.assertTrue(fit["ptdControlNotCreated"])
+        # Recorded Linux gap: only resource 0 is mapped, so the PS and PWGATE
+        # windows the J700 sequences write have no Linux representation.
+        self.assertEqual(fit["linuxWindowsMapped"], ["engine"])
+        # Fitting a window cannot remove the binding prerequisite.
+        result = plan.check(BASE, BASE["artifact"]["sha256"])
+        self.assertIn("register-window-binding", [b["id"] for b in result["blockers"]])
+
+    def test_psd_flag_never_stored_nonzero(self):
+        psd = BASE["pathObservations"]["psdFlag"]
+        self.assertEqual(psd["flagByte"], 513)
+        self.assertEqual(len(psd["reads"]), 9)
+        self.assertTrue(all(read["testsBit0"] for read in psd["reads"]))
+        self.assertEqual(psd["nonzeroStores"], [])
+        self.assertEqual(len(psd["zeroingStores"]), 3)
+        self.assertEqual(psd["byte512Write"]["value"], 1)
+        self.assertIn("0x8c8", psd["unreachableConsequence"])
+        self.assertIn("immediate-offset", psd["scanLimit"])
+
+    def test_second_function_flag_and_j700_sequences(self):
+        power = BASE["powerObservations"]
+        flag = power["secondFunctionFlag"]
+        self.assertEqual(flag["init"]["value"], 3)
+        self.assertEqual(flag["aneType0x200BranchStore"], "none")
+        self.assertIn("bit 2", flag["startModify"]["operation"])
+        self.assertIn("bit 1 set", flag["resolvedJ700Value"])
+        on, off = power["cpuPowerOnJ700"], power["cpuPowerOffJ700"]
+        self.assertEqual(on["controllers"]["ps"], "object+0xe328 (provider index object888+1)")
+        self.assertEqual(off["controllers"]["pwgate"], "object+0xe330 (provider index object888+2)")
+        self.assertIn("PS write32(0xc000, 0x1000000f) at 0xfffffe0008f2997c", on["sequence"])
+        self.assertIn("PS write32(0xc000, value & ~0x10000000) at 0xfffffe0008f2bf9c", off["sequence"])
+        self.assertIn("PWGATE write32(0x268c, 3) at 0xfffffe0008f2bfc0 (reached on both bit-1 outcomes)",
+                      off["sequence"])
+        self.assertIn("0xfffffe0008f2c2d8", " ".join(off["sequence"]))
+        # The sequences touch the PS and PWGATE windows, not only the ANE window.
+        self.assertNotIn(on["controllers"]["ps"], on["controllers"]["pwgate"])
+
+    def test_validate_semantics_recorded_with_panic_limit(self):
+        validate = BASE["powerObservations"]["validate"]
+        self.assertEqual(validate["address"], "0xfffffe0008f74194")
+        self.assertEqual(validate["observedCallsBoolArgument"], 0)
+        self.assertIn("panics", validate["semantics"])
+        self.assertIn("0xe00002bc", validate["semantics"])
+
+    def test_provider_tables_and_clock_requests_recorded(self):
+        tables = BASE["pathObservations"]["providerTables"]
+        for prop in ("clock-ids", "power-gates", "service-gates", "service-reset",
+                     "service-name", "pin-groups"):
+            self.assertIn(prop, tables["properties"])
+        self.assertEqual(tables["address"], "0xfffffe000896a8c0")
+        requests = BASE["pathObservations"]["clockPowerRequests"]
+        self.assertEqual(requests["adtClockIds"], [327, 326, 325])
+        self.assertEqual(requests["directPathIndex"], "object896 = 0")
+        self.assertEqual(requests["enableDeviceClockSlot"], "0x8a8")
+        self.assertEqual(requests["enableDevicePowerSlot"], "0x8b0")
+        self.assertIn("325 has no attributed call site", requests["resolvedVotes"])
+
     def test_missing_prerequisites_cannot_shrink_required_set(self):
         self.evidence["prerequisites"] = {}
         result = plan.check(self.evidence)
