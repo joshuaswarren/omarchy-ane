@@ -4,13 +4,22 @@ Status: **source-pinned plan; nothing device-qualified.** All register
 offsets, window sizes, and power facts below are compiled-source or ADT
 observations, not device behavior. Hardware gates stay closed.
 
+Progress: the boot register map is pinned (RVBAR `0x1050000`, CPU control
+`0x1600044`, status `0x1600048`, SCRATCH `0x1880020`, DONE `0x08042006`),
+the T8140 firmware is verified against its fetch pin, and a T8140 soc row
+now exists in `ane/h17/ane_h17_soc.{h,c}` for this repo's own driver. The
+exclave analysis is in
+`receipts/2026-11-01-j700-h17-exclave-vs-sep/`.
+
 ## Context
 
-The running aurora kernel `7.2.11-6-1-ARCH` ships an ANE driver pair
-(`ane.ko` for t8103/t6000, `ane_t6021.ko` for t6020/t6021/t6022/t8112)
-in `drivers/accel/ane/`. Neither matches `apple,t8140-ane`. The T8140
-H17 target differs from the shipped H14G/T8112 support in three pinned
-ways:
+Two Linux ANE drivers exist. This repo's `ane/` tree builds its own
+`ane.ko` plus the opt-in `ane/h16/` (T8132/T6040/T6041) and
+`ane/t6021/` family, with a per-SoC `struct ane_h16_soc` register table.
+The running aurora kernel also ships `drivers/accel/ane/` (`ane.ko` for
+t8103/t6000, `ane_t6021.ko` for t6020/t6021/t6022/t8112). Neither
+matches `apple,t8140-ane`. The T8140 H17 target differs from the shipped
+H14G/T8112 support in three pinned ways:
 
 1. H17 CPU block sits at engine+`0x1600044` (the h16g/h17/h18g
    `+0x200000` offset), not H14G's `0x1400044`.
@@ -79,15 +88,32 @@ lists only `ANE_SYS` (ps `0x290`) plus `ANE_CPU`, `ANE-SYS-V`,
 `ANE-SYS-V-PMP` (all `no_ps`), suggesting a simpler structure than T8112's
 eight islands. Do not add chains not evidenced in the ADT or Apple trace.
 
-### 2. Driver: add a T8140 descriptor
+### 2. Driver: add a T8140 row to this repo's H16/H17 table
+
+This repo's own driver family already has the right shape: `ane/h16/`
+defines `struct ane_h16_soc` with per-SoC `cpu_control`, `cpu_status`,
+`rvbar`, `scratch0`, `irq_status`, `irq_ack`, `mbox`, `wrapper_pa`,
+`cpu_pa` and `ps_off[5]`, and its header names `ane/h17/ane_h17_soc.h`
+as the H17 extension point. The T8132 row already uses
+`0x1600044`/`0x1600048`/`0x1050000`/`0x1880020`/`0x1608000` — the same
+layout H17 needs.
+
+Authored this round: `ane/h17/ane_h17_soc.{h,c}` with `ane_t8140_soc`
+and the THEIA_D9X firmware descriptor (compiles and passes its
+type/value check). Wiring it in is the remaining step:
 
 - Add `{ .compatible = "apple,t8140-ane", .data = &ane_t8140_soc }` to
-  `ane_rtclient_of_match` (and/or `ane_of_match`).
-- `ane_t8140_soc` fields to pin: `ps_cpu_off = 0xc000`,
-  `pwgate_off = 0x268c`, plus the H17 register map (below). Mirrors
-  `ane_t8112_soc` in `ane_t6021_fwload.c` (ps `0xc008`, pwgate `0x8b8`).
-- Reuse the existing genpd attach + `ACTUAL == 0xf` gate + PWGATE-closed
-  refusal unchanged.
+  `ane_h16_of_match` in `ane/h16/ane_h16_main.c`, and build
+  `ane_h17_soc.o` into the module. **Not done on purpose**: the H16
+  driver would then claim a boot path that has never run. Gate this on
+  hardware qualification.
+- The mailboxes are engine-relative (`mbox = 0x1608000`), so no DT
+  mailbox node is needed. The DTS patch supplies the `pmgr`/`set`
+  windows and the `ps_ane_sys_cpu` pwrstate.
+
+An alternative target is the in-tree `drivers/accel/ane/ane_t6021.ko`
+(uses the `ane_t602x_soc` descriptor, ps `c000`/pwgate `268c`); its
+register map is hardcoded H14G, so that path needs a bigger refactor.
 
 ### 3. Pin the H17 register map (kernelcache, offline)
 
@@ -108,8 +134,12 @@ and H17; only the CPU control/status block shifts by `+0x200000`
 entry), clear CPU_CONTROL, set CPU_CONTROL RUN (`0x10`), then poll
 SCRATCH7 for `0x08042006`.
 
-Still unpinned: the H17 ASC mailbox control offsets (H14G `0x1408110`/
-`0x1408114`), the CPU_STATUS pre-boot idle value (H14G `0x2a`), and the
+The ASC mailbox is engine-relative: the T8132/H16 row uses
+`mbox = 0x1608000`, so with the shared `+0x200000` shift the H17 control
+words are `0x1608110`/`0x1608114` (mbox + `0x110`/`0x114`). That value is
+a T8132-template candidate for H17, not yet traced.
+
+Still unpinned: the CPU_STATUS pre-boot idle value (H14G `0x2a`) and the
 roles of two extra configured offsets (field 292 = `0x1880064`, field 312
 = `0x1c201060`).
 
@@ -144,7 +174,7 @@ Per-SoC register offsets to add (H17 column pinned this round):
 | `cpu_status_off` | `0x1400048` | `0x1600048` |
 | `rvbar_off` | `0x1050000` | `0x1050000` |
 | `scratch0_off` | `0x1840048` | `0x1880020` |
-| mailbox ctrl | `0x1408110/0x1408114` | unpinned |
+| mailbox ctrl | `0x1408110/0x1408114` | `0x1608110/0x1608114` (candidate) |
 
 Add `{ .compatible = "apple,t8140-ane", .data = &ane_t8140_soc }` to
 `ane_rtclient_of_match`. This gets probe + a gated register read; firmware
