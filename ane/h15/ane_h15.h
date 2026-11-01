@@ -19,18 +19,7 @@
 #include <crypto/sha2.h>
 #include "ane_h15_adt.h"
 
-/* One pinned firmware payload. The Mach-O vm layout (text/data
- * fileoff, patchbay/tunables) is NOT measured for any H15 image
- * (sources S2/S3: the firmware list and the payload, not a parse of the
- * image). The H16 module reuses the iBoot preload instead of staging
- * a file; that path is the H15 default too. fw_path= is the explicit
- * override the volunteer signs. */
-struct ane_h15_fw {
-	const char *name;
-	u8 sha256[32];
-	u32 size;		/* the size the SHA-256 was taken over (S3) */
-	u32 manifest_size;	/* the firmware list (S2) size; differs by 25 */
-};
+#include "ane_h15_fw_pins.h"
 
 /* word group: name, where, offset, size (4 or 8 bytes), tier, source.
  * The module's stages check tier, not the offsets; offset is for the
