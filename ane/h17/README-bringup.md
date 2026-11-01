@@ -176,6 +176,26 @@ Only `RESULT stage=3 verdict=PASS reason=ane-sys-on` with `actual=0xf`
 passes this rung. Record the full PMGR word and the post-unload genpd
 state. Do not proceed to firmware wake on a failed or missing result.
 
+## Stage 3b: PMGR-only sub-domain read
+
+`ane_h17_cpu_ps_probe.ko` reuses the same overlay device and does one
+`ps_ane_sys` vote, then **reads only** PMGR words `0x290` and
+`0xc000/0xc008/0xc010/0xc018`. No engine MMIO. Load it with the stage-3
+module unloaded:
+
+```sh
+sudo insmod ane/h17/ane_h17_cpu_ps_probe.ko optin=1
+sudo dmesg --color=never | grep 'ane_h17_cpu_ps' | tail -12
+sudo rmmod ane_h17_cpu_ps_probe
+```
+
+Measured on boot `1d31ba24-…`: `0x290` on (`0x23ff`), and all four
+sub-domain words at `ACTUAL=0` (`WAS_GATED=0x3` for the first three;
+`0xc018` reads `0x0`). The ANE engine is therefore unpowered. Raising a
+sub-domain needs a DT genpd node and a planned reboot; a direct ps-word
+write is not attempted. Receipt:
+`receipts/2026-11-01-j700-h17-stage3b-subdomain-off/`.
+
 ## Stage 4: offline development only — current status
 
 The module refuses before engine access **or watchdog rehearsal**. The

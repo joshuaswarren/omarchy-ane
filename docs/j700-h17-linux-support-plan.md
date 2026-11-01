@@ -83,8 +83,20 @@ This converts the Apple driver's direct `0xc000` write into a genpd raise
 — the only path the shipped Linux driver trusts ("a direct ps-word write
 from kernel context has hung the machine").
 
-Uncertain: whether H17 has H14-style `td`/`base`/`set1..4` islands. The ADT
-lists only `ANE_SYS` (ps `0x290`) plus `ANE_CPU`, `ANE-SYS-V`,
+Stage 3b measured the live words: `0xc000/0xc008/0xc010` all report
+`ACTUAL=0` (`WAS_GATED=0x3`) and `0xc018` reads all-zero, so the chain
+exists but every island is off. Two things are still ambiguous and must be
+settled before this node is trusted:
+- **Offset.** The Apple ane-type `0x200` trace writes `0xc000` for CPU
+  power, but the T8132/T8112 family uses `0xc008` for ANE_CPU and `0xc000`
+  for ANE_MPM. `c000` in this snippet is the Apple-trace candidate; `c008`
+  is the family-template candidate. Try both under a planned reboot and
+  keep whichever reaches `ACTUAL=0xf`.
+- **Unused words.** `0xc018` reads `0x0`, so H17 may have fewer than four
+  islands.
+
+Also uncertain: whether H17 has H14-style `td`/`base`/`set1..4` islands.
+The ADT lists only `ANE_SYS` (ps `0x290`) plus `ANE_CPU`, `ANE-SYS-V`,
 `ANE-SYS-V-PMP` (all `no_ps`), suggesting a simpler structure than T8112's
 eight islands. Do not add chains not evidenced in the ADT or Apple trace.
 
