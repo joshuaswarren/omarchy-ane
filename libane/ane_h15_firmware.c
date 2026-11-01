@@ -16,25 +16,10 @@ enum {
 	H15_IMAGE_SIZE = 0x36c000
 };
 
-static const struct ane_h15_fw *firmware_for_soc(uint32_t soc)
+int ane_h15_firmware_stage(uint32_t soc, uint32_t engine, const void *payload,
+			   uint64_t size, struct ane_h15_firmware *out)
 {
-	switch (soc) {
-	case 0x8122:
-		return &ane_fw_t8122;
-	case 0x6030:
-		return &ane_fw_t6030;
-	case 0x6031:
-	case 0x6034:
-		return &ane_fw_t6031;
-	default:
-		return NULL;
-	}
-}
-
-int ane_h15_firmware_stage(uint32_t soc, const void *payload, uint64_t size,
-			   struct ane_h15_firmware *out)
-{
-	const struct ane_h15_fw *pin = firmware_for_soc(soc);
+	const struct ane_h15_fw *pin = ane_h15_fw_for_engine(soc, engine);
 	const uint8_t *bytes = payload;
 	uint8_t digest[ANE_SHA256_LEN];
 	void *storage;
