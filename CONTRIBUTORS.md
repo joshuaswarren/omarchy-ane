@@ -1,5 +1,8 @@
 # Contributors
 
+This driver continues the eiln/ane lineage; upstream authors named in the
+registry are credited for the foundation their commits provide.
+
 <!-- BEGIN GENERATED CONTRIBUTORS (contributors.yml; do not hand-edit) -->
 
 - [@chriskearney](https://github.com/chriskearney)
