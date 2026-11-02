@@ -3,8 +3,8 @@
 # Build from this checkout: cd packaging/arch/omarchy-ane-h17-ps-probe-dt && makepkg -f
 pkgname=omarchy-ane-h17-ps-probe-dt
 pkgver=0.1.0
-pkgrel=1
-pkgdesc="Opt-in J700 ANE_SYS power-state probe overlay"
+pkgrel=2
+pkgdesc="Opt-in J700 ANE power-state probe overlay (stage 3 + 3c)"
 arch=('aarch64')
 url="https://github.com/3j27/omarchy-ane"
 license=('MIT' 'GPL-2.0-only')
