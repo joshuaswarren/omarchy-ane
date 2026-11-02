@@ -1,0 +1,31 @@
+# Focused host check for the H18 ANE0 owned-image staging unit.
+# Sibling-local build only: no shared-repo wiring, no kernel/module build.
+CC      = gcc
+CFLAGS  = -I. -I../../libane -Wall -Werror -Wextra \
+	  -Wdeclaration-after-statement -O3 -std=gnu99
+BUILD   = ../../build
+PAYLOAD ?= ../../private/fixture/h18_ane0_fw_kirkland_j8xx.payload.bin
+
+.PHONY: check clean
+
+check: $(BUILD)/test_owned_firmware_h18 $(BUILD)/calloc_fail_shim.so
+	$(BUILD)/test_owned_firmware_h18 $(PAYLOAD)
+	ANE_H18_TEST_FAIL_CALLOC=1 ANE_H18_TEST_EXPECT_ENOMEM=1 \
+		LD_PRELOAD=$(BUILD)/calloc_fail_shim.so \
+		$(BUILD)/test_owned_firmware_h18 $(PAYLOAD)
+
+$(BUILD)/test_owned_firmware_h18: test_owned_firmware_h18.c \
+		../../libane/ane_h18_firmware.c ../../libane/ane_sha256.c \
+		../../libane/ane_h18_firmware.h ../../libane/ane_sha256.h \
+		ane_h18_fw_pins.h ane_h18_fw_layout.h calloc_fail_shim.c
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) test_owned_firmware_h18.c \
+		../../libane/ane_h18_firmware.c ../../libane/ane_sha256.c -o $@
+
+$(BUILD)/calloc_fail_shim.so: calloc_fail_shim.c
+	@mkdir -p $(BUILD)
+	$(CC) -shared -fPIC -Wall -Werror -Wextra -std=gnu99 calloc_fail_shim.c \
+		-o $@ -ldl
+
+clean:
+	rm -rf $(BUILD)
