@@ -313,3 +313,7 @@ The table is generated from `data/ane-soc/` and the data-only overlays.
 | T8150 | H18 | 5 | no |
 | T8152 | H18 | 1 | yes |
 <!-- END DATA-ONLY TABLE -->
+
+## Contributors
+
+Everyone credited so far: [CONTRIBUTORS.md](CONTRIBUTORS.md).
