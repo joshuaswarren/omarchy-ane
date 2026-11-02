@@ -81,7 +81,16 @@ directory.
 
 `t8132-ane-experimental.dts` builds `t8132-ane-experimental.dtbo`
 (opt-in key `ane-h16-experimental`). The package does not install it.
-The first M4 owner:
+It ships the three ANE DART nodes as `status = "disabled"` and the
+`ane` node without an `iommus` property, as the H15 overlays do:
+enabled DART nodes hung a T6030 at boot through equivalent nodes.
+`stage=dt` and `stage=status` need no DART. `stage=boot` refuses with
+"device has no iommu domain" on this overlay; it needs
+`t8132-ane-dart-experimental.dts` (same key, the three DART nodes
+enabled and listed in `iommus` with stream 0), used in place of the
+first overlay only after `stage=status` passed on the same machine.
+`omarchy-ane-probe` reports the ANE node as `not-exposed` with the
+first overlay. That is expected. The first M4 owner:
 
 1. `dtc -q -@ -I dts -O dtb -o ane-h16.dtbo t8132-ane-experimental.dts`
    (or take the compiled dtbo from the receipt),
@@ -112,7 +121,8 @@ dmesg lines back.
    Expected: five ps words logged with ACTUAL (bits 7:4) = 0xf, RVBAR probably
    latched, CPU_STATUS reads 0x2a-shaped, SCRATCH all zero. Send
    `dmesg | grep ane_h16`.
-2. `stage=boot hello_wait_ms=1000`. Expected: preload diffs only
+2. Swap in `t8132-ane-dart-experimental.dtbo` and reboot, then
+   `stage=boot hello_wait_ms=1000`. Expected: preload diffs only
    inside the patchbay/tunables and single iBoot words; the staged
    mapping at the ADT IOVAs; SCRATCH7 reaches 0x08042006; then either
    an RTKit HELLO/EPMAP exchange in the log, or a bounded "mailbox
