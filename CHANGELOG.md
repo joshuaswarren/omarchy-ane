@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The H13 driver now finishes a failed recovery after the engine's next full power-off, without a reboot. The partition cycle never powers off ane_sys, the domain that also powers the DARTs, so the task manager keeps the dead task's error latched (Grandpa T8103, 2026-11-02: `tm not idle after reset: 0x0`). Once the cycle has gated the engine, a wedged device may now autosuspend. The next client call checks the task manager, and only an idle result clears the wedge, drops the pin and reclaims the preserved mappings. Repeated calls before that power-off fail fast and do not re-cycle. The completion-failure log now names its cause (timeout, event overflow, DART fault, nid mismatch) and the task-manager state. CPU model tests cover both stages; hardware retirement is not qualified by them.
+- `ane-run --expect-bind IN:OUT`: refuse, before any submit, a program whose converter channel plan disagrees with the binding libane derives from the task stream.
 - `omarchy-ane-smoke`: refuse a run before launching the runner when bound devices span multiple dies or their die identity is unreadable. Report no die instead of guessing die 0.
 - docs: correct the M2 Pro default list and Ultra volunteer steps. Preserve other opt-in keys when adding a key. Remove the die-1 promotion sequence whose smoke result can name the wrong die.
 - `promotion_check`: do not judge a block whose check output binds both dies. This covers runtime and fallback rows in either line order, even with a scalar die field. Rows that bind one die keep their old behavior.

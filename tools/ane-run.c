@@ -1766,12 +1766,82 @@ static int cmp_double(const void *a, const void *b)
 	return (x > y) - (x < y);
 }
 
+/*
+ * --expect-bind IN:OUT, e.g. 7,8,9,10,11,12:4,5,6: the surface channel the
+ * caller's converter placed each input and output on, in index order.
+ * libane derives the role order from the task stream (ane_bind.h); when a
+ * converter's channel plan disagrees with what its own rewritten stream
+ * does, --in/--out indices land on the wrong surfaces and the program runs
+ * on garbage. Grandpa, 2026-11-02: a 6-in/3-out probe whose rewire assumed
+ * Apple numbers inputs first; Apple numbered the nine ports alphabetically,
+ * so the stream wrote its last output into an input's surface. Refusing
+ * before any submit turns that into a clear error.
+ */
+static int parse_channel_list(const char *text, uint8_t *out, uint32_t *count)
+{
+	char *end;
+
+	*count = 0;
+	while (*text) {
+		unsigned long ch = strtoul(text, &end, 10);
+
+		if (end == text || ch >= TILE_COUNT || *count >= TILE_COUNT)
+			return -1;
+		out[(*count)++] = (uint8_t)ch;
+		if (*end == ',')
+			end++;
+		else if (*end)
+			return -1;
+		text = end;
+	}
+	return *count ? 0 : -1;
+}
+
+static void print_channels(const char *label, const uint8_t *ch, uint32_t n)
+{
+	fprintf(stderr, "%s", label);
+	for (uint32_t i = 0; i < n; i++)
+		fprintf(stderr, "%s%u", i ? "," : "", ch[i]);
+}
+
+static int check_expected_bind(struct ane_nn *nn, const char *spec)
+{
+	uint8_t want_in[TILE_COUNT], want_out[TILE_COUNT];
+	uint32_t n_in, n_out;
+	const uint32_t srcs = ane_src_count(nn), dsts = ane_dst_count(nn);
+	char buf[256];
+	char *colon;
+
+	if (strlen(spec) >= sizeof(buf))
+		return -1;
+	strcpy(buf, spec);
+	colon = strchr(buf, ':');
+	if (!colon)
+		return -1;
+	*colon = '\0';
+	if (parse_channel_list(buf, want_in, &n_in) ||
+	    parse_channel_list(colon + 1, want_out, &n_out))
+		return -1;
+	if (n_in == srcs && n_out == dsts &&
+	    !memcmp(want_in, nn->bind.src, n_in) &&
+	    !memcmp(want_out, nn->bind.dst, n_out))
+		return 0;
+	fprintf(stderr, "--expect-bind: libane binds the task stream as ");
+	print_channels("in=", nn->bind.src, srcs);
+	print_channels(" out=", nn->bind.dst, dsts);
+	print_channels("; expected in=", want_in, n_in);
+	print_channels(" out=", want_out, n_out);
+	fprintf(stderr, ". The converter's channel plan disagrees with its "
+		"stream; refusing before any submit.\n");
+	return 1;
+}
+
 static void usage(void)
 {
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
 		"[--out IDX=FILE]... [--repeat N] [--time] [--time-raw FILE] [--check OP] "
-		"[--weights FILE] [--dev N] [--tile-shift N]\n"
+		"[--weights FILE] [--dev N] [--tile-shift N] [--expect-bind IN:OUT]\n"
 		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
 		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
 		"  --dev N: the accel node to open (/dev/accel/accelN; default 0,\n"
@@ -1780,6 +1850,9 @@ static void usage(void)
 		"    (default 14 = 0x4000 bytes, the H13 island containers; 9 = 512 bytes,\n"
 		"    the whole-program containers from the hwxv2 converter). Index mode only,\n"
 		"    and M1-family index path only: the T6021 path does not read it.\n"
+		"  --expect-bind IN:OUT: the channel of each input and output, in\n"
+		"    index order (e.g. 7,8,9:4). Refuse to run, exit 2, when libane's\n"
+		"    stream-derived binding differs. M1-family index path only.\n"
 		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
 		"    select bmm rms\n"
@@ -1839,6 +1912,7 @@ int main(int argc, char **argv)
 	int dev = getenv("ANE_DEVICE") ? (int)strtoul(getenv("ANE_DEVICE"), NULL, 0) : 0;
 	/* 0 = libane's default unit (__ane_init); else __ane_init_shift. */
 	uint32_t tile_shift = 0;
+	const char *expect_bind = NULL;
 
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
@@ -1937,6 +2011,8 @@ int main(int argc, char **argv)
 				fprintf(stderr, "--tile-shift must be 1..20\n");
 				return 2;
 			}
+		} else if (!strcmp(argv[i], "--expect-bind") && i + 1 < argc) {
+			expect_bind = argv[++i];
 		} else if (!strcmp(argv[i], "--dry-run")) {
 			dry_run = 1;
 		} else {
@@ -1958,6 +2034,11 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
+	if (ports_mode && expect_bind) {
+		fprintf(stderr, "--expect-bind applies to index mode, not --ports\n");
+		free_port_read(&pr);
+		return 2;
+	}
 	if (ports_mode && tile_shift) {
 		fprintf(stderr, "--tile-shift applies to index mode, not --ports\n");
 		free_port_read(&pr);
@@ -1970,6 +2051,18 @@ int main(int argc, char **argv)
 		fprintf(stderr, "ane_init failed on %s\n", anec);
 		free_port_read(&pr);
 		return 1;
+	}
+
+	if (expect_bind) {
+		int bad = nn->m2 ? -1 : check_expected_bind(nn, expect_bind);
+
+		if (bad) {
+			if (bad < 0)
+				fprintf(stderr, "--expect-bind: bad spec %s, or "
+					"not the M1-family path\n", expect_bind);
+			ane_free(nn);
+			return 2;
+		}
 	}
 
 	ret = 0;
