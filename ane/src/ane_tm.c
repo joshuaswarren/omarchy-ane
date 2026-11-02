@@ -387,9 +387,14 @@ wedge:
 	 * file survives the cycle, recovery finishes after the next full
 	 * power-off (autosuspend); until then work is refused and the
 	 * failed job's mappings stay preserved. */
-	if (ane_tm_recover(ane) < 0)
-		dev_err(ane->dev,
-			"recovery deferred: refusing work, mappings preserved until the engine powers fully off (autosuspend_ms after the last client call)\n");
+	if (ane_tm_recover(ane) < 0) {
+		if (ane->quiesced)
+			dev_err(ane->dev,
+				"recovery deferred: refusing work, mappings preserved until the engine powers fully off (autosuspend_ms after the last client call)\n");
+		else
+			dev_err(ane->dev,
+				"recovery failed before the engine was gated; preserving resources until reboot\n");
+	}
 	return err;
 }
 
