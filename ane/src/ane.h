@@ -77,6 +77,26 @@ struct ane_device {
 	bool recovering;
 
 	/*
+	 * Full power-off recovery (ane_tm_recover). The partition cycle
+	 * gates only the ANE's own set domains: their parents and the root
+	 * ane_sys domain stay up, because ane_sys also powers the DARTs and
+	 * the DARTs are runtime-PM suppliers of the still-active ANE. The
+	 * task-manager file survives that cycle with the dead task's error
+	 * latched (TM_STATUS 0, Grandpa T8103 2026-11-02; TQ_EN 0x3000 on
+	 * T6001 2026-09-16). It clears only when the whole hierarchy powers
+	 * off, which is what every autosuspend does.
+	 *
+	 * quiesced: set under engine_lock once a recovery cycle has gated
+	 * the engine after the wedge, so in-flight DMA is stopped. Only
+	 * then may runtime suspend gate a wedged engine.
+	 * por_pending: set by that runtime suspend; the next recovery
+	 * call, made with the device resumed and re-armed, checks the
+	 * task manager instead of cycling the partitions again.
+	 */
+	bool quiesced;
+	bool por_pending;
+
+	/*
 	 * TM_STATUS sampled right after the first tm_enable at probe: the
 	 * engine's fresh, idle-state signature. Recovery accepts a reset
 	 * whose post-cycle status matches it, since the register reset
@@ -91,7 +111,8 @@ struct ane_device {
 	 * (T6001 bisect evidence 2026-09-16: TQ_EN still reads 0x3000
 	 * after a 2 s gate), so recovery must drain retained task-manager
 	 * state itself instead of expecting a power-on reset to clear it.
-	 * False on T8103, where the cycle is a full POR of the file.
+	 * False on T8103. It was believed to get a full POR of the file from
+	 * the cycle; Grandpa 2026-11-02 showed it does not (see quiesced).
 	 */
 	bool tm_retention;
 

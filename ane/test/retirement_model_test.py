@@ -19,6 +19,7 @@ parts = [function(tm, 'int ane_tm_recover(')]
 if 'void ane_wedge_clear(' in tm:
     parts.append(function(tm, 'void ane_wedge_clear('))
 parts.append(function(driver, 'static void ane_drm_postclose('))
+parts.append(function(driver, 'static int __maybe_unused ane_runtime_suspend('))
 COMMON = r'''
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,13 +34,23 @@ COMMON = r'''
 typedef uint32_t u32;
 struct ane_device {
     int wedged, engine_lock;
-    bool removed, tm_retention;
+    bool removed, tm_retention, recovering, quiesced, por_pending;
     u32 tm_status_fresh;
     char *engine;
     void *dev;
 };
 struct drm_device { struct ane_device *dev_private; };
 struct drm_file { int unused; };
+struct device { int unused; };
+#define __maybe_unused
+#define READ_ONCE(x) (x)
+#define WRITE_ONCE(x, v) ((x) = (v))
+#define EAGAIN 11
+#define EBUSY 16
+static struct ane_device *drvdata;
+static int dvfs_downs;
+#define dev_get_drvdata(d) (drvdata)
+static void ane_dvfs_down(struct ane_device *ane) { dvfs_downs++; }
 static int pins, cycle_rc, verify_rc, cycles, verifies, drains, enables;
 static int polls, reads, reclaims, violations, failures;
 static bool poll_complete;
@@ -75,6 +86,7 @@ static struct drm_device drm = { .dev_private = &ane };
 static void fresh(void) {
     memset(&ane, 0, sizeof(ane)); ane.engine = engine;
     ane.wedged = 1; ane.tm_retention = true; ane.tm_status_fresh = 0x22222222;
+    drvdata = &ane; dvfs_downs = 0;
     pins = 1; cycle_rc = verify_rc = cycles = verifies = drains = enables = 0;
     polls = reads = reclaims = violations = 0; poll_complete = false;
     status_value = TM_IS_IDLE;
@@ -104,6 +116,29 @@ int main(void) {
     EXPECT(ane_tm_recover(&ane) == -ETIMEDOUT && ane.wedged && pins == 1, "original power-on error propagates");
     fresh(); ane.engine_lock = 1; status_value = 0;
     EXPECT(ane_tm_recover(&ane) == -ETIMEDOUT && ane.wedged && pins == 1, "original idle-poll error propagates");
+    /* Two-stage recovery: the partition cycle leaves the TM latched
+     * (Grandpa T8103 2026-11-02, TM_STATUS 0); only the full power-off
+     * of an autosuspend clears it. */
+    fresh(); ane.tm_retention = false; status_value = 0; close_session();
+    EXPECT(ane.wedged && pins == 1 && ane.quiesced && !ane.por_pending && !reclaims && cycles == 1, "stage 1 failure gates the engine and keeps wedge/pin/mappings");
+    close_session();
+    EXPECT(cycles == 1 && polls == 1 && ane.wedged && pins == 1 && !violations, "retry before the full power-off neither re-cycles nor polls");
+    ane.engine_lock = 1;
+    EXPECT(ane_tm_recover(&ane) == -EAGAIN, "retry before the full power-off reports EAGAIN");
+    ane.engine_lock = 0;
+    EXPECT(ane_runtime_suspend(NULL) == 0 && ane.por_pending && dvfs_downs == 1, "quiesced wedge may autosuspend, which arms the idle check");
+    status_value = TM_IS_IDLE; close_session();
+    EXPECT(!ane.wedged && !pins && reclaims == 1 && cycles == 1 && polls == 2 && verifies == 2 && !ane.quiesced && !ane.por_pending && !violations, "after the full power-off, the idle check alone releases wedge/pin/mappings once");
+    EXPECT(ane_runtime_suspend(NULL) == 0 && !ane.por_pending, "healthy suspend arms nothing");
+    fresh(); ane.tm_retention = false; status_value = 0; cycle_rc = -EIO; close_session();
+    EXPECT(ane.wedged && !ane.quiesced && ane_runtime_suspend(NULL) == -EBUSY && !ane.por_pending && !dvfs_downs, "a wedge never gated by recovery still vetoes runtime suspend");
+    fresh(); ane.tm_retention = false; status_value = 0; close_session();
+    ane_runtime_suspend(NULL); close_session();
+    EXPECT(ane.wedged && pins == 1 && ane.quiesced && !ane.por_pending && cycles == 1 && polls == 2 && !reclaims, "TM still latched after a power-off stays wedged and waits for the next one");
+    ane_runtime_suspend(NULL); status_value = TM_IS_IDLE; close_session();
+    EXPECT(!ane.wedged && !pins && reclaims == 1 && cycles == 1 && !violations, "the next full power-off can still recover");
+    fresh(); ane.recovering = true;
+    EXPECT(ane_runtime_suspend(NULL) == 0 && !ane.por_pending, "recovery's own forced suspend arms nothing");
     printf("RESULT: %d behavioral failures\n", failures);
     return failures != 0;
 }
