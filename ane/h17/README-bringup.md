@@ -196,6 +196,18 @@ sub-domain needs a DT genpd node and a planned reboot; a direct ps-word
 write is not attempted. Receipt:
 `receipts/2026-11-01-j700-h17-stage3b-subdomain-off/`.
 
+## Stage 3c: sub-domain genpd vote — PASS
+
+`omarchy-ane-h17-ps-probe-dt 0.1.0-2` adds `power-controller@c000/@c008/
+@c010` (labels `ane_sub0/1/2`) as genpds chained off `ps_ane_sys`, plus
+the `ane-h17-cpu-vote` consumer. `ane_h17_cpu_vote_probe.ko` attaches to
+all three, adds runtime-active device links, and reads the PMGR words
+back. On boot `3134730e-…` / kernel `7.2.11-14-1-ARCH` every word read
+`TARGET=0xf ACTUAL=0xf BUSY=0`, and all domains returned `off-0` after
+`rmmod`. `0xc000` is the only word with `APPLE_PMGR_PS_AUTO` set. No raw
+ps-word write was performed. Receipt:
+`receipts/2026-11-02-j700-h17-stage3c-vote-pass/`.
+
 ## Stage 4: offline development only — current status
 
 The module refuses before engine access **or watchdog rehearsal**. The

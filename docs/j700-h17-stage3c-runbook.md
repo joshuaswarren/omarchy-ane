@@ -1,7 +1,12 @@
 # J700/H17 stage 3c runbook: raise the ANE sub-domains via genpd
 
-Status: **prepared, not executed.** Requires a planned reboot to install the
-extended DTBO. No engine register is read at this stage.
+Status: **executed 2026-11-02 — PASS.** Boot `3134730e-…` on kernel
+`7.2.11-14-1-ARCH`, preflight PASS, overlay applied, all three sub-domains
+reached `ACTUAL=0xf` and returned `off-0` on unload. Receipt:
+`receipts/2026-11-02-j700-h17-stage3c-vote-pass/`.
+
+Stage 4 (`ane_h17_engine_probe.ko`) is built but **not run**: it performs
+the first engine-window read, and a stalled read would force a reboot.
 
 ## What is prepared
 
@@ -69,3 +74,27 @@ did not reach `0xf`; stop and investigate, do not read the engine.
   "ane_td and ane_base are required; with only the other six raised, block
   access resets the machine" is the warning that keeps the engine read
   behind this gate.
+
+## Result (2026-11-02)
+
+```
+ane_h17_cpu_vote ane_sys off=0x290  word=0x23ff     target=0xf actual=0xf
+ane_h17_cpu_vote sub0    off=0xc000 word=0x1f0003ff target=0xf actual=0xf
+ane_h17_cpu_vote sub1    off=0xc008 word=0x3ff      target=0xf actual=0xf
+ane_h17_cpu_vote sub2    off=0xc010 word=0x3ff      target=0xf actual=0xf
+ane_h17_cpu_vote RESULT stage=3c verdict=PASS reason=all-subdomains-on
+```
+
+`0xc000` is the only word with `APPLE_PMGR_PS_AUTO` set (bits 27:24 =
+`0xf`), consistent with it being the head of the sub-chain. After `rmmod`
+every domain is `off-0`.
+
+## Stage 4 (built, not run)
+
+`ane_h17_engine_probe.ko` repeats the stage-3c vote, refuses unless every
+PMGR word reads `ACTUAL=0xf`, then maps `ane@400000000` and reads
+`CPU_STATUS` (`0x1600048`) and `RVBAR` (`0x1050000`). Both are on the
+H16/H17 read whitelist. This is the first engine-window access; if the
+domain set is insufficient for block access the read can stall the bus,
+and recovery is a reboot. It is therefore held until a reboot is
+acceptable.
