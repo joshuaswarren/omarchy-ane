@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `omarchy-ane-probe`: `soc_table` no longer fails with `AttributeError: 'str' object has no attribute 'get'` on the M4 family. The T6040, T6041 and T8132 tables give `mailbox` as one prose leaf; the probe now skips that section, and still compares the ANE and DART rows. Found on a J773g Mac mini (T8132).
 - `omarchy-ane-smoke`: refuse a run before launching the runner when bound devices span multiple dies or their die identity is unreadable. Report no die instead of guessing die 0.
 - docs: correct the M2 Pro default list and Ultra volunteer steps. Preserve other opt-in keys when adding a key. Remove the die-1 promotion sequence whose smoke result can name the wrong die.
 - `promotion_check`: do not judge a block whose check output binds both dies. This covers runtime and fallback rows in either line order, even with a scalar die field. Rows that bind one die keep their old behavior.

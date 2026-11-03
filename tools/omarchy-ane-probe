@@ -437,6 +437,9 @@ def soc_table(soc, board, family, tdir):
             check("boards", board, sorted(tokens), board.rsplit(",", 1)[-1].lower() in tokens)
     for key, nodes in (("ane", "ane_nodes"), ("dart", "dart_ane_nodes"), ("mailbox", "mailbox_nodes")):
         spec = v(table.get(key)) or {}
+        if isinstance(spec, str):
+            # A prose leaf (the t6040, t6041 and t8132 "mailbox") has no fields to compare.
+            spec = {}
         node = (family[nodes] or [None])[0]
         compat = v(spec.get("compatible"))
         dt_compat = node["compatible"] if node else None
