@@ -140,3 +140,25 @@ A first success is not a SCRATCH7 word but a **HELLO** read from I2A and a
 HELLO_REPLY written to A2I. If no HELLO arrives, the image either does not
 speak RTKit or was not released correctly — the same failure the H14 13.5
 firmware showed on every recorded boot.
+
+## Prerequisite surfaced 2026-11-03: the ANE clocks are unmodelled
+
+The full ADT (`/dev/mtd1ro`) gives the ANE node:
+
+```
+clock-ids   = <0x147 0x146 0x145>   # 327, 326, 325
+clock-gates = <0x123 0x152>         # 291, 338 = ANE-SYS-V, ANE-SYS-V-PMP
+power-gates = <0x123 0x152>
+```
+
+Linux models none of them: no PMGR clock driver in this tree, no
+`clock-controller@` nodes in `t8140-pmgr.dtsi`, and neither the H16 nor
+the T6021 driver votes clocks. The Apple driver votes them through
+`enableDeviceClock` over the `clock-ids` table.
+
+The ID-to-register map is not in the ADT; it lives in
+`AppleH17PPlatformIO`'s `function-clock_gate`. See
+`receipts/2026-11-03-j700-h17-clock-gap/`.
+
+Any engine read or write should wait for this to be closed: a gated clock
+is the best explanation for the intermittent PMU-level resets.
