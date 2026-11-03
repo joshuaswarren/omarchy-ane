@@ -23,6 +23,7 @@ modules:
 check: ane_h15_adt_test test_domain_window
 	./ane_h15_adt_test
 	./test_domain_window
+	python3 test_trace_ane_h15.py
 
 ane_h15_adt_test: ane_h15_adt_test.c ane_h15_adt.h
 	$(CC) $(CFLAGS) -I. ane_h15_adt_test.c -o $@
