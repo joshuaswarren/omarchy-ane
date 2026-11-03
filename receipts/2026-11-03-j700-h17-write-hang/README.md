@@ -54,3 +54,28 @@ resets have no kernel trace), and review whether the synthetic genpd
 consumers should remain installed at all. The write path also needs an
 independent review of the full seven-step sequence before another
 attempt.
+
+## Follow-up: the only abnormal hardware signal is USB
+
+Across boots `024c93b4…`, `ad334b97…`, `6c6fda93…`, `878ab177…` the
+kernel log has no ANE line, no panic, no watchdog, and no shutdown
+sequence. The recurring signal is a USB mass-storage device resetting
+continuously:
+
+```
+usb 1-1.1.4: SerialNumber: 20240418000000
+usb-storage 1-1.1.4:1.0: USB Mass Storage device detected
+usb 1-1.1.4: reset high-speed USB device number 4 using xhci-hcd   (8x in ~50 s)
+```
+
+Topology: root hub → VIA Labs USB2.0 hub (`1-1`) → QinHeng USB2.0 hub
+(`1-1.1`) → this mass-storage device (`1-1.1.4`), alongside a QinHeng
+CDC-Ethernet adapter (`1-1.1.5`); an iPhone is on `1-1.2`.
+
+AC is online, the battery is charging, thermals are ~56–59 °C, and
+`btrfs device stats` reports zero errors, so those are not implicated.
+
+Until the USB chain is ruled out, ANE hardware work cannot be separated
+from host resets. Suggested next step (host owner): unplug the generic
+USB2.0 mass-storage device and the QinHeng hub, then observe whether the
+reboot cycle stops before resuming ANE work.
