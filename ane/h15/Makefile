@@ -77,6 +77,7 @@ sim-overlay-mutation:
 
 sim-test: sim/sim_h15 sim-overlay test_rtk_startup test_t8122_start
 	./sim/sim_h15 pos
+	./sim/sim_h15 neg-run
 	./test_rtk_startup
 	./test_t8122_start
 
