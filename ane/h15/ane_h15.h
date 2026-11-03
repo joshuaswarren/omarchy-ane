@@ -123,8 +123,6 @@ struct ane_h15_soc {
 	u32 pwgate_size;	/* PWGATE window size (0x4000) */
 	u32 pwgate_word;	/* offset of the gate word inside the window (T6031 0x199c, T6030 0x2b6c,
 				 * T8122 0x272c) */
-	bool pwgate_write;	/* the row may run the pwgate_t6031 write step (T6031 only); a row with a
-				 * window and no write is read only (pwgate_read) */
 	const u32 *ps_off;	/* 5 pmgr-relative offsets: SYS MPM CPU TD BASE */
 	const struct ane_h15_word *words;
 	const struct ane_h15_fw *fw;

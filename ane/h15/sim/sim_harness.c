@@ -1214,6 +1214,7 @@ static int dm_msgs_left;
 static bool dm_s7_ready;	/* scratch_boot model: the firmware publishes the ready word in SCRATCH7 once started */
 static bool dm_s7_stuck;	/* scratch_boot model: the SCRATCH7 register ignores the clear and always reads the stale word */
 static u32 dm_pw_word;		/* pwgate model: what the word at PWGATE + 0x199c reads */
+static int dm_pw_reads;		/* pwgate model: how many times the word was read */
 static bool dm_pw_stuck;	/* pwgate model: the register ignores the 0 write and the poll never opens */
 
 static u32 eng_get(const struct ane_h15_soc *s, u32 off)
@@ -1228,7 +1229,7 @@ static void dm_write(u64 pa, u32 v)
 	if (pa != s->engine_pa + s->cpu_control) {
 		/* pwgate model: a 0 to the gate word opens it within the
 		 * first 10 us poll, unless the register ignores the write */
-		if (s->pwgate_write && pa == s->pwgate_pa + s->pwgate_word && !dm_pw_stuck)
+		if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word && !dm_pw_stuck)
 			dm_pw_word &= ~3u;
 		return;
 	}
@@ -1249,8 +1250,10 @@ static u32 dm_read(u64 pa, u32 v)
 {
 	const struct ane_h15_soc *s = dm_soc;
 
-	if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word)
+	if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word) {
+		dm_pw_reads++;
 		return dm_pw_word;
+	}
 	if (dm_s7_stuck && pa == s->engine_pa + 0x1840050u + 4 * 7)
 		return 0x08042006u;	/* the register ignored the clear */
 	if (pa == s->engine_pa + s->mbox + 0x838) {	/* popping a message */
@@ -1296,6 +1299,7 @@ static void run_setup(const struct ane_h15_soc *s, const char *compat, u32 ctrl)
 	dm_s7_ready = false;
 	dm_s7_stuck = false;
 	dm_pw_word = 0;
+	dm_pw_reads = 0;
 	dm_pw_stuck = false;
 	dm_msgs_left = 0;
 	sim_write_hook = dm_write;
@@ -2007,29 +2011,155 @@ static int neg_run(void)
 		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0 && sim_bus_faults == 0,
 		    "PW7 pwgate_t6031=3: refused before any bus access, no window mapped");
 
-		/* PW8 (g): the write step is a T6031 row property (pwgate_write). t8122, t6030
-		 * and t6034 refuse the parameter in probe before any MMIO and
-		 * any mapping. */
-		{
-			static const struct { const struct ane_h15_soc *soc; const char *compat; } rows[] = {
-				{ &ane_t8122_soc, "apple,t8122-ane" },
-				{ &ane_t6030_soc, "apple,t6030-ane" },
-				{ &ane_t6034_soc, "apple,t6034-ane" },
-			};
-
-			for (i = 0; i < (int)ARRAY_SIZE(rows); i++) {
-				run_setup(rows[i].soc, rows[i].compat, 0);
-				pwgate_t6031 = 1;
-				ret = probe_now();
-				snprintf(name, sizeof(name),
-					 "PW8 %s pwgate_t6031=1: refused before any MMIO and any mapping",
-					 rows[i].soc->name);
-				chk(ret != 0 && log_count("pwgate_t6031") >= 1 &&
-				    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
-			}
-		}
+		/* PW8 (g): a row without a PWGATE window (t6034) refuses the parameter in probe
+		 * before any MMIO and any mapping. */
+		run_setup(&ane_t6034_soc, "apple,t6034-ane", 0);
+		pwgate_t6031 = 1;
+		ret = probe_now();
+		chk(ret != 0 && log_count("pwgate_t6031: the t6034 row has no PWGATE window") == 1 &&
+		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+		    "PW8 t6034 pwgate_t6031=1: refused before any MMIO and any mapping");
 	}
 	return fails;
+}
+
+/* ---- stage 5 with pwgate_t6031 on the T8122 and T6030 rows ----
+ * Every row with a PWGATE window runs the same step as the T6031 row. The addresses below are literals, so a
+ * wrong window or word offset in the SoC table fails here. The step is the last action before the first
+ * CPU_CONTROL write and writes the one PWGATE word, nothing else in the window. */
+static void pw_order(const struct ane_h15_soc *s, u64 wpa, int *ri, int *wi, int *cc)
+{
+	int i;
+
+	*ri = *wi = *cc = -1;
+	for (i = 0; i < sim_n_events && i < SIM_MAX_EVENTS; i++) {
+		if (sim_events[i].pa == wpa) {
+			if (sim_events[i].write) {
+				if (*wi < 0)
+					*wi = i;
+			} else if (*ri < 0) {
+				*ri = i;
+			}
+		} else if (sim_events[i].write && sim_events[i].pa == s->engine_pa + s->cpu_control && *cc < 0) {
+			*cc = i;
+		}
+	}
+}
+
+static void pos_run_pwgate_rows(void)
+{
+	static const struct {
+		const struct ane_h15_soc *soc;
+		const char *compat;
+		u64 window, wpa;
+		const char *read_log, *write_log;
+	} rows[] = {
+		{ &ane_t8122_soc, "apple,t8122-ane", 0x2d0724000ull, 0x2d072672cull,
+		  "ane_h15 read PWGATE pa=0x2d072672c", "ane_h15 write PWGATE=0x0 pa=0x2d072672c" },
+		{ &ane_t6030_soc, "apple,t6030-ane", 0x350724000ull, 0x350726b6cull,
+		  "ane_h15 read PWGATE pa=0x350726b6c", "ane_h15 write PWGATE=0x0 pa=0x350726b6c" },
+	};
+	unsigned int rstage;
+	char verdict[32], reason[192], name[160];
+	int r, ri, wi, cc, n, first, ret, before = fails;
+	u32 w[8];
+
+	for (r = 0; r < (int)ARRAY_SIZE(rows); r++) {
+		const struct ane_h15_soc *s = rows[r].soc;
+		const char *t = s->name;
+
+		/* WR1: default off. The run is what it was before: two CPU_CONTROL writes, no PWGATE access. */
+		run_setup(s, rows[r].compat, 0x0);
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR1 %s default off: PASS core-started-and-stopped, no suffix", t);
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    rstage == 5 && !strcmp(verdict, "PASS") && !strcmp(reason, "core-started-and-stopped"), name);
+		n = run_writes(s, w, 8, &first);
+		snprintf(name, sizeof(name), "WR1 %s default off: no PWGATE access, engine writes [0x10, 0], two windows mapped", t);
+		chk(events_in(rows[r].window, 0x4000, 0) == 0 && log_count("PWGATE") == 0 && n == 2 && w[0] == 0x10 &&
+		    w[1] == 0 && sim_n_iomap == 2 && sim_n_iounmap == 0, name);
+		ane_h15_remove(&pdev);
+
+		/* WR2: mode 1, bits 1:0 set. One read, one write of 0 at the literal address, a poll, then RUN. */
+		run_setup(s, rows[r].compat, 0x0);
+		pwgate_t6031 = 1;
+		dm_pw_word = 0x1237u;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR2 %s word 0x1237: PASS, reason core-started-and-stopped pwgate=opened word=0x1234", t);
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    rstage == 5 && !strcmp(verdict, "PASS") &&
+		    !strcmp(reason, "core-started-and-stopped pwgate=opened word=0x1234"), name);
+		pw_order(s, rows[r].wpa, &ri, &wi, &cc);
+		snprintf(name, sizeof(name), "WR2 %s one write of 0 to the literal word, preceded by a read, before CPU_CONTROL", t);
+		chk(wi >= 0 && ri >= 0 && ri < wi && sim_events[wi].val == 0 && cc > wi &&
+		    events_in(rows[r].wpa, 4, 1) == 1 && events_in(rows[r].window, 0x4000, 1) == 1, name);
+		snprintf(name, sizeof(name), "WR2 %s the read and write are logged before they happen, the poll opens at pass 1", t);
+		chk(log_count(rows[r].read_log) == 2 && log_count(rows[r].write_log) == 1 &&
+		    log_count("ane_h15 pwgate open after 1 poll") == 1, name);
+		n = run_writes(s, w, 8, &first);
+		snprintf(name, sizeof(name), "WR2 %s the engine writes stay [0x10, 0]; claims released", t);
+		chk(n == 2 && w[0] == 0x10 && w[1] == 0 && sim_pm_get == 1 && sim_pm_put == 1, name);
+		ane_h15_remove(&pdev);
+		snprintf(name, sizeof(name), "WR2 %s the window was mapped and unmapped again", t);
+		chk(sim_n_iomap == 2 && sim_n_iounmap == 3 && sim_bus_faults == 0, name);
+
+		/* WR3: mode 1, the word already 0: a read, no write, no poll. */
+		run_setup(s, rows[r].compat, 0x0);
+		pwgate_t6031 = 1;
+		dm_pw_word = 0;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR3 %s word already 0: PASS pwgate=already-open, nothing written to the window", t);
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    !strcmp(reason, "core-started-and-stopped pwgate=already-open") &&
+		    events_in(rows[r].window, 0x4000, 1) == 0 && log_count(rows[r].read_log) == 1, name);
+		ane_h15_remove(&pdev);
+
+		/* WR4: mode 2, word 0: the unconditional order writes 0 once. */
+		run_setup(s, rows[r].compat, 0x0);
+		pwgate_t6031 = 2;
+		dm_pw_word = 0;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR4 %s mode 2: one forced write to the literal word", t);
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    !strcmp(reason, "core-started-and-stopped pwgate=forced word=0x0") &&
+		    events_in(rows[r].wpa, 4, 1) == 1 && events_in(rows[r].window, 0x4000, 1) == 1 &&
+		    log_count(rows[r].write_log) == 1, name);
+		ane_h15_remove(&pdev);
+
+		/* WR5: the register ignores the write. The poll runs out, the run stops before any CPU_CONTROL write. */
+		run_setup(s, rows[r].compat, 0x0);
+		pwgate_t6031 = 1;
+		dm_pw_word = 0x1237u;
+		dm_pw_stuck = true;
+		dm_nostart = true;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR5 %s stuck gate: FAIL pwgate-not-open, zero CPU_CONTROL writes, one PWGATE write", t);
+		chk(ret != 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    rstage == 5 && !strcmp(verdict, "FAIL") && !strcmp(reason, "pwgate-not-open") &&
+		    run_writes(s, w, 16, &first) == 0 && events_in(rows[r].wpa, 4, 1) == 1 &&
+		    log_count("bits 1:0 still set after 5000 polls") == 1 && dm_pw_reads == 5001, name);
+		snprintf(name, sizeof(name), "WR5 %s stuck gate: nothing pinned, claims released, windows unmapped", t);
+		chk(sim_module_gets == 0 && sim_pm_get == sim_pm_put && sim_n_iomap == 2 && sim_n_iounmap == 3 &&
+		    log_count("do NOT unload") == 0, name);
+		ane_h15_remove(&pdev);
+
+		/* WR6: a value other than 0, 1 or 2 refuses in probe before any bus access. */
+		run_setup(s, rows[r].compat, 0x0);
+		pwgate_t6031 = 3;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR6 %s pwgate_t6031=3: refused before any bus access and any mapping", t);
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 2") == 1 && events_in(0, ~0ULL, 0) == 0 &&
+		    sim_n_iomap == 0, name);
+
+		/* WR7: the step is stage 5 only. Stage 2 with the parameter set refuses before any bus access. */
+		stage2_setup(s, rows[r].compat, -1);
+		pwgate_t6031 = 1;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "WR7 %s pwgate_t6031=1 at stage 2: refused before any bus access and any mapping", t);
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031: stage=run (5) only") == 1 &&
+		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
+	}
+	printf("  %-58s %s\n", "pos_run_pwgate_rows summary", fails == before ? "all WR checks PASS" : "FAILURES above");
 }
 
 /* ---- stage 2 with pwgate_read=1: the PWGATE word, read only ----
@@ -2053,10 +2183,10 @@ static void pos_pwgate_read(void)
 		{ &ane_t6031_soc, "apple,t6031-ane" },
 	};
 	/* Literal per-row facts, not read back from the rows: a wrong window or offset in the SoC table fails here. */
-	static const struct { u64 pa; u32 word; bool write; u64 wpa; } lit[] = {
-		{ 0x2d0724000ull, 0x272c, false, 0x2d072672cull },
-		{ 0x350724000ull, 0x2b6c, false, 0x350726b6cull },
-		{ 0x292290000ull, 0x199c, true, 0x29229199cull },
+	static const struct { u64 pa; u32 word; u64 wpa; } lit[] = {
+		{ 0x2d0724000ull, 0x272c, 0x2d072672cull },
+		{ 0x350724000ull, 0x2b6c, 0x350726b6cull },
+		{ 0x292290000ull, 0x199c, 0x29229199cull },
 	};
 	static const struct { u32 word; const char *gate; } vals[] = {
 		{ 0x30000003u, "closed" },
@@ -2074,9 +2204,9 @@ static void pos_pwgate_read(void)
 		const struct ane_h15_soc *s = rows[r].soc;
 		u64 word_pa = lit[r].wpa;
 
-		snprintf(name, sizeof(name), "PR0 %s: window, word offset, write permission and word address are the literals", s->name);
+		snprintf(name, sizeof(name), "PR0 %s: window, word offset and word address are the literals", s->name);
 		chk(s->pwgate_pa == lit[r].pa && s->pwgate_size == 0x4000 && s->pwgate_word == lit[r].word &&
-		    s->pwgate_write == lit[r].write && lit[r].pa + lit[r].word == lit[r].wpa, name);
+		    lit[r].pa + lit[r].word == lit[r].wpa, name);
 
 		for (v = 0; v < ARRAY_SIZE(vals); v++) {
 			stage2_setup(s, rows[r].compat, -1);
@@ -2127,7 +2257,7 @@ static void pos_pwgate_read(void)
 		const struct ane_h15_soc *s = r == 4 ? &ane_t6034_soc : &ane_t8122_soc;
 		const char *compat = r == 4 ? "apple,t6034-ane" : "apple,t8122-ane";
 		const char *want_log[] = { "pwgate_read 0 or 1", "pwgate_read: stage=wrapper (2) only",
-					   "pwgate_read: stage=wrapper (2) only", "pwgate_t6031: the t8122 row has no PWGATE write",
+					   "pwgate_read: stage=wrapper (2) only", "pwgate_read: stage=wrapper (2) only",
 					   "pwgate_read: the t6034 row has no PWGATE window" };
 
 		stage2_setup(s, compat, -1);
@@ -2147,18 +2277,6 @@ static void pos_pwgate_read(void)
 		    log_count(want_log[r]) == 1, name);
 	}
 
-	/* PR4: the write step stays T6031 only. T8122 and T6030 have a window now, still no write. */
-	for (r = 0; r < 2; r++) {
-		const struct ane_h15_soc *s = rows[r].soc;
-
-		stage2_setup(s, rows[r].compat, -1);
-		stage = "run";
-		pwgate_t6031 = 2;
-		ret = probe_now();
-		snprintf(name, sizeof(name), "PR4 %s pwgate_t6031=2: refused, no write step", s->name);
-		chk(ret != 0 && log_count("has no PWGATE write (T6031 only)") == 1 &&
-		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
-	}
 	printf("  %-58s %s\n", "pos_pwgate_read summary", fails == before ? "all PR checks PASS" : "FAILURES above");
 }
 
@@ -3378,6 +3496,7 @@ int main(int argc, char **argv)
 		pos_run_pmgr();
 		pos_run_scratch_boot();
 		pos_run_pwgate();
+		pos_run_pwgate_rows();
 		pos_pwgate_read();
 		pos_dart();
 		pos_translation();

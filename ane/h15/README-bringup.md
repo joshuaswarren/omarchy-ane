@@ -174,7 +174,7 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   the run before RUN with `FAIL scratch_boot=1 s7_ready=no clear-failed` and means the register ignored the write.
   The RESULT line carries `scratch_boot=1 s7_ready=<yes|no>`; the verdict rules
   are unchanged. The option is refused on every stage other than 5, before any bus access.
-  `pwgate_t6031` (stage 5 only, off by default, T6031 rows only) adds one more step as the
+  `pwgate_t6031` (stage 5 only, off by default, rows with a PWGATE window: T8122, T6030, T6031) adds one more step as the
   last action before the first CPU_CONTROL write, on top of either start order. macOS behaviour on a T6031: it writes 0 to the 32 bit register at
   offset 0x199c of a register window named PWGATE, then polls that word until bits 1:0 read 0
   (up to 0x1388 polls, 10 microseconds each). The window is the fifth reg entry of the ADT
@@ -186,8 +186,8 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   microseconds apart, until bits 1:0 read 0; the final word is logged. If the word already
   reads open, value 1 writes nothing. Value 2 always writes 0 first (the unconditional
   macOS order) and then polls. Any other value refuses in probe with
-  `REFUSED reason=pwgate_t6031 0 to 2`. The rows without the write step (t8122, t6030, t6034)
-  refuse the parameter in probe before any bus access and before any mapping, and so does
+  `REFUSED reason=pwgate_t6031 0 to 2`. A row without a PWGATE window (t6034)
+  refuses the parameter in probe before any bus access and before any mapping, and so does
   every stage other than 5. A poll timeout stops the run before any CPU_CONTROL write with
   `FAIL pwgate-not-open`: the core never starts, nothing is pinned, and the probe releases
   the power claims and unmaps the windows, like the `clear-failed` path of `scratch_boot`. A
@@ -214,8 +214,11 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   bytes: physical 0x350724000 on a T6030 and 0x2d0724000 on a T8122. It is the power-state register
   page, not a performance or DVFS page. The module maps the window, reads the word once and unmaps
   it. The parameter refuses in probe, before any bus access, unless the stage is 2 without `fw_seg` and
-  the row has the window. Only the T6031 row may run the write step above.
-  Nothing here says what the word reads on a live machine; the first run does.
+  the row has the window. Every row with the window may run the write step above: its word is at +0x272c
+  on a T8122 and at +0x2b6c on a T6030, in the third reg entry of the ANE node. The step is the same on all
+  three rows and the parameter keeps the name of the first row. A stage 2 read on a 13-inch M3 MacBook Air
+  (J613) on 2026-11-03 found the T8122 word 0x3, closed, with all five power domains on. No stage 5 run
+  with the write step has happened on any M3.
 
 - `stage=6` or `stage=rtkit`: stage 5 (all of its gates, `map_fw`, `fw_seg`) plus an RTKit management
   session over the ASC mailbox, behind `confirm_run=1` AND `confirm_rtkit=1`. It is the first stage that
