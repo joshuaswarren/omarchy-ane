@@ -228,6 +228,11 @@ module_param(stop_after_pwgate, bool, 0444);
 MODULE_PARM_DESC(stop_after_pwgate,
 		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1 or with scratch_boot=1 (pwgate_t6031 itself enforces stage 5).");
 
+static bool rpm_hold_sweep;
+module_param(rpm_hold_sweep, bool, 0444);
+MODULE_PARM_DESC(rpm_hold_sweep,
+		 "Stage=run (5): take a second runtime-PM reference immediately before the M6-lesson DART sweep and release it after, so the hold is explicit from the sweep's first read to its last. The probe's own get already spans the sweep; this one exists so a sweep crash can be measured with the hold made explicit rather than inherited. Default off, byte-identical.");
+
 static bool ps_assert;
 module_param(ps_assert, bool, 0444);
 MODULE_PARM_DESC(ps_assert,
@@ -1270,8 +1275,8 @@ static void ane_h15_step(const char *fmt, ...)
 		      (ns % 1000000000ULL) / 1000ULL);
 	if (ane_first_ps_ns)
 		n += scnprintf(buf + n, sizeof(buf) - n, "q=%llu.%03llums ",
-			       (ns - ane_first_ps_ns) / 1000000000ULL,
-			       ((ns - ane_first_ps_ns) % 1000000000ULL) / 1000000ULL);
+			       (ns - ane_first_ps_ns) / 1000000ULL,
+			       ((ns - ane_first_ps_ns) % 1000000ULL) / 1000ULL);
 	else
 		n += scnprintf(buf + n, sizeof(buf) - n, "q=pre ");
 	va_start(ap, fmt);
@@ -2389,7 +2394,18 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 	/* The M6 lesson: RUN alone was silent and iBoot left no stream enabled. Without one the core cannot fetch. */
+	if (rpm_hold_sweep) {
+		ane_h15_step("rpm hold: get before the DART sweep\n");
+		ret = pm_runtime_get_sync(ane->dev);
+		if (ret < 0) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "rpm-hold-failed");
+			return ret;
+		}
+	}
 	ret = ane_h15_dart_scan(ane, &live, &locked);
+	if (rpm_hold_sweep)
+		pm_runtime_put_sync(ane->dev);
 	if (ret) {
 		ane_h15_unmap_firmware(ane);
 		ane_h15_result(ane, stg, "FAIL", "dart-read-refused-or-not-a-dart");
