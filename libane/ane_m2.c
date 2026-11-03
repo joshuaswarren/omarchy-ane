@@ -29,6 +29,70 @@
 #define TD_SRC_A		0x1110u
 #define TD_SRC_B		0x1128u
 
+/*
+ * H18 (T8152, Mac mini M6) register roles. Source: the two Apple-compiled H18 programs of
+ * 2026-11-03 (a one-op add and the Parakeet K01 prefix, compiled on the M6 by ANECompiler
+ * for target h18, Mach-O subtype 10). Measured on both: every H14 role register reappears
+ * at +0x3c00 (KernelDMA 0x1900..0x1a40 -> 0x5500..0x5640; the K01 stream uses 0x5510,
+ * 0x55e0 and 0x5638). The surface-address records are at the H14 base +8: srcA 0x4d18
+ * (H14 0x1110+0x3c00+8), srcB 0x4d30 (0x1128+0x3c00+8), dst 0x5110 (0x1508+0x3c00+8), each
+ * with a two-word payload (offset lo, hi). The H18 stream also carries one-word BAR records
+ * at the base registers (srcA 0x4d10 and 0x4d14, dst 0x5108), always at slot 4 in the add
+ * and the K01 stream. HYPOTHESIS, not proven by any run: those base records select the
+ * kernel section at offset 0, so they take the KernelDMA role (tag 2). Slot numbers are
+ * the stream's own patch indexes, as on H14. No H18 program has run on hardware.
+ */
+#define H18_SRC_A	0x4d18u
+#define H18_SRC_B	0x4d30u
+#define H18_DST		0x5110u
+#define H18_KDMA_LO	0x5500u
+#define H18_KDMA_HI	0x5640u
+
+static int ane_m2_chip;
+
+void ane_m2_set_chip(int chip)
+{
+	ane_m2_chip = chip;
+}
+
+/* Map an H18 BAR-ref register to its H14 role address; H14 addresses pass through. */
+static uint32_t td_role_addr(uint32_t addr)
+{
+	if (ane_m2_chip != ANE_M2_CHIP_H18) {
+		return addr;
+	}
+	if (addr == H18_SRC_A) {
+		return TD_SRC_A;
+	}
+	if (addr == H18_SRC_B) {
+		return TD_SRC_B;
+	}
+	if (addr == H18_DST) {
+		return TD_DST;
+	}
+	if ((addr >= H18_KDMA_LO && addr < H18_KDMA_HI) || addr == 0x4d10u ||
+	    addr == 0x4d14u || addr == 0x5108u) {
+		return TD_KDMA_LO;
+	}
+	return addr;
+}
+
+/*
+ * H18 K01 carries three records that have header bit 29 (the H14 BAR-ref flag) set but are not
+ * surface refs of the roles above: header 0x30210100 (bit 28 set, register 0x400, payload
+ * 0x200000 0x82811340 0x107a0041, task 122), 0x20200000 (register 0, slot field 0, payload
+ * 0x200000, task 123) and 0x30200000 (bit 28 set, register 0, task 141); 184 tasks in all.
+ * Rule: on H18 a flagged record with bit 28 set, or at register 0 with slot field 0, is not a
+ * BAR ref and the builder leaves it unpatched. HYPOTHESIS: they write the 0x200000 constant
+ * (2 MiB, an on-chip memory address) rather than naming a surface. Not proven; no run used them.
+ */
+static int h18_ext_slot(uint32_t h)
+{
+	return ane_m2_chip == ANE_M2_CHIP_H18 &&
+	       ((h & 0x10000000u) ||
+		((h & 0x7fffu) == 0 && ((h >> 23) & 0x3fu) == 0));
+}
+
 const uint32_t ane_m2_section_ids[ANE_M2_SEC_COUNT] = {1, 2, 3, 4, 5, 7};
 
 static uint32_t le32(const uint8_t *p)
@@ -456,7 +520,7 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 			return fail("record declares more payload words than "
 				    "its task holds");
 		}
-		if (!(h & 0x80000000u) && (h & 0x20000000u)) {
+		if (!(h & 0x80000000u) && (h & 0x20000000u) && !h18_ext_slot(h)) {
 			if (h & 0x10000000u) {
 				return fail("BAR-ref header has bit 28 set; "
 					    "the slot field width (28:23 vs "
@@ -464,7 +528,7 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 					    "decoded case");
 			}
 			slot = (h >> 23) & 0x3fu;
-			addr = (h & 0x7fffu) * 4;
+			addr = td_role_addr((h & 0x7fffu) * 4);
 			p0 = le32(tp + (idx + 1) * 4);
 			if (addr == TD_SRC_A) {
 					if (slot_rank_srcA[slot] == UINT32_MAX) {
@@ -725,7 +789,7 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 				return fail("record declares more payload "
 					    "words than its task holds");
 			}
-			if (!(h & 0x80000000u) && (h & 0x20000000u)) {
+			if (!(h & 0x80000000u) && (h & 0x20000000u) && !h18_ext_slot(h)) {
 				if (h & 0x10000000u) {
 					return fail("BAR-ref header has bit "
 						    "28 set; the slot field "
@@ -734,7 +798,7 @@ static int derive_refs(const uint8_t *stream, const struct ane_task *tasks,
 						    "decoded case");
 				}
 				slot = (h >> 23) & 0x3fu;
-				addr = (h & 0x7fffu) * 4;
+				addr = td_role_addr((h & 0x7fffu) * 4);
 				p0 = le32(tp + (idx + 1) * 4);
 				if (addr == TD_DST) {
 					slot_has_dst[slot] = 1;

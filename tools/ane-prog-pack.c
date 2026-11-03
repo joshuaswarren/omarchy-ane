@@ -71,6 +71,14 @@ int main(int argc, char **argv)
 	for (i = 1; i < (unsigned int)argc; i++) {
 		if (!strcmp(argv[i], "--anec") && i + 1 < (unsigned int)argc) {
 			anec_path = argv[++i];
+		} else if (!strcmp(argv[i], "--chip") && i + 1 < (unsigned int)argc) {
+			i++;
+			if (!strcmp(argv[i], "h18")) {
+				ane_m2_set_chip(ANE_M2_CHIP_H18);
+			} else if (strcmp(argv[i], "h14")) {
+				fprintf(stderr, "--chip takes h14 or h18\n");
+				return 2;
+			}
 		} else if (!strcmp(argv[i], "-o") && i + 1 < (unsigned int)argc) {
 			out_path = argv[++i];
 		} else if (!strcmp(argv[i], "--in") && i + 1 < (unsigned int)argc && nins < MAXIN) {

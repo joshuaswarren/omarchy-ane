@@ -81,7 +81,9 @@ struct ane_m2_ref {
  * each task's refs in call_refs[task], so it also bounds the task count of
  * the derived build. The port-table build uses one ref set for all tasks
  * and has no task bound beyond the header's taskCount. */
+#ifndef ANE_M2_MAX_CALLS
 #define ANE_M2_MAX_CALLS 128
+#endif
 
 struct ane_m2_model {
 	struct ane_m2_io io[ANE_M2_MAX_BINDS];
@@ -142,6 +144,13 @@ struct ane_m2_port_spec {
 	uint32_t bar_slot;
 	uint64_t tile_bytes;
 };
+
+/* BAR-ref register roles of the task stream. H14 (default) is the proven M2 set. H18
+ * (T8152) is derived from two Apple-compiled streams and has not run on hardware. Set it
+ * before ane_m2_program_build(); process-wide. */
+#define ANE_M2_CHIP_H14 0
+#define ANE_M2_CHIP_H18 1
+void ane_m2_set_chip(int chip);
 
 /* Parse the H14 anec and build all six LOAD_PROGRAM section payloads.
  * Returns 0 and fills `model` + `secs` (malloc'd, free with
