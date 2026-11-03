@@ -105,6 +105,7 @@ jobs:
           python3 tools/test_ane_dvfs_level.py
           python3 ane/test/dvfs_model_test.py
           python3 tools/test_ane_probe.py
+          python3 tools/test_ane_adt_scan.py
           python3 tools/test_dkms_exclusive.py
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/h14_boot_regression" tools/h14_boot_regression.c
           "$RUNNER_TEMP/h14_boot_regression" | tail -1
