@@ -247,6 +247,7 @@ static void reset_all(void)
 	pwgate_read = 0;
 	stop_after_pwgate = false;
 	ps_assert = false;
+	rpm_hold_sweep = false;
 	dart_scan_mask = 0xf;
 	steplog = NULL;
 	run_unmapped = false;
@@ -2262,6 +2263,23 @@ static void pos_steplog_stop(void)
 	chk(strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_MPM") != NULL &&
 	    strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_BASE") != NULL,
 	    "FA the readbacks are stepped into the file");
+	remove_if_probed();
+
+	/* FE: rpm_hold_sweep takes a second runtime-PM reference around the
+	 * sweep: two gets, two puts, the sweep reads inside the hold. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	rpm_hold_sweep = true;
+	ret = probe_now();
+	chk(ret == 0 && sim_pm_get == 2 && sim_pm_put == 2,
+	    "FE rpm_hold_sweep takes a second runtime-PM reference across the sweep");
+	remove_if_probed();
+
+	/* FF: default off is the single probe reference, byte-identical. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	ret = probe_now();
+	chk(ret == 0 && sim_pm_get == 1 && sim_pm_put == 1,
+	    "FF default off: one runtime-PM get and put");
 	remove_if_probed();
 
 	/* FB: default off is byte-identical: no ps assert line, no ps writes. */
