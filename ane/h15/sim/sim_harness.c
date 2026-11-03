@@ -246,6 +246,7 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	dart_scan_mask = 0xf;
 	steplog = NULL;
 	run_unmapped = false;
 	sim_module_gets = 0;
@@ -2522,6 +2523,101 @@ static void pos_dart(void)
 			ane_h15_remove(&pdev);
 		}
 	}
+
+	unsigned int inst2;
+
+	reset_all();
+	/* DS1: the default mask is byte-identical: every window whose version matches
+	 * is scanned. Give window 1 a matching version and scan with the default. */
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x08, DART_P3);
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 read DART inst=1 PARAMS3") == 1 &&
+	    log_count("dart scan: instance 1 skipped") == 0,
+	    "DS1 default mask: window 1 with a matching version is scanned");
+	ane_h15_remove(&pdev);
+
+	/* DS2: dart_scan_mask=0xd leaves instance 1 unread even with a matching
+	 * version, and says so once. */
+	reset_all();
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x08, DART_P3);
+	dart_scan_mask = 0xd;
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 read DART inst=1 PARAMS3") == 0 &&
+	    log_count("ane_h15 dart scan: instance 1 skipped by dart_scan_mask=0xd") == 1 &&
+	    log_count("ane_h15 read DART inst=0 PARAMS3") == 1,
+	    "DS2 mask 0xd: instance 1 unread with one skip line, instance 0 still scanned");
+	chk(events_in(ane_t6030_soc.engine_pa + ane_t6030_soc.dart_off + ane_h15_dart_rel[1],
+		      0x4000, 0) == 0,
+	    "DS2 mask 0xd: not one bus access inside window 1");
+	ane_h15_remove(&pdev);
+
+	reset_all();
+	/* DS4: the reference is the first scanned instance, not instance 0. With
+	 * instance 0 skipped (0xe), instance 1 with a matching version is scanned as
+	 * the reference and its stream counts. */
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x08, DART_P3);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x0c, 0x00080010);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0xc00, 1u << 3);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x1000 + 4 * 3, 0x1);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x1400 + 4 * 3, 0x00abc001);
+	dart_scan_mask = 0xe;
+	ret = probe_now();
+	chk(ret == 0 && log_count("live_streams=1") == 1 &&
+	    log_count("ane_h15 dart scan: instance 0 skipped by dart_scan_mask=0xe") == 1 &&
+	    log_count("version differs") == 2 &&
+	    log_count("ane_h15 read DART inst=1 PARAMS3") == 1 &&
+	    log_count("ane_h15 dart inst=1 sid=3 tcr=0x1 ttbr=0xabc001 enabled=1") == 1,
+	    "DS4 mask 0xe: instance 1 is scanned as the version reference, its stream counts");
+	chk(log_count("ane_h15 read DART inst=0 PARAMS3") == 0 &&
+	    log_count("ane_h15 dart inst=0 version differs") == 0,
+	    "DS4 mask 0xe: instance 0 is never read and never cited as the reference");
+	ane_h15_remove(&pdev);
+
+	/* DS5: 0x1 scans instance 0 alone (it is the reference); 0x7 adds windows 1
+	 * and 2 as matching instances. */
+	reset_all();
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	dart_scan_mask = 0x1;
+	ret = probe_now();
+	chk(ret == 0 && log_count("live_streams=1") == 1 &&
+	    log_count("dart scan: instance 1 skipped by dart_scan_mask=0x1") == 1 &&
+	    log_count("dart scan: instance 2 skipped") == 1 &&
+	    log_count("dart scan: instance 3 skipped") == 1,
+	    "DS5 mask 0x1: instance 0 alone as the reference, 1 to 3 skipped");
+	ane_h15_remove(&pdev);
+	reset_all();
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	for (inst2 = 1; inst2 <= 2; inst2++) {
+		eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[inst2] + 0x08, DART_P3);
+		eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[inst2] + 0x0c, 0x00080010);
+	}
+	dart_scan_mask = 0x7;
+	ret = probe_now();
+	chk(ret == 0 && log_count("live_streams=1") == 1 &&
+	    log_count("ane_h15 read DART inst=1 PARAMS3") == 1 &&
+	    log_count("ane_h15 read DART inst=2 PARAMS3") == 1 &&
+	    log_count("ane_h15 read DART inst=3 PARAMS3") == 0 &&
+	    log_count("version differs") == 0,
+	    "DS5 mask 0x7: windows 0, 1 and 2 scanned as matching, 3 unread and differing");
+	ane_h15_remove(&pdev);
+
+	/* DS3: 0 and anything above 0xf refuse before any bus access. */
+	reset_all();
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	dart_scan_mask = 0;
+	ret = probe_now();
+	chk(ret != 0 && log_count("REFUSED reason=dart_scan_mask") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "DS3 mask 0 refuses before any bus access");
+	reset_all();
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	dart_scan_mask = 0x10;
+	ret = probe_now();
+	chk(ret != 0 && log_count("REFUSED reason=dart_scan_mask") == 1,
+	    "DS3 mask above 0xf refuses");
 }
 
 static void translation_setup(const struct ane_h15_soc *s, const char *compat)

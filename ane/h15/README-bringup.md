@@ -205,6 +205,10 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   core start: this run touches the gate word and nothing else. It refuses, touching nothing,
   without `pwgate_t6031=1`, with `scratch_boot=1`, or on any stage other than 5.
 
+  `dart_scan_mask` (default 0xf, all four instances) selects which DART instances the scan reads; the
+  first scanned instance carries the version reference, whatever its number. A clear bit skips that instance's sweep with one skip line and no bus access; the firmware segment
+  map is untouched. Reason: the 2026-11-03 B run died on a dart1 TTBR read while the A run survived the same read, so the sweep is an intermittent crash source. Values 0 and above 0xf refuse in probe.
+
   `steplog=<path>` (off by default) appends one line to that file, fsynced, before the access
   runs. Coverage comes from the shared accessors, so it holds the PWGATE reads and write, the
   CPU_CONTROL reads and writes, every SCRATCH read and write, the engine word reads (CPU_STATUS,
