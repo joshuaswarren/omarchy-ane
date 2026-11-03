@@ -154,3 +154,14 @@ So the clock hypothesis cannot be closed by static analysis of the
 retained kernelcache. It would need either a published T8140 PMGR clock
 layout or an implementation of the provider's function semantics, neither
 of which is in the sources held here.
+
+## Correction (from the parallel DPE analysis)
+
+`hw-dpe-reg` is not a "DPE write list". It is a 19-record table of
+**read-only energy counter descriptors** (40-byte records decoded from
+ApplePMGR's own parser). The single ANE record is
+`name "ANE", addr 0x4_019780E0, scale 15625, maxPower 21144 mW,
+deviceID 0x3c (ANE_SYS)`. It contains no gate id or clock id and has no
+field that could hold a register offset. The conclusion above — the ADT
+does not carry the gate id → register map — stands, now independently
+confirmed. See `receipts/2026-11-03-j700-h17-offline-subagents/`.

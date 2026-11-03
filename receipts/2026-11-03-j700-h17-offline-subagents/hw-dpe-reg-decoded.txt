@@ -1,0 +1,30 @@
+hw-dpe-reg: 760 bytes, 19 records x 40 bytes (10 words)
+#   name      addr/flags=0 scaleFac    maxPower_mW devID die flg splt aOn  ro 
+------------------------------------------------------------------------------
+0   ECPM      0x210e48000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+1   PCPM      0x211e48000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+2   ECORE0    0x210059000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+3   ECORE1    0x210159000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+4   ECORE2    0x210259000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+5   ECORE3    0x210359000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+6   PCORE0    0x211059000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+7   PCORE1    0x211159000 40          0          0x000 1   0x00 0    1    0   (regWidth=64)
+8   GPU       0x12900000009 384         14400      0x028 1   0x01 1    1    0   (regWidth=64)
+9   GPU SRAM  0x12a00000009 384         576        0x028 1   0x01 1    1    0   (regWidth=64)
+10  ANE       0x4019780e0 15625       21144      0x03c 1   0x00 0    0    1   (regWidth=64)
+11  ISP       0x30020a708 250         3557       0x019 1   0x00 1    1    1   (regWidth=64)
+12  AVE       0x30020af08 250         1644       0x019 1   0x00 1    1    1   (regWidth=64)
+13  MSR       0x30020b708 250         1289       0x019 1   0x00 1    1    1   (regWidth=64)
+14  AMCC      0x30020bb08 250         6000       0x019 1   0x00 1    1    1   (regWidth=64)
+15  DCS       0x30020bf08 250         0          0x019 1   0x00 1    1    1   (regWidth=64)
+16  DRAM      0x30020c308 250         3168       0x019 1   0x00 1    1    1   (regWidth=64)
+17  DISP      0x30020c708 250         1008       0x019 1   0x00 1    1    1   (regWidth=64)
+18  DISPEXT   0x30020cb08 250         0          0x019 1   0x00 1    1    1   (regWidth=64)
+
+per-tag counts: {'AMCC': 1, 'ANE': 1, 'AVE': 1, 'DCS': 1, 'DISP': 1, 'DISPEXT': 1, 'DRAM': 1, 'ECORE0': 1, 'ECORE1': 1, 'ECORE2': 1, 'ECORE3': 1, 'ECPM': 1, 'GPU': 1, 'GPU SRAM': 1, 'ISP': 1, 'MSR': 1, 'PCORE0': 1, 'PCORE1': 1, 'PCPM': 1}
+unique deviceIDs: [0, 25, 40, 60]
+die masks: [1]
+flag bytes (+0x13): [0, 1]
+regWidth (+0x17): [64]
+scaleFactor set: [40, 250, 384, 15625]
+maxPower_mW set: [0, 576, 1008, 1289, 1644, 3168, 3557, 6000, 14400, 21144]
