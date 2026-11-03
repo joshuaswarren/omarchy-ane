@@ -58,11 +58,10 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  * Candidates, not qualified for T8140: irq_status/irq_ack keep the
  * T8132 row's values (the CPU block shares the +0x200000 shift). mbox =
  * 0x1608000 is the ASC+0x8000 family pattern over the H17 CPU/ASC block
- * at engine+0x1600000, not a J700 trace: the ANE interface text carries
- * no mailbox constant (the mailbox belongs to the RTBuddy transport) and
- * neither the ADT nor the Linux DTS describes an ANE mailbox. The role of
- * c000/c008/c010 (MPM/CPU/TD) is unassigned. c018 is kept at the T8132
- * offset only to record that it is absent.
+ * at engine+0x1600000, now hardware-confirmed: A2I_CTRL/I2A_CTRL read
+ * 0x00020001 in the read-only probe. The role of c000/c008/c010
+ * (MPM/CPU/TD) is unassigned. c018 is kept at the T8132 offset only to
+ * record that it is absent.
  */
 const struct ane_h16_soc ane_t8140_soc = {
 	.name = "t8140",

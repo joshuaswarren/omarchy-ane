@@ -41,10 +41,12 @@ Evidence for `ASC + 0x8000`:
 - H16/H17 share the `0x1600000` CPU block, so the same `+0x8000` lands at
   `0x1608000`.
 
-This is a **family-pattern pin**, not a J700 trace: the ANE interface text
-contains no `0x1608xxx` constant (the mailbox belongs to the RTBuddy
-transport), the ADT carries no mailbox property, and the Linux DTS has no
-ANE mailbox node.
+This was a family-pattern pin, and it is now **confirmed on hardware**:
+the read-only probe (`receipts/2026-11-02-j700-h17-mailbox-confirmed/`)
+reads `A2I_CTRL` and `I2A_CTRL` as `0x00020001` — the documented
+pre-boot ASC value (enabled, empty, no traffic). The interface text still
+carries no mailbox constant (it belongs to the RTBuddy transport), so the
+confirmation is behavioural, not a symbol trace.
 
 ## RTBuddy start sequence (design)
 
@@ -73,9 +75,8 @@ are part of this branch.
    exclave may have configured differently?
 3. Does iBoot/exclave leave the firmware staged-but-bootable, or does the
    exclave normally perform additional setup we cannot see?
-4. The mailbox base is a family-pattern pin; a single read of
-   `A2I_CTRL`/`I2A_CTRL` would confirm the ASC block responds, but that is
-   still an engine-window access and stays behind the hardware halt.
+4. The mailbox base is now hardware-confirmed (`A2I_CTRL`/`I2A_CTRL` read
+   `0x00020001`), so only the write-path questions remain.
 
 ## Risk
 
