@@ -228,6 +228,11 @@ module_param(stop_after_pwgate, bool, 0444);
 MODULE_PARM_DESC(stop_after_pwgate,
 		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1 or with scratch_boot=1 (pwgate_t6031 itself enforces stage 5).");
 
+static bool ps_assert;
+module_param(ps_assert, bool, 0444);
+MODULE_PARM_DESC(ps_assert,
+		 "Stage=run (5) with pwgate_t6031: before the DART sweep, write 0xf to the four ANE power-state words in the pmgr window (ANE_MPM 0xc000, ANE_CPU 0xc008, ANE_TD 0xc010, ANE_BASE 0xc018) and read them back. This is the power-state re-assert of the shipped boot: the four B-class deaths landed 19 to 23 ms after the first power-state query, wherever the DART sweep happened to be, which fits the window's power domain gating off mid-sweep. The re-assert holds the domain across the sweep. Off by default, byte-identical. Refuses with pwgate_t6031=0 or off stage 5, before any MMIO.");
+
 static unsigned int dart_scan_mask = 0xf;
 module_param(dart_scan_mask, uint, 0444);
 MODULE_PARM_DESC(dart_scan_mask,
@@ -385,9 +390,12 @@ static int ane_h15_stage_idx(const char *name, unsigned int *out)
 /* ---- pmgr ACTUAL gate (always runs before any engine access) ---- */
 
 static void ane_h15_step(const char *fmt, ...);
+static u64 ane_first_ps_ns;
 
 static bool ane_h15_ps_on(struct ane_h15 *ane, unsigned int i, u32 *v)
 {
+	if (!ane_first_ps_ns)
+		ane_first_ps_ns = ktime_get_boottime_ns();
 	ane_h15_step("read pmgr.%s pa=%#llx\n", ane_h15_ps_names[i],
 		     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
 	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
@@ -1260,6 +1268,12 @@ static void ane_h15_step(const char *fmt, ...)
 		return;
 	n = scnprintf(buf, sizeof(buf), "%llu.%06llu ", ns / 1000000000ULL,
 		      (ns % 1000000000ULL) / 1000ULL);
+	if (ane_first_ps_ns)
+		n += scnprintf(buf + n, sizeof(buf) - n, "q=%llu.%03llums ",
+			       (ns - ane_first_ps_ns) / 1000000000ULL,
+			       ((ns - ane_first_ps_ns) % 1000000000ULL) / 1000000ULL);
+	else
+		n += scnprintf(buf + n, sizeof(buf) - n, "q=pre ");
 	va_start(ap, fmt);
 	n += vscnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 	va_end(ap);
@@ -1588,6 +1602,34 @@ static void ane_h15_ipi_poll(struct ane_h15 *ane)
 		ane_h15_step("write IPI_ACK=%#x pa=%#llx\n", pend, ane->soc->engine_pa + ANE_H15_IPI_ACK_OFF);
 		writel(pend, ane->engine + ANE_H15_IPI_ACK_OFF);
 	}
+}
+
+/* Stage 5, ps_assert=1: the power-state re-assert of the shipped boot. Writes
+ * 0xf to the four ANE power-state words in the pmgr window, reads them back,
+ * every access stepped. Holds the domain across the DART sweep. */
+static int ane_h15_ps_assert(struct ane_h15 *ane)
+{
+	unsigned int i;
+	u32 v;
+
+	/* ps_off[1..4]: the per-chip layout, never a hardcoded one. T6031 and
+	 * T6034 carry their ANE power-state words at 0x5a0/0x5a8/0x5b8/0x5c0;
+	 * writing the T8122 layout there would hit foreign pmgr words. */
+	for (i = 1; i < 5; i++) {
+		ane_h15_step("ps assert write pmgr.%s pa=%#llx val=0xf\n",
+			     ane_h15_ps_names[i],
+			     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
+		dev_crit(ane->dev, "ane_h15 ps assert: write pmgr.%s = 0xf\n",
+			 ane_h15_ps_names[i]);
+		writel_relaxed(0xf, ane->pmgr + ane->soc->ps_off[i]);
+	}
+	for (i = 1; i < 5; i++) {
+		ane_h15_step("ps assert readback pmgr.%s\n", ane_h15_ps_names[i]);
+		v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
+		dev_info(ane->dev, "ane_h15 ps assert: %s reads %#x\n",
+			 ane_h15_ps_names[i], v);
+	}
+	return 0;
 }
 
 /* Stage 5 only, once after the wait and before RUN is cleared: the final CPU_STATUS and both mailbox CTRL words on one
@@ -2335,6 +2377,17 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			return ret;
 		}
 	}
+	/* ps_assert: the power-state re-assert goes here, between the firmware map
+	 * and the sweep, so the domain hold spans the sweep reads (the four B-class
+	 * deaths landed 19 to 23 ms after the first ps query, mid-sweep). */
+	if (stg == 5 && ps_assert && s->pwgate_pa) {
+		int pret = ane_h15_ps_assert(ane);
+		if (pret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "ps-assert-failed");
+			return pret;
+		}
+	}
 	/* The M6 lesson: RUN alone was silent and iBoot left no stream enabled. Without one the core cannot fetch. */
 	ret = ane_h15_dart_scan(ane, &live, &locked);
 	if (ret) {
@@ -2555,11 +2608,15 @@ static void ane_h15_unmap_windows(struct ane_h15 *ane)
 
 static int ane_h15_probe(struct platform_device *pdev)
 {
-	const struct ane_h15_soc *soc = of_device_get_match_data(&pdev->dev);
 	struct ane_h15 *ane;
+	const struct ane_h15_soc *soc = of_device_get_match_data(&pdev->dev);
 	u32 ane_type;
 	unsigned int stage_idx;
 	int ret;
+
+	/* refused probes leave no device data behind: remove() runs only via the
+	 * driver core on real hardware, but the sim harness calls it directly */
+	platform_set_drvdata(pdev, NULL);
 
 	if (!optin || strcmp(optin, soc->name)) {
 		dev_err(&pdev->dev,
@@ -2591,6 +2648,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 	}
 	if (pwgate_t6031 && stage_idx != 5) {
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) only\n");
+		return -EINVAL;
+	}
+	if (ps_assert && (!pwgate_t6031 || stage_idx != 5)) {
+		dev_err(&pdev->dev,
+			"REFUSED reason=ps_assert: needs pwgate_t6031=1 and stage=run (5)\n");
 		return -EINVAL;
 	}
 	if (pwgate_t6031 && !soc->pwgate_pa) {

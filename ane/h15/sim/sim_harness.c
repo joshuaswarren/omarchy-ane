@@ -246,6 +246,7 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	ps_assert = false;
 	dart_scan_mask = 0xf;
 	steplog = NULL;
 	run_unmapped = false;
@@ -313,6 +314,14 @@ static int probe_now(void)
 	return ane_h15_probe(&pdev);
 }
 
+/* a probe that refused before devm_kzalloc leaves no drvdata: removing it
+ * would deref NULL. Skip the remove in that case. */
+static void remove_if_probed(void)
+{
+	if (platform_get_drvdata(&pdev))
+		ane_h15_remove(&pdev);
+}
+
 /* T6 test emitter: collect fact ids via the module's own helper. */
 static char t6_ids[8][8];
 static int t6_n;
@@ -371,7 +380,7 @@ static void pos_ps_pass(void)
 	chk_global_invariants(cur_soc, "P2 ps");
 
 	/* remove() must release the windows the successful probe kept */
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
 	    "P2 ps: remove unmaps both windows");
 }
@@ -587,7 +596,7 @@ static void pos_stage2(void)
 		}
 		snprintf(name, sizeof(name), "%s: power claim released", tag);
 		chk(sim_pm_get == 1 && sim_pm_put == 1, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 		snprintf(name, sizeof(name), "%s: remove unmaps both windows", tag);
 		chk(sim_n_iomap == 2 && sim_n_iounmap == 2, name);
 	}
@@ -598,7 +607,7 @@ static void pos_stage2(void)
 	chk(ret == 0 && log_count("cpu_status=0x1 ") == 1 &&
 	    log_count("t6021_stopped_status=differs") == 1,
 	    "P9 differing CPU_STATUS is logged, not interpreted");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 /* reg[0] or reg[1] that is not the window the SoC row describes (shifted
@@ -1043,7 +1052,7 @@ static void pos_multi_pd(void)
 			    "P8a pd: get==put==1");
 		}
 		chk_global_invariants(cur_soc, "P8 pd");
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 		chk(sim_pd_detach == 5 && sim_link_del == 5,
 		    "P8 pd: remove detaches 5 domains and deletes 5 links");
 		chk(pd_live() == 0 && link_live() == 0 && sim_pd_bad == 0,
@@ -1426,7 +1435,7 @@ static void pos_run_case(const char *tag, u32 ctrl, int msgs_left, bool nostart,
 	    events_in(s->engine_pa + s->mbox, 0x1000, 1) == 0, name);
 	snprintf(name, sizeof(name), "%s: power claim released, no 'do NOT unload'", tag);
 	chk(sim_pm_get == 1 && sim_pm_put == 1 && log_count("do NOT unload") == 0, name);
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	snprintf(name, sizeof(name), "%s: remove unmaps both windows (core stopped again)", tag);
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2 && sim_module_gets == 0, name);
 }
@@ -1464,7 +1473,7 @@ static void pos_run_postwait(void)
 	    "RP4 the A2I CTRL word is read once in the preflight and once after the wait, before RUN is cleared");
 	chk(events_in(0, ~0ULL, 1) == writes && writes == 2 && sim_bus_faults == 0,
 	    "RP5 the only writes are still the two CPU_CONTROL values");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 static void pos_run(void)
@@ -1496,7 +1505,7 @@ static void pos_run_scratch(void)
 		n_touch += eng_events_at(s, off + 4 * i);
 	chk(ret == 0 && n_touch == 0 && log_count("ane_h15 scratch") == 0,
 	    "RS1 run_scratch off: no SCRATCH word is read, none is logged");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	run_setup(s, "apple,t6030-ane", 0x0);
 	run_scratch = true;
@@ -1523,7 +1532,7 @@ static void pos_run_scratch(void)
 	    "RS5 SCRATCH0 is read once before the first CPU_CONTROL write (the 'before RUN' dump)");
 	chk(events_in(0, ~0ULL, 1) == events_in(s->engine_pa + s->cpu_control, 4, 1) && sim_bus_faults == 0,
 	    "RS6 the only writes are the CPU_CONTROL values, no fault");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 /* stage 5 with run_pmgr=1: the five pmgr ANE words read before RUN, just after the RUN write and after the wait, never written;
@@ -1540,7 +1549,7 @@ static void pos_run_pmgr(void)
 	ret = probe_now();
 	chk(ret == 0 && log_count("ane_h15 pmgr before RUN") == 0 && log_count("ane_h15 pmgr after") == 0,
 	    "PM1 run_pmgr off: no pmgr dump line is logged");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	run_setup(s, "apple,t6030-ane", 0x0);
 	run_pmgr = true;
@@ -1561,7 +1570,7 @@ static void pos_run_pmgr(void)
 	    "PM4 the dumps come before the RUN write, right after it, and after the wait, in that order");
 	chk(events_in(0, ~0ULL, 1) == events_in(s->engine_pa + s->cpu_control, 4, 1) && sim_bus_faults == 0,
 	    "PM5 the only writes are the CPU_CONTROL values, nothing is written to pmgr, no fault");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 /* stage 5 with scratch_boot=1: macOS's cold-boot order, never run on an M3. Zero SCRATCH0..7, SCRATCH6=1, SCRATCH7=0 with a read back, CPU_CONTROL 0
@@ -1583,7 +1592,7 @@ static void pos_run_scratch_boot(void)
 	chk(ret == 0 && n == 2 && w[0] == 0x10 && w[1] == 0x0 &&
 	    events_in(s->engine_pa + off, 0x20, 1) == 0,
 	    "KB1 scratch_boot off: the engine writes stay [CPU_CONTROL=0x10, CPU_CONTROL=0], nothing at SCRATCH");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* KB2: scratch_boot=1, the firmware publishes the ready word. SCRATCH7 starts
 	 * holding the stale ready word (the T6030 observation the hypothesis names). */
@@ -1592,6 +1601,7 @@ static void pos_run_scratch_boot(void)
 	sb_wait_ms = 50;
 	dm_s7_ready = true;
 	eng_set(s, off + 4 * 7, 0x08042006);
+	printf("    MARK KB2 probe\n");
 	ret = probe_now();
 	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) && rstage == 5 &&
 	    !strcmp(verdict, "PASS") && !strcmp(reason, "scratch_boot=1 s7_ready=yes core-started-and-stopped"),
@@ -1631,7 +1641,7 @@ static void pos_run_scratch_boot(void)
 	    "KB2 SCRATCH7 read back after the cold-boot write, ready word logged at its first poll");
 	chk(log_count("ane_h15 scratch before RUN") == 1 && log_count("ane_h15 scratch after the wait") == 1,
 	    "KB2 the SCRATCH dump runs before RUN and after the wait without run_scratch");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* KB3: scratch_boot=1, the ready word never comes (the firmware idles, the hypothesis). */
 	run_setup(s, "apple,t6030-ane", 0x0);
@@ -1646,7 +1656,7 @@ static void pos_run_scratch_boot(void)
 	n = run_writes(s, w, 16, &first);
 	chk(n == 13 && eng_events_at(s, off + 4 * 7) == 2 + 1 + 20 + 2,
 	    "KB3 SCRATCH7 is written twice, read back, polled 20 times and dumped twice");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* KB4: scratch_boot=1 is stage 5 only; stage 2 and stage 4 refuse before any MMIO.
 	 * No remove(): a probe refused this early never ran devm_kzalloc, so drvdata is NULL. */
@@ -1674,7 +1684,7 @@ static void pos_run_scratch_boot(void)
 	    !strcmp(verdict, "REFUSED") && strstr(reason, "sb_wait_ms") &&
 	    run_writes(s, w, 16, &first) == 0 && sim_bus_faults == 0,
 	    "KB5 sb_wait_ms=9 refuses with no write");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* KB6: the SCRATCH7 clear does not take (the register ignores the write and keeps
 	 * reading the stale ready word). The run must stop before the first CPU_CONTROL
@@ -1699,7 +1709,7 @@ static void pos_run_scratch_boot(void)
 	chk(sim_pm_get == sim_pm_put && sim_n_iomap == sim_n_iounmap && sim_module_gets == 0 &&
 	    log_count("do NOT unload") == 0 && log_count("clear RUN") == 0,
 	    "KB6 power claim released, windows unmapped, module not pinned, stop path not entered");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* KB7: control with the same setup, the clear takes. The run goes on, the poll
 	 * times out and the result stays PASS with s7_ready=no and the core never left
@@ -1716,7 +1726,7 @@ static void pos_run_scratch_boot(void)
 	n = run_writes(s, w, 16, &first);
 	chk(n == 13 && eng_events_at(s, off + 4 * 7) == 2 + 1 + 20 + 2,
 	    "KB7 the boot sequence and the poll run as before the clear check");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	printf("  %-58s %s\n", "pos_run_scratch_boot summary", fails == before ? "all KB checks PASS" : "FAILURES above");
 }
@@ -1753,7 +1763,7 @@ static void pos_run_pwgate(void)
 	    "PW1 default off: the engine writes stay [CPU_CONTROL=0x10, CPU_CONTROL=0]");
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 0,
 	    "PW1 default off: only the two ADT windows mapped, none released by the run");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
 	    "PW1 default off: remove unmaps exactly the two windows");
 
@@ -1801,7 +1811,7 @@ static void pos_run_pwgate(void)
 	chk(n == 2 && w[0] == 0x10 && w[1] == 0x0,
 	    "PW2 the engine writes stay the normal RUN sequence");
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "PW2 power claim released");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 3,
 	    "PW2 the PWGATE window was mapped and unmapped again (remove unmaps engine and pmgr)");
 
@@ -1823,7 +1833,7 @@ static void pos_run_pwgate(void)
 	n = run_writes(s, w, 8, &first);
 	chk(n == 2 && w[0] == 0x10 && w[1] == 0x0,
 	    "PW3 the engine writes stay the normal RUN sequence");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* PW4 (d): pwgate_t6031=2 with the word 0. The unconditional macOS
 	 * order writes 0 anyway, exactly once, and the suffix names the
@@ -1842,7 +1852,7 @@ static void pos_run_pwgate(void)
 	n = run_writes(s, w, 8, &first);
 	chk(n == 2 && w[0] == 0x10 && w[1] == 0x0,
 	    "PW4 the engine writes stay the normal RUN sequence");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* PW5 (h): scratch_boot=1 with pwgate_t6031=1. The macOS SCRATCH sequence
 	 * is unchanged; the PWGATE step sits after the last SCRATCH write and
@@ -1889,7 +1899,7 @@ static void pos_run_pwgate(void)
 	}
 	chk(log_count("ane_h15 write SCRATCH") == 10 && log_count("ane_h15 write CPU_CONTROL=") == 3,
 	    "PW5 the macOS SCRATCH and CPU_CONTROL write counts are unchanged");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	printf("  %-58s %s\n", "pos_run_pwgate summary", fails == before ? "all PW checks PASS" : "FAILURES above");
 }
@@ -1944,7 +1954,7 @@ static int neg_run(void)
 	    "N3b t6031: measured RVBAR, stage 5 runs to core-started-and-stopped");
 	chk(log_count("ane_h15 write CPU_CONTROL=") == 2 && sim_bus_faults == 0,
 	    "N3b t6031: exactly the RUN and clear-RUN writes, no fault");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_pm_get == 1 && sim_pm_put == 1 && sim_n_iomap == 2 && sim_n_iounmap == 2,
 	    "N3b t6031: power claim released, both windows unmapped");
 	/* N4..N10 preflight mismatches: read-only, FAIL, nothing written */
@@ -1988,7 +1998,7 @@ static int neg_run(void)
 	    "N13 stuck core: power claim and windows kept");
 	chk(sim_module_gets == 1, "N13 stuck core: the module is pinned (rmmod cannot free it under the core)");
 	before = sim_n_iounmap;
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_iounmap == before && sim_pm_put == 0 && log_count("remove with the firmware released") == 1,
 	    "N13 stuck core: remove() refuses");
 
@@ -2015,7 +2025,7 @@ static int neg_run(void)
 		    "PW6 stuck gate: nothing pinned, claims released, all three windows unmapped");
 		chk(log_count("bits 1:0 still set after 5000 polls") == 1,
 		    "PW6 stuck gate: the timeout is logged once with the poll count and the final word");
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 
 		/* PW7 (f): pwgate_t6031=3 refuses in probe before any bus
 		 * access and before any mapping. */
@@ -2062,6 +2072,8 @@ static void pw_order(const struct ane_h15_soc *s, u64 wpa, int *ri, int *wi, int
 }
 
 /* steplog and stop_after_pwgate: the crash-forensics pair of the write step. */
+static void dart_setup(const struct ane_h15_soc *s, const char *compat, bool live);
+
 static void pos_steplog_stop(void)
 {
 	const struct ane_h15_soc *s = &ane_t6031_soc;
@@ -2139,7 +2151,7 @@ static void pos_steplog_stop(void)
 		}
 		chk(sim_step_n > 0 && sim_step_at[0] == 0,
 		    "SL1 the init line is recorded before any bus event");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* SL2: the steplog open fails: the run refuses before any MMIO. */
 	run_setup(s, "apple,t6031-ane", 0x0);
@@ -2169,7 +2181,7 @@ static void pos_steplog_stop(void)
 	chk(eng_events_at(s, s->cpu_control) >= 1,
 	    "SA1 CPU_CONTROL is read (preflight) and never written");
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "SA1 the power claim is released");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* SA2: stop_after_pwgate without pwgate_t6031: refuse before any MMIO. */
 	run_setup(s, "apple,t6031-ane", 0x0);
@@ -2198,6 +2210,78 @@ static void pos_steplog_stop(void)
 	chk(ret != 0 && strstr(sim_steplog_buf, "module init") != NULL,
 	    "SL2b a refused probe leaves the fsynced init line behind");
 
+	/* FT: the same FA shape on the T6031 soc: ps_assert must write the
+	 * per-chip layout (0x5a0, 0x5a8, 0x5b8, 0x5c0), not the T8122 words. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ps_assert = true;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 ps assert: write pmgr.ANE_MPM = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_CPU = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_TD = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_BASE = 0xf") == 1,
+	    "FT ps_assert on T6031 writes the four per-chip ps words");
+	{
+		unsigned int k, j;
+		u32 pa;
+		int wrong = 0;
+		static const u32 t8122_words[] = { 0xc000u, 0xc008u, 0xc010u, 0xc018u };
+		for (k = 0; k < 4; k++) {
+			pa = ane_t6031_soc.pmgr_pa + t8122_words[k];
+			for (j = 0; j < sim_n_events && j < SIM_MAX_EVENTS; j++)
+				if (sim_events[j].write && sim_events[j].pa == pa)
+					wrong++;
+		}
+		chk(wrong == 0,
+		    "FT not one write lands on the T8122 layout in the T6031 run");
+	}
+	remove_if_probed();
+
+	/* FA: ps_assert=1 writes 0xf to the four ps words between the firmware map
+	 * and the sweep, every access stepped, and the step lines after the first
+	 * ps read carry the query-relative time. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ps_assert = true;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	
+	
+	chk(ret == 0 && log_count("ane_h15 ps assert: write pmgr.ANE_MPM = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_CPU = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_TD = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_BASE = 0xf") == 1,
+	    "FA ps_assert writes 0xf to the four ps words and reads them back");
+	chk(strstr(sim_steplog_buf, "q=") != NULL,
+	    "FA the step lines carry the query-relative time");
+	chk(strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_MPM") != NULL &&
+	    strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_BASE") != NULL,
+	    "FA the readbacks are stepped into the file");
+	remove_if_probed();
+
+	/* FB: default off is byte-identical: no ps assert line, no ps writes. */
+	
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	ret = probe_now();
+	chk(ret == 0 && log_count("ps assert") == 0, "FB default off: no ps assert lines");
+	if (platform_get_drvdata(&pdev))
+		remove_if_probed();
+
+	/* FC: ps_assert without pwgate_t6031 refuses before any MMIO. */
+	
+	run_setup(s, "apple,t6031-ane", 0x0);
+	ps_assert = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("REFUSED reason=ps_assert") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "FC ps_assert without pwgate_t6031 refuses before any bus access");
+
 	/* SL3: a stuck gate. The poll logs its begin and its timeout end, never one
 	 * line per pass. */
 	run_setup(s, "apple,t6031-ane", 0x0);
@@ -2220,7 +2304,7 @@ static void pos_steplog_stop(void)
 		chk(reads == 1,
 		    "SL3 exactly one read line for the word: the pre-write read, no per-pass lines");
 	}
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	printf("  %-58s %s\n", "pos_steplog_stop summary", fails == before ? "all SL/SA checks PASS" : "FAILURES above");
 }
@@ -2257,7 +2341,7 @@ static void pos_run_pwgate_rows(void)
 		snprintf(name, sizeof(name), "WR1 %s default off: no PWGATE access, engine writes [0x10, 0], two windows mapped", t);
 		chk(events_in(rows[r].window, 0x4000, 0) == 0 && log_count("PWGATE") == 0 && n == 2 && w[0] == 0x10 &&
 		    w[1] == 0 && sim_n_iomap == 2 && sim_n_iounmap == 0, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 
 		/* WR2: mode 1, bits 1:0 set. One read, one write of 0 at the literal address, a poll, then RUN. */
 		run_setup(s, rows[r].compat, 0x0);
@@ -2278,7 +2362,7 @@ static void pos_run_pwgate_rows(void)
 		n = run_writes(s, w, 8, &first);
 		snprintf(name, sizeof(name), "WR2 %s the engine writes stay [0x10, 0]; claims released", t);
 		chk(n == 2 && w[0] == 0x10 && w[1] == 0 && sim_pm_get == 1 && sim_pm_put == 1, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 		snprintf(name, sizeof(name), "WR2 %s the window was mapped and unmapped again", t);
 		chk(sim_n_iomap == 2 && sim_n_iounmap == 3 && sim_bus_faults == 0, name);
 
@@ -2291,7 +2375,7 @@ static void pos_run_pwgate_rows(void)
 		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
 		    !strcmp(reason, "core-started-and-stopped pwgate=already-open") &&
 		    events_in(rows[r].window, 0x4000, 1) == 0 && log_count(rows[r].read_log) == 1, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 
 		/* WR4: mode 2, word 0: the unconditional order writes 0 once. */
 		run_setup(s, rows[r].compat, 0x0);
@@ -2303,7 +2387,7 @@ static void pos_run_pwgate_rows(void)
 		    !strcmp(reason, "core-started-and-stopped pwgate=forced word=0x0") &&
 		    events_in(rows[r].wpa, 4, 1) == 1 && events_in(rows[r].window, 0x4000, 1) == 1 &&
 		    log_count(rows[r].write_log) == 1, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 
 		/* WR5: the register ignores the write. The poll runs out, the run stops before any CPU_CONTROL write. */
 		run_setup(s, rows[r].compat, 0x0);
@@ -2320,7 +2404,7 @@ static void pos_run_pwgate_rows(void)
 		snprintf(name, sizeof(name), "WR5 %s stuck gate: nothing pinned, claims released, windows unmapped", t);
 		chk(sim_module_gets == 0 && sim_pm_get == sim_pm_put && sim_n_iomap == 2 && sim_n_iounmap == 3 &&
 		    log_count("do NOT unload") == 0, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 
 		/* WR6: a value other than 0, 1 or 2 refuses in probe before any bus access. */
 		run_setup(s, rows[r].compat, 0x0);
@@ -2417,7 +2501,8 @@ static void pos_pwgate_read(void)
 			snprintf(name, sizeof(name), "PR1 %s word %#x: CPU_CONTROL never touched", s->name,
 				 vals[v].word);
 			chk(eng_events_at(s, s->cpu_control) == 0, name);
-			ane_h15_remove(&pdev);
+			if (platform_get_drvdata(&pdev))
+				remove_if_probed();
 		}
 
 		/* PR2: default off. The stage 2 run is byte-identical: no window mapped, no suffix. */
@@ -2428,7 +2513,7 @@ static void pos_pwgate_read(void)
 		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
 		    !strcmp(verdict, "PASS") && !strcmp(reason, "preflight-read-only") &&
 		    events_in(s->pwgate_pa, s->pwgate_size, 0) == 0 && sim_n_iounmap == 0, name);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 	}
 
 	/* PR3: the refusals, each before any bus access and any mapping. */
@@ -2516,7 +2601,7 @@ static void pos_dart(void)
 		chk(log_count("ane_h15 read DART inst=0 PARAMS3") == 1 &&
 		    log_count("ane_h15 read DART inst=0 TCR[0..]") == 1, name);
 		snprintf(name, sizeof(name), "%s: power claim released, windows unmapped on remove", tag);
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 		chk(sim_pm_get == 1 && sim_pm_put == 1 && sim_n_iomap == 2 && sim_n_iounmap == 2, name);
 	}
 	/* nothing enabled: the M6 situation, a PASS that says so */
@@ -2526,13 +2611,13 @@ static void pos_dart(void)
 	    rstage == 4 && !strcmp(verdict, "PASS") && !strcmp(reason, "dart-no-stream-enabled") &&
 	    log_count("live_streams=0") == 1 && dart_only_reads(&ane_t6030_soc),
 	    "D2 no enabled stream: PASS dart-no-stream-enabled, reads only");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	/* the lock bit is reported */
 	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
 	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + 0x208, 1);
 	ret = probe_now();
 	chk(ret == 0 && log_count("locked_windows=1") == 1, "D3 PROTECT_LOCK bit 0 is counted");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	/* enabled stream whose TTBR is not valid, TCR without translate, enable bit missing: not live */
 	{
 		static const struct { const char *tag; u32 off; u32 val; } nl[] = {
@@ -2548,7 +2633,7 @@ static void pos_dart(void)
 			ret = probe_now();
 			snprintf(name, sizeof(name), "%s: not counted as live", nl[i].tag);
 			chk(ret == 0 && log_count("live_streams=0") == 1, name);
-			ane_h15_remove(&pdev);
+			remove_if_probed();
 		}
 	}
 
@@ -2563,7 +2648,7 @@ static void pos_dart(void)
 	chk(ret == 0 && log_count("ane_h15 read DART inst=1 PARAMS3") == 1 &&
 	    log_count("dart scan: instance 1 skipped") == 0,
 	    "DS1 default mask: window 1 with a matching version is scanned");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* DS2: dart_scan_mask=0xd leaves instance 1 unread even with a matching
 	 * version, and says so once. */
@@ -2579,7 +2664,7 @@ static void pos_dart(void)
 	chk(events_in(ane_t6030_soc.engine_pa + ane_t6030_soc.dart_off + ane_h15_dart_rel[1],
 		      0x4000, 0) == 0,
 	    "DS2 mask 0xd: not one bus access inside window 1");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	reset_all();
 	/* DS4: the reference is the first scanned instance, not instance 0. With
@@ -2602,7 +2687,7 @@ static void pos_dart(void)
 	chk(log_count("ane_h15 read DART inst=0 PARAMS3") == 0 &&
 	    log_count("ane_h15 dart inst=0 version differs") == 0,
 	    "DS4 mask 0xe: instance 0 is never read and never cited as the reference");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* DS5: 0x1 scans instance 0 alone (it is the reference); 0x7 adds windows 1
 	 * and 2 as matching instances. */
@@ -2615,7 +2700,7 @@ static void pos_dart(void)
 	    log_count("dart scan: instance 2 skipped") == 1 &&
 	    log_count("dart scan: instance 3 skipped") == 1,
 	    "DS5 mask 0x1: instance 0 alone as the reference, 1 to 3 skipped");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	reset_all();
 	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
 	for (inst2 = 1; inst2 <= 2; inst2++) {
@@ -2630,7 +2715,7 @@ static void pos_dart(void)
 	    log_count("ane_h15 read DART inst=3 PARAMS3") == 0 &&
 	    log_count("version differs") == 0,
 	    "DS5 mask 0x7: windows 0, 1 and 2 scanned as matching, 3 unread and differing");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* DS3: 0 and anything above 0xf refuse before any bus access. */
 	reset_all();
@@ -2702,7 +2787,7 @@ static void pos_translation(void)
 		    eng_events_at(s, s->cpu_control) == 0 && sim_bus_faults == 0,
 		    "T1 query changes no mapping and adds no engine access beyond preflight");
 		if (!ret)
-			ane_h15_remove(&pdev);
+			remove_if_probed();
 		chk(sim_n_iocalls == before,
 		    "T1 teardown leaves the observed domain and mapping untouched");
 	}
@@ -2783,7 +2868,7 @@ static int neg_dart(void)
 	ret = probe_now();
 	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
 	    rstage == 5 && !strcmp(verdict, "PASS"), "ND7 run_unmapped=1 runs without a live stream");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	/* run with an unreadable DART: refuses before the preflight */
 	run_setup(s, "apple,t6030-ane", 0);
 	eng_set(s, s->dart_off + 0x08, 0);
@@ -2847,7 +2932,7 @@ static void pos_map(void)
 	    sim_iocalls[1].ev >= 5, "M1 map_fw: both maps and the attach happen after the pmgr gate and before the RUN write");
 	chk(log_count("live_streams=1") == 1 && sim_n_dom_live == 0, "M1 map_fw: the scan after the attach finds the live stream; the domain is gone after the stop");
 	chk(events_in(0, ~0ULL, 1) == n && sim_pm_get == 1 && sim_pm_put == 1, "M1 map_fw: only CPU_CONTROL written, power claim released");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2, "M1 map_fw: remove unmaps both windows");
 }
 
@@ -2966,7 +3051,7 @@ static int neg_map(void)
 	chk(ret == 0 && !strcmp(seq, "ATMM") && sim_n_dom_live == 1 && sim_pm_put == 0 &&
 	    sim_module_gets == 1 && run_writes(s, w, 8, &first) == 2,
 	    "NM12 stuck core: the DART mapping is kept (no unmap, detach or free)");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 	chk(sim_n_dom_live == 1 && sim_n_iounmap == 0, "NM12 stuck core: remove() refuses, mapping and windows stay");
 	{
 		const struct ane_h15_soc *max = &ane_t6031_soc;
@@ -2985,7 +3070,7 @@ static int neg_map(void)
 		    sim_pm_put == 0 && sim_n_iounmap == 0 && owned->fw_started &&
 		    owned->fw_touched && owned->map_n == 2,
 		    "NM17 ambiguous stop retains both mappings, module pin, power and windows");
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 		chk(sim_n_dom_live == 1 && sim_n_iounmap == 0 && sim_pm_put == 0 &&
 		    sim_module_gets == 1,
 		    "NM17 remove cannot release ambiguous-state ownership");
@@ -3334,7 +3419,7 @@ static void pos_rtkit_case(const char *tag, unsigned int stop, const u64 *want, 
 		chk(run_idx >= 0 && mb_idx > run_idx && (eng_get(s, s->cpu_status) & DM_STOPPED) && sim_pm_get == 1 && sim_pm_put == 1 &&
 		    sim_module_gets == 0, name);
 	}
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 static void pos_rtkit(void)
@@ -3552,14 +3637,14 @@ static void pos_chan(void)
 		chk(c ? (fw_cmds == 2 && events_in(s->engine_pa + DOORBELL_OFF, 4, 1) == 2) : (fw_cmds == 0 && events_in(s->engine_pa + DOORBELL_OFF, 4, 1) == 0),
 		    c ? "C2: PRINT_ENABLE and CONFIG_GET answered, the doorbell written exactly twice (BIT(1))" : "C1: the doorbell is never written without chan_cmds");
 		chk((eng_get(s, s->cpu_status) & DM_STOPPED) && sim_pm_get == 1 && sim_pm_put == 1 && sim_module_gets == 0, "C: core stopped, claim released");
-		ane_h15_remove(&pdev);
+		remove_if_probed();
 	}
 	/* stage 6 on the same firmware never touches the SCRATCH window */
 	ch_setup();
 	stage = "rtkit";
 	probe_now();
 	chk(scr_writes(s) == 0 && sim_n_dma == 0, "C3 stage 6 writes no SCRATCH word and allocates no surface");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 /* ---- stage 7 IPI pair: pending engine + 0x184c000 (read), acknowledge engine + 0x1850000 (write the value back) ---- */
@@ -3598,7 +3683,7 @@ static void ipi_chan(void)
 	    rstage == 7 && !strcmp(verdict, "PASS"), "I1 stage 7 with a silent pending: PASS unchanged");
 	chk(ipi_pend_reads(s) > 0, "I1 the stage 7 wait loops read the pending word");
 	chk(ipi_ack_writes(s) == 0, "I1 pending 0: no acknowledge write");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* I2: the firmware raises 0x5 with the table: exactly one write of 0x5 back, after its log line */
 	ch_setup();
@@ -3609,7 +3694,7 @@ static void ipi_chan(void)
 	chk(ipi_ack_writes(s) == 1 && ipi_ack_all(s, 0x5), "I2 exactly one acknowledge write and its value is 0x5");
 	chk(log_count("ane_h15 write IPI_ACK=0x5 pa=") == 1, "I2 the write was logged before it happened");
 	chk(log_count("ane_h15 read IPI_PENDING=0x5 pa=") >= 1, "I2 the pending change was logged");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* I2b: the same with an even value, 0x6: one write of 0x6 back, after its log line */
 	ch_setup();
@@ -3620,7 +3705,7 @@ static void ipi_chan(void)
 	chk(ipi_ack_writes(s) == 1 && ipi_ack_all(s, 0x6), "I2b exactly one acknowledge write and its value is 0x6");
 	chk(log_count("ane_h15 write IPI_ACK=0x6 pa=") == 1, "I2b the write was logged before it happened");
 	chk(log_count("ane_h15 read IPI_PENDING=0x6 pa=") >= 1, "I2b the pending change was logged");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* I3: chan_cmds=1 with the model raising 0x5 at publish and on every doorbell: one plus two acknowledges */
 	ch_setup();
@@ -3630,7 +3715,7 @@ static void ipi_chan(void)
 	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
 	    rstage == 7 && !strcmp(verdict, "PASS"), "I3 chan_cmds=1 with a raising pending: PASS");
 	chk(ipi_ack_writes(s) == 3 && ipi_ack_all(s, 0x5), "I3 publish plus the two doorbells: three 0x5 acknowledges");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* I4: the pending word is held (the acknowledge never clears it) through a stuck SCRATCH3 wait:
 	 * the writes stop at the per run cap of 64 */
@@ -3645,7 +3730,7 @@ static void ipi_chan(void)
 	    "I4 stuck SCRATCH3 still fails the run");
 	chk(ipi_ack_writes(s) == 64, "I4 the acknowledges stop at 64 per run");
 	chk(log_count("ane_h15 write IPI_ACK=") == 64, "I4 every acknowledge write carries its log line, no line past the cap");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 
 	/* I5: stage 6 and earlier never read the pending word and never write the acknowledge */
 	ch_setup();
@@ -3656,7 +3741,7 @@ static void ipi_chan(void)
 	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
 	    rstage == 6 && !strcmp(verdict, "PASS"), "I5 stage 6 with a raised pending: PASS unchanged");
 	chk(ipi_pend_reads(s) == 0 && ipi_ack_writes(s) == 0, "I5 stage 6: no pending read, no acknowledge write");
-	ane_h15_remove(&pdev);
+	remove_if_probed();
 }
 
 static void ch_refused(const char *tag, const char *want_reason, bool no_scr, bool no_dma, bool ret_nonzero)
