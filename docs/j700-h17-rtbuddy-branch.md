@@ -84,3 +84,59 @@ Steps 2 and 4 are engine **writes** (SCRATCH words, CPU_CONTROL).
 The H16 sources record the pre-CPU table writes and the ps-word class as
 machine-resetting, and this branch adds mailbox traffic. It needs a
 reboot-tolerant session and independent review before execution.
+
+## RTKit protocol detail (from `rtkit/h14_rtkit_hello.py`)
+
+The repo already implements the first exchange for the H14 family; the
+same layout applies here because the ASC block is at `0x1600000` and the
+mailbox at `+0x8000`:
+
+```
+ASC       = 0x1600000
+MBOX      = ASC + 0x8000          # 0x1608000
+A2I_CTRL  = MBOX + 0x110
+I2A_CTRL  = MBOX + 0x114
+A2I_S0/S1 = MBOX + 0x800 / +0x808
+I2A_R0/R1 = MBOX + 0x830 / +0x838
+```
+
+### Message encoding
+
+`msg0` is 64-bit; the MGMT type lives in bits 59:52 (the **high** half).
+`msg1` carries the endpoint in its low byte.
+
+| Type | Value | Payload |
+| --- | --- | --- |
+| `HELLO` | 1 | min ver [15:0], max ver [31:16] |
+| `HELLO_REPLY` | 2 | chosen ver in both fields |
+| `STARTEP` | 5 | ep at bits 39:32, flag bit 1 |
+| `SET_IOP_PWR_STATE` | 6 | state (`ON = 0x20`) |
+| `SET_IOP_PWR_STATE_ACK` | 7 | echo |
+| `EPMAP` | 8 | base [34:32], bitmap [31:0], LAST bit 51, MORE bit 0 |
+| `SET_AP_PWR_STATE` | 0xb | state |
+
+Version window: `RTKIT_MIN = 11`, `RTKIT_MAX = 12`.
+
+### Mailbox access rules
+
+- Receive: `I2A_CTRL` bit 17 is EMPTY; when clear, read `I2A_R0` as two
+  32-bit halves and `I2A_R1` low byte as the endpoint. **Receive is
+  pop-on-read** — a 32-bit or memcpy-style read would eat a message.
+- Send: wait until `A2I_CTRL` bit 16 (FULL) is clear, write `A2I_S0`
+  (two 32-bit halves), then `A2I_S1` with the endpoint, then wait for
+  FULL to clear again. The FIFO is one deep; never overwrite an in-flight
+  slot.
+
+### Endpoint sets
+
+- System: `(1, 2, 3, 4, 8, 0xa)` — crashlog, syslog, debug, ioreport,
+  oslog, tracekit (per upstream `rtkit.c`).
+- Application: `(1..6)` — the kext's `InitializeRTBuddyEndpoints` opens
+  exactly these; ep0 is an empty slot.
+
+### What the J700 run would need to observe
+
+A first success is not a SCRATCH7 word but a **HELLO** read from I2A and a
+HELLO_REPLY written to A2I. If no HELLO arrives, the image either does not
+speak RTKit or was not released correctly — the same failure the H14 13.5
+firmware showed on every recorded boot.
