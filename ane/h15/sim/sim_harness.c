@@ -2354,20 +2354,6 @@ static void pos_steplog_stop(void)
 	sim_stall_hi = sim_stall_lo + 0x4000;
 	sim_stall_reads_left = 1;
 	ret = probe_now();
-	printf("    FS2D len=%d head='%.70s'\n", sim_steplog_len, sim_steplog_buf);
-	{
-		const char *qq = sim_steplog_buf;
-		int wl = 0, sl = 0, sr = 0;
-		while ((qq = strstr(qq, "dart read wall="))) {
-			unsigned long v = strtoul(qq + strlen("dart read wall="), NULL, 10);
-			wl++;
-			if (v >= 2000) sl++;
-			qq++;
-		}
-		qq = sim_steplog_buf;
-		while ((qq = strstr(qq, "sweep stall pmgr."))) { sr++; qq++; }
-		printf("    FS2D2 wl=%d sl=%d sr=%d\n", wl, sl, sr);
-	}
 	chk(ret == 0, "FS2 the stall run passes");
 	{
 		const char *q;
