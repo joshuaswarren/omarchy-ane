@@ -107,8 +107,8 @@ struct ane_h15_soc {
 	u32 cpu_status;		/* wrapper+0x48 */
 	u32 rvbar;		/* engine+0x1050000 */
 	u64 rvbar_expect;	/* IORVBAR a stage 2 run READ on this SoC (iBoot's preload); 0 = no
-				 * measurement yet, stage=run refuses. T6030: Chris Kearney, PR 175,
-				 * J516S, 0x0000010000000001 (RVBAR_LO 0x1, RVBAR_HI 0x100). */
+				 * measurement yet, stage=run refuses. T6030: Chris Kearney, PR 175, J516S;
+				 * T6031: issue 176, J516C; T8122: stage 2 on a J613. All 0x0000010000000001 (RVBAR_LO 0x1, RVBAR_HI 0x100). */
 	u32 dart_off;		/* engine-relative base of the first ANE DART window; the ADT lists four
 				 * 0x4000 windows at +0, +0x10000, +0x20000, +0x4000. 0 = no ADT
 				 * measurement for this SoC (t6034): stage=dart refuses. */

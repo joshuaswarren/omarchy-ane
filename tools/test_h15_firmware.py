@@ -241,6 +241,40 @@ class H15FirmwareTest(unittest.TestCase):
             )
             self.assertEqual(bytes(image), before)
 
+    def test_kernel_owned_preparation_and_retention(self):
+        binary = Path(self.temp.name) / "test_owned_firmware"
+        command = [
+            os.environ.get("CC", "cc"),
+            "-std=gnu11",
+            "-Wall",
+            "-Wextra",
+            "-I" + str(ROOT / "ane/h15/sim"),
+            "-I" + str(ROOT / "ane/h15/sim/inc"),
+            str(ROOT / "ane/h15/test_owned_firmware.c"),
+            str(ROOT / "libane/ane_sha256.c"),
+            "-o",
+            str(binary),
+        ]
+        subprocess.run(command, check=True)
+        for soc, wrapper in ((0x8122, 0x311400000), (0x6030, 0x309400000), (0x6031, 0x3C9400000), (0x6034, 0x3C9400000)):
+            with self.subTest(soc=hex(soc)):
+                payload = self.images[0x6031 if soc == 0x6034 else soc]
+                expected = bytearray(macho_image(payload)[0])
+                # Native updatePatchBay writes the provider's reg[0] physical address.
+                struct.pack_into("<Q", expected, 0xD2A4C if soc == 0x8122 else 0xD27EC, wrapper)
+                location = Path(self.temp.name)
+                image, staged = location / "input", location / "expected"
+                corrupt, truncated = location / "corrupt", location / "truncated"
+                image.write_bytes(payload)
+                staged.write_bytes(expected)
+                changed = bytearray(payload)
+                changed[-1] ^= 1
+                corrupt.write_bytes(changed)
+                truncated.write_bytes(payload[:-1])
+                subprocess.run(
+                    [str(binary), f"t{soc:x}", str(image), str(staged), str(corrupt), str(truncated)], check=True
+                )
+
     def test_validation_precedes_allocation_and_failure_is_transactional(self):
         stage, _ = self.consumer()
         blob = self.images[0x6031]
