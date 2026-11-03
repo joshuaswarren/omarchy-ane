@@ -6,6 +6,7 @@
  *   make sim-overlay
  */
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include <linux/types.h>
 
 #include "../ane_h16_overlay.c"
@@ -38,6 +40,95 @@ static void ev_add(const char *fmt, ...)
 	if (nev < 200)
 		vsnprintf(ev[nev++], sizeof(ev[0]), fmt, ap);
 	va_end(ap);
+}
+
+/* ---- tracked heap: a property belongs to the kernel once the changeset accepted it ---- */
+static int sim_prop_misuse, sim_alloc_fail_n, sim_allocs, sim_update_fail_n, sim_updates, sim_distinct_props;
+static struct {
+	const void *p;
+	bool live, held;
+} heap[256];
+static int nheap;
+
+static int heap_find(const void *p)
+{
+	for (int i = 0; p && i < nheap; i++)
+		if (heap[i].live && heap[i].p == p)
+			return i;
+	return -1;
+}
+
+static void *heap_add(void *p)
+{
+	if (p && nheap < 256) {
+		heap[nheap].p = p;
+		heap[nheap].live = true;
+		heap[nheap].held = false;
+		nheap++;
+	}
+	return p;
+}
+
+static bool heap_fail(void)
+{
+	return sim_alloc_fail_n && ++sim_allocs == sim_alloc_fail_n;
+}
+
+static void heap_hold(const void *p)
+{
+	int i = heap_find(p);
+
+	if (i >= 0)
+		heap[i].held = true;
+}
+
+static int heap_unheld_live(void)
+{
+	int n = 0;
+
+	for (int i = 0; i < nheap; i++)
+		n += heap[i].live && !heap[i].held;
+	return n;
+}
+
+void *kzalloc(size_t size, int gfp)
+{
+	(void)gfp;
+	return heap_fail() ? NULL : heap_add(calloc(1, size));
+}
+
+char *kstrdup(const char *s, int gfp)
+{
+	(void)gfp;
+	return heap_fail() ? NULL : heap_add(strdup(s));
+}
+
+void *kmemdup(const void *src, size_t len, int gfp)
+{
+	void *p;
+
+	(void)gfp;
+	if (heap_fail())
+		return NULL;
+	p = malloc(len);
+	memcpy(p, src, len);
+	return heap_add(p);
+}
+
+/* Freeing something that is not a live heap block, or that the kernel already holds, is the module's bug. */
+void kfree(const void *p)
+{
+	int i = heap_find(p);
+
+	if (!p)
+		return;
+	if (i < 0 || heap[i].held) {
+		sim_prop_misuse++;
+		ev_add("MISUSE kfree of a block the module does not own");
+		return;
+	}
+	heap[i].live = false;
+	free((void *)p);
 }
 
 void sim_log(const char *fmt, ...)
@@ -206,7 +297,29 @@ static int cs_record(struct of_changeset *ocs, enum sim_cs_kind kind, struct dev
 
 int of_changeset_update_property(struct of_changeset *ocs, struct device_node *np, const struct property *prop)
 {
-	return cs_record(ocs, CS_UPDATE, np, prop->name, prop->value, prop->length);
+	int i = ocs->n, ret;
+
+	if (sim_update_fail_n && ++sim_updates == sim_update_fail_n)
+		return -ENOMEM;
+	if (heap_find(prop) < 0 || heap_find(prop->name) < 0 || heap_find(prop->value) < 0 ||
+	    !(prop->_flags & (1UL << OF_DYNAMIC)) || prop->next) {
+		sim_prop_misuse++;
+		ev_add("MISUSE %s %s is not a fresh dynamic heap property", np->path, prop->name);
+	}
+	for (int j = 0; j < i; j++)
+		if (ocs->ent[j].prop == prop) {
+			sim_prop_misuse++;
+			ev_add("MISUSE %s %s reuses a property struct that is already in the change set", np->path, prop->name);
+		}
+	ret = cs_record(ocs, CS_UPDATE, np, prop->name, prop->value, prop->length);
+	if (!ret) {
+		ocs->ent[i].prop = prop;
+		heap_hold(prop);
+		heap_hold(prop->name);
+		heap_hold(prop->value);
+		sim_distinct_props++;
+	}
+	return ret;
 }
 
 int of_changeset_add_prop_u32(struct of_changeset *ocs, struct device_node *np, const char *name, u32 val)
@@ -229,8 +342,18 @@ int of_changeset_apply(struct of_changeset *ocs)
 	for (int i = 0; i < ocs->n; i++) {
 		if (ocs->ent[i].kind == CS_REMOVE)
 			prop_drop(ocs->ent[i].np, ocs->ent[i].after.name);
-		else
+		else {
+			if (ocs->ent[i].prop) {
+				struct property *p = (struct property *)ocs->ent[i].prop;
+
+				if (p->next) {
+					sim_prop_misuse++;
+					ev_add("MISUSE %s %s is already linked into a property list", ocs->ent[i].np->path, p->name);
+				}
+				p->next = (struct property *)&tree[0];
+			}
 			prop_put(ocs->ent[i].np, ocs->ent[i].after.name, ocs->ent[i].after.value, ocs->ent[i].after.length);
+		}
 	}
 	ocs->applied = true;
 	return 0;
@@ -308,6 +431,8 @@ static void tree_reset(void)
 	sim_cs_apply_rc = 0;
 	sim_drv_rc = 0;
 	drv_registered = false;
+	nheap = 0;
+	sim_prop_misuse = sim_alloc_fail_n = sim_allocs = sim_update_fail_n = sim_updates = sim_distinct_props = 0;
 	machine = "apple,t6040";
 	n_pmgr = mk("/power-management@502280000", "apple,t6041-pmgr", true);
 	n_pmgr_ane = mk("/power-management@50228c000", "apple,t6041-pmgr", true);
@@ -402,6 +527,8 @@ int main(void)
 	chk(a > b && a > ev_index("update /ane@484000000 power-domains") && a > ev_index("update /ane@484000000 reg") &&
 	    a == c - 1 && b >= 0, "S10 status on the ANE node is the last change; the power controllers come before the ANE node");
 	chk(ev_index("register-driver") > c && ev_count("cs-init") == 1, "S11 the driver registers after the apply, from one changeset");
+	chk(sim_prop_misuse == 0 && sim_distinct_props == 9 && heap_unheld_live() == 0,
+	    "S12 each of the nine updated properties is its own dynamic heap struct with heap name and value, none shared or reused");
 
 	/* unload: driver first, then the changeset is reverted; the tree is what it was */
 	nev = 0;
@@ -412,6 +539,7 @@ int main(void)
 	nev = 0;
 	ane_h16_unregister(&drv);
 	chk(ev_count("revert") == 0, "U3 a second unload reverts nothing");
+	chk(sim_prop_misuse == 0, "U4 unload frees nothing the kernel holds");
 
 	/* guards: each refuses before any change */
 	tree_reset();
@@ -487,6 +615,28 @@ int main(void)
 	ret = ane_h16_register(&drv, "t6040", true);
 	chk(ret == -ENOMEM && !drv_registered && ev_index("revert") > ev_index("register-driver") && ev_count("cs-destroy") == 1 &&
 	    tree_untouched(), "F2 a driver registration failure reverts and destroys the changeset");
+	tree_reset();
+	sim_update_fail_n = 3;
+	ret = ane_h16_register(&drv, "t6040", true);
+	chk(ret == -ENOMEM && !drv_registered && ev_count("cs-destroy") == 1 && heap_unheld_live() == 0 && sim_prop_misuse == 0 &&
+	    tree_untouched(), "F3 a refused update frees the property it built, destroys the changeset and touches nothing");
+	{
+		int bad = 0, n;
+
+		for (n = 1; n < 60 && !bad; n++) {
+			tree_reset();
+			sim_alloc_fail_n = n;
+			ret = ane_h16_register(&drv, "t6040", true);
+			if (!ret) {
+				ane_h16_unregister(&drv);
+				break;
+			}
+			if (ret != -ENOMEM || drv_registered || heap_unheld_live() || sim_prop_misuse || !tree_untouched() ||
+			    ev_count("cs-destroy") != 1)
+				bad = n;
+		}
+		chk(!bad && n > 20, "F4 an allocation failure at any point leaves no unowned block, frees nothing it gave away and changes nothing");
+	}
 
 	printf("OVERLAY-SIM: %s (%d failure%s)\n", fails ? "FAIL" : "all checks PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;

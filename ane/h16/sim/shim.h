@@ -458,16 +458,21 @@ static inline void device_link_del(struct device_link *l)
 #define IS_ERR_OR_NULL(p) (!(p) || IS_ERR(p))
 
 /* ---- runtime pm (genpd stand-in) ---- */
-extern int sim_rpm_gets, sim_rpm_puts;
+extern int sim_rpm_gets, sim_rpm_puts, sim_rpm_get_rc;
 static inline void pm_runtime_enable(struct device *dev) { (void)dev; }
 static inline void pm_runtime_disable(struct device *dev) { (void)dev; }
 static inline int pm_runtime_get_sync(struct device *dev)
 {
 	(void)dev;
 	sim_rpm_gets++;
-	return 0;
+	return sim_rpm_get_rc;
 }
 static inline void pm_runtime_put_sync(struct device *dev)
+{
+	(void)dev;
+	sim_rpm_puts++;
+}
+static inline void pm_runtime_put_noidle(struct device *dev)
 {
 	(void)dev;
 	sim_rpm_puts++;

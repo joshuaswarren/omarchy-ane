@@ -17,7 +17,8 @@ ROOT = HERE.parent
 SCENARIOS = [
     "pos-dt", "pos-dt-noadt", "pos-defaults", "pos-status", "pos-status-scratch", "pos-pds", "pos-one-pd", "pos-boot",
     "pos-boot-hello", "neg-ps-stuck", "neg-mbox-silent", "neg-bad-pin", "neg-foreign-preload", "neg-dart-map",
-    "neg-unknown-stage", "neg-no-confirm", "neg-pd-fail", "neg-pd-link-fail",
+    "neg-unknown-stage", "neg-no-confirm", "neg-pd-fail", "neg-pd-link-fail", "pos-getsync-eacces", "neg-getsync-fail",
+    "neg-getsync-eacces-one-pd",
 ]
 
 # (name, file, old text, new text)
@@ -43,6 +44,16 @@ MUTANTS = [
     ("overlay: complete node is applied again", "ane_h16_overlay.c", 'if (!ret && of_device_is_available(ane) && of_find_property(ane, "apple,ane-type", NULL)) {', "if (0) {"),
     ("overlay: phandles are not minted", "ane_h16_overlay.c", "if (ps[i]->phandle)\n\t\t\tcontinue;", "continue;"),
     ("overlay: no revert after a registration failure", "ane_h16_overlay.c", "if (ret)\n\t\tane_h16_overlay_remove();", "if (ret)\n\t\t;"),
+    ("probe: a failed get_sync keeps its usage count", "ane_h16_main.c", "pm_runtime_put_noidle(&pdev->dev);\n\t\t\tpm_runtime_disable", "pm_runtime_disable"),
+    ("probe: -EACCES is ignored with no domain attached", "ane_h16_main.c", "if (ane->pd_count > 0 && ret == -EACCES) {", "if (ret == -EACCES) {"),
+    ("probe: any get_sync error is ignored", "ane_h16_main.c", "if (ane->pd_count > 0 && ret == -EACCES) {", "if (ane->pd_count > 0) {"),
+    ("probe: -EACCES is never ignored", "ane_h16_main.c", "if (ane->pd_count > 0 && ret == -EACCES) {", "if (0) {"),
+    ("overlay: one property struct is reused for every node", "ane_h16_overlay.c", "struct property *p = ane_h16_prop(name, value, len);\n\tint ret;", "static struct property *p;\n\tint ret;\n\n\tif (!p)\n\t\tp = ane_h16_prop(name, value, len);"),
+    ("overlay: property is not flagged dynamic", "ane_h16_overlay.c", "of_property_set_flag(p, OF_DYNAMIC);", ""),
+    ("overlay: property name is not copied", "ane_h16_overlay.c", "p->name = kstrdup(name, GFP_KERNEL);", "p->name = (char *)name;"),
+    ("overlay: property value is not copied", "ane_h16_overlay.c", "p->value = kmemdup(value, len, GFP_KERNEL);", "p->value = (void *)value;"),
+    ("overlay: the module frees a property the kernel holds", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (1) {"),
+    ("overlay: a refused update leaks its property", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (0) {"),
 ]
 
 

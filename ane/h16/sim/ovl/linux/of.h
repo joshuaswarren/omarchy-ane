@@ -4,11 +4,20 @@
 #define SIM_OVL_OF_H
 #include <linux/types.h>
 
+#define OF_DYNAMIC 1
+
 struct property {
 	char *name;
 	int length;
 	void *value;
+	struct property *next;
+	unsigned long _flags;
 };
+
+static inline void of_property_set_flag(struct property *p, unsigned long flag)
+{
+	p->_flags |= 1UL << flag;
+}
 
 #define SIM_MAX_PROPS 12
 #define SIM_PROP_BYTES 48
@@ -38,6 +47,7 @@ struct of_changeset {
 		enum sim_cs_kind kind;
 		struct device_node *np;
 		struct sim_prop before, after;
+		const struct property *prop;	/* the struct the caller handed over; the kernel keeps it, it does not copy it */
 	} ent[40];
 	bool applied;
 };

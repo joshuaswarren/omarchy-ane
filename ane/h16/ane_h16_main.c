@@ -1225,11 +1225,20 @@ static int ane_h16_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	ret = pm_runtime_get_sync(&pdev->dev);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
-		pm_runtime_disable(&pdev->dev);
-		ane_h16_unmap(ane);
-		ane_h16_detach_pds(ane);
-		return ret;
+		/* With several domains attached by id, the RPM_ACTIVE links already resumed them, and ane_h15 saw this device's get_sync
+		 * return -EACCES on a T6030 with the cause unknown. Only that code, only with domains attached, is let through: the
+		 * ACTUAL gate in ps_wait is the real power check. */
+		if (ane->pd_count > 0 && ret == -EACCES) {
+			dev_info(&pdev->dev, "engine powered via %d domain links (get_sync %d ignored)\n", ane->pd_count, ret);
+		} else {
+			dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
+			/* a failed get_sync still took a usage count */
+			pm_runtime_put_noidle(&pdev->dev);
+			pm_runtime_disable(&pdev->dev);
+			ane_h16_unmap(ane);
+			ane_h16_detach_pds(ane);
+			return ret;
+		}
 	}
 	ret = ane_h16_ps_wait(ane);
 	if (ret) {

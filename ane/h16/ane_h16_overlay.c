@@ -8,6 +8,7 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -36,18 +37,53 @@ static const char *const needs_path[] = {
 
 static const char *const dart_path[] = { "/iommu@485800000", "/iommu@485820000", "/iommu@485840000" };
 
-static __be32 reg_val[8] = {
+static const __be32 reg_val[8] = {
 	cpu_to_be32(0x4), cpu_to_be32(0x84000000), cpu_to_be32(0x0), cpu_to_be32(0x2000000),
 	cpu_to_be32(0x5), cpu_to_be32(0x02280000), cpu_to_be32(0x0), cpu_to_be32(0x18000),
 };
-static char reg_names_val[] = "engine\0pmgr";
-static __be32 pd_val[N_PS];
-static char okay_val[] = "okay";
+static const char reg_names_val[] = "engine\0pmgr";
+static const char okay_val[] = "okay";
 
-static struct property p_reg = { .name = "reg", .length = sizeof(reg_val), .value = reg_val };
-static struct property p_reg_names = { .name = "reg-names", .length = sizeof(reg_names_val), .value = reg_names_val };
-static struct property p_pd = { .name = "power-domains", .length = sizeof(pd_val), .value = pd_val };
-static struct property p_status = { .name = "status", .length = sizeof(okay_val), .value = okay_val };
+/*
+ * of_changeset_update_property() keeps the struct it is given: the kernel links it into the node's property list (it sets ->next),
+ * puts the old property on the node's deadprops, and frees name, value and struct with kfree when the node goes. So each property
+ * is its own heap allocation, flagged dynamic, and nothing here frees it once the kernel holds it. A static struct reused for
+ * several nodes would splice their lists together and leave module memory on deadprops after unload.
+ */
+static struct property *ane_h16_prop(const char *name, const void *value, int len)
+{
+	struct property *p = kzalloc(sizeof(*p), GFP_KERNEL);
+
+	if (!p)
+		return NULL;
+	p->name = kstrdup(name, GFP_KERNEL);
+	p->value = kmemdup(value, len, GFP_KERNEL);
+	if (!p->name || !p->value) {
+		kfree(p->name);
+		kfree(p->value);
+		kfree(p);
+		return NULL;
+	}
+	p->length = len;
+	of_property_set_flag(p, OF_DYNAMIC);
+	return p;
+}
+
+static int ane_h16_set(struct of_changeset *cs, struct device_node *np, const char *name, const void *value, int len)
+{
+	struct property *p = ane_h16_prop(name, value, len);
+	int ret;
+
+	if (!p)
+		return -ENOMEM;
+	ret = of_changeset_update_property(cs, np, p);
+	if (ret) {
+		kfree(p->name);
+		kfree(p->value);
+		kfree(p);
+	}
+	return ret;
+}
 
 static struct {
 	struct of_changeset cs;
@@ -133,33 +169,35 @@ static bool ane_h16_darts_unavailable(void)
  * the status changes and must already see the finished node. */
 static int ane_h16_build(struct device_node *ane, struct device_node **ps)
 {
+	struct of_changeset *cs = &ane_ovl.cs;
 	struct property *iommus;
+	__be32 pd_val[N_PS];
 	unsigned int i;
 	int ret = 0;
 
-	of_changeset_init(&ane_ovl.cs);
-	for (i = 0; i < N_PS && !ret; i++)
-		if (!of_device_is_available(ps[i]))
-			ret = of_changeset_update_property(&ane_ovl.cs, ps[i], &p_status);
 	for (i = 0; i < N_PS; i++)
 		pd_val[i] = cpu_to_be32(ps[i]->phandle);
+	of_changeset_init(cs);
+	for (i = 0; i < N_PS && !ret; i++)
+		if (!of_device_is_available(ps[i]))
+			ret = ane_h16_set(cs, ps[i], "status", okay_val, sizeof(okay_val));
 	if (!ret)
-		ret = of_changeset_update_property(&ane_ovl.cs, ane, &p_reg);
+		ret = ane_h16_set(cs, ane, "reg", reg_val, sizeof(reg_val));
 	if (!ret)
-		ret = of_changeset_update_property(&ane_ovl.cs, ane, &p_reg_names);
+		ret = ane_h16_set(cs, ane, "reg-names", reg_names_val, sizeof(reg_names_val));
 	if (!ret)
-		ret = of_changeset_update_property(&ane_ovl.cs, ane, &p_pd);
+		ret = ane_h16_set(cs, ane, "power-domains", pd_val, sizeof(pd_val));
 	if (!ret)
-		ret = of_changeset_add_prop_u32(&ane_ovl.cs, ane, "apple,ane-type", 0x110);
+		ret = of_changeset_add_prop_u32(cs, ane, "apple,ane-type", 0x110);
 	iommus = of_find_property(ane, "iommus", NULL);
 	if (!ret && iommus && ane_h16_darts_unavailable())
-		ret = of_changeset_remove_property(&ane_ovl.cs, ane, iommus);
+		ret = of_changeset_remove_property(cs, ane, iommus);
 	if (!ret && !of_device_is_available(ane))
-		ret = of_changeset_update_property(&ane_ovl.cs, ane, &p_status);
+		ret = ane_h16_set(cs, ane, "status", okay_val, sizeof(okay_val));
 	if (!ret)
-		ret = of_changeset_apply(&ane_ovl.cs);
+		ret = of_changeset_apply(cs);
 	if (ret)
-		of_changeset_destroy(&ane_ovl.cs);
+		of_changeset_destroy(cs);
 	return ret;
 }
 

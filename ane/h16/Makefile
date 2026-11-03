@@ -22,9 +22,9 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds pos-one-pd pos-boot pos-boot-hello
+POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds pos-one-pd pos-boot pos-boot-hello pos-getsync-eacces
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail
+	neg-dart-map neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

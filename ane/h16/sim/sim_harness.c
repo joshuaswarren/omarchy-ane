@@ -61,6 +61,7 @@ int sim_rpm_gets, sim_rpm_puts;
 int sim_iounmaps;
 int sim_pd_count, sim_pd_attached, sim_pd_detached, sim_pd_links, sim_pd_unlinked;
 int sim_pd_fail_at = -1, sim_pd_link_fail_at = -1;
+int sim_rpm_get_rc;
 struct device sim_pd_devs[8];
 struct device_link sim_pd_link_objs[8];
 int sim_dma_outstanding;
@@ -729,6 +730,54 @@ static void sc_neg_pd_link_fail(void)
 	chk(sim_n_events == 0 && sim_ioremaps == 0, "no mapping and no read");
 }
 
+/* A failed get_sync still took a usage count: it is given back, and the probe unwinds everything it set up. */
+static void sc_neg_getsync_fail(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_rpm_get_rc = -EIO;
+	ret = run_probe();
+	chk(ret == -EIO, "probe returns the get_sync error");
+	chk(sim_rpm_gets == sim_rpm_puts, "the usage count of the failed get_sync is given back");
+	chk(sim_ioremaps == 2 && sim_iounmaps == 2, "both windows are unmapped");
+	chk(sim_pd_attached == 5 && sim_pd_detached == 5, "all five domains are detached");
+	chk(sim_n_events == 0, "no register was read");
+}
+
+/* ane_h15 saw -EACCES from get_sync with several domains attached; the domains are already up through their links, so the ACTUAL gate decides. */
+static void sc_pos_getsync_eacces(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_rpm_get_rc = -EACCES;
+	ret = run_probe();
+	chk(ret == 0, "probe goes on");
+	chk(sim_log_count("get_sync -13 ignored") == 1, "the ignored error is logged");
+	chk(sim_rpm_gets == sim_rpm_puts, "power claim released");
+	chk(sim_log_count("verdict=PASS") == 1, "the ACTUAL gate and the reads still ran");
+}
+
+/* With no domain attached by the module, -EACCES is an ordinary failure. */
+static void sc_neg_getsync_eacces_one_pd(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 1;
+	sim_rpm_get_rc = -EACCES;
+	ret = run_probe();
+	chk(ret == -EACCES, "probe fails with -EACCES");
+	chk(sim_rpm_gets == sim_rpm_puts, "the usage count is given back");
+	chk(sim_n_events == 0 && sim_iounmaps == sim_ioremaps, "no read, windows unmapped");
+}
+
 static void sc_pos_boot(void)
 {
 	u64 expect_rvbar;
@@ -953,6 +1002,12 @@ int main(int argc, char **argv)
 		sc_neg_pd_fail();
 	else if (!strcmp(sc, "neg-pd-link-fail"))
 		sc_neg_pd_link_fail();
+	else if (!strcmp(sc, "neg-getsync-fail"))
+		sc_neg_getsync_fail();
+	else if (!strcmp(sc, "pos-getsync-eacces"))
+		sc_pos_getsync_eacces();
+	else if (!strcmp(sc, "neg-getsync-eacces-one-pd"))
+		sc_neg_getsync_eacces_one_pd();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))
