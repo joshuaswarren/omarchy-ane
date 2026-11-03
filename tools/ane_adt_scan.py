@@ -10,8 +10,9 @@ With a file argument it reads that file (an ADT dump of the same boot).
 
 It prints, for every node whose name or compatible names the ANE: the path, the property NAMES, and the values of a short
 list of properties (compatible, device_type, reg, segment-ranges, power-gates, clock-gates, clock-ids, pre-loaded). Every
-other property value, including any serial number, identifier or address, is never printed. Under /chosen it prints
-chip-id and board-id only.
+other property value, including any serial number or identifier, is never printed. Under /chosen it prints chip-id and
+board-id only. The reg entries are the raw ADT values: the parent node's device offset is not applied, so they differ from
+the CPU-side addresses by a fixed offset.
 
 segment-ranges holds the firmware iBoot preloaded for the ANE (two 32-byte little-endian records: physical address,
 iova offset, remap iova, size | flags << 32). A boot with no ANE node or no segment-ranges has no preloaded firmware

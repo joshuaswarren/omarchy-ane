@@ -31,7 +31,7 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   ACTUAL=0xf, then logs RVBAR, CPU_STATUS and the two mailbox control
   words, each address first. Without `confirm_read=1` it refuses before it
   maps, powers or reads anything. The eight SCRATCH words are read only
-  with `read_scratch=1`; nobody has read them on an M4.
+  with `read_scratch=1`. They read 0x0 on one M4 Mac mini (see "Measured on a T8132").
 - `stage=boot` (EXPERIMENTAL): firmware-boot smoke. Validates the
   iBoot-preloaded image against the pinned 27.0 payload, copies it into
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
@@ -210,7 +210,9 @@ named `adt` (the m1n1 copy of the boot device tree), read only. Root is needed f
 
 It prints the path, the property names and a few values (compatible, reg, segment-ranges, power-gates, clock-gates, clock-ids,
 pre-loaded) of every node that names the ANE, and chip-id and board-id from /chosen. It prints no other property value, so serial
-numbers, identifiers and addresses stay out of the output. Exit status 0: an ANE node was found. 1: none. 2: an error. The T8132 boot
+numbers and identifiers stay out of the output. The `reg` entries are the raw ADT values: the parent node's device offset is not applied,
+so they differ from the CPU-side addresses in the module rows by a fixed offset (0x210000000 on the saved T8122 and T6030 ADTs). The
+`segment-ranges` physical addresses are used as printed. Exit status 0: an ANE node was found. 1: none. 2: an error. The T8132 boot
 above logged no ANE node and no segment-ranges; this scan says which of the two is missing.
 
 ## Stop rules
