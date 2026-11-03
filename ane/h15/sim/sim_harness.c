@@ -2347,26 +2347,41 @@ static void pos_steplog_stop(void)
 	pwgate_t6031 = 1;
 	stop_after_pwgate = true;
 	sweep_watch = true;
-	sweep_watch_us = 10;
+	sweep_watch_us = 2000;
 	steplog = "/tmp/sim-step.log";
-	sim_stall_us = 50;
-	sim_stall_lo = s->engine_pa + s->dart_off + ane_h15_dart_rel[1] + 0x200;
-	sim_stall_hi = sim_stall_lo + 4;
+	sim_stall_us = 3000;
+	sim_stall_lo = s->engine_pa + s->dart_off;
+	sim_stall_hi = sim_stall_lo + 0x4000;
 	sim_stall_reads_left = 1;
 	ret = probe_now();
+	printf("    FS2D len=%d head='%.70s'\n", sim_steplog_len, sim_steplog_buf);
+	{
+		const char *qq = sim_steplog_buf;
+		int wl = 0, sl = 0, sr = 0;
+		while ((qq = strstr(qq, "dart read wall="))) {
+			unsigned long v = strtoul(qq + strlen("dart read wall="), NULL, 10);
+			wl++;
+			if (v >= 2000) sl++;
+			qq++;
+		}
+		qq = sim_steplog_buf;
+		while ((qq = strstr(qq, "sweep stall pmgr."))) { sr++; qq++; }
+		printf("    FS2D2 wl=%d sl=%d sr=%d\n", wl, sl, sr);
+	}
 	chk(ret == 0, "FS2 the stall run passes");
 	{
 		const char *q;
 		int wall_lines = 0, slow_lines = 0, snap_reads = 0;
-		unsigned long wall_us = 0;
+		unsigned long slow_wall_us = 0;
 
 		q = sim_steplog_buf;
 		while ((q = strstr(q, "dart read wall="))) {
 			unsigned long v = strtoul(q + strlen("dart read wall="), NULL, 10);
 			wall_lines++;
-			if (v >= 50)
+			if (v >= 2000) {
 				slow_lines++;
-			wall_us = v;
+				slow_wall_us = v;
+			}
 			q++;
 		}
 		q = sim_steplog_buf;
@@ -2376,10 +2391,10 @@ static void pos_steplog_stop(void)
 		}
 		chk(wall_lines >= 1 && slow_lines == 1,
 		    "FS2 exactly one read is over the threshold, the rest fast");
-		chk(wall_us >= 50,
-		    "FS2 the wall line carries the real stalled microseconds");
-		chk(snap_reads == 5,
-		    "FS2 exactly one snapshot block (five ps reads) for the slow read");
+		chk(slow_wall_us >= 3000,
+		    "FS2 the slow read's wall carries the stalled microseconds");
+		chk(snap_reads == 10,
+		    "FS2 exactly one snapshot block (five pa lines plus five value lines)");
 		chk(strstr(sim_steplog_buf, "sweep stall dart") != NULL,
 		    "FS2 the slow read's own value is logged after the snapshot");
 	}
