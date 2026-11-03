@@ -804,10 +804,9 @@ static int ane_h15_dart_rd(struct ane_h15 *ane, unsigned int inst, u32 off, u32 
 		return -EPERM;
 	ane_h15_step("read dart%u+%#x pa=%#llx\n", inst, off,
 		     s->engine_pa + woff);
-	{
-		u64 t0 = ktime_get_boottime_ns();
-		*v = readl_relaxed(ane->engine + woff);
 		if (sweep_watch) {
+			u64 t0 = ktime_get_boottime_ns();
+			*v = readl_relaxed(ane->engine + woff);
 			u64 dt = ktime_get_boottime_ns() - t0;
 			unsigned int k;
 
