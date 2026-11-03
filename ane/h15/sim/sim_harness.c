@@ -68,6 +68,16 @@ void ane_h15_unregister(struct platform_driver *drv)
 
 #include "../ane_h15_main.c"
 
+/* steplog shim state */
+char sim_steplog_buf[8192];
+int sim_steplog_len;
+unsigned long sim_steplog_fsyncs;
+int sim_steplog_open_fail;
+int sim_steplog_mode;
+unsigned short sim_step_at[2048];
+int sim_step_n;
+unsigned long long sim_ktime_ns;
+
 /* ---- shim storage ---- */
 struct sim_region sim_bus[SIM_MAX_REGIONS];
 int sim_n_regions;
@@ -199,6 +209,8 @@ static const struct ane_h15_soc *cur_soc;
 
 static void reset_all(void)
 {
+	sim_steplog_len = 0; sim_steplog_buf[0] = 0; sim_steplog_fsyncs = 0; sim_steplog_open_fail = 0;
+	sim_steplog_mode = 0; sim_step_n = 0;
 	sim_n_regions = 0;
 	sim_n_events = 0;
 	sim_bus_faults = 0;
@@ -233,6 +245,8 @@ static void reset_all(void)
 	sb_wait_ms = 1000;
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
+	stop_after_pwgate = false;
+	steplog = NULL;
 	run_unmapped = false;
 	sim_module_gets = 0;
 	map_fw = false;
@@ -2046,6 +2060,142 @@ static void pw_order(const struct ane_h15_soc *s, u64 wpa, int *ri, int *wi, int
 	}
 }
 
+/* steplog and stop_after_pwgate: the crash-forensics pair of the write step. */
+static void pos_steplog_stop(void)
+{
+	const struct ane_h15_soc *s = &ane_t6031_soc;
+	unsigned int rstage;
+	char verdict[32], reason[128];
+	int i, ret, before = fails;
+	u32 w[8];
+	int n, first;
+
+	/* SL1: steplog=1 with the gate write. Every step line lands before its
+	 * access; the fsync count matches the line count. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	pwgate_t6031 = 1;
+	steplog = "/tmp/sim-step.log";
+	dm_pw_word = 0x1237u;
+	ret = probe_now();
+	chk(ret == 0, "SL1 the steplog run passes");
+	{
+		char *b = sim_steplog_buf;
+		int lines = 0;
+
+		for (i = 0; b[i]; i++)
+			if (b[i] == '\n')
+				lines++;
+		chk(strstr(b, "read PWGATE pa=0x29229199c") && strstr(b, "write PWGATE=0x0 pa=0x29229199c") &&
+		    strstr(b, "poll PWGATE begin pa=0x29229199c") && strstr(b, "poll PWGATE end 1 passes") &&
+		    strstr(b, "read CPU_CONTROL pa=") && strstr(b, "write CPU_CONTROL=0x10"),
+		    "SL1 the log carries the gate read, write, poll begin and end, the CPU_CONTROL read and the RUN write");
+		chk(strstr(b, "write PWGATE=0x0") < strstr(b, "write CPU_CONTROL=0x10"),
+		    "SL1 the gate write precedes the RUN write in the log");
+		chk((unsigned long)lines == sim_steplog_fsyncs && lines > 0,
+		    "SL1 every line is fsynced exactly once");
+		chk(sim_steplog_mode == 0600, "SL1 the step file is created 0600");
+		{
+			/* each unique access has a line written when exactly its event count
+			 * had happened: the line precedes the access with nothing between */
+			int ok = 1;
+
+			for (i = 0; i < sim_n_events && i < SIM_MAX_EVENTS; i++) {
+				int j, covered = 0;
+
+				if (i && sim_events[i].pa == sim_events[i - 1].pa &&
+				    sim_events[i].write == sim_events[i - 1].write)
+					continue;	/* a repeated poll pass of the same access */
+				for (j = 0; j < sim_step_n; j++)
+					if (sim_step_at[j] == i)
+						covered = 1;
+				if (!covered) {
+					ok = 0;
+					break;
+				}
+			}
+			chk(ok, "SL1 every unique bus access has a step line written immediately before it");
+			chk(sim_step_n > 0 && sim_step_at[sim_step_n - 1] >= sim_n_events - 1,
+			    "SL1 a step line exists at or after the last bus access of the run");
+		}
+	}
+	ane_h15_remove(&pdev);
+
+	/* SL2: the steplog open fails: the run refuses before any MMIO. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	pwgate_t6031 = 1;
+	steplog = "/tmp/sim-step.log";
+	sim_steplog_open_fail = 1;
+	ret = probe_now();
+	chk(ret != 0 && log_count("ane_h15 steplog: open") == 1 && events_in(0, ~0ULL, 0) == 0,
+	    "SL2 a failed steplog open refuses the run before any bus access");
+	chk(sim_pm_get == 1 && sim_pm_put == 1,
+	    "SL2 the refused run releases the power claim it took");
+	ane_h15_remove(&pdev);
+
+	/* SA1: stop_after_pwgate with the gate closed. The gate step is the whole
+	 * run: no CPU_CONTROL write at all, the core stays untouched. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	dm_pw_word = 0x1237u;
+	ret = probe_now();
+	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+	    rstage == 5 && !strcmp(verdict, "PASS") &&
+	    !strcmp(reason, "pwgate=opened word=0x1234 stop-after-pwgate"),
+	    "SA1 the split run passes with the stop-after-pwgate reason");
+	n = run_writes(s, w, 8, &first);
+	chk(n == 0 && events_in(0, ~0ULL, 1) == 1,
+	    "SA1 exactly one write in the whole run: the gate word, no engine write");
+	chk(eng_events_at(s, s->cpu_control) >= 1,
+	    "SA1 CPU_CONTROL is read (preflight) and never written");
+	chk(sim_pm_get == 1 && sim_pm_put == 1, "SA1 the power claim is released");
+	ane_h15_remove(&pdev);
+
+	/* SA2: stop_after_pwgate without pwgate_t6031: refuse before any MMIO. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	stop_after_pwgate = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("stop_after_pwgate: needs pwgate_t6031") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "SA2 stop_after_pwgate without pwgate_t6031 refuses before any bus access");
+
+	/* SA3: stop_after_pwgate with scratch_boot: refuse before any MMIO. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	pwgate_t6031 = 1;
+	scratch_boot = true;
+	stop_after_pwgate = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("stop_after_pwgate: needs pwgate_t6031") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0,
+	    "SA3 stop_after_pwgate with scratch_boot refuses before any bus access");
+
+	/* SL3: a stuck gate. The poll logs its begin and its timeout end, never one
+	 * line per pass. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	pwgate_t6031 = 1;
+	steplog = "/tmp/sim-step.log";
+	dm_pw_word = 0x1237u;
+	dm_pw_stuck = true;
+	ret = probe_now();
+	chk(ret != 0 && strstr(sim_steplog_buf, "poll PWGATE begin pa=0x29229199c") &&
+	    strstr(sim_steplog_buf, "poll PWGATE end timeout"),
+	    "SL3 a stuck gate logs the poll begin and the timeout end");
+	{
+		const char *q = sim_steplog_buf;
+		int reads = 0;
+
+		while ((q = strstr(q, "read PWGATE pa="))) {
+			reads++;
+			q++;
+		}
+		chk(reads == 1,
+		    "SL3 exactly one read line for the word: the pre-write read, no per-pass lines");
+	}
+	ane_h15_remove(&pdev);
+
+	printf("  %-58s %s\n", "pos_steplog_stop summary", fails == before ? "all SL/SA checks PASS" : "FAILURES above");
+}
+
 static void pos_run_pwgate_rows(void)
 {
 	static const struct {
@@ -3497,6 +3647,7 @@ int main(int argc, char **argv)
 		pos_run_scratch_boot();
 		pos_run_pwgate();
 		pos_run_pwgate_rows();
+		pos_steplog_stop();
 		pos_pwgate_read();
 		pos_dart();
 		pos_translation();
