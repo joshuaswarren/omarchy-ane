@@ -70,13 +70,17 @@ void ane_h15_unregister(struct platform_driver *drv)
 
 /* steplog shim state */
 char sim_steplog_buf[8192];
+int sim_stall_reads_left;
+unsigned int sim_stall_us;
+u64 sim_stall_lo, sim_stall_hi;
+unsigned long long sim_ktime_ns;
 int sim_steplog_len;
 unsigned long sim_steplog_fsyncs;
 int sim_steplog_open_fail;
 int sim_steplog_mode;
 unsigned short sim_step_at[2048];
 int sim_step_n;
-unsigned long long sim_ktime_ns;
+
 
 /* ---- shim storage ---- */
 struct sim_region sim_bus[SIM_MAX_REGIONS];
@@ -246,6 +250,9 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	sweep_watch = false;
+	sweep_watch_us = 1000;
+	sim_stall_reads_left = 0; sim_stall_us = 1000; sim_stall_lo = sim_stall_hi = 0;
 	ps_assert = false;
 	rpm_hold_sweep = false;
 	dart_scan_mask = 0xf;
@@ -2274,6 +2281,36 @@ static void pos_steplog_stop(void)
 	    "FE rpm_hold_sweep takes a second runtime-PM reference across the sweep");
 	remove_if_probed();
 
+	/* FS: sweep_watch on a matching window: the ps snapshot runs at every
+	 * read when sweep_watch_us=0 (threshold zero counts every read as slow),
+	 * so the plumbing is asserted without a real stall. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	sweep_watch = true;
+	sweep_watch_us = 0;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret == 0 && strstr(sim_steplog_buf, "dart read wall=") != NULL &&
+	    strstr(sim_steplog_buf, "sweep stall pmgr.ANE_MPM reads") != NULL &&
+	    strstr(sim_steplog_buf, "sweep stall dart") != NULL,
+	    "FS sweep_watch steps the ps snapshot at every dart read");
+	remove_if_probed();
+
+	/* FT: sweep_watch off is byte-identical: no wall lines, no snapshot. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ret = probe_now();
+	chk(ret == 0 && strstr(sim_steplog_buf, "dart read wall=") == NULL &&
+	    strstr(sim_steplog_buf, "sweep stall") == NULL,
+	    "FT sweep_watch off: no wall lines and no snapshot");
+	remove_if_probed();
+
 	/* FF: default off is the single probe reference, byte-identical. */
 	run_setup(s, "apple,t6031-ane", 0x0);
 	dart_set(s, true);
@@ -2299,6 +2336,67 @@ static void pos_steplog_stop(void)
 	chk(ret != 0 && log_count("REFUSED reason=ps_assert") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
 	    "FC ps_assert without pwgate_t6031 refuses before any bus access");
+
+	/* FS2: exactly one injected stall (one dart0 read slowed to 50 us by the
+	 * virtual clock), sweep_watch_us=10 above it: the wall line must contain
+	 * the read (wall >= 50), and exactly one snapshot block (five ps reads)
+	 * fires for the stalled read. Fast reads produce no snapshot. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	sweep_watch = true;
+	sweep_watch_us = 2000;
+	steplog = "/tmp/sim-step.log";
+	sim_stall_us = 3000;
+	sim_stall_lo = s->engine_pa + s->dart_off;
+	sim_stall_hi = sim_stall_lo + 0x4000;
+	sim_stall_reads_left = 1;
+	ret = probe_now();
+	chk(ret == 0, "FS2 the stall run passes");
+	{
+		const char *q;
+		int wall_lines = 0, slow_lines = 0, snap_reads = 0;
+		unsigned long slow_wall_us = 0;
+
+		q = sim_steplog_buf;
+		while ((q = strstr(q, "dart read wall="))) {
+			unsigned long v = strtoul(q + strlen("dart read wall="), NULL, 10);
+			wall_lines++;
+			if (v >= 2000) {
+				slow_lines++;
+				slow_wall_us = v;
+			}
+			q++;
+		}
+		q = sim_steplog_buf;
+		while ((q = strstr(q, "sweep stall pmgr."))) {
+			snap_reads++;
+			q++;
+		}
+		chk(wall_lines >= 1 && slow_lines == 1,
+		    "FS2 exactly one read is over the threshold, the rest fast");
+		chk(slow_wall_us >= 3000,
+		    "FS2 the slow read's wall carries the stalled microseconds");
+		chk(snap_reads == 10,
+		    "FS2 exactly one snapshot block (five pa lines plus five value lines)");
+		chk(strstr(sim_steplog_buf, "sweep stall dart") != NULL,
+		    "FS2 the slow read's own value is logged after the snapshot");
+	}
+	remove_if_probed();
+
+	/* FS3: sweep_watch off: no wall lines and no snapshot. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ret = probe_now();
+	chk(ret == 0 && strstr(sim_steplog_buf, "dart read wall=") == NULL &&
+	    strstr(sim_steplog_buf, "sweep stall") == NULL,
+	    "FS3 sweep_watch off: no wall lines and no snapshot");
+	remove_if_probed();
 
 	/* SL3: a stuck gate. The poll logs its begin and its timeout end, never one
 	 * line per pass. */
