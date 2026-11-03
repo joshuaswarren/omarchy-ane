@@ -505,7 +505,7 @@ static int ane_bo_init(struct drm_device *drm, void *data,
 		err = -ENODEV;
 		goto unlock_put;
 	}
-	if (atomic_read(&ane->wedged)) {
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing bo init\n");
 		err = -ENODEV;
 		goto unlock_put;
@@ -546,7 +546,7 @@ static int ane_bo_free(struct drm_device *drm, void *data,
 		mutex_unlock(&ane->engine_lock);
 		return -ENODEV;
 	}
-	if (atomic_read(&ane->wedged)) {
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing bo free\n");
 		mutex_unlock(&ane->engine_lock);
 		return -ENODEV;
@@ -582,12 +582,6 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	    !args->handles[CMD_BUF_BDX] || args->handles[KRN_BUF_BDX] ||
 	    !args->btsp_handle) {
 		return -EINVAL;
-	}
-
-	/* Fail closed: never queue work behind a wedged engine. */
-	if (atomic_read(&ane->wedged)) {
-		dev_err_ratelimited(ane->dev, "wedged: refusing submit\n");
-		return -ECANCELED;
 	}
 
 	req.qid = 4;
@@ -643,7 +637,9 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 		err = -ENODEV;
 		goto unlock;
 	}
-	if (atomic_read(&ane->wedged)) {
+	/* Fail closed: never queue work behind a wedged engine. A wedge
+	 * whose full power-off has happened is retired here first. */
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing submit\n");
 		err = -ECANCELED;
 		goto unlock;
@@ -837,16 +833,24 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
+	bool wedged = atomic_read(&ane->wedged);
+
+	/* A wedged close retries recovery, which power-cycles the partitions
+	 * and then reads the engine, and whose por_pending check needs a
+	 * powered device: hold a reference so autosuspend cannot gate it
+	 * between those steps. A healthy close touches no hardware. */
+	if (wedged && pm_runtime_resume_and_get(ane->dev) < 0)
+		return;
 
 	mutex_lock(&ane->engine_lock);
-	if (ane->removed) {
-		mutex_unlock(&ane->engine_lock);
-		return;
-	}
-
-	ane_tm_recover(ane);
-
+	if (!ane->removed)
+		ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
+
+	if (wedged) {
+		pm_runtime_mark_last_busy(ane->dev);
+		pm_runtime_put_autosuspend(ane->dev);
+	}
 }
 
 /*
@@ -1441,9 +1445,14 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 	/* Veto gating while the engine may be DMA-active: there is no
 	 * documented abort/reset to establish quiescence first -- except
 	 * when recovery is power-cycling a wedged engine to establish
-	 * exactly that quiescence. */
-	if (atomic_read(&ane->wedged) && !ane->recovering)
-		return -EBUSY;
+	 * exactly that quiescence, or after such a cycle already gated it.
+	 * Then this suspend is recovery's second stage: the full power-off
+	 * that clears the retained task manager (ane_tm_recover). */
+	if (atomic_read(&ane->wedged) && !ane->recovering) {
+		if (!READ_ONCE(ane->quiesced))
+			return -EBUSY;
+		WRITE_ONCE(ane->por_pending, true);
+	}
 
 	ane_dvfs_down(ane);
 	return 0;
