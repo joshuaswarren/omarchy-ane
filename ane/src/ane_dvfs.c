@@ -32,8 +32,12 @@
  *    nonposted-mmio into account); a posted mapping took an SError in the first experiments.
  *  - The writes are exactly the words above: DVFS_ON 0/1, DVFS_CMD 0x80000000/1/10, the ANE_SYS
  *    bit of PS-REQ and the level words 0 and 1. The up sequence starts only when the hardware words
- *    are the ones the proving runs saw (PS-REQ 0x60003000, level word 0 or a level word, DVFS_ON 0,
- *    PMP-STATUS 1) and the PS-REQ readback after the ACK is 0x60003400; any other value leaves level 0.
+ *    are the ones the proving runs saw (PS-REQ with bit 10 clear, level word 0 or a level word, DVFS_ON 0,
+ *    PMP-STATUS 1) and the PS-REQ readback after the ACK has bit 10 set; any other value leaves level 0.
+ *    The other bits of PS-REQ belong to other PMP clients (display, ISP, video decode, USB4 and the AGX vote, bit 9): they are
+ *    neither checked nor changed, only bit 10 is read-modify-written (ane_dvfs_req.h). The read-modify-write is two MMIO accesses
+ *    without the pmp-report lock, which this module cannot take; a concurrent write of another bit in that window can be lost
+ *    until pmp-report exports one locked update of the word for all its clients.
  *    A failure at any step (PS-ACK missing) unwinds in the macOS order and leaves level 0; after three
  *    PS-ACK timeouts the driver stops trying until it is reloaded.
  */
@@ -46,6 +50,7 @@
 #include <linux/of_address.h>
 
 #include "ane.h"
+#include "ane_dvfs_req.h"
 
 #define DVFS_ON_OFF		0x2000
 #define DVFS_CMD_OFF		0xa00
@@ -57,10 +62,6 @@
 #define PTD_REG_PS_ACK		0x100
 #define PTD_REG_ANE_LEVEL	0x10c
 #define PTD_PMP_RUNNING		0x1
-#define PS_ANE_SYS		BIT_ULL(10)
-/* The PS-REQ words the runs that proved this sequence saw: booted, and with ANE_SYS requested. */
-#define PS_REQ_BOOT		0x0000000060003000ULL
-#define PS_REQ_UP		(PS_REQ_BOOT | PS_ANE_SYS)
 #define ANE_DVFS_MAX_TIMEOUTS	3
 #define PTD_LEVEL_WORD		0x2000000000000000ULL
 
@@ -115,7 +116,7 @@ static void ane_dvfs_release(struct ane_device *ane, bool level_set, bool psreq_
 		dvfs_step();
 	}
 	if (psreq_set) {
-		ptd_write(ane, PTD_REG_PS_REQ, ptd_read(ane, PTD_REG_PS_REQ) & ~PS_ANE_SYS);
+		ptd_write(ane, PTD_REG_PS_REQ, ane_dvfs_req_down(ptd_read(ane, PTD_REG_PS_REQ)));
 		dvfs_step();
 	}
 	dvfs_cmd(ane, 0, 0);
@@ -151,8 +152,8 @@ void ane_dvfs_up(struct ane_device *ane)
 		return;
 	}
 	req = ptd_read(ane, PTD_REG_PS_REQ);
-	if (req != PS_REQ_BOOT) {
-		d->state = (req & PS_ANE_SYS) ? "ps-req-already-set" : "ps-req-unexpected";
+	if (!ane_dvfs_req_may_up(req)) {
+		d->state = "ps-req-already-set";
 		return;
 	}
 	lvl = ptd_read(ane, PTD_REG_ANE_LEVEL);
@@ -165,14 +166,14 @@ void ane_dvfs_up(struct ane_device *ane)
 	dvfs_step();
 	dvfs_cmd(ane, 0, 0);
 	dvfs_step();
-	/* Re-read right before the read-modify-write: nothing else may have changed the word meanwhile. */
+	/* Re-read right before the read-modify-write: bit 10 must still be clear; every other bit is another client's and is kept as read. */
 	req = ptd_read(ane, PTD_REG_PS_REQ);
-	if (req != PS_REQ_BOOT) {
+	if (!ane_dvfs_req_may_up(req)) {
 		d->state = "ps-req-changed";
 		ane_dvfs_release(ane, false, false);
 		return;
 	}
-	ptd_write(ane, PTD_REG_PS_REQ, req | PS_ANE_SYS);
+	ptd_write(ane, PTD_REG_PS_REQ, ane_dvfs_req_up(req));
 	err = read_poll_timeout(ptd_read, ack, ack & PS_ANE_SYS, 200, 50000, false,
 				ane, PTD_REG_PS_ACK);
 	if (err) {
@@ -181,7 +182,7 @@ void ane_dvfs_up(struct ane_device *ane)
 		ane_dvfs_release(ane, false, true);
 		return;
 	}
-	if (ptd_read(ane, PTD_REG_PS_REQ) != PS_REQ_UP) {
+	if (!ane_dvfs_req_is_up(ptd_read(ane, PTD_REG_PS_REQ))) {
 		d->state = "ps-req-readback-unexpected";
 		ane_dvfs_release(ane, false, true);
 		return;
