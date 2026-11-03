@@ -277,9 +277,16 @@ class InstallTests(unittest.TestCase):
         _, tracer, _ = self.run_install(ANE_TRACE_MAX="7")
         self.assertEqual(tracer.cap, 7)
 
-    def test_other_chip_is_flagged_not_refused(self):
-        _, _, out = self.run_install(hv_args={"chip": 0x8132})
-        self.assertIn("not an M3 chip", out)
+    def test_a_chip_without_a_register_table_row_installs_nothing(self):
+        for chip in (0x6032, 0x6034, 0x8132):
+            for regs in (None, self.T6031_REGS):
+                hv, tracer, out = self.run_install(hv_args={"chip": chip, "ane_regs": regs})
+                self.assertIsNone(tracer)
+                self.assertEqual(hv.zones, [])
+                self.assertFalse(hasattr(hv, "ane_h15_tracer"))
+                self.assertIn(f"chip {chip:#x} has no entry in REG_ENTRIES", out)
+                self.assertIn("no hook is installed", out)
+                self.assertNotIn("hook 0x", out)
 
     def test_missing_dart_node_is_reported(self):
         hv, _, out = self.run_install(hv_args={"dart": False})

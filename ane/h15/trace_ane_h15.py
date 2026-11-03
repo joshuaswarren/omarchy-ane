@@ -91,8 +91,8 @@ PWGATE_OFFSET = {0x8122: 0x272C, 0x6030: 0x2B6C, 0x6031: 0x199C}
 
 # ANE register entries as (engine, pmgr, pmgr_ps). The T8122 and T6030 nodes list the engine, pmgr and pmgr_ps first.
 # The T6031 node (SoC data, J516C) lists two small sub-windows of the engine first, so its entries are 2, 3 and 4.
-DEFAULT_REG_ENTRIES = (0, 1, 2)
-REG_ENTRIES = {0x6031: (2, 3, 4)}
+# A chip without a row here is not traced: install() stops before it makes a plan.
+REG_ENTRIES = {0x8122: (0, 1, 2), 0x6030: (0, 1, 2), 0x6031: (2, 3, 4)}
 
 READY_WORD = 0x08042006
 WAKE_WORD = 0xF7FBDFF9
@@ -269,7 +269,7 @@ def dart_windows(adt):
     return []
 
 
-def pmgr_windows(adt, node, entries=DEFAULT_REG_ENTRIES):
+def pmgr_windows(adt, node, entries):
     """The ANE node's two power-manager windows as (start, size, name): the pmgr register entry holds the ps
     registers of the ANE domains and the pmgr_ps entry is the window that holds the PWGATE registers (`entries`
     is (engine, pmgr, pmgr_ps), see REG_ENTRIES). An entry counts only if it lies inside a register range of the
@@ -289,10 +289,14 @@ def pmgr_windows(adt, node, entries=DEFAULT_REG_ENTRIES):
 def install(hv):
     adt = hv.adt
     chip = adt["/chosen"].chip_id
+    if chip not in REG_ENTRIES:
+        print(f"ANE trace: chip {chip:#x} has no entry in REG_ENTRIES (T8122, T6030 and T6031 only): the ANE node's "
+              "register entries are not known, so no plan is made and no hook is installed")
+        return None
+    entries = REG_ENTRIES[chip]
     path, node = ane_node(adt)
-    engine_index, _, _ = REG_ENTRIES.get(chip, DEFAULT_REG_ENTRIES)
-    engine, engine_size = node.get_reg(engine_index)
-    print(f"ANE trace: chip {CHIPS.get(chip, hex(chip))}{'' if chip in CHIPS else ' (not an M3 chip this script was written for)'}")
+    engine, engine_size = node.get_reg(entries[0])
+    print(f"ANE trace: chip {CHIPS[chip]}")
     print(f"ANE trace: node {path} engine {engine:#x} size {engine_size:#x}")
     for name in ("ane_type", "power_gates", "clock_gates", "clock_ids", "segment_ranges", "pre_loaded"):
         value = getattr(node, name, None)
@@ -306,7 +310,7 @@ def install(hv):
     darts = dart_windows(adt)
     if not darts:
         print("ANE trace: no ANE DART node found; the DART is not traced")
-    pmgrs = pmgr_windows(adt, node, REG_ENTRIES.get(chip, DEFAULT_REG_ENTRIES))
+    pmgrs = pmgr_windows(adt, node, entries)
     if len(pmgrs) < 2:
         print("ANE trace: the ANE node has no pmgr and pmgr_ps windows inside the pmgr node; they are not traced")
     windows = darts + pmgrs
