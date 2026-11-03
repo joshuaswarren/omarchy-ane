@@ -46,6 +46,9 @@ def adt(with_ane=True, segments=True, extra_kids=()):
     arm_kids = [node(ane_props)] if with_ane else []
     arm_kids.append(node([("name", cstr("dart-ane")), ("reg", struct.pack("<QQ", 0x101800000, 0x4000)), ("decoy-key", SERIAL)]))
     arm_kids.append(node([("name", cstr("uart0")), ("serial-number", SERIAL)]))
+    arm_kids.append(node([("name", cstr("cane0")), ("reg", struct.pack("<QQ", 0x1, 0x2))]))
+    arm_kids.append(node([("name", cstr("banner")), ("compatible", cstr("apple,planet,x"))]))
+    arm_kids.append(node([("name", cstr("iop-ane-nub")), ("compatible", cstr("iop-nub,ane")), ("reg", struct.pack("<QQ", 0x3, 0x4))]))
     chosen = node([("name", cstr("chosen")), ("chip-id", struct.pack("<I", 0x8122)), ("board-id", struct.pack("<I", 0x28)),
                    ("unique-chip-id", ECID), ("mlb-serial-number", SERIAL)])
     arm_io = node([("name", cstr("arm-io"))], arm_kids)
@@ -84,7 +87,8 @@ class ScanTests(unittest.TestCase):
         self.assertIn("compatible: ane,t8122, apple,ane", out)
         self.assertIn("power-gates: words 0x185", out)
         self.assertIn("node /arm-io/dart-ane", out)
-        self.assertIn("ANE nodes: 2", out)
+        self.assertIn("node /arm-io/iop-ane-nub", out)
+        self.assertIn("ANE nodes: 3", out)
         self.assertIn("ANE nodes with segment-ranges: 1", out)
 
     def test_never_prints_a_serial_an_id_or_a_mac(self):
@@ -96,6 +100,18 @@ class ScanTests(unittest.TestCase):
         self.assertIn("/chosen chip-id: words 0x8122", out)
         self.assertIn("/chosen board-id: words 0x28", out)
         self.assertNotIn("uart0", out)
+        self.assertNotIn("cane0", out)
+        self.assertNotIn("banner", out)
+        for form in (SERIAL.hex(), "0x%x" % struct.unpack("<I", ECID[:4])[0], "0x%x" % struct.unpack("<I", ECID[4:])[0]):
+            self.assertNotIn(form, blob)
+
+    def test_only_the_listed_properties_have_a_value_line(self):
+        _, out, _ = run([self.dump(adt())])
+        shown = {line.split(":")[0].strip() for line in out.splitlines()
+                 if line.startswith("  ") and not line.startswith("    ") and ":" in line}
+        self.assertEqual(shown - {"properties"}, set(scan.SHOWN) & {"compatible", "reg", "segment-ranges", "power-gates"})
+        chosen = {line.split(" ")[1].rstrip(":") for line in out.splitlines() if line.startswith("/chosen ")}
+        self.assertEqual(chosen, {"chip-id", "board-id"})
 
     def test_property_names_are_listed_but_not_their_values(self):
         _, out, _ = run([self.dump(adt())])
@@ -104,7 +120,7 @@ class ScanTests(unittest.TestCase):
 
     def test_no_ane_node_exits_1(self):
         rc, out, _ = run([self.dump(adt(with_ane=False, extra_kids=()))])
-        self.assertIn("ANE nodes: 1", out)
+        self.assertIn("ANE nodes: 2", out)
         data = node([("name", cstr("device-tree"))], [node([("name", cstr("arm-io"))], [node([("name", cstr("uart0"))])])])
         rc, out, _ = run([self.dump(data)])
         self.assertEqual(rc, 1)
@@ -124,6 +140,19 @@ class ScanTests(unittest.TestCase):
             self.assertIn("ane_adt_scan:", err)
             self.assertNotIn("Traceback", err)
             self.assertEqual(out, "")
+
+    def test_a_cut_inside_a_property_value_is_refused(self):
+        good = adt()
+        for cut in (1, 2, 3, 9, 14):
+            rc, out, err = run([self.dump(good[:-cut])])
+            self.assertEqual(rc, 2, cut)
+            self.assertIn("truncated", err)
+
+    def test_implausible_node_counts_are_refused(self):
+        data = struct.pack("<II", scan.PROPS_MAX + 1, 0) + b"".join(prop("p", b"") for _ in range(scan.PROPS_MAX + 1))
+        rc, _, err = run([self.dump(data)])
+        self.assertEqual(rc, 2)
+        self.assertIn("implausible", err)
 
     def test_deep_nesting_is_refused(self):
         data = node([("name", cstr("x"))])
