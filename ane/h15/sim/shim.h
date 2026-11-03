@@ -228,7 +228,17 @@ static inline void sim_event(int write, u64 pa, u32 val)
 
 extern void (*sim_write_hook)(u64 pa, u32 v);
 extern u32 (*sim_read_hook)(u64 pa, u32 v);
+extern int sim_stall_reads_left;   /* matching bus reads that cost sim_stall_us */
+extern unsigned int sim_stall_us;
+extern u64 sim_stall_lo, sim_stall_hi;
+extern unsigned long long sim_ktime_ns;
 
+extern unsigned long sim_jiffies;
+#define jiffies sim_jiffies
+static inline void usleep_range(unsigned long lo, unsigned long hi)
+{
+	sim_jiffies += (lo + hi) / 2;
+}
 static inline u32 bus_read(u64 pa)
 {
 	struct sim_region *r = sim_region_find(pa);
@@ -243,6 +253,10 @@ static inline u32 bus_read(u64 pa)
 	if (sim_read_hook)
 		v = sim_read_hook(pa, v);
 	sim_event(0, pa, v);
+	if (sim_stall_reads_left > 0 && pa >= sim_stall_lo && pa < sim_stall_hi) {
+		sim_stall_reads_left--;
+		sim_ktime_ns += (unsigned long long)sim_stall_us * 1000ULL;
+	}
 	return v;
 }
 
@@ -346,8 +360,6 @@ static inline void bus_write64(u64 pa, u64 v)
 /* ---- virtual clock: 1 jiffy = 1 ms; usleep advances it so the pmgr
  * wait loop terminates against a word that never turns on ----
  */
-extern unsigned long sim_jiffies;
-#define jiffies sim_jiffies
 static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
 static inline bool time_after(unsigned long a, unsigned long b)
 {
@@ -357,10 +369,7 @@ static inline void writel_relaxed(u32 v, void *a)
 {
 	bus_write((u64)(uintptr_t)(a), v);
 }
-static inline void usleep_range(unsigned long lo, unsigned long hi)
-{
-	sim_jiffies += (lo + hi) / 2;
-}
+
 static inline void msleep(unsigned int ms) { sim_jiffies += ms; }
 
 /* ---- runtime PM counters: the harness asserts get==put (power
@@ -807,7 +816,6 @@ static inline int vfs_fsync(struct file *f, int datasync)
 }
 static inline unsigned long long ktime_get_boottime_ns(void)
 {
-	extern unsigned long long sim_ktime_ns;
 	return sim_ktime_ns += 1000000ULL;
 }
 
