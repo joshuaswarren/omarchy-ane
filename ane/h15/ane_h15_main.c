@@ -228,6 +228,11 @@ module_param(stop_after_pwgate, bool, 0444);
 MODULE_PARM_DESC(stop_after_pwgate,
 		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1 or with scratch_boot=1 (pwgate_t6031 itself enforces stage 5).");
 
+static unsigned int dart_scan_mask = 0xf;
+module_param(dart_scan_mask, uint, 0444);
+MODULE_PARM_DESC(dart_scan_mask,
+		 "Bitmask of DART instances the scan reads, bit 0 = instance 0. Default 0xf (all four, byte-identical). A clear bit skips that instance's sweep reads entirely and logs one skip line; the firmware segment map is untouched. Exists because the 2026-11-03 B run died on a dart1 TTBR read and the A run survived the same read: the sweep is an intermittent crash source, so a run can now leave the suspect instance unread. Refuses 0 and anything above 0xf.");
+
 static char *steplog;
 module_param(steplog, charp, 0444);
 MODULE_PARM_DESC(steplog,
@@ -797,6 +802,11 @@ static int ane_h15_dart_scan(struct ane_h15 *ane, unsigned int *live, unsigned i
 
 	*live = *locked = 0;
 	for (inst = 0; inst < 4; inst++) {
+		if (!(dart_scan_mask & (1u << inst))) {
+			dev_info(ane->dev, "ane_h15 dart scan: instance %u skipped by dart_scan_mask=%#x\n",
+				 inst, dart_scan_mask);
+			continue;
+		}
 		ane_h15_dart_note(ane, inst, "PARAMS3");
 		ret = ane_h15_dart_rd(ane, inst, ANE_H15_DART_PARAMS3, &p3[inst]);
 		if (ret)
@@ -2576,6 +2586,12 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev,
 			"REFUSED reason=pwgate_t6031: the %s row has no PWGATE window\n",
 			soc->name);
+		return -EINVAL;
+	}
+	/* dart_scan_mask refusals, before any MMIO: 0 scans nothing, the mask has 4 bits. */
+	if (!dart_scan_mask || dart_scan_mask > 0xf) {
+		dev_err(&pdev->dev, "REFUSED reason=dart_scan_mask: a 4 bit mask with at least one instance, got %#x\n",
+			dart_scan_mask);
 		return -EINVAL;
 	}
 	/* stop_after_pwgate refusals: the split needs the PWGATE step alone, without

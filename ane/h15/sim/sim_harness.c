@@ -246,6 +246,7 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	dart_scan_mask = 0xf;
 	steplog = NULL;
 	run_unmapped = false;
 	sim_module_gets = 0;
@@ -2522,6 +2523,44 @@ static void pos_dart(void)
 			ane_h15_remove(&pdev);
 		}
 	}
+
+	/* DS1: the default mask is byte-identical: every window whose version matches
+	 * is scanned. Give window 1 a matching version and scan with the default. */
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x08, DART_P3);
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 read DART inst=1 PARAMS3") == 1 &&
+	    log_count("dart scan: instance 1 skipped") == 0,
+	    "DS1 default mask: window 1 with a matching version is scanned");
+	ane_h15_remove(&pdev);
+
+	/* DS2: dart_scan_mask=0xd leaves instance 1 unread even with a matching
+	 * version, and says so once. */
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	eng_set(&ane_t6030_soc, ane_t6030_soc.dart_off + ane_h15_dart_rel[1] + 0x08, DART_P3);
+	dart_scan_mask = 0xd;
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 read DART inst=1 PARAMS3") == 0 &&
+	    log_count("ane_h15 dart scan: instance 1 skipped by dart_scan_mask=0xd") == 1 &&
+	    log_count("ane_h15 read DART inst=0 PARAMS3") == 1,
+	    "DS2 mask 0xd: instance 1 unread with one skip line, instance 0 still scanned");
+	chk(events_in(ane_t6030_soc.engine_pa + ane_t6030_soc.dart_off + ane_h15_dart_rel[1],
+		      0x4000, 0) == 0,
+	    "DS2 mask 0xd: not one bus access inside window 1");
+	ane_h15_remove(&pdev);
+
+	/* DS3: 0 and anything above 0xf refuse before any bus access. */
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	dart_scan_mask = 0;
+	ret = probe_now();
+	chk(ret != 0 && log_count("REFUSED reason=dart_scan_mask") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "DS3 mask 0 refuses before any bus access");
+	dart_setup(&ane_t6030_soc, "apple,t6030-ane", true);
+	dart_scan_mask = 0x10;
+	ret = probe_now();
+	chk(ret != 0 && log_count("REFUSED reason=dart_scan_mask") == 1,
+	    "DS3 mask above 0xf refuses");
 }
 
 static void translation_setup(const struct ane_h15_soc *s, const char *compat)
