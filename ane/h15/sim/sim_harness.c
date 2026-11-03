@@ -232,6 +232,7 @@ static void reset_all(void)
 	scratch_boot = false;
 	sb_wait_ms = 1000;
 	pwgate_t6031 = 0;
+	pwgate_read = 0;
 	run_unmapped = false;
 	sim_module_gets = 0;
 	map_fw = false;
@@ -1227,7 +1228,7 @@ static void dm_write(u64 pa, u32 v)
 	if (pa != s->engine_pa + s->cpu_control) {
 		/* pwgate model: a 0 to the gate word opens it within the
 		 * first 10 us poll, unless the register ignores the write */
-		if (s->pwgate_pa && pa == s->pwgate_pa + PW_WORD_OFF && !dm_pw_stuck)
+		if (s->pwgate_write && pa == s->pwgate_pa + s->pwgate_word && !dm_pw_stuck)
 			dm_pw_word &= ~3u;
 		return;
 	}
@@ -1248,7 +1249,7 @@ static u32 dm_read(u64 pa, u32 v)
 {
 	const struct ane_h15_soc *s = dm_soc;
 
-	if (s->pwgate_pa && pa == s->pwgate_pa + PW_WORD_OFF)
+	if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word)
 		return dm_pw_word;
 	if (dm_s7_stuck && pa == s->engine_pa + 0x1840050u + 4 * 7)
 		return 0x08042006u;	/* the register ignored the clear */
@@ -2006,7 +2007,7 @@ static int neg_run(void)
 		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0 && sim_bus_faults == 0,
 		    "PW7 pwgate_t6031=3: refused before any bus access, no window mapped");
 
-		/* PW8 (g): the window is a T6031 row property. t8122, t6030
+		/* PW8 (g): the write step is a T6031 row property (pwgate_write). t8122, t6030
 		 * and t6034 refuse the parameter in probe before any MMIO and
 		 * any mapping. */
 		{
@@ -2029,6 +2030,124 @@ static int neg_run(void)
 		}
 	}
 	return fails;
+}
+
+/* ---- stage 2 with pwgate_read=1: the PWGATE word, read only ----
+ * The word sits in the window the ADT ane0 node lists as its third reg entry on T6030 and T8122 (the
+ * fifth on T6031). The step reads it once, logs the address first and the value after, reports closed
+ * when bits 1:0 are nonzero, and writes nothing, on every row that has a window. */
+static void pw_word_set(const struct ane_h15_soc *s, u32 v)
+{
+	sim_bus_map(s->pwgate_pa, s->pwgate_size);
+	sim_bus[sim_region_find(s->pwgate_pa) - sim_bus].mem[s->pwgate_word >> 2] = v;
+}
+
+static void pos_pwgate_read(void)
+{
+	static const struct {
+		const struct ane_h15_soc *soc;
+		const char *compat;
+	} rows[] = {
+		{ &ane_t8122_soc, "apple,t8122-ane" },
+		{ &ane_t6030_soc, "apple,t6030-ane" },
+		{ &ane_t6031_soc, "apple,t6031-ane" },
+	};
+	static const struct { u32 word; const char *gate; } vals[] = {
+		{ 0x30000003u, "closed" },
+		{ 0x30000001u, "closed" },
+		{ 0x30000000u, "open" },
+	};
+	unsigned int rstage;
+	char verdict[32], reason[128], name[192], want[128], line[96];
+	size_t r, v;
+	int ret, before = fails;
+
+	for (r = 0; r < ARRAY_SIZE(rows); r++) {
+		const struct ane_h15_soc *s = rows[r].soc;
+		u64 word_pa = s->pwgate_pa + s->pwgate_word;
+
+		for (v = 0; v < ARRAY_SIZE(vals); v++) {
+			stage2_setup(s, rows[r].compat, -1);
+			pwgate_read = 1;
+			pw_word_set(s, vals[v].word);
+			ret = probe_now();
+			snprintf(want, sizeof(want), "preflight-read-only pwgate=%s word=0x%x",
+				 vals[v].gate, vals[v].word);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: PASS %s", s->name, vals[v].word, want);
+			chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+			    rstage == 2 && !strcmp(verdict, "PASS") && !strcmp(reason, want), name);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: one read of the word, nothing else in the window",
+				 s->name, vals[v].word);
+			chk(events_in(word_pa, 4, 0) == 1 && events_in(s->pwgate_pa, s->pwgate_size, 0) == 1, name);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: zero bus writes anywhere, zero faults",
+				 s->name, vals[v].word);
+			chk(events_in(0, ~0ULL, 1) == 0 && sim_bus_faults == 0, name);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: window unmapped again", s->name, vals[v].word);
+			chk(sim_n_iounmap == 1, name);
+			snprintf(line, sizeof(line), "ane_h15 read PWGATE pa=%#llx", (unsigned long long)word_pa);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: address logged once, before the read", s->name,
+				 vals[v].word);
+			chk(log_count(line) == 1, name);
+			snprintf(line, sizeof(line), "word=PWGATE pa=%#llx value=%#x gate=%s",
+				 (unsigned long long)word_pa, vals[v].word, vals[v].gate);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: value logged with the gate state", s->name,
+				 vals[v].word);
+			chk(log_count(line) == 1, name);
+			snprintf(name, sizeof(name), "PR1 %s word %#x: CPU_CONTROL never touched", s->name,
+				 vals[v].word);
+			chk(eng_events_at(s, s->cpu_control) == 0, name);
+			ane_h15_remove(&pdev);
+		}
+
+		/* PR2: default off. The stage 2 run is byte-identical: no window mapped, no suffix. */
+		stage2_setup(s, rows[r].compat, -1);
+		pw_word_set(s, 0x30000003u);
+		ret = probe_now();
+		snprintf(name, sizeof(name), "PR2 %s default off: PASS preflight-read-only, window untouched", s->name);
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    !strcmp(verdict, "PASS") && !strcmp(reason, "preflight-read-only") &&
+		    events_in(s->pwgate_pa, s->pwgate_size, 0) == 0 && sim_n_iounmap == 0, name);
+		ane_h15_remove(&pdev);
+	}
+
+	/* PR3: the refusals, each before any bus access and any mapping. */
+	for (r = 0; r < 5; r++) {
+		const struct ane_h15_soc *s = r == 4 ? &ane_t6034_soc : &ane_t8122_soc;
+		const char *compat = r == 4 ? "apple,t6034-ane" : "apple,t8122-ane";
+		const char *want_log[] = { "pwgate_read 0 or 1", "pwgate_read: stage=wrapper (2) only",
+					   "pwgate_read: stage=wrapper (2) only", "pwgate_read: not together",
+					   "pwgate_read: the t6034 row has no PWGATE window" };
+
+		stage2_setup(s, compat, -1);
+		pwgate_read = r == 0 ? 2 : 1;
+		if (r == 1)
+			stage = "run";
+		if (r == 2)
+			fw_seg = "10000ac4000:b0000";
+		if (r == 3) {
+			stage = "run";
+			pwgate_t6031 = 1;
+		}
+		ret = probe_now();
+		snprintf(name, sizeof(name), "PR3 case %zu: refused (%s) before any MMIO and any mapping", r,
+			 want_log[r]);
+		chk(ret != 0 && events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0 && sim_n_iounmap == 0 &&
+		    (r == 3 || log_count(want_log[r]) == 1), name);
+	}
+
+	/* PR4: the write step stays T6031 only. T8122 and T6030 have a window now, still no write. */
+	for (r = 0; r < 2; r++) {
+		const struct ane_h15_soc *s = rows[r].soc;
+
+		stage2_setup(s, rows[r].compat, -1);
+		stage = "run";
+		pwgate_t6031 = 2;
+		ret = probe_now();
+		snprintf(name, sizeof(name), "PR4 %s pwgate_t6031=2: refused, no write step", s->name);
+		chk(ret != 0 && log_count("has no PWGATE write (T6031 only)") == 1 &&
+		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
+	}
+	printf("  %-58s %s\n", "pos_pwgate_read summary", fails == before ? "all PR checks PASS" : "FAILURES above");
 }
 
 /* ---- stage 4 (confirm_read=1): the read-only DART liveness scan ---- */
@@ -3247,6 +3366,7 @@ int main(int argc, char **argv)
 		pos_run_pmgr();
 		pos_run_scratch_boot();
 		pos_run_pwgate();
+		pos_pwgate_read();
 		pos_dart();
 		pos_translation();
 		pos_map();

@@ -219,6 +219,11 @@ module_param(pwgate_t6031, uint, 0444);
 MODULE_PARM_DESC(pwgate_t6031,
 		 "Stage=run (5) only, T6031 only: the recorded PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the word at PWGATE+0x199c, log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first (the unconditional recorded order). Other values refuse in probe. Recorded behaviour, never run on an M3.");
 
+static unsigned int pwgate_read;
+module_param(pwgate_read, uint, 0444);
+MODULE_PARM_DESC(pwgate_read,
+		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe. Not together with pwgate_t6031.");
+
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
@@ -571,6 +576,7 @@ static bool ane_h15_window_ok(struct ane_h15 *ane, int idx, const char *what,
 }
 
 static int ane_h15_translation(struct ane_h15 *ane, u64 rvbar);
+static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz);
 
 static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 {
@@ -632,6 +638,18 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 		 status == 0x2a ? "equal" : "differs");
 	if (fw_seg || !strcmp(stage, "domain-window"))
 		return ane_h15_translation(ane, ((u64)rvbar_hi << 32) | rvbar_lo);
+	if (pwgate_read) {
+		char pw[48];
+
+		ret = ane_h15_pwgate_read(ane, pw, sizeof(pw));
+		if (ret) {
+			ane_h15_result(ane, 2, "FAIL", "pwgate-window-refused");
+			return ret;
+		}
+		snprintf(why, sizeof(why), "preflight-read-only %s", pw);
+		ane_h15_result(ane, 2, "PASS", why);
+		return 0;
+	}
 	ane_h15_result(ane, 2, "PASS", "preflight-read-only");
 	return 0;
 }
@@ -1900,7 +1918,7 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  * PWGATE window, then polls it until bits 1:0 read 0, up to 0x1388 polls of 10 microseconds
  * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the macOS 27.0
  * device tree of the J516C: 0x292290000, 0x4000, next to the pmgr window at 0x292280000.
- * Other chips use other offsets that are never touched here. The hypothesis under test
+ * Only the T6031 row has this write step (pwgate_write); pwgate_read reads the word on the other rows. The hypothesis under test
  * (inferred, never measured): a gate still closed there is why the two T6031 stage 5 runs
  * ended with CPU_STATUS 0x30002a to 0x300028 and no mailbox message. Never run on an M3.
  *
@@ -1911,20 +1929,20 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  * 32 bit write, to PWGATE+0x199c only, and the window is mapped and
  * unmapped here. The caller owns the RESULT line.
  */
-#define ANE_H15_PWGATE_WORD	0x199cu
 #define ANE_H15_PWGATE_BITS	3u
 #define ANE_H15_PWGATE_POLLS	5000u
 
 static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 {
 	const struct ane_h15_soc *s = ane->soc;
+	const u64 word_pa = s->pwgate_pa + s->pwgate_word;
 	void __iomem *pw;
 	unsigned int i;
 	u32 v;
 
-	if ((u64)ANE_H15_PWGATE_WORD + 4 > s->pwgate_size) {
+	if ((u64)s->pwgate_word + 4 > s->pwgate_size) {
 		dev_err(ane->dev, "ane_h15 pwgate: offset %#x+4 is outside the %#x byte window\n",
-			(u32)ANE_H15_PWGATE_WORD, s->pwgate_size);
+			s->pwgate_word, s->pwgate_size);
 		return -EINVAL;
 	}
 	pw = ioremap(s->pwgate_pa, s->pwgate_size);
@@ -1932,26 +1950,22 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
 	}
-	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n",
-		 s->pwgate_pa + ANE_H15_PWGATE_WORD);
-	v = readl_relaxed(pw + ANE_H15_PWGATE_WORD);
-	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x\n",
-		 s->pwgate_pa + ANE_H15_PWGATE_WORD, v);
+	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
+	v = readl_relaxed(pw + s->pwgate_word);
+	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x\n", word_pa, v);
 	if (!(v & ANE_H15_PWGATE_BITS) && pwgate_t6031 == 1) {
 		dev_info(ane->dev, "ane_h15 pwgate already open\n");
 		snprintf(suffix, sz, "pwgate=already-open");
 		iounmap(pw);
 		return 0;
 	}
-	dev_crit(ane->dev, "ane_h15 write PWGATE=0x0 pa=%#llx%s\n",
-		 s->pwgate_pa + ANE_H15_PWGATE_WORD,
+	dev_crit(ane->dev, "ane_h15 write PWGATE=0x0 pa=%#llx%s\n", word_pa,
 		 pwgate_t6031 == 2 ? " (forced, the unconditional macOS order)" : "");
-	writel(0, pw + ANE_H15_PWGATE_WORD);
+	writel(0, pw + s->pwgate_word);
 	for (i = 0; i < ANE_H15_PWGATE_POLLS; i++) {
 		usleep_range(10, 10);
-		dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n",
-			 s->pwgate_pa + ANE_H15_PWGATE_WORD);
-		v = readl_relaxed(pw + ANE_H15_PWGATE_WORD);
+		dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
+		v = readl_relaxed(pw + s->pwgate_word);
 		if (!(v & ANE_H15_PWGATE_BITS)) {
 			dev_info(ane->dev, "ane_h15 pwgate open after %u poll(s), final word %#x\n",
 				 i + 1, v);
@@ -1965,6 +1979,40 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 		(u32)ANE_H15_PWGATE_POLLS, v);
 	iounmap(pw);
 	return -ETIMEDOUT;
+}
+
+/* ---- stage 2, pwgate_read=1: the PWGATE word, read only ----
+ *
+ * One 32 bit read of the word the shipped CPU-power step clears (offset from the soc row: T6030 0x2b6c,
+ * T8122 0x272c, T6031 0x199c) and one log line with its value. Bits 1:0 nonzero mean the gate reads
+ * closed. Nothing is written. The address is logged before the read, so a hang names it. The window is
+ * the ANE node's pmgr_ps register entry; it is a power-state window, not a performance or DVFS window.
+ * The caller owns the RESULT line.
+ */
+static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
+{
+	const struct ane_h15_soc *s = ane->soc;
+	const u64 word_pa = s->pwgate_pa + s->pwgate_word;
+	void __iomem *pw;
+	u32 v;
+
+	if ((u64)s->pwgate_word + 4 > s->pwgate_size) {
+		dev_err(ane->dev, "ane_h15 pwgate: offset %#x+4 is outside the %#x byte window\n",
+			s->pwgate_word, s->pwgate_size);
+		return -EINVAL;
+	}
+	pw = ioremap(s->pwgate_pa, s->pwgate_size);
+	if (!pw) {
+		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
+		return -ENOMEM;
+	}
+	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
+	v = readl_relaxed(pw + s->pwgate_word);
+	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x gate=%s\n", word_pa, v,
+		 (v & ANE_H15_PWGATE_BITS) ? "closed" : "open");
+	snprintf(suffix, sz, "pwgate=%s word=0x%x", (v & ANE_H15_PWGATE_BITS) ? "closed" : "open", v);
+	iounmap(pw);
+	return 0;
 }
 
 /* Stage 5, scratch_boot=1: macOS's cold-boot order, never run on an M3. Every write address is logged before the write, so a hang names the
@@ -2421,10 +2469,29 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) only\n");
 		return -EINVAL;
 	}
-	if (pwgate_t6031 && !soc->pwgate_pa) {
+	if (pwgate_t6031 && !soc->pwgate_write) {
 		dev_err(&pdev->dev,
-			"REFUSED reason=pwgate_t6031: the %s row has no PWGATE window (T6031 only)\n",
+			"REFUSED reason=pwgate_t6031: the %s row has no PWGATE write (T6031 only)\n",
 			soc->name);
+		return -EINVAL;
+	}
+	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
+	if (pwgate_read > 1) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);
+		return -EINVAL;
+	}
+	if (pwgate_read && (stage_idx != 2 || fw_seg || !strcmp(stage, "domain-window"))) {
+		dev_err(&pdev->dev,
+			"REFUSED reason=pwgate_read: stage=wrapper (2) only, without fw_seg\n");
+		return -EINVAL;
+	}
+	if (pwgate_read && !soc->pwgate_pa) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_read: the %s row has no PWGATE window\n",
+			soc->name);
+		return -EINVAL;
+	}
+	if (pwgate_read && pwgate_t6031) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_read: not together with pwgate_t6031\n");
 		return -EINVAL;
 	}
 

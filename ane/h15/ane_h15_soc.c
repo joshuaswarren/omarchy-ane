@@ -117,6 +117,12 @@ const struct ane_h15_soc ane_t8122_soc = {
 	.engine_size = 0x2000000,
 	.pmgr_pa     = 0x2d0700000ull,
 	.pmgr_size   = 0x18000,
+	/* PWGATE, read only: the third reg entry of the ADT ane0 node (the pmgr_ps window, 0x4000
+	 * bytes). The shipped CPU-power step clears bits 1:0 of the word at +0x272c. No write: the
+	 * row has pwgate_write false, so pwgate_t6031 is refused in probe. */
+	.pwgate_pa   = 0x2d0724000ull,
+	.pwgate_size = 0x4000,
+	.pwgate_word = 0x272c,
 	.ps_off      = ane_h15_ps_8122,
 	.words       = ane_h15_words_8122,
 	.fw          = &ane_fw_t8122,
@@ -139,6 +145,12 @@ const struct ane_h15_soc ane_t6030_soc = {
 	.engine_size = 0x2000000,
 	.pmgr_pa     = 0x350700000ull,
 	.pmgr_size   = 0x18000,
+	/* PWGATE, read only: the third reg entry of the ADT ane0 node (the pmgr_ps window, 0x4000
+	 * bytes). The shipped CPU-power step clears bits 1:0 of the word at +0x2b6c. No write: the
+	 * row has pwgate_write false, so pwgate_t6031 is refused in probe. */
+	.pwgate_pa   = 0x350724000ull,
+	.pwgate_size = 0x4000,
+	.pwgate_word = 0x2b6c,
 	.ps_off      = ane_h15_ps_6030,
 	.words       = ane_h15_words_6030,
 	.fw          = &ane_fw_t6030,
@@ -168,6 +180,8 @@ const struct ane_h15_soc ane_t6031_soc = {
 	 * step is opt-in per run (pwgate_t6031). */
 	.pwgate_pa   = 0x292290000ull,
 	.pwgate_size = 0x4000,
+	.pwgate_word = 0x199c,
+	.pwgate_write = true,
 	.ps_off      = ane_h15_ps_6031,
 	.words       = ane_h15_words_6031,
 	.fw          = &ane_fw_t6031,
