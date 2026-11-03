@@ -31,7 +31,7 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   ACTUAL=0xf, then logs RVBAR, CPU_STATUS and the two mailbox control
   words, each address first. Without `confirm_read=1` it refuses before it
   maps, powers or reads anything. The eight SCRATCH words are read only
-  with `read_scratch=1`; nobody has read them on an M4.
+  with `read_scratch=1`. They read 0x0 on one M4 Mac mini (see "Measured on a T8132").
 - `stage=boot` (EXPERIMENTAL): firmware-boot smoke. Validates the
   iBoot-preloaded image against the pinned 27.0 payload, copies it into
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
@@ -215,24 +215,25 @@ in place, and none of that is done here.
 ## Measured on a T8132
 
 One M4 Mac mini (J773g, T8132), booted through m1n1, U-Boot and Limine with the DART-disabled boot overlay merged into the running
-device tree. The module was built from the main tree against the running kernel (7.1.13-1-20-ARCH) with no warnings. Stages dt and status
-each ran once, with `rmmod` after each. No SError, external abort or DART fault was logged, and the machine stayed up.
+device tree. The module was built from the main tree against the running kernel (7.1.13-1-20-ARCH) with no warnings. Stage dt ran once and
+stage status ran twice, with `rmmod` after each. No SError, external abort or DART fault was logged, and the machine stayed up.
 
 | Item | Value |
 |---|---|
 | Five ps words, ACTUAL (bits 7:4) | 0xf on all five |
-| `get_sync` on the ANE device | -13, ignored by design; the domain links powered the engine |
+| `get_sync` on the ANE device | -13 on the first status boot, ignored by design; the domain links powered the engine. The second status boot logged no `get_sync -13` line. One boot each; the cause is not known |
 | RVBAR (engine +0x1050000) | 0x10000000001, latched |
 | CPU_STATUS (engine +0x1600048) | 0x30006a (a stage 2 read on a 13-inch M3 MacBook Air before any start gave 0x30002a) |
 | Mailbox A2I and I2A control words | 0x20001 and 0x20001 |
 | ANE segment-ranges | none found on this boot: the module logged no ADT region, ANE node or segment-ranges, so `stage=boot` would refuse. Whether the firmware is preloaded on that boot is unknown |
+| SCRATCH0 to SCRATCH7 (engine +0x1880020 + 4n) | 0x0 on all eight, read by `stage=status confirm_read=1 read_scratch=1` on a second boot with the same module, device tree and boot entry. Nobody had read these words on an M4 before |
 
-Not run: `stage=boot`, `read_scratch=1` and the DART overlay. The firmware stub on that machine is an older build (26.6.2) than the pinned
-27.0 payload. One boot, one run of each stage.
+Not run: `stage=boot` and the DART overlay. The firmware stub on that machine is an older build (26.6.2) than the pinned
+27.0 payload. Stage dt ran once and stage status ran twice, each on its own boot.
 
 ## Not verified (honest limits)
 
-- Only stages dt and status have run on silicon, once, on one M4 Mac mini (see "Measured on a T8132"). `stage=boot` has never run. The
+- Only stages dt and status have run on silicon, on one M4 Mac mini: dt once and status twice, the second time with `read_scratch=1` (see "Measured on a T8132"). `stage=boot` has never run. The
   register map follows macOS behaviour (calibrated against the known T6021 row) and the ASC mailbox offsets come from the iBoot
   coprocessor table. The offsets read so far (RVBAR, CPU_STATUS and the mailbox control words) answered. The rest are unmeasured on H16
   hardware.
