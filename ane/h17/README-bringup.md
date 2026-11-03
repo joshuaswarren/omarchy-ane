@@ -256,3 +256,38 @@ in this guide.
 The current device tree remains disabled. The stage 0 result does not
 authorize enabling the ANE or the DARTs, nor loading the H16 module on
 this machine.
+
+## Teardown: the missing power-off sequence
+
+Every probe up to and including stage 4 raised the ANE sub-domains through
+genpd and released them with a bare `dev_pm_domain_detach()`. Apple never
+does that: `ANEHWDevice::DisableCPUClocksAndPower` (`0xfffffe0008f2b848`)
+runs a nine-step sequence against the PS word (`PMGR+0xc000`) and the
+PWGATE window (`0x300724000`, offsets `0x268c`/`0x26b0`). The compiled
+sequence is in
+`receipts/2026-10-31-j700-h17-power-contract/README.md`.
+
+`ane_h17_poweroff_probe.ko` runs that sequence with **no engine MMIO**,
+so a reset can be attributed to the teardown path rather than to a read:
+
+```sh
+# dry run: reads 0xc000/0xc008/0xc010, 0xc000, and the PWGATE words only
+sudo insmod ane/h17/ane_h17_poweroff_probe.ko optin=1
+sudo dmesg --color=never | grep 'ane_h17_poweroff' | tail -10
+sudo rmmod ane_h17_poweroff_probe
+
+# the sequence itself
+sudo insmod ane/h17/ane_h17_poweroff_probe.ko optin=1 apply=1
+```
+
+`apply=0` is the default. Apple's `validate()` panics on timeout because
+every traced call passes a zero bool; this port logs `TIMEOUT` and moves
+on, so a wedged register cannot take the machine down from here.
+
+The PWGATE window is not in the running device tree (resource 2 of the
+ANE node is unmapped), so the module ioremaps its ADT physical address.
+That address is fixed for T8140 and is not a general-purpose mapping.
+
+Not yet qualified: whether this sequence is what a probe lacking it was
+leaving latched. That is the experiment the module exists to run, and it
+has not been run.
