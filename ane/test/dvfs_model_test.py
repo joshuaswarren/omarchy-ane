@@ -61,10 +61,19 @@ void *fake_iomap(struct device_node *np, int idx);
 #define of_property_match_string fake_match
 #define of_address_to_resource fake_addr
 #define of_iomap fake_iomap
+extern int export_mode, puts_n, node_puts;
+void *fake_symbol_get(void);
+#define symbol_get(x) ((int (*)(const struct device_node *, unsigned int, bool, bool))fake_symbol_get())
+#define symbol_put(x) (puts_n++)
+struct device_node *fake_find_compat(void);
+#define of_find_compatible_node(a, b, c) fake_find_compat()
+#define of_node_put(n) (node_puts++)
+#define EINVAL 22
+#define ENODEV 19
 #define read_poll_timeout(op, val, cond, sleep_us, timeout_us, sleep_before_read, args...) \
 	({ int __i, __r = -ETIMEDOUT; for (__i = 0; __i < 5; __i++) { (val) = op(args); if (cond) { __r = 0; break; } } __r; })
 """
-for n in ("delay", "device", "io", "iopoll", "moduleparam", "of", "of_address", "types"):
+for n in ("delay", "device", "io", "iopoll", "module", "moduleparam", "of", "of_address", "types"):
     with open(T + "/inc/linux/%s.h" % n, "w") as f:
         f.write('#include "../common.h"\n')
 with open(T + "/inc/common.h", "w") as f:
@@ -76,7 +85,7 @@ with open(T + "/ane.h", "w") as f:
 #include "inc/common.h"
 struct ane_device {
 	struct device *dev;
-	struct ane_dvfs { void __iomem *dvfs; void __iomem *ptd; bool active; unsigned int level; unsigned int ack_timeouts; const char *state; } dvfs;
+	struct ane_dvfs { void __iomem *dvfs; void __iomem *ptd; bool active; unsigned int level; unsigned int ack_timeouts; const char *state; const struct device_node *report_np; int (*set_request)(const struct device_node *, unsigned int, bool, bool); } dvfs;
 };
 int ane_dvfs_init(struct ane_device *ane);
 void ane_dvfs_exit(struct ane_device *ane);
@@ -90,6 +99,9 @@ TEST = r"""
 int log_n;
 char log_buf[8192];
 int files, create_err, maps;
+int export_mode, puts_n, node_puts;
+static int export_arm, export_ret, export_calls;
+int fake_set_request(const struct device_node *np, unsigned int id, bool enable, bool no_ack);
 static int perturb_cmd, perturb_psreq;
 static u64 mem_pa[64], mem_val[64];
 static int mem_n;
@@ -103,6 +115,8 @@ static struct device_node np0;
 static u64 get(u64 pa) { int i; for (i = 0; i < mem_n; i++) if (mem_pa[i] == pa) return mem_val[i]; return 0; }
 static void put(u64 pa, u64 v) { int i; for (i = 0; i < mem_n; i++) if (mem_pa[i] == pa) { mem_val[i] = v; return; } mem_pa[mem_n] = pa; mem_val[mem_n++] = v; }
 void fake_usleep(void) { }
+void *fake_symbol_get(void) { return export_mode ? (void *)fake_set_request : NULL; }
+struct device_node *fake_find_compat(void) { return export_mode == 2 ? NULL : &np0; }
 u32 fake_readl(void *p) { return (u32)get((u64)(uintptr_t)p); }
 u64 fake_readq(void *p) { return get((u64)(uintptr_t)p); }
 void fake_writel(u32 v, void *p)
@@ -133,6 +147,22 @@ int fake_addr(struct device_node *np, int idx, struct resource *res)
 }
 void *fake_iomap(struct device_node *np, int idx) { maps++; return (void *)(uintptr_t)(idx == 1 ? DVFS_BASE : PTD_BASE); }
 
+int fake_set_request(const struct device_node *np, unsigned int id, bool enable, bool no_ack)
+{
+	u64 req;
+
+	export_calls++;
+	log_n += sprintf(log_buf + log_n, "EXPORT %u %d %d\n", id, enable, no_ack);
+	if (export_ret)
+		return export_ret;
+	req = get(PTD_BASE + 0xf8 * 16);
+	req = enable ? (req | (1ULL << id)) : (req & ~(1ULL << id));
+	fake_writeq(req, (void *)(uintptr_t)(PTD_BASE + 0x10000 + 0xf8 * 8));
+	if (!ack_mode && !no_ack)
+		return -ETIMEDOUT;
+	return 0;
+}
+
 static struct ane_device ane;
 static int fails;
 #define EXPECT(c, m) do { if (!(c)) { printf("FAIL: %s\n", m); fails++; } } while (0)
@@ -142,6 +172,7 @@ static void fresh(void)
 	dvfs_level = 1;	/* the older cases below are the level 1 sequence; level 5 (the default) has its own cases at the end */
 	mem_n = 0; log_n = 0; log_buf[0] = 0; ack_mode = 1; no_regs = 0; perturb_cmd = perturb_psreq = 0; files = maps = create_err = 0;
 	memset(&ane, 0, sizeof(ane));
+	export_mode = export_arm; export_arm = 0; export_calls = puts_n = node_puts = 0;
 	ane.dev = &dev0;
 	dev0.x = 0;
 	((struct device *)&dev0)->x = 0;
@@ -281,6 +312,33 @@ int main(void)
 	fresh(); dvfs_level = 0;
 	ane_dvfs_up(&ane);
 	EXPECT(log_n == 0 && !ane.dvfs.active && !strcmp(ane.dvfs.state, "level-0-by-parameter"), "level 0 by parameter: nothing written");
+	/* 9: the locked writer exported by pmp-report: the request goes through it (one call per edge), bit 9 and every other bit is left to its read-modify-write */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; export_ret = 0;
+	EXPECT(ane.dvfs.set_request == fake_set_request && ane.dvfs.report_np == &np0, "export present: resolved at init with the report node");
+	ane_dvfs_up(&ane);
+	EXPECT(!strcmp(log_buf, "W32 28586a000 00000001\nW32 285868a00 80000000\nEXPORT 10 1 0\nW64 28e3d07c0 0000000060003400\nW32 285868a00 80000001\nW64 28e3d0860 2000000000000001\n") && export_calls == 1 && ane.dvfs.active, "export present: up asks for bit 10 through the export, with the ack wait; no other PS-REQ write");
+	ane_dvfs_down(&ane);
+	EXPECT(strstr(log_buf, "EXPORT 10 0 1\n") != NULL && export_calls == 2 && !ane.dvfs.active, "export present: down withdraws bit 10 through the export, no ack wait");
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; put(PTD_BASE + 0xf8 * 16, 0x60003200ULL);
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && strstr(log_buf, "EXPORT 10 1 0\nW64 28e3d07c0 0000000060003600\n") != NULL, "export present and bit 9 set at resume: level reached, bit 9 kept");
+	ane_dvfs_exit(&ane);
+	EXPECT(puts_n == 1 && node_puts == 1 && !ane.dvfs.set_request, "exit gives the symbol and the node back");
+	/* 9b: the export times out (-ETIMEDOUT, bit 10 not acknowledged): unwind, level 0, two export calls (the set and the release) */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; ack_mode = 0;
+	ane_dvfs_up(&ane);
+	EXPECT(!ane.dvfs.active && !strcmp(ane.dvfs.state, "ps-ack-timeout") && ane.dvfs.ack_timeouts == 1 && export_calls == 2 && strstr(log_buf, "EXPORT 10 0 1\n") != NULL, "export ack timeout: unwinds through the export, state ps-ack-timeout");
+	/* 9c: the export exists but no report is bound (-ENODEV): the masked read-modify-write here does the job */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; export_ret = -ENODEV;
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && export_calls == 1 && strstr(log_buf, "EXPORT 10 1 0\nW64 28e3d07c0 0000000060003400\nW32 285868a00 80000001\n") != NULL, "export reports -ENODEV: falls back to the masked read-modify-write");
+	export_ret = 0;
+	/* 9d: no report node in the device tree: the export symbol is given back at once and nothing is called */
+	fresh(); export_arm = 2; fresh(); dvfs_level = 1;
+	EXPECT(!ane.dvfs.set_request && puts_n == 1, "no report node: symbol given back, no export in use");
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && export_calls == 0 && !strstr(log_buf, "EXPORT"), "no report node: the masked read-modify-write is used");
+	export_ret = 0;
 	printf(fails ? "RESULT: %d FAILURES\n" : "RESULT: all checks passed\n", fails);
 	return fails != 0;
 }

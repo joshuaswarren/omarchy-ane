@@ -14,7 +14,8 @@
 
 #include <linux/types.h>
 
-#define PS_ANE_SYS	((u64)1 << 10)
+#define PS_ANE_SYS_ID	10
+#define PS_ANE_SYS	((u64)1 << PS_ANE_SYS_ID)
 
 /* The up sequence may start: this driver's request is not set yet. */
 static inline bool ane_dvfs_req_may_up(u64 req)
