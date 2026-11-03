@@ -208,7 +208,26 @@ back. On boot `3134730e-…` / kernel `7.2.11-14-1-ARCH` every word read
 ps-word write was performed. Receipt:
 `receipts/2026-11-02-j700-h17-stage3c-vote-pass/`.
 
-## Stage 4: offline development only — current status
+## Stage 4: first engine read — PASS (read-only)
+
+`ane_h17_engine_probe.ko` repeats the stage-3c vote, refuses unless every
+PMGR word reads `ACTUAL=0xf`, then maps `ane@400000000` and reads
+`CPU_STATUS` (`0x1600048`) and `RVBAR` (`0x1050000`). On boot
+`3134730e-…` it returned:
+
+```
+CPU_STATUS(0x1600048)=0x30006a RVBAR(0x1050000)=0x10000000001 bit0=1
+RESULT stage=4 verdict=PASS reason=engine-read-ok
+```
+
+No hang, no panic. `RVBAR` bit 0 is set with a non-zero entry, so a
+firmware entry point is latched while the CPU reads stopped/idle. The
+three sub-domains are therefore sufficient for engine reads. Reading one
+offset does not qualify a neighbourhood; no write, firmware start, DART,
+or mailbox was attempted. Receipt:
+`receipts/2026-11-02-j700-h17-stage4-engine-read/`.
+
+## Historical status: offline development only
 
 The module refuses before engine access **or watchdog rehearsal**. The
 runner is diagnostics-only for every argument, including GO, REHEARSE and
