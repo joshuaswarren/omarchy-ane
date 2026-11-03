@@ -155,9 +155,10 @@ class ANEH15Tracer(Tracer):
     def release(self):
         """Give every hooked range back to the hardware mapping.
 
-        A tracer entry in TraceMode.OFF makes m1n1 map the range straight to the hardware. Removing the entry
-        with clear_tracers() is not enough: pt_update() skips a range that has no tracer left and keeps the
-        old trapping map. The change is applied by pt_update() at the next hypervisor exception, not at once.
+        A tracer entry in TraceMode.OFF makes m1n1 map the range straight to the hardware. Removing the entries
+        with clear_tracers() would not return the range to the hardware: pt_update() drops the emptied entries
+        (mmio_maps.compact()) and unmaps the dirty range, so the guest's accesses would fault. The change is
+        applied by pt_update() at the next hypervisor exception, not at once.
         """
         for start, size in self.zones:
             self.hv.add_tracer(irange(start, size), self.ident, TraceMode.OFF)
