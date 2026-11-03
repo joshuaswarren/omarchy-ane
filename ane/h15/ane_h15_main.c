@@ -1222,7 +1222,9 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  * hangs the machine leaves its last access in the file; the kmsg ring dies with RAM. */
 static struct file *ane_stepf;
 
-static int ane_h15_steplog_open(struct device *dev)
+static void ane_h15_step(const char *fmt, ...);
+
+static int ane_h15_steplog_open(struct device *dev, unsigned int stg)
 {
 	if (!steplog)
 		return 0;
@@ -1232,6 +1234,9 @@ static int ane_h15_steplog_open(struct device *dev)
 		ane_stepf = NULL;
 		return -EIO;
 	}
+	/* the init line: a hung or crashed machine that never reached MMIO still
+	 * leaves proof that this module ran, and the header dates the open */
+	ane_h15_step("module init stage=%u\n", stg);
 	return 0;
 }
 
@@ -2600,6 +2605,13 @@ static int ane_h15_probe(struct platform_device *pdev)
 			dart_scan_mask);
 		return -EINVAL;
 	}
+	/* the steplog opens at probe entry: the init line lands before bring-up,
+	 * so even a death in the power-domain attach leaves the file behind */
+	ret = ane_h15_steplog_open(&pdev->dev, stage_idx);
+	if (ret) {
+		ane_h15_result(NULL, stage_idx, "REFUSED", "steplog-open-failed");
+		return ret;
+	}
 	/* stop_after_pwgate refusals: the split needs the PWGATE step alone, without
 	 * the SCRATCH sequence of scratch_boot. */
 	if (stop_after_pwgate && (!pwgate_t6031 || scratch_boot)) {
@@ -2683,15 +2695,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = ane_h15_steplog_open(&pdev->dev);
-	if (ret) {
-		ane_h15_result(NULL, stage_idx, "REFUSED", "steplog-open-failed");
-		pm_runtime_put_sync(&pdev->dev);
-		pm_runtime_disable(&pdev->dev);
-		ane_h15_detach_pds(ane);
-		ane_h15_unmap_windows(ane);
-		return ret;
-	}
+	ane_h15_step("bring-up complete\n");
 	if (stage_idx == 1)       ret = ane_h15_stage_status(ane);
 	else if (stage_idx == 2)  ret = ane_h15_stage_wrapper(ane);
 	else if (stage_idx == 4)  ret = ane_h15_stage_dart(ane);

@@ -217,9 +217,9 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   log dies with RAM. The 2026-11-03 J613 write run lost everything this way: the run boot's
   journal stopped at 4.8 seconds and pstore was empty. Poll passes beyond the first are not
   logged one by one, so a stuck gate costs two lines, not 5000, and no insmod timeout is at risk.
-  The file opens after the power-domain bring-up, so those first ps reads are not in it; a failed
-  open refuses the run before the stage's MMIO and releases the power claim. The file is created
-  0600.
+  The file opens at probe entry, before the power-domain bring-up, and its first line is the init
+  line; a bring-up death still leaves the file behind. A failed open refuses the run before any
+  MMIO and before any power claim. The file is created 0600.
 
   What this rests on. The register behaviour above is macOS behaviour. We have not measured it on an
   M3, and it has never run there. The full notes stay private. They do not show two things. They do not

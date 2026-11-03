@@ -2129,9 +2129,8 @@ static void pos_steplog_stop(void)
 	ret = probe_now();
 	chk(ret != 0 && log_count("ane_h15 steplog: open") == 1 && events_in(0, ~0ULL, 0) == 0,
 	    "SL2 a failed steplog open refuses the run before any bus access");
-	chk(sim_pm_get == 1 && sim_pm_put == 1,
-	    "SL2 the refused run releases the power claim it took");
-	ane_h15_remove(&pdev);
+	chk(sim_pm_get == 0 && sim_pm_put == 0,
+	    "SL2 the open now sits before bring-up: no power claim was ever taken");
 
 	/* SA1: stop_after_pwgate with the gate closed. The gate step is the whole
 	 * run: no CPU_CONTROL write at all, the core stays untouched. */
