@@ -833,16 +833,24 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
+	bool wedged = atomic_read(&ane->wedged);
+
+	/* A wedged close retries recovery, which power-cycles the partitions
+	 * and then reads the engine, and whose por_pending check needs a
+	 * powered device: hold a reference so autosuspend cannot gate it
+	 * between those steps. A healthy close touches no hardware. */
+	if (wedged && pm_runtime_resume_and_get(ane->dev) < 0)
+		return;
 
 	mutex_lock(&ane->engine_lock);
-	if (ane->removed) {
-		mutex_unlock(&ane->engine_lock);
-		return;
-	}
-
-	ane_tm_recover(ane);
-
+	if (!ane->removed)
+		ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
+
+	if (wedged) {
+		pm_runtime_mark_last_busy(ane->dev);
+		pm_runtime_put_autosuspend(ane->dev);
+	}
 }
 
 /*

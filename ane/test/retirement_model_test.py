@@ -53,6 +53,10 @@ static int dvfs_downs;
 static void ane_dvfs_down(struct ane_device *ane) { dvfs_downs++; }
 static int pins, cycle_rc, verify_rc, cycles, verifies, drains, enables;
 static int polls, reads, reclaims, violations, failures;
+static int pm_gets, pm_puts, pm_rc, ref_at_verify;
+static __attribute__((unused)) int pm_runtime_resume_and_get(void *d) { if (pm_rc) return pm_rc; pm_gets++; return 0; }
+static __attribute__((unused)) void pm_runtime_mark_last_busy(void *d) { }
+static __attribute__((unused)) void pm_runtime_put_autosuspend(void *d) { pm_puts++; }
 static bool poll_complete;
 static u32 status_value;
 #define atomic_read(p) (*(p))
@@ -64,7 +68,7 @@ static void mutex_unlock(int *p) { if (!*p) violations++; *p = 0; }
 #define dev_info(...) ((void)0)
 static void module_put(int unused) { if (!poll_complete) violations++; pins--; }
 static int ane_pd_cycle(struct ane_device *ane) { cycles++; return cycle_rc; }
-static int ane_ps_verify_on(struct ane_device *ane) { verifies++; return verify_rc; }
+static int ane_ps_verify_on(struct ane_device *ane) { verifies++; ref_at_verify = pm_gets - pm_puts; return verify_rc; }
 static void ane_tm_drain_retained(struct ane_device *ane) { drains++; }
 static void ane_tm_enable(struct ane_device *ane, bool recovery) { enables++; }
 static u32 ane_rec_read32(struct ane_device *ane, const char *name, void *addr) {
@@ -90,6 +94,7 @@ static void fresh(void) {
     pins = 1; cycle_rc = verify_rc = cycles = verifies = drains = enables = 0;
     polls = reads = reclaims = violations = 0; poll_complete = false;
     status_value = TM_IS_IDLE;
+    pm_gets = pm_puts = pm_rc = ref_at_verify = 0;
 }
 static void close_session(void) { ane_drm_postclose(&drm, NULL); }
 int main(void) {
@@ -100,6 +105,12 @@ int main(void) {
     EXPECT(!ane.wedged && !pins && reclaims == 1 && !violations, "only successful idle poll releases wedge/pin/mappings");
     close_session();
     EXPECT(cycles == 1 && reclaims == 1 && !pins && !violations, "repeated clean close does not double-release");
+    fresh(); close_session();
+    EXPECT(pm_gets == 1 && pm_puts == 1 && ref_at_verify == 1, "wedged close holds one runtime-PM reference across recovery and drops it");
+    fresh(); ane.wedged = 0; pins = 0; close_session();
+    EXPECT(!pm_gets && !pm_puts, "healthy close takes no runtime-PM reference");
+    fresh(); pm_rc = -EIO; close_session();
+    EXPECT(ane.wedged && pins == 1 && !cycles && !verifies && !pm_puts && !violations, "failed resume leaves the wedge, pin and mappings untouched");
     fresh(); cycle_rc = -EIO; close_session();
     EXPECT(ane.wedged && pins == 1 && !reclaims && cycles == 1 && !verifies && !polls && !violations, "power failure preserves wedge/pin/mappings");
     cycle_rc = 0; close_session();
