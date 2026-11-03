@@ -116,3 +116,41 @@ provider, which Linux does not model.
 
 This does not kill the clock hypothesis; it means the hypothesis cannot
 be tested by simply adding three clock votes.
+
+## Follow-up 2: the function is declared, not implemented, in the kexts
+
+Re-reading the ADT's `/arm-io` node with the parser's allowlist lifted
+shows the function properties directly:
+
+```
+/arm-io
+  function-clock_gate = <0x00000069 0x636c6b47>   # 0x69, "clkG"
+  function-power_gate = <0x00000069 0x70777247>   # 0x69, "pwrG"
+```
+
+So `AppleARMFunction::withProvider(arm-io, "function-clock_gate")` reads a
+property of the form `<type=0x69, tag="clkG">`.
+
+Disassembly of `AppleARMFunction::withProvider` (`0xfffffe00089631b0`)
+shows it: builds an `OSString` from the name, then resolves through the
+provider's vtable slot `0x2c8` (a property lookup), casts the result, and
+stores it. No register computation appears there.
+
+Searches for a dispatch table came up empty:
+- `0x636c6b47` ("clkG"), `0x70777247` ("pwrG") and `0x69` are absent from
+  `AppleT8140`'s `__TEXT,__const`, `__DATA_CONST,__const` and
+  `__DATA,__data`;
+- "AppleARMFunction" appears only as a class/string, not as a table.
+
+## Conclusion
+
+The clock/power gate is a **provider-side function** identified by
+`<0x69, "clkG">`, resolved through a property lookup and invoked through
+the provider's command gate. The kexts declare it; they do not contain an
+ID-to-register table we can copy. The register selection is behind the
+provider/firmware boundary.
+
+So the clock hypothesis cannot be closed by static analysis of the
+retained kernelcache. It would need either a published T8140 PMGR clock
+layout or an implementation of the provider's function semantics, neither
+of which is in the sources held here.
