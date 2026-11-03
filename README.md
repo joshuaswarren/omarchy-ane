@@ -26,7 +26,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
 
 ## Support at a glance
 
-- Enabled by default: M1, M1 Pro, M1 Max, M2 Max, M2 Ultra (die 0
+- Enabled by default: M1, M1 Pro, M1 Max, M2 Pro, M2 Max, M2 Ultra (die 0
   only; one passing row). The overlay
   applies at install and the driver binds at boot. Each of these chips has run
   exact fp16 execution on real hardware. Enabled by default still requires a
@@ -36,8 +36,6 @@ Part of the Omarchy on Apple Silicon ecosystem:
 - Opt in, untested: M1 Ultra (die 0), plain M2. A driver
   and a cited overlay exist; nobody has run them on that silicon. You add one
   opt-in key.
-- M2 Pro is back to opt-in after a failing row. Keep its regression evidence
-  separate from the chips enabled by default.
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
   `ane/h18` (Mac mini M6). None is packaged or autoloaded; each loads by hand
@@ -54,7 +52,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
 | M1 Max | T6001 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
 | M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | not tested |
 | M2 | T8112 | not recorded | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | not tested |
-| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | opt-in | `ane-t6020` + note | fp16 execution verified |
+| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree |
 | M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
 | M2 Ultra | T6022 | not recorded | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) |
 
