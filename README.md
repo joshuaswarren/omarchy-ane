@@ -1,6 +1,6 @@
 # omarchy-ane
 
-Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs. It ships DRM
+Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs, with experimental bring-up modules for M3, M4 and the Mac mini M6. It ships DRM
 kernel modules and `libane`, the userspace library. Based on [eiln/ane](https://github.com/eiln/ane),
 which reverse engineered the M1; this fork adds the other chips, packaging,
 device-tree overlays and verification tools.
@@ -39,9 +39,12 @@ Part of the Omarchy on Apple Silicon ecosystem:
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
   `ane/h18` (Mac mini M6). None is packaged or autoloaded; each loads by hand
-  behind its own opt-in parameter and per-stage confirmations, and none runs
-  real inference yet ([h15](ane/h15/README-bringup.md),
-  [h16](ane/h16/README-bringup.md), [h18](ane/h18/README-bringup.md)). Data
+  behind its own opt-in parameter and per-stage confirmations
+  ([h15](ane/h15/README-bringup.md), [h16](ane/h16/README-bringup.md),
+  [h18](ane/h18/README-bringup.md)). The M6 module has run the first verified
+  computation on that chip under Linux: a one-op fp16 add, output byte-identical
+  to the reference (2026-11-03, [issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)). The
+  M3 and M4 modules remain bring-up-only. Data
   for newer chips sits in `data/ane-soc/`
   ([docs/ane-soc-data.md](docs/ane-soc-data.md)).
 

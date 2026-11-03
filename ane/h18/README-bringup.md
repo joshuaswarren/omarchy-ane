@@ -142,6 +142,20 @@ were 0 (the boot loader leaves no stream enabled). After the attach and the two 
 The firmware then acknowledged IOP power state ON (0x20). The module sent AP power state ON, the firmware acknowledged it, and the module started endpoint 0x20.
 Endpoint 0x20 sent nothing in the next 1.2 s. With `rtkit_stop=2` the AP and IOP OFF messages were acknowledged, and clearing RUN then returned the core to STOPPED.
 
+### 2026-11-03: the command queue and the first program
+
+With the four-DART device tree and the command sequence first, the firmware
+answered the queue: CONFIG_GET, RESOURCE_INFO_GET and two more opcodes came back
+in the same millisecond, and a clean stop followed ([issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)).
+The first program (a one-op fp16 add, 64 channels, 27,040 bytes) then ran:
+LOAD_PROGRAM, CREATE_PROCESS and PROCEDURE_CALL acknowledged, PROCEDURE_CALL
+finished after 1 ms, and the output buffer's first 4,096 bytes matched the
+reference byte for byte (same SHA-256, `e7fa8c08`); y = a + b held for all 64
+channels. No DART exception on any of the four instances, and the run repeated
+cleanly with the module defaults. The earlier attempt that started but never
+finished was the one-DART device tree: the ANE node now lists all four, as on
+the M1 and M2. The K01 pack (a first real model layer) is not accepted yet.
+
 ## Build and sim
 
 Build the module against the kernel tree of the Image that runs on the M6, on a build host (the vermagic must match):
