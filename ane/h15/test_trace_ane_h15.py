@@ -19,6 +19,7 @@ DART_OFFSETS = [0, 0x10000, 0x20000, 0x4000]
 
 
 class TraceMode:
+    OFF = 0
     ASYNC = 1
     SYNC = 2
 
@@ -38,6 +39,10 @@ class StubTracer:
         pass
 
 
+def irange(start, size):
+    return range(start, start + size)
+
+
 
 class Forbidden:
     """Any use of the proxy handles fails the test: the script must stay passive."""
@@ -49,7 +54,7 @@ class Forbidden:
 def load_script():
     # No m1n1.trace.dart module exists in the stubs: any import of m1n1's DARTTracer would fail the load.
     for name, attrs in (("m1n1", {}), ("m1n1.hv", {"TraceMode": TraceMode}), ("m1n1.trace", {"Tracer": StubTracer}),
-                        ("m1n1.utils", {})):
+                        ("m1n1.utils", {"irange": irange})):
         module = types.ModuleType(name)
         module.__dict__.update(attrs)
         sys.modules[name] = module
@@ -88,7 +93,8 @@ class StubADT(dict):
 
 
 def make_hv(chip=0x6030, dart=True):
-    hv = Obj(zones=[], lines=[], u=Forbidden(), p=Forbidden(), tracer_caches={})
+    hv = Obj(zones=[], releases=[], lines=[], u=Forbidden(), p=Forbidden(), tracer_caches={})
+    hv.add_tracer = lambda zone, ident, mode, read=None, write=None, **kw: hv.releases.append((zone, ident, mode))
     ane = Obj(get_reg=lambda i: (ENGINE, ENGINE_SIZE), power_gates=[7], ane_type=0xC0)
     devices = [
         Obj(name="ANE_SYS", flags=Obj(no_ps=False), id=1, addr=PS_ANE_SYS),
@@ -182,11 +188,32 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(len([line for line in out if "event cap 2 reached" in line]), 1)
         self.assertEqual(len([line for line in out if "SCRATCH0" in line]), 2)
 
+    def test_the_cap_releases_every_hook_to_the_hardware_mapping_once(self):
+        t = new_tracer(cap=2)
+        plan = [(ENGINE + 0x1400000, 0x10000, "a"), (ENGINE + 0x1840000, 0x8000, "b"), (0x28E080000, 0x4000, "c")]
+        t.watch(plan)
+        t.evt_rw(Evt(ENGINE + 0x1840050, 1, True))
+        t.evt_rw(Evt(ENGINE + 0x1840050, 2, True))
+        self.assertEqual(t.hv.releases, [], "nothing is released before the cap")
+        for value in range(3, 8):
+            t.evt_rw(Evt(ENGINE + 0x1840050, value, True))
+        released = t.hv.releases
+        self.assertEqual([(list(z)[0], len(z), ident, mode) for z, ident, mode in released],
+                         [(start, size, "ANEH15", TraceMode.OFF) for start, size, _ in plan])
+        self.assertTrue(any("hooks released" in line for line in t.hv.lines))
+
+    def test_no_release_when_the_cap_is_never_reached(self):
+        t = new_tracer(cap=100)
+        t.watch([(ENGINE + 0x1840000, 0x8000, "b")])
+        for value in range(5):
+            t.evt_rw(Evt(ENGINE + 0x1840050, value, True))
+        self.assertEqual(t.hv.releases, [])
+
 
 class InstallTests(unittest.TestCase):
     def run_install(self, **env):
         hv = make_hv(**env.pop("hv_args", {}))
-        old = {k: os.environ.get(k) for k in ("ANE_TRACE_FULL", "ANE_TRACE_MAX")}
+        old = {k: os.environ.get(k) for k in ("ANE_TRACE_FULL", "ANE_TRACE_MAX", "ANE_TRACE_PLAN_ONLY")}
         os.environ.update(env)
         buf = io.StringIO()
         try:
@@ -203,7 +230,7 @@ class InstallTests(unittest.TestCase):
     def test_default_install_traces_named_windows_dart_and_ps_pages_only(self):
         hv, tracer, out = self.run_install()
         starts = sorted(z[0] for z in hv.zones)
-        expected = ([ENGINE + off for off, _ in script.WINDOWS] + [DART_BASE + off for off in DART_OFFSETS]
+        expected = ([ENGINE + off for off, _, _ in script.WINDOWS] + [DART_BASE + off for off in DART_OFFSETS]
                     + sorted({PS_ANE_SYS & ~0x3FFF, PS_ANE_CPU & ~0x3FFF, PS_GATED & ~0x3FFF}))
         self.assertEqual(starts, sorted(expected))
         self.assertTrue(all(z[2] == TraceMode.ASYNC for z in hv.zones))
@@ -229,10 +256,13 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(len(hv.zones), 1 + 1)
 
     def test_full_mode_still_traces_a_dart_outside_the_aperture(self):
-        hv = make_hv()
-        labeler = script.Labeler(ENGINE, 0x1000000, {}, [(DART_BASE, 0x4000, "DART0")])
-        script.ANEH15Tracer(hv, labeler, 100, True).watch([], [])
-        self.assertEqual(sorted(z[0] for z in hv.zones), [ENGINE, DART_BASE])
+        plan = script.make_plan(ENGINE, 0x1000000, [(DART_BASE, 0x4000, "DART0")], [], True)
+        self.assertEqual([(s, n) for s, n, _ in plan], [(ENGINE, 0x1000000), (DART_BASE, 0x4000)])
+
+    def test_narrow_plan_lists_windows_darts_and_ps_pages(self):
+        plan = script.make_plan(ENGINE, ENGINE_SIZE, [(DART_BASE, 0x4000, "DART0")], [0x28E080000], False)
+        self.assertEqual([(s, n) for s, n, _ in plan],
+                         [(ENGINE + off, size) for off, size, _ in script.WINDOWS] + [(DART_BASE, 0x4000), (0x28E080000, 0x4000)])
 
     def test_cap_from_environment(self):
         _, tracer, _ = self.run_install(ANE_TRACE_MAX="7")
@@ -246,6 +276,25 @@ class InstallTests(unittest.TestCase):
         hv, _, out = self.run_install(hv_args={"dart": False})
         self.assertIn("no ANE DART node found", out)
         self.assertFalse([z for z in hv.zones if DART_BASE <= z[0] < DART_BASE + 0x40000])
+
+    def test_every_hooked_range_is_printed_before_the_hooks_are_installed(self):
+        hv, tracer, out = self.run_install()
+        printed = []
+        for line in out.splitlines():
+            if line.startswith("ANE trace: hook "):
+                head = line.split(" (")[0].split()
+                printed.append((int(head[3], 16), int(head[4].lstrip("+"), 16)))
+        self.assertEqual(sorted(printed), sorted((z[0], z[1]) for z in hv.zones))
+        self.assertEqual(sorted(printed), sorted(tracer.zones))
+
+    def test_plan_only_prints_the_plan_and_installs_nothing(self):
+        hv, tracer, out = self.run_install(ANE_TRACE_PLAN_ONLY="1")
+        self.assertIsNone(tracer)
+        self.assertEqual(hv.zones, [])
+        self.assertEqual(hv.releases, [])
+        self.assertFalse(hasattr(hv, "ane_h15_tracer"))
+        self.assertIn("plan only; no hook is installed", out)
+        self.assertIn(f"hook {ENGINE + 0x1400000:#x} +0x10000 (ASC wrapper)", out)
 
     def test_missing_ane_node_is_an_error(self):
         hv = make_hv()

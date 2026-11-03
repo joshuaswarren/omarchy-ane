@@ -21,8 +21,18 @@ Do not add other m1n1 tracers to the same run unless you know they read nothing:
 cache with reads when they start, and a read of an unpowered ANE block can fault the host.
 
 Environment:
-    ANE_TRACE_FULL=1     trace the whole ANE aperture, not only the named windows (heavy; use for the boot only)
-    ANE_TRACE_MAX=N      stop logging after N events (default 2000000)
+    ANE_TRACE_PLAN_ONLY=1  print every range the script would hook and stop; installs no hook
+    ANE_TRACE_FULL=1       hook the whole ANE aperture, not only the named windows (heavy; use for the boot only)
+    ANE_TRACE_MAX=N        stop logging after N events (default 2000000)
+
+Scope: before it hooks anything the script prints one `hook <start> +<size> (<what>)` line per range. Each range
+is a trapping window that m1n1 maps in 16 KiB pages: the named ANE windows, the ANE DART windows from the ADT, and
+the 16 KiB power-manager page of every ANE ps register. Other registers that share a page are trapped too and
+are not logged.
+
+Event cap: when N events have been logged the script stops logging and puts every range back on the hardware
+mapping (a TraceMode.OFF entry per range). m1n1 applies that at the next hypervisor exception, so the hooks can
+stay installed for a short time after the cap, silently.
 
 Output lines: `<seconds since first event> W|R<width> <label> <offset or address> = <value> [note]`.
 Consecutive identical accesses (polling) collapse into one line with `x<count>`.
@@ -32,6 +42,7 @@ import time
 
 from m1n1.hv import TraceMode
 from m1n1.trace import Tracer
+from m1n1.utils import irange
 
 CHIPS = {0x8122: "T8122", 0x6030: "T6030", 0x6031: "T6031"}
 PAGE = 0x4000
@@ -55,12 +66,12 @@ NAMED = {
 for _i in range(8):
     NAMED[0x1840050 + 4 * _i] = f"SCRATCH{_i}"
 
-# (offset from the engine base, size). The DART windows are left to DARTTracer.
+# (offset from the engine base, size, what it covers). The DART windows come from the ADT.
 WINDOWS = [
-    (0x1050000, PAGE),  # RVBAR
-    (0x1400000, 0x10000),  # ASC wrapper
-    (0x1840000, 0x8000),  # SCRATCH words and doorbell
-    (0x1900000, 0x10000),  # second register block
+    (0x1050000, PAGE, "RVBAR page"),
+    (0x1400000, 0x10000, "ASC wrapper"),
+    (0x1840000, 0x8000, "SCRATCH words and doorbell"),
+    (0x1900000, 0x10000, "second register block"),
 ]
 
 READY_WORD = 0x08042006
@@ -103,6 +114,22 @@ class Labeler:
         return None, None
 
 
+def make_plan(engine, engine_size, darts, ps_pages, full):
+    """Every range the script hooks, as (start, size, what it covers)."""
+    plan = []
+    if full:
+        plan.append((engine, engine_size, "whole ANE aperture"))
+    else:
+        for off, size, why in WINDOWS:
+            plan.append((engine + off, size, why))
+    for start, size, name in darts:
+        if not (full and engine <= start < engine + engine_size):
+            plan.append((start, size, f"ANE DART window {name}"))
+    for page in ps_pages:
+        plan.append((page, PAGE, "power-manager page of an ANE ps register"))
+    return plan
+
+
 class ANEH15Tracer(Tracer):
     DEFAULT_MODE = TraceMode.ASYNC
 
@@ -111,6 +138,7 @@ class ANEH15Tracer(Tracer):
         self.labeler = labeler
         self.cap = cap
         self.full = full
+        self.zones = []
         self.events = 0
         self.t0 = None
         self.pending = None
@@ -118,18 +146,22 @@ class ANEH15Tracer(Tracer):
         self.pending_time = 0.0
         self.capped = False
 
-    def watch(self, windows, ps_pages):
-        engine = self.labeler.engine
-        if self.full:
-            self.trace(engine, self.labeler.engine_size, self.DEFAULT_MODE)
-        else:
-            for off, size in windows:
-                self.trace(engine + off, size, self.DEFAULT_MODE)
-        for start, size, _name in self.labeler.dart_windows:
-            if not (self.full and engine <= start < engine + self.labeler.engine_size):
-                self.trace(start, size, self.DEFAULT_MODE)
-        for page in ps_pages:
-            self.trace(page, PAGE, self.DEFAULT_MODE)
+    def watch(self, plan):
+        """Install one hook for every range of the plan."""
+        for start, size, _why in plan:
+            self.zones.append((start, size))
+            self.trace(start, size, self.DEFAULT_MODE)
+
+    def release(self):
+        """Give every hooked range back to the hardware mapping.
+
+        A tracer entry in TraceMode.OFF makes m1n1 map the range straight to the hardware. Removing the entries
+        with clear_tracers() would not return the range to the hardware: pt_update() drops the emptied entries
+        (mmio_maps.compact()) and unmaps the dirty range, so the guest's accesses would fault. The change is
+        applied by pt_update() at the next hypervisor exception, not at once.
+        """
+        for start, size in self.zones:
+            self.hv.add_tracer(irange(start, size), self.ident, TraceMode.OFF)
 
     def evt_rw(self, evt, regmap=None, prefix=None):
         label, where = self.labeler.label(evt.addr)
@@ -138,7 +170,9 @@ class ANEH15Tracer(Tracer):
         if self.events >= self.cap:
             if not self.capped:
                 self.flush()
-                self.log(f"event cap {self.cap} reached; logging stopped")
+                self.release()
+                self.log(f"event cap {self.cap} reached; logging stopped; hooks released "
+                         "(hardware mapping returns at the next hypervisor exception)")
                 self.capped = True
             return
         self.events += 1
@@ -228,9 +262,15 @@ def install(hv):
     darts = dart_windows(adt)
     if not darts:
         print("ANE trace: no ANE DART node found; the DART is not traced")
+    plan = make_plan(engine, engine_size, darts, pages, full)
+    for start, size, why in plan:
+        print(f"ANE trace: hook {start:#x} +{size:#x} ({why})")
+    if os.environ.get("ANE_TRACE_PLAN_ONLY") == "1":
+        print("ANE trace: plan only; no hook is installed")
+        return None
     labeler = Labeler(engine, engine_size, ps, darts)
     tracer = ANEH15Tracer(hv, labeler, cap, full)
-    tracer.watch(WINDOWS, pages)
+    tracer.watch(plan)
     hv.ane_h15_tracer = tracer
     print("ANE trace: running. In the shell, hv.ane_h15_tracer.flush() writes the last pending line.")
     return tracer
