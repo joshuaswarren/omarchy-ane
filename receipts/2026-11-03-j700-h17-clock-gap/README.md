@@ -76,3 +76,43 @@ as the `function-clock_gate` table. Getting it needs one of:
 Until the clocks are modelled, an engine read is being taken with
 possibly-gated clocks. Closing this gap is a prerequisite to any further
 engine work, not an optimisation.
+
+## Follow-up: the gate is a firmware function, not a table
+
+The kernelcache is an MH_FILESET. `com.apple.driver.AppleT8140` (fileoff
+`0x6175b0`) owns the arm-io provider class (`AppleH17PPlatformIO`, text at
+`0xfffffe0009790950`). Its `start` builds the gate functions:
+
+```
+0xfffffe0009790fd8  adrp x1, 0xfffffe000761b000
+0xfffffe0009790fdc  add  x1, x1, #0xea7        ; "function-clock_gate"
+0xfffffe0009790fe0  bl   0xfffffe00089631b0    ; AppleARMFunction::withProvider
+0xfffffe0009790fe8  str  x0, [x3, #240]!
+
+0xfffffe0009791030  adrp x1, 0xfffffe000761b000
+0xfffffe0009791034  add  x1, x1, #0xf2d        ; "function-power_gate"
+0xfffffe0009791038  bl   0xfffffe00089631b0
+0xfffffe0009791040  str  x0, [x3, #248]!
+```
+
+So the provider does not hold an ID-to-offset table that can be read out.
+It resolves a named `AppleARMFunction` and calls it. The actual PMGR
+register selection lives behind that function (provider/firmware side).
+
+Searches that came up empty, for the record:
+- no literal `0x123`/`0x152` (gates) or `0x145`/`0x146`/`0x147` (clock
+  ids) anywhere in `AppleARMPlatform`'s `__TEXT,__const`,
+  `__DATA_CONST,__const` or `__DATA,__data`;
+- no chained pointer to the `clock-ids`/`clock-gate` strings from either
+  kext's text.
+
+## Consequence
+
+"Vote the ANE clocks first" is not a small fix: there is no table to
+copy. Closing the gap requires either implementing the provider's
+function semantics (PMGR gate register layout for T8140, which is not
+published in any tree here) or calling the same function through the
+provider, which Linux does not model.
+
+This does not kill the clock hypothesis; it means the hypothesis cannot
+be tested by simply adding three clock votes.
