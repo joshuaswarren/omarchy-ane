@@ -26,9 +26,12 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   the first run on a volunteer machine is hardware-silent. The absence
   of segment-ranges is a finding (iBoot preload presence unknown), not
   a failure: the stage still ends `verdict=PASS reason=dt-parse-only`.
-- `stage=status` (default, safe): powers the ANE domains listed in the
-  device node, waits for every pmgr ANE word to read ACTUAL=0xf, then
-  logs RVBAR, CPU_STATUS, SCRATCH0..7 and the mailbox control words.
+- `stage=status` (needs `confirm_read=1`): powers every ANE domain
+  listed in the device node, waits for every pmgr ANE word to read
+  ACTUAL=0xf, then logs RVBAR, CPU_STATUS and the two mailbox control
+  words, each address first. Without `confirm_read=1` it refuses before it
+  maps, powers or reads anything. The eight SCRATCH words are read only
+  with `read_scratch=1`; nobody has read them on an M4.
 - `stage=boot` (EXPERIMENTAL): firmware-boot smoke. Validates the
   iBoot-preloaded image against the pinned 27.0 payload, copies it into
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
@@ -43,8 +46,10 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
          CROSS_COMPILE=aarch64-linux-gnu- W=1 modules
 
 Verified W=1-clean against the `josh/ane-driver-aurora` tree
-(vermagic 7.1.12-ARCH+) and the M2 3-1 tree in the macstudio ALARM
-chroot. The module is not part of `make all`, `dkms.conf` or the
+(vermagic 7.1.12-ARCH+), the M2 3-1 tree in the macstudio ALARM
+chroot, and the 7.2.11 14-1 headers (all imports resolve to exported
+symbols). It has not been built against a 7.3.0 tree here: build it on the
+machine that runs it. The module is not part of `make all`, `dkms.conf` or the
 package.
 
 ## Simulation (host, userspace)
@@ -67,6 +72,17 @@ HELLO) and runs:
   `neg-foreign-preload` (diff outside patchbay/tunables refused),
   `neg-dart-map` (DART map fails midway; the partial map must unwind),
   `neg-unknown-stage` (-EINVAL, no RESULT line);
+- `pos-defaults`, `neg-no-confirm`, `pos-status-scratch`: the default
+  stage is `dt`, a status request without `confirm_read=1` makes zero
+  bus accesses, and the SCRATCH words are read only on request;
+- `pos-pds`, `pos-one-pd`, `neg-pd-fail`, `neg-pd-link-fail`: five
+  listed power domains are all attached, linked and released again; a
+  failed attach or link unwinds the ones before it;
+- `sim-overlay` (`sim/sim_overlay.c`): the run-time overlay against a
+  fake live tree, covering success, every refusal, "already complete",
+  failures and unload;
+- `sim-mutation` (`sim/mutate.py`): 21 one-line mutants of the module and
+  the overlay; each must fail a scenario;
 - `sim-discriminate`: mutates a copy of the module (pin check neutered,
   ps gate skipped, one of the two refusal leaks reintroduced) and
   requires the matching negative to FAIL the harness, proving the
@@ -99,10 +115,11 @@ first overlay. That is expected. The first M4 owner:
    `/etc/omarchy-mac-boot/dtb-overlays.opt-in`,
 4. reboot.
 
-T6040/T6041 have no board device tree in aurora yet; this overlay is
-the template for them (engine 0x484000000, pmgr 0x502280000, ps words
-at +0x3c0/+0xc000..0xc018, DART 0x485800000/0x485820000/0x485840000,
-IRQ 1054).
+T6040 and T6041: the aurora 7.3.0 device tree already holds the ANE
+node, its five power controllers and its DART nodes, all marked
+disabled. The ANE node lacks the pmgr window, `apple,ane-type` and the
+full power-domains list this module needs. See "Run-time overlay
+(T6040)" below; no boot overlay is needed there.
 
 ## Firmware file
 
@@ -117,9 +134,10 @@ Copy the payload to `/lib/firmware/apple/ane/`.
 Run in this order; stop at the first unexpected result and send the
 dmesg lines back.
 
-1. `stage=status` (`insmod ane_h16.ko optin=t8132 stage=status`).
+1. `stage=status` with `confirm_read=1` (`insmod ane_h16.ko optin=t8132
+   stage=status confirm_read=1`).
    Expected: five ps words logged with ACTUAL (bits 7:4) = 0xf, RVBAR probably
-   latched, CPU_STATUS reads 0x2a-shaped, SCRATCH all zero. Send
+   latched, CPU_STATUS reads 0x2a-shaped. Send
    `dmesg | grep ane_h16`.
 2. Swap in `t8132-ane-dart-experimental.dtbo` and reboot, then
    `stage=boot hello_wait_ms=1000`. Expected: preload diffs only
@@ -128,6 +146,42 @@ dmesg lines back.
    an RTKit HELLO/EPMAP exchange in the log, or a bounded "mailbox
    stayed empty" report. Both outcomes are results: send them.
 3. Remove the opt-in key and reboot before any other experiment.
+
+## Run-time overlay (T6040)
+
+`apply_overlay=1` (T6040 only, off by default) changes the live device
+tree with one change set, so no reboot and no boot overlay is needed:
+
+- it enables the five ANE power controllers that are still disabled and
+  the ANE node;
+- it completes the ANE node: the pmgr window (0x502280000 + 0x18000),
+  `reg-names` engine and pmgr, `apple,ane-type` 0x110 and the
+  five-entry power-domains list;
+- it removes `iommus` while the DART nodes are disabled. The DART nodes
+  are never touched;
+- it sets the ANE node's status last, because the platform device is
+  created when the status changes.
+
+Guards, all before any change: the machine is an `apple,t6040`; the ANE
+node and the five controllers exist at the expected root-level paths;
+their `pmgr` nodes and the two fabric parents of the ANE_SYS controller
+are available. A node that is already available and has
+`apple,ane-type` is left alone ("node already complete"). Unloading the
+module reverts the change set.
+
+First run, read only (no MMIO):
+
+    sudo insmod ane_h16.ko optin=t6040 apply_overlay=1
+    dmesg | grep -E 'ane_h16|apple-pmgr'
+
+Second run, after `sudo rmmod ane_h16`, reads RVBAR, CPU_STATUS and the
+two mailbox control words, nothing else:
+
+    sudo insmod ane_h16.ko optin=t6040 apply_overlay=1 stage=status confirm_read=1
+    dmesg | grep -E 'ane_h16|apple-pmgr'
+
+Stop at the first unexpected line. Do not run `stage=boot` or
+`read_scratch=1`.
 
 ## Stop rules
 

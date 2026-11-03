@@ -19,6 +19,10 @@
 #include <string.h>
 #include <strings.h>
 
+#ifndef EPROBE_DEFER
+#define EPROBE_DEFER 517
+#endif
+
 /* kernel int-ll64 widths: u64 is always long long, so the module's
  * %#llx format strings typecheck the same as in the kernel build
  */
@@ -333,8 +337,6 @@ static inline void *platform_get_drvdata(struct platform_device *pdev)
 {
 	return pdev->drvdata;
 }
-#define module_platform_driver(x) \
-	static struct platform_driver *const sim_keep_##x __maybe_unused = &(x)
 
 /* ---- devm / ioremap ---- */
 /* Fake bus addresses: the real t8132 engine and pmgr window bases. */
@@ -371,17 +373,89 @@ static inline void devm_memunmap(struct device *dev, void *p)
 	(void)dev;
 	(void)p;
 }
-static inline void *devm_platform_ioremap_resource_byname(
-	struct platform_device *pdev, const char *name)
+/* of_iomap() maps without requesting the region, which is why the module uses it: the pmgr driver already owns part of the pmgr window. */
+extern int sim_iounmaps;
+static inline void *of_iomap(struct device_node *np, int idx)
 {
-	(void)pdev;
+	if (idx < 0 || idx >= np->nreg)
+		return NULL;
 	sim_ioremaps++;
-	if (!strcmp(name, "engine"))
-		return (void *)(uintptr_t)SIM_ENGINE_PA;
-	if (!strcmp(name, "pmgr"))
-		return (void *)(uintptr_t)SIM_PMGR_PA;
-	return ERR_PTR(-EINVAL);
+	return (void *)(uintptr_t)np->reg[idx][0];
 }
+static inline void iounmap(void *p)
+{
+	(void)p;
+	sim_iounmaps++;
+}
+/* reg-names is a list of NUL separated strings. */
+static inline int of_property_match_string(struct device_node *np,
+					   const char *name, const char *s)
+{
+	int len = 0, off = 0, idx = 0;
+	const char *v = of_get_property(np, name, &len);
+
+	if (!v)
+		return -EINVAL;
+	while (off < len) {
+		if (!strcmp(v + off, s))
+			return idx;
+		off += strlen(v + off) + 1;
+		idx++;
+	}
+	return -ENODATA;
+}
+
+/* ---- power-domain attach (multi-domain devices attach by index) ---- */
+#define DL_FLAG_STATELESS	0x1
+#define DL_FLAG_PM_RUNTIME	0x2
+#define DL_FLAG_RPM_ACTIVE	0x4
+struct device_link { int idx; };
+extern int sim_pd_count, sim_pd_fail_at, sim_pd_link_fail_at;
+extern int sim_pd_attached, sim_pd_detached, sim_pd_links, sim_pd_unlinked;
+static inline int of_count_phandle_with_args(const struct device_node *np,
+					     const char *list,
+					     const char *cells)
+{
+	(void)np;
+	(void)list;
+	(void)cells;
+	return sim_pd_count;
+}
+extern struct device sim_pd_devs[8];
+extern struct device_link sim_pd_link_objs[8];
+static inline struct device *dev_pm_domain_attach_by_id(struct device *dev,
+							 unsigned int i)
+{
+	(void)dev;
+	if ((int)i == sim_pd_fail_at)
+		return ERR_PTR(-EPROBE_DEFER);
+	sim_pd_attached++;
+	return &sim_pd_devs[i];
+}
+static inline void dev_pm_domain_detach(struct device *dev, bool power_off)
+{
+	(void)dev;
+	(void)power_off;
+	sim_pd_detached++;
+}
+static inline struct device_link *device_link_add(struct device *c,
+						  struct device *s, u32 flags)
+{
+	int i = (int)(s - sim_pd_devs);
+
+	(void)c;
+	(void)flags;
+	if (i == sim_pd_link_fail_at)
+		return NULL;
+	sim_pd_links++;
+	return &sim_pd_link_objs[i];
+}
+static inline void device_link_del(struct device_link *l)
+{
+	(void)l;
+	sim_pd_unlinked++;
+}
+#define IS_ERR_OR_NULL(p) (!(p) || IS_ERR(p))
 
 /* ---- runtime pm (genpd stand-in) ---- */
 extern int sim_rpm_gets, sim_rpm_puts;
@@ -539,5 +613,7 @@ static inline unsigned long sim_find_bit(const unsigned long *addr,
 #define MODULE_LICENSE(x)
 #define MODULE_DESCRIPTION(x)
 #define MODULE_DEVICE_TABLE(t, x)
+#define __init __maybe_unused
+#define __exit __maybe_unused
 
 #endif /* ANE_H16_SIM_SHIM_H */
