@@ -16,6 +16,8 @@ PS_ANE_CPU = 0x28E080440
 PS_GATED = 0x28E080500
 DART_BASE = 0x309800000
 DART_OFFSETS = [0, 0x10000, 0x20000, 0x4000]
+PMGR_BASE = 0x28E080000
+PMGR_PS_BASE = PMGR_BASE + 0x24000
 
 
 class TraceMode:
@@ -92,10 +94,12 @@ class StubADT(dict):
         return dev.addr
 
 
-def make_hv(chip=0x6030, dart=True):
+def make_hv(chip=0x6030, dart=True, extra_ps=None, pmgr_ranges=None, ane_regs=None):
     hv = Obj(zones=[], releases=[], lines=[], u=Forbidden(), p=Forbidden(), tracer_caches={})
     hv.add_tracer = lambda zone, ident, mode, read=None, write=None, **kw: hv.releases.append((zone, ident, mode))
-    ane = Obj(get_reg=lambda i: (ENGINE, ENGINE_SIZE), power_gates=[7], ane_type=0xC0)
+    regs = ane_regs if ane_regs is not None else [(ENGINE, ENGINE_SIZE), (PMGR_BASE, 0x18000), (PMGR_PS_BASE, 0x4000)]
+    ane = Obj(reg=list(range(len(regs))), get_reg=lambda i: regs[i], power_gates=[7], ane_type=0xC0)
+    ranges = pmgr_ranges if pmgr_ranges is not None else [(PMGR_BASE, 0xCC000)]
     devices = [
         Obj(name="ANE_SYS", flags=Obj(no_ps=False), id=1, addr=PS_ANE_SYS),
         Obj(name="ANE_CPU", flags=Obj(no_ps=False), id=2, addr=PS_ANE_CPU),
@@ -103,7 +107,10 @@ def make_hv(chip=0x6030, dart=True):
         Obj(name="ANE_NO_PS", flags=Obj(no_ps=True), id=3, addr=0x28E080600),
         Obj(name="GPU", flags=Obj(no_ps=False), id=9, addr=0x28E080700),
     ]
-    adt = StubADT({"/arm-io/ane": ane, "/arm-io/pmgr": Obj(devices=devices), "/chosen": Obj(chip_id=chip)})
+    if extra_ps is not None:
+        devices.append(Obj(name="ANE_EXTRA", flags=Obj(no_ps=False), id=8, addr=extra_ps))
+    pmgr = Obj(devices=devices, reg=list(range(len(ranges))), get_reg=lambda i: ranges[i])
+    adt = StubADT({"/arm-io/ane": ane, "/arm-io/pmgr": pmgr, "/chosen": Obj(chip_id=chip)})
     if dart:
         adt["/arm-io/dart-ane"] = Obj(reg=[0, 1, 2, 3], get_reg=lambda i: (DART_BASE + DART_OFFSETS[i], 0x4000))
     hv.adt = adt
@@ -227,12 +234,14 @@ class InstallTests(unittest.TestCase):
                     os.environ[key] = value
         return hv, tracer, buf.getvalue()
 
-    def test_default_install_traces_named_windows_dart_and_ps_pages_only(self):
+    def test_default_install_traces_named_windows_dart_and_pmgr_windows(self):
         hv, tracer, out = self.run_install()
         starts = sorted(z[0] for z in hv.zones)
         expected = ([ENGINE + off for off, _, _ in script.WINDOWS] + [DART_BASE + off for off in DART_OFFSETS]
-                    + sorted({PS_ANE_SYS & ~0x3FFF, PS_ANE_CPU & ~0x3FFF, PS_GATED & ~0x3FFF}))
+                    + [PMGR_BASE, PMGR_PS_BASE])
         self.assertEqual(starts, sorted(expected))
+        self.assertEqual(sorted((z[0], z[1]) for z in hv.zones if z[0] in (PMGR_BASE, PMGR_PS_BASE)),
+                         [(PMGR_BASE, 0x18000), (PMGR_PS_BASE, 0x4000)])
         self.assertTrue(all(z[2] == TraceMode.ASYNC for z in hv.zones))
         self.assertFalse(hasattr(script, "DARTTracer"))
         self.assertIs(hv.ane_h15_tracer, tracer)
@@ -253,7 +262,7 @@ class InstallTests(unittest.TestCase):
     def test_full_mode_traces_the_whole_aperture(self):
         hv, _, _ = self.run_install(ANE_TRACE_FULL="1")
         self.assertIn((ENGINE, ENGINE_SIZE, TraceMode.ASYNC), hv.zones)
-        self.assertEqual(len(hv.zones), 1 + 1)
+        self.assertEqual(len(hv.zones), 1 + 2)
 
     def test_full_mode_still_traces_a_dart_outside_the_aperture(self):
         plan = script.make_plan(ENGINE, 0x1000000, [(DART_BASE, 0x4000, "DART0")], [], True)
@@ -295,6 +304,56 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(hasattr(hv, "ane_h15_tracer"))
         self.assertIn("plan only; no hook is installed", out)
         self.assertIn(f"hook {ENGINE + 0x1400000:#x} +0x10000 (ASC wrapper)", out)
+
+    def test_ps_register_outside_the_windows_gets_its_own_page(self):
+        hv, _, out = self.run_install(hv_args={"extra_ps": 0x28F000440})
+        self.assertIn(0x28F000000, [z[0] for z in hv.zones])
+        self.assertIn("ps register ANE_EXTRA", out)
+
+    def test_ps_registers_inside_the_pmgr_window_add_no_page(self):
+        hv, _, _ = self.run_install()
+        self.assertFalse([z for z in hv.zones if (z[0], z[1]) == (PS_ANE_SYS & ~0x3FFF, 0x4000)])
+
+    def test_ps_and_pwgate_offsets_are_named_per_chip(self):
+        _, t30, _ = self.run_install()
+        for addr, value in ((PMGR_BASE + 0xC008, 0xF), (PMGR_PS_BASE + 0x2B6C, 0), (PMGR_PS_BASE + 0x2B70, 0),
+                            (PMGR_BASE + 0x1234, 1), (PMGR_PS_BASE + 0x272C, 0)):
+            t30.evt_rw(Evt(addr, value, True))
+        out = lines_of(t30)
+        self.assertIn("W4 PS:ANE_CPU +0xc008 = 0xf", out[0])
+        self.assertIn("W4 PWGATE_CANDIDATE +0x2b6c = 0x0", out[1])
+        self.assertIn("W4 PMGR_PS +0x2b70 = 0x0", out[2])
+        self.assertIn("W4 PMGR +0x1234 = 0x1", out[3])
+        self.assertIn("W4 PMGR_PS +0x272c = 0x0", out[4], "the T8122 offset is not a candidate on the T6030")
+        _, t81, _ = self.run_install(hv_args={"chip": 0x8122})
+        t81.evt_rw(Evt(PMGR_PS_BASE + 0x272C, 0, True))
+        t81.evt_rw(Evt(PMGR_PS_BASE + 0x2B6C, 0, True))
+        out = lines_of(t81)
+        self.assertIn("PWGATE_CANDIDATE +0x272c", out[0])
+        self.assertIn("PMGR_PS +0x2b6c", out[1])
+        _, t31, _ = self.run_install(hv_args={"chip": 0x6031})
+        t31.evt_rw(Evt(PMGR_BASE + 0x5A8, 0xF, True))
+        t31.evt_rw(Evt(PMGR_PS_BASE + 0x199C, 0, True))
+        out = lines_of(t31)
+        self.assertIn("PS:ANE_CPU +0x5a8", out[0])
+        self.assertIn("PWGATE_CANDIDATE +0x199c", out[1])
+
+    def test_pmgr_entries_outside_the_pmgr_node_are_not_traced(self):
+        hv, _, out = self.run_install(hv_args={"pmgr_ranges": [(0x1000, 0x100)]})
+        self.assertIn("has no pmgr and pmgr_ps windows", out)
+        self.assertNotIn((PMGR_BASE, 0x18000), [(z[0], z[1]) for z in hv.zones])
+        self.assertNotIn(PMGR_PS_BASE, [z[0] for z in hv.zones])
+
+    def test_a_node_without_the_pmgr_entries_is_reported(self):
+        hv, _, out = self.run_install(hv_args={"ane_regs": [(ENGINE, ENGINE_SIZE)]})
+        self.assertIn("has no pmgr and pmgr_ps windows", out)
+        self.assertNotIn(PMGR_PS_BASE, [z[0] for z in hv.zones])
+
+    def test_an_empty_pmgr_entry_is_not_traced(self):
+        regs = [(ENGINE, ENGINE_SIZE), (PMGR_BASE, 0), (PMGR_PS_BASE, 0x4000)]
+        hv, _, out = self.run_install(hv_args={"ane_regs": regs})
+        self.assertIn("has no pmgr and pmgr_ps windows", out)
+        self.assertNotIn((PMGR_BASE, 0), [(z[0], z[1]) for z in hv.zones])
 
     def test_missing_ane_node_is_an_error(self):
         hv = make_hv()

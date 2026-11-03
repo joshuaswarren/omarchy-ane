@@ -4,7 +4,8 @@
 An m1n1 hypervisor script. It is PASSIVE: it never reads or writes a device register itself, and it
 never touches guest memory. It only logs what the macOS guest does to the ANE:
 
-  * the ANE power-domain registers in the power manager (ps registers of the ANE devices),
+  * the ANE power domains in the power manager: the ANE node's pmgr window (ps registers) and pmgr_ps window
+    (PWGATE registers),
   * the ASC wrapper (CPU_CONTROL, CPU_STATUS, the mailbox control words), RVBAR, the SCRATCH words and the
     doorbell, and a second register block at engine + 0x1900000,
   * the ANE DART windows (raw register accesses; m1n1's DARTTracer is not used, because its start reads the
@@ -26,9 +27,10 @@ Environment:
     ANE_TRACE_MAX=N        stop logging after N events (default 2000000)
 
 Scope: before it hooks anything the script prints one `hook <start> +<size> (<what>)` line per range. Each range
-is a trapping window that m1n1 maps in 16 KiB pages: the named ANE windows, the ANE DART windows from the ADT, and
-the 16 KiB power-manager page of every ANE ps register. Other registers that share a page are trapped too and
-are not logged.
+is a trapping window that m1n1 maps in 16 KiB pages: the named ANE windows, the ANE DART windows from the ADT, the
+ANE node's two power-manager windows (register entry 1, which holds the ps registers of the ANE domains, and entry
+2, which holds the PWGATE registers) and the page of any ANE ps register outside them. Other registers that share
+a page are trapped too and are not logged.
 
 Event cap: when N events have been logged the script stops logging and puts every range back on the hardware
 mapping (a TraceMode.OFF entry per range). m1n1 applies that at the next hypervisor exception, so the hooks can
@@ -74,6 +76,19 @@ WINDOWS = [
     (0x1900000, 0x10000, "second register block"),
 ]
 
+# Offsets inside the ANE node's pmgr window (ANE register entry 1). From the Linux boot logs of the J613 and the
+# M3 Pro (T8122, T6030) and the SoC data (T6031).
+PMGR_PS_NAMES = {
+    0x8122: {0xC000: "ANE_MPM", 0xC008: "ANE_CPU", 0xC010: "ANE_TD", 0xC018: "ANE_BASE"},
+    0x6030: {0xC000: "ANE_MPM", 0xC008: "ANE_CPU", 0xC010: "ANE_TD", 0xC018: "ANE_BASE"},
+    0x6031: {0x5A0: "ANE_MPM", 0x5A8: "ANE_CPU", 0x5B8: "ANE_TD", 0x5C0: "ANE_BASE"},
+}
+
+# Offset of the PWGATE register inside the ANE node's pmgr_ps window (ANE register entry 2), decoded from the
+# macOS driver. A candidate only: the driver gates that write on a flag whose value is not known, so macOS may
+# not run it.
+PWGATE_OFFSET = {0x8122: 0x272C, 0x6030: 0x2B6C, 0x6031: 0x199C}
+
 READY_WORD = 0x08042006
 WAKE_WORD = 0xF7FBDFF9
 RVBAR_IOVA_MASK = 0xFF7EFFFFFFFFF800
@@ -94,27 +109,34 @@ def note_for(label, write, value):
 
 
 class Labeler:
-    """Names an absolute address: a power-domain register, a DART window, a named engine register or an engine offset."""
+    """Names an absolute address: a power-domain register, a window of the ADT, a named engine register or an
+    engine offset."""
 
-    def __init__(self, engine, engine_size, ps_names, dart_windows=()):
+    def __init__(self, engine, engine_size, ps_names, windows=(), chip=0):
         self.engine = engine
         self.engine_size = engine_size
         self.ps_names = ps_names
-        self.dart_windows = list(dart_windows)
+        self.windows = list(windows)
+        self.chip = chip
 
     def label(self, addr):
         if addr in self.ps_names:
             return f"PS:{self.ps_names[addr]}", f"{addr:#x}"
-        for start, size, name in self.dart_windows:
+        for start, size, name in self.windows:
             if start <= addr < start + size:
-                return name, f"+{addr - start:#x}"
+                off = addr - start
+                if name == "PMGR" and off in PMGR_PS_NAMES.get(self.chip, {}):
+                    name = f"PS:{PMGR_PS_NAMES[self.chip][off]}"
+                elif name == "PMGR_PS" and off == PWGATE_OFFSET.get(self.chip):
+                    name = "PWGATE_CANDIDATE"
+                return name, f"+{off:#x}"
         off = addr - self.engine
         if 0 <= off < self.engine_size:
             return NAMED.get(off, "ENG"), f"+{off:#x}"
         return None, None
 
 
-def make_plan(engine, engine_size, darts, ps_pages, full):
+def make_plan(engine, engine_size, windows, ps_pages, full):
     """Every range the script hooks, as (start, size, what it covers)."""
     plan = []
     if full:
@@ -122,9 +144,9 @@ def make_plan(engine, engine_size, darts, ps_pages, full):
     else:
         for off, size, why in WINDOWS:
             plan.append((engine + off, size, why))
-    for start, size, name in darts:
+    for start, size, name in windows:
         if not (full and engine <= start < engine + engine_size):
-            plan.append((start, size, f"ANE DART window {name}"))
+            plan.append((start, size, f"ANE {name} window"))
     for page in ps_pages:
         plan.append((page, PAGE, "power-manager page of an ANE ps register"))
     return plan
@@ -242,6 +264,22 @@ def dart_windows(adt):
     return []
 
 
+def pmgr_windows(adt, node):
+    """The ANE node's two power-manager windows as (start, size, name): register entry 1 holds the ps registers
+    of the ANE domains and entry 2 is the window that holds the PWGATE registers. An entry counts only if it lies
+    inside a register range of the pmgr node. On the J613 and the M3 Pro this holds for both entries."""
+    pmgr = adt["/arm-io/pmgr"]
+    ranges = [pmgr.get_reg(i) for i in range(len(pmgr.reg))]
+    found = []
+    for index, name in ((1, "PMGR"), (2, "PMGR_PS")):
+        if index >= len(node.reg):
+            continue
+        start, size = node.get_reg(index)
+        if size and any(a <= start and start + size <= a + s for a, s in ranges):
+            found.append((start, size, name))
+    return found
+
+
 def install(hv):
     adt = hv.adt
     chip = adt["/chosen"].chip_id
@@ -256,19 +294,23 @@ def install(hv):
     ps = ps_registers(adt, node)
     for addr, name in sorted(ps.items()):
         print(f"ANE trace: ps register {name} at {addr:#x}")
-    pages = sorted({addr & ~(PAGE - 1) for addr in ps})
     full = os.environ.get("ANE_TRACE_FULL") == "1"
     cap = int(os.environ.get("ANE_TRACE_MAX", "2000000"))
     darts = dart_windows(adt)
     if not darts:
         print("ANE trace: no ANE DART node found; the DART is not traced")
-    plan = make_plan(engine, engine_size, darts, pages, full)
+    pmgrs = pmgr_windows(adt, node)
+    if len(pmgrs) < 2:
+        print("ANE trace: the ANE node has no pmgr and pmgr_ps windows inside the pmgr node; they are not traced")
+    windows = darts + pmgrs
+    pages = sorted({addr & ~(PAGE - 1) for addr in ps if not any(s <= addr < s + n for s, n, _ in windows)})
+    plan = make_plan(engine, engine_size, windows, pages, full)
     for start, size, why in plan:
         print(f"ANE trace: hook {start:#x} +{size:#x} ({why})")
     if os.environ.get("ANE_TRACE_PLAN_ONLY") == "1":
         print("ANE trace: plan only; no hook is installed")
         return None
-    labeler = Labeler(engine, engine_size, ps, darts)
+    labeler = Labeler(engine, engine_size, ps, windows, chip)
     tracer = ANEH15Tracer(hv, labeler, cap, full)
     tracer.watch(plan)
     hv.ane_h15_tracer = tracer
