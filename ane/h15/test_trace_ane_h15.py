@@ -314,6 +314,9 @@ class InstallTests(unittest.TestCase):
         hv, _, _ = self.run_install()
         self.assertFalse([z for z in hv.zones if (z[0], z[1]) == (PS_ANE_SYS & ~0x3FFF, 0x4000)])
 
+    T6031_REGS = ((0x3C9400000, 0x6C000), (0x3C9050000, 0x4000), (ENGINE, ENGINE_SIZE), (PMGR_BASE, 0x10000),
+                  (PMGR_PS_BASE, 0x4000))
+
     def test_ps_and_pwgate_offsets_are_named_per_chip(self):
         _, t30, _ = self.run_install()
         for addr, value in ((PMGR_BASE + 0xC008, 0xF), (PMGR_PS_BASE + 0x2B6C, 0), (PMGR_PS_BASE + 0x2B70, 0),
@@ -331,12 +334,23 @@ class InstallTests(unittest.TestCase):
         out = lines_of(t81)
         self.assertIn("PWGATE_CANDIDATE +0x272c", out[0])
         self.assertIn("PMGR_PS +0x2b6c", out[1])
-        _, t31, _ = self.run_install(hv_args={"chip": 0x6031})
+        _, t31, _ = self.run_install(hv_args={"chip": 0x6031, "ane_regs": self.T6031_REGS})
         t31.evt_rw(Evt(PMGR_BASE + 0x5A8, 0xF, True))
         t31.evt_rw(Evt(PMGR_PS_BASE + 0x199C, 0, True))
         out = lines_of(t31)
         self.assertIn("PS:ANE_CPU +0x5a8", out[0])
         self.assertIn("PWGATE_CANDIDATE +0x199c", out[1])
+
+    def test_t6031_entries_are_the_engine_pmgr_and_pmgr_ps_at_2_3_4(self):
+        hv, _, out = self.run_install(hv_args={"chip": 0x6031, "ane_regs": self.T6031_REGS})
+        starts = sorted(z[0] for z in hv.zones)
+        expected = ([ENGINE + off for off, _, _ in script.WINDOWS] + [DART_BASE + off for off in DART_OFFSETS]
+                    + [PMGR_BASE, PMGR_PS_BASE])
+        self.assertEqual(starts, sorted(expected))
+        self.assertIn(f"engine {ENGINE:#x} size {ENGINE_SIZE:#x}", out)
+        self.assertEqual(sorted((z[0], z[1]) for z in hv.zones if z[0] in (PMGR_BASE, PMGR_PS_BASE)),
+                         [(PMGR_BASE, 0x10000), (PMGR_PS_BASE, 0x4000)])
+        self.assertNotIn("has no pmgr and pmgr_ps windows", out)
 
     def test_pmgr_entries_outside_the_pmgr_node_are_not_traced(self):
         hv, _, out = self.run_install(hv_args={"pmgr_ranges": [(0x1000, 0x100)]})

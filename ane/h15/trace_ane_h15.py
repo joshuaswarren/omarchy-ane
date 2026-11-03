@@ -28,8 +28,8 @@ Environment:
 
 Scope: before it hooks anything the script prints one `hook <start> +<size> (<what>)` line per range. Each range
 is a trapping window that m1n1 maps in 16 KiB pages: the named ANE windows, the ANE DART windows from the ADT, the
-ANE node's two power-manager windows (register entry 1, which holds the ps registers of the ANE domains, and entry
-2, which holds the PWGATE registers) and the page of any ANE ps register outside them. Other registers that share
+ANE node's two power-manager windows (the pmgr entry, which holds the ps registers of the ANE domains, and the
+pmgr_ps entry, which holds the PWGATE registers) and the page of any ANE ps register outside them. Other registers that share
 a page are trapped too and are not logged.
 
 Event cap: when N events have been logged the script stops logging and puts every range back on the hardware
@@ -76,7 +76,7 @@ WINDOWS = [
     (0x1900000, 0x10000, "second register block"),
 ]
 
-# Offsets inside the ANE node's pmgr window (ANE register entry 1). From the Linux boot logs of the J613 and the
+# Offsets inside the ANE node's pmgr window (the pmgr entry). From the Linux boot logs of the J613 and the
 # M3 Pro (T8122, T6030) and the SoC data (T6031).
 PMGR_PS_NAMES = {
     0x8122: {0xC000: "ANE_MPM", 0xC008: "ANE_CPU", 0xC010: "ANE_TD", 0xC018: "ANE_BASE"},
@@ -84,10 +84,15 @@ PMGR_PS_NAMES = {
     0x6031: {0x5A0: "ANE_MPM", 0x5A8: "ANE_CPU", 0x5B8: "ANE_TD", 0x5C0: "ANE_BASE"},
 }
 
-# Offset of the PWGATE register inside the ANE node's pmgr_ps window (ANE register entry 2), decoded from the
+# Offset of the PWGATE register inside the ANE node's pmgr_ps window (the pmgr_ps entry), decoded from the
 # macOS driver. A candidate only: the driver gates that write on a flag whose value is not known, so macOS may
 # not run it.
 PWGATE_OFFSET = {0x8122: 0x272C, 0x6030: 0x2B6C, 0x6031: 0x199C}
+
+# ANE register entries as (engine, pmgr, pmgr_ps). The T8122 and T6030 nodes list the engine, pmgr and pmgr_ps first.
+# The T6031 node (SoC data, J516C) lists two small sub-windows of the engine first, so its entries are 2, 3 and 4.
+DEFAULT_REG_ENTRIES = (0, 1, 2)
+REG_ENTRIES = {0x6031: (2, 3, 4)}
 
 READY_WORD = 0x08042006
 WAKE_WORD = 0xF7FBDFF9
@@ -264,14 +269,15 @@ def dart_windows(adt):
     return []
 
 
-def pmgr_windows(adt, node):
-    """The ANE node's two power-manager windows as (start, size, name): register entry 1 holds the ps registers
-    of the ANE domains and entry 2 is the window that holds the PWGATE registers. An entry counts only if it lies
-    inside a register range of the pmgr node. On the J613 and the M3 Pro this holds for both entries."""
+def pmgr_windows(adt, node, entries=DEFAULT_REG_ENTRIES):
+    """The ANE node's two power-manager windows as (start, size, name): the pmgr register entry holds the ps
+    registers of the ANE domains and the pmgr_ps entry is the window that holds the PWGATE registers (`entries`
+    is (engine, pmgr, pmgr_ps), see REG_ENTRIES). An entry counts only if it lies inside a register range of the
+    pmgr node. On the J613 and the M3 Pro this holds for both entries."""
     pmgr = adt["/arm-io/pmgr"]
     ranges = [pmgr.get_reg(i) for i in range(len(pmgr.reg))]
     found = []
-    for index, name in ((1, "PMGR"), (2, "PMGR_PS")):
+    for index, name in ((entries[1], "PMGR"), (entries[2], "PMGR_PS")):
         if index >= len(node.reg):
             continue
         start, size = node.get_reg(index)
@@ -284,7 +290,8 @@ def install(hv):
     adt = hv.adt
     chip = adt["/chosen"].chip_id
     path, node = ane_node(adt)
-    engine, engine_size = node.get_reg(0)
+    engine_index, _, _ = REG_ENTRIES.get(chip, DEFAULT_REG_ENTRIES)
+    engine, engine_size = node.get_reg(engine_index)
     print(f"ANE trace: chip {CHIPS.get(chip, hex(chip))}{'' if chip in CHIPS else ' (not an M3 chip this script was written for)'}")
     print(f"ANE trace: node {path} engine {engine:#x} size {engine_size:#x}")
     for name in ("ane_type", "power_gates", "clock_gates", "clock_ids", "segment_ranges", "pre_loaded"):
@@ -299,7 +306,7 @@ def install(hv):
     darts = dart_windows(adt)
     if not darts:
         print("ANE trace: no ANE DART node found; the DART is not traced")
-    pmgrs = pmgr_windows(adt, node)
+    pmgrs = pmgr_windows(adt, node, REG_ENTRIES.get(chip, DEFAULT_REG_ENTRIES))
     if len(pmgrs) < 2:
         print("ANE trace: the ANE node has no pmgr and pmgr_ps windows inside the pmgr node; they are not traced")
     windows = darts + pmgrs
