@@ -1268,9 +1268,12 @@ static void ane_h15_step(const char *fmt, ...)
 		return;
 	n = scnprintf(buf, sizeof(buf), "%llu.%06llu ", ns / 1000000000ULL,
 		      (ns % 1000000000ULL) / 1000ULL);
-	n += scnprintf(buf + n, sizeof(buf) - n, "q=%llu.%03llums ",
-		       (ns - ane_first_ps_ns) / 1000000000ULL,
-		       ((ns - ane_first_ps_ns) % 1000000000ULL) / 1000000ULL);
+	if (ane_first_ps_ns)
+		n += scnprintf(buf + n, sizeof(buf) - n, "q=%llu.%03llums ",
+			       (ns - ane_first_ps_ns) / 1000000000ULL,
+			       ((ns - ane_first_ps_ns) % 1000000000ULL) / 1000000ULL);
+	else
+		n += scnprintf(buf + n, sizeof(buf) - n, "q=pre ");
 	va_start(ap, fmt);
 	n += vscnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 	va_end(ap);
@@ -1606,19 +1609,25 @@ static void ane_h15_ipi_poll(struct ane_h15 *ane)
  * every access stepped. Holds the domain across the DART sweep. */
 static int ane_h15_ps_assert(struct ane_h15 *ane)
 {
-	static const u32 offs[] = { 0xc000u, 0xc008u, 0xc010u, 0xc018u };
 	unsigned int i;
 	u32 v;
 
-	for (i = 0; i < ARRAY_SIZE(offs); i++) {
-		ane_h15_step("ps assert write pmgr+%#x val=0xf\n", offs[i]);
-		dev_crit(ane->dev, "ane_h15 ps assert: write pmgr+0x%04x = 0xf\n", offs[i]);
-		writel_relaxed(0xf, ane->pmgr + offs[i]);
+	/* ps_off[1..4]: the per-chip layout, never a hardcoded one. T6031 and
+	 * T6034 carry their ANE power-state words at 0x5a0/0x5a8/0x5b8/0x5c0;
+	 * writing the T8122 layout there would hit foreign pmgr words. */
+	for (i = 1; i < 5; i++) {
+		ane_h15_step("ps assert write pmgr.%s pa=%#llx val=0xf\n",
+			     ane_h15_ps_names[i],
+			     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
+		dev_crit(ane->dev, "ane_h15 ps assert: write pmgr.%s = 0xf\n",
+			 ane_h15_ps_names[i]);
+		writel_relaxed(0xf, ane->pmgr + ane->soc->ps_off[i]);
 	}
-	for (i = 0; i < ARRAY_SIZE(offs); i++) {
-		ane_h15_step("ps assert readback pmgr+%#x\n", offs[i]);
-		v = readl_relaxed(ane->pmgr + offs[i]);
-		dev_info(ane->dev, "ane_h15 ps assert: pmgr+0x%04x reads %#x\n", offs[i], v);
+	for (i = 1; i < 5; i++) {
+		ane_h15_step("ps assert readback pmgr.%s\n", ane_h15_ps_names[i]);
+		v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
+		dev_info(ane->dev, "ane_h15 ps assert: %s reads %#x\n",
+			 ane_h15_ps_names[i], v);
 	}
 	return 0;
 }

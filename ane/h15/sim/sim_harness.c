@@ -2072,6 +2072,8 @@ static void pw_order(const struct ane_h15_soc *s, u64 wpa, int *ri, int *wi, int
 }
 
 /* steplog and stop_after_pwgate: the crash-forensics pair of the write step. */
+static void dart_setup(const struct ane_h15_soc *s, const char *compat, bool live);
+
 static void pos_steplog_stop(void)
 {
 	const struct ane_h15_soc *s = &ane_t6031_soc;
@@ -2208,6 +2210,36 @@ static void pos_steplog_stop(void)
 	chk(ret != 0 && strstr(sim_steplog_buf, "module init") != NULL,
 	    "SL2b a refused probe leaves the fsynced init line behind");
 
+	/* FT: the same FA shape on the T6031 soc: ps_assert must write the
+	 * per-chip layout (0x5a0, 0x5a8, 0x5b8, 0x5c0), not the T8122 words. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ps_assert = true;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 ps assert: write pmgr.ANE_MPM = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_CPU = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_TD = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_BASE = 0xf") == 1,
+	    "FT ps_assert on T6031 writes the four per-chip ps words");
+	{
+		unsigned int k, j;
+		u32 pa;
+		int wrong = 0;
+		static const u32 t8122_words[] = { 0xc000u, 0xc008u, 0xc010u, 0xc018u };
+		for (k = 0; k < 4; k++) {
+			pa = ane_t6031_soc.pmgr_pa + t8122_words[k];
+			for (j = 0; j < sim_n_events && j < SIM_MAX_EVENTS; j++)
+				if (sim_events[j].write && sim_events[j].pa == pa)
+					wrong++;
+		}
+		chk(wrong == 0,
+		    "FT not one write lands on the T8122 layout in the T6031 run");
+	}
+	remove_if_probed();
+
 	/* FA: ps_assert=1 writes 0xf to the four ps words between the firmware map
 	 * and the sweep, every access stepped, and the step lines after the first
 	 * ps read carry the query-relative time. */
@@ -2220,15 +2252,16 @@ static void pos_steplog_stop(void)
 	ret = probe_now();
 	
 	
-	chk(ret == 0 && log_count("ane_h15 ps assert: write pmgr+0xc000 = 0xf") == 1 &&
-	    log_count("ane_h15 ps assert: write pmgr+0xc008 = 0xf") == 1 &&
-	    log_count("ane_h15 ps assert: write pmgr+0xc010 = 0xf") == 1 &&
-	    log_count("ane_h15 ps assert: write pmgr+0xc018 = 0xf") == 1,
+	chk(ret == 0 && log_count("ane_h15 ps assert: write pmgr.ANE_MPM = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_CPU = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_TD = 0xf") == 1 &&
+	    log_count("ane_h15 ps assert: write pmgr.ANE_BASE = 0xf") == 1,
 	    "FA ps_assert writes 0xf to the four ps words and reads them back");
 	chk(strstr(sim_steplog_buf, "q=") != NULL,
 	    "FA the step lines carry the query-relative time");
-	chk(strstr(sim_steplog_buf, "ps assert readback pmgr+0xc000") != NULL,
-	    "FA the readback is stepped into the file");
+	chk(strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_MPM") != NULL &&
+	    strstr(sim_steplog_buf, "ps assert readback pmgr.ANE_BASE") != NULL,
+	    "FA the readbacks are stepped into the file");
 	remove_if_probed();
 
 	/* FB: default off is byte-identical: no ps assert line, no ps writes. */
