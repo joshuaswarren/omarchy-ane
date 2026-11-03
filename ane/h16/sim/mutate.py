@@ -18,7 +18,7 @@ SCENARIOS = [
     "pos-dt", "pos-dt-noadt", "pos-defaults", "pos-status", "pos-status-scratch", "pos-pds", "pos-one-pd", "pos-boot",
     "pos-boot-hello", "neg-ps-stuck", "neg-mbox-silent", "neg-bad-pin", "neg-foreign-preload", "neg-dart-map",
     "neg-unknown-stage", "neg-no-confirm", "neg-pd-fail", "neg-pd-link-fail", "pos-getsync-eacces", "neg-getsync-fail",
-    "neg-getsync-eacces-one-pd",
+    "neg-getsync-eacces-one-pd", "neg-no-domain",
 ]
 
 # (name, file, old text, new text)
@@ -54,6 +54,7 @@ MUTANTS = [
     ("overlay: property value is not copied", "ane_h16_overlay.c", "p->value = kmemdup(value, len, GFP_KERNEL);", "p->value = (void *)value;"),
     ("overlay: the module frees a property the kernel holds", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (1) {"),
     ("overlay: a refused update leaks its property", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (0) {"),
+    ("boot: runs without an IOMMU domain", "ane_h16_main.c", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (!ane->domain) {", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (0) {"),
 ]
 
 

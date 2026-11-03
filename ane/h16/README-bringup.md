@@ -183,6 +183,13 @@ two mailbox control words, nothing else:
 Stop at the first unexpected line. Do not run `stage=boot` or
 `read_scratch=1`.
 
+With `iommus` removed the device has no IOMMU domain, so the engine would
+run without address translation. `stage=boot` therefore refuses before it
+writes anything to the engine (`RESULT stage=3 verdict=REFUSED
+reason=dart-map`). Only the dt and status stages are meant for this
+overlay. Boot needs the three ANE DART nodes available and `iommus` left
+in place, and none of that is done here.
+
 ## Stop rules
 
 - A hang at any stage: power button, remove the opt-in key, reboot.
