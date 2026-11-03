@@ -448,11 +448,12 @@ def test_empty_root_and_cap():
 def test_os_fw_version_and_object_table_shapes():
     """The stub firmware version (a /chosen property, the H1 field) is
     reported; the tables whose boards rows are objects and whose ane/dart reg rows
-    are "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150) compare instead of
-    crashing with an AttributeError."""
+    are "0x...+0x..." strings (t6034/t6050/t8140/t8142/t8150), and the tables whose
+    mailbox is one prose leaf (t6040/t6041/t8132), compare instead of crashing with
+    an AttributeError."""
     tables = REPO / "data/ane-soc"
     empty = {"ane_nodes": [], "dart_ane_nodes": [], "mailbox_nodes": []}
-    for soc in ("t6034", "t6050", "t8140", "t8142", "t8150"):
+    for soc in ("t6034", "t6050", "t8140", "t8142", "t8150", "t6040", "t6041", "t8132"):
         st = probe.soc_table(soc, "apple,j700", empty, tables)
         assert st is not None and st["table"] == f"{soc}.json", st
     assert next(d["field"] for d in
