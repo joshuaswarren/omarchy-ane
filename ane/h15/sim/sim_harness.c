@@ -246,6 +246,8 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	sweep_watch = false;
+	sweep_watch_us = 1000;
 	ps_assert = false;
 	rpm_hold_sweep = false;
 	dart_scan_mask = 0xf;
@@ -2272,6 +2274,36 @@ static void pos_steplog_stop(void)
 	ret = probe_now();
 	chk(ret == 0 && sim_pm_get == 2 && sim_pm_put == 2,
 	    "FE rpm_hold_sweep takes a second runtime-PM reference across the sweep");
+	remove_if_probed();
+
+	/* FS: sweep_watch on a matching window: the ps snapshot runs at every
+	 * read when sweep_watch_us=0 (threshold zero counts every read as slow),
+	 * so the plumbing is asserted without a real stall. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	sweep_watch = true;
+	sweep_watch_us = 0;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret == 0 && strstr(sim_steplog_buf, "dart read wall=") != NULL &&
+	    strstr(sim_steplog_buf, "sweep stall pmgr.ANE_MPM reads") != NULL &&
+	    strstr(sim_steplog_buf, "sweep stall dart") != NULL,
+	    "FS sweep_watch steps the ps snapshot at every dart read");
+	remove_if_probed();
+
+	/* FT: sweep_watch off is byte-identical: no wall lines, no snapshot. */
+	reset_all();
+	run_setup(s, "apple,t6031-ane", 0x0);
+	dart_set(s, true);
+	pwgate_t6031 = 1;
+	stop_after_pwgate = true;
+	ret = probe_now();
+	chk(ret == 0 && strstr(sim_steplog_buf, "dart read wall=") == NULL &&
+	    strstr(sim_steplog_buf, "sweep stall") == NULL,
+	    "FT sweep_watch off: no wall lines and no snapshot");
 	remove_if_probed();
 
 	/* FF: default off is the single probe reference, byte-identical. */

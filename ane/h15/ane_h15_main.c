@@ -233,6 +233,16 @@ module_param(rpm_hold_sweep, bool, 0444);
 MODULE_PARM_DESC(rpm_hold_sweep,
 		 "Stage=run (5): take a second runtime-PM reference immediately before the M6-lesson DART sweep and release it after, so the hold is explicit from the sweep's first read to its last. The probe's own get already spans the sweep; this one exists so a sweep crash can be measured with the hold made explicit rather than inherited. Default off, byte-identical.");
 
+static bool sweep_watch;
+module_param(sweep_watch, bool, 0444);
+MODULE_PARM_DESC(sweep_watch,
+		 "Stage=run (5): time every DART sweep read; when a read takes over sweep_watch_us microseconds, immediately read and steplog the five ANE power-state words plus the slow read's own value. Diagnostic for the intermittent sweep crash: the steplog shows whether the whole ANE MMIO stalls or only the DART window, and captures the power-state bits at the stall. Pairs with steplog. Default off.");
+
+static unsigned int sweep_watch_us = 1000;
+module_param(sweep_watch_us, uint, 0444);
+MODULE_PARM_DESC(sweep_watch_us,
+		 "Slow-read threshold in microseconds for sweep_watch. Default 1000.");
+
 static bool ps_assert;
 module_param(ps_assert, bool, 0444);
 MODULE_PARM_DESC(ps_assert,
@@ -794,7 +804,32 @@ static int ane_h15_dart_rd(struct ane_h15 *ane, unsigned int inst, u32 off, u32 
 		return -EPERM;
 	ane_h15_step("read dart%u+%#x pa=%#llx\n", inst, off,
 		     s->engine_pa + woff);
-	*v = readl_relaxed(ane->engine + woff);
+	{
+		u64 t0 = ktime_get_boottime_ns();
+		*v = readl_relaxed(ane->engine + woff);
+		if (sweep_watch) {
+			u64 dt = ktime_get_boottime_ns() - t0;
+			unsigned int k;
+
+			ane_h15_step("dart read wall=%lluus\n", dt / 1000ULL);
+			if (dt > (u64)sweep_watch_us * 1000ULL) {
+				dev_crit(ane->dev,
+					 "ane_h15 sweep stall: dart%u+%#x took %lluus\n",
+					 inst, off, dt / 1000ULL);
+				for (k = 0; k < 5; k++) {
+					u32 pv;
+					ane_h15_step("sweep stall pmgr.%s pa=%#llx\n",
+						     ane_h15_ps_names[k],
+						     ane->soc->pmgr_pa + ane->soc->ps_off[k]);
+					pv = readl_relaxed(ane->pmgr + ane->soc->ps_off[k]);
+					ane_h15_step("sweep stall pmgr.%s reads %#x\n",
+						     ane_h15_ps_names[k], pv);
+				}
+				ane_h15_step("sweep stall dart%u+%#x reads %#x\n",
+					     inst, off, *v);
+			}
+		}
+	}
 	return 0;
 }
 
