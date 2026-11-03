@@ -117,10 +117,14 @@ struct ane_h15_soc {
 	u32 engine_size;	/* engine window size */
 	u64 pmgr_pa;		/* pmgr window base address */
 	u32 pmgr_size;		/* pmgr window size */
-	u64 pwgate_pa;		/* PWGATE window base: the fifth reg entry of the ADT ane0 node in the
-				 * shipped system's 27.0 device tree (T6031, J516C: 0x292290000). 0 = no window
-				 * for this row: pwgate_t6031 is refused in probe. */
-	u32 pwgate_size;	/* PWGATE window size (T6031: 0x4000) */
+	u64 pwgate_pa;		/* PWGATE window base: a reg entry of the ADT ane0 node (T6031: the fifth,
+				 * 0x292290000; T6030 and T8122: the third, the pmgr_ps window). 0 = no window
+				 * for this row: pwgate_read and pwgate_t6031 are refused in probe. */
+	u32 pwgate_size;	/* PWGATE window size (0x4000) */
+	u32 pwgate_word;	/* offset of the gate word inside the window (T6031 0x199c, T6030 0x2b6c,
+				 * T8122 0x272c) */
+	bool pwgate_write;	/* the row may run the pwgate_t6031 write step (T6031 only); a row with a
+				 * window and no write is read only (pwgate_read) */
 	const u32 *ps_off;	/* 5 pmgr-relative offsets: SYS MPM CPU TD BASE */
 	const struct ane_h15_word *words;
 	const struct ane_h15_fw *fw;

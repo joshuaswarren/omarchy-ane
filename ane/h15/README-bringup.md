@@ -186,7 +186,7 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   microseconds apart, until bits 1:0 read 0; the final word is logged. If the word already
   reads open, value 1 writes nothing. Value 2 always writes 0 first (the unconditional
   macOS order) and then polls. Any other value refuses in probe with
-  `REFUSED reason=pwgate_t6031 0 to 2`. The rows without the window (t8122, t6030, t6034)
+  `REFUSED reason=pwgate_t6031 0 to 2`. The rows without the write step (t8122, t6030, t6034)
   refuse the parameter in probe before any bus access and before any mapping, and so does
   every stage other than 5. A poll timeout stops the run before any CPU_CONTROL write with
   `FAIL pwgate-not-open`: the core never starts, nothing is pinned, and the probe releases
@@ -204,6 +204,18 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   say why macOS takes this step on a T6031 and not on the other rows. And the register window is named
   only by position: the fifth reg entry of the ADT ane0 node is the one macOS uses for this step, so
   calling it PWGATE is an inference.
+
+  `pwgate_read` (stage 2 with `confirm_read=1`, off by default; the T6030, T8122 and T6031 rows) reads
+  the same gate word once and writes nothing. After the preflight reads it logs the address
+  (`ane_h15 read PWGATE pa=0x...`), then the value (`ane_h15 word=PWGATE pa=0x... value=0x... gate=closed`
+  or `gate=open`) and adds `pwgate=closed word=0x...` or `pwgate=open word=0x...` to the RESULT reason.
+  Bits 1:0 nonzero read as closed. The word is at +0x2b6c on a T6030 and at +0x272c on a T8122
+  (+0x199c on a T6031). The window is the ANE node's third reg entry (the fifth on a T6031), 0x4000
+  bytes: physical 0x350724000 on a T6030 and 0x2d0724000 on a T8122. It is the power-state register
+  page, not a performance or DVFS page. The module maps the window, reads the word once and unmaps
+  it. The parameter refuses in probe, before any bus access, unless the stage is 2 without `fw_seg` and
+  the row has the window. Only the T6031 row may run the write step above.
+  Nothing here says what the word reads on a live machine; the first run does.
 
 - `stage=6` or `stage=rtkit`: stage 5 (all of its gates, `map_fw`, `fw_seg`) plus an RTKit management
   session over the ASC mailbox, behind `confirm_run=1` AND `confirm_rtkit=1`. It is the first stage that
