@@ -51,6 +51,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
@@ -91,6 +92,40 @@ MODULE_PARM_DESC(optin, "Must be 1 on J700");
 static bool apply;
 module_param(apply, bool, 0444);
 MODULE_PARM_DESC(apply, "0 = read-only dry run (default), 1 = run the power-off sequence");
+
+static bool reads;
+module_param(reads, bool, 0444);
+MODULE_PARM_DESC(reads, "1 = also read the whitelisted engine registers before the teardown");
+
+/*
+ * Engine offsets with measured values on T8140 (receipts/2026-11-02-…,
+ * 2026-11-03-j700-h17-poweroff-dryrun). Read only; nothing here writes
+ * the engine.
+ */
+#define H17_CPU_STATUS 0x1600048
+#define H17_RVBAR 0x1050000
+#define H17_SCRATCH0 0x1880020
+#define H17_MBOX_A2I_CTRL 0x1608110
+#define H17_MBOX_I2A_CTRL 0x1608114
+
+static void h17_engine_reads(struct device *dev, struct device_node *ane)
+{
+	void __iomem *eng;
+
+	eng = of_iomap(ane, 0);
+	if (!eng) {
+		dev_err(dev, "ane_h17_poweroff engine map failed\n");
+		return;
+	}
+	dev_info(dev, "ane_h17_poweroff reads CPU_STATUS(%#x)=%#x RVBAR(%#x)=%#llx\n",
+		 H17_CPU_STATUS, readl(eng + H17_CPU_STATUS),
+		 H17_RVBAR, readq(eng + H17_RVBAR));
+	dev_info(dev, "ane_h17_poweroff reads SCRATCH0(%#x)=%#x A2I(%#x)=%#x I2A(%#x)=%#x\n",
+		 H17_SCRATCH0, readl(eng + H17_SCRATCH0),
+		 H17_MBOX_A2I_CTRL, readl(eng + H17_MBOX_A2I_CTRL),
+		 H17_MBOX_I2A_CTRL, readl(eng + H17_MBOX_I2A_CTRL));
+	iounmap(eng);
+}
 
 static bool ane_h17_darts_disabled(void)
 {
@@ -278,6 +313,9 @@ static int ane_h17_poweroff_probe(struct platform_device *pdev)
 		ret = -EAGAIN;
 		goto out;
 	}
+
+	if (reads)
+		h17_engine_reads(dev, ane);
 
 	if (!apply) {
 		void __iomem *pw = ioremap(H17_PWGATE_PA, H17_PWGATE_SIZE);
