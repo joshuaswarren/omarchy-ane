@@ -7,7 +7,7 @@
  * level code required the exact word 0x60003000 and gave up ("ps-req-unexpected") when any other bit was set, which cost the whole ANE clock level
  * whenever the GPU vote or a video decode was active at ANE resume.
  *
- * Pure functions on the word, no kernel calls: tools/test_ane_dvfs_req.c compiles this header on the host.
+ * Pure functions on the word, no kernel calls. ane/test/dvfs_model_test.py compiles ane_dvfs.c with this header against a fake PTD (the bit 9 and other-bit cases).
  */
 #ifndef ANE_DVFS_REQ_H
 #define ANE_DVFS_REQ_H
