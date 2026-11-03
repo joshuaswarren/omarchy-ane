@@ -213,8 +213,8 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   (+0x199c on a T6031). The window is the ANE node's third reg entry (the fifth on a T6031), 0x4000
   bytes: physical 0x350724000 on a T6030 and 0x2d0724000 on a T8122. It is the power-state register
   page, not a performance or DVFS page. The module maps the window, reads the word once and unmaps
-  it. The parameter refuses in probe, before any bus access, unless the stage is 2 without `fw_seg`,
-  the row has the window and `pwgate_t6031` is 0. Only the T6031 row may run the write step above.
+  it. The parameter refuses in probe, before any bus access, unless the stage is 2 without `fw_seg` and
+  the row has the window. Only the T6031 row may run the write step above.
   Nothing here says what the word reads on a live machine; the first run does.
 
 - `stage=6` or `stage=rtkit`: stage 5 (all of its gates, `map_fw`, `fw_seg`) plus an RTKit management

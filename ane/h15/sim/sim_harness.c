@@ -2052,9 +2052,17 @@ static void pos_pwgate_read(void)
 		{ &ane_t6030_soc, "apple,t6030-ane" },
 		{ &ane_t6031_soc, "apple,t6031-ane" },
 	};
+	/* Literal per-row facts, not read back from the rows: a wrong window or offset in the SoC table fails here. */
+	static const struct { u64 pa; u32 word; bool write; u64 wpa; } lit[] = {
+		{ 0x2d0724000ull, 0x272c, false, 0x2d072672cull },
+		{ 0x350724000ull, 0x2b6c, false, 0x350726b6cull },
+		{ 0x292290000ull, 0x199c, true, 0x29229199cull },
+	};
 	static const struct { u32 word; const char *gate; } vals[] = {
 		{ 0x30000003u, "closed" },
 		{ 0x30000001u, "closed" },
+		{ 0x30000002u, "closed" },
+		{ 0x30000004u, "open" },
 		{ 0x30000000u, "open" },
 	};
 	unsigned int rstage;
@@ -2064,7 +2072,11 @@ static void pos_pwgate_read(void)
 
 	for (r = 0; r < ARRAY_SIZE(rows); r++) {
 		const struct ane_h15_soc *s = rows[r].soc;
-		u64 word_pa = s->pwgate_pa + s->pwgate_word;
+		u64 word_pa = lit[r].wpa;
+
+		snprintf(name, sizeof(name), "PR0 %s: window, word offset, write permission and word address are the literals", s->name);
+		chk(s->pwgate_pa == lit[r].pa && s->pwgate_size == 0x4000 && s->pwgate_word == lit[r].word &&
+		    s->pwgate_write == lit[r].write && lit[r].pa + lit[r].word == lit[r].wpa, name);
 
 		for (v = 0; v < ARRAY_SIZE(vals); v++) {
 			stage2_setup(s, rows[r].compat, -1);
@@ -2115,7 +2127,7 @@ static void pos_pwgate_read(void)
 		const struct ane_h15_soc *s = r == 4 ? &ane_t6034_soc : &ane_t8122_soc;
 		const char *compat = r == 4 ? "apple,t6034-ane" : "apple,t8122-ane";
 		const char *want_log[] = { "pwgate_read 0 or 1", "pwgate_read: stage=wrapper (2) only",
-					   "pwgate_read: stage=wrapper (2) only", "pwgate_read: not together",
+					   "pwgate_read: stage=wrapper (2) only", "pwgate_t6031: the t8122 row has no PWGATE write",
 					   "pwgate_read: the t6034 row has no PWGATE window" };
 
 		stage2_setup(s, compat, -1);
@@ -2132,7 +2144,7 @@ static void pos_pwgate_read(void)
 		snprintf(name, sizeof(name), "PR3 case %zu: refused (%s) before any MMIO and any mapping", r,
 			 want_log[r]);
 		chk(ret != 0 && events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0 && sim_n_iounmap == 0 &&
-		    (r == 3 || log_count(want_log[r]) == 1), name);
+		    log_count(want_log[r]) == 1, name);
 	}
 
 	/* PR4: the write step stays T6031 only. T8122 and T6030 have a window now, still no write. */

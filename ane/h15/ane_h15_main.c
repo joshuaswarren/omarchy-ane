@@ -222,7 +222,7 @@ MODULE_PARM_DESC(pwgate_t6031,
 static unsigned int pwgate_read;
 module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
-		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe. Not together with pwgate_t6031.");
+		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe.");
 
 static char *fw_path;
 module_param(fw_path, charp, 0444);
@@ -2488,10 +2488,6 @@ static int ane_h15_probe(struct platform_device *pdev)
 	if (pwgate_read && !soc->pwgate_pa) {
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read: the %s row has no PWGATE window\n",
 			soc->name);
-		return -EINVAL;
-	}
-	if (pwgate_read && pwgate_t6031) {
-		dev_err(&pdev->dev, "REFUSED reason=pwgate_read: not together with pwgate_t6031\n");
 		return -EINVAL;
 	}
 
