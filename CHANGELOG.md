@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `omarchy-ane-probe`: `soc_table` no longer fails with `AttributeError: 'str' object has no attribute 'get'` on the M4 family. The T6040, T6041 and T8132 tables give `mailbox` as one prose leaf; the probe now skips that section, and still compares the ANE and DART rows. Found on a J773g Mac mini (T8132).
+- `ane_h16`: `ane/h16/t8132-ane-experimental.dts` now ships its three ANE DART nodes as `status = "disabled"` and the `ane` node without `iommus`, as the H15 overlays have since #174. Enabled nodes of that shape hung a T6030 at boot; that was not measured on a T8132. Stages dt and status need no DART. The enabled form moves to `ane/h16/t8132-ane-dart-experimental.dts` for `stage=boot`. Untested on a T8132.
 - `omarchy-ane-smoke`: refuse a run before launching the runner when bound devices span multiple dies or their die identity is unreadable. Report no die instead of guessing die 0.
 - docs: correct the M2 Pro default list and Ultra volunteer steps. Preserve other opt-in keys when adding a key. Remove the die-1 promotion sequence whose smoke result can name the wrong die.
 - `promotion_check`: do not judge a block whose check output binds both dies. This covers runtime and fallback rows in either line order, even with a scalar die field. Rows that bind one die keep their old behavior.
