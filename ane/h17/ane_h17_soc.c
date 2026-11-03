@@ -50,11 +50,17 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  * Pinned from the ADT:
  *   ane_type 0x200; ANE_SYS ps word at pmgr +0x290.
  *
- * Candidates, not qualified for T8140: irq_status/irq_ack/mbox keep the
- * T8132 row's values (the CPU block shares the +0x200000 shift), and the
- * ps words after ANE_SYS follow the T8132 0xc000/0xc008/0xc010/0xc018
- * chain. Only 0xc000 has T8140 evidence (the Apple driver's PS write);
- * the ADT marks ANE_CPU no_ps, so the row may need fewer words.
+ * Measured on hardware (boot 3134730e, kernel 7.2.11-14-1-ARCH):
+ *   c000/c008/c010 all raise to ACTUAL=0xf through the pmgr driver and
+ *   return off-0; c018 reads all-zero and is not an island.
+ *   c000 is the only word with PS_AUTO set.
+ *
+ * Candidates, not qualified for T8140: irq_status/irq_ack keep the
+ * T8132 row's values (the CPU block shares the +0x200000 shift), and
+ * mbox keeps the T8132 value; neither the IRQ offsets nor the mailbox
+ * appear in the ANE interface text (the mailbox belongs to the RTBuddy
+ * transport). The role of c000/c008/c010 (MPM/CPU/TD) is unassigned.
+ * c018 is kept at the T8132 offset only to record that it is absent.
  */
 const struct ane_h16_soc ane_t8140_soc = {
 	.name = "t8140",
