@@ -200,6 +200,19 @@ reason=dart-map`). Only the dt and status stages are meant for this
 overlay. Boot needs the three ANE DART nodes available and `iommus` left
 in place, and none of that is done here.
 
+## Reading the boot ADT (read only)
+
+`stage=boot` needs the firmware that iBoot preloaded for the ANE: the ANE node's `segment-ranges` in the boot ADT. `tools/ane_adt_scan.py`
+shows whether a boot has it. It loads no module, touches no ANE register and writes no file. With no argument it reads the one MTD
+named `adt` (the m1n1 copy of the boot device tree), read only. Root is needed for that device read.
+
+    sudo python3 tools/ane_adt_scan.py | tee adt-ane-scan.txt
+
+It prints the path, the property names and a few values (compatible, reg, segment-ranges, power-gates, clock-gates, clock-ids,
+pre-loaded) of every node that names the ANE, and chip-id and board-id from /chosen. It prints no other property value, so serial
+numbers, identifiers and addresses stay out of the output. Exit status 0: an ANE node was found. 1: none. 2: an error. The T8132 boot
+above logged no ANE node and no segment-ranges; this scan says which of the two is missing.
+
 ## Stop rules
 
 - A hang at any stage: power button, remove the opt-in key, reboot.
