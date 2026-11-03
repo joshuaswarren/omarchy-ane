@@ -328,9 +328,13 @@ It requires `CONFIG_OF_OVERLAY` and remains off by default.
 
 In this order, and only after every check passes: it publishes the few labels the overlay refers to in `/__symbols__`,
 gives a target node that has no phandle one, applies the compiled overlay with `of_overlay_fdt_apply`, and then
-registers the driver so the normal probe runs. T8122 derives from `t8122-ane-experimental.dts`; T6030/T6031 use their
-DART variants. Only empty label-minting fragments are removed (`gen-runtime-overlay.py` writes the header; `make sim-overlay`
-checks it). T8122 retains four disabled DART nodes and no `iommus` property, so it cannot supply firmware mappings.
+registers the driver so the normal probe runs. All three run-time overlays derive from a DART variant (`t8122-ane-dart-experimental.dts`,
+`t6030-ane-dart-experimental.dts`, `t6031-ane-dart-experimental.dts`); the plain `*-ane-experimental.dts` files stay the boot
+overlays with their DART nodes disabled, because enabled nodes at boot hung a T6030. Only empty label-minting fragments are removed
+(`gen-runtime-overlay.py` writes the header; `make sim-overlay` checks it). The T8122 variant carries the T6030 DART layout:
+instances 0, 1 and 2 enabled, the aperture window disabled, and the `ane` node listing stream 0 of each. After boot no ANE DART stream
+is enabled and the TCR and TTBR words hold stale values (stage 6 refused with `no-dart-stream-enabled` on a 13-inch M3 MacBook Air),
+so the DART driver has to attach the ANE. On that machine the attach gave three live streams.
 Its power graph comes from the T8122/J613 ADT, including both ANE_TD and ANE_CPU parents of ANE_BASE.
 No T8122 hardware result is established by these offline checks.
 It refuses, touching nothing, when the optin key has no overlay, the machine is
