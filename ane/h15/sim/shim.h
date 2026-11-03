@@ -773,8 +773,9 @@ static inline ssize_t kernel_write(struct file *f, const void *buf, size_t n, vo
 	sim_steplog_len += n;
 	sim_steplog_buf[sim_steplog_len] = 0;
 	/* events seen when this line was written: proves the line precedes its access */
-	if (sim_step_n < (int)(sizeof(sim_step_at) / sizeof(sim_step_at[0])))
-		sim_step_at[sim_step_n++] = (unsigned short)sim_n_events;
+	if (sim_step_n >= (int)(sizeof(sim_step_at) / sizeof(sim_step_at[0])))
+		sim_step_n = 0;	/* wrap: only the tail is checked for ordering */
+	sim_step_at[sim_step_n++] = (unsigned short)sim_n_events;
 	return n;
 }
 static inline int scnprintf(char *b, size_t sz, const char *fmt, ...)

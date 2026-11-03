@@ -2119,6 +2119,26 @@ static void pos_steplog_stop(void)
 			    "SL1 a step line exists at or after the last bus access of the run");
 		}
 	}
+	chk(ane_stepf == NULL,
+	    "SL1 the steplog file is closed when the probe returns");
+		/* w7K: the file must open with the init line for this stage, the bring-up
+		 * line follows it, and both are recorded before any bus access. */
+		{
+			const char *eol = strchr(sim_steplog_buf, '\n');
+			size_t head_len = eol ? (size_t)(eol - sim_steplog_buf) : strlen(sim_steplog_buf);
+			chk(head_len >= 19 && strncmp(sim_steplog_buf + head_len - 19,
+			    "module init stage=5", 19) == 0,
+			    "SL1 the file's first line is the module init line for stage 5");
+		}
+		{
+			const char *up = strstr(sim_steplog_buf, "bring-up complete");
+			const char *first_access = strstr(sim_steplog_buf, "read pmgr.");
+			chk(up != NULL, "SL1 the bring-up line exists in the file");
+			chk(first_access != NULL && up != NULL && up < first_access,
+			    "SL1 the bring-up line precedes the first access line");
+		}
+		chk(sim_step_n > 0 && sim_step_at[0] == 0,
+		    "SL1 the init line is recorded before any bus event");
 	ane_h15_remove(&pdev);
 
 	/* SL2: the steplog open fails: the run refuses before any MMIO. */
@@ -2129,9 +2149,8 @@ static void pos_steplog_stop(void)
 	ret = probe_now();
 	chk(ret != 0 && log_count("ane_h15 steplog: open") == 1 && events_in(0, ~0ULL, 0) == 0,
 	    "SL2 a failed steplog open refuses the run before any bus access");
-	chk(sim_pm_get == 1 && sim_pm_put == 1,
-	    "SL2 the refused run releases the power claim it took");
-	ane_h15_remove(&pdev);
+	chk(sim_pm_get == 0 && sim_pm_put == 0,
+	    "SL2 the open now sits before bring-up: no power claim was ever taken");
 
 	/* SA1: stop_after_pwgate with the gate closed. The gate step is the whole
 	 * run: no CPU_CONTROL write at all, the core stays untouched. */
@@ -2169,6 +2188,15 @@ static void pos_steplog_stop(void)
 	chk(ret != 0 && log_count("stop_after_pwgate: needs pwgate_t6031") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0,
 	    "SA3 stop_after_pwgate with scratch_boot refuses before any bus access");
+
+	/* SL2b: a refused probe (stop_after without pwgate) still leaves the init
+	 * line, because the open sits at probe entry ahead of the refusals. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	stop_after_pwgate = true;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret != 0 && strstr(sim_steplog_buf, "module init") != NULL,
+	    "SL2b a refused probe leaves the fsynced init line behind");
 
 	/* SL3: a stuck gate. The poll logs its begin and its timeout end, never one
 	 * line per pass. */
