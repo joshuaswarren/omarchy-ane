@@ -2615,35 +2615,42 @@ static int ane_h15_probe(struct platform_device *pdev)
 	/* stop_after_pwgate refusals: the split needs the PWGATE step alone, without
 	 * the SCRATCH sequence of scratch_boot. */
 	if (stop_after_pwgate && (!pwgate_t6031 || scratch_boot)) {
+		ane_h15_steplog_close();
 		dev_err(&pdev->dev,
 			"REFUSED reason=stop_after_pwgate: needs pwgate_t6031=1 without scratch_boot\n");
 		return -EINVAL;
 	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
 	if (pwgate_read > 1) {
+		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);
 		return -EINVAL;
 	}
 	if (pwgate_read && (stage_idx != 2 || fw_seg || !strcmp(stage, "domain-window"))) {
+		ane_h15_steplog_close();
 		dev_err(&pdev->dev,
 			"REFUSED reason=pwgate_read: stage=wrapper (2) only, without fw_seg\n");
 		return -EINVAL;
 	}
 	if (pwgate_read && !soc->pwgate_pa) {
+		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read: the %s row has no PWGATE window\n",
 			soc->name);
 		return -EINVAL;
 	}
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
-	if (!ane)
+	if (!ane) {
+		ane_h15_steplog_close();
 		return -ENOMEM;
+	}
 	ane->dev = &pdev->dev;
 	ane->soc = soc;
 	platform_set_drvdata(pdev, ane);
 
 	if (stage_idx == 0) {
 		ret = ane_h15_stage_dt(ane);
+		ane_h15_steplog_close();
 		return ret;
 	}
 
@@ -2657,12 +2664,14 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev,
 			"of_iomap failed (engine=%s, pmgr=%s): node reg property missing?\n",
 			ane->engine ? "ok" : "NULL", ane->pmgr ? "ok" : "NULL");
+		ane_h15_steplog_close();
 		ane_h15_unmap_windows(ane);
 		return -ENXIO;
 	}
 
 	ret = ane_h15_attach_pds(ane);
 	if (ret) {
+		ane_h15_steplog_close();
 		ane_h15_detach_pds(ane);
 		ane_h15_unmap_windows(ane);
 		return ret;
@@ -2687,6 +2696,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 		} else {
 			dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
 			/* a failed get_sync still took a usage count */
+			ane_h15_steplog_close();
 			pm_runtime_put_noidle(&pdev->dev);
 			pm_runtime_disable(&pdev->dev);
 			ane_h15_detach_pds(ane);

@@ -2119,6 +2119,8 @@ static void pos_steplog_stop(void)
 			    "SL1 a step line exists at or after the last bus access of the run");
 		}
 	}
+	chk(ane_stepf == NULL,
+	    "SL1 the steplog file is closed when the probe returns");
 	ane_h15_remove(&pdev);
 
 	/* SL2: the steplog open fails: the run refuses before any MMIO. */
@@ -2168,6 +2170,15 @@ static void pos_steplog_stop(void)
 	chk(ret != 0 && log_count("stop_after_pwgate: needs pwgate_t6031") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0,
 	    "SA3 stop_after_pwgate with scratch_boot refuses before any bus access");
+
+	/* SL2b: a refused probe (stop_after without pwgate) still leaves the init
+	 * line, because the open sits at probe entry ahead of the refusals. */
+	run_setup(s, "apple,t6031-ane", 0x0);
+	stop_after_pwgate = true;
+	steplog = "/tmp/sim-step.log";
+	ret = probe_now();
+	chk(ret != 0 && strstr(sim_steplog_buf, "module init") != NULL,
+	    "SL2b a refused probe leaves the fsynced init line behind");
 
 	/* SL3: a stuck gate. The poll logs its begin and its timeout end, never one
 	 * line per pass. */

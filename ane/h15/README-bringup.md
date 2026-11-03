@@ -218,8 +218,10 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   journal stopped at 4.8 seconds and pstore was empty. Poll passes beyond the first are not
   logged one by one, so a stuck gate costs two lines, not 5000, and no insmod timeout is at risk.
   The file opens at probe entry, before the power-domain bring-up, and its first line is the init
-  line; a bring-up death still leaves the file behind. A failed open refuses the run before any
-  MMIO and before any power claim. The file is created 0600.
+  line; a bring-up death still leaves the file behind. The close runs on every early return
+  (refusals, allocation, mapping, power bring-up), so a refused run never leaks the descriptor and
+  never leaves a half-run file that could be mistaken for a later one. A failed open refuses the
+  run before any MMIO and before any power claim. The file is created 0600.
 
   What this rests on. The register behaviour above is macOS behaviour. We have not measured it on an
   M3, and it has never run there. The full notes stay private. They do not show two things. They do not
