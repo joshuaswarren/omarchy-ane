@@ -199,6 +199,20 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   the two T6031 runs ended with CPU_STATUS `0x30002a` to `0x300028` and no mailbox message.
   macOS behaviour, never run on an M3.
 
+  `stop_after_pwgate` (stage 5 with `pwgate_t6031` only, off by default) stops the run right
+  after the PWGATE step, before any SCRATCH or CPU_CONTROL write. The RESULT reason is the pwgate
+  suffix plus `stop-after-pwgate`. The step exists to split a crash between the gate write and the
+  core start: this run touches the gate word and nothing else. It refuses, touching nothing,
+  without `pwgate_t6031=1`, with `scratch_boot=1`, or on any stage other than 5.
+
+  `steplog=<path>` (off by default) appends one line to that file, fsynced, before every MMIO
+  access the module makes: the PWGATE reads and write, the CPU_CONTROL reads and writes, the
+  SCRATCH writes and the SCRATCH7 poll. The line is on the disk before the access runs, so a run
+  that hangs the machine leaves its last access in the file; the kernel log dies with RAM. The
+  2026-11-03 J613 write run lost everything this way: the run boot's journal stopped at 4.8
+  seconds and pstore was empty. The fsync per line slows the polls. If the open fails the run
+  refuses before any MMIO.
+
   What this rests on. The register behaviour above is macOS behaviour. We have not measured it on an
   M3, and it has never run there. The full notes stay private. They do not show two things. They do not
   say why macOS takes this step on a T6031 and not on the other rows. And the register window is named

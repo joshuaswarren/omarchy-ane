@@ -219,6 +219,16 @@ module_param(pwgate_t6031, uint, 0444);
 MODULE_PARM_DESC(pwgate_t6031,
 		 "Stage=run (5) only, rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. Never run on an M3.");
 
+
+static bool stop_after_pwgate;
+module_param(stop_after_pwgate, bool, 0444);
+MODULE_PARM_DESC(stop_after_pwgate,
+		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1, with scratch_boot=1, or on any other stage.");
+
+static char *steplog;
+module_param(steplog, charp, 0444);
+MODULE_PARM_DESC(steplog,
+		 "Path: append one line, fsynced, before every MMIO access of the run stage (the PWGATE word, CPU_CONTROL reads and writes, SCRATCH writes and the SCRATCH7 poll). The file survives a reset that eats the kmsg ring, so a crashed run names its last access. Slows the polls; every line hits the disk before the next access runs. Off by default. The open fails: the run refuses before any MMIO.");
 static unsigned int pwgate_read;
 module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
@@ -1180,6 +1190,50 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
 #define ANE_H15_MBOX_I2A_RECV1	0x838u
 #define ANE_H15_RUN_MAX_MSGS	4u
 
+/* steplog: one line per MMIO access, on the disk before the access runs. A run that
+ * hangs the machine leaves its last access in the file; the kmsg ring dies with RAM. */
+static struct file *ane_stepf;
+
+static int ane_h15_steplog_open(struct device *dev)
+{
+	if (!steplog)
+		return 0;
+	ane_stepf = filp_open(steplog, O_WRONLY | O_CREAT | O_APPEND, 0600);
+	if (IS_ERR(ane_stepf)) {
+		dev_err(dev, "ane_h15 steplog: open %s failed: %ld\n", steplog, PTR_ERR(ane_stepf));
+		ane_stepf = NULL;
+		return -EIO;
+	}
+	return 0;
+}
+
+static void ane_h15_steplog_close(void)
+{
+	if (ane_stepf) {
+		filp_close(ane_stepf, NULL);
+		ane_stepf = NULL;
+	}
+}
+
+static void ane_h15_step(const char *fmt, ...)
+{
+	char buf[160];
+	va_list ap;
+	loff_t pos = 0;
+	u64 ns = ktime_get_boottime_ns();
+	int n;
+
+	if (!ane_stepf)
+		return;
+	n = scnprintf(buf, sizeof(buf), "%llu.%06llu ", ns / 1000000000ULL,
+		      (ns % 1000000000ULL) / 1000ULL);
+	va_start(ap, fmt);
+	n += vscnprintf(buf + n, sizeof(buf) - n, fmt, ap);
+	va_end(ap);
+	kernel_write(ane_stepf, buf, n, &pos);
+	vfs_fsync(ane_stepf, 0);
+}
+
 static int ane_h15_read_ctrl(struct ane_h15 *ane, u32 *v)
 {
 	const struct ane_h15_soc *s = ane->soc;
@@ -1188,6 +1242,7 @@ static int ane_h15_read_ctrl(struct ane_h15 *ane, u32 *v)
 	    (u64)s->cpu_control + 4 > (u64)ANE_H15_WRAP_OFF + ANE_H15_WRAP_SIZE ||
 	    (u64)s->cpu_control + 4 > s->engine_size)
 		return -EPERM;
+	ane_h15_step("read CPU_CONTROL pa=%#llx\n", s->engine_pa + s->cpu_control);
 	dev_crit(ane->dev, "ane_h15 read CPU_CONTROL pa=%#llx off=%#x\n",
 		 s->engine_pa + s->cpu_control, s->cpu_control);
 	*v = readl_relaxed(ane->engine + s->cpu_control);
@@ -1209,6 +1264,7 @@ static int ane_h15_write_ctrl(struct ane_h15 *ane, u32 old, u32 val, const char 
 	    (u64)s->cpu_control + 4 > (u64)ANE_H15_WRAP_OFF + ANE_H15_WRAP_SIZE ||
 	    (u64)s->cpu_control + 4 > s->engine_size)
 		return -EPERM;
+	ane_h15_step("write CPU_CONTROL=%#x pa=%#llx (%s)\n", val, s->engine_pa + s->cpu_control, why);
 	dev_crit(ane->dev, "ane_h15 write CPU_CONTROL=%#x pa=%#llx (%s)\n", val,
 		 s->engine_pa + s->cpu_control, why);
 	writel(val, ane->engine + s->cpu_control);
@@ -1545,6 +1601,7 @@ static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 
 	if ((i != 0 && i != 1 && i != 3 && i != 7) || (u64)off + 4 > ane->soc->engine_size)
 		return -EPERM;
+	ane_h15_step("write SCRATCH%u=%#x pa=%#llx\n", i, v, ane->soc->engine_pa + off);
 	dev_crit(ane->dev, "ane_h15 write SCRATCH%u=%#x pa=%#llx\n", i, v, ane->soc->engine_pa + off);
 	writel(v, ane->engine + off);
 	return 0;
@@ -1559,6 +1616,7 @@ static int ane_h15_scr_wr_kboot(struct ane_h15 *ane, unsigned int i, u32 v)
 
 	if (i >= ANE_H15_SCRATCH_N || (v && i != 6) || (u64)off + 4 > ane->soc->engine_size)
 		return -EPERM;
+	ane_h15_step("write SCRATCH%u=%#x pa=%#llx\n", i, v, ane->soc->engine_pa + off);
 	dev_crit(ane->dev, "ane_h15 write SCRATCH%u=%#x pa=%#llx\n", i, v, ane->soc->engine_pa + off);
 	writel(v, ane->engine + off);
 	return 0;
@@ -1952,6 +2010,7 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
 	}
+	ane_h15_step("read PWGATE pa=%#llx\n", word_pa);
 	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 	v = readl_relaxed(pw + s->pwgate_word);
 	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x\n", word_pa, v);
@@ -1961,12 +2020,14 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 		iounmap(pw);
 		return 0;
 	}
+	ane_h15_step("write PWGATE=0x0 pa=%#llx\n", word_pa);
 	dev_crit(ane->dev, "ane_h15 write PWGATE=0x0 pa=%#llx%s\n", word_pa,
 		 pwgate_t6031 == 2 ? " (forced, the unconditional macOS order)" : "");
 	writel(0, pw + s->pwgate_word);
 	for (i = 0; i < ANE_H15_PWGATE_POLLS; i++) {
 		usleep_range(10, 10);
-		dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
+		ane_h15_step("read PWGATE pa=%#llx\n", word_pa);
+	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 		v = readl_relaxed(pw + s->pwgate_word);
 		if (!(v & ANE_H15_PWGATE_BITS)) {
 			dev_info(ane->dev, "ane_h15 pwgate open after %u poll(s), final word %#x\n",
@@ -2008,6 +2069,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
 	}
+	ane_h15_step("read PWGATE pa=%#llx\n", word_pa);
 	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 	v = readl_relaxed(pw + s->pwgate_word);
 	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x gate=%s\n", word_pa, v,
@@ -2077,6 +2139,7 @@ static int ane_h15_scratch_boot(struct ane_h15 *ane, u32 ctrl, bool *s7_ready,
 		return ret;
 	for (waited = 0; waited < sb_wait_ms; waited++) {
 		usleep_range(1000, 1000);
+		ane_h15_step("poll SCRATCH7\n");
 		if (ane_h15_scr_peek(ane, 7) == ANE_H15_HS_READY) {
 			*s7_ready = true;
 			dev_info(ane->dev, "ane_h15 scratch_boot SCRATCH7 ready word %#x after %ums\n",
@@ -2097,7 +2160,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	bool stopped = false;
 	bool kboot = stg == 5 && scratch_boot;
 	bool s7_ready = false;
-	char kres[128], pwres[40] = "";
+	char kres[128], pwres[64] = "";
 	struct ane_h15_rtk rtk = { 0 };
 	int ret;
 
@@ -2269,6 +2332,17 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "FAIL",
 				       ret == -ETIMEDOUT ? "pwgate-not-open" : "pwgate-window-refused");
 			return ret;
+		}
+		/* stop_after_pwgate: the split run. The gate step is the whole run:
+		 * no SCRATCH write, no CPU_CONTROL write, the core stays as it was,
+		 * nothing pinned. A crash in this run names the gate step alone. */
+		if (stop_after_pwgate) {
+			strscpy(pwres + strlen(pwres), " stop-after-pwgate",
+				sizeof(pwres) - strlen(pwres));
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "PASS", pwres);
+			dev_info(ane->dev, "ane_h15 stop_after_pwgate: no CPU_CONTROL write\n");
+			return 0;
 		}
 	}
 
@@ -2477,6 +2551,17 @@ static int ane_h15_probe(struct platform_device *pdev)
 			soc->name);
 		return -EINVAL;
 	}
+	/* stop_after_pwgate refusals: the split needs the PWGATE step alone, without
+	 * the SCRATCH sequence of scratch_boot. */
+	if (stop_after_pwgate && (!pwgate_t6031 || scratch_boot)) {
+		dev_err(&pdev->dev,
+			"REFUSED reason=stop_after_pwgate: needs pwgate_t6031=1 without scratch_boot\n");
+		return -EINVAL;
+	}
+	if (stop_after_pwgate && stage_idx != 5) {
+		dev_err(&pdev->dev, "REFUSED reason=stop_after_pwgate: stage=run (5) only\n");
+		return -EINVAL;
+	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
 	if (pwgate_read > 1) {
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);
@@ -2553,6 +2638,15 @@ static int ane_h15_probe(struct platform_device *pdev)
 		}
 	}
 
+	ret = ane_h15_steplog_open(&pdev->dev);
+	if (ret) {
+		ane_h15_result(NULL, stage_idx, "REFUSED", "steplog-open-failed");
+		pm_runtime_put_noidle(&pdev->dev);
+		pm_runtime_disable(&pdev->dev);
+		ane_h15_detach_pds(ane);
+		ane_h15_unmap_windows(ane);
+		return ret;
+	}
 	if (stage_idx == 1)       ret = ane_h15_stage_status(ane);
 	else if (stage_idx == 2)  ret = ane_h15_stage_wrapper(ane);
 	else if (stage_idx == 4)  ret = ane_h15_stage_dart(ane);
@@ -2560,6 +2654,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 	else if (stage_idx == 6)  ret = ane_h15_stage_rtkit(ane);
 	else if (stage_idx == 7)  ret = ane_h15_stage_chan(ane);
 	else                      ret = ane_h15_stage_boot(ane);
+	ane_h15_steplog_close();
 
 	if (ane->map_retained) {
 		__module_get(THIS_MODULE);

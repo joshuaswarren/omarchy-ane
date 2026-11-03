@@ -738,4 +738,65 @@ static inline void *platform_get_drvdata(struct platform_device *p)
 	return p->drvdata;
 }
 
+
+/* ---- steplog shim: capture the module's step lines instead of touching a file ---- */
+#define O_WRONLY 01
+#define O_CREAT 0100
+#define O_APPEND 02000
+struct file { int fd; };
+extern char sim_steplog_buf[8192];
+extern int sim_steplog_len;
+extern unsigned long sim_steplog_fsyncs;
+extern int sim_steplog_open_fail;
+static inline struct file *filp_open(const char *path, int flags, int mode)
+{
+	(void)path; (void)flags; (void)mode;
+	if (sim_steplog_open_fail)
+		return (struct file *)ERR_PTR(-ENOENT);
+	return (struct file *)1;
+}
+static inline int filp_close(struct file *f, void *owner)
+{
+	(void)owner;
+	return f ? 0 : -EBADF;
+}
+static inline ssize_t kernel_write(struct file *f, const void *buf, size_t n, void *pos)
+{
+	(void)f; (void)pos;
+	if (n > (size_t)(sizeof(sim_steplog_buf) - 1 - sim_steplog_len))
+		n = sizeof(sim_steplog_buf) - 1 - sim_steplog_len;
+	memcpy(sim_steplog_buf + sim_steplog_len, buf, n);
+	sim_steplog_len += n;
+	sim_steplog_buf[sim_steplog_len] = 0;
+	return n;
+}
+static inline int scnprintf(char *b, size_t sz, const char *fmt, ...)
+{
+	va_list ap; int n;
+	va_start(ap, fmt); n = vsnprintf(b, sz, fmt, ap); va_end(ap);
+	return n;
+}
+static inline int vscnprintf(char *b, size_t sz, const char *fmt, va_list ap)
+{
+	int n = vsnprintf(b, sz, fmt, ap);
+	return n >= (int)sz ? (int)sz - 1 : n;
+}
+static inline size_t strscpy(char *dst, const char *src, size_t n)
+{
+	size_t l = strlen(src);
+	if (n) { size_t c = l < n - 1 ? l : n - 1; memcpy(dst, src, c); dst[c] = 0; }
+	return l;
+}
+static inline int vfs_fsync(struct file *f, int datasync)
+{
+	(void)f; (void)datasync;
+	sim_steplog_fsyncs++;
+	return 0;
+}
+static inline unsigned long long ktime_get_boottime_ns(void)
+{
+	extern unsigned long long sim_ktime_ns;
+	return sim_ktime_ns += 1000000ULL;
+}
+
 #endif /* SIM_SHIM_H */
