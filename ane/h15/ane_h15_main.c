@@ -24,13 +24,11 @@
  *              RVBAR and the two mailbox CTRL words, each address logged
  *              before its read, inside the two ADT-published windows
  *              only. No write, no CPU release.
- *   3 boot   : refuses without fw_path=; with fw_path=, prints one
- *              line per still-unmeasured fact from the ane_h15_facts
- *              table (stub firmware identity H1, mailbox/IRQ roles H2,
- *              segment-ranges/DART geometry H3, RVBAR compose H4,
- *              SCRATCH wake word H5) and refuses. Even with every row
- *              filled this build has no boot path: no engine write,
- *              no CPU release, ever.
+ *   3 boot   : requires fw_path, confirm_boot and confirm_read. Validates
+ *              the pinned file, prepares a coherent owned image and its
+ *              source-bound wrapper field, then retains the existing boot
+ *              refusal. The DMA API creates mappings; no execution-entry
+ *              alias, message, RUN or CPU release occurs.
  *   4 dart   : confirm_read=1 required. Read only: the four ANE DART windows (engine+0x1800000..),
  *              version, lock state, and per stream TCR, TTBR and the enable bits. Says whether iBoot left a
  *              stream enabled and mapped. See the comment above ane_h15_stage_dart().
@@ -40,7 +38,7 @@
  *              stage 2 run measured on this SoC, mailbox words EMPTY), watches
  *              CPU_STATUS and pops at most four mailbox messages (raw words,
  *              no reply), then stops the core again. Refused on any SoC row
- *              without a measured rvbar_expect (today t6030 and t6031), and without a live DART
+ *              without a measured rvbar_expect (today t6034 only), and without a live DART
  *              stream from the same scan stage 4 does (run_unmapped=1 overrides). scratch_boot=1 (off by
  *              default) starts the core in macOS's cold-boot order instead of the read-modify-write
  *              and reports s7_ready on the RESULT line. See the
@@ -90,9 +88,12 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <crypto/sha2.h>
+#include <linux/unaligned.h>
 
 #include "ane_h15.h"
 #include "ane_h15_overlay.h"
+#include "ane_h15_domain_window.h"
+#include "ane_h15_fw_layout.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -102,6 +103,7 @@ MODULE_PARM_DESC(optin,
 static char *stage = "status";
 module_param(stage, charp, 0444);
 MODULE_PARM_DESC(stage,
+		 "domain-window: stage2 guards and domain aperture classification only; requires fw_seg, no translation lookup. "
 		 "0/1/2/3/4/5/6/7 or name (dt/status/wrapper/boot/dart/run/rtkit/chan). 1/status (default): power up and log ps ACTUAL. 0/dt: parse the DT only. 2/wrapper: REFUSED on H15 without confirm_read=1. 3/boot: refused without fw_path=. 4/dart: read-only DART liveness, needs confirm_read=1. 5/run: refused without confirm_run=1 and without a live DART stream; starts the core once behind a preflight. 6/rtkit: stage 5 plus an RTKit session over the ASC mailbox, needs confirm_rtkit=1 as well. 7/chan: stage 6 plus the SCRATCH handshake and the channel step, needs confirm_chan=1 as well.");
 
 static unsigned int ps_wait_ms = 500;
@@ -128,6 +130,11 @@ static bool map_fw;
 module_param(map_fw, bool, 0444);
 MODULE_PARM_DESC(map_fw,
 		 "stage=run only: before RUN attach the ANE to its DART through the iommu API and map the two preloaded firmware segments named by fw_seg. Needs iommus in the node. Default off.");
+
+static bool wrad_patch = true;
+module_param(wrad_patch, bool, 0444);
+MODULE_PARM_DESC(wrad_patch,
+		 "Owned firmware image (fw_path): write the provider's wrapper address into the image's wrapper field before the core starts, as the shipped driver does (default on). 0 leaves the payload's own word there, as the M6 start that reached its READY did. For testing why the core stays silent.");
 
 static char *fw_seg;
 module_param(fw_seg, charp, 0444);
@@ -182,6 +189,11 @@ module_param(run_scratch, bool, 0444);
 MODULE_PARM_DESC(run_scratch,
 		 "Stage=run (5) only: read the eight SCRATCH words, read only, once before RUN and once after the wait, and log them. Off by default. The offsets come from macOS's T6030 case and have not been read on an M3.");
 
+static bool run_pmgr;
+module_param(run_pmgr, bool, 0444);
+MODULE_PARM_DESC(run_pmgr,
+		 "Stage=run (5) only: read the five pmgr ANE state words, read only, before RUN, just after the RUN write and after the wait, and log them. Off by default. They are the words stage 1 already reads.");
+
 static bool scratch_boot;
 module_param(scratch_boot, bool, 0444);
 MODULE_PARM_DESC(scratch_boot,
@@ -210,7 +222,8 @@ MODULE_PARM_DESC(pwgate_t6031,
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
-		 "Stage=boot only. This build checks that the value is set; it does not read or hash the file. No pin exists for the H15 stub image. See the runbook.");
+		 "Stage=boot only. Firmware API name of an exact pinned 26A428 H15 payload. Requires confirm_boot=1 and confirm_read=1. Prepares coherent owned memory, then retains the existing startup refusal; no CPU release. "
+		 "With map_fw=1 and no fw_seg, the run stages take the same owned image as their firmware source and map its pages at the RVBAR entry instead of the iBoot segments.");
 
 /* apple-pmgr-pwrstate word: TARGET bits 3:0, ACTUAL bits 7:4;
  * 0xf is fully on (ane_t6021.h ANE_PS_*; docs/t6021-ane-bringup-
@@ -240,10 +253,16 @@ struct ane_h15 {
 	u64 map_pa[2], map_iova[2], map_size[2];
 	unsigned int map_n;	/* segments mapped so far */
 	bool dom_own;		/* the domain was attached by this module (stage 7 maps into the default DMA domain instead) */
+	/* fw_path with map_fw: the Linux-owned image replaces the iBoot segments. owned_pa holds the physical page behind each 16 KiB
+	 * of owned_fw, read from the default DMA domain before the attach replaces it. */
+	u64 owned_pa[ANE_H15_FW_IMAGE_SIZE / SZ_16K];
+	bool owned_map;
+	bool map_retained;
 	bool chan;		/* stage 7 */
 	unsigned int ipi_acks;	/* stage 7: acknowledges written this run, capped at ANE_H15_IPI_ACK_MAX */
 	u32 ipi_last;		/* stage 7: last IPI pending value seen, for the change log */
 	struct ane_h15_hs_buf hs_pool, hs_ipc, hs_heap, hs_cmd;
+	struct ane_h15_hs_buf owned_fw;
 	/* The ANE node carries several power-domains (sys, mpm, cpu, td,
 	 * base). The kernel's automatic attach handles only a single
 	 * domain, so for more than one we attach each by id and link it
@@ -331,7 +350,7 @@ static int ane_h15_stage_idx(const char *name, unsigned int *out)
 {
 	if (!strcmp(name, "dt") || !strcmp(name, "0")) { *out = 0; return 0; }
 	if (!strcmp(name, "status") || !strcmp(name, "1")) { *out = 1; return 0; }
-	if (!strcmp(name, "wrapper") || !strcmp(name, "2")) { *out = 2; return 0; }
+	if (!strcmp(name, "wrapper") || !strcmp(name, "2") || !strcmp(name, "domain-window")) { *out = 2; return 0; }
 	if (!strcmp(name, "boot") || !strcmp(name, "3")) { *out = 3; return 0; }
 	if (!strcmp(name, "dart") || !strcmp(name, "4")) { *out = 4; return 0; }
 	if (!strcmp(name, "run") || !strcmp(name, "5")) { *out = 5; return 0; }
@@ -611,7 +630,7 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 		 "ane_h15 preflight cpu_status=%#x rvbar=%#llx a2i_ctrl=%#x i2a_ctrl=%#x t6021_stopped_status=%s\n",
 		 status, ((u64)rvbar_hi << 32) | rvbar_lo, a2i, i2a,
 		 status == 0x2a ? "equal" : "differs");
-	if (fw_seg)
+	if (fw_seg || !strcmp(stage, "domain-window"))
 		return ane_h15_translation(ane, ((u64)rvbar_hi << 32) | rvbar_lo);
 	ane_h15_result(ane, 2, "PASS", "preflight-read-only");
 	return 0;
@@ -630,9 +649,11 @@ static void ane_h15_fact_emit(void *ctx, const struct ane_h15_fact *f)
 		 f->id, f->what, f->fill);
 }
 
+static int ane_h15_prepare_owned_firmware(struct ane_h15 *ane);
+
 static int ane_h15_stage_boot(struct ane_h15 *ane)
 {
-	int unfilled;
+	int unfilled, ret;
 
 	if (!confirm_boot) {
 		ane_h15_result(ane, 3, "REFUSED",
@@ -641,8 +662,13 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 	}
 	if (!fw_path) {
 		ane_h15_result(ane, 3, "REFUSED",
-			       "no firmware pin for this SoC: omarchy-ane-firmware-fetch has no M3 row. Pass fw_path=<file under /lib/firmware> to override; the only known pin is the 27.0 IPSW payload (unmeasured for the stub image). See the runbook.");
+			       "fw_path=<kernel firmware name> required for pinned owned-image preparation");
 		return -ENOENT;
+	}
+	ret = ane_h15_prepare_owned_firmware(ane);
+	if (ret) {
+		ane_h15_result(ane, 3, "REFUSED", "owned-firmware-prepare-failed");
+		return ret;
 	}
 	unfilled = ane_h15_facts_report(ane_h15_facts, ane_h15_n_facts,
 					ane_h15_fact_emit, ane->dev);
@@ -895,6 +921,32 @@ static int ane_h15_translation(struct ane_h15 *ane, u64 rvbar)
 		return ret;
 	}
 	domain = iommu_get_domain_for_dev(ane->dev);
+	if (!strcmp(stage, "domain-window")) {
+		static const char *const names[] = {
+			"domain-window-missing", "domain-window-unbounded",
+			"domain-window-outside", "domain-window-inside",
+		};
+		enum ane_h15_window overall = ANE_WINDOW_INSIDE;
+		unsigned int i;
+
+		for (i = 0; i < 2; i++) {
+			enum ane_h15_window state = ane_h15_classify_window(domain,
+				ane->map_iova[i], ane->map_size[i]);
+
+			dev_info(ane->dev,
+				 "ane_h15 domain-window segment=%u iova=%#llx size=%#llx type=%u first=%#llx last=%#llx force=%u state=%s\n",
+				 i, ane->map_iova[i], ane->map_size[i],
+				 domain ? domain->type : 0,
+				 domain ? domain->geometry.aperture_start : 0,
+				 domain ? domain->geometry.aperture_end : 0,
+				 domain ? domain->geometry.force_aperture : 0, names[state]);
+			if (state < overall)
+				overall = state;
+		}
+		ane_h15_result(ane, 2, overall == ANE_WINDOW_INSIDE ? "PASS" : "REFUSED",
+			       names[overall]);
+		return overall == ANE_WINDOW_INSIDE ? 0 : -ERANGE;
+	}
 	if (!domain) {
 		ane_h15_result(ane, 2, "REFUSED", "translation-domain-unavailable");
 		return -ENODEV;
@@ -914,15 +966,33 @@ static int ane_h15_translation(struct ane_h15 *ane, u64 rvbar)
 	return 0;
 }
 
+static bool ane_h15_unmap_range(struct ane_h15 *ane, u64 iova, u64 size)
+{
+	size_t unmapped;
+
+	if (ane->map_retained)
+		return false;
+	unmapped = iommu_unmap(ane->domain, iova, size);
+	if (unmapped != size) {
+		ane->map_retained = true;
+		dev_emerg(ane->dev,
+			  "ane_h15 incomplete firmware unmap iova=%#llx size=%#llx unmapped=%#zx: retaining domain and buffers; reboot required\n",
+			  iova, size, unmapped);
+		return false;
+	}
+	return true;
+}
+
 /* Undo ane_h15_map_firmware(). NULL-safe. Never called while the core may be running. */
 static void ane_h15_unmap_firmware(struct ane_h15 *ane)
 {
 	unsigned int i;
 
-	if (!ane->domain)
+	if (!ane->domain || ane->map_retained)
 		return;
 	for (i = 0; i < ane->map_n; i++)
-		iommu_unmap(ane->domain, ane->map_iova[i], ane->map_size[i]);
+		if (!ane_h15_unmap_range(ane, ane->map_iova[i], ane->map_size[i]))
+			return;
 	ane->map_n = 0;
 	if (ane->dom_own) {
 		iommu_detach_device(ane->domain, ane->dev);
@@ -930,6 +1000,63 @@ static void ane_h15_unmap_firmware(struct ane_h15 *ane)
 	}
 	ane->domain = NULL;
 	ane->dom_own = false;
+}
+
+/* The Linux-owned image as the firmware source. TEXT goes to the RVBAR entry address and DATA directly behind it, exactly as for the
+ * iBoot segments; the firmware's own entry code finds DATA at its link address, ANE_H15_FW_TEXT_SIZE behind TEXT. Nothing is written to RVBAR:
+ * the entry iBoot left names an IOVA, and this makes that IOVA resolve to the owned pages. Read each 16 KiB page's physical address from
+ * the default DMA domain now, because the attach replaces it and the pages are not necessarily contiguous. */
+static int ane_h15_plan_owned_map(struct ane_h15 *ane)
+{
+	struct iommu_domain *dom;
+	u64 off;
+	int ret = ane_h15_prepare_owned_firmware(ane);
+
+	if (ret)
+		return ret;
+	dom = iommu_get_domain_for_dev(ane->dev);
+	for (off = 0; off < ANE_H15_FW_IMAGE_SIZE; off += SZ_16K) {
+		u64 pa = iommu_iova_to_phys(dom, ane->owned_fw.iova + off);
+
+		if (!pa || (pa & (SZ_16K - 1)))
+			return -EIO;
+		ane->owned_pa[off / SZ_16K] = pa;
+	}
+	ane->map_pa[0] = ane->owned_pa[0];
+	ane->map_pa[1] = ane->owned_pa[ANE_H15_FW_TEXT_SIZE / SZ_16K];
+	ane->map_size[0] = ANE_H15_FW_TEXT_SIZE;
+	ane->map_size[1] = ANE_H15_FW_IMAGE_SIZE - ANE_H15_FW_TEXT_SIZE;
+	ane->map_iova[0] = ane->soc->rvbar_expect & ~1ull;
+	ane->map_iova[1] = ane->map_iova[0] + ANE_H15_FW_TEXT_SIZE;
+	return 0;
+}
+
+/* Map one segment of the owned image in physically contiguous runs. A failure unmaps every run of this segment mapped so far. */
+static int ane_h15_map_owned_segment(struct ane_h15 *ane, struct iommu_domain *dom, unsigned int seg)
+{
+	const u64 first = seg ? ANE_H15_FW_TEXT_SIZE : 0;
+	const u64 end = first + ane->map_size[seg];
+	const int prot = IOMMU_READ | (seg ? IOMMU_WRITE : 0);
+	u64 off = first;
+	int ret = 0;
+
+	while (off < end) {
+		u64 pa = ane->owned_pa[off / SZ_16K], len = SZ_16K, iova = ane->map_iova[seg] + off - first;
+
+		while (off + len < end && ane->owned_pa[(off + len) / SZ_16K] == pa + len)
+			len += SZ_16K;
+		ret = iommu_map(dom, iova, pa, len, prot, GFP_KERNEL);
+		if (ret)
+			break;
+		off += len;
+		if (iommu_iova_to_phys(dom, iova) != pa) {
+			ret = -EIO;
+			break;
+		}
+	}
+	if (ret && off > first)
+		ane_h15_unmap_range(ane, ane->map_iova[seg], off - first);
+	return ret;
 }
 
 static int ane_h15_map_firmware(struct ane_h15 *ane)
@@ -965,12 +1092,18 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
 	for (i = 0; i < 2; i++) {
 		dev_crit(ane->dev, "ane_h15 iommu_map iova=%#llx pa=%#llx size=%#llx %s\n", ane->map_iova[i], ane->map_pa[i],
 			 ane->map_size[i], i ? "read+write" : "read");
-		ret = iommu_map(dom, ane->map_iova[i], ane->map_pa[i], ane->map_size[i],
-				IOMMU_READ | (i ? IOMMU_WRITE : 0), GFP_KERNEL);
-		if (!ret) {
-			ane->map_n = i + 1;
-			if (iommu_iova_to_phys(dom, ane->map_iova[i]) != ane->map_pa[i])
-				ret = -EIO;
+		if (ane->owned_map) {
+			ret = ane_h15_map_owned_segment(ane, dom, i);
+			if (!ret)
+				ane->map_n = i + 1;
+		} else {
+			ret = iommu_map(dom, ane->map_iova[i], ane->map_pa[i], ane->map_size[i],
+					IOMMU_READ | (i ? IOMMU_WRITE : 0), GFP_KERNEL);
+			if (!ret) {
+				ane->map_n = i + 1;
+				if (iommu_iova_to_phys(dom, ane->map_iova[i]) != ane->map_pa[i])
+					ret = -EIO;
+			}
 		}
 		if (ret) {
 			dev_err(ane->dev, "ane_h15 map_fw: iommu_map of segment %u failed: %d (or reads back wrong)\n", i, ret);
@@ -1017,9 +1150,8 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  * scratch_boot=1 it also writes the eight SCRATCH words, each only as 0 except SCRATCH6=1 (macOS's
  * helper zeroes all eight before it sets the wake bit, and its SCRATCH5 config value is unknown, so
  * SCRATCH5 receives 0 only); with pwgate_t6031 on a T6031 it also writes the one PWGATE word at
- * 0x199c (nothing else in that window). The order is the one the shipped system uses, never run on an M3. The ANE DART
- * nodes are disabled in the overlay and nothing here programs the DART: a core that cannot fetch its firmware
- * may simply sit started. That is a result, not a failure of this stage.
+ * 0x199c (nothing else in that window). The order is the one the shipped system uses, never run on an M3. Nothing here
+ * programs the DART: a core that cannot fetch its firmware may simply sit started. That is a result, not a failure of this stage.
  */
 #define ANE_H15_ST_RUNNING	BIT(0)
 #define ANE_H15_ST_STOPPED	BIT(1)
@@ -1070,6 +1202,8 @@ static bool ane_h15_core_stopped(u32 st)
 {
 	return !(st & ANE_H15_ST_RUNNING) && (st & ANE_H15_ST_STOPPED);
 }
+
+#include "ane_h15_fwload.h"
 
 /* ---- stage 6: an RTKit management session over the ASC mailbox ----
  *
@@ -1213,15 +1347,17 @@ static void ane_h15_rtk_handle(struct ane_h15 *ane, struct ane_h15_rtk *k, u64 m
 		if (k->shutdown && (m0 & 0xffff) == k->ap_state) {
 			k->ap_acked = true;
 			ane_h15_rtk_send(ane, k, ((u64)ANE_H15_RTK_SET_IOP_PWR << ANE_H15_RTK_TYPE_SHIFT) | k->iop_state);
-		} else if (!k->shutdown && (m0 & 0xff) == ANE_H15_RTK_PWR_ON && !k->app_started) {
+		} else if (!k->shutdown && (m0 & 0xff) == ANE_H15_RTK_PWR_ON && !k->ap_on) {
 			k->ap_on = true;
-			k->app_started = true;
+			if (!k->epmap_last)
+				return;
 			for (i = ANE_H15_RTK_APP_EP; i < 256; i++) {
 				if (!(k->eps[i / 32] & (1u << (i % 32))))
 					continue;
 				if (ane_h15_rtk_send(ane, k, ((u64)ANE_H15_RTK_STARTEP << ANE_H15_RTK_TYPE_SHIFT) | ((u64)i << 32) | (1ULL << 1)))
-					break;
+					return;
 			}
+			k->app_started = true;
 		}
 	} else if (type == ANE_H15_RTK_IOP_IDLE) {
 		dev_info(ane->dev, "ane_h15 rtkit: the firmware reports IOP idle\n");
@@ -1373,6 +1509,18 @@ static void ane_h15_scr_dump(struct ane_h15 *ane, const char *when)
 		 v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
 }
 
+/* Stage 5, run_pmgr=1: the five pmgr ANE words on one line, read only. */
+static void ane_h15_pmgr_dump(struct ane_h15 *ane, const char *when)
+{
+	u32 v[5];
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(v); i++)
+		v[i] = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
+	dev_info(ane->dev, "ane_h15 pmgr %s: ANE_SYS=%#x ANE_MPM=%#x ANE_CPU=%#x ANE_TD=%#x ANE_BASE=%#x\n", when,
+		 v[0], v[1], v[2], v[3], v[4]);
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -1400,10 +1548,10 @@ static int ane_h15_scr_wr_kboot(struct ane_h15 *ane, unsigned int i, u32 v)
 
 static void ane_h15_hs_free(struct ane_h15 *ane)
 {
-	struct ane_h15_hs_buf *b[4] = { &ane->hs_cmd, &ane->hs_heap, &ane->hs_ipc, &ane->hs_pool };
+	struct ane_h15_hs_buf *b[] = { &ane->owned_fw, &ane->hs_cmd, &ane->hs_heap, &ane->hs_ipc, &ane->hs_pool };
 	unsigned int i;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < ARRAY_SIZE(b); i++)
 		if (b[i]->va) {
 			dma_free_coherent(ane->dev, b[i]->size, b[i]->va, b[i]->iova);
 			b[i]->va = NULL;
@@ -1724,7 +1872,7 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
 	}
 	dev_info(ane->dev, "ane_h15 rtkit session: hello=%d epmap_last=%d ap_on=%d app_started=%d sent=%u after %ums\n",
 		 k->hello, k->epmap_last, k->ap_on, k->app_started, k->sent, waited);
-	if (k->ap_on && ane->chan) {
+	if (k->app_started && ane->chan) {
 		k->hs_ret = ane_h15_chan_run(ane, k);
 		k->hs_done = true;
 		dev_info(ane->dev, "ane_h15 handshake result %d\n", k->hs_ret);
@@ -1936,16 +2084,28 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		return -ENODEV;
 	}
 	ane->chan = stg == 7;
+	ane->owned_map = map_fw && fw_path;
 	if (map_fw) {
 		if (!device_iommu_mapped(ane->dev)) {
 			dev_err(ane->dev, "ane_h15 map_fw: the node has no iommus (no DART client): use the DART overlay\n");
 			ane_h15_result(ane, stg, "REFUSED", "map_fw needs iommus in the node");
 			return -ENODEV;
 		}
-		ret = ane_h15_parse_segs(ane);
-		if (ret) {
-			ane_h15_result(ane, stg, "REFUSED", "fw_seg missing or unsafe");
-			return ret;
+		if (ane->owned_map) {
+			if (!confirm_read) {
+				ane_h15_result(ane, stg, "REFUSED", "owned firmware needs confirm_read=1");
+				return -EPERM;
+			}
+			if (fw_seg) {
+				ane_h15_result(ane, stg, "REFUSED", "fw_path and fw_seg name two firmware sources");
+				return -EINVAL;
+			}
+		} else {
+			ret = ane_h15_parse_segs(ane);
+			if (ret) {
+				ane_h15_result(ane, stg, "REFUSED", "fw_seg missing or unsafe");
+				return ret;
+			}
 		}
 	}
 	if (!ane_h15_window_ok(ane, 0, "engine", s->engine_pa, s->engine_size) ||
@@ -1970,6 +2130,44 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "FAIL", "core-not-stopped-before-map");
 			return -EBUSY;
 		}
+	}
+	/* Preflight, read only. A map_fw run is about to attach the DART, so it checks that RUN is clear first. Any other run reads CPU_CONTROL
+	 * only after the DART gate below: with no live stream it refuses without reading it. */
+	ctrl = 0;
+	ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
+	if (!ret && map_fw)
+		ret = ane_h15_read_ctrl(ane, &ctrl);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "RVBAR_LO", s->rvbar, &rv_lo);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "RVBAR_HI", s->rvbar + 4, &rv_hi);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "MBOX_A2I_CTRL", s->mbox + 0x110, &a2i);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "MBOX_I2A_CTRL", s->mbox + 0x114, &i2a);
+	if (ret) {
+		ane_h15_unmap_firmware(ane);
+		ane_h15_result(ane, stg, "FAIL", "read-refused");
+		return ret;
+	}
+	if (!ane_h15_core_stopped(st) || (ctrl & ANE_H15_CPU_RUN) ||
+	    (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect ||
+	    !(a2i & ANE_H15_MBOX_EMPTY) || !(i2a & ANE_H15_MBOX_EMPTY)) {
+		dev_err(ane->dev,
+			"ane_h15 preflight: cpu_status=%#x cpu_control=%#x%s rvbar=%#llx a2i_ctrl=%#x i2a_ctrl=%#x (want stopped, RUN clear, rvbar %#llx, both mailbox words EMPTY)\n",
+			st, ctrl, map_fw ? "" : " (not read yet)", ((u64)rv_hi << 32) | rv_lo, a2i, i2a, s->rvbar_expect);
+		ane_h15_unmap_firmware(ane);
+		ane_h15_result(ane, stg, "FAIL", "preflight-not-as-iboot-left-it");
+		return -EBUSY;
+	}
+	if (ane->owned_map) {
+		ret = ane_h15_plan_owned_map(ane);
+		if (ret) {
+			ane_h15_result(ane, stg, "FAIL", "owned-firmware-prepare-failed");
+			return ret;
+		}
+	}
+	if (map_fw) {
 		ret = ane_h15_map_firmware(ane);
 		if (ret) {
 			ane_h15_result(ane, stg, "FAIL", "fw-map-failed");
@@ -1990,36 +2188,25 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_result(ane, stg, "FAIL", "no-dart-stream-enabled");
 		return -ENODEV;
 	}
-	/* Preflight, read only. */
-	ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
-	if (!ret)
+	if (!map_fw) {
 		ret = ane_h15_read_ctrl(ane, &ctrl);
-	if (!ret)
-		ret = ane_h15_read_word(ane, "RVBAR_LO", s->rvbar, &rv_lo);
-	if (!ret)
-		ret = ane_h15_read_word(ane, "RVBAR_HI", s->rvbar + 4, &rv_hi);
-	if (!ret)
-		ret = ane_h15_read_word(ane, "MBOX_A2I_CTRL", s->mbox + 0x110, &a2i);
-	if (!ret)
-		ret = ane_h15_read_word(ane, "MBOX_I2A_CTRL", s->mbox + 0x114, &i2a);
-	if (ret) {
-		ane_h15_unmap_firmware(ane);
-		ane_h15_result(ane, stg, "FAIL", "read-refused");
-		return ret;
-	}
-	if ((st & ANE_H15_ST_RUNNING) || !(st & ANE_H15_ST_STOPPED) || (ctrl & ANE_H15_CPU_RUN) ||
-	    (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect ||
-	    !(a2i & ANE_H15_MBOX_EMPTY) || !(i2a & ANE_H15_MBOX_EMPTY)) {
-		dev_err(ane->dev,
-			"ane_h15 preflight: cpu_status=%#x cpu_control=%#x rvbar=%#llx a2i_ctrl=%#x i2a_ctrl=%#x (want stopped, RUN clear, rvbar %#llx, both mailbox words EMPTY)\n",
-			st, ctrl, ((u64)rv_hi << 32) | rv_lo, a2i, i2a, s->rvbar_expect);
-		ane_h15_unmap_firmware(ane);
-		ane_h15_result(ane, stg, "FAIL", "preflight-not-as-iboot-left-it");
-		return -EBUSY;
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "read-refused");
+			return ret;
+		}
+		if (ctrl & ANE_H15_CPU_RUN) {
+			dev_err(ane->dev, "ane_h15 preflight: cpu_control=%#x (want RUN clear)\n", ctrl);
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "preflight-not-as-iboot-left-it");
+			return -EBUSY;
+		}
 	}
 
 	if (stg == 5 && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "before RUN");
+	if (stg == 5 && run_pmgr)
+		ane_h15_pmgr_dump(ane, "before RUN");
 
 	/* pwgate_t6031 (T6031 rows only): macOS's PWGATE gate clear, the
 	 * last action before the core is released. On a poll timeout the run
@@ -2051,6 +2238,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 							   "scratch-boot-write-refused") : "write-refused");
 		return ret;
 	}
+	if (stg == 5 && run_pmgr)
+		ane_h15_pmgr_dump(ane, "after RUN");
 	if (stg >= 6) {
 		ane_h15_rtk_session(ane, &rtk);
 		ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
@@ -2086,6 +2275,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_post_wait_status(ane);
 	if (stg == 5 && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "after the wait");
+	if (stg == 5 && run_pmgr)
+		ane_h15_pmgr_dump(ane, "after the wait");
 	/* Stop the core the macOS way: clear RUN, then bit 5, each from a fresh read. */
 	if (ane_h15_read_ctrl(ane, &ctrl) == 0 &&
 	    ane_h15_write_ctrl(ane, ctrl, ctrl & ~ANE_H15_CPU_RUN, "clear RUN") == 0) {
@@ -2096,7 +2287,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		usleep_range(5000, 6000);
 		if (ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st))
 			break;
-		if (st & ANE_H15_ST_STOPPED) {
+		if (ane_h15_core_stopped(st)) {
 			stopped = true;
 			break;
 		}
@@ -2122,8 +2313,12 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	}
 	ane->fw_started = false;
 	ane->fw_touched = false;
+	ane_h15_unmap_firmware(ane);	/* first: with the owned image this drops the DART map of the same pages hs_free returns to the DMA API */
+	if (ane->map_retained) {
+		ane_h15_result(ane, stg, "FAIL", "firmware-unmap-incomplete");
+		return -EIO;
+	}
 	ane_h15_hs_free(ane);		/* only after the core stopped: a running core may still write into these surfaces */
-	ane_h15_unmap_firmware(ane);
 	if (stg >= 6) {
 		if (!rtk.hello) {
 			ane_h15_result(ane, stg, "FAIL", "rtkit-no-hello");
@@ -2301,6 +2496,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 	else if (stage_idx == 7)  ret = ane_h15_stage_chan(ane);
 	else                      ret = ane_h15_stage_boot(ane);
 
+	if (ane->map_retained) {
+		__module_get(THIS_MODULE);
+		dev_emerg(&pdev->dev, "firmware mappings remain: do NOT unload; reboot required\n");
+		return 0;
+	}
 	/* A started core that did not stop keeps its power claim (and its windows, see remove()). */
 	if (!ane->fw_started)
 		pm_runtime_put_sync(&pdev->dev);
@@ -2309,6 +2509,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 			  "firmware started: do NOT unload; reboot to park the ANE\n");
 	/* a failed probe never reaches remove(); release everything */
 	if (ret) {
+		ane_h15_hs_free(ane);
 		pm_runtime_disable(&pdev->dev);
 		ane_h15_detach_pds(ane);
 		ane_h15_unmap_windows(ane);
@@ -2320,11 +2521,12 @@ static void ane_h15_remove(struct platform_device *pdev)
 {
 	struct ane_h15 *ane = platform_get_drvdata(pdev);
 
-	if (ane->fw_touched) {
+	if (ane->fw_touched || ane->map_retained) {
 		dev_emerg(&pdev->dev,
 			  "remove with the firmware released: reboot required\n");
 		return;
 	}
+	ane_h15_hs_free(ane);
 	pm_runtime_disable(&pdev->dev);
 	ane_h15_detach_pds(ane);
 	ane_h15_unmap_windows(ane);

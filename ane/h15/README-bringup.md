@@ -30,6 +30,24 @@ make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
     H15_FW_ANE1_INPUT_DIR=/private/ane1-inputs
 ```
 
+## Kernel-owned preparation
+
+Stage 3 now requests the exact pinned payload through the kernel firmware API.
+It requires read consent, matching resources, powered domains, the retained
+stopped-core predicate, RUN clear and an existing DMA-API domain.
+It allocates coherent memory, initializes the complete measured image and writes
+the provider's wrapper physical address into the measured `WrAd` field.
+The native producer obtains that address from device-memory resource 0.
+For these rows, that resource is the published engine-relative wrapper window.
+
+This allocation creates DMA mappings through the normal DMA API. It does not
+attach a domain, alias the execution entry, send a message or start the core.
+All existing boot refusals remain. A refused probe frees the prepared owner.
+The existing ambiguous-publication guard retains that owner during removal.
+The real-image checks exercise preparation and cleanup with simulated kernel
+boundaries; they do not prove a real allocation, startup or retirement on hardware.
+
+
 ## What it does
 
 - `stage=0` or `stage=dt` (safe, no MMIO): parse the running DT and
@@ -73,21 +91,13 @@ make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
   and maps nothing. It reads no firmware bytes and issues no RUN or PWGATE
   operation. It checks one entry, not the full TEXT range, and does not prove
   firmware execution. Without `fw_seg`, the original preflight result stays unchanged.
-- `stage=3` or `stage=boot`: refused without `fw_path=` and
-  `confirm_boot=1`. With them, the stage prints one line per
-  still-unmeasured fact from the `ane_h15_facts` table (stub
-  firmware identity, mailbox base and IRQ roles,
-  segment-ranges/DART geometry, RVBAR compose value, SCRATCH wake
-  word) and stops with `verdict=REFUSED reason=unfilled-facts`.
-  The table is data: a later change fills a row only with the
-  receipt named in the row. Even with every row filled, THIS
-  build implements no boot path and releases no CPU; it refuses
-  with `reason=facts-filled-boot-path-not-built`. When iBoot
-  preloads firmware into ANE DRAM, the live ADT's
-  `segment-ranges` describes it; on a measured H15 boot the same
-  preload + map + CPU-release path that the T6021 W-series uses
-  is the only mechanically proven route, and a volunteer
-  recording it is what fills the missing rows in the b0 table.
+- `stage=3` or `stage=boot`: requires `fw_path=`, `confirm_boot=1` and
+  `confirm_read=1`. It performs the kernel-owned preparation above before
+  reporting the remaining startup facts. An unavailable or invalid payload,
+  unsafe initial state or failed allocation refuses before preparation completes.
+  Successful preparation still ends with `REFUSED reason=unfilled-facts`.
+  Even a fully filled fact table still refuses CPU release with
+  `reason=facts-filled-boot-path-not-built`. No fact is marked filled by this path.
 - `stage=4` or `stage=dart` (read only, `confirm_read=1` required): reads
   the ANE DART, never writes. After the stage 1 ACTUAL=0xf gate it reads
   PARAMS3 of the four 0x4000 windows the ADT lists (engine + 0x1800000,
@@ -111,9 +121,9 @@ make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
   found every ENABLE_STREAMS word 0: iBoot left no stream enabled.
 - `stage=5` or `stage=run`: refused without `confirm_run=1`, with
   `run_wait_ms` outside 10 to 2000 (default 300), and on any SoC row whose
-  `rvbar_expect` is 0 (t8122 and t6034 today; t6030 measured it at stage 2 on a
-  16-inch M3 Pro, t6031 at stage 2 on a 16-inch M3 Max, issue 176, both
-  `0x0000010000000001`). It is the only stage that writes.
+  `rvbar_expect` is 0 (t6034 today; t6030 measured it at stage 2 on a
+  16-inch M3 Pro, t6031 at stage 2 on a 16-inch M3 Max, issue 176, and t8122 at
+  stage 2 on a 13-inch M3 MacBook Air, all `0x0000010000000001`). It is the only stage that writes.
   After the stage 1 ACTUAL=0xf gate it reads CPU_STATUS, CPU_CONTROL, RVBAR
   and both mailbox CTRL words and writes only if the core is stopped (STOPPED
   set, RUNNING clear), RUN is clear, RVBAR equals `rvbar_expect` and both
@@ -210,6 +220,9 @@ make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
   `rtkit-shutdown-incomplete` (the core is still stopped by clearing RUN), or `core-not-stopped` (reboot). The M6
   runs this session on its Postoffice (ane/h18); the H15 transport is the unknown. **Run it only after a stage 5 result
   with a mailbox message in it.**
+  Startup requires the complete endpoint map and successful sends for every advertised application endpoint.
+  A send-cap or mailbox failure keeps startup incomplete and prevents the channel handshake.
+  A later AP acknowledgement does not retry a partial startup. Bounded shutdown still runs after AP power ON.
 - `stage=7` or `stage=chan`: stage 6 (all its gates, `map_fw`, `fw_seg`) plus the macOS handshake after AP power ON and
   the channel step, behind `confirm_run=1`, `confirm_rtkit=1` AND `confirm_chan=1`; it needs `map_fw=1`. It maps the
   firmware into the ANE's default DMA domain instead of attaching an own one (the surfaces come from the DMA API).
@@ -285,9 +298,9 @@ the aurora t8122-pmgr.dtsi and t6030-pmgr.dtsi do not yet carry
 (only `ps_ane_sys` is in the kernel tree today; the b0 receipt
 describes the four missing ps words). The t6031 overlay targets
 the existing ps nodes by path. None of these overlays are
-installed by the package. They ship the four ANE DART nodes as
+installed by the package. The T6030 and T6031 base files ship the four ANE DART nodes as
 `status = "disabled"` and the `ane` node without an `iommus`
-property. Stage 0 and stage 1 need no DART, and enabled DART nodes
+property; the T8122 file enables instances 0 to 2 (see the run-time overlay section). Stage 0 and stage 1 need no DART, and enabled DART nodes
 hung a T6030 at boot through equivalent nodes. `omarchy-ane-probe`
 reports the ANE node as `not-exposed` until the DART work lands.
 That is expected.
@@ -318,6 +331,10 @@ owner copies `t6031-ane-experimental.dts`, swaps
 `0xe0`. The four-row module (`ane_h15_of_match[]`) is already
 prepared to bind either compatible.
 
+`run_pmgr=1` (stage 5 only, off by default) adds three read-only lines, `ane_h15 pmgr before RUN:`, `ane_h15 pmgr after RUN:` and `ane_h15 pmgr after the wait:`, each with the five pmgr ANE words (ANE_SYS, ANE_MPM, ANE_CPU, ANE_TD, ANE_BASE). These are the words the ACTUAL 0xf check reads. The option writes nothing.
+
+`wrad_patch` (default on) controls one write into the owned firmware image: the provider's wrapper address in the image's wrapper field. `wrad_patch=0` leaves the payload's own word there. It exists to test whether that write matters, because the M6 start that reached READY left the image unmodified. It changes nothing when `fw_path` is not used.
+
 ### Run-time overlay: `apply_overlay=1` (no boot-image change)
 
 A test boot without its SoC's ANE node cannot probe the driver.
@@ -334,7 +351,8 @@ overlays with their DART nodes disabled, because enabled nodes at boot hung a T6
 (`gen-runtime-overlay.py` writes the header; `make sim-overlay` checks it). The T8122 variant carries the T6030 DART layout:
 instances 0, 1 and 2 enabled, the aperture window disabled, and the `ane` node listing stream 0 of each. After boot no ANE DART stream
 is enabled and the TCR and TTBR words hold stale values (stage 6 refused with `no-dart-stream-enabled` on a 13-inch M3 MacBook Air),
-so the DART driver has to attach the ANE. On that machine the attach gave three live streams.
+so the DART driver has to attach the ANE. On that machine the attach gave three live streams, and with `map_fw=1` and an owned image
+the DART no longer faults.
 Its power graph comes from the T8122/J613 ADT, including both ANE_TD and ANE_CPU parents of ANE_BASE.
 No T8122 hardware result is established by these offline checks.
 It refuses, touching nothing, when the optin key has no overlay, the machine is
@@ -405,10 +423,11 @@ the dmesg back.
    `verdict=PASS reason=preflight-read-only`. Send `dmesg | grep
    ane_h15`. If the machine hangs, the last `ane_h15 read` line names
    the address.
-4. **stage=3** (`stage=3 confirm_boot=1 fw_path=…`): the refusal
-   prints one line per unfilled row of the `ane_h15_facts` table
-   (`ane_h15 hole=H… …`), then
-   `verdict=REFUSED reason=unfilled-facts`. Send the dmesg.
+4. **stage=3** (`stage=3 confirm_boot=1 confirm_read=1 fw_path=…`):
+   this source path prepares and cleans up a kernel-owned image, then refuses
+   startup. It is not a firmware-execution test or hardware clearance.
+   Missing preparation inputs return `owned-firmware-prepare-failed`; otherwise
+   the existing `unfilled-facts` refusal remains. Retain the complete log.
 5. **stage=4** (`stage=4 confirm_read=1`, T6030, T8122 and T6031 rows).
    Read only. Expect a few `ane_h15 read DART` group lines, one
    `ane_h15 dart inst=… params3=…` line per window, a `streams=` line, one line
@@ -417,7 +436,7 @@ the dmesg back.
    `dart-no-stream-enabled`. Both are results. Send the whole `dmesg | grep
    ane_h15`. Do not run stage 5 on the strength of this alone: it needs a mapping we
    have not built (stage 6) unless this stage reports a live stream.
-6. **stage=5** (`stage=5 confirm_run=1`, T6030 and T6031 today). Run it only after
+6. **stage=5** (`stage=5 confirm_run=1`, T6030, T6031 and T8122 today). Run it only after
    stages 0, 1, 2 and 4 passed on the same boot, stage 4 reported a live stream
    (or the maintainers said GO on the issue for another reason). Expected, in dmesg: the pmgr lines, six `ane_h15 read`
    lines (CPU_STATUS, CPU_CONTROL, RVBAR_LO, RVBAR_HI, the two mailbox CTRL
@@ -484,7 +503,7 @@ The read-only DART scan:
     insmod ane/h15/ane_h15.ko optin=t6030 stage=4 confirm_read=1
     dmesg | grep ane_h15
 
-The run stage (writes CPU_CONTROL; T6030 and T6031, refuses without a live DART
+The run stage (writes CPU_CONTROL; T6030, T6031 and T8122, refuses without a live DART
 stream, only after the maintainers' GO). With the DART overlay and `fw_seg`:
 
     insmod ane/h15/ane_h15.ko optin=t6030 stage=5 confirm_run=1 map_fw=1 fw_seg=TEXTPA:SIZE,DATAPA:SIZE
