@@ -82,6 +82,13 @@ FAULT = re.compile(r"fault|error|fail(?:ed|ure)?|timed? ?out|abort|oops|warn|bug
 # that checks signatures); it names the module and says "failed" but is not a device fault.
 UNSIGNED = re.compile(r"module verification failed: signature and/or required key missing - tainting kernel")
 
+# The M1-family `ane` module declining a T602x node (the omarchy-ane-dkms package installs it beside `ane_t6021`):
+# "unsupported ANE: no proven SET-block base (a guessed base external-aborts the SoC); not binding". The word "abort"
+# in it matches FAULT, but the line is the intended refusal. The collector cuts a dmesg line at 160 characters, so
+# the message is matched by its first words. Whether the chip's own driver bound is still checked by the readiness
+# check ("bound to no device" is not ready) and by the module name and the smoke.
+REFUSED = re.compile(r"unsupported ANE: no proven SET-block base")
+
 
 BOUND = re.compile(r"bound to ([0-9a-f]+)\.ane\b")
 
@@ -183,7 +190,7 @@ def unclean(oa):
     if check.get("exit") != 0 or check.get("status") != "ready":
         out.append(f"omarchy-ane-check not ready (exit {check.get('exit')}, {check.get('status')})")
     faults = [l for l in (oa.get("dmesg_faults") or []) + (oa.get("dmesg") or [])
-              if ANE_LINE.search(l) and FAULT.search(l) and not UNSIGNED.search(l)]
+              if ANE_LINE.search(l) and FAULT.search(l) and not UNSIGNED.search(l) and not REFUSED.search(l)]
     if faults:
         faults = list(dict.fromkeys(faults))
         out.append(f"{len(faults)} ANE/DART/mailbox fault line(s): {faults[0][:120]}")
