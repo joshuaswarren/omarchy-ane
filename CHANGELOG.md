@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane/h16`: README-bringup records the first measured T8132 run. Stages dt and status ran once each on an M4 Mac mini: all five ps words read ACTUAL 0xf, RVBAR reads 0x10000000001, CPU_STATUS reads 0x30006a, both mailbox control words read 0x20001, `get_sync` returned -13 and was ignored by design, and no fault was logged. The README also gains the build recipe for a machine with no `/lib/modules/$(uname -r)/build` and the Limine boot path for a machine that does not use omarchy-mac-boot, and it no longer says that no silicon has run the module. `stage=boot` has not run.
+
 ## 0.5.8 (2026-11-03)
 
 This release makes a failed H13 job recoverable without a reboot (#313). It also carries the M4 DART and probe fixes. It records the first measured result of the M1 Max clock path end to end.
