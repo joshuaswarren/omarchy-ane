@@ -1,4 +1,4 @@
-"""The run-time overlays are derived from the boot-time ones that were booted on the owners' Macs. Pin exactly how they differ."""
+"""Validate run-time overlays derived from the per-SoC boot-time sources."""
 import difflib
 import importlib.util
 import shutil
@@ -16,12 +16,12 @@ HAVE_DTC = shutil.which("dtc") is not None and shutil.which("fdtdump") is not No
 
 
 class GenTests(unittest.TestCase):
-    def test_t8122_power_graph_and_disabled_darts(self):
+    def test_t8122_power_graph_and_dart_client(self):
         if not HAVE_DTC or not shutil.which("fdtget"):
             self.skipTest("no DT tools")
         with tempfile.TemporaryDirectory() as tmp:
             blob = Path(tmp) / "t8122.dtbo"
-            blob.write_bytes(gen.compile_blob((HERE / "t8122-ane-experimental.dts").read_text()))
+            blob.write_bytes(gen.compile_blob((HERE / "t8122-ane-dart-experimental.dts").read_text()))
 
             def prop(node, name):
                 return subprocess.check_output(
@@ -36,12 +36,31 @@ class GenTests(unittest.TestCase):
                 set(td + cpu),
                 "T8122 ADT: ANE_BASE requires both ANE_TD and ANE_CPU",
             )
+            darts = {}
+            for addr, want in (("311800000", "okay"), ("311810000", "okay"), ("311820000", "okay"), ("311804000", "disabled")):
+                node = "/fragment@3/__overlay__/iommu@" + addr
+                status = subprocess.check_output(["fdtget", str(blob), node, "status"], text=True).strip()
+                self.assertEqual(status, want, addr)
+                darts[addr] = prop(node, "phandle")
+            self.assertEqual(
+                prop("/fragment@3/__overlay__/ane@310000000", "iommus"),
+                [darts["311800000"][0], "0", darts["311810000"][0], "0", darts["311820000"][0], "0"],
+                "stream 0 of the three enabled instances, as on the T6030",
+            )
+
+    def test_t8122_boot_overlay_keeps_the_darts_disabled(self):
+        """Enabled DART nodes at boot hung a T6030: the file a person compiles as a boot overlay must not enable them."""
+        if not HAVE_DTC or not shutil.which("fdtget"):
+            self.skipTest("no DT tools")
+        with tempfile.TemporaryDirectory() as tmp:
+            blob = Path(tmp) / "t8122-boot.dtbo"
+            blob.write_bytes(gen.compile_blob((HERE / "t8122-ane-experimental.dts").read_text()))
             for addr in ("311800000", "311810000", "311820000", "311804000"):
                 status = subprocess.check_output(
                     ["fdtget", str(blob), "/fragment@3/__overlay__/iommu@" + addr, "status"],
                     text=True,
                 ).strip()
-                self.assertEqual(status, "disabled")
+                self.assertEqual(status, "disabled", addr)
             props = subprocess.check_output(
                 ["fdtget", "-p", str(blob), "/fragment@3/__overlay__/ane@310000000"],
                 text=True,

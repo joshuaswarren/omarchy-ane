@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * ane/h15 OPT-IN EXPERIMENTAL overlay for T8122 (M3) board device
+ * trees, for ane_h15 (apple,t8122-ane). NOT installed by the package:
+ * it is not a row of packaging/dt/overlays and omarchy-ane-dt never
+ * applies it. The first owner of an M3 Linux box compiles it and
+ * copies it into the overlay directory by hand, with the opt-in key
+ * ane-h15-experimental in /etc/omarchy-mac-boot/dtb-overlays.opt-in.
+ *
+ * DART variant: the same overlay as t8122-ane-experimental.dts with the
+ * three ANE DART instances (windows 0, 1 and 2) ENABLED and the ane node a
+ * client of all three (iommus, stream 0 on each). The aperture window
+ * (instance 3) stays disabled. It is the source of the run-time overlay
+ * that ane_h15 applies after the module has powered the ANE
+ * (gen-runtime-overlay.py), and the form ane_h15 stage=5 map_fw=1 needs.
+ * Do NOT compile it as a boot overlay: enabled DART nodes hung a T6030 at
+ * boot (PR 173). Use t8122-ane-experimental.dts at boot.
+ *
+ * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). ADT 27.0
+ * 26A428:
+ *   ane reg engine 0x310000000+0x2000000, pmgr 0x2d0700000+0x18000;
+ *   ANE ps words at +0x438 (ANE_SYS, parent LMX4), +0xc000/+0xc008/
+ *   +0xc010/+0xc018 (ANE_MPM/CPU/TD/BASE).
+ *   dart-ane 0x311800000/0x311810000/0x311820000/0x311804000 (each
+ *   0x4000); IRQ 525; the ADT names a "no gate" line for the DARTs
+ *   and the M3 family uses apple,t8110-dart as the bindable fallback.
+ * The kernel tree's aurora t8122 dtsi has only ps_ane_sys at +0x438;
+ * this overlay adds the four MPM/CPU/TD/BASE ps nodes and the
+ * DART+ANE device nodes. AIC is 3-cell on t8122.
+ * The mailbox is not described: ane_h15 drives the ASC v4 mailbox
+ * (wrapper+0x8000, INFERENCE on H15) by polling, with no IRQ.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h15-experimental";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@2d1000000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@2d0700000/power-controller@438";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	/* T8122/J613 parent graph: receipts/2026-10-01-ane-every-soc/adt-27.0.txt,
+	 * lines 227-239. ANE_BASE depends on both ANE_TD and ANE_CPU. */
+	fragment@2 {
+		target-path = "/soc/power-management@2d0700000";
+		__overlay__ {
+			ps_ane_mpm: power-controller@c000 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_mpm";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_cpu: power-controller@c008 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_cpu";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_td: power-controller@c010 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_td";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_base: power-controller@c018 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_td>, <&ps_ane_cpu>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			/* Instances 0, 1 and 2 of the ANE DART are enabled, the aperture window (instance 3) stays disabled. On a
+			 * J613 iBoot leaves no ANE stream enabled and the TCR and TTBR words hold stale values, so the DART driver
+			 * must attach the ANE to set up stream 0 of each instance. The nodes list the ANE power domain, which the
+			 * run-time overlay applies after it is on. At boot, enabled nodes on a T6030 hung the machine before display. */
+			ane_dart0: iommu@311800000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart1: iommu@311810000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart2: iommu@311820000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+			ane_dart3: iommu@311804000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11804000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+
+			ane: ane@310000000 {
+				compatible = "apple,t8122-ane";
+				reg-names = "engine", "pmgr";
+				reg = <0x3 0x10000000 0x0 0x2000000>,
+				      <0x2 0xd0700000 0x0 0x18000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 507 4>, <0 506 4>, <0 509 4>, <0 508 4>, <0 524 4>;
+				/* Every enabled instance, stream 0: omarchy-ane-dt refuses a node that names a disabled provider. */
+				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
+						<&ps_ane_cpu>, <&ps_ane_td>,
+						<&ps_ane_base>;
+				apple,ane-type = <0xb0>;
+				status = "okay";
+			};
+		};
+	};
+};

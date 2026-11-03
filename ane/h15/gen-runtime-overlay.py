@@ -20,7 +20,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SOCS = {
-    "t8122": {"src": "t8122-ane-experimental.dts", "labels": ["aic", "ps_ane_sys"]},
+    "t8122": {"src": "t8122-ane-dart-experimental.dts", "labels": ["aic", "ps_ane_sys"]},
     "t6030": {"src": "t6030-ane-dart-experimental.dts", "labels": ["aic", "ps_ane_sys"]},
     "t6031": {"src": "t6031-ane-dart-experimental.dts", "labels": ["aic", "ps_ane_sys", "ps_ane_mpm", "ps_ane_cpu", "ps_ane_td", "ps_ane_base"]},
 }
