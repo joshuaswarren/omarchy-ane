@@ -23,7 +23,7 @@ $(BUILD_DIR)/%.o : $(SRC_DIR)/%.c ane.h ane_m2.h ane_h15.h ane_f16.h ane_sha256.
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@
 
-$(BUILD_DIR)/ane_h15_firmware.o: ../ane/h15/ane_h15_fw_pins.h
+$(BUILD_DIR)/ane_h15_firmware.o: ../ane/h15/ane_h15_fw_pins.h ../ane/h15/ane_h15_fw_layout.h
 
 install: libane
 	install $(BUILD_DIR)/${LIB_NAME}.a ${DESTDIR}/usr/lib

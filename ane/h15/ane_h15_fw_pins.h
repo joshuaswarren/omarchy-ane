@@ -9,6 +9,7 @@ struct ane_h15_fw {
 	unsigned char sha256[32];
 	unsigned int size;
 	unsigned int manifest_size;
+	unsigned int wrad_vm;
 };
 
 static const struct ane_h15_fw ane_fw_t8122 = {
@@ -18,6 +19,7 @@ static const struct ane_h15_fw ane_fw_t8122 = {
 		    0xe5,0xc1,0x03,0x4e, 0x2e,0xc4,0x78,0x08 },
 	.size = 1605632,
 	.manifest_size = 1605657,
+	.wrad_vm = 0xd2a4c,
 };
 
 static const struct ane_h15_fw ane_fw_t6030 = {
@@ -27,6 +29,7 @@ static const struct ane_h15_fw ane_fw_t6030 = {
 		    0x4f,0x97,0xf4,0xfd, 0xa9,0x98,0x67,0xa0 },
 	.size = 1605632,
 	.manifest_size = 1605657,
+	.wrad_vm = 0xd27ec,
 };
 
 static const struct ane_h15_fw ane_fw_t6031 = {
@@ -36,6 +39,7 @@ static const struct ane_h15_fw ane_fw_t6031 = {
 		    0x2c,0x24,0xfd,0x77, 0x30,0xa1,0xf9,0x77 },
 	.size = 1605632,
 	.manifest_size = 1605657,
+	.wrad_vm = 0xd27ec,
 };
 
 static const struct ane_h15_fw ane_fw_t6032_ane1 = {
@@ -45,6 +49,7 @@ static const struct ane_h15_fw ane_fw_t6032_ane1 = {
 		    0xbb,0x05,0xff,0x57, 0x5c,0x7c,0x13,0xd4 },
 	.size = 1605632,
 	.manifest_size = 1605657,
+	.wrad_vm = 0xd27ec,
 };
 
 /* Image identity only; this does not select resources or qualify an engine. */

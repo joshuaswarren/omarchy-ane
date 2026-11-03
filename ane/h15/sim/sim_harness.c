@@ -98,8 +98,9 @@ int sim_link_fail_at = -1;
 int sim_pd_attach_calls;
 int sim_module_gets;
 struct sim_dma sim_dma[8];
-int sim_n_dma, sim_dma_fail, sim_dma_mask_bits;
-struct iommu_domain sim_default_dom = { __IOMMU_DOMAIN_DMA_API };
+int sim_n_dma, sim_dma_fail, sim_dma_mask_bits, sim_dma_scatter, sim_map_fail_at;
+int sim_unmap_fail_at;
+struct iommu_domain sim_default_dom = { .type = __IOMMU_DOMAIN_DMA_API };
 int sim_default_dom_none;
 int sim_region_ram = REGION_DISJOINT;
 struct sim_iocall sim_iocalls[64];
@@ -162,20 +163,6 @@ static bool parse_result(unsigned int *stage, char *verdict, size_t vsz,
 	return true;
 }
 
-/* Collect `ane_h15 hole=Hx` ids in emission order. */
-static int collect_holes(char ids[][8], int max)
-{
-	const char *p = sim_log;
-	int n = 0;
-
-	while (n < max && (p = strstr(p, "ane_h15 hole="))) {
-		if (sscanf(p, "ane_h15 hole=%7s", ids[n]) != 1)
-			break;
-		n++;
-		p++;
-	}
-	return n;
-}
 
 static int events_in(u64 base, u64 size, int writes_only)
 {
@@ -241,6 +228,7 @@ static void reset_all(void)
 	confirm_read = false;
 	confirm_run = false;
 	run_scratch = false;
+	run_pmgr = false;
 	scratch_boot = false;
 	sb_wait_ms = 1000;
 	pwgate_t6031 = 0;
@@ -249,7 +237,7 @@ static void reset_all(void)
 	map_fw = false;
 	fw_seg = NULL;
 	sim_region_ram = REGION_DISJOINT;
-	sim_n_iocalls = sim_io_fail = sim_n_dom_live = 0;
+	sim_n_iocalls = sim_io_fail = sim_n_dom_live = sim_map_fail_at = sim_unmap_fail_at = 0;
 	sim_attach_hook = NULL;
 	run_wait_ms = 300;
 	sim_write_hook = NULL;
@@ -259,6 +247,7 @@ static void reset_all(void)
 	chan_cmds = false;
 	hs_wait_ms = 1000;
 	{ int k; for (k = 0; k < sim_n_dma; k++) free(sim_dma[k].va); }
+	sim_dma_scatter = 0;
 	sim_n_dma = sim_dma_fail = sim_dma_mask_bits = sim_default_dom_none = 0;
 	confirm_rtkit = false;
 	rtkit_wait_ms = 2000;
@@ -375,8 +364,7 @@ static void pos_refusals(void)
 {
 	unsigned int rstage;
 	char verdict[32], reason[128];
-	char ids[8][8];
-	int nids, ret;
+	int ret;
 
 	/* stage=2 wrapper: REFUSED before any engine read */
 	reset_all();
@@ -396,7 +384,7 @@ static void pos_refusals(void)
 	    "P3 wrapper: refused probe unmaps its windows");
 	chk_global_invariants(cur_soc, "P3 wrapper");
 
-	/* stage=3 boot: REFUSED, enumerates exactly the unfilled facts */
+	/* Stage 3 needs separate read consent before firmware preparation. */
 	reset_all();
 	optin = "t8122";
 	stage = "boot";
@@ -404,17 +392,14 @@ static void pos_refusals(void)
 	fw_path = "/lib/firmware/synthetic-macho-for-sim";
 	build_node(&ane_t8122_soc, 2, "apple,t8122-ane");
 	ret = probe_now();
-	chk(ret == -ENOENT, "P4 boot: probe returns -ENOENT");
+	chk(ret == -EPERM, "P4 boot: missing read consent returns -EPERM");
 	chk(parse_result(&rstage, verdict, sizeof(verdict),
 			 reason, sizeof(reason)) &&
 	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
-	    !strcmp(reason, "unfilled-facts"),
-	    "P4 boot: RESULT stage=3 REFUSED unfilled-facts");
-	nids = collect_holes(ids, 8);
-	chk(nids == 5 && !strcmp(ids[0], "H1") && !strcmp(ids[1], "H2") &&
-	    !strcmp(ids[2], "H3") && !strcmp(ids[3], "H4") &&
-	    !strcmp(ids[4], "H5"),
-	    "P4 boot: refusal enumerates exactly H1,H2,H3,H4,H5");
+	    !strcmp(reason, "owned-firmware-prepare-failed"),
+	    "P4 boot: preparation refuses without read consent");
+	chk(sim_fw_requests == 0 && sim_n_dma == 0 && sim_n_events == 0,
+	    "P4 boot: no file, DMA allocation or MMIO before consent");
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
 	    "P4 boot: refused probe unmaps its windows");
 	chk_global_invariants(cur_soc, "P4 boot");
@@ -754,15 +739,21 @@ static int neg_read_forbidden(void)
 static void pos_filled_probe(void)
 {
 	unsigned int rstage;
-	char verdict[32], reason[128];
-	int ret;
+	char verdict[32], reason[128], path[1024];
+	const char *directory = getenv("H15_FW_INPUT_DIR");
+	int ret, length;
 
-	reset_all();
-	optin = "t8122";
+	chk(directory != NULL, "P7 filled: private real-image input directory required");
+	if (!directory)
+		return;
+	length = snprintf(path, sizeof(path), "%s/t603x_ane0_fw_erebus_pc5x.im4p.payload", directory);
+	chk(length > 0 && length < (int)sizeof(path), "P7 filled: input path fits");
+	if (length <= 0 || length >= (int)sizeof(path))
+		return;
+	stage2_setup(&ane_t6031_soc, "apple,t6031-ane", -1);
 	stage = "boot";
 	confirm_boot = true;
-	fw_path = "/lib/firmware/synthetic-macho-for-sim";
-	build_node(&ane_t8122_soc, 2, "apple,t8122-ane");
+	fw_path = path;
 
 	chk(ane_h15_facts_ready(ane_h15_facts, ane_h15_n_facts),
 	    "P7 filled: substituted table is ready (gate open)");
@@ -783,7 +774,10 @@ static void pos_filled_probe(void)
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "P7 filled: power released");
 	chk(sim_n_iomap == 2 && sim_n_iounmap == 2,
 	    "P7 filled: refused probe unmaps its windows");
-	chk_global_invariants(cur_soc, "P7 filled");
+	chk(sim_n_dma == 1 && !sim_dma[0].live && sim_fw_live == 0,
+	    "P7 filled: owned preparation cleaned up on boot refusal");
+	chk(events_in(cur_soc->engine_pa, cur_soc->engine_size, 1) == 0 &&
+	    sim_bus_faults == 0, "P7 filled: no device write or bus fault");
 }
 #endif
 
@@ -1214,7 +1208,7 @@ void (*sim_write64_hook)(u64 pa, u64 v);
 #define PW_WORD_OFF	0x199cu
 #define PW_WORD_PA	(PW_PA + PW_WORD_OFF)
 static const struct ane_h15_soc *dm_soc;
-static bool dm_stuck, dm_nostart;
+static bool dm_stuck, dm_nostart, dm_ambiguous_stop;
 static int dm_msgs_left;
 static bool dm_s7_ready;	/* scratch_boot model: the firmware publishes the ready word in SCRATCH7 once started */
 static bool dm_s7_stuck;	/* scratch_boot model: the SCRATCH7 register ignores the clear and always reads the stale word */
@@ -1245,7 +1239,8 @@ static void dm_write(u64 pa, u32 v)
 		if (dm_msgs_left && !dm_nostart)
 			eng_set(s, s->mbox + 0x114, 0x1);
 	} else if (!dm_stuck) {
-		eng_set(s, s->cpu_status, eng_get(s, s->cpu_status) | DM_STOPPED);
+		eng_set(s, s->cpu_status, eng_get(s, s->cpu_status) | DM_STOPPED |
+			(dm_ambiguous_stop ? 1u : 0u));
 	}
 }
 
@@ -1296,7 +1291,7 @@ static void run_setup(const struct ane_h15_soc *s, const char *compat, u32 ctrl)
 	eng_set(s, s->mbox + 0x83c, 0x22);
 	dart_set(s, true);
 	dm_soc = s;
-	dm_stuck = dm_nostart = false;
+	dm_stuck = dm_nostart = dm_ambiguous_stop = false;
 	dm_s7_ready = false;
 	dm_s7_stuck = false;
 	dm_pw_word = 0;
@@ -1508,6 +1503,44 @@ static void pos_run_scratch(void)
 	    "RS5 SCRATCH0 is read once before the first CPU_CONTROL write (the 'before RUN' dump)");
 	chk(events_in(0, ~0ULL, 1) == events_in(s->engine_pa + s->cpu_control, 4, 1) && sim_bus_faults == 0,
 	    "RS6 the only writes are the CPU_CONTROL values, no fault");
+	ane_h15_remove(&pdev);
+}
+
+/* stage 5 with run_pmgr=1: the five pmgr ANE words read before RUN, just after the RUN write and after the wait, never written;
+ * without the parameter no pmgr dump line is logged */
+static void pos_run_pmgr(void)
+{
+	const struct ane_h15_soc *s = &ane_t6030_soc;
+	unsigned int rstage;
+	char verdict[32], reason[128];
+	const char *before, *run_write, *after_run, *after_wait;
+	int ret;
+
+	run_setup(s, "apple,t6030-ane", 0x0);
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 pmgr before RUN") == 0 && log_count("ane_h15 pmgr after") == 0,
+	    "PM1 run_pmgr off: no pmgr dump line is logged");
+	ane_h15_remove(&pdev);
+
+	run_setup(s, "apple,t6030-ane", 0x0);
+	run_pmgr = true;
+	ret = probe_now();
+	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) && rstage == 5 &&
+	    !strcmp(verdict, "PASS") && !strcmp(reason, "core-started-and-stopped"),
+	    "PM2 run_pmgr on: the verdict of stage 5 is unchanged");
+	chk(log_count("ane_h15 pmgr before RUN: ANE_SYS=0xffffffff ANE_MPM=0xffffffff ANE_CPU=0xffffffff ANE_TD=0xffffffff ANE_BASE=0xffffffff") == 1 &&
+	    log_count("ane_h15 pmgr after RUN: ANE_SYS=0xffffffff ANE_MPM=0xffffffff ANE_CPU=0xffffffff ANE_TD=0xffffffff ANE_BASE=0xffffffff") == 1 &&
+	    log_count("ane_h15 pmgr after the wait: ANE_SYS=0xffffffff ANE_MPM=0xffffffff ANE_CPU=0xffffffff ANE_TD=0xffffffff ANE_BASE=0xffffffff") == 1,
+	    "PM3 one line each before RUN, after RUN and after the wait, with the five words");
+	before = strstr(sim_log, "ane_h15 pmgr before RUN");
+	run_write = strstr(sim_log, "(RUN)");
+	after_run = strstr(sim_log, "ane_h15 pmgr after RUN");
+	after_wait = strstr(sim_log, "ane_h15 pmgr after the wait");
+	chk(before && run_write && after_run && after_wait && before < run_write && run_write < after_run &&
+	    after_run < after_wait,
+	    "PM4 the dumps come before the RUN write, right after it, and after the wait, in that order");
+	chk(events_in(0, ~0ULL, 1) == events_in(s->engine_pa + s->cpu_control, 4, 1) && sim_bus_faults == 0,
+	    "PM5 the only writes are the CPU_CONTROL values, nothing is written to pmgr, no fault");
 	ane_h15_remove(&pdev);
 }
 
@@ -1845,7 +1878,6 @@ static int neg_run(void)
 {
 	const struct ane_h15_soc *s = &ane_t6030_soc;
 	static const struct { const struct ane_h15_soc *soc; const char *compat; } others[] = {
-		{ &ane_t8122_soc, "apple,t8122-ane" },
 		{ &ane_t6034_soc, "apple,t6034-ane" },
 	};
 	static const struct { const char *tag; u32 off; u32 val; } bad[] = {
@@ -2151,7 +2183,7 @@ static void pos_translation(void)
 		chk(sim_n_iocalls == before,
 		    "T1 teardown leaves the observed domain and mapping untouched");
 	}
-	translation_setup(&ane_t8122_soc, "apple,t8122-ane");
+	translation_setup(&ane_t6034_soc, "apple,t6034-ane");
 	ret = probe_now();
 	chk(ret == -ENODEV &&
 	    parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
@@ -2348,10 +2380,30 @@ static int neg_map(void)
 		    !strcmp(verdict, "FAIL") && !strcmp(reason, "core-not-stopped-before-map") &&
 		    sim_n_iocalls == 0 && events_in(0, ~0ULL, 1) == 0, name);
 	}
+	{
+		static const struct { u32 off, val; const char *tag; } preflight[] = {
+			{ 0x1400044, 0x10, "RUN set" },
+			{ 0x1050000, 0x2, "RVBAR low changed" },
+			{ 0x1050004, 0x101, "RVBAR high changed" },
+			{ 0x1408110, 0x1, "A2I not empty" },
+			{ 0x1408114, 0x1, "I2A not empty" },
+		};
+		const struct ane_h15_soc *max = &ane_t6031_soc;
+
+		for (i = 0; i < (int)ARRAY_SIZE(preflight); i++) {
+			map_setup(max, "apple,t6031-ane");
+			eng_set(max, preflight[i].off, preflight[i].val);
+			ret = probe_now();
+			snprintf(name, sizeof(name), "NM16 %s: refuse before any IOMMU call", preflight[i].tag);
+			chk(ret != 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+			    !strcmp(verdict, "FAIL") && !strcmp(reason, "preflight-not-as-iboot-left-it") &&
+			    sim_n_iocalls == 0 && events_in(0, ~0ULL, 1) == 0, name);
+		}
+	}
 	/* NM14 a SoC row without a measured RVBAR: refused first */
-	map_setup(&ane_t8122_soc, "apple,t8122-ane");
+	map_setup(&ane_t6034_soc, "apple,t6034-ane");
 	ret = probe_now();
-	chk(ret != 0 && sim_n_events == 0 && sim_n_iocalls == 0, "NM14 t8122 map_fw: refused (no measured RVBAR), no iommu call");
+	chk(ret != 0 && sim_n_events == 0 && sim_n_iocalls == 0, "NM14 t6034 map_fw: refused (no measured RVBAR), no iommu call");
 	/* NM6..NM10 failures inside the map: nothing written, everything undone */
 	{
 		static const struct { int fail; const char *seq; const char *tag; } f[] = {
@@ -2389,9 +2441,32 @@ static int neg_map(void)
 	ret = probe_now();
 	io_seq(seq, sizeof(seq));
 	chk(ret == 0 && !strcmp(seq, "ATMM") && sim_n_dom_live == 1 && sim_pm_put == 0 &&
-	    run_writes(s, w, 8, &first) == 2, "NM12 stuck core: the DART mapping is kept (no unmap, detach or free)");
+	    sim_module_gets == 1 && run_writes(s, w, 8, &first) == 2,
+	    "NM12 stuck core: the DART mapping is kept (no unmap, detach or free)");
 	ane_h15_remove(&pdev);
 	chk(sim_n_dom_live == 1 && sim_n_iounmap == 0, "NM12 stuck core: remove() refuses, mapping and windows stay");
+	{
+		const struct ane_h15_soc *max = &ane_t6031_soc;
+		struct ane_h15 *owned;
+
+		map_setup(max, "apple,t6031-ane");
+		dm_ambiguous_stop = true;
+		ret = probe_now();
+		owned = platform_get_drvdata(&pdev);
+		io_seq(seq, sizeof(seq));
+		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+		    !strcmp(verdict, "FAIL") && !strcmp(reason, "core-not-stopped") &&
+		    (eng_get(max, max->cpu_status) & 3u) == 3u,
+		    "NM17 STOPPED and RUNNING: report core-not-stopped, never clean success");
+		chk(!strcmp(seq, "ATMM") && sim_n_dom_live == 1 && sim_module_gets == 1 &&
+		    sim_pm_put == 0 && sim_n_iounmap == 0 && owned->fw_started &&
+		    owned->fw_touched && owned->map_n == 2,
+		    "NM17 ambiguous stop retains both mappings, module pin, power and windows");
+		ane_h15_remove(&pdev);
+		chk(sim_n_dom_live == 1 && sim_n_iounmap == 0 && sim_pm_put == 0 &&
+		    sim_module_gets == 1,
+		    "NM17 remove cannot release ambiguous-state ownership");
+	}
 	return fails;
 }
 
@@ -3169,6 +3244,7 @@ int main(int argc, char **argv)
 		pos_run();
 		pos_run_postwait();
 		pos_run_scratch();
+		pos_run_pmgr();
 		pos_run_scratch_boot();
 		pos_run_pwgate();
 		pos_dart();

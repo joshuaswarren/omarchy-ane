@@ -108,6 +108,9 @@ const struct ane_h15_soc ane_t8122_soc = {
 	.cpu_control = 0x1400044,
 	.cpu_status  = 0x1400048,
 	.rvbar       = 0x1050000,
+	/* Measured by stage 2 on a 13-inch M3 MacBook Air (J613), 2026-11-02: RVBAR_LO 0x1, RVBAR_HI 0x100,
+	 * CPU_STATUS 0x30002a, both mailbox CTRL words 0x20001. The same word the T6030 and T6031 rows carry. */
+	.rvbar_expect = 0x0000010000000001ull,
 	.dart_off    = 0x1800000,	/* ADT S1: 0x311800000 - engine, data/ane-soc/t8122.json */
 	.mbox        = 0x1408000,	/* INFERENCE */
 	.engine_pa   = 0x310000000ull,
@@ -127,8 +130,8 @@ const struct ane_h15_soc ane_t6030_soc = {
 	.rvbar       = 0x1050000,
 	/* Measured by stage 2 on a 16-inch M3 Pro (J516S), PR 175 comment of 2026-10-23: RVBAR_LO 0x1,
 	 * RVBAR_HI 0x100. The same value the M2 Max run, the M6 (T8152) and the T6031 row carry: the
-	 * firmware entry IOVA 0x10000000000 with bit 0 set, i.e. the boot loader already wrote it. T8122 and T6034
-	 * have no stage 2 result yet, so their rvbar_expect stays 0 and stage=run refuses on them. */
+	 * firmware entry IOVA 0x10000000000 with bit 0 set, i.e. the boot loader already wrote it. T6034
+	 * has no stage 2 result yet, so its rvbar_expect stays 0 and stage=run refuses on it. */
 	.rvbar_expect = 0x0000010000000001ull,
 	.dart_off    = 0x1800000,	/* ADT S1: 0x309800000 - engine, data/ane-soc/t6030.json */
 	.mbox        = 0x1408000,	/* INFERENCE */
