@@ -1211,7 +1211,7 @@ void (*sim_write64_hook)(u64 pa, u64 v);
 static const struct ane_h15_soc *dm_soc;
 static bool dm_stuck, dm_nostart, dm_ambiguous_stop;
 static int dm_msgs_left;
-static bool dm_s7_ready;	/* scratch_boot model: the firmware publishes the ready word in SCRATCH7 once started */
+static bool dm_s7_ready;	/* scratch_boot model: the firmware answers the SCRATCH7 wake sentinel with the ready word */
 static bool dm_s7_stuck;	/* scratch_boot model: the SCRATCH7 register ignores the clear and always reads the stale word */
 static u32 dm_pw_word;		/* pwgate model: what the word at PWGATE + 0x199c reads */
 static int dm_pw_reads;		/* pwgate model: how many times the word was read */
@@ -1226,6 +1226,13 @@ static void dm_write(u64 pa, u32 v)
 {
 	const struct ane_h15_soc *s = dm_soc;
 
+	/* scratch_boot model: the firmware answers the wake sentinel in SCRATCH7
+	 * (0xf7fbdff9), not the RUN write itself: the sentinel follows RUN and
+	 * the ready-word poll follows the sentinel. */
+	if (dm_s7_ready && pa == s->engine_pa + 0x1840050u + 4 * 7 && v == 0xf7fbdff9u) {
+		eng_set(s, 0x1840050u + 4 * 7, 0x08042006u);
+		return;
+	}
 	if (pa != s->engine_pa + s->cpu_control) {
 		/* pwgate model: a 0 to the gate word opens it within the
 		 * first 10 us poll, unless the register ignores the write */
@@ -1236,8 +1243,6 @@ static void dm_write(u64 pa, u32 v)
 	if (v & DM_RUN) {
 		if (!dm_nostart)
 			eng_set(s, s->cpu_status, eng_get(s, s->cpu_status) & ~DM_STOPPED);
-		if (dm_s7_ready)
-			eng_set(s, 0x1840050u + 4 * 7, 0x08042006u);
 		if (dm_msgs_left && !dm_nostart)
 			eng_set(s, s->mbox + 0x114, 0x1);
 	} else if (!dm_stuck) {
@@ -1570,7 +1575,7 @@ static void pos_run_scratch_boot(void)
 	    "KB1 scratch_boot off: the engine writes stay [CPU_CONTROL=0x10, CPU_CONTROL=0], nothing at SCRATCH");
 	ane_h15_remove(&pdev);
 
-	/* KB2: scratch_boot=1, the firmware publishes the ready word. SCRATCH7 starts
+	/* KB2: scratch_boot=1, the firmware answers the wake sentinel. SCRATCH7 starts
 	 * holding the stale ready word (the T6030 observation the hypothesis names). */
 	run_setup(s, "apple,t6030-ane", 0x0);
 	scratch_boot = true;
@@ -1585,9 +1590,10 @@ static void pos_run_scratch_boot(void)
 		const struct { u32 off; u32 val; } want[] = {
 			{ off + 4 * 0, 0 }, { off + 4 * 1, 0 }, { off + 4 * 2, 0 }, { off + 4 * 3, 0 },
 			{ off + 4 * 4, 0 }, { off + 4 * 5, 0 }, { off + 4 * 6, 0 }, { off + 4 * 7, 0 },
-			{ off + 4 * 6, 1 }, { off + 4 * 7, 0 },
-			{ s->cpu_control, 0 }, { s->cpu_control, 0x10 },
-			{ s->cpu_control, 0 },	/* the stop path's clear RUN; bit 5 already clear */
+		{ off + 4 * 6, 1 }, { off + 4 * 7, 0 },
+		{ s->cpu_control, 0 }, { s->cpu_control, 0x10 },
+		{ off + 4 * 7, 0xf7fbdff9 },	/* the wake sentinel, after RUN */
+		{ s->cpu_control, 0 },	/* the stop path's clear RUN; bit 5 already clear */
 		};
 		u32 offs[16], vals[16];
 		int nw = 0, ok;
@@ -1600,17 +1606,17 @@ static void pos_run_scratch_boot(void)
 			vals[nw] = sim_events[i].val;
 			nw++;
 		}
-		ok = nw == 13;
-		for (i = 0; ok && i < 13; i++)
+		ok = nw == 14;
+		for (i = 0; ok && i < 14; i++)
 			ok = offs[i] == want[i].off && vals[i] == want[i].val;
-		chk(ok, "KB2 the engine writes are exactly S0..S7=0, S6=1, S7=0, CPU_CONTROL=0, CPU_CONTROL=0x10, then the stop clear");
+		chk(ok, "KB2 the engine writes are exactly S0..S7=0, S6=1, S7=0, CPU_CONTROL=0, CPU_CONTROL=0x10, S7=sentinel, then the stop clear");
 	}
-	chk(events_in(s->engine_pa + off, 0x20, 1) == 10 && events_in(0, ~0ULL, 1) == 13,
-	    "KB2 ten SCRATCH writes (eight zeros, S6=1, S7=0) and no write outside the two words' ranges");
+	chk(events_in(s->engine_pa + off, 0x20, 1) == 11 && events_in(0, ~0ULL, 1) == 14,
+	    "KB2 eleven SCRATCH writes (eight zeros, S6=1, S7=0, S7=sentinel) and no write outside the two words' ranges");
 	chk(eng_events_at(s, s->rvbar) == 1 && eng_events_at(s, s->rvbar + 4) == 1,
 	    "KB2 RVBAR is read once (preflight) and never written");
-	chk(log_count("ane_h15 write SCRATCH") == 10 && log_count("ane_h15 write CPU_CONTROL=") == 3,
-	    "KB2 every write logged before it happens (10 SCRATCH lines, 3 CPU_CONTROL lines)");
+	chk(log_count("ane_h15 write SCRATCH") == 11 && log_count("ane_h15 write CPU_CONTROL=") == 3,
+	    "KB2 every write logged before it happens (11 SCRATCH lines, 3 CPU_CONTROL lines)");
 	chk(log_count("SCRATCH7 reads 0 after the cold-boot write") == 1 &&
 	    log_count("ready word 0x8042006 after 1ms") == 1,
 	    "KB2 SCRATCH7 read back after the cold-boot write, ready word logged at its first poll");
@@ -1629,8 +1635,8 @@ static void pos_run_scratch_boot(void)
 	    "KB3 scratch_boot=1 ready not seen: the reason carries scratch_boot=1 s7_ready=no");
 	chk(log_count("not seen within 20ms") == 1, "KB3 the timeout is logged once with the sb_wait_ms value");
 	n = run_writes(s, w, 16, &first);
-	chk(n == 13 && eng_events_at(s, off + 4 * 7) == 2 + 1 + 20 + 2,
-	    "KB3 SCRATCH7 is written twice, read back, polled 20 times and dumped twice");
+	chk(n == 14 && eng_events_at(s, off + 4 * 7) == 3 + 1 + 20 + 2,
+	    "KB3 SCRATCH7 is written three times (0, 0, sentinel), read back, polled 20 times and dumped twice");
 	ane_h15_remove(&pdev);
 
 	/* KB4: scratch_boot=1 is stage 5 only; stage 2 and stage 4 refuse before any MMIO.
@@ -1699,8 +1705,8 @@ static void pos_run_scratch_boot(void)
 	    !strcmp(verdict, "PASS") && !strcmp(reason, "scratch_boot=1 s7_ready=no core-never-left-stopped"),
 	    "KB7 same setup, clear takes: PASS, reason scratch_boot=1 s7_ready=no core-never-left-stopped");
 	n = run_writes(s, w, 16, &first);
-	chk(n == 13 && eng_events_at(s, off + 4 * 7) == 2 + 1 + 20 + 2,
-	    "KB7 the boot sequence and the poll run as before the clear check");
+	chk(n == 14 && eng_events_at(s, off + 4 * 7) == 3 + 1 + 20 + 2,
+	    "KB7 the boot sequence and the poll run as before the clear check, sentinel included");
 	ane_h15_remove(&pdev);
 
 	printf("  %-58s %s\n", "pos_run_scratch_boot summary", fails == before ? "all KB checks PASS" : "FAILURES above");
@@ -1845,7 +1851,7 @@ static void pos_run_pwgate(void)
 	    "PW5 scratch_boot=1: PASS with the pwgate suffix after the s7_ready reason");
 	{
 		const u32 soff = 0x1840050u;
-		int last_scr = -1, pw_ri = -1, pw_wi = -1, cc = -1, nw = 0, ok;
+		int pre_scr = -1, wake_wi = -1, pw_ri = -1, pw_wi = -1, cc = -1, nw = 0, ok;
 
 		for (i = 0; i < sim_n_events && i < SIM_MAX_EVENTS; i++) {
 			u64 pa = sim_events[i].pa;
@@ -1863,17 +1869,21 @@ static void pos_run_pwgate(void)
 			if (pa < s->engine_pa || pa >= s->engine_pa + s->engine_size)
 				continue;
 			nw++;
-			if (pa >= s->engine_pa + soff && pa < s->engine_pa + soff + 0x20)
-				last_scr = i;
-			else if (pa == s->engine_pa + s->cpu_control && cc < 0)
+			if (pa >= s->engine_pa + soff && pa < s->engine_pa + soff + 0x20) {
+				if (cc < 0)
+					pre_scr = i;	/* the kboot SCRATCH sequence runs before RUN */
+				if (sim_events[i].val == 0xf7fbdff9u && wake_wi < 0)
+					wake_wi = i;
+			} else if (pa == s->engine_pa + s->cpu_control && cc < 0) {
 				cc = i;
+			}
 		}
-		ok = nw == 13 && last_scr >= 0 && pw_ri >= 0 && pw_wi >= 0 && cc >= 0 &&
-		     last_scr < pw_ri && pw_ri < pw_wi && pw_wi < cc;
-		chk(ok, "PW5 the order is the 13 SCRATCH-sequence writes, SCRATCH last, then PWGATE read, write, first CPU_CONTROL write");
+		ok = nw == 14 && pre_scr >= 0 && wake_wi >= 0 && pw_ri >= 0 && pw_wi >= 0 && cc >= 0 &&
+		     pre_scr < pw_ri && pw_ri < pw_wi && pw_wi < cc && cc < wake_wi;
+		chk(ok, "PW5 the order is the kboot SCRATCH writes, PWGATE read, write, first CPU_CONTROL write, then the wake sentinel");
 	}
-	chk(log_count("ane_h15 write SCRATCH") == 10 && log_count("ane_h15 write CPU_CONTROL=") == 3,
-	    "PW5 the macOS SCRATCH and CPU_CONTROL write counts are unchanged");
+	chk(log_count("ane_h15 write SCRATCH") == 11 && log_count("ane_h15 write CPU_CONTROL=") == 3,
+	    "PW5 the macOS SCRATCH and CPU_CONTROL write counts, sentinel included");
 	ane_h15_remove(&pdev);
 
 	printf("  %-58s %s\n", "pos_run_pwgate summary", fails == before ? "all PW checks PASS" : "FAILURES above");

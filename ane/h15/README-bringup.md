@@ -163,7 +163,8 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   `scratch_boot=1` (stage 5 only, off by default) replaces the read-modify-write with the order macOS
   boots the firmware in, as macOS does it, never run on an M3: write 0 to all eight SCRATCH words
   (macOS clears SCRATCH0 to SCRATCH7 first), then SCRATCH6=1, then SCRATCH7=0 and read it back, then
-  CPU_CONTROL 0 and CPU_CONTROL 0x10 (RUN) as plain writes, then poll SCRATCH7 every 1 ms for the ready word
+  CPU_CONTROL 0 and CPU_CONTROL 0x10 (RUN) as plain writes, then the wake sentinel `0xf7fbdff9` to SCRATCH7
+  (the shipped system writes it after RUN, then waits), then poll SCRATCH7 every 1 ms for the ready word
   `0x08042006` for `sb_wait_ms` ms (10 to 5000, default 1000). The shipped system logs "No wake signal" when its wait
   times out; this module logs the first-seen time or `not seen`. The hypothesis under test (an inference,
   not measured): a SCRATCH7 that still holds the ready word from iBoot sends the firmware down the
@@ -532,7 +533,8 @@ Without them (only if stage 4 found a live stream):
 A second run to try only after a plain stage 5 run (`run_scratch=1` first, so the log
 keeps the SCRATCH words before anything clears them): the same stage with `scratch_boot=1`
 adds `sb_wait_ms=...` if 1000 ms is not enough. This order writes the eight SCRATCH words
-(each 0, then SCRATCH6=1 and SCRATCH7=0) and CPU_CONTROL only; never RVBAR, the mailbox or
+(each 0, then SCRATCH6=1 and SCRATCH7=0), CPU_CONTROL, and after RUN the wake sentinel
+`0xf7fbdff9` to SCRATCH7; never RVBAR, the mailbox or
 the DART. macOS behaviour, never run on an M3. The `RESULT` line ends with
 `scratch_boot=1 s7_ready=<yes|no>`: send that line back either way.
 
@@ -574,8 +576,8 @@ back. macOS behaviour, never run on an M3.
   open question on the M6).
 - Stage 5 reads CPU_CONTROL and writes it (bits 4 and 5 only). It has run on a T6030
   and left the core idle with no message. With `scratch_boot=1` it also writes the eight SCRATCH
-  words, each only as 0 except SCRATCH6=1, before the same RUN write; that
-  order follows macOS behaviour and has never run on an M3. The M6
+  words, each only as 0 except SCRATCH6=1, before the same RUN write, and the wake sentinel
+  to SCRATCH7 after it; that order follows macOS behaviour and has never run on an M3. The M6
   (T8152) result it is modelled on: the same RUN
   write cleared the STOPPED bit and left the core with no message, with the
   DART unprogrammed. A started H15 core may do the same. A "core-started-and-

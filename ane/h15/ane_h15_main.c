@@ -197,7 +197,7 @@ MODULE_PARM_DESC(run_pmgr,
 static bool scratch_boot;
 module_param(scratch_boot, bool, 0444);
 MODULE_PARM_DESC(scratch_boot,
-		 "Stage=run (5) only: start the core in the recorded cold-boot order instead of the read-modify-write: write 0 to SCRATCH0..7, then SCRATCH6=1, SCRATCH7=0 (read back), then CPU_CONTROL 0 and 0x10, then poll SCRATCH7 for the ready word 0x08042006. Never RVBAR, the mailbox or the DART; SCRATCH5 only ever receives 0. Off by default. Recorded behaviour, never run on an M3.");
+		 "Stage=run (5) only: start the core in the recorded cold-boot order instead of the read-modify-write: write 0 to SCRATCH0..7, then SCRATCH6=1, SCRATCH7=0 (read back), then CPU_CONTROL 0 and 0x10, then the wake sentinel 0xf7fbdff9 to SCRATCH7, then poll SCRATCH7 for the ready word 0x08042006. Never RVBAR, the mailbox or the DART; SCRATCH5 only ever receives 0. Off by default. Recorded behaviour, never run on an M3.");
 
 static unsigned int sb_wait_ms = 1000;
 module_param(sb_wait_ms, uint, 0444);
@@ -1154,8 +1154,8 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  *      rvbar_expect) and both mailbox CTRL words (EMPTY, bit 17, set: nothing stale). Anything else refuses;
  *   4. CPU_CONTROL |= RUN (bit 4), the macOS sequence (read, OR 0x10, write);
  *      with scratch_boot=1 instead the whole macOS cold-boot order runs first: 0 to SCRATCH0..7, SCRATCH6=1,
- *      SCRATCH7=0 (read back), CPU_CONTROL 0 then 0x10, then a 1 ms poll of SCRATCH7 for the ready word
- *      0x08042006 (ane_h15_scratch_boot below);
+ *      SCRATCH7=0 (read back), CPU_CONTROL 0 then 0x10, then the wake sentinel 0xf7fbdff9 to SCRATCH7,
+ *      then a 1 ms poll of SCRATCH7 for the ready word 0x08042006 (ane_h15_scratch_boot below);
  *      with pwgate_t6031 (rows with a PWGATE window) macOS's PWGATE gate clear runs last, after the
  *      macOS SCRATCH sequence (if any) and before the first CPU_CONTROL write (ane_h15_pwgate_open below);
  *   5. for run_wait_ms every 10 ms: CPU_STATUS and I2A_CTRL; if I2A is not EMPTY it pops the message
@@ -1557,7 +1557,8 @@ static int ane_h15_scr_wr_kboot(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
 
-	if (i >= ANE_H15_SCRATCH_N || (v && i != 6) || (u64)off + 4 > ane->soc->engine_size)
+	if (i >= ANE_H15_SCRATCH_N || (v && i != 6 && !(i == 7 && v == ANE_H15_HS_WAKE)) ||
+	    (u64)off + 4 > ane->soc->engine_size)
 		return -EPERM;
 	dev_crit(ane->dev, "ane_h15 write SCRATCH%u=%#x pa=%#llx\n", i, v, ane->soc->engine_pa + off);
 	writel(v, ane->engine + off);
@@ -2021,9 +2022,8 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
  * last address. Order: 0 to SCRATCH0..7 (macOS's helper clears all eight first), SCRATCH6=1,
  * SCRATCH7=0 with a read back that must read 0 (anything else stops the run before CPU_CONTROL:
  * the register ignored the write and the stale word would be mistaken for the firmware's ready
- * signal in the poll), CPU_CONTROL 0 then 0x10 (RUN, plain writes, not the
- * read-modify-write), then poll SCRATCH7 every 1 ms for the ready word 0x08042006 that the shipped system
- * waits for (it logs "No wake signal" on timeout). Never RVBAR, never the mailbox, never the
+ * read-modify-write), then the wake sentinel 0xf7fbdff9 to SCRATCH7 (after the RUN write),
+ * then poll SCRATCH7 every 1 ms for the ready word 0x08042006 that the shipped system
  * DART; SCRATCH5 receives 0 only. The stale-ready-word hypothesis: a SCRATCH7 that still holds
  * 0x08042006 from the boot loader may send the firmware down the warm-boot path, where it idles at
  * CPU_STATUS 0x300028. Zeroing it first is what this option tests. With pwgate_t6031 on a
@@ -2073,6 +2073,10 @@ static int ane_h15_scratch_boot(struct ane_h15 *ane, u32 ctrl, bool *s7_ready,
 	if (ret)
 		return ret;
 	ret = ane_h15_write_ctrl(ane, 0, ANE_H15_CPU_RUN, "scratch boot: RUN");
+	if (ret)
+		return ret;
+	/* macOS writes the wake sentinel after RUN and then polls for the ready word. */
+	ret = ane_h15_scr_wr_kboot(ane, 7, ANE_H15_HS_WAKE);
 	if (ret)
 		return ret;
 	for (waited = 0; waited < sb_wait_ms; waited++) {
