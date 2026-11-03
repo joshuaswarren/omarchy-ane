@@ -79,3 +79,37 @@ Until the USB chain is ruled out, ANE hardware work cannot be separated
 from host resets. Suggested next step (host owner): unplug the generic
 USB2.0 mass-storage device and the QinHeng hub, then observe whether the
 reboot cycle stops before resuming ANE work.
+
+## Follow-up 2: USB removed, reboots continued — PMU boot errors
+
+The iDream/QinHeng chain was unplugged. Its mass-storage device
+(`349c:0418`) disappeared, `lsusb -t` dropped to the root hub plus the
+VIA hub, and the USB reset counter stopped climbing (last reset at
+274 s, no further resets).
+
+**The host still rebooted.** All boots since 13:11 report:
+
+```
+macsmc-reboot macsmc-reboot: PMU logged 1 boot error(s) and 0 panic(s)
+```
+
+So these are **PMU-level boot errors, not kernel panics** — consistent
+with a hardware/power reset rather than a software crash.
+
+Timing: on boot `878ab177…` the read-only ANE probe ran at 380 s and the
+boot ended 15 s later. That makes ANE work a suspect again, but it is not
+proof — earlier reads ran on other boots without an immediate reset, and
+the PMU record appears once per boot regardless.
+
+## Revised position
+
+The USB hub was a real fault (it reset in a loop) but not the reboot
+cause. ANE hardware work stays stopped, including read-only probes, until
+the host shows it can stay up across normal use without ANE activity.
+
+Suggested sequence:
+1. Use the machine normally, no ANE modules, and watch `uptime`.
+2. If it stays up, re-introduce only the preflight (no genpd vote, no
+   engine access) and watch again.
+3. Only then consider a single ANE probe, with a fresh boot id recorded
+   before and after.
