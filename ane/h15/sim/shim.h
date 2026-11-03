@@ -353,6 +353,10 @@ static inline bool time_after(unsigned long a, unsigned long b)
 {
 	return (long)(b - a) < 0;
 }
+static inline void writel_relaxed(u32 v, void *a)
+{
+	bus_write((u64)(uintptr_t)(a), v);
+}
 static inline void usleep_range(unsigned long lo, unsigned long hi)
 {
 	sim_jiffies += (lo + hi) / 2;
