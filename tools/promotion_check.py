@@ -82,13 +82,12 @@ FAULT = re.compile(r"fault|error|fail(?:ed|ure)?|timed? ?out|abort|oops|warn|bug
 # that checks signatures); it names the module and says "failed" but is not a device fault.
 UNSIGNED = re.compile(r"module verification failed: signature and/or required key missing - tainting kernel")
 
-# A module declining a node it does not drive. The omarchy-ane-dkms package installs both the M1-family
-# `ane` and `ane_t6021`; on a T602x Mac `ane` logs "unsupported ANE: no proven SET-block base (a guessed
-# base external-aborts the SoC); not binding", which contains the word "abort" but is the intended refusal.
-# The collector cuts a dmesg line at 160 characters ("not bindi"), so the message is matched by its first
-# words. Whether the chip's own driver bound and ran is judged elsewhere (module name, smoke), so these
-# lines are not faults.
-REFUSED = re.compile(r"unsupported ANE: no proven SET-block base|recognized but unqualified: constants present|SET base not a proven die base")
+# The M1-family `ane` module declining a T602x node (the omarchy-ane-dkms package installs it beside `ane_t6021`):
+# "unsupported ANE: no proven SET-block base (a guessed base external-aborts the SoC); not binding". The word "abort"
+# in it matches FAULT, but the line is the intended refusal. The collector cuts a dmesg line at 160 characters, so
+# the message is matched by its first words. Whether the chip's own driver bound is still checked by the readiness
+# check ("bound to no device" is not ready) and by the module name and the smoke.
+REFUSED = re.compile(r"unsupported ANE: no proven SET-block base")
 
 
 BOUND = re.compile(r"bound to ([0-9a-f]+)\.ane\b")

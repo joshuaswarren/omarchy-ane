@@ -162,7 +162,7 @@ refusal = ('[ 6.0] ane 284000000.ane: apple,t6020-ane: unsupported ANE: no prove
            '(a guessed base external-aborts the SoC); not binding. To advance this port, run the quick collector')
 assert not pc.unclean(oa(injected(refusal, good)))
 assert not pc.unclean(oa(injected(refusal, good, 'dmesg_faults')))
-truncated = refusal[:150]
+truncated = refusal[:refusal.index('not binding') + 9]  # ends at 'not bindi', as the collector leaves it
 assert not pc.unclean(oa(injected(truncated, good))), 'the collector cuts the line before "not binding"'
 assert pc.unclean(oa(injected('[ 6.1] ane 284000000.ane: DART fault: not binding the stream', good)))
 assert pc.unclean(oa(injected('[ 6.2] ane 284000000.ane: command timed out; not binding retries', good)))
