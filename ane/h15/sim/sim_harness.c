@@ -2121,6 +2121,24 @@ static void pos_steplog_stop(void)
 	}
 	chk(ane_stepf == NULL,
 	    "SL1 the steplog file is closed when the probe returns");
+		/* w7K: the file must open with the init line for this stage, the bring-up
+		 * line follows it, and both are recorded before any bus access. */
+		{
+			const char *eol = strchr(sim_steplog_buf, '\n');
+			size_t head_len = eol ? (size_t)(eol - sim_steplog_buf) : strlen(sim_steplog_buf);
+			chk(head_len >= 19 && strncmp(sim_steplog_buf + head_len - 19,
+			    "module init stage=5", 19) == 0,
+			    "SL1 the file's first line is the module init line for stage 5");
+		}
+		{
+			const char *up = strstr(sim_steplog_buf, "bring-up complete");
+			const char *first_access = strstr(sim_steplog_buf, "read pmgr.");
+			chk(up != NULL, "SL1 the bring-up line exists in the file");
+			chk(first_access != NULL && up != NULL && up < first_access,
+			    "SL1 the bring-up line precedes the first access line");
+		}
+		chk(sim_step_n > 0 && sim_step_at[0] == 0,
+		    "SL1 the init line is recorded before any bus event");
 	ane_h15_remove(&pdev);
 
 	/* SL2: the steplog open fails: the run refuses before any MMIO. */
