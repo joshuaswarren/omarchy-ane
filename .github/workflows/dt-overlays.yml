@@ -111,5 +111,6 @@ jobs:
           gcc -Wall -Wextra -O2 -I ane/t6021 -o "$RUNNER_TEMP/test_ane_pwgate" tools/test_ane_pwgate.c
           "$RUNNER_TEMP/test_ane_pwgate"
           python3 tools/test_ane_pwgate_latch.py
+          make -C ane/h15 sim-test
           # every promote_chip flip: the flip-sensitive suites above on each flipped tree
           ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_promote_chip.py

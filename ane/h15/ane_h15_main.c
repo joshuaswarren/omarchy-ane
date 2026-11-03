@@ -217,7 +217,7 @@ MODULE_PARM_DESC(apply_overlay,
 static unsigned int pwgate_t6031;
 module_param(pwgate_t6031, uint, 0444);
 MODULE_PARM_DESC(pwgate_t6031,
-		 "Stage=run (5) only, T6031 only: the recorded PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the word at PWGATE+0x199c, log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first (the unconditional recorded order). Other values refuse in probe. Recorded behaviour, never run on an M3.");
+		 "Stage=run (5) only, rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. Never run on an M3.");
 
 static unsigned int pwgate_read;
 module_param(pwgate_read, uint, 0444);
@@ -1156,7 +1156,7 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  *      with scratch_boot=1 instead the whole macOS cold-boot order runs first: 0 to SCRATCH0..7, SCRATCH6=1,
  *      SCRATCH7=0 (read back), CPU_CONTROL 0 then 0x10, then a 1 ms poll of SCRATCH7 for the ready word
  *      0x08042006 (ane_h15_scratch_boot below);
- *      with pwgate_t6031 (T6031 rows only) macOS's PWGATE gate clear runs last, after the
+ *      with pwgate_t6031 (rows with a PWGATE window) macOS's PWGATE gate clear runs last, after the
  *      macOS SCRATCH sequence (if any) and before the first CPU_CONTROL write (ane_h15_pwgate_open below);
  *   5. for run_wait_ms every 10 ms: CPU_STATUS and I2A_CTRL; if I2A is not EMPTY it pops the message
  *      (I2A_RECV0 at wrapper+0x8830, I2A_RECV1 at +0x8838, the Linux apple-mailbox v4 layout the other T6030 ASCs
@@ -1167,8 +1167,8 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  * It writes only CPU_CONTROL (bits 4 and 5), never RVBAR, never the mailbox, never the DART; with
  * scratch_boot=1 it also writes the eight SCRATCH words, each only as 0 except SCRATCH6=1 (macOS's
  * helper zeroes all eight before it sets the wake bit, and its SCRATCH5 config value is unknown, so
- * SCRATCH5 receives 0 only); with pwgate_t6031 on a T6031 it also writes the one PWGATE word at
- * 0x199c (nothing else in that window). The order is the one the shipped system uses, never run on an M3. Nothing here
+ * SCRATCH5 receives 0 only); with pwgate_t6031 on a row with a PWGATE window it also writes the one PWGATE word of that row
+ * (0x199c on a T6031; nothing else in that window). The order is the one the shipped system uses, never run on an M3. Nothing here
  * programs the DART: a core that cannot fetch its firmware may simply sit started. That is a result, not a failure of this stage.
  */
 #define ANE_H15_ST_RUNNING	BIT(0)
@@ -1918,15 +1918,17 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  * PWGATE window, then polls it until bits 1:0 read 0, up to 0x1388 polls of 10 microseconds
  * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the macOS 27.0
  * device tree of the J516C: 0x292290000, 0x4000, next to the pmgr window at 0x292280000.
- * Only the T6031 row has this write step (pwgate_write); pwgate_read reads the word on the other rows. The hypothesis under test
- * (inferred, never measured): a gate still closed there is why the two T6031 stage 5 runs
- * ended with CPU_STATUS 0x30002a to 0x300028 and no mailbox message. Never run on an M3.
+ * The decoded CPU-power step of the T6030 and T8122 has the same sequence at the word of their
+ * row (+0x2b6c, +0x272c) in the third reg entry of their ANE node. The T6031 offset comes from the SoC data. The
+ * hypothesis under test (inferred): a gate still closed there is why the stage 5 runs on these chips ended with
+ * CPU_STATUS 0x30002a to 0x300028 and no mailbox message. A stage 2 read (pwgate_read) found the
+ * T8122 word closed on a 13-inch M3 MacBook Air. No stage 5 run with this step has happened.
  *
  * pwgate_t6031=1 reads the word first and writes 0 only when bits 1:0
  * are set; pwgate_t6031=2 always writes 0 first (the unconditional
- * macOS order). The poll runs at most 5000 times, 10 microseconds
+ * order). The poll runs at most 5000 times, 10 microseconds
  * apart; a timeout returns before the caller touches CPU_CONTROL. One
- * 32 bit write, to PWGATE+0x199c only, and the window is mapped and
+ * 32 bit write, to the row's PWGATE word only, and the window is mapped and
  * unmapped here. The caller owns the RESULT line.
  */
 #define ANE_H15_PWGATE_BITS	3u
@@ -2256,7 +2258,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "before RUN");
 
-	/* pwgate_t6031 (T6031 rows only): macOS's PWGATE gate clear, the
+	/* pwgate_t6031 (rows with a PWGATE window): macOS's PWGATE gate clear, the
 	 * last action before the core is released. On a poll timeout the run
 	 * stops here: nothing written to the core, nothing pinned, claims
 	 * released (the probe failure path unmaps and detaches). */
@@ -2469,9 +2471,9 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) only\n");
 		return -EINVAL;
 	}
-	if (pwgate_t6031 && !soc->pwgate_write) {
+	if (pwgate_t6031 && !soc->pwgate_pa) {
 		dev_err(&pdev->dev,
-			"REFUSED reason=pwgate_t6031: the %s row has no PWGATE write (T6031 only)\n",
+			"REFUSED reason=pwgate_t6031: the %s row has no PWGATE window\n",
 			soc->name);
 		return -EINVAL;
 	}
