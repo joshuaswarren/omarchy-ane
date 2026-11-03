@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- T6020 (M2 Pro) ANE on by default. (row 3c9389040f51,02ba4b462a7d; dkms,intree)
 - `ane/h16`: README-bringup records the first measured T8132 run. Stages dt and status ran once each on an M4 Mac mini: all five ps words read ACTUAL 0xf, RVBAR reads 0x10000000001, CPU_STATUS reads 0x30006a, both mailbox control words read 0x20001, `get_sync` returned -13 and was ignored by design, and no fault was logged. The README also gains the build recipe for a machine with no `/lib/modules/$(uname -r)/build` and the Limine boot path for a machine that does not use omarchy-mac-boot, and it no longer says that no silicon has run the module. `stage=boot` has not run.
 - `ane_h15`: the T8122 run-time overlay now enables ANE DART instances 0, 1 and 2, leaves the aperture window disabled and lists stream 0 of each on the `ane` node, as the T6030 overlay does. The enabled form is a new file, `t8122-ane-dart-experimental.dts`; the plain `t8122-ane-experimental.dts` boot overlay keeps its DART nodes disabled, because enabled nodes at boot hung a T6030, and a test pins that. After boot no ANE DART stream is enabled and the TCR and TTBR words are stale (a stage 6 run on a 13-inch M3 MacBook Air refused with `no-dart-stream-enabled`), so the DART driver has to set up the streams. On that machine the attach gave three live streams (stream 0 TCR 0x9). Offline checks do not establish a hardware start.
 - `ane_h15`: new parameter `run_pmgr` (stage 5 only, off by default). It reads the five pmgr ANE state words, read only, before RUN, just after the RUN write and after the wait, and logs each set on one line. On a 14-inch M3 Pro the five words read the same at all three points (system 0x1f0023ff, MPM 0x3ff, CPU 0x1f0003ff, TD 0x3ff, base 0x3ff), so no power domain changes after RUN. The core still shows no start (status 0x300028, no messages).
@@ -34,7 +35,6 @@ This release makes a failed H13 job recoverable without a reboot (#313). It also
 - `omarchy-ane-smoke`: refuse a run before launching the runner when bound devices span multiple dies or their die identity is unreadable. Report no die instead of guessing die 0.
 - docs: correct the M2 Pro default list and Ultra volunteer steps. Preserve other opt-in keys when adding a key. Remove the die-1 promotion sequence whose smoke result can name the wrong die.
 - `promotion_check`: do not judge a block whose check output binds both dies. This covers runtime and fallback rows in either line order, even with a scalar die field. Rows that bind one die keep their old behavior.
-- T6020 (M2 Pro) ANE back to opt-in. (row 3c9389040f51,02ba4b462a7d; dkms,intree)
 - The H13 driver attempts recovery before clearing a wedged session. Failed recovery retains the wedge, module pin and preserved buffer mappings. CPU state tests cover close, recovery failures and successful release; hardware retirement is not qualified by these tests.
 
 - `ane_h15`: add the off-by-default T8122 runtime overlay from its own J613/T8122 DT evidence. Keep DARTs disabled and omit `iommus`; correct ANE_BASE to depend on both ANE_TD and ANE_CPU. Offline checks do not establish hardware execution.
