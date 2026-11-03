@@ -798,7 +798,7 @@ static int ane_h15_dart_scan(struct ane_h15 *ane, unsigned int *live, unsigned i
 {
 	u32 p3[4] = { 0 }, p4, prot, lock, en[2], tcr, ttbr;
 	unsigned int inst, sid, nsid;
-	int ret;
+	int ref = -1, ret;
 
 	*live = *locked = 0;
 	for (inst = 0; inst < 4; inst++) {
@@ -812,12 +812,18 @@ static int ane_h15_dart_scan(struct ane_h15 *ane, unsigned int *live, unsigned i
 		if (ret)
 			return ret;
 		dev_info(ane->dev, "ane_h15 dart inst=%u params3=%#x\n", inst, p3[inst]);
-		if (inst == 0 && (!p3[0] || p3[0] == 0xffffffffu || !(p3[0] & 0xff00))) {
-			dev_err(ane->dev, "ane_h15 dart inst=0 PARAMS3 %#x is not a DART version word\n", p3[0]);
-			return -ENODEV;
+		/* the first scanned instance is the version reference, whatever its number */
+		if (ref < 0) {
+			if (!p3[inst] || p3[inst] == 0xffffffffu || !(p3[inst] & 0xff00)) {
+				dev_err(ane->dev, "ane_h15 dart inst=%u PARAMS3 %#x is not a DART version word\n",
+					inst, p3[inst]);
+				return -ENODEV;
+			}
+			ref = (int)inst;
 		}
-		if ((p3[inst] & 0xffff) != (p3[0] & 0xffff)) {
-			dev_info(ane->dev, "ane_h15 dart inst=%u version differs from inst 0: not scanned\n", inst);
+		if ((int)inst != ref && (p3[inst] & 0xffff) != (p3[ref] & 0xffff)) {
+			dev_info(ane->dev, "ane_h15 dart inst=%u version differs from inst %d: not scanned\n",
+				 inst, ref);
 			continue;
 		}
 		ane_h15_dart_note(ane, inst, "PARAMS4 PROTECT PROTECT_LOCK ENABLE_STREAMS[0..1]");
