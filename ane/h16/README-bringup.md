@@ -147,7 +147,7 @@ dmesg lines back.
 1. `stage=status` with `confirm_read=1` (`insmod ane_h16.ko optin=t8132
    stage=status confirm_read=1`).
    Expected: five ps words logged with ACTUAL (bits 7:4) = 0xf. On the one T8132 measured, RVBAR reads 0x10000000001, both mailbox
-   control words 0x20001 and CPU_STATUS 0x30006a (see "Measured on a T8132"); `get_sync -13 ignored` is expected and harmless while the five ps words still read ACTUAL 0xf. Send
+   control words 0x20001 and CPU_STATUS 0x30006a (see "Measured on a T8132"); `get_sync -13 ignored` was seen, and harmless, on the one T8132 measured while the five ps words still read ACTUAL 0xf. Send
    `dmesg | grep ane_h16`.
 2. Swap in `t8132-ane-dart-experimental.dtbo` and reboot, then
    `stage=boot hello_wait_ms=1000`. Expected: preload diffs only
@@ -223,9 +223,9 @@ each ran once, with `rmmod` after each. No SError, external abort or DART fault 
 | Five ps words, ACTUAL (bits 7:4) | 0xf on all five |
 | `get_sync` on the ANE device | -13, ignored by design; the domain links powered the engine |
 | RVBAR (engine +0x1050000) | 0x10000000001, latched |
-| CPU_STATUS (engine +0x1600048) | 0x30006a (0x30002a on the M3 parts) |
+| CPU_STATUS (engine +0x1600048) | 0x30006a (a stage 2 read on a 13-inch M3 MacBook Air before any start gave 0x30002a) |
 | Mailbox A2I and I2A control words | 0x20001 and 0x20001 |
-| ANE segment-ranges | none on this boot; the module logged that the boot has no ADT region or ANE node, so `stage=boot` would refuse |
+| ANE segment-ranges | none found on this boot: the module logged no ADT region, ANE node or segment-ranges, so `stage=boot` would refuse. Whether the firmware is preloaded on that boot is unknown |
 
 Not run: `stage=boot`, `read_scratch=1` and the DART overlay. The firmware stub on that machine is an older build (26.6.2) than the pinned
 27.0 payload. One boot, one run of each stage.
@@ -236,8 +236,8 @@ Not run: `stage=boot`, `read_scratch=1` and the DART overlay. The firmware stub 
   register map follows macOS behaviour (calibrated against the known T6021 row) and the ASC mailbox offsets come from the iBoot
   coprocessor table. The offsets read so far (RVBAR, CPU_STATUS and the mailbox control words) answered. The rest are unmeasured on H16
   hardware.
-- Whether the ANE firmware is preloaded on an M4 Linux boot is known for one boot chain only: on the m1n1, U-Boot and Limine boot above the
-  module found no `segment-ranges`, so `stage=boot` refuses there. Other boot chains are untried.
+- On the m1n1, U-Boot and Limine boot above, the module found no `segment-ranges`, so `stage=boot` refuses there. Whether the firmware is
+  preloaded on that boot is unknown. Other boot chains are untried.
 - The 27.0 CSNE host contract (init structure, channel-manager table,
   CONFIG_GET/PLATFORM_INFO/BUILDINFO opcodes) is not derived; the smoke
   stops at HELLO/EPMAP/STARTEP.
