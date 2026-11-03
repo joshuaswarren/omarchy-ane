@@ -38,9 +38,9 @@
  * (H14 0x1110+0x3c00+8), srcB 0x4d30 (0x1128+0x3c00+8), dst 0x5110 (0x1508+0x3c00+8), each
  * with a two-word payload (offset lo, hi). The H18 stream also carries one-word BAR records
  * at the base registers (srcA 0x4d10 and 0x4d14, dst 0x5108), always at slot 4 in the add
- * and the K01 stream. HYPOTHESIS, not proven by any run: those base records select the
- * kernel section at offset 0, so they take the KernelDMA role (tag 2). Slot numbers are
- * the stream's own patch indexes, as on H14. No H18 program has run on hardware.
+ * and the K01 stream; they name the zero descriptor entry and stay unpatched (see
+ * h18_ext_slot). Slot numbers are the stream's own patch indexes, as on H14. No H18
+ * program has run to completion on hardware.
  */
 #define H18_SRC_A	0x4d18u
 #define H18_SRC_B	0x4d30u
@@ -70,26 +70,34 @@ static uint32_t td_role_addr(uint32_t addr)
 	if (addr == H18_DST) {
 		return TD_DST;
 	}
-	if ((addr >= H18_KDMA_LO && addr < H18_KDMA_HI) || addr == 0x4d10u ||
-	    addr == 0x4d14u || addr == 0x5108u) {
+	if (addr >= H18_KDMA_LO && addr < H18_KDMA_HI) {
 		return TD_KDMA_LO;
 	}
 	return addr;
 }
 
 /*
- * H18 K01 carries three records that have header bit 29 (the H14 BAR-ref flag) set but are not
- * surface refs of the roles above: header 0x30210100 (bit 28 set, register 0x400, payload
- * 0x200000 0x82811340 0x107a0041, task 122), 0x20200000 (register 0, slot field 0, payload
- * 0x200000, task 123) and 0x30200000 (bit 28 set, register 0, task 141); 184 tasks in all.
- * Rule: on H18 a flagged record with bit 28 set, or at register 0 with slot field 0, is not a
- * BAR ref and the builder leaves it unpatched. HYPOTHESIS: they write the 0x200000 constant
- * (2 MiB, an on-chip memory address) rather than naming a surface. Not proven; no run used them.
+ * H18 records that carry header bit 29 (the H14 BAR-ref flag) but are not surface refs of the
+ * roles above. The builder leaves them unpatched (their payload stays as compiled).
+ *  - Slot field 4. The program descriptor of both compiled programs (add and K01) lists an
+ *    IOVA for each slot at +8+16*slot; the entry of slot 4 is zero in both (slots 5, 6 and 7
+ *    of the add are the surfaces a, b and y at 0x30000000, 0x30004000, 0x30008000; slot 0 is
+ *    the program's own TEXT and slot 1 a point 0x140 into it). The three one-word records at
+ *    the add's registers 0x4d10, 0x4d14 and 0x5108 name slot 4, so they name address zero.
+ *    An earlier revision gave them the KernelDMA role; that was a hypothesis and the M6 first
+ *    run (add accepted and started, no finish event) is consistent with it being wrong.
+ *  - K01 carries three flagged records that are not slot refs either: header 0x30210100 (bit 28
+ *    set, register 0x400, payload 0x200000 0x82811340 0x107a0041, task 122), 0x20200000
+ *    (register 0, slot field 0, payload 0x200000, task 123) and 0x30200000 (bit 28 set,
+ *    register 0, task 141); 184 tasks in all. HYPOTHESIS: they write the 0x200000 constant
+ *    (2 MiB) rather than name a surface.
+ * Rule: on H18 a flagged record with slot field 4, with bit 28 set, or at register 0 with slot
+ * field 0 is not a BAR ref. Nothing here has been shown to make an H18 program finish.
  */
 static int h18_ext_slot(uint32_t h)
 {
 	return ane_m2_chip == ANE_M2_CHIP_H18 &&
-	       ((h & 0x10000000u) ||
+	       ((h & 0x10000000u) || ((h >> 23) & 0x3fu) == 4 ||
 		((h & 0x7fffu) == 0 && ((h >> 23) & 0x3fu) == 0));
 }
 

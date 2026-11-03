@@ -54,7 +54,7 @@ fails=0
 if "$tmp/pack" --anec "$fx/program-0.anec" -o "$tmp/x.bin" > /dev/null 2>&1; then echo "FAIL the H14 role set accepted the H18 stream"; fails=1; fi
 "$tmp/pack" --chip h18 --anec "$fx/program-0.anec" --in 5="$fx/a.phys4096" --in 6="$fx/b.phys4096" -o "$tmp/prog.bin" > "$tmp/pack.out"
 refs=$("$tmp/refs" "$fx/program-0.anec" | tr '\n' ' ')
-if [ "$refs" != "4:2 5:5 6:6 7:4 " ]; then echo "FAIL derived slot:tag table is '$refs'"; fails=1; fi
+if [ "$refs" != "5:5 6:6 7:4 " ]; then echo "FAIL derived slot:tag table is '$refs'"; fails=1; fi
 python3 - "$tmp" "$fx" <<'EOF' || fails=1
 import struct, sys
 tmp, fx = sys.argv[1], sys.argv[2]
