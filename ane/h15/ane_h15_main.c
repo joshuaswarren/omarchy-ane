@@ -796,6 +796,7 @@ static int ane_h15_dart_rd(struct ane_h15 *ane, unsigned int inst, u32 off, u32 
 {
 	const struct ane_h15_soc *s = ane->soc;
 	u32 woff;
+	u64 dt;
 
 	if (!s->dart_off || inst > 3 || !ane_h15_dart_off_ok(off))
 		return -EPERM;
@@ -804,29 +805,34 @@ static int ane_h15_dart_rd(struct ane_h15 *ane, unsigned int inst, u32 off, u32 
 		return -EPERM;
 	ane_h15_step("read dart%u+%#x pa=%#llx\n", inst, off,
 		     s->engine_pa + woff);
-	*v = readl_relaxed(ane->engine + woff);
 	if (sweep_watch) {
 		u64 t0 = ktime_get_boottime_ns();
-		u64 dt = ktime_get_boottime_ns() - t0;
-		unsigned int k;
+		*v = readl_relaxed(ane->engine + woff);
+		dt = ktime_get_boottime_ns() - t0;
+		{
+			unsigned int k;
 
-		ane_h15_step("dart read wall=%lluus\n", dt / 1000ULL);
-		if (dt > (u64)sweep_watch_us * 1000ULL) {
-			dev_crit(ane->dev,
-				 "ane_h15 sweep stall: dart%u+%#x took %lluus\n",
-				 inst, off, dt / 1000ULL);
-			for (k = 0; k < 5; k++) {
-				u32 pv;
-				ane_h15_step("sweep stall pmgr.%s pa=%#llx\n",
-					     ane_h15_ps_names[k],
-					     ane->soc->pmgr_pa + ane->soc->ps_off[k]);
-				pv = readl_relaxed(ane->pmgr + ane->soc->ps_off[k]);
-				ane_h15_step("sweep stall pmgr.%s reads %#x\n",
-					     ane_h15_ps_names[k], pv);
+			ane_h15_step("dart read wall=%lluus\n",
+				     dt / 1000ULL);
+			if (dt > (u64)sweep_watch_us * 1000ULL) {
+				dev_crit(ane->dev,
+					 "ane_h15 sweep stall: dart%u+%#x took %lluus\n",
+					 inst, off, dt / 1000ULL);
+				for (k = 0; k < 5; k++) {
+					u32 pv;
+					ane_h15_step("sweep stall pmgr.%s pa=%#llx\n",
+						     ane_h15_ps_names[k],
+						     ane->soc->pmgr_pa + ane->soc->ps_off[k]);
+					pv = readl_relaxed(ane->pmgr + ane->soc->ps_off[k]);
+					ane_h15_step("sweep stall pmgr.%s reads %#x\n",
+						     ane_h15_ps_names[k], pv);
+				}
+				ane_h15_step("sweep stall dart%u+%#x reads %#x\n",
+					     inst, off, *v);
 			}
-			ane_h15_step("sweep stall dart%u+%#x reads %#x\n",
-				     inst, off, *v);
 		}
+	} else {
+		*v = readl_relaxed(ane->engine + woff);
 	}
 	return 0;
 }

@@ -2337,34 +2337,52 @@ static void pos_steplog_stop(void)
 	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
 	    "FC ps_assert without pwgate_t6031 refuses before any bus access");
 
-	/* FS2: sweep_watch_us=0 makes every DART sweep read fire the stall
-	 * snapshot (the virtual clock costs about 1 ms per read, above the
-	 * zero threshold), so the whole snapshot path runs per read. */
+	/* FS2: exactly one injected stall (one dart0 read slowed to 50 us by the
+	 * virtual clock), sweep_watch_us=10 above it: the wall line must contain
+	 * the read (wall >= 50), and exactly one snapshot block (five ps reads)
+	 * fires for the stalled read. Fast reads produce no snapshot. */
 	reset_all();
 	run_setup(s, "apple,t6031-ane", 0x0);
 	dart_set(s, true);
 	pwgate_t6031 = 1;
 	stop_after_pwgate = true;
 	sweep_watch = true;
-	sweep_watch_us = 0;
+	sweep_watch_us = 10;
 	steplog = "/tmp/sim-step.log";
+	sim_stall_us = 50;
+	sim_stall_lo = s->engine_pa + s->dart_off + ane_h15_dart_rel[1] + 0x200;
+	sim_stall_hi = sim_stall_lo + 4;
+	sim_stall_reads_left = 1;
 	ret = probe_now();
-	ret = probe_now();
-	chk(ret == 0 && strstr(sim_steplog_buf, "module init stage=5") != NULL,
-	    "FS2 the init line is in the file");
-	chk(strstr(sim_steplog_buf, "dart read wall=") != NULL,
-	    "FS2 the wall lines are in the file");
-	chk(strstr(sim_steplog_buf, "sweep stall pmgr.ANE_MPM") != NULL,
-	    "FS2 the ps snapshot is in the file");
-	chk(strstr(sim_steplog_buf, "sweep stall dart") != NULL,
-	    "FS2 the stall dart line is in the file");
+	chk(ret == 0, "FS2 the stall run passes");
 	{
-		const char *psline = strstr(sim_steplog_buf, "read pmgr.ANE_SYS");
-		const char *qmark = strstr(sim_steplog_buf, "q=");
-		chk(psline != NULL && qmark != NULL && qmark < psline,
-		    "FS2 the first ps read line carries the q clock");
+		const char *q;
+		int wall_lines = 0, slow_lines = 0, snap_reads = 0;
+		unsigned long wall_us = 0;
+
+		q = sim_steplog_buf;
+		while ((q = strstr(q, "dart read wall="))) {
+			unsigned long v = strtoul(q + strlen("dart read wall="), NULL, 10);
+			wall_lines++;
+			if (v >= 50)
+				slow_lines++;
+			wall_us = v;
+			q++;
+		}
+		q = sim_steplog_buf;
+		while ((q = strstr(q, "sweep stall pmgr."))) {
+			snap_reads++;
+			q++;
+		}
+		chk(wall_lines >= 1 && slow_lines == 1,
+		    "FS2 exactly one read is over the threshold, the rest fast");
+		chk(wall_us >= 50,
+		    "FS2 the wall line carries the real stalled microseconds");
+		chk(snap_reads == 5,
+		    "FS2 exactly one snapshot block (five ps reads) for the slow read");
+		chk(strstr(sim_steplog_buf, "sweep stall dart") != NULL,
+		    "FS2 the slow read's own value is logged after the snapshot");
 	}
-	remove_if_probed();
 	remove_if_probed();
 
 	/* FS3: sweep_watch off: no wall lines and no snapshot. */
