@@ -956,6 +956,25 @@ static void sc_neg_dart_map_partial(void)
 	    "partial map unwound before free_stage");
 }
 
+/* apply_overlay removes iommus while the DART nodes are disabled, and the device then has no IOMMU domain. stage=boot must refuse before it
+ * writes anything to the engine: firmware must never run without translation. */
+static void sc_neg_no_domain(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	sim_dart = NULL;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -ENODEV, "probe returns -ENODEV");
+	chk(sim_log_count("verdict=REFUSED reason=dart-map") == 1, "RESULT REFUSED dart-map");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	chk(sim_dma_allocs == sim_dma_frees, "refusal frees the staged buffer (no DMA leak)");
+	chk(sim_rpm_gets == sim_rpm_puts, "power claim released");
+}
+
 static void sc_neg_unknown_stage(void)
 {
 	int ret;
@@ -1022,6 +1041,8 @@ int main(int argc, char **argv)
 		sc_neg_foreign_preload();
 	else if (!strcmp(sc, "neg-dart-map"))
 		sc_neg_dart_map_partial();
+	else if (!strcmp(sc, "neg-no-domain"))
+		sc_neg_no_domain();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else {
