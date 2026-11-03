@@ -73,3 +73,35 @@ correlation, not a decoded cause.
 If ANE work continues, it must not include engine-window access on this
 host. The read path is no longer worth the reset cost; the mailbox and
 register map are already measured, and repeating them adds no evidence.
+
+## Correction: the engine-read correlation was confounded
+
+On boot `b4c6a3e7…`, with the USB mass-storage chain removed and the host
+otherwise idle, the same probes now run cleanly:
+
+| Probe | Result |
+| --- | --- |
+| CPU_STATUS only (`0x1600048`) | `0x30006a`, no reset |
+| SCRATCH0 only (`0x1880020`) | `0x0`, no reset |
+| A2I_CTRL only (`0x1608110`) | `0x20001`, no reset |
+| RVBAR only (`0x1050000`, 64-bit) | `0x10000000001`, no reset |
+| I2A_CTRL only (`0x1608114`) | `0x20001`, no reset |
+| **full read probe** (all of the above) | PASS, and the host stayed up past the window that previously reset it |
+
+The full probe is the exact one that reset `3e32247f…` at 13:47 and
+`f1a4bae3…` at 13:41. On this boot it passed and the host has been up
+over 48 minutes with several ANE probes.
+
+So the earlier "engine access resets the host" conclusion does not hold
+as stated. The resets coincided with an unstable environment (the USB
+mass-storage reset loop, memory pressure with `systemd-oomd` killing the
+terminal). Engine access is not reliably fatal.
+
+Labels to keep straight:
+- Proven: the probes read correctly and the PMU boot error appears after
+  an unclean reset.
+- Not proven: that engine access causes the reset. The clean-host re-run
+  argues against it.
+- Still unknown: what actually reset the host during the 13:07–13:47
+  window. The USB chain is the leading candidate but was already removed
+  for the last two, so something else contributed.
