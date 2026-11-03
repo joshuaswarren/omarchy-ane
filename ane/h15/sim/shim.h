@@ -748,9 +748,13 @@ extern char sim_steplog_buf[8192];
 extern int sim_steplog_len;
 extern unsigned long sim_steplog_fsyncs;
 extern int sim_steplog_open_fail;
+extern int sim_steplog_mode;
+extern unsigned short sim_step_at[2048];
+extern int sim_step_n;
 static inline struct file *filp_open(const char *path, int flags, int mode)
 {
-	(void)path; (void)flags; (void)mode;
+	(void)path; (void)flags;
+	sim_steplog_mode = mode;
 	if (sim_steplog_open_fail)
 		return (struct file *)ERR_PTR(-ENOENT);
 	return (struct file *)1;
@@ -768,6 +772,9 @@ static inline ssize_t kernel_write(struct file *f, const void *buf, size_t n, vo
 	memcpy(sim_steplog_buf + sim_steplog_len, buf, n);
 	sim_steplog_len += n;
 	sim_steplog_buf[sim_steplog_len] = 0;
+	/* events seen when this line was written: proves the line precedes its access */
+	if (sim_step_n < (int)(sizeof(sim_step_at) / sizeof(sim_step_at[0])))
+		sim_step_at[sim_step_n++] = (unsigned short)sim_n_events;
 	return n;
 }
 static inline int scnprintf(char *b, size_t sz, const char *fmt, ...)

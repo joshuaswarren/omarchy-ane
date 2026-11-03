@@ -74,7 +74,10 @@
 #include <linux/iommu.h>
 #include <linux/bitops.h>
 #include <linux/iopoll.h>
+#include <linux/file.h>
+#include <linux/fs.h>
 #include <linux/jiffies.h>
+#include <linux/ktime.h>
 #include <linux/minmax.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
@@ -223,12 +226,12 @@ MODULE_PARM_DESC(pwgate_t6031,
 static bool stop_after_pwgate;
 module_param(stop_after_pwgate, bool, 0444);
 MODULE_PARM_DESC(stop_after_pwgate,
-		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1, with scratch_boot=1, or on any other stage.");
+		 "Stage=run (5) with pwgate_t6031 only, without scratch_boot: stop right after the PWGATE step, before any CPU_CONTROL write. The RESULT reason carries the pwgate state and stop-after-pwgate. Splits a crash between the gate write and the core start. Off by default. Refuses, touching nothing, without pwgate_t6031=1 or with scratch_boot=1 (pwgate_t6031 itself enforces stage 5).");
 
 static char *steplog;
 module_param(steplog, charp, 0444);
 MODULE_PARM_DESC(steplog,
-		 "Path: append one line, fsynced, before every MMIO access of the run stage (the PWGATE word, CPU_CONTROL reads and writes, SCRATCH writes and the SCRATCH7 poll). The file survives a reset that eats the kmsg ring, so a crashed run names its last access. Slows the polls; every line hits the disk before the next access runs. Off by default. The open fails: the run refuses before any MMIO.");
+		 "Path: append one line, fsynced, before every MMIO access from the first stage access on: PWGATE reads and write, CPU_CONTROL reads and writes, SCRATCH reads and writes, the engine word reads, the pmgr ps reads, the DART reads, the doorbell and IPI writes, and the first and last pass of each poll. The file survives a reset that eats the kmsg ring, so a crashed run names its last access. Every line hits the disk before the access runs. The open happens after the power-domain bring-up, so those ps reads are not in the file. Off by default. A failed open refuses the run before the stage's MMIO.");
 static unsigned int pwgate_read;
 module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
@@ -376,8 +379,12 @@ static int ane_h15_stage_idx(const char *name, unsigned int *out)
 
 /* ---- pmgr ACTUAL gate (always runs before any engine access) ---- */
 
+static void ane_h15_step(const char *fmt, ...);
+
 static bool ane_h15_ps_on(struct ane_h15 *ane, unsigned int i, u32 *v)
 {
+	ane_h15_step("read pmgr.%s pa=%#llx\n", ane_h15_ps_names[i],
+		     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
 	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
 	return FIELD_GET(ANE_H15_PS_ACTUAL, *v) == ANE_H15_PS_ON;
 }
@@ -467,6 +474,8 @@ static int ane_h15_stage_status(struct ane_h15 *ane)
 		dev_crit(ane->dev, "ane_h15 read pmgr.%s pa=%#llx off=%#x",
 			 ane_h15_ps_names[i], ane->soc->pmgr_pa + ane->soc->ps_off[i],
 			 ane->soc->ps_off[i]);
+		ane_h15_step("read pmgr.%s pa=%#llx\n", ane_h15_ps_names[i],
+			     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
 		v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
 		dev_info(ane->dev,
 			 "ane_h15 word=%s pa=%#llx value=%#x actual=%#lx pass=true",
@@ -546,6 +555,7 @@ static int ane_h15_read_word(struct ane_h15 *ane, const char *name, u32 off,
 	}
 	dev_crit(ane->dev, "ane_h15 read %s pa=%#llx off=%#x\n", name,
 		 ane->soc->engine_pa + off, off);
+	ane_h15_step("read %s pa=%#llx\n", name, ane->soc->engine_pa + off);
 	*v = readl_relaxed(ane->engine + off);
 	dev_info(ane->dev, "ane_h15 word=%s pa=%#llx value=%#x\n", name,
 		 ane->soc->engine_pa + off, *v);
@@ -764,6 +774,8 @@ static int ane_h15_dart_rd(struct ane_h15 *ane, unsigned int inst, u32 off, u32 
 	woff = s->dart_off + ane_h15_dart_rel[inst] + off;
 	if ((u64)woff + 4 > s->engine_size || woff + 4 > ANE_H15_FATAL_LO)
 		return -EPERM;
+	ane_h15_step("read dart%u+%#x pa=%#llx\n", inst, off,
+		     s->engine_pa + woff);
 	*v = readl_relaxed(ane->engine + woff);
 	return 0;
 }
@@ -1522,6 +1534,7 @@ static int ane_h15_scr_rd(struct ane_h15 *ane, unsigned int i, u32 *v)
 	if (i >= ANE_H15_SCRATCH_N || (u64)off + 4 > ane->soc->engine_size)
 		return -EPERM;
 	dev_crit(ane->dev, "ane_h15 read SCRATCH%u pa=%#llx\n", i, ane->soc->engine_pa + off);
+	ane_h15_step("read SCRATCH%u pa=%#llx\n", i, ane->soc->engine_pa + off);
 	*v = readl_relaxed(ane->engine + off);
 	return 0;
 }
@@ -1542,6 +1555,7 @@ static void ane_h15_ipi_poll(struct ane_h15 *ane)
 
 	if ((u64)ANE_H15_IPI_ACK_OFF + 4 > ane->soc->engine_size)
 		return;
+	ane_h15_step("read IPI_PENDING pa=%#llx\n", ane->soc->engine_pa + ANE_H15_IPI_PENDING_OFF);
 	pend = readl_relaxed(ane->engine + ANE_H15_IPI_PENDING_OFF);
 	if (pend != ane->ipi_last) {
 		dev_info(ane->dev, "ane_h15 read IPI_PENDING=%#x pa=%#llx\n", pend, ane->soc->engine_pa + ANE_H15_IPI_PENDING_OFF);
@@ -1550,6 +1564,7 @@ static void ane_h15_ipi_poll(struct ane_h15 *ane)
 	if (pend && ane->ipi_acks < ANE_H15_IPI_ACK_MAX) {
 		ane->ipi_acks++;
 		dev_crit(ane->dev, "ane_h15 write IPI_ACK=%#x pa=%#llx\n", pend, ane->soc->engine_pa + ANE_H15_IPI_ACK_OFF);
+		ane_h15_step("write IPI_ACK=%#x pa=%#llx\n", pend, ane->soc->engine_pa + ANE_H15_IPI_ACK_OFF);
 		writel(pend, ane->engine + ANE_H15_IPI_ACK_OFF);
 	}
 }
@@ -1589,8 +1604,11 @@ static void ane_h15_pmgr_dump(struct ane_h15 *ane, const char *when)
 	u32 v[5];
 	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(v); i++)
+	for (i = 0; i < ARRAY_SIZE(v); i++) {
+		ane_h15_step("read pmgr.%s pa=%#llx\n", ane_h15_ps_names[i],
+			     ane->soc->pmgr_pa + ane->soc->ps_off[i]);
 		v[i] = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
+	}
 	dev_info(ane->dev, "ane_h15 pmgr %s: ANE_SYS=%#x ANE_MPM=%#x ANE_CPU=%#x ANE_TD=%#x ANE_BASE=%#x\n", when,
 		 v[0], v[1], v[2], v[3], v[4]);
 }
@@ -1725,6 +1743,7 @@ static int ane_h15_cmd(struct ane_h15 *ane, struct ane_h15_ring *io, u16 op, u32
 	dma_wmb();
 	dev_crit(ane->dev, "ane_h15 write doorbell BIT(%u) pa=%#llx for command %#x slot %u block iova %#llx\n", io->bit,
 		 ane->soc->engine_pa + ANE_H15_DOORBELL_OFF, op, io->cursor, (u64)dma);
+	ane_h15_step("write doorbell BIT(%u) pa=%#llx\n", io->bit, ane->soc->engine_pa + ANE_H15_DOORBELL_OFF);
 	writel(BIT(io->bit), ane->engine + ANE_H15_DOORBELL_OFF);
 	for (waited = 0; waited < hs_wait_ms; waited++) {
 		ane_h15_ipi_poll(ane);
@@ -2026,10 +2045,12 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 	writel(0, pw + s->pwgate_word);
 	for (i = 0; i < ANE_H15_PWGATE_POLLS; i++) {
 		usleep_range(10, 10);
-		ane_h15_step("read PWGATE pa=%#llx\n", word_pa);
-	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
+		if (i == 0)
+			ane_h15_step("poll PWGATE begin pa=%#llx\n", word_pa);
+		dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 		v = readl_relaxed(pw + s->pwgate_word);
 		if (!(v & ANE_H15_PWGATE_BITS)) {
+			ane_h15_step("poll PWGATE end %u passes word=%#x\n", i + 1, v);
 			dev_info(ane->dev, "ane_h15 pwgate open after %u poll(s), final word %#x\n",
 				 i + 1, v);
 			snprintf(suffix, sz, "pwgate=%s word=0x%x",
@@ -2038,6 +2059,8 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 			return 0;
 		}
 	}
+	ane_h15_step("poll PWGATE end timeout %u passes word=%#x\n",
+		     (u32)ANE_H15_PWGATE_POLLS, v);
 	dev_err(ane->dev, "ane_h15 pwgate: bits 1:0 still set after %u polls, final word %#x; not starting the core\n",
 		(u32)ANE_H15_PWGATE_POLLS, v);
 	iounmap(pw);
@@ -2139,14 +2162,18 @@ static int ane_h15_scratch_boot(struct ane_h15 *ane, u32 ctrl, bool *s7_ready,
 		return ret;
 	for (waited = 0; waited < sb_wait_ms; waited++) {
 		usleep_range(1000, 1000);
-		ane_h15_step("poll SCRATCH7\n");
+		if (waited == 0)
+			ane_h15_step("poll SCRATCH7 first pass pa=%#llx\n",
+				     ane->soc->engine_pa + ANE_H15_SCRATCH_OFF + 4 * 7);
 		if (ane_h15_scr_peek(ane, 7) == ANE_H15_HS_READY) {
 			*s7_ready = true;
+			ane_h15_step("poll SCRATCH7 end ready after %u passes\n", waited + 1);
 			dev_info(ane->dev, "ane_h15 scratch_boot SCRATCH7 ready word %#x after %ums\n",
 				 ANE_H15_HS_READY, waited + 1);
 			return 0;
 		}
 	}
+	ane_h15_step("poll SCRATCH7 end timeout %u passes\n", sb_wait_ms);
 	dev_err(ane->dev, "ane_h15 scratch_boot SCRATCH7 ready word not seen within %ums\n", sb_wait_ms);
 	return 0;
 }
@@ -2558,10 +2585,6 @@ static int ane_h15_probe(struct platform_device *pdev)
 			"REFUSED reason=stop_after_pwgate: needs pwgate_t6031=1 without scratch_boot\n");
 		return -EINVAL;
 	}
-	if (stop_after_pwgate && stage_idx != 5) {
-		dev_err(&pdev->dev, "REFUSED reason=stop_after_pwgate: stage=run (5) only\n");
-		return -EINVAL;
-	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
 	if (pwgate_read > 1) {
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);
@@ -2641,7 +2664,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 	ret = ane_h15_steplog_open(&pdev->dev);
 	if (ret) {
 		ane_h15_result(NULL, stage_idx, "REFUSED", "steplog-open-failed");
-		pm_runtime_put_noidle(&pdev->dev);
+		pm_runtime_put_sync(&pdev->dev);
 		pm_runtime_disable(&pdev->dev);
 		ane_h15_detach_pds(ane);
 		ane_h15_unmap_windows(ane);
