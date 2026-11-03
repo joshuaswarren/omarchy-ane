@@ -31,7 +31,7 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   ACTUAL=0xf, then logs RVBAR, CPU_STATUS and the two mailbox control
   words, each address first. Without `confirm_read=1` it refuses before it
   maps, powers or reads anything. The eight SCRATCH words are read only
-  with `read_scratch=1`; nobody has read them on an M4.
+  with `read_scratch=1`. They read 0x0 on one M4 Mac mini (see "Measured on a T8132").
 - `stage=boot` (EXPERIMENTAL): firmware-boot smoke. Validates the
   iBoot-preloaded image against the pinned 27.0 payload, copies it into
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
