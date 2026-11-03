@@ -2024,6 +2024,14 @@ int main(int argc, char **argv)
 		usage();
 		return 2;
 	}
+	if (ports_mode && expect_bind) {
+		fprintf(stderr, "--expect-bind applies to index mode, not --ports\n");
+		return 2;
+	}
+	if (ports_mode && tile_shift) {
+		fprintf(stderr, "--tile-shift applies to index mode, not --ports\n");
+		return 2;
+	}
 	if (ports_mode && read_port_file(ports_path, &pr) < 0) {
 		free_port_read(&pr);
 		return 1;
@@ -2034,16 +2042,6 @@ int main(int argc, char **argv)
 		return ret;
 	}
 
-	if (ports_mode && expect_bind) {
-		fprintf(stderr, "--expect-bind applies to index mode, not --ports\n");
-		free_port_read(&pr);
-		return 2;
-	}
-	if (ports_mode && tile_shift) {
-		fprintf(stderr, "--tile-shift applies to index mode, not --ports\n");
-		free_port_read(&pr);
-		return 2;
-	}
 	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count, dev)
 			: (tile_shift ? __ane_init_shift(anec, dev, tile_shift)
 				      : __ane_init(anec, dev));

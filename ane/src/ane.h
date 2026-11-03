@@ -52,6 +52,14 @@ struct ane_device {
 	int irq;
 	struct mutex iommu_lock;
 	struct mutex engine_lock;
+
+	/*
+	 * Latest event-count overflow (line << 31 | count) and last event INFO
+	 * word popped. Written under engine_lock by ane_tm_collect_events and
+	 * read by the wedge report, so each engine reports its own.
+	 */
+	u32 last_overflow;
+	u32 last_info;
 	struct list_head bo_list;
 
 	/*

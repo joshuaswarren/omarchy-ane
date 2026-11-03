@@ -130,6 +130,19 @@ def main():
                "a plan matching the stream passes silently")
         for spec in ("", "4,5", "4,5:", "4,x:6", "4,5:6,32", ":"):
             expect(run(spec).returncode == 4, f"malformed spec {spec!r} is an error")
+    make = subprocess.run(["make", "-C", str(ROOT / "tools"), "ane-run"],
+                          capture_output=True, text=True, check=False)
+    if make.returncode:
+        sys.exit(f"ane-run build failed:\n{make.stderr}")
+    for flag, value in (("--expect-bind", "4:5"), ("--tile-shift", "9")):
+        # Through the real main(): the option check must fire before the
+        # --ports file is read, so a dry run cannot slip past it.
+        got = subprocess.run(
+            [str(ROOT / "tools/ane-run"), "--anec", "/nonexistent.anec",
+             "--ports", "/nonexistent.json", "--dry-run", flag, value],
+            capture_output=True, text=True, check=False)
+        expect(got.returncode == 2 and "applies to index mode" in got.stderr,
+               f"--ports --dry-run {flag} exits 2 before the dry run")
     print(f"RESULT: {failures} failures")
     return failures != 0
 

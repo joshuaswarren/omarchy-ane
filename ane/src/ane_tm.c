@@ -220,12 +220,6 @@ static void ane_tm_push_tq(struct ane_device *ane, struct ane_request *req)
  */
 u32 ane_last_tmst;
 
-/* Last event-count overflow (line << 31 | count) and the last event INFO
- * word popped, for the wedge report: an -EIO from this drain is otherwise
- * indistinguishable from a DART fault in the kernel log. */
-static u32 ane_last_overflow;
-static u32 ane_last_info;
-
 static int ane_tm_collect_events(struct ane_device *ane,
 				 struct ane_request *req, u32 *finished)
 {
@@ -233,7 +227,7 @@ static int ane_tm_collect_events(struct ane_device *ane,
 		u32 count = tm_read32(ane, TM_IRQ_EVTC(line));
 
 		if (count > 64) {
-			ane_last_overflow = (line << 31) | (count & 0x7fffffff);
+			ane->last_overflow = (line << 31) | (count & 0x7fffffff);
 			return -EIO;
 		}
 		for (u32 n = 0; n < count; n++) {
@@ -242,7 +236,7 @@ static int ane_tm_collect_events(struct ane_device *ane,
 			tm_read32(ane, TM_IRQ_UNK1(line));
 			ane_last_tmst = tm_read32(ane, TM_IRQ_TMST(line));
 			tm_read32(ane, TM_IRQ_UNK2(line));
-			ane_last_info = info;
+			ane->last_info = info;
 			if (req && info == (0x05000000 | (req->nid << 16) |
 					    (req->td_count - 1)))
 				*finished |= BIT(line);
@@ -276,8 +270,8 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 
 	lockdep_assert_held(&ane->engine_lock);
 	ane_dart_mask(ane);
-	ane_last_overflow = 0;
-	ane_last_info = 0;
+	ane->last_overflow = 0;
+	ane->last_info = 0;
 
 	err = ane_tm_collect_events(ane, NULL, &finished);
 	if (err < 0) {
@@ -377,7 +371,7 @@ wedge:
 				tm_read32(ane, TM_ERROR3),
 				tm_read32(ane, TM_IRQ_EVTC(0)),
 				tm_read32(ane, TM_IRQ_EVTC(1)),
-				ane_last_overflow, ane_last_info);
+				ane->last_overflow, ane->last_info);
 	}
 	ane_dart_release_scratch(ane, scratch, scratch_pages);
 	ane_dart_unmask(ane);
