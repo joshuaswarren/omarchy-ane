@@ -4,7 +4,7 @@
 #   make KERNELDIR=.../omarchy-linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h16.o
-	ane_h16-objs := ane_h16_main.o ane_h16_soc.o
+	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ane_h16_overlay.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
@@ -22,9 +22,9 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello
+POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds pos-one-pd pos-boot pos-boot-hello pos-getsync-eacces
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-unknown-stage
+	neg-dart-map neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c
@@ -41,7 +41,7 @@ sim-negative: $(SIM_OUT)
 sim-discriminate: $(SIM_OUT)
 	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim
 	@cp sim/sim_harness.c sim/shim.h /tmp/ane-h16-discrim/sim/ && cp -r sim/inc /tmp/ane-h16-discrim/sim/
-	@cp ane_h16_soc.c ane_h16.h /tmp/ane-h16-discrim/
+	@cp ane_h16_soc.c ane_h16.h ane_h16_overlay.h /tmp/ane-h16-discrim/
 	@sed 's/if (memcmp(digest, img->sha256, sizeof(digest))) {/if (0) {/' \
 	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
 	@grep -q 'if (0) {' /tmp/ane-h16-discrim/ane_h16_main.c
@@ -74,7 +74,18 @@ sim-discriminate: $(SIM_OUT)
 	else echo "ok: partial-map-leak mutation caught by neg-dart-map"; fi
 	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3 sim/sim_h16.d4
 
-sim: sim-test sim-negative sim-discriminate
+sim: sim-test sim-negative sim-discriminate sim-overlay
+
+OVL_OUT ?= sim/sim_overlay
+
+$(OVL_OUT): sim/sim_overlay.c ane_h16_overlay.c ane_h16_overlay.h sim/ovl/linux/of.h
+	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim/ovl -o $@ sim/sim_overlay.c
+
+sim-overlay: $(OVL_OUT)
+	$(OVL_OUT)
+
+sim-mutation:
+	python3 sim/mutate.py
 
 $(NEG): $(SIM_OUT)
 	$(SIM_OUT) $@

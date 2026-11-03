@@ -12,11 +12,12 @@
  *   with their evidence tier. No MMIO access of any kind: the first
  *   run on a volunteer machine is hardware-silent.
  *
- *   stage=status (default): enable the ANE power domains named in the
- *   device node, wait until every pmgr ANE state word reads ACTUAL=0xf
- *   (the standing rule from the T6021 program: never touch the engine
- *   window before that), then log RVBAR, CPU_STATUS, SCRATCH0..7 and
- *   the mailbox control words. Read-only apart from the power domains.
+ *   stage=status (needs confirm_read=1): enable the ANE power domains
+ *   named in the device node, wait until every pmgr ANE state word
+ *   reads ACTUAL=0xf (the standing rule from the T6021 program: never
+ *   touch the engine window before that), then log RVBAR, CPU_STATUS and
+ *   the two mailbox control words. The SCRATCH words are read only with
+ *   read_scratch=1. Read-only apart from the power domains.
  *
  *   stage=boot (EXPERIMENTAL, firmware-boot smoke only): everything
  *   "status" does, plus: parse the boot ADT from the reserved-memory
@@ -34,7 +35,7 @@
  *   for those is not derived yet (receipts/2026-10-03-ane-h16).
  *
  * The module refuses to probe unless its opt-in key is set:
- *   insmod ane_h16.ko optin=t8132 stage=status
+ *   insmod ane_h16.ko optin=t8132 stage=status confirm_read=1
  * There is no MODULE_DEVICE_TABLE, so nothing autoloads it.
  *
  * After stage=boot starts the firmware the module must not be unloaded;
@@ -62,21 +63,38 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/pm_domain.h>
 #include <linux/sizes.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
 #include "ane_h16.h"
+#include "ane_h16_overlay.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
 MODULE_PARM_DESC(optin,
 		 "Opt-in key: must equal the SoC row name (t8132, t6040, t6041, ...) or probe returns -EPERM.");
 
-static char *stage = "status";
+static char *stage = "dt";
 module_param(stage, charp, 0444);
 MODULE_PARM_DESC(stage,
-		 "dt/0: parse the DT and print word groups, no MMIO. status/1 (default): power up and log registers only. boot/3: firmware-boot smoke (EXPERIMENTAL). 2 is not an H16 module stage (the ladder's fw-pin step runs in userspace).");
+		 "dt/0 (default): parse the DT and print word groups, no MMIO. status/1: power up and log registers only; needs confirm_read=1. boot/3: firmware-boot smoke (EXPERIMENTAL); needs confirm_read=1. 2 is not an H16 module stage (the ladder's fw-pin step runs in userspace).");
+
+static bool confirm_read;
+module_param(confirm_read, bool, 0444);
+MODULE_PARM_DESC(confirm_read,
+		 "Required for stage=status and stage=boot. Without it the module refuses before it maps, powers or reads anything. Default off.");
+
+static bool read_scratch;
+module_param(read_scratch, bool, 0444);
+MODULE_PARM_DESC(read_scratch,
+		 "stage=status: also read the eight SCRATCH words. Nobody has read them on an M4, and a read the block does not answer can hang the machine. Default off.");
+
+static bool apply_overlay;
+module_param(apply_overlay, bool, 0444);
+MODULE_PARM_DESC(apply_overlay,
+		 "optin=t6040 only. The tree holds the ANE node, its five power controllers and its DART nodes but marks them disabled: enable the five power controllers and the ANE node and complete the ANE node (pmgr window, reg-names, apple,ane-type, power-domains) in one change set, then register the driver. The DART nodes are not touched. Unloading reverts it. Default off.");
 
 static unsigned int ps_wait_ms = 500;
 module_param(ps_wait_ms, uint, 0444);
@@ -146,11 +164,16 @@ struct ane_h16_seg {
 	u64 size;
 };
 
+#define ANE_H16_MAX_PD	5
+
 struct ane_h16 {
 	struct device *dev;
 	const struct ane_h16_soc *soc;
 	void __iomem *engine;
 	void __iomem *pmgr;
+	struct device *pd_dev[ANE_H16_MAX_PD];
+	struct device_link *pd_link[ANE_H16_MAX_PD];
+	int pd_count;
 	struct ane_h16_seg segs[2];
 	bool fw_touched;
 	bool fw_started;
@@ -160,6 +183,92 @@ struct ane_h16 {
 	size_t stage_size;
 	struct iommu_domain *domain;
 };
+
+/* Release every domain this module attached, newest first. */
+static void ane_h16_detach_pds(struct ane_h16 *ane)
+{
+	int i;
+
+	for (i = ane->pd_count - 1; i >= 0; i--) {
+		if (ane->pd_link[i])
+			device_link_del(ane->pd_link[i]);
+		if (ane->pd_dev[i])
+			dev_pm_domain_detach(ane->pd_dev[i], true);
+		ane->pd_link[i] = NULL;
+		ane->pd_dev[i] = NULL;
+	}
+	ane->pd_count = 0;
+}
+
+/* A platform device attaches a power domain by itself only when exactly one is listed. With several,
+ * the driver attaches each one, as ane_h15 does. */
+static int ane_h16_attach_pds(struct ane_h16 *ane)
+{
+	struct device *dev = ane->dev;
+	int count, i;
+
+	count = of_count_phandle_with_args(dev->of_node, "power-domains", "#power-domain-cells");
+	if (count <= 1)
+		return 0;
+	if (count > ANE_H16_MAX_PD) {
+		dev_err(dev, "too many power-domains: %d\n", count);
+		return -EINVAL;
+	}
+	for (i = 0; i < count; i++) {
+		struct device *pd = dev_pm_domain_attach_by_id(dev, i);
+
+		if (IS_ERR_OR_NULL(pd)) {
+			int err = pd ? PTR_ERR(pd) : -ENODEV;
+
+			dev_err(dev, "attach power-domain %d: %d\n", i, err);
+			ane_h16_detach_pds(ane);
+			return err;
+		}
+		ane->pd_dev[i] = pd;
+		ane->pd_count = i + 1;
+		ane->pd_link[i] = device_link_add(dev, pd, DL_FLAG_STATELESS |
+						  DL_FLAG_PM_RUNTIME | DL_FLAG_RPM_ACTIVE);
+		if (!ane->pd_link[i]) {
+			dev_err(dev, "link power-domain %d\n", i);
+			ane_h16_detach_pds(ane);
+			return -EINVAL;
+		}
+	}
+	dev_info(dev, "attached %d ANE power-domains\n", ane->pd_count);
+	return 0;
+}
+
+static void ane_h16_unmap(struct ane_h16 *ane)
+{
+	if (ane->engine)
+		iounmap(ane->engine);
+	if (ane->pmgr)
+		iounmap(ane->pmgr);
+	ane->engine = NULL;
+	ane->pmgr = NULL;
+}
+
+/* of_iomap maps without a region request. The pmgr driver already owns part of the pmgr window, so a requested
+ * mapping (devm_platform_ioremap_resource_byname) would fail with a resource conflict. */
+static int ane_h16_map(struct ane_h16 *ane)
+{
+	struct device_node *np = ane->dev->of_node;
+	int e = of_property_match_string(np, "reg-names", "engine");
+	int p = of_property_match_string(np, "reg-names", "pmgr");
+
+	if (e < 0 || p < 0) {
+		dev_err(ane->dev, "the node needs reg-names \"engine\" and \"pmgr\"\n");
+		return -EINVAL;
+	}
+	ane->engine = of_iomap(np, e);
+	ane->pmgr = of_iomap(np, p);
+	if (!ane->engine || !ane->pmgr) {
+		dev_err(ane->dev, "could not map the engine and pmgr windows\n");
+		ane_h16_unmap(ane);
+		return -ENXIO;
+	}
+	return 0;
+}
 
 /* ---- pmgr state words (the read-only-after-ACTUAL=0xf rule) ---- */
 
@@ -275,26 +384,41 @@ static void ane_h16_wr64(struct ane_h16 *ane, u32 off, u64 v)
 	writeq_relaxed(v, ane->engine + off);
 }
 
+/* The address goes to the log before the read, so a hang names the register. */
+static void ane_h16_note_read(struct ane_h16 *ane, const char *name, u32 off)
+{
+	dev_info(ane->dev, "ane_h16 reading %s at engine+%#x\n", name, off);
+}
+
 static int ane_h16_status(struct ane_h16 *ane)
 {
 	const struct ane_h16_soc *s = ane->soc;
-	u64 rvbar = ane_h16_rd64(ane, s->rvbar);
+	u64 rvbar;
 	unsigned int i;
 
+	ane_h16_note_read(ane, "RVBAR", s->rvbar);
+	rvbar = ane_h16_rd64(ane, s->rvbar);
 	dev_info(ane->dev, "RVBAR (%#x) = %#llx (%slatched)\n", s->rvbar,
 		 rvbar, (rvbar & 1) ? "" : "un");
+	ane_h16_note_read(ane, "CPU_STATUS", s->cpu_status);
 	dev_info(ane->dev, "CPU_STATUS (%#x) = %#x\n", s->cpu_status,
 		 ane_h16_rd32(ane, s->cpu_status));
-	for (i = 0; i < 8; i++)
-		dev_info(ane->dev, "SCRATCH%u (%#x) = %#x\n", i,
-			 s->scratch0 + 4 * i,
-			 ane_h16_rd32(ane, s->scratch0 + 4 * i));
+	ane_h16_note_read(ane, "mbox a2i_ctrl", s->mbox + ANE_H16_MBOX_A2I_CTRL);
 	dev_info(ane->dev, "mbox a2i_ctrl (%#x) = %#x\n",
 		 s->mbox + ANE_H16_MBOX_A2I_CTRL,
 		 ane_h16_rd32(ane, s->mbox + ANE_H16_MBOX_A2I_CTRL));
+	ane_h16_note_read(ane, "mbox i2a_ctrl", s->mbox + ANE_H16_MBOX_I2A_CTRL);
 	dev_info(ane->dev, "mbox i2a_ctrl (%#x) = %#x\n",
 		 s->mbox + ANE_H16_MBOX_I2A_CTRL,
 		 ane_h16_rd32(ane, s->mbox + ANE_H16_MBOX_I2A_CTRL));
+	if (!read_scratch)
+		return 0;
+	for (i = 0; i < 8; i++) {
+		ane_h16_note_read(ane, "SCRATCH", s->scratch0 + 4 * i);
+		dev_info(ane->dev, "SCRATCH%u (%#x) = %#x\n", i,
+			 s->scratch0 + 4 * i,
+			 ane_h16_rd32(ane, s->scratch0 + 4 * i));
+	}
 	return 0;
 }
 
@@ -1084,19 +1208,37 @@ static int ane_h16_probe(struct platform_device *pdev)
 		return 0;
 	}
 
-	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
-	ane->pmgr = devm_platform_ioremap_resource_byname(pdev, "pmgr");
-	if (IS_ERR(ane->engine))
-		return PTR_ERR(ane->engine);
-	if (IS_ERR(ane->pmgr))
-		return PTR_ERR(ane->pmgr);
+	if (!confirm_read) {
+		ane_h16_result(ane, stage_idx, "REFUSED", "confirm_read-required");
+		return -EPERM;
+	}
+
+	ret = ane_h16_attach_pds(ane);
+	if (ret)
+		return ret;
+	ret = ane_h16_map(ane);
+	if (ret) {
+		ane_h16_detach_pds(ane);
+		return ret;
+	}
 
 	pm_runtime_enable(&pdev->dev);
 	ret = pm_runtime_get_sync(&pdev->dev);
 	if (ret < 0) {
-		dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
-		pm_runtime_disable(&pdev->dev);
-		return ret;
+		/* With several domains attached by id, the RPM_ACTIVE links already resumed them, and ane_h15 saw this device's get_sync
+		 * return -EACCES on a T6030 with the cause unknown. Only that code, only with domains attached, is let through: the
+		 * ACTUAL gate in ps_wait is the real power check. */
+		if (ane->pd_count > 0 && ret == -EACCES) {
+			dev_info(&pdev->dev, "engine powered via %d domain links (get_sync %d ignored)\n", ane->pd_count, ret);
+		} else {
+			dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
+			/* a failed get_sync still took a usage count */
+			pm_runtime_put_noidle(&pdev->dev);
+			pm_runtime_disable(&pdev->dev);
+			ane_h16_unmap(ane);
+			ane_h16_detach_pds(ane);
+			return ret;
+		}
 	}
 	ret = ane_h16_ps_wait(ane);
 	if (ret) {
@@ -1117,6 +1259,11 @@ rpm_off:
 	if (ane->fw_started)
 		dev_emerg(&pdev->dev,
 			  "firmware started: do NOT unload this module; reboot to park the ANE\n");
+	if (ret && !ane->fw_touched) {
+		pm_runtime_disable(&pdev->dev);
+		ane_h16_unmap(ane);
+		ane_h16_detach_pds(ane);
+	}
 	return ret;
 }
 
@@ -1131,6 +1278,8 @@ static void ane_h16_remove(struct platform_device *pdev)
 		return;
 	}
 	pm_runtime_disable(&pdev->dev);
+	ane_h16_unmap(ane);
+	ane_h16_detach_pds(ane);
 }
 
 static const struct of_device_id ane_h16_of_match[] = {
@@ -1149,7 +1298,19 @@ static struct platform_driver ane_h16_driver = {
 	.probe = ane_h16_probe,
 	.remove = ane_h16_remove,
 };
-module_platform_driver(ane_h16_driver);
+
+static int __init ane_h16_init(void)
+{
+	return ane_h16_register(&ane_h16_driver, optin, apply_overlay);
+}
+
+static void __exit ane_h16_exit(void)
+{
+	ane_h16_unregister(&ane_h16_driver);
+}
+
+module_init(ane_h16_init);
+module_exit(ane_h16_exit);
 
 MODULE_AUTHOR("Joshua Warren");
 MODULE_DESCRIPTION("OPT-IN EXPERIMENTAL Apple H16-family ANE bring-up module (status + firmware-boot smoke; no inference)");
