@@ -70,3 +70,58 @@ At 1240 s (probe) and again at 1603 s: same boot id, no PMU boot error,
 - Repeatability: one raise/read/teardown cycle in this boot. The next
   rung is several cycles in one module load.
 - Anything about the engine beyond five read offsets.
+
+## Correction: the machine reset anyway
+
+The title of this receipt is wrong. Boot `c647ceb2` was checked clean at
+1603 s (26.7 min) and **reset at ~15:29:16**, about 31.8 min into the
+boot and **5.5 min after the last ANE access** (cycle 3 of the repeat
+test at 15:23:46).
+
+Evidence for the reset, from `journalctl -b -1` on the next boot:
+
+- The last log line of any kind is 15:29:16, mid-restart of
+  `wayshare.service` (restart counter 871). No kernel message after that.
+- No panic, no OOM, no watchdog, no SError, no DART fault, no ext4 error.
+- The next boot logs `PMU logged 1 boot error(s) and 0 panic(s)`.
+
+So the Apple power-off sequence runs cleanly, clears bit 28, and does not
+prevent the eventual reset.
+
+### Revised timeline for this boot
+
+| uptime | action |
+|---|---|
+| 552 s | dry run (domains raised, PWGATE read, no engine MMIO) |
+| 891 s | `apply=1` (nine-step sequence) |
+| 1240 s | `apply=1 reads=1` (engine reads + sequence) |
+| 1620–1635 s | 3 × `apply=1 reads=1` |
+| ~1910 s | **reset**, no log line, 5.5 min after the last access |
+
+### What the whole day now looks like
+
+| boot | ANE access | outcome |
+|---|---|---|
+| `f1a4bae3` | read probe | reset ~2 min later |
+| `3e32247f` | read probe | reset ~2 min later |
+| `b4c6a3e7` | read probe at 48 min uptime | reset ~3 min later |
+| `7239761b` | none (warm boot after) | reset ~2 min |
+| `192f5a9a` | none (warm boot after) | reset ~4 min |
+| `c0a9ac9f` | none (warm boot after) | reset ~2.5 min |
+| `c647ceb2` | cold boot, reads + teardown | **reset ~32 min**, 5.5 min after last access |
+
+That pattern fits one model better than any other: **ANE access leaves a
+state that trips the PMU some minutes later, and that state survives a
+warm reboot.** The short no-ANE boots were still dirty from the previous
+boot's probes; the cold boot cleared it, and new access re-dirtied it.
+
+The teardown changed the delay (2–3 min → 5.5 min), not the outcome. That
+could mean it removes part of the fault and leaves the rest, or that the
+delay is simply variable.
+
+### Next discriminator
+
+The model predicts that a **pure genpd raise with no engine MMIO and no
+raw PS writes** also resets, and that a cold boot with no ANE access does
+not. Those two runs separate "engine read" from "raising the domains" as
+the cause. Neither has been run.
