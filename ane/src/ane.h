@@ -20,6 +20,8 @@
  * headers; the kernel include path is searched before ccflags. */
 #include "uapi/drm/ane_accel.h"
 
+struct device_node;
+
 struct ane_device {
 	struct drm_device drm;
 	struct device *dev;
@@ -152,6 +154,9 @@ struct ane_device {
 		unsigned int level;
 		unsigned int ack_timeouts;
 		const char *state;
+		/* The locked writer of the PS-REQ word, when pmp-report exports apple_pmp_report_set_request (symbol_get at init); NULL otherwise. */
+		const struct device_node *report_np;
+		int (*set_request)(const struct device_node *report_np, unsigned int id, bool enable, bool no_ack);
 	} dvfs;
 
 	/*

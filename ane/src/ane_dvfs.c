@@ -35,9 +35,11 @@
  *    are the ones the proving runs saw (PS-REQ with bit 10 clear, level word 0 or a level word, DVFS_ON 0,
  *    PMP-STATUS 1) and the PS-REQ readback after the ACK has bit 10 set; any other value leaves level 0.
  *    The other bits of PS-REQ belong to other PMP clients (display, ISP, video decode, USB4 and the AGX vote, bit 9): they are
- *    neither checked nor changed, only bit 10 is read-modify-written (ane_dvfs_req.h). The read-modify-write is two MMIO accesses
- *    without the pmp-report lock, which this module cannot take; a concurrent write of another bit in that window can be lost
- *    until pmp-report exports one locked update of the word for all its clients.
+ *    neither checked nor changed, only bit 10 is requested (ane_dvfs_req.h). When pmp-report exports apple_pmp_report_set_request
+ *    (a pmp-report that carries the locked update) the request goes through it: one read-modify-write under the report's lock, the same
+ *    lock every other client of the word takes, with the acknowledge wait in the same call. Without that export (or before a report is
+ *    bound) bit 10 is read-modify-written here: two MMIO accesses without that lock, so a concurrent write of another bit in that
+ *    window can be lost.
  *    A failure at any step (PS-ACK missing) unwinds in the macOS order and leaves level 0; after three
  *    PS-ACK timeouts the driver stops trying until it is reloaded.
  */
@@ -45,12 +47,16 @@
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
+#include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 
 #include "ane.h"
 #include "ane_dvfs_req.h"
+
+/* Exported by pmp-report when it carries the locked update; resolved with symbol_get() so this module neither requires it nor loads without it. */
+int apple_pmp_report_set_request(const struct device_node *report_np, unsigned int id, bool enable, bool no_ack);
 
 #define DVFS_ON_OFF		0x2000
 #define DVFS_CMD_OFF		0xa00
@@ -104,6 +110,29 @@ static void dvfs_cmd(struct ane_device *ane, u32 prev, u32 new)
 	writel(DVFS_CMD_BASE | prev << 4 | new, ane->dvfs.dvfs + DVFS_CMD_OFF);
 }
 
+/*
+ * Ask for or withdraw this driver's bit of PS-REQ. When pmp-report exports apple_pmp_report_set_request and a report is bound, the request goes through it:
+ * one read-modify-write under the report's lock, shared with every other client of the word, and the acknowledge wait in the same call. Otherwise (the
+ * export is missing, or no report is bound yet: -ENODEV) the masked read-modify-write of bit 10 here, without that lock, and the acknowledge poll here.
+ */
+static int ps_req_request(struct ane_device *ane, bool enable, bool no_ack)
+{
+	struct ane_dvfs *d = &ane->dvfs;
+	u64 req, ack;
+	int ret;
+
+	if (d->set_request) {
+		ret = d->set_request(d->report_np, PS_ANE_SYS_ID, enable, no_ack);
+		if (ret != -ENODEV)
+			return ret;
+	}
+	req = ptd_read(ane, PTD_REG_PS_REQ);
+	ptd_write(ane, PTD_REG_PS_REQ, enable ? ane_dvfs_req_up(req) : ane_dvfs_req_down(req));
+	if (no_ack)
+		return 0;
+	return read_poll_timeout(ptd_read, ack, !!(ack & PS_ANE_SYS) == enable, 200, 50000, false, ane, PTD_REG_PS_ACK);
+}
+
 /* The release half, in the macOS order. Safe to call from any point of the up sequence. */
 static void ane_dvfs_release(struct ane_device *ane, bool level_set, bool psreq_set)
 {
@@ -116,7 +145,7 @@ static void ane_dvfs_release(struct ane_device *ane, bool level_set, bool psreq_
 		dvfs_step();
 	}
 	if (psreq_set) {
-		ptd_write(ane, PTD_REG_PS_REQ, ane_dvfs_req_down(ptd_read(ane, PTD_REG_PS_REQ)));
+		ps_req_request(ane, false, true);
 		dvfs_step();
 	}
 	dvfs_cmd(ane, 0, 0);
@@ -128,7 +157,7 @@ static void ane_dvfs_release(struct ane_device *ane, bool level_set, bool psreq_
 void ane_dvfs_up(struct ane_device *ane)
 {
 	struct ane_dvfs *d = &ane->dvfs;
-	u64 req, ack, lvl;
+	u64 req, lvl;
 	unsigned int level = min(READ_ONCE(dvfs_level), (unsigned int)ANE_DVFS_LEVEL_MAX);
 	int err;
 
@@ -173,9 +202,7 @@ void ane_dvfs_up(struct ane_device *ane)
 		ane_dvfs_release(ane, false, false);
 		return;
 	}
-	ptd_write(ane, PTD_REG_PS_REQ, ane_dvfs_req_up(req));
-	err = read_poll_timeout(ptd_read, ack, ack & PS_ANE_SYS, 200, 50000, false,
-				ane, PTD_REG_PS_ACK);
+	err = ps_req_request(ane, true, false);
 	if (err) {
 		d->ack_timeouts++;
 		d->state = "ps-ack-timeout";
@@ -252,8 +279,18 @@ int ane_dvfs_init(struct ane_device *ane)
 		iounmap(d->ptd);
 		d->dvfs = d->ptd = NULL;
 		d->state = "not-configured";
+		return err;
 	}
-	return err;
+	/* The locked writer is optional: kernels whose pmp-report does not export it keep the masked read-modify-write above. */
+	d->set_request = symbol_get(apple_pmp_report_set_request);
+	if (d->set_request) {
+		d->report_np = of_find_compatible_node(NULL, NULL, "apple,t6000-pmp-v2-report");
+		if (!d->report_np) {
+			symbol_put(apple_pmp_report_set_request);
+			d->set_request = NULL;
+		}
+	}
+	return 0;
 }
 
 void ane_dvfs_exit(struct ane_device *ane)
@@ -264,6 +301,12 @@ void ane_dvfs_exit(struct ane_device *ane)
 		return;
 	device_remove_file(ane->dev, &dev_attr_perf_state);
 	ane_dvfs_down(ane);
+	if (d->set_request) {
+		of_node_put((struct device_node *)d->report_np);
+		symbol_put(apple_pmp_report_set_request);
+		d->set_request = NULL;
+		d->report_np = NULL;
+	}
 	iounmap(d->dvfs);
 	iounmap(d->ptd);
 	d->dvfs = d->ptd = NULL;
