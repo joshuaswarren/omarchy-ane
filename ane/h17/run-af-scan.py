@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import pwd
 from pathlib import Path
 import subprocess
 
@@ -11,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def cmd(*args):
+    # sudo must not switch Git/SSH to root's unrelated credentials.
+    if args[0] == 'git' and os.geteuid() == 0 and os.environ.get('SUDO_USER'):
+        user = pwd.getpwnam(os.environ['SUDO_USER']).pw_name
+        args = ('runuser', '-u', user, '--', *args)
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
 
 
