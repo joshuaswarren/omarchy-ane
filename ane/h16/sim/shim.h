@@ -390,30 +390,25 @@ extern bool sim_pwgate_mapped;
 extern int sim_rpm_gets, sim_rpm_puts;
 extern struct iommu_domain *sim_dart;	/* NULL = device has no domain */
 #define IORESOURCE_MEM 0x00000200
-#define PD_FLAG_DEV_LINK_ON BIT(1)
-struct dev_pm_domain_attach_data { u32 pd_flags; };
-struct dev_pm_domain_list { int num_pds; };
-static inline int dev_pm_domain_attach_list(
-	struct device *dev, const struct dev_pm_domain_attach_data *data,
-	struct dev_pm_domain_list **list)
+static inline int of_count_phandle_with_args(struct device_node *np,
+					     const char *name,
+					     const char *cells)
 {
-	static struct dev_pm_domain_list l;
-
-	(void)dev;
-	(void)data;
-	if (!sim_dart)
-		return -ENODEV;
-	sim_rpm_gets++;
-	l.num_pds = 4;
-	*list = &l;
-	return 4;
+	(void)np; (void)name; (void)cells;
+	return 4;	/* the T8140 fixture: sys + three sub-islands */
 }
-static inline void dev_pm_domain_detach_list(struct dev_pm_domain_list *list)
+struct device;
+static inline struct device *dev_pm_domain_attach_by_id(struct device *dev,
+							unsigned int index)
 {
-	if (list) {
-		sim_rpm_puts++;
-		list->num_pds = 0;
-	}
+	(void)dev; (void)index;
+	if (!sim_dart)
+		return ERR_PTR(-ENODEV);
+	return (struct device *)(uintptr_t)(0x1000 + index);
+}
+static inline void dev_pm_domain_detach(struct device *dev, bool off)
+{
+	(void)dev; (void)off;	/* the put_sync pair already models the claim */
 }
 static inline struct resource *platform_get_resource_byname(
 	struct platform_device *dev, unsigned int flags, const char *name)

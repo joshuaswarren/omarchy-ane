@@ -62,6 +62,7 @@
 #include <linux/of_address.h>
 #include <linux/ioport.h>
 #include <linux/platform_device.h>
+#include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/sizes.h>
 #include <linux/slab.h>
@@ -153,12 +154,14 @@ struct ane_h16_seg {
 struct ane_h16 {
 	struct device *dev;
 	const struct ane_h16_soc *soc;
+#define ANE_H16_MAX_PDS 8	/* DT power-domains cap (T8140 uses 4) */
 	void __iomem *engine;
 	void __iomem *pmgr;
 	struct ane_h16_seg segs[2];
 	void __iomem *pwgate;	/* H17 reg[2]: PS/PWGATE bank (overlay) */
 	unsigned int order_seq;	/* durable h17-order sequence number */
-	struct dev_pm_domain_list *pd_list; /* ALL power domains, held */
+	struct device *pd_vdev[ANE_H16_MAX_PDS]; /* one per DT power domain */
+	unsigned int pd_nvdev;
 	bool fw_touched;
 	bool fw_started;
 	bool hello_done;
@@ -595,6 +598,7 @@ static int ane_h16_segments(struct ane_h16 *ane)
 /* ---- stage 0: dt-only parse, no MMIO ---- */
 
 static int ane_h16_admit_preload(struct ane_h16 *ane, bool enforce);
+static void ane_h16_pd_release(struct ane_h16 *ane);
 
 static void ane_h16_stage_dt(struct ane_h16 *ane)
 {
@@ -1560,27 +1564,48 @@ static int ane_h16_probe(struct platform_device *pdev)
 	/* Multi-domain consumers are attached by the DRIVER, not the core:
 	 * genpd_dev_pm_attach() skips devices with more than one
 	 * power-domains entry, so pm_runtime_get_sync() would power
-	 * nothing. Attach every listed domain and hold it on with an
-	 * RPM_ACTIVE device link; the ps_wait gate then verifies the
+	 * nothing. Attach every listed domain to a virtual device and
+	 * hold each runtime-resumed; the ps_wait gate then verifies the
 	 * ACTUAL bits at the register level. */
 	{
-		static const struct dev_pm_domain_attach_data pd_data = {
-			.pd_flags = PD_FLAG_DEV_LINK_ON,
-		};
+		int num_pds = of_count_phandle_with_args(pdev->dev.of_node,
+							 "power-domains",
+							 "#power-domain-cells");
+		unsigned int idx;
 
-		ret = dev_pm_domain_attach_list(&pdev->dev, &pd_data,
-						&ane->pd_list);
-		if (ret < 0) {
+		if (num_pds <= 0 || num_pds > ANE_H16_MAX_PDS) {
 			dev_err(&pdev->dev,
-				"power-domain attach failed: %d\n", ret);
-			return ret;
+				"device has %d power-domains; refusing to touch the engine window\n",
+				num_pds);
+			return num_pds < 0 ? num_pds : -ENODEV;
 		}
-		if (ret == 0) {
-			dev_err(&pdev->dev,
-				"device has no power-domains; refusing to touch the engine window\n");
-			return -ENODEV;
+		for (idx = 0; idx < num_pds; idx++) {
+			struct device *vdev = dev_pm_domain_attach_by_id(
+				&pdev->dev, idx);
+
+			if (IS_ERR(vdev)) {
+				ret = PTR_ERR(vdev);
+				dev_err(&pdev->dev,
+					"power-domain %u attach failed: %d\n",
+					idx, ret);
+				goto pd_unwind;
+			}
+			ane->pd_vdev[idx] = vdev;
+			ane->pd_nvdev++;
+			ret = pm_runtime_get_sync(vdev);
+			if (ret < 0) {
+				dev_err(&pdev->dev,
+					"power-domain %u vote failed: %d\n",
+					idx, ret);
+				pm_runtime_put_sync(vdev);
+				dev_pm_domain_detach(vdev, true);
+				ane->pd_vdev[idx] = NULL;
+				ane->pd_nvdev--;
+				goto pd_unwind;
+			}
 		}
-		dev_info(&pdev->dev, "attached %u power domains\n", ret);
+		dev_info(&pdev->dev, "attached and held %u power domains\n",
+			 ane->pd_nvdev);
 	}
 	ret = ane_h16_ps_wait(ane);
 	if (ret) {
@@ -1610,10 +1635,26 @@ static int ane_h16_probe(struct platform_device *pdev)
 			  ret);
 		return 0;
 	}
-pd_off:
-	dev_pm_domain_detach_list(ane->pd_list);
-	ane->pd_list = NULL;
+pd_unwind:
+	ane_h16_pd_release(ane);
 	return ret;
+pd_off:
+	ane_h16_pd_release(ane);
+	return ret;
+}
+
+static void ane_h16_pd_release(struct ane_h16 *ane)
+{
+	unsigned int i;
+
+	for (i = 0; i < ane->pd_nvdev; i++) {
+		if (!ane->pd_vdev[i])
+			continue;
+		pm_runtime_put_sync(ane->pd_vdev[i]);
+		dev_pm_domain_detach(ane->pd_vdev[i], true);
+		ane->pd_vdev[i] = NULL;
+	}
+	ane->pd_nvdev = 0;
 }
 
 static void ane_h16_remove(struct platform_device *pdev)
@@ -1625,10 +1666,7 @@ static void ane_h16_remove(struct platform_device *pdev)
 			  "remove with the firmware released: leaving power on, reboot required\n");
 		return;
 	}
-	if (ane->pd_list) {
-		dev_pm_domain_detach_list(ane->pd_list);
-		ane->pd_list = NULL;
-	}
+	ane_h16_pd_release(ane);
 }
 
 static const struct of_device_id ane_h16_of_match[] = {
