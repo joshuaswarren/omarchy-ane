@@ -33,6 +33,15 @@
  *   manager publication and no CSNE CONFIG_GET — the 27.0 host contract
  *   for those is not derived yet (receipts/2026-10-03-ane-h16).
  *
+ *   On the t8140 (H17) row the boot stage additionally offers the opt-in
+ *   irq_read=1 diagnostic: after the wake word and the recipe steps
+ *   19-21, it reads the IRQ status word at the SoC row's irq_status
+ *   (0x188c000) exactly once and logs it. Read-only: it never touches
+ *   the IRQ ack register (0x1890000), rings no doorbell and submits no
+ *   task (firmware-load-path receipt §13.3 pins the status/ack pair;
+ *   a register table is not device behaviour, and one read of an
+ *   unacked status word is a value, not a protocol).
+ *
  * The module refuses to probe unless its opt-in key is set:
  *   insmod ane_h16.ko optin=t8132 stage=status
  * There is no MODULE_DEVICE_TABLE, so nothing autoloads it.
@@ -97,6 +106,11 @@ static unsigned int hello_wait_ms;
 module_param(hello_wait_ms, uint, 0444);
 MODULE_PARM_DESC(hello_wait_ms,
 		 "After the wake word, poll the ASC mailbox for an RTKit HELLO this long (default 0 = skip; 1000 is the lab value).");
+
+static bool irq_read;
+module_param(irq_read, bool, 0444);
+MODULE_PARM_DESC(irq_read,
+		 "t8140 stage=boot only: after the SCRATCH7 wake word, read the IRQ status word at the SoC row's irq_status (0x188c000) exactly once and log it. Read-only: no IRQ ack access, no doorbell, no task. Default 0 (off).");
 
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
@@ -1441,7 +1455,20 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		ane_h16_wr32(ane, s->doorbell_en,
 			     ane_h16_rd32(ane, s->doorbell_en) | 1);
 	}
-	if (s->h17_order)
+	if (s->h17_order) {
+		/* Opt-in post-wake diagnostic (irq_read=1): a single
+		 * read-only snapshot of the firmware->host IRQ status
+		 * word, taken before any ack or channel work, to record
+		 * which lines the just-started firmware asserts. The
+		 * ack register (0x1890000, W1C 0xffff) is NOT read or
+		 * written here: the status bits stay un-acked, exactly
+		 * as a firmware that never raised them would leave
+		 * them.
+		 */
+		if (irq_read)
+			dev_info(ane->dev,
+				 "H17 IRQ_STATUS off=%#x value=%#010x (single read-only post-wake snapshot; ack register untouched)\n",
+				 s->irq_status, ane_h16_rd32(ane, s->irq_status));
 		/* The H16 RTKit management endpoint layout (mbox=0x1608000,
 		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
 		 * mapping. J700's kext reaches READY via SCRATCH7 and then
@@ -1452,6 +1479,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		 */
 		dev_info(ane->dev,
 			 "H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only\n");
+	}
 	else if (hello_wait_ms)
 		ane_h16_rtkit_poll(ane);
 	else

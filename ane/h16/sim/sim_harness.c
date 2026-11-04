@@ -12,7 +12,7 @@
  * this directory.
  *
  * Positive scenarios:  pos-dt pos-dt-noadt pos-status pos-boot
- *                      pos-boot-hello
+ *                      pos-boot-hello pos-h17-boot pos-h17-irq
  * Negative scenarios (module MUST refuse/fail, harness MUST observe it):
  *                      neg-ps-stuck neg-mbox-silent neg-bad-pin
  *                      neg-foreign-preload neg-unknown-stage
@@ -1035,8 +1035,49 @@ static void sc_pos_h17_boot(void)
 	    "step 21 doorbell setBit");
 	chk(sim_log_count("h17-order seq=") >= 80,
 	    "every ordered access durably logged before MMIO");
+	chk(sim_log_count("H17 IRQ_STATUS off=") == 0,
+	    "irq_read off (default): no IRQ status read");
+	chk(ev_count(false, reg_pa(sim_soc.irq_status), 0) == 0 &&
+	    ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
+	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
+	    "irq status and ack words untouched when irq_read=0");
 	chk(sim_module_refs == 1 && sim_rpm_gets == 4 && sim_rpm_puts == 0,
 	    "module and power retained after CPU release");
+}
+
+/* The post-wake IRQ-status rung: with irq_read=1 the wake path logs
+ * exactly one read-only snapshot of the IRQ status word and never
+ * touches the ack word. */
+static void sc_pos_h17_irq(void)
+{
+	int ret;
+
+	setup_common();
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;	/* ANE_SYS word */
+	sim_regions[0].backing[sim_soc.irq_status / 4] = 0x00000200;
+	optin = "t8140";
+	stage = "boot";
+	boot_wait_ms = 300;
+	hello_wait_ms = 1000;
+	irq_read = true;
+	ret = run_probe();
+	chk(ret == 0, "t8140 boot with irq_read succeeds through the H17 path");
+	chk(sim_log_count("verdict=PASS reason=boot-wake") == 1,
+	    "RESULT PASS boot-wake");
+	chk(sim_log_count("H17 post-wake RTKit management poll skipped") == 1,
+	    "H17 skips unqualified H16 mailbox even with irq_read");
+	chk(sim_log_count("H17 IRQ_STATUS off=0x188c000 value=0x00000200") == 1,
+	    "one logged IRQ status snapshot with the modelled value");
+	chk(ev_count(false, reg_pa(sim_soc.irq_status), 0) == 1,
+	    "exactly one read of the IRQ status word");
+	chk(ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
+	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
+	    "IRQ ack word untouched");
 }
 
 static void sc_neg_unknown_stage(void)
@@ -1100,6 +1141,8 @@ int main(int argc, char **argv)
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "pos-h17-boot"))
 		sc_pos_h17_boot();
+	else if (!strcmp(sc, "pos-h17-irq"))
+		sc_pos_h17_irq();
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
 	else if (!strcmp(sc, "pos-four-ps"))

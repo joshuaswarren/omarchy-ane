@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# J700 H17 boot-wake reproduction with the poll-skip build (commit 91eb462).
+# J700 H17 boot-wake reproduction plus the post-wake IRQ-status rung.
 # Fresh boot only, gated by /var/lib/omarchy-ane/h17-bootwake.pending.
 # Rung scope: power on, load firmware, release CPU, poll SCRATCH7 for
-# 0x08042006 with hello_wait_ms=1000, then SKIP the H16 RTKit management
-# poll. No command path is touched. On wake the module pins itself and
-# holds power: never rmmod; the host must reboot before any further rung.
+# 0x08042006 with hello_wait_ms=1000, read the IRQ status word (0x188c000)
+# exactly once with irq_read=1, then SKIP the H16 RTKit management poll.
+# No IRQ ack write, no doorbell, no command path is touched. On wake the
+# module pins itself and holds power: never rmmod; the host must reboot
+# before any further rung.
 set -euo pipefail
 
 repo=${H17_REPO:-/home/admin/omarchy-ane}
@@ -29,7 +31,7 @@ if lsmod | grep -q '^ane_h16 '; then
 fi
 
 before=$(dmesg --color=never | wc -l)
-insmod "$ko" optin=t8140 stage=boot hello_wait_ms=1000
+insmod "$ko" optin=t8140 stage=boot hello_wait_ms=1000 irq_read=1
 # The wake poll completes within ~2 s (SCRATCH7 checked at 50 ms,
 # hello_wait_ms=1000 caps a second pass); give the RESULT line time to land.
 sleep 10
@@ -39,10 +41,20 @@ dmesg --color=never > "$log_dir/dmesg-full.log"
 
 verdict=FAIL
 reason=unknown
+irq_status=missing
+irq_line=$(grep -o 'H17 IRQ_STATUS off=0x[0-9a-f]* value=0x[0-9a-f]*' "$log_dir/dmesg-rung.log" | tail -1 || true)
+if [ -n "$irq_line" ]; then
+    irq_status=$(printf '%s' "$irq_line" | sed 's/.*value=//')
+fi
 if grep -q 'verdict=PASS reason=boot-wake' "$log_dir/dmesg-rung.log"; then
     if grep -q 'post-wake RTKit management poll skipped' "$log_dir/dmesg-rung.log"; then
-        verdict=PASS
-        reason=wake-and-poll-skipped
+        if [ "$irq_status" != missing ]; then
+            verdict=PASS
+            reason=wake-irq-status-and-poll-skipped
+        else
+            verdict=IRQ-MISSING
+            reason=wake-without-irq-status
+        fi
     else
         verdict=WAKE-NO-SKIP-MARKER
         reason=wake-without-skip-marker
@@ -50,4 +62,4 @@ if grep -q 'verdict=PASS reason=boot-wake' "$log_dir/dmesg-rung.log"; then
 elif grep -q 'verdict=FAIL' "$log_dir/dmesg-rung.log"; then
     reason=$(grep -o 'reason=[a-z0-9-]*' "$log_dir/dmesg-rung.log" | tail -1)
 fi
-echo "rung=$verdict reason=$reason boot_id=$boot_id" | tee "$log_dir/verdict.txt"
+echo "rung=$verdict reason=$reason irq_status=$irq_status boot_id=$boot_id" | tee "$log_dir/verdict.txt"

@@ -61,8 +61,11 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
   for the SCRATCH7 wake word 0x08042006; then (only if
   `hello_wait_ms=1000`) polls the ASC mailbox for an RTKit HELLO and
-  answers HELLO_REPLY / EPMAP_ACK / STARTEP. No CSNE command, no
-  inference, no DRM device.
+  answers HELLO_REPLY / EPMAP_ACK / STARTEP. On the t8140 row,
+  `irq_read=1` adds a single read-only post-wake snapshot of the IRQ
+  status word (`0x188c000`), logged as
+  `H17 IRQ_STATUS off=0x188c000 value=0x…`; the ack register is never
+  touched. No CSNE command, no inference, no DRM device.
 
 ## Build (host cross build)
 
@@ -86,7 +89,10 @@ HELLO) and runs:
   words ACTUAL=0xf, zero engine writes), `pos-boot` (boot reaches the
   wake word; RVBAR compose, SCRATCH7=0, CPU_CONTROL 0->0x10, 219-page
   DART map at the ADT IOVAs), `pos-boot-hello` (HELLO answered with
-  version 2);
+  version 2), `pos-h17-boot` (the t8140 row end to end, with zero IRQ
+  status/ack access while `irq_read` is off), `pos-h17-irq` (the same
+  with `irq_read=1`: exactly one logged IRQ status snapshot, the ack
+  word untouched);
 - negatives that MUST refuse: `neg-ps-stuck` (word stuck 0x30 ->
   FAIL pmgr-actual-stuck, zero engine accesses), `neg-mbox-silent`
   (no wake word -> FAIL boot-timeout, mapping left, reboot required),
