@@ -4,7 +4,7 @@
 #   make KERNELDIR=.../omarchy-linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h16.o
-	ane_h16-objs := ane_h16_main.o ane_h16_soc.o
+	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ../h17/ane_h17_soc.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build

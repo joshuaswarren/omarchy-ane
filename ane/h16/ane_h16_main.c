@@ -1137,6 +1137,7 @@ static const struct of_device_id ane_h16_of_match[] = {
 	{ .compatible = "apple,t8132-ane", .data = &ane_t8132_soc },
 	{ .compatible = "apple,t6040-ane", .data = &ane_t6040_soc },
 	{ .compatible = "apple,t6041-ane", .data = &ane_t6041_soc },
+	{ .compatible = "apple,t8140-ane", .data = &ane_t8140_soc },
 	{ }
 };
 

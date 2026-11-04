@@ -63,5 +63,6 @@ struct ane_h16_soc {
 extern const struct ane_h16_soc ane_t8132_soc;
 extern const struct ane_h16_soc ane_t6040_soc;
 extern const struct ane_h16_soc ane_t6041_soc;
+extern const struct ane_h16_soc ane_t8140_soc;
 
 #endif /* __ANE_H16_SOC_H__ */
