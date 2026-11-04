@@ -4,6 +4,7 @@ obj-m := ane_h17_adt_probe.o ane_h17_ps_probe.o ane_h17_cpu_ps_probe.o ane_h17_c
 obj-m += ane_h17_af_scan.o
 obj-m += ane_h17_clk_wide.o
 obj-m += ane_h17_clkgen_scan.o
+obj-m += ane_h17_fwboot_probe.o
 else
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
