@@ -124,7 +124,7 @@ static int scan(struct platform_device *pdev)
 		ret = -EINVAL;
 		goto done;
 	}
-	if (ARRAY_SIZE(offsets) != 192) {
+	if (ARRAY_SIZE(offsets) != 320) {
 		ret = -EINVAL;
 		goto done;
 	}
