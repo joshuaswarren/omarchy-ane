@@ -25,12 +25,13 @@
 
 	fragment@0 {
 		target-path = "/soc/ane@400000000";
-		__overlay__ {
+		h17_ane: __overlay__ {
 			reg-names = "engine", "pmgr";
 			reg = <0x4 0x00000000 0x0 0x2000000>,
 			      <0x3 0x00700000 0x0 0x14000>;
 			power-domains = <&ps_ane_sys &ps_ane_sub0 &ps_ane_sub1 &ps_ane_sub2>;
 			apple,ane-type = <0x200>;
+			memory-region = <&h17_fw_alias_iova>;
 			status = "okay";
 		};
 	};
@@ -53,6 +54,19 @@
 		target-path = "/soc/iommu@401840000";
 		__overlay__ {
 			status = "okay";
+		};
+	};
+
+	/* No reg property: this reserves only IOVA space, not physical RAM.
+	 * The DMA allocator must not allocate over the fixed firmware aliases.
+	 * The loader verifies IOMMU_RESV_RESERVED coverage before allocation.
+	 */
+	fragment@4 {
+		target-path = "/reserved-memory";
+		__overlay__ {
+			h17_fw_alias_iova: ane-fw-alias-iova {
+				iommu-addresses = <&h17_ane 0x100 0x0 0x0 0x380000>;
+			};
 		};
 	};
 };

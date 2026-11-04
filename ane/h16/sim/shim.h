@@ -14,6 +14,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -401,8 +402,25 @@ static inline void pm_runtime_put_sync(struct device *dev)
 static inline void pm_runtime_get_noresume(struct device *dev) { (void)dev; }
 
 /* ---- DMA ---- */
+extern int sim_module_refs;
+#define THIS_MODULE ((void *)1)
+static inline void __module_get(void *module)
+{
+	(void)module;
+	sim_module_refs++;
+}
+
 extern int sim_dma_outstanding;
 extern int sim_dma_allocs, sim_dma_frees;
+static int sim_coherent_map(size_t size, dma_addr_t *dma);
+static void sim_coherent_unmap(dma_addr_t dma, size_t size);
+#define DMA_BIT_MASK(n) (~0ULL >> (64 - (n)))
+static inline int dma_set_mask_and_coherent(struct device *dev, u64 mask)
+{
+	(void)dev;
+	(void)mask;
+	return 0;
+}
 static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 				       dma_addr_t *dma, int gfp)
 {
@@ -415,7 +433,10 @@ static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 	if (posix_memalign(&p, SZ_16K, (size + SZ_16K - 1) & ~(SZ_16K - 1)))
 		return NULL;
 	memset(p, 0, size);
-	*dma = (u64)(uintptr_t)p;
+	if (sim_coherent_map(size, dma)) {
+		free(p);
+		return NULL;
+	}
 	sim_dma_outstanding++;
 	sim_dma_allocs++;
 	return p;
@@ -426,6 +447,7 @@ static inline void dma_free_coherent(struct device *dev, size_t size,
 	(void)dev;
 	(void)size;
 	(void)dma;
+	sim_coherent_unmap(dma, size);
 	sim_dma_outstanding--;
 	sim_dma_frees++;
 	free(cpu);
@@ -444,10 +466,46 @@ struct iommu_domain {
 	} map[1024];
 	int n;
 	bool short_unmap;
+	bool dma_api;
+	bool alias_reserved;
 };
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
 extern struct iommu_domain *sim_dart;	/* NULL = device has no domain */
+static inline bool iommu_is_dma_domain(struct iommu_domain *d)
+{
+	return d->dma_api;
+}
+
+struct list_head { struct list_head *next, *prev; };
+#define LIST_HEAD(n) struct list_head n = { &(n), &(n) }
+#define list_for_each_entry(pos, head, member) \
+	for (struct list_head *_node = (head)->next; \
+	     _node != (head) && ((pos) = (void *)((char *)_node - \
+	         offsetof(__typeof__(*(pos)), member)), 1); _node = _node->next)
+#define IOMMU_RESV_RESERVED 1
+struct iommu_resv_region {
+	u64 start, length;
+	int type;
+	struct list_head list;
+};
+static inline void iommu_get_resv_regions(struct device *dev, struct list_head *h)
+{
+	static struct iommu_resv_region region;
+	(void)dev;
+	if (sim_dart && sim_dart->alias_reserved) {
+		region.start = 0x10000000000ULL;
+		region.length = 0x4000000;
+		region.type = IOMMU_RESV_RESERVED;
+		region.list.next = region.list.prev = h;
+		h->next = h->prev = &region.list;
+	}
+}
+static inline void iommu_put_resv_regions(struct device *dev, struct list_head *h)
+{
+	(void)dev;
+	h->next = h->prev = h;
+}
 static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
 {
 	(void)dev;
@@ -491,6 +549,26 @@ static inline size_t iommu_unmap(struct iommu_domain *d, u64 iova, size_t size)
 			d->map[i].len = 0;
 		}
 	return removed;
+}
+
+/* CPU address, DMA handle and backing PA deliberately all differ. */
+#define SIM_DMA_SOURCE_IOVA 0x20000000000ULL
+#define SIM_DMA_SOURCE_PA 0x30000000000ULL
+static int sim_coherent_map(size_t size, dma_addr_t *dma)
+{
+	size_t off;
+	if (!sim_dart)
+		return -ENODEV;
+	*dma = SIM_DMA_SOURCE_IOVA;
+	for (off = 0; off < size; off += SZ_16K)
+		if (iommu_map(sim_dart, *dma + off, SIM_DMA_SOURCE_PA + off,
+			      SZ_16K, IOMMU_READ | IOMMU_WRITE, 0))
+			return -ENOMEM;
+	return 0;
+}
+static void sim_coherent_unmap(dma_addr_t dma, size_t size)
+{
+	iommu_unmap(sim_dart, dma, size);
 }
 
 /* ---- firmware ---- */

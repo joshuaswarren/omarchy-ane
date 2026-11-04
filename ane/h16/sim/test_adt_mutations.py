@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require the simulated real driver to catch the two J700 ADT regressions."""
+"""Require the simulated real driver to catch ADT and DMA regressions."""
 from pathlib import Path
 import os
 import shutil
@@ -17,6 +17,18 @@ def main():
             "le32_to_cpup(data + i * stride + 24) : le64_to_cpu(v[2])",
             "le64_to_cpu(v[3]) : le64_to_cpu(v[2])",
             "pos-boot",
+        ),
+        (
+            "dma-handle-is-not-physical",
+            "pa = iommu_iova_to_phys(ane->domain, source);",
+            "pa = source;",
+            "pos-boot",
+        ),
+        (
+            "released-cpu-power-drop",
+            "ane->boot_error = ret;",
+            "pm_runtime_put_sync(&pdev->dev); ane->boot_error = ret;",
+            "neg-mbox-silent",
         ),
     ]
     # Only copies of source are mutated. Never load a kernel module.

@@ -51,6 +51,7 @@ const void *sim_match_data;
 struct sim_phys sim_phys_maps[8];
 int sim_n_phys_maps;
 int sim_rpm_gets, sim_rpm_puts;
+int sim_module_refs;
 int sim_dma_outstanding;
 int sim_dma_allocs, sim_dma_frees;
 struct iommu_domain sim_dart_storage;
@@ -77,6 +78,15 @@ static int sim_log_count(const char *sub)
 
 	for (i = 0; i < sim_n_log; i++)
 		if (strstr(sim_log[i], sub))
+			n++;
+	return n;
+}
+
+static int sim_active_maps(void)
+{
+	int i, n = 0;
+	for (i = 0; i < sim_dart_storage.n; i++)
+		if (sim_dart_storage.map[i].len)
 			n++;
 	return n;
 }
@@ -467,6 +477,8 @@ static void setup_common(void)
 	sim_fw_write_hook = fw_write_hook;
 	fw.wake_after = 3;
 	sim_dart = &sim_dart_storage;
+	sim_dart->dma_api = true;
+	sim_dart->alias_reserved = true;
 
 	optin = "t8132";
 	ps_wait_ms = 500;
@@ -602,10 +614,15 @@ static void sc_pos_boot(void)
 	    "CPU_CONTROL 0 then 0x10");
 	chk(ev_engine_count(false) > ev_engine_count(true),
 	    "more reads than writes");
-	chk(sim_dart_storage.n == 48 + 171,
-	    "staged image mapped at the ADT IOVAs (219 pages)");
+	chk(sim_dart_storage.n == 2 * (48 + 171),
+	    "DMA source and staged aliases each map 219 pages");
+	chk(iommu_iova_to_phys(sim_dart, TEXT_IOVA) == SIM_DMA_SOURCE_PA,
+	    "alias uses DMA-translated PA, not CPU pointer or DMA handle");
 	chk(sim_log_count("do NOT unload") == 1,
 	    "post-start pin warning printed");
+	chk(sim_module_refs == 1, "module pinned after CPU release");
+	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	    "runtime power retained after CPU release");
 }
 
 static void sc_pos_boot_hello(void)
@@ -659,15 +676,20 @@ static void sc_neg_mbox_silent(void)
 	fw.wake_after = 1 << 30;	/* never */
 	sim_dart = &sim_dart_storage;
 	ret = run_probe();
-	chk(ret == -ETIMEDOUT, "probe returns -ETIMEDOUT");
+	chk(ret == 0, "binding retained after uncertain CPU release");
+	chk(((struct ane_h16 *)platform_get_drvdata(&sim_pdev))->boot_error == -ETIMEDOUT,
+	    "timeout retained as boot_error, not reported as success");
 	chk(sim_log_count("verdict=FAIL reason=boot-timeout") == 1,
 	    "RESULT FAIL boot-timeout");
 	chk(sim_log_count("reboot before retrying") == 1,
 	    "reboot-required message");
 	chk(sim_dart_storage.n > 0, "mapping LEFT in place (no unwind)");
 	chk(sim_dma_outstanding == 1, "staged buffer not freed");
-	chk(sim_log_count("do NOT unload") == 0,
+	chk(sim_log_count("firmware is running") == 0,
 	    "no firmware-started claim (it did not start)");
+	chk(sim_module_refs == 1, "module pinned after timeout");
+	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	    "runtime power retained after timeout");
 }
 
 static void sc_neg_bad_pin(void)
@@ -687,7 +709,7 @@ static void sc_neg_bad_pin(void)
 	chk(sim_log_count("verdict=REFUSED reason=fw-pin") == 1,
 	    "RESULT REFUSED fw-pin");
 	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
-	chk(sim_dart_storage.n == 0, "nothing mapped");
+	chk(sim_active_maps() == 0, "nothing mapped");
 	chk(sim_dma_allocs == 0 && sim_dma_frees == 0,
 	    "refused before any allocation");
 }
@@ -709,7 +731,7 @@ static void sc_neg_foreign_preload(void)
 	chk(sim_log_count("verdict=REFUSED reason=preload-diff") == 1,
 	    "RESULT REFUSED preload-diff");
 	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
-	chk(sim_dart_storage.n == 0, "nothing mapped");
+	chk(sim_active_maps() == 0, "nothing mapped");
 	/* a refusal must NOT leak the staged buffer: allocs == frees.
 	 * (The deliberate exception is a post-release timeout, where the
 	 * buffer stays because the wedged firmware may still DMA.)
@@ -753,6 +775,23 @@ static void sc_neg_dart_map_partial(void)
 	    "partial map unwound before free_stage");
 	chk(iommu_iova_to_phys(d, alias) == 0xdead0000,
 	    "pre-existing foreign mapping preserved after collision");
+}
+
+static void sc_neg_stage_domain(bool dma_api)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	sim_dart->dma_api = dma_api;
+	sim_dart->alias_reserved = !dma_api;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == (dma_api ? -EINVAL : -ENODEV),
+	    "unreserved alias or incompatible domain refused");
+	chk(sim_dma_allocs == 0, "refusal precedes DMA allocation");
+	chk(ev_engine_count(true) == 0, "refusal precedes engine writes");
 }
 
 static void sc_neg_short_unmap(void)
@@ -944,6 +983,10 @@ int main(int argc, char **argv)
 		sc_neg_dart_map_partial();
 	else if (!strcmp(sc, "neg-short-unmap"))
 		sc_neg_short_unmap();
+	else if (!strcmp(sc, "neg-unreserved-alias"))
+		sc_neg_stage_domain(true);
+	else if (!strcmp(sc, "neg-non-dma-domain"))
+		sc_neg_stage_domain(false);
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "neg-h17-boot"))

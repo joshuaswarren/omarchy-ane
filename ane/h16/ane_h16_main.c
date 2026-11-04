@@ -155,6 +155,7 @@ struct ane_h16 {
 	bool fw_touched;
 	bool fw_started;
 	bool hello_done;
+	int boot_error;		/* result retained when binding must survive a timeout */
 	void *stage_cpu;
 	dma_addr_t stage_dma;
 	size_t stage_size;
@@ -569,7 +570,8 @@ static int ane_h16_segments(struct ane_h16 *ane)
 	if (ret)
 		return ret;
 	if ((ane->segs[0].size != ane->soc->fw->text_vmsize) ||
-	    (ane->segs[1].size < fw->data_filesize)) {
+	    (ane->segs[1].size < fw->data_filesize) ||
+	    (ane->segs[1].size > fw->data_vmsize)) {
 		dev_err(ane->dev,
 			"segment sizes %#llx/%#llx do not match the pinned image (%#x/%#x)\n",
 			ane->segs[0].size, ane->segs[1].size,
@@ -729,6 +731,9 @@ static int ane_h16_stage(struct ane_h16 *ane, const struct firmware *fw)
 	unsigned int s, i;
 	int ret = 0;
 
+	ret = dma_set_mask_and_coherent(ane->dev, DMA_BIT_MASK(64));
+	if (ret)
+		return ret;
 	ane->stage_size = ALIGN(img->data_vm + img->data_vmsize, SZ_16K);
 	ane->stage_cpu = dma_alloc_coherent(ane->dev, ane->stage_size,
 					    &ane->stage_dma, GFP_KERNEL);
@@ -796,6 +801,54 @@ out:
 
 /* ---- DART mapping of the staged image at the ADT IOVAs ---- */
 
+static int ane_h16_stage_domain(struct ane_h16 *ane)
+{
+	LIST_HEAD(regions);
+	struct iommu_resv_region *region;
+	unsigned int s;
+	int ret = 0;
+
+	ane->domain = iommu_get_domain_for_dev(ane->dev);
+	if (!ane->domain || !iommu_is_dma_domain(ane->domain)) {
+		dev_err(ane->dev, "staging requires a DMA-API IOMMU domain\n");
+		return -ENODEV;
+	}
+	/* Fixed aliases must be excluded from the DMA API's IOVA allocator
+	 * before coherent allocation. A no-reg reserved-memory region with
+	 * iommu-addresses supplies IOMMU_RESV_RESERVED at domain setup.
+	 */
+	iommu_get_resv_regions(ane->dev, &regions);
+	for (s = 0; s < 2; s++) {
+		bool covered = false;
+		u64 start = ane->segs[s].iova, size = ane->segs[s].size;
+
+		if (!size || start + size < start ||
+		    ane->segs[s].phys + size < ane->segs[s].phys ||
+		    !IS_ALIGNED(start | size | ane->segs[s].phys, SZ_16K)) {
+			ret = -EINVAL;
+			break;
+		}
+		list_for_each_entry(region, &regions, list) {
+			u64 offset;
+
+			if (region->type != IOMMU_RESV_RESERVED || start < region->start)
+				continue;
+			offset = start - region->start;
+			if (offset <= region->length && size <= region->length - offset) {
+				covered = true;
+				break;
+			}
+		}
+		if (!covered) {
+			dev_err(ane->dev, "firmware alias IOVA is not reserved from DMA allocation\n");
+			ret = -EINVAL;
+			break;
+		}
+	}
+	iommu_put_resv_regions(ane->dev, &regions);
+	return ret;
+}
+
 static int ane_h16_map_stage(struct ane_h16 *ane)
 {
 	const struct ane_h16_fw *img = ane->soc->fw;
@@ -803,27 +856,31 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	unsigned int s;
 	int ret;
 
-	ane->domain = iommu_get_domain_for_dev(ane->dev);
-	if (!ane->domain) {
-		dev_err(ane->dev,
-			"device has no iommu domain: the overlay must give the node apple,t8110-dart iommus\n");
-		return -ENODEV;
-	}
-	if (!IS_ALIGNED(virt_to_phys(ane->stage_cpu), SZ_16K)) {
-		dev_err(ane->dev, "staged buffer not 16 KiB aligned\n");
+	if (!ane->domain || !IS_ALIGNED(ane->stage_dma, SZ_16K)) {
+		dev_err(ane->dev, "staged DMA IOVA not 16 KiB aligned or domain missing\n");
 		return -EINVAL;
 	}
 	for (s = 0; s < 2; s++) {
 		u64 off;
 
 		for (off = 0; off < ane->segs[s].size; off += SZ_16K) {
-			u64 pa = virt_to_phys(ane->stage_cpu + seg_vm[s] + off);
+			u64 pa;
 			u64 iova = ane->segs[s].iova + off;
+			u64 source = ane->stage_dma + seg_vm[s] + off;
 			size_t len = min_t(u64, SZ_16K, ane->segs[s].size - off);
 
 			if (seg_vm[s] + off + len > ane->stage_size) {
 				dev_err(ane->dev, "mapping outside the staged image\n");
 				return -EINVAL;
+			}
+			/* A coherent CPU pointer may be remapped/vmalloc-backed. The
+			 * DMA handle is an IOVA; resolve its backing page via the DMA
+			 * domain, never virt_to_phys(cpu_pointer) or dma_handle-as-PA.
+			 */
+			pa = iommu_iova_to_phys(ane->domain, source);
+			if (!pa || !IS_ALIGNED(pa, SZ_16K)) {
+				dev_err(ane->dev, "staged DMA page is untranslated or unaligned\n");
+				return -EFAULT;
 			}
 			if (iommu_iova_to_phys(ane->domain, iova)) {
 				dev_err(ane->dev,
@@ -1030,6 +1087,11 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		ane_h16_result(ane, 3, "REFUSED", "segment-ranges");
 		return ret;
 	}
+	ret = ane_h16_stage_domain(ane);
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "dma-domain-or-alias-reservation");
+		return ret;
+	}
 	ret = ane_h16_fw_pin(ane, &fw);
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "fw-pin");
@@ -1212,11 +1274,22 @@ static int ane_h16_probe(struct platform_device *pdev)
 		goto rpm_off;
 	}
 	ret = ane_h16_boot(ane);
+	if (ane->fw_touched) {
+		/* CPU release is an ownership boundary, even on timeout. Returning
+		 * an error would let failed-probe devres cleanup discard mappings
+		 * that firmware may still use. Keep the device bound, power held,
+		 * and module pinned until reboot. RESULT (not insmod's status)
+		 * reports the actual boot outcome.
+		 */
+		ane->boot_error = ret;
+		__module_get(THIS_MODULE);
+		dev_emerg(&pdev->dev,
+			  "CPU release attempted: boot_error=%d; retaining binding, mappings and power; do NOT unload; reboot required\n",
+			  ret);
+		return 0;
+	}
 rpm_off:
 	pm_runtime_put_sync(&pdev->dev);
-	if (ane->fw_started)
-		dev_emerg(&pdev->dev,
-			  "firmware started: do NOT unload this module; reboot to park the ANE\n");
 	return ret;
 }
 

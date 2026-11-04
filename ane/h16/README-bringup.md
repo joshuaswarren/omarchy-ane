@@ -6,6 +6,21 @@ an M4-family (T8132 / T6040 / T6041) Linux box. H17 rows join the same
 module from `ane/h17/` (AneH17Driver). Facts and receipts:
 `receipts/2026-10-03-ane-h16/README.md`.
 
+**Current safety constraints:** T8140 `stage=boot` refuses before hardware
+access pending its H17-specific CE/PWGATE ordering adapter. Generic boot
+staging now requires a DMA-API IOMMU domain and boot-time
+IOMMU_RESV_RESERVED coverage for fixed alias IOVAs. The T8140 overlay
+source describes that reservation, but other templates must be updated
+before boot staging can proceed. Apply reservations at boot, not through
+a live overlay after the DMA domain is initialized.
+
+Once CPU release is attempted, probe deliberately retains a successful
+driver binding even if firmware readiness times out, preventing devres
+cleanup from invalidating live mappings. **insmod exit 0 is not a boot
+success:** inspect the RESULT line and boot_error diagnostic. The module
+and runtime-power reference are pinned until reboot on both success and
+timeout. Do not force-unload or remove the platform device.
+
 ## What it does
 
 Every stage ends with one machine-readable record on the console:
