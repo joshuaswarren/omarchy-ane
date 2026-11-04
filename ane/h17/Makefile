@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0-only OR MIT
 ifneq ($(KERNELRELEASE),)
-obj-m := ane_h17_adt_probe.o ane_h17_ps_probe.o ane_h17_cpu_ps_probe.o ane_h17_cpu_vote_probe.o ane_h17_engine_probe.o ane_h17_read_probe.o ane_h17_single_read_probe.o ane_h17_poweroff_probe.o ane_h17_survey_probe.o ane_h17_run_probe.o ane_h17_write_probe.o ane_h17_wake.o
+obj-m := ane_h17_adt_probe.o ane_h17_ps_probe.o ane_h17_cpu_ps_probe.o ane_h17_cpu_vote_probe.o ane_h17_engine_probe.o ane_h17_read_probe.o ane_h17_single_read_probe.o ane_h17_poweroff_probe.o ane_h17_survey_probe.o ane_h17_run_probe.o ane_h17_write_probe.o ane_h17_poweron_probe.o ane_h17_wake.o
 else
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
