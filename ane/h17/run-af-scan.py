@@ -73,8 +73,7 @@ def main():
     run.mkdir(mode=0o700)  # Exclusive: a failed attempt consumes this boot.
     log = run / 'probe.log'
     args = ['insmod', str(module), 'optin=1']
-    if 'af_scan' in module.name:
-        args.append(f'log_path={log}')
+    args.append(f'log_path={log}')
     durable(run / 'manifest.json', json.dumps({
         'boot': boot, 'commit': head, 'kernel': kernel, 'vermagic': vermagic,
         'module_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),

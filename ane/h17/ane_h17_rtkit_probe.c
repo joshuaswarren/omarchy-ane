@@ -75,6 +75,10 @@
 
 static const u32 h17_sub_off[H17_MAX_SUB] = { 0xc000, 0xc008, 0xc010 };
 
+static char *log_path;
+module_param(log_path, charp, 0400);
+MODULE_PARM_DESC(log_path, "absolute durable log path supplied by the launcher");
+
 static bool optin;
 module_param(optin, bool, 0444);
 MODULE_PARM_DESC(optin, "Must be 1 on J700");
@@ -368,7 +372,11 @@ put_nodes:
 	if (ret)
 		goto refused;
 
-	logf = filp_open(H17_LOG_PATH, O_WRONLY | O_CREAT | O_APPEND | O_SYNC,
+	if (!log_path || log_path[0] != '/') {
+		pr_err("ane_h17_rtkit REFUSED: log_path must be absolute\n");
+		return -EINVAL;
+	}
+	logf = filp_open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_SYNC,
 			 0644);
 	if (IS_ERR(logf)) {
 		pr_err("ane_h17_rtkit cannot open %s: %ld\n",
