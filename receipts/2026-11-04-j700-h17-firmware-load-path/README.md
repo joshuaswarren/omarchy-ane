@@ -784,3 +784,73 @@ python3 ane.py 0xfffffe0008f55fa0 30  # the FWIM surface allocation
 
 Nothing here is device qualification. A register map is not device behaviour,
 and a decoded instruction is not a running CPU.
+
+## 10. Message/command register protocol (offline, 2026-11-04 evening)
+
+Sweeps over the whole interface range (`0xfffffe0008eeb820`–`0xfffffe0008ff8dd8`)
+for loads/stores of the family-`0xe0` SoC-config fields, then a use-site
+disassembly of every hit. Raw outputs retained in `analysis/` (field-consumer
+sweep, SoC-config dispatcher, doorbell/IRQ/command sites, full
+`SendRequestToFirmware_gated` and `aneFirmwareCommandSend` traces).
+
+### 10.0 Method correction — PAC virtual calls are not field reads
+
+The dominant hit pattern is
+
+```
+ldr  x16, [x0]            ; signed vtable pointer (autda/xpacd guard follows)
+add  x8,  x16, #off
+ldr  x9,  [x16, #off]     ; method at vtable slot off
+blraa x9, x17             ; virtual call
+```
+
+so `ldr x9,[x16,#0x148/0x150/...]` hits are **vtable-slot calls**, not device
+field reads. True field/register consumers are only the sites of the form
+`ldr w1,[this,#off]` followed by a register-helper call (§3 helper cluster).
+
+### 10.1 The mailbox trio, pinned to named consumers
+
+| Reg offset | Field | Consumer (VA) | Use |
+|---|---|---|---|
+| `0x1884000` | `this+0x158` | `ANEHWDevice::doorBellRing` (`0xfffffe0008f416b4`) | host→firmware **raise**: write `1 << bit`, `bit < 32` enforced (`cmp w8,#0x20`) |
+| `0x188c000` | `this+0x150` | `aneInterruptHandlerPriv` (`0xfffffe0008f5810c`), `handleOutstandingCommand`, `waitForFirmwareToQuiesce`, `HandleFirmwareTimeout_gated`, ISP surface-map paths | firmware→host IRQ **status**, read via helper `0x8f73fdc(base, reg)` |
+| `0x1890000` | `this+0x154` | `aneInterruptHandlerPriv` (`0xfffffe0008f581c4`) | IRQ **ACK**: write `0xffff` via helper `0x8f74130(base, reg, val)`, then `dmb ish` — 16 W1C lines |
+| `0x1370000/4` | `this+0x148..14c` | `ReadFirmwareTimestamp` (`0x8f43d78`), `GetANETimeToSystemTimeSync` | free-running firmware **timestamp** counter pair |
+
+The MMIO handle passed to both helpers is device field `[this,#0x320]`
+(`ldr x0,[x26,#0x320]` at every IRQ call site). `doorBellRing` reaches the
+same handle through `[arg+0xe320]`, i.e. its argument object and the interrupt
+handler's device sit `0xe000` apart in the same allocation — how exactly is
+not resolved offline and does not change any register value above.
+
+`doorBellRing` is referenced once as data: a u64 equal to its VA at
+`0xfffffe000c7c4378`, inside an `ANEHWDevice` method table (neighbours include
+`ANE_deInit`, `aneCmdSend`, `ANE_PowerOn`, `ProgramLoad`). No direct `bl` to it
+exists anywhere in the kernelcache — dispatch is virtual. The one observed
+call site, inside `SendRequestToFirmware_gated` at `0xfffffe0008f107dc`, calls
+slot `[vptr+0x158]` with `x0 = this`; reconciling that convention with
+doorBellRing's argument dereference is open (see the 0xe000 note above).
+
+### 10.2 Command-send call chain (`ANEHWDevice`)
+
+| Symbol | VA |
+|---|---|
+| `aneCmdSend(ANEFirmwareCommand&)` | `0xfffffe0008f49064` |
+| raw `aneCmdSend(void*,u32,void*,u32,u32,bool,u64,u32,bool,bool,bool,u64)` | `0xfffffe0008f3d300` |
+| `aneFirmwareCommandSend(ANEFirmwareCommand&, function<void(void*,int)>)` | `0xfffffe0008f47d78` |
+| `aneCmdSendAsync(ANEFirmwareCommand&, function<void(void*,int)>)` | `0xfffffe0008f48f58` |
+| `cancelFirmwareCommand(void*)` | `0xfffffe0008f436c8` |
+| `commandSleep(void*, u32)` | `0xfffffe0008f59b1c` |
+
+`aneCmdSend(ANEFirmwareCommand&)` builds a completion thunk and tail-calls
+`aneFirmwareCommandSend`; that function is queue/state-machine logic (OSAction
+helpers, error constants `0xe00002bd` and `0xe208`) with **no direct MMIO access
+in its first 400 instructions** — the doorbell rung observed for a request
+lives in `SendRequestToFirmware_gated`, which dispatches slot 0x158 after its
+request bookkeeping. So the H17 submit handshake is: build request → queue →
+ring bit on `0x1884000` → firmware answers via an IRQ line, status read at
+`0x188c000`, W1C-ACK written to `0x1890000`.
+
+This is a decoded instruction stream, not device behaviour: nothing in this
+section has been exercised on hardware, and task submission stays off-limits
+until the ring/bit semantics are pinned beyond what a static trace shows.

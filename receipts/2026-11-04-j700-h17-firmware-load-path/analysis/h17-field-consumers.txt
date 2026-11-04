@@ -1,0 +1,473 @@
+== _ZinComputeInitProcedureSection
+   0xfffffe0008fa4514 str      x10, [x8, #0x100]                        [x8,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008fa451c str      w10, [x8, #0x100]                        [x8,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008fa4528 str      w10, [x8, #0x104]                        [x8,#0x104] -> 0x1880028
+   0xfffffe0008fa4530 str      w9, [x8, #0x108]                         [x8,#0x108] -> 0x188002c
+== _ZinComputeInitTextPropertySection
+   0xfffffe0008fa50e4 ldr      x8, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008fa5154 ldr      x8, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008fa5164 ldr      w8, [x21, #0x128]                        [x21,#0x128] -> 0x1880058
+   0xfffffe0008fa516c str      w8, [x21, #0x128]                        [x21,#0x128] -> 0x1880058
+== __Z19printDictionaryKeysPK12OSDictionaryPc
+   0xfffffe0008ef9b0c ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZL37ZinComputeInitSneProgramTdPropertyBufPK17ZinComputeProgramP20ZinComputeProgramSne
+   0xfffffe0008fa2c20 ldr      w8, [x21, #0x128]                        [x21,#0x128] -> 0x1880058
+   0xfffffe0008fa2c28 str      w8, [x21, #0x128]                        [x21,#0x128] -> 0x1880058
+   0xfffffe0008fa2c40 str      x0, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008fa2cbc ldr      x9, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008fa2cc4 str      x0, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008fa2cf0 str      x8, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+== __ZL42ZinComputeInitSneProgramSegmentPropertyBufPK17ZinComputeProgramP20ZinComputeProgramSne
+   0xfffffe0008fa2b04 ldr      w8, [x20, #0x128]                        [x20,#0x128] -> 0x1880058
+   0xfffffe0008fa2b0c str      w8, [x20, #0x128]                        [x20,#0x128] -> 0x1880058
+   0xfffffe0008fa2b24 str      x8, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+   0xfffffe0008fa2ba0 ldr      x9, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+   0xfffffe0008fa2ba8 str      x0, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+   0xfffffe0008fa2bf4 str      x8, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice10ANE_deInitEv
+   0xfffffe0008f42294 ldr      w8, [x20, #0xf4]                         [x20,#0xf4] -> regA
+   0xfffffe0008f42668 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f4273c ldr      w1, [x20, #0x100]                        [x20,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f42d7c ldr      w1, [x20, #0xfc]                         [x20,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f42e1c ldr      w1, [x20, #0xfc]                         [x20,#0xfc] -> regA+8(0x1880020)
+== __ZN11ANEHWDevice12ProgramAbortEP18ANEProgramResource
+   0xfffffe0008efd94c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice12doorBellRingEPv
+   0xfffffe0008f4172c ldr      w1, [x9, #0x158]                         [x9,#0x158] -> 0x1884000(db)
+== __ZN11ANEHWDevice13setClientHintEP13ANEClientHint
+   0xfffffe0008f0908c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice14ANEExclaveInitEP9IOService
+   0xfffffe0008f68980 ldr      x9, [x16, #0x160]                        [x16,#0x160] -> 0x1600044(ctl)
+== __ZN11ANEHWDevice15mapFwCTRRRegionEv
+   0xfffffe0008f449c8 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f44c90 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f44cd0 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f44d6c ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice16ANE_ctrrReloadFwEP11IOMemoryMapjjP4task
+   0xfffffe0008f45048 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f4511c ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice16DumpANERegistersEv
+   0xfffffe0008f2dc0c ldr      w1, [x21, #0xfc]                         [x21,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f2dc34 ldr      w1, [x21, #0x100]                        [x21,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f2dc5c ldr      w1, [x21, #0x104]                        [x21,#0x104] -> 0x1880028
+   0xfffffe0008f2dc84 ldr      w1, [x21, #0x108]                        [x21,#0x108] -> 0x188002c
+   0xfffffe0008f2dcac ldr      w1, [x21, #0x10c]                        [x21,#0x10c] -> 0x1880030
+   0xfffffe0008f2dcd4 ldr      w1, [x21, #0x110]                        [x21,#0x110] -> 0x1880034
+   0xfffffe0008f2dcfc ldr      w1, [x21, #0x114]                        [x21,#0x114] -> 0x1880038
+   0xfffffe0008f2dd24 ldr      w1, [x21, #0x118]                        [x21,#0x118] -> 0x188003c
+== __ZN11ANEHWDevice18disableAneSysClockEv
+   0xfffffe0008f2d128 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f2d144 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f2d154 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f2d160 ldr      w1, [x19, #0x12c]                        [x19,#0x12c] -> 0x188005c
+== __ZN11ANEHWDevice18power_off_hardwareEv
+   0xfffffe0008f595d4 ldr      x8, [x22, #0x100]                        [x22,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f595dc str      x8, [x22, #0x100]                        [x22,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f59640 ldr      x1, [x22, #0x100]                        [x22,#0x100] -> regA+12(0x1880024)
+== __ZN11ANEHWDevice21ReadFirmwareTimestampEv
+   0xfffffe0008f43d78 ldr      w1, [x19, #0x14c]                        [x19,#0x14c] -> 0x1370004
+   0xfffffe0008f43d8c ldr      w1, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f43d9c ldr      w1, [x19, #0x14c]                        [x19,#0x14c] -> 0x1370004
+== __ZN11ANEHWDevice22ANE_ScheduleWork_gatedEP33ANEInDebugWorkProcessorRPCRequestb
+   0xfffffe0008f36024 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f361c8 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice22initializeANESoCConfigEv
+   0xfffffe0008f64e9c str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f64ea8 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f64f44 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f64f60 str      w10, [x19, #0x124]                       [x19,#0x124] -> 0x1880064
+   0xfffffe0008f64f68 str      w9, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f64fcc str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f64fd8 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65080 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f65098 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f650a4 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f651b4 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f651c0 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65254 str      w8, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f65300 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f6530c str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f654b8 str      w9, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f654c4 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65554 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65560 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65608 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f65618 str      wzr, [x19, #0x124]                       [x19,#0x124] -> 0x1880064
+   0xfffffe0008f65624 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f656dc str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f656e8 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65718 stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f657dc str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f657e8 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f658d8 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f658e4 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65944 stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f65a68 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65a74 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65aec str      w9, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65af8 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65b54 stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f65ba8 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65bb4 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65ca4 str      w9, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65cb0 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65d0c stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f65da0 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f65dac str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f65e3c stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f65e54 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f65e60 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f66038 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f66044 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f660f4 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f6610c str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f66118 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f6620c str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f66218 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f662ac stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f662c4 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f662d0 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f663c4 str      w9, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f663d0 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f66430 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f6643c str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f664d0 str      w8, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f66574 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f66580 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f666dc stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f666f4 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f66700 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f66798 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f667a4 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f66840 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f6685c str      w10, [x19, #0x124]                       [x19,#0x124] -> 0x1880064
+   0xfffffe0008f66864 str      w9, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f668d8 str      w8, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f668e4 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f6698c stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f66cb0 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f66dbc stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f66de8 str      wzr, [x19, #0xf4]                        [x19,#0xf4] -> regA
+   0xfffffe0008f66f00 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f66f18 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f66f24 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f67014 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f6702c str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f67038 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f67134 stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f6714c str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f67158 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f6724c stur     q1, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f67264 str      w8, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f67270 str      d0, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f67424 str      w9, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f67430 str      d0, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f6752c stur     q0, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f67558 str      wzr, [x19, #0xf4]                        [x19,#0xf4] -> regA
+   0xfffffe0008f675cc strb     wzr, [x22, #0x11c]                       [x22,#0x11c] -> 0x196c000
+== __ZN11ANEHWDevice22processCommandResponseEyyy
+   0xfffffe0008f438ec ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice22showDartAllocationInfoEv
+   0xfffffe0008f32598 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice23FreeSharedMemorySurfaceEybb
+   0xfffffe0008f4cbe0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice23InitANEScratchRegistersEv
+   0xfffffe0008f6123c ldr      w1, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f6124c ldr      w1, [x19, #0x100]                        [x19,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f6125c ldr      w1, [x19, #0x104]                        [x19,#0x104] -> 0x1880028
+   0xfffffe0008f6126c ldr      w1, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f6127c ldr      w1, [x19, #0x10c]                        [x19,#0x10c] -> 0x1880030
+   0xfffffe0008f6128c ldr      w1, [x19, #0x110]                        [x19,#0x110] -> 0x1880034
+   0xfffffe0008f6129c ldr      w1, [x19, #0x114]                        [x19,#0x114] -> 0x1880038
+   0xfffffe0008f612ac ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+== __ZN11ANEHWDevice23aneInterruptHandlerPrivEP22IOInterruptEventSourcei
+   0xfffffe0008f5810c ldr      w1, [x19, #0x150]                        [x19,#0x150] -> 0x188c000
+   0xfffffe0008f581c4 ldr      w1, [x19, #0x154]                        [x19,#0x154] -> 0x1890000
+== __ZN11ANEHWDevice23dartMapMemoryDescriptorEP18IOMemoryDescriptorPP12IODMACommandPyP8IOMapperb20ANEResourceUsageTypeNSt3__110shared_ptrI11ANEResourceEEyPP20RTBuddyVisibleMemory
+   0xfffffe0008f2ff94 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f30034 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f30174 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f301d0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice23initializeANEPropertiesEv
+   0xfffffe0008f642d4 strb     wzr, [x21, #0x108]                       [x21,#0x108] -> 0x188002c
+   0xfffffe0008f642ec strb     w22, [x21, #0x11c]                       [x21,#0x11c] -> 0x196c000
+   0xfffffe0008f64304 strh     w22, [x21, #0x128]                       [x21,#0x128] -> 0x1880058
+   0xfffffe0008f64318 strb     wzr, [x21, #0x100]                       [x21,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f645b0 str      w26, [x19, #0xf4]                        [x19,#0xf4] -> regA
+== __ZN11ANEHWDevice24ANE_ProgramDestroy_gatedEP21ANEProgramDestroyArgsb
+   0xfffffe0008f074b8 str      w9, [x8, #0x128]                         [x8,#0x128] -> 0x1880058
+== __ZN11ANEHWDevice24ANE_UnmapMPMMemory_gatedEyP24IOBufferMemoryDescriptor
+   0xfffffe0008f712e0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f71324 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice24DisableDriverSleepTimersEv
+   0xfffffe0008f262e8 ldr      w8, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f2631c ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f2632c ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f26370 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+== __ZN11ANEHWDevice24handleOutstandingCommandEP8OSObjectb
+   0xfffffe0008f43504 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice25ANE_SaveRequestTimerStateEv
+   0xfffffe0008f05320 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice25ReleaseAllPendingSurfacesILNS_12SurfaceTypesE0EEEvP7OSArrayb
+   0xfffffe0008f4df04 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice25ReleaseAllPendingSurfacesILNS_12SurfaceTypesE1EEEvP7OSArrayb
+   0xfffffe0008f4de08 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice25ReleaseDebugWorkProcessorEP8ipc_port
+   0xfffffe0008f389f0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice25dartUnmapMemoryDescriptorEP12IODMACommandyjj20ANEResourceUsageTypeP20RTBuddyVisibleMemory
+   0xfffffe0008f3337c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice26ANE_releaseAllPeerSurfacesEv
+   0xfffffe0008f50a10 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice26GetANETimeToSystemTimeSyncEPyS0_
+   0xfffffe0008f577a8 ldr      w1, [x21, #0x14c]                        [x21,#0x14c] -> 0x1370004
+   0xfffffe0008f577c4 ldr      w1, [x21, #0x148]                        [x21,#0x148] -> 0x1370000
+   0xfffffe0008f577d4 ldr      w1, [x21, #0x14c]                        [x21,#0x14c] -> 0x1370004
+== __ZN11ANEHWDevice26cleanupAllChainingMappingsEP25ANEChainingCacheReqParams
+   0xfffffe0008fdc8d0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008fdca68 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008fdcc4c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice26processDebugLoggingRequestEyyy
+   0xfffffe0008f3c2a0 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008f3c3d8 ldr      w1, [x19, #0x114]                        [x19,#0x114] -> 0x1880038
+== __ZN11ANEHWDevice27ANEPowerChangeHandler_gatedEjP9IOServicePvm
+   0xfffffe0008f755bc ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f7573c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f75e38 ldrb     w8, [x25, #0x108]                        [x25,#0x108] -> 0x188002c
+   0xfffffe0008f75e68 strb     wzr, [x25, #0x108]                       [x25,#0x108] -> 0x188002c
+== __ZN11ANEHWDevice27ANE_UserClientCleanup_gatedEPvb
+   0xfffffe0008f066f8 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice27AllocateSharedMemorySurfaceEyPP28ANESharedMemorySurfaceParamsbjbbybiby
+   0xfffffe0008f4bc48 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice27HandleFirmwareTimeout_gatedEv
+   0xfffffe0008f453e8 ldr      w1, [x19, #0x114]                        [x19,#0x114] -> 0x1880038
+   0xfffffe0008f45758 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice27SendRequestToFirmware_gatedEP10ANERequestP9IOSurfaceibb
+   0xfffffe0008f107cc ldr      x9, [x16, #0x158]                        [x16,#0x158] -> 0x1884000(db)
+== __ZN11ANEHWDevice31ANE_ProgramCreateInstance_gatedEP30ANEClientProgramInstanceParamsP26ANEProgramCreateArgsOutputP32ANEProgramCreateAdditionalParams
+   0xfffffe0008f0c0d4 ldr      w8, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f0cf90 ldr      w8, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f0d0f4 ldr      w8, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f0d544 ldr      w8, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+== __ZN11ANEHWDevice31ANE_processISPSurfaceMapRequestEyyj
+   0xfffffe0008f4ef04 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice33ANE_processISPSurfaceUnMapRequestEybb
+   0xfffffe0008f4dae8 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice34ANE_ShowDebugWorkProcessorSurfacesEv
+   0xfffffe0008f38144 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f38270 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice36ANE_processIspAneNetworkSurfaceRemapEjb
+   0xfffffe0008f4fc5c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice36ANE_processIspAneNetworkSurfaceUnMapEy
+   0xfffffe0008f50384 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice37ANE_ShowSharedMemoryAllocations_gatedEb
+   0xfffffe0008f5f178 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f600e8 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f6016c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice38ANE_PatchProcessInstanceWeightsBuffersEP10ANEProcessP30ANEClientProgramInstanceParamsP4task
+   0xfffffe0008fd5fa0 ldr      w8, [x2, #0x108]                         [x2,#0x108] -> 0x188002c
+   0xfffffe0008fd628c ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+   0xfffffe0008fd6760 ldr      w8, [x28, #0x108]                        [x28,#0x108] -> 0x188002c
+== __ZN11ANEHWDevice40ANE_CompleteDebugWorkProcessorItem_gatedEPyPvjP4task
+   0xfffffe0008f379a0 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice42ANE_CleanupAllocationsPendingRelease_gatedEb
+   0xfffffe0008f09e50 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f0a038 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice45ANE_PatchClusterProcessInstanceWeightsBuffersEP10ANEProcessP30ANEClientProgramInstanceParamsP4task
+   0xfffffe0008fd4658 ldr      w8, [x2, #0x108]                         [x2,#0x108] -> 0x188002c
+   0xfffffe0008fd46a8 ldr      w8, [x26, #0x108]                        [x26,#0x108] -> 0x188002c
+   0xfffffe0008fd4788 ldr      w8, [x26, #0x108]                        [x26,#0x108] -> 0x188002c
+   0xfffffe0008fd4e74 ldr      w8, [x26, #0x108]                        [x26,#0x108] -> 0x188002c
+   0xfffffe0008fd5088 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN11ANEHWDevice5startEP9IOService
+   0xfffffe0008f53130 str      w8, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f53b58 str      x0, [x23, #0x100]                        [x23,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f53b88 str      x0, [x23, #0x108]                        [x23,#0x108] -> 0x188002c
+   0xfffffe0008f53b8c ldrb     w8, [x24, #0x118]                        [x24,#0x118] -> 0x188003c
+   0xfffffe0008f53bb8 str      x0, [x23, #0x110]                        [x23,#0x110] -> 0x1880034
+   0xfffffe0008f53bec str      x0, [x23, #0x120]                        [x23,#0x120] -> 0x1880060
+   0xfffffe0008f53c20 str      x0, [x23, #0x128]                        [x23,#0x128] -> 0x1880058
+   0xfffffe0008f549c8 ldrb     w8, [x24, #0x104]                        [x24,#0x104] -> 0x1880028
+   0xfffffe0008f54e58 ldrb     w8, [x24, #0x118]                        [x24,#0x118] -> 0x188003c
+   0xfffffe0008f55aac ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice60SharedMemorySurfaceTargetPhysicalAddressToHostVirtualAddressEyyPP28ANESharedMemorySurfaceParamsPj
+   0xfffffe0008f4c1bc ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZN11ANEHWDevice8ANE_InitEv
+   0xfffffe0008f3dd7c ldr      w1, [x19, #0x114]                        [x19,#0x114] -> 0x1880038
+   0xfffffe0008f3de90 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3df10 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3df64 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3dfb0 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3e14c ldr      w1, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f3e15c ldr      w1, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f3e178 ldr      w1, [x19, #0x110]                        [x19,#0x110] -> 0x1880034
+   0xfffffe0008f3e18c ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3e210 ldr      w9, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3e24c ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3e388 ldr      w1, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f3e398 ldr      w1, [x19, #0x100]                        [x19,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f3e55c ldr      w8, [x19, #0xf4]                         [x19,#0xf4] -> regA
+   0xfffffe0008f3e568 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f3e57c ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f3e5e4 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f3e9d4 ldr      w1, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f3e9e4 ldr      w1, [x19, #0x10c]                        [x19,#0x10c] -> 0x1880030
+   0xfffffe0008f3f048 ldr      w1, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f3f068 ldr      w1, [x19, #0x100]                        [x19,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f3f08c ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3f0a0 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3f124 ldr      w9, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3f160 ldr      w1, [x19, #0x118]                        [x19,#0x118] -> 0x188003c
+   0xfffffe0008f3f248 ldr      w1, [x19, #0x100]                        [x19,#0x100] -> regA+12(0x1880024)
+   0xfffffe0008f3f258 ldr      w1, [x19, #0xfc]                         [x19,#0xfc] -> regA+8(0x1880020)
+   0xfffffe0008f3f3d0 ldr      w1, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f3f3e4 ldr      w1, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f3f464 ldr      w9, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f3f4a0 ldr      w1, [x19, #0x108]                        [x19,#0x108] -> 0x188002c
+   0xfffffe0008f3ffec ldr      d8, [x8, #0x128]                         [x8,#0x128] -> 0x1880058
+   0xfffffe0008f4083c ldr      d0, [x8, #0x148]                         [x8,#0x148] -> 0x1370000
+   0xfffffe0008f40900 ldr      d0, [x8, #0x150]                         [x8,#0x150] -> 0x188c000
+   0xfffffe0008f409c4 ldr      d0, [x8, #0x158]                         [x8,#0x158] -> 0x1884000(db)
+   0xfffffe0008f40a84 ldr      d0, [x8, #0x160]                         [x8,#0x160] -> 0x1600044(ctl)
+== __ZN11ANEResource16releaseResourcesEv
+   0xfffffe0008f97d9c ldr      x8, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+== __ZN11ANEResource18waitForAsyncWiringEb
+   0xfffffe0008f9ac78 ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9ac8c ldr      x8, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f9ada8 ldr      x11, [x19, #0x148]                       [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9ade0 ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9ae8c ldr      x10, [x19, #0x148]                       [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9aef0 ldr      x10, [x19, #0x148]                       [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9af44 ldr      x8, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f9af4c ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN11ANEResource4wireEj
+   0xfffffe0008f9a750 ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9a910 ldr      x9, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN11ANEResource6unwireEbj
+   0xfffffe0008f9bc90 ldr      x0, [x0, #0x148]                         [x0,#0x148] -> 0x1370000
+   0xfffffe0008f9becc ldr      x8, [x19, #0x158]                        [x19,#0x158] -> 0x1884000(db)
+   0xfffffe0008f9bf18 ldr      x9, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN11ANEResource7dartMapE12ANEResidencyb
+   0xfffffe0008f998e0 ldr      x1, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+   0xfffffe0008f99b24 ldr      x21, [x20, #0x150]                       [x20,#0x150] -> 0x188c000
+== __ZN11ANEResource9asyncWireEjj
+   0xfffffe0008f9b668 ldr      x11, [x19, #0x148]                       [x19,#0x148] -> 0x1370000
+   0xfffffe0008f9b6bc ldr      x22, [x19, #0x148]                       [x19,#0x148] -> 0x1370000
+== __ZN11ANEResource9dartUnmapE12ANEResidency
+   0xfffffe0008f9a0b0 ldr      x1, [x0, #0x148]                         [x0,#0x148] -> 0x1370000
+   0xfffffe0008f9a168 ldr      x21, [x19, #0x150]                       [x19,#0x150] -> 0x188c000
+== __ZN11ANEResourceC1EP11ANEHWDevice
+   0xfffffe0008f979a0 str      x19, [x0, #0x148]                        [x0,#0x148] -> 0x1370000
+== __ZN11ANEResourceC1EP11ANEHWDeviceRK25ANEResourceCreationParams
+   0xfffffe0008f97b08 str      x21, [x0, #0x148]                        [x0,#0x148] -> 0x1370000
+== __ZN11ANEResourceC2EP11ANEHWDevice
+   0xfffffe0008f97978 str      x19, [x0, #0x148]                        [x0,#0x148] -> 0x1370000
+== __ZN11ANEResourceC2EP11ANEHWDeviceRK25ANEResourceCreationParams
+   0xfffffe0008f979d8 str      x21, [x0, #0x148]                        [x0,#0x148] -> 0x1370000
+== __ZN11ANEResourceC2Ev
+   0xfffffe0008f9793c str      x20, [x19, #0x160]                       [x19,#0x160] -> 0x1600044(ctl)
+== __ZN11ANEResourceD1Ev
+   0xfffffe0008f97f60 ldr      x0, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f97f84 str      xzr, [x19, #0x160]                       [x19,#0x160] -> 0x1600044(ctl)
+== __ZN11ANEResourceD2Ev
+   0xfffffe0008f97cd4 ldr      x0, [x19, #0x160]                        [x19,#0x160] -> 0x1600044(ctl)
+   0xfffffe0008f97cf8 str      xzr, [x19, #0x160]                       [x19,#0x160] -> 0x1600044(ctl)
+== __ZN12ANEScheduler4initER11ANEHWDevice
+   0xfffffe0008ef4ce4 ldr      x9, [x16, #0x160]                        [x16,#0x160] -> 0x1600044(ctl)
+== __ZN15ANEExclaveProxy34ANEFirmwareECCmdHandleITQInterruptEP55aneengine_aneenginecmdhandleitqinterruptreturncontext_sP35aneengine_eaneengineerrorcodetype_sPK49aneengine_aneenginecmdhandleitqinterruptcontext_s
+   0xfffffe0008f3ada0 ldr      d1, [x11, #0x120]                        [x11,#0x120] -> 0x1880060
+== __ZN16ANEGroupResourceC2EP11ANEHWDeviceRK25ANEResourceCreationParams
+   0xfffffe0008f78b64 ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN16ANEInVMAllocator4initEP8IOMapperj
+   0xfffffe0008f23078 ldr      x8, [x8, #0x148]                         [x8,#0x148] -> 0x1370000
+== __ZN16ANEInVMAllocator6vmFreeEjj
+   0xfffffe0008f2348c ldr      x16, [x8, #0x160]                        [x8,#0x160] -> 0x1600044(ctl)
+== __ZN16ANEUnionResource22updateMemoryDescriptorENSt3__110shared_ptrI11ANEResourceEE
+   0xfffffe0008fa0460 ldr      x9, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN16ANEUnionResource30markPendingRequestsToBeUpdatedEv
+   0xfffffe0008fa0eb8 ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN16ANEUnionResourceC2EP11ANEHWDeviceRK25ANEResourceCreationParamsNSt3__18functionIFbNS5_10shared_ptrI11ANEResourceEES9_EEEh
+   0xfffffe0008f9fea0 ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN17ANEClientResource7dartMapE12ANEResidencyb
+   0xfffffe0008f77784 ldr      x0, [x20, #0x150]                        [x20,#0x150] -> 0x188c000
+   0xfffffe0008f7778c ldr      x0, [x20, #0x148]                        [x20,#0x148] -> 0x1370000
+== __ZN17ANEClientResource9dartUnmapE12ANEResidency
+   0xfffffe0008f778b0 ldr      x0, [x19, #0x150]                        [x19,#0x150] -> 0x188c000
+   0xfffffe0008f778b8 ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZN18ANERegisterControlC2EP16AppleARMIODevicejPKc
+   0xfffffe0008f73d84 ldr      x9, [x16, #0x148]                        [x16,#0x148] -> 0x1370000
+== __ZN18AppleANEEPFunction27initWithTargetDataAndSymbolEP9IOServicePK6OSDataPK8OSSymbol
+   0xfffffe0008f6c5d4 ldr      x16, [x8, #0x148]                        [x8,#0x148] -> 0x1370000
+== __ZN20ANEDriverEventSource15initWithOptionsEP9IOService
+   0xfffffe0008ef07a4 ldr      x8, [x8, #0x148]                         [x8,#0x148] -> 0x1370000
+== __ZN20ANEProgramRTResource10preProcessEP20ANEProgramCreateArgsP32ANEProgramCreateAdditionalParamsP26ANEProgramCreateArgsOutput
+   0xfffffe0008f89188 ldr      x9, [x16, #0x158]                        [x16,#0x158] -> 0x1884000(db)
+== __ZN24ANEProgramLegacyResource10preProcessEP20ANEProgramCreateArgsP32ANEProgramCreateAdditionalParamsP26ANEProgramCreateArgsOutput
+   0xfffffe0008f7a8e4 ldr      x9, [x16, #0x158]                        [x16,#0x158] -> 0x1884000(db)
+== __ZN24ANEProgramLegacyResource24programLoadFromMachoFileEP20ANEProgramCreateArgsP32ANEProgramCreateAdditionalParams
+   0xfffffe0008f7ba40 str      xzr, [x25, #0x150]                       [x25,#0x150] -> 0x188c000
+   0xfffffe0008f7c8cc ldr      x9, [x9, #0x148]                         [x9,#0x148] -> 0x1370000
+   0xfffffe0008f7d350 ldr      w10, [x24, #0x108]                       [x24,#0x108] -> 0x188002c
+== __ZN26AppleANEPowerOnOffFunction27initWithTargetDataAndSymbolEP9IOServicePK6OSDataPK8OSSymbol
+   0xfffffe0008f5c088 ldr      x16, [x8, #0x148]                        [x8,#0x148] -> 0x1370000
+== __ZN28AppleANEMPMMapMemoryFunction27initWithTargetDataAndSymbolEP9IOServicePK6OSDataPK8OSSymbol
+   0xfffffe0008f5c864 ldr      x16, [x8, #0x148]                        [x8,#0x148] -> 0x1370000
+== __ZN30AppleANEMPMUnmapMemoryFunction27initWithTargetDataAndSymbolEP9IOServicePK6OSDataPK8OSSymbol
+   0xfffffe0008f5cce8 ldr      x16, [x8, #0x148]                        [x8,#0x148] -> 0x1370000
+== __ZN31AppleANEPerfCounterReadFunction27initWithTargetDataAndSymbolEP9IOServicePK6OSDataPK8OSSymbol
+   0xfffffe0008f73b38 ldr      x16, [x8, #0x148]                        [x8,#0x148] -> 0x1370000
+== __ZN9ANEDriver31removeProgramToANEMapping_gatedEyP23_ANEDriverClientContext
+   0xfffffe0008eee76c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZNK11ANEHWDevice24waitForFirmwareToQuiesceEv
+   0xfffffe0008f47284 ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+   0xfffffe0008f473bc ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== __ZNK11ANEResource19invokeActionUnGatedENSt3__18functionIFivEEE
+   0xfffffe0008f99c60 ldr      x8, [x0, #0x148]                         [x0,#0x148] -> 0x1370000
+   0xfffffe0008f99d3c ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f99dac ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f99e4c ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f99f7c ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f99f90 ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+   0xfffffe0008f99f98 ldr      x0, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== __ZNSt3__110__function6__funcIZN11ANEHWDevice10ANE_deInitEvE3$_0FvvEEclEv
+   0xfffffe0008f49de0 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f49dfc ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f49e74 ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f49e84 ldr      w1, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+   0xfffffe0008f49ea0 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+== __ZNSt3__110__function6__funcIZN11ANEHWDevice10ANE_deInitEvE3$_1FvvEEclEv
+   0xfffffe0008f49fa0 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f49fc4 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f4a054 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f4a068 ldr      w1, [x19, #0x12c]                        [x19,#0x12c] -> 0x188005c
+   0xfffffe0008f4a088 ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f4a0a0 ldr      w1, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+== __ZNSt3__110__function6__funcIZN11ANEHWDevice10ANE_deInitEvE3$_2FvvEEclEv
+   0xfffffe0008f4a1bc ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f4a1e0 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f4a254 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f4a268 ldr      w1, [x19, #0x12c]                        [x19,#0x12c] -> 0x188005c
+   0xfffffe0008f4a288 ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f4a2a0 ldr      w1, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+== __ZNSt3__110__function6__funcIZN11ANEHWDevice10ANE_deInitEvE3$_3FvvEEclEv
+   0xfffffe0008f4a3e0 ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f4a3fc ldr      w1, [x19, #0x11c]                        [x19,#0x11c] -> 0x196c000
+   0xfffffe0008f4a474 ldr      w1, [x19, #0x128]                        [x19,#0x128] -> 0x1880058
+   0xfffffe0008f4a480 ldr      w1, [x19, #0x12c]                        [x19,#0x12c] -> 0x188005c
+   0xfffffe0008f4a4a0 ldr      w1, [x19, #0x120]                        [x19,#0x120] -> 0x1880060
+   0xfffffe0008f4a4b8 ldr      w1, [x19, #0x124]                        [x19,#0x124] -> 0x1880064
+== __ZNSt3__110__function6__funcIZN11ANEResource7dartMapE12ANEResidencybE3$_0FivEEclEv
+   0xfffffe0008f9dbe0 ldr      x19, [x9, #0x150]                        [x9,#0x150] -> 0x188c000
+   0xfffffe0008f9dc64 ldr      x1, [x9, #0x148]                         [x9,#0x148] -> 0x1370000
+== __ZNSt3__110__function6__funcIZN11ANEResource9dartUnmapE12ANEResidencyE3$_0FivEEclEv
+   0xfffffe0008f9dd68 ldr      x19, [x9, #0x150]                        [x9,#0x150] -> 0x188c000
+   0xfffffe0008f9ddd0 ldr      x1, [x9, #0x148]                         [x9,#0x148] -> 0x1370000
+== __ZZN16ANEUnionResource22updateMemoryDescriptorENSt3__110shared_ptrI11ANEResourceEEENK3$_0clEv
+   0xfffffe0008fa0764 ldr      x8, [x19, #0x148]                        [x19,#0x148] -> 0x1370000
+== ____ZN11ANEHWDevice31ANE_ShowModelMemoryStatus_gatedEv_block_invoke
+   0xfffffe0008f5e56c ldr      x9, [x16, #0x150]                        [x16,#0x150] -> 0x188c000
+== ____ZN11ANEResource9asyncWireEjj_block_invoke
+   0xfffffe0008f9b850 ldr      x11, [x22, #0x148]                       [x22,#0x148] -> 0x1370000
+   0xfffffe0008f9bb6c ldr      x8, [x22, #0x148]                        [x22,#0x148] -> 0x1370000
+== ____ZN11ANEResource9asyncWireEjj_block_invoke_2
+   0xfffffe0008f9bc20 str      xzr, [x8, #0x158]                        [x8,#0x158] -> 0x1884000(db)
+   0xfffffe0008f9bc24 ldr      x0, [x8, #0x148]                         [x8,#0x148] -> 0x1370000
