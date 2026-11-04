@@ -755,9 +755,12 @@ order:
 ```
 receipts/2026-11-04-j700-h17-firmware-load-path/
 ├── README.md      this report
+├── analysis/      raw sweep/trace outputs backing §§3, 6, 10, 11
 └── scripts/
     ├── ane.py     VA↔file mapping, symbol-annotated capstone disassembly
+    ├── disva.py   disassemble N instructions from a VA (`va <va> <n>`)
     ├── scan.py    linear-sweep search: `disp|imm|adrp|str` in a kext __text
+    ├── cases.py   simulate the initializeANESoCConfig dispatch tree → §11 table
     ├── regnames.py adrp+add constant-pool string dump for a VA window
     └── fw.py      re-derive reg[]/ranges/segment-ranges from the ADT, the RVBAR
                    arithmetic, and the firmware Mach-O header + 0x08042006 sites
@@ -767,6 +770,7 @@ receipts/2026-11-04-j700-h17-firmware-load-path/
 cd receipts/2026-11-04-j700-h17-firmware-load-path/scripts
 python3 fw.py all                     # ADT windows, physical map, segments, Mach-O
 python3 fw.py rvbar 0x10000000000     # the RVBAR arithmetic
+python3 cases.py                      # §11 cross-family table from the full dump
 python3 scan.py disp 0x158            # .. 0x8f4172c is the doorbell (0x1884000)
 python3 scan.py disp 0x15c            # CPU_STATUS field: only 0x8f2dd64 + 0x8f42ff4
 python3 scan.py disp 0x160            # CPU_CONTROL: only 0x8f3e14c + 0x8f3e15c are the field
@@ -854,3 +858,99 @@ ring bit on `0x1884000` → firmware answers via an IRQ line, status read at
 This is a decoded instruction stream, not device behaviour: nothing in this
 section has been exercised on hardware, and task submission stays off-limits
 until the ring/bit semantics are pinned beyond what a static trace shows.
+
+## 11. The cross-family SoC-config table (offline)
+
+`ANEHWDevice::initializeANESoCConfig` (`0xfffffe0008f64ae0`) is a dispatcher on
+the platform ID at `this+0x1cc`: a binary tree of `cmp w8,#K` nodes rooted at
+`0x8f64e3c` (`cmp`s at `0x8f64e40`…`0x8f657a4`), 21 leaves. Simulating the tree
+for every candidate key (`scripts/cases.py`, output
+`analysis/h17-socconfig-cases.txt`) gives **21 keys, one distinct case each,
+no collisions**. Each case stores: family id → `[x21]` (out-param; `key` where
+the body stores the dispatch value directly), name string → `[x21,#0x10]`,
+variant id → `this+0x1c8`, a 16-byte q-block → `this+0x148..0x154`
+(`stur q0,[x23,#0x44]`, `x23 = this+0x104`), an 8-byte d-pair →
+`this+0x158/0x15c` (`str d0,[x19,#0x158]`), and the CPU-control register
+offset → `this+0x160`.
+
+### 11.1 All 21 cases
+
+| key (`this+0x1cc`) | name | fam (`[x21]`) | var (`this+0x1c8`) | q-block (`+0x148..0x154`) | d-pair (`+0x158/0x15c`) | ctl (`+0x160`) |
+|---|---|---|---|---|---|---|
+| 0x1 | h11 | 0x11 | 1 | runtime | runtime | `0x1400044` |
+| 0x4 | h11 | 0x12 | 1 | runtime | runtime | `0x1400044` |
+| 0x8 | h12 | 0x30 | 3 | `0x1170000/4`, `0x184c000`, `0x1850000` | `0x1844000` / `0x1400048` | `0x1400044` |
+| **0x20** | **h13** | **0x40** | **4** | `0x1170000/4`, `0x184c000`, `0x1850000` | `0x1844000` / `0x1400048` | `0x1400044` |
+| 0x40 | h13g | key (0x40) | 4 | same as 0x20 | same | `0x1400044` |
+| 0x60 | h13g | key (0x60) | 4 | runtime | runtime | runtime |
+| 0x70 | h14 | key (0x70) | 5 | same as 0x20 | same | `0x1400044` |
+| 0x80 | h14g | 0x70 | 5 | same as 0x20 | same | `0x1400044` |
+| 0x90 | h15 | key (0x90) | 6 | same as 0x20 | same | `0x1400044` |
+| 0xa0 | h14g | 0x80 | 5 | runtime | runtime | `0x1400044` |
+| 0xb0 | h15g | 0x90 | 6 | same as 0x20 | same | `0x1400044` |
+| 0xc0 | h15g | 0x90 | 6 | same as 0x20 | same | `0x1400044` |
+| 0xd0 | h16 | 0xc0 | 7 | same as 0x20 | same | `0x1400044` |
+| 0xe0 | h15g | 0xb0 | 6 | same as 0x20 | same | `0x1400044` |
+| 0xf0 | m11 | 0xa0 | 8 | same as 0x20 | same | `0x1400044` |
+| 0x100 | h16g | 0xc0 | 7 | `0x1370000/4`, `0x188c000`, `0x1890000` | `0x1884000` / `0x1600048` | `0x1600044` |
+| 0x110 | h16g | 0xd0 | 7 | same as 0x200 | same | `0x1600044` |
+| **0x200** | **h17** | **0xe0** | **9** | `0x1370000/4`, `0x188c000`, `0x1890000` | `0x1884000` / `0x1600048` | `0x1600044` |
+| 0x210 | h17 | 0xe0 | 9 | `0x1840068/6c`, `0x1908000`, `0x1840080` | `0x1840078` / `0x184007c` | `0x1600044` |
+| 0x220 | h17 | 0x100 | 9 | runtime | runtime | `0x1600044` |
+| 0x300 | m9 | 0xf0 | 0xa | same as 0x20 | same | `0x1600044` |
+
+Name strings are `__TEXT,__cstring` at `0xfffffe00073b4fab` (`h13`),
+`…fbd` (`h13g`), `…fc2` (`h14`), `…fc6` (`h14g`), `…fcb` (`h15`), `…f95`
+(`h11`, keys 0x1/0x4), `0xfffffe00073b5038` (`h17`, all three cases). Pool
+sources: `0x200` (H13-class q-block), `0x260` (H17-class q-block), `0x320`/
+`0x468` (the 0x210 case), `0x450`/`0x480` (d-pairs).
+
+### 11.2 The mailbox-page cluster (`this+0xf4..0x138`)
+
+The same cases fill a second register-offset cluster on the mailbox pages,
+adjacent to the §10.1 trio:
+
+| field | h13 (key 0x20) | h17 (key 0x200) |
+|---|---|---|
+| `+0xf4..0x104` | `0xc030`, `0x1840048/4c/50` (pool+0x420) | `1`, `0xc010`, `0x1880020/24` (pool+0x3b0, `stur q1,[x19,#0xf4]`) |
+| `+0x104..0x114` | `0x1840054/58/5c/60` (pool+0x430, `stur q0,[x23,#4]`) | `0x1880028/2c/30/34` (pool+0x2d0) then `0x1880038, 0x188003c, 0x196c000, 0x1880060` (pool+0x2f0, `stp q0,q1,[x23]`) |
+| `+0x118` (SCRATCH7, §6.1) | `0x1840084 − 0x20 = 0x1840064` | `0x188003c` |
+| `+0x124` | — | `0x1880064` |
+| `+0x128/0x12c` | — | `0x1880058`, `0x188005c` (pool+0x4a8) |
+| `+0x138` | — | `0x1c201060` |
+
+### 11.3 The three handshake fields vs. what this host did
+
+| field | h13 | h17 | kext consumer | this host (§3, §6; three boots) |
+|---|---|---|---|---|
+| `this+0x118` SCRATCH7 | `0x1840064` | `0x188003c` | `ANE_Init` `+0x564` reads it and compares the literal `0x08042006` (`mov w25,#0x2006; movk w25,#0x804,lsl#16` at `0x8f3e180`); also `DumpANERegisters+0x17c` | the wake poll that returned `0x08042006` |
+| `this+0x160` CPU_CONTROL | `0x1400044` | `0x1600044` | `ANE_Init` `write32(…,0)` then `write32(…,0x10)` (`0x8f3e14c`…`0x8f3e164`) | the register our release sequence writes |
+| `this+0x15c` CPU_STATUS | `0x1400048` | `0x1600048` | `ANE_deInit` poll (§3.3), `DumpANERegisters+0x1bc` | the register polled for the wake word |
+
+Two independent sources — Apple's kext constant pool and this host's observed
+wake behaviour — agree on CPU_CONTROL `0x1600044`, CPU_STATUS `0x1600048`, and
+token `0x08042006` for H17: the kext's case for this platform is key `0x200`
+(family `0xe0`, variant 9). Note the kext's wake-word *read* targets SCRATCH7
+(`0x188003c`), never CPU_STATUS — CPU_STATUS is polled only in `ANE_deInit`
+(bits 0/1, 20 × 10 ms), matching the module's own poll order (§6.1).
+
+The `+0x160` scalar at `0x8f64fcc` is built `mov w8,#0x44; movk w8,#0x140,lsl#16;
+orr w8,w8,#0x200000` → **`0x1600044`** — the H17 case sets bit 21, which moves
+the CPU-control window from the H13 page `0x1400000` to `0x1600000`; the d-pair
+lo half is the §10.1 doorbell and the hi half is CPU_STATUS.
+
+### 11.4 Runtime-source cases
+
+Keys `0x1, 0x4, 0x60, 0xa0, 0x220` do not load the q-block/d-pair from the
+constant pool: they make a PAC-signed virtual call (`autda` + `blraa`, PAC
+modifier `0xcda1<<48` / `0x37a5<<48`) through `[this+0x2b0]`'s vtable slot
+`+0x2d8` with the C-string `"ane-subtype"` (`0xfffffe00073b5073`) and take the
+values from the returned object. Offline, the existence of that lookup is
+pinned, not its results.
+
+Raw evidence kept: `analysis/h17-socconfig-cases.txt` (generated by
+`scripts/cases.py` from the full function dump),
+`analysis/h17-sweep-0x118.txt`, `analysis/h17-sweep-0x15c.txt`,
+`analysis/h17-sweep-0x160.txt` (displacement sweeps of the full
+`__TEXT_EXEC`, `scripts/scan.py disp <off>`). As elsewhere in this receipt:
+decoded instruction stream, not device behaviour.
