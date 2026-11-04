@@ -1128,34 +1128,65 @@ same caveat as the `+0x278` slot above. `ANEClientDevice::getClient`
 
 ### 13.2 Delivery: an RTKit message queue per channel, not MMIO
 
-The command/request primitive is `_IOProcessorChannelSend` (`0xfffffe0008ef85a8`,
-called via `IOProcessorChannelSendRetry(u8 channel, const void *buf, u64, u64,
-bool)` at `0xfffffe0008f43a8c`; a logging wrapper
-`IOProcessorChannelSendWithLog` exists at `0xfffffe0008f4948c`). Control-block
-layout (`x0`, 0x30 bytes):
+The command/request primitive is `_IOProcessorChannelSend(cb, id, a2, a3)`
+(`0xfffffe0008ef85a8`, called via `IOProcessorChannelSendRetry(u8 channel,
+const void *buf, u64, u64, bool)` at `0xfffffe0008f43a8c`; a logging wrapper
+`IOProcessorChannelSendWithLog` exists at `0xfffffe0008f4948c`).
 
-| off | field |
-|---|---|
-| `+0x00` | enqueue hook fptr (PAC-authenticated, modifier `0x2abe<<48`) |
-| `+0x08` | dequeue hook fptr |
-| `+0x10` | u32 phase bit |
-| `+0x14` | u32 entries (power of two) |
-| `+0x18` | u64 message buffer base |
-| `+0x20` | u32 write index |
-| `+0x24` | u32 read index |
-| `+0x28`/`+0x2c` | u32 dequeue/enqueue counters |
+Control-block layout (0x30 bytes) — **re-audited 2026-11-04 against the
+disassembly** (`analysis/h17-messenger-irq-chain.txt`); the first version of
+this table swapped the two indices, called the payload words u32, and
+mis-claimed `+0x00/+0x08` as hook pointers:
 
-`send(channel, msg, a3, a4, wait)`: reject `read==−1`; slot = `buf + (write %
-entries)*64` — **64-byte message slots**; `dsb st`; store `w2` at slot+8, `w3`
-at slot+10h, and `((phase&1)^1) | w0` at slot+0 (the RTKit **phase bit** in
-word 0, message id in word 0 bits 2+); advance the write index with
-wrap-at-`entries`, increment the enqueue counter. The dequeue side
-(`_IOProcessorChannelUnidirectionalReceive`, `0xfffffe0008ef896c`) mirrors it:
-`dsb ishld`; empty iff `(slot[0] & 1) != (phase&1 ^ ((phase>>31)&1))`; copy out
-`slot[0]&~4` (id), `slot[1]`, `slot[2]`; toggle the phase bit; advance the read
-index. So H17 host→firmware work is delivered as **RTKit message-queue
-enqueues into shared memory**, with the §12.2 shmem-word store (bit `0x40`) as
-the doorbell that wakes the firmware.
+| off | field | evidence |
+|---|---|---|
+| `+0x00`/`+0x08` | role unresolved — **not dereferenced by either primitive** | no load/store/`blr` against them in send or receive |
+| `+0x10` | s32 phase word | send stores `slot[0] = x1 | (sxtw(+0x10) ^ 1)` (`0x8ef8620..62c`); receive compares `slot[0]&1` vs `+0x10&1` (`0x8ef89f0..a04`) |
+| `+0x14` | u32 entries (wrap at `entries−1`) | `csinc` wraps at `0x8ef8664..670` and `0x8ef8a50..660` |
+| `+0x18` | u64 message buffer base | `ldr x8,[cb+0x18]`; slot = base + index·64 |
+| `+0x20` | u32 **read (consumer)** index | receive's slot address (`0x8ef89b4`); send initialises it to the producer value when `−1` (`0x8ef8650..658`) |
+| `+0x24` | u32 **write (producer)** index; `−1` → send returns `−1` | send's slot address (`0x8ef85ec..5f4`, `b.eq` → `mov w20,#-1` at `0x8ef8690`); post-advance store `0x8ef867c` |
+| `+0x28` | u32 dequeue counter | receive increments it (`0x8ef8a68..670`) |
+| `+0x2c` | u32 enqueue counter | send increments it (`0x8ef8680..688`) |
+
+`send(cb, x1 = message id/flags, x2, x3 = two u64 payload words)`: reject
+if the producer index reads `−1`; `slot = base + (producer)*64` — **64-byte
+message slots**; `dsb st`; store `x2` at `slot+0x08` and `x3` at `slot+0x10`
+— **both full 64-bit `str`** (the first version of this section said u32);
+`slot[0] = x1 | (phase^1)` (RTKit phase/written bit in bit 0, id in bits 2+,
+which is what receive re-extracts as `slot[0] & ~4`); advance the producer
+with wrap-at-`entries−1`, increment the enqueue counter; return `0`, or
+`−1`.
+
+The post-advance producer store is **not** a plain index
+(`csinv`/`csinc` at `0xfffffe0008ef866c..67c`): when consumer ≠ new-producer
+it stores `~prod'` (bitwise-inverted); when consumer == new-producer it
+stores `0`. The consumer store (`0xfffffe0008ef8a64`) is the plain
+wrapped index. A later send therefore uses `+0x24` as a slot address only
+after the other endpoint has acknowledged a plain value back into it — an
+H→T handshake word whose exact full/empty arithmetic is not resolvable
+from host-side code alone and stays **unresolved**.
+
+`receive(cb, u64 *out_id, u64 *out_a, u64 *out_b)`
+(`_IOProcessorChannelUnidirectionalReceive`, `0xfffffe0008ef896c`):
+`slot = base + (consumer)*64`; **empty iff `slot[0]&1 != (cb+0x10)&1`**
+(`dsb ishld` before the read); otherwise copy `slot[0]&~4` → `*out_id`,
+`slot[+0x08]` → `*out_a`, `slot[+0x10]` → `*out_b` (three u64 loads),
+re-store `slot[0] = sxtw(phase)^1` (slot release), advance the consumer
+with wrap-at-`entries−1`, increment `+0x28`; return `0`/`−1`.
+
+The `0xfffffe000c3f8d68/70/78` pointers are **global null-guarded
+instrumentation hooks, not control-block fields**: `+d68` is called
+`(slot, 0x40)` (PAC modifier `0xf33d<<48`) after every slot store in both
+primitives — consistent with cache clean; `+d70` is called `(slot, 0x40)`
+before the receive slot read — consistent with cache invalidate; `+d78`
+(entry of both primitives) and `+d80` (exit, via `ldp x9, x0, [0xc3f8d80]`)
+take the argument at `0xc3f8d88` with modifier `0x2abe<<48` — a trace/log
+hook. Their identities are unconfirmed.
+
+So H17 host→firmware work is delivered as **RTKit message-queue enqueues
+into shared memory**, with the §12.2 shmem-word store (bit `0x40`) as the
+doorbell that wakes the firmware.
 
 Send topology (whole-image `bl` scans): `aneFirmwareCommandSend` →
 `IOProcessorChannelSendRetry` (`0x8f486cc`, the IO command channel) and
@@ -1198,9 +1229,11 @@ cached write index, (c) store `0x40` into the shmem doorbell word §12.2, (d)
 wait for the IRQ line matching the channel's cached index (status `0x188c000`,
 ACK `0xffff` to `0x1890000`). Still *not* pinned statically, and all of it
 device-side: the runtime channel-index values (firmware-published at boot), the
-message id space, and the enqueue/dequeue hooks at control-block `+0x00/+0x08`.
-A post-wake read of `0x188c000`/`0x1890000` and of the channel-name table would
-resolve the first two without submitting anything.
+message id space, and the producer handshake word at control-block `+0x24`
+(§13.2: stored inverted, acknowledged plain by the firmware — full/empty
+arithmetic unresolved) together with the still-unresolved `+0x00/+0x08` fields.
+A post-wake read of `0x188c000` and of the channel-name table would resolve
+the first two without submitting anything.
 
 Raw evidence: `analysis/h17-messenger-irq-chain.txt` (the send/receive
 primitives, the IRQ handler arms, the real `externalMethod`, and the

@@ -57,12 +57,15 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  *   return off-0; c018 reads all-zero and is not an island.
  *   c000 is the only word with PS_AUTO set.
  *
- * Candidates, not qualified for T8140: irq_status/irq_ack keep the
- * T8132 row's values (the CPU block shares the +0x200000 shift). mbox =
- * 0x1608000 is the ASC+0x8000 family pattern over the H17 CPU/ASC block
- * at engine+0x1600000, now hardware-confirmed: A2I_CTRL/I2A_CTRL read
- * 0x00020001 in the read-only probe. The role of c000/c008/c010
- * (MPM/CPU/TD) is unassigned. c018 is absent and excluded by ps_count.
+ * Candidates, not device-qualified for T8140: irq_status 0x188c000 /
+ * irq_ack 0x1890000 are the ANE-type-0x200 row of the kext's
+ * initializeANESoCConfig case table (firmware-load-path receipt §11), not
+ * borrowed from the T8132 row — but a register table is not device
+ * behaviour. mbox = 0x1608000 is the ASC+0x8000 family pattern over the
+ * H17 CPU/ASC block at engine+0x1600000, now hardware-confirmed:
+ * A2I_CTRL/I2A_CTRL read 0x00020001 in the read-only probe. The role of
+ * c000/c008/c010 (MPM/CPU/TD) is unassigned. c018 is absent and excluded
+ * by ps_count.
  */
 const struct ane_h16_soc ane_t8140_soc = {
 	.name = "t8140",
@@ -71,8 +74,8 @@ const struct ane_h16_soc ane_t8140_soc = {
 	.cpu_status = 0x1600048,
 	.rvbar = 0x1050000,
 	.scratch0 = 0x1880020,
-	.irq_status = 0x188c000,	/* candidate: T8132 template */
-	.irq_ack = 0x1890000,		/* candidate: T8132 template */
+	.irq_status = 0x188c000,	/* kext config table, ANE type 0x200 */
+	.irq_ack = 0x1890000,		/* kext config table, ANE type 0x200 */
 	.mbox = 0x1608000,		/* candidate: T8132 template */
 	.wrapper_pa = 0x401600000ull,
 	.cpu_pa = 0x401000000ull,
