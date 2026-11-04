@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+## 0.5.10 (2026-11-04)
+
 - Preserve DART fault outcomes and retain scratch mappings when completion is
   unknown. Such a wedge requires reboot; forced device removal remains unsafe.
+- Open the M3 bring-up steplog at probe entry. Add opt-in DART sweep timing,
+  power-state checks and a runtime power hold. (#352, #354, #356, #357)
+- Update the M6 bring-up documentation with the recorded command-queue and
+  first-program results. (#353)
 
 ## 0.5.9 (2026-11-03)
 
