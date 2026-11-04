@@ -2,6 +2,7 @@
 ifneq ($(KERNELRELEASE),)
 obj-m := ane_h17_adt_probe.o ane_h17_ps_probe.o ane_h17_cpu_ps_probe.o ane_h17_cpu_vote_probe.o ane_h17_engine_probe.o ane_h17_read_probe.o ane_h17_single_read_probe.o ane_h17_poweroff_probe.o ane_h17_survey_probe.o ane_h17_run_probe.o ane_h17_write_probe.o ane_h17_poweron_probe.o ane_h17_tunable_probe.o ane_h17_appleorder_probe.o ane_h17_boot_probe.o ane_h17_full_probe.o ane_h17_rtkit_probe.o ane_h17_hal_probe.o ane_h17_clk_scan.o ane_h17_wake.o
 obj-m += ane_h17_af_scan.o
+obj-m += ane_h17_clk_wide.o
 else
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
