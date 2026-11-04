@@ -20,6 +20,12 @@ sim/sim_h17_wake: sim/sim_harness.c sim/shim.h ane_h17_wake.c transaction.h $(wi
 sim/transaction_test: sim/transaction_test.c transaction.h sim/inc/linux/errno.h
 	$(SIM_CC) $(SIM_CFLAGS) -I sim/inc -o $@ sim/transaction_test.c
 
+sim/bringup_order_test: sim/bringup_order_test.c bringup_order.h
+	$(SIM_CC) $(SIM_CFLAGS) -o $@ sim/bringup_order_test.c
+
+order-test: sim/bringup_order_test
+	./sim/bringup_order_test
+
 sim-test: sim/sim_h17_wake sim/transaction_test
 	./sim/sim_h17_wake snapshot
 	./sim/transaction_test
@@ -32,7 +38,7 @@ sim-negative: sim/sim_h17_wake
 sim-mutations:
 	SIM_CC='$(SIM_CC)' SIM_CFLAGS='$(SIM_CFLAGS)' python3 sim/test_mutations.py
 
-sim-all: sim-test sim-negative sim-mutations planner-test
+sim-all: sim-test sim-negative sim-mutations planner-test order-test
 
 planner-test:
 	python3 sim/test_plan_stage4.py
@@ -42,7 +48,7 @@ script-test:
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -f sim/sim_h17_wake sim/transaction_test
+	rm -f sim/sim_h17_wake sim/transaction_test sim/bringup_order_test
 
-.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test clean
+.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test order-test clean
 endif

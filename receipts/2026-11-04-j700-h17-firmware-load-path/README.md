@@ -1,5 +1,10 @@
 # J700 / T8140 (H17): `CPU_STATUS`, the reset vector, and the ANE firmware-load path
 
+> **Branch correction:** the warm SCRATCH7:=1 and cold SCRATCH7:=0 writes
+> are alternative paths, not a sequential 1-to-0 handshake. See
+> `../2026-11-04-j700-h17-order-helper/README.md`. Do not execute the
+> flattened write recipe below as an exact Apple sequence.
+
 Offline binary analysis only. **No device access, no module load, no MMIO, no
 writes outside this directory.** Every claim below carries an instruction
 address (and raw bytes where it decides the answer) so it can be re-checked.
