@@ -1,0 +1,12 @@
+== ane_h16 sim: adt-file ==
+     ok   saved ADT validates
+     ok   saved ADT contains H17 ANE
+     ok   saved H17 node contains segment-ranges
+     ok   saved segment-ranges decoded
+seg0 phys=0x10000774000 iova=0x10000000000 size=0xc0000
+seg1 phys=0x100019ac000 iova=0x100000c0000 size=0x2ac000
+     ok   TEXT u32 size excludes auxiliary dword
+     ok   DATA u32 size decoded
+     ok   TEXT DVA matches latched RVBAR address
+     ok   zero bus accesses
+== adt-file: PASS (0 failures) ==

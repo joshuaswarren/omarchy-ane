@@ -303,6 +303,45 @@ static int ane_h16_status(struct ane_h16 *ane)
 static const void *adt;
 static size_t adt_len;
 
+/* Validate the complete tree before the offset-only walkers below run.
+ * All offsets must fit u32 and recursion is bounded independently of data.
+ */
+static int adt_validate_node(size_t *off, unsigned int depth)
+{
+	u32 nprops, nchildren, i;
+
+	if (depth > 32 || *off > adt_len || adt_len - *off < 8)
+		return -EINVAL;
+	nprops = le32_to_cpup(adt + *off);
+	nchildren = le32_to_cpup(adt + *off + 4);
+	*off += 8;
+	for (i = 0; i < nprops; i++) {
+		size_t bytes;
+
+		if (adt_len - *off < 36)
+			return -EINVAL;
+		bytes = le32_to_cpup(adt + *off + 32) & 0x7fffffff;
+		*off += 36;
+		bytes = ALIGN(bytes, 4);
+		if (bytes > adt_len - *off)
+			return -EINVAL;
+		*off += bytes;
+	}
+	for (i = 0; i < nchildren; i++)
+		if (adt_validate_node(off, depth + 1))
+			return -EINVAL;
+	return 0;
+}
+
+static int adt_validate(void)
+{
+	size_t off = 0;
+
+	if (!adt || adt_len > (u32)~0U)
+		return -EINVAL;
+	return adt_validate_node(&off, 0);
+}
+
 struct adt_node {
 	u32 off;
 	u32 nprops;
@@ -397,6 +436,14 @@ static int ane_h16_adt_open(struct ane_h16 *ane)
 			goto out;
 		}
 		adt_len = resource_size(&res);
+		ret = adt_validate();
+		if (ret) {
+			dev_err(ane->dev, "ADT: malformed or truncated tree; refusing\n");
+			adt = NULL;
+			adt_len = 0;
+			of_node_put(np);
+			goto out;
+		}
 		dev_info(ane->dev, "ADT: %pOF at %#llx+%#llx\n", np,
 			 (unsigned long long)res.start,
 			 (unsigned long long)adt_len);
@@ -424,7 +471,7 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 	for (i = 0; i < root.nchildren; i++) {
 		struct adt_node c = adt_child(root, i);
 
-		if (!adt_prop(c, "name", &data, &size) && size > 7 &&
+		if (!adt_prop(c, "name", &data, &size) && size >= 7 &&
 		    !strncasecmp(data, "arm-io", 7)) {
 			arm_io = c;
 			break;
@@ -446,9 +493,13 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 }
 
 /* Decode one segment-ranges property (two entries) into segs[2].
- * Entry is {phys, iova, remap, size} (u64 each); the ASC sees
- * "remap". The 3-word form {phys, remap, size} is accepted too; the
- * log keeps the decoded values so a wrong pick is visible.
+ * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
+ * The ASC sees remap. mapFwCTRRRegion in retained kernelcache SHA256
+ * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+ * uses ldr w9,[x20,#0x18] at 0xfffffe0008f440a0 (TEXT), and
+ * ldr w9,[x20,#0x38] at 0xfffffe0008f440c0 (DATA): size is u32,
+ * not u64. The final dword's meaning is not established here.
+ * The legacy 24-byte {u64 phys, remap, size} form is also accepted.
  */
 static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
 			      u32 size, struct ane_h16_seg *segs)
@@ -469,7 +520,8 @@ static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
 		segs[i].phys = le64_to_cpu(v[0]);
 		segs[i].iova = stride == 32 ?
 			le64_to_cpu(v[2]) : le64_to_cpu(v[1]);
-		segs[i].size = le64_to_cpu(v[stride / 8 - 1]);
+		segs[i].size = stride == 32 ?
+			le32_to_cpup(data + i * stride + 24) : le64_to_cpu(v[2]);
 	}
 	return 0;
 }

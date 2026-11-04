@@ -310,7 +310,8 @@ static u8 *build_adt(size_t *out_len)
 	struct {
 		u64 phys, pad, remap, size;
 	} segs[2] = {
-		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0xc0000 },
+		/* J700's TEXT record has auxiliary dword 1 after its u32 size. */
+		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0x1000c0000ULL },
 		{ DATA_PRE_PA, 0, DATA_IOVA, 0x2ac000 },
 	};
 	u32 ane_type = sim_soc.ane_type;
@@ -321,7 +322,8 @@ static u8 *build_adt(size_t *out_len)
 	/* arm-io: one prop, one child */
 	put32(b, &off, 1);
 	put32(b, &off, 1);
-	put_prop(b, &off, "name", "arm-io\0", 8);
+	/* Real ADTs encode six letters plus one NUL, not two NULs. */
+	put_prop(b, &off, "name", "arm-io", 7);
 	/* ane0: three props, no children */
 	put32(b, &off, 3);
 	put32(b, &off, 0);
@@ -750,6 +752,86 @@ static void sc_neg_dart_map_partial(void)
 	    "partial map unwound before free_stage");
 }
 
+static void sc_neg_adt_bounds(void)
+{
+	size_t len;
+	u8 *buf;
+	size_t off = 0;
+	unsigned int i;
+
+	setup_common();
+	buf = build_adt(&len);
+	adt = buf;
+	adt_len = len;
+	chk(adt_validate() == 0, "valid seven-byte arm-io fixture accepted");
+	adt_len = len - 1;
+	chk(adt_validate() == -EINVAL, "truncated final property refused");
+	adt_len = 7;
+	chk(adt_validate() == -EINVAL, "truncated node header refused");
+	memset(buf, 0, 4096);
+	for (i = 0; i < 34; i++) {
+		put32(buf, &off, 0);
+		put32(buf, &off, i < 33 ? 1 : 0);
+	}
+	adt_len = off;
+	chk(adt_validate() == -EINVAL, "excessive tree depth refused");
+	chk(sim_n_events == 0, "zero bus accesses");
+}
+
+static void sc_adt_file(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	long len;
+	u8 *buf;
+	struct adt_node node;
+	struct ane_h16 ane = { };
+	struct ane_h16_seg segs[2];
+	const void *data;
+	u32 size;
+	int ret;
+	unsigned int i;
+
+	if (!f || fseek(f, 0, SEEK_END) || (len = ftell(f)) < 8 ||
+	    len > 16 * 1024 * 1024 || fseek(f, 0, SEEK_SET)) {
+		fprintf(stderr, "cannot read ADT fixture\n");
+		exit(2);
+	}
+	buf = malloc(len);
+	if (!buf || fread(buf, 1, len, f) != (size_t)len)
+		exit(2);
+	fclose(f);
+	adt = buf;
+	adt_len = len;
+	ret = adt_validate();
+	chk(ret == 0, "saved ADT validates");
+	if (ret)
+		goto out;
+	ret = adt_find_ane(0x200, &node);
+	chk(ret == 0, "saved ADT contains H17 ANE");
+	if (ret)
+		goto out;
+	ret = adt_prop(node, "segment-ranges", &data, &size);
+	chk(ret == 0, "saved H17 node contains segment-ranges");
+	if (ret)
+		goto out;
+	ret = ane_h16_seg_decode(&ane, data, size, segs);
+	chk(ret == 0, "saved segment-ranges decoded");
+	if (!ret)
+		for (i = 0; i < 2; i++)
+			printf("seg%u phys=%#llx iova=%#llx size=%#llx\n",
+			       i, segs[i].phys, segs[i].iova, segs[i].size);
+	if (!ret) {
+		chk(segs[0].size == 0xc0000, "TEXT u32 size excludes auxiliary dword");
+		chk(segs[1].size == 0x2ac000, "DATA u32 size decoded");
+		chk(segs[0].iova == 0x10000000000ULL, "TEXT DVA matches latched RVBAR address");
+	}
+out:
+	free(buf);
+	adt = NULL;
+	adt_len = 0;
+	chk(sim_n_events == 0, "zero bus accesses");
+}
+
 static void sc_neg_h17_boot(void)
 {
 	int ret;
@@ -784,7 +866,7 @@ int main(int argc, char **argv)
 {
 	const char *sc;
 
-	if (argc != 2) {
+	if (argc != 2 && !(argc == 3 && !strcmp(argv[1], "adt-file"))) {
 		fprintf(stderr, "usage: sim_harness <scenario>\n");
 		return 2;
 	}
@@ -814,6 +896,10 @@ int main(int argc, char **argv)
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "neg-h17-boot"))
 		sc_neg_h17_boot();
+	else if (!strcmp(sc, "neg-adt-bounds"))
+		sc_neg_adt_bounds();
+	else if (!strcmp(sc, "adt-file") && argc == 3)
+		sc_adt_file(argv[2]);
 	else {
 		fprintf(stderr, "unknown scenario %s\n", sc);
 		return 2;

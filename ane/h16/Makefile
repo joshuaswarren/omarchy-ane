@@ -24,7 +24,7 @@ modules:
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-unknown-stage neg-h17-boot
+	neg-dart-map neg-unknown-stage neg-h17-boot neg-adt-bounds
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c
@@ -74,7 +74,10 @@ sim-discriminate: $(SIM_OUT)
 	else echo "ok: partial-map-leak mutation caught by neg-dart-map"; fi
 	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3 sim/sim_h16.d4
 
-sim: sim-test sim-negative sim-discriminate
+sim-adt-mutations:
+	python3 sim/test_adt_mutations.py
+
+sim: sim-test sim-negative sim-discriminate sim-adt-mutations
 
 $(NEG): $(SIM_OUT)
 	$(SIM_OUT) $@
@@ -83,5 +86,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f $(SIM_OUT)
 
-.PHONY: default modules sim sim-test sim-negative sim-discriminate $(NEG) clean
+.PHONY: default modules sim sim-test sim-negative sim-discriminate sim-adt-mutations $(NEG) clean
 endif
