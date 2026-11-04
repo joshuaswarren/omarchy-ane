@@ -7,7 +7,8 @@
 #   - the working tree is clean and HEAD is pushed to the remote branch
 #     (a freeze has already corrupted git objects twice)
 #   - everything has been flushed to disk
-#   - no ane_h17 module is already loaded
+#   - no ane_* module is already loaded (ane_h16 pins itself once the
+#     CPU is released, so a stale ane_h16 means a fresh boot is required)
 #
 # Then prints the identity a result must be recorded with. It performs no
 # hardware access itself.
@@ -35,7 +36,7 @@ elif [ "$remote" != "$head" ]; then
 	fail=1
 fi
 
-loaded=$(lsmod | awk '$1 ~ /^ane_h17/ {print $1}' || true)
+loaded=$(lsmod | awk '$1 ~ /^ane_/ {print $1}' || true)
 if [ -n "$loaded" ]; then
 	echo "REFUSED: modules already loaded: $loaded" >&2
 	fail=1

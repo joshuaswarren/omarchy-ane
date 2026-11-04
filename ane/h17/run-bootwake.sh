@@ -42,15 +42,22 @@ dmesg --color=never > "$log_dir/dmesg-full.log"
 verdict=FAIL
 reason=unknown
 irq_status=missing
-irq_line=$(grep -o 'H17 IRQ_STATUS off=0x[0-9a-f]* value=0x[0-9a-f]*' "$log_dir/dmesg-rung.log" | tail -1 || true)
+# Pin the exact offset (a regression that read the ack word 0x1890000
+# or any other word must not record PASS) and require exactly one
+# snapshot line (a poll-loop regression must not record PASS either).
+irq_count=$(grep -c 'H17 IRQ_STATUS off=0x188c000 value=0x' "$log_dir/dmesg-rung.log" || true)
+irq_line=$(grep -o 'H17 IRQ_STATUS off=0x188c000 value=0x[0-9a-f]*' "$log_dir/dmesg-rung.log" | tail -1 || true)
 if [ -n "$irq_line" ]; then
     irq_status=$(printf '%s' "$irq_line" | sed 's/.*value=//')
 fi
 if grep -q 'verdict=PASS reason=boot-wake' "$log_dir/dmesg-rung.log"; then
     if grep -q 'post-wake RTKit management poll skipped' "$log_dir/dmesg-rung.log"; then
-        if [ "$irq_status" != missing ]; then
+        if [ "$irq_count" = 1 ]; then
             verdict=PASS
             reason=wake-irq-status-and-poll-skipped
+        elif [ "${irq_count:-0}" -gt 1 ] 2>/dev/null; then
+            verdict=IRQ-MULTIPLE
+            reason=irq-status-read-more-than-once
         else
             verdict=IRQ-MISSING
             reason=wake-without-irq-status
@@ -62,4 +69,4 @@ if grep -q 'verdict=PASS reason=boot-wake' "$log_dir/dmesg-rung.log"; then
 elif grep -q 'verdict=FAIL' "$log_dir/dmesg-rung.log"; then
     reason=$(grep -o 'reason=[a-z0-9-]*' "$log_dir/dmesg-rung.log" | tail -1)
 fi
-echo "rung=$verdict reason=$reason irq_status=$irq_status boot_id=$boot_id" | tee "$log_dir/verdict.txt"
+echo "rung=$verdict reason=$reason irq_status=$irq_status irq_lines=$irq_count boot_id=$boot_id" | tee "$log_dir/verdict.txt"
