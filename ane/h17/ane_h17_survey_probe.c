@@ -9,8 +9,10 @@
  * on disk when the machine comes back.
  *
  * Read-only against the engine. Raises the sub-domains through genpd,
- * reads the engine words that have been measured on this board, and runs
- * the Apple power-off sequence on the way out.
+ * reads the engine words that have been measured on this board, and
+ * releases the domains the same way the earlier probes did. It does NOT
+ * run the Apple power-off sequence; use ane_h17_poweroff_probe.ko for
+ * that.
  *
  * Usage:
  *   sudo insmod ane_h17_survey_probe.ko optin=1
