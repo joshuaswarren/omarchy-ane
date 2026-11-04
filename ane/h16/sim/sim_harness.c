@@ -751,6 +751,31 @@ static void sc_neg_dart_map_partial(void)
 	    iommu_iova_to_phys(d, DATA_IOVA) == 0 &&
 	    iommu_iova_to_phys(d, DATA_IOVA + 99 * SZ_16K) == 0,
 	    "partial map unwound before free_stage");
+	chk(iommu_iova_to_phys(d, alias) == 0xdead0000,
+	    "pre-existing foreign mapping preserved after collision");
+}
+
+static void sc_neg_short_unmap(void)
+{
+	struct iommu_domain *d = &sim_dart_storage;
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	d->map[d->n].iova = DATA_IOVA + SZ_16K;
+	d->map[d->n].pa = 0xdead0000;
+	d->map[d->n].len = SZ_16K;
+	d->n++;
+	d->short_unmap = true;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -EIO, "short unmap reported as cleanup failure");
+	chk(sim_dma_allocs == 1 && sim_dma_frees == 0,
+	    "buffer retained while translations may reference it");
+	chk(ev_engine_count(true) == 0, "zero engine writes before map refusal");
+	chk(iommu_iova_to_phys(d, DATA_IOVA + SZ_16K) == 0xdead0000,
+	    "foreign mapping survives short-unmap failure");
 }
 
 static void sc_pos_four_ps(void)
@@ -917,6 +942,8 @@ int main(int argc, char **argv)
 		sc_neg_foreign_preload();
 	else if (!strcmp(sc, "neg-dart-map"))
 		sc_neg_dart_map_partial();
+	else if (!strcmp(sc, "neg-short-unmap"))
+		sc_neg_short_unmap();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "neg-h17-boot"))

@@ -159,6 +159,7 @@ struct ane_h16 {
 	dma_addr_t stage_dma;
 	size_t stage_size;
 	struct iommu_domain *domain;
+	u64 stage_mapped[2];	/* owned contiguous prefixes, never foreign ranges */
 };
 
 /* ---- pmgr state words (the read-only-after-ACTUAL=0xf rule) ---- */
@@ -836,6 +837,7 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 				dev_err(ane->dev, "iommu_map %#llx: %d\n", iova, ret);
 				return ret;
 			}
+			ane->stage_mapped[s] += len;
 		}
 	}
 	dev_info(ane->dev,
@@ -844,14 +846,27 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	return 0;
 }
 
-static void ane_h16_unmap_stage(struct ane_h16 *ane)
+static int ane_h16_unmap_stage(struct ane_h16 *ane)
 {
 	unsigned int s;
+	int ret = 0;
 
 	if (!ane->domain)
-		return;
-	for (s = 0; s < 2; s++)
-		iommu_unmap(ane->domain, ane->segs[s].iova, ane->segs[s].size);
+		return 0;
+	for (s = 0; s < 2; s++) {
+		u64 owned = ane->stage_mapped[s];
+
+		if (!owned)
+			continue;
+		if (iommu_unmap(ane->domain, ane->segs[s].iova, owned) != owned) {
+			dev_err(ane->dev,
+				"short stage unmap: retaining buffer; reboot required\n");
+			ret = -EIO;
+		} else {
+			ane->stage_mapped[s] = 0;
+		}
+	}
+	return ret;
 }
 
 /* ---- polled ASC mailbox (RTKit management only) ---- */
@@ -1099,7 +1114,11 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	ret = 0;
 	goto rel_fw;
 unmap:
-	ane_h16_unmap_stage(ane);
+	if (ane_h16_unmap_stage(ane)) {
+		/* Some translations may still reference the buffer. Never free it. */
+		ret = -EIO;
+		goto rel_fw;
+	}
 free_stage:
 	if (ane->stage_cpu) {
 		dma_free_coherent(ane->dev, ane->stage_size, ane->stage_cpu,

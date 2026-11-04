@@ -443,6 +443,7 @@ struct iommu_domain {
 		u64 len;
 	} map[1024];
 	int n;
+	bool short_unmap;
 };
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
@@ -475,14 +476,21 @@ static inline u64 iommu_iova_to_phys(struct iommu_domain *d, u64 iova)
 			return d->map[i].pa + (iova - d->map[i].iova);
 	return 0;
 }
-static inline void iommu_unmap(struct iommu_domain *d, u64 iova, size_t size)
+static inline size_t iommu_unmap(struct iommu_domain *d, u64 iova, size_t size)
 {
 	int i;
+	size_t removed = 0;
+
+	if (d->short_unmap)
+		return 0;
 
 	for (i = 0; i < d->n; i++)
 		if (d->map[i].iova >= iova &&
-		    d->map[i].iova + d->map[i].len <= iova + size)
+		    d->map[i].iova + d->map[i].len <= iova + size) {
+			removed += d->map[i].len;
 			d->map[i].len = 0;
+		}
+	return removed;
 }
 
 /* ---- firmware ---- */
