@@ -1507,23 +1507,53 @@ static int ane_h16_probe(struct platform_device *pdev)
 		return 0;
 	}
 
-	ane->engine = devm_platform_ioremap_resource_byname(pdev, "engine");
-	ane->pmgr = devm_platform_ioremap_resource_byname(pdev, "pmgr");
-	if (IS_ERR(ane->engine))
-		return PTR_ERR(ane->engine);
-	if (IS_ERR(ane->pmgr))
-		return PTR_ERR(ane->pmgr);
+	/* The windows are mapped WITHOUT request_region: on T8140 the ANE
+	 * DARTs (0x4018x_0000) sit inside the engine window and the ps-probe
+	 * pmgr-pwrstate devices sit inside the pmgr window, so the sibling
+	 * drivers' reservations make a whole-window request fail -EBUSY.
+	 * ioremap itself does not reserve; the ownership guarantee is the
+	 * DT reg layout, not the region accounting. */
+	{
+		struct resource *res = platform_get_resource_byname(pdev,
+								    IORESOURCE_MEM,
+								    "engine");
+
+		if (!res)
+			return -ENXIO;
+		ane->engine = devm_ioremap(&pdev->dev, res->start,
+					   resource_size(res));
+		if (!ane->engine)
+			return -ENOMEM;
+	}
+	{
+		struct resource *res = platform_get_resource_byname(pdev,
+								    IORESOURCE_MEM,
+								    "pmgr");
+
+		if (!res)
+			return -ENXIO;
+		ane->pmgr = devm_ioremap(&pdev->dev, res->start,
+					 resource_size(res));
+		if (!ane->pmgr)
+			return -ENOMEM;
+	}
 	if (soc->h17_order) {
 		/* kext "PWGATE" provider window, reg[2] of /arm-io/ane
 		 * (receipt §2: DT 0x3_00724000 size 0x4000). Required for
 		 * the H17 boot path; absent means the overlay is stale. */
-		ane->pwgate = devm_platform_ioremap_resource_byname(pdev,
+		struct resource *res = platform_get_resource_byname(pdev,
+								    IORESOURCE_MEM,
 								    "pwgate");
-		if (IS_ERR(ane->pwgate)) {
+
+		if (!res) {
 			dev_err(&pdev->dev,
 				"H17 boot requires the pwgate reg window; update the overlay\n");
-			return PTR_ERR(ane->pwgate);
+			return -ENXIO;
 		}
+		ane->pwgate = devm_ioremap(&pdev->dev, res->start,
+					   resource_size(res));
+		if (!ane->pwgate)
+			return -ENOMEM;
 	}
 
 	pm_runtime_enable(&pdev->dev);

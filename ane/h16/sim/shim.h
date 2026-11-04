@@ -387,18 +387,36 @@ static inline void *platform_get_drvdata(struct platform_device *pdev)
 #define SIM_PMGR_PA 0x380700000ull	/* pmgr window 0x18000 bytes */
 #define SIM_PWGATE_PA 0x300724000ull	/* H17 pwgate window 0x4000 bytes */
 extern bool sim_pwgate_mapped;
-static inline void *devm_platform_ioremap_resource_byname(
-	struct platform_device *pdev, const char *name)
+#define IORESOURCE_MEM 0x00000200
+static inline struct resource *platform_get_resource_byname(
+	struct platform_device *dev, unsigned int flags, const char *name)
 {
-	(void)pdev;
+	struct device_node *np = dev->dev.of_node;
+	struct resource *r = calloc(1, sizeof(*r));
+	int idx = !strcmp(name, "engine") ? 0 :
+		  !strcmp(name, "pmgr") ? 1 :
+		  !strcmp(name, "pwgate") ? 2 : -1;
+
+	(void)flags;
+	if (idx < 0 || idx >= np->nreg) {
+		free(r);
+		return NULL;
+	}
+	r->start = np->reg[idx][0];
+	r->end = np->reg[idx][0] + np->reg[idx][1] - 1;
+	return r;
+}
+static inline void __iomem *devm_ioremap(struct device *dev, u64 pa, u64 size)
+{
+	int i;
+
+	(void)dev;
 	sim_ioremaps++;
-	if (!strcmp(name, "engine"))
-		return (void *)(uintptr_t)SIM_ENGINE_PA;
-	if (!strcmp(name, "pmgr"))
-		return (void *)(uintptr_t)SIM_PMGR_PA;
-	if (!strcmp(name, "pwgate") && sim_pwgate_mapped)
-		return (void *)(uintptr_t)SIM_PWGATE_PA;
-	return ERR_PTR(-EINVAL);
+	for (i = 0; i < sim_n_regions; i++)
+		if (sim_regions[i].pa == pa &&
+		    sim_regions[i].size <= size)
+			return (void *)(uintptr_t)pa;
+	return NULL;
 }
 struct sim_phys {
 	u64 pa;
