@@ -12,6 +12,7 @@
   `0xf` to four power-state registers. `rpm_hold_sweep` holds a runtime-PM
   reference during the DART sweep; `sweep_watch` times its reads.
   (#352, #354, #356, #357)
+- Balance the runtime-PM reference when the M3 DART sweep hold fails.
 - Update the M6 bring-up documentation with the recorded command-queue and
   first-program results. (#353)
 
