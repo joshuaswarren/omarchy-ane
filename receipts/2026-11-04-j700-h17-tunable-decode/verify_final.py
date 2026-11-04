@@ -111,7 +111,7 @@ def main():
     ok4 = all(t["count"] * 8 + 8 == t["extent"] for t in out.values())
     print("  count == extent/8 - 1          : %s" % ("PASS" if ok4 else "FAIL"))
     # 5 no offset looks like a file offset
-    print("  no offset >= 0x2000000 (file-offset bug): %s"
+    print("  no offset >= 0x2000000          : %s (weak test, see README)"
           % ("PASS" if not bad else "FAIL"))
     # 6 elements inside HAL __const section
     lo, hi = 0xfffffe000813b8b8, 0xfffffe000813b8b8 + 0x2FE0

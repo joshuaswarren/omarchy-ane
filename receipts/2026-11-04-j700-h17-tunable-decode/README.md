@@ -174,14 +174,12 @@ entry selected by `_tunableh_module_finalize(cfg, id)`:
 0x97a80c4  cmp  x1, #2
 0x97a80d0  str  x8, [x0, #56]       ; cfg->0x38 = -1  (=> 0x30 already final)
 ```
-The flag table is at `__TEXT.__const 0xfffffe0007620a30` (file `0x61ca30`):
+The flag table is at `__TEXT.__const 0xfffffe0007620a30` (file `0x61ca30`), as 2-byte
+entries; raw bytes from `0x30`:
 
 ```
-offset :  0x30 0x31 0x32 0x33 0x34 0x35 0x36 0x37 0x38
-bytes  :  00   00   01   00   01   01   00   00   01
-entry  :  e0=----   e1=----   e2=----   e3=----   e4=----
-byte0  :  00   00   01   00   01       (per 2-byte entry)
-byte1  :  00   01   01   00   01
+raw    : 00 00 01 00 01 01 00 00 01 00 00 00 00 00 00 00
+entry  :  e0={00,00}  e1={01,00}  e2={01,01}  e3={00,00}  e4={01,00} ...
 ```
 Every `af_aneaxi2af` applier calls `_tunableh_module_finalize` with **`w1 = 2`**
 (`0x9799440`, `0x97994e4`, `0x9799588`: `mov w1, #2`), i.e. **entry 2 = bytes
@@ -359,11 +357,13 @@ The two globals are `OSSymbol`s built at load time from the kext's own C strings
 **Conclusion (proven):** the choice between the two functions is made by *name* at the
 `callPlatformFunction` boundary — whichever of the two symbol names the platform
 (the ADT/DT property set) passes in. There is **no branch on `ane-type` and no
-comparison against family `0xe0`** anywhere: a scan of both `__text` sections for
-`cmp/mov …, #0xe0` found nothing, and the only `0x200` compares in the interface kext
-are unrelated (`0x8fac874`, `0x8fb7fe8`, …). The premise "ane-type 0x200 → internal
-family 0xe0" is therefore **not corroborated** by this binary; treat `0xe0` as an
-external convention (see §7).
+comparison against family `0xe0`** anywhere: a scan of both `__text` sections found no
+`cmp wN,#0xe0` (the only near-hit is `0x97a927c mov w8,#0xe000` / `0x97a9280 movk
+w8,#0x186,lsl#16` inside `_Legacy`, building the `0x186e000` cfg base for the
+`soc_dpe_temp` family — unrelated), and the only `0x200` compares in the
+interface kext are unrelated (`0x8fac874`, `0x8fb7fe8`, …). The premise "ane-type 0x200
+→ internal family 0xe0" is therefore **not corroborated** by this binary; treat `0xe0`
+as an external convention (see §7).
 
 **Robustness of §5 either way (proven):** `_Legacy` calls the *same three*
 `af_aneaxi2af` appliers in the same order —
