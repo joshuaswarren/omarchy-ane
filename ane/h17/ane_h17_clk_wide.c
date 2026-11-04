@@ -232,7 +232,8 @@ static int __init start(void)
 			return -ENODEV;
 	}
 	/* Launcher must create and sync this file and its parent first. */
-	logfile = filp_open(log_path, O_WRONLY | O_APPEND | O_SYNC | O_NOFOLLOW, 0);
+	logfile = filp_open(log_path, O_WRONLY | O_APPEND | O_SYNC | O_NOFOLLOW |
+			 O_CREAT, 0600);
 	if (IS_ERR(logfile))
 		return PTR_ERR(logfile);
 	if (!S_ISREG(file_inode(logfile)->i_mode)) {
