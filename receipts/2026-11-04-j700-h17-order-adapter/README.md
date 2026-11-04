@@ -66,3 +66,11 @@ noise, none in this tree). Local outputs:
 write budget: the ordering sequence performs the machine's first
 PS/PWGATE/CE writes. Failure modes and parking rules are unchanged:
 timeout ⇒ RESULT FAIL + reboot before retry; never rmmod/reload.
+
+Staged for the rung before this boot ended: the pwgate overlay was
+compiled and installed into the opted-in T8140 stage-boot slot
+(previous overlay backed up at
+`/var/tmp/opencode/h17-pre-pwgate-overlay-backup.dtbo`, SHA256
+f6d6815b5808085519ec27515879ebbb25adc392663deb805a1c272d2b3524a9);
+the generated DTB carries reg-names engine/pmgr/pwgate; module built
+W=1 against 7.2.11-14-1-ARCH.
