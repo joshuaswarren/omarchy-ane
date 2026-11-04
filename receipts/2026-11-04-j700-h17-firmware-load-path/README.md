@@ -828,12 +828,28 @@ handler's device sit `0xe000` apart in the same allocation — how exactly is
 not resolved offline and does not change any register value above.
 
 `doorBellRing` is referenced once as data: a u64 equal to its VA at
-`0xfffffe000c7c4378`, inside an `ANEHWDevice` method table (neighbours include
-`ANE_deInit`, `aneCmdSend`, `ANE_PowerOn`, `ProgramLoad`). No direct `bl` to it
-exists anywhere in the kernelcache — dispatch is virtual. The one observed
-call site, inside `SendRequestToFirmware_gated` at `0xfffffe0008f107dc`, calls
-slot `[vptr+0x158]` with `x0 = this`; reconciling that convention with
-doorBellRing's argument dereference is open (see the 0xe000 note above).
+`0xfffffe000c7c4378`. That table (`…c7c42c8`…, entries sorted by mangled name)
+is the `OSMetaClass` **method list** of `ANEHWDevice`: `ANE_PowerOn`,
+`ProgramLoad`, `isANEActive`, `ANE_PowerOff`, `IsAneTestApp`, `IsRecoveryOS`,
+`ProcessAbort`, `ProcessReMap`, `ProgramAbort`, **`doorBellRingEPv`**,
+`processCount`, `updateReport`, `ANE_GetStatus`, `ANE_SaveState`,
+`ProgramUnload`. No direct `bl` to it exists anywhere in the kernelcache and
+no chained or raw slot in any vtable points at it (a full-image scan for a
+chained-rebase slot with target `0x01f316b4` returns zero hits) — the method
+is **exported through the meta-class table for cross-kext callers**, not
+dispatched inside `ANEHWDevice`.
+
+Its argument convention, from its own body (`0x8f416b4`): `x0 = arg`,
+`x9 = [arg]` (the `ANEHWDevice*`), `w8 = [arg,#8]` (the bit, `cmp w8,#0x20`
+rejects ≥ 32), MMIO handle `[arg+0xe000+0x320]`, register offset
+`[x9,#0x158]`, tail-`b` to the `write32` helper with `w2 = 1 << w8`. The
+`[this+0x320]` the IRQ helper reads is the **same field via the shifted
+pointer**: the IRQ handler receives `device+0xe000`, `doorBellRing` receives
+the device and adds `0xe000` itself. The earlier note that the call site at
+`0x8f107dc` in `SendRequestToFirmware_gated` was the doorbell rung is
+**withdrawn**: that site is a vtable slot `+0x158` dispatch whose target
+(`0xbbb9cf4`, outside the ANE iface range) is a base-class method; the
+`+0x158` coincidence is arithmetic, not causal.
 
 ### 10.2 Command-send call chain (`ANEHWDevice`)
 
@@ -849,11 +865,15 @@ doorBellRing's argument dereference is open (see the 0xe000 note above).
 `aneCmdSend(ANEFirmwareCommand&)` builds a completion thunk and tail-calls
 `aneFirmwareCommandSend`; that function is queue/state-machine logic (OSAction
 helpers, error constants `0xe00002bd` and `0xe208`) with **no direct MMIO access
-in its first 400 instructions** — the doorbell rung observed for a request
-lives in `SendRequestToFirmware_gated`, which dispatches slot 0x158 after its
-request bookkeeping. So the H17 submit handshake is: build request → queue →
-ring bit on `0x1884000` → firmware answers via an IRQ line, status read at
-`0x188c000`, W1C-ACK written to `0x1890000`.
+in its first 400 instructions**. Within this kext no request-path function
+rings `0x1884000` — the doorbell is reached only through `doorBellRing`'s
+meta-class export (above), i.e. a consumer-side kext rings it. The in-kernel
+producer that eventually calls `doorBellRing`, and the request-memory layout
+it reads, are **not resolvable from this kext alone**; they live on the caller
+side (`ANECore`/`ANESupport` or equivalent) and stay open. The observable H17
+submit handshake is: build request → queue → (external caller rings
+`0x1884000`) → firmware answers via an IRQ line, status read at `0x188c000`,
+W1C-ACK written to `0x1890000`.
 
 This is a decoded instruction stream, not device behaviour: nothing in this
 section has been exercised on hardware, and task submission stays off-limits
