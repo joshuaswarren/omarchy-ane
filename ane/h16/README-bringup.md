@@ -6,13 +6,17 @@ an M4-family (T8132 / T6040 / T6041) Linux box. H17 rows join the same
 module from `ane/h17/` (AneH17Driver). Facts and receipts:
 `receipts/2026-10-03-ane-h16/README.md`.
 
-**Current safety constraints:** T8140 `stage=boot` refuses before hardware
-access pending its H17-specific CE/PWGATE ordering adapter. Generic boot
-staging now requires a DMA-API IOMMU domain and boot-time
-IOMMU_RESV_RESERVED coverage for fixed alias IOVAs. The T8140 overlay
-source describes that reservation, but other templates must be updated
-before boot staging can proceed. Apply reservations at boot, not through
-a live overlay after the DMA domain is initialized.
+**Current safety constraints:** T8140 `stage=boot` now runs the dedicated
+H17 path: kext steps 1–8 (CE handshake, 37 HAL tunables, PS/PWGATE
+enable) through the checked, durably logged ordering helper, then the
+cold-branch scratch sequence, CPU release, wake poll and post-wake steps
+19–21. The generic H16 rows keep the old path. The H17 sequence is
+source-derived and has never run on the device; the first hardware rung
+is a single fresh boot with `optin=t8140 stage=boot`. Generic boot
+staging requires a DMA-API IOMMU domain and boot-time
+IOMMU_RESV_RESERVED coverage for fixed alias IOVAs (installed in the
+T8140 overlay). Apply reservations at boot, not through a live overlay
+after the DMA domain is initialized.
 
 Before boot staging reads any preload DRAM, ownership is enforced: each
 ADT segment must be 16 KiB-aligned, non-overlapping, disjoint from every

@@ -40,6 +40,13 @@ def main():
             shutil.copyfile(root / name, dst / name)
         for name in ("shim.h", "sim_harness.c"):
             shutil.copyfile(root / "sim" / name, dst / "sim" / name)
+        (dst / "h17").mkdir()
+        for name in ("ane_h17_soc.c", "ane_h17_soc.h", "ane_h17_fw.h",
+                     "bringup_order.h"):
+            shutil.copyfile(root.parent / "h17" / name, dst / "h17" / name)
+        # ane_h17_soc.h includes "../h16/ane_h16.h"
+        (dst / "h16").mkdir()
+        shutil.copyfile(root / "ane_h16.h", dst / "h16" / "ane_h16.h")
         shutil.copytree(root / "sim/inc", dst / "sim/inc")
         for name, before, after, scenario in cases:
             if original.count(before) != 1:

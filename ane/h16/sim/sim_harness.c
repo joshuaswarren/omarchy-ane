@@ -26,12 +26,8 @@
 #include "../ane_h16_main.c"
 #include "../ane_h16_soc.c"
 
-/* Match-data fixture: only the early H17 refusal is exercised here. */
-const struct ane_h16_soc ane_t8140_soc = {
-	.name = "t8140",
-	.ane_type = 0x200,
-	.ps_count = 4,
-};
+/* The real H17 row: the boot scenarios exercise it end to end. */
+#include "../../h17/ane_h17_soc.c"
 
 /* ---- shim globals ---- */
 struct sim_region sim_regions[8];
@@ -52,6 +48,7 @@ struct sim_phys sim_phys_maps[8];
 int sim_n_phys_maps;
 int sim_rpm_gets, sim_rpm_puts;
 int sim_module_refs;
+bool sim_pwgate_mapped = true;
 int sim_snapshots, sim_snapshot_attempts, sim_snapshot_fail;
 struct sim_ram_range sim_sys_ram[4] = { { 0x710000000ull, 0x8000000000ull } };
 int sim_n_sys_ram = 1;
@@ -260,7 +257,19 @@ static void fw_write_hook(u64 pa, u32 val)
 {
 	u32 off = (u32)(pa - SIM_ENGINE_PA);
 
-	if (pa == reg_pa(sim_soc.scratch0 + 7 * 4) && val == 0)
+	/* CE handshake: a request word at 0x18a4000 is acknowledged in
+	 * the status/ack register (bringup_order.h polls it). */
+	if (off == 0x18a4000)
+		reg_wr(0x18a4008, val);
+	else if (pa >= SIM_PMGR_PA && pa + 4 <= SIM_PMGR_PA + 0x18000) {
+		/* pmgr ps words: ACTUAL (7:4) follows TARGET (3:0), the
+		 * condition every kext PS poll waits for. */
+		unsigned int idx = (unsigned int)(pa - SIM_PMGR_PA) / 4;
+
+		sim_regions[1].backing[idx] =
+			(val & ~0xf0u) | ((val & 0xf) << 4);
+	}
+	else if (pa == reg_pa(sim_soc.scratch0 + 7 * 4) && val == 0)
 		fw.scratch7_cleared = true;
 	else if (pa == reg_pa(sim_soc.cpu_control) && val == 0x10)
 		fw.armed = true;
@@ -444,11 +453,13 @@ static void setup_common(void)
 
 	memset(&n_ane, 0, sizeof(n_ane));
 	n_ane.name = "ane0";
-	n_ane.nreg = 2;
+	n_ane.nreg = 3;
 	n_ane.reg[0][0] = SIM_ENGINE_PA;
 	n_ane.reg[0][1] = 0x2000000;
 	n_ane.reg[1][0] = SIM_PMGR_PA;
 	n_ane.reg[1][1] = 0x18000;
+	n_ane.reg[2][0] = SIM_PWGATE_PA;
+	n_ane.reg[2][1] = 0x4000;
 	n_ane.props[n_ane.nprops++] = (struct sim_prop){
 		"apple,ane-type", &sim_soc.ane_type, 4 };
 	n_ane.props[n_ane.nprops++] = (struct sim_prop){
@@ -467,8 +478,17 @@ static void setup_common(void)
 	sim_regions[sim_n_regions++] = (struct sim_region){
 		SIM_PMGR_PA, 0x18000,
 		calloc(0x18000 / 4, 4), "pmgr" };
+	sim_regions[sim_n_regions++] = (struct sim_region){
+		SIM_PWGATE_PA, 0x4000,
+		calloc(0x4000 / 4, 4), "pwgate" };
 	for (i = 0; i < 5; i++)
 		sim_regions[1].backing[sim_soc.ps_off[i] / 4] = 0xff;
+
+	/* Exercise the H17 ordering path in every boot scenario. */
+	sim_soc.h17_order = true;
+	sim_soc.wake_cfg1 = 0x1880058;
+	sim_soc.wake_cfg2 = 0x1880060;
+	sim_soc.doorbell_en = 0x196c000;
 
 	sim_fw_read_hook = fw_read_hook;
 	sim_fw_write_hook = fw_write_hook;
@@ -604,8 +624,10 @@ static void sc_pos_boot(void)
 		(TEXT_IOVA & ANE_H16_RVBAR_ADDR_MASK);
 	chk(ev_count(true, reg_pa(sim_soc.rvbar), (u32)expect_rvbar) == 1,
 	    "RVBAR written with the composed entry");
-	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 1,
-	    "SCRATCH7 cleared once, before CPU release");
+	/* H17 cold branch: scratch init (step 9) zeroes SCRATCH7 and the
+	 * cold path clears it again (step 12) before CPU release. */
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 2,
+	    "SCRATCH7 zeroed by step 9 and again by step 12");
 	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0) == 1 &&
 	    ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 1,
 	    "CPU_CONTROL 0 then 0x10");
@@ -705,7 +727,16 @@ static void sc_neg_bad_pin(void)
 	chk(ret == -EINVAL, "probe returns -EINVAL");
 	chk(sim_log_count("verdict=REFUSED reason=fw-pin") == 1,
 	    "RESULT REFUSED fw-pin");
-	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	/* The H17 ordering (clock/power enable) legitimately precedes the
+	 * pin check; the pin must still refuse before any release-relevant
+	 * access: no scratch, CPU_CONTROL or RVBAR writes. */
+	chk(ev_count(true, reg_pa(sim_soc.scratch0), 0) == 0,
+	    "no scratch writes before the pin passes");
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0) == 0 &&
+	    ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU_CONTROL writes before the pin passes");
+	chk(ev_count(true, reg_pa(sim_soc.rvbar), 0) == 0,
+	    "no RVBAR writes before the pin passes");
 	chk(sim_active_maps() == 0, "nothing mapped");
 	chk(sim_dma_allocs == 0 && sim_dma_frees == 0,
 	    "refused before any allocation");
@@ -727,7 +758,9 @@ static void sc_neg_foreign_preload(void)
 	chk(ret == -EINVAL, "probe returns -EINVAL");
 	chk(sim_log_count("verdict=REFUSED reason=preload-diff") == 1,
 	    "RESULT REFUSED preload-diff");
-	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	/* ordering writes are allowed; no release-relevant access */
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU release on preload refusal");
 	chk(sim_active_maps() == 0, "nothing mapped");
 	/* a refusal must NOT leak the staged buffer: allocs == frees.
 	 * (The deliberate exception is a post-release timeout, where the
@@ -762,7 +795,8 @@ static void sc_neg_dart_map_partial(void)
 	chk(ret == -EBUSY, "probe returns -EBUSY");
 	chk(sim_log_count("verdict=REFUSED reason=dart-map") == 1,
 	    "RESULT REFUSED dart-map");
-	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU release on map refusal");
 	chk(sim_dma_allocs == sim_dma_frees,
 	    "refusal frees the staged buffer (no DMA leak)");
 	chk(iommu_iova_to_phys(d, TEXT_IOVA) == 0 &&
@@ -790,7 +824,8 @@ static void sc_neg_preload_sysram(void)
 	chk(sim_snapshots == 0, "no snapshot taken from allocator RAM");
 	chk(sim_dma_allocs == sim_dma_frees, "no DMA backing leaked");
 	chk(sim_active_maps() == 0, "no alias mappings after refusal");
-	chk(ev_engine_count(true) == 0, "no engine writes on ownership refusal");
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU release on ownership refusal");
 }
 
 static void sc_neg_preload_bytes(unsigned int mode)
@@ -816,7 +851,8 @@ static void sc_neg_preload_bytes(unsigned int mode)
 	chk(sim_snapshots == 0, "all snapshots released on refusal");
 	chk(sim_dma_allocs == sim_dma_frees, "staged backing released before CPU use");
 	chk(sim_active_maps() == 0, "no DMA mappings left after refusal");
-	chk(ev_engine_count(true) == 0, "no engine writes on preload refusal");
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU release on preload refusal");
 }
 
 static void sc_neg_stage_domain(bool dma_api)
@@ -854,7 +890,8 @@ static void sc_neg_short_unmap(void)
 	chk(ret == -EIO, "short unmap reported as cleanup failure");
 	chk(sim_dma_allocs == 1 && sim_dma_frees == 0,
 	    "buffer retained while translations may reference it");
-	chk(ev_engine_count(true) == 0, "zero engine writes before map refusal");
+	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "no CPU release before map refusal");
 	chk(iommu_iova_to_phys(d, DATA_IOVA + SZ_16K) == 0xdead0000,
 	    "foreign mapping survives short-unmap failure");
 }
@@ -963,21 +1000,44 @@ out:
 	chk(sim_n_events == 0, "zero bus accesses");
 }
 
-static void sc_neg_h17_boot(void)
+/* The H17 path on the real row: ordering sequence, wake, post-wake
+ * steps 19-21, durable per-access logging. */
+static void sc_pos_h17_boot(void)
 {
 	int ret;
 
 	setup_common();
-	sim_match_data = &ane_t8140_soc;
-	sim_soc.ane_type = ane_t8140_soc.ane_type;
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;	/* ANE_SYS word */
 	optin = "t8140";
 	stage = "boot";
+	boot_wait_ms = 300;
 	ret = run_probe();
-	chk(ret == -EOPNOTSUPP, "H17 boot refused before hardware access");
-	chk(sim_n_events == 0, "zero bus accesses");
-	chk(sim_ioremaps == 0, "zero ioremaps");
-	chk(sim_rpm_gets == 0, "zero runtime power acquisitions");
-	chk(sim_dma_allocs == 0, "zero DMA allocations");
+	chk(ret == 0, "t8140 boot succeeds through the H17 path");
+	chk(sim_log_count("verdict=PASS reason=boot-wake") == 1,
+	    "RESULT PASS boot-wake");
+	chk(ev_count(true, SIM_PMGR_PA + 0xc000, 0xf) == 1, "PS step 1: 0xf");
+	chk(ev_count(true, SIM_PMGR_PA + 0xc000, 0x1000000f) == 1,
+	    "PS step 5: 0x1000000f");
+	chk(ev_count(true, SIM_PMGR_PA + 0xc008, 0xf) == 1,
+	    "PS step 7: subblocks 0xf");
+	chk(ev_count(true, SIM_PWGATE_PA + 0x268c, 0) == 1,
+	    "PWGATE step 3: 0");
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 1) == 1,
+	    "step 10: SCRATCH6 set");
+	chk(ev_count(true, reg_pa(sim_soc.wake_cfg1), 1) == 1,
+	    "step 19 after the wake word");
+	chk(ev_count(true, reg_pa(sim_soc.wake_cfg2), 0) == 1, "step 20");
+	chk(ev_count(true, reg_pa(sim_soc.doorbell_en), 1) == 1,
+	    "step 21 doorbell setBit");
+	chk(sim_log_count("h17-order seq=") >= 80,
+	    "every ordered access durably logged before MMIO");
+	chk(sim_module_refs == 1 && sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	    "module and power retained after CPU release");
 }
 
 static void sc_neg_unknown_stage(void)
@@ -1039,8 +1099,8 @@ int main(int argc, char **argv)
 		sc_neg_preload_sysram();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
-	else if (!strcmp(sc, "neg-h17-boot"))
-		sc_neg_h17_boot();
+	else if (!strcmp(sc, "pos-h17-boot"))
+		sc_pos_h17_boot();
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
 	else if (!strcmp(sc, "pos-four-ps"))

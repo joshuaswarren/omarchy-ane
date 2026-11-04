@@ -22,9 +22,10 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps
+POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps \
+	pos-h17-boot
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-short-unmap neg-unknown-stage neg-h17-boot neg-adt-bounds \
+	neg-dart-map neg-short-unmap neg-unknown-stage neg-adt-bounds \
 	neg-unreserved-alias neg-non-dma-domain \
 	neg-preload-bss neg-preload-boundary neg-preload-snapshot \
 	neg-preload-sysram
@@ -42,9 +43,11 @@ sim-negative: $(SIM_OUT)
 # ps gate skipped) and require the matching negative to FAIL the harness.
 # If a mutated run passes, the harness is not discriminating: fix it.
 sim-discriminate: $(SIM_OUT)
-	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim
+	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim /tmp/ane-h16-discrim/h17 /tmp/ane-h16-discrim/h16
 	@cp sim/sim_harness.c sim/shim.h /tmp/ane-h16-discrim/sim/ && cp -r sim/inc /tmp/ane-h16-discrim/sim/
 	@cp ane_h16_soc.c ane_h16.h /tmp/ane-h16-discrim/
+	@cp ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h ../h17/ane_h17_fw.h ../h17/bringup_order.h /tmp/ane-h16-discrim/h17/
+	@cp ane_h16.h /tmp/ane-h16-discrim/h16/
 	@sed 's/if (memcmp(digest, img->sha256, sizeof(digest))) {/if (0) {/' \
 	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
 	@grep -q 'if (0) {' /tmp/ane-h16-discrim/ane_h16_main.c

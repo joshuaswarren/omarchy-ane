@@ -26,9 +26,11 @@
 	fragment@0 {
 		target-path = "/soc/ane@400000000";
 		h17_ane: __overlay__ {
-			reg-names = "engine", "pmgr";
+			reg-names = "engine", "pmgr", "pwgate";
 			reg = <0x4 0x00000000 0x0 0x2000000>,
-			      <0x3 0x00700000 0x0 0x14000>;
+			      <0x3 0x00700000 0x0 0x14000>,
+			      /* kext "PWGATE" provider window (receipt §2) */
+			      <0x3 0x00724000 0x0 0x4000>;
 			power-domains = <&ps_ane_sys &ps_ane_sub0 &ps_ane_sub1 &ps_ane_sub2>;
 			apple,ane-type = <0x200>;
 			memory-region = <&h17_fw_alias_iova>;

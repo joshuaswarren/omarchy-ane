@@ -79,5 +79,12 @@ const struct ane_h16_soc ane_t8140_soc = {
 	/* 0xc018 is absent; never substitute a duplicate as a fifth island. */
 	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010 },
 	.ps_count = 4,
+	/* Kext recipe §5.4 rows 19-21 (field 0x128, field 0x120, field
+	 * 0x11c setBit 0), engine-relative. Executed only after the
+	 * SCRATCH7 wake word, through the checked H17 boot path. */
+	.h17_order = true,
+	.wake_cfg1 = 0x1880058,
+	.wake_cfg2 = 0x1880060,
+	.doorbell_en = 0x196c000,
 	.fw = &ane_fw_theia_d9x,
 };

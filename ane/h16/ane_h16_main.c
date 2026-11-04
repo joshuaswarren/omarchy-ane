@@ -65,6 +65,8 @@
 #include <linux/pm_runtime.h>
 #include <linux/sizes.h>
 #include <linux/slab.h>
+
+#include "../h17/bringup_order.h"
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -154,6 +156,8 @@ struct ane_h16 {
 	void __iomem *engine;
 	void __iomem *pmgr;
 	struct ane_h16_seg segs[2];
+	void __iomem *pwgate;	/* H17 reg[2]: PS/PWGATE bank (overlay) */
+	unsigned int order_seq;	/* durable h17-order sequence number */
 	bool fw_touched;
 	bool fw_started;
 	bool hello_done;
@@ -1024,6 +1028,133 @@ static int ane_h16_unmap_stage(struct ane_h16 *ane)
 	return ret;
 }
 
+/* ---- H17 (T8140) ordered clock/power enable, kext steps 1-8 ----
+ *
+ * Adapter between the device's MMIO and the checked ordering helper
+ * (ane/h17/bringup_order.h): CE handshake + 37 HAL tunables + PS/PWGATE
+ * enable with bounded polls. Every access is durably logged (dev_info
+ * with a monotonic sequence number, before it is performed) via the
+ * pending callback; a failed log stops the sequence before MMIO.
+ * Sources: firmware-load-path receipt §5.4 rows 1-8 (commit 0049f0b
+ * lineage), CE/tunables decode at 1e4e9e7. On J700 this is the COLD
+ * branch (this[0xa2] bit0 clear on first init; warm SCRATCH7:=1 is the
+ * other branch, see order-helper receipt) — this code performs neither
+ * warm nor cold scratch writes; the caller owns those.
+ */
+
+static int ane_h17_order_pending(void *ctx, enum h17_order_action action,
+				 enum h17_order_bank bank, unsigned int off,
+				 unsigned int width, unsigned long long value)
+{
+	static const char *const names[] = { "engine", "ps", "pwgate" };
+	struct ane_h16 *ane = ctx;
+
+	dev_info(ane->dev,
+		 "h17-order seq=%u %s %s off=%#x width=%u val=%#llx\n",
+		 ++ane->order_seq,
+		 action == H17_ORDER_WRITE ? "write" : "read",
+		 names[bank], off, width, value);
+	return 0;
+}
+
+static void __iomem *ane_h17_order_base(struct ane_h16 *ane,
+					enum h17_order_bank bank,
+					size_t *size)
+{
+	switch (bank) {
+	case H17_ORDER_ENGINE:
+		*size = 0x2000000;
+		return ane->engine;
+	case H17_ORDER_PS:
+		*size = 0x14000;	/* overlay pmgr window */
+		return ane->pmgr;
+	case H17_ORDER_PWGATE:
+		*size = 0x4000;	/* receipt §2 PWGATE window */
+		return ane->pwgate;
+	}
+	return NULL;
+}
+
+static int ane_h17_order_rw_check(struct ane_h16 *ane,
+				  enum h17_order_bank bank,
+				  unsigned int off, unsigned int width,
+				  void __iomem **base)
+{
+	size_t size;
+
+	*base = ane_h17_order_base(ane, bank, &size);
+	if (!*base)
+		return -ENODEV;
+	if (off > size || width > size || off + width > size)
+		return -ERANGE;
+	return 0;
+}
+
+static int ane_h17_order_read(void *ctx, enum h17_order_bank bank,
+			      unsigned int off, unsigned int width,
+			      unsigned long long *value)
+{
+	struct ane_h16 *ane = ctx;
+	void __iomem *base;
+	int ret = ane_h17_order_rw_check(ane, bank, off, width, &base);
+
+	if (ret)
+		return ret;
+	switch (width) {
+	case 4:
+		*value = readl_relaxed(base + off);
+		return 0;
+	case 8:
+		*value = readq_relaxed(base + off);
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int ane_h17_order_write(void *ctx, enum h17_order_bank bank,
+			       unsigned int off, unsigned int width,
+			       unsigned long long value)
+{
+	struct ane_h16 *ane = ctx;
+	void __iomem *base;
+	int ret = ane_h17_order_rw_check(ane, bank, off, width, &base);
+
+	if (ret)
+		return ret;
+	switch (width) {
+	case 4:
+		writel_relaxed((u32)value, base + off);
+		return 0;
+	case 8:
+		writeq_relaxed(value, base + off);
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int ane_h17_order_delay(void *ctx, unsigned int us)
+{
+	(void)ctx;
+	udelay(us);
+	return 0;
+}
+
+static int ane_h16_h17_enable(struct ane_h16 *ane)
+{
+	const struct h17_order_ops ops = {
+		ane_h17_order_pending, ane_h17_order_read,
+		ane_h17_order_write, ane_h17_order_delay,
+	};
+	int ret;
+
+	/* Steps 1-8, checked and logged. On failure the caller refuses
+	 * the boot BEFORE any CPU release; resources stay put. */
+	ret = h17_order_prepare(&ops, ane);
+	if (ret)
+		ane_h16_result(ane, 3, "REFUSED", "h17-order");
+	return ret;
+}
+
 /* ---- polled ASC mailbox (RTKit management only) ---- */
 
 static int ane_h16_mbox_send(struct ane_h16 *ane, u8 ep, u64 msg)
@@ -1205,6 +1336,15 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		ane_h16_result(ane, 3, "REFUSED", "not-quiescent");
 		return -EINVAL;
 	}
+	/* H17 steps 1-8: CE handshake, HAL tunables, PS/PWGATE enable,
+	 * every access logged and polled through the ordering helper.
+	 * Runs before any staging snapshot so the preload is read only
+	 * once clocks and power are in the kext's post-enable state. */
+	if (s->h17_order) {
+		ret = ane_h16_h17_enable(ane);
+		if (ret)
+			return ret;
+	}
 	ret = ane_h16_fw_pin(ane, &fw);
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "fw-pin");
@@ -1246,7 +1386,16 @@ static int ane_h16_boot(struct ane_h16 *ane)
 
 	/* kext ANE_Init cold-boot order (macOS 27.0): SCRATCH7 = 0, RVBAR
 	 * (skipped when latched), CPU_CONTROL 0 then 0x10, then poll
-	 * SCRATCH7 for the wake word. */
+	 * SCRATCH7 for the wake word. H17 (steps 9, 10, 12 of the recipe)
+	 * additionally clears all eight scratch words, sets SCRATCH6 and
+	 * then clears SCRATCH7 — the cold branch (order-helper receipt). */
+	if (s->h17_order) {
+		unsigned int n;
+
+		for (n = 0; n < 8; n++)
+			ane_h16_wr32(ane, s->scratch0 + 4 * n, 0);
+		ane_h16_wr32(ane, s->scratch0 + 6 * 4, 1);
+	}
 	ane_h16_wr32(ane, s->scratch0 + 7 * 4, 0);
 	ane_h16_wr32(ane, s->cpu_control, 0);
 	wmb();
@@ -1278,6 +1427,15 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	}
 	ane->fw_started = true;
 
+	/* H17 steps 19-21, only ever after the wake word (recipe §5.4:
+	 * field 0x128 := 1, field 0x120 := 0, doorbell enable setBit 0).
+	 * Step 17 is absent: this[0xa4] is always 0 on J700. */
+	if (s->h17_order) {
+		ane_h16_wr32(ane, s->wake_cfg1, 1);
+		ane_h16_wr32(ane, s->wake_cfg2, 0);
+		ane_h16_wr32(ane, s->doorbell_en,
+			     ane_h16_rd32(ane, s->doorbell_en) | 1);
+	}
 	if (hello_wait_ms)
 		ane_h16_rtkit_poll(ane);
 	else
@@ -1336,16 +1494,6 @@ static int ane_h16_probe(struct platform_device *pdev)
 	}
 	if (ane_h16_ps_count(soc) > ARRAY_SIZE(soc->ps_off))
 		return -EINVAL;
-	/* H17's proven write ordering includes the CE handshake and PWGATE
-	 * sequence (46efa4b). The generic H16 boot path does neither. Matching
-	 * a SoC row is not qualification to execute that path on T8140.
-	 * Refuse before mapping registers or acquiring runtime power.
-	 */
-	if (stage_idx == 3 && soc == &ane_t8140_soc) {
-		dev_err(&pdev->dev,
-			"T8140 boot refused: H17 CE/PWGATE ordering is not implemented in this path\n");
-		return -EOPNOTSUPP;
-	}
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
@@ -1365,6 +1513,18 @@ static int ane_h16_probe(struct platform_device *pdev)
 		return PTR_ERR(ane->engine);
 	if (IS_ERR(ane->pmgr))
 		return PTR_ERR(ane->pmgr);
+	if (soc->h17_order) {
+		/* kext "PWGATE" provider window, reg[2] of /arm-io/ane
+		 * (receipt §2: DT 0x3_00724000 size 0x4000). Required for
+		 * the H17 boot path; absent means the overlay is stale. */
+		ane->pwgate = devm_platform_ioremap_resource_byname(pdev,
+								    "pwgate");
+		if (IS_ERR(ane->pwgate)) {
+			dev_err(&pdev->dev,
+				"H17 boot requires the pwgate reg window; update the overlay\n");
+			return PTR_ERR(ane->pwgate);
+		}
+	}
 
 	pm_runtime_enable(&pdev->dev);
 	ret = pm_runtime_get_sync(&pdev->dev);

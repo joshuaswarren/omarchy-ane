@@ -181,6 +181,11 @@ static inline void sim_bus_write(u64 pa, u32 v)
 	__ret;								\
 })
 
+static inline void udelay(unsigned long us)
+{
+	(void)us;
+}
+
 /* ---- virtual time: only usleep_range advances it, so a spin without
  * sleep freezes the clock and every bounded wait hits its deadline ----
  */
@@ -380,6 +385,21 @@ static inline void *platform_get_drvdata(struct platform_device *pdev)
 /* Fake bus addresses: the real t8132 engine and pmgr window bases. */
 #define SIM_ENGINE_PA 0x500000000ull	/* engine window 0x2000000 bytes */
 #define SIM_PMGR_PA 0x380700000ull	/* pmgr window 0x18000 bytes */
+#define SIM_PWGATE_PA 0x300724000ull	/* H17 pwgate window 0x4000 bytes */
+extern bool sim_pwgate_mapped;
+static inline void *devm_platform_ioremap_resource_byname(
+	struct platform_device *pdev, const char *name)
+{
+	(void)pdev;
+	sim_ioremaps++;
+	if (!strcmp(name, "engine"))
+		return (void *)(uintptr_t)SIM_ENGINE_PA;
+	if (!strcmp(name, "pmgr"))
+		return (void *)(uintptr_t)SIM_PMGR_PA;
+	if (!strcmp(name, "pwgate") && sim_pwgate_mapped)
+		return (void *)(uintptr_t)SIM_PWGATE_PA;
+	return ERR_PTR(-EINVAL);
+}
 struct sim_phys {
 	u64 pa;
 	u64 size;
@@ -410,17 +430,6 @@ static inline void devm_memunmap(struct device *dev, void *p)
 {
 	(void)dev;
 	(void)p;
-}
-static inline void *devm_platform_ioremap_resource_byname(
-	struct platform_device *pdev, const char *name)
-{
-	(void)pdev;
-	sim_ioremaps++;
-	if (!strcmp(name, "engine"))
-		return (void *)(uintptr_t)SIM_ENGINE_PA;
-	if (!strcmp(name, "pmgr"))
-		return (void *)(uintptr_t)SIM_PMGR_PA;
-	return ERR_PTR(-EINVAL);
 }
 
 /* ---- runtime pm (genpd stand-in) ---- */

@@ -60,6 +60,13 @@ struct ane_h16_soc {
 				 * ANE_TD, ANE_BASE, offsets into the pmgr
 				 * reg window the DT node names "pmgr" */
 	u8 ps_count;		/* 0: all five legacy slots; otherwise valid prefix */
+	/* H17 (T8140) rows: kext steps 1-8 + 9-12 + 19-21 of the
+	 * firmware-load-path receipt §5.4, executed through the checked,
+	 * durably logged ordering helper. wake_* are engine offsets. */
+	bool h17_order;
+	u32 wake_cfg1;		/* step 19: write 1 after the wake word */
+	u32 wake_cfg2;		/* step 20: write 0 after the wake word */
+	u32 doorbell_en;	/* step 21: setBit32(_, 0) after the wake word */
 	const struct ane_h16_fw *fw;
 };
 
