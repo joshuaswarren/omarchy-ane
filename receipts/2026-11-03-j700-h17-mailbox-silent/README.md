@@ -81,3 +81,49 @@ on a boot is measuring residue, not the bring-up path.
 Cold boot, then exactly one run of the full probe, so the C-block sees
 the state Apple sees. Anything measured after a second run on the same
 boot should be discarded.
+
+## Cold-boot rerun (the only clean measurement)
+
+Boot `a6917626-7f54-4b6c-b758-c562eef44b6e`, cold boot, uptime 114 s,
+single run of the full probe, then the domain released.
+
+```
+C1 0x18a4010 v=0  C2 0x18a4018 s=0x0
+C5 0x18a4000 := 0x3, now 0x3
+C6 0x18a4008=0x3            <- matches v^3, handshake satisfied
+C7 0x18a4018=0x0
+C8 0x18a4008 := 0x3 (64-bit), now 0x0
+C9 34 regs OR 0x100000 + 0x1137a50 OR 0x200000 done
+C10 secure_lock_wr_dis done
+C11 secure_lock_lock done
+C-block complete 0x1137ac8=0x0
+...
+G17 CPU_CONTROL := 0x10 -> 0x10 status 0x68
+sequence complete, status 0x68
+poll 0 status=0x68 sc7=0x0 a2i=0x20001 i2a=0x20001 ctrl=0x10
+observation done status=0x68 sc7=0x0 a2i=0x20001 i2a=0x20001
+```
+
+On clean state the handshake **does** satisfy (`v = 0`, wrote `3`,
+`0x18a4008` read `3`), so the earlier timeout was residue, as suspected.
+
+Three things survive the clean run:
+
+1. **The AF-block writes still do not stick.** `0x1137ac8` is written
+   `|= 0x200000` and reads `0x0`.
+2. **The 64-bit write to `0x18a4008` does not stick.** Wrote `3`, reads
+   `0x0`.
+3. **The mailbox stays silent.** `A2I/I2A = 0x20001` throughout,
+   `SCRATCH7 = 0x0`, `CPU_STATUS` frozen at `0x68`.
+
+## Where that leaves the hypothesis
+
+Writes to the CPU block, the scratch block and the CE block all take
+effect. Writes to the AF block (`0x1130000`) are dropped, and a 64-bit
+store to the CE status word is dropped. That split matches an ANE whose
+power state is up but whose **clock gates were never voted**: the
+always-on register file responds, the functional blocks do not.
+
+That is still inference. But it is now the only unexplained gap between
+our sequence and Apple's: the provider clock and power votes (B1/B2)
+before any MMIO.
