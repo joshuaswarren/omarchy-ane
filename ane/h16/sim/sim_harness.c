@@ -484,12 +484,6 @@ static void setup_common(void)
 	for (i = 0; i < 5; i++)
 		sim_regions[1].backing[sim_soc.ps_off[i] / 4] = 0xff;
 
-	/* Exercise the H17 ordering path in every boot scenario. */
-	sim_soc.h17_order = true;
-	sim_soc.wake_cfg1 = 0x1880058;
-	sim_soc.wake_cfg2 = 0x1880060;
-	sim_soc.doorbell_en = 0x196c000;
-
 	sim_fw_read_hook = fw_read_hook;
 	sim_fw_write_hook = fw_write_hook;
 	fw.wake_after = 3;
@@ -624,10 +618,8 @@ static void sc_pos_boot(void)
 		(TEXT_IOVA & ANE_H16_RVBAR_ADDR_MASK);
 	chk(ev_count(true, reg_pa(sim_soc.rvbar), (u32)expect_rvbar) == 1,
 	    "RVBAR written with the composed entry");
-	/* H17 cold branch: scratch init (step 9) zeroes SCRATCH7 and the
-	 * cold path clears it again (step 12) before CPU release. */
-	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 2,
-	    "SCRATCH7 zeroed by step 9 and again by step 12");
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 1,
+	    "H16 SCRATCH7 cleared once before CPU release");
 	chk(ev_count(true, reg_pa(sim_soc.cpu_control), 0) == 1 &&
 	    ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 1,
 	    "CPU_CONTROL 0 then 0x10");
@@ -640,7 +632,7 @@ static void sc_pos_boot(void)
 	chk(sim_log_count("do NOT unload") == 1,
 	    "post-start pin warning printed");
 	chk(sim_module_refs == 1, "module pinned after CPU release");
-	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	chk(sim_rpm_gets == 4 && sim_rpm_puts == 0,
 	    "runtime power retained after CPU release");
 }
 
@@ -707,7 +699,7 @@ static void sc_neg_mbox_silent(void)
 	chk(sim_log_count("firmware is running") == 0,
 	    "no firmware-started claim (it did not start)");
 	chk(sim_module_refs == 1, "module pinned after timeout");
-	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	chk(sim_rpm_gets == 4 && sim_rpm_puts == 0,
 	    "runtime power retained after timeout");
 }
 
@@ -1016,10 +1008,15 @@ static void sc_pos_h17_boot(void)
 	optin = "t8140";
 	stage = "boot";
 	boot_wait_ms = 300;
+	hello_wait_ms = 1000;
 	ret = run_probe();
 	chk(ret == 0, "t8140 boot succeeds through the H17 path");
 	chk(sim_log_count("verdict=PASS reason=boot-wake") == 1,
 	    "RESULT PASS boot-wake");
+	chk(sim_log_count("H17 post-wake RTKit management poll skipped") == 1,
+	    "H17 skips unqualified H16 mailbox even when requested");
+	chk(sim_log_count("RTKit poll done") == 0,
+	    "H17 does not access candidate H16 mailbox");
 	chk(ev_count(true, SIM_PMGR_PA + 0xc000, 0xf) == 1, "PS step 1: 0xf");
 	chk(ev_count(true, SIM_PMGR_PA + 0xc000, 0x1000000f) == 1,
 	    "PS step 5: 0x1000000f");
@@ -1029,6 +1026,8 @@ static void sc_pos_h17_boot(void)
 	    "PWGATE step 3: 0");
 	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 1) == 1,
 	    "step 10: SCRATCH6 set");
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 2,
+	    "cold branch: SCRATCH7 zeroed by init and step 12");
 	chk(ev_count(true, reg_pa(sim_soc.wake_cfg1), 1) == 1,
 	    "step 19 after the wake word");
 	chk(ev_count(true, reg_pa(sim_soc.wake_cfg2), 0) == 1, "step 20");
@@ -1036,7 +1035,7 @@ static void sc_pos_h17_boot(void)
 	    "step 21 doorbell setBit");
 	chk(sim_log_count("h17-order seq=") >= 80,
 	    "every ordered access durably logged before MMIO");
-	chk(sim_module_refs == 1 && sim_rpm_gets == 1 && sim_rpm_puts == 0,
+	chk(sim_module_refs == 1 && sim_rpm_gets == 4 && sim_rpm_puts == 0,
 	    "module and power retained after CPU release");
 }
 

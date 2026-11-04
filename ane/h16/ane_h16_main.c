@@ -1441,14 +1441,26 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		ane_h16_wr32(ane, s->doorbell_en,
 			     ane_h16_rd32(ane, s->doorbell_en) | 1);
 	}
-	if (hello_wait_ms)
+	if (s->h17_order)
+		/* The H16 RTKit management endpoint layout (mbox=0x1608000,
+		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
+		 * mapping. J700's kext reaches READY via SCRATCH7 and then
+		 * uses its firmware command path in later requests; it does
+		 * not poll this mailbox after ANE_Init. Do not claim HELLO/EPMAP
+		 * support or touch the unqualified candidate, even when the
+		 * H16-only hello_wait_ms parameter is set.
+		 */
+		dev_info(ane->dev,
+			 "H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only\n");
+	else if (hello_wait_ms)
 		ane_h16_rtkit_poll(ane);
 	else
 		dev_info(ane->dev,
 			 "RTKit poll skipped (hello_wait_ms=0); set 1000 to probe for HELLO/EPMAP/STARTEP\n");
 	ane_h16_result(ane, 3, "PASS",
 		       ane->hello_done ? "boot-hello" :
-		       hello_wait_ms ? "boot-nortkit" : "boot-wake");
+		       (hello_wait_ms && !s->h17_order) ?
+		       "boot-nortkit" : "boot-wake");
 	ret = 0;
 	goto rel_fw;
 unmap:
