@@ -66,4 +66,9 @@ ane/test/_build/
 # userspace sim harness build output
 ane/h15/sim/sim_h15
 ane/h15/sim/sim_h15_filled
+ane/h15/ane_h15_adt_test
+ane/h15/sim/sim_overlay
+ane/h15/test_domain_window
+ane/h15/test_rtk_startup
+ane/h15/test_t8122_start
 ane/h18/sim/sim_h18

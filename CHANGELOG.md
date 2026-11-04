@@ -6,8 +6,12 @@
 
 - Preserve DART fault outcomes and retain scratch mappings when completion is
   unknown. Such a wedge requires reboot; forced device removal remains unsafe.
-- Open the M3 bring-up steplog at probe entry. Add opt-in DART sweep timing,
-  power-state checks and a runtime power hold. (#352, #354, #356, #357)
+- Acquire a runtime-PM reference on every DRM postclose, including healthy
+  closes, before checking for recovery. (#359)
+- Open the M3 bring-up steplog at probe entry. The opt-in `ps_assert` writes
+  `0xf` to four power-state registers. `rpm_hold_sweep` holds a runtime-PM
+  reference during the DART sweep; `sweep_watch` times its reads.
+  (#352, #354, #356, #357)
 - Update the M6 bring-up documentation with the recorded command-queue and
   first-program results. (#353)
 
