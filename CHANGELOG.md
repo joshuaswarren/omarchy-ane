@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Preserve DART fault outcomes and retain scratch mappings when completion is
+  unknown. Such a wedge requires reboot; forced device removal remains unsafe.
+
 ## 0.5.9 (2026-11-03)
 
 This release ships the M3 crash-forensics steplog, the DART instance mask and the PWGATE read and write steps for the M3 rows. It promotes the M2 Pro to default-on, records the second M4 run, and adds a read-only boot-ADT scan tool.

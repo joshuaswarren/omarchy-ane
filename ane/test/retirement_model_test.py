@@ -34,7 +34,7 @@ COMMON = r'''
 typedef uint32_t u32;
 struct ane_device {
     int wedged, engine_lock;
-    bool removed, tm_retention, recovering, quiesced, por_pending;
+    bool removed, tm_retention, recovering, quiesced, por_pending, scratch_retained;
     u32 tm_status_fresh;
     char *engine;
     void *dev;
@@ -108,9 +108,12 @@ int main(void) {
     fresh(); close_session();
     EXPECT(pm_gets == 1 && pm_puts == 1 && ref_at_verify == 1, "wedged close holds one runtime-PM reference across recovery and drops it");
     fresh(); ane.wedged = 0; pins = 0; close_session();
-    EXPECT(!pm_gets && !pm_puts, "healthy close takes no runtime-PM reference");
+    EXPECT(pm_gets == 1 && pm_puts == 1, "healthy close balances its runtime-PM reference");
     fresh(); pm_rc = -EIO; close_session();
     EXPECT(ane.wedged && pins == 1 && !cycles && !verifies && !pm_puts && !violations, "failed resume leaves the wedge, pin and mappings untouched");
+    fresh(); ane.scratch_retained = true; close_session();
+    EXPECT(ane.wedged && pins == 1 && !cycles && !reclaims && pm_gets == 1 && pm_puts == 1,
+           "retained scratch prevents close recovery and wedge release");
     fresh(); cycle_rc = -EIO; close_session();
     EXPECT(ane.wedged && pins == 1 && !reclaims && cycles == 1 && !verifies && !polls && !violations, "power failure preserves wedge/pin/mappings");
     cycle_rc = 0; close_session();
