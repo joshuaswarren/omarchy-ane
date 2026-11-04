@@ -17,7 +17,9 @@ mkdir -p "$log_dir"
 exec > >(tee "$log_dir/run.log") 2>&1
 
 echo "boot_id=$boot_id kernel=$(uname -r) date=$(date -Is)"
-echo "repo_head=$(git -C "$repo" rev-parse HEAD) dirty=$(git -C "$repo" status --porcelain | wc -l)"
+# The service runs as root; tolerate the repo being owned by a user.
+git_repo() { git -c safe.directory="$repo" -C "$repo" "$@"; }
+echo "repo_head=$(git_repo rev-parse HEAD) dirty=$(git_repo status --porcelain | wc -l)"
 sha256sum "$ko" "$fw"
 
 if lsmod | grep -q '^ane_h16 '; then
