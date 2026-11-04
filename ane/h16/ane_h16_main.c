@@ -253,6 +253,22 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	u32 v;
 
 	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
+		/* H17: the boot path's own ordering enables PS 0xc000 and
+		 * 0xc008 with checked polls (kext steps 1 and 7); the kext
+		 * has no pre-gate on them. Genpd may leave them at
+		 * ACTUAL=0 (TARGET=3 bootloader state), so gate only on
+		 * the words the boot path does not drive itself. */
+		if (ane->soc->h17_order &&
+		    (ane->soc->ps_off[i] == 0xc000 ||
+		     ane->soc->ps_off[i] == 0xc008)) {
+			ane_h16_ps_on(ane, i, &v);
+			dev_info(ane->dev,
+				 "ane_h16 ps word=%s off=%#x value=%#x actual=%#lx (h17: enabled by the boot ordering, not gated)\n",
+				 ane_h16_ps_name(ane->soc, i),
+				 ane->soc->ps_off[i], v,
+				 FIELD_GET(ANE_H16_PS_ACTUAL, v));
+			continue;
+		}
 		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
@@ -265,15 +281,20 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 		}
 	}
 	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
-		if (!ane_h16_ps_on(ane, i, &v)) {
+		if (!ane_h16_ps_on(ane, i, &v) &&
+		    !(ane->soc->h17_order &&
+		      (ane->soc->ps_off[i] == 0xc000 ||
+		       ane->soc->ps_off[i] == 0xc008))) {
 			dev_err(ane->dev,
 				"ane_h16 ps word=%s off=%#x dropped value=%#x after the wait; refusing to touch the engine window\n",
 				ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 			return -EIO;
 		}
 		dev_info(ane->dev,
-			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=true\n",
-			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
+			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=%s\n",
+			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v,
+			 FIELD_GET(ANE_H16_PS_ACTUAL, v) == ANE_H16_PS_ON ?
+			 "true" : "h17-deferred");
 	}
 	return 0;
 }
