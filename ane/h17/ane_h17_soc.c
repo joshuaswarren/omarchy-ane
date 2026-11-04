@@ -75,6 +75,11 @@ const struct ane_h16_soc ane_t8140_soc = {
 	.mbox = 0x1608000,		/* candidate: T8132 template */
 	.wrapper_pa = 0x401600000ull,
 	.cpu_pa = 0x401000000ull,
-	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010, 0xc018 },
+	/* 0xc018 is absent on T8140 (reads all-zero; the ADT has no ANE_BASE
+	 * power-controller node). The H16 driver's ps-wait polls a fixed
+	 * five-word array, so the fifth slot repeats 0xc010 (the last real
+	 * word) rather than leaving the absent 0xc018, which would hang the
+	 * ACTUAL==0xf wait. */
+	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010, 0xc010 },
 	.fw = &ane_fw_theia_d9x,
 };
