@@ -383,13 +383,15 @@ extern int sim_pm_put;
  */
 extern int sim_pm_get_fail;
 extern int sim_pm_get_err;
+extern int sim_pm_get_fail_at;
 extern int sim_pm_noidle;	/* put_noidle calls: they drop a failed get_sync's count */
 static inline void pm_runtime_enable(struct device *d) { (void)d; }
 static inline void pm_runtime_disable(struct device *d) { (void)d; }
 static inline int pm_runtime_get_sync(struct device *d)
 {
 	(void)d;
-	if (sim_pm_get_fail) {
+	if (sim_pm_get_fail && (!sim_pm_get_fail_at ||
+	    sim_pm_get + sim_pm_get_err + 1 == sim_pm_get_fail_at)) {
 		sim_pm_get_err++;
 		return sim_pm_get_fail;
 	}

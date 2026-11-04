@@ -2437,6 +2437,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_step("rpm hold: get before the DART sweep\n");
 		ret = pm_runtime_get_sync(ane->dev);
 		if (ret < 0) {
+			pm_runtime_put_noidle(ane->dev);
 			ane_h15_unmap_firmware(ane);
 			ane_h15_result(ane, stg, "FAIL", "rpm-hold-failed");
 			return ret;

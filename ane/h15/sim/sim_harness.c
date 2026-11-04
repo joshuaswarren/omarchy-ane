@@ -97,6 +97,7 @@ int sim_pm_get;
 int sim_pm_put;
 int sim_pm_get_fail;
 int sim_pm_get_err;
+int sim_pm_get_fail_at;
 int sim_pm_noidle;
 struct device sim_pd_dev[SIM_MAX_PD];
 struct device_link sim_pd_link[SIM_MAX_PD];
@@ -225,6 +226,7 @@ static void reset_all(void)
 	sim_pm_get = 0;
 	sim_pm_put = 0;
 	sim_pm_get_fail = 0;
+	sim_pm_get_fail_at = 0;
 	sim_pm_get_err = 0;
 	sim_pm_noidle = 0;
 	memset(sim_pd_state, 0, sizeof(sim_pd_state));
@@ -2280,6 +2282,16 @@ static void pos_steplog_stop(void)
 	chk(ret == 0 && sim_pm_get == 2 && sim_pm_put == 2,
 	    "FE rpm_hold_sweep takes a second runtime-PM reference across the sweep");
 	remove_if_probed();
+
+	run_setup(s, "apple,t6031-ane", 0x0);
+	rpm_hold_sweep = true;
+	sim_pm_get_fail = -EIO;
+	sim_pm_get_fail_at = 2;
+	ret = probe_now();
+	chk(ret == -EIO && sim_pm_get == 1 && sim_pm_get_err == 1 &&
+	    sim_pm_put == 1 && sim_pm_noidle == 1 &&
+	    log_count("rpm-hold-failed") == 1 && log_count("ane_h15 read DART") == 0,
+	    "FE failed sweep hold balances the failed PM reference");
 
 	/* FS: sweep_watch on a matching window: the ps snapshot runs at every
 	 * read when sweep_watch_us=0 (threshold zero counts every read as slow),
