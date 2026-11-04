@@ -1233,7 +1233,10 @@ message id space, and the producer handshake word at control-block `+0x24`
 (§13.2: stored inverted, acknowledged plain by the firmware — full/empty
 arithmetic unresolved) together with the still-unresolved `+0x00/+0x08` fields.
 A post-wake read of `0x188c000` and of the channel-name table would resolve
-the first two without submitting anything.
+the first two without submitting anything. *Executed 2026-11-04: the
+post-wake `0x188c000` read ran on hardware and returned `0x00000000` —
+the wake handshake raises no IRQ line (receipts/2026-11-04-j700-h17-wake-irq-status);
+the channel-name-table read and the doorbell re-read remain open.*
 
 Raw evidence: `analysis/h17-messenger-irq-chain.txt` (the send/receive
 primitives, the IRQ handler arms, the real `externalMethod`, and the
