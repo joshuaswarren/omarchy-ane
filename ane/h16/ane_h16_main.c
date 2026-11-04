@@ -212,14 +212,31 @@ static int ane_h16_stage_idx(const char *name, unsigned int *out)
 	return -EINVAL;
 }
 
+static unsigned int ane_h16_ps_count(const struct ane_h16_soc *soc)
+{
+	return soc->ps_count ? soc->ps_count : ARRAY_SIZE(soc->ps_off);
+}
+
+static const char *ane_h16_ps_name(const struct ane_h16_soc *soc, unsigned int i)
+{
+	static const char *const h17_names[] = {
+		"ANE_SYS", "ANE_SUB0", "ANE_SUB1", "ANE_SUB2",
+	};
+
+	/* The sub-island roles on T8140 are not yet assigned. */
+	if (soc->ane_type == 0x200 && i < ARRAY_SIZE(h17_names))
+		return h17_names[i];
+	return ane_h16_ps_names[i];
+}
+
 static bool ane_h16_ps_on(struct ane_h16 *ane, unsigned int i, u32 *v)
 {
 	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
 	return FIELD_GET(ANE_H16_PS_ACTUAL, *v) == ANE_H16_PS_ON;
 }
 
-/* Every ANE word must read ACTUAL == 0xf, all at once, before any
- * engine MMIO: each word is polled to 0xf, then all five are read
+/* Every valid ANE word must read ACTUAL == 0xf before any engine MMIO:
+ * each word is polled to 0xf, then the valid prefix is read
  * again so a domain that dropped while a later one came up refuses. */
 static int ane_h16_ps_wait(struct ane_h16 *ane)
 {
@@ -227,28 +244,28 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	unsigned int i;
 	u32 v;
 
-	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
+	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
 		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
 					"ane_h16 ps word=%s off=%#x stuck value=%#x actual=%#lx; refusing to touch the engine window\n",
-					ane_h16_ps_names[i], ane->soc->ps_off[i],
+					ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i],
 					v, FIELD_GET(ANE_H16_PS_ACTUAL, v));
 				return -ETIMEDOUT;
 			}
 			usleep_range(100, 200);
 		}
 	}
-	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
+	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
 		if (!ane_h16_ps_on(ane, i, &v)) {
 			dev_err(ane->dev,
 				"ane_h16 ps word=%s off=%#x dropped value=%#x after the wait; refusing to touch the engine window\n",
-				ane_h16_ps_names[i], ane->soc->ps_off[i], v);
+				ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 			return -EIO;
 		}
 		dev_info(ane->dev,
 			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=true\n",
-			 ane_h16_ps_names[i], ane->soc->ps_off[i], v);
+			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 	}
 	return 0;
 }
@@ -591,10 +608,10 @@ static void ane_h16_stage_dt(struct ane_h16 *ane)
 	 * 3 = forbidden). The H16 rows are kext-derived and calibrated
 	 * against the known T6021 row, hence tier 0.
 	 */
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < ane_h16_ps_count(s); i++)
 		dev_info(ane->dev,
 			 "ane_h16 group=pmgr tier=0 word=%s off=%#x (ps guard word)",
-			 ane_h16_ps_names[i], s->ps_off[i]);
+			 ane_h16_ps_name(s, i), s->ps_off[i]);
 	dev_info(ane->dev, "ane_h16 group=engine-ro tier=0 word=RVBAR off=%#x",
 		 s->rvbar);
 	dev_info(ane->dev,
@@ -1123,6 +1140,8 @@ static int ane_h16_probe(struct platform_device *pdev)
 			stage);
 		return ret;
 	}
+	if (ane_h16_ps_count(soc) > ARRAY_SIZE(soc->ps_off))
+		return -EINVAL;
 	/* H17's proven write ordering includes the CE handshake and PWGATE
 	 * sequence (46efa4b). The generic H16 boot path does neither. Matching
 	 * a SoC row is not qualification to execute that path on T8140.

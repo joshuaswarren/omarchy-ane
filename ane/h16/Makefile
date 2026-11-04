@@ -22,7 +22,7 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello
+POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-dart-map neg-unknown-stage neg-h17-boot neg-adt-bounds
 

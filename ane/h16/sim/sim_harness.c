@@ -30,6 +30,7 @@
 const struct ane_h16_soc ane_t8140_soc = {
 	.name = "t8140",
 	.ane_type = 0x200,
+	.ps_count = 4,
 };
 
 /* ---- shim globals ---- */
@@ -752,6 +753,30 @@ static void sc_neg_dart_map_partial(void)
 	    "partial map unwound before free_stage");
 }
 
+static void sc_pos_four_ps(void)
+{
+	struct ane_h16 ane = {
+		.dev = &sim_pdev.dev,
+		.soc = &sim_soc,
+		.pmgr = (void *)(uintptr_t)SIM_PMGR_PA,
+	};
+	int ret;
+
+	setup_common();
+	sim_soc.ps_count = 4;
+	/* The excluded fifth word must not be read or polled. */
+	sim_regions[1].backing[sim_soc.ps_off[4] / 4] = 0;
+	ret = ane_h16_ps_wait(&ane);
+	chk(ret == 0, "four valid PS words accepted with absent fifth word");
+	chk(sim_n_events == 8, "only four PS words read twice");
+	sim_soc.ps_count = 6;
+	ret = run_probe();
+	chk(ret == -EINVAL, "out-of-bounds PS count refused");
+	chk(sim_n_events == 8, "invalid count adds no bus accesses");
+	chk(sim_ioremaps == 0 && sim_rpm_gets == 0,
+	    "invalid count refused before mapping or power acquisition");
+}
+
 static void sc_neg_adt_bounds(void)
 {
 	size_t len;
@@ -898,6 +923,8 @@ int main(int argc, char **argv)
 		sc_neg_h17_boot();
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
+	else if (!strcmp(sc, "pos-four-ps"))
+		sc_pos_four_ps();
 	else if (!strcmp(sc, "adt-file") && argc == 3)
 		sc_adt_file(argv[2]);
 	else {

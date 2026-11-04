@@ -54,3 +54,14 @@ require its matching simulator test to fail. No Apple ADT bytes are
 committed. Simulation/replay is software evidence only. T8140 stage=boot
 remains refused before hardware access; the ordering, DMA ownership and
 resource-lifetime blockers in the preceding safety review still apply.
+
+## Live DT-only rerun at 14790e1
+
+On the same boot, the old module was confirmed to be running stage=dt,
+then unloaded and replaced with the fixed build, again only stage=dt.
+This is not an unload/retry after a hardware hang or CPU release.
+The fixed kernel parser reports the same physical/DVA/size triples above
+from the live reserved ADT, and RESULT stage=0 PASS dt-parse-only.
+Manifest and filtered log are adjacent. The log's words "iBoot preload
+present" mean segment metadata was found; they do not verify the firmware
+contents or the DART translation. No hardware qualification is claimed.

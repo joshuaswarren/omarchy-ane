@@ -57,6 +57,7 @@ struct ane_h16_soc {
 	u32 ps_off[5];		/* pmgr ps words ANE_SYS, ANE_MPM, ANE_CPU,
 				 * ANE_TD, ANE_BASE, offsets into the pmgr
 				 * reg window the DT node names "pmgr" */
+	u8 ps_count;		/* 0: all five legacy slots; otherwise valid prefix */
 	const struct ane_h16_fw *fw;
 };
 

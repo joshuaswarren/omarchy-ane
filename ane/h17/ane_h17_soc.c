@@ -60,8 +60,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  * 0x1608000 is the ASC+0x8000 family pattern over the H17 CPU/ASC block
  * at engine+0x1600000, now hardware-confirmed: A2I_CTRL/I2A_CTRL read
  * 0x00020001 in the read-only probe. The role of c000/c008/c010
- * (MPM/CPU/TD) is unassigned. c018 is kept at the T8132 offset only to
- * record that it is absent.
+ * (MPM/CPU/TD) is unassigned. c018 is absent and excluded by ps_count.
  */
 const struct ane_h16_soc ane_t8140_soc = {
 	.name = "t8140",
@@ -75,11 +74,8 @@ const struct ane_h16_soc ane_t8140_soc = {
 	.mbox = 0x1608000,		/* candidate: T8132 template */
 	.wrapper_pa = 0x401600000ull,
 	.cpu_pa = 0x401000000ull,
-	/* 0xc018 is absent on T8140 (reads all-zero; the ADT has no ANE_BASE
-	 * power-controller node). The H16 driver's ps-wait polls a fixed
-	 * five-word array, so the fifth slot repeats 0xc010 (the last real
-	 * word) rather than leaving the absent 0xc018, which would hang the
-	 * ACTUAL==0xf wait. */
-	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010, 0xc010 },
+	/* 0xc018 is absent; never substitute a duplicate as a fifth island. */
+	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010 },
+	.ps_count = 4,
 	.fw = &ane_fw_theia_d9x,
 };
