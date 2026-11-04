@@ -158,6 +158,7 @@ struct ane_h16 {
 	struct ane_h16_seg segs[2];
 	void __iomem *pwgate;	/* H17 reg[2]: PS/PWGATE bank (overlay) */
 	unsigned int order_seq;	/* durable h17-order sequence number */
+	struct dev_pm_domain_list *pd_list; /* ALL power domains, held */
 	bool fw_touched;
 	bool fw_started;
 	bool hello_done;
@@ -253,22 +254,6 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	u32 v;
 
 	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
-		/* H17: the boot path's own ordering enables PS 0xc000 and
-		 * 0xc008 with checked polls (kext steps 1 and 7); the kext
-		 * has no pre-gate on them. Genpd may leave them at
-		 * ACTUAL=0 (TARGET=3 bootloader state), so gate only on
-		 * the words the boot path does not drive itself. */
-		if (ane->soc->h17_order &&
-		    (ane->soc->ps_off[i] == 0xc000 ||
-		     ane->soc->ps_off[i] == 0xc008)) {
-			ane_h16_ps_on(ane, i, &v);
-			dev_info(ane->dev,
-				 "ane_h16 ps word=%s off=%#x value=%#x actual=%#lx (h17: enabled by the boot ordering, not gated)\n",
-				 ane_h16_ps_name(ane->soc, i),
-				 ane->soc->ps_off[i], v,
-				 FIELD_GET(ANE_H16_PS_ACTUAL, v));
-			continue;
-		}
 		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
@@ -281,20 +266,15 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 		}
 	}
 	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
-		if (!ane_h16_ps_on(ane, i, &v) &&
-		    !(ane->soc->h17_order &&
-		      (ane->soc->ps_off[i] == 0xc000 ||
-		       ane->soc->ps_off[i] == 0xc008))) {
+		if (!ane_h16_ps_on(ane, i, &v)) {
 			dev_err(ane->dev,
 				"ane_h16 ps word=%s off=%#x dropped value=%#x after the wait; refusing to touch the engine window\n",
 				ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 			return -EIO;
 		}
 		dev_info(ane->dev,
-			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=%s\n",
-			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v,
-			 FIELD_GET(ANE_H16_PS_ACTUAL, v) == ANE_H16_PS_ON ?
-			 "true" : "h17-deferred");
+			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=true\n",
+			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 	}
 	return 0;
 }
@@ -1577,25 +1557,43 @@ static int ane_h16_probe(struct platform_device *pdev)
 			return -ENOMEM;
 	}
 
-	pm_runtime_enable(&pdev->dev);
-	ret = pm_runtime_get_sync(&pdev->dev);
-	if (ret < 0) {
-		dev_err(&pdev->dev, "power-domains bring-up failed: %d\n", ret);
-		pm_runtime_disable(&pdev->dev);
-		return ret;
+	/* Multi-domain consumers are attached by the DRIVER, not the core:
+	 * genpd_dev_pm_attach() skips devices with more than one
+	 * power-domains entry, so pm_runtime_get_sync() would power
+	 * nothing. Attach every listed domain and hold it on with an
+	 * RPM_ACTIVE device link; the ps_wait gate then verifies the
+	 * ACTUAL bits at the register level. */
+	{
+		static const struct dev_pm_domain_attach_data pd_data = {
+			.pd_flags = PD_FLAG_DEV_LINK_ON,
+		};
+
+		ret = dev_pm_domain_attach_list(&pdev->dev, &pd_data,
+						&ane->pd_list);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"power-domain attach failed: %d\n", ret);
+			return ret;
+		}
+		if (ret == 0) {
+			dev_err(&pdev->dev,
+				"device has no power-domains; refusing to touch the engine window\n");
+			return -ENODEV;
+		}
+		dev_info(&pdev->dev, "attached %u power domains\n", ret);
 	}
 	ret = ane_h16_ps_wait(ane);
 	if (ret) {
 		ane_h16_result(ane, 1, "FAIL", "pmgr-actual-stuck");
-		goto rpm_off;
+		goto pd_off;
 	}
 
 	ret = ane_h16_status(ane);
 	if (ret)
-		goto rpm_off;
+		goto pd_off;
 	if (stage_idx == 1) {
 		ane_h16_result(ane, 1, "PASS", "ps-guard+reads");
-		goto rpm_off;
+		goto pd_off;
 	}
 	ret = ane_h16_boot(ane);
 	if (ane->fw_touched) {
@@ -1612,8 +1610,9 @@ static int ane_h16_probe(struct platform_device *pdev)
 			  ret);
 		return 0;
 	}
-rpm_off:
-	pm_runtime_put_sync(&pdev->dev);
+pd_off:
+	dev_pm_domain_detach_list(ane->pd_list);
+	ane->pd_list = NULL;
 	return ret;
 }
 
@@ -1624,10 +1623,12 @@ static void ane_h16_remove(struct platform_device *pdev)
 	if (ane->fw_touched) {
 		dev_emerg(&pdev->dev,
 			  "remove with the firmware released: leaving power on, reboot required\n");
-		pm_runtime_get_noresume(&pdev->dev);
 		return;
 	}
-	pm_runtime_disable(&pdev->dev);
+	if (ane->pd_list) {
+		dev_pm_domain_detach_list(ane->pd_list);
+		ane->pd_list = NULL;
+	}
 }
 
 static const struct of_device_id ane_h16_of_match[] = {

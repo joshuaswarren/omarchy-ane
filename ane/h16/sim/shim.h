@@ -387,7 +387,34 @@ static inline void *platform_get_drvdata(struct platform_device *pdev)
 #define SIM_PMGR_PA 0x380700000ull	/* pmgr window 0x18000 bytes */
 #define SIM_PWGATE_PA 0x300724000ull	/* H17 pwgate window 0x4000 bytes */
 extern bool sim_pwgate_mapped;
+extern int sim_rpm_gets, sim_rpm_puts;
+extern struct iommu_domain *sim_dart;	/* NULL = device has no domain */
 #define IORESOURCE_MEM 0x00000200
+#define PD_FLAG_DEV_LINK_ON BIT(1)
+struct dev_pm_domain_attach_data { u32 pd_flags; };
+struct dev_pm_domain_list { int num_pds; };
+static inline int dev_pm_domain_attach_list(
+	struct device *dev, const struct dev_pm_domain_attach_data *data,
+	struct dev_pm_domain_list **list)
+{
+	static struct dev_pm_domain_list l;
+
+	(void)dev;
+	(void)data;
+	if (!sim_dart)
+		return -ENODEV;
+	sim_rpm_gets++;
+	l.num_pds = 4;
+	*list = &l;
+	return 4;
+}
+static inline void dev_pm_domain_detach_list(struct dev_pm_domain_list *list)
+{
+	if (list) {
+		sim_rpm_puts++;
+		list->num_pds = 0;
+	}
+}
 static inline struct resource *platform_get_resource_byname(
 	struct platform_device *dev, unsigned int flags, const char *name)
 {
