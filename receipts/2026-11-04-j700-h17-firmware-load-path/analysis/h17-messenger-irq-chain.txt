@@ -430,3 +430,27 @@
 0xfffffe0008fc3b38: braa     x16, x17
 0xfffffe0008fc3b3c: pacibsp  
 
+== H11ANEInDirectPathClient::externalMethod table (0x7f5d6d0, 9 selectors) ==
+sel 0 ANE_DeviceOpen   sel 1 ANE_DeviceClose   sel 2 ANE_ProgramSendRequest
+sel 3 ANE_ProgramOutputSetEnqueue  sel 4 ANE_ProgramInputsReady
+sel 5 ANE_MemoryMapRequest         sel 6 ANE_MemoryUnMapRequest
+sel 7 ANE_SessionHintRequest       sel 8 ANE_ProgramChainingSetActiveProcedure
+== ANE_ProgramSendRequest wrapper body 0x8fc3b3c (user-struct copy) ==
+0xfffffe0008fc3b44 stp    x28, x27, [sp, #0x40]
+0xfffffe0008fc3b48 stp    x26, x25, [sp, #0x50]
+0xfffffe0008fc3b4c stp    x24, x23, [sp, #0x60]
+0xfffffe0008fc3b50 stp    x22, x21, [sp, #0x70]
+0xfffffe0008fc3b54 stp    x20, x19, [sp, #0x80]
+0xfffffe0008fc3b58 stp    x29, x30, [sp, #0x90]
+0xfffffe0008fc3b70 ldrb   w8, [x8, #1]
+0xfffffe0008fc3b88 ldr    w8, [x27]
+0xfffffe0008fc3bb4 ldr    x8, [x10]
+0xfffffe0008fc3bb8 b      #0xfffffe0008fc3bc4
+0xfffffe0008fc3bc8 ldr    w10, [x22, #0x20]
+0xfffffe0008fc3bcc stp    x9, x10, [sp, #0x18]
+0xfffffe0008fc3bd0 stp    x26, x22, [sp, #8]
+0xfffffe0008fc3bd4 str    x8, [sp]
+0xfffffe0008fc3be4 ldr    x1, [x1, #0xac8]
+0xfffffe0008fc3bf4 bl     #0xfffffe000bb76174
+0xfffffe0008fc3bf8 ldr    x0, [x23]
+0xfffffe0008fc3bfc ldr    x3, [x22, #0x18]

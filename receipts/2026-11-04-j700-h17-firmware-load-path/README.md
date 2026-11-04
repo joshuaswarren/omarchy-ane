@@ -1205,3 +1205,34 @@ resolve the first two without submitting anything.
 Raw evidence: `analysis/h17-messenger-irq-chain.txt` (the send/receive
 primitives, the IRQ handler arms, the real `externalMethod`, and the
 selector-2 wrapper). Again: decoded instruction stream, not device behaviour.
+
+### 13.5 The direct-path client: the 9 selectors a submit actually uses
+
+The same chained-fixup decode applied to `H11ANEInDirectPathClient`'s table
+(`0xfffffe0007f5d6d0`, `w4 = 9` at `0xfffffe0008fc7574`) pins the restricted
+direct-path ABI:
+
+| sel | function |
+|---|---|
+| 0 | `ANE_DeviceOpen` |
+| 1 | `ANE_DeviceClose` |
+| 2 | **`ANE_ProgramSendRequest`** |
+| 3 | `ANE_ProgramOutputSetEnqueue` |
+| 4 | `ANE_ProgramInputsReady` |
+| 5 | `ANE_MemoryMapRequest` |
+| 6 | `ANE_MemoryUnMapRequest` |
+| 7 | `ANE_SessionHintRequest` |
+| 8 | `ANE_ProgramChainingSetActiveProcedure` |
+
+The selectors are static free functions `ANE_*(ANEClientDevice*, void*,
+IOExternalMethodArguments*)`. The selector-2 wrapper (`0xfffffe0008fc3b3c`)
+reads the user-space ANE-program request struct's scalar fields at
+`+0x18` (u64 user pointer) and `+0x20` (u32 length), wraps the user pointer in
+a `ScopedMMap<ANEProgramCreateArgsOutput>` (`0xfffffe0008fc3340`,
+`IOMemoryDescriptor::withAddressRange`), and forwards the kernel-mapped struct
+to the `ANECoreInterface`/`ANEHWDevice` method chain (e.g.
+`ANE_ProgramOutputSetEnqueue` → `ANECoreInterface::ANE_ProgramOutputSetEnqueue`
+at `0xfffffe0008fae980`, `ANE_ProgramInputsReady` → `0xfffffe0008fae960`).
+`ANEClientDevice::getClient` (`this+0x18`) supplies the embedded client in
+every wrapper. For libane this is the complete userspace submission surface:
+open → map buffers → inputs-ready/output-enqueue → send-request.
