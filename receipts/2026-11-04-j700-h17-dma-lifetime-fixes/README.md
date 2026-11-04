@@ -48,3 +48,19 @@ This is not hardware qualification. T8140 stage=boot remains fail-closed.
 Next prerequisite: a checked, durably logged H17 ordering adapter and
 explicit acquisition/retention of all required power domains. Physical
 preload reservation/content admission also remains to be established.
+
+## Reservation installation after bf21193
+
+The source overlay was compiled, installed in the existing opted-in
+T8140 stage-boot overlay slot, and update-m1n1 rebuilt the boot image.
+The old overlay is backed up at
+`/var/tmp/opencode/h17-pre-alias-overlay-backup.dtbo`, SHA256
+99492a071f53965f5fdfa3506289a291ebd86768c988595ca687f6fed8e2156e.
+The generated DTB's iommu-addresses tuple is owner-phandle plus
+`0x100 0 0 0x380000`, reserving [0x10000000000,0x10000380000).
+The old boot's IOMMU-group reserved_regions output is empty, saved at
+`/var/tmp/opencode/h17-alias-reservation-before.txt`.
+
+Next boot check: verify the memory-region owner/tuple, actual DART driver
+bindings and /sys/kernel/iommu_groups/<ANE group>/reserved_regions. No
+CPU release or stage=boot is part of that check. The H17 guard remains.
