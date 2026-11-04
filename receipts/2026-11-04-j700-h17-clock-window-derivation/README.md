@@ -98,3 +98,34 @@ If the gate words are readable, one of them should show the ANE gate bits
 and we can attempt the vote. If the read faults, the window is gated behind
 the very clock we are trying to enable, and the macOS route becomes the
 only way left.
+
+## 7. Corroboration: the window is PMGR-declared
+
+`/arm-io/pmgr` `reg` is 44 windows. Entry 30 is
+
+```
+30  pa=0xf82c8000  len=0x4000
+```
+
+which is exactly the ANE's resource 5 (`0xf82c8000` in ADT space,
+`0x3082c8000` global). Its neighbours in the same list are
+`0xf82b8000/0x10000` (entry 29) and `0xf82d0000/0x8000` (entry 31) — a
+band of small PMGR sub-windows.
+
+So resource 5 is not a stray ANE-private aperture; PMGR declares it. That
+raises confidence that map `0x71` binds to it, though it still does not
+prove the binding, because `initRegMap` for map `0x71` was not located.
+
+Other ANE windows appear in the same list: entry 21 `0xf0700000/0x18000`
+(PMGR slice), 22 `0xf0724000/0x4000` (PWGATE), 34 `0xf03c0000/0x30000`
+(PTD), 41 `0x01000000/0xff4000` (alternate base). The engine aperture
+`0x1f0000000` is absent, as expected — it is not a PMGR window.
+
+## 8. What remains unresolvable offline
+
+The per-device ordinal `n` in `0x3082c9100 + stride*n`. It is read from a
+runtime device struct built from the `devices` blob, and the blob's fields
+do not expose it in a form that separates gates from power-state devices.
+Two candidate readings are recorded (bit 0 / bit 31 of one shared gate
+word, versus a per-device ordinal), and neither can be settled without
+either reading the window or a kernel-debugging session on macOS.
