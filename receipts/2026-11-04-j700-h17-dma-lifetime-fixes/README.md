@@ -64,3 +64,32 @@ The old boot's IOMMU-group reserved_regions output is empty, saved at
 Next boot check: verify the memory-region owner/tuple, actual DART driver
 bindings and /sys/kernel/iommu_groups/<ANE group>/reserved_regions. No
 CPU release or stage=boot is part of that check. The H17 guard remains.
+
+## Ownership admission, after 6ffbd0e (live boot f62ad8af)
+
+Live check on boot f62ad8af-c34e-417a-b546-f2e2258763c1: IOMMU group 15
+reports `0x10000000000-0x1000037ffff reserved`, all three DARTs bound to
+apple-dart, ANE node okay and unbound. Recorded in
+`/var/tmp/opencode/h17-alias-live-f62ad8af-*/metadata.json`.
+
+Per the read-only preload review (session ses_e593c2d98ffef6e9aneN3903I4):
+these preload windows are owned by exclusion from System RAM, not by a
+reserved-memory node; "must be reserved" would fail and was T6021's rule,
+not this boot's. `ane_h16_admit_preload()` now enforces, before any
+mapping or read of preload DRAM: segments non-empty/aligned/non-overlap,
+`region_intersects(..., IORESOURCE_SYSTEM_RAM, ...)` == REGION_DISJOINT,
+and zero overlap with any reserved-memory reg. It is enforced in the boot
+path and logged as metadata verdicts at stage=dt. A boot refuses on a
+nonzero SCRATCH7 wake word (firmware not quiescent). Per-segment snapshot
+buffers no longer outlive their short demand-window memremap. Preload
+diffs are now byte-whitelisted at patchbay/tunables/CE-env positions with
+an accepted-diff count and staged-image SHA-256 logged; the old value-
+based `live && !file` rule is removed. New negative scenarios:
+refusing BSS/IOVA-like diffs, whitelist boundary, snapshot failure and a
+System-RAM-overlapping seg. Full suite passes:
+`/var/tmp/opencode/h17-ownership-sim.log` (21 scenarios), W=1 build
+`/var/tmp/opencode/h17-ownership-build.log`, mutation tests GREP-clean.
+
+Next boot check: verify the memory-region owner/tuple, actual DART driver
+bindings and /sys/kernel/iommu_groups/<ANE group>/reserved_regions. No
+CPU release or stage=boot is part of that check. The H17 guard remains.

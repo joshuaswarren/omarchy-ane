@@ -50,6 +50,25 @@ typedef unsigned long long dma_addr_t;
 /* ---- err/alloc ---- */
 #define GFP_KERNEL 0
 #define MEMREMAP_WB 0
+extern int sim_snapshots, sim_snapshot_attempts, sim_snapshot_fail;
+static inline void *kvzalloc(size_t size, int flags)
+{
+	void *p;
+	(void)flags;
+	if (++sim_snapshot_attempts == sim_snapshot_fail)
+		return NULL;
+	p = calloc(1, size);
+	if (p)
+		sim_snapshots++;
+	return p;
+}
+static inline void kvfree(void *p)
+{
+	if (p) {
+		sim_snapshots--;
+		free(p);
+	}
+}
 #define __iomem
 #define __maybe_unused __attribute__((unused))
 #define IS_ERR(p) ((unsigned long)(p) > (unsigned long)-4096L)
@@ -295,6 +314,26 @@ static inline struct device_node *of_get_next_child(struct device_node *np,
 static inline void of_node_put(struct device_node *np)
 {
 	(void)np;
+}
+
+/* ---- System RAM model for preload ownership admission ---- */
+#define IORESOURCE_SYSTEM_RAM	0x00020000
+#define IORES_DESC_NONE		0
+enum ios_region { REGION_DISJOINT, REGION_INTERSECTS, REGION_MIXED };
+struct sim_ram_range { u64 start, end; };
+extern struct sim_ram_range sim_sys_ram[4];extern int sim_n_sys_ram;
+static inline int region_intersects(u64 start, size_t size, unsigned long flags,
+				    int desc)
+{
+	int i;
+
+	(void)flags;
+	(void)desc;
+	for (i = 0; i < sim_n_sys_ram; i++)
+		if (start < sim_sys_ram[i].end &&
+		    sim_sys_ram[i].start < start + size)
+			return REGION_INTERSECTS;
+	return REGION_DISJOINT;
 }
 
 /* ---- platform device / driver ---- */

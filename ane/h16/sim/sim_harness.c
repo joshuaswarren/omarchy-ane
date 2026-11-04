@@ -52,6 +52,9 @@ struct sim_phys sim_phys_maps[8];
 int sim_n_phys_maps;
 int sim_rpm_gets, sim_rpm_puts;
 int sim_module_refs;
+int sim_snapshots, sim_snapshot_attempts, sim_snapshot_fail;
+struct sim_ram_range sim_sys_ram[4] = { { 0x710000000ull, 0x8000000000ull } };
+int sim_n_sys_ram = 1;
 int sim_dma_outstanding;
 int sim_dma_allocs, sim_dma_frees;
 struct iommu_domain sim_dart_storage;
@@ -359,25 +362,19 @@ static u8 *build_fw(void)
 	return b;
 }
 
-/* The iBoot preload: the file laid out at its vm addresses, plus the
- * differences a real preload is expected to carry (patchbay/tunables
- * windows, one DATA-base IOVA word, one TEXT-entry IOVA word).
+/* Synthetic preload: file layout plus differences only within the
+ * position-whitelisted patchbay/tunables windows. This is not device data.
  */
 static void build_preloads(void)
 {
 	const struct ane_h16_fw *img = sim_soc.fw;
 	u8 *data_pre = calloc(1, img->data_vmsize);
-	u64 w;
 
 	sim_text_pre = calloc(1, img->text_vmsize);
 	memcpy(sim_text_pre, fwbuf + 0x4000, img->text_vmsize);
 	memcpy(data_pre, fwbuf + img->data_fileoff, img->data_filesize);
 	memset(data_pre + img->patchbay_vm - img->data_vm, 0x11, 0x261);
 	memset(data_pre + img->tunables_vm - img->data_vm, 0x22, 0x6a0);
-	w = DATA_IOVA;
-	memcpy(data_pre + 0x100000, &w, 8);
-	w = TEXT_IOVA;
-	memcpy(data_pre + 0x200000, &w, 8);
 	sim_phys_maps[sim_n_phys_maps++] = (struct sim_phys){
 		TEXT_PRE_PA, img->text_vmsize, sim_text_pre };
 	sim_phys_maps[sim_n_phys_maps++] = (struct sim_phys){
@@ -777,6 +774,51 @@ static void sc_neg_dart_map_partial(void)
 	    "pre-existing foreign mapping preserved after collision");
 }
 
+/* preload ownership negative: a segment inside allocator-owned System RAM
+ * is not an owned preload window. */
+static void sc_neg_preload_sysram(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	sim_sys_ram[0].start = DATA_PRE_PA + SZ_16K;	/* overlap seg1 */
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -EINVAL, "System-RAM-overlapping preload refused");
+	chk(sim_snapshots == 0, "no snapshot taken from allocator RAM");
+	chk(sim_dma_allocs == sim_dma_frees, "no DMA backing leaked");
+	chk(sim_active_maps() == 0, "no alias mappings after refusal");
+	chk(ev_engine_count(true) == 0, "no engine writes on ownership refusal");
+}
+
+static void sc_neg_preload_bytes(unsigned int mode)
+{
+	int ret;
+	u64 entry = TEXT_IOVA;
+	u8 *data;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	data = sim_phys_maps[1].host;
+	if (mode == 0)
+		memcpy(data + 0x100000, &entry, sizeof(entry));
+	else if (mode == 1)
+		data[sim_fw.patchbay_vm - sim_fw.data_vm + 0x261] ^= 1;
+	else
+		sim_snapshot_fail = 2;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == (mode == 2 ? -ENOMEM : -EINVAL),
+	    "unqualified BSS, exact whitelist boundary or snapshot failure refused");
+	chk(sim_snapshots == 0, "all snapshots released on refusal");
+	chk(sim_dma_allocs == sim_dma_frees, "staged backing released before CPU use");
+	chk(sim_active_maps() == 0, "no DMA mappings left after refusal");
+	chk(ev_engine_count(true) == 0, "no engine writes on preload refusal");
+}
+
 static void sc_neg_stage_domain(bool dma_api)
 {
 	int ret;
@@ -987,6 +1029,14 @@ int main(int argc, char **argv)
 		sc_neg_stage_domain(true);
 	else if (!strcmp(sc, "neg-non-dma-domain"))
 		sc_neg_stage_domain(false);
+	else if (!strcmp(sc, "neg-preload-bss"))
+		sc_neg_preload_bytes(0);
+	else if (!strcmp(sc, "neg-preload-boundary"))
+		sc_neg_preload_bytes(1);
+	else if (!strcmp(sc, "neg-preload-snapshot"))
+		sc_neg_preload_bytes(2);
+	else if (!strcmp(sc, "neg-preload-sysram"))
+		sc_neg_preload_sysram();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "neg-h17-boot"))

@@ -60,9 +60,11 @@
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/ioport.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/sizes.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -587,6 +589,8 @@ static int ane_h16_segments(struct ane_h16 *ane)
 
 /* ---- stage 0: dt-only parse, no MMIO ---- */
 
+static int ane_h16_admit_preload(struct ane_h16 *ane, bool enforce);
+
 static void ane_h16_stage_dt(struct ane_h16 *ane)
 {
 	const struct ane_h16_soc *s = ane->soc;
@@ -665,6 +669,12 @@ static void ane_h16_stage_dt(struct ane_h16 *ane)
 			dev_info(ane->dev,
 				 "adt: no reserved-memory \"adt\" region, ane node or segment-ranges: iBoot preload presence on this boot is unknown; stage=boot refuses");
 		}
+		/* Record the ownership verdict with the addresses, not just
+		 * the addresses (metadata only; no mapping or read). */
+		if (!ane_h16_adt_open(ane) && !adt_find_ane(s->ane_type, &ane_node) &&
+		    !adt_prop(ane_node, "segment-ranges", &data, &size) &&
+		    !ane_h16_seg_decode(ane, data, size, segs))
+			ane_h16_admit_preload(ane, false);
 	}
 	ane_h16_result(ane, 0, "PASS", "dt-parse-only");
 }
@@ -698,36 +708,120 @@ static int ane_h16_fw_pin(struct ane_h16 *ane, const struct firmware **fwp)
 	return 0;
 }
 
-/* True when a differing u64 is one iBoot is expected to have patched:
- * an entry/DATA-base IOVA, or a nonzero iBoot-only value (stack guard,
- * SOC id, engine addresses) over a zero in the file. Logged either way;
- * only the copy decision depends on this. */
-static bool ane_h16_preload_patched_u64(struct ane_h16 *ane, u64 file,
-					u64 live)
+/* Ownership admission before any mapping or read of the preload DRAM.
+ * On T8140 the iBoot preload lives below Linux's first usable /memory
+ * range and has no reserved-memory coverage: it is owned by exclusion
+ * from the allocator, not by a reservation. "Segment inside a
+ * reservation" is therefore NOT the admission test (that was T6021's
+ * case, where the address is inside RAM); the test here is that each
+ * segment is DRAM-decoded but disjoint from (a) every other segment,
+ * (b) every System RAM range and (c) every reserved-memory reg.
+ * An in_ram elsewhere would mean allocator-owned memory: refuse.
+ */
+static int ane_h16_admit_preload(struct ane_h16 *ane, bool enforce)
 {
-	if (live == ane->segs[0].iova || live == ane->segs[1].iova)
-		return true;
-	if ((live & ANE_H16_RVBAR_ADDR_MASK) ==
-	    (ane->segs[0].iova & ANE_H16_RVBAR_ADDR_MASK))
-		return true;
-	return live && !file;
+	unsigned int s;
+	int ret = 0;
+
+	for (s = 0; s < 2; s++) {
+		u64 start = ane->segs[s].phys, size = ane->segs[s].size;
+		unsigned int c;
+
+		if (!size || start + size <= start ||
+		    !IS_ALIGNED(start | size, SZ_16K)) {
+			dev_err(ane->dev,
+				"preload seg%u phys %#llx size %#llx is empty, wrapping or unaligned\n",
+				s, start, size);
+			ret = -EINVAL;
+			goto out;
+		}
+		for (c = 0; c < 2; c++) {
+			if (c == s)
+				continue;
+			if (start < ane->segs[c].phys + ane->segs[c].size &&
+			    ane->segs[c].phys < start + size) {
+				dev_err(ane->dev,
+					"preload seg%u and seg%u overlap\n",
+					s, c);
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+		if (region_intersects(start, size, IORESOURCE_SYSTEM_RAM,
+				      IORES_DESC_NONE) != REGION_DISJOINT) {
+			dev_err(ane->dev,
+				"preload seg%u phys %#llx-%#llx intersects Linux System RAM; not an owned preload window\n",
+				s, start, start + size);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+	{
+		struct device_node *rm = of_find_node_by_name(NULL,
+							      "reserved-memory");
+		struct device_node *child;
+
+		if (rm)
+		for_each_child_of_node(rm, child) {
+			struct resource res;
+			unsigned int idx;
+
+			for (idx = 0;
+			     !of_address_to_resource(child, idx, &res);
+			     idx++) {
+				unsigned int c;
+
+				for (c = 0; c < 2; c++) {
+					if (ane->segs[c].phys <
+					    res.start + resource_size(&res) &&
+					    res.start <
+					    ane->segs[c].phys + ane->segs[c].size) {
+						dev_err(ane->dev,
+							"preload seg%u overlaps reserved-memory %pOFn reg%u\n",
+							c, child, idx);
+						ret = -EINVAL;
+						goto out;
+					}
+				}
+			}
+		}
+	}
+out:
+	for (s = 0; s < 2; s++)
+		dev_info(ane->dev,
+			 "preload owned seg%u phys %#llx-%#llx: %s (%s; ram_disjoint=%d)\n",
+			 s, ane->segs[s].phys,
+			 ane->segs[s].phys + ane->segs[s].size,
+			 ret ? "refused" : "admitted",
+			 enforce ? "enforced" : "log-only", ret ? 0 :
+			 region_intersects(ane->segs[s].phys,
+					   ane->segs[s].size,
+					   IORESOURCE_SYSTEM_RAM,
+					   IORES_DESC_NONE) == REGION_DISJOINT);
+	return ret;
 }
 
 /* Build the staged image: the pinned file laid out at its vm addresses,
- * then every accepted iBoot difference copied in from the preload.
- * Anything else that differs refuses the boot. */
+ * then position-whitelisted bytes copied from one snapshot per segment.
+ * No value-based exception for zero file words, BSS, or IOVA-like values.
+ * Caller must establish quiescence/admit physical ranges before reading.
+ */
 static int ane_h16_stage(struct ane_h16 *ane, const struct firmware *fw)
 {
 	const struct ane_h16_fw *img = ane->soc->fw;
 	const unsigned long allowed[][2] = {
 		{ img->patchbay_vm, 0x261 },
 		{ img->tunables_vm, 0x6a0 },
+		{ img->ce_env_vm, img->ce_env_size },
 	};
 	/* The preload maps the image vm layout: segment 0 at vm 0,
 	 * segment 1 at data_vm. */
 	const u64 seg_vm[2] = { 0, img->data_vm };
 	const u64 seg_file_off[2] = { 0x4000, img->data_fileoff };
-	void __iomem *pre[2] = {};
+	void *mapped;
+	u8 *pre[2] = {};
+	u64 accepted = 0;
+	u8 digest[SHA256_DIGEST_SIZE];
 	unsigned int s, i;
 	int ret = 0;
 
@@ -739,63 +833,67 @@ static int ane_h16_stage(struct ane_h16 *ane, const struct firmware *fw)
 					    &ane->stage_dma, GFP_KERNEL);
 	if (!ane->stage_cpu)
 		return -ENOMEM;
+	memset(ane->stage_cpu, 0, ane->stage_size);
 	memcpy(ane->stage_cpu, fw->data + 0x4000, img->text_vmsize);
 	memcpy(ane->stage_cpu + img->data_vm, fw->data + img->data_fileoff,
 	       img->data_filesize);
 
 	for (s = 0; s < 2; s++) {
-		pre[s] = devm_memremap(ane->dev, ane->segs[s].phys,
-				       ane->segs[s].size, MEMREMAP_WB);
-		if (IS_ERR(pre[s])) {
-			ret = PTR_ERR(pre[s]);
-			pre[s] = NULL;
+		pre[s] = kvzalloc(ane->segs[s].size, GFP_KERNEL);
+		if (!pre[s]) {
+			ret = -ENOMEM;
 			goto out;
 		}
+		mapped = devm_memremap(ane->dev, ane->segs[s].phys,
+				      ane->segs[s].size, MEMREMAP_WB);
+		if (IS_ERR(mapped)) {
+			ret = PTR_ERR(mapped);
+			goto out;
+		}
+		memcpy(pre[s], mapped, ane->segs[s].size);
+		devm_memunmap(ane->dev, mapped);
 	}
 	for (s = 0; s < 2 && !ret; s++) {
 		u64 expect_bytes = s ? img->data_filesize : img->text_vmsize;
 
-		for (i = 0; i < ane->segs[s].size; i += 8) {
-			u64 a = 0, b;
-			u8 *dst;
+		for (i = 0; i < ane->segs[s].size; i++) {
+			u8 a = 0, b = pre[s][i];
 			unsigned int k;
 			bool in_allowed = false;
 
-			if (i + 8 <= expect_bytes)
-				memcpy(&a, fw->data + seg_file_off[s] + i, 8);
-			memcpy(&b, pre[s] + i, 8);
+			if (i < expect_bytes)
+				a = fw->data[seg_file_off[s] + i];
 			if (a == b)
 				continue;
 			for (k = 0; k < ARRAY_SIZE(allowed); k++)
-				if (seg_vm[s] + i >= allowed[k][0] &&
-				    seg_vm[s] + i < allowed[k][0] + allowed[k][1])
+				if (allowed[k][1] && seg_vm[s] + i >= allowed[k][0] &&
+				    seg_vm[s] + i - allowed[k][0] < allowed[k][1])
 					in_allowed = true;
-			if (!in_allowed &&
-			    !ane_h16_preload_patched_u64(ane, a, b)) {
+			if (!in_allowed) {
 				dev_err(ane->dev,
-					"preload diff seg%u vm %#llx: file %#llx live %#llx: preload is not the pinned image; refusing\n",
-					s, seg_vm[s] + i, a, b);
+					"preload diff seg%u vm %#llx outside byte whitelist; refusing\n",
+					s, seg_vm[s] + i);
 				ret = -EINVAL;
 				break;
 			}
-			dev_info(ane->dev,
-				 "preload diff seg%u vm %#llx: file %#llx live %#llx (%s; copied)\n",
-				 s, seg_vm[s] + i, a, b,
-				 in_allowed ? "patchbay/tunables" : "single word");
-			if (seg_vm[s] + i + 8 > ane->stage_size) {
+			if (seg_vm[s] + i >= ane->stage_size) {
 				dev_err(ane->dev,
 					"preload diff outside the staged image\n");
 				ret = -EINVAL;
 				break;
 			}
-			dst = ane->stage_cpu + seg_vm[s] + i;
-			memcpy(dst, &b, 8);
+			((u8 *)ane->stage_cpu)[seg_vm[s] + i] = b;
+			accepted++;
 		}
+	}
+	if (!ret) {
+		sha256(ane->stage_cpu, ane->stage_size, digest);
+		dev_info(ane->dev, "staged image accepted_diff_bytes=%llu sha256=%*phN\n",
+			 accepted, SHA256_DIGEST_SIZE, digest);
 	}
 out:
 	for (s = 0; s < 2; s++)
-		if (pre[s])
-			devm_memunmap(ane->dev, pre[s]);
+		kvfree(pre[s]);
 	return ret;
 }
 
@@ -1091,6 +1189,21 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "dma-domain-or-alias-reservation");
 		return ret;
+	}
+	/* Own the preload DRAM before anything may map or read it. */
+	ret = ane_h16_admit_preload(ane, true);
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "preload-ownership");
+		return ret;
+	}
+	/* Quiescence: the wake word set means a firmware from an earlier
+	 * attempt in this boot may still be running against this DRAM.
+	 * Snapshots and CPU release refuse; reboot is the recovery. */
+	if (ane_h16_rd32(ane, s->scratch0 + 7 * 4) == ANE_H16_WAKE_ACK) {
+		dev_err(ane->dev,
+			"SCRATCH7 already carries the wake word: firmware not quiescent; reboot before retrying\n");
+		ane_h16_result(ane, 3, "REFUSED", "not-quiescent");
+		return -EINVAL;
 	}
 	ret = ane_h16_fw_pin(ane, &fw);
 	if (ret) {

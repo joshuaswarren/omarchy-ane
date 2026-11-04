@@ -37,6 +37,8 @@ struct ane_h16_fw {
 	u32 data_filesize;
 	u32 patchbay_vm;
 	u32 tunables_vm;
+	u32 ce_env_vm;
+	u32 ce_env_size;
 };
 
 /* Offsets are engine-relative unless a field name ends in _pa. */

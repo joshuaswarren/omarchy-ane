@@ -14,6 +14,14 @@ source describes that reservation, but other templates must be updated
 before boot staging can proceed. Apply reservations at boot, not through
 a live overlay after the DMA domain is initialized.
 
+Before boot staging reads any preload DRAM, ownership is enforced: each
+ADT segment must be 16 KiB-aligned, non-overlapping, disjoint from every
+System RAM range and every reserved-memory reg, and SCRATCH7 must not
+already carry the wake word. Preload diffs are admitted only at
+byte-whitelisted patchbay/tunables/CE-env positions, with the accepted
+count and staged-image SHA-256 logged. stage=dt records these verdicts
+(log-only) alongside the segment addresses.
+
 Once CPU release is attempted, probe deliberately retains a successful
 driver binding even if firmware readiness times out, preventing devres
 cleanup from invalidating live mappings. **insmod exit 0 is not a boot

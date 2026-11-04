@@ -36,6 +36,8 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
 	.data_filesize = 0xbc000,
 	.patchbay_vm = 0xcbdc8,
 	.tunables_vm = 0xde030,
+	.ce_env_vm = 0xb8280,
+	.ce_env_size = 0x4000,
 };
 
 /* T8140 / J700 (A18 Pro-class, H17). ADT ane-type 0x200; engine
