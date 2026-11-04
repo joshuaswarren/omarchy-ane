@@ -833,13 +833,7 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
-	bool wedged = atomic_read(&ane->wedged);
-
-	/* A wedged close retries recovery, which power-cycles the partitions
-	 * and then reads the engine, and whose por_pending check needs a
-	 * powered device: hold a reference so autosuspend cannot gate it
-	 * between those steps. A healthy close touches no hardware. */
-	if (wedged && pm_runtime_resume_and_get(ane->dev) < 0)
+	if (pm_runtime_resume_and_get(ane->dev) < 0)
 		return;
 
 	mutex_lock(&ane->engine_lock);
@@ -847,10 +841,8 @@ static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 		ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
 
-	if (wedged) {
-		pm_runtime_mark_last_busy(ane->dev);
-		pm_runtime_put_autosuspend(ane->dev);
-	}
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 }
 
 /*
@@ -930,12 +922,14 @@ static int ane_drm_release(struct inode *inode, struct file *file)
 {
 	struct drm_file *priv = file->private_data;
 	struct device *dev = get_device(priv->minor->dev->dev);
-	int err;
+	int err, pm_err;
 
-	pm_runtime_get_sync(dev);
+	pm_err = pm_runtime_resume_and_get(dev);
 	err = drm_release(inode, file);
-	pm_runtime_mark_last_busy(dev);
-	pm_runtime_put_autosuspend(dev);
+	if (pm_err >= 0) {
+		pm_runtime_mark_last_busy(dev);
+		pm_runtime_put_autosuspend(dev);
+	}
 	put_device(dev);
 	return err;
 }
@@ -1414,6 +1408,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane->removed = true;
 	drm_dev_unplug(&ane->drm);
 
+	/* Returning cannot stop forced removal or its devres cleanup. */
 	if (atomic_read(&ane->wedged)) {
 		dev_err(ane->dev,
 			"forced removal of a wedged device is unsafe; reboot required\n");

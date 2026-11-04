@@ -246,14 +246,12 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
-/* read_poll_timeout op: consult the DART latch before any engine access.
- * Returns 1 to end the poll when a fault is latched; the caller then
- * handles the fault without ever reading the wedged engine. */
+/* Stop polling on a DART fault before accessing the engine. */
 static int ane_tm_poll_step(struct ane_device *ane, struct ane_request *req,
 			    u32 *finished)
 {
 	if (ane_dart_faulted(ane, NULL, NULL))
-		return 1;
+		return -EIO;
 	return ane_tm_collect_events(ane, req, finished);
 }
 
@@ -294,7 +292,7 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 					ane, req, &finished);
 		if (!err && status < 0) {
 			err = status;
-			why = "event overflow";
+			why = "poll fault or event overflow";
 		}
 		if (ane_dart_faulted(ane, &fault_iova, &fault_status)) {
 			faulted = true;
@@ -318,9 +316,7 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		 * stream disable: the page tables were never changed by
 		 * the fault. */
 		if (err || ane_dart_faulted(ane, NULL, NULL)) {
-			/* Drain failed or the drained program never reached
-			 * completion: the engine is not idle and access is
-			 * off the table. wedge releases the scratch. */
+			/* Completion was not established; keep scratch mapped. */
 			err = err ?: -EIO;
 			why = "DART fault not drained";
 			goto wedge;
@@ -357,7 +353,8 @@ wedge:
 		dev_err(ane->dev,
 			"tm completion failed: %d (%s), finish lines=%x (q%d nid=%#x td_count=%u)\n",
 			err, why, finished, req->qid, req->nid, req->td_count);
-		if (faulted || ane_dart_faulted(ane, &fault_iova, &fault_status))
+		if (faulted || err == -EIO ||
+		    ane_dart_faulted(ane, &fault_iova, &fault_status))
 			/* Never read the engine behind a latched fault. */
 			dev_err(ane->dev,
 				"tm failure state: DART fault status=%#x iova=%#llx scratch=%d\n",
@@ -373,8 +370,11 @@ wedge:
 				tm_read32(ane, TM_IRQ_EVTC(1)),
 				ane->last_overflow, ane->last_info);
 	}
-	ane_dart_release_scratch(ane, scratch, scratch_pages);
 	ane_dart_unmask(ane);
+	if (scratch_pages) {
+		ane->scratch_retained = true;
+		return err;
+	}
 
 	/* One bounded recovery attempt: gate the engine's partitions, which
 	 * stops the dead task's DMA, and check the task manager. When its
@@ -596,6 +596,8 @@ int ane_tm_recover(struct ane_device *ane)
 	int err;
 
 	lockdep_assert_held(&ane->engine_lock);
+	if (ane->scratch_retained)
+		return -EBUSY;
 	if (!atomic_read(&ane->wedged))
 		return 0;
 
@@ -680,3 +682,4 @@ check:
 	}
 	return 0;
 }
+

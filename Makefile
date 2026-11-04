@@ -10,6 +10,9 @@ tools: libane
 
 check: tools
 	make -C tools check
+	python3 ane/test/tm_transient_fault_test.py
+	python3 ane/test/tm_close_test.py
+	python3 ane/test/tm_recovery_guard_test.py
 
 install:
 	make -C libane install

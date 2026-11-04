@@ -78,6 +78,7 @@ struct ane_device {
 	 * preserve-until-reboot behaviour applies only when that reset fails.
 	 */
 	atomic_t wedged;
+	bool scratch_retained;
 
 	/*
 	 * Set under engine_lock for the duration of a recovery power cycle,
