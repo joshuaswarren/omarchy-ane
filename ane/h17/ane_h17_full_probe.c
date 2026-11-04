@@ -388,7 +388,7 @@ static struct platform_driver ane_h17_full_driver = {
 	},
 };
 
-static int __init ane_h17_full_init(void)
+static int __init __maybe_unused ane_h17_full_init(void)
 {
 	struct device_node *ane, *probe;
 	int ret = -EPERM;
@@ -434,7 +434,15 @@ static void __exit ane_h17_full_exit(void)
 	}
 }
 
-module_init(ane_h17_full_init);
+/* Historical experiment: C9-C11 confuse descriptor file offsets with MMIO.
+ * Keep the source for receipt reproducibility, but never execute this path.
+ */
+static int __init ane_h17_full_refuse(void)
+{
+	pr_err("ane_h17_full REFUSED: invalid AF descriptor decoding; use reviewed AF scan\n");
+	return -EOPNOTSUPP;
+}
+module_init(ane_h17_full_refuse);
 module_exit(ane_h17_full_exit);
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_DESCRIPTION("J700 H17 Apple bring-up order probe (family 0xe0)");

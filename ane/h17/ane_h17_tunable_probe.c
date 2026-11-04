@@ -355,7 +355,7 @@ static struct platform_driver ane_h17_tunable_driver = {
 	},
 };
 
-static int __init ane_h17_tunable_init(void)
+static int __init __maybe_unused ane_h17_tunable_init(void)
 {
 	struct device_node *ane, *probe;
 	int ret = -EPERM;
@@ -401,7 +401,13 @@ static void __exit ane_h17_tunable_exit(void)
 	}
 }
 
-module_init(ane_h17_tunable_init);
+/* Historical experiment maps engine offsets as absolute physical addresses. */
+static int __init ane_h17_tunable_refuse(void)
+{
+	pr_err("ane_h17_tunable REFUSED: invalid absolute MMIO addresses\n");
+	return -EOPNOTSUPP;
+}
+module_init(ane_h17_tunable_refuse);
 module_exit(ane_h17_tunable_exit);
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_DESCRIPTION("J700 H17 ANE power-on sequence probe (gate open before engine write)");
