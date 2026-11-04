@@ -1,5 +1,10 @@
 # J700/H17: firmware-boot smoke runs clean but the firmware does not wake
 
+> **Review correction:** the measurements below stand, but the interpretations
+> about RVBAR proving firmware residency and a remap uniquely isolating the
+> clock do not. See `REVIEW-CORRECTION.md` and
+> `../2026-11-04-j700-h17-boot-safety-review/README.md` before using this plan.
+
 Boot `105a8645-ecce-48a8-9e55-23962582f07e`, warm reboot, run at uptime ~33 s.
 Commit `46efa4b`. Module `ane_h17_fwboot_probe.ko` — the corrected Apple-order
 bring-up (receipt `2026-11-04-j700-h17-firmware-load-path/`) plus the SCRATCH7

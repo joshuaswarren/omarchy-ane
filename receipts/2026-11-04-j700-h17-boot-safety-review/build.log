@@ -1,0 +1,466 @@
+make: Entering directory '/home/admin/omarchy-ane/ane/h16'
+make -C /lib/modules/7.2.11-14-1-ARCH/build M=/home/admin/omarchy-ane/ane/h16 modules
+make[1]: Entering directory '/usr/lib/modules/7.2.11-14-1-ARCH/build'
+make[2]: Entering directory '/home/admin/omarchy-ane/ane/h16'
+warning: the compiler differs from the one used to build the kernel
+  The kernel was built by: clang version 18.1.8
+  You are using:           gcc (GCC) 16.1.1 20260430
+  CC [M]  ane_h16_main.o
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/asm-generic/percpu.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/percpu.h:266,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:17,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/processor.h:47,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/delay.h:13,
+                 from ane_h16_main.c:46:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:36: warning: ignoring attributes applied to ‘struct bp_hardening_data’ after definition [-Wattributes]
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      |                                    ^~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:1: note: in expansion of macro ‘DECLARE_PER_CPU_READ_MOSTLY’
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:24: warning: ignoring attributes applied to ‘struct cpu_fp_state’ after definition [-Wattributes]
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      |                        ^~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      | ^~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/uapi/linux/signal.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/signal_types.h:10,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched.h:37:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/signal.h:12:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+   12 | {
+      | ^
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/arch_timer.h:18,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/timex.h:8,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/timex.h:67,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time32.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time.h:60,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/jiffies.h:10,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/delay.h:14:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:138:36: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  138 |                                    gfp_t gfp) __alloc_size(1);
+      |                                    ^~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:24,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/gfp.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/xarray.h:16,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:21,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/idr.h:15,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/kernfs.h:12,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sysfs.h:16,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/kobject.h:20,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/energy_model.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/device.h:16,
+                 from ane_h16_main.c:47:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:86:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   86 | DEFINE_LOCK_GUARD_1(local_lock, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:89:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   89 | DEFINE_LOCK_GUARD_1(local_lock_irq, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:92:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   92 | DEFINE_LOCK_GUARD_1(local_lock_irqsave, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:103:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+  103 | DEFINE_LOCK_GUARD_1(local_lock_nested_bh, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:85,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/notifier.h:16,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/memory_hotplug.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:1614:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:253:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  253 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:291:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  291 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:335:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  335 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:326:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  326 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:366:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  366 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:382:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  382 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:403:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  403 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:24: warning: ignoring attributes applied to ‘struct radix_tree_preload’ after definition [-Wattributes]
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      |                        ^~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      | ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:225:41: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  225 |                                         unsigned long index);
+      |                                         ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:265:31: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  265 |                               unsigned long max);
+      |                               ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:282:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  282 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:310:37: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  310 |                              struct radix_tree_iter *iter, unsigned flags);
+      |                                     ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:325:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  325 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:341:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  341 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:364:48: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  364 |                                         struct radix_tree_iter *iter);
+      |                                                ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:399:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  399 | {
+      | ^
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/device.h:31:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/device/devres.h:110:43: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  110 | void __percpu *__devm_alloc_percpu(struct device *dev, size_t size, size_t align);
+      |                                           ^~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/uaccess.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/task.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/signal.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/rcuwait.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-rwsem.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super_types.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/elf.h:144,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/elf.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:20,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/device/driver.h:21,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/device.h:32:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/uaccess.h:164:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  164 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:24: warning: ignoring attributes applied to ‘struct tick_device’ after definition [-Wattributes]
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      |                        ^~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      | ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/vmstat.h:55:24: warning: ignoring attributes applied to ‘struct vm_event_state’ after definition [-Wattributes]
+   55 | DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
+      |                        ^~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/vmstat.h:55:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+   55 | DECLARE_PER_CPU(struct vm_event_state, vm_event_states);
+      | ^~~~~~~~~~~~~~~
+cc1: note: unrecognized command-line option ‘-Wno-enum-enum-conversion’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-microsoft-anon-tag’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-gnu’ may have been intended to silence earlier diagnostics
+  CC [M]  ane_h16_soc.o
+  CC [M]  ../h17/ane_h17_soc.o
+  LD [M]  ane_h16.o
+  MODPOST Module.symvers
+  CC [M]  ane_h16.mod.o
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/asm-generic/percpu.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/percpu.h:266,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/alloc_tag.h:12,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/arch_timer.h:18,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/timex.h:8,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/timex.h:67,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time32.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time.h:60,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/stat.h:19,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:13,
+                 from ane_h16.mod.c:1:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:36: warning: ignoring attributes applied to ‘struct bp_hardening_data’ after definition [-Wattributes]
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      |                                    ^~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:1: note: in expansion of macro ‘DECLARE_PER_CPU_READ_MOSTLY’
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:24: warning: ignoring attributes applied to ‘struct cpu_fp_state’ after definition [-Wattributes]
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      |                        ^~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      | ^~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/uapi/linux/signal.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/signal_types.h:10,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched.h:37,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:12:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/signal.h:12:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+   12 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:138:36: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  138 |                                    gfp_t gfp) __alloc_size(1);
+      |                                    ^~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:24,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/gfp.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/umh.h:4,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/kmod.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:18:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:86:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   86 | DEFINE_LOCK_GUARD_1(local_lock, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:89:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   89 | DEFINE_LOCK_GUARD_1(local_lock_irq, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:92:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   92 | DEFINE_LOCK_GUARD_1(local_lock_irqsave, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:103:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+  103 | DEFINE_LOCK_GUARD_1(local_lock_nested_bh, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:85,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/notifier.h:16,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/memory_hotplug.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:1614:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:253:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  253 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:291:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  291 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:335:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  335 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:326:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  326 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:366:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  366 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:382:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  382 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:403:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  403 | {
+      | ^
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/uaccess.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/task.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/signal.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/rcuwait.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-rwsem.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super_types.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/elf.h:144,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/elf.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:20:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/uaccess.h:164:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  164 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:24: warning: ignoring attributes applied to ‘struct tick_device’ after definition [-Wattributes]
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      |                        ^~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      | ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:24: warning: ignoring attributes applied to ‘struct radix_tree_preload’ after definition [-Wattributes]
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      |                        ^~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      | ^~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs.h:16:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:225:41: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  225 |                                         unsigned long index);
+      |                                         ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:265:31: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  265 |                               unsigned long max);
+      |                               ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:282:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  282 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:310:37: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  310 |                              struct radix_tree_iter *iter, unsigned flags);
+      |                                     ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:325:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  325 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:341:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  341 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:364:48: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  364 |                                         struct radix_tree_iter *iter);
+      |                                                ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:399:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  399 | {
+      | ^
+cc1: note: unrecognized command-line option ‘-Wno-enum-enum-conversion’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-microsoft-anon-tag’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-gnu’ may have been intended to silence earlier diagnostics
+  CC [M]  .module-common.o
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/asm-generic/percpu.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/percpu.h:266,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/alloc_tag.h:12,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/arch_timer.h:18,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/timex.h:8,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/timex.h:67,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time32.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/time.h:60,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/stat.h:19,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/scripts/module-common.c:3:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:36: warning: ignoring attributes applied to ‘struct bp_hardening_data’ after definition [-Wattributes]
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      |                                    ^~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/spectre.h:69:1: note: in expansion of macro ‘DECLARE_PER_CPU_READ_MOSTLY’
+   69 | DECLARE_PER_CPU_READ_MOSTLY(struct bp_hardening_data, bp_hardening_data);
+      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:24: warning: ignoring attributes applied to ‘struct cpu_fp_state’ after definition [-Wattributes]
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      |                        ^~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/fpsimd.h:175:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  175 | DECLARE_PER_CPU(struct cpu_fp_state, fpsimd_last_state);
+      | ^~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/uapi/linux/signal.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/signal_types.h:10,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched.h:37,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:12:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/signal.h:12:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+   12 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu.h:138:36: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  138 |                                    gfp_t gfp) __alloc_size(1);
+      |                                    ^~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:24,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/gfp.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/umh.h:4,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/kmod.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:18:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:86:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   86 | DEFINE_LOCK_GUARD_1(local_lock, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:89:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   89 | DEFINE_LOCK_GUARD_1(local_lock_irq, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:92:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+   92 | DEFINE_LOCK_GUARD_1(local_lock_irqsave, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/local_lock.h:103:1: warning: ignoring attributes applied to ‘struct local_lock’ after definition [-Wattributes]
+  103 | DEFINE_LOCK_GUARD_1(local_lock_nested_bh, local_lock_t __percpu,
+      | ^~~~~~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:85,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/notifier.h:16,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/memory_hotplug.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/mmzone.h:1614:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:253:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  253 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:291:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  291 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcutree.h:335:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  335 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:326:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  326 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:366:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  366 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:382:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  382 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/srcu.h:403:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  403 | {
+      | ^
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/uaccess.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/task.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/sched/signal.h:9,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/rcuwait.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-rwsem.h:7,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super_types.h:13,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs/super.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs.h:5,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/elf.h:144,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/elf.h:6,
+                 from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/module.h:20:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/arch/arm64/include/asm/uaccess.h:164:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  164 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:24: warning: ignoring attributes applied to ‘struct tick_device’ after definition [-Wattributes]
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      |                        ^~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/hrtimer.h:172:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+  172 | DECLARE_PER_CPU(struct tick_device, tick_cpu_device);
+      | ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:24: warning: ignoring attributes applied to ‘struct radix_tree_preload’ after definition [-Wattributes]
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      |                        ^~~~~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/percpu-defs.h:100:45: note: in definition of macro ‘DECLARE_PER_CPU_SECTION’
+  100 |         extern __PCPU_ATTRS(sec) __typeof__(type) name
+      |                                             ^~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:34:1: note: in expansion of macro ‘DECLARE_PER_CPU’
+   34 | DECLARE_PER_CPU(struct radix_tree_preload, radix_tree_preloads);
+      | ^~~~~~~~~~~~~~~
+In file included from /usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/fs.h:16:
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:225:41: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  225 |                                         unsigned long index);
+      |                                         ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:265:31: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  265 |                               unsigned long max);
+      |                               ^~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:282:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  282 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:310:37: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  310 |                              struct radix_tree_iter *iter, unsigned flags);
+      |                                     ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:325:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  325 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:341:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  341 | {
+      | ^
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:364:48: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  364 |                                         struct radix_tree_iter *iter);
+      |                                                ^~~~~~~~~~~~~~~
+/usr/lib/modules/7.2.11-14-1-ARCH/build/include/linux/radix-tree.h:399:1: warning: ‘btf_type_tag’ attribute does not apply to functions [-Wattributes]
+  399 | {
+      | ^
+cc1: note: unrecognized command-line option ‘-Wno-enum-enum-conversion’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-microsoft-anon-tag’ may have been intended to silence earlier diagnostics
+cc1: note: unrecognized command-line option ‘-Wno-gnu’ may have been intended to silence earlier diagnostics
+  LD [M]  ane_h16.ko
+  BTF [M] ane_h16.ko
+make[2]: Leaving directory '/home/admin/omarchy-ane/ane/h16'
+make[1]: Leaving directory '/usr/lib/modules/7.2.11-14-1-ARCH/build'
+make: Leaving directory '/home/admin/omarchy-ane/ane/h16'

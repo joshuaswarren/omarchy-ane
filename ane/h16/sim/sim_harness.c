@@ -26,6 +26,12 @@
 #include "../ane_h16_main.c"
 #include "../ane_h16_soc.c"
 
+/* Match-data fixture: only the early H17 refusal is exercised here. */
+const struct ane_h16_soc ane_t8140_soc = {
+	.name = "t8140",
+	.ane_type = 0x200,
+};
+
 /* ---- shim globals ---- */
 struct sim_region sim_regions[8];
 int sim_n_regions;
@@ -744,6 +750,23 @@ static void sc_neg_dart_map_partial(void)
 	    "partial map unwound before free_stage");
 }
 
+static void sc_neg_h17_boot(void)
+{
+	int ret;
+
+	setup_common();
+	sim_match_data = &ane_t8140_soc;
+	sim_soc.ane_type = ane_t8140_soc.ane_type;
+	optin = "t8140";
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -EOPNOTSUPP, "H17 boot refused before hardware access");
+	chk(sim_n_events == 0, "zero bus accesses");
+	chk(sim_ioremaps == 0, "zero ioremaps");
+	chk(sim_rpm_gets == 0, "zero runtime power acquisitions");
+	chk(sim_dma_allocs == 0, "zero DMA allocations");
+}
+
 static void sc_neg_unknown_stage(void)
 {
 	int ret;
@@ -789,6 +812,8 @@ int main(int argc, char **argv)
 		sc_neg_dart_map_partial();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
+	else if (!strcmp(sc, "neg-h17-boot"))
+		sc_neg_h17_boot();
 	else {
 		fprintf(stderr, "unknown scenario %s\n", sc);
 		return 2;

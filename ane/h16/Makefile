@@ -24,7 +24,7 @@ modules:
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-unknown-stage
+	neg-dart-map neg-unknown-stage neg-h17-boot
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

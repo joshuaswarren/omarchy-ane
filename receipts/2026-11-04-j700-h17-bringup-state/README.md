@@ -1,5 +1,11 @@
 # J700/H17: state of the ANE bring-up after the clock and firmware-load decode
 
+> **Superseded safety conclusions:** see
+> `../2026-11-04-j700-h17-boot-safety-review/README.md`.
+> A latched RVBAR does not prove firmware residency or translation validity,
+> and the generic H16 boot path is not qualified for H17. Its T8140 boot
+> stage is now fail-closed pending ordering and resource-lifetime fixes.
+
 Consolidated summary of the receipts written on 2026-11-04. No hardware touched
 in this receipt; it records conclusions from the offline decode and the two
 hardware runs.

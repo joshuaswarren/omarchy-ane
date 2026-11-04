@@ -1071,6 +1071,16 @@ static int ane_h16_probe(struct platform_device *pdev)
 			stage);
 		return ret;
 	}
+	/* H17's proven write ordering includes the CE handshake and PWGATE
+	 * sequence (46efa4b). The generic H16 boot path does neither. Matching
+	 * a SoC row is not qualification to execute that path on T8140.
+	 * Refuse before mapping registers or acquiring runtime power.
+	 */
+	if (stage_idx == 3 && soc == &ane_t8140_soc) {
+		dev_err(&pdev->dev,
+			"T8140 boot refused: H17 CE/PWGATE ordering is not implemented in this path\n");
+		return -EOPNOTSUPP;
+	}
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
