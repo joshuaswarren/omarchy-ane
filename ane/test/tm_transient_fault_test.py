@@ -30,11 +30,13 @@ struct ane_dart_scratch { int unused; };
 #define atomic_xchg(ptr, value) (*(ptr) = (value), 0)
 #define read_poll_timeout(op, status, cond, delay, timeout, sleep, ...) \
     ((status) = op(__VA_ARGS__), 0)
-static int reads, scenario, recovery, recovery_result, pages_released, released_before_recovery;
+static int reads, scenario, recovery, recovery_result, pages_released, released_before_recovery, drains;
 static bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status) {
     (void)ane; (void)iova; (void)status;
     if (scenario == 1) return reads++ == 0;
     if (scenario == 2 || scenario == 3) { int n = reads++; return n < (scenario == 2 ? 3 : 2); }
+    if (scenario == 4) { int n = reads++; return n == 0 || n == 1 || n == 3; }
+    if (scenario == 5) return reads++ < 10;
     return false;
 }
 static int ane_tm_collect_events(struct ane_device *ane, struct ane_request *req, u32 *finished) {
@@ -44,7 +46,11 @@ static void ane_dart_mask(struct ane_device *a) { (void)a; }
 static void ane_dart_unmask(struct ane_device *a) { (void)a; }
 static void ane_tm_push_tq(struct ane_device *a, struct ane_request *r) { (void)a; (void)r; }
 static int ane_dart_drain_fault(struct ane_device *a, u64 i, struct ane_dart_scratch *s, int *p) {
-    (void)a; (void)i; (void)s; (*p)++; return 0;
+    (void)a; (void)i; (void)s;
+    drains++;
+    if (scenario == 4 && drains == 2) return -ENOMEM;
+    (*p)++;
+    return 0;
 }
 static void ane_dart_release_scratch(struct ane_device *a, struct ane_dart_scratch *s, int p) {
     (void)a; (void)s; pages_released += p;
@@ -79,6 +85,20 @@ int main(void) {
     if (result != -EIO || pages_released || recovery || !dev.scratch_retained) {
         fprintf(stderr, "fault after scratch: rc=%d released=%d recovery=%d retained=%d\n",
                 result, pages_released, recovery, dev.scratch_retained);
+        return 1;
+    }
+    dev.scratch_retained = false; dev.wedged = 0; scenario = 4; reads = drains = recovery = pages_released = 0;
+    result = ane_tm_execute(&dev, &req);
+    if (result != -ENOMEM || drains != 2 || pages_released || recovery || !dev.scratch_retained) {
+        fprintf(stderr, "second drain failed: rc=%d drains=%d released=%d retained=%d\n",
+                result, drains, pages_released, dev.scratch_retained);
+        return 1;
+    }
+    dev.scratch_retained = false; dev.wedged = 0; scenario = 5; reads = drains = recovery = pages_released = 0;
+    result = ane_tm_execute(&dev, &req);
+    if (result != -EIO || drains != ANE_DART_SCRATCH_MAX || pages_released || recovery || !dev.scratch_retained) {
+        fprintf(stderr, "scratch cap: rc=%d drains=%d released=%d retained=%d\n",
+                result, drains, pages_released, dev.scratch_retained);
         return 1;
     }
     puts("normal, transient and scratch lifetime: PASS");

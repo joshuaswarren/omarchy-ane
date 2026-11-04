@@ -296,10 +296,13 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		}
 		if (ane_dart_faulted(ane, &fault_iova, &fault_status)) {
 			faulted = true;
-			if (scratch_pages >= ANE_DART_SCRATCH_MAX)
+			if (scratch_pages >= ANE_DART_SCRATCH_MAX) {
+				err = -EIO;
 				break;
-			if (ane_dart_drain_fault(ane, fault_iova, scratch,
-						 &scratch_pages))
+			}
+			err = ane_dart_drain_fault(ane, fault_iova, scratch,
+						   &scratch_pages);
+			if (err)
 				break;
 			/* The retried transaction now completes; poll on. */
 			continue;
