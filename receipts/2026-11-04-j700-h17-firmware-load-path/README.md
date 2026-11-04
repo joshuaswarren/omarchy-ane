@@ -755,7 +755,7 @@ order:
 ```
 receipts/2026-11-04-j700-h17-firmware-load-path/
 ├── README.md      this report
-├── analysis/      raw sweep/trace outputs backing §§3, 6, 10, 11
+├── analysis/      raw sweep/trace outputs backing §§3, 6, 10, 11, 12, 13
 └── scripts/
     ├── ane.py     VA↔file mapping, symbol-annotated capstone disassembly
     ├── kimage.py  whole-kernelcache index: 366 filesets, global symtab, ptr/bl/adrp/find scans
@@ -775,6 +775,8 @@ python3 cases.py                      # §11 cross-family table from the full du
 python3 kimage.py list ane            # §12 filesets + global symbolize (kc-index.json cache)
 python3 kimage.py bl 0xfffffe0008f45fb8   # the two FWSharedEventDoorbellRing ring sites
 python3 kimage.py find doorBellRing   # §12.1: only __FUNCTION__ + LINKEDIT strings
+python3 kimage.py sym 0xfffffe0008ef85a8  # §13.2 _IOProcessorChannelSend; bl-scan it for the send topology
+python3 disva.py va 0xfffffe0008f58060 40 # §13.3 IRQ status read + W1C ACK
 python3 scan.py disp 0x158            # .. 0x8f4172c is the doorbell (0x1884000)
 python3 scan.py disp 0x15c            # CPU_STATUS field: only 0x8f2dd64 + 0x8f42ff4
 python3 scan.py disp 0x160            # CPU_CONTROL: only 0x8f3e14c + 0x8f3e15c are the field
@@ -1076,3 +1078,130 @@ Raw evidence: `analysis/h17-ring-fns.txt` (full disassembly of `doorBellRing`,
 `scripts/kimage.py`. Again: decoded instruction stream, not device behaviour —
 the command rung stays closed until a fresh boot, and nothing here was
 exercised on hardware.
+
+## 13. The messenger protocol and the full request path (offline, 2026-11-04 night, part 2)
+
+This section closes the two gaps §12 left open: *how a request or command is
+actually delivered to firmware*, and *how the completion comes back*. All of it
+is static decode of the retained kernelcache.
+
+### 13.1 Userspace submission ABI: 17 selectors
+
+`H11ANEInUserClient::externalMethod` (`0xfffffe0008fc7370`) is a log-and-forward
+shim: it builds a copy of the `IOExternalMethodArguments` on its stack and
+tail-calls `ANEClientInterface::externalMethod` (`0xfffffe0008fc62b8`), passing
+`this` (the ANEClientInterface), the copied args, and the `ANESharedEvents*`
+argument. The real dispatch resolves the client device
+(`ANEClientInterface vptr+0xa8`), caches it at `[iface+0xd8]`, and invokes the
+**runtime** driver singleton's `vptr+0x278` with the copied-args block and the
+selector (`0xfffffe0008fc64a4`; the singleton global `0xc3f4aa0` holds a
+runtime-allocated pointer — static value `0x100`, so its vtable identity is not
+statically resolvable). A second `vptr+0x278` call (`0xfffffe0008fc64ac`,
+`x0 = client device`, `x1 = selector`) is the per-selector log/name lookup.
+
+The selector table passed to the kernel's method dispatcher lives at
+`0xfffffe0007f5d428`, 17 rows of `IOExternalMethodDispatch` with chained-auth
+fixup slots; decoded targets:
+
+| sel | function |
+|---|---|
+| 0 | `ANE_DeviceOpen` |
+| 1 | `ANE_DeviceClose` |
+| 2 | **`ANE_ProgramSendRequest`** |
+| 3 | `ANE_ProgramCreate` |
+| 4 | `ANE_ProgramPrepare` |
+| 5 | `ANE_ProgramUnprepare` |
+| 6 | `ANE_ProgramDestroy` |
+| 7 | `ANE_GetStatus` |
+| 8 | `ANE_ProgramCreateInstance` |
+| 9 | `ANE_ProgramChainingPrepare` |
+| 10–16 | further static `ANE_*` free-function wrappers (same `{ANEClientDevice*, IOExternalMethodArguments*}` tail-call idiom) |
+
+The selector-2 wrapper (`0xfffffe0008fc3a44`) reads the device out of
+`[iface+0x10]`, authenticates its vtable (`autda`, PAC modifier `0xcda1<<48`),
+loads slot `+0x930`, and tail-`braa`s it with the args block — i.e. the public
+entry is a virtual method on the ANEClientInterface. `ANEClientInterface`'s
+static vtable decodes slot +0x930 to `clientClose` because **the dispatch
+targets the runtime-allocated object's vtable**, not the kext's static one;
+same caveat as the `+0x278` slot above. `ANEClientDevice::getClient`
+(`0xfffffe0008fc27d0`) is `return this + 0x18` (the embedded client).
+
+### 13.2 Delivery: an RTKit message queue per channel, not MMIO
+
+The command/request primitive is `_IOProcessorChannelSend` (`0xfffffe0008ef85a8`,
+called via `IOProcessorChannelSendRetry(u8 channel, const void *buf, u64, u64,
+bool)` at `0xfffffe0008f43a8c`; a logging wrapper
+`IOProcessorChannelSendWithLog` exists at `0xfffffe0008f4948c`). Control-block
+layout (`x0`, 0x30 bytes):
+
+| off | field |
+|---|---|
+| `+0x00` | enqueue hook fptr (PAC-authenticated, modifier `0x2abe<<48`) |
+| `+0x08` | dequeue hook fptr |
+| `+0x10` | u32 phase bit |
+| `+0x14` | u32 entries (power of two) |
+| `+0x18` | u64 message buffer base |
+| `+0x20` | u32 write index |
+| `+0x24` | u32 read index |
+| `+0x28`/`+0x2c` | u32 dequeue/enqueue counters |
+
+`send(channel, msg, a3, a4, wait)`: reject `read==−1`; slot = `buf + (write %
+entries)*64` — **64-byte message slots**; `dsb st`; store `w2` at slot+8, `w3`
+at slot+10h, and `((phase&1)^1) | w0` at slot+0 (the RTKit **phase bit** in
+word 0, message id in word 0 bits 2+); advance the write index with
+wrap-at-`entries`, increment the enqueue counter. The dequeue side
+(`_IOProcessorChannelUnidirectionalReceive`, `0xfffffe0008ef896c`) mirrors it:
+`dsb ishld`; empty iff `(slot[0] & 1) != (phase&1 ^ ((phase>>31)&1))`; copy out
+`slot[0]&~4` (id), `slot[1]`, `slot[2]`; toggle the phase bit; advance the read
+index. So H17 host→firmware work is delivered as **RTKit message-queue
+enqueues into shared memory**, with the §12.2 shmem-word store (bit `0x40`) as
+the doorbell that wakes the firmware.
+
+Send topology (whole-image `bl` scans): `aneFirmwareCommandSend` →
+`IOProcessorChannelSendRetry` (`0x8f486cc`, the IO command channel) and
+→ `handleOutstandingCommand` (`0x8f48a70`, timeout requeue);
+`processCommandResponse` → `IOProcessorChannelSendRetry` (`0x8f43990`, replies);
+`processTargetToHostIOCommand` and `processSharedMallocRequest` →
+`IOProcessorChannelSendWithLog` (T2H/MALLOC replies); the raw
+`_IOProcessorChannelSend` has one caller, `ANE_processISPSurfaceMapRequest`.
+
+### 13.3 Completion: one IRQ line, W1C, then per-channel dequeue
+
+`aneInterruptHandlerPriv` (`0xfffffe0008f5807c`, `x26 = dev+0xe000`, `x20 =
+dev+0xc3f4d48`):
+
+1. gate: bit 1 of `[0xc3f4d49]` (runtime flag) must be set;
+2. `read32([dev+0xe320], [dev+0x150] = 0x188c000)` — IRQ status word;
+3. `write32([dev+0xe320], [dev+0x154] = 0x1890000, 0xffff)` then `dmb ish` —
+   **W1C all 16 lines** (`0xffff`);
+4. per-message loop, dispatch on the IRQ line number vs the §12.3 cached
+   channel indices at `[dev+0xe1f8..0xe214]`:
+
+| line equals | arm |
+|---|---|
+| `[dev+0xe200]` BUF_H2T or `[dev+0xe204]` BUF_T2H | host→ / target→host **buffer** channel: dequeue one message via `_IOProcessorChannelUnidirectionalReceive` (`0x8f582c8`) from the channel's control-block table (`[[dev+0xd48+0x278]]`) |
+| `[dev+0xe208]` IO | `IOProcessorChannelReceiveWithLog` (`0x8f47cd4`, `0x8f582e4`) → `processTargetToHostIOCommand` (`0x8f03a70`) |
+| `[dev+0xe1f8]` SHAREDMALLOC or `[dev+0xe210]` DEBUG | `IOMalloc(0x32)` + `processSharedMallocRequest` (`0x8f4e3xx`) |
+| `[dev+0xe20c]` IO_T2H / `[dev+0xe214]` DATA_CHAIN_H2T | `processTargetToHostIOCommand`-family arms (`0x8f585ac..0x8f585b8`) |
+
+5. completions reach clients through `handleOutstandingCommand(OSObject*,bool)`
+   (`0xfffffe0008f43110`, callers: `ANE_deInit`, `cancelFirmwareCommand`'s
+   `_block_invoke`, `processCommandResponse`, `aneFirmwareCommandSend`) and the
+   timer path: `timeOutRequestTimerHandler_gated` → `handleRequestCompletion`
+   (`0xfffffe0008efc364`, sole `bl` at `0x8f25da8`; extent 0xb10 bytes).
+
+### 13.4 What this means for a first hardware command rung
+
+The static picture says a submission is: (a) build the 64-byte RTKit message
+with id and two u32 words, (b) enqueue into the channel's message buffer at the
+cached write index, (c) store `0x40` into the shmem doorbell word §12.2, (d)
+wait for the IRQ line matching the channel's cached index (status `0x188c000`,
+ACK `0xffff` to `0x1890000`). Still *not* pinned statically, and all of it
+device-side: the runtime channel-index values (firmware-published at boot), the
+message id space, and the enqueue/dequeue hooks at control-block `+0x00/+0x08`.
+A post-wake read of `0x188c000`/`0x1890000` and of the channel-name table would
+resolve the first two without submitting anything.
+
+Raw evidence: `analysis/h17-messenger-irq-chain.txt` (the send/receive
+primitives, the IRQ handler arms, the real `externalMethod`, and the
+selector-2 wrapper). Again: decoded instruction stream, not device behaviour.
