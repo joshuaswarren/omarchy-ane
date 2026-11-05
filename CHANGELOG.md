@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.5.10 (2026-11-04)
+## 0.5.10 (2026-11-05)
 
 - Preserve DART fault outcomes and retain scratch mappings when completion is
   unknown. Such a wedge requires reboot; forced device removal remains unsafe.
