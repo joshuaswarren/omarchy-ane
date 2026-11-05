@@ -407,3 +407,117 @@ is armed; rung-2 (dart read-only diagnostic) needs the aurora-kernel
 build, review gates and the owner's reboot decision before any next
 hardware rung; the module-side code does not change until the
 diagnostic's answer is in.
+
+## Addendum 4 — evidence limits and diagnostic safety correction
+
+This section supersedes stronger claims in addendum 3. No hardware rung,
+register access, kernel installation, or reboot was performed for this
+followup. The diagnostic worktree is clean; the attempted edit did not apply.
+
+- **Publication arithmetic is source-aligned.** At compiler/kernelcache
+  evidence commit `e1c4839`, §15.2 and §16.3 of the firmware-load-path
+  receipt establish `DM.DVA + (descriptor_CPU - DM.CPU)`. Our descriptor
+  starts at DM offset zero, so publishing `dm->dma` matches that formula.
+  This establishes the host encoding, not successful firmware decoding.
+- **The reply translator is host-side.** `aneAddressToHostAddress`
+  (`0x8f41314` and IPC branch `0x8f413b4..0x8f413d4` in that retained
+  kernelcache) translates an address returned by firmware for the kext's
+  copy. It does not establish how firmware derives or issues its write.
+- **Wake is not proof of fresh-root publication.** The observed wake does
+  not identify which DART/port performs instruction fetch, nor establish
+  ownership of root slot 16. An inherited firmware mapping and a missing
+  fresh slot-63 mapping remain consistent with wake followed by failure.
+  H1 is therefore not refuted by wake. Source shows a publication path,
+  but its success on these mappings remains unmeasured.
+- **Slot-16 ownership is unmeasured.** At aurora source head
+  `b6f070c911934c9c377c4be939b883bf32f37acf`, the mirror branch of
+  `apple_dart_check_fw_map` and the handoff branch are distinct. The
+  latter's foreign-slot refusal cannot be applied to mirror mode without
+  tracing its guards. No alternative DVA band is approved by this note.
+- **Address evidence is limited to the recorded print.** Commit
+  `f57d9004043387ed6c437ddf0afcfcc1bb49f2fd` introduces the exception
+  record definitions used by the examined source. Concatenating two
+  software register reads explains the print but does not independently
+  qualify their hardware meaning. Low-32 address coincidence supports
+  a truncation hypothesis; it does not prove its cause or location.
+- **A full record dump is not approved.** A record stride does not prove
+  that all intervening offsets are implemented or side-effect-free.
+  No speculative reads of all 16 words should be added. Even a raw dump
+  would not by itself prove address-field semantics or root publication.
+  A proposed diagnostic must use source-qualified reads, be scoped and
+  bounded, preserve existing acknowledgement ordering, and undergo review
+  before any hardware use.
+- **Running-source identity remains open.** Package release `aurora14`
+  does not imply tag `aurora-2026.10.11.14`. The cached package's
+  `.BUILDINFO` identifies `7.2.11.aurora14-1` and PKGBUILD SHA-256
+  `94161581f2468fd0fbfcba36f514b4a11f26a47859d888494156997695d0b505`.
+  It does not itself give a kernel Git pin. The detached-tag worktree
+  `/home/admin/aurora-build/wt-dart-diag` is only a clean candidate tree,
+  not a verified match for the running kernel. Locate the matching recipe
+  before choosing a diagnostic base or drawing running-code conclusions.
+
+Receipt command: `bsdtar -xOf
+/var/cache/pacman/pkg/linux-aurora-7.2.11.aurora14-1-aarch64.pkg.tar.zst
+.BUILDINFO`. This reads archive metadata only. The failed boot remains
+parked; no unload, arming, task submission, or doorbell is authorized by
+these corrections.
+
+## Addendum 5 — exact installed-package recipe located
+
+The cached package's `.BUILDINFO` recipe hash matches **byte-for-byte**
+the PKGBUILD in `omacom/omarchy-pkgs` commit
+`158e9d36f67595e06e455e2aec559915bbac6e8e`, path
+`pkgbuilds/linux-aurora/PKGBUILD`. Both are retained beside this receipt as
+`installed-kernel.BUILDINFO` and `installed-kernel.PKGBUILD`.
+
+- Recipe SHA-256:
+  `94161581f2468fd0fbfcba36f514b4a11f26a47859d888494156997695d0b505`.
+- Recipe version: `7.2.11.aurora14-1`.
+- Kernel source pin: `4fdd0fc5c931ef9f14474942b37c3d451e97fc04`.
+- At that pin, `drivers/iommu/apple-dart.c` SHA-256:
+  `78bfc4fe5a7602848cece069f13c720aeb0dea2c73f62ed7671857dd017c3f85`.
+
+This identifies the packaged recipe/source, not a fresh runtime or device
+qualification. The October 11 tag was not the matching source. No checkout
+was reset or diagnostic installed.
+
+### Source re-audit at the package pin
+
+All following line numbers refer to `apple-dart.c` at the full pin above:
+
+1. Attach `:2046-2053` selects the locked path. Locked setup
+   `:1828-1848` maps roots, synchronizes, and invalidates; it does not
+   call the unlocked TTBR writer (`:1803-1811`). This remains a source
+   fact, not proof that every live entry reached hardware.
+2. `apple_dart_hw_sync_locked`, `:1025-1051`, can skip deferred streams
+   when root/shadow state is absent. It calls the root publisher at
+   `:1073-1077` once the state exists. A useful diagnostic must record
+   which case actually happened, rather than assuming every map published.
+3. `apple_dart_publish_root`, `:747-775`, checks live/owned/host entries
+   and uses `cmpxchg` to publish. A bounded snapshot of these **already
+   mapped memory entries**, taken under the existing lock, can test the
+   publication hypothesis without reading unknown MMIO offsets. Its
+   design must retain host, shadow, live values and publication return
+   code together; a software `iova_to_phys` result alone is insufficient.
+4. The non-handoff map-check branch `:1640-1654` uses three-level index
+   arithmetic, skips indexes beyond `DART_MAX_TTBR`, and then continues.
+   The four-level foreign-slot check `:1656-1677` belongs to the other
+   branch. Therefore the earlier claim that the mirror branch proves
+   slot 16 forbidden or slot 63 the only map-legal band is withdrawn.
+   Root ownership and mapping legality require actual path/state evidence.
+
+### Narrowed next diagnostic design (not implemented or armed)
+
+Prefer instrumentation of existing publication state over speculative
+fault-record MMIO scans. Scope it to the three ANE DART instances and SID
+0, default off, with bounded records. Record domain level count, TTBR count,
+publication return/skip reason, and host/shadow/live root entries for the
+candidate address slots. Derive indexes from the observed level count;
+do not hard-code four-level interpretation as measured truth. Capture
+values under the existing lock and emit outside it. Preserve all existing
+mapping, invalidation, exception acknowledgement, and unlock behavior.
+
+The diagnostic still needs implementation, offline tests, a matching-source
+build and independent review. It can establish publication state but does
+not by itself prove hardware exception address-field semantics. No new
+hardware attempt, alternate-DVA mapping, or reboot is armed.
