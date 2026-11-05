@@ -1372,7 +1372,13 @@ later lookups on the same table.
 - The pending post-wake SCRATCH0..7 snapshot rung (§13.4) now has exact
   expectations: `SCRATCH7 == 0x08042006` (observed 2026-11-04), SCRATCH0/1
   either 0 or a stale address, SCRATCH3 untouched (never written by us),
-  SCRATCH6 == 1 (we write it).
+  SCRATCH6 == 1 (we write it). *Executed 2026-11-04 on boot 3f9aa97c
+  (receipts/2026-11-04-j700-h17-wake-scratch-snapshot): the firmware
+  publishes SCRATCH0 = `0x8`, SCRATCH1 = `0xc440`, SCRATCH2 = `0x100`,
+  SCRATCH3 = `0x00f00000` (without host involvement), SCRATCH5 =
+  `0x100090` post-wake; SCRATCH4 0; SCRATCH6/7 as we left them. The
+  "either 0 or a stale address" expectation was too conservative — the
+  firmware writes real values into the scratch window.*
 - What stays unpinned: the shmem doorbell word (`[dev+0x3b20] := 0x40`,
   §12.2 — IOSurface shared-event path only), the control-block producer
   arithmetic (§13.2), and the runtime channel indices — all firmware- or
