@@ -33,6 +33,12 @@ def judge(text):
         one("ane_h16 RESULT ", r"ane_h16 RESULT stage=3 soc=t8140 verdict=PASS reason=boot-table-discovery")
         address = r"(0x[0-9a-f]{1,16})"
         digest = r"([0-9a-f]{64})"
+        reservation = one(
+            "H17 ALIAS_RESERVATION ",
+            r"H17 ALIAS_RESERVATION start=" + address +
+            r" bytes=" + address + r" type=IOMMU_RESV_RESERVED")
+        if tuple(int(v, 16) for v in reservation.groups()) != (DM_IOVA, 0xF50000):
+            raise ValueError("runtime IOMMU reservation does not cover exact channel aliases")
         prep = one("H17 TABLE_PREPARE ",
                    r"H17 TABLE_PREPARE dm=" + address + " ipc=" + address +
                    r" ipc_bytes=0xc441 heap=" + address +
@@ -92,7 +98,8 @@ def judge(text):
             if not re.search(pattern, line):
                 raise ValueError("malformed, duplicate, or out-of-order channel observation")
         one("H17 TABLE_STOP ", r"H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task")
-        ordered_markers = [*[re.search(r"H17 TABLE_BACKING .*$", line)[0] for line in backings],
+        ordered_markers = [reservation[0],
+                           *[re.search(r"H17 TABLE_BACKING .*$", line)[0] for line in backings],
                            prep[0], copied[0], *[re.search(r"H17 CHANNEL .*$", line)[0]
                                                for line in channels],
                            "H17 TABLE_STOP ", "ane_h16 RESULT "]

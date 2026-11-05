@@ -18,12 +18,15 @@ class VerdictTests(unittest.TestCase):
             "H17 TABLE_BACKING index=2 dma=0x3fffe000000 alias=0x100003d0000 mapped=0xf00000",
         ]
         self.copy = "H17 TABLE_COPY address=0x100003c0000 bytes=0x800 count=8 sha256=" + "b" * 64
+        self.reservation = ("H17 ALIAS_RESERVATION start=0x10000380000 bytes=0xf50000 "
+                            "type=IOMMU_RESV_RESERVED")
         self.stop = "H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task"
         self.result = "ane_h16 RESULT stage=3 soc=t8140 verdict=PASS reason=boot-table-discovery"
         self.channels = [f"H17 CHANNEL index={i} name_hex=" + "00" * 32 +
                          " type=0x00000000 source=0x00000001 slots=0x00000002 buffer=0xffffffffffffffff"
                          for i in range(8)]
-        self.lines = [*self.backings, self.prep, self.copy, *self.channels, self.stop, self.result]
+        self.lines = [self.reservation, *self.backings, self.prep, self.copy,
+                      *self.channels, self.stop, self.result]
 
     def check(self, lines):
         return judge("\n".join("[ 12.345] ane_h16 400000000.ane: " + line for line in lines))
@@ -35,6 +38,11 @@ class VerdictTests(unittest.TestCase):
 
     def test_runner_has_no_default_action(self):
         runner = Path(__file__).with_name("run-table-discovery.sh")
+        source = runner.read_text()
+        self.assertLess(source.index("table_preflight.py"), source.index('mkdir -m 700 "$log_dir"'))
+        self.assertLess(source.index("$attempt_root/$boot_id"), source.index('rm -f -- "$marker"'))
+        self.assertLess(source.index('rm -f -- "$marker"'), source.index('insmod ane/h16/ane_h16.ko'))
+        self.assertIn("$attempt_root/$boot_id", source)
         for arguments in ([], ["--run", "extra"]):
             with self.subTest(arguments=arguments):
                 result = subprocess.run(["bash", str(runner), *arguments],
@@ -84,7 +92,8 @@ class VerdictTests(unittest.TestCase):
                 self.assertEqual(self.check(lines)["rung"], "FAIL")
 
     def test_protocol_order(self):
-        for left, right in ((0, 1), (2, 3), (3, 4), (4, 5), (12, 13), (13, 14), (0, 14)):
+        for left, right in ((0, 1), (1, 2), (2, 3), (3, 4), (4, 5),
+                            (13, 14), (14, 15), (0, 15)):
             with self.subTest(left=left, right=right):
                 lines = self.lines.copy()
                 lines[left], lines[right] = lines[right], lines[left]

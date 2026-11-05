@@ -1146,6 +1146,11 @@ static int ane_h16_stage_domain(struct ane_h16 *ane)
 		if (!covered) {
 			dev_err(ane->dev, "channel alias IOVAs not reserved; update manual overlay before reboot\n");
 			ret = -EINVAL;
+		} else {
+			dev_info(ane->dev,
+				 "H17 ALIAS_RESERVATION start=%#llx bytes=%#llx type=IOMMU_RESV_RESERVED\n",
+				 (u64)ANE_H17_DM_IOVA,
+				 (u64)ANE_H17_CHAN_ALIAS_BYTES);
 		}
 	}
 	iommu_put_resv_regions(ane->dev, &regions);

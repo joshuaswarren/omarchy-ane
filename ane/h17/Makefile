@@ -38,7 +38,7 @@ sim-negative: sim/sim_h17_wake
 sim-mutations:
 	SIM_CC='$(SIM_CC)' SIM_CFLAGS='$(SIM_CFLAGS)' python3 sim/test_mutations.py
 
-sim-all: sim-test sim-negative sim-mutations planner-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test chanreg-layout-test
+sim-all: sim-test sim-negative sim-mutations planner-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test table-preflight-test chanreg-layout-test
 
 sim/chanreg_layout_test: sim/chanreg_layout_test.c chanreg.h
 	$(SIM_CC) $(SIM_CFLAGS) -o $@ $<
@@ -49,6 +49,9 @@ chanreg-layout-test: sim/chanreg_layout_test
 
 diagnostic-preflight-test:
 	python3 -m unittest -v test_diagnostic_preflight.py
+
+table-preflight-test:
+	python3 -m unittest -v test_table_preflight.py
 
 dart-publication-test:
 	python3 -m unittest -v test_dart_publication_observations.py
@@ -66,5 +69,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f sim/sim_h17_wake sim/transaction_test sim/bringup_order_test sim/chanreg_layout_test
 
-.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test chanreg-layout-test clean
+.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test table-preflight-test chanreg-layout-test clean
 endif
