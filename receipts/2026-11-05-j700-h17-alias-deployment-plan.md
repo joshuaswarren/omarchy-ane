@@ -207,3 +207,14 @@ boot result. Remaining gates are review of that result and explicit
 authorization for candidate deployment and the one-shot table-discovery
 rung. No candidate boot, live reservation check, module load, or H17 table
 result has occurred.
+
+## Final offline review update (2026-11-06)
+
+The independent reviewer subsequently confirmed that the rollback boot test
+closes the rollback-path finding, and that the refreshed source pin and
+pristine UKI identity match the staged artifacts. The candidate has not been
+booted; live reservation coverage and H17 table discovery remain
+unobserved. Deployment and the specific one-shot rung are still not
+authorized. See the UKI identity-correction section of the offline-execution
+receipt for the objcopy staging-copy issue and its correction; the live EFI
+UKI was unchanged.

@@ -261,3 +261,22 @@ bundle checksums were refreshed and independently checked. The independent
 review has not yet reviewed the rollback boot evidence. No candidate
 deployment or table-discovery rung is authorized by the rollback-test
 approval.
+
+## UKI identity correction (2026-11-06)
+
+A follow-up review caught that the staged file named
+`omarchy_linux-aurora.efi.stock` no longer matched the UKI hash in the
+candidate manifest. Investigation found that GNU objcopy had been invoked on
+staged PE copies without a distinct output path; it rewrote metadata in those
+copies. The live EFI UKI remained unchanged at SHA-256
+`df8d56d02043fff28a38bfb05c661e370dd6c0e5d57a9de8e4761b0b0aa1ab89` and
+byte-matched a fresh `omarchy_linux-aurora.efi.active.pristine` copy. The
+manifest's `uki_sha256` pins this pristine copy. Kernel/initrd extraction was
+repeated with a distinct objcopy output path; section hashes are
+`d550fa1f2fa0fc3d725317fae729b0b20d00cd3cd00d3b3d6017a26fb397390c` and
+`d27f7763a9accd13aade7d62cfb9a2e4383c21dcc510811a88f1a20cb0b34047`.
+All staging copies, including the objcopy-modified ones, are retained and
+identified in `BUNDLE-README.md`; none was copied back to EFI. The reviewer
+confirmed the manifest mismatch is resolved. This correction is offline
+artifact hygiene only and does not establish candidate boot or authorize the
+H17 rung.
