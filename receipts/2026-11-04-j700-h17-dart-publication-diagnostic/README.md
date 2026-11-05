@@ -71,3 +71,31 @@ was linked or loaded. Before hardware: build and link a matching built-in
 kernel, review the boot/deployment plan and fail-closed runner identity
 checks, preserve the known-good boot, and stage the fresh-boot rung.
 The failed boot's ANE module must stay pinned until the authorized reboot.
+
+## Offline observation parser
+
+`ane/h17/dart_publication_observations.py` validates saved `h17-pub`
+records without opening a device. Usage:
+
+```
+python3 ane/h17/dart_publication_observations.py saved-dmesg.log --page-shift 14
+make -C ane/h17 dart-publication-test
+```
+
+The page shift is an explicit caller assumption, not a hardware measurement
+inferred from these logs. The parser rejects malformed/out-of-scope records,
+missing/duplicate candidates, missing sequence numbers, contradictory
+geometry, inconsistent snapshot metadata and words for absent tables. Same
+root indexes must share a presence mask; a deferred-missing-root result
+requires the deferred flag. Complete records are labeled `PARSED`, never
+hardware PASS; `hardware_qualification` is always false. It reports missing
+devices, the sequence cap and equality/difference/unavailability of words.
+It does not replace the table-discovery judge or certify a complete capture
+after the cap. Interleaved output is grouped by device and sequence.
+
+Eleven unit tests pass. They are included in `sim-all`, which also passed
+after integration; output retained in `publication-sim-all.log`.
+Independent review session `ses_e562a6492ffes4dV3eZpRJ3iZt` identified the
+shared-root presence and deferred-flag consistency issues; both were fixed
+with regressions and re-review returned **APPROVE**. No device evidence was
+created by parser tests.
