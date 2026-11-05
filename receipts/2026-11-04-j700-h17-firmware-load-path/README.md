@@ -1458,3 +1458,131 @@ Reading an address from SCRATCH0/1 after the second reply also does not
 authorize arbitrary physical-memory reads: the complete table range must
 translate into memory owned and retained by the module. Neither a
 SCRATCH7 reply nor a copied table qualifies command or task execution.
+
+## 16. Resolved descriptor producers and offline construction contract
+
+Follow-up to `34704d4`. Source: the retained kernelcache SHA-256
+`7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe`.
+`scripts/chanreg_prereqs.py` now emits the producer windows as well as
+the consumers in `analysis/h17-chanreg-prereqs.txt`. This resolves the
+source-level descriptor prerequisites of §15.3 into a construction model,
+not an assertion that a Linux-created descriptor has run on hardware.
+
+### 16.1 Referenced allocations and exact sizes
+
+| Object | Producer | Contract |
+|---|---|---|
+| firmware / FWIM (`dev+0x490` for non-preload; `dev+0x288` mapped base for preload) | `start`, `0x8f55fa0..0x8f55fd4`; preload path §5.2 | `0x380000` bytes; descriptor +0 points at mapped firmware DVA, **not** its physical address |
+| device memory / DM (`dev+0x498`) | `start`, `0x8f561a0..0x8f56238` | allocation request `0x40000`, tag `0x444d4d20`; CPU buffer is bzero'd and `DeviceMemoryManager` initialized over that size; descriptor is an offset allocation within this arena |
+| IPC (`dev+0x4a0`) | `ANE_Init`, `0x8f3e79c..0x8f3e7e4` | requested extent `max(mapper_page_size, u32(SCRATCH1+1))`, tag `0x49504320`; descriptor +8 is its DVA |
+| optional HEAP | `ANE_Init`, `0x8f3e9d0..0x8f3e9dc`, `0x8f3ebb0..0x8f3ec80` | if SCRATCH3 is zero, +0x20/+0x28 are zero; otherwise request `max(mapper_page_size, SCRATCH3)`, tag `0x48454150`; +0x20 is returned DVA and +0x28 is requested size |
+
+The surface wrapper saves its requested size at metadata +0
+(`0x8f4b6d0`, stack +0x80), DVA at +0x18, CPU pointer at +0x38
+(`0x8f4be44`, stack +0xb8), then publishes the metadata at
+`0x8f4be80..0x8f4bedc`. **+0x38 is a CPU pointer, not a size.**
+That corrects the ambiguous label in §14.1 step 7; §15's address arithmetic
+is unchanged. Descriptor +0x60 gets DM's requested size (+0 metadata).
+
+For the recorded snapshot `SCRATCH1=0xc440`, the IPC requested extent is
+**0xc441**, not 0x10000. A Linux 16-KiB-granule mapping must back 0x10000
+bytes, but that padding is not part of the logical IPC extent. Descriptor
++0x50 is the unrounded `SCRATCH1+1`, even when it is smaller than a page.
+With `SCRATCH3=0xf00000`, the optional HEAP request is 15 MiB. These
+computed sizes do not establish that any allocation already exists on Linux.
+
+### 16.2 The options template is reconstructible
+
+`initializeANEProperties`, `0x8f641e4..0x8f64220`:
+
+1. Zero `[dev+0x2ac]`.
+2. Call `kalloc_data_external(0x100, 4)`; store pointer at `dev+0x4b0`.
+3. Store u32 `[dev+0x2ac]` at template +0 and zero 8 bytes at +4.
+4. OR bit 2 (`4`) into template u32 +0xc0.
+
+The allocation's flag 4 is `Z_ZERO`. The retained wrapper
+`0xb425f1c..0xb425f40` forwards the low three flag bits. Published XNU
+corroboration: commit `f6217f891ac0bb64f3d375211650a4c1ff8ca1ea`,
+[`osfmk/kern/zalloc.h`](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/osfmk/kern/zalloc.h)
+defines `Z_ZERO=0x0004`. This source gives the flag's name; the retained
+cache gives the actual call and store sequence.
+
+`start`, `0x8f53158..0x8f53194`, adds two conditional bits at template
++0xc0: OR `8` if `[dev+0xed]&1 && !([dev+0xec]&1)`; OR `0x10` if
+`[dev+0x202]&1 && !([dev+0x201]&1)`. The offline model exposes this
+selection explicitly (allowed values 4/12/20/28), rather than claiming the
+Linux snapshot measured either feature. It models the traced default
+configuration and these modifiers, not arbitrary macOS property overrides.
+The full 256-byte template is copied to descriptor +0x6c; the flags thus
+land at **descriptor +0x12c**. All remaining template bytes are zero on
+this traced default path. The marker at descriptor +0x68 remains `0x40`;
+no semantic name beyond the store value is needed to construct it.
+
+The u32 at descriptor +0x30 comes from `[dev+0x4a8]`, initialized zero
+at `0x8f64184`. `ANE_LoadFirmware_gated` can replace it with its second
+unsigned argument (incoming w3 saved as w23 at `0x8f461d4`, stored at
+`0x8f462d8`). The existing preload rung never calls that upload method;
+the model defaults this field to zero but retains an explicit u32 input.
+
+### 16.3 Ownership and address translation contract
+
+The DM host→ANE translator (`0x8f412f8..0x8f41310`) is exactly
+`surface.DVA + (host_pointer - surface.CPU_pointer)`. SCRATCH0/1 receive
+that address's low/high halves. There is no DMA-handle-as-physical shortcut.
+The reply-side translator has firmware/IPC/preload branches; for IPC it
+returns `surface.CPU_pointer + (reply_DVA - surface.DVA)` at
+`0x8f413b4..0x8f413d4` and `0x8f41534..0x8f41538`.
+
+For Linux, the next implementation must use the already-established
+DMA-API domain (see `34704d4:ane/h16/ane_h16_main.c`,
+`ane_h16_stage_domain` / `ane_h16_map_stage`): allocate coherent DM/IPC/
+HEAP memory, retain their CPU pointers and DMA handles, and validate every
+complete mapped extent. An allocated DMA handle is a DVA, never a PA.
+If an additional alias is needed, it must be reserved before allocation,
+mapped using `iommu_iova_to_phys` on the owned handle, and use the existing
+checked mapping/rollback discipline. Do not guess an unreserved address.
+Coherent buffers plus a DMA write barrier before publishing the scratch
+pointer avoid importing macOS cache hooks; a device-visible handshake reply
+must precede the DMA read barrier and table copy. `dsb st` in the kext
+is ordering evidence, not proof of Linux DMA coherency.
+
+All referenced buffers and mapping records must be retained after a request
+or timeout until reboot. The model refuses unasserted ownership/retention,
+overlap, misalignment, out-of-aperture mappings, and wrapped input sizes.
+Those are **offline assertions**, not substitutes for kernel allocation
+and IOMMU checks.
+
+The reply table is `channel_count*0x100` bytes. Our first-run policy is
+stricter than the kext's start-pointer check: **the entire range must fit
+inside the owned logical IPC extent**. No read from arbitrary physical
+memory, firmware TEXT, another allocation, mapping padding, or a one-past-end
+pointer is accepted. The model accepts counts 1..32 (source bound is <33;
+zero would fail the subsequent required-channel lookups anyway).
+
+### 16.4 Executable model and remaining hardware boundary
+
+`ane/h17/chanreg_model.py` builds the 0x180-byte allocation, including
+all §15 stores, default template and conditional flags, from explicit
+owned-region inputs. `ane/h17/test_chanreg_model.py` checks every byte
+against an independent store list, exact/requested-vs-mapped sizes,
+optional HEAP, all flag combinations, count limits, final valid descriptor
+slot, overflow, unowned/unretained/overlapping regions, and full reply ranges.
+
+```
+make -C ane/h17 chanreg-model-test
+```
+
+The 12 test methods pass; addresses in tests are synthetic and explicitly
+marked so. Test output is retained in `analysis/h17-chanreg-model-tests.txt`.
+The target also runs under `ane/h17`'s `sim-all`; the full successful run
+is retained in `analysis/h17-chanreg-sim-all.txt`.
+
+**The descriptor's source-level construction contract is resolved.** The
+model does not implement or enable a kernel rung. A first table-discovery
+rung should publish the constructed descriptor, request with SCRATCH7,
+copy a validated table, and **stop before SCRATCH3 registration**. The
+kext initializes per-channel slots through the constructor (§14.2) before
+writing that registration word; skipping those buffer writes and sending
+the final ack is not an equivalent sequence. That is a later rung after
+validating every channel-buffer range. No doorbell, task, IRQ ack, or new
+hardware access is added by this change.
