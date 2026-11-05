@@ -68,11 +68,11 @@ A second operator ran this on boot `f53f5742`. That is the second boot on the ca
 
 One ANE job is slower than one CPU core at this size. This is busy time on the device, not wall time per call, and nothing here shows a speedup.
 
-The first run failed: 30 of 1024 lanes. The operator fed random weights, but the ANEC bakes in the compiler's own weights. The second run used the matching weights file and passed. Both runs are in the log. The checks ran with the same own script as above.
+The first run failed: 30 of 1024 lanes. The operator fed random weights, but the ANEC bakes in the compiler's own weights. The second run used the matching weights file and passed. Both runs are in the lane log. The checks ran with the same separate script as above.
 
 ## Deviation from `gate.sh`
 
-The laptop had no numpy and no pip. The sparse input files were generated on another machine with the same code and seeds as `ane/t6021/gate/gate.sh`, copied over, and run through the same `ane-run --check` loop by a separate script. This is not `gate.sh` itself. The operator reported that the programs come from the checkout at that commit (`fixtures/h14-anec`).
+The laptop had no numpy. The sparse input files were generated on another machine with the same code and seeds as `ane/t6021/gate/gate.sh`, copied over, and run through the same `ane-run --check` loop by a separate script. This is not `gate.sh` itself.
 
 ## Restore path, tested, and the state after
 
@@ -84,7 +84,12 @@ If Linux does not return, the stock file goes back from macOS with a second scri
 
 ## Not covered
 
-- matvec at 2048x5120 or 2048x2048: no program with matching weights was available. The one 2048x2048 try failed on a weights mismatch with a single sample, so it is not a row.
-- Wall time per call. `busy_ns` is device busy time.
-- Per-job time beyond `busy_ns`, and any run under load.
+- matvec at 2048x5120 or 2048x2048 on this laptop in this session: no program with matching weights was available. The one 2048x2048 try failed on a weights mismatch with a single sample, so it is not a row.
+- Wall time per call, and any run under load. `busy_ns` is device busy time.
 - Any other T6021 laptop, kernel build or module build.
+
+## Where each figure comes from
+
+- Hashes, sizes, the guard list, the exit codes and the no-autoload rule come from the written procedure that the operator ran. It was reviewed before the boot, and the operator hash-checked each block against it.
+- Boot ids, the load line and the kernel lines come from the operator's log of the boot.
+- The add and mul counts come from the job operator's state check and gate log. The matvec figures come from that operator's `gate.log`. A reviewer re-read the matvec `gate.log` and re-derived the 360 microseconds.
