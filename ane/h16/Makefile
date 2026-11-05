@@ -23,7 +23,7 @@ modules:
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps \
-	pos-h17-boot pos-h17-irq
+	pos-h17-boot pos-h17-irq pos-h17-scratch
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-dart-map neg-short-unmap neg-unknown-stage neg-adt-bounds \
 	neg-unreserved-alias neg-non-dma-domain \

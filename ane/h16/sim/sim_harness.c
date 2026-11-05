@@ -13,6 +13,7 @@
  *
  * Positive scenarios:  pos-dt pos-dt-noadt pos-status pos-boot
  *                      pos-boot-hello pos-h17-boot pos-h17-irq
+ *                      pos-h17-scratch
  * Negative scenarios (module MUST refuse/fail, harness MUST observe it):
  *                      neg-ps-stuck neg-mbox-silent neg-bad-pin
  *                      neg-foreign-preload neg-unknown-stage
@@ -1037,6 +1038,8 @@ static void sc_pos_h17_boot(void)
 	    "every ordered access durably logged before MMIO");
 	chk(sim_log_count("H17 IRQ_STATUS off=") == 0,
 	    "irq_read off (default): no IRQ status read");
+	chk(sim_log_count("H17 SCRATCH off=") == 0,
+	    "scratch_read off (default): no scratch-word snapshot");
 	chk(ev_count(false, reg_pa(sim_soc.irq_status), 0) == 0 &&
 	    ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
 	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
@@ -1078,6 +1081,52 @@ static void sc_pos_h17_irq(void)
 	chk(ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
 	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
 	    "IRQ ack word untouched");
+}
+
+/* The post-wake scratch-word rung: with scratch_read=1 the wake path
+ * logs exactly one in-order snapshot of the eight scratch words and
+ * adds no scratch writes beyond the boot recipe. */
+static void sc_pos_h17_scratch(void)
+{
+	int ret;
+	unsigned int n;
+
+	setup_common();
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;	/* ANE_SYS word */
+	optin = "t8140";
+	stage = "boot";
+	boot_wait_ms = 300;
+	hello_wait_ms = 1000;
+	scratch_read = true;
+	ret = run_probe();
+	chk(ret == 0, "t8140 boot with scratch_read succeeds through the H17 path");
+	chk(sim_log_count("verdict=PASS reason=boot-wake") == 1,
+	    "RESULT PASS boot-wake");
+	chk(sim_log_count("H17 SCRATCH off=0x1880020 values=0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000000,0x00000001,0x08042006") == 1,
+	    "one logged scratch snapshot: S0..5 carry the boot clears, S6 the step-10 set, S7 the wake word");
+	chk(sim_log_count("H17 IRQ_STATUS off=") == 0,
+	    "irq_read off (default): no IRQ status read");
+	for (n = 0; n < 8; n++)
+		/* S0..6: status dump + snapshot; S7 adds the quiescence
+		 * check and the 3 modelled wake polls.
+		 */
+		chk(ev_count(false, reg_pa(sim_soc.scratch0 + 4 * n), 0) ==
+		    (n == 7 ? 6 : 2),
+		    "scratch words read only by status and the snapshot");
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 2 &&
+	    ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 1) == 1 &&
+	    ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 0) == 1 &&
+	    ev_count(true, reg_pa(sim_soc.scratch0), 0) == 1,
+	    "scratch writes are the boot recipe only: S0..5 cleared, S6 cleared then set, S7 cleared twice");
+	chk(ev_count(false, reg_pa(sim_soc.irq_status), 0) == 0 &&
+	    ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
+	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
+	    "IRQ status and ack words untouched");
 }
 
 static void sc_neg_unknown_stage(void)
@@ -1143,6 +1192,8 @@ int main(int argc, char **argv)
 		sc_pos_h17_boot();
 	else if (!strcmp(sc, "pos-h17-irq"))
 		sc_pos_h17_irq();
+	else if (!strcmp(sc, "pos-h17-scratch"))
+		sc_pos_h17_scratch();
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
 	else if (!strcmp(sc, "pos-four-ps"))

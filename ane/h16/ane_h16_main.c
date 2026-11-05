@@ -112,6 +112,11 @@ module_param(irq_read, bool, 0444);
 MODULE_PARM_DESC(irq_read,
 		 "t8140 stage=boot only: after the SCRATCH7 wake word, read the IRQ status word at the SoC row's irq_status (0x188c000) exactly once and log it. Read-only: no IRQ ack access, no doorbell, no task. Default 0 (off).");
 
+static bool scratch_read;
+module_param(scratch_read, bool, 0444);
+MODULE_PARM_DESC(scratch_read,
+		 "t8140 stage=boot only: after the SCRATCH7 wake word, snapshot the eight ANE scratch words (SCRATCH0..7, the row's scratch0..scratch0+28) with exactly one read each and log them in order. Read-only: no scratch write beyond the boot recipe, no IRQ ack access, no doorbell, no task. Default 0 (off).");
+
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
 /* RVBAR fold: kext ANE_Init 27.0 writes base | (iova & mask); the base
@@ -1467,8 +1472,30 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		 */
 		if (irq_read)
 			dev_info(ane->dev,
-				 "H17 IRQ_STATUS off=%#x value=%#010x (single read-only post-wake snapshot; ack register untouched)\n",
+				 "H17 IRQ_STATUS off=%#x value=0x%08x (single read-only post-wake snapshot; ack register untouched)\n",
 				 s->irq_status, ane_h16_rd32(ane, s->irq_status));
+		/* Opt-in post-wake diagnostic (scratch_read=1): the
+		 * channel-registration handshake (receipt sec 14) puts
+		 * the firmware-published channel count in SCRATCH0,
+		 * carries the firmware's table-ready ack in SCRATCH7,
+		 * and leaves SCRATCH3 for the host's registration word
+		 * (which we never write). One read of each of the
+		 * eight words, in order, logged once; no scratch
+		 * writes beyond the boot recipe, no IRQ ack access, no
+		 * doorbell, no task.
+		 */
+		if (scratch_read) {
+			unsigned int n;
+			u32 sw[8];
+
+			for (n = 0; n < 8; n++)
+				sw[n] = ane_h16_rd32(ane,
+						     s->scratch0 + 4 * n);
+			dev_info(ane->dev,
+				 "H17 SCRATCH off=%#x values=0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x (single read-only post-wake snapshot; scratch words untouched)\n",
+				 s->scratch0, sw[0], sw[1], sw[2], sw[3],
+				 sw[4], sw[5], sw[6], sw[7]);
+		}
 		/* The H16 RTKit management endpoint layout (mbox=0x1608000,
 		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
 		 * mapping. J700's kext reaches READY via SCRATCH7 and then
