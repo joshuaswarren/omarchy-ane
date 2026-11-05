@@ -28,6 +28,13 @@ copy of the firmware with iBoot's runtime patches replayed (receipt
 maps the preloaded physical windows instead; probe refuses it, before any
 power access, unless no-map `/reserved-memory` nodes cover both windows.
 
+On 2026-11-05 a 14-inch M2 Max MacBook Pro booted a candidate m1n1 stage 2 that
+carries the ANE node in its own device tree, instead of an overlay applied on
+the disk. The module was loaded by hand, once, with the guards listed in the
+receipt, and the add and mul gate loops passed bit-exact (receipt
+[2026-11-05-t6021-stage2-boot-and-first-jobs](../../receipts/2026-11-05-t6021-stage2-boot-and-first-jobs/README.md)).
+The receipt lists what was not covered, including one deviation from `gate.sh`.
+
 On that laptop the disk boot also needs the opt-in overlay
 `packaging/dt/t6021-uboot-serial-stdin.dts` (opt-in key
 `uboot-serial-stdin-t6021`): without it, input from the U-Boot internal
