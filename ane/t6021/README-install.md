@@ -31,7 +31,10 @@ power access, unless no-map `/reserved-memory` nodes cover both windows.
 On 2026-11-05 a 14-inch M2 Max MacBook Pro booted a candidate m1n1 stage 2 that
 carries the ANE node in its own device tree, instead of an overlay applied on
 the disk. The module was loaded by hand, once, with the guards listed in the
-receipt, and the add and mul gate loops passed bit-exact (receipt
+receipt. The kernel was `7.1.12-2-7-ARCH`, which is not one of the two kernels
+in the proven list. This run adds a third kernel to the record and does
+not change that list. The add and mul gate loops and a 1024x1024 matvec passed
+(receipt
 [2026-11-05-t6021-stage2-boot-and-first-jobs](../../receipts/2026-11-05-t6021-stage2-boot-and-first-jobs/README.md)).
 The receipt lists what was not covered, including one deviation from `gate.sh`.
 

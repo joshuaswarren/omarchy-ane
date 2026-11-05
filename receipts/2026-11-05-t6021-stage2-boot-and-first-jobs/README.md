@@ -55,6 +55,21 @@ A state check of 30 seconds first: no fault, SError, Oops or coprocessor crash l
 
 No fault lines after both runs. Mean busy time is about 306 to 310 microseconds per job, derived from `busy_ns` over jobs; it includes the reopen pass.
 
+## Native 1024x1024 matvec
+
+A second operator ran this on the next boot of the same laptop, after the module was hand-loaded again (same module hash, same kernel). The program is a `mil-hwxc` H14 ANEC from `h14-ticket/mv/k1024n1024`: M=1, 2 MiB of weights baked in. It is not Qwen size.
+
+| Item | Value |
+|---|---|
+| gate | 4 trials and reopen and repeat PASS |
+| lanes in band | 1024 of 1024, max 0.121 conditioning units; 956 to 966 bit-exact per trial |
+| ANE busy time | 2519585 ns over 7 jobs, 360 microseconds per job (derived from `ane_stats`) |
+| CPU baseline | one thread, fp32, same weights, same laptop: 238.2 and 237.2 microseconds per matvec |
+
+One ANE job is slower than one CPU core at this size. This is busy time on the device, not wall time per call, and nothing here shows a speedup.
+
+The first run failed: 30 of 1024 lanes. The operator fed random weights, but the ANEC bakes in the compiler's own weights. The second run used the matching weights file and passed. Both runs are in the log. The checks ran with the same own script as above.
+
 ## Deviation from `gate.sh`
 
 The laptop had no numpy and no pip. The sparse input files were generated on another machine with the same code and seeds as `ane/t6021/gate/gate.sh`, copied over, and run through the same `ane-run --check` loop by a separate script. This is not `gate.sh` itself. The operator reported that the programs come from the checkout at that commit (`fixtures/h14-anec`).
@@ -69,6 +84,7 @@ If Linux does not return, the stock file goes back from macOS with a second scri
 
 ## Not covered
 
-- matvec: the repository fixture is 256x256; no 2048x5120 program was available.
+- matvec at 2048x5120 or 2048x2048: no program with matching weights was available. The one 2048x2048 try failed on a weights mismatch with a single sample, so it is not a row.
+- Wall time per call. `busy_ns` is device busy time.
 - Per-job time beyond `busy_ns`, and any run under load.
 - Any other T6021 laptop, kernel build or module build.
