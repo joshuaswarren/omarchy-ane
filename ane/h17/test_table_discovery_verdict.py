@@ -39,10 +39,10 @@ class VerdictTests(unittest.TestCase):
     def test_runner_has_no_default_action(self):
         runner = Path(__file__).with_name("run-table-discovery.sh")
         source = runner.read_text()
-        self.assertLess(source.index("table_preflight.py"), source.index('mkdir -m 700 "$log_dir"'))
-        self.assertLess(source.index("$attempt_root/$boot_id"), source.index('rm -f -- "$marker"'))
-        self.assertLess(source.index('rm -f -- "$marker"'), source.index('insmod ane/h16/ane_h16.ko'))
+        self.assertLess(source.index("table_preflight.py"), source.index('insmod ane/h16/ane_h16.ko'))
+        self.assertIn("--claim", source)
         self.assertIn("$attempt_root/$boot_id", source)
+        self.assertNotIn('rm -f -- "$marker"', source)
         for arguments in ([], ["--run", "extra"]):
             with self.subTest(arguments=arguments):
                 result = subprocess.run(["bash", str(runner), *arguments],

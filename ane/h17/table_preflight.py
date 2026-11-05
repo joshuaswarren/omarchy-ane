@@ -42,13 +42,69 @@ def digest(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def _open_parent(path):
+    path = Path(path)
+    if not path.is_absolute() or path.name in ("", ".", ".."):
+        raise ValueError("trusted path must be absolute and name a file")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open("/", flags)
+    try:
+        for component in path.parts[1:-1]:
+            child = os.open(component, flags, dir_fd=fd)
+            info = os.fstat(child)
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                os.close(child)
+                raise ValueError(f"untrusted parent directory in {path}")
+            os.close(fd)
+            fd = child
+        return fd, path.name
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _open_trusted_file(path):
+    parent, name = _open_parent(path)
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                     dir_fd=parent)
+    finally:
+        os.close(parent)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        os.close(fd)
+        raise ValueError("trusted input must be root-owned regular file, not group/world writable")
+    return fd
+
+
+def _trusted_dir(path):
+    path = Path(path)
+    if not path.is_absolute():
+        raise ValueError("trusted directory must be absolute")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open("/", flags)
+    try:
+        info = os.fstat(fd)
+        if info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError("untrusted root directory")
+        for component in path.parts[1:]:
+            child = os.open(component, flags, dir_fd=fd)
+            info = os.fstat(child)
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                os.close(child)
+                raise ValueError(f"untrusted directory in {path}")
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def load_manifest(path):
     """Open the run manifest without following a symlink and enforce ownership."""
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    fd = _open_trusted_file(path)
     with os.fdopen(fd, "rb") as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
-            raise ValueError("manifest must be root-owned regular file, not group/world writable")
         raw = stream.read()
     return json.loads(raw), hashlib.sha256(raw).hexdigest()
 
@@ -80,7 +136,7 @@ def _rooted(root, path):
 
 def check(expected, *, root=Path("/"), module, vermagic, repo,
           boot_id=None, module_loaded=None, attempt_exists=None,
-          evidence_exists=None, pending_ok=None, manifest_sha256=None):
+          pending_ok=None, manifest_sha256=None):
     """Validate a supplied test root or the live root. Never arms the rung."""
     out = {"identity": "REFUSED", "arms_rung": False, "checks": []}
 
@@ -175,20 +231,25 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
         require(head == expected["source_commit"] and not dirty,
                 "source-checkout", {"head": head, "dirty": bool(dirty)})
 
-        attempt = attempt_exists if attempt_exists is not None else \
-            os.path.lexists(_rooted(root, ATTEMPTS / boot_id))
-        evidence = evidence_exists if evidence_exists is not None else \
-            os.path.lexists(Path(f"/var/tmp/opencode/h17-table-{boot_id}"))
-        require(not attempt and not evidence, "one-shot-unused", {"attempt": attempt, "evidence": evidence})
+        if attempt_exists is None:
+            attempts_fd = _trusted_dir(_rooted(root, ATTEMPTS))
+            try:
+                try:
+                    os.stat(boot_id, dir_fd=attempts_fd, follow_symlinks=False)
+                    attempt = True
+                except FileNotFoundError:
+                    attempt = False
+            finally:
+                os.close(attempts_fd)
+        else:
+            attempt = attempt_exists
+        require(not attempt, "one-shot-unused", {"attempt": attempt})
         if pending_ok is None:
             pending_path = _rooted(root, PENDING)
-            fd = os.open(pending_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd) as marker_file:
-                info = os.fstat(marker_file.fileno())
-                pending = (stat.S_ISREG(info.st_mode) and info.st_uid == 0 and
-                           not (info.st_mode & 0o022))
+            fd = _open_trusted_file(pending_path)
+            with os.fdopen(fd, "r") as marker_file:
                 marker = marker_file.read()
-            pending = pending and marker == (
+            pending = marker == (
                 "schema=h17-table-attempt.v1\n"
                 f"manifest_sha256={manifest_sha256}\n")
         else:
@@ -201,11 +262,84 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
     return out
 
 
+def claim_attempt(boot_id, manifest_path, manifest_sha256, expected, root=Path("/")):
+    """Atomically bind the pending marker to this boot and make retries impossible."""
+    attempts_path = _rooted(root, ATTEMPTS)
+    pending_path = _rooted(root, PENDING)
+    attempts_fd = _trusted_dir(attempts_path)
+    marker_parent = None
+    attempt_dir = None
+    try:
+        marker_parent, marker_name = _open_parent(pending_path)
+        os.mkdir(boot_id, 0o700, dir_fd=attempts_fd)
+        attempt_dir = os.open(boot_id, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                              dir_fd=attempts_fd)
+        os.fsync(attempts_fd)
+
+        manifest_fd = _open_trusted_file(manifest_path)
+        try:
+            raw = b""
+            while True:
+                block = os.read(manifest_fd, 65536)
+                if not block:
+                    break
+                raw += block
+        finally:
+            os.close(manifest_fd)
+        if hashlib.sha256(raw).hexdigest() != manifest_sha256 or json.loads(raw) != expected:
+            raise ValueError("manifest changed after validation")
+
+        marker_fd = os.open(marker_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                            dir_fd=marker_parent)
+        try:
+            marker_info = os.fstat(marker_fd)
+            if (not stat.S_ISREG(marker_info.st_mode) or marker_info.st_uid != 0 or
+                    marker_info.st_mode & 0o022):
+                raise ValueError("pending marker changed or is untrusted")
+            marker = os.read(marker_fd, 4096).decode()
+            expected_marker = ("schema=h17-table-attempt.v1\n"
+                               f"manifest_sha256={manifest_sha256}\n")
+            if marker != expected_marker:
+                raise ValueError("pending marker no longer matches the manifest")
+            current = os.stat(marker_name, dir_fd=marker_parent, follow_symlinks=False)
+            if current.st_dev != marker_info.st_dev or current.st_ino != marker_info.st_ino:
+                raise ValueError("pending marker replaced during claim")
+        finally:
+            os.close(marker_fd)
+
+        record = (
+            f"boot_id={boot_id}\nmanifest_sha256={manifest_sha256}\n"
+            f"module_sha256={expected['module_sha256']}\n"
+            f"m1n1_sha256={expected['m1n1_sha256']}\n")
+        record_fd = os.open("identity", os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                            os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=attempt_dir)
+        try:
+            remaining = memoryview(record.encode())
+            while remaining:
+                remaining = remaining[os.write(record_fd, remaining):]
+            os.fsync(record_fd)
+        finally:
+            os.close(record_fd)
+        os.rename(marker_name, "pending.claimed", src_dir_fd=marker_parent,
+                  dst_dir_fd=attempt_dir)
+        os.fsync(marker_parent)
+        os.fsync(attempt_dir)
+    finally:
+        if attempt_dir is not None:
+            os.close(attempt_dir)
+        if marker_parent is not None:
+            os.close(marker_parent)
+        os.close(attempts_fd)
+    return str(attempts_path / boot_id)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("module", type=Path)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--claim", action="store_true",
+                        help="atomically consume the pending marker and persist this boot's one-shot attempt")
     args = parser.parse_args()
     try:
         expected, manifest_sha256 = load_manifest(args.manifest)
@@ -213,6 +347,12 @@ def main():
                                            text=True, stderr=subprocess.STDOUT)
         result = check(expected, module=args.module, vermagic=vermagic, repo=args.repo,
                        manifest_sha256=manifest_sha256)
+        if args.claim and result["identity"] == "MATCHED":
+            if os.geteuid() != 0:
+                raise ValueError("--claim requires root")
+            result["attempt_dir"] = claim_attempt(
+                result["boot_id"], args.manifest, manifest_sha256, expected)
+            result["attempt_claimed"] = True
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         result = {"identity": "REFUSED", "arms_rung": False, "reason": str(exc)}
     print(json.dumps(result, sort_keys=True))

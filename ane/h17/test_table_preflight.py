@@ -83,7 +83,7 @@ class TablePreflightTests(unittest.TestCase):
         expected = dict(self.expected)
         expected.update(changes.pop("expected", {}))
         arguments = dict(boot_id=self.boot_id, attempt_exists=False,
-                         evidence_exists=False, pending_ok=True)
+                         pending_ok=True)
         arguments.update(changes)
         with patch.object(preflight, "build_id", return_value=self.build_id), \
              patch.object(preflight.subprocess, "check_output", side_effect=[
@@ -116,8 +116,8 @@ class TablePreflightTests(unittest.TestCase):
         cases = (
             {"module_loaded": True},
             {"attempt_exists": True},
-            {"evidence_exists": True},
             {"boot_id": preflight.FAILED_BOOT},
+            {"pending_ok": False},
             {"expected": {"kernel_build_id": "f" * 16}},
             {"expected": {"module_sha256": "0" * 64}},
         )
@@ -138,18 +138,78 @@ class TablePreflightTests(unittest.TestCase):
         manifest = self.root / "manifest.json"
         content = json.dumps(self.expected, sort_keys=True).encode()
         manifest.write_bytes(content)
-        trusted = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0)
-        with patch.object(preflight.os, "fstat", return_value=trusted):
+        trusted = [SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                   SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                   SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                   SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=0)]
+        with patch.object(preflight.os, "fstat", side_effect=trusted):
             parsed, digest = preflight.load_manifest(manifest)
         self.assertEqual(parsed, self.expected)
         self.assertEqual(digest, hashlib.sha256(content).hexdigest())
-        with patch.object(preflight.os, "fstat", return_value=SimpleNamespace(
-                st_mode=stat.S_IFREG | 0o666, st_uid=0)), self.assertRaises(ValueError):
+        untrusted = [SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                     SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                     SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0),
+                     SimpleNamespace(st_mode=stat.S_IFREG | 0o666, st_uid=0)]
+        with patch.object(preflight.os, "fstat", side_effect=untrusted), self.assertRaises(ValueError):
             preflight.load_manifest(manifest)
         link = self.root / "manifest-link.json"
         link.symlink_to(manifest)
-        with self.assertRaises(OSError):
+        parent_stats = [SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)] * 3
+        with patch.object(preflight.os, "fstat", side_effect=parent_stats), self.assertRaises(OSError):
             preflight.load_manifest(link)
+
+    def test_attempt_claim_atomically_consumes_manifest_bound_marker(self):
+        base = self.root / "var/lib/omarchy-ane"
+        attempts = base / "h17-table-attempts"
+        attempts.mkdir(parents=True)
+        marker = base / "h17-table.pending"
+        manifest = base / "h17-table.manifest.json"
+        raw = json.dumps(self.expected, sort_keys=True).encode()
+        manifest.write_bytes(raw)
+        manifest_hash = hashlib.sha256(raw).hexdigest()
+        marker.write_text("schema=h17-table-attempt.v1\n"
+                          f"manifest_sha256={manifest_hash}\n")
+
+        real_fstat = os.fstat
+
+        def trusted_fstat(fd):
+            current = real_fstat(fd)
+            mode = current.st_mode & ~0o022
+            return SimpleNamespace(st_mode=mode, st_uid=0, st_dev=current.st_dev,
+                                   st_ino=current.st_ino)
+
+        with patch.object(preflight.os, "fstat", side_effect=trusted_fstat):
+            path = preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
+                                           self.expected, root=self.root)
+            self.assertTrue((Path(path) / "identity").is_file())
+            self.assertTrue((Path(path) / "pending.claimed").is_file())
+            self.assertFalse(marker.exists())
+            with self.assertRaises(FileExistsError):
+                preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
+                                        self.expected, root=self.root)
+
+    def test_attempt_claim_refuses_marker_replacement_content(self):
+        base = self.root / "var/lib/omarchy-ane"
+        (base / "h17-table-attempts").mkdir(parents=True)
+        marker = base / "h17-table.pending"
+        manifest = base / "h17-table.manifest.json"
+        raw = json.dumps(self.expected, sort_keys=True).encode()
+        manifest.write_bytes(raw)
+        manifest_hash = hashlib.sha256(raw).hexdigest()
+        marker.write_text("schema=h17-table-attempt.v1\nmanifest_sha256=" + "0" * 64 + "\n")
+        real_fstat = os.fstat
+
+        def trusted_fstat(fd):
+            current = real_fstat(fd)
+            return SimpleNamespace(st_mode=current.st_mode & ~0o022, st_uid=0,
+                                   st_dev=current.st_dev, st_ino=current.st_ino)
+
+        with patch.object(preflight.os, "fstat", side_effect=trusted_fstat):
+            with self.assertRaises(ValueError):
+                preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
+                                        self.expected, root=self.root)
+        self.assertTrue((base / "h17-table-attempts" / self.boot_id).is_dir())
+        self.assertTrue(marker.exists())
 
 
 if __name__ == "__main__":
