@@ -1,6 +1,6 @@
 # T6021: ANE node from a candidate m1n1 stage 2, hand-loaded module, first jobs (2026-11-05)
 
-One 14-inch M2 Max MacBook Pro, one supervised boot, one `insmod` of `ane_t6021.ko`. Then the first ANE jobs on that laptop with this module. All numbers come from that one boot. One operator ran the boot and the load. A second operator ran the jobs.
+One 14-inch M2 Max MacBook Pro, one supervised boot, one `insmod` of `ane_t6021.ko`. Then the first ANE jobs on that laptop with this module. The add and mul numbers come from that boot (boot id `2cbdf4ea`). The matvec numbers come from a later boot (`f53f5742`), described in its own section. One operator ran the boot and the load. A second operator ran the jobs.
 
 ## What the boot file adds
 
@@ -57,7 +57,7 @@ No fault lines after both runs. Mean busy time is about 306 to 310 microseconds 
 
 ## Native 1024x1024 matvec
 
-A second operator ran this on the next boot of the same laptop, after the module was hand-loaded again (same module hash, same kernel). The program is a `mil-hwxc` H14 ANEC from `h14-ticket/mv/k1024n1024`: M=1, 2 MiB of weights baked in. It is not Qwen size.
+A second operator ran this on boot `f53f5742`. That is the second boot on the candidate stage 2. A boot on the stock stage 2 (`1324614b`) sits between the two, and the module was hand-loaded again on `f53f5742` (same module hash, same kernel). The program is a `mil-hwxc` H14 ANEC from `h14-ticket/mv/k1024n1024`: M=1, 2 MiB of weights baked in. It is not Qwen size.
 
 | Item | Value |
 |---|---|
