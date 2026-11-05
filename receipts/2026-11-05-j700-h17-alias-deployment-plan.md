@@ -168,3 +168,23 @@ alias implementation/deployment bundle and explicit authorization for the
 specific table-discovery rung remain required. The connected Linux session
 still reports the original failed boot ID with `ane_h16` loaded; no fresh
 boot or hardware run is evidenced by this checkout.
+
+## Offline bundle review update (2026-11-06)
+
+The candidate bundle now records the active assembly model and includes
+read-only copies of current `boot.bin`, `boot.bin.old`, `limine.conf`, both
+Limine EFI loader copies, the stock UKI, its extracted `.linux` and `.initrd`
+sections, the candidate m1n1 payload, J700 candidate DTB/overlays, and module.
+Offline reconstruction reproduced current `boot.bin` byte-for-byte; the
+candidate changes only the J700 DTB inside m1n1's concatenated payload. The
+stock Limine-selected UKI/kernel/initramfs and module tree are unchanged; the
+experimental module is loaded separately by the gated runner.
+
+An independent follow-up review accepted this as resolving the **offline
+bundle-completeness concern for the stated m1n1-only DTB change**. This is
+not candidate boot/selection proof. Review still requests changes for the
+stale source manifest (pinned `b998fe…` versus local HEAD `10a274a…`, whose
+push was rejected), an untested rollback/restore procedure, and missing
+fresh-boot/runtime evidence. It explicitly does not authorize deployment or
+the one-shot rung. Candidate checksums pass; no system files or boot state
+were changed.

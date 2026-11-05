@@ -207,3 +207,24 @@ Remaining gates: independent review of the complete alias implementation
 and deployment bundle, and separate explicit authorization for deployment
 and the one-shot pre-registration table-discovery rung. No system files,
 boot variables, module state, or pending marker were changed for this update.
+
+## Independent deployment-review follow-up (2026-11-06)
+
+The candidate bundle was expanded outside system paths with read-only copies
+of current/old m1n1 payloads, `limine.conf`, both Limine EFI loader copies,
+and `.linux`/`.initrd` sections extracted from the unchanged stock UKI.
+`BUNDLE-README.md` documents the active assembly: `update-m1n1` builds
+`m1n1/boot.bin` from the m1n1 image, selected DTBs, compressed U-Boot and
+configuration; the offline reconstruction matches current `boot.bin`
+byte-for-byte, and the candidate changes only the embedded J700 DTB. Every
+file listed in the bundle's regenerated `SHA256SUMS` verifies.
+
+Independent follow-up review agrees this resolves bundle completeness for
+the stated design at the **offline-evidence** level: stock UKI/kernel/initrd
+and module tree remain unchanged, while the experimental module is loaded
+separately after boot. It does not establish candidate boot or runtime DTB
+selection. Remaining blockers are the stale candidate manifest/source pin
+(`b998fe…` versus local docs-only HEAD `10a274a…`, not pushed), an untested
+rollback/restore procedure, lack of fresh-boot/live IOMMU/table evidence,
+and separate deployment/rung authorization. No installation, reboot, live
+claim, module load, or hardware run was performed.
