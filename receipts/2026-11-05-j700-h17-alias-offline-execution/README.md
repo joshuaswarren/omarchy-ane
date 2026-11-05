@@ -49,11 +49,26 @@ domain reports the reserved regions.
 
 ## Deployment blocker confirmed
 
-Read-only inspection found `/boot/efi` is mode `0700 root:root`. The current
-user could read `/etc/default/update-m1n1` but could not inspect
-`/boot/efi/limine.conf`, the UKI, or `m1n1/boot.bin`; no `sudo` or permission
-change was attempted. Thus the active EFI entries and recoverable boot
-selection remain unverified. Independent review is also still outstanding.
+Initial unprivileged inspection found `/boot/efi` mode `0700 root:root`.
+After the user authorized sudo, read-only inspection established:
+
+- `/boot/efi` is `/dev/nvme0n1p4`, vfat, mounted read-write, `fmask=0077`.
+- `limine.conf` says `default_entry: 2`. The displayed OS/kernel entry is
+  `Omarchy` / `linux-aurora`, kernel `7.2.11-14-1-ARCH`, pointing to
+  `/EFI/Linux/omarchy_linux-aurora.efi`; its cmdline contains no experimental
+  H17 opt-in. The file also lists two historical snapshot entries.
+- The stock UKI is 62,580,224 bytes, SHA-256
+  `df8d56d02043fff28a38bfb05c661e370dd6c0e5d57a9de8e4761b0b0aa1ab89`.
+- Current `/m1n1/boot.bin` is 10,216,309 bytes, SHA-256
+  `7dc4c03fe572227ca641699f2aa9f0e9f77321e879126de957f7f925815e98c5`.
+- `/m1n1/boot.bin.old` is 10,216,008 bytes, SHA-256
+  `524e7236d58d0e7f6a75495752be0f6879ab78fb93af6dba26b3c1a69b3de067`.
+
+These observations identify the visible current files, but do not establish
+that `default_entry: 2` is a reliable recovery selection, that the historical
+UKIs are paired with compatible m1n1 payloads, or that boot.bin.old can be
+restored after a failed boot. No protected file was written. Independent
+review of the deployment and a verified recovery path remain outstanding.
 
 Do not proceed to installation, boot selection, reboot, or module loading
 until those gates are resolved and separately authorized. The next hardware
