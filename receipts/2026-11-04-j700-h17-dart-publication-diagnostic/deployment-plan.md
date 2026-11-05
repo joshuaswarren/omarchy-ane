@@ -2,6 +2,32 @@
 
 No deployment or boot configuration changes are made by this plan.
 
+## Installed boot tooling audit (read-only)
+
+Installed versions: `omarchy-mac-boot 20261027-1`,
+`m1n1-aurora 1.6.1.aurora22-1`, `uboot-aurora 2026.07.aurora6-1`.
+The boot package's source-revision file names
+`2d8616390bc57fb4560cbf57c645bd4a100c5d49`.
+Observed mount layout: `/boot` is ext4 and `/boot/efi` is the separate
+vfat ESP. Listing the ESP as the unprivileged user was denied; its active
+loader entries have not been inspected and must not be assumed.
+
+The installed `/usr/bin/update-m1n1` selects DTBs by sorting
+`/lib/modules/*-ARCH` and taking the newest tree (`:20`). The installed
+`dtb-overlays.sh` repeats that selection (`:165`), applies eligible opted-in
+overlays, and may set DTBS for the boot-bundle rebuild. Consequently,
+**even installing a separately named module/DTB tree can affect a later
+automatic bundle update**. The distinct kernel release prevents overwrite
+but does not by itself isolate boot selection. Keep staging outside
+`/lib/modules` until this behavior is accounted for in a reviewed plan.
+
+`omarchy-mac-boot-update` chooses GRUB versus Limine through
+`omarchy-mac-limine-active`; the latter tests platform and marker/config
+presence, not just a boot filename. The `/usr/local/bin/mkinitcpio` wrapper
+can invoke additional Limine tooling or prompt. None of these update
+commands or sourced overlay helpers was executed during this audit.
+Do not run them as supposedly read-only discovery commands.
+
 ## Build gate
 
 Use kernel pin `4fdd0fc5c931ef9f14474942b37c3d451e97fc04` plus the

@@ -1,0 +1,56 @@
+configure.sh: OK
+bindgen-kernel.py: OK
+rust-toolchain.toml: OK
+validate-config.py: OK
+config: OK
+bc 1.08.2
+Copyright 1991-1994, 1997, 1998, 2000, 2004, 2006, 2008, 2012-2018, 2024 Free Software Foundation, Inc.
+info: syncing channel updates for 1.85.0-aarch64-unknown-linux-gnu
+info: latest update on 2025-02-20 for version 1.85.0 (4d91de4e4 2025-02-17)
+info: component rust-src is up to date
+
+  1.85.0-aarch64-unknown-linux-gnu unchanged - rustc 1.85.0 (4d91de4e4 2025-02-17)
+
+info: checking for self-update (current version: 1.29.2)
+info: downloading self-update (new version: 1.29.3)
+info: syncing channel updates for 1.99.0-aarch64-unknown-linux-gnu
+info: latest update on 2026-10-01 for version 1.99.0 (b940084d7 2026-09-28)
+info: downloading 4 components
+
+  1.99.0-aarch64-unknown-linux-gnu installed - rustc 1.99.0 (b940084d7 2026-09-28)
+
+info: checking for self-update (current version: 1.29.3)
+patching file bindgen/codegen/mod.rs
+patching file bindgen/clang.rs
+patching file bindgen/ir/comp.rs
+Traceback (most recent call last):
+  File "/home/admin/aurora-build/wt-dart-diag/tools/aurora-bindgen/test.py", line 35, in <module>
+    ccmd=[a.clang,'--target='+ct,'-x',language,*extra,'-Wno-microsoft-anon-tag','-c',str(header),'-o',str(O/(fixture+'.c.o'))];cr=run(ccmd);(O/(fixture+'.c.log')).write_text(cr.stdout+cr.stderr);assert cr.returncode==0,(fixture,cr.stderr)
+                                                                                                                                  ~~~^^^^^^
+  File "/home/admin/aurora-build/wt-dart-diag/tools/aurora-bindgen/test.py", line 12, in run
+    def run(cmd):return subprocess.run(cmd,capture_output=True,text=True)
+                        ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 555, in run
+    with Popen(*popenargs, **kwargs) as process:
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1039, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                        pass_fds, cwd, env,
+                        ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+                        gid, gids, uid, umask,
+                        ^^^^^^^^^^^^^^^^^^^^^^
+                        start_new_session, process_group)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1990, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'clang'
+Traceback (most recent call last):
+  File "/home/admin/aurora-build/wt-dart-diag/tools/aurora-bindgen/build.py", line 24, in <module>
+    binary=S/'target/release/bindgen';subprocess.run([sys.executable,str(P/'test.py'),'--bindgen',str(binary),'--output-dir',str(O/'tests')],check=True)
+                                      ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/usr/bin/python3', '/home/admin/aurora-build/wt-dart-diag/tools/aurora-bindgen/test.py', '--bindgen', '/var/tmp/opencode/h17-kernel-kit/private-bindgen/rust-bindgen-0.73.2/target/release/bindgen', '--output-dir', '/var/tmp/opencode/h17-kernel-kit/private-bindgen/tests']' returned non-zero exit status 1.
