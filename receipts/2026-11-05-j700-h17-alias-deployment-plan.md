@@ -48,6 +48,44 @@ acceptance.
 These gates establish source/simulation properties only, not IOMMU behavior
 or ANE execution on J700.
 
+## Additional offline source and boot-chain findings
+
+- The retained installed-kernel `PKGBUILD` and `BUILDINFO` identify
+  `linux-aurora 7.2.11.aurora14-1`, `_commit=4fdd0fc5c931ef9f14474942b37c3d451e97fc04`,
+  PKGBUILD SHA-256
+  `94161581f2468fd0fbfcba36f514b4a11f26a47859d888494156997695d0b505`,
+  and release `7.2.11-14-1-ARCH`. The exact source is present in
+  `/home/admin/aurora-build/wt-dart-diag` at that commit; it has an unrelated
+  local DART diagnostic modification, so do not build or deploy from that
+  dirty worktree without separately accounting for the patch.
+- The pinned kernel's `drivers/iommu/of_iommu.c` treats a memory-region
+  node without `reg` as an IOVA reservation, translates the
+  `iommu-addresses` tuples owned by the ANE node, and classifies a no-physical
+  backing region as `IOMMU_RESV_RESERVED`. `drivers/iommu/dma-iommu.c`
+  reserves non-translated reserved regions in the DMA IOVA allocator.
+  `drivers/iommu/apple-dart.c` wires `apple_dart_get_resv_regions()` to
+  `iommu_dma_get_resv_regions()`. These source paths support the overlay
+  design but do not prove that a runtime boot DT contains the expected
+  phandles/tuples or that the live DART domain reports them; that must remain
+  a pre-module-load runtime gate.
+- `receipts/2026-11-04-j700-h17-table-discovery-rung1/installed-kernel.PKGBUILD`
+  confirms the kernel package builds `Image modules dtbs` and installs its
+  kernel under `/usr/lib/modules/<release>/vmlinuz` with DTBs in that tree.
+  The existing boot audit says `update-m1n1` selects the newest `*-ARCH`
+  module tree, so adding a separate release can alter later DTB selection.
+- The local boot-process note reports a Limine/UKI path on 2026-11-03:
+  Limine config `/boot/efi/limine.conf`, UKI
+  `/boot/efi/EFI/Linux/omarchy_linux-aurora.efi`, m1n1 payload
+  `/boot/efi/m1n1/boot.bin`, and `boot.bin.old` as the update-m1n1 backup.
+  This is dated observation, not current verification; protected EFI files
+  and current entries were not inspected in this task. The source-curated
+  record also warns `/boot/initramfs-linux-aurora.img` may be stale because
+  the UKI hook, rather than that loose image, is the active path. Accordingly
+  the exact rollback method is still not established.
+- Existing attempt-3 diagnostic-kernel output includes an `Image` and
+  `vmlinux`, but that build is for a separate diagnostic patch/release and
+  is not an alias-layout deployment bundle. Do not use it for this rung.
+
 ## Hard blockers before any deployment
 
 1. Obtain an independent review of the alias implementation and this plan.
@@ -65,8 +103,9 @@ or ANE execution on J700.
 3. Inspect the active boot entries and establish, from the machine's actual
    boot assembly mechanism, a tested way to retain and select the known-good
    kernel together with its matching DTBs, initramfs, modules, and bundle.
-   The previous audit could not inspect the ESP/active entries; this remains
-   unresolved. Do not run update/boot tooling as part of this plan.
+   The 2026-11-03 Limine/UKI note narrows what to inspect but does not prove
+   current EFI contents or a tested rollback; this remains unresolved. Do not
+   run update/boot tooling as part of this plan.
 4. Produce hashes and identities for every final artifact, check compatibility
    and signing requirements, and make the rollback selection explicit. No
    artifact hashes in this plan authorize or identify an installed image.
