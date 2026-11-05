@@ -357,6 +357,22 @@ zero dart-register writes, keeping stop-before-SCRATCH3 discipline.
      gap]
   2. whether the firmware's reply target derives from the descriptor's
      64-bit IPC field (`+0x08`) or from a narrower internal source.
+  - First offline resolution (same session, later): prereqs.txt:541
+    titles the SCRATCH0/1 publish block "**descriptor ANE address** and
+    SECOND wake request" (`0x8f3f040-0x8f3f098`: SCRATCH0-class word at
+    `[x19+0xfc]` = low32 of the difference, SCRATCH1-class word at
+    `[x19+0x100]` = `lsr #32` of the same 64-bit value, then SCRATCH7
+    `[x19+0x118]` = `0xf7fbdff9`). The register identities are pinned by
+    the ambient reads: `[x19+0xfc]` is the SCRATCH0 that yields
+    `count := 8` and `[x19+0x100]` is the SCRATCH1 whose `+1`
+    (`:159-160`, trace `0x8f3e3a0-0x8f3e3a4`) equals the IPC bytes —
+    exactly our ambient layout (`ane_h16_main.c:1135-1137`), and
+    `[x19+0x118] - [x19+0xfc] = 0x1c = 28` = our `scratch0 + 28`
+    request word (:1176). So the kext publishes the **descriptor
+    address in the ANE address space** as an arena-delta pair, not a
+    raw base pointer; the residual offline work for rung 2 is to prove
+    our `dm.iova + offset` equals that value for the traced boot
+    (descriptor at arena base ⇒ offset 0) or find case they differ.
 - Only after that offline closure: reboot, re-run the same rung with the
   corrected publication. The fault address recorded in the next boot's
   dart line remains the decoder: `fault < 2^32` anywhere = truncation
