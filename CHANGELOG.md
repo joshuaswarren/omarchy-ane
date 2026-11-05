@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `ane_h16`: find `/arm-io` in the boot ADT. The name check needed 8 bytes of a 7 byte property, so it never matched and `stage=dt` printed "no ... ane node or segment-ranges" even when the ADT held both (omarchy-ane#320, T8132). The sim now builds the name at its real length.
+- `ane_h16`: the boot-ADT lookup required 8 bytes of the 7 byte `arm-io` name property, so it could never match a real ADT; it now accepts 7. This is derived from the source and from the later ADT scan, not run on a T8132. The sim now builds the name at its real length. The T8132 test boot's "no ane node or segment-ranges" line may have had this cause; a `stage=dt` re-run decides (omarchy-ane#320).
 
 ## 0.5.10 (2026-11-05)
 
