@@ -120,9 +120,11 @@ package is stale relative to the alias fix:
   installed headers. Vermagic:
   `7.2.11-14-1-ARCH SMP preempt mod_unload aarch64`; SHA-256
   `962af7d65052bd09f99aa40278f38f4a6a593c6ebb5188244edaf28689a27791`.
-  The candidate manifest pins source commit
-  `607d62dae67f190ae86da94d71a9e17a01cbecd3`, kernel build ID
+  The candidate manifest pins the source commit, kernel build ID
   `e6037e7a6a53ed1dfa9c1faa90efedc3d6b022bf`, and UKI/firmware hashes.
+  Because the manifest is an external deployment input, mint it only after
+  the final source commit is pushed and clean; any subsequent HEAD change
+  requires reminting and re-reviewing that manifest.
 
 The runner now calls `table_preflight.py` before any module load. It checks
 the root-owned, no-symlink manifest and manifest-bound pending marker;
