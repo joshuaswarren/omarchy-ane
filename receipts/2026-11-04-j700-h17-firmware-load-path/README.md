@@ -1236,7 +1236,12 @@ A post-wake read of `0x188c000` and of the channel-name table would resolve
 the first two without submitting anything. *Executed 2026-11-04: the
 post-wake `0x188c000` read ran on hardware and returned `0x00000000` —
 the wake handshake raises no IRQ line (receipts/2026-11-04-j700-h17-wake-irq-status);
-the channel-name-table read and the doorbell re-read remain open.*
+the channel-name-table read and the doorbell re-read remain open. §14,
+traced the same day, statically pins the publish/ack handshake around that
+table — the count rides SCRATCH0, the request word is `0xF7FBDFF9`
+(SCRATCH7), `0x08042006` is the firmware's reply, and SCRATCH3 is the
+host-written registration word the firmware clears. The runtime channel
+indices and the shmem doorbell stay device-side.)*
 
 Raw evidence: `analysis/h17-messenger-irq-chain.txt` (the send/receive
 primitives, the IRQ handler arms, the real `externalMethod`, and the
@@ -1272,3 +1277,107 @@ at `0xfffffe0008fae980`, `ANE_ProgramInputsReady` → `0xfffffe0008fae960`).
 `ANEClientDevice::getClient` (`this+0x18`) supplies the embedded client in
 every wrapper. For libane this is the complete userspace submission surface:
 open → map buffers → inputs-ready/output-enqueue → send-request.
+
+
+## 14. The channel-registration handshake (offline trace, 2026-11-04)
+
+Whole-function trace of `ANEHWDevice::ANE_Init` (`0xfffffe0008f3dc28`,
+AppleH16ANEInterface `__TEXT_EXEC 0xfffffe0008eeb820..0x8ff60dd8`), the
+function Apple's driver runs after CPU release. It answers the §13.4 open
+items "how does the firmware publish the channel table" and "what does the
+host do around the wake word". Register reads go through
+`ANERegisterControl::read32` (`0x8f73fdc`) and writes through
+`ANERegisterControl::write32` (`0x8f74130`), both called with the accessor
+at `[dev+0xe320]` and a register offset read from the §11 family table —
+`[dev+0xfc..0x118]` = SCRATCH0..7 at `0x1880020..0x188003c`. x28 is pinned
+at `dev+0xe1f0` (the channel-count anchor) at `0x8f3dc64`. Decoded
+instruction stream — not device behaviour; every VA is
+`0xfffffe0007004000 + file_offset` in the retained kernelcache.
+
+### 14.1 Boot order up to the SCRATCH7 handshake
+
+| step | VA | what |
+|---|---|---|
+| 1 | `0x8f3dd74` | `InitANEScratchRegisters` (`0x8f6121c`) |
+| 2 | `0x8f3dd78` | `write32(SCRATCH6, 1)` — the same SCRATCH6=1 this driver's `h17_order` path performs |
+| 3 | `0x8f3de44` | `CleanupRTBuddyEndpoints` (`0x8f52228`); failure logs "Failed to Initialize RTBuddy endpoints" (`0x73d724f`) and returns `0xE00002BC` (`0x8f3de48-0x8f3de50`) |
+| 4 | `0x8f3e384-0x8f3e3a4` | `count := read32(SCRATCH0)` → `[dev+0xe1f0]` (`str w0,[x28]` at `0x8f3e390`); `[dev+0xe1f4] := read32(SCRATCH1) + 1` |
+| 5 | `0x8f3e344-0x8f3e354` | pre-fill the 8 channel slots at `dev+0x3ef0+0x10i` with `{0xFFFFFFFF, 0xFFFFFFFF}` |
+| 6 | `0x8f3eeb8-0x8f3f02c` | build the 0x100-byte RTBuddy message from the `[dev+0x4b0]` template (marker `0x40` at +0x68 = msgCount 64; trace-gated word dump) |
+| 7 | `0x8f3f040-0x8f3f084` | `dsb st`; SCRATCH0 := lo32, SCRATCH1 := hi32 of a 64-bit ANE address derived from the `[dev+0x498]` command-buffer descriptor (base at `+0x18`, size at `+0x38` — the `cmd_buffer_base: 0x%llx, size: 0x%llu` string at `0x73d75ff` names those fields; the exact `x20` operand of `base + x20 - size` was not pinned further) |
+| 8 | `0x8f3f088-0x8f3f098` | `write32(SCRATCH7, 0xF7FBDFF9)` — the host's **table request** word |
+| 9 | `0x8f3f0dc-0x8f3f170` | poll `read32(SCRATCH7)` until it equals `0x08042006` (`w25` init at `0x8f3e180-0x8f3e184`), 1 ms `IOSleep` per iteration, 1000 max; success logs "Got second int from ANECPU (channel description table ready)" (`0x73d7706`); timeout increments the retry counter `[dev+0x8c]`, and at ≥ 2 logs "No second int from ANECPU" (`0x73d7662`) and returns `0xE00002DA` (the `-4` variant `0xE00002D6` at `0x8f3f7e8` exits the other timeout arm) |
+
+Two static facts that change the wake recipe as recorded in the receipts:
+
+- **The channel count is firmware-published in SCRATCH0.** `ANE_Init` reads
+  it before writing the table address, and the driver's only other write to
+  `[dev+0xe1f0]` is the zero-store in `initializeANEProperties`
+  (`0x8f6422c`). The interim scan note that the count "is only zero-written,
+  so the channel-table path is dormant in this cache" is **refuted**: the
+  writer exists (`str w0,[x28]`, `0x8f3e390`) and was missed only because
+  the literal-operand scan could not see stores through a register base.
+- **`0x08042006` at SCRATCH7 is the firmware's reply, not the host's
+  request.** The kext's request word is `0xF7FBDFF9` (step 8). This driver's
+  rung wrote `0x08042006` (the reply word) to SCRATCH7 and observed the
+  word plus the CPU_STATUS transition — consistent with a firmware that
+  raises the ack after CPU release, but it is *not* the kext's request
+  sequence. The kext does write `0x08042006` — to SCRATCH3, step 12.
+
+### 14.2 Table copy and per-channel objects
+
+| step | VA | what |
+|---|---|---|
+| 10 | `0x8f3f1ec-0x8f3f240` | `IOFree([dev+0x3de0], count<<8)`; `kernel_debug(0x61b0058, 3)`; `IOMallocData(count<<8)` → `[dev+0x3de0]`, size `[dev+0x3de8]` |
+| 11 | `0x8f3f244-0x8f3f27c` | re-read SCRATCH1/SCRATCH0 → ANE table address `hi<<32|lo` → `aneAddressToHostAddress` (`0x8f41314`) → `memmove([dev+0x3de0], host, count<<8)` (`_memmove` `0xb394bf0`) |
+| 12 | `0x8f3f284` | `count == 0` → **skip the walk**, jump straight to the SCRATCH3 handshake; the handshake and name lookups still run with an empty table |
+| 13 | `0x8f3f2a4-0x8f3f3c8` | per 0x100-byte entry: slot `{dev, source}` at `dev+0x3ef0+0x10i`; ctor `0x8ef8314` (`IOMalloc(0xc0)`) → object at `dev+0x3df0+8i`; per-type stats counters on the stack; log "Found channel %d in the channel table. Type=%d (%s), Source=%d, size: %d" (`0x73d774c`) |
+
+Channel-table entry (stride `0x100`): `+0x00` name (compared with
+`strnlen(name, 0x20)` + `strncmp`, `0x8f41790-0x8f417b0`), `+0x40` u32 type
+(`== 0` → flag 1), `+0x44` u32 source, `+0x48` u32 size, `+0x50` u64 buffer
+ANE address. The 0xc0-byte object (`0x8ef8364-0x8ef83cc`): `+0x00` =
+`PACIA(doorBellRing, 0x2abe)` — the callback pointer is PAC-signed at the
+call site (`0x8f3f35c-0x8f3f368`) and is **never `bl`'d** (§12.1 stands: the
+MMIO doorbell is a compatibility export); `+0x08` slot; `+0x10` flag;
+`+0x14` size; `+0x18` host buffer; when flag && size ≥ 1 the ctor seeds
+each 0x40-byte control block in the host buffer with `+0x00 = (u64)flag,
++0x08 = +0x10 = 0` and calls the null-guarded global `[0xc3f8d68]` hook as
+`hook(block, 0x40)` — the same cache-clean hook recorded in §13.2.
+
+### 14.3 Registration ack and the required channels
+
+| step | VA | what |
+|---|---|---|
+| 14 | `0x8f3f3cc-0x8f3f4ac` | `write32(SCRATCH3, 0x08042006)`; poll `read32(SCRATCH3)` to 0, 1 ms sleep, 1000 max; timeout logs "No wake signal from rANE_SCRATCH3(0x%x) ANECPU" (`0x73d7802`); success `kernel_debug(0x61b0058, 5)` |
+| 15 | `0x8f3f4d0-0x8f3f844` | `channelNameToIndex` (`0x8f41748`) for **"SHAREDMALLOC"** → `[dev+0xe1f8]`, **"TERMINAL"** → `[dev+0xe1fc]`, **"BUF_T2H"** → `[dev+0xe204]`; a miss returns `0xE00002C2`, logs "No %s ipc channel found" (`0x73d783a`/`0x73d785b`/`0x73d787c`) and ANE_Init exits `0xE00002DA` — all three names must exist in the published table |
+
+So the scratch mailbox is a three-phase handshake: host publishes its table
+buffer's ANE address (SCRATCH0/1) → host requests with SCRATCH7 `0xF7FBDFF9`
+→ firmware acks SCRATCH7 with `0x08042006` → host copies the firmware's
+table → host writes SCRATCH3 `0x08042006` and the firmware **clears** it as
+the registration ack. SCRATCH7 is firmware→host, SCRATCH3 is host→firmware,
+both with the same reply word. The `[dev+0xe20c]`/`[dev+0xe214]`
+(IO_T2H / DATA_CHAIN_H2T) fields of the §13.3 dispatch switch are filled by
+later lookups on the same table.
+
+### 14.4 What this pins for the first hardware rung
+
+- A table read rung needs only the §11 read whitelist **plus two scratch
+  writes** (SCRATCH0/1 publish, SCRATCH7 request `0xF7FBDFF9`, SCRATCH3 ack
+  `0x08042006`) — no doorbell, no task, no IRQ-ack access. A nonzero SCRATCH0
+  read on our boot (before any publish) is the firmware-published count; if
+  the rung sees it, the walk is live on Linux and the channel names are
+  reachable.
+- The pending post-wake SCRATCH0..7 snapshot rung (§13.4) now has exact
+  expectations: `SCRATCH7 == 0x08042006` (observed 2026-11-04), SCRATCH0/1
+  either 0 or a stale address, SCRATCH3 untouched (never written by us),
+  SCRATCH6 == 1 (we write it).
+- What stays unpinned: the shmem doorbell word (`[dev+0x3b20] := 0x40`,
+  §12.2 — IOSurface shared-event path only), the control-block producer
+  arithmetic (§13.2), and the runtime channel indices — all firmware- or
+  runtime-side; a device read of the published table is the only way to see
+  them.
+
+Raw evidence: `analysis/h17-chanreg-trace.txt` (the full dump sequence with
+per-window VAs). Nothing in §14 has executed on a device.
