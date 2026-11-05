@@ -633,6 +633,7 @@ struct iommu_domain {
 	bool short_unmap;
 	bool dma_api;
 	bool alias_reserved;
+	u64 fail_iova;
 };
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
@@ -681,6 +682,8 @@ static inline int iommu_map(struct iommu_domain *d, u64 iova, u64 pa,
 {
 	(void)prot;
 	(void)gfp;
+	if (d->fail_iova && iova == d->fail_iova)
+		return -EIO;
 	if (d->n >= (int)ARRAY_SIZE(d->map))
 		return -ENOMEM;
 	d->map[d->n].iova = iova;

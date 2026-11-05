@@ -77,6 +77,7 @@ ane/h18/sim/sim_h18
 # ane/h17 userspace sim binary
 ane/h17/sim/sim_h17_wake
 ane/h17/sim/transaction_test
+ane/h17/sim/chanreg_layout_test
 
 # kernelcache index cache (regenerable from the retained kernelcache)
 receipts/**/scripts/kc-index.json

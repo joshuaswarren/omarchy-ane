@@ -18,6 +18,10 @@ DESCRIPTOR_ALLOCATION = 0x180
 VM_BASE = 0x10000000000
 VM_END = VM_BASE + 0x30000000000
 U32_MAX = (1 << 32) - 1
+DM_IOVA = VM_BASE + FW_BYTES
+IPC_IOVA = DM_IOVA + DM_BYTES
+IPC_MAPPED = 0x10000
+HEAP_IOVA = IPC_IOVA + IPC_MAPPED
 
 
 def uint(value, bits, name):
@@ -30,6 +34,17 @@ def round_page(size):
     uint(size, 64, "size")
     rounded = (size + PAGE - 1) & -PAGE
     return uint(rounded, 64, "rounded size")
+
+
+def validate_channel_layout(dm, ipc):
+    """c4c43d3: channel W-load + unchanged SCRATCH1 constrain both aliases."""
+    for region in (dm, ipc):
+        region.validate()
+        alias = region.iova & 0xFFFFFFFFF
+        if alias >= 1 << 32 or region.mapped_bytes > (1 << 32) - alias:
+            raise ValueError("channel mapping exceeds firmware low-32 CPU alias")
+    if dm.iova >> 32 != ipc.iova >> 32:
+        raise ValueError("DM/IPC prefixes break SCRATCH1 reply reconstruction")
 
 
 @dataclass(frozen=True)
@@ -106,6 +121,7 @@ def build_descriptor(inputs, firmware, ipc, dm, heap=None, *, offset=0):
     regions = [firmware, ipc, dm] + ([heap] if heap is not None else [])
     for region in regions:
         region.validate()
+    validate_channel_layout(dm, ipc)
     if len({r.name for r in regions}) != len(regions):
         raise ValueError("duplicate region names")
     ordered = sorted(regions, key=lambda r: r.iova)

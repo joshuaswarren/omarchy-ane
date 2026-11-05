@@ -34,7 +34,8 @@ NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-preload-bss neg-preload-boundary neg-preload-snapshot \
 	neg-preload-sysram neg-table-timeout neg-table-overrun neg-table-foreign \
 	neg-table-padding neg-table-envelope neg-table-alloc neg-table-dma-range \
-	neg-table-heap-alloc neg-table-scope neg-table-reservation
+	neg-table-heap-alloc neg-table-scope neg-table-reservation \
+	neg-table-alias-reservation neg-table-alias-collision neg-table-alias-map
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

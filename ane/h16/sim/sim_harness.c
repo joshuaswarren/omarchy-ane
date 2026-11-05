@@ -285,10 +285,10 @@ static void fw_check_descriptor(void)
 	struct ane_h16 *ane = platform_get_drvdata(&sim_pdev);
 	u8 expected[0x180] = {};
 	u64 first[6] = {
-		ANE_H17_DMA_BASE, ane->chanbuf[1].dma, 0x380000, 0xfc80000,
-		ane->chanbuf[2].dma, 0xf00000,
+		ANE_H17_DMA_BASE, ane->chanbuf[1].iova, 0x380000, 0xfc80000,
+		ane->chanbuf[2].iova, 0xf00000,
 	};
-	u64 last[3] = { 0xc441, ane->chanbuf[0].dma, 0x40000 };
+	u64 last[3] = { 0xc441, ane->chanbuf[0].iova, 0x40000 };
 	u32 marker = 0x40, flags = 4;
 	u64 published = ((u64)reg_rd(sim_soc.scratch0 + 4) << 32) |
 		reg_rd(sim_soc.scratch0);
@@ -299,8 +299,15 @@ static void fw_check_descriptor(void)
 	memcpy(expected + 0x68, &marker, sizeof(marker));
 	memcpy(expected + 0x12c, &flags, sizeof(flags));
 	fw.descriptor_valid = ane->chanbuf[0].cpu &&
-		published == ane->chanbuf[0].dma && sim_dma_wmbs == 1 &&
+		published == ANE_H17_DM_IOVA && sim_dma_wmbs == 1 &&
 		!memcmp(ane->chanbuf[0].cpu, expected, sizeof(expected));
+	/* Independent firmware constraint oracle: ldr-w of channel pointer,
+	 * and a low-word reply with SCRATCH1 left at the descriptor prefix.
+	 */
+	if (((ane->chanbuf[1].iova + 0x800) & 0xfffffffffull) !=
+	    (u64)(u32)(ane->chanbuf[1].iova + 0x800) ||
+	    (published >> 32) != (ane->chanbuf[1].iova >> 32))
+		fw.descriptor_valid = false;
 	fw.table_pending = fw.descriptor_valid;
 }
 
@@ -338,7 +345,7 @@ static void fw_read_hook(u64 pa)
 	if (pa == reg_pa(sim_soc.scratch0 + 28) && fw.table_pending &&
 	    fw.table_mode != 1) {
 		struct ane_h16 *ane = platform_get_drvdata(&sim_pdev);
-		u8 *table = (u8 *)ane->chanbuf[1].cpu + 0x100;
+		u8 *table = (u8 *)ane->chanbuf[1].cpu;
 		unsigned int i;
 
 		for (i = 0; i < 8; i++) {
@@ -348,15 +355,15 @@ static void fw_read_hook(u64 pa)
 			snprintf((char *)table + i * 0x100, 32, "fixture-%u", i);
 			memset(table + i * 0x100 + 0x50, 0xff, 8);
 		}
-		fw.table_address = ane->chanbuf[1].dma + 0x100;
+		fw.table_address = ane->chanbuf[1].iova;
 		if (fw.table_mode == 2)
-			fw.table_address = ane->chanbuf[1].dma + 0xc441 - 0x800 + 1;
+			fw.table_address = ane->chanbuf[1].iova + 0xc441 - 0x800 + 1;
 		else if (fw.table_mode == 3)
 			fw.table_address = TEXT_IOVA;
 		else if (fw.table_mode == 4)
-			fw.table_address = ane->chanbuf[1].dma + 0xc000;
+			fw.table_address = ane->chanbuf[1].iova + 0xc000;
 		reg_wr(sim_soc.scratch0, (u32)fw.table_address);
-		reg_wr(sim_soc.scratch0 + 4, fw.table_address >> 32);
+		/* Firmware updates only SCRATCH0: preserve the host's SCRATCH1. */
 		reg_wr(sim_soc.scratch0 + 28, ANE_H16_WAKE_ACK);
 		fw.table_pending = false;
 		return;
@@ -1457,7 +1464,7 @@ static void sc_h17_table(int mode)
 		expected_error = -EINVAL;
 		expected_allocs = 1;
 		reason = "verdict=REFUSED reason=table-input-envelope";
-	} else if (mode >= 6) {
+	} else if (mode >= 6 && mode <= 8) {
 		expected_error = mode == 7 ? -EINVAL : -ENOMEM;
 		expected_allocs = mode == 8 ? 3 : 2;
 		reason = "verdict=REFUSED reason=table-dma-allocation-or-range";
@@ -1465,6 +1472,15 @@ static void sc_h17_table(int mode)
 			sim_dma_bad_at = 2;
 		else
 			sim_dma_fail_at = mode == 8 ? 4 : 3;
+	} else if (mode == 9 || mode == 10) {
+		expected_error = mode == 9 ? -EBUSY : -EIO;
+		expected_allocs = 2;
+		reason = "verdict=REFUSED reason=table-dma-allocation-or-range";
+		if (mode == 9)
+			iommu_map(sim_dart, ANE_H17_DM_IOVA, 0xabcdef0000ull,
+				  SZ_16K, IOMMU_READ | IOMMU_WRITE, 0);
+		else
+			sim_dart->fail_iova = ANE_H17_DM_IOVA + SZ_16K;
 	}
 	ret = run_probe();
 	ane = platform_get_drvdata(&sim_pdev);
@@ -1497,6 +1513,16 @@ static void sc_h17_table(int mode)
 	    ev_access_count(true, reg_pa(sim_soc.irq_ack)) == 0,
 	    "no doorbell, IRQ status or IRQ ack access of any value");
 	chk(!sim_events_overflow, "bus event recorder did not overflow");
+	if (mode == 9)
+		chk(ane->chanbuf[0].mapped == 0 &&
+		    iommu_iova_to_phys(sim_dart, ANE_H17_DM_IOVA) == 0xabcdef0000ull,
+		    "foreign alias mapping is never overwritten or retired");
+	if (mode == 10)
+		chk(ane->chanbuf[0].mapped == SZ_16K &&
+		    iommu_iova_to_phys(sim_dart, ANE_H17_DM_IOVA) ==
+		    iommu_iova_to_phys(sim_dart, ane->chanbuf[0].dma) &&
+		    iommu_iova_to_phys(sim_dart, ANE_H17_DM_IOVA + SZ_16K) == 0,
+		    "failed mapping retains only its owned prefix and coherent backing");
 	if (mode < 5) {
 		chk(fw.descriptor_valid && sim_dma_wmbs == 1 &&
 		    ev_count(true, reg_pa(sim_soc.scratch0 + 28), ANE_H17_TABLE_REQUEST) == 1,
@@ -1507,12 +1533,25 @@ static void sc_h17_table(int mode)
 		    "preparation refusal never publishes a request");
 	}
 	if (mode == 0) {
+		unsigned int b;
+
+		for (b = 0; b < 3; b++) {
+			u64 off;
+
+			chk(ane->chanbuf[b].mapped == ane->chanbuf[b].size &&
+			    ane->chanbuf[b].dma != ane->chanbuf[b].iova,
+			    "firmware alias and DMA backing are separate, complete extents");
+			for (off = 0; off < ane->chanbuf[b].size; off += SZ_16K)
+				if (iommu_iova_to_phys(sim_dart, ane->chanbuf[b].iova + off) !=
+				    iommu_iova_to_phys(sim_dart, ane->chanbuf[b].dma + off))
+					chk(false, "each alias page must reference its owned DMA page");
+		}
 		chk(sim_log_count("H17 TABLE_COPY ") == 1 &&
 		    sim_log_count("H17 CHANNEL index=") == 8 &&
 		    sim_log_count("H17 TABLE_STOP before SCRATCH3") == 1,
 		    "one table copy, eight opaque entries, explicit pre-registration stop");
 		chk(sim_dma_rmbs == 1 &&
-		    !memcmp(ane->chan_table, (u8 *)ane->chanbuf[1].cpu + 0x100, 0x800),
+		    !memcmp(ane->chan_table, ane->chanbuf[1].cpu, 0x800),
 		    "exactly the validated owned IPC bytes are copied after read barrier");
 	} else {
 		chk(sim_dma_rmbs == 0 && sim_log_count("H17 TABLE_COPY ") == 0 &&
@@ -1530,7 +1569,7 @@ static void sc_neg_table_scope(void)
 	    "chanreg on non-H17 target refuses before hardware access");
 }
 
-static void sc_neg_table_reservation(void)
+static void sc_neg_table_reservation(bool channels_only)
 {
 	setup_common();
 	sim_soc = ane_t8140_soc;
@@ -1543,7 +1582,7 @@ static void sc_neg_table_reservation(void)
 	optin = "t8140";
 	stage = "boot";
 	chanreg = true;
-	sim_resv_length = 0x36c000; /* covers segments, NOT advertised arena */
+	sim_resv_length = channels_only ? 0x380000 : 0x36c000;
 	chk(run_probe() == -EINVAL && sim_module_refs == 0 &&
 	    sim_dma_outstanding == 0 && sim_dma_allocs == 0 &&
 	    ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
@@ -1681,7 +1720,13 @@ int main(int argc, char **argv)
 	else if (!strcmp(sc, "neg-table-scope"))
 		sc_neg_table_scope();
 	else if (!strcmp(sc, "neg-table-reservation"))
-		sc_neg_table_reservation();
+		sc_neg_table_reservation(false);
+	else if (!strcmp(sc, "neg-table-alias-reservation"))
+		sc_neg_table_reservation(true);
+	else if (!strcmp(sc, "neg-table-alias-collision"))
+		sc_h17_table(9);
+	else if (!strcmp(sc, "neg-table-alias-map"))
+		sc_h17_table(10);
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
 	else if (!strcmp(sc, "pos-four-ps"))

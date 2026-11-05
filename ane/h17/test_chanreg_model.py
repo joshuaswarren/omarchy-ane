@@ -99,6 +99,15 @@ class DescriptorTests(unittest.TestCase):
             with self.subTest(key=key, region=region), self.assertRaises(ValueError):
                 self.build(**{key: region})
 
+    def test_channel_width_and_reply_prefix_constraints(self):
+        for dm, ipc in (
+            (0x3ffffbc0000, 0x3ffffbb0000),  # recorded rung-1 failure
+            (self.dm.iova, VM_BASE + 0xffffc000),  # mapped IPC extent crosses 4 GiB
+            (VM_BASE + 0x100000000 + 0x400000, self.ipc.iova),  # mixed reply prefix
+        ):
+            with self.subTest(dm=dm, ipc=ipc), self.assertRaises(ValueError):
+                self.build(dm=replace(self.dm, iova=dm), ipc=replace(self.ipc, iova=ipc))
+
     def test_complete_reply_range(self):
         self.assertEqual(table_offset(self.inputs, self.ipc, self.ipc.iova), 0)
         last = self.ipc.iova + self.ipc.size - 0x800

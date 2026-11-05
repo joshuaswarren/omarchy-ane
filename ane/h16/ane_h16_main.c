@@ -206,6 +206,8 @@ struct ane_h17_chanbuf {
 	void *cpu;
 	dma_addr_t dma;
 	size_t size;
+	u64 iova;
+	u64 mapped;
 };
 
 struct ane_h16 {
@@ -1130,6 +1132,22 @@ static int ane_h16_stage_domain(struct ane_h16 *ane)
 			break;
 		}
 	}
+	if (!ret && chanreg) {
+		bool covered = false;
+
+		list_for_each_entry(region, &regions, list) {
+			if (region->type == IOMMU_RESV_RESERVED &&
+			    ane_h17_full_range(region->start, region->length,
+					       ANE_H17_DM_IOVA, ANE_H17_CHAN_ALIAS_BYTES)) {
+				covered = true;
+				break;
+			}
+		}
+		if (!covered) {
+			dev_err(ane->dev, "channel alias IOVAs not reserved; update manual overlay before reboot\n");
+			ret = -EINVAL;
+		}
+	}
 	iommu_put_resv_regions(ane->dev, &regions);
 	return ret;
 }
@@ -1197,11 +1215,25 @@ static bool ane_h17_overlap(u64 a, u64 asize, u64 b, u64 bsize)
 static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
 				 size_t bytes)
 {
-	struct ane_h17_chanbuf *b = &ane->chanbuf[index];
+	const u64 aliases[] = { ANE_H17_DM_IOVA, ANE_H17_IPC_IOVA, ANE_H17_HEAP_IOVA };
+	struct ane_h17_chanbuf *b;
 	u64 off;
 	unsigned int i;
+	int ret;
+
+	/* This path runs only after wake: partial aliases/backing are retained
+	 * on every refusal, like the existing staging mappings. Never retry.
+	 */
+	if (!ane->fw_touched || index >= ARRAY_SIZE(aliases))
+		return -EINVAL;
+	b = &ane->chanbuf[index];
+	if (b->cpu || b->mapped)
+		return -EBUSY;
+	b->iova = aliases[index];
 
 	b->size = ALIGN(bytes, SZ_16K);
+	if (!ane_h17_channel_range(b->iova, b->size))
+		return -EINVAL;
 	b->cpu = dma_alloc_coherent(ane->dev, b->size, &b->dma, GFP_KERNEL);
 	if (!b->cpu)
 		return -ENOMEM;
@@ -1216,6 +1248,9 @@ static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
 		return -EINVAL;
 	if (ane_h17_overlap(b->dma, b->size, ane->stage_dma, ane->stage_size))
 		return -EBUSY;
+	if (ane_h17_overlap(b->dma, b->size, ANE_H17_DM_IOVA,
+			    ANE_H17_CHAN_ALIAS_BYTES))
+		return -EBUSY;
 	for (i = 0; i < 2; i++)
 		if (ane_h17_overlap(b->dma, b->size,
 				    ane->segs[i].iova, ane->stage_mapped[i]))
@@ -1229,7 +1264,18 @@ static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
 
 		if (!pa || !IS_ALIGNED(pa, SZ_16K))
 			return -EFAULT;
+		if (iommu_iova_to_phys(ane->domain, b->iova + off))
+			return -EBUSY;
+		ret = iommu_map(ane->domain, b->iova + off, pa, SZ_16K,
+				IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+		if (ret)
+			return ret;
+		b->mapped += SZ_16K;
+		if (iommu_iova_to_phys(ane->domain, b->iova + off) != pa)
+			return -EFAULT;
 	}
+	dev_info(ane->dev, "H17 TABLE_BACKING index=%u dma=%#llx alias=%#llx mapped=%#llx\n",
+		 index, (u64)b->dma, b->iova, b->mapped);
 	return 0;
 }
 
@@ -1279,19 +1325,23 @@ static int ane_h17_discover_table(struct ane_h16 *ane)
 			return ret;
 		}
 	}
+	if (!ane_h17_channel_layout(dm->iova, dm->size, ipc->iova, ipc->size)) {
+		ane_h16_result(ane, 3, "REFUSED", "table-address-layout");
+		return -EINVAL;
+	}
 	ane_h17_encode_descriptor(dm->cpu, ane->segs[0].iova,
-				  dm->dma, ipc->dma, heap->dma);
+				  dm->iova, ipc->iova, heap->iova);
 	sha256(dm->cpu, ANE_H17_DESC_BYTES, digest);
 	dev_info(ane->dev,
 		 "H17 TABLE_PREPARE dm=%#llx ipc=%#llx ipc_bytes=0xc441 heap=%#llx descriptor_bytes=0x180 sha256=%*phN\n",
-		 (u64)dm->dma, (u64)ipc->dma, (u64)heap->dma,
+		 dm->iova, ipc->iova, heap->iova,
 		 SHA256_DIGEST_SIZE, digest);
-	/* Publish only fully prepared, owned coherent memory. No fixed alias
-	 * is invented here: returned DMA handles must pass the aperture checks.
+	/* Publish only completely mapped aliases of owned coherent memory.
+	 * stage_domain checked their DMA-allocator reservations before staging.
 	 */
 	dma_wmb();
-	ane_h16_wr32(ane, s->scratch0, (u32)dm->dma);
-	ane_h16_wr32(ane, s->scratch0 + 4, (u64)dm->dma >> 32);
+	ane_h16_wr32(ane, s->scratch0, (u32)dm->iova);
+	ane_h16_wr32(ane, s->scratch0 + 4, dm->iova >> 32);
 	wmb();
 	ane_h16_wr32(ane, s->scratch0 + 28, ANE_H17_TABLE_REQUEST);
 	deadline = jiffies + msecs_to_jiffies(1000);
@@ -1304,13 +1354,13 @@ static int ane_h17_discover_table(struct ane_h16 *ane)
 	}
 	address = ane_h16_rd32(ane, s->scratch0 + 4);
 	address = (address << 32) | ane_h16_rd32(ane, s->scratch0);
-	if (!ane_h17_full_range(ipc->dma, ANE_H17_IPC_BYTES,
+	if (!ane_h17_full_range(ipc->iova, ANE_H17_IPC_BYTES,
 				 address, ANE_H17_TABLE_BYTES)) {
 		dev_err(ane->dev, "H17 TABLE refused reply address=%#llx\n", address);
 		ane_h16_result(ane, 3, "REFUSED", "table-reply-outside-ipc");
 		return -EINVAL;
 	}
-	offset = address - ipc->dma;
+	offset = address - ipc->iova;
 	dma_rmb();
 	memcpy(ane->chan_table, (u8 *)ipc->cpu + offset, ANE_H17_TABLE_BYTES);
 	sha256(ane->chan_table, ANE_H17_TABLE_BYTES, digest);

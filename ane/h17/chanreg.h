@@ -15,6 +15,17 @@
 #define ANE_H17_DMA_BASE 0x10000000000ull
 #define ANE_H17_DMA_END 0x40000000000ull
 
+/* Host-owned alias design, not Apple fixed addresses. c4c43d3 traces the
+ * firmware's ldr-w channel pointer and unchanged SCRATCH1 reply prefix.
+ * All aliases fit in the same low-32 CPU-alias window, after FWIM.
+ * The manual overlay MUST reserve this IOVA range before DMA allocation.
+ */
+#define ANE_H17_DM_IOVA (ANE_H17_DMA_BASE + ANE_H17_FW_BYTES)
+#define ANE_H17_IPC_MAPPED 0x10000u
+#define ANE_H17_IPC_IOVA (ANE_H17_DM_IOVA + ANE_H17_DM_BYTES)
+#define ANE_H17_HEAP_IOVA (ANE_H17_IPC_IOVA + ANE_H17_IPC_MAPPED)
+#define ANE_H17_CHAN_ALIAS_BYTES (ANE_H17_DM_BYTES + ANE_H17_IPC_MAPPED + ANE_H17_HEAP_BYTES)
+
 static inline void ane_h17_put_le(u8 *p, u64 value, unsigned int bytes)
 {
 	unsigned int i;
@@ -37,6 +48,23 @@ static inline bool ane_h17_full_range(u64 base, u64 size, u64 addr, u64 len)
 {
 	return size && len && size <= ~0ull - base && addr >= base &&
 		addr - base <= size && len <= size - (addr - base);
+}
+
+static inline bool ane_h17_channel_range(u64 addr, u64 bytes)
+{
+	u64 alias = addr & 0xfffffffffull;
+
+	return !(addr & 0x3fff) && !(bytes & 0x3fff) &&
+		ane_h17_full_range(ANE_H17_DMA_BASE,
+				  ANE_H17_DMA_END - ANE_H17_DMA_BASE, addr, bytes) &&
+		alias < 0x100000000ull && bytes <= 0x100000000ull - alias;
+}
+
+static inline bool ane_h17_channel_layout(u64 dm, u64 dm_bytes,
+					u64 ipc, u64 ipc_bytes)
+{
+	return ane_h17_channel_range(dm, dm_bytes) &&
+		ane_h17_channel_range(ipc, ipc_bytes) && (dm >> 32) == (ipc >> 32);
 }
 
 static inline void ane_h17_encode_descriptor(u8 *p, u64 firmware, u64 dm,

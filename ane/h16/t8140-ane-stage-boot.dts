@@ -33,7 +33,7 @@
 			      <0x3 0x00724000 0x0 0x4000>;
 			power-domains = <&ps_ane_sys &ps_ane_sub0 &ps_ane_sub1 &ps_ane_sub2>;
 			apple,ane-type = <0x200>;
-			memory-region = <&h17_fw_alias_iova>;
+			memory-region = <&h17_fw_alias_iova &h17_chan_alias_iova>;
 			status = "okay";
 		};
 	};
@@ -68,6 +68,13 @@
 		__overlay__ {
 			h17_fw_alias_iova: ane-fw-alias-iova {
 				iommu-addresses = <&h17_ane 0x100 0x0 0x0 0x380000>;
+			};
+			/* Host design (c4c43d3): DM 0x40000, IPC 0x10000,
+			 * HEAP 0xf00000, directly after the FWIM alias.
+			 * IOVA reservation only; no physical RAM ownership claim.
+			 */
+			h17_chan_alias_iova: ane-chan-alias-iova {
+				iommu-addresses = <&h17_ane 0x100 0x380000 0x0 0xf50000>;
 			};
 		};
 	};

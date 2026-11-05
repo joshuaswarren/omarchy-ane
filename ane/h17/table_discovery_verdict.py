@@ -10,6 +10,7 @@ import sys
 from chanreg_model import (
     VM_BASE, VM_END, FW_BYTES, DM_BYTES, PAGE, round_page,
     BootInputs, Region, build_descriptor,
+    DM_IOVA, IPC_IOVA, IPC_MAPPED, HEAP_IOVA,
 )
 
 
@@ -37,6 +38,28 @@ def judge(text):
                    r" ipc_bytes=0xc441 heap=" + address +
                    r" descriptor_bytes=0x180 sha256=" + digest)
         dm, ipc, heap = (int(v, 16) for v in prep.groups()[:3])
+        if (dm, ipc, heap) != (DM_IOVA, IPC_IOVA, HEAP_IOVA):
+            raise ValueError("preparation does not use the reserved firmware-compatible aliases")
+        backings = [line for line in lines if "H17 TABLE_BACKING " in line]
+        if len(backings) != 3:
+            raise ValueError("expected three complete alias/backing records")
+        sources = []
+        for index, (line, alias, size) in enumerate(zip(
+                backings, (dm, ipc, heap), (DM_BYTES, IPC_MAPPED, 0xF00000))):
+            record = re.search(rf"H17 TABLE_BACKING index={index} dma=" + address +
+                               " alias=" + address + " mapped=" + address + r"$", line)
+            if record is None:
+                raise ValueError("malformed or out-of-order backing record")
+            source, target, mapped = (int(value, 16) for value in record.groups())
+            if target != alias or mapped != size or source % PAGE or not VM_BASE <= source <= VM_END - size:
+                raise ValueError("invalid alias/backing geometry")
+            sources.append((source, size))
+        alias_ranges = [(VM_BASE, FW_BYTES), (dm, DM_BYTES), (ipc, IPC_MAPPED), (heap, 0xF00000)]
+        if any(a < b + m and b < a + n for a, n in sources for b, m in alias_ranges):
+            raise ValueError("backing allocation overlaps reserved alias space")
+        ordered_sources = sorted(sources)
+        if any(a + n > b for (a, n), (b, _) in zip(ordered_sources, ordered_sources[1:])):
+            raise ValueError("backing allocations overlap")
         regions = [(VM_BASE, FW_BYTES), (dm, DM_BYTES),
                    (ipc, round_page(0xC441)), (heap, 0xF00000)]
         for base, size in regions:
@@ -69,7 +92,8 @@ def judge(text):
             if not re.search(pattern, line):
                 raise ValueError("malformed, duplicate, or out-of-order channel observation")
         one("H17 TABLE_STOP ", r"H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task")
-        ordered_markers = [prep[0], copied[0], *[re.search(r"H17 CHANNEL .*$", line)[0]
+        ordered_markers = [*[re.search(r"H17 TABLE_BACKING .*$", line)[0] for line in backings],
+                           prep[0], copied[0], *[re.search(r"H17 CHANNEL .*$", line)[0]
                                                for line in channels],
                            "H17 TABLE_STOP ", "ane_h16 RESULT "]
         positions = [next(i for i, line in enumerate(lines) if marker in line)
@@ -79,7 +103,7 @@ def judge(text):
         result.update(rung="PASS", reason="owned-ipc-table-copied-registration-skipped",
                       table_address=hex(table_address), table_bytes=0x800,
                       channel_count=8, table_sha256=copied[2],
-                      descriptor_sha256=prep[4])
+                       descriptor_sha256=prep[4])
     except ValueError as exc:
         result["reason"] = str(exc)
     return result
