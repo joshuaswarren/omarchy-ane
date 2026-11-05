@@ -13,7 +13,8 @@ The empty output directory was preserved as
 
 ## Attempt 2 — private bindgen built; fixture tests failed
 
-`build-diagnostic.sh` retains the script launched for this attempt.
+Commit `f969625` retains the script launched for this attempt as
+`build-diagnostic.sh` (the file has subsequently been hardened).
 It provisions private rustup/proxy executables, verifies the actual source
 diff against the reviewed diagnostic patch and checks recipe-helper hashes
 before executing them. It requires the exact distinct release
@@ -58,3 +59,28 @@ Rust 1.99.0's bindgen/formatter role. Final compiler/tool versions, source and
 patch digests, config changes, artifact hashes and deployment review remain
 required before any hardware operation. That review was not build-result
 approval, and no deployment is authorized by it.
+
+### Attempt-3 setup/configuration milestone (not build completion)
+
+The following artifacts were inspected for prerequisite/configuration
+validation while compilation runs; they are not completion markers:
+
+- `attempt3-build-identity.txt`: LLVM/LLD 18.1.8, kernel Rust 1.85.0,
+  bindgen-build Rust 1.99.0, rustfmt 1.10.0, bindgen 0.73.2, source and
+  recipe-helper hashes. The patched source SHA-256 is
+  `cc6fc81ceebdd51293c6903c03dbc0a8227a740c915d03e3caeebdbb0f8ec5c6`.
+- `attempt3-bindgen-result.json`: private tool built and fixture-tested;
+  binary SHA-256
+  `63e47fbaf206a27899a9e564650902ca33d81d3a4839438b2d4ba50612cfeaf9`.
+- Diagnostic release resolves to `7.2.11-14-1-h17pub-ARCH`.
+- Resolved `.config` is **byte-identical** to
+  `/lib/modules/7.2.11-14-1-ARCH/build/.config`: both SHA-256
+  `127a9570ea7c294621566e63b628bb4759ad71729b0148b2b8ca90d527dba903`.
+  `config-vs-installed.diff` is empty. No Rust or platform capability
+  was dropped to obtain this configuration. The distinct release comes
+  from the output directory's localversion file, not a config change.
+
+Source diff versus `HEAD` was rechecked against the reviewed patch at this
+milestone; staged and non-ignored untracked file lists were empty. This
+does not substitute for the final source/artifact identity check after a
+successful full build. Nothing has been installed or armed.
