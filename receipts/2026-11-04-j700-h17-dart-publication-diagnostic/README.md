@@ -99,3 +99,36 @@ Independent review session `ses_e562a6492ffes4dV3eZpRJ3iZt` identified the
 shared-root presence and deferred-flag consistency issues; both were fixed
 with regressions and re-review returned **APPROVE**. No device evidence was
 created by parser tests.
+
+## Standalone read-only identity preflight
+
+`ane/h17/diagnostic_preflight.py` is a future-run identity check, **not yet
+wired into the hardware runner**. It cannot arm, load/unload modules, submit
+work, or create pending markers. There is no approved identity manifest yet;
+one requires a completed full build, reviewed artifacts and a matching ANE
+module. Do not fill those values with guesses or fixture values.
+
+The CLI requires a root-owned regular manifest, opened without following
+symlinks and checked by file descriptor; group/world-writable manifests are
+refused. It requires the reviewed source/patch, exact diagnostic release,
+the runtime GNU build ID from `/sys/kernel/notes`, enabled diagnostic
+parameter, J700/T8140 identity, a boot other than the failed/pinned rung-1
+boot, no loaded `ane`/`ane_*` module, matching module vermagic release, and
+SHA-256 matches for the installed kernel image, ANE module and firmware.
+It reads metadata/files only, not device MMIO. `MATCHED` retains
+`arms_rung: false` and does not replace the one-attempt marker, full DT/PM
+checks, clean/pushed checkout or hardware runner's other gates. It is not
+a secure-boot attestation or permission to use a result read after failure.
+Caller-supplied module paths and later loading must be kept stable by a
+future reviewed runner; this standalone check does not prevent substitution
+between a successful check and a later command. Build-ID and manifest trust
+are explicit assumptions; the checker cannot prove its own running code.
+
+Twelve offline fixture/CLI tests pass, included in `sim-all`. Tests cover
+failed boot, runtime/build/parameter/board/module mismatches, each artifact
+hash, malformed/truncated/duplicate notes, manifest symlinks, ownership and
+permissions, malformed JSON and modinfo failure without root privileges.
+Review session `ses_e56212d6dffep2GOlpRXOxkFpH` returned **APPROVED WITH
+NITS**, no blockers; the requested CLI trust-boundary tests were added and
+the release-mismatch test was unmasked. No live preflight, approved manifest,
+boot change or hardware run was performed to test this checker.

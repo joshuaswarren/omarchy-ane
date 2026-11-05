@@ -38,7 +38,10 @@ sim-negative: sim/sim_h17_wake
 sim-mutations:
 	SIM_CC='$(SIM_CC)' SIM_CFLAGS='$(SIM_CFLAGS)' python3 sim/test_mutations.py
 
-sim-all: sim-test sim-negative sim-mutations planner-test order-test chanreg-model-test dart-publication-test
+sim-all: sim-test sim-negative sim-mutations planner-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test
+
+diagnostic-preflight-test:
+	python3 -m unittest -v test_diagnostic_preflight.py
 
 dart-publication-test:
 	python3 -m unittest -v test_dart_publication_observations.py
@@ -56,5 +59,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f sim/sim_h17_wake sim/transaction_test sim/bringup_order_test
 
-.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test order-test chanreg-model-test dart-publication-test clean
+.PHONY: all sim-test sim-negative sim-mutations sim-all planner-test script-test order-test chanreg-model-test dart-publication-test diagnostic-preflight-test clean
 endif
