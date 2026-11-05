@@ -177,3 +177,16 @@ the ANE node disabled, and makes it a plausible rollback artifact. It does
 **not** prove the machine booted it, prove the Limine default/Apple startup
 picker can select it, or verify a restore procedure from a failed boot. The
 rollback gate therefore remains open; no reboot or restoration was attempted.
+
+## Firmware and partition route audit
+
+Read-only `efibootmgr -v` shows a single NVRAM `Boot0000` entry for the NVMe
+device, not separate Limine/macOS entries. The EFI contains Limine and its
+fallback executable, one current Omarchy UKI plus two historical Limine
+snapshot UKIs, and m1n1's `boot.bin`/`boot.bin.old`. `lsblk` confirms APFS
+system and RecoveryOS containers exist alongside the Omarchy partitions.
+This makes Apple's startup options/macOS or RecoveryOS a plausible external
+recovery route, but Linux metadata does not establish that either can be
+selected and booted on this current machine, nor that it can mount and
+restore this EFI payload. No firmware variables, boot files, or partition
+contents were changed. Recovery still needs a user-observed, tested path.
