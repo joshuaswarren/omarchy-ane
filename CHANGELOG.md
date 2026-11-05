@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane_h16`: the boot-ADT lookup required 8 bytes of the 7 byte `arm-io` name property, so it could never match a real ADT; it now accepts 7. This is derived from the source and from the later ADT scan, not run on a T8132. The sim now builds the name at its real length. The T8132 test boot's "no ane node or segment-ranges" line may have had this cause; a `stage=dt` re-run decides (omarchy-ane#320).
+
 ## 0.5.10 (2026-11-05)
 
 - Preserve DART fault outcomes and retain scratch mappings when completion is

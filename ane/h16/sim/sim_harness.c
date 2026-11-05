@@ -335,7 +335,7 @@ static u8 *build_adt(size_t *out_len)
 	/* arm-io: one prop, one child */
 	put32(b, &off, 1);
 	put32(b, &off, 1);
-	put_prop(b, &off, "name", "arm-io\0", 8);
+	put_prop(b, &off, "name", "arm-io", 7);
 	/* ane0: three props, no children */
 	put32(b, &off, 3);
 	put32(b, &off, 0);
