@@ -158,6 +158,18 @@ class TablePreflightTests(unittest.TestCase):
         with patch.object(preflight.os, "fstat", side_effect=parent_stats), self.assertRaises(OSError):
             preflight.load_manifest(link)
 
+    def test_trusted_walk_rejects_symlink_and_writable_parents(self):
+        parent = self.root / "trusted-parent"
+        parent.mkdir()
+        (parent / "real").mkdir()
+        (parent / "linked").symlink_to(parent / "real", target_is_directory=True)
+        safe_dir = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        with patch.object(preflight.os, "fstat", return_value=safe_dir), self.assertRaises(OSError):
+            preflight._open_parent(parent / "linked" / "manifest.json")
+        writable_dir = SimpleNamespace(st_mode=stat.S_IFDIR | 0o777, st_uid=0)
+        with patch.object(preflight.os, "fstat", return_value=writable_dir), self.assertRaises(ValueError):
+            preflight._trusted_dir(Path("/var/lib/omarchy-ane"))
+
     def test_attempt_claim_atomically_consumes_manifest_bound_marker(self):
         base = self.root / "var/lib/omarchy-ane"
         attempts = base / "h17-table-attempts"
@@ -210,6 +222,10 @@ class TablePreflightTests(unittest.TestCase):
                                         self.expected, root=self.root)
         self.assertTrue((base / "h17-table-attempts" / self.boot_id).is_dir())
         self.assertTrue(marker.exists())
+        with patch.object(preflight.os, "fstat", side_effect=trusted_fstat):
+            with self.assertRaises(FileExistsError):
+                preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
+                                        self.expected, root=self.root)
 
 
 if __name__ == "__main__":
