@@ -74,3 +74,24 @@ Do not proceed to installation, boot selection, reboot, or module loading
 until those gates are resolved and separately authorized. The next hardware
 attempt, if later approved, remains the pre-registration table-discovery
 rung only.
+
+## Independent deployment review
+
+An independent review of the implementation, plan, and boot-state evidence
+returned **REQUEST CHANGES / DEPLOYMENT BLOCKED**. Findings:
+
+1. Recovery is not demonstrated: neither the two historical snapshot UKIs
+   nor `boot.bin.old` is verified as a compatible, selectable, recoverable
+   boot path.
+2. No complete candidate deployment bundle has been built and identified;
+   module compilation plus offline DTB merge does not establish which DTB
+   the live boot chain selects.
+3. The fail-closed live preflight is not implemented/verified for reservation
+   coverage, artifact and firmware identity, and one-attempt controls.
+4. Offline simulation does not establish live DART reservation behavior or
+   firmware acceptance.
+
+Decision: do not install artifacts, alter boot selection, reboot into a
+candidate, load the module, or arm the runner. Close those findings and
+obtain separate authorization for the specific one-shot rung first. Review
+was source/evidence review only; no device was accessed.
