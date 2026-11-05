@@ -84,3 +84,25 @@ Source diff versus `HEAD` was rechecked against the reviewed patch at this
 milestone; staged and non-ignored untracked file lists were empty. This
 does not substitute for the final source/artifact identity check after a
 successful full build. Nothing has been installed or armed.
+
+### Compiler-diagnostics audit during attempt 3
+
+The available log contains three `rustfmt` errors at binding generation;
+each is explicitly followed by `Failed to run rustfmt: Internal rustfmt
+error (non-fatal, continuing)`. It subsequently records successful Rust
+binding, uapi and kernel object compilation. These are not successful
+Image/module link results, nor a claim that later compilation cannot fail.
+
+Cause pinned to source: the kernel Makefile at
+`4fdd0fc5c931ef9f14474942b37c3d451e97fc04:551` assigns
+`RUSTFMT = rustfmt`, overriding the environment-only formatter selection.
+Bindgen's formatter path selection reads the resulting `RUSTFMT` value;
+the private Cargo proxy then selects Rust 1.85.0, which lacks rustfmt.
+The actual 1.99.0 formatter exists and was used successfully in tool tests.
+
+The future-launch `build-diagnostic.sh` now passes `RUSTFMT` on the make
+command line, where it wins over that assignment. The exact running
+attempt-3 script remains unchanged. No parallel make or in-place source/
+toolchain modification was performed to fix an active compilation. This
+diagnostic and any formatting cleanup must remain in the final build
+receipt; do not describe attempt 3 as warning-free.

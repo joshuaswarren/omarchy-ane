@@ -54,7 +54,7 @@ export RUSTUP_TOOLCHAIN=1.85.0
 chmod u+x "$kit/bindgen-kernel.py"
 _make() {
   nice -n 10 make -C "$src" LLVM=/usr/lib/llvm18/bin/ \
-    BINDGEN="$kit/bindgen-kernel.py" LOCALVERSION= "$@"
+    BINDGEN="$kit/bindgen-kernel.py" RUSTFMT="$RUSTFMT" LOCALVERSION= "$@"
 }
 cd "$src"
 source "$kit/configure.sh"
