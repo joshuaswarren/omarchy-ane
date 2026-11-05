@@ -91,7 +91,66 @@ Runner verdict (fail-closed, recorded BEFORE analysis):
   directory has been preserved as
   `/var/tmp/opencode/h17-table-0855c23b-dce5-47b0-83c5-a19baef2beef-gate-refusal-1`.
 
-## What this changes for the next rung (offline design) [addendum, same boot]
+## Arithmetic correction and refined dart-source facts [addendum 2, same boot]
+
+Correction to addendum 1: the faulting DVA `0x3ffffbb0800` does **not**
+map to TTBR index 3 under the driver's 3-level arithmetic. With
+`pgsize = 16 KiB` (`pgshift = 14`) and `2048`-entry tables (`bits = 11`),
+the published-root TTBR-level index is `DVA >> 36 = 63`, root slot 2047,
+leaf 1772. The dart's `apple,dma-range` `[0x10000000000, +0x30000000000)`
+spans index values `[16, 64)` — 48 potential top-level indices — while the
+driver's `DART_MAX_TTBR = 4` (`apple-dart.c:55`) caps everything it
+snapshots/publishes at indexes 0..3 (`locked_ttbr[sid][DART_MAX_TTBR]`,
+`:318`). The publish/check paths pre-exact `if (idx >= DART_MAX_TTBR)
+continue` for out-of-range indices (`:1574`, `:1594`), and
+`apple_dart_fw_invalidate`'s locked_window clip
+(`base = dma_min + dma_offset` aligned down to `2^36`) covers **only the
+idx-16 segment** `[0x10000000000, 0x11000000000)` — so neither
+publication nor invalidation machinery demonstrably reaches idx≥17 DVA
+territory unless an unproven high-bit aliasing exists.
+
+Additional source facts read this session:
+
+- The driver decides 3- vs 4-level **per stream at runtime**
+  (`four = readl(TCR(sid)) & hw->tcr_4level`, `:1592-1593` in the check
+  path and `:1205` in invalidation) — the attach-time snapshot loop only
+  runs when `pgtbl_cfg.apple_dart_cfg.n_levels == 3` (`:1888`); a 4-level
+  stream attach **silently skips** the locked-root snapshot instead of
+  erroring (the -EINVAL guard at `:823-828` lives inside
+  `apple_dart_hw_map_locked_ttbr`, which is only called from that skipped
+  block and for `idx < n_ttbrs`).
+- There is an intentional unlock op for t8110-v2 hardware
+  (`apple_dart_t8110_v2_unlock`, `:1307-1318`, invoked from the remap
+  config path at `:1399`) — the sanctioned mechanism if Linux ever wants
+  to own these locked streams outright.
+
+Refined, unresolved hypotheses for rung 2 (H1 > H2 > H3; all testable):
+
+1. **4-level TCR on the ANE streams.** Attach skipped the snapshot path,
+   Linux's io-pgtable root is a fresh Linux-owned table the locked
+   hardware never consults, so *every* Linux map is invisible in hardware.
+   The rung's facts survive intact under H1 *only if the firmware never
+   made a DART DMA read at all before the reply store* — i.e. the reply
+   write is the FIRST DART access, and the descriptor fetch (log-silent)
+   never touched the locked walk. Consistent because nothing logged a
+   read fault, not because one can't lurk.
+2. **3-level multi-TTBR aliasing semantics we have not derived**
+   (hardware root selection for idx≥17 differs from the driver's
+   `addr >> 36` publication).
+3. **Negative-walk caching by the dart TLB in an
+   invalidation-clip-excluded region** (single observation; weakest).
+
+Rung-2 candidates unchanged in intent but now scoped correctly: any
+experiment must either (a) be a read-only diagnostic of the locked streams
+(these dart registers belong to `apple-dart`, not our module; touching
+them via ane_h16 would be new device-side surface), or (b) reconfigure
+through the driver's own documented mechanisms (unlock path in the aurora
+kernel, or gooed bootloader-side reservation), or (c) confine DVAs into
+the proven idx-16 window via the overlay's `apple,dma-range` — which
+addendum-2 now shows is NOT safe as a standalone knob because shrinking
+the range also shrinks `n_ttbrs` and keeps the snapshot anchored at
+TTBR[0], whose live table the hardware may not consult.
+
 
 Driver-source facts read this session (aurora `drivers/iommu/apple-dart.c`,
 all line numbers from that working tree; static reads — no device access):
