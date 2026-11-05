@@ -157,3 +157,14 @@ blocked pending analysis and a new reviewed plan.
 
 Independent review: pending. Deployment authorization: not granted.
 Hardware run: not performed.
+
+## Recovery gate update (2026-11-05, user-reported)
+
+The user reports a successful macOS/RecoveryOS boot, EFI mount, and matching
+`m1n1/boot.bin.old` SHA-256 (`524e7236d58d0e7f6a75495752be0f6879ab78fb93af6dba26b3c1a69b3de067`).
+This clears the recovery-access check as reported, but does not itself
+authorize deployment or a hardware rung. Independent review of the complete
+alias implementation/deployment bundle and explicit authorization for the
+specific table-discovery rung remain required. The connected Linux session
+still reports the original failed boot ID with `ane_h16` loaded; no fresh
+boot or hardware run is evidenced by this checkout.

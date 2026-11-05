@@ -190,3 +190,20 @@ recovery route, but Linux metadata does not establish that either can be
 selected and booted on this current machine, nor that it can mount and
 restore this EFI payload. No firmware variables, boot files, or partition
 contents were changed. Recovery still needs a user-observed, tested path.
+
+## Recovery check update (user-reported)
+
+The user reports that macOS/RecoveryOS booted, EFI mounted, and
+`m1n1/boot.bin.old` matched the expected SHA-256
+`524e7236d58d0e7f6a75495752be0f6879ab78fb93af6dba26b3c1a69b3de067`.
+This satisfies the physical recovery-path check as reported; the hash was
+not independently captured by this Linux session. A subsequent read-only
+check of the connected Linux environment still returned boot ID
+`0855c23b-dce5-47b0-83c5-a19baef2beef` with `ane_h16` loaded. Therefore no
+fresh Linux boot or H17 table rung has occurred here. Do not treat the
+recovery check as authorization to deploy or run the rung.
+
+Remaining gates: independent review of the complete alias implementation
+and deployment bundle, and separate explicit authorization for deployment
+and the one-shot pre-registration table-discovery rung. No system files,
+boot variables, module state, or pending marker were changed for this update.
