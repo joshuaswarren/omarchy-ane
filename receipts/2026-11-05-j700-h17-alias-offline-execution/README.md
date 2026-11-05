@@ -157,3 +157,23 @@ live runtime proof. The candidate bundle and strengthened runner address
 preparation and identity checks, not authorization or hardware qualification.
 Do not install or reboot until a recovery method is established and reviewed
 and the specific fresh-boot rung is separately authorized.
+
+## Read-only `boot.bin.old` payload comparison
+
+Parsed the concatenated m1n1 payloads offline (no boot file was changed):
+
+- `boot.bin.old` contains the same m1n1 image, all 115 DTBs, and the same
+  U-Boot gzip stream as the current and candidate payloads. Across the 115
+  DTBs, exactly one differs: `t8140-j700.dtb`.
+- Its J700 DTB SHA-256 is
+  `4188b804153b548c95a22f5d7da8868456660e14f6a0c98af7b427c6f381db1a`;
+  it has the ANE node disabled and no channel-alias reservation.
+- Current payload J700 DTB SHA-256 is
+  `e000eaaf2d5ed45f21b4948bdbc1c839538b22ab98e37a115fca34b6a3c201b8`;
+  candidate is `70b4a9b46d93109f422c30afbf08138786fdb409aa3e4a996360aef94e65c091`.
+
+This shows `boot.bin.old` is a structurally consistent earlier payload with
+the ANE node disabled, and makes it a plausible rollback artifact. It does
+**not** prove the machine booted it, prove the Limine default/Apple startup
+picker can select it, or verify a restore procedure from a failed boot. The
+rollback gate therefore remains open; no reboot or restoration was attempted.
