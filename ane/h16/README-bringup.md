@@ -273,7 +273,7 @@ stage status ran twice, with `rmmod` after each. No SError, external abort or DA
 | RVBAR (engine +0x1050000) | 0x10000000001, latched |
 | CPU_STATUS (engine +0x1600048) | 0x30006a (a stage 2 read on a 13-inch M3 MacBook Air before any start gave 0x30002a) |
 | Mailbox A2I and I2A control words | 0x20001 and 0x20001 |
-| ANE segment-ranges | none found on this boot: the module logged no ADT region, ANE node or segment-ranges, so `stage=boot` would refuse. Whether the firmware is preloaded on that boot is unknown |
+| ANE segment-ranges | the module logged `ADT: ... at 0x10002d4c000+0x70000`, then no ANE node or segment-ranges, on the test boot. The boot-ADT scan on a later boot found `/arm-io/ane` with two `segment-ranges` records and `pre-loaded = 0x1`. The module's `arm-io` name check needed 8 bytes of a 7 byte ADT name and could not match a real ADT; the check now accepts 7. Whether that was the cause on the test boot is not established: one message covers a missing `adt` region, a missed node and missed `segment-ranges`. The next `stage=dt` run on the test boot settles it: `adt seg0` and `adt seg1` lines confirm the fix; no `ADT: ... at` line means the region is missing |
 | SCRATCH0 to SCRATCH7 (engine +0x1880020 + 4n) | 0x0 on all eight, read by `stage=status confirm_read=1 read_scratch=1` on a second boot with the same module, device tree and boot entry. Nobody had read these words on an M4 before |
 
 Not run: `stage=boot` and the DART overlay. The firmware stub on that machine is an older build (26.6.2) than the pinned
@@ -285,8 +285,7 @@ Not run: `stage=boot` and the DART overlay. The firmware stub on that machine is
   register map follows macOS behaviour (calibrated against the known T6021 row) and the ASC mailbox offsets come from the iBoot
   coprocessor table. The offsets read so far (RVBAR, CPU_STATUS and the mailbox control words) answered. The rest are unmeasured on H16
   hardware.
-- On the m1n1, U-Boot and Limine boot above, the module found no `segment-ranges`, so `stage=boot` refuses there. Whether the firmware is
-  preloaded on that boot is unknown. Other boot chains are untried.
+- On the m1n1, U-Boot and Limine boot above, the module reported no `segment-ranges`. The cause is not established (see the segment-ranges row of "Measured on a T8132"); the scan of a later boot found them with `pre-loaded = 0x1`. Whether the firmware is preloaded on the test boot itself is unmeasured. Other boot chains are untried.
 - The 27.0 CSNE host contract (init structure, channel-manager table,
   CONFIG_GET/PLATFORM_INFO/BUILDINFO opcodes) is not derived; the smoke
   stops at HELLO/EPMAP/STARTEP.
