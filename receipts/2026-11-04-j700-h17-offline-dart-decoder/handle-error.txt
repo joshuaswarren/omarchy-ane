@@ -1,0 +1,566 @@
+sha256 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe range 0xfffffe000978a3e4 0xfffffe000978acb8
+0xfffffe000978a3e4: 7f 23 03 d5	pacibsp
+0xfffffe000978a3e8: ff 03 05 d1	sub	sp, sp, #0x140
+0xfffffe000978a3ec: fc 6f 0e a9	stp	x28, x27, [sp, #0xe0]
+0xfffffe000978a3f0: fa 67 0f a9	stp	x26, x25, [sp, #0xf0]
+0xfffffe000978a3f4: f8 5f 10 a9	stp	x24, x23, [sp, #0x100]
+0xfffffe000978a3f8: f6 57 11 a9	stp	x22, x21, [sp, #0x110]
+0xfffffe000978a3fc: f4 4f 12 a9	stp	x20, x19, [sp, #0x120]
+0xfffffe000978a400: fd 7b 13 a9	stp	x29, x30, [sp, #0x130]
+0xfffffe000978a404: fd c3 04 91	add	x29, sp, #0x130
+0xfffffe000978a408: a3 03 1a b8	stur	w3, [x29, #-0x60]
+0xfffffe000978a40c: 96 57 80 52	mov	w22, #0x2bc
+0xfffffe000978a410: 16 00 bc 72	movk	w22, #0xe000, lsl #16
+0xfffffe000978a414: 08 fc 45 f9	ldr	x8, [x0, #0xbf8]
+0xfffffe000978a418: 48 3d 00 b4	cbz	x8, #0xfffffe000978abc0
+0xfffffe000978a41c: f5 03 02 aa	mov	x21, x2
+0xfffffe000978a420: f4 03 01 aa	mov	x20, x1
+0xfffffe000978a424: f3 03 00 aa	mov	x19, x0
+0xfffffe000978a428: 48 14 40 b9	ldr	w8, [x2, #0x14]
+0xfffffe000978a42c: a8 83 19 f8	stur	x8, [x29, #-0x68]
+0xfffffe000978a430: 00 80 30 91	add	x0, x0, #0xc20
+0xfffffe000978a434: 8b 7a 8e 94	bl	#0xfffffe000bb28e60 ('_OSIncrementAtomic', 0, 'com.apple.kernel')
+0xfffffe000978a438: 60 3d f8 37	tbnz	w0, #0x1f, #0xfffffe000978abe4
+0xfffffe000978a43c: e0 03 13 aa	mov	x0, x19
+0xfffffe000978a440: f6 f2 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a444: 1f 04 08 71	cmp	w0, #0x201
+0xfffffe000978a448: 68 00 00 54	b.hi	#0xfffffe000978a454
+0xfffffe000978a44c: bc 72 40 b9	ldr	w28, [x21, #0x70]
+0xfffffe000978a450: 02 00 00 14	b	#0xfffffe000978a458 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 116, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a454: 1c 00 80 52	mov	w28, #0
+0xfffffe000978a458: 77 fe 45 f9	ldr	x23, [x19, #0xbf8]
+0xfffffe000978a45c: f7 39 00 b4	cbz	x23, #0xfffffe000978ab98
+0xfffffe000978a460: a8 06 40 f9	ldr	x8, [x21, #8]
+0xfffffe000978a464: 19 fd 4e d3	lsr	x25, x8, #0xe
+0xfffffe000978a468: e9 03 14 2a	mov	w9, w20
+0xfffffe000978a46c: a8 82 00 91	add	x8, x21, #0x20
+0xfffffe000978a470: a8 a7 38 a9	stp	x8, x9, [x29, #-0x78]
+0xfffffe000978a474: a8 c2 00 91	add	x8, x21, #0x30
+0xfffffe000978a478: a8 03 18 f8	stur	x8, [x29, #-0x80]
+0xfffffe000978a47c: 08 12 83 52	mov	w8, #0x1890
+0xfffffe000978a480: 68 02 08 8b	add	x8, x19, x8
+0xfffffe000978a484: 09 09 83 52	mov	w9, #0x1848
+0xfffffe000978a488: 69 02 09 8b	add	x9, x19, x9
+0xfffffe000978a48c: e9 47 00 f9	str	x9, [sp, #0x88]
+0xfffffe000978a490: 89 1f 06 53	ubfx	w9, w28, #6, #2
+0xfffffe000978a494: e9 97 00 b9	str	w9, [sp, #0x94]
+0xfffffe000978a498: 09 0a 83 52	mov	w9, #0x1850
+0xfffffe000978a49c: 69 02 09 8b	add	x9, x19, x9
+0xfffffe000978a4a0: e9 3f 00 f9	str	x9, [sp, #0x78]
+0xfffffe000978a4a4: 09 0b 83 52	mov	w9, #0x1858
+0xfffffe000978a4a8: 69 02 09 8b	add	x9, x19, x9
+0xfffffe000978a4ac: e9 43 00 f9	str	x9, [sp, #0x80]
+0xfffffe000978a4b0: 09 02 83 52	mov	w9, #0x1810
+0xfffffe000978a4b4: 69 02 09 8b	add	x9, x19, x9
+0xfffffe000978a4b8: e9 33 00 f9	str	x9, [sp, #0x60]
+0xfffffe000978a4bc: 29 4d ff b0	adrp	x9, #0xfffffe000812f000
+0xfffffe000978a4c0: 29 f5 41 f9	ldr	x9, [x9, #0x3e8]
+0xfffffe000978a4c4: 2a 4d ff b0	adrp	x10, #0xfffffe000812f000
+0xfffffe000978a4c8: 4a f9 41 f9	ldr	x10, [x10, #0x3f0]
+0xfffffe000978a4cc: 9f 03 04 72	tst	w28, #0x10000000
+0xfffffe000978a4d0: 29 01 8a 9a	csel	x9, x9, x10, eq
+0xfffffe000978a4d4: 29 01 40 f9	ldr	x9, [x9]
+0xfffffe000978a4d8: e9 4f 00 f9	str	x9, [sp, #0x98]
+0xfffffe000978a4dc: 9f 03 1d 72	tst	w28, #8
+0xfffffe000978a4e0: 09 06 83 52	mov	w9, #0x1830
+0xfffffe000978a4e4: 0a 05 83 52	mov	w10, #0x1828
+0xfffffe000978a4e8: 49 01 89 9a	csel	x9, x10, x9, eq
+0xfffffe000978a4ec: 9f 07 1e 72	tst	w28, #0xc
+0xfffffe000978a4f0: 0a 04 83 52	mov	w10, #0x1820
+0xfffffe000978a4f4: 49 01 89 9a	csel	x9, x10, x9, eq
+0xfffffe000978a4f8: 9f 0b 1f 72	tst	w28, #0xe
+0xfffffe000978a4fc: 0a 03 83 52	mov	w10, #0x1818
+0xfffffe000978a500: 49 01 89 9a	csel	x9, x10, x9, eq
+0xfffffe000978a504: 9f 0f 00 72	tst	w28, #0xf
+0xfffffe000978a508: 0a 07 83 52	mov	w10, #0x1838
+0xfffffe000978a50c: 49 01 89 9a	csel	x9, x10, x9, eq
+0xfffffe000978a510: ea 07 88 52	mov	w10, #0x403f
+0xfffffe000978a514: 8a 03 0a 0a	and	w10, w28, w10
+0xfffffe000978a518: aa c3 17 b8	stur	w10, [x29, #-0x84]
+0xfffffe000978a51c: 9f 13 00 72	tst	w28, #0x1f
+0xfffffe000978a520: 0a 08 83 52	mov	w10, #0x1840
+0xfffffe000978a524: 49 01 89 9a	csel	x9, x10, x9, eq
+0xfffffe000978a528: 69 02 09 8b	add	x9, x19, x9
+0xfffffe000978a52c: 9f 03 12 72	tst	w28, #0x4000
+0xfffffe000978a530: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a534: a8 03 17 f8	stur	x8, [x29, #-0x90]
+0xfffffe000978a538: 9f 03 18 72	tst	w28, #0x100
+0xfffffe000978a53c: 08 0c 83 52	mov	w8, #0x1860
+0xfffffe000978a540: 09 0d 83 52	mov	w9, #0x1868
+0xfffffe000978a544: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a548: 9f 07 18 72	tst	w28, #0x300
+0xfffffe000978a54c: 09 0e 83 52	mov	w9, #0x1870
+0xfffffe000978a550: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a554: 9f 0b 18 72	tst	w28, #0x700
+0xfffffe000978a558: 09 0f 83 52	mov	w9, #0x1878
+0xfffffe000978a55c: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a560: 9f 0f 18 72	tst	w28, #0xf00
+0xfffffe000978a564: 09 10 83 52	mov	w9, #0x1880
+0xfffffe000978a568: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a56c: 9f 13 18 72	tst	w28, #0x1f00
+0xfffffe000978a570: 09 11 83 52	mov	w9, #0x1888
+0xfffffe000978a574: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a578: 9f 17 18 72	tst	w28, #0x3f00
+0xfffffe000978a57c: 09 13 83 52	mov	w9, #0x1898
+0xfffffe000978a580: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a584: 09 e0 87 52	mov	w9, #0x3f00
+0xfffffe000978a588: 89 00 a0 72	movk	w9, #4, lsl #16
+0xfffffe000978a58c: 2a 01 0d 32	orr	w10, w9, #0x80000
+0xfffffe000978a590: 9f 03 09 6a	tst	w28, w9
+0xfffffe000978a594: 09 14 83 52	mov	w9, #0x18a0
+0xfffffe000978a598: 28 01 88 9a	csel	x8, x9, x8, eq
+0xfffffe000978a59c: 1f c1 28 eb	cmp	x8, w8, sxtw
+0xfffffe000978a5a0: 69 c2 28 8b	add	x9, x19, w8, sxtw
+0xfffffe000978a5a4: 70 02 08 8b	add	x16, x19, x8
+0xfffffe000978a5a8: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978a5ac: 29 01 90 9a	csel	x9, x9, x16, eq
+0xfffffe000978a5b0: e9 3b 00 f9	str	x9, [sp, #0x70]
+0xfffffe000978a5b4: 88 03 0a 0a	and	w8, w28, w10
+0xfffffe000978a5b8: e8 6f 00 b9	str	w8, [sp, #0x6c]
+0xfffffe000978a5bc: 88 57 80 52	mov	w8, #0x2bc
+0xfffffe000978a5c0: 08 00 bc 72	movk	w8, #0xe000, lsl #16
+0xfffffe000978a5c4: a8 43 1a b8	stur	w8, [x29, #-0x5c]
+0xfffffe000978a5c8: fa 03 17 aa	mov	x26, x23
+0xfffffe000978a5cc: f7 02 40 f9	ldr	x23, [x23]
+0xfffffe000978a5d0: 48 1b 40 b9	ldr	w8, [x26, #0x18]
+0xfffffe000978a5d4: a9 72 40 b9	ldr	w9, [x21, #0x70]
+0xfffffe000978a5d8: 3f 01 08 6a	tst	w9, w8
+0xfffffe000978a5dc: a0 2d 00 54	b.eq	#0xfffffe000978ab90
+0xfffffe000978a5e0: 48 17 40 f9	ldr	x8, [x26, #0x28]
+0xfffffe000978a5e4: 88 00 08 36	tbz	w8, #1, #0xfffffe000978a5f4
+0xfffffe000978a5e8: 09 fd 78 d3	lsr	x9, x8, #0x38
+0xfffffe000978a5ec: 9f 02 09 6b	cmp	w20, w9
+0xfffffe000978a5f0: 01 2d 00 54	b.ne	#0xfffffe000978ab90
+0xfffffe000978a5f4: a9 03 5a b8	ldur	w9, [x29, #-0x60]
+0xfffffe000978a5f8: 49 00 00 34	cbz	w9, #0xfffffe000978a600
+0xfffffe000978a5fc: 48 2d 00 36	tbz	w8, #0, #0xfffffe000978aba4
+0xfffffe000978a600: e0 03 13 aa	mov	x0, x19
+0xfffffe000978a604: 85 f2 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a608: 09 20 1f 12	and	w9, w0, #0x3fe
+0xfffffe000978a60c: 68 0a 46 f9	ldr	x8, [x19, #0xc10]
+0xfffffe000978a610: 3f 01 04 71	cmp	w9, #0x100
+0xfffffe000978a614: e1 01 00 54	b.ne	#0xfffffe000978a650
+0xfffffe000978a618: 69 02 4c f9	ldr	x9, [x19, #0x1800]
+0xfffffe000978a61c: 09 05 00 f9	str	x9, [x8, #8]
+0xfffffe000978a620: 60 6e 4c f9	ldr	x0, [x19, #0x18d8]
+0xfffffe000978a624: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a628: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a62c: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a630: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a634: 11 30 80 d2	mov	x17, #0x180
+0xfffffe000978a638: 10 02 11 8b	add	x16, x16, x17
+0xfffffe000978a63c: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe000978a640: 01 00 80 d2	mov	x1, #0
+0xfffffe000978a644: b0 49 e3 f2	movk	x16, #0x1a4d, lsl #48
+0xfffffe000978a648: 10 09 3f d7	blraa	x8, x16
+0xfffffe000978a64c: 1a 00 00 14	b	#0xfffffe000978a6b4 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 720, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a650: 69 06 4c f9	ldr	x9, [x19, #0x1808]
+0xfffffe000978a654: 09 05 00 f9	str	x9, [x8, #8]
+0xfffffe000978a658: 7b 6e 4c f9	ldr	x27, [x19, #0x18d8]
+0xfffffe000978a65c: 60 2a 46 f9	ldr	x0, [x19, #0xc50]
+0xfffffe000978a660: e1 03 14 aa	mov	x1, x20
+0xfffffe000978a664: e2 03 19 aa	mov	x2, x25
+0xfffffe000978a668: 23 00 80 52	mov	w3, #1
+0xfffffe000978a66c: 24 00 80 52	mov	w4, #1
+0xfffffe000978a670: c8 9b 78 94	bl	#0xfffffe000b5b1590 ('_t8110dart_vo_tt_index', 0, 'com.apple.kernel')
+0xfffffe000978a674: f1 03 1b aa	mov	x17, x27
+0xfffffe000978a678: e1 03 00 2a	mov	w1, w0
+0xfffffe000978a67c: 70 03 40 f9	ldr	x16, [x27]
+0xfffffe000978a680: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a684: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a688: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a68c: f1 47 c1 da	xpacd	x17
+0xfffffe000978a690: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a694: 40 00 00 54	b.eq	#0xfffffe000978a69c
+0xfffffe000978a698: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a69c: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a6a0: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a6a4: e0 03 1b aa	mov	x0, x27
+0xfffffe000978a6a8: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a6ac: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a6b0: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a6b4: 60 62 4c f9	ldr	x0, [x19, #0x18c0]
+0xfffffe000978a6b8: a1 12 40 b9	ldr	w1, [x21, #0x10]
+0xfffffe000978a6bc: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a6c0: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a6c4: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a6c8: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a6cc: 11 30 80 d2	mov	x17, #0x180
+0xfffffe000978a6d0: 10 02 11 8b	add	x16, x16, x17
+0xfffffe000978a6d4: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe000978a6d8: b0 49 e3 f2	movk	x16, #0x1a4d, lsl #48
+0xfffffe000978a6dc: 10 09 3f d7	blraa	x8, x16
+0xfffffe000978a6e0: 60 5e 4c f9	ldr	x0, [x19, #0x18b8]
+0xfffffe000978a6e4: a1 06 40 f9	ldr	x1, [x21, #8]
+0xfffffe000978a6e8: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a6ec: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a6f0: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a6f4: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a6f8: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a6fc: f1 47 c1 da	xpacd	x17
+0xfffffe000978a700: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a704: 40 00 00 54	b.eq	#0xfffffe000978a70c
+0xfffffe000978a708: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a70c: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a710: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a714: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a718: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a71c: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a720: 60 7a 4c f9	ldr	x0, [x19, #0x18f0]
+0xfffffe000978a724: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a728: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a72c: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a730: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a734: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a738: f1 47 c1 da	xpacd	x17
+0xfffffe000978a73c: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a740: 40 00 00 54	b.eq	#0xfffffe000978a748
+0xfffffe000978a744: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a748: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a74c: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a750: a1 03 59 f8	ldur	x1, [x29, #-0x70]
+0xfffffe000978a754: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a758: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a75c: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a760: 7b 6a 4c f9	ldr	x27, [x19, #0x18d0]
+0xfffffe000978a764: 60 2a 46 f9	ldr	x0, [x19, #0xc50]
+0xfffffe000978a768: e1 03 14 aa	mov	x1, x20
+0xfffffe000978a76c: e2 03 19 aa	mov	x2, x25
+0xfffffe000978a770: 03 00 80 52	mov	w3, #0
+0xfffffe000978a774: 24 00 80 52	mov	w4, #1
+0xfffffe000978a778: 86 9b 78 94	bl	#0xfffffe000b5b1590 ('_t8110dart_vo_tt_index', 0, 'com.apple.kernel')
+0xfffffe000978a77c: f1 03 1b aa	mov	x17, x27
+0xfffffe000978a780: e1 03 00 2a	mov	w1, w0
+0xfffffe000978a784: 70 03 40 f9	ldr	x16, [x27]
+0xfffffe000978a788: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a78c: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a790: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a794: f1 47 c1 da	xpacd	x17
+0xfffffe000978a798: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a79c: 40 00 00 54	b.eq	#0xfffffe000978a7a4
+0xfffffe000978a7a0: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a7a4: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a7a8: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a7ac: e0 03 1b aa	mov	x0, x27
+0xfffffe000978a7b0: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a7b4: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a7b8: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a7bc: 7b 72 4c f9	ldr	x27, [x19, #0x18e0]
+0xfffffe000978a7c0: 60 2a 46 f9	ldr	x0, [x19, #0xc50]
+0xfffffe000978a7c4: e1 03 14 aa	mov	x1, x20
+0xfffffe000978a7c8: e2 03 19 aa	mov	x2, x25
+0xfffffe000978a7cc: 43 00 80 52	mov	w3, #2
+0xfffffe000978a7d0: 24 00 80 52	mov	w4, #1
+0xfffffe000978a7d4: 6f 9b 78 94	bl	#0xfffffe000b5b1590 ('_t8110dart_vo_tt_index', 0, 'com.apple.kernel')
+0xfffffe000978a7d8: f1 03 1b aa	mov	x17, x27
+0xfffffe000978a7dc: e1 03 00 2a	mov	w1, w0
+0xfffffe000978a7e0: 70 03 40 f9	ldr	x16, [x27]
+0xfffffe000978a7e4: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a7e8: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a7ec: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a7f0: f1 47 c1 da	xpacd	x17
+0xfffffe000978a7f4: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a7f8: 40 00 00 54	b.eq	#0xfffffe000978a800
+0xfffffe000978a7fc: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a800: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a804: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a808: e0 03 1b aa	mov	x0, x27
+0xfffffe000978a80c: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a810: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a814: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a818: 7b 76 4c f9	ldr	x27, [x19, #0x18e8]
+0xfffffe000978a81c: 60 2a 46 f9	ldr	x0, [x19, #0xc50]
+0xfffffe000978a820: e1 03 14 aa	mov	x1, x20
+0xfffffe000978a824: e2 03 19 aa	mov	x2, x25
+0xfffffe000978a828: 63 00 80 52	mov	w3, #3
+0xfffffe000978a82c: 24 00 80 52	mov	w4, #1
+0xfffffe000978a830: 58 9b 78 94	bl	#0xfffffe000b5b1590 ('_t8110dart_vo_tt_index', 0, 'com.apple.kernel')
+0xfffffe000978a834: f1 03 1b aa	mov	x17, x27
+0xfffffe000978a838: e1 03 00 2a	mov	w1, w0
+0xfffffe000978a83c: 70 03 40 f9	ldr	x16, [x27]
+0xfffffe000978a840: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a844: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a848: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a84c: f1 47 c1 da	xpacd	x17
+0xfffffe000978a850: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a854: 40 00 00 54	b.eq	#0xfffffe000978a85c
+0xfffffe000978a858: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a85c: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a860: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a864: e0 03 1b aa	mov	x0, x27
+0xfffffe000978a868: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a86c: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a870: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a874: 60 66 4c f9	ldr	x0, [x19, #0x18c8]
+0xfffffe000978a878: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a87c: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a880: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a884: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a888: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a88c: f1 47 c1 da	xpacd	x17
+0xfffffe000978a890: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a894: 40 00 00 54	b.eq	#0xfffffe000978a89c
+0xfffffe000978a898: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a89c: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a8a0: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a8a4: a1 83 59 f8	ldur	x1, [x29, #-0x68]
+0xfffffe000978a8a8: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a8ac: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a8b0: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a8b4: 60 7e 4c f9	ldr	x0, [x19, #0x18f8]
+0xfffffe000978a8b8: a1 1a 40 b9	ldr	w1, [x21, #0x18]
+0xfffffe000978a8bc: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a8c0: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a8c4: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a8c8: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a8cc: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a8d0: f1 47 c1 da	xpacd	x17
+0xfffffe000978a8d4: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a8d8: 40 00 00 54	b.eq	#0xfffffe000978a8e0
+0xfffffe000978a8dc: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a8e0: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a8e4: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a8e8: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a8ec: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a8f0: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a8f4: 60 82 4c f9	ldr	x0, [x19, #0x1900]
+0xfffffe000978a8f8: a1 1e 40 b9	ldr	w1, [x21, #0x1c]
+0xfffffe000978a8fc: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a900: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a904: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a908: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a90c: f1 03 10 aa	mov	x17, x16
+0xfffffe000978a910: f1 47 c1 da	xpacd	x17
+0xfffffe000978a914: 1f 02 11 eb	cmp	x16, x17
+0xfffffe000978a918: 40 00 00 54	b.eq	#0xfffffe000978a920
+0xfffffe000978a91c: 40 8e 38 d4	brk	#0xc472
+0xfffffe000978a920: 08 02 06 91	add	x8, x16, #0x180
+0xfffffe000978a924: 09 c2 40 f9	ldr	x9, [x16, #0x180]
+0xfffffe000978a928: f1 03 08 aa	mov	x17, x8
+0xfffffe000978a92c: b1 49 e3 f2	movk	x17, #0x1a4d, lsl #48
+0xfffffe000978a930: 31 09 3f d7	blraa	x9, x17
+0xfffffe000978a934: e0 03 13 aa	mov	x0, x19
+0xfffffe000978a938: b8 f1 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a93c: 1f 04 08 71	cmp	w0, #0x201
+0xfffffe000978a940: 48 00 80 52	mov	w8, #2
+0xfffffe000978a944: 89 00 80 52	mov	w9, #4
+0xfffffe000978a948: 1b 81 89 9a	csel	x27, x8, x9, hi
+0xfffffe000978a94c: b8 83 58 f8	ldur	x24, [x29, #-0x78]
+0xfffffe000978a950: 16 21 83 52	mov	w22, #0x1908
+0xfffffe000978a954: 68 02 16 8b	add	x8, x19, x22
+0xfffffe000978a958: 00 01 40 f9	ldr	x0, [x8]
+0xfffffe000978a95c: 01 47 40 b8	ldr	w1, [x24], #4
+0xfffffe000978a960: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a964: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a968: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a96c: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a970: 11 30 80 d2	mov	x17, #0x180
+0xfffffe000978a974: 10 02 11 8b	add	x16, x16, x17
+0xfffffe000978a978: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe000978a97c: b0 49 e3 f2	movk	x16, #0x1a4d, lsl #48
+0xfffffe000978a980: 10 09 3f d7	blraa	x8, x16
+0xfffffe000978a984: d6 22 00 91	add	x22, x22, #8
+0xfffffe000978a988: 7b 07 00 f1	subs	x27, x27, #1
+0xfffffe000978a98c: 41 fe ff 54	b.ne	#0xfffffe000978a954
+0xfffffe000978a990: e0 03 13 aa	mov	x0, x19
+0xfffffe000978a994: a1 f1 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978a998: b6 03 58 f8	ldur	x22, [x29, #-0x80]
+0xfffffe000978a99c: b8 64 80 52	mov	w24, #0x325
+0xfffffe000978a9a0: 68 0e 18 8b	add	x8, x19, x24, lsl #3
+0xfffffe000978a9a4: 00 01 40 f9	ldr	x0, [x8]
+0xfffffe000978a9a8: c1 46 40 b8	ldr	w1, [x22], #4
+0xfffffe000978a9ac: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978a9b0: f1 03 00 aa	mov	x17, x0
+0xfffffe000978a9b4: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978a9b8: 30 1a c1 da	autda	x16, x17
+0xfffffe000978a9bc: 11 30 80 d2	mov	x17, #0x180
+0xfffffe000978a9c0: 10 02 11 8b	add	x16, x16, x17
+0xfffffe000978a9c4: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe000978a9c8: b0 49 e3 f2	movk	x16, #0x1a4d, lsl #48
+0xfffffe000978a9cc: 10 09 3f d7	blraa	x8, x16
+0xfffffe000978a9d0: 18 07 00 91	add	x24, x24, #1
+0xfffffe000978a9d4: 1f b7 0c f1	cmp	x24, #0x32d
+0xfffffe000978a9d8: 41 fe ff 54	b.ne	#0xfffffe000978a9a0
+0xfffffe000978a9dc: 69 5e 4c f9	ldr	x9, [x19, #0x18b8]
+0xfffffe000978a9e0: 68 0a 46 f9	ldr	x8, [x19, #0xc10]
+0xfffffe000978a9e4: 09 19 00 f9	str	x9, [x8, #0x30]
+0xfffffe000978a9e8: 69 62 4c f9	ldr	x9, [x19, #0x18c0]
+0xfffffe000978a9ec: 09 0d 00 f9	str	x9, [x8, #0x18]
+0xfffffe000978a9f0: 69 66 4c f9	ldr	x9, [x19, #0x18c8]
+0xfffffe000978a9f4: 09 35 00 f9	str	x9, [x8, #0x68]
+0xfffffe000978a9f8: 60 36 c6 3d	ldr	q0, [x19, #0x18d0]
+0xfffffe000978a9fc: 00 11 80 3d	str	q0, [x8, #0x40]
+0xfffffe000978aa00: 60 3a c6 3d	ldr	q0, [x19, #0x18e0]
+0xfffffe000978aa04: 00 15 80 3d	str	q0, [x8, #0x50]
+0xfffffe000978aa08: 69 7a 4c f9	ldr	x9, [x19, #0x18f0]
+0xfffffe000978aa0c: 09 15 00 f9	str	x9, [x8, #0x28]
+0xfffffe000978aa10: 69 7e 4c f9	ldr	x9, [x19, #0x18f8]
+0xfffffe000978aa14: 09 39 00 f9	str	x9, [x8, #0x70]
+0xfffffe000978aa18: 69 82 4c f9	ldr	x9, [x19, #0x1900]
+0xfffffe000978aa1c: 09 3d 00 f9	str	x9, [x8, #0x78]
+0xfffffe000978aa20: 09 41 02 91	add	x9, x8, #0x90
+0xfffffe000978aa24: 2a 64 80 52	mov	w10, #0x321
+0xfffffe000978aa28: 6b 0e 0a 8b	add	x11, x19, x10, lsl #3
+0xfffffe000978aa2c: 6b 01 40 f9	ldr	x11, [x11]
+0xfffffe000978aa30: 2b 85 00 f8	str	x11, [x9], #8
+0xfffffe000978aa34: 4a 05 00 91	add	x10, x10, #1
+0xfffffe000978aa38: 5f 95 0c f1	cmp	x10, #0x325
+0xfffffe000978aa3c: 61 ff ff 54	b.ne	#0xfffffe000978aa28
+0xfffffe000978aa40: 08 c1 02 91	add	x8, x8, #0xb0
+0xfffffe000978aa44: a9 64 80 52	mov	w9, #0x325
+0xfffffe000978aa48: 96 57 80 52	mov	w22, #0x2bc
+0xfffffe000978aa4c: 16 00 bc 72	movk	w22, #0xe000, lsl #16
+0xfffffe000978aa50: 6a 0e 09 8b	add	x10, x19, x9, lsl #3
+0xfffffe000978aa54: 4a 01 40 f9	ldr	x10, [x10]
+0xfffffe000978aa58: 0a 85 00 f8	str	x10, [x8], #8
+0xfffffe000978aa5c: 29 05 00 91	add	x9, x9, #1
+0xfffffe000978aa60: 3f b5 0c f1	cmp	x9, #0x32d
+0xfffffe000978aa64: 61 ff ff 54	b.ne	#0xfffffe000978aa50
+0xfffffe000978aa68: e0 03 13 aa	mov	x0, x19
+0xfffffe000978aa6c: 6b f1 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978aa70: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978aa74: 42 03 00 54	b.hs	#0xfffffe000978aadc
+0xfffffe000978aa78: a8 03 57 f8	ldur	x8, [x29, #-0x90]
+0xfffffe000978aa7c: a9 c3 57 b8	ldur	w9, [x29, #-0x84]
+0xfffffe000978aa80: 89 02 00 35	cbnz	w9, #0xfffffe000978aad0
+0xfffffe000978aa84: 1c 02 e8 37	tbnz	w28, #0x1d, #0xfffffe000978aac4
+0xfffffe000978aa88: e8 43 40 f9	ldr	x8, [sp, #0x80]
+0xfffffe000978aa8c: e9 97 40 b9	ldr	w9, [sp, #0x94]
+0xfffffe000978aa90: 3f 09 00 71	cmp	w9, #2
+0xfffffe000978aa94: e0 01 00 54	b.eq	#0xfffffe000978aad0
+0xfffffe000978aa98: e8 3f 40 f9	ldr	x8, [sp, #0x78]
+0xfffffe000978aa9c: e9 97 40 b9	ldr	w9, [sp, #0x94]
+0xfffffe000978aaa0: 3f 0d 00 71	cmp	w9, #3
+0xfffffe000978aaa4: 60 01 00 54	b.eq	#0xfffffe000978aad0
+0xfffffe000978aaa8: e8 3b 40 f9	ldr	x8, [sp, #0x70]
+0xfffffe000978aaac: e9 6f 40 b9	ldr	w9, [sp, #0x6c]
+0xfffffe000978aab0: 09 01 00 35	cbnz	w9, #0xfffffe000978aad0
+0xfffffe000978aab4: 69 62 66 39	ldrb	w9, [x19, #0x998]
+0xfffffe000978aab8: e8 33 40 f9	ldr	x8, [sp, #0x60]
+0xfffffe000978aabc: a9 00 00 36	tbz	w9, #0, #0xfffffe000978aad0
+0xfffffe000978aac0: 58 00 00 14	b	#0xfffffe000978ac20 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 2108, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978aac4: 69 22 66 39	ldrb	w9, [x19, #0x988]
+0xfffffe000978aac8: e8 47 40 f9	ldr	x8, [sp, #0x88]
+0xfffffe000978aacc: 89 09 08 36	tbz	w9, #1, #0xfffffe000978abfc
+0xfffffe000978aad0: 08 01 40 f9	ldr	x8, [x8]
+0xfffffe000978aad4: 69 0a 46 f9	ldr	x9, [x19, #0xc10]
+0xfffffe000978aad8: 28 09 00 f9	str	x8, [x9, #0x10]
+0xfffffe000978aadc: e0 03 13 aa	mov	x0, x19
+0xfffffe000978aae0: 4e f1 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978aae4: 61 0a 46 f9	ldr	x1, [x19, #0xc10]
+0xfffffe000978aae8: 1f 04 08 71	cmp	w0, #0x201
+0xfffffe000978aaec: 88 00 00 54	b.hi	#0xfffffe000978aafc
+0xfffffe000978aaf0: e8 4f 40 f9	ldr	x8, [sp, #0x98]
+0xfffffe000978aaf4: 08 01 40 f9	ldr	x8, [x8]
+0xfffffe000978aaf8: 28 10 00 f9	str	x8, [x1, #0x20]
+0xfffffe000978aafc: a8 36 40 f9	ldr	x8, [x21, #0x68]
+0xfffffe000978ab00: 28 30 00 f9	str	x8, [x1, #0x60]
+0xfffffe000978ab04: a8 d2 41 39	ldrb	w8, [x21, #0x74]
+0xfffffe000978ab08: 1f 01 00 72	tst	w8, #1
+0xfffffe000978ab0c: 08 ff 82 52	mov	w8, #0x17f8
+0xfffffe000978ab10: 09 fe 82 52	mov	w9, #0x17f0
+0xfffffe000978ab14: 28 11 88 9a	csel	x8, x9, x8, ne
+0xfffffe000978ab18: 68 02 08 8b	add	x8, x19, x8
+0xfffffe000978ab1c: 08 01 40 f9	ldr	x8, [x8]
+0xfffffe000978ab20: 28 00 00 f9	str	x8, [x1]
+0xfffffe000978ab24: 48 0b 40 f9	ldr	x8, [x26, #0x10]
+0xfffffe000978ab28: 40 13 40 f9	ldr	x0, [x26, #0x20]
+0xfffffe000978ab2c: d1 9f 9c d2	mov	x17, #0xe4fe
+0xfffffe000978ab30: 11 09 3f d7	blraa	x8, x17
+0xfffffe000978ab34: a8 43 5a b8	ldur	w8, [x29, #-0x5c]
+0xfffffe000978ab38: 1f 01 16 6b	cmp	w8, w22
+0xfffffe000978ab3c: a1 02 00 54	b.ne	#0xfffffe000978ab90
+0xfffffe000978ab40: 80 02 00 35	cbnz	w0, #0xfffffe000978ab90
+0xfffffe000978ab44: e0 03 13 aa	mov	x0, x19
+0xfffffe000978ab48: 34 f1 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978ab4c: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978ab50: e3 00 00 54	b.lo	#0xfffffe000978ab6c
+0xfffffe000978ab54: 68 0a 46 f9	ldr	x8, [x19, #0xc10]
+0xfffffe000978ab58: 08 09 40 f9	ldr	x8, [x8, #0x10]
+0xfffffe000978ab5c: 69 4a 4c f9	ldr	x9, [x19, #0x1890]
+0xfffffe000978ab60: 1f 01 09 eb	cmp	x8, x9
+0xfffffe000978ab64: c8 02 9f 1a	csel	w8, w22, wzr, eq
+0xfffffe000978ab68: 09 00 00 14	b	#0xfffffe000978ab8c ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 1960, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978ab6c: 9f 03 0d 72	tst	w28, #0x80000
+0xfffffe000978ab70: e8 17 9f 1a	cset	w8, eq
+0xfffffe000978ab74: 9f 03 12 72	tst	w28, #0x4000
+0xfffffe000978ab78: e9 17 9f 1a	cset	w9, eq
+0xfffffe000978ab7c: 6a 42 73 39	ldrb	w10, [x19, #0xcd0]
+0xfffffe000978ab80: 48 01 08 2a	orr	w8, w10, w8
+0xfffffe000978ab84: 1f 01 09 6a	tst	w8, w9
+0xfffffe000978ab88: e8 13 96 1a	csel	w8, wzr, w22, ne
+0xfffffe000978ab8c: a8 43 1a b8	stur	w8, [x29, #-0x5c]
+0xfffffe000978ab90: d7 d1 ff b5	cbnz	x23, #0xfffffe000978a5c8
+0xfffffe000978ab94: 06 00 00 14	b	#0xfffffe000978abac ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 1992, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978ab98: 88 57 80 52	mov	w8, #0x2bc
+0xfffffe000978ab9c: 08 00 bc 72	movk	w8, #0xe000, lsl #16
+0xfffffe000978aba0: 02 00 00 14	b	#0xfffffe000978aba8 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 1988, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978aba4: c8 8e 00 11	add	w8, w22, #0x23
+0xfffffe000978aba8: a8 43 1a b8	stur	w8, [x29, #-0x5c]
+0xfffffe000978abac: 60 82 30 91	add	x0, x19, #0xc20
+0xfffffe000978abb0: b0 78 8e 94	bl	#0xfffffe000bb28e70 ('_OSDecrementAtomic', 0, 'com.apple.kernel')
+0xfffffe000978abb4: b6 43 5a b8	ldur	w22, [x29, #-0x5c]
+0xfffffe000978abb8: 1f 00 00 71	cmp	w0, #0
+0xfffffe000978abbc: ad 01 00 54	b.le	#0xfffffe000978abf0
+0xfffffe000978abc0: e0 03 16 aa	mov	x0, x22
+0xfffffe000978abc4: fd 7b 53 a9	ldp	x29, x30, [sp, #0x130]
+0xfffffe000978abc8: f4 4f 52 a9	ldp	x20, x19, [sp, #0x120]
+0xfffffe000978abcc: f6 57 51 a9	ldp	x22, x21, [sp, #0x110]
+0xfffffe000978abd0: f8 5f 50 a9	ldp	x24, x23, [sp, #0x100]
+0xfffffe000978abd4: fa 67 4f a9	ldp	x26, x25, [sp, #0xf0]
+0xfffffe000978abd8: fc 6f 4e a9	ldp	x28, x27, [sp, #0xe0]
+0xfffffe000978abdc: ff 03 05 91	add	sp, sp, #0x140
+0xfffffe000978abe0: ff 0f 5f d6	retab
+0xfffffe000978abe4: 68 1a 46 f9	ldr	x8, [x19, #0xc30]
+0xfffffe000978abe8: 49 2d 81 52	mov	w9, #0x96a
+0xfffffe000978abec: 06 00 00 14	b	#0xfffffe000978ac04 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 2080, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978abf0: 68 1a 46 f9	ldr	x8, [x19, #0xc30]
+0xfffffe000978abf4: 69 42 81 52	mov	w9, #0xa13
+0xfffffe000978abf8: 03 00 00 14	b	#0xfffffe000978ac04 ('__ZN14AppleT8110DART12_handleErrorEjPKN6IODART16interruptState_tEb', 2080, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978abfc: 68 1a 46 f9	ldr	x8, [x19, #0xc30]
+0xfffffe000978ac00: c9 38 81 52	mov	w9, #0x9c6
+0xfffffe000978ac04: 6a f4 fe d0	adrp	x10, #0xfffffe0007618000
+0xfffffe000978ac08: 4a 31 3f 91	add	x10, x10, #0xfcc  string@0xfffffe0007618fcc '/AppleT8110DART.cpp'
+0xfffffe000978ac0c: ea a7 00 a9	stp	x10, x9, [sp, #8]
+0xfffffe000978ac10: e8 03 00 f9	str	x8, [sp]
+0xfffffe000978ac14: 60 f4 fe d0	adrp	x0, #0xfffffe0007618000
+0xfffffe000978ac18: 00 c4 3e 91	add	x0, x0, #0xfb1  string@0xfffffe0007618fb1 '(%s) %s:%u: REQUIRE failed'
+0xfffffe000978ac1c: bb 18 96 94	bl	#0xfffffe000bd10f08 ('_panic', 0, 'com.apple.kernel')
+0xfffffe000978ac20: 76 1a 46 f9	ldr	x22, [x19, #0xc30]
+0xfffffe000978ac24: a0 36 40 f9	ldr	x0, [x21, #0x68]
+0xfffffe000978ac28: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe000978ac2c: f1 03 00 aa	mov	x17, x0
+0xfffffe000978ac30: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe000978ac34: 30 1a c1 da	autda	x16, x17
+0xfffffe000978ac38: 11 2d 80 d2	mov	x17, #0x168
+0xfffffe000978ac3c: 10 02 11 8b	add	x16, x16, x17
+0xfffffe000978ac40: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe000978ac44: f0 30 e5 f2	movk	x16, #0x2987, lsl #48
+0xfffffe000978ac48: 10 09 3f d7	blraa	x8, x16
+0xfffffe000978ac4c: a8 06 40 f9	ldr	x8, [x21, #8]
+0xfffffe000978ac50: a9 12 40 b9	ldr	w9, [x21, #0x10]
+0xfffffe000978ac54: 0a 3d 81 52	mov	w10, #0x9e8
+0xfffffe000978ac58: 6b f4 fe f0	adrp	x11, #0xfffffe0007619000
+0xfffffe000978ac5c: 6b c5 01 91	add	x11, x11, #0x71  string@0xfffffe0007619071 'AppleT8110DART.cpp'
+0xfffffe000978ac60: eb ab 04 a9	stp	x11, x10, [sp, #0x48]
+0xfffffe000978ac64: 6a f4 fe f0	adrp	x10, #0xfffffe0007619000
+0xfffffe000978ac68: 4a ad 04 91	add	x10, x10, #0x12b
+0xfffffe000978ac6c: e8 ab 03 a9	stp	x8, x10, [sp, #0x38]
+0xfffffe000978ac70: f4 a7 02 a9	stp	x20, x9, [sp, #0x28]
+0xfffffe000978ac74: 68 f4 fe f0	adrp	x8, #0xfffffe0007619000
+0xfffffe000978ac78: 08 b1 29 91	add	x8, x8, #0xa6c  string@0xfffffe0007619a6c 'unknown'
+0xfffffe000978ac7c: e8 ab 01 a9	stp	x8, x10, [sp, #0x18]
+0xfffffe000978ac80: f3 83 00 a9	stp	x19, x0, [sp, #8]
+0xfffffe000978ac84: 60 f4 fe f0	adrp	x0, #0xfffffe0007619000
+0xfffffe000978ac88: 00 8c 24 91	add	x0, x0, #0x923  string@0xfffffe0007619923 '"%s (%p): %s %s exception%s SID %d ERROR_STATUS 0x%08x ERROR_ADDRESS 0x%016llx%s" @%s:%d'
+0xfffffe000978ac8c: f6 03 00 f9	str	x22, [sp]
+0xfffffe000978ac90: 9e 18 96 94	bl	#0xfffffe000bd10f08 ('_panic', 0, 'com.apple.kernel')
+0xfffffe000978ac94: 7f 23 03 d5	pacibsp
+0xfffffe000978ac98: fd 7b bf a9	stp	x29, x30, [sp, #-0x10]!
+0xfffffe000978ac9c: fd 03 00 91	mov	x29, sp
+0xfffffe000978aca0: de f0 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978aca4: 08 20 1f 12	and	w8, w0, #0x3fe
+0xfffffe000978aca8: 1f 01 04 71	cmp	w8, #0x100
+0xfffffe000978acac: e0 17 9f 1a	cset	w0, eq
+0xfffffe000978acb0: fd 7b c1 a8	ldp	x29, x30, [sp], #0x10
+0xfffffe000978acb4: ff 0f 5f d6	retab

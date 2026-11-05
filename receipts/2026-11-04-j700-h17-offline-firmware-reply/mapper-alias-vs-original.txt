@@ -1,0 +1,38 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 00020e70 file 00024e70  a802088a  and      x8, x21, x8
+VA 00020e74 file 00024e74  ca040090  adrp     x10, #0xb8000
+VA 00020e78 file 00024e78  40dd40fd  ldr      d0, [x10, #0x1b8]
+VA 00020e7c file 00024e7c  e20316aa  mov      x2, x22
+VA 00020e80 file 00024e80  1801098b  add      x24, x8, x9
+VA 00020e84 file 00024e84  e3c30091  add      x3, sp, #0x30
+VA 00020e88 file 00024e88  178f4092  and      x23, x24, #0xfffffffff
+VA 00020e8c file 00024e8c  e10318aa  mov      x1, x24
+VA 00020e90 file 00024e90  e00317aa  mov      x0, x23
+VA 00020e94 file 00024e94  e01b00fd  str      d0, [sp, #0x30]
+VA 00020e98 file 00024e98  fd1f0094  bl       #0x28e8c
+VA 00020e9c file 00024e9c  a0010034  cbz      w0, #0x20ed0
+VA 00020ea0 file 00024ea0  f503002a  mov      w21, w0
+VA 00020ea4 file 00024ea4  e00300f0  adrp     x0, #0x9f000
+VA 00020ea8 file 00024ea8  e80300f0  adrp     x8, #0x9f000
+VA 00020eac file 00024eac  00282f91  add      x0, x0, #0xbca
+VA 00020eb0 file 00024eb0  08e12f91  add      x8, x8, #0xbf8
+VA 00020eb4 file 00024eb4  f6d701a9  stp      x22, x21, [sp, #0x18]
+VA 00020eb8 file 00024eb8  f7e300a9  stp      x23, x24, [sp, #8]
+VA 00020ebc file 00024ebc  e80300f9  str      x8, [sp]
+VA 00020ec0 file 00024ec0  4ef5ff97  bl       #0x1e3f8
+VA 00020ec4 file 00024ec4  1c000014  b        #0x20f34
+VA 00020ec8 file 00024ec8  f5031f2a  mov      w21, wzr
+VA 00020ecc file 00024ecc  29000014  b        #0x20f70
+VA 00020ed0 file 00024ed0  5a0d0090  adrp     x26, #0x1c8000
+VA 00020ed4 file 00024ed4  f9025cb2  orr      x25, x23, #0x1000000000
+VA 00020ed8 file 00024ed8  5a431291  add      x26, x26, #0x490
+VA 00020edc file 00024edc  e10318aa  mov      x1, x24
+VA 00020ee0 file 00024ee0  e20316aa  mov      x2, x22
+VA 00020ee4 file 00024ee4  29008052  mov      w9, #1
+VA 00020ee8 file 00024ee8  e3c30091  add      x3, sp, #0x30
+VA 00020eec file 00024eec  e93700b9  str      w9, [sp, #0x34]
+VA 00020ef0 file 00024ef0  48034039  ldrb     w8, [x26]
+VA 00020ef4 file 00024ef4  1f010071  cmp      w8, #0
+VA 00020ef8 file 00024ef8  e012999a  csel     x0, x23, x25, ne
+VA 00020efc file 00024efc  e41f0094  bl       #0x28e8c
+VA 00020f00 file 00024f00  f503002a  mov      w21, w0

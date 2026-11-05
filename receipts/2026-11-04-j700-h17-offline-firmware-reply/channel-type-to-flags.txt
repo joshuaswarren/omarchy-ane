@@ -1,0 +1,15 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 0000dc10 file 00011c10  a82240f9  ldr      x8, [x21, #0x40]
+VA 0000dc14 file 00011c14  df060071  cmp      w22, #1
+VA 0000dc18 file 00011c18  a31246a9  ldp      x3, x4, [x21, #0x60]
+VA 0000dc1c file 00011c1c  69008052  mov      w9, #3
+VA 0000dc20 file 00011c20  e10314aa  mov      x1, x20
+VA 0000dc24 file 00011c24  0801178b  add      x8, x8, x23
+VA 0000dc28 file 00011c28  e203132a  mov      w2, w19
+VA 0000dc2c file 00011c2c  162900b9  str      w22, [x8, #0x28]
+VA 0000dc30 file 00011c30  1fb10039  strb     wzr, [x8, #0x2c]
+VA 0000dc34 file 00011c34  131100f9  str      x19, [x8, #0x20]
+VA 0000dc38 file 00011c38  e8179f1a  cset     w8, eq
+VA 0000dc3c file 00011c3c  df0a0071  cmp      w22, #2
+VA 0000dc40 file 00011c40  2001881a  csel     w0, w9, w8, eq
+VA 0000dc44 file 00011c44  2e6f0094  bl       #0x298fc

@@ -3,6 +3,14 @@
 Status: compile-only, independently reviewed; NOT installed or armed.
 No device access, module unload, task, doorbell, or reboot was performed.
 
+**2026-11-05 decision update:** offline firmware analysis now identifies a
+channel-pointer narrowing chain that predicts the rung-1 fault address.
+See `../2026-11-04-j700-h17-offline-firmware-reply/README.md` and rung-1
+addendum 6. Defer diagnostic-kernel deployment; prioritize a reviewed
+firmware-compatible address-layout design. The diagnostic remains a
+fallback for unresolved runtime publication state, not a prerequisite to
+discovering this already source-established narrowing.
+
 ## Source and artifacts
 
 - Exact installed-package source pin:

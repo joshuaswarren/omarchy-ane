@@ -1,0 +1,33 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 000052e4 file 000092e4  7f2303d5  pacibsp
+VA 000052e8 file 000092e8  fa67bba9  stp      x26, x25, [sp, #-0x50]!
+VA 000052ec file 000092ec  f85f01a9  stp      x24, x23, [sp, #0x10]
+VA 000052f0 file 000092f0  f65702a9  stp      x22, x21, [sp, #0x20]
+VA 000052f4 file 000092f4  f44f03a9  stp      x20, x19, [sp, #0x30]
+VA 000052f8 file 000092f8  fd7b04a9  stp      x29, x30, [sp, #0x40]
+VA 000052fc file 000092fc  fd030191  add      x29, sp, #0x40
+VA 00005300 file 00009300  28fc0091  add      x8, x1, #0x3f
+VA 00005304 file 00009304  c1040090  adrp     x1, #0x9d000
+VA 00005308 file 00009308  13e57a92  and      x19, x8, #0xffffffffffffffc0
+VA 0000530c file 0000930c  08fc0091  add      x8, x0, #0x3f
+VA 00005310 file 00009310  e00313aa  mov      x0, x19
+VA 00005314 file 00009314  14e57a92  and      x20, x8, #0xffffffffffffffc0
+VA 00005318 file 00009318  21700c91  add      x1, x1, #0x31c
+VA 0000531c file 0000931c  02088052  mov      w2, #0x40
+VA 00005320 file 00009320  7f4600b9  str      wzr, [x19, #0x44]
+VA 00005324 file 00009324  96022091  add      x22, x20, #0x800
+VA 00005328 file 00009328  15088052  mov      w21, #0x40
+VA 0000532c file 0000932c  36ffff97  bl       #0x5004
+VA 00005330 file 00009330  08408052  mov      w8, #0x200
+VA 00005334 file 00009334  c1040090  adrp     x1, #0x9d000
+VA 00005338 file 00009338  58008052  mov      w24, #2
+VA 0000533c file 0000933c  68da04a9  stp      x8, x22, [x19, #0x48]
+VA 00005340 file 00009340  37008052  mov      w23, #1
+VA 00005344 file 00009344  08009152  mov      w8, #0x8800
+VA 00005348 file 00009348  21940c91  add      x1, x1, #0x325
+VA 0000534c file 0000934c  60020491  add      x0, x19, #0x100
+VA 00005350 file 00009350  02088052  mov      w2, #0x40
+VA 00005354 file 00009354  784200b9  str      w24, [x19, #0x40]
+VA 00005358 file 00009358  774601b9  str      w23, [x19, #0x144]
+VA 0000535c file 0000935c  9902088b  add      x25, x20, x8
+VA 00005360 file 00009360  29ffff97  bl       #0x5004

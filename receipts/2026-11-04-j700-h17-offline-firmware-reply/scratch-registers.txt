@@ -1,0 +1,47 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 0000878c file 0000c78c  7f2303d5  pacibsp
+VA 00008790 file 0000c790  fd7bbfa9  stp      x29, x30, [sp, #-0x10]!
+VA 00008794 file 0000c794  fd030091  mov      x29, sp
+VA 00008798 file 0000c798  03018052  mov      w3, #8
+VA 0000879c file 0000c79c  03430094  bl       #0x193a8
+VA 000087a0 file 0000c7a0  d0050090  adrp     x16, #0xc0000
+VA 000087a4 file 0000c7a4  10220791  add      x16, x16, #0x1c8
+VA 000087a8 file 0000c7a8  10420091  add      x16, x16, #0x10
+VA 000087ac file 0000c7ac  f10300aa  mov      x17, x0
+VA 000087b0 file 0000c7b0  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 000087b4 file 0000c7b4  300ac1da  pacda    x16, x17
+VA 000087b8 file 0000c7b8  080480d2  mov      x8, #0x20
+VA 000087bc file 0000c7bc  fd7bc1a8  ldp      x29, x30, [sp], #0x10
+VA 000087c0 file 0000c7c0  0831a0f2  movk     x8, #0x188, lsl #16
+VA 000087c4 file 0000c7c4  8800c0f2  movk     x8, #4, lsl #32
+VA 000087c8 file 0000c7c8  100000f9  str      x16, [x0]
+VA 000087cc file 0000c7cc  082400f9  str      x8, [x0, #0x48]
+VA 000087d0 file 0000c7d0  ff0f5fd6  retab
+VA 000087d4 file 0000c7d4  d0050090  adrp     x16, #0xc0000
+VA 000087d8 file 0000c7d8  10220791  add      x16, x16, #0x1c8
+VA 000087dc file 0000c7dc  10420091  add      x16, x16, #0x10
+VA 000087e0 file 0000c7e0  f10300aa  mov      x17, x0
+VA 000087e4 file 0000c7e4  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 000087e8 file 0000c7e8  300ac1da  pacda    x16, x17
+VA 000087ec file 0000c7ec  100000f9  str      x16, [x0]
+VA 000087f0 file 0000c7f0  01430014  b        #0x193f4
+VA 000087f4 file 0000c7f4  7f2303d5  pacibsp
+VA 000087f8 file 0000c7f8  fd7bbfa9  stp      x29, x30, [sp, #-0x10]!
+VA 000087fc file 0000c7fc  fd030091  mov      x29, sp
+VA 00008800 file 0000c800  d0050090  adrp     x16, #0xc0000
+VA 00008804 file 0000c804  10220791  add      x16, x16, #0x1c8
+VA 00008808 file 0000c808  10420091  add      x16, x16, #0x10
+VA 0000880c file 0000c80c  f10300aa  mov      x17, x0
+VA 00008810 file 0000c810  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 00008814 file 0000c814  300ac1da  pacda    x16, x17
+VA 00008818 file 0000c818  100000f9  str      x16, [x0]
+VA 0000881c file 0000c81c  f6420094  bl       #0x193f4
+VA 00008820 file 0000c820  fd7bc1a8  ldp      x29, x30, [sp], #0x10
+VA 00008824 file 0000c824  ff2303d5  autibsp
+VA 00008828 file 0000c828  ce060214  b        #0x8a360
+VA 0000882c file 0000c82c  082440f9  ldr      x8, [x0, #0x48]
+VA 00008830 file 0000c830  007961b8  ldr      w0, [x8, x1, lsl #2]
+VA 00008834 file 0000c834  c0035fd6  ret
+VA 00008838 file 0000c838  082440f9  ldr      x8, [x0, #0x48]
+VA 0000883c file 0000c83c  027921b8  str      w2, [x8, x1, lsl #2]
+VA 00008840 file 0000c840  c0035fd6  ret

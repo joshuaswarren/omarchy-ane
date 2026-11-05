@@ -1,0 +1,7 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 0008c93c file 0009093c  8b0140b9  ldr      w11, [x12]
+VA 0008c940 file 00090940  a90009cb  sub      x9, x5, x9
+VA 0008c944 file 00090944  f40305aa  mov      x20, x5
+VA 0008c948 file 00090948  e3a702a9  stp      x3, x9, [sp, #0x28]
+VA 0008c94c file 0009094c  69050051  sub      w9, w11, #1
+VA 0008c950 file 00090950  36a540d2  eor      x22, x9, #0x3ffffffffff

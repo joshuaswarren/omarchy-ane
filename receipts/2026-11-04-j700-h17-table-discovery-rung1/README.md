@@ -521,3 +521,37 @@ The diagnostic still needs implementation, offline tests, a matching-source
 build and independent review. It can establish publication state but does
 not by itself prove hardware exception address-field semantics. No new
 hardware attempt, alternate-DVA mapping, or reboot is armed.
+
+## Addendum 6 — offline instruction chain explains the low-32 access
+
+2026-11-05. See companion receipts
+`../2026-11-04-j700-h17-offline-firmware-reply/` and
+`../2026-11-04-j700-h17-offline-dart-decoder/` for hashed inputs,
+reproduction scripts, checked instruction anchors and review.
+
+The Apple DART collector independently corroborates Linux's fault-address
+offsets +8/+12 and 64-bit assembly. More importantly, the ANE firmware
+builds a full-width channel buffer pointer at IPC DVA +0x800, then reloads
+it with **`ldr w8,[x27,#0x50]` at firmware VA `0x6e0c`**. The narrowed
+value propagates through channel constructors to stores at VA
+`0x299b8/0x299bc`. Substituting rung-1 IPC `0x3ffffbb0000` predicts store
+operands `0xffbb0808` and **`0xffbb0800`**, matching the recorded fault.
+
+This is channel-header initialization before the table-discovery reply,
+not a table reply store at IPC +0x800. The table itself is at the mapped
+IPC base on this path. The descriptor reader retains high/low scratch
+halves and mapping helpers distinguish original DVA from a 36-bit CPU
+alias; the decisive 32-bit narrowing is in channel construction.
+
+This establishes an incompatible allocation layout and a matching failure
+mechanism, not the failed device's exact PC or every live mapping. Earlier
+claims treating unknown DART publication as the only explanation, or
+requiring a diagnostic boot to locate the narrowing, are superseded.
+
+**Decision: defer diagnostic-kernel deployment.** First design reviewed,
+owned/reserved aliases whose IPC low-36-bit extent fits below 2^32, while
+also preserving the DM/IPC prefix relationship used by the low-word reply
+and unchanged SCRATCH1. Arithmetic examples in the model are not approved
+addresses. Do not shrink DART aperture properties, force firmware-owned
+slots, or submit a new rung merely on this evidence. Existing stop rules
+and reboot requirements remain in force; no hardware change was made.
