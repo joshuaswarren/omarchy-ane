@@ -64,11 +64,11 @@ A second operator ran this on boot `f53f5742`. That is the second boot on the ca
 | gate | 4 trials and reopen and repeat PASS |
 | lanes in band | 1024 of 1024, max 0.121 conditioning units; 956 to 966 bit-exact per trial |
 | ANE busy time | 2519585 ns over 7 jobs, 360 microseconds per job (derived from `ane_stats`) |
-| CPU baseline | one thread, fp32, same weights, same laptop: 238.2 and 237.2 microseconds per matvec |
+| CPU baseline | one thread, fp32, same weights, same laptop: 238.2 and 237.2 microseconds per matvec (operator report; the gate log does not hold it) |
 
 One ANE job is slower than one CPU core at this size. This is busy time on the device, not wall time per call, and nothing here shows a speedup.
 
-The first run failed: 30 of 1024 lanes. The operator fed random weights, but the ANEC bakes in the compiler's own weights. The second run used the matching weights file and passed. Both runs are in the lane log. The checks ran with the same separate script as above.
+The first run failed: 30 of 1024 lanes. The operator reports the cause as random weights fed to an ANEC that bakes in the compiler's own weights, and that the second run used the matching weights file. The log holds both runs and their verdicts. It does not hold the cause or the weights hash, so the cause is the operator's inference. The checks ran with the same separate script as above.
 
 ## Deviation from `gate.sh`
 
@@ -92,4 +92,4 @@ If Linux does not return, the stock file goes back from macOS with a second scri
 
 - Hashes, sizes, the guard list, the exit codes and the no-autoload rule come from the written procedure that the operator ran. It was reviewed before the boot, and the operator hash-checked each block against it.
 - Boot ids, the load line and the kernel lines come from the operator's log of the boot.
-- The add and mul counts come from the job operator's state check and gate log. The matvec figures come from that operator's `gate.log`. A reviewer re-read the matvec `gate.log` and re-derived the 360 microseconds.
+- The add and mul counts come from the job operator's state check and gate log. The matvec gate result and the `ane_stats` figures come from that operator's `gate.log`, which is listed in a dated checksum file. The CPU baseline and the run 1 cause are operator reports, to be saved as artifacts when the laptop is back on Linux. A reviewer re-read the matvec `gate.log` and re-derived the 360 microseconds.
