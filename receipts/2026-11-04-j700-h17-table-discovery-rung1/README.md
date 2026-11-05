@@ -220,3 +220,154 @@ publish them into the hardware walk. A rung 2 needs one of:
 No component of the table or descriptor contract was invalidated; the
 reply-timing envelope (1 s) remains untouched for rung 2 (retry policy is
 unchanged: one attempt per boot).
+
+## Addendum 3 — attach path re-read, hypothesis resolution, rung-2 shape
+[same boot 0855c23b; offline source study, no device access]
+
+- All source citations are `/home/admin/linux-aurora/drivers/iommu/
+  apple-dart.c` unless otherwise named. Labels: [source] = code fact
+  at the cited head; [device] = rung-1 dmesg observation
+  (`dmesg-rung.log`); [inference] = conclusion combining the two.
+
+### Corrections to addendum 2
+
+- **The three ANE darts are not 3-level-locked.** Addendum 2 read the
+  `-EINVAL` at `:823-828` as the general locked 4-level guard. It is not:
+  that guard fires only when `dart->fw_handoff` is set (`:865-868`,
+  `if (dart->fw_handoff && dart->hw->tcr_4level && (TCR & tcr_4level))`
+  internally `apple_dart_hw_map_locked_ttbr`). Our DT has no
+  `apple,firmware-root-handoff`, so `fw_handoff` is false
+  (`apple_dart_fw_handoff_enabled`, `:599-609`) and, for a locked
+  `apple,t8140-dart` without handoff, **`fw_mirror` is true**
+  (`:3103-3105`). Mirror mode supports locked **four-level** streams
+  first-class: seen in `apple_dart_fw_slot_foreign` (`:1123-1126`) and
+  the four-level branch of `apple_dart_fw_invalidate` (`:1185-1200`),
+  whose comment names this exact setting — "On T8140 DARTs that keep
+  firmware roots". [source]
+- **"The legacy error printout may be truncated" is resolved.** The rung
+  1 line came from the t8110 **v2** IRQ path (`:2710-2757`), which latches
+  `addr = EXCADDR_LO | (EXCADDR_HI << 32)` (`:2742-2745`) and prints it as
+  one `%#llx` (`:2751-2757`). The printed `0xffbb0800` is therefore the
+  full latched device-issued DVA: **ADDR_HI read zero**. [source: the
+  print path; device: the observed line]
+
+### H1 / H2 resolution (the suspended questions)
+
+- Call site `:1971-1975` (`apple_dart_attach_dev_paging`): locked streams
+  take `apple_dart_setup_translation_locked`; `apple_dart_setup_translation`
+  — the only function that writes TTBR (`:1729`) — is reached **only when
+  `!stream_map->dart->locked`**. [source]
+- `apple_dart_setup_translation_locked` (`:1752-1772`) never writes TTBR
+  or TCR: it maps the live root (`apple_dart_hw_map_locked_ttbr`,
+  `:853-937`, which memremaps the root page decoded from
+  `DART_TTBR(dart, sid, idx)`), syncs new PTEs into it
+  (`apple_dart_hw_sync_locked`, `:950-1045`), then invalidates. Mappings
+  created later keep flowing through the same publish: the TLB-flush path
+  re-syncs before every invalidate (`:1466`, `:1453-1490`). [source]
+- The `ias >= 37` expansion at `:1839-1861` requires `dart->hw->tcr_4level`
+  (set for the t8110-family struct, `:3366`) and `dart->ias > 36`;
+  `dart->ias` comes from `DART_T8110_PARAMS3.VA_WIDTH` (`:2995-3001`).
+  Our rung-1 DVAs (`0x3ffffb…0`, > 2^36, < 2^42) are serviceable only by a
+  four-level domain, and the rung's maps would have failed `apple_dart
+  _finalize_domain` aperture checks otherwise. [source]
+- **H2 ("Linux repoints TTBR at a fresh root on attach") — REFUTED
+  [source].** No locked stream's TTBR (or TCR) is ever reprogrammed.
+  Linux hosts its mappings by copying PTEs into the firmware-owned live
+  root.
+- **H1 ("a locked four-level stream's fresh root is invisible to the
+  hardware walk") — REFUTED [source + device].** Source: the machinery
+  above is four-level aware. Device: the firmware CPU fetches its staged
+  image at `0x10000000000` via SID 0 (dmesg-rung.log:113, CPU_STATUS
+  0x6c, "firmware is running"), so the walk of the root Linux published
+  into reaches at least the slot-16 subtree and the hardware does read
+  Linux-published entries. A "fresh root invisible" mis-walk would have
+  killed the firmware fetch too. [inference]
+
+### What the fault lines actually pin down
+
+- status `0x00001100` decodes (`:163-165`, `:2658-2668`) as level 1
+  ("CTE invalid") + write. "CTE" is the entry read *off the root page*:
+  the root itself (TTBR) was walkable; the top-level slot entry at the
+  faulting DVA was not. [source: naming; device: the status word]
+- The hardware-walked root cannot be one where our published subtrees
+  are simply absent (the slot-16 fetch works, [device]). So the faulting
+  DVA belongs to a top-level slot **we did not publish** — and, given the
+  rung-1 design published only slot 16 (stage) and the slots covering
+  `0x3ffffb…0` (the chanbuf allocations), it is likely **slot 0** of the
+  walk. [inference]
+- `0xffbb0800 >> 36 = 0` — the latched DVA is 32 bits wide and sits in
+  slot **0**, `< 2^32`, exactly the low-32 slice of our IPC DVA + 0x800
+  (`0x3ffffbb0800 & 0xffffffff`). [device arithmetic]
+- Therefore the dominant candidate is now **H3: the ANE hardware issue
+  side truncated the reply target to 32 bits** — the reply DVA as seen
+  on the DART bus is the low 32 bits of what the descriptor (64-bit
+  everywhere, `chanreg_model.py:131-136`, `chanreg.h:46-70`) specifies.
+- Two countervailing possibilities remain open, both unrefutable from
+  the receipt alone:
+  1. The kernel log line is `dev_err_ratelimited` (`:2750`), so "one
+     fault line" does not imply a single faulted access: a truncated
+     *descriptor read* at `0xffbc0xxx` could have been suppressed by
+     rate-limiting. [source + inference]
+     refuted; the full staging reach of macOS also shows 40-bit-plus DVAs
+     (`0x10000000000` traced segment DVAs), so a hard 32-bit DMA port
+     clip is not a plausible invariant either; the truncation, if real,
+     is in the *specific reply path* (how the firmware learns/derives
+     the reply target), not the ANE DMA engine at large.
+     [source-of-trace + inference]
+- The `+0x18 = 0x10000000 - 0x380000` companion constant (kext window
+  budget 256 MiB, addendum 1 note `chanreg.h:49-63`) gains new meaning
+  under H3: a 256 MiB DVA window base is consistent with an issue-side
+  view of the staging arena that does not need bytes ≥ 2^32 to reach the
+  DART. [inference, unproven]
+
+### Rung-2 shape (design proposed; NOT armed, no boot yet)
+
+Goal: answer "why did the ANE side issue a 32-bit DVA" with one boot and
+zero dart-register writes, keeping stop-before-SCRATCH3 discipline.
+
+- Amendment to the first draft below (recorded as discovered): the
+  slot-16 alternative is **not servable** for fresh mappings. The
+  locked-mirror reservation check (`:1553-1608`, four-level branch
+  `:1597-1606`) returns `-EBUSY` for any map into a root slot the
+  firmware holds; slot 16 is macOS-owned (its subtree serves the stage
+  image via `apple_dart_inherited_phys`, `:1655-1671` — "existing
+  firmware translations need no replacement software mapping"), so the
+  boot-stage mapping was reusing an inherited subtree, not ours. The
+  only proven map-legal fresh band remains slot 63 (`0x3ffffb…0`). [source]
+- Consequently rung-1 itself already carries the discriminator: a slot-63
+  reply DVA latched as `0xffbb0800` (< 2^32, slot 0) can only be
+  explained by issue-side address loss — no truncation-free walk-side
+  story produces a slot-0 fault from a slot-63 programming. [inference]
+  What rung-1 does NOT answer is *which* truncating link: SCRATCH
+  handshake width, firmware-side reply-path derivation, or an EXC
+  register semantics we have not verified. Rung-1's own publication of
+  the DM pointer followed the traced kext protocol (64-bit value split
+  over two consecutive 32-bit scratch words, then the request word —
+  kext `0x8f3f040-0x8f3f098` — SCRATCH0/1 + SCRATCH7
+  `ane_h16_main.c:1173-1176`), so the handshake itself is
+  protocol-aligned at that granularity. [source: kext trace + kernel]
+- Rung-2 lever (offline first, then one boot): re-derive the
+  **reply-target reach** end-to-end against the kext evidence:
+  1. the kext's SCRATCH0/1 published value is computed
+     `([x8+0x18] + x20) - [x8+0x38]` (a 64-bit difference), not a raw
+     base pointer — what that difference represents, and whether the
+     firmware expects the *descriptor address* `dm.iova + offset`
+     (`chanreg_model.py:126`) rather than the arena base, is not yet
+     pinned; our rung-1 published `dm->dma` with `offset` 0. [source of
+     gap]
+  2. whether the firmware's reply target derives from the descriptor's
+     64-bit IPC field (`+0x08`) or from a narrower internal source.
+- Only after that offline closure: reboot, re-run the same rung with the
+  corrected publication. The fault address recorded in the next boot's
+  dart line remains the decoder: `fault < 2^32` anywhere = truncation
+  lives upstream of the DART (and rung-3 hunts the firmware's reply
+  derivation); `fault == full DVA in a firmware-held slot` (-EBUSY
+  family) would instead point at map-side constraints; a reply means
+  publication semantics were the problem.
+- Judge additionally records: chosen DVAs, top-level slot indices of
+  each, and the (slot, level) arithmetic of the resulting fault line,
+  so future readers don't re-derive it.
+
+Standing: still parked on boot 0855c23b with the module pinned; nothing
+is armed; rung-2 needs the usual implementation + sim + review gates
+before a reboot arms it.
