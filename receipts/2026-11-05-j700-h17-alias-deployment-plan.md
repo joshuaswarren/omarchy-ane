@@ -188,3 +188,22 @@ push was rejected), an untested rollback/restore procedure, and missing
 fresh-boot/runtime evidence. It explicitly does not authorize deployment or
 the one-shot rung. Candidate checksums pass; no system files or boot state
 were changed.
+
+## Rollback test and latest review state (2026-11-06)
+
+The user separately authorized a rollback-payload boot test. The retained
+`boot.bin.old` was atomically installed as active `boot.bin`, after preserving
+the former payload as `boot.bin.pre-h17-rollback`; both hashes were verified
+before and after reboot. Linux returned on fresh boot
+`e61000e9-4feb-4e0c-b370-8cacab1c6109` with `apple,t8140-ane` disabled and no
+ANE module loaded. This demonstrates that the old payload boots and provides
+a tested restore route. It was not the alias candidate and did not enter the
+ANE driver.
+
+The stale-manifest/push finding was also closed: clean local and remote HEAD
+are `57b08c2921f727a38db5701fa370189a8c6c6d41`; the manifest was reminted
+and its bundle rechecked. Independent review has not yet seen the rollback
+boot result. Remaining gates are review of that result and explicit
+authorization for candidate deployment and the one-shot table-discovery
+rung. No candidate boot, live reservation check, module load, or H17 table
+result has occurred.

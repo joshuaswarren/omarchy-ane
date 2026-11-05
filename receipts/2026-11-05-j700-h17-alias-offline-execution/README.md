@@ -228,3 +228,36 @@ selection. Remaining blockers are the stale candidate manifest/source pin
 rollback/restore procedure, lack of fresh-boot/live IOMMU/table evidence,
 and separate deployment/rung authorization. No installation, reboot, live
 claim, module load, or hardware run was performed.
+
+## Authorized rollback-payload boot test (2026-11-06)
+
+The user explicitly authorized one rollback-path test, limited to replacing
+active m1n1 `boot.bin` with the hash-verified `boot.bin.old` and rebooting.
+Before replacement, the current payload was preserved as
+`/boot/efi/m1n1/boot.bin.pre-h17-rollback`. The write used a same-directory
+temporary file and atomic rename, with hashes checked before and after:
+
+- Active payload after replacement and reboot:
+  `524e7236d58d0e7f6a75495752be0f6879ab78fb93af6dba26b3c1a69b3de067`.
+- Retained `boot.bin.old`: same hash.
+- Preserved former active payload `boot.bin.pre-h17-rollback`:
+  `7dc4c03fe572227ca641699f2aa9f0e9f77321e879126de957f7f925815e98c5`.
+- Fresh Linux boot ID: `e61000e9-4feb-4e0c-b370-8cacab1c6109`; kernel
+  `7.2.11-14-1-ARCH`.
+- Live tree reports `apple,t8140-ane` status `disabled`; no `ane` or
+  `ane_h16` module is loaded.
+
+This demonstrates that the retained old m1n1 payload can be selected as the
+active payload and reaches Linux with ANE disabled, and that the former
+payload remains available for restoration. It is rollback-path evidence only:
+the H17 alias candidate was not installed or booted, and no module was loaded
+or hardware rung run. The candidate remains staged under
+`/var/tmp/opencode/h17-alias-candidate-bundle/`.
+
+The earlier stale-manifest note was resolved after pushing the review receipt:
+the clean source HEAD and `mine/neo/h17-bringup` now match
+`57b08c2921f727a38db5701fa370189a8c6c6d41`; the candidate manifest and
+bundle checksums were refreshed and independently checked. The independent
+review has not yet reviewed the rollback boot evidence. No candidate
+deployment or table-discovery rung is authorized by the rollback-test
+approval.
