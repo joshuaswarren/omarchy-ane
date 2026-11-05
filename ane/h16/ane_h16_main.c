@@ -548,7 +548,7 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 	for (i = 0; i < root.nchildren; i++) {
 		struct adt_node c = adt_child(root, i);
 
-		if (!adt_prop(c, "name", &data, &size) && size > 7 &&
+		if (!adt_prop(c, "name", &data, &size) && size >= 7 &&
 		    !strncasecmp(data, "arm-io", 7)) {
 			arm_io = c;
 			break;

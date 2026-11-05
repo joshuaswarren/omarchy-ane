@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane_h16`: find `/arm-io` in the boot ADT. The name check needed 8 bytes of a 7 byte property, so it never matched and `stage=dt` printed "no ... ane node or segment-ranges" even when the ADT held both (omarchy-ane#320, T8132). The sim now builds the name at its real length.
+
 ## 0.5.10 (2026-11-05)
 
 - Preserve DART fault outcomes and retain scratch mappings when completion is
