@@ -91,7 +91,60 @@ Runner verdict (fail-closed, recorded BEFORE analysis):
   directory has been preserved as
   `/var/tmp/opencode/h17-table-0855c23b-dce5-47b0-83c5-a19baef2beef-gate-refusal-1`.
 
-## What this changes for the next rung (offline design)
+## What this changes for the next rung (offline design) [addendum, same boot]
+
+Driver-source facts read this session (aurora `drivers/iommu/apple-dart.c`,
+all line numbers from that working tree; static reads — no device access):
+
+- T8110-v2 exception taxonomy: code 0 with level 0/1/2/3 = TTBR/CTE/STE/PTE
+  invalid (`apple_dart_t8110_v2_fault_name`, `:2656-2700`). This is the
+  generic 4-level ranking; it does *not* by itself prove the live dart was
+  configured 4-level.
+- A locked root snapshot attach refuses 4-level streams
+  (`apple_dart_hw_map_locked_ttbr`, `:823-828`: -EINVAL when
+  `tcr_4level` is set in TCR). The rung reached `TABLE_PREPARE`, so attach
+  succeeded for all three darts: their live roots were 3-level.
+- Publish semantics (`apple_dart_publish_root`, `:713-748`): publish only
+  into *vacant* firmware-owned root slots via cmpxchg; a slot firmware
+  already holds is never written (its descendants must mirror, checked by
+  `apple_dart_fw_mapping_matches`). Mirror-mode leaf pages are snapshot
+  memremaps of firmware tables.
+- TLB invalidation for mirror darts with `version >= 0x0202` routes through
+  `apple_dart_fw_invalidate` clipped to the stream's locked window
+  (`:1241-1244`, `:1142-1237`); older versions use a per-SID flush command.
+- `apple,firmware-root-handoff` (`Documentation/devicetree/bindings/iommu/
+  apple,dart.yaml:82-92`) is a **bootloader** contract: the loader must
+  retain the root and leaf table pages as reserved normal RAM. Our boot
+  chain offers no such ANE reservation, so handoff is not a one-property
+  rung-2 toggle; it is the canonical fix path only if a retained loader is
+  built first.
+- Correction to the rung-1 receipt above: the `ane-fw-alias-iova`
+  reservation is produced by our overlay fragment
+  (`ane/h16/t8140-ane-stage-boot.dts:66-73`) — its phandle `0xb8` resolves
+  to the ANE node, not a dart, and it is **not** evidence about macOS's
+  allocation layout. The conclusion it fed ("macOS also owns only
+  0x380000 of firmware memory") must be re-derived from the kext
+  instruction evidence alone, which still supports it
+  (`prereqs.txt:5-19` allocator size; `:680-688` validator extent).
+- Open fault-address ambiguity: the legacy error printout `0xffbb0800`
+  may be a truncated/low-word rendering of `IPC DVA + 0x800`
+  (`0x3ffffbb0800`) rather than the true full address (the v2 exception
+  path reads block_error/address separately; the writer side of that
+  hardware path was not verified this session). The replayable datum is
+  the raw log line; both readings stay inside/near the IPC arena.
+
+Rung-2 standing (all offline, none confirmed): root-cause candidates in
+priority order — (1) publication/TLB semantics on these three locked
+3-level darts for fresh DVAs near the top of the aperture
+(`0x3ffffb…0000` → TTBR index 3), starting from `apple_dart_publish_root`
+callers and the `DART_TTBR(dart, sid, idx)` index wiring; (2) whether the
+write port of ANE is a different stream/SID than the Advertised `SID 0`
+(fault says SID 0, but a remap or silently distinct write stream would
+invalidate that); (3) the 1 s reply timeout envelope — firmware kept
+running after the fault, so a failed store retries are unproven. Any
+component change remains subject to sim + review before another boot;
+the module stays pinned until then.
+
 
 `rung1` confirms: descriptor publish/request works; the allocation DVAs the
 module chose cannot be served by retained macOS roots, and on locked T8140
