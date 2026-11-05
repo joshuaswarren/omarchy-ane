@@ -302,6 +302,46 @@ unchanged: one attempt per boot).
   side truncated the reply target to 32 bits** — the reply DVA as seen
   on the DART bus is the low 32 bits of what the descriptor (64-bit
   everywhere, `chanreg_model.py:131-136`, `chanreg.h:46-70`) specifies.
+
+### Addendum 3 followup — publication semantics pinned; second fork mechanism
+
+- The SCRATCH0/1 publish is **resolved equal to our implementation**:
+  per receipt §15.2/§16.3 (and prereqs.txt:541 : "descriptor ANE
+  address and SECOND wake request"), the kext publishes
+  `[[dev+0x498]+0x18] (DM DVA base) + w0 (descriptor offset inside the
+  arena)` computed as `([x8+0x18] + x20) - [x8+0x38]` with `[x8+0x38]`
+  being the DM **CPU pointer** (`0x8f412f8..0x8f41310` naming; §16.3).
+  Our rung publishes `dm->dma` with the descriptor encoded at arena
+  offset 0 — same semantics. The reply-side translator derivation
+  (`surface.CPU_pointer + (reply_DVA - surface.DVA)`, `0x8f413b4`,
+  §16.3) is already decoded there. No kernel-side change is needed
+  here. [source]
+- **A competing reading of the 32-bit fault address must be kept
+  alive.** The per-stream exception record layout (records at
+  `0x8000 + 0x40*sid`, `addr_lo` at +8, `addr_hi` at +0xc) is
+  single-sourced to `linux-aurora` commit `f57d90040433` ("Support
+  T8140 DARTs and firmware-owned stream roots", Ryan Murray); no
+  upstream map corroborates the ADDR_HI offset. If the ADDR_HI
+  register on t8140 darts is at a different offset (or reads zero by
+  construction), the device may have issued the **full** DVA
+  `0x3ffffbb0800` and the fault is walk-side at root slot 63 with the
+  CTE invalid — H1/H2 refutation then does NOT explain the fault and
+  the diagnostic must cover slot-63 publication state. [source:
+  register map provenance; inference]
+- Both readings predict identical DART behaviour for identical inputs;
+  they are separated **only** by reading the fault record's address
+  words from the device after the fault. Device-side discriminator
+  (read-only, dart-driver-owned, NO dart writes beyond the existing
+  ack/unlock the v2 IRQ already performs):
+  1. dump the full 16-word per-stream record block at
+     `0x8000 + 0x40*sid` on fault, one word per printed line with the
+     register offset;
+  2. read back `TCR(sid)` and `TTBR(sid,0)` after the fault;
+  3. read `PARAMS2/3/4` (page shift, VA/PA width, SIDs) once at boot.
+  That requires an aurora-kernel build; it is the rung-2 gate that
+  changes nothing in `ane_h16` and no dart configuration, and it
+  resolves (i) issue-side truncation vs (ii) ADDR_HI register
+  misread, plus the live slot-63 CTE question, in one boot.
 - Two countervailing possibilities remain open, both unrefutable from
   the receipt alone:
   1. The kernel log line is `dev_err_ratelimited` (`:2750`), so "one
@@ -334,56 +374,36 @@ zero dart-register writes, keeping stop-before-SCRATCH3 discipline.
   firmware translations need no replacement software mapping"), so the
   boot-stage mapping was reusing an inherited subtree, not ours. The
   only proven map-legal fresh band remains slot 63 (`0x3ffffb…0`). [source]
-- Consequently rung-1 itself already carries the discriminator: a slot-63
+- Consequently rung-1 itself carries strong partial evidence: a slot-63
   reply DVA latched as `0xffbb0800` (< 2^32, slot 0) can only be
-  explained by issue-side address loss — no truncation-free walk-side
-  story produces a slot-0 fault from a slot-63 programming. [inference]
-  What rung-1 does NOT answer is *which* truncating link: SCRATCH
-  handshake width, firmware-side reply-path derivation, or an EXC
-  register semantics we have not verified. Rung-1's own publication of
-  the DM pointer followed the traced kext protocol (64-bit value split
-  over two consecutive 32-bit scratch words, then the request word —
-  kext `0x8f3f040-0x8f3f098` — SCRATCH0/1 + SCRATCH7
-  `ane_h16_main.c:1173-1176`), so the handshake itself is
-  protocol-aligned at that granularity. [source: kext trace + kernel]
-- Rung-2 lever (offline first, then one boot): re-derive the
-  **reply-target reach** end-to-end against the kext evidence:
-  1. the kext's SCRATCH0/1 published value is computed
-     `([x8+0x18] + x20) - [x8+0x38]` (a 64-bit difference), not a raw
-     base pointer — what that difference represents, and whether the
-     firmware expects the *descriptor address* `dm.iova + offset`
-     (`chanreg_model.py:126`) rather than the arena base, is not yet
-     pinned; our rung-1 published `dm->dma` with `offset` 0. [source of
-     gap]
-  2. whether the firmware's reply target derives from the descriptor's
-     64-bit IPC field (`+0x08`) or from a narrower internal source.
-  - First offline resolution (same session, later): prereqs.txt:541
-    titles the SCRATCH0/1 publish block "**descriptor ANE address** and
-    SECOND wake request" (`0x8f3f040-0x8f3f098`: SCRATCH0-class word at
-    `[x19+0xfc]` = low32 of the difference, SCRATCH1-class word at
-    `[x19+0x100]` = `lsr #32` of the same 64-bit value, then SCRATCH7
-    `[x19+0x118]` = `0xf7fbdff9`). The register identities are pinned by
-    the ambient reads: `[x19+0xfc]` is the SCRATCH0 that yields
-    `count := 8` and `[x19+0x100]` is the SCRATCH1 whose `+1`
-    (`:159-160`, trace `0x8f3e3a0-0x8f3e3a4`) equals the IPC bytes —
-    exactly our ambient layout (`ane_h16_main.c:1135-1137`), and
-    `[x19+0x118] - [x19+0xfc] = 0x1c = 28` = our `scratch0 + 28`
-    request word (:1176). So the kext publishes the **descriptor
-    address in the ANE address space** as an arena-delta pair, not a
-    raw base pointer; the residual offline work for rung 2 is to prove
-    our `dm.iova + offset` equals that value for the traced boot
-    (descriptor at arena base ⇒ offset 0) or find case they differ.
-- Only after that offline closure: reboot, re-run the same rung with the
-  corrected publication. The fault address recorded in the next boot's
-  dart line remains the decoder: `fault < 2^32` anywhere = truncation
-  lives upstream of the DART (and rung-3 hunts the firmware's reply
-  derivation); `fault == full DVA in a firmware-held slot` (-EBUSY
-  family) would instead point at map-side constraints; a reply means
-  publication semantics were the problem.
+  explained **if** the latched address is the accurate device issue —
+  see the followup section above for the competing ADDR_HI register
+  reading. [inference, conditional on the register identity]
+- Rung-2 lever evolution (recorded as discovered in-session):
+  1. (closed by §15.2/§16.3, followup above) the kext publishes the
+     **descriptor ANE address** as an arena-delta hi/lo pair — our
+     `dm->dma + offset 0` matches the semantics; no kernel-side change
+     needed for the handshake. [source]
+  2. (replaces the earlier slot-16 band idea) the fresh-mapping band
+     is legally confined to non-firmware root slots by the -EBUSY
+     reservation check (`:1553-1608`), and slot 16 is macOS-owned;
+     slot 63 remains the only proven fresh band. [source]
+  3. (new) the deciding rung-2 diagnostic is **dart-side, read-only,
+     in the aurora driver** — full per-stream fault record dump
+     (16 words, one per printed line with offsets), post-fault
+     `TCR`/`TTBR`/`PARAMS2-4` readback — resolving issue-side
+     truncation vs ADDR_HI-register-misread vs slot-63 publication
+     state in one boot. `ane_h16` must not touch dart registers; the
+     diagnostic lands in `apple-dart.c` (constrained additions to
+     `apple_dart_t8110_v2_irq` and probe, strictly read-only), and
+     needs an aurora-kernel build on m1-test-host before the next
+     boot. No rung implementation exists yet.
 - Judge additionally records: chosen DVAs, top-level slot indices of
   each, and the (slot, level) arithmetic of the resulting fault line,
   so future readers don't re-derive it.
 
 Standing: still parked on boot 0855c23b with the module pinned; nothing
-is armed; rung-2 needs the usual implementation + sim + review gates
-before a reboot arms it.
+is armed; rung-2 (dart read-only diagnostic) needs the aurora-kernel
+build, review gates and the owner's reboot decision before any next
+hardware rung; the module-side code does not change until the
+diagnostic's answer is in.
