@@ -30,6 +30,30 @@ def main():
             "pm_runtime_put_sync(&pdev->dev); ane->boot_error = ret;",
             "neg-mbox-silent",
         ),
+        (
+            "table-start-pointer-only",
+            "address, ANE_H17_TABLE_BYTES))",
+            "address, 1))",
+            "neg-table-overrun",
+        ),
+        (
+            "descriptor-publish-without-dma-barrier",
+            "\tdma_wmb();",
+            "\t/* missing DMA barrier */;",
+            "pos-h17-table",
+        ),
+        (
+            "registration-too-early",
+            '"H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task\\n");',
+            '"H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task\\n"); ane_h16_wr32(ane, s->scratch0 + 12, ANE_H16_WAKE_ACK);',
+            "pos-h17-table",
+        ),
+        (
+            "advertised-fw-padding-unmapped",
+            "return chanreg && s == 1 ? ANE_H17_FW_BYTES - 0xc0000 : ane->segs[s].size;",
+            "return ane->segs[s].size;",
+            "pos-h17-table",
+        ),
     ]
     # Only copies of source are mutated. Never load a kernel module.
     with tempfile.TemporaryDirectory(prefix="h17-adt-mutations-",
@@ -42,7 +66,7 @@ def main():
             shutil.copyfile(root / "sim" / name, dst / "sim" / name)
         (dst / "h17").mkdir()
         for name in ("ane_h17_soc.c", "ane_h17_soc.h", "ane_h17_fw.h",
-                     "bringup_order.h"):
+                     "bringup_order.h", "chanreg.h"):
             shutil.copyfile(root.parent / "h17" / name, dst / "h17" / name)
         # ane_h17_soc.h includes "../h16/ane_h16.h"
         (dst / "h16").mkdir()
@@ -56,9 +80,9 @@ def main():
             subprocess.run([os.environ.get("CC", "cc"), "-g", "-O1",
                             "-I", str(dst / "sim"), "-I", str(dst / "sim/inc"),
                             "-o", str(binary), str(dst / "sim/sim_harness.c")],
-                           check=True)
+                           check=True, timeout=60)
             result = subprocess.run([str(binary), scenario], capture_output=True,
-                                    text=True)
+                                    text=True, timeout=20)
             if result.returncode != 1 or "FAIL" not in result.stdout:
                 raise RuntimeError(f"{name}: regression not caught\n{result.stdout}"
                                    f"\n{result.stderr}")

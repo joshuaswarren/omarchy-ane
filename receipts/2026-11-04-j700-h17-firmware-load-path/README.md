@@ -376,8 +376,11 @@ fields — see §5.2):
 | 0 `__TEXT` | `0x0100_0077_4000` | `0x0` | **`0x0100_0000_0000`** | `0xc0000` | `1` |
 | 1 `__DATA` | `0x0100_019A_C000` | `0xc0000` | `0x0100_000C_0000` | `0x2ac000` | `0` |
 
-`0xc0000 + 0x2ac000 = 0x380000` = `this[0x3c0]` = the FWIM surface size. The
-retained firmware image agrees to the byte:
+**Arithmetic correction during kernel integration:** `0xc0000 + 0x2ac000 =
+0x36c000`, not `0x380000`. The latter is `this[0x3c0]`, the nominal FWIM
+arena size, leaving `0x14000` beyond the two image segments. A descriptor
+advertising the larger arena must back that remainder as well (see §17).
+The retained firmware image's segment layout is:
 
 ```
 $ python3 scripts/fw.py macho
@@ -1586,3 +1589,19 @@ writing that registration word; skipping those buffer writes and sending
 the final ack is not an equivalent sequence. That is a later rung after
 validating every channel-buffer range. No doorbell, task, IRQ ack, or new
 hardware access is added by this change.
+
+## 17. Kernel integration and the FWIM/image-size distinction
+
+The next implementation is recorded in
+`receipts/2026-11-04-j700-h17-table-discovery-implementation/README.md`.
+It adds a default-off `chanreg` rung and a separately gated runner; neither
+has been run on hardware in that implementation receipt.
+
+The old §4.3 sum was wrong: `0xc0000+0x2ac000` is `0x36c000`, not
+`0x380000`. Since descriptor +0x10 advertises the latter nominal FWIM size,
+the opt-in rung backs/maps the remaining `0x14000` with owned zeroed coherent
+memory and requires a reservation covering the full advertised range before
+allocation. The existing wake-only path retains its original segment-only
+layout. A successful synthetic wake is not enough to accept a descriptor
+whose advertised firmware range has an unmapped tail; the new mutation test
+specifically catches that regression.

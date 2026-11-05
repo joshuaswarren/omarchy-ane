@@ -55,6 +55,9 @@ struct sim_ram_range sim_sys_ram[4] = { { 0x710000000ull, 0x8000000000ull } };
 int sim_n_sys_ram = 1;
 int sim_dma_outstanding;
 int sim_dma_allocs, sim_dma_frees;
+int sim_dma_fail_at, sim_dma_bad_at;
+int sim_dma_wmbs, sim_dma_rmbs;
+u64 sim_resv_length;
 struct iommu_domain sim_dart_storage;
 struct iommu_domain *sim_dart;
 const struct firmware *sim_fw_file;
@@ -204,6 +207,9 @@ static struct {
 	u64 hello_msg;
 	int polls, wake_after;	/* deliver the wake word on poll N */
 	bool want_hello;
+	bool table_enabled, table_pending, descriptor_valid;
+	int table_mode; /* 1=silent, 2=one-byte overrun, 3=foreign, 4=padding */
+	u64 table_address;
 } fw;
 
 static u64 reg_pa(u32 off)
@@ -254,6 +260,30 @@ static void fw_on_a2i_send(u8 ep, u64 msg)
 	}
 }
 
+static void fw_check_descriptor(void)
+{
+	struct ane_h16 *ane = platform_get_drvdata(&sim_pdev);
+	u8 expected[0x180] = {};
+	u64 first[6] = {
+		ANE_H17_DMA_BASE, ane->chanbuf[1].dma, 0x380000, 0xfc80000,
+		ane->chanbuf[2].dma, 0xf00000,
+	};
+	u64 last[3] = { 0xc441, ane->chanbuf[0].dma, 0x40000 };
+	u32 marker = 0x40, flags = 4;
+	u64 published = ((u64)reg_rd(sim_soc.scratch0 + 4) << 32) |
+		reg_rd(sim_soc.scratch0);
+
+	/* Independent store-list oracle, not the module's encoder helper. */
+	memcpy(expected, first, sizeof(first));
+	memcpy(expected + 0x50, last, sizeof(last));
+	memcpy(expected + 0x68, &marker, sizeof(marker));
+	memcpy(expected + 0x12c, &flags, sizeof(flags));
+	fw.descriptor_valid = ane->chanbuf[0].cpu &&
+		published == ane->chanbuf[0].dma && sim_dma_wmbs == 1 &&
+		!memcmp(ane->chanbuf[0].cpu, expected, sizeof(expected));
+	fw.table_pending = fw.descriptor_valid;
+}
+
 static void fw_write_hook(u64 pa, u32 val)
 {
 	u32 off = (u32)(pa - SIM_ENGINE_PA);
@@ -274,6 +304,9 @@ static void fw_write_hook(u64 pa, u32 val)
 		fw.scratch7_cleared = true;
 	else if (pa == reg_pa(sim_soc.cpu_control) && val == 0x10)
 		fw.armed = true;
+	else if (pa == reg_pa(sim_soc.scratch0 + 28) &&
+		 val == ANE_H17_TABLE_REQUEST && fw.table_enabled)
+		fw_check_descriptor();
 	else if (off == sim_soc.mbox + 0x808)
 		fw_on_a2i_send((u8)val,
 			       (u64)reg_rd(sim_soc.mbox + 0x800) |
@@ -282,6 +315,32 @@ static void fw_write_hook(u64 pa, u32 val)
 
 static void fw_read_hook(u64 pa)
 {
+	if (pa == reg_pa(sim_soc.scratch0 + 28) && fw.table_pending &&
+	    fw.table_mode != 1) {
+		struct ane_h16 *ane = platform_get_drvdata(&sim_pdev);
+		u8 *table = (u8 *)ane->chanbuf[1].cpu + 0x100;
+		unsigned int i;
+
+		for (i = 0; i < 8; i++) {
+			/* Non-pointer test data: even foreign buffer fields must
+			 * only be logged, never translated or dereferenced.
+			 */
+			snprintf((char *)table + i * 0x100, 32, "fixture-%u", i);
+			memset(table + i * 0x100 + 0x50, 0xff, 8);
+		}
+		fw.table_address = ane->chanbuf[1].dma + 0x100;
+		if (fw.table_mode == 2)
+			fw.table_address = ane->chanbuf[1].dma + 0xc441 - 0x800 + 1;
+		else if (fw.table_mode == 3)
+			fw.table_address = TEXT_IOVA;
+		else if (fw.table_mode == 4)
+			fw.table_address = ane->chanbuf[1].dma + 0xc000;
+		reg_wr(sim_soc.scratch0, (u32)fw.table_address);
+		reg_wr(sim_soc.scratch0 + 4, fw.table_address >> 32);
+		reg_wr(sim_soc.scratch0 + 28, ANE_H16_WAKE_ACK);
+		fw.table_pending = false;
+		return;
+	}
 	if (pa == reg_pa(sim_soc.scratch0 + 7 * 4) && fw.armed &&
 	    !fw.wake_delivered) {
 		if (++fw.polls >= fw.wake_after) {
@@ -289,6 +348,11 @@ static void fw_read_hook(u64 pa)
 			       ANE_H16_WAKE_ACK);
 			reg_wr(sim_soc.cpu_status, 0x2a);
 			fw.wake_delivered = true;
+			if (fw.table_enabled) {
+				reg_wr(sim_soc.scratch0, fw.table_mode == 5 ? 9 : 8);
+				reg_wr(sim_soc.scratch0 + 4, 0xc440);
+				reg_wr(sim_soc.scratch0 + 12, 0xf00000);
+			}
 			if (fw.want_hello && !fw.hello_posted)
 				fw_post_hello();
 		}
@@ -339,6 +403,11 @@ static u8 *build_adt(size_t *out_len)
 		{ DATA_PRE_PA, 0, DATA_IOVA, 0x2ac000 },
 	};
 	u32 ane_type = sim_soc.ane_type;
+
+	if (fw.table_enabled) {
+		segs[0].remap = ANE_H17_DMA_BASE;
+		segs[1].remap = ANE_H17_DMA_BASE + 0xc0000;
+	}
 
 	/* root: no props, one child (arm-io) */
 	put32(b, &off, 0);
@@ -399,6 +468,16 @@ static int ev_count(bool write, u64 pa, u32 val)
 	for (i = 0; i < sim_n_events; i++)
 		if (sim_events[i].write == write && sim_events[i].pa == pa &&
 		    (!write || sim_events[i].val == val))
+			n++;
+	return n;
+}
+
+static int ev_access_count(bool write, u64 pa)
+{
+	int i, n = 0;
+
+	for (i = 0; i < sim_n_events; i++)
+		if (sim_events[i].write == write && sim_events[i].pa == pa)
 			n++;
 	return n;
 }
@@ -496,6 +575,9 @@ static void setup_common(void)
 	ps_wait_ms = 500;
 	boot_wait_ms = 3000;
 	hello_wait_ms = 0;
+	irq_read = false;
+	scratch_read = false;
+	chanreg = false;
 	stage = "status";
 
 	sim_pdev.name = "ane_h16";
@@ -1040,6 +1122,9 @@ static void sc_pos_h17_boot(void)
 	    "irq_read off (default): no IRQ status read");
 	chk(sim_log_count("H17 SCRATCH off=") == 0,
 	    "scratch_read off (default): no scratch-word snapshot");
+	chk(sim_log_count("H17 TABLE") == 0 && sim_dma_allocs == 1 &&
+	    ev_count(true, reg_pa(sim_soc.scratch0 + 28), ANE_H17_TABLE_REQUEST) == 0,
+	    "chanreg off: no discovery allocations, request or table log");
 	chk(ev_count(false, reg_pa(sim_soc.irq_status), 0) == 0 &&
 	    ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
 	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
@@ -1129,6 +1214,130 @@ static void sc_pos_h17_scratch(void)
 	    "IRQ status and ack words untouched");
 }
 
+static void sc_h17_table(int mode)
+{
+	struct ane_h16 *ane;
+	int ret, expected_error = 0;
+	int expected_allocs = 4;
+	unsigned int n;
+	const char *reason = "verdict=PASS reason=boot-table-discovery";
+
+	setup_common();
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	fw.table_enabled = true;
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;
+	optin = "t8140";
+	stage = "boot";
+	chanreg = true;
+	fw.table_enabled = true;
+	fw.table_mode = mode;
+	if (mode == 1) {
+		expected_error = -ETIMEDOUT;
+		reason = "verdict=FAIL reason=table-reply-timeout";
+	} else if (mode >= 2 && mode <= 4) {
+		expected_error = -EINVAL;
+		reason = "verdict=REFUSED reason=table-reply-outside-ipc";
+	} else if (mode == 5) {
+		expected_error = -EINVAL;
+		expected_allocs = 1;
+		reason = "verdict=REFUSED reason=table-input-envelope";
+	} else if (mode >= 6) {
+		expected_error = mode == 7 ? -EINVAL : -ENOMEM;
+		expected_allocs = mode == 8 ? 3 : 2;
+		reason = "verdict=REFUSED reason=table-dma-allocation-or-range";
+		if (mode == 7)
+			sim_dma_bad_at = 2;
+		else
+			sim_dma_fail_at = mode == 8 ? 4 : 3;
+	}
+	ret = run_probe();
+	ane = platform_get_drvdata(&sim_pdev);
+	chk(ret == 0 && ane->boot_error == expected_error,
+	    "binding retained; boot_error records table rung result");
+	chk(sim_log_count(reason) == 1 &&
+	    sim_log_count("verdict=PASS reason=boot-wake") == 0,
+	    "only the table-specific verdict, never a fallback wake PASS");
+	chk(sim_dma_outstanding == expected_allocs && sim_dma_frees == 0 &&
+	    sim_module_refs == 1 && sim_rpm_puts == 0,
+	    "all firmware-visible memory, binding and power retained until reboot");
+	chk(ane->stage_size == 0x380000 &&
+	    ane->stage_mapped[0] + ane->stage_mapped[1] == 0x380000 &&
+	    iommu_iova_to_phys(sim_dart, ANE_H17_DMA_BASE + 0x37c000) != 0,
+	    "entire advertised FWIM range, including padding, is coherently backed");
+	chk(ev_access_count(true, reg_pa(sim_soc.scratch0 + 12)) == 1 &&
+	    ev_count(true, reg_pa(sim_soc.scratch0 + 12), 0) == 1,
+	    "SCRATCH3 only cleared by boot recipe; registration is NEVER sent");
+	for (n = 0; n < 8; n++) {
+		int writes = n >= 6 ? 2 : 1;
+
+		if (mode < 5 && (n == 0 || n == 1 || n == 7))
+			writes++;
+		chk(ev_access_count(true, reg_pa(sim_soc.scratch0 + n * 4)) == writes,
+		    "scratch writes are exactly boot recipe plus published S0/S1/S7");
+	}
+	chk(ev_access_count(true, reg_pa(0x1884000)) == 0 &&
+	    ev_access_count(false, reg_pa(sim_soc.irq_status)) == 0 &&
+	    ev_access_count(false, reg_pa(sim_soc.irq_ack)) == 0 &&
+	    ev_access_count(true, reg_pa(sim_soc.irq_ack)) == 0,
+	    "no doorbell, IRQ status or IRQ ack access of any value");
+	chk(!sim_events_overflow, "bus event recorder did not overflow");
+	if (mode < 5) {
+		chk(fw.descriptor_valid && sim_dma_wmbs == 1 &&
+		    ev_count(true, reg_pa(sim_soc.scratch0 + 28), ANE_H17_TABLE_REQUEST) == 1,
+		    "full descriptor matches independent byte oracle before one published request");
+	} else {
+		chk(sim_dma_wmbs == 0 &&
+		    ev_count(true, reg_pa(sim_soc.scratch0 + 28), ANE_H17_TABLE_REQUEST) == 0,
+		    "preparation refusal never publishes a request");
+	}
+	if (mode == 0) {
+		chk(sim_log_count("H17 TABLE_COPY ") == 1 &&
+		    sim_log_count("H17 CHANNEL index=") == 8 &&
+		    sim_log_count("H17 TABLE_STOP before SCRATCH3") == 1,
+		    "one table copy, eight opaque entries, explicit pre-registration stop");
+		chk(sim_dma_rmbs == 1 &&
+		    !memcmp(ane->chan_table, (u8 *)ane->chanbuf[1].cpu + 0x100, 0x800),
+		    "exactly the validated owned IPC bytes are copied after read barrier");
+	} else {
+		chk(sim_dma_rmbs == 0 && sim_log_count("H17 TABLE_COPY ") == 0 &&
+		    sim_log_count("H17 CHANNEL index=") == 0,
+		    "timeout/refusal never copies or follows an untrusted reply");
+	}
+}
+
+static void sc_neg_table_scope(void)
+{
+	setup_common();
+	chanreg = true;
+	stage = "boot"; /* t8132, wrong target */
+	chk(run_probe() == -EINVAL && sim_n_events == 0 && sim_ioremaps == 0,
+	    "chanreg on non-H17 target refuses before hardware access");
+}
+
+static void sc_neg_table_reservation(void)
+{
+	setup_common();
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	fw.table_enabled = true;
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;
+	optin = "t8140";
+	stage = "boot";
+	chanreg = true;
+	sim_resv_length = 0x36c000; /* covers segments, NOT advertised arena */
+	chk(run_probe() == -EINVAL && sim_module_refs == 0 &&
+	    sim_dma_outstanding == 0 && sim_dma_allocs == 0 &&
+	    ev_count(true, reg_pa(sim_soc.cpu_control), 0x10) == 0,
+	    "short FWIM alias reservation refuses before allocation or CPU release");
+}
+
 static void sc_neg_unknown_stage(void)
 {
 	int ret;
@@ -1194,6 +1403,28 @@ int main(int argc, char **argv)
 		sc_pos_h17_irq();
 	else if (!strcmp(sc, "pos-h17-scratch"))
 		sc_pos_h17_scratch();
+	else if (!strcmp(sc, "pos-h17-table"))
+		sc_h17_table(0);
+	else if (!strcmp(sc, "neg-table-timeout"))
+		sc_h17_table(1);
+	else if (!strcmp(sc, "neg-table-overrun"))
+		sc_h17_table(2);
+	else if (!strcmp(sc, "neg-table-foreign"))
+		sc_h17_table(3);
+	else if (!strcmp(sc, "neg-table-padding"))
+		sc_h17_table(4);
+	else if (!strcmp(sc, "neg-table-envelope"))
+		sc_h17_table(5);
+	else if (!strcmp(sc, "neg-table-alloc"))
+		sc_h17_table(6);
+	else if (!strcmp(sc, "neg-table-dma-range"))
+		sc_h17_table(7);
+	else if (!strcmp(sc, "neg-table-heap-alloc"))
+		sc_h17_table(8);
+	else if (!strcmp(sc, "neg-table-scope"))
+		sc_neg_table_scope();
+	else if (!strcmp(sc, "neg-table-reservation"))
+		sc_neg_table_reservation();
 	else if (!strcmp(sc, "neg-adt-bounds"))
 		sc_neg_adt_bounds();
 	else if (!strcmp(sc, "pos-four-ps"))

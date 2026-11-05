@@ -42,6 +42,12 @@
  *   a register table is not device behaviour, and one read of an
  *   unacked status word is a value, not a protocol).
  *
+ *   chanreg=1 is a separate, default-off T8140 table-discovery rung:
+ *   back the full FWIM arena, allocate coherent descriptor/IPC/HEAP,
+ *   publish through SCRATCH0/1/7, copy only an owned IPC table, and
+ *   STOP before SCRATCH3 registration. No channel-buffer initialization,
+ *   doorbell, task or IRQ ack. Source contract: e1c4839, receipt sec 16.
+ *
  * The module refuses to probe unless its opt-in key is set:
  *   insmod ane_h16.ko optin=t8132 stage=status
  * There is no MODULE_DEVICE_TABLE, so nothing autoloads it.
@@ -81,6 +87,7 @@
 #include <linux/types.h>
 
 #include "ane_h16.h"
+#include "../h17/chanreg.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -116,6 +123,11 @@ static bool scratch_read;
 module_param(scratch_read, bool, 0444);
 MODULE_PARM_DESC(scratch_read,
 		 "t8140 stage=boot only: after the SCRATCH7 wake word, snapshot the eight ANE scratch words (SCRATCH0..7, the row's scratch0..scratch0+28) with exactly one read each and log them in order. Read-only: no scratch write beyond the boot recipe, no IRQ ack access, no doorbell, no task. Default 0 (off).");
+
+static bool chanreg;
+module_param(chanreg, bool, 0444);
+MODULE_PARM_DESC(chanreg,
+		 "t8140 stage=boot only: experimental initialization-descriptor/table-discovery rung. Requires the recorded initial scratch geometry; allocates coherent DM/IPC/HEAP, writes SCRATCH0/1/7, bounds-checks and copies the IPC table, then STOPS before SCRATCH3 registration. No doorbell, IRQ ack or task. Default 0 (off).");
 
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
@@ -170,6 +182,12 @@ struct ane_h16_seg {
 	u64 size;
 };
 
+struct ane_h17_chanbuf {
+	void *cpu;
+	dma_addr_t dma;
+	size_t size;
+};
+
 struct ane_h16 {
 	struct device *dev;
 	const struct ane_h16_soc *soc;
@@ -190,6 +208,8 @@ struct ane_h16 {
 	size_t stage_size;
 	struct iommu_domain *domain;
 	u64 stage_mapped[2];	/* owned contiguous prefixes, never foreign ranges */
+	struct ane_h17_chanbuf chanbuf[3]; /* DM, IPC, HEAP; retained after release */
+	u8 *chan_table;
 };
 
 /* ---- pmgr state words (the read-only-after-ACTUAL=0xf rule) ---- */
@@ -857,6 +877,12 @@ static int ane_h16_stage(struct ane_h16 *ane, const struct firmware *fw)
 	if (ret)
 		return ret;
 	ane->stage_size = ALIGN(img->data_vm + img->data_vmsize, SZ_16K);
+	/* The descriptor advertises the 0x380000 FWIM arena, not just the
+	 * 0x36c000 image segments. Back its remaining 0x14000 with owned,
+	 * zeroed coherent memory too. Default wake-only layout is unchanged.
+	 */
+	if (chanreg)
+		ane->stage_size = ANE_H17_FW_BYTES;
 	ane->stage_cpu = dma_alloc_coherent(ane->dev, ane->stage_size,
 					    &ane->stage_dma, GFP_KERNEL);
 	if (!ane->stage_cpu)
@@ -927,6 +953,11 @@ out:
 
 /* ---- DART mapping of the staged image at the ADT IOVAs ---- */
 
+static u64 ane_h16_stage_alias_size(struct ane_h16 *ane, unsigned int s)
+{
+	return chanreg && s == 1 ? ANE_H17_FW_BYTES - 0xc0000 : ane->segs[s].size;
+}
+
 static int ane_h16_stage_domain(struct ane_h16 *ane)
 {
 	LIST_HEAD(regions);
@@ -939,6 +970,13 @@ static int ane_h16_stage_domain(struct ane_h16 *ane)
 		dev_err(ane->dev, "staging requires a DMA-API IOMMU domain\n");
 		return -ENODEV;
 	}
+	if (chanreg && (ane->segs[0].iova != ANE_H17_DMA_BASE ||
+			ane->segs[0].size != 0xc0000 ||
+			ane->segs[1].size != 0x2ac000 ||
+			ane->soc->fw->data_vm != 0xc0000 ||
+			ane->soc->fw->data_vmsize != 0x2ac000 ||
+			ane->segs[1].iova != ane->segs[0].iova + 0xc0000))
+		return -EINVAL;
 	/* Fixed aliases must be excluded from the DMA API's IOVA allocator
 	 * before coherent allocation. A no-reg reserved-memory region with
 	 * iommu-addresses supplies IOMMU_RESV_RESERVED at domain setup.
@@ -946,7 +984,8 @@ static int ane_h16_stage_domain(struct ane_h16 *ane)
 	iommu_get_resv_regions(ane->dev, &regions);
 	for (s = 0; s < 2; s++) {
 		bool covered = false;
-		u64 start = ane->segs[s].iova, size = ane->segs[s].size;
+		u64 start = ane->segs[s].iova;
+		u64 size = ane_h16_stage_alias_size(ane, s);
 
 		if (!size || start + size < start ||
 		    ane->segs[s].phys + size < ane->segs[s].phys ||
@@ -988,12 +1027,13 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	}
 	for (s = 0; s < 2; s++) {
 		u64 off;
+		u64 alias_size = ane_h16_stage_alias_size(ane, s);
 
-		for (off = 0; off < ane->segs[s].size; off += SZ_16K) {
+		for (off = 0; off < alias_size; off += SZ_16K) {
 			u64 pa;
 			u64 iova = ane->segs[s].iova + off;
 			u64 source = ane->stage_dma + seg_vm[s] + off;
-			size_t len = min_t(u64, SZ_16K, ane->segs[s].size - off);
+			size_t len = min_t(u64, SZ_16K, alias_size - off);
 
 			if (seg_vm[s] + off + len > ane->stage_size) {
 				dev_err(ane->dev, "mapping outside the staged image\n");
@@ -1026,6 +1066,153 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	dev_info(ane->dev,
 		 "staged image (%zu KiB) mapped at iova %#llx (TEXT) and %#llx (DATA)\n",
 		 ane->stage_size / 1024, ane->segs[0].iova, ane->segs[1].iova);
+	return 0;
+}
+
+static bool ane_h17_overlap(u64 a, u64 asize, u64 b, u64 bsize)
+{
+	return asize && bsize && (a <= b ? b - a < asize : a - b < bsize);
+}
+
+static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
+				 size_t bytes)
+{
+	struct ane_h17_chanbuf *b = &ane->chanbuf[index];
+	u64 off;
+	unsigned int i;
+
+	b->size = ALIGN(bytes, SZ_16K);
+	b->cpu = dma_alloc_coherent(ane->dev, b->size, &b->dma, GFP_KERNEL);
+	if (!b->cpu)
+		return -ENOMEM;
+	/* CPU was already released: even partial/failed preparation keeps all
+	 * allocations until reboot, with the binding and staged firmware.
+	 */
+	memset(b->cpu, 0, b->size);
+	if (!IS_ALIGNED(b->dma, SZ_16K) ||
+	    !ane_h17_full_range(ANE_H17_DMA_BASE,
+				 ANE_H17_DMA_END - ANE_H17_DMA_BASE,
+				 b->dma, b->size))
+		return -EINVAL;
+	if (ane_h17_overlap(b->dma, b->size, ane->stage_dma, ane->stage_size))
+		return -EBUSY;
+	for (i = 0; i < 2; i++)
+		if (ane_h17_overlap(b->dma, b->size,
+				    ane->segs[i].iova, ane->stage_mapped[i]))
+			return -EBUSY;
+	for (i = 0; i < index; i++)
+		if (ane_h17_overlap(b->dma, b->size,
+				    ane->chanbuf[i].dma, ane->chanbuf[i].size))
+			return -EBUSY;
+	for (off = 0; off < b->size; off += SZ_16K) {
+		u64 pa = iommu_iova_to_phys(ane->domain, b->dma + off);
+
+		if (!pa || !IS_ALIGNED(pa, SZ_16K))
+			return -EFAULT;
+	}
+	return 0;
+}
+
+static int ane_h17_discover_table(struct ane_h16 *ane)
+{
+	const struct ane_h16_soc *s = ane->soc;
+	const size_t sizes[] = {
+		ANE_H17_DM_BYTES, ANE_H17_IPC_BYTES, ANE_H17_HEAP_BYTES,
+	};
+	struct ane_h17_chanbuf *dm = &ane->chanbuf[0];
+	struct ane_h17_chanbuf *ipc = &ane->chanbuf[1];
+	struct ane_h17_chanbuf *heap = &ane->chanbuf[2];
+	u8 digest[SHA256_DIGEST_SIZE];
+	u32 count, ipc_last, heap_bytes;
+	u64 address, offset;
+	unsigned long deadline;
+	unsigned int i;
+	int ret;
+
+	/* First-run envelope, not arbitrary firmware-controlled allocations.
+	 * Source: e1c4839 receipt sec 16; snapshot: 6610ec7 boot 3f9aa97c.
+	 */
+	count = ane_h16_rd32(ane, s->scratch0);
+	ipc_last = ane_h16_rd32(ane, s->scratch0 + 4);
+	heap_bytes = ane_h16_rd32(ane, s->scratch0 + 12);
+	if (count != 8 || ipc_last != ANE_H17_IPC_BYTES - 1 ||
+	    heap_bytes != ANE_H17_HEAP_BYTES ||
+	    ane->stage_size != ANE_H17_FW_BYTES ||
+	    ane->segs[0].size != 0xc0000 ||
+	    ane->segs[1].size != 0x2ac000 ||
+	    ane->segs[1].iova != ane->segs[0].iova + 0xc0000) {
+		dev_err(ane->dev,
+			"H17 TABLE refused geometry count=%u ipc_last=0x%08x heap=0x%08x\n",
+			count, ipc_last, heap_bytes);
+		ane_h16_result(ane, 3, "REFUSED", "table-input-envelope");
+		return -EINVAL;
+	}
+	ane->chan_table = kvzalloc(ANE_H17_TABLE_BYTES, GFP_KERNEL);
+	if (!ane->chan_table) {
+		ane_h16_result(ane, 3, "FAIL", "table-copy-allocation");
+		return -ENOMEM;
+	}
+	for (i = 0; i < ARRAY_SIZE(sizes); i++) {
+		ret = ane_h17_alloc_chanbuf(ane, i, sizes[i]);
+		if (ret) {
+			ane_h16_result(ane, 3, "REFUSED", "table-dma-allocation-or-range");
+			return ret;
+		}
+	}
+	ane_h17_encode_descriptor(dm->cpu, ane->segs[0].iova,
+				  dm->dma, ipc->dma, heap->dma);
+	sha256(dm->cpu, ANE_H17_DESC_BYTES, digest);
+	dev_info(ane->dev,
+		 "H17 TABLE_PREPARE dm=%#llx ipc=%#llx ipc_bytes=0xc441 heap=%#llx descriptor_bytes=0x180 sha256=%*phN\n",
+		 (u64)dm->dma, (u64)ipc->dma, (u64)heap->dma,
+		 SHA256_DIGEST_SIZE, digest);
+	/* Publish only fully prepared, owned coherent memory. No fixed alias
+	 * is invented here: returned DMA handles must pass the aperture checks.
+	 */
+	dma_wmb();
+	ane_h16_wr32(ane, s->scratch0, (u32)dm->dma);
+	ane_h16_wr32(ane, s->scratch0 + 4, (u64)dm->dma >> 32);
+	wmb();
+	ane_h16_wr32(ane, s->scratch0 + 28, ANE_H17_TABLE_REQUEST);
+	deadline = jiffies + msecs_to_jiffies(1000);
+	while (ane_h16_rd32(ane, s->scratch0 + 28) != ANE_H16_WAKE_ACK) {
+		if (time_after(jiffies, deadline)) {
+			ane_h16_result(ane, 3, "FAIL", "table-reply-timeout");
+			return -ETIMEDOUT;
+		}
+		usleep_range(1000, 2000);
+	}
+	address = ane_h16_rd32(ane, s->scratch0 + 4);
+	address = (address << 32) | ane_h16_rd32(ane, s->scratch0);
+	if (!ane_h17_full_range(ipc->dma, ANE_H17_IPC_BYTES,
+				 address, ANE_H17_TABLE_BYTES)) {
+		dev_err(ane->dev, "H17 TABLE refused reply address=%#llx\n", address);
+		ane_h16_result(ane, 3, "REFUSED", "table-reply-outside-ipc");
+		return -EINVAL;
+	}
+	offset = address - ipc->dma;
+	dma_rmb();
+	memcpy(ane->chan_table, (u8 *)ipc->cpu + offset, ANE_H17_TABLE_BYTES);
+	sha256(ane->chan_table, ANE_H17_TABLE_BYTES, digest);
+	dev_info(ane->dev,
+		 "H17 TABLE_COPY address=%#llx bytes=0x800 count=8 sha256=%*phN\n",
+		 address, SHA256_DIGEST_SIZE, digest);
+	for (i = 0; i < 8; i++) {
+		const u8 *entry = ane->chan_table + i * 0x100;
+
+		/* Hex names cannot inject lines into the rung log. All fields
+		 * are observations only: NEVER dereference a channel buffer.
+		 */
+		dev_info(ane->dev,
+			 "H17 CHANNEL index=%u name_hex=%*phN type=0x%08x source=0x%08x slots=0x%08x buffer=0x%016llx\n",
+			 i, 32, entry, (u32)ane_h17_get_le(entry + 0x40, 4),
+			 (u32)ane_h17_get_le(entry + 0x44, 4),
+			 (u32)ane_h17_get_le(entry + 0x48, 4),
+			 ane_h17_get_le(entry + 0x50, 8));
+	}
+	dev_info(ane->dev,
+		 "H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task\n");
+	ane_h16_result(ane, 3, "PASS", "boot-table-discovery");
 	return 0;
 }
 
@@ -1504,14 +1691,22 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		 * support or touch the unqualified candidate, even when the
 		 * H16-only hello_wait_ms parameter is set.
 		 */
-		dev_info(ane->dev,
-			 "H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only\n");
+		if (chanreg)
+			dev_info(ane->dev,
+				 "H17 post-wake RTKit management poll skipped: table discovery uses scratch handshake only\n");
+		else
+			dev_info(ane->dev,
+				 "H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only\n");
 	}
 	else if (hello_wait_ms)
 		ane_h16_rtkit_poll(ane);
 	else
 		dev_info(ane->dev,
 			 "RTKit poll skipped (hello_wait_ms=0); set 1000 to probe for HELLO/EPMAP/STARTEP\n");
+	if (chanreg) {
+		ret = ane_h17_discover_table(ane);
+		goto rel_fw;
+	}
 	ane_h16_result(ane, 3, "PASS",
 		       ane->hello_done ? "boot-hello" :
 		       (hello_wait_ms && !s->h17_order) ?
@@ -1563,6 +1758,10 @@ static int ane_h16_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unknown stage \"%s\" (want dt, status or boot)\n",
 			stage);
 		return ret;
+	}
+	if (chanreg && (!soc->h17_order || stage_idx != 3)) {
+		dev_err(&pdev->dev, "chanreg requires t8140 stage=boot\n");
+		return -EINVAL;
 	}
 	if (ane_h16_ps_count(soc) > ARRAY_SIZE(soc->ps_off))
 		return -EINVAL;

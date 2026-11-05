@@ -1,0 +1,5 @@
+c41e8a9a108b900654c3b5306c9108e7d3a8965c3c68536095fe29a1effed7c1  ane/h16/ane_h16_main.c
+a8e91b1035896469ea7071d158759d03394eb3abeee64948aebc7f174309e0d3  ane/h17/chanreg.h
+98f07258c8d7aa8ade36bcebd63782a41b1259864d926b2a168c836d244a290f  ane/h16/ane_h16.ko
+srcversion=
+vermagic=7.2.11-14-1-ARCH SMP preempt mod_unload aarch64

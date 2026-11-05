@@ -164,6 +164,9 @@ static inline void sim_bus_write(u64 pa, u32 v)
  * SCRATCH7/CPU_CONTROL ordering point for readers of the code
  */
 #define wmb() do { } while (0)
+extern int sim_dma_wmbs, sim_dma_rmbs;
+#define dma_wmb() do { sim_dma_wmbs++; } while (0)
+#define dma_rmb() do { sim_dma_rmbs++; } while (0)
 
 #define readl_poll_timeout(addr, val, cond, sleep_us, timeout_us) ({     \
 	unsigned long __tmo = jiffies + msecs_to_jiffies((timeout_us) / 1000); \
@@ -500,6 +503,8 @@ static inline void __module_get(void *module)
 
 extern int sim_dma_outstanding;
 extern int sim_dma_allocs, sim_dma_frees;
+extern int sim_dma_fail_at, sim_dma_bad_at;
+extern u64 sim_resv_length;
 static int sim_coherent_map(size_t size, dma_addr_t *dma);
 static void sim_coherent_unmap(dma_addr_t dma, size_t size);
 #define DMA_BIT_MASK(n) (~0ULL >> (64 - (n)))
@@ -516,6 +521,8 @@ static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 
 	(void)dev;
 	(void)gfp;
+	if (sim_dma_fail_at && sim_dma_allocs + 1 == sim_dma_fail_at)
+		return NULL;
 	/* the module asserts 16 KiB alignment on the staged buffer
 	 */
 	if (posix_memalign(&p, SZ_16K, (size + SZ_16K - 1) & ~(SZ_16K - 1)))
@@ -551,7 +558,7 @@ struct iommu_domain {
 		u64 iova;
 		u64 pa;
 		u64 len;
-	} map[1024];
+	} map[4096];
 	int n;
 	bool short_unmap;
 	bool dma_api;
@@ -583,7 +590,7 @@ static inline void iommu_get_resv_regions(struct device *dev, struct list_head *
 	(void)dev;
 	if (sim_dart && sim_dart->alias_reserved) {
 		region.start = 0x10000000000ULL;
-		region.length = 0x4000000;
+		region.length = sim_resv_length ? sim_resv_length : 0x4000000;
 		region.type = IOMMU_RESV_RESERVED;
 		region.list.next = region.list.prev = h;
 		h->next = h->prev = &region.list;
@@ -647,9 +654,12 @@ static int sim_coherent_map(size_t size, dma_addr_t *dma)
 	size_t off;
 	if (!sim_dart)
 		return -ENODEV;
-	*dma = SIM_DMA_SOURCE_IOVA;
+	*dma = SIM_DMA_SOURCE_IOVA + (u64)sim_dma_allocs * 0x2000000;
+	if (sim_dma_bad_at && sim_dma_allocs + 1 == sim_dma_bad_at)
+		*dma = 0x50000000000ULL;
 	for (off = 0; off < size; off += SZ_16K)
-		if (iommu_map(sim_dart, *dma + off, SIM_DMA_SOURCE_PA + off,
+		if (iommu_map(sim_dart, *dma + off,
+			      SIM_DMA_SOURCE_PA + (u64)sim_dma_allocs * 0x2000000 + off,
 			      SZ_16K, IOMMU_READ | IOMMU_WRITE, 0))
 			return -ENOMEM;
 	return 0;

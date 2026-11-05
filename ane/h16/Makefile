@@ -12,7 +12,8 @@ else
 
 CC ?= cc
 SIM_OUT ?= sim/sim_h16
-SIM_SRCS = sim/sim_harness.c sim/shim.h ane_h16_main.c ane_h16_soc.c ane_h16.h
+SIM_SRCS = sim/sim_harness.c sim/shim.h ane_h16_main.c ane_h16_soc.c ane_h16.h \
+	../h17/chanreg.h
 
 default: modules
 
@@ -23,12 +24,14 @@ modules:
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps \
-	pos-h17-boot pos-h17-irq pos-h17-scratch
+	pos-h17-boot pos-h17-irq pos-h17-scratch pos-h17-table
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-dart-map neg-short-unmap neg-unknown-stage neg-adt-bounds \
 	neg-unreserved-alias neg-non-dma-domain \
 	neg-preload-bss neg-preload-boundary neg-preload-snapshot \
-	neg-preload-sysram
+	neg-preload-sysram neg-table-timeout neg-table-overrun neg-table-foreign \
+	neg-table-padding neg-table-envelope neg-table-alloc neg-table-dma-range \
+	neg-table-heap-alloc neg-table-scope neg-table-reservation
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c
@@ -46,7 +49,7 @@ sim-discriminate: $(SIM_OUT)
 	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim /tmp/ane-h16-discrim/h17 /tmp/ane-h16-discrim/h16
 	@cp sim/sim_harness.c sim/shim.h /tmp/ane-h16-discrim/sim/ && cp -r sim/inc /tmp/ane-h16-discrim/sim/
 	@cp ane_h16_soc.c ane_h16.h /tmp/ane-h16-discrim/
-	@cp ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h ../h17/ane_h17_fw.h ../h17/bringup_order.h /tmp/ane-h16-discrim/h17/
+	@cp ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h ../h17/ane_h17_fw.h ../h17/bringup_order.h ../h17/chanreg.h /tmp/ane-h16-discrim/h17/
 	@cp ane_h16.h /tmp/ane-h16-discrim/h16/
 	@sed 's/if (memcmp(digest, img->sha256, sizeof(digest))) {/if (0) {/' \
 	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
