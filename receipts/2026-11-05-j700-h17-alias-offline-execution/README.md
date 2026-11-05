@@ -95,3 +95,63 @@ Decision: do not install artifacts, alter boot selection, reboot into a
 candidate, load the module, or arm the runner. Close those findings and
 obtain separate authorization for the specific one-shot rung first. Review
 was source/evidence review only; no device was accessed.
+
+## Follow-up: candidate bundle and fail-closed runner
+
+Read-only bundle reconstruction established that the installed overlay
+package is stale relative to the alias fix:
+
+- Installed stage overlay SHA-256:
+  `41955ed56cba79208fdf0a5931ae39c7368cf1b55e5bb83838ec25e9729db9ec`.
+- Source-built alias stage overlay SHA-256:
+  `173f40d7097dd9e97601ddb8c502e15921e71946b65848960da2359862f164be`.
+- The installed overlay plus all 115 packaged DTBs, packaged `m1n1.bin`,
+  and U-Boot gzip reproduced the live `boot.bin` byte for byte: SHA-256
+  `7dc4c03fe572227ca641699f2aa9f0e9f77321e879126de957f7f925815e98c5`.
+  Replacing only the H17 stage overlay with the source-built alias overlay
+  produced candidate `boot.bin` SHA-256
+  `7a68ca9d93733dca6efb56ce03b3506a7f76eebf5f9e09f742dc2446d71b92f9`.
+- Candidate bundle is staged outside system paths at
+  `/var/tmp/opencode/h17-alias-candidate-bundle/`: candidate `boot.bin`,
+  unchanged stock UKI, source-built module, both overlay blobs, merged J700
+  DTB, JSON identity manifest, and `SHA256SUMS`. It targets the existing
+  `7.2.11-14-1-ARCH` kernel; no kernel or initramfs was rebuilt or installed.
+- The committed module was force-built with LLVM 18 / `W=1` against matching
+  installed headers. Vermagic:
+  `7.2.11-14-1-ARCH SMP preempt mod_unload aarch64`; SHA-256
+  `962af7d65052bd09f99aa40278f38f4a6a593c6ebb5188244edaf28689a27791`.
+  The candidate manifest pins source commit
+  `607d62dae67f190ae86da94d71a9e17a01cbecd3`, kernel build ID
+  `e6037e7a6a53ed1dfa9c1faa90efedc3d6b022bf`, and UKI/firmware hashes.
+
+The runner now calls `table_preflight.py` before any module load. It checks
+the root-owned, no-symlink manifest and manifest-bound pending marker;
+kernel/build/board/ANE/DART identity; exact live reserved-memory tuples;
+module, firmware, UKI and m1n1 hashes; a clean expected source commit; no
+loaded ANE module; the failed boot ID; and no existing per-boot attempt. The
+preflight atomically creates the attempt directory and renames the exact
+pending marker into it. Logs and identity records live inside that persistent
+root-owned attempt directory. The module logs the actual
+`IOMMU_RESV_RESERVED` coverage it observed, and the table judge requires that
+marker before accepting discovery.
+
+Independent review initially found marker/attempt path races. Commit
+`9ad1c1307bb2c2a785b1ddb1ec25ddb821e5810e` fixes them with component-wise
+trusted directory opens, manifest/marker revalidation, atomic marker rename,
+and durable one-shot claim. Re-review returned **APPROVE**. The reviewer
+noted missing tests for hostile parent directories and partial claims;
+commit `607d62dae67f190ae86da94d71a9e17a01cbecd3` adds those cases.
+
+`make -C ane/h17 sim-all`, `make -C ane/h16 sim`, shell syntax checks,
+Python compilation, and `git diff --check` pass. A read-only invocation of
+the live preflight refused immediately because the machine is still on the
+recorded failed boot ID. No overlay, bundle, manifest, marker, or module was
+installed into system paths. The candidate manifest in `/var/tmp` is not
+root-owned, no pending marker was created, and `--claim` was not run against
+the live machine.
+
+The deployment blockers remain: no demonstrated recovery boot path and no
+live runtime proof. The candidate bundle and strengthened runner address
+preparation and identity checks, not authorization or hardware qualification.
+Do not install or reboot until a recovery method is established and reviewed
+and the specific fresh-boot rung is separately authorized.
