@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: MIT
 """Judge a captured table-discovery log; never opens a device."""
 import json
+import hashlib
 from pathlib import Path
 import re
 import sys
 
-from chanreg_model import VM_BASE, VM_END, FW_BYTES, DM_BYTES, PAGE, round_page
+from chanreg_model import (
+    VM_BASE, VM_END, FW_BYTES, DM_BYTES, PAGE, round_page,
+    BootInputs, Region, build_descriptor,
+)
 
 
 def judge(text):
@@ -41,6 +45,15 @@ def judge(text):
         ordered = sorted(regions)
         if any(a + n > b for (a, n), (b, _) in zip(ordered, ordered[1:])):
             raise ValueError("overlapping preparation DMA extents")
+        blob, _ = build_descriptor(
+            BootInputs(8, 0xC440, 0xF00000),
+            Region("firmware", VM_BASE, FW_BYTES, FW_BYTES, True, True),
+            Region("ipc", ipc, 0xC441, round_page(0xC441), True, True),
+            Region("dm", dm, DM_BYTES, DM_BYTES, True, True),
+            Region("heap", heap, 0xF00000, 0xF00000, True, True),
+        )
+        if hashlib.sha256(blob).hexdigest() != prep[4]:
+            raise ValueError("descriptor digest differs from independent offline model")
         copied = one("H17 TABLE_COPY ", r"H17 TABLE_COPY address=" + address +
                      r" bytes=0x800 count=8 sha256=" + digest)
         table_address = int(copied[1], 16)
@@ -56,6 +69,13 @@ def judge(text):
             if not re.search(pattern, line):
                 raise ValueError("malformed, duplicate, or out-of-order channel observation")
         one("H17 TABLE_STOP ", r"H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task")
+        ordered_markers = [prep[0], copied[0], *[re.search(r"H17 CHANNEL .*$", line)[0]
+                                               for line in channels],
+                           "H17 TABLE_STOP ", "ane_h16 RESULT "]
+        positions = [next(i for i, line in enumerate(lines) if marker in line)
+                     for marker in ordered_markers]
+        if positions != sorted(positions):
+            raise ValueError("discovery markers are not in protocol order")
         result.update(rung="PASS", reason="owned-ipc-table-copied-registration-skipped",
                       table_address=hex(table_address), table_bytes=0x800,
                       channel_count=8, table_sha256=copied[2],

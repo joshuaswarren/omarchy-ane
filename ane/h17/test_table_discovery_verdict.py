@@ -10,7 +10,8 @@ from table_discovery_verdict import judge
 class VerdictTests(unittest.TestCase):
     def setUp(self):
         self.prep = ("H17 TABLE_PREPARE dm=0x20000000000 ipc=0x20000040000 "
-                     "ipc_bytes=0xc441 heap=0x20000050000 descriptor_bytes=0x180 sha256=" + "a" * 64)
+                     "ipc_bytes=0xc441 heap=0x20000050000 descriptor_bytes=0x180 sha256="
+                     "fc9c7e04b7973a27a1b6948051f68b82da8323bfc6e7bec0357cf355f16a60b6")
         self.copy = "H17 TABLE_COPY address=0x20000040100 bytes=0x800 count=8 sha256=" + "b" * 64
         self.stop = "H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task"
         self.result = "ane_h16 RESULT stage=3 soc=t8140 verdict=PASS reason=boot-table-discovery"
@@ -68,6 +69,21 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(self.check(lines)["rung"], "FAIL")
         for verdict in ("FAIL", "REFUSED"):
             self.assertEqual(self.check(self.lines + ["verdict=" + verdict])["rung"], "FAIL")
+
+    def test_descriptor_digest_must_match_all_bytes(self):
+        for digest in ("a" * 64, "0" * 64,
+                       "fc9c7e04b7973a27a1b6948051f68b82da8323bfc6e7bec0357cf355f16a60b7"):
+            with self.subTest(digest=digest):
+                lines = self.lines.copy()
+                lines[0] = lines[0].split("sha256=")[0] + "sha256=" + digest
+                self.assertEqual(self.check(lines)["rung"], "FAIL")
+
+    def test_protocol_order(self):
+        for left, right in ((0, 1), (1, 2), (9, 10), (10, 11), (0, 11)):
+            with self.subTest(left=left, right=right):
+                lines = self.lines.copy()
+                lines[left], lines[right] = lines[right], lines[left]
+                self.assertEqual(self.check(lines)["rung"], "FAIL")
 
 
 if __name__ == "__main__":

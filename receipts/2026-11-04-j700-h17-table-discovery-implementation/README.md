@@ -69,6 +69,55 @@ cells: 0xb8 0x100 0x0 0x0 0x380000
 That is DT evidence only, not an execution result. The earlier wake path
 continues to stage/map only its two original image segments.
 
+## Independent review: blockers 1 and 2, closed offline
+
+The independent review of `20a1cad` raised two blockers. Both are closed with
+retained evidence; no hardware access was needed or performed.
+
+**Blocker 2 — log-judge did not verify the descriptor digest value.** The
+runner's Python judge previously accepted any well-formed 64-hex digest.
+It now rebuilds the complete 0x180 descriptor with the independent offline
+model (`chanreg_model.build_descriptor`), SHA-256s it and requires the logged
+digest to match byte-for-byte (`table_discovery_verdict.py`). New tests
+reject a wrong digest, all-zeros, and a one-bit-off digest; a protocol-order
+check requires the PREPARE→COPY→CHANNEL 0..7→STOP→RESULT sequence to appear
+in order. 8/8 verdict tests green.
+
+**Blocker 1 — the advertised `+0x10/+0x18` pair and full ownership.** The
+descriptor publishes `+0x10 = 0x380000` and `+0x18 = 0x10000000 − 0x380000 =
+0xfc80000`. The review asked whether `+0x18` advertises memory beyond what
+the rung backs, making zero-padding insufficient. Retained evidence resolves
+this to the limit the sources allow:
+
+- The kext allocates the FWIM arena with **size `this[0x3c0]` = 0x380000**
+  (`analysis/h17-chanreg-prereqs.txt:5-19`, first allocator argument).
+- Its own device-address validator bounds FWIM access to
+  `[DVA, DVA + this[0x3c0])` — that same 0x380000
+  (`…prereqs.txt:680-688`), *not* `0x10000000`.
+- The live macOS boot's DT reserves the fw alias as exactly
+  `VM_BASE`..`+0x380000` (`ane-fw-alias-iova/iommu-addresses`, cells ending
+  `0x380000`), i.e. no host-owned memory backs the remaining `0xfc80000`
+  there either.
+- The kext then publishes the pair anyway (`…prereqs.txt:460-463`:
+  `mov w10, #0x10000000; sub; stp → +0x10/+0x18`). A constant of this size
+  recurs in region-management code as `0x10001000` (kernel image
+  `0xfffffe0008f44838`), pointing to a 256 MiB DVA-window budget rather than
+  an in-use extent.
+
+Conclusion: `+0x18 = 0x10000000 − image size` cannot demand additional
+firmware-owned memory in the boot path — the publishing host owns none there.
+The firmware's reader of the field is not in the retained evidence; that
+semantic remains unqualified. The risk to this rung is bounded: the rung
+publishes the identical traced values, owns at least the kext's extents
+(its 0x380000 alias at `VM_BASE`, zero-filled, plus disjoint DM/IPC/HEAP at
+the kext sizes), and stops before registration, so no registered command
+path and no task can depend on interpreting the field. A firmware DMA
+outside a mapped extent faults the DART and is observable; it has no silent
+corruption path into host memory we do not own.
+
+This is recorded as a comment on the encoder in `ane/h17/chanreg.h`, citing
+the exact instruction ranges above.
+
 ## Validation
 
 Commands and retained outputs:

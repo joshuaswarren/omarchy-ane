@@ -20,7 +20,7 @@ PASS mutation alignment
 python3 sim/test_plan_stage4.py
 ..................
 ----------------------------------------------------------------------
-Ran 18 tests in 0.828s
+Ran 18 tests in 0.856s
 
 OK
 ./sim/bringup_order_test
@@ -40,13 +40,15 @@ test_snapshot_geometry (test_chanreg_model.DescriptorTests.test_snapshot_geometr
 test_unasserted_ownership_is_refused (test_chanreg_model.DescriptorTests.test_unasserted_ownership_is_refused) ... ok
 test_channel_order_and_failures (test_table_discovery_verdict.VerdictTests.test_channel_order_and_failures) ... ok
 test_copy_bounds_sizes_and_preparation (test_table_discovery_verdict.VerdictTests.test_copy_bounds_sizes_and_preparation) ... ok
+test_descriptor_digest_must_match_all_bytes (test_table_discovery_verdict.VerdictTests.test_descriptor_digest_must_match_all_bytes) ... ok
 test_exact_capture (test_table_discovery_verdict.VerdictTests.test_exact_capture) ... ok
 test_missing_duplicate_or_malformed_marker (test_table_discovery_verdict.VerdictTests.test_missing_duplicate_or_malformed_marker) ... ok
+test_protocol_order (test_table_discovery_verdict.VerdictTests.test_protocol_order) ... ok
 test_runner_has_no_default_action (test_table_discovery_verdict.VerdictTests.test_runner_has_no_default_action) ... ok
 test_wake_pass_cannot_substitute (test_table_discovery_verdict.VerdictTests.test_wake_pass_cannot_substitute) ... ok
 
 ----------------------------------------------------------------------
-Ran 18 tests in 0.011s
+Ran 20 tests in 0.009s
 
 OK
 make: Leaving directory '/home/admin/omarchy-ane/ane/h17'

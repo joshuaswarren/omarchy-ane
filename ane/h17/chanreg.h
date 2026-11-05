@@ -46,6 +46,21 @@ static inline void ane_h17_encode_descriptor(u8 *p, u64 firmware, u64 dm,
 	ane_h17_put_le(p + 0x00, firmware, 8);
 	ane_h17_put_le(p + 0x08, ipc, 8);
 	ane_h17_put_le(p + 0x10, ANE_H17_FW_BYTES, 8);
+	/* +0x10/+0x18 pair semantics (review closed offline, e1c4839+):
+	 * the kext owns the FWIM region as this[0x3c0] = 0x380000 exactly
+	 * (allocator size, prereqs.txt:5-19), bounds its device access to
+	 * that same extent (prereqs.txt:680-688), and the live macOS boot
+	 * reserves the alias as exactly VM_BASE..+0x380000. It nonetheless
+	 * publishes +0x18 = 0x10000000 - 0x380000 (prereqs.txt:460-463), a
+	 * window-budget companion constant, most plausibly a 256 MiB DVA
+	 * window reference (0x8f44838: 0x10001000 near a region call).
+	 * It cannot name additional owned firmware memory: no such memory
+	 * exists on the host. Firmware's own reader is not in the retained
+	 * evidence; firmware requesting DMA outside a mapped extent faults
+	 * the DART (observable), so the rung's stop-before-registration
+	 * results never depend on interpreting this field. We reproduce
+	 * the traced values byte-for-byte and own >= the kext's extents.
+	 */
 	ane_h17_put_le(p + 0x18, 0x10000000 - ANE_H17_FW_BYTES, 8);
 	ane_h17_put_le(p + 0x20, heap, 8);
 	ane_h17_put_le(p + 0x28, ANE_H17_HEAP_BYTES, 8);
