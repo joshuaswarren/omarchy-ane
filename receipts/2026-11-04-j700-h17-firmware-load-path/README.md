@@ -1281,6 +1281,12 @@ open → map buffers → inputs-ready/output-enqueue → send-request.
 
 ## 14. The channel-registration handshake (offline trace, 2026-11-04)
 
+**Correction: see §15 before using this section as a hardware plan.** The
+initial trace omitted descriptor construction and the first wake poll.
+Its empty-table-buffer proposal is not a safe implementation plan. The
+absence of direct `bl` calls also does not establish that a callback is
+unused. Hardware observations in the separate rung receipts remain valid.
+
 Whole-function trace of `ANEHWDevice::ANE_Init` (`0xfffffe0008f3dc28`,
 AppleH16ANEInterface `__TEXT_EXEC 0xfffffe0008eeb820..0x8ff60dd8`), the
 function Apple's driver runs after CPU release. It answers the §13.4 open
@@ -1317,12 +1323,11 @@ Two static facts that change the wake recipe as recorded in the receipts:
   so the channel-table path is dormant in this cache" is **refuted**: the
   writer exists (`str w0,[x28]`, `0x8f3e390`) and was missed only because
   the literal-operand scan could not see stores through a register base.
-- **`0x08042006` at SCRATCH7 is the firmware's reply, not the host's
-  request.** The kext's request word is `0xF7FBDFF9` (step 8). This driver's
-  rung wrote `0x08042006` (the reply word) to SCRATCH7 and observed the
-  word plus the CPU_STATUS transition — consistent with a firmware that
-  raises the ack after CPU release, but it is *not* the kext's request
-  sequence. The kext does write `0x08042006` — to SCRATCH3, step 12.
+- **`0x08042006` is a firmware reply at SCRATCH7.** The driver clears
+  SCRATCH7 and polls for that reply; it does not write the reply there
+  (`c52cbdb`, `ane/h16/ane_h16_main.c`, boot path). The kext has an initial
+  wake poll at `0x8f3e188..0x8f3e25c` and a second poll after the
+  `0xF7FBDFF9` request. The two phases must not be conflated (§15).
 
 ### 14.2 Table copy and per-channel objects
 
@@ -1338,8 +1343,9 @@ Channel-table entry (stride `0x100`): `+0x00` name (compared with
 (`== 0` → flag 1), `+0x44` u32 source, `+0x48` u32 size, `+0x50` u64 buffer
 ANE address. The 0xc0-byte object (`0x8ef8364-0x8ef83cc`): `+0x00` =
 `PACIA(doorBellRing, 0x2abe)` — the callback pointer is PAC-signed at the
-call site (`0x8f3f35c-0x8f3f368`) and is **never `bl`'d** (§12.1 stands: the
-MMIO doorbell is a compatibility export); `+0x08` slot; `+0x10` flag;
+  call site (`0x8f3f35c-0x8f3f368`). No direct `bl` was found, but this
+  callback registration refutes §12.1's compatibility-only inference;
+  indirect invocation must be traced separately. `+0x08` slot; `+0x10` flag;
 `+0x14` size; `+0x18` host buffer; when flag && size ≥ 1 the ctor seeds
 each 0x40-byte control block in the host buffer with `+0x00 = (u64)flag,
 +0x08 = +0x10 = 0` and calls the null-guarded global `[0xc3f8d68]` hook as
@@ -1363,12 +1369,10 @@ later lookups on the same table.
 
 ### 14.4 What this pins for the first hardware rung
 
-- A table read rung needs only the §11 read whitelist **plus two scratch
-  writes** (SCRATCH0/1 publish, SCRATCH7 request `0xF7FBDFF9`, SCRATCH3 ack
-  `0x08042006`) — no doorbell, no task, no IRQ-ack access. A nonzero SCRATCH0
-  read on our boot (before any publish) is the firmware-published count; if
-  the rung sees it, the walk is live on Linux and the channel names are
-  reachable.
+- **Superseded by §15:** the handshake involves four scratch-word writes
+  (SCRATCH0, SCRATCH1, SCRATCH7, SCRATCH3), plus constructing and mapping an
+  initialization descriptor and its referenced memory. A scratch snapshot
+  alone proves neither table availability nor channel reachability.
 - The pending post-wake SCRATCH0..7 snapshot rung (§13.4) now has exact
   expectations: `SCRATCH7 == 0x08042006` (observed 2026-11-04), SCRATCH0/1
   either 0 or a stale address, SCRATCH3 untouched (never written by us),
@@ -1387,3 +1391,70 @@ later lookups on the same table.
 
 Raw evidence: `analysis/h17-chanreg-trace.txt` (the full dump sequence with
 per-window VAs). Nothing in §14 has executed on a device.
+
+## 15. Initialization descriptor prerequisites — correction before writes
+
+Offline follow-up to `4a19594`/`6610ec7`, after the owner rebooted to boot
+`0855c23b-dce5-47b0-83c5-a19baef2beef`. No module was loaded and no ANE
+register was accessed during this follow-up. Source is the same retained
+kernelcache (SHA-256 recorded in `analysis/h17-chanreg-prereqs.txt`). Run:
+
+```
+python3 scripts/chanreg_prereqs.py > analysis/h17-chanreg-prereqs.txt
+```
+
+### 15.1 Two distinct SCRATCH7 replies
+
+CPU_CONTROL writes 0/0x10 occur at `0x8f3e148..0x8f3e164`. The kext then
+polls SCRATCH7 for `0x08042006` (`0x8f3e180..0x8f3e25c`), **before**
+reading the channel count at `0x8f3e384..0x8f3e390`. Our Linux rung at
+`c52cbdb` performs that first wake, not the later descriptor handshake.
+The kext's second request (`0xF7FBDFF9` at `0x8f3f090..0x8f3f098`) comes
+only after the descriptor below is constructed. No extra request is needed
+to explain the first firmware wake observed on Linux.
+
+### 15.2 SCRATCH0/1 publish a populated initialization descriptor
+
+`DeviceMemoryManager::Allocate(0x174)` at `0x8f3ecb8..0x8f3ecc0` returns
+an offset (w0); -1 is refused. At `0x8f3ecdc..0x8f3ece4`, x20 becomes
+`[[dev+0x498]+0x38] + sign_extend(w0)`. Later SCRATCH0/1 receive
+`[[dev+0x498]+0x18] + x20 - [[dev+0x498]+0x38]` — equivalently the
+descriptor's ANE base plus that offset (`0x8f3f044..0x8f3f084`). This is
+**not** an empty channel-table destination. The allocator rounds its
+request up to 64 bytes (`0x8ef90d0..0x8ef90d4`), so 0x174 requests consume
+0x180 bytes; the observed final 16-byte zero store ends at +0x180.
+
+Observed descriptor stores (meanings intentionally limited to data flow):
+
+| Offset | Value/source | Store VA |
+|---|---|---|
+| +0x00 | conditional value from `[dev+0x288]` or `[[dev+0x490]+0x18]` | `0x8f3ed48..0x8f3ed54` |
+| +0x08 | `[[dev+0x4a0]+0x18]` | `0x8f3ed58..0x8f3ed60` |
+| +0x10 / +0x18 | zero-extended `[dev+0x3c0]` / 32-bit `0x10000000 - value` | `0x8f3ed64..0x8f3ed70` |
+| +0x20 / +0x28 | optional allocated surface's +0x18 / selected allocation size | `0x8f3ed74..0x8f3ed8c` |
+| +0x30 | u32 `[dev+0x4a8]` | `0x8f3ee24..0x8f3ee28` |
+| +0x38..+0x4f | zeros | `0x8f3ee2c..0x8f3ee30` |
+| +0x50 | zero-extended `[dev+0xe1f4]` (earlier SCRATCH1 + 1) | `0x8f3ee34..0x8f3ee38` |
+| +0x58 / +0x60 | `[[dev+0x498]+0x18]` / `[[dev+0x498]+0]` | `0x8f3ee3c..0x8f3ee48` |
+| +0x68 | u32 `0x40`; semantic name not established | `0x8f3eec4..0x8f3eec8` |
+| +0x6c..+0x17f | zeros, then +0x6c..+0x16b overwritten from `[dev+0x4b0]` | `0x8f3eeb8..0x8f3ef2c` |
+
+Other prerequisites include the kext's count bound (`count < 0x21` at
+`0x8f3e75c..0x8f3e764`) and an IPC surface allocation through
+`AllocateSharedMemorySurface` (`0x8f3e79c..0x8f3e7e4`). The slot-prefill
+loop actually covers **16** 16-byte slots starting at `dev+0x3df0`
+(`x8=-0x100; [dev+x8+0x3ef0]; x8+=0x10`), not eight slots starting
+at +0x3ef0 as §14 claimed. The observed Linux count 8 remains an observed
+value, not validation of that erroneous slot model.
+
+### 15.3 Gate for a future write rung
+
+Do not implement the earlier empty-buffer proposal. First resolve the
+descriptor's required surfaces, the template at `[dev+0x4b0]`, address
+translation, size limits, and cache/DMA ownership for each referenced
+range. Then model successful and refused paths offline, independently
+review the implementation, and stage a separate opt-in hardware rung.
+Reading an address from SCRATCH0/1 after the second reply also does not
+authorize arbitrary physical-memory reads: the complete table range must
+translate into memory owned and retained by the module. Neither a
+SCRATCH7 reply nor a copied table qualifies command or task execution.

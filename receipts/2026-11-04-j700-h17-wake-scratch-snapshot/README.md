@@ -62,12 +62,10 @@ matching boot a9c7fa8d. Staged preload accepted with 2065 diff bytes
 Static expectations were recorded in §14.4 before this boot. Observed:
 
 - `SCRATCH0 = 0x00000008` after CPU release. §14.1 step 4 reads
-  `count := read32(SCRATCH0)` before the host publishes its table
-  address; `ANE_Init` pre-fills 8 channel slots (`dev+0x3ef0+0x10i`).
-  A firmware-published value of 8 here is numerically consistent with
-  that 8-slot model — *consistent, not proof*; the kext's own count read
-  runs on Apple's boot order, ours runs post-wake after different
-  preceding writes.
+  `count := read32(SCRATCH0)` before the host publishes its initialization
+  descriptor address. The original eight-slot interpretation was wrong:
+  §15 of the firmware-load-path receipt corrects it to sixteen prefilled
+  slots and a separate count bound. The observed value 8 is unchanged.
 - `SCRATCH1 = 0x0000c440`. In §14.1 step 4 SCRATCH1's low 32 bits feed
   `[dev+0xe1f4] := read32(SCRATCH1) + 1`; the kext never writes SCRATCH1
   before that read, so `0xc440` is firmware-side. Uninterpreted.
@@ -81,16 +79,18 @@ Static expectations were recorded in §14.4 before this boot. Observed:
   `0x00f00000` there. This is the first observation of a non-zero
   firmware-side SCRATCH3.
 - `SCRATCH6 = 1`, `SCRATCH7 = 0x08042006`: both are this driver's own
-  boot-recipe writes / the firmware's reply word — expected, unchanged
-  since boot a9c7fa8d.
+  boot-recipe state / the firmware's reply word, respectively. The host
+  writes SCRATCH6=1, but clears SCRATCH7 to zero and **does not** write
+  `0x08042006` there. Expected, unchanged since boot a9c7fa8d.
 
 What this rung does **not** establish: that SCRATCH0 is a channel count
 on this boot order (it establishes only that the firmware writes 8
 there), that any channel table exists or is readable, or any command
-path. The next offline step stays static: §14.4's table-read rung design
-publishes a host table-buffer ANE address via SCRATCH0/1 *writes* and
-requests with SCRATCH7 `0xF7FBDFF9` — those are writes beyond the current
-read-only whitelist and need their own gate and review before hardware.
+path. The next offline step stays static: §15 supersedes §14.4's proposed
+empty-table-buffer design. SCRATCH0/1 must publish a populated initialization
+descriptor and its referenced allocations must be resolved and owned before
+requesting with SCRATCH7 `0xF7FBDFF9`. Those writes need their own gate and
+review before hardware.
 
 ## State after this rung
 
