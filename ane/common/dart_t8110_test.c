@@ -210,7 +210,7 @@ int main(void)
 	 */
 	check(dart8_ttbr(0x1004102c000ULL) == 0x1004102dULL,
 	      "P3-ttbr-measured",
-	      "0x1004102d = 2026-09-25-macos-ane-engine-dump, T6021");
+	      "0x1004102d = 2026-09-25 engine-dump receipt, T6021");
 
 	/* P4: 2-level mode, same leaf format, DERIVED structure. */
 	{

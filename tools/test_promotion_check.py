@@ -157,6 +157,15 @@ assert pc.failures(injected('[ 901.2] apple-mailbox 285408000.mailbox: fifo erro
 assert not pc.unclean(oa(injected(dcp, good)))
 assert not pc.unclean(oa(injected(dcp, t6001, 'dmesg_faults')))
 assert not pc.unclean(oa(injected('[ 903.1] apple-dart 581008000.iommu: translation fault: status:0x81000404', good)))
+# The M1-family module refusing a T602x node is not a fault (row 02ba4b462a7d of 2026-11-01 failed on it); a real fault, even one that says "not binding", still is.
+refusal = ('[ 6.0] ane 284000000.ane: apple,t6020-ane: unsupported ANE: no proven SET-block base '
+           '(a guessed base external-aborts the SoC); not binding. To advance this port, run the quick collector')
+assert not pc.unclean(oa(injected(refusal, good)))
+assert not pc.unclean(oa(injected(refusal, good, 'dmesg_faults')))
+truncated = refusal[:refusal.index('not binding') + 9]  # ends at 'not bindi', as the collector leaves it
+assert not pc.unclean(oa(injected(truncated, good))), 'the collector cuts the line before "not binding"'
+assert pc.unclean(oa(injected('[ 6.1] ane 284000000.ane: DART fault: not binding the stream', good)))
+assert pc.unclean(oa(injected('[ 6.2] ane 284000000.ane: command timed out; not binding retries', good)))
 
 # Not-installed rows stay unjudged even when the raw dmesg has unrelated faults.
 not_installed = copy.deepcopy(real_by_id['a994fe80c994'])
@@ -315,4 +324,34 @@ both = copy.deepcopy(good)
 both['summary']['ane_linux'] = copy.deepcopy(oa(good))
 both['summary']['ane_linux']['smoke']['errors'] = 1
 assert pc.failures(both) == []
+
+for chip, bases in (('t6002', ('285c04000', '2285c04000')),
+                    ('t6022', ('284000000', '2284000000'))):
+    for ordered_bases in (bases, bases[::-1]):
+        bound_lines = [f'  ok    {pc.DRIVER[chip]} is bound to {base}.ane' for base in ordered_bases]
+        for check_lines in (bound_lines, ['; '.join(bound_lines)]):
+            for runtime_present in (False, True):
+                for reported_die in (None, 0, 1):
+                    ambiguous = fallback_row(40, soc=chip)
+                    candidate = ambiguous['summary']['ane_linux']
+                    candidate['check']['lines'] = check_lines
+                    if reported_die is not None:
+                        candidate['die'] = reported_die
+                    if runtime_present:
+                        ambiguous['summary']['ane_port_detail']['runtime'] = {'omarchy_ane': candidate}
+                    assert not pc.judged(ambiguous), (chip, ordered_bases, runtime_present, reported_die)
+                    assert pc.verdict([ambiguous]) == {}
+                    report = pc.json_verdict([ambiguous])
+                    assert all(not r['judged'] and not r['passed'] for c in report['chips'] for r in c['rows'])
+                    assert all(not c['targets'] for c in report['chips'])
+                    candidate['smoke']['errors'] = 1
+                    candidate['dmesg_faults'] = [f'ane {bases[1]}.ane: command timed out']
+                    assert not pc.judged(ambiguous) and pc.verdict([ambiguous]) == {}
+    for die, base in enumerate(bases):
+        single_die = fallback_row(41, soc=chip, base=base)
+        candidate = single_die['summary']['ane_linux']
+        candidate['check']['lines'] *= 2
+        assert pc.die_of(single_die) == die
+        assert pc.verdict([single_die])[(chip, die)]['passing'] == ['290000000000']
+
 print('test_promotion_check: ok')

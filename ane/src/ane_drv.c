@@ -505,7 +505,7 @@ static int ane_bo_init(struct drm_device *drm, void *data,
 		err = -ENODEV;
 		goto unlock_put;
 	}
-	if (atomic_read(&ane->wedged)) {
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing bo init\n");
 		err = -ENODEV;
 		goto unlock_put;
@@ -546,7 +546,7 @@ static int ane_bo_free(struct drm_device *drm, void *data,
 		mutex_unlock(&ane->engine_lock);
 		return -ENODEV;
 	}
-	if (atomic_read(&ane->wedged)) {
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing bo free\n");
 		mutex_unlock(&ane->engine_lock);
 		return -ENODEV;
@@ -582,12 +582,6 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 	    !args->handles[CMD_BUF_BDX] || args->handles[KRN_BUF_BDX] ||
 	    !args->btsp_handle) {
 		return -EINVAL;
-	}
-
-	/* Fail closed: never queue work behind a wedged engine. */
-	if (atomic_read(&ane->wedged)) {
-		dev_err_ratelimited(ane->dev, "wedged: refusing submit\n");
-		return -ECANCELED;
 	}
 
 	req.qid = 4;
@@ -643,7 +637,9 @@ static int ane_submit(struct drm_device *drm, void *data, struct drm_file *file)
 		err = -ENODEV;
 		goto unlock;
 	}
-	if (atomic_read(&ane->wedged)) {
+	/* Fail closed: never queue work behind a wedged engine. A wedge
+	 * whose full power-off has happened is retired here first. */
+	if (atomic_read(&ane->wedged) && ane_tm_recover(ane) < 0) {
 		dev_err_ratelimited(ane->dev, "wedged: refusing submit\n");
 		err = -ECANCELED;
 		goto unlock;
@@ -833,41 +829,20 @@ static int ane_drm_open(struct drm_device *drm, struct drm_file *file)
 	return 0;
 }
 
-/*
- * Per-session teardown: every file context open is a fresh boundary.
- * Anything the previous session left on the device (wedged flag, tm
- * completion counters, in-flight recovery state) belongs to that
- * session and must not survive into the next one.
- *
- * drm_gem_release runs before us and has dropped every handle this
- * file held. BOs leaked by `ane_gem_free_object under wedge` stay on
- * ane->bo_list until module teardown (their backing `drm_gem_object`s
- * are already gone, and touching them here would be use-after-free).
- * We do not try to drain them; we only clear the session-leaving
- * state (wedged + tm counters + recovering flag) so the next opener
- * sees a clean device. The orphan BOs remain inert: they are not in
- * any drm_file's handle table.
- */
+/* Failed recovery must retain the wedge, module pin and preserved BOs. */
 static void ane_drm_postclose(struct drm_device *drm, struct drm_file *file)
 {
 	struct ane_device *ane = drm->dev_private;
+	if (pm_runtime_resume_and_get(ane->dev) < 0)
+		return;
 
 	mutex_lock(&ane->engine_lock);
-	if (ane->removed) {
-		mutex_unlock(&ane->engine_lock);
-		return;
-	}
-
-	/* Drop the wedge pin first: a wedged engine that cannot be
-	 * recovered in software must NOT keep the module pinned, or the
-	 * operator cannot unload the ko for an updated build without a
-	 * reboot. ane_wedge_clear releases both the wedged flag and the
-	 * module_refcount; ane_tm_recover then attempts a power-cycle
-	 * recovery (succeeds only if the engine is actually idle-able). */
-	ane_wedge_clear(ane);
-	ane_tm_recover(ane);
-
+	if (!ane->removed)
+		ane_tm_recover(ane);
 	mutex_unlock(&ane->engine_lock);
+
+	pm_runtime_mark_last_busy(ane->dev);
+	pm_runtime_put_autosuspend(ane->dev);
 }
 
 /*
@@ -947,12 +922,14 @@ static int ane_drm_release(struct inode *inode, struct file *file)
 {
 	struct drm_file *priv = file->private_data;
 	struct device *dev = get_device(priv->minor->dev->dev);
-	int err;
+	int err, pm_err;
 
-	pm_runtime_get_sync(dev);
+	pm_err = pm_runtime_resume_and_get(dev);
 	err = drm_release(inode, file);
-	pm_runtime_mark_last_busy(dev);
-	pm_runtime_put_autosuspend(dev);
+	if (pm_err >= 0) {
+		pm_runtime_mark_last_busy(dev);
+		pm_runtime_put_autosuspend(dev);
+	}
 	put_device(dev);
 	return err;
 }
@@ -1227,7 +1204,7 @@ static const struct ane_soc ane_soc_t6020 = {
 
 static const struct ane_soc ane_soc_t6021 = {
 	/* M2 Max (T6021, t6021-test-host). SET window 0x8e08c000 = pmgr base
-	 * 0x8e080000 + 0xc000, present in ane0's own reg on macOS captures
+	 * 0x8e080000 + 0xc000, present in ane0's own reg in the recorded captures
 	 * of both 26.6.2 and 27.0 (2026-09-18, 11/11 derivation-input
 	 * checks each, zero delta); the Linux translation reuses the pmgr
 	 * high bits proven on T6000/T6020 rows (low-32 match) ->
@@ -1431,6 +1408,7 @@ static void ane_platform_remove(struct platform_device *pdev)
 	ane->removed = true;
 	drm_dev_unplug(&ane->drm);
 
+	/* Returning cannot stop forced removal or its devres cleanup. */
 	if (atomic_read(&ane->wedged)) {
 		dev_err(ane->dev,
 			"forced removal of a wedged device is unsafe; reboot required\n");
@@ -1462,9 +1440,14 @@ static int __maybe_unused ane_runtime_suspend(struct device *dev)
 	/* Veto gating while the engine may be DMA-active: there is no
 	 * documented abort/reset to establish quiescence first -- except
 	 * when recovery is power-cycling a wedged engine to establish
-	 * exactly that quiescence. */
-	if (atomic_read(&ane->wedged) && !ane->recovering)
-		return -EBUSY;
+	 * exactly that quiescence, or after such a cycle already gated it.
+	 * Then this suspend is recovery's second stage: the full power-off
+	 * that clears the retained task manager (ane_tm_recover). */
+	if (atomic_read(&ane->wedged) && !ane->recovering) {
+		if (!READ_ONCE(ane->quiesced))
+			return -EBUSY;
+		WRITE_ONCE(ane->por_pending, true);
+	}
 
 	ane_dvfs_down(ane);
 	return 0;

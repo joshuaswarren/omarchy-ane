@@ -38,7 +38,7 @@ static const struct ane_h16_fw ane_fw_aether = {
 	.tunables_vm = 0xd7c80,
 };
 
-/* T8132 (M4). ADT j604ap; ane-type 0x100 row; iBoot j604 coproc
+/* T8132 (M4). ADT j604ap; ane-type 0x100 row; boot handoff j604 coproc
  * id 4. ps words inside pmgr 0x380700000+0x18000. */
 const struct ane_h16_soc ane_t8132_soc = {
 	.name = "t8132",

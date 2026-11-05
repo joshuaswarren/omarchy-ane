@@ -4,7 +4,7 @@ Subject: [PATCH] iommu/apple-dart: write the T6021 ANE bulk-DART tunables at res
 Base: AsahiLinux/linux asahi-7.1.13-3 (linux-asahi 7.1.13.asahi3-1).
 
 With apple_dart.ane_tunables=1 on an apple,t6021 machine, the two bulk DARTs
-of the ANE (dart-ane1 0x285810000, dart-ane2 0x285820000) get the 19 macOS
+of the ANE (dart-ane1 0x285810000, dart-ane2 0x285820000) get the 19
 ADT dart-tunables words (0x20c, 0x220, 0x224, 0x800-0x83c) as read-modify-
 writes in apple_dart_hw_reset(): after the TTBRs are cleared and a full TLB
 flush, before streams and translation are enabled. This is the macOS order

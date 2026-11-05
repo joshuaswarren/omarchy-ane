@@ -40,6 +40,7 @@ typedef int64_t s64;
 /* ---- annotations ---- */
 #define __iomem
 #define __init
+#define __exit
 #ifndef __always_inline
 #define __always_inline inline
 #endif
@@ -156,6 +157,8 @@ struct platform_driver {
 #define MODULE_DESCRIPTION(x)
 #define MODULE_DEVICE_TABLE(t, x)
 #define module_platform_driver(x) extern char __sim_kmod_noop
+#define module_init(f) extern char __sim_mi_##f
+#define module_exit(f) extern char __sim_me_##f
 
 /* ---- fake MMIO bus with a full access record ---- */
 #define SIM_MAX_REGIONS 8
@@ -225,7 +228,17 @@ static inline void sim_event(int write, u64 pa, u32 val)
 
 extern void (*sim_write_hook)(u64 pa, u32 v);
 extern u32 (*sim_read_hook)(u64 pa, u32 v);
+extern int sim_stall_reads_left;   /* matching bus reads that cost sim_stall_us */
+extern unsigned int sim_stall_us;
+extern u64 sim_stall_lo, sim_stall_hi;
+extern unsigned long long sim_ktime_ns;
 
+extern unsigned long sim_jiffies;
+#define jiffies sim_jiffies
+static inline void usleep_range(unsigned long lo, unsigned long hi)
+{
+	sim_jiffies += (lo + hi) / 2;
+}
 static inline u32 bus_read(u64 pa)
 {
 	struct sim_region *r = sim_region_find(pa);
@@ -240,6 +253,10 @@ static inline u32 bus_read(u64 pa)
 	if (sim_read_hook)
 		v = sim_read_hook(pa, v);
 	sim_event(0, pa, v);
+	if (sim_stall_reads_left > 0 && pa >= sim_stall_lo && pa < sim_stall_hi) {
+		sim_stall_reads_left--;
+		sim_ktime_ns += (unsigned long long)sim_stall_us * 1000ULL;
+	}
 	return v;
 }
 
@@ -343,17 +360,16 @@ static inline void bus_write64(u64 pa, u64 v)
 /* ---- virtual clock: 1 jiffy = 1 ms; usleep advances it so the pmgr
  * wait loop terminates against a word that never turns on ----
  */
-extern unsigned long sim_jiffies;
-#define jiffies sim_jiffies
 static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
 static inline bool time_after(unsigned long a, unsigned long b)
 {
 	return (long)(b - a) < 0;
 }
-static inline void usleep_range(unsigned long lo, unsigned long hi)
+static inline void writel_relaxed(u32 v, void *a)
 {
-	sim_jiffies += (lo + hi) / 2;
+	bus_write((u64)(uintptr_t)(a), v);
 }
+
 static inline void msleep(unsigned int ms) { sim_jiffies += ms; }
 
 /* ---- runtime PM counters: the harness asserts get==put (power
@@ -367,13 +383,15 @@ extern int sim_pm_put;
  */
 extern int sim_pm_get_fail;
 extern int sim_pm_get_err;
+extern int sim_pm_get_fail_at;
 extern int sim_pm_noidle;	/* put_noidle calls: they drop a failed get_sync's count */
 static inline void pm_runtime_enable(struct device *d) { (void)d; }
 static inline void pm_runtime_disable(struct device *d) { (void)d; }
 static inline int pm_runtime_get_sync(struct device *d)
 {
 	(void)d;
-	if (sim_pm_get_fail) {
+	if (sim_pm_get_fail && (!sim_pm_get_fail_at ||
+	    sim_pm_get + sim_pm_get_err + 1 == sim_pm_get_fail_at)) {
 		sim_pm_get_err++;
 		return sim_pm_get_fail;
 	}
@@ -405,6 +423,60 @@ static inline bool IS_ERR(const void *p)
 }
 static inline bool IS_ERR_OR_NULL(const void *p) { return !p || IS_ERR(p); }
 
+
+struct firmware {
+	size_t size;
+	const u8 *data;
+};
+static int sim_fw_requests, sim_fw_live, sim_dma_poison;
+static inline int request_firmware(const struct firmware **out,
+				  const char *name, struct device *dev)
+{
+	struct firmware *fw;
+	FILE *file;
+	long size;
+	void *data;
+	int read_error, close_error;
+
+	(void)dev;
+	sim_fw_requests++;
+	file = fopen(name, "rb");
+	if (!file)
+		return -ENOENT;
+	if (fseek(file, 0, SEEK_END) || (size = ftell(file)) < 0 ||
+	    fseek(file, 0, SEEK_SET)) {
+		fclose(file);
+		return -EIO;
+	}
+	fw = malloc(sizeof(*fw));
+	data = malloc(size ? (size_t)size : 1);
+	if (!fw || !data) {
+		free(fw);
+		free(data);
+		fclose(file);
+		return -ENOMEM;
+	}
+	read_error = fread(data, 1, size, file) != (size_t)size;
+	close_error = fclose(file);
+	if (read_error || close_error) {
+		free(data);
+		free(fw);
+		return -EIO;
+	}
+	fw->size = size;
+	fw->data = data;
+	*out = fw;
+	sim_fw_live++;
+	return 0;
+}
+static inline void release_firmware(const struct firmware *fw)
+{
+	free((void *)fw->data);
+	free((void *)fw);
+	sim_fw_live--;
+}
+void ane_sha256(const void *data, u64 len, u8 out[32]);
+#define sha256 ane_sha256
 /* ---- DMA API for stage 7: zeroed surfaces at IOVAs far from the firmware segments ---- */
 #define PAGE_SIZE 0x4000UL
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
@@ -414,10 +486,10 @@ static inline bool IS_ERR_OR_NULL(const void *p) { return !p || IS_ERR(p); }
 #define READ_ONCE(x) (*(volatile __typeof__(x) *)&(x))
 #define WRITE_ONCE(x, v) (*(volatile __typeof__(x) *)&(x) = (v))
 typedef u64 dma_addr_t;
-#define DMA_BIT_MASK(n) ((1ULL << (n)) - 1)
-struct sim_dma { void *va; dma_addr_t iova; size_t size; int live; };
+#define DMA_BIT_MASK(n) (~0ULL >> (64 - (n)))
+struct sim_dma { void *va; dma_addr_t iova; size_t size; int live; int unmaps_at_free; };
 extern struct sim_dma sim_dma[8];
-extern int sim_n_dma, sim_dma_fail, sim_dma_mask_bits;
+extern int sim_n_dma, sim_dma_fail, sim_dma_mask_bits, sim_dma_scatter, sim_map_fail_at;
 static inline int dma_set_mask_and_coherent(struct device *d, u64 mask)
 {
 	(void)d;
@@ -429,21 +501,27 @@ static inline void *dma_alloc_coherent(struct device *d, size_t size, dma_addr_t
 	(void)d; (void)gfp;
 	if (sim_dma_fail == sim_n_dma + 1 || sim_n_dma >= 8)
 		return NULL;
-	sim_dma[sim_n_dma].va = calloc(1, size);
+	if (posix_memalign(&sim_dma[sim_n_dma].va, 0x4000, size))
+		sim_dma[sim_n_dma].va = NULL;
+	if (sim_dma[sim_n_dma].va)
+		memset(sim_dma[sim_n_dma].va, sim_dma_poison ? 0xa5 : 0, size);
 	sim_dma[sim_n_dma].iova = 0x3ff00000000ULL - 0x4000000ULL * (sim_n_dma + 1);
 	sim_dma[sim_n_dma].size = size;
 	sim_dma[sim_n_dma].live = 1;
 	*iova = sim_dma[sim_n_dma].iova;
 	return sim_dma[sim_n_dma++].va;
 }
+static inline void sim_note_dma_free(struct sim_dma *d);
 static inline void dma_free_coherent(struct device *d, size_t size, void *va, dma_addr_t iova)
 {
 	int k;
 
 	(void)d; (void)size;
 	for (k = 0; k < sim_n_dma; k++)
-		if (sim_dma[k].va == va && sim_dma[k].iova == iova)
+		if (sim_dma[k].va == va && sim_dma[k].iova == iova) {
 			sim_dma[k].live = 0;
+			sim_note_dma_free(&sim_dma[k]);
+		}
 }
 
 /* ---- iommu API for stage 5 map_fw=1: records every call with the bus event count at that moment ---- */
@@ -460,20 +538,44 @@ static inline int region_intersects(u64 start, size_t size, unsigned long flags,
 	return sim_region_ram;
 }
 #define __IOMMU_DOMAIN_DMA_API (1U << 1)
-struct iommu_domain { unsigned int type; };
+struct iommu_domain {
+	unsigned int type;
+	struct { u64 aperture_start, aperture_end; bool force_aperture; } geometry;
+};
+static unsigned int sim_window_queries;
 extern struct iommu_domain sim_default_dom;
 extern int sim_default_dom_none;
 static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *d) { (void)d; return sim_default_dom_none ? NULL : &sim_default_dom; }
 enum { SIM_IO_ALLOC = 1, SIM_IO_ATTACH, SIM_IO_MAP, SIM_IO_UNMAP, SIM_IO_DETACH, SIM_IO_FREE };
 struct sim_iocall { int code; u64 iova, pa, size; int prot; int ev; };
 extern struct sim_iocall sim_iocalls[64];
-extern int sim_n_iocalls, sim_io_fail, sim_n_dom_live;	/* sim_io_fail: 1 alloc, 2 attach, 3 map of segment 1, 4 map of segment 0 fails; 5 reads back wrong */
+extern int sim_n_iocalls, sim_io_fail, sim_n_dom_live;	/* sim_io_fail: 1 alloc, 2 attach, 3 map of segment 1, 4 map of segment 0 fails; 5 reads back wrong; sim_map_fail_at fails that 1-based map call */
+extern int sim_unmap_fail_at;
 extern void (*sim_attach_hook)(void);			/* the DART driver programming the DART at the attach */
 static inline void sim_iorec(int code, u64 iova, u64 pa, u64 size, int prot)
 {
 	if (sim_n_iocalls < 64)
 		sim_iocalls[sim_n_iocalls] = (struct sim_iocall){ code, iova, pa, size, prot, sim_n_events };
 	sim_n_iocalls++;
+}
+static inline void sim_note_dma_free(struct sim_dma *d)
+{
+	int k;
+
+	d->unmaps_at_free = 0;
+	for (k = 0; k < sim_n_iocalls && k < 64; k++)
+		d->unmaps_at_free += sim_iocalls[k].code == SIM_IO_UNMAP;
+}
+/* Page p of a DMA allocation sits at physical page f(p). With sim_dma_scatter, whole 128 KiB blocks are swapped in pairs; f is its own inverse. */
+static inline u64 sim_dma_page(u64 page)
+{
+	u64 block = page / 8;
+
+	return sim_dma_scatter && block < 26 ? (block ^ 1) * 8 + page % 8 : page;
+}
+static inline u64 sim_dma_phys(const struct sim_dma *d, u64 off)
+{
+	return (u64)(uintptr_t)d->va + sim_dma_page(off / SZ_16K) * SZ_16K + off % SZ_16K;
 }
 static inline bool device_iommu_mapped(struct device *d) { return d->of_node && d->of_node->has_iommus; }
 static inline struct iommu_domain *iommu_paging_domain_alloc(struct device *d)
@@ -503,15 +605,19 @@ static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa
 	for (k = 0; k < sim_n_iocalls && k < 64; k++)
 		maps += sim_iocalls[k].code == SIM_IO_MAP;
 	sim_iorec(SIM_IO_MAP, iova, pa, size, prot);
-	if ((sim_io_fail == 4 && maps == 0) || (sim_io_fail == 3 && maps == 1))
+	if ((sim_io_fail == 4 && maps == 0) || (sim_io_fail == 3 && maps == 1) || (sim_map_fail_at && maps + 1 == sim_map_fail_at))
 		return -ENOMEM;
 	return 0;
 }
 static inline u64 iommu_iova_to_phys(struct iommu_domain *dom, u64 iova)
 {
 	int k;
+	sim_window_queries++;
 
-	(void)dom;
+	if (dom == &sim_default_dom)
+		for (k = 0; k < sim_n_dma; k++)
+			if (sim_dma[k].live && iova >= sim_dma[k].iova && iova < sim_dma[k].iova + sim_dma[k].size)
+				return sim_dma_phys(&sim_dma[k], iova - sim_dma[k].iova);
 	for (k = 0; k < sim_n_iocalls && k < 64; k++)
 		if (sim_iocalls[k].code == SIM_IO_MAP && iova >= sim_iocalls[k].iova && iova < sim_iocalls[k].iova + sim_iocalls[k].size)
 			return sim_io_fail == 5 ? 0 : sim_iocalls[k].pa + (iova - sim_iocalls[k].iova);
@@ -519,9 +625,15 @@ static inline u64 iommu_iova_to_phys(struct iommu_domain *dom, u64 iova)
 }
 static inline size_t iommu_unmap(struct iommu_domain *dom, unsigned long iova, size_t size)
 {
+	int k, unmaps = 0;
+
 	(void)dom;
+	for (k = 0; k < sim_n_iocalls && k < 64; k++)
+		unmaps += sim_iocalls[k].code == SIM_IO_UNMAP;
 	sim_iorec(SIM_IO_UNMAP, iova, 0, size, 0);
-	return size;
+	if (sim_unmap_fail_at == -(unmaps + 1))
+		return 0;
+	return sim_unmap_fail_at == unmaps + 1 ? size - SZ_16K : size;
 }
 static inline void iommu_detach_device(struct iommu_domain *dom, struct device *d) { (void)dom; (void)d; sim_iorec(SIM_IO_DETACH, 0, 0, 0, 0); }
 static inline void iommu_domain_free(struct iommu_domain *dom) { sim_iorec(SIM_IO_FREE, 0, 0, 0, 0); sim_n_dom_live--; free(dom); }
@@ -639,6 +751,74 @@ static inline void platform_set_drvdata(struct platform_device *p, void *v)
 static inline void *platform_get_drvdata(struct platform_device *p)
 {
 	return p->drvdata;
+}
+
+
+/* ---- steplog shim: capture the module's step lines instead of touching a file ---- */
+#define O_WRONLY 01
+#define O_CREAT 0100
+#define O_APPEND 02000
+struct file { int fd; };
+extern char sim_steplog_buf[8192];
+extern int sim_steplog_len;
+extern unsigned long sim_steplog_fsyncs;
+extern int sim_steplog_open_fail;
+extern int sim_steplog_mode;
+extern unsigned short sim_step_at[2048];
+extern int sim_step_n;
+static inline struct file *filp_open(const char *path, int flags, int mode)
+{
+	(void)path; (void)flags;
+	sim_steplog_mode = mode;
+	if (sim_steplog_open_fail)
+		return (struct file *)ERR_PTR(-ENOENT);
+	return (struct file *)1;
+}
+static inline int filp_close(struct file *f, void *owner)
+{
+	(void)owner;
+	return f ? 0 : -EBADF;
+}
+static inline ssize_t kernel_write(struct file *f, const void *buf, size_t n, void *pos)
+{
+	(void)f; (void)pos;
+	if (n > (size_t)(sizeof(sim_steplog_buf) - 1 - sim_steplog_len))
+		n = sizeof(sim_steplog_buf) - 1 - sim_steplog_len;
+	memcpy(sim_steplog_buf + sim_steplog_len, buf, n);
+	sim_steplog_len += n;
+	sim_steplog_buf[sim_steplog_len] = 0;
+	/* events seen when this line was written: proves the line precedes its access */
+	if (sim_step_n >= (int)(sizeof(sim_step_at) / sizeof(sim_step_at[0])))
+		sim_step_n = 0;	/* wrap: only the tail is checked for ordering */
+	sim_step_at[sim_step_n++] = (unsigned short)sim_n_events;
+	return n;
+}
+static inline int scnprintf(char *b, size_t sz, const char *fmt, ...)
+{
+	va_list ap; int n;
+	va_start(ap, fmt); n = vsnprintf(b, sz, fmt, ap); va_end(ap);
+	return n;
+}
+static inline int vscnprintf(char *b, size_t sz, const char *fmt, va_list ap)
+{
+	int n = vsnprintf(b, sz, fmt, ap);
+	return n >= (int)sz ? (int)sz - 1 : n;
+}
+static inline size_t strscpy(char *dst, const char *src, size_t n)
+{
+	size_t l = strlen(src);
+	if (n) { size_t c = l < n - 1 ? l : n - 1; memcpy(dst, src, c); dst[c] = 0; }
+	return l;
+}
+static inline int vfs_fsync(struct file *f, int datasync)
+{
+	(void)f; (void)datasync;
+	sim_steplog_fsyncs++;
+	return 0;
+}
+static inline unsigned long long ktime_get_boottime_ns(void)
+{
+	return sim_ktime_ns += 1000000ULL;
 }
 
 #endif /* SIM_SHIM_H */

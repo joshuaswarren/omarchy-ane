@@ -29,7 +29,7 @@ ledger's ANE cell at 674 jobs/s, against 17.5 us per job on the M1.
 | T6021 RTKit / mailbox IRQ | none: the 13.5 firmware sends no HELLO, and starting the mailbox fires AIC2 884 about 700,000 times/s (`hello_wait_ms` row in `ane/t6021/README-install.md`) | - |
 | T6021 SCRATCH words | boot phase only; no per-call word is known | - |
 
-macOS sends PROCEDURE_CALL (0x204) over its RTBuddy "IO" endpoint. Its
+The reference run sends PROCEDURE_CALL (0x204) over its RTBuddy "IO" endpoint. Its
 completion path was not traced; [INFERENCE] it receives the same firmware
 finish message.
 

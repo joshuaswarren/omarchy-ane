@@ -74,11 +74,11 @@
   ],
   "marketing": {
     "product": {
-      "v": "Apple Mac mini (M6), as named by the aurora-wip T8152 DTS; the macOS 27.0 macOS chip and board map maps its Mac18,5 identity to board J873gAP and SoC 0x8152.",
+      "v": "Apple Mac mini (M6), as named by the aurora-wip T8152 DTS; the 27.0 chip and board map maps its Mac18,5 identity to board J873gAP and SoC 0x8152.",
       "src": "S3"
     },
     "board_identity": {
-      "v": "chip and board map device/model identity Mac18,5; board configuration J873gAP / j873gap; SoC 0x8152. This is the macOS-side join used with the DTS model field.",
+      "v": "chip and board map device/model identity Mac18,5; board configuration J873gAP / j873gap; SoC 0x8152. This is the identity join used with the DTS model field.",
       "src": "S2"
     }
   },

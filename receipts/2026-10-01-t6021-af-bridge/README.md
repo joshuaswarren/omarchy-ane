@@ -37,7 +37,7 @@ candidate cause of the 254 ms vs 90 ms encoder gap
 All addresses here are absolute physical addresses. Linux DT `reg` values
 and m1n1 hv MMIO addresses are already absolute.
 
-1. **The bridge base is the ANE engine base, 0x284000000.** The kext
+1. **The bridge base is the ANE engine base, 0x284000000.** The driver
    takes it from RegMap 4 = ADT `/arm-io/pmgr` reg[38]. The Linux DT
    cannot give that index: each of the seven pmgr nodes in the live DT has
    one or two `reg` entries. A macOS 13.5 trace gives the answer
@@ -46,7 +46,7 @@ and m1n1 hv MMIO addresses are already absolute.
    after `ps_ane_sys` goes T=0, T=f, AUTO (events 2813-2815) and before
    `ps_ane_cpu` goes on (event 2842). All 26 written values pass the mask
    test above. Three of them carry bits outside their mask (eng+0x000 =
-   0x11, eng+0x108 = 0x11, eng+0x400 = 0xc0f10010), so macOS read those
+   0x11, eng+0x108 = 0x11, eng+0x400 = 0xc0f10010), so the reference run read those
    registers before it wrote them. The ADT value of reg[38] is still
    unconfirmed. From an m1n1 proxy: `u.adt["/arm-io/pmgr"].get_reg(38)`.
    Expected: 0x284000000, size at least 0xa04.

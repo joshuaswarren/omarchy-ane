@@ -66,7 +66,7 @@ assert all(r['field'] for r in d['ranges'])
 stray = bytearray(data)
 stray[0x1000] ^= 1
 assert [r['vm'] for r in collect.decode(0x8112, bytes(fake), text, bytes(stray))['ranges'] if not r['field']] == \
-    [hex(dvm + 0x1000)], 'a byte outside the iBoot fields must be reported'
+    [hex(dvm + 0x1000)], 'a byte outside the boot-loader fields must be reported'
 for bad in ((text[:-1], data), (text, data[:img.patch[1] - dvm] + b'XXXX' + data[img.patch[1] - dvm + 4:])):
     try:
         collect.decode(0x8112, bytes(fake), *bad)

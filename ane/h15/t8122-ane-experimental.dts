@@ -39,12 +39,8 @@
 		};
 	};
 
-	/* aurora t8122-pmgr.dtsi ships only ps_ane_sys; add the four
-	 * MPM/CPU/TD/BASE ps nodes that the ADT lists. Parents mirror
-	 * the aurora t6031-pmgr.dtsi chain (kernel-shaped; the pmgr
-	 * driver reads these, and stage=status re-reads ACTUAL=0xf on
-	 * every word behind the genpd get so an order mismatch is
-	 * caught, not masked). */
+	/* T8122/J613 parent graph: receipts/2026-10-01-ane-every-soc/adt-27.0.txt,
+	 * lines 227-239. ANE_BASE depends on both ANE_TD and ANE_CPU. */
 	fragment@2 {
 		target-path = "/soc/power-management@2d0700000";
 		__overlay__ {
@@ -78,7 +74,7 @@
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
 				label = "ane_base";
-				power-domains = <&ps_ane_td>;
+				power-domains = <&ps_ane_td>, <&ps_ane_cpu>;
 			};
 		};
 	};

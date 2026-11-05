@@ -102,7 +102,7 @@ arithmetic on A1 values (A3).
 | DART IRQ and gate | 885, ANE-SYS-DART | 525, no gate | 577, no gate | 984, ANE-SYS-DART | MEASURED | A1 |
 | DART use by the driver | three DART nodes (first three windows), IRQ 885 shared, dart0 in the pmp domain, dart1 and dart2 in ane_cpu, sid 0 | same split expected | same | same | T6021 MEASURED; M3 INFERENCE | R2:116-148 |
 | DART sid, vm-base, vm-size, iommu-parent | from the 13.5 ADT and the lab tree | not in A1 | not in A1 | not in A1 | missing | A1 |
-| Firmware IOVA map | ADT segment-ranges: PA 0x10000848000 → IOVA 0x10000000000 (0xc4000, TEXT), PA 0x10001400000 → IOVA 0x100000c4000 (0x438000, DATA); the ANE DART is off at the iBoot handoff and holds no map | not in A1 | not in A1 | not in A1 | T6021 MEASURED; M3 missing | R4 §3 |
+| Firmware IOVA map | ADT segment-ranges: PA 0x10000848000 → IOVA 0x10000000000 (0xc4000, TEXT), PA 0x10001400000 → IOVA 0x100000c4000 (0x438000, DATA); the ANE DART is off at the boot stage handoff and holds no map | not in A1 | not in A1 | not in A1 | T6021 MEASURED; M3 missing | R4 §3 |
 
 ## Corrections to the earlier H15 records
 

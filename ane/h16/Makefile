@@ -4,7 +4,7 @@
 #   make KERNELDIR=.../omarchy-linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h16.o
-	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ../h17/ane_h17_soc.o
+	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ane_h16_overlay.o ../h17/ane_h17_soc.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
@@ -13,7 +13,8 @@ else
 CC ?= cc
 SIM_OUT ?= sim/sim_h16
 SIM_SRCS = sim/sim_harness.c sim/shim.h ane_h16_main.c ane_h16_soc.c ane_h16.h \
-	../h17/chanreg.h
+	ane_h16_overlay.h ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h \
+	../h17/ane_h17_fw.h ../h17/bringup_order.h ../h17/chanreg.h
 
 default: modules
 
@@ -23,11 +24,13 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-status pos-boot pos-boot-hello pos-four-ps \
+POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds \
+	pos-one-pd pos-boot pos-boot-hello pos-four-ps pos-getsync-eacces \
 	pos-h17-boot pos-h17-irq pos-h17-scratch pos-h17-table
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-short-unmap neg-unknown-stage neg-adt-bounds \
-	neg-unreserved-alias neg-non-dma-domain \
+	neg-dart-map neg-short-unmap neg-no-domain neg-unknown-stage neg-no-confirm \
+	neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd \
+	neg-adt-bounds neg-unreserved-alias neg-non-dma-domain \
 	neg-preload-bss neg-preload-boundary neg-preload-snapshot \
 	neg-preload-sysram neg-table-timeout neg-table-overrun neg-table-foreign \
 	neg-table-padding neg-table-envelope neg-table-alloc neg-table-dma-range \
@@ -48,7 +51,7 @@ sim-negative: $(SIM_OUT)
 sim-discriminate: $(SIM_OUT)
 	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim /tmp/ane-h16-discrim/h17 /tmp/ane-h16-discrim/h16
 	@cp sim/sim_harness.c sim/shim.h /tmp/ane-h16-discrim/sim/ && cp -r sim/inc /tmp/ane-h16-discrim/sim/
-	@cp ane_h16_soc.c ane_h16.h /tmp/ane-h16-discrim/
+	@cp ane_h16_soc.c ane_h16.h ane_h16_overlay.h /tmp/ane-h16-discrim/
 	@cp ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h ../h17/ane_h17_fw.h ../h17/bringup_order.h ../h17/chanreg.h /tmp/ane-h16-discrim/h17/
 	@cp ane_h16.h /tmp/ane-h16-discrim/h16/
 	@sed 's/if (memcmp(digest, img->sha256, sizeof(digest))) {/if (0) {/' \
@@ -86,7 +89,18 @@ sim-discriminate: $(SIM_OUT)
 sim-adt-mutations:
 	python3 sim/test_adt_mutations.py
 
-sim: sim-test sim-negative sim-discriminate sim-adt-mutations
+sim: sim-test sim-negative sim-discriminate sim-adt-mutations sim-overlay sim-mutation
+
+OVL_OUT ?= sim/sim_overlay
+
+$(OVL_OUT): sim/sim_overlay.c ane_h16_overlay.c ane_h16_overlay.h sim/ovl/linux/of.h
+	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim/ovl -o $@ sim/sim_overlay.c
+
+sim-overlay: $(OVL_OUT)
+	$(OVL_OUT)
+
+sim-mutation:
+	python3 sim/mutate.py
 
 $(NEG): $(SIM_OUT)
 	$(SIM_OUT) $@
@@ -95,5 +109,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f $(SIM_OUT)
 
-.PHONY: default modules sim sim-test sim-negative sim-discriminate sim-adt-mutations $(NEG) clean
+.PHONY: default modules sim sim-test sim-negative sim-discriminate sim-adt-mutations sim-overlay sim-mutation $(NEG) clean
 endif

@@ -106,11 +106,11 @@ def check_channels(text, boot_h, t6021):
 
 def check_rvbar(t6021):
     mask = t6021["ANE_T6021_RVBAR_ADDR_MASK"]
-    iboot = 0x10000000001  # ADT segment-ranges remap IOVA 0x10000000000 | valid bit; the M6 reads this back
-    entry = iboot & mask
+    latch = 0x10000000001  # ADT segment-ranges remap IOVA 0x10000000000 | valid bit; the M6 reads this back
+    entry = latch & mask
     errs = []
     if entry != 0x10000000000 or (entry & ~mask & (2**64 - 1)) != 0:
-        errs.append(f"iBoot RVBAR {iboot:#x} folds to {entry:#x}")
+        errs.append(f"boot-loader RVBAR {latch:#x} folds to {entry:#x}")
     return errs
 
 

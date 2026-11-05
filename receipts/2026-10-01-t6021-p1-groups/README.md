@@ -5,7 +5,7 @@ merged: it showed no effect, as `af_bridge_macos` before it.
 
 ## Result
 
-P-1, the first step of our firmware start, writes 12 words in the ANE engine page at 0x284000000. The macOS 13.5
+P-1, the first step of our firmware start, writes 12 words in the ANE engine page at 0x284000000. The reference run 13.5
 hv trace never writes ten of them (rank 4 of
 [2026-10-01-t6021-macos-vs-linux-mmio](../2026-10-01-t6021-macos-vs-linux-mmio/README.md)). A boot that skips all
 ten starts the firmware (`booted=1 fw_alive=1`), passes every correctness check, and runs the encoder at

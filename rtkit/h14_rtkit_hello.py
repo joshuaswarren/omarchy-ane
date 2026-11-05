@@ -42,7 +42,7 @@ boot()).  No pmgr writes, no RVBAR writes, no register writes otherwise.
 import argparse, os, mmap, struct, sys, time
 
 ANE = 0x284000000
-ASC = 0x1600000                      # H14 ASC cpu block (kext 0x1600044 control)
+ASC = 0x1600000                      # H14 ASC cpu block (control at +0x44)
 MBOX = ASC + 0x8000                  # m1n1 ASCRegs mailbox layout
 A2I_CTRL, I2A_CTRL = MBOX + 0x110, MBOX + 0x114
 A2I_S0, A2I_S1 = MBOX + 0x800, MBOX + 0x808

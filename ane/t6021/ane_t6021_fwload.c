@@ -34,7 +34,7 @@
  *      RVBAR entry on the device's default DMA domain. Placement
  *      contract, from the private notes of 2026-09-20:
  *        - live RVBAR read64 = 0x10000000001 (bit0 latched, entry
- *          bits 0x10000000000 = dart-ane vm base); kext law
+ *          bits 0x10000000000 = dart-ane vm base); vendor-driver law
  *          (rvbar-lifecycle 6288b0b): bit0 set => the RVBAR write
  *          branch is skipped, so the ASC fetches AT the latched entry;
  *        - netconsole 2026-09-20T17:48:19: apple-dart 285800000.iommu
@@ -109,7 +109,7 @@ MODULE_PARM_DESC(fw_alias_reserved,
 		 "Lab, T6021: map reserved SEG0 0x10000848000+0xc4000 at entry and "
 		 "SEG1 0x10001400000+0x438000 after it (probe refuses unless no-map "
 		 "/reserved-memory nodes cover both); 0 (default) = run the staged "
-		 "copy with iBoot's patches replayed (own memory, the only mode on "
+		 "copy with the boot stage's patches replayed (own memory, the only mode on "
 		 "T6020/T6022).");
 
 static bool ane_t6021_fw_alias_is_reserved(struct device *dev)
@@ -196,8 +196,8 @@ bool ane_t6021_fwload_options_ok(void)
  * FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts.
  *
  * T8112 (receipts/2026-10-01-t8112-optin): the revision comes from the
- * eFuse words iBoot reads, the ANE_SYS_CPU word is pmgr +0xc008, and the
- * kext (type 0x70) opens PWGATE "set" +0x8b8 before the ps words. The TM
+ * eFuse words the boot loader reads, the ANE_SYS_CPU word is pmgr +0xc008, and the
+ * vendor driver (type 0x70) opens PWGATE "set" +0x8b8 before the ps words. The TM
  * TD word is not known there, so trace_td is off. */
 const struct ane_t602x_soc ane_t6020_soc = {
 	.soc = 0x6020, .soc_revision = 0x01,
@@ -558,7 +558,7 @@ static int ane_t6021_fw_patch(struct ane_t6021 *ane, u8 *img)
 		return -EINVAL;
 	}
 	dev_dbg(ane->dev,
-		"fwload: own memory: iBoot patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
+		"fwload: own memory: boot stage patches replayed (soc %#x rev %#x DATA %#llx cpu %#llx wrapper %#llx)\n",
 		p.soc, p.soc_revision,
 		p.exec_base + soc->fw->segs[1].vmaddr, p.cpu_pa,
 		p.wrapper_pa);

@@ -22,6 +22,11 @@
  * The mailbox is not described: ane_h16 drives the ASC v4 mailbox at
  * engine+0x1608000 by polling, with no IRQ, because which of 629/642 is
  * the recv line is not established.
+ *
+ * This overlay is for stage=dt and stage=status. It ships the three ANE
+ * DART nodes disabled and the ane node without iommus, as the H15
+ * overlays do (#174): equivalent enabled nodes hung a T6030 at boot.
+ * stage=boot needs the DART; it uses t8132-ane-dart-experimental.dts.
  */
 /dts-v1/;
 /plugin/;
@@ -69,6 +74,9 @@
 		target-path = "/soc";
 
 		__overlay__ {
+			/* The three ANE DART nodes are disabled. The DART driver probes an enabled node at boot. On a T6030,
+			 * equivalent enabled nodes hung the machine before display or network, because the ANE hardware behind
+			 * them was not powered. That was not measured with this overlay. Stages dt and status need no DART. */
 			ane_dart0: iommu@501800000 {
 				compatible = "apple,t8132-dart", "apple,t8110-dart";
 				reg = <0x5 0x01800000 0x0 0xc000>;
@@ -76,7 +84,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 630 4>;
 				power-domains = <&ps_ane_sys>;
-				status = "okay";
+				status = "disabled";
 			};
 
 			ane_dart1: iommu@501820000 {
@@ -86,7 +94,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 630 4>;
 				power-domains = <&ps_ane_sys>;
-				status = "okay";
+				status = "disabled";
 			};
 
 			ane_dart2: iommu@501840000 {
@@ -96,7 +104,7 @@
 				interrupt-parent = <&aic>;
 				interrupts = <0 630 4>;
 				power-domains = <&ps_ane_sys>;
-				status = "okay";
+				status = "disabled";
 			};
 
 			ane@500000000 {
@@ -106,7 +114,8 @@
 				      <0x3 0x80700000 0x0 0x18000>;
 				interrupt-parent = <&aic>;
 				interrupts = <0 629 4>, <0 642 4>;
-				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+				/* No iommus property while the DART nodes are disabled: omarchy-ane-dt refuses a node that
+				 * names a disabled provider. t8132-ane-dart-experimental.dts carries them for stage=boot. */
 				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
 						<&ps_ane_cpu>, <&ps_ane_td>,
 						<&ps_ane_base>;

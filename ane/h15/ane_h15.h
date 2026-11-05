@@ -19,18 +19,7 @@
 #include <crypto/sha2.h>
 #include "ane_h15_adt.h"
 
-/* One pinned firmware payload. The Mach-O vm layout (text/data
- * fileoff, patchbay/tunables) is NOT measured for any H15 image
- * (sources S2/S3: the firmware list and the payload, not a parse of the
- * image). The H16 module reuses the iBoot preload instead of staging
- * a file; that path is the H15 default too. fw_path= is the explicit
- * override the volunteer signs. */
-struct ane_h15_fw {
-	const char *name;
-	u8 sha256[32];
-	u32 size;		/* the size the SHA-256 was taken over (S3) */
-	u32 manifest_size;	/* the firmware list (S2) size; differs by 25 */
-};
+#include "ane_h15_fw_pins.h"
 
 /* word group: name, where, offset, size (4 or 8 bytes), tier, source.
  * The module's stages check tier, not the offsets; offset is for the
@@ -118,8 +107,8 @@ struct ane_h15_soc {
 	u32 cpu_status;		/* wrapper+0x48 */
 	u32 rvbar;		/* engine+0x1050000 */
 	u64 rvbar_expect;	/* IORVBAR a stage 2 run READ on this SoC (iBoot's preload); 0 = no
-				 * measurement yet, stage=run refuses. T6030: Chris Kearney, PR 175,
-				 * J516S, 0x0000010000000001 (RVBAR_LO 0x1, RVBAR_HI 0x100). */
+				 * measurement yet, stage=run refuses. T6030: Chris Kearney, PR 175, J516S;
+				 * T6031: issue 176, J516C; T8122: stage 2 on a J613. All 0x0000010000000001 (RVBAR_LO 0x1, RVBAR_HI 0x100). */
 	u32 dart_off;		/* engine-relative base of the first ANE DART window; the ADT lists four
 				 * 0x4000 windows at +0, +0x10000, +0x20000, +0x4000. 0 = no ADT
 				 * measurement for this SoC (t6034): stage=dart refuses. */
@@ -128,10 +117,12 @@ struct ane_h15_soc {
 	u32 engine_size;	/* engine window size */
 	u64 pmgr_pa;		/* pmgr window base address */
 	u32 pmgr_size;		/* pmgr window size */
-	u64 pwgate_pa;		/* PWGATE window base: the fifth reg entry of the ADT ane0 node in the
-				 * macOS 27.0 device tree (T6031, J516C: 0x292290000). 0 = no window
-				 * for this row: pwgate_t6031 is refused in probe. */
-	u32 pwgate_size;	/* PWGATE window size (T6031: 0x4000) */
+	u64 pwgate_pa;		/* PWGATE window base: a reg entry of the ADT ane0 node (T6031: the fifth,
+				 * 0x292290000; T6030 and T8122: the third, the pmgr_ps window). 0 = no window
+				 * for this row: pwgate_read and pwgate_t6031 are refused in probe. */
+	u32 pwgate_size;	/* PWGATE window size (0x4000) */
+	u32 pwgate_word;	/* offset of the gate word inside the window (T6031 0x199c, T6030 0x2b6c,
+				 * T8122 0x272c) */
 	const u32 *ps_off;	/* 5 pmgr-relative offsets: SYS MPM CPU TD BASE */
 	const struct ane_h15_word *words;
 	const struct ane_h15_fw *fw;

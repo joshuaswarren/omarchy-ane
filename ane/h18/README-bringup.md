@@ -46,7 +46,7 @@ else in the ASC, IORVBAR or mailbox windows.
     acknowledgement arrives, as `apple_rtkit_shutdown` does, and wait up to 600 ms for the IOP acknowledgement. That pair can be restarted. Whether it lets
     the core reach STOPPED is not known. `rtkit_stop=2` sends OFF (0x0) on both sides instead, as `apple_rtkit_poweroff` does. The board stopped the
     core with that pair. The core cannot be restarted after it.
-  - `read_scratch=1`: read the eight SCRATCH words of the engine block (engine + 0x18a0024 to +0x18a0040, the registers macOS uses for the
+  - `read_scratch=1`: read the eight SCRATCH words of the engine block (engine + 0x18a0024 to +0x18a0040, the registers the shipped system uses for the
     boot-args handshake of this SoC) three times: before RUN, when AP power ON is acknowledged and before the shutdown. Read only, each
     address logged before its read. Whether the block can be read on this board is not known, and a read the block does not answer can hang or reset the machine, as the DART read can.
   - `handshake=1` (needs `map_fw=1`, `read_scratch=1`, `rtkit_start=1` and `rtkit_stop=1` or `2`): the first write to the SCRATCH words. Once AP power ON
@@ -55,7 +55,7 @@ else in the ASC, IORVBAR or mailbox windows.
     writes the block address to SCRATCH0 (low) and SCRATCH1 (high), and then writes the wake word 0xf7fbdff9 to SCRATCH7. It waits up to `hs_wait_ms` for a new
     address in SCRATCH1:SCRATCH0 together with 0x08042006 in SCRATCH7, and dumps the first 0x800 bytes at that address (all-zero lines of 16 bytes are counted, not printed) when one of its own surfaces holds it.
     The firmware shows 0x08042006 before the wake, so the answer is judged by the new address. With this option the two firmware segments are mapped into the
-    default DMA domain of the ANE (no own domain is attached), because the surfaces come from the DMA API. The config size at block +0x10 is 0x380000, the value macOS sets on the M6 (`hs_cfg_size`; T6021 uses 0x500000). Two words macOS
+    default DMA domain of the ANE (no own domain is attached), because the surfaces come from the DMA API. The config size at block +0x10 is 0x380000, the value the shipped system sets on the M6 (`hs_cfg_size`; T6021 uses 0x500000). Two words the shipped system
     does not give is zero: the template word. The pool qword at +0x60 is 0x40000 as in the T6021 sequencer. The handshake refuses unless SCRATCH7 already shows READY. SCRATCH6 is not
     written (macOS writes 1 there before RUN, the firmware showed 0). A hang, a reset or a DART fault is possible, and what the firmware does with the
     surfaces is not known. The surfaces are freed only after the core stopped. Nothing here has run on the board.
@@ -75,17 +75,17 @@ else in the ASC, IORVBAR or mailbox windows.
     first write. It allocates one DMA surface per section and per buffer, sends LOAD_PROGRAM (0x200, 0x1c0 bytes, six 0x30 byte section records, the program id comes
     back at +0x1b8), CREATE_PROCESS (0x202, process id at +0xc) and PROCEDURE_CALL (0x204, one 0x30 byte element per buffer at +0x60, cookie 0xADD0), reads the
     IO_T2H events (two per call, the second with state 1 when the procedure finished) and gives each slot back with the ring's doorbell bit, logs the buffers,
-    then sends TERMINATE_PROCESS (0x203) and DESTROY_PROGRAM (0x201). The wire format is the T6021's, which the M2 driver uses and macOS behaviour matches in command ids
+    then sends TERMINATE_PROCESS (0x203) and DESTROY_PROGRAM (0x201). The wire format is the T6021's, which the M2 driver uses and the shipped system's behaviour matches in command ids
     and sizes. Whether the M6 firmware accepts a program built for the M2's firmware has not been tried: a refusal is logged with the reply, an unanswered command
     or a call without a finish event ends the sequence with no unload, and the buffers are freed only after the core stopped.
     With `read_dart=1` the module also reads the exception state of the ANE DART (instance 0), read only, before LOAD_PROGRAM and after the call. On the first run on the M6 the firmware answered LOAD_PROGRAM, CREATE_PROCESS and PROCEDURE_CALL with acknowledgement 0 for the H14 add program. It posted one IO_T2H event with state 0. No finish event came, and the kernel logged an unhandled ANE DART interrupt.
-    `dart_inst` (a mask of ANE DART instances 0 to 3, needs `hs_prog=1` and `read_dart=1`) also reads the instances read only, before LOAD_PROGRAM and after the call. It reads the stream enable, translation control and table base words, the first two exception bitmap words and the records of streams 0, 10, 11, 13 and 15. The ADT lists four DART instances behind one interrupt, and the kernel handler reads only the first. `hs_premap=1` sends PREMAP_BUFFER (0x20d, type 2) for one inference request pool before LOAD_PROGRAM, as macOS does at init. Neither has run on the board yet.
+    `dart_inst` (a mask of ANE DART instances 0 to 3, needs `hs_prog=1` and `read_dart=1`) also reads the instances read only, before LOAD_PROGRAM and after the call. It reads the stream enable, translation control and table base words, the first two exception bitmap words and the records of streams 0, 10, 11, 13 and 15. The ADT lists four DART instances behind one interrupt, and the kernel handler reads only the first. `hs_premap=1` sends PREMAP_BUFFER (0x20d, type 2) for one inference request pool before LOAD_PROGRAM, as the shipped system does at init. Neither has run on the board yet.
   - After the channel step the module polls the doorbell side every millisecond while it waits. That is 100 ms after SCRATCH3 and the whole wait of each command.
     It answers the firmware's requests on the SHAREDMALLOC ring. A MALLOC gets a DMA buffer of up to 2 MiB (at most 16 buffers and 64 MiB) and an ordinal. A FREE
     gets the answer the firmware waits for with no timeout. Each answer rings the ring's doorbell bit. A pending IPI value is written to the ack register at
-    engine + 0x18b0000, as macOS does. When the pending value or a firmware-to-host ring changes, the module logs the nonzero lines of those rings. A silent
+    engine + 0x18b0000, as the shipped system does. When the pending value or a firmware-to-host ring changes, the module logs the nonzero lines of those rings. A silent
     firmware then still shows which ring moved. The first command on the M6 got no answer before this. The cause is open.
-    The command block lives inside the pool surface, 0x400 bytes in, because macOS takes every command block from the pool and the first run with a separate block
+    The command block lives inside the pool surface, 0x400 bytes in, because the shipped system takes every command block from the pool and the first run with a separate block
     got no answer. The terminal ring is logged as text too.
   - `rtkit_hello=1` (needs `alias_mbox=1`): answer the firmware's RTKit management HELLO with version 12 and its endpoint map, nothing else. The
     reply goes to TX as one paired 16 byte store. No reply is sent without a free TX slot, for a message of another type or endpoint, or when the
@@ -141,6 +141,20 @@ were 0 (the boot loader leaves no stream enabled). After the attach and the two 
 (the firmware answered with a buffer request for its own crash log, 12 pages at an address inside its data segment, which the module logs and does not answer).
 The firmware then acknowledged IOP power state ON (0x20). The module sent AP power state ON, the firmware acknowledged it, and the module started endpoint 0x20.
 Endpoint 0x20 sent nothing in the next 1.2 s. With `rtkit_stop=2` the AP and IOP OFF messages were acknowledged, and clearing RUN then returned the core to STOPPED.
+
+### 2026-11-03: the command queue and the first program
+
+With the four-DART device tree and the command sequence first, the firmware
+answered the queue: CONFIG_GET, RESOURCE_INFO_GET and two more opcodes came back
+in the same millisecond, and a clean stop followed ([issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)).
+The first program (a one-op fp16 add, 64 channels, 27,040 bytes) then ran:
+LOAD_PROGRAM, CREATE_PROCESS and PROCEDURE_CALL acknowledged, PROCEDURE_CALL
+finished after 1 ms, and the output buffer's first 4,096 bytes matched the
+reference byte for byte (same SHA-256, `e7fa8c08`); y = a + b held for all 64
+channels. No DART exception on any of the four instances, and the run repeated
+cleanly with the module defaults. The earlier attempt that started but never
+finished was the one-DART device tree: the ANE node now lists all four, as on
+the M1 and M2. The K01 pack (a first real model layer) is not accepted yet.
 
 ## Build and sim
 

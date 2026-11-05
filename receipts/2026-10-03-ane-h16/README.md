@@ -64,15 +64,15 @@ ane-type 0x110 (type 0xd0, generation 7, "h16g").
 | pmgr window | 0x380700000+0x18000 | 0x502280000+0x18000 | ADT ane reg[1] |
 | ANE ps words | ANE_SYS +0x570, MPM/CPU/TD/BASE +0xc000/8/10/18 | ANE_SYS +0x3c0, MPM/CPU/TD/BASE +0xc000/8/10/18 | ADT pmgr (t8132 also aurora t8132-pmgr.dtsi) |
 | Power-gates | ANE-SYS-V, ANE-SYS-V-PMP (both no_ps) | + ANE-SYS-DART (no_ps, on dart-ane0) | ADT clock-gates/power-gates |
-| CPU_CONTROL | engine+0x1600044 (0 then 0x10) | same | macOS behaviour |
-| CPU_STATUS | engine+0x1600048 | same | macOS behaviour |
-| RVBAR | engine+0x1050000 (written only if bit0 clear) | same | macOS behaviour |
-| SCRATCH0..7 | engine+0x1880020..+0x188003c | same | macOS behaviour |
-| MBI doorbell | engine+0x1884000 | same | macOS behaviour |
-| IRQ status/ack | engine+0x188c000 / +0x1890000 | same | macOS behaviour |
-| ASC core PA | 0x501000000 | 0x485000000 | iBoot coproc entry id 4, +0x20 |
-| ASC wrapper PA | 0x501600000 | 0x485600000 | iBoot coproc entry id 4, +8 |
-| ASC mailbox | wrapper+0x8000: a2i/i2a ctrl +0x110/0x114, a2i send +0x800/+0x808, i2a recv +0x830/+0x838 | same | iBoot coproc entry register table (ASC v4) |
+| CPU_CONTROL | engine+0x1600044 (0 then 0x10) | same | reference run behaviour |
+| CPU_STATUS | engine+0x1600048 | same | reference run behaviour |
+| RVBAR | engine+0x1050000 (written only if bit0 clear) | same | reference run behaviour |
+| SCRATCH0..7 | engine+0x1880020..+0x188003c | same | reference run behaviour |
+| MBI doorbell | engine+0x1884000 | same | reference run behaviour |
+| IRQ status/ack | engine+0x188c000 / +0x1890000 | same | reference run behaviour |
+| ASC core PA | 0x501000000 | 0x485000000 | boot stage coproc entry id 4, +0x20 |
+| ASC wrapper PA | 0x501600000 | 0x485600000 | boot stage coproc entry id 4, +8 |
+| ASC mailbox | wrapper+0x8000: a2i/i2a ctrl +0x110/0x114, a2i send +0x800/+0x808, i2a recv +0x830/+0x838 | same | boot stage coproc entry register table (ASC v4) |
 | Interrupts | 629, 642 | 1054 | ADT ane interrupts |
 | DART (LLT/BRD/BWR) | 0x501800000/0x501820000/0x501840000, each +0xc000 | 0x485800000/0x485820000/0x485840000 | ADT dart-ane reg + instance |
 | DAPF | 0x501810000+0x4000 | 0x485810000+0x4000 | ADT dart-ane reg[3] |
@@ -80,7 +80,7 @@ ane-type 0x110 (type 0xd0, generation 7, "h16g").
 | MPM streams | iommu-parent mapper-ane (stream 0) + mapper-ane-mpm (stream 11) | same | ADT ane iommu-parent (new this pass: the MPM mapper) |
 | Firmware | leto payload 4b330c5f… | aether payload 8659271a… | IPSW + firmware list `ANE` |
 | Firmware load | iBoot: IsLoadedByiBoot true, IsFUDFirmware true, Personalize true | same | firmware list |
-| Wake word | SCRATCH7 == 0x08042006 after CPU_CONTROL 0→0x10 | same | macOS behaviour |
+| Wake word | SCRATCH7 == 0x08042006 after CPU_CONTROL 0→0x10 | same | reference run behaviour |
 | RTKit | 3514.0.15; `__TEXT` vm 0xc0000, `__DATA` vm 0xc0000+0x2ac000; `_rtk_patchbay` 43 records; `_rtk_tunables` 0x6a0 B | same | firmware payload |
 
 iBoot patchbay writer list (H16, from `iboot_ane.py` on j604/j614c;

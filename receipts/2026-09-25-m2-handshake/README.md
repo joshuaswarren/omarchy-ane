@@ -38,7 +38,7 @@ program counter cannot be sampled through it.
   access; the live stream pins it to that write, the only one in the
   group not already proven safe. Not repeated. The 13.5 kext does not
   write a GPIO clock-enable on this path, so the hypothesis was wrong.
-- Engine table. The kext writes engine+0x938/0xa18/0xaf8 = 0x01ff01ff
+- Engine table. The driver writes engine+0x938/0xa18/0xaf8 = 0x01ff01ff
   before ANE_Init. Those writes read back 0. No READY.
 - Translation. The three ANE DARTs were not programmed alike: inst0's
   TTBR read 0 (invalid) while inst1 and inst2 shared a valid one. m1n1's
@@ -53,7 +53,7 @@ program counter cannot be sampled through it.
 
 ## The remaining blocker
 RVBAR reads 0x0000010000000001: bit 0 set, so it is locked, and the mode
-bits (0x0081<<48) are absent. The kext would write
+bits (0x0081<<48) are absent. The driver would write
 0x8100000000000001 if the lock were clear. The firmware executes without
 those bits, so they do not gate fetch; the open inference is that they
 gate the interrupt or timer delivery that would wake the firmware from

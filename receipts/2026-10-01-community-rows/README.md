@@ -14,17 +14,17 @@ their receipts ([every SoC](../2026-10-01-ane-every-soc/README.md), [T8112](../2
 
 | # | Value | Ours | Community rows | Verdict |
 | --- | --- | --- | --- | --- |
-| D1 | T6020 `RTK_soc_revision` (chip revision that iBoot writes into the ANE firmware) | 0x11 for every T602x (`ANE_T602X_SOC_REVISION`, the T6021 capture; marked as an assumption for T6020) | macOS `ANEDevicePropertyANEMinorVersion` = 1 on all four T6020 rows: 4e8224a39f40, e6069fe959ad (J416s, 26.5.1, kext 9.511.3), dc53badc436a, ea8c35bd20bf (J414s, 26.6.2, kext 9.512.0). = 17 (0x11) on T6021 2b83108f0645, f209393a8d2d (kext 9.512.0, the same kext) and T6022 90c6b9bf3e03. 17 = 0x11 = the T6021 preload capture. | **Wrong for the measured T6020 parts (0x01).** The 26.6.2 iBoot computes `RTK_soc_revision` from two eFuse words (j414c iBoot, function at 0x46c24, read by the T8112 opt-in work), so it is the chip revision of each part. The fix (a per-SoC `soc_revision` in `struct ane_t602x_soc`, T6020 0x01) is in the T8112 opt-in change, not in this one; until it merges, `ane_t6021` on T6020 replays 0x11. |
+| D1 | T6020 `RTK_soc_revision` (chip revision that boot stage writes into the ANE firmware) | 0x11 for every T602x (`ANE_T602X_SOC_REVISION`, the T6021 capture; marked as an assumption for T6020) | reference run `ANEDevicePropertyANEMinorVersion` = 1 on all four T6020 rows: 4e8224a39f40, e6069fe959ad (J416s, 26.5.1, driver 9.511.3), dc53badc436a, ea8c35bd20bf (J414s, 26.6.2, driver 9.512.0). = 17 (0x11) on T6021 2b83108f0645, f209393a8d2d (driver 9.512.0, the same driver) and T6022 90c6b9bf3e03. 17 = 0x11 = the T6021 preload capture. | **Wrong for the measured T6020 parts (0x01).** The 26.6.2 boot stage computes `RTK_soc_revision` from two eFuse words (j414c boot stage, function at 0x46c24, read by the T8112 opt-in work), so it is the chip revision of each part. The fix (a per-SoC `soc_revision` in `struct ane_t602x_soc`, T6020 0x01) is in the T8112 opt-in change, not in this one; until it merges, `ane_t6021` on T6020 replays 0x11. |
 | D2 | T6020 ASC tunables | the 24 T6021 capture records for every T602x | not in any row | **Wrong for T6020.** The 26.6.2 j414s iBoot has the same 24 offsets with 13 different values (T8112 opt-in work). The fix is in the same change as D1. |
 | D3 | `ane_soc_from_collect.py` (mlx-omarchy) on T6022 | — | refuses T6022: it takes `ane_nodes[0]`, and on 90c6b9bf3e03 that is `ane1` (die 1) | Tool defect, not an overlay defect. Sent to the collector lane. |
-| D4 | IRQ decode of old macOS rows | — | `IOInterruptSpecifiers` is stored as Python bytes repr on a3e974f8e6f9, 857e1e6c61b0 and the M1 Ultra rows; `ane_soc_from_collect._irq_number` reads `[b't\x03..']` as 0x7427625b, not 884. On the M5 row 9610cb9f861d the dart-ane value is lossy (U+FFFD) and cannot be decoded. | Tool and collector defect. Decoded here with `ast.literal_eval` (scripts/extract.py). |
+| D4 | IRQ decode of old reference run rows | — | `IOInterruptSpecifiers` is stored as Python bytes repr on a3e974f8e6f9, 857e1e6c61b0 and the M1 Ultra rows; `ane_soc_from_collect._irq_number` reads `[b't\x03..']` as 0x7427625b, not 884. On the M5 row 9610cb9f861d the dart-ane value is lossy (U+FFFD) and cannot be decoded. | Tool and collector defect. Decoded here with `ast.literal_eval` (scripts/extract.py). |
 
 No address, interrupt, DART window, power-domain path, label or compatible in our overlays disagrees with a row.
 
 ## T6020 (M2 Pro)
 
 43 rows: 19 Linux with a device tree block (j414s 13, j416s 6; linux-asahi 7.1.13-3-1 and -3-2), 5 macOS with
-ANE nodes. macOS IORegistry addresses are arm-io relative; the physical address adds 0x200000000.
+ANE nodes. The reference run IORegistry addresses are arm-io relative; the physical address adds 0x200000000.
 
 | Value | Ours (source) | Community rows | Agree | Verdict |
 | --- | --- | --- | --- | --- |
@@ -39,10 +39,10 @@ ANE nodes. macOS IORegistry addresses are arm-io relative; the physical address 
 | power-domain paths | pmgr 28e080000: 2c8 (pmp), 2e0, 4000, 4008, 4010, 4018, 4020, 4028, 4030 | every path exists with labels pmp, ane_cpu, ane_sys_mpm, ane_td, ane_base, ane_set1..4 on all 19 Linux rows (pmgr block reg 0x28e080000/0x8000; ane_sys at 0x260, not used) | yes | confirmed (scripts/paths.py: 0 missing) |
 | node status | overlay applies when the kernel has no enabled `apple,t6020-ane` node | no row has an ANE node (`ane_node_present` false, 19 rows) | yes | the overlay applies on every reported kernel |
 | ane-type | 160 (ADT j414c, same as T6021) | `hw_board_type` 160, ANEVersion 128, h14g, 16 cores, firmware loaded: 5 rows | yes | T6020 takes the T6021 kext path |
-| RTK_soc | 0x6020 (compatible) | `platform.soc_id` t6020: 4 rows | yes | consistent (iBoot: 0x6020 or fuse bits) |
+| RTK_soc | 0x6020 (compatible) | `platform.soc_id` t6020: 4 rows | yes | consistent (boot stage: 0x6020 or fuse bits) |
 | chip revision | 0x11 | ANEMinorVersion 1 | **no** | D1 |
 | ASC tunables | T6021 capture | none | — | D2 (from iBoot, not rows) |
-| mailbox 0x285408000, IRQs 884 + 1833 | v3 lab overlay | none (the macOS probe walks only `ane*`, `dart-ane*`, `mapper-ane*`; stock trees have no node) | — | unmeasured |
+| mailbox 0x285408000, IRQs 884 + 1833 | v3 lab overlay | none (the reference run probe walks only `ane*`, `dart-ane*`, `mapper-ane*`; stock trees have no node) | — | unmeasured |
 | firmware placement (`segment-ranges`), reserved-memory | none needed: own memory | none | — | unmeasured; not needed by the own-memory path |
 | DART vm-base / IOVA | `ane-alias-iova` 0x10000000000 (ADT vm-base) | none | — | unmeasured |
 | boot chain | 13.5 selene image pinned (`a9c4b771…`) | iBoot2 8422.141.2, os-fw 13.5, m1n1 stage 2 v1.6.1 on all 19 Linux rows | yes | these Macs preload the 13.5 generation the driver pins; stock m1n1 adds no ane-firmware nodes |
@@ -103,7 +103,7 @@ Mac14,2, no ANE port detail at all).
 | pmgr block | children at 0xc008..0xc038 added | block reg 0x23b700000/0x14000 (covers 0xc038): 2 rows | yes | the new children are inside the block |
 | DART compatible | `apple,t8112-dart`, `apple,t8110-dart` | both that pair and `apple,t8110-dart` alone in the trees | yes | confirmed |
 | node status | no stock ANE node | false: 2 rows | yes | — |
-| engine 0x26a000000, IRQ 520, DARTs 0x26b800000.., IRQ 521, vm-base, mailbox, SET base, power words | ADT + kext | none | — | unmeasured |
+| engine 0x26a000000, IRQ 520, DARTs 0x26b800000.., IRQ 521, vm-base, mailbox, SET base, power words | ADT + driver | none | — | unmeasured |
 | chip revision, tunables | none in the overlay (the T8112 opt-in work handles them) | none | — | unmeasured |
 
 ## `ane_soc_from_collect.py` against our overlays

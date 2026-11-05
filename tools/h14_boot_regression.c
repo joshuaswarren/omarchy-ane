@@ -240,7 +240,7 @@ static u8 *read_file(const char *path, size_t want)
 }
 
 /* RTK_soc_revision from the two T8112 eFuse words, the instructions of
- * iBootStage2 25G83 j413 0x40270 step by step: ubfx w0, w9, #27, #3;
+ * the stage-2 boot code, step by step: ubfx w0, w9, #27, #3;
  * extr w8, w8, w9, #30; bfi w0, w8, #4, #3. */
 static u32 iboot_t8112_rev(u32 w9, u32 w8)
 {
@@ -378,7 +378,7 @@ static void boot_patch_checks(void)
 							&ane_t8112_asc_tunables, &p,
 							&reason) == 0 &&
 			      !memcmp(img, want, FW_IMG_SIZE), name,
-			      "j413 iBoot table, DATA base 0x8000b4000; no other byte");
+			      "j413 boot table, DATA base 0x8000b4000; no other byte");
 			free(img);
 			free(want);
 		}
@@ -390,7 +390,7 @@ static void boot_patch_checks(void)
 		snprintf(name, sizeof(name), "T8112 fuse %08x %08x", fuse[i][0], fuse[i][1]);
 		check(ane_t8112_fuse_revision(fuse[i][0], fuse[i][1]) ==
 		      iboot_t8112_rev(fuse[i][0], fuse[i][1]), name,
-		      "decode = iBoot j413 0x40270");
+		      "decode = boot j413 0x40270");
 	}
 }
 

@@ -7,13 +7,13 @@ The kit is [tools/t8112-kit](../../tools/t8112-kit/README.md).
 
 | Check | Result |
 | --- | --- |
-| `collect-m1n1.py --replay` + `ingest.py` on the 17 pre-Linux T6021 captures (2026-09-27) | 17 of 17 pass. 176 to 178 bytes differ from the archive (the stack guard's random bytes sometimes equal the archive bytes), all in iBoot fields; 0 bytes outside them. Each gives `RTK_soc` 0x6021, revision 0x11, cpu 0x285000000, wrapper 0x285400000, DATA base 0x100000c4000 (entry IOVA 0x10000000000), 24 tunables records, PMU base 0x28e084008 |
+| `collect-m1n1.py --replay` + `ingest.py` on the 17 pre-Linux T6021 captures (2026-09-27) | 17 of 17 pass. 176 to 178 bytes differ from the archive (the stack guard's random bytes sometimes equal the archive bytes), all in boot stage fields; 0 bytes outside them. Each gives `RTK_soc` 0x6021, revision 0x11, cpu 0x285000000, wrapper 0x285400000, DATA base 0x100000c4000 (entry IOVA 0x10000000000), 24 tunables records, PMU base 0x28e084008 |
 | The same 17, against the driver | each matches `ANE_T602X_SOC_REVISION`, `ane_t602x_asc_tunables` (the generated C rows equal the header rows), `ANE_T6021_PMU_PA` (0x28e084000) and the `t602x-ane.dtsi` alias IOVA (0x10000000000) |
 | Live path, fake proxy (13.5 j413 IPSW ADT with injected `segment-ranges`, a patched bia preload, m1n1 proxyclient a878095) | ANE off: only the nine PS words are read, no engine or DART read. ANE on: RVBAR, CPU_STATUS and 3 × 3 DART reads. The proxy has no write method. `ingest.py` accepts the result (3 or 4 entry sources agree) and refuses an RVBAR that disagrees. A `segment-ranges` address outside DRAM is refused before any read |
 | Generated diffs | `git apply` clean on 9c1c932. The patched overlay compiles (dtc 1.7.2-g53373d13) and applies to `t8112-j413.dtb`: mailbox interrupts `0 520 4 0 1000 4`, ane `mboxes` = the mailbox phandle. `tools/h14_boot_regression.c` builds with the patched header: 112 checks pass |
 | `omarchy-ane-firmware-fetch` on a fake `apple,t8112` root, live CDN | installed `h14_ane_fw_bia_j4xx.macho`, 4938552 B, sha256 `af587dfa96b1e01d2b2e0f9f776e5dbefebb44c7968b86fff7d2b19c4cbef0dd`, 1.3 s |
 | `tools/test_t8112_kit.py`, `test_ane_firmware_fetch.py`, `test_ane_m2.py`, `test_ane_dt.py`, `test_ane_overlays.py` | ok |
-| `collect-macos.sh` | `bash -n` and shellcheck clean; run on Linux with stand-in `ioreg`, `sysctl`, `sw_vers`, `system_profiler`, `shasum` (the T6021 macOS 27 `segment-ranges` bytes): `ingest.py --macos` gives entry 0x10000000000; the serial number, hardware UUID and `unique-chip-id` lines are not in the tarball. Not run on macOS |
+| `collect-macos.sh` | `bash -n` and shellcheck clean; run on Linux with stand-in `ioreg`, `sysctl`, `sw_vers`, `system_profiler`, `shasum` (the T6021 `segment-ranges` bytes): `ingest.py --macos` gives the expected firmware entry address; the serial number, hardware UUID and `unique-chip-id` lines are not in the tarball. Not run on the reference run |
 | Device run | NOT RUN. No T8112 is in the lab |
 
 ## The pmgr page comes from the image
@@ -45,7 +45,7 @@ The T6021 macOS 27 `ioreg` of `ane0` (ane-linux-experiments d3dc1aef,
 `receipts/2026-09-23-m2-macos-denominator/m2-macos-window/ane-evidence/ane0-devicetree.txt`)
 has `segment-ranges`: TEXT phys 0x1000092c000, iova 0, remap 0x10000000000,
 size 0xe8000; DATA phys 0x1000150c000, iova 0xe8000, remap 0x100000e8000,
-size 0x284000. The sizes are the macOS 27 image, but the TEXT remap equals the
+size 0x284000. The sizes are the reference run 27 image, but the TEXT remap equals the
 13.5-stub m1n1 ADT remap and the latched RVBAR entry (0x10000000000). So the
 macOS route gives the entry IOVA. It gives no tunables (the node has none) and
 no preload. `/arm-io` `chip-revision` is 0x11 on T6001 (macOS "B1"), and the

@@ -28,7 +28,7 @@ receipts/2026-09-19-h14-w3-driver-skeleton.md   (this file)
   power-domain/MMIO/IRQ interaction (H13 `ane/src/ane_drv.c` pattern).
 - **reg windows** (the ADT's three ane0 ranges, names are the binding):
   `engine` = whole 32 MiB block `0x284000000` (block-relative; the H13
-  +0x1c04000 engine delta is GONE — kext never computes it, first touch
+  +0x1c04000 engine delta is GONE — driver never computes it, first touch
   external-aborted twice per the 2026-09-18 bisect), `pmgr` =
   `0x28e080000+0x4034` island words, `set` = `0x28e08c000+0x4000` mapped
   by address outside the resource API, read-only by repo rule (H13 SET

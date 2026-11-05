@@ -1594,7 +1594,7 @@ static void pos_boot(void)
 			if (pass == 1) {
 				chk(ret == 0 && ok && nsc3 == 1 && sim_db_writes == 2 && sim_cmds_seen == 2 && sim_cmd_ops[0] == 4 && sim_cmd_ops[1] == 3, "CH2 hs_cmds=1: PRINT_ENABLE then CONFIG_GET on the IO ring, two doorbell writes");
 				chk(log_count("CONFIG_GET reply u32 at +8 = 0x16e3600") == 1 && log_count("ack=0\n") == 2 && w3 > 0 && db > w3, "CH2 hs_cmds=1: the reply is read, both acknowledged with 0, the doorbell comes after SCRATCH3");
-				chk(sim_n_dma == 3 && log_count("hs surface CMD inside POOL at +0x400 iova=") == 1 && sim_cmd_blk_in_pool, "CH2 hs_cmds=1: the command block lives inside the pool surface at +0x400 (no fourth surface), as the kext does");
+				chk(sim_n_dma == 3 && log_count("hs surface CMD inside POOL at +0x400 iova=") == 1 && sim_cmd_blk_in_pool, "CH2 hs_cmds=1: the command block lives inside the pool surface at +0x400 (no fourth surface), as the vendor driver does");
 			}
 			if (pass == 2)
 				chk(ret == -EIO && result("boot", "FAIL", "handshake-channel-step-failed") && nsc3 == 1 && sim_db_writes == 0 && sim_cmds_seen == 0 && log_count("rtkit shutdown:") == 1, "CH3 SCRATCH3 never cleared: FAIL, no command, the stop still runs");

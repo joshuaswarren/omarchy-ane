@@ -7,6 +7,47 @@ row in the same module (j514m / j516m). Facts and the b0 family
 decision: `receipts/2026-10-03-ane-h15/README.md`. The structural
 template is `ane/h16/`.
 
+## Host-owned firmware staging
+
+`ane_h15_firmware_stage()` validates the complete 26A428 payload against the
+shared chip pin before allocation. It stages the measured TEXT and DATA file
+segments into one owned host buffer and zeroes the remaining VM extent.
+The engine argument is zero on single-engine chips. T6032/J575D explicitly selects
+ANE0 or ANE1, with distinct image pins and independent host owners.
+T6034 selects the T6031 image. Image selection does not qualify hardware resources,
+startup or device retirement for either Ultra engine or any other chip.
+
+This API performs no DMA mapping, runtime patch, publication or device access.
+It does not connect `fw_path` to a loader or change the module's boot refusals.
+`ane_h15_firmware_free()` frees host storage only. After any future publication,
+the caller must retain storage until device retirement is proved.
+
+The input images remain private and are not distributed in this repository.
+Run the real-image host checks with all four measured payload files:
+
+```
+make -C tools check-h15-firmware H15_FW_INPUT_DIR=/private/ane0-inputs \
+    H15_FW_ANE1_INPUT_DIR=/private/ane1-inputs
+```
+
+## Kernel-owned preparation
+
+Stage 3 now requests the exact pinned payload through the kernel firmware API.
+It requires read consent, matching resources, powered domains, the retained
+stopped-core predicate, RUN clear and an existing DMA-API domain.
+It allocates coherent memory, initializes the complete measured image and writes
+the provider's wrapper physical address into the measured `WrAd` field.
+The native producer obtains that address from device-memory resource 0.
+For these rows, that resource is the published engine-relative wrapper window.
+
+This allocation creates DMA mappings through the normal DMA API. It does not
+attach a domain, alias the execution entry, send a message or start the core.
+All existing boot refusals remain. A refused probe frees the prepared owner.
+The existing ambiguous-publication guard retains that owner during removal.
+The real-image checks exercise preparation and cleanup with simulated kernel
+boundaries; they do not prove a real allocation, startup or retirement on hardware.
+
+
 ## What it does
 
 - `stage=0` or `stage=dt` (safe, no MMIO): parse the running DT and
@@ -37,33 +78,37 @@ template is `ane/h16/`.
   compares CPU_STATUS with the value a stopped T6021 core reads (0x2a).
   The meaning of the bits on H15 is not measured, so the line only says
   whether the values are equal.
-- `stage=3` or `stage=boot`: refused without `fw_path=` and
-  `confirm_boot=1`. With them, the stage prints one line per
-  still-unmeasured fact from the `ane_h15_facts` table (stub
-  firmware identity, mailbox base and IRQ roles,
-  segment-ranges/DART geometry, RVBAR compose value, SCRATCH wake
-  word) and stops with `verdict=REFUSED reason=unfilled-facts`.
-  The table is data: a later change fills a row only with the
-  receipt named in the row. Even with every row filled, THIS
-  build implements no boot path and releases no CPU; it refuses
-  with `reason=facts-filled-boot-path-not-built`. When iBoot
-  preloads firmware into ANE DRAM, the live ADT's
-  `segment-ranges` describes it; on a measured H15 boot the same
-  preload + map + CPU-release path that the T6021 W-series uses
-  is the only mechanically proven route, and a volunteer
-  recording it is what fills the missing rows in the b0 table.
+
+  With `fw_seg=TEXTPA:SIZE,DATAPA:SIZE` from this boot's live ADT, stage 2 also
+  queries the existing IOMMU domain at the current `RVBAR & ~1`. The current
+  RVBAR must match the measured SoC entry. It logs the IOVA, expected TEXT
+  address and resolved physical address. `PASS reason=rvbar-text-entry-match`
+  means that entry resolves to the supplied TEXT address.
+
+  A missing domain or zero translation refuses the check; a different address
+  fails it. A zero translation means the kernel could not resolve the entry,
+  not that hardware necessarily lacks a mapping. This query allocates, attaches
+  and maps nothing. It reads no firmware bytes and issues no RUN or PWGATE
+  operation. It checks one entry, not the full TEXT range, and does not prove
+  firmware execution. Without `fw_seg`, the original preflight result stays unchanged.
+- `stage=3` or `stage=boot`: requires `fw_path=`, `confirm_boot=1` and
+  `confirm_read=1`. It performs the kernel-owned preparation above before
+  reporting the remaining startup facts. An unavailable or invalid payload,
+  unsafe initial state or failed allocation refuses before preparation completes.
+  Successful preparation still ends with `REFUSED reason=unfilled-facts`.
+  Even a fully filled fact table still refuses CPU release with
+  `reason=facts-filled-boot-path-not-built`. No fact is marked filled by this path.
 - `stage=4` or `stage=dart` (read only, `confirm_read=1` required): reads
   the ANE DART, never writes. After the stage 1 ACTUAL=0xf gate it reads
   PARAMS3 of the four 0x4000 windows the ADT lists (engine + 0x1800000,
   +0x1810000, +0x1820000, +0x1804000), and for every window whose version
   equals window 0's it reads PARAMS4, PROTECT, PROTECT_LOCK, the ENABLE_STREAMS
   words and TCR (plus TTBR where TCR is set) of streams 0 to 63. It logs
-  each non-zero stream and `live_streams=N locked_windows=N`. `PASS
-  reason=dart-live-stream-found` means iBoot left a stream enabled, with
-  translation on and a valid TTBR. `PASS reason=dart-no-stream-enabled`
-  means nothing is enabled: a started core could not fetch its firmware. It
-  does not show whether the mapping covers the firmware, whether the core would
-  run, or anything about the mailbox.
+  each non-zero stream and `live_streams=N locked_windows=N`.
+  `PASS reason=dart-live-stream-found` means a scanned stream has translation
+  enabled and a valid TTBR. It does not identify who programmed that stream.
+  `PASS reason=dart-no-stream-enabled` means no stream in the bounded scan meets
+  those checks. Neither result proves a firmware translation or firmware execution.
   Reading the result: `locked_windows` counts bit 0 of PROTECT_LOCK (offset 0x208), not
   of PROTECT (offset 0x200): the code tests `lock & 1`. A T6030 (J516S, run by a tester) printed bank 0
   PROTECT = PROTECT_LOCK = `0x2` and the fourth window, at bank 0 + 0x4000, with another
@@ -76,9 +121,9 @@ template is `ane/h16/`.
   found every ENABLE_STREAMS word 0: iBoot left no stream enabled.
 - `stage=5` or `stage=run`: refused without `confirm_run=1`, with
   `run_wait_ms` outside 10 to 2000 (default 300), and on any SoC row whose
-  `rvbar_expect` is 0 (t8122 and t6034 today; t6030 measured it at stage 2 on a
-  16-inch M3 Pro, t6031 at stage 2 on a 16-inch M3 Max, issue 176, both
-  `0x0000010000000001`). It is the only stage that writes.
+  `rvbar_expect` is 0 (t6034 today; t6030 measured it at stage 2 on a
+  16-inch M3 Pro, t6031 at stage 2 on a 16-inch M3 Max, issue 176, and t8122 at
+  stage 2 on a 13-inch M3 MacBook Air, all `0x0000010000000001`). It is the only stage that writes.
   After the stage 1 ACTUAL=0xf gate it reads CPU_STATUS, CPU_CONTROL, RVBAR
   and both mailbox CTRL words and writes only if the core is stopped (STOPPED
   set, RUNNING clear), RUN is clear, RVBAR equals `rvbar_expect` and both
@@ -113,13 +158,13 @@ template is `ane/h16/`.
   with `__module_get` (an `rmmod` would otherwise free the code under a running core).
   `run_scratch=1` (stage 5 only, off by default) adds a read-only dump of the eight SCRATCH words at engine + 0x1840050 to + 0x184006c: one line before RUN
   and one after the wait, `ane_h15 scratch before RUN: S0=... S7=...` and `ane_h15 scratch after the wait: ...`. It writes nothing. The offsets are the ones macOS uses for the T6030
-  and have not been read on an M3. On the M2 (T6021) macOS waits for `0x08042006` in SCRATCH7 after it starts the firmware (`ane/t6021/ane_t6021.h`); whether this firmware writes it is what the dump is for.
+  and have not been read on an M3. On the M2 (T6021) the shipped system waits for `0x08042006` in SCRATCH7 after it starts the firmware (`ane/t6021/ane_t6021.h`); whether this firmware writes it is what the dump is for.
   Clearing RUN does not stop a core that has started (see the stage 5 results below), so a run with a started core still ends in `core-not-stopped` and needs a reboot.
   `scratch_boot=1` (stage 5 only, off by default) replaces the read-modify-write with the order macOS
   boots the firmware in, as macOS does it, never run on an M3: write 0 to all eight SCRATCH words
   (macOS clears SCRATCH0 to SCRATCH7 first), then SCRATCH6=1, then SCRATCH7=0 and read it back, then
   CPU_CONTROL 0 and CPU_CONTROL 0x10 (RUN) as plain writes, then poll SCRATCH7 every 1 ms for the ready word
-  `0x08042006` for `sb_wait_ms` ms (10 to 5000, default 1000). macOS logs "No wake signal" when its wait
+  `0x08042006` for `sb_wait_ms` ms (10 to 5000, default 1000). The shipped system logs "No wake signal" when its wait
   times out; this module logs the first-seen time or `not seen`. The hypothesis under test (an inference,
   not measured): a SCRATCH7 that still holds the ready word from iBoot sends the firmware down the
   warm-boot path, where it idles at `0x300028`; zeroing all eight words first is what the run decides on.
@@ -129,11 +174,11 @@ template is `ane/h16/`.
   the run before RUN with `FAIL scratch_boot=1 s7_ready=no clear-failed` and means the register ignored the write.
   The RESULT line carries `scratch_boot=1 s7_ready=<yes|no>`; the verdict rules
   are unchanged. The option is refused on every stage other than 5, before any bus access.
-  `pwgate_t6031` (stage 5 only, off by default, T6031 rows only) adds one more step as the
+  `pwgate_t6031` (stage 5 only, off by default, rows with a PWGATE window: T8122, T6030, T6031) adds one more step as the
   last action before the first CPU_CONTROL write, on top of either start order. macOS behaviour on a T6031: it writes 0 to the 32 bit register at
   offset 0x199c of a register window named PWGATE, then polls that word until bits 1:0 read 0
   (up to 0x1388 polls, 10 microseconds each). The window is the fifth reg entry of the ADT
-  ane0 node in the macOS 27.0 device tree: physical 0x292290000, size 0x4000, next to the
+  ane0 node in the shipped system's 27.0 device tree: physical 0x292290000, size 0x4000, next to the
   pmgr window at 0x292280000. The module maps that one window with ioremap for the step and
   unmaps it again on every exit path. No device tree entry changes. Value 1 reads the word
   and logs it; if bits 1:0 are nonzero it writes 0 once (`ane_h15 write PWGATE=0x0
@@ -141,8 +186,8 @@ template is `ane/h16/`.
   microseconds apart, until bits 1:0 read 0; the final word is logged. If the word already
   reads open, value 1 writes nothing. Value 2 always writes 0 first (the unconditional
   macOS order) and then polls. Any other value refuses in probe with
-  `REFUSED reason=pwgate_t6031 0 to 2`. The rows without the window (t8122, t6030, t6034)
-  refuse the parameter in probe before any bus access and before any mapping, and so does
+  `REFUSED reason=pwgate_t6031 0 to 2`. A row without a PWGATE window (t6034)
+  refuses the parameter in probe before any bus access and before any mapping, and so does
   every stage other than 5. A poll timeout stops the run before any CPU_CONTROL write with
   `FAIL pwgate-not-open`: the core never starts, nothing is pinned, and the probe releases
   the power claims and unmaps the windows, like the `clear-failed` path of `scratch_boot`. A
@@ -154,11 +199,50 @@ template is `ane/h16/`.
   the two T6031 runs ended with CPU_STATUS `0x30002a` to `0x300028` and no mailbox message.
   macOS behaviour, never run on an M3.
 
+  `stop_after_pwgate` (stage 5 with `pwgate_t6031` only, off by default) stops the run right
+  after the PWGATE step, before any SCRATCH or CPU_CONTROL write. The RESULT reason is the pwgate
+  suffix plus `stop-after-pwgate`. The step exists to split a crash between the gate write and the
+  core start: this run touches the gate word and nothing else. It refuses, touching nothing,
+  without `pwgate_t6031=1`, with `scratch_boot=1`, or on any stage other than 5.
+
+  `dart_scan_mask` (default 0xf, all four instances) selects which DART instances the scan reads; the
+  first scanned instance carries the version reference, whatever its number. A clear bit skips that instance's sweep with one skip line and no bus access; the firmware segment
+  map is untouched. Reason: the 2026-11-03 B run died on a dart1 TTBR read while the A run survived the same read, so the sweep is an intermittent crash source. Values 0 and above 0xf refuse in probe.
+
+  `steplog=<path>` (off by default) appends one line to that file, fsynced, before the access
+  runs. Coverage comes from the shared accessors, so it holds the PWGATE reads and write, the
+  CPU_CONTROL reads and writes, every SCRATCH read and write, the engine word reads (CPU_STATUS,
+  RVBAR, the mailbox words), the pmgr ps reads, the DART reads, the doorbell and IPI writes, and
+  the first and last pass of each poll. A hung run leaves its last access in the file; the kernel
+  log dies with RAM. The 2026-11-03 J613 write run lost everything this way: the run boot's
+  journal stopped at 4.8 seconds and pstore was empty. Poll passes beyond the first are not
+  logged one by one, so a stuck gate costs two lines, not 5000, and no insmod timeout is at risk.
+  The file opens at probe entry, before the power-domain bring-up, and its first line is the init
+  line; a bring-up death still leaves the file behind. The close runs on every early return
+  (refusals, allocation, mapping, power bring-up), so a refused run never leaks the descriptor and
+  never leaves a half-run file that could be mistaken for a later one. A failed open refuses the
+  run before any MMIO and before any power claim. The file is created 0600.
+
   What this rests on. The register behaviour above is macOS behaviour. We have not measured it on an
   M3, and it has never run there. The full notes stay private. They do not show two things. They do not
   say why macOS takes this step on a T6031 and not on the other rows. And the register window is named
   only by position: the fifth reg entry of the ADT ane0 node is the one macOS uses for this step, so
   calling it PWGATE is an inference.
+
+  `pwgate_read` (stage 2 with `confirm_read=1`, off by default; the T6030, T8122 and T6031 rows) reads
+  the same gate word once and writes nothing. After the preflight reads it logs the address
+  (`ane_h15 read PWGATE pa=0x...`), then the value (`ane_h15 word=PWGATE pa=0x... value=0x... gate=closed`
+  or `gate=open`) and adds `pwgate=closed word=0x...` or `pwgate=open word=0x...` to the RESULT reason.
+  Bits 1:0 nonzero read as closed. The word is at +0x2b6c on a T6030 and at +0x272c on a T8122
+  (+0x199c on a T6031). The window is the ANE node's third reg entry (the fifth on a T6031), 0x4000
+  bytes: physical 0x350724000 on a T6030 and 0x2d0724000 on a T8122. It is the power-state register
+  page, not a performance or DVFS page. The module maps the window, reads the word once and unmaps
+  it. The parameter refuses in probe, before any bus access, unless the stage is 2 without `fw_seg` and
+  the row has the window. Every row with the window may run the write step above: its word is at +0x272c
+  on a T8122 and at +0x2b6c on a T6030, in the third reg entry of the ANE node. The step is the same on all
+  three rows and the parameter keeps the name of the first row. A stage 2 read on a 13-inch M3 MacBook Air
+  (J613) on 2026-11-03 found the T8122 word 0x3, closed, with all five power domains on. No stage 5 run
+  with the write step has happened on any M3.
 
 - `stage=6` or `stage=rtkit`: stage 5 (all of its gates, `map_fw`, `fw_seg`) plus an RTKit management
   session over the ASC mailbox, behind `confirm_run=1` AND `confirm_rtkit=1`. It is the first stage that
@@ -175,10 +259,13 @@ template is `ane/h16/`.
   `rtkit-shutdown-incomplete` (the core is still stopped by clearing RUN), or `core-not-stopped` (reboot). The M6
   runs this session on its Postoffice (ane/h18); the H15 transport is the unknown. **Run it only after a stage 5 result
   with a mailbox message in it.**
+  Startup requires the complete endpoint map and successful sends for every advertised application endpoint.
+  A send-cap or mailbox failure keeps startup incomplete and prevents the channel handshake.
+  A later AP acknowledgement does not retry a partial startup. Bounded shutdown still runs after AP power ON.
 - `stage=7` or `stage=chan`: stage 6 (all its gates, `map_fw`, `fw_seg`) plus the macOS handshake after AP power ON and
   the channel step, behind `confirm_run=1`, `confirm_rtkit=1` AND `confirm_chan=1`; it needs `map_fw=1`. It maps the
   firmware into the ANE's default DMA domain instead of attaching an own one (the surfaces come from the DMA API).
-  Reads SCRATCH0..7 (engine + 0x1840050 .. + 0x184006c, the offsets macOS uses on the T6030): READY in SCRATCH7, SCRATCH0 below 0x21,
+  Reads SCRATCH0..7 (engine + 0x1840050 .. + 0x184006c, the offsets the shipped system uses on the T6030): READY in SCRATCH7, SCRATCH0 below 0x21,
   the IPC (max(page, SCRATCH1 + 1)) and HEAP (SCRATCH3) requests within limits, else nothing is written. Then allocates
   POOL (0x40000), IPC and HEAP surfaces, fills the 0x174 byte init block (the T6021/M6 layout, config size 0x380000), writes
   SCRATCH0 (pool low), SCRATCH1 (pool high), SCRATCH7 (wake 0xf7fbdff9), waits `hs_wait_ms` (10 to 5000, default 1000) for the
@@ -250,9 +337,9 @@ the aurora t8122-pmgr.dtsi and t6030-pmgr.dtsi do not yet carry
 (only `ps_ane_sys` is in the kernel tree today; the b0 receipt
 describes the four missing ps words). The t6031 overlay targets
 the existing ps nodes by path. None of these overlays are
-installed by the package. They ship the four ANE DART nodes as
+installed by the package. The T6030 and T6031 base files ship the four ANE DART nodes as
 `status = "disabled"` and the `ane` node without an `iommus`
-property. Stage 0 and stage 1 need no DART, and enabled DART nodes
+property; the T8122 file enables instances 0 to 2 (see the run-time overlay section). Stage 0 and stage 1 need no DART, and enabled DART nodes
 hung a T6030 at boot through equivalent nodes. `omarchy-ane-probe`
 reports the ANE node as `not-exposed` until the DART work lands.
 That is expected.
@@ -282,6 +369,43 @@ owner copies `t6031-ane-experimental.dts`, swaps
 `apple,t6031-ane` → `apple,t6034-ane`, and keeps the ane-type at
 `0xe0`. The four-row module (`ane_h15_of_match[]`) is already
 prepared to bind either compatible.
+
+`run_pmgr=1` (stage 5 only, off by default) adds three read-only lines, `ane_h15 pmgr before RUN:`, `ane_h15 pmgr after RUN:` and `ane_h15 pmgr after the wait:`, each with the five pmgr ANE words (ANE_SYS, ANE_MPM, ANE_CPU, ANE_TD, ANE_BASE). These are the words the ACTUAL 0xf check reads. The option writes nothing.
+
+`wrad_patch` (default on) controls one write into the owned firmware image: the provider's wrapper address in the image's wrapper field. `wrad_patch=0` leaves the payload's own word there. It exists to test whether that write matters, because the M6 start that reached READY left the image unmodified. It changes nothing when `fw_path` is not used.
+
+### Run-time overlay: `apply_overlay=1` (no boot-image change)
+
+A test boot without its SoC's ANE node cannot probe the driver.
+`apply_overlay=1` supplies that node for `optin=t8122`, `optin=t6030` or `optin=t6031`.
+It requires `CONFIG_OF_OVERLAY` and remains off by default.
+
+    insmod ane/h15/ane_h15.ko optin=t6031 apply_overlay=1 stage=5 confirm_run=1 map_fw=1 fw_seg=TEXTPA:SIZE,DATAPA:SIZE
+
+In this order, and only after every check passes: it publishes the few labels the overlay refers to in `/__symbols__`,
+gives a target node that has no phandle one, applies the compiled overlay with `of_overlay_fdt_apply`, and then
+registers the driver so the normal probe runs. All three run-time overlays derive from a DART variant (`t8122-ane-dart-experimental.dts`,
+`t6030-ane-dart-experimental.dts`, `t6031-ane-dart-experimental.dts`); the plain `*-ane-experimental.dts` files stay the boot
+overlays with their DART nodes disabled, because enabled nodes at boot hung a T6030. Only empty label-minting fragments are removed
+(`gen-runtime-overlay.py` writes the header; `make sim-overlay` checks it). The T8122 variant carries the T6030 DART layout:
+instances 0, 1 and 2 enabled, the aperture window disabled, and the `ane` node listing stream 0 of each. After boot no ANE DART stream
+is enabled and the TCR and TTBR words hold stale values (stage 6 refused with `no-dart-stream-enabled` on a 13-inch M3 MacBook Air),
+so the DART driver has to attach the ANE. On that machine the attach gave three live streams, and with `map_fw=1` and an owned image
+the DART no longer faults.
+Its power graph comes from the T8122/J613 ADT, including both ANE_TD and ANE_CPU parents of ANE_BASE.
+No T8122 hardware result is established by these offline checks.
+It refuses, touching nothing, when the optin key has no overlay, the machine is
+not that chip, or a node the overlay refers to is missing. It does nothing when the tree already has the ANE node. Unloading
+removes the overlay and its labels. Minted target phandles remain in the live tree after removal.
+Nothing is written to a boot image or to disk.
+If overlay application returns an error with a changeset ID, the module removes that changeset before reverting its labels.
+
+On a 16-inch M3 Pro MacBook Pro, the runtime overlay created the ANE node and all five power domains reported ACTUAL `0xf`.
+Stage 5 observed zero SCRATCH words before and after RUN, zero mailbox messages, and `FAIL reason=core-not-stopped`.
+This does not establish inference.
+A test on an M3 Max MacBook Pro lost the kernel and recovered without saved test output.
+No console capture survived, so the failure location is unknown.
+The parameter remains off by default.
 
 The shipped **data-only** overlays in `packaging/dt/`:
 
@@ -338,10 +462,11 @@ the dmesg back.
    `verdict=PASS reason=preflight-read-only`. Send `dmesg | grep
    ane_h15`. If the machine hangs, the last `ane_h15 read` line names
    the address.
-4. **stage=3** (`stage=3 confirm_boot=1 fw_path=…`): the refusal
-   prints one line per unfilled row of the `ane_h15_facts` table
-   (`ane_h15 hole=H… …`), then
-   `verdict=REFUSED reason=unfilled-facts`. Send the dmesg.
+4. **stage=3** (`stage=3 confirm_boot=1 confirm_read=1 fw_path=…`):
+   this source path prepares and cleans up a kernel-owned image, then refuses
+   startup. It is not a firmware-execution test or hardware clearance.
+   Missing preparation inputs return `owned-firmware-prepare-failed`; otherwise
+   the existing `unfilled-facts` refusal remains. Retain the complete log.
 5. **stage=4** (`stage=4 confirm_read=1`, T6030, T8122 and T6031 rows).
    Read only. Expect a few `ane_h15 read DART` group lines, one
    `ane_h15 dart inst=… params3=…` line per window, a `streams=` line, one line
@@ -350,7 +475,7 @@ the dmesg back.
    `dart-no-stream-enabled`. Both are results. Send the whole `dmesg | grep
    ane_h15`. Do not run stage 5 on the strength of this alone: it needs a mapping we
    have not built (stage 6) unless this stage reports a live stream.
-6. **stage=5** (`stage=5 confirm_run=1`, T6030 and T6031 today). Run it only after
+6. **stage=5** (`stage=5 confirm_run=1`, T6030, T6031 and T8122 today). Run it only after
    stages 0, 1, 2 and 4 passed on the same boot, stage 4 reported a live stream
    (or the maintainers said GO on the issue for another reason). Expected, in dmesg: the pmgr lines, six `ane_h15 read`
    lines (CPU_STATUS, CPU_CONTROL, RVBAR_LO, RVBAR_HI, the two mailbox CTRL
@@ -365,7 +490,8 @@ the dmesg back.
    `core-not-stopped`; that core stopped only after RTKit power messages (stage 6). A core that never
    ran firmware did not stop either (M6 with no firmware mapped: `0x8`, then `core-not-stopped`). So this
    result alone does not say whether the core ran; read CPU_STATUS (bit 0 RUNNING) and the mailbox lines. A T6030
-   run with one DART instance bound ended this way: `0x30002a` before RUN, `0x300028` after, bit 0 never set, no message, no DART fault line. `verdict=FAIL reason=preflight-not-as-iboot-left-it` means
+   run with one DART instance bound ended this way: `0x30002a` before RUN, `0x300028` after, bit 0 never set, no message, no DART fault line.
+   A `verdict=FAIL reason=preflight-not-as-iboot-left-it` means
    nothing was written. Send the whole `dmesg | grep ane_h15`.
 7. Remove the opt-in key and reboot before any other experiment.
 
@@ -416,7 +542,7 @@ The read-only DART scan:
     insmod ane/h15/ane_h15.ko optin=t6030 stage=4 confirm_read=1
     dmesg | grep ane_h15
 
-The run stage (writes CPU_CONTROL; T6030 and T6031, refuses without a live DART
+The run stage (writes CPU_CONTROL; T6030, T6031 and T8122, refuses without a live DART
 stream, only after the maintainers' GO). With the DART overlay and `fw_seg`:
 
     insmod ane/h15/ane_h15.ko optin=t6030 stage=5 confirm_run=1 map_fw=1 fw_seg=TEXTPA:SIZE,DATAPA:SIZE

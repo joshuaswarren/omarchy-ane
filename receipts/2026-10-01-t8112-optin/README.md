@@ -78,7 +78,7 @@ All addresses are payload offsets (j414c / j413).
   one entry per chip-revision key, highest key first. The selector (0x6c54 /
   the same code) takes the first entry whose key is not above the chip
   revision. The ANE id is 4: the field +0x210 of the ANE coprocessor
-  descriptor (j414c 0x186218 `ANE0`, j413 0x16ff08 `ANE`). iBoot writes the
+  descriptor (j414c 0x186218 `ANE0`, j413 0x16ff08 `ANE`). boot stage writes the
   selected key into the header and the records without flag bit 30.
 - **Check on T6021.** j414c, key 0x10: type 1 gives one record (0x150010),
   and type 3 gives 23 records. Together, in this order, they equal the type-1
@@ -99,16 +99,16 @@ All addresses are payload offsets (j414c / j413).
 
 | Value | T8112 | Source |
 | --- | --- | --- |
-| RTK_soc | 0x8112 | iBoot j413 0x40268 |
-| RTK_soc_revision | eFuse 0x23d2c8060/064, read at load | iBoot j413 0x40270; driver `ane_t8112_fuse_revision()` |
-| ASC tunables | 23 records; header key 0x10 for revision ≥ 0x10, else 0x00 | iBoot j413 0x1a09ac and 0x1a0b8c (j415, j473, j493 equal). [INFERENCE: the 13.5 iBoot2 has the same table and keys, as on T6021] |
+| RTK_soc | 0x8112 | boot stage j413 0x40268 |
+| RTK_soc_revision | eFuse 0x23d2c8060/064, read at load | boot stage j413 0x40270; driver `ane_t8112_fuse_revision()` |
+| ASC tunables | 23 records; header key 0x10 for revision ≥ 0x10, else 0x00 | boot stage j413 0x1a09ac and 0x1a0b8c (j415, j473, j493 equal). [INFERENCE: the 13.5 boot stage2 has the same table and keys, as on T6021] |
 | pmgr page for the firmware | 0x23b70c000, seven ps words 0xc008..0xc038 | the bia image stores 0x23b70c010 (ANE_TD) in `SetPMUBaseAddress` (receipts/2026-10-01-t8112-kit). It is no longer an inference |
 | Probe guard | ANE_SYS_CPU ps word, pmgr window + 0xc008 | ADT pmgr `ANE_CPU` (id 209) |
-| PWGATE | "set" window + 0x8b8 must read bits 29:28 = 0; the driver refuses otherwise | kext `EnableANEClocksAndPower`, type 0x70. The T6021 driver never writes its PWGATE either |
-| Doorbell | engine + 0x1844000 (now engine-relative for every SoC) | kext `aneInterruptHandler` has no SoC branch |
+| PWGATE | "set" window + 0x8b8 must read bits 29:28 = 0; the driver refuses otherwise | driver `EnableANEClocksAndPower`, type 0x70. The T6021 driver never writes its PWGATE either |
+| Doorbell | engine + 0x1844000 (now engine-relative for every SoC) | driver `aneInterruptHandler` has no SoC branch |
 | Mailbox | 0x26b408000, recv-not-empty 520, send-empty 1000 | ASC + 0x8000, as for every T8112 ASC in t8112.dtsi. **1000 is a lab choice**: no node in the 13.5/27.0 ADTs (286 lines, highest 1151) or the four linux-asahi DTBs (highest 1116) uses it, and it is in the free range 991..1023. Lines 517..519 are free too and may be the ANE mailbox's own lines [INFERENCE, not used] |
 | DART range | no `apple,dma-range` | the driver uses a 32-bit DMA mask; with the ADT range (0x800000000..) as aperture no allocation can succeed. T602x has none either |
-| Entry IOVA | read from RVBAR at load (0x800000000 expected) | [INFERENCE: ADT `dart-ane` vm-base; the iBoot ANE descriptor +0xc0 holds 0x800000000; the T8112 DCP DART logs the same range on community row 137d85c4c8d8] |
+| Entry IOVA | read from RVBAR at load (0x800000000 expected) | [INFERENCE: ADT `dart-ane` vm-base; the boot stage ANE descriptor +0xc0 holds 0x800000000; the T8112 DCP DART logs the same range on community row 137d85c4c8d8] |
 
 ### The fuse read (a new read class for this driver)
 
@@ -168,7 +168,7 @@ Unchanged, labeled as inference for T8112:
 
 - P-1 writes 12 words with T8103 values into the engine page. On T6021,
   skipping ten of them changed nothing (receipts/2026-10-01-t6021-p1-groups).
-- The FWIM size 0x500000 is the T6021 kext value. The bia vmsize 0x4ec000
+- The FWIM size 0x500000 is the T6021 driver value. The bia vmsize 0x4ec000
   fits in it.
 
 ## T8112 device test (for the lead to schedule)
@@ -183,7 +183,7 @@ Pre-register it in the notebook. One owner.
    - dmesg has `ane_cpu ACTUAL` with the ON field and `PWGATE = 0x…` with
      bits 29:28 clear.
    - dmesg has `fwload: chip revision 0x… (fuse 0x23d2c8060: …)` and
-     `iBoot patches replayed (soc 0x8112 rev 0x… DATA 0x8000b4000 …)`
+     the fwload line that says the boot-stage patches were replayed
      (if RVBAR is latched at 0x800000000).
    - dmesg has `fwalias: entry …` and `pmu: DART map 0x23b70c000 …: 0`.
    - The BOOT-PHASE lines (READY, DONE, chman VALIDATED, CONFIG_GET

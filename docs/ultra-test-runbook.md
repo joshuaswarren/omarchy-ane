@@ -1,10 +1,11 @@
 # Ultra ANE test runbook (T6002 / T6022 die 0 and die 1)
 
 For a volunteer with an M1 Ultra (T6002) or M2 Ultra (T6022) Mac running
-Omarchy (or willing to install it). Everything here is opt-in: nothing turns
-on by itself, and every stage is reversible by removing one line from
-`/etc/omarchy-mac-boot/dtb-overlays.opt-in` and running `sudo omarchy-ane-dt
-apply && sudo update-m1n1 && reboot`. Stages build on each other; do not skip.
+Omarchy. M2 Ultra die 0 is enabled by default in the source release; the
+other Ultra dies still need their own proof. Package versions can differ.
+Opt-in changes the device tree used at boot and requires a reboot.
+Removing a key takes effect only after applying the device tree and rebooting again.
+Keep a working fallback boot before changing these keys.
 
 Rules that keep this safe:
 
@@ -40,10 +41,10 @@ ANE node means the kernel tree needs the overlay first — go to stage 1.
 
 ## Stage 1 — die 0 only (T6002: key `ane-t6002`)
 
-Purpose: the known-good die. This is the M0/M1-proven path.
+Purpose: qualify T6002 die 0. The sibling chips' results do not qualify this die.
 
 ```
-echo ane-t6002 | sudo tee /etc/omarchy-mac-boot/dtb-overlays.opt-in
+echo ane-t6002 | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in
 sudo omarchy-ane-dt apply && sudo update-m1n1 && sudo reboot
 # after boot:
 omarchy-ane-dt status
@@ -69,38 +70,20 @@ QUALIFIED: the first boot needs an explicit override, and the driver logs the
 power-island ACTUAL nibbles through the SET window before every engine write
 so the first resume names the die-1 word layout.
 
-```
-echo ane-t6002-die1 | sudo tee -a /etc/omarchy-mac-boot/dtb-overlays.opt-in
-echo 'options ane allow_unqualified=1' | sudo tee /etc/modprobe.d/ane-unqualified.conf
-sudo omarchy-ane-dt apply && sudo update-m1n1 && sudo reboot
-# after boot:
-omarchy-ane-dt status                 # node= now lists BOTH ane nodes
-ls -l /dev/accel/                     # expect accel0 AND accel1
-sudo dmesg | grep -E 'loaded ane|UNQUALIFIED|ps probe'
-omarchy-ane-smoke --timeout 120       # die field names the die it measured
-sudo ANE_DEVICE=1 omarchy-ane-smoke --timeout 120   # the same run on die 1
-sudo omarchy-ane-run --dev 1 --anec /usr/share/omarchy-ane/fixtures/h13-anec/add/program-0.anec \
-  --in 0=/tmp/a.fp16 --in 1=/tmp/b.fp16 --out /tmp/y.fp16
-```
+The existing runner accepts `ANE_DEVICE`. The smoke tool now refuses a run
+when the bound devices span both dies or their die identity cannot be read.
+It does not guess a die from the first device. The collector also carries
+shared check and fault fields; the promotion checker refuses ambiguous rows.
 
-(`a.fp16`/`b.fp16`: any 16 KiB fp16 files; the smoke tool is the check that
-matters — the `--dev 1` run above is the manual "die 1 opens" probe. One
-caveat: the smoke `die` field is computed from the module's first bound
-device, not from the device `ANE_DEVICE` opens, so on a both-dies box it may
-read `0` even for the die-1 run until the smoke grows a device selector. Say
-in your report which run each JSON came from.)
+There is no complete die-1 qualification command here yet. Do not use the
+old `ANE_DEVICE=1` smoke sequence as a passing die-1 promotion row.
+The missing source boundary is a smoke result bound to the selected device,
+plus separate check and fault evidence for that die.
 
-What to send back: `omarchy-ane-dt status`, `ls -l /dev/accel/`, the dmesg
-lines above (especially the ACTUAL-nibble probe lines and the
-`UNQUALIFIED bind forced by allow_unqualified` warning), the smoke JSON, and
-`journalctl -k -g ane | tail -80`.
+Retain the stage-0 device-tree report and existing boot logs. Do not enable
+the second die solely to fill this missing evidence.
 
-Verdict:
-- **Die-1 bind** = two `loaded ane` lines, two accel nodes, no DART fault.
-- **Die-1 passing row** = the `ANE_DEVICE=1` smoke run with 20/20 bit-exact
-  against the same H13 golden, and no ANE/DART/mailbox fault line (the smoke
-  `die` field caveat above applies; name the run in your report).
-  Promotion rules judge dies separately: die 1 never rides the die-0 row.
+For an existing die-1 attempt:
 - A genpd timeout, an external abort, or a DART fault on the die-1 DARTs
   (0x2285800000-0x2285820000) or a fault naming the die-1 mailbox
   (0x2285408000) = STOP, power-cycle, send everything. Do not

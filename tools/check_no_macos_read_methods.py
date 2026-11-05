@@ -2,7 +2,8 @@
 """Public-text check: nothing in the tree may show HOW we read macOS, macOS drivers, macOS firmware or macOS restore images.
 
 Rule (2026-10-29): state only observed behaviour. No Apple code addresses, no Apple symbol or bundle names, no extraction or
-decode commands, no restore-image locators, no 'decoded from the kext' wording. History is not rewritten.
+decode commands, no restore-image locators, no 'decoded from the kext' wording, and (2026-10-30) no hex value on the same line as a macOS,
+kext, kernelcache, iBoot or restore-image word: constants stay in code with a neutral comment. History is not rewritten.
 
 Usage:
   check_no_macos_read_methods.py            check the working tree against the baseline; exit 1 on any increase
@@ -27,10 +28,24 @@ PATTERNS = [
     ("tool or command", r"\b(ipsw\s+(extract|kernel|macho|dl|download)|pyimg4|img4tool|otool\s+-|ghidra|radare2|objdump\s+-d|disarm64|jtool2?)\b"),
     ("restore-image locator", r"kernelcache\.release|\bhdr_off=|__PRELINK_INFO|__TEXT_EXEC|\bBuildManifest\b|updates\.cdn-apple|\.ipsw\b|by HTTP range"),
     ("Apple symbol or bundle", r"\bcom\.apple\.driver\.|\bApple(H1\d|H1\dANE|ASCWrap|A7IOP|T60\d\d|ANE|PMGR|DART)[A-Za-z0-9_]*(::|\b)"),
+    ("macOS-sourced value", r"(?i)(macOS|restore[- ]image|\bkext|kernelcache|iBoot|Apple'?s? (firmware|driver|compiler|kernel|ANE firmware)|\bipsw\b).*0x[0-9a-f]{3,}|0x[0-9a-f]{3,}.*(macOS|restore[- ]image|\bkext|kernelcache|iBoot|Apple'?s? (firmware|driver|compiler|kernel|ANE firmware)|\bipsw\b)"),
     ("decode wording", r"(static|offline) decode|decoded (statically )?from the (macOS )?(kext|kernelcache|kernel extension)|reverse[- ]engineer(ed|ing)? (the )?(macOS|kext)"),
 ]
 # Decided 2026-10-29: the tool that installs a Mac's own firmware keeps its two download addresses, in code only.
 ALLOWED = {"packaging/omarchy-ane-firmware-fetch"}
+# Decided 2026-10-30: captured program output and a run's own source copy are evidence and are never edited. Explicit list, not a glob:
+# a new capture that carries the words fails until it is added here on purpose.
+CAPTURED = {
+    "receipts/2026-09-24-t6021-pwgate/ane_t6021_fwload.c",
+    "receipts/2026-09-24-t6021-pwgate/ane_t6021_rtclient_main.c",
+    "receipts/2026-10-01-t6021-dart-kernel/logs/hw_reset.disasm.txt",
+    "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-ane.txt",
+    "receipts/2026-10-01-t6021-default-on-gate/logs/P/dmesg-ane.txt",
+    "receipts/2026-10-01-t6021-default-on-gate/logs/final/dmesg-ane.txt",
+    "receipts/2026-10-01-t6021-default-on-gate/logs/host/flip-m2-compile.txt",
+    "receipts/2026-10-01-t6021-default-on-gate/logs/host/host-tests-c2b7408.txt",
+}
+ALLOWED = ALLOWED | CAPTURED
 COMPILED = [(n, re.compile(p)) for n, p in PATTERNS]
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "macos_read_methods_baseline.json")

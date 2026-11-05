@@ -91,7 +91,7 @@ pmp) and dart1/dart2 (ane_cpu, held), not to a compute island.
 
 Open risk for arm C (`boot_prevent_nap=0`): Linux sets AUTO_ENABLE on every ANE PS word when genpd
 powers it on (omarchy-linux `drivers/pmdomain/apple/pmgr-pwrstate.c`, `apple_pmgr_ps_set`). If the
-firmware CPU naps, ane_cpu ACTUAL can fall to 0 between jobs, as macOS shows (`0x1000030f`,
+firmware CPU naps, ane_cpu ACTUAL can fall to 0 between jobs, as the reference run shows (`0x1000030f`,
 `docs/t6021-ane-bringup-findings.md`, macOS PS table). Rows 1-5 then reach the IPI block while
 the ASC is auto-gated. macOS rings the same doorbell in that state, so the auto-enable wakes the
 block (INFERENCE). Linux has no evidence. Arm C runs only after arm B passes.

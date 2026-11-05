@@ -60,7 +60,7 @@ def main():
                                      dir="/var/tmp/opencode") as tmp:
         dst = Path(tmp)
         (dst / "sim").mkdir()
-        for name in ("ane_h16.h", "ane_h16_soc.c"):
+        for name in ("ane_h16.h", "ane_h16_soc.c", "ane_h16_overlay.h"):
             shutil.copyfile(root / name, dst / name)
         for name in ("shim.h", "sim_harness.c"):
             shutil.copyfile(root / "sim" / name, dst / "sim" / name)

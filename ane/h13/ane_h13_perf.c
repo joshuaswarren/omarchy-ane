@@ -500,7 +500,7 @@ static int __init ane_h13_perf_init(void)
 		 * CPU_CONTROL write32 0 -> 0x10. RVBAR never written
 		 * when bit0 is latched.
 		 * STRUCK per the prerun-diff CORRECTION (c33c0d3): the
-		 * macOS 0x2e0 write is a pmgr ps word (phys 0x28e080000,
+		 * The 0x2e0 write is a pmgr ps word (phys 0x28e080000,
 		 * genpd-covered): reissuing it hung the M2 in an earlier
 		 * test, so my earlier engine+0x2e0 variant is removed.
 		 * Corrected first missing NON-ps write is

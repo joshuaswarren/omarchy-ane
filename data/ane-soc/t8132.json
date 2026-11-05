@@ -412,7 +412,7 @@
     }
   },
   "mailbox": {
-    "v": "ASC v4 mailbox at engine+0x1608000 (iBoot coprocessor table ANE entry id 4: wrapper PA engine+0x1600000; its register table lists a2i/i2a ctrl 0x110/0x114, send 0x800/0x808, recv 0x830/0x838 relative to +0x8000)",
+    "v": "ASC v4 mailbox at engine+0x1608000 (boot coprocessor table ANE entry id 4: wrapper PA engine+0x1600000; its register table lists a2i/i2a ctrl 0x110/0x114, send 0x800/0x808, recv 0x830/0x838 relative to +0x8000)",
     "src": "S19"
   },
   "pmgr": {
@@ -483,7 +483,7 @@
         "src": "S21"
       },
       "rtkit": {
-        "v": "RTKit_release-3514.0.15 (string in the payload); MH_PRELOAD arm64e, __TEXT vm 0xc0000, __DATA vm 0xc0000+0x2ac000; __DATA,_rtk_patchbay 43 records at vm 0xc5a08 (leto) / 0xc5a18 (aether); _rtk_tunables 0x6a0 bytes; iBoot fills SOC_/SOCR/CpAd/WrAd/STKG/TUNS/TUNZ per the iBoot patch writer sites",
+        "v": "RTKit_release-3514.0.15 (string in the payload); MH_PRELOAD arm64e, __TEXT vm 0xc0000, __DATA vm 0xc0000+0x2ac000; __DATA,_rtk_patchbay 43 records at vm 0xc5a08 (leto) / 0xc5a18 (aether); _rtk_tunables 0x6a0 bytes; the boot loader fills SOC_/SOCR/CpAd/WrAd/STKG/TUNS/TUNZ per the preload patch writer sites",
         "src": "S21"
       }
     }

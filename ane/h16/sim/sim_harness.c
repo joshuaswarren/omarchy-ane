@@ -24,6 +24,20 @@
 #include "shim.h"
 
 /* the module's real source */
+/* The run-time overlay has its own sim (sim_overlay.c); here the module only needs the two entry points to exist. */
+int ane_h16_register(struct platform_driver *drv, const char *optin, bool apply_overlay)
+{
+	(void)drv;
+	(void)optin;
+	(void)apply_overlay;
+	return 0;
+}
+
+void ane_h16_unregister(struct platform_driver *drv)
+{
+	(void)drv;
+}
+
 #include "../ane_h16_main.c"
 #include "../ane_h16_soc.c"
 
@@ -53,6 +67,12 @@ bool sim_pwgate_mapped = true;
 int sim_snapshots, sim_snapshot_attempts, sim_snapshot_fail;
 struct sim_ram_range sim_sys_ram[4] = { { 0x710000000ull, 0x8000000000ull } };
 int sim_n_sys_ram = 1;
+int sim_iounmaps;
+int sim_pd_count, sim_pd_attached, sim_pd_detached, sim_pd_links, sim_pd_unlinked;
+int sim_pd_fail_at = -1, sim_pd_link_fail_at = -1;
+int sim_rpm_get_rc;
+struct device sim_pd_devs[8];
+struct device_link sim_pd_link_objs[8];
 int sim_dma_outstanding;
 int sim_dma_allocs, sim_dma_frees;
 int sim_dma_fail_at, sim_dma_bad_at;
@@ -546,6 +566,8 @@ static void setup_common(void)
 		"interrupts", irq_cells, sizeof(irq_cells) };
 	n_ane.props[n_ane.nprops++] = (struct sim_prop){
 		"iommus", iommu_cells, sizeof(iommu_cells) };
+	n_ane.props[n_ane.nprops++] = (struct sim_prop){
+		"reg-names", "engine\0pmgr", 12 };
 
 	memset(&n_rm, 0, sizeof(n_rm));
 	n_rm.name = "reserved-memory";
@@ -579,6 +601,8 @@ static void setup_common(void)
 	scratch_read = false;
 	chanreg = false;
 	stage = "status";
+	confirm_read = true;
+	read_scratch = false;
 
 	sim_pdev.name = "ane_h16";
 	sim_pdev.dev.of_node = &n_ane;
@@ -663,6 +687,34 @@ static void sc_pos_dt_noadt(void)
 	    "still RESULT PASS dt-parse-only");
 }
 
+/* Engine reads at one offset (every read is one bus event). */
+static int ev_engine_read_at(u32 off)
+{
+	return ev_count(false, SIM_ENGINE_PA + off, 0);
+}
+
+static int ev_scratch_reads(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < 8; i++)
+		n += ev_engine_read_at(sim_soc.scratch0 + 4 * i);
+	return n;
+}
+
+/* What the module reads when it is allowed to read: RVBAR (a 64-bit read, two bus words), CPU_STATUS and the two mailbox control
+ * words. Nothing else. */
+static void chk_status_reads_only(void)
+{
+	chk(ev_engine_read_at(sim_soc.rvbar) == 1 && ev_engine_read_at(sim_soc.rvbar + 4) == 1,
+	    "RVBAR read once");
+	chk(ev_engine_read_at(sim_soc.cpu_status) == 1, "CPU_STATUS read once");
+	chk(ev_engine_read_at(sim_soc.mbox + ANE_H16_MBOX_A2I_CTRL) == 1,
+	    "mailbox A2I control read once");
+	chk(ev_engine_read_at(sim_soc.mbox + ANE_H16_MBOX_I2A_CTRL) == 1,
+	    "mailbox I2A control read once");
+}
+
 static void sc_pos_status(void)
 {
 	int ret;
@@ -671,14 +723,174 @@ static void sc_pos_status(void)
 	stage = "status";
 	ret = run_probe();
 	chk(ret == 0, "probe returns 0");
-		chk(sim_log_count("ane_h16 RESULT stage=1 soc=t8132 "
+	chk(sim_log_count("ane_h16 RESULT stage=1 soc=t8132 "
 	    "verdict=PASS reason=ps-guard+reads") == 1,
 	    "RESULT PASS ps-guard+reads");
 	chk(sim_log_count("actual=0xf pass=true") == 5,
 	    "five ps words logged with ACTUAL 0xf");
 	chk(ev_engine_count(true) == 0, "zero engine WRITES");
-	chk(ev_engine_count(false) > 0, "engine readout happened behind the guard");
+	chk(ev_engine_count(false) == 5, "exactly five engine bus reads (RVBAR is two words)");
+	chk_status_reads_only();
+	chk(ev_scratch_reads() == 0, "SCRATCH words are not read by default");
 	chk(sim_rpm_gets == sim_rpm_puts, "power claim released");
+	chk(sim_ioremaps == 2 && sim_iounmaps == 0,
+	    "engine and pmgr mapped without a region request, still mapped while bound");
+	ane_h16_remove(&sim_pdev);
+	chk(sim_iounmaps == 2, "both mappings released on remove");
+}
+
+static void sc_pos_status_scratch(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	read_scratch = true;
+	ret = run_probe();
+	chk(ret == 0, "probe returns 0");
+	chk(ev_scratch_reads() == 8, "read_scratch=1 reads exactly the eight SCRATCH words");
+	chk_status_reads_only();
+	chk(ev_engine_count(true) == 0, "zero engine WRITES");
+}
+
+/* Defaults captured before any scenario sets a parameter. */
+static const char *init_stage;
+static bool init_confirm_read, init_read_scratch;
+
+static void sc_pos_defaults(void)
+{
+	chk(init_stage && !strcmp(init_stage, "dt"), "default stage is dt (no MMIO)");
+	chk(!init_confirm_read, "confirm_read defaults off");
+	chk(!init_read_scratch, "read_scratch defaults off");
+}
+
+/* No consent, no access: nothing is mapped, powered or read. */
+static void sc_neg_no_confirm(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	confirm_read = false;
+	sim_pd_count = 5;
+	ret = run_probe();
+	chk(ret == -EPERM, "probe refuses with -EPERM");
+	chk(sim_log_count("ane_h16 RESULT stage=1 soc=t8132 "
+	    "verdict=REFUSED reason=confirm_read-required") == 1,
+	    "RESULT REFUSED confirm_read-required");
+	chk(sim_n_events == 0, "ZERO bus accesses");
+	chk(sim_ioremaps == 0, "zero ioremaps");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "nothing powered or attached");
+}
+
+/* Five listed power domains are all attached, linked, and released again on remove. */
+static void sc_pos_pds(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	ret = run_probe();
+	chk(ret == 0, "probe returns 0");
+	chk(sim_pd_attached == 5 && sim_pd_links == 5, "five domains attached and linked");
+	chk(sim_pd_detached == 0, "none detached while bound");
+	chk(sim_log_count("attached 5 ANE power-domains") == 1, "attach logged");
+	ane_h16_remove(&sim_pdev);
+	chk(sim_pd_detached == 5 && sim_pd_unlinked == 5, "all five unlinked and detached on remove");
+}
+
+/* One listed domain is the platform's own job: the module attaches nothing. */
+static void sc_pos_one_pd(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 1;
+	ret = run_probe();
+	chk(ret == 0, "probe returns 0");
+	chk(sim_pd_attached == 0 && sim_pd_links == 0, "a single domain is left to the platform");
+}
+
+/* A domain that fails to attach unwinds the ones before it, before any mapping or read. */
+static void sc_neg_pd_fail(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_pd_fail_at = 2;
+	ret = run_probe();
+	chk(ret == -EPROBE_DEFER, "probe returns the attach error");
+	chk(sim_pd_attached == 2 && sim_pd_detached == 2 && sim_pd_unlinked == 2,
+	    "the two attached domains are unlinked and detached");
+	chk(sim_n_events == 0 && sim_ioremaps == 0, "no mapping and no read");
+}
+
+/* A failed link still detaches the domain that was just attached. */
+static void sc_neg_pd_link_fail(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_pd_link_fail_at = 1;
+	ret = run_probe();
+	chk(ret < 0, "probe fails");
+	chk(sim_pd_attached == 2 && sim_pd_detached == 2, "both attached domains detached");
+	chk(sim_pd_unlinked == sim_pd_links, "every link that was made is removed");
+	chk(sim_n_events == 0 && sim_ioremaps == 0, "no mapping and no read");
+}
+
+/* A failed get_sync still took a usage count: it is given back, and the probe unwinds everything it set up. */
+static void sc_neg_getsync_fail(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_rpm_get_rc = -EIO;
+	ret = run_probe();
+	chk(ret == -EIO, "probe returns the get_sync error");
+	chk(sim_rpm_gets == sim_rpm_puts, "the usage count of the failed get_sync is given back");
+	chk(sim_ioremaps == 2 && sim_iounmaps == 2, "both windows are unmapped");
+	chk(sim_pd_attached == 5 && sim_pd_detached == 5, "all five domains are detached");
+	chk(sim_n_events == 0, "no register was read");
+}
+
+/* ane_h15 saw -EACCES from get_sync with several domains attached; the domains are already up through their links, so the ACTUAL gate decides. */
+static void sc_pos_getsync_eacces(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 5;
+	sim_rpm_get_rc = -EACCES;
+	ret = run_probe();
+	chk(ret == 0, "probe goes on");
+	chk(sim_log_count("get_sync -13 ignored") == 1, "the ignored error is logged");
+	chk(sim_rpm_gets == sim_rpm_puts, "power claim released");
+	chk(sim_log_count("verdict=PASS") == 1, "the ACTUAL gate and the reads still ran");
+}
+
+/* With no domain attached by the module, -EACCES is an ordinary failure. */
+static void sc_neg_getsync_eacces_one_pd(void)
+{
+	int ret;
+
+	setup_common();
+	stage = "status";
+	sim_pd_count = 1;
+	sim_rpm_get_rc = -EACCES;
+	ret = run_probe();
+	chk(ret == -EACCES, "probe fails with -EACCES");
+	chk(sim_rpm_gets == sim_rpm_puts, "the usage count is given back");
+	chk(sim_n_events == 0 && sim_iounmaps == sim_ioremaps, "no read, windows unmapped");
 }
 
 static void sc_pos_boot(void)
@@ -715,7 +927,7 @@ static void sc_pos_boot(void)
 	chk(sim_log_count("do NOT unload") == 1,
 	    "post-start pin warning printed");
 	chk(sim_module_refs == 1, "module pinned after CPU release");
-	chk(sim_rpm_gets == 4 && sim_rpm_puts == 0,
+	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
 	    "runtime power retained after CPU release");
 }
 
@@ -782,7 +994,7 @@ static void sc_neg_mbox_silent(void)
 	chk(sim_log_count("firmware is running") == 0,
 	    "no firmware-started claim (it did not start)");
 	chk(sim_module_refs == 1, "module pinned after timeout");
-	chk(sim_rpm_gets == 4 && sim_rpm_puts == 0,
+	chk(sim_rpm_gets == 1 && sim_rpm_puts == 0,
 	    "runtime power retained after timeout");
 }
 
@@ -1129,7 +1341,7 @@ static void sc_pos_h17_boot(void)
 	    ev_count(false, reg_pa(sim_soc.irq_ack), 0) == 0 &&
 	    ev_count(true, reg_pa(sim_soc.irq_ack), 0) == 0,
 	    "irq status and ack words untouched when irq_read=0");
-	chk(sim_module_refs == 1 && sim_rpm_gets == 4 && sim_rpm_puts == 0,
+	chk(sim_module_refs == 1 && sim_rpm_gets == 1 && sim_rpm_puts == 0,
 	    "module and power retained after CPU release");
 }
 
@@ -1197,12 +1409,12 @@ static void sc_pos_h17_scratch(void)
 	chk(sim_log_count("H17 IRQ_STATUS off=") == 0,
 	    "irq_read off (default): no IRQ status read");
 	for (n = 0; n < 8; n++)
-		/* S0..6: status dump + snapshot; S7 adds the quiescence
+		/* S0..6: snapshot only (read_scratch defaults off); S7 adds the quiescence
 		 * check and the 3 modelled wake polls.
 		 */
 		chk(ev_count(false, reg_pa(sim_soc.scratch0 + 4 * n), 0) ==
-		    (n == 7 ? 6 : 2),
-		    "scratch words read only by status and the snapshot");
+		    (n == 7 ? 5 : 1),
+		    "scratch words read only by the snapshot and boot checks");
 	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 7 * 4), 0) == 2 &&
 	    ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 1) == 1 &&
 	    ev_count(true, reg_pa(sim_soc.scratch0 + 6 * 4), 0) == 1 &&
@@ -1338,6 +1550,26 @@ static void sc_neg_table_reservation(void)
 	    "short FWIM alias reservation refuses before allocation or CPU release");
 }
 
+/* apply_overlay removes iommus while the DART nodes are disabled, and the device then has no IOMMU domain. stage=boot must refuse before it
+ * writes anything to the engine: firmware must never run without translation. */
+static void sc_neg_no_domain(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	pin_to_fixture();
+	sim_dart = NULL;
+	stage = "boot";
+	ret = run_probe();
+	chk(ret == -ENODEV, "probe returns -ENODEV");
+	chk(sim_log_count("verdict=REFUSED reason=dma-domain-or-alias-reservation") == 1,
+	    "RESULT REFUSED dma-domain-or-alias-reservation");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	chk(sim_dma_allocs == sim_dma_frees, "refusal frees the staged buffer (no DMA leak)");
+	chk(sim_rpm_gets == sim_rpm_puts, "power claim released");
+}
+
 static void sc_neg_unknown_stage(void)
 {
 	int ret;
@@ -1360,6 +1592,9 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	sc = argv[1];
+	init_stage = stage;
+	init_confirm_read = confirm_read;
+	init_read_scratch = read_scratch;
 	printf("== ane_h16 sim: %s ==\n", sc);
 	if (!strcmp(sc, "pos-dt"))
 		sc_pos_dt();
@@ -1367,6 +1602,26 @@ int main(int argc, char **argv)
 		sc_pos_dt_noadt();
 	else if (!strcmp(sc, "pos-status"))
 		sc_pos_status();
+	else if (!strcmp(sc, "pos-status-scratch"))
+		sc_pos_status_scratch();
+	else if (!strcmp(sc, "pos-defaults"))
+		sc_pos_defaults();
+	else if (!strcmp(sc, "pos-pds"))
+		sc_pos_pds();
+	else if (!strcmp(sc, "pos-one-pd"))
+		sc_pos_one_pd();
+	else if (!strcmp(sc, "neg-no-confirm"))
+		sc_neg_no_confirm();
+	else if (!strcmp(sc, "neg-pd-fail"))
+		sc_neg_pd_fail();
+	else if (!strcmp(sc, "neg-pd-link-fail"))
+		sc_neg_pd_link_fail();
+	else if (!strcmp(sc, "neg-getsync-fail"))
+		sc_neg_getsync_fail();
+	else if (!strcmp(sc, "pos-getsync-eacces"))
+		sc_pos_getsync_eacces();
+	else if (!strcmp(sc, "neg-getsync-eacces-one-pd"))
+		sc_neg_getsync_eacces_one_pd();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))
@@ -1395,6 +1650,8 @@ int main(int argc, char **argv)
 		sc_neg_preload_bytes(2);
 	else if (!strcmp(sc, "neg-preload-sysram"))
 		sc_neg_preload_sysram();
+	else if (!strcmp(sc, "neg-no-domain"))
+		sc_neg_no_domain();
 	else if (!strcmp(sc, "neg-unknown-stage"))
 		sc_neg_unknown_stage();
 	else if (!strcmp(sc, "pos-h17-boot"))

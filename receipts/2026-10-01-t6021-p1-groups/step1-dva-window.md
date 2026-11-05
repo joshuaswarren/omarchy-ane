@@ -46,7 +46,7 @@ Observations:
 - m1n1 names the words only "hwrev 2 only" (`proxyclient/m1n1/hw/dart8110.py`), and Linux `apple-dart` does not
   write them.
 
-[INFERENCE] Bit 0 of 0x300 enables a DVA window from 0x308 to 0x310, and macOS sets that window to the IOMapper
+[INFERENCE] Bit 0 of 0x300 enables a DVA window from 0x308 to 0x310, and the reference run sets that window to the IOMapper
 range. Under Linux the window is off on BRD and BWR, and 0x308 and 0x310 hold power-on contents that have no
 reset value. While bit 0 is 0, the hardware does not use them. What the window does when it is on is not known.
 One LLT observation (2026-09-29) argues against a plain range check: the firmware access to IOVA 0x28e084008, which
@@ -61,7 +61,7 @@ To move them into the macOS window:
    IOVA allocator tries the 32-bit range first only for PCI devices (`drivers/iommu/dma-iommu.c:796`, flag set at
    `:2158`), so a platform device gets IOVAs from the top of the range, just below 0x400_0000_0000. That is inside
    the macOS window [INFERENCE from the allocator code].
-2. For the exact macOS range, add `apple,dma-range = <0x100 0x0 0x300 0x0>` to the three ANE DART nodes.
+2. For the exact range of the reference run, add `apple,dma-range = <0x100 0x0 0x300 0x0>` to the three ANE DART nodes.
    `apple-dart.c:1393-1408` turns it into the domain aperture.
 3. The command format needs no change. The LOAD and CALL records carry 64-bit IOVA fields (slot offset 0x18,
    `cpu_to_le64(iova)`). The firmware already runs from IOVAs above 1 TiB on Linux (the firmware map at

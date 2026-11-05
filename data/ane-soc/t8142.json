@@ -305,7 +305,7 @@
   "mailbox": {
     "node": {
       "v": null,
-      "reason": "No ANE mailbox or ASC node in the macOS ADT (searched /arm-io for ane*, *exclave*, and compatibles with \"ane\"). The macOS class binds the ane node itself, as on T6021, where the ASC and its mailbox sit inside reg[0] (engine+0x1400000/+0x1408000). For H17 that offset is not measured."
+      "reason": "No ANE mailbox or ASC node in the ADT (searched /arm-io for ane*, *exclave*, and compatibles with \"ane\"). The ane node itself is the bound one, as on T6021, where the ASC and its mailbox sit inside reg[0] (engine+0x1400000/+0x1408000). For H17 that offset is not measured."
     },
     "protocol": {
       "v": "RTKit (RTBuddy endpoints) with the CSNE_CMD host command set: 96 CSNE_CMD names, including EXCLAVE_MODE_START/STOP and SECURE_MODE_*; RTKit string RTKit_release-3514.0.15.",

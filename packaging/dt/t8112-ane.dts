@@ -13,9 +13,9 @@
  *    ps_ane_sys). No apple,dma-range: ane_t6021 maps its buffers with a
  *    32-bit DMA mask and aliases the firmware at the RVBAR entry itself, as
  *    on T6021 (t602x-ane.dtsi has none either).
- *  - macOS 13.5: for this ANE (ane-type 0x80) it powers on 0xc008, 0xc010, 0xc018,
- *    0xc020, 0xc028, 0xc030, 0xc038 in that order, powers them off in the
- *    reverse order, and names them ANE_SYS_CPU, ANE_TD, ANE_BASE and
+ *  - Power-on for this ANE (ane-type 0x80): the domains 0xc008, 0xc010, 0xc018,
+ *    0xc020, 0xc028, 0xc030, 0xc038 are raised in that order and shut down in the
+ *    reverse order, named ANE_SYS_CPU, ANE_TD, ANE_BASE and
  *    ANE_SET1..4. The parent links below give genpd that
  *    order. The ADT gives a parent only for 0xc008.
  *  - mailbox@26b408000: the ASC is engine + 0x1400000 and an
@@ -27,8 +27,8 @@
  *    four boards nor in the linux-asahi 7.1.13 DTBs uses it, and it is below
  *    the highest used line (1151), so it maps. ane_t6021 leaves the mailbox
  *    stopped by default (hello_wait_ms=0).
- *  - "fuse" 0x23d2c8060+8: the two eFuse words iBoot reads for
- *    RTK_soc_revision (iBootStage2 macOS 26.6.2 j413 0x40270), inside ADT
+ *  - "fuse" 0x23d2c8060+8: the two eFuse words read for
+ *    RTK_soc_revision, inside ADT
  *    pmgr reg[36] 0x23d2c8000+0x4000, the block m1n1 reads its T8112 ATC
  *    and GPU fuses from. No linux-asahi node claims it.
  * Stock T8112 trees already carry AIC and ane_sys. Their phandles differ

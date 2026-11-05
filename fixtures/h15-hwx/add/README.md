@@ -34,3 +34,15 @@ The 14.x firmware on an M3 stub may not accept a program from this compiler.
 No driver for these chips can run a job yet, so omarchy-ane-smoke exits 2
 with an unavailable note on every M3 chip. ports.json carries no bar slots,
 buffer ids or channels, because no reader parses this HWX format yet.
+
+## Host load construction
+
+The `load/` directory contains five fixed-family reference sets: the original
+fixture, changed extent, changed NE count, changed property and swapped input slots.
+The host-only C builder owns six payload copies and constructs a 448-byte load
+command from explicit address and capacity inputs. Constants precede TEXT in its
+section records. Tests compare the command and payloads against these references.
+
+Caller-declared addresses do not prove device residency. Zero initialization is
+the Linux builder's policy. This adds no HWX parser, firmware transport or device
+execution, and it does not establish firmware acceptance.

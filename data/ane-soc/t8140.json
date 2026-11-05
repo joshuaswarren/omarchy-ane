@@ -328,7 +328,7 @@
   "mailbox": {
     "node": {
       "v": null,
-      "reason": "No ANE mailbox or ASC node in the macOS ADT (searched /arm-io for ane*, *exclave*, and compatibles with \"ane\"). The macOS class binds the ane node itself, as on T6021, where the ASC and its mailbox sit inside reg[0] (engine+0x1400000/+0x1408000). For H17 that offset is not measured."
+      "reason": "No ANE mailbox or ASC node in the ADT (searched /arm-io for ane*, *exclave*, and compatibles with \"ane\"). The ane node itself is the bound one, as on T6021, where the ASC and its mailbox sit inside reg[0] (engine+0x1400000/+0x1408000). For H17 that offset is not measured."
     },
     "protocol": {
       "v": "RTKit (RTBuddy endpoints) with the CSNE_CMD host command set: 96 CSNE_CMD names, including EXCLAVE_MODE_START/STOP and SECURE_MODE_*; RTKit string RTKit_release-3514.0.15.",
@@ -438,7 +438,7 @@
   },
   "state": "data-only",
   "aurora": {
-    "v": "aurora-wip t8140.dtsi has no ANE node, no ANE DART and no ANE mailbox. AOP, ANS, ISP and AVD are described; the AOP note says iBoot loads its firmware and leaves it stopped, and its DART is left protected (PROTECT 0x1e7, inherited stream roots).",
+    "v": "aurora-wip t8140.dtsi has no ANE node, no ANE DART and no ANE mailbox. AOP, ANS, ISP and AVD are described; the AOP note says the boot loader loads its firmware and leaves it stopped, and its DART is left protected (PROTECT 0x1e7, inherited stream roots).",
     "src": "D1"
   },
   "aurora_pmgr": {
@@ -454,7 +454,7 @@
     "src": "D5"
   },
   "community_row": {
-    "v": "Scott Jones deep row: kernel 7.1.12-2-11.16-sep-ARCH, m1n1 0a33275c, iBoot mBoot-18000.161.9, os-fw-version unknown; no ANE DT node, 8 DARTs none ANE, no ANE pmgr domain; no ane/dart fault lines; omarchy-ane not installed; no /lib/firmware/apple/ane; reserved-memory has a phram \"adt\" region at 0x10004834000+0x68000",
+    "v": "Scott Jones deep row: kernel 7.1.12-2-11.16-sep-ARCH, m1n1 0a33275c, boot stage2 mBoot-18000.161.9, os-fw-version unknown; no ANE DT node, 8 DARTs none ANE, no ANE pmgr domain; no ane/dart fault lines; omarchy-ane not installed; no /lib/firmware/apple/ane; reserved-memory has a phram \"adt\" region at 0x10004834000+0x68000",
     "src": "C1"
   }
 }

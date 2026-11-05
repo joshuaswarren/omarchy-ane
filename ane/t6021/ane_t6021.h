@@ -6,7 +6,7 @@
  *    receipts/2026-09-18-t6021-engine-layout-mined §2), Linux translation
  *    +0x200000000 (proven class, pmgr low-32 match).
  *  - ASC cpu block (+0x1400000 h14g) + MBI transport (SCRATCH, channel
- *    table, +0x1844000 doorbell): K14 kext disasm, W4-fix receipt
+ *    table, +0x1844000 doorbell): K14 vendor-driver disasm, W4-fix receipt
  *    (initializeANESoCConfig h14g blocks + InitializeRTBuddy +
  *    doorbell setter 0x…95ebdd0); m1n1 ASCRegs = t8103 cross-ref only
  *  - RTKit MGMT protocol: Asahi rtkit.c semantics, u64 message halves as
@@ -102,7 +102,7 @@ enum {
 #define ANE_ASC_RVBAR		0x1050000	/* fw entry | valid bit0 */
 #define ANE_ASC_EDPRCR		0x1010310	/* phase1 S2 whitelist */
 #define ANE_ASC_VERS		0x1840000
-#define ANE_ASC_RTB_STATUS	0x1840088	/* macOS polls it: value < 2 */
+#define ANE_ASC_RTB_STATUS	0x1840088	/* poll until the value reads < 2 */
 #define ANE_ASC_RTB_STATUS_UNK7C 0x184007c	/* phase1 S2 whitelist */
 
 /* ASC blocks iBoot names in the firmware's __rtk_patch records
@@ -226,7 +226,7 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
  * host-write-fatal even behind the W8 grant, W9; SCRATCH family is
  * host-writable granted, W9 nonzero latch). */
 
-/* MBI channel-table entry (kext stride 0x100, fields at +0x40 family:
+/* MBI channel-table entry (vendor-driver stride 0x100, fields at +0x40 family:
  * type @+0x40, doorbell bit @+0x44, size @+0x48, phys @+0x50 —
  * InitializeRTBuddy 0x…95eade8-0x…95eae58) */
 #define ANE_MBI_CHAN_STRIDE	0x100
@@ -282,7 +282,7 @@ enum ane_t6021_eps {
  * (full set: receipts/2026-09-18-h14-w2-protocol-decode §4 and
  * receipts/2026-09-18-h14-w2-protocol-decode/fw_cmd_table.json). The
  * fw parses the id as u16 at wire offset +4 (W4 correction of the W2
- * §4 "offset 0" claim: fw sites 0x4d244/0x4d264/0x5246c); the kext
+ * §4 "offset 0" claim: fw sites 0x4d244/0x4d264/0x5246c); the vendor driver
  * controller header for the fw->host direction is a different shape
  * (u32 id @ +0x8, 0x24 bytes) and never rides host->fw submission. */
 enum ane_t6021_csne_cmd {
@@ -529,7 +529,7 @@ struct ane_csne_cmd_ipc_endpoint_set {
 	u8 payload[];
 };
 
-/* PROCEDURE_CALL (0x204) / INFERENCE_CALL (0x404) — the kext
+/* PROCEDURE_CALL (0x204) / INFERENCE_CALL (0x404) — the vendor driver
  * CANE_SUB_PACKET_CMD_PROCEDURE_CALL family. Field offsets PROVEN from
  * the fw parse; field semantics named only where the kext asserts name
  * them (programId, procedureId, numIoBuffers in assert order, W2 §4):

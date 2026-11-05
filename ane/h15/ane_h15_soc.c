@@ -101,37 +101,6 @@ static const struct ane_h15_word ane_h15_words_6031[] = {
 	  ANE15_TIER_FORBIDDEN, false, "T6021 forbidden range" },
 };
 
-/* Pinned 27.0 ANE firmware payloads. S3 source: SHA-256 of the 1605632-
- * byte payload; payload bytes not
- * retained. S2 reports 1605657; the 25-byte gap is
- * the same on every H15 row and is not explained locally. The module
- * checks against the S3 size+hash pair. */
-static const struct ane_h15_fw ane_fw_t8122 = {
-	.name = "h15_ane_fw_themis_j51y",
-	.sha256 = { 0x19,0xb6,0xa4,0x99, 0x97,0xec,0xf3,0xeb, 0x4e,0xc1,0x59,0x60,
-		    0xf4,0x2a,0xb6,0xa7, 0x9f,0xec,0xd3,0x4c, 0x8e,0x14,0x48,0xd2,
-		    0xe5,0xc1,0x03,0x4e, 0x2e,0xc4,0x78,0x08 },
-	.size = 1605632,
-	.manifest_size = 1605657,
-};
-
-static const struct ane_h15_fw ane_fw_t6030 = {
-	.name = "t603x_ane0_fw_erebus_ls5x",
-	.sha256 = { 0x43,0xda,0x9d,0x56, 0x6a,0x88,0x0b,0xab, 0x1b,0xd8,0xef,0x9c,
-		    0xd3,0xdd,0x3e,0xa4, 0xa5,0x5a,0xe6,0xc0, 0x16,0xd2,0xec,0x7f,
-		    0x4f,0x97,0xf4,0xfd, 0xa9,0x98,0x67,0xa0 },
-	.size = 1605632,
-	.manifest_size = 1605657,
-};
-
-static const struct ane_h15_fw ane_fw_t6031 = {
-	.name = "t603x_ane0_fw_erebus_pc5x",
-	.sha256 = { 0xdd,0xac,0x37,0xc7, 0x0b,0xdc,0xae,0xdc, 0x62,0x39,0xd5,0xcc,
-		    0x85,0xd8,0x48,0xe6, 0x06,0xcd,0x66,0xdf, 0x45,0x4e,0x8a,0x43,
-		    0x2c,0x24,0xfd,0x77, 0x30,0xa1,0xf9,0x77 },
-	.size = 1605632,
-	.manifest_size = 1605657,
-};
 
 const struct ane_h15_soc ane_t8122_soc = {
 	.name = "t8122",
@@ -139,12 +108,22 @@ const struct ane_h15_soc ane_t8122_soc = {
 	.cpu_control = 0x1400044,
 	.cpu_status  = 0x1400048,
 	.rvbar       = 0x1050000,
+	/* Measured by stage 2 on a 13-inch M3 MacBook Air (J613), 2026-11-02: RVBAR_LO 0x1, RVBAR_HI 0x100,
+	 * CPU_STATUS 0x30002a, both mailbox CTRL words 0x20001. The same word the T6030 and T6031 rows carry. */
+	.rvbar_expect = 0x0000010000000001ull,
 	.dart_off    = 0x1800000,	/* ADT S1: 0x311800000 - engine, data/ane-soc/t8122.json */
 	.mbox        = 0x1408000,	/* INFERENCE */
 	.engine_pa   = 0x310000000ull,
 	.engine_size = 0x2000000,
 	.pmgr_pa     = 0x2d0700000ull,
 	.pmgr_size   = 0x18000,
+	/* PWGATE: the third reg entry of the ADT ane0 node (the pmgr_ps window, 0x4000 bytes). The
+	 * shipped CPU-power step clears bits 1:0 of the word at +0x272c. pwgate_read reads it; the
+	 * opt-in write step (pwgate_t6031) clears it. A stage 2 read on a 13-inch M3 MacBook Air
+	 * (J613), 2026-11-03, found the word 0x3 (closed) after the power domains were on. */
+	.pwgate_pa   = 0x2d0724000ull,
+	.pwgate_size = 0x4000,
+	.pwgate_word = 0x272c,
 	.ps_off      = ane_h15_ps_8122,
 	.words       = ane_h15_words_8122,
 	.fw          = &ane_fw_t8122,
@@ -157,9 +136,9 @@ const struct ane_h15_soc ane_t6030_soc = {
 	.cpu_status  = 0x1400048,
 	.rvbar       = 0x1050000,
 	/* Measured by stage 2 on a 16-inch M3 Pro (J516S), PR 175 comment of 2026-10-23: RVBAR_LO 0x1,
-	 * RVBAR_HI 0x100. The same value the M2 Max macOS run, the M6 (T8152) and the T6031 row carry: the
-	 * firmware entry IOVA 0x10000000000 with bit 0 set, i.e. iBoot already wrote it. T8122 and T6034
-	 * have no stage 2 result yet, so their rvbar_expect stays 0 and stage=run refuses on them. */
+	 * RVBAR_HI 0x100. The same value the M2 Max run, the M6 (T8152) and the T6031 row carry: the
+	 * firmware entry IOVA 0x10000000000 with bit 0 set, i.e. the boot loader already wrote it. T6034
+	 * has no stage 2 result yet, so its rvbar_expect stays 0 and stage=run refuses on it. */
 	.rvbar_expect = 0x0000010000000001ull,
 	.dart_off    = 0x1800000,	/* ADT S1: 0x309800000 - engine, data/ane-soc/t6030.json */
 	.mbox        = 0x1408000,	/* INFERENCE */
@@ -167,6 +146,12 @@ const struct ane_h15_soc ane_t6030_soc = {
 	.engine_size = 0x2000000,
 	.pmgr_pa     = 0x350700000ull,
 	.pmgr_size   = 0x18000,
+	/* PWGATE: the third reg entry of the ADT ane0 node (the pmgr_ps window, 0x4000 bytes). The
+	 * shipped CPU-power step clears bits 1:0 of the word at +0x2b6c. pwgate_read reads it; the
+	 * opt-in write step (pwgate_t6031) clears it. */
+	.pwgate_pa   = 0x350724000ull,
+	.pwgate_size = 0x4000,
+	.pwgate_word = 0x2b6c,
 	.ps_off      = ane_h15_ps_6030,
 	.words       = ane_h15_words_6030,
 	.fw          = &ane_fw_t6030,
@@ -191,11 +176,12 @@ const struct ane_h15_soc ane_t6031_soc = {
 	.pmgr_size   = 0x10000,
 	/* PWGATE: ADT ane0 reg entry 5 of the macOS 27.0 device tree for
 	 * the J516C (0x292290000, 0x4000, next to the pmgr window).
-	 * macOS behaviour: the 0x199c word is cleared and
+	 * Shipped-system behaviour: the 0x199c word is cleared and
 	 * polled before the core is released. Never run on an M3; the
 	 * step is opt-in per run (pwgate_t6031). */
 	.pwgate_pa   = 0x292290000ull,
 	.pwgate_size = 0x4000,
+	.pwgate_word = 0x199c,
 	.ps_off      = ane_h15_ps_6031,
 	.words       = ane_h15_words_6031,
 	.fw          = &ane_fw_t6031,

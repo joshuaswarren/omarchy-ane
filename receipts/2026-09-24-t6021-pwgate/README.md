@@ -48,8 +48,8 @@ nub. Its IODeviceMemory:
 Linux DT: /soc/ane@284000000 (parent /soc, simple-bus), reg-names
 engine/pmgr/set, same three ranges.
 
-    base 0x28e08c000 + 0x12cc = 0x28e08d2cc  (kext writes 3)
-    base 0x28e08c000 + 0x13cc = 0x28e08d3cc  (kext writes 0)
+    base 0x28e08c000 + 0x12cc = 0x28e08d2cc  (driver writes 3)
+    base 0x28e08c000 + 0x13cc = 0x28e08d3cc  (driver writes 0)
 
 Live (islands on, ps_ane_cpu 0x1f0003ff):
 
@@ -103,6 +103,6 @@ The fallback ESP boot.bin was 43ec6090. Script: `pwgate_prep.sh`.
     post  STATUS 0x2a (core still unrun), box alive
 
 The Linux pmgr node covers only 0x28e080000 + 0x8000, so no genpd domain
-owns the 0x28e088xxx words. The macOS hv traces (trace-135,
+owns the 0x28e088xxx words. The reference run hv traces (trace-135,
 trace-atcrt) show the OS itself writing 0x2f/0x20/0xf/0 to
 0x28e088004..0x28e088018 during boot. Access log: `ascdbg.log`.

@@ -333,7 +333,7 @@
   },
   "driver_family": {
     "v": null,
-    "reason": "INFERENCE (b0 decision, receipts/2026-10-03-ane-h15): ane_t6021-like at the ASC layer, no new ASC-IOP client. S1 gives reg[0] = engine + 0x1400000 (the ASC wrapper whose CPU_CONTROL ane_t6021 sets at +0x44), reg[1] = engine + 0x1050000 (the T6021 RVBAR offset) and the DART at engine + 0x1800000 with the T6021 four-window shape; S4 uses apple,asc-mailbox-v4 for every M3 ASC mailbox. Not measured: whether the firmware that iBoot preloads on an M3 Linux boot sends RTKit HELLO. The T6021 13.5 image never did, and its working path is the legacy ChMan ring, which is tied to that image."
+    "reason": "INFERENCE (b0 decision, receipts/2026-10-03-ane-h15): ane_t6021-like at the ASC layer, no new ASC-IOP client. S1 gives reg[0] = engine + 0x1400000 (the ASC wrapper whose CPU_CONTROL ane_t6021 sets at +0x44), reg[1] = engine + 0x1050000 (the T6021 RVBAR offset) and the DART at engine + 0x1800000 with the T6021 four-window shape; S4 uses apple,asc-mailbox-v4 for every M3 ASC mailbox. Not measured: whether the firmware preloaded at boot on an M3 Linux system sends RTKit HELLO. The T6021 13.5 image never did, and its working path is the legacy ChMan ring, which is tied to that image."
   },
   "hwx_generation": {
     "v": {

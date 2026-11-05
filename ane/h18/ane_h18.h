@@ -55,9 +55,9 @@
 #define ANE_H18_PO_MAXMSG	8	/* at most this many messages are read per run */
 #define ANE_H18_PO_NCAND	3	/* candidate channels, see ane_h18_stage_power() */
 /* The alias bank: the same Postoffice window at +0x10000, channel 2 * msgbox-mailbox-num. For this ANE the ADT has msgbox-using-postoffice and no
- * msgbox-using-alias, which macOS turns into base + 0x10000 and channel 2 * num (0x316010c00 for ANE0). */
+ * msgbox-using-alias, which the shipped system turns into base + 0x10000 and channel 2 * num (0x316010c00 for ANE0). */
 #define ANE_H18_PO_ALIAS_OFF	0x10000
-/* The eight SCRATCH words of the engine block (macOS handshake registers): engine + 0x18a0024 to +0x18a0040 for ane-type 0x310 (h18g), the table
+/* The eight SCRATCH words of the engine block (shipped-system handshake registers): engine + 0x18a0024 to +0x18a0040 for ane-type 0x310 (h18g), the table
  * macOS uses for this SoC. Read only here, in the page at scratch_pa. */
 #define ANE_H18_SCRATCH_OFF	0x24
 #define ANE_H18_SCRATCH_N	8
@@ -106,14 +106,14 @@ static inline enum ane_h18_mal_kind ane_h18_mal_classify(u64 hdr, u64 size, u64 
 	return (size || mode) ? ANE_H18_MAL_BAD : ANE_H18_MAL_FREE;
 }
 #define ANE_H18_CMD_BLOCK	0x100	/* the commands here are 12 and 16 bytes, the reply fits in the block too: clear no more of the pool than that */
-#define ANE_H18_CMD_POOL_OFF	0x400	/* the command block lives in the pool surface, 0x100 aligned, as macOS takes every command block from the pool */
+#define ANE_H18_CMD_POOL_OFF	0x400	/* the command block lives in the pool surface, 0x100 aligned, as the shipped system takes every command block from the pool */
 #define ANE_H18_CSNE_CH_PROPERTY_WRITE	0x1f	/* 0x14 bytes: u32 0 at +8, property id at +0xc, u32 value at +0x10 */
 #define ANE_H18_CSNE_PRINT_ENABLE	0x04
 #define ANE_H18_CSNE_MCACHE_SIZE_GET	0x26	/* 12 bytes, no argument; the reply u32 at +8 is the memory cache size */
-#define ANE_H18_CSNE_DEFAULT_SETTING_SET	0x2e	/* 0x18 bytes: u64 1 at +8 (one setting), u32 2 at +0x10 (register id 2), u32 0x2710 at +0x14; macOS sends it after the property writes (value from config +0x124) */
+#define ANE_H18_CSNE_DEFAULT_SETTING_SET	0x2e	/* 0x18 bytes: u64 1 at +8 (one setting), u32 2 at +0x10 (register id 2), u32 0x2710 at +0x14; the shipped system sends it after the property writes (value from config +0x124) */
 #define ANE_H18_CSNE_SET_DYNAMIC_POWERGATE	0x2d	/* 12 bytes, one byte at +8: 1 enables, 0 disables the firmware's dynamic power gating (where macOS sends it is not known; that 1 enables is an inference) */
 #define ANE_H18_CSNE_SET_SNE_PMU_BASE2	0x29	/* 16 bytes, u64 at +8: the PMU base the firmware uses for its own power control; macOS sends it after START and before CONFIG_GET */
-#define ANE_H18_PMU_BASE_H18G	0x300700000ULL	/* the constant macOS uses for ANE types 0x300 and 0x310 */
+#define ANE_H18_PMU_BASE_H18G	0x300700000ULL	/* the constant the shipped system uses for ANE types 0x300 and 0x310 */
 #define ANE_H18_CSNE_CONFIG_GET		0x03
 #define ANE_H18_CSNE_START		0x00
 #define ANE_H18_CSNE_LOAD_PROGRAM	0x200	/* the T6021 wire: nine 0x30 byte section records at +8 (flags 1, id +4, iova +0x18, size +0x20), 0x1c0 bytes, the program id comes back at +0x1b8 */
@@ -131,7 +131,7 @@ static inline enum ane_h18_mal_kind ane_h18_mal_classify(u64 hdr, u64 size, u64 
 #define ANE_H18_PROG_MAX_BYTES	0xc000000	/* all buffers together, 192 MiB */
 #define ANE_H18_PROG_COOKIE	0xADD0	/* the call cookie of the T6021 driver, returned in the IO_T2H events */
 #define ANE_H18_PROG_PRIORITY	2
-#define ANE_H18_CSNE_PREMAP_BUFFER	0x20d	/* 0x3490 bytes, type 2 for the inference request pool: macOS sends it at init, before any call */
+#define ANE_H18_CSNE_PREMAP_BUFFER	0x20d	/* 0x3490 bytes, type 2 for the inference request pool: the shipped system sends it at init, before any call */
 #define ANE_H18_PREMAP_LEN	0x3490
 #define ANE_H18_PREMAP_POOL	0x3898	/* one inference request, rounded to a page for the surface */
 #define ANE_H18_PREMAP_BLOCK	0x4000	/* command block size with hs_premap */
@@ -192,7 +192,7 @@ struct ane_h18_soc {
 	u64 dart_pa;		/* ANE DART instance 0 (ADT /arm-io/dart-ane reg[0]) */
 	u32 dart_size;
 	u32 mbox_num;		/* ADT msgbox-mailbox-num */
-	u64 rvbar_expect;	/* IORVBAR as iBoot leaves it: entry 0x10000000000 (the segment-ranges remap) | valid bit. Measured on the board. */
+	u64 rvbar_expect;	/* IORVBAR as the boot loader leaves it: entry 0x10000000000 (the segment-ranges remap) | valid bit. Measured on the board. */
 	u32 psd_slot[ANE_H18_NPSD];
 	struct ane_h18_fw_seg fw_seg[2];
 };

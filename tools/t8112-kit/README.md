@@ -10,7 +10,7 @@ diffs. All device access is read-only.
 | --- | --- | --- |
 | 1a. `RTK_soc_revision` | A candidate only: `/arm-io` `chip-revision`. On T6001 both values are 0x11. No record links them on T6021. | Yes: the `RCOS` record of the preload. The same run saves `chip-revision`, to test the link. |
 | 1b. ASC tunables block | No. iBoot writes it from its own table. The live macOS ADT has no ANE tunables. | Yes: `__rtk_platform_asc_tunables_block` of the preload. |
-| 2. Firmware entry IOVA | Yes: the ANE `segment-ranges` TEXT remap. On T6021, macOS 27 (`ioreg`) and the 13.5 stub (m1n1 ADT) give the same value, 0x10000000000. That value is also the latched RVBAR entry. | Yes, from two or three sources: the DATA base that iBoot writes into the preload, the ADT `segment-ranges`, and RVBAR (only when the ANE is powered). |
+| 2. Firmware entry IOVA | Yes: the ANE `segment-ranges` TEXT remap. On T6021, both collected sources (live `ioreg` and the stub ADT) give the same value, 0x10000000000. That value is also the latched RVBAR entry. | Yes, from two or three sources: the DATA base written into the preload, the ADT `segment-ranges`, and RVBAR (only when the ANE is powered). |
 | 3. pmgr page that the firmware writes | Not needed. The image itself gives it: `CPowerControlServiceAneH14::SetPMUBaseAddress` stores 0x23b70c010 (the `ANE_TD` power state), so the page is 0x23b70c000. `ingest.py` reads it from the image bytes. | Same. |
 
 So macOS alone gives item 2. Item 1 needs the m1n1 proxy, because the

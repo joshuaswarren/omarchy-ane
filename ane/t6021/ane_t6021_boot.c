@@ -95,7 +95,7 @@
  *      surface = min(config+4, dev+0x3A70
  *      cap) — the numeric cap needs the h14g config blob field map
  *      (open prerequisite). Init suballoc = 0x174 from a Linux-owned
- *      pool standing in for the kext dev+0x968/dev+0x980 pool (pool
+ *      pool standing in for the vendor driver's dev+0x968/dev+0x980 pool (pool
  *      total size open). RTBuddy FW_INIT sizes (64K…) are the OTHER
  *      branch — never used here.
  *   5. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
@@ -110,7 +110,7 @@
  * Read whitelist — every MMIO read below, individually:
  *   - RVBAR eng+0x01050000: read64 width-proven (rvbar-width
  *     width_proof); W8 and W10 live Linux reads, value 0x1 each.
- *   - CPU_STATUS eng+0x1400048: phase-1 S2 whitelist; kext poll site
+ *   - CPU_STATUS eng+0x1400048: phase-1 S2 whitelist; vendor-driver poll site
  *     0x…95ecfb4 (config field dev+0x49c = 0x1400048); W10 live read
  *     0x2a.
  *   - ASC mailbox controls eng+0x1408110/0x1408114: W10 live reads

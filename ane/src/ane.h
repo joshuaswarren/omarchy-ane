@@ -20,6 +20,8 @@
  * headers; the kernel include path is searched before ccflags. */
 #include "uapi/drm/ane_accel.h"
 
+struct device_node;
+
 struct ane_device {
 	struct drm_device drm;
 	struct device *dev;
@@ -52,6 +54,14 @@ struct ane_device {
 	int irq;
 	struct mutex iommu_lock;
 	struct mutex engine_lock;
+
+	/*
+	 * Latest event-count overflow (line << 31 | count) and last event INFO
+	 * word popped. Written under engine_lock by ane_tm_collect_events and
+	 * read by the wedge report, so each engine reports its own.
+	 */
+	u32 last_overflow;
+	u32 last_info;
 	struct list_head bo_list;
 
 	/*
@@ -68,6 +78,7 @@ struct ane_device {
 	 * preserve-until-reboot behaviour applies only when that reset fails.
 	 */
 	atomic_t wedged;
+	bool scratch_retained;
 
 	/*
 	 * Set under engine_lock for the duration of a recovery power cycle,
@@ -75,6 +86,26 @@ struct ane_device {
 	 * quiescing.
 	 */
 	bool recovering;
+
+	/*
+	 * Full power-off recovery (ane_tm_recover). The partition cycle
+	 * gates only the ANE's own set domains: their parents and the root
+	 * ane_sys domain stay up, because ane_sys also powers the DARTs and
+	 * the DARTs are runtime-PM suppliers of the still-active ANE. The
+	 * task-manager file survives that cycle with the dead task's error
+	 * latched (TM_STATUS 0, Grandpa T8103 2026-11-02; TQ_EN 0x3000 on
+	 * T6001 2026-09-16). It clears only when the whole hierarchy powers
+	 * off, which is what every autosuspend does.
+	 *
+	 * quiesced: set under engine_lock once a recovery cycle has gated
+	 * the engine after the wedge, so in-flight DMA is stopped. Only
+	 * then may runtime suspend gate a wedged engine.
+	 * por_pending: set by that runtime suspend; the next recovery
+	 * call, made with the device resumed and re-armed, checks the
+	 * task manager instead of cycling the partitions again.
+	 */
+	bool quiesced;
+	bool por_pending;
 
 	/*
 	 * TM_STATUS sampled right after the first tm_enable at probe: the
@@ -91,7 +122,8 @@ struct ane_device {
 	 * (T6001 bisect evidence 2026-09-16: TQ_EN still reads 0x3000
 	 * after a 2 s gate), so recovery must drain retained task-manager
 	 * state itself instead of expecting a power-on reset to clear it.
-	 * False on T8103, where the cycle is a full POR of the file.
+	 * False on T8103. It was believed to get a full POR of the file from
+	 * the cycle; Grandpa 2026-11-02 showed it does not (see quiesced).
 	 */
 	bool tm_retention;
 
@@ -123,6 +155,9 @@ struct ane_device {
 		unsigned int level;
 		unsigned int ack_timeouts;
 		const char *state;
+		/* The locked writer of the PS-REQ word, when pmp-report exports apple_pmp_report_set_request (symbol_get at init); NULL otherwise. */
+		const struct device_node *report_np;
+		int (*set_request)(const struct device_node *report_np, unsigned int id, bool enable, bool no_ack);
 	} dvfs;
 
 	/*
@@ -148,15 +183,6 @@ struct ane_request {
 	u32 btsp_iova;
 	u32 bar[ANE_TILE_COUNT];
 };
-
-/*
- * Drop the wedge pin (module refcount) without requiring a successful
- * recovery. Used by ane_drm_postclose so a wedged engine cannot leave
- * the module un-unloadable after a clean session close. Recovery stays
- * safe to call afterwards; if it returns error, the postclose path has
- * already unlocked the module count so the operator can swap the ko.
- */
-void ane_wedge_clear(struct ane_device *ane);
 
 /*
  * Reclaim wedge-preserved BO ranges (unmap, release nodes and pages).

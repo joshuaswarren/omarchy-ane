@@ -32,7 +32,7 @@ read. No EDLAR, OSLAR, DBGWRAP, or DTR access was made.
 
 ERROR has no FLAG. Its SID field is 27:20 in the m1n1 dart8110 layout.
 TTBR1-15 are 0. dart0 TCR15 = 2 was written by hand in the IOMMU_CACHE
-test. macOS writes 2 on all three instances. dart0 ENABLE was `0xfffe`
+test. The reference run writes 2 on all three instances. dart0 ENABLE was `0xfffe`
 after the SID-0 cleanup. It was restored with a write of `0xffff` and read
 back as `0xffff`.
 

@@ -6,7 +6,7 @@
 #   make check                 (host ADT walker self test)
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h15.o
-	ane_h15-objs := ane_h15_main.o ane_h15_soc.o
+	ane_h15-objs := ane_h15_main.o ane_h15_soc.o ane_h15_overlay.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
@@ -20,8 +20,10 @@ default: modules
 modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
-check: ane_h15_adt_test
+check: ane_h15_adt_test test_domain_window
 	./ane_h15_adt_test
+	./test_domain_window
+	python3 test_trace_ane_h15.py
 
 ane_h15_adt_test: ane_h15_adt_test.c ane_h15_adt.h
 	$(CC) $(CFLAGS) -I. ane_h15_adt_test.c -o $@
@@ -36,22 +38,48 @@ ane_h15_adt_test: ane_h15_adt_test.c ane_h15_adt.h
 # harness to fail it (PMP sim-negative semantics).
 SIM_CC ?= cc
 SIM_CFLAGS ?= -g -O0 -Wall -Wextra -std=gnu11
-SIM_HDRS := ane_h15.h ane_h15_adt.h sim/shim.h \
+SIM_SHA := $(abspath ../../libane/ane_sha256.c)
+SIM_HDRS := $(wildcard ane_h15*.h) sim/shim.h \
 	$(wildcard sim/inc/linux/*.h) sim/inc/crypto/sha2.h
 
-sim/sim_h15: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS)
-	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ sim/sim_harness.c
+test_domain_window: test_domain_window.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ test_domain_window.c $(SIM_SHA)
+
+sim/sim_h15: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ sim/sim_harness.c $(SIM_SHA)
+
+test_rtk_startup: test_rtk_startup.c sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ test_rtk_startup.c $(SIM_SHA)
+
+test_t8122_start: test_t8122_start.c sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ test_t8122_start.c $(SIM_SHA)
 
 # P7 build: the fact table is substituted (synthetic, fully filled) so
 # the real probe + stage_boot run the every-fact-filled fall-through.
-sim/sim_h15_filled: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS)
-	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I sim -I sim/inc -o $@ sim/sim_harness.c
+sim/sim_h15_filled: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I sim -I sim/inc -o $@ sim/sim_harness.c $(SIM_SHA)
 
 sim-probe-filled: sim/sim_h15_filled
-	./sim/sim_h15_filled pos-filled
+	@test -r "$(H15_FW_INPUT_DIR)/t603x_ane0_fw_erebus_pc5x.im4p.payload" || { echo "private H15_FW_INPUT_DIR is required"; exit 1; }
+	H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" ./sim/sim_h15_filled pos-filled
 
-sim-test: sim/sim_h15
+# The run-time overlay (apply_overlay=1): the REAL ane_h15_overlay.c against a fake live device tree, then the generated
+# blob header must be what gen-runtime-overlay.py writes from the overlay sources.
+sim/sim_overlay: sim/sim_overlay.c ane_h15_overlay.c ane_h15_overlay.h ane_h15_overlay_data.h $(wildcard sim/ovl/linux/*.h)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim/ovl -o $@ sim/sim_overlay.c
+
+sim-overlay: sim/sim_overlay
+	./sim/sim_overlay
+	python3 gen-runtime-overlay.py --check
+
+sim-overlay-mutation:
+	python3 sim/mutate_overlay.py
+
+sim-test: sim/sim_h15 sim-overlay test_rtk_startup test_t8122_start
 	./sim/sim_h15 pos
+	./sim/sim_h15 neg-run
+	./test_rtk_startup
+	./test_t8122_start
 
 sim-negative-ps-stuck: sim/sim_h15
 	./sim/sim_h15 neg-ps-stuck
@@ -95,10 +123,10 @@ COMMA := ,
 define pd_mutant
 	rm -rf /tmp/ane_h15-$(1) && mkdir -p /tmp/ane_h15-$(1)
 	cp -r sim /tmp/ane_h15-$(1)/sim
-	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-$(1)/
+	cp ane_h15_main.c ane_h15_soc.c ane_h15*.h /tmp/ane_h15-$(1)/
 	sed '$(2)' ane_h15_main.c > /tmp/ane_h15-$(1)/ane_h15_main.c
 	grep -q '$(3)' /tmp/ane_h15-$(1)/ane_h15_main.c
-	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-$(1)/sim -I /tmp/ane_h15-$(1)/sim/inc -o /tmp/ane_h15-$(1)/sim_h15 /tmp/ane_h15-$(1)/sim/sim_harness.c
+	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-$(1)/sim -I /tmp/ane_h15-$(1)/sim/inc -o /tmp/ane_h15-$(1)/sim_h15 /tmp/ane_h15-$(1)/sim/sim_harness.c $(SIM_SHA)
 	@/tmp/ane_h15-$(1)/sim_h15 $(4) > /tmp/ane_h15-$(1)/run.log 2>&1; \
 	s=$$?; \
 	echo "--- $(1) mutant harness tail ---"; tail -4 /tmp/ane_h15-$(1)/run.log; \
@@ -192,7 +220,7 @@ sim-negative-map: sim/sim_h15
 
 # the map is never undone (domain and mappings leak after a clean stop or a failed step)
 sim-mutation-map-noundo:
-	$(call pd_mutant,map-noundo,s/if (!ane->domain)/if (1 \/* NEG: unmap is a no-op *\/)/,NEG: unmap is a no-op,pos)
+	$(call pd_mutant,map-noundo,s/if (!ane->domain || ane->map_retained)/if (1 \/* NEG: unmap is a no-op *\/)/,NEG: unmap is a no-op,pos)
 
 # a firmware segment inside system RAM is mapped into the ANE
 sim-mutation-map-noramcheck:
@@ -273,10 +301,10 @@ sim-mutation-chan-noownership:
 sim-negative-nopsguard:
 	rm -rf /tmp/ane_h15-nopsguard && mkdir -p /tmp/ane_h15-nopsguard
 	cp -r sim /tmp/ane_h15-nopsguard/sim
-	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-nopsguard/
+	cp ane_h15_main.c ane_h15_soc.c ane_h15*.h /tmp/ane_h15-nopsguard/
 	sed 's/ret = ane_h15_ps_wait(ane);/ret = 0; \/* NEG: PS guard skipped *\//' ane_h15_main.c > /tmp/ane_h15-nopsguard/ane_h15_main.c
 	grep -q 'NEG: PS guard skipped' /tmp/ane_h15-nopsguard/ane_h15_main.c
-	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-nopsguard/sim -I /tmp/ane_h15-nopsguard/sim/inc -o /tmp/ane_h15-nopsguard/sim_h15 /tmp/ane_h15-nopsguard/sim/sim_harness.c
+	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-nopsguard/sim -I /tmp/ane_h15-nopsguard/sim/inc -o /tmp/ane_h15-nopsguard/sim_h15 /tmp/ane_h15-nopsguard/sim/sim_harness.c $(SIM_SHA)
 	@/tmp/ane_h15-nopsguard/sim_h15 neg-ps-stuck > /tmp/ane_h15-nopsguard/run.log 2>&1; \
 	s=$$?; \
 	echo "--- nopsguard negative-control tail ---"; tail -6 /tmp/ane_h15-nopsguard/run.log; \
@@ -289,10 +317,10 @@ sim-negative-nopsguard:
 sim-mutation-nounmap:
 	rm -rf /tmp/ane_h15-nounmap && mkdir -p /tmp/ane_h15-nounmap
 	cp -r sim /tmp/ane_h15-nounmap/sim
-	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-nounmap/
+	cp ane_h15_main.c ane_h15_soc.c ane_h15*.h /tmp/ane_h15-nounmap/
 	sed 's/ane_h15_unmap_windows(ane);/\/* NEG: window unmap deleted *\//' ane_h15_main.c > /tmp/ane_h15-nounmap/ane_h15_main.c
 	grep -q 'NEG: window unmap deleted' /tmp/ane_h15-nounmap/ane_h15_main.c
-	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-nounmap/sim -I /tmp/ane_h15-nounmap/sim/inc -o /tmp/ane_h15-nounmap/sim_h15 /tmp/ane_h15-nounmap/sim/sim_harness.c
+	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h15-nounmap/sim -I /tmp/ane_h15-nounmap/sim/inc -o /tmp/ane_h15-nounmap/sim_h15 /tmp/ane_h15-nounmap/sim/sim_harness.c $(SIM_SHA)
 	@/tmp/ane_h15-nounmap/sim_h15 pos > /tmp/ane_h15-nounmap/run.log 2>&1; \
 	s=$$?; \
 	echo "--- nounmap mutant harness tail ---"; tail -4 /tmp/ane_h15-nounmap/run.log; \
@@ -301,14 +329,14 @@ sim-mutation-nounmap:
 
 # Mutation control for P7: the filled-table fall-through refusal
 # deleted (return -ENOSYS -> return 0) MUST fail the filled probe.
-sim-mutation-nofillrefusal:
+sim-mutation-nofillrefusal: sim-probe-filled
 	rm -rf /tmp/ane_h15-nofillref && mkdir -p /tmp/ane_h15-nofillref
 	cp -r sim /tmp/ane_h15-nofillref/sim
-	cp ane_h15_main.c ane_h15_soc.c ane_h15.h ane_h15_adt.h /tmp/ane_h15-nofillref/
+	cp ane_h15_main.c ane_h15_soc.c ane_h15*.h /tmp/ane_h15-nofillref/
 	sed 's/return -ENOSYS;/return 0; \/* NEG: filled-table fall-through deleted *\//' ane_h15_main.c > /tmp/ane_h15-nofillref/ane_h15_main.c
 	grep -q 'NEG: filled-table fall-through deleted' /tmp/ane_h15-nofillref/ane_h15_main.c
-	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I /tmp/ane_h15-nofillref/sim -I /tmp/ane_h15-nofillref/sim/inc -o /tmp/ane_h15-nofillref/sim_h15_filled /tmp/ane_h15-nofillref/sim/sim_harness.c
-	@/tmp/ane_h15-nofillref/sim_h15_filled pos-filled > /tmp/ane_h15-nofillref/run.log 2>&1; \
+	$(SIM_CC) $(SIM_CFLAGS) -DANE15_SIM_FILL_FACTS -I /tmp/ane_h15-nofillref/sim -I /tmp/ane_h15-nofillref/sim/inc -o /tmp/ane_h15-nofillref/sim_h15_filled /tmp/ane_h15-nofillref/sim/sim_harness.c $(SIM_SHA)
+	@H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" /tmp/ane_h15-nofillref/sim_h15_filled pos-filled > /tmp/ane_h15-nofillref/run.log 2>&1; \
 	s=$$?; \
 	echo "--- nofillrefusal mutant harness tail ---"; tail -4 /tmp/ane_h15-nofillref/run.log; \
 	if [ $$s -eq 0 ]; then echo "SIM-MUT-NOFILLREF BAD: fall-through-deleted build PASSED P7 (harness does not discriminate)"; exit 1; \
@@ -316,7 +344,7 @@ sim-mutation-nofillrefusal:
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -f ane_h15_adt_test sim/sim_h15 sim/sim_h15_filled
+	rm -f ane_h15_adt_test test_domain_window test_rtk_startup test_t8122_start sim/sim_h15 sim/sim_h15_filled
 
 .PHONY: default modules check sim-test sim-negative-ps-stuck \
 	sim-negative-wrong-stage sim-negative-truncated-dt \

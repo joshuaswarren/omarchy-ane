@@ -130,7 +130,7 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  *   heap_floor  -> [0x28] floor = config field dev+0x3A90 (value
  *                  pinned by the audit lane at preflight close),
  *   pool_dma    -> [0x58] the 'DDM ' pool surface DVA (Linux allocates
- *                  its own 0x40000-byte DDM pool — the kext size),
+ *                  its own 0x40000-byte DDM pool — the vendor driver's size),
  *   pool_word0  -> [0x60] first qword of the Linux pool-descriptor
  *                  struct. NOT CLOSED: the fw-side consumer of
  *                  pool+0x00 is untraced and the kext never stores it
@@ -608,7 +608,7 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 
 	io->phase(io->ctx, "P4 pollA-READY");
 	/* S4: poll A — FRESH READY (the pulse made it unambiguous).
-	 * RTBuddy mode (SCRATCH6=0, kext fw 0x42c8: rtbuddyFW when
+	 * RTBuddy mode (SCRATCH6=0, vendor-driver fw 0x42c8: rtbuddyFW when
 	 * SCRATCH6 == 0): the fw does not publish BOOT_ACK to SCRATCH7
 	 * and no legacy publication follows — aliveness is gated by the
 	 * RTKit HELLO after boot_run returns (selene InitializeRTBuddy

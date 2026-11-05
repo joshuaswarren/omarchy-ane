@@ -50,7 +50,7 @@ W2 receipt left as-is with this receipt as the erratum.
 - `struct ane_csne_cmd_procedure_call` (0x204, and 0x404 INFERENCE_CALL
   same shape [INFERENCE]) — offsets PROVEN, semantics named only where the
   kext asserts name them: u32 program_id @ +0x08, procedure_id @ +0x0c
-  (validated as a pair, `ldp` @0x4d654; kext assert order "program id %d,
+  (validated as a pair, `ldp` @0x4d654; driver assert order "program id %d,
   procedureId %d, numIoBuffers %d"), u64 @ +0x10 (validator arg, 0x4d6d4),
   u32 @ +0x18 **required in [8,15]** (@0x4d660-0x4d66c: `sub #8; cmn #7`
   unsigned bound), u64 @ +0x20, u32 num_io_buffers @ +0x28 (loop bound

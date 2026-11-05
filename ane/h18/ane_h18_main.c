@@ -98,11 +98,11 @@ MODULE_PARM_DESC(read_scratch, "Stage=boot: read the eight SCRATCH words of the 
 
 static bool handshake;
 module_param(handshake, bool, 0444);
-MODULE_PARM_DESC(handshake, "Stage=boot with map_fw=1, read_scratch=1, rtkit_start=1 and rtkit_stop=1 or 2: after AP power ON is acknowledged, allocate the surfaces macOS allocates, publish a 0x174 byte init block in SCRATCH0 and SCRATCH1, write the wake word to SCRATCH7 and wait for the firmware's channel table address. The firmware segments are then mapped into the default DMA domain of the ANE instead of an own domain. Default off.");
+MODULE_PARM_DESC(handshake, "Stage=boot with map_fw=1, read_scratch=1, rtkit_start=1 and rtkit_stop=1 or 2: after AP power ON is acknowledged, allocate the surfaces the shipped system allocates, publish a 0x174 byte init block in SCRATCH0 and SCRATCH1, write the wake word to SCRATCH7 and wait for the firmware's channel table address. The firmware segments are then mapped into the default DMA domain of the ANE instead of an own domain. Default off.");
 
 static unsigned int hs_cfg_size = 0x380000;
 module_param(hs_cfg_size, uint, 0444);
-MODULE_PARM_DESC(hs_cfg_size, "Stage=boot with handshake=1: the config size stored at init block +0x10 (+0x18 is 0x10000000 minus it). 0x380000 is the value macOS sets for ane-type 0x310 (T6021 uses 0x500000). Default 0x380000.");
+MODULE_PARM_DESC(hs_cfg_size, "Stage=boot with handshake=1: the config size stored at init block +0x10 (+0x18 is 0x10000000 minus it). 0x380000 is the value the shipped system sets for ane-type 0x310 (T6021 uses 0x500000). Default 0x380000.");
 
 static unsigned int hs_wait_ms = 1000;
 module_param(hs_wait_ms, uint, 0444);
@@ -126,11 +126,11 @@ MODULE_PARM_DESC(dart_inst, "hs_prog=1 with read_dart=1: a bit mask of ANE DART 
 
 static unsigned int hs_props;
 module_param(hs_props, uint, 0444);
-MODULE_PARM_DESC(hs_props, "hs_start=1: send the five CH_PROPERTY_WRITE commands (0x1f) macOS sends after CONFIG_GET and RESOURCE_INFO_GET: 0x10a4=1, 0x10a6=1, 0xa1=0, 0x10aa=1, 0x1209=1, in macOS's order. A refused write is logged and the sequence goes on. The values of 0x10a6 and 0x1209 depend on macOS config bytes that are not known for the T8152. hs_props=2 sends 0xa1 = 1 instead of 0: macOS writes 0 for 'ProcedureCall Firmware log', 1 may turn the firmware's per call log on (not tested). Default 0 (off).");
+MODULE_PARM_DESC(hs_props, "hs_start=1: send the five CH_PROPERTY_WRITE commands (0x1f) the shipped system sends after CONFIG_GET and RESOURCE_INFO_GET: 0x10a4=1, 0x10a6=1, 0xa1=0, 0x10aa=1, 0x1209=1, in the shipped system's order. A refused write is logged and the sequence goes on. The values of 0x10a6 and 0x1209 depend on shipped-system config bytes that are not known for the T8152. hs_props=2 sends 0xa1 = 1 instead of 0: the shipped system writes 0 for 'ProcedureCall Firmware log', 1 may turn the firmware's per call log on (not tested). Default 0 (off).");
 
 static bool hs_defset;
 module_param(hs_defset, bool, 0444);
-MODULE_PARM_DESC(hs_defset, "hs_props=1 or 2: send DEFAULT_SETTING_SET (0x2e, 0x18 bytes: one setting, register id 2, value 0x2710) after the property writes, as macOS does. Default off.");
+MODULE_PARM_DESC(hs_defset, "hs_props=1 or 2: send DEFAULT_SETTING_SET (0x2e, 0x18 bytes: one setting, register id 2, value 0x2710) after the property writes, as the shipped system does. Default off.");
 
 static bool hs_mcsz;
 module_param(hs_mcsz, bool, 0444);
@@ -142,11 +142,11 @@ MODULE_PARM_DESC(hs_dyn, "hs_pmu=1: send SET_DYNAMIC_POWERGATE (0x2d) right afte
 
 static bool hs_pmu;
 module_param(hs_pmu, bool, 0444);
-MODULE_PARM_DESC(hs_pmu, "hs_start=1: send SET_SNE_PMU_BASE2 (0x29) with the value 0x300700000 after START and before CONFIG_GET, as macOS does for ANE types 0x300 and 0x310. Default off: the firmware uses the value as a bus address, so one value only.");
+MODULE_PARM_DESC(hs_pmu, "hs_start=1: send SET_SNE_PMU_BASE2 (0x29) with the value 0x300700000 after START and before CONFIG_GET, as the shipped system does for ANE types 0x300 and 0x310. Default off: the firmware uses the value as a bus address, so one value only.");
 
 static bool hs_premap;
 module_param(hs_premap, bool, 0444);
-MODULE_PARM_DESC(hs_premap, "hs_prog=1: send PREMAP_BUFFER (0x20d, type 2) for one inference request pool before LOAD_PROGRAM, as macOS does at init. The reply is logged. Default off.");
+MODULE_PARM_DESC(hs_premap, "hs_prog=1: send PREMAP_BUFFER (0x20d, type 2) for one inference request pool before LOAD_PROGRAM, as the shipped system does at init. The reply is logged. Default off.");
 
 static unsigned long long premap_second;
 module_param(premap_second, ullong, 0444);
@@ -1366,7 +1366,7 @@ static void ane_h18_dart_exc(struct ane_h18 *ane, const char *when)
 }
 
 /* Read only: ENABLE_STREAMS, TCR, TTBR, the first two words of the exception bitmap and the records of streams 0, 10, 11, 13 and 15 of DART instance k (0 to 3), the
- * layout macOS reads per instance. +0x704 is not read: the fork's own comment says it is outside the gen3 capture list. Needs the instance mapped. */
+ * layout the shipped system reads per instance. +0x704 is not read: the fork's own comment says it is outside the gen3 capture list. Needs the instance mapped. */
 static void ane_h18_dart_inst(struct ane_h18 *ane, unsigned int k, const char *when)
 {
 	static const u32 regs[] = { 0xc00, 0x1000, 0x1400, 0x4000, 0x4004 };
@@ -1392,7 +1392,7 @@ static void ane_h18_dart_inst(struct ane_h18 *ane, unsigned int k, const char *w
 	}
 }
 
-/* PREMAP_BUFFER (0x20d), as macOS sends it at init for the inference request pool: a 0x3490 byte command, type 2, one request of 0x3898 bytes in a surface of the
+/* PREMAP_BUFFER (0x20d), as the shipped system sends it at init for the inference request pool: a 0x3490 byte command, type 2, one request of 0x3898 bytes in a surface of the
  * DART's page size. Source of the layout: macOS behaviour on build 26A434 (mac18g), recorded in the M6
  * engine DMA lab note, section 4, sha256 eac93039f9c3f62883f83c2b563dda7b47e0d3b19e2fca2bd450527f0d8d6f60.
  * The pool is count x 0x3898 bytes rounded to the DART page.
@@ -1851,7 +1851,7 @@ static int ane_h18_chan_step(struct ane_h18 *ane, const struct ane_h18_hs_buf *t
 }
 
 
-/* The macOS handshake after READY, on the T8152: surfaces IPC (max(page, SCRATCH1 + 1) bytes) and HEAP (SCRATCH3 bytes), the 0x174 byte
+/* The shipped-system handshake after READY, on the T8152: surfaces IPC (max(page, SCRATCH1 + 1) bytes) and HEAP (SCRATCH3 bytes), the 0x174 byte
  * init block taken from a pool surface, then SCRATCH0 (low), SCRATCH1 (high), the wake word in SCRATCH7. Values macOS does not give (the config size,
  * the template word) are zero or the T6021 value, logged with the block. Returns 0 only when the firmware published a table address.
  * Needs the core running with AP power ON acknowledged. */

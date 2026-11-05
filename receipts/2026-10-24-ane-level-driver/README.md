@@ -9,7 +9,7 @@ sequence and the result; `ane/src/ane_dvfs.c` makes it permanent.
 
 | Step | Write | Where |
 | --- | --- | --- |
-| 1 | DVFS_ON := 1 | pmgr DVFS block (macOS RegMap 113 = pmgr ADT reg[39], PA 0x285868000) + 0x2000 |
+| 1 | DVFS_ON := 1 | pmgr DVFS block (the reference run RegMap 113 = pmgr ADT reg[39], PA 0x285868000) + 0x2000 |
 | 2 | DVFS_CMD := 0x80000000 | same block + 0xa00 |
 | 3 | PS-REQ ANE_SYS bit set, wait for PS-ACK | PMP PTD window (0x28e3c0000), update space +0x10000, reg 0xf8 / 0x100 |
 | 4 | DVFS_CMD := 0x80000001, level word := 0x2000000000000001 | same block / PTD reg 0x10c |
@@ -57,8 +57,8 @@ read-modify-write.
 
 | Claim | Source |
 | --- | --- |
-| macOS RegMap 113 is ADT reg[39] (PA 0x285868000, 0x4000 bytes) of the M1 Max pmgr | macOS 26.6.2 (25G83) maps RegMap 113 to ADT index 39 (48 `initRegMap(map, adtIndex)` calls); the pmgr node's IODeviceMemory list has index 39 = 0x285868000 length 0x4000 and index 41 = 0x28e3c0000 length 0x20000 |
-| DVFS_ON at +0x2000, DVFS_CMD at +0xa00 of that block, the order of the writes, the command words 0x80000000 / 0x800000(old<<4 or new) | a dtrace entry trace of three ANE power cycles on that Mac under macOS 26.6.2: `s2-trace-primary.txt` sha256 4915d96e179a5542fa5462b60ac0f31f9ec2b4aee1be2d01ba9d4a75039bfb75; decodes `ane-dvfs-write-seq-RE.md` sha256 4c1675cf92d82ebda63caf35e4aaf1a8faf6e29e6ec0c728217987697305c8cd and `ane-dvfs-ladder-RE.md` sha256 27000b7909c49f889d5140202cca63d13a174d6f1d5c8cc43c82ecc15e8fd0a8 |
+| reference run RegMap 113 is ADT reg[39] (PA 0x285868000, 0x4000 bytes) of the M1 Max pmgr | reference run 26.6.2 (25G83) maps RegMap 113 to ADT index 39 (48 `initRegMap(map, adtIndex)` calls); the pmgr node's IODeviceMemory list has index 39 = 0x285868000 length 0x4000 and index 41 = 0x28e3c0000 length 0x20000 |
+| DVFS_ON at +0x2000, DVFS_CMD at +0xa00 of that block, the order of the writes, the command words 0x80000000 / 0x800000(old<<4 or new) | a dtrace entry trace of three ANE power cycles on that Mac under the reference run 26.6.2: `s2-trace-primary.txt` sha256 4915d96e179a5542fa5462b60ac0f31f9ec2b4aee1be2d01ba9d4a75039bfb75; decodes `ane-dvfs-write-seq-RE.md` sha256 4c1675cf92d82ebda63caf35e4aaf1a8faf6e29e6ec0c728217987697305c8cd and `ane-dvfs-ladder-RE.md` sha256 27000b7909c49f889d5140202cca63d13a174d6f1d5c8cc43c82ecc15e8fd0a8 |
 | The PTD window (0x28e3c0000, read entities at +reg*16, update space at +0x10000 + reg*8), PS-REQ reg 0xf8, PS-ACK reg 0x100, PMP-STATUS reg 1, the ANE level reg 0x10c and the level word 0x2000000000000000 \| level | the PMP nub's `ptd-range` property in the same ADT and `ane-ptd-level-RE.md` sha256 8f4bb58f1202cec7889d5fee1789521ac96fc6c7ecb97f16f5f0bf81af51b979; the in-tree `drivers/pmdomain/apple/pmp-report.c` (T600x offsets tgt_read 0xf80, tgt_write 0x107c0, actual 0x1000, status 0x10) uses the same PS-REQ and PS-ACK entities |
 | The sequence moves the clock and level 1 is the useful level | hardware runs on the M1 Max 16-inch with test modules that wrote exactly these words: run logs sha256 e67b4b8be4944554bac2a013c166e737c6cf672c91b8b127c56f5c91aebb77ac (level 1), 9460f2ef29500f84f29ac16f73bb820bd51f3590f24eb288889ba7188c50ca0e (levels 1 and 2, A=0 and A=3), 118893b60d58922c328be4e05c30f50d90439df12b76597b6e47558a7d5bc713 (decode); the one-hour soak through this driver: run log sha256 1528b0ff3b64373e299f10a49f35e943a947187f976b8b5fe42dda6e84d166de |
 | The kernel's own device tree values the overlay depends on (ANE node `ane@285c04000`, phandles 0x15, 0x19 to 0x1c, 0x20) | the `t6001-j316c.dtb` of linux-aurora 7.1.12.aurora2-20261013.18, read with `fdtget`; `packaging/arch/omarchy-ane-level-dt` checks them again at install time |

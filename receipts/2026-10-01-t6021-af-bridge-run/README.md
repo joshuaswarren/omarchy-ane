@@ -86,7 +86,7 @@ guard. The run did not retry.
 
 `af_bridge_macos` (bool, 0444, default 0) is a load-time parameter of
 `ane_t6021`. When it is set, P-1 starts with the 26 macOS read-modify-writes
-in the macOS table order, in place of P-1a (eng+0x000 <- 0x10) and P-1d
+in the reference run table order, in place of P-1a (eng+0x000 <- 0x10) and P-1d
 (eng+0x400 <- 0x40010001). The other ten P-1 writes follow in their old order
 (0x038, 0x03c, 0x600, 0x738, 0x798, 0x7f8, 0x900, 0x410, 0x420, 0x430), then
 the scratch setup and the CPU release. macOS writes the table after `ane_sys`
@@ -107,7 +107,7 @@ reset loop. There was no reset.
 On the S3 boot (`logs/s3-driver-afb.log`) all 26 readbacks equal the written
 values, the firmware boot reached DONE (`booted=1 fw_alive=1`), and the probe
 read **applied 26, NOT-applied 0** (`logs/s3-check.txt`). The 0x000, 0x108
-and 0x400 results (0x11, 0x11, 0xc0f10010) are exactly what macOS 13.5 writes
+and 0x400 results (0x11, 0x11, 0xc0f10010) are exactly what the reference run 13.5 writes
 in the hv trace. The power-on value of 0x400 is 0x00f00008.
 
 ### Timing and correctness

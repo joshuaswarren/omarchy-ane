@@ -17,7 +17,7 @@ import struct
 from typing import NamedTuple
 
 CMD_LEN = 0x1C0
-LOAD_CMD_ID = 0x200          # kext map section 0: ZinComputeInitSneProgram 0x9529584
+LOAD_CMD_ID = 0x200          # program load command (ZinComputeInitSneProgram)
 MAX_ADDR = 0xE0000000        # spec section 1.1 verifyProgramSection 0x4a22c-0x4a230
                              # (pool 0xdf900000 + 0x700000)
 
@@ -25,7 +25,7 @@ HWX_MAGIC = 0xBEEFFACE
 HWX_SUBTYPES = (4, 7)        # 4 = H13, 7 = H16G (same container family)
 
 # HWX symbol tags (low byte of the section flags word, section record +0x40)
-# -> kext buffer types (kext map section 2: ZinComputeGetBufferType 0x73a0408).
+# -> buffer types (ZinComputeGetBufferType).
 TAG_TEXT = 0x28              # -> type 0x3e8, the __TEXT/__text TD blob
 TAG_KERNEL = (0x26, 0x27)    # -> type 0x3e9, the kernel binary blob
 TAG_GENERIC = (0x20, 0x21, 0x22, 0x23, 0x24, 0x25)  # -> 0x3ee/0x3ef/0x3f0
@@ -33,7 +33,7 @@ TAG_GENERIC = (0x20, 0x21, 0x22, 0x23, 0x24, 0x25)  # -> 0x3ee/0x3ef/0x3f0
 # the type->index table {0x3ee:0, 0x3ef:1, 0x3f0:2, 0x3f1:5}); pairing assumed.
 TAG_TO_INDEX = {0x20: 0, 0x21: 0, 0x22: 1, 0x23: 1, 0x24: 2, 0x25: 2}
 
-PAGE_CONST = 0x4000          # kext [this+0x33e8]; map section 6.1 INFERENCE (vmaddr evidence)
+PAGE_CONST = 0x4000          # page size constant, INFERENCE (vmaddr spacing evidence)
 
 # Section group bases (spec section 1, VERIFIED via in-image strings)
 G_GENERIC, G_KERNEL, G_TEXT, G_OPERATION = 0x08, 0x38, 0x68, 0x98
@@ -133,7 +133,7 @@ def _generic_blob(entries: list[dict], assumptions: list[dict]) -> bytes:
         "why": "spec section 2.1/6.3: bytes +0x01..+0x07 and +0x0c..+0x2f never read "
                "by the firmware verifiers"})
     blob = bytearray(align8(0x208 + len(entries) * 0x30))
-    struct.pack_into("<II", blob, 0x000, 1, 1)       # maxAneUsed=1 (kext const 0x9529eb8), nbrOfNe
+    struct.pack_into("<II", blob, 0x000, 1, 1)       # maxAneUsed=1, nbrOfNe
     struct.pack_into("<I", blob, 0x204, len(entries))
     for i, e in enumerate(entries):
         off = 0x208 + 0x30 * i
@@ -143,7 +143,7 @@ def _generic_blob(entries: list[dict], assumptions: list[dict]) -> bytes:
 
 
 def _operation_blob(tot: int, ops: list[dict], assumptions: list[dict]) -> bytes:
-    """Operation section blob: u32 tot + tot*0x110 entries (kext bitfield trick
+    """Operation section blob: u32 tot + tot*0x110 entries (packed bitfield trick
     4 | (tot*17<<4), aligned; 0x95297c8-0x95297f4).
     fw-checked per type-0 entry: opType<=3 (0x4a828), end-start+1<=0x10000
     (0x4a7fc), nbrOfNe<=0x10 @+0xa (0x4a83c), nbrOfLocalbarSetup<=0x20 @+0xc
@@ -273,7 +273,7 @@ def pack_progload(hwx_bytes: bytes, iova_base: int) -> tuple[bytes, dict, list, 
     gorp.append(("procedure", _procedure_blob(procs, assumptions)))
     gorp.append(("tdprop", _tdprop_blob(tot, text["size"], assumptions)))
     assumptions.append({
-        "what": "kext page constant [this+0x33e8]",
+        "what": "page constant [this+0x33e8]",
         "value": f"{PAGE_CONST:#x} (blob surface sub-offsets "
                  + ", ".join(f"{i * PAGE_CONST:#x}" for i in range(4)) + ")",
         "why": "map section 6.1 INFERENCE: value derived from HWX vmaddr spacing"})

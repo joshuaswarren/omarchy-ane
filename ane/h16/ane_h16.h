@@ -51,11 +51,11 @@ struct ane_h16_soc {
 	u32 scratch0;		/* SCRATCHn = scratch0 + 4n */
 	u32 irq_status;		/* IRQ pending register */
 	u32 irq_ack;		/* IRQ acknowledge register */
-	u32 mbox;		/* iBoot coproc table reg table: +0x8000
+	u32 mbox;		/* boot handoff coproc table: +0x8000
 				 * (a2i/i2a ctrl 0x110/0x114, a2i send
 				 * 0x800/0x808, i2a recv 0x830/0x838) */
-	u64 wrapper_pa;		/* iBoot coproc entry +8 (engine+0x1600000) */
-	u64 cpu_pa;		/* iBoot coproc entry +0x20 (engine+0x1000000) */
+	u64 wrapper_pa;		/* boot handoff coproc entry +8 (engine+0x1600000) */
+	u64 cpu_pa;		/* boot handoff coproc entry +0x20 (engine+0x1000000) */
 	u32 ps_off[5];		/* pmgr ps words ANE_SYS, ANE_MPM, ANE_CPU,
 				 * ANE_TD, ANE_BASE, offsets into the pmgr
 				 * reg window the DT node names "pmgr" */

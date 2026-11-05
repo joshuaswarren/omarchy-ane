@@ -383,7 +383,7 @@ static const struct ane_asc_tunables ane_t8112_asc_tunables = {
 };
 
 /* T8112 RTK_soc_revision from its two eFuse words at 0x23d2c8060, as
- * iBootStage2 25G83 j413 0x40270 (and j415/j473/j493) computes it:
+ * boot stage 2, 25G83 j413 0x40270 (and j415/j473/j493), computes it:
  * bits 2:0 = w0[29:27], bits 6:4 = {w1[0], w0[31:30]}. */
 static inline u32 ane_t8112_fuse_revision(u32 w0, u32 w1)
 {

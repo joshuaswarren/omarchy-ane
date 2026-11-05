@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * Overlay state: on by default.
+ * Overlay state: on by default (row 3c9389040f51,02ba4b462a7d; dkms,intree).
  * ANE for T6020 (M2 Pro) board device trees.
  * The node values are the T6021 ones (t602x-ane.dtsi, same in the macOS 13.5
  * ADTs of j414s, j416s and j474s), and the 13.5 firmware list gives these

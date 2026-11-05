@@ -107,7 +107,7 @@
 #include "uapi/drm/ane_accel.h" /* quoted so the in-tree UAPI wins */
 
 /* Doorbell (IPI) block, engine + 0x1844000: set +0, pending +0x8000,
- * ack +0xc000 (kext aneInterruptHandler reads +0x184c000 and writes
+ * ack +0xc000 (the vendor driver's aneInterruptHandler reads +0x184c000 and writes
  * +0x1850000 with no SoC branch, receipts/2026-10-01-t8112-ane). */
 #define ANE_IPI_OFF			0x1844000
 
@@ -118,7 +118,7 @@
 static bool pwgate_open;
 module_param(pwgate_open, bool, 0444);
 MODULE_PARM_DESC(pwgate_open,
-		 "T8112 only: when PWGATE reads exactly 0x30000000, write 0 to it once and wait up to 100 ms for bits 29:28 to clear, as the macOS kext does; otherwise refuse (default 0: never write)");
+		 "T8112 only: when PWGATE reads exactly 0x30000000, write 0 to it once and wait up to 100 ms for bits 29:28 to clear, as the vendor driver does; otherwise refuse (default 0: never write)");
 
 /* Boot-time module parameters — defaults are the proven add-path
  * parameter list (boot 3ab812a3 / load-run.sh), except fw_alias_reserved,
@@ -160,7 +160,7 @@ MODULE_PARM_DESC(start_app_eps,
 static bool scratch3_ack = true;
 module_param(scratch3_ack, bool, 0444);
 MODULE_PARM_DESC(scratch3_ack,
-		 "After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc, kext 0x95eaee4). Default on; 0 withholds.");
+		 "After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc, vendor driver 0x95eaee4). Default on; 0 withholds.");
 
 static bool legacy_only = true;
 module_param(legacy_only, bool, 0444);
@@ -1889,7 +1889,7 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 }
 
 /* Firmware perf mode: CSNE_CMD_CH_PROPERTY_WRITE (0x1f), channel 0,
- * property 0x10aa, value 1. macOS sends it once during power-on (H13
+ * property 0x10aa, value 1. The shipped system sends it once during power-on (H13
  * kext evidence in the omarchy-ane perf-mode receipt); the selene 13.5
  * fw routes it to CAneEngineExeLoop::setPerfMode. It is a runtime
  * switch (write 1 to /sys/module/ane_t6021/parameters/fw_perf_mode) so

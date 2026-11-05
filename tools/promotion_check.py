@@ -82,31 +82,38 @@ FAULT = re.compile(r"fault|error|fail(?:ed|ure)?|timed? ?out|abort|oops|warn|bug
 # that checks signatures); it names the module and says "failed" but is not a device fault.
 UNSIGNED = re.compile(r"module verification failed: signature and/or required key missing - tainting kernel")
 
+# The M1-family `ane` module declining a T602x node (the omarchy-ane-dkms package installs it beside `ane_t6021`):
+# "unsupported ANE: no proven SET-block base (a guessed base external-aborts the SoC); not binding". The word "abort"
+# in it matches FAULT, but the line is the intended refusal. The collector cuts a dmesg line at 160 characters, so
+# the message is matched by its first words. Whether the chip's own driver bound is still checked by the readiness
+# check ("bound to no device" is not ready) and by the module name and the smoke.
+REFUSED = re.compile(r"unsupported ANE: no proven SET-block base")
+
 
 BOUND = re.compile(r"bound to ([0-9a-f]+)\.ane\b")
 
 
 def block(row):
-    """The row's omarchy_ane block. The collector drops the runtime section of
-    ane_port_detail when it is over its byte budget (marked runtime:over_budget;
-    an Ultra's DARTs do that). summary.ane_linux carries the same check, module,
-    smoke and fault fields, so it stands in for the dropped block. Its die comes
-    from the bound engine base in the check output (floor-divided by 0x20_0000_0000,
-    as the collector computes it); without that line the die is unknown and the
-    row is not judged."""
+    """Return unambiguous evidence from runtime, or the over-budget fallback.
+
+    A multi-die binding cannot scope the aggregate smoke/fault fields, even
+    with a scalar runtime die. Leave that row unjudged until evidence is
+    collected per die. Legacy runtime rows without bound lines keep die 0.
+    """
     summary = row.get("summary") or {}
     detail = summary.get("ane_port_detail") or {}
     oa = (detail.get("runtime") or {}).get("omarchy_ane")
-    if isinstance(oa, dict):
-        return oa
-    linux = summary.get("ane_linux")
-    if "runtime:over_budget" not in (detail.get("truncated") or []) or not isinstance(linux, dict):
+    fallback = not isinstance(oa, dict)
+    if fallback:
+        oa = summary.get("ane_linux")
+        if "runtime:over_budget" not in (detail.get("truncated") or []) or not isinstance(oa, dict):
+            return None
+    dies = {int(base, 16) // 0x2000000000
+            for line in (oa.get("check") or {}).get("lines") or []
+            for base in BOUND.findall(line)}
+    if len(dies) > 1 or (fallback and not dies):
         return None
-    lines = (linux.get("check") or {}).get("lines") or []
-    m = next((BOUND.search(l) for l in lines if BOUND.search(l)), None)
-    if not m:
-        return None
-    return {**linux, "die": int(m.group(1), 16) // 0x2000000000}
+    return {**oa, "die": next(iter(dies))} if fallback else oa
 
 
 def soc(row):
@@ -183,7 +190,7 @@ def unclean(oa):
     if check.get("exit") != 0 or check.get("status") != "ready":
         out.append(f"omarchy-ane-check not ready (exit {check.get('exit')}, {check.get('status')})")
     faults = [l for l in (oa.get("dmesg_faults") or []) + (oa.get("dmesg") or [])
-              if ANE_LINE.search(l) and FAULT.search(l) and not UNSIGNED.search(l)]
+              if ANE_LINE.search(l) and FAULT.search(l) and not UNSIGNED.search(l) and not REFUSED.search(l)]
     if faults:
         faults = list(dict.fromkeys(faults))
         out.append(f"{len(faults)} ANE/DART/mailbox fault line(s): {faults[0][:120]}")

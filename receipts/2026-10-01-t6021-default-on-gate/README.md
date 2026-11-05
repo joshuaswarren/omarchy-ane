@@ -51,11 +51,10 @@ Boot A (reserved mode) has `fwalias: reserved SEG0/SEGi at entry 0x10000000000 (
 m1n1. Its ane_t6021 lines equal those of the 0.4.0 release boot except two text-only lines (the #47 fwload message and
 the version string; `logs/A/trace-vs-release-0.4.0.txt`).
 
-Boots B, P and final have these lines, and they are the expected lines for the release gate (default own memory):
+Boots B, P and final have these lines, and they are the expected lines for the release gate (default own memory). One more fwload line sits between the first and the second. It says that the boot-stage patches were replayed in own memory, and gives the SoC id, the revision and three base addresses. It is not quoted here, because the wording of that line changed after these captures:
 
 ```
 fwload: apple/ane/t602x_ane0_fw_selene_rc4x.macho PRELOAD validated + DART-mapped: entry 0x0, iova 0x00000000ff800000 size 0x700000
-fwload: own memory: iBoot patches replayed (soc 0x6021 rev 0x11 DATA 0x100000c4000 cpu 0x285000000 wrapper 0x285400000)
 fwalias: entry 0x10000000000 <- 448 dart pages aliased from fw 0x00000000ff800000 (first <PA, changes per boot>, roundtrip OK)
 pmu: DART map 0x28e084000 (IOVA == PA, 0x4000 bytes): 0
 BOOT-PHASE P4 pollA READY observed

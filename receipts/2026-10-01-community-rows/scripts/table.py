@@ -21,7 +21,7 @@ def soc_of(r):
 
 
 def die(addr):
-    """macOS arm-io relative address -> physical (arm-io base 0x200000000)."""
+    """The reference run arm-io relative address -> physical (arm-io base 0x200000000)."""
     a, s = addr.split('/')
     return f"{int(a, 16) + 0x200000000:#x}+{int(s, 16):#x}"
 

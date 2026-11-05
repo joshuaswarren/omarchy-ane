@@ -175,7 +175,7 @@ def macos(tarball):
           f"  DATA phys {dp:#x} iova {di:#x} remap {dr:#x} size {ds:#x} flags {df:#x}")
     check(tr - ti == dr - di, "TEXT and DATA remaps give different entry IOVAs")
     print(f"entry IOVA {tr - ti:#x}: the IOVA of vm 0 for the image macOS booted. On T6021 the TEXT remap\n"
-          "was 0x10000000000 under both macOS 27 (ioreg) and the 13.5 stub (m1n1 ADT), the latched RVBAR entry.")
+          "was 0x10000000000 under both the reference boot (ioreg) and the 13.5 stub (m1n1 ADT), the latched RVBAR entry.")
     rev = re.search(rb'"chip-revision" = <([0-9a-f]{8})>', files["arm-io.txt"])
     if rev:
         print(f"/arm-io chip-revision {int.from_bytes(bytes.fromhex(rev.group(1).decode()), 'little'):#x}: "

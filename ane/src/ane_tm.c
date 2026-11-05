@@ -226,14 +226,17 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	for (unsigned int line = 0; line < 2; line++) {
 		u32 count = tm_read32(ane, TM_IRQ_EVTC(line));
 
-		if (count > 64)
+		if (count > 64) {
+			ane->last_overflow = (line << 31) | (count & 0x7fffffff);
 			return -EIO;
+		}
 		for (u32 n = 0; n < count; n++) {
 			u32 info = tm_read32(ane, TM_IRQ_INFO(line));
 
 			tm_read32(ane, TM_IRQ_UNK1(line));
 			ane_last_tmst = tm_read32(ane, TM_IRQ_TMST(line));
 			tm_read32(ane, TM_IRQ_UNK2(line));
+			ane->last_info = info;
 			if (req && info == (0x05000000 | (req->nid << 16) |
 					    (req->td_count - 1)))
 				*finished |= BIT(line);
@@ -243,14 +246,12 @@ static int ane_tm_collect_events(struct ane_device *ane,
 	return *finished == 3 && (tm_read32(ane, TM_STATUS) & TM_IS_IDLE);
 }
 
-/* read_poll_timeout op: consult the DART latch before any engine access.
- * Returns 1 to end the poll when a fault is latched; the caller then
- * handles the fault without ever reading the wedged engine. */
+/* Stop polling on a DART fault before accessing the engine. */
 static int ane_tm_poll_step(struct ane_device *ane, struct ane_request *req,
 			    u32 *finished)
 {
 	if (ane_dart_faulted(ane, NULL, NULL))
-		return 1;
+		return -EIO;
 	return ane_tm_collect_events(ane, req, finished);
 }
 
@@ -262,14 +263,19 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	struct ane_dart_scratch scratch[ANE_DART_SCRATCH_MAX];
 	int scratch_pages = 0;
 	bool faulted = false;
+	const char *why = "timeout";
 	int err, status;
 
 	lockdep_assert_held(&ane->engine_lock);
 	ane_dart_mask(ane);
+	ane->last_overflow = 0;
+	ane->last_info = 0;
 
 	err = ane_tm_collect_events(ane, NULL, &finished);
-	if (err < 0)
+	if (err < 0) {
+		why = "event overflow before push";
 		goto wedge;
+	}
 	wmb();
 	ane_tm_push_tq(ane, req);
 
@@ -284,14 +290,19 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		err = read_poll_timeout(ane_tm_poll_step, status,
 					status != 0, 1, 1000000, false,
 					ane, req, &finished);
-		if (!err && status < 0)
+		if (!err && status < 0) {
 			err = status;
+			why = "poll fault or event overflow";
+		}
 		if (ane_dart_faulted(ane, &fault_iova, &fault_status)) {
 			faulted = true;
-			if (scratch_pages >= ANE_DART_SCRATCH_MAX)
+			if (scratch_pages >= ANE_DART_SCRATCH_MAX) {
+				err = -EIO;
 				break;
-			if (ane_dart_drain_fault(ane, fault_iova, scratch,
-						 &scratch_pages))
+			}
+			err = ane_dart_drain_fault(ane, fault_iova, scratch,
+						   &scratch_pages);
+			if (err)
 				break;
 			/* The retried transaction now completes; poll on. */
 			continue;
@@ -308,10 +319,9 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		 * stream disable: the page tables were never changed by
 		 * the fault. */
 		if (err || ane_dart_faulted(ane, NULL, NULL)) {
-			/* Drain failed or the drained program never reached
-			 * completion: the engine is not idle and access is
-			 * off the table. wedge releases the scratch. */
+			/* Completion was not established; keep scratch mapped. */
 			err = err ?: -EIO;
+			why = "DART fault not drained";
 			goto wedge;
 		}
 		status = tq_read32(ane, TQ_NID1(req->qid));
@@ -330,6 +340,7 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	status = tq_read32(ane, TQ_NID1(req->qid));
 	if (((status >> 8) & 0xff) != req->nid) {
 		err = -EIO;
+		why = "queue nid mismatch";
 		goto wedge;
 	}
 	tq_write32(ane, TQ_NID1(req->qid), status & ~1U);
@@ -339,50 +350,77 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	return 0;
 
 wedge:
-	ane_dart_release_scratch(ane, scratch, scratch_pages);
-	ane_dart_unmask(ane);
+	/* Report while the DART latch is still masked and readable. */
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
 		dev_err(ane->dev,
-			"tm completion failed: %d, finish lines=%x (q%d nid=%#x)\n",
-			err, finished, req->qid, req->nid);
-	}
-
-	/* One bounded recovery attempt: stop the tm, power-cycle the engine
-	 * and return to accepting work. Only a failed reset preserves
-	 * resources until reboot. */
-	if (ane_tm_recover(ane) < 0) {
-		if (ane->tm_retention)
+			"tm completion failed: %d (%s), finish lines=%x (q%d nid=%#x td_count=%u)\n",
+			err, why, finished, req->qid, req->nid, req->td_count);
+		if (faulted || err == -EIO ||
+		    ane_dart_faulted(ane, &fault_iova, &fault_status))
+			/* Never read the engine behind a latched fault. */
 			dev_err(ane->dev,
-				"recovery failed; preserving resources until module reload or reboot (tm/tq file retained through the cycle: the latched task error parks the TM in place; rmmod+insmod restores service)\n");
+				"tm failure state: DART fault status=%#x iova=%#llx scratch=%d\n",
+				fault_status, fault_iova, scratch_pages);
 		else
 			dev_err(ane->dev,
-				"recovery failed; preserving resources until reboot\n");
+				"tm failure state: status=%#x err=%#x/%#x/%#x evtc=%u/%u overflow=%#x last_info=%#x\n",
+				tm_read32(ane, TM_STATUS),
+				tm_read32(ane, TM_ERROR1),
+				tm_read32(ane, TM_ERROR2),
+				tm_read32(ane, TM_ERROR3),
+				tm_read32(ane, TM_IRQ_EVTC(0)),
+				tm_read32(ane, TM_IRQ_EVTC(1)),
+				ane->last_overflow, ane->last_info);
+	}
+	ane_dart_unmask(ane);
+	if (scratch_pages) {
+		ane->scratch_retained = true;
+		return err;
+	}
+
+	/* One bounded recovery attempt: gate the engine's partitions, which
+	 * stops the dead task's DMA, and check the task manager. When its
+	 * file survives the cycle, recovery finishes after the next full
+	 * power-off (autosuspend); until then work is refused and the
+	 * failed job's mappings stay preserved. */
+	if (ane_tm_recover(ane) < 0) {
+		if (ane->quiesced)
+			dev_err(ane->dev,
+				"recovery deferred: refusing work, mappings preserved until the engine powers fully off (autosuspend_ms after the last client call)\n");
+		else
+			dev_err(ane->dev,
+				"recovery failed before the engine was gated; preserving resources until reboot\n");
 	}
 	return err;
 }
 
 /*
- * Bounded recovery after a failed task. The only reset this driver knows
- * is the partition power cycle system sleep already performs on this
- * hardware. With the several ANE power partitions attached as genpd
- * devices (T8103 five, T6001 similar), gating happens on those devices;
- * with a single domain attached directly to the device, on the device
- * itself. Gating the partitions stops any DMA still fetching the dead
- * task and clears the tm register file; ungating brings the engine back
- * through the probe resume path (ane_tm_enable), then the task manager
- * must report idle. BO mappings deliberately stay in place: they remain
- * coherent through the cycle and valid for the next submit, and once the
- * wedge clears, BO_FREE unmaps them through the normal path again.
- * Callers hold engine_lock.
+ * Bounded recovery after a failed task, in two stages.
  *
- * T6001 note, bisect evidence 2026-09-16: its set0/base islands are
- * firmware-locked (direct pmgr writes external-abort; see the SET block
- * comment above) and hold the tm/tq file in retention through any
- * genpd cycle - TQ_EN still reads 0x3000 after a 20 ms and a 2 s gate,
- * and tasks dispatched afterwards complete but compute nondeterministic
- * garbage. The idle-or-fresh poll below therefore fails on T6001 and
- * recovery preserves until reboot instead of serving wrong data.
+ * Stage 1, at the failure: gate the ANE's power partitions (genpd
+ * devices for T8103's five set domains, or the device's single domain).
+ * That stops any DMA still fetching the dead task. Then re-arm the task
+ * manager and require idle. Stage 1 cannot power off the parents of the
+ * set domains: ane_base and ane_sys_cpu go off only by queued genpd work,
+ * which the immediate resume pre-empts, and the root ane_sys also powers
+ * the DARTs, which stay up as runtime-PM suppliers of the active device.
+ * The tm/tq file lives in that retained part. With a task error latched
+ * it reads TM_STATUS 0 after stage 1: Grandpa T8103, 2026-11-02, a
+ * 318-task program failing with -EIO. T6001 shows the same retention
+ * (TQ_EN 0x3000 after a 2 s gate, bisect evidence 2026-09-16).
+ *
+ * Stage 2, once stage 1 has gated the engine (quiesced): runtime
+ * suspend may gate the wedged device. With the device suspended, its
+ * DART suppliers suspend and the whole hierarchy up to ane_sys powers
+ * off, the same full power-off every idle autosuspend performs.
+ * Runtime resume re-arms the task manager as usual; the next recovery
+ * call (open's first ioctl, submit, BO init/free, close, or the reset
+ * attribute) only checks for idle.
+ *
+ * Success, and only success, clears the wedge, drops the module pin and
+ * reclaims the BO mappings preserved under the wedge. Callers hold
+ * engine_lock.
  */
 
 /* No engine MMIO unless the owning partitions read powered on (ACTUAL
@@ -561,8 +599,32 @@ int ane_tm_recover(struct ane_device *ane)
 	int err;
 
 	lockdep_assert_held(&ane->engine_lock);
+	if (ane->scratch_retained)
+		return -EBUSY;
 	if (!atomic_read(&ane->wedged))
 		return 0;
+
+	if (READ_ONCE(ane->por_pending)) {
+		/* The device went through runtime suspend since the cycle
+		 * below failed, so the whole hierarchy, ane_sys and the
+		 * DARTs included, powered off; runtime resume re-armed the
+		 * task manager. Only the idle check is left. */
+		WRITE_ONCE(ane->por_pending, false);
+		dev_info(ane->dev,
+			 "recovering: checking the task manager after a full power-off\n");
+		err = ane_ps_verify_on(ane);
+		if (err) {
+			dev_err(ane->dev,
+				"recovery: ane set islands not powered on: %d\n",
+				err);
+			return err;
+		}
+		goto check;
+	}
+	/* The cycle already ran and gated the engine once; repeating it
+	 * cannot reach ane_sys. Wait for the autosuspend power-off. */
+	if (ane->quiesced)
+		return -EAGAIN;
 
 	dev_err(ane->dev, "recovering: power-cycling engine partitions\n");
 
@@ -572,6 +634,8 @@ int ane_tm_recover(struct ane_device *ane)
 			err);
 		return err;
 	}
+	/* The set islands were gated: no DMA of the dead task survives. */
+	ane->quiesced = true;
 
 	/* No engine MMIO before the islands read powered on. */
 	err = ane_ps_verify_on(ane);
@@ -592,6 +656,7 @@ int ane_tm_recover(struct ane_device *ane)
 	 * like the probe resume path does. */
 	ane_tm_enable(ane, true);
 
+check:
 	err = readl_poll_timeout(ane->engine + ANE_TM_BASE + TM_STATUS,
 				 status,
 				 (status & TM_IS_IDLE) ||
@@ -600,11 +665,13 @@ int ane_tm_recover(struct ane_device *ane)
 	status = ane_rec_read32(ane, "TM_STATUS tm+0x54",
 				ane->engine + ANE_TM_BASE + TM_STATUS);
 	if (err) {
-		dev_err(ane->dev, "recovery: tm not idle after reset: %#x\n",
-			status);
+		dev_err(ane->dev,
+			"recovery: tm not idle after reset: %#x (fresh %#x); retrying after the next full power-off (autosuspend)\n",
+			status, ane->tm_status_fresh);
 		return err;
 	}
 
+	ane->quiesced = false;
 	if (atomic_xchg(&ane->wedged, 0)) {
 		module_put(THIS_MODULE); /* drop the wedge pin */
 		/* The power cycle above quiesced every transaction, so the
@@ -619,26 +686,3 @@ int ane_tm_recover(struct ane_device *ane)
 	return 0;
 }
 
-/*
- * Drop the wedge pin on demand. The recovery path in ane_tm_recover
- * does an atomic_xchg + module_put, but only on its success branch -
- * a real -110 with the engine stuck leaves ane->wedged set and the
- * module refcount one too high, so rmmod fails forever and the bug
- * becomes a kernel-brick-without-reboot. ane_drm_postclose calls
- * this unconditionally so every session close releases the pin,
- * letting the operator unload the ko for an updated build even when
- * the engine itself cannot be cleared in software.
- *
- * Pair count: must follow an ane_wedge_set() that called
- * __module_get(THIS_MODULE). Today the only such set is in the wedge:
- * branch of ane_tm_execute(); future sets must call this in their
- * clean-up path too.
- */
-void ane_wedge_clear(struct ane_device *ane)
-{
-	if (atomic_xchg(&ane->wedged, 0)) {
-		module_put(THIS_MODULE);
-		dev_info(ane->dev,
-			 "wedge pin released (engine state unknown)\n");
-	}
-}

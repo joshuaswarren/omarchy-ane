@@ -52,7 +52,7 @@ IMAGES = {
 }
 RECORDS = (("stack_guard", b"GKTS", 8), ("soc", b"_COS", 4), ("soc_revision", b"RCOS", 4),
            ("cpu_pa", b"dApC", 8), ("wrapper_pa", b"dArW", 8))
-DATA_BASE_VM = 0x423C  # TEXT u64 that iBoot sets to the IOVA of the DATA vmaddr
+DATA_BASE_VM = 0x423C  # TEXT u64 holding the IOVA of the DATA vmaddr
 TUNABLES_LEN = 0x1E8
 
 # T8112 live addresses: receipts/2026-10-01-t8112-ane "Derived values".

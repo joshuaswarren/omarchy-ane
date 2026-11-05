@@ -61,17 +61,20 @@ class Unavailable(Exception):
 
 
 def die(root, module):
-    """Die index of the module's first bound device: its DT node reg[0]
-    // DIE_STRIDE. 0 (the default the promotion rule gives a row without
-    the field) when no device is bound or the node has no reg (tests)."""
-    try:
-        drivers = root / "sys/bus/platform/drivers" / module
-        bound = sorted(p for p in drivers.glob("*")
-                       if p.is_symlink() and p.name != "module")[0]
-        cells = struct.unpack(f">{8 // 4}I", (bound / "of_node/reg").read_bytes()[:8])
-        return (cells[0] << 32 | cells[1]) // DIE_STRIDE
-    except (OSError, IndexError):
-        return 0
+    """Return a single bound die; refuse ambiguous or unreadable identity."""
+    drivers = root / "sys/bus/platform/drivers" / module
+    dies = set()
+    for bound in drivers.glob("*"):
+        if not bound.is_symlink() or bound.name == "module":
+            continue
+        try:
+            cells = struct.unpack(">II", (bound / "of_node/reg").read_bytes()[:8])
+        except (OSError, struct.error) as error:
+            raise Unavailable(f"cannot read the bound device's die: {bound}") from error
+        dies.add((cells[0] << 32 | cells[1]) // DIE_STRIDE)
+    if len(dies) > 1:
+        raise Unavailable("multiple ANE dies are bound; separate device and fault evidence is required")
+    return next(iter(dies), 0)
 
 
 def inputs(tag, lanes):
@@ -251,8 +254,9 @@ def main(argv=None):
     args = ap.parse_args(argv)
     deadline = time.monotonic() + args.timeout
     chip = soc(args.root)
-    bound = die(args.root, MODULE.get(chip, ""))
+    bound = None
     try:
+        bound = die(args.root, MODULE.get(chip, ""))
         anec, runner = prepare(args.root, chip)
         with lock(args.root / LOCK, deadline):
             hashes, times, exact, problem, golden = calls(runner, anec, chip, deadline, args.timeout)

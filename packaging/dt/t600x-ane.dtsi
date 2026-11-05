@@ -37,7 +37,7 @@
  * ane0 reg, interrupt 770, dart-ane0 reg and interrupt 771. The T6000 Linux
  * rows (j314s: c901d2bb47ba, 1c239648b330; j316s: 8bdc4c196309, fbc20029b7fd)
  * have the AIC path and ane_sys@268 and ane_sys_cpu@2c8 used here, and pmgr
- * reg 0x4000. No M1 Pro macOS row exists.
+ * reg 0x4000. No M1 Pro row exists.
  */
 
 / {

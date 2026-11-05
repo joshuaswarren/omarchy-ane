@@ -97,7 +97,7 @@ first boot: BRD 0x1d10 / 0x3fff7da4 / 0x3f6cfdcf, BWR 0x1f30 / 0x2bedebf4 /
 Notes:
 
 - The receipt's prediction holds for BRD and BWR and fails for LLT. LLT
-  already carries the six macOS 27.0 ADT values (0x20c and 0x310 also equal
+  already carries the six values of the reference run 27.0 ADT (0x20c and 0x310 also equal
   the 13.5 trace results), so step E5 has nothing to apply on this boot.
   Linux `apple-dart` writes no tunable. Which earlier stage writes the LLT
   words is not known [INFERENCE: iBoot or m1n1; LLT sits in the `pmp` power

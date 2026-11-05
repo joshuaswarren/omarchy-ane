@@ -136,7 +136,7 @@ ane-linux-experiments abb63dd, closure omarchy-ane ee14b27).
 | Zero timer frequency keeps the core asleep | `patch_timer_freq=0x016e3600` wrote PA 0x10001406880 and read back, then release: still parked, no READY (2026-09-25, 340f3a4, receipt 8004cfe) |
 | Coproc IRQ masks 0x1400a00-a14 left closed after the park | Read 0 post-park; 0xffffffff stuck 60 s; no READY, doorbell undrained (receipt 8004cfe). Status did move 0x28 -> 0x08, see section 14 |
 | Firmware + legacy TM coexisting on T6001 | With the firmware running, the TM path stops serving jobs; a reboot restores it |
-| RVBAR mode bits or a different latch keep the core from starting | macOS runs the firmware with the identical latch `0x0000010000000001` and no mode bits (section 17, ane-linux-experiments b7c7bc5) |
+| RVBAR mode bits or a different latch keep the core from starting | the reference run has the identical latch `0x0000010000000001` and no mode bits (section 17, ane-linux-experiments b7c7bc5) |
 | CPU_STATUS 0x28 marks a parked core | The working macOS run reads 0x20 and 0x28 (section 17); 0x28 only says the core left its boot path |
 
 ## 7. Hazards (each one wedged or reset a laptop)
@@ -347,7 +347,7 @@ reserved memory. No T6021 has run it yet (receipt
 
 - The vendor tree's ISP driver (`isp-fw.c`) writes the coprocessor IRQ mask registers
   0x1400a00-0x1400a14 to 0xffffffff and polls the coprocessor status word at
-  +0x818 for zero before it releases the CPU. macOS does neither.
+  +0x818 for zero before it releases the CPU. The reference run does neither.
 - The ANE mailbox is the ASC variant: the vendor tree's `mailbox.c` gives it
   `has_irq_controls = false`. There is no host-side mailbox IRQ-enable
   register to write; the doorbell is the inbox write itself, and the
@@ -593,8 +593,8 @@ What this changes:
 - **The mailbox control words differ in bit 19** (0x000a0001 vs 0x00020001).
   Bits 16-17 are FULL and EMPTY. Bit 19 is now known (M2PreRunRE):
   bit 19 is UNDERFLOW (read from an empty FIFO) and bit 18 is
-  OVERFLOW. macOS tests both words against mask 0xc0000 and panics, and the
-  13.5 ANE firmware runs the same test. macOS
+  OVERFLOW. the reference side tests both words against the overflow mask and panics, and the
+  13.5 ANE firmware runs the same test. The reference
   software never writes bit 19. The only control write is the outbox
   enable, bit 0. The 0x000a0001 in this dump is a latched underflow flag,
   not a mode the host must set.
@@ -641,7 +641,7 @@ macOS start paths write none of these words:
 - +0x40 = 0x000a0000 is a read-only wrapper status word; bits 19:16 = 0xa is
   UNDERFLOW + EMPTY.
 - +0x444 = 0x10 is the Core 1 slice (+0x400 stride) mirrored by hardware
-  when Core 0 RUN (+0x44) is written. No macOS write to +0x444 exists.
+  when Core 0 RUN (+0x44) is written. No write to +0x444 exists.
 - The 0xffffffff bank at +0xb80..+0xb94, +0xbfc is the KIC interrupt
   register bank at reset default; the macOS ASC wrapper driver never writes it.
 - The mailbox-shaped blocks at +0x4000, +0xc000 and +0x10000 are unused
@@ -654,7 +654,7 @@ behaviours if a run ever needs them.
 
 ## 18. macOS idle signature and the staged Linux tests (2026-09-25)
 
-The macOS 27 idle signature of the ANE power islands is 0x300 per island and
+The reference idle signature of the ANE power islands is 0x300 per island and
 0x0f000300 for ane_cpu, where the 0xf is bits [27:24] (PS_AUTO), not ACTUAL.
 A 2 s poll catches the short ACTUAL-0xf windows; one workload sample still
 read idle. The capture tool behind sections 16-17 is kept private.
@@ -702,7 +702,7 @@ dropped by silicon. The unlock protocol (M2PreRunRE; m1n1): write 0x2 to
 UNPROTECT (0x285800204), verify PROTECT
 bit 1 clear, write the DAPF slices (+0x04 r4, +0x08 start, +0x10 end,
 +0x00 r0 enable, +0x20 r20, stride 0x40), then re-protect by writing 0x6
-to PROTECT (0x285800200). That is the macOS working-state value (section 17).
+to PROTECT (0x285800200). That is the working-state value (section 17).
 Receipt: ane-linux-experiments `lane/m2-fwstart`
 22b208b, `receipts/2026-09-25-t6021-ane-dapf/` (ADT data and m1n1
 entry list included). First hardware leg failed (M2FwStart-2, receipt
@@ -829,14 +829,14 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   0x470 — the ANE_SYS power-state word at pmgr reg[0]+0x470, PA
   0x23b700470 — with a nonzero low nibble, and the ADT `ane-acg-hack`
   flag is set (T8103 has it = 1), it does a physical read-modify-write at
-  PA 0x26b868a04 (macOS ANE window 0x26a000000 + 0x1868a04):
+  the engine word at offset 0x1868a04:
   `(old & ~0x1000) | 0x80001000`; power-down to 0 clears bit 12. No
   Linux code writes that engine word. Executed, in two halves
   (AneAcgT8103, ane-linux-experiments 9288833,
   `receipts/2026-09-25-jwm1-t8103-acg-hack/`; omarchy-ane
   `agent/t8103-acg` eb4cf4c). Read half: Linux's power-up value at the
-  word is 0x80000000 — bit 12 clear where macOS sets it; the two systems
-  genuinely disagree. Write half, falsified: applying macOS's RMW
+  word is 0x80000000 — bit 12 clear where the reference side sets it; the two systems
+  genuinely disagree. Write half, falsified: applying the reference RMW
   hard-resets the machine (PMU-logged reset during probe, auto-recovery
   to stock, no filesystem damage). Bit 12 gates the idle engine's clocks,
   and the hack rides on CLPC/pmgr clock state Linux never configures. No
@@ -1382,8 +1382,7 @@ Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-b
 - The test-only `ane_t6021` parameter `af_bridge_macos=1` (code `d3b8561`,
   removed from main after this result) writes the 26
   read-modify-writes at the start of P-1, in place of P-1a and P-1d. All 26
-  read back as macOS writes them (0x400 = 0xc0f10010, as in the 13.5 hv
-  trace), the firmware boots, and every output stays bit-exact.
+  read back as expected (0x400 = 0xc0f10010), the firmware boots, and every output stays bit-exact.
 - The encoder time does not change: 254.274 ms against 254.276 and 254.215
   ms on default boots before and after (prog_020 and prog_006 within 0.1%).
   The bridge tunables are not the cause of the gap to macOS. The section 27
@@ -1397,8 +1396,7 @@ Record: [receipts/2026-10-01-t6021-macos-vs-linux-mmio](../receipts/2026-10-01-t
 - The only DMA-path setting in the 13.5 hv trace that Linux never makes is
   the DART tunables on dart-ane1 and dart-ane2 (ADT instance names DARTBRD
   and DARTBWR): 0x20c, 0x220, 0x224, the 0x300-0x310 DVA window and 16
-  per-SID words at 0x800. The trace, the 26.6.2 j414c iBoot tables and the
-  live macOS 27.0 ADT agree on the values. Linux `apple-dart` writes none of
+  per-SID words at 0x800. The reference tables and the live ADT agree on the values. Linux `apple-dart` writes none of
   them. On T8103, m1n1 writes the same 0xf0f0f/0x80808 pair to the ANE DART.
 - macOS translates the ANE stream the same way Linux does: TCR[0] = 0x9,
   16 KiB pages, bypass on sid 15 only. Each TLB entry covers the same 16 KiB
@@ -1476,7 +1474,7 @@ Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021
   the three own-memory boots. [INFERENCE] Those trials ran a copy without
   iBoot's patches (receipt 2026-10-01-t602x-independent); the replay closes it.
 
-## 33. The DART tunables at DART reset: 0x20c faults in the macOS order too (2026-10-02)
+## 33. The DART tunables at DART reset: 0x20c faults in the reference order too (2026-10-02)
 
 Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dart-kernel/README.md).
 
@@ -1490,7 +1488,7 @@ Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dar
   0xe40000ff) and the firmware boots, but the first CALL gives `NO PGD FOR
   IOVA` on BRD stream 0 at 0xfd68be00, the CALL times out, and every later
   program load times out until a reboot. Same fault as the live write in
-  section 30. 0x20c with the macOS value does not work with the Linux page
+  section 30. 0x20c with the reference value does not work with the Linux page
   tables in any write order. Rejected as a lever on this path; the only open
   test is 0x20c together with the DVA window and BOs above 4 GiB (E3).
 - A stock Omarchy boot deletes every module tree under `/usr/lib/modules`

@@ -3,7 +3,7 @@
 Status: done, **rejected**. With the macOS tunables written by apple-dart at
 DART reset, in the macOS order, the first ANE CALL faults with `NO PGD FOR
 IOVA` on the BRD stream 0 and the ANE stops until a reboot: the same fault
-as the live write of 0x20c in DartTune. So 0x20c with the macOS value does
+as the live write of 0x20c in DartTune. So 0x20c with the reference run value does
 not work with the Linux page tables in any write order, and the patch gives
 no speed to measure. The patch is not worth upstreaming. The decision rule,
 the one-shot plan and its fallback were written before the first boot; the
@@ -67,8 +67,8 @@ on AsahiLinux/linux `asahi-7.1.13-3`, `drivers/iommu/apple-dart.c`
 - `apple_dart_hw_reset()`: after `apple_dart_hw_clear_all_ttbrs()` and
   before ENABLE_STREAMS, a DART with a table gets a TLB flush-all (the
   existing `apple_dart_t8110_hw_tlb_command()` with op 0 on stream 0: the
-  same value 0x00000000 that macOS writes) and then 19 RMWs,
-  `reg = (reg & ~mask) | value`, in the macOS trace order: 0x20c
+  same value 0x00000000 that reference run writes) and then 19 RMWs,
+  `reg = (reg & ~mask) | value`, in the reference run trace order: 0x20c
   (0xff0000b7 / 0xe40000b7), 0x220 (0x000f0f0f / 0x000f0f0f), 0x224
   (0x00ffffff / 0x00080808), 0x800-0x83c (0x000f007f / 0x00060000 for SID
   0-1; BRD 0x00030040 for SID 2-4 and 0x00010048 for SID 5-15; BWR
@@ -345,9 +345,9 @@ gate, submitted nothing more, and the S reboot restored the ANE.
 Verdict by the pre-registered rule: a fault in X. Reading (a), stale walker
 state from a write on a live DART, is false: the write at DART reset, with
 the TTBRs cleared and a full TLB flush before it and the streams and TTBR
-after it, gives the same fault. Reading (b) holds: 0x20c with the macOS
+after it, gives the same fault. Reading (b) holds: 0x20c with the reference run
 value does not work with the page tables Linux gives the bulk DARTs, in any
-write order. [INFERENCE] macOS sets 0x20c together with the 0x300-0x310 DVA
+write order. [INFERENCE] the reference run sets 0x20c together with the 0x300-0x310 DVA
 window and puts the ANE buffers inside that window
 ([0x100_0000_0000, 0x400_0000_0000)); Linux BOs sit below 4 GiB with the
 window off. 0x20c can only be tested again together with E3 (a 42-bit DMA

@@ -4,7 +4,7 @@
  * node, as linux-aurora 7.1.12.aurora2 does: the node is /soc/ane@285c04000 there (the overlay of t6001-ane.dts creates
  * /soc/ane@284000000 instead, and is left out when the kernel's node is available). This overlay adds to the
  * kernel's node:
- *   reg-names "dvfs": the pmgr DVFS block, macOS RegMap 113 = pmgr ADT index 39 of the M1 Max, PA 0x285868000, 0x4000 bytes: DVFS_ON at +0x2000, DVFS_CMD at +0xa00
+ *   reg-names "dvfs": the pmgr DVFS block, pmgr ADT index 39 of the M1 Max, PA 0x285868000, 0x4000 bytes: DVFS_ON at +0x2000, DVFS_CMD at +0xa00
  *   reg-names "ptd":  the PMP PTD window, 0x28e3c0000, 0x20000 bytes: read entities at +reg*16, update space at +0x10000 + reg*8
  *   the PMS SRAM power domain (the PTD window lives in it), after the five domains the node already has.
  * Without these entries ane.ko behaves as before. No skip rule: this file is for kernels that have the node; on a kernel

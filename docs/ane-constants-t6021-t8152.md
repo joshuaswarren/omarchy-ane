@@ -14,10 +14,10 @@ Evidence tags in the last column:
 
 1. **Engine words are not at the T6021 offsets.** On T8152 the ASC wrapper is at engine + `0x1600000` (ADT reg[0] `0x419600000`), not `0x1400000`. The T6021 probe reads `CPU_STATUS` at engine + `0x1400048` before it knows anything; on T8152 that offset is not the wrapper and nothing measured says it is safe to read.
 2. **The SCRATCH, doorbell, pending and ack block moved.** T8152: SCRATCH0 at engine + `0x18a0024`, doorbell `0x18a4000`, pending `0x18ac000`, ack `0x18b0000`. The block base is `0x18a0000` (T6021 `0x1840000`) and SCRATCH sits at +`0x24` in it (T6021 +`0x48`). All of them lie inside `ANE_FATAL_READ_LO..HI`, the range the T6021 guard forbids. Board reads of SCRATCH at `0x4198a0024` did not fault; the range is not otherwise measured on T8152.
-3. **There is no wrapper mailbox.** T8152 uses a Postoffice (`msgbox-using-postoffice`, mailbox number 12): channel 24, second 64 KiB half of reg[2], aperture `0x316010c00`. RX at +0x00, TX at +0x10, STATUS at +0x20 (macOS, ADT). The T6021 `ANE_ASC_MBOX*` registers have no counterpart there.
+3. **There is no wrapper mailbox.** T8152 uses a Postoffice (`msgbox-using-postoffice`, mailbox number 12): channel 24, second 64 KiB half of reg[2], aperture `0x316010c00`. RX at +0x00, TX at +0x10, STATUS at +0x20 (ADT). The T6021 `ANE_ASC_MBOX*` registers have no counterpart there.
 4. **The channel layout is not the T6021 one.** The firmware's table on the board has TERMINAL with `0x200` slots (T6021 `0x300`), so every later ring offset and the total differ (second table below). `ane_t6021_chman_check` would reject the M6 table.
 5. **`CPU_STATUS` after RUN.** Board: `0xa` before RUN. With the firmware mapped through the DART it reads `0xd` after RUN (bit 0 RUNNING set; `0xc` between polls, one `0x8` poll in boot `ee8a53d1`), and `0xe` (STOPPED) after the stop. With no firmware mapped (boot `235c8ff4`) it reads `0x8`, RUNNING never set. The probe's `!(cpu_status & ANE_ASC_CPU_STATUS_RUNNING)` test is therefore true only when no firmware is mapped, and a single poll can read RUNNING clear while the core runs.
-6. **iBoot loads the firmware** (`pre-loaded = 1`, loaded by iBoot), so the loader rows (pinned image, ASC tunables, RTK patch addresses, alias windows) do not apply to T8152; IORVBAR is already `0x10000000001` (IOVA `0x10000000000` with the valid bit), which the T6021 entry fold accepts (checked by the test).
+6. **The boot loader loads the firmware** (`pre-loaded = 1`), so the loader rows (pinned image, ASC tunables, RTK patch addresses, alias windows) do not apply to T8152; IORVBAR is already `0x10000000001` (IOVA `0x10000000000` with the valid bit), which the T6021 entry fold accepts (checked by the test).
 7. **The channel and handshake words match.** READY, wake, the 0x21 request limit, the 0x174 byte init block and the RTKit management types are the same constants.
 
 ## Constants
@@ -25,11 +25,11 @@ Evidence tags in the last column:
 | constant | T6021 | T8152 | H15 (T6030) | basis |
 |---|---|---|---|---|
 | `ANE_PS_ON` | `0xf` | PSD state `0` [ANE_H18_PSD_P0_RUN]: slots 30 and 31 at `0x303a10000`, no pmgr ps words | `0xf` [ANE_H15_PS_ON] | ADT power-gates; board; H15: I |
-| `ANE_PWGATE_CLOSED_MASK` | `0x30000000` | ? | ? | macOS (T8112, type 0x70, receipts/2026-10-01-t8112-ane); used only by the T8112 probe, T6021 has no gate offset; T8152, H15: ? |
-| `ANE_PWGATE_CLOSED_WORD` | `0x30000000` | ? | ? | macOS (T8112, type 0x70, receipts/2026-10-01-t8112-ane); used only by the T8112 probe, T6021 has no gate offset; T8152, H15: ? |
+| `ANE_PWGATE_CLOSED_MASK` | `0x30000000` | ? | ? | T8112 (receipts/2026-10-01-t8112-ane); used only by the T8112 probe, T6021 has no gate offset; T8152, H15: ? |
+| `ANE_PWGATE_CLOSED_WORD` | `0x30000000` | ? | ? | T8112 (receipts/2026-10-01-t8112-ane); used only by the T8112 probe, T6021 has no gate offset; T8152, H15: ? |
 | `ANE_PWGATE_WAIT_US` | `100000` | ? | ? | driver choice, 100 ms bound on the wait for the gate bits; T8152, H15: ? |
-| `ANE_ASC_CPU_CONTROL` | `0x1400044` | `0x1600044` | `0x1400044` | macOS (ane-type 0x310), board read of PA `0x419600044` = 0; H15: I |
-| `ANE_ASC_CPU_STATUS` | `0x1400048` | `0x1600048` | `0x1400048` | macOS, board read = `0xa`; H15: ADT reg[0] + 0x48, role I |
+| `ANE_ASC_CPU_CONTROL` | `0x1400044` | `0x1600044` | `0x1400044` | board read of the register = 0; H15: I |
+| `ANE_ASC_CPU_STATUS` | `0x1400048` | `0x1600048` | `0x1400048` | board read = `0xa`; H15: ADT reg[0] + 0x48, role I |
 | `ANE_ASC_RVBAR` | `0x1050000` | `0x1050000` | `0x1050000` [ANE_H15_RVBAR_WIN_OFF] | ADT reg[1] `0x419050000`; board IORVBAR `0x10000000001` |
 | `ANE_ASC_EDPRCR` | `0x1010310` | ? | ? | T6021 whitelist word; H15 treats `0x1010000` as forbidden |
 | `ANE_ASC_VERS` | `0x1840000` | ? | ? | not translated: the block base moved, in-block offsets differ |
@@ -46,14 +46,14 @@ Evidence tags in the last column:
 | `ANE_ASC_MBOX_I2A_RECV1` | `0x1408838` | none | `0x838` [ANE_H15_MBOX_I2A_RECV1] | I |
 | `ANE_FATAL_READ_LO` | `0x1854000` | ? (see 2 above) | `0x1854000` [ANE_H15_FATAL_LO] | H15 inherits the T6021 rule, no H15 evidence |
 | `ANE_FATAL_READ_HI` | `0x1c04000` | ? | `0x1c04000` [ANE_H15_FATAL_HI] | same |
-| `ANE_MBI_SCRATCH0` | `0x1840048` | `0x18a0024` | `0x1840050` [ANE_H15_SCRATCH_OFF] | macOS (T8152 scratch table; T6030 ane-type 0xc0 case); board reads |
+| `ANE_MBI_SCRATCH0` | `0x1840048` | `0x18a0024` | `0x1840050` [ANE_H15_SCRATCH_OFF] | T8152 scratch table; T6030 case; board reads |
 | `ANE_MBI_SCRATCH6` | `0x1840060` | `0x18a003c` | `0x1840068` | stride 4 from SCRATCH0 |
 | `ANE_MBI_SCRATCH7` | `0x1840064` | `0x18a0040` | `0x184006c` | stride 4 |
-| `ANE_MBI_DOORBELL` | `0x1844000` | `0x18a4000` [ANE_H18_DOORBELL_OFF] | `0x1844000` [ANE_H15_DOORBELL_OFF] | macOS, both; no H15 write yet |
+| `ANE_MBI_DOORBELL` | `0x1844000` | `0x18a4000` [ANE_H18_DOORBELL_OFF] | `0x1844000` [ANE_H15_DOORBELL_OFF] | both; no H15 write yet |
 | `ANE_IPI_OFF` | `0x1844000` | `0x18a4000` [ANE_H18_DOORBELL_OFF] | `0x1844000` [ANE_H15_DOORBELL_OFF] | same word as the doorbell |
-| `ANE_MBI_MSG_A2I_RD` | `0x184c000` | `0x18ac000` [ANE_H18_IPI_PENDING_OFF] | ? | same offset from the doorbell (+0x8000). T6021 calls it host to firmware; the T8152 macOS side reads it as firmware-to-host pending. The T6021 direction label is unverified |
-| `ANE_MBI_MSG_A2I_WR` | `0x1850000` | `0x18b0000` [ANE_H18_IPI_ACK_OFF] | ? | doorbell +0xc000; macOS writes back the value it read from pending |
-| `ANE_MBI_TIMEBASE_LO` | `0x1170000` | `0x1370000` | ? | T8152: macOS, lo/hi pair read as timestamps, I |
+| `ANE_MBI_MSG_A2I_RD` | `0x184c000` | `0x18ac000` [ANE_H18_IPI_PENDING_OFF] | ? | same offset from the doorbell (+0x8000). T6021 calls it host to firmware; the T8152 side reads it as firmware-to-host pending. The T6021 direction label is unverified |
+| `ANE_MBI_MSG_A2I_WR` | `0x1850000` | `0x18b0000` [ANE_H18_IPI_ACK_OFF] | ? | doorbell +0xc000; the value read from pending is written back |
+| `ANE_MBI_TIMEBASE_LO` | `0x1170000` | `0x1370000` | ? | T8152: lo/hi pair read as timestamps, I |
 | `ANE_MBI_TIMEBASE_HI` | `0x1170004` | `0x1370004` | ? | as `ANE_MBI_TIMEBASE_LO` |
 | `ANE_T6021_BOOT_REG_TICK` | `0x1160008` | ? | ? | T6021 progress observable |
 | `ANE_MBI_CHAN_STRIDE` | `0x100` | `0x100` [ANE_H18_CH_ENTRY] | `0x100` [ANE_H15_CH_ENTRY] | channel table entry size; board table |
@@ -74,7 +74,7 @@ Evidence tags in the last column:
 | `ANE_RTKIT_EP_IOREPORT` | `4` | not in the board endpoint map | ? | board |
 | `ANE_RTKIT_EP_OSLOG` | `8` | not in the board endpoint map | ? | board |
 | `ANE_RTKIT_EP_TRACEKIT` | `0xa` | not in the board endpoint map | ? | board |
-| `ANE_FW_ALIAS_MAX_WIN` | `3` | n/a: iBoot maps 2 segments (code IOVA `0x10000000000`, data `0x100000c4000`) | ? | ADT segment-ranges |
+| `ANE_FW_ALIAS_MAX_WIN` | `3` | n/a: the boot loader maps 2 segments (code IOVA `0x10000000000`, data `0x100000c4000`) | ? | ADT segment-ranges |
 | `ANE_T6021_FW_ALIAS_PAGE` | `0x4000` | `0x4000` | ? | ADT dart-ane page-size 16384 |
 | `ANE_CSNE_CMD_MAX_SIZE` | `0x1b88` | ? | ? | T6021 command block size |
 | `ANE_T6021_LOAD_SEC_COUNT` | `9` | ? | ? | the H18 compiled-program format is not established |
@@ -88,18 +88,18 @@ Evidence tags in the last column:
 | `ANE_ASC_CPU_STATUS_RUNNING` | `BIT(0)` | `BIT(0)` set after RUN with the firmware mapped, flickering between polls; not set without firmware (see 5 above) | `BIT(0)` [ANE_H15_ST_RUNNING] | board |
 | `ANE_ASC_CPU_STATUS_STOPPED` | `BIT(1)` | `BIT(1)` set before RUN (`0xa`), clear while running (`0xc`/`0xd`), set again after the stop (`0xe`) | `BIT(1)` [ANE_H15_ST_STOPPED] | board |
 | `ANE_T6021_CPU_RUN_RELEASE` | `0x10` | `0x10` | `0x10` | macOS writes 0 then 0x10; H15: `ANE_H15_CPU_RUN` is BIT(4) |
-| `ANE_T6021_RVBAR_ENTRY_BASE` | `0x0081000000000001` | `0x0081000000000001` | ? | macOS reads IORVBAR with the T6021 constants |
-| `ANE_T6021_RVBAR_ADDR_MASK` | `0xff7efffffffff800` | `0xff7efffffffff800` | ? | macOS; iBoot's `0x10000000001` folds to `0x10000000000` |
-| `ANE_T6021_BOOT_IPC_REQ_THRESHOLD` | `0x21` | `0x21` [ANE_H18_HS_REQ_LIMIT] | `0x21` [ANE_H15_HS_REQ_LIMIT] | macOS both |
-| `ANE_T6021_BOOT_WAKE_REQ` | `0xf7fbdff9` | `0xf7fbdff9` [ANE_H18_HS_WAKE] | `0xf7fbdff9` [ANE_H15_HS_WAKE] | macOS both |
-| `ANE_T6021_BOOT_ACK` | `0x08042006` | `0x08042006` [ANE_H18_HS_READY] | `0x08042006` [ANE_H15_HS_READY] | macOS; T8152 SCRATCH7 already reads READY before the wake |
-| `ANE_T6021_INIT_STRUCT_SIZE` | `0x174` | `0x174` [ANE_H18_HS_BLOCK_SIZE] | `0x174` | macOS; host-written: the module wrote a block of this size and the firmware then published its table |
-| `ANE_T6021_INIT_FW_DVA_OFF` | `0x00` | `0x00` | `0x00` | macOS (+0x0 is the IOVA of the firmware surface); host-written on the M6: `0x10000000000`, iBoot's code IOVA |
+| `ANE_T6021_RVBAR_ENTRY_BASE` | `0x0081000000000001` | `0x0081000000000001` | ? | IORVBAR is read with the T6021 constants |
+| `ANE_T6021_RVBAR_ADDR_MASK` | `0xff7efffffffff800` | `0xff7efffffffff800` | ? | the boot loader's `0x10000000001` folds to `0x10000000000` |
+| `ANE_T6021_BOOT_IPC_REQ_THRESHOLD` | `0x21` | `0x21` [ANE_H18_HS_REQ_LIMIT] | `0x21` [ANE_H15_HS_REQ_LIMIT] | both |
+| `ANE_T6021_BOOT_WAKE_REQ` | `0xf7fbdff9` | `0xf7fbdff9` [ANE_H18_HS_WAKE] | `0xf7fbdff9` [ANE_H15_HS_WAKE] | both |
+| `ANE_T6021_BOOT_ACK` | `0x08042006` | `0x08042006` [ANE_H18_HS_READY] | `0x08042006` [ANE_H15_HS_READY] | T8152 SCRATCH7 already reads READY before the wake |
+| `ANE_T6021_INIT_STRUCT_SIZE` | `0x174` | `0x174` [ANE_H18_HS_BLOCK_SIZE] | `0x174` | host-written: the module wrote a block of this size and the firmware then published its table |
+| `ANE_T6021_INIT_FW_DVA_OFF` | `0x00` | `0x00` | `0x00` | +0x0 is the IOVA of the firmware surface; host-written on the M6: `0x10000000000`, the boot loader's code IOVA |
 | `ANE_T6021_INIT_COUNT_OFF` | `0x68` | `0x68` | `0x68` | macOS; host-written `0x40` |
 | `ANE_T6021_INIT_COUNT` | `0x40` | `0x40` | `0x40` | macOS; host-written |
 | `ANE_T6021_INIT_TEMPLATE_OFF` | `0x6c` | `0x6c` | `0x6c` | macOS |
-| `ANE_T6021_INIT_TEMPLATE_SIZE` | `0x100` | `0x100` | `0x100` | macOS |
-| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | the T6021 value; macOS on the M6 shows the same (template word +0xc0 OR-ed with 4), a second reading to confirm; host-written at block +0x12c (= 0x6c + 0xc0). The template's first word (config + 0x1d8) is the one macOS does not show; the module writes 0 |
+| `ANE_T6021_INIT_TEMPLATE_SIZE` | `0x100` | `0x100` | `0x100` | as T6021 |
+| `ANE_T6021_INIT_TBIT_OFF` | `0xc0` | `0xc0` | `0xc0` | the T6021 value; the M6 shows the same (template word +0xc0 OR-ed with 4), a second reading to confirm; host-written at block +0x12c (= 0x6c + 0xc0). The template's first word (config + 0x1d8) is not shown on the M6; the module writes 0 |
 | `ANE_T6021_INIT_TBIT_VAL` | `0x4` | `0x4` | `0x4` | the T6021 value, same macOS reading as the row above; host-written `0x4` |
 | `ANE_T6021_BOOT_IPC_CEILING` | `0x100000` | `0x100000` [ANE_H18_HS_IPC_MAX] | `0x100000` [ANE_H15_HS_IPC_MAX] | driver limit, not a chip value; the firmware's request on the board gave `0xc441` (SCRATCH1 + 1) |
 | `ANE_T6021_BOOT_HEAP_CEILING` | `0x2000000` | `0x4000000` [ANE_H18_HS_HEAP_MAX] | `0x4000000` [ANE_H15_HS_HEAP_MAX] | driver limit; the board heap request is `0xf00000`, which fits both |
@@ -117,18 +117,18 @@ Evidence tags in the last column:
 | `ANE_T6021_CHMAN_NAME_LEN` | `0x40` | `0x40` [ANE_H18_CH_NAME_LEN] | `0x40` [ANE_H15_CH_NAME_LEN] | board table |
 | `ANE_T6021_CHMAN_COUNT` | `8` | `8` [ANE_H18_CH_COUNT] | `8` [ANE_H15_CH_COUNT] | board table |
 | `ANE_T6021_CHMAN_TOTAL` | `0x10440` | `0xc440` | ? | SCRATCH1 + 1 = `0xc441` in init block +0x50, so SCRATCH1 = `0xc440` (the module's own computation from the word it read); equals the last ring end `0xc400` + 0x40, the slack T6021 has too; see 4 above |
-| `ANE_FW_BUF_SIZE` | `0x500000` | n/a (iBoot loads); payload `0x180000` | ? | `data/ane-soc/t8152.json` firmware.ane0_payload_size 1572864 |
+| `ANE_FW_BUF_SIZE` | `0x500000` | n/a (the boot loader loads); payload `0x180000` | ? | `data/ane-soc/t8152.json` firmware.ane0_payload_size 1572864 |
 | `ANE_FW_NCMDS` | `5` | `7` | ? | json firmware header |
 | `ANE_FW_SIZEOF_CMDS` | `0x960` | `0xb38` | ? | json firmware header |
 | `ANE_FW_FLAGS` | `0x1` | `0x200001` | ? | json firmware header |
 | `ANE_FW_NSEGS` | `2` | `3` | ? | json: three 64-bit segments |
 | `ANE_FW_ENTRY_PC` | `0x0` | `0x0` | ? | json: entry PC 0 |
 | `ANE_FW_RTK_PATCHES` | `5` | ? | ? | the H18 payload has a 45 record patchbay instead; not mapped |
-| `ANE_FW_DATA_BASE_VM` | `0x423c` | ? | ? | T6021 code word holding the data IOVA; M6 data IOVA is set by iBoot |
+| `ANE_FW_DATA_BASE_VM` | `0x423c` | ? | ? | T6021 code word holding the data IOVA; M6 data IOVA is set by the boot loader |
 | `ANE_FW_TUNABLES_MAX` | `0x24` | none | ? | M6 ADT has no ANE-level tunables blob; only `dart-tunables-instance-0..3` |
 | `ANE_BOOT_ACK_POLL_US` | `1000` | `1000` | `1000` | macOS polls SCRATCH7 1 ms x 1000; H15: I |
 | `ANE_BOOT_POLL_MS` | `1000` | `1000` | `1000` | same |
-| `ane_t6021_soc.soc` | `0x6021` | ? | n/a | the value iBoot writes to RTK_soc for T8152 is not known |
+| `ane_t6021_soc.soc` | `0x6021` | ? | n/a | the value the boot loader writes to RTK_soc for T8152 is not known |
 | `ane_t6021_soc.soc_revision` | `0x11` | ? | ? | not known; iBoot preloads on T8152 |
 | `ane_t6021_soc.ps_cpu_off` | `0x2e0` | n/a (PSD slots 30, 31) | `0xc008` | H15 ANE_CPU ps word of T6030 (ADT, `ane_h15_ps_6030`) |
 | `ane_t6021_soc.pmu_pa` | `0x28e084000` | ? | ? | H18 payloads carry a PMU base address; the address is not established |

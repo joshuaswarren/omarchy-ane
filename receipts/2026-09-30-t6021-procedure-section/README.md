@@ -300,7 +300,7 @@ block entry:
 
 ### PROCEDURE_CALL wire format (already established in `kext135-command-sequence.md`)
 
-- macOS's cached request: len `0x268` (cached variant), id `0x20a` (macOS uses
+- The reference run's cached request: len `0x268` (cached variant), id `0x20a` (reference run uses
   `0x20a` for the trigger path that fires pushToHWDirect; `0x209` and `0x20b` /
   `0x20d` are NO-OPs in fw135 per the coarse table at fw 0x2a658 — see
   `hwready-gate.md` §4).

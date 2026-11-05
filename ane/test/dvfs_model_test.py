@@ -1,6 +1,7 @@
 """dvfs_model_test.py: userspace model test of the REAL ane/src/ane_dvfs.c with fake kernel headers (no hardware).
 usage: python3 ane/test/dvfs_model_test.py   (from the repo root; needs gcc)
-Checks: the exact write sequence up and down; the refusal paths write nothing; the PS-ACK timeout unwinds in the macOS order."""
+Checks: the exact write sequence up and down; the refusal paths write nothing; the PS-ACK timeout unwinds in the macOS order;
+only bit 10 of PS-REQ is this driver's: a set bit 9 (the AGX vote) or any other bit at resume still reaches the level and is kept."""
 import os
 import shutil
 import subprocess
@@ -60,21 +61,31 @@ void *fake_iomap(struct device_node *np, int idx);
 #define of_property_match_string fake_match
 #define of_address_to_resource fake_addr
 #define of_iomap fake_iomap
+extern int export_mode, puts_n, node_puts;
+void *fake_symbol_get(void);
+#define symbol_get(x) ((int (*)(const struct device_node *, unsigned int, bool, bool))fake_symbol_get())
+#define symbol_put(x) (puts_n++)
+struct device_node *fake_find_compat(void);
+#define of_find_compatible_node(a, b, c) fake_find_compat()
+#define of_node_put(n) (node_puts++)
+#define EINVAL 22
+#define ENODEV 19
 #define read_poll_timeout(op, val, cond, sleep_us, timeout_us, sleep_before_read, args...) \
 	({ int __i, __r = -ETIMEDOUT; for (__i = 0; __i < 5; __i++) { (val) = op(args); if (cond) { __r = 0; break; } } __r; })
 """
-for n in ("delay", "device", "io", "iopoll", "moduleparam", "of", "of_address"):
+for n in ("delay", "device", "io", "iopoll", "module", "moduleparam", "of", "of_address", "types"):
     with open(T + "/inc/linux/%s.h" % n, "w") as f:
         f.write('#include "../common.h"\n')
 with open(T + "/inc/common.h", "w") as f:
     f.write(COMMON)
 shutil.copy(os.path.join(ROOT, "ane", "src", "ane_dvfs.c"), T + "/ane_dvfs.c")
+shutil.copy(os.path.join(ROOT, "ane", "src", "ane_dvfs_req.h"), T + "/ane_dvfs_req.h")
 with open(T + "/ane.h", "w") as f:
     f.write(r"""
 #include "inc/common.h"
 struct ane_device {
 	struct device *dev;
-	struct ane_dvfs { void __iomem *dvfs; void __iomem *ptd; bool active; unsigned int level; unsigned int ack_timeouts; const char *state; } dvfs;
+	struct ane_dvfs { void __iomem *dvfs; void __iomem *ptd; bool active; unsigned int level; unsigned int ack_timeouts; const char *state; const struct device_node *report_np; int (*set_request)(const struct device_node *, unsigned int, bool, bool); } dvfs;
 };
 int ane_dvfs_init(struct ane_device *ane);
 void ane_dvfs_exit(struct ane_device *ane);
@@ -88,6 +99,9 @@ TEST = r"""
 int log_n;
 char log_buf[8192];
 int files, create_err, maps;
+int export_mode, puts_n, node_puts;
+static int export_arm, export_ret, export_calls;
+int fake_set_request(const struct device_node *np, unsigned int id, bool enable, bool no_ack);
 static int perturb_cmd, perturb_psreq;
 static u64 mem_pa[64], mem_val[64];
 static int mem_n;
@@ -101,6 +115,8 @@ static struct device_node np0;
 static u64 get(u64 pa) { int i; for (i = 0; i < mem_n; i++) if (mem_pa[i] == pa) return mem_val[i]; return 0; }
 static void put(u64 pa, u64 v) { int i; for (i = 0; i < mem_n; i++) if (mem_pa[i] == pa) { mem_val[i] = v; return; } mem_pa[mem_n] = pa; mem_val[mem_n++] = v; }
 void fake_usleep(void) { }
+void *fake_symbol_get(void) { return export_mode ? (void *)fake_set_request : NULL; }
+struct device_node *fake_find_compat(void) { return export_mode == 2 ? NULL : &np0; }
 u32 fake_readl(void *p) { return (u32)get((u64)(uintptr_t)p); }
 u64 fake_readq(void *p) { return get((u64)(uintptr_t)p); }
 void fake_writel(u32 v, void *p)
@@ -108,7 +124,7 @@ void fake_writel(u32 v, void *p)
 	log_n += sprintf(log_buf + log_n, "W32 %llx %08x\n", (u64)(uintptr_t)p, v);
 	put((u64)(uintptr_t)p, v);
 	if (perturb_cmd && v == 0x80000000U && get(DVFS_BASE + 0x2000) == 1)
-		put(PTD_BASE + 0xf8 * 16, 0x60003001ULL);	/* another owner touches PS-REQ during the 2 ms */
+		put(PTD_BASE + 0xf8 * (16), perturb_cmd == 1 ? 0x60003400ULL : 0x60003001ULL);	/* 1: another owner sets OUR bit during the 2 ms; 2: it sets another bit */
 }
 void fake_writeq(u64 v, void *p)
 {
@@ -120,7 +136,7 @@ void fake_writeq(u64 v, void *p)
 	if (pa == PTD_BASE + 0x10000 + 0xf8 * 8 && ack_mode)
 		put(PTD_BASE + 0x100 * 16, v);
 	if (pa == PTD_BASE + 0x10000 + 0xf8 * 8 && perturb_psreq && (v & 0x400))
-		put(PTD_BASE + 0xf8 * 16, v | 1);	/* readback differs from what was written */
+		put(PTD_BASE + 0xf8 * 16, v & ~0x400ULL);	/* readback has lost our bit */
 }
 int fake_match(struct device_node *np, const char *prop, const char *name) { if (no_regs) return -22; return !strcmp(name, "dvfs") ? 1 : 2; }
 int fake_addr(struct device_node *np, int idx, struct resource *res)
@@ -131,6 +147,22 @@ int fake_addr(struct device_node *np, int idx, struct resource *res)
 }
 void *fake_iomap(struct device_node *np, int idx) { maps++; return (void *)(uintptr_t)(idx == 1 ? DVFS_BASE : PTD_BASE); }
 
+int fake_set_request(const struct device_node *np, unsigned int id, bool enable, bool no_ack)
+{
+	u64 req;
+
+	export_calls++;
+	log_n += sprintf(log_buf + log_n, "EXPORT %u %d %d\n", id, enable, no_ack);
+	if (export_ret)
+		return export_ret;
+	req = get(PTD_BASE + 0xf8 * 16);
+	req = enable ? (req | (1ULL << id)) : (req & ~(1ULL << id));
+	fake_writeq(req, (void *)(uintptr_t)(PTD_BASE + 0x10000 + 0xf8 * 8));
+	if (!ack_mode && !no_ack)
+		return -ETIMEDOUT;
+	return 0;
+}
+
 static struct ane_device ane;
 static int fails;
 #define EXPECT(c, m) do { if (!(c)) { printf("FAIL: %s\n", m); fails++; } } while (0)
@@ -140,6 +172,7 @@ static void fresh(void)
 	dvfs_level = 1;	/* the older cases below are the level 1 sequence; level 5 (the default) has its own cases at the end */
 	mem_n = 0; log_n = 0; log_buf[0] = 0; ack_mode = 1; no_regs = 0; perturb_cmd = perturb_psreq = 0; files = maps = create_err = 0;
 	memset(&ane, 0, sizeof(ane));
+	export_mode = export_arm; export_arm = 0; export_calls = puts_n = node_puts = 0;
 	ane.dev = &dev0;
 	dev0.x = 0;
 	((struct device *)&dev0)->x = 0;
@@ -197,10 +230,25 @@ int main(void)
 	fresh(); memset(&ane, 0, sizeof(ane)); ane.dev = &dev0; no_regs = 1; ane_dvfs_init(&ane);
 	log_n = 0; ane_dvfs_up(&ane); ane_dvfs_down(&ane);
 	EXPECT(!ane.dvfs.dvfs && log_n == 0 && !strcmp(ane.dvfs.state, "not-configured"), "no DT windows: driver does nothing");
-	/* 7: PS-REQ with any other bit: the exact-word gate refuses, nothing written */
+	/* 7: PS-REQ with another bit set (not ours): the level is still requested, the other bit is kept in every write */
 	fresh(); put(PTD_BASE + 0xf8 * 16, 0x60003001ULL);
 	ane_dvfs_up(&ane);
-	EXPECT(log_n == 0 && !strcmp(ane.dvfs.state, "ps-req-unexpected"), "PS-REQ 0x60003001: nothing written");
+	EXPECT(ane.dvfs.active && strstr(log_buf, "W64 28e3d07c0 0000000060003401\n") && !strstr(log_buf, "0000000060003400\n"), "PS-REQ 0x60003001: bit 10 added, bit 0 kept");
+	ane_dvfs_down(&ane);
+	EXPECT(strstr(log_buf, "W64 28e3d07c0 0000000060003001\n") != NULL && !ane.dvfs.active, "release clears bit 10 only: 0x60003001 again");
+	/* 7a: the AGX vote (bit 9) is set when the ANE powers up: the level is still reached at level 1 (and at the default 5, below), bit 9 is kept */
+	fresh(); put(PTD_BASE + 0xf8 * 16, 0x60003200ULL);
+	ane_dvfs_up(&ane);
+	EXPECT(!strcmp(log_buf, "W32 28586a000 00000001\nW32 285868a00 80000000\nW64 28e3d07c0 0000000060003600\nW32 285868a00 80000001\nW64 28e3d0860 2000000000000001\n") && ane.dvfs.active && !strcmp(ane.dvfs.state, "level-1"), "bit 9 set at resume: still level-1, PS-REQ written 0x60003600");
+	ane_dvfs_down(&ane);
+	EXPECT(strstr(log_buf, "W64 28e3d07c0 0000000060003200\n") != NULL, "bit 9 set at resume: the release writes 0x60003200 back (bit 9 kept)");
+	fresh(); dvfs_level = 5; put(PTD_BASE + 0xf8 * 16, 0x60003200ULL);
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && !strcmp(ane.dvfs.state, "level-5") && strstr(log_buf, "W64 28e3d07c0 0000000060003600\n") && strstr(log_buf, "W32 285868a00 80000005\n"), "bit 9 set at resume: the default level 5 is reached");
+	/* 7b0: bits 9, 12 and 13 and the video-decode and USB4 bits all set together */
+	fresh(); put(PTD_BASE + 0xf8 * 16, 0x60043200ULL | (1ULL << 17) | (1ULL << 29));
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active, "several other bits set: level reached");
 	/* 7b: DVFS[4] holds something that is not 0 or a level word */
 	fresh(); put(PTD_BASE + 0x10c * 16, 0xdeadULL);
 	ane_dvfs_up(&ane);
@@ -209,11 +257,15 @@ int main(void)
 	fresh(); put(PTD_BASE + 0x10c * 16, 0x2000000000000002ULL);
 	ane_dvfs_up(&ane);
 	EXPECT(ane.dvfs.active, "a leftover level word is accepted");
-	/* 7d: PS-REQ changes during the 2 ms: unwind without touching PS-REQ */
+	/* 7d: another owner sets OUR bit during the 2 ms: unwind without touching PS-REQ */
 	fresh(); perturb_cmd = 1;
 	ane_dvfs_up(&ane);
 	EXPECT(!strcmp(log_buf, "W32 28586a000 00000001\nW32 285868a00 80000000\nW32 285868a00 80000000\nW32 28586a000 00000000\n") && !strcmp(ane.dvfs.state, "ps-req-changed"), "PS-REQ changed: undo DVFS_CMD and DVFS_ON only");
-	/* 7e: PS-REQ readback differs after the ACK */
+	/* 7d2: another owner sets a different bit during the 2 ms: the write keeps it (the word is re-read right before) */
+	fresh(); perturb_cmd = 2;
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && strstr(log_buf, "W64 28e3d07c0 0000000060003401\n") != NULL, "another bit changed meanwhile: it is kept, level reached");
+	/* 7e: PS-REQ readback has lost our bit after the ACK */
 	fresh(); perturb_psreq = 1;
 	ane_dvfs_up(&ane);
 	EXPECT(!strcmp(ane.dvfs.state, "ps-req-readback-unexpected") && !ane.dvfs.active && !strstr(log_buf, "80000001"), "PS-REQ readback wrong: no level written, unwound");
@@ -260,6 +312,33 @@ int main(void)
 	fresh(); dvfs_level = 0;
 	ane_dvfs_up(&ane);
 	EXPECT(log_n == 0 && !ane.dvfs.active && !strcmp(ane.dvfs.state, "level-0-by-parameter"), "level 0 by parameter: nothing written");
+	/* 9: the locked writer exported by pmp-report: the request goes through it (one call per edge), bit 9 and every other bit is left to its read-modify-write */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; export_ret = 0;
+	EXPECT(ane.dvfs.set_request == fake_set_request && ane.dvfs.report_np == &np0, "export present: resolved at init with the report node");
+	ane_dvfs_up(&ane);
+	EXPECT(!strcmp(log_buf, "W32 28586a000 00000001\nW32 285868a00 80000000\nEXPORT 10 1 0\nW64 28e3d07c0 0000000060003400\nW32 285868a00 80000001\nW64 28e3d0860 2000000000000001\n") && export_calls == 1 && ane.dvfs.active, "export present: up asks for bit 10 through the export, with the ack wait; no other PS-REQ write");
+	ane_dvfs_down(&ane);
+	EXPECT(strstr(log_buf, "EXPORT 10 0 1\n") != NULL && export_calls == 2 && !ane.dvfs.active, "export present: down withdraws bit 10 through the export, no ack wait");
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; put(PTD_BASE + 0xf8 * 16, 0x60003200ULL);
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && strstr(log_buf, "EXPORT 10 1 0\nW64 28e3d07c0 0000000060003600\n") != NULL, "export present and bit 9 set at resume: level reached, bit 9 kept");
+	ane_dvfs_exit(&ane);
+	EXPECT(puts_n == 1 && node_puts == 1 && !ane.dvfs.set_request, "exit gives the symbol and the node back");
+	/* 9b: the export times out (-ETIMEDOUT, bit 10 not acknowledged): unwind, level 0, two export calls (the set and the release) */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; ack_mode = 0;
+	ane_dvfs_up(&ane);
+	EXPECT(!ane.dvfs.active && !strcmp(ane.dvfs.state, "ps-ack-timeout") && ane.dvfs.ack_timeouts == 1 && export_calls == 2 && strstr(log_buf, "EXPORT 10 0 1\n") != NULL, "export ack timeout: unwinds through the export, state ps-ack-timeout");
+	/* 9c: the export exists but no report is bound (-ENODEV): the masked read-modify-write here does the job */
+	fresh(); export_arm = 1; fresh(); dvfs_level = 1; export_ret = -ENODEV;
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && export_calls == 1 && strstr(log_buf, "EXPORT 10 1 0\nW64 28e3d07c0 0000000060003400\nW32 285868a00 80000001\n") != NULL, "export reports -ENODEV: falls back to the masked read-modify-write");
+	export_ret = 0;
+	/* 9d: no report node in the device tree: the export symbol is given back at once and nothing is called */
+	fresh(); export_arm = 2; fresh(); dvfs_level = 1;
+	EXPECT(!ane.dvfs.set_request && puts_n == 1, "no report node: symbol given back, no export in use");
+	ane_dvfs_up(&ane);
+	EXPECT(ane.dvfs.active && export_calls == 0 && !strstr(log_buf, "EXPORT"), "no report node: the masked read-modify-write is used");
+	export_ret = 0;
 	printf(fails ? "RESULT: %d FAILURES\n" : "RESULT: all checks passed\n", fails);
 	return fails != 0;
 }

@@ -47,7 +47,7 @@ Design, per die:
 
 | Driver | Die-1 SET/pmgr base | Qualification | Firmware |
 | --- | --- | --- | --- |
-| `ane.ko` (T6002 die 1) | 0x228e08c000 | RECOGNIZED until a die-1 run; `tm_retention = true` as die 0 | none (host TM; iBoot preloads per instance, `pre-loaded=1` measured on ane2) |
+| `ane.ko` (T6002 die 1) | 0x228e08c000 | RECOGNIZED until a die-1 run; `tm_retention = true` as die 0 | none (host TM; the boot loader preloads per instance, `pre-loaded=1` measured on ane2) |
 | `ane_t6021` (T6022 die 1) | SET from the node reg; `pmu_pa = 0x228e084000` | die-0 tier until a die-1 run | `t602x_ane1_fw_selene_rc4x` pin |
 
 Mechanism: the SET/ps base moves from compiled constant to node reg entry.

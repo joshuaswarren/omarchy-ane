@@ -79,7 +79,7 @@ sets the bit.
   set4..set1, base, td and ane_cpu and closes PWGATE. The next open cold-boots
   the firmware (`ColdStarts` grows; `Resumes` stays 0).
 - Inside a session the firmware gates the compute islands between jobs. M2 idle
-  words under macOS 27: ane_sys and ane_cpu 0x0f000300, islands 0x300
+  words under the reference run 27: ane_sys and ane_cpu 0x0f000300, islands 0x300
   (findings.md:563-576).
 - The kext also has an idle sleep timer, a dynamic power-gate hysteresis timer,
   and `ANE_RestoreState`, which re-creates the programs of open clients after a
@@ -132,7 +132,7 @@ T6020 and T6022 die 0 use the same addresses, PS words, selene firmware and
 `pmu_pa` as T6021 (`packaging/dt/t602x-ane.dtsi:40-45`,
 `ane/t6021/ane_t6021_fwload.c:207-226`): same power sequence. T8112 uses the bia
 firmware, PS words at pmgr +0xc000..+0xc038, PMU base 0x23b70c010, and a PWGATE
-word at set +0x8b8 that the kext opens before the PS words
+word at set +0x8b8 that the driver opens before the PS words
 (`ane_t6021_fwload.c:203-206`, `:228-233`); a power-down there must close it
 after them.
 

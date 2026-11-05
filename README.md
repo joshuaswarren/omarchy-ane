@@ -1,9 +1,26 @@
 # omarchy-ane
 
-Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs. It ships DRM
+Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs, with experimental bring-up modules for M3, M4 and the Mac mini M6. It ships DRM
 kernel modules and `libane`, the userspace library. Based on [eiln/ane](https://github.com/eiln/ane),
 which reverse engineered the M1; this fork adds the other chips, packaging,
 device-tree overlays and verification tools.
+
+## The projects
+
+Part of the Omarchy on Apple Silicon ecosystem:
+
+- [omarchy-mlx](https://github.com/joshuaswarren/omarchy-mlx) — MLX on the Apple GPU under Linux, and Core ML models on the Neural Engine.
+- [mil-hwx-compiler](https://github.com/joshuaswarren/mil-hwx-compiler) — compiles Core ML MIL into ANE programs on Linux (M1/M2 targets).
+- [metal2vk](https://github.com/joshuaswarren/metal2vk) — translates Metal compute kernels to Vulkan SPIR-V with open tools.
+- [mesa-1](https://github.com/joshuaswarren/mesa-1) — Mesa fork carrying the Honeykrisp Vulkan driver work for Apple silicon.
+- [omarchy-cluster](https://github.com/joshuaswarren/omarchy-cluster) — one local model split across Macs on macOS and Omarchy Linux.
+- [omarchy-apple-dev](https://github.com/joshuaswarren/omarchy-apple-dev) — build and ship iOS apps from Omarchy Linux, no Xcode or Mac.
+- [omarchy-egpu](https://github.com/joshuaswarren/omarchy-egpu) — eGPU setup, diagnostics and measured local-inference results on Omarchy Linux.
+- [ane-linux-experiments](https://github.com/joshuaswarren/ane-linux-experiments) — Neural Engine on Linux: verified primitives, receipt-backed macOS parity.
+- [coreglass](https://github.com/joshuaswarren/coreglass) — profiler that shows where local inference loses speed on Apple Silicon Linux.
+- [omarchy-inference-fleet](https://github.com/joshuaswarren/omarchy-inference-fleet) — reproducible, pinned single-node MLX inference baselines.
+- [remnic](https://github.com/joshuaswarren/remnic) — local-first memory and context for AI agents.
+- Platform upstream: [omarchy-mac](https://github.com/omacom/omarchy-mac) — Omarchy on Apple Silicon Macs.
 
 <a id="chip-coverage"></a>
 
@@ -22,9 +39,12 @@ device-tree overlays and verification tools.
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
   `ane/h18` (Mac mini M6). None is packaged or autoloaded; each loads by hand
-  behind its own opt-in parameter and per-stage confirmations, and none runs
-  real inference yet ([h15](ane/h15/README-bringup.md),
-  [h16](ane/h16/README-bringup.md), [h18](ane/h18/README-bringup.md)). Data
+  behind its own opt-in parameter and per-stage confirmations
+  ([h15](ane/h15/README-bringup.md), [h16](ane/h16/README-bringup.md),
+  [h18](ane/h18/README-bringup.md)). The M6 module has run the first verified
+  computation on that chip under Linux: a one-op fp16 add, output byte-identical
+  to the reference (2026-11-03, [issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)). The
+  M3 and M4 modules remain bring-up-only. Data
   for newer chips sits in `data/ane-soc/`
   ([docs/ane-soc-data.md](docs/ane-soc-data.md)).
 
@@ -35,7 +55,7 @@ device-tree overlays and verification tools.
 | M1 Max | T6001 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
 | M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | opt-in, untested (die 0) | `ane-t6002` | not tested |
 | M2 | T8112 | not recorded | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | not tested |
-| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
+| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree |
 | M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
 | M2 Ultra | T6022 | not recorded | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) |
 
@@ -311,3 +331,7 @@ The table is generated from `data/ane-soc/` and the data-only overlays.
 | T8150 | H18 | 5 | no |
 | T8152 | H18 | 1 | yes |
 <!-- END DATA-ONLY TABLE -->
+
+## Contributors
+
+Everyone credited so far: [CONTRIBUTORS.md](CONTRIBUTORS.md).

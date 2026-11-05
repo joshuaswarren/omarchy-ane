@@ -15,6 +15,12 @@ tools: ane-run ane-session ane-selfcheck
 $(LIB):
 	$(MAKE) -C ../libane libane
 
+.PHONY: check-h15-firmware
+check-h15-firmware:
+	test -n "$(H15_FW_INPUT_DIR)"
+	test -n "$(H15_FW_ANE1_INPUT_DIR)"
+	H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" H15_FW_ANE1_INPUT_DIR="$(H15_FW_ANE1_INPUT_DIR)" python3 test_h15_firmware.py -v
+
 ane-run: ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-run.c $(LIB) -lm
 
@@ -151,6 +157,13 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	./test_t6021_prog_lookup
 	./test_check_band
 	./test_ane_timing
+	$(PYTHON) ../ane/test/retirement_model_test.py
+	$(PYTHON) ../ane/test/tm_transient_fault_test.py
+	$(PYTHON) ../ane/test/tm_close_test.py
+	$(PYTHON) ../ane/test/tm_recovery_guard_test.py
+	$(PYTHON) ../ane/test/tm_telemetry_test.py
+	$(PYTHON) test_ane_run_expect_bind.py
+	$(PYTHON) test_h15_load.py
 ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_resident.py
 	$(PYTHON) test_qwen_resident_ab.py
