@@ -565,6 +565,30 @@ word were not captured, and the firmware service-registry index has not been
 shown byte-for-byte equal to the Linux table ordinal. Static cross-receipt
 correlation only; no hardware accessed during this continuation.
 
+## Addendum 21 — separate record-builder and ring-notification callbacks
+
+The full `0x29b6c` disassembly separates two indirect-call roles that should
+not be conflated. First, it calls `0x50ec` with `(x0=length, x1=1, x2=message,
+x3=0)`. `0x50ec` loads `0x1cce08`; if installed, its return value is saved
+and ORed into the 64-bit ring-record header alongside the queue's mode flag.
+It is therefore a record-header/metadata hook at this call site, not itself
+the ring doorbell.
+
+After writing the record and advancing the producer index, `0x29b6c` loads a
+different callback from `[0x1cde20+0x18]` and, when non-null, calls it with
+`(record_address, 0x40)`. This is the direct post-enqueue notification hook.
+The same `0x1cde20` object has another callback at +0x28, called earlier with
+the context pointer at +0x38; on the sentinel/error branch it is called with
+the pair loaded from +0x30. These fields belong to the notification registry
+object, not to the `0x1cce08` function pointer.
+
+Accordingly, the prior addendum's phrase “indirect notification hook” for
+`0x1cce08` was imprecise: it transforms/augments the record header, while the
+post-push call through `[0x1cde20+0x18]` is the notification candidate. Its
+implementation is still unresolved. This traces the local ring path's
+callback boundary but does not prove a Linux channel or firmware endpoint.
+Static disassembly only; no new hardware access and no command submitted.
+
 ## Addendum 20 — notification callback pointer is not firmware-assigned here
 
 The indirect call at `0x50ec` loads the function pointer at VA `0x1cce08`
