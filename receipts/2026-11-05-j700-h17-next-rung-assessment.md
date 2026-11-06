@@ -41,17 +41,40 @@ empty-buffer proposal. The H17 discovery output currently exposes channel
 names, types, sources, slot counts, and buffer addresses as observations; the
 driver deliberately does not dereference those buffers.
 
-## Offline gates before proposing registration hardware
+## Offline source contract: host initialization writes
 
-1. From the pinned firmware analysis, resolve the exact initialization
-   contract for each channel buffer: complete byte ranges, producer/consumer
-   fields, initial contents, ownership, and the write/ordering sequence. The
-   current table copy alone does not provide safe sizes or establish that an
-   address is backed by one of the driver's retained allocations.
+The assessment above is narrowed by the pinned firmware analysis
+`receipts/2026-11-04-j700-h17-firmware-load-path/README.md` §14.2-14.3,
+based on kernelcache SHA-256
+`7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe`.
+The trace shows that the constructor seeds `slots` control blocks of 0x40
+bytes only for type-0 entries; for each block it stores the source-traced
+initial state and invokes the cache-clean hook. It also identifies
+`SHAREDMALLOC`, `TERMINAL`, and `BUF_T2H` as required names before
+`ANE_Init` continues. This is source analysis, not a device observation of
+registration.
+
+An offline-only validator was added in `ane/h17/chanreg_model.py` as
+`registration_init_ranges`, with synthetic tests in
+`ane/h17/test_registration_model.py`. Its fixture is taken from the retained
+successful table log. The model proves only that the host's source-traced
+type-0 initialization ranges are aligned, non-overlapping, and inside the
+owned **logical** IPC extent (not merely DMA mapping padding). It deliberately
+does not validate or bless firmware-side accesses to the other channel
+buffers, and it is not wired into the driver or a hardware runner.
+
+## Remaining offline gates before proposing registration hardware
+
+1. Resolve from the pinned analysis the complete firmware-side access
+   contract for every non-type-0 channel buffer: byte ranges, producer/
+   consumer fields, ownership, and ordering. The copied table contains
+   pointers and counts, but the current stage never dereferences these
+   buffers; the host-initialization model is not evidence that firmware-side
+   accesses stay within owned IPC.
 2. Extend the offline model to validate all eight records and every complete
-   buffer range against owned DMA allocations, including overflow, overlap,
-   granularity, and firmware address-width constraints. Do not infer lengths
-   from adjacent addresses or slot counts without source evidence.
+   firmware-accessed range against owned DMA allocations, including overflow,
+   overlap, granularity, and firmware address-width constraints. Do not infer
+   lengths from adjacent addresses or slot counts without source evidence.
 3. Add negative and mutation tests for malformed names/records, missing
    required channels, out-of-range/overlapping buffers, partial allocation or
    mapping, bad reply/ack, and timeout. Specify retention on every failure

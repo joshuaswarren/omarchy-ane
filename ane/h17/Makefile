@@ -57,7 +57,7 @@ dart-publication-test:
 	python3 -m unittest -v test_dart_publication_observations.py
 
 chanreg-model-test:
-	python3 -m unittest -v test_chanreg_model.py test_table_discovery_verdict.py
+	python3 -m unittest -v test_chanreg_model.py test_table_discovery_verdict.py test_registration_model.py
 
 planner-test:
 	python3 sim/test_plan_stage4.py

@@ -170,3 +170,60 @@ def table_offset(inputs, ipc, table_address):
     if ipc.size != inputs.ipc_requested:
         raise ValueError("unexpected IPC extent")
     return ipc.offset(table_address, inputs.channel_count * 0x100)
+
+
+@dataclass(frozen=True)
+class ChannelRecord:
+    """Decoded 0x100-byte firmware table entry; values are observations."""
+    index: int
+    name: str
+    channel_type: int
+    source: int
+    slots: int
+    buffer_iova: int
+
+
+def registration_init_ranges(records, ipc):
+    """Validate the host's source-traced type-0 control-block initialization.
+
+    The pinned J700 trace shows the channel constructor initializing `slots`
+    0x40-byte blocks only when the entry's type is zero. This deliberately
+    does not claim that firmware-side use of other channel buffers is safe.
+    """
+    ipc.validate()
+    required = {"SHAREDMALLOC", "TERMINAL", "BUF_T2H"}
+    if len(records) != 8:
+        raise ValueError("first-run registration model requires eight records")
+    names = set()
+    ranges = []
+    for expected, record in enumerate(records):
+        if not isinstance(record, ChannelRecord) or record.index != expected:
+            raise ValueError("channel records must be unique and ordered 0..7")
+        if (not isinstance(record.name, str) or not record.name or
+                len(record.name.encode("ascii", errors="strict")) > 31):
+            raise ValueError("invalid channel name")
+        for value, label in ((record.channel_type, "type"),
+                             (record.source, "source"), (record.slots, "slots")):
+            uint(value, 32, f"channel[{expected}].{label}")
+        uint(record.buffer_iova, 64, f"channel[{expected}].buffer_iova")
+        if record.name in names:
+            raise ValueError("duplicate channel name")
+        names.add(record.name)
+        if record.channel_type != 0:
+            continue
+        if record.slots == 0:
+            continue
+        length = record.slots * 0x40
+        if length >= 1 << 64:
+            raise ValueError("channel control-block extent overflows u64")
+        if record.buffer_iova % 0x40:
+            raise ValueError("channel control-block base is not 0x40-aligned")
+        offset = ipc.offset(record.buffer_iova, length)
+        ranges.append((record.index, offset, length))
+    if not required <= names:
+        raise ValueError("required channel names are missing")
+    ordered = sorted((offset, offset + length, index)
+                     for index, offset, length in ranges)
+    if any(left[1] > right[0] for left, right in zip(ordered, ordered[1:])):
+        raise ValueError("host-initialized channel control-block ranges overlap")
+    return tuple(ranges)
