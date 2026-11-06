@@ -351,17 +351,22 @@ hardware access occurred.
 
 ### Response-handler reference scan
 
-Scanned the retained ANE interface code range for direct branches and exact
-ADRP+ADD constructions of `processCommandResponse` (`0xfffffe0008f437f8`). No
-direct code reference was found in that range. The only raw u64 occurrence in
-the whole kernelcache is at `0xfffffe000c7c4dc8`, adjacent to other method
-addresses and metadata-like words; that data entry does not establish a caller
-or registration mechanism. Receipt:
+Follow-up tracing found a direct call in `aneInterruptHandlerPriv` at
+`0xfffffe0008f585b8`. The handler passes the received queue message ID as
+`processCommandResponse`'s `x1`, with size in `x2` and payload in `x3`. The
+receive primitive's `x1` output points to `sp+0x50`; after queue receive, the
+handler reloads that output as `x1` and invokes the response matcher. This
+closes the host-side path from a received slot token to outstanding-response
+matching. Full evidence and the exact instructions are in
 `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-response-xrefs.txt`.
 
-The token's firmware-side extraction/dispatch is therefore still not pinned.
-An indirect callback or framework dispatch remains possible; do not infer a
-safe reply path from the absent direct branch.
+Correction: the earlier direct-reference scan missed this call because its
+Capstone comparison treated the branch immediate as an unsigned canonical VA;
+Capstone returned a sign-extended relative value for the high kernel address.
+The earlier “no direct code reference” conclusion was false. This corrects
+host-side receive/dispatch tracing only; it still does not show how firmware
+chooses the returned token or prove the token's relation to CSNE `command+4`,
+nor does it establish PING's request/reply contract or safe eligibility.
 
 ### Queue receive-ID mask correction
 
