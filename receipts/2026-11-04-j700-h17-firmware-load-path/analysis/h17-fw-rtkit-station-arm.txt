@@ -1085,6 +1085,22 @@ connects the fallback's optional pointer to the station route table here.
 CRPC link mode, runtime route, and IRQ ownership remain unresolved; no
 hardware access or submission; PING remains unsent.
 
+## Addendum 83 — service `+8` has a vtable setter; this does not set `+0x28`
+
+The `0x6170` service object's signed vtable points at table `0xc0068`; its
+entry at vtable offset `+0x20` resolves to `0x6158`. That method returns the
+old 32-bit value from `[service+8]` and stores its second argument there
+(`ldr w0,[x0,#8]; str w1,[x0,#8]`). Thus `+8` is not proven permanently NULL:
+the object exposes an explicit setter that can make the `0x35128` guarded
+service-link branch eligible. The setter writes only the 32-bit `+8` field;
+it does not write the pointer-sized `[service+0x28]` queue reference. I have
+not identified a callsite that invokes this slot for `DATA_CHAIN_H2T`, or a
+writer that couples the setter with initialization of `+0x28`. Addenda 80–82
+remain valid for the distinct `+0x28` writer search and fallback transport
+analysis, but the initial-zero observation alone cannot establish that the
+service object always takes the fallback path. No hardware access or
+submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
