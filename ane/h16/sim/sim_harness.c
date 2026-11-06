@@ -992,6 +992,24 @@ static void sc_neg_adt_deep_nesting(void)
 	(void)ret;
 }
 
+/* A region larger than the u32 offset domain is refused at open, before any
+ * mapping or lookup, so no offset or sentinel can narrow or wrap.
+ */
+static void sc_neg_adt_oversize(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	n_adt.reg[0][1] = 0x100000080ULL;
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("exceeds the") == 1, "oversize ADT region is refused at open");
+	chk(sim_log_count("adt seg0 phys=") == 0, "oversize ADT never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
 /* A DART map that fails midway must unwind the pages it already
  * mapped before the staged buffer is freed: partial IOVA mappings
  * over freed memory hand the next map a stale translation. The
@@ -1102,6 +1120,8 @@ int main(int argc, char **argv)
 		sc_neg_adt_truncated_prop();
 	else if (!strcmp(sc, "neg-adt-deep-nesting"))
 		sc_neg_adt_deep_nesting();
+	else if (!strcmp(sc, "neg-adt-oversize"))
+		sc_neg_adt_oversize();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))

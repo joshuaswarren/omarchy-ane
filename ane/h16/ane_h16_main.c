@@ -427,6 +427,9 @@ static int ane_h16_status(struct ane_h16 *ane)
 static const void *adt;
 static size_t adt_len;
 
+/* Every ADT offset is u32; refusing larger regions at open keeps them all valid. */
+#define ADT_MAX_LEN (1U << 30)
+
 struct adt_node {
 	u32 off;
 	u32 nprops;
@@ -450,7 +453,7 @@ static struct adt_node adt_node_at(u32 off)
 /* Truncated or too-deep data ends every later walk at an empty node. */
 static u32 adt_end_sentinel(void)
 {
-	return adt_len < (u64)(u32)~0ULL ? (u32)adt_len : (u32)~0ULL;
+	return adt_len;
 }
 
 /*
@@ -511,7 +514,7 @@ static struct adt_node adt_child(struct adt_node n, unsigned int idx)
 			break;
 		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
 		extent = (u64)off + 36 + ALIGN(size, 4);
-		if (extent > adt_len || extent > (u32)~0ULL) {
+		if (extent > adt_len) {
 			/* truncated body: end the walk at an empty node
 			 * instead of wrapping the offset */
 			return adt_node_at(adt_end_sentinel());
@@ -574,6 +577,14 @@ static int ane_h16_adt_open(struct ane_h16 *ane)
 			continue;
 		if (of_address_to_resource(np, 0, &res))
 			continue;
+		if (resource_size(&res) > ADT_MAX_LEN) {
+			dev_err(ane->dev,
+				"ADT: region %#llx bytes exceeds the %#x limit; refusing\n",
+				(unsigned long long)resource_size(&res), ADT_MAX_LEN);
+			ret = -EFBIG;
+			of_node_put(np);
+			goto out;
+		}
 		adt = devm_memremap(ane->dev, res.start, resource_size(&res),
 				    MEMREMAP_WB);
 		if (IS_ERR(adt)) {
