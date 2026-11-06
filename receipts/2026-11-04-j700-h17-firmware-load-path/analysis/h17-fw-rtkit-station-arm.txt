@@ -426,6 +426,27 @@ invocation appears indirect (e.g. class/vtable path); the upstream factory and
 runtime registration are still the next trace targets. Static disassembly
 only; no hardware accessed.
 
+## Addendum 14 — cross-source H2T name corroboration, not endpoint identity
+
+There is an independent kernelcache-side use of the same channel name. In
+`h17-send-channel-lookup.txt` (kernelcache SHA-256
+`7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe`), the
+decoded `aneFirmwareCommandSend` selector lookup maps selectors 2 and 3 to
+device offset `0xe214`, whose documented label is `DATA_CHAIN_H2T`. Firmware
+slot 3 is separately named `DATA_CHAIN_H2T` by its string argument at VA
+0x9d352 in this pinned firmware image.
+
+This is useful cross-source corroboration that both sides expose a
+`DATA_CHAIN_H2T`-named service/channel. The numbering is not equivalent:
+firmware's slot 3 indexes its four service objects; kernel selectors 2/3
+index a device-field lookup and both resolve to the same cached channel index.
+The kernel receipt explicitly says that lookup is not a CSNE command-ID table.
+The evidence therefore does not establish that the slot-3 service object's
++0x20 or +0x28 pointer is the Linux channel record, nor that the firmware
+queue consumer's pop path and Linux send path share one endpoint. Keep the
+mapping unproven pending an explicit object/link registration or shared index
+field. Static evidence only; no device access.
+
 ## Addendum 13 — service handle is separate from optional link
 
 The vtable installed by 0x6170 has its first two methods at 0x61e4 and 0x61e8
