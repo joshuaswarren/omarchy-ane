@@ -1341,6 +1341,19 @@ wrapper path's route encoding unresolved and gives no CRPC queue ownership
 evidence. Static disassembly only; no hardware access or submission; PING
 remains unsent.
 
+## Addendum 92 — callback retention does not prove endpoint-registration success
+
+One status detail in the `0x6898` linked arm limits the previous result:
+`0x9acb8` returns a status in `w0`, but `0x6898` does not test or propagate
+it. It unconditionally stores the callback pointer at `[service+0x18]` and
+returns. The lower-level helper only installs callback/service at the selected
+message block when both channel and endpoint resolution succeed; its failure
+status otherwise leaves that block untouched. Thus a retained callback at
+service `+0x18` would not by itself prove successful route registration, even
+if the nonzero `+8` path ran. Runtime channel/endpoint identity and registration
+success remain unobserved. No hardware access or submission; PING remains
+unsent.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
