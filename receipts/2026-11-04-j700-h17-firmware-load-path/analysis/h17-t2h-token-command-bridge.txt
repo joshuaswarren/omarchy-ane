@@ -1,0 +1,37 @@
+H17 T2H receive token to inner command dispatch
+===============================================
+
+Source kernelcache SHA-256:
+  7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+
+At 0xfffffe0008f58598..0xfffffe0008f585a4, the interrupt handler reloads
+the queue receive outputs and calls the T2H handler at 0xfffffe0008f03a70:
+
+  0xfffffe0008f58598: ldp x2, x1, [sp, #0x48]
+  0xfffffe0008f5859c: ldr x3, [sp, #0x40]
+  0xfffffe0008f585a0: mov x0, x19
+  0xfffffe0008f585a4: bl  0xfffffe0008f03a70
+
+Because the receive primitive output pointers are sp+0x50 for the message ID,
+sp+0x48 for size, and sp+0x40 for payload, the T2H handler receives x1=queue
+message ID/token, x2=size, x3=payload.
+
+At handler entry 0xfffffe0008f03a70, x19 saves x1 (token), x21 saves x2 (size),
+and x20 saves x3 (payload). It then sets the requested read size to 12 bytes
+and calls 0xfffffe0008f4c128 with the saved token as x1, size 12 as x2, and a
+stack output pointer in x3 (0xfffffe0008f03ac4..d0). The lookup helper retains
+that token as x19, forms token+requested-size, checks it against registered
+mapping/range state, and obtains the corresponding data view. Exact relevant
+helper instructions are in `h17-message-lookup-helper.txt` (full disassembly).
+
+The T2H handler then loads the returned message view and reads a 16-bit field
+at offset +4 (`ldrh w8, [x0,#4]` at 0xfffffe0008f03bb0). It dispatches on that
+inner field, with visible cases including 0x100, 0x102, 0x103, 0x104, 0x105,
+0x106, 0x107, 0x300, 0x302, 0x303, and 0x305. This is separate from the
+queue token passed in x1.
+
+Interpretation boundary: this is the host driver's T2H receive/dispatch code.
+It shows the outer queue token is used to locate/read a mapped 12-byte command
+view, whose inner command code is at +4. It does not prove firmware's token
+allocation/echo policy, that any particular inner command is safe to send,
+or a PING-specific contract. Static disassembly only; no hardware access.

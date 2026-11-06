@@ -368,6 +368,23 @@ host-side receive/dispatch tracing only; it still does not show how firmware
 chooses the returned token or prove the token's relation to CSNE `command+4`,
 nor does it establish PING's request/reply contract or safe eligibility.
 
+### T2H outer-token to inner-command bridge
+
+The T2H handler call at `0xfffffe0008f585a4` receives the queue message ID as
+`x1`, the received length as `x2`, and payload as `x3`. In
+`0xfffffe0008f03a70`, it retains that token, requests a 12-byte view through
+the mapped-message lookup helper (`0xfffffe0008f4c128`), then reads the inner
+u16 at `+4` from the returned view and dispatches on it. The helper uses its
+token and requested length in range lookup against registered mapping state.
+Receipts:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-token-command-bridge.txt`
+and `analysis/h17-message-lookup-helper.txt`.
+
+This is a host-side structural bridge between the outer queue token and the
+inner command code; it explains why the two fields must not be conflated. It
+does not establish firmware token allocation/echo behavior, or prove PING's
+request/reply schema or safe eligibility. No hardware was accessed.
+
 ### Queue receive-ID mask correction
 
 The decoded receive primitive at `0xfffffe0008ef8a10` applies
