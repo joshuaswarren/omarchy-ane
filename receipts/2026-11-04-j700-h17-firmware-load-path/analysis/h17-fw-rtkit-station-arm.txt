@@ -1025,6 +1025,28 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
+
+The route's lower half has an independent bound check in `0x9a944`. It loads
+the selected channel object's maximum configured endpoint ID from `+0x2c`,
+rejects IDs above that maximum (the configured maximum is 32 for the visible
+endpoint set), then maps the sparse legal ranges `0..13` and `18..32` into a
+compact table index and checks the endpoint-present bit before returning the
+connection object. The setup at `0x96934` builds that map from the configured
+IDs 0, 1, 2, and 32 (Addendum 66).
+
+For a child pointer in the statically configured wrapper pool, the route's
+low half would fall in `0xe000..0xffff` or `0x0000..0x8fff`, depending on the
+pool segment. Values above 32 in those ranges are rejected by `0x9a944`; the
+few low values at segment boundaries cannot be ruled out without the actual
+allocation address. Even if such a low endpoint value were valid, however,
+the route's upper half remains `0x26..0x38`, outside the initialized eight
+channel-object entries checked by `0x9c930`. This refines rather than
+independently proves the static inconsistency in Addendum 77, and remains
+conditional on the peer-wrapper pointer and pinned preload mapping being the
+runtime values. No device behavior is claimed; CRPC ownership remains open.
+No hardware access or submission; PING remains unsent.
+
 ## Addendum 77 — configured wrapper-pool pointers cannot index the eight-channel route table
 
 The allocator bounds can be evaluated in the firmware's documented preload
