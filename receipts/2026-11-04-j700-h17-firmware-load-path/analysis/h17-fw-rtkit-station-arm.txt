@@ -1053,6 +1053,23 @@ offset. No writer that bridges the service object to the CRPC queue has been
 identified. Static analysis only; no hardware access or submission; PING
 remains unsent.
 
+## Addendum 81 — CRPC consumer has a guarded service-link path and separate fallback
+
+The consumer initializer at `0x35128` makes the distinction explicit. It
+checks `[service+8]`; only when nonzero does it copy `[service+0x28]` into the
+consumer's `[+0x1d0]`. When `[service+8]` is zero, it instead calls the
+separate resource/queue constructor at `0x26440`, stores that result at
+`[consumer+0x1d0]`, and proceeds with the consumer-owned queue setup. The
+`0x6170` constructor initializes both service `+8` and `+0x28` to zero (the
+first pair store writes a vtable and zero; the `+0x20` pair store likewise
+writes helper result and zero), so a newly constructed, otherwise untouched
+service object takes the fallback branch. This does not prove that runtime
+registration never changes `+8`, nor that the fallback queue's own `[+8]`
+link is local or linked. It does show that the fallback queue is not the
+service object's `+0x28` reference by construction. CRPC route and IRQ
+ownership remain unresolved; no hardware access or submission; PING remains
+unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
