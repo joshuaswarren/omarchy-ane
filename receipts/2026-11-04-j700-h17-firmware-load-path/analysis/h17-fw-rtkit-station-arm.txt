@@ -711,3 +711,21 @@ where the route is read, but neither who populates the link object's route
 field nor whether the `CRPC` fallback's `[queue+8]` is non-null at runtime.
 The local-ring branch remains selected when that pointer is null. Static
 disassembly only; no hardware accessed and no command submitted.
+
+## Addendum 27 — active registry descriptor labels and identifiers
+
+The four active 0x18-byte records consumed by the initializer beginning at
+`0x96934` are directly visible in the pinned firmware data at `0xcabc0`.
+Their descriptor field at record `+8` is respectively `0`, `1`, `2`, and
+`0x20`; the active field at `+0xc` is `8` in each record. The associated
+tagged name-pointer words resolve (using their low 32 bits) to `management`
+(`0x9d3b3`), `crashlog` (`0x9d3be`), `syslog` (`0x9d3c7`), and `user1`
+(`0x9d3ce`). The next record has active field zero, terminating the walk.
+
+This is evidence about the firmware's own descriptor registry, not a mapping
+to host RTKit channel ordinals or to `DATA_CHAIN_H2T`. In particular, none of
+these four names identifies the host's index-7 record, and the descriptor
+field values cannot be substituted for the route's high 16-bit channel index
+without additional dataflow evidence. This narrows the registry contents but
+does not close the CRPC link/route construction gap. Static image inspection
+only; no device access or command submission.
