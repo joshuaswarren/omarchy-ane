@@ -385,6 +385,21 @@ H2T queue, nor a mapping to the Linux channel-table record. The registration
 ack receipt contains eight runtime channel records, but no field-by-field
 equivalence has been demonstrated. No hardware accessed.
 
+## Addendum 12 — slot object's initial link fields
+
+Refining Addendum 11: `0x6170` builds each named 0x58-byte service object.
+It stores the name and callback-derived metadata at +0x10/+0x18, invokes
+0xdf08, then stores that helper's result at +0x20 and explicitly zeros +0x28
+(`stp x0,xzr,[object+0x20]`). It also zeros +0x30..+0x4f and +0x50. Thus the
+slot-3 object is indeed named `DATA_CHAIN_H2T`, but its +0x28 pointer is NULL
+immediately after this construction. The `0x35128` initializer only copies
+`[service+0x28]` to the consumer's +0x1d0 when `[service+8]` is nonzero; this
+cannot be read as a proven queue association without finding a later write
+that populates those fields. The object also receives a pointer from 0xdf08
+at +0x20, whose precise role is not yet identified. This narrows, rather than
+closes, the endpoint question: slot naming is proven; a live queue-link in
+that object's +0x28 is not. Static disassembly only; no hardware accessed.
+
 ## Addendum 8 — queue consumer fields in the 0x35128 initializer
 
 The initializer beginning at 0x35128 (body at 0x3512c) receives x4 in x20 and
