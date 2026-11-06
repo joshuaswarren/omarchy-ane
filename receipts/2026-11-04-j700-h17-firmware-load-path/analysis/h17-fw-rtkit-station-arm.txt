@@ -1354,6 +1354,25 @@ if the nonzero `+8` path ran. Runtime channel/endpoint identity and registration
 success remain unobserved. No hardware access or submission; PING remains
 unsent.
 
+## Addendum 93 — `0xdc44` constructs per-entry queues from a context table
+
+The `0xdc44` call is inside `0xdbcc`, not a direct CRPC-specific constructor.
+`0xdbcc` takes a context object in `x0`, computes an entry in that context's
+`[+0x40]` array (stride `0x60` bytes), then invokes `0x298fc` with `x3,x4`
+loaded from context `[+0x60,+0x68]`. Constructor `0x298fc` stores those values
+as the new queue object's `[+0,+8]` respectively; thus the active-link
+candidate is exactly the context's `[+0x68]` value.
+
+The pair at context `[+0x60,+0x68]` is initialized by `0xdbc4` (`stp x1,x2,
+[x0,#0x60]`). Its callers include `0x60e0`, `0x6a40`, and `0x201bc`; the
+`0x60e0` path is part of a per-object table setup, while `0x201bc` receives
+the object at global `[0x1c8000+0x5a8]`. This confirms the constructor family
+and the exact dataflow into queue `+8`, but does not yet identify which
+context/table entry is the CRPC mailbox or the runtime value of its link
+argument. The CRPC association, route to host channel 7, IRQ ownership, and
+PING schema therefore remain unproven. Static firmware analysis only; no
+reboot, device access, or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
