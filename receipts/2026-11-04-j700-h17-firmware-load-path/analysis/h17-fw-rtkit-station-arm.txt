@@ -1239,6 +1239,26 @@ constructor's initial path is the local callback-registration path. No
 runtime route, IRQ ownership, or device behavior is established. No hardware
 access or submission; PING remains unsent.
 
+## Addendum 91 — nonzero service `+8` registers its callback against the station endpoint
+
+Traced the linked arm of `0x6258`. It passes the nonzero value loaded from
+`[service+8]` to `0x6898`; that routine reads a 32-bit endpoint value from
+`[that_object+0x10]`, then calls `0x9acb8(endpoint, callback, service)`. The
+registration helper resolves the runtime channel object, resolves the
+endpoint's message block, and stores the callback and service pointer in that
+block at `+8/+0x10` (`0x9ad08`). `0x6898` also saves the callback at
+`[service+0x18]`. This is the firmware path by which a service with a
+nonzero `+8` registration object becomes associated with a station endpoint.
+
+This clarifies that service `+8` is a guard/registration-object reference,
+not itself the endpoint ordinal; the endpoint is read from the referenced
+object's `+0x10`. It remains distinct from queue `[+8]`, which directly points
+to the active send/receive link object. The path neither writes service
+`+0x28` nor proves that the `SHAREDMALLOC` registration object is populated
+for CRPC at runtime. The station route's correspondence to host
+`DATA_CHAIN_H2T` index 7, response/IRQ ownership, and PING schema remain
+unproven. No hardware access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
