@@ -348,3 +348,17 @@ cached channel index, not the queue message ID. This corrects the earlier
 interpretation without changing the safety conclusion: no firmware-side token
 extraction, PING payload schema, or PING reply contract is yet proven, and no
 hardware access occurred.
+
+### Response-handler reference scan
+
+Scanned the retained ANE interface code range for direct branches and exact
+ADRP+ADD constructions of `processCommandResponse` (`0xfffffe0008f437f8`). No
+direct code reference was found in that range. The only raw u64 occurrence in
+the whole kernelcache is at `0xfffffe000c7c4dc8`, adjacent to other method
+addresses and metadata-like words; that data entry does not establish a caller
+or registration mechanism. Receipt:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-response-xrefs.txt`.
+
+The token's firmware-side extraction/dispatch is therefore still not pinned.
+An indirect callback or framework dispatch remains possible; do not infer a
+safe reply path from the absent direct branch.
