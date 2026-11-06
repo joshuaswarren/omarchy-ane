@@ -922,6 +922,26 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 65 — linked-send route is a packed endpoint-table/channel selector
+
+The route consumed by `0x9ad28` is not a single opaque endpoint ID. The caller
+loads the 32-bit word from `[link+0x10]` into w0. `0x9c930` extracts its upper
+16 bits, compares that value with the endpoint-table count at
+`[0xcb000+0x5c0]`, and `0x9ad28` indexes the endpoint-object pointer array at
+table `+8` with that upper-half value. It then passes the lower 16 bits to
+`0x9a944`, which validates/looks up that channel within the selected endpoint
+object and returns the corresponding connection object. The send path then
+dispatches through that connection's transport method.
+
+Thus `[link+0x10]` has a statically demonstrated shape:
+`(endpoint_table_index << 16) | endpoint_local_channel_id`. This is not proof
+that either half equals the host's cached `DATA_CHAIN_H2T` index 7; that host
+field is a separate selector-to-channel mapping, and the runtime link word
+has not been observed. The link writer/value and the relation between this
+firmware endpoint table and the saved host registration remain open. Static
+firmware analysis only; no hardware access or submission; `CSNE_CMD_PING`
+remains unsent.
+
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
 The construction path for each named wrapper is now covered through its base
