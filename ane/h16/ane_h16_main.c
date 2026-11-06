@@ -437,6 +437,8 @@ static struct adt_node adt_node_at(u32 off)
 {
 	struct adt_node n = { .off = off };
 
+	if ((u64)off + 8 > adt_len)
+		return n;	/* past the mapping: an empty node ends the walk */
 	n.nprops = le32_to_cpup(adt + off);
 	n.nchildren = le32_to_cpup(adt + off + 4);
 	return n;
@@ -449,13 +451,19 @@ static u32 adt_subtree_end(struct adt_node n)
 	unsigned int i;
 
 	for (i = 0; i < n.nprops; i++) {
-		u32 size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		u32 size;
 
+		if ((u64)off + 36 > adt_len)
+			break;
+		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
 		off += 36 + ALIGN(size, 4);
 	}
 	for (i = 0; i < n.nchildren; i++) {
-		struct adt_node c = adt_node_at(off);
+		struct adt_node c;
 
+		if ((u64)off + 8 > adt_len)
+			break;
+		c = adt_node_at(off);
 		off = adt_subtree_end(c);
 	}
 	return off;
@@ -468,12 +476,18 @@ static struct adt_node adt_child(struct adt_node n, unsigned int idx)
 
 	off = n.off + 8;
 	for (i = 0; i < n.nprops; i++) {
-		u32 size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		u32 size;
 
+		if ((u64)off + 36 > adt_len)
+			break;
+		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
 		off += 36 + ALIGN(size, 4);
 	}
-	for (i = 0; i < idx; i++)
+	for (i = 0; i < idx; i++) {
+		if ((u64)off + 8 > adt_len)
+			break;
 		off = adt_subtree_end(adt_node_at(off));
+	}
 	return adt_node_at(off);
 }
 
@@ -484,8 +498,11 @@ static int adt_prop(struct adt_node n, const char *name, const void **data,
 	unsigned int i;
 
 	for (i = 0; i < n.nprops; i++) {
-		u32 len = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		u32 len;
 
+		if ((u64)off + 36 > adt_len)
+			return -ENOENT;
+		len = le32_to_cpup(adt + off + 32) & 0x7fffffff;
 		if (!strncasecmp(adt + off, name, 32)) {
 			*data = adt + off + 36;
 			*size = len;
@@ -594,6 +611,8 @@ static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
 		segs[i].iova = stride == 32 ?
 			le64_to_cpu(v[2]) : le64_to_cpu(v[1]);
 		segs[i].size = le64_to_cpu(v[stride / 8 - 1]);
+		if (stride == 32)
+			segs[i].size &= 0xffffffffULL;	/* last word is size | flags << 32 */
 	}
 	return 0;
 }
@@ -602,12 +621,20 @@ static int ane_h16_segments(struct ane_h16 *ane)
 {
 	const struct ane_h16_fw *fw = ane->soc->fw;
 	struct adt_node ane_node;
+	struct adt_node root;
 	const void *data;
 	u32 size;
 	int ret;
 
 	if (ane_h16_adt_open(ane))
 		return -ENODEV;
+	root = adt_node_at(0);
+	if (!root.nchildren) {
+		dev_err(ane->dev,
+			"ADT: region is not an ADT (root %u/%u); refusing\n",
+			root.nprops, root.nchildren);
+		return -EINVAL;
+	}
 	if (adt_find_ane(ane->soc->ane_type, &ane_node)) {
 		dev_err(ane->dev,
 			"ADT: no /arm-io child with ane-type %#x; refusing\n",

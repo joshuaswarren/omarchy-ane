@@ -324,7 +324,8 @@ static u8 *build_adt(size_t *out_len)
 	struct {
 		u64 phys, pad, remap, size;
 	} segs[2] = {
-		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0xc0000 },
+		/* last word is size | flags << 32; T8132 TEXT carries flags 0x1 */
+		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0xc0000 | 1ULL << 32 },
 		{ DATA_PRE_PA, 0, DATA_IOVA, 0x2ac000 },
 	};
 	u32 ane_type = sim_soc.ane_type;
