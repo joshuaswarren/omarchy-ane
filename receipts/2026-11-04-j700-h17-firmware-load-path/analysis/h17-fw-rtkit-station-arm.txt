@@ -922,6 +922,23 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 58 — CRPC adopts a supplied resource before invoking fallback
+
+The CRPC constructor at `0x35128` has two resource paths. After obtaining
+its auxiliary objects, it tests `[x20+8]`. If nonzero, it loads `[x20+0x28]`
+and stores that value in the CRPC parent's `+0x1d0`; it then checks
+`[x20+0x38]` against the required-size threshold before proceeding. If
+`[x20+8]` is zero, it takes the fallback at `0x35324`, calls `0x26440` for
+the `CRPC` resource, and stores the result at parent `+0x1d0/+0x1d8`.
+
+This shows CRPC can be initialized from a caller-supplied resource instead
+of always using the global manager fallback. It does not establish the type
+or identity of x20, nor that `[x20+8]` is the queue object's `[q+8]` link:
+the copied resource is `[x20+0x28]`, not x20 itself, and this path does not
+write a queue link or expose `[link+0x10]`. The caller supplying x20 and the
+relation to `ChManTarget`/`ChManHost` remain untraced. Static firmware only;
+no hardware access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 57 — child callback is a reset/cleanup hook before mapping
 
 The prior vtable mismatch is less mysterious than it first appeared. For the
