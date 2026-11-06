@@ -985,6 +985,25 @@ parent or its response queue was found. Therefore this still does not provide
 the CRPC queue's `[+8]` value or its route word. Static firmware analysis
 only; no device access or submission; `CSNE_CMD_PING` remains unsent.
 
+## Addendum 68 — PING follows the generic completion path, not a PING handler
+
+The main evaluator's table entry for command `0x0012` resolves to the shared
+default epilogue at `0x30ebc` (the `0x0012` name is `CSNE_CMD_PING` in the
+pinned command-name table). That epilogue calls `0x31e50(context, 0)`, then
+returns through the normal evaluator teardown. `0x31e50` takes the current
+message pointer from `[context+0x1b8]`; with its second argument zero it does
+not replace the message status halfword, and it proceeds to `0xeeac`.
+
+`0xeeac` normalizes/flushes the message via `0x8bbcc`, then sends the response
+through `[context+0x40]` by calling `0x62e0` with status `-1`. `0x62e0` uses
+the linked RTKit send path when that queue's `[+8]` is non-null, otherwise it
+uses the local ring fallback. This statically identifies the PING command's
+generic completion and response-queue path, but it does not prove the wire
+payload/status accepted by a real host, the runtime link state/route, or the
+IRQ/queue ownership contract. In particular, this is not authorization to
+send PING: it remains unsent until those runtime contracts are established.
+Static firmware analysis only; no hardware access or submission.
+
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
 The construction path for each named wrapper is now covered through its base
