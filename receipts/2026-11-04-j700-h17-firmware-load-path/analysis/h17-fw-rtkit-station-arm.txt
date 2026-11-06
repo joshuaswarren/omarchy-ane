@@ -459,3 +459,21 @@ The next useful trace is the registration/update path that could make the
 DATA_CHAIN_H2T object's +8 nonzero, or another writer that fills its +0x28.
 Until then, the service's constructor state does not establish a live queue
 link or endpoint. Static disassembly only; no hardware accessed.
+
+## Addendum 15 — explicit fallback queue construction
+
+The `0x35128` initializer's null-`[service+8]` branch is not an unknown
+factory. At 0x35220 it sets the fallback capacity/size value to
+`0x000175ff`; at 0x35324 it calls 0x26440 with `x0=0x17600`, `w1=0x52504300`,
+`x2=parent`, `x3=x4=x5=0`, `x6=0xa2c78`, and `w7=0x5d`. The little-endian
+four-byte identifier is `00 43 50 52` (the source string at VA 0xa2c78 is
+`CRPCClient.cpp`). The returned object is stored as both `[parent+0x1d0]`
+and `[parent+0x1d8]`; the subsequent setup builds `+0x1e0` and other state
+from that returned object. The push site at 0x4bd2c later uses
+`[parent+0x1d0]`.
+
+This proves the consumer has a concrete RPC-named fallback queue construction
+when its service object's +8 is zero. It does not prove the service object
+remains null at runtime, nor identify the `0x26440` result's RTKit endpoint
+or its Linux channel index. The source string supports the RPC naming but is
+not a protocol contract. Static firmware evidence only; no hardware accessed.
