@@ -904,3 +904,20 @@ resolve any later linked-mode route. The optional queue link remains
 `[queue+8]`, and linked send still obtains its route from `[link+0x10]`; the
 route value and mapping to host channel index 7 remain unproven. No hardware
 access or command submission; `CSNE_CMD_PING` remains unsent.
+
+## Addendum 38 — shared-pointer unregister helpers are not link setters
+
+The generic shared-pointer helpers previously seen at `0x25b5c` and `0x25d2c`
+are teardown paths, not constructors for the queue's optional link. `0x25b5c`
+passes the pointer slot's current value to `0x258d8` and then clears the slot.
+`0x25d2c` first decrements/releases the current value through `0x92c28`, calls
+the same `0x258d8` unlink routine, and clears the slot. Their CRPC-adjacent
+callers pass addresses of owned fields (for example the parent `+0x1d0`/
+`+0x1d8`-family during destruction), so these call sites establish resource
+removal only. Neither helper assigns a new pointer or writes a route word.
+
+This rules out the global shared-pointer manager's unregister path as the
+missing CRPC link writer. The constructor's `+8` link and `[link+0x10]` route
+remain unresolved; no index-7 mapping or submission is justified. Static
+firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
+unsent.
