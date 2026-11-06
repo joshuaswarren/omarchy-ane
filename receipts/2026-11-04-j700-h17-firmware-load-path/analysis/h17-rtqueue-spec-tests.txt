@@ -1,0 +1,10 @@
+test_index_wrap_and_validation (__main__.QueueFormulaTests.test_index_wrap_and_validation) ... ok
+test_phase_predicate_and_release_sign_extension (__main__.QueueFormulaTests.test_phase_predicate_and_release_sign_extension) ... ok
+test_post_send_announcement_formula (__main__.QueueFormulaTests.test_post_send_announcement_formula) ... ok
+test_safety_guard_rejects_unacknowledged_words (__main__.QueueFormulaTests.test_safety_guard_rejects_unacknowledged_words) ... ok
+test_send_word_and_received_id_mask (__main__.QueueFormulaTests.test_send_word_and_received_id_mask) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK

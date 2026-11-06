@@ -204,3 +204,21 @@ same envelope and how its reply is completed.
 
 Until these gates close, the next safe work is offline trace/model work only;
 do not load another module, write the shared doorbell, or access the IRQ ACK.
+
+### Partial queue-formula model (not end-to-end)
+
+The individually decoded host FIFO formulas now have a small executable
+specification at
+`receipts/2026-11-04-j700-h17-firmware-load-path/scripts/rtqueue_spec.py`
+and five unit tests in `scripts/test_rtqueue_spec.py`. The tests cover
+wrap-at-`entries−1`, the post-send producer announcement encoding, strict
+acceptance of only a plain acknowledged producer index, phase-bit matching and
+release sign extension, and the message-ID bit mask. Test output is captured
+in `analysis/h17-rtqueue-spec-tests.txt` (five passed).
+
+This is only formula-level host-source validation. It intentionally does not
+model a full send/receive exchange, assert that the peer's phase seed is known,
+or claim that a device will acknowledge a slot. The producer-word safety
+guard is a proposed Linux policy stricter than Apple's primitive, not an
+observed firmware rule. Gate 2 remains open pending peer acknowledgment and
+queue ownership evidence.
