@@ -922,6 +922,24 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 48 — `0x9177c` is a memory-window control write, not link route setup
+
+The 32-bit `+0x10` scan found a particularly plausible false positive at
+`0x9177c`: the routine takes x9 from `[x19+8]` and stores literal `0x20` to
+`[x9+0x10]`. Its call paths (`0x911a4`, `0x913a8`, `0x914cc`) show this is
+inside the firmware's resource-window/control path: the same x19 object has
+resource size/state at `+0x28`, a backing/control object at `+0x20`, and
+register-like fields at `[window+4]`, `[window+8]`, `[window+0x10]`, and
+`[window+0x18]`. The routine sets the window's control value to `0x20`, stores
+the caller's two arguments at object `+0x38`, and updates control bits at
+`+4`. This is not the RTKit queue link consumed by `0x68c8`; `0x20` is not
+being derived as a route word, and the object is a memory-window resource.
+
+This rules out that concrete candidate only. The route is still consumed as
+a 32-bit word at `[link+0x10]`, so future writer searches must include
+`str Wt,[...+0x10]` and not only 64-bit stores. No hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 47 — `0x9a3ac` writes decoded memory descriptors, not a queue route
 
 The wider store scan found the pair of writes at `0x9a3dc` and `0x9a418`.
