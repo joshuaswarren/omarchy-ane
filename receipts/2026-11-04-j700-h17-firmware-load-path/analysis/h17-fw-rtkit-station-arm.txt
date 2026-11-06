@@ -1147,6 +1147,27 @@ identify their writer or establish either branch as the runtime path. Static
 firmware analysis only; no hardware access or submission; PING remains
 unsent.
 
+## Addendum 87 — fallback owner fields are initialized by the property-backed owner
+
+The earlier statement that the fallback owner's `[+0x40]/[+0x48]` writers
+were unidentified was too broad. The context object later read through the
+global `[0x1ca000+0x6e0]` is created by `0x34e94` (called at `0x2af2c`) and
+published to that global at `0x34ee8`. Its constructor writes a 16-byte
+configuration pair from `[0xb5000+0xe0]` to `[object+0x40]` and a further
+8-byte configuration value from `[0xb5000+0xf0]` to `[object+0x50]`.
+
+Its registered property handler is `0x3507c`, dispatched for property group
+`0x1800` by `0x2ef7c`. Property `0x1801` stores the supplied value at
+`[object+0x40]`; property `0x1802` stores it at `[object+0x48]`. The use of
+the same context object is corroborated by `0x34f7c`, which loads the object
+from `[0x1ca000+0x6e0]` and reads its `+0x40`, `+0x48`, and `+0x50` fields for
+the transport/rate calculations. Thus these fields are not uninitialized
+garbage: they have constructor defaults and a property-update path. However,
+static code does not establish which property values are delivered at runtime,
+or whether this context object is identical to the specific `owner` passed to
+`0x265f4` in every CRPC path. The fallback branch and its route therefore
+remain unproven. No hardware access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
