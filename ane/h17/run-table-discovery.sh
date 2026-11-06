@@ -34,7 +34,7 @@ before=$(dmesg --color=never | wc -l)
 # insmod is synchronous: RESULT is emitted before probe returns. Even a
 # failed/refused post-release rung keeps the module bound and pinned.
 status=0
-insmod ane/h16/ane_h16.ko optin=t8140 stage=boot chanreg=1 || status=$?
+insmod ane/h16/ane_h16.ko optin=t8140 stage=boot confirm_read=1 chanreg=1 || status=$?
 dmesg --color=never | tail -n +"$((before + 1))" > "$log_dir/dmesg-rung.log"
 if [[ $status != 0 ]]; then
     echo '{"rung":"FAIL","reason":"insmod-failed"}' > "$log_dir/verdict.json"

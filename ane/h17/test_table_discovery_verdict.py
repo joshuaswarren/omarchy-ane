@@ -41,6 +41,7 @@ class VerdictTests(unittest.TestCase):
         source = runner.read_text()
         self.assertLess(source.index("table_preflight.py"), source.index('insmod ane/h16/ane_h16.ko'))
         self.assertIn("--claim", source)
+        self.assertIn("stage=boot confirm_read=1 chanreg=1", source)
         self.assertIn("$attempt_root/$boot_id", source)
         self.assertNotIn('rm -f -- "$marker"', source)
         for arguments in ([], ["--run", "extra"]):

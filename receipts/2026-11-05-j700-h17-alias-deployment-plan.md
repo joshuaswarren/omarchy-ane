@@ -226,3 +226,11 @@ loaded or bound. This establishes candidate boot and live-DT propagation
 only; the driver-level reservation query, firmware/table discovery, and any
 ANE operation remain untested. The specific table-discovery rung still
 requires separate explicit authorization.
+
+The user subsequently authorized one table-discovery attempt. Its preflight
+passed, but the module refused before power/MMIO/register access because the
+runner omitted required `confirm_read=1`. The one-shot marker was consumed;
+there is no runtime reservation or table result, and the module remains
+loaded with refcount 0, unbound, and not unloaded. A reviewed offline runner
+fix now supplies that parameter. Any retry requires a fresh boot, a refreshed
+manifest/marker for the pushed source, and separate explicit authorization.

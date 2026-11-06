@@ -315,3 +315,40 @@ runtime IOMMU domain reports `IOMMU_RESV_RESERVED`, because the experimental
 driver was not loaded; nor does it show firmware acceptance or table
 discovery. No preflight claim or pending marker was created, and the
 table-discovery runner was not invoked. The result is not ANE qualification.
+
+## Authorized table-discovery attempt: pre-hardware refusal (2026-11-06)
+
+The user authorized the one-shot pre-registration table-discovery rung on
+candidate boot `53cac498-5434-4afa-b9d1-4303244e93dc`. An initial invocation
+stopped at `prepare-run.sh` because root could not use the admin SSH identity
+for the `mine` remote; it exited before marker claim or module insertion.
+The read-only retry check confirmed the pending marker remained and no
+per-boot attempt directory existed. The runner was then invoked with
+`GIT_SSH_COMMAND='/usr/bin/sudo -u admin /usr/bin/ssh'` so its remote gate
+used the checkout owner's credentials. The clean/pushed source gate and all
+preflight identity checks passed; the marker was atomically claimed.
+
+The module then refused with exactly:
+
+```text
+ane_h16 RESULT stage=3 soc=t8140 verdict=REFUSED reason=confirm_read-required
+probe with driver ane_h16 failed with error -1
+```
+
+Source inspection confirms the `confirm_read` check is at
+`ane/h16/ane_h16_main.c:1956-1959`, before power-domain attachment, MMIO
+mapping, power, or register reads. The captured rung log contains no
+`H17 ALIAS_RESERVATION`, table backing, CPU-release, or table markers. The
+module remains present in `/proc/modules` with refcount 0 and no bound
+platform driver; it was **not unloaded**. The attempt marker remains consumed.
+No retry was made on this boot.
+
+The runner omitted the module's required explicit `confirm_read=1` opt-in.
+The fix adds it to the single `stage=boot chanreg=1` invocation and asserts
+that argument sequence in `test_table_discovery_verdict.py`. `make -C
+ane/h17 sim-all`, `bash -n ane/h17/run-table-discovery.sh`, and
+`git diff --check` pass; independent review found no issue with this minimal
+correction. This software fix does not turn the refused attempt into a pass.
+A retry requires a fresh boot, a newly pinned/pushed source manifest and
+pending marker, and separate explicit authorization; do not unload the
+resident module or reuse the consumed attempt.
