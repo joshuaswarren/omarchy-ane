@@ -747,3 +747,23 @@ Thus the newly traced callback chain explains one consumer of the runtime
 registry but does not connect its entries to host channel index 7 or the CRPC
 fallback. Static disassembly of the pinned firmware only; no hardware access
 or command submission.
+
+## Addendum 29 — CRPC factory call does not visibly attach a link
+
+The CRPC fallback constructor at `0x35324` calls the generic allocator
+`0x26440` with size `[x21+1]`, tag `0x52504300` (`CRPC`), parent `x19`, and
+zero for x3/x4/x5; it stores the returned pointer only at parent `+0x1d0` and
+`+0x1d8` (`0x35324`–`0x3535c`). The rest of the visible constructor maps
+subregions and initializes parent state, but contains no store to the
+returned object's `[+8]` or to a link object's `[+0x10]`. Its later call to
+`0x6258` registers a callback on a separate service object (`x20`) and is not
+a write to those fields.
+
+`0x26440` delegates the actual allocation through the shared manager at
+`0x265f4`; that factory path returns an allocation and may call a manager
+virtual method, but the static path does not expose initialization of the
+CRPC result's `+8` member. Therefore this pass rules out a visible link attach
+in the CRPC constructor body, but does not prove the returned object starts
+unlinked: the allocator or an indirect manager callback may initialize it.
+The queue link writer and route source remain unresolved. Static firmware
+analysis only; no hardware accessed and no command submitted.
