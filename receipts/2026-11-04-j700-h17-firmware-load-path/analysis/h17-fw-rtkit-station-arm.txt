@@ -175,3 +175,43 @@ matches 0x9a9a8's attach op), but unproven.
   bring-up tool rather than more raw-offset reading.
 
 Static disassembly/raw-image reads only. No hardware accessed.
+
+## Addendum 4 — correct image address mapping and selector table
+
+Correction to Addendum 3 above: its raw data reads used VA as a file offset.
+That is wrong for this MH_PRELOAD. For __DATA (VM start 0xc0000, fileoff
+0xc4000), the file offset is `0xc4000 + (VA - 0xc0000)` = VA + 0x4000.
+The tables printed there from file offsets 0xcabc0/0xc61b0/0xcadf8 were
+therefore unrelated bytes. Withdraw all Addendum 3 conclusions based on those
+raw dumps, including the claimed 0xcabc0 relocation stream and the assertion
+that no static station table exists. Re-read at the mapped file offsets before
+assigning meaning. Firmware SHA-256 remains the same.
+
+Also correction: the dispatcher jump table VA is **0x96e9c**, not 0x960e9c.
+The instruction pair at 0x964c0/0x964c4 is `adrp x17,0x96000; add x17,x17,#0xe9c`.
+Because code has fileoff 0x4000, the table is at file offset 0x9ae9c. Its
+signed 32-bit deltas are relative to 0x964cc. Decoded selectors:
+
+  1 -> 0x964d8; 2 -> 0x96914; 3 -> 0x964d8; 4 -> 0x966c4;
+  5 -> 0x96770; 6 -> 0x9666c; 7 -> 0x9666c; 8 -> 0x96674;
+  9..14 -> 0x9666c; 15 -> 0x96688.
+
+Thus selector 9 does NOT dispatch to 0x96934; it dispatches to the shared
+error return at 0x9666c. The function at 0x96458 returns at 0x96928; the
+station-construction body begins separately at 0x9692c (no PAC prologue at
+that address). The previous claim that 0x96934 is a case body of the 0x96458
+switch and the guess that selector 9 identifies its registration are withdrawn.
+The earlier observation that 0x9692c..0x96b20 allocates/builds station objects
+and registers the Cmbx service remains a valid disassembly observation, but
+its caller/dispatch selector still needs to be established.
+
+The properly mapped data reads now show distinct structures: VA 0xcabc0 begins
+with records containing 0x003000000009d3b3, 0x003000000009d3be,
+0x003000000009d3c7, and 0x004000000009d3ce; VA 0xc61b0 begins a sequence of
+{0x40000468, 0x00200000000b4b30}, {0x4000046c,
+0x00200000000b4b30}, ...; VA 0xcadf8 begins scalar/layout data and then
+0x00100000000b8105 / 0x00100000000b8128 / 0x801000000008a408. These are not
+the previously reported strings/register list. Their encoded-pointer/tag
+format is still unresolved; no channel identity inference is made here.
+
+Offline only. No hardware accessed.
