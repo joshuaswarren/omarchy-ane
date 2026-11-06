@@ -929,9 +929,9 @@ loads the 32-bit word from `[link+0x10]` into w0. `0x9c930` extracts its upper
 16 bits, compares that value with the runtime channel-table count at
 `[0xcb000+0x5c0]`, and `0x9ad28` indexes the channel-object pointer array at
 table `+8` with that upper-half value. It then passes the lower 16 bits to
-`0x9a944`, which resolves an endpoint ID in the selected channel object's
-endpoint map and returns the corresponding connection object. The send path
-then dispatches through that connection's transport method.
+`0x9a944`, which resolves an endpoint ID in the selected station's endpoint
+map and returns its per-endpoint message block. The send path then dispatches
+through the station's inner transport object.
 
 Thus `[link+0x10]` has the shape already noted in Addendum 18:
 `(runtime_channel_index << 16) | endpoint_id`. Correction: Addendum 65's
@@ -1024,6 +1024,18 @@ mode, and an actual PING response have not been observed. It clarifies
 how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
+
+## Addendum 79 — route low-half resolves a station message block, not an abstract connection
+
+The helper `0x9a944` returns the selected station's concrete 0x60-byte
+per-endpoint message block: its address is `[station+0x10] + compact_id*0x60`.
+The compact ID comes from the sparse endpoint-ID map at `[station+0x18]`, and
+the presence bitmap/max ID are checked first. `0x9ad28` then uses this block's
+state at `+0x58` and the station's inner transport object to enqueue the
+message. This refines the shorthand “connection object” in Addendum 65: the
+route low half selects a station endpoint/message block, not a pointer or a
+host-side channel ordinal. It does not alter the upper-half runtime channel
+index finding or establish the CRPC queue's route.
 
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
