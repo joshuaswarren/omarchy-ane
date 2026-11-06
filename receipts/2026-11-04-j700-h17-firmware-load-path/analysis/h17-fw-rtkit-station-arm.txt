@@ -836,3 +836,21 @@ the linked branch used by the allocator helper when `[manager+0x40]+8` is
 non-null. This is a static initialization-path conclusion only: later writes
 to the service's `+8` are not ruled out, and it says nothing about the
 separate CRPC buffer's link state. No hardware accessed; no command submitted.
+
+## Addendum 34 — allocator fallback vtable method resolves to range lookup
+
+The indirect method reached when `0x265f4` has no linked SHAREDMALLOC service
+is the allocator object at `[0x1c8630]`, vtable slot `+0x28`. Its vtable is
+installed by `0x209e4`/`0x20a88`; the slot points to `0x21100` (vtable data at
+`0xc0c70`). `0x21100` checks the requested address against the allocator
+object's cached range fields at `+0x60`, `+0x68`, and `+0x70`. If the address
+is in range, it returns the address relative to the stored base. Otherwise it
+branches to `0x20cf8`, which delegates allocation through the manager's
+backing object at `+0x58` and applies the shared-region/ring bookkeeping.
+
+This resolves the indirect allocator method as cached-range lookup plus a
+backing allocation path. The method operates on allocator addresses and
+outputs; it does not receive a CRPC queue object or write a CRPC `[+8]` link
+or route. This closes the allocator-vtable lead without changing the
+unresolved CRPC constructor/link question. Static firmware disassembly only;
+no hardware access or command submission.
