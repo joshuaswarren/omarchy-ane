@@ -286,3 +286,32 @@ the host binds to CSNE's `queue(+0x40)->link(+0x08)` path, nor that the
 `management` block is CSNE H2T/T2H. Those require matching the host's runtime
 endpoint/channel registration to this station's `Cmbx` service and the CSNE
 evaluator. Static firmware evidence only; no hardware accessed.
+
+## Addendum 7 — Cmbx service registration call contract
+
+The call at 0x96adc is to the tiny wrapper at 0x9cc94, which sets `w1=0x300`
+and branches to the common registration routine at 0x8d018. At the call site,
+the arguments are:
+
+  x0 = 0x436d6278 (service tag; bytes as stored in the register are
+       78 62 6d 43, or "xbmC")
+  x1 = set by wrapper to 0x300 (registration operation)
+  x2 = paciza(0x9a7f0) (station properties/query callback)
+  x3 = the station index loaded from [station+0x28], here slot 0
+
+`0x8d018` checks nonzero tag and callback, allocates a 0x28-byte service
+record, stores `{tag@+0, operation@+4, callback@+8, context@+0x10}`, and links
+it into the global list rooted at VA 0xcaf40 (list lock at +0x88). It returns
+zero on success. This confirms that the `Cmbx` registration is a named service
+registration carrying the station-slot context, not itself construction of
+the queue's RTKit link object.
+
+Thus the identified firmware-side chain is now: dispatcher selectors 1/3
+success -> station slot 0 -> four message blocks (management/crashlog/syslog/
+user1) -> Cmbx op 0x300 registered with callback 0x9a7f0 and context 0.
+There is still no evidence tying that service to the separate queue link at
+`[q+8]`, or tying any one block to the H2T/T2H CSNE path. The Linux run's
+eight channel records are a different layer and cannot be mapped from this
+service registration alone.
+
+Static disassembly only; no hardware accessed.
