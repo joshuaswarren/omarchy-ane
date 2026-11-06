@@ -871,3 +871,16 @@ This is the shared allocator's own internal queue object: its `+8` is backing
 storage, not the CRPC queue's optional link. It gives no evidence about the
 CRPC link writer or route. Static firmware disassembly only; no hardware
 access or command submission.
+
+## Addendum 36 — CRPC region mapping helper is a list insertion
+
+The repeated helper `0x185cc` called after the CRPC allocation does not set
+the CRPC buffer's `+8` link. It receives x0 as the mapping/resource object
+(the second qword loaded from the returned allocation) and x1 as the address
+of a subregion. It takes a node from the free-list at `[object+0x18]`, stores
+the subregion address at `[node+8]`, links the node into the object's list at
+`+0x20/+0x28`, and increments the list count at `+0x30`. The operation's
+stores are based on the mapping object/node, not on the returned CRPC buffer
+base. This classifies the many `0x185cc` calls in the constructor as
+subregion bookkeeping, not link attachment. Static disassembly only; no
+hardware access or command submission.
