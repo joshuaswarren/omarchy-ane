@@ -942,6 +942,32 @@ transport link being created elsewhere. No evidence here writes `[q+8]` or
 reveals `[link+0x10]`; host channel 7 remains unproven. Static firmware only;
 no hardware access or submission; `CSNE_CMD_PING` remains unsent.
 
+## Addendum 60 — correction: manager child slot is an operation callback, not cleanup
+
+Correction to Addenda 55–57: the vtable addresses were read from the wrong
+base. The constructors form the actual vtable pointers by adding `0x10` to
+the constants: `0x218c4` installs VA `0xc0cb8`, and `0x229ac` installs
+VA `0xc0d28` (not `0xc0ca8`/`0xc0d18`). `0x20cf8` loads the function pointer
+at vtable offset `+0x18`, which is entry 3 from those actual bases: `0x22124`
+for `0xc0cb8`, and `0x2320c` for `0xc0d28`. The earlier `0x219a8`/`0x22a90`
+identification selected entry 1, the cleanup/destructor slot, and was wrong.
+
+For the `0xc0cb8` variant, `0x22124` appends a 0x58-byte operation record to
+the child-local 0xc00-byte buffer when mode bit 0 is clear; when set, operation
+0 forwards to `0x21dd0`. The other variant's `0x2320c` tail-branches to
+`0x22eb0`, which similarly selects local record handling or a separate
+forwarding path based on its mode byte. This is a child resource-operation
+callback, not a reset hook. The outer `0x20cf8` path then continues its own
+alignment/range bookkeeping and `0x28e8c` call. Exact behavior of the
+alternate forwarding paths remains separate work.
+
+This corrects the callback interpretation but does not connect the manager's
+resource operation to CRPC queue construction: the CRPC allocation result is
+still consumed as mapped backing storage, and no `[q+8]` or `[link+0x10]`
+writer/value has been found. No host channel 7 mapping follows. Static
+disassembly only; no hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
+
 ## Addendum 58 — CRPC adopts a supplied resource before invoking fallback
 
 The CRPC constructor at `0x35128` has two resource paths. After obtaining
