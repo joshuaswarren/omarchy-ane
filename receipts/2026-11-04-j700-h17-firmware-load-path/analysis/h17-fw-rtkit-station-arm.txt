@@ -922,6 +922,25 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 52 — the `0x5fa8` wrappers are named `ChManTarget` and `ChManHost`
+
+The direct caller of `0x54f8` is `0x7c78`, which passes the main context in
+x0 and `(0x20, 0x1c)` in w1/w2. Inside it, two `0x5fa8` calls create wrappers
+from the global descriptor array at `0x178150`: the first uses the string at
+firmware VA `0x9d361` (`ChManTarget`), the second `0x9d36d` (`ChManHost`).
+Each wrapper is then passed to `0x60c8`, which instantiates its queue records.
+These strings and call edges classify this as a paired channel-manager
+configuration path; they do not establish that either object is the CRPC
+fallback queue, nor do the names prove host/device channel-number mapping.
+
+This narrows Addenda 49–51: the unresolved `[wrapper+0x68]` belongs to one of
+these channel-manager wrappers on this setup path, rather than being shown
+as a CRPC object field. The independent CRPC construction at `0x35324` still
+has not been connected to these objects or their queues. The wrapper link
+value, route word, and any relation to host `DATA_CHAIN_H2T` index 7 remain
+unproven. Static firmware strings/disassembly only; no hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 51 — this wrapper allocation path does not clear its returned bytes
 
 The `0x57xx` builder obtains its 0xb0-byte wrapper through `0x8a2d4`, which
