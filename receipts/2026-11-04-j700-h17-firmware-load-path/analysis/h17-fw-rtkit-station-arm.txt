@@ -922,6 +922,22 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 62 — `0x941cc` is a global-field getter, not a queue wakeup
+
+The post-record call `0x941cc(0, 0, &local)` in the child's operation path
+does not signal a worker. With its zero object argument it loads a global
+object from `[0xcb000+0xc0]`, obtains a view through `0x940a8`, and uses the
+selector jump table. Selector 0 (the call used here) loads that object's
+`+0x20` field and stores it through the output pointer. The resulting value
+is written into the child's 0x38-byte bookkeeping record. The helper has no
+store to the child queue indices and no event/interrupt call in this path.
+
+So Addendum 61 establishes request-record insertion and associated metadata
+capture, but not a wakeup/notification contract. The producer/consumer handoff
+for the manager child's 0x58-byte records remains unresolved; do not infer a
+worker wake from `0x941cc`. Static firmware only; no hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 59 — CRPC's manager result is consumed as a mapped backing resource
 
 The use of CRPC's `+0x1d0/+0x1d8` values after construction narrows their
