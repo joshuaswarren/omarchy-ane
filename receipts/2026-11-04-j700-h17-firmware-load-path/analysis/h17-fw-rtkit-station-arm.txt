@@ -922,6 +922,26 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
+
+The construction path for each named wrapper is now covered through its base
+constructor. `0x5780` allocates the 0xb0-byte object via `0x8a2d4`, then
+`0x5fa8` calls `0xda10`. `0xda10` calls `0x239bc` and initializes fields
+`+0x40`, `+0x48`, `+0x50`, `+0x70`, `+0x78`, `+0x88`, and `+0x98`; neither it
+nor `0x5fa8` stores `+0x60` or `+0x68`. In `0x239bc`, the one virtual setter
+uses `w1=0x14` and writes the object's `+8` field, not either queue argument.
+The later setup loop `0x60c8` reads `[wrapper+0x60]` as callback and
+`[wrapper+0x68]` as link and passes them to the queue factory.
+
+Along the visible `0x57xx` creation-to-`0x60c8` path, no store to those two
+wrapper fields appears. Since the allocator path does not clear returned
+payload (Addendum 51), this strengthens the static conclusion that the
+effective callback/link values are not established by this constructor path.
+It still does not prove a runtime stale pointer, null value, or link identity:
+an indirect/untraced owner could write them. Consequently no route or CRPC
+queue identity can be inferred. Static firmware only; no device access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 63 — manager child records are mapping state, not a proven FIFO
 
 The child `+8` array is better described as mapping-operation state than as a
