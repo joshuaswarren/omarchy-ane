@@ -397,7 +397,7 @@ immediately after this construction. The `0x35128` initializer only copies
 cannot be read as a proven queue association without finding a later write
 that populates those fields. The object also receives a pointer from 0xdf08
 at +0x20, whose precise role is not yet identified. This narrows, rather than
-closes, the endpoint question: slot naming is proven; a live queue-link in
+ closes, the endpoint question: slot naming is proven; a live queue-link in
 that object's +0x28 is not. Static disassembly only; no hardware accessed.
 
 ## Addendum 8 — queue consumer fields in the 0x35128 initializer
@@ -425,3 +425,16 @@ initializer has no direct BL callers in the decoded firmware text, so its
 invocation appears indirect (e.g. class/vtable path); the upstream factory and
 runtime registration are still the next trace targets. Static disassembly
 only; no hardware accessed.
+
+## Addendum 13 — service handle is separate from optional link
+
+The vtable installed by 0x6170 has its first two methods at 0x61e4 and 0x61e8
+(a return stub and destructor path); neither is an observed link setter. The
+0xdf08 helper stores selected entry state in a separate 0x60-byte table and
+returns that entry's +0x30 payload, which 0x6170 places at service-object
++0x20. This is distinct from the explicitly zeroed +0x28 field. Thus +0x20
+is a service handle/metadata candidate, not evidence that +0x28 is populated.
+The next useful trace is the registration/update path that could make the
+DATA_CHAIN_H2T object's +8 nonzero, or another writer that fills its +0x28.
+Until then, the service's constructor state does not establish a live queue
+link or endpoint. Static disassembly only; no hardware accessed.
