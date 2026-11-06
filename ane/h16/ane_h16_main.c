@@ -444,29 +444,57 @@ static struct adt_node adt_node_at(u32 off)
 	return n;
 }
 
-/* Offset just past the last byte of n's whole subtree. */
-static u32 adt_subtree_end(struct adt_node n)
+/* Real boot ADTs nest a handful of levels; this only bounds hostile data. */
+#define ADT_MAX_DEPTH 32
+
+/* Truncated or too-deep data ends every later walk at an empty node. */
+static u32 adt_end_sentinel(void)
 {
-	u32 off = n.off + 8;
-	unsigned int i;
+	return adt_len < (u64)(u32)~0ULL ? (u32)adt_len : (u32)~0ULL;
+}
 
-	for (i = 0; i < n.nprops; i++) {
-		u32 size;
+/*
+ * Offset just past the last byte of the subtree rooted at off. Iterative:
+ * todo[d] counts the nodes still to enter at depth d, so stack use is fixed
+ * for any input. Each node and property consumes bytes, so the walk is also
+ * bounded by adt_len.
+ */
+static u32 adt_subtree_end(u32 off)
+{
+	u32 todo[ADT_MAX_DEPTH] = { 1 };
+	unsigned int depth = 0;
 
-		if ((u64)off + 36 > adt_len)
-			break;
-		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
-		off += 36 + ALIGN(size, 4);
-	}
-	for (i = 0; i < n.nchildren; i++) {
-		struct adt_node c;
+	for (;;) {
+		u32 nprops, nchildren, i;
 
+		while (!todo[depth]) {
+			if (!depth)
+				return off;
+			depth--;
+		}
+		todo[depth]--;
 		if ((u64)off + 8 > adt_len)
-			break;
-		c = adt_node_at(off);
-		off = adt_subtree_end(c);
+			return adt_end_sentinel();
+		nprops = le32_to_cpup(adt + off);
+		nchildren = le32_to_cpup(adt + off + 4);
+		off += 8;
+		for (i = 0; i < nprops; i++) {
+			u64 extent;
+
+			if ((u64)off + 36 > adt_len)
+				return adt_end_sentinel();
+			extent = (u64)off + 36 +
+				 ALIGN(le32_to_cpup(adt + off + 32) & 0x7fffffff, 4);
+			if (extent > adt_len)
+				return adt_end_sentinel();
+			off = extent;
+		}
+		if (nchildren) {
+			if (++depth >= ADT_MAX_DEPTH)
+				return adt_end_sentinel();
+			todo[depth] = nchildren;
+		}
 	}
-	return off;
 }
 
 static struct adt_node adt_child(struct adt_node n, unsigned int idx)
@@ -486,16 +514,14 @@ static struct adt_node adt_child(struct adt_node n, unsigned int idx)
 		if (extent > adt_len || extent > (u32)~0ULL) {
 			/* truncated body: end the walk at an empty node
 			 * instead of wrapping the offset */
-			return adt_len < (u64)(u32)~0ULL
-				       ? adt_node_at((u32)adt_len)
-				       : adt_node_at((u32)~0ULL);
+			return adt_node_at(adt_end_sentinel());
 		}
 		off = extent;
 	}
 	for (i = 0; i < idx; i++) {
 		if ((u64)off + 8 > adt_len)
 			break;
-		off = adt_subtree_end(adt_node_at(off));
+		off = adt_subtree_end(off);
 	}
 	return adt_node_at(off);
 }

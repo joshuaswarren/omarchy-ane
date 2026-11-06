@@ -318,9 +318,9 @@ static void put_prop(u8 *b, size_t *off, const char *name, const void *data,
  * exactly this layout.
  */
 static size_t adt_segprop_header_end;
-static u8 *build_adt(size_t *out_len)
+static u8 *build_adt(size_t *out_len, size_t deep)
 {
-	u8 *b = calloc(1, 4096);
+	u8 *b = calloc(1, 4096 + deep * 8);
 	size_t off = 0, len;
 	struct {
 		u64 phys, pad, remap, size;
@@ -331,9 +331,14 @@ static u8 *build_adt(size_t *out_len)
 	};
 	u32 ane_type = sim_soc.ane_type;
 
-	/* root: no props, one child (arm-io) */
+	/* root: no props; arm-io, plus a deep chain ahead of it when deep != 0 */
 	put32(b, &off, 0);
-	put32(b, &off, 1);
+	put32(b, &off, deep ? 2 : 1);
+	/* chain: `deep` nodes of one child each, ending in a leaf */
+	for (size_t d = 0; d < deep; d++) {
+		put32(b, &off, 0);
+		put32(b, &off, d + 1 < deep);
+	}
 	/* arm-io: one prop, one child */
 	put32(b, &off, 1);
 	put32(b, &off, 1);
@@ -496,10 +501,10 @@ static void setup_common(void)
 	sim_pdev.dev.of_node = &n_ane;
 }
 
-static void setup_adt_node(void)
+static void setup_adt_node_deep(size_t deep)
 {
 	size_t adt_len;
-	u8 *adt = build_adt(&adt_len);
+	u8 *adt = build_adt(&adt_len, deep);
 
 	memset(&n_adt, 0, sizeof(n_adt));
 	n_adt.name = "adt";
@@ -511,6 +516,11 @@ static void setup_adt_node(void)
 	(void)adt;
 }
 
+static void setup_adt_node(void)
+{
+	setup_adt_node_deep(0);
+}
+
 /* Same ADT, but the resource ends at the segment-ranges header: the
  * property body lies outside the mapping. adt_prop() must refuse the
  * truncated extent instead of returning body bytes from past adt_len.
@@ -518,7 +528,7 @@ static void setup_adt_node(void)
 static void setup_adt_node_truncated(void)
 {
 	size_t full_len;
-	u8 *adt = build_adt(&full_len);
+	u8 *adt = build_adt(&full_len, 0);
 
 	memset(&n_adt, 0, sizeof(n_adt));
 	n_adt.name = "adt";
@@ -964,6 +974,24 @@ static void sc_neg_adt_truncated_prop(void)
 	(void)ret;
 }
 
+/* The ADT nests a chain far deeper than any real one ahead of /arm-io.
+ * Skipping that child to reach /arm-io must neither recurse once per level
+ * (stack overflow) nor invent a node; the walk refuses it.
+ */
+static void sc_neg_adt_deep_nesting(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node_deep(1 << 20);
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("adt seg0 phys=") == 0,
+	    "too-deep ADT never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
 /* A DART map that fails midway must unwind the pages it already
  * mapped before the staged buffer is freed: partial IOVA mappings
  * over freed memory hand the next map a stale translation. The
@@ -1072,6 +1100,8 @@ int main(int argc, char **argv)
 		sc_neg_getsync_eacces_one_pd();
 	else if (!strcmp(sc, "neg-adt-truncated-prop"))
 		sc_neg_adt_truncated_prop();
+	else if (!strcmp(sc, "neg-adt-deep-nesting"))
+		sc_neg_adt_deep_nesting();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))
