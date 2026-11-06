@@ -1037,6 +1037,22 @@ route low half selects a station endpoint/message block, not a pointer or a
 host-side channel ordinal. It does not alter the upper-half runtime channel
 index finding or establish the CRPC queue's route.
 
+## Addendum 80 — apparent `+0x28` writer is a different record type
+
+The broad static store scan finds a `str x16,[x0,#0x28]` at `0x9b638`, but
+this does not populate the `DATA_CHAIN_H2T` service object's `+0x28`. Its
+caller `0x9b51c` is a registration/allocation path: `0x9b9a4` returns an
+entry from the global array `[0xcb000+0x628]`, iterating entries at stride
+`0x48` and comparing each entry's `[+0x38]` identifier with the requested
+value. The store at `0x9b638` installs a callback in that returned entry;
+the same path stores the entry pointer in a separate output slot `[x19]`.
+This is distinct from the 0x58-byte service object constructed at `0x6170`,
+whose `+0x28` is explicitly initialized to NULL. This candidate writer is
+therefore excluded by its producer/record layout, not merely by its nearby
+offset. No writer that bridges the service object to the CRPC queue has been
+identified. Static analysis only; no hardware access or submission; PING
+remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
