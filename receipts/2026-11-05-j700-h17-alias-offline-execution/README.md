@@ -352,3 +352,41 @@ correction. This software fix does not turn the refused attempt into a pass.
 A retry requires a fresh boot, a newly pinned/pushed source manifest and
 pending marker, and separate explicit authorization; do not unload the
 resident module or reuse the consumed attempt.
+
+## Corrected fresh-boot table-discovery rung (2026-11-05)
+
+After the corrected runner was pushed as `29cce360d90e038c3e2b19d70af5e6e147170cc7`,
+the server restarted before further work. The fresh boot ID is
+`ba568e3c-69f8-44c4-8e45-5698ee16b5e6`; kernel release/build ID remain
+`7.2.11-14-1-ARCH` / `e6037e7a6a53ed1dfa9c1faa90efedc3d6b022bf`. The live
+candidate `boot.bin`, UKI, firmware, and module hashes matched the bundle,
+the pushed checkout was clean at `29cce360…`, and no ANE module was loaded
+before preflight. The stale root manifest pinned `26deed9…`; it was retained
+as `/var/lib/omarchy-ane/h17-table.manifest.previous.json` and replaced from
+the checksum-verified bundle, then a fresh manifest-bound pending marker was
+created. The boot's read-only preflight returned `MATCHED` for every identity,
+DT, reservation-tuple, module-absence, and one-shot-unused check.
+
+The user authorized the fresh-boot retry. The corrected one-shot runner
+claimed the marker and returned `PASS`:
+
+```json
+{"channel_count":8,"descriptor_sha256":"d02b270910104f38d5e543aacb9b32a09135903b899da97f8472c159c36098ee","reason":"owned-ipc-table-copied-registration-skipped","rung":"PASS","table_address":"0x100003c0000","table_bytes":2048,"table_sha256":"05e5c12d7e24fc033f6eb0dd246ae4753004375426b0d07c8c211fab575e08ae"}
+```
+
+The retained attempt evidence is under
+`/var/lib/omarchy-ane/h17-table-attempts/ba568e3c-69f8-44c4-8e45-5698ee16b5e6/`
+(including `identity`, `preflight.json`, `run.log`, `dmesg-rung.log`, and
+`verdict.json`). The captured device log reports the runtime DART reservation
+`start=0x10000380000 bytes=0xf50000 type=IOMMU_RESV_RESERVED`; all three
+DMA-backed table buffers were mapped into the planned DM/IPC/HEAP aliases;
+firmware woke; and an owned 2,048-byte IPC table with eight channels was
+copied and hashed. The driver stopped before SCRATCH3 channel registration,
+with no doorbell, IRQ acknowledgement, or task submission. This is observed
+J700/H17 table-discovery behavior on this exact boot/artifact set—not ANE
+numerical execution or broader qualification.
+
+The driver explicitly logged that CPU release was attempted and that binding,
+mappings, and power are retained; `ane_h16` is still loaded and bound. **Do
+not unload it.** Any further hardware rung requires a new review and separate
+authorization, a reboot, and a new attempt record.

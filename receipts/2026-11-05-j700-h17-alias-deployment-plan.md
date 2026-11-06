@@ -234,3 +234,14 @@ there is no runtime reservation or table result, and the module remains
 loaded with refcount 0, unbound, and not unloaded. A reviewed offline runner
 fix now supplies that parameter. Any retry requires a fresh boot, a refreshed
 manifest/marker for the pushed source, and separate explicit authorization.
+
+The user authorized that fresh-boot retry. On boot
+`ba568e3c-69f8-44c4-8e45-5698ee16b5e6`, after refreshing the stale root
+manifest and passing all preflight checks, the corrected table-discovery
+runner returned `PASS`. Runtime logs observed the alias range as
+`IOMMU_RESV_RESERVED`, mapped all three DMA-backed regions, woke firmware,
+copied and validated the owned 2,048-byte/eight-channel IPC table, then
+stopped before SCRATCH3 registration. No task or numerical result was
+submitted. The module remains loaded/bound with mappings and power retained;
+do not unload. A later rung needs separate review/authorization and a fresh
+boot. Full evidence is recorded in the offline-execution receipt.
