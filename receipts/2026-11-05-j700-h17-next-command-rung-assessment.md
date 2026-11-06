@@ -279,3 +279,22 @@ extraction that supplies that argument or established that either value is
 the CSNE ID from the firmware table. The T2H dispatcher narrows the transport
 path but does not close the firmware-parser/reply contract or make `PING` safe
 to send.
+
+### Request serialization details and namespace boundary
+
+Extended `aneFirmwareCommandSend` disassembly is captured in
+`analysis/h17-fwcmdsend-serialization.txt`; the receive helper is in
+`analysis/h17-io-receive-helper.txt`. The sender stores the command's u16 at
+`command+4` as a correlation-related field (also used in a diagnostic), but the
+channel-send call's message type (`x1`) comes from a separate local value
+derived through a device/channel lookup, then narrowed to its low byte. The
+other send arguments include a separate object field and command data. Thus it
+would be unsafe to describe the `command+4` value as simply “the RTKit message
+ID” from the earlier load alone.
+
+The incoming T2H path requests a 12-byte message and its dispatcher reads the
+u16 at offset `+4`; the host matcher later correlates on its own object field
+at `+0x50`. The necessary mapping among those fields, the outgoing channel
+message type, and firmware CSNE ID `0x12` is still not established. This is a
+useful boundary finding, not a complete request/reply contract. No hardware
+access was performed.
