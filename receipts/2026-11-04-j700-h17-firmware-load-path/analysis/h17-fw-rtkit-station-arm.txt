@@ -922,6 +922,28 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 54 — global manager `+0x630` is installed by two runtime constructors
+
+The writes to global `[0x1c8000+0x630]` are not just lookups: constructors
+`0x209e4` and `0x20a88` each allocate an object, install its vtable pointer
+from the `0xc0000+0xc60` region, and store the object pointer into that global
+slot (`0x20a28` and `0x20acc`). Both also initialize their associated
+`+0x618/+0x620` globals and object state. The relevant alternatives are
+selected in the larger `0x160ac` context initializer: its branch at
+`0x161b0` reaches `0x29260`→`0x209e4`, or `0x20a88`; both returned values
+are retained in that context at `+0xf8`. Their teardown paths clear the
+global slot (`0x20bb8`, `0x20c50`, `0x20ce0`).
+
+This makes the CRPC fallback in `0x26440` concrete: its virtual call through
+`[0x1c8000+0x630]` targets an object installed by this runtime manager
+initialization, not an arbitrary unclassified pointer. However, this object
+is still not proven to be either named `ChManTarget`/`ChManHost` wrapper
+created by `0x54f8`; the manager and wrappers have separate construction
+sites and no pointer equality or handoff has been found. The CRPC returned
+resource is still not identified as the linked queue or its route. Static
+disassembly only; no hardware access or task submission; `CSNE_CMD_PING`
+remains unsent.
+
 ## Addendum 53 — CRPC creation consults a global channel-manager path
 
 The call at `0x3534c` invokes `0x26440` with channel value `0x17600`, identifier
