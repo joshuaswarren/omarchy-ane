@@ -649,6 +649,32 @@ uses it, or that the consumer reads the same ring whose producer is
 task submission or ring-consumer observation to close that gap. Static
 disassembly only; no hardware accessed and no command submitted.
 
+## Addendum 26 — runtime channel table is populated from firmware descriptors
+
+In the pinned firmware image (SHA-256
+`32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c`),
+`0x96934` begins construction of the object later referenced through the
+runtime table at `0xcb5c0`. It reads the table's count at `[0xcb5c0]` and
+pointer-array address at `[0xcb5c8]`. The initializer walks 0x18-byte records
+starting at `0xcabc0`; for each active record it allocates a 0x60-byte
+channel/endpoint object, stores the record's first word as the object's
+leading field, initializes its lookup and callback storage, and eventually
+stores the object in the pointer array at the index held in object `+0x28`
+(`0x96a38`–`0x96acc`). It then registers the object with the runtime
+framework (`0x96adc` onward). This is the firmware-side runtime registry
+construction, distinct from the host's shared IPC channel-name table.
+
+The table's consumers are consistent with that role: `0x9ad28` extracts the
+upper 16-bit channel ordinal and loads `[table+8][ordinal]`; `0x98718` and
+`0x988e8` likewise use a message/object channel index to select an entry
+before dispatch or endpoint lookup. The nearby `0x98a60` path processes
+incoming words and selects a runtime entry, while `0x9a988` operates on an
+already-selected entry. None of these sites ties the CRPC fallback queue's
+`[+8]` link to an entry or exposes that link's `[+0x10]` route value. In
+particular, the host registration log's index 7 remains a candidate mapping,
+not proof that a CRPC route uses high-half 7. Static firmware disassembly;
+no device interaction or command submission.
+
 ## Addendum 25 — endpoint callback registration consumes, not creates, route
 
 The callback-registration path does not supply the missing route writer.
