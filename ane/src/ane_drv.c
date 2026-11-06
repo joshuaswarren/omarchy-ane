@@ -295,6 +295,7 @@ static void ane_iommu_unmap_pages(struct ane_device *ane, struct ane_bo *bo)
 	struct drm_mm_node *mm = bo->mm;
 	size_t size;
 	size_t unmapped;
+	size_t off;
 
 	lockdep_assert_held(&ane->engine_lock);
 
@@ -306,9 +307,15 @@ static void ane_iommu_unmap_pages(struct ane_device *ane, struct ane_bo *bo)
 	size = (size_t)bo->npages << ane->shift;
 	/* One call: apple-dart flushes each DART once, not once per page. */
 	unmapped = iommu_unmap(ane->domain, bo->iova, size);
-	if (unmapped != size)
-		dev_err(ane->dev, "unmap short at %#llx: %zu of %zu\n",
-			(unsigned long long)bo->iova, unmapped, size);
+	/* A short call stopped at a hole: try every later page, as the per-page loop did. */
+	for (off = unmapped; off < size; off += 1UL << ane->shift) {
+		dma_addr_t iova = bo->iova + off;
+		size_t page = iommu_unmap(ane->domain, iova, 1UL << ane->shift);
+
+		if (page != 1UL << ane->shift)
+			dev_err(ane->dev, "unmap short at %#llx: %zu\n",
+				(unsigned long long)iova, page);
+	}
 	drm_mm_remove_node(mm);
 	bo->mm = NULL;
 	bo->iova = 0;
