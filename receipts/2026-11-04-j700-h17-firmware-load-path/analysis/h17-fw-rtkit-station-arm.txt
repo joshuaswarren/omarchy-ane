@@ -1087,8 +1087,8 @@ hardware access or submission; PING remains unsent.
 
 ## Addendum 83 — service `+8` has a vtable setter; this does not set `+0x28`
 
-The `0x6170` service object's signed vtable points at table `0xc0068`; its
-entry at vtable offset `+0x20` resolves to `0x6158`. That method returns the
+The `0x6170` service object's signed vtable points at table `0xc0058`; its
+entry at vtable offset `+0x30` resolves to `0x6158`. That method returns the
 old 32-bit value from `[service+8]` and stores its second argument there
 (`ldr w0,[x0,#8]; str w1,[x0,#8]`). Thus `+8` is not proven permanently NULL:
 the object exposes an explicit setter that can make the `0x35128` guarded
