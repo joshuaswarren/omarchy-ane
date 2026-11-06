@@ -242,3 +242,22 @@ does not establish command execution or reply matching. The firmware
 receive/parser and response-to-outstanding-command path remain unpinned, as do
 the `PING` ID/format namespace gap, peer acknowledgment, and Linux IRQ
 ownership. No hardware access is authorized by this offline trace.
+
+### Host response matching (offline disassembly)
+
+Captured `processCommandResponse` and `handleOutstandingCommand` in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-command-response.txt`
+and `analysis/h17-handle-outstanding.txt`. `processCommandResponse` receives
+its first explicit argument in `x1`, walks the outstanding-command collection,
+and compares that value against each candidate object's field at `+0x50`
+(`0xfffffe0008f43950..0x8f43958`). On a match it calls
+`handleOutstandingCommand(device, candidate, true)` (`0xfffffe0008f43960..68`).
+The latter checks/updates the response object, invokes its completion/callback
+path, updates accounting, and removes/advances collection state.
+
+This pins a host-side correlation-and-completion mechanism, but not the origin
+or wire meaning of the value passed in `x1`: it does not yet show the firmware
+parser extracting the same field, the reply status/payload contract, or a
+PING-specific response. Thus the outstanding-command match cannot be equated
+with the CSNE table's `0x12` based on this evidence alone. Queue/IRQ ownership
+remains an independent gate; no device interaction occurred.
