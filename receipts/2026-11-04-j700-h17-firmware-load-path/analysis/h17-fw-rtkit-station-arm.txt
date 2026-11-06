@@ -537,3 +537,30 @@ matching the size of the captured host table only numerically; no proof yet
 ties their entry order or pointers together. Do not map firmware channel
 indices to Linux table entries from count/name coincidence. Static evidence
 only; no hardware accessed.
+## Addendum 19 — saved host table fixes H2T's index to 7
+
+The preserved `dmesg-rung.log` from the channel-registration attempt logs all
+eight copied host records (boot `8ec803ee-85f7-434c-8a5e-19317934c9c9`;
+hashes and run identity are in `receipts/2026-11-05-j700-h17-channel-registration.md`).
+Its explicit record is:
+
+  `H17 CHANNEL index=7 name=DATA_CHAIN_H2T type=0 source=7 slots=0x10`
+
+This is the shared IPC channel table at alias `0x100003c0000`, copied as
+0x800 bytes and accepted by the firmware registration handshake. The host
+`channelNameToIndex` implementation scans that table in 0x100-byte strides
+and returns the matching ordinal; the saved kernel trace names
+`DATA_CHAIN_H2T` as that helper's target for `device+0xe214`. Therefore host
+selectors 2/3 resolve to host table index 7 (source receipts:
+`analysis/h17-ring-fns.txt`, `analysis/h17-doorbell-arch.txt`, and
+`analysis/h17-send-channel-lookup.txt`).
+
+Firmware's `0x9ad28` route decoder independently uses the upper 16 bits as an
+index into its runtime channel-pointer table and the low 16 bits as an
+endpoint ID. This makes 7 the concrete host-side H2T channel ordinal and a
+strong candidate for the firmware route high half when addressing that same
+named channel. It still does not prove the RPC fallback object's route word
+is `(7 << 16) | endpoint`, because its `[queue+8]` link and `link+0x10` route
+word were not captured, and the firmware service-registry index has not been
+shown byte-for-byte equal to the Linux table ordinal. Static cross-receipt
+correlation only; no hardware accessed during this continuation.
