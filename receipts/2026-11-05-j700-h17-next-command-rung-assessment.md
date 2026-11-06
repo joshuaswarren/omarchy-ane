@@ -393,6 +393,15 @@ table ID alone as sufficient evidence that `0x12` is the inner code consumed by
 this T2H path. The next offline gate remains tracing the actual firmware
 endpoint/parser and matching it to a host caller.
 
+An offline firmware `__TEXT,__text` scan (Capstone skipdata across sparse
+islands) found no obvious ADRP+ADD reference to the PING name or either CSNE
+name-table address; direct u64 pointers to those VAs were also absent. Many
+unrelated compares use immediate `0x12`, so literal-compare searches are not a
+useful discriminator. The negative scan cannot rule out indexed/indirect
+dispatch or runtime relocation and did not locate a PING handler. Reproduction
+and exact output:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-ping-xref-scan.txt`.
+
 ### Queue receive-ID mask correction
 
 The decoded receive primitive at `0xfffffe0008ef8a10` applies
