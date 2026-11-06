@@ -1434,6 +1434,24 @@ separately at a global slot by `0x25dac` and is not substituted for the
 fallback selector. No firmware route or host channel identity, IRQ ownership,
 or PING schema is established. No reboot or device access; no submission.
 
+## Addendum 97 — correction: selector is wrapper `+0x18`, not `+0x20`
+
+Rechecking `0x6170` against the fallback sequence exposes an offset error in
+Addenda 95–96. `0x6170(wrapper, context, selector)` stores `context` at
+`wrapper+0x10` and `selector` at `wrapper+0x18`, calls `0xdf08(context,
+selector, ...)`, and stores the returned queue pointer at `wrapper+0x20`.
+Accordingly, `0x6258`'s local path first passes `context` and the selected
+queue pointer (`wrapper+0x20`) to `0xdfbc` for its cleanup step; it then
+reloads the pair at `wrapper+0x10` as `(context, selector)` and calls
+`0xdf08` again. The selector is therefore `[wrapper+0x18]`, not
+`[wrapper+0x20]`; `+0x20` is the cached queue pointer. Withdraw the prior
+claims that `[owner+0x1f8+0x20]` is the selector or that `0xdf08` indexes by
+that field. The owner `[+0x1f8]` wrapper remains the direct source context
+object, and its selected queue is resolved from the pair at wrapper `+0x10/+18`.
+The actual selector value, queue link, host route, IRQ ownership, and PING
+schema remain unknown. Offline disassembly only; no device access or
+submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
