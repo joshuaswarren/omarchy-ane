@@ -1,0 +1,97 @@
+H17 firmware RTKit station layer: arming, tables, and the [q+8] lifecycle (addendum 2)
+=====================================================================================
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+Companion to: analysis/h17-fw-queue-object.txt,
+analysis/h17-fw-linked-recv-and-ipc-endpoints.txt
+
+## Station table and per-station objects
+
+  Table global 0xcb5c0: [count@", +8 = array of station pointers,
+  indexed by station/endpoint id (w8 uxtw #3 peers).
+  Station object (0x38 bytes, allocated in RTKit boot init 0x96934
+  with `str wzr,[x0,#0x30]`; at allocation [x0] vtable 0x16c378,
+  [x0+0x20]={list head +0x108, self}):
+    +0x00  inner queue object (virtual target of all ops)
+    +0x18 / +0x10 / +0x08  misc referenced objects (query fn 0x9a758)
+    +0x20  shared-buffer descriptor table {rows, base} used by the
+           properties query 0x9a7f0 (rows/stride math at 0x9a878-)
+    +0x28 / +0x2b / +0x2a  flags (0x2b written with 1 or 2 states,
+           0x2a checked in the suspend block)
+    +0x2c  max message id seen / count (read by 0x9a944: `cmn w9,#0x13
+           / ccmp w1,w8` bounds; entries laid out via a u16 bitmap
+           [x+0x18] with 0x60-stride slots in [+0x10])
+    +0x30  FLAGS: bit0 = ARMED/ATTACHED gate for send AND receive.
+
+## Arm/disarm primitive
+
+  0x9a988(w8=station_id, w1=arm)   bounds-checked trampoline
+    count check vs [0xcb5c0]; <= count-1 -> 0x9a9a8(w0=..., w1)
+  0x9a9a8:
+    w1 != 0 (ARM):   virtual op w1=9  (attach, arg = struct {fn 0x9aa84,
+                     self} paciza pair); then virtual op w1=1 (START);
+                     then [st+0x30] |= 1 ; dsb sy ; then virtual op
+                     w1=5 (post-start notify). Success = 0.
+    w1 == 0 (DISARM): [st+0x30] &= ~1 (not dsb'd); virtual op w1=2
+                     (STOP) with w=1. 
+  0x9a944(st, id): per-id message-block lookup: bounds via [st+0x2c]
+    and a u16 presence bitmap at [st+0x18] (ids < 0x1e direct map,
+    0x12-0x2b shifted block), slot = [st+0x10] + idx*0x60. Ids are
+    "message ids" within the station, consistent with the u8/u16
+    ids seen in the send/recv wrappers.
+
+## Who arms stations
+
+  RTKit-internal message pump 0x98694 (called with the mailbox message
+  buffer): for each message with type != 5 and != 4 it DISARMS then
+  IMMEDIATELY re-ARMS the station ([msg+4]) — 0x9a988(id,0)+0x9a988(id,1)
+  — then a virtual op w1=0xc ("drain") on the station's inner object,
+  then re-broadcasts the control message to the endpoint [msg+8] via
+  0x9ad28 with the 0xc0c00000|0x100000|R flag folded from [msg+0x54]
+  bit 3, then acks (type 4 paths skip). 0x9b08c handles [msg+8]-side
+  bookkeeping. This is the classic RTKit control-message pipeline
+  where the HOST side drives queue wake/drain via control words; the
+  firmware does not self-register by name.
+  Whole-text scan: the ONLY arm site (store of [x+0x30] with `orr #1`)
+  in the entire firmware is 0x9aa18 in the arm fn above, plus
+  runtime state writers at 0x93694 (per-entry enable/disable switch in
+  a table walker, arm toggled by entry type 1/2) and 0x93f84
+  (an event/IRQ dispatcher path, sets arm + optional global hook
+  0x1ccb80 blraaz + 0x9ca7c wake). Those two are the *station's own
+  inner-queue* update paths, not RTKit-level arm.
+
+## Consequence for the [q+8] construction gap
+
+The ANE-side link object's [+0x10] endpoint id is a RTKit STATION id
+(index into 0xcb5c0); stations are allocated at RTKit boot and armed by
+the RTKit pump/control messages, not by ANE code. The remaining pin is
+which ANE-side constructor allocates the chain
+queue(+0x40) -> link(+0x08) with [link+0x10] = <station id> and what
+station id the H2T CSNE channel uses. No name strings exist in the
+payload for queue names, so identification must proceed structurally:
+(1) the second-channel users 0x36138 (pop sibling 0x6464) / 0x385d0,
+0x4bd2c (push) lead to the same queue class ctor; (2) 0x9b08c and
+the handler registration at RTKit boot (0x96934) reveal the station
+guest callback list, from which the CSNE station can be identified by
+its handler pointing back into the 0x2bb34 evaluator vein.
+
+Also decoded this pass:
+  0x9a7f0: per-station properties query (out+0x10 status 3 when
+    unattached, out+0x18 station id, out+0x1c.. records from the
+    station's +0x20 descriptor table in 0x18-byte entries).
+  0x963d0: vtable-tail fused lock/unlock call pair (used as mutex
+    acquire/release around RTKit globals 0xcae40 / 0xa1...) — the
+    earlier reads of it as "logging" were artifacts of the same shape;
+    classify by the two-method offsets (+0x18 pre-call, tail-call
+    into [+exact vtable slot]) rather than by name.
+  0x9ad28 full body: armed-gate first (0x8000fff7 family errors),
+    block alloc via 0x9a944, global 0xcae40 write of a paciza'd
+    tracking record {0x93c98, block}, [0xcb0c0] core lock via
+    0x9c78c/0x9c6bc, retry loop 0x94dcc/0x94e48 until accept, then
+    the virtual send on the inner object (op w1=2, struct at sp:
+    payload x19, ep w20, 0 at sp+0x10, 0x1@c=1) and completion via
+    [inner+0x20] -> 0x9abfc. x2 = payload length or -1 for the
+    short-record form.
+
+Static disassembly only. No hardware was accessed.
