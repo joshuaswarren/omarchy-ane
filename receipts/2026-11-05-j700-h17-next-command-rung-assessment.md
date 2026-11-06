@@ -222,3 +222,23 @@ or claim that a device will acknowledge a slot. The producer-word safety
 guard is a proposed Linux policy stricter than Apple's primitive, not an
 observed firmware rule. Gate 2 remains open pending peer acknowledgment and
 queue ownership evidence.
+
+### Host channel-send call path (offline disassembly)
+
+The send wrapper call at `0xfffffe0008f43a8c` is captured in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-channel-send-caller.txt`.
+It selects a channel object by index and calls the queue primitive at
+`0xfffffe0008ef85a8`, passing the message ID and two payload words. Its bounded
+retry count is derived from a device field at `+0x194` multiplied by `0x32`;
+the loop also checks generation/state fields. The primitive excerpt is
+`analysis/h17-channel-primitive.txt`: it writes two 64-bit payload words into
+the selected 64-byte slot, performs a store barrier, writes
+`message_id | (sign_extended_phase XOR 1)`, performs another barrier, and
+advances local producer bookkeeping.
+
+This is host serialization evidence for the channel queue, not proof that the
+firmware command-mailbox envelope is the same structure. A successful enqueue
+does not establish command execution or reply matching. The firmware
+receive/parser and response-to-outstanding-command path remain unpinned, as do
+the `PING` ID/format namespace gap, peer acknowledgment, and Linux IRQ
+ownership. No hardware access is authorized by this offline trace.
