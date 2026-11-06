@@ -922,6 +922,21 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 44 — service vtable slot `0x6158` is not the CRPC link writer
+
+The constructor vtable at VA `0xc76f0` includes target `0x6158`, which looks
+like a possible `+8` setter at first glance. Its body is only:
+`mov x8,x0; ldr w0,[x0,#8]; str w1,[x8,#8]; ret`. The store is a 32-bit
+service-object field update, whereas the CRPC queue's optional link is loaded
+as a 64-bit pointer and then dereferenced by queue send/receive. Callers
+reached through this service vtable therefore do not establish a CRPC link
+write or route initialization; matching field offsets alone are insufficient.
+
+This rules out the concrete `0x6158` setter as the missing link writer. The
+remaining CRPC `[queue+8]` writer and `[link+0x10]` route source are still
+unresolved. Static firmware disassembly only; no hardware access or
+submission, and `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 43 — corrected constructor pass still finds no queue-link store
 
 After correcting the `ldp` interpretation, the constructor path was rechecked
