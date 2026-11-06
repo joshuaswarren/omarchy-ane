@@ -495,3 +495,23 @@ selection, but does not expose the value of the queue object's +8 or the
 transport/endpoint selected by 0x29b6c. Therefore the fallback object has two
 possible enqueue routes; which route applies to the H17 RPC instance remains
 unresolved by static initialization alone. No hardware accessed.
+
+## Addendum 17 — null-link enqueue writes a ring record
+
+The null-link path is traceable past 0x29b6c. `0x62e0` passes `[queue+0x20]`
+as x0, the original length in x1, the original message value in x2, and zero
+in x3. `0x29b6c` calls the indirect helper at 0x50ec on the length, then reads
+the producer slot at `[queue+0x24]` and ring base at `[queue+0x18]`. For a
+nonnegative slot it writes the message at slot+8, x3 at slot+0x10, and the
+optional callback result at slot+0x18; publishes the record with a store
+barrier; advances the producer modulo the ring size `[queue+0x14]`; increments
+the enqueue counter at +0x2c; and invokes optional callbacks through global
+state rooted at VA 0x1cde20. A sentinel producer index (-1) skips the ring
+write and takes the callback/error path.
+
+The linked branch at 0x68c8 hands its packed message to helper 0x9ad28, then
+updates a counter at the link object +0x20 when that helper reports the
+non-error result. These are distinct queue backends. The null-link route is a
+local ring enqueue with an indirect notification hook; the trace still does
+not identify that hook's concrete transport, the ring consumer, or a Linux
+channel index. Static disassembly only; no hardware accessed.
