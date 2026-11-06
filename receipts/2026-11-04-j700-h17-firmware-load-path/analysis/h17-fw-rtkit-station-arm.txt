@@ -967,6 +967,24 @@ firmware SHA-256
 `32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c` only;
 no hardware access or submission; `CSNE_CMD_PING` remains unsent.
 
+## Addendum 67 — known queue constructor is wrapper-owned, not CRPC-owned
+
+Rechecked the concrete writer for the generic queue's optional link. The
+constructor at `0x298fc` stores x3 at `[queue+0]` and x4 at `[queue+8]`; its
+only direct `BL` callsite in this firmware image is `0xdc44`. That call is
+inside `0xdbcc`, reached from `0x60c8` while iterating the metadata records of
+the `0x5fa8` wrapper. `0xdbcc` loads the pair from `[wrapper+0x60]`, so the
+known writer's link source is `[wrapper+0x68]`.
+
+This sharpens the ownership boundary: the traced queue/link constructor is
+part of `ChManTarget`/`ChManHost` wrapper setup, not the independently traced
+CRPC constructor at `0x35128`/`0x35324`. A direct-call xref is not proof that
+no indirect invocation exists elsewhere, and the wrapper's effective `+0x68`
+value remains unknown. No pointer handoff from those wrappers to the CRPC
+parent or its response queue was found. Therefore this still does not provide
+the CRPC queue's `[+8]` value or its route word. Static firmware analysis
+only; no device access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
 The construction path for each named wrapper is now covered through its base
