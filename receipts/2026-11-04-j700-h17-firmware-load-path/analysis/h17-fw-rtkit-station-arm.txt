@@ -952,27 +952,31 @@ mapping from that resource path to the CRPC linked queue's `[link+0x10]`.
 Static disassembly only; no hardware access or submission; `CSNE_CMD_PING`
 remains unsent.
 
-## Addendum 56 — manager misses delegate resource requests to its child
+## Addendum 56 — manager misses take a child callback before range allocation
 
 The “range translation” call path can now be characterized at the ABI level.
 `0x21100` checks the manager's `[+0x60,+0x68)` interval; an address inside
 returns `address - [+0x70]`. A miss calls `0x20cf8`, forwarding the requested
 address and size plus flags/output storage. `0x20cf8` obtains or retains the
-manager's child resource at `[manager+0x58]` (creating it through
-`[0x1c8000+0x670]` if absent), then invokes the child's vtable slot `+0x18`.
-On success it records an allocated/mapped range through `0x28e8c`, and may
-return the selected address through the caller's output pointer. This is a
-resource mapping/allocation path, not a queue send routine.
+manager's child at `[manager+0x58]` (creating it through
+`[0x1c8000+0x670]` if absent), then invokes that child's vtable slot `+0x18`.
+It subsequently computes an aligned range and calls `0x28e8c`; on success it
+records/returns the selected address. Thus the outer path is resource
+mapping/allocation, not a queue send routine.
 
-Do not equate the child slot's numeric offset with one fixed function yet:
-the two child constructors (`0x229ac` and `0x218c4`) install different
-vtable bases (`0xc0000+0xd18` and `0xc0000+0xca8`), so the same virtual slot
-must be resolved against the actual constructor variant. The CRPC `0x26440`
-call uses the manager's `+0x28` slot with its `0x17600` channel resource,
-but this mapping operation still does not identify the returned resource as
-the queue's optional link or provide `[link+0x10]`. No host channel 7 route
-follows from it. Static firmware analysis only; no hardware access or
-submission; `CSNE_CMD_PING` remains unsent.
+The child-slot interpretation needs qualification: the two child constructors
+(`0x229ac` and `0x218c4`) install distinct vtable bases (`0xc0000+0xd18` and
+`0xc0000+0xca8`), whose `+0x18` entries resolve to `0x22a90` and `0x219a8`.
+Those bodies appear teardown-like: they replace the vtable, release the
+child's `+8` allocation, and clear that pointer. This does not obviously
+match the arguments/results with which `0x20cf8` invokes the slot. The
+callback's exact semantic role is therefore unresolved; do not describe it
+as the mapping allocator itself. The subsequent `0x28e8c` path and outer
+range bookkeeping are visible, but their relationship to this callback
+requires resolving the vtable/call ABI. CRPC's `0x26440` call still does not
+identify the returned resource as the queue link or provide `[link+0x10]`;
+no host channel 7 route follows. Static firmware analysis only; no hardware
+access or submission; `CSNE_CMD_PING` remains unsent.
 
 ## Addendum 54 — global manager `+0x630` is installed by two runtime constructors
 
