@@ -729,3 +729,21 @@ field values cannot be substituted for the route's high 16-bit channel index
 without additional dataflow evidence. This narrows the registry contents but
 does not close the CRPC link/route construction gap. Static image inspection
 only; no device access or command submission.
+
+## Addendum 28 — descriptor callback registration is a separate class registry
+
+The registration following descriptor-table construction does not write a
+linked-queue route. At `0x96adc`, the initializer passes class tag `0x436d6278`
+(`Cmbx`), callback `0x9a7f0`, and the descriptor context to `0x9cc94`.
+`0x9cc94` supplies registration kind `0x300` and tail-branches to `0x8d018`;
+that helper allocates a 0x28-byte registration record containing the tag,
+kind, callback, and context, then links it into the registry rooted at
+`0xcaf40`. The callback `0x9a7f0` later queries the runtime table using its
+request's index and serializes properties from the selected entry. These are
+class/property-registration operations, not stores to the CRPC queue's
+`[+8]` link or the link route at `[+0x10]`.
+
+Thus the newly traced callback chain explains one consumer of the runtime
+registry but does not connect its entries to host channel index 7 or the CRPC
+fallback. Static disassembly of the pinned firmware only; no hardware access
+or command submission.
