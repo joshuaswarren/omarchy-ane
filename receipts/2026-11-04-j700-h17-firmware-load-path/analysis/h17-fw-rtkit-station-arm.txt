@@ -922,6 +922,28 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 49 — generic queue factory receives its link from shared state
+
+The `0x298fc` caller is `0xdbcc`. It allocates a 0x20-byte descriptor-sized
+record at `x21->table + ((3 * x1) << 5)`, sets record fields `+0x28/+0x2c`
+and `+0x20`, then calls `0x298fc` and stores its return at record `+0x30`.
+The constructor saves x3/x4 at queue offsets `+0/+8`, initializes queue
+`+0x10/+0x18/+0x20` and local-ring state, then returns the queue. In its
+caller, `ldp x3,x4,[x21,#0x60]` supplies these two constructor arguments;
+thus the optional link at `[queue+8]` comes from the shared object field
+`[x21+0x68]`, not the per-record descriptor. The records select and
+parameterize queues, while the shared fields provide callback/link values.
+
+This does not yet identify the descriptor table's owner or show that this
+queue is the CRPC fallback queue. The previously followed CRPC-adjacent
+object setup at `0x5fa8`/`0x69d4` has distinct call sites and has not been
+connected to `0xdbcc`'s `x21` or table. Therefore it is not valid to carry
+the shared link field over to CRPC or to infer its route. Next
+trace the callers that populate `[x21+0x40]` and `[x21+0x60/+0x68]` for the
+`0xdbcc` path, and establish whether that object/table is owned by the CRPC
+construction path. Static disassembly only; no hardware access or task
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 48 — `0x9177c` is a memory-window control write, not link route setup
 
 The 32-bit `+0x10` scan found a particularly plausible false positive at
