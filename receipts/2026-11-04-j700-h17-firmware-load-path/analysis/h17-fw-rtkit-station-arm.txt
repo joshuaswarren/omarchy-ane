@@ -1025,6 +1025,29 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 73 — wrapper queue links are wired to the peer wrapper
+
+The two `0x5fa8` wrappers created in `0x54f8` are passed to `0x60c8` in
+reciprocal order: first `(wrapper_A, callback, wrapper_B)`, then
+`(wrapper_B, callback, wrapper_A)` (`0x5844`–`0x5864`). `0x60c8` immediately
+calls `0xdbc4`, whose complete body stores x1/x2 as the wrapper's `+0x60/+0x68`
+pair. Its metadata loop then calls `0xdbcc`; that routine reloads the pair
+from `+0x60` and passes the second word as x4 to queue constructor `0x298fc`,
+which stores x4 at `[queue+8]`. Thus the queue objects built for these wrapper
+metadata records receive the *peer wrapper pointer* as their link argument;
+this is no longer an unknown `[wrapper+0x68]` value for this specific setup
+path.
+
+This closes only the wrapper-owned constructor dataflow. It does not connect
+either wrapper or its queues to the CRPC parent/response queue. There is also
+an unresolved representation question: the generic RTKit send path reads a
+32-bit route word from `[link+0x10]`, while the wrapper constructor stores a
+pointer at its own `+0x10` via the `0x239bc`/`0x24670` path. I have not proved
+that this reciprocal wrapper path is the link object consumed by that send
+primitive at runtime, or explained how that field yields a valid packed route.
+Static firmware disassembly only; no hardware access or submission; PING
+remains unsent.
+
 ## Addendum 72 — host token paths are distinct; mapped-range lookup is not a base match
 
 The host artifacts distinguish two uses of message IDs. In the generic
