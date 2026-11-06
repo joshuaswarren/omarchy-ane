@@ -854,3 +854,20 @@ outputs; it does not receive a CRPC queue object or write a CRPC `[+8]` link
 or route. This closes the allocator-vtable lead without changing the
 unresolved CRPC constructor/link question. Static firmware disassembly only;
 no hardware access or command submission.
+
+## Addendum 35 — backing allocator queue has its own unrelated `+8` buffer
+
+Following `0x20cf8` one level farther identifies the allocator backing
+object's dispatch. It loads `[allocator+0x58]` and calls that object's vtable
+slot `+0x18`, which resolves to `0x22124` (vtable at `0xc0cb8`). The backing
+object constructor `0x218c4` sets its mode byte at `+0x5c`, allocates a
+0xc00-byte local record buffer at `+8`, and allocates a separate 0x100-byte
+buffer at `+0x50`. When mode bit 0 is clear, `0x22124` appends a 0x58-byte
+record into the local `+8` buffer and updates its producer/count fields. When
+mode bit 0 is set, it forwards to a different method path (`0x21dd0` for
+operation 0, `0x21f6c` for operation 1).
+
+This is the shared allocator's own internal queue object: its `+8` is backing
+storage, not the CRPC queue's optional link. It gives no evidence about the
+CRPC link writer or route. Static firmware disassembly only; no hardware
+access or command submission.
