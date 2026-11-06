@@ -922,6 +922,26 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 59 — CRPC's manager result is consumed as a mapped backing resource
+
+The use of CRPC's `+0x1d0/+0x1d8` values after construction narrows their
+role. The fallback result from `0x26440` is saved as the parent resource base;
+the constructor allocates a 15-entry descriptor/list object and repeatedly
+calls `0x185cc` with that list and addresses formed as the base plus offsets
+`0x000`, `0x480`, `0x900`, `0xd80`, `0x1200`, `0x1680`, `0x1b00`, `0x1f80`,
+`0x2400`, `0x2880`, `0x2d00`, `0x3180`, `0x3600`, `0x3a80`, and `0x3f00`.
+`0x185cc` appends the supplied address to a linked descriptor-list node; it
+does not create or attach a queue link. Subsequent fields at `+0x2d0` onward
+are derived from the resource base and passed through the same mapping/list
+setup.
+
+Accordingly, the CRPC result is being treated here as backing storage/address
+space for the CRPC object's regions. This makes it less plausible that
+parent `+0x1d0` itself is the queue link, but does not rule out an independent
+transport link being created elsewhere. No evidence here writes `[q+8]` or
+reveals `[link+0x10]`; host channel 7 remains unproven. Static firmware only;
+no hardware access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 58 — CRPC adopts a supplied resource before invoking fallback
 
 The CRPC constructor at `0x35128` has two resource paths. After obtaining
