@@ -942,6 +942,28 @@ firmware endpoint table and the saved host registration remain open. Static
 firmware analysis only; no hardware access or submission; `CSNE_CMD_PING`
 remains unsent.
 
+## Addendum 66 — endpoint-table initializer consumes fixed 24-byte records
+
+The setup loop at `0x96934` walks records beginning at VA `0xca000+0xbc0`,
+with a 0x18-byte stride. For each record, it tests the 32-bit field at `+0x0c`;
+records with that field set contribute an endpoint object. The initializer
+uses the field at `+8` as the endpoint-table slot/index (tracking the maximum
+to size the pointer array), stores the constructed object in the table's
+pointer array, and passes the record's `+0x0c` value into its channel/setup
+builder. The 64-bit field at `+0x18` is passed into the object's name/property
+setup. Visible strings in this static region include `management`, `crashlog`,
+`syslog`, and `user1`.
+
+The code therefore confirms that the endpoint table is built from a firmware
+configuration-record array, rather than being the host's channel-registration
+array. It gives no direct identity match to host `DATA_CHAIN_H2T` index 7,
+CRPC, or either `ChManTarget`/`ChManHost` wrapper. The strings alone do not
+identify the endpoint/channel represented by the CRPC route, and no runtime
+table contents or `[link+0x10]` value have been observed. Static analysis of
+firmware SHA-256
+`32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c` only;
+no hardware access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
 The construction path for each named wrapper is now covered through its base
