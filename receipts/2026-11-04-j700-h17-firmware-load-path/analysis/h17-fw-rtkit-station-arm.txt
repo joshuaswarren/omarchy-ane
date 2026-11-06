@@ -1070,6 +1070,21 @@ service object's `+0x28` reference by construction. CRPC route and IRQ
 ownership remain unresolved; no hardware access or submission; PING remains
 unsent.
 
+## Addendum 82 — fallback construction still branches on its own transport object
+
+Followed the fallback call from Addendum 81 into `0x26440` and its helper
+`0x265f4`. The latter loads the fallback consumer's transport object from
+`[owner+0x40]` and tests that object's `[+8]`; only on the nonzero branch does
+it dereference that same object's `[+0x28]` storage and initialize the
+transport buffer. The zero branch instead uses the owner's separate `[+0x48]`
+object and calls its local enqueue/dequeue helpers. Therefore the fallback
+queue allocation does not by itself prove RTKit-linked mode: its inner
+transport object has an independent optional pointer and local path. This is
+not the `DATA_CHAIN_H2T` service object's `+8/+0x28` pair, and no dataflow
+connects the fallback's optional pointer to the station route table here.
+CRPC link mode, runtime route, and IRQ ownership remain unresolved; no
+hardware access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
