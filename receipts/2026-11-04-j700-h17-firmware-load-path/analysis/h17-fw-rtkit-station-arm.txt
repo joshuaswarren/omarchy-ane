@@ -515,3 +515,25 @@ non-error result. These are distinct queue backends. The null-link route is a
 local ring enqueue with an indirect notification hook; the trace still does
 not identify that hook's concrete transport, the ring consumer, or a Linux
 channel index. Static disassembly only; no hardware accessed.
+
+## Addendum 18 — linked-route word selects runtime channel and endpoint
+
+The linked send helper `0x9ad28` receives the route word in w0, packed message
+metadata in x1, and payload in x2 (from 0x68c8). `0x9ce94` supplies a pointer
+to the firmware's runtime channel-table header at VA 0xcb5c0; `0x9c930`
+compares `route[31:16]` against the table count, then `0x9ad60` indexes the
+table's pointer array by that high-half value. The helper passes `route[15:0]`
+to `0x9a944`, which resolves an endpoint record within the selected channel
+object using its per-channel endpoint table. On success, later code invokes
+the selected channel's virtual send method (operation 2) and records the
+payload in the channel's response/queue state.
+
+This provides a concrete firmware route-word interpretation:
+`route = (runtime_channel_index << 16) | endpoint_id`. It is not the Linux
+kernel's selector table at device offsets e208/e210/e214, and it does not
+identify the numerical route word attached to the RPC fallback object. The
+firmware table's count is eight in the earlier static-data view at cb5c0,
+matching the size of the captured host table only numerically; no proof yet
+ties their entry order or pointers together. Do not map firmware channel
+indices to Linux table entries from count/name coincidence. Static evidence
+only; no hardware accessed.
