@@ -921,3 +921,21 @@ missing CRPC link writer. The constructor's `+8` link and `[link+0x10]` route
 remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
+
+## Addendum 39 — generic CRPC factory returns an allocator address, not a queue initializer
+
+The `0x26440` factory does not construct a queue header around its result. It
+normalizes the requested extent/alignment and tag, dispatches the allocator
+callback, calls `0x265f4` with the allocator manager, and returns the address
+derived from the returned allocation (`0x26440`–`0x265ac`). In the locally
+backed branch, `0x265f4` obtains the allocation through the manager's
+`+0x28` virtual method and returns its address through the out-parameter. The
+factory itself performs no stores through that returned address; in
+particular it does not write result `+8`, initialize a queue `+0x20` ring
+pointer, or construct a link/route object.
+
+This rules out explicit header/link initialization in the generic factory
+body, but does not establish the bytes supplied by the backing allocator or
+an external/shared-memory producer. The CRPC result's runtime `+8` value and
+its writer remain open. Static firmware disassembly only; no hardware access
+or command submission, and `CSNE_CMD_PING` remains unsent.
