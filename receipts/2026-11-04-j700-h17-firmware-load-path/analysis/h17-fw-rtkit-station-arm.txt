@@ -649,6 +649,26 @@ uses it, or that the consumer reads the same ring whose producer is
 task submission or ring-consumer observation to close that gap. Static
 disassembly only; no hardware accessed and no command submitted.
 
+## Addendum 25 — endpoint callback registration consumes, not creates, route
+
+The callback-registration path does not supply the missing route writer.
+`0x6898` receives a link object, reads its existing `[link+0x10]`, and passes
+that route plus callback/context arguments to `0x9acb8`; it then stores the
+callback at `[link+0x18]`. `0x9acb8` validates the route against the firmware
+runtime channel table, resolves its low-half endpoint with `0x9a944`, and
+stores callback/context in the resolved endpoint record at offsets +8/+0x10
+(`0x9ad08`). These writes target the resolved endpoint record, not the
+original link object's route field.
+
+The other direct callers of `0x9acb8` at `0x96c1c`, `0x96df0`, and `0x993e0`
+also pass a route value already held in their caller-owned object; they are
+endpoint-registration paths, not evidence of the CRPC link constructor. The
+firmware code inspected so far therefore has a complete route consumer and
+callback registration flow, but still lacks the constructor/store that
+populates the CRPC queue's `[+8]` link and that link's `[+0x10]` route. No
+endpoint or channel identity should be inferred from these callback paths.
+Static disassembly only; no hardware access and no command submitted.
+
 ## Addendum 24 — exact linked-send route source
 
 The linked enqueue path makes the route-word source explicit. `0x62e0`
