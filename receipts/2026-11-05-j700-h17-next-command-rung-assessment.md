@@ -136,14 +136,18 @@ with the host wrapper and reply parser. If the stripped image does not retain
 enough relocation/table information to prove that mapping, the correct result
 is that no candidate is established—not a guessed ping.
 
-The first reference pass confirmed why the string inventory is insufficient:
+The reference pass confirmed why the string inventory is insufficient:
 the relevant command names are in the `__TEXT,__cstring` section, but the
 retained `__TEXT,__text` scan did not find direct PC-relative references to
 the sampled names (`PING`, `CONFIG_GET`, `PREMAP_BUFFER`, `PLATFORM_INFO`).
-The image has separate `__DATA,__const` and `__DATA_CONST` sections and a
-dyld-info load command, so an indirect name table remains possible; this
-negative direct-reference scan is not proof that the handlers are absent.
-Resolving those fixups/table references is the next appropriate static step.
+Corrected Mach-O load-command decoding: the image has `LC_UUID` and
+`LC_UNIXTHREAD`, not a dyld-info or chained-fixups command, and its symbol-table
+commands are empty. A corrected search also found no absolute 32-bit/64-bit
+pointers to the sampled strings. This still does not prove the handlers are
+absent: code or constant tables may use relative offsets, indices, or shared
+logging machinery. But there is no symbol/fixup metadata to justify treating
+the strings as a command-ID table. Recovering an indirect mapping would
+require a separate data/code analysis and remains unproven.
 
 ## Offline gates before proposing the next hardware rung
 
