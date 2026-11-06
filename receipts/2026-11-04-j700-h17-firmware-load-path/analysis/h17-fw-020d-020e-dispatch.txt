@@ -1,0 +1,49 @@
+H17 firmware: indirect dispatch for 0x020d and 0x020e
+=====================================================
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+
+At VA 0x3c230 the code loads a u32 command at message+4, bounds the 0x200
+family, subtracts 0x200 and indexes a signed relative-offset table at VA
+0x3c558. The table base is applied relative to VA 0x3c25c, then control
+branches indirectly. For indexes 0x0d and 0x0e:
+
+  command  table index  relative entry  target
+  0x020d   0x0d          +0x2a0          0x3c4fc
+  0x020e   0x0e          +0x044          0x3c2a0
+
+At 0x3c4fc the 0x020d route rejoins the common flag/response handling; it
+does not take the specialized body at 0x3c2a0. The 0x020e route reads distinct
+fields from offsets +0x28, +0x38 and +0xa8 and formats/logs that message before
+rejoining common handling. This is direct evidence that this firmware parser
+routes 0x020d and 0x020e differently. It does not prove the higher-level host
+`sendPremapCmd` has a nested operation, nor identify what custom-bars means;
+no 0x020d→0x020e relationship is established.
+
+Relevant disassembly:
+
+  0x3c230 ldr w8, [x24, #4]
+  0x3c234 cmp w8, #0x2ff
+  0x3c23c sub w16, w8, #0x200
+  0x3c240 cmp w16, #0x12
+  0x3c250 adrp x17, #0x3c000
+  0x3c254 add x17, x17, #0x558
+  0x3c258 ldrsw x16, [x17, x16, lsl #2]
+  0x3c25c adr x17, #0x3c25c
+  0x3c260 add x16, x17, x16
+  0x3c264 br x16
+  0x3c2a0 ... specialized 0x020e message body ...
+  0x3c4fc ... common continuation (0x020d table target) ...
+
+The compare immediate 0x12 at 0x3c240 is the maximum table index, not a
+comparison against CSNE command ID 0x0012. A separate compare at VA 0x16d10
+occurs in a status conversion helper called from 0x16c40 after a status-return
+helper; its input is a returned status value. It is not evidence of PING
+dispatch. These false leads explain why searching for literal 0x12 compares
+does not establish the PING path.
+
+Scope: static disassembly of the pinned firmware image only. It identifies
+one indexed command-family parser and its 0x020d/0x020e routes. It does not
+locate the parser for low CSNE IDs (including PING), establish endpoint
+direction, or establish runtime behavior. No hardware accessed.

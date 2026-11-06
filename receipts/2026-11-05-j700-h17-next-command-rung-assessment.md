@@ -152,33 +152,42 @@ host-call contract or handler behavior. Entries of immediate relevance:
 | `0x0403` | `CSNE_CMD_REQUEST_PROCESS_ID` |
 | `0x0404` | `CSNE_CMD_RETURN_PROCESS_ID` |
 
-This means the name `sendPremapCmd` must not be used to infer the wire ID:
-its disassembly writes `0x020d`, whereas this table calls `0x020d` a
-procedure-call command and `0x020e` premap. That discrepancy needs explanation
-from the concrete parser/translation path before interpreting or reproducing
-that request. Similarly, the host's `sendSetupCmd` IDs overlap entries named
-as events/ID requests in the table; the table alone does not establish
-direction or prove that the host helper's 16-bit field is this table's CSNE
-ID.
+The host `sendPremapCmd` disassembly writes `0x020d`, which exactly matches the
+table's `CSNE_CMD_PROCEDURE_CALL_WITH_CUSTOM_BARS` entry. The helper's name
+describes its caller-level purpose, not its outer wire opcode. `0x020e` is a
+separate `CSNE_CMD_PREMAP_BUFFER` entry. This corrects the earlier wording that
+called the numeric mapping itself a discrepancy; whether the `0x020d` custom-
+bars request invokes a nested `0x020e` operation remains untraced. Similarly,
+the host `sendSetupCmd` codes `0x0400`–`0x0403` numerically match table entries,
+but the table names alone do not establish direction or payload semantics.
 
 The host-side command sender loads the inner u16 from `command+4` at
 `0xfffffe0008f48248`; at `+6` it first zeros the adjacent u16. The loaded
 value is stored in a stack argument area for a diagnostic call, not in the
 outstanding-command correlation field. Focused excerpt:
 `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend-id-field.txt`.
-This pins the host's inner command-code location, but does not alone prove its
-wire interpretation or resolve the premap discrepancy.
-Next, trace the firmware's incoming-command parser and compare its exact
-header offsets to this host structure before treating `0x0012` as sendable.
+This pins the host's inner command-code location; the numeric table alignment
+above supports interpreting it in the CSNE command-ID namespace, but does not
+establish each command's direction or contract.
+
+The indexed firmware parser for the `0x200` family routes `0x020d` and
+`0x020e` to different bodies: `0x020d` rejoins common handling, while
+`0x020e` takes a field-reading premap body. This corrects the earlier direct-
+reference scan's inability to see indirect dispatch, but does not establish a
+nested `0x020d`→`0x020e` operation or identify the parser for low CSNE IDs.
+The apparent compare against `0x12` in this parser is a table bound (indexes
+0 through 0x12), not PING. Another `0x12` compare belongs to status conversion,
+not command dispatch. Evidence:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-020d-020e-dispatch.txt`.
 
 `CSNE_CMD_PING` at ID `0x0012` is now a concrete candidate name/ID in the
 J700 firmware, not merely a string and not an ID borrowed from T6021. Still
 unresolved: exact message envelope and endpoint, request/response sizes,
 whether it is accepted in the current post-registration state, the reply
 matcher/status semantics, and Linux queue/IRQ ownership. Do not submit it yet.
-The next offline step is to trace the firmware endpoint parser into the CSNE
-dispatch and ping handler, then show how the host command channel emits that
-same envelope and how its reply is completed.
+The next offline step is to locate the low-ID CSNE parser and ping handler,
+then show how the host command channel emits that same envelope and how its
+reply is completed.
 
 ## Offline gates before proposing the next hardware rung
 
