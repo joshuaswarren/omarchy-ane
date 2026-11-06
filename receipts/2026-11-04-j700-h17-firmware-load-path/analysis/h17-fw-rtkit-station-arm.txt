@@ -630,3 +630,21 @@ of those records. The null-link path therefore remains a local ring enqueue
 with an uncharacterized notification callout; neither firmware nor the saved
 host table evidence identifies its Linux channel endpoint. No new hardware
 access or command submission was performed.
+
+## Addendum 23 — RPC fallback construction does not expose consumer dispatch
+
+The fallback branch at `0x35324` calls `0x26440` with requested size
+`0x17600`, identifier `0x52504300` (`CRPC`), and the parent object, then stores
+the returned object at parent offsets `+0x1d0` and `+0x1d8`. Its later setup
+allocates associated state and maps several subregions, but this path contains
+no direct call to the ring consumer routine at `0x29d0c`. A direct-call scan
+of firmware `__TEXT` likewise found no `BL` to `0x29d0c`; the routine is
+therefore reached, if at all, through an indirect method/table or another
+consumer wrapper not yet tied to this RPC object.
+
+This leaves an important gap: although `0x29d0c` implements a ring-pop path,
+the code evidence currently does not prove that the `CRPC` fallback object
+uses it, or that the consumer reads the same ring whose producer is
+`0x29b6c`. The successful H17 host channel-registration receipt contains no
+task submission or ring-consumer observation to close that gap. Static
+disassembly only; no hardware accessed and no command submitted.
