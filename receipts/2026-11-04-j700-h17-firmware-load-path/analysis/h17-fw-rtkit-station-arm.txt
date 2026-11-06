@@ -922,6 +922,28 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 57 — child callback is a reset/cleanup hook before mapping
+
+The prior vtable mismatch is less mysterious than it first appeared. For the
+two child vtables, the `+0x18` targets (`0x219a8` and `0x22a90`) both replace
+the object's vtable with its teardown vtable, release `[child+8]` if present,
+clear that field, and return the child pointer in x0. The caller `0x20cf8`
+does not treat x0 as an allocated address: it tests `w0` with
+`0xffffffcf`; a 16-byte-aligned child pointer passes that check, after which
+the outer path performs its separate aligned-range calculations and calls
+`0x28e8c`. This is consistent with a child reset/cleanup hook ahead of
+resource mapping, rather than the mapping allocator itself.
+
+The callback ignores the forwarded request arguments, but the exact meaning
+of the `0xffffffcf` result mask and its expected return convention are not
+independently documented; do not claim that every child pointer passes it.
+This removes the earlier expectation that the vtable target itself must
+return an allocated address. The manager miss remains a mapping/allocation
+path and still does
+not establish that CRPC's returned resource is a queue link, reveal
+`[link+0x10]`, or map it to host channel 7. Static analysis only; no hardware
+access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 55 — clarify the two manager constructors and trace the child
 
 Correction to Addendum 54: `0x20a88` is the constructor used directly by
