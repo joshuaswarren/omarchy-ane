@@ -1016,13 +1016,32 @@ that field (`analysis/h17-command-token-correction.txt` and
 `analysis/h17-process-response-xrefs.txt`).
 
 This gives a concrete cross-layer correlation: if the firmware queue's
-`[+0x28]` window is the corresponding host-mapped command-buffer window, the
-generic completion returns the buffer-offset token that the host is waiting
-for. The conditional matters: byte-for-byte identity of those bases, runtime
-link mode, and an actual PING response have not been observed. It clarifies
+`[+0x28]` token-offset bias is the corresponding base used by the host's
+mapped command-buffer token calculation, the generic completion returns the
+buffer-offset token that the host is waiting for. The conditional matters:
+the queue's effective bias and its identity with the host base, runtime link
+mode, and an actual PING response have not been observed. It clarifies
 how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
+
+## Addendum 70 — linked traffic counters belong to the link object, not queue
+
+Disambiguation for the token comparison: `0x62e0` preserves the queue in x8,
+loads its link from `[queue+8]` into x0, and uses the queue's `[+0x28]` as the
+token-offset bias before tail-branching to `0x68c8`. The send helper therefore
+receives x0=link, not x0=queue; after a successful send, `0x68f4` increments
+`[link+0x20]`. The receive path similarly passes the link in x0 to `0x690c`,
+whose success path at `0x6938` increments `[link+0x28]`. Those are link-object
+counters and must not be confused with the queue's token-bias field at
+`[queue+0x28]`.
+
+The queue constructor `0x298fc` initializes queue `+0x28` to zero; the inspected
+constructor does not explain any later nonzero bias. The counter-field
+disambiguation supports Addendum 69's object distinction but still does not
+prove that the host and firmware use the same effective token base at runtime.
+Static firmware disassembly only; no hardware access or submission; PING
+remains unsent.
 
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
