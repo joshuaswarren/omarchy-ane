@@ -250,3 +250,39 @@ the decoded text; its entry/caller and the value assigned to station+0x28
 remain unresolved. Do not infer a station ID from the block keys.
 
 Static image/disassembly only. No hardware accessed.
+
+## Addendum 6 — builder is dispatcher success path; station slot 0
+
+The statement in Addendum 5 that a direct caller/reference to 0x9692c was not
+found is too narrow and is superseded here. `0x9692c` is an internal basic
+block of the function beginning at 0x96458, reached by conditional branch,
+not by BL. The selector table at VA 0x96e9c (file offset 0x9ae9c) maps
+selectors 1 and 3 to 0x964d8. That shared setup case eventually calls
+0x8d9f4 at 0x9665c; `cbz w0, 0x96830` (0x96660) enters the success path.
+After the subsequent setup/virtual operations, `cbz w0, 0x9692c` at
+0x9690c reaches the station construction block. Failure returns through
+0x96910..0x96928. Selector 4's path ends through 0x96828 -> 0x96914; selector
+5's path also returns through 0x96914. Do not attribute the station builder
+to selector 9 (which maps to the shared error return).
+
+Within this success block:
+  - `0x9692c` allocates a 0x48-byte wrapper object, stores the global list
+    linkage, then checks the station table at 0xcb5c0.
+  - If the first pointer slot is already populated, it takes the existing
+    error/cleanup path rather than constructing a duplicate.
+  - Otherwise `0x96970` allocates the 0x38-byte station object; its fields
+    are initialized, including `str q0,[x0,#0x20]`, which zeros the dword
+    at station+0x28. At 0x96abc the object is stored in
+    `[station_table_array + (station+0x28)*8]`; for this newly initialized
+    object that index is 0. The static global table count at 0xcb5c0 is 8,
+    so this constructs/populates slot 0 of an eight-slot station table.
+  - That station's four active message-block descriptors are the keys and
+    names listed in Addendum 5: 0/management, 1/crashlog, 2/syslog,
+    0x20/user1 (each count 8).
+
+This establishes the control-flow path and that this initialization pass
+populates station slot 0. It still does not establish which station/block
+the host binds to CSNE's `queue(+0x40)->link(+0x08)` path, nor that the
+`management` block is CSNE H2T/T2H. Those require matching the host's runtime
+endpoint/channel registration to this station's `Cmbx` service and the CSNE
+evaluator. Static firmware evidence only; no hardware accessed.
