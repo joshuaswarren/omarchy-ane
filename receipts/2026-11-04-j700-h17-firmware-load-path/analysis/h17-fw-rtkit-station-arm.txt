@@ -1133,6 +1133,20 @@ or route. This excludes two tempting static matches, but is not a complete
 proof that no non-virtual service `+0x28` writer exists. Static analysis only;
 no hardware access or submission; PING remains unsent.
 
+## Addendum 86 — CRPC initializer does not establish the fallback's transport fields
+
+Checked the `0x35128` initializer against the `0x26440`/`0x265f4` fallback
+consumer. In the `0x35128..0x35920` body, there are no loads or stores of the
+root object's `[+0x40]` or `[+0x48]` fields. Yet `0x265f4` selects its transport
+branch by loading `[owner+0x40]`, testing that pointed-to object's `+8`, and
+using `[owner+0x48]` on the zero branch. Therefore neither the CRPC service
+reference decision nor the initializer itself establishes whether the
+fallback's inner transport takes its linked-buffer or local-queue branch;
+those owner fields must be inherited or initialized elsewhere. This does not
+identify their writer or establish either branch as the runtime path. Static
+firmware analysis only; no hardware access or submission; PING remains
+unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
