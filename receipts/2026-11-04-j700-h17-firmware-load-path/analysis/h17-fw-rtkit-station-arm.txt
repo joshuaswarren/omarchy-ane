@@ -922,6 +922,24 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 43 — corrected constructor pass still finds no queue-link store
+
+After correcting the `ldp` interpretation, the constructor path was rechecked
+for stores through the CRPC allocation pointer itself. `0x35324` calls
+`0x26440`, then stores the returned address only into the parent fields
+`+0x1d0` and `+0x1d8`; subsequent constructor setup registers the buffer and
+subregions through the separate list at parent `+0x1e0`. The generic factory
+and the inspected allocator wrappers likewise return/map the allocation
+without an explicit store to `[allocation+8]`. Queue operations later read
+that field at `0x62e4`, `0x6338`, and `0x6398`, but this pass finds no
+constructor-side writer.
+
+This is bounded negative evidence for the visible CRPC constructor/factory
+and allocator path, not proof that no writer exists elsewhere, through an
+indirect method, or in shared-memory initialization. The link's runtime
+value, route, and channel mapping remain open. No hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 41 — RETRACTED: `0x185cc` does not consume `[queue+8]`
 
 The interpretation in this addendum was caused by misreading the addressing
