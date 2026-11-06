@@ -1416,6 +1416,24 @@ or what link is present at the selected queue's `+8`. No route-to-host-channel
 correlation, IRQ owner, or PING schema follows. Firmware-only analysis; no
 hardware operation or submission.
 
+## Addendum 96 — `SharedMemoryManager` caller supplies the selector context
+
+The two direct callers of `0x25dac` are at `0x7e18` and `0x80d0`. Both pass
+the string `SharedMemoryManager` (`0x9d462`) as `x1`, the owning object in `x2`,
+and `[owner+0x1f8]` as `x3`; the first passes `[x26]` as `x4`, while the
+second passes zero. Inside `0x25dac`, `x3` becomes `x20` and is stored at
+`[new_object+0x40]`; when its `[+8]` is zero, this exact `x20` object is passed
+to `0x6258` (`0x25e5c..0x25e98`). Thus the fallback selector lookup traced in
+Addendum 95 is against the owner's `[+0x1f8]` context, at index
+`[context+0x20]`, and resolves an already-populated entry queue at
+`[context+0x40+index*0x60+0x30]`.
+
+This identifies the static source object for the fallback context, but not the
+runtime value of its selector or selected queue/link. The `x4` value is kept
+separately at a global slot by `0x25dac` and is not substituted for the
+fallback selector. No firmware route or host channel identity, IRQ ownership,
+or PING schema is established. No reboot or device access; no submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
