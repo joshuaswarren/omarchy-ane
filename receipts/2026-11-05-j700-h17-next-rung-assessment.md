@@ -70,6 +70,14 @@ geometry against the traced access width; it does not simulate the firmware
 protocol or prove actual device accesses. It is not wired into the driver or a
 hardware runner.
 
+The same bounded geometry check is implemented in the pure helper
+`ane/h17/chanreg.h:ane_h17_validate_channel_table` and exercised by
+`ane/h17/sim/chanreg_layout_test.c` against the retained table-log fixture.
+Both models reject out-of-range type-1 buffers, overlapping extents,
+duplicate/missing required names, and malformed records; they report the
+four type-0 ranges to be initialized. This still does not create a kernel
+registration path.
+
 ## Remaining offline gates before proposing registration hardware
 
 1. Independently review the table-entry interpretation and validator against

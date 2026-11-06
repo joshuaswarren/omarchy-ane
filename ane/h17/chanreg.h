@@ -25,6 +25,10 @@
 #define ANE_H17_IPC_IOVA (ANE_H17_DM_IOVA + ANE_H17_DM_BYTES)
 #define ANE_H17_HEAP_IOVA (ANE_H17_IPC_IOVA + ANE_H17_IPC_MAPPED)
 #define ANE_H17_CHAN_ALIAS_BYTES (ANE_H17_DM_BYTES + ANE_H17_IPC_MAPPED + ANE_H17_HEAP_BYTES)
+#define ANE_H17_CHANNEL_COUNT 8u
+#define ANE_H17_CHANNEL_ENTRY_BYTES 0x100u
+#define ANE_H17_CHANNEL_NAME_BYTES 0x20u
+#define ANE_H17_CHANNEL_SLOT_BYTES 0x40u
 
 static inline void ane_h17_put_le(u8 *p, u64 value, unsigned int bytes)
 {
@@ -99,6 +103,85 @@ static inline void ane_h17_encode_descriptor(u8 *p, u64 firmware, u64 dm,
 	ane_h17_put_le(p + 0x68, 0x40, 4);
 	/* Traced default options block: Z_ZERO allocation, +0xc0 |= 4. */
 	ane_h17_put_le(p + 0x12c, 4, 4);
+}
+
+struct ane_h17_channel_init_range {
+	u32 index;
+	u64 offset;
+	u64 bytes;
+};
+
+/* Source model only: the J700 constructor initializes size 0x40-byte
+ * control blocks for type-0 entries. Validate every buffer's complete
+ * size*0x40 range against owned logical IPC, but return only host-written
+ * type-0 ranges. Firmware behavior is not modeled here.
+ */
+static inline bool
+ane_h17_validate_channel_table(const u8 *table, u64 ipc, u64 ipc_bytes,
+			       struct ane_h17_channel_init_range *init,
+			       u32 *init_count)
+{
+	static const char * const required[] = {
+		"SHAREDMALLOC", "TERMINAL", "BUF_T2H",
+	};
+	bool found[3] = { false, false, false };
+	u64 starts[ANE_H17_CHANNEL_COUNT];
+	u64 sizes[ANE_H17_CHANNEL_COUNT];
+	u32 ninit = 0;
+	u32 i, j;
+
+	if (!table || !init || !init_count || !ipc_bytes)
+		return false;
+	for (i = 0; i < ANE_H17_CHANNEL_COUNT; i++) {
+		const u8 *entry = table + i * ANE_H17_CHANNEL_ENTRY_BYTES;
+		const u8 *name_end = memchr(entry, 0, ANE_H17_CHANNEL_NAME_BYTES);
+		size_t name_len;
+		u32 type, slots;
+		u64 address, bytes, offset;
+
+		if (!name_end || name_end == entry)
+			return false;
+		name_len = name_end - entry;
+		for (j = 0; j < i; j++) {
+			const u8 *prior = table + j * ANE_H17_CHANNEL_ENTRY_BYTES;
+			const u8 *prior_end = memchr(prior, 0, ANE_H17_CHANNEL_NAME_BYTES);
+			if (!prior_end || ((size_t)(prior_end - prior) == name_len &&
+				    !memcmp(entry, prior, name_len)))
+				return false;
+		}
+		for (j = 0; j < 3; j++)
+			if (strlen(required[j]) == name_len &&
+			    !memcmp(entry, required[j], name_len))
+				found[j] = true;
+
+		type = (u32)ane_h17_get_le(entry + 0x40, 4);
+		slots = (u32)ane_h17_get_le(entry + 0x48, 4);
+		address = ane_h17_get_le(entry + 0x50, 8);
+		if (!slots || address & (ANE_H17_CHANNEL_SLOT_BYTES - 1))
+			return false;
+		bytes = (u64)slots * ANE_H17_CHANNEL_SLOT_BYTES;
+		if (bytes / ANE_H17_CHANNEL_SLOT_BYTES != slots ||
+		    !ane_h17_full_range(ipc, ipc_bytes, address, bytes))
+			return false;
+		offset = address - ipc;
+		starts[i] = offset;
+		sizes[i] = bytes;
+		for (j = 0; j < i; j++)
+			if (offset < starts[j] + sizes[j] &&
+			    starts[j] < offset + bytes)
+				return false;
+		if (type == 0) {
+			init[ninit].index = i;
+			init[ninit].offset = offset;
+			init[ninit].bytes = bytes;
+			ninit++;
+		}
+	}
+	for (i = 0; i < 3; i++)
+		if (!found[i])
+			return false;
+	*init_count = ninit;
+	return true;
 }
 
 #endif
