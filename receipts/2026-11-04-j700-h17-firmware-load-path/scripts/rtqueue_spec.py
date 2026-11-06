@@ -59,5 +59,5 @@ def release_slot_word(phase_word: int) -> int:
 
 
 def received_message_id(slot_word: int) -> int:
-    """The host receive primitive clears bit 2 from the stored word."""
-    return slot_word & U64_MASK & ~0x4
+    """The host receive primitive clears both low bits from the stored word."""
+    return slot_word & U64_MASK & ~0x3

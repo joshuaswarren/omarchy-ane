@@ -40,7 +40,8 @@ class QueueFormulaTests(unittest.TestCase):
     def test_send_word_and_received_id_mask(self):
         self.assertEqual(send_phase_word(0x104, 0), 0x105)
         self.assertEqual(send_phase_word(0x105, 1), 0x105)
-        self.assertEqual(received_message_id(0x105), 0x101)
+        self.assertEqual(received_message_id(0x105), 0x104)
+        self.assertEqual(received_message_id(0x107), 0x104)
 
 
 if __name__ == "__main__":

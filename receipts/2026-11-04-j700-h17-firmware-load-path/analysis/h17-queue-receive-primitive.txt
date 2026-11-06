@@ -1,0 +1,115 @@
+H17 host queue receive primitive
+================================
+
+Source: retained kernelcache, SHA-256
+7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe.
+Function begins at VA 0xfffffe0008ef896c. The full captured disassembly is
+provided below; this is static host-code evidence, not device behavior.
+
+The receive primitive loads the slot word at 0xfffffe0008ef89f0, checks only
+bit 0 against the phase word (0x8ef89f4..0x8ef8a04), then applies
+`and x9, x9, #0xfffffffffffffffc` at 0xfffffe0008ef8a10 before returning the
+message ID through the output pointer. Therefore both low bits are cleared.
+This corrects the previous offline helper, which cleared bit 2 only.
+
+Captured disassembly:
+0xfffffe0008ef896c: 7f 23 03 d5	pacibsp	
+0xfffffe0008ef8970: f8 5f bc a9	stp	x24, x23, [sp, #-0x40]!
+0xfffffe0008ef8974: f6 57 01 a9	stp	x22, x21, [sp, #0x10]
+0xfffffe0008ef8978: f4 4f 02 a9	stp	x20, x19, [sp, #0x20]
+0xfffffe0008ef897c: fd 7b 03 a9	stp	x29, x30, [sp, #0x30]
+0xfffffe0008ef8980: fd c3 00 91	add	x29, sp, #0x30
+0xfffffe0008ef8984: f4 03 03 aa	mov	x20, x3
+0xfffffe0008ef8988: f5 03 02 aa	mov	x21, x2
+0xfffffe0008ef898c: f6 03 01 aa	mov	x22, x1
+0xfffffe0008ef8990: f3 03 00 aa	mov	x19, x0
+0xfffffe0008ef8994: 18 a8 01 90	adrp	x24, #0xfffffe000c3f8000
+0xfffffe0008ef8998: 08 bf 46 f9	ldr	x8, [x24, #0xd78]
+0xfffffe0008ef899c: a8 00 00 b4	cbz	x8, #0xfffffe0008ef89b0
+0xfffffe0008ef89a0: 09 a8 01 90	adrp	x9, #0xfffffe000c3f8000
+0xfffffe0008ef89a4: 20 c5 46 f9	ldr	x0, [x9, #0xd88]
+0xfffffe0008ef89a8: d1 57 85 d2	mov	x17, #0x2abe
+0xfffffe0008ef89ac: 11 09 3f d7	blraa	x8, x17
+0xfffffe0008ef89b0: 68 0e 40 f9	ldr	x8, [x19, #0x18]
+0xfffffe0008ef89b4: 69 22 80 b9	ldrsw	x9, [x19, #0x20]
+0xfffffe0008ef89b8: 29 e5 7a d3	lsl	x9, x9, #6
+0xfffffe0008ef89bc: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe0008ef89c0: 17 c1 29 8b	add	x23, x8, w9, sxtw
+0xfffffe0008ef89c4: 10 01 09 8b	add	x16, x8, x9
+0xfffffe0008ef89c8: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe0008ef89cc: f7 02 90 9a	csel	x23, x23, x16, eq
+0xfffffe0008ef89d0: 08 a8 01 90	adrp	x8, #0xfffffe000c3f8000
+0xfffffe0008ef89d4: 08 b9 46 f9	ldr	x8, [x8, #0xd70]
+0xfffffe0008ef89d8: a8 00 00 b4	cbz	x8, #0xfffffe0008ef89ec
+0xfffffe0008ef89dc: e0 03 17 aa	mov	x0, x23
+0xfffffe0008ef89e0: 01 08 80 52	mov	w1, #0x40
+0xfffffe0008ef89e4: b1 67 9e d2	mov	x17, #0xf33d
+0xfffffe0008ef89e8: 11 09 3f d7	blraa	x8, x17
+0xfffffe0008ef89ec: 9f 39 03 d5	dsb	ishld
+0xfffffe0008ef89f0: e8 02 40 f9	ldr	x8, [x23]
+0xfffffe0008ef89f4: 09 01 40 92	and	x9, x8, #1
+0xfffffe0008ef89f8: 68 12 40 b9	ldr	w8, [x19, #0x10]
+0xfffffe0008ef89fc: 0a 01 40 92	and	x10, x8, #1
+0xfffffe0008ef8a00: 3f 01 0a eb	cmp	x9, x10
+0xfffffe0008ef8a04: a1 03 00 54	b.ne	#0xfffffe0008ef8a78
+0xfffffe0008ef8a08: 08 7d 40 93	sxtw	x8, w8
+0xfffffe0008ef8a0c: e9 02 40 f9	ldr	x9, [x23]
+0xfffffe0008ef8a10: 29 f5 7e 92	and	x9, x9, #0xfffffffffffffffc
+0xfffffe0008ef8a14: c9 02 00 f9	str	x9, [x22]
+0xfffffe0008ef8a18: e9 06 40 f9	ldr	x9, [x23, #8]
+0xfffffe0008ef8a1c: a9 02 00 f9	str	x9, [x21]
+0xfffffe0008ef8a20: e9 0a 40 f9	ldr	x9, [x23, #0x10]
+0xfffffe0008ef8a24: 89 02 00 f9	str	x9, [x20]
+0xfffffe0008ef8a28: 08 01 40 d2	eor	x8, x8, #1
+0xfffffe0008ef8a2c: e8 02 00 f9	str	x8, [x23]
+0xfffffe0008ef8a30: 08 a8 01 90	adrp	x8, #0xfffffe000c3f8000
+0xfffffe0008ef8a34: 08 b5 46 f9	ldr	x8, [x8, #0xd68]
+0xfffffe0008ef8a38: a8 00 00 b4	cbz	x8, #0xfffffe0008ef8a4c
+0xfffffe0008ef8a3c: e0 03 17 aa	mov	x0, x23
+0xfffffe0008ef8a40: 01 08 80 52	mov	w1, #0x40
+0xfffffe0008ef8a44: b1 67 9e d2	mov	x17, #0xf33d
+0xfffffe0008ef8a48: 11 09 3f d7	blraa	x8, x17
+0xfffffe0008ef8a4c: 14 00 80 52	mov	w20, #0
+0xfffffe0008ef8a50: 68 22 40 b9	ldr	w8, [x19, #0x20]
+0xfffffe0008ef8a54: 69 16 40 b9	ldr	w9, [x19, #0x14]
+0xfffffe0008ef8a58: 29 05 00 51	sub	w9, w9, #1
+0xfffffe0008ef8a5c: 1f 01 09 6b	cmp	w8, w9
+0xfffffe0008ef8a60: e8 07 88 1a	csinc	w8, wzr, w8, eq
+0xfffffe0008ef8a64: 68 22 00 b9	str	w8, [x19, #0x20]
+0xfffffe0008ef8a68: 68 2a 40 b9	ldr	w8, [x19, #0x28]
+0xfffffe0008ef8a6c: 08 05 00 11	add	w8, w8, #1
+0xfffffe0008ef8a70: 68 2a 00 b9	str	w8, [x19, #0x28]
+0xfffffe0008ef8a74: 02 00 00 14	b	#0xfffffe0008ef8a7c
+0xfffffe0008ef8a78: 14 00 80 12	mov	w20, #-1
+0xfffffe0008ef8a7c: 08 bf 46 f9	ldr	x8, [x24, #0xd78]
+0xfffffe0008ef8a80: c8 00 00 b4	cbz	x8, #0xfffffe0008ef8a98
+0xfffffe0008ef8a84: 08 a8 01 90	adrp	x8, #0xfffffe000c3f8000
+0xfffffe0008ef8a88: 08 01 36 91	add	x8, x8, #0xd80
+0xfffffe0008ef8a8c: 09 01 40 a9	ldp	x9, x0, [x8]
+0xfffffe0008ef8a90: d1 57 85 d2	mov	x17, #0x2abe
+0xfffffe0008ef8a94: 31 09 3f d7	blraa	x9, x17
+0xfffffe0008ef8a98: e0 03 14 aa	mov	x0, x20
+0xfffffe0008ef8a9c: fd 7b 43 a9	ldp	x29, x30, [sp, #0x30]
+0xfffffe0008ef8aa0: f4 4f 42 a9	ldp	x20, x19, [sp, #0x20]
+0xfffffe0008ef8aa4: f6 57 41 a9	ldp	x22, x21, [sp, #0x10]
+0xfffffe0008ef8aa8: f8 5f c4 a8	ldp	x24, x23, [sp], #0x40
+0xfffffe0008ef8aac: ff 0f 5f d6	retab	
+0xfffffe0008ef8ab0: 5f 24 03 d5	bti	c
+0xfffffe0008ef8ab4: 62 00 00 b4	cbz	x2, #0xfffffe0008ef8ac0
+0xfffffe0008ef8ab8: 08 04 80 52	mov	w8, #0x20
+0xfffffe0008ef8abc: 48 00 00 f9	str	x8, [x2]
+0xfffffe0008ef8ac0: 81 00 00 b4	cbz	x1, #0xfffffe0008ef8ad0
+0xfffffe0008ef8ac4: 08 7c 7d d3	ubfiz	x8, x0, #3, #0x20
+0xfffffe0008ef8ac8: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe0008ef8acc: 28 00 00 f9	str	x8, [x1]
+0xfffffe0008ef8ad0: c0 03 5f d6	ret	
+0xfffffe0008ef8ad4: 5f 24 03 d5	bti	c
+0xfffffe0008ef8ad8: 62 00 00 b4	cbz	x2, #0xfffffe0008ef8ae4
+0xfffffe0008ef8adc: 08 01 80 52	mov	w8, #8
+0xfffffe0008ef8ae0: 48 00 00 f9	str	x8, [x2]
+0xfffffe0008ef8ae4: 81 00 00 b4	cbz	x1, #0xfffffe0008ef8af4
+0xfffffe0008ef8ae8: 08 7c 7d d3	ubfiz	x8, x0, #3, #0x20
+0xfffffe0008ef8aec: 08 21 00 91	add	x8, x8, #8
+0xfffffe0008ef8af0: 28 00 00 f9	str	x8, [x1]
+0xfffffe0008ef8af4: c0 03 5f d6	ret	
+0xfffffe0008ef8af8: 7f 23 03 d5	pacibsp	

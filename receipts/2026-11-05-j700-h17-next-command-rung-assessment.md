@@ -362,3 +362,15 @@ or registration mechanism. Receipt:
 The token's firmware-side extraction/dispatch is therefore still not pinned.
 An indirect callback or framework dispatch remains possible; do not infer a
 safe reply path from the absent direct branch.
+
+### Queue receive-ID mask correction
+
+The decoded receive primitive at `0xfffffe0008ef8a10` applies
+`and x9, x9, #0xfffffffffffffffc` to the slot word before returning its
+message ID. It clears both low bits, not only bit 2. The offline
+`received_message_id()` model and its test now reflect that mask. Full
+disassembly and the refreshed test output are retained at
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-queue-receive-primitive.txt`
+and `analysis/h17-rtqueue-spec-tests.txt`. Five formula tests pass. This is
+static host-code evidence and model validation only; it does not establish
+peer queue ownership or device behavior.
