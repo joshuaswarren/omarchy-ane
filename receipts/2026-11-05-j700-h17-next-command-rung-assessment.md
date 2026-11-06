@@ -124,30 +124,51 @@ boot state, or side effects. A string match is not a safe command contract.
 
 The repository's T6021 protocol notes identify a header-only `CSNE_CMD_PING`
 (`0x11`) on endpoint 1, but those notes concern a different SoC/firmware
-protocol and explicitly derive the ID and layout from the Selene image. They
-are not transferable evidence for J700/T8140. The J700 kernel-side
-`aneCmdSend`/`sendSetupCmd` messages also use IDs such as `0x0400` and `0x020d`,
-which have not been tied to the string-named CSNE interface. Do not send the
-T6021 ping or infer a J700 ID from those numeric coincidences.
+protocol and are not transferable evidence for J700/T8140. The J700 image
+mapping is now independently decoded below; its ping ID is `0x12`, not `0x11`.
 
-Next offline step: map references to the J700 firmware's command-name tables
-and dispatcher, then correlate a candidate's numeric ID and exact structure
-with the host wrapper and reply parser. If the stripped image does not retain
-enough relocation/table information to prove that mapping, the correct result
-is that no candidate is established—not a guessed ping.
+The command metadata is two 16-byte-record arrays in `__DATA,__const` at
+firmware VAs `0xc1c50` and `0xc78a8`. Each record has a 32-bit cstring VA, tag
+`0x200000`, 32-bit command ID, and reserved word. The first array has 94
+records, including `CSNE_CMD_DEBUG_COMMAND_DATA_CHECK`; the second has 93 and
+omits that last record. The decoder validates the pinned firmware hash and is
+`receipts/2026-11-04-j700-h17-firmware-load-path/scripts/csne_cmd_table.py`;
+its full output is
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-csne-command-id-table.txt`.
 
-The reference pass confirmed why the string inventory is insufficient:
-the relevant command names are in the `__TEXT,__cstring` section, but the
-retained `__TEXT,__text` scan did not find direct PC-relative references to
-the sampled names (`PING`, `CONFIG_GET`, `PREMAP_BUFFER`, `PLATFORM_INFO`).
-Corrected Mach-O load-command decoding: the image has `LC_UUID` and
-`LC_UNIXTHREAD`, not a dyld-info or chained-fixups command, and its symbol-table
-commands are empty. A corrected search also found no absolute 32-bit/64-bit
-pointers to the sampled strings. This still does not prove the handlers are
-absent: code or constant tables may use relative offsets, indices, or shared
-logging machinery. But there is no symbol/fixup metadata to justify treating
-the strings as a command-ID table. Recovering an indirect mapping would
-require a separate data/code analysis and remains unproven.
+This closes the numeric name mapping for the firmware table, but not yet the
+host-call contract or handler behavior. Entries of immediate relevance:
+
+| ID | Firmware table name |
+|---:|---|
+| `0x0004` | `CSNE_CMD_CONFIG_GET` |
+| `0x0010` | `CSNE_CMD_PLATFORM_INFO` |
+| `0x0012` | `CSNE_CMD_PING` |
+| `0x020d` | `CSNE_CMD_PROCEDURE_CALL_WITH_CUSTOM_BARS` |
+| `0x020e` | `CSNE_CMD_PREMAP_BUFFER` |
+| `0x0400` | `CSNE_CMD_SECURE_MODE_EVENT` |
+| `0x0401` | `CSNE_CMD_REQUEST_PROGRAM_ID` |
+| `0x0402` | `CSNE_CMD_RETURN_PROGRAM_ID` |
+| `0x0403` | `CSNE_CMD_REQUEST_PROCESS_ID` |
+| `0x0404` | `CSNE_CMD_RETURN_PROCESS_ID` |
+
+This means the name `sendPremapCmd` must not be used to infer the wire ID:
+its disassembly writes `0x020d`, whereas this table calls `0x020d` a
+procedure-call command and `0x020e` premap. That discrepancy needs explanation
+from the concrete parser/translation path before interpreting or reproducing
+that request. Similarly, the host's `sendSetupCmd` IDs overlap entries named
+as events/ID requests in the table; the table alone does not establish
+direction or prove that the host helper's 16-bit field is this table's CSNE
+ID.
+
+`CSNE_CMD_PING` at ID `0x0012` is now a concrete candidate name/ID in the
+J700 firmware, not merely a string and not an ID borrowed from T6021. Still
+unresolved: exact message envelope and endpoint, request/response sizes,
+whether it is accepted in the current post-registration state, the reply
+matcher/status semantics, and Linux queue/IRQ ownership. Do not submit it yet.
+The next offline step is to trace the firmware endpoint parser into the CSNE
+dispatch and ping handler, then show how the host command channel emits that
+same envelope and how its reply is completed.
 
 ## Offline gates before proposing the next hardware rung
 
