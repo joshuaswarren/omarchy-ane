@@ -922,6 +922,23 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 63 — manager child records are mapping state, not a proven FIFO
+
+The child `+8` array is better described as mapping-operation state than as a
+request queue. In the mode-set operation-0 path, `0x22124` forwards to
+`0x21dd0`, which calls `0x21a00` to inspect the child’s existing 0x58-byte
+records by address/range before updating or adding a record. The alternate
+path through `0x22eb0` performs the same class of overlap/range checks against
+the records under `[child+8]`. The records hold range and operation metadata;
+these routines do not show a distinct consumer popping FIFO entries.
+
+Accordingly, Addenda 61–62 do not establish a producer/consumer queue or a
+wakeup contract. They establish local mapping-state bookkeeping plus a
+global-field lookup for the auxiliary 0x38-byte record. The manager child is
+not thereby identified with the RTKit queue or CRPC IPC queue. Static firmware
+analysis only; no hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
+
 ## Addendum 62 — `0x941cc` is a global-field getter, not a queue wakeup
 
 The post-record call `0x941cc(0, 0, &local)` in the child's operation path
@@ -930,12 +947,12 @@ object from `[0xcb000+0xc0]`, obtains a view through `0x940a8`, and uses the
 selector jump table. Selector 0 (the call used here) loads that object's
 `+0x20` field and stores it through the output pointer. The resulting value
 is written into the child's 0x38-byte bookkeeping record. The helper has no
-store to the child queue indices and no event/interrupt call in this path.
+store to the child's mapping-record indices and no event/interrupt call in
+this path.
 
-So Addendum 61 establishes request-record insertion and associated metadata
-capture, but not a wakeup/notification contract. The producer/consumer handoff
-for the manager child's 0x58-byte records remains unresolved; do not infer a
-worker wake from `0x941cc`. Static firmware only; no hardware access or
+So Addendum 61 establishes mapping-record insertion and associated metadata
+capture, but not a wakeup/notification contract. Do not infer a worker wake
+from `0x941cc`. Static firmware only; no hardware access or
 submission; `CSNE_CMD_PING` remains unsent.
 
 ## Addendum 59 — CRPC's manager result is consumed as a mapped backing resource
@@ -984,26 +1001,25 @@ writer/value has been found. No host channel 7 mapping follows. Static
 disassembly only; no hardware access or submission; `CSNE_CMD_PING` remains
 unsent.
 
-## Addendum 61 — manager child operation 0 enters its local request queue
+## Addendum 61 — manager child operation 0 records a local resource operation
 
 The corrected vtable targets show what the manager miss actually does next.
 `0x20cf8` invokes child slot `+0x18` with operation `w1=0`, requested address,
 size, and mapping parameters. In the `0xc0cb8` mode-bit-clear path,
-`0x22124` appends a 0x58-byte request record to the child's local buffer at
-`[child+8]`, advances its producer/count fields, then creates a separate
-0x38-byte bookkeeping record in the child's buffer at `[child+0x50]` and
-calls helper `0x941cc`. The alternate vtable's `0x22eb0` path has the
-corresponding local-record branch when its mode bit is clear; its mode-set
-branch routes through `0x22ae8` and updates existing request records.
+`0x22124` appends a 0x58-byte record to the child's local array at `[child+8]`,
+updates its index/count fields, then creates a separate 0x38-byte record in
+the child's buffer at `[child+0x50]` and calls helper `0x941cc`. The alternate
+vtable's `0x22eb0` path has the corresponding local-record branch when its
+mode bit is clear; its mode-set branch routes through `0x22ae8` and updates
+existing records.
 
 Thus a manager range miss is not merely a synchronous address translation:
-it submits a resource operation to the manager child, then the outer code
-continues its own mapping/allocation bookkeeping. This reveals a local request
-queue owned by the manager child, but not the queue object's RTKit link at
-`[q+8]`, the completion/worker that services these records, or any equivalence
-to the CRPC IPC queue. The operation's scheduler/notification contract remains
-open. Static disassembly only; no hardware access or submission;
-`CSNE_CMD_PING` remains unsent.
+it records a resource operation in manager-child state, then the outer code
+continues its own mapping/allocation bookkeeping. This does not yet identify
+the records as a FIFO/message queue, nor connect them to the RTKit-linked
+queue at `[q+8]`, a worker/completion path, or the CRPC IPC queue. Static
+disassembly only; no hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
 
 ## Addendum 58 — CRPC adopts a supplied resource before invoking fallback
 
