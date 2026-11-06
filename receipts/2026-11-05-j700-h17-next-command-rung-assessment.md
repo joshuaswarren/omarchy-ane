@@ -261,3 +261,21 @@ parser extracting the same field, the reply status/payload contract, or a
 PING-specific response. Thus the outstanding-command match cannot be equated
 with the CSNE table's `0x12` based on this evidence alone. Queue/IRQ ownership
 remains an independent gate; no device interaction occurred.
+
+### Inbound host transport dispatcher (offline disassembly)
+
+Captured `processTargetToHostIOCommand` at
+`0xfffffe0008f03a70` in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-io-command.txt`.
+It obtains one 12-byte channel message through the receive helper, then reads
+the 16-bit field at message offset `+4` and dispatches on transport IDs
+including `0x0100`, `0x0102`, `0x0103`, `0x0104`–`0x0107`, `0x0300`, and
+`0x0302`–`0x0305`. This is a concrete host-side RTKit/T2H transport namespace.
+
+Important distinction: those `+4` IDs are not thereby the firmware CSNE
+command IDs. The host response matcher compares a separate callback-object
+field at `+0x50` against its `x1` argument. We have not yet traced the field
+extraction that supplies that argument or established that either value is
+the CSNE ID from the firmware table. The T2H dispatcher narrows the transport
+path but does not close the firmware-parser/reply contract or make `PING` safe
+to send.
