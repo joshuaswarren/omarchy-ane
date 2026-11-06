@@ -944,6 +944,29 @@ trace the callers that populate `[x21+0x40]` and `[x21+0x60/+0x68]` for the
 construction path. Static disassembly only; no hardware access or task
 submission; `CSNE_CMD_PING` remains unsent.
 
+## Addendum 50 — queue factory belongs to the `0x5fa8` wrapper, link field still unassigned
+
+The caller chain closes one part of Addendum 49: the outer object passed to
+`0xdbcc` is the wrapper allocated at `0x57xx` (size `0xb0`) and initialized
+by `0x5fa8`. That initializer places its metadata-array pointer/count at
+`+0xa0/+0xa8`; `0x60c8` later iterates those records and calls `0xdbcc` on
+the same wrapper. In `0xdbcc`, the queue's link argument is the wrapper's
+`[+0x68]` (the second word loaded from `[wrapper+0x60]`). This establishes
+the generic queues' owner, but does not identify it as the CRPC fallback
+queue.
+
+The `0x5fa8` initializer itself writes the wrapper vtable, metadata pointer,
+count, and `+0x80`; it does not write `+0x60` or `+0x68`. The nearby explicit
+`str x0,[x28,#0x68]` at `0x57660` is on a separate object path (the object is
+loaded from `[x19+0x68]` at `0x57638`), so it is not evidence for this
+wrapper's link field. The allocation helper is indirect and its zeroing or
+reuse semantics have not been established here; absence of a store in this
+initializer does not prove the field is null. Next determine the allocator
+semantics and trace any mutation of this wrapper's `+0x68` before its
+`0x60c8` setup call. The CRPC identity, route word, and host-channel mapping
+remain unproven. Static disassembly only; no hardware access or submission;
+`CSNE_CMD_PING` remains unsent.
+
 ## Addendum 48 — `0x9177c` is a memory-window control write, not link route setup
 
 The 32-bit `+0x10` scan found a particularly plausible false positive at
