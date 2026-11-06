@@ -1452,6 +1452,27 @@ The actual selector value, queue link, host route, IRQ ownership, and PING
 schema remain unknown. Offline disassembly only; no device access or
 submission.
 
+## Addendum 98 — wrapper selector comes from the matched channel metadata record
+
+The constructor's selector source is now traced one level farther. For
+`SHAREDMALLOC`, the caller obtains the context pointer with `0x1736c(owner,
+name)` and the selector with `0x17378(owner, name)`, then passes both to
+`0x6170`. These are indirect calls through owner `[+0xa8]` and `[+0xb0]`.
+Their configured implementations (`0x5d50` and `0x5de4`) scan the firmware
+metadata records at `[0x178000+0x160]` in 0x20-byte steps, using
+`0x98518` to match the requested name. The pointer accessor returns the
+matched record's `[+8]`; the selector accessor returns its 32-bit `[+0x18]`.
+`0x6170` stores that selector at wrapper `+0x18` and immediately uses it as
+the index in `0xdf08`.
+
+Consequently the queue selection is name-keyed through a metadata-table entry,
+not an ad hoc host channel ordinal inferred from the name. The concrete
+`SHAREDMALLOC` metadata record's value at `+0x18` is still not established
+from the inspected static data or the saved host registration acknowledgment;
+nor is its relation to the host `DATA_CHAIN_H2T` index 7. The selected queue's
+link route, IRQ ownership, and PING schema remain unresolved. No reboot,
+hardware access, or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
