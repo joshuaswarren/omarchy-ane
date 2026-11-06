@@ -884,3 +884,23 @@ stores are based on the mapping object/node, not on the returned CRPC buffer
 base. This classifies the many `0x185cc` calls in the constructor as
 subregion bookkeeping, not link attachment. Static disassembly only; no
 hardware access or command submission.
+
+## Addendum 37 — CRPC local send and receive use the same ring object
+
+The queue wrappers close the producer/consumer identity gap for the local
+fallback. `0x62e0` first tests `[queue+8]`; when null, it loads
+`[queue+0x20]` and calls producer `0x29b6c` (`0x6304`–`0x631c`). The receive
+wrapper `0x637c` takes the same null-link branch and passes `[queue+0x20]` to
+`0x29ce8` (`0x63e4`–`0x63f0`); `0x29ce8` sets its optional fifth argument to
+zero and branches to consumer `0x29cf0`. Thus both local operations use the
+same ring object pointer held at queue `+0x20`, not merely routines with
+similar layouts. The consumer pops a record and returns its word, length, and
+associated metadata through the wrapper's out-parameters.
+
+This is a source-level identity, not a device observation. It resolves the
+local ring producer/consumer pairing for the queue abstraction, but does not
+establish that the CRPC queue selects this local branch at runtime, nor
+resolve any later linked-mode route. The optional queue link remains
+`[queue+8]`, and linked send still obtains its route from `[link+0x10]`; the
+route value and mapping to host channel index 7 remain unproven. No hardware
+access or command submission; `CSNE_CMD_PING` remains unsent.
