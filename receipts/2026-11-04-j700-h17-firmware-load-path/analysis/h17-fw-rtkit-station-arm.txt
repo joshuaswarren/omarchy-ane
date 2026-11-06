@@ -1025,6 +1025,29 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 77 — configured wrapper-pool pointers cannot index the eight-channel route table
+
+The allocator bounds can be evaluated in the firmware's documented preload
+address domain. `0xcb650` contains size `0x19c000`; `0x83c8` passes it with
+image address `0x1ce000` to `0x8a008`. The pool adds the extent starting at
+`0x1ce000 + 0x80000 = 0x26e000` with length `0x19c000 - 0x80000 = 0x11c000`,
+so its exclusive end is `0x38a000`. The pinned preload mapping uses DVA base
+`0x10000000000` (firmware-load-path README §5.2); that base has zero low 32
+bits, so pointers into this pool retain low-32-bit values in
+`[0x26e000, 0x38a000)`.
+
+Under that mapping, the route selector read as w0 from `[link+0x10]` when the
+link is the peer wrapper's allocated child object would have upper 16 bits
+`0x26` through `0x38`. The route decoder compares that upper half with the
+runtime channel-object count; the pinned firmware table initializes the count
+to 8 (`[0xcb000+0x5c0]`). Thus these pool addresses do not select an entry in
+that eight-element route table. This is a static incompatibility in the traced
+wrapper path, not a device-observed failure. It means the reciprocal wrapper
+queue constructor path cannot presently be treated as proof of a working
+RTKit link; one of the assumed runtime identities/address-domain premises
+must differ, or this path is not used for that RTKit sender. CRPC queue
+ownership and PING safety remain unresolved. No hardware access or submission.
+
 ## Addendum 76 — wrapper allocator is backed by a firmware region, not route encoding
 
 The optional allocator global used by `0x8a2d4` is populated by the pool
