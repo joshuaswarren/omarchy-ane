@@ -477,3 +477,21 @@ when its service object's +8 is zero. It does not prove the service object
 remains null at runtime, nor identify the `0x26440` result's RTKit endpoint
 or its Linux channel index. The source string supports the RPC naming but is
 not a protocol contract. Static firmware evidence only; no hardware accessed.
+
+## Addendum 16 — queue push dispatch on the returned fallback object
+
+The shared primitive at 0x62e0 clarifies how the object stored at
+`[parent+0x1d0]` is used. If `[queue+8]` is nonzero, it builds a packed
+message word using `[queue+0x28]` and branches to 0x68c8 (linked-queue path).
+If `[queue+8]` is zero, it instead loads `[queue+0x20]` and calls 0x29b6c
+(fallback transport path). The adjacent 0x6334 helper uses the same split for
+the other enqueue operation.
+
+In `0x26440`, the returned pointer is derived from the shared-memory manager's
+allocation result and allocator base; when the cached allocator path is
+unavailable, it calls the allocator object's virtual method at global
+`+0x630`, vtable offset `+0x28`. This traces object creation into allocator
+selection, but does not expose the value of the queue object's +8 or the
+transport/endpoint selected by 0x29b6c. Therefore the fallback object has two
+possible enqueue routes; which route applies to the H17 RPC instance remains
+unresolved by static initialization alone. No hardware accessed.
