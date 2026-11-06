@@ -1473,6 +1473,23 @@ nor is its relation to the host `DATA_CHAIN_H2T` index 7. The selected queue's
 link route, IRQ ownership, and PING schema remain unresolved. No reboot,
 hardware access, or submission.
 
+## Addendum 99 — `0xdfbc` is queue-pointer cleanup, not a second selector lookup
+
+The cleanup half of `0x6258` is independently resolved: `0xdfbc` walks the
+context entries from `[context+0x40]` in 0x60-byte steps and compares its
+argument against each entry's `[+0x30]` queue pointer (the initial cursor is
+`entry+0x2c`, and `ldur x10,[cursor,#4]` reads `entry+0x30`). On a match it
+clears the entry state byte and three adjacent bookkeeping values. The
+argument supplied by `0x6258` is `[wrapper+0x20]`, the queue pointer cached by
+`0x6170`; after cleanup, `0x6258` reloads `(context, selector)` from wrapper
+`+0x10/+0x18` and re-registers through `0xdf08`.
+
+This confirms the corrected field roles: wrapper `+0x18` is the metadata
+selector; wrapper `+0x20` is the selected queue pointer used for cleanup. It
+still provides no actual `SHAREDMALLOC` record value or queue-link route. The
+host channel-index correspondence, IRQ ownership, and PING schema remain
+unproven. Firmware disassembly only; no device access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
