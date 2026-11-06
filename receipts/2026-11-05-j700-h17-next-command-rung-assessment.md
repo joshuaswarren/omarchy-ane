@@ -161,6 +161,16 @@ as events/ID requests in the table; the table alone does not establish
 direction or prove that the host helper's 16-bit field is this table's CSNE
 ID.
 
+The host-side command sender makes the ID location precise: at
+`0xfffffe0008f48248`, `aneFirmwareCommandSend` loads a 16-bit value from
+`command+4` and stores it in the outstanding-command record; at `+6` it first
+zeros the adjacent 16-bit field. Focused excerpt:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend-id-field.txt`.
+This proves the host's correlation key is the u16 at `+4`, but does not prove
+that it indexes the firmware CSNE table or resolves the premap discrepancy.
+Next, trace the firmware's incoming-command parser and compare its exact
+header offsets to this host structure before treating `0x0012` as sendable.
+
 `CSNE_CMD_PING` at ID `0x0012` is now a concrete candidate name/ID in the
 J700 firmware, not merely a string and not an ID borrowed from T6021. Still
 unresolved: exact message envelope and endpoint, request/response sizes,
