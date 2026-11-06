@@ -72,6 +72,42 @@ These points are source analysis, not observed device failures. The already
 observed registration ACK does not qualify the message queue, IRQ path, command
 IDs, or compute path.
 
+## Caller-context findings (offline)
+
+The symbol/call-site scan and focused excerpts are from the same pinned
+kernelcache; relevant addresses and decoded call arguments are captured in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-premap-setup-disasm.txt`.
+
+- `sendPremapCmd` has a single direct caller, `initializeInferenceRequestMemoryPool`
+  at `0x8f3d13c`. That caller obtains a size from an object/vtable call and
+  supplies premap type `2` and flag/value `1`. It is specifically part of
+  inference request memory-pool initialization, not a generic firmware-ready
+  handshake. Command `0x020d` is therefore not a suitable probe.
+- `sendSetupCmd` call sites are in program/process lifecycle functions:
+  process create, abort, program load/unload, and release paths. The shown
+  abort path sends `0x0402` with two words derived from process state. This
+  confirms that the helper's small fixed payloads participate in stateful
+  operations; command ID alone does not imply query semantics.
+- In the traced `ANE_Init` continuation, a configuration-gated command
+  `0x0021` sends a 12-byte payload derived from `[dev+0xc8]`; after successful
+  completion it issues `0x0400` and `0x0401`. The path is conditional and
+  mutating/configuration semantics are unresolved. It cannot be lifted out
+  of `ANE_Init` as a standalone command without proving preconditions and
+  side effects.
+- `aneCmdSend` registers an outstanding command before enqueue and then waits
+  through its completion machinery. The response handler matches incoming
+  command state to an outstanding request and invokes completion; this is a
+  request/response transaction, not an enqueue-only notification. The
+  synchronous completion path and IRQ dispatch are consequently inseparable
+  from any proposed command rung.
+
+Result: caller analysis has ruled out the apparent setup/premap candidates as
+safe post-registration probes. It has not established a no-side-effect
+command. Continue with firmware-side command dispatch semantics (including
+response IDs/status fields) and Linux-owned IRQ/queue synchronization; do not
+choose `0x0400`, `0x020d`, or `0x0021` merely because they appear during
+initialization.
+
 ## Offline gates before proposing the next hardware rung
 
 1. Trace the concrete request creation call chain and pin the command ID,
