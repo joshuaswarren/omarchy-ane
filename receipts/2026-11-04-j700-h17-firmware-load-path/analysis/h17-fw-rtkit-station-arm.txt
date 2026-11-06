@@ -1101,6 +1101,25 @@ analysis, but the initial-zero observation alone cannot establish that the
 service object always takes the fallback path. No hardware access or
 submission; PING remains unsent.
 
+## Addendum 84 — service vtable audit finds no direct `+0x28` setter
+
+Audited the complete signed vtable used by `0x6170` (base `0xc0058`). Its
+non-null entries resolve to `0x61e4`, `0x61e8`, `0x65a0`, `0x65f8`, `0x6158`,
+`0x6168`, `0x6664`, `0x665c`, `0x6654`, and `0x6718`. Of these, `0x6158` is
+the only field setter in the directly decoded methods and writes the 32-bit
+`+8` field. `0x6654`/`0x665c` load `+0x48` and delegate; `0x61e8`/`0x6718`
+run lifecycle cleanup. The lifecycle helper `0x1d8c0` replaces the object's
+vtable, loads `[object+0x40]`, and removes that subobject from the registry;
+it does not write `+0x28`. The remaining entries are return/no-op, logging,
+or registry allocation/cleanup paths; none directly stores a queue pointer at
+`+0x28`.
+
+This rules out an obvious virtual setter for the queue reference, but not a
+non-virtual writer elsewhere or a helper that receives the object through an
+indirect path. The service object's `+0x28` writer, and therefore the
+DATA_CHAIN_H2T-to-CRPC handoff, remain unidentified. Static firmware analysis
+only; no hardware access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
