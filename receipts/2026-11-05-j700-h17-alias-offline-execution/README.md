@@ -280,3 +280,38 @@ identified in `BUNDLE-README.md`; none was copied back to EFI. The reviewer
 confirmed the manifest mismatch is resolved. This correction is offline
 artifact hygiene only and does not establish candidate boot or authorize the
 H17 rung.
+
+## Authorized candidate-boot-only check (2026-11-06)
+
+The user explicitly authorized installing the candidate m1n1 payload and
+rebooting, with a stop before loading any ANE module or running table
+discovery. Before replacement, the verified ANE-disabled payload remained
+preserved as both `boot.bin.old` and
+`/boot/efi/m1n1/boot.bin.pre-h17-candidate` (SHA-256
+`524e7236d58d0e7f6a75495752be0f6879ab78fb93af6dba26b3c1a69b3de067`). The
+candidate active `boot.bin` hash is
+`7a68ca9d93733dca6efb56ce03b3506a7f76eebf5f9e09f742dc2446d71b92f9`.
+
+Read-only post-boot observations:
+
+- Fresh boot ID `53cac498-5434-4afa-b9d1-4303244e93dc`, kernel
+  `7.2.11-14-1-ARCH`, build ID
+  `e6037e7a6a53ed1dfa9c1faa90efedc3d6b022bf`.
+- Live board compatibles include `apple,j700` and `apple,t8140`.
+- `/soc/ane@400000000` has compatible `apple,t8140-ane`, status `okay`,
+  and memory-region references to both no-`reg` reservation nodes. Their live
+  `iommu-addresses` cells encode FWIM at `0x10000000000`/`0x380000` and the
+  channel alias arena at `0x10000380000`/`0xf50000`, owned by the ANE node.
+- All three T8140 DART nodes are `okay`, and the ANE node's `iommus` lists
+  their live phandles with stream ID 0.
+- No `ane` or `ane_h16` module is present in `/proc/modules`; the platform
+  device has no `driver` symlink and `/sys/module/ane` is absent. The live
+  payload, stock UKI, firmware and staged module hashes match the candidate
+  manifest.
+
+This confirms that the candidate boot payload reached Linux and that Linux's
+live device tree contains the intended overlay. It does **not** show that the
+runtime IOMMU domain reports `IOMMU_RESV_RESERVED`, because the experimental
+driver was not loaded; nor does it show firmware acceptance or table
+discovery. No preflight claim or pending marker was created, and the
+table-discovery runner was not invoked. The result is not ANE qualification.

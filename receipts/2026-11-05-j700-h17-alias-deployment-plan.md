@@ -218,3 +218,11 @@ unobserved. Deployment and the specific one-shot rung are still not
 authorized. See the UKI identity-correction section of the offline-execution
 receipt for the objcopy staging-copy issue and its correction; the live EFI
 UKI was unchanged.
+
+The user later explicitly authorized a candidate-boot-only check. The
+candidate m1n1 payload booted Linux with the intended live J700/T8140 ANE
+node and both `iommu-addresses` reservation ranges, while no ANE module was
+loaded or bound. This establishes candidate boot and live-DT propagation
+only; the driver-level reservation query, firmware/table discovery, and any
+ANE operation remain untested. The specific table-discovery rung still
+requires separate explicit authorization.
