@@ -922,6 +922,24 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 40 — backing path maps storage but does not prove it is zeroed
+
+The local allocator path `0x20cf8` delegates backing storage through the
+manager object at `+0x58` and ultimately calls `0x28e8c` with an address,
+extent, alignment, and mapping options. `0x28e8c` validates those parameters,
+translates the address/size, and invokes the lower mapping primitive
+`0x8c134`; it does not clear the mapped payload in its visible body. The
+caller likewise contains no payload memset before returning the allocation.
+
+This is not evidence that the bytes at the CRPC result are nonzero or stale:
+the lower mapper and backing allocator's initialization guarantees have not
+been established. It means only that the inspected wrapper/factory path does
+not explicitly zero the returned payload. Therefore the queue's initial
+`[+8]` value cannot be inferred from this allocation path; runtime memory or
+device evidence would be needed to distinguish allocator initialization from
+a later writer. No hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
+
 ## Addendum 39 — generic CRPC factory returns an allocator address, not a queue initializer
 
 The `0x26440` factory does not construct a queue header around its result. It
