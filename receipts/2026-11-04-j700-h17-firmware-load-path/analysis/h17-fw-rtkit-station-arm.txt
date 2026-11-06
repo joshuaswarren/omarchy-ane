@@ -922,6 +922,36 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 55 — clarify the two manager constructors and trace the child
+
+Correction to Addendum 54: `0x20a88` is the constructor used directly by
+the `0x160ac` context initializer; `0x209e4` is reached through `0x29260`
+from the same initializer's alternate branch. Each creates the manager
+object installed at `[0x1c8000+0x630]`, initializes its `+0x58` child field
+to null, and initializes the shared range globals. The branch is selected by
+bit 0 of `[0x1c8000+0x4cc]`; therefore these are alternatives for that
+context initialization, not evidence that both manager instances coexist.
+
+The separate `0x21800` and `0x2183c` routines create a 0x60-byte child
+object and store it in the caller's `[parent+0x58]`. Their only direct callers
+are the two arms at `0x7a54/0x7a6c`, passing the manager loaded from global
+`[0x1c8000+0x630]`. Both take the shared `[0x1c8000+0x618]` value and
+`[manager+0x41]`; one child constructor is at `0x229ac`, the other at
+`0x218c4`. Thus these children belong to the global manager's own `+0x58`
+subobject path. They are not shown handed to the `0x5fa8` named wrappers or
+to the CRPC parent's `+0x1d0/+0x1d8` resource fields. This is an ownership
+distinction, not yet proof of runtime channel identity or route.
+
+Manager vtable evidence is also stronger than the prior addendum stated:
+the vtable at VA `0xc0c60` has slot `+0x38` pointing to `0x21100` (after its
+leading entries); `0x21100` is the range-check/translation method and calls
+`0x20cf8` on a miss. The manager object's `+0x58` child is a distinct object
+whose vtable is built at `0xc0ca8`; `0x20cf8` dispatches through that child's
+slot `+0x18`. This closes the parent/child dispatch relation, but not the
+mapping from that resource path to the CRPC linked queue's `[link+0x10]`.
+Static disassembly only; no hardware access or submission; `CSNE_CMD_PING`
+remains unsent.
+
 ## Addendum 54 — global manager `+0x630` is installed by two runtime constructors
 
 The writes to global `[0x1c8000+0x630]` are not just lookups: constructors
