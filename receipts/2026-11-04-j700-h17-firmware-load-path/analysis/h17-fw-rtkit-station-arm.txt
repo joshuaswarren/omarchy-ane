@@ -316,6 +316,28 @@ service registration alone.
 
 Static disassembly only; no hardware accessed.
 
+## Addendum 9 — queue consumer vtable identity (structural, not named)
+
+`0x35128` installs the encoded vtable at VA 0xc76f0 (`adrp x16,0xc7000; add
+x16,#0x6f0; add x16,#0x10; pacda; str [object]`). Under the corrected data
+mapping, the vtable bytes are at file offset 0xcb6f0. Its first virtual slots
+are encoded pointers whose low 32-bit targets include 0x35e90, 0x35e94,
+0x6158, 0x6168, 0x35eb0, and later 0x35eb4 at vtable offset +0xc0 (slot 22
+after the two-word vtable header). The body at 0x35eb4 is the already-traced
+consumer that pops from `[object+0x190]` via 0x637c. This ties the pop method
+and the 0x35128 initializer to one concrete firmware class/vtable, although
+no reliable class name has been recovered from the image.
+
+The constructor also stores its x4 input at +0x190 and, when `[x20+8]` is
+nonzero, copies `[x20+0x28]` to +0x1d0. That confirms the two queue references
+are fields of this class instance, not coincidental offsets in unrelated
+objects. It still does not reveal who creates the x20 input or which queue
+endpoint is attached. The `CAneEngineExeLoop` source-path string exists in the
+image, but no direct reference tying that string to vtable 0xc76f0 has been
+found; do not use that name as a proven class attribution.
+
+Static image/disassembly only; no hardware accessed.
+
 ## Addendum 8 — queue consumer fields in the 0x35128 initializer
 
 The initializer beginning at 0x35128 (body at 0x3512c) receives x4 in x20 and
