@@ -1004,6 +1004,26 @@ IRQ/queue ownership contract. In particular, this is not authorization to
 send PING: it remains unsent until those runtime contracts are established.
 Static firmware analysis only; no hardware access or submission.
 
+## Addendum 69 — firmware reply token is the host's outstanding-match field
+
+The default completion's token path can be compared with the pinned host
+trace. `0xeeac` passes the original message pointer (`[context+0x1b8]`) to
+`0x62e0`; the linked branch packs its offset from `[queue+0x28]` into the
+24-bit message token. On the host, `aneFirmwareCommandSend` stores a token
+derived from its mapped command-buffer base/offset in `outstanding_state+0x50`,
+and `processCommandResponse` matches the received queue message ID against
+that field (`analysis/h17-command-token-correction.txt` and
+`analysis/h17-process-response-xrefs.txt`).
+
+This gives a concrete cross-layer correlation: if the firmware queue's
+`[+0x28]` window is the corresponding host-mapped command-buffer window, the
+generic completion returns the buffer-offset token that the host is waiting
+for. The conditional matters: byte-for-byte identity of those bases, runtime
+link mode, and an actual PING response have not been observed. It clarifies
+how a reply can be matched, but does not establish the PING payload/status
+schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
+only; no hardware access or submission; PING remains unsent.
+
 ## Addendum 64 — wrapper constructor path leaves queue callback/link words untouched
 
 The construction path for each named wrapper is now covered through its base
