@@ -922,6 +922,28 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 53 — CRPC creation consults a global channel-manager path
+
+The call at `0x3534c` invokes `0x26440` with channel value `0x17600`, identifier
+`CRPC` (`0x52504300`), parent x19, zero optional output pointers, and the
+CRPC class string. In `0x26440`, when global `[0x1c8000+0x688]` is nonzero,
+the request goes through helper `0x265f4` using global `[0x1c8000+0x680]`.
+When `[0x1c8000+0x688]` is zero, it calls the virtual method at slot `+0x28`
+on the object in `[0x1c8000+0x630]`, passing the selected channel resource,
+size/alignment data, and the remaining constructor arguments. For this
+CRPC call the optional output destinations are null, so `0x26440` returns
+the resulting channel/resource value to the caller, which stores it in the
+parent's `+0x1d0/+0x1d8` fields.
+
+This establishes that CRPC creation uses one of these global channel-manager
+paths. It does not prove that `[0x1c8000+0x630]` is either `ChManTarget` or
+`ChManHost`, nor that this constructor's returned resource is the linked
+queue object at `[queue+8]`. The equality/link between those globals and the
+two wrappers created at `0x57c8/0x5834` is still untraced; `[link+0x10]`,
+queue/IRQ ownership, and host channel 7 mapping remain unresolved. Static
+disassembly only; no hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
+
 ## Addendum 52 — the `0x5fa8` wrappers are named `ChManTarget` and `ChManHost`
 
 The direct caller of `0x54f8` is `0x7c78`, which passes the main context in
