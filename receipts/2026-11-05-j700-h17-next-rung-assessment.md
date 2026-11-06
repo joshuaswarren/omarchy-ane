@@ -54,37 +54,37 @@ initial state and invokes the cache-clean hook. It also identifies
 `ANE_Init` continues. This is source analysis, not a device observation of
 registration.
 
-An offline-only validator was added in `ane/h17/chanreg_model.py` as
-`registration_init_ranges`, with synthetic tests in
-`ane/h17/test_registration_model.py`. Its fixture is taken from the retained
-successful table log. The model proves only that the host's source-traced
-type-0 initialization ranges are aligned, non-overlapping, and inside the
-owned **logical** IPC extent (not merely DMA mapping padding). It deliberately
-does not validate or bless firmware-side accesses to the other channel
-buffers, and it is not wired into the driver or a hardware runner.
+Sections 13.2 and 14.2 of the same pinned firmware receipt establish the
+channel buffer geometry: the queue uses 64-byte entries, and each table
+record's `size` is the entry count used by the channel object. The constructor
+initializes those entries only for type-0 channels; the other types' buffers
+are firmware-produced/consumed and are not initialized by the host there.
+
+The offline-only validator `registration_init_ranges` in
+`ane/h17/chanreg_model.py`, tested by `ane/h17/test_registration_model.py`,
+uses the retained successful table log as its fixture. It requires all eight
+table buffer ranges (`size * 0x40`) to be aligned, non-overlapping, and wholly
+inside the owned **logical** IPC extent—not merely DMA mapping padding—and
+returns the subset the host constructor initializes. This validates address
+geometry against the traced access width; it does not simulate the firmware
+protocol or prove actual device accesses. It is not wired into the driver or a
+hardware runner.
 
 ## Remaining offline gates before proposing registration hardware
 
-1. Resolve from the pinned analysis the complete firmware-side access
-   contract for every non-type-0 channel buffer: byte ranges, producer/
-   consumer fields, ownership, and ordering. The copied table contains
-   pointers and counts, but the current stage never dereferences these
-   buffers; the host-initialization model is not evidence that firmware-side
-   accesses stay within owned IPC.
-2. Extend the offline model to validate all eight records and every complete
-   firmware-accessed range against owned DMA allocations, including overflow,
-   overlap, granularity, and firmware address-width constraints. Do not infer
-   lengths from adjacent addresses or slot counts without source evidence.
-3. Add negative and mutation tests for malformed names/records, missing
-   required channels, out-of-range/overlapping buffers, partial allocation or
-   mapping, bad reply/ack, and timeout. Specify retention on every failure
-   after firmware CPU release; no unmap/free rollback is safe without separate
-   evidence.
-4. Implement a new explicit default-off stage and runner. Preserve the
+1. Independently review the table-entry interpretation and validator against
+   the pinned trace, especially that every channel buffer's `size` is an entry
+   count and that no type has a larger structure or alignment requirement.
+   Unknown fields such as channel-type-specific protocol behavior remain
+   outside the model.
+2. Add mutation tests for malformed table capture and registration outcomes;
+   specify retention on every failure after firmware CPU release. No unmap/free
+   rollback is safe without separate evidence.
+3. Implement a new explicit default-off stage and runner. Preserve the
    already-tested table-discovery-only mode. Stop immediately after the
    registration acknowledgement; do not add a doorbell, task, IRQ ack, or
    numerical execution to that rung.
-5. Have the new stage independently reviewed, build the exact pinned module,
+4. Have the new stage independently reviewed, build the exact pinned module,
    and add a one-shot preflight/attempt marker and verdict that fail closed on
    all identities and observed outputs. Only then present the concrete rung
    and its risks for separate authorization.

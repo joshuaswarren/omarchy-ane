@@ -31,15 +31,17 @@ class RegistrationInitTests(unittest.TestCase):
             (7, 0xC000, 0x400),
         ))
 
-    def test_type_one_and_two_buffers_are_not_host_initialized(self):
-        # This checks only the source-traced host writes; it does not bless
-        # firmware-side accesses to these table-provided pointers.
+    def test_only_type_zero_ranges_are_host_initialized(self):
+        self.assertEqual(tuple(index for index, _, _ in
+                               registration_init_ranges(self.records, self.ipc)),
+                         (1, 2, 3, 7))
+
+    def test_all_table_buffers_must_fit_logical_ipc(self):
         records = list(self.records)
-        records[0] = replace(records[0], buffer_iova=(1 << 64) - 1)
-        records[4] = replace(records[4], buffer_iova=(1 << 64) - 1)
-        records[5] = replace(records[5], buffer_iova=(1 << 64) - 1)
-        records[6] = replace(records[6], buffer_iova=(1 << 64) - 1)
-        self.assertEqual(len(registration_init_ranges(records, self.ipc)), 4)
+        # A type-1 firmware-produced buffer cannot use DMA mapping padding.
+        records[6] = replace(records[6], buffer_iova=IPC_IOVA + 0xC040)
+        with self.assertRaisesRegex(ValueError, "complete range is not owned"):
+            registration_init_ranges(records, self.ipc)
 
     def test_initialized_range_must_fit_logical_ipc_not_padding(self):
         records = list(self.records)
