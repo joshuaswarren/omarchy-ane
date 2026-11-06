@@ -1197,6 +1197,28 @@ that submissions take the local or linked branch. CRPC route and IRQ
 ownership remain unresolved; no hardware access or submission; PING remains
 unsent.
 
+## Addendum 89 — CRPC owner's link field is the `SHAREDMALLOC` service object
+
+Decoded the caller-side field identity at `0x7e18` and `0x80d0`. In both
+initialization variants, `[context+0x1f8]` is assigned immediately after a
+`0x6170` service object is constructed from the string `SHAREDMALLOC`
+(`0x9d33e`; stores at `0x7ce8` and `0x7fe8`). The adjacent services are
+`IO` at `+0x200`, `DATA_CHAIN_H2T` at `+0x208`, and `IO_T2H` at `+0x210`
+(names at `0x9d325`, `0x9d352`, and `0x9d34b`). Therefore the CRPC owner
+`[+0x40]` link is specifically the `SHAREDMALLOC` service object, not the
+`DATA_CHAIN_H2T` service object. This is a concrete object-identity result,
+not evidence that `SHAREDMALLOC` corresponds to a particular host RTKit
+channel or route.
+
+The `0x6170` constructor initializes the service's `[+8]` and `[+0x28]` to
+zero. The fallback's linked branch tests the former; if still zero, it uses
+the separately constructed queue at CRPC owner `[+0x48]`. A setter for a
+service `[+8]` field exists at `0x6158`, but the runtime write to this
+particular `SHAREDMALLOC` object and any subsequent `[+0x28]` setup remain
+unidentified. The DATA_CHAIN_H2T-to-host-channel mapping, CRPC reply route,
+and IRQ ownership remain unproven. No hardware access or submission; PING
+remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
