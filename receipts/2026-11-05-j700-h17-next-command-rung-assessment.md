@@ -38,6 +38,20 @@ The static record does **not** establish a safe initial command:
 
 - The command/message ID and its two payload words for any no-side-effect
   request have not been pinned to an observed J700 exchange.
+- The helper trace now identifies initialization command *families*, but not
+  a proven-safe first command. `ANEFirmwareManager::sendPremapCmd`
+  (`0x8f3d1c4`) constructs command `0x020d`, sets a 16-bit field to `1`,
+  passes a 0x3490-byte command structure, and calls `aneCmdSend` with a
+  0x3490-byte response buffer and synchronous flag `2`. Its four trailing
+  arguments are zero. `sendSetupCmd` (`0x8f3d414`) constructs command IDs
+  `0x0400`–`0x0403` with payload sizes 0, 12, or 16 bytes; response handling
+  copies a returned word for `0x0400`. These are firmware setup exchanges,
+  not evidence of no side effects. The recorded disassembly is
+  `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-premap-setup-disasm.txt`
+  (kernelcache SHA-256 given above). The `ANE_Init` excerpt at `0x8f3fc70`
+  also shows command `0x0021` with a 12-byte payload when `[dev+0xc8]` is
+  nonzero, followed by setup commands `0x0400` and `0x0401`; it is
+  configuration-dependent and cannot be assumed harmless.
 - The sender's producer word can hold an inverted value while a peer
   acknowledgment is pending. The control-block producer/consumer
   synchronization is not established for a Linux-owned endpoint; a second
