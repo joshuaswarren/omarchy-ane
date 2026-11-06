@@ -1,0 +1,124 @@
+H17 firmware message queue object and push/pop contract (verified)
+==================================================================
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+Companion to:
+  analysis/h17-fw-command-dispatch-tables.txt (evaluator 0x2bb34 and the
+  0x30ebc default epilogue / 0x31e50 / 0xeeac completion path)
+
+Context-object and queue-object identity
+----------------------------------------
+The receive drain loop 0xec90 pops with 0x637c from [x19+0x40] and then
+invokes virtual slot 7 (vtable +0x38, diversifier 0x80116afc -> 0x2bb34)
+with x0 = x19, the SAME object. Inside 0x2bb34 that arg is x20, so the
+evaluator's response queue [x20+0x40] is exactly the mailbox the request
+was popped from. There is no separate response object at this layer;
+the response push (0x62e0) re-packs token and length and enqueues it down the
+same queue object.
+
+Queue-object fields observed
+----------------------------
+  +0x08   link: pointer to the ACTIVE link object, or NULL if unlinked.
+          All linked paths (RTKit) dereference it.
+  +0x10   (link object) RTKit endpoint id passed to the send primitive
+          0x9ad28 (read as w0 at 0x68dc).
+  +0x20   (queue object) fallback LOCAL ring object used by both the
+          unlinked pop (0x29ce8) and the unlinked push (0x29b6c).
+  +0x28   base of a 16 KiB ring window; tokens are deltas from it.
+  +0x50   peeked record (word), cleared on take (lossy peek/take pattern).
+  +0x84   (context, i.e. the outer object) ring/loop mode flag consumed at
+          0xede0 / 0xee58 and by the drain-loop tail condition.
+  [ring+0x10], [ring+0x18], [ring+0x24], [ring+0x70]
+          local-ring internals seen in 0x29b6c: free/next index word
+          (+0x10), ring base (+0x18), next alloc index (+0x24, -1 = full),
+          tail-chase state (+0x70). Slots are 64 bytes: [base + idx*0x40],
+          word0 = (([ring+0x10] ^ 1) | token_from_0x50ec), +8 length,
+          +0x10 status word, +0x18 result, dsb st, then the tail walk.
+
+Push 0x62e0(queueobj, msg_token_or_ptr, len, status)
+----------------------------------------------------
+  linked   ([q+8] != 0): pack x1 = ((msg - [q+0x28]) & 0xffffff) |
+           ((len & 0xffffff) << 24), x2 = status, tail-call 0x68c8.
+  unlinked ([q+8] == 0): bl 0x29b6c([q+0x20], msg, len, x3=0).
+           THIS IS NOT A FAILURE. 0x29b6c writes a 64-byte slot into the
+           local ring and returns 0 when the ring has a free entry
+           ([ring+0x24] != -1). It returns nonzero (-1 path at 0x29be8)
+           only when the ring is FULL -> and only that nonzero return
+           propagates to 0x31e50, which then logs and enters the
+           infinite loop 0x31f7c `b 0x31f80` (firmware-core hang).
+
+  Corrects the earlier working note "T2H response queue must be verified
+  live (linked and drained) before any submission": an UNLINKED channel
+  accepts the fallback push silently. The actual gate is (a) linked ->
+  RTKit send 0x9ad28 must succeed on endpoint [link+0x10], or (b)
+  unlinked -> the fallback ring at [q+0x20] must have room. The ring-full
+  hang is real but requires a full ring, not a missing link.
+
+Pop 0x637c(queueobj, *msg_out, *size_out, x3)
+---------------------------------------------
+  linked: take peeked record from [q+0x50]; if none, bl 0x690c(q,
+          &record, x3=orig x3, &sp) -- the RTKit receive. Token out =
+          (record & 0xffffff) + [q+0x28]; size out = (record >> 24) &
+          0xffffff. Return 0 on success, else the caller treats nonzero
+          as queue-empty.
+  unlinked: bl 0x29ce8([q+0x20], &record, x2 = orig x3, &sp); on failure
+          returns 0x80000010.
+
+Message identity on the wire
+----------------------------
+An RTKit message on this channel is a 48-bit word: low 24 bits = token
+delta from [q+0x28], high 24 bits = length. Byte-offset masks of 0x3fff
+appear at 0xede4 and 0x8bbcc-range code (commit buffer = ring_base +
+(token & 0x3fff)), i.e. a 16 KiB window, 64-byte slots = 256 entries.
+The 16-byte command envelope itself lives IN the ring slot; only the
+(token|len) word travels via RTKit. This matches the host-side trace in
+analysis/h17-process-response-xrefs.txt where the receive primitive
+strips low bits from the "slot word" before passing the message ID.
+
+Drain loop semantics (0xec90)
+-----------------------------
+  1. bl 0x637c([ctx+0x40], &token sp+0x18, &size sp+0x10, 0). Nonzero ->
+     return (queue empty / not linked-and-empty variants).
+  2. Optional cache invalidate of the message region via 0x8bcb8.
+  3. Increment [ctx+0x98]; call slot 7 with (x0=ctx, x1=msg token/ptr,
+     x2=size, x3=&out sp+0x08).
+  4. If slot 7 returned nonzero -> 0xee4c. If it wrote out = token
+     (nonzero), 0xec90 itself flushes cache (0x8bbcc) and pushes the
+     returned token back via its own copy of the completion epilogue
+     (0x8bfcc / 0x8cc8c / 0x62e0 with -1). This branch serves the OTHER
+     slot-7 implementation (the bounded 0x200-family parser class); for
+     0x2bb34 the epilogue str xzr,[x19] writes out = 0, so step 4 is
+     skipped and the push already happened inside 0x31e50/0xeeac.
+  5. Loop condition at 0xee4c: while [q+8] != 0 (linked) OR [ctx+0x84]
+     mode != 0 OR debug-gate global 0x1c8630->[+0x40] == 1, pop again
+     (drain everything pending in one pass); otherwise return after a
+     single pass.
+
+Echo / fill hazard on an unlinked channel
+-----------------------------------------
+On an unlinked channel the drain loop pops messages from the ring object
+[q+0x20] and the completion push writes the response into the SAME ring
+(0x29b6c path). The next 0x637c pop therefore sees the echoed response,
+slot 7 re-dispatches it (dispatch keys only on the u16 command id, not
+direction), and the cycle repeats, writing a new record each time, until
+the fallback ring has no free slot ([ring+0x24] == -1). Then the push
+fails, 0x31e50 enters the 0x31f80 spin, and the firmware core hangs.
+
+Implication for the first-submission rung: an unlinked-channel echo test
+without a concurrent host drainer is NOT bounded. Options for a bounded
+rung: (a) bring the channel up LINKED (RTKit path, separate windows, the
+normal mode), (b) host drains the ring concurrently and kills the
+feedback loop early (race-prone, would need its own contract pinning),
+or (c) never submit and instead keep the hardware step gated until (a)
+is established. Option (a) is the reviewing-safe default.
+
+Scope / limits
+--------------
+Static disassembly of the pinned firmware only. Not pinned: the code
+that CREATES a queue object and writes [q+8] (the link/attach site);
+0x9ad28's endpoint-table layout and 0x690c's RTKit receive details;
+0x50ec's exact meaning (token minted for a ring slot); who sets [q+0x84]
+and [x0+0x84] mode values; whether [q+0x20] and the interrupted-context
+ring-object used by 0x29ce8 share the 64-byte layout everywhere. No
+hardware was accessed.

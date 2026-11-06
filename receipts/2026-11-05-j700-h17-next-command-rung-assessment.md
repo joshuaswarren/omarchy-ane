@@ -218,11 +218,21 @@ is the one dedicated body that logs "Dummy return success" and flags
 `[msg+6] = 2`; CONFIG_GET/PLATFORM_INFO/BOOT are also body-less.
 
 Critical hardware gate discovered: if the response enqueue fails
-(response queue not linked or no room), `0x31e50` logs and enters an
-infinite loop — a firmware-core hang by design. So no submission
-through this evaluator is hardware-safe before the T2H response queue
-at `[context+0x40]` is verified live (linked and drained) by the Linux
-side; a PING rung is meaningless without that predecessor rung.
+(response queue not linked or full ring), `0x31e50` logs and enters an
+infinite loop — a firmware-core hang by design. Follow-up analysis
+corrected the gate's shape: an *unlinked* channel does not fail the push
+(`0x62e0` silently falls back to the local ring at `[q+0x20]` via
+`0x29b6c`); only a full fallback ring (`[ring+0x24] == -1`) or a failed
+linked RTKit send reaches the hang. New hazard: on an unlinked channel
+the echoed response is written into the same ring the drain loop pops
+from, so it is re-dispatched until the ring fills, then the firmware
+hangs. A PING rung is meaningless without a predecessor rung that makes
+the completion route bounded — the reviewing-safe default is the linked
+(RTKit) mode. Queue-object fields, push/pop packing (48-bit
+`(token-delta24 | len24<<24)` RTKit words over a 16 KiB, 64-byte-slot
+ring), the pop `0x637c`, the fallback `0x29b6c`, and the drain-loop
+termination conditions are recorded in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-queue-object.txt`.
 
 ## Offline gates before proposing the next hardware rung
 
