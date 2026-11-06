@@ -315,3 +315,29 @@ eight channel records are a different layer and cannot be mapped from this
 service registration alone.
 
 Static disassembly only; no hardware accessed.
+
+## Addendum 8 — queue consumer fields in the 0x35128 initializer
+
+The initializer beginning at 0x35128 (body at 0x3512c) receives x4 in x20 and
+stores it at `[parent+0x190]` (0x35200). After checking `[x20+8]`, it loads
+`[x20+0x28]` and stores that pointer at `[parent+0x1d0]` (0x35240..0x3524c);
+it also reads `[x20+0x38]` as a size/capacity-like value for a bounds check.
+The corresponding push sites are:
+
+  0x38570: load [parent+0x190], then pass it to 0x62e0
+  0x4bd2c: load [parent+0x1d0], then pass it to 0x62e0
+
+At 0x38570, linked-vs-fallback choice is made by testing `[[parent+0x190]+8]`;
+the queue push at 0x62e0 receives the selected message pointer/length. At
+0x4bd2c the payload has a different producer but uses the same queue primitive;
+the code then checks `[[parent+0x1d0]+8]` to branch on link presence. This is
+consistent with two queue references within the parent object: one retained
+as the constructor argument, and another nested queue pointer sourced from
+that argument's +0x28 field.
+
+This does not identify the creator of the x20 argument, prove that this is the
+CSNE drain queue, or recover either queue's `[q+8]` link endpoint ID. The
+initializer has no direct BL callers in the decoded firmware text, so its
+invocation appears indirect (e.g. class/vtable path); the upstream factory and
+runtime registration are still the next trace targets. Static disassembly
+only; no hardware accessed.
