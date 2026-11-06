@@ -1025,6 +1025,28 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 74 — reciprocal wrapper link has an unresolved route representation
+
+The apparent representation mismatch is real in the statically traced
+wrapper setup, not a register-shuffle mistake at the queue send site. The
+`0x62e0` linked branch loads `[queue+8]` into x0 and tail-branches to `0x68c8`;
+`0x68c8` reads a 32-bit value from `[x0+0x10]` into w0 and passes it to
+`0x9ad28` as the route selector. Meanwhile, `0x5fa8` initializes each wrapper
+through `0xda10`/`0x239bc`; `0x239bc` allocates a child object and stores its
+returned pointer at `[wrapper+0x10]`. `0x60c8` stores the peer wrapper at
+`[wrapper+0x68]`, and `0xdbcc` passes that peer to `0x298fc`, which stores it
+at `[queue+8]`.
+
+So in this concrete wrapper queue path, the linked send's route read appears
+to consume the low 32 bits of the peer wrapper's child-object pointer. The
+trace does not show that value being converted to the packed
+`(runtime_channel_index << 16) | endpoint_id` format established at
+`0x9ad28`, nor does it prove that this wrapper queue path reaches the same
+send primitive at runtime. This unresolved inconsistency means the reciprocal
+wrapper wiring is not evidence of a valid RTKit route and should not be used
+to infer CRPC or H2T/T2H endpoint ownership. Static analysis only; no hardware
+access or submission; PING remains unsent.
+
 ## Addendum 73 — wrapper queue links are wired to the peer wrapper
 
 The two `0x5fa8` wrappers created in `0x54f8` are passed to `0x60c8` in
