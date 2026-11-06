@@ -385,6 +385,14 @@ inner command code; it explains why the two fields must not be conflated. It
 does not establish firmware token allocation/echo behavior, or prove PING's
 request/reply schema or safe eligibility. No hardware was accessed.
 
+The complete host T2H handler's visible +4 dispatch has no `0x0012` case; it
+handles the `0x100`/`0x300` families instead. This does not establish that the
+firmware-table `CSNE_CMD_PING` is unsupported, because the command-name table
+may describe a different endpoint or namespace. It does rule out treating the
+table ID alone as sufficient evidence that `0x12` is the inner code consumed by
+this T2H path. The next offline gate remains tracing the actual firmware
+endpoint/parser and matching it to a host caller.
+
 ### Queue receive-ID mask correction
 
 The decoded receive primitive at `0xfffffe0008ef8a10` applies

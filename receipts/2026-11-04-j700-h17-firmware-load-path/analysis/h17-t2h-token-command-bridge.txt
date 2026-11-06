@@ -30,6 +30,14 @@ inner field, with visible cases including 0x100, 0x102, 0x103, 0x104, 0x105,
 0x106, 0x107, 0x300, 0x302, 0x303, and 0x305. This is separate from the
 queue token passed in x1.
 
+The complete named function ends at the next symbol, 0xfffffe0008f05054.
+Within that function the +4 field is compared against the cases above (and
+other non-command bounds/state values); no 0x0012 case appears in the dispatch
+comparisons. The CSNE firmware table's `CSNE_CMD_PING` value 0x0012 therefore
+does not map directly to a visible case in this host T2H handler. This absence
+does not establish that PING is unsupported: it may use a different endpoint,
+message family, or namespace.
+
 Interpretation boundary: this is the host driver's T2H receive/dispatch code.
 It shows the outer queue token is used to locate/read a mapped 12-byte command
 view, whose inner command code is at +4. It does not prove firmware's token
