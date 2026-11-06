@@ -1120,6 +1120,19 @@ indirect path. The service object's `+0x28` writer, and therefore the
 DATA_CHAIN_H2T-to-CRPC handoff, remain unidentified. Static firmware analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 85 — two generic `+0x28` stores are list-node counters
+
+Follow-up on the broad offset-store scan: `0x8d1c` and `0x8dd8` look like
+pointer-sized `+0x28` writes, but each is a read/increment/store counter update
+on a node in a linked list. The loops follow the node's `[+8]` next pointer;
+when `[+0x10]` is present they invoke it with payload `[+0x20]`, otherwise
+they use `[+0x18]` with the same payload. The updated `+0x28` value is only
+used as node-local progress/accounting before advancing to `[node+8]`. These
+are not service-object initialization paths and do not install a queue pointer
+or route. This excludes two tempting static matches, but is not a complete
+proof that no non-virtual service `+0x28` writer exists. Static analysis only;
+no hardware access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
