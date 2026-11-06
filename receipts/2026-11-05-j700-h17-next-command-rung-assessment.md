@@ -280,6 +280,22 @@ the CSNE ID from the firmware table. The T2H dispatcher narrows the transport
 path but does not close the firmware-parser/reply contract or make `PING` safe
 to send.
 
+### Sender channel-selector lookup decoded
+
+Resolved the table at kernelcache VA `0xfffffe00073b0180` used by
+`aneFirmwareCommandSend`. The u32 selector at `ANEFirmwareCommand+0x18` is
+bounds-checked to 0..3, indexes a four-entry table of device-field offsets,
+then loads the runtime cached channel index from that device field. Values:
+selector 0 → `device+0xe208` (IO), selector 1 → `device+0xe210` (DEBUG),
+selectors 2 and 3 → `device+0xe214` (DATA_CHAIN_H2T). Receipt:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-send-channel-lookup.txt`.
+
+This resolves the channel selection, not the message payload's semantic ID.
+The table is a route-to-runtime-channel-index lookup, not the CSNE command-name
+table. `sendSetupCmd` passes the selector 0 path when it builds its `0x400`–
+`0x403` request structures, confirming those setup requests use the IO channel;
+it does not identify which wrapper carries CSNE `PING` or prove a reply for it.
+
 ### Request serialization details and namespace boundary
 
 Extended `aneFirmwareCommandSend` disassembly is captured in
