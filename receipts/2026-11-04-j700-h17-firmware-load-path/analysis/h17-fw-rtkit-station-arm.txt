@@ -1025,6 +1025,21 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 71 — token-bias write search finds registration state, not queue mutation
+
+A full firmware `__TEXT` census of explicit stores at displacement `+0x28`
+does not reveal another obvious writer to the queue field after constructor
+`0x298fc` initializes it to zero. The superficially relevant store at
+`0x52b8` is in the channel-registration path: it writes x1 at offset `+0x28`
+of the registration object whose pointer is stored in a global indexed table
+rooted at `0x178108`. This is not a write to the queue object passed to
+`0x62e0`. Stores in `0x185f8`/`0x1861c` and the `0x1ddd8`-range code belong
+to local ring/container head/tail bookkeeping;
+their `+0x28` is likewise a different object field. The exhaustive raw
+displacement census cannot rule out aliases or indirect writes, so this is
+negative static evidence only: the effective queue token bias remains
+unexplained and must not be assumed zero at runtime.
+
 ## Addendum 70 — linked traffic counters belong to the link object, not queue
 
 Disambiguation for the token comparison: `0x62e0` preserves the queue in x8,
