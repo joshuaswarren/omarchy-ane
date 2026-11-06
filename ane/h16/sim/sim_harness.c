@@ -317,6 +317,7 @@ static void put_prop(u8 *b, size_t *off, const char *name, const void *data,
  * windows; the boot parser (adt_node_at/adt_child/adt_prop) walks
  * exactly this layout.
  */
+static size_t adt_segprop_header_end;
 static u8 *build_adt(size_t *out_len)
 {
 	u8 *b = calloc(1, 4096);
@@ -324,7 +325,8 @@ static u8 *build_adt(size_t *out_len)
 	struct {
 		u64 phys, pad, remap, size;
 	} segs[2] = {
-		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0xc0000 },
+		/* last word is size | flags << 32; T8132 TEXT carries flags 0x1 */
+		{ TEXT_PRE_PA, 0, TEXT_IOVA, 0xc0000 | 1ULL << 32 },
 		{ DATA_PRE_PA, 0, DATA_IOVA, 0x2ac000 },
 	};
 	u32 ane_type = sim_soc.ane_type;
@@ -341,6 +343,7 @@ static u8 *build_adt(size_t *out_len)
 	put32(b, &off, 0);
 	put_prop(b, &off, "name", "ane0", 5);
 	put_prop(b, &off, "ane-type", &ane_type, 4);
+	adt_segprop_header_end = off + 36;
 	put_prop(b, &off, "segment-ranges", segs, sizeof(segs));
 	len = off;
 	sim_phys_maps[sim_n_phys_maps++] =
@@ -504,6 +507,25 @@ static void setup_adt_node(void)
 	n_adt.nreg = 1;
 	n_adt.reg[0][0] = ADT_PA;
 	n_adt.reg[0][1] = adt_len;
+	n_rm.children[n_rm.nchildren++] = &n_adt;
+	(void)adt;
+}
+
+/* Same ADT, but the resource ends at the segment-ranges header: the
+ * property body lies outside the mapping. adt_prop() must refuse the
+ * truncated extent instead of returning body bytes from past adt_len.
+ */
+static void setup_adt_node_truncated(void)
+{
+	size_t full_len;
+	u8 *adt = build_adt(&full_len);
+
+	memset(&n_adt, 0, sizeof(n_adt));
+	n_adt.name = "adt";
+	n_adt.props[n_adt.nprops++] = (struct sim_prop){ "label", "adt", 4 };
+	n_adt.nreg = 1;
+	n_adt.reg[0][0] = ADT_PA;
+	n_adt.reg[0][1] = adt_segprop_header_end;
 	n_rm.children[n_rm.nchildren++] = &n_adt;
 	(void)adt;
 }
@@ -921,6 +943,27 @@ static void sc_neg_foreign_preload(void)
 	    "refusal frees the staged buffer (no DMA leak)");
 }
 
+/* The fake ADT ends exactly at the segment-ranges header: the
+ * property name is inside the mapping, the declared body is not.
+ * The walk must refuse the truncated extent; it must never return
+ * body bytes read from past adt_len as usable segment data.
+ */
+static void sc_neg_adt_truncated_prop(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node_truncated();
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("has no segment-ranges") == 1,
+	    "truncated segment-ranges is refused by the walk");
+	chk(sim_log_count("adt seg0 phys=") == 0,
+	    "truncated segment-ranges never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
 /* A DART map that fails midway must unwind the pages it already
  * mapped before the staged buffer is freed: partial IOVA mappings
  * over freed memory hand the next map a stale translation. The
@@ -1027,6 +1070,8 @@ int main(int argc, char **argv)
 		sc_pos_getsync_eacces();
 	else if (!strcmp(sc, "neg-getsync-eacces-one-pd"))
 		sc_neg_getsync_eacces_one_pd();
+	else if (!strcmp(sc, "neg-adt-truncated-prop"))
+		sc_neg_adt_truncated_prop();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))
