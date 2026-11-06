@@ -648,3 +648,20 @@ uses it, or that the consumer reads the same ring whose producer is
 `0x29b6c`. The successful H17 host channel-registration receipt contains no
 task submission or ring-consumer observation to close that gap. Static
 disassembly only; no hardware accessed and no command submitted.
+
+## Addendum 24 — exact linked-send route source
+
+The linked enqueue path makes the route-word source explicit. `0x62e0`
+branches to `0x68c8` with x0 set to the queue's `[queue+8]` link object. It
+uses `[queue+0x28]` to form the packed message metadata from the length and
+message arguments; that field is not the route word. At `0x68dc`, the helper
+loads `w0 = [link+0x10]` and passes that value to `0x9ad28` at `0x68e0`.
+Thus, if the link pointer is present, the route decoded in Addendum 18 comes
+specifically from the link object's `+0x10` field.
+
+The adjacent `0x6898` helper stores its x1 argument at `[link+0x18]`; it does
+not write `[link+0x10]`. The inspected link-send path therefore identifies
+where the route is read, but neither who populates the link object's route
+field nor whether the `CRPC` fallback's `[queue+8]` is non-null at runtime.
+The local-ring branch remains selected when that pointer is null. Static
+disassembly only; no hardware accessed and no command submitted.
