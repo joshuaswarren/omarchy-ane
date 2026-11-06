@@ -564,3 +564,23 @@ is `(7 << 16) | endpoint`, because its `[queue+8]` link and `link+0x10` route
 word were not captured, and the firmware service-registry index has not been
 shown byte-for-byte equal to the Linux table ordinal. Static cross-receipt
 correlation only; no hardware accessed during this continuation.
+
+## Addendum 20 — notification callback pointer is not firmware-assigned here
+
+The indirect call at `0x50ec` loads the function pointer at VA `0x1cce08`
+and branches to it when non-null; otherwise it returns. The firmware image's
+`__DATA` segment declares only file-backed bytes through VA `0x17c000`, so
+`0x1cce08` is zero-fill/BSS state in the on-disk image, not an initial code
+pointer. An exhaustive scan of the disassembled `__TEXT` range found this as
+the only direct code reference to `0x1cce08`, and no firmware store to that
+slot. Thus the callback is installed outside this direct static path or
+through an indirect mechanism; its implementation and owner remain unknown.
+
+Nearby globals have distinct roles: helper `0x9288` stores its argument at
+`0x1cce10` (called at `0x754c`), while `0x9298` appends three pointers plus a
+32-bit value into a 32-byte record array rooted at `0x1cce20`, bounded by 128
+entries. That registry is not evidence that the callback at `0x1cce08` is one
+of those records. The null-link path therefore remains a local ring enqueue
+with an uncharacterized notification callout; neither firmware nor the saved
+host table evidence identifies its Linux channel endpoint. No new hardware
+access or command submission was performed.
