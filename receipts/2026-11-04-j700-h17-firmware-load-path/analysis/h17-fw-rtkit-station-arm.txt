@@ -922,6 +922,22 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 46 — paired `+8` store at `0x55fc` is an array descriptor
+
+The broad store scan also includes `stp x25,x0,[x23,#8]` at `0x55fc`. In
+this function x23 is explicitly set to global `0x178150`; x25 is the signed
+item count from the routine's parse result, and x0 is a newly allocated
+`count * 32`-byte region. The pair initializes global descriptor fields
+`[0x178158]=count` and `[0x178160]=region`, followed by zeroing/populating
+that region as an array of records. This is not a write through the CRPC
+allocation pointer and provides no evidence about `[queue+8]` or `[link+0x10]`.
+
+The literal-offset candidates reviewed so far (`0x6158`, `0x519c`, `0x52b4`,
+and `0x55fc`) are distinct service, parser, indexed-table, or global-array
+fields. This remains a syntactic, bounded search: it cannot rule out a write
+through a computed address or a shared-memory producer. No hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 45 — remaining literal `+8` stores are table/parser fields
 
 The firmware-wide literal-offset scan left two 64-bit `[base+8]` stores worth
