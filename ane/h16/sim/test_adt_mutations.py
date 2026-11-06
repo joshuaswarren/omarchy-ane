@@ -38,7 +38,7 @@ def main():
         ),
         (
             "descriptor-publish-without-dma-barrier",
-            "\tdma_wmb();",
+            "/* Publish only completely mapped aliases of owned coherent memory.\n\t * stage_domain checked their DMA-allocator reservations before staging.\n\t */\n\tdma_wmb();",
             "\t/* missing DMA barrier */;",
             "pos-h17-table",
         ),

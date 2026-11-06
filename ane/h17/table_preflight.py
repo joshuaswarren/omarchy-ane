@@ -35,6 +35,16 @@ DM = 0x10000380000
 ALIAS_BYTES = 0xF50000
 ATTEMPTS = Path("var/lib/omarchy-ane/h17-table-attempts")
 PENDING = Path("var/lib/omarchy-ane/h17-table.pending")
+KINDS = {
+    "table": ("h17-table-discovery.v1", ATTEMPTS, PENDING,
+              "h17-table-attempt.v1"),
+    "registration": (
+        "h17-channel-registration.v1",
+        Path("var/lib/omarchy-ane/h17-registration-attempts"),
+        Path("var/lib/omarchy-ane/h17-registration.pending"),
+        "h17-registration-attempt.v1",
+    ),
+}
 
 
 def digest(path):
@@ -136,7 +146,7 @@ def _rooted(root, path):
 
 def check(expected, *, root=Path("/"), module, vermagic, repo,
           boot_id=None, module_loaded=None, attempt_exists=None,
-          pending_ok=None, manifest_sha256=None):
+          pending_ok=None, manifest_sha256=None, kind="table"):
     """Validate a supplied test root or the live root. Never arms the rung."""
     out = {"identity": "REFUSED", "arms_rung": False, "checks": []}
 
@@ -146,10 +156,13 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
             raise ValueError(name)
 
     try:
+        if kind not in KINDS:
+            raise ValueError("unknown H17 rung kind")
         if not isinstance(expected, dict) or set(expected) != FIELDS:
             raise ValueError("manifest fields differ from schema")
-        if expected["schema"] != "h17-table-discovery.v1" or expected["kernel_release"] != RELEASE:
-            raise ValueError("manifest does not describe the table-discovery target")
+        schema, attempts_rel, pending_rel, marker_schema = KINDS[kind]
+        if expected["schema"] != schema or expected["kernel_release"] != RELEASE:
+            raise ValueError("manifest does not describe the selected H17 target")
         if expected["failed_boot"] != FAILED_BOOT:
             raise ValueError("manifest failed-boot identity differs from the recorded failure")
         for field in ("module_sha256", "firmware_sha256", "uki_sha256", "m1n1_sha256"):
@@ -232,7 +245,7 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
                 "source-checkout", {"head": head, "dirty": bool(dirty)})
 
         if attempt_exists is None:
-            attempts_fd = _trusted_dir(_rooted(root, ATTEMPTS))
+            attempts_fd = _trusted_dir(_rooted(root, attempts_rel))
             try:
                 try:
                     os.stat(boot_id, dir_fd=attempts_fd, follow_symlinks=False)
@@ -245,16 +258,16 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
             attempt = attempt_exists
         require(not attempt, "one-shot-unused", {"attempt": attempt})
         if pending_ok is None:
-            pending_path = _rooted(root, PENDING)
+            pending_path = _rooted(root, pending_rel)
             fd = _open_trusted_file(pending_path)
             with os.fdopen(fd, "r") as marker_file:
                 marker = marker_file.read()
             pending = marker == (
-                "schema=h17-table-attempt.v1\n"
+                f"schema={marker_schema}\n"
                 f"manifest_sha256={manifest_sha256}\n")
         else:
             pending = pending_ok
-        require(pending, "pending-marker-bound-to-manifest", str(PENDING))
+        require(pending, "pending-marker-bound-to-manifest", str(pending_rel))
         out.update(identity="MATCHED", reason="identity-and-device-tree-only-not-rung-authorization",
                    boot_id=boot_id)
     except (OSError, ValueError, TypeError, subprocess.CalledProcessError) as exc:
@@ -262,10 +275,14 @@ def check(expected, *, root=Path("/"), module, vermagic, repo,
     return out
 
 
-def claim_attempt(boot_id, manifest_path, manifest_sha256, expected, root=Path("/")):
+def claim_attempt(boot_id, manifest_path, manifest_sha256, expected,
+                  root=Path("/"), kind="table"):
     """Atomically bind the pending marker to this boot and make retries impossible."""
-    attempts_path = _rooted(root, ATTEMPTS)
-    pending_path = _rooted(root, PENDING)
+    if kind not in KINDS:
+        raise ValueError("unknown H17 rung kind")
+    _, attempts_rel, pending_rel, marker_schema = KINDS[kind]
+    attempts_path = _rooted(root, attempts_rel)
+    pending_path = _rooted(root, pending_rel)
     attempts_fd = _trusted_dir(attempts_path)
     marker_parent = None
     attempt_dir = None
@@ -297,7 +314,7 @@ def claim_attempt(boot_id, manifest_path, manifest_sha256, expected, root=Path("
                     marker_info.st_mode & 0o022):
                 raise ValueError("pending marker changed or is untrusted")
             marker = os.read(marker_fd, 4096).decode()
-            expected_marker = ("schema=h17-table-attempt.v1\n"
+            expected_marker = (f"schema={marker_schema}\n"
                                f"manifest_sha256={manifest_sha256}\n")
             if marker != expected_marker:
                 raise ValueError("pending marker no longer matches the manifest")
@@ -338,6 +355,7 @@ def main():
     parser.add_argument("manifest", type=Path)
     parser.add_argument("module", type=Path)
     parser.add_argument("--repo", type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument("--kind", choices=KINDS, default="table")
     parser.add_argument("--claim", action="store_true",
                         help="atomically consume the pending marker and persist this boot's one-shot attempt")
     args = parser.parse_args()
@@ -346,12 +364,13 @@ def main():
         vermagic = subprocess.check_output(["modinfo", "-F", "vermagic", str(args.module.resolve())],
                                            text=True, stderr=subprocess.STDOUT)
         result = check(expected, module=args.module, vermagic=vermagic, repo=args.repo,
-                       manifest_sha256=manifest_sha256)
+                       manifest_sha256=manifest_sha256, kind=args.kind)
         if args.claim and result["identity"] == "MATCHED":
             if os.geteuid() != 0:
                 raise ValueError("--claim requires root")
             result["attempt_dir"] = claim_attempt(
-                result["boot_id"], args.manifest, manifest_sha256, expected)
+                result["boot_id"], args.manifest, manifest_sha256, expected,
+                kind=args.kind)
             result["attempt_claimed"] = True
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         result = {"identity": "REFUSED", "arms_rung": False, "reason": str(exc)}

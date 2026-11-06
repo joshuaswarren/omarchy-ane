@@ -147,6 +147,11 @@ module_param(chanreg, bool, 0444);
 MODULE_PARM_DESC(chanreg,
 		 "t8140 stage=boot only: experimental initialization-descriptor/table-discovery rung. Requires the recorded initial scratch geometry; allocates coherent DM/IPC/HEAP, writes SCRATCH0/1/7, bounds-checks and copies the IPC table, then STOPS before SCRATCH3 registration. No doorbell, IRQ ack or task. Default 0 (off).");
 
+static bool register_channels;
+module_param(register_channels, bool, 0444);
+MODULE_PARM_DESC(register_channels,
+		 "t8140 stage=boot only: separate experimental channel-registration rung. Requires chanreg=1; validates every table buffer against owned logical IPC, initializes only source-traced type-0 control blocks, writes SCRATCH3 and waits for its clear ack, then stops. No doorbell, IRQ ack or task. Default 0 (off).");
+
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
 /* RVBAR fold: kext ANE_Init 27.0 writes base | (iova & mask); the base
@@ -1284,6 +1289,72 @@ static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
 	return 0;
 }
 
+static int ane_h17_register_channels(struct ane_h16 *ane,
+				     struct ane_h17_chanbuf *ipc)
+{
+	const struct ane_h16_soc *s = ane->soc;
+	struct ane_h17_channel_init_range init[ANE_H17_CHANNEL_COUNT];
+	u32 init_count = 0, i;
+	unsigned long deadline;
+	int ret;
+
+	if (!ane_h17_validate_channel_table(ane->chan_table,
+					    ipc->iova, ANE_H17_IPC_BYTES,
+					    init, &init_count)) {
+		dev_err(ane->dev,
+			"H17 REGISTER refused malformed, unowned, or overlapping channel table\n");
+		ane_h16_result(ane, 3, "REFUSED", "channel-table-envelope");
+		return -EINVAL;
+	}
+	for (i = 0; i < init_count; i++) {
+		u8 *block = (u8 *)ipc->cpu + init[i].offset;
+		u64 off;
+
+		for (off = 0; off < init[i].bytes;
+		     off += ANE_H17_CHANNEL_SLOT_BYTES) {
+			u8 *slot = block + off;
+
+			/* J700's type-0 channel constructor stores flag, then clears
+			 * the two 64-bit control words. The coherent IPC arena was
+			 * zeroed at allocation; leave the rest of each 0x40 block
+			 * unchanged, matching the traced stores.
+			 */
+			ane_h17_put_le(slot, 1, 8);
+			memset(slot + 8, 0, 16);
+		}
+		dev_info(ane->dev,
+			 "H17 CHANNEL_INIT index=%u offset=%#llx bytes=%#llx entries=%#llx\n",
+			 init[i].index, init[i].offset, init[i].bytes,
+			 init[i].bytes / ANE_H17_CHANNEL_SLOT_BYTES);
+	}
+	/* Coherent CPU writes must be visible before firmware sees registration. */
+	dma_wmb();
+	dev_info(ane->dev,
+		 "H17 CHANNEL_REGISTER request=%#x scratch3=%#x\n",
+		 ANE_H16_WAKE_ACK, s->scratch0 + 12);
+	ane_h16_wr32(ane, s->scratch0 + 12, ANE_H16_WAKE_ACK);
+	deadline = jiffies + msecs_to_jiffies(1000);
+	do {
+		ret = ane_h16_rd32(ane, s->scratch0 + 12);
+		if (!ret) {
+			dev_info(ane->dev,
+				 "H17 CHANNEL_REGISTER_ACK value=0\n");
+			dev_info(ane->dev,
+				 "H17 CHANNEL_REGISTER_STOP after ack; no doorbell, IRQ ack or task\n");
+			ane_h16_result(ane, 3, "PASS", "boot-channel-registration");
+			return 0;
+		}
+		if (time_after(jiffies, deadline))
+			break;
+		usleep_range(1000, 2000);
+	} while (1);
+	dev_err(ane->dev,
+		"H17 CHANNEL_REGISTER timeout scratch3=%#x; buffers retained\n",
+		ret);
+	ane_h16_result(ane, 3, "FAIL", "channel-registration-timeout");
+	return -ETIMEDOUT;
+}
+
 static int ane_h17_discover_table(struct ane_h16 *ane)
 {
 	const struct ane_h16_soc *s = ane->soc;
@@ -1375,8 +1446,9 @@ static int ane_h17_discover_table(struct ane_h16 *ane)
 	for (i = 0; i < 8; i++) {
 		const u8 *entry = ane->chan_table + i * 0x100;
 
-		/* Hex names cannot inject lines into the rung log. All fields
-		 * are observations only: NEVER dereference a channel buffer.
+		/* Hex names cannot inject lines into the rung log. Discovery mode
+		 * only observes these fields; the separately opted-in registration
+		 * path validates every buffer before touching type-0 blocks.
 		 */
 		dev_info(ane->dev,
 			 "H17 CHANNEL index=%u name_hex=%*phN type=0x%08x source=0x%08x slots=0x%08x buffer=0x%016llx\n",
@@ -1385,6 +1457,8 @@ static int ane_h17_discover_table(struct ane_h16 *ane)
 			 (u32)ane_h17_get_le(entry + 0x48, 4),
 			 ane_h17_get_le(entry + 0x50, 8));
 	}
+	if (register_channels)
+		return ane_h17_register_channels(ane, ipc);
 	dev_info(ane->dev,
 		 "H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task\n");
 	ane_h16_result(ane, 3, "PASS", "boot-table-discovery");
@@ -1936,6 +2010,11 @@ static int ane_h16_probe(struct platform_device *pdev)
 	}
 	if (chanreg && (!soc->h17_order || stage_idx != 3)) {
 		dev_err(&pdev->dev, "chanreg requires t8140 stage=boot\n");
+		return -EINVAL;
+	}
+	if (register_channels && (!chanreg || !soc->h17_order || stage_idx != 3)) {
+		dev_err(&pdev->dev,
+			"register_channels requires chanreg=1 and t8140 stage=boot\n");
 		return -EINVAL;
 	}
 	if (ane_h16_ps_count(soc) > ARRAY_SIZE(soc->ps_off))

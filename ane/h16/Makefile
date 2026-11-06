@@ -26,7 +26,7 @@ modules:
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds \
 	pos-one-pd pos-boot pos-boot-hello pos-four-ps pos-getsync-eacces \
-	pos-h17-boot pos-h17-irq pos-h17-scratch pos-h17-table
+	pos-h17-boot pos-h17-irq pos-h17-scratch pos-h17-table pos-h17-register
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-dart-map neg-short-unmap neg-no-domain neg-unknown-stage neg-no-confirm \
 	neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd \
@@ -35,7 +35,9 @@ NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-preload-sysram neg-table-timeout neg-table-overrun neg-table-foreign \
 	neg-table-padding neg-table-envelope neg-table-alloc neg-table-dma-range \
 	neg-table-heap-alloc neg-table-scope neg-table-reservation \
-	neg-table-alias-reservation neg-table-alias-collision neg-table-alias-map
+	neg-table-alias-reservation neg-table-alias-collision neg-table-alias-map \
+	neg-register-timeout neg-register-range neg-register-overlap neg-register-name \
+	neg-register-scope
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

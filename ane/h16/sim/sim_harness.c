@@ -228,6 +228,8 @@ static struct {
 	int polls, wake_after;	/* deliver the wake word on poll N */
 	bool want_hello;
 	bool table_enabled, table_pending, descriptor_valid;
+	bool register_enabled, register_pending, register_timeout;
+	int register_table_mode; /* 1=out-of-range, 2=overlap, 3=missing name */
 	int table_mode; /* 1=silent, 2=one-byte overrun, 3=foreign, 4=padding */
 	u64 table_address;
 } fw;
@@ -334,6 +336,9 @@ static void fw_write_hook(u64 pa, u32 val)
 	else if (pa == reg_pa(sim_soc.scratch0 + 28) &&
 		 val == ANE_H17_TABLE_REQUEST && fw.table_enabled)
 		fw_check_descriptor();
+	else if (pa == reg_pa(sim_soc.scratch0 + 12) &&
+		 val == ANE_H16_WAKE_ACK && fw.register_enabled)
+		fw.register_pending = true;
 	else if (off == sim_soc.mbox + 0x808)
 		fw_on_a2i_send((u8)val,
 			       (u64)reg_rd(sim_soc.mbox + 0x800) |
@@ -342,13 +347,49 @@ static void fw_write_hook(u64 pa, u32 val)
 
 static void fw_read_hook(u64 pa)
 {
+	if (pa == reg_pa(sim_soc.scratch0 + 12) && fw.register_pending &&
+	    !fw.register_timeout) {
+		reg_wr(sim_soc.scratch0 + 12, 0);
+		fw.register_pending = false;
+		return;
+	}
 	if (pa == reg_pa(sim_soc.scratch0 + 28) && fw.table_pending &&
 	    fw.table_mode != 1) {
 		struct ane_h16 *ane = platform_get_drvdata(&sim_pdev);
 		u8 *table = (u8 *)ane->chanbuf[1].cpu;
 		unsigned int i;
 
-		for (i = 0; i < 8; i++) {
+		if (fw.register_enabled) {
+			static const char * const names[] = {
+				"TERMINAL", "IO", "DEBUG", "BUF_H2T",
+				"BUF_T2H", "SHAREDMALLOC", "IO_T2H",
+				"DATA_CHAIN_H2T",
+			};
+			static const u32 types[] = { 2, 0, 0, 0, 1, 1, 1, 0 };
+			static const u32 slots[] = { 0x200, 0x10, 8, 0x40,
+						     0x40, 8, 0x40, 0x10 };
+			static const u32 offsets[] = { 0x800, 0x8800, 0x8c00,
+							 0x8e00, 0x9e00, 0xae00,
+							 0xb000, 0xc000 };
+
+			for (i = 0; i < 8; i++) {
+				u8 *entry = table + i * ANE_H17_CHANNEL_ENTRY_BYTES;
+				memcpy(entry, names[i], strlen(names[i]));
+				ane_h17_put_le(entry + 0x40, types[i], 4);
+				ane_h17_put_le(entry + 0x44, i, 4);
+				ane_h17_put_le(entry + 0x48, slots[i], 4);
+				ane_h17_put_le(entry + 0x50,
+						ANE_H17_IPC_IOVA + offsets[i], 8);
+			}
+			if (fw.register_table_mode == 1)
+				ane_h17_put_le(table + 6 * 0x100 + 0x50,
+					       ANE_H17_IPC_IOVA + 0xc040, 8);
+			else if (fw.register_table_mode == 2)
+				ane_h17_put_le(table + 2 * 0x100 + 0x50,
+					       ANE_H17_IPC_IOVA + 0x8900, 8);
+			else if (fw.register_table_mode == 3)
+				memcpy(table + 5 * 0x100, "OTHER", 5);
+		} else for (i = 0; i < 8; i++) {
 			/* Non-pointer test data: even foreign buffer fields must
 			 * only be logged, never translated or dereferenced.
 			 */
@@ -607,6 +648,7 @@ static void setup_common(void)
 	irq_read = false;
 	scratch_read = false;
 	chanreg = false;
+	register_channels = false;
 	stage = "status";
 	confirm_read = true;
 	read_scratch = false;
@@ -1560,6 +1602,88 @@ static void sc_h17_table(int mode)
 	}
 }
 
+static void sc_h17_register(int mode)
+{
+	struct ane_h16 *ane;
+	int ret, expected_error = 0;
+	int table_mode = 0;
+	bool pass = mode == 0;
+	unsigned int n;
+
+	setup_common();
+	sim_soc = ane_t8140_soc;
+	sim_soc.fw = &sim_fw;
+	sim_match_data = &sim_soc;
+	fw.table_enabled = true;
+	fw.register_enabled = true;
+	fw.register_timeout = mode == 1;
+	if (mode >= 2) {
+		table_mode = mode - 1;
+		fw.register_table_mode = table_mode;
+		expected_error = -EINVAL;
+	} else if (mode == 1) {
+		expected_error = -ETIMEDOUT;
+	}
+	setup_adt_node();
+	pin_to_fixture();
+	sim_regions[1].backing[0x290 / 4] = 0xff;
+	optin = "t8140";
+	stage = "boot";
+	chanreg = true;
+	register_channels = true;
+	ret = run_probe();
+	ane = platform_get_drvdata(&sim_pdev);
+	chk(ret == 0 && ane->boot_error == expected_error,
+	    "registration result retained while binding and firmware ownership persist");
+	if (pass)
+		chk(sim_log_count("verdict=PASS reason=boot-channel-registration") == 1 &&
+		    sim_log_count("H17 CHANNEL_REGISTER_ACK value=0") == 1,
+		    "registered stage passes only after firmware clears SCRATCH3");
+	else if (mode == 1)
+		chk(sim_log_count("verdict=FAIL reason=channel-registration-timeout") == 1 &&
+		    sim_log_count("H17 CHANNEL_REGISTER_ACK") == 0,
+		    "timeout is not mistaken for registration acknowledgement");
+	else
+		chk(sim_log_count("verdict=REFUSED reason=channel-table-envelope") == 1 &&
+		    sim_log_count("H17 CHANNEL_REGISTER request=") == 0,
+		    "malformed table is refused before any registration write");
+	chk(sim_dma_outstanding == 4 && sim_dma_frees == 0 &&
+	    sim_module_refs == 1 && sim_rpm_puts == 0,
+	    "post-release registration outcomes retain mappings, buffers, and power");
+	chk(sim_dma_rmbs == 1 && sim_log_count("H17 TABLE_COPY ") == 1,
+	    "registration uses only the bounded copied IPC table");
+	chk(ev_access_count(true, reg_pa(sim_soc.scratch0 + 12)) ==
+	    (pass || mode == 1 ? 2 : 1),
+	    "SCRATCH3 has only boot clear and, after validation, one registration write");
+	chk(ev_count(true, reg_pa(sim_soc.scratch0 + 12), ANE_H16_WAKE_ACK) ==
+	    (pass || mode == 1 ? 1 : 0),
+	    "registration request uses the traced reply word exactly once");
+	chk(ev_access_count(true, reg_pa(0x1884000)) == 0 &&
+	    ev_access_count(false, reg_pa(sim_soc.irq_status)) == 0 &&
+	    ev_access_count(false, reg_pa(sim_soc.irq_ack)) == 0 &&
+	    ev_access_count(true, reg_pa(sim_soc.irq_ack)) == 0,
+	    "registration stage never rings doorbell or touches IRQ status/ack");
+	chk(sim_dma_wmbs == (pass || mode == 1 ? 2 : 1),
+	    "descriptor and channel-state DMA barriers occur only after validation");
+	if (pass || mode == 1) {
+		static const u32 offsets[] = { 0x8800, 0x8c00, 0x8e00, 0xc000 };
+		static const u32 counts[] = { 0x10, 8, 0x40, 0x10 };
+		const u8 *ipc = ane->chanbuf[1].cpu;
+		for (n = 0; n < ARRAY_SIZE(offsets); n++) {
+			u32 slot;
+			for (slot = 0; slot < counts[n]; slot++) {
+				const u8 *p = ipc + offsets[n] + slot * 0x40;
+				if (ane_h17_get_le(p, 8) != 1 ||
+				    ane_h17_get_le(p + 8, 8) ||
+				    ane_h17_get_le(p + 16, 8))
+					chk(false, "only traced type-0 control-block fields initialized");
+			}
+		}
+		chk(true, "type-0 control blocks initialized within owned IPC");
+	}
+	chk(!sim_events_overflow, "registration bus event recorder did not overflow");
+}
+
 static void sc_neg_table_scope(void)
 {
 	setup_common();
@@ -1567,6 +1691,15 @@ static void sc_neg_table_scope(void)
 	stage = "boot"; /* t8132, wrong target */
 	chk(run_probe() == -EINVAL && sim_n_events == 0 && sim_ioremaps == 0,
 	    "chanreg on non-H17 target refuses before hardware access");
+}
+
+static void sc_neg_register_scope(void)
+{
+	setup_common();
+	stage = "boot";
+	register_channels = true;
+	chk(run_probe() == -EINVAL && sim_n_events == 0 && sim_ioremaps == 0,
+	    "registration opt-in without chanreg refuses before hardware access");
 }
 
 static void sc_neg_table_reservation(bool channels_only)
@@ -1701,6 +1834,18 @@ int main(int argc, char **argv)
 		sc_pos_h17_scratch();
 	else if (!strcmp(sc, "pos-h17-table"))
 		sc_h17_table(0);
+	else if (!strcmp(sc, "pos-h17-register"))
+		sc_h17_register(0);
+	else if (!strcmp(sc, "neg-register-timeout"))
+		sc_h17_register(1);
+	else if (!strcmp(sc, "neg-register-range"))
+		sc_h17_register(2);
+	else if (!strcmp(sc, "neg-register-overlap"))
+		sc_h17_register(3);
+	else if (!strcmp(sc, "neg-register-name"))
+		sc_h17_register(4);
+	else if (!strcmp(sc, "neg-register-scope"))
+		sc_neg_register_scope();
 	else if (!strcmp(sc, "neg-table-timeout"))
 		sc_h17_table(1);
 	else if (!strcmp(sc, "neg-table-overrun"))

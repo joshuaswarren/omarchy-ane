@@ -24,13 +24,16 @@ DMA-backed alias mappings, firmware wake, and owned IPC table copy. It does
 not establish that channel buffers are initialized, that registration is
 accepted, or that the firmware command path works.
 
-## Next rung is not implemented
+## Separate registration rung: implemented offline, not reviewed or qualified
 
-There is no separate registration runner or registration verdict in
-`ane/h17/`. The existing `chanreg=1` parameter names the table-discovery rung;
-its description explicitly says it stops before registration. Reusing that
-parameter with additional behavior would silently widen the reviewed stage
-and is not appropriate.
+The source now keeps `chanreg=1` as table discovery and adds a second
+default-off `register_channels=1` switch, which requires `chanreg=1` and the
+T8140 boot stage. After copying the bounded table, the new path validates all
+eight channel ranges against logical owned IPC, initializes only the traced
+type-0 ranges, publishes SCRATCH3, and stops after its clear acknowledgement.
+It adds a separate one-shot runner, manifest/marker namespace, and strict log
+judge. This is an offline implementation only; it has not been independently
+reviewed, built as a device module, or run on hardware.
 
 The firmware trace receipt
 `receipts/2026-11-04-j700-h17-firmware-load-path/README.md`, sections 14-16,
@@ -73,10 +76,11 @@ hardware runner.
 The same bounded geometry check is implemented in the pure helper
 `ane/h17/chanreg.h:ane_h17_validate_channel_table` and exercised by
 `ane/h17/sim/chanreg_layout_test.c` against the retained table-log fixture.
-Both models reject out-of-range type-1 buffers, overlapping extents,
-duplicate/missing required names, and malformed records; they report the
-four type-0 ranges to be initialized. This still does not create a kernel
-registration path.
+The kernel registration path now calls that helper. The offline C simulation
+models a successful SCRATCH3 clear, a timeout, malformed ranges, overlap, and
+missing names; the log judge and one-shot preflight have separate tests. These
+simulations prove the modeled code path only, not firmware acceptance or safe
+device behavior.
 
 ## Remaining offline gates before proposing registration hardware
 
@@ -85,17 +89,16 @@ registration path.
    count and that no type has a larger structure or alignment requirement.
    Unknown fields such as channel-type-specific protocol behavior remain
    outside the model.
-2. Add mutation tests for malformed table capture and registration outcomes;
-   specify retention on every failure after firmware CPU release. No unmap/free
-   rollback is safe without separate evidence.
-3. Implement a new explicit default-off stage and runner. Preserve the
-   already-tested table-discovery-only mode. Stop immediately after the
-   registration acknowledgement; do not add a doorbell, task, IRQ ack, or
-   numerical execution to that rung.
-4. Have the new stage independently reviewed, build the exact pinned module,
-   and add a one-shot preflight/attempt marker and verdict that fail closed on
-   all identities and observed outputs. Only then present the concrete rung
-   and its risks for separate authorization.
+2. Review the mutation/simulation cases and verify retention on every failure
+   after firmware CPU release. No unmap/free rollback is safe without separate
+   evidence.
+3. Independently review the new runner, preflight marker namespace, verdict,
+   and exact module build; ensure the manifest and marker are provisioned for
+   the intended fresh boot.
+4. Only after those reviews, present the concrete rung and risks for separate
+   authorization. Do not treat host simulations or source review as device
+   qualification, and do not add a doorbell, task, IRQ ack, or numerical
+   execution to this rung.
 
 These are design gates, not evidence that the registration operation is
 safe or that any next hardware rung is authorized. A future hardware attempt

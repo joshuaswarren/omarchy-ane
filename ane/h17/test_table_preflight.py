@@ -98,6 +98,12 @@ class TablePreflightTests(unittest.TestCase):
         self.assertEqual(result["identity"], "MATCHED")
         self.assertFalse(result["arms_rung"])
 
+    def test_registration_kind_has_separate_schema_and_marker_paths(self):
+        expected = {"schema": "h17-channel-registration.v1"}
+        self.assertEqual(self.run_check(expected=expected, kind="registration")["identity"],
+                         "MATCHED")
+        self.assertEqual(self.run_check(expected=expected)["identity"], "REFUSED")
+
     def test_refuses_wrong_overlay_addresses_and_extent(self):
         cases = (
             ("proc/device-tree/reserved-memory/channel-alias/iommu-addresses",
@@ -199,6 +205,33 @@ class TablePreflightTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
                                         self.expected, root=self.root)
+
+    def test_registration_claim_uses_separate_attempt_namespace(self):
+        expected = dict(self.expected, schema="h17-channel-registration.v1")
+        base = self.root / "var/lib/omarchy-ane"
+        attempts = base / "h17-registration-attempts"
+        attempts.mkdir(parents=True)
+        marker = base / "h17-registration.pending"
+        manifest = base / "h17-registration.manifest.json"
+        raw = json.dumps(expected, sort_keys=True).encode()
+        manifest.write_bytes(raw)
+        manifest_hash = hashlib.sha256(raw).hexdigest()
+        marker.write_text("schema=h17-registration-attempt.v1\n"
+                          f"manifest_sha256={manifest_hash}\n")
+        real_fstat = os.fstat
+
+        def trusted_fstat(fd):
+            current = real_fstat(fd)
+            return SimpleNamespace(st_mode=current.st_mode & ~0o022, st_uid=0,
+                                   st_dev=current.st_dev, st_ino=current.st_ino)
+
+        with patch.object(preflight.os, "fstat", side_effect=trusted_fstat):
+            path = preflight.claim_attempt(self.boot_id, manifest, manifest_hash,
+                                           expected, root=self.root,
+                                           kind="registration")
+        self.assertTrue(path.endswith("h17-registration-attempts/" + self.boot_id))
+        self.assertTrue((Path(path) / "pending.claimed").is_file())
+        self.assertFalse(marker.exists())
 
     def test_attempt_claim_refuses_marker_replacement_content(self):
         base = self.root / "var/lib/omarchy-ane"
