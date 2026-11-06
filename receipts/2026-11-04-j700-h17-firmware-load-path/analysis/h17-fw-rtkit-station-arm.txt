@@ -922,6 +922,28 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 51 — this wrapper allocation path does not clear its returned bytes
+
+The `0x57xx` builder obtains its 0xb0-byte wrapper through `0x8a2d4`, which
+tail-branches to `0x97710`. That path reaches allocator `0x92488`; the latter
+rounds the requested size, finds/splits a free block, and returns the payload
+pointer at block `+8`. Its allocation/split path updates allocator headers
+but contains no clear of the returned payload. The wrapper setup at `0x5fa8`
+then writes its vtable and selected fields (`+0x80`, `+0xa0`, `+0xa8`), not
+`+0x60/+0x68`. The separate `0x60c8` loop consumes `+0x60/+0x68` as callback
+and link arguments without initializing them.
+
+This means the earlier “no initializer found” result cannot be safely
+translated into “link is null”: this allocator path does not itself promise
+zeroed storage, and reuse of a block could preserve prior payload. It also
+does not prove the field is stale at runtime; a prior owner or an indirect
+initializer may still set it. Establishing the field's effective value
+requires tracing all writes to this wrapper before `0x60c8`, including any
+indirect setup, or a separately justified runtime observation. Thus neither
+the generic queue's link presence nor its route can be inferred. Static
+firmware analysis only; no hardware access or submission; `CSNE_CMD_PING`
+remains unsent.
+
 ## Addendum 49 — generic queue factory receives its link from shared state
 
 The `0x298fc` caller is `0xdbcc`. It allocates a 0x20-byte descriptor-sized
@@ -934,15 +956,14 @@ thus the optional link at `[queue+8]` comes from the shared object field
 `[x21+0x68]`, not the per-record descriptor. The records select and
 parameterize queues, while the shared fields provide callback/link values.
 
-This does not yet identify the descriptor table's owner or show that this
-queue is the CRPC fallback queue. The previously followed CRPC-adjacent
-object setup at `0x5fa8`/`0x69d4` has distinct call sites and has not been
-connected to `0xdbcc`'s `x21` or table. Therefore it is not valid to carry
-the shared link field over to CRPC or to infer its route. Next
-trace the callers that populate `[x21+0x40]` and `[x21+0x60/+0x68]` for the
-`0xdbcc` path, and establish whether that object/table is owned by the CRPC
-construction path. Static disassembly only; no hardware access or task
-submission; `CSNE_CMD_PING` remains unsent.
+This did not by itself identify the descriptor table's owner or show that
+the queue is CRPC's fallback queue. Addendum 50 subsequently connects this
+`0xdbcc` instance to the wrapper initialized at `0x5fa8`; the separate
+`0x69d4` setup remains unconnected. Addendum 51 establishes that the allocator
+does not clear returned payload bytes, but does not establish the effective
+value of `[wrapper+0x68]`. The CRPC identity and route therefore remain
+unproven. Static disassembly only; no hardware access or task submission;
+`CSNE_CMD_PING` remains unsent.
 
 ## Addendum 50 — queue factory belongs to the `0x5fa8` wrapper, link field still unassigned
 
