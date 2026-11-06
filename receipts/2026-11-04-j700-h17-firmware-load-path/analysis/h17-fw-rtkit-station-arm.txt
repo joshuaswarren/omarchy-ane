@@ -1219,6 +1219,26 @@ unidentified. The DATA_CHAIN_H2T-to-host-channel mapping, CRPC reply route,
 and IRQ ownership remain unproven. No hardware access or submission; PING
 remains unsent.
 
+## Addendum 90 — CRPC owner registers a fallback callback with `SHAREDMALLOC`
+
+The zero branch in `0x25dac` is more specific than just creating an unrelated
+queue. When the supplied `SHAREDMALLOC` object's `[+8]` is zero, it calls
+`0x6258(service, 0x25da8, owner[+0x48])` (`0x25e80..0x25e98`). The callee
+stores those last two arguments at service `[+0x40]` and `[+0x48]`. Because
+service `[+8]` remains zero, it takes its local setup path through `0xdfbc`
+and `0xdf08`, then stores that helper's result at service `[+0x20]`. If
+service `[+8]` is nonzero, `0x6258` instead branches to `0x6898` with a
+callback and the service object.
+
+This proves that the CRPC owner associates its queue and callback with the
+`SHAREDMALLOC` service in the default-zero setup. It does **not** set the
+service `[+0x28]` field that `0x265f4` would consume on its nonzero `[+8]`
+branch, and does not identify who later changes `[+8]` or initializes
+`[+0x28]`. The linked branch therefore remains conditional, while the
+constructor's initial path is the local callback-registration path. No
+runtime route, IRQ ownership, or device behavior is established. No hardware
+access or submission; PING remains unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
