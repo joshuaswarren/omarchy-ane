@@ -922,44 +922,49 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
-## Addendum 65 — linked-send route is a packed endpoint-table/channel selector
+## Addendum 65 — linked-send route is a packed channel-index/endpoint selector
 
 The route consumed by `0x9ad28` is not a single opaque endpoint ID. The caller
 loads the 32-bit word from `[link+0x10]` into w0. `0x9c930` extracts its upper
-16 bits, compares that value with the endpoint-table count at
-`[0xcb000+0x5c0]`, and `0x9ad28` indexes the endpoint-object pointer array at
+16 bits, compares that value with the runtime channel-table count at
+`[0xcb000+0x5c0]`, and `0x9ad28` indexes the channel-object pointer array at
 table `+8` with that upper-half value. It then passes the lower 16 bits to
-`0x9a944`, which validates/looks up that channel within the selected endpoint
-object and returns the corresponding connection object. The send path then
-dispatches through that connection's transport method.
+`0x9a944`, which resolves an endpoint ID in the selected channel object's
+endpoint map and returns the corresponding connection object. The send path
+then dispatches through that connection's transport method.
 
-Thus `[link+0x10]` has a statically demonstrated shape:
-`(endpoint_table_index << 16) | endpoint_local_channel_id`. This is not proof
-that either half equals the host's cached `DATA_CHAIN_H2T` index 7; that host
-field is a separate selector-to-channel mapping, and the runtime link word
-has not been observed. The link writer/value and the relation between this
-firmware endpoint table and the saved host registration remain open. Static
-firmware analysis only; no hardware access or submission; `CSNE_CMD_PING`
-remains unsent.
+Thus `[link+0x10]` has the shape already noted in Addendum 18:
+`(runtime_channel_index << 16) | endpoint_id`. Correction: Addendum 65's
+earlier label `endpoint_table_index/channel_id` was reversed/misleading; the
+upper half indexes the runtime channel-object table, and the lower half is the
+endpoint ID resolved within that object. The format is not proof that the
+runtime channel index equals host `DATA_CHAIN_H2T` index 7. The runtime link
+word and identity mapping between the firmware table and saved host table
+remain unobserved. Static firmware analysis only; no hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
 
 ## Addendum 66 — endpoint-table initializer consumes fixed 24-byte records
 
-The setup loop at `0x96934` walks records beginning at VA `0xca000+0xbc0`,
-with a 0x18-byte stride. For each record, it tests the 32-bit field at `+0x0c`;
-records with that field set contribute an endpoint object. The initializer
-uses the field at `+8` as the endpoint-table slot/index (tracking the maximum
-to size the pointer array), stores the constructed object in the table's
-pointer array, and passes the record's `+0x0c` value into its channel/setup
-builder. The 64-bit field at `+0x18` is passed into the object's name/property
-setup. Visible strings in this static region include `management`, `crashlog`,
-`syslog`, and `user1`.
+The setup loop at `0x96934` walks 0x18-byte steps beginning at VA
+`0xca000+0xbc0`. Its cursor points at the 32-bit per-channel field
+(`w1=[cursor]`); the adjacent channel-table index is `[cursor-4]`, used to
+size and index the runtime channel-object pointer array. A name/property
+pointer is loaded at
+`[cursor+0x0c]`, i.e. the first qword of the following 0x18-byte step, so this
+configuration is a packed/overlapping sequence rather than a conventional
+record whose name is at its own `+0x18`. The visible data associates four
+channel-table indices (0, 1, 2, 32) and per-channel field value 8 with the
+strings `management`, `crashlog`, `syslog`, and `user1`; the following zero
+per-channel field terminates the scan. This does not settle whether 8 is a
+count/capacity or another local channel parameter; 9a944's lower-half lookup
+is explicitly an endpoint ID lookup, but the parameter's semantic identity
+has not been verified against the decoded request path.
 
-The code therefore confirms that the endpoint table is built from a firmware
-configuration-record array, rather than being the host's channel-registration
-array. It gives no direct identity match to host `DATA_CHAIN_H2T` index 7,
-CRPC, or either `ChManTarget`/`ChManHost` wrapper. The strings alone do not
-identify the endpoint/channel represented by the CRPC route, and no runtime
-table contents or `[link+0x10]` value have been observed. Static analysis of
+The code therefore confirms that the firmware runtime channel-object table is
+built from its configuration array, rather than being the host's channel-
+registration array. The strings alone do not identify a host channel or the
+endpoint represented by the CRPC route; no runtime table contents or
+`[link+0x10]` value have been observed. Static analysis of
 firmware SHA-256
 `32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c` only;
 no hardware access or submission; `CSNE_CMD_PING` remains unsent.
