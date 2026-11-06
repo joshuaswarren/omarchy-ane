@@ -767,3 +767,20 @@ in the CRPC constructor body, but does not prove the returned object starts
 unlinked: the allocator or an indirect manager callback may initialize it.
 The queue link writer and route source remain unresolved. Static firmware
 analysis only; no hardware accessed and no command submitted.
+
+## Addendum 30 — allocator transport link belongs to the shared manager
+
+The linked-vs-local branch inside the allocator helper `0x265f4` is not a
+write or inspection of the CRPC result's link field. At entry, x19 is set to
+the shared manager argument x0. At `0x26648` the helper loads `[manager+0x40]`
+and tests `[that_object+8]`; if non-null, it sends the allocator request via
+`0x6334`. Otherwise it takes the local callback/ring path through `0x6350`
+and `0x6508`. The buffer returned through the helper's out-parameter is held
+separately in x23 and returned from `0x26440` after pointer adjustment.
+
+This proves the allocator itself can use a linked transport, but its tested
+link is owned by the shared manager's `+0x40` object, not the CRPC buffer
+stored by the caller at parent `+0x1d0/+0x1d8`. It therefore supplies no
+evidence that the CRPC buffer's `[+8]` is initialized or that its `[+8]`
+points to the allocator transport. The CRPC link writer remains unresolved.
+Static disassembly only; no hardware access or command submission.
