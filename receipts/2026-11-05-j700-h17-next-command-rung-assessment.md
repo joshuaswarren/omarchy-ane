@@ -314,3 +314,22 @@ at `+0x50`. The necessary mapping among those fields, the outgoing channel
 message type, and firmware CSNE ID `0x12` is still not established. This is a
 useful boundary finding, not a complete request/reply contract. No hardware
 access was performed.
+
+### Firmware-manager command constructors inspected
+
+Symbol search and focused disassembly are captured in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-host-command-constructor-search.txt`,
+`analysis/h17-send-setup.txt`, `analysis/h17-send-premap.txt`, and
+`analysis/h17-send-inference.txt`. The named manager exposes setup, premap, and
+inference send methods; no manager symbol containing `Ping` was found (symbol
+search only, not proof no generic caller can construct one).
+
+`sendSetupCmd` writes IDs `0x0400`–`0x0403` at command offset `+4`, with
+command-specific 12- or 16-byte allocation and payload fields. `sendPremapCmd`
+allocates a larger command object and writes `0x020d` at `+4`, preserving the
+known disagreement with the J700 firmware table name for that number.
+`sendInferenceCmd` constructs `0x0404`. These examples confirm that `+4` is an
+inner command code in the manager's command structure, distinct from the
+selector at `+0x18` used to choose a transport channel. They do not identify a
+valid PING payload schema, safe state, or reply callback. Keep `PING` unsent
+until those are independently resolved.
