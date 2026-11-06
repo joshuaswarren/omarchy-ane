@@ -1393,6 +1393,29 @@ contents of the selected CRPC context entry, the linked registration branch,
 host route mapping, IRQ ownership, and PING schema remain unresolved. Static
 analysis only; no reboot, device access, or submission.
 
+## Addendum 95 — CRPC fallback selects from the service's context, not a route number
+
+The `0x6258 -> 0xdf08` arguments show how to locate the runtime queue owner:
+the selector is `[service+0x20]`, while the context is `[service+0x10]`.
+`0xdf08` interprets that context's `[+0x70]` as entry count and chooses
+`context[+0x40 + selector*0x60]`; it returns the queue pointer already stored
+at selected-entry `[+0x30]`. For the CRPC service, `[+0x20]` is copied from
+the service-construction argument at `0x25dac` (initially `x2`), and
+`[+0x10]` from its `x1` argument. Static code does not make that selector an
+endpoint ID: it is only an index into this context's entry array.
+
+The global context at `[0x1c8000+0x678]` is created by `0x25b84`; that path
+stores its `x3` count at context `+0x40`, allocates an eight-entry queue-like
+pool at `+0x50`, and publishes the context globally at `0x25c24`. The CRPC
+constructor separately calls `0x25b30` with the global object at
+`[0x1c8000+0x670]` and saves the returned value at service `+0x50`;
+`0x25b30` calls `0x25880` on that global object. This narrows the object
+graph, but does not establish
+that the CRPC service's `+0x10` is the global context, which entry is selected,
+or what link is present at the selected queue's `+8`. No route-to-host-channel
+correlation, IRQ owner, or PING schema follows. Firmware-only analysis; no
+hardware operation or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
