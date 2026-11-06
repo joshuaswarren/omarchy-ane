@@ -922,6 +922,27 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 47 — `0x9a3ac` writes decoded memory descriptors, not a queue route
+
+The wider store scan found the pair of writes at `0x9a3dc` and `0x9a418`.
+The method decodes x1's tagged descriptor: it extracts the low 44-bit
+address-like value into `[x0+8]`, derives a size/attribute value from bits
+44 onward into `[x0+0x10]`, and uses descriptor tag bits to select alternate
+handling paths. The nearby routine at `0x9a0e8` operates on an object with a
+resource descriptor at `+0x20`, validates/maps that resource, and later
+clears that routine's `[object+8]` and `[object+0x10]` fields. No direct call
+edge connects these routines, so their shared object identity is not
+established here.
+
+This is a memory/resource mapping object lifecycle, not evidence that the
+CRPC queue's `[+8]` link is initialized or that an RTKit route is written.
+There are no direct BL references to `0x9a3ac`; it is reached indirectly,
+which also means its callers are not yet identified. The descriptor-path
+candidate is therefore excluded by field semantics and surrounding usage,
+not by proving all callers. The CRPC link writer and route remain unresolved.
+Static firmware disassembly only; no hardware access or submission, and
+`CSNE_CMD_PING` remains unsent.
+
 ## Addendum 46 — paired `+8` store at `0x55fc` is an array descriptor
 
 The broad store scan also includes `stp x25,x0,[x23,#8]` at `0x55fc`. In
