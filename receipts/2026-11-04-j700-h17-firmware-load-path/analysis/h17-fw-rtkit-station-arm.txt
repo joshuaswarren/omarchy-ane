@@ -922,34 +922,20 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
-## Addendum 41 — CRPC constructor consumes `[queue+8]` as a mapped resource object
+## Addendum 41 — RETRACTED: `0x185cc` does not consume `[queue+8]`
 
-Correction/refinement to Addendum 36: the repeated `0x185cc` call sequence
-does relate directly to the CRPC buffer's `+8` field. At `0x35370` the
-constructor allocates a 0x38-byte list/resource object with `0x183f4`; its
-first `0x185cc` call receives that new object in x0 and the complete CRPC
-allocation (`[parent+0x1d8]`) in x1. For each subsequent subregion, the caller
-executes `ldp x8,x0,[parent+0x1d8]`: x8 becomes the allocation base and x0
-becomes `[allocation+8]`; it passes x0 as the list owner and x8+offset as the
-subregion. This repeats for offsets `0x480` through `0x3f00`.
+The interpretation in this addendum was caused by misreading the addressing
+mode of `ldp x8,x0,[x19,#0x1d8]`. It uses the parent object (`x19`) as its
+base, so it loads the adjacent parent fields `+0x1d8` (the CRPC allocation)
+and `+0x1e0` (the separate 0x38-byte list/resource object). It does not
+dereference the CRPC allocation and does not load `[queue+8]`. The claimed
+link/resource tie and inferred non-null link are withdrawn; see Addendum 42.
 
-`0x185cc` dereferences owner `+0x18` for a free-list node, stores the supplied
-subregion at `[node+8]`, and links the node into the owner's list/count
-fields. Therefore the CRPC constructor treats `[queue+8]` as an already
-available resource/list object and registers its subregions there. That is a
-strong structural tie between the queue's `+8` pointer and the resource/link
-object consumed by linked send (`0x62e0`/`0x68c8`); it is not a store that
-creates or populates that pointer. The constructor has no null guard around
-these later calls, so its normal completion path expects a valid object at
-`[queue+8]`.
-
-This raises the static evidence for expected linked-mode setup, but does not
-identify who initializes the pointer, prove its runtime value on this host,
-or resolve the route at `[link+0x10]` / mapping to host channel 7. The earlier
-Addendum 36 statement that the helper's stores were unrelated to the CRPC
-`+8` object should be read with this correction. Firmware disassembly only;
-no hardware access or command submission, and `CSNE_CMD_PING` remains
-unsent.
+The earlier Addendum 36 classification is consistent with the corrected
+dataflow: the `0x185cc` calls insert the whole CRPC allocation and its
+subregions into the separate list object at parent `+0x1e0`. They neither
+write nor consume the CRPC queue's `+8` link. No conclusion about whether the
+queue uses linked or local mode follows from these calls.
 
 ## Addendum 40 — backing path maps storage but does not prove it is zeroed
 
@@ -986,3 +972,19 @@ body, but does not establish the bytes supplied by the backing allocator or
 an external/shared-memory producer. The CRPC result's runtime `+8` value and
 its writer remain open. Static firmware disassembly only; no hardware access
 or command submission, and `CSNE_CMD_PING` remains unsent.
+
+## Addendum 42 — corrected CRPC subregion-list dataflow
+
+At `0x35370`–`0x35384`, the constructor allocates a separate 0x38-byte list
+object with `0x183f4`, stores it at parent `+0x1e0`, then calls `0x185cc`
+with that list object in x0 and the CRPC allocation at parent `+0x1d8` in x1.
+For later subregions, `ldp x8,x0,[x19,#0x1d8]` loads x8 from parent `+0x1d8`
+(the CRPC base) and x0 from parent `+0x1e0` (the list object); x1 is then
+CRPC base plus the selected offset. `0x185cc` inserts those addresses into
+the list object. No instruction in this sequence reads `[CRPC+8]`.
+
+This confirms the Addendum 41 retraction and supersedes its incorrect
+link-object inference. The `0x185cc` helper remains subregion-list insertion;
+the CRPC `[queue+8]` writer, runtime linked-vs-local selection, and
+`[link+0x10]` route are still unresolved. Static disassembly only; no
+hardware access or command submission, and `CSNE_CMD_PING` remains unsent.
