@@ -215,3 +215,38 @@ the previously reported strings/register list. Their encoded-pointer/tag
 format is still unresolved; no channel identity inference is made here.
 
 Offline only. No hardware accessed.
+
+## Addendum 5 — station message-block descriptors (properly mapped)
+
+Using the corrected __DATA mapping from Addendum 4, the four active rows
+consumed by the loop at 0x96a28 are at VA 0xcabc0, stride 0x18. `x24` starts
+at 0xcabcc; each iteration loads the block count from `[x24]`, the block key
+from `[x24-4]`, and the encoded pointer/name from `[x24+0xc]`, then advances
+by 0x18. The rows decode as:
+
+  key 0, count 8, name VA 0x9d3b3 = "management"
+  key 1, count 8, name VA 0x9d3be = "crashlog"
+  key 2, count 8, name VA 0x9d3c7 = "syslog"
+  key 0x20, count 8, name VA 0x9d3ce = "user1"
+
+The name pointers are encoded in the image as `0x003000000009d3b3`,
+`...d3be`, `...d3c7`, `0x004000000009d3ce`; the loader's runtime decoding is
+not reconstructed here. The zero count at the next row terminates the loop.
+This is strong evidence for four named message blocks in the station being
+constructed, with keys 0, 1, 2, and 0x20. It does NOT identify the station's
+global index or prove that any block is the CSNE H2T/T2H channel.
+
+The per-block setup call is `0x925b0(block+0x28, count, 8)`. It computes and
+stores the count+1, stride 8, allocates a `(count+1)*8` byte area, zeroes
+entries, and initializes the block's pointer fields. This confirms that the
+four names/keys are block metadata, not four station names or four separate
+station objects. The station object is inserted into the global station
+pointer array once, after the block loop.
+
+The `0x96458` selector table remains as listed in Addendum 4. The station
+builder at 0x9692c is outside that function (the dispatcher returns at
+0x96928). Direct branch/call references to 0x9692c/0x96934 were not found in
+the decoded text; its entry/caller and the value assigned to station+0x28
+remain unresolved. Do not infer a station ID from the block keys.
+
+Static image/disassembly only. No hardware accessed.
