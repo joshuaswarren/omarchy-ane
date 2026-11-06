@@ -338,6 +338,29 @@ found; do not use that name as a proven class attribution.
 
 Static image/disassembly only; no hardware accessed.
 
+## Addendum 10 — creator path for the 0x35128 queue input
+
+The initializer's x4 input is no longer an unidentified factory argument.
+The path is:
+
+  0x43f4: create/get the object at global +0x668
+  0x440c: `0x1734c(global_service_object, 1)` -> slot 1 at `[base+0x1f8+8]`
+  0x441c: `0x1734c(global_service_object, 3)` -> slot 3 at `[base+0x1f8+24]`
+  0x4450: call 0x32438 with x4=slot 1 and x5=slot 3
+  0x32438: argument shuffle passes slot 3 as x6 to 0x2a678
+  0x2a678: saves x6 in x24; at 0x2abf0 calls 0x35c20 with x4=x24
+  0x35c20: tail-branches to 0x35128, whose first body instructions save x4 as x20
+
+Thus `[x20+0x28]` in the initializer is specifically the `+0x28` field of
+the service object's slot-3 result, not a station-slot value supplied by the
+Cmbx registration. The lookup helper at 0x1734c bounds-checks selector <= 3
+and returns the corresponding pointer from the four-entry array at +0x1f8.
+The name/type and construction history of that slot-3 service object are not
+yet established; in particular, this does not identify it as CSNE H2T/T2H or
+map it to a Linux channel record. It does, however, close the previously
+unknown immediate creator/input chain for the queue consumer. Static image
+and disassembly evidence only; no hardware accessed.
+
 ## Addendum 8 — queue consumer fields in the 0x35128 initializer
 
 The initializer beginning at 0x35128 (body at 0x3512c) receives x4 in x20 and
