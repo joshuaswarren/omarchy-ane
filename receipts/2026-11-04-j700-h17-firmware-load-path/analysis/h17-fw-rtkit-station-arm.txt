@@ -589,6 +589,28 @@ implementation is still unresolved. This traces the local ring path's
 callback boundary but does not prove a Linux channel or firmware endpoint.
 Static disassembly only; no new hardware access and no command submitted.
 
+## Addendum 22 — +0x18 callback is a per-slot ring hook, not a proven doorbell
+
+Tracing the callback's other call sites narrows its role. The queue constructor
+`0x298fc` invokes `[0x1cde20+0x18]` once for each initialized 0x40-byte ring
+slot, passing `(slot_address, 0x40)`. The producer invokes it after writing a
+slot and advancing its index with the same arguments. Consumer `0x29d0c`
+invokes a separate callback at `[0x1cde20+0x20]` on the slot before the
+`dsb ishld` and record read. The callbacks at +0x18 and +0x20 therefore
+bracket initialization/producer publication and consumer access to ring
+records; the evidence is consistent with per-slot mapping or cache/synchrony
+operations, but does not identify their implementations or prove an IRQ or
+transport notification.
+
+The inspected queue routines read these callback fields but do not assign
+them. Constructor `0x298fc` obtains the allocation through `[0x1cde20]` and
+initializes the queue object; it does not install the +0x18/+0x20 functions.
+No direct code store to those function-pointer fields was found in the
+disassembled `__TEXT` range. Consequently, the queue's ring hook owner is
+still an external/indirect initialization question. Do not treat the +0x18
+call as proof of a firmware-to-Linux channel or endpoint. No hardware access;
+no command submitted.
+
 ## Addendum 20 — notification callback pointer is not firmware-assigned here
 
 The indirect call at `0x50ec` loads the function pointer at VA `0x1cce08`
