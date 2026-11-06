@@ -1490,6 +1490,23 @@ still provides no actual `SHAREDMALLOC` record value or queue-link route. The
 host channel-index correspondence, IRQ ownership, and PING schema remain
 unproven. Firmware disassembly only; no device access or submission.
 
+## Addendum 100 — selector metadata is runtime-populated, absent from image initializer
+
+The `0x5d50/0x5de4` accessors read a global count at VA `0x178158` and a
+record-array pointer at `0x178160`. In the firmware Mach-O's `__DATA` segment,
+these VAs map to file offsets `0x17c158` and `0x17c160`; both initial qwords
+are zero. Thus the concrete `SHAREDMALLOC` metadata selector cannot be
+recovered directly from those image-initializer bytes. Some runtime setup must
+populate the list before the accessors can return a matching record, but the
+current static trace has not identified that setup with a concrete
+record/value. Equating the dynamic selector with host channel index 7 based on
+the name alone would be unsupported. The saved channel-registration receipt
+proves host registration only, not this firmware metadata value.
+
+The route and IRQ questions need further offline correlation or a separately
+authorized observational capture; no fresh hardware access is warranted for
+this step. PING and task submission remain out of scope.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
