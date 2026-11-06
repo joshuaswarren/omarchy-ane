@@ -802,3 +802,19 @@ path, not the CRPC buffer. It still does not prove whether that service's
 link later becomes populated, and it provides no writer for the CRPC queue's
 `[+8]` or route. Firmware image/disassembly only; no hardware access or
 command submission.
+
+## Addendum 32 — SHAREDMALLOC service starts on its local fallback
+
+The `0x6170` service constructor initializes its first two qwords with
+`stp x16, xzr, [x0]`, so the service's `+8` link is null immediately after
+construction. In the `SharedMemoryManager` setup, `0x25dac` receives this
+service as x3, stores it at manager `+0x40`, and tests the service's `+8` at
+`0x25e5c`. The null branch calls `0x6258`; that routine records callback and
+context at service `+0x40/+0x48`, creates the local queue with `0xdf08`, and
+stores it at service `+0x20` without writing service `+8`.
+
+Thus the inspected initialization chooses the service's local fallback, not
+the linked branch used by the allocator helper when `[manager+0x40]+8` is
+non-null. This is a static initialization-path conclusion only: later writes
+to the service's `+8` are not ruled out, and it says nothing about the
+separate CRPC buffer's link state. No hardware accessed; no command submitted.
