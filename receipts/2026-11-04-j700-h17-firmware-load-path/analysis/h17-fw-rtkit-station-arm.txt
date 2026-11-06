@@ -784,3 +784,21 @@ stored by the caller at parent `+0x1d0/+0x1d8`. It therefore supplies no
 evidence that the CRPC buffer's `[+8]` is initialized or that its `[+8]`
 points to the allocator transport. The CRPC link writer remains unresolved.
 Static disassembly only; no hardware access or command submission.
+
+## Addendum 31 — shared-manager transport object is SHAREDMALLOC service
+
+The shared manager setup at `0x7e00`–`0x7e1c` clarifies ownership of the
+allocator path's transport test. It allocates a manager object, passes the
+name `SharedMemoryManager` (string VA `0x9d462`) to `0x25dac`, and passes
+`[parent+0x1f8]` as x3. That parent field is the service object initialized
+earlier under the name `SHAREDMALLOC` (string VA `0x9d33e`). `0x25dac` stores
+x3 at `[manager+0x40]`; if `[SHAREDMALLOC service+8]` is null, it registers
+the callback through `0x6258` instead of taking its already-linked return
+path. This is consistent with the allocator's `[manager+0x40]+8` check in
+`0x265f4`.
+
+This identifies the allocator transport object as the SHAREDMALLOC service
+path, not the CRPC buffer. It still does not prove whether that service's
+link later becomes populated, and it provides no writer for the CRPC queue's
+`[+8]` or route. Firmware image/disassembly only; no hardware access or
+command submission.
