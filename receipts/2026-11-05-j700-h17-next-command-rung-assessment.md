@@ -108,6 +108,34 @@ response IDs/status fields) and Linux-owned IRQ/queue synchronization; do not
 choose `0x0400`, `0x020d`, or `0x0021` merely because they appear during
 initialization.
 
+## Firmware-image command inventory check
+
+The retained J700 image is
+`/usr/lib/firmware/apple/ane/h17_ane_fw_theia_d9x.macho`, SHA-256
+`32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c`.
+Its string table contains an ANE controller command vocabulary including
+`CSNE_CMD_PING`, `CSNE_CMD_CONFIG_GET`, `CSNE_CMD_PLATFORM_INFO`,
+`CSNE_CMD_PREMAP_BUFFER`, power controls, and program/process lifecycle
+commands. It also contains handler assertions describing input/output size
+checks for commands such as config-get and platform-info. This is evidence
+that the firmware has command classes that might include queries, but strings
+alone do not give their numeric IDs, endpoint, exact wire header, required
+boot state, or side effects. A string match is not a safe command contract.
+
+The repository's T6021 protocol notes identify a header-only `CSNE_CMD_PING`
+(`0x11`) on endpoint 1, but those notes concern a different SoC/firmware
+protocol and explicitly derive the ID and layout from the Selene image. They
+are not transferable evidence for J700/T8140. The J700 kernel-side
+`aneCmdSend`/`sendSetupCmd` messages also use IDs such as `0x0400` and `0x020d`,
+which have not been tied to the string-named CSNE interface. Do not send the
+T6021 ping or infer a J700 ID from those numeric coincidences.
+
+Next offline step: map references to the J700 firmware's command-name tables
+and dispatcher, then correlate a candidate's numeric ID and exact structure
+with the host wrapper and reply parser. If the stripped image does not retain
+enough relocation/table information to prove that mapping, the correct result
+is that no candidate is established—not a guessed ping.
+
 ## Offline gates before proposing the next hardware rung
 
 1. Trace the concrete request creation call chain and pin the command ID,
