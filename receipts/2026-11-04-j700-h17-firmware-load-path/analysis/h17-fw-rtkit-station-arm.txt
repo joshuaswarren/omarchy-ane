@@ -1373,6 +1373,26 @@ argument. The CRPC association, route to host channel 7, IRQ ownership, and
 PING schema therefore remain unproven. Static firmware analysis only; no
 reboot, device access, or submission.
 
+## Addendum 94 — CRPC's fallback path uses `0xdf08`, not the `0x298fc` constructor
+
+Comparing the actual CRPC setup callsite resolves an important scope question.
+In `0x6258`, when the `SHAREDMALLOC` object's `[+8]` is zero, firmware calls
+`0xdf08` with `x0=[service+0x10]`, `x1=[service+0x20]`, `x2=0`, `x3=0`,
+`x4=0`, `x5=0x600238`, and `x6=service` (`0x62a8..0x62cc`). `0xdf08` treats
+`x0` as a context containing a count at `[+0x70]` and 0x60-byte entries from
+`[+0x40]`; it selects entry `x1`, validates its `[+0x30]` queue and state
+byte `[+0x2c]`, stores the supplied values in that entry, and returns the
+queue pointer from `[entry+0x30]`.
+
+Therefore the CRPC owner's fallback callback path is associated with the
+context entry selected through `0xdf08`; it is **not** evidence that the
+queue constructed at `0xdc44` by `0x298fc` is the CRPC queue. Addendum 93's
+`context[+0x68] -> queue[+8]` dataflow is valid for that distinct constructor
+path, but does not close the CRPC link question. The identity and runtime
+contents of the selected CRPC context entry, the linked registration branch,
+host route mapping, IRQ ownership, and PING schema remain unresolved. Static
+analysis only; no reboot, device access, or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
