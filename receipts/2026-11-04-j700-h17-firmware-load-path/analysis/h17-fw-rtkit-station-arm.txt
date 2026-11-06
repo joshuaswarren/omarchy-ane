@@ -922,6 +922,26 @@ remain unresolved; no index-7 mapping or submission is justified. Static
 firmware disassembly only; no hardware access, and `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 45 — remaining literal `+8` stores are table/parser fields
+
+The firmware-wide literal-offset scan left two 64-bit `[base+8]` stores worth
+checking. At `0x519c`, the destination base is x20, which `0x51500` takes from
+its x4 argument. All three direct callers found (`0x2e730`, `0x2e924`,
+`0x2f4e0`) set x4 to zero; this does not make the store a queue-link writer or
+establish any relationship to the CRPC allocation. A possible indirect caller
+or alternate dataflow is not excluded, but no call path ties this parser's
+input structure to the CRPC queue.
+
+At `0x52b4`, the destination is an entry in the indexed global array based at
+`0x178108` (`x9 = base + count*8`); the same routine also writes its second
+field at entry `+0x28`. That is table registration, not a store through the
+CRPC allocation. The two matches therefore do not resolve `[queue+8]`.
+
+This is another bounded exclusion, not a whole-program proof against
+register-indirect or shared-memory writes. The CRPC link writer and route
+remain unresolved. Static disassembly only; no hardware access or submission,
+and `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 44 — service vtable slot `0x6158` is not the CRPC link writer
 
 The constructor vtable at VA `0xc76f0` includes target `0x6158`, which looks
