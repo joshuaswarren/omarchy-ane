@@ -803,6 +803,24 @@ link later becomes populated, and it provides no writer for the CRPC queue's
 `[+8]` or route. Firmware image/disassembly only; no hardware access or
 command submission.
 
+## Addendum 33 — CRPC allocator callback slot 0 is only a tag classifier
+
+The indirect callback selected by the CRPC allocation is now resolved.
+`0x25dac` installs callback `0x269dc` in allocator callback slot 0 at
+`[0x1c8690]` and `0x26a00` in slot 1. The CRPC caller passes `w5=0` to
+`0x26440`; that value is retained as the callback index and dispatched at
+`0x26524`. Slot 0 (`0x269dc`) writes the allocation tag to the caller's
+classification output (masking its high bit only when its third argument is
+nonzero) and returns success for the zero mode used here. It does not receive
+the returned buffer pointer and does not write the CRPC buffer or a link
+object. Slot 1 is a separate validator/encoder path and is not selected by
+this CRPC call.
+
+This resolves the indirect callback on the allocator selection path but does
+not resolve the manager's later virtual allocation method or the CRPC
+buffer's `[+8]` link. No route value is supplied by callback slot 0. Static
+firmware disassembly only; no hardware access or command submission.
+
 ## Addendum 32 — SHAREDMALLOC service starts on its local fallback
 
 The `0x6170` service constructor initializes its first two qwords with
