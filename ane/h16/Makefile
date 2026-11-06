@@ -24,7 +24,8 @@ modules:
 # "make all"/modules.
 POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds pos-one-pd pos-boot pos-boot-hello pos-getsync-eacces
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-no-domain neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd
+	neg-dart-map neg-no-domain neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd \
+	neg-adt-truncated-prop
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

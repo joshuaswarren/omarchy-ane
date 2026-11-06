@@ -477,11 +477,20 @@ static struct adt_node adt_child(struct adt_node n, unsigned int idx)
 	off = n.off + 8;
 	for (i = 0; i < n.nprops; i++) {
 		u32 size;
+		u64 extent;
 
 		if ((u64)off + 36 > adt_len)
 			break;
 		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
-		off += 36 + ALIGN(size, 4);
+		extent = (u64)off + 36 + ALIGN(size, 4);
+		if (extent > adt_len || extent > (u32)~0ULL) {
+			/* truncated body: end the walk at an empty node
+			 * instead of wrapping the offset */
+			return adt_len < (u64)(u32)~0ULL
+				       ? adt_node_at((u32)adt_len)
+				       : adt_node_at((u32)~0ULL);
+		}
+		off = extent;
 	}
 	for (i = 0; i < idx; i++) {
 		if ((u64)off + 8 > adt_len)
@@ -499,16 +508,26 @@ static int adt_prop(struct adt_node n, const char *name, const void **data,
 
 	for (i = 0; i < n.nprops; i++) {
 		u32 len;
+		u64 extent;
 
 		if ((u64)off + 36 > adt_len)
 			return -ENOENT;
 		len = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		extent = (u64)off + 36 + ALIGN(len, 4);
+		/* The whole body must lie inside the mapping: returning
+		 * or advancing past a truncated extent hands the caller
+		 * bytes read from outside the ADT.
+		 */
+		if (extent > adt_len)
+			return -EOVERFLOW;
 		if (!strncasecmp(adt + off, name, 32)) {
 			*data = adt + off + 36;
 			*size = len;
 			return 0;
 		}
-		off += 36 + ALIGN(len, 4);
+		if (extent > (u32)~0ULL)
+			return -EOVERFLOW;
+		off = extent;
 	}
 	return -ENOENT;
 }
