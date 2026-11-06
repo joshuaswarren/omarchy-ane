@@ -40,9 +40,14 @@ The static record does **not** establish a safe initial command:
   request have not been pinned to an observed J700 exchange.
 - The sender's producer word can hold an inverted value while a peer
   acknowledgment is pending. The control-block producer/consumer
-  synchronization and retry semantics are not established for a Linux-owned
-  endpoint; a second send cannot be inferred safe from the enqueue primitive
-  alone.
+  synchronization is not established for a Linux-owned endpoint; a second
+  send cannot be inferred safe from the enqueue primitive alone. The Apple
+  retry wrapper is now disassembled at
+  `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-send-retry-disasm.txt`:
+  it calls the FIFO primitive and derives
+  its retry budget from device state (`dev+0x194 * 0x32`), with conditional
+  wait/retry paths. That implementation-specific policy is not sufficient to
+  define Linux retry semantics or a safe retry after an uncertain send.
 - The IRQ handler's `0xffff` W1C write acknowledges all lines, and its
   dispatch depends on channel-index state. A speculative send or ACK could
   consume unrelated firmware state or strand a message.
@@ -59,9 +64,9 @@ IDs, or compute path.
    payload schema, expected reply, timeout behavior, and whether it has any
    firmware side effect. Refuse to proceed if no genuinely non-compute,
    bounded request can be identified.
-2. Resolve queue-object initialization and `IOProcessorChannelSendRetry`
-   semantics, including how a peer acknowledgment changes the inverted
-   producer word. Build an independent executable model and tests for slot
+2. Resolve queue-object initialization and the peer-side acknowledgment,
+   including how it changes the inverted producer word. Build an independent
+   executable model and tests for slot
    bounds, phase, wrap, backpressure, and the no-retry-after-uncertain-state
    rule.
 3. Design a separate default-off rung that retains all DMA mappings and
