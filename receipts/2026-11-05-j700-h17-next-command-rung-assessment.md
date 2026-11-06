@@ -180,14 +180,49 @@ The apparent compare against `0x12` in this parser is a table bound (indexes
 not command dispatch. Evidence:
 `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-020d-020e-dispatch.txt`.
 
-`CSNE_CMD_PING` at ID `0x0012` is now a concrete candidate name/ID in the
-J700 firmware, not merely a string and not an ID borrowed from T6021. Still
-unresolved: exact message envelope and endpoint, request/response sizes,
-whether it is accepted in the current post-registration state, the reply
-matcher/status semantics, and Linux queue/IRQ ownership. Do not submit it yet.
-The next offline step is to locate the low-ID CSNE parser and ping handler,
-then show how the host command channel emits that same envelope and how its
-reply is completed.
+`CSNE_CMD_PING` at ID `0x0012` in the J700 firmware is now honored by the
+real low-ID parser as a body-less command, which is favorable evidence
+for the non-compute rung hypothesis. Still unresolved: the precise
+request-side envelope as emitted by the host (`aneFirmwareCommandSend`
+path), the reply status semantics the HOST matcher consumes, and
+queue/IRQ for the response channel on Linux. Do not submit it yet.
+The next offline steps are pinned in the dispatch-table receipt below.
+
+### Firmware command dispatch table and the PING path (verified)
+
+A census of indexed jump tables (`ldrsw [lsl #2]` + `br` sites) in the
+firmware located the main CSNE command evaluator: function `0x2bb34`,
+dispatch table at VA `0x30f10` with 530 entries indexed directly by the
+command-ID u16 at message `+4`, guarded `>0x3ff` → `0x400` family and
+`>0x211` → shared default epilogue `0x30ebc`. `0x2bb34` is registered as
+virtual slot 7 in both command-class vtables (auth-pointer arrays at
+VAs `0xc1b78` / `0xc1be8`, diversifier `0x80116afc`), immediately before
+the two name tables, and is invoked from the receive-response dispatcher
+at `0xec90`. The earlier "0x020d rejoin / 0x020e premap body" routing
+belongs to the second, bounded `0x200`-family parser (entries
+`0x3c558` / `0x3ccac`); in the main evaluator both IDs have their own
+dedicated bodies. Full verified routing for IDs `0x001`–`0x034`,
+`0x200`–`0x212`:
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-command-dispatch-tables.txt`.
+
+The key result for the PING hypothesis: table entry `[0x12]` for
+`CSNE_CMD_PING` routes to the shared default epilogue `0x30ebc` — PING
+has **no dedicated firmware body**. The path is bounded: completion
+record handling, optional log-only calls behind globals, and enqueue
+of the SAME message record back on the response queue via
+`0x62e0`(`[context+0x40]`, token, length, `-1`). `[msg+6]` (a
+completion-status / dummy-response flag written by other bodies: 2 =
+"dummy success", 1 = body failure) is left untouched, i.e. stays at the
+host-written value. `0x208` (= `CSNE_CMD_PROGRAM_INTERFACE_VERSION_CHECK`)
+is the one dedicated body that logs "Dummy return success" and flags
+`[msg+6] = 2`; CONFIG_GET/PLATFORM_INFO/BOOT are also body-less.
+
+Critical hardware gate discovered: if the response enqueue fails
+(response queue not linked or no room), `0x31e50` logs and enters an
+infinite loop — a firmware-core hang by design. So no submission
+through this evaluator is hardware-safe before the T2H response queue
+at `[context+0x40]` is verified live (linked and drained) by the Linux
+side; a PING rung is meaningless without that predecessor rung.
 
 ## Offline gates before proposing the next hardware rung
 
@@ -195,6 +230,11 @@ reply is completed.
    payload schema, expected reply, timeout behavior, and whether it has any
    firmware side effect. Refuse to proceed if no genuinely non-compute,
    bounded request can be identified.
+   Status: firmware side largely pinned for a PING-shaped command (body-less
+   evaluator route, bounded completion + response enqueue; see the dispatch
+   receipt). Remaining: host-side envelope emit, reply status semantics at
+   the host matcher, and the response-queue/IRQ rung (gates 2-3) that
+   precedes any submission.
 2. Resolve queue-object initialization and the peer-side acknowledgment,
    including how it changes the inverted producer word. Build an independent
    executable model and tests for slot
@@ -336,8 +376,10 @@ search only, not proof no generic caller can construct one).
 
 `sendSetupCmd` writes IDs `0x0400`–`0x0403` at command offset `+4`, with
 command-specific 12- or 16-byte allocation and payload fields. `sendPremapCmd`
-allocates a larger command object and writes `0x020d` at `+4`, preserving the
-known disagreement with the J700 firmware table name for that number.
+allocates a larger command object and writes `0x020d` at `+4`, which matches
+the J700 table entry `CSNE_CMD_PROCEDURE_CALL_WITH_CUSTOM_BARS` (the helper's
+name describes its caller-level purpose, not the wire opcode; `0x020e` is the
+separate `CSNE_CMD_PREMAP_BUFFER`).
 `sendInferenceCmd` constructs `0x0404`. These examples confirm that `+4` is an
 inner command code in the manager's command structure, distinct from the
 selector at `+0x18` used to choose a transport channel. They do not identify a
