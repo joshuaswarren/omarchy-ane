@@ -95,3 +95,83 @@ Also decoded this pass:
     short-record form.
 
 Static disassembly only. No hardware was accessed.
+
+## Addendum 3 — dispatcher, builder body, and the data-region reframe
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+Supersedes/adds to the sections above.
+
+### 0x96458 — RTKit selector dispatcher (op 1..0xf)
+
+pacibsp fn: switch on w1 selector (bounds sub w16 = w1-1, cmp 0xe; default
+-> 0x9666c error 0x8000fffc), branch table looked up via 0x960e9c
+(ldrsw x16, [x17, x16, lsl #2]; adr x17, 0x964cc; br x16). Case bodies
+call virtual methods on the compiler-picked globals (0xcb0f8, 0xcb1608/,
+0x1cdeb8, 0xcae40, 0xcb690, 0xcb7f8) — these are the RTKit OPS
+subsystem objects; the opcode values the station class consumes in
+virtual ops (1=START 2=STOP 5=notify 9=attach 0xc=drain 0xf=query,
+previously assigned in 0x9a9a8) align with the selector domain.
+Correction: 0x963d0 (called from the 0x963d0 cluster) is NOT a
+standalone fused lock/unlock pair — it sits among dispatcher case
+fragments; the receipt-2 classification for it is withdrawn. 0x96934
+(selection unresolved — see below) is one of its case bodies.
+
+### The 0x96934 case body — station boot, corrected framing
+
+Body does: allocate 0x38 station, vtable 0x16c378; [st+0x30]=0;
+loop reads ids/table from x26 = 0xcabc0 (stride x24 = x26+0xc; checked
+id at [x24], 8-byte field ldur x9,[x24,#0xc] stored to slot[0]; slots
+0x60-stride in [st+0x10]; presence bitmap strh at [st+0x18] indexed by
+(id<0xe ? id : id-0x12) via ORR w11 = (i<<1)|1; word bitmap at [st+8]);
+then register with service magic w0=0x436d6278 ("Cmbx") via 0x9cc94
+with callback 0x9a7f0; allocate the 0x68 control entry (d0 template
+from 0xb81b8/0xb81c0 = {00 00 00 00 00 00 00 00}/{00 00 10 00}),
+linked into 0xcb690, [entry+0x28] = paciza(0x980a48), [entry+0x38]=0,
+[entry+0x30]=0, [+0x19]=0 [+0x1a]=0xf [+0x54]=1, [+0x18]=1;
+0x96228(0x1ccbb8); 0x9acb8(entry[8], paciza(0x98087c), entry);
+0x9bb24(paciza(0x98694), entry) — the per-entry pump; 0x98854(entry[4]);
+pump call 0x98694(entry, 1, 0x21). The +0x60/0x10 byte inside the
+[E6] '0x54' byte is the byte copied from [0x1ccbb8] to [entry+0x5c].
+
+### The data-region reframe (IMPORTANT for all prior reads)
+
+fns like fn 0x8434 etc read slots 0xcabc8/0xcadf8/0xcae18/0xcae28/
+0xcae40/0xcae08/0xcae30 via adrp+add+ldr — these are RELOCATED GOT
+slots (runtime-patched); the DUMPED contents are PRE-RELOCATION
+boot data, not runtime tables:
+  0xcabc0..0xcadf0: 44 x 8-byte {u32 low, u32 kind-tag} entries
+    with tag 0x100000 (43x), one 0x300000 at 0xcade8, terminator 0
+    at 0xcadf0 — RELOCATION descriptors (rebase), not ep records.
+  0xcadf8..: 8-byte {0x4000ac, 0} pattern — further relocs (the
+    "0x400000-ish delta, section" shape).
+  0xc61b0..0xc6358: records {u32 fmt-string-ptr (0xa2a80+,
+    0xb4238+), u32 0x200000, u32 value}: value sequence 0x400,
+    0x401..0x404, 0x7000, 0xff00, then 8-digit values 0x40021100,
+    0x40024100, 0x4009019c..0x400901b0, 0x40094080/84, 0x40098100/08,
+    0x400a0100/04, 0x400a4088, 0x400a4488, 0x400a4888, 0x400a4c88,
+    0x400a708c. Read this as RTKit's rebase entry stream for a
+    property/log REGION (asserts "boot chip minor rev …",
+    "major 0x%x, minor 0x%x, program_offset_entry_num …", 'H','E','N',
+    'A' package-magic asserts), NOT a register map and NOT the
+    H2T/T2H channel catalog. The earlier "station-id register list"
+    read is withdrawn.
+Because 0x960e9c (the branch-table word array) lies beyond the raw
+mapped code, the dispatcher's jump table itself resides in the
+relocation-fixed region — resolving which case 0x96934 is requires
+APPLYING the relocations first; until then treat selector identity
+for 0x96934 as unresolved. Probable = attach (selector domain op 9
+matches 0x9a9a8's attach op), but unproven.
+
+### Standing consequences
+
+- The [q+8] link-construction question remains open; RTKit-side
+  "H2T/T2H channel table" as usually drawn does NOT exist in the
+  raw image's static data — it is assembled at runtime by the
+  loader/RTKit common code acting on these relocation records.
+- For rung design, any claim tying a specific endpoint id to CSNE
+  H2T must come from the runtime-resolved view, i.e. from DEALING
+  WITH THE REBASE FORMAT, or from an m1n1/Asahi-side ANE firmware
+  bring-up tool rather than more raw-offset reading.
+
+Static disassembly/raw-image reads only. No hardware accessed.
