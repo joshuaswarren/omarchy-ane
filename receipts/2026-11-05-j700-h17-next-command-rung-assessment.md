@@ -161,13 +161,13 @@ as events/ID requests in the table; the table alone does not establish
 direction or prove that the host helper's 16-bit field is this table's CSNE
 ID.
 
-The host-side command sender makes the ID location precise: at
-`0xfffffe0008f48248`, `aneFirmwareCommandSend` loads a 16-bit value from
-`command+4` and stores it in the outstanding-command record; at `+6` it first
-zeros the adjacent 16-bit field. Focused excerpt:
+The host-side command sender loads the inner u16 from `command+4` at
+`0xfffffe0008f48248`; at `+6` it first zeros the adjacent u16. The loaded
+value is stored in a stack argument area for a diagnostic call, not in the
+outstanding-command correlation field. Focused excerpt:
 `receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend-id-field.txt`.
-This proves the host's correlation key is the u16 at `+4`, but does not prove
-that it indexes the firmware CSNE table or resolves the premap discrepancy.
+This pins the host's inner command-code location, but does not alone prove its
+wire interpretation or resolve the premap discrepancy.
 Next, trace the firmware's incoming-command parser and compare its exact
 header offsets to this host structure before treating `0x0012` as sendable.
 
@@ -255,12 +255,13 @@ and compares that value against each candidate object's field at `+0x50`
 The latter checks/updates the response object, invokes its completion/callback
 path, updates accounting, and removes/advances collection state.
 
-This pins a host-side correlation-and-completion mechanism, but not the origin
-or wire meaning of the value passed in `x1`: it does not yet show the firmware
-parser extracting the same field, the reply status/payload contract, or a
-PING-specific response. Thus the outstanding-command match cannot be equated
-with the CSNE table's `0x12` based on this evidence alone. Queue/IRQ ownership
-remains an independent gate; no device interaction occurred.
+This pins a host-side response-token match and completion mechanism, but not
+the firmware parser extracting that token or the reply status/payload contract.
+The `+0x50` value is populated by `aneFirmwareCommandSend` from a mapped-buffer
+address/offset calculation (`0xfffffe0008f484c4..0x8f484d8`), not from the
+inner command u16 at `command+4`. Therefore this match is not evidence that the
+CSNE ID is its key. No PING-specific response is established. Queue/IRQ
+ownership remains an independent gate; no device interaction occurred.
 
 ### Inbound host transport dispatcher (offline disassembly)
 
@@ -300,19 +301,19 @@ it does not identify which wrapper carries CSNE `PING` or prove a reply for it.
 
 Extended `aneFirmwareCommandSend` disassembly is captured in
 `analysis/h17-fwcmdsend-serialization.txt`; the receive helper is in
-`analysis/h17-io-receive-helper.txt`. The sender stores the command's u16 at
-`command+4` as a correlation-related field (also used in a diagnostic), but the
-channel-send call's message type (`x1`) comes from a separate local value
-derived through a device/channel lookup, then narrowed to its low byte. The
-other send arguments include a separate object field and command data. Thus it
-would be unsafe to describe the `command+4` value as simply “the RTKit message
-ID” from the earlier load alone.
+`analysis/h17-io-receive-helper.txt`. The sender loads the command's u16 at
+`command+4` into a diagnostic stack argument area. Separately, the call at
+`0xfffffe0008f486cc` passes a cached channel index as `x1` to
+`IOProcessorChannelSendRetry`; `x2` is the outstanding state's `+0x50`
+mapped-buffer token, `x3` is the payload size, and `x4` is the payload pointer.
+Inside the retry wrapper, `x1` selects the channel object and the token is
+passed onward as the queue message ID. Thus `command+4` is not shown as the
+RTKit slot ID or the outstanding-response match key.
 
 The incoming T2H path requests a 12-byte message and its dispatcher reads the
-u16 at offset `+4`; the host matcher later correlates on its own object field
-at `+0x50`. The necessary mapping among those fields, the outgoing channel
-message type, and firmware CSNE ID `0x12` is still not established. This is a
-useful boundary finding, not a complete request/reply contract. No hardware
+u16 at offset `+4`; the host response matcher uses the mapped-buffer token at
+`+0x50`. The relation between those message contents and the outstanding token,
+and any PING-specific response contract, remain unestablished. No hardware
 access was performed.
 
 ### Firmware-manager command constructors inspected
@@ -333,3 +334,17 @@ inner command code in the manager's command structure, distinct from the
 selector at `+0x18` used to choose a transport channel. They do not identify a
 valid PING payload schema, safe state, or reply callback. Keep `PING` unsent
 until those are independently resolved.
+
+### Correction: inner ID versus outstanding queue token
+
+The earlier note that `command+4` was the host correlation key was incorrect.
+The corrected field-level trace is recorded in
+`receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-command-token-correction.txt`.
+The u16 at `command+4` is loaded into a diagnostic stack argument area. The
+outstanding object's `+0x50` token is separately computed from mapped-buffer
+address/offset state, passed as the queue slot's message ID, and later compared
+by `processCommandResponse`. The selector-derived `x1` at the call site is the
+cached channel index, not the queue message ID. This corrects the earlier
+interpretation without changing the safety conclusion: no firmware-side token
+extraction, PING payload schema, or PING reply contract is yet proven, and no
+hardware access occurred.
