@@ -1025,6 +1025,22 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 72 — host token paths are distinct; mapped-range lookup is not a base match
+
+The host artifacts distinguish two uses of message IDs. In the generic
+`processCommandResponse` path, the received ID is matched against
+`outstanding_state+0x50` (`analysis/h17-process-response-xrefs.txt`). In the
+T2H handler, the received token is instead passed to
+`0xfffffe0008f4c128`, which checks `token + requested_size` against registered
+mapping extents and returns a view (`analysis/h17-t2h-token-command-bridge.txt`
+and `analysis/h17-message-lookup-helper.txt`). The send-side token calculation
+in `h17-fwcmdsend-serialization.txt` is `mapped_base + offset - mapping_base`
+on its non-direct-map path. These are compatible with a shared offset-token
+representation, but do not prove that the T2H mapped range, firmware queue
+`[+0x28]`, and command-response outstanding token use the same allocation or
+base. The earlier cross-layer correlation remains conditional and cannot
+establish a runtime token bias.
+
 ## Addendum 71 — token-bias write search finds registration state, not queue mutation
 
 A full firmware `__TEXT` census of explicit stores at displacement `+0x28`
