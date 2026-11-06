@@ -1168,6 +1168,35 @@ or whether this context object is identical to the specific `owner` passed to
 `0x265f4` in every CRPC path. The fallback branch and its route therefore
 remain unproven. No hardware access or submission; PING remains unsent.
 
+Correction: the global used by `0x265f4` is `[0x1c8000+0x680]`, not the
+separate property-backed context at `[0x1ca000+0x6e0]`. The latter's fields
+and `0x3507c` property writes are unrelated to the CRPC fallback owner; the
+similar `+0x40/+0x48` offsets do not establish shared object identity. The
+actual CRPC owner construction is traced in Addendum 88 below.
+
+## Addendum 88 — CRPC transport owner is initialized, but its link is supplied by the caller
+
+The exact owner loaded by both `0x26558` and `0x267fc` is global
+`[0x1c8000+0x680]`. Constructor `0x25dac` publishes its allocated object to
+that slot at `0x25e00`. It stores constructor argument `x3` at
+`[owner+0x40]` (`0x25e60`), creates the queue/resource object returned by
+`0x25b30` and stores that at `[owner+0x48]` (`0x25e20`), and stores a separate
+resource result at `[owner+0x50]` (`0x25e30`). Thus Addendum 86's statement
+that the fields were not established by `0x35128` is true but incomplete:
+they belong to a separately constructed global owner, not the `0x35128`
+consumer root.
+
+Both observed calls to `0x25dac` pass `[consumer/context+0x1f8]` as `x3`
+(`0x7e04` and `0x80bc`). The fallback helper `0x265f4` then tests
+`[owner+0x40][+8]`; if nonzero, it uses that link object's `[+0x28]` buffer,
+and otherwise uses the owner queue at `[owner+0x48]`. This identifies the
+fallback owner and the source field of its link pointer, but not the runtime
+value or identity of `[context+0x1f8]`, nor the link object's runtime route.
+The owner constructor's separate queue creation therefore does not prove
+that submissions take the local or linked branch. CRPC route and IRQ
+ownership remain unresolved; no hardware access or submission; PING remains
+unsent.
+
 ## Addendum 78 — endpoint resolver constrains the wrapper-pool pointer value
 
 The route's lower half has an independent bound check in `0x9a944`. It loads
