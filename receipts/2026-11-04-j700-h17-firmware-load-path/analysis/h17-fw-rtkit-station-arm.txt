@@ -968,6 +968,27 @@ writer/value has been found. No host channel 7 mapping follows. Static
 disassembly only; no hardware access or submission; `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 61 — manager child operation 0 enters its local request queue
+
+The corrected vtable targets show what the manager miss actually does next.
+`0x20cf8` invokes child slot `+0x18` with operation `w1=0`, requested address,
+size, and mapping parameters. In the `0xc0cb8` mode-bit-clear path,
+`0x22124` appends a 0x58-byte request record to the child's local buffer at
+`[child+8]`, advances its producer/count fields, then creates a separate
+0x38-byte bookkeeping record in the child's buffer at `[child+0x50]` and
+calls helper `0x941cc`. The alternate vtable's `0x22eb0` path has the
+corresponding local-record branch when its mode bit is clear; its mode-set
+branch routes through `0x22ae8` and updates existing request records.
+
+Thus a manager range miss is not merely a synchronous address translation:
+it submits a resource operation to the manager child, then the outer code
+continues its own mapping/allocation bookkeeping. This reveals a local request
+queue owned by the manager child, but not the queue object's RTKit link at
+`[q+8]`, the completion/worker that services these records, or any equivalence
+to the CRPC IPC queue. The operation's scheduler/notification contract remains
+open. Static disassembly only; no hardware access or submission;
+`CSNE_CMD_PING` remains unsent.
+
 ## Addendum 58 — CRPC adopts a supplied resource before invoking fallback
 
 The CRPC constructor at `0x35128` has two resource paths. After obtaining
