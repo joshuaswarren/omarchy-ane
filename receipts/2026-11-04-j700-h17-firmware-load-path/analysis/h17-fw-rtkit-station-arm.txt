@@ -1025,6 +1025,25 @@ how a reply can be matched, but does not establish the PING payload/status
 schema, queue/IRQ ownership, or justify sending it. Static cross-image analysis
 only; no hardware access or submission; PING remains unsent.
 
+## Addendum 75 — wrapper child allocation does not resolve the route encoding
+
+The nested object stored by `0x239bc` is allocated as 0x30 bytes through
+`0x8a2d4`, then initialized/linked by `0x244e8`/`0x24670`; it is a real object
+pointer, not a scalar route assembled in the visible constructor. However,
+`0x8a2d4` is an allocator dispatch: it uses the optional allocator callback
+at global `[0x1cc320]` when installed, and otherwise falls back to `0x97710`.
+The fallback in turn uses allocator state/callbacks, and this static trace does
+not establish the returned object's address domain or low-32-bit value.
+
+Therefore the route-read observation cannot be resolved by assuming ordinary
+heap addresses (or by assuming that the pointer is deliberately route-shaped).
+The only proven chain is `peer wrapper -> [peer+0x10] child pointer -> low 32
+bits passed as route to 0x9ad28`; whether those bits form a valid route depends
+on allocator/runtime state not present in the image. This leaves the concrete
+wrapper path's route encoding unresolved and gives no CRPC queue ownership
+evidence. Static disassembly only; no hardware access or submission; PING
+remains unsent.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
