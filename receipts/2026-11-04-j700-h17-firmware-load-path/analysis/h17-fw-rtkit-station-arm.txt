@@ -1756,6 +1756,26 @@ conditions are successful pool setup/allocation, unchanged route-table count,
 and that this wrapper queue/link is the active send path. No runtime failure
 is claimed; no hardware access or submission, PING remains gated.
 
+## Addendum 118 — local-ring callbacks resolve to cache maintenance, not a doorbell
+
+Resolved the callback implementation left open in Addenda 21–22. Firmware
+setters `0x298bc` and `0x298dc` write the global ring-hook structure at
+`0x1cde20`: `+0x18` receives x5 and `+0x20` receives x6 (`0x298cc`/
+`0x298f0`). In the `0x54f8` setup sequence, the first setter call supplies
+`0x5d00`/`0x5d28`, while its second call explicitly clears both fields; the
+separate setup path at `0x7214` supplies `0x5d00`/`0x5d28` again.
+
+The functions are direct cache-maintenance wrappers: `0x5d00` calls
+`0x8bbcc`, and `0x5d28` calls `0x8bcb8`. The local-ring producer invokes
+`[0x1cde20+0x18]` after publishing a 0x40-byte record, so that callback is a
+cache-clean operation, not the ring's doorbell. The consumer's `+0x20` hook
+is the corresponding invalidate-side operation. This corrects Addendum 22's
+overbroad statement that no code stores these callback fields: the queue
+methods do not install them, but the separate setters do. These hooks explain
+cache visibility only; the local-ring notification/host wake path, CRPC
+response route, and IRQ ownership remain unproven. No hardware access or
+submission; PING remains gated.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
