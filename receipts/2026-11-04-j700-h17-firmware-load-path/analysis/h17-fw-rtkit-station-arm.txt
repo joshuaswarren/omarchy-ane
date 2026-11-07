@@ -1796,6 +1796,77 @@ None is a demonstrated host doorbell or Linux IRQ acknowledgment path. The
 actual local-ring consumer/wake route and CRPC response ownership remain
 unresolved. No hardware access or submission; PING remains gated.
 
+## Addendum 120 — local-ring pop, ring doorbell pair, and the registered start thunk
+
+Completed the local-ring consumer side left open by Addendum 119, using the
+reusable firmware disassembler `scripts/fwdis.py` (SHA-gated on the pinned
+image). Three verified pieces, plus the attach/wake registration that ties
+them together.
+
+`0x29ce8` (unlinked pop) is ack-symmetric with the `0x29b6c` push. It enters
+the `0x1cde20+0x28`/`+0x30` critical section, reads the consumer word
+`[ring+0x20]` (signed; `-1` = empty, returns -1), forms the slot
+`[ring+0x18] + idx*0x40`, optionally invokes the invalidate hook
+`[0x1cde20+0x20](slot, 0x40)`, `dsb ishld`, and accepts the record only when
+`([slot]&1) == ([ring+0x10]&1)`. Token = `0x50ec([slot]&~3, 0)` (push calls
+`0x50ec` with flag 1; the flag's meaning stays open), size = `[slot+8]`,
+status = `[slot+0x10]`, and `[slot+0x18]` goes to the caller's x5 slot. It
+copies `[slot+0x18]` into an eight-qword result history at
+`[ring+0x78 + mod8([ring+0xb8])*8]` and increments `[ring+0xb8]` (signed
+mod-8 wrap). When the producer word `[ring+0x24]` is `-1` it first resets
+producer := consumer. It advances the consumer with wrap at `[ring+0x14]-1`,
+acks `[ring+0x20] = next` when the producer word equals `next` else `~next`
+(`0x29e14`–`0x29e1c`), increments the dequeue counter `[ring+0x28]`, exits
+the critical section, and returns 0.
+
+The push tail (`0x29b6c` `0x29c04`–`0x29cd8`) mirrors it: slot word0 is
+stamped `([ring+0x10]&1)^1 | token`, the producer ack `[ring+0x24]` is
+written with the same plain/`~next` rule, `[ring+0x2c]` counts enqueues, and
+on a successful store (`producer index != -1`) the *last* action is
+`ldp x8, x0, [ring]; blraaz x8` at `0x29cc0` — a ring-level notify pair
+`[ring+0]`/`[ring+8]`. The pop never invokes that pair. A third ring
+operation, `0x29e68`, replaces the head slot in place when
+`([slot@producer]&1) == ([ring+0x10]&1)`: it rewrites length/status/result,
+restamps the epoch, records a producer-side result history at
+`[ring+0x30 + mod8([ring+0x70])*8]`, advances `[ring+0x24]` *plain* (csinc,
+no `~` inversion) and `[ring+0x2c]`, rings the same `[ring]` doorbell, and
+returns 0; on epoch-bit mismatch it writes nothing, rings nothing, and
+returns -1. Eleven direct callsites exist, `0x1eb1c`–`0x201d4`. This pass
+finds no writer of `[ring+0]`, `[ring+8]`, or the epoch word `[ring+0x10]`
+inside push/pop/replace, so the stamp-¬epoch/accept-on-match rule requires
+that word to flip outside the ring methods, and the doorbell pair's producer
+remains open.
+
+Attach (`0x6258`) explains where the wake callbacks go. It first stores its
+callback/context pair at `[q+0x40]`/`[q+0x48]` for both branches. Linked
+branch: tail-calls `0x6898([q+8], paciza(0x61ec), q)` — `0x61ec` is a
+trampoline that invokes `[q+0x40]([q+0x48])`, parking its own x1 at `[q+0x50]`
+across the call. Unlinked branch: `0xdfbc([q+0x10], [q+0x20])` then
+`0xdf08([q+0x10], [q+0x20], 0, 0, 0, paciza(0x6238), q)`, storing the result
+back at `[q+0x20]`; `0xdf08` is a registry writer into a manager table at
+`[manager+0x40]` (stride 0x60, count `[manager+0x70]`, requires
+`[entry+0x30]` non-null and `[entry+0x2c]` bit0 clear, stores x2→`+0x38`,
+x3→`+0x40`, x4→`+0x48`, x5→`+0x50`, x6→`+0x58`, active→`[entry+0x2c]`).
+Trampoline `0x6238` has the same `ldp x8,x0,[x1,#0x40]; blraaz x8` shape.
+
+The setup at `0xe868`–`0xe8bc` attaches `0xe948` (a two-instruction thunk
+`b 0x92a9c`) with context `[ctx+0x68]` onto the queue at `[ctx+0x40]`, and
+separately registers the pump `0xe94c` into the singleton at `[0x1c86b8]`
+via `0x27594(singleton, ctx+0x18, sw32 [ctx+0x8c], x20, paciza(0xe94c), ctx,
+1)`. `0x92a9c` is an atomic start primitive: `cas x8, x9, [obj]` with
+expected 0 → new 1, a `>= 4` acceptance branch, and for other states a
+`0x92be0` state read followed by clearing `[obj]`/`[obj+0x18]`. The pump
+`0xe9a4` (`[ctx+0x89]==1` forces drain A) iterates message sources with
+`0x93024` over the null-terminated table `[ctx+0x78]`: a source equal to
+`[ctx+0x58]` drains through `0xeb3c`, one equal to `[ctx+0x68]` through
+`0xec90` (which pops via `0x637c`), anything else through an autda'd
+`[obj+0x40]` virtual. So the local-ring wake is a registered *consumer-start
+CAS*, not a host doorbell; the firmware-to-host notification/IRQ
+acknowledgment path is still unproven, and whether the `0xdf08` registry
+entry ever invokes the `[ring]` pair is untraced. Static disassembly of the
+pinned image only; no hardware access or submission; `CSNE_CMD_PING` remains
+unsent.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
