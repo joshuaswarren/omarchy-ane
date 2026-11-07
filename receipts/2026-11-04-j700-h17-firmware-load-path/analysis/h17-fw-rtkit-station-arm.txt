@@ -1707,6 +1707,21 @@ inconsistency but does not establish a runtime fault or identify an alternate
 effective lookup path. PING, tasks, doorbells, and IRQ acknowledgment remain
 gated. No hardware access or submission.
 
+## Addendum 109 — image contains a BSS-clear routine, invocation untraced
+
+Routine `0x93e0` calls `0x897dc(dst=0x178100, value=0, size=0x1f1f00)`
+(`0x93ec`–`0x9404`), exactly covering the declared `__DATA,__zerofill`
+section. It then zeroes `0xec000..0x16c000` and initializes the `__sysvars`
+word at `0x178004` (`0x9408`–`0x9440`). This is a concrete firmware-side
+zero-initialization path in addition to the Mach-O section declaration.
+
+A scan of direct `b`/`bl` references across the retained `__text` finds no
+direct call to `0x93e0`; an indirect entry or boot-table invocation remains
+possible, as does the routine being unused on this boot path. Therefore this
+routine does not prove that the pool bytes were cleared before `0x54f8`, and
+the setup-time context qword remains conditional as in Addendum 108. No
+hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
