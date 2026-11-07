@@ -1543,20 +1543,27 @@ or task submission occurred.
 The same table-copy path raises a separate unresolved consistency problem.
 Accessor `0x5d50` returns the matched metadata record's qword at `+8`
 (`0x5dc4`–`0x5dd0`). The record builder at `0x5a90`–`0x5a94` loads a *32-bit*
-word from the source descriptor at `+0x40` and stores it at metadata `+8`.
-In the `SHAREDMALLOC` descriptor initialized at `0x5400`–`0x5418`, that source
-word is literal `1`. Meanwhile, `0x6170` treats the result of `0x5d50` as its
-context argument and passes it to `0xdf08`; `0xdf08` immediately dereferences
-that argument at `+0x70` and `+0x40` (`0xdf08`–`0xdf20`).
+word from the source descriptor at `+0x40` and stores only that word at
+metadata `+8`. In the `SHAREDMALLOC` descriptor initialized at
+`0x5400`–`0x5418`, that low word is literal `1`. The metadata array is
+allocated by `0x89cfc` through `0x92488`; the allocator rounds/splits a free
+block and returns its payload, with no payload clear on this path. Therefore
+the upper 32 bits of the accessor's qword are not established by this copy;
+the returned value is not proven to equal the integer `1`. Meanwhile,
+`0x6170` treats the qword result as its context argument and passes it to
+`0xdf08`, which immediately dereferences that argument at `+0x70` and `+0x40`
+(`0xdf08`–`0xdf20`).
 
-Taken literally as one uninterrupted table path, this would pass the value
-`1` where `0xdf08` expects an addressable context object. The concrete caller
+Taken literally as one uninterrupted table path, this passes a qword whose
+low dword is `1` and whose high dword is not statically established, where
+`0xdf08` expects an addressable context object. The concrete caller
 at `0x7c78` invokes `0x54f8` to build this global table, then installs the
 `0x5d50/0x5de4` lookup callbacks at `0x7c7c`–`0x7ca0`, and immediately begins
 the named service lookups; no direct table replacement appears between those
-operations. This strengthens the same-path inconsistency, but does not prove
-a runtime fault: an indirect/shared-memory mutation or an untraced meaning of
-the copied value is still possible. Addendum 101's `8` is the selector value
+operations. This confirms the same-path field flow, but the upper dword is
+not established and the pointer inconsistency itself is not proven; an
+indirect/shared-memory mutation or an untraced meaning of the copied value is
+also possible. Addendum 101's `8` is the selector value
 implied by the matching descriptor copy only; it must not be used to infer
 that the paired context pointer is valid, that `0xdf08` successfully selects
 an entry, or that the selector is effective in the CRPC path. The
@@ -1567,20 +1574,25 @@ submission.
 
 ## Addendum 103 — `0xdf08` does not guard the context pointer before dereference
 
-Checked whether the accessor result `1` could simply be a no-match sentinel.
+Checked whether the accessor's low-word value could simply be a no-match
+sentinel.
 At `0xdf08`, the first instruction is `ldr x8,[x0,#0x70]`, followed by the
 selector/count comparison; there is no null/sentinel check before that load.
-If the metadata path supplies `x0=1`, the routine attempts to read from
-address `0x71` before it can return a null queue. The Mach-O's firmware VA
+The metadata path writes low dword `1` but leaves the upper dword of the
+accessor's qword unestablished, so the static trace does not identify the
+effective address used by the load. If that qword were exactly `1`, the
+routine would attempt to read from address `0x71` before it could return a
+null queue. The Mach-O's firmware VA
 space and the runtime preload DVA base are distinct; zero bytes at file-backed
 VA `0x71` do not show that runtime address `0x71` is mapped or make this a safe
 sentinel. Nor does the static trace prove the actual `x0` value observed at
 runtime.
 
-Thus the context mismatch cannot be downgraded to a benign null-result path
-from this code alone. It remains an unresolved source/runtime inconsistency;
-do not invoke this route or infer its safety from the selector value. No
-hardware access or submission.
+Thus this is not shown to be a benign null-result path, but neither is an
+invalid pointer or runtime fault established: the high dword, effective
+allocation contents, and resulting context object are unknown. Do not invoke
+this route or infer its safety from the selector value. No hardware access or
+submission.
 
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
@@ -1597,8 +1609,8 @@ This is not the table read by the named-service callbacks `0x5d50/0x5de4`,
 which use the distinct pointer/count pair `[0x178000+0x160/+0x158]`; nor did
 the inspected path connect the two tables' records or use the `0x70a8` return
 as `0x6170`'s context. The second registry therefore does not resolve the
-`1` versus pointer mismatch and must not be substituted as its explanation.
-The actual context value and its provenance remain open. Offline disassembly
+low-dword versus pointer question and must not be substituted as its
+explanation. The actual context value and its provenance remain open. Offline disassembly
 only; no hardware access or submission.
 
 ## Addendum 105 — complete static service metadata field map
@@ -1607,7 +1619,7 @@ Mapped the eight records initialized at `0x52e4` (`0x5320`–`0x5488`) using
 their copied names, `+0x40` source word, `+0x44` matching key, and `+0x48`
 selector source. In initializer order:
 
-| Name | `+0x40` value | key `+0x44` | selector `+0x48` |
+| Name | low dword at `+0x40` | key `+0x44` | selector `+0x48` |
 |---|---:|---:|---:|
 | `TERMINAL` | 2 | 0 | `0x200` |
 | `IO` | 0 | 1 | `0x10` |
@@ -1623,7 +1635,10 @@ into metadata `+0x18`; the callbacks `0x5d50/0x5de4` return those fields.
 Thus the firmware selector values are neither the record keys nor, by
 themselves, host channel indices or RTKit endpoint IDs. The equal selector
 values across different names also do not establish a shared queue. The
-context-side values remain the small integers shown above; their interpretation
+context-side column records only the low dword copied from each descriptor.
+Because the metadata builder uses `str w` into an allocator-returned record
+and the accessor uses `ldr x`, the corresponding high dword is not established
+as zero; these rows are not complete context pointers. Their interpretation
 as arguments to `0xdf08` is still unresolved by static evidence. No mapping to
 Linux channel 7, IRQ ownership, queue link/route, or PING contract follows.
 Offline firmware analysis only; no hardware access or submission.
