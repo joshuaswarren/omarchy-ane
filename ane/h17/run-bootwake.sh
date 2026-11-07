@@ -32,7 +32,8 @@ if lsmod | grep -q '^ane_h16 '; then
 fi
 
 before=$(dmesg --color=never | wc -l)
-insmod "$ko" optin=t8140 stage=boot hello_wait_ms=1000 irq_read=1 scratch_read=1
+insmod "$ko" optin=t8140 stage=boot confirm_read=1 \
+	 hello_wait_ms=1000 irq_read=1 scratch_read=1
 # The wake poll completes within ~2 s (SCRATCH7 checked at 50 ms,
 # hello_wait_ms=1000 caps a second pass); give the RESULT line time to land.
 sleep 10

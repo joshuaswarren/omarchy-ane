@@ -12,7 +12,8 @@ trap 'rm -rf "$work"' EXIT
 
 stub=$work/bin
 mkdir -p "$stub"
-printf '#!/bin/sh\nexit 0\n' | tee "$stub/insmod" "$stub/sleep" "$stub/sha256sum" "$stub/git" > /dev/null
+printf '#!/bin/sh\nfor want in confirm_read=1 irq_read=1 scratch_read=1; do\n  case " $* " in *" $want "*) ;; *) echo "missing $want: $*" >&2; exit 2 ;; esac\ndone\nexit 0\n' > "$stub/insmod"
+printf '#!/bin/sh\nexit 0\n' | tee "$stub/sleep" "$stub/sha256sum" "$stub/git" > /dev/null
 chmod +x "$stub"/{insmod,sleep,sha256sum,git}
 : > "$stub/lsmod"
 chmod +x "$stub/lsmod"
