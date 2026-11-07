@@ -1692,6 +1692,23 @@ that the numeric low word is rejected at runtime or that this wrapper path is
 the CRPC response queue's active link. Route identity, queue ownership, IRQ
 ownership, and PING safety remain unresolved. No hardware access or submission.
 
+## Addendum 115 — `0x298fc` has one direct constructor callsite
+
+Scanned the pinned firmware `__text` for direct branches to queue constructor
+`0x298fc`; the only direct call is `0xdc44` from `0xdbcc`. Immediately before
+the call, `0xdbcc` loads the wrapper's stored pair at `+0x60/+0x68` into x3/x4
+(`0xdc14`–`0xdc24`) and supplies x4 as `0x298fc`'s fifth argument. The
+constructor stores that argument at queue `+8` (`0x29934`–`0x29964`). This
+corroborates the wrapper-link dataflow in Addenda 73–74 for the sole direct
+construction site found.
+
+This is a bounded direct-call census, not proof against an indirect call,
+alternate queue class, or other firmware build. Within the observed direct
+path, no second constructor callsite supplies a numeric route instead of the
+peer-wrapper link. The child-pointer/route representation discrepancy
+remains unresolved; no runtime endpoint, host channel, IRQ ownership, or PING
+safety follows. Offline analysis only; no hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
