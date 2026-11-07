@@ -1546,8 +1546,9 @@ Accessor `0x5d50` returns the matched metadata record's qword at `+8`
 word from the source descriptor at `+0x40` and stores only that word at
 metadata `+8`. In the `SHAREDMALLOC` descriptor initialized at
 `0x5400`–`0x5418`, that low word is literal `1`. The metadata array is
-allocated by `0x89cfc` through `0x92488`; the allocator rounds/splits a free
-block and returns its payload, with no payload clear on this path. Therefore
+allocated through wrapper `0x89cfc`, which dispatches to the configured
+allocator or its fallback; the traced allocators round/split a free block and
+return its payload, with no payload clear on these paths. Therefore
 the upper 32 bits of the accessor's qword are not established by this copy;
 the returned value is not proven to equal the integer `1`. Meanwhile,
 `0x6170` treats the qword result as its context argument and passes it to
@@ -1642,6 +1643,26 @@ as zero; these rows are not complete context pointers. Their interpretation
 as arguments to `0xdf08` is still unresolved by static evidence. No mapping to
 Linux channel 7, IRQ ownership, queue link/route, or PING contract follows.
 Offline firmware analysis only; no hardware access or submission.
+
+## Addendum 106 — allocator pool registration does not establish zeroed payload
+
+Checked the backing-pool initialization used by the metadata allocator. The
+initializer `0x8a008` initializes allocator control structures, registers the
+first `0x80000` bytes through `0x9751c`/`0x9204c`, and registers the remaining
+extent (`base+0x80000`, remaining size) with the other allocator through
+`0x9204c` (`0x8a068`–`0x8a110`). `0x9204c` aligns each extent and writes/splits
+allocator block headers and free-list records; it may clear a 0x20-byte
+bookkeeping slot via `0x897dc`, but has no operation that clears the full
+supplied extent before making it allocatable. The subsequent `0x92488`
+allocation likewise returns a split free-block payload without clearing it.
+
+This confirms that firmware's allocator code does not guarantee the
+metadata-record upper dword is zero. It does not establish what bytes the
+runtime supplied region initially contains, whether another writer populates
+that dword, or what complete context qword reaches `0xdf08`. The low-word
+table remains a static observation, not a valid/invalid pointer conclusion.
+Queue identity, route, IRQ ownership, and PING contract remain unresolved.
+Offline disassembly only; no hardware access or submission.
 
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
