@@ -27,10 +27,12 @@ and `BUF_T2H` to their published source indices (trace §14.3). A command
 request then uses the IO channel's shared-memory FIFO, with 64-byte slots;
 the static sender writes two 64-bit payload words, orders the slot publication,
 and updates a producer word (trace §13.2 and
-`analysis/h17-messenger-irq-chain.txt`). Firmware completion arrives through
-the IRQ status word at `0x188c000`; Apple's handler writes `0xffff` to the
-W1C acknowledgment register at `0x1890000` before channel dispatch (trace
-§13.3).
+`analysis/h17-messenger-irq-chain.txt`). Firmware completion is handled via
+the IRQ status word at `0x188c000` and W1C register at `0x1890000`. Correction:
+the normal `aneInterruptHandler` callback writes the status mask it just read;
+the `0xffff` write belongs to a separate zero-arguments path in
+`aneInterruptHandlerPriv`. See
+`analysis/h17-irq-line-dispatch-correction.txt`.
 
 ## Why no command is submitted yet
 
@@ -62,9 +64,11 @@ The static record does **not** establish a safe initial command:
   its retry budget from device state (`dev+0x194 * 0x32`), with conditional
   wait/retry paths. That implementation-specific policy is not sufficient to
   define Linux retry semantics or a safe retry after an uncertain send.
-- The IRQ handler's `0xffff` W1C write acknowledges all lines, and its
-  dispatch depends on channel-index state. A speculative send or ACK could
-  consume unrelated firmware state or strand a message.
+- IRQ acknowledgment and dispatch depend on the handler entry path and
+  runtime per-line descriptors. The ordinary callback acknowledges the
+  status mask it reads; it does not prove which runtime descriptor, channel,
+  or queue owns a future response. A speculative send or ACK could consume
+  unrelated firmware state or strand a message.
 - No first command is known to be side-effect-free. A task submission is
   explicitly outside this boundary.
 
