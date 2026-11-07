@@ -1734,6 +1734,28 @@ fallback, runtime table mutation, an alternate queue/link path, and whether
 this route is used for CRPC are not resolved. No hardware access or
 submission; PING remains gated.
 
+## Addendum 117 — known allocator fallback also yields an out-of-range route index
+
+Followed the `0x8a2d4` fallback rather than leaving it as an unbounded caveat.
+Setup at `0x83c8` calls `0x8a008` before the later service/wrapper construction
+in the same startup path (`0x79dc`, then object setup from `0x7aa4` onward).
+`0x8a008` first registers `[0x1ce000,0x24e000)` through `0x9751c` in the
+default allocator at `[0x1ccdf8]`, then registers the remaining
+`[0x26e000,0x38a000)` extent in the configured allocator at `[0x1cc320]`
+(`0x8a048`–`0x8a0f0`). The wrapper child allocation calls `0x8a2d4`; its
+configured branch uses the latter allocator and its fallback `0x97710` uses
+the former via `0x9cb60` (`0x8a2d4`, `0x97710`).
+
+Thus, if `0x8a008` completes pool registration and the child allocation
+succeeds through either visible branch, the returned pointer's low 32 bits are
+in one of those two extents. In either case the route-word high half is at
+least `0x1c`, still greater than the route table's initialized count of 8;
+`0x9ad58` rejects it before endpoint lookup. This removes the configured-vs-
+fallback allocator ambiguity for the traced allocator paths. Remaining
+conditions are successful pool setup/allocation, unchanged route-table count,
+and that this wrapper queue/link is the active send path. No runtime failure
+is claimed; no hardware access or submission, PING remains gated.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
