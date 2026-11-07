@@ -48,12 +48,20 @@ the dispatch mode. In mode 2, the handler receives from a channel object at
 `channel_object_array[x22]` using `IOProcessorChannelUnidirectionalReceive`.
 Other modes call the generic dispatcher with `x22 & 0xff`.
 
-This shows three distinct runtime identities: the IRQ status bit selected by
-descriptor `+0x44`, the descriptor/dispatch index `x22`, and (in mode 2) the
-channel-object-array index. The static code does not provide the live
-descriptor count, entries, modes, or array contents for J700. Therefore it
-does not prove that a response IRQ maps to host `DATA_CHAIN_H2T` channel 7,
-or identify the CRPC response queue's owner. The new post-wake observation
+The table at `[device+0x3de0]` is also the table used by `channelNameToIndex`
+(`h17-doorbell-arch.txt`): eight entries of stride `0x100`, searched by their
+names, with the resulting array index cached for names such as
+`DATA_CHAIN_H2T`. Thus the IRQ loop's descriptor slot and the channel-name
+index share an array/index domain; when the cached H17 `DATA_CHAIN_H2T` index
+is 7, its descriptor is slot 7. This is a useful identity correction, but it
+does not reveal descriptor 7's live `+0x44` status-bit position or `+0x40`
+dispatch mode, nor prove that the response queue is the `DATA_CHAIN_H2T`
+queue.
+
+The runtime descriptor contents and mode-specific channel objects are not
+present in the saved Linux receipts. Therefore the mapping from the observed
+zero status word to a future response interrupt and the CRPC response queue's
+owner remain unknown. The new post-wake observation
 (`receipts/2026-11-06-j700-h17-irq-status-capture/`) read status `0` once;
 that snapshot had no set bits to dispatch and says nothing about a later
 response interrupt.
