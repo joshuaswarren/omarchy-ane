@@ -1,0 +1,1 @@
+rung=PASS reason=wake-irq-status-and-poll-skipped irq_status=0x00000000 irq_lines=1 boot_id=a9c7fa8d-1b87-4638-aeae-25c3270074d4

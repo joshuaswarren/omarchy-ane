@@ -1,0 +1,1 @@
+rung=PASS reason=wake-irq-scratch-status-and-poll-skipped irq_status=0x00000000 irq_lines=1 scratch_words=0x00000008,0x0000c440,0x00000100,0x00f00000,0x00000000,0x00100090,0x00000001,0x08042006 scratch_lines=1 boot_id=3fcfb31b-577c-43f3-8a1e-094098397d39

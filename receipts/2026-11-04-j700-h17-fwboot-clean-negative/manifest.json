@@ -1,0 +1,14 @@
+{
+  "boot": "105a8645-ecce-48a8-9e55-23962582f07e",
+  "commit": "46efa4b3775bee5ff4ad3dffe39245d09960d433",
+  "kernel": "7.2.11-14-1-ARCH",
+  "vermagic": "7.2.11-14-1-ARCH SMP preempt mod_unload aarch64",
+  "module_sha256": "e5ff2ce4db859a2545b73109005245779da42c561474739a4081f9eb52c3ac5d",
+  "command": [
+    "insmod",
+    "/home/admin/omarchy-ane/ane/h17/ane_h17_fwboot_probe.ko",
+    "optin=1",
+    "log_path=/var/log/omarchy-ane/fwboot-105a8645-ecce-48a8-9e55-23962582f07e/probe.log"
+  ],
+  "cold_boot_confirmed_by_operator": true
+}

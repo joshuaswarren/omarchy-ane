@@ -1,0 +1,161 @@
+# J700 H17: ASC register-map mining and the stage 4 module
+
+**Correction 2026-10-31:** the gate is closed. The later claims below
+that containment was established, SCRATCH was pinned, and mapped MMIO
+cannot fault are withdrawn. See the [correction](../2026-10-31-j700-h17-containment-correction/README.md).
+
+2026-10-30. MacBook Neo J700/T8140, Linux `7.2.11-6-1-ARCH`. This receipt
+records one day of offline work (no ANE MMIO, no module load, no reboot by
+the ANE work) after the stage 3 power pass in
+`receipts/2026-10-30-j700-h17-adt`. Everything here was mined from the
+machine's own macOS build's kernelcache, file SHA-256
+`9d7dd347fc96cd0cb27a14b6dbc6f02c6354dc531668cdbdd2e50c641d86bbc5`, which
+sits on this machine's boot bundle; the module and sim live in `ane/h17/`
+(commits `5b2a45e` and the follow-up).
+
+## What the macOS build says about the T8140 ANE
+
+Facts stated as observed values; method detail stays out of public text
+per the 2026-10-29 rule.
+
+- The T8140 ANE HAL kext composes physical addresses
+  `0x401880000`, `0x401960000` and `0x401970000`. That fixes the engine
+  base at `0x400000000` (the live device tree's `ane@400000000`,
+  window `0x2000000`) and names two windows this repo had no data for:
+  engine `+0x1880000` and the `+0x1960000`/`+0x1970000` area.
+- The same HAL touches engine `+0x18a4000`, `+0x18a4008`,
+  `+0x18a4010`, `+0x18a4018` and `+0x18ac000`. On the M6 (T8152) the
+  doorbell is `+0x18a4000` and the IPI pending word `+0x18ac000`
+  (`ane/h18/ane_h18.h`), so the T8140 carries the M6-shaped
+  doorbell/IPI block, not the M4-shaped one at `+0x1884000`.
+- The macOS ANE interface kext's constant table carries
+  `(doorbell, CPU_STATUS)` rows of `(0x1844000, 0x1400048)` for the
+  h14g family and `(0x1884000, 0x1600048)` for the h16g family, with
+  poll words `0x100/0x8` and `0x10/0x8`. The h16g `0x1600048`
+  corroborates the H16 row's `CPU_STATUS`/`CPU_CONTROL` pair at
+  `0x1600048`/`0x1600044` (`ane/h16/ane_h16_soc.c`,
+  `ane/t6021/ane_t6021.h`: "the 0x1600044 value belongs to the
+  h16g/h17/h18g variant").
+- SCRATCH0 candidates in that table: rows carry `0x1880020`
+  (two rows) and `0x1880024` (three rows) on the h16g side. The table
+  has no h17-specific row: nothing names the J700 pmgr offset `0x290`,
+  and no `0x18a`-based scratch address appears anywhere in the build.
+  The h17-specific values live in the HAL, so SCRATCH0 stays a
+  candidate pair (`+0x20` or `+0x24` alignment) until the live read
+  pass says which alignment holds the wake word.
+- A block value `0x196c000` rides in several interface rows; with the
+  HAL's `+0x1960000`/`+0x1970000` windows this makes engine
+  `+0x196c000` the second mailbox candidate beside the h16g row's
+  `+0x1608000`.
+- The macOS power-up path dispatches on the ANE type value read from
+  its own state: for `0x200`/`0x210` it raises one more pmgr power
+  state, writing `0xf` at offset `0xc008` of the ANE pmgr window and
+  polling it to `0xf` (the h16g branch raises `0xc018` and `0xc020`
+  the same way; a t6021-shaped branch raises `0x4008` through
+  `0x4030`). The aurora tree has no power controller at pmgr
+  `0xc008` on t8140 — only the ADT names it — so the aurora comment
+  "The T8140 firmware and child power sequence need their own backend"
+  now has concrete addresses. On this machine the word is pmgr
+  `0x30070c008`, in the same block as `ANE_SYS` at `0x290`.
+
+## What the stage 4 module does with this
+
+`ane_h17_wake.ko` binds the existing synthetic `ane-h17-ps-probe`
+consumer node (the overlay from stage 3; nothing new at boot). Stage 4
+takes the ANE_SYS vote, then reads — every address logged before the
+read — CPU_STATUS `0x1600048`, CPU_CONTROL `0x1600044`, RVBAR
+`0x1050000` (two words), SCRATCH words `0x1880020..0x1880044` (nine
+words, covering both SCRATCH0 alignments), and the two mailbox
+candidates' control words at `0x1608110/0x1608114` and
+`0x196c110/0x196c114`. Without `confirm_wake=1` that is all; the stage
+ends `verdict=PASS reason=asc-snapshot`.
+
+With `confirm_wake=1`, and only if CPU_STATUS shows the stopped shape
+(RUNNING clear, STOPPED set) that M1/M2/M6 boots showed, it optionally
+raises the `0xc008` child state (`child_ps=1`, default off), writes RUN
+(`0x10`) once to CPU_CONTROL, polls CPU_STATUS and both SCRATCH7
+candidates (`0x188003c`, `0x1880040`) for the wake word `0x08042006`
+for `wake_wait_ms` (default 500), peeks the mailbox selected by
+`mbox_off` (default `0x1608000`, alt `0x196c000`) for `mbox_wait_ms`
+(reads pop messages; nothing is replied), clears RUN, and waits up to
+`stop_wait_ms` for STOPPED. A core that does not stop keeps the power
+vote held and asks for a reboot (the M6 behaved this way). It never
+programs a DART, maps firmware, or submits a task. The read pass also
+dumps the pmgr words at `0x2e0`, `0x4000..0x4030` and
+`0xc000..0xc020`, so the first run maps the whole child power-state
+picture before anything is written.
+
+`ane/h17/run-stage4.sh` gates on preflight and runs the snapshot
+first; `GO` as the first argument adds the confirm_wake run. The
+userspace sim (`make -C ane/h17 sim-all`) runs the real module against
+a fake bus, genpd and firmware model: two positives, three refusals
+and three mutation controls all behave as required. It is not silicon.
+
+## Today's reboots and the PMU panic record
+
+Five boot boundaries today; the last one is the stage 4 hang:
+
+| boot start | end | evidence |
+| --- | --- | --- |
+| 08:58 | 12:45:20 | unclean end; the next boot's PMU read "1 boot error(s), 0 panic(s)" |
+| 12:45:25 | ~14:15:0x | unclean end |
+| 14:15:08 | 14:17:52 | **panic** — the next boot's PMU read "1 boot error(s), 1 panic(s)" at 14:18:02 |
+| 14:17:52 | 14:22:59 | unclean end, no panic |
+| 14:22:59 | ~15:39:20 | **stage 4 hang** — see below |
+| 15:39:33 | current | |
+
+The ANE work's only hardware touch before the hang was the stage 3
+power vote at 09:09 on the first boot (clean; the domain returned to
+off). The stage 4 module was compiled at 12:45 and first loaded in the
+afternoon, on the boot that started 14:22:59: the read-only snapshot
+(`optin=1`, no `confirm_wake`) hung the machine during the engine read
+pass. The run reached the script's boot-id output and froze before the
+module's first RESULT line; the stage 4 log file was lost with the
+unclean reset (tee's create was unsynced), and the kernel log lines
+died the same way (no pstore, journal tail unsynced, PMU logged no
+panic) — so the hang point is bounded, not named. The first engine
+MMIO read in the pass is CPU_STATUS at `0x1600048`; the macOS
+power-up path raises the `0xc008` child state before it touches the
+ASC, and the hung run preceded that raise — the prime suspect, but the
+map itself is also under suspicion. The module was reworked the same
+evening (the `0xc008` raise moved before the first engine access,
+`child_ps=1` by default) and is now quarantined pending register-map
+qualification; see the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md).
+`panic_console_replay` is set to `1` at runtime so a future panic
+replays the console on the built-in display; the setting reverts at
+reboot. Netconsole is not an option on this machine today (wlan0 only;
+the classical netconsole needs a pollable NIC).
+
+## What remains before stage 4 runs
+
+The module is no longer quarantined: the map was qualified and the
+containment shipped on 2026-10-30 (see the
+[containment receipt](../../receipts/2026-10-30-j700-h17-containment/README.md);
+the release criteria are in the
+[hang receipt](../../receipts/2026-10-30-j700-h17-hang/README.md)).
+The re-derived module runs the snapshot with containment defaults:
+every pending access recorded in the O_SYNC marker, a containment
+timer on another CPU, and the inherited CPU-wrapper and mailbox reads
+gated behind opt-in parameters.
+
+The 2026-10-30 evening cross-check of the live device tree, the
+build's interface table and the T8140 HAL against the M6 (T8152)
+table
+([hal-map receipt](../../receipts/2026-10-30-j700-h17-hal-map/README.md))
+settles what the T8140 build supports: the doorbell `0x18a4000`, IPI
+`0x18ac000` and the SCRATCH page `0x1880000` are T8140-sourced (the
+exported window `0x401880000` is the h16g scratch page; the M6
+scratch page `0x18a0000` never appears in the T8140 build), and the
+mailbox-setup sequence runs through `0x1960000`/`0x1974000`/
+`0x195c000`. What has **no** T8140 source is the h16g/M6
+CPU-wrapper trio the old module read first — `0x1600044`, `0x1600048`,
+`0x1050000` — and both mailbox candidates (`0x1608000`,
+`0x196c000`): the re-derived module gates them behind `read_wrapper`
+and `mbox_peek`, and follows the T8140 HAL's control path instead.
+The "wrapper base wrong" hypothesis is now testable under containment
+with `read_wrapper=1` on a later rung, and since the engine window
+(`0x2000000`) is fully mapped those reads cannot fault — the first
+hang's suspect list was "wrong-base garbage, missing child state, or
+the mailbox sequence", and the missing `0xc008` child state remains
+the lead suspect.

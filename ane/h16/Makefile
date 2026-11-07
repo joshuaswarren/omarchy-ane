@@ -4,7 +4,7 @@
 #   make KERNELDIR=.../omarchy-linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h16.o
-	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ane_h16_overlay.o
+	ane_h16-objs := ane_h16_main.o ane_h16_soc.o ane_h16_overlay.o ../h17/ane_h17_soc.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
@@ -12,7 +12,9 @@ else
 
 CC ?= cc
 SIM_OUT ?= sim/sim_h16
-SIM_SRCS = sim/sim_harness.c sim/shim.h ane_h16_main.c ane_h16_soc.c ane_h16.h
+SIM_SRCS = sim/sim_harness.c sim/shim.h ane_h16_main.c ane_h16_soc.c ane_h16.h \
+	ane_h16_overlay.h ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h \
+	../h17/ane_h17_fw.h ../h17/bringup_order.h ../h17/chanreg.h
 
 default: modules
 
@@ -22,10 +24,21 @@ modules:
 # Userspace sim of the REAL module (see sim/sim_harness.c header). A
 # green sim proves harness logic only, never silicon. Not part of
 # "make all"/modules.
-POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds pos-one-pd pos-boot pos-boot-hello pos-getsync-eacces
+POS = pos-dt pos-dt-noadt pos-defaults pos-status pos-status-scratch pos-pds \
+	pos-one-pd pos-boot pos-boot-hello pos-four-ps pos-getsync-eacces \
+	pos-h17-boot pos-h17-irq pos-h17-scratch pos-h17-table pos-h17-register
 NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
-	neg-dart-map neg-no-domain neg-unknown-stage neg-no-confirm neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd \
-	neg-adt-truncated-prop neg-adt-deep-nesting neg-adt-oversize
+	neg-dart-map neg-short-unmap neg-no-domain neg-unknown-stage neg-no-confirm \
+	neg-pd-fail neg-pd-link-fail neg-getsync-fail neg-getsync-eacces-one-pd \
+	neg-adt-bounds neg-unreserved-alias neg-non-dma-domain \
+	neg-preload-bss neg-preload-boundary neg-preload-snapshot \
+	neg-preload-sysram neg-table-timeout neg-table-overrun neg-table-foreign \
+	neg-table-padding neg-table-envelope neg-table-alloc neg-table-dma-range \
+	neg-table-heap-alloc neg-table-scope neg-table-reservation \
+	neg-table-alias-reservation neg-table-alias-collision neg-table-alias-map \
+	neg-register-timeout neg-register-range neg-register-overlap neg-register-name \
+	neg-register-scope neg-adt-truncated-prop neg-adt-deep-nesting \
+	neg-adt-oversize
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c
@@ -40,9 +53,11 @@ sim-negative: $(SIM_OUT)
 # ps gate skipped) and require the matching negative to FAIL the harness.
 # If a mutated run passes, the harness is not discriminating: fix it.
 sim-discriminate: $(SIM_OUT)
-	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim
+	@rm -rf /tmp/ane-h16-discrim && mkdir -p /tmp/ane-h16-discrim/sim /tmp/ane-h16-discrim/h17 /tmp/ane-h16-discrim/h16
 	@cp sim/sim_harness.c sim/shim.h /tmp/ane-h16-discrim/sim/ && cp -r sim/inc /tmp/ane-h16-discrim/sim/
 	@cp ane_h16_soc.c ane_h16.h ane_h16_overlay.h /tmp/ane-h16-discrim/
+	@cp ../h17/ane_h17_soc.c ../h17/ane_h17_soc.h ../h17/ane_h17_fw.h ../h17/bringup_order.h ../h17/chanreg.h /tmp/ane-h16-discrim/h17/
+	@cp ane_h16.h /tmp/ane-h16-discrim/h16/
 	@sed 's/if (memcmp(digest, img->sha256, sizeof(digest))) {/if (0) {/' \
 	  ane_h16_main.c > /tmp/ane-h16-discrim/ane_h16_main.c
 	@grep -q 'if (0) {' /tmp/ane-h16-discrim/ane_h16_main.c
@@ -75,7 +90,10 @@ sim-discriminate: $(SIM_OUT)
 	else echo "ok: partial-map-leak mutation caught by neg-dart-map"; fi
 	@rm -rf sim/sim_h16.d1 sim/sim_h16.d2 sim/sim_h16.d3 sim/sim_h16.d4
 
-sim: sim-test sim-negative sim-discriminate sim-overlay
+sim-adt-mutations:
+	python3 sim/test_adt_mutations.py
+
+sim: sim-test sim-negative sim-discriminate sim-adt-mutations sim-overlay sim-mutation
 
 OVL_OUT ?= sim/sim_overlay
 
@@ -95,5 +113,5 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f $(SIM_OUT)
 
-.PHONY: default modules sim sim-test sim-negative sim-discriminate $(NEG) clean
+.PHONY: default modules sim sim-test sim-negative sim-discriminate sim-adt-mutations sim-overlay sim-mutation $(NEG) clean
 endif

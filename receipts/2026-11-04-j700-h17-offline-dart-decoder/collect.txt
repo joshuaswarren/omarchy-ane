@@ -1,0 +1,223 @@
+sha256 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe range 0xfffffe000978aed8 0xfffffe000978b250
+0xfffffe000978aed8: 7f 23 03 d5	pacibsp
+0xfffffe000978aedc: fa 67 bb a9	stp	x26, x25, [sp, #-0x50]!
+0xfffffe000978aee0: f8 5f 01 a9	stp	x24, x23, [sp, #0x10]
+0xfffffe000978aee4: f6 57 02 a9	stp	x22, x21, [sp, #0x20]
+0xfffffe000978aee8: f4 4f 03 a9	stp	x20, x19, [sp, #0x30]
+0xfffffe000978aeec: fd 7b 04 a9	stp	x29, x30, [sp, #0x40]
+0xfffffe000978aef0: fd 03 01 91	add	x29, sp, #0x40
+0xfffffe000978aef4: f3 03 03 aa	mov	x19, x3
+0xfffffe000978aef8: f7 03 02 aa	mov	x23, x2
+0xfffffe000978aefc: f4 03 01 aa	mov	x20, x1
+0xfffffe000978af00: f6 03 00 aa	mov	x22, x0
+0xfffffe000978af04: 45 f0 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978af08: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978af0c: e3 01 00 54	b.lo	#0xfffffe000978af48
+0xfffffe000978af10: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978af14: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978af18: 09 0e 80 52	mov	w9, #0x70
+0xfffffe000978af1c: 89 7e a9 9b	umull	x9, w20, w9
+0xfffffe000978af20: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978af24: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978af28: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978af2c: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978af30: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978af34: e8 66 1a 53	lsl	w8, w23, #6
+0xfffffe000978af38: 08 21 40 11	add	w8, w8, #8, lsl #12
+0xfffffe000978af3c: 49 01 40 f9	ldr	x9, [x10]
+0xfffffe000978af40: 35 49 68 b8	ldr	w21, [x9, w8, uxtw]
+0xfffffe000978af44: 02 00 00 14	b	#0xfffffe000978af4c ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 116, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978af48: 15 00 80 52	mov	w21, #0
+0xfffffe000978af4c: 75 12 00 b9	str	w21, [x19, #0x10]
+0xfffffe000978af50: 7f 72 00 b9	str	wzr, [x19, #0x70]
+0xfffffe000978af54: e0 03 16 aa	mov	x0, x22
+0xfffffe000978af58: 30 f0 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978af5c: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978af60: a3 02 00 54	b.lo	#0xfffffe000978afb4
+0xfffffe000978af64: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978af68: 89 01 90 52	mov	w9, #0x800c
+0xfffffe000978af6c: 29 19 17 0b	add	w9, w9, w23, lsl #6
+0xfffffe000978af70: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978af74: 0a 0e 80 52	mov	w10, #0x70
+0xfffffe000978af78: 8a 7e aa 9b	umull	x10, w20, w10
+0xfffffe000978af7c: 5f c1 2a eb	cmp	x10, w10, sxtw
+0xfffffe000978af80: 0b c1 2a 8b	add	x11, x8, w10, sxtw
+0xfffffe000978af84: 10 01 0a 8b	add	x16, x8, x10
+0xfffffe000978af88: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978af8c: 6b 01 90 9a	csel	x11, x11, x16, eq
+0xfffffe000978af90: 68 01 40 f9	ldr	x8, [x11]
+0xfffffe000978af94: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978af98: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978af9c: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978afa0: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978afa4: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978afa8: 48 01 40 b9	ldr	w8, [x10]
+0xfffffe000978afac: 18 7d 60 d3	lsl	x24, x8, #0x20
+0xfffffe000978afb0: 02 00 00 14	b	#0xfffffe000978afb8 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 224, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978afb4: 18 00 80 d2	mov	x24, #0
+0xfffffe000978afb8: e0 03 16 aa	mov	x0, x22
+0xfffffe000978afbc: 17 f0 ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978afc0: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978afc4: 83 02 00 54	b.lo	#0xfffffe000978b014
+0xfffffe000978afc8: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978afcc: 09 01 90 52	mov	w9, #0x8008
+0xfffffe000978afd0: 29 19 17 0b	add	w9, w9, w23, lsl #6
+0xfffffe000978afd4: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978afd8: 0a 0e 80 52	mov	w10, #0x70
+0xfffffe000978afdc: 8a 7e aa 9b	umull	x10, w20, w10
+0xfffffe000978afe0: 5f c1 2a eb	cmp	x10, w10, sxtw
+0xfffffe000978afe4: 0b c1 2a 8b	add	x11, x8, w10, sxtw
+0xfffffe000978afe8: 10 01 0a 8b	add	x16, x8, x10
+0xfffffe000978afec: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978aff0: 6b 01 90 9a	csel	x11, x11, x16, eq
+0xfffffe000978aff4: 68 01 40 f9	ldr	x8, [x11]
+0xfffffe000978aff8: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978affc: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978b000: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978b004: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b008: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978b00c: 48 01 40 b9	ldr	w8, [x10]
+0xfffffe000978b010: 02 00 00 14	b	#0xfffffe000978b018 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 320, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b014: 08 00 80 d2	mov	x8, #0
+0xfffffe000978b018: 08 01 18 aa	orr	x8, x8, x24
+0xfffffe000978b01c: 68 06 00 f9	str	x8, [x19, #8]
+0xfffffe000978b020: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b024: fd ef ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b028: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978b02c: 83 02 00 54	b.lo	#0xfffffe000978b07c
+0xfffffe000978b030: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978b034: 89 00 90 52	mov	w9, #0x8004
+0xfffffe000978b038: 29 19 17 0b	add	w9, w9, w23, lsl #6
+0xfffffe000978b03c: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978b040: 0a 0e 80 52	mov	w10, #0x70
+0xfffffe000978b044: 8a 7e aa 9b	umull	x10, w20, w10
+0xfffffe000978b048: 5f c1 2a eb	cmp	x10, w10, sxtw
+0xfffffe000978b04c: 0b c1 2a 8b	add	x11, x8, w10, sxtw
+0xfffffe000978b050: 10 01 0a 8b	add	x16, x8, x10
+0xfffffe000978b054: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b058: 6b 01 90 9a	csel	x11, x11, x16, eq
+0xfffffe000978b05c: 68 01 40 f9	ldr	x8, [x11]
+0xfffffe000978b060: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978b064: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978b068: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978b06c: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b070: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978b074: 48 01 40 b9	ldr	w8, [x10]
+0xfffffe000978b078: 02 00 00 14	b	#0xfffffe000978b080 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 424, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b07c: 08 00 80 52	mov	w8, #0
+0xfffffe000978b080: 68 22 03 29	stp	w8, w8, [x19, #0x18]
+0xfffffe000978b084: b9 06 17 72	ands	w25, w21, #0x600
+0xfffffe000978b088: e8 17 9f 1a	cset	w8, eq
+0xfffffe000978b08c: 68 d2 01 39	strb	w8, [x19, #0x74]
+0xfffffe000978b090: 19 03 00 34	cbz	w25, #0xfffffe000978b0f0
+0xfffffe000978b094: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b098: e0 ef ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b09c: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978b0a0: 83 02 00 54	b.lo	#0xfffffe000978b0f0
+0xfffffe000978b0a4: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978b0a8: 09 02 90 52	mov	w9, #0x8010
+0xfffffe000978b0ac: 29 19 17 0b	add	w9, w9, w23, lsl #6
+0xfffffe000978b0b0: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978b0b4: 0a 0e 80 52	mov	w10, #0x70
+0xfffffe000978b0b8: 8a 7e aa 9b	umull	x10, w20, w10
+0xfffffe000978b0bc: 5f c1 2a eb	cmp	x10, w10, sxtw
+0xfffffe000978b0c0: 0b c1 2a 8b	add	x11, x8, w10, sxtw
+0xfffffe000978b0c4: 10 01 0a 8b	add	x16, x8, x10
+0xfffffe000978b0c8: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b0cc: 6b 01 90 9a	csel	x11, x11, x16, eq
+0xfffffe000978b0d0: 68 01 40 f9	ldr	x8, [x11]
+0xfffffe000978b0d4: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978b0d8: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978b0dc: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978b0e0: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b0e4: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978b0e8: 48 01 40 b9	ldr	w8, [x10]
+0xfffffe000978b0ec: 02 00 00 14	b	#0xfffffe000978b0f4 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 540, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b0f0: 08 00 80 52	mov	w8, #0
+0xfffffe000978b0f4: 68 52 00 b9	str	w8, [x19, #0x50]
+0xfffffe000978b0f8: 74 16 00 b9	str	w20, [x19, #0x14]
+0xfffffe000978b0fc: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b100: e1 03 14 aa	mov	x1, x20
+0xfffffe000978b104: e2 03 17 aa	mov	x2, x23
+0xfffffe000978b108: 03 00 80 52	mov	w3, #0
+0xfffffe000978b10c: 51 00 00 94	bl	#0xfffffe000978b250 ('__ZNK14AppleT8110DART20_DART_ERR_SID_AXI_IDEjjj', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b110: 60 22 00 b9	str	w0, [x19, #0x20]
+0xfffffe000978b114: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b118: e1 03 14 aa	mov	x1, x20
+0xfffffe000978b11c: e2 03 17 aa	mov	x2, x23
+0xfffffe000978b120: 23 00 80 52	mov	w3, #1
+0xfffffe000978b124: 4b 00 00 94	bl	#0xfffffe000978b250 ('__ZNK14AppleT8110DART20_DART_ERR_SID_AXI_IDEjjj', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b128: 18 00 80 d2	mov	x24, #0
+0xfffffe000978b12c: 60 26 00 b9	str	w0, [x19, #0x24]
+0xfffffe000978b130: 7a c2 00 91	add	x26, x19, #0x30
+0xfffffe000978b134: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b138: e1 03 14 aa	mov	x1, x20
+0xfffffe000978b13c: e2 03 17 aa	mov	x2, x23
+0xfffffe000978b140: e3 03 18 aa	mov	x3, x24
+0xfffffe000978b144: 78 00 00 94	bl	#0xfffffe000978b324 ('__ZNK14AppleT8110DART22_DART_ERR_SID_AXI_USEREjjj', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b148: 48 0b 18 8b	add	x8, x26, x24, lsl #2
+0xfffffe000978b14c: 00 01 00 b9	str	w0, [x8]
+0xfffffe000978b150: 18 07 00 91	add	x24, x24, #1
+0xfffffe000978b154: 1f 23 00 f1	cmp	x24, #8
+0xfffffe000978b158: e1 fe ff 54	b.ne	#0xfffffe000978b134
+0xfffffe000978b15c: d9 04 00 34	cbz	w25, #0xfffffe000978b1f4
+0xfffffe000978b160: 7f d2 01 39	strb	wzr, [x19, #0x74]
+0xfffffe000978b164: e0 03 16 aa	mov	x0, x22
+0xfffffe000978b168: ac ef ff 97	bl	#0xfffffe0009787018 ('__ZNK14AppleT8110DART10_hwVersionEv', 0, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b16c: 08 00 80 52	mov	w8, #0
+0xfffffe000978b170: 1f 08 08 71	cmp	w0, #0x202
+0xfffffe000978b174: 63 02 00 54	b.lo	#0xfffffe000978b1c0
+0xfffffe000978b178: c8 2a 46 f9	ldr	x8, [x22, #0xc50]
+0xfffffe000978b17c: 09 02 90 52	mov	w9, #0x8010
+0xfffffe000978b180: 29 19 17 0b	add	w9, w9, w23, lsl #6
+0xfffffe000978b184: 08 81 00 91	add	x8, x8, #0x20
+0xfffffe000978b188: 0a 0e 80 52	mov	w10, #0x70
+0xfffffe000978b18c: 8a 7e aa 9b	umull	x10, w20, w10
+0xfffffe000978b190: 5f c1 2a eb	cmp	x10, w10, sxtw
+0xfffffe000978b194: 0b c1 2a 8b	add	x11, x8, w10, sxtw
+0xfffffe000978b198: 10 01 0a 8b	add	x16, x8, x10
+0xfffffe000978b19c: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b1a0: 6b 01 90 9a	csel	x11, x11, x16, eq
+0xfffffe000978b1a4: 68 01 40 f9	ldr	x8, [x11]
+0xfffffe000978b1a8: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978b1ac: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978b1b0: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978b1b4: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b1b8: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978b1bc: 48 01 40 b9	ldr	w8, [x10]
+0xfffffe000978b1c0: 68 52 00 b9	str	w8, [x19, #0x50]
+0xfffffe000978b1c4: 7f 36 00 f9	str	xzr, [x19, #0x68]
+0xfffffe000978b1c8: c8 a6 56 b9	ldr	w8, [x22, #0x16a4]
+0xfffffe000978b1cc: 48 03 00 34	cbz	w8, #0xfffffe000978b234
+0xfffffe000978b1d0: 09 d5 82 52	mov	w9, #0x16a8
+0xfffffe000978b1d4: c9 02 09 8b	add	x9, x22, x9
+0xfffffe000978b1d8: 2a 19 40 b9	ldr	w10, [x9, #0x18]
+0xfffffe000978b1dc: 5f 01 14 6b	cmp	w10, w20
+0xfffffe000978b1e0: 60 02 00 54	b.eq	#0xfffffe000978b22c
+0xfffffe000978b1e4: 29 81 00 91	add	x9, x9, #0x20
+0xfffffe000978b1e8: 08 05 00 f1	subs	x8, x8, #1
+0xfffffe000978b1ec: 40 02 00 54	b.eq	#0xfffffe000978b234
+0xfffffe000978b1f0: fa ff ff 17	b	#0xfffffe000978b1d8 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 768, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b1f4: 28 00 80 52	mov	w8, #1
+0xfffffe000978b1f8: 68 d2 01 39	strb	w8, [x19, #0x74]
+0xfffffe000978b1fc: 7f 52 00 b9	str	wzr, [x19, #0x50]
+0xfffffe000978b200: 08 9c 82 52	mov	w8, #0x14e0
+0xfffffe000978b204: c8 02 08 8b	add	x8, x22, x8
+0xfffffe000978b208: 09 0e 80 52	mov	w9, #0x70
+0xfffffe000978b20c: 89 7e a9 9b	umull	x9, w20, w9
+0xfffffe000978b210: 3f c1 29 eb	cmp	x9, w9, sxtw
+0xfffffe000978b214: 0a c1 29 8b	add	x10, x8, w9, sxtw
+0xfffffe000978b218: 10 01 09 8b	add	x16, x8, x9
+0xfffffe000978b21c: b0 75 e5 f2	movk	x16, #0x2bad, lsl #48
+0xfffffe000978b220: 4a 01 90 9a	csel	x10, x10, x16, eq
+0xfffffe000978b224: 48 01 40 f9	ldr	x8, [x10]
+0xfffffe000978b228: 02 00 00 14	b	#0xfffffe000978b230 ('__ZN14AppleT8110DART22_collectInterruptStateEjjPN6IODART16interruptState_tE', 856, 'com.apple.driver.AppleT8110DART')
+0xfffffe000978b22c: 28 01 40 f9	ldr	x8, [x9]
+0xfffffe000978b230: 68 36 00 f9	str	x8, [x19, #0x68]
+0xfffffe000978b234: e0 03 15 aa	mov	x0, x21
+0xfffffe000978b238: fd 7b 44 a9	ldp	x29, x30, [sp, #0x40]
+0xfffffe000978b23c: f4 4f 43 a9	ldp	x20, x19, [sp, #0x30]
+0xfffffe000978b240: f6 57 42 a9	ldp	x22, x21, [sp, #0x20]
+0xfffffe000978b244: f8 5f 41 a9	ldp	x24, x23, [sp, #0x10]
+0xfffffe000978b248: fa 67 c5 a8	ldp	x26, x25, [sp], #0x50
+0xfffffe000978b24c: ff 0f 5f d6	retab

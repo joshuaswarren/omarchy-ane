@@ -1,0 +1,218 @@
+H17 firmware CSNE command dispatch tables (verified)
+====================================================
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+Name-mapping pinned in:
+  analysis/h17-csne-command-id-table.txt
+
+## Two indexed dispatch sites found by an ldrsw(lsl #2)+br census
+
+An offline census of every indexed jump table in firmware __TEXT found 45
+`ldrsw xN, [xM, xK, lsl #2]` + `br` sites. One stands out as the main CSNE
+command evaluator:
+
+  Site VA 0x2bc0c, function entry 0x2bb34, table VA 0x30f10.
+    0x2bbe4  ldrh w24,[x21,#4]      ; command-ID u16 at message+4
+    0x2bbe8  cmp w24,#0x3ff ; b.gt 0x2bcb0     ; 0x400 family
+    0x2bbf0  cmp w24,#0x211 ; b.hi 0x30ebc     ; overflow -> default
+    0x2bc04  adrp x17,#0x30000; add x17,#0xf10
+    0x2bc0c  ldrsw x16,[x17,x16,lsl #2]        ; table indexed by raw id
+    0x2bc18  br x16
+  Table 0x30f10 has 530 entries (0x212), applied relative to 0x2bc10.
+
+A second site, 0x230 family parser tables 0x3c558 / 0x3ccac (site
+origins 0x3c25c and 0x3c948), covers a bounded 0x200..0x212 subset plus
+ids 0x2d, 0x300, 0x303. Earlier session output describing "0x020d rejoins
+common handling; 0x020e specialized premap body" (VA 0x3c4fc / 0x3c2a0)
+belongs to this SECOND bounded dispatcher, not to the main table below.
+In the main table both IDs have their own dedicated bodies.
+
+## Registration context
+
+0x2bb34 is registered as an authenticated C++ virtual method. Its (imp,
+diversifier) pair appears at VA 0xc1bb0 and 0xc1c20 in the __DATA,__const
+auth-pointer arrays that immediately precede the two CSNE command name
+tables (0xc1c50 and 0xc78a8). The two arrays are the class vtabs:
+bases 0xc1b78 and 0xc1be8 (constructors at 0x2a6d8 / 0x3247c build them
+with `add x16,#0xb68; add x16,#0x10` etc.). In both, slot 7 (offset
++0x38) is 0x2bb34 with diversifier 0x80116afc; the receive-response
+dispatcher at 0xec90 invokes it via `ldr x8,[x16,#0x38]!` +
+`movk x16,#0x6afc,lsl #48; blraa x8,x16`. So both endpoint classes share
+this same command evaluator.
+
+## Verified main-table routing, low-ID region 0x001..0x034
+
+Target 0x30ebc = shared default epilogue. Both name tables give
+identical names for these ids (94- and 93-record name tables at
+0xc1c50 / 0xc78a8; table A's extra last record is 0x40021100
+CSNE_CMD_DEBUG_COMMAND_DATA_CHECK).
+
+  id      name                          target
+  0x001   START                         0x2cb7c
+  0x002   STOP                          0x2c740
+  0x003   RESET                         0x2cfa4
+  0x004   CONFIG_GET                    default
+  0x005   PRINT_ENABLE                  default
+  0x006   REG_FILE_LOAD                 0x2cebc
+  0x007   BUILDINFO                     0x2d02c
+  0x008   TIMEPROFILE_START             0x2c420
+  0x009   TIMEPROFILE_STOP              0x2cca0
+  0x00a   TIMEPROFILE_SHOW              0x2ca88
+  0x00b   FW_RUN_MODE                   0x2cae8
+  0x00c   POWER_DOWN                    0x2c2f0
+  0x00d   SET_SNE_PMU_BASE              default
+  0x00e   SET_SNE_RPC_CHECK_CMD         default
+  0x00f   RPC_ENABLE                    0x2c9e0
+  0x010   PLATFORM_INFO                 default
+  0x011   BOOT                          default
+  0x012   PING                          default
+  0x013   CONFIG_GET_EXT                0x2c25c
+  0x014   POWER_DEVICE_ON               0x2d0a8
+  0x015   POWER_DEVICE_OFF              0x2d140
+  0x016   IPC_ENDPOINT_SET              0x2c2bc
+  0x017   IPC_ENDPOINT_UNSET            default
+  0x018   CH_INFO_GET                   default
+  0x019   CH_BUFFER_RECYCLE_MODE_SET    default
+  0x01a   CH_BUFFER_RECYCLE_START       default
+  0x01b   CH_BUFFER_RECYCLE_STOP        default
+  0x01c   CH_BUFFER_RETURN              default
+  0x01d   CH_BUFFER_POOL_CONFIG_GET     0x2bc1c
+  0x01e   CH_BUFFER_POOL_CONFIG_SET     default
+  0x01f   CH_DATA_FILE_LOAD             0x2bc1c
+  0x020   CH_PROPERTY_WRITE             0x2d270
+  0x021   CH_PROPERTY_READ              0x2d2dc
+  0x022   TRACE_ENABLE                  0x2c548
+  0x023   RESOURCE_INFO_GET             0x2d43c
+  0x024   STATS_BUFFER_SIZE_GET         0x2cddc
+  0x025   SUSPEND                       0x2cd24
+  0x026   DSID_SET                      0x2d204
+  0x027   MCACHE_SIZE_GET               0x2d514
+  0x028   SECURE_MODE_START             0x2d174
+  0x029   SECURE_MODE_STOP              0x2d388
+  0x02a   SET_SNE_PMU_BASE2             0x2c818
+  0x02b   IPC_ENDPOINT_SET2             0x2c878
+  0x02c   IPC_ENDPOINT_UNSET2           default
+  0x02d   CH_DATA_FILE_LOAD2            0x2beec
+  0x02e   SET_DYNAMIC_POWERGATE         0x2c60c
+  0x02f   ANE_DEFAULT_SETTING_SET       0x2bd90
+  0x030   INIT_SHARED_EVENT_INFO        0x2bf2c
+  0x031   EXCLAVE_MODE_START            0x2d5a4
+  0x032   EXCLAVE_MODE_STOP             default
+  0x033   QUIESCE_STATE                 0x2c3a8
+  0x034   CPU_LOAD_GET                  default
+
+0x1d and 0x1f share the small body 0x2bc1c, which re-switches on the
+u32 payload at cmd+0xc. The 0x13 CONFIG_GET_EXT body (0x2c25c) contains
+the assert "outsize >= sizeof(struct sCSneCmdPowerSupplyControl)"
+(string VA 0xa079d, source path ./sne/controller/target/
+CANEController.cpp), which corroborates the id-name table for the LOW
+region.
+
+## Verified main-table routing, 0x200 family
+
+  0x200 TM_SYNC_ERR_NOTIFICATION           0x2c384
+  0x201 LOAD_PROGRAM                       0x2bd00
+  0x202 UNLOAD_PROGRAM                     0x2bd48
+  0x203 CREATE_PROCESS                     0x2bec8
+  0x204 TERMINATE_PROCESS                  0x2d634
+  0x205 PROCEDURE_CALL                     0x2be58
+  0x206 LOAD_AFPP                          0x2d658
+  0x207 UNLOAD_AFPP                        0x2c178
+  0x208 PROGRAM_INTERFACE_VERSION_CHECK    0x2d6c8
+  0x209 PROC_CALL_CACHE_REQUEST            default
+  0x20a PROC_CALL_TRIGGER_CACHE_REQUEST    default
+  0x20b PROC_CALL_RECYCLE_OUTPUT_BUFFER    0x2c854
+  0x20c PROC_CALL_INVALIDATE_CACHE_REQUEST 0x2be34
+  0x20d PROC_CALL_WITH_CUSTOM_BARS         0x2bfe0
+  0x20e PREMAP_BUFFER                      0x2bfbc
+  0x20f CACHE_REQ_WITH_CUSTOM_BARS         0x2bd24
+  0x210 CACHE_REQ_WITH_SHARED_EVENTS       0x2cf80
+  0x211 FORCE_DISABLE_CACHE_REQUESTS       0x2bd6c
+  0x212 PROC_CALL_WITH_SIGNAL_EVENTS       default (via >0x211 guard)
+
+0x300/0x303 and all remaining IDs (including notification family
+0x100..0x108, which all index to the default) also end at 0x30ebc.
+
+## 0x400-family in the 0x2bcb0 branch
+
+  0x400 SECURE_MODE_EVENT   -> 0x31758
+  0x401 REQUEST_PROGRAM_ID  -> 0x318d8
+  0x402 RETURN_PROGRAM_ID   -> 0x2d74c
+  0x403 RETURN_PROCESS_ID   -> 0x2d73c
+  0x404 RETURN_PROCESS_ID   -> 0x31d80
+  else -> default 0x30ebc.
+
+## The default epilogue, and the PING-relevant completion path
+
+Target 0x30ebc is not "unsupported"; it is the common epilogue that
+body-less entries and fulfilled bodies' fallthrough both reach. Sequence:
+
+  0x30ebc  mov x0,x20; mov w1,wzr
+  0x30ec4  bl 0x31e50 (completion helper, mode w1)
+  0x30ec8  mov w23,wzr
+  0x30ecc  ldr x0,[x28]        ; instrumentation-hook global 0x1ca748
+           cbz -> skip; else bl 0x3c63c(w1=[x20+0x1a8], w2=[x20+0xd0],
+           x3=[x20+0x100])  -- log-only
+  0x30ee4  ret (success status of the whole receive loop)
+
+Completion helper 0x31e50(x20, w1):
+  - reads the command record at [x20+0x1b8] (the same msg object);
+    writes u16 [msg+6] ONLY when w1 != 0: w1==1 -> 2, else -> 1;
+    w1==0 (the default path's case) leaves [msg+6] untouched.
+  - if [x20+0x170]==1 it formats an extra debug log (0x2b34c) after a
+    name lookup via 0x34150; log-only.
+  - before enqueue it computes the name pointer again (0x34150 result
+    stored at [x20+0x100]) and calls:
+
+    0xeeac(x20, msg, w2=[x20+0x1b0] msg length, w3=[x20+0x1ac])
+      -> bookkeeping calls 0x8bbcc / 0x8bfcc / 0x8cc8c on the token,
+      then enqueues the SAME msg record on the response queue:
+        0x62e0([x20+0x40], msg, len, -1)
+      If 0x62e0 returns NONZERO, 0x31e50 logs and enters an infinite
+      loop (0x31f7c `b 0x31f80`) = firmware-side hang.
+
+Response enqueue 0x62e0(queueobj, msg_token, len, status):
+  - if [queueobj+8] (linked channel) == 0:
+      bl 0x29b6c([queueobj+0x20], 0); return 0 on success, else 0x80000006
+    (that nonzero propagates back to the panic-hang above).
+  - if [queueobj+8] != 0: packs ((msg_token - [queueobj+0x28]) & 0xffffff)
+    | (len & 0xffffff) << 24 into one word and calls 0x68c8(queue, pack,
+    status) -- the shared queue-insert primitive.
+
+So ANY submission through this evaluator requires the response queue
+at [context+0x40] to already be live (linked channel with room), or the
+firmware core hangs by design: that is a hardware bring-up gate, not a
+firmware defect to route around.
+
+## Dedicated-body examples (corroboration)
+
+The low-ID dedicated bodies mostly just do bounded value copies, or
+extend the LOG format string, and complete via the same epilogue. Full
+function body confirmed for:
+  - id 0x208 PROGRAM_INTERFACE_VERSION_CHECK -> body 0x2d6c8:
+        ldrb [x20+0x1e8]; cmp 1; b.ne 0x2f52c ; then the "Dummy return
+        success" log (string VA 0xa0f0b) and b to epilogue with w1=1
+        (so [msg+6] = 2).
+    The two mode-1 completion sites (`mov w1,#1; b 0x30ec4`) in the
+    whole evaluator are 0x2d724 (used by this 0x208 body) and 0x2f8f0
+    which logs another body's reason string then completes with w1=3
+    (mode 3 -> writes 1 into [msg+6]).
+So [msg+6] is the completion-status/dummy-response u16: 2 = the
+"dummy success" marker (matches the LOAD_AFPP assertions in the
+__TEXT,__cstring name table: "CSNE_CMD_LOAD_AFPP does not support
+dummy response"), 1 = a dedicated-body failure response, and 0 = body-
+less/no-dummy success (e.g. what id 0x12 reaches).
+
+## Scope / limits
+
+Static disassembly of the pinned firmware only. Not pinned here:
+the identity of the response queue at [context+0x40] (T2H endpoint the
+Linux host must own), the call-site context that reaches 0x2bb34 for a
+command from the H2T register path (0xec90's object), how the [msg+6]
+and status word surface in the HOST-side response matcher, or any
+behavior for the "no body" ids besides the epilogue above. The
+instrumentation globals at 0x1ca748 and the [x20+0x170] "print
+enabled" flag exist but their values at run time are unknown (a
+non-null globals would engage log-only calls whose implementations
+are bounded but not audited here). No hardware was accessed.

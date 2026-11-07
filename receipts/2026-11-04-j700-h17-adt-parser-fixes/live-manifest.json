@@ -1,0 +1,13 @@
+{
+  "boot": "984bf0a3-fe01-4c12-b92c-3c7152556dbc",
+  "commit": "14790e11a3e2c0bec2a4c095f23989d4cd6a60e3",
+  "module_sha256": "52a491cbd98fd5b06c8fff75efe1862ca44b93eda1090b0e6d497b9f0b0ee98d",
+  "command": [
+    "sudo",
+    "insmod",
+    "/home/admin/omarchy-ane/ane/h16/ane_h16.ko",
+    "optin=t8140",
+    "stage=dt"
+  ],
+  "previous_stage": "dt-only; no CPU release"
+}

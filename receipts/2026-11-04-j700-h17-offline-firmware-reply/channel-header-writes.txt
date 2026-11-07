@@ -1,0 +1,58 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 000298fc file 0002d8fc  7f2303d5  pacibsp
+VA 00029900 file 0002d900  e923ba6d  stp      d9, d8, [sp, #-0x60]!
+VA 00029904 file 0002d904  fa6701a9  stp      x26, x25, [sp, #0x10]
+VA 00029908 file 0002d908  f85f02a9  stp      x24, x23, [sp, #0x20]
+VA 0002990c file 0002d90c  f65703a9  stp      x22, x21, [sp, #0x30]
+VA 00029910 file 0002d910  f44f04a9  stp      x20, x19, [sp, #0x40]
+VA 00029914 file 0002d914  fd7b05a9  stp      x29, x30, [sp, #0x50]
+VA 00029918 file 0002d918  fd430191  add      x29, sp, #0x50
+VA 0002991c file 0002d91c  390d0090  adrp     x25, #0x1cd000
+VA 00029920 file 0002d920  f30301aa  mov      x19, x1
+VA 00029924 file 0002d924  39833891  add      x25, x25, #0xe20
+VA 00029928 file 0002d928  f503002a  mov      w21, w0
+VA 0002992c file 0002d92c  20008052  mov      w0, #1
+VA 00029930 file 0002d930  01188052  mov      w1, #0xc0
+VA 00029934 file 0002d934  f70304aa  mov      x23, x4
+VA 00029938 file 0002d938  f80303aa  mov      x24, x3
+VA 0002993c file 0002d93c  280340f9  ldr      x8, [x25]
+VA 00029940 file 0002d940  f603022a  mov      w22, w2
+VA 00029944 file 0002d944  1f093fd6  blraaz   x8
+VA 00029948 file 0002d948  f40300aa  mov      x20, x0
+VA 0002994c file 0002d94c  800400b4  cbz      x0, #0x299dc
+VA 00029950 file 0002d950  00e4006f  movi     v0.2d, #0000000000000000
+VA 00029954 file 0002d954  985e00a9  stp      x24, x23, [x20]
+VA 00029958 file 0002d958  08e6072f  movi     d8, #0xffffffff00000000
+VA 0002995c file 0002d95c  955a0229  stp      w21, w22, [x20, #0x10]
+VA 00029960 file 0002d960  930e00f9  str      x19, [x20, #0x18]
+VA 00029964 file 0002d964  9f1600f9  str      xzr, [x20, #0x28]
+VA 00029968 file 0002d968  8082873c  stur     q0, [x20, #0x78]
+VA 0002996c file 0002d96c  808201ad  stp      q0, q0, [x20, #0x30]
+VA 00029970 file 0002d970  8082883c  stur     q0, [x20, #0x88]
+VA 00029974 file 0002d974  8082893c  stur     q0, [x20, #0x98]
+VA 00029978 file 0002d978  808202ad  stp      q0, q0, [x20, #0x50]
+VA 0002997c file 0002d97c  80828a3c  stur     q0, [x20, #0xa8]
+VA 00029980 file 0002d980  9f7200b9  str      wzr, [x20, #0x70]
+VA 00029984 file 0002d984  9fba00b9  str      wzr, [x20, #0xb8]
+VA 00029988 file 0002d988  95020036  tbz      w21, #0, #0x299d8
+VA 0002998c file 0002d98c  e8e5002f  movi     d8, #0x000000ffffffff
+VA 00029990 file 0002d990  df060071  cmp      w22, #1
+VA 00029994 file 0002d994  2b020054  b.lt     #0x299d8
+VA 00029998 file 0002d998  f5031f2a  mov      w21, wzr
+VA 0002999c file 0002d99c  06000014  b        #0x299b4
+VA 000299a0 file 0002d9a0  881640b9  ldr      w8, [x20, #0x14]
+VA 000299a4 file 0002d9a4  b5060011  add      w21, w21, #1
+VA 000299a8 file 0002d9a8  73020191  add      x19, x19, #0x40
+VA 000299ac file 0002d9ac  bf02086b  cmp      w21, w8
+VA 000299b0 file 0002d9b0  4a010054  b.ge     #0x299d8
+VA 000299b4 file 0002d9b4  881280b9  ldrsw    x8, [x20, #0x10]
+VA 000299b8 file 0002d9b8  7ffe00a9  stp      xzr, xzr, [x19, #8]
+VA 000299bc file 0002d9bc  680200f9  str      x8, [x19]
+VA 000299c0 file 0002d9c0  280f40f9  ldr      x8, [x25, #0x18]
+VA 000299c4 file 0002d9c4  e8feffb4  cbz      x8, #0x299a0
+VA 000299c8 file 0002d9c8  e00313aa  mov      x0, x19
+VA 000299cc file 0002d9cc  01088052  mov      w1, #0x40
+VA 000299d0 file 0002d9d0  1f093fd6  blraaz   x8
+VA 000299d4 file 0002d9d4  f3ffff17  b        #0x299a0
+VA 000299d8 file 0002d9d8  881200fd  str      d8, [x20, #0x20]
+VA 000299dc file 0002d9dc  fd7b45a9  ldp      x29, x30, [sp, #0x50]

@@ -1,0 +1,25 @@
+{
+  "boot": "a54fb0ee-3b37-4b94-aa0f-07be07774214",
+  "commit": "aa286071697d69b69622038b0a8f5c91e581e38b",
+  "kernel": "7.2.11-14-1-ARCH",
+  "vermagic": "7.2.11-14-1-ARCH SMP preempt mod_unload aarch64",
+  "module_sha256": "3aacc5c33b5406c2cff1f6b63ec798d45b7fd5b2e17b2b9833053e5a9f61ec10",
+  "engine_reads": [
+    {
+      "offset": "0x0",
+      "width": 4
+    },
+    {
+      "offset": "0x338",
+      "width": 4
+    }
+  ],
+  "command": [
+    "insmod",
+    "/home/admin/omarchy-ane/ane/h17/ane_h17_af_scan.ko",
+    "optin=1",
+    "log_path=/var/log/omarchy-ane/af-scan-a54fb0ee-3b37-4b94-aa0f-07be07774214/probe.log"
+  ],
+  "cold_boot_confirmed_by_operator": true,
+  "scope": "genpd raise, two reads, genpd release; no engine writes"
+}

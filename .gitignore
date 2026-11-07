@@ -56,6 +56,7 @@ tmp/*
 
 # Byte-compiled Python (a committed __pycache__ blob shipped in v0.4.3)
 __pycache__/
+/ane/h17/sim/bringup_order_test
 *.pyc
 
 .omp/
@@ -72,3 +73,11 @@ ane/h15/test_domain_window
 ane/h15/test_rtk_startup
 ane/h15/test_t8122_start
 ane/h18/sim/sim_h18
+
+# ane/h17 userspace sim binary
+ane/h17/sim/sim_h17_wake
+ane/h17/sim/transaction_test
+ane/h17/sim/chanreg_layout_test
+
+# kernelcache index cache (regenerable from the retained kernelcache)
+receipts/**/scripts/kc-index.json

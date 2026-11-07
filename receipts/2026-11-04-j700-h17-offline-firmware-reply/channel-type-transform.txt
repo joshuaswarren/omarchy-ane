@@ -1,0 +1,10 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 000054a4 file 000094a4  e803002a  mov      w8, w0
+VA 000054a8 file 000094a8  e003012a  mov      w0, w1
+VA 000054ac file 000094ac  c8000034  cbz      w8, #0x54c4
+VA 000054b0 file 000094b0  1f080071  cmp      w0, #2
+VA 000054b4 file 000094b4  88000054  b.hi     #0x54c4
+VA 000054b8 file 000094b8  680500f0  adrp     x8, #0xb4000
+VA 000054bc file 000094bc  08810391  add      x8, x8, #0xe0
+VA 000054c0 file 000094c0  005960b8  ldr      w0, [x8, w0, uxtw #2]
+VA 000054c4 file 000094c4  c0035fd6  ret

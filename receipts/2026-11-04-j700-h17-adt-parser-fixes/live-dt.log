@@ -1,0 +1,21 @@
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: stage=dt: soc=t8140 ane-type=0x200
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: reg[0] pa=0x400000000 size=0x2000000 (engine)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: reg[1] pa=0x300700000 size=0x14000 (pmgr)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 dt irq cells=6 iommu cells=6
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=pmgr tier=0 word=ANE_SYS off=0x290 (ps guard word)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=pmgr tier=0 word=ANE_MPM off=0xc000 (ps guard word)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=pmgr tier=0 word=ANE_CPU off=0xc008 (ps guard word)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=pmgr tier=0 word=ANE_TD off=0xc010 (ps guard word)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=pmgr tier=0 word=ANE_BASE off=0xc010 (ps guard word)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-ro tier=0 word=RVBAR off=0x1050000
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-ro tier=0 word=CPU_STATUS off=0x1600048
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-ro tier=0 word=SCRATCH0 off=0x1880020 (+4n, n<8)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-ro tier=0 word=MBOX off=0x1608000 (a2i/i2a ctrl +0x110/+0x114, send +0x800/+0x808, recv +0x830/+0x838)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-boot tier=0 word=CPU_CONTROL off=0x1600044 (write 0 then 0x10, stage=boot only)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=engine-boot tier=0 word=SCRATCH7 off=0x188003c (cleared, then polled for 0x08042006 at stage=boot)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 group=forbidden tier=3 word=CORESIGHT off=0x1010000 (never touched)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: fw pin: name=apple/ane/h17_ane_fw_theia_d9x.macho size=0x180000
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ADT: /reserved-memory/flash@10004ea4000 at 0x10004ea4000+0x68000
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: adt seg0 phys=0x10000774000 remap=0x10000000000 size=0xc0000 (iBoot preload present)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: adt seg1 phys=0x100019ac000 remap=0x100000c0000 size=0x2ac000 (iBoot preload present)
+Nov 04 05:14:34 omarchy kernel: ane_h16 400000000.ane: ane_h16 RESULT stage=0 soc=t8140 verdict=PASS reason=dt-parse-only

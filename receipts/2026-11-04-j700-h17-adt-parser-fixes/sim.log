@@ -1,0 +1,2798 @@
+make: Entering directory '/home/admin/omarchy-ane/ane/h16'
+== ane_h16 sim: pos-dt ==
+info stage=dt: soc=t8132 ane-type=0x100
+info reg[0] pa=0x500000000 size=0x2000000 (engine)
+info reg[1] pa=0x380700000 size=0x18000 (pmgr)
+info ane_h16 dt irq cells=2 iommu cells=1
+info ane_h16 group=pmgr tier=0 word=ANE_SYS off=0x570 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_MPM off=0xc000 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_CPU off=0xc008 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_TD off=0xc010 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_BASE off=0xc018 (ps guard word)
+info ane_h16 group=engine-ro tier=0 word=RVBAR off=0x1050000
+info ane_h16 group=engine-ro tier=0 word=CPU_STATUS off=0x1600048
+info ane_h16 group=engine-ro tier=0 word=SCRATCH0 off=0x1880020 (+4n, n<8)
+info ane_h16 group=engine-ro tier=0 word=MBOX off=0x1608000 (a2i/i2a ctrl +0x110/+0x114, send +0x800/+0x808, recv +0x830/+0x838)
+info ane_h16 group=engine-boot tier=0 word=CPU_CONTROL off=0x1600044 (write 0 then 0x10, stage=boot only)
+info ane_h16 group=engine-boot tier=0 word=SCRATCH7 off=0x188003c (cleared, then polled for 0x08042006 at stage=boot)
+info ane_h16 group=forbidden tier=3 word=CORESIGHT off=0x1010000 (never touched)
+info fw pin: name=apple/ane/h16_ane_fw_leto_j7x.macho size=0x17c000
+info ADT: 0xaaab04a003b0OF at 0x600000000+0xfc
+
+info adt seg0 phys=0x700000000 remap=0x10000848000 size=0xc0000 (iBoot preload present)
+info adt seg1 phys=0x701000000 remap=0x10001400000 size=0x2ac000 (iBoot preload present)
+CRIT ane_h16 RESULT stage=0 soc=t8132 verdict=PASS reason=dt-parse-only
+
+     ok   probe returns 0
+     ok   ZERO bus accesses (hardware-silent)
+     ok   zero ioremaps
+     ok   RESULT PASS dt-parse-only
+     ok   ps guard group printed
+     ok   forbidden CoreSight group printed
+     ok   engine window printed
+     ok   irq/iommu cell counts printed
+     ok   boot-ADT segment-ranges reported
+== pos-dt: PASS (0 failures) ==
+== ane_h16 sim: pos-dt-noadt ==
+info stage=dt: soc=t8132 ane-type=0x100
+info reg[0] pa=0x500000000 size=0x2000000 (engine)
+info reg[1] pa=0x380700000 size=0x18000 (pmgr)
+info ane_h16 dt irq cells=2 iommu cells=1
+info ane_h16 group=pmgr tier=0 word=ANE_SYS off=0x570 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_MPM off=0xc000 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_CPU off=0xc008 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_TD off=0xc010 (ps guard word)
+info ane_h16 group=pmgr tier=0 word=ANE_BASE off=0xc018 (ps guard word)
+info ane_h16 group=engine-ro tier=0 word=RVBAR off=0x1050000
+info ane_h16 group=engine-ro tier=0 word=CPU_STATUS off=0x1600048
+info ane_h16 group=engine-ro tier=0 word=SCRATCH0 off=0x1880020 (+4n, n<8)
+info ane_h16 group=engine-ro tier=0 word=MBOX off=0x1608000 (a2i/i2a ctrl +0x110/+0x114, send +0x800/+0x808, recv +0x830/+0x838)
+info ane_h16 group=engine-boot tier=0 word=CPU_CONTROL off=0x1600044 (write 0 then 0x10, stage=boot only)
+info ane_h16 group=engine-boot tier=0 word=SCRATCH7 off=0x188003c (cleared, then polled for 0x08042006 at stage=boot)
+info ane_h16 group=forbidden tier=3 word=CORESIGHT off=0x1010000 (never touched)
+info fw pin: name=apple/ane/h16_ane_fw_leto_j7x.macho size=0x17c000
+ERR  no reserved-memory node labelled "adt": cannot read segment-ranges; refusing
+
+info adt: no reserved-memory "adt" region, ane node or segment-ranges: iBoot preload presence on this boot is unknown; stage=boot refuses
+CRIT ane_h16 RESULT stage=0 soc=t8132 verdict=PASS reason=dt-parse-only
+
+     ok   probe returns 0
+     ok   ZERO bus accesses
+     ok   missing ADT is a finding, not a failure
+     ok   still RESULT PASS dt-parse-only
+== pos-dt-noadt: PASS (0 failures) ==
+== ane_h16 sim: pos-status ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+CRIT ane_h16 RESULT stage=1 soc=t8132 verdict=PASS reason=ps-guard+reads
+
+     ok   probe returns 0
+     ok   RESULT PASS ps-guard+reads
+     ok   five ps words logged with ACTUAL 0xf
+     ok   zero engine WRITES
+     ok   engine readout happened behind the guard
+     ok   power claim released
+== pos-status: PASS (0 failures) ==
+== ane_h16 sim: pos-boot ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaab609903b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+info preload diff seg1 vm 0xc5a08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c68: file 0xa5a5a5a5a5a5a5a5 live 0xa5a5a5a5a5a5a511 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8000: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8008: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8010: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8018: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8020: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8028: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8030: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8038: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8040: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8048: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8050: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8058: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8060: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8068: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8070: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8078: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8080: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8088: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8090: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8098: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8100: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8108: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8110: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8118: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8120: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8128: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8130: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8138: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8140: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8148: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8150: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8158: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8160: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8168: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8170: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8178: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8180: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8188: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8190: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8198: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8200: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8208: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8210: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8218: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8220: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8228: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8230: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8238: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8240: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8248: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8250: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8258: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8260: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8268: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8270: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8278: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8280: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8288: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8290: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8298: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8300: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8308: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0x1c0000: file 0 live 0x10001400000 (single word; copied)
+
+info preload diff seg1 vm 0x2c0000: file 0 live 0x10000848000 (single word; copied)
+
+info staged image (3504 KiB) mapped at iova 0x10000848000 (TEXT) and 0x10001400000 (DATA)
+
+info RVBAR unlatched; writing 0x81010000848001
+
+info SCRATCH7 wake word 0x8042006: firmware is running (CPU_STATUS 0x2a)
+
+info RTKit poll skipped (hello_wait_ms=0); set 1000 to probe for HELLO/EPMAP/STARTEP
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=PASS reason=boot-wake
+
+EMRG firmware started: do NOT unload this module; reboot to park the ANE
+
+     ok   probe returns 0
+     ok   wake word line
+     ok   RESULT PASS boot-wake
+     ok   RVBAR written with the composed entry
+     ok   SCRATCH7 cleared once, before CPU release
+     ok   CPU_CONTROL 0 then 0x10
+     ok   more reads than writes
+     ok   staged image mapped at the ADT IOVAs (219 pages)
+     ok   post-start pin warning printed
+== pos-boot: PASS (0 failures) ==
+== ane_h16 sim: pos-boot-hello ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaaae1a603b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+info preload diff seg1 vm 0xc5a08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c68: file 0xa5a5a5a5a5a5a5a5 live 0xa5a5a5a5a5a5a511 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8000: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8008: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8010: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8018: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8020: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8028: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8030: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8038: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8040: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8048: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8050: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8058: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8060: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8068: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8070: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8078: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8080: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8088: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8090: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8098: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8100: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8108: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8110: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8118: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8120: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8128: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8130: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8138: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8140: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8148: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8150: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8158: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8160: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8168: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8170: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8178: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8180: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8188: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8190: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8198: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8200: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8208: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8210: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8218: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8220: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8228: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8230: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8238: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8240: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8248: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8250: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8258: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8260: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8268: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8270: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8278: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8280: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8288: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8290: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8298: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8300: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8308: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0x1c0000: file 0 live 0x10001400000 (single word; copied)
+
+info preload diff seg1 vm 0x2c0000: file 0 live 0x10000848000 (single word; copied)
+
+info staged image (3504 KiB) mapped at iova 0x10000848000 (TEXT) and 0x10001400000 (DATA)
+
+info RVBAR unlatched; writing 0x81010000848001
+
+info SCRATCH7 wake word 0x8042006: firmware is running (CPU_STATUS 0x2a)
+
+info RTKit HELLO: min 1 max 3 -> replying version 2
+
+info RTKit poll done: HELLO received
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=PASS reason=boot-hello
+
+EMRG firmware started: do NOT unload this module; reboot to park the ANE
+
+     ok   probe returns 0
+     ok   firmware model received HELLO_REPLY
+     ok   reply version min(max=3, 2)
+     ok   HELLO exchange logged
+     ok   RESULT PASS boot-hello
+== pos-boot-hello: PASS (0 failures) ==
+== ane_h16 sim: neg-ps-stuck ==
+ERR  ane_h16 ps word=ANE_SYS off=0x570 stuck value=0x30 actual=0x3; refusing to touch the engine window
+
+CRIT ane_h16 RESULT stage=1 soc=t8132 verdict=FAIL reason=pmgr-actual-stuck
+
+     ok   probe returns -ETIMEDOUT
+     ok   RESULT FAIL pmgr-actual-stuck
+     ok   ZERO engine accesses behind a failed guard
+     ok   power claim released
+== neg-ps-stuck: PASS (0 failures) ==
+== ane_h16 sim: neg-mbox-silent ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaab692203b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+info preload diff seg1 vm 0xc5a08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c68: file 0xa5a5a5a5a5a5a5a5 live 0xa5a5a5a5a5a5a511 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8000: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8008: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8010: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8018: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8020: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8028: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8030: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8038: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8040: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8048: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8050: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8058: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8060: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8068: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8070: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8078: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8080: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8088: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8090: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8098: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8100: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8108: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8110: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8118: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8120: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8128: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8130: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8138: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8140: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8148: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8150: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8158: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8160: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8168: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8170: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8178: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8180: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8188: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8190: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8198: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8200: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8208: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8210: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8218: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8220: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8228: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8230: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8238: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8240: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8248: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8250: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8258: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8260: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8268: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8270: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8278: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8280: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8288: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8290: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8298: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8300: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8308: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0x1c0000: file 0 live 0x10001400000 (single word; copied)
+
+info preload diff seg1 vm 0x2c0000: file 0 live 0x10000848000 (single word; copied)
+
+info staged image (3504 KiB) mapped at iova 0x10000848000 (TEXT) and 0x10001400000 (DATA)
+
+info RVBAR unlatched; writing 0x81010000848001
+
+EMRG no SCRATCH7 wake word within 200 ms (last 0); firmware did not start; leaving the mapping in place, reboot before retrying
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=FAIL reason=boot-timeout
+
+     ok   probe returns -ETIMEDOUT
+     ok   RESULT FAIL boot-timeout
+     ok   reboot-required message
+     ok   mapping LEFT in place (no unwind)
+     ok   staged buffer not freed
+     ok   no firmware-started claim (it did not start)
+== neg-mbox-silent: PASS (0 failures) ==
+== ane_h16 sim: neg-bad-pin ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaab47dd03b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+ERR  apple/ane/h16_ane_fw_leto_j7x.macho: sha256 mismatch against the pinned image
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=REFUSED reason=fw-pin
+
+     ok   probe returns -EINVAL
+     ok   RESULT REFUSED fw-pin
+     ok   zero engine writes on refusal
+     ok   nothing mapped
+     ok   refused before any allocation
+== neg-bad-pin: PASS (0 failures) ==
+== ane_h16 sim: neg-foreign-preload ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaaacf6003b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+ERR  preload diff seg0 vm 0x2000: file 0x5a5a5a5a5a5a5a5a live 0xdeadbeefdeadbeef: preload is not the pinned image; refusing
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=REFUSED reason=preload-diff
+
+     ok   probe returns -EINVAL
+     ok   RESULT REFUSED preload-diff
+     ok   zero engine writes on refusal
+     ok   nothing mapped
+     ok   refusal frees the staged buffer (no DMA leak)
+== neg-foreign-preload: PASS (0 failures) ==
+== ane_h16 sim: neg-dart-map ==
+info ane_h16 ps word=ANE_SYS off=0x570 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_MPM off=0xc000 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_CPU off=0xc008 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_TD off=0xc010 value=0xff actual=0xf pass=true
+
+info ane_h16 ps word=ANE_BASE off=0xc018 value=0xff actual=0xf pass=true
+
+info RVBAR (0x1050000) = 0 (unlatched)
+
+info CPU_STATUS (0x1600048) = 0
+
+info SCRATCH0 (0x1880020) = 0
+
+info SCRATCH1 (0x1880024) = 0
+
+info SCRATCH2 (0x1880028) = 0
+
+info SCRATCH3 (0x188002c) = 0
+
+info SCRATCH4 (0x1880030) = 0
+
+info SCRATCH5 (0x1880034) = 0
+
+info SCRATCH6 (0x1880038) = 0
+
+info SCRATCH7 (0x188003c) = 0
+
+info mbox a2i_ctrl (0x1608110) = 0
+
+info mbox i2a_ctrl (0x1608114) = 0
+
+info ADT: 0xaaaba5e903b0OF at 0x600000000+0xfc
+
+info segment-ranges: TEXT phys 0x700000000 iova 0x10000848000 size 0xc0000; DATA phys 0x701000000 iova 0x10001400000 size 0x2ac000
+
+info preload diff seg1 vm 0xc5a08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5a98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5aa8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ab8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ac8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ad8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ae8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5af8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b68: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b70: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b78: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b80: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b88: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b90: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5b98: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5ba8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bb8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bc8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bd8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5be8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf0: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5bf8: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c00: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c08: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c10: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c18: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c20: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c28: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c30: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c38: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c40: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c48: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c50: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c58: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c60: file 0xa5a5a5a5a5a5a5a5 live 0x1111111111111111 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xc5c68: file 0xa5a5a5a5a5a5a5a5 live 0xa5a5a5a5a5a5a511 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7c98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ca8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ce8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7cf8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7d98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7da8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7db8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7dd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7de8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7df8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7e98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ea8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7eb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ec8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ed8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ee8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ef8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f00: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f08: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f10: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f18: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f20: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f28: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f30: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f38: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f40: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f48: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f50: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f58: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f60: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f68: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f70: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f78: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f80: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f88: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f90: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7f98: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fa8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fb8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fc8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fd8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7fe8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd7ff8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8000: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8008: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8010: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8018: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8020: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8028: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8030: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8038: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8040: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8048: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8050: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8058: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8060: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8068: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8070: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8078: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8080: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8088: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8090: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8098: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd80f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8100: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8108: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8110: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8118: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8120: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8128: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8130: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8138: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8140: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8148: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8150: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8158: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8160: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8168: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8170: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8178: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8180: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8188: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8190: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8198: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd81f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8200: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8208: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8210: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8218: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8220: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8228: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8230: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8238: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8240: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8248: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8250: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8258: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8260: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8268: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8270: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8278: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8280: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8288: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8290: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8298: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82a8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82b8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82c8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82d8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82e8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f0: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd82f8: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8300: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0xd8308: file 0xa5a5a5a5a5a5a5a5 live 0x2222222222222222 (patchbay/tunables; copied)
+
+info preload diff seg1 vm 0x1c0000: file 0 live 0x10001400000 (single word; copied)
+
+info preload diff seg1 vm 0x2c0000: file 0 live 0x10000848000 (single word; copied)
+
+ERR  iova 0x10001590000 already mapped; refusing to alias over it
+
+CRIT ane_h16 RESULT stage=3 soc=t8132 verdict=REFUSED reason=dart-map
+
+     ok   probe returns -EBUSY
+     ok   RESULT REFUSED dart-map
+     ok   zero engine writes on refusal
+     ok   refusal frees the staged buffer (no DMA leak)
+     ok   partial map unwound before free_stage
+== neg-dart-map: PASS (0 failures) ==
+== ane_h16 sim: neg-unknown-stage ==
+ERR  unknown stage "2" (want dt, status or boot)
+
+     ok   probe returns -EINVAL
+     ok   NO RESULT line on unknown stage
+     ok   zero bus accesses
+     ok   zero ioremaps
+== neg-unknown-stage: PASS (0 failures) ==
+== ane_h16 sim: neg-h17-boot ==
+ERR  T8140 boot refused: H17 CE/PWGATE ordering is not implemented in this path
+
+     ok   H17 boot refused before hardware access
+     ok   zero bus accesses
+     ok   zero ioremaps
+     ok   zero runtime power acquisitions
+     ok   zero DMA allocations
+== neg-h17-boot: PASS (0 failures) ==
+== ane_h16 sim: neg-adt-bounds ==
+     ok   valid seven-byte arm-io fixture accepted
+     ok   truncated final property refused
+     ok   truncated node header refused
+     ok   excessive tree depth refused
+     ok   zero bus accesses
+== neg-adt-bounds: PASS (0 failures) ==
+ok: pin-check mutation caught by neg-bad-pin
+ok: ps-gate mutation caught by neg-ps-stuck
+ok: leak mutation caught by neg-foreign-preload
+ok: partial-map-leak mutation caught by neg-dart-map
+python3 sim/test_adt_mutations.py
+PASS: arm-io-length regression caught by pos-dt
+PASS: segment-u64-size regression caught by pos-boot
+make: Leaving directory '/home/admin/omarchy-ane/ane/h16'

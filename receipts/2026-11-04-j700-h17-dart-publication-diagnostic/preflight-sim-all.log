@@ -1,0 +1,87 @@
+make: Entering directory '/home/admin/omarchy-ane/ane/h17'
+./sim/sim_h17_wake snapshot
+snapshot: ok
+./sim/transaction_test
+transaction checks: 86, failures: 0
+./sim/sim_h17_wake no-optin
+no-optin: ok
+./sim/sim_h17_wake wrong-board
+wrong-board: ok
+./sim/sim_h17_wake rehearse-init
+rehearse-init: ok
+SIM_CC='cc' SIM_CFLAGS='-g -O1 -Wall -Wextra -Werror -std=gnu11' python3 sim/test_mutations.py
+PASS mutation init-refusal
+PASS mutation pending-before-read
+PASS mutation ack-timeout
+PASS mutation disarm-failure
+PASS mutation alignment
+python3 sim/test_plan_stage4.py
+..................
+----------------------------------------------------------------------
+Ran 18 tests in 1.676s
+
+OK
+./sim/bringup_order_test
+PASS: H17 CE/tunable/PS/PWGATE ordering, 88 intent and 88 I/O failures, three bounded timeouts; no CPU release
+python3 -m unittest -v test_chanreg_model.py test_table_discovery_verdict.py
+test_complete_reply_range (test_chanreg_model.DescriptorTests.test_complete_reply_range) ... ok
+test_count_boundaries_and_firmware_argument (test_chanreg_model.DescriptorTests.test_count_boundaries_and_firmware_argument) ... ok
+test_every_byte_against_independent_store_list (test_chanreg_model.DescriptorTests.test_every_byte_against_independent_store_list) ... ok
+test_invalid_inputs (test_chanreg_model.DescriptorTests.test_invalid_inputs) ... ok
+test_invalid_regions (test_chanreg_model.DescriptorTests.test_invalid_regions) ... ok
+test_last_descriptor_slot (test_chanreg_model.DescriptorTests.test_last_descriptor_slot) ... ok
+test_mapping_padding_is_not_reply_storage (test_chanreg_model.DescriptorTests.test_mapping_padding_is_not_reply_storage) ... ok
+test_minimum_allocation_and_all_option_combinations (test_chanreg_model.DescriptorTests.test_minimum_allocation_and_all_option_combinations) ... ok
+test_no_heap_cannot_publish_extra_heap (test_chanreg_model.DescriptorTests.test_no_heap_cannot_publish_extra_heap) ... ok
+test_optional_heap_absent (test_chanreg_model.DescriptorTests.test_optional_heap_absent) ... ok
+test_snapshot_geometry (test_chanreg_model.DescriptorTests.test_snapshot_geometry) ... ok
+test_unasserted_ownership_is_refused (test_chanreg_model.DescriptorTests.test_unasserted_ownership_is_refused) ... ok
+test_channel_order_and_failures (test_table_discovery_verdict.VerdictTests.test_channel_order_and_failures) ... ok
+test_copy_bounds_sizes_and_preparation (test_table_discovery_verdict.VerdictTests.test_copy_bounds_sizes_and_preparation) ... ok
+test_descriptor_digest_must_match_all_bytes (test_table_discovery_verdict.VerdictTests.test_descriptor_digest_must_match_all_bytes) ... ok
+test_exact_capture (test_table_discovery_verdict.VerdictTests.test_exact_capture) ... ok
+test_missing_duplicate_or_malformed_marker (test_table_discovery_verdict.VerdictTests.test_missing_duplicate_or_malformed_marker) ... ok
+test_protocol_order (test_table_discovery_verdict.VerdictTests.test_protocol_order) ... ok
+test_runner_has_no_default_action (test_table_discovery_verdict.VerdictTests.test_runner_has_no_default_action) ... ok
+test_wake_pass_cannot_substitute (test_table_discovery_verdict.VerdictTests.test_wake_pass_cannot_substitute) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.024s
+
+OK
+python3 -m unittest -v test_dart_publication_observations.py
+test_deferred_result_requires_flag (test_dart_publication_observations.PublicationObservationsTests.test_deferred_result_requires_flag) ... ok
+test_different_words_and_zero_are_not_qualified (test_dart_publication_observations.PublicationObservationsTests.test_different_words_and_zero_are_not_qualified) ... ok
+test_limit_is_reported_not_assumed_complete (test_dart_publication_observations.PublicationObservationsTests.test_limit_is_reported_not_assumed_complete) ... ok
+test_malformed_scope_geometry_and_bounds (test_dart_publication_observations.PublicationObservationsTests.test_malformed_scope_geometry_and_bounds) ... ok
+test_missing_duplicate_and_gap (test_dart_publication_observations.PublicationObservationsTests.test_missing_duplicate_and_gap) ... ok
+test_presence_mask_and_retired_ownership (test_dart_publication_observations.PublicationObservationsTests.test_presence_mask_and_retired_ownership) ... ok
+test_return_code_consistency (test_dart_publication_observations.PublicationObservationsTests.test_return_code_consistency) ... ok
+test_shared_root_presence_must_match (test_dart_publication_observations.PublicationObservationsTests.test_shared_root_presence_must_match) ... ok
+test_snapshot_log_order_can_interleave (test_dart_publication_observations.PublicationObservationsTests.test_snapshot_log_order_can_interleave) ... ok
+test_three_level_bounds (test_dart_publication_observations.PublicationObservationsTests.test_three_level_bounds) ... ok
+test_valid_is_not_hardware_pass (test_dart_publication_observations.PublicationObservationsTests.test_valid_is_not_hardware_pass) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.006s
+
+OK
+python3 -m unittest -v test_diagnostic_preflight.py
+test_board_and_loaded_module (test_diagnostic_preflight.DiagnosticPreflightTests.test_board_and_loaded_module) ... ok
+test_cli_manifest_ownership_modes_and_json (test_diagnostic_preflight.DiagnosticPreflightTests.test_cli_manifest_ownership_modes_and_json) ... ok
+test_cli_modinfo_failure (test_diagnostic_preflight.DiagnosticPreflightTests.test_cli_modinfo_failure) ... ok
+test_cli_rejects_manifest_symlink (test_diagnostic_preflight.DiagnosticPreflightTests.test_cli_rejects_manifest_symlink) ... ok
+test_disabled_or_missing_diagnostic (test_diagnostic_preflight.DiagnosticPreflightTests.test_disabled_or_missing_diagnostic) ... ok
+test_every_artifact_hash_is_required (test_diagnostic_preflight.DiagnosticPreflightTests.test_every_artifact_hash_is_required) ... ok
+test_failed_boot_and_bad_uuid (test_diagnostic_preflight.DiagnosticPreflightTests.test_failed_boot_and_bad_uuid) ... ok
+test_invalid_or_incomplete_manifest (test_diagnostic_preflight.DiagnosticPreflightTests.test_invalid_or_incomplete_manifest) ... ok
+test_matching_identity_does_not_arm (test_diagnostic_preflight.DiagnosticPreflightTests.test_matching_identity_does_not_arm) ... ok
+test_missing_module (test_diagnostic_preflight.DiagnosticPreflightTests.test_missing_module) ... ok
+test_notes_refuse_missing_duplicate_and_truncated (test_diagnostic_preflight.DiagnosticPreflightTests.test_notes_refuse_missing_duplicate_and_truncated) ... ok
+test_release_and_build_id (test_diagnostic_preflight.DiagnosticPreflightTests.test_release_and_build_id) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.046s
+
+OK
+make: Leaving directory '/home/admin/omarchy-ane/ane/h17'

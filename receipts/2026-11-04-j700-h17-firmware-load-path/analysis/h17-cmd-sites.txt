@@ -1,0 +1,79 @@
+### processCommandResponse around 0x8f438ec (this+0x148)
+0xfffffe0008f438c0: fa 03 00 aa	mov	x26, x0
+0xfffffe0008f438c4: 3a b4 f9 f2	movk	x26, #0xcda1, lsl #48
+0xfffffe0008f438c8: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe0008f438cc: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe0008f438d0: 30 1a c1 da	autda	x16, x17
+0xfffffe0008f438d4: f1 03 10 aa	mov	x17, x16
+0xfffffe0008f438d8: f1 47 c1 da	xpacd	x17
+0xfffffe0008f438dc: 1f 02 11 eb	cmp	x16, x17
+0xfffffe0008f438e0: 40 00 00 54	b.eq	#0xfffffe0008f438e8
+0xfffffe0008f438e4: 40 8e 38 d4	brk	#0xc472
+0xfffffe0008f438e8: 08 22 05 91	add	x8, x16, #0x148
+0xfffffe0008f438ec: 09 a6 40 f9	ldr	x9, [x16, #0x148]
+0xfffffe0008f438f0: f1 03 08 aa	mov	x17, x8
+0xfffffe0008f438f4: 11 59 e3 f2	movk	x17, #0x1ac8, lsl #48
+0xfffffe0008f438f8: 31 09 3f d7	blraa	x9, x17
+0xfffffe0008f438fc: a1 a5 01 d0	adrp	x1, #0xfffffe000c3f9000
+0xfffffe0008f43900: 21 e0 15 91	add	x1, x1, #0x578
+0xfffffe0008f43904: 71 98 af 94	bl	#0xfffffe000bb29ac8
+0xfffffe0008f43908: 20 07 00 b4	cbz	x0, #0xfffffe0008f439ec
+0xfffffe0008f4390c: e1 03 00 aa	mov	x1, x0
+0xfffffe0008f43910: 1b 00 80 52	mov	w27, #0
+0xfffffe0008f43914: b6 a5 01 d0	adrp	x22, #0xfffffe000c3f9000
+0xfffffe0008f43918: d6 e2 15 91	add	x22, x22, #0x578
+0xfffffe0008f4391c: 3c 00 80 52	mov	w28, #1
+0xfffffe0008f43920: f1 03 01 aa	mov	x17, x1
+0xfffffe0008f43924: 30 0e 41 f8	ldr	x16, [x17, #0x10]!
+
+### ReadFirmwareTimestamp 0x8f43d78 (this+0x14c)
+0xfffffe0008f43d58: fd 7b 03 a9	stp	x29, x30, [sp, #0x30]
+0xfffffe0008f43d5c: fd c3 00 91	add	x29, sp, #0x30
+0xfffffe0008f43d60: f3 03 00 aa	mov	x19, x0
+0xfffffe0008f43d64: 08 20 42 39	ldrb	w8, [x0, #0x88]
+0xfffffe0008f43d68: 88 02 00 36	tbz	w8, #0, #0xfffffe0008f43db8
+0xfffffe0008f43d6c: 08 64 9c 52	mov	w8, #0xe320
+0xfffffe0008f43d70: 75 02 08 8b	add	x21, x19, x8
+0xfffffe0008f43d74: a0 02 40 f9	ldr	x0, [x21]
+0xfffffe0008f43d78: 61 4e 41 b9	ldr	w1, [x19, #0x14c]
+0xfffffe0008f43d7c: 98 c0 00 94	bl	#0xfffffe0008f73fdc
+0xfffffe0008f43d80: f6 03 00 2a	mov	w22, w0
+0xfffffe0008f43d84: b7 0c 80 52	mov	w23, #0x65
+0xfffffe0008f43d88: a0 02 40 f9	ldr	x0, [x21]
+0xfffffe0008f43d8c: 61 4a 41 b9	ldr	w1, [x19, #0x148]
+0xfffffe0008f43d90: 93 c0 00 94	bl	#0xfffffe0008f73fdc
+0xfffffe0008f43d94: f4 03 00 aa	mov	x20, x0
+0xfffffe0008f43d98: a0 02 40 f9	ldr	x0, [x21]
+0xfffffe0008f43d9c: 61 4e 41 b9	ldr	w1, [x19, #0x14c]
+0xfffffe0008f43da0: 8f c0 00 94	bl	#0xfffffe0008f73fdc
+0xfffffe0008f43da4: df 42 20 eb	cmp	x22, w0, uxtw
+0xfffffe0008f43da8: 40 01 00 54	b.eq	#0xfffffe0008f43dd0
+0xfffffe0008f43dac: f6 03 00 2a	mov	w22, w0
+0xfffffe0008f43db0: f7 06 00 71	subs	w23, w23, #1
+0xfffffe0008f43db4: a1 fe ff 54	b.ne	#0xfffffe0008f43d88
+
+### handleOutstandingCommand 0x8f43504 (this+0x150 as x9)
+0xfffffe0008f434e4: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe0008f434e8: 30 1a c1 da	autda	x16, x17
+0xfffffe0008f434ec: f1 03 10 aa	mov	x17, x16
+0xfffffe0008f434f0: f1 47 c1 da	xpacd	x17
+0xfffffe0008f434f4: 1f 02 11 eb	cmp	x16, x17
+0xfffffe0008f434f8: 40 00 00 54	b.eq	#0xfffffe0008f43500
+0xfffffe0008f434fc: 40 8e 38 d4	brk	#0xc472
+0xfffffe0008f43500: 08 42 05 91	add	x8, x16, #0x150
+0xfffffe0008f43504: 09 aa 40 f9	ldr	x9, [x16, #0x150]
+0xfffffe0008f43508: f1 03 08 aa	mov	x17, x8
+0xfffffe0008f4350c: 11 3d e5 f2	movk	x17, #0x29e8, lsl #48
+0xfffffe0008f43510: 31 09 3f d7	blraa	x9, x17
+0xfffffe0008f43514: 20 02 00 35	cbnz	w0, #0xfffffe0008f43558
+0xfffffe0008f43518: 68 02 4d 39	ldrb	w8, [x19, #0x340]
+0xfffffe0008f4351c: 88 01 00 36	tbz	w8, #0, #0xfffffe0008f4354c
+0xfffffe0008f43520: 60 96 41 f9	ldr	x0, [x19, #0x328]
+0xfffffe0008f43524: 10 00 40 f9	ldr	x16, [x0]
+0xfffffe0008f43528: f1 03 00 aa	mov	x17, x0
+0xfffffe0008f4352c: 31 b4 f9 f2	movk	x17, #0xcda1, lsl #48
+0xfffffe0008f43530: 30 1a c1 da	autda	x16, x17
+0xfffffe0008f43534: 11 2f 80 d2	mov	x17, #0x178
+0xfffffe0008f43538: 10 02 11 8b	add	x16, x16, x17
+0xfffffe0008f4353c: 08 02 40 f9	ldr	x8, [x16]
+0xfffffe0008f43540: 30 53 f3 f2	movk	x16, #0x9a99, lsl #48

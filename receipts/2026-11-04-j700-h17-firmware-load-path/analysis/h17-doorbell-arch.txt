@@ -1,0 +1,103 @@
+# H17 doorbell architecture -- who rings 0x1884000 and what a request rings instead
+# Image-wide scans over /var/tmp/neo/kernelcache.bin (114688000 bytes, 366 kext
+# filesets, linear map VA = 0xfffffe0007004000 + file offset), kimage.py scans.
+
+find "doorBellRing":  0x73b38fe  "static void ANEHWDevice::doorBellRing(void *)"  (__FUNCTION__ string)
+                      0x73d91ba  os_log format of doorBellRing
+                      0xcf21e13/0xcf90b23..0xcf90b95/0xd8907e9  (LINKEDIT symbol strings)
+ptr  (raw u64 == doorBellRing VA, image-wide): exactly 1 slot -- the ANEHWDevice
+    method list 0xc7c4378. No raw data pointer to it anywhere else.
+bl   (target doorBellRing, whole __TEXT_EXEC): 0 hits.
+adrp+add (0x73b38fe): 0 sites -> no callPlatformFunction("doorBellRing") in the image.
+
+named doorbell channels (ANE_Init -> channelNameToIndex, 8 sites):
+  dev+0xe1f8 SHAREDMALLOC   dev+0xe208 IO
+  dev+0xe1fc TERMINAL       dev+0xe20c IO_T2H
+  dev+0xe200 BUF_H2T        dev+0xe210 DEBUG
+  dev+0xe204 BUF_T2H        dev+0xe214 DATA_CHAIN_H2T
+channelNameToIndex: count u32 [dev+0xe1f0], table [[dev+0x3de0]] stride 0x100,
+  strnlen(name,0x20)+bcmp; *out=index; returns 0 / 0xe00002c2.
+
+== ANEHWDevice::FWSharedEventDoorbellRing(ANERequest*) head 0x8f45fb8 ==
+0xfffffe0008f45fb8: pacibsp  
+0xfffffe0008f45fbc: sub      sp, sp, #0x90
+0xfffffe0008f45fc0: stp      x28, x27, [sp, #0x30]
+0xfffffe0008f45fc4: stp      x26, x25, [sp, #0x40]
+0xfffffe0008f45fc8: stp      x24, x23, [sp, #0x50]
+0xfffffe0008f45fcc: stp      x22, x21, [sp, #0x60]
+0xfffffe0008f45fd0: stp      x20, x19, [sp, #0x70]
+0xfffffe0008f45fd4: stp      x29, x30, [sp, #0x80]
+0xfffffe0008f45fd8: add      x29, sp, #0x80
+0xfffffe0008f45fdc: str      x0, [sp, #0x28]
+0xfffffe0008f45fe0: cbz      x1, #0xfffffe0008f46100
+0xfffffe0008f45fe4: adrp     x8, #0xfffffe000c3f8000
+0xfffffe0008f45fe8: add      x8, x8, #0xd48
+0xfffffe0008f45fec: ldr      w8, [x8]
+0xfffffe0008f45ff0: tbz      w8, #0xa, #0xfffffe0008f46100
+0xfffffe0008f45ff4: mov      x20, x1
+0xfffffe0008f45ff8: ldr      x8, [sp, #0x28]
+0xfffffe0008f45ffc: ldr      x0, [x8, #0x3ab8]
+0xfffffe0008f46000: ldr      x16, [x0]
+0xfffffe0008f46004: mov      x17, x0
+0xfffffe0008f46008: movk     x17, #0xcda1, lsl #48
+0xfffffe0008f4600c: autda    x16, x17
+0xfffffe0008f46010: mov      x17, #0x138
+0xfffffe0008f46014: add      x16, x16, x17
+0xfffffe0008f46018: ldr      x8, [x16]
+0xfffffe0008f4601c: movk     x16, #0x34f6, lsl #48
+0xfffffe0008f46020: blraa    x8, x16
+0xfffffe0008f46024: ldr      w8, [x20, #0x18fc]
+0xfffffe0008f46028: cbz      w8, #0xfffffe0008f46100
+0xfffffe0008f4602c: mov      x21, x0
+0xfffffe0008f46030: mov      x25, #0
+0xfffffe0008f46034: mov      w8, #0xe278
+0xfffffe0008f46038: ldr      x9, [sp, #0x28]
+0xfffffe0008f4603c: add      x26, x9, x8
+
+== FWSharedEventDoorbellRing tail (the ring) ==
+0xfffffe0008f46120: ldr      x8, [sp, #0x28]
+0xfffffe0008f46124: ldr      x8, [x8, #0x3b20]
+0xfffffe0008f46128: mov      w9, #0x40
+0xfffffe0008f4612c: str      w9, [x8]
+0xfffffe0008f46130: mov      w0, #0
+
+== ANEHWDevice::start+0x39c4  shared-event shmem word init -> [dev+0x3b20] ==
+0xfffffe0008f56774: str      x0, [x19, #0x3b18]
+0xfffffe0008f56778: cbz      x0, #0xfffffe0008f567b4
+0xfffffe0008f5677c: sub      x8, x22, #1
+0xfffffe0008f56780: and      x22, x8, x27
+0xfffffe0008f56784: ldr      x16, [x0]
+0xfffffe0008f56788: mov      x17, x0
+0xfffffe0008f5678c: movk     x17, #0xcda1, lsl #48
+0xfffffe0008f56790: autda    x16, x17
+0xfffffe0008f56794: mov      x17, #0x138
+0xfffffe0008f56798: add      x16, x16, x17
+0xfffffe0008f5679c: ldr      x8, [x16]
+0xfffffe0008f567a0: movk     x16, #0x34f6, lsl #48
+0xfffffe0008f567a4: blraa    x8, x16
+0xfffffe0008f567a8: add      x8, x0, x22
+
+== SendRequestToFirmware_gated+0x20f8 ring site (x0=this, x1=request) ==
+0xfffffe0008f11ac4: mov      x0, x22
+0xfffffe0008f11ac8: mov      x1, x19
+0xfffffe0008f11acc: bl       #0xfffffe0008f45fb8
+0xfffffe0008f11ad0: mov      w24, #0
+
+FWSharedEventDoorbellRing call sites (whole-image bl scan): SendRequestToFirmware_gated+0x2100,
+  ANE_ProgramPrepareAndSubmitRequest_gated+0x3e68 (0x8f1d440).
+
+log strings:
+  0xfffffe00073cb4f7  '%s: %s: FW shared event doorbell uuid: 0x%llx cachehandle: 0x%llx, transactionId: 0x%llx\n'
+  0xfffffe00073cf431  '%s: %s: FW shared event doorbell uuid: 0x%llx cachehandle: 0x%llx, transactionId: 0x%llx'
+  0xfffffe00073d91ff  '%s: %s: wait event idx: %lld type: %d value: %lld\n'
+  0xfffffe00073dd933  '%s: %s: no clocks. returning \n'
+  0xfffffe00073dd952  '%s: %s: polling all channels\n'
+  0xfffffe00073b45ef  'aneInterruptHandlerPriv'
+  0xfffffe00073b3913  'FWSharedEventDoorbellRing'
+
+ANERequest field offsets observed in SendRequestToFirmware_gated (this=dev x22):
+  +0x18 u64   +0x20 u32  +0x24 u8(flag set/clear)  +0x25 u8  +0x28 u64(obj, vtable+0x158 call)
+  +0x30 u64(cleared)  +0x38 u64  +0x40 u32  +0x44 u32
+  +0x1890 u64  +0x1898 u32  +0x18a0 u64  +0x18e0 u64 (client key -> findClient)  +0x18f0 u64
+  +0x1900 u32  +0x18fc u32 shared-event count  +0x190c event array stride 0x30, +0x14 = IOSurfaceSharedEvent*
+  +0x3120 u64  +0x3128 u32  +0x3130 u64 (queue link, cleared on completion)

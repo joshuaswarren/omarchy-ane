@@ -1,0 +1,58 @@
+{
+  "boot_id": "915eae80-feaa-43f7-959d-8fd6b499cc5c",
+  "kernel": "7.2.11-14-1-ARCH",
+  "nodes": {
+    "ane@400000000": {
+      "status": "okay",
+      "compatible": "apple,t8140-ane",
+      "reg-names": "engine\u0000pmgr",
+      "reg": "0000000400000000000000000200000000000003007000000000000000014000",
+      "power-domains": "000000a0000000b4000000b5000000b6",
+      "iommus": "000000a100000000000000a200000000000000a300000000",
+      "driver": null,
+      "iommu_group": "/sys/kernel/iommu_groups/15"
+    },
+    "iommu@401800000": {
+      "status": "okay",
+      "compatible": "apple,t8140-dart\u0000apple,t8110-dart",
+      "reg": "0000000401800000000000000000c000",
+      "power-domains": "000000a0",
+      "apple,dma-range": "00000100000000000000030000000000",
+      "driver": "/sys/bus/platform/drivers/apple-dart",
+      "iommu_group": null
+    },
+    "iommu@401820000": {
+      "status": "okay",
+      "compatible": "apple,t8140-dart\u0000apple,t8110-dart",
+      "reg": "00000004018200000000000000020000",
+      "power-domains": "000000a0",
+      "apple,dma-range": "00000100000000000000030000000000",
+      "driver": "/sys/bus/platform/drivers/apple-dart",
+      "iommu_group": null
+    },
+    "iommu@401840000": {
+      "status": "okay",
+      "compatible": "apple,t8140-dart\u0000apple,t8110-dart",
+      "reg": "00000004018400000000000000020000",
+      "power-domains": "000000a0",
+      "apple,dma-range": "00000100000000000000030000000000",
+      "driver": "/sys/bus/platform/drivers/apple-dart",
+      "iommu_group": null
+    }
+  },
+  "installed_overlay": {
+    "path": "/usr/lib/omarchy-mac-boot/dtb-overlays/t8140/omarchy-ane-h17-stage-boot.dtbo",
+    "sha256": "99492a071f53965f5fdfa3506289a291ebd86768c988595ca687f6fed8e2156e",
+    "bytes": 956
+  },
+  "firmware": {
+    "path": "/lib/firmware/apple/ane/h17_ane_fw_theia_d9x.macho",
+    "sha256": "32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c",
+    "bytes": 1572864
+  },
+  "module": {
+    "path": "ane/h16/ane_h16.ko",
+    "sha256": "0fe7177a504c73f00b9933eea304f5f9549eefd63e59ffa187fa0fac3edb357d",
+    "bytes": 588120
+  }
+}

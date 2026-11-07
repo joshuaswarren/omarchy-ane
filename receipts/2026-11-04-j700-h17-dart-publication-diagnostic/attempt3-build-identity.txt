@@ -1,0 +1,27 @@
+4fdd0fc5c931ef9f14474942b37c3d451e97fc04
+a7e9e91dcfbd0cea8dec6cc15cf4ccde93e282b5e1f5ddc328e657eea3cbc911  -
+cc6fc81ceebdd51293c6903c03dbc0a8227a740c915d03e3caeebdbb0f8ec5c6  /home/admin/aurora-build/wt-dart-diag/drivers/iommu/apple-dart.c
+b95c0f0ddf106f3861e0e62a746af6a881fb8e0f356a892961f9e86062877400  /var/tmp/opencode/h17-kernel-kit/configure.sh
+84a03d5fea19cae243c89f50c1736c639622d25d4d1de8d7d53ebd8f603c0f62  /var/tmp/opencode/h17-kernel-kit/bindgen-kernel.py
+98f76a885d81711013aad47e2ee13f000923191e43321738ec8f381690bf5160  /var/tmp/opencode/h17-kernel-kit/config
+clang version 18.1.8
+Target: aarch64-unknown-linux-gnu
+Thread model: posix
+InstalledDir: /usr/lib/llvm18/bin
+LLD 18.1.8 (compatible with GNU linkers)
+rustc 1.85.0 (4d91de4e4 2025-02-17)
+binary: rustc
+commit-hash: 4d91de4e48198da2e33413efdcd9cd2cc0c46688
+commit-date: 2025-02-17
+host: aarch64-unknown-linux-gnu
+release: 1.85.0
+LLVM version: 19.1.7
+rustc 1.99.0 (b940084d7 2026-09-28)
+binary: rustc
+commit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4
+commit-date: 2026-09-28
+host: aarch64-unknown-linux-gnu
+release: 1.99.0
+LLVM version: 23.1.1
+rustfmt 1.10.0-stable (b940084d7e 2026-09-28)
+bindgen 0.73.2

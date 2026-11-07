@@ -1,0 +1,14 @@
+{
+  "boot": "6a3d0b8c-85a4-4e39-93c8-c3efb0d079e8",
+  "commit": "7547fe2a094fdd75fe0450a897f0dff512e451b6",
+  "kernel": "7.2.11-14-1-ARCH",
+  "vermagic": "7.2.11-14-1-ARCH SMP preempt mod_unload aarch64",
+  "module_sha256": "4199c2435d5a7ca28385382f70866e7538ede6ce83c46cfc6d5c0c5aa9f134c5",
+  "command": [
+    "insmod",
+    "/home/admin/omarchy-ane/ane/h17/ane_h17_clkgen_scan.ko",
+    "optin=1",
+    "log_path=/var/log/omarchy-ane/clkgen-6a3d0b8c-85a4-4e39-93c8-c3efb0d079e8/probe.log"
+  ],
+  "cold_boot_confirmed_by_operator": true
+}

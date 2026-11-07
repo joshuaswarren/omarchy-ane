@@ -1,0 +1,93 @@
+H17 firmware linked/unlinked receive paths and IPC endpoint commands (addendum)
+==============================================================================
+
+Firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+Companion to:
+  analysis/h17-fw-queue-object.txt (push/pop contract, ring, hazards)
+  analysis/h17-fw-command-dispatch-tables.txt (evaluator routing)
+
+## Field-name correction to h17-fw-queue-object.txt
+
+The send/recv counters and the token base live on DIFFERENT objects:
+  LINK object (at [queue+0x08], non-null = linked):
+    +0x10  RTKit endpoint id (read as w0 by both primitives)
+    +0x20  send counter (incremented at 0x68f8 after a successful
+           0x9ad28 in the insert path)
+    +0x28  receive counter (incremented at 0x6938-0x6940 after a
+           successful 0x9af10)
+  QUEUE object:
+    +0x28  ring-window base used to pack/unpack token deltas
+           (read at 0x62ec -> `sub w8, w1, w8`; NOT the link's counter).
+
+Earlier wording merged the two; supersede that reading with this one.
+
+## 0x690c — thin linked-receive wrapper
+
+    0x690c: mov x19,x0 (link)
+    0x6920: ldr w0,[x0,#0x10]      ; endpoint id
+    0x6924: bl 0x9af10             ; RTKit recv(endpoint, x1=&record)
+    0x6928: cbz w0 -> increment [link+0x28]; return
+So the RTKit recv primitive is 0x9af10(ep, out_record); only RTKit-
+internal callers (0x98a90 / 0x9988c / 0x9a464) plus this wrapper use it
+below 0x95000. Correspondingly 0x9ad28(ep, packed_word, status) is the
+send symmetric (endpoint id from the same +0x10 field).
+
+## Pop siblings (two receive forms per direction)
+
+  Linked pop with peek:  0x637c
+    checks [q+0x50] peeked record first, then 0x690c via [q+8];
+    unlinked branch -> 0x29ce8([q+0x20], ...). Used by the CSNE drain
+    loop 0xec90 (0xecc0 / 0xed00).
+  Linked-only pop:       0x6464
+    peek [q+0x50] first; if empty loads [q+8] UNCHECKED and calls
+    0x690c directly (would fault on a NULL link), so only valid where
+    the channel is known linked. Its peek-take tail (0x6490) is shared
+    with 0x637c. Callers: 0x36138 / 0x361e4 (a second, non-CSNE-drain
+    channel user).
+  Unlinked fallback pop: 0x6508 (pacibsp, one-liner)
+    ldr x0,[x0,#0x20]; bl 0x29ce8 — the small-form receive for the
+    second channel; sibling pushes at 0x385d0 / 0x4bd2c and the direct
+    fallback-ring users at 0x14dc8 / 0x14ddc and 0x26d00 / 0x26d14.
+All five primitives (0x62e0 push, 0x637c, 0x6464, 0x6508 pops, plus the
+0x68c8 insert) sit in one 0x62e0..0x694c cluster — the message-queue
+class members — and the `0x14d*` / `0x26d*` users touch the ring class
+directly, bypassing the queue wrapper.
+
+## CSNE_CMD_IPC_ENDPOINT_SET / SET2 bodies (NOT the RTKit link)
+
+The internal-IPC endpoint commands from the main evaluator:
+  0x016 IPC_ENDPOINT_SET -> body 0x2c2bc:
+    logs (assert strings "./sne/.../CRPCClient.cpp" family), then at
+    0x2c368 loads a required global object at [0x1cc310]; NULL ->
+    error path 0x2f658; else calls its virtual method 0x2d418 with
+    w1 = the endpoint id from msg+8. On the alternate low path it
+    writes `0x34f7c(0)` back into msg+8 (the reply value).
+  0x02b IPC_ENDPOINT_SET2 -> body 0x2c878:
+    gate on [x20+0x1e4] bit0 -> 0x2f0a4; optional debug hook global
+    0x1ca728 call (0x39f1c) with msg+0x0c/+0x18/+0x24/+0x2c; then the
+    standard conditional-log block and a type switch at 0x2c954
+    (msg+8 == 1 -> 0x30294 else -> 0x30374).
+These manage the INTERNAL exeloop/IPC endpoint namespace (asserts
+"endPointId (%d) for Exeloop must be CSNE…" / "endPointId ==
+CSNE_CMD_IPC_ENDPOINT_TYPE" elsewhere in __TEXT), i.e. the command-side
+process-routing ids — NOT the RTKit endpoint at [link+0x10] that
+0x9ad28/0x9af10 consume. Do not conflate the two namespaces when
+designing rungs.
+
+## Still open (supersedes/updates the queue receipt's limits)
+
+- The site that CONSTRUCTS the link object and stores it into [q+8] is
+  still not pinned. Narrowed facts: the +0x20/+0x28 counters are not
+  written with explicit `str wzr` in any visited constructor, so the
+  link object is likely member-initialized inside a class ctor; the
+  RTKit ep id must come from the RTKit service-level registration API
+  in the 0x95xxx-0x9cxxx region. Candidates to decode next: the RTKit
+  create/register entry points called by ANE-side code, and the second
+  channel's users (0x36138 pop / 0x385d0, 0x4bd2c push) whose contexts
+  should lead back to the same queue class ctor.
+- 0x9af10 and 0x9ad28 internals (endpoint table layout at the RTKit
+  layer) still unpinned; register endpoints by id implies a fixed
+  table walk (seen inside 0x9ad28).
+
+Static disassembly only. No hardware was accessed.

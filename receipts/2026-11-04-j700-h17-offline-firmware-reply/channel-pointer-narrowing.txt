@@ -1,0 +1,44 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 00006ddc file 0000addc  684740b9  ldr      w8, [x27, #0x44]
+VA 00006de0 file 0000ade0  1f011a6b  cmp      w8, w26
+VA 00006de4 file 0000ade4  01ffff54  b.ne     #0x6dc4
+VA 00006de8 file 0000ade8  e92340f9  ldr      x9, [sp, #0x40]
+VA 00006dec file 0000adec  687e4093  sxtw     x8, w19
+VA 00006df0 file 0000adf0  e03f40b9  ldr      w0, [sp, #0x3c]
+VA 00006df4 file 0000adf4  3815088b  add      x24, x9, x8, lsl #5
+VA 00006df8 file 0000adf8  1b0300f9  str      x27, [x24]
+VA 00006dfc file 0000adfc  614340b9  ldr      w1, [x27, #0x40]
+VA 00006e00 file 0000ae00  a9f9ff97  bl       #0x54a4
+VA 00006e04 file 0000ae04  000b00b9  str      w0, [x24, #8]
+VA 00006e08 file 0000ae08  29008052  mov      w9, #1
+VA 00006e0c file 0000ae0c  685340b9  ldr      w8, [x27, #0x50]
+VA 00006e10 file 0000ae10  73060011  add      w19, w19, #1
+VA 00006e14 file 0000ae14  f7060051  sub      w23, w23, #1
+VA 00006e18 file 0000ae18  080b00f9  str      x8, [x24, #0x10]
+VA 00006e1c file 0000ae1c  682740f9  ldr      x8, [x27, #0x48]
+VA 00006e20 file 0000ae20  89030039  strb     w9, [x28]
+VA 00006e24 file 0000ae24  081b00b9  str      w8, [x24, #0x18]
+VA 00006e28 file 0000ae28  e7ffff17  b        #0x6dc4
+VA 00006e2c file 0000ae2c  fb031faa  mov      x27, xzr
+VA 00006e30 file 0000ae30  03000014  b        #0x6e3c
+VA 00006e34 file 0000ae34  7b7e4093  sxtw     x27, w19
+VA 00006e38 file 0000ae38  f30f40b9  ldr      w19, [sp, #0xc]
+VA 00006e3c file 0000ae3c  00158052  mov      w0, #0xa8
+VA 00006e40 file 0000ae40  250d0294  bl       #0x8a2d4
+VA 00006e44 file 0000ae44  f51740f9  ldr      x21, [sp, #0x28]
+VA 00006e48 file 0000ae48  fc0300aa  mov      x28, x0
+VA 00006e4c file 0000ae4c  a20400f0  adrp     x2, #0x9d000
+VA 00006e50 file 0000ae50  e3031a2a  mov      w3, w26
+VA 00006e54 file 0000ae54  e1230191  add      x1, sp, #0x48
+VA 00006e58 file 0000ae58  42480e91  add      x2, x2, #0x392
+VA 00006e5c file 0000ae5c  e00315aa  mov      x0, x21
+VA 00006e60 file 0000ae60  32750094  bl       #0x24328
+VA 00006e64 file 0000ae64  e43f40b9  ldr      w4, [sp, #0x3c]
+VA 00006e68 file 0000ae68  e10300aa  mov      x1, x0
+VA 00006e6c file 0000ae6c  e62340f9  ldr      x6, [sp, #0x40]
+VA 00006e70 file 0000ae70  e0031caa  mov      x0, x28
+VA 00006e74 file 0000ae74  e20315aa  mov      x2, x21
+VA 00006e78 file 0000ae78  e303132a  mov      w3, w19
+VA 00006e7c file 0000ae7c  e5031a2a  mov      w5, w26
+VA 00006e80 file 0000ae80  e7031baa  mov      x7, x27
+VA 00006e84 file 0000ae84  d4feff97  bl       #0x69d4
