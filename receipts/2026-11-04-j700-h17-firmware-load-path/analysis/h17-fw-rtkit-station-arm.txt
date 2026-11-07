@@ -1916,6 +1916,41 @@ non-null but never stores it); and the consumer of the `[entry+0x50]`/
 `q` (the RTKit receive-side wake). Static disassembly of the pinned image
 only; no hardware access or submission; `CSNE_CMD_PING` remains unsent.
 
+## Addendum 122 — endpoint record +8/+0x10 is where the linked wake lands
+
+Completed the linked-channel side of the wake chain begun in Addendum 120.
+
+`0x6898(link, fn, ctx)` is two stores around one call: it invokes
+`0x9acb8([link+0x10], fn, ctx)` and then writes `[link+0x18] = fn`
+(`0x68ac`–`0x68bc`). `0x9acb8(route, x1, x2)` resolves the route word
+exactly as Addendum 18 decoded it: `0x9ce94` supplies the channel-table
+header at VA `0xcb5c0`, `0x9c930` computes `w9 = route >> 16` and compares
+against the count word at `[header]`; out-of-range or a null `0x9a944`
+endpoint record returns `0x8000000c`, a null channel pointer returns
+`0x80000008` (the same register minus 4, `0x9ad10`), and on success it
+stores `stp x1, x2, [record, #8]` (`0x9ad08`). So the endpoint
+record — a 0x60-byte slot in the channel's `[channel+0x10]` array — takes
+the *consumer trampoline* at `+8` and its context at `+0x10`.
+
+Composing the verified pieces: `0x6258` (linked branch) parks trampoline
+`0x61ec` and the queue `q` into `0x9acb8`, so `[record+8] = 0x61ec` and
+`[record+0x10] = q`; `0x61ec(q)` invokes `[q+0x40]([q+0x48])`; `0x6258`'s
+first store put `0xe948`/service there; `0xe948` is the thunk `b 0x92a9c`,
+the CAS start primitive. The linked wake therefore terminates at the same
+consumer-start CAS as the registry path of Addendum 121, reached through
+the route word rather than the registry index. The sender side is symmetric
+(`0x68c8` → `0x9ad28([link+0x10], …)`).
+
+This pass pins the writer side of the endpoint record. The dispatcher that
+*invokes* `[record+8]` was not re-traced here; the header's RTKit control
+message pump `0x98694` (disarm/re-arm, drain, re-broadcast via `0x9ad28`)
+remains the named candidate. The writer of the link's route word
+`[link+0x10]` — and of the link object's creation — is still the open link,
+as are the ring epoch word `[ring+0x10]`, the `[ring+0]`/`[ring+8]` pair,
+and `[entry+0x30]`/`[entry+0x50]` from Addendum 121. Static disassembly of
+the pinned image only; no hardware access or submission; `CSNE_CMD_PING`
+remains unsent.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
