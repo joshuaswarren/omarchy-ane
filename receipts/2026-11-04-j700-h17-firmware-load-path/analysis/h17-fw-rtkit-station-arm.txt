@@ -1613,6 +1613,28 @@ choose among these outcomes, and the prior context-mismatch wording should be
 read as an unresolved address-space dependency, not a proven firmware bug.
 No hardware access or submission.
 
+## Addendum 111 — startup builds CPU page tables, but low-VA coverage is input-dependent
+
+Checked the firmware's early EL1 translation setup to see whether it settles
+the `0x71` case. Entry code chooses translation parameters from boot inputs
+(`0x29c`–`0x3fc`), programs `TCR_EL1` (`0x43c`–`0x450`), derives a table base
+under the `__rtk_page_tables` region (`0x450`–`0x498`), and selects
+`TTBR0_EL1` or `TTBR1_EL1` according to the computed address split
+(`0x498`–`0x4b8`). It then initializes page-table entries and emits mappings
+through helper `0x8a4` (`0x4c4`–`0x744`). Thus the CPU translation regime is
+constructed by firmware; it is not established merely by the host-side DART
+mapping of the image at DVA `0x10000000000`.
+
+The table-building path is parameterized by boot values including `x22`,
+`x23`, `x26`, and derived `x9`/`x13`/`x14`/`x15`. The retained static
+disassembly, without their runtime values and a complete page-table
+reconstruction, does not establish whether CPU VA page zero is mapped. The
+helper's presence and the fact that the image's linked VA `0x71` has zero
+file-backed bytes are insufficient to conclude that a load from runtime CPU
+VA `0x71` succeeds or returns zero. Addendum 110's three-way uncertainty
+(unmapped, mapped-zero, or a different effective context qword) therefore
+remains. No hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
