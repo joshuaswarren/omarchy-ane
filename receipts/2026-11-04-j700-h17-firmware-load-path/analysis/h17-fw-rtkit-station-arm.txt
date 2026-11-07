@@ -1536,6 +1536,30 @@ runtime context's entry count/content, the selected entry's queue identity or
 index 7 / IRQ ownership. No hardware access, acknowledgment, doorbell, PING,
 or task submission occurred.
 
+## Addendum 102 — metadata pointer accessor conflicts with initializer field
+
+The same table-copy path raises a separate unresolved consistency problem.
+Accessor `0x5d50` returns the matched metadata record's qword at `+8`
+(`0x5dc4`–`0x5dd0`). The record builder at `0x5a90`–`0x5a94` loads a *32-bit*
+word from the source descriptor at `+0x40` and stores it at metadata `+8`.
+In the `SHAREDMALLOC` descriptor initialized at `0x5400`–`0x5418`, that source
+word is literal `1`. Meanwhile, `0x6170` treats the result of `0x5d50` as its
+context argument and passes it to `0xdf08`; `0xdf08` immediately dereferences
+that argument at `+0x70` and `+0x40` (`0xdf08`–`0xdf20`).
+
+Taken literally as one uninterrupted table path, this would pass the value
+`1` where `0xdf08` expects an addressable context object. The current static
+trace does not explain that mismatch or establish which metadata-table
+population is effective at the `0x6170` call. Consequently Addendum 101's
+`0x40` result is only the selector value implied by the matching descriptor
+copy; it must not be used to infer that the paired context pointer is valid,
+that `0xdf08` successfully selects an entry, or that the selector is the
+effective runtime value in the CRPC path. Trace the exact table-population
+and caller instance, including any indirect/runtime replacement, before
+relying on this pair. Queue identity, link/route, host-channel mapping, IRQ
+ownership, and PING safety remain unresolved. Offline analysis only; no
+hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
