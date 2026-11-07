@@ -1655,6 +1655,21 @@ firmware surface proves an EL1 mapping at VA `0x71`. Thus the exact sentinel
 branch remains unresolved, with no basis to classify it as safe or faulting.
 No hardware access or submission.
 
+## Addendum 113 — `0x6170` forwards metadata context unchanged
+
+Rechecked the constructor instructions directly. `0x6170` stores incoming
+`x1` and `x2` at wrapper offsets `+0x10/+0x18` (`0x61a4`), then copies them
+to `x0/x1` and calls `0xdf08` (`0x61a8`–`0x61c0`). It stores the returned
+pointer at wrapper `+0x20` and explicitly zeros `+0x28` (`0x61c4`–`0x61c8`).
+There is no range check, handle resolution, or integer-sentinel conversion
+between the metadata accessor result and the helper call in this constructor.
+
+This rules out a constructor-local reinterpretation of literal context value
+`1` on the traced path. It does not establish the accessor's complete runtime
+qword, the low-VA mapping, whether the named-service setup reaches this
+constructor on the live boot path, or the resulting queue identity. No
+hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
