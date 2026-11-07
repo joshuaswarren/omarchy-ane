@@ -459,9 +459,10 @@ static void put_prop(u8 *b, size_t *off, const char *name, const void *data,
  * windows; the boot parser (adt_node_at/adt_child/adt_prop) walks
  * exactly this layout.
  */
-static u8 *build_adt(size_t *out_len)
+static size_t adt_segprop_header_end;
+static u8 *build_adt(size_t *out_len, size_t deep)
 {
-	u8 *b = calloc(1, 4096);
+	u8 *b = calloc(1, 4096 + deep * 8);
 	size_t off = 0, len;
 	struct {
 		u64 phys, pad, remap, size;
@@ -477,9 +478,14 @@ static u8 *build_adt(size_t *out_len)
 		segs[1].remap = ANE_H17_DMA_BASE + 0xc0000;
 	}
 
-	/* root: no props, one child (arm-io) */
+	/* root: no props; arm-io, plus a deep chain ahead of it when deep != 0 */
 	put32(b, &off, 0);
-	put32(b, &off, 1);
+	put32(b, &off, deep ? 2 : 1);
+	/* chain: `deep` nodes of one child each, ending in a leaf */
+	for (size_t d = 0; d < deep; d++) {
+		put32(b, &off, 0);
+		put32(b, &off, d + 1 < deep);
+	}
 	/* arm-io: one prop, one child */
 	put32(b, &off, 1);
 	put32(b, &off, 1);
@@ -490,6 +496,7 @@ static u8 *build_adt(size_t *out_len)
 	put32(b, &off, 0);
 	put_prop(b, &off, "name", "ane0", 5);
 	put_prop(b, &off, "ane-type", &ane_type, 4);
+	adt_segprop_header_end = off + 36;
 	put_prop(b, &off, "segment-ranges", segs, sizeof(segs));
 	len = off;
 	sim_phys_maps[sim_n_phys_maps++] =
@@ -657,10 +664,10 @@ static void setup_common(void)
 	sim_pdev.dev.of_node = &n_ane;
 }
 
-static void setup_adt_node(void)
+static void setup_adt_node_deep(size_t deep)
 {
 	size_t adt_len;
-	u8 *adt = build_adt(&adt_len);
+	u8 *adt = build_adt(&adt_len, deep);
 
 	memset(&n_adt, 0, sizeof(n_adt));
 	n_adt.name = "adt";
@@ -668,6 +675,30 @@ static void setup_adt_node(void)
 	n_adt.nreg = 1;
 	n_adt.reg[0][0] = ADT_PA;
 	n_adt.reg[0][1] = adt_len;
+	n_rm.children[n_rm.nchildren++] = &n_adt;
+	(void)adt;
+}
+
+static void setup_adt_node(void)
+{
+	setup_adt_node_deep(0);
+}
+
+/* Same ADT, but the resource ends at the segment-ranges header: the
+ * property body lies outside the mapping. adt_prop() must refuse the
+ * truncated extent instead of returning body bytes from past adt_len.
+ */
+static void setup_adt_node_truncated(void)
+{
+	size_t full_len;
+	u8 *adt = build_adt(&full_len, 0);
+
+	memset(&n_adt, 0, sizeof(n_adt));
+	n_adt.name = "adt";
+	n_adt.props[n_adt.nprops++] = (struct sim_prop){ "label", "adt", 4 };
+	n_adt.nreg = 1;
+	n_adt.reg[0][0] = ADT_PA;
+	n_adt.reg[0][1] = adt_segprop_header_end;
 	n_rm.children[n_rm.nchildren++] = &n_adt;
 	(void)adt;
 }
@@ -1106,6 +1137,63 @@ static void sc_neg_foreign_preload(void)
 	    "refusal frees the staged buffer (no DMA leak)");
 }
 
+/* The fake ADT ends exactly at the segment-ranges header: the
+ * property name is inside the mapping, the declared body is not.
+ * The walk must refuse the truncated extent; it must never return
+ * body bytes read from past adt_len as usable segment data.
+ */
+static void sc_neg_adt_truncated_prop(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node_truncated();
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("has no segment-ranges") == 1,
+	    "truncated segment-ranges is refused by the walk");
+	chk(sim_log_count("adt seg0 phys=") == 0,
+	    "truncated segment-ranges never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
+/* The ADT nests a chain far deeper than any real one ahead of /arm-io.
+ * Skipping that child to reach /arm-io must neither recurse once per level
+ * (stack overflow) nor invent a node; the walk refuses it.
+ */
+static void sc_neg_adt_deep_nesting(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node_deep(1 << 20);
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("adt seg0 phys=") == 0,
+	    "too-deep ADT never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
+/* A region larger than the u32 offset domain is refused at open, before any
+ * mapping or lookup, so no offset or sentinel can narrow or wrap.
+ */
+static void sc_neg_adt_oversize(void)
+{
+	int ret;
+
+	setup_common();
+	setup_adt_node();
+	n_adt.reg[0][1] = 0x100000080ULL;
+	stage = "boot";
+	ret = run_probe();
+	chk(sim_log_count("exceeds the") == 1, "oversize ADT region is refused at open");
+	chk(sim_log_count("adt seg0 phys=") == 0, "oversize ADT never yields segments");
+	chk(ev_engine_count(true) == 0, "zero engine writes on refusal");
+	(void)ret;
+}
+
 /* A DART map that fails midway must unwind the pages it already
  * mapped before the staged buffer is freed: partial IOVA mappings
  * over freed memory hand the next map a stale translation. The
@@ -1264,7 +1352,7 @@ static void sc_neg_adt_bounds(void)
 	unsigned int i;
 
 	setup_common();
-	buf = build_adt(&len);
+	buf = build_adt(&len, 0);
 	adt = buf;
 	adt_len = len;
 	chk(adt_validate() == 0, "valid seven-byte arm-io fixture accepted");
@@ -1794,6 +1882,12 @@ int main(int argc, char **argv)
 		sc_pos_getsync_eacces();
 	else if (!strcmp(sc, "neg-getsync-eacces-one-pd"))
 		sc_neg_getsync_eacces_one_pd();
+	else if (!strcmp(sc, "neg-adt-truncated-prop"))
+		sc_neg_adt_truncated_prop();
+	else if (!strcmp(sc, "neg-adt-deep-nesting"))
+		sc_neg_adt_deep_nesting();
+	else if (!strcmp(sc, "neg-adt-oversize"))
+		sc_neg_adt_oversize();
 	else if (!strcmp(sc, "pos-boot"))
 		sc_pos_boot();
 	else if (!strcmp(sc, "pos-boot-hello"))

@@ -37,7 +37,8 @@ NEG = neg-ps-stuck neg-mbox-silent neg-bad-pin neg-foreign-preload \
 	neg-table-heap-alloc neg-table-scope neg-table-reservation \
 	neg-table-alias-reservation neg-table-alias-collision neg-table-alias-map \
 	neg-register-timeout neg-register-range neg-register-overlap neg-register-name \
-	neg-register-scope
+	neg-register-scope neg-adt-truncated-prop neg-adt-deep-nesting \
+	neg-adt-oversize
 
 $(SIM_OUT): $(SIM_SRCS)
 	$(CC) -g -O1 -Wall -Wextra -Wno-unused-parameter -I sim -I sim/inc -o $@ sim/sim_harness.c

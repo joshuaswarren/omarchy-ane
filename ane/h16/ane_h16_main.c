@@ -499,6 +499,9 @@ static int ane_h16_status(struct ane_h16 *ane)
 static const void *adt;
 static size_t adt_len;
 
+/* Every ADT offset is u32; refusing larger regions keeps them representable. */
+#define ADT_MAX_LEN (1U << 30)
+
 /* Validate the complete tree before the offset-only walkers below run.
  * All offsets must fit u32 and recursion is bounded independently of data.
  */
@@ -548,28 +551,64 @@ static struct adt_node adt_node_at(u32 off)
 {
 	struct adt_node n = { .off = off };
 
+	if ((u64)off + 8 > adt_len)
+		return n;	/* past the mapping: an empty node ends the walk */
 	n.nprops = le32_to_cpup(adt + off);
 	n.nchildren = le32_to_cpup(adt + off + 4);
 	return n;
 }
 
-/* Offset just past the last byte of n's whole subtree. */
-static u32 adt_subtree_end(struct adt_node n)
+/* Real boot ADTs nest a handful of levels; this only bounds hostile data. */
+#define ADT_MAX_DEPTH 32
+
+/* Truncated or too-deep data ends every later walk at an empty node. */
+static u32 adt_end_sentinel(void)
 {
-	u32 off = n.off + 8;
-	unsigned int i;
+	return adt_len;
+}
 
-	for (i = 0; i < n.nprops; i++) {
-		u32 size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+/*
+ * Offset just past the last byte of the subtree rooted at off. Iterative:
+ * todo[d] counts the nodes still to enter at depth d, so stack use is fixed
+ * for any input. Each node and property consumes bytes, so the walk is also
+ * bounded by adt_len.
+ */
+static u32 adt_subtree_end(u32 off)
+{
+	u32 todo[ADT_MAX_DEPTH] = { 1 };
+	unsigned int depth = 0;
 
-		off += 36 + ALIGN(size, 4);
+	for (;;) {
+		u32 nprops, nchildren, i;
+
+		while (!todo[depth]) {
+			if (!depth)
+				return off;
+			depth--;
+		}
+		todo[depth]--;
+		if ((u64)off + 8 > adt_len)
+			return adt_end_sentinel();
+		nprops = le32_to_cpup(adt + off);
+		nchildren = le32_to_cpup(adt + off + 4);
+		off += 8;
+		for (i = 0; i < nprops; i++) {
+			u64 extent;
+
+			if ((u64)off + 36 > adt_len)
+				return adt_end_sentinel();
+			extent = (u64)off + 36 +
+				 ALIGN(le32_to_cpup(adt + off + 32) & 0x7fffffff, 4);
+			if (extent > adt_len)
+				return adt_end_sentinel();
+			off = extent;
+		}
+		if (nchildren) {
+			if (++depth >= ADT_MAX_DEPTH)
+				return adt_end_sentinel();
+			todo[depth] = nchildren;
+		}
 	}
-	for (i = 0; i < n.nchildren; i++) {
-		struct adt_node c = adt_node_at(off);
-
-		off = adt_subtree_end(c);
-	}
-	return off;
 }
 
 static struct adt_node adt_child(struct adt_node n, unsigned int idx)
@@ -579,12 +618,25 @@ static struct adt_node adt_child(struct adt_node n, unsigned int idx)
 
 	off = n.off + 8;
 	for (i = 0; i < n.nprops; i++) {
-		u32 size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		u32 size;
+		u64 extent;
 
-		off += 36 + ALIGN(size, 4);
+		if ((u64)off + 36 > adt_len)
+			break;
+		size = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		extent = (u64)off + 36 + ALIGN(size, 4);
+		if (extent > adt_len) {
+			/* truncated body: end the walk at an empty node
+			 * instead of wrapping the offset */
+			return adt_node_at(adt_end_sentinel());
+		}
+		off = extent;
 	}
-	for (i = 0; i < idx; i++)
-		off = adt_subtree_end(adt_node_at(off));
+	for (i = 0; i < idx; i++) {
+		if ((u64)off + 8 > adt_len)
+			break;
+		off = adt_subtree_end(off);
+	}
 	return adt_node_at(off);
 }
 
@@ -595,14 +647,27 @@ static int adt_prop(struct adt_node n, const char *name, const void **data,
 	unsigned int i;
 
 	for (i = 0; i < n.nprops; i++) {
-		u32 len = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		u32 len;
+		u64 extent;
 
+		if ((u64)off + 36 > adt_len)
+			return -ENOENT;
+		len = le32_to_cpup(adt + off + 32) & 0x7fffffff;
+		extent = (u64)off + 36 + ALIGN(len, 4);
+		/* The whole body must lie inside the mapping: returning
+		 * or advancing past a truncated extent hands the caller
+		 * bytes read from outside the ADT.
+		 */
+		if (extent > adt_len)
+			return -EOVERFLOW;
 		if (!strncasecmp(adt + off, name, 32)) {
 			*data = adt + off + 36;
 			*size = len;
 			return 0;
 		}
-		off += 36 + ALIGN(len, 4);
+		if (extent > (u32)~0ULL)
+			return -EOVERFLOW;
+		off = extent;
 	}
 	return -ENOENT;
 }
@@ -623,6 +688,14 @@ static int ane_h16_adt_open(struct ane_h16 *ane)
 			continue;
 		if (of_address_to_resource(np, 0, &res))
 			continue;
+		if (resource_size(&res) > ADT_MAX_LEN) {
+			dev_err(ane->dev,
+				"ADT: region %#llx bytes exceeds the %#x limit; refusing\n",
+				(unsigned long long)resource_size(&res), ADT_MAX_LEN);
+			ret = -EFBIG;
+			of_node_put(np);
+			goto out;
+		}
 		adt = devm_memremap(ane->dev, res.start, resource_size(&res),
 				    MEMREMAP_WB);
 		if (IS_ERR(adt)) {
@@ -726,12 +799,20 @@ static int ane_h16_segments(struct ane_h16 *ane)
 {
 	const struct ane_h16_fw *fw = ane->soc->fw;
 	struct adt_node ane_node;
+	struct adt_node root;
 	const void *data;
 	u32 size;
 	int ret;
 
 	if (ane_h16_adt_open(ane))
 		return -ENODEV;
+	root = adt_node_at(0);
+	if (!root.nchildren) {
+		dev_err(ane->dev,
+			"ADT: region is not an ADT (root %u/%u); refusing\n",
+			root.nprops, root.nchildren);
+		return -EINVAL;
+	}
 	if (adt_find_ane(ane->soc->ane_type, &ane_node)) {
 		dev_err(ane->dev,
 			"ADT: no /arm-io child with ane-type %#x; refusing\n",
