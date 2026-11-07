@@ -15,7 +15,7 @@ The encoder graph and its weights come from a private evidence store and are not
 
 The graph compiled unmodified. A single pipeline fix was needed: the compile bridge wants the weights as one flat file, so the MIL reference `@model_path/weights/weight.bin` is rewritten to `@model_path/weights.bin`. The blob and its offsets are unchanged.
 
-The conversion applies the same tile fix the production container uses: tiles 4 through 8 are set to 938, 938, 1500, 1500. The converted header was verified identical to the production container's header.
+The conversion applies the same tile fix the production container uses: header tiles 4 through 7 (four values) are set to 938, 938, 1500, 1500, which are the two output surfaces and the two input surfaces. The converted header was verified identical to the production container's header.
 
 ## Device A/B on the 13-inch M1
 
@@ -28,7 +28,11 @@ Device A/B receipt (named in the internal record). Real encoder inputs (`mask.f1
 
 The outputs are bitwise identical: `cmp` reports the files equal, and the numeric diff over 240,128 fp16 values is max 0 and mean 0. Both arms reproduce the production gold hash `8d8c6692` exactly. The timing ratio is 0.996, inside the predicted band of 0.85 to 1.15, so no regression.
 
-Throughput of the minted program: 18,508 input frames per second and 2,314 output frames per second, from 3,000 input frames and 375 output frames per 162 ms call.
+### Operating point of this A/B
+
+The 162 ms medians are not the 137.9 ms median that the 2026-10-11 operating-point receipt reports for the archived container on the same 13-inch M1. That receipt was taken in an exclusive window with no CPU or GPU ticket from another lane. This A/B ran from the shared queue, so other lanes' GPU tickets can run beside it; the queue log shows one admitted 51 seconds before this run started, and I did not check whether it was still running. Two later ABBA probes of the minted program on the same machine, taken the same way, read between 135.8 and 190.0 ms across eight arms. The probe with CPU 0 and CPU 4 read 157.6 to 163.1 ms on both; the probe with CPU 1 and CPU 7 read 190.0 and 159.9 ms on the E core and 135.8 and 139.4 ms on the P core. The two probes disagree, so pinning alone does not explain the spread, and I have not measured the cause. The ratio of 0.996 is a same-session A/B between two containers. Quote 137.9 ms for the quiet operating point, not the absolute milliseconds here.
+
+Throughput of the minted program in this run: 18,508 input frames per second and 2,314 output frames per second, from 3,000 input frames and 375 output frames per 162 ms call.
 
 ## Cold-load cost
 
