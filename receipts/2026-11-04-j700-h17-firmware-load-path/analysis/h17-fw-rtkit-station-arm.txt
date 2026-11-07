@@ -1776,6 +1776,26 @@ cache visibility only; the local-ring notification/host wake path, CRPC
 response route, and IRQ ownership remain unproven. No hardware access or
 submission; PING remains gated.
 
+## Addendum 119 — local-ring critical section and slot-result callback are distinct
+
+Completed the callback-field map for the local ring. Global `+0x28` is the
+ring critical-section entry: its configured function `0x54c8` calls `0x8a7a0`,
+which masks IRQs and returns whether they were enabled on entry; `0x54c8`
+stores that state through the context at global `+0x38`. Global `+0x30` is the
+exit callback `0x54f0`, which reloads that saved state and calls `0x8a7b0` to
+restore IRQ enablement only when it was previously enabled. `0x29b6c` brackets
+its local-ring update with these callbacks.
+
+Global `+0x40` is a separate optional slot-result producer. In the setup at
+`0x7214`, it is set to `0x78d4`; that function reads a qword from fixed
+firmware address `0x401378000` and returns it. During ring enqueue, its return
+value is stored in slot `+0x18` (`0x29bd8`–`0x29bfc`); it is not invoked as a
+post-enqueue notification. Together with Addendum 118, the observed local-ring
+hooks are IRQ save/restore, optional record metadata, and cache clean/invalidate.
+None is a demonstrated host doorbell or Linux IRQ acknowledgment path. The
+actual local-ring consumer/wake route and CRPC response ownership remain
+unresolved. No hardware access or submission; PING remains gated.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
