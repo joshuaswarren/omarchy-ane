@@ -1684,6 +1684,29 @@ does not promote the `SHAREDMALLOC` low dword `1` into a proven complete
 context pointer. Runtime context and transport ownership remain unresolved.
 Offline image/disassembly analysis only; no hardware access or submission.
 
+## Addendum 108 — setup allocation order makes a zero upper dword plausible
+
+The metadata table's first allocation is made by `0x54f8` after the owning
+setup routine has initialized the pool (`0x79dc`) and allocated several setup
+objects (`0x7aa4` onward). On the configured-pool path, `0x89cfc` dispatches
+to `0x92488`. When `0x92488` splits a free block, it places the allocated
+block at the high end: it computes `remaining = block_size - rounded_request`,
+sets the new block at `free_block + remaining`, and returns its payload at
+`new_block + 8` (`0x92524`–`0x92568`). Thus earlier allocations from the same
+extent do not ordinarily occupy the later table allocation's range.
+
+Together with the table's backing extent being inside the Mach-O
+`S_ZEROFILL` range (Addendum 107), this makes it plausible that the untouched
+upper half of each copied context qword is zero when the table is built. Under
+those assumptions, `SHAREDMALLOC`'s accessor result would be `1`, which is not
+a plausible address for the context dereferenced by `0xdf08`. This is a
+conditional static inference only: the retained evidence does not prove
+iBoot's runtime zero-fill action, exclude an out-of-range/indirect writer, or
+observe the table bytes. It therefore sharpens the apparent setup-path
+inconsistency but does not establish a runtime fault or identify an alternate
+effective lookup path. PING, tasks, doorbells, and IRQ acknowledgment remain
+gated. No hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
