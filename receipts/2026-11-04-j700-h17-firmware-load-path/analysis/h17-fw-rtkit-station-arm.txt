@@ -1563,6 +1563,23 @@ Queue identity, link/route, host-channel mapping, IRQ ownership, and PING
 safety remain unresolved. Offline analysis only; no hardware access or
 submission.
 
+## Addendum 103 — `0xdf08` does not guard the context pointer before dereference
+
+Checked whether the accessor result `1` could simply be a no-match sentinel.
+At `0xdf08`, the first instruction is `ldr x8,[x0,#0x70]`, followed by the
+selector/count comparison; there is no null/sentinel check before that load.
+If the metadata path supplies `x0=1`, the routine attempts to read from
+address `0x71` before it can return a null queue. The Mach-O's firmware VA
+space and the runtime preload DVA base are distinct; zero bytes at file-backed
+VA `0x71` do not show that runtime address `0x71` is mapped or make this a safe
+sentinel. Nor does the static trace prove the actual `x0` value observed at
+runtime.
+
+Thus the context mismatch cannot be downgraded to a benign null-result path
+from this code alone. It remains an unresolved source/runtime inconsistency;
+do not invoke this route or infer its safety from the selector value. No
+hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
