@@ -77,7 +77,7 @@ def test_h15_conversion_contract(h15, tmp_path):
     content, first, count, stream, consts, inputs, version = struct.unpack_from(
         "<QIIQQII", anec, 0)
     assert version == 1
-    assert inputs == info["input_count"] == 2 or inputs == info["input_count"]
+    assert inputs == info["input_count"] == 2
     assert count == info["task_count"]
     assert stream == info["stream_bytes"]
     assert consts == info["constant_bytes"]

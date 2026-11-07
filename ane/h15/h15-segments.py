@@ -9,9 +9,8 @@ maps TEXT at RVBAR & ~1, so the script refuses a dump whose TEXT remap is anothe
 
 ADT.bin must be the live ADT of the SAME boot you will insmod on: iBoot picks the physical addresses when it
 loads the firmware. Whether those addresses repeat from one boot to the next is NOT KNOWN, so do not reuse a
-dump from another boot. With m1n1's proxyclient attached to that boot, the dump is
-    python3 -c "from m1n1.setup import *; open('adt.bin', 'wb').write(u.get_adt())"
-(proxyutils.get_adt reads devtree at boot_args.devtree). Never from macOS.
+dump from another boot. Take the dump on that same boot with m1n1's proxyclient device-tree reader, written to
+a local file. Never from macOS.
 
 The /arm-io/ane node's segment-ranges holds two 32-byte little-endian records {phys, iova offset, remap iova,
 size | flags << 32}. This script walks the ADT without m1n1's python modules, prints the records and the

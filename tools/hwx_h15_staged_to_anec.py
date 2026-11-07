@@ -130,7 +130,9 @@ def convert(data: bytes) -> tuple[bytes, dict]:
     layouts = [0] * (CHANNEL_COUNT * LAYOUT_FIELDS)
     tiles = [0] * CHANNEL_COUNT
     bound = {}
-    plan = [(outputs[0], 4, "output")] if outputs else []
+    if not outputs:
+        raise Refuse("H15 HWX has no output tensors; channel 4 would stay unbound")
+    plan = [(outputs[0], 4, "output")]
     for index, tensor in enumerate(inputs):
         plan.append((tensor, 5 + index, "input"))
     for offset, tensor in enumerate(outputs[1:]):
