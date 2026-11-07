@@ -1507,6 +1507,35 @@ The route and IRQ questions need further offline correlation or a separately
 authorized observational capture; no fresh hardware access is warranted for
 this step. PING and task submission remain out of scope.
 
+## Addendum 101 — static initializer supplies the SHAREDMALLOC selector value
+
+Followed the runtime metadata-table builder `0x54f8` back into its descriptor
+initializer `0x52e4`. The initializer constructs eight 0x100-byte channel
+records. The `SHAREDMALLOC`-named record is at initializer offset `+0x500`
+(name copied from VA `0x9d33e`); it stores `1` at record `+0x40`, `5` at
+`+0x44`, literal `0x40` at `+0x48`, and its resource pointer at `+0x50`
+(`0x5400`–`0x5418`).
+
+In `0x54f8`, the metadata-table records are 0x20 bytes. The record-building
+loop matches channel records by their `+0x44` key and copies the channel
+record's `+0x40`, `+0x50`, and `+0x48` into metadata offsets `+8`, `+0x10`,
+and `+0x18`, respectively (`0x5a68`–`0x5aa8`, with equivalent code for the
+other entries). The accessors `0x5d50` and `0x5de4` find a metadata record by
+name; the latter returns its `+0x18` value as a 32-bit result (`0x5e58`–
+`0x5e74`). For the traced initializer/builder path, a successful
+`SHAREDMALLOC` metadata match therefore supplies selector value `0x40` to
+`0x6170`, which stores it at wrapper `+0x18` and uses it as the index passed
+to `0xdf08`.
+
+This narrows Addendum 100: the selector does not exist in the image's initial
+global pointer/count bytes, but its source value is statically derivable from
+the initializer and the metadata-copy path. It is a context-entry selector,
+not an RTKit endpoint ID or host channel index. It does not establish the
+runtime context's entry count/content, the selected entry's queue identity or
+`+8` link, the link route at `+0x10`, or any relation to `DATA_CHAIN_H2T`
+index 7 / IRQ ownership. No hardware access, acknowledgment, doorbell, PING,
+or task submission occurred.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
