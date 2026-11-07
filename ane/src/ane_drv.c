@@ -1102,8 +1102,33 @@ static int ane_attach_genpd(struct ane_device *ane)
 					DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME |
 						DL_FLAG_RPM_ACTIVE);
 		if (!ane->pd_link[i]) {
-			ane_detach_genpd(ane);
-			return -EINVAL;
+			/*
+			 * A domain left off by a previous crashed instance
+			 * (exit-time "Failed to reach power state", issue
+			 * #358) can fail the active link. Cycle the supplier
+			 * once and retry before giving up: reload should
+			 * recover, not brick until the next reboot.
+			 */
+			dev_warn(dev, "pd[%d]: link failed; cycling domain and retrying once\n",
+				 i);
+			int ret = pm_runtime_resume_and_get(ane->pd_dev[i]);
+
+			if (ret < 0)
+				dev_err(dev, "pd[%d]: resume failed: %pe\n", i,
+					ERR_PTR(ret));
+			else
+				pm_runtime_put_sync(ane->pd_dev[i]);
+			ane->pd_link[i] =
+				device_link_add(dev, ane->pd_dev[i],
+						DL_FLAG_STATELESS |
+							DL_FLAG_PM_RUNTIME |
+							DL_FLAG_RPM_ACTIVE);
+			if (!ane->pd_link[i]) {
+				dev_err(dev, "pd[%d]: link failed again\n", i);
+				ane_detach_genpd(ane);
+				return -EINVAL;
+			}
+			dev_info(dev, "pd[%d]: link recovered on retry\n", i);
 		}
 	}
 
