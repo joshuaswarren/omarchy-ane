@@ -1595,6 +1595,24 @@ allocation contents, and resulting context object are unknown. Do not invoke
 this route or infer its safety from the selector value. No hardware access or
 submission.
 
+## Addendum 110 — empty-context sentinel path depends on low-VA mapping
+
+Rechecked `0xdf08`'s branch order. It loads the count from `[context+0x70]`,
+compares the selector, and branches to the null return at `0xdf30` when the
+selector is greater than or equal to that count. It does not read the entries
+array at `[context+0x40]` unless the selector is in range (`0xdf08`–`0xdf34`).
+
+Therefore, if the effective context qword is exactly `1`, and firmware address
+`0x71` is readable with a zero count, selector `8` takes the null-return path
+without touching the entries array. The pinned image has zero bytes at file
+VA `0x70`–`0x78`, but that alone does not establish the runtime CPU mapping or
+contents at address `0x71`. If it is unmapped, the first load faults; if mapped
+with zero, the sentinel is benign for this lookup. A nonzero high dword would
+select a different context address entirely. Thus the current evidence cannot
+choose among these outcomes, and the prior context-mismatch wording should be
+read as an unresolved address-space dependency, not a proven firmware bug.
+No hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
