@@ -1580,6 +1580,25 @@ from this code alone. It remains an unresolved source/runtime inconsistency;
 do not invoke this route or infer its safety from the selector value. No
 hardware access or submission.
 
+## Addendum 104 — adjacent global lookup table is a distinct registry
+
+Checked the other nearby global table as a possible source of the missing
+context interpretation. Initializer `0x6c1c` allocates and publishes a
+separate pointer/count pair at `[0x178000+0x168/+0x170]`, builds 0x18-byte
+records, and indexes them through `0x70a8`. That accessor compares the name at
+record `+0` and returns record `+8` and `+0x10` through caller-provided
+outputs (`0x70a8`–`0x7138`). The builder has its own descriptor-to-record
+mapping and passes descriptor `+0x40` through `0x54a4` before storing it at
+record `+8` (`0x6dfc`–`0x6e18`).
+
+This is not the table read by the named-service callbacks `0x5d50/0x5de4`,
+which use the distinct pointer/count pair `[0x178000+0x160/+0x158]`; nor did
+the inspected path connect the two tables' records or use the `0x70a8` return
+as `0x6170`'s context. The second registry therefore does not resolve the
+`1` versus pointer mismatch and must not be substituted as its explanation.
+The actual context value and its provenance remain open. Offline disassembly
+only; no hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
