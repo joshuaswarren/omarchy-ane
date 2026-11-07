@@ -1951,6 +1951,42 @@ and `[entry+0x30]`/`[entry+0x50]` from Addendum 121. Static disassembly of
 the pinned image only; no hardware access or submission; `CSNE_CMD_PING`
 remains unsent.
 
+## Addendum 123 — the static channel table is a placeholder; no runtime route packer in code
+
+Bounded evidence narrowing the `[link+0x10]` writer question.
+
+The runtime channel table in the retained image is a pre-initialization
+placeholder, not static data: `[0xcb5c0] = 8` (the count seen by
+`0x9c930`), `[0xcb5c8] = 0x01300000_000cb580` (low half points at the
+pointer array immediately below the header; high half an unrelated word),
+and the first channel slot at `0xcb580` is all zeros for its first 0x30
+bytes. A boot-time resolver therefore reads a null channel pointer and
+takes the `0x80000008` path of Addendum 122 until boot code fills the
+array: the route word and its link object are installed by the same boot
+population that Addendum 26 observed for the channel descriptors, not
+carried as static bytes.
+
+The route word is never assembled by a runtime bit-packer in the scanned
+code window. Scans for `orr … lsl #16` and `bfi …, #0x10, #0x10` (a
+16:16 channel:endpoint split) followed by a store to an object field at
+`+0x10` found no instances. Every `bfi x?, x?, #0x10, #8` site writes an
+8+8-bit word (bits 23:16 and 31:24) to stack slots or 0x20-stride table
+entries (`0x67dcc`, `0x6c5a8`, `0x6c638` and the command-table family
+around them), not to a link. Combined with Addenda 18/24, the route word at
+`[link+0x10]` must arrive as a precomposed value from the boot population
+or a shared-memory producer.
+
+The resolver family sharing the `0x9ce94` channel-table accessor is now:
+`0x9ad28` (send), `0x9acb8` (register consumer pair, Addendum 122),
+`0x9af10` (receive, reached from `0x690c`), and a fourth variant entered
+at `0x9b1a0`, whose thunk stashes the caller's return address in `x1`
+across the `0x9ce94` accessor call (`0x9b1a0`–`0x9b1a8`) — the stashed
+word's eventual use was not traced in this pass. The sibling accessor
+`0x9cea0` exposes a second table
+at `[0xcb000+0xc0]` with ten callers in the `0x8d6fc`–`0x944cc` range, not
+yet decoded. Static image inspection only; no hardware access or
+submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
