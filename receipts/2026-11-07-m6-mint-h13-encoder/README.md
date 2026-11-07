@@ -15,7 +15,7 @@ The encoder graph and its weights come from a private evidence store and are not
 
 The graph compiled unmodified. A single pipeline fix was needed: the compile bridge wants the weights as one flat file, so the MIL reference `@model_path/weights/weight.bin` is rewritten to `@model_path/weights.bin`. The blob and its offsets are unchanged.
 
-The conversion applies the same tile fix the production container uses: header tiles 4 through 7 (four values) are set to 938, 938, 1500, 1500, which are the two output surfaces and the two input surfaces. The converted header was verified identical to the production container's header.
+The conversion applies the same tile fix the production container uses: header tiles 4 through 7 (four values) are set to 938, 938, 1500, 1500, which are the two output surfaces and the two input surfaces. Those four words match the production header. Other header words differ because the program differs; for example word 0 reads 883,488 in the minted container and 894,560 in the production one.
 
 ## Device A/B on the 13-inch M1
 
@@ -34,9 +34,7 @@ The 162 ms medians are not the 137.9 ms median that the 2026-10-11 operating-poi
 
 Throughput of the minted program in this run: 18,508 input frames per second and 2,314 output frames per second, from 3,000 input frames and 375 output frames per 162 ms call.
 
-## Cold-load cost
-
-Load-cost receipt (named in the internal record). Three full load-plus-one-call runs each: the archived container at 510, 510, 509 ms; the minted container at 498, 497, 498 ms. The minted container deploys at the same cost as production.
+The medians agree, but the lower tail does not. Over the same 50 calls the minted arm reads min 135.756, p10 139.638 and p25 143.736 ms, against 139.404, 162.401 and 162.599 ms for the archived arm. So "parity" here means equal medians and equal output, not equal distributions; the minted arm has more fast calls.
 
 ## The h14 build for the 14-inch M2 Max
 
@@ -58,4 +56,4 @@ The converted h14 package has a task stream of 902,248 B and constants of 447,80
 
 ## Raw data
 
-The per-pair wall timings, the load runs, the guard logs, and the container bytes stay in the internal measurement records for this work. This file carries the medians, the p99 values, the output hashes, and the diff result only.
+The per-pair wall timings, the guard logs, and the container bytes stay in the internal measurement records for this work. This file carries the medians, the p99 values, the output hashes, and the diff result only.
