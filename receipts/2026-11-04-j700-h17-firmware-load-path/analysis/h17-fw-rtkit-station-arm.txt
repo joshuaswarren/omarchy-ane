@@ -1664,6 +1664,26 @@ table remains a static observation, not a valid/invalid pointer conclusion.
 Queue identity, route, IRQ ownership, and PING contract remain unresolved.
 Offline disassembly only; no hardware access or submission.
 
+## Addendum 107 — allocator base is in the Mach-O zero-fill section
+
+The allocator pool base passed by setup at `0x83d8` is firmware VA
+`0x1ce000`. The pinned Mach-O declares `__DATA,__zerofill` at VA `0x178100`
+with size `0x1f1f00` and section type `S_ZEROFILL` (section flags `0x1`), so
+`0x1ce000` lies inside the image's zero-fill range. This supports an expectation
+that the backing bytes start zero when the image loader honors the Mach-O
+zero-fill contract; it is not evidence of the exact bytes at the later table
+allocation.
+
+In the traced setup function, pool initialization at `0x79dc` precedes several
+allocator-backed object allocations beginning at `0x7aa4`, while the metadata
+array is built later at `0x7c78`. The allocator does not clear returned
+payloads, and static analysis has not resolved the returned table address,
+allocation reuse history, or whether any prior writer touched its unwritten
+upper dword. Thus the zero-fill placement narrows the likely initial state but
+does not promote the `SHAREDMALLOC` low dword `1` into a proven complete
+context pointer. Runtime context and transport ownership remain unresolved.
+Offline image/disassembly analysis only; no hardware access or submission.
+
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
 The apparent representation mismatch is real in the statically traced
