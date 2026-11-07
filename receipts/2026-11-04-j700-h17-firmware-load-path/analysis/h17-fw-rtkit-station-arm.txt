@@ -1670,6 +1670,28 @@ qword, the low-VA mapping, whether the named-service setup reaches this
 constructor on the live boot path, or the resulting queue identity. No
 hardware access or submission.
 
+## Addendum 114 — wrapper route candidate is a child-object pointer
+
+Refined the wrapper/send representation mismatch from Addendum 74. Constructor
+`0x239bc` allocates a `0x30`-byte child object, initializes its vtable and
+`+8`, then calls `0x24670` with the child, its owner, and a value loaded from
+the peer's `+0x10` (`0x239d4`–`0x23a1c`). `0x24670` branches to `0x244e8`,
+which stores that third argument at child `+0x10`, links a separate
+registration node, and returns the child pointer (`0x245b4`–`0x245f4`). The
+wrapper constructor stores that returned child-object pointer at wrapper
+`+0x10`; reciprocal queue setup passes the peer wrapper as the queue link
+(`0x60c8`, `0xdbcc`, `0x298fc`).
+
+On the linked-send path, `0x68c8` reads a 32-bit value directly from
+`[link+0x10]` and passes it to `0x9ad28` as the route selector. For this
+specific wrapper wiring, that load therefore takes the low 32 bits of the
+peer wrapper's child-object pointer. The separate registration-node insertion
+is not shown converting that child address to the packed route form. This is a
+static type/dataflow discrepancy, not proof
+that the numeric low word is rejected at runtime or that this wrapper path is
+the CRPC response queue's active link. Route identity, queue ownership, IRQ
+ownership, and PING safety remain unresolved. No hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
