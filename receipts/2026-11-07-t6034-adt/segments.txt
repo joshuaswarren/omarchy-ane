@@ -1,0 +1,3 @@
+record 0: phys=0x10000ac4000 iova_offset=0x0 remap=0x10000000000 size=0xb0000 flags=0x1
+record 1: phys=0x10001544000 iova_offset=0xb0000 remap=0x100000b0000 size=0x43c000 flags=0x0
+fw_seg=10000ac4000:b0000,10001544000:43c000

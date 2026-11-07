@@ -1,0 +1,132 @@
+== h15-capture 2026-11-07T08:55:06Z
+== kernel: 7.2.11-14-1-ARCH
+== model: Apple MacBook Pro (14-inch, M3 Max, 14 CPU cores, Nov 2023) 
+== compatible: apple,j514m apple,t6034 apple,arm-platform 
+== chosen: the os-fw-version property selects the firmware image iBoot preloads (H1)
+    asahi,os-fw-version (5 bytes): 14.7 
+    asahi,system-fw-version (7 bytes): 26.6.2 
+== ANE, every DART and ASC mailbox node (H2, H3; the ANE DART is the one whose reg sits at the ANE engine window + 0x1800000)
+== reserved-memory (part of H3: the asc-firmware regions iBoot preloads; segment-ranges and DART geometry are not here)
+  node /reserved-memory/asc-firmware@10000b74000
+    compatible (14 bytes): apple,asc-mem 
+    iommu-addresses (20 bytes):  00 00 01 13 00 00 01 00 00 00 00 00 00 00 00 00 00 96 00 00 
+    name (13 bytes): asc-firmware 
+    no-map (0 bytes): 
+    phandle (4 bytes):  00 00 01 14 
+    reg (16 bytes):  00 00 01 00 00 b7 40 00 00 00 00 00 00 96 00 00 
+  node /reserved-memory/asc-firmware@10001d28000
+    compatible (14 bytes): apple,asc-mem 
+    iommu-addresses (20 bytes):  00 00 01 13 00 00 01 00 00 96 00 00 00 00 00 00 00 41 c0 00 
+    name (13 bytes): asc-firmware 
+    no-map (0 bytes): 
+    phandle (4 bytes):  00 00 01 15 
+    reg (16 bytes):  00 00 01 00 01 d2 80 00 00 00 00 00 00 41 c0 00 
+  node /reserved-memory/flash@100040ac000
+    compatible (6 bytes): phram 
+    label (4 bytes): adt 
+    name (6 bytes): flash 
+    phandle (4 bytes):  00 00 01 11 
+    reg (16 bytes):  00 00 01 00 04 0a c0 00 00 00 00 00 00 08 c0 00 
+  node /reserved-memory/flash@108cbe0c000
+    compatible (6 bytes): phram 
+    label (16 bytes): m1n1_stage2.log 
+    name (6 bytes): flash 
+    phandle (4 bytes):  00 00 01 12 
+    reg (16 bytes):  00 00 01 08 cb e0 c0 00 00 00 00 00 00 00 40 00 
+  node /reserved-memory/isp-heap@0
+    compatible (14 bytes): apple,asc-mem 
+    iommu-addresses (20 bytes):  00 00 01 13 00 00 01 00 00 d7 c0 00 00 00 00 00 00 28 40 00 
+    name (9 bytes): isp-heap 
+    no-map (0 bytes): 
+    phandle (4 bytes):    T
+    reg (16 bytes):  00 00 01 08 cb e1 00 00 00 00 00 00 00 28 40 00 
+  node /reserved-memory/uat-handoff@30
+    name (12 bytes): uat-handoff 
+    phandle (4 bytes):  00 00 01 03 
+    reg (16 bytes):        0        
+    status (9 bytes): disabled 
+  node /reserved-memory/uat-pagetables@20
+    name (15 bytes): uat-pagetables 
+    phandle (4 bytes):  00 00 01 02 
+    reg (16 bytes):                 
+    status (9 bytes): disabled 
+  node /reserved-memory/uat-pagetables-l2@40
+    name (18 bytes): uat-pagetables-l2 
+    phandle (4 bytes):  00 00 01 04 
+    reg (16 bytes):        @        
+    status (9 bytes): disabled 
+  node /reserved-memory/uat-ttbs@10
+    name (9 bytes): uat-ttbs 
+    phandle (4 bytes):  00 00 01 01 
+    reg (16 bytes):  00 00 00 00 00 00 00 10 00 00 00 00 00 00 00 00 
+    status (9 bytes): disabled 
+== /proc/interrupts lines for mailboxes, DARTs, ANE (H2)
+  38:        590        525        590        556        524        353        440        432        279        867       1210        867        311       1277  AIC2                 66454 Level     2a4408000.mbox-recv
+  39:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66451 Level     2a4408000.mbox-send
+  40:       5371       3698       7211       2907       1839       4039       3005       1997       1308       8034       3666       2647       1579       1226  AIC2                 66151 Level     2a8408000.mbox-recv
+  41:          0          1          0          0          0          0          0          1          0          0          0          0          0          0  AIC2                 66148 Level     2a8408000.mbox-send
+  42:          0          0          6          0          6          2          1          1          7          2          1          3          2          1  AIC2                 66231 Level     2ac408000.mbox-recv
+  43:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66228 Level     2ac408000.mbox-send
+  44:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66398 Level     701108000.mailbox-recv
+  45:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66395 Level     701108000.mailbox-send
+  46:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66406 Level     b01108000.mailbox-recv
+  47:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66403 Level     b01108000.mailbox-send
+  48:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66414 Level     f01108000.mailbox-recv
+  49:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66411 Level     f01108000.mailbox-send
+  51:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66720 Level     apple-dart fault handler
+  52:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66163 Level     apple-dart fault handler
+  53:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66211 Level     apple-dart fault handler
+  54:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66107 Level     apple-dart fault handler, apple-dart fault handler, apple-dart fault handler
+  55:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 67028 Level     apple-dart fault handler
+  56:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 67037 Level     apple-dart fault handler
+  57:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66728 Level     apple-dart fault handler
+  58:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66874 Level     apple-dart fault handler
+  59:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66902 Level     apple-dart fault handler, apple-dart fault handler
+  60:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66930 Level     apple-dart fault handler, apple-dart fault handler
+  61:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66958 Level     apple-dart fault handler, apple-dart fault handler
+  62:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66719 Level     290c08000.mbox-recv
+  63:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66716 Level     290c08000.mbox-send
+  64:          0          4         14          7         10          5          1          7          4          3          0          1         10          8  AIC2                 66813 Level     349408000.mbox-recv
+  65:          0          0          0          0          0          0          0          0          0          0          0          0          0          0  AIC2                 66810 Level     349408000.mbox-send
+== /proc/iomem lines for ane and reserved regions
+2ac400000-2ac403fff : 2ac400000.mtp asc
+10000b74000-100014d3fff : reserved
+10001d28000-10002143fff : reserved
+  100040ac000-10004137fff : reserved
+10004194000-10004197fff : reserved
+100050d0000-100054dffff : reserved
+1000711c000-1000714ffff : reserved
+  10008000000-1000bffffff : reserved
+  1081f080000-108209fffff : reserved
+  10822550000-108226cffff : reserved
+  1082a4a0000-1082a4cbfff : reserved
+1082e000000-1082e003fff : reserved
+  1082e13c000-1082e1abfff : reserved
+  108b7bb0000-108c1e67fff : reserved
+  108c1e70000-108c6c7bfff : reserved
+  108c6c7c000-108c6c7ffff : reserved
+  108c6c80000-108c6c97fff : reserved
+108c6c98000-108c6cbffff : reserved
+  108c6cc0000-108c7d43fff : reserved
+108c7d44000-108c7d47fff : reserved
+  108c7d48000-108cabb7fff : reserved
+  108cabb8000-108cabbbfff : reserved
+  108cabbc000-108cabcbfff : reserved
+  108cabcc000-108cac5bfff : reserved
+  108cac5c000-108cbd1ffff : reserved
+108cbd20000-108cbd2ffff : reserved
+  108cbd30000-108cbe07fff : reserved
+  108cbe0c000-108cbe0ffff : reserved
+108cbe10000-108cc093fff : reserved
+== genpd: ANE power domains (root only)
+ane_base                        off-0                           0
+ane_td                          off-0                           0
+                                                ane_base
+ane_cpu                         off-0                           0
+ane_mpm                         off-0                           0
+ane_sys                         off-0                           0
+                                                ane_mpm, ane_cpu, ane_td
+                                                msr0, ane_sys
+                                                msr1, venc1_sys, ane_sys
+== dmesg lines for ane, dart-ane, ascwrap, rtkit (root or dmesg_restrict=0)
+== end
