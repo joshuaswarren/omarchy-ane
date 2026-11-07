@@ -1635,6 +1635,26 @@ VA `0x71` succeeds or returns zero. Addendum 110's three-way uncertainty
 (unmapped, mapped-zero, or a different effective context qword) therefore
 remains. No hardware access or submission.
 
+## Addendum 112 — low pointer is an absolute CPU VA, not a firmware-relative offset
+
+The reset-vector analysis establishes a firmware DVA near `0x10000000000`,
+while the Mach-O's section addresses are image-relative offsets. The startup
+stub at image VA `0x204` preserves incoming `x0` in `x7`, obtains the core ID
+from `MPIDR_EL1`, and later constructs EL1 translation tables from
+boot-dependent values (`0x228`–`0x278`, `0x29c`–`0x4b8`). PC-relative
+instructions such as `adrp` naturally retain the runtime PC's high address;
+they do not make arbitrary pointer values image-relative.
+
+Consequently, if the metadata qword passed to `0xdf08` is literally `1`, its
+first load `[x0,#0x70]` addresses CPU VA `0x71`, not firmware DVA plus image
+offset `0x71`. The zero bytes at Mach-O file VA `0x71` describe the image
+payload and cannot answer whether that separate low CPU VA is mapped. The
+startup page-table builder's mappings depend on live boot inputs not
+recoverable from this image alone; neither the ADT's DART remap nor the host
+firmware surface proves an EL1 mapping at VA `0x71`. Thus the exact sentinel
+branch remains unresolved, with no basis to classify it as safe or faulting.
+No hardware access or submission.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
