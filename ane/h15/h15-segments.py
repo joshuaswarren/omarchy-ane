@@ -16,8 +16,8 @@ The /arm-io/ane node's segment-ranges holds two 32-byte little-endian records {p
 size | flags << 32}. This script walks the ADT without m1n1's python modules, prints the records and the
 fw_seg= argument, and refuses anything that is not exactly two records, a layout where remap != vm-base + offset,
 or a DATA offset that is not the TEXT size (ane_h15 derives both IOVAs from the RVBAR entry and would be wrong).
-Checked against the saved M6 ADT: it prints fw_seg=100014e8000:c4000,100030c4000:2ac000, the offline decode of that ADT. Nothing
-is written.
+Checked against the saved M6 ADT: it prints fw_seg=100014e8000:c4000,100030c4000:2ac000, the segment values recorded for
+that ADT. Nothing is written.
 """
 import struct
 import sys
