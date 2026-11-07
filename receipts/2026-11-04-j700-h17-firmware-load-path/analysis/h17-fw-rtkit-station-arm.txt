@@ -1867,6 +1867,55 @@ entry ever invokes the `[ring]` pair is untraced. Static disassembly of the
 pinned image only; no hardware access or submission; `CSNE_CMD_PING` remains
 unsent.
 
+## Addendum 121 — the registry entry owns the ring; registration fires the saved consumer pair
+
+Followed the return-value semantics of `0xdf08` and the ring-family helper it
+calls, and pinned the fourth ring operation.
+
+`0xdf08(manager, idx, x2..x6)` guards on `idx < [manager+0x70]`,
+`[[manager+0x40] + idx*0x60]`'s `+0x30` non-null (the ring), and
+`[entry+0x2c]` bit0 clear; it stores x2→`+0x38`, x3→`+0x40`, x4→`+0x48`,
+x5→`+0x50`, x6→`+0x58`, sets active, then — when its x2 argument is
+non-null — calls `0x29ac8(ring)`, and if that reports a valid head invokes
+`[entry+0x38]([entry+0x40])` (the pair it just stored). It returns
+`[entry+0x30]`: the 0x60-byte registry entry holds a pointer to the ring
+object, so the ring is a per-entry attached buffer, not the entry itself.
+`0x29ac8` is a head probe: critical section; consumer word `[ring+0x20] ==
+-1` → 0; else invalidate the head slot `[ring+0x18] + [ring+0x20]*0x40` via
+the `0x1cde20+0x20` hook, `dsb ishld`, return `([head]&1) == ([ring+0x10]&1)`;
+no stores, no doorbell.
+
+The fourth ring operation, `0x29ff8` (wrapper `0x29ff0` forcing x5=0),
+peeks-and-voids the head: same probe and field copies as the pop (token
+`0x50ec([slot]&~3, 0)`, `[slot+8]`, `[slot+0x10]`, optional `[slot+0x18]`,
+the `[ring+0x78]`/`[ring+0xb8]` history), then re-stamps the slot word
+`[slot] = [ring+0x10]^1` (void epoch, token bits zeroed) at `0x2a0ec`–
+`0x2a0f0`, cache-**cleans** the slot via `[0x1cde20+0x18]`, advances
+`[ring+0x20]` plain with wrap at `[ring+0x14]-1` (no `~` ack inversion, no
+producer-word reset), increments `[ring+0x28]`, exits, returns 0/-1. It
+never invokes the `[ring+0]` doorbell pair. Its sole direct caller, `0x27dc4`
+inside a service modeled on the `0xe868` setup, first makes an autda'd
+`[obj+0x28]` virtual call, then peeks-voids the registry-returned ring:
+registration at `0x27d00`–`0x27d34` is
+`0xdf08([arg+0x40], [x19+0x48], paciza(0x280d0), fmov(d0), 0, 0, 0)` — the
+non-null x2 takes the probe branch, so after the stores the helper probes
+the ring head and, when valid, invokes the just-written
+`[entry+0x38]([entry+0x40])` = `0x280d0(d0)`; `0x280d0` is a second
+two-instruction thunk into the same `0x92a9c` start CAS, making `d0` a
+pointer to the state object the CAS starts. By contrast the `0x6258`
+unlinked branch registers with x2 = 0 (no probe) and parks its trampoline
+`0x6238` at `[entry+0x50]` with context `q` at `[entry+0x58]`, fields this
+pass finds no reader for. Both traced services therefore wake consumers
+through the same registered start primitive.
+
+Still unpinned after this pass: the writers of the ring epoch word
+`[ring+0x10]` and of the push doorbell pair `[ring+0]`/`[ring+8]`; the
+writer of the entry's ring pointer `[entry+0x30]` (registration requires it
+non-null but never stores it); and the consumer of the `[entry+0x50]`/
+`[entry+0x58]` pair that `0x6258` fills with trampoline `0x6238` and context
+`q` (the RTKit receive-side wake). Static disassembly of the pinned image
+only; no hardware access or submission; `CSNE_CMD_PING` remains unsent.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
