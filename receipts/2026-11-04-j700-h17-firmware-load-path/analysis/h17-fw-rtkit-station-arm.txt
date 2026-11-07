@@ -1548,17 +1548,20 @@ context argument and passes it to `0xdf08`; `0xdf08` immediately dereferences
 that argument at `+0x70` and `+0x40` (`0xdf08`–`0xdf20`).
 
 Taken literally as one uninterrupted table path, this would pass the value
-`1` where `0xdf08` expects an addressable context object. The current static
-trace does not explain that mismatch or establish which metadata-table
-population is effective at the `0x6170` call. Consequently Addendum 101's
-`0x40` result is only the selector value implied by the matching descriptor
-copy; it must not be used to infer that the paired context pointer is valid,
-that `0xdf08` successfully selects an entry, or that the selector is the
-effective runtime value in the CRPC path. Trace the exact table-population
-and caller instance, including any indirect/runtime replacement, before
-relying on this pair. Queue identity, link/route, host-channel mapping, IRQ
-ownership, and PING safety remain unresolved. Offline analysis only; no
-hardware access or submission.
+`1` where `0xdf08` expects an addressable context object. The concrete caller
+at `0x7c78` invokes `0x54f8` to build this global table, then installs the
+`0x5d50/0x5de4` lookup callbacks at `0x7c7c`–`0x7ca0`, and immediately begins
+the named service lookups; no direct table replacement appears between those
+operations. This strengthens the same-path inconsistency, but does not prove
+a runtime fault: an indirect/shared-memory mutation or an untraced meaning of
+the copied value is still possible. Addendum 101's `0x40` is the selector
+value implied by the matching descriptor copy only; it must not be used to
+infer that the paired context pointer is valid, that `0xdf08` successfully
+selects an entry, or that the selector is effective in the CRPC path. The
+context/selector pair needs another source-level explanation before reliance.
+Queue identity, link/route, host-channel mapping, IRQ ownership, and PING
+safety remain unresolved. Offline analysis only; no hardware access or
+submission.
 
 ## Addendum 74 — reciprocal wrapper link has an unresolved route representation
 
