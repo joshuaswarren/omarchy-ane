@@ -1709,6 +1709,31 @@ peer-wrapper link. The child-pointer/route representation discrepancy
 remains unresolved; no runtime endpoint, host channel, IRQ ownership, or PING
 safety follows. Offline analysis only; no hardware access or submission.
 
+## Addendum 116 — configured-pool wrapper pointer cannot be an in-range route
+
+Combined the wrapper allocation and route bounds. `0x239bc` obtains its
+0x30-byte child object through `0x8a2d4` (`0x239d4`–`0x23a1c`). When the
+configured allocator at global `[0x1cc320]` is active and the allocation
+succeeds, `0x8a2d4` calls `0x92488`; its pool was initialized by `0x8a008`
+with base `0x1ce000`,
+reserving the first `0x80000` bytes and registering the remainder
+(`0x8a008`/Addenda 76, 106). The registered allocation extent is therefore
+`[0x26e000, 0x38a000)`. `0x92488` returns a payload inside that extent (after
+its block header), so a child pointer from this path has low 32 bits in that
+range; the firmware DVA base `0x10000000000` does not alter those low bits.
+
+The linked send consumes the peer wrapper's `+0x10` child pointer as the route
+word (`0x68c8`). Its upper 16 bits are consequently in `0x26..0x38`, whereas
+the route decoder compares that half against the runtime channel-table count
+and rejects `index >= count` at `0x9ad58`/`0x9c930`. The pinned initializer at
+`0xcb5c0` declares count 8 (Addenda 18–19). Thus, **if** the configured pool
+path is active for these wrapper objects and the route-table count remains 8,
+this pointer-shaped value cannot address an entry in that table; the failure
+occurs before endpoint lookup. This is a conditional static result: pool
+fallback, runtime table mutation, an alternate queue/link path, and whether
+this route is used for CRPC are not resolved. No hardware access or
+submission; PING remains gated.
+
 ## Addendum 104 — adjacent global lookup table is a distinct registry
 
 Checked the other nearby global table as a possible source of the missing
