@@ -2,8 +2,8 @@
 /*
  * J700/T8140 H17: Apple bring-up order + SCRATCH7 firmware wake-word poll.
  *
- * Derived from com.apple.driver.AppleH16ANEInterface (family 0xe0) and
- * AppleT8140ANEHAL; recipe receipts:
+ * Derived from the H16 ANE driver family the host OS ships (family 0xe0) and
+ * the T8140 ANE HAL; recipe receipts:
  *   receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md
  *   receipts/2026-11-04-j700-h17-firmware-load-path/README.md
  *
@@ -217,7 +217,7 @@ static int ane_h17_hal_probe(struct platform_device *pdev)
 	h17_log("C5 CE_A now %#x\n", readl(eng + H17_CE_A));
 	h17_log("C6 read CE_B(%#x) = %#x\n", H17_CE_B, readl(eng + H17_CE_B));
 
-/* AppleT8140ANEHAL online tunables: figs_1 (35) + figs_4 (2).
+/* T8140 ANE HAL online tunables: figs_1 (35) + figs_4 (2).
  * kernelcache 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
  * new = (live & ~mask) | (value & mask), then width-4 store.
  */

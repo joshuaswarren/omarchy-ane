@@ -79,7 +79,7 @@ ps_ane_sys_cpu: power-controller@c000 {
 };
 ```
 
-This converts the Apple driver's direct `0xc000` write into a genpd raise
+This converts the host driver's direct `0xc000` write into a genpd raise
 — the only path the shipped Linux driver trusts ("a direct ps-word write
 from kernel context has hung the machine").
 
@@ -130,7 +130,7 @@ register map is hardcoded H14G, so that path needs a bigger refactor.
 ### 3. Pin the H17 register map (kernelcache, offline)
 
 The legacy direct-boot block in `ANEHWDevice::ANE_Init()`
-(`0xfffffe0008f3e138..0xfffffe0008f3e198`) resolves the boot handshake:
+(its entry range is recorded in the offline receipts) resolves the boot handshake:
 
 | Register | H14G (shipped) | H17 (pinned, this plan) | Evidence |
 | --- | --- | --- | --- |

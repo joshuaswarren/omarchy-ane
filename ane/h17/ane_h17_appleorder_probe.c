@@ -2,9 +2,9 @@
 /*
  * J700/T8140 H17: walk Apple's real bring-up order, one logged step at a time.
  *
- * Derived from com.apple.driver.AppleH16ANEInterface (family 0xe0, the
+ * Derived from the H16 ANE driver family the host OS ships (family 0xe0, the
  * group the driver maps ADT ane-type 0x200 onto) and
- * AppleT8140ANEHAL. See
+ * the T8140 ANE HAL. See
  * receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md
  * for the instruction addresses.
  *

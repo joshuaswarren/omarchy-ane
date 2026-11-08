@@ -13,7 +13,7 @@
  * (receipts/2026-11-03-j700-h17-any-write-freezes).
  *
  * Apple's driver does not stop at the ps-word. EnableCPUClocksAndPower
- * (ane-type 0x200 block, 0xfffffe0008f294b0) runs:
+ * (ane-type 0x200 block) runs:
  *
  *   1. PS      write32(0xc000, 0xf)
  *   2. PS      validate(0xc000, 0xff, mask 0xff)
@@ -252,7 +252,7 @@ static int ane_h17_tunable_probe(struct platform_device *pdev)
 	iounmap(pw);
 
 	/*
-	 * AppleANETunableApplyFunction's unconditional _Legacy writes, in
+	 * The tunable-apply call's unconditional _Legacy writes, in
 	 * the order the HAL applies them. Each is logged before and after,
 	 * so a freeze names the exact register.
 	 */

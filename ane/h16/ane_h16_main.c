@@ -768,8 +768,8 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
  * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
  * The ASC sees remap. mapFwCTRRRegion in retained kernelcache SHA256
  * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
- * uses ldr w9,[x20,#0x18] at 0xfffffe0008f440a0 (TEXT), and
- * ldr w9,[x20,#0x38] at 0xfffffe0008f440c0 (DATA): size is u32,
+ * uses ldr w9,[x20,#0x18] for the TEXT entry and
+ * ldr w9,[x20,#0x38] for the DATA entry: size is u32,
  * not u64. The final dword's meaning is not established here.
  * The legacy 24-byte {u64 phys, remap, size} form is also accepted.
  */

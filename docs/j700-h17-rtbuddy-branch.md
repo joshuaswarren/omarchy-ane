@@ -157,7 +157,7 @@ the T6021 driver votes clocks. The Apple driver votes them through
 `enableDeviceClock` over the `clock-ids` table.
 
 The ID-to-register map is not in the ADT; it lives in
-`AppleH17PPlatformIO`'s `function-clock_gate`. See
+the platform-IO driver's `function-clock_gate`. See
 `receipts/2026-11-03-j700-h17-clock-gap/`.
 
 Any engine read or write should wait for this to be closed: a gated clock
