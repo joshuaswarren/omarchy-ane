@@ -1,0 +1,77 @@
+J700 IRQ handler: acknowledgment branch and line-to-channel dispatch
+====================================================================
+
+Kernelcache SHA-256:
+  7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+
+This corrects the shorthand in `h17-messenger-irq-chain.txt` that labels the
+write at `0x8f581bc` as the handler's unconditional `ACK 0xffff`. The immediate
+does occur, but it is not on the ordinary `aneInterruptHandler` callback path.
+
+## Acknowledgment control flow
+
+`aneInterruptHandler` is at VA `0xfffffe0008f5721c`; its body forwards the
+callback arguments unchanged to `aneInterruptHandlerPriv` at
+`0xfffffe0008f5804c`:
+
+```
+0xfffffe0008f57230  mov x19, x2
+0xfffffe0008f57234  mov x20, x1
+...
+0xfffffe0008f57240  mov x0, x21
+0xfffffe0008f57244  mov x1, x20
+0xfffffe0008f57248  mov x2, x19
+0xfffffe0008f5724c  bl  0xfffffe0008f5804c
+```
+
+The private handler saves `x1` as `x22` and `x2` as `w21`. If either is
+nonzero, it branches at `0x8f580c4`/`0x8f580c8` to `0x8f58108`, reads
+`[device+0x150]` (the configured status register, `0x188c000`) via
+`0x8f73fdc`, keeps the returned status mask in `x21`, and passes that mask to
+the write helper for `[device+0x154]` (`0x1890000`) at `0x8f581c0..cc`.
+Thus the ordinary callback with a non-null `IOInterruptEventSource *` in `x1`
+acknowledges the status value it read, not an unconditional `0xffff`.
+
+The `mov w21,#0xffff` at `0x8f581bc` is reached only through the zero/zero
+argument branch (`x22 == 0 && w21 == 0`). Its handling depends on the flags at
+`[x20+1]`; either way, this is not the ordinary callback path established by
+the wrapper above. Do not model that fallback as the normal IRQ policy.
+
+## Post-ack dispatch and the remaining runtime gap
+
+In the normal path the status mask in `x21` is tested after the W1C write.
+The handler iterates `x22` from zero to the count at `[device+0x1f0]`. For
+each descriptor it computes
+`descriptor = [device+0x3de0] + x22*0x100`; descriptor `+0x44` supplies the
+bit position tested in the saved status mask, while descriptor `+0x40` selects
+the dispatch mode. In mode 2, the handler receives from a channel object at
+`channel_object_array[x22]` using `IOProcessorChannelUnidirectionalReceive`.
+Other modes call the generic dispatcher with `x22 & 0xff`.
+
+The table at `[device+0x3de0]` is also the table used by `channelNameToIndex`
+(`h17-doorbell-arch.txt`): eight entries of stride `0x100`, searched by their
+names, with the resulting array index cached for names such as
+`DATA_CHAIN_H2T`. Thus the IRQ loop's descriptor slot and the channel-name
+index share an array/index domain; when the cached H17 `DATA_CHAIN_H2T` index
+is 7, its descriptor is slot 7. This is a useful identity correction, but it
+does not reveal descriptor 7's live `+0x44` status-bit position or `+0x40`
+dispatch mode, nor prove that the response queue is the `DATA_CHAIN_H2T`
+queue.
+
+The runtime descriptor contents and mode-specific channel objects are not
+present in the saved Linux receipts. Therefore the mapping from the observed
+zero status word to a future response interrupt and the CRPC response queue's
+owner remain unknown. The new post-wake observation
+(`receipts/2026-11-06-j700-h17-irq-status-capture/`) read status `0` once;
+that snapshot had no set bits to dispatch and says nothing about a later
+response interrupt.
+
+## Safety consequence
+
+The correction narrows, but does not clear, the IRQ gate. A Linux handler must
+not copy either the special `0xffff` write or the regular status-mask write
+until the runtime line descriptors and queue ownership are established. The
+normal Apple callback's status readback does not prove Linux owns all bits in
+the mask. PING's envelope/reply contract and response route are also still
+open. No hardware access, acknowledgment, doorbell, or command submission was
+performed for this analysis.

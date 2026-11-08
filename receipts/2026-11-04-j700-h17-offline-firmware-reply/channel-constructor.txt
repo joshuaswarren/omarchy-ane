@@ -1,0 +1,40 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 0000dbcc file 00011bcc  7f2303d5  pacibsp
+VA 0000dbd0 file 00011bd0  f85fbca9  stp      x24, x23, [sp, #-0x40]!
+VA 0000dbd4 file 00011bd4  f65701a9  stp      x22, x21, [sp, #0x10]
+VA 0000dbd8 file 00011bd8  f44f02a9  stp      x20, x19, [sp, #0x20]
+VA 0000dbdc file 00011bdc  fd7b03a9  stp      x29, x30, [sp, #0x30]
+VA 0000dbe0 file 00011be0  fdc30091  add      x29, sp, #0x30
+VA 0000dbe4 file 00011be4  2804018b  add      x8, x1, x1, lsl #1
+VA 0000dbe8 file 00011be8  092040f9  ldr      x9, [x0, #0x40]
+VA 0000dbec file 00011bec  f50300aa  mov      x21, x0
+VA 0000dbf0 file 00011bf0  e10302aa  mov      x1, x2
+VA 0000dbf4 file 00011bf4  17e97bd3  lsl      x23, x8, #5
+VA 0000dbf8 file 00011bf8  02048052  mov      w2, #0x20
+VA 0000dbfc file 00011bfc  2001178b  add      x0, x9, x23
+VA 0000dc00 file 00011c00  f30305aa  mov      x19, x5
+VA 0000dc04 file 00011c04  f40304aa  mov      x20, x4
+VA 0000dc08 file 00011c08  f603032a  mov      w22, w3
+VA 0000dc0c file 00011c0c  fedcff97  bl       #0x5004
+VA 0000dc10 file 00011c10  a82240f9  ldr      x8, [x21, #0x40]
+VA 0000dc14 file 00011c14  df060071  cmp      w22, #1
+VA 0000dc18 file 00011c18  a31246a9  ldp      x3, x4, [x21, #0x60]
+VA 0000dc1c file 00011c1c  69008052  mov      w9, #3
+VA 0000dc20 file 00011c20  e10314aa  mov      x1, x20
+VA 0000dc24 file 00011c24  0801178b  add      x8, x8, x23
+VA 0000dc28 file 00011c28  e203132a  mov      w2, w19
+VA 0000dc2c file 00011c2c  162900b9  str      w22, [x8, #0x28]
+VA 0000dc30 file 00011c30  1fb10039  strb     wzr, [x8, #0x2c]
+VA 0000dc34 file 00011c34  131100f9  str      x19, [x8, #0x20]
+VA 0000dc38 file 00011c38  e8179f1a  cset     w8, eq
+VA 0000dc3c file 00011c3c  df0a0071  cmp      w22, #2
+VA 0000dc40 file 00011c40  2001881a  csel     w0, w9, w8, eq
+VA 0000dc44 file 00011c44  2e6f0094  bl       #0x298fc
+VA 0000dc48 file 00011c48  a82240f9  ldr      x8, [x21, #0x40]
+VA 0000dc4c file 00011c4c  fd7b43a9  ldp      x29, x30, [sp, #0x30]
+VA 0000dc50 file 00011c50  f44f42a9  ldp      x20, x19, [sp, #0x20]
+VA 0000dc54 file 00011c54  0801178b  add      x8, x8, x23
+VA 0000dc58 file 00011c58  f65741a9  ldp      x22, x21, [sp, #0x10]
+VA 0000dc5c file 00011c5c  f85fc4a8  ldp      x24, x23, [sp], #0x40
+VA 0000dc60 file 00011c60  001900f9  str      x0, [x8, #0x30]
+VA 0000dc64 file 00011c64  ff0f5fd6  retab

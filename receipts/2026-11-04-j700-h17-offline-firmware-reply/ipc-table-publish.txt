@@ -1,0 +1,86 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 000076e0 file 0000b6e0  f41f40f9  ldr      x20, [sp, #0x38]
+VA 000076e4 file 0000b6e4  e11740f9  ldr      x1, [sp, #0x28]
+VA 000076e8 file 0000b6e8  810000b4  cbz      x1, #0x76f8
+VA 000076ec file 0000b6ec  000340f9  ldr      x0, [x24]
+VA 000076f0 file 0000b6f0  e20740f9  ldr      x2, [sp, #8]
+VA 000076f4 file 0000b6f4  7e670094  bl       #0x214ec
+VA 000076f8 file 0000b6f8  000340f9  ldr      x0, [x24]
+VA 000076fc file 0000b6fc  e10314aa  mov      x1, x20
+VA 00007700 file 0000b700  e20315aa  mov      x2, x21
+VA 00007704 file 0000b704  98670094  bl       #0x21564
+VA 00007708 file 0000b708  f30300aa  mov      x19, x0
+VA 0000770c file 0000b70c  c00240f9  ldr      x0, [x22]
+VA 00007710 file 0000b710  c1008052  mov      w1, #6
+VA 00007714 file 0000b714  e2008052  mov      w2, #7
+VA 00007718 file 0000b718  100040f9  ldr      x16, [x0]
+VA 0000771c file 0000b71c  f10300aa  mov      x17, x0
+VA 00007720 file 0000b720  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 00007724 file 0000b724  301ac1da  autda    x16, x17
+VA 00007728 file 0000b728  080e43f8  ldr      x8, [x16, #0x30]!
+VA 0000772c file 0000b72c  b07bebf2  movk     x16, #0x5bdd, lsl #48
+VA 00007730 file 0000b730  10093fd7  blraa    x8, x16
+VA 00007734 file 0000b734  880340b9  ldr      w8, [x28]
+VA 00007738 file 0000b738  88000034  cbz      w8, #0x7748
+VA 0000773c file 0000b73c  e00313aa  mov      x0, x19
+VA 00007740 file 0000b740  e10315aa  mov      x1, x21
+VA 00007744 file 0000b744  cdf6ff97  bl       #0x5278
+VA 00007748 file 0000b748  e00314aa  mov      x0, x20
+VA 0000774c file 0000b74c  e10313aa  mov      x1, x19
+VA 00007750 file 0000b750  e5f6ff97  bl       #0x52e4
+VA 00007754 file 0000b754  f30300aa  mov      x19, x0
+VA 00007758 file 0000b758  c00240f9  ldr      x0, [x22]
+VA 0000775c file 0000b75c  c1008052  mov      w1, #6
+VA 00007760 file 0000b760  02018052  mov      w2, #8
+VA 00007764 file 0000b764  100040f9  ldr      x16, [x0]
+VA 00007768 file 0000b768  f10300aa  mov      x17, x0
+VA 0000776c file 0000b76c  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 00007770 file 0000b770  301ac1da  autda    x16, x17
+VA 00007774 file 0000b774  080e43f8  ldr      x8, [x16, #0x30]!
+VA 00007778 file 0000b778  b07bebf2  movk     x16, #0x5bdd, lsl #48
+VA 0000777c file 0000b77c  10093fd7  blraa    x8, x16
+VA 00007780 file 0000b780  e12f40f9  ldr      x1, [sp, #0x58]
+VA 00007784 file 0000b784  e20313aa  mov      x2, x19
+VA 00007788 file 0000b788  e02740f9  ldr      x0, [sp, #0x48]
+VA 0000778c file 0000b78c  e3031f2a  mov      w3, wzr
+VA 00007790 file 0000b790  e45740b9  ldr      w4, [sp, #0x54]
+VA 00007794 file 0000b794  22fdff97  bl       #0x6c1c
+VA 00007798 file 0000b798  c00240f9  ldr      x0, [x22]
+VA 0000779c file 0000b79c  c1008052  mov      w1, #6
+VA 000077a0 file 0000b7a0  22018052  mov      w2, #9
+VA 000077a4 file 0000b7a4  100040f9  ldr      x16, [x0]
+VA 000077a8 file 0000b7a8  f10300aa  mov      x17, x0
+VA 000077ac file 0000b7ac  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 000077b0 file 0000b7b0  301ac1da  autda    x16, x17
+VA 000077b4 file 0000b7b4  080e43f8  ldr      x8, [x16, #0x30]!
+VA 000077b8 file 0000b7b8  b07bebf2  movk     x16, #0x5bdd, lsl #48
+VA 000077bc file 0000b7bc  10093fd7  blraa    x8, x16
+VA 000077c0 file 0000b7c0  c00240f9  ldr      x0, [x22]
+VA 000077c4 file 0000b7c4  e203132a  mov      w2, w19
+VA 000077c8 file 0000b7c8  e1031faa  mov      x1, xzr
+VA 000077cc file 0000b7cc  100040f9  ldr      x16, [x0]
+VA 000077d0 file 0000b7d0  f10300aa  mov      x17, x0
+VA 000077d4 file 0000b7d4  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 000077d8 file 0000b7d8  301ac1da  autda    x16, x17
+VA 000077dc file 0000b7dc  080e43f8  ldr      x8, [x16, #0x30]!
+VA 000077e0 file 0000b7e0  b07bebf2  movk     x16, #0x5bdd, lsl #48
+VA 000077e4 file 0000b7e4  10093fd7  blraa    x8, x16
+VA 000077e8 file 0000b7e8  c00240f9  ldr      x0, [x22]
+VA 000077ec file 0000b7ec  c2008452  mov      w2, #0x2006
+VA 000077f0 file 0000b7f0  e1008052  mov      w1, #7
+VA 000077f4 file 0000b7f4  8200a172  movk     w2, #0x804, lsl #16
+VA 000077f8 file 0000b7f8  100040f9  ldr      x16, [x0]
+VA 000077fc file 0000b7fc  f10300aa  mov      x17, x0
+VA 00007800 file 0000b800  31f7e2f2  movk     x17, #0x17b9, lsl #48
+VA 00007804 file 0000b804  301ac1da  autda    x16, x17
+VA 00007808 file 0000b808  080e43f8  ldr      x8, [x16, #0x30]!
+VA 0000780c file 0000b80c  b07bebf2  movk     x16, #0x5bdd, lsl #48
+VA 00007810 file 0000b810  10093fd7  blraa    x8, x16
+VA 00007814 file 0000b814  fd7b4ba9  ldp      x29, x30, [sp, #0xb0]
+VA 00007818 file 0000b818  f44f4aa9  ldp      x20, x19, [sp, #0xa0]
+VA 0000781c file 0000b81c  f65749a9  ldp      x22, x21, [sp, #0x90]
+VA 00007820 file 0000b820  f85f48a9  ldp      x24, x23, [sp, #0x80]
+VA 00007824 file 0000b824  fa6747a9  ldp      x26, x25, [sp, #0x70]
+VA 00007828 file 0000b828  fc6f46a9  ldp      x28, x27, [sp, #0x60]
+VA 0000782c file 0000b82c  ff030391  add      sp, sp, #0xc0
+VA 00007830 file 0000b830  ff0f5fd6  retab

@@ -1,0 +1,34 @@
+# Scans backing §14 (whole-__TEXT_EXEC, literal-offset patterns only; the
+# [x28]-base store at 0x8f3e390 is the lesson: literal scans miss register-base stores).
+
+## /var/tmp/neo/scan-chanreg.txt
+0xfffffe0008f3f1ec: ldr        x0, [x19, #0x3de0]
+0xfffffe0008f3f1f8: str        xzr, [x19, #0x3de0]
+0xfffffe0008f3f23c: str        x0, [x19, #0x3de0]
+0xfffffe0008f3f278: ldr        x0, [x19, #0x3de0]
+0xfffffe0008f3f2a4: ldr        x9, [x19, #0x3de0]
+0xfffffe0008f41790: ldr        x26, [x22, #0x3de0]
+0xfffffe0008f45db4: ldr        x8, [x19, #0x3de0]
+0xfffffe0008f45ffc: ldr        x0, [x8, #0x3ab8]
+0xfffffe0008f46124: ldr        x8, [x8, #0x3b20]
+0xfffffe0008f56460: str        x0, [x19, #0x3ab8]
+0xfffffe0008f56774: str        x0, [x19, #0x3b18]
+0xfffffe0008f567ac: str        x8, [x19, #0x3b20]
+0xfffffe0008f58270: ldr        x8, [x19, #0x3de0]
+0xfffffe0008f6423c: str        xzr, [x19, #0x3de0]
+done
+
+## /var/tmp/neo/scan-e1f0.txt
+0xfffffe0008efe1c4: b.hi       #0xfffffe0008efe1f0
+0xfffffe0008f3dc64: mov        w8, #0xe1f0
+0xfffffe0008f4176c: mov        w8, #0xe1f0
+0xfffffe0008f5b194: mov        w9, #0xe1f0
+0xfffffe0008f64094: mov        w8, #0xe1f0
+0xfffffe0008fde1c4: b.hi       #0xfffffe0008fde1f0
+0xfffffe0008fe1e24: b.eq       #0xfffffe0008fe1f08
+---done
+
+## w25 init + [x28]-bare stores + -0x88 anchors (ANE_Init range 0x8f3dc28..0x8f3f900)
+0xfffffe0008f3e180: mov      w25, #0x2006  (w25 = wake echo word)
+0xfffffe0008f3e184: movk     w25, #0x804, lsl #16  (w25 = wake echo word)
+0xfffffe0008f3e390: str      w0, [x28]  (count store via register base)

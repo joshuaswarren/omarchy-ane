@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- ane/h17: the J700 (T8140, MacBook Neo) stage 4 firmware wake is quarantined after its first hardware run hung the machine: the snapshot printed the script's boot id line and froze completely, the boot ended unclean (PMU boot error, no panic), and the log lines died with the reset. `ane_h17_wake.c` now refuses at init (`reason=unqualified-register-map`) before it registers a driver, takes power or maps MMIO, under `H17_REGISTER_MAP_QUALIFIED` with no parameter override; the sim asserts the refusal touches nothing — zero registrations, ioremaps, pmgr reads, regmap writes, engine reads and writes, and no genpd vote — including under the legacy parameters, and its mutation control flips the gate and requires the harness to reject the ungated access. `run-stage4.sh` is read-only diagnostics (boot id, model, loaded modules, preflight) that always exits 2 while the gate is closed. The hang report and the release criteria for lifting it are in `receipts/2026-10-30-j700-h17-hang`; the register-map provenance (engine base `0x400000000`, the M6-shaped doorbell and IPI blocks, the h16g `(0x1884000, 0x1600048)` row, the `0xc008` child state) and that day's boot and panic events are in `receipts/2026-10-30-j700-h17-asc-map`.
+- docs: the J700 stage 0 receipt loses its restore-image locator wording, per the public-text rule of 2026-10-29.
 - `ane_h16`: the boot-ADT lookup required 8 bytes of the 7 byte `arm-io` name property, so it could never match a real ADT; it now accepts 7. This is derived from the source and from the later ADT scan, not run on a T8132. The sim now builds the name at its real length. The T8132 test boot's "no ane node or segment-ranges" line may have had this cause; a `stage=dt` re-run decides (omarchy-ane#320).
 
 ## 0.5.10 (2026-11-05)
@@ -72,7 +74,6 @@ This release makes a failed H13 job recoverable without a reboot (#313). It also
 - `ane_h15`: add the off-by-default T8122 runtime overlay from its own J613/T8122 DT evidence. Keep DARTs disabled and omit `iommus`; correct ANE_BASE to depend on both ANE_TD and ANE_CPU. Offline checks do not establish hardware execution.
 - `ane_h15`: stage 2 can compare the current domain's RVBAR entry with TEXT from the same boot's ADT. It refuses a missing domain, changed RVBAR or zero translation and fails a different address. It creates no mapping and starts no core; a match proves only that entry.
 - tools: the M3 part 2 scorer isolates each run's messages and gate state. It rejects malformed page indices and comparison records. An empty capture no longer implies a missing device-tree node.
-
 - docs: the README and the level 5 receipt now give the Qwen decode at levels 3 and 4 and a 31 minute decode soak at level 5: the S1-GPTQ step reaches its floor at level 3 (0.0790 s, then 0.0788 and 0.0787 s), the fp16 step does not follow the clock, and the logits are identical at every level.
 
 ## 0.5.7 (2026-10-30)

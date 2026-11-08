@@ -54,7 +54,7 @@ MUTANTS = [
     ("overlay: property value is not copied", "ane_h16_overlay.c", "p->value = kmemdup(value, len, GFP_KERNEL);", "p->value = (void *)value;"),
     ("overlay: the module frees a property the kernel holds", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (1) {"),
     ("overlay: a refused update leaks its property", "ane_h16_overlay.c", "ret = of_changeset_update_property(cs, np, p);\n\tif (ret) {", "ret = of_changeset_update_property(cs, np, p);\n\tif (0) {"),
-    ("boot: runs without an IOMMU domain", "ane_h16_main.c", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (!ane->domain) {", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (0) {"),
+    ("boot: runs without an IOMMU domain", "ane_h16_main.c", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (!ane->domain || !iommu_is_dma_domain(ane->domain)) {", "ane->domain = iommu_get_domain_for_dev(ane->dev);\n\tif (0) {"),
 ]
 
 
@@ -79,9 +79,11 @@ def build_and_run(work):
 def main():
     survived = 0
     for name, fname, old, new in MUTANTS:
-        with tempfile.TemporaryDirectory() as tmp:
-            work = Path(tmp)
+        with tempfile.TemporaryDirectory(dir="/var/tmp/opencode") as tmp:
+            work = Path(tmp) / "h16"
             shutil.copytree(ROOT, work, dirs_exist_ok=True, ignore=shutil.ignore_patterns("sim_h16*", "sim_overlay", "*.o", "*.ko"))
+            shutil.copytree(ROOT.parent / "h17", Path(tmp) / "h17",
+                            ignore=shutil.ignore_patterns("*.o", "*.ko"))
             path = work / fname
             text = path.read_text()
             if text.count(old) != 1:

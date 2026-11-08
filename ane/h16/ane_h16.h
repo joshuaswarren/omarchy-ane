@@ -37,6 +37,8 @@ struct ane_h16_fw {
 	u32 data_filesize;
 	u32 patchbay_vm;
 	u32 tunables_vm;
+	u32 ce_env_vm;
+	u32 ce_env_size;
 };
 
 /* Offsets are engine-relative unless a field name ends in _pa. */
@@ -57,11 +59,20 @@ struct ane_h16_soc {
 	u32 ps_off[5];		/* pmgr ps words ANE_SYS, ANE_MPM, ANE_CPU,
 				 * ANE_TD, ANE_BASE, offsets into the pmgr
 				 * reg window the DT node names "pmgr" */
+	u8 ps_count;		/* 0: all five legacy slots; otherwise valid prefix */
+	/* H17 (T8140) rows: kext steps 1-8 + 9-12 + 19-21 of the
+	 * firmware-load-path receipt §5.4, executed through the checked,
+	 * durably logged ordering helper. wake_* are engine offsets. */
+	bool h17_order;
+	u32 wake_cfg1;		/* step 19: write 1 after the wake word */
+	u32 wake_cfg2;		/* step 20: write 0 after the wake word */
+	u32 doorbell_en;	/* step 21: setBit32(_, 0) after the wake word */
 	const struct ane_h16_fw *fw;
 };
 
 extern const struct ane_h16_soc ane_t8132_soc;
 extern const struct ane_h16_soc ane_t6040_soc;
 extern const struct ane_h16_soc ane_t6041_soc;
+extern const struct ane_h16_soc ane_t8140_soc;
 
 #endif /* __ANE_H16_SOC_H__ */

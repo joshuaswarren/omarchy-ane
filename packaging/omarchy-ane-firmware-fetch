@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """omarchy-ane-firmware-fetch: install this Mac's ANE firmware.
 
-Installs the ANE firmware for the M2 family (T6020, T6021, T6022, T8112) and the M4 family (T8132, T6040, T6041) from
+Installs the ANE firmware for the M2 family (T6020, T6021, T6022, T8112), the M4 family (T8132, T6040, T6041), and
+T8140 with a macOS 26.6.2 stub from
 Apple's servers, and only when the file's size and SHA-256 equal the pin in this file. M1-family chips need nothing.
 M3-family chips (T8122, T6030, T6031, T6034) refuse: no payload SHA-256 is pinned yet (ane/h15/README-bringup.md).
 
@@ -37,7 +38,8 @@ from pathlib import Path
 # chip -> (IPSW member, installed name, payload size, payload SHA-256, IPSW
 # macOS version). These are the driver's pins: ane/t6021/ane_fw_validate.h
 # ane_fw_selene and ane_fw_bia; ane/h16/ane_h16_soc.c ane_fw_leto and
-# ane_fw_aether. Change them together (tools/test_ane_firmware_fetch.py).
+# ane_fw_aether. T8140 is pinned by the Apple CDN member in
+# receipts/2026-10-30-j700-h17-adt/README.md. Change pins and tests together.
 SELENE = ("Firmware/ane/t602x_ane0_fw_selene_rc4x.im4p", "apple/ane/t602x_ane0_fw_selene_rc4x.macho",
           0x4C5B28, "a9c4b771294a6b115624d9480a6248d0899a1681a575e865070b87a3248427bc", "13.5")
 BIA = ("Firmware/ane/h14_ane_fw_bia_j4xx.im4p", "apple/ane/h14_ane_fw_bia_j4xx.macho",
@@ -46,8 +48,11 @@ LETO = ("Firmware/ane/h16_ane_fw_leto_j7x.im4p", "apple/ane/h16_ane_fw_leto_j7x.
         0x17C000, "4b330c5fd3548fb534ded5e7030c64b2ee3c3feb8ad859c23d87dcb82947abd2", "27.0")
 AETHER = ("Firmware/ane/t604x_ane_fw_aether_brvx.im4p", "apple/ane/t604x_ane_fw_aether_brvx.macho",
           0x17C000, "8659271a3173ca1c816841b212ac406a6516f74f51d08f196327560cb1f6b925", "27.0")
+THEIA_D9X = ("Firmware/ane/h17_ane_fw_theia_d9x.im4p", "apple/ane/h17_ane_fw_theia_d9x.macho",
+             0x180000, "32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c", "26.6.2")
 FETCH = {"apple,t6020": SELENE, "apple,t6021": SELENE, "apple,t6022": SELENE, "apple,t8112": BIA,
-         "apple,t8132": LETO, "apple,t6040": AETHER, "apple,t6041": AETHER}
+         "apple,t8132": LETO, "apple,t6040": AETHER, "apple,t6041": AETHER,
+         "apple,t8140": THEIA_D9X}
 MEMBER_MAX = 16 << 20
 # The M3 family: no raw payload SHA-256 is pinned (ane/h15/README-bringup.md).
 # Refuse until a receipt pins one.
@@ -59,6 +64,8 @@ IPSW = {
             "D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw",
     "27.0": "https://updates.cdn-apple.com/2026FallFCS/afcfc88e-bbe6-44bf-a5da-07c56eebc06c/"
             "UniversalMac_27.0_26A428_Restore.ipsw",
+    "26.6.2": "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/"
+              "A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw",
 }
 NO_FETCH = ("apple,t8103", "apple,t6000", "apple,t6001", "apple,t6002")
 # FETCH chips whose ANE overlay is enabled in packaging/dt/overlays (the

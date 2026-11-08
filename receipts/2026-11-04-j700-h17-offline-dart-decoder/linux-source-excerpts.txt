@@ -1,0 +1,286 @@
+drivers/iommu/apple-dart.c @ 4fdd0fc5c931ef9f14474942b37c3d451e97fc04
+158: #define DART_T8110_ERROR_STREAMS 0x1c0
+159:
+160: #define DART_T8110_EXCEPTION(i) (0x4000 + 4 * (i))
+161: #define DART_T8110_ERR_SID(sid) (0x8000 + 0x40 * (sid))
+162: #define DART_T8110_ERR_SID_STATUS(sid) (DART_T8110_ERR_SID(sid) + 0x00)
+163: #define DART_T8110_ERR_SID_STATUS_WRITE BIT(8)
+164: #define DART_T8110_EXCEPTION_CODE GENMASK(3, 0)
+165: #define DART_T8110_EXCEPTION_LEVEL GENMASK(13, 12)
+166:
+167: /* DART v2.3 adds a block-level exception summary. */
+168: #define DART_T8110_BLOCK_ERROR 0x704
+169: #define DART_T8110_BLOCK_ERROR_MASK 0x777
+170:
+171: #define DART_T8110_EXCEPTION_INFO(sid) (0x8000 + 0x40 * (sid))
+172: #define DART_T8110_EXCEPTION_ADDR_LO(sid) (DART_T8110_ERR_SID(sid) + 0x8)
+173: #define DART_T8110_EXCEPTION_ADDR_HI(sid) (DART_T8110_ERR_SID(sid) + 0xc)
+174:
+175: #define DART_T8110_PROTECT 0x200
+176: #define DART_T8110_UNPROTECT 0x204
+177: #define DART_T8110_PROTECT_LOCK 0x208
+178: #define DART_T8110_PROTECT_TTBR_TCR BIT(0)
+179: #define DART_T8110_DIAG_LOCK 0x210
+180: #define DART_T8110_DIAG_LOCK_ON_ERR BIT(1)
+181:
+182: #define DART_T8110_ENABLE_STREAMS  0xc00
+183: #define DART_T8110_DISABLE_STREAMS 0xc20
+184:
+1312: }
+1313:
+1314: static const char *apple_dart_t8110_v2_fault_name(u32 exception);
+1315:
+1316: static void apple_dart_drain_stale_exceptions(struct apple_dart *dart)
+1317: {
+1318: 	unsigned int i, drained = 0;
+1319:
+1320: 	if (dart->hw->type != DART_T8110 || dart->version < 0x0202)
+1321: 		return;
+1322:
+1323: 	for (i = 0; i < DIV_ROUND_UP(dart->num_streams, 32) && i < 8; i++) {
+1324: 		u32 pending = readl(dart->regs + DART_T8110_EXCEPTION(i));
+1325: 		unsigned long bits = pending;
+1326: 		unsigned int bit;
+1327:
+1328: 		if (!pending)
+1329: 			continue;
+1330:
+1331: 		for_each_set_bit(bit, &bits, 32) {
+1332: 			unsigned int sid = i * 32 + bit;
+1333: 			u32 status;
+1334: 			u64 addr;
+1335:
+1336: 			if (sid >= dart->num_streams)
+1337: 				break;
+1338:
+1339: 			status = readl(dart->regs +
+1340: 				       DART_T8110_ERR_SID_STATUS(sid));
+1341: 			addr = readl(dart->regs +
+1342: 				     DART_T8110_EXCEPTION_ADDR_LO(sid)) |
+1343: 			       (u64)readl(dart->regs +
+1344: 					  DART_T8110_EXCEPTION_ADDR_HI(sid)) << 32;
+1345: 			dev_dbg(dart->dev,
+1346: 				 "stale exception latched before probe: SID:%u %s %s at %#llx (status %#010x)\n",
+1347: 				 sid,
+1348: 				 status & DART_T8110_ERR_SID_STATUS_WRITE ?
+1349: 					 "write" : "read",
+1350: 				 apple_dart_t8110_v2_fault_name(status),
+1351: 				 addr, status);
+1352: 			drained++;
+1353: 		}
+1354:
+1355: 		writel(pending, dart->regs + DART_T8110_EXCEPTION(i));
+1356: 	}
+1357:
+1358: 	if (drained) {
+1359: 		dsb(sy);
+1360: 		readl(dart->regs + DART_T8110_EXCEPTION(0));
+1361: 	}
+1362:
+1363: 	if (dart->version >= 0x0203)
+1364: 		readl(dart->regs + DART_T8110_BLOCK_ERROR);
+1365:
+1366: 	if (drained)
+1367: 		dev_dbg(dart->dev,
+1368: 			 "%u stale exception(s) drained; these predate Linux\n",
+1369: 			 drained);
+1370: }
+1371:
+1372: static int apple_dart_t8110_v2_unlock(struct apple_dart *dart)
+1373: {
+1374: 	struct apple_dart_stream_map stream_map = { .dart = dart };
+1375:
+1376: 	KUNIT_STATIC_STUB_REDIRECT(apple_dart_t8110_v2_unlock, dart);
+1377:
+1378: 	if (!(readl(dart->regs + DART_T8110_DIAG_LOCK) & DART_T8110_DIAG_LOCK_ON_ERR))
+1379: 		return 0;
+1380:
+1381: 	/* Unlock after acknowledging a lock-on-error exception. */
+1382: 	__set_bit(0, stream_map.sidmap);
+1383: 	return apple_dart_t8110_hw_tlb_command_range(&stream_map,
+1384: 					    DART_T8110_TLB_CMD_OP_FLUSH_UNLOCK,
+1385: 					    false, 0, 0);
+1386: }
+1387:
+1388: static int apple_dart_read_remaps(struct apple_dart *dart)
+1389: {
+1390: 	struct device_node *np = dart->dev->of_node;
+1391: 	u32 src, dst;
+1392: 	int count, i, ret;
+1393:
+1394: 	if (!of_property_present(np, "apple,remap-streams"))
+1395: 		return 0;
+1396: 	count = of_property_count_u32_elems(np, "apple,remap-streams");
+1397: 	if (count <= 0 || count > 2 * dart->num_streams || count % 2 ||
+1398: 	    dart->hw->type != DART_T8110)
+1399: 		return -EINVAL;
+1400: 	for (i = 0; i < count; i += 2) {
+1401: 		ret = of_property_read_u32_index(np, "apple,remap-streams", i, &src);
+1402: 		if (!ret)
+1403: 			ret = of_property_read_u32_index(np, "apple,remap-streams", i + 1, &dst);
+1404: 		if (ret)
+1405: 			return ret;
+1406: 		if (src >= dart->num_streams || dst >= dart->num_streams ||
+1407: 		    dst > FIELD_MAX(DART_T8110_TCR_REMAP) || src == dst)
+1408: 			return -ERANGE;
+1409: 		if (test_and_set_bit(src, dart->remapped))
+1410: 			return -EINVAL;
+1411: 		dart->remap_target[src] = dst;
+1412: 	}
+1413: 	/* Only a single remap hop is described by this binding. */
+2738: }
+2739:
+2740: static const char *apple_dart_t8110_v2_fault_name(u32 exception)
+2741: {
+2742: 	switch (FIELD_GET(DART_T8110_EXCEPTION_CODE, exception)) {
+2743: 	case 0:
+2744: 		switch (FIELD_GET(DART_T8110_EXCEPTION_LEVEL, exception)) {
+2745: 		case 0:
+2746: 			return "TTBR invalid";
+2747: 		case 1:
+2748: 			return "CTE invalid";
+2749: 		case 2:
+2750: 			return "STE invalid";
+2751: 		case 3:
+2752: 			return "PTE invalid";
+2753: 		}
+2754: 		break;
+2755: 	case 1:
+2756: 		return "write protect";
+2757: 	case 2:
+2758: 		return "read protect";
+2759: 	case 3:
+2760: 		return "drop protect";
+2761: 	case 4:
+2762: 		return "AXI decode";
+2763: 	case 5:
+2764: 		return "AXI error";
+2765: 	case 6:
+2766: 		return "fill region";
+2767: 	case 7:
+2768: 		return "region protect";
+2769: 	case 8:
+2770: 		return "CTRR write protect";
+2771: 	case 9:
+2772: 		return "APF reject";
+2773: 	case 10:
+2774: 		return "BPF reject";
+2775: 	case 11:
+2776: 		return "STT mismatch";
+2777: 	case 12:
+2778: 		return "STT flush";
+2779: 	case 13:
+2780: 		return "external";
+2781: 	case 14:
+2782: 		return "illegal SID";
+2783: 	}
+2784:
+2785: 	return "unknown";
+2786: }
+2787:
+2788: static bool apple_dart_t8110_v2_block_pending(u16 version, u32 block_error)
+2789: {
+2790: 	return version >= 0x0203 &&
+2791: 	       (block_error & DART_T8110_BLOCK_ERROR_MASK);
+2792: }
+2793:
+2794: static irqreturn_t apple_dart_t8110_v2_irq(int irq, void *dev)
+2795: {
+2796: 	struct apple_dart *dart = dev;
+2797: 	irqreturn_t ret = IRQ_NONE;
+2798: 	unsigned int words = DIV_ROUND_UP(dart->num_streams, 32);
+2799: 	unsigned int i;
+2800: 	u32 block_error;
+2801:
+2802: 	/*
+2803: 	 * 0x4000 + 4*i is a bitmap of SIDs with a pending exception, one word
+2804: 	 * per 32 SIDs -- not a per-SID code.  Iterating it per SID (as this
+2805: 	 * used to) runs off the end of the array into the register arrays at
+2806: 	 * 0x4020/0x4040 for every sid >= ceil(nsid/32).
+2807: 	 */
+2808: 	for (i = 0; i < words && i < 8; i++) {
+2809: 		u32 pending = readl(dart->regs + DART_T8110_EXCEPTION(i));
+2810: 		unsigned long bits = pending;
+2811: 		unsigned int bit;
+2812:
+2813: 		if (!pending)
+2814: 			continue;
+2815:
+2816: 		for_each_set_bit(bit, &bits, 32) {
+2817: 			unsigned int sid = i * 32 + bit;
+2818: 			u32 status;
+2819: 			u64 addr;
+2820:
+2821: 			if (sid >= dart->num_streams)
+2822: 				break;
+2823:
+2824: 			status = readl(dart->regs +
+2825: 				       DART_T8110_ERR_SID_STATUS(sid));
+2826: 			addr = readl(dart->regs +
+2827: 				     DART_T8110_EXCEPTION_ADDR_LO(sid)) |
+2828: 			       (u64)readl(dart->regs +
+2829: 					  DART_T8110_EXCEPTION_ADDR_HI(sid)) << 32;
+2830:
+2831: 			dev_err_ratelimited(dart->dev,
+2832: 					    "translation fault: SID:%u %s %s at %#llx (status %#010x)\n",
+2833: 					    sid,
+2834: 					    status & DART_T8110_ERR_SID_STATUS_WRITE ?
+2835: 						    "write" : "read",
+2836: 						    apple_dart_t8110_v2_fault_name(status),
+2837: 						    addr, status);
+2838: 		}
+2839:
+2840: 		/*
+2841: 		 * Acknowledge: the bitmap is write-1-to-clear.  Without this the
+2842: 		 * same latched bit re-fires immediately and one historical
+2843: 		 * exception looks like a fault storm.
+2844: 		 */
+2845: 		writel(pending, dart->regs + DART_T8110_EXCEPTION(i));
+2846: 		ret = IRQ_HANDLED;
+2847: 	}
+2848:
+2849: 	if (ret == IRQ_HANDLED) {
+2850: 		dsb(sy);
+2851: 		readl(dart->regs + DART_T8110_EXCEPTION(0));
+2852: 	}
+2853:
+2854: 	if (dart->version >= 0x0203) {
+2855: 		block_error = readl(dart->regs + DART_T8110_BLOCK_ERROR);
+2856: 		if (apple_dart_t8110_v2_block_pending(dart->version, block_error)) {
+2857: 			dev_err_ratelimited(dart->dev,
+2858: 					    "block exception: status:0x%08x\n",
+2859: 					    block_error);
+2860: 			writel(block_error & DART_T8110_BLOCK_ERROR_MASK,
+2861: 			       dart->regs + DART_T8110_BLOCK_ERROR);
+2862: 			ret = IRQ_HANDLED;
+2863: 		}
+2864: 	}
+2865: 	if (ret == IRQ_HANDLED)
+2866: 		apple_dart_t8110_v2_unlock(dart);
+2867:
+2868: 	return ret;
+2869: }
+2870:
+2871: static irqreturn_t apple_dart_t8110_irq(int irq, void *dev)
+2872: {
+2873: 	struct apple_dart *dart = dev;
+2874:
+2875: 	if (dart->version >= 0x0202)
+2876: 		return apple_dart_t8110_v2_irq(irq, dev);
+2877:
+2878: 	return apple_dart_t8110_legacy_irq(irq, dev);
+2879: }
+2880:
+2881: static irqreturn_t apple_dart_irq(int irq, void *dev)
+2882: {
+2883: 	irqreturn_t ret = IRQ_NONE;
+2884: 	struct apple_dart *dart = dev;
+2885:
+2886: 	if (READ_ONCE(dart->commands_gated))
+2887: 		return IRQ_NONE;
+2888: 	if (pm_runtime_resume_and_get(dart->dev) < 0)
+2889: 		return IRQ_NONE;
+2890: 	if (!READ_ONCE(dart->commands_gated))
+2891: 		ret = dart->hw->irq_handler(irq, dev);
+2892: 	pm_runtime_put(dart->dev);
+2893: 	return ret;

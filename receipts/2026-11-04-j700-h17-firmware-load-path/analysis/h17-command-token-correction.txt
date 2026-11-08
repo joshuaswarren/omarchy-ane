@@ -1,0 +1,38 @@
+H17 command/token field correction
+===================================
+
+Source kernelcache SHA-256:
+  7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+
+Inner command code (not the response token)
+-------------------------------------------
+aneFirmwareCommandSend at 0xfffffe0008f48248 loads a u16 from
+ANEFirmwareCommand+4 and stores it at [sp,#0x88]. The instruction excerpt is
+in h17-fwcmdsend-id-field.txt. The value is not stored in the outstanding
+state's +0x50 field; the stack location serves as a diagnostic argument.
+
+Outstanding token construction
+------------------------------
+At 0xfffffe0008f484c4..0xfffffe0008f484d8, x24 is computed from a mapped
+buffer's base/offset state and stored as [outstanding_state,#0x50].
+processCommandResponse receives its x1 value, walks the outstanding states,
+compares x1 with candidate+0x50 at 0xfffffe0008f43950..58, and completes the
+matching state. Thus +0x50 is the host's outstanding-response token; it is
+not shown to be the CSNE command ID.
+
+Call argument roles at 0xfffffe0008f486ac..cc
+---------------------------------------------
+  x1 = cached channel index from the selector lookup
+  x2 = outstanding_state+0x50 token
+  x3 = command payload size
+  x4 = command payload pointer
+  x5 = send flags
+
+IOProcessorChannelSendRetry uses its x1 to select a channel object and passes
+its x2 onward as the queue message ID to IOProcessorChannelSend. The primitive
+stores that message ID (with phase bit) in slot word 0. Payload size and pointer
+are written to later slot words. This corrects earlier prose that called the
+selector-derived x1 a message ID or called command+4 the outstanding key.
+
+Evidence classification: static host disassembly only. Firmware extraction of
+the response token and its relation to CSNE command IDs remain unproven.

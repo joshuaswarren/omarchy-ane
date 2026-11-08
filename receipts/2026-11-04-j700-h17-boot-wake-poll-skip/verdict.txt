@@ -1,0 +1,1 @@
+rung=PASS reason=wake-and-poll-skipped boot_id=91129a82-5ead-4669-9473-b96eb3f15f73

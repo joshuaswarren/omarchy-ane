@@ -1,0 +1,5 @@
+make: Entering directory '/usr/lib/modules/7.2.11-14-1-ARCH/build'
+make[1]: Entering directory '/var/tmp/opencode/h17-pub-compile'
+  CC [M]  apple-dart.o
+make[1]: Leaving directory '/var/tmp/opencode/h17-pub-compile'
+make: Leaving directory '/usr/lib/modules/7.2.11-14-1-ARCH/build'

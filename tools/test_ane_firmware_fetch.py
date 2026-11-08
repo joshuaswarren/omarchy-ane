@@ -27,6 +27,7 @@ spec.loader.exec_module(fetch)
 validate = (root / 'ane/t6021/ane_fw_validate.h').read_text()
 fwload = (root / 'ane/t6021/ane_t6021_fwload.c').read_text()
 h16soc = (root / 'ane/h16/ane_h16_soc.c').read_text()
+h17fw = (root / 'ane/h17/ane_h17_fw.h').read_text()
 def image(text, struct, var):
     body = text.split(f'static const struct {struct} {var} = {{', 1)[1].split('\n};', 1)[0]
     sha = body.split('.sha256 = {', 1)[1].split('}', 1)[0]
@@ -38,6 +39,12 @@ for chip, row in fetch.FETCH.items():
     if chip.split(',')[1] in ('t8132', 't6040', 't6041'):
         soc = h16soc.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('\n};', 1)[0]
         got = image(h16soc, 'ane_h16_fw', re.search(r'\.fw = &(\w+)', soc).group(1))
+    elif chip == 'apple,t8140':
+        def define(name):
+            return re.search(rf'^#define {name} (.+)$', h17fw, re.MULTILINE).group(1)
+        got = (define('ANE_H17_FW_NAME').strip('"'),
+               int(define('ANE_H17_FW_SIZE'), 16),
+               define('ANE_H17_FW_SHA256').strip('"'))
     else:
         soc = fwload.split(f'ane_{chip.split(",")[1]}_soc = {{', 1)[1].split('\n};', 1)[0]
         got = image(validate, 'ane_fw_image', re.search(r'\.fw = &(\w+)', soc).group(1))
@@ -99,7 +106,9 @@ for compat, gate in (([b'apple,j414s', b'apple,t6020'], True),
 # is not the pin's own IPSW version refuses: iBoot preloads from the stub.
 for compat, version, want in (([b'apple,j604', b'apple,t8132'], b'27.0', 'cannot fetch'),
                               ([b'apple,j604', b'apple,t8132'], b'13.5', 'is from the macOS 27.0 IPSW'),
-                              ([b'apple,j614s', b'apple,t6040'], b'26.0.1', 'no pinned ANE image')):
+                              ([b'apple,j614s', b'apple,t6040'], b'26.0.1', 'no pinned ANE image'),
+                              ([b'apple,j700', b'apple,t8140'], b'26.6.2', 'cannot fetch'),
+                              ([b'apple,j700', b'apple,t8140'], b'27.0', 'is from the macOS 26.6.2 IPSW')):
     t = system(compat, version)
     err = io.StringIO()
     with contextlib.redirect_stderr(err):
@@ -221,7 +230,7 @@ for chip, row in fetch.FETCH.items():
         rc, out = call('--check', '--root', str(t))
         assert rc == check_rc and check_line in out, (case, out)
         # omarchy-ane-check prints the firmware line for the ane_t6021 family only.
-        if chip.split(',')[1] not in ('t8132', 't6040', 't6041'):
+        if chip.split(',')[1] not in ('t8132', 't6040', 't6041', 't8140'):
             p = subprocess.run([str(bin_dir / 'omarchy-ane-check'), '--root', str(t)], capture_output=True, text=True)
             line = next(l for l in p.stdout.splitlines() if 'ANE firmware' in l or name in l)
             assert line.startswith('  ok    ANE firmware: ' if check_rc == 0 else '  FAIL  ') and check_line in line, \

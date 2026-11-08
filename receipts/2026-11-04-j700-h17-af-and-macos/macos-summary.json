@@ -1,0 +1,102 @@
+{
+  "capture_hashes": {
+    "ane-services.txt": "491fb71e68c492824ef30c6bf51884d309dbdcc718278b03458675dd54b57b50",
+    "device-tree.txt": "53ac753e2b49c360d0c43c4c1e5d66672cf2eb60bc818f9af2af5c649f07c62d",
+    "kernel.txt": "e437596001eed487ac24673f8983b5f393dba36191d98eb2bb588e214fa4c572",
+    "model.txt": "81231b068771318a24eb602680416b003102108d69f89215d29325594c29b136",
+    "os.txt": "4ef10a0fc370704ea84699cf3851e51488598c5f1ab35cb572eb6b96278a8e5c",
+    "pmgr-services.txt": "d7dbbf0be256f9c02128bd22b41a4eda9b67eed3588025b54af5d8d4fae39e79",
+    "READ-ME.txt": "59a02575a30d51906c2cae3fe6457c541585a6753c574adee92b6c79ba7ed7b5",
+    "security-status.txt": "83fb612043aa785d573f4d9ad5bae8ed63dc175f4c39f984d66c367f996f0d36",
+    "status.txt": "6dc96b02df904aee5151d401912721f738bcddebd4b00219687572266c65826a",
+    "device-tree.plist": "6ccd5b95d86e29cd327aaaa1b97976bb4d1ed609c953e685a4f0f22ae3af7271",
+    "service-tree.plist": "9890abc701482e6ec0759f3384cf1efaa06a686ae7472ed73d0502d8dc13a6e6",
+    "ane-services.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "device-tree.plist.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "device-tree.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kernel.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "model.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "os.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pmgr-services.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "security-status.txt.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "service-tree.plist.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+  "model": "hw.model: Mac17,5\nhw.machine: arm64\nhw.memsize: 8589934592",
+  "ane": {
+    "properties": {
+      "ANEDevicePropertyANEVersion": 224,
+      "ANEDevicePropertyANEHWBoardType": 512,
+      "ANEDevicePropertyANECPUSubType": 9,
+      "ANEDevicePropertyANEMinorVersion": 17,
+      "ANEDevicePropertyNumANECores": 16,
+      "ANEDevicePropertyTypeANEArchitectureTypeStr": "h17"
+    },
+    "firmware_loaded": true,
+    "exclave_proxy": true,
+    "power_state": {
+      "CapabilityFlags": 0,
+      "CurrentPowerState": 0,
+      "DevicePowerState": 0,
+      "MaxPowerState": 1
+    },
+    "memory_resources": [
+      [
+        {
+          "address": 17179869184,
+          "length": 33554432
+        }
+      ],
+      [
+        {
+          "address": 12892241920,
+          "length": 98304
+        }
+      ],
+      [
+        {
+          "address": 12892389376,
+          "length": 16384
+        }
+      ],
+      [
+        {
+          "address": 12888834048,
+          "length": 196608
+        }
+      ],
+      [
+        {
+          "address": 8875147264,
+          "length": 16728064
+        }
+      ],
+      [
+        {
+          "address": 13022035968,
+          "length": 16384
+        }
+      ]
+    ],
+    "clock_gate_ids": [
+      291,
+      338
+    ],
+    "power_gate_ids": [
+      291,
+      338
+    ],
+    "clock_ids": [
+      327,
+      326,
+      325
+    ]
+  },
+  "pmgr_class": "AppleT8140PMGR",
+  "pmgr_mapping_property_names": [],
+  "limits": [
+    "Registry state is not Linux device qualification.",
+    "No private kernel memory or clock-register map was captured.",
+    "A newer macOS build does not validate older private object offsets."
+  ]
+}

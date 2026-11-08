@@ -1,0 +1,70 @@
+0xfffffe0008f416b0: ff 0f 5f d6              retab     
+0xfffffe0008f416b4: 5f 24 03 d5              bti       c  <-- __ZN11ANEHWDevice12doorBellRingEPv
+0xfffffe0008f416b8: 60 03 00 b4              cbz       x0, #0xfffffe0008f41724
+0xfffffe0008f416bc: 08 08 40 b9              ldr       w8, [x0, #8]
+0xfffffe0008f416c0: 09 00 40 f9              ldr       x9, [x0]
+0xfffffe0008f416c4: 2a 39 40 91              add       x10, x9, #0xe, lsl #12
+0xfffffe0008f416c8: 1f 81 00 71              cmp       w8, #0x20
+0xfffffe0008f416cc: e3 02 00 54              b.lo      #0xfffffe0008f41728
+0xfffffe0008f416d0: 7f 23 03 d5              pacibsp   
+0xfffffe0008f416d4: ff c3 00 d1              sub       sp, sp, #0x30
+0xfffffe0008f416d8: fd 7b 02 a9              stp       x29, x30, [sp, #0x20]
+0xfffffe0008f416dc: fd 83 00 91              add       x29, sp, #0x20
+0xfffffe0008f416e0: 49 79 42 b9              ldr       w9, [x10, #0x278]
+0xfffffe0008f416e4: 0a 04 80 52              mov       w10, #0x20
+0xfffffe0008f416e8: e8 2b 01 a9              stp       x8, x10, [sp, #0x10]
+0xfffffe0008f416ec: 88 23 ff d0              adrp      x8, #0xfffffe00073b3000
+0xfffffe0008f416f0: 08 95 23 91              add       x8, x8, #0x8e5
+0xfffffe0008f416f4: e9 23 00 a9              stp       x9, x8, [sp]
+0xfffffe0008f416f8: 60 23 ff d0              adrp      x0, #0xfffffe00073af000
+0xfffffe0008f416fc: 00 40 21 91              add       x0, x0, #0x850
+0xfffffe0008f41700: 41 80 ff b0              adrp      x1, #0xfffffe0007f4a000
+0xfffffe0008f41704: 21 64 45 f9              ldr       x1, [x1, #0xac8]
+0xfffffe0008f41708: c3 24 ff 90              adrp      x3, #0xfffffe00073d9000
+0xfffffe0008f4170c: 63 8c 06 91              add       x3, x3, #0x1a3
+0xfffffe0008f41710: 02 00 80 52              mov       w2, #0
+0xfffffe0008f41714: 98 d2 b0 94              bl        #0xfffffe000bb76174
+0xfffffe0008f41718: fd 7b 42 a9              ldp       x29, x30, [sp, #0x20]
+0xfffffe0008f4171c: ff c3 00 91              add       sp, sp, #0x30
+0xfffffe0008f41720: ff 0f 5f d6              retab     
+0xfffffe0008f41724: c0 03 5f d6              ret       
+0xfffffe0008f41728: 40 91 41 f9              ldr       x0, [x10, #0x320]
+0xfffffe0008f4172c: 21 59 41 b9              ldr       w1, [x9, #0x158]
+0xfffffe0008f41730: 29 00 80 52              mov       w9, #1
+0xfffffe0008f41734: 22 21 c8 1a              lsl       w2, w9, w8
+0xfffffe0008f41738: d0 07 1e ca              eor       x16, x30, x30, lsl #1
+0xfffffe0008f4173c: 50 00 f0 b6              tbz       x16, #0x3e, #0xfffffe0008f41744
+0xfffffe0008f41740: 20 8e 38 d4              brk       #0xc471
+0xfffffe0008f41744: 7b ca 00 14              b         #0xfffffe0008f74130
+0xfffffe0008f41748: 7f 23 03 d5              pacibsp     <-- __ZN11ANEHWDevice18channelNameToIndexEPcPj
+0xfffffe0008f4174c: fa 67 bb a9              stp       x26, x25, [sp, #-0x50]!
+0xfffffe0008f41750: f8 5f 01 a9              stp       x24, x23, [sp, #0x10]
+0xfffffe0008f41754: f6 57 02 a9              stp       x22, x21, [sp, #0x20]
+0xfffffe0008f41758: f4 4f 03 a9              stp       x20, x19, [sp, #0x30]
+0xfffffe0008f4175c: fd 7b 04 a9              stp       x29, x30, [sp, #0x40]
+0xfffffe0008f41760: fd 03 01 91              add       x29, sp, #0x40
+0xfffffe0008f41764: 53 58 80 52              mov       w19, #0x2c2
+0xfffffe0008f41768: 13 00 bc 72              movk      w19, #0xe000, lsl #16
+0xfffffe0008f4176c: 08 3e 9c 52              mov       w8, #0xe1f0
+0xfffffe0008f41770: 17 00 08 8b              add       x23, x0, x8
+0xfffffe0008f41774: e8 02 40 b9              ldr       w8, [x23]
+0xfffffe0008f41778: e8 02 00 34              cbz       w8, #0xfffffe0008f417d4
+0xfffffe0008f4177c: f4 03 02 aa              mov       x20, x2
+0xfffffe0008f41780: f5 03 01 aa              mov       x21, x1
+0xfffffe0008f41784: f6 03 00 aa              mov       x22, x0
+0xfffffe0008f41788: 19 00 80 d2              mov       x25, #0
+0xfffffe0008f4178c: 18 00 80 d2              mov       x24, #0
+0xfffffe0008f41790: da f2 5e f9              ldr       x26, [x22, #0x3de0]
+0xfffffe0008f41794: e0 03 15 aa              mov       x0, x21
+0xfffffe0008f41798: 01 04 80 52              mov       w1, #0x20
+0xfffffe0008f4179c: 41 6a 91 94              bl        #0xfffffe000b39c0a0
+0xfffffe0008f417a0: e2 03 00 aa              mov       x2, x0
+0xfffffe0008f417a4: 41 03 19 8b              add       x1, x26, x25
+0xfffffe0008f417a8: e0 03 15 aa              mov       x0, x21
+0xfffffe0008f417ac: a3 52 98 94              bl        #0xfffffe000b556238
+0xfffffe0008f417b0: e0 00 00 34              cbz       w0, #0xfffffe0008f417cc
+0xfffffe0008f417b4: 18 07 00 91              add       x24, x24, #1
+0xfffffe0008f417b8: e8 02 40 b9              ldr       w8, [x23]
+0xfffffe0008f417bc: 39 03 04 91              add       x25, x25, #0x100
+0xfffffe0008f417c0: 1f 03 08 eb              cmp       x24, x8
+0xfffffe0008f417c4: 63 fe ff 54              b.lo      #0xfffffe0008f41790

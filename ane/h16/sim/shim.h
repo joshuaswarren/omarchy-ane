@@ -2,7 +2,7 @@
 /* ane/h16/sim/shim.h -- userspace shim so the REAL ane_h16 module source
  * compiles and runs unmodified against a fake MMIO bus, a fake boot ADT,
  * a fake DART, and a firmware model (see sim_harness.c). Same design as
- * the PMP vehicle harness (vehicles/jwm1-pmp-oot/sim/shim.h).
+ * the PMP vehicle harness (vehicles/lab-pmp-oot/sim/shim.h).
  *
  * Known cosmetic gap: "%pOF" (ane_h16_adt_open) renders as pointer+"OF"
  * here instead of the kernel's node path; nothing keys on that line.
@@ -14,6 +14,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,25 @@ typedef unsigned long long dma_addr_t;
 /* ---- err/alloc ---- */
 #define GFP_KERNEL 0
 #define MEMREMAP_WB 0
+extern int sim_snapshots, sim_snapshot_attempts, sim_snapshot_fail;
+static inline void *kvzalloc(size_t size, int flags)
+{
+	void *p;
+	(void)flags;
+	if (++sim_snapshot_attempts == sim_snapshot_fail)
+		return NULL;
+	p = calloc(1, size);
+	if (p)
+		sim_snapshots++;
+	return p;
+}
+static inline void kvfree(void *p)
+{
+	if (p) {
+		sim_snapshots--;
+		free(p);
+	}
+}
 #define __iomem
 #define __maybe_unused __attribute__((unused))
 #define IS_ERR(p) ((unsigned long)(p) > (unsigned long)-4096L)
@@ -148,6 +168,9 @@ static inline void sim_bus_write(u64 pa, u32 v)
  * SCRATCH7/CPU_CONTROL ordering point for readers of the code
  */
 #define wmb() do { } while (0)
+extern int sim_dma_wmbs, sim_dma_rmbs;
+#define dma_wmb() do { sim_dma_wmbs++; } while (0)
+#define dma_rmb() do { sim_dma_rmbs++; } while (0)
 
 #define readl_poll_timeout(addr, val, cond, sleep_us, timeout_us) ({     \
 	unsigned long __tmo = jiffies + msecs_to_jiffies((timeout_us) / 1000); \
@@ -164,6 +187,11 @@ static inline void sim_bus_write(u64 pa, u32 v)
 	}								\
 	__ret;								\
 })
+
+static inline void udelay(unsigned long us)
+{
+	(void)us;
+}
 
 /* ---- virtual time: only usleep_range advances it, so a spin without
  * sleep freezes the clock and every bounded wait hits its deadline ----
@@ -300,6 +328,26 @@ static inline void of_node_put(struct device_node *np)
 	(void)np;
 }
 
+/* ---- System RAM model for preload ownership admission ---- */
+#define IORESOURCE_SYSTEM_RAM	0x00020000
+#define IORES_DESC_NONE		0
+enum ios_region { REGION_DISJOINT, REGION_INTERSECTS, REGION_MIXED };
+struct sim_ram_range { u64 start, end; };
+extern struct sim_ram_range sim_sys_ram[4];extern int sim_n_sys_ram;
+static inline int region_intersects(u64 start, size_t size, unsigned long flags,
+				    int desc)
+{
+	int i;
+
+	(void)flags;
+	(void)desc;
+	for (i = 0; i < sim_n_sys_ram; i++)
+		if (start < sim_sys_ram[i].end &&
+		    sim_sys_ram[i].start < start + size)
+			return REGION_INTERSECTS;
+	return REGION_DISJOINT;
+}
+
 /* ---- platform device / driver ---- */
 struct device {
 	struct device_node *of_node;
@@ -342,6 +390,41 @@ static inline void *platform_get_drvdata(struct platform_device *pdev)
 /* Fake bus addresses: the real t8132 engine and pmgr window bases. */
 #define SIM_ENGINE_PA 0x500000000ull	/* engine window 0x2000000 bytes */
 #define SIM_PMGR_PA 0x380700000ull	/* pmgr window 0x18000 bytes */
+#define SIM_PWGATE_PA 0x300724000ull	/* H17 pwgate window 0x4000 bytes */
+extern bool sim_pwgate_mapped;
+extern int sim_rpm_gets, sim_rpm_puts;
+extern struct iommu_domain *sim_dart;	/* NULL = device has no domain */
+#define IORESOURCE_MEM 0x00000200
+static inline struct resource *platform_get_resource_byname(
+	struct platform_device *dev, unsigned int flags, const char *name)
+{
+	struct device_node *np = dev->dev.of_node;
+	struct resource *r = calloc(1, sizeof(*r));
+	int idx = !strcmp(name, "engine") ? 0 :
+		  !strcmp(name, "pmgr") ? 1 :
+		  !strcmp(name, "pwgate") ? 2 : -1;
+
+	(void)flags;
+	if (idx < 0 || idx >= np->nreg) {
+		free(r);
+		return NULL;
+	}
+	r->start = np->reg[idx][0];
+	r->end = np->reg[idx][0] + np->reg[idx][1] - 1;
+	return r;
+}
+static inline void __iomem *devm_ioremap(struct device *dev, u64 pa, u64 size)
+{
+	int i;
+
+	(void)dev;
+	sim_ioremaps++;
+	for (i = 0; i < sim_n_regions; i++)
+		if (sim_regions[i].pa == pa &&
+		    sim_regions[i].size <= size)
+			return (void *)(uintptr_t)pa;
+	return NULL;
+}
 struct sim_phys {
 	u64 pa;
 	u64 size;
@@ -480,8 +563,27 @@ static inline void pm_runtime_put_noidle(struct device *dev)
 static inline void pm_runtime_get_noresume(struct device *dev) { (void)dev; }
 
 /* ---- DMA ---- */
+extern int sim_module_refs;
+#define THIS_MODULE ((void *)1)
+static inline void __module_get(void *module)
+{
+	(void)module;
+	sim_module_refs++;
+}
+
 extern int sim_dma_outstanding;
 extern int sim_dma_allocs, sim_dma_frees;
+extern int sim_dma_fail_at, sim_dma_bad_at;
+extern u64 sim_resv_length;
+static int sim_coherent_map(size_t size, dma_addr_t *dma);
+static void sim_coherent_unmap(dma_addr_t dma, size_t size);
+#define DMA_BIT_MASK(n) (~0ULL >> (64 - (n)))
+static inline int dma_set_mask_and_coherent(struct device *dev, u64 mask)
+{
+	(void)dev;
+	(void)mask;
+	return 0;
+}
 static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 				       dma_addr_t *dma, int gfp)
 {
@@ -489,12 +591,17 @@ static inline void *dma_alloc_coherent(struct device *dev, size_t size,
 
 	(void)dev;
 	(void)gfp;
+	if (sim_dma_fail_at && sim_dma_allocs + 1 == sim_dma_fail_at)
+		return NULL;
 	/* the module asserts 16 KiB alignment on the staged buffer
 	 */
 	if (posix_memalign(&p, SZ_16K, (size + SZ_16K - 1) & ~(SZ_16K - 1)))
 		return NULL;
 	memset(p, 0, size);
-	*dma = (u64)(uintptr_t)p;
+	if (sim_coherent_map(size, dma)) {
+		free(p);
+		return NULL;
+	}
 	sim_dma_outstanding++;
 	sim_dma_allocs++;
 	return p;
@@ -505,6 +612,7 @@ static inline void dma_free_coherent(struct device *dev, size_t size,
 	(void)dev;
 	(void)size;
 	(void)dma;
+	sim_coherent_unmap(dma, size);
 	sim_dma_outstanding--;
 	sim_dma_frees++;
 	free(cpu);
@@ -520,12 +628,50 @@ struct iommu_domain {
 		u64 iova;
 		u64 pa;
 		u64 len;
-	} map[1024];
+	} map[4096];
 	int n;
+	bool short_unmap;
+	bool dma_api;
+	bool alias_reserved;
+	u64 fail_iova;
 };
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
 extern struct iommu_domain *sim_dart;	/* NULL = device has no domain */
+static inline bool iommu_is_dma_domain(struct iommu_domain *d)
+{
+	return d->dma_api;
+}
+
+struct list_head { struct list_head *next, *prev; };
+#define LIST_HEAD(n) struct list_head n = { &(n), &(n) }
+#define list_for_each_entry(pos, head, member) \
+	for (struct list_head *_node = (head)->next; \
+	     _node != (head) && ((pos) = (void *)((char *)_node - \
+	         offsetof(__typeof__(*(pos)), member)), 1); _node = _node->next)
+#define IOMMU_RESV_RESERVED 1
+struct iommu_resv_region {
+	u64 start, length;
+	int type;
+	struct list_head list;
+};
+static inline void iommu_get_resv_regions(struct device *dev, struct list_head *h)
+{
+	static struct iommu_resv_region region;
+	(void)dev;
+	if (sim_dart && sim_dart->alias_reserved) {
+		region.start = 0x10000000000ULL;
+		region.length = sim_resv_length ? sim_resv_length : 0x4000000;
+		region.type = IOMMU_RESV_RESERVED;
+		region.list.next = region.list.prev = h;
+		h->next = h->prev = &region.list;
+	}
+}
+static inline void iommu_put_resv_regions(struct device *dev, struct list_head *h)
+{
+	(void)dev;
+	h->next = h->prev = h;
+}
 static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *dev)
 {
 	(void)dev;
@@ -536,6 +682,8 @@ static inline int iommu_map(struct iommu_domain *d, u64 iova, u64 pa,
 {
 	(void)prot;
 	(void)gfp;
+	if (d->fail_iova && iova == d->fail_iova)
+		return -EIO;
 	if (d->n >= (int)ARRAY_SIZE(d->map))
 		return -ENOMEM;
 	d->map[d->n].iova = iova;
@@ -554,14 +702,44 @@ static inline u64 iommu_iova_to_phys(struct iommu_domain *d, u64 iova)
 			return d->map[i].pa + (iova - d->map[i].iova);
 	return 0;
 }
-static inline void iommu_unmap(struct iommu_domain *d, u64 iova, size_t size)
+static inline size_t iommu_unmap(struct iommu_domain *d, u64 iova, size_t size)
 {
 	int i;
+	size_t removed = 0;
+
+	if (d->short_unmap)
+		return 0;
 
 	for (i = 0; i < d->n; i++)
 		if (d->map[i].iova >= iova &&
-		    d->map[i].iova + d->map[i].len <= iova + size)
+		    d->map[i].iova + d->map[i].len <= iova + size) {
+			removed += d->map[i].len;
 			d->map[i].len = 0;
+		}
+	return removed;
+}
+
+/* CPU address, DMA handle and backing PA deliberately all differ. */
+#define SIM_DMA_SOURCE_IOVA 0x20000000000ULL
+#define SIM_DMA_SOURCE_PA 0x30000000000ULL
+static int sim_coherent_map(size_t size, dma_addr_t *dma)
+{
+	size_t off;
+	if (!sim_dart)
+		return -ENODEV;
+	*dma = SIM_DMA_SOURCE_IOVA + (u64)sim_dma_allocs * 0x2000000;
+	if (sim_dma_bad_at && sim_dma_allocs + 1 == sim_dma_bad_at)
+		*dma = 0x50000000000ULL;
+	for (off = 0; off < size; off += SZ_16K)
+		if (iommu_map(sim_dart, *dma + off,
+			      SIM_DMA_SOURCE_PA + (u64)sim_dma_allocs * 0x2000000 + off,
+			      SZ_16K, IOMMU_READ | IOMMU_WRITE, 0))
+			return -ENOMEM;
+	return 0;
+}
+static void sim_coherent_unmap(dma_addr_t dma, size_t size)
+{
+	iommu_unmap(sim_dart, dma, size);
 }
 
 /* ---- firmware ---- */
