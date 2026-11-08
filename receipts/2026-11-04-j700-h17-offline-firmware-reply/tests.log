@@ -1,0 +1,10 @@
+test_compatible_arithmetic_not_mapping_authorization (test_address_model.AddressModelTests.test_compatible_arithmetic_not_mapping_authorization) ... ok
+test_first_pointer_fits_but_later_extent_crosses_boundary (test_address_model.AddressModelTests.test_first_pointer_fits_but_later_extent_crosses_boundary) ... ok
+test_low32_boundary_before_first_channel_pointer (test_address_model.AddressModelTests.test_low32_boundary_before_first_channel_pointer) ... ok
+test_mixed_high_halves_break_reply_reconstruction (test_address_model.AddressModelTests.test_mixed_high_halves_break_reply_reconstruction) ... ok
+test_rung1_predicts_recorded_address (test_address_model.AddressModelTests.test_rung1_predicts_recorded_address) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK

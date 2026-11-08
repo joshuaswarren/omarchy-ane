@@ -1,0 +1,177 @@
+diff --git i/drivers/iommu/apple-dart.c w/drivers/iommu/apple-dart.c
+index abbd4e86af49..b3084705769e 100644
+--- i/drivers/iommu/apple-dart.c
++++ w/drivers/iommu/apple-dart.c
+@@ -58,6 +58,11 @@
+ #define DART_PCIEC_ADDR_WIDTH 42
+ #define DART_PCIEC_STREAMS 64
+ 
++/* Temporary H17 bring-up diagnostic. Boot-time opt-in only; never writes MMIO. */
++static bool h17_pub_diag;
++module_param_named(h17_pub_diag, h17_pub_diag, bool, 0400);
++MODULE_PARM_DESC(h17_pub_diag, "Bounded ANE locked-root publication snapshots");
++
+ /* Common registers */
+ 
+ #define DART_PARAMS1 0x00
+@@ -335,6 +340,7 @@ struct apple_dart {
+ 	 * The first error of each stream is logged.
+ 	 */
+ 	int locked_retire_err[DART_MAX_STREAMS];
++	unsigned int h17_pub_diag_count;
+ };
+ 
+ /*
+@@ -1009,12 +1015,87 @@ static int apple_dart_retire_error(struct apple_dart_stream_map *stream_map)
+ 	return ret;
+ }
+ 
++struct apple_dart_h17_pub_sample {
++	u64 dva, host, owned, live;
++	u64 index, slot;
++	u32 present;
++};
++
++/* The addresses are rung-1 candidates, not pointers to dereference. */
++static const u64 apple_dart_h17_pub_candidates[] = {
++	0x10000000000ULL, 0x3ffffbb0800ULL, 0xffbb0800ULL,
++};
++
++static bool apple_dart_h17_pub_enabled(struct apple_dart *dart,
++				     struct apple_dart_stream_map *map)
++{
++	const char *name = dev_name(dart->dev);
++
++	return h17_pub_diag && dart->locked &&
++		of_device_is_compatible(dart->dev->of_node, "apple,t8140-dart") &&
++		test_bit(0, map->sidmap) &&
++		bitmap_weight(map->sidmap, dart->num_streams) == 1 &&
++		(!strcmp(name, "401800000.iommu") ||
++		 !strcmp(name, "401820000.iommu") ||
++		 !strcmp(name, "401840000.iommu"));
++}
++
++/* Caller holds dart->lock. Only read already mapped driver table memory. */
++static void apple_dart_h17_pub_capture(struct apple_dart *dart,
++				      struct io_pgtable_cfg *cfg,
++				      struct apple_dart_h17_pub_sample *sample)
++{
++	u32 pgshift = ilog2(dart->pgsize);
++	u32 bits = pgshift - ilog2(sizeof(u64));
++	u64 entries = dart->pgsize / sizeof(u64);
++	unsigned int n;
++
++	for (n = 0; n < ARRAY_SIZE(apple_dart_h17_pub_candidates); n++) {
++		struct apple_dart_h17_pub_sample *s = &sample[n];
++		u64 *live, *owned, *host;
++
++		s->dva = apple_dart_h17_pub_candidates[n];
++		if (cfg->apple_dart_cfg.n_levels != 3 &&
++		    cfg->apple_dart_cfg.n_levels != 4)
++			continue;
++		s->index = cfg->apple_dart_cfg.n_levels == 4 ? 0 :
++			s->dva >> (pgshift + 2 * bits);
++		s->slot = (s->dva >> (pgshift +
++			(cfg->apple_dart_cfg.n_levels - 2) * bits)) & (entries - 1);
++		if (s->index >= DART_MAX_TTBR ||
++		    s->index >= cfg->apple_dart_cfg.n_ttbrs)
++			continue;
++		live = dart->locked_ttbr[0][s->index];
++		owned = dart->locked_owned[0][s->index];
++		host = cfg->apple_dart_cfg.ttbr[s->index];
++		if (host) {
++			s->host = READ_ONCE(host[s->slot]);
++			s->present |= BIT(0);
++		}
++		/* Retirement clears live under this lock, then frees owned
++		 * outside it. A residual owned pointer alone is not safe to read.
++		 */
++		if (live && owned) {
++			s->owned = READ_ONCE(owned[s->slot]);
++			s->present |= BIT(1);
++		}
++		if (live) {
++			s->live = READ_ONCE(live[s->slot]);
++			s->present |= BIT(2);
++		}
++	}
++}
++
+ static int
+ apple_dart_hw_sync_locked(struct io_pgtable_cfg *cfg,
+ 			 struct apple_dart_stream_map *stream_map,
+ 			 bool defer_unknown)
+ {
+ 	struct apple_dart *dart = stream_map->dart;
++	struct apple_dart_h17_pub_sample samples[3] = {};
++	bool diag = apple_dart_h17_pub_enabled(dart, stream_map);
++	const char *diag_result = "published";
++	unsigned int seq = 0, n;
+ 	unsigned long flags;
+ 	int sid, idx, ret = 0;
+ 
+@@ -1030,8 +1111,10 @@ apple_dart_hw_sync_locked(struct io_pgtable_cfg *cfg,
+ 					break;
+ 				}
+ 			}
+-			if (!ready)
++			if (!ready) {
++				diag_result = "deferred-missing-root";
+ 				continue;
++			}
+ 		}
+ 
+ 		for (idx = 0; idx < cfg->apple_dart_cfg.n_ttbrs; idx++) {
+@@ -1044,9 +1127,12 @@ apple_dart_hw_sync_locked(struct io_pgtable_cfg *cfg,
+ 			 * locked roots. Attach will publish these entries once
+ 			 * both the live root and its ownership shadow exist.
+ 			 */
+-			if (!live && !owned)
++			if (!live && !owned) {
++				diag_result = "missing-root";
+ 				continue;
++			}
+ 			if (!live || !owned || !ours) {
++				diag_result = "incomplete-root";
+ 				ret = -EIO;
+ 				goto out;
+ 			}
+@@ -1068,17 +1154,37 @@ apple_dart_hw_sync_locked(struct io_pgtable_cfg *cfg,
+ 					WRITE_ONCE(owned[entry], next);
+ 				}
+ 				dma_wmb();
++				diag_result = "legacy-copy";
+ 				continue;
+ 			}
+ 			ret = apple_dart_publish_root(dart, live, owned, ours,
+ 						      dart->locked_fw[sid][idx],
+ 						      dart->pgsize / sizeof(*live));
+-			if (ret)
++			if (ret) {
++				diag_result = "publish-error";
+ 				goto out;
++			}
+ 		}
+ 	}
+ out:
++	if (diag && dart->h17_pub_diag_count < 64) {
++		seq = ++dart->h17_pub_diag_count;
++		apple_dart_h17_pub_capture(dart, cfg, samples);
++	}
+ 	spin_unlock_irqrestore(&dart->lock, flags);
++	/* Logging outside the table lock; seq identifies interleaved snapshots. */
++	if (seq)
++		for (n = 0; n < ARRAY_SIZE(samples); n++) {
++			const struct apple_dart_h17_pub_sample *s = &samples[n];
++
++			dev_info(dart->dev,
++				 "h17-pub seq=%u result=%s deferred=%u ret=%d levels=%u ttbrs=%u dva=%#llx index=%llu slot=%llu present=%#x host=%#llx owned=%#llx live=%#llx\n",
++				 seq, diag_result, defer_unknown, ret,
++				 cfg->apple_dart_cfg.n_levels,
++				 cfg->apple_dart_cfg.n_ttbrs,
++				 s->dva, s->index, s->slot, s->present,
++				 s->host, s->owned, s->live);
++		}
+ 	return ret;
+ }
+ 

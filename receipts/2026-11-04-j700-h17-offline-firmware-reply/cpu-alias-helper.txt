@@ -1,0 +1,17 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+VA 00021564 file 00025564  7f2303d5  pacibsp
+VA 00021568 file 00025568  ffc301d1  sub      sp, sp, #0x70
+VA 0002156c file 0002556c  f85f03a9  stp      x24, x23, [sp, #0x30]
+VA 00021570 file 00025570  f65704a9  stp      x22, x21, [sp, #0x40]
+VA 00021574 file 00025574  f44f05a9  stp      x20, x19, [sp, #0x50]
+VA 00021578 file 00025578  fd7b06a9  stp      x29, x30, [sp, #0x60]
+VA 0002157c file 0002557c  fd830191  add      x29, sp, #0x60
+VA 00021580 file 00025580  f3031faa  mov      x19, xzr
+VA 00021584 file 00025584  c11000b4  cbz      x1, #0x2179c
+VA 00021588 file 00025588  f60302aa  mov      x22, x2
+VA 0002158c file 0002558c  821000b4  cbz      x2, #0x2179c
+VA 00021590 file 00025590  172440f9  ldr      x23, [x0, #0x48]
+VA 00021594 file 00025594  f50301aa  mov      x21, x1
+VA 00021598 file 00025598  f40300aa  mov      x20, x0
+VA 0002159c file 0002559c  338c4092  and      x19, x1, #0xfffffffff
+VA 000215a0 file 000255a0  570e00b4  cbz      x23, #0x21768

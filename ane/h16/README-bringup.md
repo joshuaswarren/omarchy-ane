@@ -6,6 +6,36 @@ an M4-family (T8132 / T6040 / T6041) Linux box. H17 rows join the same
 module from `ane/h17/` (AneH17Driver). Facts and receipts:
 `receipts/2026-10-03-ane-h16/README.md`.
 
+**Current safety constraints:** T8140 `stage=boot` now runs the dedicated
+H17 path: kext steps 1–8 (CE handshake, 37 HAL tunables, PS/PWGATE
+enable) through the checked, durably logged ordering helper, then the
+cold-branch scratch sequence, CPU release, wake poll and post-wake steps
+19–21. The generic H16 rows keep the old path. The H17 sequence is
+source-derived; it ran on J700/T8140 on 2026-11-04 with RESULT PASS
+boot-wake (see
+`receipts/2026-11-04-j700-h17-first-firmware-wake/README.md`), and later
+rungs are in `receipts/2026-11-04-j700-h17-wake-irq-status/`. Each run
+needs a fresh boot. Generic boot staging requires a DMA-API IOMMU domain
+and boot-time
+IOMMU_RESV_RESERVED coverage for fixed alias IOVAs (installed in the
+T8140 overlay). Apply reservations at boot, not through a live overlay
+after the DMA domain is initialized.
+
+Before boot staging reads any preload DRAM, ownership is enforced: each
+ADT segment must be 16 KiB-aligned, non-overlapping, disjoint from every
+System RAM range and every reserved-memory reg, and SCRATCH7 must not
+already carry the wake word. Preload diffs are admitted only at
+byte-whitelisted patchbay/tunables/CE-env positions, with the accepted
+count and staged-image SHA-256 logged. stage=dt records these verdicts
+(log-only) alongside the segment addresses.
+
+Once CPU release is attempted, probe deliberately retains a successful
+driver binding even if firmware readiness times out, preventing devres
+cleanup from invalidating live mappings. **insmod exit 0 is not a boot
+success:** inspect the RESULT line and boot_error diagnostic. The module
+and runtime-power reference are pinned until reboot on both success and
+timeout. Do not force-unload or remove the platform device.
+
 ## What it does
 
 Every stage ends with one machine-readable record on the console:
@@ -37,8 +67,11 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
   for the SCRATCH7 wake word 0x08042006; then (only if
   `hello_wait_ms=1000`) polls the ASC mailbox for an RTKit HELLO and
-  answers HELLO_REPLY / EPMAP_ACK / STARTEP. No CSNE command, no
-  inference, no DRM device.
+  answers HELLO_REPLY / EPMAP_ACK / STARTEP. On the t8140 row,
+  `irq_read=1` adds a single read-only post-wake snapshot of the IRQ
+  status word (`0x188c000`), logged as
+  `H17 IRQ_STATUS off=0x188c000 value=0x…`; the ack register is never
+  touched. No CSNE command, no inference, no DRM device.
 
 ## Build (host cross build)
 
@@ -46,7 +79,7 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
          CROSS_COMPILE=aarch64-linux-gnu- W=1 modules
 
 Verified W=1-clean against the `josh/ane-driver-aurora` tree
-(vermagic 7.1.12-ARCH+), the M2 3-1 tree in the macstudio ALARM
+(vermagic 7.1.12-ARCH+), the M2 3-1 tree in the lab ALARM
 chroot, and the 7.2.11 14-1 headers (all imports resolve to exported
 symbols). It has not been built against a 7.3.0 tree here: build it on the
 machine that runs it. The module is not part of `make all`, `dkms.conf` or the
@@ -70,7 +103,10 @@ HELLO) and runs:
   words ACTUAL=0xf, zero engine writes), `pos-boot` (boot reaches the
   wake word; RVBAR compose, SCRATCH7=0, CPU_CONTROL 0->0x10, 219-page
   DART map at the ADT IOVAs), `pos-boot-hello` (HELLO answered with
-  version 2);
+  version 2), `pos-h17-boot` (the t8140 row end to end, with zero IRQ
+  status/ack access while `irq_read` is off), `pos-h17-irq` (the same
+  with `irq_read=1`: exactly one logged IRQ status snapshot, the ack
+  word untouched);
 - negatives that MUST refuse: `neg-ps-stuck` (word stuck 0x30 ->
   FAIL pmgr-actual-stuck, zero engine accesses), `neg-mbox-silent`
   (no wake word -> FAIL boot-timeout, mapping left, reboot required),

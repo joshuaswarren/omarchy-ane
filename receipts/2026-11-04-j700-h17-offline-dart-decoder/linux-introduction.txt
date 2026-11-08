@@ -1,0 +1,65 @@
+commit f57d9004043387ed6c437ddf0afcfcc1bb49f2fd
+Author: Ryan Murray <ryan@aurorasilicon.org>
+Date:   Sat Sep 26 00:30:06 2026 +1000
+
+    iommu/apple-dart: Support T8140 DARTs and firmware-owned stream roots
+
+    The DARTs of the A18 Pro (T8140) are T8110-family instances that report
+    version 2.2 or later in PARAMS3. At least the AOP DART is locked by the
+    bootloader (PROTECT reads back 0x1e7), and its stream roots already
+    hold the co-processor firmware's own mappings when Linux takes over.
+    The driver handled neither:
+
+     - Attaching a domain to a locked stream copied Linux's whole L1 table
+       over the firmware's root table, and releasing it zeroed the table,
+       destroying the firmware's mappings.
+     - From version 2.2 on, per-stream TLB flush commands take an extra
+       command bit, faults are reported through per-stream exception
+       records instead of the legacy error registers, and exceptions latched
+       before Linux took over are still pending at probe.
+
+    Handle both, and add the device tree inputs the T8140 device tree
+    needs:
+
+     - Locked roots: publish Linux's L1 entries only into slots that are
+       vacant or that Linux itself filled, keep a shadow copy of what was
+       published, and on release clear only entries that still hold
+       Linux's value. A slot whose owner has changed fails the operation
+       with -EBUSY instead of being overwritten. Publishing is done under
+       the DART lock, and errors now propagate out of the attach path.
+     - TLB maintenance: wait for the busy bit before and after every T8110
+       TLB command, for up to 2 ms instead of 100 us. From version 2.2 on,
+       set bit 15 in per-stream flush commands, and after a map or unmap
+       flush a locked stream by range instead of invalidating it whole;
+       TLB_START and TLB_END take the first and last page number, derived
+       from the DART page size, shifted left by two.
+     - Faults from version 2.2 on: decode the pending-exception bitmap at
+       0x4000 (one bit per stream, write 1 to clear) and the per-stream
+       records at 0x8000 + 0x40 * sid (status, access type and fault
+       address), plus the block-level summary at 0x704 on version 2.3.
+       Drain exceptions left over from before probe, logging them at debug
+       level. If the DART is set to lock on error (DIAG_LOCK bit 1), unlock
+       it with TLB command 4 once its exceptions have been acknowledged.
+     - apple,remap-streams: validate the property at probe and program the
+       remaps into the source streams' TCRs when the DART is reset.
+     - apple,dma-range on a consumer node: use that window as the domain's
+       aperture instead of the DART's, so that each consumer's IOVAs land
+       in root slots that are free for it. Consumer and DART windows must
+       have a nonzero size, must not overflow or cross the DART's input
+       address width, and must be aligned to the DART page size.
+     - Power the DART with pm_runtime_resume_and_get() and handle failure
+       instead of warning, both when flushing and when releasing a consumer
+       of a locked DART. When a locked DART's domain is freed, its entries
+       are retired and the stream invalidated first; if the DART cannot be
+       powered or the invalidation fails, the page tables are intentionally
+       leaked rather than freed while the hardware may still cache them.
+     - Return -EINVAL instead of warning when a locked DART is attached with
+       anything other than a single stream.
+
+    The probe banner and the DMA range and IAS messages move to debug
+    level.
+
+    [ryan: adapted to 7.2.10 — the consumer apple,dma-range window now overrides Asahi's per-master cfg DMA window (commit 3658355cfaba ("iommu: apple-dart: Support specifying the DMA aperture in the DT")) instead of the DART window; the T8110 TLB loop keeps Asahi's first-stream-only invalidate for remapping DARTs; the static remaps use Asahi's renamed DART_T8110_TCR_REMAP_ENABLE]
+
+    Assisted-by: LLM
+    Signed-off-by: Ryan Murray <ryan@aurorasilicon.org>

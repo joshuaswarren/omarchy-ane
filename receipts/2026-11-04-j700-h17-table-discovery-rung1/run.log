@@ -1,0 +1,14 @@
+disk: Dirty:              1056 kB
+disk: Writeback:             0 kB
+ARMED
+  branch   neo/h17-bringup
+  head     a1c376b519c49b6ddb58a06c359f18a2d2a4c2f2
+  boot     0855c23b-dce5-47b0-83c5-a19baef2beef
+  uptime   4165.30s
+  logs     /var/log/h17-*.log (collect with ane/h17/collect-logs.sh)
+  module   ane/h16/ane_h16.ko
+  after a freeze: reboot, then run ane/h17/collect-logs.sh <tag>
+boot_id=0855c23b-dce5-47b0-83c5-a19baef2beef kernel=7.2.11-14-1-ARCH date=2026-11-04T18:46:17-08:00 head=a1c376b519c49b6ddb58a06c359f18a2d2a4c2f2
+1303c8c3b692c131f8e44dc5d34b9d2811f67775d94645c1adb05963c730e6f4  ane/h16/ane_h16.ko
+32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c  /usr/lib/firmware/apple/ane/h17_ane_fw_theia_d9x.macho
+{"reason": "module reported failure/refusal", "rung": "FAIL"}

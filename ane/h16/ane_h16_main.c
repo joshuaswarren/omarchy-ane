@@ -2,7 +2,10 @@
 /*
  * ane_h16 — OPT-IN EXPERIMENTAL bring-up module for the H16/H17-family
  * ANE (the Apple 27.0 kext generation: T8132, T6040, T6041; H17 rows
- * live in ane/h17/). No silicon has run this module. It registers no
+ * live in ane/h17/). It has run on J700/T8140 silicon in the opt-in
+ * `stage=boot` path (RESULT PASS boot-wake, 2026-11-04: see
+ * receipts/2026-11-04-j700-h17-first-firmware-wake/README.md); the
+ * generic H16 rows have not run on any device. It registers no
  * DRM device, performs no inference and sends no CSNE command.
  *
  * Three stages, selected by the "stage" module parameter:
@@ -34,6 +37,21 @@
  *   manager publication and no CSNE CONFIG_GET — the 27.0 host contract
  *   for those is not derived yet (receipts/2026-10-03-ane-h16).
  *
+ *   On the t8140 (H17) row the boot stage additionally offers the opt-in
+ *   irq_read=1 diagnostic: after the wake word and the recipe steps
+ *   19-21, it reads the IRQ status word at the SoC row's irq_status
+ *   (0x188c000) exactly once and logs it. Read-only: it never touches
+ *   the IRQ ack register (0x1890000), rings no doorbell and submits no
+ *   task (firmware-load-path receipt §13.3 pins the status/ack pair;
+ *   a register table is not device behaviour, and one read of an
+ *   unacked status word is a value, not a protocol).
+ *
+ *   chanreg=1 is a separate, default-off T8140 table-discovery rung:
+ *   back the full FWIM arena, allocate coherent descriptor/IPC/HEAP,
+ *   publish through SCRATCH0/1/7, copy only an owned IPC table, and
+ *   STOP before SCRATCH3 registration. No channel-buffer initialization,
+ *   doorbell, task or IRQ ack. Source contract: e1c4839, receipt sec 16.
+ *
  * The module refuses to probe unless its opt-in key is set:
  *   insmod ane_h16.ko optin=t8132 stage=status confirm_read=1
  * There is no MODULE_DEVICE_TABLE, so nothing autoloads it.
@@ -61,15 +79,21 @@
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/ioport.h>
 #include <linux/platform_device.h>
+#include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm_domain.h>
 #include <linux/sizes.h>
+#include <linux/slab.h>
+
+#include "../h17/bringup_order.h"
 #include <linux/string.h>
 #include <linux/types.h>
 
 #include "ane_h16.h"
 #include "ane_h16_overlay.h"
+#include "../h17/chanreg.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -110,6 +134,26 @@ static unsigned int hello_wait_ms;
 module_param(hello_wait_ms, uint, 0444);
 MODULE_PARM_DESC(hello_wait_ms,
 		 "After the wake word, poll the ASC mailbox for an RTKit HELLO this long (default 0 = skip; 1000 is the lab value).");
+
+static bool irq_read;
+module_param(irq_read, bool, 0444);
+MODULE_PARM_DESC(irq_read,
+		 "t8140 stage=boot only: after the SCRATCH7 wake word, read the IRQ status word at the SoC row's irq_status (0x188c000) exactly once and log it. Read-only: no IRQ ack access, no doorbell, no task. Default 0 (off).");
+
+static bool scratch_read;
+module_param(scratch_read, bool, 0444);
+MODULE_PARM_DESC(scratch_read,
+		 "t8140 stage=boot only: after the SCRATCH7 wake word, snapshot the eight ANE scratch words (SCRATCH0..7, the row's scratch0..scratch0+28) with exactly one read each and log them in order. Read-only: no scratch write beyond the boot recipe, no IRQ ack access, no doorbell, no task. Default 0 (off).");
+
+static bool chanreg;
+module_param(chanreg, bool, 0444);
+MODULE_PARM_DESC(chanreg,
+		 "t8140 stage=boot only: experimental initialization-descriptor/table-discovery rung. Requires the recorded initial scratch geometry; allocates coherent DM/IPC/HEAP, writes SCRATCH0/1/7, bounds-checks and copies the IPC table, then STOPS before SCRATCH3 registration. No doorbell, IRQ ack or task. Default 0 (off).");
+
+static bool register_channels;
+module_param(register_channels, bool, 0444);
+MODULE_PARM_DESC(register_channels,
+		 "t8140 stage=boot only: separate experimental channel-registration rung. Requires chanreg=1; validates every table buffer against owned logical IPC, initializes only source-traced type-0 control blocks, writes SCRATCH3 and waits for its clear ack, then stops. No doorbell, IRQ ack or task. Default 0 (off).");
 
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
@@ -166,6 +210,14 @@ struct ane_h16_seg {
 
 #define ANE_H16_MAX_PD	5
 
+struct ane_h17_chanbuf {
+	void *cpu;
+	dma_addr_t dma;
+	size_t size;
+	u64 iova;
+	u64 mapped;
+};
+
 struct ane_h16 {
 	struct device *dev;
 	const struct ane_h16_soc *soc;
@@ -175,13 +227,19 @@ struct ane_h16 {
 	struct device_link *pd_link[ANE_H16_MAX_PD];
 	int pd_count;
 	struct ane_h16_seg segs[2];
+	void __iomem *pwgate;	/* H17 reg[2]: PS/PWGATE bank (overlay) */
+	unsigned int order_seq;	/* durable h17-order sequence number */
 	bool fw_touched;
 	bool fw_started;
 	bool hello_done;
+	int boot_error;		/* result retained when binding must survive a timeout */
 	void *stage_cpu;
 	dma_addr_t stage_dma;
 	size_t stage_size;
 	struct iommu_domain *domain;
+	u64 stage_mapped[2];	/* owned contiguous prefixes, never foreign ranges */
+	struct ane_h17_chanbuf chanbuf[3]; /* DM, IPC, HEAP; retained after release */
+	u8 *chan_table;
 };
 
 /* Release every domain this module attached, newest first. */
@@ -321,14 +379,31 @@ static int ane_h16_stage_idx(const char *name, unsigned int *out)
 	return -EINVAL;
 }
 
+static unsigned int ane_h16_ps_count(const struct ane_h16_soc *soc)
+{
+	return soc->ps_count ? soc->ps_count : ARRAY_SIZE(soc->ps_off);
+}
+
+static const char *ane_h16_ps_name(const struct ane_h16_soc *soc, unsigned int i)
+{
+	static const char *const h17_names[] = {
+		"ANE_SYS", "ANE_SUB0", "ANE_SUB1", "ANE_SUB2",
+	};
+
+	/* The sub-island roles on T8140 are not yet assigned. */
+	if (soc->ane_type == 0x200 && i < ARRAY_SIZE(h17_names))
+		return h17_names[i];
+	return ane_h16_ps_names[i];
+}
+
 static bool ane_h16_ps_on(struct ane_h16 *ane, unsigned int i, u32 *v)
 {
 	*v = readl_relaxed(ane->pmgr + ane->soc->ps_off[i]);
 	return FIELD_GET(ANE_H16_PS_ACTUAL, *v) == ANE_H16_PS_ON;
 }
 
-/* Every ANE word must read ACTUAL == 0xf, all at once, before any
- * engine MMIO: each word is polled to 0xf, then all five are read
+/* Every valid ANE word must read ACTUAL == 0xf before any engine MMIO:
+ * each word is polled to 0xf, then the valid prefix is read
  * again so a domain that dropped while a later one came up refuses. */
 static int ane_h16_ps_wait(struct ane_h16 *ane)
 {
@@ -336,28 +411,28 @@ static int ane_h16_ps_wait(struct ane_h16 *ane)
 	unsigned int i;
 	u32 v;
 
-	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
+	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
 		while (!ane_h16_ps_on(ane, i, &v)) {
 			if (time_after(jiffies, deadline)) {
 				dev_err(ane->dev,
 					"ane_h16 ps word=%s off=%#x stuck value=%#x actual=%#lx; refusing to touch the engine window\n",
-					ane_h16_ps_names[i], ane->soc->ps_off[i],
+					ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i],
 					v, FIELD_GET(ANE_H16_PS_ACTUAL, v));
 				return -ETIMEDOUT;
 			}
 			usleep_range(100, 200);
 		}
 	}
-	for (i = 0; i < ARRAY_SIZE(ane->soc->ps_off); i++) {
+	for (i = 0; i < ane_h16_ps_count(ane->soc); i++) {
 		if (!ane_h16_ps_on(ane, i, &v)) {
 			dev_err(ane->dev,
 				"ane_h16 ps word=%s off=%#x dropped value=%#x after the wait; refusing to touch the engine window\n",
-				ane_h16_ps_names[i], ane->soc->ps_off[i], v);
+				ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 			return -EIO;
 		}
 		dev_info(ane->dev,
 			 "ane_h16 ps word=%s off=%#x value=%#x actual=0xf pass=true\n",
-			 ane_h16_ps_names[i], ane->soc->ps_off[i], v);
+			 ane_h16_ps_name(ane->soc, i), ane->soc->ps_off[i], v);
 	}
 	return 0;
 }
@@ -427,8 +502,47 @@ static int ane_h16_status(struct ane_h16 *ane)
 static const void *adt;
 static size_t adt_len;
 
-/* Every ADT offset is u32; refusing larger regions at open keeps them all valid. */
+/* Every ADT offset is u32; refusing larger regions keeps them representable. */
 #define ADT_MAX_LEN (1U << 30)
+
+/* Validate the complete tree before the offset-only walkers below run.
+ * All offsets must fit u32 and recursion is bounded independently of data.
+ */
+static int adt_validate_node(size_t *off, unsigned int depth)
+{
+	u32 nprops, nchildren, i;
+
+	if (depth > 32 || *off > adt_len || adt_len - *off < 8)
+		return -EINVAL;
+	nprops = le32_to_cpup(adt + *off);
+	nchildren = le32_to_cpup(adt + *off + 4);
+	*off += 8;
+	for (i = 0; i < nprops; i++) {
+		size_t bytes;
+
+		if (adt_len - *off < 36)
+			return -EINVAL;
+		bytes = le32_to_cpup(adt + *off + 32) & 0x7fffffff;
+		*off += 36;
+		bytes = ALIGN(bytes, 4);
+		if (bytes > adt_len - *off)
+			return -EINVAL;
+		*off += bytes;
+	}
+	for (i = 0; i < nchildren; i++)
+		if (adt_validate_node(off, depth + 1))
+			return -EINVAL;
+	return 0;
+}
+
+static int adt_validate(void)
+{
+	size_t off = 0;
+
+	if (!adt || adt_len > (u32)~0U)
+		return -EINVAL;
+	return adt_validate_node(&off, 0);
+}
 
 struct adt_node {
 	u32 off;
@@ -594,6 +708,14 @@ static int ane_h16_adt_open(struct ane_h16 *ane)
 			goto out;
 		}
 		adt_len = resource_size(&res);
+		ret = adt_validate();
+		if (ret) {
+			dev_err(ane->dev, "ADT: malformed or truncated tree; refusing\n");
+			adt = NULL;
+			adt_len = 0;
+			of_node_put(np);
+			goto out;
+		}
 		dev_info(ane->dev, "ADT: %pOF at %#llx+%#llx\n", np,
 			 (unsigned long long)res.start,
 			 (unsigned long long)adt_len);
@@ -643,9 +765,13 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 }
 
 /* Decode one segment-ranges property (two entries) into segs[2].
- * Entry is {phys, iova, remap, size} (u64 each); the ASC sees
- * "remap". The 3-word form {phys, remap, size} is accepted too; the
- * log keeps the decoded values so a wrong pick is visible.
+ * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
+ * The ASC sees remap. mapFwCTRRRegion in retained kernelcache SHA256
+ * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+ * uses ldr w9,[x20,#0x18] for the TEXT entry and
+ * ldr w9,[x20,#0x38] for the DATA entry: size is u32,
+ * not u64. The final dword's meaning is not established here.
+ * The legacy 24-byte {u64 phys, remap, size} form is also accepted.
  */
 static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
 			      u32 size, struct ane_h16_seg *segs)
@@ -666,9 +792,8 @@ static int ane_h16_seg_decode(struct ane_h16 *ane, const void *data,
 		segs[i].phys = le64_to_cpu(v[0]);
 		segs[i].iova = stride == 32 ?
 			le64_to_cpu(v[2]) : le64_to_cpu(v[1]);
-		segs[i].size = le64_to_cpu(v[stride / 8 - 1]);
-		if (stride == 32)
-			segs[i].size &= 0xffffffffULL;	/* last word is size | flags << 32 */
+		segs[i].size = stride == 32 ?
+			le32_to_cpup(data + i * stride + 24) : le64_to_cpu(v[2]);
 	}
 	return 0;
 }
@@ -706,7 +831,8 @@ static int ane_h16_segments(struct ane_h16 *ane)
 	if (ret)
 		return ret;
 	if ((ane->segs[0].size != ane->soc->fw->text_vmsize) ||
-	    (ane->segs[1].size < fw->data_filesize)) {
+	    (ane->segs[1].size < fw->data_filesize) ||
+	    (ane->segs[1].size > fw->data_vmsize)) {
 		dev_err(ane->dev,
 			"segment sizes %#llx/%#llx do not match the pinned image (%#x/%#x)\n",
 			ane->segs[0].size, ane->segs[1].size,
@@ -721,6 +847,8 @@ static int ane_h16_segments(struct ane_h16 *ane)
 }
 
 /* ---- stage 0: dt-only parse, no MMIO ---- */
+
+static int ane_h16_admit_preload(struct ane_h16 *ane, bool enforce);
 
 static void ane_h16_stage_dt(struct ane_h16 *ane)
 {
@@ -746,10 +874,10 @@ static void ane_h16_stage_dt(struct ane_h16 *ane)
 	 * 3 = forbidden). The H16 rows are kext-derived and calibrated
 	 * against the known T6021 row, hence tier 0.
 	 */
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < ane_h16_ps_count(s); i++)
 		dev_info(ane->dev,
 			 "ane_h16 group=pmgr tier=0 word=%s off=%#x (ps guard word)",
-			 ane_h16_ps_names[i], s->ps_off[i]);
+			 ane_h16_ps_name(s, i), s->ps_off[i]);
 	dev_info(ane->dev, "ane_h16 group=engine-ro tier=0 word=RVBAR off=%#x",
 		 s->rvbar);
 	dev_info(ane->dev,
@@ -800,6 +928,12 @@ static void ane_h16_stage_dt(struct ane_h16 *ane)
 			dev_info(ane->dev,
 				 "adt: no reserved-memory \"adt\" region, ane node or segment-ranges: iBoot preload presence on this boot is unknown; stage=boot refuses");
 		}
+		/* Record the ownership verdict with the addresses, not just
+		 * the addresses (metadata only; no mapping or read). */
+		if (!ane_h16_adt_open(ane) && !adt_find_ane(s->ane_type, &ane_node) &&
+		    !adt_prop(ane_node, "segment-ranges", &data, &size) &&
+		    !ane_h16_seg_decode(ane, data, size, segs))
+			ane_h16_admit_preload(ane, false);
 	}
 	ane_h16_result(ane, 0, "PASS", "dt-parse-only");
 }
@@ -833,105 +967,284 @@ static int ane_h16_fw_pin(struct ane_h16 *ane, const struct firmware **fwp)
 	return 0;
 }
 
-/* True when a differing u64 is one iBoot is expected to have patched:
- * an entry/DATA-base IOVA, or a nonzero iBoot-only value (stack guard,
- * SOC id, engine addresses) over a zero in the file. Logged either way;
- * only the copy decision depends on this. */
-static bool ane_h16_preload_patched_u64(struct ane_h16 *ane, u64 file,
-					u64 live)
+/* Ownership admission before any mapping or read of the preload DRAM.
+ * On T8140 the iBoot preload lives below Linux's first usable /memory
+ * range and has no reserved-memory coverage: it is owned by exclusion
+ * from the allocator, not by a reservation. "Segment inside a
+ * reservation" is therefore NOT the admission test (that was T6021's
+ * case, where the address is inside RAM); the test here is that each
+ * segment is DRAM-decoded but disjoint from (a) every other segment,
+ * (b) every System RAM range and (c) every reserved-memory reg.
+ * An in_ram elsewhere would mean allocator-owned memory: refuse.
+ */
+static int ane_h16_admit_preload(struct ane_h16 *ane, bool enforce)
 {
-	if (live == ane->segs[0].iova || live == ane->segs[1].iova)
-		return true;
-	if ((live & ANE_H16_RVBAR_ADDR_MASK) ==
-	    (ane->segs[0].iova & ANE_H16_RVBAR_ADDR_MASK))
-		return true;
-	return live && !file;
+	unsigned int s;
+	int ret = 0;
+
+	for (s = 0; s < 2; s++) {
+		u64 start = ane->segs[s].phys, size = ane->segs[s].size;
+		unsigned int c;
+
+		if (!size || start + size <= start ||
+		    !IS_ALIGNED(start | size, SZ_16K)) {
+			dev_err(ane->dev,
+				"preload seg%u phys %#llx size %#llx is empty, wrapping or unaligned\n",
+				s, start, size);
+			ret = -EINVAL;
+			goto out;
+		}
+		for (c = 0; c < 2; c++) {
+			if (c == s)
+				continue;
+			if (start < ane->segs[c].phys + ane->segs[c].size &&
+			    ane->segs[c].phys < start + size) {
+				dev_err(ane->dev,
+					"preload seg%u and seg%u overlap\n",
+					s, c);
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+		if (region_intersects(start, size, IORESOURCE_SYSTEM_RAM,
+				      IORES_DESC_NONE) != REGION_DISJOINT) {
+			dev_err(ane->dev,
+				"preload seg%u phys %#llx-%#llx intersects Linux System RAM; not an owned preload window\n",
+				s, start, start + size);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+	{
+		struct device_node *rm = of_find_node_by_name(NULL,
+							      "reserved-memory");
+		struct device_node *child;
+
+		if (rm)
+		for_each_child_of_node(rm, child) {
+			struct resource res;
+			unsigned int idx;
+
+			for (idx = 0;
+			     !of_address_to_resource(child, idx, &res);
+			     idx++) {
+				unsigned int c;
+
+				for (c = 0; c < 2; c++) {
+					if (ane->segs[c].phys <
+					    res.start + resource_size(&res) &&
+					    res.start <
+					    ane->segs[c].phys + ane->segs[c].size) {
+						dev_err(ane->dev,
+							"preload seg%u overlaps reserved-memory %pOFn reg%u\n",
+							c, child, idx);
+						ret = -EINVAL;
+						goto out;
+					}
+				}
+			}
+		}
+	}
+out:
+	for (s = 0; s < 2; s++)
+		dev_info(ane->dev,
+			 "preload owned seg%u phys %#llx-%#llx: %s (%s; ram_disjoint=%d)\n",
+			 s, ane->segs[s].phys,
+			 ane->segs[s].phys + ane->segs[s].size,
+			 ret ? "refused" : "admitted",
+			 enforce ? "enforced" : "log-only", ret ? 0 :
+			 region_intersects(ane->segs[s].phys,
+					   ane->segs[s].size,
+					   IORESOURCE_SYSTEM_RAM,
+					   IORES_DESC_NONE) == REGION_DISJOINT);
+	return ret;
 }
 
 /* Build the staged image: the pinned file laid out at its vm addresses,
- * then every accepted iBoot difference copied in from the preload.
- * Anything else that differs refuses the boot. */
+ * then position-whitelisted bytes copied from one snapshot per segment.
+ * No value-based exception for zero file words, BSS, or IOVA-like values.
+ * Caller must establish quiescence/admit physical ranges before reading.
+ */
 static int ane_h16_stage(struct ane_h16 *ane, const struct firmware *fw)
 {
 	const struct ane_h16_fw *img = ane->soc->fw;
 	const unsigned long allowed[][2] = {
 		{ img->patchbay_vm, 0x261 },
 		{ img->tunables_vm, 0x6a0 },
+		{ img->ce_env_vm, img->ce_env_size },
 	};
 	/* The preload maps the image vm layout: segment 0 at vm 0,
 	 * segment 1 at data_vm. */
 	const u64 seg_vm[2] = { 0, img->data_vm };
 	const u64 seg_file_off[2] = { 0x4000, img->data_fileoff };
-	void __iomem *pre[2] = {};
+	void *mapped;
+	u8 *pre[2] = {};
+	u64 accepted = 0;
+	u8 digest[SHA256_DIGEST_SIZE];
 	unsigned int s, i;
 	int ret = 0;
 
+	ret = dma_set_mask_and_coherent(ane->dev, DMA_BIT_MASK(64));
+	if (ret)
+		return ret;
 	ane->stage_size = ALIGN(img->data_vm + img->data_vmsize, SZ_16K);
+	/* The descriptor advertises the 0x380000 FWIM arena, not just the
+	 * 0x36c000 image segments. Back its remaining 0x14000 with owned,
+	 * zeroed coherent memory too. Default wake-only layout is unchanged.
+	 */
+	if (chanreg)
+		ane->stage_size = ANE_H17_FW_BYTES;
 	ane->stage_cpu = dma_alloc_coherent(ane->dev, ane->stage_size,
 					    &ane->stage_dma, GFP_KERNEL);
 	if (!ane->stage_cpu)
 		return -ENOMEM;
+	memset(ane->stage_cpu, 0, ane->stage_size);
 	memcpy(ane->stage_cpu, fw->data + 0x4000, img->text_vmsize);
 	memcpy(ane->stage_cpu + img->data_vm, fw->data + img->data_fileoff,
 	       img->data_filesize);
 
 	for (s = 0; s < 2; s++) {
-		pre[s] = devm_memremap(ane->dev, ane->segs[s].phys,
-				       ane->segs[s].size, MEMREMAP_WB);
-		if (IS_ERR(pre[s])) {
-			ret = PTR_ERR(pre[s]);
-			pre[s] = NULL;
+		pre[s] = kvzalloc(ane->segs[s].size, GFP_KERNEL);
+		if (!pre[s]) {
+			ret = -ENOMEM;
 			goto out;
 		}
+		mapped = devm_memremap(ane->dev, ane->segs[s].phys,
+				      ane->segs[s].size, MEMREMAP_WB);
+		if (IS_ERR(mapped)) {
+			ret = PTR_ERR(mapped);
+			goto out;
+		}
+		memcpy(pre[s], mapped, ane->segs[s].size);
+		devm_memunmap(ane->dev, mapped);
 	}
 	for (s = 0; s < 2 && !ret; s++) {
 		u64 expect_bytes = s ? img->data_filesize : img->text_vmsize;
 
-		for (i = 0; i < ane->segs[s].size; i += 8) {
-			u64 a = 0, b;
-			u8 *dst;
+		for (i = 0; i < ane->segs[s].size; i++) {
+			u8 a = 0, b = pre[s][i];
 			unsigned int k;
 			bool in_allowed = false;
 
-			if (i + 8 <= expect_bytes)
-				memcpy(&a, fw->data + seg_file_off[s] + i, 8);
-			memcpy(&b, pre[s] + i, 8);
+			if (i < expect_bytes)
+				a = fw->data[seg_file_off[s] + i];
 			if (a == b)
 				continue;
 			for (k = 0; k < ARRAY_SIZE(allowed); k++)
-				if (seg_vm[s] + i >= allowed[k][0] &&
-				    seg_vm[s] + i < allowed[k][0] + allowed[k][1])
+				if (allowed[k][1] && seg_vm[s] + i >= allowed[k][0] &&
+				    seg_vm[s] + i - allowed[k][0] < allowed[k][1])
 					in_allowed = true;
-			if (!in_allowed &&
-			    !ane_h16_preload_patched_u64(ane, a, b)) {
+			if (!in_allowed) {
 				dev_err(ane->dev,
-					"preload diff seg%u vm %#llx: file %#llx live %#llx: preload is not the pinned image; refusing\n",
-					s, seg_vm[s] + i, a, b);
+					"preload diff seg%u vm %#llx outside byte whitelist; refusing\n",
+					s, seg_vm[s] + i);
 				ret = -EINVAL;
 				break;
 			}
-			dev_info(ane->dev,
-				 "preload diff seg%u vm %#llx: file %#llx live %#llx (%s; copied)\n",
-				 s, seg_vm[s] + i, a, b,
-				 in_allowed ? "patchbay/tunables" : "single word");
-			if (seg_vm[s] + i + 8 > ane->stage_size) {
+			if (seg_vm[s] + i >= ane->stage_size) {
 				dev_err(ane->dev,
 					"preload diff outside the staged image\n");
 				ret = -EINVAL;
 				break;
 			}
-			dst = ane->stage_cpu + seg_vm[s] + i;
-			memcpy(dst, &b, 8);
+			((u8 *)ane->stage_cpu)[seg_vm[s] + i] = b;
+			accepted++;
 		}
+	}
+	if (!ret) {
+		sha256(ane->stage_cpu, ane->stage_size, digest);
+		dev_info(ane->dev, "staged image accepted_diff_bytes=%llu sha256=%*phN\n",
+			 accepted, SHA256_DIGEST_SIZE, digest);
 	}
 out:
 	for (s = 0; s < 2; s++)
-		if (pre[s])
-			devm_memunmap(ane->dev, pre[s]);
+		kvfree(pre[s]);
 	return ret;
 }
 
 /* ---- DART mapping of the staged image at the ADT IOVAs ---- */
+
+static u64 ane_h16_stage_alias_size(struct ane_h16 *ane, unsigned int s)
+{
+	return chanreg && s == 1 ? ANE_H17_FW_BYTES - 0xc0000 : ane->segs[s].size;
+}
+
+static int ane_h16_stage_domain(struct ane_h16 *ane)
+{
+	LIST_HEAD(regions);
+	struct iommu_resv_region *region;
+	unsigned int s;
+	int ret = 0;
+
+	ane->domain = iommu_get_domain_for_dev(ane->dev);
+	if (!ane->domain || !iommu_is_dma_domain(ane->domain)) {
+		dev_err(ane->dev, "staging requires a DMA-API IOMMU domain\n");
+		return -ENODEV;
+	}
+	if (chanreg && (ane->segs[0].iova != ANE_H17_DMA_BASE ||
+			ane->segs[0].size != 0xc0000 ||
+			ane->segs[1].size != 0x2ac000 ||
+			ane->soc->fw->data_vm != 0xc0000 ||
+			ane->soc->fw->data_vmsize != 0x2ac000 ||
+			ane->segs[1].iova != ane->segs[0].iova + 0xc0000))
+		return -EINVAL;
+	/* Fixed aliases must be excluded from the DMA API's IOVA allocator
+	 * before coherent allocation. A no-reg reserved-memory region with
+	 * iommu-addresses supplies IOMMU_RESV_RESERVED at domain setup.
+	 */
+	iommu_get_resv_regions(ane->dev, &regions);
+	for (s = 0; s < 2; s++) {
+		bool covered = false;
+		u64 start = ane->segs[s].iova;
+		u64 size = ane_h16_stage_alias_size(ane, s);
+
+		if (!size || start + size < start ||
+		    ane->segs[s].phys + size < ane->segs[s].phys ||
+		    !IS_ALIGNED(start | size | ane->segs[s].phys, SZ_16K)) {
+			ret = -EINVAL;
+			break;
+		}
+		list_for_each_entry(region, &regions, list) {
+			u64 offset;
+
+			if (region->type != IOMMU_RESV_RESERVED || start < region->start)
+				continue;
+			offset = start - region->start;
+			if (offset <= region->length && size <= region->length - offset) {
+				covered = true;
+				break;
+			}
+		}
+		if (!covered) {
+			dev_err(ane->dev, "firmware alias IOVA is not reserved from DMA allocation\n");
+			ret = -EINVAL;
+			break;
+		}
+	}
+	if (!ret && chanreg) {
+		bool covered = false;
+
+		list_for_each_entry(region, &regions, list) {
+			if (region->type == IOMMU_RESV_RESERVED &&
+			    ane_h17_full_range(region->start, region->length,
+					       ANE_H17_DM_IOVA, ANE_H17_CHAN_ALIAS_BYTES)) {
+				covered = true;
+				break;
+			}
+		}
+		if (!covered) {
+			dev_err(ane->dev, "channel alias IOVAs not reserved; update manual overlay before reboot\n");
+			ret = -EINVAL;
+		} else {
+			dev_info(ane->dev,
+				 "H17 ALIAS_RESERVATION start=%#llx bytes=%#llx type=IOMMU_RESV_RESERVED\n",
+				 (u64)ANE_H17_DM_IOVA,
+				 (u64)ANE_H17_CHAN_ALIAS_BYTES);
+		}
+	}
+	iommu_put_resv_regions(ane->dev, &regions);
+	return ret;
+}
 
 static int ane_h16_map_stage(struct ane_h16 *ane)
 {
@@ -940,27 +1253,32 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	unsigned int s;
 	int ret;
 
-	ane->domain = iommu_get_domain_for_dev(ane->dev);
-	if (!ane->domain) {
-		dev_err(ane->dev,
-			"device has no iommu domain: the overlay must give the node apple,t8110-dart iommus\n");
-		return -ENODEV;
-	}
-	if (!IS_ALIGNED(virt_to_phys(ane->stage_cpu), SZ_16K)) {
-		dev_err(ane->dev, "staged buffer not 16 KiB aligned\n");
+	if (!ane->domain || !IS_ALIGNED(ane->stage_dma, SZ_16K)) {
+		dev_err(ane->dev, "staged DMA IOVA not 16 KiB aligned or domain missing\n");
 		return -EINVAL;
 	}
 	for (s = 0; s < 2; s++) {
 		u64 off;
+		u64 alias_size = ane_h16_stage_alias_size(ane, s);
 
-		for (off = 0; off < ane->segs[s].size; off += SZ_16K) {
-			u64 pa = virt_to_phys(ane->stage_cpu + seg_vm[s] + off);
+		for (off = 0; off < alias_size; off += SZ_16K) {
+			u64 pa;
 			u64 iova = ane->segs[s].iova + off;
-			size_t len = min_t(u64, SZ_16K, ane->segs[s].size - off);
+			u64 source = ane->stage_dma + seg_vm[s] + off;
+			size_t len = min_t(u64, SZ_16K, alias_size - off);
 
 			if (seg_vm[s] + off + len > ane->stage_size) {
 				dev_err(ane->dev, "mapping outside the staged image\n");
 				return -EINVAL;
+			}
+			/* A coherent CPU pointer may be remapped/vmalloc-backed. The
+			 * DMA handle is an IOVA; resolve its backing page via the DMA
+			 * domain, never virt_to_phys(cpu_pointer) or dma_handle-as-PA.
+			 */
+			pa = iommu_iova_to_phys(ane->domain, source);
+			if (!pa || !IS_ALIGNED(pa, SZ_16K)) {
+				dev_err(ane->dev, "staged DMA page is untranslated or unaligned\n");
+				return -EFAULT;
 			}
 			if (iommu_iova_to_phys(ane->domain, iova)) {
 				dev_err(ane->dev,
@@ -974,6 +1292,7 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 				dev_err(ane->dev, "iommu_map %#llx: %d\n", iova, ret);
 				return ret;
 			}
+			ane->stage_mapped[s] += len;
 		}
 	}
 	dev_info(ane->dev,
@@ -982,14 +1301,402 @@ static int ane_h16_map_stage(struct ane_h16 *ane)
 	return 0;
 }
 
-static void ane_h16_unmap_stage(struct ane_h16 *ane)
+static bool ane_h17_overlap(u64 a, u64 asize, u64 b, u64 bsize)
+{
+	return asize && bsize && (a <= b ? b - a < asize : a - b < bsize);
+}
+
+static int ane_h17_alloc_chanbuf(struct ane_h16 *ane, unsigned int index,
+				 size_t bytes)
+{
+	const u64 aliases[] = { ANE_H17_DM_IOVA, ANE_H17_IPC_IOVA, ANE_H17_HEAP_IOVA };
+	struct ane_h17_chanbuf *b;
+	u64 off;
+	unsigned int i;
+	int ret;
+
+	/* This path runs only after wake: partial aliases/backing are retained
+	 * on every refusal, like the existing staging mappings. Never retry.
+	 */
+	if (!ane->fw_touched || index >= ARRAY_SIZE(aliases))
+		return -EINVAL;
+	b = &ane->chanbuf[index];
+	if (b->cpu || b->mapped)
+		return -EBUSY;
+	b->iova = aliases[index];
+
+	b->size = ALIGN(bytes, SZ_16K);
+	if (!ane_h17_channel_range(b->iova, b->size))
+		return -EINVAL;
+	b->cpu = dma_alloc_coherent(ane->dev, b->size, &b->dma, GFP_KERNEL);
+	if (!b->cpu)
+		return -ENOMEM;
+	/* CPU was already released: even partial/failed preparation keeps all
+	 * allocations until reboot, with the binding and staged firmware.
+	 */
+	memset(b->cpu, 0, b->size);
+	if (!IS_ALIGNED(b->dma, SZ_16K) ||
+	    !ane_h17_full_range(ANE_H17_DMA_BASE,
+				 ANE_H17_DMA_END - ANE_H17_DMA_BASE,
+				 b->dma, b->size))
+		return -EINVAL;
+	if (ane_h17_overlap(b->dma, b->size, ane->stage_dma, ane->stage_size))
+		return -EBUSY;
+	if (ane_h17_overlap(b->dma, b->size, ANE_H17_DM_IOVA,
+			    ANE_H17_CHAN_ALIAS_BYTES))
+		return -EBUSY;
+	for (i = 0; i < 2; i++)
+		if (ane_h17_overlap(b->dma, b->size,
+				    ane->segs[i].iova, ane->stage_mapped[i]))
+			return -EBUSY;
+	for (i = 0; i < index; i++)
+		if (ane_h17_overlap(b->dma, b->size,
+				    ane->chanbuf[i].dma, ane->chanbuf[i].size))
+			return -EBUSY;
+	for (off = 0; off < b->size; off += SZ_16K) {
+		u64 pa = iommu_iova_to_phys(ane->domain, b->dma + off);
+
+		if (!pa || !IS_ALIGNED(pa, SZ_16K))
+			return -EFAULT;
+		if (iommu_iova_to_phys(ane->domain, b->iova + off))
+			return -EBUSY;
+		ret = iommu_map(ane->domain, b->iova + off, pa, SZ_16K,
+				IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
+		if (ret)
+			return ret;
+		b->mapped += SZ_16K;
+		if (iommu_iova_to_phys(ane->domain, b->iova + off) != pa)
+			return -EFAULT;
+	}
+	dev_info(ane->dev, "H17 TABLE_BACKING index=%u dma=%#llx alias=%#llx mapped=%#llx\n",
+		 index, (u64)b->dma, b->iova, b->mapped);
+	return 0;
+}
+
+static int ane_h17_register_channels(struct ane_h16 *ane,
+				     struct ane_h17_chanbuf *ipc)
+{
+	const struct ane_h16_soc *s = ane->soc;
+	struct ane_h17_channel_init_range init[ANE_H17_CHANNEL_COUNT];
+	u32 init_count = 0, i;
+	unsigned long deadline;
+	int ret;
+
+	if (!ane_h17_validate_channel_table(ane->chan_table,
+					    ipc->iova, ANE_H17_IPC_BYTES,
+					    init, &init_count)) {
+		dev_err(ane->dev,
+			"H17 REGISTER refused malformed, unowned, or overlapping channel table\n");
+		ane_h16_result(ane, 3, "REFUSED", "channel-table-envelope");
+		return -EINVAL;
+	}
+	for (i = 0; i < init_count; i++) {
+		u8 *block = (u8 *)ipc->cpu + init[i].offset;
+		u64 off;
+
+		for (off = 0; off < init[i].bytes;
+		     off += ANE_H17_CHANNEL_SLOT_BYTES) {
+			u8 *slot = block + off;
+
+			/* J700's type-0 channel constructor stores flag, then clears
+			 * the two 64-bit control words. The coherent IPC arena was
+			 * zeroed at allocation; leave the rest of each 0x40 block
+			 * unchanged, matching the traced stores.
+			 */
+			ane_h17_put_le(slot, 1, 8);
+			memset(slot + 8, 0, 16);
+		}
+		dev_info(ane->dev,
+			 "H17 CHANNEL_INIT index=%u offset=%#llx bytes=%#llx entries=%#llx\n",
+			 init[i].index, init[i].offset, init[i].bytes,
+			 init[i].bytes / ANE_H17_CHANNEL_SLOT_BYTES);
+	}
+	/* Coherent CPU writes must be visible before firmware sees registration. */
+	dma_wmb();
+	dev_info(ane->dev,
+		 "H17 CHANNEL_REGISTER request=%#x scratch3=%#x\n",
+		 ANE_H16_WAKE_ACK, s->scratch0 + 12);
+	ane_h16_wr32(ane, s->scratch0 + 12, ANE_H16_WAKE_ACK);
+	deadline = jiffies + msecs_to_jiffies(1000);
+	do {
+		ret = ane_h16_rd32(ane, s->scratch0 + 12);
+		if (!ret) {
+			dev_info(ane->dev,
+				 "H17 CHANNEL_REGISTER_ACK value=0\n");
+			dev_info(ane->dev,
+				 "H17 CHANNEL_REGISTER_STOP after ack; no doorbell, IRQ ack or task\n");
+			ane_h16_result(ane, 3, "PASS", "boot-channel-registration");
+			return 0;
+		}
+		if (time_after(jiffies, deadline))
+			break;
+		usleep_range(1000, 2000);
+	} while (1);
+	dev_err(ane->dev,
+		"H17 CHANNEL_REGISTER timeout scratch3=%#x; buffers retained\n",
+		ret);
+	ane_h16_result(ane, 3, "FAIL", "channel-registration-timeout");
+	return -ETIMEDOUT;
+}
+
+static int ane_h17_discover_table(struct ane_h16 *ane)
+{
+	const struct ane_h16_soc *s = ane->soc;
+	const size_t sizes[] = {
+		ANE_H17_DM_BYTES, ANE_H17_IPC_BYTES, ANE_H17_HEAP_BYTES,
+	};
+	struct ane_h17_chanbuf *dm = &ane->chanbuf[0];
+	struct ane_h17_chanbuf *ipc = &ane->chanbuf[1];
+	struct ane_h17_chanbuf *heap = &ane->chanbuf[2];
+	u8 digest[SHA256_DIGEST_SIZE];
+	u32 count, ipc_last, heap_bytes;
+	u64 address, offset;
+	unsigned long deadline;
+	unsigned int i;
+	int ret;
+
+	/* First-run envelope, not arbitrary firmware-controlled allocations.
+	 * Source: e1c4839 receipt sec 16; snapshot: 6610ec7 boot 3f9aa97c.
+	 */
+	count = ane_h16_rd32(ane, s->scratch0);
+	ipc_last = ane_h16_rd32(ane, s->scratch0 + 4);
+	heap_bytes = ane_h16_rd32(ane, s->scratch0 + 12);
+	if (count != 8 || ipc_last != ANE_H17_IPC_BYTES - 1 ||
+	    heap_bytes != ANE_H17_HEAP_BYTES ||
+	    ane->stage_size != ANE_H17_FW_BYTES ||
+	    ane->segs[0].size != 0xc0000 ||
+	    ane->segs[1].size != 0x2ac000 ||
+	    ane->segs[1].iova != ane->segs[0].iova + 0xc0000) {
+		dev_err(ane->dev,
+			"H17 TABLE refused geometry count=%u ipc_last=0x%08x heap=0x%08x\n",
+			count, ipc_last, heap_bytes);
+		ane_h16_result(ane, 3, "REFUSED", "table-input-envelope");
+		return -EINVAL;
+	}
+	ane->chan_table = kvzalloc(ANE_H17_TABLE_BYTES, GFP_KERNEL);
+	if (!ane->chan_table) {
+		ane_h16_result(ane, 3, "FAIL", "table-copy-allocation");
+		return -ENOMEM;
+	}
+	for (i = 0; i < ARRAY_SIZE(sizes); i++) {
+		ret = ane_h17_alloc_chanbuf(ane, i, sizes[i]);
+		if (ret) {
+			ane_h16_result(ane, 3, "REFUSED", "table-dma-allocation-or-range");
+			return ret;
+		}
+	}
+	if (!ane_h17_channel_layout(dm->iova, dm->size, ipc->iova, ipc->size)) {
+		ane_h16_result(ane, 3, "REFUSED", "table-address-layout");
+		return -EINVAL;
+	}
+	ane_h17_encode_descriptor(dm->cpu, ane->segs[0].iova,
+				  dm->iova, ipc->iova, heap->iova);
+	sha256(dm->cpu, ANE_H17_DESC_BYTES, digest);
+	dev_info(ane->dev,
+		 "H17 TABLE_PREPARE dm=%#llx ipc=%#llx ipc_bytes=0xc441 heap=%#llx descriptor_bytes=0x180 sha256=%*phN\n",
+		 dm->iova, ipc->iova, heap->iova,
+		 SHA256_DIGEST_SIZE, digest);
+	/* Publish only completely mapped aliases of owned coherent memory.
+	 * stage_domain checked their DMA-allocator reservations before staging.
+	 */
+	dma_wmb();
+	ane_h16_wr32(ane, s->scratch0, (u32)dm->iova);
+	ane_h16_wr32(ane, s->scratch0 + 4, dm->iova >> 32);
+	wmb();
+	ane_h16_wr32(ane, s->scratch0 + 28, ANE_H17_TABLE_REQUEST);
+	deadline = jiffies + msecs_to_jiffies(1000);
+	while (ane_h16_rd32(ane, s->scratch0 + 28) != ANE_H16_WAKE_ACK) {
+		if (time_after(jiffies, deadline)) {
+			ane_h16_result(ane, 3, "FAIL", "table-reply-timeout");
+			return -ETIMEDOUT;
+		}
+		usleep_range(1000, 2000);
+	}
+	address = ane_h16_rd32(ane, s->scratch0 + 4);
+	address = (address << 32) | ane_h16_rd32(ane, s->scratch0);
+	if (!ane_h17_full_range(ipc->iova, ANE_H17_IPC_BYTES,
+				 address, ANE_H17_TABLE_BYTES)) {
+		dev_err(ane->dev, "H17 TABLE refused reply address=%#llx\n", address);
+		ane_h16_result(ane, 3, "REFUSED", "table-reply-outside-ipc");
+		return -EINVAL;
+	}
+	offset = address - ipc->iova;
+	dma_rmb();
+	memcpy(ane->chan_table, (u8 *)ipc->cpu + offset, ANE_H17_TABLE_BYTES);
+	sha256(ane->chan_table, ANE_H17_TABLE_BYTES, digest);
+	dev_info(ane->dev,
+		 "H17 TABLE_COPY address=%#llx bytes=0x800 count=8 sha256=%*phN\n",
+		 address, SHA256_DIGEST_SIZE, digest);
+	for (i = 0; i < 8; i++) {
+		const u8 *entry = ane->chan_table + i * 0x100;
+
+		/* Hex names cannot inject lines into the rung log. Discovery mode
+		 * only observes these fields; the separately opted-in registration
+		 * path validates every buffer before touching type-0 blocks.
+		 */
+		dev_info(ane->dev,
+			 "H17 CHANNEL index=%u name_hex=%*phN type=0x%08x source=0x%08x slots=0x%08x buffer=0x%016llx\n",
+			 i, 32, entry, (u32)ane_h17_get_le(entry + 0x40, 4),
+			 (u32)ane_h17_get_le(entry + 0x44, 4),
+			 (u32)ane_h17_get_le(entry + 0x48, 4),
+			 ane_h17_get_le(entry + 0x50, 8));
+	}
+	if (register_channels)
+		return ane_h17_register_channels(ane, ipc);
+	dev_info(ane->dev,
+		 "H17 TABLE_STOP before SCRATCH3 registration; buffers retained; no doorbell, IRQ ack or task\n");
+	ane_h16_result(ane, 3, "PASS", "boot-table-discovery");
+	return 0;
+}
+
+static int ane_h16_unmap_stage(struct ane_h16 *ane)
 {
 	unsigned int s;
+	int ret = 0;
 
 	if (!ane->domain)
-		return;
-	for (s = 0; s < 2; s++)
-		iommu_unmap(ane->domain, ane->segs[s].iova, ane->segs[s].size);
+		return 0;
+	for (s = 0; s < 2; s++) {
+		u64 owned = ane->stage_mapped[s];
+
+		if (!owned)
+			continue;
+		if (iommu_unmap(ane->domain, ane->segs[s].iova, owned) != owned) {
+			dev_err(ane->dev,
+				"short stage unmap: retaining buffer; reboot required\n");
+			ret = -EIO;
+		} else {
+			ane->stage_mapped[s] = 0;
+		}
+	}
+	return ret;
+}
+
+/* ---- H17 (T8140) ordered clock/power enable, kext steps 1-8 ----
+ *
+ * Adapter between the device's MMIO and the checked ordering helper
+ * (ane/h17/bringup_order.h): CE handshake + 37 HAL tunables + PS/PWGATE
+ * enable with bounded polls. Every access is durably logged (dev_info
+ * with a monotonic sequence number, before it is performed) via the
+ * pending callback; a failed log stops the sequence before MMIO.
+ * Sources: firmware-load-path receipt §5.4 rows 1-8 (commit 0049f0b
+ * lineage), CE/tunables decode at 1e4e9e7. On J700 this is the COLD
+ * branch (this[0xa2] bit0 clear on first init; warm SCRATCH7:=1 is the
+ * other branch, see order-helper receipt) — this code performs neither
+ * warm nor cold scratch writes; the caller owns those.
+ */
+
+static int ane_h17_order_pending(void *ctx, enum h17_order_action action,
+				 enum h17_order_bank bank, unsigned int off,
+				 unsigned int width, unsigned long long value)
+{
+	static const char *const names[] = { "engine", "ps", "pwgate" };
+	struct ane_h16 *ane = ctx;
+
+	dev_info(ane->dev,
+		 "h17-order seq=%u %s %s off=%#x width=%u val=%#llx\n",
+		 ++ane->order_seq,
+		 action == H17_ORDER_WRITE ? "write" : "read",
+		 names[bank], off, width, value);
+	return 0;
+}
+
+static void __iomem *ane_h17_order_base(struct ane_h16 *ane,
+					enum h17_order_bank bank,
+					size_t *size)
+{
+	switch (bank) {
+	case H17_ORDER_ENGINE:
+		*size = 0x2000000;
+		return ane->engine;
+	case H17_ORDER_PS:
+		*size = 0x14000;	/* overlay pmgr window */
+		return ane->pmgr;
+	case H17_ORDER_PWGATE:
+		*size = 0x4000;	/* receipt §2 PWGATE window */
+		return ane->pwgate;
+	}
+	return NULL;
+}
+
+static int ane_h17_order_rw_check(struct ane_h16 *ane,
+				  enum h17_order_bank bank,
+				  unsigned int off, unsigned int width,
+				  void __iomem **base)
+{
+	size_t size;
+
+	*base = ane_h17_order_base(ane, bank, &size);
+	if (!*base)
+		return -ENODEV;
+	if (off > size || width > size || off + width > size)
+		return -ERANGE;
+	return 0;
+}
+
+static int ane_h17_order_read(void *ctx, enum h17_order_bank bank,
+			      unsigned int off, unsigned int width,
+			      unsigned long long *value)
+{
+	struct ane_h16 *ane = ctx;
+	void __iomem *base;
+	int ret = ane_h17_order_rw_check(ane, bank, off, width, &base);
+
+	if (ret)
+		return ret;
+	switch (width) {
+	case 4:
+		*value = readl_relaxed(base + off);
+		return 0;
+	case 8:
+		*value = readq_relaxed(base + off);
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int ane_h17_order_write(void *ctx, enum h17_order_bank bank,
+			       unsigned int off, unsigned int width,
+			       unsigned long long value)
+{
+	struct ane_h16 *ane = ctx;
+	void __iomem *base;
+	int ret = ane_h17_order_rw_check(ane, bank, off, width, &base);
+
+	if (ret)
+		return ret;
+	switch (width) {
+	case 4:
+		writel_relaxed((u32)value, base + off);
+		return 0;
+	case 8:
+		writeq_relaxed(value, base + off);
+		return 0;
+	}
+	return -EINVAL;
+}
+
+static int ane_h17_order_delay(void *ctx, unsigned int us)
+{
+	(void)ctx;
+	udelay(us);
+	return 0;
+}
+
+static int ane_h16_h17_enable(struct ane_h16 *ane)
+{
+	const struct h17_order_ops ops = {
+		ane_h17_order_pending, ane_h17_order_read,
+		ane_h17_order_write, ane_h17_order_delay,
+	};
+	int ret;
+
+	/* Steps 1-8, checked and logged. On failure the caller refuses
+	 * the boot BEFORE any CPU release; resources stay put. */
+	ret = h17_order_prepare(&ops, ane);
+	if (ret)
+		ane_h16_result(ane, 3, "REFUSED", "h17-order");
+	return ret;
 }
 
 /* ---- polled ASC mailbox (RTKit management only) ---- */
@@ -1153,6 +1860,35 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		ane_h16_result(ane, 3, "REFUSED", "segment-ranges");
 		return ret;
 	}
+	ret = ane_h16_stage_domain(ane);
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "dma-domain-or-alias-reservation");
+		return ret;
+	}
+	/* Own the preload DRAM before anything may map or read it. */
+	ret = ane_h16_admit_preload(ane, true);
+	if (ret) {
+		ane_h16_result(ane, 3, "REFUSED", "preload-ownership");
+		return ret;
+	}
+	/* Quiescence: the wake word set means a firmware from an earlier
+	 * attempt in this boot may still be running against this DRAM.
+	 * Snapshots and CPU release refuse; reboot is the recovery. */
+	if (ane_h16_rd32(ane, s->scratch0 + 7 * 4) == ANE_H16_WAKE_ACK) {
+		dev_err(ane->dev,
+			"SCRATCH7 already carries the wake word: firmware not quiescent; reboot before retrying\n");
+		ane_h16_result(ane, 3, "REFUSED", "not-quiescent");
+		return -EINVAL;
+	}
+	/* H17 steps 1-8: CE handshake, HAL tunables, PS/PWGATE enable,
+	 * every access logged and polled through the ordering helper.
+	 * Runs before any staging snapshot so the preload is read only
+	 * once clocks and power are in the kext's post-enable state. */
+	if (s->h17_order) {
+		ret = ane_h16_h17_enable(ane);
+		if (ret)
+			return ret;
+	}
 	ret = ane_h16_fw_pin(ane, &fw);
 	if (ret) {
 		ane_h16_result(ane, 3, "REFUSED", "fw-pin");
@@ -1194,7 +1930,16 @@ static int ane_h16_boot(struct ane_h16 *ane)
 
 	/* kext ANE_Init cold-boot order (macOS 27.0): SCRATCH7 = 0, RVBAR
 	 * (skipped when latched), CPU_CONTROL 0 then 0x10, then poll
-	 * SCRATCH7 for the wake word. */
+	 * SCRATCH7 for the wake word. H17 (steps 9, 10, 12 of the recipe)
+	 * additionally clears all eight scratch words, sets SCRATCH6 and
+	 * then clears SCRATCH7 — the cold branch (order-helper receipt). */
+	if (s->h17_order) {
+		unsigned int n;
+
+		for (n = 0; n < 8; n++)
+			ane_h16_wr32(ane, s->scratch0 + 4 * n, 0);
+		ane_h16_wr32(ane, s->scratch0 + 6 * 4, 1);
+	}
 	ane_h16_wr32(ane, s->scratch0 + 7 * 4, 0);
 	ane_h16_wr32(ane, s->cpu_control, 0);
 	wmb();
@@ -1226,18 +1971,87 @@ static int ane_h16_boot(struct ane_h16 *ane)
 	}
 	ane->fw_started = true;
 
-	if (hello_wait_ms)
+	/* H17 steps 19-21, only ever after the wake word (recipe §5.4:
+	 * field 0x128 := 1, field 0x120 := 0, doorbell enable setBit 0).
+	 * Step 17 is absent: this[0xa4] is always 0 on J700. */
+	if (s->h17_order) {
+		ane_h16_wr32(ane, s->wake_cfg1, 1);
+		ane_h16_wr32(ane, s->wake_cfg2, 0);
+		ane_h16_wr32(ane, s->doorbell_en,
+			     ane_h16_rd32(ane, s->doorbell_en) | 1);
+	}
+	if (s->h17_order) {
+		/* Opt-in post-wake diagnostic (irq_read=1): a single
+		 * read-only snapshot of the firmware->host IRQ status
+		 * word, taken before any ack or channel work, to record
+		 * which lines the just-started firmware asserts. The
+		 * ack register (0x1890000, W1C 0xffff) is NOT read or
+		 * written here: the status bits stay un-acked, exactly
+		 * as a firmware that never raised them would leave
+		 * them.
+		 */
+		if (irq_read)
+			dev_info(ane->dev,
+				 "H17 IRQ_STATUS off=%#x value=0x%08x (single read-only post-wake snapshot; ack register untouched)\n",
+				 s->irq_status, ane_h16_rd32(ane, s->irq_status));
+		/* Opt-in post-wake diagnostic (scratch_read=1): the
+		 * channel-registration handshake (receipt sec 14) puts
+		 * the firmware-published channel count in SCRATCH0,
+		 * carries the firmware's table-ready ack in SCRATCH7,
+		 * and leaves SCRATCH3 for the host's registration word
+		 * (which we never write). One read of each of the
+		 * eight words, in order, logged once; no scratch
+		 * writes beyond the boot recipe, no IRQ ack access, no
+		 * doorbell, no task.
+		 */
+		if (scratch_read) {
+			unsigned int n;
+			u32 sw[8];
+
+			for (n = 0; n < 8; n++)
+				sw[n] = ane_h16_rd32(ane,
+						     s->scratch0 + 4 * n);
+			dev_info(ane->dev,
+				 "H17 SCRATCH off=%#x values=0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x,0x%08x (single read-only post-wake snapshot; scratch words untouched)\n",
+				 s->scratch0, sw[0], sw[1], sw[2], sw[3],
+				 sw[4], sw[5], sw[6], sw[7]);
+		}
+		/* The H16 RTKit management endpoint layout (mbox=0x1608000,
+		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
+		 * mapping. J700's kext reaches READY via SCRATCH7 and then
+		 * uses its firmware command path in later requests; it does
+		 * not poll this mailbox after ANE_Init. Do not claim HELLO/EPMAP
+		 * support or touch the unqualified candidate, even when the
+		 * H16-only hello_wait_ms parameter is set.
+		 */
+		if (chanreg)
+			dev_info(ane->dev,
+				 "H17 post-wake RTKit management poll skipped: table discovery uses scratch handshake only\n");
+		else
+			dev_info(ane->dev,
+				 "H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only\n");
+	}
+	else if (hello_wait_ms)
 		ane_h16_rtkit_poll(ane);
 	else
 		dev_info(ane->dev,
 			 "RTKit poll skipped (hello_wait_ms=0); set 1000 to probe for HELLO/EPMAP/STARTEP\n");
+	if (chanreg) {
+		ret = ane_h17_discover_table(ane);
+		goto rel_fw;
+	}
 	ane_h16_result(ane, 3, "PASS",
 		       ane->hello_done ? "boot-hello" :
-		       hello_wait_ms ? "boot-nortkit" : "boot-wake");
+		       (hello_wait_ms && !s->h17_order) ?
+		       "boot-nortkit" : "boot-wake");
 	ret = 0;
 	goto rel_fw;
 unmap:
-	ane_h16_unmap_stage(ane);
+	if (ane_h16_unmap_stage(ane)) {
+		/* Some translations may still reference the buffer. Never free it. */
+		ret = -EIO;
+		goto rel_fw;
+	}
 free_stage:
 	if (ane->stage_cpu) {
 		dma_free_coherent(ane->dev, ane->stage_size, ane->stage_cpu,
@@ -1278,6 +2092,17 @@ static int ane_h16_probe(struct platform_device *pdev)
 			stage);
 		return ret;
 	}
+	if (chanreg && (!soc->h17_order || stage_idx != 3)) {
+		dev_err(&pdev->dev, "chanreg requires t8140 stage=boot\n");
+		return -EINVAL;
+	}
+	if (register_channels && (!chanreg || !soc->h17_order || stage_idx != 3)) {
+		dev_err(&pdev->dev,
+			"register_channels requires chanreg=1 and t8140 stage=boot\n");
+		return -EINVAL;
+	}
+	if (ane_h16_ps_count(soc) > ARRAY_SIZE(soc->ps_off))
+		return -EINVAL;
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
@@ -1299,10 +2124,40 @@ static int ane_h16_probe(struct platform_device *pdev)
 	ret = ane_h16_attach_pds(ane);
 	if (ret)
 		return ret;
+
+	/* The windows are mapped WITHOUT request_region: on T8140 the ANE
+	 * DARTs (0x4018x_0000) sit inside the engine window and the ps-probe
+	 * pmgr-pwrstate devices sit inside the pmgr window, so the sibling
+	 * drivers' reservations make a whole-window request fail -EBUSY.
+	 * of_iomap itself does not reserve; the ownership guarantee is the
+	 * DT reg layout, not the region accounting. */
 	ret = ane_h16_map(ane);
 	if (ret) {
 		ane_h16_detach_pds(ane);
 		return ret;
+	}
+	if (soc->h17_order) {
+		/* kext "PWGATE" provider window, reg[2] of /arm-io/ane
+		 * (receipt §2: DT 0x3_00724000 size 0x4000). Required for
+		 * the H17 boot path; absent means the overlay is stale. */
+		struct resource *res = platform_get_resource_byname(pdev,
+								    IORESOURCE_MEM,
+								    "pwgate");
+
+		if (!res) {
+			dev_err(&pdev->dev,
+				"H17 boot requires the pwgate reg window; update the overlay\n");
+			ane_h16_unmap(ane);
+			ane_h16_detach_pds(ane);
+			return -ENXIO;
+		}
+		ane->pwgate = devm_ioremap(&pdev->dev, res->start,
+					   resource_size(res));
+		if (!ane->pwgate) {
+			ane_h16_unmap(ane);
+			ane_h16_detach_pds(ane);
+			return -ENOMEM;
+		}
 	}
 
 	pm_runtime_enable(&pdev->dev);
@@ -1326,23 +2181,34 @@ static int ane_h16_probe(struct platform_device *pdev)
 	ret = ane_h16_ps_wait(ane);
 	if (ret) {
 		ane_h16_result(ane, 1, "FAIL", "pmgr-actual-stuck");
-		goto rpm_off;
+		goto pd_off;
 	}
 
 	ret = ane_h16_status(ane);
 	if (ret)
-		goto rpm_off;
+		goto pd_off;
 	if (stage_idx == 1) {
 		ane_h16_result(ane, 1, "PASS", "ps-guard+reads");
-		goto rpm_off;
+		goto pd_off;
 	}
 	ret = ane_h16_boot(ane);
-rpm_off:
-	pm_runtime_put_sync(&pdev->dev);
-	if (ane->fw_started)
+	if (ane->fw_touched) {
+		/* CPU release is an ownership boundary, even on timeout. Returning
+		 * an error would let failed-probe devres cleanup discard mappings
+		 * that firmware may still use. Keep the device bound, power held,
+		 * and module pinned until reboot. RESULT (not insmod's status)
+		 * reports the actual boot outcome.
+		 */
+		ane->boot_error = ret;
+		__module_get(THIS_MODULE);
 		dev_emerg(&pdev->dev,
-			  "firmware started: do NOT unload this module; reboot to park the ANE\n");
-	if (ret && !ane->fw_touched) {
+			  "CPU release attempted: boot_error=%d; retaining binding, mappings and power; do NOT unload; reboot required\n",
+			  ret);
+		return 0;
+	}
+pd_off:
+	pm_runtime_put_sync(&pdev->dev);
+	if (ret) {
 		pm_runtime_disable(&pdev->dev);
 		ane_h16_unmap(ane);
 		ane_h16_detach_pds(ane);
@@ -1357,7 +2223,6 @@ static void ane_h16_remove(struct platform_device *pdev)
 	if (ane->fw_touched) {
 		dev_emerg(&pdev->dev,
 			  "remove with the firmware released: leaving power on, reboot required\n");
-		pm_runtime_get_noresume(&pdev->dev);
 		return;
 	}
 	pm_runtime_disable(&pdev->dev);
@@ -1369,6 +2234,7 @@ static const struct of_device_id ane_h16_of_match[] = {
 	{ .compatible = "apple,t8132-ane", .data = &ane_t8132_soc },
 	{ .compatible = "apple,t6040-ane", .data = &ane_t6040_soc },
 	{ .compatible = "apple,t6041-ane", .data = &ane_t6041_soc },
+	{ .compatible = "apple,t8140-ane", .data = &ane_t8140_soc },
 	{ }
 };
 

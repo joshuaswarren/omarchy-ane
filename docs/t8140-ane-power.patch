@@ -1,0 +1,60 @@
+From: H17 J700 ANE power-domain wiring (proposal; applies to linux-aurora)
+Subject: [PATCH] arm64: dts: apple: t8140: expose the ANE-CPU ps-word and windows
+
+The H17 ANE-CPU island is powered through a raw ps-word at PMGR+0xc000
+that the host driver writes directly (0xc000=0xf then 0x1000000f).
+Expose it as an apple-pmgr-pwrstate so Linux genpd raises it instead of
+a direct kernel write, and add the pmgr/set windows the register-map
+and PWGATE guard need.
+
+Hardware-qualification note: offsets are compiled-source/ADT evidence,
+not device behaviour. status stays disabled.
+
+---
+
+diff --git a/arch/arm64/boot/dts/apple/t8140.dtsi b/arch/arm64/boot/dts/apple/t8140.dtsi
+--- a/arch/arm64/boot/dts/apple/t8140.dtsi	2026-11-01 06:28:47.592498581 -0800
++++ b/arch/arm64/boot/dts/apple/t8140.dtsi	2026-11-01 06:28:58.864941108 -0800
+@@ -1764,13 +1764,15 @@
+ 		/* The T8140 firmware and child power sequence need their own backend. */
+ 		ane: ane@400000000 {
+ 			compatible = "apple,t8140-ane";
+-			reg = <0x4 0x0 0x0 0x2000000>;
+-			reg-names = "engine";
++			reg = <0x4 0x0 0x0 0x2000000>,
++			      <0x3 0x00700000 0x0 0x18000>,
++			      <0x3 0x00724000 0x0 0x4000>;
++			reg-names = "engine", "pmgr", "set";
+ 			interrupt-parent = <&aic>;
+ 			interrupts = <AIC_IRQ 655 IRQ_TYPE_LEVEL_HIGH>,
+ 				     <AIC_IRQ 668 IRQ_TYPE_LEVEL_HIGH>;
+ 			iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
+-			power-domains = <&ps_ane_sys>;
++			power-domains = <&ps_ane_sys>, <&ps_ane_sys_cpu>;
+ 			status = "disabled";
+ 		};
+ 	};
+diff --git a/arch/arm64/boot/dts/apple/t8140-pmgr.dtsi b/arch/arm64/boot/dts/apple/t8140-pmgr.dtsi
+--- a/arch/arm64/boot/dts/apple/t8140-pmgr.dtsi	2026-11-01 06:28:47.594498591 -0800
++++ b/arch/arm64/boot/dts/apple/t8140-pmgr.dtsi	2026-11-01 06:28:58.865094530 -0800
+@@ -834,6 +834,20 @@
+ 		status = "okay";
+ 	};
+ 
++	/* H17 ANE-CPU island. The Apple driver writes this ps-word directly
++	 * (0xc000 = 0xf, then 0x1000000f); expose it so genpd raises it
++	 * instead — a direct ps-word write from kernel context hangs.
++	 */
++	ps_ane_sys_cpu: power-controller@c000 {
++		compatible = "apple,t8140-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
++		reg = <0xc000 4>;
++		#power-domain-cells = <0>;
++		#reset-cells = <0>;
++		label = "ane_sys_cpu";
++		power-domains = <&ps_ane_sys>;
++		status = "disabled";
++	};
++
+ 	ps_msr_ase_core: power-controller@298 {
+ 		compatible = "apple,t8140-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+ 		reg = <0x298 4>;

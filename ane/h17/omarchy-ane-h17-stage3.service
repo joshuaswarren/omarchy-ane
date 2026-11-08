@@ -1,0 +1,13 @@
+[Unit]
+Description=One-time J700 H17 ANE_SYS power-state rung
+After=multi-user.target
+ConditionPathExists=/var/lib/omarchy-ane/h17-stage3.pending
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/rm -f /var/lib/omarchy-ane/h17-stage3.pending
+ExecStart=/usr/bin/bash /var/lib/omarchy-ane/ane/h17/run-stage3.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+Firmware SHA256 32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+
+/usr/lib/firmware/apple/ane/h17_ane_fw_theia_d9x.macho:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000000000000 <__text>:
+    6e0c: b9405368     	ldr	w8, [x27, #0x50]
+    6e10: 11000673     	add	w19, w19, #0x1
+    6e14: 510006f7     	sub	w23, w23, #0x1
+    6e18: f9000b08     	str	x8, [x24, #0x10]
+
+/usr/lib/firmware/apple/ane/h17_ane_fw_theia_d9x.macho:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+0000000000000000 <__text>:
+   299b4: b9801288     	ldrsw	x8, [x20, #0x10]
+   299b8: a900fe7f     	stp	xzr, xzr, [x19, #0x8]
+   299bc: f9000268     	str	x8, [x19]

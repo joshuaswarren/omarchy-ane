@@ -1,0 +1,13 @@
+{
+  "kernelcache_sha256": "7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe",
+  "checked_anchors": 17,
+  "independent_address_layout": "0x8000 + (sid << 6); low +8, high +12",
+  "address_assembly": "u32(low) | (u64(u32(high)) << 32)",
+  "status_0x1100": {
+    "code": 0,
+    "level": 1,
+    "label": "CTE invalid",
+    "access_bits": "0x100"
+  },
+  "hardware_qualification": false
+}

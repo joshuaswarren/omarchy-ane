@@ -1,0 +1,32 @@
+H17 firmware PING dispatch-reference scan
+=========================================
+
+Command:
+  python3 receipts/2026-11-04-j700-h17-firmware-load-path/scripts/scan_fw_dispatch_refs.py
+
+Pinned firmware SHA-256:
+  32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+
+Output:
+
+firmware_sha256=32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c
+code_candidate_va=0x0..0x9d298
+decoded_instructions=160906
+skipped_data_items=28
+adrp_add_refs_to_0xa225a=[]
+adrp_add_refs_to_0xc1c50=[]
+adrp_add_refs_to_0xc78a8=[]
+cmp_immediate_0x12=['0x16d10', '0x3c240', '0x3c248', '0x3c92c', '0x3c934', '0x440a8', '0x5a238', '0x60514', '0x60b24', '0x63200', '0x63678', '0x64f9c', '0x66bf0', '0x670f0', '0x72e40', '0x73a6c', '0x75910', '0x761d0', '0x792b0', '0x79774', '0x90448', '0x904c8']
+raw_u64_0xa225a_file_offsets=[]
+raw_u64_0xc1c50_file_offsets=[]
+raw_u64_0xc78a8_file_offsets=[]
+
+Scope/limits:
+  __TEXT,__text is the scanned VA range, with Capstone skipdata enabled to
+  continue across sparse gaps. PING name VA 0xa225a and command-table VAs
+  0xc1c50/0xc78a8 have no obvious ADRP+ADD references or literal u64 pointers
+  in this scan. The text has many unrelated CMP-immediate-0x12 instructions;
+  their presence is not evidence of command dispatch. This negative search
+  does not rule out indexed tables, indirect references, runtime relocation,
+  or another parser path. It does not identify the firmware handler for
+  CSNE_CMD_PING and is not a firmware behavior result.

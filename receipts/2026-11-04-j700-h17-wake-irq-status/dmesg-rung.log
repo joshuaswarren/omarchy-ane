@@ -1,0 +1,164 @@
+[   15.441991] ane_h16 400000000.ane: attached and held 4 power domains
+[   15.441999] ane_h16 400000000.ane: ane_h16 ps word=ANE_SYS off=0x290 value=0x23ff actual=0xf pass=true
+[   15.442003] ane_h16 400000000.ane: ane_h16 ps word=ANE_SUB0 off=0xc000 value=0x1f0003ff actual=0xf pass=true
+[   15.442006] ane_h16 400000000.ane: ane_h16 ps word=ANE_SUB1 off=0xc008 value=0x3ff actual=0xf pass=true
+[   15.442008] ane_h16 400000000.ane: ane_h16 ps word=ANE_SUB2 off=0xc010 value=0x3ff actual=0xf pass=true
+[   15.442011] ane_h16 400000000.ane: RVBAR (0x1050000) = 0x10000000001 (latched)
+[   15.442013] ane_h16 400000000.ane: CPU_STATUS (0x1600048) = 0x30006a
+[   15.442016] ane_h16 400000000.ane: SCRATCH0 (0x1880020) = 0x0
+[   15.442018] ane_h16 400000000.ane: SCRATCH1 (0x1880024) = 0x0
+[   15.442020] ane_h16 400000000.ane: SCRATCH2 (0x1880028) = 0x0
+[   15.442022] ane_h16 400000000.ane: SCRATCH3 (0x188002c) = 0x0
+[   15.442024] ane_h16 400000000.ane: SCRATCH4 (0x1880030) = 0x0
+[   15.442025] ane_h16 400000000.ane: SCRATCH5 (0x1880034) = 0x0
+[   15.442027] ane_h16 400000000.ane: SCRATCH6 (0x1880038) = 0x0
+[   15.442029] ane_h16 400000000.ane: SCRATCH7 (0x188003c) = 0x0
+[   15.442031] ane_h16 400000000.ane: mbox a2i_ctrl (0x1608110) = 0x20001
+[   15.442033] ane_h16 400000000.ane: mbox i2a_ctrl (0x1608114) = 0x20001
+[   15.442125] ane_h16 400000000.ane: ADT: /reserved-memory/flash@100055d8000 at 0x100055d8000+0x68000
+[   15.443442] ane_h16 400000000.ane: segment-ranges: TEXT phys 0x10000774000 iova 0x10000000000 size 0xc0000; DATA phys 0x100019ac000 iova 0x100000c0000 size 0x2ac000
+[   15.443766] ane_h16 400000000.ane: preload owned seg0 phys 0x10000774000-0x10000834000: admitted (enforced; ram_disjoint=1)
+[   15.443770] ane_h16 400000000.ane: preload owned seg1 phys 0x100019ac000-0x10001c58000: admitted (enforced; ram_disjoint=1)
+[   15.443773] ane_h16 400000000.ane: h17-order seq=1 read engine off=0x18a4010 width=4 val=0x0
+[   15.443776] ane_h16 400000000.ane: h17-order seq=2 read engine off=0x18a4018 width=4 val=0x0
+[   15.443779] ane_h16 400000000.ane: h17-order seq=3 write engine off=0x18a4000 width=4 val=0x3
+[   15.443781] ane_h16 400000000.ane: h17-order seq=4 read engine off=0x18a4008 width=4 val=0x0
+[   15.443783] ane_h16 400000000.ane: h17-order seq=5 read engine off=0x18a4018 width=8 val=0x0
+[   15.443785] ane_h16 400000000.ane: h17-order seq=6 write engine off=0x18a4008 width=8 val=0x3
+[   15.443787] ane_h16 400000000.ane: h17-order seq=7 read engine off=0x0 width=4 val=0x0
+[   15.443789] ane_h16 400000000.ane: h17-order seq=8 write engine off=0x0 width=4 val=0x8000001b
+[   15.443792] ane_h16 400000000.ane: h17-order seq=9 read engine off=0x4 width=4 val=0x0
+[   15.443794] ane_h16 400000000.ane: h17-order seq=10 write engine off=0x4 width=4 val=0x800c000d
+[   15.443796] ane_h16 400000000.ane: h17-order seq=11 read engine off=0x8 width=4 val=0x0
+[   15.443798] ane_h16 400000000.ane: h17-order seq=12 write engine off=0x8 width=4 val=0x800c000d
+[   15.443800] ane_h16 400000000.ane: h17-order seq=13 read engine off=0xc width=4 val=0x0
+[   15.443802] ane_h16 400000000.ane: h17-order seq=14 write engine off=0xc width=4 val=0x800c000d
+[   15.443804] ane_h16 400000000.ane: h17-order seq=15 read engine off=0x10 width=4 val=0x0
+[   15.443807] ane_h16 400000000.ane: h17-order seq=16 write engine off=0x10 width=4 val=0x80000003
+[   15.443809] ane_h16 400000000.ane: h17-order seq=17 read engine off=0x14 width=4 val=0x0
+[   15.443811] ane_h16 400000000.ane: h17-order seq=18 write engine off=0x14 width=4 val=0x80000003
+[   15.443813] ane_h16 400000000.ane: h17-order seq=19 read engine off=0x18 width=4 val=0x0
+[   15.443815] ane_h16 400000000.ane: h17-order seq=20 write engine off=0x18 width=4 val=0x80000013
+[   15.443817] ane_h16 400000000.ane: h17-order seq=21 read engine off=0x1c width=4 val=0x0
+[   15.443819] ane_h16 400000000.ane: h17-order seq=22 write engine off=0x1c width=4 val=0x80000020
+[   15.443821] ane_h16 400000000.ane: h17-order seq=23 read engine off=0x20 width=4 val=0x0
+[   15.443823] ane_h16 400000000.ane: h17-order seq=24 write engine off=0x20 width=4 val=0x8012000c
+[   15.443825] ane_h16 400000000.ane: h17-order seq=25 read engine off=0x24 width=4 val=0x0
+[   15.443827] ane_h16 400000000.ane: h17-order seq=26 write engine off=0x24 width=4 val=0x80180006
+[   15.443829] ane_h16 400000000.ane: h17-order seq=27 read engine off=0x28 width=4 val=0x0
+[   15.443831] ane_h16 400000000.ane: h17-order seq=28 write engine off=0x28 width=4 val=0x80070003
+[   15.443833] ane_h16 400000000.ane: h17-order seq=29 read engine off=0x2c width=4 val=0x0
+[   15.443836] ane_h16 400000000.ane: h17-order seq=30 write engine off=0x2c width=4 val=0x80070003
+[   15.443837] ane_h16 400000000.ane: h17-order seq=31 read engine off=0x30 width=4 val=0x0
+[   15.443840] ane_h16 400000000.ane: h17-order seq=32 write engine off=0x30 width=4 val=0x80000015
+[   15.443841] ane_h16 400000000.ane: h17-order seq=33 read engine off=0x34 width=4 val=0x0
+[   15.443844] ane_h16 400000000.ane: h17-order seq=34 write engine off=0x34 width=4 val=0x80000011
+[   15.443845] ane_h16 400000000.ane: h17-order seq=35 read engine off=0x38 width=4 val=0x0
+[   15.443848] ane_h16 400000000.ane: h17-order seq=36 write engine off=0x38 width=4 val=0x80000011
+[   15.443849] ane_h16 400000000.ane: h17-order seq=37 read engine off=0x100 width=4 val=0x0
+[   15.443852] ane_h16 400000000.ane: h17-order seq=38 write engine off=0x100 width=4 val=0xff
+[   15.443854] ane_h16 400000000.ane: h17-order seq=39 read engine off=0x108 width=4 val=0x0
+[   15.443856] ane_h16 400000000.ane: h17-order seq=40 write engine off=0x108 width=4 val=0x413b0
+[   15.443858] ane_h16 400000000.ane: h17-order seq=41 read engine off=0x304 width=4 val=0x0
+[   15.443860] ane_h16 400000000.ane: h17-order seq=42 write engine off=0x304 width=4 val=0x2020000
+[   15.443862] ane_h16 400000000.ane: h17-order seq=43 read engine off=0x314 width=4 val=0x0
+[   15.443864] ane_h16 400000000.ane: h17-order seq=44 write engine off=0x314 width=4 val=0xc0000140
+[   15.443866] ane_h16 400000000.ane: h17-order seq=45 read engine off=0x31c width=4 val=0x0
+[   15.443868] ane_h16 400000000.ane: h17-order seq=46 write engine off=0x31c width=4 val=0xc00005a0
+[   15.443870] ane_h16 400000000.ane: h17-order seq=47 read engine off=0x324 width=4 val=0x0
+[   15.443872] ane_h16 400000000.ane: h17-order seq=48 write engine off=0x324 width=4 val=0xc00005a0
+[   15.443874] ane_h16 400000000.ane: h17-order seq=49 read engine off=0x408 width=4 val=0x0
+[   15.443876] ane_h16 400000000.ane: h17-order seq=50 write engine off=0x408 width=4 val=0x120031
+[   15.443878] ane_h16 400000000.ane: h17-order seq=51 read engine off=0x700 width=4 val=0x0
+[   15.443880] ane_h16 400000000.ane: h17-order seq=52 write engine off=0x700 width=4 val=0x400
+[   15.443882] ane_h16 400000000.ane: h17-order seq=53 read engine off=0x748 width=4 val=0x0
+[   15.443884] ane_h16 400000000.ane: h17-order seq=54 write engine off=0x748 width=4 val=0x200030
+[   15.443886] ane_h16 400000000.ane: h17-order seq=55 read engine off=0x800 width=4 val=0x0
+[   15.443888] ane_h16 400000000.ane: h17-order seq=56 write engine off=0x800 width=4 val=0x400
+[   15.443890] ane_h16 400000000.ane: h17-order seq=57 read engine off=0x848 width=4 val=0x0
+[   15.443892] ane_h16 400000000.ane: h17-order seq=58 write engine off=0x848 width=4 val=0x100030
+[   15.443894] ane_h16 400000000.ane: h17-order seq=59 read engine off=0x900 width=4 val=0x0
+[   15.443896] ane_h16 400000000.ane: h17-order seq=60 write engine off=0x900 width=4 val=0x400
+[   15.443898] ane_h16 400000000.ane: h17-order seq=61 read engine off=0x948 width=4 val=0x0
+[   15.443900] ane_h16 400000000.ane: h17-order seq=62 write engine off=0x948 width=4 val=0x1000100
+[   15.443902] ane_h16 400000000.ane: h17-order seq=63 read engine off=0xb00 width=4 val=0x0
+[   15.443905] ane_h16 400000000.ane: h17-order seq=64 write engine off=0xb00 width=4 val=0x7fffffff
+[   15.443907] ane_h16 400000000.ane: h17-order seq=65 read engine off=0xb04 width=4 val=0x0
+[   15.443909] ane_h16 400000000.ane: h17-order seq=66 write engine off=0xb04 width=4 val=0x101
+[   15.443911] ane_h16 400000000.ane: h17-order seq=67 read engine off=0x4008 width=4 val=0x0
+[   15.443913] ane_h16 400000000.ane: h17-order seq=68 write engine off=0x4008 width=4 val=0x0
+[   15.443915] ane_h16 400000000.ane: h17-order seq=69 read engine off=0x400c width=4 val=0x0
+[   15.443917] ane_h16 400000000.ane: h17-order seq=70 write engine off=0x400c width=4 val=0x0
+[   15.443919] ane_h16 400000000.ane: h17-order seq=71 read engine off=0x4014 width=4 val=0x0
+[   15.443921] ane_h16 400000000.ane: h17-order seq=72 write engine off=0x4014 width=4 val=0x0
+[   15.443923] ane_h16 400000000.ane: h17-order seq=73 read engine off=0x4018 width=4 val=0x0
+[   15.443925] ane_h16 400000000.ane: h17-order seq=74 write engine off=0x4018 width=4 val=0x0
+[   15.443927] ane_h16 400000000.ane: h17-order seq=75 read engine off=0x401c width=4 val=0x0
+[   15.443929] ane_h16 400000000.ane: h17-order seq=76 write engine off=0x401c width=4 val=0x1
+[   15.443938] ane_h16 400000000.ane: h17-order seq=77 read engine off=0x338 width=4 val=0x0
+[   15.443939] ane_h16 400000000.ane: h17-order seq=78 write engine off=0x338 width=4 val=0x50020
+[   15.443941] ane_h16 400000000.ane: h17-order seq=79 read engine off=0x33c width=4 val=0x0
+[   15.443943] ane_h16 400000000.ane: h17-order seq=80 write engine off=0x33c width=4 val=0xa0030
+[   15.443945] ane_h16 400000000.ane: h17-order seq=81 write ps off=0xc000 width=4 val=0xf
+[   15.443949] ane_h16 400000000.ane: h17-order seq=82 read ps off=0xc000 width=4 val=0x0
+[   15.443952] ane_h16 400000000.ane: h17-order seq=83 write pwgate off=0x268c width=4 val=0x0
+[   15.443954] ane_h16 400000000.ane: h17-order seq=84 read pwgate off=0x268c width=4 val=0x0
+[   15.443957] ane_h16 400000000.ane: h17-order seq=85 write ps off=0xc000 width=4 val=0x1000000f
+[   15.443960] ane_h16 400000000.ane: h17-order seq=86 read ps off=0xc000 width=4 val=0x0
+[   15.443963] ane_h16 400000000.ane: h17-order seq=87 write ps off=0xc008 width=4 val=0xf
+[   15.443965] ane_h16 400000000.ane: h17-order seq=88 read ps off=0xc008 width=4 val=0x0
+[   15.463606] ane_h16 400000000.ane: staged image accepted_diff_bytes=2065 sha256=10d97ffe304993666e9e685ab34bf7cc347257a9a41d1429daffb7cd5cef4e65
+[   15.464610] ane_h16 400000000.ane: staged image (3504 KiB) mapped at iova 0x10000000000 (TEXT) and 0x100000c0000 (DATA)
+[   15.464613] ane_h16 400000000.ane: RVBAR latched at the staged entry 0x10000000000
+[   15.469938] ane_h16 400000000.ane: SCRATCH7 wake word 0x8042006: firmware is running (CPU_STATUS 0x6c)
+[   15.469941] ane_h16 400000000.ane: H17 IRQ_STATUS off=0x188c000 value=0x00000000 (single read-only post-wake snapshot; ack register untouched)
+[   15.469943] ane_h16 400000000.ane: H17 post-wake RTKit management poll skipped: H16 mailbox offset is unqualified; RESULT covers wake only
+[   15.469943] ane_h16 400000000.ane: ane_h16 RESULT stage=3 soc=t8140 verdict=PASS reason=boot-wake
+[   15.469952] ane_h16 400000000.ane: CPU release attempted: boot_error=0; retaining binding, mappings and power; do NOT unload; reboot required
+[   15.509243] apple_sep 282600000.sep: discover: endpoint 0x08 (type 0, msg0 0x7362696f080000fd); 8 known
+[   15.509252] apple_sep 282600000.sep: discover: endpoint 0x08 (type 1, msg0 0x01010101080100fd); 8 known
+[   15.518053] apple_sep 282600000.sep: discover: endpoint 0x17 (type 0, msg0 0x736b646c170000fd); 9 known
+[   15.518058] apple_sep 282600000.sep: discover: endpoint 0x17 (type 1, msg0 0x01010101170100fd); 9 known
+[   15.518270] apple_sep 282600000.sep: discover: endpoint 0x0c (type 0, msg0 0x737365200c0000fd); 10 known
+[   15.518278] apple_sep 282600000.sep: discover: endpoint 0x0c (type 1, msg0 0x010101010c0100fd); 10 known
+[   15.519143] apple_sep 282600000.sep: discover: endpoint 0x0a (type 0, msg0 0x736372640a0000fd); 11 known
+[   15.519146] apple_sep 282600000.sep: discover: endpoint 0x0a (type 1, msg0 0x010101010a0100fd); 11 known
+[   15.597898] apple_sep 282600000.sep: discover: endpoint 0x12 (type 0, msg0 0x736b7320120000fd); 12 known
+[   15.597904] apple_sep 282600000.sep: discover: endpoint 0x12 (type 1, msg0 0x02010201120100fd); 12 known
+[   16.156618] apple-mesa spi1.0: sep sensor: CS timing 20 ns programmed in hardware
+[   16.156914] apple-mesa spi1.0: sep sensor: power from SMC key pcLD (2 rails)
+[   16.157475] apple-mesa spi1.0: sep sensor: bound, 8000000 Hz, mode 2 (CPOL=1 CPHA=0)
+[   16.157532] apple_sep: apple_sep: sensor node present in the device tree; enabling it and its SPI bus
+[   16.157536] apple_sep 282600000.sep: sensor: power via the sensor node's SMC-switched rails (apple,smc-power-key)
+[   16.158406] apple_sep 282600000.sep: sbio: communication initialization accepted
+[   16.173820] apple_sep 282600000.sep: sks: LOAD_KEYBAG reply mailbox status 0, response size 84, copied 84 bytes
+[   16.193826] apple_sep 282600000.sep: sbio: identity count 0 before the cold-match preparation
+[   16.197170] apple_sep 282600000.sep: sks: snapshot identity bound to recovered and designated bag; generated lookup false
+[   16.223492] apple_sep 282600000.sep: scrd: cold-match credential established true
+[   16.223523] apple_sep 282600000.sep: sbio: pre-restore special unlock true, SCRD match context true
+[   16.224718] apple_sep 282600000.sep: sbio: master catacomb LOAD_CATACOMB answered status 0 with post-load state Some(3)
+[   16.224728] apple_sep 282600000.sep: sbio: restore master catacomb state Some(1) outcome Restored
+[   16.225909] apple_sep 282600000.sep: sbio: owner catacomb LOAD_CATACOMB answered status 0 with post-load state Some(3)
+[   16.225914] apple_sep 282600000.sep: sbio: restore owner catacomb state Some(1) outcome Restored
+[   16.232021] apple_sep 282600000.sep: sbio: user catacomb LOAD_CATACOMB answered status 0 with post-load state Some(3)
+[   16.232031] apple_sep 282600000.sep: sbio: restore user catacomb state Some(1) outcome Restored
+[   16.232427] apple_sep 282600000.sep: sbio: restore lockout outcome EmptyTolerated
+[   16.232431] apple_sep 282600000.sep: sbio: cold-match preparation true, component restore true
+[   16.245955] apple_sep 282600000.sep: scrd: cold-match credential established true
+[   16.246015] apple_sep 282600000.sep: sbio: identity count 1 after Catacomb restore with sensor registered
+[   16.246020] apple_sep 282600000.sep: sbio: cold restore candidate ready; waiting for device-view proof
+[   16.266040] apple_sep 282600000.sep: sbio: registering sensor at bring-up stage 0
+[   16.292214] apple_sep 282600000.sep: sbio: identity count 1 after sensor serial registration
+[   16.354615] apple_sep 282600000.sep: hwrng: registered after ready-phase survey (attempt 1)
+[   16.436471] apple_sep 282600000.sep: sbio: identity count 1 after device-view synchronisation
+[   16.436477] apple_sep 282600000.sep: sbio: device-view identity count Some(1), restore-ready before proof false
+[   16.436566] apple_sep 282600000.sep: Touch ID: restored 1 enrolled identity/identities; enrolment survived reboot
+[   16.436569] apple_sep 282600000.sep: sbio: restore-ready after device-view proof true
+[   16.436693] apple-mesa spi1.0: sep sensor: data-ready IRQ 116 configured for interrupt capture
+[   16.436694] apple_sep 282600000.sep: sensor: interrupt-driven capture
+[   16.450089] apple_sep 282600000.sep: scrd: cold-match credential established true
+[   17.415128] Bluetooth: RFCOMM TTY layer initialized
+[   17.415134] Bluetooth: RFCOMM socket layer initialized
+[   17.415138] Bluetooth: RFCOMM ver 1.11
+[   36.401093] usb 1-1.2.6: reset high-speed USB device number 6 using xhci-hcd
+[   57.396101] usb 1-1.2.6: reset high-speed USB device number 6 using xhci-hcd

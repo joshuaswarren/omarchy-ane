@@ -100,6 +100,29 @@ for name in (cap, other):
     with open(os.path.join(repo, name), "w") as f:
         f.write("clean\n")
 commit(repo)
+# frozen captured evidence: a listed file may keep its recorded count and may not gain any
+# (the override must sit before the checker's main guard, or sys.exit swallows it)
+with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py")) as f:
+    body = f.read()
+override = ("ALLOWED.add('receipts/2026-10-30-j700-h17-frozen/README.md')\n"
+            "CAPTURED_H17_COUNTS.update({'receipts/2026-10-30-j700-h17-frozen/README.md': 1})\n")
+assert body.count('if __name__ == "__main__":') == 1
+body = body.replace('if __name__ == "__main__":', override + 'if __name__ == "__main__":')
+with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py"), "w") as f:
+    f.write(body)
+frozen = "receipts/2026-10-30-j700-h17-frozen/README.md"
+os.makedirs(os.path.dirname(os.path.join(repo, frozen)), exist_ok=True)
+with open(os.path.join(repo, frozen), "w") as f:
+    f.write(line)
+commit(repo)
+expect("frozen captured file at its recorded count passes", run(repo), 0, "ok")
+with open(os.path.join(repo, frozen), "a") as f:
+    f.write(line)
+commit(repo)
+expect("frozen captured file that gains a match fails", run(repo), 1, "grew past")
+with open(os.path.join(repo, frozen), "w") as f:
+    f.write("clean\n")
+commit(repo)
 # baseline: an existing offender may keep its count, not gain
 with open(os.path.join(repo, "old.md"), "w") as f:
     f.write(BANNED["kernel address"][0] + "ordinary line\n")

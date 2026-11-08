@@ -1,0 +1,116 @@
+============================================================================================================
+AppleT8140ANEHAL tunable tables  (kernelcache /var/tmp/neo/kernelcache.bin)
+image fixup base = 0xfffffe0007004000   engine aperture base = 0x400000000
+============================================================================================================
+
+TABLE A  af_aneaxi2af default  (UNCONDITIONAL)
+  file 0x01137af0  VA 0xfffffe000813baf0  entries=35  NULL terminator at slot 35 (file 0x01137c08)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137af0 0x011378b8 0x0061c3c0  4      0x00000000  0x800000ff   -      0x8000001b
+  01  0x01137af8 0x011378c4 0x0061c3d0  4      0x00000004  0x80ff00ff   -      0x800c000d
+  02  0x01137b00 0x011378d0 0x0061c3d0  4      0x00000008  0x80ff00ff   -      0x800c000d
+  03  0x01137b08 0x011378dc 0x0061c3d0  4      0x0000000c  0x80ff00ff   -      0x800c000d
+  04  0x01137b10 0x011378e8 0x0061c3e0  4      0x00000010  0x80ff00ff   -      0x80000003
+  05  0x01137b18 0x011378f4 0x0061c3e0  4      0x00000014  0x80ff00ff   -      0x80000003
+  06  0x01137b20 0x01137900 0x0061c3f0  4      0x00000018  0x800000ff   -      0x80000013
+  07  0x01137b28 0x0113790c 0x0061c400  4      0x0000001c  0x800000ff   -      0x80000020
+  08  0x01137b30 0x01137918 0x0061c410  4      0x00000020  0x80ff00ff   -      0x8012000c
+  09  0x01137b38 0x01137924 0x0061c420  4      0x00000024  0x80ff00ff   -      0x80180006
+  10  0x01137b40 0x01137930 0x0061c430  4      0x00000028  0x80ff00ff   -      0x80070003
+  11  0x01137b48 0x0113793c 0x0061c430  4      0x0000002c  0x80ff00ff   -      0x80070003
+  12  0x01137b50 0x01137948 0x0061c440  4      0x00000030  0x800000ff   -      0x80000015
+  13  0x01137b58 0x01137954 0x0061c450  4      0x00000034  0x800000ff   -      0x80000011
+  14  0x01137b60 0x01137960 0x0061c450  4      0x00000038  0x800000ff   -      0x80000011
+  15  0x01137b68 0x0113796c 0x0061c460  4      0x00000100  0x000000ff   -      0x000000ff
+  16  0x01137b70 0x01137978 0x0061c470  4      0x00000108  0x00000006   -      0x00000000
+  17  0x01137b78 0x01137984 0x0061c480  4      0x00000304  0x3f3f0000   -      0x02020000
+  18  0x01137b80 0x01137990 0x0061c490  4      0x00000314  0x80000000   -      0x80000000
+  19  0x01137b88 0x0113799c 0x0061c490  4      0x0000031c  0x80000000   -      0x80000000
+  20  0x01137b90 0x011379a8 0x0061c490  4      0x00000324  0x80000000   -      0x80000000
+  21  0x01137b98 0x011379b4 0x0061c4a0  4      0x00000408  0xffff0020   -      0x00120020
+  22  0x01137ba0 0x011379c0 0x0061c4b0  4      0x00000700  0x00000400   -      0x00000400
+  23  0x01137ba8 0x011379cc 0x0061c4c0  4      0x00000748  0x07ff07ff   -      0x00200030
+  24  0x01137bb0 0x011379d8 0x0061c4b0  4      0x00000800  0x00000400   -      0x00000400
+  25  0x01137bb8 0x011379e4 0x0061c4d0  4      0x00000848  0x07ff07ff   -      0x00100030
+  26  0x01137bc0 0x011379f0 0x0061c4b0  4      0x00000900  0x00000400   -      0x00000400
+  27  0x01137bc8 0x011379fc 0x0061c4e0  4      0x00000948  0x07ff07ff   -      0x01000100
+  28  0x01137bd0 0x01137a08 0x0061c4f0  4      0x00000b00  0xffffffff   -      0x7fffffff
+  29  0x01137bd8 0x01137a14 0x0061c500  4      0x00000b04  0x00000100   -      0x00000100
+  30  0x01137be0 0x01137a20 0x0061c510  4      0x00004008  0x00000001   -      0x00000000
+  31  0x01137be8 0x01137a2c 0x0061c510  4      0x0000400c  0x00000001   -      0x00000000
+  32  0x01137bf0 0x01137a38 0x0061c510  4      0x00004014  0x00000001   -      0x00000000
+  33  0x01137bf8 0x01137a44 0x0061c510  4      0x00004018  0x00000001   -      0x00000000
+  34  0x01137c00 0x01137a50 0x0061c520  4      0x0000401c  0x00000001   -      0x00000001
+
+TABLE B  af_aneaxi2af default#2 (m+8==0 && m+32==0 && m+33==0)
+  file 0x01137c10  VA 0xfffffe000813bc10  entries=2  NULL terminator at slot 2 (file 0x01137c20)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137c10 0x01137ad4 0x0061c530  4      0x00000338  0xffffffff   -      0x00050020
+  01  0x01137c18 0x01137ae0 0x0061c540  4      0x0000033c  0xffffffff   -      0x000a0030
+
+TABLE C  af_aneaxi2af lock      (m+8==1 && m+32==0 && m+33==1)
+  file 0x01137c28  VA 0xfffffe000813bc28  entries=5  NULL terminator at slot 5 (file 0x01137c50)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137c28 0x01137a68 0x0061c520  4      0x00000dfc  0x00000001   -      0x00000001
+  01  0x01137c30 0x01137a80 0x0061c520  4      0x00000efc  0x00000001   -      0x00000001
+  02  0x01137c38 0x01137a98 0x0061c520  4      0x00000ffc  0x00000001   -      0x00000001
+  03  0x01137c40 0x01137ab0 0x0061c520  4      0x000010fc  0x00000001   -      0x00000001
+  04  0x01137c48 0x01137ac8 0x0061c520  4      0x000011fc  0x00000001   -      0x00000001
+
+TABLE D  af_aneaxi2af wr_dis    (m+8==1 && m+32==0 && m+33==1)
+  file 0x01137c58  VA 0xfffffe000813bc58  entries=5  NULL terminator at slot 5 (file 0x01137c80)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137c58 0x01137a5c 0x0061c520  4      0x00000df8  0x00000001   -      0x00000001
+  01  0x01137c60 0x01137a74 0x0061c520  4      0x00000ef8  0x00000001   -      0x00000001
+  02  0x01137c68 0x01137a8c 0x0061c520  4      0x00000ff8  0x00000001   -      0x00000001
+  03  0x01137c70 0x01137aa4 0x0061c520  4      0x000010f8  0x00000001   -      0x00000001
+  04  0x01137c78 0x01137abc 0x0061c520  4      0x000011f8  0x00000001   -      0x00000001
+
+TABLE E  c1ppt default          (boot-arg pmgr-c1ppt)
+  file 0x01137e50  VA 0xfffffe000813be50  entries=8  NULL terminator at slot 8 (file 0x01137e90)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137e50 0x01137d30 0x0061c620  4      0x00000020  0x0000ffff   -      0x00001068
+  01  0x01137e58 0x01137d3c 0x0061c630  4      0x00000024  0x0000ffff   -      0x00000c4c
+  02  0x01137e60 0x01137d48 0x0061c640  4      0x00000028  0xffffffff   -      0x00000000
+  03  0x01137e68 0x01137d54 0x0061c650  4      0x0000002c  0x000000ff   -      0x00000003
+  04  0x01137e70 0x01137cc4 0x0061c5a0  4      0x00000040  0x000003ff   -      0x000000bf
+  05  0x01137e78 0x01137d60 0x0061c660  4      0x00000044  0x000003ff   -      0x0000019a
+  06  0x01137e80 0x01137d6c 0x0061c670  4      0x00000048  0x0001ffff   -      0x00000000
+  07  0x01137e88 0x01137ce8 0x0061c5d0  4      0x00000060  0x00001f1f   -      0x00000103
+
+TABLE F  c1ppt c1ppt_enable m+8==0 (boot-arg pmgr-c1ppt)
+  file 0x01137e30  VA 0xfffffe000813be30  entries=1  NULL terminator at slot 1 (file 0x01137e38)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137e30 0x01137d24 0x0061c610  4      0x00000004  0x00000003   -      0x00000000
+
+TABLE I  c1ppt c1ppt_enable m+8==1 (boot-arg pmgr-c1ppt)
+  file 0x01137e40  VA 0xfffffe000813be40  entries=1  NULL terminator at slot 1 (file 0x01137e48)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137e40 0x01137d78 0x0061c680  4      0x00000004  0x00000003   -      0x00000001
+
+TABLE G  c1ppt lock             (boot-arg pmgr-c1ppt)
+  file 0x01137e10  VA 0xfffffe000813be10  entries=1  NULL terminator at slot 1 (file 0x01137e18)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137e10 0x01137d0c 0x0061c520  4      0x00003ffc  0x00000001   -      0x00000001
+
+TABLE H  c1ppt wr_dis           (boot-arg pmgr-c1ppt)
+  file 0x01137e20  VA 0xfffffe000813be20  entries=1  NULL terminator at slot 1 (file 0x01137e28)
+  #   slot       desc       payload   width  offset      mask        cb     value      
+  00  0x01137e20 0x01137d00 0x0061c5f0  4      0x00003ff0  0x007fffff   -      0x0077ebf9
+
+============================================================================================================
+SELF-CHECK
+============================================================================================================
+1. total descriptors decoded ............ 59
+   per table ............................ A=35, B=2, C=5, D=5, E=8, F=1, I=1, G=1, H=1
+2. widths seen .......................... [4]  OK
+3. every engine offset < 0x2000000 ...... OK
+4. width-4 offsets 4-byte aligned ....... OK
+5. no offset equals a kernelcache file offset (0x11378b8 / 0x1137ad4) ............... OK
+6. no offset lands in the table file range 0x1137ae8-0x1137e90 ... OK
+7. every payload pointer resolves in image ... OK
+8. table extents: each walk ended on an 8-byte NULL slot, so the entry
+   count equals the extent: A 35@0x1137af0, B 2@0x1137c10, C 5@0x1137c28, D 5@0x1137c58, E 8@0x1137e50, F 1@0x1137e30, I 1@0x1137e40, G 1@0x1137e10, H 1@0x1137e20
+9. duplicate (base,offset) among simultaneously-applied tables ... F and I both target 0x197c004 but are mutually exclusive (module[+8]==0 vs ==1), so no double write can occur
+
+RESULT: ALL CHECKS PASS

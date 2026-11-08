@@ -1,0 +1,37 @@
+=== apple-order run at uptime 1336s ===
+domains raised ps_cpu=0x1f0003ff actual=0xf (B1/B2 clock+power votes NOT done)
+C5 read CE_A(0x18a4000)
+C5 CE_A was 0x0, writing 0x3
+C5 CE_A now 0x3
+C6 read CE_B(0x18a4008) = 0x3
+D1 PS 0xc000 := 0xf
+D2 0xc000=0xf0003ff
+D4 PWGATE 0x268c := 0
+D5 0x268c=0x0
+D6 PS 0xc000 := 0x1000000f
+D7 0xc000=0x1f0003ff
+E1 PS 0xc008 := 0xf
+E1 0xc008=0x3ff
+G1 SCRATCH0 := 0 (was 0x0)
+G2 SCRATCH1 := 0 (was 0x0)
+G3 SCRATCH2 := 0 (was 0x0)
+G4 SCRATCH3 := 0 (was 0x0)
+G5 SCRATCH4 := 0 (was 0x0)
+G6 SCRATCH5 := 0 (was 0x0)
+G7 SCRATCH6 := 0 (was 0x0)
+G8 SCRATCH7 := 0 (was 0x0)
+G9 SCRATCH6 := 1
+G9 SCRATCH6 now 0x1
+G10 SCRATCH7 := 1, now 0x0
+G11 SCRATCH7 := 0, now 0x0
+G13 RVBAR=0x10000000001
+G14 RVBAR := 0x81010000000001
+G14 RVBAR now 0x10000000001
+G16 CPU_CONTROL := 0
+G16 now 0x0 status 0x6a
+G17 CPU_CONTROL := 0x10
+G17 now 0x10 status 0x68
+sequence complete, status 0x68
+poll 0 status=0x68 sc7=0x0 a2i=0x20001 i2a=0x20001 ctrl=0x10
+observation done status=0x68 sc7=0x0 a2i=0x20001 i2a=0x20001
+released
