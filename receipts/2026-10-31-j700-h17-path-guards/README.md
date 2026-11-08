@@ -4,7 +4,7 @@ Offline continuation from `4253458`, with no hardware experiment. The exact
 compiled-artifact source is kernelcache SHA-256
 `7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe`.
 Symbol addresses and observations are recorded under `pathObservations` in
-`data/ane-soc/t8140-stage4.json`. No disassembly or binary is distributed.
+`data/h17/t8140-stage4.json`. No disassembly or binary is distributed.
 
 ## 1. Window binding: provider identity comes before index arithmetic
 

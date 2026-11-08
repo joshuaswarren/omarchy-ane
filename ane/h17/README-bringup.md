@@ -83,7 +83,7 @@ execution or the meaning of the patched values.
 
 ### Offline stage-4 planning (not hardware permission)
 
-The symbol-backed evidence ledger is `data/ane-soc/t8140-stage4.json`.
+The symbol-backed evidence ledger is `data/h17/t8140-stage4.json`.
 Check it without touching the device:
 
 ```sh

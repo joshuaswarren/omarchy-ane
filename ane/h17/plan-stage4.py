@@ -100,7 +100,7 @@ def hash_artifact(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--evidence", type=Path, default=Path(__file__).resolve().parents[2] / "data/ane-soc/t8140-stage4.json")
+    parser.add_argument("--evidence", type=Path, default=Path(__file__).resolve().parents[2] / "data/h17/t8140-stage4.json")
     parser.add_argument("--artifact", type=Path, help="optional retained file to hash; no device paths")
     args = parser.parse_args()
     try:

@@ -4,7 +4,7 @@ Offline continuation from `b0a0463`. No live device-tree/sysfs inspection,
 MMIO, power transitions, module loads, watchdog operations, or reboot.
 Everything below is compiled-source observation of the retained kernelcache;
 nothing here is device qualification. The evidence ledger is
-`data/ane-soc/t8140-stage4.json` (this commit); the planner stays **BLOCKED**.
+`data/h17/t8140-stage4.json` (this commit); the planner stays **BLOCKED**.
 
 ## Exact evidence identities
 

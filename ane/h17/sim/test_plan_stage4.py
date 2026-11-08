@@ -17,7 +17,7 @@ SCRIPT = ROOT / "ane/h17/plan-stage4.py"
 spec = importlib.util.spec_from_file_location("stage4_plan", SCRIPT)
 plan = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plan)
-BASE = json.loads((ROOT / "data/ane-soc/t8140-stage4.json").read_text())
+BASE = json.loads((ROOT / "data/h17/t8140-stage4.json").read_text())
 
 
 class PlannerTests(unittest.TestCase):

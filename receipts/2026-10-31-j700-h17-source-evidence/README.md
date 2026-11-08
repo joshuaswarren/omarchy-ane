@@ -11,7 +11,7 @@ The retained `/var/tmp/neo/kernelcache.bin` SHA-256 is
 The relationship to old receipts' `9d7dd347…` artifact is **unresolved**;
 do not silently equate the two. Its version string names Darwin
 25.6.0 / `xnu-12377.161.13~4/RELEASE_ARM64_T8140`.
-Full UUIDs and hashes are recorded in `data/ane-soc/t8140-stage4.json`.
+Full UUIDs and hashes are recorded in `data/h17/t8140-stage4.json`.
 Compiled-artifact observations below are tied to that exact SHA-256,
 not an inferred Apple source revision or a device qualification.
 
