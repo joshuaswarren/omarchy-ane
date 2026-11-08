@@ -69,8 +69,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          git config user.name omarchy-ane-automation
-          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          git config --global user.name omarchy-ane-automation
+          git config --global user.email 816217+joshuaswarren@users.noreply.github.com
           # The verdict artifact is the record; propose judges its own source:
           # the live dataset, or the fixture in a test repo only.
           if [ "${{ inputs.synthetic }}" = "true" ]; then
@@ -155,8 +155,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          git config user.name omarchy-ane-automation
-          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          git config --global user.name omarchy-ane-automation
+          git config --global user.email 816217+joshuaswarren@users.noreply.github.com
           tools/asahi-dtbs "$RUNNER_TEMP/asahi"
           export PATH="$RUNNER_TEMP/asahi/bin:$PATH"
           host_suites() {
@@ -167,6 +167,7 @@ jobs:
             python3 tools/test_t8112_kit.py
             ANE_DTBS="$RUNNER_TEMP/asahi/dtbs" python3 tools/test_ane_overlays.py
             python3 tools/test_promotion_check.py
+            python3 tools/test_promotion_identity.py
             python3 tools/test_ane_intree.py
             python3 tools/test_aurora_dt.py
             python3 tools/test_promote_chip.py
@@ -216,8 +217,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          git config user.name omarchy-ane-automation
-          git config user.email 816217+joshuaswarren@users.noreply.github.com
+          git config --global user.name omarchy-ane-automation
+          git config --global user.email 816217+joshuaswarren@users.noreply.github.com
           git pull --rebase -q origin main
           # One release per run, from the tag range: an earlier run can merge
           # one promotion and fail on the next (v0.4.3 shipped that way), and
