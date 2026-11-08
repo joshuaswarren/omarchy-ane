@@ -20,7 +20,7 @@ hardware runs.
 3. **The functional clock enable is a PMP mailbox command**, not an MMIO write.
    the device-clock enable call chains through the PMGR clock-gate call
    function into the PMP mailbox send. The only MMIO clock-path write
-   (`setPSAutoMinLevel`, bits `[19:16]`) is the *auto-gating* function, which the
+   (the auto-min-level setter, bits `[19:16]`) is the *auto-gating* function, which the
    ANE's clock enable does not call. macOS never writes map 0x71 (its accessors
    are dead code). `2026-11-04-j700-h17-clkgen-enable-path`,
    `2026-11-04-j700-h17-clock-pmp-command`.
