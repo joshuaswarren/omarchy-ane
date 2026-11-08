@@ -1,0 +1,15 @@
+kernelcache_sha256=7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+source: aneFirmwareCommandSend at 0xfffffe0008f47f34..0xfffffe0008f47f78
+selector = *(u32 *)(ANEFirmwareCommand + 0x18), bounds checked <=3
+lookup table VA=0xfffffe00073b0180 (4 x u64 device-field offsets)
+selector 0: device offset 0xe208; runtime value is cached channel index
+selector 1: device offset 0xe210; runtime value is cached channel index
+selector 2: device offset 0xe214; runtime value is cached channel index
+selector 3: device offset 0xe214; runtime value is cached channel index
+Observed field labels from README §13.3:
+  selector 0: IO
+  selector 1: DEBUG
+  selector 2: DATA_CHAIN_H2T
+  selector 3: DATA_CHAIN_H2T
+Not a CSNE ID table: this lookup supplies the selected channel index;
+the separately decoded command u16 at command+4 is not mapped here.

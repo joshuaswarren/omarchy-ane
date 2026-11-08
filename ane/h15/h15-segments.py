@@ -9,15 +9,17 @@ maps TEXT at RVBAR & ~1, so the script refuses a dump whose TEXT remap is anothe
 
 ADT.bin must be the live ADT of the SAME boot you will insmod on: iBoot picks the physical addresses when it
 loads the firmware. Whether those addresses repeat from one boot to the next is NOT KNOWN, so do not reuse a
-dump from another boot. Take the dump on that same boot with m1n1's proxyclient device-tree reader, written to
-a local file. Never from macOS.
+dump from another boot. With m1n1's proxyclient attached to that boot, the dump is
+    python3 -c "from m1n1.setup import *; open('adt.bin', 'wb').write(u.get_adt())"
+(proxyutils.get_adt reads devtree at boot_args.devtree). Never from macOS.
 
-The /arm-io/ane node's segment-ranges holds two 32-byte little-endian records {phys, iova offset, remap iova,
-size | flags << 32}. This script walks the ADT without m1n1's python modules, prints the records and the
+The ANE node's segment-ranges holds two 32-byte little-endian records {phys, iova offset, remap iova,
+size | flags << 32}. The node is /arm-io/ane0 in the ADT of a J516C and /arm-io/ane in the M6 ADT the script was first
+checked against; the lookup tries ane0 first. This script walks the ADT without m1n1's python modules, prints the records and the
 fw_seg= argument, and refuses anything that is not exactly two records, a layout where remap != vm-base + offset,
 or a DATA offset that is not the TEXT size (ane_h15 derives both IOVAs from the RVBAR entry and would be wrong).
-Checked against the saved M6 ADT: it prints fw_seg=100014e8000:c4000,100030c4000:2ac000, the segment values recorded for
-that ADT. Nothing is written.
+Checked against the saved M6 ADT: it prints fw_seg=100014e8000:c4000,100030c4000:2ac000, from that ADT. Nothing
+is written.
 """
 import struct
 import sys
@@ -61,7 +63,7 @@ def main():
         root, _ = parse(data)
     except (struct.error, IndexError, UnicodeDecodeError, RecursionError, MemoryError):
         sys.exit('this file is not an ADT dump')
-    ane = find(root, 'arm-io', 'ane') or find(root, 'arm-io', 'ane0')
+    ane = find(root, 'arm-io', 'ane0') or find(root, 'arm-io', 'ane')
     if ane is None:
         sys.exit('no /arm-io/ane node in this ADT')
     seg = ane['props'].get('segment-ranges')

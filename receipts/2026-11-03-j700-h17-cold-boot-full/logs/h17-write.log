@@ -1,0 +1,4 @@
+=== run at uptime 134s cpu0=1 cells=0x1 ===
+domains raised all_on=1
+before RVBAR=0x10000000001 CPU_STATUS=0x30006a CPU_CONTROL=0x0
+write BEGIN CPU_CONTROL(0x1600044) := 0

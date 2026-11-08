@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * J700/T8140 H17 stage 3c, source-only power-domain probe overlay.
+ * Applied only by a manual boot opt-in; never packaged or auto-installed.
+ *
+ * Extends the stage-3 overlay with the ANE sub-domain pwrstate nodes the
+ * stage-3b PMGR read found at 0xc000/0xc008/0xc010 (all ACTUAL=0,
+ * WAS_GATED=0x3). They are registered as genpds chained off the existing
+ * ps_ane_sys provider, so a later probe can raise them through the pmgr
+ * driver (TARGET write + ACTUAL poll) instead of a raw ps-word write.
+ *
+ * Offsets are engine-window PMGR words; the CPU/MPM/TD role of each is
+ * NOT yet assigned, so the nodes are named sub0/sub1/sub2. 0xc018 is
+ * omitted because stage 3b read it as all-zero (likely unused on T8140).
+ *
+ * It does not enable the ANE engine node or any DART node. The vote
+ * consumer is a separate synthetic node; nothing votes it until a module
+ * binds.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h17-ps-probe";
+
+	fragment@0 {
+		target-path = "/soc/power-management@300700000/power-controller@290";
+		ps_ane_sys: __overlay__ {
+			#power-domain-cells = <0>;
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@300700000";
+		__overlay__ {
+			ps_ane_sub0: power-controller@c000 {
+				compatible = "apple,t8140-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_sub0";
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ps_ane_sub1: power-controller@c008 {
+				compatible = "apple,t8140-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_sub1";
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ps_ane_sub2: power-controller@c010 {
+				compatible = "apple,t8140-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_sub2";
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc";
+		__overlay__ {
+			ane-h17-ps-probe {
+				compatible = "omarchy,t8140-ane-ps-probe";
+				power-domains = <&ps_ane_sys>;
+				status = "okay";
+			};
+
+			ane-h17-cpu-vote {
+				compatible = "omarchy,t8140-ane-cpu-vote";
+				power-domains = <&ps_ane_sub0>, <&ps_ane_sub1>, <&ps_ane_sub2>;
+				status = "okay";
+			};
+		};
+	};
+};

@@ -1,0 +1,40 @@
+{
+  "firmware_sha256": "32ce2ba5af65742d68e703db66430ca15e0132af7ca5e59ec9b743d7e9ca3f0c",
+  "checked_instruction_anchors": 35,
+  "capstone_version": "5.0.7",
+  "rung1_prediction": {
+    "dm": "0x3ffffbc0000",
+    "ipc": "0x3ffffbb0000",
+    "ipc_cpu_alias": "0xfffbb0000",
+    "ipc_bytes": "0xc441",
+    "logical_ipc_alias_fits_low32": false,
+    "table_cpu_alias": "0xfffbb0000",
+    "channel0_full_pointer": "0x3ffffbb0800",
+    "channel0_narrowed_pointer": "0xffbb0800",
+    "channel0_store_operands": [
+      "0xffbb0808",
+      "0xffbb0800"
+    ],
+    "reconstructed_reply": "0x3ffffbb0000",
+    "alias_survives_narrowing": false,
+    "reply_equals_original_table": true
+  },
+  "arithmetic_only_compatible_example": {
+    "dm": "0x10000300000",
+    "ipc": "0x10000400000",
+    "ipc_cpu_alias": "0x400000",
+    "ipc_bytes": "0xc441",
+    "logical_ipc_alias_fits_low32": true,
+    "table_cpu_alias": "0x400000",
+    "channel0_full_pointer": "0x10000400800",
+    "channel0_narrowed_pointer": "0x400800",
+    "channel0_store_operands": [
+      "0x400808",
+      "0x400800"
+    ],
+    "reconstructed_reply": "0x10000400000",
+    "alias_survives_narrowing": true,
+    "reply_equals_original_table": true
+  },
+  "hardware_qualification": false
+}

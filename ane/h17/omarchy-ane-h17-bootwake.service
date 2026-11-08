@@ -1,0 +1,13 @@
+[Unit]
+Description=One-time J700 H17 boot-wake + post-wake IRQ-status and SCRATCH0..7 snapshot rungs (irq_read=1 scratch_read=1, hello_wait_ms=1000)
+After=multi-user.target
+ConditionPathExists=/var/lib/omarchy-ane/h17-bootwake.pending
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/rm -f /var/lib/omarchy-ane/h17-bootwake.pending
+ExecStart=/usr/bin/bash /var/lib/omarchy-ane/ane/h17/run-bootwake.sh
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

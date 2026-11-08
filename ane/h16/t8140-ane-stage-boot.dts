@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * J700/T8140 H17 stage=boot OPT-IN overlay, for ane_h16 (apple,t8140-ane).
+ * Applied only by a manual boot opt-in; never packaged or auto-installed.
+ *
+ * Extends omarchy-ane-h17-ps-probe (which must be applied first, and must be
+ * opted in first): it enables the ANE engine node and gives it the second
+ * "pmgr" reg window the driver maps by name, chains the CPU-island sub-domains
+ * onto the ANE, and enables the three ANE DARTs so ane_h16 stage=boot can
+ * iommu_map the staged firmware.
+ *
+ * The overlay FILE name must sort after omarchy-ane-h17-ps-probe so its
+ * &ps_ane_sys / &ps_ane_sub* label references resolve (dtb_overlays_list
+ * applies in C order of PREFIX/NAME). Name it
+ * omarchy-ane-h17-stage-boot.dtbo under dtb-overlays/t8140/.
+ *
+ * Phandles are never hardcoded: the labels come from the ps-probe overlay.
+ * 0xc018 is intentionally absent (all-zero on T8140).
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h16-experimental";
+
+	fragment@0 {
+		target-path = "/soc/ane@400000000";
+		h17_ane: __overlay__ {
+			reg-names = "engine", "pmgr", "pwgate";
+			reg = <0x4 0x00000000 0x0 0x2000000>,
+			      <0x3 0x00700000 0x0 0x14000>,
+			      /* kext "PWGATE" provider window (receipt §2) */
+			      <0x3 0x00724000 0x0 0x4000>;
+			power-domains = <&ps_ane_sys &ps_ane_sub0 &ps_ane_sub1 &ps_ane_sub2>;
+			apple,ane-type = <0x200>;
+			memory-region = <&h17_fw_alias_iova &h17_chan_alias_iova>;
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/iommu@401800000";
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/iommu@401820000";
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/iommu@401840000";
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	/* No reg property: this reserves only IOVA space, not physical RAM.
+	 * The DMA allocator must not allocate over the fixed firmware aliases.
+	 * The loader verifies IOMMU_RESV_RESERVED coverage before allocation.
+	 */
+	fragment@4 {
+		target-path = "/reserved-memory";
+		__overlay__ {
+			h17_fw_alias_iova: ane-fw-alias-iova {
+				iommu-addresses = <&h17_ane 0x100 0x0 0x0 0x380000>;
+			};
+			/* Host design (c4c43d3): DM 0x40000, IPC 0x10000,
+			 * HEAP 0xf00000, directly after the FWIM alias.
+			 * IOVA reservation only; no physical RAM ownership claim.
+			 */
+			h17_chan_alias_iova: ane-chan-alias-iova {
+				iommu-addresses = <&h17_ane 0x100 0x380000 0x0 0xf50000>;
+			};
+		};
+	};
+};
