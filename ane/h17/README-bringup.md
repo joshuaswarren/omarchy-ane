@@ -288,9 +288,9 @@ this machine.
 ## Teardown: the missing power-off sequence
 
 Every probe up to and including stage 4 raised the ANE sub-domains through
-genpd and released them with a bare `dev_pm_domain_detach()`. Apple never
-does that: `ANEHWDevice::DisableCPUClocksAndPower` (`0xfffffe0008f2b848`)
-runs a nine-step sequence against the PS word (`PMGR+0xc000`) and the
+genpd and released them with a bare `dev_pm_domain_detach()`. The host driver
+never does that: its power-down entry point runs a nine-step sequence
+against the PS word (`PMGR+0xc000`) and the
 PWGATE window (`0x300724000`, offsets `0x268c`/`0x26b0`). The compiled
 sequence is in
 `receipts/2026-10-31-j700-h17-power-contract/README.md`.

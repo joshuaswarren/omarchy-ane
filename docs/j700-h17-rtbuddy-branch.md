@@ -153,11 +153,11 @@ power-gates = <0x123 0x152>
 
 Linux models none of them: no PMGR clock driver in this tree, no
 `clock-controller@` nodes in `t8140-pmgr.dtsi`, and neither the H16 nor
-the T6021 driver votes clocks. The Apple driver votes them through
-`enableDeviceClock` over the `clock-ids` table.
+the T6021 driver votes clocks. The host driver votes them through
+its device-clock enable call over the `clock-ids` table.
 
 The ID-to-register map is not in the ADT; it lives in
-`AppleH17PPlatformIO`'s `function-clock_gate`. See
+the platform-IO driver's `function-clock_gate`. See
 `receipts/2026-11-03-j700-h17-clock-gap/`.
 
 Any engine read or write should wait for this to be closed: a gated clock

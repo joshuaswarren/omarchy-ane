@@ -79,7 +79,7 @@ static inline void ane_h17_encode_descriptor(u8 *p, u64 firmware, u64 dm,
 	ane_h17_put_le(p + 0x08, ipc, 8);
 	ane_h17_put_le(p + 0x10, ANE_H17_FW_BYTES, 8);
 	/* +0x10/+0x18 pair semantics (review closed offline, e1c4839+):
-	 * the kext owns the FWIM region as this[0x3c0] = 0x380000 exactly
+	 * the host driver owns the FWIM region as this[0x3c0] = 0x380000 exactly
 	 * (allocator size, prereqs.txt:5-19), bounds its device access to
 	 * that same extent (prereqs.txt:680-688), and the live macOS boot
 	 * reserves the alias as exactly VM_BASE..+0x380000. It nonetheless

@@ -7,7 +7,7 @@
 > stage is now fail-closed pending ordering and resource-lifetime fixes.
 
 Consolidated summary of the receipts written on 2026-11-04. No hardware touched
-in this receipt; it records conclusions from the offline decode and the two
+in this receipt; it records conclusions from the offline analysis and the two
 hardware runs.
 
 ## The arc
@@ -18,9 +18,9 @@ hardware runs.
 2. **The clkgen window is live and boot-chain programmed** (251 nonzero words:
    two bank headers, PLL/dividers, mirrored config). `2026-11-04-j700-h17-clkgen-live`.
 3. **The functional clock enable is a PMP mailbox command**, not an MMIO write.
-   `AppleARMIODevice::enableDeviceClock` → `ApplePMGRFunctionClockGate::callFunction`
-   → `_enableDeviceEmmmm` → `_sendPMPCommand`. The only MMIO clock-path write
-   (`setPSAutoMinLevel`, bits `[19:16]`) is the *auto-gating* function, which the
+   the device-clock enable call chains through the PMGR clock-gate call
+   function into the PMP mailbox send. The only MMIO clock-path write
+   (the auto-min-level setter, bits `[19:16]`) is the *auto-gating* function, which the
    ANE's clock enable does not call. macOS never writes map 0x71 (its accessors
    are dead code). `2026-11-04-j700-h17-clkgen-enable-path`,
    `2026-11-04-j700-h17-clock-pmp-command`.

@@ -6,7 +6,7 @@
  * docs/j700-h17-linux-support-plan.md and
  * receipts/2026-11-01-j700-h17-linux-support-plan/):
  *   - the retained macOS kernelcache legacy direct-boot block
- *     (ANE_Init 0xfffffe0008f3e138..0xfffffe0008f3e198), and
+ *     (its ANE_Init entry block), and
  *   - the recorded ADT (data/ane-soc/t8140.json, source A1).
  * Fields marked "candidate" are the T8132/H16 template and are NOT
  * device-qualified for T8140. No of_match entry is added here: the H16
@@ -58,7 +58,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  *   c000 is the only word with PS_AUTO set.
  *
  * Candidates, not device-qualified for T8140: irq_status 0x188c000 /
- * irq_ack 0x1890000 are the ANE-type-0x200 row of the kext's
+ * irq_ack 0x1890000 are the ANE-type-0x200 row of the host driver's
  * initializeANESoCConfig case table (firmware-load-path receipt §11), not
  * borrowed from the T8132 row — but a register table is not device
  * behaviour. mbox = 0x1608000 is the ASC+0x8000 family pattern over the
@@ -74,15 +74,15 @@ const struct ane_h16_soc ane_t8140_soc = {
 	.cpu_status = 0x1600048,
 	.rvbar = 0x1050000,
 	.scratch0 = 0x1880020,
-	.irq_status = 0x188c000,	/* kext config table, ANE type 0x200 */
-	.irq_ack = 0x1890000,		/* kext config table, ANE type 0x200 */
+	.irq_status = 0x188c000,	/* host driver config table, ANE type 0x200 */
+	.irq_ack = 0x1890000,		/* host driver config table, ANE type 0x200 */
 	.mbox = 0x1608000,		/* candidate: T8132 template */
 	.wrapper_pa = 0x401600000ull,
 	.cpu_pa = 0x401000000ull,
 	/* 0xc018 is absent; never substitute a duplicate as a fifth island. */
 	.ps_off = { 0x290, 0xc000, 0xc008, 0xc010 },
 	.ps_count = 4,
-	/* Kext recipe §5.4 rows 19-21 (field 0x128, field 0x120, field
+	/* Host-driver recipe §5.4 rows 19-21 (field 0x128, field 0x120, field
 	 * 0x11c setBit 0), engine-relative. Executed only after the
 	 * SCRATCH7 wake word, through the checked H17 boot path. */
 	.h17_order = true,

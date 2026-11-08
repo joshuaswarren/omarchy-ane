@@ -2,7 +2,7 @@ From: H17 J700 ANE power-domain wiring (proposal; applies to linux-aurora)
 Subject: [PATCH] arm64: dts: apple: t8140: expose the ANE-CPU ps-word and windows
 
 The H17 ANE-CPU island is powered through a raw ps-word at PMGR+0xc000
-that the Apple driver writes directly (0xc000=0xf then 0x1000000f).
+that the host driver writes directly (0xc000=0xf then 0x1000000f).
 Expose it as an apple-pmgr-pwrstate so Linux genpd raises it instead of
 a direct kernel write, and add the pmgr/set windows the register-map
 and PWGATE guard need.

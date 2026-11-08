@@ -3,7 +3,7 @@
  * Read-only ANE clock-generator (RegMap 0x71, SNE_ANECLKGEN_TOP) scan.
  *
  * This supersedes ane_h17_clk_scan.c / ane_h17_clk_wide.c, which read
- * physical 0x3082c8000. Offline binary analysis of the retained kernelcache
+ * physical 0x3082c8000. Offline binary analysis of the retained kernel image
  * (receipts/2026-11-04-j700-h17-regmap-71/) shows 0x3082c8000 is RegMap
  * 0x6c — the ANE 16 KiB CSR aperture — and that the clock-generator window
  * is RegMap 0x71, initialised from /arm-io/pmgr reg[36] = 0x1f1878000 /

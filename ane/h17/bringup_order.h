@@ -6,8 +6,8 @@
 
 /* Source-derived ordering only; NOT hardware qualification. The retained
  * kernelcache SHA256 is 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe.
- * CE: 0xfffffe00097a906c..0xfffffe00097a9110; PS/PWGATE:
- * 0xfffffe0008f294bc..0xfffffe0008f29b0c, 0xfffffe0008f27abc.
+ * CE, PS and PWGATE block addresses: recorded in the
+ * receipts/2026-11-04-j700-h17-firmware-load-path/ dumps.
  * Tunables: verified 37-entry decode recorded at commit 1e4e9e7.
  *
  * This helper stops BEFORE scratch/CPU release. Provider/PMP votes and
