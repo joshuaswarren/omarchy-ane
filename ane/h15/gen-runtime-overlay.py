@@ -27,13 +27,32 @@ SOCS = {
 EMPTY_FRAGMENT = re.compile(r'\tfragment@(\d+) \{\n\t\ttarget-path = "([^"]+)";\n\t\t(\w+): __overlay__ \{\n\t\t\};\n\t\};\n\n?')
 
 
+def t8122_runtime_patch(text):
+    """The run-time variant is applied to a LIVE kernel: an apple,t8110-dart
+    node with status okay is probed by the running apple-dart driver the
+    moment the overlay merges, on real ANE DART MMIO - the enabled-DART hang
+    documented at boot on T6030 (PR 173), reproduced on a J613 lab machine
+    2026-11-09. The apply_overlay contract for T8122 is disabled DARTs and
+    no IOMMU client, so the run-time variant keeps the three instances
+    disabled and drops the ane node's iommus. The boot-time overlay is
+    unchanged."""
+    for pa in ("311800000", "311810000", "311820000"):
+        start = text.index(f"iommu@{pa}")
+        ok = text.index('status = "okay"', start)
+        text = text[:ok] + 'status = "disabled"' + text[ok + len('status = "okay"'):]
+    return re.sub(r"\n\t\t\t\tiommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;", "", text)
+
+
 def derive(soc):
     """Return (runtime dts text, [(label, path)]) for one SoC."""
     text = (HERE / SOCS[soc]["src"]).read_text()
     found = [(m.group(3), m.group(2)) for m in EMPTY_FRAGMENT.finditer(text)]
     if [label for label, _ in found] != SOCS[soc]["labels"]:
         raise SystemExit(f"{soc}: label-minting fragments are {[l for l, _ in found]}, expected {SOCS[soc]['labels']}")
-    return EMPTY_FRAGMENT.sub("", text), found
+    text = EMPTY_FRAGMENT.sub("", text)
+    if soc == "t8122":
+        text = t8122_runtime_patch(text)
+    return text, found
 
 
 def compile_blob(dts_text):
