@@ -349,6 +349,16 @@ static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
 				(uint64_t)slot_max_in_alloc_src;
 		}
 		if (pick_smallest_fit_channel(m, 0, reach, tag) < 0) {
+			/* No bound input channel covers the slot's reach:
+			 * the surface is cross-task scratch (conv chains
+			 * keep per-layer activations there), the same shape
+			 * as the dst fallback above. Merge to scratch when
+			 * enabled; the union step sizes the BO from the
+			 * BAR-ref extents at this slot. */
+			if (scratch_bufid != 0) {
+				*tag = scratch_bufid;
+				return 0;
+			}
 			return fail("BAR-ref src register's slot reach "
 				    "overflows every bound input channel");
 		}
@@ -501,7 +511,17 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 				}
 				tag = scratch_bufid;
 				err = 0;
-			} else if (!legacy && (is_matmul || blend_mode)) {
+			} else if (!legacy) {
+				/* Extents for every program class, not only
+				 * matmul/blend: conv chains bind srcA slots
+				 * >= 2 (MobileNet H14 linked and ring), which
+				 * the legacy slot rule refuses ("BAR slot
+				 * 2/3 ... collides with the section-tag
+				 * namespace"). The extents rule maps slot
+				 * <= 1 to kernel (tag 2) and picks the
+				 * smallest input channel covering the
+				 * slot's reach, so the stage 1-4 fixture
+				 * tags stay as the legacy rule had them. */
 				err = bar_ref_tag_extents(addr, slot,
 						slot_max_offset_dst[slot],
 						slot_max_offset_src[slot],
