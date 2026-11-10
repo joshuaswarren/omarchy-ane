@@ -16,10 +16,12 @@ HAVE_DTC = shutil.which("dtc") is not None and shutil.which("fdtdump") is not No
 
 
 class GenTests(unittest.TestCase):
-    def test_t6030_boot_iommus_carries_sid16_and_runtime_drops_iommus(self):
-        """The t6030 boot variant names dart0 streams 0 and 16 (16 = the flagged second agent,
-        Main-sanctioned 2026-11-10); the runtime variant keeps the PR 382 contract: no iommus
-        at all, not a leftover specifier naming a disabled provider."""
+    def test_t6030_boot_iommus_three_streams_and_runtime_drops_iommus(self):
+        """The t6030 boot variant names dart0/dart1/dart2 stream 0 (the contract since PR 386);
+        the runtime variant keeps the PR 382 contract: no iommus at all, not a leftover
+        specifier naming a disabled provider. Guards both shapes after the reverted sid-16
+        experiment (99a0e124): the strip regex must keep matching the bare three-specifier
+        line."""
         if not HAVE_DTC or not shutil.which("fdtget"):
             self.skipTest("no DT tools")
         with tempfile.TemporaryDirectory() as tmp:
@@ -33,8 +35,8 @@ class GenTests(unittest.TestCase):
                 darts[addr] = subprocess.check_output(["fdtget", "-t", "x", str(boot), node, "phandle"], text=True).split()
             self.assertEqual(
                 subprocess.check_output(["fdtget", "-t", "x", str(boot), "/fragment@3/__overlay__/ane@308000000", "iommus"], text=True).split(),
-                [darts["309800000"][0], "0", darts["309810000"][0], "0", darts["309820000"][0], "0", darts["309800000"][0], "10"],
-                "dart0 streams 0 and 0x10(=16), dart1 and dart2 stream 0",
+                [darts["309800000"][0], "0", darts["309810000"][0], "0", darts["309820000"][0], "0"],
+                "stream 0 of the three enabled instances",
             )
             runtime = Path(tmp) / "t6030-runtime.dtbo"
             runtime.write_bytes(gen.compile_blob(gen.derive("t6030")[0]))
