@@ -1984,6 +1984,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	if (model->scratch_io_index != UINT32_MAX) {
 		uint64_t scratch_bytes = 0;
 		uint64_t env_bytes = 0;
+		uint64_t declared_scratch;
 		const char *env = getenv("ANE_M2_SCRATCH");
 		struct ane_m2_io *scratch_io;
 		uint32_t scratch_slot = 0;
@@ -2006,6 +2007,18 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 					 &scratch_bytes);
 		if (err) {
 			return err;
+		}
+		/* The compiler declares the scratch it needs as tiles[3] of
+		 * the header; the firmware writes that whole region, while
+		 * the BAR-ref walk sees only the offsets the descriptors
+		 * reference (16 KiB of payload for the MobileNet ring).
+		 * Mapping the walk value alone leaves the tail unmapped and
+		 * the DART faults (NO-PTE). 0 means not declared (every
+		 * pre-ring fixture), so the walk value stands. */
+		declared_scratch = (uint64_t)le32(d + 0x28 + 3 * 4)
+				   << ANE_M2_TILE_UNIT_SHIFT;
+		if (declared_scratch > scratch_bytes) {
+			scratch_bytes = declared_scratch;
 		}
 		if (env && env[0] != '0' && env[0] != '-') {
 			env_bytes = strtoull(env, NULL, 0);
