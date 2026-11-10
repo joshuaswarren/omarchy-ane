@@ -218,6 +218,14 @@ module_param(sb_wait_ms, uint, 0444);
 MODULE_PARM_DESC(sb_wait_ms,
 		 "Stage=run scratch_boot=1: how long to poll SCRATCH7 for the ready word, 10 to 5000 ms. Default 1000.");
 
+/* The twelve T6021 grant tunables (ane_t6021_boot.h P-1), written before
+ * the SCRATCH handshake and CPU release. Recorded on working T6021 boots;
+ * never measured on T6030 before 2026-11-10. */
+static bool grant_tunables;
+module_param(grant_tunables, bool, 0444);
+MODULE_PARM_DESC(grant_tunables,
+		 "Stage=run (5) or boot (3), before the scratch handshake: write the twelve T6021 grant-tunable words at eng+0x000..0x430 (ane_t6021_boot.h P-1). The working T6021 flow runs this unconditionally; the h15 sequences never had it. Off by default.");
+
 /* The names these two parameters had before the rename. Accepted, not listed (permission 0), so the commands already
  * posted to volunteers still run. Remove both lines once those runs are done. */
 module_param_named(kext_boot, scratch_boot, bool, 0);
@@ -1814,6 +1822,35 @@ static int ane_h15_scr_wr_kboot(struct ane_h15 *ane, unsigned int i, u32 v)
 	return 0;
 }
 
+/* P-1 of the working T6021 boot (ane_t6021_boot.h): twelve grant-tunable
+ * words before the scratch handshake and CPU release. Values recorded on
+ * T6021; the point of the 2026-11-10 run is whether T6030 needs them. */
+static const struct { u32 off; u32 val; } ane_h15_grant_tunables_tab[] = {
+	{ 0x000, 0x00000010 }, { 0x038, 0x00050020 },
+	{ 0x03c, 0x000a0030 }, { 0x400, 0x40010001 },
+	{ 0x600, 0x01ffffff }, { 0x738, 0x00200020 },
+	{ 0x798, 0x00100030 }, { 0x7f8, 0x0100000a },
+	{ 0x900, 0x00000101 }, { 0x410, 0x00001100 },
+	{ 0x420, 0x00001100 }, { 0x430, 0x00001100 },
+};
+
+static int ane_h15_grant_tunables_wr(struct ane_h15 *ane)
+{
+	unsigned int ti;
+
+	for (ti = 0; ti < ARRAY_SIZE(ane_h15_grant_tunables_tab); ti++) {
+		u32 off = ane_h15_grant_tunables_tab[ti].off;
+		u32 v = ane_h15_grant_tunables_tab[ti].val;
+
+		if ((u64)off + 4 > ane->soc->engine_size)
+			return -EPERM;
+		ane_h15_step("write GRANT off=%#x=%#x pa=%#llx\n", off, v, ane->soc->engine_pa + off);
+		dev_crit(ane->dev, "ane_h15 write GRANT %#x=%#x pa=%#llx\n", off, v, ane->soc->engine_pa + off);
+		writel(v, ane->engine + off);
+	}
+	return 0;
+}
+
 static void ane_h15_hs_free(struct ane_h15 *ane)
 {
 	struct ane_h15_hs_buf *b[] = { &ane->owned_fw, &ane->hs_cmd, &ane->hs_heap, &ane->hs_ipc, &ane->hs_pool };
@@ -2611,6 +2648,18 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
+	/* grant_tunables: the T6021 P-1 words, strictly before the scratch
+	 * handshake and the first CPU_CONTROL write. On any refusal the run
+	 * stops here: no SCRATCH write, no RUN, nothing started. */
+	if (grant_tunables && (stg == 5 || stg == 3)) {
+		ret = ane_h15_grant_tunables_wr(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "grant-tunables-refused");
+			return ret;
+		}
+	}
+
 	/* Start the core. From here a reboot may be needed. */
 	ane->fw_started = true;
 	ane->fw_touched = true;
@@ -2802,6 +2851,10 @@ static int ane_h15_probe(struct platform_device *pdev)
 	}
 	if (scratch_boot && stage_idx != 5 && stage_idx != 3) {
 		dev_err(&pdev->dev, "scratch_boot=1 is stage=run (5) or boot (3) only: refusing\n");
+		return -EINVAL;
+	}
+	if (grant_tunables && stage_idx != 5 && stage_idx != 3) {
+		dev_err(&pdev->dev, "grant_tunables=1 is stage=run (5) or boot (3) only: refusing\n");
 		return -EINVAL;
 	}
 	/* pwgate_t6031 refusals, all before any MMIO and before any mapping,

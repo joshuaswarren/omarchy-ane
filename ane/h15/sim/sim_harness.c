@@ -250,6 +250,7 @@ static void reset_all(void)
 	run_pmgr = false;
 	scratch_boot = false;
 	sb_wait_ms = 1000;
+	grant_tunables = false;
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
@@ -1747,6 +1748,68 @@ static void pos_run_scratch_boot(void)
 	    run_writes(s, w, 16, &first) == 0 && sim_bus_faults == 0,
 	    "KB5 sb_wait_ms=9 refuses with no write");
 	remove_if_probed();
+
+	/* KT1: grant_tunables=1 on the stage-5 scratch-boot run: the twelve T6021 P-1
+	 * words go first, then the exact KB2 sequence. Values and order pinned from
+	 * aurora-linux drivers/accel/ane/ane_t6021_boot.h. */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	scratch_boot = true;
+	sb_wait_ms = 50;
+	grant_tunables = true;
+	dm_s7_ready = true;
+	eng_set(s, off + 4 * 7, 0x08042006);
+	ret = probe_now();
+	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+	    rstage == 5 && !strcmp(verdict, "PASS"),
+	    "KT1 grant tunables then handshake: probe runs and passes as in KB2");
+	{
+		static const struct { u32 off; u32 val; } tun[] = {
+			{ 0x000, 0x00000010 }, { 0x038, 0x00050020 },
+			{ 0x03c, 0x000a0030 }, { 0x400, 0x40010001 },
+			{ 0x600, 0x01ffffff }, { 0x738, 0x00200020 },
+			{ 0x798, 0x00100030 }, { 0x7f8, 0x0100000a },
+			{ 0x900, 0x00000101 }, { 0x410, 0x00001100 },
+			{ 0x420, 0x00001100 }, { 0x430, 0x00001100 },
+		};
+		const struct { u32 off; u32 val; } want[] = {
+			{ 0x000, 0x10 }, { 0x038, 0x00050020 }, { 0x03c, 0x000a0030 },
+			{ 0x400, 0x40010001 }, { 0x600, 0x01ffffff }, { 0x738, 0x00200020 },
+			{ 0x798, 0x00100030 }, { 0x7f8, 0x0100000a }, { 0x900, 0x101 },
+			{ 0x410, 0x1100 }, { 0x420, 0x1100 }, { 0x430, 0x1100 },
+			{ off + 4 * 0, 0 }, { off + 4 * 1, 0 }, { off + 4 * 2, 0 }, { off + 4 * 3, 0 },
+			{ off + 4 * 4, 0 }, { off + 4 * 5, 0 }, { off + 4 * 6, 0 }, { off + 4 * 7, 0 },
+			{ off + 4 * 6, 1 }, { off + 4 * 7, 0 },
+			{ s->cpu_control, 0 }, { s->cpu_control, 0x10 },
+			{ s->cpu_control, 0 },
+		};
+		u32 offs[32], vals[32];
+		int nw = 0, ok;
+
+		for (i = 0; i < sim_n_events && i < SIM_MAX_EVENTS; i++) {
+			if (!sim_events[i].write || sim_events[i].pa < s->engine_pa ||
+			    sim_events[i].pa >= s->engine_pa + s->engine_size || nw >= 32)
+				continue;
+			offs[nw] = sim_events[i].pa - s->engine_pa;
+			vals[nw] = sim_events[i].val;
+			nw++;
+		}
+		ok = nw == 25;
+		for (i = 0; ok && i < 25; i++)
+			ok = offs[i] == want[i].off && vals[i] == want[i].val;
+		chk(ok, "KT1 the engine writes are exactly the twelve grant words then the KB2 sequence");
+		chk(log_count("ane_h15 write GRANT") == 12,
+		    "KT1 every grant write logged before it happens (12 lines)");
+	}
+	remove_if_probed();
+
+	/* KT2: grant_tunables=1 on a non-run stage refuses at probe like scratch_boot. */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	stage = "wrapper";
+	grant_tunables = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("grant_tunables=1 is stage=run (5) or boot (3) only") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "KT2 stage=2 with grant_tunables=1 refuses before any bus access");
 
 	/* KB6: the SCRATCH7 clear does not take (the register ignores the write and keeps
 	 * reading the stale ready word). The run must stop before the first CPU_CONTROL
