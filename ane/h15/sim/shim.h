@@ -239,6 +239,11 @@ static inline void usleep_range(unsigned long lo, unsigned long hi)
 {
 	sim_jiffies += (lo + hi) / 2;
 }
+/* the sim has no real time: udelay advances the virtual clock like usleep */
+static inline void udelay(unsigned long usecs)
+{
+	sim_jiffies += usecs / 1000;
+}
 static inline u32 bus_read(u64 pa)
 {
 	struct sim_region *r = sim_region_find(pa);

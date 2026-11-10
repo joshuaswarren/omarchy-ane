@@ -253,6 +253,8 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	pwr_req = false;
+	pwr_poll_ms = 1000;
 	sweep_watch = false;
 	sweep_watch_us = 1000;
 	sim_stall_reads_left = 0; sim_stall_us = 1000; sim_stall_lo = sim_stall_hi = 0;
@@ -578,10 +580,11 @@ static void pos_stage2(void)
 				 reason, sizeof(reason)) &&
 		    rstage == 2 && !strcmp(verdict, "PASS") &&
 		    !strncmp(reason, "preflight-read-only", 19), name);
-		snprintf(name, sizeof(name), "%s: exactly six engine reads (five words + EDPRCR)", tag);
-		chk(events_in(s->engine_pa, s->engine_size, 0) == 6 &&
+		snprintf(name, sizeof(name), "%s: exactly seven engine reads (five words + EDPRCR + EDPRSR)", tag);
+		chk(events_in(s->engine_pa, s->engine_size, 0) == 7 &&
 		    eng_events_at(s, s->cpu_status) == 1 &&
 		    eng_events_at(s, 0x1010310) == 1 &&
+		    eng_events_at(s, 0x1010314) == 1 &&
 		    eng_events_at(s, s->rvbar) == 1 &&
 		    eng_events_at(s, s->rvbar + 4) == 1 &&
 		    eng_events_at(s, s->mbox + 0x110) == 1 &&
@@ -1273,6 +1276,8 @@ static bool dm_s7_stuck;	/* scratch_boot model: the SCRATCH7 register ignores th
 static u32 dm_pw_word;		/* pwgate model: what the word at PWGATE + 0x199c reads */
 static int dm_pw_reads;		/* pwgate model: how many times the word was read */
 static bool dm_pw_stuck;	/* pwgate model: the register ignores the 0 write and the poll never opens */
+static bool dm_pwr_stuck;	/* pwr_req model: EDPRCR bit0 is ignored, EDPRSR never shows powered */
+static u32 dm_edpsr;		/* pwr_req model: the EDPRSR powered status */
 
 static u32 eng_get(const struct ane_h15_soc *s, u32 off)
 {
@@ -1284,6 +1289,13 @@ static void dm_write(u64 pa, u32 v)
 	const struct ane_h15_soc *s = dm_soc;
 
 	if (pa != s->engine_pa + s->cpu_control) {
+		/* pwr_req model: EDPRCR bit0 powers the core (EDPRSR bit0
+		 * reads 1 from the next poll on), unless stuck */
+		if (pa == s->engine_pa + 0x1010310u) {
+			if ((v & 1u) && !dm_pwr_stuck)
+				dm_edpsr = 1u;
+			return;
+		}
 		/* pwgate model: a 0 to the gate word opens it within the
 		 * first 10 us poll, unless the register ignores the write */
 		if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word && !dm_pw_stuck)
@@ -1311,6 +1323,8 @@ static u32 dm_read(u64 pa, u32 v)
 		dm_pw_reads++;
 		return dm_pw_word;
 	}
+	if (pa == s->engine_pa + 0x1010314u)
+		return dm_edpsr;
 	if (dm_s7_stuck && pa == s->engine_pa + 0x1840050u + 4 * 7)
 		return 0x08042006u;	/* the register ignored the clear */
 	if (pa == s->engine_pa + s->mbox + 0x838) {	/* popping a message */
@@ -1357,6 +1371,10 @@ static void run_setup(const struct ane_h15_soc *s, const char *compat, u32 ctrl)
 	dm_s7_stuck = false;
 	dm_pw_word = 0;
 	dm_pw_reads = 0;
+	dm_pwr_stuck = false;
+	dm_edpsr = 0;
+	dm_pwr_stuck = false;
+	dm_edpsr = 0;
 	dm_pw_stuck = false;
 	dm_msgs_left = 0;
 	sim_write_hook = dm_write;
@@ -1773,6 +1791,57 @@ static void pos_run_scratch_boot(void)
  * when the word already reads 0 (the unconditional macOS order). The step
  * must sit between the preflight (and the macOS SCRATCH sequence, when
  * scratch_boot=1) and the first CPU_CONTROL write. */
+/* PB: pwr_req, the M2-order core power-up request (Main-sanctioned). EDPRCR
+ * bit0 is the only permitted debug-block write; a bounded EDPRSR poll gates
+ * the RUN write, and a timeout stops with no RUN written. */
+static void pos_run_pwr_req(void)
+{
+	const struct ane_h15_soc *s = &ane_t6030_soc;
+	unsigned int rstage;
+	char verdict[32], reason[128], name[128];
+	int ret, before = fails;
+	u32 w[16];
+	int i, n, first;
+
+	/* PB1: the model powers the core on the request: EDPRCR written once,
+	 * EDPRSR read at least twice (once in the preflight, once polled),
+	 * RUN issued, the normal run verdict. */
+	reset_all();
+	run_setup(s, "apple,t6030-ane", 0x0);
+	pwr_req = true;
+	ret = probe_now();
+	n = run_writes(s, w, 16, &first);
+	chk(ret == 0 && n >= 3 && w[0] == 0x1 && w[1] == 0x10,
+	    "PB1 pwr_req: the first engine write is EDPRCR=0x1, the second is RUN");
+	chk(events_in(s->engine_pa + 0x1010310, 4, 0) == 2 && events_in(s->engine_pa + 0x1010310, 4, 1) == 1 &&
+	    events_in(s->engine_pa + 0x1010314, 4, 0) == 2 && events_in(s->engine_pa + 0x1010314, 4, 1) == 0,
+	    "PB1 pwr_req: EDPRCR one read + one write, EDPRSR two reads no writes (prep + one poll hit)");
+	(void)first;
+	remove_if_probed();
+
+	/* PB2: the register ignores the request: bounded poll times out, the
+	 * run stops with FAIL power-poll-timeout and no CPU_CONTROL write. */
+	reset_all();
+	run_setup(s, "apple,t6030-ane", 0x0);
+	pwr_req = true;
+	pwr_poll_ms = 10;
+	dm_pwr_stuck = true;
+	ret = probe_now();
+	snprintf(name, sizeof(name), "PB2 pwr_req stuck: FAIL power-poll-timeout, ret -ETIMEDOUT");
+	chk(ret == -ETIMEDOUT && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+	    rstage == 5 && !strcmp(verdict, "FAIL") && !strcmp(reason, "power-poll-timeout"), name);
+	chk(events_in(s->engine_pa + s->cpu_control, 4, 1) == 0,
+	    "PB2 pwr_req stuck: no CPU_CONTROL write after the timeout");
+	chk(events_in(s->engine_pa + 0x1010310, 4, 1) == 1,
+	    "PB2 pwr_req stuck: exactly one EDPRCR write, no more");
+	remove_if_probed();
+
+	(void)name;
+	if (fails == before)
+		printf("    PB pwr_req controls PASS\n");
+}
+
+
 static void pos_run_pwgate(void)
 {
 	const struct ane_h15_soc *s = &ane_t6031_soc;
@@ -2934,7 +3003,7 @@ static void pos_translation(void)
 				      "expected_pa=0x10000ac4000 resolved_pa=0x10000ac4000") == 1,
 			    "T1 matched entry logs the IOVA, expected TEXT and resolved address");
 		chk(sim_n_iocalls == before && events_in(0, ~0ULL, 1) == 0 &&
-		    events_in(s->engine_pa, s->engine_size, 0) == 6 &&
+		    events_in(s->engine_pa, s->engine_size, 0) == 7 &&
 		    eng_events_at(s, s->cpu_control) == 0 && sim_bus_faults == 0,
 		    "T1 query changes no mapping and adds no engine access beyond preflight");
 		if (!ret)
@@ -4004,7 +4073,9 @@ int main(int argc, char **argv)
 		pos_run_postwait();
 		pos_run_scratch();
 		pos_run_pmgr();
+
 		pos_run_scratch_boot();
+		pos_run_pwr_req();
 		pos_run_pwgate();
 		pos_run_pwgate_rows();
 		pos_steplog_stop();

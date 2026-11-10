@@ -123,9 +123,17 @@ MODULE_PARM_DESC(confirm_boot,
 		 "Required for stage=boot. Off by default; stage=boot refuses without it.");
 
 static bool confirm_read;
+static bool pwr_req;
+static unsigned int pwr_poll_ms = 1000;
 module_param(confirm_read, bool, 0444);
 MODULE_PARM_DESC(confirm_read,
 		 "Stage=wrapper only. Off by default; stage=wrapper refuses without it. With it, stage=wrapper reads CPU_STATUS, RVBAR and the two mailbox CTRL words behind the pmgr ACTUAL=0xf gate. Reads only, nothing is written.");
+module_param(pwr_req, bool, 0444);
+MODULE_PARM_DESC(pwr_req,
+		 "stage=run or boot: the M2-order ASC CPU power-up request: set EDPRCR bit0, then poll EDPRSR bounded (pwr_poll_ms) for the powered status before RUN. On poll timeout: FAIL, no RUN write. Off by default.");
+module_param(pwr_poll_ms, uint, 0444);
+MODULE_PARM_DESC(pwr_poll_ms,
+		 "pwr_req poll bound in ms, 10 to 10000, default 1000.");
 
 static bool run_unmapped;
 module_param(run_unmapped, bool, 0444);
@@ -575,7 +583,7 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	/* EDPRCR (the ASC CPU power/reset request, t6021 phase1 S2
 	 * whitelist) sits outside both windows; it is read once by the
 	 * wrapper preflight: a single named address, no writes. */
-	if (off == 0x1010310 && size == 4)
+	if ((off == 0x1010310 || off == 0x1010314) && size == 4)
 		return true;
 	if (!in_wrap && !in_rvbar)
 		return false;
@@ -647,7 +655,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz);
 static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;
-	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0, edprcr = 0;
+	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0, edprcr = 0, edpsr = 0;
 	unsigned int i, refused = 0;
 	char why[128];
 	int ret;
@@ -686,6 +694,8 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 	if (!ret)
 		ret = ane_h15_read_word(ane, "EDPRCR", 0x1010310, &edprcr);
 	if (!ret)
+		ret = ane_h15_read_word(ane, "EDPRSR", 0x1010314, &edpsr);
+	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_LO", s->rvbar, &rvbar_lo);
 	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_HI", s->rvbar + 4, &rvbar_hi);
@@ -714,11 +724,11 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 			ane_h15_result(ane, 2, "FAIL", "pwgate-window-refused");
 			return ret;
 		}
-		snprintf(why, sizeof(why), "preflight-read-only %s edprcr=0x%x", pw, edprcr);
+		snprintf(why, sizeof(why), "preflight-read-only %s edprcr=0x%x edpsr=0x%x", pw, edprcr, edpsr);
 		ane_h15_result(ane, 2, "PASS", why);
 		return 0;
 	}
-	snprintf(why, sizeof(why), "preflight-read-only edprcr=0x%x", edprcr);
+	snprintf(why, sizeof(why), "preflight-read-only edprcr=0x%x edpsr=0x%x", edprcr, edpsr);
 	ane_h15_result(ane, 2, "PASS", why);
 	return 0;
 }
@@ -1380,6 +1390,22 @@ static int ane_h15_read_ctrl(struct ane_h15 *ane, u32 *v)
 	*v = readl_relaxed(ane->engine + s->cpu_control);
 	dev_info(ane->dev, "ane_h15 word=CPU_CONTROL pa=%#llx value=%#x\n",
 		 s->engine_pa + s->cpu_control, *v);
+	return 0;
+}
+
+/* The single sanctioned debug-block write: set EDPRCR bit0, the ASC CPU
+ * power-up request (the M2 order step). Never clears bits, never writes
+ * any other debug-block address. */
+static int ane_h15_write_edprcr(struct ane_h15 *ane, u32 old, u32 val)
+{
+	if (!(val & 1u) || (old ^ val) & ~1u) {
+		dev_err(ane->dev, "ane_h15 refusing EDPRCR write %#x over %#x: only bit0 may be set\n", val, old);
+		return -EPERM;
+	}
+	ane_h15_step("write EDPRCR=%#x pa=%#llx\n", val, ane->soc->engine_pa + 0x1010310);
+	dev_crit(ane->dev, "ane_h15 write EDPRCR=%#x pa=%#llx (core power-up request)\n", val,
+		 ane->soc->engine_pa + 0x1010310);
+	writel(val, ane->engine + 0x1010310);
 	return 0;
 }
 
@@ -2541,6 +2567,45 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "PASS", pwres);
 			dev_info(ane->dev, "ane_h15 stop_after_pwgate: no CPU_CONTROL write\n");
 			return 0;
+		}
+	}
+
+	/* pwr_req (the M2 order, Main-sanctioned): set the ASC CPU power-up
+	 * request (EDPRCR bit0) and poll EDPRSR bounded before RUN. On a
+	 * poll timeout the run stops here: no RUN write, nothing started,
+	 * nothing pinned, claims released via the unmap below. */
+	if (pwr_req) {
+		u32 pr = 0, psr = 0, psr_first = 0;
+		unsigned int pol, polls = pwr_poll_ms * 10;
+
+		if (pwr_poll_ms < 10 || pwr_poll_ms > 10000) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "REFUSED", "pwr_poll_ms 10 to 10000");
+			return -EINVAL;
+		}
+		ret = ane_h15_read_word(ane, "EDPRCR", 0x1010310, &pr);
+		if (!ret)
+			ret = ane_h15_read_word(ane, "EDPRSR", 0x1010314, &psr_first);
+		if (!ret)
+			ret = ane_h15_write_edprcr(ane, pr, pr | 1u);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "power-request-refused");
+			return ret;
+		}
+		for (pol = 0; pol < polls; pol++) {
+			if (ane_h15_read_word(ane, "EDPRSR", 0x1010314, &psr))
+				break;
+			if (psr & 1u)
+				break;
+			udelay(100);
+		}
+		dev_crit(ane->dev, "ane_h15 power-request: edpsr first=0x%x last=0x%x polls=%u powered=%d\n",
+			 psr_first, psr, pol, (int)(psr & 1u));
+		if (!(psr & 1u)) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "power-poll-timeout");
+			return -ETIMEDOUT;
 		}
 	}
 
