@@ -577,10 +577,11 @@ static void pos_stage2(void)
 		chk(parse_result(&rstage, verdict, sizeof(verdict),
 				 reason, sizeof(reason)) &&
 		    rstage == 2 && !strcmp(verdict, "PASS") &&
-		    !strcmp(reason, "preflight-read-only"), name);
-		snprintf(name, sizeof(name), "%s: exactly five engine reads at the five words", tag);
-		chk(events_in(s->engine_pa, s->engine_size, 0) == 5 &&
+		    !strncmp(reason, "preflight-read-only", 19), name);
+		snprintf(name, sizeof(name), "%s: exactly six engine reads (five words + EDPRCR)", tag);
+		chk(events_in(s->engine_pa, s->engine_size, 0) == 6 &&
 		    eng_events_at(s, s->cpu_status) == 1 &&
+		    eng_events_at(s, s->cpu_status - 0x48 + 0x1010310) == 1 &&
 		    eng_events_at(s, s->rvbar) == 1 &&
 		    eng_events_at(s, s->rvbar + 4) == 1 &&
 		    eng_events_at(s, s->mbox + 0x110) == 1 &&
@@ -591,6 +592,7 @@ static void pos_stage2(void)
 		chk(events_in(0, ~0ULL, 1) == 0 && sim_bus_faults == 0, name);
 		snprintf(name, sizeof(name), "%s: each address logged before its read (5 lines)", tag);
 		chk(log_count("ane_h15 read CPU_STATUS") == 1 &&
+		    log_count("ane_h15 read EDPRCR") == 1 &&
 		    log_count("ane_h15 read RVBAR_LO") == 1 &&
 		    log_count("ane_h15 read RVBAR_HI") == 1 &&
 		    log_count("ane_h15 read MBOX_A2I_CTRL") == 1 &&

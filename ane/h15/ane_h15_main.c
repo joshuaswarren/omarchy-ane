@@ -572,6 +572,11 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	bool in_rvbar = off >= ANE_H15_RVBAR_WIN_OFF &&
 			end <= (u64)ANE_H15_RVBAR_WIN_OFF + ANE_H15_RVBAR_WIN_SIZE;
 
+	/* EDPRCR (the ASC CPU power/reset request, t6021 phase1 S2
+	 * whitelist) sits outside both windows; it is read once by the
+	 * wrapper preflight: a single named address, no writes. */
+	if (off == 0x1010310 && size == 4)
+		return true;
 	if (!in_wrap && !in_rvbar)
 		return false;
 	if (end > s->engine_size)
@@ -642,7 +647,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz);
 static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;
-	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0;
+	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0, edprcr = 0;
 	unsigned int i, refused = 0;
 	char why[128];
 	int ret;
@@ -679,6 +684,8 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 	}
 	ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &status);
 	if (!ret)
+		ret = ane_h15_read_word(ane, "EDPRCR", 0x1010310, &edprcr);
+	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_LO", s->rvbar, &rvbar_lo);
 	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_HI", s->rvbar + 4, &rvbar_hi);
@@ -707,11 +714,12 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 			ane_h15_result(ane, 2, "FAIL", "pwgate-window-refused");
 			return ret;
 		}
-		snprintf(why, sizeof(why), "preflight-read-only %s", pw);
+		snprintf(why, sizeof(why), "preflight-read-only %s edprcr=0x%x", pw, edprcr);
 		ane_h15_result(ane, 2, "PASS", why);
 		return 0;
 	}
-	ane_h15_result(ane, 2, "PASS", "preflight-read-only");
+	snprintf(why, sizeof(why), "preflight-read-only edprcr=0x%x", edprcr);
+	ane_h15_result(ane, 2, "PASS", why);
 	return 0;
 }
 
