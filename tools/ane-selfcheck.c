@@ -426,6 +426,12 @@ static int check_declared_scratch(const char *dir, const char *op)
 	}
 	walk = model.io[model.io_count - 1].size;
 	ane_m2_sections_free(&secs);
+	/* w7X #385 review pin: the walk baseline itself must not regress.
+	 * island-c-pv declares tiles[3] == 0, so an assign-instead-of-max
+	 * mutant shrinks this fixture's scratch BO to the 16 KiB guard
+	 * while the comparisons below still pass (island-c-pv walks
+	 * 2,490,368 B). */
+	good &= walk == 2490368ull;
 	for (i = 0; i < sizeof(declared) / sizeof(declared[0]); i++) {
 		uint64_t want = (uint64_t)declared[i] << 14;
 		uint64_t got;
@@ -539,6 +545,93 @@ static int check_optional_island_blend(const char *dir, const char *op,
 	return 1;
 }
 
+/* MobileNet H14 ring (optional fixture <dir>/ring-mobilenet.anec; like
+ * island-b-select-constfill it stays out of git at 8.2 MiB. Local copy:
+ * ~/scratch/w73/ring-after.anec, sha256 24e8f8d9670dbb49...a066). Pins
+ * the #385 region rule on the real package: ch5 input 311,296 B (19
+ * tiles, the header's value), ch4 output 458,752 B (28 tiles, the
+ * header's value), scratch entry 161 << 14 + the 16 KiB guard =
+ * 2,654,208 B.
+ *
+ * The io sizes stay at the header's tiles on purpose. The proposed
+ * alternative -- raise an io region to
+ * ceil(C * align_up(plane_stride, 512) / 16384) -- is falsified by the
+ * in-repo device-proven fixtures: the add task writes Common channels
+ * 512 with plane stride 64 and its hardware-proven LOAD carries 2-tile
+ * (32 KiB) allocations, i.e. plain C * plane_stride with no 512-byte
+ * plane padding; align-512 would demand 16 tiles there and fault. Every
+ * measured stride that already is a multiple of 512 (p01-p03 controls)
+ * is unchanged by either rule. Without align-512 the physical demand
+ * never exceeds the header on any measured program, and the ring's
+ * 524,288 B firmware write is covered by the #385 scratch BO
+ * (2,637,824 B), which is the change that closed the ring NO-PTE storm.
+ * A device row that shows an io region itself short changes this pin
+ * with that evidence, not with an uncorroborated alignment rule. */
+static int check_ring_region_sizes(const char *dir, const char *op,
+				   unsigned *skipped)
+{
+	const char *dirs[3];
+	char path[4096];
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint8_t *anec;
+	long size;
+	unsigned i;
+	int n;
+	int good = 1;
+
+	/* Same search order as check_optional_island_blend. */
+	dirs[0] = dir;
+	dirs[1] = getenv("ANE_ISLAND_FIXTURES_DIR");
+	dirs[2] = "/var/tmp/islands-fixtures";
+	for (i = 0; i < 3; i++) {
+		if (!dirs[i] || !*dirs[i])
+			continue;
+		n = snprintf(path, sizeof(path), "%s/%s.anec", dirs[i], op);
+		if (n < 0 || (size_t)n >= sizeof(path))
+			continue;
+		if (access(path, R_OK) == 0)
+			break;
+	}
+	if (i == 3) {
+		printf("  [skip] optional fixture %s.anec unavailable in arg "
+		       "dir, ANE_ISLAND_FIXTURES_DIR and "
+		       "/var/tmp/islands-fixtures\n", op);
+		(*skipped)++;
+		return 1;
+	}
+	anec = read_all(path, &size);
+	if (!anec) {
+		return 0;
+	}
+	if (ane_m2_program_build(anec, (uint64_t)size, &model, &secs)) {
+		printf("  [FAIL] %s: ane_m2_program_build refused\n", op);
+		free(anec);
+		return 0;
+	}
+	ane_m2_sections_free(&secs);
+	good &= model.io_count == 3;
+	if (model.io_count == 3) {
+		good &= model.io[0].buffer_id == 5 && model.io[0].dir == 0 &&
+			model.io[0].size == 311296ull;
+		good &= model.io[1].buffer_id == 4 && model.io[1].dir == 1 &&
+			model.io[1].size == 458752ull;
+		good &= model.io[2].buffer_id == ANE_M2_SCRATCH_BUFID &&
+			model.io[2].dir == 2 &&
+			model.io[2].size == 2654208ull;
+	}
+	printf("  [%s] %s: ring io sizes (input %llu B, output %llu B, "
+	       "scratch %llu B)\n", good ? "ok" : "FAIL", op,
+	       model.io_count > 0 ? (unsigned long long)model.io[0].size :
+				    0ull,
+	       model.io_count > 1 ? (unsigned long long)model.io[1].size :
+				    0ull,
+	       model.io_count > 2 ? (unsigned long long)model.io[2].size :
+				    0ull);
+	free(anec);
+	return good;
+}
+
 int main(int argc, char **argv)
 {
 	static const char *const ops[] = {
@@ -629,6 +722,10 @@ int main(int argc, char **argv)
 			sizeof(constfill_refs) /
 			sizeof(constfill_refs[0]), &skipped) && ok;
 	}
+
+	printf("ring io region sizes (descriptor-derived demand; optional "
+	       "fixture):\n");
+	ok = check_ring_region_sizes(dir, "ring-mobilenet", &skipped) && ok;
 
 	printf("envelope refusals:\n");
 	ok = check_refusal(dir, "add", "truncated anec refused",
