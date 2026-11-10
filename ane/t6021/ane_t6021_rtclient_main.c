@@ -1200,7 +1200,7 @@ static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
 		*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(p->proc_id);
 		ret = ane_rtclient_command(ane, command, 0x10, CSNE_CMD_TERMINATE_PROCESS, 1, 3000);
 		if (!ret)
-			ret = ane_rtclient_malloc_settle(ane, 10);	/* the FREE of the l2 spill buffers lands after the acknowledgement */
+			ret = ane_rtclient_malloc_settle(ane, 100);	/* the FREE of the l2 spill buffers lands after the acknowledgement */
 		if (ret) {
 			atomic_set(&ane_t6021_quarantined, 1);
 			return ret;
@@ -1210,7 +1210,13 @@ static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
 	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(p->prog_id);
 	ret = ane_rtclient_command(ane, command, 0x0c, CSNE_CMD_DESTROY_PROGRAM, 1, 3000);
 	if (!ret)
-		ret = ane_rtclient_malloc_settle(ane, 10);
+		/* Serve the firmware's post-destroy FREEs before the section
+		 * buffers release: on the 2026-11-10 M2 storm a firmware FREE
+		 * of a 475136-byte l2-spill buffer sat unanswered for minutes
+		 * after a program closed, with the firmware still writing into
+		 * unmapped tiles (DART NO-PTE burst). The 10 ms quiet window
+		 * answered the fast path only; 500 ms bounds the slow path. */
+		ret = ane_rtclient_malloc_settle(ane, 500);
 	if (ret)
 		atomic_set(&ane_t6021_quarantined, 1);
 	return ret;
