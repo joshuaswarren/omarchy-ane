@@ -349,6 +349,16 @@ static int bar_ref_tag_extents(uint32_t addr, uint32_t slot,
 				(uint64_t)slot_max_in_alloc_src;
 		}
 		if (pick_smallest_fit_channel(m, 0, reach, tag) < 0) {
+			/* No bound input channel covers the slot's reach:
+			 * the surface is cross-task scratch (conv chains
+			 * keep per-layer activations there), the same shape
+			 * as the dst fallback above. Merge to scratch when
+			 * enabled; the union step sizes the BO from the
+			 * BAR-ref extents at this slot. */
+			if (scratch_bufid != 0) {
+				*tag = scratch_bufid;
+				return 0;
+			}
 			return fail("BAR-ref src register's slot reach "
 				    "overflows every bound input channel");
 		}
@@ -501,7 +511,17 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 				}
 				tag = scratch_bufid;
 				err = 0;
-			} else if (!legacy && (is_matmul || blend_mode)) {
+			} else if (!legacy &&
+				   (is_matmul || blend_mode ||
+				    ((addr == TD_SRC_A || addr == TD_SRC_B) &&
+				     (slot == 2 || slot == 3)))) {
+				/* Conv chains bind srcA slots 2/3 (MobileNet
+				 * H14 linked and ring), which the legacy rule
+				 * refuses ("BAR slot 2/3 ... collides with the
+				 * section-tag namespace"). The extents rule
+				 * takes exactly those refs; every other
+				 * add/mul-class ref keeps its legacy tag, so
+				 * the stage 1-4 fixtures stay byte-identical. */
 				err = bar_ref_tag_extents(addr, slot,
 						slot_max_offset_dst[slot],
 						slot_max_offset_src[slot],
@@ -1964,6 +1984,7 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 	if (model->scratch_io_index != UINT32_MAX) {
 		uint64_t scratch_bytes = 0;
 		uint64_t env_bytes = 0;
+		uint64_t declared_scratch;
 		const char *env = getenv("ANE_M2_SCRATCH");
 		struct ane_m2_io *scratch_io;
 		uint32_t scratch_slot = 0;
@@ -1986,6 +2007,18 @@ int ane_m2_program_build(const void *anec, uint64_t anec_size,
 					 &scratch_bytes);
 		if (err) {
 			return err;
+		}
+		/* The compiler declares the scratch it needs as tiles[3] of
+		 * the header; the firmware writes that whole region, while
+		 * the BAR-ref walk sees only the offsets the descriptors
+		 * reference (16 KiB of payload for the MobileNet ring).
+		 * Mapping the walk value alone leaves the tail unmapped and
+		 * the DART faults (NO-PTE). 0 means not declared (every
+		 * pre-ring fixture), so the walk value stands. */
+		declared_scratch = (uint64_t)le32(d + 0x28 + 3 * 4)
+				   << ANE_M2_TILE_UNIT_SHIFT;
+		if (declared_scratch > scratch_bytes) {
+			scratch_bytes = declared_scratch;
 		}
 		if (env && env[0] != '0' && env[0] != '-') {
 			env_bytes = strtoull(env, NULL, 0);

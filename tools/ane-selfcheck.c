@@ -399,6 +399,55 @@ static int check_island_scratch(const char *dir, const char *op)
 	return good;
 }
 
+/* The header's tiles[3] declares the scratch the firmware writes in
+ * full (2,637,824 B on the MobileNet ring); the BAR-ref walk sees only
+ * referenced offsets. The built scratch entry must be the larger of the
+ * two, plus the 16 KiB guard. Fixtures carry tiles[3] == 0, so the
+ * unpatched build is the walk value; a tiny declaration changes nothing. */
+static int check_declared_scratch(const char *dir, const char *op)
+{
+	const char *anec_path = fixture(dir, op, "program-0.anec");
+	static const uint32_t declared[] = { 1, 161 };
+	struct ane_m2_model model;
+	struct ane_m2_sections secs;
+	uint8_t *anec;
+	long size;
+	uint64_t walk;
+	unsigned i;
+	int good = 1;
+
+	anec = read_all(anec_path, &size);
+	if (!anec) {
+		return 0;
+	}
+	if (ane_m2_program_build(anec, (uint64_t)size, &model, &secs)) {
+		free(anec);
+		return 0;
+	}
+	walk = model.io[model.io_count - 1].size;
+	ane_m2_sections_free(&secs);
+	for (i = 0; i < sizeof(declared) / sizeof(declared[0]); i++) {
+		uint64_t want = (uint64_t)declared[i] << 14;
+		uint64_t got;
+
+		memcpy(anec + 0x28 + 3 * 4, &declared[i], 4);
+		if (ane_m2_program_build(anec, (uint64_t)size, &model,
+					 &secs)) {
+			good = 0;
+			break;
+		}
+		got = model.io[model.io_count - 1].size;
+		ane_m2_sections_free(&secs);
+		want += 0x4000;
+		good &= got == (want > walk ? want : walk);
+	}
+	free(anec);
+	printf("  [%s] %s: tiles[3] declared scratch sizes the scratch BO "
+	       "(walk %llu B)\n", good ? "ok" : "FAIL", op,
+	       (unsigned long long)walk);
+	return good;
+}
+
 /* Blend-pipeline islands (island-b-select-runtime,
  * island-b-select-constfill): the select lowering solo-reads the bool
  * cond through a srcA slot numbered ABOVE the srcB operand slots. The
@@ -555,6 +604,7 @@ int main(int argc, char **argv)
 	     i++) {
 		ok = check_island_scratch(dir, scratch_islands[i]) && ok;
 	}
+	ok = check_declared_scratch(dir, "island-c-pv") && ok;
 
 	printf("blend-pipeline islands (select rank: srcB desc, then srcA; "
 	       "device-validated channel order):\n");
