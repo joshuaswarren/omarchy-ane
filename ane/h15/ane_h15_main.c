@@ -193,7 +193,7 @@ MODULE_PARM_DESC(run_wait_ms,
 static bool run_scratch;
 module_param(run_scratch, bool, 0444);
 MODULE_PARM_DESC(run_scratch,
-		 "Stage=run (5) only: read the eight SCRATCH words, read only, once before RUN and once after the wait, and log them. Off by default. The offsets come from macOS's T6030 case and have not been read on an M3.");
+		 "Stage=run (5) or stage=boot (3): read the eight SCRATCH words, read only, once before RUN and once after the wait, and log them. Off by default. The offsets come from macOS's T6030 case and have not been read on an M3.");
 
 static bool run_pmgr;
 module_param(run_pmgr, bool, 0444);
@@ -2506,7 +2506,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
-	if (stg == 5 && (run_scratch || kboot))
+	if ((stg == 5 || stg == 3) && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "before RUN");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "before RUN");
@@ -2587,7 +2587,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	}
 	if (stg == 5)
 		ane_h15_post_wait_status(ane);
-	if (stg == 5 && (run_scratch || kboot))
+	if ((stg == 5 || stg == 3) && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
