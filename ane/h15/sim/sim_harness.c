@@ -797,6 +797,7 @@ static void pos_filled_probe(void)
 	stage = "boot";
 	confirm_boot = true;
 	fw_path = path;
+	pwgate_t6031 = 1;
 
 	chk(ane_h15_facts_ready(ane_h15_facts, ane_h15_n_facts),
 	    "P7 filled: substituted table is ready (gate open)");
@@ -821,6 +822,18 @@ static void pos_filled_probe(void)
 	    "P7 filled: owned preparation cleaned up on boot refusal");
 	chk(events_in(cur_soc->engine_pa, cur_soc->engine_size, 1) == 0 &&
 	    sim_bus_faults == 0, "P7 filled: no device write or bus fault");
+	/* pwgate_t6031 no longer refuses the boot stage at probe: a second
+	 * probe with the parameter set must reach the boot_overlay gate,
+	 * not a pwgate refusal. Runs after the counter assertions so it
+	 * cannot pollute them. */
+	pwgate_t6031 = 1;
+	ret = probe_now();
+	chk(parse_result(&rstage, verdict, sizeof(verdict),
+			 reason, sizeof(reason)) &&
+	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
+	    strstr(reason, "boot_overlay=1"),
+	    "P7 filled: pwgate_t6031=1 on stage 3 reaches the boot_overlay gate");
+	pwgate_t6031 = 0;
 }
 #endif
 
@@ -2550,12 +2563,12 @@ static void pos_run_pwgate_rows(void)
 		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 2") == 1 && events_in(0, ~0ULL, 0) == 0 &&
 		    sim_n_iomap == 0, name);
 
-		/* WR7: the step is stage 5 only. Stage 2 with the parameter set refuses before any bus access. */
+		/* WR7: the step is stages 5 and 3 only. Stage 2 with the parameter set refuses before any bus access. */
 		stage2_setup(s, rows[r].compat, -1);
 		pwgate_t6031 = 1;
 		ret = probe_now();
 		snprintf(name, sizeof(name), "WR7 %s pwgate_t6031=1 at stage 2: refused before any bus access and any mapping", t);
-		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031: stage=run (5) only") == 1 &&
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031: stage=run (5) or stage=boot (3) only") == 1 &&
 		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
 	}
 	printf("  %-58s %s\n", "pos_run_pwgate_rows summary", fails == before ? "all WR checks PASS" : "FAILURES above");

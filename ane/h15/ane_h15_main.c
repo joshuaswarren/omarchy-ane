@@ -233,7 +233,7 @@ MODULE_PARM_DESC(boot_overlay,
 static unsigned int pwgate_t6031;
 module_param(pwgate_t6031, uint, 0444);
 MODULE_PARM_DESC(pwgate_t6031,
-		 "Stage=run (5) only, rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. Never run on an M3.");
+		 "Stage=run (5) or stage=boot (3), rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. 2026-11-10: the stage 3 boot route measured the T6030 word 0x3 (closed) after two RUNs that left RUNNING clear, so the boot route now runs the shipped clear. Never run on an M3.");
 
 
 static bool stop_after_pwgate;
@@ -2515,7 +2515,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	 * last action before the core is released. On a poll timeout the run
 	 * stops here: nothing written to the core, nothing pinned, claims
 	 * released (the probe failure path unmaps and detaches). */
-	if (stg == 5 && !kboot && pwgate_t6031 && s->pwgate_pa) {
+	if ((stg == 5 || stg == 3) && !kboot && pwgate_t6031 && s->pwgate_pa) {
 		ret = ane_h15_pwgate_open(ane, pwres, sizeof(pwres));
 		if (ret) {
 			ane_h15_unmap_firmware(ane);
@@ -2735,8 +2735,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 2 (got %u)\n", pwgate_t6031);
 		return -EINVAL;
 	}
-	if (pwgate_t6031 && stage_idx != 5) {
-		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) only\n");
+	if (pwgate_t6031 && stage_idx != 5 && stage_idx != 3) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) or stage=boot (3) only\n");
 		return -EINVAL;
 	}
 	if (ps_assert && (!pwgate_t6031 || stage_idx != 5)) {
