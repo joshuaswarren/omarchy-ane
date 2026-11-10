@@ -214,19 +214,31 @@ const struct ane_h15_soc ane_t6034_soc = {
  * "stage=boot stays REFUSED on H15".
  */
 const struct ane_h15_fact ane_h15_facts[] = {
+	/* stages bit 3 = stage 3 (the owned-image boot route). H1..H4 are filled
+	 * by measured receipts; H5 (the SCRATCH wake word) belongs to the
+	 * kext-boot experiments that no current stage performs: it gates no
+	 * stage and stays open. */
 	{ "H1", "H15 stub-OS firmware identity (which firmware image iBoot preloads)",
-	  "omarchy-ane-probe os-fw-version + omarchy-ane-firmware-fetch pin row",
-	  false },
+	  "the owned route pins the image itself: ane_h15_fw_pins.h ane_fw_t6030 "
+	  "(sha256 43da9d56..67a0, 1605632 B), sha-verified at prepare on the "
+	  "2026-11-10 stage 3 attempt; iBoot's preload is not fetched on this route",
+	  true, 0x08 },
 	{ "H2", "mailbox base + IRQ roles",
-	  "S2 probe /proc/interrupts + S3 raw mbox CTRL reads", false },
+	  "mbox 0x1408000 INFERENCE per the soc row (ADT); A2I/I2A CTRL read EMPTY "
+	  "at every preflight (stage 2 receipt 2026-10-23 PR 175, stage 3 dmesg "
+	  "2026-11-10); h15 polls the CTRL words, no IRQ handler",
+	  true, 0x08 },
 	{ "H3", "firmware segment-ranges + DART sid/vm-base/vm-size",
-	  "owner IODeviceTree capture (ane + dart-ane) beside the b0 receipts",
-	  false },
+	  "owned image layout ane_h15_fw_layout.h (TEXT/DATA split); IOVA base "
+	  "0x10000000000 = rvbar_expect&~1 (soc row); sid 0 per the ADT dart-ane "
+	  "row (t6030 DTS header: mapper-ane reg 0, bypass-15)",
+	  true, 0x08 },
 	{ "H4", "RVBAR entry compose value",
-	  "macOS behaviour on the H15, then S3 live observation",
-	  false },
+	  "measured by stage 2 on this machine 2026-10-23 (PR 175 comment): "
+	  "RVBAR 0x0000010000000001, the soc row's rvbar_expect",
+	  true, 0x08 },
 	{ "H5", "SCRATCH wake word + protocol role (never reuse T6021 0xf7fbdff9)",
-	  "same macOS behaviour as H4, then live observation", false },
+	  "same macOS behaviour as H4, then live observation", false, 0 },
 };
 
 const unsigned int ane_h15_n_facts = ARRAY_SIZE(ane_h15_facts);

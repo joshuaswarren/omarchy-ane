@@ -65,6 +65,9 @@ struct ane_h15_fact {
 	const char *what;	/* the missing fact, one line */
 	const char *fill;	/* the artifact that fills the row */
 	bool filled;
+	unsigned char stages;	/* bitmask of stages this row gates (bit n = stage n);
+				 * 0 = gates no current path: the row stays open for
+				 * audit, but opens no stage gate */
 };
 
 /* Walk a fact table, emit one line per unfilled row through emit(),
@@ -81,6 +84,27 @@ static inline int ane_h15_facts_report(const struct ane_h15_fact *facts,
 
 	for (i = 0; i < n; i++) {
 		if (facts[i].filled)
+			continue;
+		unfilled++;
+		if (emit)
+			emit(ctx, &facts[i]);
+	}
+	return (int)unfilled;
+}
+
+/* Same walk, scoped to one stage: a row gates the stage only when its stages
+ * bit is set. An unfilled row that gates nothing never blocks a stage. */
+static inline int ane_h15_facts_report_stage(const struct ane_h15_fact *facts,
+					     unsigned int n,
+					     void (*emit)(void *ctx,
+							  const struct ane_h15_fact *f),
+					     void *ctx,
+					     unsigned char stage_bit)
+{
+	unsigned int i, unfilled = 0;
+
+	for (i = 0; i < n; i++) {
+		if (facts[i].filled || !(facts[i].stages & stage_bit))
 			continue;
 		unfilled++;
 		if (emit)

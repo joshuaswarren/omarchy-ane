@@ -750,8 +750,9 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 		ane_h15_result(ane, 3, "REFUSED", "owned-firmware-prepare-failed");
 		return ret;
 	}
-	unfilled = ane_h15_facts_report(ane_h15_facts, ane_h15_n_facts,
-					ane_h15_fact_emit, ane->dev);
+	unfilled = ane_h15_facts_report_stage(ane_h15_facts, ane_h15_n_facts,
+					      ane_h15_fact_emit, ane->dev,
+					      0x08);
 	if (unfilled) {
 		ane_h15_result(ane, 3, "REFUSED", "unfilled-facts");
 		return -ENOENT;

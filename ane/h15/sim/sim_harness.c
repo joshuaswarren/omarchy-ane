@@ -451,22 +451,29 @@ static void pos_gate_logic(void)
 
 	chk(n == 5, "T6: real table has exactly 5 fact rows");
 	chk(!ane_h15_facts_ready(ane_h15_facts, n),
-	    "T6: real table is NOT ready (gate closed)");
-	chk(ane_h15_facts_report(ane_h15_facts, n, NULL, NULL) == 5,
-	    "T6: real table reports 5 unfilled rows");
+	    "T6: real table is NOT ready (gate closed; H5 stays open)");
+	chk(ane_h15_facts_report(ane_h15_facts, n, NULL, NULL) == 1,
+	    "T6: real table reports exactly H5 unfilled");
+	chk(ane_h15_facts_report_stage(ane_h15_facts, n, NULL, NULL, 0x08) == 0,
+	    "T6: stage 3 facts (H1..H4) are filled; H5 gates no stage");
+	chk(ane_h15_facts_report_stage(ane_h15_facts, n, NULL, NULL, 0x20) == 0,
+	    "T6: H5 gates no current stage, stage 5 included");
 
 	memcpy(t, ane_h15_facts, n * sizeof(t[0]));
-	t[2].filled = true;		/* synthetic: H3 measured */
+	t[4].filled = true;		/* synthetic: H5 measured too */
+	chk(ane_h15_facts_ready(t, n),
+	    "T6: a fully-filled real table WOULD be ready");
+	memcpy(t, ane_h15_facts, n * sizeof(t[0]));
+	t[0].filled = false;		/* synthetic: unfill H1 again */
 	t6_n = 0;
-	chk(ane_h15_facts_report(t, n, t6_emit, NULL) == 4,
-	    "T6: synthetic H3-filled table reports 4 unfilled");
-	chk(t6_n == 4 && !strcmp(t6_ids[0], "H1") &&
-	    !strcmp(t6_ids[1], "H2") && !strcmp(t6_ids[2], "H4") &&
-	    !strcmp(t6_ids[3], "H5"),
-	    "T6: synthetic H3-filled enumeration is H1,H2,H4,H5");
+	chk(ane_h15_facts_report_stage(t, n, t6_emit, NULL, 0x08) == 1 &&
+	    t6_n == 1 && !strcmp(t6_ids[0], "H1"),
+	    "T6: an unfilled stage-3 row still blocks the stage-3 gate");
 
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++) {
+		t[i] = ane_h15_facts[i];
 		t[i].filled = true;
+	}
 	chk(ane_h15_facts_ready(t, n),
 	    "T6: fully-filled synthetic table WOULD open the gate (logic only)");
 	chk(ane_h15_facts_report(t, n, t6_emit, NULL) == 0,
