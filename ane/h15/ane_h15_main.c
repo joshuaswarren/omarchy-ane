@@ -226,6 +226,15 @@ module_param(grant_tunables, bool, 0444);
 MODULE_PARM_DESC(grant_tunables,
 		 "Stage=run (5) or boot (3), before the scratch handshake: write the twelve T6021 grant-tunable words at eng+0x000..0x430 (ane_t6021_boot.h P-1). The working T6021 flow runs this unconditionally; the h15 sequences never had it. Off by default.");
 
+/* The T6021 mailbox transport variant (ane_t6021_boot.h rtb_mode): SCRATCH6=0
+ * in the handshake, a SCRATCH7 ACK timeout is nonfatal because aliveness comes
+ * from the RTKit HELLO over the ASC mailbox, and the session runs after the
+ * start. This is the w91 M2 path that reached its READY. */
+static bool mailbox_mode;
+module_param(mailbox_mode, bool, 0444);
+MODULE_PARM_DESC(mailbox_mode,
+		 "Stage=run (5) or boot (3), with scratch_boot=1: select the mailbox transport (SCRATCH6=0), tolerate a SCRATCH7 ACK timeout, and run the RTKit session after the start; the RESULT carries rtkit-hello. The w91 M2 READY path. Off by default.");
+
 /* The names these two parameters had before the rename. Accepted, not listed (permission 0), so the commands already
  * posted to volunteers still run. Remove both lines once those runs are done. */
 module_param_named(kext_boot, scratch_boot, bool, 0);
@@ -2338,7 +2347,7 @@ static int ane_h15_scratch_boot(struct ane_h15 *ane, u32 ctrl, bool *s7_ready,
 		if (ret)
 			return ret;
 	}
-	ret = ane_h15_scr_wr_kboot(ane, 6, 1);
+	ret = ane_h15_scr_wr_kboot(ane, 6, mailbox_mode ? 0 : 1);
 	if (ret)
 		return ret;
 	ret = ane_h15_scr_wr_kboot(ane, 7, 0);
@@ -2678,7 +2687,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	}
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after RUN");
-	if (stg >= 6) {
+	if (stg >= 6 || mailbox_mode) {
 		ane_h15_rtk_session(ane, &rtk);
 		ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
 		if (!ret && !(st & ANE_H15_ST_STOPPED))
@@ -2738,6 +2747,9 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		if (kboot) {
 			snprintf(kres, sizeof(kres), "scratch_boot=1 s7_ready=%s core-not-stopped",
 				 s7_ready ? "yes" : "no");
+			if (mailbox_mode)
+				snprintf(kres + strlen(kres), sizeof(kres) - strlen(kres),
+					 " rtkit-hello=%u", rtk.hello);
 			ane_h15_result(ane, stg, "FAIL", kres);
 		} else {
 			ane_h15_result(ane, stg, "FAIL", "core-not-stopped");
@@ -2780,6 +2792,9 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	if (kboot) {
 		snprintf(kres, sizeof(kres), "scratch_boot=1 s7_ready=%s %s", s7_ready ? "yes" : "no",
 			 started_seen ? "core-started-and-stopped" : "core-never-left-stopped");
+		if (mailbox_mode)
+			snprintf(kres + strlen(kres), sizeof(kres) - strlen(kres),
+				 " rtkit-hello=%u app=%u", rtk.hello, rtk.app_started);
 		if (pwres[0])
 			snprintf(kres + strlen(kres), sizeof(kres) - strlen(kres), " %s", pwres);
 		ane_h15_result(ane, stg, "PASS", kres);
@@ -2848,6 +2863,14 @@ static int ane_h15_probe(struct platform_device *pdev)
 	if (ret) {
 		dev_err(&pdev->dev, "unknown stage \"%s\"\n", stage);
 		return ret;
+	}
+	if (mailbox_mode && (stage_idx != 5 && stage_idx != 3)) {
+		dev_err(&pdev->dev, "mailbox_mode=1 is stage=run (5) or boot (3) only: refusing\n");
+		return -EINVAL;
+	}
+	if (mailbox_mode && !scratch_boot) {
+		dev_err(&pdev->dev, "mailbox_mode=1 needs scratch_boot=1 (it changes the handshake transport): refusing\n");
+		return -EINVAL;
 	}
 	if (scratch_boot && stage_idx != 5 && stage_idx != 3) {
 		dev_err(&pdev->dev, "scratch_boot=1 is stage=run (5) or boot (3) only: refusing\n");

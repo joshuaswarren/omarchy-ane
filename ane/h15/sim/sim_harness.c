@@ -251,6 +251,7 @@ static void reset_all(void)
 	scratch_boot = false;
 	sb_wait_ms = 1000;
 	grant_tunables = false;
+	mailbox_mode = false;
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
@@ -1810,6 +1811,43 @@ static void pos_run_scratch_boot(void)
 	chk(ret != 0 && log_count("grant_tunables=1 is stage=run (5) or boot (3) only") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
 	    "KT2 stage=2 with grant_tunables=1 refuses before any bus access");
+
+	/* KM1: mailbox_mode=1 selects SCRATCH6=0, tolerates the ACK timeout and runs
+	 * the RTKit session after the start (the T6021 rtb_mode variant). The stage-5
+	 * dm model does not answer the HELLO, so hello stays 0; the transport flip,
+	 * the tolerated timeout and the session execution are what this run proves. */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	scratch_boot = true;
+	sb_wait_ms = 20;
+	mailbox_mode = true;
+	eng_set(s, off + 4 * 7, 0x08042006);
+	ret = probe_now();
+	chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+	    rstage == 5 && !strcmp(verdict, "PASS") && strstr(reason, "s7_ready=no") &&
+	    strstr(reason, "rtkit-hello="),
+	    "KM1 mailbox mode: ACK timeout tolerated, RESULT carries rtkit-hello");
+	chk(log_count("ane_h15 write SCRATCH6=0x1") == 0 && log_count("ane_h15 write SCRATCH6=0 pa=") == 2,
+	    "KM1 the transport select writes SCRATCH6=0 (clear plus select), never 1");
+	chk(log_count("ane_h15 rtkit session:") == 1, "KM1 the RTKit session ran once after the start");
+	remove_if_probed();
+
+	/* KM2: mailbox_mode without scratch_boot refuses (it only changes the handshake). */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	mailbox_mode = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("mailbox_mode=1 needs scratch_boot=1") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0,
+	    "KM2 mailbox_mode=1 without scratch_boot=1 refuses before any bus access");
+
+	/* KM3: mailbox_mode on a non-run stage refuses at probe. */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	stage = "dart";
+	mailbox_mode = true;
+	scratch_boot = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("mailbox_mode=1 is stage=run (5) or boot (3) only") == 1 &&
+	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
+	    "KM3 stage=4 with mailbox_mode=1 refuses before any bus access");
 
 	/* KB6: the SCRATCH7 clear does not take (the register ignores the write and keeps
 	 * reading the stale ready word). The run must stop before the first CPU_CONTROL
