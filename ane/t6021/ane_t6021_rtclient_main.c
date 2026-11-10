@@ -242,6 +242,7 @@ struct ane_rtclient {
 	u32 legacy_allocated;		/* high-water mark of the table: slots below it may be free (cpu NULL) */
 	size_t legacy_bytes;
 	u32 legacy_malloc_cursor;
+	u32 legacy_owner;		/* stamp of the buffers the firmware asks for now (ane_t6021_legtab.h): program id + 1 while a command of that program runs, ANE_LEGTAB_PENDING during a LOAD, else none; set under ane_t6021_fw_lock */
 	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
 	/* One reusable 16 KiB command buffer for every host command
 	 * (CONFIG_GET + the three ioctls). Protocol-legal to reuse: an
@@ -501,6 +502,7 @@ static int ane_rtclient_legacy_alloc(struct ane_rtclient *ane, u64 size)
 	}
 	memset(buffer->cpu, 0, size);
 	buffer->size = size;
+	buffer->owner = ane->legacy_owner;
 	ane->legacy_bytes += size;
 	if ((u32)slot == ane->legacy_allocated)
 		ane->legacy_allocated++;
@@ -609,32 +611,48 @@ static int ane_rtclient_malloc_service(struct ane_rtclient *ane, unsigned int *c
 	return 1;
 }
 
-/* After a command that makes the firmware free memory (0x203, 0x201) its FREE request can land after the acknowledgement. Keep answering the
- * ring until it was quiet for quiet_ms, at most 64 answers (a firmware that never goes quiet is -EBUSY). Caller holds the firmware lock. */
-static int ane_rtclient_malloc_settle(struct ane_rtclient *ane, unsigned int quiet_ms)
+static int ane_rtclient_wait_serve(void *ctx)
 {
-	unsigned int cursor = ane->legacy_malloc_cursor;
-	unsigned long until = jiffies + msecs_to_jiffies(quiet_ms);
-	int ret = 0, served;
-	unsigned int answered = 0;
+	struct ane_rtclient *ane = ctx;
 
-	while (time_before(jiffies, until)) {
-		served = ane_rtclient_malloc_service(ane, &cursor);
-		if (served < 0) {
-			ret = served;
-			break;
-		}
-		if (served) {
-			if (++answered > 64) {
-				ret = -EBUSY;
-				break;
-			}
-			until = jiffies + msecs_to_jiffies(quiet_ms);
-		} else
-			usleep_range(200, 400);
-	}
-	ane->legacy_malloc_cursor = cursor;
-	return ret;
+	return ane_rtclient_malloc_service(ane, &ane->legacy_malloc_cursor);
+}
+
+static u64 ane_rtclient_wait_now_us(void *ctx)
+{
+	return ktime_to_us(ktime_get());
+}
+
+static void ane_rtclient_wait_pause(void *ctx)
+{
+	usleep_range(50, 100);
+}
+
+static const struct ane_legtab_wait_ops ane_rtclient_wait_ops = {
+	.serve = ane_rtclient_wait_serve,
+	.now_us = ane_rtclient_wait_now_us,
+	.pause = ane_rtclient_wait_pause,
+};
+
+/* After TERMINATE_PROCESS (0x203) and DESTROY_PROGRAM (0x201) the firmware gives back the buffers it asked for while the program ran with a FREE request that
+ * can land after the acknowledgement, and it has not stopped using the program's memory until the host answered. Answer the ring until every buffer stamped
+ * with the program's owner mark is back, at most bound_ms (ane_t6021_legtab.h). Returns 0 when they are back, and also when bound_ms passed without them:
+ * that is logged, the buffers lose their mark so a later program that gets the same id does not wait for them, and their FREE is answered whenever it comes.
+ * Returns the negative errno of a ring entry that cannot be served. Caller holds the firmware lock. */
+static int ane_rtclient_unload_wait(struct ane_rtclient *ane, const struct ane_t6021_prog *p, unsigned int bound_ms, const char *after)
+{
+	u32 owner = p->prog_id + 1, out = ane_legtab_owned(ane->legacy_buffers, ane->legacy_allocated, owner);
+	ktime_t t0 = ktime_get();
+	int ret = ane_legtab_wait_owner(&ane_rtclient_wait_ops, ane, ane->legacy_buffers, &ane->legacy_allocated, owner, (u64)bound_ms * USEC_PER_MSEC);
+
+	dev_dbg(ane->dev, "program %u: %u firmware buffer(s) out after %s, waited %lld us, result %d\n", p->prog_id, out, after,
+		ktime_us_delta(ktime_get(), t0), ret);
+	if (ret != -ETIMEDOUT)
+		return ret;
+	dev_warn(ane->dev, "program %u: %u firmware buffer(s) still out %u ms after %s, going on\n", p->prog_id,
+		 ane_legtab_owned(ane->legacy_buffers, ane->legacy_allocated, owner), bound_ms, after);
+	ane_legtab_restamp(ane->legacy_buffers, ane->legacy_allocated, owner, ANE_LEGTAB_NO_OWNER);
+	return 0;
 }
 
 /* Legacy ChMan exchange (post-DONE 13.5 transport). Resends to the same
@@ -1182,12 +1200,12 @@ static struct ane_t6021_prog *ane_t6021_prog_by_id(u32 prog_id)
 	return ane_t6021_progtab_by_id(&ane_t6021_progtab, prog_id);
 }
 
-/* Firmware side of an unload: terminate the program's process (0x203), then destroy the program (0x201). The firmware acknowledges both
- * with a zero status; a program with a process still attached would make it halt, which is why the process goes first. A failure or timeout
- * leaves the program HELD (and the device quarantined by the command path). Caller holds ane_t6021_fw_lock. */
-static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
+/* Firmware side of an unload: terminate the program's process (0x203), then destroy the program (0x201). The firmware acknowledges both with a zero status;
+ * a program with a process still attached would make it halt, which is why the process goes first. After each command, wait for the firmware to give back
+ * the buffers it asked for while the program ran (ane_rtclient_unload_wait), so the unload lasts as long as the firmware's teardown and has no fixed
+ * minimum. A failure or timeout of a command leaves the program HELD (and the device quarantined by the command path). Caller holds ane_t6021_fw_lock. */
+static int ane_t6021_prog_unload_fw(struct ane_rtclient *ane, struct ane_t6021_prog *p)
 {
-	struct ane_rtclient *ane = ctx;
 	struct ane_legacy_buffer *command;
 	int ret;
 
@@ -1200,7 +1218,7 @@ static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
 		*(u32 *)((u8 *)command->cpu + 0x0c) = cpu_to_le32(p->proc_id);
 		ret = ane_rtclient_command(ane, command, 0x10, CSNE_CMD_TERMINATE_PROCESS, 1, 3000);
 		if (!ret)
-			ret = ane_rtclient_malloc_settle(ane, 100);	/* the FREE of the l2 spill buffers lands after the acknowledgement */
+			ret = ane_rtclient_unload_wait(ane, p, 100, "terminate");	/* the FREE of the l2 spill buffers lands after the acknowledgement */
 		if (ret) {
 			atomic_set(&ane_t6021_quarantined, 1);
 			return ret;
@@ -1210,15 +1228,22 @@ static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
 	*(u32 *)((u8 *)command->cpu + 0x08) = cpu_to_le32(p->prog_id);
 	ret = ane_rtclient_command(ane, command, 0x0c, CSNE_CMD_DESTROY_PROGRAM, 1, 3000);
 	if (!ret)
-		/* Serve the firmware's post-destroy FREEs before the section
-		 * buffers release: on the 2026-11-10 M2 storm a firmware FREE
-		 * of a 475136-byte l2-spill buffer sat unanswered for minutes
-		 * after a program closed, with the firmware still writing into
-		 * unmapped tiles (DART NO-PTE burst). The 10 ms quiet window
-		 * answered the fast path only; 500 ms bounds the slow path. */
-		ret = ane_rtclient_malloc_settle(ane, 500);
+		/* The firmware keeps writing into the program's memory until its FREE is answered: on the 2026-11-10 M2 storm a FREE of a 475136-byte
+		 * l2-spill buffer sat unanswered for minutes after a program closed, and the firmware wrote into unmapped tiles (DART NO-PTE burst). */
+		ret = ane_rtclient_unload_wait(ane, p, 500, "destroy");
 	if (ret)
 		atomic_set(&ane_t6021_quarantined, 1);
+	return ret;
+}
+
+static int ane_t6021_prog_unload_op(void *ctx, struct ane_t6021_prog *p)
+{
+	struct ane_rtclient *ane = ctx;
+	ktime_t t0 = ktime_get();
+	int ret = ane_t6021_prog_unload_fw(ane, p);
+
+	if (ane)
+		dev_dbg(ane->dev, "program %u: unload result %d in %lld us\n", p->prog_id, ret, ktime_us_delta(ktime_get(), t0));
 	return ret;
 }
 
@@ -1456,10 +1481,12 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	 * 0x1b8, so the length is pinned here (h14_seq_first_add.py
 	 * load_step). */
 	BUILD_BUG_ON(sizeof(struct ane_csne_cmd_load_program) != 0x1b8);
+	ane->legacy_owner = ANE_LEGTAB_PENDING;
 	ret = ane_rtclient_command(ane, command,
 						       0x1c0,
 						       CSNE_CMD_LOAD_PROGRAM,
 						       1, 5000);
+	ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
 	if (!ret) {
 		u8 *cmd = command->cpu;
 
@@ -1485,6 +1512,8 @@ static int ane_rtclient_load_program(struct ane_rtclient *ane,
 	}
 
 out:
+	/* The buffers the firmware asked for during the LOAD belong to the program once it has an id; after a failed LOAD nobody waits for them. */
+	ane_legtab_restamp(ane->legacy_buffers, ane->legacy_allocated, ANE_LEGTAB_PENDING, ret ? ANE_LEGTAB_NO_OWNER : *prog_id + 1);
 	kfree(sections);
 	kfree(binds);
 	return ret;
@@ -1513,9 +1542,11 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 		*(u32 *)(cmd + 0x08) = cpu_to_le32(prog_id);
 		*(u32 *)(cmd + 0x0c) = cpu_to_le32(U32_MAX);
 	}
+	ane->legacy_owner = prog_id + 1;
 	ret = ane_rtclient_command(ane, command, 0x10,
 						       CSNE_CMD_CREATE_PROCESS,
 						       1, 3000);
+	ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
 	if (!ret) {
 		u8 *cmd = command->cpu;
 
@@ -1625,12 +1656,14 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		 * filled through its uncached mapping are in DRAM before
 		 * the fw starts reading them. */
 		wmb();
+		ane->legacy_owner = user->prog_id + 1;
 		ret = ane_rtclient_command(ane, command,
 							       cmd_size,
 							       CSNE_CMD_PROCEDURE_CALL,
 							       1,
 							       user->timeout_ms ?
 							       user->timeout_ms : 5000);
+		ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
 	}
 unlock:
 	mutex_unlock(&ane_t6021_fw_lock);
