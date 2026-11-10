@@ -24,11 +24,14 @@
  *              RVBAR and the two mailbox CTRL words, each address logged
  *              before its read, inside the two ADT-published windows
  *              only. No write, no CPU release.
- *   3 boot   : requires fw_path, confirm_boot and confirm_read. Validates
- *              the pinned file, prepares a coherent owned image and its
- *              source-bound wrapper field, then retains the existing boot
- *              refusal. The DMA API creates mappings; no execution-entry
- *              alias, message, RUN or CPU release occurs.
+ *   3 boot   : the boot-time route Main GOed 2026-11-10 for T6030: apply_overlay=1 boot_overlay=1
+ *              applies the boot blob (DART instances enabled, ane node an IOMMU client) at init
+ *              BEFORE the driver probes, the probe powers the domains, and this stage then runs
+ *              the same run path as stage 5 (run_common, stg=3) with map_fw=1 and the pinned
+ *              owned image, so the core fetches firmware through all three DART instances.
+ *              Requires fw_path, confirm_boot, confirm_read and confirm_run. The overlay is
+ *              never removed in-session (w91 M6 lesson: removal oopses apple_psd_request; a
+ *              second apply fails -EEXIST); a reboot reclaims it.
  *   4 dart   : confirm_read=1 required. Read only: the four ANE DART windows (engine+0x1800000..),
  *              version, lock state, and per stream TCR, TTBR and the enable bits. Says whether iBoot left a
  *              stream enabled and mapped. See the comment above ane_h15_stage_dart().
@@ -120,9 +123,17 @@ MODULE_PARM_DESC(confirm_boot,
 		 "Required for stage=boot. Off by default; stage=boot refuses without it.");
 
 static bool confirm_read;
+static bool pwr_req;
+static unsigned int pwr_poll_ms = 1000;
 module_param(confirm_read, bool, 0444);
 MODULE_PARM_DESC(confirm_read,
 		 "Stage=wrapper only. Off by default; stage=wrapper refuses without it. With it, stage=wrapper reads CPU_STATUS, RVBAR and the two mailbox CTRL words behind the pmgr ACTUAL=0xf gate. Reads only, nothing is written.");
+module_param(pwr_req, bool, 0444);
+MODULE_PARM_DESC(pwr_req,
+		 "stage=run or boot: the M2-order ASC CPU power-up request: set EDPRCR bit0, then poll EDPRSR bounded (pwr_poll_ms) for the powered status before RUN. On poll timeout: FAIL, no RUN write. Off by default.");
+module_param(pwr_poll_ms, uint, 0444);
+MODULE_PARM_DESC(pwr_poll_ms,
+		 "pwr_req poll bound in ms, 10 to 10000, default 1000.");
 
 static bool run_unmapped;
 module_param(run_unmapped, bool, 0444);
@@ -190,7 +201,7 @@ MODULE_PARM_DESC(run_wait_ms,
 static bool run_scratch;
 module_param(run_scratch, bool, 0444);
 MODULE_PARM_DESC(run_scratch,
-		 "Stage=run (5) only: read the eight SCRATCH words, read only, once before RUN and once after the wait, and log them. Off by default. The offsets come from macOS's T6030 case and have not been read on an M3.");
+		 "Stage=run (5) or stage=boot (3): read the eight SCRATCH words, read only, once before RUN and once after the wait, and log them. Off by default. The offsets come from macOS's T6030 case and have not been read on an M3.");
 
 static bool run_pmgr;
 module_param(run_pmgr, bool, 0444);
@@ -217,10 +228,20 @@ module_param(apply_overlay, bool, 0444);
 MODULE_PARM_DESC(apply_overlay,
 		 "Off by default. For a boot whose device tree has no ANE node (a maclab lab boot cannot carry one): apply the compiled overlay for optin=t8122, t6030 or t6031 to the live device tree with the kernel's overlay call, then register the driver, so the normal probe runs. T8122 keeps DART nodes disabled and has no IOMMU client. Refuses, touching nothing, unless optin names a row with an overlay, the machine matches it and every node the overlay refers to exists; does nothing when the tree already has the ANE node. Unloading removes it again. Never touches a boot image.");
 
+/* The boot blob (DART instances enabled, ane node an IOMMU client) instead
+ * of the runtime blob: stage=3 applies it BEFORE the driver probes, so the
+ * DARTs bind while the tree is cold. Never removed in-session; a reboot
+ * reclaims it (w91 M6 lesson: removal oopses apple_psd_request, a second
+ * apply fails -EEXIST). */
+static bool boot_overlay;
+module_param(boot_overlay, bool, 0444);
+MODULE_PARM_DESC(boot_overlay,
+		 "Off by default; stage=3 refuses without apply_overlay=1 boot_overlay=1. Applies the boot-time variant of the overlay: the three ANE DART instances enabled and the ane node an IOMMU client of all of them. Requires the apple-dart driver present so the instances bind; a stage 3 boot then maps firmware through the kernel's IOMMU API. The overlay is NOT removed at unload.");
+
 static unsigned int pwgate_t6031;
 module_param(pwgate_t6031, uint, 0444);
 MODULE_PARM_DESC(pwgate_t6031,
-		 "Stage=run (5) only, rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. Never run on an M3.");
+		 "Stage=run (5) or stage=boot (3), rows with a PWGATE window (T8122, T6030, T6031): the PWGATE step before the first CPU_CONTROL write. 0 off (default, byte-identical). 1: read the row's word (T8122 pmgr_ps+0x272c, T6030 pmgr_ps+0x2b6c, T6031 +0x199c), log it; if bits 1:0 are nonzero write 0 once and poll up to 5000 times (10 us each) until they read 0; if already 0 write nothing. 2: like 1 but always write 0 first. Other values refuse in probe. The name dates from the T6031 row, which had the step first. 2026-11-10: the stage 3 boot route measured the T6030 word 0x3 (closed) after two RUNs that left RUNNING clear, so the boot route now runs the shipped clear. Never run on an M3.");
 
 
 static bool stop_after_pwgate;
@@ -559,6 +580,11 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	bool in_rvbar = off >= ANE_H15_RVBAR_WIN_OFF &&
 			end <= (u64)ANE_H15_RVBAR_WIN_OFF + ANE_H15_RVBAR_WIN_SIZE;
 
+	/* EDPRCR (the ASC CPU power/reset request, t6021 phase1 S2
+	 * whitelist) sits outside both windows; it is read once by the
+	 * wrapper preflight: a single named address, no writes. */
+	if ((off == 0x1010310 || off == 0x1010314) && size == 4)
+		return true;
 	if (!in_wrap && !in_rvbar)
 		return false;
 	if (end > s->engine_size)
@@ -629,7 +655,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz);
 static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;
-	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0;
+	u32 status = 0, rvbar_lo = 0, rvbar_hi = 0, a2i = 0, i2a = 0, edprcr = 0, edpsr = 0;
 	unsigned int i, refused = 0;
 	char why[128];
 	int ret;
@@ -666,6 +692,10 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 	}
 	ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &status);
 	if (!ret)
+		ret = ane_h15_read_word(ane, "EDPRCR", 0x1010310, &edprcr);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "EDPRSR", 0x1010314, &edpsr);
+	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_LO", s->rvbar, &rvbar_lo);
 	if (!ret)
 		ret = ane_h15_read_word(ane, "RVBAR_HI", s->rvbar + 4, &rvbar_hi);
@@ -694,11 +724,12 @@ static int ane_h15_stage_wrapper(struct ane_h15 *ane)
 			ane_h15_result(ane, 2, "FAIL", "pwgate-window-refused");
 			return ret;
 		}
-		snprintf(why, sizeof(why), "preflight-read-only %s", pw);
+		snprintf(why, sizeof(why), "preflight-read-only %s edprcr=0x%x edpsr=0x%x", pw, edprcr, edpsr);
 		ane_h15_result(ane, 2, "PASS", why);
 		return 0;
 	}
-	ane_h15_result(ane, 2, "PASS", "preflight-read-only");
+	snprintf(why, sizeof(why), "preflight-read-only edprcr=0x%x edpsr=0x%x", edprcr, edpsr);
+	ane_h15_result(ane, 2, "PASS", why);
 	return 0;
 }
 
@@ -716,6 +747,7 @@ static void ane_h15_fact_emit(void *ctx, const struct ane_h15_fact *f)
 }
 
 static int ane_h15_prepare_owned_firmware(struct ane_h15 *ane);
+static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg);
 
 static int ane_h15_stage_boot(struct ane_h15 *ane)
 {
@@ -736,18 +768,36 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 		ane_h15_result(ane, 3, "REFUSED", "owned-firmware-prepare-failed");
 		return ret;
 	}
-	unfilled = ane_h15_facts_report(ane_h15_facts, ane_h15_n_facts,
-					ane_h15_fact_emit, ane->dev);
+	unfilled = ane_h15_facts_report_stage(ane_h15_facts, ane_h15_n_facts,
+					      ane_h15_fact_emit, ane->dev,
+					      0x08);
 	if (unfilled) {
 		ane_h15_result(ane, 3, "REFUSED", "unfilled-facts");
 		return -ENOENT;
 	}
-	/* Every fact row is filled: the gate would open for a build
-	 * that implements the boot path. This one does not; there is
-	 * no CPU release and no engine write in THIS stage (stage 5 is the only one that writes).
-	 */
-	ane_h15_result(ane, 3, "REFUSED", "facts-filled-boot-path-not-built");
-	return -ENOSYS;
+	/* Every fact row filled: the boot route runs the stage 5 machinery
+	 * (run_common, stg=3) behind the boot-time overlay. The overlay
+	 * applied at init carries the enabled DART instances and the ane
+	 * node's iommus, so map_fw maps through all of them (w91 M6 lesson:
+	 * one instance means DMA never completes). Power ran at probe via
+	 * the domain attach; run_common re-gates ACTUAL=0xf before any
+	 * engine access. */
+	if (!apply_overlay || !boot_overlay) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "stage 3 needs apply_overlay=1 boot_overlay=1 (the boot blob: DARTs enabled, ane node an IOMMU client)");
+		return -EINVAL;
+	}
+	if (!map_fw) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "stage 3 needs map_fw=1 (the core fetches firmware only through the mapped DART)");
+		return -EINVAL;
+	}
+	if (!device_iommu_mapped(ane->dev)) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "the boot overlay's DARTs did not bind (no IOMMU client)");
+		return -ENODEV;
+	}
+	return ane_h15_run_common(ane, 3);
 }
 
 /* ---- stage 4: is any ANE DART stream enabled? read only ----
@@ -1118,7 +1168,8 @@ static int ane_h15_plan_owned_map(struct ane_h15 *ane)
 {
 	struct iommu_domain *dom;
 	u64 off;
-	int ret = ane_h15_prepare_owned_firmware(ane);
+	/* stage=3 already prepared the image behind its own gates (fwload.h); prepare() refuses a second call with -EBUSY. */
+	int ret = ane->owned_fw.va ? 0 : ane_h15_prepare_owned_firmware(ane);
 
 	if (ret)
 		return ret;
@@ -1339,6 +1390,22 @@ static int ane_h15_read_ctrl(struct ane_h15 *ane, u32 *v)
 	*v = readl_relaxed(ane->engine + s->cpu_control);
 	dev_info(ane->dev, "ane_h15 word=CPU_CONTROL pa=%#llx value=%#x\n",
 		 s->engine_pa + s->cpu_control, *v);
+	return 0;
+}
+
+/* The single sanctioned debug-block write: set EDPRCR bit0, the ASC CPU
+ * power-up request (the M2 order step). Never clears bits, never writes
+ * any other debug-block address. */
+static int ane_h15_write_edprcr(struct ane_h15 *ane, u32 old, u32 val)
+{
+	if (!(val & 1u) || (old ^ val) & ~1u) {
+		dev_err(ane->dev, "ane_h15 refusing EDPRCR write %#x over %#x: only bit0 may be set\n", val, old);
+		return -EPERM;
+	}
+	ane_h15_step("write EDPRCR=%#x pa=%#llx\n", val, ane->soc->engine_pa + 0x1010310);
+	dev_crit(ane->dev, "ane_h15 write EDPRCR=%#x pa=%#llx (core power-up request)\n", val,
+		 ane->soc->engine_pa + 0x1010310);
+	writel(val, ane->engine + 0x1010310);
 	return 0;
 }
 
@@ -2473,7 +2540,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
-	if (stg == 5 && (run_scratch || kboot))
+	if ((stg == 5 || stg == 3) && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "before RUN");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "before RUN");
@@ -2482,7 +2549,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	 * last action before the core is released. On a poll timeout the run
 	 * stops here: nothing written to the core, nothing pinned, claims
 	 * released (the probe failure path unmaps and detaches). */
-	if (stg == 5 && !kboot && pwgate_t6031 && s->pwgate_pa) {
+	if ((stg == 5 || stg == 3) && !kboot && pwgate_t6031 && s->pwgate_pa) {
 		ret = ane_h15_pwgate_open(ane, pwres, sizeof(pwres));
 		if (ret) {
 			ane_h15_unmap_firmware(ane);
@@ -2500,6 +2567,47 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "PASS", pwres);
 			dev_info(ane->dev, "ane_h15 stop_after_pwgate: no CPU_CONTROL write\n");
 			return 0;
+		}
+	}
+
+	/* pwr_req (the M2 order, Main-sanctioned): set the ASC CPU power-up
+	 * request (EDPRCR bit0) and poll EDPRSR bounded before RUN. On a
+	 * poll timeout the run stops here: no RUN write, nothing started,
+	 * nothing pinned, claims released via the unmap below. */
+	if (pwr_req) {
+		u32 pr = 0, psr = 0, psr_first = 0;
+		unsigned int pol, polls = pwr_poll_ms * 10;
+
+		if (pwr_poll_ms < 10 || pwr_poll_ms > 10000) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "REFUSED", "pwr_poll_ms 10 to 10000");
+			return -EINVAL;
+		}
+		ret = ane_h15_read_word(ane, "EDPRCR", 0x1010310, &pr);
+		if (!ret)
+			ret = ane_h15_read_word(ane, "EDPRSR", 0x1010314, &psr_first);
+		if (!ret)
+			ret = ane_h15_write_edprcr(ane, pr, pr | 1u);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "power-request-refused");
+			return ret;
+		}
+		/* the poll reads through the quiet reader: read_word logs
+		 * every access and 10000 pairs overflow the kmsg ring,
+		 * burying the evidence lines ahead of them */
+		for (pol = 0; pol < polls; pol++) {
+			psr = readl_relaxed(ane->engine + 0x1010314);
+			if (psr & 1u)
+				break;
+			udelay(100);
+		}
+		dev_crit(ane->dev, "ane_h15 power-request: edprcr_read=0x%x edpsr first=0x%x last=0x%x polls=%u powered=%d\n",
+			 pr, psr_first, psr, pol, (int)(psr & 1u));
+		if (!(psr & 1u)) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "power-poll-timeout");
+			return -ETIMEDOUT;
 		}
 	}
 
@@ -2554,7 +2662,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	}
 	if (stg == 5)
 		ane_h15_post_wait_status(ane);
-	if (stg == 5 && (run_scratch || kboot))
+	if ((stg == 5 || stg == 3) && (run_scratch || kboot))
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
@@ -2702,8 +2810,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 2 (got %u)\n", pwgate_t6031);
 		return -EINVAL;
 	}
-	if (pwgate_t6031 && stage_idx != 5) {
-		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) only\n");
+	if (pwgate_t6031 && stage_idx != 5 && stage_idx != 3) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031: stage=run (5) or stage=boot (3) only\n");
 		return -EINVAL;
 	}
 	if (ps_assert && (!pwgate_t6031 || stage_idx != 5)) {
@@ -2889,7 +2997,7 @@ static struct platform_driver ane_h15_driver = {
 
 static int __init ane_h15_init(void)
 {
-	return ane_h15_register(&ane_h15_driver, optin, apply_overlay);
+	return ane_h15_register(&ane_h15_driver, optin, apply_overlay, boot_overlay);
 }
 
 static void __exit ane_h15_exit(void)

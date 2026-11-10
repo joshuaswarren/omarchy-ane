@@ -53,11 +53,12 @@ const unsigned int ane_h15_n_facts = ARRAY_SIZE(ane_h15_facts);
 #include "../ane_h15_soc.c"
 #endif
 /* The run-time overlay glue is tested by sim/sim_overlay.c with its own fake tree; here the module's init and exit are never run. */
-int ane_h15_register(struct platform_driver *drv, const char *opt, bool apply)
+int ane_h15_register(struct platform_driver *drv, const char *opt, bool apply, bool boot)
 {
 	(void)drv;
 	(void)opt;
 	(void)apply;
+	(void)boot;
 	return 0;
 }
 
@@ -252,6 +253,8 @@ static void reset_all(void)
 	pwgate_t6031 = 0;
 	pwgate_read = 0;
 	stop_after_pwgate = false;
+	pwr_req = false;
+	pwr_poll_ms = 1000;
 	sweep_watch = false;
 	sweep_watch_us = 1000;
 	sim_stall_reads_left = 0; sim_stall_us = 1000; sim_stall_lo = sim_stall_hi = 0;
@@ -450,22 +453,29 @@ static void pos_gate_logic(void)
 
 	chk(n == 5, "T6: real table has exactly 5 fact rows");
 	chk(!ane_h15_facts_ready(ane_h15_facts, n),
-	    "T6: real table is NOT ready (gate closed)");
-	chk(ane_h15_facts_report(ane_h15_facts, n, NULL, NULL) == 5,
-	    "T6: real table reports 5 unfilled rows");
+	    "T6: real table is NOT ready (gate closed; H5 stays open)");
+	chk(ane_h15_facts_report(ane_h15_facts, n, NULL, NULL) == 1,
+	    "T6: real table reports exactly H5 unfilled");
+	chk(ane_h15_facts_report_stage(ane_h15_facts, n, NULL, NULL, 0x08) == 0,
+	    "T6: stage 3 facts (H1..H4) are filled; H5 gates no stage");
+	chk(ane_h15_facts_report_stage(ane_h15_facts, n, NULL, NULL, 0x20) == 0,
+	    "T6: H5 gates no current stage, stage 5 included");
 
 	memcpy(t, ane_h15_facts, n * sizeof(t[0]));
-	t[2].filled = true;		/* synthetic: H3 measured */
+	t[4].filled = true;		/* synthetic: H5 measured too */
+	chk(ane_h15_facts_ready(t, n),
+	    "T6: a fully-filled real table WOULD be ready");
+	memcpy(t, ane_h15_facts, n * sizeof(t[0]));
+	t[0].filled = false;		/* synthetic: unfill H1 again */
 	t6_n = 0;
-	chk(ane_h15_facts_report(t, n, t6_emit, NULL) == 4,
-	    "T6: synthetic H3-filled table reports 4 unfilled");
-	chk(t6_n == 4 && !strcmp(t6_ids[0], "H1") &&
-	    !strcmp(t6_ids[1], "H2") && !strcmp(t6_ids[2], "H4") &&
-	    !strcmp(t6_ids[3], "H5"),
-	    "T6: synthetic H3-filled enumeration is H1,H2,H4,H5");
+	chk(ane_h15_facts_report_stage(t, n, t6_emit, NULL, 0x08) == 1 &&
+	    t6_n == 1 && !strcmp(t6_ids[0], "H1"),
+	    "T6: an unfilled stage-3 row still blocks the stage-3 gate");
 
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++) {
+		t[i] = ane_h15_facts[i];
 		t[i].filled = true;
+	}
 	chk(ane_h15_facts_ready(t, n),
 	    "T6: fully-filled synthetic table WOULD open the gate (logic only)");
 	chk(ane_h15_facts_report(t, n, t6_emit, NULL) == 0,
@@ -569,10 +579,12 @@ static void pos_stage2(void)
 		chk(parse_result(&rstage, verdict, sizeof(verdict),
 				 reason, sizeof(reason)) &&
 		    rstage == 2 && !strcmp(verdict, "PASS") &&
-		    !strcmp(reason, "preflight-read-only"), name);
-		snprintf(name, sizeof(name), "%s: exactly five engine reads at the five words", tag);
-		chk(events_in(s->engine_pa, s->engine_size, 0) == 5 &&
+		    !strncmp(reason, "preflight-read-only", 19), name);
+		snprintf(name, sizeof(name), "%s: exactly seven engine reads (five words + EDPRCR + EDPRSR)", tag);
+		chk(events_in(s->engine_pa, s->engine_size, 0) == 7 &&
 		    eng_events_at(s, s->cpu_status) == 1 &&
+		    eng_events_at(s, 0x1010310) == 1 &&
+		    eng_events_at(s, 0x1010314) == 1 &&
 		    eng_events_at(s, s->rvbar) == 1 &&
 		    eng_events_at(s, s->rvbar + 4) == 1 &&
 		    eng_events_at(s, s->mbox + 0x110) == 1 &&
@@ -583,6 +595,7 @@ static void pos_stage2(void)
 		chk(events_in(0, ~0ULL, 1) == 0 && sim_bus_faults == 0, name);
 		snprintf(name, sizeof(name), "%s: each address logged before its read (5 lines)", tag);
 		chk(log_count("ane_h15 read CPU_STATUS") == 1 &&
+		    log_count("ane_h15 read EDPRCR") == 1 &&
 		    log_count("ane_h15 read RVBAR_LO") == 1 &&
 		    log_count("ane_h15 read RVBAR_HI") == 1 &&
 		    log_count("ane_h15 read MBOX_A2I_CTRL") == 1 &&
@@ -789,6 +802,7 @@ static void pos_filled_probe(void)
 	stage = "boot";
 	confirm_boot = true;
 	fw_path = path;
+	pwgate_t6031 = 1;
 
 	chk(ane_h15_facts_ready(ane_h15_facts, ane_h15_n_facts),
 	    "P7 filled: substituted table is ready (gate open)");
@@ -798,12 +812,12 @@ static void pos_filled_probe(void)
 	    "P7 filled: real table renamed aside, still 5 unfilled");
 
 	ret = probe_now();
-	chk(ret == -ENOSYS, "P7 filled: probe returns -ENOSYS");
+	chk(ret == -EINVAL, "P7 filled: probe refuses without the boot overlay gates");
 	chk(parse_result(&rstage, verdict, sizeof(verdict),
 			 reason, sizeof(reason)) &&
 	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
-	    !strcmp(reason, "facts-filled-boot-path-not-built"),
-	    "P7 filled: RESULT stage=3 REFUSED facts-filled-boot-path-not-built");
+	    !strcmp(reason, "stage 3 needs apply_overlay=1 boot_overlay=1 (the boot blob: DARTs enabled, ane node an IOMMU client)"),
+	    "P7 filled: RESULT stage=3 REFUSED boot_overlay gate");
 	chk(log_count("ane_h15 hole=") == 0,
 	    "P7 filled: no hole lines from a filled table");
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "P7 filled: power released");
@@ -813,6 +827,18 @@ static void pos_filled_probe(void)
 	    "P7 filled: owned preparation cleaned up on boot refusal");
 	chk(events_in(cur_soc->engine_pa, cur_soc->engine_size, 1) == 0 &&
 	    sim_bus_faults == 0, "P7 filled: no device write or bus fault");
+	/* pwgate_t6031 no longer refuses the boot stage at probe: a second
+	 * probe with the parameter set must reach the boot_overlay gate,
+	 * not a pwgate refusal. Runs after the counter assertions so it
+	 * cannot pollute them. */
+	pwgate_t6031 = 1;
+	ret = probe_now();
+	chk(parse_result(&rstage, verdict, sizeof(verdict),
+			 reason, sizeof(reason)) &&
+	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
+	    strstr(reason, "boot_overlay=1"),
+	    "P7 filled: pwgate_t6031=1 on stage 3 reaches the boot_overlay gate");
+	pwgate_t6031 = 0;
 }
 #endif
 
@@ -1250,6 +1276,8 @@ static bool dm_s7_stuck;	/* scratch_boot model: the SCRATCH7 register ignores th
 static u32 dm_pw_word;		/* pwgate model: what the word at PWGATE + 0x199c reads */
 static int dm_pw_reads;		/* pwgate model: how many times the word was read */
 static bool dm_pw_stuck;	/* pwgate model: the register ignores the 0 write and the poll never opens */
+static bool dm_pwr_stuck;	/* pwr_req model: EDPRCR bit0 is ignored, EDPRSR never shows powered */
+static u32 dm_edpsr;		/* pwr_req model: the EDPRSR powered status */
 
 static u32 eng_get(const struct ane_h15_soc *s, u32 off)
 {
@@ -1261,6 +1289,13 @@ static void dm_write(u64 pa, u32 v)
 	const struct ane_h15_soc *s = dm_soc;
 
 	if (pa != s->engine_pa + s->cpu_control) {
+		/* pwr_req model: EDPRCR bit0 powers the core (EDPRSR bit0
+		 * reads 1 from the next poll on), unless stuck */
+		if (pa == s->engine_pa + 0x1010310u) {
+			if ((v & 1u) && !dm_pwr_stuck)
+				dm_edpsr = 1u;
+			return;
+		}
 		/* pwgate model: a 0 to the gate word opens it within the
 		 * first 10 us poll, unless the register ignores the write */
 		if (s->pwgate_pa && pa == s->pwgate_pa + s->pwgate_word && !dm_pw_stuck)
@@ -1288,6 +1323,8 @@ static u32 dm_read(u64 pa, u32 v)
 		dm_pw_reads++;
 		return dm_pw_word;
 	}
+	if (pa == s->engine_pa + 0x1010314u)
+		return dm_edpsr;
 	if (dm_s7_stuck && pa == s->engine_pa + 0x1840050u + 4 * 7)
 		return 0x08042006u;	/* the register ignored the clear */
 	if (pa == s->engine_pa + s->mbox + 0x838) {	/* popping a message */
@@ -1334,6 +1371,10 @@ static void run_setup(const struct ane_h15_soc *s, const char *compat, u32 ctrl)
 	dm_s7_stuck = false;
 	dm_pw_word = 0;
 	dm_pw_reads = 0;
+	dm_pwr_stuck = false;
+	dm_edpsr = 0;
+	dm_pwr_stuck = false;
+	dm_edpsr = 0;
 	dm_pw_stuck = false;
 	dm_msgs_left = 0;
 	sim_write_hook = dm_write;
@@ -1750,6 +1791,57 @@ static void pos_run_scratch_boot(void)
  * when the word already reads 0 (the unconditional macOS order). The step
  * must sit between the preflight (and the macOS SCRATCH sequence, when
  * scratch_boot=1) and the first CPU_CONTROL write. */
+/* PB: pwr_req, the M2-order core power-up request (Main-sanctioned). EDPRCR
+ * bit0 is the only permitted debug-block write; a bounded EDPRSR poll gates
+ * the RUN write, and a timeout stops with no RUN written. */
+static void pos_run_pwr_req(void)
+{
+	const struct ane_h15_soc *s = &ane_t6030_soc;
+	unsigned int rstage;
+	char verdict[32], reason[128], name[128];
+	int ret, before = fails;
+	u32 w[16];
+	int i, n, first;
+
+	/* PB1: the model powers the core on the request: EDPRCR written once,
+	 * EDPRSR read at least twice (once in the preflight, once polled),
+	 * RUN issued, the normal run verdict. */
+	reset_all();
+	run_setup(s, "apple,t6030-ane", 0x0);
+	pwr_req = true;
+	ret = probe_now();
+	n = run_writes(s, w, 16, &first);
+	chk(ret == 0 && n >= 3 && w[0] == 0x1 && w[1] == 0x10,
+	    "PB1 pwr_req: the first engine write is EDPRCR=0x1, the second is RUN");
+	chk(events_in(s->engine_pa + 0x1010310, 4, 0) == 2 && events_in(s->engine_pa + 0x1010310, 4, 1) == 1 &&
+	    events_in(s->engine_pa + 0x1010314, 4, 0) == 2 && events_in(s->engine_pa + 0x1010314, 4, 1) == 0,
+	    "PB1 pwr_req: EDPRCR one read + one write, EDPRSR two reads no writes (prep + one poll hit)");
+	(void)first;
+	remove_if_probed();
+
+	/* PB2: the register ignores the request: bounded poll times out, the
+	 * run stops with FAIL power-poll-timeout and no CPU_CONTROL write. */
+	reset_all();
+	run_setup(s, "apple,t6030-ane", 0x0);
+	pwr_req = true;
+	pwr_poll_ms = 10;
+	dm_pwr_stuck = true;
+	ret = probe_now();
+	snprintf(name, sizeof(name), "PB2 pwr_req stuck: FAIL power-poll-timeout, ret -ETIMEDOUT");
+	chk(ret == -ETIMEDOUT && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
+	    rstage == 5 && !strcmp(verdict, "FAIL") && !strcmp(reason, "power-poll-timeout"), name);
+	chk(events_in(s->engine_pa + s->cpu_control, 4, 1) == 0,
+	    "PB2 pwr_req stuck: no CPU_CONTROL write after the timeout");
+	chk(events_in(s->engine_pa + 0x1010310, 4, 1) == 1,
+	    "PB2 pwr_req stuck: exactly one EDPRCR write, no more");
+	remove_if_probed();
+
+	(void)name;
+	if (fails == before)
+		printf("    PB pwr_req controls PASS\n");
+}
+
+
 static void pos_run_pwgate(void)
 {
 	const struct ane_h15_soc *s = &ane_t6031_soc;
@@ -2542,12 +2634,12 @@ static void pos_run_pwgate_rows(void)
 		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 2") == 1 && events_in(0, ~0ULL, 0) == 0 &&
 		    sim_n_iomap == 0, name);
 
-		/* WR7: the step is stage 5 only. Stage 2 with the parameter set refuses before any bus access. */
+		/* WR7: the step is stages 5 and 3 only. Stage 2 with the parameter set refuses before any bus access. */
 		stage2_setup(s, rows[r].compat, -1);
 		pwgate_t6031 = 1;
 		ret = probe_now();
 		snprintf(name, sizeof(name), "WR7 %s pwgate_t6031=1 at stage 2: refused before any bus access and any mapping", t);
-		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031: stage=run (5) only") == 1 &&
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031: stage=run (5) or stage=boot (3) only") == 1 &&
 		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0, name);
 	}
 	printf("  %-58s %s\n", "pos_run_pwgate_rows summary", fails == before ? "all WR checks PASS" : "FAILURES above");
@@ -2608,7 +2700,7 @@ static void pos_pwgate_read(void)
 				 vals[v].gate, vals[v].word);
 			snprintf(name, sizeof(name), "PR1 %s word %#x: PASS %s", s->name, vals[v].word, want);
 			chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
-			    rstage == 2 && !strcmp(verdict, "PASS") && !strcmp(reason, want), name);
+			    rstage == 2 && !strcmp(verdict, "PASS") && !strncmp(reason, want, strlen(want)), name);
 			snprintf(name, sizeof(name), "PR1 %s word %#x: one read of the word, nothing else in the window",
 				 s->name, vals[v].word);
 			chk(events_in(word_pa, 4, 0) == 1 && events_in(s->pwgate_pa, s->pwgate_size, 0) == 1, name);
@@ -2639,7 +2731,7 @@ static void pos_pwgate_read(void)
 		ret = probe_now();
 		snprintf(name, sizeof(name), "PR2 %s default off: PASS preflight-read-only, window untouched", s->name);
 		chk(ret == 0 && parse_result(&rstage, verdict, sizeof(verdict), reason, sizeof(reason)) &&
-		    !strcmp(verdict, "PASS") && !strcmp(reason, "preflight-read-only") &&
+		    !strcmp(verdict, "PASS") && !strncmp(reason, "preflight-read-only", 19) &&
 		    events_in(s->pwgate_pa, s->pwgate_size, 0) == 0 && sim_n_iounmap == 0, name);
 		remove_if_probed();
 	}
@@ -2911,7 +3003,7 @@ static void pos_translation(void)
 				      "expected_pa=0x10000ac4000 resolved_pa=0x10000ac4000") == 1,
 			    "T1 matched entry logs the IOVA, expected TEXT and resolved address");
 		chk(sim_n_iocalls == before && events_in(0, ~0ULL, 1) == 0 &&
-		    events_in(s->engine_pa, s->engine_size, 0) == 5 &&
+		    events_in(s->engine_pa, s->engine_size, 0) == 7 &&
 		    eng_events_at(s, s->cpu_control) == 0 && sim_bus_faults == 0,
 		    "T1 query changes no mapping and adds no engine access beyond preflight");
 		if (!ret)
@@ -3981,7 +4073,9 @@ int main(int argc, char **argv)
 		pos_run_postwait();
 		pos_run_scratch();
 		pos_run_pmgr();
+
 		pos_run_scratch_boot();
+		pos_run_pwr_req();
 		pos_run_pwgate();
 		pos_run_pwgate_rows();
 		pos_steplog_stop();

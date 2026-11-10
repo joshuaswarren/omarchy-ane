@@ -37,6 +37,8 @@ struct ane_h15_ovl {
 	const char *node;		/* the compatible of the ANE node the overlay adds */
 	const u8 *blob;
 	u32 size;
+	const u8 *boot_blob;		/* boot-time variant: DARTs enabled, iommus intact */
+	u32 boot_size;
 	const struct ane_h15_ovl_sym *syms;
 	unsigned int nsyms;
 };
@@ -45,16 +47,20 @@ struct ane_h15_ovl {
 
 static const struct ane_h15_ovl ane_h15_ovls[] = {
 	{ "t8122", "apple,t8122", "apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob),
+	  ane_h15_ovl_t8122_boot_blob, sizeof(ane_h15_ovl_t8122_boot_blob),
 	  ane_h15_ovl_t8122_syms, ARRAY_SIZE(ane_h15_ovl_t8122_syms) },
 	{ "t6030", "apple,t6030", "apple,t6030-ane", ane_h15_ovl_t6030_blob, sizeof(ane_h15_ovl_t6030_blob),
+	  ane_h15_ovl_t6030_boot_blob, sizeof(ane_h15_ovl_t6030_boot_blob),
 	  ane_h15_ovl_t6030_syms, ARRAY_SIZE(ane_h15_ovl_t6030_syms) },
 	{ "t6031", "apple,t6031", "apple,t6031-ane", ane_h15_ovl_t6031_blob, sizeof(ane_h15_ovl_t6031_blob),
+	  ane_h15_ovl_t6031_boot_blob, sizeof(ane_h15_ovl_t6031_boot_blob),
 	  ane_h15_ovl_t6031_syms, ARRAY_SIZE(ane_h15_ovl_t6031_syms) },
 };
 
 static struct {
 	bool symbols;		/* the /__symbols__ changeset is applied */
 	bool overlay;		/* the overlay is applied */
+	bool boot;		/* the boot-time variant: never remove it in-session */
 	int id;
 	struct of_changeset cs;
 } ane_ovl;
@@ -161,9 +167,11 @@ static void ane_h15_put_targets(struct device_node **targets, unsigned int n)
 }
 
 /* Returns 0 when the overlay was applied or the tree already has the node; an error, with the tree untouched, otherwise. */
-static int ane_h15_overlay_apply(const char *optin)
+static int ane_h15_overlay_apply(const char *optin, bool boot)
 {
 	const struct ane_h15_ovl *o = ane_h15_find_ovl(optin);
+	const u8 *blob;
+	u32 size;
 	struct device_node *targets[OVL_MAX_SYMS] = { };
 	struct device_node *np;
 	int ret;
@@ -172,6 +180,8 @@ static int ane_h15_overlay_apply(const char *optin)
 		pr_err(OVL "refused: optin=%s has no overlay (t8122, t6030 and t6031 do)\n", optin ? optin : "(unset)");
 		return -EINVAL;
 	}
+	blob = boot ? o->boot_blob : o->blob;
+	size = boot ? o->boot_size : o->size;
 	if (o->nsyms > OVL_MAX_SYMS) {
 		pr_err(OVL "refused: %s lists %u labels, more than the %u this code holds\n", o->name, o->nsyms, OVL_MAX_SYMS);
 		return -E2BIG;
@@ -191,7 +201,7 @@ static int ane_h15_overlay_apply(const char *optin)
 		ret = ane_h15_publish_symbols(o);
 	if (!ret) {
 		ane_h15_assign_phandles(o, targets);
-		ret = of_overlay_fdt_apply(o->blob, o->size, &ane_ovl.id, NULL);
+		ret = of_overlay_fdt_apply(blob, size, &ane_ovl.id, NULL);
 		if (ret) {
 			pr_err(OVL "the kernel refused the overlay: %d\n", ret);
 			if (ane_ovl.id) {
@@ -205,7 +215,9 @@ static int ane_h15_overlay_apply(const char *optin)
 			ane_ovl.symbols = false;
 		} else {
 			ane_ovl.overlay = true;
-			pr_info(OVL "applied %s (%u bytes, %u labels)\n", o->node, o->size, o->nsyms);
+			ane_ovl.boot = boot;
+			pr_info(OVL "applied %s variant=%s (%u bytes, %u labels)\n", o->node,
+				boot ? "boot" : "runtime", size, o->nsyms);
 		}
 	}
 	ane_h15_put_targets(targets, o->nsyms);
@@ -214,6 +226,16 @@ static int ane_h15_overlay_apply(const char *optin)
 
 static void ane_h15_overlay_remove(void)
 {
+	if (ane_ovl.overlay && ane_ovl.boot) {
+		/* w91 M6 lesson: removing an applied overlay oopses apple_psd_request,
+		 * and a second apply in one boot fails -EEXIST. The boot variant stays
+		 * applied; a reboot reclaims it. */
+		pr_info(OVL "boot overlay left applied; reboot to reclaim it\n");
+		ane_ovl.overlay = false;
+		ane_ovl.boot = false;
+		/* the id stays consumed; of_overlay_remove is never called for it */
+		ane_ovl.id = 0;
+	}
 	if (ane_ovl.overlay) {
 		int ret = of_overlay_remove(&ane_ovl.id);
 
@@ -228,12 +250,12 @@ static void ane_h15_overlay_remove(void)
 	}
 }
 
-int ane_h15_register(struct platform_driver *drv, const char *optin, bool apply_overlay)
+int ane_h15_register(struct platform_driver *drv, const char *optin, bool apply_overlay, bool boot_overlay)
 {
 	int ret = 0;
 
 	if (apply_overlay)
-		ret = ane_h15_overlay_apply(optin);
+		ret = ane_h15_overlay_apply(optin, boot_overlay);
 	if (ret)
 		return ret;
 	ret = platform_driver_register(drv);
