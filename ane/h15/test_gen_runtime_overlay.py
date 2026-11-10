@@ -68,13 +68,19 @@ class GenTests(unittest.TestCase):
             self.assertNotIn("iommus", props)
 
     def test_only_the_empty_label_fragments_are_removed(self):
+        """The runtime derivation is the boot-time source with exactly two edits: the empty label-minting
+        fragments removed (pure subtraction) and the three DART instances flipped to disabled (PR 382:
+        the live apple-dart driver must not probe enabled ANE DARTs at overlay-apply time)."""
+        disabled = '\t\t\t\tstatus = "disabled";'
         for soc, info in gen.SOCS.items():
             with self.subTest(soc=soc):
                 source = (HERE / info["src"]).read_text().splitlines()
                 derived, syms = gen.derive(soc)
-                removed = [line for line in difflib.unified_diff(source, derived.splitlines(), lineterm="", n=0) if line.startswith("-") and not line.startswith("---")]
-                added = [line for line in difflib.unified_diff(source, derived.splitlines(), lineterm="", n=0) if line.startswith("+") and not line.startswith("+++")]
-                self.assertEqual(added, [], "the derived overlay adds nothing")
+                diff = list(difflib.unified_diff(source, derived.splitlines(), lineterm="", n=0))
+                removed = [line for line in diff if line.startswith("-") and not line.startswith("---")]
+                added = [line for line in diff if line.startswith("+") and not line.startswith("+++")]
+                self.assertEqual(added, ["+" + disabled] * 3, "the only additions are the three DART disables")
+                self.assertEqual(removed.count('-\t\t\t\tstatus = "okay";'), 3, "the disables replace the three okay lines")
                 body = "\n".join(removed)
                 self.assertEqual(body.count("__overlay__"), len(syms))
                 self.assertEqual(body.count("target-path"), len(syms))
@@ -82,7 +88,11 @@ class GenTests(unittest.TestCase):
                     self.assertIn(f'target-path = "{path}"', body)
                     self.assertIn(f"{label}: __overlay__", body)
                 self.assertNotIn("compatible", body)
-                self.assertNotIn("status", body)
+                self.assertNotIn("status = \"disabled\"", body)
+                boot, _ = gen.derive(soc, boot=True)
+                self.assertEqual([line for line in difflib.unified_diff(source, boot.splitlines(), lineterm="", n=0)
+                                  if line.startswith("+") and not line.startswith("+++")],
+                                 [], "the boot derivation is pure subtraction")
 
     def test_the_labels_are_exactly_the_ones_the_overlay_refers_to_but_does_not_define(self):
         for soc in gen.SOCS:
@@ -119,7 +129,11 @@ class GenTests(unittest.TestCase):
                     blob = Path(tmp) / "o.dtbo"
                     blob.write_bytes(gen.compile_blob(derived))
                     dump = subprocess.run(["fdtdump", str(blob)], capture_output=True, text=True, check=False).stdout
-                fixups = dump[dump.index("__fixups__"):dump.index("__local_fixups__")]
+                fixups_start = dump.index("__fixups__")
+                local = dump.find("__local_fixups__")
+                # t6031 mints all five ANE power-controller labels too, so with the iommus dropped it has
+                # no overlay-internal phandle reference left and dtc emits no __local_fixups__ at all.
+                fixups = dump[fixups_start:local] if local != -1 else dump[fixups_start:]
                 for label in info["labels"]:
                     self.assertIn(f"{label} =", fixups)
                 if soc == "t6030":
