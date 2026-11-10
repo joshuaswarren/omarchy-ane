@@ -81,3 +81,10 @@ ane/h17/sim/chanreg_layout_test
 
 # kernelcache index cache (regenerable from the retained kernelcache)
 receipts/**/scripts/kc-index.json
+
+# w7X audit 2026-11-10: committed test ELFs are rebuilt from source by make; never recommit the artifacts
+tools/test_ane_session_state
+tools/test_t6021_legtab
+tools/test_t6021_mring
+tools/test_t6021_prog_lookup
+tools/test_t6021_progtab
