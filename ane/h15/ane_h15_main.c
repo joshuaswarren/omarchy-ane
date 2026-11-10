@@ -2593,15 +2593,17 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "FAIL", "power-request-refused");
 			return ret;
 		}
+		/* the poll reads through the quiet reader: read_word logs
+		 * every access and 10000 pairs overflow the kmsg ring,
+		 * burying the evidence lines ahead of them */
 		for (pol = 0; pol < polls; pol++) {
-			if (ane_h15_read_word(ane, "EDPRSR", 0x1010314, &psr))
-				break;
+			psr = readl_relaxed(ane->engine + 0x1010314);
 			if (psr & 1u)
 				break;
 			udelay(100);
 		}
-		dev_crit(ane->dev, "ane_h15 power-request: edpsr first=0x%x last=0x%x polls=%u powered=%d\n",
-			 psr_first, psr, pol, (int)(psr & 1u));
+		dev_crit(ane->dev, "ane_h15 power-request: edprcr_read=0x%x edpsr first=0x%x last=0x%x polls=%u powered=%d\n",
+			 pr, psr_first, psr, pol, (int)(psr & 1u));
 		if (!(psr & 1u)) {
 			ane_h15_unmap_firmware(ane);
 			ane_h15_result(ane, stg, "FAIL", "power-poll-timeout");
