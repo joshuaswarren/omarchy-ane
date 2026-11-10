@@ -15,7 +15,7 @@ DOC = ROOT / "docs/ane-constants-t6021-t8152.md"
 DEF = re.compile(r"^#define\s+(\w+)\s+\(?(BIT\(\d+\)|0x[0-9a-fA-F]+|\d+)[uUlL]*\)?(?=\s|\)|/|$)", re.MULTILINE)
 # Not chip constants (see the doc's last paragraph) or layouts of a transport T8152 does not have.
 EXCLUDED = re.compile(
-    r"ANE_LEGACY_|ANE_T6021_BO_|ANE_TRACE_|ANE_PMGR_PS_LAST_OFF|ANE_CALL_COOKIE|ANE_T2H_CALL_|ANE_MBI_CHAN_MAX_DUMP"
+    r"ANE_LEGACY_|ANE_LEGTAB_|ANE_T6021_BO_|ANE_TRACE_|ANE_PMGR_PS_LAST_OFF|ANE_CALL_COOKIE|ANE_T2H_CALL_|ANE_MBI_CHAN_MAX_DUMP"
     r"|MH_MAGIC_64|MH_PRELOAD|CPU_TYPE_ARM64|LC_SEGMENT_64|LC_UNIXTHREAD|ARM_THREAD_STATE64"
     r"|ANE_ASC_MBOX_CTRL_|ANE_PS_(BUSY|AUTO_ENABLE)|ANE_SEC_F_PRESENT|ANE_T6021_PROG_|ANE_T6021_BOOT_TABLE_POLLS")
 
