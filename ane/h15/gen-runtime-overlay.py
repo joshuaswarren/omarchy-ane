@@ -43,13 +43,33 @@ def runtime_dart_disable(text):
     return re.sub(r"\n\t+iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;", "", text)
 
 
-def derive(soc):
-    """Return (runtime dts text, [(label, path)]) for one SoC."""
+def derive(soc, boot=False):
+    """Return (overlay dts text, [(label, path)]) for one SoC. boot=True keeps
+    the DART instances enabled and the ane node's iommus: the boot-time
+    variant the stage=3 boot path applies BEFORE the driver probes, so the
+    DARTs bind while the tree is still cold. Only the label-minting empty
+    fragments are removed either way."""
     text = (HERE / SOCS[soc]["src"]).read_text()
     found = [(m.group(3), m.group(2)) for m in EMPTY_FRAGMENT.finditer(text)]
     if [label for label, _ in found] != SOCS[soc]["labels"]:
         raise SystemExit(f"{soc}: label-minting fragments are {[l for l, _ in found]}, expected {SOCS[soc]['labels']}")
-    return runtime_dart_disable(EMPTY_FRAGMENT.sub("", text)), found
+    stripped = EMPTY_FRAGMENT.sub("", text)
+    return (stripped if boot else runtime_dart_disable(stripped)), found
+
+
+def check_variant(soc, text, boot):
+    """Structural check per variant: the runtime blob must carry zero enabled
+    DARTs and no ane iommus (PR 382 contract), the boot blob must carry the
+    three enabled instances and the iommus (w91 M6 lesson: all instances or
+    DMA never completes)."""
+    ane = re.search(r'ane: ane@[0-9a-f]+ \{(?:(?!\n\t\t\};).)*', text, flags=re.DOTALL).group(0)
+    darts = re.findall(r'ane_dart[0-9]+: iommu@[0-9a-f]+ \{(?:(?!};).)*status = "(\w+)"', text, flags=re.DOTALL)
+    has_iommus = "iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;" in ane
+    enabled = darts.count("okay")
+    if not boot and (enabled or has_iommus):
+        raise SystemExit(f"{soc}: runtime variant must have 0 enabled DARTs and no ane iommus (got {enabled} enabled)")
+    if boot and (enabled != 3 or not has_iommus):
+        raise SystemExit(f"{soc}: boot variant must have 3 enabled DARTs and the ane iommus (got {enabled} enabled, iommus={has_iommus})")
 
 
 def compile_blob(dts_text):
@@ -68,10 +88,17 @@ def render():
              "#ifndef __ANE_H15_OVERLAY_DATA_H__", "#define __ANE_H15_OVERLAY_DATA_H__", ""]
     for soc in SOCS:
         dts, syms = derive(soc)
+        check_variant(soc, dts, boot=False)
         blob = compile_blob(dts)
+        bdts, _ = derive(soc, boot=True)
+        check_variant(soc, bdts, boot=True)
+        bblob = compile_blob(bdts)
         lines.append(f"static const u8 ane_h15_ovl_{soc}_blob[] = {{")
         for i in range(0, len(blob), 12):
             lines.append("\t" + ", ".join(f"0x{b:02x}" for b in blob[i:i + 12]) + ",")
+        lines += ["};", "", f"static const u8 ane_h15_ovl_{soc}_boot_blob[] = {{"]
+        for i in range(0, len(bblob), 12):
+            lines.append("\t" + ", ".join(f"0x{b:02x}" for b in bblob[i:i + 12]) + ",")
         lines += ["};", "", f"static const struct ane_h15_ovl_sym ane_h15_ovl_{soc}_syms[] = {{"]
         lines += [f'\t{{ "{label}", "{path}" }},' for label, path in syms]
         lines += ["};", ""]
