@@ -134,7 +134,7 @@ Evidence tags in the last column:
 | `ane_t6021_soc.pmu_pa` | `0x28e084000` | ? | ? | H18 payloads carry a PMU base address; the address is not established |
 | `ane_t6021_soc.trace_td_off` | `0x1c20458` | ? | ? | the H18 payload names the trace TD driver; the TD word offset is not established |
 
-Not chip constants, left out on purpose: allocation, buffer-object and hash limits (`ANE_LEGACY_*`, `ANE_T6021_BO_*`), trace sizes and magic (`ANE_TRACE_*`), the pmgr word offset `ANE_PMGR_PS_LAST_OFF`, the CALL cookie and its T2H layout (`ANE_CALL_COOKIE`, `ANE_T2H_CALL_*`; the T8152 INFERENCE_CALL payload is not established), the RTKit bit-field masks, which are the same RTKit message format on every chip here.
+Not chip constants, left out on purpose: allocation, buffer-object and hash limits (`ANE_LEGACY_*`, `ANE_T6021_BO_*`), the owner stamps the driver gives those buffers (`ANE_LEGTAB_*`), trace sizes and magic (`ANE_TRACE_*`), the pmgr word offset `ANE_PMGR_PS_LAST_OFF`, the CALL cookie and its T2H layout (`ANE_CALL_COOKIE`, `ANE_T2H_CALL_*`; the T8152 INFERENCE_CALL payload is not established), the RTKit bit-field masks, which are the same RTKit message format on every chip here.
 
 ## Channel table (firmware's eight channels, 64 byte slots)
 

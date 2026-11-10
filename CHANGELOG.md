@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane_t6021`: the program unload waits for the firmware instead of sleeping. After TERMINATE_PROCESS and after DESTROY_PROGRAM the driver answers the ring until every buffer stamped for that program is freed, and gives up at the bounds the 0.5.11 sleeps used (100 ms and 500 ms); a timeout logs a warning, clears the stamp and goes on. A buffer takes its owner stamp when LOAD, CREATE_PROCESS or PROCEDURE_CALL allocates it. A trace of 17 unloads on the 14-inch M2 Max (earlier module, 10 ms settles) shows the firmware freeing the buffers 231 to 392 microseconds after the TERMINATE command started (median 260), before its acknowledge, with nothing after it; the unload took 19.5 to 20.5 ms there and 600.5 ms with the 0.5.11 settles. The wait should bring that under 1 ms. That figure is a prediction from the trace: the patched module has not run on a device yet. `tools/test_t6021_legtab.c` covers a FREE posted before the wait, at 39 ms and at 300 ms, a FREE 1 microsecond either side of the bound, two buffers out, two programs, a buffer asked for during the wait, and a ring error.
+
 ## 0.5.11 (2026-11-10)
 
 This release lets the M2 conv chains reach the device and stops the firmware writing past the scratch buffer (#385), lengthens the M2 unload settles so late firmware FREEs land before the buffers release (#383), unmaps a buffer object with one ranged call (#367), and recovers a downed power domain at probe (#375). It also carries the H15, H16 and H17 bring-up work for the M3 and M4 class machines.
