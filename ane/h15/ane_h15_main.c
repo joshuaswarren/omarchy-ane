@@ -24,11 +24,14 @@
  *              RVBAR and the two mailbox CTRL words, each address logged
  *              before its read, inside the two ADT-published windows
  *              only. No write, no CPU release.
- *   3 boot   : requires fw_path, confirm_boot and confirm_read. Validates
- *              the pinned file, prepares a coherent owned image and its
- *              source-bound wrapper field, then retains the existing boot
- *              refusal. The DMA API creates mappings; no execution-entry
- *              alias, message, RUN or CPU release occurs.
+ *   3 boot   : the boot-time route Main GOed 2026-11-10 for T6030: apply_overlay=1 boot_overlay=1
+ *              applies the boot blob (DART instances enabled, ane node an IOMMU client) at init
+ *              BEFORE the driver probes, the probe powers the domains, and this stage then runs
+ *              the same run path as stage 5 (run_common, stg=3) with map_fw=1 and the pinned
+ *              owned image, so the core fetches firmware through all three DART instances.
+ *              Requires fw_path, confirm_boot, confirm_read and confirm_run. The overlay is
+ *              never removed in-session (w91 M6 lesson: removal oopses apple_psd_request; a
+ *              second apply fails -EEXIST); a reboot reclaims it.
  *   4 dart   : confirm_read=1 required. Read only: the four ANE DART windows (engine+0x1800000..),
  *              version, lock state, and per stream TCR, TTBR and the enable bits. Says whether iBoot left a
  *              stream enabled and mapped. See the comment above ane_h15_stage_dart().
@@ -216,6 +219,16 @@ static bool apply_overlay;
 module_param(apply_overlay, bool, 0444);
 MODULE_PARM_DESC(apply_overlay,
 		 "Off by default. For a boot whose device tree has no ANE node (a maclab lab boot cannot carry one): apply the compiled overlay for optin=t8122, t6030 or t6031 to the live device tree with the kernel's overlay call, then register the driver, so the normal probe runs. T8122 keeps DART nodes disabled and has no IOMMU client. Refuses, touching nothing, unless optin names a row with an overlay, the machine matches it and every node the overlay refers to exists; does nothing when the tree already has the ANE node. Unloading removes it again. Never touches a boot image.");
+
+/* The boot blob (DART instances enabled, ane node an IOMMU client) instead
+ * of the runtime blob: stage=3 applies it BEFORE the driver probes, so the
+ * DARTs bind while the tree is cold. Never removed in-session; a reboot
+ * reclaims it (w91 M6 lesson: removal oopses apple_psd_request, a second
+ * apply fails -EEXIST). */
+static bool boot_overlay;
+module_param(boot_overlay, bool, 0444);
+MODULE_PARM_DESC(boot_overlay,
+		 "Off by default; stage=3 refuses without apply_overlay=1 boot_overlay=1. Applies the boot-time variant of the overlay: the three ANE DART instances enabled and the ane node an IOMMU client of all of them. Requires the apple-dart driver present so the instances bind; a stage 3 boot then maps firmware through the kernel's IOMMU API. The overlay is NOT removed at unload.");
 
 static unsigned int pwgate_t6031;
 module_param(pwgate_t6031, uint, 0444);
@@ -716,6 +729,7 @@ static void ane_h15_fact_emit(void *ctx, const struct ane_h15_fact *f)
 }
 
 static int ane_h15_prepare_owned_firmware(struct ane_h15 *ane);
+static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg);
 
 static int ane_h15_stage_boot(struct ane_h15 *ane)
 {
@@ -742,12 +756,29 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 		ane_h15_result(ane, 3, "REFUSED", "unfilled-facts");
 		return -ENOENT;
 	}
-	/* Every fact row is filled: the gate would open for a build
-	 * that implements the boot path. This one does not; there is
-	 * no CPU release and no engine write in THIS stage (stage 5 is the only one that writes).
-	 */
-	ane_h15_result(ane, 3, "REFUSED", "facts-filled-boot-path-not-built");
-	return -ENOSYS;
+	/* Every fact row filled: the boot route runs the stage 5 machinery
+	 * (run_common, stg=3) behind the boot-time overlay. The overlay
+	 * applied at init carries the enabled DART instances and the ane
+	 * node's iommus, so map_fw maps through all of them (w91 M6 lesson:
+	 * one instance means DMA never completes). Power ran at probe via
+	 * the domain attach; run_common re-gates ACTUAL=0xf before any
+	 * engine access. */
+	if (!apply_overlay || !boot_overlay) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "stage 3 needs apply_overlay=1 boot_overlay=1 (the boot blob: DARTs enabled, ane node an IOMMU client)");
+		return -EINVAL;
+	}
+	if (!map_fw) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "stage 3 needs map_fw=1 (the core fetches firmware only through the mapped DART)");
+		return -EINVAL;
+	}
+	if (!device_iommu_mapped(ane->dev)) {
+		ane_h15_result(ane, 3, "REFUSED",
+			       "the boot overlay's DARTs did not bind (no IOMMU client)");
+		return -ENODEV;
+	}
+	return ane_h15_run_common(ane, 3);
 }
 
 /* ---- stage 4: is any ANE DART stream enabled? read only ----
@@ -2889,7 +2920,7 @@ static struct platform_driver ane_h15_driver = {
 
 static int __init ane_h15_init(void)
 {
-	return ane_h15_register(&ane_h15_driver, optin, apply_overlay);
+	return ane_h15_register(&ane_h15_driver, optin, apply_overlay, boot_overlay);
 }
 
 static void __exit ane_h15_exit(void)

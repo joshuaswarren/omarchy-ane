@@ -14,9 +14,10 @@
 
 struct platform_driver;
 
-/* Apply the overlay when apply_overlay is set, then register the driver. Fails closed: a refused guard returns an error and the
- * device tree is untouched. */
-int ane_h15_register(struct platform_driver *drv, const char *optin, bool apply_overlay);
+/* Apply the overlay when apply_overlay is set (the boot-time variant when boot_overlay is set:
+ * DART instances enabled, ane node an IOMMU client; never removed in-session), then register the
+ * driver. Fails closed: a refused guard returns an error and the device tree is untouched. */
+int ane_h15_register(struct platform_driver *drv, const char *optin, bool apply_overlay, bool boot_overlay);
 
 /* Unregister the driver, then remove what ane_h15_register applied (nothing if it applied nothing). */
 void ane_h15_unregister(struct platform_driver *drv);

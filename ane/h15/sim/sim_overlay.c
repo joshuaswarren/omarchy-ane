@@ -299,7 +299,7 @@ static void test_off_by_default(void)
 {
 	reset();
 	t6031_tree();
-	chk(ane_h15_register(&drv, "t6031", false) == 0, "O1 apply_overlay off: register succeeds");
+	chk(ane_h15_register(&drv, "t6031", false, false) == 0, "O1 apply_overlay off: register succeeds");
 	chk(nev == 1 && !strcmp(ev[0], "driver-register"), "O2 apply_overlay off: nothing but the driver registration happens");
 	ane_h15_unregister(&drv);
 	chk(nev == 2 && !strcmp(ev[1], "driver-unregister"), "O3 off: unload only unregisters the driver");
@@ -311,7 +311,7 @@ static void test_t6031_happy(void)
 
 	reset();
 	base = t6031_tree();
-	chk(ane_h15_register(&drv, "t6031", true) == 0, "H1 t6031: register with apply_overlay returns 0");
+	chk(ane_h15_register(&drv, "t6031", true, false) == 0, "H1 t6031: register with apply_overlay returns 0");
 	chk(idx("cs-init") < idx("cs-create /__symbols__") && idx("cs-create /__symbols__") < idx("cs-prop aic") &&
 	    idx("cs-prop ps_ane_base") < idx("cs-apply") && idx("cs-apply") < idx("overlay-apply") && idx("overlay-apply") < idx("driver-register"),
 	    "H2 order: symbols changeset, then the overlay, then the driver");
@@ -341,7 +341,7 @@ static void test_t6030_happy(void)
 {
 	reset();
 	t6030_tree();
-	chk(ane_h15_register(&drv, "t6030", true) == 0, "T1 t6030: register with apply_overlay returns 0");
+	chk(ane_h15_register(&drv, "t6030", true, false) == 0, "T1 t6030: register with apply_overlay returns 0");
 	chk(count_prefix("cs-prop") == 2 && ovl_blob == ane_h15_ovl_t6030_blob, "T2 t6030: two labels and the t6030 blob");
 	chk(tree[2].phandle != 0 && tree[2].phandle != 7, "T3 t6030: ps_ane_sys had no phandle and got one");
 }
@@ -352,7 +352,7 @@ static void test_t8122(void)
 	machine = "apple,t8122";
 	add_node("/soc/interrupt-controller@2d1000000", NULL, 7);
 	add_node("/soc/power-management@2d0700000/power-controller@438", NULL, 0);
-	chk(ane_h15_register(&drv, "t8122", true) == 0,
+	chk(ane_h15_register(&drv, "t8122", true, false) == 0,
 	    "B1 t8122: own-chip overlay registers");
 	chk(ovl_blob && ovl_blob != ane_h15_ovl_t6030_blob && ovl_blob != ane_h15_ovl_t6031_blob,
 	    "B2 t8122: neither Pro nor Max payload is applied");
@@ -363,12 +363,12 @@ static void test_t8122(void)
 	    "B4 t8122: removal reverses registration");
 	reset();
 	machine = "apple,t6031";
-	chk(ane_h15_register(&drv, "t8122", true) == -ENODEV && !writes() && !count_prefix("driver"),
+	chk(ane_h15_register(&drv, "t8122", true, false) == -ENODEV && !writes() && !count_prefix("driver"),
 	    "B5 t8122: Max machine refuses before any write");
 	reset();
 	machine = "apple,t8122";
 	add_node("/soc/interrupt-controller@2d1000000", NULL, 7);
-	chk(ane_h15_register(&drv, "t8122", true) == -ENOENT && !writes() && !count_prefix("driver"),
+	chk(ane_h15_register(&drv, "t8122", true, false) == -ENOENT && !writes() && !count_prefix("driver"),
 	    "B6 t8122: missing own-chip power target refuses before any write");
 }
 
@@ -376,25 +376,25 @@ static void test_guards(void)
 {
 	reset();
 	t6031_tree();
-	chk(ane_h15_register(&drv, NULL, true) == -EINVAL && writes() == 0 && count_prefix("driver") == 0 && said("optin=(unset)"),
+	chk(ane_h15_register(&drv, NULL, true, false) == -EINVAL && writes() == 0 && count_prefix("driver") == 0 && said("optin=(unset)"),
 	    "G1 optin unset: refused, nothing written, driver not registered");
 	reset();
 	t6031_tree();
-	chk(ane_h15_register(&drv, "t6034", true) == -EINVAL && writes() == 0 && count_prefix("driver") == 0, "G2 optin for a row without an overlay: refused, nothing written");
+	chk(ane_h15_register(&drv, "t6034", true, false) == -EINVAL && writes() == 0 && count_prefix("driver") == 0, "G2 optin for a row without an overlay: refused, nothing written");
 	reset();
 	t6031_tree();
 	machine = "apple,t6030";
-	chk(ane_h15_register(&drv, "t6031", true) == -ENODEV && writes() == 0 && count_prefix("driver") == 0 && said("not an apple,t6031"),
+	chk(ane_h15_register(&drv, "t6031", true, false) == -ENODEV && writes() == 0 && count_prefix("driver") == 0 && said("not an apple,t6031"),
 	    "G3 wrong machine for the optin key: refused, nothing written");
 	reset();
 	t6031_tree();
 	add_node("/soc/ane@3c8000000", "apple,t6031-ane", 0);
-	chk(ane_h15_register(&drv, "t6031", true) == 0 && writes() == 0 && !strcmp(ev[0], "driver-register") && said("already has apple,t6031-ane"),
+	chk(ane_h15_register(&drv, "t6031", true, false) == 0 && writes() == 0 && !strcmp(ev[0], "driver-register") && said("already has apple,t6031-ane"),
 	    "G4 the tree already has the ANE node: nothing applied, the driver still registers");
 	reset();
 	t6031_tree();
 	tree[3].attached = false;
-	chk(ane_h15_register(&drv, "t6031", true) == -ENOENT && writes() == 0 && count_prefix("driver") == 0 && said("power-controller@5a0"),
+	chk(ane_h15_register(&drv, "t6031", true, false) == -ENOENT && writes() == 0 && count_prefix("driver") == 0 && said("power-controller@5a0"),
 	    "G5 a label's node is missing: refused, names the path, nothing written");
 	reset();
 	t6031_tree();
@@ -405,7 +405,7 @@ static void test_guards(void)
 		snprintf(sym->vals[0], sizeof(sym->vals[0]), "/soc/somewhere-else");
 		sym->nprops = 1;
 	}
-	chk(ane_h15_register(&drv, "t6031", true) == -EEXIST && writes() == 0 && said("already names"),
+	chk(ane_h15_register(&drv, "t6031", true, false) == -EEXIST && writes() == 0 && said("already names"),
 	    "G6 a label already names another node: refused, nothing written");
 	reset();
 	t6031_tree();
@@ -416,7 +416,7 @@ static void test_guards(void)
 		snprintf(sym->vals[0], sizeof(sym->vals[0]), "/soc/interrupt-controller@292400000");
 		sym->nprops = 1;
 	}
-	chk(ane_h15_register(&drv, "t6031", true) == 0 && count_prefix("cs-create") == 0 && count_prefix("cs-prop") == 5,
+	chk(ane_h15_register(&drv, "t6031", true, false) == 0 && count_prefix("cs-create") == 0 && count_prefix("cs-prop") == 5,
 	    "G7 an existing /__symbols__ is reused and a label that already matches is not added again");
 }
 
@@ -425,17 +425,17 @@ static void test_failures(void)
 	reset();
 	t6031_tree();
 	sim_cs_apply_rc = -EIO;
-	chk(ane_h15_register(&drv, "t6031", true) == -EIO && count_prefix("overlay-apply") == 0 && count_prefix("driver") == 0 && count_prefix("cs-destroy") == 1,
+	chk(ane_h15_register(&drv, "t6031", true, false) == -EIO && count_prefix("overlay-apply") == 0 && count_prefix("driver") == 0 && count_prefix("cs-destroy") == 1,
 	    "F1 the changeset fails: the overlay is never applied, the driver never registered, the changeset destroyed");
 	chk(!ane_ovl.symbols && !ane_ovl.overlay, "F2 nothing is recorded as applied");
 	reset();
 	t6031_tree();
 	sim_cs_prop_rc = -ENOMEM;
-	chk(ane_h15_register(&drv, "t6031", true) == -ENOMEM && count_prefix("cs-apply") == 0 && count_prefix("overlay-apply") == 0, "F3 a property add fails: no apply, no overlay");
+	chk(ane_h15_register(&drv, "t6031", true, false) == -ENOMEM && count_prefix("cs-apply") == 0 && count_prefix("overlay-apply") == 0, "F3 a property add fails: no apply, no overlay");
 	reset();
 	t6031_tree();
 	sim_ovl_rc = -EINVAL;
-	chk(ane_h15_register(&drv, "t6031", true) == -EINVAL && count_prefix("driver") == 0 && idx("cs-revert") > idx("overlay-apply") && count_prefix("cs-destroy") == 1,
+	chk(ane_h15_register(&drv, "t6031", true, false) == -EINVAL && count_prefix("driver") == 0 && idx("cs-revert") > idx("overlay-apply") && count_prefix("cs-destroy") == 1,
 	    "F4 the kernel refuses the overlay: the symbols changeset is reverted, the driver not registered");
 	chk(!ane_ovl.symbols && !ane_ovl.overlay && said("kernel refused the overlay"), "F5 nothing is recorded as applied and the log says why");
 	chk(count_prefix("overlay-remove") == 0, "F8 invalid overlay without an ID needs no removal");
@@ -443,20 +443,46 @@ static void test_failures(void)
 	t6031_tree();
 	sim_ovl_rc = -EIO;
 	sim_ovl_partial = true;
-	chk(ane_h15_register(&drv, "t6031", true) == -EIO && !sim_ovl_active && count_prefix("driver") == 0,
+	chk(ane_h15_register(&drv, "t6031", true, false) == -EIO && !sim_ovl_active && count_prefix("driver") == 0,
 	    "F9 a post-apply error leaves no overlay devices or registered driver");
 	chk(idx("overlay-remove 7") > idx("overlay-apply") && idx("cs-revert") > idx("overlay-remove 7"),
 	    "F10 a partially applied overlay is removed before its symbol labels");
 	reset();
 	t6031_tree();
 	sim_drv_rc = -EBUSY;
-	chk(ane_h15_register(&drv, "t6031", true) == -EBUSY && idx("overlay-remove 7") > idx("driver-register") && idx("cs-revert") > idx("overlay-remove 7"),
+	chk(ane_h15_register(&drv, "t6031", true, false) == -EBUSY && idx("overlay-remove 7") > idx("driver-register") && idx("cs-revert") > idx("overlay-remove 7"),
 	    "F6 the driver registration fails after the overlay: the overlay and the symbols are removed again");
 	reset();
 	t6031_tree();
 	sim_drv_rc = -EBUSY;
-	chk(ane_h15_register(&drv, "t6031", false) == -EBUSY && count_prefix("overlay") == 0 && count_prefix("cs-") == 0,
+	chk(ane_h15_register(&drv, "t6031", false, false) == -EBUSY && count_prefix("overlay") == 0 && count_prefix("cs-") == 0,
 	    "F7 off by default and the driver fails: nothing to undo, nothing touched");
+}
+
+static void test_boot_variant(void)
+{
+	reset();
+	t6030_tree();
+	chk(ane_h15_register(&drv, "t6030", true, true) == 0, "BO1 t6030 boot: register with boot_overlay applies the boot blob");
+	chk(ovl_blob == ane_h15_ovl_t6030_boot_blob && ovl_size == sizeof(ane_h15_ovl_t6030_boot_blob),
+	    "BO2 t6030 boot: the boot blob is the one applied, not the runtime blob");
+	chk(said("variant=boot"), "BO3 t6030 boot: the log names the variant");
+	ane_h15_unregister(&drv);
+	chk(count_prefix("overlay-remove") == 0 && said("reboot to reclaim"),
+	    "BO4 t6030 boot: unload never removes the applied boot overlay");
+	chk(idx("driver-unregister") < idx("cs-revert"), "BO5 t6030 boot: the symbols changeset is still reverted at unload");
+	reset();
+	t6031_tree();
+	sim_ovl_rc = -EINVAL;
+	chk(ane_h15_register(&drv, "t6031", true, true) == -EINVAL && count_prefix("driver") == 0 && idx("cs-revert") > idx("overlay-apply"),
+	    "BO6 boot blob refused by the kernel: the failed apply still cleans up the changeset");
+	chk(!ane_ovl.overlay && !ane_ovl.boot, "BO7 a refused boot apply records nothing as applied");
+	reset();
+	t6031_tree();
+	sim_ovl_rc = -EIO;
+	sim_ovl_partial = true;
+	chk(ane_h15_register(&drv, "t6031", true, true) == -EIO && !sim_ovl_active,
+	    "BO8 a partially applied boot overlay is removed (never merged fully) before the driver registers");
 }
 
 int main(void)
@@ -468,6 +494,7 @@ int main(void)
 	test_t8122();
 	test_guards();
 	test_failures();
+	test_boot_variant();
 	printf(fails ? "SIM-OVERLAY: %d FAILED\n" : "SIM-OVERLAY: all checks PASS\n", fails);
 	return fails ? 1 : 0;
 }

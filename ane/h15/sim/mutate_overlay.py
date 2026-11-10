@@ -12,11 +12,11 @@ from pathlib import Path
 
 H15 = Path(__file__).resolve().parent.parent
 MUTANTS = {
-    "no-t8122-overlay": ('\t{ "t8122", "apple,t8122", "apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob),\n\t  ane_h15_ovl_t8122_syms, ARRAY_SIZE(ane_h15_ovl_t8122_syms) },\n', ""),
+    "no-t8122-overlay": ('\t{ "t8122", "apple,t8122", "apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob),\n\t  ane_h15_ovl_t8122_boot_blob, sizeof(ane_h15_ovl_t8122_boot_blob),\n\t  ane_h15_ovl_t8122_syms, ARRAY_SIZE(ane_h15_ovl_t8122_syms) },\n', ""),
     "wrong-blob-for-t8122": ('"apple,t8122-ane", ane_h15_ovl_t8122_blob, sizeof(ane_h15_ovl_t8122_blob)', '"apple,t8122-ane", ane_h15_ovl_t6031_blob, sizeof(ane_h15_ovl_t6031_blob)'),
     "no-phandle-assignment": ("targets[i]->phandle = next++;", "next++;"),
-    "driver-before-overlay": ("\tif (apply_overlay)\n\t\tret = ane_h15_overlay_apply(optin);\n\tif (ret)\n\t\treturn ret;\n\tret = platform_driver_register(drv);",
-                              "\tret = platform_driver_register(drv);\n\tif (apply_overlay && !ret)\n\t\tret = ane_h15_overlay_apply(optin);"),
+    "driver-before-overlay": ("\tif (apply_overlay)\n\t\tret = ane_h15_overlay_apply(optin, boot_overlay);\n\tif (ret)\n\t\treturn ret;\n\tret = platform_driver_register(drv);",
+                              "\tret = platform_driver_register(drv);\n\tif (apply_overlay && !ret)\n\t\tret = ane_h15_overlay_apply(optin, boot_overlay);"),
     "skip-machine-check": ("!of_machine_is_compatible(o->board)", "false"),
     "skip-existing-node-check": ("\tif (np) {\n\t\tof_node_put(np);", "\tif (false) {\n\t\tof_node_put(np);"),
     "skip-target-check": ("if (!targets[i]) {", "if (false) {"),
@@ -29,7 +29,9 @@ MUTANTS = {
                                     "}\n\nint ane_h15_register"),
     "wrong-blob-for-t6030": ('"apple,t6030-ane", ane_h15_ovl_t6030_blob, sizeof(ane_h15_ovl_t6030_blob)', '"apple,t6030-ane", ane_h15_ovl_t6031_blob, sizeof(ane_h15_ovl_t6031_blob)'),
     "renumber-existing-phandles": ("\t\tif (targets[i]->phandle)\n\t\t\tcontinue;\n", ""),
-    "apply-even-when-off": ("\tif (apply_overlay)\n\t\tret = ane_h15_overlay_apply(optin);", "\tret = ane_h15_overlay_apply(optin);"),
+    "apply-even-when-off": ("\tif (apply_overlay)\n\t\tret = ane_h15_overlay_apply(optin, boot_overlay);", "\tret = ane_h15_overlay_apply(optin, boot_overlay);"),
+    "runtime-blob-for-boot": ("blob = boot ? o->boot_blob : o->blob;", "blob = o->blob;"),
+    "boot-overlay-removed-on-unload": ("if (ane_ovl.overlay && ane_ovl.boot) {", "if (false) {"),
 }
 
 
