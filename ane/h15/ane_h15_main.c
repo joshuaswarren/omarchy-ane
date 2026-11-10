@@ -1149,7 +1149,8 @@ static int ane_h15_plan_owned_map(struct ane_h15 *ane)
 {
 	struct iommu_domain *dom;
 	u64 off;
-	int ret = ane_h15_prepare_owned_firmware(ane);
+	/* stage=3 already prepared the image behind its own gates (fwload.h); prepare() refuses a second call with -EBUSY. */
+	int ret = ane->owned_fw.va ? 0 : ane_h15_prepare_owned_firmware(ane);
 
 	if (ret)
 		return ret;

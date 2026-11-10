@@ -799,12 +799,12 @@ static void pos_filled_probe(void)
 	    "P7 filled: real table renamed aside, still 5 unfilled");
 
 	ret = probe_now();
-	chk(ret == -ENOSYS, "P7 filled: probe returns -ENOSYS");
+	chk(ret == -EINVAL, "P7 filled: probe refuses without the boot overlay gates");
 	chk(parse_result(&rstage, verdict, sizeof(verdict),
 			 reason, sizeof(reason)) &&
 	    rstage == 3 && !strcmp(verdict, "REFUSED") &&
-	    !strcmp(reason, "facts-filled-boot-path-not-built"),
-	    "P7 filled: RESULT stage=3 REFUSED facts-filled-boot-path-not-built");
+	    !strcmp(reason, "stage 3 needs apply_overlay=1 boot_overlay=1 (the boot blob: DARTs enabled, ane node an IOMMU client)"),
+	    "P7 filled: RESULT stage=3 REFUSED boot_overlay gate");
 	chk(log_count("ane_h15 hole=") == 0,
 	    "P7 filled: no hole lines from a filled table");
 	chk(sim_pm_get == 1 && sim_pm_put == 1, "P7 filled: power released");
