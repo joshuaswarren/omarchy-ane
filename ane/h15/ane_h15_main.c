@@ -846,6 +846,9 @@ static int ane_h15_stage_boot(struct ane_h15 *ane)
 #define ANE_H15_DART_ENABLE	0xc00u
 #define ANE_H15_DART_TCR	0x1000u
 #define ANE_H15_DART_TTBR	0x1400u
+#define ANE_H15_DART_ERROR	0x100u	/* t8110: FLAG bit31, STREAM 27:20, CODE 14:0 */
+#define ANE_H15_DART_ERROR_ADDR_LO	0x170u
+#define ANE_H15_DART_ERROR_ADDR_HI	0x174u
 #define ANE_H15_DART_SIDS	64u
 
 static const u32 ane_h15_dart_rel[4] = { 0, 0x10000, 0x20000, 0x4000 };
@@ -855,6 +858,8 @@ static bool ane_h15_dart_off_ok(u32 off)
 	return off == ANE_H15_DART_PARAMS3 || off == ANE_H15_DART_PARAMS4 ||
 	       off == ANE_H15_DART_PROTECT || off == ANE_H15_DART_LOCK ||
 	       off == ANE_H15_DART_ENABLE || off == ANE_H15_DART_ENABLE + 4 ||
+	       off == ANE_H15_DART_ERROR || off == ANE_H15_DART_ERROR_ADDR_LO ||
+	       off == ANE_H15_DART_ERROR_ADDR_HI ||
 	       (off >= ANE_H15_DART_TCR && off < ANE_H15_DART_TCR + 4 * ANE_H15_DART_SIDS && !(off & 3)) ||
 	       (off >= ANE_H15_DART_TTBR && off < ANE_H15_DART_TTBR + 4 * ANE_H15_DART_SIDS && !(off & 3));
 }
@@ -1843,6 +1848,48 @@ static const struct { u32 off; u32 val; } ane_h15_grant_tunables_tab[] = {
 	{ 0x420, 0x00001100 }, { 0x430, 0x00001100 },
 };
 
+/* Post-start DART error dump (Main-sanctioned 2026-11-10): read the t8110
+ * ERROR/ERROR_ADDR and ENABLE_STREAMS of all four windows while the module
+ * still holds the DARTs live, then the faulting stream's TCR/TTBR if the
+ * flag is set. Reads only; the raw words go to the log for the receipt.
+ * /dev/mem reads after the probe showed a different view (PARAMS3
+ * 0x2a2a0200 vs the module's in-window 0x125cc034), so the dump must run
+ * inside this access window. */
+static void ane_h15_dart_error_dump(struct ane_h15 *ane)
+{
+	unsigned int inst, sid;
+	u32 err, alo, ahi, en0, en1;
+
+	for (inst = 0; inst < 4; inst++) {
+		if (ane_h15_dart_rd(ane, inst, ANE_H15_DART_ERROR, &err))
+			continue;
+		if (ane_h15_dart_rd(ane, inst, ANE_H15_DART_ERROR_ADDR_LO, &alo))
+			continue;
+		if (ane_h15_dart_rd(ane, inst, ANE_H15_DART_ERROR_ADDR_HI, &ahi))
+			continue;
+		if (ane_h15_dart_rd(ane, inst, ANE_H15_DART_ENABLE, &en0))
+			continue;
+		if (ane_h15_dart_rd(ane, inst, ANE_H15_DART_ENABLE + 4, &en1))
+			continue;
+		dev_crit(ane->dev,
+			 "ane_h15 dart%u error=%#x addr=%#llx%08x en=%#08x:%#x\n",
+			 inst, err, (unsigned long long)ahi, alo, en0, en1);
+		if (!(err & 0x80000000u))
+			continue;
+		sid = (err & 0x0ff00000u) >> 20;
+		if (sid < ANE_H15_DART_SIDS) {
+			u32 tcr = 0, ttbr = 0;
+
+			if (!ane_h15_dart_rd(ane, inst, ANE_H15_DART_TCR + 4 * sid, &tcr) &&
+			    !ane_h15_dart_rd(ane, inst, ANE_H15_DART_TTBR + 4 * sid, &ttbr))
+				dev_crit(ane->dev,
+					 "ane_h15 dart%u fault sid=%u code=%#lx tcr=%#x ttbr=%#x\n",
+					 inst, sid,
+					 (unsigned long)(err & 0x7fffu), tcr, ttbr);
+		}
+	}
+}
+
 static int ane_h15_grant_tunables_wr(struct ane_h15 *ane)
 {
 	unsigned int ti;
@@ -2688,6 +2735,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after RUN");
 	if (stg >= 6 || mailbox_mode) {
+		ane_h15_dart_error_dump(ane);
 		ane_h15_rtk_session(ane, &rtk);
 		ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
 		if (!ret && !(st & ANE_H15_ST_STOPPED))
