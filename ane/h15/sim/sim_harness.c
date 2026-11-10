@@ -1715,16 +1715,27 @@ static void pos_run_scratch_boot(void)
 	stage = "wrapper";
 	scratch_boot = true;
 	ret = probe_now();
-	chk(ret != 0 && log_count("scratch_boot=1 is stage=run (5) only") == 1 &&
+	chk(ret != 0 && log_count("scratch_boot=1 is stage=run (5) or boot (3) only") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
 	    "KB4 stage=2 with scratch_boot=1 refuses before any bus access");
 	run_setup(s, "apple,t6030-ane", 0x0);
 	stage = "dart";
 	scratch_boot = true;
 	ret = probe_now();
-	chk(ret != 0 && log_count("scratch_boot=1 is stage=run (5) only") == 1 &&
+	chk(ret != 0 && log_count("scratch_boot=1 is stage=run (5) or boot (3) only") == 1 &&
 	    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0,
 	    "KB4 stage=4 with scratch_boot=1 refuses before any bus access");
+
+	/* KB4b: the boot route (3) accepts scratch_boot=1; the refusal moves past the
+	 * stage gate to the next stage-3 gate, and no bus write happens. The handshake
+	 * itself is the stage-5 sequence covered by KB2/KB3. */
+	run_setup(s, "apple,t6030-ane", 0x0);
+	stage = "boot";
+	scratch_boot = true;
+	ret = probe_now();
+	chk(ret != 0 && log_count("scratch_boot=1 is stage=run (5) or boot (3) only") == 0 &&
+	    events_in(0, ~0ULL, 1) == 0,
+	    "KB4b stage=3 with scratch_boot=1 passes the stage gate (no bus write)");
 
 	/* KB5: sb_wait_ms outside 10 to 5000 refuses stage 5 before any write. */
 	run_setup(s, "apple,t6030-ane", 0x0);

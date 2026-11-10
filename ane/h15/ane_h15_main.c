@@ -211,7 +211,7 @@ MODULE_PARM_DESC(run_pmgr,
 static bool scratch_boot;
 module_param(scratch_boot, bool, 0444);
 MODULE_PARM_DESC(scratch_boot,
-		 "Stage=run (5) only: start the core in the recorded cold-boot order instead of the read-modify-write: write 0 to SCRATCH0..7, then SCRATCH6=1, SCRATCH7=0 (read back), then CPU_CONTROL 0 and 0x10, then poll SCRATCH7 for the ready word 0x08042006. Never RVBAR, the mailbox or the DART; SCRATCH5 only ever receives 0. Off by default. Recorded behaviour, never run on an M3.");
+		 "Stage=run (5) or boot (3): start the core in the recorded cold-boot order instead of the read-modify-write: write 0 to SCRATCH0..7, then SCRATCH6=1, SCRATCH7=0 (read back), then CPU_CONTROL 0 and 0x10, then poll SCRATCH7 for the ready word 0x08042006. Never RVBAR, the mailbox or the DART; SCRATCH5 only ever receives 0. Off by default. Recorded behaviour, never run on an M3. 2026-11-10: the boot route takes the same handshake, because the working T6021 sequence always runs it before CPU release (ane_t6021_boot.h P1+P3) and the T6030 stage=3 without it started nothing.");
 
 static unsigned int sb_wait_ms = 1000;
 module_param(sb_wait_ms, uint, 0444);
@@ -2359,7 +2359,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	u64 m0, m1;
 	unsigned int waited, i, msgs = 0, started_seen = 0, posted = 0, live = 0, locked = 0;
 	bool stopped = false;
-	bool kboot = stg == 5 && scratch_boot;
+	bool kboot = (stg == 5 || stg == 3) && scratch_boot;
 	bool s7_ready = false;
 	char kres[128], pwres[64] = "";
 	struct ane_h15_rtk rtk = { 0 };
@@ -2800,8 +2800,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unknown stage \"%s\"\n", stage);
 		return ret;
 	}
-	if (scratch_boot && stage_idx != 5) {
-		dev_err(&pdev->dev, "scratch_boot=1 is stage=run (5) only: refusing\n");
+	if (scratch_boot && stage_idx != 5 && stage_idx != 3) {
+		dev_err(&pdev->dev, "scratch_boot=1 is stage=run (5) or boot (3) only: refusing\n");
 		return -EINVAL;
 	}
 	/* pwgate_t6031 refusals, all before any MMIO and before any mapping,
