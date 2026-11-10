@@ -511,17 +511,17 @@ static int refs_of_task(const uint8_t *tp, uint32_t words,
 				}
 				tag = scratch_bufid;
 				err = 0;
-			} else if (!legacy) {
-				/* Extents for every program class, not only
-				 * matmul/blend: conv chains bind srcA slots
-				 * >= 2 (MobileNet H14 linked and ring), which
-				 * the legacy slot rule refuses ("BAR slot
-				 * 2/3 ... collides with the section-tag
-				 * namespace"). The extents rule maps slot
-				 * <= 1 to kernel (tag 2) and picks the
-				 * smallest input channel covering the
-				 * slot's reach, so the stage 1-4 fixture
-				 * tags stay as the legacy rule had them. */
+			} else if (!legacy &&
+				   (is_matmul || blend_mode ||
+				    ((addr == TD_SRC_A || addr == TD_SRC_B) &&
+				     (slot == 2 || slot == 3)))) {
+				/* Conv chains bind srcA slots 2/3 (MobileNet
+				 * H14 linked and ring), which the legacy rule
+				 * refuses ("BAR slot 2/3 ... collides with the
+				 * section-tag namespace"). The extents rule
+				 * takes exactly those refs; every other
+				 * add/mul-class ref keeps its legacy tag, so
+				 * the stage 1-4 fixtures stay byte-identical. */
 				err = bar_ref_tag_extents(addr, slot,
 						slot_max_offset_dst[slot],
 						slot_max_offset_src[slot],
