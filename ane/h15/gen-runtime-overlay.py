@@ -40,7 +40,7 @@ def runtime_dart_disable(text):
     since a live stream requires the DART driver bound."""
     text = re.sub(r'(iommu@[0-9a-f]+ \{(?:(?!};).)*?)status = "okay"',
                   r'\1status = "disabled"', text, flags=re.DOTALL)
-    return re.sub(r"\n\t+iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;", "", text)
+    return re.sub(r"\n\t+iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>(?:,\n\s*<&ane_dart0 16>)?;", "", text)
 
 
 def derive(soc, boot=False):
@@ -64,7 +64,7 @@ def check_variant(soc, text, boot):
     DMA never completes)."""
     ane = re.search(r'ane: ane@[0-9a-f]+ \{(?:(?!\n\t\t\};).)*', text, flags=re.DOTALL).group(0)
     darts = re.findall(r'ane_dart[0-9]+: iommu@[0-9a-f]+ \{(?:(?!};).)*status = "(\w+)"', text, flags=re.DOTALL)
-    has_iommus = "iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;" in ane
+    has_iommus = "iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>" in ane
     enabled = darts.count("okay")
     if not boot and (enabled or has_iommus):
         raise SystemExit(f"{soc}: runtime variant must have 0 enabled DARTs and no ane iommus (got {enabled} enabled)")

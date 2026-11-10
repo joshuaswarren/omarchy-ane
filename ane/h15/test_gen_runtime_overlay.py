@@ -16,6 +16,34 @@ HAVE_DTC = shutil.which("dtc") is not None and shutil.which("fdtdump") is not No
 
 
 class GenTests(unittest.TestCase):
+    def test_t6030_boot_iommus_carries_sid16_and_runtime_drops_iommus(self):
+        """The t6030 boot variant names dart0 streams 0 and 16 (16 = the flagged second agent,
+        Main-sanctioned 2026-11-10); the runtime variant keeps the PR 382 contract: no iommus
+        at all, not a leftover specifier naming a disabled provider."""
+        if not HAVE_DTC or not shutil.which("fdtget"):
+            self.skipTest("no DT tools")
+        with tempfile.TemporaryDirectory() as tmp:
+            boot = Path(tmp) / "t6030-boot.dtbo"
+            boot.write_bytes(gen.compile_blob((HERE / "t6030-ane-dart-experimental.dts").read_text()))
+            darts = {}
+            for addr, want in (("309800000", "okay"), ("309810000", "okay"), ("309820000", "okay"), ("309804000", "disabled")):
+                node = "/fragment@3/__overlay__/iommu@" + addr
+                status = subprocess.check_output(["fdtget", str(boot), node, "status"], text=True).strip()
+                self.assertEqual(status, want, addr)
+                darts[addr] = subprocess.check_output(["fdtget", "-t", "x", str(boot), node, "phandle"], text=True).split()
+            self.assertEqual(
+                subprocess.check_output(["fdtget", "-t", "x", str(boot), "/fragment@3/__overlay__/ane@308000000", "iommus"], text=True).split(),
+                [darts["309800000"][0], "0", darts["309810000"][0], "0", darts["309820000"][0], "0", darts["309800000"][0], "10"],
+                "dart0 streams 0 and 0x10(=16), dart1 and dart2 stream 0",
+            )
+            runtime = Path(tmp) / "t6030-runtime.dtbo"
+            runtime.write_bytes(gen.compile_blob(gen.derive("t6030")[0]))
+            props = subprocess.check_output(
+                ["fdtget", "-p", str(runtime), "/fragment@3/__overlay__/ane@308000000"],
+                text=True,
+            ).splitlines()
+            self.assertNotIn("iommus", props)
+
     def test_t8122_power_graph_and_dart_client(self):
         if not HAVE_DTC or not shutil.which("fdtget"):
             self.skipTest("no DT tools")

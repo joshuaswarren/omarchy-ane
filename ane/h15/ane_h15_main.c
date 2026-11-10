@@ -2707,6 +2707,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	/* grant_tunables: the T6021 P-1 words, strictly before the scratch
 	 * handshake and the first CPU_CONTROL write. On any refusal the run
 	 * stops here: no SCRATCH write, no RUN, nothing started. */
+	ane_h15_dart_error_dump(ane);	/* pre-RUN baseline: sticky flags from before this boot's release */
 	if (grant_tunables && (stg == 5 || stg == 3)) {
 		ret = ane_h15_grant_tunables_wr(ane);
 		if (ret) {
