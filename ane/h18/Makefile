@@ -137,7 +137,7 @@ sim-mutation-nodomaingate:
 
 # the post-failure readers ignore domain_down: the channel snapshot reads IPI pending on the powered-off domain
 sim-mutation-nosnapguard:
-	$(call mutant,nosnapguard,s/if (!ane->domain_down)/if (false \&\& !ane->domain_down) \/* NEG: readers run on a dead domain *\//,NEG: readers run on a dead domain,pos)
+	$(call mutant,nosnapguard,s/ane_h18_domain_gone(ane)/0 \&\& ane_h18_domain_gone(ane) \/* NEG: the snapshot reads on a dead domain *\//,NEG: the snapshot reads on a dead domain,pos)
 
 # the RTKit reply is written without looking at the inbox credits
 sim-mutation-nocredit:
