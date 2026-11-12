@@ -1,0 +1,49 @@
+# Moved to the private lab store
+
+These captured dumps are no longer in this repository. They live unchanged in the private lab store (ane-h17-lab, directory public-repo-moved-20261112, same relative path as here); each file's sha256 matched at the destination before removal.
+
+- `h17-anecmdsend.txt` sha256 8f523df66aa497f30cbff856ffc0924911b8d2be2cd95b228179a9512d0fe7bc
+- `h17-channel-primitive.txt` sha256 a9e98e30dc6131fa7e8f736bd9dfd5393d5214548f41cd05498eb7061d4bede6
+- `h17-channel-send-caller.txt` sha256 4cacdb6ba8bbf12800e9a84f29c3391c9f0d909eef1f6d86474fb3882c8aa66d
+- `h17-chanreg-prereqs.txt` sha256 3b3ab750641785f0108f130afb155c9820aa7b7d0e78eb036490ba6db9056483
+- `h17-chanreg-scans.txt` sha256 79ca4a2ce070b444969b08cffa9e3afb38edde58624d7ead403c239f89bf4a4a
+- `h17-chanreg-trace.txt` sha256 28792e09c3069b4d1a68510313d789f4c4638fb817015a5723b942e0edae19ff
+- `h17-cmd-sites.txt` sha256 5f4b5e32dbdf129345fdb4d41d4f214fa4a99e51a352f238940a6ca0bdf05a1e
+- `h17-command-token-correction.txt` sha256 c2e28095109a0bd5cbf21143f03061cc4348e511a058fbf87fb95d9f86a703ec
+- `h17-doorbell-arch.txt` sha256 45954bf2d5c8098174a4774c637227f412c407b21eb481b8e25bd0d2c17d4a1a
+- `h17-doorbell-callsite.txt` sha256 7c60c3c155011d08f9d49aadfb33db4bc1ea18a1c0edb9f48f98fc35938a08e7
+- `h17-doorbell-disasm.txt` sha256 d69a8a02f1c4b2fa45af08b0afc0cd85553e8e8ebf730335343daaae45bd6c60
+- `h17-field-consumers.txt` sha256 ed31f8d1ab495064a83e57f543d065b8de3a26870abb5a594a2fd7800148d400
+- `h17-fw-rtkit-station-arm.txt` sha256 9afe162d67f1316fa0e71ade857e5fb51b308bb7e48580982cc339ae97fb6c75
+- `h17-fwcmdsend-id-field.txt` sha256 cac93eafa5024a9eefe012b6bc19a84ccd3a596b05c4e3d9b926322e728d0064
+- `h17-fwcmdsend-serialization.txt` sha256 116aab3b4dd7be5f6044347c050782d26cd9289c0028fbf41b723faa8a977a0e
+- `h17-fwcmdsend.txt` sha256 90d737b2b7f4902a4356e6754484f8139b34f60ea3b0d035418b4c21d95cf333
+- `h17-handle-outstanding.txt` sha256 10d691ee51749e2ca98602a44c7a0131b83d37add465e56985ddfe4cab93b274
+- `h17-host-command-constructor-search.txt` sha256 24b09da030a74d446d03e958405f6473f015309a95a96091718e65c1bae55d95
+- `h17-io-receive-helper.txt` sha256 6c8056952a08f6fc8f284a372fda7f523425868f35fea4a0a884c93eba078bd3
+- `h17-irq-line-dispatch-correction.txt` sha256 a0a1e6ddeb97d38301b46a5eeca178a431111800e837105e679b639c17ed2353
+- `h17-irq-sites.txt` sha256 e78a8002fda89b1a9827917b8ccd19a815b8edc806810e4e7fee916dda245223
+- `h17-message-lookup-helper.txt` sha256 b475414577c5d86aa8b5459e5a396f743c680c998b307bd026ae9234f97999b2
+- `h17-messenger-irq-chain.txt` sha256 da95493e6f8942fafeade0c64b3772690f13e9d26a3b22c3183e5f9484188f29
+- `h17-premap-setup-disasm.txt` sha256 5014dee3412449d2f282cf03808d01cb46bf9baeae07bc685e1250ab01ffdd72
+- `h17-process-command-response.txt` sha256 1f5c4461a43b0b93ec18906ac708a1c3bce2bf6405cfba6ed3f1192c1d7e26e8
+- `h17-process-response-xrefs.txt` sha256 d9f5b29f2eaa04b4cd3de525d37686062ee4cc5cbb78b18caf3cc31eb3bad4ef
+- `h17-queue-receive-primitive.txt` sha256 f10f287613240df2296abbfee2e1d62e469ff659400ffd68a50a39551db6034b
+- `h17-ring-fns.txt` sha256 6704707265dd4f5f663a85718538b45f6bbd56a9540bbe2df764baf824629cc5
+- `h17-send-channel-lookup.txt` sha256 e5191f619b718dd756ab70f9051e5dfa375307d794b91560d1e68265d2c8869e
+- `h17-send-inference.txt` sha256 170a6f1724e44289709871ee042a5b21089c215ca18dd74d932dab339e12bda0
+- `h17-send-premap.txt` sha256 4d91945148e39cb225410ecbe87bc9dbad90cefa657157c7ad7a815416bee445
+- `h17-send-retry-disasm.txt` sha256 4cacdb6ba8bbf12800e9a84f29c3391c9f0d909eef1f6d86474fb3882c8aa66d
+- `h17-send-setup.txt` sha256 445e1ae679cf642205cbe8af7955634d073bcbd2e1ec4e933f0da24ee2b30ff1
+- `h17-sendrequest-full.txt` sha256 8abe4114c3e9af799ffd2c1e30e8431e44203206174ccc4595f6cfe4ede1b095
+- `h17-socconfig-all.txt` sha256 ea295516b368667627684b892d5bc5127727bfdfafd3114b0ca7fb0b6d3e95fd
+- `h17-socconfig-cases.txt` sha256 45cba0b3b677989955eb5258b69d0fc0436f3d84d9e716effd8258f69ed79597
+- `h17-socconfig.txt` sha256 b0373ac8511e0dbd97fd1124f2d0528c9156ceddb044d85a4f96da137331d5c8
+- `h17-sweep-0x118.txt` sha256 87268abd061886d07e5c2689a14ebf63f892dc139e74e8fc3c7d81f30c81c1c9
+- `h17-sweep-0x15c.txt` sha256 ddeb5ed0f5be96389745bc59ff5a9b5b5fb54e773310422f1462117b7f0ad37d
+- `h17-sweep-0x160.txt` sha256 9516104da09875b066a53bad27dc498d564458e31b9f57940168cb68217c9716
+- `h17-t2h-helper-300.txt` sha256 10f8e7adbc3adada90faa22119df2d90525f1d217979213702db95f82087bde8
+- `h17-t2h-io-command.txt` sha256 8b02e169f01338b0a38e7eabf632f0ade3dae299757af90b67f80bd8d186e439
+- `h17-t2h-token-command-bridge.txt` sha256 14add00b62a28cc65c69102c2ad3442cb44d41b09df3707680ef090bc351aa7f
+
+Any reference to one of these files elsewhere in this repository means the copy at the same relative path in that store.

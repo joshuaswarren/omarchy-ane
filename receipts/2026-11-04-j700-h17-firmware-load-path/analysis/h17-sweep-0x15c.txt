@@ -1,9 +1,0 @@
-0xfffffe0008f2dd64: a1 5e 41 b9          ldr      w1, [x21, #0x15c]                          __ZN11ANEHWDevice16DumpANERegistersEv+0x1bc
-0xfffffe0008f3ff70: e8 5f 01 b9          str      w8, [sp, #0x15c]                           __ZN11ANEHWDevice8ANE_InitEv+0x2348
-0xfffffe0008f4009c: e8 5f 01 b9          str      w8, [sp, #0x15c]                           __ZN11ANEHWDevice8ANE_InitEv+0x2474
-0xfffffe0008f40160: e8 5f 01 b9          str      w8, [sp, #0x15c]                           __ZN11ANEHWDevice8ANE_InitEv+0x2538
-0xfffffe0008f40780: e8 5f 01 b9          str      w8, [sp, #0x15c]                           __ZN11ANEHWDevice8ANE_InitEv+0x2b58
-0xfffffe0008f409d4: f7 5f 01 b9          str      w23, [sp, #0x15c]                          __ZN11ANEHWDevice8ANE_InitEv+0x2dac
-0xfffffe0008f40a94: f7 5f 01 b9          str      w23, [sp, #0x15c]                          __ZN11ANEHWDevice8ANE_InitEv+0x2e6c
-0xfffffe0008f40b68: e8 5f 01 b9          str      w8, [sp, #0x15c]                           __ZN11ANEHWDevice8ANE_InitEv+0x2f40
-0xfffffe0008f42ff4: 81 5e 41 b9          ldr      w1, [x20, #0x15c]                          __ZN11ANEHWDevice10ANE_deInitEv+0xf4c

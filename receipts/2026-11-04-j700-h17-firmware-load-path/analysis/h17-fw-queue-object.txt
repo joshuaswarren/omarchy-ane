@@ -73,7 +73,7 @@ appear at 0xede4 and 0x8bbcc-range code (commit buffer = ring_base +
 (token & 0x3fff)), i.e. a 16 KiB window, 64-byte slots = 256 entries.
 The 16-byte command envelope itself lives IN the ring slot; only the
 (token|len) word travels via RTKit. This matches the host-side trace in
-analysis/h17-process-response-xrefs.txt where the receive primitive
+analysis/h17-process-response-xrefs.txt (moved to the private lab store, see MOVED.md) where the receive primitive
 strips low bits from the "slot word" before passing the message ID.
 
 Drain loop semantics (0xec90)
