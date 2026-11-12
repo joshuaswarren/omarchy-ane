@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ascdbg_probe.py — emit commands that test which addresses the halted ASC
-core can read. Each address: movz/movk x18 = addr, ldr w0,[x18], then read
+core can read. Each address: movz/movk x18 = addr, ldr w0 at the address held in x18, then read
 ESR_EL1/FAR_EL1. A nonzero ESR means the access faulted.
 usage: ascdbg_probe.py 0xADDR [0xADDR ...]
 """
@@ -9,7 +9,7 @@ sys.path.insert(0, "/tmp/t6001-ascdbg/ane/h13")
 import ascdbg_regs as a
 
 ED = a.ED
-LDR = 0xB9400260  # ldr w0, [x19]
+LDR = 0xB9400260  # ldr w0 from the word at x19
 
 
 def mov_imm(rd, val):

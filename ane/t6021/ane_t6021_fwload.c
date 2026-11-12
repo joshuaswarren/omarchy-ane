@@ -490,7 +490,7 @@ err_unmap:
 }
 
 /* RTK_soc_revision. T8112 reads it as iBoot does: the two eFuse words
- * of the DT "fuse" window (0x23d2c8060, 8 bytes), decoded by
+ * of the DT "fuse" window (0x23d2c8060, 8 bytes), parsed by
  * ane_t8112_fuse_revision(). Two non-posted 32-bit reads and nothing
  * else: the eFuse block (ADT pmgr reg[36]) is always on, and m1n1 reads
  * its ATC and GPU fuses at 0x23d2c8484 and 0x23d2c84dc on every T8112

@@ -14,8 +14,8 @@
  *
  * Blocked boot writes, with the blocking prerequisite each one waits on:
  *   - RVBAR entry fold (ENTRY_BASE | fw DVA & ADDR_MASK; single u64
- *     store, width_proof 0x95e9860→0x9622b0c read / 0x95e9988→0x9622c94
- *     write): semantics of the observed RVBAR read 0x1 are unresolved
+ *     store, width_proof paired read/write store
+ *     (anchors in the private lab store): semantics of the observed RVBAR read 0x1 are unresolved
  *     (see the rvbar lifecycle fork) AND the pre-CPU block
  *     below applies regardless.
  *   - CPU_CONTROL write32 0 then 0x10 (rvbar-width local order): waits
@@ -40,14 +40,14 @@
  *   STILL OPEN (each blocks its write below):
  *   1. CLOSED (pass5 c364f24): the pre-CPU engine table writels
  *      eng+0xb38/0xb98/0xbf8 <- 0x01ff01ff are REQUIRED every
- *      EnableANEClocksAndPower — dev+0x784 bit0 has no writer, so the
+ *      the vendor clock-and-power enable — driver-object offset 0x784 bit0 has no writer, so the
  *      always-open gate runs the loop unconditionally; the
  *      order-vs-start question is moot. Receiver PROVEN pass4
- *      (dev+0x188 accessor = engine reg[0]); count = config+0x150 =
+ *      (driver-object offset 0x188 accessor = engine reg[0]); count = config+0x150 =
  *      3. Armed below; the first live firing must ride netconsole
  *      behind the seam logs.
- *   2. Provider first-enable enableDeviceClock(1,dev+0x8F0)/
- *      enableDevicePower(1,&out,dev+0x8F0) (0x95d1d48/0x95d1d90):
+ *   2. Provider first-enable clock/power gate calls on
+ *      driver-object offset 0x8F0:
  *      internal gate-ID arrays are runtime-populated (open). Linux
  *      substitutes the genpd raise + supplier links (islands verified
  *      ACTUAL=0xf by the gate); the equivalence datum is the open
@@ -56,12 +56,13 @@
  *     rvbar-lifecycle-evidence.json, anchors 38/38
  *     check_rvbar_lifecycle_anchors.py): live bit0-set + entry 0 is
  *     the STALE state; the kext-lawful transition is power_off
- *     (ANE_deInit when dev+0x3FB, then PMGR ps 0x2e0 ← 0x00000000 via
- *     the dev+0x190 PMGR accessor) → power_on → re-init, NEVER an
+ *     (vendor de-init gate at driver-object offset 0x3FB, then PMGR
+ *     ps 0x2e0 ← 0x00000000 via the driver-object offset 0x190 PMGR
+ *     accessor) → power_on → re-init, NEVER an
  *     RVBAR write while bit0 is set. RVBAR (engine accessor,
  *     0x1050000, u64) is written only after a read64 with bit0 == 0;
  *     CPU_CONTROL write32 0 then 0x10 runs on BOTH paths; success =
- *     SCRATCH7 (dev+0x454 selector) read32 == 0x08042006. Open edge:
+ *     SCRATCH7 (driver-object offset 0x454 selector) read32 == 0x08042006. Open edge:
  *     whether ps-off clears bit0 — one live read-only read64 after a
  *     domain-off answers it. IMPLEMENTATION CAVEAT: the ps-word write
  *     is the class that froze this host from kernel context
@@ -90,18 +91,18 @@
  *      config+0x138 byte-count = 0x500000 (Main, audit 751caa4);
  *      Linux fw_buf is ANE_FW_BUF_SIZE = 0x500000 — the semantic is
  *      honored directly, covering the image vmsize 0x36c000. 'IPC '
- *      surface = min(config+4, dev+0x3A70
+ *      surface = min(config+4, driver-object offset 0x3A70
  *      cap) — the numeric cap needs the h14g config blob field map
  *      (open prerequisite). Init suballoc = 0x174 from a Linux-owned
- *      pool standing in for the vendor driver's dev+0x968/dev+0x980 pool (pool
+ *      pool standing in for the vendor driver's driver-object offsets 0x968/0x980 pool (pool
  *      total size open). RTBuddy FW_INIT sizes (64K…) are the OTHER
  *      branch — never used here.
  *   5. Init publication: the fw consumes [0x08]..[0x68] (pass5) and
  *      the Linux sources of those fields are not pinned ([0x08] =
- *      *(dev+0x988+0x18) = the 'IPC ' surface DVA — the surface
+ *      *(driver-object offset 0x988 + 0x18) = the 'IPC ' surface DVA — the surface
  *      itself is CLOSED (pass5c/5d), its Linux allocation size open
  *      per item 4; [0x10]/[0x18] = config-size terms with
- *      config+0x138 = image byte-count closed; [0x30] = dev+0x990
+ *      config+0x138 = image byte-count closed; [0x30] = the driver-object offset 0x990
  *      load-progress word) — publication cannot fire until every
  *      fw-read field has a pinned Linux source.
  *
@@ -109,7 +110,7 @@
  *   - RVBAR eng+0x01050000: read64 width-proven (rvbar-width
  *     width_proof); W8 and W10 live Linux reads, value 0x1 each.
  *   - CPU_STATUS eng+0x1400048: phase-1 S2 whitelist; vendor-driver poll site
- *     0x…95ecfb4 (config field dev+0x49c = 0x1400048); W10 live read
+ *     (config field driver-object offset 0x49c = 0x1400048); W10 live read
  *     0x2a.
  *   - ASC mailbox controls eng+0x1408110/0x1408114: W10 live reads
  *     (both 0x00020001; 600 polls / 30 s, zero changes, zero aborts).
@@ -169,10 +170,10 @@ static const bool pf_pool_word0_proven = true;	/* CONFIRMED (Main raw +
 						 * 0x40000 — sourced, not
 						 * synthesized */
 static const bool pf_heap_floor_pinned = true;	/* CLOSED: floor =
-						 * getPageSize() return =
+						 * the vendor page-size query return =
 						 * DART page size 0x4000
-						 * (store chain 0x9602e68-90
-						 * + dart-ane0 page-size
+						 * (store chain anchors in the private lab
+						 * store + dart-ane0 page-size
 						 * 0x4000 node, pass6h);
 						 * sourced in boot_sources */
 static const bool pf_dart_page_floor = true;	/* CLOSED (Main raw,
@@ -222,7 +223,7 @@ static bool ane_t6021_boot_preflight_complete(void)
  * authorization 2026-09-20). Object layout (Main raw correction,
  * superseding audit 018abdb): the OSValueObject at +0x10 POINTS to
  * the Params; Params+0x00 = size, +0x18 = DVA, +0x38 = hostVA.
- * dev+0x980 is the 'DDM ' Params pool (size 0x40000); dev+0x968 is a
+ * driver-object offset 0x980 is the 'DDM ' Params pool (size 0x40000); driver-object offset 0x968 is a
  * SEPARATE DMM manager constructed over the pool hostVA — never
  * conflate the two. Runtime fields (fw_dva, ipc_dva, pool_dma) are
  * filled by ane_t6021_boot_prepare() at sequence time (after poll A,
@@ -231,10 +232,10 @@ static bool ane_t6021_boot_preflight_complete(void)
  * used unpinned (the gate above keeps the whole sequence unrun until
  * then). */
 static const struct ane_t6021_init_sources boot_sources = {
-	.cfg_size = 0x500000,		/* config+0x138 (0x9613da8/ dac) */
+	.cfg_size = 0x500000,		/* config+0x138 (anchor in the private lab store / dac) */
 	.prev_fw_len = 0,		/* first boot; static per reload */
-	.heap_floor = 0x4000,		/* DART page size: dev+0x3A90 =
-					 * getPageSize() return; node
+	.heap_floor = 0x4000,		/* DART page size: driver-object offset 0x3A90 =
+					 * the vendor page-size query return; node
 					 * authority dart-ane0 page-size
 					 * 0x4000 (exact linkage check
 					 * passing) */
@@ -365,7 +366,7 @@ static int ane_t6021_boot_prepare(void *ctx, u32 *lo, u32 *hi)
 		return -ENODATA;	/* belt: run() already gated */
 
 	/* dynamic reads (post-READY, live cells — never hardcoded):
-	 * read order SCRATCH0 then SCRATCH1 (0x95ea0d8/0x95ea100);
+	 * read order SCRATCH0 then SCRATCH1 (read-order anchors in the private lab store);
 	 * SCRATCH0 >= 0x21 refuses before allocations/publication;
 	 * SCRATCH3 = fw extra-heap request; SCRATCH1+1 = ordinal. */
 	scratch0 = readl(eng + ANE_MBI_SCRATCH0);

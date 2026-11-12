@@ -7,7 +7,7 @@
  *    +0x200000000 (proven class, pmgr low-32 match).
  *  - ASC cpu block (+0x1400000 h14g) + MBI transport (SCRATCH, channel
  *    table, +0x1844000 doorbell): K14 vendor-driver disasm, W4-fix receipt
- *    (initializeANESoCConfig h14g blocks + InitializeRTBuddy +
+ *    (vendor SoC-config init h14g blocks + vendor RTBuddy init +
  *    doorbell setter 0x…95ebdd0); m1n1 ASCRegs = t8103 cross-ref only
  *  - RTKit MGMT protocol: Asahi rtkit.c semantics, u64 message halves as
  *    staged in omarchy-ane rtkit/h14_rtkit_hello.py (commit 6ad26b7).
@@ -228,7 +228,7 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
 
 /* MBI channel-table entry (vendor-driver stride 0x100, fields at +0x40 family:
  * type @+0x40, doorbell bit @+0x44, size @+0x48, phys @+0x50 —
- * InitializeRTBuddy 0x…95eade8-0x…95eae58) */
+ * vendor RTBuddy init call) */
 #define ANE_MBI_CHAN_STRIDE	0x100
 #define ANE_MBI_CHAN_MAX_DUMP	8
 

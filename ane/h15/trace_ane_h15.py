@@ -84,9 +84,7 @@ PMGR_PS_NAMES = {
     0x6031: {0x5A0: "ANE_MPM", 0x5A8: "ANE_CPU", 0x5B8: "ANE_TD", 0x5C0: "ANE_BASE"},
 }
 
-# Offset of the PWGATE register inside the ANE node's pmgr_ps window (the pmgr_ps entry), decoded from the
-# macOS driver. A candidate only: the driver gates that write on a flag whose value is not known, so macOS may
-# not run it.
+# Candidate offset of PWGATE within the ANE node's pmgr_ps window; its write condition is not established.
 PWGATE_OFFSET = {0x8122: 0x272C, 0x6030: 0x2B6C, 0x6031: 0x199C}
 
 # ANE register entries as (engine, pmgr, pmgr_ps). The T8122 and T6030 nodes list the engine, pmgr and pmgr_ps first.

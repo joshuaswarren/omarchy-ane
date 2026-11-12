@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
  * ane_h15.h — per-SoC table for the H15 (M3) family ANE. Every value
- * carries its source. "ADT 27.0" = the macOS 27.0 IPSW ADT summary
+ * carries its source. "pinned ADT" = the system ADT summary
  * (receipts/2026-10-03-ane-h15/README.md; source artifact
  * artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt, sha256
  * 04fe38b8…); "ADT 13.5" = the macOS 13.5 page-size note (the T8110

@@ -6,7 +6,7 @@
  * docs/j700-h17-linux-support-plan.md and
  * receipts/2026-11-01-j700-h17-linux-support-plan/):
  *   - the retained macOS kernelcache legacy direct-boot block
- *     (its ANE_Init entry block), and
+ *     (its firmware init entry block), and
  *   - the recorded ADT (data/ane-soc/t8140.json, source A1).
  * Fields marked "candidate" are the T8132/H16 template and are NOT
  * device-qualified for T8140. No of_match entry is added here: the H16
@@ -59,7 +59,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  *
  * Candidates, not device-qualified for T8140: irq_status 0x188c000 /
  * irq_ack 0x1890000 are the ANE-type-0x200 row of the host driver's
- * initializeANESoCConfig case table (firmware-load-path receipt §11), not
+ * SoC-config case table (firmware-load-path receipt §11), not
  * borrowed from the T8132 row — but a register table is not device
  * behaviour. mbox = 0x1608000 is the ASC+0x8000 family pattern over the
  * H17 CPU/ASC block at engine+0x1600000, now hardware-confirmed:

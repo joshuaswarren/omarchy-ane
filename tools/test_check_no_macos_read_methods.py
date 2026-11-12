@@ -27,6 +27,10 @@ BANNED = {
     "macOS-sourced value": ["macOS writes 0 to register 0x199c first\n", "the window is in the macOS 27.0 device tree: physical 0x292290000\n",
                             "ASC = 0x1600000  # kext 0x1600044 control\n", "0x20c  iBoot tables\n", "Apple's driver sets 0x400 and then 0x10\n",
                             "the restore image holds 0x8000 bytes\n", "the kernelcache entry is at 0x4000\n"],
+    "Apple driver function": ["EnableANEClocksAndPower runs first\n", "ANE_deInit frees it\n", "enableDeviceClock is called\n", "getPageSize returns it\n", "Foo::bar() sets it\n", "calls _runCPU(false) next\n"],
+    "kernelcache address": ["site 0xfffffe0008f294e8 reads it\n", "at 0x9613e14 it is set\n", "branch at 0x8f3e000 skips\n"],
+    "driver struct offset or operand": ["dev+0x3EA0 is zero\n", "u32[x23+4] holds it\n", "loads [x8+0x10] first\n"],
+    "decoded provenance": ["decoded from the ADT\n", "from the macOS 27.0 ADT summary\n", "ADT 27.0 row\n"],
     "decode wording": ["a static decode of the driver shows the order\n", "an offline decode of the kext\n", "decoded from the kext\n",
                        "decoded statically from the kernelcache\n", "reverse engineered the macOS driver\n", "reverse-engineering the kext\n", "decoded from the kernel extension\n"],
 }

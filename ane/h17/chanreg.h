@@ -85,7 +85,7 @@ static inline void ane_h17_encode_descriptor(u8 *p, u64 firmware, u64 dm,
 	 * reserves the alias as exactly VM_BASE..+0x380000. It nonetheless
 	 * publishes +0x18 = 0x10000000 - 0x380000 (prereqs.txt:460-463), a
 	 * window-budget companion constant, most plausibly a 256 MiB DVA
-	 * window reference (0x8f44838: 0x10001000 near a region call).
+	 * window reference (0x10001000 near a region call).
 	 * It cannot name additional owned firmware memory: no such memory
 	 * exists on the host. Firmware's own reader is not in the retained
 	 * evidence; firmware requesting DMA outside a mapped extent faults

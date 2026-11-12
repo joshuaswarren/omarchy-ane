@@ -31,7 +31,7 @@
  *   copy the validated image into a DART-mapped coherent buffer at the
  *   same IOVAs the ADT names, write SCRATCH7=0, latch or write RVBAR,
  *   release the CPU (CPU_CONTROL 0 then 0x10) and poll SCRATCH7 for the
- *   wake word 0x08042006 (vendor driver ANE_Init, 27.0). If the firmware
+ *   wake word 0x08042006 (firmware startup). If the firmware
  *   wakes, poll the ASC mailbox for an RTKit HELLO, answer it, ack
  *   EPMAP and STARTEP the system endpoints. Then stop: no channel-
  *   manager publication and no CSNE CONFIG_GET — the 27.0 host contract
@@ -157,7 +157,7 @@ MODULE_PARM_DESC(register_channels,
 
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
-/* RVBAR fold: kext ANE_Init 27.0 writes base | (iova & mask); the base
+/* RVBAR fold: firmware startup uses base | (iova & mask); the base
  * supplies bit 0 (valid), the mask clears bits 0-10, 48 and 55. */
 #define ANE_H16_RVBAR_ENTRY_BASE	0x0081000000000001ull
 #define ANE_H16_RVBAR_ADDR_MASK		0xff7efffffffff800ull
@@ -1928,7 +1928,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 
 	ane->fw_touched = true;
 
-	/* kext ANE_Init cold-boot order (macOS 27.0): SCRATCH7 = 0, RVBAR
+	/* firmware cold-boot order: SCRATCH7 = 0, RVBAR
 	 * (skipped when latched), CPU_CONTROL 0 then 0x10, then poll
 	 * SCRATCH7 for the wake word. H17 (steps 9, 10, 12 of the recipe)
 	 * additionally clears all eight scratch words, sets SCRATCH6 and
@@ -2020,7 +2020,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
 		 * mapping. J700's kext reaches READY via SCRATCH7 and then
 		 * uses its firmware command path in later requests; it does
-		 * not poll this mailbox after ANE_Init. Do not claim HELLO/EPMAP
+		 * not poll this mailbox after startup. Do not claim HELLO/EPMAP
 		 * support or touch the unqualified candidate, even when the
 		 * H16-only hello_wait_ms parameter is set.
 		 */

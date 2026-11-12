@@ -16,7 +16,7 @@
  * Do NOT compile it as a boot overlay: enabled DART nodes hung a T6030 at
  * boot (PR 173). Use t8122-ane-experimental.dts at boot.
  *
- * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). ADT 27.0
+ * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). pinned ADT
  * 26A428:
  *   ane reg engine 0x310000000+0x2000000, pmgr 0x2d0700000+0x18000;
  *   ANE ps words at +0x438 (ANE_SYS, parent LMX4), +0xc000/+0xc008/

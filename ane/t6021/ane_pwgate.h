@@ -2,7 +2,7 @@
 /*
  * ane_pwgate.h - what the T8112 probe may do about a closed ANE power gate.
  *
- * The macOS kext (EnableANEClocksAndPower, type 0x70) writes 0 to PWGATE
+ * The vendor kext (its clock-and-power enable, selector 0x70) writes 0 to PWGATE
  * (the "set" window + 0x8b8) and waits for bits 29:28 to read 0
  * (receipts/2026-10-01-t8112-ane). The driver never wrote it. With the
  * pwgate_open module parameter it writes once, and only when the word reads

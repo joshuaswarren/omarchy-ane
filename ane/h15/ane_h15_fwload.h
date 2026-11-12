@@ -17,7 +17,7 @@ static const u32 ane_h15_trace_stub[] = {		/* text 0x1a0.. */
 	0xa9021404,	/* stp x4, x5, [x0, #0x20] */
 	0xf9000401,	/* str x1, [x0, #8] */
 	0xd28a08a6,	/* mov x6, #0x5045 */
-	0xf9000006,	/* str x6, [x0] */
+	0xf9000006,	/* store patched entry word */
 	0xd5033f9f,	/* dsb sy */
 	0x14000000,	/* b . */
 };

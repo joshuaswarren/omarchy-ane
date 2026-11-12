@@ -60,7 +60,7 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   and ACTUAL of each one. The pmgr window is mapped and read; the
   engine window is **not** touched at stage 1.
 - `stage=2` or `stage=wrapper`: refused unless `confirm_read=1`. The
-  CPU_STATUS and RVBAR words are MEASURED addresses (ADT 27.0 reg[0] and
+  CPU_STATUS and RVBAR words are MEASURED addresses (pinned ADT reg[0] and
   reg[1]), but their roles are INFERENCE. Without `confirm_read=1` the
   stage prints the word list and refuses before any engine access.
   The probe has already powered the ANE domains by then, as it does
@@ -579,7 +579,7 @@ back. macOS behaviour, never run on an M3.
   `unfilled-facts`. Stages 0, 1, 2 and 4 have run on a 16-inch M3 Max (T6031). The T6030 results are on
   PR 175 and issue 176, the T6031 results on issue 176. Stage 5 on the T6030 ended in `core-not-stopped`
   with no mailbox message, with one and with three DART instances. The register map is
-  ADT-derived (the macOS 27.0 ADT summary). The role of every word in the engine
+  ADT-derived (the pinned ADT summary). The role of every word in the engine
   aperture is INFERENCE on H15.
 - Whether iBoot preloads the ANE firmware on an M3 Linux boot
   at all is not known (the b0 doc records the stub macOS
