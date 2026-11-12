@@ -45,8 +45,14 @@ OUT_RE = re.compile(r"ane_h18 prog: out buf (\d+) \+(0x[0-9a-f]+|\d+): ((?:[0-9a
 
 
 def make_input():
-    """x[k] = ((37k + 11) mod 257 - 128) / 128: exact in fp16, spread over -1..1 so a wrong lane shows."""
-    return [((37 * k + 11) % 257 - 128) / 128 for k in range(K)]
+    """x[k] = ((37k + 11) mod 257 - 128) / 128, the residue 0 replaced by +1/128: exact in fp16, spread over -1..1, and never 0. A zero input would make the
+    product of that k undetectable in every lane (a dropped x[k]*W[n][k] changes no result), so the generator refuses to emit one. The residues step by 37 over
+    the odd modulus 257, so they cover -128..128 once and the zero falls at k = 24; the replacement keeps |x| >= 2^-7, the floor the tolerance reasoning uses."""
+    out = []
+    for k in range(K):
+        r = (37 * k + 11) % 257 - 128
+        out.append((1 if r == 0 else r) / 128)
+    return out
 
 
 def input_file(x):

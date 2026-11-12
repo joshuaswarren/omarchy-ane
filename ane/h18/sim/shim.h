@@ -786,7 +786,7 @@ extern u64 sim_ktime_calls;
 #define NSEC_PER_MSEC 1000000ULL
 static inline u64 ktime_get_ns(void) { return sim_jiffies * NSEC_PER_MSEC + ++sim_ktime_calls * 1000; }
 #define cpu_relax() ((void)0)
-#define cond_resched() ((void)0)
+#define cond_resched() sim_usleep_hook()	/* a yield lets the fake firmware deferred work run: the delayed IO_T2H publication */
 static inline void usleep_range(unsigned long lo, unsigned long hi) { sim_jiffies += (lo + hi) / 2000 + 1; sim_credits_now = 1; sim_usleep_hook(); }
 
 #define ERANGE_UNUSED 0

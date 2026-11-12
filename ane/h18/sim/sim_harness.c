@@ -287,6 +287,10 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 				sim_pub_wait = 3;
 				continue;
 			}
+			if (sim_prog_mode == 10) {	/* the same, but the publication waits five yields with no sleep in between: only the timed spin's cond_resched runs */
+				sim_pub_wait = 5;
+				continue;
+			}
 			ring[sl * 8] = sim_dma[0].iova + 0x1000 + sl * 0x40;
 			sim_t2h_posted++;
 		}
@@ -1463,7 +1467,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 42; pass++) {
+		for (pass = 0; pass < 43; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1519,6 +1523,7 @@ static void pos_boot(void)
 			if (pass == 39) { prog_out_words = 20; prog_calls = 2; }
 			if (pass == 40) { hs_prog = false; prog_out_words = 16; }
 			if (pass == 41) prog_calls = 1001;
+			if (pass == 42) { prog_out_words = 16; prog_calls = 1; sim_prog_mode = 10; }
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1600,6 +1605,14 @@ static void pos_boot(void)
 					chk(log_count("out buf 4 +0x0: 11223344 11223344 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000\n") == 2 &&
 					    log_count("out buf 4 +0x40: 00000000 00000000 00000000 00000000\n") == 2 && log_count("out buf 4 +0x50") == 0 && log_count("out buf 5") == 0 && log_count("out buf 6") == 0,
 					    "PO3 after each call the first 20 words of the output buffer only are logged, 16 words a line, the last line short, no input buffer");
+				}
+				if (pass == 42) {
+					const char *m1 = strstr(sim_log, "call 1/1 finished in ");
+					unsigned long long nn = m1 ? strtoull(m1 + strlen("call 1/1 finished in "), NULL, 10) : 0;
+
+					chk(ret == 0 && ok && nn > 0 && log_count("finished in ") == 1 && log_count("no latency") == 0 &&
+					    log_count("gave no finish event") == 0 && sim_t2h_posted == 2 && sim_t2h_back == 2 && live == 0,
+					    "PO5 prog_out_words=16 with the finish event arriving five yields after the ack, no sleep in between: the timed spin stamps a real ns latency, no no-latency line");
 				}
 				if (pass == 40 || pass == 41)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; prog_calls is 1 to 1000 and needs hs_prog=1 above 1") && writes() == 0 && sim_fw_requests == 0,

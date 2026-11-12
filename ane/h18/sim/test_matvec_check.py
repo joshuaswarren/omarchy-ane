@@ -52,6 +52,10 @@ def run(text, *args):
 
 x = mc.make_input()
 w = mc.unpermute(open(mc.FIXTURE, "rb").read())
+
+report("every x[k] is nonzero with |x| >= 2^-7", all(v != 0 and abs(v) >= 2 ** -7 for v in x))
+wmin = min(abs(v) for row in w for v in row if v != 0)
+report("min nonzero |W| is 1/32 (the floor reasoning uses it)", wmin == 1 / 32)
 ref = mc.reference(x, w)
 good = [struct.unpack("<e", struct.pack("<e", e))[0] for e in ref]
 
@@ -83,7 +87,7 @@ for k, verdict in ((1, "PASS"), (2, "PASS"), (3, "FAIL")):
     report("one lane %d ulp off: %s (band is 2 ulp + 2^-13)" % (k, verdict), out.rstrip().endswith(verdict))
 
 print("matvec-check: one K term missing from every lane")
-for k in (0, 1, 5, 100, 255):
+for k in (0, 1, 5, 24, 100, 255):
     dropped = [struct.unpack("<e", struct.pack("<e", e - x[k] * w[n][k]))[0] for n, e in enumerate(ref)]
     rc, out = run(dump(dropped))
     report("term k=%d (x=%.4g) dropped: FAIL" % (k, x[k]), rc == 1 and out.rstrip().endswith("FAIL"))
