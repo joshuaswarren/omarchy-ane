@@ -584,8 +584,8 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
  * 0x4e53c worker + 0x4e640 registration; decode 2026-09-26, entry
  * item 23/23b/23c/23e): the payload is NINE 0x30-byte named section
  * records at +0x08. Registration publishes "<name>.bin" into the fw
- * program-info symbol table (format "%s.bin" @0xa733f,
- * CAneProgramInfo.cpp) with value = record+0x18 and aux =
+ * program-info symbol table (format "%s.bin" @0xa733f)
+ * with value = record+0x18 and aux =
  * u32(record+0x20). The fw dereferences record+0x18 (0x5d0c8), so it
  * carries a fw-addressable pointer — in this driver, the IOVA of a
  * host-authored section object (below). Absent sections (flags bit0
