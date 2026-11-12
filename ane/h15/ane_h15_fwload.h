@@ -49,6 +49,44 @@ static int ane_h15_patch_vectors(void *image)
 	return 0;
 }
 
+/* fw_trace=2: breadcrumbs. Each of these instructions (none PC-relative, none touching x28/x29, which the entry code never uses) is
+ * moved into a 5-word trampoline in vector padding that first stores its 1-based index to trace page +0x40 + 8*(index-1)
+ * with x28/x29, then runs the moved instruction and branches back. The host reads which markers appeared. */
+static const struct { u32 at, orig; } ane_h15_crumb[] = {
+	{ 0x274, 0x9a800400 }, { 0x2ec, 0x91002000 }, { 0x378, 0xaa0003f8 }, { 0x384, 0xf9000022 },
+	{ 0x38c, 0x9108c000 }, { 0x414, 0xf100041f }, { 0x44c, 0xd5182040 }, { 0x4d4, 0xd2800000 },
+	{ 0x56c, 0xcb170000 }, { 0x590, 0xd5181000 },
+};
+#define ANE_H15_NCRUMB ARRAY_SIZE(ane_h15_crumb)
+#define ANE_H15_CRUMB_OFF 0x40u
+
+static int ane_h15_patch_crumbs(void *image)
+{
+	u32 *t = image;
+	/* free (udf) runs of the vector padding not used by the trace stubs: 0x94..0xff and 0x114..0x17f, five trampolines each */
+	static const u32 slot0[] = { 0x94, 0x114 };
+	unsigned int i, k;
+
+	for (i = 0; i < ANE_H15_NCRUMB; i++)
+		if (le32_to_cpu(t[ane_h15_crumb[i].at / 4]) != ane_h15_crumb[i].orig)
+			return -EBADMSG;
+	for (k = 0; k < ARRAY_SIZE(slot0); k++)
+		for (i = 0; i < 5 * 5; i++)
+			if (t[slot0[k] / 4 + i])
+				return -EBADMSG;
+	for (i = 0; i < ANE_H15_NCRUMB; i++) {
+		u32 tp = slot0[i / 5] + 20 * (i % 5), at = ane_h15_crumb[i].at;
+
+		t[tp / 4 + 0] = cpu_to_le32(0x9000181c);			/* adrp x28, 0x300000 */
+		t[tp / 4 + 1] = cpu_to_le32(0xd280001d | ((i + 1) << 5));	/* mov x29, #index */
+		t[tp / 4 + 2] = cpu_to_le32(0xf9000000 | (((ANE_H15_CRUMB_OFF / 8) + i) << 10) | (28 << 5) | 29); /* str x29, [x28, #off] */
+		t[tp / 4 + 3] = cpu_to_le32(ane_h15_crumb[i].orig);
+		t[tp / 4 + 4] = cpu_to_le32(0x14000000 | (((at + 4 - (tp + 16)) / 4) & 0x3ffffff));
+		t[at / 4] = cpu_to_le32(0x14000000 | (((tp - at) / 4) & 0x3ffffff));
+	}
+	return 0;
+}
+
 static int ane_h15_prepare_owned_firmware(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;
@@ -109,6 +147,8 @@ static int ane_h15_prepare_owned_firmware(struct ane_h15 *ane)
 		put_unaligned_le64(wrapper, (u8 *)image.va + s->fw->wrad_vm);
 	if (fw_trace) {
 		ret = ane_h15_patch_vectors(image.va);
+		if (!ret && fw_trace > 1)
+			ret = ane_h15_patch_crumbs(image.va);
 		if (ret) {
 			dma_free_coherent(ane->dev, image.size, image.va, image.iova);
 			goto release;
