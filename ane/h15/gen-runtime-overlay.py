@@ -94,10 +94,10 @@ def render():
         bdts, _ = derive(soc, boot=True)
         check_variant(soc, bdts, boot=True)
         bblob = compile_blob(bdts)
-        lines.append(f"static const u8 ane_h15_ovl_{soc}_blob[] = {{")
+        lines.append(f"static const u8 ane_h15_ovl_{soc}_blob[] __aligned(8) = {{")
         for i in range(0, len(blob), 12):
             lines.append("\t" + ", ".join(f"0x{b:02x}" for b in blob[i:i + 12]) + ",")
-        lines += ["};", "", f"static const u8 ane_h15_ovl_{soc}_boot_blob[] = {{"]
+        lines += ["};", "", f"static const u8 ane_h15_ovl_{soc}_boot_blob[] __aligned(8) = {{"]
         for i in range(0, len(bblob), 12):
             lines.append("\t" + ", ".join(f"0x{b:02x}" for b in bblob[i:i + 12]) + ",")
         lines += ["};", "", f"static const struct ane_h15_ovl_sym ane_h15_ovl_{soc}_syms[] = {{"]

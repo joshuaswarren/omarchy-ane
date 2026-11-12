@@ -186,6 +186,9 @@ int of_overlay_fdt_apply(const void *blob, u32 size, int *id, const struct devic
 {
 	(void)base;
 	ev_add("overlay-apply");
+	/* libfdt's fdt_check_header rejects a blob that is not 8-byte aligned in memory */
+	if ((uintptr_t)blob & 7)
+		return -22;
 	ovl_blob = blob;
 	ovl_size = size;
 	*id = 0;
