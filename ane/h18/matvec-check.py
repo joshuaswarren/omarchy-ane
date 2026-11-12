@@ -12,13 +12,16 @@ The CPU weights are not invented. They are the constant section of the fixture (
 with Apple's weight packing rule (research/h14-td-fields.md in mil-hwx-compiler, proven by 125 minted probes): with
 g = min(16, N/16), planes = N/g, p = n//g, q = (p%16)*(planes/16) + p//16, W[n][k] is halfword q*K*g + k*g + n%g.
 
-Load the module with hs_prog=1 prog_calls=M prog_out_words=N (N >= 16 + the 256 fp16 = 128 words; 4096 dumps the whole buffer).
+Load the module with hs_prog=1 prog_calls=M prog_out_words=4096: the dump must cover the whole buffer (4096 words) so the padding is checked.
 It logs, per call, "ane_h18 prog: call I/M finished in X ns" and "ane_h18 prog: out buf 4 +0xOFF: <words>". X is the time
 the module's poll loop saw the finish event after it rang the doorbell: poll granularity and interrupt latency are in it. It is
 not a hardware time.
 
-check compares each call with the CPU result rounded to fp16. A lane passes at 2 ulp of the rounded exact value, or within 4
-condition units (one unit is 2^-11 * sum|terms|), the band tools/ane_check_band.h uses for ane-run --check matvec. It prints
+check compares each call with the CPU result rounded to fp16. A lane passes within 2 ulp of the rounded exact value plus an
+absolute floor of 2^-13. The band is relative to the lane, not to the sum of its terms (the 4 condition units of ane-run
+--check matvec): with this data a condition-unit band is as wide as a whole dropped product. 2^-13 is half the smallest nonzero
+product (|x| >= 2^-7 times |W| >= 2^-5), so a lane that misses any one product is outside it. A device that accumulates in
+fp16 may need a wider band; the output prints the max error in ulp so that can be judged from a real run. It prints
 PASS or FAIL, the max abs error, the module's per-call ns (median, min, max) and the CPU time of the same matvec. Exit status
 0 for PASS, 1 for FAIL, 2 for bad arguments.
 """
@@ -36,7 +39,8 @@ K = N = 256
 SURFACE = 0x4000
 OUT_BUF = 4
 
-CALL_RE = re.compile(r"ane_h18 prog: call (\d+)/(\d+) (?:finished in (\d+) ns|gave no finish event)")
+CALL_RE = re.compile(r"ane_h18 prog: call (\d+)/(\d+) (?:finished in (\d+) ns|(gave no finish event)|finished, the finish event was not seen)")
+FLOOR = 2.0 ** -13
 OUT_RE = re.compile(r"ane_h18 prog: out buf (\d+) \+(0x[0-9a-f]+|\d+): ((?:[0-9a-f]{8} ?)+)")
 
 
@@ -71,29 +75,27 @@ def ulp(v):
 
 
 def reference(x, w):
-    """Exact (double) y[n] and sum|x[k] W[n][k]| for each n."""
-    return [(sum(a * b for a, b in zip(x, row)), sum(abs(a * b) for a, b in zip(x, row))) for row in w]
+    """Exact (double) y[n] for each n."""
+    return [sum(a * b for a, b in zip(x, row)) for row in w]
 
 
-def lane_ok(got, exact, sumabs):
-    """The tools/ane_check_band.h rule; returns (ok, abs error)."""
-    err = abs(got - exact)
+def lane_ok(got, exact):
+    """Within 2 ulp of the exact value rounded to fp16, plus FLOOR; returns (ok, abs error, error in ulp of the rounded value)."""
     if not math.isfinite(got):
-        return False, math.inf
-    if sumabs == 0.0:
-        return err == 0.0, err
+        return False, math.inf, math.inf
     want = struct.unpack("<e", struct.pack("<e", exact))[0]
-    return abs(got - want) / ulp(want) <= 2.0 or err / (sumabs * 2.0 ** -11) <= 4.0, err
+    d = abs(got - want)
+    return d <= 2.0 * ulp(want) + FLOOR, abs(got - exact), d / ulp(want)
 
 
 def parse_dmesg(text, buf):
-    """-> (calls, outs): calls[i] = ns or None (no finish event); outs[i] = {byte offset: [u32 words]} of buffer buf for call i."""
+    """-> (calls, outs, declared): calls[i] = (ns or None, finished); outs[i] = {byte offset: [u32 words]} of buffer buf for call i."""
     calls, outs = [], []
     declared = 0
     for line in text.splitlines():
         m = CALL_RE.search(line)
         if m:
-            calls.append(int(m.group(3)) if m.group(3) else None)
+            calls.append((int(m.group(3)) if m.group(3) else None, not m.group(4)))
             outs.append({})
             declared = int(m.group(2))
             continue
@@ -114,22 +116,22 @@ def lanes(chunks):
 
 
 def check_call(words, ref):
-    """-> (problem or None, max abs error over the lanes)."""
-    if words is None or len(words) < N // 2:
-        return "dump has %d words, need %d" % (len(words or []), N // 2), math.nan
+    """-> (problem or None, max abs error, max error in ulp over the lanes)."""
+    if words is None or len(words) < SURFACE // 4:
+        return "dump has %d words, need %d (prog_out_words=%d): the padding would go unchecked" % (len(words or []), SURFACE // 4, SURFACE // 4), math.nan, math.nan
     raw = struct.pack("<%dI" % len(words), *words)
     got = struct.unpack("<%de" % N, raw[:2 * N])
-    bad, worst = [], 0.0
-    for n, (g, (exact, sumabs)) in enumerate(zip(got, ref)):
-        ok, err = lane_ok(g, exact, sumabs)
-        worst = max(worst, err)
+    bad, worst, worst_ulp = [], 0.0, 0.0
+    for n, (g, exact) in enumerate(zip(got, ref)):
+        ok, err, u = lane_ok(g, exact)
+        worst, worst_ulp = max(worst, err), max(worst_ulp, u)
         if not ok:
             bad.append(n)
     if bad:
-        return "%d lanes out of band, first lane %d" % (len(bad), bad[0]), worst
+        return "%d lanes out of band, first lane %d" % (len(bad), bad[0]), worst, worst_ulp
     if any(raw[2 * N:]):
-        return "padding after the %d lanes is not zero" % N, worst
-    return None, worst
+        return "padding after the %d lanes is not zero" % N, worst, worst_ulp
+    return None, worst, worst_ulp
 
 
 def cpu_time(x, w):
@@ -155,20 +157,21 @@ def cmd_check(a):
     w = unpermute(kernel)
     ref = reference(x, w)
     calls, outs, declared = parse_dmesg(open(a.dmesg, errors="replace").read(), a.buf)
-    problems, worst = [], 0.0
+    problems, worst, worst_ulp = [], 0.0, 0.0
     if not calls:
         problems.append("no 'ane_h18 prog: call I/M' line in the log")
     if len(calls) != declared:
         problems.append("log has %d of %d calls" % (len(calls), declared))
     for i, chunks in enumerate(outs):
-        p, err = check_call(lanes(chunks), ref)
-        worst = max(worst, err) if not math.isnan(err) else worst
+        p, err, u = check_call(lanes(chunks), ref)
+        if not math.isnan(err):
+            worst, worst_ulp = max(worst, err), max(worst_ulp, u)
         if p:
             problems.append("call %d: %s" % (i + 1, p))
-        if calls[i] is None:
+        if not calls[i][1]:
             problems.append("call %d: no finish event" % (i + 1))
-    ns = [c for c in calls if c is not None]
-    print("matvec M=1 K=%d N=%d fp16: %d calls, max abs error %.6g" % (K, N, len(calls), worst))
+    ns = [c for c, _ in calls if c is not None]
+    print("matvec M=1 K=%d N=%d fp16: %d calls, max abs error %.6g (%.3g ulp)" % (K, N, len(calls), worst, worst_ulp))
     if ns:
         print("device ns per call (poll loop, not hardware time): median %d min %d max %d" % (statistics.median(ns), min(ns), max(ns)))
     backend, cpu = cpu_time(x, w)

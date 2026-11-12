@@ -53,7 +53,7 @@ def run(text, *args):
 x = mc.make_input()
 w = mc.unpermute(open(mc.FIXTURE, "rb").read())
 ref = mc.reference(x, w)
-good = [struct.unpack("<e", struct.pack("<e", e))[0] for e, _ in ref]
+good = [struct.unpack("<e", struct.pack("<e", e))[0] for e in ref]
 
 print("matvec-check weights and input")
 closed = all(w[n][k] == ((n % 8) * 8 + (k % 4) * 2 - 31) / 32 for n in range(mc.N) for k in range(mc.K))
@@ -69,10 +69,24 @@ report("device ns median 41000 min 39000 max 52000", "median 41000 min 39000 max
 report("cpu ns per call is printed", "cpu ns per call (" in out)
 report("max abs error is the fp16 rounding of the result (under 0.01)", float(out.split("max abs error ")[1].split()[0]) < 0.01)
 
-one_ulp = list(good)
-one_ulp[7] = struct.unpack("<e", struct.pack("<H", struct.unpack("<H", struct.pack("<e", good[7]))[0] + 1))[0]
-rc, out = run(dump(one_ulp))
-report("one lane 1 ulp off: still PASS (band is 2 ulp)", rc == 0 and out.rstrip().endswith("PASS"))
+
+
+def ulps_off(v, k):
+    """v moved k fp16 steps away from zero."""
+    return struct.unpack("<e", struct.pack("<H", struct.unpack("<H", struct.pack("<e", v))[0] + k))[0]
+
+
+for k, verdict in ((1, "PASS"), (2, "PASS"), (3, "FAIL")):
+    off = list(good)
+    off[7] = ulps_off(good[7], k)
+    rc, out = run(dump(off))
+    report("one lane %d ulp off: %s (band is 2 ulp + 2^-13)" % (k, verdict), out.rstrip().endswith(verdict))
+
+print("matvec-check: one K term missing from every lane")
+for k in (0, 1, 5, 100, 255):
+    dropped = [struct.unpack("<e", struct.pack("<e", e - x[k] * w[n][k]))[0] for n, e in enumerate(ref)]
+    rc, out = run(dump(dropped))
+    report("term k=%d (x=%.4g) dropped: FAIL" % (k, x[k]), rc == 1 and out.rstrip().endswith("FAIL"))
 
 bad = list(good)
 bad[100] = good[100] + 0.25
@@ -91,11 +105,15 @@ report("NaN output: FAIL", rc == 1)
 rc, out = run(dump(good, pad=0x3c003c00))
 report("nonzero padding word in call 2: FAIL", rc == 1 and "call 2: padding" in out)
 
-rc, out = run(dump(good, nwords=64))
-report("dump shorter than 128 words: FAIL", rc == 1 and "dump has 64 words" in out)
+for nw in (64, 2048, 4080):
+    rc, out = run(dump(good, nwords=nw))
+    report("dump of %d words, lanes right, padding unchecked: FAIL" % nw, rc == 1 and "dump has %d words" % nw in out)
 
 rc, out = run(dump(good).replace("call 3/3 finished in 52000 ns", "call 3/3 gave no finish event"))
 report("call without a finish event: FAIL", rc == 1 and "call 3: no finish event" in out)
+
+rc, out = run(dump(good).replace("call 3/3 finished in 52000 ns", "call 3/3 finished, the finish event was not seen before the events were read: no latency"))
+report("call finished without a latency: PASS, its dump stays with call 3, ns stats from 2 calls", rc == 0 and "median 40000 min 39000 max 41000" in out)
 
 rc, out = run("\n".join(dump(good).splitlines()[:-512]) + "\n")
 report("log cut short (3 calls announced, 2 and a part logged): FAIL", rc == 1)

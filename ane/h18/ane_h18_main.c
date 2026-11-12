@@ -1161,6 +1161,7 @@ static void ane_h18_cmd_idle(struct ane_h18 *ane, const u64 *slot)
 	for (end = ktime_get_ns() + NSEC_PER_MSEC; ktime_get_ns() < end && !(READ_ONCE(slot[0]) & 1); cpu_relax()) {
 		ane_h18_chan_poll(ane, 1, &digest, &last_pend);	/* t = 1: the answers only, no ring digest */
 		ane_h18_call_peek(ane);
+		cond_resched();
 	}
 }
 
@@ -1755,6 +1756,7 @@ static unsigned int ane_h18_call_spin(struct ane_h18 *ane, unsigned int *t2h, un
 		last = ms;
 		ane_h18_call_peek(ane);
 		cpu_relax();
+		cond_resched();	/* process context with only the debugfs mutex held; hs_wait_ms can be long */
 	}
 	*got += ane_h18_prog_t2h(ane, t2h, fin);
 	return ms;
