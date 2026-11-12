@@ -10,6 +10,7 @@ tools: libane
 
 check: tools
 	make -C tools check
+	python3 ane/h18/pack/test_h18_pack.py
 
 install:
 	make -C libane install
