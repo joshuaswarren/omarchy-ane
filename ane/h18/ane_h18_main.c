@@ -45,16 +45,21 @@
 #include <linux/platform_device.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/debugfs.h>
+#include <linux/fs.h>
+#include <linux/mutex.h>
+#include <linux/pm_domain.h>
 
 #include "ane_h18.h"
+#include "ane_h18_dt.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
-MODULE_PARM_DESC(optin, "Opt-in key: must be t8152 or probe returns -EPERM.");
+MODULE_PARM_DESC(optin, "Opt-in key: must be t8152 or t8132 or probe returns -EPERM.");
 
 static char *stage = "dt";
 module_param(stage, charp, 0444);
-MODULE_PARM_DESC(stage, "dt (default, no MMIO), psd (read the PSD slots) or power (request PSD state, needs confirm_power=1).");
+MODULE_PARM_DESC(stage, "dt (default, no MMIO), psd (read the PSD slots), power (request PSD state, needs confirm_power=1), boot, or reads (t8132 only: read-only register probe, needs allow_reads=1).");
 
 static bool confirm_power;
 module_param(confirm_power, bool, 0444);
@@ -184,7 +189,80 @@ static unsigned int psd_timeout_ms = 1000;
 module_param(psd_timeout_ms, uint, 0444);
 MODULE_PARM_DESC(psd_timeout_ms, "Stage=power: per-slot acknowledge wait, ms. Default 1000 (the ADT psd-timeout-ms).");
 
-enum { ANE_H18_STAGE_DT, ANE_H18_STAGE_PSD, ANE_H18_STAGE_POWER, ANE_H18_STAGE_BOOT };
+enum { ANE_H18_STAGE_DT, ANE_H18_STAGE_PSD, ANE_H18_STAGE_POWER, ANE_H18_STAGE_BOOT, ANE_H18_STAGE_READS };
+
+static bool allow_reads;
+module_param(allow_reads, bool, 0444);
+MODULE_PARM_DESC(allow_reads, "stage=reads only: permit the read-only register probe (IORVBAR, SCRATCH7 candidates, doorbell words) on an incomplete row. Read only; no writes, no clocks, no power requests. Default off.");
+
+static ulong pmgr_gate_pa;
+module_param(pmgr_gate_pa, ulong, 0444);
+MODULE_PARM_DESC(pmgr_gate_pa, "stage=reads: optional extra gate-state register. When set (with pmgr_gate_mask) the module reads it back before every step and refuses unless all pmgr_gate_mask bits are set. 0 (the default) checks the four ANE pmgr ps registers only. The ANE gates (ADT ids 569/664) are no_ps and have no pmgr register of their own.");
+
+static uint pmgr_gate_mask;
+module_param(pmgr_gate_mask, uint, 0444);
+MODULE_PARM_DESC(pmgr_gate_mask, "stage=reads: mask of pmgr_gate_pa bits that must read as set (on) before any engine-window read is allowed. Required alongside pmgr_gate_pa.");
+
+/* An optional second extra gate register, checked the same way before every step. */
+static ulong pmgr_gate2_pa;
+module_param(pmgr_gate2_pa, ulong, 0444);
+MODULE_PARM_DESC(pmgr_gate2_pa, "stage=reads: optional second extra gate-state register. Needs pmgr_gate_pa. Checked like pmgr_gate_pa when nonzero.");
+
+static uint pmgr_gate2_mask;
+module_param(pmgr_gate2_mask, uint, 0444);
+MODULE_PARM_DESC(pmgr_gate2_mask, "stage=reads: mask bits that must read as set in the second pmgr gate register. Required alongside pmgr_gate2_pa.");
+
+/* The four ANE pmgr power-state registers (t6050-pmgr.dtsi): ane_sys 0x3a8, ane_mpm 0x3c0,
+ * ane_cpu 0x3c8, ane_tdbase 0x3d0 - all in the pmgr1 page (0x280900000). The ADT hangs the
+ * ANE power-gates under ANE_CPU and ANE_SYS (569/664 parent 223/219), so the genpd claims are
+ * not the last word: all four domains must read ON before any engine-window read. In the
+ * pmgr power-state register the TARGET state is bits 3:0 and the ACTUAL state is bits 7:4
+ * (pmgr-pwrstate.c); the actual nibble 0xf = fully on. */
+#define ANE_H18_PS_SYS		0x3a8
+#define ANE_H18_PS_MPM		0x3c0
+#define ANE_H18_PS_CPU		0x3c8
+#define ANE_H18_PS_TDBASE	0x3d0
+
+static ulong pmgr_ps_pa;
+module_param(pmgr_ps_pa, ulong, 0444);
+MODULE_PARM_DESC(pmgr_ps_pa, "stage=reads: physical address of the pmgr1 page holding the four ANE power-state registers (0x280900000 on the t6050). Required, page-aligned.");
+
+static uint pmgr_ps_mask;
+module_param(pmgr_ps_mask, uint, 0444);
+MODULE_PARM_DESC(pmgr_ps_mask, "stage=reads: mask the actual-state field (bits 7:4) of the four ANE power-state registers must read as set (0xf = fully on). Required alongside pmgr_ps_pa.");
+
+/* The stage=reads step machine: one engine-window register per write of "next". */
+struct ane_h18;
+static struct ane_h18 *ane_h18_rd_dev;
+static unsigned int ane_h18_rd_idx;
+static struct dentry *ane_h18_rd_control;
+static const struct file_operations ane_h18_rd_fops;
+static const struct { const char *name; u32 off; } ane_h18_rd_list[] = {
+	{ "IORVBAR_LO", 0x1050000 },
+	{ "IORVBAR_HI", 0x1050004 },
+	{ "SCRATCH7_kext", 0x1840084 },
+	{ "SCRATCH7_m6practice", 0x18a003c },
+	{ "SCRATCH0_m6practice", 0x18a0024 },
+	{ "DOORBELL_a", 0x1844000 },
+	{ "DOORBELL_b", 0x1884000 },
+	/* Aurora T6050 cold-boot cells (ane_fw_cold.c snapshot, drivers/accel/ane): the scratch file
+	 * first (the same 0x188xxxx block as the doorbell above), then the CPU-run/status pair and
+	 * the compute-engine enable/state words in blocks not read before: a hang, if any, lands
+	 * on the last steps. DART and pwgate cells are NOT here (separate power gate unmapped). */
+	{ "AUR_SCRATCH0", 0x1880028 },
+	{ "AUR_SCRATCH1", 0x188002c },
+	{ "AUR_SCRATCH2", 0x1880030 },
+	{ "AUR_SCRATCH3", 0x1880034 },
+	{ "AUR_SCRATCH4", 0x1880038 },
+	{ "AUR_SCRATCH5", 0x188003c },
+	{ "AUR_SCRATCH6", 0x1880040 },
+	{ "AUR_SCRATCH7", 0x1880044 },
+	{ "AUR_CPU_RUN", 0x1600044 },
+	{ "AUR_STATUS", 0x1600048 },
+	{ "AUR_CE_ENABLE", 0x18a4008 },
+	{ "AUR_CE_STATE", 0x18a4010 },
+	{ "AUR_CE_ERROR", 0x18a4018 },
+};
 
 struct ane_h18 {
 	struct device *dev;
@@ -193,6 +271,10 @@ struct ane_h18 {
 	void __iomem *asc;
 	void __iomem *rvbar;
 	void __iomem *mbox;
+	void __iomem *eng;	/* stage=reads: the whole engine window, reg index 0 */
+	void __iomem *gate;	/* stage=reads: the pmgr gate-state register page */
+	void __iomem *gate2;	/* stage=reads: optional second pmgr gate page (the other gate family) */
+	void __iomem *ps;	/* stage=reads: the pmgr1 page with the four ANE power-state registers */
 	void __iomem *dart;
 	void __iomem *dartx[ANE_H18_DART_INSTANCES];	/* instances 1 to 3 with dart_inst, [0] unused (ane->dart is instance 0) */
 	void __iomem *scratch;
@@ -220,7 +302,10 @@ struct ane_h18 {
 		u32 slots, bit, type;
 	} ch_rings[8];
 	bool kpsd;		/* the node has power-domains: the kernel's PSD driver owns the slots, this module only holds a runtime PM reference */
+	int pd_count;		/* power-domains cells (of_count_phandle_with_args; negative = malformed, stage=reads refuses): >1 = the claims are attached through pd_list (devm), <=1 = the driver core's single attach */
+	struct dev_pm_domain_list *pd_list;	/* the attached multi-domain claims (set when pd_count > 1) */
 	bool rpm_held;
+	bool vote_held;		/* stage=reads holds the genpd power claims (pm_runtime_get_sync succeeded): the only flag that lets unmap put them back */
 	u32 rtk_eps[8];		/* RTKit endpoints the firmware announced, one bit per endpoint number */
 	u64 rtk_txq[8];		/* management messages accepted but not yet stored in TX (no free slot at the time), in order */
 	unsigned int rtk_txq_n;
@@ -247,12 +332,131 @@ static void ane_h18_result(struct ane_h18 *ane, const char *stg, const char *ver
 	dev_crit(ane->dev, "ane_h18 RESULT stage=%s soc=%s verdict=%s reason=%s\n", stg, ane->soc->name, verdict, reason);
 }
 
+/* stage=reads: ONE register per write of "next" to /sys/kernel/debug/ane_h18_rd. The gate
+ * state is re-read and checked before every read (the extra gate registers when set);
+ * the address goes to the console at dev_crit priority BEFORE the readl, so a bus hang
+ * always names its register. One write in flight: the mutex serializes concurrent writers
+ * and the index lives in a local between the bounds check and the read. */
+DEFINE_MUTEX(ane_h18_rd_lock);
+
+static bool ane_h18_rd_gates_ok(struct ane_h18 *ane, u64 *bad_pa, u32 *bad_state,
+				const char **reason)
+{
+	u32 gate;
+
+	*reason = "pmgr-gates-off";
+	if (ane->gate) {
+		gate = readl(ane->gate);
+		if ((gate & pmgr_gate_mask) != pmgr_gate_mask) {
+			*bad_pa = pmgr_gate_pa;
+			*bad_state = gate;
+			return false;
+		}
+	}
+	if (pmgr_gate2_pa) {
+		u32 gate2 = readl(ane->gate2);
+
+		if ((gate2 & pmgr_gate2_mask) != pmgr_gate2_mask) {
+			*bad_pa = pmgr_gate2_pa;
+			*bad_state = gate2;
+			return false;
+		}
+		dev_crit(ane->dev, "ane_h18 reads gate2 pa=%#llx state 0x%08x mask 0x%08x ok\n",
+			 (unsigned long long)pmgr_gate2_pa, gate2, pmgr_gate2_mask);
+	}
+	if (ane->ps) {
+		static const struct { u32 off; const char *name; } ps_regs[] = {
+			{ ANE_H18_PS_SYS, "ane_sys" },
+			{ ANE_H18_PS_MPM, "ane_mpm" },
+			{ ANE_H18_PS_CPU, "ane_cpu" },
+			{ ANE_H18_PS_TDBASE, "ane_tdbase" },
+		};
+		unsigned int i;
+
+		*reason = "pmgr-ps-off";
+		for (i = 0; i < ARRAY_SIZE(ps_regs); i++) {
+			u32 ps = readl(ane->ps + ps_regs[i].off);
+
+			/* the ACTUAL state is bits 7:4; the TARGET (3:0) may lag */
+			if (((ps >> 4) & pmgr_ps_mask) != pmgr_ps_mask) {
+				*bad_pa = pmgr_ps_pa + ps_regs[i].off;
+				*bad_state = ps;
+				dev_crit(ane->dev, "ane_h18 reads %s pmgr ps state 0x%08x at %#llx lacks mask 0x%08x\n",
+					 ps_regs[i].name, ps, (unsigned long long)*bad_pa,
+					 pmgr_ps_mask);
+				return false;
+			}
+		}
+		dev_crit(ane->dev, "ane_h18 reads: ane_sys/ane_mpm/ane_cpu/ane_tdbase all in state, mask 0x%08x ok\n",
+			 pmgr_ps_mask);
+	}
+	return true;
+}
+
+static ssize_t ane_h18_rd_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	struct ane_h18 *ane;
+	char cmd[8];
+	u32 v;
+	unsigned int idx;
+	int ret;
+
+	ret = simple_write_to_buffer(cmd, sizeof(cmd) - 1, ppos, buffer, count);
+	if (ret < 0)
+		return ret;
+	cmd[ret] = '\0';
+	if (strcmp(strim(cmd), "next"))
+		return -EINVAL;
+	mutex_lock(&ane_h18_rd_lock);
+	ane = ane_h18_rd_dev;
+	if (!ane || !ane->eng) {
+		mutex_unlock(&ane_h18_rd_lock);
+		return -ENODEV;
+	}
+	if (ane_h18_rd_idx >= ARRAY_SIZE(ane_h18_rd_list)) {
+		if (ane_h18_rd_idx == ARRAY_SIZE(ane_h18_rd_list)) {
+			ane_h18_rd_idx++;
+			ane_h18_result(ane, "reads", "PASS", "reads-done");
+		}
+		mutex_unlock(&ane_h18_rd_lock);
+		return count;
+	}
+	{
+		u64 bad_pa = 0;
+		u32 bad_state = 0;
+		const char *refusal = "pmgr-gates-off";
+
+		if (!ane_h18_rd_gates_ok(ane, &bad_pa, &bad_state, &refusal)) {
+			dev_crit(ane->dev, "ane_h18 reads REFUSED: pmgr state 0x%08x at %#llx lacks its mask (power/clock gates or ps registers off). Enable the gates through the pmgr first.\n",
+				 bad_state, (unsigned long long)bad_pa);
+			ane_h18_result(ane, "reads", "REFUSED", refusal);
+			mutex_unlock(&ane_h18_rd_lock);
+			return -EPERM;
+		}
+	}
+	idx = ane_h18_rd_idx;
+	dev_crit(ane->dev, "ane_h18 reads %s pa=%#llx - reading now\n",
+		 ane_h18_rd_list[idx].name,
+		 ane->soc->engine_pa + ane_h18_rd_list[idx].off);
+	v = readl(ane->eng + ane_h18_rd_list[idx].off);
+	dev_crit(ane->dev, "ane_h18 reads %s = 0x%08x\n", ane_h18_rd_list[idx].name, v);
+	ane_h18_rd_idx = idx + 1;
+	mutex_unlock(&ane_h18_rd_lock);
+	return count;
+}
+
+static const struct file_operations ane_h18_rd_fops = {
+	.owner = THIS_MODULE,
+	.write = ane_h18_rd_write,
+};
+
 static int ane_h18_stage_idx(const char *name, unsigned int *out)
 {
 	if (!strcmp(name, "dt")) { *out = ANE_H18_STAGE_DT; return 0; }
 	if (!strcmp(name, "psd")) { *out = ANE_H18_STAGE_PSD; return 0; }
 	if (!strcmp(name, "power")) { *out = ANE_H18_STAGE_POWER; return 0; }
 	if (!strcmp(name, "boot")) { *out = ANE_H18_STAGE_BOOT; return 0; }
+	if (!strcmp(name, "reads")) { *out = ANE_H18_STAGE_READS; return 0; }
 	return -EINVAL;
 }
 
@@ -322,6 +526,19 @@ static int ane_h18_check_windows(struct ane_h18 *ane, int *idx)
 	return ret;
 }
 
+static void ane_h18_report_windows(struct platform_device *pdev, struct ane_h18 *ane)
+{
+	unsigned int i;
+
+	for (i = 0; ; i++) {
+		struct resource *r = platform_get_resource(pdev, IORESOURCE_MEM, i);
+
+		if (!r)
+			break;
+		dev_info(ane->dev, "ane_h18 window %u: pa=%pa end=%pa\n", i, &r->start, &r->end);
+	}
+}
+
 static void ane_h18_unmap(struct ane_h18 *ane)
 {
 	unsigned int i;
@@ -331,6 +548,22 @@ static void ane_h18_unmap(struct ane_h18 *ane)
 			iounmap(ane->psd[i]);
 			ane->psd[i] = NULL;
 		}
+	/* teardown order: the debugfs control dies FIRST (no in-flight "next" can reach a
+	 * mapped window), then the vote, then the mappings. ane_h18_rd_lock serializes
+	 * against a writer that already passed the ENODEV check. */
+	mutex_lock(&ane_h18_rd_lock);
+	ane_h18_rd_dev = NULL;
+	mutex_unlock(&ane_h18_rd_lock);
+	if (ane_h18_rd_control) {
+		debugfs_remove(ane_h18_rd_control);
+		ane_h18_rd_control = NULL;
+	}
+	if (ane->vote_held) {
+		/* the multi-domain claims hold through devm links: nothing to put here */
+		if (ane->pd_count <= 1)
+			pm_runtime_put_sync(ane->dev);	/* release the single-domain vote cast at reads arm */
+		ane->vote_held = false;
+	}
 	if (ane->asc) { iounmap(ane->asc); ane->asc = NULL; }
 	if (ane->rvbar) { iounmap(ane->rvbar); ane->rvbar = NULL; }
 	if (ane->mbox) { iounmap(ane->mbox); ane->mbox = NULL; }
@@ -338,6 +571,10 @@ static void ane_h18_unmap(struct ane_h18 *ane)
 	for (i = 1; i < ANE_H18_DART_INSTANCES; i++)
 		if (ane->dartx[i]) { iounmap(ane->dartx[i]); ane->dartx[i] = NULL; }
 	if (ane->scratch) { iounmap(ane->scratch); ane->scratch = NULL; }
+	if (ane->eng) { iounmap(ane->eng); ane->eng = NULL; }
+	if (ane->gate) { iounmap(ane->gate); ane->gate = NULL; }
+	if (ane->gate2) { iounmap(ane->gate2); ane->gate2 = NULL; }
+	if (ane->ps) { iounmap(ane->ps); ane->ps = NULL; }
 	if (ane->prog_blob) { release_firmware(ane->prog_blob); ane->prog_blob = NULL; }
 	if (ane->doorbell) { iounmap(ane->doorbell); ane->doorbell = NULL; }
 	if (ane->ipi_pending) { iounmap(ane->ipi_pending); ane->ipi_pending = NULL; }
@@ -2361,29 +2598,57 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	ane_h18_result(ane, "boot", "PASS", handshake ? "core-handshook-and-stopped" : running_seen ? "core-ran-and-stopped" : "core-never-reported-running");
 	return 0;
 }
-
 static int ane_h18_probe(struct platform_device *pdev)
 {
 	struct ane_h18 *ane;
 	unsigned int stage_idx, k;
 	int idx[3 + ANE_H18_NPSD];
+	const struct ane_h18_soc *soc_sel = &ane_t8152_soc;
 	int ret;
 
-	if (!optin || strcmp(optin, ane_t8152_soc.name)) {
-		dev_err(&pdev->dev, "not probing: load with optin=%s. EXPERIMENTAL: no hardware has run this module.\n", ane_t8152_soc.name);
+	if (optin && !strcmp(optin, ane_t8132_soc.name))
+		soc_sel = &ane_t8132_soc;
+	if (!optin || strcmp(optin, soc_sel->name)) {
+		dev_err(&pdev->dev, "not probing: load with optin=%s or optin=%s. EXPERIMENTAL: no hardware has run this module.\n",
+			ane_t8152_soc.name, ane_t8132_soc.name);
 		return -EPERM;
 	}
 	ret = ane_h18_stage_idx(stage, &stage_idx);
 	if (ret) {
-		dev_err(&pdev->dev, "unknown stage \"%s\" (dt, psd, power or boot)\n", stage);
+		dev_err(&pdev->dev, "unknown stage \"%s\" (dt, psd, power, boot or reads)\n", stage);
 		return ret;
+	}
+	if (!soc_sel->row_complete && stage_idx != ANE_H18_STAGE_DT && stage_idx != ANE_H18_STAGE_READS) {
+		dev_err(&pdev->dev, "ane_h18 %s: row incomplete, refusing %s: only stage=dt and stage=reads are allowed (asc/rvbar/mbox/scratch/mailbox/rvbar_expect/fw_seg need hardware verification; see ane_h18_soc.c)\n",
+			soc_sel->name, stage);
+		return -EINVAL;
+	}
+	if (stage_idx == ANE_H18_STAGE_READS && !allow_reads) {
+		dev_err(&pdev->dev, "ane_h18 %s: stage=reads needs allow_reads=1 (read-only register probe: IORVBAR, SCRATCH7 candidates, doorbell words; no writes)\n",
+			soc_sel->name);
+		return -EPERM;
+	}
+	if (stage_idx == ANE_H18_STAGE_READS && soc_sel != &ane_t8132_soc) {
+		dev_err(&pdev->dev, "ane_h18 %s: stage=reads is the t8132 row's probe; this SoC does not support it\n",
+			soc_sel->name);
+		return -EINVAL;
+	}
+	if (stage_idx == ANE_H18_STAGE_READS &&
+	    !of_property_present(pdev->dev.of_node, "power-domains")) {
+		dev_err(&pdev->dev, "ane_h18 %s: stage=reads requires power-domains (the pmgr pwrstate domains of the ANE); a bare node leaves the block gated and the first readl hangs the bus\n",
+			soc_sel->name);
+		return -EPERM;
 	}
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
 	if (!ane)
 		return -ENOMEM;
 	ane->dev = &pdev->dev;
-	ane->soc = &ane_t8152_soc;
+	ane->soc = soc_sel;
 	ane->kpsd = of_property_present(pdev->dev.of_node, "power-domains");
+	ane->pd_count = of_count_phandle_with_args(pdev->dev.of_node, "power-domains",
+						   "#power-domain-cells");
+	/* negatives stay negative: kpsd true with a malformed count refuses the reads
+	 * stage below instead of arming with no domain attached */
 	if (ane->kpsd) {
 		dev_info(&pdev->dev, "ane_h18 the node has power-domains: the kernel powers PSD slots 30 and 31, this module requests no PSD state\n");
 		ret = devm_pm_runtime_enable(&pdev->dev);
@@ -2392,13 +2657,176 @@ static int ane_h18_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, ane);
 
-	ret = ane_h18_check_windows(ane, idx);
-	if (ret) {
-		ane_h18_result(ane, stage, "FAIL", "dt-window-mismatch");
-		return ret;
+	if (soc_sel->row_complete) {
+		ret = ane_h18_check_windows(ane, idx);
+		if (ret) {
+			ane_h18_result(ane, stage, "FAIL", "dt-window-mismatch");
+			return ret;
+		}
+	} else {
+		ane_h18_report_windows(pdev, ane);
 	}
-	if (stage_idx == ANE_H18_STAGE_DT)
+	if (stage_idx == ANE_H18_STAGE_DT) {
+		if (!soc_sel->row_complete) {
+			/* the windows were reported above, not checked: the row has no verified
+			 * window map yet, so the checked verdict would be a false PASS */
+			ane_h18_result(ane, stage, "PASS", "dt-windows-reported-unchecked");
+			return 0;
+		}
 		return ane_h18_stage_dt(ane, idx);
+	}
+
+	if (stage_idx == ANE_H18_STAGE_READS) {
+		/* Read-only register probe on the engine window (reg index 0, the 32 MiB ADT
+		 * window the kext uses as its RegisterControl base). The 2026-11-11 bus hang:
+		 * the ANE block was power/clock-gated at read time, so a single readl hung the
+		 * bus until the watchdog rebooted. Rules: the node must carry power-domains
+		 * (every cell must resolve to a pmgr pwrstate provider in the live tree, so a
+		 * PMP report entry or a shifted phandle refuses before any power request), the
+		 * operator must pass the four ANE ps registers, and every step re-checks them
+		 * (and the optional extra gate registers), logs the address at dev_crit
+		 * priority BEFORE the readl, and reads exactly one register. No writes, no
+		 * clocks, no PMP request from this stage. */
+		struct device_node *pd_np = NULL;
+		u32 ph = 0;
+		int ret2;
+		unsigned int pd_i;
+
+		/* first, before any hardware or power request: verify what each power-domains
+		 * phandle points at. The probe above already refused a bare node, so the node
+		 * has power-domains here and pd_count is meaningful. */
+		if (ane->pd_count < 0) {
+			ane_h18_result(ane, stage, "FAIL", "pd-count-malformed");
+			return -EINVAL;
+		}
+		if (!ane->pd_count) {
+			ane_h18_result(ane, stage, "FAIL", "power-domains-unreadable");
+			return -EINVAL;
+		}
+		for (pd_i = 0; pd_i < (unsigned int)ane->pd_count; pd_i++) {
+			if (of_property_read_u32_index(pdev->dev.of_node, "power-domains",
+						       pd_i, &ph)) {
+				ane_h18_result(ane, stage, "FAIL", "power-domains-unreadable");
+				return -EINVAL;
+			}
+			pd_np = of_find_node_by_phandle(ph);
+			if (!pd_np ||
+			    !(of_device_is_compatible(pd_np, "apple,t6050-pmgr-pwrstate") ||
+			      of_device_is_compatible(pd_np, "apple,t8103-pmgr-pwrstate"))) {
+				dev_crit(&pdev->dev, "ane_h18 %s: power-domains cell %u (phandle 0x%x) does not resolve to a pmgr pwrstate provider - re-derive the ANE phandles from the installed dtb; a PMP report entry is refused here by design\n",
+					 soc_sel->name, pd_i, ph);
+				ane_h18_result(ane, stage, "FAIL", "ps-domain-mismatch");
+				of_node_put(pd_np);
+				return -EINVAL;
+			}
+			of_node_put(pd_np);
+		}
+
+
+		if (pmgr_gate_pa && !pmgr_gate_mask)
+			goto reads_fail_gates;
+		if (pmgr_gate2_pa && !pmgr_gate_pa)
+			goto reads_fail_gates;
+		if (pmgr_gate2_pa && !pmgr_gate2_mask)
+			goto reads_fail_gates;	/* a zero mask passes trivially; refuse the config */
+		if (!pmgr_ps_pa || (pmgr_ps_pa & (PAGE_SIZE - 1)))
+			goto reads_fail_ps;
+		if (pmgr_ps_mask != 0xf)	/* the actual-state nibble must read fully on: only 0xf is the on-identity */
+			goto reads_fail_ps_mask;
+		ret2 = -ENXIO;
+		ane->eng = of_iomap(pdev->dev.of_node, 0);
+		if (!ane->eng) {
+			ane_h18_result(ane, stage, "FAIL", "engine-iomap-failed");
+			return -ENXIO;
+		}
+		/* With more than one power-domains cell the driver core attaches no
+		 * domain automatically (pmdomain/core.c), so a plain
+		 * pm_runtime_get_sync on the device would cast NO vote while this
+		 * log claimed one. Attach the claimed domains explicitly and hold
+		 * them runtime-active through the device links (DEV_LINK_ON) for as
+		 * long as this probe is bound. */
+		if (ane->pd_count > 1) {
+			static const struct dev_pm_domain_attach_data pd_data = {
+				.pd_flags = PD_FLAG_DEV_LINK_ON,
+			};
+
+			ret = devm_pm_domain_attach_list(&pdev->dev, &pd_data, &ane->pd_list);
+			if (ret < 0) {
+				ret2 = ret;
+				ane_h18_result(ane, stage, "FAIL", "pd-attach-failed");
+				goto out_unmap_eng;
+			}
+			if (ret != ane->pd_count) {
+				dev_crit(&pdev->dev, "ane_h18 %s: attached %d of %d claimed power domains - re-derive the claimed phandles from the installed dtb\n",
+					 soc_sel->name, ret, ane->pd_count);
+				ane_h18_result(ane, stage, "FAIL", "pd-attach-count");
+				ret2 = -EINVAL;
+				goto out_unmap_eng;
+			}
+			ane->vote_held = true;
+		} else {
+			ret2 = pm_runtime_get_sync(&pdev->dev);
+			if (ret2 < 0) {
+				pm_runtime_put_noidle(&pdev->dev);
+				ane_h18_result(ane, stage, "FAIL", "runtime-vote-failed");
+				goto out_unmap_eng;
+			}
+			ane->vote_held = true;
+		}
+		dev_crit(&pdev->dev, "ane_h18 reads: genpd claims held (%s; no PMP vote)\n",
+			 ane->pd_count > 1 ? "claims attached, links runtime-active" : "single power-domains provider");
+
+		if (pmgr_gate_pa) {
+			ane->gate = ioremap(pmgr_gate_pa, 0x1000);
+			if (!ane->gate)
+				goto out_release_gate;
+		}
+		if (pmgr_gate2_pa) {
+			ane->gate2 = ioremap(pmgr_gate2_pa, 0x1000);
+			if (!ane->gate2)
+				goto out_release_gates;
+		}
+		ane->ps = ioremap(pmgr_ps_pa, 0x1000);
+		if (!ane->ps)
+			goto out_release_gate2;	/* unmap the mapped gate2, then gate, then the vote */
+		ane_h18_rd_idx = 0;
+		ane_h18_rd_dev = ane;
+		ane_h18_rd_control = debugfs_create_file("ane_h18_rd", 0200, NULL, NULL, &ane_h18_rd_fops);
+		if (IS_ERR_OR_NULL(ane_h18_rd_control)) {
+			ane_h18_rd_control = NULL;
+			ane_h18_result(ane, stage, "FAIL", "rd-control-failed");
+			ane_h18_unmap(ane);
+			return -ENOMEM;
+		}
+		dev_crit(&pdev->dev, "ane_h18 reads: engine mapped, the four ANE ps regs at pmgr_ps_pa=%#llx%s checked per read; write \"next\" to /sys/kernel/debug/ane_h18_rd for ONE register per step\n",
+			 (unsigned long long)pmgr_ps_pa,
+			 pmgr_gate_pa ? " plus the extra gate register(s)" : "");
+		ane_h18_result(ane, stage, "PASS", "reads-armed-step-via-ane_h18_rd");
+		return 0;
+
+reads_fail_gates:
+		ane_h18_result(ane, stage, "FAIL", "gates-unverified-pass-pmgr-gate-pa-and-mask");
+		return -EINVAL;
+reads_fail_ps:
+		ane_h18_result(ane, stage, "FAIL", "ps-unverified-pass-pmgr-ps-pa");
+		return -EINVAL;
+reads_fail_ps_mask:
+		ane_h18_result(ane, stage, "FAIL", "ps-mask-not-0xf");
+		return -EINVAL;
+out_release_gate2:
+		if (ane->gate2) { iounmap(ane->gate2); ane->gate2 = NULL; }
+out_release_gates:
+		if (ane->gate) { iounmap(ane->gate); ane->gate = NULL; }
+out_release_gate:
+		if (ane->pd_count <= 1)
+			pm_runtime_put_sync(&pdev->dev);
+		ane->vote_held = false;
+		ane_h18_result(ane, stage, "FAIL", "gate-iomap-failed");
+out_unmap_eng:
+		iounmap(ane->eng);
+		ane->eng = NULL;
+		return ret2;
+	}
 
 	ret = ane_h18_map_psd(ane, idx);
 	if (ret)
@@ -2482,6 +2910,7 @@ static void ane_h18_remove(struct platform_device *pdev)
 
 static const struct of_device_id ane_h18_of_match[] = {
 	{ .compatible = "apple,t8152-ane" },
+	{ .compatible = "apple,t8132-ane" },
 	{ }
 };
 
@@ -2494,8 +2923,8 @@ static struct platform_driver ane_h18_driver = {
 	.probe = ane_h18_probe,
 	.remove = ane_h18_remove,
 };
-module_platform_driver(ane_h18_driver);
+module_driver(ane_h18_driver, ane_h18_dt_register, ane_h18_dt_unregister, optin, stage);
 
 MODULE_AUTHOR("Joshua Warren");
-MODULE_DESCRIPTION("OPT-IN EXPERIMENTAL Apple H18 ANE0 bring-up for the T8152 (dt, psd, power; no firmware path)");
+MODULE_DESCRIPTION("OPT-IN EXPERIMENTAL Apple H18 ANE0 bring-up for the T8152 (dt, psd, power; no firmware path) and the T8132 diagnostic row (dt, reads)");
 MODULE_LICENSE("Dual MIT/GPL");

@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <errno.h>
+#include <pthread.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -67,7 +68,48 @@ struct device_node {
 	u32 mbox_num;
 	bool has_power_domains;
 	bool has_iommus;
+	/* pmp phandle-registry node: what of_find_node_by_phandle hands back */
+	u32 phandle;		/* nonzero: this node is registered under sim_phandle */
+	const char *compat;	/* first compatible string, NULL = none */
+	u32 reg_val;		/* the "reg" cell of_property_read_u32(np, "reg") returns */
+	int refs;
 };
+/* the phandles the sim's live tree resolves (0 = slot empty); the t8132 node claims
+ * all three slots (the ps_ane_mpm/tdbase/cpu pmgr pwrstate domains) */
+#define SIM_PHANDLE_SLOTS 3
+extern u32 sim_phandle[SIM_PHANDLE_SLOTS];
+extern struct device_node *sim_phandle_target[SIM_PHANDLE_SLOTS];
+extern int sim_pd_attached, sim_pd_false_votes;	/* the genpd claim list seam, wired in the harness */
+extern struct device *sim_pdev_dev;
+extern u64 sim_gate_pa[2];			/* stage=reads seams: the pmgr gate-state pages */
+extern u32 sim_gate_val[2];
+extern bool sim_ps_on;				/* the four ANE ps registers read fully on when set */
+
+static inline struct device_node *of_find_node_by_phandle(u32 ph)
+{
+	int i;
+
+	for (i = 0; i < SIM_PHANDLE_SLOTS; i++)
+		if (ph && ph == sim_phandle[i] && sim_phandle_target[i])
+			return sim_phandle_target[i];
+	return NULL;
+}
+static inline bool of_device_is_compatible(const struct device_node *n, const char *s)
+{
+	return n && n->compat && !strcmp(n->compat, s);
+}
+static inline void of_node_put(struct device_node *n) { if (n) n->refs--; }
+static inline int of_property_read_u32_index(const struct device_node *n, const char *name,
+					     int index, u32 *v)
+{
+	if (index >= 0 && index < SIM_PHANDLE_SLOTS && !strcmp(name, "power-domains") &&
+	    n->has_power_domains && n->phandle && sim_phandle[index]) {
+		*v = sim_phandle[index];
+		return 0;
+	}
+	return -EINVAL;
+}
+
 
 struct device { struct device_node *of_node; };
 struct platform_device { struct device dev; void *drvdata; };
@@ -75,10 +117,26 @@ struct resource { u64 start; u64 end; };
 
 static inline u64 resource_size(const struct resource *r) { return r->end - r->start + 1; }
 
+#define IORESOURCE_MEM 0x00000200
+
+static inline struct resource *platform_get_resource(struct platform_device *pdev, unsigned int type, unsigned int num)
+{
+	struct device_node *np = pdev->dev.of_node;
+	static struct resource res[8];
+
+	(void)type;
+	if (!np || num >= (unsigned int)np->n_reg || !np->reg_size[num] || num >= 8)
+		return NULL;
+	res[num].start = np->reg_pa[num];
+	res[num].end = np->reg_pa[num] + np->reg_size[num] - 1;
+	return &res[num];
+}
+
 static inline int of_property_read_u32(const struct device_node *n, const char *name, u32 *v)
 {
 	if (!strcmp(name, "apple,ane-type") && n->has_type) { *v = n->ane_type; return 0; }
 	if (!strcmp(name, "msgbox-mailbox-num") && n->has_num) { *v = n->mbox_num; return 0; }
+	if (!strcmp(name, "reg") && n->phandle) { *v = n->reg_val; return 0; }
 	return -EINVAL;
 }
 
@@ -87,6 +145,12 @@ static inline bool of_property_present(const struct device_node *n, const char *
 	return (!strcmp(name, "power-domains") && n->has_power_domains) || (!strcmp(name, "iommus") && n->has_iommus);
 }
 
+#define MODULE_STATE_LIVE 0
+struct module { int state, refs; };
+static struct module sim_owner_module;
+#define THIS_MODULE (&sim_owner_module)
+#define __module_get(m) ((void)((m)->refs++))
+#define module_put(m) ((void)((m)->refs--))
 #define ERR_PTR(e) ((void *)(intptr_t)(e))
 #define PTR_ERR(p) ((long)(intptr_t)(p))
 #define IS_ERR(p) ((uintptr_t)(p) >= (uintptr_t)-4095)
@@ -326,7 +390,22 @@ static inline bool sim_in(u64 pa, u64 base, u32 size) { return pa >= base && pa 
 static inline u32 bus_read(u64 pa)
 {
 	u32 off, v = 0xdeadbeef;
-	int i = sim_psd_of(pa, &off);
+	int gi, i = sim_psd_of(pa, &off);
+
+	for (gi = 0; gi < 2; gi++) {
+		if (sim_gate_pa[gi] && pa >= sim_gate_pa[gi] && pa < sim_gate_pa[gi] + 0x1000) {
+			v = sim_gate_val[gi];
+			sim_event(0, pa, v);
+			return v;
+		}
+	}
+	if (pa >= 0x280900000ULL && pa < 0x280901000ULL) {
+		/* the pmgr1 page: the four ANE power-state registers. TARGET is bits 3:0,
+		 * ACTUAL is bits 7:4 (pmgr-pwrstate.c); 0xf0 = fully on, 0 = out of state */
+		v = sim_ps_on ? 0xf0 : 0;
+		sim_event(0, pa, v);
+		return v;
+	}
 
 	if (i >= 0) {
 		if (off == 0xbc) {
@@ -495,17 +574,23 @@ static inline void bus_write(u64 pa, u32 v)
 }
 
 /* sim_find_node: the harness registers the node; of_iomap returns the physical address as the "mapping" */
+extern int sim_iomap_fail_at;	/* fail the Nth of_iomap/ioremap call (0 = never) */
+
 static inline void *of_iomap(struct device_node *n, int idx)
 {
 	if (!n || idx < 0 || idx >= n->n_reg || !n->reg_size[idx])
 		return NULL;
 	sim_n_iomap++;
+	if (sim_iomap_fail_at && sim_n_iomap == sim_iomap_fail_at)
+		return NULL;
 	return (void *)(uintptr_t)n->reg_pa[idx];
 }
 static inline void *ioremap(u64 pa, u32 size)
 {
 	(void)size;
 	sim_n_iomap++;
+	if (sim_iomap_fail_at && sim_n_iomap == sim_iomap_fail_at)
+		return NULL;
 	return (void *)(uintptr_t)pa;
 }
 static inline void iounmap(void *p) { (void)p; sim_n_iounmap++; }
@@ -516,6 +601,15 @@ static inline void iounmap(void *p) { (void)p; sim_n_iounmap++; }
 /* ---- runtime PM and iommu stubs: calls are recorded, ordered against the MMIO events by event index ---- */
 extern int sim_rpm_enabled, sim_rpm_gets, sim_rpm_puts, sim_rpm_get_fail;
 static inline int devm_pm_runtime_enable(struct device *d) { (void)d; sim_rpm_enabled++; return 0; }
+static inline int pm_runtime_get_sync(struct device *d)
+{
+	if (sim_pd_attached && d == sim_pdev_dev)
+		sim_pd_false_votes++;	/* no auto domain with 2+ cells: this casts no vote */
+	sim_rpm_gets++;
+	return sim_rpm_get_fail ? -EIO : 0;
+}
+static inline void pm_runtime_put_sync(struct device *d) { (void)d; sim_rpm_puts++; }
+static inline int pm_runtime_put_noidle(struct device *d) { (void)d; return 0; }
 static inline int pm_runtime_resume_and_get(struct device *d)
 {
 	(void)d;
@@ -526,6 +620,103 @@ static inline int pm_runtime_resume_and_get(struct device *d)
 	return 0;
 }
 static inline int pm_runtime_put(struct device *d) { (void)d; sim_rpm_puts++; return 0; }
+
+extern int sim_count_error;	/* force of_count_phandle_with_args to return -EINVAL */
+static inline int of_count_phandle_with_args(const struct device_node *n,
+					     const char *name, const char *cells)
+{
+	int i, cnt = 0;
+
+	(void)name; (void)cells;
+	if (!n || !n->has_power_domains)
+		return -ENOENT;
+	if (sim_count_error)
+		return -EINVAL;
+	for (i = 0; i < SIM_PHANDLE_SLOTS; i++)
+		cnt += sim_phandle[i] != 0;
+	return cnt;
+}
+
+/* devm_pm_domain_attach_list seam: with >= 2 cells the driver core attaches NO
+ * domain, so a pm_runtime_get_sync on the device itself is the false-vote trap */
+#define PD_FLAG_DEV_LINK_ON 1
+struct dev_pm_domain_attach_data { u32 pd_flags; };
+struct dev_pm_domain_list { int num_pds; };
+extern int sim_pd_attach_fail;	/* force devm_pm_domain_attach_list to fail with -EIO */
+extern struct dev_pm_domain_list sim_pd_list;
+static inline int devm_pm_domain_attach_list(struct device *dev,
+					     const struct dev_pm_domain_attach_data *data,
+					     struct dev_pm_domain_list **list)
+{
+	(void)dev; (void)data;
+	if (sim_pd_attached)
+		return -EBUSY;	/* devm double-attach */
+	if (sim_pd_attach_fail) {
+		sim_pd_attach_fail = 0;
+		return -EIO;
+	}
+	if (of_count_phandle_with_args(dev->of_node, "power-domains", "#power-domain-cells") < 2)
+		return -EINVAL;
+	*list = &sim_pd_list;
+	sim_pd_list.num_pds = sim_pd_attached = of_count_phandle_with_args(dev->of_node, "power-domains", "#power-domain-cells");
+	return sim_pd_attached;
+}
+
+/* ---- the reads step control: mutex, user-copy helpers, debugfs ---- */
+struct mutex { pthread_mutex_t value; };
+static inline void mutex_lock(struct mutex *m) { pthread_mutex_lock(&m->value); }
+static inline void mutex_unlock(struct mutex *m) { pthread_mutex_unlock(&m->value); }
+/* the kernel's DEFINE_MUTEX does not add a storage class; callers write `static DEFINE_MUTEX(...)` */
+#define DEFINE_MUTEX(n) struct mutex n = { .value = PTHREAD_MUTEX_INITIALIZER }
+static inline char *strim(char *s)
+{
+	char *end;
+	size_t len;
+
+	while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')
+		s++;
+	len = strlen(s);
+	if (!len)
+		return s;
+	end = s + len - 1;
+	while (end > s && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+		*end-- = '\0';
+	return s;
+}
+static inline ssize_t simple_write_to_buffer(void *to, size_t avail, loff_t *ppos,
+					     const char *from, size_t count)
+{
+	size_t cp = count < avail ? count : avail;
+
+	if (!cp)
+		return -EINVAL;
+	memcpy(to, from, cp);
+	*ppos += cp;
+	return (ssize_t)cp;
+}
+#define __user
+struct inode { void *i_private; };
+struct file { void *private_data; };
+struct file_operations {
+	struct module *owner;
+	ssize_t (*write)(struct file *, const char *, size_t, loff_t *);
+};
+struct dentry { void *data; const struct file_operations *ops; bool live; };
+extern int sim_rd_ready;
+static struct dentry sim_rd_entry;	/* the reads step control, driven by the harness */
+static inline struct dentry *debugfs_create_file(const char *name, int mode, void *parent, void *data, const struct file_operations *ops)
+{
+	(void)parent;
+	if (strcmp(name, "ane_h18_rd"))
+		abort();
+	if (mode != 0200)
+		abort();
+	sim_rd_entry = (struct dentry){ .data = data, .ops = ops, .live = true };
+	sim_rd_ready = 1;
+	return &sim_rd_entry;
+}
+static inline void debugfs_remove(struct dentry *entry) { if (entry) entry->live = false; }
+#define IS_ERR_OR_NULL(p) (!(p) || IS_ERR(p))
 
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2

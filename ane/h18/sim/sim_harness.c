@@ -51,6 +51,16 @@ int sim_nprops;
 u32 sim_prop_refuse;	/* a property id the modelled firmware refuses (ack 1), 0 = none */
 u32 sim_credits_now = 1;
 int sim_rpm_enabled, sim_rpm_gets, sim_rpm_puts, sim_rpm_get_fail;
+u32 sim_phandle[SIM_PHANDLE_SLOTS];			/* slots 0.. = the claimed ps domains, a PMP report entry in a slot is a refusal case only */
+struct device_node *sim_phandle_target[SIM_PHANDLE_SLOTS];
+int sim_pd_attached, sim_pd_false_votes, sim_pd_attach_fail, sim_count_error;
+struct dev_pm_domain_list sim_pd_list;
+struct device *sim_pdev_dev;
+int sim_rd_ready;			/* the module published the reads step control */
+u64 sim_gate_pa[2];			/* stage=reads seams: the pmgr gate-state pages */
+u32 sim_gate_val[2];
+bool sim_ps_on;				/* the four ANE ps registers read fully on when set */
+int sim_iomap_fail_at;
 struct sim_iocall sim_iocalls[64];
 int sim_n_iocalls, sim_io_fail, sim_n_dom_live;
 int sim_start_chan = -1, sim_start_msgs, sim_start_hello;
@@ -554,10 +564,13 @@ static int log_pos(const char *needle)
 
 static bool result(const char *stg, const char *verdict, const char *reason)
 {
-	char want[160];
+	char head[80], tail[80];
 
-	snprintf(want, sizeof(want), "ane_h18 RESULT stage=%s soc=t8152 verdict=%s reason=%s", stg, verdict, reason);
-	return strstr(sim_log, want) != NULL;
+	/* the soc sits between stage and verdict, and the reads tests run t8132 while the
+	 * older ones run t8152: match the two ends separately */
+	snprintf(head, sizeof(head), "ane_h18 RESULT stage=%s soc=", stg);
+	snprintf(tail, sizeof(tail), "verdict=%s reason=%s", verdict, reason);
+	return strstr(sim_log, head) != NULL && strstr(sim_log, tail) != NULL;
 }
 
 static int writes(void)
@@ -653,6 +666,22 @@ static void reset_all(void)
 	sim_start_chan = -1;
 	sim_start_msgs = 0;
 	psd_timeout_ms = 1000;
+	memset(sim_phandle, 0, sizeof(sim_phandle));
+	memset(sim_phandle_target, 0, sizeof(sim_phandle_target));
+	sim_pd_attached = sim_pd_false_votes = sim_pd_attach_fail = sim_count_error = 0;
+	sim_pd_list.num_pds = 0;
+	sim_pdev_dev = &pdev.dev;
+	sim_rd_ready = 0;
+	sim_ps_on = false;
+	sim_iomap_fail_at = 0;
+	allow_reads = false;
+	confirm_power = false;
+	pmgr_gate_pa = 0;
+	pmgr_gate_mask = 0;
+	pmgr_gate2_pa = 0;
+	pmgr_gate2_mask = 0;
+	pmgr_ps_pa = 0;
+	pmgr_ps_mask = 0;
 	memset(&pdev, 0, sizeof(pdev));
 	memset(&node, 0, sizeof(node));
 	node.n_reg = 5;
@@ -1898,6 +1927,440 @@ static int neg_args(void)
 	return bad;
 }
 
+/* ---- stage=reads: the step machine on the t8132 row (pmgr domains only, no PMP vote) ---- */
+
+static struct device_node sim_cpu_node;		/* ps_ane_cpu, the third power-domains cell */
+static struct device_node sim_pmp_entry;	/* a t6050 PMP report entry: must never be a cell */
+
+static void set_t8132_node(void)
+{
+	static struct device_node sim_mpm_node, sim_tdbase_node;
+
+	memset(&node, 0, sizeof(node));
+	node.n_reg = 1;
+	node.reg_pa[0] = 0x5080000000ULL; node.reg_size[0] = 0x2000000; node.reg_name[0] = "ane";
+	node.has_type = true;
+	node.ane_type = 546;
+	node.has_power_domains = true;
+	node.phandle = 0xa1;
+	sim_pd_attached = 0;	/* the claims attach only through devm_pm_domain_attach_list */		/* the shim returns the per-slot phandle for each power-domains index */
+	node.compat = NULL;
+	pdev.dev.of_node = &node;
+	/* the three claimed ANE pmgr domains: ps_ane_mpm 0xa2, ps_ane_tdbase 0xa3, ps_ane_cpu 0xa4 */
+	memset(&sim_mpm_node, 0, sizeof(sim_mpm_node));
+	sim_mpm_node.compat = "apple,t6050-pmgr-pwrstate";
+	sim_mpm_node.phandle = 0xa2;
+	sim_mpm_node.refs = 1;
+	sim_phandle[0] = 0xa2;
+	sim_phandle_target[0] = &sim_mpm_node;
+	memset(&sim_tdbase_node, 0, sizeof(sim_tdbase_node));
+	sim_tdbase_node.compat = "apple,t6050-pmgr-pwrstate";
+	sim_tdbase_node.phandle = 0xa3;
+	sim_tdbase_node.refs = 1;
+	sim_phandle[1] = 0xa3;
+	sim_phandle_target[1] = &sim_tdbase_node;
+	memset(&sim_cpu_node, 0, sizeof(sim_cpu_node));
+	sim_cpu_node.compat = "apple,t6050-pmgr-pwrstate";
+	sim_cpu_node.phandle = 0xa4;
+	sim_cpu_node.refs = 1;
+	sim_phandle[2] = 0xa4;
+	sim_phandle_target[2] = &sim_cpu_node;
+	memset(&sim_pmp_entry, 0, sizeof(sim_pmp_entry));
+	sim_pmp_entry.compat = "apple,t6050-pmp-v2-report-entry";
+	sim_pmp_entry.reg_val = 0x10;
+	sim_pmp_entry.phandle = 0xa1;
+	sim_pmp_entry.refs = 1;
+}
+
+static int rd_next(ssize_t *rc)
+{
+	struct file file = { 0 };
+	loff_t position = 0;
+
+	if (!sim_rd_entry.ops || !sim_rd_entry.ops->write)
+		return -1;
+	*rc = sim_rd_entry.ops->write(&file, "next\n", 5, &position);
+	return 0;
+}
+
+/* A malformed power-domains cell count (of_count error) must refuse the reads
+ * stage outright: -EINVAL, FAIL verdict, no vote cast, no attach, no maps. */
+static int pos_reads_single(void)
+{
+	int ret;
+
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_count_error = 1;	/* of_count_phandle_with_args returns -EINVAL */
+	ret = probe_now();
+	chk(ret == -EINVAL, "S1 single: malformed cell count refuses the arm with -EINVAL");
+	chk(result("reads", "FAIL", "pd-count-malformed"), "S1 single: RESULT FAIL pd-count-malformed");
+	chk(sim_rpm_gets == 0, "S1 single: no device vote cast on the refusal");
+	chk(sim_pd_attached == 0, "S1 single: no list attach on the refusal");
+	chk(sim_n_iomap == 0 && sim_n_iounmap == 0, "S1 single: no engine window mapped on the refusal");
+	printf("pos-reads-single: %s\n", fails ? "FAILED" : "PASS");
+	return fails;
+}
+
+static int pos_reads(void)
+{
+	struct file file = { 0 };
+	loff_t position = 0;
+	ssize_t operated;
+	int ret, i, reads_before;
+
+	reset_all();
+	optin = "t8132";
+	stage = "reads";
+	allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL;
+	pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL;
+	pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL;
+	pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_gate_pa[1] = pmgr_gate2_pa; sim_gate_val[1] = 0x1;
+	sim_ps_on = true;
+	set_t8132_node();
+
+	ret = probe_now();
+	chk(ret == 0, "R1 reads: probe returns 0");
+	chk(result("reads", "PASS", "reads-armed-step-via-ane_h18_rd"), "R1 reads: RESULT PASS reads-armed");
+	chk(sim_rd_ready, "R1 reads: rd control published");
+	chk(sim_rpm_gets == 0 && sim_rpm_puts == 0, "R1 reads: no device runtime PM get on the multi-domain path (the claims hold through links)");
+	/* two gate reads at the first step: both gate families */
+	reads_before = sim_n_events;
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated == 5, "R1 reads: first next accepted");
+	chk(result("reads", "PASS", "reads-done") == false, "R1 reads: not done after one step");
+	for (i = 2; i <= (int)ARRAY_SIZE(ane_h18_rd_list); i++) {
+		ret = rd_next(&operated);
+		chk(ret == 0 && operated == 5, "R1 reads: next accepted");
+	}
+	chk(result("reads", "PASS", "reads-done") == false, "R1 reads: every listed register read, not done yet");
+	ret = rd_next(&operated);	/* the write after the last register reports done */
+	chk(ret == 0 && operated == 5, "R1 reads: done write accepted");
+	chk(result("reads", "PASS", "reads-done"), "R1 reads: RESULT PASS reads-done after all listed reads");
+	reads_before = sim_n_events;
+	ret = rd_next(&operated);
+	chk(ret == 0, "R1 reads: next after done is a no-op that returns count");
+	chk(sim_n_events == reads_before, "R1 reads: no register re-read after done");
+	/* reads only: no bus write of any kind across the whole sequence */
+	for (i = 0; i < sim_n_events; i++)
+		chk(!sim_events[i].write, "R1 reads: zero bus writes (event index above)");
+	/* removal: control first, then the vote, then the maps; the multi-domain claims
+	 * hold through devm links, so there is no device put and none was faked */
+	ane_h18_unmap(ane_h18_rd_dev);
+	chk(sim_pd_attached == 3 && sim_pd_list.num_pds == 3, "R1 reads: all three claims attached");
+	chk(sim_pd_false_votes == 0, "R1 reads: no pm_runtime_get_sync on the multi-domain device (no false vote)");
+	chk(sim_rpm_puts == 0, "R1 reads: removal puts nothing on the multi-domain path (devm links hold)");
+	chk(!ane_h18_rd_dev, "R1 reads: rd device cleared");
+
+	/* R2: the default vote-free configuration - the four ps registers alone, no extra gate
+	 * register: it arms, reads, and never maps or reads a gate page */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0, "R2 reads: arms with the ps registers only");
+	chk(result("reads", "PASS", "reads-armed-step-via-ane_h18_rd"), "R2 reads: RESULT PASS reads-armed");
+	chk(sim_n_iomap == 2, "R2 reads: only the engine window and the ps page are mapped");
+	chk(sim_pd_attached == 3 && sim_rpm_gets == 0, "R2 reads: the three pmgr claims attach, no device vote");
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated == 5, "R2 reads: first step accepted");
+	chk(!result("reads", "REFUSED", "pmgr-ps-off"), "R2 reads: no refusal with the ps registers on");
+	sim_ps_on = false;
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated < 0, "R2 reads: step refused once a ps register leaves state");
+	chk(result("reads", "REFUSED", "pmgr-ps-off"), "R2 reads: REFUSED pmgr-ps-off with no gate register configured");
+	ane_h18_unmap(ane_h18_rd_dev);
+
+	/* R3: stage=dt on the incomplete t8132 row reports the windows unchecked:
+	 * no window check ran, so the checked verdict would be a false PASS */
+	reset_all();
+	optin = "t8132"; stage = "dt";
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0 && sim_n_iomap == 0, "R3 dt: incomplete row maps nothing in stage=dt");
+	chk(result("dt", "PASS", "dt-windows-reported-unchecked"), "R3 dt: RESULT PASS dt-windows-reported-unchecked");
+	printf("pos-reads: %s\n", fails ? "FAILED" : "PASS");
+	return fails;
+}
+
+static int neg_reads(void)
+{
+	int ret;
+	ssize_t operated;
+
+	/* N1: no allow_reads */
+	reset_all();
+	optin = "t8132"; stage = "reads";
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EPERM, "N1 reads: refused without allow_reads (rc above)");
+
+	/* N2: the second extra gate register without the first */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N2 reads: gate2 without gate refused (rc above)");
+	chk(result("reads", "FAIL", "gates-unverified-pass-pmgr-gate-pa-and-mask"), "N2 reads: FAIL gates-unverified");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N2 reads: no power claim attached for a bad gate config");
+
+	/* N3: bare node (no power-domains) */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	memset(&node, 0, sizeof(node));
+	node.n_reg = 1;
+	node.reg_pa[0] = 0x5080000000ULL; node.reg_size[0] = 0x2000000;
+	node.has_type = true; node.ane_type = 546;
+	node.has_power_domains = false;
+	pdev.dev.of_node = &node;
+	ret = probe_now();
+	chk(ret == -EPERM, "N3 reads: bare node refused");
+	chk(strstr(sim_log, "stage=reads requires power-domains") != NULL, "N3 reads: bare-node refusal names the missing provider");
+
+	/* N4: phandle resolves to a foreign node (the base dtb shifted) */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_cpu_node.compat = "apple,t6050-pmgr-OTHER";	/* shifted tree: wrong compatible */
+	ret = probe_now();
+	chk(ret == -EINVAL, "N4 reads: foreign phandle target refused (rc above)");
+	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N4 reads: FAIL ps-domain-mismatch");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N4 reads: no power claim on a foreign domain");
+
+	/* N5: phandle dangles (the final dtb predates the ps_ane_cpu pin) */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_phandle_target[2] = NULL;	/* the ps_ane_cpu phandle dangles in the live tree */
+	ret = probe_now();
+	chk(ret == -EINVAL, "N5 reads: dangling phandle refused (rc above)");
+	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N5 reads: FAIL ps-domain-mismatch");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N5 reads: no power claim without a target");
+
+	/* N6: the PMP report entry as the last cell (the old vote-last layout) = refuse */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_phandle[2] = 0xa1; sim_phandle_target[2] = &sim_pmp_entry;
+	ret = probe_now();
+	chk(ret == -EINVAL, "N6 reads: PMP report entry cell refused (rc above)");
+	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N6 reads: FAIL ps-domain-mismatch");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N6 reads: no PMP vote and no attach");
+
+	/* N7: gates fall off between arm and step: REFUSED, no readl */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_gate_pa[1] = pmgr_gate2_pa; sim_gate_val[1] = 0x1;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0, "N7 reads: armed");
+	sim_gate_val[0] = 0;	/* the power gates dropped */
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated < 0, "N7 reads: step refused when the gate dropped");
+	chk(result("reads", "REFUSED", "pmgr-gates-off"), "N7 reads: REFUSED pmgr-gates-off");
+	/* still no writes even in the refused state */
+	sim_n_events = 0;
+	rd_next(&operated);
+	for (ret = 0; ret < sim_n_events; ret++)
+		chk(!sim_events[ret].write, "N7 reads: refused state does no writes");
+
+	/* N8: second gate family fails the mask */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_gate_pa[1] = pmgr_gate2_pa; sim_gate_val[1] = 0;	/* clock gates off */
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0, "N8 reads: armed");
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated < 0, "N8 reads: step refused when gate2 lacks its mask");
+	chk(result("reads", "REFUSED", "pmgr-gates-off"), "N8 reads: REFUSED pmgr-gates-off");
+
+	/* N9: the claims attach fails at arm: no maps leak, no control */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_ps_on = true;
+	sim_pd_attach_fail = 1;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret < 0, "N9 reads: attach failure refuses the arm (rc above)");
+	chk(result("reads", "FAIL", "pd-attach-failed"), "N9 reads: FAIL pd-attach-failed");
+	chk(!sim_rd_ready, "N9 reads: no control published");
+	chk(sim_n_iounmap == 1, "N9 reads: engine window unmapped on attach failure");
+
+	/* N10: t8132 refuses psd/power/boot outright */
+	reset_all();
+	optin = "t8132"; stage = "psd";
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N10 t8132: psd refused on the incomplete row");
+	reset_all();
+	optin = "t8132"; stage = "boot";
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N10 t8132: boot refused on the incomplete row");
+
+	/* N11: the ps page params missing = fail closed */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N11 reads: missing ps params refused");
+	chk(result("reads", "FAIL", "ps-unverified-pass-pmgr-ps-pa"), "N11 reads: FAIL ps-unverified");
+	chk(sim_rpm_gets == 0, "N11 reads: no vote cast without the ps check");
+
+	/* N12: a ps register not fully on = REFUSED at the step, no readl */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_gate_pa[1] = pmgr_gate2_pa; sim_gate_val[1] = 0x1;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0, "N12 reads: armed");
+	sim_ps_on = false;	/* a domain dropped out of state */
+	ret = rd_next(&operated);
+	chk(ret == 0 && operated < 0, "N12 reads: step refused when a ps register left state");
+	chk(result("reads", "REFUSED", "pmgr-ps-off"), "N12 reads: REFUSED pmgr-ps-off");
+
+	/* N13: gate2_pa with a zero mask = refuse at arm (a zero mask passes trivially) */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N13 reads: gate2 zero-mask refused");
+	chk(result("reads", "FAIL", "gates-unverified-pass-pmgr-gate-pa-and-mask"), "N13 reads: FAIL gates-unverified");
+	chk(sim_rpm_gets == 0, "N13 reads: no vote cast for a zero gate2 mask");
+
+	/* N14: an unaligned pmgr_ps_pa = refuse at arm */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_ps_pa = 0x280900123ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N14 reads: unaligned ps page refused");
+	chk(result("reads", "FAIL", "ps-unverified-pass-pmgr-ps-pa"), "N14 reads: FAIL ps-unverified");
+	chk(sim_rpm_gets == 0, "N14 reads: no vote cast for an unaligned ps page");
+
+	/* N15: the ps ioremap failing must unmap gate2 AND gate, release the vote, leave no leak */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_gate2_pa = 0x2922d0000ULL; pmgr_gate2_mask = 0x1;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_gate_pa[1] = pmgr_gate2_pa; sim_gate_val[1] = 0x1;
+	sim_ps_on = true;
+	set_t8132_node();
+	{
+		int maps_before = sim_n_iomap, unmaps_before = sim_n_iounmap;
+
+		/* engine of_iomap + gate + gate2 succeed; the 4th map (ps) fails */
+		sim_iomap_fail_at = 4;
+		ret = probe_now();
+		chk(ret != 0, "N15 reads: ps ioremap failure fails the arm");
+		chk(sim_n_iomap == maps_before + 4, "N15 reads: four maps attempted, the fourth failed");
+		chk(sim_n_iounmap == unmaps_before + 3, "N15 reads: gate2, gate and engine all unmapped");
+		chk(sim_rpm_puts == 0, "N15 reads: no device put on the multi-domain path (devm holds)");
+	}
+
+	/* N16: a claimed ps sub-block cell that does not resolve to a pmgr pwrstate = refuse */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_gate_pa = 0x2922c0000ULL; pmgr_gate_mask = 0x3f;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_gate_pa[0] = pmgr_gate_pa; sim_gate_val[0] = 0x3f;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_phandle_target[0] = NULL;	/* the claimed ps_ane_mpm phandle dangles in the live tree */
+	ret = probe_now();
+	chk(ret == -EINVAL, "N16 reads: dangling ps-domain claim refused");
+	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N16 reads: FAIL ps-domain-mismatch");
+	chk(sim_rpm_gets == 0, "N16 reads: no vote cast for a dangling ps-domain claim");
+
+	/* N17: the PMP report entry as the first cell = refuse before any claim attaches */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0xf;
+	sim_ps_on = true;
+	set_t8132_node();
+	sim_phandle[0] = 0xa1; sim_phandle_target[0] = &sim_pmp_entry;
+	ret = probe_now();
+	chk(ret == -EINVAL, "N17 reads: PMP cell first refused");
+	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N17 reads: FAIL ps-domain-mismatch");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N17 reads: no vote and no attach when a PMP cell is present");
+
+
+	/* N19: stage=reads on the t8152 row = refuse: reads is the t8132 row's probe */
+	reset_all();
+	optin = "t8152"; stage = "reads"; allow_reads = true;
+	ret = probe_now();
+	chk(ret == -EINVAL, "N19 reads: t8152 row refuses stage=reads (rc above)");
+	chk(sim_n_iomap == 0 && sim_rpm_gets == 0 && sim_pd_attached == 0, "N19 reads: nothing mapped or claimed on the refusal");
+
+	/* N18: a pmgr_ps_mask other than the on-identity 0xf = refuse at arm */
+	reset_all();
+	optin = "t8132"; stage = "reads"; allow_reads = true;
+	pmgr_ps_pa = 0x280900000ULL; pmgr_ps_mask = 0x7;
+	sim_ps_on = true;
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == -EINVAL, "N18 reads: pmgr_ps_mask other than 0xf refused");
+	chk(result("reads", "FAIL", "ps-mask-not-0xf"), "N18 reads: FAIL ps-mask-not-0xf");
+	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N18 reads: no vote and no attach for a foreign mask");
+
+	printf("neg-reads: %s\n", fails ? "FAILED" : "PASS");
+	return fails;
+}
+
 int main(int argc, char **argv)
 {
 	const char *mode = argc > 1 ? argv[1] : "pos";
@@ -1921,8 +2384,14 @@ int main(int argc, char **argv)
 		fails = neg_boot();
 	} else if (!strcmp(mode, "neg-args")) {
 		fails = neg_args();
+	} else if (!strcmp(mode, "pos-reads-single")) {
+		fails = pos_reads_single();
+	} else if (!strcmp(mode, "pos-reads")) {
+		fails = pos_reads();
+	} else if (!strcmp(mode, "neg-reads")) {
+		fails = neg_reads();
 	} else {
-		fprintf(stderr, "usage: sim_h18 [pos|neg-psd-never|neg-psd-wrong|neg-dt|neg-boot|neg-args]\n");
+		fprintf(stderr, "usage: sim_h18 [pos|neg-psd-never|neg-psd-wrong|neg-dt|neg-boot|neg-args|pos-reads-single|pos-reads|neg-reads]\n");
 		return 2;
 	}
 	return fails ? 1 : 0;

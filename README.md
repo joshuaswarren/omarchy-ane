@@ -38,13 +38,17 @@ Part of the Omarchy on Apple Silicon ecosystem:
   opt-in key.
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
-  `ane/h18` (Mac mini M6). None is packaged or autoloaded; each loads by hand
+  `ane/h18` (Mac mini M6 and 14-inch M5 Max MacBook Pro). None is packaged or
+  autoloaded; each loads by hand
   behind its own opt-in parameter and per-stage confirmations
   ([h15](ane/h15/README-bringup.md), [h16](ane/h16/README-bringup.md),
   [h18](ane/h18/README-bringup.md)). The M6 module has run the first verified
   computation on that chip under Linux: a one-op fp16 add, output byte-identical
   to the reference (2026-11-03, [issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)). The
-  M3 and M4 modules remain bring-up-only. Data
+  M3 and M4 modules remain bring-up-only. The M5 Max row is diagnostic only: the
+  module applies a power-domain overlay and reads registers read-only (all 20
+  probe cells answered with no crash on that machine); the ANE firmware was
+  never started there. Data
   for newer chips sits in `data/ane-soc/`
   ([docs/ane-soc-data.md](docs/ane-soc-data.md)).
 

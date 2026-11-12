@@ -9,22 +9,34 @@
 #   make sim-all                     everything above
 ifneq ($(KERNELRELEASE),)
 	obj-m := ane_h18.o
-	ane_h18-objs := ane_h18_main.o ane_h18_soc.o
+	ane_h18-objs := ane_h18_main.o ane_h18_soc.o ane_h18_dt.o
 	ccflags-y += -I$(src)
 else
 	KERNELDIR ?= /lib/modules/$(shell uname -r)/build
 	PWD := $(shell pwd)
 
 SIM_CC ?= cc
-SIM_CFLAGS ?= -g -O0 -Wall -Wextra -Werror=return-type -std=gnu11
+SIM_CFLAGS ?= -g -O0 -Wall -Wextra -Werror=return-type -std=gnu11 -pthread
 
 default: modules
 
 modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
-sim/sim_h18: sim/sim_harness.c sim/shim.h ane_h18_main.c ane_h18_soc.c ane_h18.h
+sim/sim_h18: sim/sim_harness.c sim/shim.h ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h
 	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ sim/sim_harness.c
+
+sim/sim_dt_pmp: sim/test_dt_pmp.c ane_h18_dt.c ane_h18_dt.h ane_h18_dt_t8132_data.h
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -o $@ sim/test_dt_pmp.c
+
+sim-dt-pmp: sim/sim_dt_pmp
+	./sim/sim_dt_pmp
+
+sim/sim_dt_lifecycle: sim/test_dt_lifecycle.c ane_h18_dt.c ane_h18_dt.h ane_h18_dt_t8132_data.h
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -o $@ sim/test_dt_lifecycle.c
+
+sim-dt-lifecycle: sim/sim_dt_lifecycle
+	@timeout 30s ./sim/sim_dt_lifecycle
 
 sim-test: sim/sim_h18
 	./sim/sim_h18 pos
@@ -44,13 +56,35 @@ sim-negative-args: sim/sim_h18
 sim-negative-boot: sim/sim_h18
 	./sim/sim_h18 neg-boot
 
+sim-positive-reads-single: sim/sim_h18
+	./sim/sim_h18 pos-reads-single
+
+sim-positive-reads: sim/sim_h18
+	./sim/sim_h18 pos-reads-single
+	./sim/sim_h18 pos-reads
+
+sim-negative-reads: sim/sim_h18
+	./sim/sim_h18 neg-reads
+
+# stage=reads: the pwrstate identity of the power-domains cells is not checked (a shifted base dtb would power a foreign domain)
+sim-mutation-nopwrstateid:
+	$(call mutant,nopwrstateid,s/of_device_is_compatible(pd_np$(COMMA) "apple,t6050-pmgr-pwrstate") ||/1 \/* NEG: pwrstate identity not checked *\/ ||/,NEG: pwrstate identity not checked,neg-reads)
+
+# the power-domains phandle targets are never resolved
+sim-mutation-novotecheck:
+	$(call mutant,novotecheck,s/pd_np = of_find_node_by_phandle(ph);/pd_np = NULL; \/* NEG: target never resolved *\//,NEG: target never resolved,neg-reads)
+
+# the multi-domain claims are skipped and a device get_sync fakes the vote
+sim-mutation-nopdattach:
+	$(call mutant,nopdattach,s/if (ane->pd_count > 1) {/if (0) { \/* NEG: claims never attached *\//,NEG: claims never attached,pos-reads)
+
 # Mutation controls: build a copy of the real module with one sed edit and REQUIRE the named harness mode to fail it.
 # $(call mutant,<name>,<sed script>,<marker>,<harness mode>)
 COMMA := ,
 define mutant
 	rm -rf /tmp/ane_h18-$(1) && mkdir -p /tmp/ane_h18-$(1)
 	cp -r sim /tmp/ane_h18-$(1)/sim
-	cp ane_h18_main.c ane_h18_soc.c ane_h18.h /tmp/ane_h18-$(1)/
+	cp ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h /tmp/ane_h18-$(1)/
 	sed '$(2)' ane_h18_main.c > /tmp/ane_h18-$(1)/ane_h18_main.c
 	grep -q '$(3)' /tmp/ane_h18-$(1)/ane_h18_main.c
 	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h18-$(1)/sim -I /tmp/ane_h18-$(1)/sim/inc -o /tmp/ane_h18-$(1)/sim_h18 /tmp/ane_h18-$(1)/sim/sim_harness.c
@@ -352,8 +386,8 @@ sim-mutation-chackalways:
 sim-mutation-chnostartgate:
 	$(call mutant,chnostartgate,s/if (seq\[i\].start_only \&\& !hs_start)/if (0 \/* NEG: start commands always *\/)/,NEG: start commands always,pos)
 
-sim-all: sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
-	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
+sim-all: sim-test sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
+	sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
 	sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt \
 	sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate \
 	sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput \
@@ -414,8 +448,8 @@ sim-all: sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt 
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -f sim/sim_h18
+	rm -f sim/sim_h18 sim/sim_dt_pmp sim/sim_dt_lifecycle
 
-.PHONY: sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
+.PHONY: sim-dt-pmp sim-dt-lifecycle sim-positive-reads sim-positive-reads-single sim-negative-reads sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
 	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-all clean
 endif

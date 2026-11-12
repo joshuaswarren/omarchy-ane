@@ -73,6 +73,8 @@ ane/h15/test_domain_window
 ane/h15/test_rtk_startup
 ane/h15/test_t8122_start
 ane/h18/sim/sim_h18
+ane/h18/sim/sim_dt_pmp
+ane/h18/sim/sim_dt_lifecycle
 
 # ane/h17 userspace sim binary
 ane/h17/sim/sim_h17_wake
