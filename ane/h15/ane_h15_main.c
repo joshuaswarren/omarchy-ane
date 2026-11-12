@@ -307,6 +307,11 @@ module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
 		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe.");
 
+static bool probe_fwreg;
+module_param(probe_fwreg, bool, 0444);
+MODULE_PARM_DESC(probe_fwreg,
+		 "Stage 5 only, with confirm_read=1 (T6030 row): read engine+0x1140008 and +0x114000c once before RUN and once after the wait, read only. The firmware's start code stores 0x5000fbfc00000000 to PA 0x309140008 (fw text 0x384); +0xc reads 0x5000fbfc afterwards if that store completed. A read in an unrouted block can fault the host: run behind the watchdog gate with steplog. Off by default.");
+
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
@@ -622,6 +627,9 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	 * whitelist) sits outside both windows; it is read once by the
 	 * wrapper preflight: a single named address, no writes. */
 	if ((off == 0x1010310 || off == 0x1010314) && size == 4)
+		return true;
+	/* probe_fwreg: the one register the firmware's start code stores to (two 32-bit halves). */
+	if (probe_fwreg && (off == 0x1140008 || off == 0x114000c) && size == 4 && end <= s->engine_size)
 		return true;
 	if (!in_wrap && !in_rvbar)
 		return false;
@@ -1830,6 +1838,17 @@ static void ane_h15_pmgr_dump(struct ane_h15 *ane, const char *when)
 		 v[0], v[1], v[2], v[3], v[4]);
 }
 
+/* Stage 5, probe_fwreg=1: the two halves of the register the firmware stores to, read only. */
+static void ane_h15_fwreg_dump(struct ane_h15 *ane, const char *when)
+{
+	u32 lo = 0, hi = 0;
+
+	if (ane_h15_read_word(ane, "fwreg lo", 0x1140008, &lo) ||
+	    ane_h15_read_word(ane, "fwreg hi", 0x114000c, &hi))
+		return;
+	dev_info(ane->dev, "ane_h15 fwreg %s: +0x1140008=%#x +0x114000c=%#x\n", when, lo, hi);
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -2731,6 +2750,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "before RUN");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "before RUN");
+	if (stg == 5 && probe_fwreg)
+		ane_h15_fwreg_dump(ane, "before RUN");
 
 	/* pwgate_t6031 (rows with a PWGATE window): macOS's PWGATE gate clear, the
 	 * last action before the core is released. On a poll timeout the run
@@ -2869,6 +2890,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
+	if (stg == 5 && probe_fwreg)
+		ane_h15_fwreg_dump(ane, "after the wait");
 	ane_h15_owned_digest(ane, "after the wait", &data_snap);
 	kvfree(data_snap);
 	data_snap = NULL;
@@ -3071,6 +3094,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
+	if (probe_fwreg && (stage_idx != 5 || !confirm_read)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=probe_fwreg: stage=run (5) with confirm_read=1 only\n");
+		return -EINVAL;
+	}
 	if (pwgate_read > 1) {
 		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);
