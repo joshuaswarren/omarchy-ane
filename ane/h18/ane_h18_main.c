@@ -212,6 +212,14 @@ static unsigned long long prog_iova_text;
 module_param(prog_iova_text, ullong, 0444);
 MODULE_PARM_DESC(prog_iova_text, "hs_prog: nonzero maps program section 3 (the task stream, the HWX __TEXT) at this fixed IOVA in a 32 KiB region, the vmsize of the HWX __TEXT (the add program: 0x3000c000). Same alias mapping and unmap as prog_iova_bufs. Default 0: dynamic.");
 
+static unsigned int prog_text_const;
+module_param(prog_text_const, uint, 0444);
+MODULE_PARM_DESC(prog_text_const, "hs_prog with prog_iova_text: copy the first 0x4000 bytes of program section 2 (the HWX __TEXT __const) into the section 3 region at this byte offset, where the task stream expects its constants (the matvec program: 0x280). 8 byte aligned; the region is 32 KiB. Default 0: not copied.");
+
+static unsigned long long prog_iova_kern;
+module_param(prog_iova_kern, ullong, 0444);
+MODULE_PARM_DESC(prog_iova_kern, "hs_prog: nonzero copies program section 2 behind its first 0x4000 bytes (the HWX __KERN_0, the weights) into its own surface and maps it at this fixed IOVA, 16 KiB aligned, below 0xe0000000 (the matvec program: 0x30010000). Same alias mapping and unmap as prog_iova_bufs. Default 0: not mapped.");
+
 static unsigned int hs_prog_dump;
 module_param(hs_prog_dump, uint, 0444);
 static unsigned int hs_settle_ms = 10;
@@ -375,6 +383,7 @@ struct ane_h18 {
 		struct { u32 id, dir; u64 size, doff, dsize; } io[ANE_H18_PROG_MAX_IO];
 	} pd;
 	struct ane_h18_hs_buf pg_sec[ANE_H18_PROG_MAX_SECS], pg_io[ANE_H18_PROG_MAX_IO], pg_pool;
+	struct ane_h18_hs_buf pg_kern;
 };
 
 static void ane_h18_result(struct ane_h18 *ane, const char *stg, const char *verdict, const char *reason)
@@ -1083,6 +1092,7 @@ static void ane_h18_prog_surfaces_free(struct ane_h18 *ane)
 
 	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
 		ane_h18_hs_buf_free(ane, &ane->pg_sec[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_kern);
 	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
 		ane_h18_hs_buf_free(ane, &ane->pg_io[i]);
 	ane_h18_hs_buf_free(ane, &ane->pg_pool);
@@ -1113,6 +1123,7 @@ static void ane_h18_hs_free(struct ane_h18 *ane)
 	memset(ane->ch_rings, 0, sizeof(ane->ch_rings));
 	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
 		ane_h18_hs_buf_free(ane, &ane->pg_sec[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_kern);
 	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
 		ane_h18_hs_buf_free(ane, &ane->pg_io[i]);
 	ane_h18_hs_buf_free(ane, &ane->pg_pool);
@@ -2019,6 +2030,33 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 		if (ret)
 			return ret;
 		memcpy(b->va, fw + p->sec[i].off, p->sec[i].size);
+	}
+	if (prog_text_const || prog_iova_kern) {
+		const u64 cbytes = 0x4000;
+		unsigned int s2 = p->nsec, s3 = p->nsec;
+
+		for (i = 0; i < p->nsec; i++) {
+			if (p->sec[i].id == 2)
+				s2 = i;
+			if (p->sec[i].id == 3)
+				s3 = i;
+		}
+		if (s2 == p->nsec || p->sec[s2].size < cbytes)
+			return -EINVAL;
+		if (prog_text_const) {
+			if (!prog_iova_text || s3 == p->nsec || (prog_text_const & 7) || prog_text_const + cbytes > 0x8000 ||
+			    p->sec[s3].size > prog_text_const)
+				return -EINVAL;
+			memcpy((u8 *)ane->pg_sec[s3].va + prog_text_const, fw + p->sec[s2].off, cbytes);
+		}
+		if (prog_iova_kern && p->sec[s2].size > cbytes) {
+			u64 ksz = p->sec[s2].size - cbytes;
+
+			ret = ane_h18_hs_alloc_at(ane, &ane->pg_kern, ALIGN(ksz, SZ_16K), "PROG kern", prog_iova_kern);
+			if (ret)
+				return ret;
+			memcpy(ane->pg_kern.va, fw + p->sec[s2].off + cbytes, ksz);
+		}
 	}
 	for (i = 0; i < p->nio; i++) {
 		struct ane_h18_hs_buf *b = &ane->pg_io[i];
