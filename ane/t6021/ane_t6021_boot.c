@@ -82,11 +82,9 @@
  *      SCRATCH0/1. Because of the pulse, a post-CPU READY is
  *      unambiguous — no stale-ack hazard. The SCRATCH0 marker (fn
  *      0x86EC) is not a gate.
- *      Selene raw anchors: READY write idx7 @0x7360-0x7388 (movz
- *      0x2006 @0x7364, mov w1,#7 @0x7368, movk 0x804 @0x736c, slot
- *      byte48 @0x7380, salt 0x5bdd @0x7384, blraa @0x7388); poll loop
- *      READ32 idx7 @0x73c4-0x73e4, cmp wake 0xf7fbdff9 @0x73e8,
- *      sleep(1000) @0x73f8-0x73fc; DONE ack @0x77cc-0x77f0.
+ *      Selene sequence: READY write idx7 (value 0x08042006, slot byte
+ *      48, salt 0x5bdd); then a poll loop on READ32 idx7 against wake
+ *      0xf7fbdff9 with a 1000 sleep; then the DONE ack.
  *   4. Linux allocation map (legacy branch sizes): FWIM surface =
  *      config+0x138 byte-count = 0x500000 (Main, audit 751caa4);
  *      Linux fw_buf is ANE_FW_BUF_SIZE = 0x500000 — the semantic is
