@@ -512,7 +512,7 @@ static inline void ane_csne_hdr_init(struct ane_csne_hdr *h, u16 id)
  * PING (0x11), BUILDINFO (0x06). sizeof(struct ane_csne_hdr) bytes. */
 
 /* REG_FILE_LOAD (0x05) payload: the 1456 B blob is the fw's own
- * __DATA._rtk_tunables section (@0x100590, size 0x5b0) — its transport
+ * __DATA._rtk_tunables section (size 0x5b0) — its transport
  * (inline vs shared-memory iova) is [INFERENCE], pinned by W1. */
 struct ane_csne_cmd_reg_file_load {
 	struct ane_csne_hdr hdr;
@@ -531,12 +531,12 @@ struct ane_csne_cmd_ipc_endpoint_set {
  * CANE_SUB_PACKET_CMD_PROCEDURE_CALL family. Field offsets PROVEN from
  * the fw parse; field semantics named only where the kext asserts name
  * them (programId, procedureId, numIoBuffers in assert order, W2 §4):
- *   +0x08/+0x0c u32 pair validated together (ldp @0x4d654)
+ *   +0x08/+0x0c u32 pair validated together
  *   +0x10        u64 passed to the fw validator (0x4d6d4)
  *   +0x18        u32 stats/priority, fw-valid [2,7]; 2 is the value
  *                proven end-to-end (binding.json stats_type; the
  *                first-inference receipt's bare calls)
- *   +0x28        u32 element count (loop bound @0x524bc-0x524c4)
+ *   +0x28        u32 element count (a recorded loop bound)
  *   +0x60        count × 0x30-byte io-buffer records (count from recorded loop bounds)
  * The shipped driver checks that the submitted size is a whole number of
  * command records, so commands form same-shape arrays in the ring; this driver submits one
@@ -575,7 +575,7 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
 }
 
 /* Fw-side bound: the generic CSNE processor rejects work items of
- * 0x1b89 bytes and above (@0x4d134 cmp x2, #0x1b89). What x2 names
+ * 0x1b89 bytes and above. What x2 names
  * beyond "the command's size" is [INFERENCE] — enforced here as a
  * fail-fast so an oversized command cannot enter the ring. */
 #define ANE_CSNE_CMD_MAX_SIZE	0x1b88
@@ -584,7 +584,7 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
  * registration; observed 2026-09-26, entry
  * item 23/23b/23c/23e): the payload is NINE 0x30-byte named section
  * records at +0x08. Registration publishes "<name>.bin" into the fw
- * program-info symbol table (format "%s.bin" @0xa733f)
+ * program-info symbol table (format "%s.bin")
  * with value = record+0x18 and aux =
  * u32(record+0x20). The fw dereferences record+0x18 (0x5d0c8), so it
  * carries a fw-addressable pointer — in this driver, the IOVA of a

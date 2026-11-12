@@ -35,7 +35,7 @@ PATTERNS = [
     ("decoded provenance", r"(?i)\bdecoded (from|by|statically)\b|\bstatic[- ]decod\w*|\bdecoded (CPU-power|power|step|sequence|driver|kext|kernelcache)|(?-i:DECODED:)|\bDeviceTree\.[\w.]+|\bmapFw\w+|\b(ldr|str)\s+[wx]\d+,\s*\[x\d+,\s*#0x[0-9a-fA-F]+\]|\btbnz\s+w\d+,\s*#\d|macOS 27\.0 ADT|\bADT 27\.0\b"),
     ("restore-image or kernelcache locator", r"(?i)\bkernelcache\b|\bipsw\b|restore[- ]image"),
     ("macOS 27.0 provenance", r"\b27\.0\b|\b26A[0-9]{3}[A-Za-z]?\b|adt-27"),
-    ("vendor type, class or instruction quote", r"\b[sS]?CSne[A-Za-z_]\w*|\bRegisterControl\b|\bOS(?!Error\b)[A-Z][a-z]\w+|\bselene\s+(\d+\.\d+\s+)?0x[0-9a-fA-F]{3,}|\bC[A-Z][a-z]\w*(::\w+|\.cpp)|\bDecode of\b|\bUnRemap\b|\bkext'?s?\s+(add|dsb|dmb|ldr|str|tbnz|cbz)\b|\badd\s+w\d+,\s*w\d+,\s*#\d"),
+    ("vendor type, class or instruction quote", r"\b[sS]?CSne[A-Za-z_]\w*|\bRegisterControl\b|@0x[0-9a-fA-F]{3,}|\b(blraa|blrab|braa|retaa|paciasp|autiasp)\b|\bOS(?!Error\b)[A-Z][a-z]\w+|\bselene\s+(\d+\.\d+\s+)?0x[0-9a-fA-F]{3,}|\bC[A-Z][a-z]\w*(::\w+|\.cpp)|\bDecode of\b|\bUnRemap\b|\bkext'?s?\s+(add|dsb|dmb|ldr|str|tbnz|cbz)\b|\badd\s+w\d+,\s*w\d+,\s*#\d"),
     ("decode wording", r"(static|offline) decode|decoded (statically )?from the (macOS )?(kext|kernelcache|kernel extension)|reverse[- ]engineer(ed|ing)? (the )?(macOS|kext)"),
 ]
 # Decided 2026-10-29: the tool that installs a Mac's own firmware keeps its two download addresses, in code only.
@@ -190,7 +190,7 @@ CAPTURED_H17_COUNTS = {
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-line-dispatch-correction.txt": 16,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-sites.txt": 58,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-message-lookup-helper.txt": 302,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-messenger-irq-chain.txt": 435,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-messenger-irq-chain.txt": 436,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-premap-setup-disasm.txt": 254,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-command-response.txt": 220,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-response-xrefs.txt": 16,
@@ -222,7 +222,7 @@ CAPTURED_H17_COUNTS = {
     "receipts/2026-11-04-j700-h17-order-adapter/README.md": 2,
     "receipts/2026-11-04-j700-h17-order-helper/README.md": 6,
     "receipts/2026-11-04-j700-h17-table-discovery-implementation/README.md": 2,
-    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt": 12,
+    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt": 13,
     "receipts/2026-11-04-j700-h17-wake-scratch-snapshot/README.md": 1,
     "receipts/2026-11-05-j700-h17-next-command-rung-assessment.md": 26,
 }
