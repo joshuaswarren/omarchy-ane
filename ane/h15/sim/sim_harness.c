@@ -3415,6 +3415,14 @@ static void pos_enable_fail_gates(void)
 	ret = probe_now();
 	chk(ret != 0 && sim_n_iomap == 0, "EO6 probe_gates on T6031 is refused before any mapping");
 	remove_if_probed();
+
+	map_setup(&ane_t6031_soc, "apple,t6031-ane");
+	probe_pc = true;
+	confirm_read = true;
+	ret = probe_now();
+	chk(ret != 0 && sim_n_iomap == 0 && events_in(0, ~0ULL, 0) == 0,
+	    "EO7 probe_pc on T6031 is refused before any mapping or access");
+	remove_if_probed();
 	if (fails == before)
 		printf("    EO failure paths and row gates PASS\n");
 }

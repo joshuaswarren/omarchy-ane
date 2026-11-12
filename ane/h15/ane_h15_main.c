@@ -685,6 +685,9 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 		return true;
 	if (probe_ce && off >= 0x18a4000 && end <= 0x18a4020 && size == 4 && end <= s->engine_size)
 		return true;
+	/* +0x1844000/+0x184c000/+0x1850000: the doorbell, irq status and irq ack words at the #1595 offsets from the scratch block base */
+	if (probe_scr && (off == 0x1844000 || off == 0x184c000 || off == 0x1850000) && size == 4 && end <= s->engine_size)
+		return true;
 	if (probe_scr && off >= 0x1840000 && end <= 0x1840100 && size == 4 && end <= s->engine_size)
 		return true;
 	if (dapf_prog && off == 0x1800208 && size == 4)
@@ -2073,6 +2076,13 @@ static void ane_h15_scr_region(struct ane_h15 *ane, const char *when)
 			return;
 		if (v)
 			dev_info(ane->dev, "ane_h15 scrreg %s engine+%#x=%#x\n", when, off, v);
+	}
+	for (off = 0x1844000; off <= 0x1850000; off += 0x4000) {
+		if (off != 0x1844000 && off != 0x184c000 && off != 0x1850000)
+			continue;
+		if (ane_h15_read_word(ane, "scrreg", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 scrreg %s engine+%#x=%#x\n", when, off, v);
 	}
 }
 
