@@ -300,7 +300,15 @@ static inline void bus_write(u64 pa, u32 v)
 }
 
 #define ioremap_np(pa, size) sim_bus_map((pa), (size))
-#define ioremap(pa, size) sim_bus_map((pa), (size))
+/* A plain ioremap() is a POSTED mapping: the Apple pmgr/PWGATE windows take non-posted writes only (a posted write there
+ * resets the SoC on hardware), so the module must never call it. The harness counts the calls. */
+extern int sim_posted_maps;
+static inline void *sim_ioremap_posted(u64 pa, u64 size)
+{
+	sim_posted_maps++;
+	return sim_bus_map(pa, size);
+}
+#define ioremap(pa, size) sim_ioremap_posted((pa), (size))
 static inline void iounmap(void *p)
 {
 	(void)p;
