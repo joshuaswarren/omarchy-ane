@@ -1541,6 +1541,16 @@ static int ane_h18_chan_poll(struct ane_h18 *ane, unsigned int t, u64 *digest, u
 	return ret;
 }
 
+/* True when the failpath recovery left the ANE domain powered down: no MMIO read of the ANE may run while it is. The one decision, so every post-failure
+ * reader asks it instead of each open-coding its own gate. */
+static bool ane_h18_domain_gone(struct ane_h18 *ane)
+{
+	if (!ane->domain_down)
+		return false;
+	dev_info(ane->dev, "ane_h18: the ANE domain is down, register reads are skipped\n");
+	return true;
+}
+
 /* Read only look at the rings and the IPI pending register: what the firmware posted that nobody answered. A nonzero line of a firmware-to-host ring or the
  * terminal ring is logged (at most 24 lines of 16 bytes per ring, 4 when `full` is false, the rest counted), the first two slots of every host-to-firmware ring
  * are logged, and so is the pending register. With `full` the terminal ring text is logged too: the change snapshots leave it out, six of them with the text
@@ -1552,6 +1562,8 @@ static void ane_h18_chan_snapshot(struct ane_h18 *ane, const char *when, bool fu
 	unsigned int i, k, lines, more;
 	u32 pend = 0;
 
+	if (ane_h18_domain_gone(ane))
+		return;
 	if (ane->ipi_pending) {
 		dev_info(ane->dev, "ane_h18 chan snapshot %s: read IPI pending pa=%#llx\n", when, ane->soc->engine_pa + ANE_H18_IPI_PENDING_OFF);
 		pend = readl(ane->ipi_pending);
@@ -3072,7 +3084,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 			msgs += ane_h18_po_pop(ane, chan_off, tag, po);
 		}
 	}
-	ane_h18_read_scratch_words(ane, "end");
+	if (!ane_h18_domain_gone(ane))
+		ane_h18_read_scratch_words(ane, "end");
 	if (handshake) {
 		if (ane->rtk_ap_on) {
 			hs_ret = ane_h18_handshake(ane);

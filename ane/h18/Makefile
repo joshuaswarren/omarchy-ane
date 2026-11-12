@@ -135,6 +135,10 @@ sim-mutation-nohalt:
 sim-mutation-nodomaingate:
 	$(call mutant,nodomaingate,s/if (ane->domain_down) {/if (0) { \/* NEG: domain_down ignored *\//,NEG: domain_down ignored,pos)
 
+# the post-failure readers ignore domain_down: the channel snapshot reads IPI pending on the powered-off domain
+sim-mutation-nosnapguard:
+	$(call mutant,nosnapguard,s/if (!ane->domain_down)/if (false \&\& !ane->domain_down) \/* NEG: readers run on a dead domain *\//,NEG: readers run on a dead domain,pos)
+
 # the RTKit reply is written without looking at the inbox credits
 sim-mutation-nocredit:
 	$(call mutant,nocredit,s/if (!(st \& 0xf00))/if (0 \/* NEG: credit ignored *\/)/,NEG: credit ignored,pos)
@@ -427,7 +431,7 @@ sim-mutation-chnostartgate:
 
 sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
 	sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
-	sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt sim-mutation-nodomaingate \
+	sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt sim-mutation-nodomaingate sim-mutation-nosnapguard \
 	sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate \
 	sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput \
 	sim-mutation-nostop sim-mutation-noackstate \
@@ -498,5 +502,5 @@ clean:
 	rm -f sim/sim_h18 sim/sim_dt_pmp sim/sim_dt_lifecycle
 
 .PHONY: sim-matvec-check sim-dt-pmp sim-dt-lifecycle sim-positive-reads sim-positive-reads-single sim-negative-reads sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnostamp sim-mutation-pgnooutdump sim-mutation-pgonecall sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
-	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-mutation-nodomaingate sim-all clean
+	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-mutation-nodomaingate sim-mutation-nosnapguard sim-all clean
 endif

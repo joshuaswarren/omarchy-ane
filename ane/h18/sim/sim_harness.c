@@ -1805,12 +1805,12 @@ static void pos_boot(void)
 						if (sim_events[gi].write == 2 && sim_events[gi].pa == 0xe0)
 							break;
 					for (kk = gi + 1; kk < sim_n_events; kk++)
-						touched += sim_in(sim_events[kk].pa, sim_asc_pa, sim_asc_size) || sim_in(sim_events[kk].pa, sim_rvbar_pa, sim_rvbar_size) ||
-							   sim_in(sim_events[kk].pa, sim_mbox_pa, sim_mbox_size);
+						if (!(sim_events[kk].write == 2 && sim_events[kk].pa == 0xe0))
+							touched++;
 					chk(ret == -EIO && result("boot", "FAIL", "domain-down-after-recover") && result("recover", "FAIL", "kernel-psd-power-on-failed") &&
 					    sim_owner_module.refs == 1 && log_count("the ANE domain did not come back up") == 1 &&
 					    gi >= 0 && touched == 0 && sim_rpm_gets == 1 && sim_rpm_puts == 1,
-					    "PG53 a psd_up failure during the recovery leaves domain_down set: the boot FAILs domain-down-after-recover, the module is pinned, and no ASC, IORVBAR or mailbox register is touched after the failed get");
+					    "PG53 a psd_up failure during the recovery leaves domain_down set: the boot FAILs domain-down-after-recover, the module is pinned, and no MMIO access of any ANE window (not even the post-failure snapshot's IPI pending read) happens after the failed get");
 				}
 				if (pass == 54) {
 					int live_img = 0;
