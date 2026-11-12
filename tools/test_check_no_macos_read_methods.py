@@ -137,9 +137,11 @@ with open(os.path.join(repo, frozen), "w") as f:
     f.write("clean\n")
 commit(repo)
 expect("frozen captured file cleaned below its recorded count fails", run(repo), 1, "frozen 1")
+expect("stale frozen entry names the file and says to edit CAPTURED_H17_COUNTS", run(repo), 1, "CAPTURED_H17_COUNTS: " + frozen)
 os.remove(os.path.join(repo, frozen))
 commit(repo)
 expect("frozen captured file that no longer exists fails", run(repo), 1, "frozen 1")
+expect("stale frozen message says to drop the entry", run(repo), 1, "drop the entry")
 with open(os.path.join(repo, frozen), "w") as f:
     f.write(line)
 commit(repo)
