@@ -602,14 +602,16 @@ static inline void iounmap(void *p) { (void)p; sim_n_iounmap++; }
 #define writel(v, a) bus_write((u64)(uintptr_t)(a), (v))
 
 /* ---- runtime PM and iommu stubs: calls are recorded, ordered against the MMIO events by event index ---- */
-extern int sim_rpm_enabled, sim_rpm_gets, sim_rpm_puts, sim_rpm_get_fail;
+extern int sim_rpm_enabled, sim_rpm_gets, sim_rpm_puts, sim_rpm_get_fail, sim_rpm_get_fail_at;	/* fail_at: fail the (N+1)-th get, -1 = never */
 static inline int devm_pm_runtime_enable(struct device *d) { (void)d; sim_rpm_enabled++; return 0; }
 static inline int pm_runtime_get_sync(struct device *d)
 {
 	if (sim_pd_attached && d == sim_pdev_dev)
 		sim_pd_false_votes++;	/* no auto domain with 2+ cells: this casts no vote */
+	if (sim_rpm_get_fail || sim_rpm_get_fail_at == sim_rpm_gets)
+		return -EIO;
 	sim_rpm_gets++;
-	return sim_rpm_get_fail ? -EIO : 0;
+	return 0;
 }
 static inline void pm_runtime_put_sync(struct device *d) { (void)d; sim_rpm_puts++; }
 static inline int pm_runtime_put_noidle(struct device *d) { (void)d; return 0; }
@@ -617,7 +619,7 @@ static inline int pm_runtime_resume_and_get(struct device *d)
 {
 	(void)d;
 	sim_event(2, 0xe0, 0);
-	if (sim_rpm_get_fail)
+	if (sim_rpm_get_fail || sim_rpm_get_fail_at == sim_rpm_gets)
 		return -ETIMEDOUT;
 	sim_rpm_gets++;
 	return 0;
