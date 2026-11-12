@@ -277,8 +277,8 @@ bisection only.
 | Parameter | Default | Lives in | Purpose |
 |---|---|---|---|
 | `fw_load` | `1` | fwload.c | Validate + DART-map the selene PRELOAD payload |
-| `fw_extra_ram` | `0x200000` (2 MiB) | fwload.c | Page-aligned owned RAM after the 5 MiB firmware surface |
-| `fw_alias_reserved` | `0` | fwload.c | `0` = own memory (staged copy + iBoot patches), the only mode on T6020/T6022; `1` (lab, T6021) = map the iBoot-reserved SEG0/SEGi phys at the latched RVBAR entry; probe refuses unless no-map `/reserved-memory` nodes cover both windows |
+| `fw_extra_ram` | `0x200000` (2 MiB) | fwload.c | Owned RAM after the payload surface |
+| `fw_alias_reserved` | `0` | fwload.c | `0` = own memory (staged copy + preload adjustments), the only mode on T6020/T6022; `1` (lab, T6021) = map the reserved SEG0/SEGi phys at the latched RVBAR entry; probe refuses unless no-map `/reserved-memory` nodes cover both windows |
 | `fw_start` | `1` | rtclient | Fenced Linux-context firmware start (boot contract) |
 | `fw_start_table_mode` | `2` (skip) | rtclient | Pre-CPU engine table block: 0 abort, 1 write, 2 skip |
 | `fw_start_rtb_mode` | `0` | rtclient | RTBuddy/RTKit-app-endpoint select; off = legacy ChMan transport |

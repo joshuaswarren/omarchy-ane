@@ -3,7 +3,7 @@
  * ane_h15.h — per-SoC table for the H15 (M3) family ANE. Every value
  * carries its source. "pinned ADT" = the system ADT summary
  * (receipts/2026-10-03-ane-h15/README.md; source artifact
- * artifacts/AneAllSoc/every-soc/receipt/adt-27.0.txt, sha256
+ * artifacts/AneAllSoc/every-soc/receipt/the saved boot device tree summary, sha256
  * 04fe38b8…); "ADT 13.5" = the macOS 13.5 page-size note (the T8110
  * family is the only T8110 fact extracted). "analyzer" =
  * receipts/2026-10-03-ane-h15 data/ane-soc/SOC.json (post-b0 corrected

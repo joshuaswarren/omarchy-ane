@@ -63,7 +63,7 @@ prints no RESULT. Stage numbers: 0=dt, 1=status,
   maps, powers or reads anything. The eight SCRATCH words are read only
   with `read_scratch=1`. They read 0x0 on one M4 Mac mini (see "Measured on a T8132").
 - `stage=boot` (EXPERIMENTAL): firmware-boot smoke. Validates the
-  iBoot-preloaded image against the pinned 27.0 payload, copies it into
+  iBoot-preloaded image against the pinned payload, copies it into
   a DART-mapped buffer at the ADT IOVAs, releases the ASC CPU and waits
   for the SCRATCH7 wake word 0x08042006; then (only if
   `hello_wait_ms=1000`) polls the ASC mailbox for an RTKit HELLO and
@@ -280,7 +280,7 @@ stage status ran twice, with `rmmod` after each. No SError, external abort or DA
 | SCRATCH0 to SCRATCH7 (engine +0x1880020 + 4n) | 0x0 on all eight, read by `stage=status confirm_read=1 read_scratch=1` on a second boot with the same module, device tree and boot entry. Nobody had read these words on an M4 before |
 
 Not run: `stage=boot` and the DART overlay. The firmware stub on that machine is an older build (26.6.2) than the pinned
-27.0 payload. Stage dt ran once and stage status ran twice, each on its own boot.
+shipped payload. Stage dt ran once and stage status ran twice, each on its own boot.
 
 ## Not verified (honest limits)
 
@@ -289,7 +289,7 @@ Not run: `stage=boot` and the DART overlay. The firmware stub on that machine is
   coprocessor table. The offsets read so far (RVBAR, CPU_STATUS and the mailbox control words) answered. The rest are unmeasured on H16
   hardware.
 - On the m1n1, U-Boot and Limine boot above, the module reported no `segment-ranges`. The cause is not established (see the segment-ranges row of "Measured on a T8132"); the scan of a later boot found them with `pre-loaded = 0x1`. Whether the firmware is preloaded on the test boot itself is unmeasured. Other boot chains are untried.
-- The 27.0 CSNE host contract (init structure, channel-manager table,
+- The shipped CSNE host contract (init structure, channel-manager table,
   CONFIG_GET/PLATFORM_INFO/BUILDINFO opcodes) is not derived; the smoke
   stops at HELLO/EPMAP/STARTEP.
 - The DAPF windows of dart-ane are not programmed by Linux (known gap

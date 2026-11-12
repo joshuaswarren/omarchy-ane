@@ -365,7 +365,7 @@ MODULE_PARM_DESC(probe_fwreg,
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
-		 "Stage=boot only. Firmware API name of an exact pinned 26A428 H15 payload. Requires confirm_boot=1 and confirm_read=1. Prepares coherent owned memory, then retains the existing startup refusal; no CPU release. "
+		 "Stage=boot only. Firmware API name of an exact pinned H15 payload. Requires confirm_boot=1 and confirm_read=1. Prepares coherent owned memory, then retains the existing startup refusal; no CPU release. "
 		 "With map_fw=1 and no fw_seg, the run stages take the same owned image as their firmware source and map its pages at the RVBAR entry instead of the iBoot segments.");
 
 /* apple-pmgr-pwrstate word: TARGET bits 3:0, ACTUAL bits 7:4;
@@ -651,8 +651,8 @@ static int ane_h15_stage_status(struct ane_h15 *ane)
  *   (lines 104-109, 142-143 and 160-163). These are T6021 values. Their
  *   H15 roles are INFERENCE (see the b0 receipt).
  * - The two ADT windows (wrapper 0x6c000 bytes at engine + 0x1400000,
- *   RVBAR block 0x4000 bytes at engine + 0x1050000): the shipped system's 27.0 ADT
- *   summary adt-27.0.txt, sha256
+ *   RVBAR block 0x4000 bytes at engine + 0x1050000): the shipped system's boot device tree
+ *   summary the saved boot device tree summary, sha256
  *   04fe38b8ee009700f02e2c01e83bf608afab5e843f5878a83f162973a1ffdb84,
  *   as tabulated (A1, A3) in receipts/2026-10-03-ane-h15/README.md at
  *   71ed021859a3f7e55c04756a1c6ab456fa48fc9f.
@@ -2567,7 +2567,7 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  *
  * On a T6031 (ane-type 0xe0) the shipped system writes 0 to the 32 bit register at offset 0x199c of the
  * PWGATE window, then polls it until bits 1:0 read 0, up to 0x1388 polls of 10 microseconds
- * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the macOS 27.0
+ * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the the shipped system
  * device tree of the J516C: 0x292290000, 0x4000, next to the pmgr window at 0x292280000.
  * The decoded CPU-power step of the T6030 and T8122 has the same sequence at the word of their
  * row (+0x2b6c, +0x272c) in the third reg entry of their ANE node. The T6031 offset comes from the SoC data. The

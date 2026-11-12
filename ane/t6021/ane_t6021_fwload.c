@@ -192,7 +192,7 @@ bool ane_t6021_fwload_options_ok(void)
  * pmu_pa: the firmware's power service programs the seven ANE ps words
  * through its DART at IOVA == PA (SetPMUBaseAddress stores the ANE_TD
  * word: selene 0x28e084008, bia 0x23b70c010, receipts/2026-10-01-t8112-kit).
- * macOS maps the page first; without it the first access faults (NO PMD
+ * Mapping the page first is required; otherwise access faults (NO PMD
  * FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts.
  *
  * T8112 (receipts/2026-10-01-t8112-optin): the revision comes from the
@@ -489,7 +489,7 @@ err_unmap:
 	return ret;
 }
 
-/* RTK_soc_revision. T8112 reads it as iBoot does: the two eFuse words
+/* RTK_soc_revision. T8112 reads two eFuse words
  * of the DT "fuse" window (0x23d2c8060, 8 bytes), parsed by
  * ane_t8112_fuse_revision(). Two non-posted 32-bit reads and nothing
  * else: the eFuse block (ADT pmgr reg[36]) is always on, and m1n1 reads

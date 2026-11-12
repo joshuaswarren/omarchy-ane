@@ -186,7 +186,7 @@ const struct ane_h15_soc ane_t6031_soc = {
 	.engine_size = 0x2000000,
 	.pmgr_pa     = 0x292280000ull,
 	.pmgr_size   = 0x10000,
-	/* PWGATE: ADT ane0 reg entry 5 of the macOS 27.0 device tree for
+	/* PWGATE: ADT ane0 reg entry 5 of the boot device tree for
 	 * the J516C (0x292290000, 0x4000, next to the pmgr window).
 	 * Shipped-system behaviour: the 0x199c word is cleared and
 	 * polled before the core is released. Never run on an M3; the

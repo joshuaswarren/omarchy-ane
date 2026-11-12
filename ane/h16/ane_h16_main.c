@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
  * ane_h16 — OPT-IN EXPERIMENTAL bring-up module for the H16/H17-family
- * ANE (the Apple 27.0 kext generation: T8132, T6040, T6041; H17 rows
+ * ANE (the shipped driver generation: T8132, T6040, T6041; H17 rows
  * live in ane/h17/). It has run on J700/T8140 silicon in the opt-in
  * `stage=boot` path (RESULT PASS boot-wake, 2026-11-04: see
  * receipts/2026-11-04-j700-h17-first-firmware-wake/README.md); the
@@ -25,7 +25,7 @@
  *   stage=boot (EXPERIMENTAL, firmware-boot smoke only): everything
  *   "status" does, plus: parse the boot ADT from the reserved-memory
  *   phram "adt" region, read /arm-io/aneX segment-ranges, validate the
- *   iBoot-preloaded firmware against the pinned 27.0 payload (only
+ *   iBoot-preloaded firmware against the pinned payload (only
  *   differences inside the _rtk_patchbay and _rtk_tunables sections are
  *   accepted, plus at most one entry/DATA-base-looking u64 per segment),
  *   copy the validated image into a DART-mapped coherent buffer at the
@@ -34,7 +34,7 @@
  *   wake word 0x08042006 (firmware startup). If the firmware
  *   wakes, poll the ASC mailbox for an RTKit HELLO, answer it, ack
  *   EPMAP and STARTEP the system endpoints. Then stop: no channel-
- *   manager publication and no CSNE CONFIG_GET — the 27.0 host contract
+ *   manager publication and no CSNE CONFIG_GET — the pinned host contract
  *   for those is not derived yet (receipts/2026-10-03-ane-h16).
  *
  *   On the t8140 (H17) row the boot stage additionally offers the opt-in
@@ -766,7 +766,7 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 
 /* Decode one segment-ranges property (two entries) into segs[2].
  * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
- * The ASC sees remap. mapFwCTRRRegion in retained kernelcache SHA256
+ * The ASC sees remap. mapFwCTRRRegion in retained image SHA256
  * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
  * uses ldr w9,[x20,#0x18] for the TEXT entry and
  * ldr w9,[x20,#0x38] for the DATA entry: size is u32,
@@ -1842,7 +1842,7 @@ static int ane_h16_rtkit_poll(struct ane_h16 *ane)
 	ret = ane->hello_done ? 0 : -ETIMEDOUT;
 	dev_info(ane->dev, "RTKit poll done: HELLO %sreceived%s\n",
 		 ane->hello_done ? "" : "not ",
-		 ret ? " (mailbox stayed empty; the 27.0 firmware may not speak RTKit when brought up this way — see the receipt)" : "");
+		 ret ? " (mailbox stayed empty; the pinned firmware may not speak RTKit when brought up this way — see the receipt)" : "");
 	return ret;
 }
 

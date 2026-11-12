@@ -2,7 +2,7 @@
 #ifndef ANE_H18_FW_PINS_H
 #define ANE_H18_FW_PINS_H
 
-/* Exact 26A428 T8152 ANE0 identity shared by the data record and the host
+/* Exact pinned T8152 ANE0 identity shared by the data record and the host
  * stager. The IM4P wrapper is 1572889 bytes; the payload occupies
  * [25, 1572889). The whole-payload SHA-256 pins the segment layout, so no
  * parser or option flags are checked. No field of this struct selects

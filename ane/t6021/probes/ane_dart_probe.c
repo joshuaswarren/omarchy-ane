@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
- * ane_dart_probe — read the T6021 ANE DART words that macOS programs, and
- * on request apply the macOS tunables of the two bulk DARTs.
+ * ane_dart_probe — read the T6021 ANE DART words and, on request, apply
+ * recorded tunables to the two bulk DARTs.
  *
  * apply=0 (default): read only. On dart-ane0 (LLT), dart-ane1 (BRD) and
  *   dart-ane2 (BWR): PARAMS, 0x20c, DIAG_LOCK, 0x220-0x22c, 0x300-0x310,
- *   the m1n1-named PERF words, the per-SID words 0x800-0x83c, and
- *   ENABLE_STREAMS[0] (receipts/2026-10-01-t6021-macos-vs-linux-mmio, E1).
- * apply=1: the macOS RMWs on the bulk DARTs, reg = (reg & ~mask) | value,
- *   in the macOS 13.5 hv trace order (events 2857-2878 and 2887-2908)
+ *   the performance words, the per-SID words 0x800-0x83c, and
+ *   ENABLE_STREAMS[0] (receipt 2026-10-01-t6021-dart-audit, E1).
+ * apply=1: recorded RMWs on the bulk DARTs, reg = (reg & ~mask) | value,
+ *   in trace order (events 2857-2878 and 2887-2908)
  *   without 0x300-0x310. Values from the ADT dart-tunables. groups selects
  *   the words: bit 0 0x220/0x224, bit 1 the SID words 0x800-0x83c, bit 2
  *   0x20c (default 7, all 19 per DART; 0 = the stream/flush steps alone).

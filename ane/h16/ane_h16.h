@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
 /*
- * ane_h16.h: per-SoC table for the H16/H17 (27.0 macOS) ANE family.
+ * ane_h16.h: per-SoC table for the H16/H17 (shipped) ANE family.
  *
- * Every value carries its source. "ADT j604ap" means the macOS 27.0
- * (26A428) device tree ANE node for the j604ap board (logs in
+ * Every value carries its source. "ADT j604ap" means the the shipped system
+ * (pinned build) device tree ANE node for the j604ap board (logs in
  * receipts/2026-10-03-ane-h16/); "macOS" means
- * the macOS 27.0 behaviour of the H16/H17 ANE driver. Its
+ * the the shipped system behaviour of the H16/H17 ANE driver. Its
  * ane-type 0xa0
  * (T6021) row reproduces the known T6021 map (SCRATCH0 0x1840048,
  * CPU_CONTROL 0x1400044), which calibrates the rest of the table.

@@ -9,7 +9,7 @@ template is `ane/h16/`.
 
 ## Host-owned firmware staging
 
-`ane_h15_firmware_stage()` validates the complete 26A428 payload against the
+`ane_h15_firmware_stage()` validates the complete pinned payload against the
 shared chip pin before allocation. It stages the measured TEXT and DATA file
 segments into one owned host buffer and zeroes the remaining VM extent.
 The engine argument is zero on single-engine chips. T6032/J575D explicitly selects
@@ -178,7 +178,7 @@ boundaries; they do not prove a real allocation, startup or retirement on hardwa
   last action before the first CPU_CONTROL write, on top of either start order. macOS behaviour on a T6031: it writes 0 to the 32 bit register at
   offset 0x199c of a register window named PWGATE, then polls that word until bits 1:0 read 0
   (up to 0x1388 polls, 10 microseconds each). The window is the fifth reg entry of the ADT
-  ane0 node in the shipped system's 27.0 device tree: physical 0x292290000, size 0x4000, next to the
+  ane0 node in the shipped system's device tree: physical 0x292290000, size 0x4000, next to the
   pmgr window at 0x292280000. The module maps that one window with ioremap for the step and
   unmaps it again on every exit path. No device tree entry changes. Value 1 reads the word
   and logs it; if bits 1:0 are nonzero it writes 0 once (`ane_h15 write PWGATE=0x0
@@ -610,7 +610,7 @@ back. macOS behaviour, never run on an M3.
   v4 layout inferred from the other T6030 ASCs. It is read only when
   `MBOX_I2A_CTRL` loses its EMPTY bit, so a wrong layout costs nothing unless
   the core posts a message.
-- The 27.0 CSNE host contract (init structure, channel-manager
+- The shipped CSNE host contract (init structure, channel-manager
   table, CONFIG_GET / PLATFORM_INFO / BUILDINFO opcodes) is not
   derived; the smoke stops at the boot stage refusal.
 - The DAPF windows of `dart-ane` are not programmed by Linux

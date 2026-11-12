@@ -112,7 +112,7 @@ static inline u64 ane_t6021_scratch64_join(u32 lo, u32 hi)
  * [0x58] pool DMA base, [0x60] pool word0, [0x68] count 64,
  * template[0x00] = 0, template+0xC0 = 4. The struct values pin BEFORE
  * the preflight gate can open (Main: no unresolved field silently
- * zero; no partial boot). The caller MUST zero the full 0x174 block
+ * zero; no partial boot). The caller MUST zero the full init block
  * first (coherent alloc): gaps [0x34..37]/[0x64..67] get no kext
  * store and sit inside fw-read u64 units. */
 /* Init-suballocation contract — pass6 producer semantics

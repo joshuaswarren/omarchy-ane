@@ -198,7 +198,7 @@ MODULE_PARM_DESC(psd_timeout_ms, "Stage=power: per-slot acknowledge wait, ms. De
 
 static bool owned_fw;
 module_param(owned_fw, bool, 0444);
-MODULE_PARM_DESC(owned_fw, "Stage=boot with map_fw=1: stage the exact pinned 26A428 payload from fw_path into Linux-owned coherent memory and DART-map those pages at the fixed TEXT/DATA IOVAs instead of the iBoot DRAM segments. One attempt per module instance; a short unmap or a post-RUN failure retains the image and the module pin. No program submission. Default off.");
+MODULE_PARM_DESC(owned_fw, "Stage=boot with map_fw=1: stage the exact pinned payload from fw_path into Linux-owned coherent memory and DART-map those pages at the fixed TEXT/DATA IOVAs instead of the iBoot DRAM segments. One attempt per module instance; a short unmap or a post-RUN failure retains the image and the module pin. No program submission. Default off.");
 
 static char *fw_path;
 module_param(fw_path, charp, 0444);
@@ -1922,7 +1922,7 @@ static void ane_h18_dart_inst(struct ane_h18 *ane, unsigned int k, const char *w
 }
 
 /* PREMAP_BUFFER (0x20d), as the shipped system sends it at init for the inference request pool: a 0x3490 byte command, type 2, one request of 0x3898 bytes in a surface of the
- * DART's page size. Source of the layout: macOS behaviour on build 26A434 (mac18g), recorded in the M6
+ * DART's page size. Source of the layout: macOS behaviour on the pinned build (mac18g), recorded in the M6
  * engine DMA lab note, section 4, sha256 eac93039f9c3f62883f83c2b563dda7b47e0d3b19e2fca2bd450527f0d8d6f60.
  * The pool is count x 0x3898 bytes rounded to the DART page.
  * The layout is: +8 1, +0x10 type, +0x54 1, +0x58 1, +0x60 4, +0x68 1, +0x70 the pool address, +0x78 a second value (premap_second, or the

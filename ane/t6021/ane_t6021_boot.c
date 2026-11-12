@@ -55,7 +55,7 @@
  *   3. RVBAR lifecycle — RESOLVED (M2ResetLifecycle,
  *     rvbar-lifecycle-evidence.json, anchors 38/38
  *     check_rvbar_lifecycle_anchors.py): live bit0-set + entry 0 is
- *     the STALE state; the kext-lawful transition is power_off
+ *     the STALE state; the required sequence is power_off
  *     (vendor de-init gate at driver-object offset 0x3FB, then PMGR
  *     ps 0x2e0 ← 0x00000000 via the driver-object offset 0x190 PMGR
  *     accessor) → power_on → re-init, NEVER an
@@ -243,8 +243,8 @@ static const struct ane_t6021_init_sources boot_sources = {
 					 * bytes (CONFIRMED, 183fd50) */
 };
 
-/* Poll A/B bound: the kext polls <=1000 x sleep(1ms) (selene poll
- * loop 0x73c4-0x73fc analog; rvbar-lifecycle step 6/10). */
+/* Poll A/B bound: poll <=1000 x sleep(1ms) (selene poll
+ * loop analog; rvbar-lifecycle step 6/10). */
 #define ANE_BOOT_ACK_POLL_US	1000
 #define ANE_BOOT_POLL_MS	1000
 

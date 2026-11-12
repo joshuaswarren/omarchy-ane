@@ -16,7 +16,7 @@ Run it from an m1n1 checkout with the Mac in proxy mode and macOS as the guest, 
 guest (one CoreML model run on the Neural Engine):
 
     python3 proxyclient/tools/run_guest.py -l ane-trace.log \\
-        -m proxyclient/hv/trace_ane_h15.py <your usual run_guest.py arguments and kernelcache>
+        -m proxyclient/hv/trace_ane_h15.py <your usual run_guest.py arguments>
 
 Do not add other m1n1 tracers to the same run unless you know they read nothing: several prime their register
 cache with reads when they start, and a read of an unpowered ANE block can fault the host.

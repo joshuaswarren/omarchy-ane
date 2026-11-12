@@ -1928,8 +1928,8 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 }
 
 /* Firmware perf mode: CSNE_CMD_CH_PROPERTY_WRITE (0x1f), channel 0,
- * property 0x10aa, value 1. The shipped system sends it once during power-on (H13
- * kext evidence in the omarchy-ane perf-mode receipt); the selene 13.5
+ * property 0x10aa, value 1. It is sent once during power-on, as documented
+ * in the perf-mode receipt. The selene 13.5
  * fw routes it to CAneEngineExeLoop::setPerfMode. It is a runtime
  * switch (write 1 to /sys/module/ane_t6021/parameters/fw_perf_mode) so
  * its effect on call time can be measured on one boot. Only 1 is

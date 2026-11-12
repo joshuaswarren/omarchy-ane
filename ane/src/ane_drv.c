@@ -1211,7 +1211,7 @@ static const struct ane_soc ane_soc_t6020 = {
 static const struct ane_soc ane_soc_t6021 = {
 	/* M2 Max (T6021, t6021-test-host). SET window 0x8e08c000 = pmgr base
 	 * 0x8e080000 + 0xc000, present in ane0's own reg in the recorded captures
-	 * of both 26.6.2 and 27.0 (2026-09-18, 11/11 derivation-input
+	 * of both 26.6.2 and shipped (2026-09-18, 11/11 derivation-input
 	 * checks each, zero delta); the Linux translation reuses the pmgr
 	 * high bits proven on T6000/T6020 rows (low-32 match) ->
 	 * 0x28e08c000. Recognized, not qualified: constants complete, but

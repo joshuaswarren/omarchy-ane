@@ -5,7 +5,7 @@
  * Values pinned from two offline sources (see
  * docs/j700-h17-linux-support-plan.md and
  * receipts/2026-11-01-j700-h17-linux-support-plan/):
- *   - the retained macOS kernelcache legacy direct-boot block
+ *   - the retained image legacy direct-boot block
  *     (its firmware init entry block), and
  *   - the recorded ADT (data/ane-soc/t8140.json, source A1).
  * Fields marked "candidate" are the T8132/H16 template and are NOT
@@ -43,7 +43,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
 /* T8140 / J700 (A18 Pro-class, H17). ADT ane-type 0x200; engine
  * 0x400000000+0x2000000.
  *
- * Pinned from the kernelcache legacy direct-boot block:
+ * Pinned from the legacy direct-boot block:
  *   cpu_control 0x1600044 (write 0 then 0x10 RUN)
  *   cpu_status  0x1600048
  *   rvbar       0x1050000 (write64)

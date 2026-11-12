@@ -215,7 +215,7 @@ static int ane_h17_hal_probe(struct platform_device *pdev)
 	h17_log("C6 read CE_B(%#x) = %#x\n", H17_CE_B, readl(eng + H17_CE_B));
 
 /* T8140 ANE HAL online tunables: figs_1 (35) + figs_4 (2).
- * kernelcache 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
+ * the retained image digest
  * new = (live & ~mask) | (value & mask), then width-4 store.
  */
 static const u32 ane_hal_tunables[][3] = {

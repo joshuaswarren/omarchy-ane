@@ -11,9 +11,8 @@
  *    doorbell setter 0x…95ebdd0); m1n1 ASCRegs = t8103 cross-ref only
  *  - RTKit MGMT protocol: Asahi rtkit.c semantics, u64 message halves as
  *    staged in omarchy-ane rtkit/h14_rtkit_hello.py (commit 6ad26b7).
- *  - RTBuddy endpoint table + doorbell word: K14 kext cfg table
- *    __DATA_CONST.__const+0x814e520 and HandleRTBuddyMessage
- *    (receipts/2026-09-18-h14-w2-protocol-decode §3).
+ *  - RTBuddy endpoint table + doorbell word: firmware endpoint configuration
+ *    and message-dispatch analysis (receipts/2026-09-18-h14-w2-protocol-decode §3).
  *
  * DT binding (driver + packaging/dt/t6021-ane.dts are the two halves):
  *  compatible    = "apple,t6021-ane" (also "apple,t6020-ane", the
@@ -24,9 +23,8 @@
  *                  IRQ 520, seven power states 0xc008..0xc038, and a
  *                  fourth window "fuse" (0x23d2c8060+8, chip revision).
  *  reg/reg-names = "engine" (whole 32 MiB ADT range0, 0x284000000;
- *                  the H13-style +0x1c04000 engine delta does not exist
- *                  on this SoC — kext never computes it and first touch
- *                  external-aborted, proven 2026-09-18),
+ *                  this SoC uses the full engine window; an earlier
+ *                  first-touch test caused an external abort),
  *                  "pmgr" (0x28e080000+0x4034, pmgr1,t6021 island words),
  *                  "set"  (0x28e08c000+0x4000, SET window — read-only by
  *                  repo rule: direct SET writes external-abort the SoC)
@@ -105,9 +103,9 @@ enum {
 #define ANE_ASC_RTB_STATUS	0x1840088	/* poll until the value reads < 2 */
 #define ANE_ASC_RTB_STATUS_UNK7C 0x184007c	/* phase1 S2 whitelist */
 
-/* ASC blocks iBoot names in the firmware's __rtk_patch records
+/* ASC blocks named in the firmware's __rtk_patch records
  * (RTK_cpu_physical_address 0x285000000 and RTK_cpu_wrapper_physical_address
- * 0x285400000 on the T6021 preload), as engine-relative offsets. */
+ * 0x285400000 on this preload), as engine-relative offsets. */
 #define ANE_ASC_CPU_BASE	0x1000000
 #define ANE_ASC_WRAPPER_BASE	0x1400000
 
@@ -156,7 +154,7 @@ enum {
 #define ANE_FATAL_READ_HI	0x1c04000
 
 /* MBI transport. SCRATCH0..7 are the eight words at ANE+0x1840048..0x1840064 (see the
- * defines below). The handshake order macOS uses: the command buffer base goes to
+ * defines below). The handshake order: the command buffer base goes to
  * SCRATCH0/1, the wake word 0xf7fbdff9 to SCRATCH7, the host polls SCRATCH7 for
  * 0x08042006 ("channel description table ready"), reads the table base back from
  * SCRATCH0/1, and registers one {type, bit, size, phys} entry per channel. A doorbell
@@ -265,8 +263,8 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
 #define ANE_RTKIT_EP_OSLOG	8
 #define ANE_RTKIT_EP_TRACEKIT	0xa
 
-/* RTBuddy app endpoints — K14 InitializeRTBuddyEndpoints opens ids 1..6;
- * ring sizes + fourccs from the per-EP config table (W2 §3). fourcc is
+/* RTBuddy app endpoints — the shipped driver opens endpoint ids 1..6;
+ * ring sizes + fourccs come from the per-endpoint configuration table (W2 §3). fourcc is
  * byte-reversed in the table (0x54324643 = "T2FC"). */
 enum ane_t6021_eps {
 	ANE_T6021_EP_INIT = 1,	/* INIT — CSNE_CMD controller channel (W4) */
@@ -539,7 +537,7 @@ struct ane_csne_cmd_ipc_endpoint_set {
  *                proven end-to-end (binding.json stats_type; the
  *                first-inference receipt's bare calls)
  *   +0x28        u32 element count (loop bound @0x524bc-0x524c4)
- *   +0x60        count × 0x30-byte io-buffer records (@0x524a8-0x524b4)
+ *   +0x60        count × 0x30-byte io-buffer records (count from recorded loop bounds)
  * The kext `size % sizeof(sCSneCmdProcedureCall) == 0` assert says
  * commands form same-shape arrays in the ring; this driver submits one
  * command per slot. INFERENCE_CALL shares the shape [INFERENCE: the

@@ -59,7 +59,7 @@ it does not prove that they match the pinned payload or will execute.
 ## Stage 2: pinned preload comparison
 
 The 26.6.2 payload is pinned in `ane_h17_fw.h` and fetched from Apple's
-26.6.2 IPSW by `packaging/omarchy-ane-firmware-fetch`. The fetcher refuses
+26.6.2 release by `packaging/omarchy-ane-firmware-fetch`. The fetcher refuses
 another stub version. With the matching file installed, run:
 
 ```sh
@@ -88,7 +88,7 @@ Check it without touching the device:
 
 ```sh
 make -C ane/h17 planner-test
-python3 ane/h17/plan-stage4.py --artifact /var/tmp/neo/kernelcache.bin
+python3 ane/h17/plan-stage4.py --artifact /var/tmp/neo/retained.bin
 ```
 
 The current result is **BLOCKED**, exit 2, even when the retained hash
