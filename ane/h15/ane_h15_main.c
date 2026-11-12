@@ -348,7 +348,7 @@ struct ane_h15 {
 	 * base). The kernel's automatic attach handles only a single
 	 * domain, so for more than one we attach each by id and link it
 	 * for runtime PM, as the in-tree ane driver does. */
-#define ANE_H15_MAX_PD 8
+#define ANE_H15_MAX_PD 12
 	struct device *pd_dev[ANE_H15_MAX_PD];
 	struct device_link *pd_link[ANE_H15_MAX_PD];
 	int pd_count;

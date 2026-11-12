@@ -262,6 +262,9 @@ static void t6030_tree(void)
 	machine = "apple,t6030";
 	add_node("/soc/interrupt-controller@351000000", NULL, 7);
 	add_node("/soc/power-management@350700000/power-controller@498", NULL, 0);
+	/* The kernel dtbo ships report@5 with an explicit phandle (Grok review:
+	 * kbuild builds the dtbo without -@, so no resolver-side mint). */
+	add_node("/soc/pmp-report@3503c0000/report@5", NULL, 11);
 }
 
 static int count_prefix(const char *prefix)
@@ -342,8 +345,11 @@ static void test_t6030_happy(void)
 	reset();
 	t6030_tree();
 	chk(ane_h15_register(&drv, "t6030", true, false) == 0, "T1 t6030: register with apply_overlay returns 0");
-	chk(count_prefix("cs-prop") == 2 && ovl_blob == ane_h15_ovl_t6030_blob, "T2 t6030: two labels and the t6030 blob");
+	chk(count_prefix("cs-prop") == 3 && ovl_blob == ane_h15_ovl_t6030_blob, "T2 t6030: three labels and the t6030 blob");
+	/* tree[0] is the sim's auto-added "/" root: aic=1, ps_ane_sys=2, report@5=3. */
 	chk(tree[2].phandle != 0 && tree[2].phandle != 7, "T3 t6030: ps_ane_sys had no phandle and got one");
+	chk(tree[3].phandle == 11,
+	    "T3b t6030: report@5 keeps its kernel-dtbo phandle and is not reminted");
 }
 
 static void test_t8122(void)
