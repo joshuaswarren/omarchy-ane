@@ -16,7 +16,7 @@ else
 	PWD := $(shell pwd)
 
 SIM_CC ?= cc
-SIM_CFLAGS ?= -g -O0 -Wall -Wextra -Werror=return-type -std=gnu11 -pthread
+SIM_CFLAGS ?= -g -O0 -Wall -Wextra -Werror=return-type -std=gnu11 -pthread -DSIM
 
 default: modules
 
@@ -198,6 +198,26 @@ sim-mutation-hsnohigh:
 # the surfaces are never freed
 sim-mutation-hsnofree:
 	$(call mutant,hsnofree,s/^\t\tane_h18_hs_free(ane);\t\/\* only after.*/\t\t\/* NEG: surfaces leaked *\//,NEG: surfaces leaked,pos)
+
+# the owned firmware unmap runs before the handshake surfaces free (the review order bug)
+sim-mutation-hsunmapfirst:
+	$(call mutant,hsunmapfirst,s|^\t\tane_h18_hs_free(ane);\t/\* only after.*|\t\tif (owned_fw) ane_h18_unmap_owned_firmware(ane);\n\t\tane_h18_hs_free(ane);\t/* only after the core stopped */|,if (owned_fw) ane_h18_unmap_owned_firmware(ane);,pos)
+
+# the fixed-IOVA bound loses its overflow clauses
+sim-mutation-hsnoiovaoverflow:
+	$(call mutant,hsnoiovaoverflow,s$(COMMA) || at >= 0xe0000000ULL$(COMMA)$(COMMA); s$(COMMA)if (sz > 0xe0000000ULL - at)$(COMMA)if (0)$(COMMA),if (0),pos)
+
+# owned_fw=1 together with hs_prog=1 is allowed again
+sim-mutation-hsownedprogrefuse:
+	$(call mutant,hsownedprogrefuse,s$(COMMA)if (owned_fw && hs_prog) {$(COMMA)if (0) {$(COMMA),if (0) {,pos)
+
+# the fixed aliases free without unmapping
+sim-mutation-hsnoaliasunmap:
+	$(call mutant,hsnoaliasunmap,s/size_t un = ane->domain ? iommu_unmap(ane->domain$(COMMA) b->iova$(COMMA) b->size) : b->size;/size_t un = b->size;/,size_t un = b->size;,pos)
+
+# a failed alias page map leaves the earlier pages of that buffer mapped
+sim-mutation-hsnoaliasrollback:
+	$(call mutant,hsnoaliasrollback,s/iommu_unmap(dom$(COMMA) at$(COMMA) off);/if (0) iommu_unmap(dom$(COMMA) at$(COMMA) off);/,if (0) iommu_unmap,pos)
 
 # the answer is judged by READY alone, which is there before the wake
 sim-mutation-hsbys7:
@@ -413,6 +433,11 @@ sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-
 	sim-mutation-hsnowake \
 	sim-mutation-hsnohigh \
 	sim-mutation-hsnofree \
+	sim-mutation-hsunmapfirst \
+	sim-mutation-hsnoiovaoverflow \
+	sim-mutation-hsownedprogrefuse \
+	sim-mutation-hsnoaliasunmap \
+	sim-mutation-hsnoaliasrollback \
 	sim-mutation-hsbys7 \
 	sim-mutation-hsnoreqgate \
 	sim-mutation-hsnolimit \

@@ -234,9 +234,10 @@ static inline void release_firmware(const struct firmware *fw)
 #endif
 typedef u64 dma_addr_t;
 #define DMA_BIT_MASK(n) ((1ULL << (n)) - 1)
-struct sim_dma { void *va; dma_addr_t iova; size_t size; int live; };
+struct sim_dma { void *va; dma_addr_t iova; size_t size; int live; unsigned long free_seq; };
 #define SIM_NDMA 32
 extern struct sim_dma sim_dma[SIM_NDMA];
+extern unsigned long sim_op_seq, sim_last_dmafree_seq;
 extern int sim_n_dma, sim_dma_fail, sim_dma_mask_bits;
 static inline int dma_set_mask_and_coherent(struct device *d, u64 mask)
 {
@@ -262,8 +263,10 @@ static inline void dma_free_coherent(struct device *d, size_t size, void *va, dm
 
 	(void)d; (void)size;
 	for (k = 0; k < sim_n_dma; k++)
-		if (sim_dma[k].va == va && sim_dma[k].iova == iova)
+		if (sim_dma[k].va == va && sim_dma[k].iova == iova) {
 			sim_dma[k].live = 0;
+			sim_dma[k].free_seq = sim_last_dmafree_seq = ++sim_op_seq;
+		}
 }
 static inline void *devm_kzalloc(struct device *d, size_t n, int f) { (void)d; (void)f; return calloc(1, n); }
 static inline void platform_set_drvdata(struct platform_device *p, void *d) { p->drvdata = d; }
@@ -726,14 +729,18 @@ extern struct iommu_domain sim_default_dom;
 extern int sim_default_dom_none;
 static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *d) { (void)d; return sim_default_dom_none ? NULL : &sim_default_dom; }
 enum { SIM_IO_ALLOC = 1, SIM_IO_ATTACH, SIM_IO_MAP, SIM_IO_UNMAP, SIM_IO_DETACH, SIM_IO_FREE };
-struct sim_iocall { int code; u64 iova, pa, size; int prot; int ev; };
+struct sim_iocall { int code; u64 iova, pa, size; int prot; int ev; unsigned long seq; };
 extern struct sim_iocall sim_iocalls[64];
-extern int sim_n_iocalls, sim_io_fail;		/* sim_io_fail: 1 alloc fails, 2 attach fails, 3 the second map fails */
+extern int sim_n_iocalls, sim_io_fail;		/* sim_io_fail: 1 alloc fails, 2 attach fails, 3 the second map fails, 4 the third read+write map fails */
 extern int sim_n_dom_live;
 static inline void sim_iorec(int code, u64 iova, u64 pa, u64 size, int prot)
 {
-	if (sim_n_iocalls < 64)
-		sim_iocalls[sim_n_iocalls] = (struct sim_iocall){ code, iova, pa, size, prot, sim_n_events };
+	if (sim_n_iocalls < 64) {
+		struct sim_iocall *c = &sim_iocalls[sim_n_iocalls];
+
+		c->code = code; c->iova = iova; c->pa = pa; c->size = size; c->prot = prot; c->ev = sim_n_events;
+		c->seq = ++sim_op_seq;
+	}
 	sim_n_iocalls++;
 }
 static inline bool device_iommu_mapped(struct device *d) { return d->of_node && d->of_node->has_iommus; }
@@ -752,16 +759,29 @@ static inline int iommu_attach_device(struct iommu_domain *dom, struct device *d
 	sim_iorec(SIM_IO_ATTACH, 0, 0, 0, 0);
 	return sim_io_fail == 2 ? -EBUSY : 0;
 }
+struct sim_iomap { u64 iova, pa, size; };
+extern struct sim_iomap sim_iomaps[64];
+extern int sim_n_iomaps;
 static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa, size_t size, int prot, int gfp)
 {
 	(void)dom; (void)gfp;
 	sim_iorec(SIM_IO_MAP, iova, pa, size, prot);
+	if (sim_n_iomaps < 64)
+		sim_iomaps[sim_n_iomaps++] = (struct sim_iomap){ iova, pa, size };
 	if (sim_io_fail == 3) {
 		int maps = 0, k;
 
 		for (k = 0; k < sim_n_iocalls && k < 64; k++)
 			maps += sim_iocalls[k].code == SIM_IO_MAP;
 		if (maps == 2)
+			return -ENOMEM;
+	}
+	if (sim_io_fail == 4 && prot == (IOMMU_READ | IOMMU_WRITE)) {
+		int rw = 0, k;
+
+		for (k = 0; k < sim_n_iocalls && k < 64; k++)
+			rw += sim_iocalls[k].code == SIM_IO_MAP && sim_iocalls[k].prot == (IOMMU_READ | IOMMU_WRITE);
+		if (rw == 3)
 			return -ENOMEM;
 	}
 	return 0;
@@ -772,13 +792,27 @@ static inline size_t iommu_unmap(struct iommu_domain *dom, unsigned long iova, s
 	sim_iorec(SIM_IO_UNMAP, iova, 0, size, 0);
 	return size;
 }
-/* Nothing in the sim maps a page the device reads back, so every lookup is unmapped: the fixed-alias and owned-page checks then refuse, which is the honest
- * sim answer for paths the fake firmware cannot drive. Not recorded: the iocall log counts real map/unmap calls only. */
+/* The fake translation: a lookup resolves inside a live dma_alloc_coherent range (identity), then through the ranges iommu_map recorded (aliases), so the
+ * fixed-alias and owned-page paths can run; anything else is unmapped, which is the honest sim answer for pages the fake firmware cannot drive. Not recorded:
+ * the iocall log counts real map/unmap calls only. */
 static inline u64 iommu_iova_to_phys(struct iommu_domain *dom, unsigned long iova)
 {
+	int k;
+
 	(void)dom;
-	(void)iova;
+	for (k = 0; k < sim_n_dma; k++)
+		if (sim_dma[k].live && iova >= sim_dma[k].iova && iova < sim_dma[k].iova + sim_dma[k].size)
+			return iova;
+	for (k = sim_n_iomaps - 1; k >= 0; k--)
+		if (iova >= sim_iomaps[k].iova && iova < sim_iomaps[k].iova + sim_iomaps[k].size)
+			return sim_iomaps[k].pa + (iova - sim_iomaps[k].iova);
 	return 0;
+}
+
+/* The dma-api address behind a fixed alias, for the fake firmware's buffer lookups. */
+static inline u64 sim_alias_dma(u64 iova)
+{
+	return iommu_iova_to_phys(NULL, iova);
 }
 static inline void iommu_detach_device(struct iommu_domain *dom, struct device *d) { (void)dom; (void)d; sim_iorec(SIM_IO_DETACH, 0, 0, 0, 0); }
 static inline void iommu_domain_free(struct iommu_domain *dom) { sim_iorec(SIM_IO_FREE, 0, 0, 0, 0); sim_n_dom_live--; free(dom); }

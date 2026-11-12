@@ -41,6 +41,7 @@ struct iommu_domain sim_default_dom = { __IOMMU_DOMAIN_DMA_API };
 int sim_default_dom_none;
 int sim_hs_mode;	/* 0 the firmware answers the wake word, 1 it never answers */
 int sim_hs_block_ok, sim_hs_wakes;
+static int sim_ipc_i = 1;
 int sim_db_writes, sim_hs_table, sim_s3_mode, sim_cmd_mode, sim_cmds_seen, sim_table_bad, sim_chan_req;
 u32 sim_pend_val;
 int sim_ack_writes, sim_cmd_blk_in_pool, sim_posted, sim_term_tick;
@@ -63,6 +64,10 @@ bool sim_ps_on;				/* the four ANE ps registers read fully on when set */
 int sim_iomap_fail_at;
 struct sim_iocall sim_iocalls[64];
 int sim_n_iocalls, sim_io_fail, sim_n_dom_live;
+struct sim_iomap sim_iomaps[64];
+int sim_n_iomaps;
+unsigned long sim_op_seq, sim_last_dmafree_seq;
+static u8 sim_owned_fw[1572864];	/* the owned_fw trial payload: zeroed, matching the zeroed sim pin (sha256 stub returns zeros) */
 int sim_start_chan = -1, sim_start_msgs, sim_start_hello;
 u32 sim_po_out_off, sim_alias_credits = 1, sim_hello_min = 11, sim_hello_max = 12, sim_hello_ep, sim_hello_type = 1;
 
@@ -138,6 +143,8 @@ static int sim_buf_ok(u64 iova, u64 size)
 	for (d = 0; d < sim_n_dma; d++)
 		if (sim_dma[d].live && iova >= sim_dma[d].iova && size <= sim_dma[d].size && iova - sim_dma[d].iova <= sim_dma[d].size - size)
 			return 1;
+	if (sim_alias_dma(iova))	/* a fixed alias resolves through the fake iommu */
+		return sim_buf_ok(sim_alias_dma(iova), size);
 	return 0;
 }
 
@@ -148,6 +155,8 @@ static u8 *sim_buf_va(u64 iova)
 	for (d = 0; d < sim_n_dma; d++)
 		if (sim_dma[d].live && iova >= sim_dma[d].iova && iova < sim_dma[d].iova + sim_dma[d].size)
 			return (u8 *)sim_dma[d].va + (iova - sim_dma[d].iova);
+	if (sim_alias_dma(iova))
+		return sim_buf_va(sim_alias_dma(iova));
 	return NULL;
 }
 
@@ -231,7 +240,7 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		return 0;
 	case 0x204: {
 		u32 cnt, prio;
-		u64 *ring = (u64 *)((u8 *)sim_dma[1].va + 0xb000);
+		u64 *ring = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
 		u8 *pool = sim_dma[0].va;
 
 		if (!sim_prog_created || prog != 0x5a || proc != 0x77)
@@ -329,10 +338,21 @@ void sim_hs_react(void)
 	b = sim_dma[found].va;
 #define F8(off) (memcpy(&f, b + (off), 8), f)
 #define F4(off) (memcpy(&f, b + (off), 4), f & 0xffffffffu)
-	f = 0;
-	sim_hs_block_ok = F8(0x00) == ane_t8152_soc.fw_seg[0].iova && F8(0x08) == sim_dma[1].iova && F8(0x10) == hs_cfg_size && F8(0x18) == 0x10000000ULL - hs_cfg_size &&
-			  F8(0x20) == (sim_n_dma > 2 ? sim_dma[2].iova : 0) && F8(0x28) == 0xf00000 && F8(0x50) == 0xc441 && F8(0x58) == pub && F8(0x60) == 0x40000 && F4(0x68) == 0x40 && F4(0x12c) == 4 &&
-			  sim_dma[0].size == 0x40000 && sim_dma[1].size == 0x10000 && sim_dma[2].size == 0xf00000;
+	{
+		/* with owned_fw staged the image is sim_dma[0] and every handshake surface shifts one slot */
+		int sh = 0, pool, ipc, heap;
+
+		for (k = 0; k < sim_n_dma; k++)
+			sh += sim_dma[k].size == 0x370000u;
+		pool = sh ? 1 : 0;
+		ipc = pool + 1;
+		heap = pool + 2;
+		f = 0;
+		sim_hs_block_ok = F8(0x00) == ane_t8152_soc.fw_seg[0].iova && F8(0x08) == sim_dma[ipc].iova && F8(0x10) == hs_cfg_size && F8(0x18) == 0x10000000ULL - hs_cfg_size &&
+				  F8(0x20) == (sim_n_dma > 2 ? sim_dma[heap].iova : 0) && F8(0x28) == 0xf00000 && F8(0x50) == 0xc441 && F8(0x58) == pub && F8(0x60) == 0x40000 && F4(0x68) == 0x40 && F4(0x12c) == 4 &&
+				  sim_dma[pool].size == 0x40000 && sim_dma[ipc].size == 0x10000 && sim_dma[heap].size == 0xf00000;
+		sim_ipc_i = ipc;
+	}
 	if (sim_hs_mode == 2)
 		sim_scr[7] = ANE_H18_HS_READY;	/* READY again, but no table address: the block address stays in SCRATCH0 and SCRATCH1 */
 	if (sim_hs_mode == 0 && sim_hs_table) {
@@ -341,19 +361,19 @@ void sim_hs_react(void)
 			{ "TERMINAL", 2, 0, 0x200, 0x800 }, { "IO", 0, 1, 0x10, 0x8800 }, { "DEBUG", 0, 2, 8, 0x8c00 }, { "BUF_H2T", 0, 3, 0x40, 0x8e00 },
 			{ "BUF_T2H", 1, 4, 0x40, 0x9e00 }, { "SHAREDMALLOC", 1, 5, 8, 0xae00 }, { "IO_T2H", 1, 6, 0x40, 0xb000 }, { "DATA_CHAIN_H2T", 0, 7, 0x10, 0xc000 },
 		};
-		u8 *t = sim_dma[1].va;
+		u8 *t = sim_dma[sim_ipc_i].va;
 		int c;
 
 		memset(t, 0, 8 * 0x100);
 		for (c = 0; c < 8; c++) {
-			u64 ring = sim_dma[1].iova + ch[c].off + (sim_table_bad == c + 1 ? 0x1000000 : 0);
+			u64 ring = sim_dma[sim_ipc_i].iova + ch[c].off + (sim_table_bad == c + 1 ? 0x1000000 : 0);
 
 			if (c == 2 && sim_table_bad == 100)
-				ring = sim_dma[1].iova + 0x80;	/* inside the table entries */
+				ring = sim_dma[sim_ipc_i].iova + 0x80;	/* inside the table entries */
 			if (c == 2 && sim_table_bad == 102)
 				ring = 0xffffffffffffff00ULL;	/* ring + slots * 0x40 wraps past 2^64 */
 			if (c == 2 && sim_table_bad == 101)
-				ring = sim_dma[1].iova + 0x8800;	/* the IO ring */
+				ring = sim_dma[sim_ipc_i].iova + 0x8800;	/* the IO ring */
 
 			strcpy((char *)t + c * 0x100, ch[c].n);
 			memcpy(t + c * 0x100 + 0x40, &ch[c].type, 4);
@@ -362,22 +382,22 @@ void sim_hs_react(void)
 			memcpy(t + c * 0x100 + 0x50, &ring, 8);
 		}
 		if (sim_chan_req) {
-			u64 *sm = (u64 *)((u8 *)sim_dma[1].va + 0xae00);	/* the SHAREDMALLOC ring: a request nobody answered */
+			u64 *sm = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xae00);	/* the SHAREDMALLOC ring: a request nobody answered */
 
-			memcpy((u8 *)sim_dma[1].va + 0x800, "ANE fw says hi", 14);	/* the firmware console */
+			memcpy((u8 *)sim_dma[sim_ipc_i].va + 0x800, "ANE fw says hi", 14);	/* the firmware console */
 			if (sim_chan_req == 1) {
-				memcpy((u8 *)sim_dma[1].va + 0xf000, "fw text\n\x01", 9);	/* a console record that points to text: slot 2, flag 2, length 9, timestamp 0x77 */
-				((u64 *)((u8 *)sim_dma[1].va + 0x800))[2 * 8] = (sim_dma[1].iova + 0xf000) | 2;
-				((u64 *)((u8 *)sim_dma[1].va + 0x800))[2 * 8 + 1] = 9;
-				((u64 *)((u8 *)sim_dma[1].va + 0x800))[2 * 8 + 3] = 0x77;
-				memset((u8 *)sim_dma[1].va + 0xf100, 'a', 0x101);	/* the limit: slot 3 has length 0x100 (printed, ends in 'yz'), slot 4 has 0x101 (counted, not printed) */
-				((u8 *)sim_dma[1].va)[0xf100 + 0xfe] = 'y';
-				((u8 *)sim_dma[1].va)[0xf100 + 0xff] = 'z';
-				((u8 *)sim_dma[1].va)[0xf100 + 0x100] = 'w';
+				memcpy((u8 *)sim_dma[sim_ipc_i].va + 0xf000, "fw text\n\x01", 9);	/* a console record that points to text: slot 2, flag 2, length 9, timestamp 0x77 */
+				((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[2 * 8] = (sim_dma[sim_ipc_i].iova + 0xf000) | 2;
+				((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[2 * 8 + 1] = 9;
+				((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[2 * 8 + 3] = 0x77;
+				memset((u8 *)sim_dma[sim_ipc_i].va + 0xf100, 'a', 0x101);	/* the limit: slot 3 has length 0x100 (printed, ends in 'yz'), slot 4 has 0x101 (counted, not printed) */
+				((u8 *)sim_dma[sim_ipc_i].va)[0xf100 + 0xfe] = 'y';
+				((u8 *)sim_dma[sim_ipc_i].va)[0xf100 + 0xff] = 'z';
+				((u8 *)sim_dma[sim_ipc_i].va)[0xf100 + 0x100] = 'w';
 				for (int q = 3; q <= 4; q++) {
-					((u64 *)((u8 *)sim_dma[1].va + 0x800))[q * 8] = (sim_dma[1].iova + 0xf100) | 2;
-					((u64 *)((u8 *)sim_dma[1].va + 0x800))[q * 8 + 1] = q == 3 ? 0x100 : 0x101;
-					((u64 *)((u8 *)sim_dma[1].va + 0x800))[q * 8 + 3] = 0x75 + q;
+					((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[q * 8] = (sim_dma[sim_ipc_i].iova + 0xf100) | 2;
+					((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[q * 8 + 1] = q == 3 ? 0x100 : 0x101;
+					((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800))[q * 8 + 3] = 0x75 + q;
 				}
 			}
 			sm[0] = 0x1000;	/* a header that is an iova, with a size: no request has this shape */
@@ -385,15 +405,15 @@ void sim_hs_react(void)
 			sm[2] = 0;
 			sim_pend_val = 0x20;
 		}
-		sim_scr[0] = (u32)sim_dma[1].iova;
-		sim_scr[1] = (u32)(sim_dma[1].iova >> 32);
+		sim_scr[0] = (u32)sim_dma[sim_ipc_i].iova;
+		sim_scr[1] = (u32)(sim_dma[sim_ipc_i].iova >> 32);
 		sim_scr[7] = ANE_H18_HS_READY;
 	} else if (sim_hs_mode == 0) {
 		u32 mark[4] = { 0x11111111, 0x22222222, 0x33333333, 0x44444444 };
 
-		memcpy((u8 *)sim_dma[1].va + 0x100, mark, sizeof(mark));
-		sim_scr[0] = (u32)(sim_dma[1].iova + 0x100);
-		sim_scr[1] = (u32)((sim_dma[1].iova + 0x100) >> 32);
+		memcpy((u8 *)sim_dma[sim_ipc_i].va + 0x100, mark, sizeof(mark));
+		sim_scr[0] = (u32)(sim_dma[sim_ipc_i].iova + 0x100);
+		sim_scr[1] = (u32)((sim_dma[sim_ipc_i].iova + 0x100) >> 32);
 		sim_scr[7] = ANE_H18_HS_READY;
 	}
 }
@@ -403,7 +423,7 @@ void sim_hs_react(void)
 void sim_usleep_hook(void)
 {
 	if (sim_pub_wait && !--sim_pub_wait && sim_n_dma > 1) {	/* publish the two IO_T2H events of a call in mode 5 */
-		u64 *ring = (u64 *)((u8 *)sim_dma[1].va + 0xb000);
+		u64 *ring = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
 		int q;
 
 		for (q = 0; q < 2; q++) {
@@ -412,7 +432,7 @@ void sim_usleep_hook(void)
 		}
 	}
 	if (sim_chan_req == 4 && sim_n_dma > 1 && sim_scr_model && sim_scr[3] == 0 && sim_hs_table) {
-		u32 *t = (u32 *)((u8 *)sim_dma[1].va + 0x800);
+		u32 *t = (u32 *)((u8 *)sim_dma[sim_ipc_i].va + 0x800);
 
 		t[0] = ++sim_term_tick;
 		for (int j = 1; j < 6; j++)	/* six nonzero 16 byte lines in all, to see the cap of a change snapshot */
@@ -426,7 +446,7 @@ void sim_s3_react(u32 v)
 	if (v == ANE_H18_HS_READY && sim_s3_mode == 0)
 		sim_scr[3] = 0;
 	if (v == ANE_H18_HS_READY && (sim_chan_req == 2 || sim_chan_req == 3) && sim_n_dma > 1) {
-		u64 *sm = (u64 *)((u8 *)sim_dma[1].va + 0xae00);
+		u64 *sm = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xae00);
 
 		sm[0] = 0;	/* a MALLOC of 0x8000 bytes, mode 0: the firmware takes no command before it is answered */
 		sm[1] = 0x8000;
@@ -442,7 +462,7 @@ void sim_db_react(u32 v)
 	int k, d;
 
 	if (v == BIT(5) && sim_chan_req == 3 && !sim_posted && sim_n_dma > 3) {
-		u64 *sm = (u64 *)((u8 *)sim_dma[1].va + 0xae00);
+		u64 *sm = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xae00);
 
 		if (sm[0] & 1) {	/* the first MALLOC was answered: the firmware gives that buffer back and asks for the same size again */
 			sim_posted = 1;
@@ -456,7 +476,7 @@ void sim_db_react(u32 v)
 		return;
 	}
 	if (v == BIT(6) && sim_n_dma > 1) {
-		u64 *r6 = (u64 *)((u8 *)sim_dma[1].va + 0xb000);
+		u64 *r6 = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
 		int q;
 
 		for (q = 0; q < 2; q++)
@@ -466,9 +486,9 @@ void sim_db_react(u32 v)
 	}
 	if (v != BIT(1) || sim_n_dma < 3)
 		return;
-	if (sim_chan_req == 2 && !(((u64 *)((u8 *)sim_dma[1].va + 0xae00))[0] & 1))
+	if (sim_chan_req == 2 && !(((u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xae00))[0] & 1))
 		return;	/* the firmware still waits for its memory */
-	ring = (u64 *)((u8 *)sim_dma[1].va + 0x8800);
+	ring = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0x8800);
 	for (k = 0; k < 0x10; k++) {
 		u64 hdr = ring[k * 8];
 		u8 *blk = NULL;
@@ -525,7 +545,7 @@ void sim_db_react(u32 v)
 		ring[k * 8 + 2] = 0;
 		ring[k * 8] = hdr | 1;
 		if (sim_chan_req == 2 && op == ANE_H18_CSNE_CONFIG_GET) {
-			u64 *sm = (u64 *)((u8 *)sim_dma[1].va + 0xae00);
+			u64 *sm = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xae00);
 
 			sm[8] = sm[0] & ~1ULL;	/* the firmware gives its buffer back: a FREE in slot 1 */
 			sm[9] = 0;
@@ -656,6 +676,7 @@ static void reset_all(void)
 	map_fw = false;
 	sim_rpm_enabled = sim_rpm_gets = sim_rpm_puts = sim_rpm_get_fail = 0;
 	sim_n_iocalls = sim_io_fail = sim_n_dom_live = 0;
+	sim_n_iomaps = 0;
 	sim_start_hello = 0;
 	sim_po_out_off = 0;
 	sim_alias_credits = 1;
@@ -1017,6 +1038,10 @@ static void boot_setup(void)
 {
 	reset_all();
 	stage = "boot";
+	owned_fw = false;
+	fw_path = NULL;
+	sim_fw_data = sim_blob;
+	sim_fw_size = sim_blob_len;
 	confirm_power = true;
 	confirm_boot = true;
 	psd_slots = 2;
@@ -1467,7 +1492,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 43; pass++) {
+		for (pass = 0; pass < 48; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1524,6 +1549,14 @@ static void pos_boot(void)
 			if (pass == 40) { hs_prog = false; prog_out_words = 16; }
 			if (pass == 41) hs_prog_calls = 1001;
 			if (pass == 42) { prog_out_words = 16; hs_prog_calls = 1; sim_prog_mode = 10; }
+			if (pass == 43) { prog_iova_bufs = 0x40000000; prog_iova_text = 0x50000000; }
+			if (pass == 44) prog_iova_bufs = 0xffffffffffff0000ull;
+			if (pass == 45) { prog_iova_bufs = 0x40000000; prog_iova_text = 0x50000000; sim_io_fail = 4; }
+			if (pass == 46) { owned_fw = true; fw_path = "pin.bin"; }
+			if (pass == 47) {
+				owned_fw = true; fw_path = "pin.bin"; hs_prog = false;
+				sim_fw_data = sim_owned_fw; sim_fw_size = sizeof(sim_owned_fw);
+			}
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1617,6 +1650,43 @@ static void pos_boot(void)
 				if (pass == 40 || pass == 41)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1") && writes() == 0 && sim_fw_requests == 0,
 					    pass == 40 ? "PO4 prog_out_words without hs_prog=1 is refused before any write" : "PO4 hs_prog_calls above 1000 is refused before any write");
+				if (pass == 43) {
+					int mfix = 0, ufix = 0, kk;
+
+					for (kk = 0; kk < sim_n_iocalls; kk++) {
+						mfix += sim_iocalls[kk].code == SIM_IO_MAP && (sim_iocalls[kk].iova == 0x40000000 || sim_iocalls[kk].iova == 0x50000000);
+						ufix += sim_iocalls[kk].code == SIM_IO_UNMAP && (sim_iocalls[kk].iova == 0x40000000 || sim_iocalls[kk].iova == 0x50000000);
+					}
+					chk(ret == 0 && ok && mfix >= 2 && ufix >= 2 && live == 0,
+					    "PG43 prog_iova_bufs/text: the section 3 and buffer aliases map at the fixed IOVAs, the call finishes and every alias unmaps at free");
+				}
+				if (pass == 44)
+					chk(ret == -EINVAL && log_count("is not 16 KiB aligned or is not below 0xe0000000") == 1,
+					    "PG44 a prog_iova_bufs base at or past 0xe0000000 (or one whose buffers overflow it) is refused by the fixed-IOVA bound");
+				if (pass == 45) {
+					int rb = 0, kk;
+
+					for (kk = 0; kk < sim_n_iocalls; kk++)
+						rb += sim_iocalls[kk].code == SIM_IO_UNMAP && sim_iocalls[kk].iova == 0x50000000 && sim_iocalls[kk].size == 0x4000;
+					chk(ret == -ENOMEM && rb >= 1 && log_count("map of page") == 1,
+					    "PG45 a failed alias page map rolls back the pages of that buffer already mapped and fails the sequence");
+				}
+				if (pass == 46)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "owned_fw=1 is a firmware-residency trial that submits no program; drop hs_prog=1 or owned_fw=1") && writes() == 0 && sim_fw_requests == 0,
+					    "PG46 owned_fw=1 together with hs_prog=1 is refused before any write or file load");
+				if (pass == 47) {
+					int kk;
+					unsigned long seq_unmap_owned = 0, seq_free_hs = 0;
+
+					for (kk = 0; kk < sim_n_iocalls; kk++)
+						if (sim_iocalls[kk].code == SIM_IO_UNMAP && (sim_iocalls[kk].iova == 0x10000000000ull || sim_iocalls[kk].iova == 0x100000c4000ull))
+							seq_unmap_owned = seq_unmap_owned ? seq_unmap_owned : sim_iocalls[kk].seq;
+					for (kk = 0; kk < sim_n_dma; kk++)
+						if (!sim_dma[kk].live && sim_dma[kk].size != 0x370000u)
+							seq_free_hs = sim_dma[kk].free_seq > seq_free_hs ? sim_dma[kk].free_seq : seq_free_hs;
+					chk(ret == 0 && ok && seq_unmap_owned && seq_free_hs && seq_free_hs < seq_unmap_owned && log_count("(owned image)") == 2,
+					    "PG47 owned_fw=1: the pinned payload stages, both segments map at the fixed TEXT/DATA IOVAs (owned image), and the handshake surfaces free before the owned ranges unmap");
+				}
 				if (pass == 38)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1") && writes() == 0, "PR5 hs_props=3 is refused before any write");
 				if (pass == 36)

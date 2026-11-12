@@ -16,6 +16,17 @@ struct ane_h18_fw {
 	unsigned char image_sha256[32];	/* IM4P wrapper */
 };
 
+#ifdef SIM
+/* The sim's sha256 stub returns 32 zero bytes; the pin it must match is zeroed too, so an
+ * owned_fw trial can stage a fabricated payload. The kernel build keeps the real pin. */
+static const struct ane_h18_fw ane_fw_t8152_ane0 = {
+	.name = "h18_ane0_fw_kirkland_j8xx (sim pin)",
+	.sha256 = { 0 },
+	.size = 1572864,
+	.manifest_size = 1572889,
+	.image_sha256 = { 0 }
+};
+#else
 static const struct ane_h18_fw ane_fw_t8152_ane0 = {
 	.name = "h18_ane0_fw_kirkland_j8xx",
 	.sha256 = { 0x83,0x05,0x05,0xbc, 0x95,0x78,0x6d,0xa1, 0xbf,0x49,0x9b,0xa9,
@@ -27,5 +38,6 @@ static const struct ane_h18_fw ane_fw_t8152_ane0 = {
 			  0xe8,0x09,0x67,0x17, 0xad,0xa8,0xb8,0xeb, 0x80,0x52,0x15,0x63,
 			  0x30,0xc5,0xb1,0x6d, 0x02,0x12,0x93,0xb8 }
 };
+#endif
 
 #endif

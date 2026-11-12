@@ -217,7 +217,7 @@ module_param(hs_prog_dump, uint, 0444);
 static unsigned int hs_settle_ms = 10;
 module_param(hs_settle_ms, uint, 0444);
 MODULE_PARM_DESC(hs_settle_ms, "hs_prog=1: milliseconds the driver waits after each unload command and between program passes, so the firmware can finish tearing the previous program down. Default 10.");
-MODULE_PARM_DESC(hs_prog_dump, "hs_prog=1: hexdump the first N bytes of every program buffer after the call (16 bytes per line, capped at 0x400). The first pass only. Default 0 (off).");
+MODULE_PARM_DESC(hs_prog_dump, "hs_prog=1: hexdump the first N bytes of every program buffer after the call (16 bytes per line, capped at 0x1000). The first pass only. Default 0 (off).");
 
 static unsigned int hs_prog_calls = 1;
 module_param(hs_prog_calls, uint, 0444);
@@ -1163,7 +1163,7 @@ static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, si
 		dev_err(ane->dev, "ane_h18 fixed IOVA for %s: no iommu domain\n", name);
 		return -ENODEV;
 	}
-	if (((at | size) & (SZ_16K - 1)) || at + size > 0xe0000000ULL) {
+	if (((at | size) & (SZ_16K - 1)) || at >= 0xe0000000ULL || size > 0xe0000000ULL - at) {
 		dev_err(ane->dev, "ane_h18 fixed IOVA %#llx size %#zx for %s is not 16 KiB aligned or is not below 0xe0000000\n", at, size, name);
 		return -EINVAL;
 	}
@@ -1194,7 +1194,8 @@ static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, si
 	return 0;
 }
 
-/* The fixed IOVA of program buffer i: prog_iova_bufs plus the 16 KiB aligned sizes of the buffers before it, or 0 for a dynamic one. */
+/* The fixed IOVA of program buffer i: prog_iova_bufs plus the 16 KiB aligned sizes of the buffers before it, or 0 for a dynamic one. A base that would push the
+ * range past the DART limit returns 0xe0000000, which ane_h18_hs_alloc_at refuses. */
 static u64 ane_h18_io_at(const struct ane_h18_pdesc *p, unsigned int i)
 {
 	u64 at = prog_iova_bufs;
@@ -1202,8 +1203,13 @@ static u64 ane_h18_io_at(const struct ane_h18_pdesc *p, unsigned int i)
 
 	if (!at)
 		return 0;
-	for (k = 0; k < i; k++)
-		at += ALIGN(p->io[k].size, SZ_16K);
+	for (k = 0; k < i; k++) {
+		u64 sz = ALIGN(p->io[k].size, SZ_16K);
+
+		if (sz > 0xe0000000ULL - at)
+			return 0xe0000000ULL;
+		at += sz;
+	}
 	return at;
 }
 
@@ -1988,9 +1994,10 @@ static void ane_h18_failpath_recover(struct ane_h18 *ane)
 
 /* One program on the IO ring after START: allocate the section and buffer surfaces from the file, LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, wait for the
  * finish event, then TERMINATE_PROCESS and DESTROY_PROGRAM. Every reply is logged whole. A command the firmware refuses (acknowledgement not zero) or does not
- * answer ends the sequence; the program and the process are unloaded anyway, and a firmware that does not answer the unload is power-cycled, so no program
- * stays resident and no cold boot is needed. The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. Whether
- * the T8152 firmware accepts it is what the first run shows. */
+ * answer ends the sequence; the program and the process are unloaded anyway, and a firmware that does not answer the unload is power-cycled and reset. On the
+ * M6 the recovery has only been seen to work this far: the matvec program still ended core-not-stopped after the power cycle, so a stuck core is not yet
+ * proven clearable without a reboot. The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. The H14 add
+ * program runs on the T8152; the matvec program's call never finishes (known failure, cause unknown). */
 static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsigned int pass, unsigned int calls, unsigned int *t2h_cursor)
 {
 	const struct ane_h18_pdesc *p = &ane->pd;
@@ -2223,7 +2230,10 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	goto destroy;
 fail:
 	/* A command or the call timed out. The program and the process may still be resident, so the unload is tried anyway: a firmware that only lost the finish
-	 * event answers it and the ANE holds nothing. A firmware that does not answer is power-cycled below, which resets it and drops the program. */
+	 * event answers it and the ANE holds nothing. The recovery runs only on -ETIMEDOUT or -EBUSY (an unanswered reply wait, or the IO slot of an earlier
+	 * unanswered command that is not ours to send on). A command the firmware answers is taken as done without parsing the reply, so a firmware that answers
+	 * DESTROY_PROGRAM with a refusal leaves the program resident with prog_cleaned already set; only an unanswered one ends in the power-cycle below, which
+	 * resets the firmware and drops the program. */
 	if (ret == -ETIMEDOUT || ret == -EBUSY) {	/* -EBUSY: the IO slot of an earlier unanswered command is not ours */
 		int unanswered = 0, cmdret;
 
@@ -2848,6 +2858,10 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "REFUSED", "hs_chan=1 needs handshake=1, hs_cmds=1 needs hs_chan=1, hs_start=1 needs hs_cmds=1 and hs_prog=1 needs hs_start=1");
 		return -EINVAL;
 	}
+	if (owned_fw && hs_prog) {
+		ane_h18_result(ane, "boot", "REFUSED", "owned_fw=1 is a firmware-residency trial that submits no program; drop hs_prog=1 or owned_fw=1");
+		return -EINVAL;
+	}
 	if (hs_props > 2 || (hs_props && !hs_start)) {
 		ane_h18_result(ane, "boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1");
 		return -EINVAL;
@@ -3045,11 +3059,11 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		return ret ? ret : -EBUSY;
 	}
 	ane->fw_started = false;
-	if (owned_fw)
-		ane_h18_unmap_owned_firmware(ane);
 	if (!ane->map_retained) {
 		ane_h18_hs_free(ane);	/* only after the core stopped: a running core may still write into these surfaces */
-		if (!owned_fw)
+		if (owned_fw)
+			ane_h18_unmap_owned_firmware(ane);	/* after hs_free: the fixed-IOVA aliases unmap through this domain */
+		else
 			ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
 	} else {
 		ane->trial_retained = true;
