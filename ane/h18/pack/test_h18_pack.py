@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Offline check for ane-h18-pack.py.
 
-For the add program the packed sections must be byte-identical to the
-hardware-validated image (the add fixture runs 100 of 100 calls on the M6 with
-exactly these bytes). For the matvec program no hardware-validated reference
-exists; the check is that the procedure section grows to two TD records and the
-TD-property record carries the declared TD count.
+For the add program the two packed sections must equal the sections of the
+hardware-validated image (the add fixture runs 100 of 100 calls on the Mac
+mini; only sections 5 and 7 are compared - the rebuilt image's header and its
+pad bytes differ from the original). For the matvec program no
+hardware-validated reference exists; the check is that the procedure section
+grows to two TD records and the TD-property record carries the declared TD
+count.
 
 usage: test_h18_pack.py
 """
@@ -16,10 +18,10 @@ import tempfile
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ADD_BASE = "/home/joshuawarren/scratch/w91-m6h18-prep3/packs/ane_h18_prog-add.bin"
-ADD_HWX = "/home/joshuawarren/scratch/w73/m6-prog/add-h18.hwx"
-MV_BASE = "/home/joshuawarren/scratch/w91/mv18/ane_h18_prog-mv64.bin"
-MV_HWX = "/home/joshuawarren/scratch/w91/mv18/mv64.hwx"
+ADD_BASE = os.path.join(HERE, "fixtures", "add.prog.bin")
+ADD_HWX = os.path.join(HERE, "fixtures", "add.hwx")
+MV_BASE = os.path.join(HERE, "fixtures", "mv64.prog.bin")
+MV_HWX = os.path.join(HERE, "fixtures", "mv64.hwx")
 
 
 def secs(f):
@@ -46,7 +48,7 @@ add, add_path = run(ADD_BASE, ADD_HWX)
 ref = secs(ADD_BASE)
 assert add[5] == ref[5], "add sec5 differs:\n%s\n%s" % (add[5].hex(), ref[5].hex())
 assert add[7] == ref[7], "add sec7 differs:\n%s\n%s" % (add[7].hex(), ref[7].hex())
-print("add: sec5 and sec7 byte-identical to the hardware-validated image")
+print("add: sec5 and sec7 equal the hardware-validated image's sections (image header and pad bytes are not compared)")
 
 mv, mv_path = run(MV_BASE, MV_HWX)
 count, tdcount = struct.unpack_from("<I", mv[5], 0)[0], struct.unpack_from("<I", mv[5], 0x28)[0]

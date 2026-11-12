@@ -40,7 +40,7 @@ def threads(hwx):
     p, out = 32, []
     for _ in range(n):
         cmd, cs = struct.unpack_from("<II", d, p)
-        if cmd == 0x4 and cs >= 0x100:
+        if cmd == 0x4 and cs >= 0x840:
             flav = struct.unpack_from("<I", d, p + 8)[0]
             if flav == 4:
                 base = p + 16
