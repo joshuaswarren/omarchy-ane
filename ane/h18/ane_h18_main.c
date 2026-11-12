@@ -344,6 +344,7 @@ struct ane_h18 {
 	bool map_retained;			/* a short unmap kept the domain and the image: no retry, no removal, reboot required (the module is pinned) */
 	bool module_pinned;			/* __module_get() taken once: a retained image or surface must not outlive the module code; released only by reboot */
 	bool prog_cleaned;			/* the program stage unloaded the program or power-cycled the domain: the ANE holds no program, so nothing needs a reboot */
+	bool domain_down;			/* the failpath recovery powered the domain down and has not brought it back: no register of the ANE may be touched */
 	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the running call, for the finish-event peek that logs nothing */
 	u64 call_t0, call_t1;	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
 	unsigned int hs_mal_n, mal_cursor, mal_slots, mal_bit;
@@ -1540,6 +1541,16 @@ static int ane_h18_chan_poll(struct ane_h18 *ane, unsigned int t, u64 *digest, u
 	return ret;
 }
 
+/* True when the failpath recovery left the ANE domain powered down: no MMIO read of the ANE may run while it is. The one decision, so every post-failure
+ * reader asks it instead of each open-coding its own gate. */
+static bool ane_h18_domain_gone(struct ane_h18 *ane)
+{
+	if (!ane->domain_down)
+		return false;
+	dev_info(ane->dev, "ane_h18: the ANE domain is down, register reads are skipped\n");
+	return true;
+}
+
 /* Read only look at the rings and the IPI pending register: what the firmware posted that nobody answered. A nonzero line of a firmware-to-host ring or the
  * terminal ring is logged (at most 24 lines of 16 bytes per ring, 4 when `full` is false, the rest counted), the first two slots of every host-to-firmware ring
  * are logged, and so is the pending register. With `full` the terminal ring text is logged too: the change snapshots leave it out, six of them with the text
@@ -1551,6 +1562,8 @@ static void ane_h18_chan_snapshot(struct ane_h18 *ane, const char *when, bool fu
 	unsigned int i, k, lines, more;
 	u32 pend = 0;
 
+	if (ane_h18_domain_gone(ane))
+		return;
 	if (ane->ipi_pending) {
 		dev_info(ane->dev, "ane_h18 chan snapshot %s: read IPI pending pa=%#llx\n", when, ane->soc->engine_pa + ANE_H18_IPI_PENDING_OFF);
 		pend = readl(ane->ipi_pending);
@@ -2001,12 +2014,14 @@ static void ane_h18_failpath_recover(struct ane_h18 *ane)
 	int failed;
 
 	failed = ane_h18_psd_off(ane);
+	ane->domain_down = true;
 	dev_err(ane->dev, "ane_h18 prog: the firmware did not answer the unload, the ANE domain was powered down (%d slots did not acknowledge)\n", failed);
 	msleep(100);
 	if (ane_h18_psd_up(ane, "recover")) {
 		dev_err(ane->dev, "ane_h18 prog: the ANE domain did not come back up, the program may still be resident\n");
 		return;
 	}
+	ane->domain_down = false;
 	ane->rtk_ap_on = false;
 	ane->rtk_ap_acked = false;
 	ane->rtk_iop_acked = false;
@@ -2289,8 +2304,8 @@ fail:
 	/* A command or the call timed out. The program and the process may still be resident, so the unload is tried anyway: a firmware that only lost the finish
 	 * event answers it and the ANE holds nothing. The recovery runs only on -ETIMEDOUT or -EBUSY (an unanswered reply wait, or the IO slot of an earlier
 	 * unanswered command that is not ours to send on). A command the firmware answers is taken as done without parsing the reply, so a firmware that answers
-	 * DESTROY_PROGRAM with a refusal leaves the program resident with prog_cleaned already set; only an unanswered one ends in the power-cycle below, which
-	 * resets the firmware and drops the program. */
+	 * DESTROY_PROGRAM with a refusal leaves the program resident with prog_cleaned set; only an unanswered one ends in the power-cycle in
+	 * ane_h18_failpath_recover, which resets the firmware and sets prog_cleaned once the domain is back and the core started again. */
 	if (ret == -ETIMEDOUT || ret == -EBUSY) {	/* -EBUSY: the IO slot of an earlier unanswered command is not ours */
 		int unanswered = 0, cmdret;
 
@@ -3006,6 +3021,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	if (read_dart) {
 		ret = ane_h18_read_dart_words(ane, "DART0");
 		if (ret) {
+			if (owned_fw)
+				ane_h18_free_owned_image(ane);	/* planned but not mapped: nothing holds the staged image */
 			ane_h18_psd_off(ane);
 			ane_h18_result(ane, "boot", "FAIL", "dart-read-refused");
 			return ret;
@@ -3067,7 +3084,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 			msgs += ane_h18_po_pop(ane, chan_off, tag, po);
 		}
 	}
-	ane_h18_read_scratch_words(ane, "end");
+	if (!ane_h18_domain_gone(ane))
+		ane_h18_read_scratch_words(ane, "end");
 	if (handshake) {
 		if (ane->rtk_ap_on) {
 			hs_ret = ane_h18_handshake(ane);
@@ -3076,6 +3094,12 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 			hs_ret = -ENODEV;
 		}
 		dev_info(ane->dev, "ane_h18 handshake result %d\n", hs_ret);
+	}
+	if (ane->domain_down) {
+		ane_h18_pin_module(ane);
+		dev_emerg(ane->dev, "ane_h18 boot: the domain is still down after the unload recovery, no ANE register is touched; the surfaces stay allocated, reboot required\n");
+		ane_h18_result(ane, "boot", "FAIL", "domain-down-after-recover");
+		return -EIO;
 	}
 	if (rtkit_stop && ane->rtk_ap_on) {
 		/* RTKit shutdown as apple_rtkit_shutdown does it: AP power state QUIESCED, then IOP power state SLEEP once that is acknowledged, then wait for the
@@ -3116,6 +3140,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	}
 	dev_info(ane->dev, "ane_h18 boot running_seen=%u messages=%u final cpu_status=%#x stopped=%d\n", running_seen, msgs, st, stopped);
 	if (!stopped) {
+		ane_h18_pin_module(ane);	/* a running core may still DMA into the surfaces and the image the module owns */
 		dev_emerg(ane->dev, "ane_h18 the core did not stop after RUN was cleared: the PSD slots stay on, reboot required\n");
 		ane_h18_result(ane, "boot", "FAIL", "core-not-stopped");
 		return ret ? ret : -EBUSY;

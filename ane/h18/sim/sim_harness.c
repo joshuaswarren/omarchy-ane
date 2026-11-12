@@ -52,6 +52,7 @@ int sim_nprops;
 u32 sim_prop_refuse;	/* a property id the modelled firmware refuses (ack 1), 0 = none */
 u32 sim_credits_now = 1;
 int sim_rpm_enabled, sim_rpm_gets, sim_rpm_puts, sim_rpm_get_fail;
+int sim_rpm_get_fail_at = -1;	/* PG53: fail the second runtime PM get (the recovery psd_up), -1 = never */
 u32 sim_phandle[SIM_PHANDLE_SLOTS];			/* slots 0.. = the claimed ps domains, a PMP report entry in a slot is a refusal case only */
 struct device_node *sim_phandle_target[SIM_PHANDLE_SLOTS];
 int sim_pd_attached, sim_pd_false_votes, sim_pd_attach_fail, sim_count_error;
@@ -72,8 +73,12 @@ static u8 sim_owned_fw[1572864];	/* the owned_fw trial payload: zeroed, matching
 int sim_start_chan = -1, sim_start_msgs, sim_start_hello;
 u32 sim_po_out_off, sim_alias_credits = 1, sim_hello_min = 11, sim_hello_max = 12, sim_hello_ep, sim_hello_type = 1;
 
+#define ane_t8152_soc sim_soc_t8152_orig	/* the const row keeps its data; the probe sees the writable copy below */
 #include "../ane_h18_soc.c"
+static struct ane_h18_soc ane_t8152_soc_shim;	/* reset_all() copies the row in: a pin may shrink dart_size to refuse a DART0 word */
+#define ane_t8152_soc ane_t8152_soc_shim
 #include "../ane_h18_main.c"
+/* no #undef: harness code above and below both mean the writable copy */
 
 
 
@@ -339,6 +344,8 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		sim_prog_created = 0;
 		return 0;
 	case 0x201:
+		if (sim_prog_mode == 11)	/* PG52: the firmware never answers the unload */
+			return 0xffff;
 		if (!sim_prog_loaded || prog != 0x5a)
 			return 4;
 		if (sim_prog_created)
@@ -707,6 +714,8 @@ static void reset_all(void)
 	memset(sim_dma, 0, sizeof(sim_dma));
 	map_fw = false;
 	sim_rpm_enabled = sim_rpm_gets = sim_rpm_puts = sim_rpm_get_fail = 0;
+	sim_rpm_get_fail_at = -1;
+	ane_t8152_soc_shim = sim_soc_t8152_orig;	/* every probe sees the untouched row unless a pin shrank it */
 	sim_n_iocalls = sim_io_fail = sim_n_dom_live = 0;
 	sim_n_iomaps = 0;
 	sim_start_hello = 0;
@@ -1534,7 +1543,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 52; pass++) {
+		for (pass = 0; pass < 56; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1607,6 +1616,15 @@ static void pos_boot(void)
 				node.has_iommus = false;
 			}
 			if (pass == 51) { prog_iova_bufs = 0x40000000; prog_iova_text = 0x50000000; sim_unmap_short_iova = 0x40000000; }
+			if (pass == 52) sim_prog_mode = 11;
+			if (pass == 53) { sim_prog_mode = 6; sim_rpm_get_fail_at = 1; }
+			if (pass == 54) {
+				owned_fw = true; fw_path = "pin.bin"; hs_prog = false;
+				sim_fw_data = sim_owned_fw; sim_fw_size = sizeof(sim_owned_fw);
+				read_dart = true;
+				ane_t8152_soc_shim.dart_size = 0x1438;	/* the last DART0 word sits outside its window: the read is refused */
+			}
+			if (pass == 55) sim_core_stuck = 1;
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1774,6 +1792,40 @@ static void pos_boot(void)
 					chk(ret == 0 && ok && log_count("the pages are leaked, not freed") == 1 && leaked == 1 && live_other == 0 && sim_owner_module.refs == 1,
 					    "PG51 a short unmap of the 0x40000000 alias keeps that buffer allocated (leaked, never freed) and pins the module, the rest of the run frees clean");
 				}
+				if (pass == 52)
+					chk(ret == -EIO && result("boot", "FAIL", "rtkit-shutdown-incomplete") && sim_prog_n == 5 && sim_prog_ops[4] == 0x201 &&
+					    log_count("DESTROY_PROGRAM was not answered") == 1 && log_count("did not answer the unload") == 1 &&
+					    log_count("the ANE domain is back up") == 1 && sim_rpm_gets == 2 && sim_rpm_puts >= 1 &&
+					    log_count("did not stop after RUN was cleared") == 0,
+					    "PG52 an unanswered DESTROY_PROGRAM power-cycles the domain (runtime PM put then get) and the recovery cleans the program: the stop still runs, the boot never reports core-not-stopped");
+				if (pass == 53) {
+					int gi, touched = 0;
+
+					for (gi = sim_n_events - 1; gi >= 0; gi--)
+						if (sim_events[gi].write == 2 && sim_events[gi].pa == 0xe0)
+							break;
+					for (kk = gi + 1; kk < sim_n_events; kk++)
+						if (!(sim_events[kk].write == 2 && sim_events[kk].pa == 0xe0))
+							touched++;
+					chk(ret == -EIO && result("boot", "FAIL", "domain-down-after-recover") && result("recover", "FAIL", "kernel-psd-power-on-failed") &&
+					    sim_owner_module.refs == 1 && log_count("the ANE domain did not come back up") == 1 &&
+					    gi >= 0 && touched == 0 && sim_rpm_gets == 1 && sim_rpm_puts == 1,
+					    "PG53 a psd_up failure during the recovery leaves domain_down set: the boot FAILs domain-down-after-recover, the module is pinned, and no MMIO access of any ANE window (not even the post-failure snapshot's IPI pending read) happens after the failed get");
+				}
+				if (pass == 54) {
+					int live_img = 0;
+
+					for (kk = 0; kk < sim_n_dma; kk++)
+						live_img += sim_dma[kk].live && sim_dma[kk].size == ANE_H18_FW_IMAGE_SIZE;
+					chk(ret == -EPERM && result("boot", "FAIL", "dart-read-refused") && log_count("refusing read DART0_0x1438 +") == 1 &&
+					    events_in(SIM_DART_PA, SIM_DART_SIZE, 0) == 11 && log_count("owned firmware staged bytes=") == 1 &&
+					    live_img == 0 && sim_n_iomap == sim_n_iounmap,
+					    "PG54 a DART0 read refusal with owned_fw=1 frees the staged owned image (nothing leaks, no window left mapped) and FAILs dart-read-refused");
+				}
+				if (pass == 55)
+					chk(ret == -EBUSY && result("boot", "FAIL", "core-not-stopped") && sim_owner_module.refs == 1 &&
+					    log_count("reboot required") >= 1 && sim_rpm_puts == 0 && sim_n_iounmap == 0,
+					    "PG55 a core that never reports STOPPED after RUN was cleared pins the module: the surfaces and the power reference stay, reboot required");
 				if (pass == 38)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1") && writes() == 0, "PR5 hs_props=3 is refused before any write");
 				if (pass == 36)
