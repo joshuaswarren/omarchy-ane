@@ -312,6 +312,11 @@ module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
 		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe.");
 
+static bool probe_pc;
+module_param(probe_pc, bool, 0444);
+MODULE_PARM_DESC(probe_pc,
+		 "Stage 5 only, with confirm_read=1: after the wait, read only: RVBAR again, EDPRSR, and (only when EDPRSR bit 0, core powered, is set) EDPCSR lo/hi (engine+0x10100a0/+0x10100ac, the sampled PC); the DART translation of the text IOVA; the DART error registers. Off by default.");
+
 static bool probe_fwreg;
 module_param(probe_fwreg, bool, 0444);
 MODULE_PARM_DESC(probe_fwreg,
@@ -634,6 +639,8 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	if ((off == 0x1010310 || off == 0x1010314) && size == 4)
 		return true;
 	/* probe_fwreg: the one register the firmware's start code stores to (two 32-bit halves). */
+	if (probe_pc && (off == 0x10100a0 || off == 0x10100ac) && size == 4)
+		return true;
 	if (probe_fwreg && (off == 0x1140008 || off == 0x114000c) && size == 4 && end <= s->engine_size)
 		return true;
 	if (!in_wrap && !in_rvbar)
@@ -1862,6 +1869,31 @@ static void ane_h15_trace_dump(struct ane_h15 *ane)
 	}
 }
 
+static void ane_h15_dart_error_dump(struct ane_h15 *ane);
+
+/* Stage 5, probe_pc=1: where the core is, read only. EDPCSR is read only when EDPRSR says the core is powered (PU, bit 0). */
+static void ane_h15_pc_dump(struct ane_h15 *ane)
+{
+	u32 rv_lo = 0, rv_hi = 0, sr = 0, pc_lo = 0, pc_hi = 0;
+	struct iommu_domain *dom = ane->domain;
+	u64 pa = dom ? iommu_iova_to_phys(dom, ane->map_iova[0]) : 0;
+
+	if (ane_h15_read_word(ane, "RVBAR_LO", ane->soc->rvbar, &rv_lo) ||
+	    ane_h15_read_word(ane, "RVBAR_HI", ane->soc->rvbar + 4, &rv_hi) ||
+	    ane_h15_read_word(ane, "EDPRSR", 0x1010314, &sr))
+		return;
+	dev_info(ane->dev, "ane_h15 pc: RVBAR=%#x%08x EDPRSR=%#x text iova=%#llx -> pa=%#llx (mapped pa %#llx)\n",
+		 rv_hi, rv_lo, sr, ane->map_iova[0], pa, ane->map_pa[0]);
+	if (sr & 1) {
+		if (!ane_h15_read_word(ane, "EDPCSR_LO", 0x10100a0, &pc_lo) &&
+		    !ane_h15_read_word(ane, "EDPCSR_HI", 0x10100ac, &pc_hi))
+			dev_info(ane->dev, "ane_h15 pc: EDPCSR=%#x%08x\n", pc_hi, pc_lo);
+	} else {
+		dev_info(ane->dev, "ane_h15 pc: EDPRSR PU clear, EDPCSR not read\n");
+	}
+	ane_h15_dart_error_dump(ane);
+}
+
 /* Stage 5, probe_fwreg=1: the two halves of the register the firmware stores to, read only. */
 static void ane_h15_fwreg_dump(struct ane_h15 *ane, const char *when)
 {
@@ -2918,6 +2950,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_fwreg_dump(ane, "after the wait");
 	if (stg == 5 && fw_trace)
 		ane_h15_trace_dump(ane);
+	if (stg == 5 && probe_pc)
+		ane_h15_pc_dump(ane);
 	ane_h15_owned_digest(ane, "after the wait", &data_snap);
 	kvfree(data_snap);
 	data_snap = NULL;
@@ -3120,6 +3154,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
+	if (probe_pc && (stage_idx != 5 || !confirm_read)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=probe_pc: stage=run (5) with confirm_read=1 only\n");
+		return -EINVAL;
+	}
 	if (fw_trace && (fw_trace > 2 || stage_idx != 5 || !confirm_run)) {
 		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=fw_trace: stage=run (5) with confirm_run=1 only, fw_trace 1 or 2\n");
