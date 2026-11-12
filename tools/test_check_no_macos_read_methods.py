@@ -48,6 +48,12 @@ def make_repo():
     repo = tempfile.mkdtemp(prefix="chk-")
     os.makedirs(os.path.join(repo, "tools"))
     shutil.copy(CHECK, os.path.join(repo, "tools"))
+    # the real frozen list names files this scratch repo does not have, which the stale check now reports
+    copy = os.path.join(repo, "tools", os.path.basename(CHECK))
+    with open(copy) as f:
+        body = f.read()
+    with open(copy, "w") as f:
+        f.write(body.replace('if __name__ == "__main__":', "CAPTURED_H17_COUNTS.clear()\nif __name__ == \"__main__\":", 1))
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     with open(os.path.join(repo, "clean.md"), "w") as f:
         f.write("The core stops before its first status write. Register 0x199c is the gate word.\nObserved macOS behaviour: it clears the gate word first (0x10 is the run bit).\n")
@@ -129,6 +135,13 @@ commit(repo)
 expect("frozen captured file that gains a match fails", run(repo), 1, "grew past")
 with open(os.path.join(repo, frozen), "w") as f:
     f.write("clean\n")
+commit(repo)
+expect("frozen captured file cleaned below its recorded count fails", run(repo), 1, "frozen 1")
+os.remove(os.path.join(repo, frozen))
+commit(repo)
+expect("frozen captured file that no longer exists fails", run(repo), 1, "frozen 1")
+with open(os.path.join(repo, frozen), "w") as f:
+    f.write(line)
 commit(repo)
 # baseline: an existing offender may keep its count, not gain
 with open(os.path.join(repo, "old.md"), "w") as f:
