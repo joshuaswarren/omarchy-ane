@@ -164,7 +164,6 @@ MODULE_PARM_DESC(confirm_rtkit,
 		 "stage=rtkit only: required. Stage 6 is stage 5 plus an RTKit management session on the ASC mailbox: it WRITES the mailbox send registers (HELLO reply, endpoint map, STARTEP, power states) and then runs the shutdown handshake. Nobody has run it on an H15 part.");
 
 static bool hold_vote;
-static bool vote_held;	/* shortcut: one device, bring-up module; upgrade if it ever binds twice */
 module_param(hold_vote, bool, 0444);
 MODULE_PARM_DESC(hold_vote,
 		 "Experiment: a passing probe keeps its runtime reference (no pm_runtime_put_sync), so the PMP vote and the ANE domains stay held until rmmod. Splits a PMP crash at vote time from one at release.");
@@ -358,6 +357,7 @@ struct ane_h15 {
 	struct device *pd_dev[ANE_H15_MAX_PD];
 	struct device_link *pd_link[ANE_H15_MAX_PD];
 	int pd_count;
+	bool vote_held;			/* hold_vote: the probe kept its runtime reference */
 	struct device *vote_dev;	/* the PMP vote domain, taken in runtime_resume; NULL when the node has none */
 };
 
@@ -3092,7 +3092,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 	}
 	/* A started core that did not stop keeps its power claim (and its windows, see remove()). */
 	if (!ane->fw_started && hold_vote && !ret) {
-		vote_held = true;
+		ane->vote_held = true;
 		dev_info(&pdev->dev, "hold_vote: runtime reference kept; rmmod releases it\n");
 	} else if (!ane->fw_started) {
 		pm_runtime_put_sync(&pdev->dev);
@@ -3119,8 +3119,8 @@ static void ane_h15_remove(struct platform_device *pdev)
 			  "remove with the firmware released: reboot required\n");
 		return;
 	}
-	if (vote_held) {
-		vote_held = false;
+	if (ane->vote_held) {
+		ane->vote_held = false;
 		dev_info(&pdev->dev, "hold_vote: releasing the held runtime reference\n");
 		pm_runtime_put_sync(&pdev->dev);
 	}

@@ -101,6 +101,8 @@ int sim_pm_get_err;
 int sim_pm_get_fail_at;
 int sim_pm_noidle;
 struct device sim_pd_dev[SIM_MAX_PD];
+struct device_node sim_pd_node[SIM_MAX_PD];
+unsigned int sim_link_flags[SIM_MAX_PD];
 struct device_link sim_pd_link[SIM_MAX_PD];
 int sim_pd_state[SIM_MAX_PD];
 int sim_link_state[SIM_MAX_PD];
@@ -1107,6 +1109,73 @@ static void pos_multi_pd(void)
 		    variant ? "P9 one domain: module attaches nothing"
 			    : "P9 no domain: module attaches nothing");
 	}
+}
+
+/* P10: the PMP vote domain is found by compatible (here the middle entry of
+ * three), linked without runtime PM, taken once per runtime resume and
+ * dropped once per runtime suspend; a failed vote resume holds nothing; a
+ * node with no vote entry (t6031) leaves both callbacks inert. */
+static void pd_counts_reset(void)
+{
+	int i;
+
+	for (i = 0; i < SIM_MAX_PD; i++)
+		sim_pd_dev[i].rpm_get = sim_pd_dev[i].rpm_put = sim_pd_dev[i].rpm_fail = 0;
+}
+
+static int pd_counts_total(void)
+{
+	int i, n = 0;
+
+	for (i = 0; i < SIM_MAX_PD; i++)
+		n += sim_pd_dev[i].rpm_get + sim_pd_dev[i].rpm_put;
+	return n;
+}
+
+static void pos_vote_callbacks(void)
+{
+	const unsigned int plain = DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME | DL_FLAG_RPM_ACTIVE;
+	struct ane_h15 *ane;
+	int i, ret;
+
+	pd_setup(3);
+	pd_counts_reset();
+	node.vote_idx1 = 2;
+	ret = probe_now();
+	ane = platform_get_drvdata(&pdev);
+	chk(ret == 0 && ane && ane->vote_dev == &sim_pd_dev[1],
+	    "P10 vote: the vote domain is the one named by compatible, not the last");
+	chk(sim_link_flags[1] == DL_FLAG_STATELESS &&
+	    sim_link_flags[0] == plain && sim_link_flags[2] == plain,
+	    "P10 vote: linked without runtime PM; the others keep PM_RUNTIME|RPM_ACTIVE");
+	for (i = 0; i < 2; i++) {
+		chk(ane_h15_runtime_resume(&pdev.dev) == 0, "P10 vote: runtime resume returns 0");
+		chk(ane_h15_runtime_suspend(&pdev.dev) == 0, "P10 vote: runtime suspend returns 0");
+	}
+	chk(sim_pd_dev[1].rpm_get == 2 && sim_pd_dev[1].rpm_put == 2,
+	    "P10 vote: one vote taken per resume and one dropped per suspend");
+	chk(sim_pd_dev[0].rpm_get + sim_pd_dev[0].rpm_put +
+	    sim_pd_dev[2].rpm_get + sim_pd_dev[2].rpm_put == 0,
+	    "P10 vote: the callbacks never touch the pmgr domains");
+	sim_pd_dev[1].rpm_fail = 1;
+	chk(ane_h15_runtime_resume(&pdev.dev) < 0 && sim_pd_dev[1].rpm_get == 2,
+	    "P10 vote: a failed vote resume returns the error and holds nothing");
+	sim_pd_dev[1].rpm_fail = 0;
+	remove_if_probed();
+	chk(ane->vote_dev == NULL, "P10 vote: detach clears vote_dev");
+
+	/* no vote entry in the list: t6031 and t8122 behave as before */
+	pd_setup(3);
+	pd_counts_reset();
+	node.vote_idx1 = 0;
+	ret = probe_now();
+	ane = platform_get_drvdata(&pdev);
+	chk(ret == 0 && ane && ane->vote_dev == NULL, "P10 no vote entry: vote_dev stays NULL");
+	chk(sim_link_flags[0] == plain && sim_link_flags[1] == plain && sim_link_flags[2] == plain,
+	    "P10 no vote entry: every domain keeps PM_RUNTIME|RPM_ACTIVE");
+	chk(ane_h15_runtime_resume(&pdev.dev) == 0 && ane_h15_runtime_suspend(&pdev.dev) == 0 &&
+	    pd_counts_total() == 0, "P10 no vote entry: both callbacks are no-ops");
+	remove_if_probed();
 }
 
 /* Common refusal checks for a failed multi-domain probe. */
@@ -4180,6 +4249,7 @@ int main(int argc, char **argv)
 		pos_gate_logic();
 		pos_other_socs();
 		pos_multi_pd();
+		pos_vote_callbacks();
 		pos_stage2();
 		pos_run();
 		pos_run_postwait();

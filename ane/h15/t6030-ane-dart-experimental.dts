@@ -44,8 +44,8 @@
 
 	/* The ANE power vote entry the T6030 display gate's overlay creates.
 	 * Empty fragment: mints the label so &pmp_report_ane resolves through
-	 * __symbols__ at apply time. Voted last: the attach loop powers
-	 * power-domains in list order. */
+	 * __symbols__ at apply time. Listed last; the driver finds the
+	 * vote by its compatible, so the position is only a convention. */
 	fragment@4 {
 		target-path = "/soc/pmp-report@3503c0000/report@5";
 		pmp_report_ane: __overlay__ {

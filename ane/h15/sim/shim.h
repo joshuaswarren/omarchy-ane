@@ -99,11 +99,15 @@ struct device_node {
 	u64 reg_size[2];
 	int n_pd;		/* entries in the node's power-domains property */
 	bool has_iommus;	/* the node has an iommus property (a DART client) */
+	int vote_idx1;		/* 1-based index of the PMP vote entry in power-domains, 0 = none */
 };
 
 struct device {
 	struct device_node *of_node;
 	const char *name;
+	void *drvdata;
+	int rpm_get, rpm_put;	/* resume_and_get / put_sync calls on this device */
+	int rpm_fail;		/* nonzero: resume_and_get fails */
 };
 
 struct platform_device {
@@ -137,10 +141,19 @@ struct of_device_id {
 	const void *data;
 };
 
+struct dev_pm_ops {
+	int (*runtime_suspend)(struct device *dev);
+	int (*runtime_resume)(struct device *dev);
+	int (*runtime_idle)(struct device *dev);
+};
+#define SET_RUNTIME_PM_OPS(suspend_fn, resume_fn, idle_fn) \
+	.runtime_suspend = suspend_fn, .runtime_resume = resume_fn, .runtime_idle = idle_fn,
+
 struct driver_shim {
 	const char *name;
 	bool suppress_bind_attrs;
 	const struct of_device_id *of_match_table;
+	const struct dev_pm_ops *pm;
 };
 
 struct platform_driver {
@@ -404,8 +417,16 @@ static inline int pm_runtime_get_sync(struct device *d)
 }
 static inline int pm_runtime_put_sync(struct device *d)
 {
-	(void)d;
+	d->rpm_put++;
 	return ++sim_pm_put;
+}
+/* A failing resume takes no count (the kernel puts it back itself). */
+static inline int pm_runtime_resume_and_get(struct device *d)
+{
+	if (d->rpm_fail)
+		return -EIO;
+	d->rpm_get++;
+	return 0;
 }
 static inline void pm_runtime_put_noidle(struct device *d)
 {
@@ -665,6 +686,7 @@ extern struct device_link sim_pd_link[SIM_MAX_PD];
 /* 0 = never attached/linked, 1 = live, 2 = released */
 extern int sim_pd_state[SIM_MAX_PD];
 extern int sim_link_state[SIM_MAX_PD];
+extern unsigned int sim_link_flags[SIM_MAX_PD];
 extern int sim_pd_attach;	/* successful attaches */
 extern int sim_pd_detach;	/* detaches of a live slot */
 extern int sim_link_add;	/* successful links */
@@ -686,6 +708,39 @@ static inline int of_count_phandle_with_args(const struct device_node *np,
 	(void)cells_name;
 	return np && np->n_pd > 0 ? np->n_pd : -ENOENT;
 }
+
+/* The power-domains entries as device nodes: the node's vote_idx1 (1-based,
+ * 0 = none) names the PMP vote entry, as the real DT does by compatible. */
+struct of_phandle_args {
+	struct device_node *np;
+	int args_count;
+	u32 args[8];
+};
+extern struct device_node sim_pd_node[SIM_MAX_PD];
+
+static inline int of_parse_phandle_with_args(const struct device_node *np,
+					     const char *list_name,
+					     const char *cells_name, int index,
+					     struct of_phandle_args *out)
+{
+	(void)list_name;
+	(void)cells_name;
+	if (!np || index < 0 || index >= np->n_pd || index >= SIM_MAX_PD)
+		return -ENOENT;
+	sim_pd_node[index].compatible = np->vote_idx1 == index + 1 ?
+		"apple,t6000-pmp-v2-report-entry" : "apple,t6000-pmgr-pwrstate";
+	out->np = &sim_pd_node[index];
+	out->args_count = 0;
+	return 0;
+}
+
+static inline bool of_device_is_compatible(const struct device_node *n,
+					   const char *compat)
+{
+	return n && n->compatible && !strcmp(n->compatible, compat);
+}
+
+static inline void of_node_put(struct device_node *n) { (void)n; }
 
 static inline struct device *dev_pm_domain_attach_by_id(struct device *dev,
 							unsigned int index)
@@ -721,9 +776,9 @@ static inline struct device_link *device_link_add(struct device *consumer,
 	long idx = supplier - sim_pd_dev;
 
 	(void)consumer;
-	(void)flags;
 	if (call == sim_link_fail_at || idx < 0 || idx >= SIM_MAX_PD)
 		return NULL;
+	sim_link_flags[idx] = flags;
 	sim_link_state[idx] = 1;
 	sim_link_add++;
 	return &sim_pd_link[idx];
@@ -752,10 +807,15 @@ static inline void *devm_kzalloc(struct device *d, size_t s, int gfp)
 static inline void platform_set_drvdata(struct platform_device *p, void *v)
 {
 	p->drvdata = v;
+	p->dev.drvdata = v;
 }
 static inline void *platform_get_drvdata(struct platform_device *p)
 {
 	return p->drvdata;
+}
+static inline void *dev_get_drvdata(const struct device *d)
+{
+	return d->drvdata;
 }
 
 

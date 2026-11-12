@@ -146,8 +146,9 @@ class GenTests(unittest.TestCase):
 
     def test_t6030_ane_node_claims_the_five_h15_domains_and_the_vote(self):
         """The ane node carries the five h15 ps words plus the PMP report vote
-        entry, last: the attach loop powers power-domains in list order, so the
-        vote goes in last and comes out first (AneModXReview 2026-11-11). The
+        entry, listed last. The driver finds the vote by its compatible, not by
+        position, and drops it in runtime_suspend before the suppliers are put,
+        so the position is only the overlay's convention. The
         +0x4e0..+0x4f8 words stay unclaimed - they are USB-C PHY domains."""
         if not HAVE_DTC or not shutil.which("fdtget"):
             self.skipTest("no DT tools")
