@@ -42,6 +42,16 @@
 		};
 	};
 
+	/* The ANE power vote entry the T6030 display gate's overlay creates.
+	 * Empty fragment: mints the label so &pmp_report_ane resolves through
+	 * __symbols__ at apply time. Listed last; the driver finds the
+	 * vote by its compatible, so the position is only a convention. */
+	fragment@4 {
+		target-path = "/soc/pmp-report@3503c0000/report@5";
+		pmp_report_ane: __overlay__ {
+		};
+	};
+
 	fragment@2 {
 		target-path = "/soc/power-management@350700000";
 		__overlay__ {
@@ -136,7 +146,11 @@
 				iommus = <&ane_dart0 0>, <&ane_dart1 0>, <&ane_dart2 0>;
 				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
 						<&ps_ane_cpu>, <&ps_ane_td>,
-						<&ps_ane_base>;
+						<&ps_ane_base>, <&pmp_report_ane>;
+				/* Claude review 2026-11-11: the pmgr words at
+				 * +0x4e0..+0x4f8 are USB-C PHY domains, not ANE -
+				 * their sync_state pending is unrelated and claiming
+				 * them on the ane node was wrong (90625ee2). */
 				apple,ane-type = <0xc0>;
 				status = "okay";
 			};

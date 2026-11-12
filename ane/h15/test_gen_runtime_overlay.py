@@ -144,6 +144,31 @@ class GenTests(unittest.TestCase):
             finally:
                 gen.HERE = old
 
+    def test_t6030_ane_node_claims_the_five_h15_domains_and_the_vote(self):
+        """The ane node carries the five h15 ps words plus the PMP report vote
+        entry, listed last. The driver finds the vote by its compatible, not by
+        position, and drops it in runtime_suspend before the suppliers are put,
+        so the position is only the overlay's convention. The
+        +0x4e0..+0x4f8 words stay unclaimed - they are USB-C PHY domains."""
+        if not HAVE_DTC or not shutil.which("fdtget"):
+            self.skipTest("no DT tools")
+        for boot in (True, False):
+            with self.subTest(boot=boot):
+                derived, syms = gen.derive("t6030", boot=boot)
+                names = [l for l, _ in syms]
+                self.assertEqual(names, ["aic", "ps_ane_sys", "pmp_report_ane"],
+                                 "aic, ps_ane_sys and pmp_report_ane label fragments")
+                with tempfile.TemporaryDirectory() as tmp:
+                    blob = Path(tmp) / "o.dtbo"
+                    blob.write_bytes(gen.compile_blob(derived))
+                    pd = subprocess.check_output(
+                        ["fdtget", "-t", "x", str(blob), "/fragment@3/__overlay__/ane@308000000", "power-domains"],
+                        text=True).split()
+                self.assertEqual(len(pd), 6, f"five h15 domains plus the vote entry, got {len(pd)}")
+                self.assertTrue(all(int(v, 16) != 0 for v in pd), "no zero phandle in the list")
+                self.assertEqual(int(pd[-1], 16), 0xffffffff,
+                                 "the last entry is the unresolved external vote reference")
+
     def test_the_committed_header_is_what_the_generator_writes(self):
         if not HAVE_DTC:
             self.skipTest("no dtc")
