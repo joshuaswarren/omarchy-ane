@@ -233,6 +233,11 @@ MODULE_PARM_DESC(sb_wait_ms,
 /* The twelve T6021 grant tunables (ane_t6021_boot.h P-1), written before
  * the SCRATCH handshake and CPU release. Recorded on working T6021 boots;
  * never measured on T6030 before 2026-11-10. */
+static uint dart_tunables;
+module_param(dart_tunables, uint, 0444);
+MODULE_PARM_DESC(dart_tunables,
+		 "Stage=run (5) with map_fw=1, before RUN: 1 = log the nine J514s ADT dart-tunables words of DART instances 0..2, 2 = also write them (masked RMW, old/new logged). Default 0.");
+
 static bool grant_tunables;
 module_param(grant_tunables, bool, 0444);
 MODULE_PARM_DESC(grant_tunables,
@@ -1986,6 +1991,46 @@ static void ane_h15_dart_error_dump(struct ane_h15 *ane)
 	}
 }
 
+/* dart_tunables: the nine dart-tunables-instance-N records of the J514s ADT /arm-io/dart-ane (identical for N = 0, 1, 2;
+ * {register, mask, value}), which m1n1 applies for the DARTs it brings up but not for the ANE's. Read live from the boot
+ * ADT of the M3 Pro (2026-11-12); not taken from another board. */
+static const struct { u32 off; u32 mask; u32 val; } ane_h15_dart_tun[] = {
+	{ 0x20c, 0x800001b7, 0x800001b7 }, { 0x220, 0x000f0f0f, 0x000f0f0f },
+	{ 0x224, 0x00ffffff, 0x00080808 }, { 0x300, 0x00001f31, 0x00000001 },
+	{ 0x308, 0x3ffffffc, 0x10000000 }, { 0x310, 0x3ffffffc, 0x3ffffffc },
+	{ 0x318, 0x00001f31, 0x00000001 }, { 0x320, 0x3ffffffc, 0x01f00000 },
+	{ 0x328, 0x3ffffffc, 0x01f0bffc },
+};
+
+/* dart_tunables=1 logs the nine words of DART instances 0..2; =2 also writes them (masked read-modify-write, each write
+ * logged before and after). Before RUN, with the DARTs powered and attached. A word that does not stick (a locked bank)
+ * shows as old == new in the log. */
+static int ane_h15_dart_tunables(struct ane_h15 *ane)
+{
+	unsigned int inst, i;
+
+	for (inst = 0; inst < 3; inst++) {
+		for (i = 0; i < ARRAY_SIZE(ane_h15_dart_tun); i++) {
+			u32 woff = ane->soc->dart_off + ane_h15_dart_rel[inst] + ane_h15_dart_tun[i].off;
+			u32 old, nv, got;
+
+			if ((u64)woff + 4 > ane->soc->engine_size || woff + 4 > ANE_H15_FATAL_LO)
+				return -EPERM;
+			old = readl_relaxed(ane->engine + woff);
+			nv = (old & ~ane_h15_dart_tun[i].mask) | (ane_h15_dart_tun[i].val & ane_h15_dart_tun[i].mask);
+			if (dart_tunables == 2 && nv != old) {
+				writel(nv, ane->engine + woff);
+				got = readl_relaxed(ane->engine + woff);
+			} else {
+				got = old;
+			}
+			dev_crit(ane->dev, "ane_h15 dart_tunables inst=%u reg=%#x old=%#x want=%#x now=%#x\n",
+				 inst, ane_h15_dart_tun[i].off, old, nv, got);
+		}
+	}
+	return 0;
+}
+
 static int ane_h15_grant_tunables_wr(struct ane_h15 *ane)
 {
 	unsigned int ti;
@@ -2884,6 +2929,15 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		if (ret) {
 			ane_h15_unmap_firmware(ane);
 			ane_h15_result(ane, stg, "FAIL", "grant-tunables-refused");
+			return ret;
+		}
+	}
+
+	if (dart_tunables && stg == 5) {
+		ret = ane_h15_dart_tunables(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "dart-tunables-refused");
 			return ret;
 		}
 	}
