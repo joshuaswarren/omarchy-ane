@@ -1,4 +1,4 @@
-# ane/h18: OPT-IN EXPERIMENTAL H18 ANE0 bring-up for the T8152 (Mac mini M6, J873g)
+# ane/h18: OPT-IN EXPERIMENTAL H18 ANE0 bring-up for the T8152 (Mac mini M6, J873g) and the T8132 (14-inch M5 Max MacBook Pro, K114c)
 
 Nothing in this directory is installed, autoloaded or shipped as working support. Stages dt, psd and power ran once on an M6 (see "Measured"). Stage boot has not run on any machine.
 The module never writes IORVBAR or a mailbox. The ANE firmware is preloaded by iBoot (the ADT
@@ -206,3 +206,14 @@ Stop at the first unexpected result and keep the log. A hang costs one reboot: h
    acknowledged`, then the ASC words, then the return to state 6.
 4. Only after step 3 passed: `psd_slots=2`, then `read_mbox=1`.
 5. Only after step 4 of the stage script's order (two slots, mailbox, CPU_CONTROL) passed: `m6-ane-stage.sh 4`, which runs stage boot once per boot.
+
+## T8132 (14-inch M5 Max MacBook Pro, K114c): diagnostic row
+
+The t8132 row is incomplete by design: asc, rvbar, mbox, scratch, mailbox, rvbar_expect and fw_seg are not yet mapped from a verified current-boot source, so this opt-in admits two stages and refuses `psd`, `power` and `boot`.
+
+- `stage=dt` (t8132): applies an embedded overlay that creates `/soc/ane@5080000000` with `power-domains = <0xa2 0xa3 0xa4>` (the ps_ane_mpm, ps_ane_tdbase and ps_ane_cpu pmgr pwrstate phandles of one base-dtb build) and no PMP report cell. Before anything is pinned or applied, every raw-phandle cell must resolve to a pmgr pwrstate provider whose `reg` is the ANE offset in pmgr1; a shifted or dangling claim refuses. A base-dtb rebuild can shift the pins: re-derive them from the installed base dtb before a rerun.
+- `stage=reads` (t8132, needs the overlay applied, `allow_reads=1`, `pmgr_ps_pa` and `pmgr_ps_mask=0xf`): the read-only register probe behind the pmgr power-state gate. Optionally up to two extra gate registers are re-read per step. Exactly one register is read per write of `next` to `/sys/kernel/debug/ane_h18_rd`: the seven original probe cells first, then Aurora's T6050 cold-boot cells (scratch file, CPU run and status, compute-engine enable, state and error). Every read logs its address at console priority before the readl. No writes, no clocks, no firmware start.
+
+Measured on the machine (2026-11-11): with this overlay and `stage=reads`, the module read all 20 probe registers with no crash and never started the ANE firmware. The same kernel and base dtb with a PMP report cell in the overlay crashed the power-management firmware in both cell orders tried; that is why the overlay carries no PMP cell and the module refuses any power-domains cell that is not a pmgr pwrstate provider.
+
+Host tests for the row: `make sim-dt-pmp sim-dt-lifecycle` (the phandle identity gate and the control lifecycle), `sim_h18 pos-reads-single pos-reads neg-reads` (the arm and step machine, 34 refusal and flow cases) and the `nopwrstateid`, `novotecheck` and `nopdattach` mutation controls that must fail the harness.
