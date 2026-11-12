@@ -224,10 +224,15 @@ def main():
         print("\n".join("  " + g for g in grown))
         return 1
     stale = [f"{n}: {counts.get(n, 0)} matching lines, baseline {base[n]}" for n in sorted(base) if counts.get(n, 0) < base[n]]
-    if stale:
-        print("FAIL: the baseline is higher than the tree. A cleaned file could regain matches up to its old count unnoticed.")
-        print("Lower the baseline: run  python3 tools/check_no_macos_read_methods.py --write-baseline  and commit the file.")
-        print("\n".join("  " + b for b in stale))
+    stale_frozen = [f"{n}: {captured.get(n, 'missing')} matching lines, frozen {c}" for n, c in sorted(CAPTURED_H17_COUNTS.items()) if captured.get(n, -1) < c]
+    if stale or stale_frozen:
+        print("FAIL: the baseline or a frozen captured count is higher than the tree. A cleaned file could regain matches up to its old count unnoticed.")
+        if stale:
+            print("Lower the baseline: run  python3 tools/check_no_macos_read_methods.py --write-baseline  and commit the file.")
+            print("\n".join("  " + b for b in stale))
+        if stale_frozen:
+            print("Frozen captured counts are not rewritten by --write-baseline. Edit CAPTURED_H17_COUNTS in this file: drop the entry (file gone) or lower its count (file cleaned):")
+            print("\n".join("  CAPTURED_H17_COUNTS: " + b for b in stale_frozen))
         return 1
     print(f"ok: no file differs from the baseline ({len(counts)} files still in the backlog)")
     return 0
