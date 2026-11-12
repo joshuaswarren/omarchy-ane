@@ -216,4 +216,4 @@ The t8132 row is incomplete by design: asc, rvbar, mbox, scratch, mailbox, rvbar
 
 Measured on the machine (2026-11-11): with this overlay and `stage=reads`, the module read all 20 probe registers with no crash and never started the ANE firmware. The same kernel and base dtb with a PMP report cell in the overlay crashed the power-management firmware in both cell orders tried; that is why the overlay carries no PMP cell and the module refuses any power-domains cell that is not a pmgr pwrstate provider.
 
-Host tests for the row: `make sim-dt-pmp sim-dt-lifecycle` (the phandle identity gate and the control lifecycle), `sim_h18 pos-reads-single pos-reads neg-reads` (the arm and step machine, 34 refusal and flow cases) and the `nopwrstateid`, `novotecheck` and `nopdattach` mutation controls that must fail the harness.
+Host tests for the row: `make sim-dt-pmp sim-dt-lifecycle` (the phandle identity gate and the control lifecycle), `sim_h18 pos-reads-single pos-reads neg-reads` (the arm and step machine: three positive suites, 19 refusal cases) and the `nopwrstateid`, `novotecheck` and `nopdattach` mutation controls that must fail the harness.

@@ -179,7 +179,7 @@ struct ane_h18_fw_seg {
 struct ane_h18_soc {
 	const char *name;
 	u32 ane_type;
-	bool row_complete;	/* false: windows not yet mapped from the SoC ADT/kext; probe refuses all MMIO stages */
+	bool row_complete;	/* false: windows not yet mapped from the SoC ADT/kext; probe refuses every stage but dt, and reads is the one MMIO stage it allows */
 	u64 asc_pa;
 	u32 asc_size;
 	u64 rvbar_pa;

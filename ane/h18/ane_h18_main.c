@@ -2628,6 +2628,11 @@ static int ane_h18_probe(struct platform_device *pdev)
 			soc_sel->name);
 		return -EPERM;
 	}
+	if (stage_idx == ANE_H18_STAGE_READS && soc_sel != &ane_t8132_soc) {
+		dev_err(&pdev->dev, "ane_h18 %s: stage=reads is the t8132 row's probe; this SoC does not support it\n",
+			soc_sel->name);
+		return -EINVAL;
+	}
 	if (stage_idx == ANE_H18_STAGE_READS &&
 	    !of_property_present(pdev->dev.of_node, "power-domains")) {
 		dev_err(&pdev->dev, "ane_h18 %s: stage=reads requires power-domains (the pmgr pwrstate domains of the ANE); a bare node leaves the block gated and the first readl hangs the bus\n",
@@ -2661,8 +2666,15 @@ static int ane_h18_probe(struct platform_device *pdev)
 	} else {
 		ane_h18_report_windows(pdev, ane);
 	}
-	if (stage_idx == ANE_H18_STAGE_DT)
+	if (stage_idx == ANE_H18_STAGE_DT) {
+		if (!soc_sel->row_complete) {
+			/* the windows were reported above, not checked: the row has no verified
+			 * window map yet, so the checked verdict would be a false PASS */
+			ane_h18_result(ane, stage, "PASS", "dt-windows-reported-unchecked");
+			return 0;
+		}
 		return ane_h18_stage_dt(ane, idx);
+	}
 
 	if (stage_idx == ANE_H18_STAGE_READS) {
 		/* Read-only register probe on the engine window (reg index 0, the 32 MiB ADT
@@ -2677,15 +2689,12 @@ static int ane_h18_probe(struct platform_device *pdev)
 		 * clocks, no PMP request from this stage. */
 		struct device_node *pd_np = NULL;
 		u32 ph = 0;
-		int ret2 = -EINVAL;
+		int ret2;
 		unsigned int pd_i;
 
 		/* first, before any hardware or power request: verify what each power-domains
-		 * phandle points at */
-		if (!ane->kpsd) {
-			ane_h18_result(ane, stage, "FAIL", "reads-needs-power-domains");
-			return -EPERM;
-		}
+		 * phandle points at. The probe above already refused a bare node, so the node
+		 * has power-domains here and pd_count is meaningful. */
 		if (ane->pd_count < 0) {
 			ane_h18_result(ane, stage, "FAIL", "pd-count-malformed");
 			return -EINVAL;
@@ -2756,8 +2765,8 @@ static int ane_h18_probe(struct platform_device *pdev)
 			}
 			ane->vote_held = true;
 		} else {
-			ret = pm_runtime_get_sync(&pdev->dev);
-			if (ret < 0) {
+			ret2 = pm_runtime_get_sync(&pdev->dev);
+			if (ret2 < 0) {
 				pm_runtime_put_noidle(&pdev->dev);
 				ane_h18_result(ane, stage, "FAIL", "runtime-vote-failed");
 				goto out_unmap_eng;

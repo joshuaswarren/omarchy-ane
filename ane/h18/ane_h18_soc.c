@@ -44,8 +44,10 @@ const struct ane_h18_soc ane_t8152_soc = {
  * The register offsets the shipped kernel extension of this SoC uses match the T8152 row
  * where the two can be compared: IORVBAR sits at engine+0x1050000 exactly like the T8152
  * row's rvbar_pa, while the SCRATCH7 candidates differ by which branch serves which
- * codename, so both stay in the stage=reads list. The engine is exclave/PMP-managed on
- * this SoC: the ADT has no ps-ane node and no PSD slot number is derivable, and the
+ * codename, so both stay in the stage=reads list. Power on this SoC is the pmgr
+ * domains only (the overlay carries ps_ane_mpm, ps_ane_tdbase and ps_ane_cpu and no
+ * PMP report cell): the ADT has no ps-ane node and no PSD slot number is derivable,
+ * and the
  * RTBuddy endpoint table is keyed on ane-type, not a Linux mbox number, so mbox_num
  * stays 0 until a hardware check names it. row_complete stays false until that check
  * validates the inferred windows.
@@ -68,7 +70,7 @@ const struct ane_h18_soc ane_t8132_soc = {
 	.dart_size = 0xc000,
 	.mbox_num = 0,			/* unknown: no ADT property names it */
 	.rvbar_expect = 0x10000000001ULL, /* TEXT IOVA | valid; the plain convention that boots on the T8152 */
-	.psd_slot = { 0, 0 },		/* exclave/PMP-managed on this SoC */
+	.psd_slot = { 0, 0 },		/* no PSD slot: power is the pmgr domains, no PMP cell */
 	.fw_seg = {
 		{ .pa = 0x10000de8000ULL, .size = 0xec000, .iova = 0x10000000000ULL, .write = false },
 		{ .pa = 0x100022c4000ULL, .size = 0x280000, .iova = 0x100000ec000ULL, .write = true },

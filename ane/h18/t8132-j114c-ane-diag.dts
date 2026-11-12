@@ -2,10 +2,11 @@
 /*
  * Apple T8132 (K114c, M5 Max): transient diagnostic ANE0 profile for the ane_h18 probe.
  *
- * Values straight from the saved macOS ADT (ane0@8000000, Main's gather 20261110T163237Z):
+ * Values straight from the saved macOS ADT (ane0@8000000, gathered 2026-11-10):
  * seven MMIO windows in ADT order, ane-type 0x222 (546), no reg-names yet (the window
- * mapping to asc/rvbar/mbox is the open kext question, so the ane_h18 probe refuses every
- * MMIO stage on this row until that lands; stage=reads needs the full row too).
+ * mapping to asc/rvbar/mbox is the open question, so the row stays incomplete and the
+ * ane_h18 probe admits only stage=dt, which maps nothing, and stage=reads, the one
+ * MMIO stage on an incomplete row, gated per read on the pmgr power-state registers).
  * No interrupts and no AIC reference; the ane node carries power-domains = <0xa2 0xa3 0xa4>:
  * the three ANE pmgr domains (ps_ane_mpm 0xa2, ps_ane_tdbase 0xa3, ps_ane_cpu 0xa4; ps_ane_sys
  * comes up as their parent). There is no PMP report cell: Aurora's T6050 ANE node powers the

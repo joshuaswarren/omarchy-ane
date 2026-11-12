@@ -2082,6 +2082,15 @@ static int pos_reads(void)
 	chk(ret == 0 && operated < 0, "R2 reads: step refused once a ps register leaves state");
 	chk(result("reads", "REFUSED", "pmgr-ps-off"), "R2 reads: REFUSED pmgr-ps-off with no gate register configured");
 	ane_h18_unmap(ane_h18_rd_dev);
+
+	/* R3: stage=dt on the incomplete t8132 row reports the windows unchecked:
+	 * no window check ran, so the checked verdict would be a false PASS */
+	reset_all();
+	optin = "t8132"; stage = "dt";
+	set_t8132_node();
+	ret = probe_now();
+	chk(ret == 0 && sim_n_iomap == 0, "R3 dt: incomplete row maps nothing in stage=dt");
+	chk(result("dt", "PASS", "dt-windows-reported-unchecked"), "R3 dt: RESULT PASS dt-windows-reported-unchecked");
 	printf("pos-reads: %s\n", fails ? "FAILED" : "PASS");
 	return fails;
 }
@@ -2329,6 +2338,13 @@ static int neg_reads(void)
 	chk(result("reads", "FAIL", "ps-domain-mismatch"), "N17 reads: FAIL ps-domain-mismatch");
 	chk(sim_rpm_gets == 0 && sim_pd_attached == 0, "N17 reads: no vote and no attach when a PMP cell is present");
 
+
+	/* N19: stage=reads on the t8152 row = refuse: reads is the t8132 row's probe */
+	reset_all();
+	optin = "t8152"; stage = "reads"; allow_reads = true;
+	ret = probe_now();
+	chk(ret == -EINVAL, "N19 reads: t8152 row refuses stage=reads (rc above)");
+	chk(sim_n_iomap == 0 && sim_rpm_gets == 0 && sim_pd_attached == 0, "N19 reads: nothing mapped or claimed on the refusal");
 
 	/* N18: a pmgr_ps_mask other than the on-identity 0xf = refuse at arm */
 	reset_all();
