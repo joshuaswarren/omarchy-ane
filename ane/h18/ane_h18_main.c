@@ -3084,8 +3084,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 			msgs += ane_h18_po_pop(ane, chan_off, tag, po);
 		}
 	}
-	if (!ane_h18_domain_gone(ane))
-		ane_h18_read_scratch_words(ane, "end");
+	ane_h18_read_scratch_words(ane, "end");
 	if (handshake) {
 		if (ane->rtk_ap_on) {
 			hs_ret = ane_h18_handshake(ane);
