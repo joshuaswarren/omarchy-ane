@@ -336,17 +336,17 @@ MODULE_PARM_DESC(probe_ce,
 		 "Stage=run (5): read the 8 words engine+0x18a4000..+0x18a4020 (the H17 CE block; inside the T6021 fatal range, so read only on request), once before RUN. Off by default.");
 static unsigned int enable_stop = 7;
 module_param(enable_stop, uint, 0444);
-MODULE_PARM_DESC(enable_stop, "enable_order only: run macOS 0xc0 steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
+MODULE_PARM_DESC(enable_stop, "enable_order only: run the observed 0xc0 enable steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
 static bool enable_order;
 module_param(enable_order, bool, 0444);
 MODULE_PARM_DESC(enable_order,
-		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the macOS EnableCPUClocksAndPower ane-type 0xc0 order, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
+		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the observed enable order of the 0xc0 ANE type, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
 static bool gate_noop;
 module_param(gate_noop, bool, 0444);
 MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the gate word +0x2b6c with 0x3, its current value (a write that changes nothing), read it back and go on. Off by default.");
 static bool cold_first;
 module_param(cold_first, bool, 0444);
-MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the macOS order. Raw PS writes. Off by default.");
+MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the observed order. Raw PS writes. Off by default.");
 static bool probe_scr;
 module_param(probe_scr, bool, 0444);
 MODULE_PARM_DESC(probe_scr, "Stage=run (5): read engine+0x1840000..+0x1840100 before RUN and after the wait and log the nonzero words, read only. Off by default.");
@@ -2667,7 +2667,7 @@ static int ane_h15_poll_word(struct ane_h15 *ane, void __iomem *a, u64 pa, u32 m
 
 static int ane_h15_enable_order(struct ane_h15 *ane)
 {
-	/* macOS EnableCPUClocksAndPower, ane-type 0xc0 branch: ps words and gate words in macOS's order, constants as macOS writes them. */
+	/* observed enable order of the 0xc0 ANE type: ps words and gate words in the observed order, constants as observed. */
 	static const struct { bool gate; u32 off; u32 val; u32 mask; } st[7] = {
 		{ false, 0xc000, 0xf, 0xff }, { true, 0x248c, 0, 0 }, { false, 0xc008, 0xf, 0xff },
 		{ true, 0x2b6c, 0, 3 }, { false, 0xc008, 0x1000000f, 0x100000ff },
@@ -2727,7 +2727,7 @@ out:
 	return ret;
 }
 
-/* probe_gates=1: the words the macOS 0xc0 order touches, read only. */
+/* probe_gates=1: the words the observed 0xc0 enable order touches, read only. */
 static void ane_h15_gates_dump(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;
