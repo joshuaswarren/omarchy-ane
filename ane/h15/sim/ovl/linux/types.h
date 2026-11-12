@@ -9,5 +9,6 @@ typedef uint8_t u8;
 typedef uint32_t u32;
 typedef u32 phandle;
 
+#define __aligned(x) __attribute__((aligned(x)))
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif

@@ -186,6 +186,9 @@ int of_overlay_fdt_apply(const void *blob, u32 size, int *id, const struct devic
 {
 	(void)base;
 	ev_add("overlay-apply");
+	/* libfdt's fdt_check_header rejects a blob that is not 8-byte aligned in memory */
+	if ((uintptr_t)blob & 7)
+		return -22;
 	ovl_blob = blob;
 	ovl_size = size;
 	*id = 0;
@@ -473,6 +476,8 @@ static void test_boot_variant(void)
 	chk(ovl_blob == ane_h15_ovl_t6030_boot_blob && ovl_size == sizeof(ane_h15_ovl_t6030_boot_blob),
 	    "BO2 t6030 boot: the boot blob is the one applied, not the runtime blob");
 	chk(said("variant=boot"), "BO3 t6030 boot: the log names the variant");
+	chk(((uintptr_t)ane_h15_ovl_t6030_boot_blob & 7) == 0 && ((uintptr_t)ane_h15_ovl_t6030_blob & 7) == 0,
+	    "BO3a t6030 blobs sit at 8-byte aligned addresses (fdt_check_header refuses otherwise)");
 	ane_h15_unregister(&drv);
 	chk(count_prefix("overlay-remove") == 0 && said("reboot to reclaim"),
 	    "BO4 t6030 boot: unload never removes the applied boot overlay");
@@ -489,6 +494,15 @@ static void test_boot_variant(void)
 	sim_ovl_partial = true;
 	chk(ane_h15_register(&drv, "t6031", true, true) == -EIO && !sim_ovl_active,
 	    "BO8 a partially applied boot overlay is removed (never merged fully) before the driver registers");
+	{
+		static u8 buf[32] __aligned(16);
+		int id;
+
+		reset();
+		chk(of_overlay_fdt_apply(buf + 1, sizeof(buf) - 1, &id, NULL) == -22,
+		    "BO9 the shim refuses a deliberately misaligned blob like fdt_check_header");
+		chk(of_overlay_fdt_apply(buf, sizeof(buf), &id, NULL) == 0, "BO10 the same shim accepts an 8-byte aligned blob");
+	}
 }
 
 int main(void)

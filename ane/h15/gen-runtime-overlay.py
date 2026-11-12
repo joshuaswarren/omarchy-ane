@@ -94,10 +94,10 @@ def render():
         bdts, _ = derive(soc, boot=True)
         check_variant(soc, bdts, boot=True)
         bblob = compile_blob(bdts)
-        lines.append(f"static const u8 ane_h15_ovl_{soc}_blob[] = {{")
+        lines.append(f"static const u8 ane_h15_ovl_{soc}_blob[] __aligned(8) = {{")
         for i in range(0, len(blob), 12):
             lines.append("\t" + ", ".join(f"0x{b:02x}" for b in blob[i:i + 12]) + ",")
-        lines += ["};", "", f"static const u8 ane_h15_ovl_{soc}_boot_blob[] = {{"]
+        lines += ["};", "", f"static const u8 ane_h15_ovl_{soc}_boot_blob[] __aligned(8) = {{"]
         for i in range(0, len(bblob), 12):
             lines.append("\t" + ", ".join(f"0x{b:02x}" for b in bblob[i:i + 12]) + ",")
         lines += ["};", "", f"static const struct ane_h15_ovl_sym ane_h15_ovl_{soc}_syms[] = {{"]
@@ -111,7 +111,11 @@ def main(argv):
     out = HERE / "ane_h15_overlay_data.h"
     text = render()
     if argv[1:] == ["--check"]:
-        return 0 if out.exists() and out.read_text() == text else 1
+        # Also require __aligned(8) on every blob in the committed file: of_overlay_fdt_apply() runs fdt_check_header(),
+        # which refuses a blob that is not 8-byte aligned, and the x86 sim cannot see a missing attribute.
+        blobs = re.findall(r"^static const u8 \w+_blob\[\](.*?)= \{", out.read_text(), re.M) if out.exists() else []
+        aligned = bool(blobs) and all("__aligned(8)" in attrs for attrs in blobs)
+        return 0 if out.exists() and out.read_text() == text and aligned else 1
     out.write_text(text)
     print("wrote", out, len(text), "bytes")
     return 0
