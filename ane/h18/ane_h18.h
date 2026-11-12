@@ -179,6 +179,7 @@ struct ane_h18_fw_seg {
 struct ane_h18_soc {
 	const char *name;
 	u32 ane_type;
+	bool row_complete;	/* false: windows not yet mapped from the SoC ADT/kext; probe refuses all MMIO stages */
 	u64 asc_pa;
 	u32 asc_size;
 	u64 rvbar_pa;
@@ -198,5 +199,6 @@ struct ane_h18_soc {
 };
 
 extern const struct ane_h18_soc ane_t8152_soc;
+extern const struct ane_h18_soc ane_t8132_soc;
 
 #endif /* __ANE_H18_H__ */

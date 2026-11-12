@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * Apple T8132 (K114c, M5 Max): transient diagnostic ANE0 profile for the ane_h18 probe.
+ *
+ * Values straight from the saved macOS ADT (ane0@8000000, Main's gather 20261110T163237Z):
+ * seven MMIO windows in ADT order, ane-type 0x222 (546), no reg-names yet (the window
+ * mapping to asc/rvbar/mbox is the open kext question, so the ane_h18 probe refuses every
+ * MMIO stage on this row until that lands; stage=reads needs the full row too).
+ * No interrupts and no AIC reference; the ane node carries power-domains = <0xa2 0xa3 0xa4>:
+ * the three ANE pmgr domains (ps_ane_mpm 0xa2, ps_ane_tdbase 0xa3, ps_ane_cpu 0xa4; ps_ane_sys
+ * comes up as their parent). There is no PMP report cell: Aurora's T6050 ANE node powers the
+ * engine through ps_ane_cpu alone, and the PMP firmware took an unhandled SError on the REQ-bit
+ * write in both orders tried on 2026-11-11. ane_h18_dt verifies all three targets (pmgr pwrstate
+ * with the ANE register offset) before the overlay is applied, so a base-dtb rebuild that shifts
+ * a phandle refuses instead of powering a foreign domain. Re-derive all three from the installed
+ * dtb before a rerun.
+ * The dart-ane0 of the ADT is "dart,t8110" and is left to the kernel's own
+ * apple,t8110-dart driver in a later step.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "apple,k114c", "apple,t6050";
+	omarchy,opt-in = "ane-t8132-diagnostic";
+
+	fragment@0 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane@5080000000 {
+				compatible = "apple,t8132-ane";
+				reg = <0x5 0x08000000 0x0 0x2000000>,	/* ADT window 1: 32 MiB */
+				      <0x2 0x80020000 0x0 0x18000>,	/* ADT window 2: 96 KiB */
+				      <0x2 0x80060000 0x0 0x4000>,	/* ADT window 3: 16 KiB */
+				      <0x2 0x84000000 0x0 0x40000>,	/* ADT window 4: 256 KiB */
+				      <0x2 0x12600000 0x0 0xff3ce0>,	/* ADT window 5: ~16 MiB */
+				      <0x5 0x88000000 0x0 0x2000000>,	/* ADT window 6: 32 MiB */
+				      <0x2 0x88030000 0x0 0x4000>;	/* ADT window 7: 16 KiB */
+				apple,ane-type = <546>;
+				/* The three ANE pmgr domains, by explicit phandle (the live FDT carries no
+				 * __symbols__): ps_ane_mpm 0xa2, ps_ane_tdbase 0xa3, ps_ane_cpu 0xa4. Applying
+				 * this overlay against a dtb that lacks any of the three pins fails closed. */
+				power-domains = <0xa2 0xa3 0xa4>;
+				status = "okay";
+			};
+		};
+	};
+};
