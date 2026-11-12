@@ -2429,18 +2429,31 @@ static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when, u8 **sna
 			memcpy(*snap, base + ANE_H15_FW_TEXT_SIZE, ANE_H15_FW_DATA_FILE_SIZE);
 	} else if (snap && *snap) {
 		const u64 *o = (const u64 *)*snap, *n = (const u64 *)(base + ANE_H15_FW_TEXT_SIZE);
-		size_t changed = 0, shown = 0;
+		size_t changed = 0, shown = 0, run = 0, start = 0, nruns = 0, last = 0;
 
-		for (i = 0; i < ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64); i++) {
-			if (o[i] == n[i])
+		/* Report runs of consecutive changed words (offset in DATA, length, first old/new): a footprint of what the firmware wrote. */
+		for (i = 0; i <= ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64); i++) {
+			bool diff = i < ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64) && o[i] != n[i];
+
+			if (diff) {
+				if (!run)
+					start = i;
+				run++;
+				changed++;
 				continue;
-			changed++;
-			if (shown < 64) {
-				dev_info(ane->dev, "ane_h15 data diff +%#zx old=%#llx new=%#llx\n", i * sizeof(u64), o[i], n[i]);
-				shown++;
+			}
+			if (run) {
+				nruns++;
+				last = (start + run - 1) * sizeof(u64);
+				if (shown < 128) {
+					dev_info(ane->dev, "ane_h15 data diff run +%#zx words=%zu first old=%#llx new=%#llx last new=%#llx\n",
+						 start * sizeof(u64), run, o[start], n[start], n[start + run - 1]);
+					shown++;
+				}
+				run = 0;
 			}
 		}
-		dev_info(ane->dev, "ane_h15 data diff: %zu changed 64-bit words, %zu shown\n", changed, shown);
+		dev_info(ane->dev, "ane_h15 data diff: %zu changed 64-bit words in %zu runs, %zu runs shown, last changed word +%#zx\n", changed, nruns, shown, last);
 		kvfree(*snap);
 		*snap = NULL;
 	}
