@@ -64,6 +64,7 @@
  * receipts/2026-10-03-ane-h16).
  */
 #include <linux/bitfield.h>
+#include <crypto/sha2.h>
 #include <linux/bits.h>
 #include <linux/cred.h>
 #include <linux/dma-mapping.h>
@@ -2388,6 +2389,43 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
 	return 0;
 }
 
+/* Read-only fetch evidence for the owned image (map_fw + fw_path): sha256 of TEXT, of the initialised DATA and of the zero tail (BSS), the
+ * count of non-zero 64-bit words in the tail, and CPU_STATUS, logged before RUN and after the wait. A core that executed the image writes
+ * DATA/BSS (stack, globals); a tail that is still all zero and a DATA digest equal to the one before RUN mean it never ran our code.
+ * The buffer is dma_alloc_coherent, so the CPU reads what the core wrote. Nothing is written. */
+static u64 ane_h15_be64(const u8 *p)
+{
+	u64 v = 0;
+	int i;
+
+	for (i = 0; i < 8; i++)
+		v = v << 8 | p[i];
+	return v;
+}
+
+static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when)
+{
+	const u8 *base = ane->owned_fw.va;
+	const u64 *tail;
+	u8 d_text[SHA256_DIGEST_SIZE], d_data[SHA256_DIGEST_SIZE], d_bss[SHA256_DIGEST_SIZE];
+	size_t bss_off = ANE_H15_FW_TEXT_SIZE + ANE_H15_FW_DATA_FILE_SIZE, i, nz = 0;
+	u32 st = 0;
+
+	if (!ane->owned_map || !base || ane->owned_fw.size < ANE_H15_FW_IMAGE_SIZE)
+		return;
+	sha256(base, ANE_H15_FW_TEXT_SIZE, d_text);
+	sha256(base + ANE_H15_FW_TEXT_SIZE, ANE_H15_FW_DATA_FILE_SIZE, d_data);
+	sha256(base + bss_off, ANE_H15_FW_IMAGE_SIZE - bss_off, d_bss);
+	tail = (const u64 *)(base + bss_off);
+	for (i = 0; i < (ANE_H15_FW_IMAGE_SIZE - bss_off) / sizeof(u64); i++)
+		nz += tail[i] != 0;
+	if (ane_h15_read_word(ane, "CPU_STATUS", ane->soc->cpu_status, &st))
+		st = 0xffffffffu;
+	dev_info(ane->dev, "ane_h15 owned image %s: sha256[0..15] text=%016llx%016llx data=%016llx%016llx bss=%016llx%016llx bss_nonzero_words=%zu cpu_status=%#x\n",
+		 when, ane_h15_be64(d_text), ane_h15_be64(d_text + 8), ane_h15_be64(d_data), ane_h15_be64(d_data + 8),
+		 ane_h15_be64(d_bss), ane_h15_be64(d_bss + 8), nz, st);
+}
+
 /* Stage 5, scratch_boot=1: macOS's cold-boot order, never run on an M3. Every write address is logged before the write, so a hang names the
  * last address. Order: 0 to SCRATCH0..7 (macOS's helper clears all eight first), SCRATCH6=1,
  * SCRATCH7=0 with a read back that must read 0 (anything else stops the run before CPU_CONTROL:
@@ -2736,6 +2774,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
+	ane_h15_owned_digest(ane, "before RUN");
 	/* Start the core. From here a reboot may be needed. */
 	ane->fw_started = true;
 	ane->fw_touched = true;
@@ -2792,6 +2831,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
+	ane_h15_owned_digest(ane, "after the wait");
 	/* Stop the core the macOS way: clear RUN, then bit 5, each from a fresh read. */
 	if (ane_h15_read_ctrl(ane, &ctrl) == 0 &&
 	    ane_h15_write_ctrl(ane, ctrl, ctrl & ~ANE_H15_CPU_RUN, "clear RUN") == 0) {
