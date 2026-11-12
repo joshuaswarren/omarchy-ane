@@ -111,7 +111,11 @@ def main(argv):
     out = HERE / "ane_h15_overlay_data.h"
     text = render()
     if argv[1:] == ["--check"]:
-        return 0 if out.exists() and out.read_text() == text else 1
+        # Also require __aligned(8) on every blob in the committed file: of_overlay_fdt_apply() runs fdt_check_header(),
+        # which refuses a blob that is not 8-byte aligned, and the x86 sim cannot see a missing attribute.
+        blobs = re.findall(r"^static const u8 \w+_blob\[\](.*?)= \{", out.read_text(), re.M) if out.exists() else []
+        aligned = bool(blobs) and all("__aligned(8)" in attrs for attrs in blobs)
+        return 0 if out.exists() and out.read_text() == text and aligned else 1
     out.write_text(text)
     print("wrote", out, len(text), "bytes")
     return 0
