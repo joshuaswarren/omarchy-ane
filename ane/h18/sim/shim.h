@@ -772,6 +772,14 @@ static inline size_t iommu_unmap(struct iommu_domain *dom, unsigned long iova, s
 	sim_iorec(SIM_IO_UNMAP, iova, 0, size, 0);
 	return size;
 }
+/* Nothing in the sim maps a page the device reads back, so every lookup is unmapped: the fixed-alias and owned-page checks then refuse, which is the honest
+ * sim answer for paths the fake firmware cannot drive. Not recorded: the iocall log counts real map/unmap calls only. */
+static inline u64 iommu_iova_to_phys(struct iommu_domain *dom, unsigned long iova)
+{
+	(void)dom;
+	(void)iova;
+	return 0;
+}
 static inline void iommu_detach_device(struct iommu_domain *dom, struct device *d) { (void)dom; (void)d; sim_iorec(SIM_IO_DETACH, 0, 0, 0, 0); }
 static inline void iommu_domain_free(struct iommu_domain *dom) { sim_iorec(SIM_IO_FREE, 0, 0, 0, 0); sim_n_dom_live--; free(dom); }
 
@@ -781,6 +789,18 @@ extern unsigned long sim_jiffies;
 static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
 static inline bool time_after(unsigned long a, unsigned long b) { return (long)(b - a) < 0; }
 extern void sim_usleep_hook(void);
+/* ktime: the virtual jiffies plus one microsecond per reading, so a spin loop ends and every stamp is different */
+extern u64 sim_ktime_calls;
+#define NSEC_PER_MSEC 1000000ULL
+static inline u64 ktime_get_ns(void) { return sim_jiffies * NSEC_PER_MSEC + ++sim_ktime_calls * 1000; }
+typedef u64 ktime_t;
+static inline ktime_t ktime_get(void) { return ktime_get_ns(); }
+static inline u64 ktime_to_ms(ktime_t t) { return t / NSEC_PER_MSEC; }
+/* min: plain operands here, no kernel macro machinery */
+#define min(a, b) ((a) < (b) ? (a) : (b))
+static inline void msleep(unsigned int ms) { sim_jiffies += ms ? ms : 1; sim_credits_now = 1; sim_usleep_hook(); }
+#define cpu_relax() ((void)0)
+#define cond_resched() sim_usleep_hook()	/* a yield lets the fake firmware deferred work run: the delayed IO_T2H publication */
 static inline void usleep_range(unsigned long lo, unsigned long hi) { sim_jiffies += (lo + hi) / 2000 + 1; sim_credits_now = 1; sim_usleep_hook(); }
 
 #define ERANGE_UNUSED 0

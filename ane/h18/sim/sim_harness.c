@@ -80,6 +80,7 @@ static size_t sim_blob_len;
 int sim_prog_mode, sim_prog_n, sim_prog_loaded, sim_prog_created, sim_t2h_back, sim_out_written, sim_t2h_posted;
 u32 sim_prog_ops[16];
 int sim_pub_wait, sim_premapped;
+u64 sim_ktime_calls;
 
 /* the file: sections 1 to 5 and 7 (the add program's six), buffers 5 and 6 as inputs and 4 as the output, 0x4000 bytes each; input 5 starts with 0xaa bytes */
 static void make_blob(void)
@@ -267,9 +268,12 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		}
 		if (sim_prog_mode == 3)
 			return 0;
+		int base = sim_t2h_posted;
+
 		for (i = 0; i < 2; i++) {
-			u8 *ev = pool + 0x1000 + i * 0x40;
-			u32 seq = i + 1, k = 0x300, st = i;
+			int sl = base + i;
+			u8 *ev = pool + 0x1000 + sl * 0x40;
+			u32 seq = sl + 1, k = 0x300, st = i;
 
 			memset(ev, 0, 0x28);
 			memcpy(ev, &seq, 4);
@@ -278,12 +282,16 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 			memcpy(ev + 0x10, &prog, 4);
 			memcpy(ev + 0x14, &proc, 4);
 			memcpy(ev + 0x1c, &st, 4);
-			ring[i * 8 + 1] = 0x28;
+			ring[sl * 8 + 1] = 0x28;
 			if (sim_prog_mode == 5) {	/* the length first, the address (the publication) three sleeps later */
 				sim_pub_wait = 3;
 				continue;
 			}
-			ring[i * 8] = sim_dma[0].iova + 0x1000 + i * 0x40;
+			if (sim_prog_mode == 10) {	/* the same, but the publication waits five yields with no sleep in between: only the timed spin's cond_resched runs */
+				sim_pub_wait = 5;
+				continue;
+			}
+			ring[sl * 8] = sim_dma[0].iova + 0x1000 + sl * 0x40;
 			sim_t2h_posted++;
 		}
 		return 0;
@@ -633,6 +641,8 @@ static void reset_all(void)
 	sim_nprops = 0;
 	sim_prop_refuse = 0;
 	dart_inst = 0;
+	prog_out_words = 0;
+	hs_prog_calls = 1;
 	premap_second = 0;
 	sim_premapped = sim_pub_wait = sim_prog_mode = sim_prog_n = sim_prog_loaded = sim_prog_created = sim_t2h_back = sim_out_written = sim_t2h_posted = 0;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
@@ -1457,7 +1467,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 39; pass++) {
+		for (pass = 0; pass < 43; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1510,6 +1520,10 @@ static void pos_boot(void)
 			if (pass == 36) { hs_start = false; hs_prog = false; hs_props = 1; }
 			if (pass == 37) hs_props = 2;
 			if (pass == 38) hs_props = 3;
+			if (pass == 39) { prog_out_words = 20; hs_prog_calls = 2; }
+			if (pass == 40) { hs_prog = false; prog_out_words = 16; }
+			if (pass == 41) hs_prog_calls = 1001;
+			if (pass == 42) { prog_out_words = 16; hs_prog_calls = 1; sim_prog_mode = 10; }
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1548,8 +1562,8 @@ static void pos_boot(void)
 					chk(ret == -EIO && result("boot", "FAIL", "handshake-channel-step-failed") && sim_prog_n == 1 && sim_prog_ops[0] == 0x200 && log_count("rtkit shutdown:") == 1 && live == 0,
 					    "PG8 LOAD_PROGRAM refused by the firmware (acknowledgement 3): FAIL, no further program command, the stop still runs, surfaces freed");
 				if (pass == 22)
-					chk(ret == -EIO && sim_prog_n == 3 && sim_prog_ops[2] == 0x204 && log_count("gave no finish event") == 1 && live == 0 && sim_t2h_posted == 0,
-					    "PG9 a call without a finish event: FAIL, nothing is unloaded (the firmware may be hung), the stop still runs");
+					chk(ret == -EIO && sim_prog_n == 5 && sim_prog_ops[2] == 0x204 && sim_prog_ops[3] == 0x203 && sim_prog_ops[4] == 0x201 && !sim_prog_loaded && log_count("gave no finish event") == 1 && live == 0 && sim_t2h_posted == 0,
+					    "PG9 a call without a finish event: FAIL, the unload is tried anyway and answered so nothing stays resident, the stop still runs");
 				if (pass == 23)
 					chk(ret == -EIO && sim_prog_n == 3 && sim_prog_ops[1] == 0x202 && sim_prog_ops[2] == 0x201 && !sim_prog_loaded, "PG10 CREATE_PROCESS refused: the program is destroyed, no call");
 				if (pass == 28) {
@@ -1580,6 +1594,29 @@ static void pos_boot(void)
 					    "PR2 a refused property write is logged and the sequence goes on to the program");
 				if (pass == 37)
 					chk(ret == 0 && sim_nprops == 5 && sim_prop[2][1] == 0xa1 && sim_prop[2][2] == 1 && sim_prop[0][2] == 1 && sim_prop[3][2] == 1, "PR4 hs_props=2 sends 0xa1 = 1 and the other four as hs_props=1");
+				if (pass == 39) {
+					const char *l1 = strstr(sim_log, "call 1/2 finished in "), *l2 = strstr(sim_log, "call 2/2 finished in ");
+					unsigned long long n1 = l1 ? strtoull(l1 + strlen("call 1/2 finished in "), NULL, 10) : 0, n2 = l2 ? strtoull(l2 + strlen("call 2/2 finished in "), NULL, 10) : 0;
+
+					chk(ret == 0 && ok && sim_prog_n == 10 && sim_t2h_posted == 4 && sim_t2h_back >= 2 && log_count("PROCEDURE_CALL finished after") == 2 && log_count("write doorbell BIT(6)") == 4 && log_count("sequence result 0") == 2 && live == 0,
+					    "PO1 hs_prog_calls=2 prog_out_words=20: the sequence runs twice, each pass loads, calls once and unloads, four IO_T2H events read and given back");
+					chk(n1 > 0 && n2 > 0 && log_pos("call 1/2 finished in ") < log_pos("call 2/2 finished in ") && log_count("call 1/2 finished in ") == 2 && log_count("call 2/2 finished in ") == 2,
+					    "PO2 each call logs 'call N/M finished in X ns' with a nonzero X, in order, plus the ms line");
+					chk(log_count("out buf 4 +0x0: 11223344 11223344 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000\n") == 2 &&
+					    log_count("out buf 4 +0x40: 00000000 00000000 00000000 00000000\n") == 2 && log_count("out buf 4 +0x50") == 0 && log_count("out buf 5") == 0 && log_count("out buf 6") == 0,
+					    "PO3 after each call the first 20 words of the output buffer only are logged, 16 words a line, the last line short, no input buffer");
+				}
+				if (pass == 42) {
+					const char *m1 = strstr(sim_log, "call 1/1 finished in ");
+					unsigned long long nn = m1 ? strtoull(m1 + strlen("call 1/1 finished in "), NULL, 10) : 0;
+
+					chk(ret == 0 && ok && nn > 0 && log_count("call 1/1 finished in ") == 2 && log_count("no latency") == 0 &&
+					    log_count("gave no finish event") == 0 && sim_t2h_posted == 2 && sim_t2h_back == 2 && live == 0,
+					    "PO5 prog_out_words=16 with the finish event arriving five yields after the ack, no sleep in between: the timed spin stamps a real ns latency, no no-latency line");
+				}
+				if (pass == 40 || pass == 41)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1") && writes() == 0 && sim_fw_requests == 0,
+					    pass == 40 ? "PO4 prog_out_words without hs_prog=1 is refused before any write" : "PO4 hs_prog_calls above 1000 is refused before any write");
 				if (pass == 38)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1") && writes() == 0, "PR5 hs_props=3 is refused before any write");
 				if (pass == 36)
@@ -1608,8 +1645,9 @@ static void pos_boot(void)
 					    "PG18 read_dart=1 with hs_prog: the DART exception state (five words, eight bitmap words, at most eight stream records) is read before LOAD_PROGRAM and after the call, never written");
 				}
 				if (pass == 26)
-					chk(ret == -EIO && sim_prog_n == 2 && sim_prog_ops[0] == 0x200 && sim_prog_ops[1] == 0x202 && sim_prog_loaded && live == 0 && log_count("rtkit shutdown:") == 1,
-					    "PG17 CREATE_PROCESS not answered: FAIL, no DESTROY_PROGRAM and nothing else sent to the firmware, the stop still runs and the surfaces are freed afterwards");
+					chk(ret == -EIO && sim_prog_n == 2 && sim_prog_ops[0] == 0x200 && sim_prog_ops[1] == 0x202 && sim_prog_loaded && live == 0 &&
+					    log_count("did not answer the unload") == 1 && log_count("RESULT stage=boot soc=t8152 verdict=FAIL") == 1,
+					    "PG17 CREATE_PROCESS not answered: FAIL, no destroy can go out (the timed-out slot is not ours) and the domain is power-cycled, the stop still runs");
 				if (pass == 25)
 					chk(ret == 0 && ok && sim_t2h_posted == 2 && sim_t2h_back == 2 && log_count("PROCEDURE_CALL finished after") == 1 && log_count("is not in a buffer the firmware was given") == 0 && log_count("IO_T2H slot 0 header=0x") == 1,
 					    "PG16 an IO_T2H slot whose length is written before its address is not consumed until the address is there: both events are read after publication, the call finishes");
