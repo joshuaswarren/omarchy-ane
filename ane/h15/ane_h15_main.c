@@ -64,6 +64,7 @@
  * receipts/2026-10-03-ane-h16).
  */
 #include <linux/bitfield.h>
+#include <crypto/sha2.h>
 #include <linux/bits.h>
 #include <linux/cred.h>
 #include <linux/dma-mapping.h>
@@ -82,6 +83,7 @@
 #include <linux/jiffies.h>
 #include <linux/ktime.h>
 #include <linux/minmax.h>
+#include <linux/mm.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -144,6 +146,11 @@ static bool map_fw;
 module_param(map_fw, bool, 0444);
 MODULE_PARM_DESC(map_fw,
 		 "stage=run only: before RUN attach the ANE to its DART through the iommu API and map the two preloaded firmware segments named by fw_seg. Needs iommus in the node. Default off.");
+
+static unsigned int fw_trace;
+module_param(fw_trace, uint, 0444);
+MODULE_PARM_DESC(fw_trace,
+		 "Stage 5 only (with confirm_run=1), 1 or 2: patch the owned firmware copy's four spinning exception vectors into stubs that store ESR/FAR/ELR/SPSR_EL1 and a vector number into a BSS page (vm 0x300000) the host reads after the wait; 2 adds twelve breadcrumb markers (page +0x40..) at fixed points of the entry code. TEXT differs from the pinned image (digest line shows it). Off by default.");
 
 static bool wrad_patch = true;
 module_param(wrad_patch, bool, 0444);
@@ -226,6 +233,11 @@ MODULE_PARM_DESC(sb_wait_ms,
 /* The twelve T6021 grant tunables (ane_t6021_boot.h P-1), written before
  * the SCRATCH handshake and CPU release. Recorded on working T6021 boots;
  * never measured on T6030 before 2026-11-10. */
+static uint dart_tunables;
+module_param(dart_tunables, uint, 0444);
+MODULE_PARM_DESC(dart_tunables,
+		 "Stage=run (5) with map_fw=1, before RUN: 1 = log the nine J514s ADT dart-tunables words of DART instances 0..2, 2 = also write them (masked RMW, old/new logged). Default 0.");
+
 static bool grant_tunables;
 module_param(grant_tunables, bool, 0444);
 MODULE_PARM_DESC(grant_tunables,
@@ -305,6 +317,51 @@ module_param(pwgate_read, uint, 0444);
 MODULE_PARM_DESC(pwgate_read,
 		 "Stage=wrapper (2) only, rows with a PWGATE window (T6030, T8122, T6031), with confirm_read=1, without fw_seg: after the preflight reads, read the one PWGATE word (T6030 pmgr_ps+0x2b6c, T8122 pmgr_ps+0x272c, T6031 +0x199c) once and log it with bits 1:0 closed or open. Writes nothing. 0 off (default, the stage 2 run is byte-identical). Other values refuse in probe.");
 
+static bool probe_pc;
+module_param(probe_pc, bool, 0444);
+MODULE_PARM_DESC(probe_pc,
+		 "BANNED-CLASS READ (EDPCSR sampled-PC, may hang or reset the SoC), T6030 only. Stage 5 only, with confirm_read=1: after the wait, read only: RVBAR again, EDPRSR, and (only when EDPRSR bit 0, core powered, is set) EDPCSR lo/hi (engine+0x10100a0/+0x10100ac, the sampled PC); the DART translation of the text IOVA; the DART error registers. Off by default.");
+
+static char *dapf_ranges;
+module_param(dapf_ranges, charp, 0444);
+MODULE_PARM_DESC(dapf_ranges,
+		 "Stage=run (5) with map_fw=1, dapf_prog=1: START:END,... (hex, END inclusive, as the ADT dapf-instance-0 holds them), up to 5 records, each inside one 16 KiB page.");
+static bool dapf_prog;
+module_param(dapf_prog, bool, 0444);
+MODULE_PARM_DESC(dapf_prog,
+		 "Stage=run (5) with map_fw=1 and dapf_ranges: map each record's 16 KiB page (IOVA = PA, MMIO read+write) in the ANE DART domain, check DART0+0x208 bit 2 (lock) is clear, then program engine+0x1804000+i*0x40: +4=0, +8 start, +0x10 end, +0x20=1, +0 = 0x31 last, and read each back. Any mismatch stops before RUN. Writes nothing else. Off by default.");
+static bool probe_ce;
+module_param(probe_ce, bool, 0444);
+MODULE_PARM_DESC(probe_ce,
+		 "Stage=run (5): read the 8 words engine+0x18a4000..+0x18a4020 (the H17 CE block; inside the T6021 fatal range, so read only on request), once before RUN. Off by default.");
+static unsigned int enable_stop = 7;
+module_param(enable_stop, uint, 0444);
+MODULE_PARM_DESC(enable_stop, "enable_order only: run macOS 0xc0 steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
+static bool enable_order;
+module_param(enable_order, bool, 0444);
+MODULE_PARM_DESC(enable_order,
+		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the macOS EnableCPUClocksAndPower ane-type 0xc0 order, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
+static bool gate_noop;
+module_param(gate_noop, bool, 0444);
+MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the gate word +0x2b6c with 0x3, its current value (a write that changes nothing), read it back and go on. Off by default.");
+static bool cold_first;
+module_param(cold_first, bool, 0444);
+MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the macOS order. Raw PS writes. Off by default.");
+static bool probe_scr;
+module_param(probe_scr, bool, 0444);
+MODULE_PARM_DESC(probe_scr, "Stage=run (5): read engine+0x1840000..+0x1840100 before RUN and after the wait and log the nonzero words, read only. Off by default.");
+static bool probe_gates;
+module_param(probe_gates, bool, 0444);
+MODULE_PARM_DESC(probe_gates, "Stage=run (5), T6030: read the gate words 0x248c/0x2b6c/0x3b6c and ps 0xc000/0xc008/0x10000, read only, once before RUN. Off by default.");
+static bool probe_dapf;
+module_param(probe_dapf, bool, 0444);
+MODULE_PARM_DESC(probe_dapf,
+		 "Stage=run (5): read the 80 words engine+0x1804000..+0x1804140 (the T6030 DAPF aperture, 5 records x 0x40), read only, once before RUN. Off by default.");
+static bool probe_fwreg;
+module_param(probe_fwreg, bool, 0444);
+MODULE_PARM_DESC(probe_fwreg,
+		 "Stage 5 only, with confirm_read=1 (T6030 row): read engine+0x1140008 and +0x114000c once before RUN and once after the wait, read only. The firmware's start code stores 0x5000fbfc00000000 to PA 0x309140008 (fw text 0x384); +0xc reads 0x5000fbfc afterwards if that store completed. A read in an unrouted block can fault the host: run behind the watchdog gate with steplog. Off by default.");
+
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
@@ -338,6 +395,8 @@ struct ane_h15 {
 	struct iommu_domain *domain;	/* map_fw: the DART domain, NULL when none */
 	u64 map_pa[2], map_iova[2], map_size[2];
 	unsigned int map_n;	/* segments mapped so far */
+	u64 dapf_page[5];	/* dapf_prog: extra MMIO pages mapped, IOVA = PA */
+	unsigned int dapf_pages;
 	bool dom_own;		/* the domain was attached by this module (stage 7 maps into the default DMA domain instead) */
 	/* fw_path with map_fw: the Linux-owned image replaces the iBoot segments. owned_pa holds the physical page behind each 16 KiB
 	 * of owned_fw, read from the default DMA domain before the attach replaces it. */
@@ -620,6 +679,19 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	 * whitelist) sits outside both windows; it is read once by the
 	 * wrapper preflight: a single named address, no writes. */
 	if ((off == 0x1010310 || off == 0x1010314) && size == 4)
+		return true;
+	/* probe_fwreg: the one register the firmware's start code stores to (two 32-bit halves). */
+	if (probe_pc && (off == 0x10100a0 || off == 0x10100ac) && size == 4)
+		return true;
+	if (probe_ce && off >= 0x18a4000 && end <= 0x18a4020 && size == 4 && end <= s->engine_size)
+		return true;
+	if (probe_scr && off >= 0x1840000 && end <= 0x1840100 && size == 4 && end <= s->engine_size)
+		return true;
+	if (dapf_prog && off == 0x1800208 && size == 4)
+		return true;
+	if ((probe_dapf || dapf_prog) && off >= 0x1804000 && end <= 0x1804140 && size == 4 && end <= s->engine_size)
+		return true;
+	if (probe_fwreg && (off == 0x1140008 || off == 0x114000c) && size == 4 && end <= s->engine_size)
 		return true;
 	if (!in_wrap && !in_rvbar)
 		return false;
@@ -1189,6 +1261,11 @@ static void ane_h15_unmap_firmware(struct ane_h15 *ane)
 
 	if (!ane->domain || ane->map_retained)
 		return;
+	while (ane->dapf_pages) {
+		if (!ane_h15_unmap_range(ane, ane->dapf_page[ane->dapf_pages - 1], SZ_16K))
+			return;
+		ane->dapf_pages--;
+	}
 	for (i = 0; i < ane->map_n; i++)
 		if (!ane_h15_unmap_range(ane, ane->map_iova[i], ane->map_size[i]))
 			return;
@@ -1828,6 +1905,177 @@ static void ane_h15_pmgr_dump(struct ane_h15 *ane, const char *when)
 		 v[0], v[1], v[2], v[3], v[4]);
 }
 
+/* Stage 5, fw_trace=1: the trace page the patched vector stubs fill (text patch in fwload.h). */
+static void ane_h15_trace_dump(struct ane_h15 *ane)
+{
+	const u64 *p = ane->owned_fw.va ? (const u64 *)((u8 *)ane->owned_fw.va + ANE_H15_FW_TRACE_VM) : NULL;
+
+	if (!p || !ane->owned_map)
+		return;
+	dev_info(ane->dev, "ane_h15 fw trace: magic=%#llx vector=%llu esr=%#llx far=%#llx elr=%#llx spsr=%#llx\n",
+		 p[0], p[1], p[2], p[3], p[4], p[5]);
+	if (fw_trace > 1) {
+		unsigned int i;
+		char m[ANE_H15_NCRUMB * 4 + 1] = "";
+
+		for (i = 0; i < ANE_H15_NCRUMB; i++)
+			snprintf(m + strlen(m), 5, "%s", p[ANE_H15_CRUMB_OFF / 8 + i] ? "1" : "0");
+		dev_info(ane->dev, "ane_h15 fw crumbs [000 204 228 274 2ec 378 384 38c 414 44c 4d4 590]: %s\n", m);
+	}
+}
+
+static void ane_h15_dart_error_dump(struct ane_h15 *ane);
+
+/* Stage 5, probe_pc=1: where the core is, read only. EDPCSR is read only when EDPRSR says the core is powered (PU, bit 0). */
+static void ane_h15_pc_dump(struct ane_h15 *ane)
+{
+	u32 rv_lo = 0, rv_hi = 0, sr = 0, pc_lo = 0, pc_hi = 0;
+	struct iommu_domain *dom = ane->domain;
+	u64 pa = dom ? iommu_iova_to_phys(dom, ane->map_iova[0]) : 0;
+
+	if (ane_h15_read_word(ane, "RVBAR_LO", ane->soc->rvbar, &rv_lo) ||
+	    ane_h15_read_word(ane, "RVBAR_HI", ane->soc->rvbar + 4, &rv_hi) ||
+	    ane_h15_read_word(ane, "EDPRSR", 0x1010314, &sr))
+		return;
+	dev_info(ane->dev, "ane_h15 pc: RVBAR=%#x%08x EDPRSR=%#x text iova=%#llx -> pa=%#llx (mapped pa %#llx)\n",
+		 rv_hi, rv_lo, sr, ane->map_iova[0], pa, ane->map_pa[0]);
+	if (sr & 1) {
+		if (!ane_h15_read_word(ane, "EDPCSR_LO", 0x10100a0, &pc_lo) &&
+		    !ane_h15_read_word(ane, "EDPCSR_HI", 0x10100ac, &pc_hi))
+			dev_info(ane->dev, "ane_h15 pc: EDPCSR=%#x%08x\n", pc_hi, pc_lo);
+	} else {
+		dev_info(ane->dev, "ane_h15 pc: EDPRSR PU clear, EDPCSR not read\n");
+	}
+	ane_h15_dart_error_dump(ane);
+}
+
+/* Stage 5, probe_fwreg=1: the two halves of the register the firmware stores to, read only. */
+static void ane_h15_fwreg_dump(struct ane_h15 *ane, const char *when)
+{
+	u32 lo = 0, hi = 0;
+
+	if (ane_h15_read_word(ane, "fwreg lo", 0x1140008, &lo) ||
+	    ane_h15_read_word(ane, "fwreg hi", 0x114000c, &hi))
+		return;
+	dev_info(ane->dev, "ane_h15 fwreg %s: +0x1140008=%#x +0x114000c=%#x\n", when, lo, hi);
+}
+
+/* Stage 5, probe_dapf=1: the DAPF aperture words, read only, each logged to the steplog before the read. */
+static void ane_h15_dapf_dump(struct ane_h15 *ane)
+{
+	u32 off, v;
+
+	for (off = 0x1804000; off < 0x1804140; off += 4) {
+		if (ane_h15_read_word(ane, "dapf", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 dapf engine+%#x=%#x\n", off, v);
+	}
+}
+
+/* dapf_prog: the five ADT records, written the way the DART driver replays them (config word last), each read back. */
+static int ane_h15_dapf_prog(struct ane_h15 *ane)
+{
+	u64 st[5], en[5];
+	unsigned int n = 0, i, j;
+	const char *p = dapf_ranges;
+	u32 lock;
+	int ret;
+
+	while (p && *p && n < 5) {
+		int used = 0;
+
+		if (sscanf(p, "%llx:%llx%n", &st[n], &en[n], &used) != 2 || st[n] > en[n] ||
+		    (st[n] & ~(u64)(SZ_16K - 1)) != (en[n] & ~(u64)(SZ_16K - 1))) {
+			dev_err(ane->dev, "ane_h15 dapf_ranges: bad record %u\n", n);
+			return -EINVAL;
+		}
+		p += used;
+		if (*p == ',')
+			p++;
+		n++;
+	}
+	if (!n || (p && *p)) {
+		dev_err(ane->dev, "ane_h15 dapf_ranges: 1 to 5 START:END records required\n");
+		return -EINVAL;
+	}
+	if (!ane->domain)
+		return -EINVAL;
+	for (i = 0; i < n; i++) {
+		u64 pg = st[i] & ~(u64)(SZ_16K - 1);
+
+		for (j = 0; j < ane->dapf_pages; j++)
+			if (ane->dapf_page[j] == pg)
+				break;
+		if (j < ane->dapf_pages)
+			continue;
+		dev_crit(ane->dev, "ane_h15 iommu_map MMIO iova=pa=%#llx size=0x4000 read+write\n", pg);
+		ret = iommu_map(ane->domain, pg, pg, SZ_16K, IOMMU_READ | IOMMU_WRITE | IOMMU_MMIO, GFP_KERNEL);
+		if (ret)
+			return ret;
+		ane->dapf_page[ane->dapf_pages++] = pg;
+		if (iommu_iova_to_phys(ane->domain, pg) != pg)
+			return -EIO;
+	}
+	ret = ane_h15_read_word(ane, "dart0 lock", 0x1800208, &lock);
+	if (ret)
+		return ret;
+	if (lock & BIT(2)) {
+		dev_err(ane->dev, "ane_h15 dapf_prog: DART0+0x208=%#x locked, nothing written\n", lock);
+		return -EPERM;
+	}
+	for (i = 0; i < n; i++) {
+		void __iomem *r = ane->engine + 0x1804000 + i * 0x40;
+		u64 pa = ane->soc->engine_pa + 0x1804000 + i * 0x40;
+		u32 cfg, w20;
+		u64 rs, re;
+
+		ane_h15_step("write DAPF%u start=%#llx end=%#llx pa=%#llx\n", i, st[i], en[i], pa);
+		dev_crit(ane->dev, "ane_h15 write DAPF%u start=%#llx end=%#llx pa=%#llx\n", i, st[i], en[i], pa);
+		writel(0, r + 4);
+		writel(lower_32_bits(st[i]), r + 8);
+		writel(upper_32_bits(st[i]), r + 0xc);
+		writel(lower_32_bits(en[i]), r + 0x10);
+		writel(upper_32_bits(en[i]), r + 0x14);
+		writel(1, r + 0x20);
+		writel(0x31, r);
+		ane_h15_step("read back DAPF%u pa=%#llx\n", i, pa);
+		cfg = readl_relaxed(r);
+		rs = readl_relaxed(r + 8) | (u64)readl_relaxed(r + 0xc) << 32;
+		re = readl_relaxed(r + 0x10) | (u64)readl_relaxed(r + 0x14) << 32;
+		w20 = readl_relaxed(r + 0x20);
+		dev_info(ane->dev, "ane_h15 DAPF%u read back cfg=%#x start=%#llx end=%#llx w20=%#x\n", i, cfg, rs, re, w20);
+		if ((cfg & 0x333) != 0x31 || rs != st[i] || (re | 3) != (en[i] | 3) || (w20 & 0xffff) != 1) {
+			dev_err(ane->dev, "ane_h15 DAPF%u read-back mismatch: stopping before RUN\n", i);
+			return -EIO;
+		}
+	}
+	return 0;
+}
+
+/* Stage 5, probe_ce=1: the CE block words, read only, each logged to the steplog before the read. */
+static void ane_h15_ce_dump(struct ane_h15 *ane)
+{
+	u32 off, v;
+
+	for (off = 0x18a4000; off < 0x18a4020; off += 4) {
+		if (ane_h15_read_word(ane, "ce", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 ce engine+%#x=%#x\n", off, v);
+	}
+}
+
+static void ane_h15_scr_region(struct ane_h15 *ane, const char *when)
+{
+	u32 off, v;
+
+	for (off = 0x1840000; off < 0x1840100; off += 4) {
+		if (ane_h15_read_word(ane, "scrreg", off, &v))
+			return;
+		if (v)
+			dev_info(ane->dev, "ane_h15 scrreg %s engine+%#x=%#x\n", when, off, v);
+	}
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -1907,6 +2155,46 @@ static void ane_h15_dart_error_dump(struct ane_h15 *ane)
 					 (unsigned long)(err & 0x7fffu), tcr, ttbr);
 		}
 	}
+}
+
+/* dart_tunables: the nine dart-tunables-instance-N records of the J514s ADT /arm-io/dart-ane (identical for N = 0, 1, 2;
+ * {register, mask, value}), which m1n1 applies for the DARTs it brings up but not for the ANE's. Read live from the boot
+ * ADT of the M3 Pro (2026-11-12); not taken from another board. */
+static const struct { u32 off; u32 mask; u32 val; } ane_h15_dart_tun[] = {
+	{ 0x20c, 0x800001b7, 0x800001b7 }, { 0x220, 0x000f0f0f, 0x000f0f0f },
+	{ 0x224, 0x00ffffff, 0x00080808 }, { 0x300, 0x00001f31, 0x00000001 },
+	{ 0x308, 0x3ffffffc, 0x10000000 }, { 0x310, 0x3ffffffc, 0x3ffffffc },
+	{ 0x318, 0x00001f31, 0x00000001 }, { 0x320, 0x3ffffffc, 0x01f00000 },
+	{ 0x328, 0x3ffffffc, 0x01f0bffc },
+};
+
+/* dart_tunables=1 logs the nine words of DART instances 0..2; =2 also writes them (masked read-modify-write, each write
+ * logged before and after). Before RUN, with the DARTs powered and attached. A word that does not stick (a locked bank)
+ * shows as old == new in the log. */
+static int ane_h15_dart_tunables(struct ane_h15 *ane)
+{
+	unsigned int inst, i;
+
+	for (inst = 0; inst < 3; inst++) {
+		for (i = 0; i < ARRAY_SIZE(ane_h15_dart_tun); i++) {
+			u32 woff = ane->soc->dart_off + ane_h15_dart_rel[inst] + ane_h15_dart_tun[i].off;
+			u32 old, nv, got;
+
+			if ((u64)woff + 4 > ane->soc->engine_size || woff + 4 > ANE_H15_FATAL_LO)
+				return -EPERM;
+			old = readl_relaxed(ane->engine + woff);
+			nv = (old & ~ane_h15_dart_tun[i].mask) | (ane_h15_dart_tun[i].val & ane_h15_dart_tun[i].mask);
+			if (dart_tunables == 2 && nv != old) {
+				writel(nv, ane->engine + woff);
+				got = readl_relaxed(ane->engine + woff);
+			} else {
+				got = old;
+			}
+			dev_crit(ane->dev, "ane_h15 dart_tunables inst=%u reg=%#x old=%#x want=%#x now=%#x\n",
+				 inst, ane_h15_dart_tun[i].off, old, nv, got);
+		}
+	}
+	return 0;
 }
 
 static int ane_h15_grant_tunables_wr(struct ane_h15 *ane)
@@ -2310,7 +2598,7 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 			s->pwgate_word, s->pwgate_size);
 		return -EINVAL;
 	}
-	pw = ioremap(s->pwgate_pa, s->pwgate_size);
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
 	if (!pw) {
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
@@ -2319,6 +2607,11 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 	v = readl_relaxed(pw + s->pwgate_word);
 	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x\n", word_pa, v);
+	if (pwgate_t6031 == 3) {	/* read only: ioremap and the one readl above, no write, no poll */
+		snprintf(suffix, sz, "pwgate=read-only word=0x%x", v);
+		iounmap(pw);
+		return 0;
+	}
 	if (!(v & ANE_H15_PWGATE_BITS) && pwgate_t6031 == 1) {
 		dev_info(ane->dev, "ane_h15 pwgate already open\n");
 		snprintf(suffix, sz, "pwgate=already-open");
@@ -2353,6 +2646,108 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 	return -ETIMEDOUT;
 }
 
+/* enable_order: the #1595 power-up order, T6030 words. The writes are the whole step: nothing else is touched. */
+static int ane_h15_poll_word(struct ane_h15 *ane, void __iomem *a, u64 pa, u32 mask, u32 want, const char *what)
+{
+	unsigned int i;
+	u32 v = 0;
+
+	ane_h15_step("poll %s begin pa=%#llx mask=%#x want=%#x\n", what, pa, mask, want);
+	for (i = 0; i < 100000; i++) {
+		v = readl_relaxed(a);
+		if ((v & mask) == want) {
+			dev_info(ane->dev, "ane_h15 poll %s ok after %u: %#x\n", what, i + 1, v);
+			return 0;
+		}
+		usleep_range(10, 20);
+	}
+	dev_err(ane->dev, "ane_h15 poll %s timeout: %#x\n", what, v);
+	return -ETIMEDOUT;
+}
+
+static int ane_h15_enable_order(struct ane_h15 *ane)
+{
+	/* macOS EnableCPUClocksAndPower, ane-type 0xc0 branch: ps words and gate words in macOS's order, constants as macOS writes them. */
+	static const struct { bool gate; u32 off; u32 val; u32 mask; } st[7] = {
+		{ false, 0xc000, 0xf, 0xff }, { true, 0x248c, 0, 0 }, { false, 0xc008, 0xf, 0xff },
+		{ true, 0x2b6c, 0, 3 }, { false, 0xc008, 0x1000000f, 0x100000ff },
+		{ false, 0x10000, 0xf, 0xff }, { true, 0x3b6c, 0, 3 },
+	};
+	const struct ane_h15_soc *s = ane->soc;
+	void __iomem *pw;
+	unsigned int i;
+	int ret = 0;
+
+	if (!s->pwgate_pa || s->pwgate_word != 0x2b6c)
+		return -EINVAL;
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
+	if (!pw)
+		return -ENOMEM;
+	if (gate_noop) {
+		u32 v = readl_relaxed(pw + 0x2b6c);
+
+		ane_h15_step("noop gate write %#x pa=%#llx (was %#x)\n", v, s->pwgate_pa + 0x2b6c, v);
+		writel(v, pw + 0x2b6c);
+		dev_info(ane->dev, "ane_h15 gate noop write %#x, reads back %#x\n", v, readl_relaxed(pw + 0x2b6c));
+		iounmap(pw);
+		return 0;
+	}
+	if (cold_first) {
+		static const u32 off[] = { 0xc008, 0xc000 };
+		unsigned int k;
+
+		for (k = 0; k < ARRAY_SIZE(off); k++) {
+			ane_h15_step("cold step: write ps=0x300 pa=%#llx\n", s->pmgr_pa + off[k]);
+			writel(0x300, ane->pmgr + off[k]);
+			ret = ane_h15_poll_word(ane, ane->pmgr + off[k], s->pmgr_pa + off[k], 0x8ff, 0, "ps off");
+			if (ret)
+				goto out;
+			if (!k) {
+				ret = ane_h15_poll_word(ane, pw + 0x2b6c, s->pwgate_pa + 0x2b6c, 3, 3, "gate closed");
+				if (ret)
+					goto out;
+			}
+		}
+	}
+	for (i = 0; i < ARRAY_SIZE(st) && i < enable_stop; i++) {
+		void __iomem *a = (st[i].gate ? pw : ane->pmgr) + st[i].off;
+		u64 pa = (st[i].gate ? s->pwgate_pa : s->pmgr_pa) + st[i].off;
+		const char *what = st[i].gate ? "gate" : "ps";
+
+		ane_h15_step("enable step %u: write %s=%#x pa=%#llx\n", i + 1, what, st[i].val, pa);
+		writel(st[i].val, a);
+		if (!st[i].mask)
+			continue;
+		ret = ane_h15_poll_word(ane, a, pa, st[i].mask, st[i].gate ? 0 : st[i].mask, what);
+		if (ret)
+			break;
+	}
+out:
+	iounmap(pw);
+	return ret;
+}
+
+/* probe_gates=1: the words the macOS 0xc0 order touches, read only. */
+static void ane_h15_gates_dump(struct ane_h15 *ane)
+{
+	const struct ane_h15_soc *s = ane->soc;
+	static const u32 g[] = { 0x248c, 0x2b6c, 0x3b6c }, p[] = { 0xc000, 0xc008, 0x10000 };
+	void __iomem *pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
+	unsigned int i;
+
+	if (!pw || !s->pwgate_pa)
+		return;
+	for (i = 0; i < ARRAY_SIZE(g); i++) {
+		ane_h15_step("read gate pa=%#llx\n", s->pwgate_pa + g[i]);
+		dev_info(ane->dev, "ane_h15 gate +%#x=%#x\n", g[i], readl_relaxed(pw + g[i]));
+	}
+	for (i = 0; i < ARRAY_SIZE(p); i++) {
+		ane_h15_step("read ps pa=%#llx\n", s->pmgr_pa + p[i]);
+		dev_info(ane->dev, "ane_h15 ps +%#x=%#x\n", p[i], readl_relaxed(ane->pmgr + p[i]));
+	}
+	iounmap(pw);
+}
+
 /* ---- stage 2, pwgate_read=1: the PWGATE word, read only ----
  *
  * One 32 bit read of the word the shipped CPU-power step clears (offset from the soc row: T6030 0x2b6c,
@@ -2373,7 +2768,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
 			s->pwgate_word, s->pwgate_size);
 		return -EINVAL;
 	}
-	pw = ioremap(s->pwgate_pa, s->pwgate_size);
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
 	if (!pw) {
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
@@ -2386,6 +2781,78 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
 	snprintf(suffix, sz, "pwgate=%s word=0x%x", (v & ANE_H15_PWGATE_BITS) ? "closed" : "open", v);
 	iounmap(pw);
 	return 0;
+}
+
+/* Read-only fetch evidence for the owned image (map_fw + fw_path): sha256 of TEXT, of the initialised DATA and of the zero tail (BSS), the
+ * count of non-zero 64-bit words in the tail, and CPU_STATUS, logged before RUN and after the wait. A core that executed the image writes
+ * DATA/BSS (stack, globals); a tail that is still all zero and a DATA digest equal to the one before RUN mean it never ran our code.
+ * The buffer is dma_alloc_coherent, so the CPU reads what the core wrote. Nothing is written. */
+static u64 ane_h15_be64(const u8 *p)
+{
+	u64 v = 0;
+	int i;
+
+	for (i = 0; i < 8; i++)
+		v = v << 8 | p[i];
+	return v;
+}
+
+static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when, u8 **snap)
+{
+	const u8 *base = ane->owned_fw.va;
+	const u64 *tail;
+	u8 d_text[SHA256_DIGEST_SIZE], d_data[SHA256_DIGEST_SIZE], d_bss[SHA256_DIGEST_SIZE];
+	size_t bss_off = ANE_H15_FW_TEXT_SIZE + ANE_H15_FW_DATA_FILE_SIZE, i, nz = 0;
+	u32 st = 0;
+
+	if (!ane->owned_map || !base || ane->owned_fw.size < ANE_H15_FW_IMAGE_SIZE)
+		return;
+	sha256(base, ANE_H15_FW_TEXT_SIZE, d_text);
+	sha256(base + ANE_H15_FW_TEXT_SIZE, ANE_H15_FW_DATA_FILE_SIZE, d_data);
+	sha256(base + bss_off, ANE_H15_FW_IMAGE_SIZE - bss_off, d_bss);
+	tail = (const u64 *)(base + bss_off);
+	for (i = 0; i < (ANE_H15_FW_IMAGE_SIZE - bss_off) / sizeof(u64); i++)
+		nz += tail[i] != 0;
+	if (ane_h15_read_word(ane, "CPU_STATUS", ane->soc->cpu_status, &st))
+		st = 0xffffffffu;
+	/* snap: before RUN keep a copy of DATA; after the wait log each changed 64-bit word (offset in DATA, old, new), at most 64, then free it. */
+	if (snap && !*snap) {
+		*snap = kvmalloc(ANE_H15_FW_DATA_FILE_SIZE, GFP_KERNEL);
+		if (*snap)
+			memcpy(*snap, base + ANE_H15_FW_TEXT_SIZE, ANE_H15_FW_DATA_FILE_SIZE);
+	} else if (snap && *snap) {
+		const u64 *o = (const u64 *)*snap, *n = (const u64 *)(base + ANE_H15_FW_TEXT_SIZE);
+		size_t changed = 0, shown = 0, run = 0, start = 0, nruns = 0, last = 0;
+
+		/* Report runs of consecutive changed words (offset in DATA, length, first old/new): a footprint of what the firmware wrote. */
+		for (i = 0; i <= ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64); i++) {
+			bool diff = i < ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64) && o[i] != n[i];
+
+			if (diff) {
+				if (!run)
+					start = i;
+				run++;
+				changed++;
+				continue;
+			}
+			if (run) {
+				nruns++;
+				last = (start + run - 1) * sizeof(u64);
+				if (shown < 128) {
+					dev_info(ane->dev, "ane_h15 data diff run +%#zx words=%zu first old=%#llx new=%#llx last new=%#llx\n",
+						 start * sizeof(u64), run, o[start], n[start], n[start + run - 1]);
+					shown++;
+				}
+				run = 0;
+			}
+		}
+		dev_info(ane->dev, "ane_h15 data diff: %zu changed 64-bit words in %zu runs, %zu runs shown, last changed word +%#zx\n", changed, nruns, shown, last);
+		kvfree(*snap);
+		*snap = NULL;
+	}
+	dev_info(ane->dev, "ane_h15 owned image %s: sha256[0..15] text=%016llx%016llx data=%016llx%016llx bss=%016llx%016llx bss_nonzero_words=%zu cpu_status=%#x\n",
+		 when, ane_h15_be64(d_text), ane_h15_be64(d_text + 8), ane_h15_be64(d_data), ane_h15_be64(d_data + 8),
+		 ane_h15_be64(d_bss), ane_h15_be64(d_bss + 8), nz, st);
 }
 
 /* Stage 5, scratch_boot=1: macOS's cold-boot order, never run on an M3. Every write address is logged before the write, so a hang names the
@@ -2475,6 +2942,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	bool s7_ready = false;
 	char kres[128], pwres[64] = "";
 	struct ane_h15_rtk rtk = { 0 };
+	u8 *data_snap = NULL;
 	int ret;
 
 	if (!confirm_run) {
@@ -2656,6 +3124,32 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "before RUN");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "before RUN");
+	if (stg == 5 && probe_fwreg)
+		ane_h15_fwreg_dump(ane, "before RUN");
+	if (stg == 5 && probe_dapf)
+		ane_h15_dapf_dump(ane);
+	if (stg == 5 && probe_ce)
+		ane_h15_ce_dump(ane);
+	if (stg == 5 && probe_gates)
+		ane_h15_gates_dump(ane);
+	if (stg == 5 && probe_scr)
+		ane_h15_scr_region(ane, "before");
+	if (stg >= 5 && enable_order) {
+		ret = ane_h15_enable_order(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "enable-order-failed");
+			return ret;
+		}
+	}
+	if (stg >= 5 && dapf_prog) {
+		ret = ane_h15_dapf_prog(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "dapf-prog-failed");
+			return ret;
+		}
+	}
 
 	/* pwgate_t6031 (rows with a PWGATE window): macOS's PWGATE gate clear, the
 	 * last action before the core is released. On a poll timeout the run
@@ -2736,6 +3230,16 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
+	if (dart_tunables && stg == 5) {
+		ret = ane_h15_dart_tunables(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "dart-tunables-refused");
+			return ret;
+		}
+	}
+
+	ane_h15_owned_digest(ane, "before RUN", &data_snap);
 	/* Start the core. From here a reboot may be needed. */
 	ane->fw_started = true;
 	ane->fw_touched = true;
@@ -2744,6 +3248,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	else
 		ret = ane_h15_write_ctrl(ane, ctrl, ctrl | ANE_H15_CPU_RUN, "RUN");
 	if (ret) {
+		kvfree(data_snap);
 		ane->fw_started = false;
 		ane->fw_touched = false;
 		ane_h15_unmap_firmware(ane);
@@ -2792,6 +3297,17 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
+	if (stg == 5 && probe_fwreg)
+		ane_h15_fwreg_dump(ane, "after the wait");
+	if (stg == 5 && fw_trace)
+		ane_h15_trace_dump(ane);
+	if (stg == 5 && probe_scr)
+		ane_h15_scr_region(ane, "after");
+	if (stg == 5 && probe_pc)
+		ane_h15_pc_dump(ane);
+	ane_h15_owned_digest(ane, "after the wait", &data_snap);
+	kvfree(data_snap);
+	data_snap = NULL;
 	/* Stop the core the macOS way: clear RUN, then bit 5, each from a fresh read. */
 	if (ane_h15_read_ctrl(ane, &ctrl) == 0 &&
 	    ane_h15_write_ctrl(ane, ctrl, ctrl & ~ANE_H15_CPU_RUN, "clear RUN") == 0) {
@@ -2948,10 +3464,23 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "grant_tunables=1 is stage=run (5) or boot (3) only: refusing\n");
 		return -EINVAL;
 	}
+	/* probe_gates reads ps 0x10000 and probe_pc reads EDPCSR: both only on the T6030 row they were measured on */
+	if ((probe_gates || probe_pc) && soc->pwgate_word != 0x2b6c) {
+		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc: T6030 row only\n");
+		return -EINVAL;
+	}
+	if (enable_order && (stage_idx < 5 || stage_idx > 7 || !dapf_prog || pwgate_t6031)) {
+		dev_err(&pdev->dev, "REFUSED reason=enable_order: needs stage=run and dapf_prog=1, and no pwgate_t6031\n");
+		return -EINVAL;
+	}
+	if (dapf_prog && (stage_idx < 5 || stage_idx > 7 || !map_fw || !dapf_ranges || !fw_seg)) {
+		dev_err(&pdev->dev, "REFUSED reason=dapf_prog: needs stage=run, map_fw=1, fw_seg and dapf_ranges\n");
+		return -EINVAL;
+	}
 	/* pwgate_t6031 refusals, all before any MMIO and before any mapping,
 	 * exactly as scratch_boot is refused on other stages. */
-	if (pwgate_t6031 > 2) {
-		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 2 (got %u)\n", pwgate_t6031);
+	if (pwgate_t6031 > 3) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 3 (got %u)\n", pwgate_t6031);
 		return -EINVAL;
 	}
 	if (pwgate_t6031 && stage_idx != 5 && stage_idx != 3) {
@@ -2991,6 +3520,21 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
+	if (probe_pc && (stage_idx != 5 || !confirm_read)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=probe_pc: stage=run (5) with confirm_read=1 only\n");
+		return -EINVAL;
+	}
+	if (fw_trace && (fw_trace > 2 || stage_idx != 5 || !confirm_run)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=fw_trace: stage=run (5) with confirm_run=1 only, fw_trace 1 or 2\n");
+		return -EINVAL;
+	}
+	if (probe_fwreg && (stage_idx != 5 || !confirm_read)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=probe_fwreg: stage=run (5) with confirm_read=1 only\n");
+		return -EINVAL;
+	}
 	if (pwgate_read > 1) {
 		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=pwgate_read 0 or 1 (got %u)\n", pwgate_read);

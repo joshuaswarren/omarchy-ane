@@ -300,7 +300,15 @@ static inline void bus_write(u64 pa, u32 v)
 }
 
 #define ioremap_np(pa, size) sim_bus_map((pa), (size))
-#define ioremap(pa, size) sim_bus_map((pa), (size))
+/* A plain ioremap() is a POSTED mapping: the Apple pmgr/PWGATE windows take non-posted writes only (a posted write there
+ * resets the SoC on hardware), so the module must never call it. The harness counts the calls. */
+extern int sim_posted_maps;
+static inline void *sim_ioremap_posted(u64 pa, u64 size)
+{
+	sim_posted_maps++;
+	return sim_bus_map(pa, size);
+}
+#define ioremap(pa, size) sim_ioremap_posted((pa), (size))
 static inline void iounmap(void *p)
 {
 	(void)p;
@@ -502,7 +510,20 @@ static inline void release_firmware(const struct firmware *fw)
 	sim_fw_live--;
 }
 void ane_sha256(const void *data, u64 len, u8 out[32]);
+#include <stdlib.h>
+static inline void *kvmalloc(size_t s, int gfp)
+{
+	(void)gfp;
+	return malloc(s);
+}
+static inline void kvfree(const void *p)
+{
+	free((void *)p);
+}
 #define sha256 ane_sha256
+#define SHA256_DIGEST_SIZE 32
+#define le32_to_cpu(x) (x)
+#define cpu_to_le32(x) (x)
 /* ---- DMA API for stage 7: zeroed surfaces at IOVAs far from the firmware segments ---- */
 #define PAGE_SIZE 0x4000UL
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
@@ -554,6 +575,9 @@ static inline void dma_free_coherent(struct device *d, size_t size, void *va, dm
 #define SZ_16K 0x4000ull
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
+#define IOMMU_MMIO 16
+#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
+#define lower_32_bits(n) ((u32)((n) & 0xffffffff))
 #define IORESOURCE_SYSTEM_RAM 1ul
 #define IORES_DESC_NONE 0ul
 enum { REGION_INTERSECTS, REGION_DISJOINT, REGION_MIXED };
