@@ -37,6 +37,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/ioport.h>
 #include <linux/jiffies.h>
+#include <linux/ktime.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -165,6 +166,14 @@ static char *prog_fw = "ane_h18_prog.bin";
 module_param(prog_fw, charp, 0444);
 MODULE_PARM_DESC(prog_fw, "hs_prog=1: the program file name under /lib/firmware. Default ane_h18_prog.bin.");
 
+static unsigned int prog_calls = 1;
+module_param(prog_calls, uint, 0444);
+MODULE_PARM_DESC(prog_calls, "hs_prog=1: how many PROCEDURE_CALLs the one process gets, back to back, 1 to 1000. Default 1.");
+
+static unsigned int prog_out_words;
+module_param(prog_out_words, uint, 0444);
+MODULE_PARM_DESC(prog_out_words, "hs_prog=1: after every PROCEDURE_CALL log the first this-many 32 bit words (the whole buffer if it is smaller) of every output buffer, 16 words a line ('out buf <id> +<offset>: ...'), and the call's latency in ns ('call N/M finished in X ns'). The wait for the finish event then spins instead of sleeping, so the stamp is as early as the poll loop can see the event; it is not the hardware time. Default 0: off, the 1 ms sleeping poll and the ms line only.");
+
 static bool map_fw;
 module_param(map_fw, bool, 0444);
 MODULE_PARM_DESC(map_fw, "Stage=boot: before RUN, attach the ANE to its DART through the iommu API and map the two preloaded firmware segments at their IOVAs. Needs power-domains and iommus in the node. Default off.");
@@ -292,6 +301,8 @@ struct ane_h18 {
 	size_t hs_mal_bytes;
 	unsigned int ack_logs;	/* ack writes logged so far: the address is logged for the first few, then silently */
 	unsigned int snap_left;	/* change snapshots still allowed in the current wait */
+	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the call being timed (NULL = no call is being timed) */
+	u64 call_t0, call_t1;	/* ktime_get_ns() right before the doorbell of PROCEDURE_CALL, and when the poll loop first saw its finish event (0 = not yet) */
 	int mal_err;		/* the first refusal of a firmware request: later polls return it without logging again */
 	bool hs_cmd_in_pool;	/* hs_cmd points into hs_pool: never freed on its own */
 	u64 *mal_ring;		/* the SHAREDMALLOC ring of the published table, NULL until the channel step has checked the table */
@@ -1084,6 +1095,75 @@ static int ane_h18_chan_get(struct ane_h18 *ane, const struct ane_h18_hs_buf *tb
 
 static int ane_h18_chan_poll(struct ane_h18 *ane, unsigned int t, u64 *digest, u32 *last_pend);
 
+static const u8 *ane_h18_prog_cpu(const struct ane_h18 *ane, u64 a, size_t len);
+
+/* The IO_T2H ring of the published table, or NULL. */
+static const struct ane_h18_ring_copy *ane_h18_t2h_ring(const struct ane_h18 *ane)
+{
+	const struct ane_h18_ring_copy *r = NULL;
+	unsigned int i;
+
+	for (i = 0; i < ANE_H18_CH_COUNT; i++)
+		if (ane->ch_rings[i].base && ane->ch_rings[i].type == 1 && !strcmp(ane->ch_names[i], "IO_T2H"))
+			r = &ane->ch_rings[i];
+	return r;
+}
+
+/* An IO_T2H event that says the procedure of our call finished: cookie at +8, state 1 at +0x1c. */
+static bool ane_h18_ev_fin(const u8 *ev)
+{
+	u64 cookie;
+	u32 state;
+
+	memcpy(&cookie, ev + 8, 8);
+	memcpy(&state, ev + 0x1c, 4);
+	return cookie == ANE_H18_PROG_COOKIE && state == 1;
+}
+
+/* The call latency of prog_out_words: call_t0 is taken right before the doorbell write that hands PROCEDURE_CALL to the firmware (the slot is filled a few
+ * instructions earlier; the log line between the two is not counted). call_t1 is ktime_get_ns() of the first poll iteration that read the finish event in the IO_T2H ring,
+ * from the cursor on, without logging or giving a slot back, so the console cannot delay the stamp. It is NOT the hardware completion time: the firmware posted the
+ * event some unknown time before an iteration noticed it (an iteration reads the IPI pending register and looks at two rings; its length is not measured), so the
+ * latency is the call as the host sees it: doorbell latency, the firmware's run and post path, and the poll granularity. */
+static void ane_h18_call_peek(struct ane_h18 *ane)
+{
+	const struct ane_h18_ring_copy *r = ane->call_t2h && !ane->call_t1 ? ane_h18_t2h_ring(ane) : NULL;
+	unsigned int c, n;
+
+	if (!r)
+		return;
+	for (n = 0, c = *ane->call_t2h; n < r->slots; n++, c = (c + 1) % r->slots) {
+		u64 hdr = READ_ONCE(r->base[(size_t)c * 8]), len;
+		const u8 *ev;
+
+		if ((hdr & 1) || hdr == 0)
+			return;
+		dma_rmb();
+		len = READ_ONCE(r->base[(size_t)c * 8 + 1]);
+		ev = len >= 0x20 && len <= 0x1000 ? ane_h18_prog_cpu(ane, hdr, len) : NULL;
+		if (ev && ane_h18_ev_fin(ev)) {
+			ane->call_t1 = ktime_get_ns();
+			return;
+		}
+	}
+}
+
+/* Between two looks at the command slot: sleep, or spin (answering the firmware and looking for the finish event) for up to 1 ms while a call is timed. */
+static void ane_h18_cmd_idle(struct ane_h18 *ane, const u64 *slot)
+{
+	u64 end, digest = 0;
+	u32 last_pend = 0;
+
+	if (!ane->call_t2h) {
+		usleep_range(500, 1000);
+		return;
+	}
+	for (end = ktime_get_ns() + NSEC_PER_MSEC; ktime_get_ns() < end && !(READ_ONCE(slot[0]) & 1); cpu_relax()) {
+		ane_h18_chan_poll(ane, 1, &digest, &last_pend);	/* t = 1: the answers only, no ring digest */
+		ane_h18_call_peek(ane);
+	}
+}
+
 /* One command on the IO ring: the command block (id at +4, optional u32 argument at +8), slot header = its DMA address, doorbell BIT(bit), then wait for the
  * firmware to give the slot back (header | 1) with a zero acknowledgement at +6. Returns the block in *blk for the reply. */
 static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op, u32 len, bool arg_set, u32 arg, const u8 *body, u32 body_len, u8 **blk)
@@ -1118,9 +1198,12 @@ static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op
 	dma_wmb();
 	dev_crit(ane->dev, "ane_h18 write doorbell BIT(%u) pa=%#llx for command %#x slot %u block iova %#llx\n", io->bit, ane->soc->engine_pa + ANE_H18_DOORBELL_OFF, op,
 		 io->cursor, (u64)dma);
+	if (ane->call_t2h)
+		ane->call_t0 = ktime_get_ns();
 	writel(BIT(io->bit), ane->doorbell);
 	for (waited = 0; waited < hs_wait_ms; waited++) {
 		ane_h18_chan_poll(ane, waited, &digest, &last_pend);
+		ane_h18_call_peek(ane);
 		hdr = READ_ONCE(slot[0]);
 		if (hdr & 1) {
 			dma_rmb();
@@ -1133,7 +1216,7 @@ static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op
 				return -EPROTO;	/* not the answer to this command */
 			return ack ? -EREMOTEIO : 0;	/* the firmware answered and refused */
 		}
-		usleep_range(500, 1000);
+		ane_h18_cmd_idle(ane, slot);
 	}
 	dev_err(ane->dev, "ane_h18 cmd %#x: no answer within %ums (header %#llx)\n", op, hs_wait_ms, READ_ONCE(slot[0]));
 	return -ETIMEDOUT;
@@ -1501,12 +1584,9 @@ static void ane_h18_term_log(struct ane_h18 *ane, const char *when)
  * Returns the number of events taken and sets *finished when an event of our cookie had state 1. Nothing is written unless the firmware posted a slot. */
 static unsigned int ane_h18_prog_t2h(struct ane_h18 *ane, unsigned int *cursor, bool *finished)
 {
-	const struct ane_h18_ring_copy *r = NULL;
-	unsigned int i, n = 0;
+	const struct ane_h18_ring_copy *r = ane_h18_t2h_ring(ane);
+	unsigned int n = 0;
 
-	for (i = 0; i < ANE_H18_CH_COUNT; i++)
-		if (ane->ch_rings[i].base && ane->ch_rings[i].type == 1 && !strcmp(ane->ch_names[i], "IO_T2H"))
-			r = &ane->ch_rings[i];
 	if (!r)
 		return 0;
 	while (n < r->slots) {
@@ -1520,13 +1600,8 @@ static unsigned int ane_h18_prog_t2h(struct ane_h18 *ane, unsigned int *cursor, 
 		dev_info(ane->dev, "ane_h18 prog: IO_T2H slot %u header=%#llx len=%#llx\n", *cursor, hdr, len);
 		ev = len >= 0x20 && len <= 0x1000 ? ane_h18_prog_cpu(ane, hdr, len) : NULL;
 		if (ev) {
-			u64 cookie;
-			u32 state;
-
 			ane_h18_prog_dump(ane, "event", ev, len < 0x40 ? len : 0x40);
-			memcpy(&cookie, ev + 8, 8);
-			memcpy(&state, ev + 0x1c, 4);
-			if (cookie == ANE_H18_PROG_COOKIE && state == 1)
+			if (ane_h18_ev_fin(ev))
 				*finished = true;
 		} else {
 			dev_warn(ane->dev, "ane_h18 prog: the event address %#llx is not in a buffer the firmware was given, slot given back unread\n", hdr);
@@ -1666,6 +1741,50 @@ static int ane_h18_premap(struct ane_h18 *ane, struct ane_h18_ring *io)
 	return ret;
 }
 
+/* prog_out_words: wait for the finish event of the call without sleeping, then take the events like the sleeping loop does. The events stay unread (and the console quiet)
+ * until the stamp is taken. Answers the firmware every iteration (the same poll as the 1 ms loop, which digests the rings every 10th ms). Returns the ms waited. */
+static unsigned int ane_h18_call_spin(struct ane_h18 *ane, unsigned int *t2h, unsigned int *got, bool *fin)
+{
+	u64 digest = 0, t0 = ktime_get_ns(), now;
+	u32 last_pend = 0;
+	unsigned int ms = 0, last = ~0u;
+
+	while (!ane->call_t1 && (now = ktime_get_ns()) - t0 < (u64)hs_wait_ms * NSEC_PER_MSEC) {
+		ms = (now - t0) / NSEC_PER_MSEC;
+		ane_h18_chan_poll(ane, ms != last ? ms + 1 : 1, &digest, &last_pend);
+		last = ms;
+		ane_h18_call_peek(ane);
+		cpu_relax();
+	}
+	*got += ane_h18_prog_t2h(ane, t2h, fin);
+	return ms;
+}
+
+/* prog_out_words: every output buffer after a call, the first prog_out_words words, 16 words a line. */
+static void ane_h18_prog_out_dump(struct ane_h18 *ane)
+{
+	const struct ane_h18_pdesc *p = &ane->pd;
+	unsigned int i, k, j;
+
+	for (i = 0; i < p->nio; i++) {
+		const u32 *o = ane->pg_io[i].va;
+		unsigned int words = p->io[i].size / 4;
+
+		if (p->io[i].dir != 1)
+			continue;
+		if (words > prog_out_words)
+			words = prog_out_words;
+		for (k = 0; k < words; k += 16) {
+			char line[16 * 9 + 1];
+			unsigned int n = words - k < 16 ? words - k : 16, pos = 0;
+
+			for (j = 0; j < n; j++)
+				pos += snprintf(line + pos, sizeof(line) - pos, j ? " %08x" : "%08x", o[k + j]);
+			dev_info(ane->dev, "ane_h18 prog: out buf %u +0x%x: %s\n", p->io[i].id, k * 4, line);
+		}
+	}
+}
+
 /* One program on the IO ring after START: allocate the section and buffer surfaces from the file, LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, wait for the
  * finish event, then TERMINATE_PROCESS and DESTROY_PROGRAM. Every reply is logged whole. A command the firmware refuses (acknowledgement not zero) or does not
  * answer ends the sequence; after an unanswered command nothing is unloaded and no buffer is freed before the core stopped (the module frees them with the
@@ -1676,7 +1795,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 	const struct ane_h18_pdesc *p = &ane->pd;
 	const u8 *fw = ane->prog_blob->data;
 	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
-	unsigned int i, t2h = 0, got = 0, waited;
+	unsigned int i, t2h = 0, got = 0, waited, call;
 	u32 prog = ~0u, proc = ~0u, w;
 	bool fin = false, created = false, loaded = false;
 	int ret;
@@ -1785,32 +1904,54 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		memcpy(r + 0x20, &size, 8);
 	}
 	wmb();
-	ret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_PROCEDURE_CALL, 0x60 + p->nio * 0x30, false, 0, cmd + 8, 0x60 + p->nio * 0x30 - 8, &blk);
-	ane_h18_prog_dump(ane, "PROCEDURE_CALL reply", (u8 *)ane->hs_cmd.va, 0x40);
-	if (ret)
-		goto fail;
-	for (waited = 0; waited < hs_wait_ms && !fin; waited++) {
-		u64 digest = 0;
-		u32 last_pend = 0;
+	for (call = 0; call < prog_calls; call++) {
+		fin = false;
+		got = 0;
+		ane->call_t0 = ane->call_t1 = 0;
+		ane->call_t2h = prog_out_words ? &t2h : NULL;
+		ret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_PROCEDURE_CALL, 0x60 + p->nio * 0x30, false, 0, cmd + 8, 0x60 + p->nio * 0x30 - 8, &blk);
+		ane_h18_prog_dump(ane, "PROCEDURE_CALL reply", (u8 *)ane->hs_cmd.va, 0x40);
+		if (ret) {
+			ane->call_t2h = NULL;
+			goto fail;
+		}
+		if (ane->call_t2h) {
+			waited = ane_h18_call_spin(ane, &t2h, &got, &fin);
+			ane->call_t2h = NULL;
+		} else {
+			for (waited = 0; waited < hs_wait_ms && !fin; waited++) {
+				u64 digest = 0;
+				u32 last_pend = 0;
 
-		usleep_range(1000, 1100);
-		ane_h18_chan_poll(ane, waited + 1, &digest, &last_pend);
-		got += ane_h18_prog_t2h(ane, &t2h, &fin);
-	}
-	dev_info(ane->dev, "ane_h18 prog: PROCEDURE_CALL %s after %u ms, %u IO_T2H events\n", fin ? "finished" : "gave no finish event", waited, got);
-	ane_h18_dart_exc(ane, "after the call");
-	for (i = 0; i < p->nio; i++) {
-		const u32 *o = ane->pg_io[i].va;
-		unsigned int k, nz = 0, words = p->io[i].size / 4;
+				usleep_range(1000, 1100);
+				ane_h18_chan_poll(ane, waited + 1, &digest, &last_pend);
+				got += ane_h18_prog_t2h(ane, &t2h, &fin);
+			}
+		}
+		dev_info(ane->dev, "ane_h18 prog: PROCEDURE_CALL %s after %u ms, %u IO_T2H events\n", fin ? "finished" : "gave no finish event", waited, got);
+		ane_h18_dart_exc(ane, "after the call");
+		for (i = 0; i < p->nio; i++) {
+			const u32 *o = ane->pg_io[i].va;
+			unsigned int k, nz = 0, words = p->io[i].size / 4;
 
-		for (k = 0; k < words; k++)
-			nz += o[k] != 0;
-		dev_info(ane->dev, "ane_h18 prog: buffer %u (%s, %#llx bytes): %u nonzero words, first %08x %08x %08x %08x\n", p->io[i].id, p->io[i].dir == 1 ? "output" : "input", p->io[i].size, nz,
-			 words > 0 ? o[0] : 0, words > 1 ? o[1] : 0, words > 2 ? o[2] : 0, words > 3 ? o[3] : 0);
-	}
-	if (!fin) {
-		ret = -ETIMEDOUT;
-		goto fail;
+			for (k = 0; k < words; k++)
+				nz += o[k] != 0;
+			dev_info(ane->dev, "ane_h18 prog: buffer %u (%s, %#llx bytes): %u nonzero words, first %08x %08x %08x %08x\n", p->io[i].id, p->io[i].dir == 1 ? "output" : "input", p->io[i].size, nz,
+				 words > 0 ? o[0] : 0, words > 1 ? o[1] : 0, words > 2 ? o[2] : 0, words > 3 ? o[3] : 0);
+		}
+		if (prog_out_words) {
+			if (!fin)
+				dev_info(ane->dev, "ane_h18 prog: call %u/%u gave no finish event\n", call + 1, prog_calls);
+			else if (ane->call_t1)
+				dev_info(ane->dev, "ane_h18 prog: call %u/%u finished in %llu ns\n", call + 1, prog_calls, ane->call_t1 - ane->call_t0);
+			else
+				dev_info(ane->dev, "ane_h18 prog: call %u/%u finished, the finish event was not seen before the events were read: no latency\n", call + 1, prog_calls);
+			ane_h18_prog_out_dump(ane);
+		}
+		if (!fin) {
+			ret = -ETIMEDOUT;
+			goto fail;
+		}
 	}
 	ret = 0;
 
@@ -2401,6 +2542,10 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	}
 	if (hs_props > 2 || (hs_props && !hs_start)) {
 		ane_h18_result(ane, "boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1");
+		return -EINVAL;
+	}
+	if (((prog_out_words || prog_calls != 1) && !hs_prog) || !prog_calls || prog_calls > 1000) {
+		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; prog_calls is 1 to 1000 and needs hs_prog=1 above 1");
 		return -EINVAL;
 	}
 	if (hs_prog) {

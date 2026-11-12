@@ -781,6 +781,11 @@ extern unsigned long sim_jiffies;
 static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
 static inline bool time_after(unsigned long a, unsigned long b) { return (long)(b - a) < 0; }
 extern void sim_usleep_hook(void);
+/* ktime: the virtual jiffies plus one microsecond per reading, so a spin loop ends and every stamp is different */
+extern u64 sim_ktime_calls;
+#define NSEC_PER_MSEC 1000000ULL
+static inline u64 ktime_get_ns(void) { return sim_jiffies * NSEC_PER_MSEC + ++sim_ktime_calls * 1000; }
+#define cpu_relax() ((void)0)
 static inline void usleep_range(unsigned long lo, unsigned long hi) { sim_jiffies += (lo + hi) / 2000 + 1; sim_credits_now = 1; sim_usleep_hook(); }
 
 #define ERANGE_UNUSED 0
