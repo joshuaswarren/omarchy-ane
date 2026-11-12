@@ -83,6 +83,7 @@
 #include <linux/jiffies.h>
 #include <linux/ktime.h>
 #include <linux/minmax.h>
+#include <linux/mm.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -2403,7 +2404,7 @@ static u64 ane_h15_be64(const u8 *p)
 	return v;
 }
 
-static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when)
+static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when, u8 **snap)
 {
 	const u8 *base = ane->owned_fw.va;
 	const u64 *tail;
@@ -2421,6 +2422,28 @@ static void ane_h15_owned_digest(struct ane_h15 *ane, const char *when)
 		nz += tail[i] != 0;
 	if (ane_h15_read_word(ane, "CPU_STATUS", ane->soc->cpu_status, &st))
 		st = 0xffffffffu;
+	/* snap: before RUN keep a copy of DATA; after the wait log each changed 64-bit word (offset in DATA, old, new), at most 64, then free it. */
+	if (snap && !*snap) {
+		*snap = kvmalloc(ANE_H15_FW_DATA_FILE_SIZE, GFP_KERNEL);
+		if (*snap)
+			memcpy(*snap, base + ANE_H15_FW_TEXT_SIZE, ANE_H15_FW_DATA_FILE_SIZE);
+	} else if (snap && *snap) {
+		const u64 *o = (const u64 *)*snap, *n = (const u64 *)(base + ANE_H15_FW_TEXT_SIZE);
+		size_t changed = 0, shown = 0;
+
+		for (i = 0; i < ANE_H15_FW_DATA_FILE_SIZE / sizeof(u64); i++) {
+			if (o[i] == n[i])
+				continue;
+			changed++;
+			if (shown < 64) {
+				dev_info(ane->dev, "ane_h15 data diff +%#zx old=%#llx new=%#llx\n", i * sizeof(u64), o[i], n[i]);
+				shown++;
+			}
+		}
+		dev_info(ane->dev, "ane_h15 data diff: %zu changed 64-bit words, %zu shown\n", changed, shown);
+		kvfree(*snap);
+		*snap = NULL;
+	}
 	dev_info(ane->dev, "ane_h15 owned image %s: sha256[0..15] text=%016llx%016llx data=%016llx%016llx bss=%016llx%016llx bss_nonzero_words=%zu cpu_status=%#x\n",
 		 when, ane_h15_be64(d_text), ane_h15_be64(d_text + 8), ane_h15_be64(d_data), ane_h15_be64(d_data + 8),
 		 ane_h15_be64(d_bss), ane_h15_be64(d_bss + 8), nz, st);
@@ -2513,6 +2536,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	bool s7_ready = false;
 	char kres[128], pwres[64] = "";
 	struct ane_h15_rtk rtk = { 0 };
+	u8 *data_snap = NULL;
 	int ret;
 
 	if (!confirm_run) {
@@ -2774,7 +2798,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		}
 	}
 
-	ane_h15_owned_digest(ane, "before RUN");
+	ane_h15_owned_digest(ane, "before RUN", &data_snap);
 	/* Start the core. From here a reboot may be needed. */
 	ane->fw_started = true;
 	ane->fw_touched = true;
@@ -2783,6 +2807,7 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 	else
 		ret = ane_h15_write_ctrl(ane, ctrl, ctrl | ANE_H15_CPU_RUN, "RUN");
 	if (ret) {
+		kvfree(data_snap);
 		ane->fw_started = false;
 		ane->fw_touched = false;
 		ane_h15_unmap_firmware(ane);
@@ -2831,7 +2856,9 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_scr_dump(ane, "after the wait");
 	if (stg == 5 && run_pmgr)
 		ane_h15_pmgr_dump(ane, "after the wait");
-	ane_h15_owned_digest(ane, "after the wait");
+	ane_h15_owned_digest(ane, "after the wait", &data_snap);
+	kvfree(data_snap);
+	data_snap = NULL;
 	/* Stop the core the macOS way: clear RUN, then bit 5, each from a fresh read. */
 	if (ane_h15_read_ctrl(ane, &ctrl) == 0 &&
 	    ane_h15_write_ctrl(ane, ctrl, ctrl & ~ANE_H15_CPU_RUN, "clear RUN") == 0) {
