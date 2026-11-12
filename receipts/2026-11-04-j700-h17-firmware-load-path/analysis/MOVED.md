@@ -1,6 +1,6 @@
 # Moved to the private lab store
 
-These captured dumps are no longer in this repository. They live unchanged in the private lab store; each file's sha256 matched at the destination before removal.
+These captured dumps are no longer in this repository. They live unchanged in the private lab store (ane-h17-lab, directory public-repo-moved-20261112, same relative path as here); each file's sha256 matched at the destination before removal.
 
 - `h17-anecmdsend.txt` sha256 8f523df66aa497f30cbff856ffc0924911b8d2be2cd95b228179a9512d0fe7bc
 - `h17-channel-primitive.txt` sha256 a9e98e30dc6131fa7e8f736bd9dfd5393d5214548f41cd05498eb7061d4bede6
@@ -45,3 +45,5 @@ These captured dumps are no longer in this repository. They live unchanged in th
 - `h17-t2h-helper-300.txt` sha256 10f8e7adbc3adada90faa22119df2d90525f1d217979213702db95f82087bde8
 - `h17-t2h-io-command.txt` sha256 8b02e169f01338b0a38e7eabf632f0ade3dae299757af90b67f80bd8d186e439
 - `h17-t2h-token-command-bridge.txt` sha256 14add00b62a28cc65c69102c2ad3442cb44d41b09df3707680ef090bc351aa7f
+
+Any reference to one of these files elsewhere in this repository means the copy at the same relative path in that store.
