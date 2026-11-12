@@ -330,6 +330,26 @@ static bool dapf_prog;
 module_param(dapf_prog, bool, 0444);
 MODULE_PARM_DESC(dapf_prog,
 		 "Stage=run (5) with map_fw=1 and dapf_ranges: map each record's 16 KiB page (IOVA = PA, MMIO read+write) in the ANE DART domain, check DART0+0x208 bit 2 (lock) is clear, then program engine+0x1804000+i*0x40: +4=0, +8 start, +0x10 end, +0x20=1, +0 = 0x31 last, and read each back. Any mismatch stops before RUN. Writes nothing else. Off by default.");
+static bool probe_ce;
+module_param(probe_ce, bool, 0444);
+MODULE_PARM_DESC(probe_ce,
+		 "Stage=run (5): read the 8 words engine+0x18a4000..+0x18a4020 (the H17 CE block; inside the T6021 fatal range, so read only on request), once before RUN. Off by default.");
+static unsigned int enable_stop = 7;
+module_param(enable_stop, uint, 0444);
+MODULE_PARM_DESC(enable_stop, "enable_order only: run macOS 0xc0 steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
+static bool enable_order;
+module_param(enable_order, bool, 0444);
+MODULE_PARM_DESC(enable_order,
+		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the aurora-silicon/linux#1595 power-up order before the DAPF step: ps 0xc000 |= 0xf (poll &0xff), PWGATE word <- 0 (poll &3 == 0), ps 0xc008 |= 0x1000000f (poll &0x100000ff), poll the ack word (PWGATE word + 0x24) == 0. Steplog line before every write and poll. Off by default.");
+static bool gate_noop;
+module_param(gate_noop, bool, 0444);
+MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the gate word +0x2b6c with 0x3, its current value (a write that changes nothing), read it back and go on. Off by default.");
+static bool cold_first;
+module_param(cold_first, bool, 0444);
+MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the macOS order. Raw PS writes. Off by default.");
+static bool probe_gates;
+module_param(probe_gates, bool, 0444);
+MODULE_PARM_DESC(probe_gates, "Stage=run (5), T6030: read the gate words 0x248c/0x2b6c/0x3b6c and ps 0xc000/0xc008/0x10000, read only, once before RUN. Off by default.");
 static bool probe_dapf;
 module_param(probe_dapf, bool, 0444);
 MODULE_PARM_DESC(probe_dapf,
@@ -659,6 +679,8 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 		return true;
 	/* probe_fwreg: the one register the firmware's start code stores to (two 32-bit halves). */
 	if (probe_pc && (off == 0x10100a0 || off == 0x10100ac) && size == 4)
+		return true;
+	if (probe_ce && off >= 0x18a4000 && end <= 0x18a4020 && size == 4 && end <= s->engine_size)
 		return true;
 	if (dapf_prog && off == 0x1800208 && size == 4)
 		return true;
@@ -2025,6 +2047,18 @@ static int ane_h15_dapf_prog(struct ane_h15 *ane)
 	return 0;
 }
 
+/* Stage 5, probe_ce=1: the CE block words, read only, each logged to the steplog before the read. */
+static void ane_h15_ce_dump(struct ane_h15 *ane)
+{
+	u32 off, v;
+
+	for (off = 0x18a4000; off < 0x18a4020; off += 4) {
+		if (ane_h15_read_word(ane, "ce", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 ce engine+%#x=%#x\n", off, v);
+	}
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -2547,7 +2581,7 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 			s->pwgate_word, s->pwgate_size);
 		return -EINVAL;
 	}
-	pw = ioremap(s->pwgate_pa, s->pwgate_size);
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
 	if (!pw) {
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
@@ -2595,6 +2629,108 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 	return -ETIMEDOUT;
 }
 
+/* enable_order: the #1595 power-up order, T6030 words. The writes are the whole step: nothing else is touched. */
+static int ane_h15_poll_word(struct ane_h15 *ane, void __iomem *a, u64 pa, u32 mask, u32 want, const char *what)
+{
+	unsigned int i;
+	u32 v = 0;
+
+	ane_h15_step("poll %s begin pa=%#llx mask=%#x want=%#x\n", what, pa, mask, want);
+	for (i = 0; i < 100000; i++) {
+		v = readl_relaxed(a);
+		if ((v & mask) == want) {
+			dev_info(ane->dev, "ane_h15 poll %s ok after %u: %#x\n", what, i + 1, v);
+			return 0;
+		}
+		usleep_range(10, 20);
+	}
+	dev_err(ane->dev, "ane_h15 poll %s timeout: %#x\n", what, v);
+	return -ETIMEDOUT;
+}
+
+static int ane_h15_enable_order(struct ane_h15 *ane)
+{
+	/* macOS EnableCPUClocksAndPower, ane-type 0xc0 branch: ps words and gate words in macOS's order, constants as macOS writes them. */
+	static const struct { bool gate; u32 off; u32 val; u32 mask; } st[7] = {
+		{ false, 0xc000, 0xf, 0xff }, { true, 0x248c, 0, 0 }, { false, 0xc008, 0xf, 0xff },
+		{ true, 0x2b6c, 0, 3 }, { false, 0xc008, 0x1000000f, 0x100000ff },
+		{ false, 0x10000, 0xf, 0xff }, { true, 0x3b6c, 0, 3 },
+	};
+	const struct ane_h15_soc *s = ane->soc;
+	void __iomem *pw;
+	unsigned int i;
+	int ret = 0;
+
+	if (!s->pwgate_pa || s->pwgate_word != 0x2b6c)
+		return -EINVAL;
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
+	if (!pw)
+		return -ENOMEM;
+	if (gate_noop) {
+		u32 v = readl_relaxed(pw + 0x2b6c);
+
+		ane_h15_step("noop gate write %#x pa=%#llx (was %#x)\n", v, s->pwgate_pa + 0x2b6c, v);
+		writel(v, pw + 0x2b6c);
+		dev_info(ane->dev, "ane_h15 gate noop write %#x, reads back %#x\n", v, readl_relaxed(pw + 0x2b6c));
+		iounmap(pw);
+		return 0;
+	}
+	if (cold_first) {
+		static const u32 off[] = { 0xc008, 0xc000 };
+		unsigned int k;
+
+		for (k = 0; k < ARRAY_SIZE(off); k++) {
+			ane_h15_step("cold step: write ps=0x300 pa=%#llx\n", s->pmgr_pa + off[k]);
+			writel(0x300, ane->pmgr + off[k]);
+			ret = ane_h15_poll_word(ane, ane->pmgr + off[k], s->pmgr_pa + off[k], 0x8ff, 0, "ps off");
+			if (ret)
+				goto out;
+			if (!k) {
+				ret = ane_h15_poll_word(ane, pw + 0x2b6c, s->pwgate_pa + 0x2b6c, 3, 3, "gate closed");
+				if (ret)
+					goto out;
+			}
+		}
+	}
+	for (i = 0; i < ARRAY_SIZE(st) && i < enable_stop; i++) {
+		void __iomem *a = (st[i].gate ? pw : ane->pmgr) + st[i].off;
+		u64 pa = (st[i].gate ? s->pwgate_pa : s->pmgr_pa) + st[i].off;
+		const char *what = st[i].gate ? "gate" : "ps";
+
+		ane_h15_step("enable step %u: write %s=%#x pa=%#llx\n", i + 1, what, st[i].val, pa);
+		writel(st[i].val, a);
+		if (!st[i].mask)
+			continue;
+		ret = ane_h15_poll_word(ane, a, pa, st[i].mask, st[i].gate ? 0 : st[i].mask, what);
+		if (ret)
+			break;
+	}
+out:
+	iounmap(pw);
+	return ret;
+}
+
+/* probe_gates=1: the words the macOS 0xc0 order touches, read only. */
+static void ane_h15_gates_dump(struct ane_h15 *ane)
+{
+	const struct ane_h15_soc *s = ane->soc;
+	static const u32 g[] = { 0x248c, 0x2b6c, 0x3b6c }, p[] = { 0xc000, 0xc008, 0x10000 };
+	void __iomem *pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
+	unsigned int i;
+
+	if (!pw || !s->pwgate_pa)
+		return;
+	for (i = 0; i < ARRAY_SIZE(g); i++) {
+		ane_h15_step("read gate pa=%#llx\n", s->pwgate_pa + g[i]);
+		dev_info(ane->dev, "ane_h15 gate +%#x=%#x\n", g[i], readl_relaxed(pw + g[i]));
+	}
+	for (i = 0; i < ARRAY_SIZE(p); i++) {
+		ane_h15_step("read ps pa=%#llx\n", s->pmgr_pa + p[i]);
+		dev_info(ane->dev, "ane_h15 ps +%#x=%#x\n", p[i], readl_relaxed(ane->pmgr + p[i]));
+	}
+	iounmap(pw);
+}
+
 /* ---- stage 2, pwgate_read=1: the PWGATE word, read only ----
  *
  * One 32 bit read of the word the shipped CPU-power step clears (offset from the soc row: T6030 0x2b6c,
@@ -2615,7 +2751,7 @@ static int ane_h15_pwgate_read(struct ane_h15 *ane, char *suffix, size_t sz)
 			s->pwgate_word, s->pwgate_size);
 		return -EINVAL;
 	}
-	pw = ioremap(s->pwgate_pa, s->pwgate_size);
+	pw = ioremap_np(s->pwgate_pa, s->pwgate_size);
 	if (!pw) {
 		dev_err(ane->dev, "ane_h15 pwgate: ioremap of %#llx failed\n", s->pwgate_pa);
 		return -ENOMEM;
@@ -2975,7 +3111,19 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_fwreg_dump(ane, "before RUN");
 	if (stg == 5 && probe_dapf)
 		ane_h15_dapf_dump(ane);
-	if (stg == 5 && dapf_prog) {
+	if (stg == 5 && probe_ce)
+		ane_h15_ce_dump(ane);
+	if (stg == 5 && probe_gates)
+		ane_h15_gates_dump(ane);
+	if (stg >= 5 && enable_order) {
+		ret = ane_h15_enable_order(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "enable-order-failed");
+			return ret;
+		}
+	}
+	if (stg >= 5 && dapf_prog) {
 		ret = ane_h15_dapf_prog(ane);
 		if (ret) {
 			ane_h15_unmap_firmware(ane);
@@ -3295,7 +3443,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "grant_tunables=1 is stage=run (5) or boot (3) only: refusing\n");
 		return -EINVAL;
 	}
-	if (dapf_prog && (stage_idx != 5 || !map_fw || !dapf_ranges || !fw_seg)) {
+	if (enable_order && (stage_idx < 5 || stage_idx > 7 || !dapf_prog || pwgate_t6031)) {
+		dev_err(&pdev->dev, "REFUSED reason=enable_order: needs stage=run and dapf_prog=1, and no pwgate_t6031\n");
+		return -EINVAL;
+	}
+	if (dapf_prog && (stage_idx < 5 || stage_idx > 7 || !map_fw || !dapf_ranges || !fw_seg)) {
 		dev_err(&pdev->dev, "REFUSED reason=dapf_prog: needs stage=run, map_fw=1, fw_seg and dapf_ranges\n");
 		return -EINVAL;
 	}
