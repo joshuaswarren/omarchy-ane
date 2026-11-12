@@ -186,7 +186,7 @@ static int events_in(u64 base, u64 size, int writes_only)
 {
 	int i, n = 0;
 
-	for (i = 0; i < sim_n_events; i++)
+	for (i = 0; i < sim_n_events && i < SIM_MAX_EVENTS; i++)
 		if (sim_events[i].pa >= base && sim_events[i].pa < base + size &&
 		    (!writes_only || sim_events[i].write))
 			n++;
@@ -275,6 +275,8 @@ static void reset_all(void)
 	enable_stop = 7;
 	gate_noop = false;
 	cold_first = false;
+	probe_gates = false;
+	probe_pc = false;
 	fw_seg = NULL;
 	sim_region_ram = REGION_DISJOINT;
 	sim_n_iocalls = sim_io_fail = sim_n_dom_live = sim_map_fail_at = sim_unmap_fail_at = 0;
@@ -335,7 +337,12 @@ static void set_ps_words(const struct ane_h15_soc *s, int stuck_idx)
 
 static int probe_now(void)
 {
-	return ane_h15_probe(&pdev);
+	int ret = ane_h15_probe(&pdev);
+
+	/* every sim run: a plain (posted) ioremap anywhere is a failure */
+	if (sim_posted_maps)
+		chk(0, "probe_now: a posted (plain ioremap) mapping was made");
+	return ret;
 }
 
 /* a probe that refused before devm_kzalloc leaves no drvdata: removing it
@@ -3377,6 +3384,41 @@ static void pos_enable_order(void)
 		printf("    EO enable_order PASS\n");
 }
 
+
+/* EO4 a ps request that never shows ACTUAL times out on step 1 and writes nothing after it;
+ * EO5 probe_gates reads every window it maps non-posted on T6030 and is refused on T6031 (its ps 0x10000 read is past pmgr_size) */
+static void pos_enable_fail_gates(void)
+{
+	const struct ane_h15_soc *s = &ane_t6030_soc;
+	int ret, before = fails;
+
+	map_setup(s, "apple,t6030-ane");
+	dapf_prog = true;
+	dapf_ranges = "350700498:35070049b,35070c000:35070c01b,350726c6c:350726c6f,2c9468000:2c9468003,292468000:292468003";
+	enable_order = true;
+	dm_pw_word = 3;
+	ret = probe_now();
+	chk(ret != 0 && events_in(s->pwgate_pa, s->pwgate_size, 1) == 0 && events_in(s->pmgr_pa + 0xc000, 4, 1) == 1,
+	    "EO4 enable_order, ps never answers: the run fails after the first write, no gate write");
+	remove_if_probed();
+
+	map_setup(s, "apple,t6030-ane");
+	probe_gates = true;
+	dm_pw_word = 3;
+	ret = probe_now();
+	chk(ret == 0 && events_in(s->pwgate_pa, s->pwgate_size, 0) == 3 && events_in(s->pwgate_pa, s->pwgate_size, 1) == 0,
+	    "EO5 probe_gates on T6030: three gate reads, no writes");
+	remove_if_probed();
+
+	map_setup(&ane_t6031_soc, "apple,t6031-ane");
+	probe_gates = true;
+	ret = probe_now();
+	chk(ret != 0 && sim_n_iomap == 0, "EO6 probe_gates on T6031 is refused before any mapping");
+	remove_if_probed();
+	if (fails == before)
+		printf("    EO failure paths and row gates PASS\n");
+}
+
 static void pos_map(void)
 {
 	const struct ane_h15_soc *s = &ane_t6030_soc;
@@ -4336,6 +4378,7 @@ int main(int argc, char **argv)
 		pos_translation();
 		pos_map();
 		pos_enable_order();
+		pos_enable_fail_gates();
 		pos_rtkit();
 		pos_chan();
 		ipi_chan();

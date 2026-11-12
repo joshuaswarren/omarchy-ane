@@ -320,7 +320,7 @@ MODULE_PARM_DESC(pwgate_read,
 static bool probe_pc;
 module_param(probe_pc, bool, 0444);
 MODULE_PARM_DESC(probe_pc,
-		 "Stage 5 only, with confirm_read=1: after the wait, read only: RVBAR again, EDPRSR, and (only when EDPRSR bit 0, core powered, is set) EDPCSR lo/hi (engine+0x10100a0/+0x10100ac, the sampled PC); the DART translation of the text IOVA; the DART error registers. Off by default.");
+		 "BANNED-CLASS READ (EDPCSR sampled-PC, may hang or reset the SoC), T6030 only. Stage 5 only, with confirm_read=1: after the wait, read only: RVBAR again, EDPRSR, and (only when EDPRSR bit 0, core powered, is set) EDPCSR lo/hi (engine+0x10100a0/+0x10100ac, the sampled PC); the DART translation of the text IOVA; the DART error registers. Off by default.");
 
 static char *dapf_ranges;
 module_param(dapf_ranges, charp, 0444);
@@ -340,7 +340,7 @@ MODULE_PARM_DESC(enable_stop, "enable_order only: run macOS 0xc0 steps 1..N (1 p
 static bool enable_order;
 module_param(enable_order, bool, 0444);
 MODULE_PARM_DESC(enable_order,
-		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the aurora-silicon/linux#1595 power-up order before the DAPF step: ps 0xc000 |= 0xf (poll &0xff), PWGATE word <- 0 (poll &3 == 0), ps 0xc008 |= 0x1000000f (poll &0x100000ff), poll the ack word (PWGATE word + 0x24) == 0. Steplog line before every write and poll. Off by default.");
+		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the macOS EnableCPUClocksAndPower ane-type 0xc0 order, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
 static bool gate_noop;
 module_param(gate_noop, bool, 0444);
 MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the gate word +0x2b6c with 0x3, its current value (a write that changes nothing), read it back and go on. Off by default.");
@@ -3462,6 +3462,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 	}
 	if (grant_tunables && stage_idx != 5 && stage_idx != 3) {
 		dev_err(&pdev->dev, "grant_tunables=1 is stage=run (5) or boot (3) only: refusing\n");
+		return -EINVAL;
+	}
+	/* probe_gates reads ps 0x10000 and probe_pc reads EDPCSR: both only on the T6030 row they were measured on */
+	if ((probe_gates || probe_pc) && soc->pwgate_word != 0x2b6c) {
+		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc: T6030 row only\n");
 		return -EINVAL;
 	}
 	if (enable_order && (stage_idx < 5 || stage_idx > 7 || !dapf_prog || pwgate_t6031)) {
