@@ -357,9 +357,9 @@ sim-mutation-pgnogiveback:
 sim-mutation-pgnodoorbell:
 	$(call mutant,pgnodoorbell,s/writel(BIT(r->bit), ane->doorbell);/(void)r; \/* NEG: no T2H doorbell *\//,NEG: no T2H doorbell,pos)
 
-# a call that never finished is followed by an unload anyway
+# an unload command the firmware never answers is followed by the power cycle of the domain
 sim-mutation-pgunloadtimeout:
-	$(call mutant,pgunloadtimeout,s/if (ret == -ETIMEDOUT || ret == -EBUSY)/if (0 \/* NEG: unload after a timeout *\/)/,NEG: unload after a timeout,pos)
+	$(call mutant,pgunloadtimeout,s/ane_h18_failpath_recover(ane);/(void)0; \/* NEG: no recovery after an unanswered unload *\//,NEG: no recovery after an unanswered unload,pos)
 
 # a never written IO_T2H slot counts as an event
 sim-mutation-pgemptyslot:

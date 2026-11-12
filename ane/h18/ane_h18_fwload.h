@@ -15,6 +15,15 @@
  * No H15 patch offset, wrapper write or alias policy is carried over.
  * The hash helper is sha256() (kernel: crypto/sha2.h; sim: ane_sha256 via sim/shim.h). */
 
+/* Take the module reference once for a retained image, surface or domain: rmmod must not free the code that still owns them. Only a reboot drops it. */
+static void ane_h18_pin_module(struct ane_h18 *ane)
+{
+	if (ane->module_pinned)
+		return;
+	__module_get(THIS_MODULE);
+	ane->module_pinned = true;
+}
+
 /* Short-unmap retention (H15 959..975): a partial iommu_unmap keeps the domain, the image and
  * the module pin; no retry, no unload, reboot required. Never called while the core may run. */
 static bool ane_h18_fw_unmap_range(struct ane_h18 *ane, u64 iova, u64 size)
@@ -26,6 +35,7 @@ static bool ane_h18_fw_unmap_range(struct ane_h18 *ane, u64 iova, u64 size)
 	unmapped = iommu_unmap(ane->domain, iova, size);
 	if (unmapped != size) {
 		ane->map_retained = true;
+		ane_h18_pin_module(ane);
 		dev_emerg(ane->dev,
 			  "ane_h18 incomplete owned firmware unmap iova=%#llx size=%#llx unmapped=%#zx: retaining domain, image and module; reboot required\n",
 			  iova, size, unmapped);
@@ -35,14 +45,15 @@ static bool ane_h18_fw_unmap_range(struct ane_h18 *ane, u64 iova, u64 size)
 }
 
 /* Undo the owned map and release the owned backing in the required order: both segment aliases
- * unmap BEFORE the image frees; a short unmap retains everything and frees nothing. */
+ * unmap BEFORE the image frees; a short unmap retains everything and frees nothing. With no domain yet
+ * (an early map_firmware refusal) nothing is mapped and only the staged image goes back. */
 static void ane_h18_unmap_owned_firmware(struct ane_h18 *ane)
 {
 	unsigned int i;
 
-	if (!ane->domain || ane->map_retained)
+	if (ane->map_retained)
 		return;
-	for (i = 0; i < ane->map_n; i++)
+	for (i = 0; ane->domain && i < ane->map_n; i++)
 		if (!ane_h18_fw_unmap_range(ane, ane->map_iova[i], ane->map_len[i]))
 			return;
 	ane->map_n = 0;
@@ -51,7 +62,7 @@ static void ane_h18_unmap_owned_firmware(struct ane_h18 *ane)
 				  ane->owned_fw_img.iova);
 		ane->owned_fw_img.va = NULL;
 	}
-	if (ane->dom_own) {
+	if (ane->domain && ane->dom_own) {
 		iommu_detach_device(ane->domain, ane->dev);
 		iommu_domain_free(ane->domain);
 	}

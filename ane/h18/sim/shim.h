@@ -786,11 +786,12 @@ static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa
 	}
 	return 0;
 }
+extern u64 sim_unmap_short_iova;	/* the harness pins an alias iova here: an unmap of exactly it returns half the size (a short unmap) */
 static inline size_t iommu_unmap(struct iommu_domain *dom, unsigned long iova, size_t size)
 {
 	(void)dom;
 	sim_iorec(SIM_IO_UNMAP, iova, 0, size, 0);
-	return size;
+	return sim_unmap_short_iova == iova && size > 1 ? size / 2 : size;
 }
 /* The fake translation: a lookup resolves inside a live dma_alloc_coherent range (identity), then through the ranges iommu_map recorded (aliases), so the
  * fixed-alias and owned-page paths can run; anything else is unmapped, which is the honest sim answer for pages the fake firmware cannot drive. Not recorded:
