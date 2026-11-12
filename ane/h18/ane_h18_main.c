@@ -37,12 +37,15 @@
 #include <linux/pm_runtime.h>
 #include <linux/ioport.h>
 #include <linux/jiffies.h>
+#include <linux/ktime.h>
+#include <linux/minmax.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
+#include <linux/sizes.h>
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/debugfs.h>
@@ -50,8 +53,12 @@
 #include <linux/mutex.h>
 #include <linux/pm_domain.h>
 
+#include <crypto/sha2.h>
+
 #include "ane_h18.h"
 #include "ane_h18_dt.h"
+#include "ane_h18_fw_pins.h"
+#include "ane_h18_fw_layout.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -189,6 +196,45 @@ static unsigned int psd_timeout_ms = 1000;
 module_param(psd_timeout_ms, uint, 0444);
 MODULE_PARM_DESC(psd_timeout_ms, "Stage=power: per-slot acknowledge wait, ms. Default 1000 (the ADT psd-timeout-ms).");
 
+static bool owned_fw;
+module_param(owned_fw, bool, 0444);
+MODULE_PARM_DESC(owned_fw, "Stage=boot with map_fw=1: stage the exact pinned 26A428 payload from fw_path into Linux-owned coherent memory and DART-map those pages at the fixed TEXT/DATA IOVAs instead of the iBoot DRAM segments. One attempt per module instance; a short unmap or a post-RUN failure retains the image and the module pin. No program submission. Default off.");
+
+static char *fw_path;
+module_param(fw_path, charp, 0444);
+MODULE_PARM_DESC(fw_path, "owned_fw=1: firmware-loader file name without a path holding the exact pinned payload (1572864 bytes, sha256-pinned in ane_h18_fw_pins.h). Required for owned_fw=1; there is no fallback to the iBoot DRAM segments.");
+
+static unsigned long long prog_iova_bufs;
+module_param(prog_iova_bufs, ullong, 0444);
+MODULE_PARM_DESC(prog_iova_bufs, "hs_prog: nonzero maps the program's input and output buffers, in file order, at consecutive fixed IOVAs from this base (16 KiB aligned, below 0xe0000000), as the compile-time IOVAs of the HWX (the add program: 0x30000000). Each buffer is allocated with the DMA API as before, and an alias is mapped at the fixed address and removed before the buffer is freed. Default 0: dynamic IOVAs.");
+
+static unsigned long long prog_iova_text;
+module_param(prog_iova_text, ullong, 0444);
+MODULE_PARM_DESC(prog_iova_text, "hs_prog: nonzero maps program section 3 (the task stream, the HWX __TEXT) at this fixed IOVA in a 32 KiB region, the vmsize of the HWX __TEXT (the add program: 0x3000c000). Same alias mapping and unmap as prog_iova_bufs. Default 0: dynamic.");
+
+static unsigned int prog_text_const;
+module_param(prog_text_const, uint, 0444);
+MODULE_PARM_DESC(prog_text_const, "hs_prog with prog_iova_text: copy the first 0x4000 bytes of program section 2 (the HWX __TEXT __const) into the section 3 region at this byte offset, where the task stream expects its constants (the matvec program: 0x280). 8 byte aligned; the region is 32 KiB. Default 0: not copied.");
+
+static unsigned long long prog_iova_kern;
+module_param(prog_iova_kern, ullong, 0444);
+MODULE_PARM_DESC(prog_iova_kern, "hs_prog: nonzero copies program section 2 behind its first 0x4000 bytes (the HWX __KERN_0, the weights) into its own surface and maps it at this fixed IOVA, 16 KiB aligned, below 0xe0000000 (the matvec program: 0x30010000). Same alias mapping and unmap as prog_iova_bufs. Default 0: not mapped.");
+
+static unsigned int hs_prog_dump;
+module_param(hs_prog_dump, uint, 0444);
+static unsigned int hs_settle_ms = 10;
+module_param(hs_settle_ms, uint, 0444);
+MODULE_PARM_DESC(hs_settle_ms, "hs_prog=1: milliseconds the driver waits after each unload command and between program passes, so the firmware can finish tearing the previous program down. Default 10.");
+MODULE_PARM_DESC(hs_prog_dump, "hs_prog=1: hexdump the first N bytes of every program buffer after the call (16 bytes per line, capped at 0x1000). The first pass only. Default 0 (off).");
+
+static unsigned int hs_prog_calls = 1;
+module_param(hs_prog_calls, uint, 0444);
+MODULE_PARM_DESC(hs_prog_calls, "hs_prog=1: run the whole program sequence this many times (LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, finish wait, TERMINATE_PROCESS, DESTROY_PROGRAM each pass; 1 to 1000). Per-call latency is logged as 'call i/N finished in X ms'. Default 1.");
+
+static unsigned int prog_out_words;
+module_param(prog_out_words, uint, 0444);
+MODULE_PARM_DESC(prog_out_words, "hs_prog=1: dump the first N words of every output buffer after each call as 'out buf <id> +0x<off>: <16 words>', and log 'call i/N finished in X ns' while tight-polling for the finish event. X is the host poll loop's time from the doorbell write to the first iteration that saw the event: doorbell latency, the firmware's post path and the poll granularity are in it. It is NOT a hardware time. 0 (the default) keeps the sleeping poll and the millisecond log.");
+
 enum { ANE_H18_STAGE_DT, ANE_H18_STAGE_PSD, ANE_H18_STAGE_POWER, ANE_H18_STAGE_BOOT, ANE_H18_STAGE_READS };
 
 static bool allow_reads;
@@ -285,9 +331,21 @@ struct ane_h18 {
 	bool dom_own;		/* the domain was allocated and attached here (map_fw without handshake); otherwise it is the default DMA domain */
 	struct ane_h18_hs_buf {
 		void *va;
-		dma_addr_t iova;
+		dma_addr_t iova;	/* the address the firmware is given: the fixed alias when `fixed`, else the DMA API address */
+		dma_addr_t dma;		/* the address dma_alloc_coherent returned: what dma_free_coherent needs */
 		size_t size;
-	} hs_pool, hs_ipc, hs_heap, hs_cmd, hs_mal[ANE_H18_MAL_MAX_BUFS];
+		bool fixed;		/* an alias mapping at `iova` was added with iommu_map and is removed with iommu_unmap before the free */
+	} hs_pool, hs_ipc, hs_heap, hs_cmd, hs_mal[ANE_H18_MAL_MAX_BUFS], owned_fw_img;
+	/* the Linux-owned image (owned_fw=1): staged unmodified pinned payload, planned pages, the two fixed segment maps */
+	u64 owned_pa[ANE_H18_FW_PAGES];		/* physical address of each 16 KiB image page, read from the default domain before any attach */
+	u64 map_iova[2], map_size[2];		/* the fixed TEXT/DATA IOVAs and full sizes (owned pages or iBoot segments) */
+	u64 map_len[2];				/* bytes actually mapped per segment: unmap uses these, never the full size blindly */
+	unsigned int map_n;			/* segments whose whole extent is currently mapped */
+	bool map_retained;			/* a short unmap kept the domain, the image and the module pin: no retry, no removal, reboot required */
+	bool trial_retained;			/* a post-RUN failure of the owned trial kept the module pin with image and surfaces until reboot recovery */
+	bool prog_cleaned;			/* the program stage unloaded the program or power-cycled the domain: the ANE holds no program, so nothing needs a reboot */
+	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the running call, for the finish-event peek that logs nothing */
+	u64 call_t0, call_t1;	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
 	unsigned int hs_mal_n, mal_cursor, mal_slots, mal_bit;
 	size_t hs_mal_bytes;
 	unsigned int ack_logs;	/* ack writes logged so far: the address is logged for the first few, then silently */
@@ -325,6 +383,7 @@ struct ane_h18 {
 		struct { u32 id, dir; u64 size, doff, dsize; } io[ANE_H18_PROG_MAX_IO];
 	} pd;
 	struct ane_h18_hs_buf pg_sec[ANE_H18_PROG_MAX_SECS], pg_io[ANE_H18_PROG_MAX_IO], pg_pool;
+	struct ane_h18_hs_buf pg_kern;
 };
 
 static void ane_h18_result(struct ane_h18 *ane, const char *stg, const char *verdict, const char *reason)
@@ -815,6 +874,8 @@ static int ane_h18_po_pop(struct ane_h18 *ane, u32 chan_off, const char *tag, u3
 	return 1;
 }
 
+#include "ane_h18_fwload.h"
+
 /* Undo ane_h18_map_firmware(): unmap what was mapped, detach, free. Never called while the core may run. */
 static void ane_h18_unmap_firmware(struct ane_h18 *ane, unsigned int nmapped)
 {
@@ -868,14 +929,57 @@ static int ane_h18_map_firmware(struct ane_h18 *ane)
 	}
 	ane->domain = dom;
 	ane->dom_own = !handshake;
+	if (owned_fw) {
+		/* the Linux-owned image maps at the fixed IOVAs the boot entry names: TEXT at rvbar_expect & ~1, DATA behind it */
+		ane->map_iova[0] = s->rvbar_expect & ~1ull;
+		ane->map_size[0] = ANE_H18_FW_TEXT_SIZE;
+		ane->map_iova[1] = ane->map_iova[0] + ANE_H18_FW_TEXT_SIZE;
+		ane->map_size[1] = ANE_H18_FW_IMAGE_SIZE - ANE_H18_FW_TEXT_SIZE;
+		ane->map_len[0] = ane->map_len[1] = 0;
+		/* ownership validation before any alias map: the image's own DMA range must not sit inside the fixed alias
+		 * range, and every fixed 16 KiB page must be free of an existing translation. A refusal never unmaps the
+		 * pre-existing mapping or the image backing. */
+		if ((u64)ane->owned_fw_img.iova < ane->map_iova[1] + ane->map_size[1] &&
+		    ane->map_iova[0] < (u64)ane->owned_fw_img.iova + ane->owned_fw_img.size) {
+			dev_err(ane->dev, "ane_h18 owned fw: the image DMA range %#llx..%#llx overlaps the fixed alias range %#llx..%#llx\n",
+				(u64)ane->owned_fw_img.iova, (u64)ane->owned_fw_img.iova + ane->owned_fw_img.size - 1,
+				ane->map_iova[0], ane->map_iova[1] + ane->map_size[1] - 1);
+			ane_h18_unmap_owned_firmware(ane);
+			ane_h18_result(ane, "boot", "FAIL", "owned-map-failed");
+			return -EBUSY;
+		}
+		for (i = 0; i < ANE_H18_FW_PAGES; i++) {
+			if (iommu_iova_to_phys(dom, ane->map_iova[0] + (u64)i * SZ_16K)) {
+				dev_err(ane->dev, "ane_h18 owned fw: an existing translation already holds fixed alias page %u (%#llx); it is left untouched\n",
+					i, ane->map_iova[0] + (u64)i * SZ_16K);
+				ane_h18_unmap_owned_firmware(ane);
+				ane_h18_result(ane, "boot", "FAIL", "owned-map-failed");
+				return -EBUSY;
+			}
+		}
+	}
 	for (i = 0; i < ARRAY_SIZE(s->fw_seg); i++) {
-		dev_crit(ane->dev, "ane_h18 iommu_map iova=%#llx pa=%#llx size=%#llx %s\n", s->fw_seg[i].iova, s->fw_seg[i].pa, s->fw_seg[i].size,
-			 s->fw_seg[i].write ? "read+write" : "read");
-		ret = iommu_map(dom, s->fw_seg[i].iova, s->fw_seg[i].pa, s->fw_seg[i].size,
-				IOMMU_READ | (s->fw_seg[i].write ? IOMMU_WRITE : 0), GFP_KERNEL);
+		if (owned_fw)
+			dev_crit(ane->dev, "ane_h18 iommu_map iova=%#llx pa=%#llx size=%#llx %s (owned image)\n", ane->map_iova[i],
+				 ane->owned_pa[(u64)i * ANE_H18_FW_TEXT_SIZE / SZ_16K], ane->map_size[i], i ? "read+write" : "read");
+		if (owned_fw) {
+			ret = ane_h18_map_owned_segment(ane, dom, i);
+			if (!ret)
+				ane->map_n = i + 1;
+		} else {
+			dev_crit(ane->dev, "ane_h18 iommu_map iova=%#llx pa=%#llx size=%#llx %s\n", s->fw_seg[i].iova, s->fw_seg[i].pa, s->fw_seg[i].size,
+				 s->fw_seg[i].write ? "read+write" : "read");
+			ret = iommu_map(dom, s->fw_seg[i].iova, s->fw_seg[i].pa, s->fw_seg[i].size,
+					IOMMU_READ | (s->fw_seg[i].write ? IOMMU_WRITE : 0), GFP_KERNEL);
+		}
 		if (ret) {
 			dev_err(ane->dev, "ane_h18 map_fw: iommu_map of segment %u failed: %d\n", i, ret);
-			ane_h18_unmap_firmware(ane, i);
+			if (owned_fw) {
+				ane_h18_unmap_owned_firmware(ane);
+				ane_h18_result(ane, "boot", "FAIL", "owned-map-failed");
+			} else {
+				ane_h18_unmap_firmware(ane, i);
+			}
 			return ret;
 		}
 	}
@@ -965,6 +1069,35 @@ static void ane_h18_scratch_write(struct ane_h18 *ane, unsigned int i, u32 v)
 	writel(v, ane->scratch + ANE_H18_SCRATCH_OFF + 4 * i);
 }
 
+/* One program surface goes back: the fixed alias is unmapped first so the device cannot reach the pages after the DMA API releases them. */
+static void ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
+{
+	if (!b->va)
+		return;
+	if (b->fixed) {
+		size_t un = ane->domain ? iommu_unmap(ane->domain, b->iova, b->size) : b->size;
+
+		if (un != b->size)
+			dev_warn(ane->dev, "ane_h18 fixed alias at %#llx unmapped %#zx of %#zx bytes\n", (u64)b->iova, un, b->size);
+		b->fixed = false;
+	}
+	dma_free_coherent(ane->dev, b->size, b->va, b->dma);
+	b->va = NULL;
+}
+
+/* The program surfaces and their fixed-IOVA aliases of a finished pass. Only safe once every command answered (the failure paths leave them for ane_h18_hs_free). */
+static void ane_h18_prog_surfaces_free(struct ane_h18 *ane)
+{
+	unsigned int i;
+
+	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
+		ane_h18_hs_buf_free(ane, &ane->pg_sec[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_kern);
+	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
+		ane_h18_hs_buf_free(ane, &ane->pg_io[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_pool);
+}
+
 static void ane_h18_hs_free(struct ane_h18 *ane)
 {
 	struct ane_h18_hs_buf *b[4] = { &ane->hs_cmd, &ane->hs_heap, &ane->hs_ipc, &ane->hs_pool };
@@ -989,19 +1122,11 @@ static void ane_h18_hs_free(struct ane_h18 *ane)
 	ane->mal_ring = NULL;
 	memset(ane->ch_rings, 0, sizeof(ane->ch_rings));
 	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
-		if (ane->pg_sec[i].va) {
-			dma_free_coherent(ane->dev, ane->pg_sec[i].size, ane->pg_sec[i].va, ane->pg_sec[i].iova);
-			ane->pg_sec[i].va = NULL;
-		}
+		ane_h18_hs_buf_free(ane, &ane->pg_sec[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_kern);
 	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
-		if (ane->pg_io[i].va) {
-			dma_free_coherent(ane->dev, ane->pg_io[i].size, ane->pg_io[i].va, ane->pg_io[i].iova);
-			ane->pg_io[i].va = NULL;
-		}
-	if (ane->pg_pool.va) {
-		dma_free_coherent(ane->dev, ane->pg_pool.size, ane->pg_pool.va, ane->pg_pool.iova);
-		ane->pg_pool.va = NULL;
-	}
+		ane_h18_hs_buf_free(ane, &ane->pg_io[i]);
+	ane_h18_hs_buf_free(ane, &ane->pg_pool);
 	if (ane->prog_blob) {
 		release_firmware(ane->prog_blob);
 		ane->prog_blob = NULL;
@@ -1019,6 +1144,8 @@ static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_
 		dev_err(ane->dev, "ane_h18 handshake: allocation of %s (%#zx bytes) failed\n", name, size);
 		return -ENOMEM;
 	}
+	b->dma = b->iova;
+	b->fixed = false;
 	b->size = size;
 	dev_info(ane->dev, "ane_h18 hs surface %s size=%#zx iova=%#llx\n", name, size, (u64)b->iova);
 	for (i = 0; i < ARRAY_SIZE(s->fw_seg); i++)
@@ -1027,6 +1154,74 @@ static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_
 			return -EBUSY;
 		}
 	return 0;
+}
+
+/* A surface at a fixed IOVA: allocated as above, then aliased. The pages stay where the DMA API put them; each 16 KiB page of the allocation is looked up in the
+ * domain and mapped again at `at` + its offset, read and write. The target range must be 16 KiB aligned, below the DART's 0xe0000000 limit, clear of the firmware
+ * segments and unmapped. A failure unmaps what this call mapped; the allocation itself is freed by ane_h18_hs_free. */
+static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_t size, const char *name, u64 at)
+{
+	const struct ane_h18_soc *s = ane->soc;
+	struct iommu_domain *dom = ane->domain;
+	size_t off;
+	unsigned int i;
+	int ret;
+
+	ret = ane_h18_hs_alloc(ane, b, size, name);
+	if (ret || !at)
+		return ret;
+	if (!dom) {
+		dev_err(ane->dev, "ane_h18 fixed IOVA for %s: no iommu domain\n", name);
+		return -ENODEV;
+	}
+	if (((at | size) & (SZ_16K - 1)) || at >= 0xe0000000ULL || size > 0xe0000000ULL - at) {
+		dev_err(ane->dev, "ane_h18 fixed IOVA %#llx size %#zx for %s is not 16 KiB aligned or is not below 0xe0000000\n", at, size, name);
+		return -EINVAL;
+	}
+	for (i = 0; i < ARRAY_SIZE(s->fw_seg); i++)
+		if (at < s->fw_seg[i].iova + s->fw_seg[i].size && at + size > s->fw_seg[i].iova) {
+			dev_err(ane->dev, "ane_h18 fixed IOVA %#llx for %s overlaps firmware segment %u\n", at, name, i);
+			return -EBUSY;
+		}
+	for (off = 0; off < size; off += SZ_16K)
+		if (iommu_iova_to_phys(dom, at + off)) {
+			dev_err(ane->dev, "ane_h18 fixed IOVA %#llx for %s is already mapped\n", at + off, name);
+			return -EBUSY;
+		}
+	for (off = 0; off < size; off += SZ_16K) {
+		u64 pa = iommu_iova_to_phys(dom, b->dma + off);
+
+		ret = pa ? iommu_map(dom, at + off, pa, SZ_16K, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL) : -EFAULT;
+		if (ret) {
+			dev_err(ane->dev, "ane_h18 fixed IOVA %#llx for %s: map of page at +%#zx failed: %d\n", at, name, off, ret);
+			if (off)
+				iommu_unmap(dom, at, off);
+			return ret;
+		}
+	}
+	b->iova = at;
+	b->fixed = true;
+	dev_info(ane->dev, "ane_h18 hs surface %s aliased at fixed iova=%#llx (dma api iova %#llx)\n", name, at, (u64)b->dma);
+	return 0;
+}
+
+/* The fixed IOVA of program buffer i: prog_iova_bufs plus the 16 KiB aligned sizes of the buffers before it, or 0 for a dynamic one. A base that would push the
+ * range past the DART limit returns 0xe0000000, which ane_h18_hs_alloc_at refuses. */
+static u64 ane_h18_io_at(const struct ane_h18_pdesc *p, unsigned int i)
+{
+	u64 at = prog_iova_bufs;
+	unsigned int k;
+
+	if (!at)
+		return 0;
+	for (k = 0; k < i; k++) {
+		u64 sz = ALIGN(p->io[k].size, SZ_16K);
+
+		if (sz > 0xe0000000ULL - at)
+			return 0xe0000000ULL;
+		at += sz;
+	}
+	return at;
 }
 
 static void ane_h18_hs_put(struct ane_h18 *ane, u8 *blk, unsigned int off, unsigned int width, u64 v)
@@ -1084,6 +1279,58 @@ static int ane_h18_chan_get(struct ane_h18 *ane, const struct ane_h18_hs_buf *tb
 
 static int ane_h18_chan_poll(struct ane_h18 *ane, unsigned int t, u64 *digest, u32 *last_pend);
 
+static const u8 *ane_h18_prog_cpu(const struct ane_h18 *ane, u64 a, size_t len);
+
+/* The published IO_T2H ring of the channel table, or NULL. */
+static struct ane_h18_ring_copy *ane_h18_call_ring(struct ane_h18 *ane)
+{
+	struct ane_h18_ring_copy *r = NULL;
+	unsigned int i;
+
+	for (i = 0; i < ANE_H18_CH_COUNT; i++)
+		if (ane->ch_rings[i].base && ane->ch_rings[i].type == 1 && !strcmp(ane->ch_names[i], "IO_T2H"))
+			r = &ane->ch_rings[i];
+	return r;
+}
+
+/* True when the event is the finish of our procedure: cookie at +8, state 1 at +0x1c. */
+static bool ane_h18_ev_fin(const u8 *ev)
+{
+	u64 cookie;
+	u32 state;
+
+	memcpy(&cookie, ev + 8, 8);
+	memcpy(&state, ev + 0x1c, 4);
+	return cookie == ANE_H18_PROG_COOKIE && state == 1;
+}
+
+/* The latency stamp of prog_out_words: call_t0 is taken right before the doorbell write that hands PROCEDURE_CALL to the firmware. call_t1 is ktime_get_ns() of
+ * the first poll iteration that read the finish event in the IO_T2H ring, from the cursor on, without logging or giving a slot back, so the console cannot delay
+ * the stamp. It is NOT the hardware completion time: the firmware posted the event some unknown time before an iteration noticed it, so the latency is the call
+ * as the host sees it: the doorbell latency, the firmware's run and post path, and the poll granularity. */
+static void ane_h18_call_peek(struct ane_h18 *ane)
+{
+	struct ane_h18_ring_copy *r = ane->call_t2h && !ane->call_t1 ? ane_h18_call_ring(ane) : NULL;
+	unsigned int c, n;
+
+	if (!r)
+		return;
+	for (n = 0, c = *ane->call_t2h; n < r->slots; n++, c = (c + 1) % r->slots) {
+		u64 hdr = READ_ONCE(r->base[(size_t)c * 8]), len;
+		const u8 *ev;
+
+		if ((hdr & 1) || hdr == 0)
+			return;
+		dma_rmb();
+		len = READ_ONCE(r->base[(size_t)c * 8 + 1]);
+		ev = len >= 0x20 && len <= 0x1000 ? ane_h18_prog_cpu(ane, hdr, len) : NULL;
+		if (ev && ane_h18_ev_fin(ev)) {
+			ane->call_t1 = ktime_get_ns();
+			return;
+		}
+	}
+}
+
 /* One command on the IO ring: the command block (id at +4, optional u32 argument at +8), slot header = its DMA address, doorbell BIT(bit), then wait for the
  * firmware to give the slot back (header | 1) with a zero acknowledgement at +6. Returns the block in *blk for the reply. */
 static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op, u32 len, bool arg_set, u32 arg, const u8 *body, u32 body_len, u8 **blk)
@@ -1118,6 +1365,9 @@ static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op
 	dma_wmb();
 	dev_crit(ane->dev, "ane_h18 write doorbell BIT(%u) pa=%#llx for command %#x slot %u block iova %#llx\n", io->bit, ane->soc->engine_pa + ANE_H18_DOORBELL_OFF, op,
 		 io->cursor, (u64)dma);
+	/* call_t0 is taken here, immediately before the doorbell write itself; the log line above has already run, so the stamp carries no console time. */
+	if (ane->call_t2h && op == ANE_H18_CSNE_PROCEDURE_CALL)
+		ane->call_t0 = ktime_get_ns();
 	writel(BIT(io->bit), ane->doorbell);
 	for (waited = 0; waited < hs_wait_ms; waited++) {
 		ane_h18_chan_poll(ane, waited, &digest, &last_pend);
@@ -1133,7 +1383,18 @@ static int ane_h18_cmd_body(struct ane_h18 *ane, struct ane_h18_ring *io, u16 op
 				return -EPROTO;	/* not the answer to this command */
 			return ack ? -EREMOTEIO : 0;	/* the firmware answered and refused */
 		}
-		usleep_range(500, 1000);
+		if (ane->call_t2h && op == ANE_H18_CSNE_PROCEDURE_CALL) {
+			u64 end = ktime_get_ns() + NSEC_PER_MSEC;	/* a timed call answers the firmware and watches for the event instead of sleeping */
+
+			while (!(READ_ONCE(slot[0]) & 1) && ktime_get_ns() < end) {
+				ane_h18_chan_poll(ane, 1, &digest, &last_pend);
+				ane_h18_call_peek(ane);
+				cpu_relax();
+				cond_resched();	/* process context with only the debugfs mutex held; hs_wait_ms can be long */
+			}
+		} else {
+			usleep_range(500, 1000);
+		}
 	}
 	dev_err(ane->dev, "ane_h18 cmd %#x: no answer within %ums (header %#llx)\n", op, hs_wait_ms, READ_ONCE(slot[0]));
 	return -ETIMEDOUT;
@@ -1509,11 +1770,14 @@ static unsigned int ane_h18_prog_t2h(struct ane_h18 *ane, unsigned int *cursor, 
 			r = &ane->ch_rings[i];
 	if (!r)
 		return 0;
+	/* Linear cursor over the firmware's channel-table ring: 64-byte records, r->slots records,
+	 * wrap at r->slots. The debug probe in the wait loop prints every record so a desync between
+	 * this cursor and the firmware's publish sequence shows in the trace. */
 	while (n < r->slots) {
 		u64 *slot = r->base + (size_t)*cursor * 8, hdr = READ_ONCE(slot[0]), len;
 		const u8 *ev;
 
-		if ((hdr & 1) || !hdr)	/* host owned (given back) or not published yet: the firmware publishes a slot by writing its event address, bit 0 clear, and may write the length first */
+		if ((hdr & 1) || !hdr)	/* host owned (given back, or the firmware's marker 1) or not published yet */
 			break;
 		dma_rmb();
 		len = READ_ONCE(slot[1]);
@@ -1666,18 +1930,93 @@ static int ane_h18_premap(struct ane_h18 *ane, struct ane_h18_ring *io)
 	return ret;
 }
 
+/* Start the core and service the mailbox channels while the firmware comes up: its RTKit HELLO and the endpoint maps arrive there and are answered. Reports
+ * through *running whether the core reported running and adds the messages it handled to *msgs. Returns the errno of a failed read, 0 otherwise. */
+static int ane_h18_core_start(struct ane_h18 *ane, unsigned int *msgs, bool *running)
+{
+	const struct ane_h18_soc *s = ane->soc;
+	u32 ctrl = 0, st = 0, last = 0xffffffffu, po, chan_off;
+	unsigned int i, waited, sent = 0;
+	int ret;
+
+	ret = ane_h18_read(ane, "CPU_CONTROL", ane->asc, s->asc_pa, ANE_H18_ASC_CPU_CONTROL, s->asc_size, &ctrl);
+	if (ret)
+		return ret;
+	dev_crit(ane->dev, "ane_h18 write CPU_CONTROL=%#x pa=%#llx (RUN)\n", ctrl | ANE_H18_CPU_RUN, s->asc_pa + ANE_H18_ASC_CPU_CONTROL);
+	ane->fw_started = true;
+	writel(ctrl | ANE_H18_CPU_RUN, ane->asc + ANE_H18_ASC_CPU_CONTROL);
+	for (waited = 0; waited < boot_wait_ms; waited += 10) {
+		usleep_range(10000, 11000);
+		ret = ane_h18_read(ane, "CPU_STATUS", ane->asc, s->asc_pa, ANE_H18_ASC_CPU_STATUS, s->asc_size, &st);
+		if (ret)
+			return ret;
+		if (st & ANE_H18_ST_RUNNING)
+			*running = true;
+		if (st != last) {
+			dev_info(ane->dev, "ane_h18 t+%ums cpu_status=%#x\n", waited + 10, st);
+			last = st;
+		}
+		for (i = 0; i < ANE_H18_PO_NCAND + (alias_mbox ? 1 : 0) && *msgs < ANE_H18_PO_MAXMSG; i++) {
+			chan_off = i < ANE_H18_PO_NCAND ? ane_h18_po_chan(s, i) * ANE_H18_PO_STRIDE : ANE_H18_PO_ALIAS_OFF + s->mbox_num * 2 * ANE_H18_PO_STRIDE;
+			char tag[16];
+
+			if ((u64)chan_off + ANE_H18_PO_STATUS + 4 > s->mbox_size)
+				continue;
+			if (i < ANE_H18_PO_NCAND)
+				snprintf(tag, sizeof(tag), "ch%u", ane_h18_po_chan(s, i));
+			else
+				snprintf(tag, sizeof(tag), "alias%u", s->mbox_num * 2);
+			if (i >= ANE_H18_PO_NCAND) {
+				*msgs += ane_h18_rtkit_step(ane, chan_off, tag, &sent);
+				continue;
+			}
+			po = readl(ane->mbox + chan_off + ANE_H18_PO_STATUS);
+			*msgs += ane_h18_po_pop(ane, chan_off, tag, po);
+		}
+	}
+	return 0;
+}
+
+/* The firmware did not answer the unload: power-cycle the ANE domain through the PSD this module owns. The firmware resets with the domain, so the program and
+ * the process are gone, and the core runs again so the RTKit exchange starts over without a reboot. */
+static void ane_h18_failpath_recover(struct ane_h18 *ane)
+{
+	unsigned int msgs = 0;
+	bool running = false;
+	int failed;
+
+	failed = ane_h18_psd_off(ane);
+	dev_err(ane->dev, "ane_h18 prog: the firmware did not answer the unload, the ANE domain was powered down (%d slots did not acknowledge)\n", failed);
+	msleep(100);
+	if (ane_h18_psd_up(ane, "recover")) {
+		dev_err(ane->dev, "ane_h18 prog: the ANE domain did not come back up, the program may still be resident\n");
+		return;
+	}
+	ane->rtk_ap_on = false;
+	ane->rtk_ap_acked = false;
+	ane->rtk_iop_acked = false;
+	ane->rtk_iop_idle = false;
+	if (ane_h18_core_start(ane, &msgs, &running))
+		dev_err(ane->dev, "ane_h18 prog: the core did not start again after the power cycle\n");
+	else
+		dev_info(ane->dev, "ane_h18 prog: the ANE domain is back up, the firmware was reset and the RTKit exchange started again\n");
+	ane->prog_cleaned = true;
+}
+
 /* One program on the IO ring after START: allocate the section and buffer surfaces from the file, LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, wait for the
  * finish event, then TERMINATE_PROCESS and DESTROY_PROGRAM. Every reply is logged whole. A command the firmware refuses (acknowledgement not zero) or does not
- * answer ends the sequence; after an unanswered command nothing is unloaded and no buffer is freed before the core stopped (the module frees them with the
- * surfaces). The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. Whether the T8152 firmware accepts it is
- * what the first run shows. */
-static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
+ * answer ends the sequence; the program and the process are unloaded anyway, and a firmware that does not answer the unload is power-cycled and reset. On the
+ * M6 the recovery has only been seen to work this far: the matvec program still ended core-not-stopped after the power cycle, so a stuck core is not yet
+ * proven clearable without a reboot. The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. The H14 add
+ * program runs on the T8152; the matvec program's call never finishes (known failure, cause unknown). */
+static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsigned int pass, unsigned int calls, unsigned int *t2h_cursor)
 {
 	const struct ane_h18_pdesc *p = &ane->pd;
 	const u8 *fw = ane->prog_blob->data;
 	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
-	unsigned int i, t2h = 0, got = 0, waited;
+	unsigned int i, got = 0, waited;
 	u32 prog = ~0u, proc = ~0u, w;
+	u64 t0;
 	bool fin = false, created = false, loaded = false;
 	int ret;
 
@@ -1686,17 +2025,45 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		char nm[24];
 
 		snprintf(nm, sizeof(nm), "PROG sec %u", p->sec[i].id);
-		ret = ane_h18_hs_alloc(ane, b, ALIGN(p->sec[i].size, SZ_16K), nm);
+		ret = ane_h18_hs_alloc_at(ane, b, ALIGN(p->sec[i].size, prog_iova_text && p->sec[i].id == 3 ? 0x8000 : SZ_16K), nm,
+					  prog_iova_text && p->sec[i].id == 3 ? prog_iova_text : 0);
 		if (ret)
 			return ret;
 		memcpy(b->va, fw + p->sec[i].off, p->sec[i].size);
+	}
+	if (prog_text_const || prog_iova_kern) {
+		const u64 cbytes = 0x4000;
+		unsigned int s2 = p->nsec, s3 = p->nsec;
+
+		for (i = 0; i < p->nsec; i++) {
+			if (p->sec[i].id == 2)
+				s2 = i;
+			if (p->sec[i].id == 3)
+				s3 = i;
+		}
+		if (s2 == p->nsec || p->sec[s2].size < cbytes)
+			return -EINVAL;
+		if (prog_text_const) {
+			if (!prog_iova_text || s3 == p->nsec || (prog_text_const & 7) || prog_text_const + cbytes > 0x8000 ||
+			    p->sec[s3].size > prog_text_const)
+				return -EINVAL;
+			memcpy((u8 *)ane->pg_sec[s3].va + prog_text_const, fw + p->sec[s2].off, cbytes);
+		}
+		if (prog_iova_kern && p->sec[s2].size > cbytes) {
+			u64 ksz = p->sec[s2].size - cbytes;
+
+			ret = ane_h18_hs_alloc_at(ane, &ane->pg_kern, ALIGN(ksz, SZ_16K), "PROG kern", prog_iova_kern);
+			if (ret)
+				return ret;
+			memcpy(ane->pg_kern.va, fw + p->sec[s2].off + cbytes, ksz);
+		}
 	}
 	for (i = 0; i < p->nio; i++) {
 		struct ane_h18_hs_buf *b = &ane->pg_io[i];
 		char nm[24];
 
 		snprintf(nm, sizeof(nm), "PROG buf %u", p->io[i].id);
-		ret = ane_h18_hs_alloc(ane, b, ALIGN(p->io[i].size, SZ_16K), nm);
+		ret = ane_h18_hs_alloc_at(ane, b, ALIGN(p->io[i].size, SZ_16K), nm, ane_h18_io_at(p, i));
 		if (ret)
 			return ret;
 		if (p->io[i].dsize)
@@ -1712,7 +2079,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		} else if (ret) {
 			goto fail;
 		}
-		ane_h18_prog_settle(ane, 20, &t2h);
+		ane_h18_prog_settle(ane, 20, t2h_cursor);
 	}
 
 	/* LOAD_PROGRAM */
@@ -1729,6 +2096,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 	}
 	w = ~0u;
 	memcpy(cmd + 0x1b8, &w, 4);
+	ane_h18_prog_dump(ane, "LOAD_PROGRAM sent", cmd, 0x1c0);
 	ret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_LOAD_PROGRAM, 0x1c0, false, 0, cmd + 8, 0x1c0 - 8, &blk);
 	ane_h18_prog_dump(ane, "LOAD_PROGRAM reply", (u8 *)ane->hs_cmd.va, 0x40);
 	if (ret)
@@ -1741,7 +2109,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		goto fail;
 	}
 	loaded = true;
-	ane_h18_prog_settle(ane, 20, &t2h);
+	ane_h18_prog_settle(ane, 20, t2h_cursor);
 
 	/* CREATE_PROCESS */
 	memset(cmd, 0, sizeof(cmd));
@@ -1759,7 +2127,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		goto fail;
 	}
 	created = true;
-	ane_h18_prog_settle(ane, 20, &t2h);
+	ane_h18_prog_settle(ane, 20, t2h_cursor);
 
 	/* PROCEDURE_CALL: one 0x30 byte element per buffer at +0x60 (flags 1, buffer id +4, type +8, iova +0x18, size +0x20) */
 	memset(cmd, 0, sizeof(cmd));
@@ -1785,19 +2153,72 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 		memcpy(r + 0x20, &size, 8);
 	}
 	wmb();
+	ane_h18_prog_dump(ane, "PROCEDURE_CALL sent", cmd, 0x60 + p->nio * 0x30);
+	t0 = ktime_to_ms(ktime_get());
+	ane->call_t2h = prog_out_words ? t2h_cursor : NULL;
+	ane->call_t0 = ane->call_t1 = 0;
 	ret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_PROCEDURE_CALL, 0x60 + p->nio * 0x30, false, 0, cmd + 8, 0x60 + p->nio * 0x30 - 8, &blk);
+	ane->call_t2h = NULL;	/* the ack wait peeked with the cursor armed; the tight loop below re-arms it, because the finish event usually arrives after the ack */
 	ane_h18_prog_dump(ane, "PROCEDURE_CALL reply", (u8 *)ane->hs_cmd.va, 0x40);
 	if (ret)
 		goto fail;
+	if (prog_out_words) {
+		u64 digest = 0, t0n = ktime_get_ns();
+		u32 last_pend = 0;
+
+		/* Tight poll so the stamp carries no sleep: the cursor is re-armed above because call_peek needs it, peek stamps call_t1, and the events are drained only
+		 * after the stamp, so the console cannot delay it. */
+		ane->call_t2h = t2h_cursor;
+		for (waited = 0; waited < hs_wait_ms && !ane->call_t1; waited = (unsigned int)((ktime_get_ns() - t0n) / NSEC_PER_MSEC)) {
+			ane_h18_chan_poll(ane, 1, &digest, &last_pend);
+			ane_h18_call_peek(ane);
+			cpu_relax();
+			cond_resched();
+		}
+		ane->call_t2h = NULL;
+		got += ane_h18_prog_t2h(ane, t2h_cursor, &fin);
+	} else {
 	for (waited = 0; waited < hs_wait_ms && !fin; waited++) {
 		u64 digest = 0;
 		u32 last_pend = 0;
 
 		usleep_range(1000, 1100);
 		ane_h18_chan_poll(ane, waited + 1, &digest, &last_pend);
-		got += ane_h18_prog_t2h(ane, &t2h, &fin);
+		got += ane_h18_prog_t2h(ane, t2h_cursor, &fin);
+		if (waited == 99 || waited == 299 || waited == 599) {
+			/* Debug check: every record of the ring (64-byte records, the table's slot count),
+			 * bit0 set = host owned, 1 = the firmware's freed marker, an address with bit0
+			 * clear = a published event. Compare with the host cursor to catch a desync. */
+			struct ane_h18_ring_copy *r2 = NULL;
+			unsigned int s;
+
+			for (i = 0; i < ANE_H18_CH_COUNT; i++)
+				if (ane->ch_rings[i].base && ane->ch_rings[i].type == 1 && !strcmp(ane->ch_names[i], "IO_T2H"))
+					r2 = &ane->ch_rings[i];
+			if (r2) {
+				dev_info(ane->dev, "ane_h18 prog: ring probe t=%ums cursor=%u slots=%u\n", waited + 1, *t2h_cursor, r2->slots);
+				for (s = 0; s < r2->slots; s++) {
+					u64 h = READ_ONCE(r2->base[s * 8]);
+
+					if (h)
+						dev_info(ane->dev, "ane_h18 prog: ring probe t=%ums rec %u hdr=%#llx len=%#llx\n",
+							 waited + 1, s, h, READ_ONCE(r2->base[s * 8 + 1]));
+				}
+			}
+		}
+	}
+	}
+	if (prog_out_words) {
+		if (ane->call_t1)
+			dev_info(ane->dev, "ane_h18 prog: call %u/%u finished in %llu ns\n", pass, calls, ane->call_t1 - ane->call_t0);
+		else if (fin)
+			dev_info(ane->dev, "ane_h18 prog: call %u/%u finished, the finish event was not seen before the events were read: no latency\n", pass, calls);
+		else
+			dev_info(ane->dev, "ane_h18 prog: call %u/%u gave no finish event\n", pass, calls);
 	}
 	dev_info(ane->dev, "ane_h18 prog: PROCEDURE_CALL %s after %u ms, %u IO_T2H events\n", fin ? "finished" : "gave no finish event", waited, got);
+	dev_info(ane->dev, "ane_h18 prog: call %u/%u %s in %llu ms (send to finish event)\n", pass, calls,
+		 fin ? "finished" : "did not finish", ktime_to_ms(ktime_get()) - t0);
 	ane_h18_dart_exc(ane, "after the call");
 	for (i = 0; i < p->nio; i++) {
 		const u32 *o = ane->pg_io[i].va;
@@ -1807,6 +2228,24 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 			nz += o[k] != 0;
 		dev_info(ane->dev, "ane_h18 prog: buffer %u (%s, %#llx bytes): %u nonzero words, first %08x %08x %08x %08x\n", p->io[i].id, p->io[i].dir == 1 ? "output" : "input", p->io[i].size, nz,
 			 words > 0 ? o[0] : 0, words > 1 ? o[1] : 0, words > 2 ? o[2] : 0, words > 3 ? o[3] : 0);
+		if (pass == 1 && hs_prog_dump) {
+			unsigned int n = min(hs_prog_dump, 0x1000u);
+
+			ane_h18_prog_dump(ane, p->io[i].dir == 1 ? "output buffer" : "input buffer", (const u8 *)o, n);
+		}
+		if (prog_out_words && p->io[i].dir == 1) {
+			unsigned int w = min(words, prog_out_words), k2;
+
+			for (k2 = 0; k2 < w; k2 += 16) {
+				char line[16 * 9 + 1];
+				unsigned int m, n2 = 0;
+
+				for (m = 0; m < 16 && k2 + m < w; m++)
+					n2 += sprintf(line + n2, "%08x ", o[k2 + m]);
+				line[n2 - 1] = 0;
+				dev_info(ane->dev, "ane_h18 prog: out buf %u +0x%x: %s\n", p->io[i].id, k2 * 4, line);
+			}
+		}
 	}
 	if (!fin) {
 		ret = -ETIMEDOUT;
@@ -1814,7 +2253,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 	}
 	ret = 0;
 
-	/* unload: process first, then the program, each followed by 10 ms of answering */
+	/* unload: process first, then the program, each followed by hs_settle_ms ms of answering */
 	memset(cmd, 0, sizeof(cmd));
 	memcpy(cmd + 8, &prog, 4);
 	memcpy(cmd + 0xc, &proc, 4);
@@ -1823,21 +2262,57 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io)
 	created = false;
 	if (i) {
 		ret = i;
-		goto fail_nounload;
+		goto fail;		/* the unload did not answer: the fail path destroys the program or power-cycles the domain */
 	}
-	ane_h18_prog_settle(ane, 10, &t2h);
+	ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
 	goto destroy;
 fail:
-	/* a command or the call timed out: the firmware may be hung and the unanswered slot is still ours to give back, so nothing more is sent to it */
-	if (ret == -ETIMEDOUT || ret == -EBUSY)	/* -EBUSY: the IO slot of an earlier unanswered command is not ours */
+	/* A command or the call timed out. The program and the process may still be resident, so the unload is tried anyway: a firmware that only lost the finish
+	 * event answers it and the ANE holds nothing. The recovery runs only on -ETIMEDOUT or -EBUSY (an unanswered reply wait, or the IO slot of an earlier
+	 * unanswered command that is not ours to send on). A command the firmware answers is taken as done without parsing the reply, so a firmware that answers
+	 * DESTROY_PROGRAM with a refusal leaves the program resident with prog_cleaned already set; only an unanswered one ends in the power-cycle below, which
+	 * resets the firmware and drops the program. */
+	if (ret == -ETIMEDOUT || ret == -EBUSY) {	/* -EBUSY: the IO slot of an earlier unanswered command is not ours */
+		int unanswered = 0, cmdret;
+
+		if (created) {
+			memset(cmd, 0, sizeof(cmd));
+			memcpy(cmd + 8, &prog, 4);
+			memcpy(cmd + 0xc, &proc, 4);
+			cmdret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
+			ane_h18_prog_dump(ane, "TERMINATE_PROCESS reply", (u8 *)ane->hs_cmd.va, 0x20);
+			ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
+			if (cmdret) {
+				unanswered = 1;
+				dev_err(ane->dev, "ane_h18 prog: TERMINATE_PROCESS was not answered (%d)\n", cmdret);
+			}
+			created = false;
+		}
+		if (loaded) {
+			memset(cmd, 0, sizeof(cmd));
+			memcpy(cmd + 8, &prog, 4);
+			cmdret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk);
+			ane_h18_prog_dump(ane, "DESTROY_PROGRAM reply", (u8 *)ane->hs_cmd.va, 0x20);
+			ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
+			if (cmdret) {
+				unanswered = 1;
+				dev_err(ane->dev, "ane_h18 prog: DESTROY_PROGRAM was not answered (%d)\n", cmdret);
+			}
+			loaded = false;
+		}
+		if (unanswered)
+			ane_h18_failpath_recover(ane);
+		else
+			ane->prog_cleaned = true;
 		goto fail_nounload;
+	}
 	if (created) {
 		memset(cmd, 0, sizeof(cmd));
 		memcpy(cmd + 8, &prog, 4);
 		memcpy(cmd + 0xc, &proc, 4);
 		(void)ane_h18_cmd_body(ane, io, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
 		ane_h18_prog_dump(ane, "TERMINATE_PROCESS reply", (u8 *)ane->hs_cmd.va, 0x20);
-		ane_h18_prog_settle(ane, 10, &t2h);
+		ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
 	}
 destroy:
 	if (loaded) {
@@ -1847,9 +2322,14 @@ destroy:
 		memcpy(cmd + 8, &prog, 4);
 		r2 = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk);
 		ane_h18_prog_dump(ane, "DESTROY_PROGRAM reply", (u8 *)ane->hs_cmd.va, 0x20);
-		ane_h18_prog_settle(ane, 10, &t2h);
-		if (!ret)
-			ret = r2;
+		ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
+		if (r2) {
+			if (!ret)
+				ret = r2;
+			loaded = false;
+			goto fail;	/* the program could not be destroyed: the fail path power-cycles the domain */
+		}
+		loaded = false;
 	}
 fail_nounload:
 	dev_info(ane->dev, "ane_h18 prog: sequence result %d\n", ret);
@@ -2066,11 +2546,18 @@ static int ane_h18_chan_step(struct ane_h18 *ane, const struct ane_h18_hs_buf *t
 		}
 	}
 	if (hs_prog) {
-		ret = ane_h18_prog_run(ane, &io);
-		if (ret) {
-			ane_h18_chan_snapshot(ane, "after the failed program", true);
-			ane_h18_term_log(ane, "after the failed program");
-			return ret;
+		unsigned int pass, calls = min(hs_prog_calls, 1000u);
+		unsigned int t2h = 0;
+
+		for (pass = 1; pass <= calls; pass++) {
+			ret = ane_h18_prog_run(ane, &io, pass, calls, &t2h);
+			if (ret) {
+				ane_h18_chan_snapshot(ane, "after the failed program", true);
+				ane_h18_term_log(ane, "after the failed program");
+				return ret;
+			}
+			ane_h18_prog_surfaces_free(ane);
+			ane_h18_prog_settle(ane, hs_settle_ms, &t2h);	/* let the firmware finish with the program before the next pass loads one */
 		}
 	}
 	{
@@ -2375,6 +2862,16 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "REFUSED", "confirm_power=1 and confirm_boot=1 required");
 		return -EPERM;
 	}
+	if (owned_fw) {
+		if (!map_fw) {
+			ane_h18_result(ane, "boot", "REFUSED", "owned_fw=1 needs map_fw=1 (the owned pages are DART-mapped at the fixed TEXT/DATA IOVAs)");
+			return -EINVAL;
+		}
+		if (!fw_path || !fw_path[0] || strchr(fw_path, '/') || strstr(fw_path, "..")) {
+			ane_h18_result(ane, "boot", "REFUSED", "owned_fw=1 needs fw_path, a firmware-loader file name without a path, holding the exact pinned payload");
+			return -EINVAL;
+		}
+	}
 	if (psd_state >= ANE_H18_PSD_P6_RAIL || psd_slots < 1 || psd_slots > ANE_H18_NPSD || boot_wait_ms < 10 || boot_wait_ms > 2000) {
 		ane_h18_result(ane, "boot", "REFUSED", "psd_state 0 to 5, psd_slots 1 or 2, boot_wait_ms 10 to 2000");
 		return -EINVAL;
@@ -2399,8 +2896,16 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "REFUSED", "hs_chan=1 needs handshake=1, hs_cmds=1 needs hs_chan=1, hs_start=1 needs hs_cmds=1 and hs_prog=1 needs hs_start=1");
 		return -EINVAL;
 	}
+	if (owned_fw && hs_prog) {
+		ane_h18_result(ane, "boot", "REFUSED", "owned_fw=1 is a firmware-residency trial that submits no program; drop hs_prog=1 or owned_fw=1");
+		return -EINVAL;
+	}
 	if (hs_props > 2 || (hs_props && !hs_start)) {
 		ane_h18_result(ane, "boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1");
+		return -EINVAL;
+	}
+	if (((prog_out_words || hs_prog_calls != 1) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000) {
+		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1");
 		return -EINVAL;
 	}
 	if (hs_prog) {
@@ -2420,6 +2925,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ret = ane_h18_prog_parse(ane->prog_blob->data, ane->prog_blob->size, &ane->pd, &why);
 		if (ret) {
 			dev_err(ane->dev, "ane_h18 prog: %s: %s\n", prog_fw, why);
+			release_firmware(ane->prog_blob);
+			ane->prog_blob = NULL;
 			ane_h18_result(ane, "boot", "REFUSED", "hs_prog=1: the program file is not valid");
 			return -EINVAL;
 		}
@@ -2460,6 +2967,16 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "FAIL", "preflight-not-as-iboot-left-it");
 		return -EBUSY;
 	}
+	if (owned_fw) {
+		/* stage the pinned payload and plan the pages through the default domain while it still owns them; before any attach, before RUN */
+		ret = ane_h18_plan_owned_map(ane);
+		if (ret) {
+			ane_h18_free_owned_image(ane);	/* nothing is mapped and no domain is held: the trial fails clean */
+			ane_h18_psd_off(ane);
+			ane_h18_result(ane, "boot", "FAIL", "owned-prepare-failed");
+			return ret;
+		}
+	}
 	if (alias_mbox) {
 		u32 chan_off = ANE_H18_PO_ALIAS_OFF + s->mbox_num * 2 * ANE_H18_PO_STRIDE, ast = readl(ane->mbox + chan_off + ANE_H18_PO_STATUS);
 
@@ -2477,7 +2994,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ret = ane_h18_map_firmware(ane);
 		if (ret) {
 			ane_h18_psd_off(ane);
-			ane_h18_result(ane, "boot", "FAIL", "fw-map-failed");
+			if (!owned_fw)
+				ane_h18_result(ane, "boot", "FAIL", "fw-map-failed");
 			return ret;
 		}
 		if (read_dart) {
@@ -2579,20 +3097,47 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		return ret ? ret : -EBUSY;
 	}
 	ane->fw_started = false;
-	ane_h18_hs_free(ane);	/* only after the core stopped: a running core may still write into these surfaces */
-	ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
+	if (!ane->map_retained) {
+		ane_h18_hs_free(ane);	/* only after the core stopped: a running core may still write into these surfaces */
+		if (owned_fw)
+			ane_h18_unmap_owned_firmware(ane);	/* after hs_free: the fixed-IOVA aliases unmap through this domain */
+		else
+			ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
+	} else {
+		ane->trial_retained = true;
+	}
 	if (!keep_on)
 		ane_h18_psd_off(ane);
+	if (ane->map_retained)
+		return -EIO;	/* the EMERG above names the retention; the module pin stays and the control write reports failure */
 	if (ret) {
 		ane_h18_result(ane, "boot", "FAIL", "read-refused");
+		if (owned_fw) {
+			ane->trial_retained = true;
+			if (!keep_on)
+				ane_h18_psd_off(ane);
+		}
 		return ret;
 	}
 	if (rtkit_stop && !(ane->rtk_ap_on && ane->rtk_ap_acked && ane->rtk_iop_acked)) {
 		ane_h18_result(ane, "boot", "FAIL", "rtkit-shutdown-incomplete");
+		if (owned_fw) {
+			ane->trial_retained = true;
+			if (!keep_on)
+				ane_h18_psd_off(ane);
+		}
 		return -EIO;
 	}
 	if (handshake && hs_ret) {
 		ane_h18_result(ane, "boot", "FAIL", hs_ret == -ETIMEDOUT ? "handshake-no-table-address" : (hs_ret == -EIO || hs_ret == -EPROTO) ? "handshake-channel-step-failed" : "handshake-not-done");
+		if (owned_fw && !ane->prog_cleaned) {
+			ane->trial_retained = true;
+			if (!keep_on)
+				ane_h18_psd_off(ane);
+			return hs_ret;
+		}
+		if (owned_fw)
+			dev_info(ane->dev, "ane_h18 boot: the program stage left no program behind, the surfaces and the image are freed and the module can be removed\n");
 		return hs_ret;
 	}
 	ane_h18_result(ane, "boot", "PASS", handshake ? "core-handshook-and-stopped" : running_seen ? "core-ran-and-stopped" : "core-never-reported-running");
