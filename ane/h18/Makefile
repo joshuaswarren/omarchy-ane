@@ -29,7 +29,14 @@ sim/sim_h18: sim/sim_harness.c sim/shim.h ane_h18_main.c ane_h18_soc.c ane_h18.h
 sim/sim_dt_pmp: sim/test_dt_pmp.c ane_h18_dt.c ane_h18_dt.h ane_h18_dt_t8132_data.h
 	$(SIM_CC) $(SIM_CFLAGS) -I sim -o $@ sim/test_dt_pmp.c
 
-sim-dt-pmp: sim/sim_dt_pmp
+# the arm64 overlay blob must reach of_overlay_fdt_apply 8-byte aligned (the FDT magic is read as
+# a word); the x86-64 sim build aligns it by chance, so only this grep proves the attribute stays
+sim-dt-align-check:
+	@grep -q 'ane_h18_dt_t8132_blob\[\] __attribute__((aligned(8)))' ane_h18_dt_t8132_data.h || \
+		{ echo 'SIM-DT-ALIGN BAD: ane_h18_dt_t8132_blob is missing its 8-byte alignment attribute'; exit 1; }
+	@echo 'SIM-DT-ALIGN OK: the overlay blob carries 8-byte alignment'
+
+sim-dt-pmp: sim/sim_dt_pmp sim-dt-align-check
 	./sim/sim_dt_pmp
 
 sim/sim_dt_lifecycle: sim/test_dt_lifecycle.c ane_h18_dt.c ane_h18_dt.h ane_h18_dt_t8132_data.h
@@ -429,7 +436,7 @@ sim-mutation-chackalways:
 sim-mutation-chnostartgate:
 	$(call mutant,chnostartgate,s/if (seq\[i\].start_only \&\& !hs_start)/if (0 \/* NEG: start commands always *\/)/,NEG: start commands always,pos)
 
-sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
+sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-dt-align-check sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
 	sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
 	sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt sim-mutation-nodomaingate sim-mutation-nosnapguard \
 	sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate \
@@ -502,5 +509,5 @@ clean:
 	rm -f sim/sim_h18 sim/sim_dt_pmp sim/sim_dt_lifecycle
 
 .PHONY: sim-matvec-check sim-dt-pmp sim-dt-lifecycle sim-positive-reads sim-positive-reads-single sim-negative-reads sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnostamp sim-mutation-pgnooutdump sim-mutation-pgonecall sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
-	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-mutation-nodomaingate sim-mutation-nosnapguard sim-all clean
+	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-mutation-nodomaingate sim-mutation-nosnapguard sim-dt-align-check sim-all clean
 endif
