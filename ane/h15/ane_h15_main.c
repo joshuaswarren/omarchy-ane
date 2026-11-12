@@ -163,6 +163,12 @@ module_param(confirm_rtkit, bool, 0444);
 MODULE_PARM_DESC(confirm_rtkit,
 		 "stage=rtkit only: required. Stage 6 is stage 5 plus an RTKit management session on the ASC mailbox: it WRITES the mailbox send registers (HELLO reply, endpoint map, STARTEP, power states) and then runs the shutdown handshake. Nobody has run it on an H15 part.");
 
+static bool hold_vote;
+static bool vote_held;	/* shortcut: one device, bring-up module; upgrade if it ever binds twice */
+module_param(hold_vote, bool, 0444);
+MODULE_PARM_DESC(hold_vote,
+		 "Experiment: a passing probe keeps its runtime reference (no pm_runtime_put_sync), so the PMP vote and the ANE domains stay held until rmmod. Splits a PMP crash at vote time from one at release.");
+
 static unsigned int rtkit_wait_ms = 2000;
 module_param(rtkit_wait_ms, uint, 0444);
 MODULE_PARM_DESC(rtkit_wait_ms,
@@ -352,6 +358,7 @@ struct ane_h15 {
 	struct device *pd_dev[ANE_H15_MAX_PD];
 	struct device_link *pd_link[ANE_H15_MAX_PD];
 	int pd_count;
+	struct device *vote_dev;	/* the PMP vote domain, taken in runtime_resume; NULL when the node has none */
 };
 
 /* Attach every power-domain the node lists and link it so a single
@@ -383,9 +390,19 @@ static int ane_h15_attach_pds(struct ane_h15 *ane)
 		/* Count it before adding the link: if device_link_add fails,
 		 * ane_h15_detach_pds must still detach this attached domain. */
 		ane->pd_count = i + 1;
-		ane->pd_link[i] = device_link_add(dev, ane->pd_dev[i],
-						  DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME |
-						  DL_FLAG_RPM_ACTIVE);
+		struct of_phandle_args args;
+		u32 flags = DL_FLAG_STATELESS | DL_FLAG_PM_RUNTIME | DL_FLAG_RPM_ACTIVE;
+
+		/* The PMP vote is found by what it is, not where it sits in the list. */
+		if (!of_parse_phandle_with_args(dev->of_node, "power-domains",
+						"#power-domain-cells", i, &args)) {
+			if (of_device_is_compatible(args.np, "apple,t6000-pmp-v2-report-entry")) {
+				flags = DL_FLAG_STATELESS;
+				ane->vote_dev = ane->pd_dev[i];
+			}
+			of_node_put(args.np);
+		}
+		ane->pd_link[i] = device_link_add(dev, ane->pd_dev[i], flags);
 		/* device_link_add() returns NULL on failure, never an
 		 * ERR_PTR, so a plain !link test is the right check. */
 		if (!ane->pd_link[i]) {
@@ -400,6 +417,8 @@ static int ane_h15_attach_pds(struct ane_h15 *ane)
 static void ane_h15_detach_pds(struct ane_h15 *ane)
 {
 	int i;
+
+	ane->vote_dev = NULL;
 
 	for (i = ane->pd_count - 1; i >= 0; i--) {
 		if (ane->pd_link[i]) {
@@ -3072,8 +3091,12 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return 0;
 	}
 	/* A started core that did not stop keeps its power claim (and its windows, see remove()). */
-	if (!ane->fw_started)
+	if (!ane->fw_started && hold_vote && !ret) {
+		vote_held = true;
+		dev_info(&pdev->dev, "hold_vote: runtime reference kept; rmmod releases it\n");
+	} else if (!ane->fw_started) {
 		pm_runtime_put_sync(&pdev->dev);
+	}
 	if (ane->fw_started)
 		dev_emerg(&pdev->dev,
 			  "firmware started: do NOT unload; reboot to park the ANE\n");
@@ -3096,6 +3119,11 @@ static void ane_h15_remove(struct platform_device *pdev)
 			  "remove with the firmware released: reboot required\n");
 		return;
 	}
+	if (vote_held) {
+		vote_held = false;
+		dev_info(&pdev->dev, "hold_vote: releasing the held runtime reference\n");
+		pm_runtime_put_sync(&pdev->dev);
+	}
 	ane_h15_hs_free(ane);
 	pm_runtime_disable(&pdev->dev);
 	ane_h15_detach_pds(ane);
@@ -3110,11 +3138,40 @@ static const struct of_device_id ane_h15_of_match[] = {
 	{ }
 };
 
+/* The PMP vote (the report entry in the power-domains list) is not a runtime-PM
+ * link supplier: the core suspends link suppliers in attach order, after the
+ * consumer's own callback, so a vote attached last was cleared after ane_sys
+ * and the other pmgr domains were already off, and the PMP crashed. The vote
+ * is taken in runtime_resume (suppliers already on) and dropped in
+ * runtime_suspend (suppliers still on), on every path that suspends the device. */
+static int ane_h15_runtime_resume(struct device *dev)
+{
+	struct ane_h15 *ane = dev_get_drvdata(dev);
+
+	return ane && ane->vote_dev ? pm_runtime_resume_and_get(ane->vote_dev) : 0;
+}
+
+static int ane_h15_runtime_suspend(struct device *dev)
+{
+	struct ane_h15 *ane = dev_get_drvdata(dev);
+	int ret;
+
+	if (!ane || !ane->vote_dev)
+		return 0;
+	ret = pm_runtime_put_sync(ane->vote_dev);
+	return ret < 0 ? ret : 0;
+}
+
+static const struct dev_pm_ops ane_h15_pm_ops = {
+	SET_RUNTIME_PM_OPS(ane_h15_runtime_suspend, ane_h15_runtime_resume, NULL)
+};
+
 static struct platform_driver ane_h15_driver = {
 	.driver = {
 		.name = "ane_h15",
 		.suppress_bind_attrs = true,
 		.of_match_table = ane_h15_of_match,
+		.pm = &ane_h15_pm_ops,
 	},
 	.probe = ane_h15_probe,
 	.remove = ane_h15_remove,
