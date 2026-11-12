@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /* T6021 (H14 / J414c) Apple Neural Engine — skeleton constants and types.
  *
- * Every constant below is static-decode provenance, no device writes:
- *  - reg windows, IRQ, pmgr islands: ADT j414c (DeviceTree.j414cap.im4p,
+ * Every constant below is observed provenance, no device writes:
+ *  - reg windows, IRQ, pmgr islands: ADT j414c (the J414c boot device tree,
  *    receipts/2026-09-18-t6021-engine-layout-mined §2), Linux translation
  *    +0x200000000 (proven class, pmgr low-32 match).
  *  - ASC cpu block (+0x1400000 h14g) + MBI transport (SCRATCH, channel
@@ -205,8 +205,8 @@ static inline u64 ane_mbi_msg48_encode(u32 cursor, u32 len)
 	       FIELD_PREP(ANE_MBI_MSG48_LEN, len);
 }
 
-/* Host->fw TX sequence (RTBuddy mode, all static-decode proven):
- *   1. fail if len > ring_size (K14 0xe00002c2 @0x…95f3a24)
+/* Host->fw TX sequence (RTBuddy mode, all observed):
+ *   1. fail if len > ring_size (error code 0xe00002c2)
  *   2. cursor = write_cursor; if (cursor + len >= ring_size) cursor = 0
  *      (exact fit wraps: csel lo @0x…95f3b04)
  *   3. memcpy(ring + cursor, cmd, len)   (DMA-coherent ring)

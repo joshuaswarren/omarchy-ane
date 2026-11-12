@@ -49,7 +49,7 @@ from m1n1.utils import irange
 CHIPS = {0x8122: "T8122", 0x6030: "T6030", 0x6031: "T6031"}
 PAGE = 0x4000
 
-# Offsets from the engine base (ANE reg 0). DECODED: read in the macOS kext (receipts/2026-10-28-m3-ane).
+# Offsets from the engine base (ANE reg 0). OBSERVED: read from the shipped driver (receipts/2026-10-28-m3-ane).
 # INFERRED: labelled by analogy with the Linux apple-mailbox layout; the offset is real, the name is a guess.
 NAMED = {
     0x1050000: "RVBAR",

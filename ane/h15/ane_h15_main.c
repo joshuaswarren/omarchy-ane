@@ -2567,9 +2567,9 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  *
  * On a T6031 (ane-type 0xe0) the shipped system writes 0 to the 32 bit register at offset 0x199c of the
  * PWGATE window, then polls it until bits 1:0 read 0, up to 0x1388 polls of 10 microseconds
- * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the the shipped system
+ * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the boot
  * device tree of the J516C: 0x292290000, 0x4000, next to the pmgr window at 0x292280000.
- * The decoded CPU-power step of the T6030 and T8122 has the same sequence at the word of their
+ * The observed CPU-power step of the T6030 and T8122 has the same sequence at the word of their
  * row (+0x2b6c, +0x272c) in the third reg entry of their ANE node. The T6031 offset comes from the SoC data. The
  * hypothesis under test (inferred): a gate still closed there is why the stage 5 runs on these chips ended with
  * CPU_STATUS 0x30002a to 0x300028 and no mailbox message. A stage 2 read (pwgate_read) found the

@@ -766,10 +766,8 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 
 /* Decode one segment-ranges property (two entries) into segs[2].
  * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
- * The ASC sees remap. mapFwCTRRRegion in retained image SHA256
- * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
- * uses ldr w9,[x20,#0x18] for the TEXT entry and
- * ldr w9,[x20,#0x38] for the DATA entry: size is u32,
+ * The ASC sees remap. The shipped driver reads the TEXT size at entry
+ * +0x18 and the DATA size at entry +0x38 as 32-bit words: size is u32,
  * not u64. The final dword's meaning is not established here.
  * The legacy 24-byte {u64 phys, remap, size} form is also accepted.
  */

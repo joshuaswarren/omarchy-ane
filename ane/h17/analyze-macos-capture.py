@@ -30,7 +30,7 @@ def words(value):
     return list(struct.unpack('<' + 'I' * (len(value) // 4), value))
 
 
-def analyze(root):
+def analyze(root, pmgr_name):
     hashes = {}
     for line in (root / 'SHA256SUMS').read_text().splitlines():
         expected, filename = line.split(None, 1)
@@ -47,7 +47,7 @@ def analyze(root):
     tree = plistlib.loads((root / 'service-tree.plist').read_bytes())
     ane = one(tree, 'ane')
     driver = one(tree, 'H11ANE')
-    pmgr = one(tree, 'AppleT8140PMGR')
+    pmgr = one(tree, pmgr_name)
     props = driver.get('DeviceProperties', {})
     selected = ('ANEDevicePropertyANEVersion', 'ANEDevicePropertyANEHWBoardType',
                 'ANEDevicePropertyANECPUSubType', 'ANEDevicePropertyANEMinorVersion',
@@ -78,5 +78,6 @@ def analyze(root):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('capture', type=Path)
+    parser.add_argument('--pmgr-name', required=True, help='registry entry name of the power-manager node in the capture')
     args = parser.parse_args()
-    print(json.dumps(analyze(args.capture), indent=2))
+    print(json.dumps(analyze(args.capture, args.pmgr_name), indent=2))

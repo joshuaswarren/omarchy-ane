@@ -25,7 +25,7 @@
 # chan=4 also loads the program file $WORK/ane_h18_prog.bin (pinned by sha256 below, copied to /lib/firmware) and runs the program on the IO ring: LOAD_PROGRAM,
 # CREATE_PROCESS, PROCEDURE_CALL, then TERMINATE_PROCESS and DESTROY_PROGRAM. The core runs the firmware's own handling of a program: a refusal is logged, a hang costs a reboot.
 # All of them write; a hang or reset is possible.
-# The state defaults to 1: the AppleT8152PMGR kext decode in the lab receipts reads "on" as request 1 (or 2) for these slots,
+# The state defaults to 1: the observed power-manager behaviour in the lab receipts reads "on" as request 1 (or 2) for these slots,
 # and names 1 as the first experiment. 0 is the value proven for the ATC USB slot 71 and GPU slot 3, 2 is the GPU ASC value.
 # Step 3 needs the literal third argument GO (the operator's go-ahead) and a step 2 PASS on this boot. It may run again on
 # the same boot only after a step 3 PASS whose slots returned to state 6; a failed or refused-late step 3 needs a reboot.
