@@ -67,6 +67,7 @@ int sim_n_iocalls, sim_io_fail, sim_n_dom_live;
 struct sim_iomap sim_iomaps[64];
 int sim_n_iomaps;
 unsigned long sim_op_seq, sim_last_dmafree_seq;
+u64 sim_unmap_short_iova;
 static u8 sim_owned_fw[1572864];	/* the owned_fw trial payload: zeroed, matching the zeroed sim pin (sha256 stub returns zeros) */
 int sim_start_chan = -1, sim_start_msgs, sim_start_hello;
 u32 sim_po_out_off, sim_alias_credits = 1, sim_hello_min = 11, sim_hello_max = 12, sim_hello_ep, sim_hello_type = 1;
@@ -133,6 +134,33 @@ static void make_blob(void)
 	memcpy(sim_blob + 16, &fsize, 8);
 	sim_blob_len = fsize;
 	sim_fw_data = sim_blob;
+	sim_fw_size = fsize;
+}
+
+/* the prog_iova_kern trial file: the section with id 2 is exactly 0x4000 bytes, so nothing sits behind its first 0x4000 */
+static void make_blob_kern(void)
+{
+	static const u64 pos[6] = { 0x1000, 0x1100, 0x5100, 0x5400, 0x5800, 0x5d00 };
+	static const u64 size[6] = { 0x100, 0x4000, 0x300, 0x400, 0x500, 0x600 };
+	u64 fsize = 0x6380, i;
+
+	make_blob();
+	for (i = 0; i < 6; i++) {
+		u8 *r = sim_blob + 0x20 + i * 0x20;
+
+		memcpy(r + 8, &size[i], 8);
+		memcpy(r + 16, &pos[i], 8);
+		memset(sim_blob + pos[i], 0x10 + i, size[i]);
+	}
+	for (i = 0; i < 2; i++) {
+		u64 doff = 0x6300 + 0x40 * i;
+		u8 *r = sim_blob + 0x20 + 6 * 0x20 + i * 0x20;
+
+		memcpy(r + 16, &doff, 8);
+		memset(sim_blob + doff, i ? 0xbb : 0xaa, 0x40);
+	}
+	memcpy(sim_blob + 16, &fsize, 8);
+	sim_blob_len = fsize;
 	sim_fw_size = fsize;
 }
 
@@ -667,6 +695,10 @@ static void reset_all(void)
 	sim_premapped = sim_pub_wait = sim_prog_mode = sim_prog_n = sim_prog_loaded = sim_prog_created = sim_t2h_back = sim_out_written = sim_t2h_posted = 0;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
 	make_blob();
+	prog_iova_kern = 0;
+	hs_settle_ms = 10;
+	sim_unmap_short_iova = 0;
+	sim_owner_module.refs = 0;
 	sim_db_writes = sim_hs_table = sim_s3_mode = sim_cmd_mode = sim_cmds_seen = sim_table_bad = sim_chan_req = 0;
 	sim_pend_val = 0;
 	sim_ack_writes = 0;
@@ -1067,6 +1099,16 @@ static int psd_write_events(void)
 	for (k = 0; k < sim_n_events; k++)
 		if (sim_events[k].write == 1 && sim_events[k].pa >= SIM_PSD_BASE && sim_events[k].pa < SIM_PSD_BASE + 0x40000)
 			n++;
+	return n;
+}
+
+/* real bus writes only: the write==2 events are the shim's runtime-PM markers, not bus accesses */
+static int bus_write_events(void)
+{
+	int k, n = 0;
+
+	for (k = 0; k < sim_n_events; k++)
+		n += sim_events[k].write == 1;
 	return n;
 }
 
@@ -1492,7 +1534,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 48; pass++) {
+		for (pass = 0; pass < 52; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1557,6 +1599,14 @@ static void pos_boot(void)
 				owned_fw = true; fw_path = "pin.bin"; hs_prog = false;
 				sim_fw_data = sim_owned_fw; sim_fw_size = sizeof(sim_owned_fw);
 			}
+			if (pass == 48) hs_settle_ms = 1001;
+			if (pass == 49) { make_blob_kern(); prog_iova_kern = 0x30010000; }
+			if (pass == 50) {
+				owned_fw = true; fw_path = "pin.bin"; hs_prog = false;
+				sim_fw_data = sim_owned_fw; sim_fw_size = sizeof(sim_owned_fw);
+				node.has_iommus = false;
+			}
+			if (pass == 51) { prog_iova_bufs = 0x40000000; prog_iova_text = 0x50000000; sim_unmap_short_iova = 0x40000000; }
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1686,6 +1736,43 @@ static void pos_boot(void)
 							seq_free_hs = sim_dma[kk].free_seq > seq_free_hs ? sim_dma[kk].free_seq : seq_free_hs;
 					chk(ret == 0 && ok && seq_unmap_owned && seq_free_hs && seq_free_hs < seq_unmap_owned && log_count("(owned image)") == 2,
 					    "PG47 owned_fw=1: the pinned payload stages, both segments map at the fixed TEXT/DATA IOVAs (owned image), and the handshake surfaces free before the owned ranges unmap");
+				}
+				if (pass == 48)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000") && writes() == 0 && sim_fw_requests == 0 && sim_n_dma == 0 && first_run_event() < 0,
+					    "PG48 hs_settle_ms=1001 with hs_prog=1 is refused before any write, file load or allocation");
+				if (pass == 49) {
+					int kern_maps = 0;
+
+					for (kk = 0; kk < sim_n_iocalls; kk++)
+						kern_maps += sim_iocalls[kk].code == SIM_IO_MAP && sim_iocalls[kk].iova == 0x30010000;
+					chk(ret == -EINVAL && result("boot", "FAIL", "handshake-not-done") && log_count("prog_iova_kern is set but section 2") == 1 && kern_maps == 0 && sim_prog_n == 0 && live == 0,
+					    "PG49 prog_iova_kern with a section 2 of exactly 0x4000 bytes: the empty tail is logged, the boot FAILs, no kern alias maps and nothing leaks");
+				}
+				if (pass == 50) {
+					int live_img = 0;
+
+					for (kk = 0; kk < sim_n_dma; kk++)
+						live_img += sim_dma[kk].live && sim_dma[kk].size == ANE_H18_FW_IMAGE_SIZE;
+					chk(ret == -ENODEV && result("boot", "FAIL", "owned-map-failed") && bus_write_events() == 0 && first_run_event() < 0 &&
+					    log_count("the node has no iommus") == 1 && log_count("owned firmware staged bytes=") == 1 && live_img == 0 && sim_owner_module.refs == 0,
+					    "PG50 owned_fw=1 with no iommus in the node: the early map refusal is FAIL owned-map-failed, the staged image goes back, nothing pinned");
+				}
+				if (pass == 51) {
+					u64 dma_pa = 0;
+					int leaked = 0, live_other = 0;
+
+					for (kk = 0; kk < sim_n_iomaps; kk++)
+						if (sim_iomaps[kk].iova == 0x40000000)
+							dma_pa = sim_iomaps[kk].pa;
+					for (kk = 0; kk < sim_n_dma; kk++)
+						if (sim_dma[kk].live) {
+							if (sim_dma[kk].iova == dma_pa)
+								leaked++;
+							else
+								live_other++;
+						}
+					chk(ret == 0 && ok && log_count("the pages are leaked, not freed") == 1 && leaked == 1 && live_other == 0 && sim_owner_module.refs == 1,
+					    "PG51 a short unmap of the 0x40000000 alias keeps that buffer allocated (leaked, never freed) and pins the module, the rest of the run frees clean");
 				}
 				if (pass == 38)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1") && writes() == 0, "PR5 hs_props=3 is refused before any write");

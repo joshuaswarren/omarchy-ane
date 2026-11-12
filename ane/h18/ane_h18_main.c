@@ -341,8 +341,8 @@ struct ane_h18 {
 	u64 map_iova[2], map_size[2];		/* the fixed TEXT/DATA IOVAs and full sizes (owned pages or iBoot segments) */
 	u64 map_len[2];				/* bytes actually mapped per segment: unmap uses these, never the full size blindly */
 	unsigned int map_n;			/* segments whose whole extent is currently mapped */
-	bool map_retained;			/* a short unmap kept the domain, the image and the module pin: no retry, no removal, reboot required */
-	bool trial_retained;			/* a post-RUN failure of the owned trial kept the module pin with image and surfaces until reboot recovery */
+	bool map_retained;			/* a short unmap kept the domain and the image: no retry, no removal, reboot required (the module is pinned) */
+	bool module_pinned;			/* __module_get() taken once: a retained image or surface must not outlive the module code; released only by reboot */
 	bool prog_cleaned;			/* the program stage unloaded the program or power-cycled the domain: the ANE holds no program, so nothing needs a reboot */
 	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the running call, for the finish-event peek that logs nothing */
 	u64 call_t0, call_t1;	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
@@ -903,28 +903,31 @@ static int ane_h18_map_firmware(struct ane_h18 *ane)
 
 	if (!device_iommu_mapped(ane->dev)) {
 		dev_err(ane->dev, "ane_h18 map_fw: the node has no iommus (no DART client)\n");
-		return -ENODEV;
+		ret = -ENODEV;
+		goto refused;
 	}
 	if (handshake) {
 		/* The DMA API (the handshake surfaces) allocates in the default domain, so the segments go into that one and nothing is attached. */
 		dom = iommu_get_domain_for_dev(ane->dev);
 		if (!dom || !(dom->type & __IOMMU_DOMAIN_DMA_API)) {
 			dev_err(ane->dev, "ane_h18 map_fw: the ANE has no default DMA domain\n");
-			return -ENODEV;
+			ret = -ENODEV;
+			goto refused;
 		}
 		dev_crit(ane->dev, "ane_h18 map the firmware into the default DMA domain of the ANE (no attach)\n");
 	} else {
 		dom = iommu_paging_domain_alloc(ane->dev);
 		if (IS_ERR(dom)) {
 			dev_err(ane->dev, "ane_h18 map_fw: no iommu domain: %ld\n", PTR_ERR(dom));
-			return PTR_ERR(dom);
+			ret = PTR_ERR(dom);
+			goto refused;
 		}
 		dev_crit(ane->dev, "ane_h18 attach the ANE to a new DART domain (the DART driver programs the DART now)\n");
 		ret = iommu_attach_device(dom, ane->dev);
 		if (ret) {
 			dev_err(ane->dev, "ane_h18 map_fw: attach failed: %d\n", ret);
 			iommu_domain_free(dom);
-			return ret;
+			goto refused;
 		}
 	}
 	ane->domain = dom;
@@ -984,6 +987,13 @@ static int ane_h18_map_firmware(struct ane_h18 *ane)
 		}
 	}
 	return 0;
+
+refused:
+	if (owned_fw) {
+		ane_h18_unmap_owned_firmware(ane);	/* nothing is mapped and no domain is held: only the staged image goes back */
+		ane_h18_result(ane, "boot", "FAIL", "owned-map-failed");
+	}
+	return ret;
 }
 
 /* Offsets of the ANE DART words read before RUN: config (+0x0), +0x4, version (+0x8), the stream-enable word (+0xc00), the stream configuration
@@ -1069,7 +1079,8 @@ static void ane_h18_scratch_write(struct ane_h18 *ane, unsigned int i, u32 v)
 	writel(v, ane->scratch + ANE_H18_SCRATCH_OFF + 4 * i);
 }
 
-/* One program surface goes back: the fixed alias is unmapped first so the device cannot reach the pages after the DMA API releases them. */
+/* One program surface goes back: the fixed alias is unmapped first so the device cannot reach the pages after the DMA API releases them. When the unmap
+ * is short, part of the alias is still mapped, so the pages stay allocated (leaked, logged) instead of going back to the allocator under a live mapping. */
 static void ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
 {
 	if (!b->va)
@@ -1077,9 +1088,13 @@ static void ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
 	if (b->fixed) {
 		size_t un = ane->domain ? iommu_unmap(ane->domain, b->iova, b->size) : b->size;
 
-		if (un != b->size)
-			dev_warn(ane->dev, "ane_h18 fixed alias at %#llx unmapped %#zx of %#zx bytes\n", (u64)b->iova, un, b->size);
 		b->fixed = false;
+		if (un != b->size) {
+			dev_err(ane->dev, "ane_h18 fixed alias at %#llx unmapped %#zx of %#zx bytes: the pages are leaked, not freed\n", (u64)b->iova, un, b->size);
+			b->va = NULL;
+			ane_h18_pin_module(ane);
+			return;
+		}
 	}
 	dma_free_coherent(ane->dev, b->size, b->va, b->dma);
 	b->va = NULL;
@@ -2049,7 +2064,11 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 				return -EINVAL;
 			memcpy((u8 *)ane->pg_sec[s3].va + prog_text_const, fw + p->sec[s2].off, cbytes);
 		}
-		if (prog_iova_kern && p->sec[s2].size > cbytes) {
+		if (prog_iova_kern && p->sec[s2].size <= cbytes) {
+			dev_err(ane->dev, "ane_h18 prog: prog_iova_kern is set but section 2 (%#llx bytes) has nothing behind its first %#llx bytes\n", (u64)p->sec[s2].size, cbytes);
+			return -EINVAL;
+		}
+		if (prog_iova_kern) {
 			u64 ksz = p->sec[s2].size - cbytes;
 
 			ret = ane_h18_hs_alloc_at(ane, &ane->pg_kern, ALIGN(ksz, SZ_16K), "PROG kern", prog_iova_kern);
@@ -2327,7 +2346,9 @@ destroy:
 			if (!ret)
 				ret = r2;
 			loaded = false;
-			goto fail;	/* the program could not be destroyed: the fail path power-cycles the domain */
+			dev_err(ane->dev, "ane_h18 prog: DESTROY_PROGRAM was not answered (%d)\n", r2);
+			ane_h18_failpath_recover(ane);	/* the program may still be resident: power-cycle the domain (this sets prog_cleaned only when the recovery finished) */
+			goto fail_nounload;
 		}
 		loaded = false;
 	}
@@ -2904,8 +2925,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1");
 		return -EINVAL;
 	}
-	if (((prog_out_words || hs_prog_calls != 1) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000) {
-		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1");
+	if (((prog_out_words || hs_prog_calls != 1) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000 || hs_settle_ms > 1000) {
+		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000");
 		return -EINVAL;
 	}
 	if (hs_prog) {
@@ -3001,7 +3022,10 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		if (read_dart) {
 			ret = ane_h18_read_dart_words(ane, "DARTPOST");
 			if (ret) {
-				ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
+				if (owned_fw)
+					ane_h18_unmap_owned_firmware(ane);
+				else
+					ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
 				ane_h18_psd_off(ane);
 				ane_h18_result(ane, "boot", "FAIL", "dart-read-refused");
 				return ret;
@@ -3103,8 +3127,6 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 			ane_h18_unmap_owned_firmware(ane);	/* after hs_free: the fixed-IOVA aliases unmap through this domain */
 		else
 			ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
-	} else {
-		ane->trial_retained = true;
 	}
 	if (!keep_on)
 		ane_h18_psd_off(ane);
@@ -3113,7 +3135,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	if (ret) {
 		ane_h18_result(ane, "boot", "FAIL", "read-refused");
 		if (owned_fw) {
-			ane->trial_retained = true;
+			ane_h18_pin_module(ane);
 			if (!keep_on)
 				ane_h18_psd_off(ane);
 		}
@@ -3122,7 +3144,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	if (rtkit_stop && !(ane->rtk_ap_on && ane->rtk_ap_acked && ane->rtk_iop_acked)) {
 		ane_h18_result(ane, "boot", "FAIL", "rtkit-shutdown-incomplete");
 		if (owned_fw) {
-			ane->trial_retained = true;
+			ane_h18_pin_module(ane);
 			if (!keep_on)
 				ane_h18_psd_off(ane);
 		}
@@ -3131,7 +3153,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	if (handshake && hs_ret) {
 		ane_h18_result(ane, "boot", "FAIL", hs_ret == -ETIMEDOUT ? "handshake-no-table-address" : (hs_ret == -EIO || hs_ret == -EPROTO) ? "handshake-channel-step-failed" : "handshake-not-done");
 		if (owned_fw && !ane->prog_cleaned) {
-			ane->trial_retained = true;
+			ane_h18_pin_module(ane);
 			if (!keep_on)
 				ane_h18_psd_off(ane);
 			return hs_ret;
