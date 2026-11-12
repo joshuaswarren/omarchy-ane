@@ -322,6 +322,18 @@ module_param(probe_pc, bool, 0444);
 MODULE_PARM_DESC(probe_pc,
 		 "Stage 5 only, with confirm_read=1: after the wait, read only: RVBAR again, EDPRSR, and (only when EDPRSR bit 0, core powered, is set) EDPCSR lo/hi (engine+0x10100a0/+0x10100ac, the sampled PC); the DART translation of the text IOVA; the DART error registers. Off by default.");
 
+static char *dapf_ranges;
+module_param(dapf_ranges, charp, 0444);
+MODULE_PARM_DESC(dapf_ranges,
+		 "Stage=run (5) with map_fw=1, dapf_prog=1: START:END,... (hex, END inclusive, as the ADT dapf-instance-0 holds them), up to 5 records, each inside one 16 KiB page.");
+static bool dapf_prog;
+module_param(dapf_prog, bool, 0444);
+MODULE_PARM_DESC(dapf_prog,
+		 "Stage=run (5) with map_fw=1 and dapf_ranges: map each record's 16 KiB page (IOVA = PA, MMIO read+write) in the ANE DART domain, check DART0+0x208 bit 2 (lock) is clear, then program engine+0x1804000+i*0x40: +4=0, +8 start, +0x10 end, +0x20=1, +0 = 0x31 last, and read each back. Any mismatch stops before RUN. Writes nothing else. Off by default.");
+static bool probe_dapf;
+module_param(probe_dapf, bool, 0444);
+MODULE_PARM_DESC(probe_dapf,
+		 "Stage=run (5): read the 80 words engine+0x1804000..+0x1804140 (the T6030 DAPF aperture, 5 records x 0x40), read only, once before RUN. Off by default.");
 static bool probe_fwreg;
 module_param(probe_fwreg, bool, 0444);
 MODULE_PARM_DESC(probe_fwreg,
@@ -360,6 +372,8 @@ struct ane_h15 {
 	struct iommu_domain *domain;	/* map_fw: the DART domain, NULL when none */
 	u64 map_pa[2], map_iova[2], map_size[2];
 	unsigned int map_n;	/* segments mapped so far */
+	u64 dapf_page[5];	/* dapf_prog: extra MMIO pages mapped, IOVA = PA */
+	unsigned int dapf_pages;
 	bool dom_own;		/* the domain was attached by this module (stage 7 maps into the default DMA domain instead) */
 	/* fw_path with map_fw: the Linux-owned image replaces the iBoot segments. owned_pa holds the physical page behind each 16 KiB
 	 * of owned_fw, read from the default DMA domain before the attach replaces it. */
@@ -645,6 +659,10 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 		return true;
 	/* probe_fwreg: the one register the firmware's start code stores to (two 32-bit halves). */
 	if (probe_pc && (off == 0x10100a0 || off == 0x10100ac) && size == 4)
+		return true;
+	if (dapf_prog && off == 0x1800208 && size == 4)
+		return true;
+	if ((probe_dapf || dapf_prog) && off >= 0x1804000 && end <= 0x1804140 && size == 4 && end <= s->engine_size)
 		return true;
 	if (probe_fwreg && (off == 0x1140008 || off == 0x114000c) && size == 4 && end <= s->engine_size)
 		return true;
@@ -1216,6 +1234,11 @@ static void ane_h15_unmap_firmware(struct ane_h15 *ane)
 
 	if (!ane->domain || ane->map_retained)
 		return;
+	while (ane->dapf_pages) {
+		if (!ane_h15_unmap_range(ane, ane->dapf_page[ane->dapf_pages - 1], SZ_16K))
+			return;
+		ane->dapf_pages--;
+	}
 	for (i = 0; i < ane->map_n; i++)
 		if (!ane_h15_unmap_range(ane, ane->map_iova[i], ane->map_size[i]))
 			return;
@@ -1910,6 +1933,98 @@ static void ane_h15_fwreg_dump(struct ane_h15 *ane, const char *when)
 	dev_info(ane->dev, "ane_h15 fwreg %s: +0x1140008=%#x +0x114000c=%#x\n", when, lo, hi);
 }
 
+/* Stage 5, probe_dapf=1: the DAPF aperture words, read only, each logged to the steplog before the read. */
+static void ane_h15_dapf_dump(struct ane_h15 *ane)
+{
+	u32 off, v;
+
+	for (off = 0x1804000; off < 0x1804140; off += 4) {
+		if (ane_h15_read_word(ane, "dapf", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 dapf engine+%#x=%#x\n", off, v);
+	}
+}
+
+/* dapf_prog: the five ADT records, written the way the DART driver replays them (config word last), each read back. */
+static int ane_h15_dapf_prog(struct ane_h15 *ane)
+{
+	u64 st[5], en[5];
+	unsigned int n = 0, i, j;
+	const char *p = dapf_ranges;
+	u32 lock;
+	int ret;
+
+	while (p && *p && n < 5) {
+		int used = 0;
+
+		if (sscanf(p, "%llx:%llx%n", &st[n], &en[n], &used) != 2 || st[n] > en[n] ||
+		    (st[n] & ~(u64)(SZ_16K - 1)) != (en[n] & ~(u64)(SZ_16K - 1))) {
+			dev_err(ane->dev, "ane_h15 dapf_ranges: bad record %u\n", n);
+			return -EINVAL;
+		}
+		p += used;
+		if (*p == ',')
+			p++;
+		n++;
+	}
+	if (!n || (p && *p)) {
+		dev_err(ane->dev, "ane_h15 dapf_ranges: 1 to 5 START:END records required\n");
+		return -EINVAL;
+	}
+	if (!ane->domain)
+		return -EINVAL;
+	for (i = 0; i < n; i++) {
+		u64 pg = st[i] & ~(u64)(SZ_16K - 1);
+
+		for (j = 0; j < ane->dapf_pages; j++)
+			if (ane->dapf_page[j] == pg)
+				break;
+		if (j < ane->dapf_pages)
+			continue;
+		dev_crit(ane->dev, "ane_h15 iommu_map MMIO iova=pa=%#llx size=0x4000 read+write\n", pg);
+		ret = iommu_map(ane->domain, pg, pg, SZ_16K, IOMMU_READ | IOMMU_WRITE | IOMMU_MMIO, GFP_KERNEL);
+		if (ret)
+			return ret;
+		ane->dapf_page[ane->dapf_pages++] = pg;
+		if (iommu_iova_to_phys(ane->domain, pg) != pg)
+			return -EIO;
+	}
+	ret = ane_h15_read_word(ane, "dart0 lock", 0x1800208, &lock);
+	if (ret)
+		return ret;
+	if (lock & BIT(2)) {
+		dev_err(ane->dev, "ane_h15 dapf_prog: DART0+0x208=%#x locked, nothing written\n", lock);
+		return -EPERM;
+	}
+	for (i = 0; i < n; i++) {
+		void __iomem *r = ane->engine + 0x1804000 + i * 0x40;
+		u64 pa = ane->soc->engine_pa + 0x1804000 + i * 0x40;
+		u32 cfg, w20;
+		u64 rs, re;
+
+		ane_h15_step("write DAPF%u start=%#llx end=%#llx pa=%#llx\n", i, st[i], en[i], pa);
+		dev_crit(ane->dev, "ane_h15 write DAPF%u start=%#llx end=%#llx pa=%#llx\n", i, st[i], en[i], pa);
+		writel(0, r + 4);
+		writel(lower_32_bits(st[i]), r + 8);
+		writel(upper_32_bits(st[i]), r + 0xc);
+		writel(lower_32_bits(en[i]), r + 0x10);
+		writel(upper_32_bits(en[i]), r + 0x14);
+		writel(1, r + 0x20);
+		writel(0x31, r);
+		ane_h15_step("read back DAPF%u pa=%#llx\n", i, pa);
+		cfg = readl_relaxed(r);
+		rs = readl_relaxed(r + 8) | (u64)readl_relaxed(r + 0xc) << 32;
+		re = readl_relaxed(r + 0x10) | (u64)readl_relaxed(r + 0x14) << 32;
+		w20 = readl_relaxed(r + 0x20);
+		dev_info(ane->dev, "ane_h15 DAPF%u read back cfg=%#x start=%#llx end=%#llx w20=%#x\n", i, cfg, rs, re, w20);
+		if ((cfg & 0x333) != 0x31 || rs != st[i] || (re | 3) != (en[i] | 3) || (w20 & 0xffff) != 1) {
+			dev_err(ane->dev, "ane_h15 DAPF%u read-back mismatch: stopping before RUN\n", i);
+			return -EIO;
+		}
+	}
+	return 0;
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -2441,6 +2556,11 @@ static int ane_h15_pwgate_open(struct ane_h15 *ane, char *suffix, size_t sz)
 	dev_crit(ane->dev, "ane_h15 read PWGATE pa=%#llx\n", word_pa);
 	v = readl_relaxed(pw + s->pwgate_word);
 	dev_info(ane->dev, "ane_h15 word=PWGATE pa=%#llx value=%#x\n", word_pa, v);
+	if (pwgate_t6031 == 3) {	/* read only: ioremap and the one readl above, no write, no poll */
+		snprintf(suffix, sz, "pwgate=read-only word=0x%x", v);
+		iounmap(pw);
+		return 0;
+	}
 	if (!(v & ANE_H15_PWGATE_BITS) && pwgate_t6031 == 1) {
 		dev_info(ane->dev, "ane_h15 pwgate already open\n");
 		snprintf(suffix, sz, "pwgate=already-open");
@@ -2853,6 +2973,16 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_pmgr_dump(ane, "before RUN");
 	if (stg == 5 && probe_fwreg)
 		ane_h15_fwreg_dump(ane, "before RUN");
+	if (stg == 5 && probe_dapf)
+		ane_h15_dapf_dump(ane);
+	if (stg == 5 && dapf_prog) {
+		ret = ane_h15_dapf_prog(ane);
+		if (ret) {
+			ane_h15_unmap_firmware(ane);
+			ane_h15_result(ane, stg, "FAIL", "dapf-prog-failed");
+			return ret;
+		}
+	}
 
 	/* pwgate_t6031 (rows with a PWGATE window): macOS's PWGATE gate clear, the
 	 * last action before the core is released. On a poll timeout the run
@@ -3165,10 +3295,14 @@ static int ane_h15_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "grant_tunables=1 is stage=run (5) or boot (3) only: refusing\n");
 		return -EINVAL;
 	}
+	if (dapf_prog && (stage_idx != 5 || !map_fw || !dapf_ranges || !fw_seg)) {
+		dev_err(&pdev->dev, "REFUSED reason=dapf_prog: needs stage=run, map_fw=1, fw_seg and dapf_ranges\n");
+		return -EINVAL;
+	}
 	/* pwgate_t6031 refusals, all before any MMIO and before any mapping,
 	 * exactly as scratch_boot is refused on other stages. */
-	if (pwgate_t6031 > 2) {
-		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 2 (got %u)\n", pwgate_t6031);
+	if (pwgate_t6031 > 3) {
+		dev_err(&pdev->dev, "REFUSED reason=pwgate_t6031 0 to 3 (got %u)\n", pwgate_t6031);
 		return -EINVAL;
 	}
 	if (pwgate_t6031 && stage_idx != 5 && stage_idx != 3) {

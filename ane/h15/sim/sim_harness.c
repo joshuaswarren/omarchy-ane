@@ -2310,14 +2310,14 @@ static int neg_run(void)
 		    "PW6 stuck gate: the timeout is logged once with the poll count and the final word");
 		remove_if_probed();
 
-		/* PW7 (f): pwgate_t6031=3 refuses in probe before any bus
+		/* PW7 (f): pwgate_t6031=4 refuses in probe before any bus
 		 * access and before any mapping. */
 		run_setup(t, "apple,t6031-ane", 0x0);
-		pwgate_t6031 = 3;
+		pwgate_t6031 = 4;
 		ret = probe_now();
-		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 2") == 1 &&
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 3") == 1 &&
 		    events_in(0, ~0ULL, 0) == 0 && sim_n_iomap == 0 && sim_bus_faults == 0,
-		    "PW7 pwgate_t6031=3: refused before any bus access, no window mapped");
+		    "PW7 pwgate_t6031=4: refused before any bus access, no window mapped");
 
 		/* PW8 (g): a row without a PWGATE window (t6034) refuses the parameter in probe
 		 * before any MMIO and any mapping. */
@@ -2807,12 +2807,12 @@ static void pos_run_pwgate_rows(void)
 		    log_count("do NOT unload") == 0, name);
 		remove_if_probed();
 
-		/* WR6: a value other than 0, 1 or 2 refuses in probe before any bus access. */
+		/* WR6: a value other than 0 to 3 refuses in probe before any bus access. */
 		run_setup(s, rows[r].compat, 0x0);
-		pwgate_t6031 = 3;
+		pwgate_t6031 = 4;
 		ret = probe_now();
-		snprintf(name, sizeof(name), "WR6 %s pwgate_t6031=3: refused before any bus access and any mapping", t);
-		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 2") == 1 && events_in(0, ~0ULL, 0) == 0 &&
+		snprintf(name, sizeof(name), "WR6 %s pwgate_t6031=4: refused before any bus access and any mapping", t);
+		chk(ret != 0 && log_count("REFUSED reason=pwgate_t6031 0 to 3") == 1 && events_in(0, ~0ULL, 0) == 0 &&
 		    sim_n_iomap == 0, name);
 
 		/* WR7: the step is stages 5 and 3 only. Stage 2 with the parameter set refuses before any bus access. */

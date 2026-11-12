@@ -567,6 +567,9 @@ static inline void dma_free_coherent(struct device *d, size_t size, void *va, dm
 #define SZ_16K 0x4000ull
 #define IOMMU_READ 1
 #define IOMMU_WRITE 2
+#define IOMMU_MMIO 16
+#define upper_32_bits(n) ((u32)(((n) >> 16) >> 16))
+#define lower_32_bits(n) ((u32)((n) & 0xffffffff))
 #define IORESOURCE_SYSTEM_RAM 1ul
 #define IORES_DESC_NONE 0ul
 enum { REGION_INTERSECTS, REGION_DISJOINT, REGION_MIXED };
