@@ -160,7 +160,7 @@ MODULE_PARM_DESC(start_app_eps,
 static bool scratch3_ack = true;
 module_param(scratch3_ack, bool, 0444);
 MODULE_PARM_DESC(scratch3_ack,
-		 "After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc; vendor call anchor in the private lab store). Default on; 0 withholds.");
+		 "After DONE, write SCRATCH3 = 0x08042006 (vendor call anchor in the private lab store). Default on; 0 withholds.");
 
 static bool legacy_only = true;
 module_param(legacy_only, bool, 0444);

@@ -190,8 +190,8 @@ bool ane_t6021_fwload_options_ok(void)
  * die-0 addresses (13.5 ADTs, t602x-ane.dtsi).
  *
  * pmu_pa: the firmware's power service programs the seven ANE ps words
- * through its DART at IOVA == PA (SetPMUBaseAddress stores the ANE_TD
- * word: selene 0x28e084008, bia 0x23b70c010, receipts/2026-10-01-t8112-kit).
+ * through its DART at IOVA == PA (the firmware stores the ANE_TD
+ * word; receipts/2026-10-01-t8112-kit).
  * Mapping the page first is required; otherwise access faults (NO PMD
  * FOR IOVA 0x28e084008, 2026-09-29) and the firmware halts.
  *

@@ -293,17 +293,17 @@ enum ane_t6021_csne_cmd {
 	CSNE_CMD_POWER_DEVICE_ON	= 0x0013,
 	CSNE_CMD_IPC_ENDPOINT_SET	= 0x0015,
 	CSNE_CMD_IPC_ENDPOINT_UNSET	= 0x0016,
-	CSNE_CMD_SET_DYNAMIC_POWERGATE	= 0x002d,	/* selene 0x28178; 8cae3ad */
+	CSNE_CMD_SET_DYNAMIC_POWERGATE	= 0x002d,	/* 8cae3ad */
 	CSNE_CMD_LOAD_PROGRAM		= 0x0200,
-	CSNE_CMD_DESTROY_PROGRAM	= 0x0201,	/* programId at +8; selene 13.5 0x28eb8 -> 0x36adc; needs zero processes */
+	CSNE_CMD_DESTROY_PROGRAM	= 0x0201,	/* programId at +8; needs zero processes */
 	CSNE_CMD_CREATE_PROCESS		= 0x0202,
-	CSNE_CMD_TERMINATE_PROCESS	= 0x0203,	/* programId at +8, processId at +0xc; selene 13.5 0x29090 -> 0x41a24 */
+	CSNE_CMD_TERMINATE_PROCESS	= 0x0203,	/* programId at +8, processId at +0xc */
 	CSNE_CMD_PROCEDURE_CALL	= 0x0204,
 	CSNE_CMD_INFERENCE_CALL	= 0x0404,
 	CSNE_CMD_BACK_CHANNEL_RPC	= 0x7000,
 };
 
-/* fw buffer word (selene builder 0x982b4/0x98f84, decoder 0x98fc8; the
+/* fw buffer word (selene builder and decoder; the
  * K14 SetupEndpoints word is the same shape): addr[43:0] |
  * size_code[51:44] | unit[53:52], unit 0 = no size, 1 = code*4K,
  * 2 = code*1M, 3 = code*2M. The fw encoder picks unit 1 below 1 MiB
@@ -580,8 +580,8 @@ ane_csne_cmd_procedure_call_size(unsigned int num_io_buffers)
  * fail-fast so an oversized command cannot enter the ring. */
 #define ANE_CSNE_CMD_MAX_SIZE	0x1b88
 
-/* ---- LOAD_PROGRAM (0x200) wire contract (selene 0x4e44c hook +
- * 0x4e53c worker + 0x4e640 registration; decode 2026-09-26, entry
+/* ---- LOAD_PROGRAM (0x200) wire contract (selene hook, worker and
+ * registration; observed 2026-09-26, entry
  * item 23/23b/23c/23e): the payload is NINE 0x30-byte named section
  * records at +0x08. Registration publishes "<name>.bin" into the fw
  * program-info symbol table (format "%s.bin" @0xa733f)

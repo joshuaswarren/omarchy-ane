@@ -22,7 +22,7 @@
  *     on the same pre-CPU block; releasing RUN with an unresolved
  *     entry state is the exact blind start the lane forbids.
  *   - SCRATCH0/1 publication + SCRATCH7 wake: init-structure fields
- *     [0x08] and [0x10,0x38) have no pinned selene fn 0x71A4 consumer
+ *     [0x08] and [0x10,0x38) have no pinned firmware consumer
  *     read-set; zero-filling unknown fields and calling the structure
  *     valid is forbidden (Main 2026-09-20).
  *
@@ -221,7 +221,7 @@ static bool ane_t6021_boot_preflight_complete(void)
 
 /* STATIC boot sources — populated per the pinned contract (Main
  * authorization 2026-09-20). Object layout (Main raw correction,
- * superseding audit 018abdb): the OSValueObject at +0x10 POINTS to
+ * superseding audit 018abdb): the value object at +0x10 POINTS to
  * the Params; Params+0x00 = size, +0x18 = DVA, +0x38 = hostVA.
  * driver-object offset 0x980 is the 'DDM ' Params pool (size 0x40000); driver-object offset 0x968 is a
  * SEPARATE DMM manager constructed over the pool hostVA — never
