@@ -503,6 +503,7 @@ static inline void release_firmware(const struct firmware *fw)
 }
 void ane_sha256(const void *data, u64 len, u8 out[32]);
 #define sha256 ane_sha256
+#define SHA256_DIGEST_SIZE 32
 /* ---- DMA API for stage 7: zeroed surfaces at IOVAs far from the firmware segments ---- */
 #define PAGE_SIZE 0x4000UL
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
