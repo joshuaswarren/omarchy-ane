@@ -16,6 +16,17 @@ HAVE_DTC = shutil.which("dtc") is not None and shutil.which("fdtdump") is not No
 
 
 class GenTests(unittest.TestCase):
+    def test_every_blob_is_8_byte_aligned(self):
+        """of_overlay_fdt_apply() -> fdt_check_header() refuses a blob not 8-byte aligned in memory
+        (the t6030 boot blob did on the M3 Pro). The sim cannot see it on x86-64, so guard the
+        declarations: every blob array in the generated header carries __aligned(8)."""
+        import re
+        text = (HERE / "ane_h15_overlay_data.h").read_text()
+        decls = re.findall(r"^static const u8 (\w+_blob)\[\](.*?)= \{", text, re.M)
+        self.assertEqual(len(decls), 6)
+        for name, attrs in decls:
+            self.assertIn("__aligned(8)", attrs, name)
+
     def test_t6030_boot_iommus_three_streams_and_runtime_drops_iommus(self):
         """The t6030 boot variant names dart0/dart1/dart2 stream 0 (the contract since PR 386);
         the runtime variant keeps the PR 382 contract: no iommus at all, not a leftover
