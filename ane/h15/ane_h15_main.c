@@ -1394,7 +1394,7 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
 /* ---- stage 5: start the ASC core once, watch, stop it again ----
  *
  * Sources, commit-pinned, with H15 observations told apart from cross-generation inference:
- * ane/h15/run-stage-sources.md (m1n1 asc.py 97820568, macOS _runCPU decode sha d383f674, ane_t6021.h
+ * ane/h15/run-stage-sources.md (m1n1 asc.py 97820568, the observed core-run sequence, ane_t6021.h
  * 16cfa8720b80677dbcdf8fd1d04077a8b72768bf, omarchy-linux mailbox.c 57f8f6de, the M6 boot 235c8ff4).
  *
  * Why this is the next step. The T6030 stage 2 run (PR 175, J516S) read RVBAR 0x0000010000000001 and CPU_STATUS
@@ -1420,7 +1420,7 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  *   5. for run_wait_ms every 10 ms: CPU_STATUS and I2A_CTRL; if I2A is not EMPTY it pops the message
  *      (I2A_RECV0 at wrapper+0x8830, I2A_RECV1 at +0x8838, the Linux apple-mailbox v4 layout the other T6030 ASCs
  *      use) and logs the raw words, at most 4 messages. It sends NOTHING and never replies to a HELLO;
- *   6. stops the core the macOS way (_runCPU(false)): clear bit 4, write; re-read, clear bit 5, write; waits for
+ *   6. stops the core the observed way: clear bit 4, write; re-read, clear bit 5, write; waits for
  *      STOPPED. If the core does not stop the power domains stay on, the windows stay mapped and remove()
  *      refuses: reboot.
  * It writes only CPU_CONTROL (bits 4 and 5), never RVBAR, never the mailbox, never the DART; with

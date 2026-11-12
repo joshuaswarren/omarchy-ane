@@ -29,9 +29,7 @@
  * Pre-CPU prerequisites, updated for pass4 (receipts 2026-09-20
  * mapper-callchain pass4 + tools/check_power_anchors.py 33/33, commit
  * 04630ef):
- *   RESOLVED (pass4): the CPU-power branch selector — H14g SoCConfig
- *     zeroes dev+0x3EA0 (0x9613e14, the block that also sets
- *     dev+0x4A0=0x01400044), so EnableCPUClocksAndPower takes the
+ *   RESOLVED (pass4): the CPU-power branch selector: this SoC takes the
  *     PLAIN branch: write32(PMGR+0x2e0, 0x0000000f), validate 0xff —
  *     AUTO_ENABLE bit28 never set. On Linux this END STATE is exactly
  *     what the first_resume stage-2/3 gate verifies (act=0xf,

@@ -167,8 +167,7 @@ struct ane_t6021_init_sources {
 };
 
 /* 'IPC ' surface size (CURRENT_CONTRACT f9602e0; operands proven:
- * u64[dev+0x3A90] = IODARTMapper::getPageSize() — 0x4000, one 16K
- * DART page, typical; u32[x23+4] = captured SCRATCH1 + 1, the boot
+ * the DART page size, 0x4000 (one 16K DART page), typical; u32[x23+4] = captured SCRATCH1 + 1, the boot
  * ordinal): size = max(page_size, ordinal + 1). Used by the kernel
  * prepare hook to size the 'IPC ' allocation. */
 /* SCRATCH0 read-order note (pass9 phase-1: SCRATCH0 then SCRATCH1
