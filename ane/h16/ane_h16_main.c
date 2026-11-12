@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only OR MIT
 /*
  * ane_h16 — OPT-IN EXPERIMENTAL bring-up module for the H16/H17-family
- * ANE (the Apple 27.0 kext generation: T8132, T6040, T6041; H17 rows
+ * ANE (the shipped driver generation: T8132, T6040, T6041; H17 rows
  * live in ane/h17/). It has run on J700/T8140 silicon in the opt-in
  * `stage=boot` path (RESULT PASS boot-wake, 2026-11-04: see
  * receipts/2026-11-04-j700-h17-first-firmware-wake/README.md); the
@@ -25,16 +25,16 @@
  *   stage=boot (EXPERIMENTAL, firmware-boot smoke only): everything
  *   "status" does, plus: parse the boot ADT from the reserved-memory
  *   phram "adt" region, read /arm-io/aneX segment-ranges, validate the
- *   iBoot-preloaded firmware against the pinned 27.0 payload (only
+ *   iBoot-preloaded firmware against the pinned payload (only
  *   differences inside the _rtk_patchbay and _rtk_tunables sections are
  *   accepted, plus at most one entry/DATA-base-looking u64 per segment),
  *   copy the validated image into a DART-mapped coherent buffer at the
  *   same IOVAs the ADT names, write SCRATCH7=0, latch or write RVBAR,
  *   release the CPU (CPU_CONTROL 0 then 0x10) and poll SCRATCH7 for the
- *   wake word 0x08042006 (vendor driver ANE_Init, 27.0). If the firmware
+ *   wake word 0x08042006 (firmware startup). If the firmware
  *   wakes, poll the ASC mailbox for an RTKit HELLO, answer it, ack
  *   EPMAP and STARTEP the system endpoints. Then stop: no channel-
- *   manager publication and no CSNE CONFIG_GET — the 27.0 host contract
+ *   manager publication and no CSNE CONFIG_GET — the pinned host contract
  *   for those is not derived yet (receipts/2026-10-03-ane-h16).
  *
  *   On the t8140 (H17) row the boot stage additionally offers the opt-in
@@ -157,7 +157,7 @@ MODULE_PARM_DESC(register_channels,
 
 #define ANE_H16_WAKE_ACK		0x08042006u
 #define ANE_H16_CPU_RUN_RELEASE		0x10u
-/* RVBAR fold: kext ANE_Init 27.0 writes base | (iova & mask); the base
+/* RVBAR fold: firmware startup uses base | (iova & mask); the base
  * supplies bit 0 (valid), the mask clears bits 0-10, 48 and 55. */
 #define ANE_H16_RVBAR_ENTRY_BASE	0x0081000000000001ull
 #define ANE_H16_RVBAR_ADDR_MASK		0xff7efffffffff800ull
@@ -766,10 +766,8 @@ static int adt_find_ane(u32 ane_type, struct adt_node *out)
 
 /* Decode one segment-ranges property (two entries) into segs[2].
  * A 32-byte entry is {u64 phys, virt, remap; u32 size, auxiliary}.
- * The ASC sees remap. mapFwCTRRRegion in retained kernelcache SHA256
- * 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe
- * uses ldr w9,[x20,#0x18] for the TEXT entry and
- * ldr w9,[x20,#0x38] for the DATA entry: size is u32,
+ * The ASC sees remap. The shipped driver reads the TEXT size at entry
+ * +0x18 and the DATA size at entry +0x38 as 32-bit words: size is u32,
  * not u64. The final dword's meaning is not established here.
  * The legacy 24-byte {u64 phys, remap, size} form is also accepted.
  */
@@ -1842,7 +1840,7 @@ static int ane_h16_rtkit_poll(struct ane_h16 *ane)
 	ret = ane->hello_done ? 0 : -ETIMEDOUT;
 	dev_info(ane->dev, "RTKit poll done: HELLO %sreceived%s\n",
 		 ane->hello_done ? "" : "not ",
-		 ret ? " (mailbox stayed empty; the 27.0 firmware may not speak RTKit when brought up this way — see the receipt)" : "");
+		 ret ? " (mailbox stayed empty; the pinned firmware may not speak RTKit when brought up this way — see the receipt)" : "");
 	return ret;
 }
 
@@ -1928,7 +1926,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 
 	ane->fw_touched = true;
 
-	/* kext ANE_Init cold-boot order (macOS 27.0): SCRATCH7 = 0, RVBAR
+	/* firmware cold-boot order: SCRATCH7 = 0, RVBAR
 	 * (skipped when latched), CPU_CONTROL 0 then 0x10, then poll
 	 * SCRATCH7 for the wake word. H17 (steps 9, 10, 12 of the recipe)
 	 * additionally clears all eight scratch words, sets SCRATCH6 and
@@ -2020,7 +2018,7 @@ static int ane_h16_boot(struct ane_h16 *ane)
 		 * A2I/I2A +0x110/+0x114) is a T8132 template, not a J700
 		 * mapping. J700's kext reaches READY via SCRATCH7 and then
 		 * uses its firmware command path in later requests; it does
-		 * not poll this mailbox after ANE_Init. Do not claim HELLO/EPMAP
+		 * not poll this mailbox after startup. Do not claim HELLO/EPMAP
 		 * support or touch the unqualified candidate, even when the
 		 * H16-only hello_wait_ms parameter is set.
 		 */

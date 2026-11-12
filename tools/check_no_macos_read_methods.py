@@ -24,12 +24,18 @@ import subprocess
 import sys
 
 PATTERNS = [
-    ("kernel address", r"0xfffffe[0-9a-fA-F]{6,}"),
     ("code offset", r"\b(kext|kernelcache|kc)\s*[+@]\s*0x[0-9a-fA-F]+"),
     ("tool or command", r"\b(ipsw\s+(extract|kernel|macho|dl|download)|pyimg4|img4tool|otool\s+-|ghidra|radare2|objdump\s+-d|disarm64|jtool2?)\b"),
     ("restore-image locator", r"kernelcache\.release|\bhdr_off=|__PRELINK_INFO|__TEXT_EXEC|\bBuildManifest\b|updates\.cdn-apple|\.ipsw\b|by HTTP range"),
-    ("Apple symbol or bundle", r"\bcom\.apple\.driver\.|\bApple(H1\d|H1\dANE|ASCWrap|A7IOP|T60\d\d|ANE|PMGR|DART)[A-Za-z0-9_]*(::|\b)"),
+    ("Apple symbol or bundle", r"\bcom\.apple\.driver\.|\bApple(?=[A-Z0-9])[A-Za-z0-9_]+"),
     ("macOS-sourced value", r"(?i)(macOS|restore[- ]image|\bkext|kernelcache|iBoot|Apple'?s? (firmware|driver|compiler|kernel|ANE firmware)|\bipsw\b).*0x[0-9a-f]{3,}|0x[0-9a-f]{3,}.*(macOS|restore[- ]image|\bkext|kernelcache|iBoot|Apple'?s? (firmware|driver|compiler|kernel|ANE firmware)|\bipsw\b)"),
+    ("Apple driver function", r"\b(Enable|Disable)(ANE|CPU)ClocksAndPower\b|\bANE_(deInit|Init)\w*|\benableDevice\w*|\bgetPageSize\b|\bInitializeRTBuddy\w*|\binitializeANESoCConfig\w*|\b[A-Za-z]\w*::~?[A-Za-z_]\w*\s*\(|(?<![\w.])_[a-z]+[A-Z]\w*\("),
+    ("kernelcache address", r"\b0xfffffe[0-9a-fA-F]+|\b0x(9[0-9a-fA-F]{6}|8f[0-9a-fA-F]{5})\b"),
+    ("driver struct offset or operand", r"\bdev\s*\+\s*0x[0-9a-fA-F]+|\bu(8|16|32|64)\[[^\]]*\b[xw][0-9]+[^\]]*\]|\[x[0-9]+\s*[+\]]"),
+    ("decoded provenance", r"(?i)\bdecoded (from|by|statically)\b|\bstatic[- ]decod\w*|\bdecoded (CPU-power|power|step|sequence|driver|kext|kernelcache)|(?-i:DECODED:)|\bDeviceTree\.[\w.]+|\bmapFw\w+|\b(ldr|str)\s+[wx]\d+,\s*\[x\d+,\s*#0x[0-9a-fA-F]+\]|\btbnz\s+w\d+,\s*#\d|macOS 27\.0 ADT|\bADT 27\.0\b"),
+    ("restore-image or kernelcache locator", r"(?i)\bkernelcache\b|\bipsw\b|restore[- ]image"),
+    ("macOS 27.0 provenance", r"\b27\.0\b|\b26A[0-9]{3}[A-Za-z]?\b|adt-27"),
+    ("vendor type, class or instruction quote", r"\b[sS]?CSne[A-Za-z_]\w*|\bRegisterControl\b|\bOS(?!Error\b)[A-Z][a-z]\w+|\bselene\s+(\d+\.\d+\s+)?0x[0-9a-fA-F]{3,}|\bC[A-Z][a-z]\w*(::\w+|\.cpp)|\bDecode of\b|\bUnRemap\b|\bkext'?s?\s+(add|dsb|dmb|ldr|str|tbnz|cbz)\b|\badd\s+w\d+,\s*w\d+,\s*#\d"),
     ("decode wording", r"(static|offline) decode|decoded (statically )?from the (macOS )?(kext|kernelcache|kernel extension)|reverse[- ]engineer(ed|ing)? (the )?(macOS|kext)"),
 ]
 # Decided 2026-10-29: the tool that installs a Mac's own firmware keeps its two download addresses, in code only.
@@ -54,7 +60,6 @@ CAPTURED = {
 # captured run's addresses. Read-method TOOLING and TEACHING DOCS are not on this list;
 # they moved to the private lab store (ane-h17-lab) in the same change.
 CAPTURED_H17 = {
-    "ane/h17/sim/test_plan_stage4.py",
     "data/h17/t8140-stage4.json",
     "receipts/2026-10-30-j700-h17-adt/README.md",
     "receipts/2026-10-30-j700-h17-asc-map/README.md",
@@ -141,57 +146,56 @@ CAPTURED_H17 = {
 # at grandfathering time (2026-11-08): a listed file may keep its recorded matches and may not
 # gain any. A no-op edit still passes; new read-method text in a captured file fails.
 CAPTURED_H17_COUNTS = {
-    "ane/h17/sim/test_plan_stage4.py": 7,
-    "data/h17/t8140-stage4.json": 89,
-    "receipts/2026-10-30-j700-h17-adt/README.md": 1,
-    "receipts/2026-10-30-j700-h17-asc-map/README.md": 1,
+    "data/h17/t8140-stage4.json": 121,
+    "receipts/2026-10-30-j700-h17-adt/README.md": 4,
+    "receipts/2026-10-30-j700-h17-asc-map/README.md": 2,
     "receipts/2026-10-30-j700-h17-hang/README.md": 1,
     "receipts/2026-10-30-j700-h17-qualified-map/README.md": 2,
-    "receipts/2026-10-31-j700-h17-power-contract/README.md": 37,
-    "receipts/2026-11-01-j700-h17-exclave-vs-sep/README.md": 5,
-    "receipts/2026-11-01-j700-h17-linux-support-plan/README.md": 1,
+    "receipts/2026-10-31-j700-h17-power-contract/README.md": 55,
+    "receipts/2026-11-01-j700-h17-exclave-vs-sep/README.md": 8,
+    "receipts/2026-11-01-j700-h17-linux-support-plan/README.md": 6,
     "receipts/2026-11-02-j700-h17-safe-round/README.md": 2,
     "receipts/2026-11-02-j700-h17-stage5-review/README.md": 1,
-    "receipts/2026-11-03-j700-h17-clock-gap/README.md": 14,
-    "receipts/2026-11-03-j700-h17-offline-subagents/README.md": 4,
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-exclave-kernelcache-report.md": 75,
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md": 39,
-    "receipts/2026-11-03-j700-h17-offline-subagents/t8140-anehal-register-map.md": 143,
+    "receipts/2026-11-03-j700-h17-clock-gap/README.md": 24,
+    "receipts/2026-11-03-j700-h17-offline-subagents/README.md": 15,
+    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-exclave-kernelcache-report.md": 127,
+    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md": 179,
+    "receipts/2026-11-03-j700-h17-offline-subagents/t8140-anehal-register-map.md": 151,
     "receipts/2026-11-03-j700-h17-poweron-and-tunable-freezes/README.md": 2,
-    "receipts/2026-11-04-j700-h17-adt-parser-fixes/README.md": 2,
+    "receipts/2026-11-04-j700-h17-adt-parser-fixes/README.md": 3,
     "receipts/2026-11-04-j700-h17-adt-parser-fixes/live-dt.log": 2,
     "receipts/2026-11-04-j700-h17-clkgen-live/README.md": 3,
-    "receipts/2026-11-04-j700-h17-clkgen-map71-correction/README.md": 1,
-    "receipts/2026-11-04-j700-h17-clock-pmp-command/README.md": 7,
-    "receipts/2026-11-04-j700-h17-clock-window-derivation/README.md": 11,
+    "receipts/2026-11-04-j700-h17-clkgen-map71-correction/README.md": 2,
+    "receipts/2026-11-04-j700-h17-clock-pmp-command/README.md": 11,
+    "receipts/2026-11-04-j700-h17-clock-window-derivation/README.md": 12,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-anecmdsend.txt": 120,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-channel-primitive.txt": 160,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-channel-send-caller.txt": 180,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-prereqs.txt": 923,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-scans.txt": 25,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-trace.txt": 1061,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-cmd-sites.txt": 74,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-command-token-correction.txt": 4,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-doorbell-arch.txt": 66,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-doorbell-callsite.txt": 70,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-prereqs.txt": 924,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-scans.txt": 27,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-chanreg-trace.txt": 1062,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-cmd-sites.txt": 77,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-command-token-correction.txt": 5,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-doorbell-arch.txt": 77,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-doorbell-callsite.txt": 73,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-doorbell-disasm.txt": 70,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-field-consumers.txt": 369,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-rtkit-station-arm.txt": 1,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fw-rtkit-station-arm.txt": 34,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend-id-field.txt": 48,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend-serialization.txt": 760,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-fwcmdsend.txt": 400,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-handle-outstanding.txt": 180,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-host-command-constructor-search.txt": 3,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-io-receive-helper.txt": 100,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-line-dispatch-correction.txt": 8,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-sites.txt": 56,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-message-lookup-helper.txt": 301,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-messenger-irq-chain.txt": 432,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-line-dispatch-correction.txt": 16,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-irq-sites.txt": 58,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-message-lookup-helper.txt": 302,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-messenger-irq-chain.txt": 435,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-premap-setup-disasm.txt": 254,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-command-response.txt": 220,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-response-xrefs.txt": 14,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-queue-receive-primitive.txt": 103,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-ring-fns.txt": 228,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-process-response-xrefs.txt": 16,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-queue-receive-primitive.txt": 104,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-ring-fns.txt": 231,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-send-channel-lookup.txt": 2,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-send-inference.txt": 220,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-send-premap.txt": 180,
@@ -206,25 +210,39 @@ CAPTURED_H17_COUNTS = {
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-sweep-0x160.txt": 146,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-helper-300.txt": 100,
     "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-io-command.txt": 600,
-    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-token-command-bridge.txt": 11,
+    "receipts/2026-11-04-j700-h17-firmware-load-path/analysis/h17-t2h-token-command-bridge.txt": 12,
     "receipts/2026-11-04-j700-h17-first-firmware-wake/README.md": 1,
-    "receipts/2026-11-04-j700-h17-fwboot-clean-negative/README.md": 1,
+    "receipts/2026-11-04-j700-h17-fwboot-clean-negative/README.md": 2,
     "receipts/2026-11-04-j700-h17-offline-dart-decoder/collect.txt": 223,
     "receipts/2026-11-04-j700-h17-offline-dart-decoder/fatal.txt": 411,
     "receipts/2026-11-04-j700-h17-offline-dart-decoder/handle-error.txt": 566,
-    "receipts/2026-11-04-j700-h17-offline-dart-decoder/identity-symbols.txt": 199,
+    "receipts/2026-11-04-j700-h17-offline-dart-decoder/identity-symbols.txt": 200,
     "receipts/2026-11-04-j700-h17-offline-dart-decoder/interrupt.txt": 318,
     "receipts/2026-11-04-j700-h17-offline-dart-decoder/version.txt": 17,
-    "receipts/2026-11-04-j700-h17-order-adapter/README.md": 1,
-    "receipts/2026-11-04-j700-h17-order-helper/README.md": 1,
+    "receipts/2026-11-04-j700-h17-order-adapter/README.md": 2,
+    "receipts/2026-11-04-j700-h17-order-helper/README.md": 6,
     "receipts/2026-11-04-j700-h17-table-discovery-implementation/README.md": 2,
-    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt": 11,
+    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt": 12,
     "receipts/2026-11-04-j700-h17-wake-scratch-snapshot/README.md": 1,
-    "receipts/2026-11-05-j700-h17-next-command-rung-assessment.md": 15,
+    "receipts/2026-11-05-j700-h17-next-command-rung-assessment.md": 26,
 }
 CAPTURED_H17 |= CAPTURED_H17_COUNTS.keys()
 ALLOWED = ALLOWED | CAPTURED | CAPTURED_H17
 COMPILED = [(n, re.compile(p)) for n, p in PATTERNS]
+_WRAP = re.compile(r"^\s*(\*|//|#|/\*)?\s*")
+
+
+def line_hits(lines):
+    """(line number, kind) per match; a match that starts on a line and wraps onto the next counts on its first line."""
+    out = []
+    for i, line in enumerate(lines):
+        nxt = _WRAP.sub("", lines[i + 1], count=1) if i + 1 < len(lines) else ""
+        joined = line + " " + nxt
+        for kind, rx in COMPILED:
+            # the macOS-word-plus-hex rule stays per line: joining lines pairs unrelated words and numbers
+            if rx.search(line) or (kind != "macOS-sourced value" and any(m.start() < len(line) for m in rx.finditer(joined))):
+                out.append((i + 1, kind))
+    return out
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASELINE = os.path.join(HERE, "macos_read_methods_baseline.json")
 SKIP_SUFFIX = (".png", ".jpg", ".bin", ".dtb", ".dtbo", ".gz", ".xz", ".zip", ".tar", ".pdf", ".so", ".ko", ".o")
@@ -247,7 +265,7 @@ def scan(root):
                 lines = f.read().splitlines()
         except (UnicodeDecodeError, OSError):
             continue
-        hits = [(i + 1, kind) for i, line in enumerate(lines) for kind, rx in COMPILED if rx.search(line)]
+        hits = line_hits(lines)
         if hits:
             result[name] = hits
     return result
@@ -261,7 +279,7 @@ def scan_captured(root):
                 lines = f.read().splitlines()
         except (UnicodeDecodeError, OSError):
             continue
-        counts[name] = len({i + 1 for i, line in enumerate(lines) for _, rx in COMPILED if rx.search(line)})
+        counts[name] = len({i for i, _ in line_hits(lines)})
     return counts
 
 

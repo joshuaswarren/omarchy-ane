@@ -2,7 +2,7 @@
 /*
  * ane/h15 OPT-IN EXPERIMENTAL overlay for T6030 (M3 Pro) board device
  * trees. Mirrors ane/h15/t8122-ane-experimental.dts; the engine and
- * pmgr bases are MEASURED (ADT 27.0): engine 0x308000000+0x2000000,
+ * pmgr bases are MEASURED (pinned ADT): engine 0x308000000+0x2000000,
  * pmgr 0x350700000+0x18000. The ps word set is the same five words,
  * the ANE_SYS word at +0x498 (parent LW20), the others at
  * +0xc000..+0xc018. IRQ lines and DART reg are per the ADT order.

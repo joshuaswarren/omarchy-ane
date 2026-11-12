@@ -8,7 +8,7 @@
 /* Linux-owned image preparation for the T8152 ANE0, included by ane_h18_main.c after its
  * helpers. Structure follows the accepted H15 kernel-residency pattern (ane/h15/ane_h15_main.c
  * 959..1049 unmap_range/map_owned_segment and ane_h15_fwload.h) with the H18 fixed contract
- * only: exact 26A428 payload pin, zeroed 0x370000 coherent image, TEXT/DATA copied byte-exact,
+ * only: exact pinned payload pin, zeroed 0x370000 coherent image, TEXT/DATA copied byte-exact,
  * nothing patched, entry 0. The image is staged unmodified: no ECAP seed, no patchbay or
  * tunables rewrite, no PAC/security change — whether the firmware needs producer-applied
  * initialization is experimentally unqualified, and this trial publishes the shipped bytes.

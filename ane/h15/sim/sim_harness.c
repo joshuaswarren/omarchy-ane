@@ -3323,7 +3323,7 @@ static void io_seq(char *out, size_t sz)
 }
 
 
-/* ---- enable_order: the PWGATE window is mapped non-posted, and the macOS ane-type 0xc0 order runs as macOS runs it ---- */
+/* ---- enable_order: the PWGATE window is mapped non-posted, and the observed 0xc0 enable order runs as observed ---- */
 static void (*eo_prev_hook)(u64 pa, u32 v);
 
 /* the real power controller answers a ps request with the ACTUAL bits */
@@ -3373,7 +3373,7 @@ static void pos_enable_order(void)
 		}
 	}
 	chk(k == (int)ARRAY_SIZE(want),
-	    "EO2 the macOS 0xc0 order: ps 0xc000, gate 0x248c, ps 0xc008, gate 0x2b6c, ps 0xc008 bit 28, ps 0x10000, gate 0x3b6c, nothing else in those windows");
+	    "EO2 the observed 0xc0 enable order: ps 0xc000, gate 0x248c, ps 0xc008, gate 0x2b6c, ps 0xc008 bit 28, ps 0x10000, gate 0x3b6c, nothing else in those windows");
 	chk(sim_posted_maps == 0,
 	    "EO3 no plain (posted) ioremap: the PWGATE window is mapped with ioremap_np");
 	remove_if_probed();

@@ -7,7 +7,7 @@
  * overlay directory by hand, with the opt-in key ane-h16-experimental
  * in /etc/omarchy-mac-boot/dtb-overlays.opt-in. See ane/h16/README-bringup.
  *
- * Sources (receipts/2026-10-03-ane-h16): ADT j604ap (27.0 26A428):
+ * Sources (receipts/2026-10-03-ane-h16): ADT j604ap (pinned build):
  * ane reg engine 0x500000000+0x2000000, pmgr 0x380700000+0x18000 with
  * the ANE state words at +0x570 (ANE_SYS), +0xc000/+0xc008/+0xc010/
  * +0xc018 (ANE_MPM/CPU/TD/BASE); interrupts 629, 642; dart-ane LLT

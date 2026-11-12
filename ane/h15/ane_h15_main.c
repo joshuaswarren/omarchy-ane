@@ -336,17 +336,17 @@ MODULE_PARM_DESC(probe_ce,
 		 "Stage=run (5): read the 8 words engine+0x18a4000..+0x18a4020 (the H17 CE block; inside the T6021 fatal range, so read only on request), once before RUN. Off by default.");
 static unsigned int enable_stop = 7;
 module_param(enable_stop, uint, 0444);
-MODULE_PARM_DESC(enable_stop, "enable_order only: run macOS 0xc0 steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
+MODULE_PARM_DESC(enable_stop, "enable_order only: run the observed 0xc0 enable steps 1..N (1 ps 0xc000, 2 gate 0x248c, 3 ps 0xc008, 4 gate 0x2b6c, 5 ps 0xc008 bit 28, 6 ps 0x10000, 7 gate 0x3b6c); default 7.");
 static bool enable_order;
 module_param(enable_order, bool, 0444);
 MODULE_PARM_DESC(enable_order,
-		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the macOS EnableCPUClocksAndPower ane-type 0xc0 order, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
+		 "Stage=run (5), T6030 only, needs pwgate_t6031=1 free (it is separate), map_fw, dapf_prog: the observed enable order of the 0xc0 ANE type, constants written (no |=): see enable_stop for the 7 steps; polls only on ps 0xc000/0xc008/0x10000 (&0xff or &0x100000ff) and gate 0x2b6c/0x3b6c (&3 == 0), none on gate 0x248c, no ack-word poll. Steplog line before every write and poll. Off by default.");
 static bool gate_noop;
 module_param(gate_noop, bool, 0444);
 MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the gate word +0x2b6c with 0x3, its current value (a write that changes nothing), read it back and go on. Off by default.");
 static bool cold_first;
 module_param(cold_first, bool, 0444);
-MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the macOS order. Raw PS writes. Off by default.");
+MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the observed order. Raw PS writes. Off by default.");
 static bool probe_scr;
 module_param(probe_scr, bool, 0444);
 MODULE_PARM_DESC(probe_scr, "Stage=run (5): read engine+0x1840000..+0x1840100 before RUN and after the wait and log the nonzero words, read only. Off by default.");
@@ -365,7 +365,7 @@ MODULE_PARM_DESC(probe_fwreg,
 static char *fw_path;
 module_param(fw_path, charp, 0444);
 MODULE_PARM_DESC(fw_path,
-		 "Stage=boot only. Firmware API name of an exact pinned 26A428 H15 payload. Requires confirm_boot=1 and confirm_read=1. Prepares coherent owned memory, then retains the existing startup refusal; no CPU release. "
+		 "Stage=boot only. Firmware API name of an exact pinned H15 payload. Requires confirm_boot=1 and confirm_read=1. Prepares coherent owned memory, then retains the existing startup refusal; no CPU release. "
 		 "With map_fw=1 and no fw_seg, the run stages take the same owned image as their firmware source and map its pages at the RVBAR entry instead of the iBoot segments.");
 
 /* apple-pmgr-pwrstate word: TARGET bits 3:0, ACTUAL bits 7:4;
@@ -651,8 +651,8 @@ static int ane_h15_stage_status(struct ane_h15 *ane)
  *   (lines 104-109, 142-143 and 160-163). These are T6021 values. Their
  *   H15 roles are INFERENCE (see the b0 receipt).
  * - The two ADT windows (wrapper 0x6c000 bytes at engine + 0x1400000,
- *   RVBAR block 0x4000 bytes at engine + 0x1050000): the shipped system's 27.0 ADT
- *   summary adt-27.0.txt, sha256
+ *   RVBAR block 0x4000 bytes at engine + 0x1050000): the shipped system's boot device tree
+ *   summary the saved boot device tree summary, sha256
  *   04fe38b8ee009700f02e2c01e83bf608afab5e843f5878a83f162973a1ffdb84,
  *   as tabulated (A1, A3) in receipts/2026-10-03-ane-h15/README.md at
  *   71ed021859a3f7e55c04756a1c6ab456fa48fc9f.
@@ -1394,7 +1394,7 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
 /* ---- stage 5: start the ASC core once, watch, stop it again ----
  *
  * Sources, commit-pinned, with H15 observations told apart from cross-generation inference:
- * ane/h15/run-stage-sources.md (m1n1 asc.py 97820568, macOS _runCPU decode sha d383f674, ane_t6021.h
+ * ane/h15/run-stage-sources.md (m1n1 asc.py 97820568, the observed core-run sequence, ane_t6021.h
  * 16cfa8720b80677dbcdf8fd1d04077a8b72768bf, omarchy-linux mailbox.c 57f8f6de, the M6 boot 235c8ff4).
  *
  * Why this is the next step. The T6030 stage 2 run (PR 175, J516S) read RVBAR 0x0000010000000001 and CPU_STATUS
@@ -1420,7 +1420,7 @@ static int ane_h15_map_firmware(struct ane_h15 *ane)
  *   5. for run_wait_ms every 10 ms: CPU_STATUS and I2A_CTRL; if I2A is not EMPTY it pops the message
  *      (I2A_RECV0 at wrapper+0x8830, I2A_RECV1 at +0x8838, the Linux apple-mailbox v4 layout the other T6030 ASCs
  *      use) and logs the raw words, at most 4 messages. It sends NOTHING and never replies to a HELLO;
- *   6. stops the core the macOS way (_runCPU(false)): clear bit 4, write; re-read, clear bit 5, write; waits for
+ *   6. stops the core the observed way: clear bit 4, write; re-read, clear bit 5, write; waits for
  *      STOPPED. If the core does not stop the power domains stay on, the windows stay mapped and remove()
  *      refuses: reboot.
  * It writes only CPU_CONTROL (bits 4 and 5), never RVBAR, never the mailbox, never the DART; with
@@ -2567,9 +2567,9 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
  *
  * On a T6031 (ane-type 0xe0) the shipped system writes 0 to the 32 bit register at offset 0x199c of the
  * PWGATE window, then polls it until bits 1:0 read 0, up to 0x1388 polls of 10 microseconds
- * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the macOS 27.0
+ * each. The PWGATE window is the fifth reg entry of the ADT ane0 node in the boot
  * device tree of the J516C: 0x292290000, 0x4000, next to the pmgr window at 0x292280000.
- * The decoded CPU-power step of the T6030 and T8122 has the same sequence at the word of their
+ * The observed CPU-power step of the T6030 and T8122 has the same sequence at the word of their
  * row (+0x2b6c, +0x272c) in the third reg entry of their ANE node. The T6031 offset comes from the SoC data. The
  * hypothesis under test (inferred): a gate still closed there is why the stage 5 runs on these chips ended with
  * CPU_STATUS 0x30002a to 0x300028 and no mailbox message. A stage 2 read (pwgate_read) found the
@@ -2667,7 +2667,7 @@ static int ane_h15_poll_word(struct ane_h15 *ane, void __iomem *a, u64 pa, u32 m
 
 static int ane_h15_enable_order(struct ane_h15 *ane)
 {
-	/* macOS EnableCPUClocksAndPower, ane-type 0xc0 branch: ps words and gate words in macOS's order, constants as macOS writes them. */
+	/* observed enable order of the 0xc0 ANE type: ps words and gate words in the observed order, constants as observed. */
 	static const struct { bool gate; u32 off; u32 val; u32 mask; } st[7] = {
 		{ false, 0xc000, 0xf, 0xff }, { true, 0x248c, 0, 0 }, { false, 0xc008, 0xf, 0xff },
 		{ true, 0x2b6c, 0, 3 }, { false, 0xc008, 0x1000000f, 0x100000ff },
@@ -2727,7 +2727,7 @@ out:
 	return ret;
 }
 
-/* probe_gates=1: the words the macOS 0xc0 order touches, read only. */
+/* probe_gates=1: the words the observed 0xc0 enable order touches, read only. */
 static void ane_h15_gates_dump(struct ane_h15 *ane)
 {
 	const struct ane_h15_soc *s = ane->soc;

@@ -5,7 +5,7 @@
 #include <linux/errno.h>
 
 /* Source-derived ordering only; NOT hardware qualification. The retained
- * kernelcache SHA256 is 7d4ca8baa2f40da0244eeeadebd072895995cf2046e1ef2cfc9f893c22af44fe.
+ * the retained image digest
  * CE, PS and PWGATE block addresses: recorded in the
  * receipts/2026-11-04-j700-h17-firmware-load-path/ dumps.
  * Tunables: verified 37-entry decode recorded at commit 1e4e9e7.

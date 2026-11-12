@@ -7,8 +7,8 @@
  * copies it into the overlay directory by hand, with the opt-in key
  * ane-h15-experimental in /etc/omarchy-mac-boot/dtb-overlays.opt-in.
  *
- * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). ADT 27.0
- * 26A428:
+ * Source: receipts/2026-10-03-ane-h15/README.md (b0 table). pinned ADT
+ * pinned:
  *   ane reg engine 0x310000000+0x2000000, pmgr 0x2d0700000+0x18000;
  *   ANE ps words at +0x438 (ANE_SYS, parent LMX4), +0xc000/+0xc008/
  *   +0xc010/+0xc018 (ANE_MPM/CPU/TD/BASE).
@@ -39,7 +39,7 @@
 		};
 	};
 
-	/* T8122/J613 parent graph: receipts/2026-10-01-ane-every-soc/adt-27.0.txt,
+	/* T8122/J613 parent graph: receipts/2026-10-01-ane-every-soc/the saved boot device tree summary,
 	 * lines 227-239. ANE_BASE depends on both ANE_TD and ANE_CPU. */
 	fragment@2 {
 		target-path = "/soc/power-management@2d0700000";

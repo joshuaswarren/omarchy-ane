@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only OR MIT */
-/* T8140/J700 ANE payload from Apple's macOS 26.6.2 (25G83) IPSW.
+/* T8140/J700 ANE payload from the shipped 26.6.2 (25G83) release.
  * The IM4P member and its SHA-256 are recorded in
  * receipts/2026-10-30-j700-h17-adt/README.md. These are file facts,
  * not a claim that the live iBoot preload is byte-identical. */

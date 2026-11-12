@@ -83,7 +83,7 @@ class BootInputs:
     channel_count: int        # initial SCRATCH0
     ipc_last_offset: int      # initial SCRATCH1, kext adds one in w8
     heap_bytes: int           # initial SCRATCH3, optional (zero => absent)
-    firmware_argument: int = 0  # [dev+0x4a8], initialized zero for preload
+    firmware_argument: int = 0  # device-struct word 0x4a8, initialized zero for preload
     option_flags: int = 4     # template +0xc0; conditional OR 8 / 0x10
 
     def validate(self):

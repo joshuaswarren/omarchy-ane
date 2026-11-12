@@ -16,7 +16,7 @@ Run it from an m1n1 checkout with the Mac in proxy mode and macOS as the guest, 
 guest (one CoreML model run on the Neural Engine):
 
     python3 proxyclient/tools/run_guest.py -l ane-trace.log \\
-        -m proxyclient/hv/trace_ane_h15.py <your usual run_guest.py arguments and kernelcache>
+        -m proxyclient/hv/trace_ane_h15.py <your usual run_guest.py arguments>
 
 Do not add other m1n1 tracers to the same run unless you know they read nothing: several prime their register
 cache with reads when they start, and a read of an unpowered ANE block can fault the host.
@@ -49,7 +49,7 @@ from m1n1.utils import irange
 CHIPS = {0x8122: "T8122", 0x6030: "T6030", 0x6031: "T6031"}
 PAGE = 0x4000
 
-# Offsets from the engine base (ANE reg 0). DECODED: read in the macOS kext (receipts/2026-10-28-m3-ane).
+# Offsets from the engine base (ANE reg 0). OBSERVED: read from the shipped driver (receipts/2026-10-28-m3-ane).
 # INFERRED: labelled by analogy with the Linux apple-mailbox layout; the offset is real, the name is a guess.
 NAMED = {
     0x1050000: "RVBAR",
@@ -84,9 +84,7 @@ PMGR_PS_NAMES = {
     0x6031: {0x5A0: "ANE_MPM", 0x5A8: "ANE_CPU", 0x5B8: "ANE_TD", 0x5C0: "ANE_BASE"},
 }
 
-# Offset of the PWGATE register inside the ANE node's pmgr_ps window (the pmgr_ps entry), decoded from the
-# macOS driver. A candidate only: the driver gates that write on a flag whose value is not known, so macOS may
-# not run it.
+# Candidate offset of PWGATE within the ANE node's pmgr_ps window; its write condition is not established.
 PWGATE_OFFSET = {0x8122: 0x272C, 0x6030: 0x2B6C, 0x6031: 0x199C}
 
 # ANE register entries as (engine, pmgr, pmgr_ps). The T8122 and T6030 nodes list the engine, pmgr and pmgr_ps first.

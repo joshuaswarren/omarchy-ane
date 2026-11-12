@@ -3,10 +3,10 @@
  * ane_t6021_mring.h: what an entry of the firmware's SHAREDMALLOC ring (ChMan channel 5, 8 slots of 0x40 bytes) is, factored out so the host unit test
  * (tools/test_t6021_mring.c) compiles the rule the driver runs.
  *
- * Decode of selene 13v5 (CSharedMemory in the firmware image, free-request decode in the lab notes): the firmware writes one slot per request, three
+ * Observed on selene 13v5 (shared-memory requests in the firmware image, free requests in the lab notes): the firmware writes one slot per request, three
  * 64-bit words (header, size, mode), and the host answers by writing the header back with bit 0 set and ringing doorbell bit 5.
- *   MALLOC (CSharedMemory::Malloc): header 0, size = bytes, mode 0 or 1.
- *   FREE or UNREMAP (CSharedMemory::Free, UnRemap): header = the IOVA being given back (16 KiB aligned, so bit 0 is clear and the header is not 0),
+ *   MALLOC: header 0, size = bytes, mode 0 or 1.
+ *   FREE or UNREMAP: header = the IOVA being given back (16 KiB aligned, so bit 0 is clear and the header is not 0),
  *     both body words 0. The firmware has already unmapped it on its side and waits for the answer with no timeout, holding its shared-memory lock.
  *   A slot with bit 0 set is host-owned: it was already answered.
  * A slot with header 0 and size 0 carries no request (a slot the firmware has not written yet). A REMAP request has that shape too (header 0, size 0,

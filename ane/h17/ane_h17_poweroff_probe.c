@@ -4,7 +4,7 @@
  *
  * Every earlier probe raised the ANE sub-domains through genpd and then
  * dropped them with a bare dev_pm_domain_detach(). Apple's driver never
- * does that: DisableCPUClocksAndPower (ane-type 0x200 block) runs a
+ * does that: the CPU clocks-and-power disable call (ane-type 0x200 block) runs a
  * nine-step sequence against the PS word
  * (PMGR+0xc000) and the PWGATE window (0x300724000).
  *

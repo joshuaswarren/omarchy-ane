@@ -19,7 +19,7 @@
  * tester's kernel (source 77648eb7716845a7207ed6cdeadeea17b42c7a22, checked by the tester), where MAX_DARTS_PER_DEVICE is 8
  * and apple_dart_of_xlate records distinct providers; the one-instance result is on issue 176 (module f65f676826209fc0fe8e5b9d09b7879280faee31). Mirrors
  * ane/h15/t8122-ane-experimental.dts; the engine and
- * pmgr bases are MEASURED (ADT 27.0): engine 0x308000000+0x2000000,
+ * pmgr bases are MEASURED (pinned ADT): engine 0x308000000+0x2000000,
  * pmgr 0x350700000+0x18000. The ps word set is the same five words,
  * the ANE_SYS word at +0x498 (parent LW20), the others at
  * +0xc000..+0xc018. IRQ lines and DART reg are per the ADT order.

@@ -160,7 +160,7 @@ MODULE_PARM_DESC(start_app_eps,
 static bool scratch3_ack = true;
 module_param(scratch3_ack, bool, 0444);
 MODULE_PARM_DESC(scratch3_ack,
-		 "After DONE, write SCRATCH3 = 0x08042006 (selene 0x7edc, vendor driver 0x95eaee4). Default on; 0 withholds.");
+		 "After DONE, write SCRATCH3 = 0x08042006 (vendor call anchor in the private lab store). Default on; 0 withholds.");
 
 static bool legacy_only = true;
 module_param(legacy_only, bool, 0444);
@@ -1928,9 +1928,9 @@ static int ane_t6021_prog_load_ioctl(struct drm_device *drm, void *data,
 }
 
 /* Firmware perf mode: CSNE_CMD_CH_PROPERTY_WRITE (0x1f), channel 0,
- * property 0x10aa, value 1. The shipped system sends it once during power-on (H13
- * kext evidence in the omarchy-ane perf-mode receipt); the selene 13.5
- * fw routes it to CAneEngineExeLoop::setPerfMode. It is a runtime
+ * property 0x10aa, value 1. It is sent once during power-on, as documented
+ * in the perf-mode receipt. The selene 13.5
+ * fw routes it to its perf-mode handler. It is a runtime
  * switch (write 1 to /sys/module/ane_t6021/parameters/fw_perf_mode) so
  * its effect on call time can be measured on one boot. Only 1 is
  * accepted: no other value is known to be safe. */

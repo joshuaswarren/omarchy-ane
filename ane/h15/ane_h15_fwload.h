@@ -5,7 +5,7 @@
 /* fw_trace: the firmware's exception vectors spin on `b .`. Turn each into a stub that records ESR/FAR/ELR/SPSR_EL1 and the vector
  * number into a page of the zero BSS tail (vm ANE_H15_FW_TRACE_VM, which the host reads back), then spins. The stubs live in the
  * vectors' own udf padding at text 0x190..0x1ff; slot 0x200 (`b .`, EL1h sync) branches to the stub at 0x194. Refuses an image whose
- * words are not exactly what was disassembled from the 26A428 payload. */
+ * words are not exactly what was disassembled from the pinned payload. */
 #define ANE_H15_FW_TRACE_VM 0x300000u
 static const u32 ane_h15_trace_stub[] = {		/* text 0x1a0.. */
 	0x90001800,	/* adrp x0, 0x300000 (pc page 0) */
@@ -17,7 +17,7 @@ static const u32 ane_h15_trace_stub[] = {		/* text 0x1a0.. */
 	0xa9021404,	/* stp x4, x5, [x0, #0x20] */
 	0xf9000401,	/* str x1, [x0, #8] */
 	0xd28a08a6,	/* mov x6, #0x5045 */
-	0xf9000006,	/* str x6, [x0] */
+	0xf9000006,	/* store patched entry word */
 	0xd5033f9f,	/* dsb sy */
 	0x14000000,	/* b . */
 };

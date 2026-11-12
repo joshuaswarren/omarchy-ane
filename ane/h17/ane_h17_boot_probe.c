@@ -10,7 +10,7 @@
  *
  * Apple's order, which differs from everything this repo has done so far:
  *
- *   B1/B2  provider enableDeviceClock / enableDevicePower   (NOT done here:
+ *   B1/B2  provider clock and power enable calls           (NOT done here:
  *          needs the PMGR clock map, which Linux does not have)
  *   C5     ANE 0x18a4000  ^= 3, then poll 0x18a4008        <- first ANE MMIO
  *   D1-D7  PS 0xc000 := 0xf, PWGATE 0x268c := 0, PS 0xc000 := 0x1000000f

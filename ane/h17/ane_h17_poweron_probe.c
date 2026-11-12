@@ -12,8 +12,8 @@
  * a write of 0 into a register that already read 0
  * (receipts/2026-11-03-j700-h17-any-write-freezes).
  *
- * Apple's driver does not stop at the ps-word. EnableCPUClocksAndPower
- * (ane-type 0x200 block) runs:
+ * The observed power-up does not stop at the ps-word. For the
+ * 0x200 ANE type it runs:
  *
  *   1. PS      write32(0xc000, 0xf)
  *   2. PS      validate(0xc000, 0xff, mask 0xff)

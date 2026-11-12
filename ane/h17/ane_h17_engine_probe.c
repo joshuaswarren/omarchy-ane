@@ -43,7 +43,7 @@
 #define H17_PS_ACTUAL GENMASK(7, 4)
 #define H17_MAX_SUB 3
 
-/* H17 engine-window registers (pinned from the retained kernelcache;
+/* H17 engine-window registers (pinned from the retained image;
  * see docs/j700-h17-linux-support-plan.md). */
 #define H17_CPU_STATUS 0x1600048
 #define H17_RVBAR 0x1050000

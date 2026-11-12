@@ -2,7 +2,7 @@
 #ifndef ANE_H15_FW_PINS_H
 #define ANE_H15_FW_PINS_H
 
-/* Exact 26A428 payload pins shared by the platform rows and host stager.
+/* Exact pinned payload pins shared by the platform rows and host stager.
  * Each IM4P is 1605657 bytes; its payload occupies [25, 1605657). */
 struct ane_h15_fw {
 	const char *name;

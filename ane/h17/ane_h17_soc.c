@@ -5,8 +5,8 @@
  * Values pinned from two offline sources (see
  * docs/j700-h17-linux-support-plan.md and
  * receipts/2026-11-01-j700-h17-linux-support-plan/):
- *   - the retained macOS kernelcache legacy direct-boot block
- *     (its ANE_Init entry block), and
+ *   - the retained image legacy direct-boot block
+ *     (its firmware init entry block), and
  *   - the recorded ADT (data/ane-soc/t8140.json, source A1).
  * Fields marked "candidate" are the T8132/H16 template and are NOT
  * device-qualified for T8140. No of_match entry is added here: the H16
@@ -43,7 +43,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
 /* T8140 / J700 (A18 Pro-class, H17). ADT ane-type 0x200; engine
  * 0x400000000+0x2000000.
  *
- * Pinned from the kernelcache legacy direct-boot block:
+ * Pinned from the legacy direct-boot block:
  *   cpu_control 0x1600044 (write 0 then 0x10 RUN)
  *   cpu_status  0x1600048
  *   rvbar       0x1050000 (write64)
@@ -59,7 +59,7 @@ static const struct ane_h16_fw ane_fw_theia_d9x = {
  *
  * Candidates, not device-qualified for T8140: irq_status 0x188c000 /
  * irq_ack 0x1890000 are the ANE-type-0x200 row of the host driver's
- * initializeANESoCConfig case table (firmware-load-path receipt §11), not
+ * SoC-config case table (firmware-load-path receipt §11), not
  * borrowed from the T8132 row — but a register table is not device
  * behaviour. mbox = 0x1608000 is the ASC+0x8000 family pattern over the
  * H17 CPU/ASC block at engine+0x1600000, now hardware-confirmed:

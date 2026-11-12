@@ -8,7 +8,7 @@
  *   true). Each ADT address plus 0x200000000 is the physical address, the translation the kernel tree's
  *   t8152-j873 device tree uses (linux-aurora, j873 tip 4513ee61d6a0, "translated ADT addresses").
  * - ASC wrapper register offsets (CPU_CONTROL 0x44, CPU_STATUS 0x48, ASC_STATUS 0x8048, IORVBAR at +0 of its block):
- *   UNVERIFIED by any checked-in receipt. They come from macOS 27.0 (26A434) behaviour recorded
+ *   UNVERIFIED by any checked-in receipt. They come from the shipped system behaviour recorded
  *   in the lab notebook (2026-10-19), which this repository does not carry. The board has
  *   confirmed only that reads of CPU_STATUS, ASC_STATUS and IORVBAR at these offsets return sane values with the
  *   PSD slots on (stage power) and that CPU_CONTROL reads 0 before the core runs (read_ctrl).
@@ -61,7 +61,7 @@
  * macOS uses for this SoC. Read only here, in the page at scratch_pa. */
 #define ANE_H18_SCRATCH_OFF	0x24
 #define ANE_H18_SCRATCH_N	8
-/* SCRATCH handshake of macOS (macOS behaviour on build 26A434, mac18g; recorded in a private lab note):
+/* SCRATCH handshake of macOS (macOS behaviour on the pinned build, mac18g; recorded in a private lab note):
  * after READY the host publishes the address of a 0x174 byte init block
  * in SCRATCH0 (low) and SCRATCH1 (high), writes the wake word to SCRATCH7, and the firmware answers READY again with the address of its channel table in
  * SCRATCH1:SCRATCH0. The firmware already shows READY before the wake (board read), so the answer is judged by the table address, not by SCRATCH7. */
