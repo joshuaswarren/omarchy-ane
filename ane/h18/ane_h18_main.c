@@ -3269,7 +3269,7 @@ static int ane_h18_probe(struct platform_device *pdev)
 
 	if (stage_idx == ANE_H18_STAGE_READS) {
 		/* Read-only register probe on the engine window (reg index 0, the 32 MiB ADT
-		 * window the kext uses as its RegisterControl base). The 2026-11-11 bus hang:
+		 * window, the register base of the shipped driver). The 2026-11-11 bus hang:
 		 * the ANE block was power/clock-gated at read time, so a single readl hung the
 		 * bus until the watchdog rebooted. Rules: the node must carry power-domains
 		 * (every cell must resolve to a pmgr pwrstate provider in the live tree, so a

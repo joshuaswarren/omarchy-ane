@@ -180,7 +180,7 @@ struct ane_t6021_init_sources {
 static inline u64 ane_t6021_ipc_size(u64 page_size, u32 captured)
 {
 	/* EXACT u32 semantics: the fw-visible ordinal is the captured
-	 * SCRATCH1 value + 1 in 32-bit arithmetic (kext add w8,w0,#1) —
+	 * SCRATCH1 value + 1 in 32-bit arithmetic —
 	 * it wraps. Callers pass the CAPTURED value, never pre-incremented.
 	 * The result is then bounded by ANE_T6021_BOOT_IPC_CEILING at the
 	 * allocation site: captured is fw-supplied and untrusted. */
@@ -347,8 +347,8 @@ ane_t6021_boot_prepare_publish(const struct ane_t6021_init_sources *s,
 			return -ENOMEM;
 	}
 
-	/* ordinal: exact u32 +1 on the READ SCRATCH1 value (kext add
-	 * w8,w0,#1; callers pass the read value, never pre-incremented).
+	/* ordinal: exact u32 +1 on the READ SCRATCH1 value (callers
+	 * pass the read value, never pre-incremented).
 	 * HEADER SOURCES come from the ALLOCATIONS: s->ipc_dva/pool_dma
 	 * may be zero in the caller's static sources — fill from the
 	 * allocator outputs (a->ipc_dva/a->pool_dva), never from s
@@ -637,10 +637,10 @@ ane_t6021_boot_run(const struct ane_t6021_boot_io *io,
 	 * publish barrier, then publish suballoc DVA low32/high32, then
 	 * wake. Barrier semantics (Main review 2026-09-20): the kernel
 	 * backend's dma_wmb() is dmb oshst — it ORDERS the coherent fill
-	 * before the device publish; it is NOT the kext's dsb st (which
+	 * before the device publish; it is NOT a full completion barrier (which
 	 * additionally waits for completion). Ordering suffices for the
 	 * Linux coherent-DMA + writel doorbell contract (writel itself
-	 * orders prior accesses before the MMIO store); the kext dsb st
+	 * orders prior accesses before the MMIO store); the stronger barrier
 	 * choice is a completion guarantee this driver does not claim. */
 	{
 		u32 lo = 0, hi = 0;

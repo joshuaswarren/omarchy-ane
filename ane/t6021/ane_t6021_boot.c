@@ -295,7 +295,7 @@ static void ane_boot_publish_barrier(void *ctx)
 {
 	(void)ctx;
 	/* dma_wmb() = dmb oshst on arm64: orders the coherent pool fill
-	 * before the device publish. ORDERING guarantee — not the kext's
+	 * before the device publish. ORDERING guarantee — not the stronger
 	 * dsb st (completion). Sufficient for the Linux coherent-DMA +
 	 * writel doorbell contract (writel orders prior accesses before
 	 * the MMIO store). */

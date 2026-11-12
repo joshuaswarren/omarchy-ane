@@ -30,9 +30,10 @@ BANNED = {
     "Apple driver function": ["EnableANEClocksAndPower runs first\n", "ANE_deInit frees it\n", "enableDeviceClock is called\n", "getPageSize returns it\n", "Foo::bar() sets it\n", "calls _runCPU(false) next\n"],
     "kernelcache address": ["site 0xfffffe0008f294e8 reads it\n", "at 0x9613e14 it is set\n", "branch at 0x8f3e000 skips\n"],
     "driver struct offset or operand": ["dev+0x3EA0 is zero\n", "u32[x23+4] holds it\n", "loads [x8+0x10] first\n"],
-    "decoded provenance": ["the table is decoded\n * from the ADT summary\n", "static-decode provenance only\n", "(DeviceTree.j414cap.im4p, x)\n", "mapFwCTRRRegion reads it\n", "uses ldr w9,[x20,#0x18] here\n", "the decoded CPU-power step\n", "# DECODED: read in it\n", "decoded from the ADT\n", "from the macOS 27.0 ADT summary\n", "ADT 27.0 row\n"],
+    "decoded provenance": [ "it has a tbnz w0,#0 test\n", "the decoded power sequence\n", "the decoded step\n", "a decoded sequence\n", "the decoded driver\n", "the decoded kext\n","the table is decoded\n * from the ADT summary\n", "static-decode provenance only\n", "(DeviceTree.j414cap.im4p, x)\n", "mapFwCTRRRegion reads it\n", "uses ldr w9,[x20,#0x18] here\n", "the decoded CPU-power step\n", "# DECODED: read in it\n", "decoded from the ADT\n", "from the macOS 27.0 ADT summary\n", "ADT 27.0 row\n"],
     "restore-image or kernelcache locator": ["the retained kernelcache is pinned\n", "from the IPSW file\n", "read it from the restore image\n"],
     "macOS 27.0 provenance": ["the 27.0 payload\n", "a 26A428 payload pin\n", "see adt-27.0.txt\n"],
+    "vendor type, class or instruction quote": ["sizeof(sCSneCmdProcedureCall) == 0\n", "the CSneCmd type\n", "its RegisterControl base\n", "(kext add w8,w0,#1)\n", "NOT the kext's dsb st\n", "the kext dsb st choice\n", "add w8,w0,#1 wraps\n"],
     "decode wording": ["a static decode of the driver shows the order\n", "an offline decode of the kext\n", "decoded from the kext\n",
                        "decoded statically from the kernelcache\n", "reverse engineered the macOS driver\n", "reverse-engineering the kext\n", "decoded from the kernel extension\n"],
 }

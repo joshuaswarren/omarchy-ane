@@ -538,8 +538,8 @@ struct ane_csne_cmd_ipc_endpoint_set {
  *                first-inference receipt's bare calls)
  *   +0x28        u32 element count (loop bound @0x524bc-0x524c4)
  *   +0x60        count × 0x30-byte io-buffer records (count from recorded loop bounds)
- * The kext `size % sizeof(sCSneCmdProcedureCall) == 0` assert says
- * commands form same-shape arrays in the ring; this driver submits one
+ * The shipped driver checks that the submitted size is a whole number of
+ * command records, so commands form same-shape arrays in the ring; this driver submits one
  * command per slot. INFERENCE_CALL shares the shape [INFERENCE: the
  * 0x404 id is not in the decoded id tree — it is the W4 submission
  * endpoint per the phase-1 workstream plan]. */
