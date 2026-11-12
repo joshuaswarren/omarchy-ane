@@ -147,6 +147,11 @@ module_param(map_fw, bool, 0444);
 MODULE_PARM_DESC(map_fw,
 		 "stage=run only: before RUN attach the ANE to its DART through the iommu API and map the two preloaded firmware segments named by fw_seg. Needs iommus in the node. Default off.");
 
+static bool fw_trace;
+module_param(fw_trace, bool, 0444);
+MODULE_PARM_DESC(fw_trace,
+		 "Stage 5 only (with confirm_run=1): patch the owned firmware copy's four spinning exception vectors into stubs that store ESR/FAR/ELR/SPSR_EL1 and a vector number into a BSS page (vm 0x300000) the host reads after the wait. TEXT differs from the pinned image (digest line shows it). Off by default.");
+
 static bool wrad_patch = true;
 module_param(wrad_patch, bool, 0444);
 MODULE_PARM_DESC(wrad_patch,
@@ -1838,6 +1843,17 @@ static void ane_h15_pmgr_dump(struct ane_h15 *ane, const char *when)
 		 v[0], v[1], v[2], v[3], v[4]);
 }
 
+/* Stage 5, fw_trace=1: the trace page the patched vector stubs fill (text patch in fwload.h). */
+static void ane_h15_trace_dump(struct ane_h15 *ane)
+{
+	const u64 *p = ane->owned_fw.va ? (const u64 *)((u8 *)ane->owned_fw.va + ANE_H15_FW_TRACE_VM) : NULL;
+
+	if (!p || !ane->owned_map)
+		return;
+	dev_info(ane->dev, "ane_h15 fw trace: magic=%#llx vector=%llu esr=%#llx far=%#llx elr=%#llx spsr=%#llx\n",
+		 p[0], p[1], p[2], p[3], p[4], p[5]);
+}
+
 /* Stage 5, probe_fwreg=1: the two halves of the register the firmware stores to, read only. */
 static void ane_h15_fwreg_dump(struct ane_h15 *ane, const char *when)
 {
@@ -2892,6 +2908,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 		ane_h15_pmgr_dump(ane, "after the wait");
 	if (stg == 5 && probe_fwreg)
 		ane_h15_fwreg_dump(ane, "after the wait");
+	if (stg == 5 && fw_trace)
+		ane_h15_trace_dump(ane);
 	ane_h15_owned_digest(ane, "after the wait", &data_snap);
 	kvfree(data_snap);
 	data_snap = NULL;
@@ -3094,6 +3112,11 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* pwgate_read refusals: same rule, before any MMIO and any mapping. */
+	if (fw_trace && (stage_idx != 5 || !confirm_run)) {
+		ane_h15_steplog_close();
+		dev_err(&pdev->dev, "REFUSED reason=fw_trace: stage=run (5) with confirm_run=1 only\n");
+		return -EINVAL;
+	}
 	if (probe_fwreg && (stage_idx != 5 || !confirm_read)) {
 		ane_h15_steplog_close();
 		dev_err(&pdev->dev, "REFUSED reason=probe_fwreg: stage=run (5) with confirm_read=1 only\n");

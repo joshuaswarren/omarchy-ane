@@ -514,6 +514,8 @@ static inline void kvfree(const void *p)
 }
 #define sha256 ane_sha256
 #define SHA256_DIGEST_SIZE 32
+#define le32_to_cpu(x) (x)
+#define cpu_to_le32(x) (x)
 /* ---- DMA API for stage 7: zeroed surfaces at IOVAs far from the firmware segments ---- */
 #define PAGE_SIZE 0x4000UL
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
