@@ -3420,8 +3420,23 @@ static void pos_enable_fail_gates(void)
 	probe_pc = true;
 	confirm_read = true;
 	ret = probe_now();
-	chk(ret != 0 && sim_n_iomap == 0 && events_in(0, ~0ULL, 0) == 0,
-	    "EO7 probe_pc on T6031 is refused before any mapping or access");
+	chk(ret != 0 && sim_n_iomap == 0 && events_in(0, ~0ULL, 0) == 0 && log_count("REFUSED reason=probe_gates_probe_pc_probe_scr") == 1,
+	    "EO7 probe_pc on T6031 is refused by the row gate, before any mapping or access");
+	remove_if_probed();
+
+	map_setup(&ane_t6031_soc, "apple,t6031-ane");
+	probe_scr = true;
+	ret = probe_now();
+	chk(ret != 0 && sim_n_iomap == 0 && events_in(0, ~0ULL, 0) == 0 && log_count("REFUSED reason=probe_gates_probe_pc_probe_scr") == 1,
+	    "EO8 probe_scr on T6031 is refused by the row gate, before any mapping or access");
+	remove_if_probed();
+
+	map_setup(s, "apple,t6030-ane");
+	probe_scr = true;
+	ret = probe_now();
+	chk(ret == 0 && events_in(s->engine_pa + 0x1844000, 4, 0) == 2 && events_in(s->engine_pa + 0x184c000, 4, 0) == 2 &&
+	    events_in(s->engine_pa + 0x1850000, 4, 0) == 2,
+	    "EO9 probe_scr on T6030 reads the doorbell, irq status and irq ack words twice (before RUN, after the wait), no writes there");
 	remove_if_probed();
 	if (fails == before)
 		printf("    EO failure paths and row gates PASS\n");
