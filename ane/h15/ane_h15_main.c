@@ -349,7 +349,7 @@ module_param(cold_first, bool, 0444);
 MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the observed order. Raw PS writes. Off by default.");
 static bool probe_scr;
 module_param(probe_scr, bool, 0444);
-MODULE_PARM_DESC(probe_scr, "Stage=run (5): read engine+0x1840000..+0x1840100 before RUN and after the wait and log the nonzero words, read only. Off by default.");
+MODULE_PARM_DESC(probe_scr, "Stage=run (5), T6030 only (refused on other rows; the words were read on a T6030 14-inch M3 Pro board, core running and stopped): read engine+0x1840000..+0x1840100 and the three words at +0x1844000, +0x184c000, +0x1850000 before RUN and after the wait and log the nonzero words, read only. Off by default.");
 static bool probe_gates;
 module_param(probe_gates, bool, 0444);
 MODULE_PARM_DESC(probe_gates, "Stage=run (5), T6030: read the gate words 0x248c/0x2b6c/0x3b6c and ps 0xc000/0xc008/0x10000, read only, once before RUN. Off by default.");
@@ -684,6 +684,9 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	if (probe_pc && (off == 0x10100a0 || off == 0x10100ac) && size == 4)
 		return true;
 	if (probe_ce && off >= 0x18a4000 && end <= 0x18a4020 && size == 4 && end <= s->engine_size)
+		return true;
+	/* +0x1844000/+0x184c000/+0x1850000: the doorbell, irq status and irq ack words at the #1595 offsets from the scratch block base */
+	if (probe_scr && (off == 0x1844000 || off == 0x184c000 || off == 0x1850000) && size == 4 && end <= s->engine_size)
 		return true;
 	if (probe_scr && off >= 0x1840000 && end <= 0x1840100 && size == 4 && end <= s->engine_size)
 		return true;
@@ -2073,6 +2076,13 @@ static void ane_h15_scr_region(struct ane_h15 *ane, const char *when)
 			return;
 		if (v)
 			dev_info(ane->dev, "ane_h15 scrreg %s engine+%#x=%#x\n", when, off, v);
+	}
+	for (off = 0x1844000; off <= 0x1850000; off += 0x4000) {
+		if (off != 0x1844000 && off != 0x184c000 && off != 0x1850000)
+			continue;
+		if (ane_h15_read_word(ane, "scrreg", off, &v))
+			return;
+		dev_info(ane->dev, "ane_h15 scrreg %s engine+%#x=%#x\n", when, off, v);
 	}
 }
 
@@ -3465,8 +3475,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* probe_gates reads ps 0x10000 and probe_pc reads EDPCSR: both only on the T6030 row they were measured on */
-	if ((probe_gates || probe_pc) && soc->pwgate_word != 0x2b6c) {
-		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc: T6030 row only\n");
+	if ((probe_gates || probe_pc || probe_scr) && soc->pwgate_word != 0x2b6c) {
+		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc_probe_scr: T6030 row only\n");
 		return -EINVAL;
 	}
 	if (enable_order && (stage_idx < 5 || stage_idx > 7 || !dapf_prog || pwgate_t6031)) {
