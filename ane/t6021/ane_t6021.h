@@ -120,7 +120,7 @@ enum {
  * offsets; m1n1 proxyclient/m1n1/hw/asc.py ASCRegs gives the same set
  * ASC-relative plus the R_MBOX_CTRL field layout.
  *
- * Observed on jw14m2 (2026-09-19), both directions identical:
+ * Observed on the T6021 device (2026-09-19), both directions identical:
  *   a2i_control 0x285408110 = 0x00020001
  *   i2a_control 0x285408114 = 0x00020001
  *     -> ENABLE=1 EMPTY=1 FULL=0 OVERFLOW=0 FIFOCNT=0 WPTR=0 RPTR=0

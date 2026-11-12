@@ -66,7 +66,7 @@ static inline u64 ane_t6021_rvbar_compose(u64 iova)
 }
 
 /* The kext skip condition: bit0 of the RVBAR read (tbnz w0,#0 at
- * ANE_Init 0x95e9878; live jw14m2 reads have been 0x1). What a set
+ * ANE_Init 0x95e9878; live T6021 device reads have been 0x1). What a set
  * bit names in boot-mode terms is the open lifecycle fork — see
  * ane_t6021_boot.c; this predicate only decodes the bit. */
 static inline bool ane_t6021_rvbar_latched(u64 rd)
