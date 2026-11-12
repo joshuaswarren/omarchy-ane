@@ -502,6 +502,16 @@ static inline void release_firmware(const struct firmware *fw)
 	sim_fw_live--;
 }
 void ane_sha256(const void *data, u64 len, u8 out[32]);
+#include <stdlib.h>
+static inline void *kvmalloc(size_t s, int gfp)
+{
+	(void)gfp;
+	return malloc(s);
+}
+static inline void kvfree(const void *p)
+{
+	free((void *)p);
+}
 #define sha256 ane_sha256
 #define SHA256_DIGEST_SIZE 32
 /* ---- DMA API for stage 7: zeroed surfaces at IOVAs far from the firmware segments ---- */
