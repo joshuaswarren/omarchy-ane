@@ -150,7 +150,7 @@ MODULE_PARM_DESC(map_fw,
 static unsigned int fw_trace;
 module_param(fw_trace, uint, 0444);
 MODULE_PARM_DESC(fw_trace,
-		 "Stage 5 only (with confirm_run=1), 1 or 2: patch the owned firmware copy's four spinning exception vectors into stubs that store ESR/FAR/ELR/SPSR_EL1 and a vector number into a BSS page (vm 0x300000) the host reads after the wait; 2 adds ten breadcrumb markers (page +0x40..) at fixed points of the entry code. TEXT differs from the pinned image (digest line shows it). Off by default.");
+		 "Stage 5 only (with confirm_run=1), 1 or 2: patch the owned firmware copy's four spinning exception vectors into stubs that store ESR/FAR/ELR/SPSR_EL1 and a vector number into a BSS page (vm 0x300000) the host reads after the wait; 2 adds twelve breadcrumb markers (page +0x40..) at fixed points of the entry code. TEXT differs from the pinned image (digest line shows it). Off by default.");
 
 static bool wrad_patch = true;
 module_param(wrad_patch, bool, 0444);
@@ -1858,7 +1858,7 @@ static void ane_h15_trace_dump(struct ane_h15 *ane)
 
 		for (i = 0; i < ANE_H15_NCRUMB; i++)
 			snprintf(m + strlen(m), 5, "%s", p[ANE_H15_CRUMB_OFF / 8 + i] ? "1" : "0");
-		dev_info(ane->dev, "ane_h15 fw crumbs [274 2ec 378 384 38c 414 44c 4d4 56c 590]: %s\n", m);
+		dev_info(ane->dev, "ane_h15 fw crumbs [000 204 228 274 2ec 378 384 38c 414 44c 4d4 590]: %s\n", m);
 	}
 }
 
