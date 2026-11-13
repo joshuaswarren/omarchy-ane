@@ -277,6 +277,154 @@ def sigquit_no_watchdog(ok):
         t.close()
 
 
+WLOG_SRC = r"""
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+/* every write() the serve process makes is logged as one line
+ * "w <fd> <n>:<up to 64 bytes>"; the dip case counts the freq-file writes
+ * by their exact length and bytes (the state and stderr writes are longer) */
+static int logfd = -1;
+static char line[128];
+static ssize_t (*next_write)(int, const void *, size_t);
+
+static void wlog_ctor(void) __attribute__((constructor));
+static void wlog_ctor(void)
+{
+	const char *p = getenv("ANE_FLOOR_WRITE_LOG");
+
+	if (p)
+		logfd = open(p, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0600);
+}
+
+ssize_t write(int fd, const void *buf, size_t n)
+{
+	ssize_t r;
+
+	if (!next_write)
+		next_write = dlsym(RTLD_NEXT, "write");
+	r = next_write(fd, buf, n);
+	if (logfd >= 0 && buf && n) {
+		int k = snprintf(line, sizeof(line), "w %d %zu:", fd, n);
+		size_t m = n < 64 ? n : 64;
+
+		if (k > 0 && k < (int)sizeof(line) - 1) {
+			memcpy(line + k, buf, m);
+			syscall(SYS_write, logfd, line, (size_t)k + m);
+			syscall(SYS_write, logfd, "\n", 1);
+		}
+	}
+	return r;
+}
+"""
+
+
+def write_log_lines(t):
+    """Compile the write logger into the tree and return (so_path, log_path)."""
+    cc = shutil.which("cc") or shutil.which("gcc")
+    if not cc:
+        raise RuntimeError("no cc or gcc for the write logger")
+    so = t.base / "wlog.so"
+    log = t.base / "writes.log"
+    src = t.base / "wlog.c"
+    src.write_text(WLOG_SRC)
+    subprocess.run([cc, "-shared", "-fPIC", "-o", str(so), str(src)],
+                   check=True, capture_output=True)
+    return so, log
+
+
+def log_body(log):
+    return log.read_text() if log.exists() else ""
+
+
+def count_write(body, fdmin, n, text):
+    """Writes to fd >= fdmin whose logged length and bytes match exactly.
+    Log lines look like: w <fd> <n>:<bytes>"""
+    hits = 0
+    for ln in body.splitlines():
+        head, sep, tail = ln.partition(":")
+        if not sep:
+            continue
+        parts = head.split(" ")
+        if len(parts) != 3 or parts[0] != "w":
+            continue
+        if int(parts[1]) >= fdmin and int(parts[2]) == n and tail == text:
+            hits += 1
+    return hits
+
+
+@case
+def stale_adopt_no_dip(ok):
+    """A stale record followed by a raise must not dip scaling_min_freq
+    through the recorded save. The raise adopts the record's saved value,
+    so the file sees exactly one write (the new floor); the red shape
+    wrote the save first and the file briefly held the baseline. A write
+    logger (LD_PRELOAD) counts the exact 8- and 9-byte writes; a sit-out
+    begin still restores the baseline with its single undo write."""
+    so, log = (None, None)
+    t = Tree(freq=b"1968000\n", floor="2400000")
+    try:
+        so, log = write_log_lines(t)
+        t.state.write_text("saved 702000\npid 4000000\n")
+        old_ld = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = str(so)
+        os.environ["ANE_FLOOR_WRITE_LOG"] = str(log)
+        try:
+            p = serve(t, 60, "floor-adopt")
+        finally:
+            if old_ld is None:
+                os.environ.pop("LD_PRELOAD", None)
+            else:
+                os.environ["LD_PRELOAD"] = old_ld
+            os.environ.pop("ANE_FLOOR_WRITE_LOG", None)
+        ok(p.stdout.readline().strip() == "FLOOR raised", "the raise happens")
+        ok(wait_for(lambda: t.freq.read_bytes().strip() == b"2400000"),
+           "the floor is applied")
+        body = log_body(log)
+        ok(count_write(body, 3, 7, "702000") == 0,
+           "no write pushes the baseline through the file (no dip)")
+        ok(count_write(body, 3, 8, "2400000") == 1,
+           "the raise is the one freq write")
+        term(p)
+        ok(p.wait(10) == -signal.SIGTERM, "SIGTERM still terminates by signal")
+        ok(wait_for(lambda: restored(t)),
+           "the adopted saved value is what the exit restores")
+    finally:
+        t.close()
+    t2 = Tree(freq=b"1968000\n", floor="500000")
+    try:
+        so2, log2 = write_log_lines(t2)
+        t2.state.write_text("saved 702000\npid 4000000\n")
+        old_ld = os.environ.get("LD_PRELOAD")
+        os.environ["LD_PRELOAD"] = str(so2)
+        os.environ["ANE_FLOOR_WRITE_LOG"] = str(log2)
+        try:
+            p = serve(t2, 0.4, "floor-adopt-sitout")
+        finally:
+            if old_ld is None:
+                os.environ.pop("LD_PRELOAD", None)
+            else:
+                os.environ["LD_PRELOAD"] = old_ld
+            os.environ.pop("ANE_FLOOR_WRITE_LOG", None)
+        ok(p.stdout.readline().strip() == "FLOOR skipped", "the raise sits out")
+        ok(wait_for(lambda: t2.freq.read_bytes().strip() == b"702000"),
+           "the sit-out still restores the recorded baseline")
+        body = log_body(log2)
+        ok(count_write(body, 3, 7, "702000") == 1,
+           "the sit-out's undo is its one freq write")
+        ok(count_write(body, 3, 8, "2400000") == 0, "no raise happened")
+        ok(p.wait(10) == 0, "clean sit-out exit")
+        ok(not t2.state.exists(), "the sat-out run leaves no state")
+    finally:
+        t2.close()
+
+
 @case
 def sigkill_watchdog(ok):
     t = Tree()

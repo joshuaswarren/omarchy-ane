@@ -274,23 +274,28 @@ MUTANTS = {
         """	char buf[1024], tmp[512], *w = buf;
 	int i, r, fd;"""),
     # the fresh raise must sit out when the file already sits at or above
-    # the floor -- a raise there would LOWER the file; the stale undo falls
-    # into this same branch, so this mutant re-lowers both ways
+    # the floor -- a raise there would LOWER the file
     "stale_skips_sitout": (None,
-        """		if (saved >= floor) {
+        """		} else if (saved >= floor) {
 			/* at or above the floor already: a raise here would
-			 * LOWER the file, and after a stale undo the value
-			 * that just came back is not ours to go under */
+			 * LOWER the file */
 			close(lockfd);
 			return 0;
 		}""",
-        """		if (0) {
+        """		} else if (0) {
 			/* at or above the floor already: a raise here would
-			 * LOWER the file, and after a stale undo the value
-			 * that just came back is not ours to go under */
+			 * LOWER the file */
 			close(lockfd);
 			return 0;
 		}"""),
+    # and the adopted stale baseline must sit out the same way: without it
+    # the raise lowers the file over the dead run's raise or an
+    # administrator change
+    "stale_adopt_sitout_removed": (None,
+        """			if (saved >= floor) {
+				/* the raise would sit out, but the baseline""",
+        """			if (0) {
+				/* the raise would sit out, but the baseline"""),
     # a join must raise only above the file's current content: this mutant
     # never raises on a join (the applied value stays whatever the holders
     # left), so a higher-floor joiner serves below its floor
@@ -322,6 +327,32 @@ MUTANTS = {
 					    SIGPIPE, SIGALRM };""",
         """static const int sigs[] = { SIGINT, SIGTERM, SIGHUP,
 					    SIGPIPE, SIGALRM };"""),
+    # the delivery is handed back to a previous non-default handler: for
+    # SIG_DFL the raise is the death, for a real handler the pending
+    # signal dispatches to the reinstated handler
+    "chain_swallowed": (None,
+        """	 * first delivery is never swallowed */
+	raise(sig);""",
+        """	 * first delivery is never swallowed */
+	(void)0;"""),
+    # the handler restores errno in whatever frame the signal interrupted
+    "errno_saved": (None,
+        "	ane_floor_signal_body(sig);\n	errno = e;",
+        "	ane_floor_signal_body(sig);\n	(void)e;"),
+    # NOTE: no mutant for sigfillset(&act.sa_mask): a single-threaded host
+    # test cannot make a second signal nest into the handler frame (the
+    # kernel serializes the deliveries), so its removal has no
+    # deterministic kill. The mask itself is pinned by the sigfillset call
+    # and the lock-retry path is covered by the self-locked-signal case.
+    # the raise adopts the record's saved value: the exit restores the
+    # baseline, not the dead run's raise
+    "stale_adopt_dropped": ("stale_adopt_no_dip",
+        "			saved = stale_saved;",
+        "			saved = strtoull(buf, &end, 10);"),
+    # a sit-out begin still restores the baseline with its one undo write
+    "stale_sitout_skips_undo": ("stale_adopt_no_dip",
+        "				ane_floor_write(p->freq, saved_out);",
+        "				(void)saved_out;"),
 }
 
 

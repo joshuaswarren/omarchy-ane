@@ -2,8 +2,9 @@
 /* Copyright 2026 Joshua Warren */
 
 /* Host unit suite for ane_cpu_floor.h: the state machine over fake sysfs
- * and state trees (no device, no signals). Process-level cases (signals,
- * the watchdog, real ane-run) live in test_cpu_floor.py.
+ * and state trees (no device). Case 10d delivers real signals to the test
+ * process itself to pin the handler; process-lifetime cases (the watchdog,
+ * real ane-run) live in test_cpu_floor.py.
  *
  * usage: ./test_cpu_floor
  */
@@ -34,6 +35,20 @@ static int fails;
 static void ane_floor_test_signal(int sig)
 {
 	(void)sig;	/* swallow the re-raised signal: proves the release ran */
+}
+
+/* the marker 10d installs as the previous handler: it only notes that the
+ * delivery reached it, and what errno was on entry */
+static volatile sig_atomic_t ane_floor_test_marks[32];
+static volatile int ane_floor_test_mark_errno;
+
+static void ane_floor_test_marker(int sig)
+{
+	int e = errno;
+
+	if (sig > 0 && sig < 32)
+		ane_floor_test_marks[sig] = 1;
+	ane_floor_test_mark_errno = e;
 }
 
 /* pipe/system calls in the forked cases cannot legitimately fail; (void)
@@ -328,6 +343,62 @@ int main(void)
 	ane_cpu_floor_end();	/* quiet when the run sat out; cleans up a
 				 * pre-fix head where it did not */
 	setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+
+	/* 10d: the chained handler restores errno, blocks the chained set so
+	 * a second signal cannot nest, and hands the delivery on to a
+	 * previous handler that is neither SIG_DFL nor SIG_IGN -- the first
+	 * delivery must reach it, not be swallowed. The signals are delivered
+	 * for real through kill(); the handler's own syscalls clobber errno
+	 * unless it saves it. */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	{
+		struct sigaction marker, dfl;
+		struct timespec t0, t1;
+		int e;
+
+		memset(&marker, 0, sizeof(marker));
+		marker.sa_handler = ane_floor_test_marker;
+		sigaction(SIGPIPE, &marker, NULL);
+		sigaction(SIGALRM, &marker, NULL);
+		ane_floor_test_marks[SIGPIPE] = 0;
+		ane_floor_test_marks[SIGALRM] = 0;
+		ane_floor_test_mark_errno = -1;
+		EXPECT(ane_cpu_floor_begin() == 1, "10d: begin participates");
+		e = 42;
+		errno = e;
+		clock_gettime(CLOCK_MONOTONIC, &t0);
+		kill(getpid(), SIGPIPE);
+		kill(getpid(), SIGALRM);
+		{
+			int waited = 0;
+
+			while ((!ane_floor_test_marks[SIGPIPE] ||
+				!ane_floor_test_marks[SIGALRM]) && waited < 3000) {
+				struct timespec step = { 0, 5 * 1000 * 1000 };
+
+				nanosleep(&step, NULL);
+				waited += 5;
+			}
+		}
+		clock_gettime(CLOCK_MONOTONIC, &t1);
+		EXPECT(ane_floor_test_marks[SIGPIPE] == 1,
+			"the first delivery reaches the previous handler");
+		EXPECT(ane_floor_test_marks[SIGALRM] == 1,
+			"the second signal runs after the first, not nested");
+		EXPECT(t1.tv_sec - t0.tv_sec < 1,
+			"the second signal stayed pending, not a 2 s nested retry");
+		EXPECT(ane_floor_test_mark_errno == e,
+			"the handler left errno alone");
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0,
+			"the chain releases the floor on the way through");
+		EXPECT(strstr(state_of(var), "<absent>") != NULL,
+			"the chain leaves no state behind");
+		ane_cpu_floor_end();
+		memset(&dfl, 0, sizeof(dfl));
+		dfl.sa_handler = SIG_DFL;
+		sigaction(SIGPIPE, &dfl, NULL);
+		sigaction(SIGALRM, &dfl, NULL);
+	}
 
 	/* 11: an end under a live foreign holder leaves the floor to that holder */
 	mkfreq(sysfs, "apple,t6021", "702000\n");

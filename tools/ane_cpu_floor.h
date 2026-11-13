@@ -36,10 +36,10 @@
  *     so the exit status still says how the run died; the restore takes the
  *     state lock non-blocking with a bounded retry (the frame the signal
  *     interrupted may hold the lock itself), and if the lock never frees,
- *     the run dies by the signal only when the previous disposition is
- *     SIG_DFL; any other handler keeps the process running, the watchdog
- *     gives up at its 30 s bound, and the floor stays raised until the
- *     next ANE_CPU_FLOOR run; an
+ *     the run dies by the signal when the previous disposition is
+ *     SIG_DFL; a previous real handler is reinstated and receives this
+ *     delivery (the raise stays pending behind the sa_mask), so its own
+ *     semantics decide what happens next; an
  *     inherited SIG_IGN (a background job) is put back untouched and
  *     the floor survives the delivery;
  *   - SIGKILL or a crash: a watchdog child forked at begin watches a pipe; the
@@ -48,19 +48,25 @@
  *     releases its fds (the pipe among them) inside do_exit, before
  *     exit_notify makes it a zombie, so the first look at the pid can still
  *     say alive. The watchdog runs in its own session (setsid) with SIGHUP,
- *     SIGINT, SIGQUIT and SIGTERM ignored, so a group kill that takes the
- *     run -- systemd's KillMode, the OOM killer, a pkill sweep (#413) --
- *     leaves the watchdog alive to restore;
- *   - a watchdog SIGKILLed itself, OOM-killed, or a run that was killed
- *     before it could record anything: the state file survives as the
- *     stale-state record and the next begin reconciles it before raising
- *     again.
+ *     SIGINT, SIGQUIT and SIGTERM ignored, so a process-group kill that
+ *     takes the run -- a terminal or ssh hangup, a group ^\, a pkill
+ *     sweep over the group (#413) -- leaves the watchdog alive to
+ *     restore. It stays in the run's control group: a systemd kill that
+ *     takes the whole cgroup (KillMode=control-group, the final SIGKILL
+ *     stage of mixed, memory.oom.group) kills the watchdog with the run;
+ *   - a watchdog SIGKILLed itself, a cgroup kill as above, or a run
+ *     killed between the fork and the child's setsid -- a window a few
+ *     scheduling steps wide at begin; the sync handoff only orders the
+ *     run's own signals behind the detach, and an external group kill in
+ *     that window takes both -- leaves the state file as the stale
+ *     record and the next begin reconciles it before raising again.
  *
  * Concurrent ane-run instances share one state file under a flock, and no
  * begin ever lowers the file: a fresh raise sits out when the file already
  * sits at or above the floor, a join raises only above the file's current
- * content, and a stale undo writes back exactly the recorded saved value.
- * The state
+ * content, and a stale record is adopted -- a following raise starts from
+ * the recorded saved value with a single write, and a sit-out begin still
+ * restores that value with its one undo write. The state
  * carries every holder pid with its /proc start time; a holder whose pid is
  * gone, is a zombie, or whose start time no longer matches is dead, so a
  * killed run cannot pin the floor (a pid that was reused after a fast crash
@@ -552,11 +558,17 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 		int rfd = fds[0];
 
 		/* the watchdog detaches into its own session and ignores the
-		 * catchable deaths: a group SIGHUP, SIGQUIT or SIGKILL that
-		 * takes the run (#413: systemd's KillMode, the OOM killer, a
-		 * pkill sweep) leaves the watchdog alive to restore. A
-		 * SIGKILL aimed at the watchdog itself still strands the
-		 * floor until the next ANE_CPU_FLOOR run. */
+		 * catchable deaths: a process-group SIGHUP, SIGQUIT or
+		 * SIGKILL that takes the run (#413: a terminal or ssh
+		 * hangup, a group ^\, a pkill sweep) leaves the watchdog
+		 * alive to restore. It stays in the run's control group, so
+		 * a systemd kill that takes the whole cgroup takes it too.
+		 * The window between this fork and the setsid is a few
+		 * scheduling steps wide: the sync handoff below only orders
+		 * the run's own signals behind the detach, and an external
+		 * group kill in that window takes both. A SIGKILL aimed at
+		 * the watchdog itself strands the floor until the next
+		 * ANE_CPU_FLOOR run. */
 		setsid();
 		signal(SIGHUP, SIG_IGN);
 		signal(SIGINT, SIG_IGN);
@@ -657,9 +669,8 @@ static void ane_floor_release(const struct ane_floor_paths *p, int blocking)
 	}
 }
 
-static void ane_floor_signal(int sig)
+static void ane_floor_signal_body(int sig)
 {
-	int again = 0;
 	struct sigaction *o;
 
 	if (sig <= 0 || sig >= ANE_FLOOR_SIG_MAX)
@@ -674,13 +685,23 @@ static void ane_floor_signal(int sig)
 	}
 	ane_floor_release(&ane_floor_paths, 0);
 	ane_floor_held = 0;
-	if (o->sa_handler == SIG_DFL)
-		again = 1;
 	sigaction(sig, o, NULL);
-	if (again)
-		raise(sig);
-	/* any other previous disposition is re-installed above; its own
-	 * semantics apply from there */
+	/* the delivery is handed back in every non-IGN case: for SIG_DFL the
+	 * raise is the death, and for a previous handler the signal is
+	 * blocked in this frame (sa_mask below), so it stays pending and the
+	 * reinstated handler receives it the moment this one returns -- the
+	 * first delivery is never swallowed */
+	raise(sig);
+}
+
+static void ane_floor_signal(int sig)
+{
+	/* the body runs open/flock/read/write/rename/unlink/nanosleep, any
+	 * of which clobbers errno in whatever frame the signal interrupted */
+	int e = errno;
+
+	ane_floor_signal_body(sig);
+	errno = e;
 }
 
 /* Raise the floor for this run. Returns 1 when this process holds it (and so
@@ -693,7 +714,8 @@ static int ane_cpu_floor_begin(void)
 	char buf[128], floor_out[32], *end;
 	const char *root = NULL, *dir = NULL, *env;
 	unsigned long long saved, floor, my_ticks, applied = 0;
-	int lockfd, raised_fresh = 0, joined = 0;
+	unsigned long long stale_saved = 0;
+	int lockfd, raised_fresh = 0, joined = 0, stale_adopt = 0;
 
 	/* Opt-in gate: with ANE_CPU_FLOOR unset, zero, or garbage the feature is
 	 * off and nothing under sysfs is read or written. */
@@ -803,25 +825,24 @@ static int ane_cpu_floor_begin(void)
 			}
 			joined = 1;
 		} else {
-			/* stale: undo the orphaned floor first, then raise
-			 * fresh through the branch below (the value to save
-			 * is what the file holds after the undo) */
-			{
-				char saved_out[32], *w = saved_out;
-
-				w = ane_floor_num(w, st.saved);
-				*w++ = '\n';
-				*w = 0;
-				ane_floor_write(p->freq, saved_out);
-			}
+			/* stale: the record carries the true baseline. Adopt
+			 * it instead of writing it back here: a raise that
+			 * follows would otherwise dip the file through the
+			 * baseline (the dead run's raise, then the saved
+			 * value, then the new floor) and schedutil would see
+			 * the low value. The fresh branch below raises from
+			 * the adopted baseline; when the raise sits out, the
+			 * undo below is the one write that brings the
+			 * baseline back. */
+			stale_saved = st.saved;
+			stale_adopt = 1;
 			unlink(p->state);
 		}
 	}
 	if (!joined) {
-		/* fresh, no record -- also right after a stale undo: the
-		 * saved value is read under the lock, so a value that lands
-		 * in the file while this begin waited for the lock wins, and
-		 * a concurrent begin or end cannot feed a stale one to the
+		/* fresh, no record -- also right after an adopted stale
+		 * record: the saved value is read under the lock, so a
+		 * concurrent begin or end cannot feed a stale one to the
 		 * shortcut or to the record (an orphaned floor from a dead
 		 * run counts only after the stale-record branch above has
 		 * been reconciled) */
@@ -834,10 +855,28 @@ static int ane_cpu_floor_begin(void)
 			close(lockfd);
 			return 0;
 		}
-		if (saved >= floor) {
+		if (stale_adopt) {
+			/* the file holds the dead run's raise; the record's
+			 * saved value is the baseline to keep, not what the
+			 * file holds now */
+			saved = stale_saved;
+			if (saved >= floor) {
+				/* the raise would sit out, but the baseline
+				 * still comes back: this undo is then the
+				 * one write, with no raise after it and no
+				 * dip */
+				char saved_out[32], *w = saved_out;
+
+				w = ane_floor_num(w, saved);
+				*w++ = '\n';
+				*w = 0;
+				ane_floor_write(p->freq, saved_out);
+				close(lockfd);
+				return 0;
+			}
+		} else if (saved >= floor) {
 			/* at or above the floor already: a raise here would
-			 * LOWER the file, and after a stale undo the value
-			 * that just came back is not ours to go under */
+			 * LOWER the file */
 			close(lockfd);
 			return 0;
 		}
@@ -880,6 +919,15 @@ static int ane_cpu_floor_begin(void)
 
 		memset(&act, 0, sizeof(act));
 		act.sa_handler = ane_floor_signal;
+		/* every signal is blocked while the handler runs (SIGKILL and
+		 * SIGSTOP cannot be blocked): a second chained signal stays
+		 * pending instead of nesting into a frame that holds the
+		 * state lock, and the raise above dispatches to the
+		 * reinstated disposition only after this frame is done.
+		 * The body is written to the async-signal-safe subset except
+		 * for the parse helpers (strstr, strtoull, strtol, memset,
+		 * memcpy), none of which allocate or lock on glibc. */
+		sigfillset(&act.sa_mask);
 		for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
 			sigaction(sigs[i], &act, &ane_floor_old[sigs[i]]);
 	}
