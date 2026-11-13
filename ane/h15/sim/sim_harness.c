@@ -1626,6 +1626,25 @@ static void pos_run(void)
 	pos_run_case("R5 T6030 core does not leave STOPPED", 0x0, 0, true, 0, w0, 2);
 }
 
+/* probe_mbx with more messages queued than the stage 5 wait loop takes (ANE_H15_RUN_MAX_MSGS = 4): the wait pops 4, the sampler
+ * then pops exactly ONE more, once, at its first sample (not at 5 s or 10 s), so the queue is never drained by the probe */
+static void pos_run_mbx_pop(void)
+{
+	const struct ane_h15_soc *s = &ane_t6030_soc;
+	int ret;
+
+	run_setup(s, "apple,t6030-ane", 0x0);
+	probe_mbx = true;
+	dm_msgs_left = 6;
+	ret = probe_now();
+	chk(ret == 0 && log_count("ane_h15 msg3 raw0=") == 1 && log_count("ane_h15 msg4 raw0=") == 0 &&
+	    log_count("ane_h15 mbx msg raw0=") == 1 && dm_msgs_left == 1 &&
+	    log_count("ane_h15 mbx t+1000ms") == 1 && log_count("ane_h15 mbx t+5000ms") == 1 && log_count("ane_h15 mbx t+10000ms") == 1 &&
+	    events_in(s->engine_pa + s->mbox + 0x838, 8, 0) == 5,
+	    "R6 probe_mbx with 6 queued: the wait pops 4, the sampler pops one more once (RECV1 read 5 times, 1 left), samples still at 1, 5 and 10 s");
+	remove_if_probed();
+}
+
 /* stage 5 with run_scratch=1: eight SCRATCH words read before RUN and again after the wait, never written;
  * without the parameter the SCRATCH window is not touched at all */
 static void pos_run_scratch(void)
@@ -4408,6 +4427,7 @@ int main(int argc, char **argv)
 		pos_vote_callbacks();
 		pos_stage2();
 		pos_run();
+		pos_run_mbx_pop();
 		pos_run_postwait();
 		pos_run_scratch();
 		pos_run_pmgr();

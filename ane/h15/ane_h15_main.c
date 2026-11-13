@@ -349,7 +349,7 @@ module_param(cold_first, bool, 0444);
 MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the observed order. Raw PS writes. Off by default.");
 static bool probe_mbx;
 module_param(probe_mbx, bool, 0444);
-MODULE_PARM_DESC(probe_mbx, "Stage=run (5), T6030 only (refused on other rows): after the wait, at 1, 5 and 10 s (counted from the end of the wait, after sleeping) read CPU_STATUS, the two mailbox CTRL words, SCRATCH0..7 and the three words at engine+0x1844000, +0x184c000, +0x1850000 and log them. If the I2A mailbox is not empty it pops one message once and does not acknowledge it. Reads only. Off by default.");
+MODULE_PARM_DESC(probe_mbx, "Stage=run (5), T6030 only (refused on other rows): after the wait, at 1, 5 and 10 s (counted from the end of the wait, after sleeping) read CPU_STATUS, the two mailbox CTRL words, SCRATCH0..7 and the three words at engine+0x1844000, +0x184c000, +0x1850000 and log them. If the I2A mailbox is not empty it pops one message once and does not acknowledge it. Every other access is a plain read; the pop is the one side effect (reading RECV1 removes the message from the queue). Off by default.");
 static bool probe_scr;
 module_param(probe_scr, bool, 0444);
 MODULE_PARM_DESC(probe_scr, "Stage=run (5), T6030 only (refused on other rows; the words were read on a T6030 14-inch M3 Pro board, core running and stopped): read engine+0x1840000..+0x1840100 and the three words at +0x1844000, +0x184c000, +0x1850000 before RUN and after the wait and log the nonzero words, read only. Off by default.");
