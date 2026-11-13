@@ -17,8 +17,13 @@
  * 14-inch M2 Max, 840 s): default 702000 kHz n=214000 p50/p90/p99
  * 1.907/2.066/2.242 ms; 1968000 kHz n=213000 1.874/1.939/1.994 ms (p90
  * -6.1 percent, p99 -11.1 percent, p50 -1.7 percent). The minimum was
- * restored to 702000 at the end of the row. The ring program and the power
- * cost are rows 075 and 072, still to run.
+ * restored to 702000 at the end of the row. The power cost is row 072
+ * (hwmon4 "Total System Power", 1 Hz, medians over about 359 samples per arm,
+ * one 14-inch M2 Max, whole machine): idle +1.30 W and serve +1.94 W at the
+ * floor, which is why the floor is held only while ane-run serves. The means
+ * are not usable: rare spikes of about 100 W hit both arms and their source
+ * is not identified yet (a follow-up row looks for it). The ring program is
+ * row 075, still to run.
  *
  * Every exit path restores:
  *   - normal exit: atexit restores in this process;
