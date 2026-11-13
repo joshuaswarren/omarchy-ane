@@ -303,6 +303,32 @@ int main(void)
 	ane_cpu_floor_end();
 	EXPECT(strstr(state_of(var), "<absent>") != NULL, "the reconciled run clears the record");
 
+	/* 10c: the stale undo must not end below the recorded save, and the
+	 * raise behind it must sit out when the file already sits at or above
+	 * the floor: a begin never lowers the file. Here the record saves
+	 * 1500000 while the orphaned floor (or an administrator) holds
+	 * 2400000, and this run's floor is 1000000. */
+	mkfreq(sysfs, "apple,t6021", "2400000\n");
+	{
+		char path[1024];
+		FILE *f;
+
+		ane_floor_join(path, sizeof(path), var, "ane-run.state");
+		f = fopen(path, "w");
+		fputs("saved 1500000\npid 4000000\n", f);
+		fclose(f);
+	}
+	setenv(ANE_CPU_FLOOR_ENV, "1000000", 1);
+	EXPECT(ane_cpu_floor_begin() == 0,
+		"stale undo at or above the floor: begin sits out");
+	EXPECT(strcmp(freq_of(sysfs), "1500000") == 0,
+		"the stale undo restored the recorded save and nothing lower");
+	EXPECT(strstr(state_of(var), "<absent>") != NULL,
+		"the sat-out run leaves no state");
+	ane_cpu_floor_end();	/* quiet when the run sat out; cleans up a
+				 * pre-fix head where it did not */
+	setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+
 	/* 11: an end under a live foreign holder leaves the floor to that holder */
 	mkfreq(sysfs, "apple,t6021", "702000\n");
 	{
@@ -327,6 +353,83 @@ int main(void)
 		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "foreign holder restored at its end");
 	}
 
+	/* 11b: a joiner with a LOWER floor never lowers the file over the
+	 * live holder's raise (or over an administrator change): it joins
+	 * the record and serves under the applied value */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	setenv(ANE_CPU_FLOOR_ENV, "2400000", 1);
+	EXPECT(ane_cpu_floor_begin() == 1, "join-lower: the holder raises");
+	{
+		pid_t kid;
+		int st, jpipe[2];
+		char c;
+
+		EXPECT(pipe(jpipe) == 0, "join-lower pipe opens");
+		kid = fork();
+		if (kid == 0) {
+			char rc;
+
+			ane_cpu_floor_forked_child();
+			setenv(ANE_CPU_FLOOR_ENV, "1000000", 1);
+			rc = (char)('0' + ane_cpu_floor_begin());
+			io_or_die(write(jpipe[1], &rc, 1) == 1);
+			sleep(1);
+			ane_cpu_floor_end();
+			_exit(0);
+		}
+		io_or_die(read(jpipe[0], &c, 1) == 1);
+		close(jpipe[0]);
+		close(jpipe[1]);
+		EXPECT(c == '1', "the lower joiner joins the holders");
+		EXPECT(strcmp(freq_of(sysfs), "2400000") == 0,
+			"a lower joiner does not lower the file");
+		waitpid(kid, &st, 0);
+		EXPECT(WIFEXITED(st) && WEXITSTATUS(st) == 0, "lower joiner exited clean");
+		EXPECT(strcmp(freq_of(sysfs), "2400000") == 0,
+			"the holder's raise survives the joiner's end");
+	}
+	ane_cpu_floor_end();
+	EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "join-lower cycle restores");
+	setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+
+	/* 11c: a joiner with a HIGHER floor still raises above the holders'
+	 * value (the other half of never-lower: the join raises) */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	setenv(ANE_CPU_FLOOR_ENV, "1000000", 1);
+	EXPECT(ane_cpu_floor_begin() == 1, "join-raise: the holder raises");
+	{
+		pid_t kid;
+		int st, jpipe[2];
+		char c;
+
+		EXPECT(pipe(jpipe) == 0, "join-raise pipe opens");
+		kid = fork();
+		if (kid == 0) {
+			char rc;
+
+			ane_cpu_floor_forked_child();
+			setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+			rc = (char)('0' + ane_cpu_floor_begin());
+			io_or_die(write(jpipe[1], &rc, 1) == 1);
+			sleep(1);
+			ane_cpu_floor_end();
+			_exit(0);
+		}
+		io_or_die(read(jpipe[0], &c, 1) == 1);
+		close(jpipe[0]);
+		close(jpipe[1]);
+		EXPECT(c == '1', "the higher joiner joins the holders");
+		EXPECT(strcmp(freq_of(sysfs), "1968000") == 0,
+			"a higher joiner raises above the holders");
+		waitpid(kid, &st, 0);
+		EXPECT(WIFEXITED(st) && WEXITSTATUS(st) == 0, "higher joiner exited clean");
+		EXPECT(strcmp(freq_of(sysfs), "1968000") == 0,
+			"the raise survives the joiner's end");
+	}
+	ane_cpu_floor_end();
+	EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "join-raise cycle restores");
+	setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+
 	/* 12: a full holder table -- the run sits out instead of holding
 	 * without a record (a later failed write there would decrement
 	 * somebody else's entry) */
@@ -347,6 +450,78 @@ int main(void)
 		EXPECT(strstr(freq_of(sysfs), "702000") != NULL, "full table: the floor stays with the holders");
 		EXPECT(strstr(state_of(var), "pid ") != NULL, "full table: the record survives untouched");
 		(void)unlink(path);
+	}
+
+	/* 12b: ANE_CPU_FLOOR_HOLDER_MAX LIVE holders recorded with their real
+	 * pids and start ticks: this begin is the (max+1)th and the table
+	 * refuses it, without touching the floor or the record. The refusal
+	 * exists so a full table never makes a run hold without a record. */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	{
+		pid_t kids[ANE_CPU_FLOOR_HOLDER_MAX];
+		char path[1024];
+		const char *s;
+		FILE *f;
+		int i, nrec = 0;
+
+		ane_floor_join(path, sizeof(path), var, "ane-run.state");
+		f = fopen(path, "w");
+		fprintf(f, "saved 702000\n");
+		for (i = 0; i < ANE_CPU_FLOOR_HOLDER_MAX; i++) {
+			kids[i] = fork();
+			if (kids[i] == 0) {
+				pause();
+				_exit(0);
+			}
+			usleep(2000);
+			fprintf(f, "pid %d %llu\n", (int)kids[i],
+				ane_floor_start_ticks(kids[i]));
+		}
+		fclose(f);
+		EXPECT(ane_cpu_floor_begin() == 0,
+			"the (max+1)th holder: begin refuses the full live table");
+		EXPECT(strstr(freq_of(sysfs), "702000") != NULL,
+			"the refused run leaves the floor alone");
+		for (s = state_of(var); (s = strstr(s, "\npid ")) != NULL; s++)
+			nrec++;
+		EXPECT(nrec == ANE_CPU_FLOOR_HOLDER_MAX,
+			"the full live record survives untouched");
+		for (i = 0; i < ANE_CPU_FLOOR_HOLDER_MAX; i++)
+			kill(kids[i], SIGKILL);
+		while (wait(NULL) > 0)
+			;
+		unlink(path);
+	}
+
+	/* 14: the full-width state round-trip: one write carrying the saved
+	 * line and ANE_CPU_FLOOR_HOLDER_MAX maximum-width records (a 10-digit
+	 * pid and a 20-digit start tick per holder, the worst case the
+	 * composer can build) reads back identical. ASan builds of this
+	 * suite catch a too-small state buffer here. */
+	{
+		struct ane_floor_state st, back;
+		int i, okall;
+
+		memset(&st, 0, sizeof(st));
+		st.saved = 18446744073709551615ULL;
+		st.npids = ANE_CPU_FLOOR_HOLDER_MAX;
+		for (i = 0; i < ANE_CPU_FLOOR_HOLDER_MAX; i++) {
+			st.pids[i] = 2147483647;
+			st.ticks[i] = 18446744073709551615ULL;
+		}
+		EXPECT(ane_floor_state_write(&ane_floor_paths, &st) == 0,
+			"the max-width state write succeeds");
+		EXPECT(ane_floor_state_read(ane_floor_paths.state, &back) == 0,
+			"the max-width state reads back");
+		EXPECT(back.npids == ANE_CPU_FLOOR_HOLDER_MAX &&
+			back.saved == 18446744073709551615ULL,
+			"count and saved value survive the round-trip");
+		okall = back.npids == ANE_CPU_FLOOR_HOLDER_MAX;
+		for (i = 0; okall && i < back.npids; i++)
+			okall = back.pids[i] == 2147483647 &&
+				back.ticks[i] == 18446744073709551615ULL;
+		EXPECT(okall, "every holder pid and tick survives the round-trip");
+		unlink(ane_floor_paths.state);
 	}
 
 	/* 13: the saved value is read under the lock: an administrator value
@@ -472,9 +647,38 @@ int main(void)
 			"the signal handler removed the state");
 	}
 
-	snprintf(base, sizeof(base), "rm -rf /tmp/ane-floor-test.%d", (int)getpid());
-	io_or_die(system(base) == 0);
+	/* the chained set covers SIGHUP: a captured SIGHUP proves the release
+	 * ran in this process and the captured disposition came back */
+	{
+		struct sigaction cap, got;
 
+		memset(&cap, 0, sizeof(cap));
+		cap.sa_handler = ane_floor_test_signal;
+		sigaction(SIGHUP, &cap, NULL);
+		mkfreq(sysfs, "apple,t6021", "702000\n");
+		EXPECT(ane_cpu_floor_begin() == 1, "raise before the captured SIGHUP");
+		raise(SIGHUP);
+		EXPECT(sigaction(SIGHUP, NULL, &got) == 0 && got.sa_handler == ane_floor_test_signal,
+			"the handler reinstated the captured SIGHUP disposition");
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0,
+			"SIGHUP restored in this process");
+		EXPECT(strstr(state_of(var), "<absent>") != NULL,
+			"SIGHUP removed the state");
+	}
+
+	/* the captured-signal checks leave a watchdog that exits a few
+	 * milliseconds after the release: give it the state dir back before
+	 * the rm, print RESULT first, and never let the cleanup hide a good
+	 * run (review should-fix 3) */
+	{
+		struct timespec settle = { 0, 300 * 1000 * 1000 };
+
+		nanosleep(&settle, NULL);
+	}
 	printf("RESULT: %d checks, %d failures\n", checks, fails);
+	snprintf(base, sizeof(base), "rm -rf /tmp/ane-floor-test.%d", (int)getpid());
+	if (system(base) != 0)
+		printf("note: the temp cleanup raced a watchdog; /tmp/ane-floor-test.%d left behind\n",
+			(int)getpid());
 	return fails != 0;
 }

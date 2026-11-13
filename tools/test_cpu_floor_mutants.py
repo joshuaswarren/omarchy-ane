@@ -84,14 +84,14 @@ MUTANTS = {
 		raised_fresh = 1;"""),
     # the saved value must be recorded before the floor is applied
     "saved_never_recorded": (None,
-        """			st.saved = saved;
-			st.npids = 1;
-			st.pids[0] = (int)getpid();
-			st.ticks[0] = my_ticks;""",
-        """			st.saved = 0;
-			st.npids = 1;
-			st.pids[0] = (int)getpid();
-			st.ticks[0] = my_ticks;"""),
+        """		st.saved = saved;
+		st.npids = 1;
+		st.pids[0] = (int)getpid();
+		st.ticks[0] = my_ticks;""",
+        """		st.saved = 0;
+		st.npids = 1;
+		st.pids[0] = (int)getpid();
+		st.ticks[0] = my_ticks;"""),
     # the join must add this pid, or the floor loses its last restorer.
     # Replaces the append with a dead pid and drops the list to one entry, so
     # the floor dies with the first holder while the second still serves.
@@ -180,40 +180,35 @@ MUTANTS = {
 				 * somebody else's entry) */
 				close(lockfd);
 				return 0;
-			}
-			st.pids[st.npids] = (int)getpid();
-			st.ticks[st.npids] = my_ticks;
-			st.npids++;""",
-        """			if (st.npids < ANE_CPU_FLOOR_HOLDER_MAX) {
-				st.pids[st.npids] = (int)getpid();
-				st.ticks[st.npids] = my_ticks;
-				st.npids++;
+			}""",
+        """			if (st.npids > ANE_CPU_FLOOR_HOLDER_MAX) {
+				/* the holder table is full: the recorded holders
+				 * already keep the floor up, so this run sits
+				 * out instead of holding without a record (a
+				 * later failed write would then decrement
+				 * somebody else's entry) */
+				close(lockfd);
+				return 0;
 			}"""),
     # an inherited SIG_IGN must be put back untouched, with the floor intact
     "signal_ign_releases": (None,
-        """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
+        """	o = &ane_floor_old[sig];
 	if (o->sa_handler == SIG_IGN) {
-		/* the run inherited SIG_IGN (nohup, a background job): the
+		/* the run inherited SIG_IGN (a background job): the
 		 * signal is not meant for this process, so put it back and
 		 * keep holding the floor */
 		sigaction(sig, o, NULL);
 		return;
 	}
 	ane_floor_release(&ane_floor_paths, 0);""",
-        """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
+        """	o = &ane_floor_old[sig];
 	ane_floor_release(&ane_floor_paths, 0);"""),
     # the fresh branch must read the saved value under the lock: a mutant
     # that trusts a value read before the lock clobbers an administrator
     # change that landed while the begin waited (unit case 13, and case 2's
     # 553000 restore)
     "fresh_saved_stale_value": (None,
-        """		/* fresh, no record: the saved value is read under the lock, so
-		 * a value that lands in the file while this begin waited for
-		 * the lock wins, and a concurrent begin or end cannot feed a
-		 * stale one to the shortcut or to the record (an orphaned
-		 * floor from a dead run counts only after the stale-record
-		 * branch above has been reconciled) */
-		if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0) {
+        """		if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0) {
 			close(lockfd);
 			return 0;
 		}
@@ -262,6 +257,61 @@ MUTANTS = {
 	}""",
         """	if (!ane_floor_pid_dead(ppid, 0))
 		ane_floor_reconcile(p);"""),
+    # the state buffer is sized from the compile-time maxima (max holders x
+    # max line length, static-asserted): a fixed 1024-byte buffer overflows
+    # on the full-width 64-record round-trip, and under ASan at about 50
+    # real holders
+    "state_buf_fixed_1024": (None,
+        """	char buf[ANE_FLOOR_STATE_MAX], tmp[512], *w = buf;
+	int i, r, fd;
+
+	/* the composition below appends with no bounds checks: the assert
+	 * pins the worst case, the saved line plus one full-width line per
+	 * holder, against the sizing above */
+	_Static_assert(sizeof(buf) == 6 + ANE_FLOOR_NUM_MAX + 1 +
+		ANE_CPU_FLOOR_HOLDER_MAX * ANE_FLOOR_LINE_MAX,
+		"state buffer fits the saved line and every full-width holder line");""",
+        """	char buf[1024], tmp[512], *w = buf;
+	int i, r, fd;"""),
+    # the fresh raise must sit out when the file already sits at or above
+    # the floor -- a raise there would LOWER the file; the stale undo falls
+    # into this same branch, so this mutant re-lowers both ways
+    "stale_skips_sitout": (None,
+        """		if (saved >= floor) {
+			/* at or above the floor already: a raise here would
+			 * LOWER the file, and after a stale undo the value
+			 * that just came back is not ours to go under */
+			close(lockfd);
+			return 0;
+		}""",
+        """		if (0) {
+			/* at or above the floor already: a raise here would
+			 * LOWER the file, and after a stale undo the value
+			 * that just came back is not ours to go under */
+			close(lockfd);
+			return 0;
+		}"""),
+    # a join must raise only above the file's current content: this mutant
+    # never raises on a join (the applied value stays whatever the holders
+    # left), so a higher-floor joiner serves below its floor
+    "join_skips_raise": (None,
+        "if (end != buf && cur >= floor)",
+        "if (end != buf && (cur >= floor && cur < floor))"),
+    # and this one always raises on a join, lowering the file over another
+    # holder's raise or an administrator change
+    "join_writes_below": (None,
+        "if (end != buf && cur >= floor)",
+        "if (end != buf && (cur >= floor || cur < floor))"),
+    # SIGHUP joins the chained set: a group hangup must not strand the floor
+    "sighup_not_chained": ("sighup_group",
+        "static const int sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT,",
+        "static const int sigs[] = { SIGINT, SIGTERM,"),
+    # SIGQUIT joins the chained set: a group ^\\ must not strand the floor
+    "sigquit_not_chained": ("sigquit_group",
+        """static const int sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT,
+					    SIGPIPE, SIGALRM };""",
+        """static const int sigs[] = { SIGINT, SIGTERM, SIGHUP,
+					    SIGPIPE, SIGALRM };"""),
 }
 
 

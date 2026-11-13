@@ -184,6 +184,42 @@ def sigint(ok):
 
 
 @case
+def sighup_group(ok):
+    """SIGHUP to the whole process group, the shape of a terminal or ssh
+    hangup: the run's chained handler must restore before the default
+    action kills it -- the watchdog shares the group and dies too, so it
+    cannot cover this (the catchable half of #413's cause)."""
+    t = Tree()
+    try:
+        p = serve(t, 60, "floor-hup")
+        p.stdout.readline()
+        os.killpg(os.getpgid(p.pid), signal.SIGHUP)
+        ok(p.wait(10) == -signal.SIGHUP, "SIGHUP still terminates by signal")
+        ok(wait_for(lambda: restored(t)), "the group hangup restores")
+        ok(wait_for(lambda: not t.state.exists()),
+           "the group hangup removes the state")
+    finally:
+        t.close()
+
+
+@case
+def sigquit_group(ok):
+    """SIGQUIT to the whole process group (a group ^\\): the chained
+    handler restores and the run still dies by SIGQUIT."""
+    t = Tree()
+    try:
+        p = serve(t, 60, "floor-quit")
+        p.stdout.readline()
+        os.killpg(os.getpgid(p.pid), signal.SIGQUIT)
+        ok(p.wait(10) == -signal.SIGQUIT, "SIGQUIT still terminates by signal")
+        ok(wait_for(lambda: restored(t)), "the group quit restores")
+        ok(wait_for(lambda: not t.state.exists()),
+           "the group quit removes the state")
+    finally:
+        t.close()
+
+
+@case
 def sigkill_watchdog(ok):
     t = Tree()
     try:
