@@ -8,21 +8,30 @@ The check builds an AddressSanitizer binary; on hosts with `vm.mmap_rnd_bits` ab
 
 With `ANE_CPU_FLOOR=<kHz>` set, `ane-run` holds the t6021 P cluster's minimum
 clock (`cpu4/cpufreq/scaling_min_freq`, cpus 4-7) at `<kHz>` while it serves
-and restores the value it found on every exit path: normal exit, SIGINT,
-SIGTERM (an inherited SIG_IGN, for example from nohup, is put back untouched
+and restores the value it found on every exit path: normal exit; SIGINT,
+SIGTERM, SIGHUP, SIGQUIT, SIGPIPE and SIGALRM through a chained handler that
+gives the signal back, so the exit status still says how the run died (an
+inherited SIG_IGN, for example from a background job, is put back untouched
 and the floor survives the delivery; the restore takes the state lock
 non-blocking with a bounded retry, because the frame the signal interrupted
-may hold the lock itself, and if it never frees the run dies by the signal
-and the watchdog restores at death), SIGKILL and crashes through a forked
-watchdog child, and a stale state file under `/run/ane-run` that the next run
-reconciles before it raises again. The watchdog restores only once the dying
+may hold the lock itself, and if it never frees, only a SIG_DFL disposition
+re-raises and dies by the signal, while the watchdog restores at death);
+SIGKILL and crashes through a forked watchdog child; and a stale state file
+under `/run/ane-run` that the next run reconciles before it raises again.
+Only a SIGKILL that takes the run and its watchdog together (a group kill, a
+stop-timeout, the OOM killer) leaves the floor raised until the next
+`ANE_CPU_FLOOR` run reconciles it; that is issue #413's remaining half. The watchdog restores only once the dying
 holder is really gone: the dying process releases its file descriptors (the
 watchdog's pipe among them) before it becomes a zombie, so one reconcile at
 pipe close can still see it alive and would leave the floor raised. A holder
 counts as dead from `/proc/<pid>/stat` alone - gone, zombie, or a start time
 that no longer matches - because `kill()` alone answers for a pid reused by
 another user. Concurrent
-instances share the raise under a lock; the first raises and the last restores.
+instances share the raise under a lock; the first raises and the last
+restores. No begin ever lowers the file: a fresh raise sits out when the file
+already sits at or above the floor, a joiner raises only above the file's
+current content (another holder's raise, or an administrator change, wins),
+and a stale undo writes back exactly the recorded saved value.
 `ANE_CPU_FLOOR=1968000` is the value the measurement rows use. With the
 variable unset, zero, or not a number -- trailing junk included,
 `1968000kHz` is not a number -- nothing is read or written under sysfs.
