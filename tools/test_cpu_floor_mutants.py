@@ -26,9 +26,11 @@ CFLAGS = ["-std=gnu99", "-Wall", "-Wextra", "-Werror", "-O2"]
 
 # name -> (case for test_cpu_floor.py or None for the unit suite, old, new)
 MUTANTS = {
-    # the restore writes the found value, never a constant
+    # the restore writes the found value, never a constant (drop_pid: the
+    # atexit and signal path)
     "restore_is_hardcoded": (None,
-        """		if (st.npids == 0) {
+        """		st.npids = live;
+		if (st.npids == 0) {
 			w = ane_floor_num(w, st.saved);
 			*w++ = '\\n';
 			*w = 0;
@@ -38,9 +40,9 @@ MUTANTS = {
 			ane_floor_state_write(p, &st);
 		}
 	}
-	close(fd);
-	if (ane_floor_pipe_w >= 0) {""",
-        """		if (st.npids == 0) {
+	close(fd);""",
+        """		st.npids = live;
+		if (st.npids == 0) {
 			w = ane_floor_num(w, 702000ULL);
 			*w++ = '\\n';
 			*w = 0;
@@ -50,8 +52,16 @@ MUTANTS = {
 			ane_floor_state_write(p, &st);
 		}
 	}
-	close(fd);
-	if (ane_floor_pipe_w >= 0) {"""),
+	close(fd);"""),
+    # the watchdog's reconcile must also restore the recorded saved value,
+    # never a constant: exercised with a non-default saved value
+    "reconcile_restore_hardcoded": ("crash_saved_value",
+        """		ane_floor_prune(&st);
+		if (st.npids == 0) {
+			w = ane_floor_num(w, st.saved);""",
+        """		ane_floor_prune(&st);
+		if (st.npids == 0) {
+			w = ane_floor_num(w, 702000ULL);"""),
     # the floor write in the fresh raise must really happen
     "floor_write_skipped": (None,
         """		if (ane_floor_state_write(p, &st)) {
@@ -132,11 +142,19 @@ MUTANTS = {
         "(void)ppid;\n\t\t_exit(0);"),
     # the SIGINT/SIGTERM handler must release before dying
     "signal_skips_release": (None,
-        """	ane_floor_release(&ane_floor_paths);
+        """	ane_floor_release(&ane_floor_paths, 0);
 	ane_floor_held = 0;""",
         """	ane_floor_held = 0;"""),
-    # a dead holder (zombie or reused pid) must not keep the floor pinned
-    "prune_keeps_zombies": ("sigkill_watchdog",
+    # the signal-path release must not block on the state lock: the frame the
+    # signal interrupted may hold it itself, and a blocking flock there
+    # deadlocks the process (hang, floor stays raised)
+    "signal_release_blocks": ("sigterm_self_locked",
+        "ane_floor_release(&ane_floor_paths, 0);",
+        "ane_floor_release(&ane_floor_paths, 1);"),
+    # a dead holder (zombie or reused pid) must not keep the floor pinned:
+    # the unit suite crafts a live pid whose recorded start time no longer
+    # matches, which kill() alone cannot see
+    "prune_keeps_zombies": (None,
         """	for (i = 0; i < st->npids; i++) {
 		if (!ane_floor_pid_dead(st->pids[i], st->ticks[i])) {""",
         """	for (i = 0; i < st->npids; i++) {
@@ -180,9 +198,9 @@ MUTANTS = {
 		sigaction(sig, o, NULL);
 		return;
 	}
-	ane_floor_release(&ane_floor_paths);""",
+	ane_floor_release(&ane_floor_paths, 0);""",
         """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
-	ane_floor_release(&ane_floor_paths);"""),
+	ane_floor_release(&ane_floor_paths, 0);"""),
     # the watchdog must ride out the dying-parent window: the fds close in
     # do_exit before the dying process is a zombie, so one reconcile at pipe
     # close can still see it alive and leave the floor raised
@@ -191,7 +209,7 @@ MUTANTS = {
 	struct ane_floor_state st;
 	int i, j;
 
-	for (i = 0; i < 250; i++) {
+	for (i = 0; i < 1500; i++) {	/* 30 s */
 		unsigned long long ticks = 0;
 		int found = 0;
 
@@ -205,8 +223,19 @@ MUTANTS = {
 				break;
 			}
 		}
-		if (!found || ane_floor_pid_dead(ppid, ticks))
+		if (!found)
 			return;	/* this run is out; whoever is left is alive */
+		if ((int)getppid() != ppid) {
+			/* reparenting happens only at the parent's death, so
+			 * the holder is dead even when /proc still argues
+			 * alive -- a stranger can reuse the pid within the
+			 * same start tick. Drop it directly: the floor must
+			 * not wait on a verdict the stranger can spoof. */
+			ane_floor_drop_pid(p, ppid, 1);
+			return;
+		}
+		if (ane_floor_pid_dead(ppid, ticks))
+			return;	/* gone, a zombie, or its start time reused */
 		nanosleep(&step, NULL);
 	}""",
         """	if (!ane_floor_pid_dead(ppid, 0))

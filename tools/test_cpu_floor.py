@@ -70,14 +70,13 @@ def wait_for(pred, timeout=5.0, step=0.05):
     return pred()
 
 
-def serve(tree, seconds, tag, slowclose=False):
+def serve(tree, seconds, tag, slowclose=False, locksig=False):
     # start_new_session: the watchdog child joins the group, so a full crash
     # (server plus watchdog) is one killpg to a group this test owns.
     argv = [str(SERVE), tag]
-    if slowclose:
-        argv[1:1] = ["slowclose", str(seconds)]
-    else:
-        argv[1:1] = [str(seconds)]
+    pre = ["slowclose", str(seconds)] if slowclose else (
+        ["locksig", str(seconds)] if locksig else [str(seconds)])
+    argv[1:1] = pre
     return subprocess.Popen(
         argv, env=tree.env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, start_new_session=True)
@@ -192,8 +191,35 @@ def sigkill_watchdog(ok):
         p.stdout.readline()
         kill(p)
         p.wait(10)
-        ok(wait_for(lambda: restored(t)), "watchdog restores after SIGKILL")
-        ok(wait_for(lambda: not t.state.exists()), "watchdog removes the state")
+        ok(wait_for(lambda: restored(t), timeout=15.0), "watchdog restores after SIGKILL")
+        ok(wait_for(lambda: not t.state.exists(), timeout=15.0), "watchdog removes the state")
+    finally:
+        t.close()
+
+
+@case
+def sigterm_self_locked(ok):
+    """SIGTERM while this process itself holds the state lock (the shape of
+    an interrupted critical section): the handler's release must not block
+    forever on its own flock. It retries bounded and non-blocking, and if
+    the lock never frees the run dies by SIGTERM and the watchdog restores
+    at death."""
+    t = Tree()
+    try:
+        p = serve(t, 60, "floor-locksig", locksig=True)
+        ok(p.stdout.readline().strip() == "FLOOR raised", "serve reports the raise")
+        ok(p.stdout.readline().strip() == "LOCK held", "serve holds the state lock")
+        term(p)
+        try:
+            st = p.wait(15)
+        except subprocess.TimeoutExpired:
+            kill(p)
+            p.wait(10)
+            ok(False, "SIGTERM while self-locked: the handler hung on the flock")
+            return
+        ok(st == -signal.SIGTERM, f"SIGTERM still terminates by signal (got {st})")
+        ok(wait_for(lambda: restored(t), timeout=10.0), "the floor is restored at death")
+        ok(wait_for(lambda: not t.state.exists(), timeout=10.0), "the state is removed at death")
     finally:
         t.close()
 
@@ -212,9 +238,9 @@ def slow_teardown(ok):
         ok(p.stdout.readline().strip() == "FLOOR raised", "serve reports the raise")
         ok(raised(t), "floor applied while the holder lives")
         p.wait(10)
-        ok(wait_for(lambda: restored(t), timeout=10.0),
+        ok(wait_for(lambda: restored(t), timeout=15.0),
            "watchdog rides out the slow teardown")
-        ok(wait_for(lambda: not t.state.exists()),
+        ok(wait_for(lambda: not t.state.exists(), timeout=15.0),
            "state removed after the slow teardown")
     finally:
         t.close()
@@ -257,6 +283,31 @@ def crash_all_stale(ok):
         ok(p2.stdout.readline().strip() == "FLOOR raised", "next run raises after reconcile")
         ok("4000000" not in state_text(t), "stale pid dropped")
         ok(p2.wait(10) == 0 and restored(t), "reconciled run restores normally")
+    finally:
+        t.close()
+
+
+@case
+def crash_saved_value(ok):
+    """After a full crash the next run reconciles the stale state, and its
+    watchdog restores the recorded saved value - here 553000, not the
+    fixture's usual 702000, so a hard-coded restore cannot hide."""
+    t = Tree(freq=b"553000\n")
+    try:
+        p = serve(t, 60, "floor-saved")
+        ok(p.stdout.readline().strip() == "FLOOR raised", "serve reports the raise")
+        ok(raised(t), "floor applied")
+        kill_group(p)
+        p.wait(10)
+        time.sleep(0.3)
+        ok(t.state.exists() and "saved 553000" in state_text(t),
+           "the stale record carries the real saved value")
+        p2 = serve(t, 60, "floor-saved2")
+        ok(p2.stdout.readline().strip() == "FLOOR raised", "next run raises after reconcile")
+        kill(p2)
+        p2.wait(10)
+        ok(wait_for(lambda: t.freq.read_bytes().strip() == b"553000", timeout=15.0),
+           "the watchdog restored the saved 553000")
     finally:
         t.close()
 

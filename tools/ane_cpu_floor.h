@@ -32,9 +32,12 @@
  * Every exit path restores:
  *   - normal exit: atexit restores in this process;
  *   - SIGINT/SIGTERM: a chained handler restores, then gives the signal back
- *     so the exit status still says how the run died; an inherited SIG_IGN
- *     (nohup, a background job) is put back untouched and the floor survives
- *     the delivery;
+ *     so the exit status still says how the run died; the restore takes the
+ *     state lock non-blocking with a bounded retry (the frame the signal
+ *     interrupted may hold the lock itself), and if the lock never frees the
+ *     run dies by the signal and the watchdog restores at death; an
+ *     inherited SIG_IGN (nohup, a background job) is put back untouched and
+ *     the floor survives the delivery;
  *   - SIGKILL or a crash: a watchdog child forked at begin watches a pipe; the
  *     kernel closes the pipe when the parent dies, and the child restores from
  *     the state file once the parent is really gone -- a dying process
@@ -108,6 +111,7 @@ static int ane_floor_held;	/* this process is a live holder */
 static int ane_floor_pipe_w = -1;
 
 static void ane_cpu_floor_end(void);
+static void ane_floor_drop_pid(const struct ane_floor_paths *p, int pid, int blocking);
 
 /* A process that fork()ed while holding the floor must call this in the child
  * before it does anything else: the child inherits the participation flag and
@@ -204,6 +208,23 @@ static int ane_floor_lock(const struct ane_floor_paths *p)
 	return ane_floor_lock_at(p, 1);
 }
 
+/* Take the state lock without blocking: the signal path uses it, because
+ * the frame the signal interrupted may hold the lock itself, and a blocking
+ * flock there would hang the process forever. */
+static int ane_floor_lock_try(const struct ane_floor_paths *p)
+{
+	int fd;
+
+	fd = open(p->lock, O_RDWR | O_CREAT, 0644);
+	if (fd < 0)
+		return -1;
+	if (flock(fd, LOCK_EX | LOCK_NB)) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
 /* The start time of a pid, /proc/<pid>/stat field 22 in clock ticks. 0 when
  * the pid does not exist or the field cannot be read. */
 static unsigned long long ane_floor_start_ticks(int pid)
@@ -246,20 +267,16 @@ static unsigned long long ane_floor_start_ticks(int pid)
 	return v;
 }
 
-/* A holder is dead when the pid is gone, is a zombie (exited, not yet
- * reaped: kill(pid, 0) still answers for it), or its start time no longer
- * matches the record (the pid was reused by a stranger). */
+/* A holder is dead when /proc/<pid>/stat is gone, shows a zombie (exited,
+ * not yet reaped), or its start time no longer matches the record (the pid
+ * was reused by a stranger). kill() alone cannot tell: a reuse by another
+ * user answers EPERM, as if the stranger were our holder. */
 static int ane_floor_pid_dead(int pid, unsigned long long ticks)
 {
 	char path[48], buf[1024], *p, *tok;
 	int fd, n, i;
 	unsigned long long cur = 0;
 
-	if (kill((pid_t)pid, 0)) {
-		if (errno == ESRCH)
-			return 1;
-		return 0;	/* EPERM: alive, owned by someone else */
-	}
 	p = path;
 	memcpy(p, "/proc/", 6);
 	p += 6;
@@ -267,7 +284,7 @@ static int ane_floor_pid_dead(int pid, unsigned long long ticks)
 	memcpy(p, "/stat", 6);
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
-		return errno == ENOENT;
+		return errno == ENOENT;	/* gone: dead; unreadable: assume alive */
 	n = (int)read(fd, buf, sizeof(buf) - 1);
 	close(fd);
 	if (n <= 0)
@@ -408,14 +425,17 @@ static void ane_floor_reconcile(const struct ane_floor_paths *p)
  * alive, keep the record and leave the floor raised. Loop, bounded, until
  * this run's holder is really out of the record (gone, a zombie, or its
  * start time reused); a holder still alive at the bound -- an intentional
- * early pipe close under a live run -- keeps its record and its floor. */
+ * early pipe close under a live run -- keeps its record and its floor. The
+ * bound has to cover a holder that is merely SLOW to die (a throttled or
+ * loaded exit), not only a fast one: giving up on one of those strands the
+ * floor until the next run. */
 static void ane_floor_watchdog_reconcile(const struct ane_floor_paths *p, int ppid)
 {
 	const struct timespec step = { 0, 20 * 1000 * 1000 };
 	struct ane_floor_state st;
 	int i, j;
 
-	for (i = 0; i < 250; i++) {
+	for (i = 0; i < 1500; i++) {	/* 30 s */
 		unsigned long long ticks = 0;
 		int found = 0;
 
@@ -429,8 +449,19 @@ static void ane_floor_watchdog_reconcile(const struct ane_floor_paths *p, int pp
 				break;
 			}
 		}
-		if (!found || ane_floor_pid_dead(ppid, ticks))
+		if (!found)
 			return;	/* this run is out; whoever is left is alive */
+		if ((int)getppid() != ppid) {
+			/* reparenting happens only at the parent's death, so
+			 * the holder is dead even when /proc still argues
+			 * alive -- a stranger can reuse the pid within the
+			 * same start tick. Drop it directly: the floor must
+			 * not wait on a verdict the stranger can spoof. */
+			ane_floor_drop_pid(p, ppid, 1);
+			return;
+		}
+		if (ane_floor_pid_dead(ppid, ticks))
+			return;	/* gone, a zombie, or its start time reused */
 		nanosleep(&step, NULL);
 	}
 }
@@ -443,10 +474,17 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 	int fds[2];
 	pid_t kid;
 	pid_t ppid = getpid();	/* read before the fork: the child inherits it */
+	const struct timespec fstep = { 0, 50 * 1000 * 1000 };
 
 	if (pipe(fds))
 		return;
 	kid = fork();
+	if (kid < 0) {
+		/* a fork can fail on a loaded host, and the watchdog is the
+		 * only SIGKILL cover: try once more before giving up on it */
+		nanosleep(&fstep, NULL);
+		kid = fork();
+	}
 	if (kid < 0) {
 		close(fds[0]);
 		close(fds[1]);
@@ -477,20 +515,34 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 	ane_floor_pipe_w = fds[1];
 }
 
-/* The one restore used by every in-process exit path (atexit and the signal
- * handler): async-signal-safe calls only. */
-static void ane_floor_release(const struct ane_floor_paths *p)
+/* Remove one pid from the state record; when it was the last holder, give
+ * the saved value back and clear the record. blocking 1 takes the lock and
+ * waits (atexit, the watchdog); blocking 0 retries bounded and non-blocking
+ * (the signal path, where the interrupted frame may hold the lock itself:
+ * a blocking flock there would deadlock the process -- if the lock never
+ * frees, the run dies by the signal and the watchdog restores at death). */
+static void ane_floor_drop_pid(const struct ane_floor_paths *p, int pid, int blocking)
 {
 	struct ane_floor_state st;
+	const struct timespec step = { 0, 20 * 1000 * 1000 };
 	char saved[32], *w = saved;
 	int fd, i, live = 0;
 
-	fd = ane_floor_lock_at(p, 0);	/* no mkdir: this runs on the signal path */
+	if (blocking) {
+		fd = ane_floor_lock_at(p, 0);	/* no mkdir: this runs on the signal path */
+	} else {
+		fd = -1;
+		for (i = 0; fd < 0 && i < 100; i++) {
+			fd = ane_floor_lock_try(p);
+			if (fd < 0)
+				nanosleep(&step, NULL);
+		}
+	}
 	if (fd < 0)
 		return;
 	if (ane_floor_state_read(p->state, &st) == 0) {
 		for (i = 0; i < st.npids; i++) {
-			if (st.pids[i] != (int)getpid()) {
+			if (st.pids[i] != pid) {
 				st.pids[live] = st.pids[i];
 				st.ticks[live] = st.ticks[i];
 				live++;
@@ -508,6 +560,13 @@ static void ane_floor_release(const struct ane_floor_paths *p)
 		}
 	}
 	close(fd);
+}
+
+/* The one restore used by every in-process exit path (atexit and the signal
+ * handler): async-signal-safe calls only on the signal path. */
+static void ane_floor_release(const struct ane_floor_paths *p, int blocking)
+{
+	ane_floor_drop_pid(p, (int)getpid(), blocking);
 	if (ane_floor_pipe_w >= 0) {
 		close(ane_floor_pipe_w);
 		ane_floor_pipe_w = -1;
@@ -527,7 +586,7 @@ static void ane_floor_signal(int sig)
 		sigaction(sig, o, NULL);
 		return;
 	}
-	ane_floor_release(&ane_floor_paths);
+	ane_floor_release(&ane_floor_paths, 0);
 	ane_floor_held = 0;
 	if (o->sa_handler == SIG_DFL)
 		again = 1;
@@ -733,7 +792,7 @@ static void ane_cpu_floor_end(void)
 	if (!ane_floor_held)
 		return;
 	ane_floor_held = 0;
-	ane_floor_release(&ane_floor_paths);
+	ane_floor_release(&ane_floor_paths, 1);
 }
 
 #endif /* ANE_CPU_FLOOR_H */

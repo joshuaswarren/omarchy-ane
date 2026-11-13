@@ -278,6 +278,23 @@ int main(void)
 	ane_cpu_floor_end();
 	EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "the reconciled cycle restores too");
 
+	/* 10b: a stranger's reuse of a live pid (start ticks no longer match)
+	 * is dead: the prune drops it even though kill() would still answer */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	{
+		char path[1024];
+		FILE *f;
+
+		ane_floor_join(path, sizeof(path), var, "ane-run.state");
+		f = fopen(path, "w");
+		fprintf(f, "saved 702000\npid %d 1\n", (int)getpid());
+		fclose(f);
+	}
+	EXPECT(ane_cpu_floor_begin() == 1, "a reused stranger pid is dropped and the run raises");
+	EXPECT(strstr(state_of(var), " 1\n") == NULL, "the stranger's stale record is pruned");
+	ane_cpu_floor_end();
+	EXPECT(strstr(state_of(var), "<absent>") != NULL, "the reconciled run clears the record");
+
 	/* 11: an end under a live foreign holder leaves the floor to that holder */
 	mkfreq(sysfs, "apple,t6021", "702000\n");
 	{
