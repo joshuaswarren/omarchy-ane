@@ -31,6 +31,11 @@ static int fails;
 	} \
 } while (0)
 
+static void ane_floor_test_signal(int sig)
+{
+	(void)sig;	/* swallow the re-raised signal: proves the release ran */
+}
+
 static void mkfreq(const char *root, const char *compat, const char *val)
 {
 	char path[1024];
@@ -42,6 +47,7 @@ static void mkfreq(const char *root, const char *compat, const char *val)
 	ane_floor_join(path, sizeof(path), root, "cpu4/cpufreq");
 	mkdir(path, 0755);
 	ane_floor_join(path, sizeof(path), root, "cpu4/cpufreq/scaling_min_freq");
+	unlink(path);	/* a fifo left by the off-by-default case would block the open */
 	f = fopen(path, "w");
 	if (!f)
 		return;
@@ -104,6 +110,46 @@ int main(void)
 	ane_floor_join(var, sizeof(var), base, "var");
 	setenv(ANE_CPU_FLOOR_SYSFS_ENV, sysfs, 1);
 	setenv(ANE_CPU_FLOOR_STATE_ENV, var, 1);
+
+	/* 0: the floor is opt-in. With ANE_CPU_FLOOR unset the code must not read
+	 * or write sysfs at all: the freq file is a FIFO with no writer, so any
+	 * read would block the suite until the alarm fires and kills it. */
+	{
+		char path[1024], probe[32];
+
+		unsetenv(ANE_CPU_FLOOR_ENV);
+		unsetenv(ANE_CPU_FLOOR_STATE_ENV);
+		mkdir(sysfs, 0755);
+		mkfreq(sysfs, "apple,t6021\n", "placeholder");
+		ane_floor_join(path, sizeof(path), sysfs, "cpu4/cpufreq/scaling_min_freq");
+		unlink(path);
+		if (mkfifo(path, 0644))
+			printf("FAIL: cannot make the fifo (%s)\n", strerror(errno)), fails++, checks++;
+		{
+			struct stat st2;
+
+			EXPECT(stat(path, &st2) == 0 && S_ISFIFO(st2.st_mode), "sanity: the freq path is a fifo");
+		}
+		(void)probe;
+		alarm(10);
+		EXPECT(ane_cpu_floor_begin() == 0, "no ANE_CPU_FLOOR: begin skips");
+		alarm(0);
+		EXPECT(strstr(state_of(var), "<absent>") != NULL, "no ANE_CPU_FLOOR: no state file");
+		ane_cpu_floor_end();
+		/* garbage and zero opt-ins are the same no-op */
+		setenv(ANE_CPU_FLOOR_ENV, "nonsense", 1);
+		EXPECT(ane_cpu_floor_begin() == 0, "garbage ANE_CPU_FLOOR: begin skips");
+		setenv(ANE_CPU_FLOOR_ENV, "0", 1);
+		EXPECT(ane_cpu_floor_begin() == 0, "zero ANE_CPU_FLOOR: begin skips");
+		setenv(ANE_CPU_FLOOR_STATE_ENV, var, 1);
+		setenv(ANE_CPU_FLOOR_ENV, "1000000", 1);
+		mkfreq(sysfs, "apple,t6021\n", "702000\n");
+		EXPECT(ane_cpu_floor_begin() == 1, "a custom floor value is honoured");
+		EXPECT(strstr(freq_of(sysfs), "1000000") != NULL, "the floor comes from the env, not a constant");
+		ane_cpu_floor_end();
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "the custom cycle restores too");
+		setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
+	}
 
 	/* 1: normal restore -- raise, then end puts the SAVED value back */
 	mkdir(var, 0755);
@@ -227,6 +273,27 @@ int main(void)
 			EXPECT(WIFEXITED(st) && WEXITSTATUS(st) == 0, "foreign holder exited");
 		}
 		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "foreign holder restored at its end");
+	}
+
+	/* 9: the signal handler itself must restore before it hands the signal
+	 * back: a captured SIGTERM proves the release happened in the dying
+	 * process, not later in the watchdog. */
+	{
+		struct sigaction cap, got;
+
+		memset(&cap, 0, sizeof(cap));
+		cap.sa_handler = ane_floor_test_signal;
+		sigaction(SIGTERM, &cap, NULL);
+		mkfreq(sysfs, "apple,t6021\n", "702000\n");
+		EXPECT(ane_cpu_floor_begin() == 1, "raise before the captured signal");
+		EXPECT(strstr(freq_of(sysfs), "1968000") != NULL, "floor applied before the signal");
+		raise(SIGTERM);
+		EXPECT(sigaction(SIGTERM, NULL, &got) == 0 && got.sa_handler == ane_floor_test_signal,
+			"the handler reinstated the captured disposition");
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0,
+			"the signal handler restored in this process");
+		EXPECT(strstr(state_of(var), "<absent>") != NULL,
+			"the signal handler removed the state");
 	}
 
 	snprintf(base, sizeof(base), "rm -rf /tmp/ane-floor-test.%d", (int)getpid());

@@ -58,7 +58,7 @@ MUTANTS = {
 			close(lockfd);
 			return 0;
 		}
-		if (ane_floor_write(p->freq, ANE_CPU_FLOOR_MIN)) {
+		if (ane_floor_write(p->freq, floor_out)) {
 			/* no write access: silent skip, leave nothing behind */
 			unlink(p->state);
 			close(lockfd);
@@ -69,7 +69,7 @@ MUTANTS = {
 			close(lockfd);
 			return 0;
 		}
-		(void)ane_floor_write(p->freq, ANE_CPU_FLOOR_MIN);
+		(void)ane_floor_write(p->freq, floor_out);
 		raised_fresh = 1;"""),
     # the saved value must be recorded before the floor is applied
     "saved_never_recorded": (None,
@@ -81,10 +81,22 @@ MUTANTS = {
 			st.npids = 1;
 			st.pids[0] = (int)getpid();
 			st.ticks[0] = my_ticks;"""),
-    # the join must add this pid, or the floor loses its last restorer
+    # the join must add this pid, or the floor loses its last restorer.
+    # Replaces the append with a dead pid and drops the list to one entry, so
+    # the floor dies with the first holder while the second still serves.
     "join_drops_pid": ("concurrent_refcount",
         "st.pids[st.npids] = (int)getpid();",
-        "st.npids = 1;"),
+        "st.npids = 1; st.pids[0] = 0;"),
+    # the opt-in gate: with ANE_CPU_FLOOR absent nothing may be read or written
+    "optin_gate_removed": (None,
+        """	env = getenv(ANE_CPU_FLOOR_ENV);
+	if (!env || *env < '1' || *env > '9')
+		return 0;
+	floor = strtoull(env, &end, 10);
+	if (end == env || floor == 0)
+		return 0;""",
+        """	env = "1968000";
+	floor = 1968000ULL;"""),
     # the watchdog child is what covers SIGKILL and crashes
     "watchdog_not_forked": ("sigkill_watchdog",
         "ane_floor_watchdog_start(p);",
@@ -94,7 +106,7 @@ MUTANTS = {
         "ane_floor_reconcile(p);\n\t\t_exit(0);",
         "_exit(0);"),
     # the SIGINT/SIGTERM handler must release before dying
-    "signal_skips_release": ("sigterm",
+    "signal_skips_release": (None,
         """	ane_floor_release(&ane_floor_paths);
 	ane_floor_held = 0;""",
         """	ane_floor_held = 0;"""),

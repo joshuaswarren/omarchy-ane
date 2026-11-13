@@ -28,7 +28,7 @@ COMPAT_T6021 = b"apple,j414s\napple,t6021\n"
 class Tree:
     """One fake sysfs tree plus one fake state dir."""
 
-    def __init__(self, freq=b"702000\n", compat=COMPAT_T6021):
+    def __init__(self, freq=b"702000\n", compat=COMPAT_T6021, floor="1968000"):
         self.base = Path(tempfile.mkdtemp(prefix="ane-floor-proc."))
         self.sysfs = self.base / "sys"
         self.var = self.base / "var"
@@ -36,6 +36,7 @@ class Tree:
         self.var.mkdir()
         self.freq.write_bytes(freq)
         (self.sysfs / "compatible").write_bytes(compat)
+        self.floor = floor
 
     @property
     def freq(self):
@@ -49,6 +50,9 @@ class Tree:
         e = dict(os.environ)
         e["ANE_RUN_CPUFREQ_ROOT"] = str(self.sysfs)
         e["ANE_RUN_STATE_DIR"] = str(self.var)
+        e.pop("ANE_CPU_FLOOR", None)
+        if self.floor is not None:
+            e["ANE_CPU_FLOOR"] = self.floor
         return e
 
     def close(self):
@@ -112,6 +116,22 @@ CASES = {}
 def case(fn):
     CASES[fn.__name__] = fn
     return fn
+
+
+@case
+def off_by_default(ok):
+    """Without ANE_CPU_FLOOR nothing is read or written: the run skips."""
+    t = Tree(floor=None)
+    try:
+        p = serve(t, 0.4, "floor-off")
+        ok(p.stdout.readline().strip() == "FLOOR skipped", "serve reports the skip")
+        ok(restored(t), "freq untouched")
+        ok(not t.state.exists(), "no state file")
+        ok(p.wait(10) == 0, "clean exit")
+    finally:
+        t.close()
+
+
 
 
 @case

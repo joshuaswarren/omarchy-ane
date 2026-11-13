@@ -7,10 +7,12 @@
 /*
  * ane_cpu_floor.h -- hold a CPU clock floor under a serving ane-run (t6021 only).
  *
- * While ane-run serves on the t6021 (M2 Max), the P cluster's minimum clock
- * (policy4, cpus 4-7, scaling_min_freq) is raised from its boot value to
- * 1968000 kHz so the schedutil governor cannot idle the P cores between ANE
- * submissions. Only scaling_min_freq is written: the governor is never
+ * With ANE_CPU_FLOOR=<kHz> set (for example ANE_CPU_FLOOR=1968000, the value
+ * the rows measure), ane-run raises the t6021 (M2 Max) P cluster's minimum
+ * clock (policy4, cpus 4-7, scaling_min_freq) to <kHz> while it serves so the
+ * schedutil governor cannot idle the P cores between ANE submissions; with
+ * the variable unset, zero, or not a number, nothing under sysfs is read or
+ * written at all. Only scaling_min_freq is written: the governor is never
  * changed, and the value found in the file is saved and restored, never
  * assumed. Measured in row m2-minfreq-interleaved-074 (default and 1968000
  * alternating in one row, linked program, cpu4 pinned, schedutil, one
@@ -56,7 +58,6 @@
  *                         the SoC gate then reads <root>/compatible;
  *   ANE_RUN_STATE_DIR     replaces /run/ane-run (lock and state files).
  */
-
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -73,8 +74,9 @@
 
 #define ANE_CPU_FLOOR_SYSFS_ENV "ANE_RUN_CPUFREQ_ROOT"
 #define ANE_CPU_FLOOR_STATE_ENV "ANE_RUN_STATE_DIR"
+#define ANE_CPU_FLOOR_ENV "ANE_CPU_FLOOR"
 #define ANE_CPU_FLOOR_CPU "cpu4"	/* policy4: the t6021 P cluster, cpus 4-7 */
-#define ANE_CPU_FLOOR_MIN "1968000"	/* kHz, the floor the pending rows measure */
+#define ANE_CPU_FLOOR_KHZ_DEFAULT "1968000"	/* kHz, the value the rows measure */
 #define ANE_CPU_FLOOR_HOLDER_MAX 64
 
 struct ane_floor_paths {
@@ -493,11 +495,26 @@ static int ane_cpu_floor_begin(void)
 {
 	struct ane_floor_paths *p = &ane_floor_paths;
 	struct ane_floor_state st;
-	char buf[128], *end;
-	const char *root, *dir;
+	char buf[128], floor_out[32], *end;
+	const char *root, *dir, *env;
 	unsigned long long saved, floor, my_ticks;
 	int lockfd, raised_fresh = 0;
 
+	/* Opt-in gate: with ANE_CPU_FLOOR unset, zero, or garbage the feature is
+	 * off and nothing under sysfs is read or written. */
+	env = getenv(ANE_CPU_FLOOR_ENV);
+	if (!env || *env < '1' || *env > '9')
+		return 0;
+	floor = strtoull(env, &end, 10);
+	if (end == env || floor == 0)
+		return 0;
+	{
+		char *w = floor_out;
+
+		w = ane_floor_num(w, floor);
+		*w++ = '\n';
+		*w = 0;
+	}
 	if (ane_floor_held)
 		return 1;
 	root = getenv(ANE_CPU_FLOOR_SYSFS_ENV);
@@ -527,7 +544,6 @@ static int ane_cpu_floor_begin(void)
 	saved = strtoull(buf, &end, 10);
 	if (end == buf)
 		return 0;
-	floor = strtoull(ANE_CPU_FLOOR_MIN, &end, 10);
 	my_ticks = ane_floor_start_ticks((int)getpid());
 
 	lockfd = ane_floor_lock(p);
@@ -542,7 +558,7 @@ static int ane_cpu_floor_begin(void)
 				st.ticks[st.npids] = my_ticks;
 				st.npids++;
 			}
-			ane_floor_write(p->freq, ANE_CPU_FLOOR_MIN);
+			ane_floor_write(p->freq, floor_out);
 			if (ane_floor_state_write(p, &st)) {
 				/* leave the state as the other holders wrote it */
 				st.npids--;
@@ -577,7 +593,7 @@ static int ane_cpu_floor_begin(void)
 			st.pids[0] = (int)getpid();
 			st.ticks[0] = my_ticks;
 			ane_floor_state_write(p, &st);
-			if (ane_floor_write(p->freq, ANE_CPU_FLOOR_MIN)) {
+			if (ane_floor_write(p->freq, floor_out)) {
 				unlink(p->state);
 				close(lockfd);
 				return 0;
@@ -602,7 +618,7 @@ static int ane_cpu_floor_begin(void)
 			close(lockfd);
 			return 0;
 		}
-		if (ane_floor_write(p->freq, ANE_CPU_FLOOR_MIN)) {
+		if (ane_floor_write(p->freq, floor_out)) {
 			/* no write access: silent skip, leave nothing behind */
 			unlink(p->state);
 			close(lockfd);
@@ -628,11 +644,11 @@ static int ane_cpu_floor_begin(void)
 	}
 
 	if (raised_fresh)
-		fprintf(stderr, "ane-run: cpu floor %s/%s %llu -> %s kHz, restored on exit\n",
-			ANE_CPU_FLOOR_CPU, "scaling_min_freq", saved, ANE_CPU_FLOOR_MIN);
+		fprintf(stderr, "ane-run: cpu floor %s/%s %llu -> %llu kHz, restored on exit\n",
+			ANE_CPU_FLOOR_CPU, "scaling_min_freq", saved, floor);
 	else
-		fprintf(stderr, "ane-run: cpu floor %s/%s held at %s kHz, restored on exit\n",
-			ANE_CPU_FLOOR_CPU, "scaling_min_freq", ANE_CPU_FLOOR_MIN);
+		fprintf(stderr, "ane-run: cpu floor %s/%s held at %llu kHz, restored on exit\n",
+			ANE_CPU_FLOOR_CPU, "scaling_min_freq", floor);
 	return 1;
 }
 
