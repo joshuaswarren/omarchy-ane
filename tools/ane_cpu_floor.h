@@ -34,8 +34,11 @@
  *   - SIGINT/SIGTERM: a chained handler restores, then gives the signal back
  *     so the exit status still says how the run died; the restore takes the
  *     state lock non-blocking with a bounded retry (the frame the signal
- *     interrupted may hold the lock itself), and if the lock never frees the
- *     run dies by the signal and the watchdog restores at death; an
+ *     interrupted may hold the lock itself), and if the lock never frees,
+ *     the run dies by the signal only when the previous disposition is
+ *     SIG_DFL; any other handler keeps the process running, the watchdog
+ *     gives up at its 30 s bound, and the floor stays raised until the
+ *     next ANE_CPU_FLOOR run; an
  *     inherited SIG_IGN (nohup, a background job) is put back untouched and
  *     the floor survives the delivery;
  *   - SIGKILL or a crash: a watchdog child forked at begin watches a pipe; the
@@ -288,8 +291,14 @@ static int ane_floor_pid_dead(int pid, unsigned long long ticks)
 	p = ane_floor_num(p, (unsigned long long)pid);
 	memcpy(p, "/stat", 6);
 	fd = open(path, O_RDONLY);
-	if (fd < 0)
-		return errno == ENOENT;	/* gone: dead; unreadable: assume alive */
+	if (fd < 0) {
+		if (errno != ENOENT)
+			return 0;	/* unreadable: assume alive */
+		/* hidepid mounts hide a live stranger's /proc entry, so a
+		 * missing stat is not proof: EPERM or 0 from kill() means
+		 * the pid exists and is alive */
+		return kill(pid, 0) == -1 && errno == ESRCH;
+	}
 	n = (int)read(fd, buf, sizeof(buf) - 1);
 	close(fd);
 	if (n <= 0)
@@ -525,7 +534,9 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
  * waits (atexit, the watchdog); blocking 0 retries bounded and non-blocking
  * (the signal path, where the interrupted frame may hold the lock itself:
  * a blocking flock there would deadlock the process -- if the lock never
- * frees, the run dies by the signal and the watchdog restores at death). */
+ * frees, only a SIG_DFL disposition re-raises and dies; any other handler
+ * keeps running, the watchdog gives up at its 30 s bound, and the floor
+ * stays raised until the next ANE_CPU_FLOOR run). */
 static void ane_floor_drop_pid(const struct ane_floor_paths *p, int pid, int blocking)
 {
 	struct ane_floor_state st;

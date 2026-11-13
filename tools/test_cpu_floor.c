@@ -36,6 +36,14 @@ static void ane_floor_test_signal(int sig)
 	(void)sig;	/* swallow the re-raised signal: proves the release ran */
 }
 
+/* pipe/system calls in the forked cases cannot legitimately fail; (void)
+ * does not satisfy -Wunused-result under _FORTIFY_SOURCE, so assert them */
+static void io_or_die(int ok)
+{
+	if (!ok)
+		_exit(3);
+}
+
 /* /proc/device-tree/compatible on the 14-inch M2 Max: NUL separated entries,
  * captured from row m2-cpu-floor-pr411-078's finding. strlen on the buffer
  * sees only the first entry. */
@@ -360,14 +368,14 @@ int main(void)
 			ane_floor_join(lpath, sizeof(lpath), var, "ane-run.lock");
 			lfd2 = open(lpath, O_RDWR | O_CREAT, 0644);
 			flock(lfd2, LOCK_EX);
-			(void)write(syncpipe[1], "L", 1);
-			(void)read(gopipe[0], &c, 1);
+			io_or_die(write(syncpipe[1], "L", 1) == 1);
+			io_or_die(read(gopipe[0], &c, 1) == 1);
 			/* the administrator change lands while the begin waits */
 			mkfreq(sysfs, "apple,t6021", "553000\n");
 			close(lfd2);	/* the waiting begin proceeds */
 			_exit(0);
 		}
-		(void)read(syncpipe[0], &c, 1);	/* the lock is held */
+		io_or_die(read(syncpipe[0], &c, 1) == 1);	/* the lock is held */
 		kid = fork();
 		if (kid == 0) {
 			ane_cpu_floor_forked_child();
@@ -376,7 +384,7 @@ int main(void)
 			_exit(0);
 		}
 		nanosleep(&settle, NULL);	/* let the begin block on the lock */
-		(void)write(gopipe[1], "G", 1);
+		io_or_die(write(gopipe[1], "G", 1) == 1);
 		waitpid(holder, &st, 0);
 		waitpid(kid, &st, 0);
 		close(syncpipe[0]);
@@ -465,7 +473,7 @@ int main(void)
 	}
 
 	snprintf(base, sizeof(base), "rm -rf /tmp/ane-floor-test.%d", (int)getpid());
-	(void)system(base);
+	io_or_die(system(base) == 0);
 
 	printf("RESULT: %d checks, %d failures\n", checks, fails);
 	return fails != 0;
