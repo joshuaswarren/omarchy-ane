@@ -167,6 +167,13 @@ int main(void)
 		EXPECT(strstr(freq_of(sysfs), "1000000") != NULL, "the floor comes from the env, not a constant");
 		ane_cpu_floor_end();
 		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "the custom cycle restores too");
+		/* trailing junk after the digits is not a number either */
+		setenv(ANE_CPU_FLOOR_ENV, "1968000kHz", 1);
+		EXPECT(ane_cpu_floor_begin() == 0, "trailing junk (kHz): begin skips");
+		setenv(ANE_CPU_FLOOR_ENV, "12x", 1);
+		EXPECT(ane_cpu_floor_begin() == 0, "trailing junk (12x): begin skips");
+		setenv(ANE_CPU_FLOOR_ENV, "1e6", 1);
+		EXPECT(ane_cpu_floor_begin() == 0, "exponent junk (1e6): begin skips");
 		setenv(ANE_CPU_FLOOR_ENV, ANE_CPU_FLOOR_KHZ_DEFAULT, 1);
 	}
 
@@ -295,6 +302,28 @@ int main(void)
 		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "foreign holder restored at its end");
 	}
 
+	/* 12: a full holder table -- the run sits out instead of holding
+	 * without a record (a later failed write there would decrement
+	 * somebody else's entry) */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	{
+		char path[1024];
+		FILE *f;
+		unsigned long long my = ane_floor_start_ticks((int)getpid());
+		int i;
+
+		ane_floor_join(path, sizeof(path), var, "ane-run.state");
+		f = fopen(path, "w");
+		fprintf(f, "saved 702000\n");
+		for (i = 0; i < ANE_CPU_FLOOR_HOLDER_MAX; i++)
+			fprintf(f, "pid %d %llu\n", (int)getpid(), my);
+		fclose(f);
+		EXPECT(ane_cpu_floor_begin() == 0, "full holder table: begin sits out");
+		EXPECT(strstr(freq_of(sysfs), "702000") != NULL, "full table: the floor stays with the holders");
+		EXPECT(strstr(state_of(var), "pid ") != NULL, "full table: the record survives untouched");
+		(void)unlink(path);
+	}
+
 	/* 10: the real compatible bytes are NUL separated; the gate must scan
 	 * every entry, so t6021 in the SECOND entry still engages the floor,
 	 * while a t60210 entry (t6021 as a substring) must not match. */
@@ -312,6 +341,43 @@ int main(void)
 		mkcompat(sysfs, compat_t60210, sizeof(compat_t60210));
 		EXPECT(ane_cpu_floor_begin() == 0, "t6021 as a substring of t60210 does not match");
 		EXPECT(strstr(freq_of(sysfs), "702000") != NULL, "the near-miss entry leaves sysfs alone");
+
+		/* the list's last entry without its trailing NUL is still a
+		 * whole entry: the read NUL-terminates the buffer */
+		mkfreq(sysfs, "", "702000\n");
+		mkcompat(sysfs, "apple,j414c\0apple,t6021", 23);
+		EXPECT(ane_cpu_floor_begin() == 1, "compatible without the trailing NUL matches");
+		EXPECT(strstr(freq_of(sysfs), "1968000") != NULL, "the unterminated list engaged the floor");
+		ane_cpu_floor_end();
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "and restored after the unterminated list");
+
+		/* an empty compatible file names no SoC: silent no-op */
+		mkfreq(sysfs, "", "702000\n");
+		mkcompat(sysfs, "", 0);
+		EXPECT(ane_cpu_floor_begin() == 0, "empty compatible: begin skips");
+		EXPECT(strstr(state_of(var), "<absent>") != NULL, "empty compatible: no state file");
+	}
+
+	/* an inherited SIG_IGN (nohup, a background job) is not meant for this
+	 * run: the handler puts it back and the floor survives the delivery */
+	{
+		struct sigaction ign, got;
+
+		memset(&ign, 0, sizeof(ign));
+		ign.sa_handler = SIG_IGN;
+		sigaction(SIGTERM, &ign, NULL);
+		mkfreq(sysfs, "apple,t6021", "702000\n");
+		EXPECT(ane_cpu_floor_begin() == 1, "raise under an inherited SIG_IGN");
+		raise(SIGTERM);
+		EXPECT(sigaction(SIGTERM, NULL, &got) == 0 && got.sa_handler == SIG_IGN,
+			"the handler reinstated SIG_IGN");
+		EXPECT(strstr(freq_of(sysfs), "1968000") != NULL,
+			"SIG_IGN delivery leaves the floor raised");
+		EXPECT(strstr(state_of(var), "saved 702000") != NULL,
+			"SIG_IGN delivery leaves the state");
+		ane_cpu_floor_end();
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "the floor restores after SIG_IGN");
+		EXPECT(strstr(state_of(var), "<absent>") != NULL, "state gone after SIG_IGN");
 	}
 
 	/* 9: the signal handler itself must restore before it hands the signal

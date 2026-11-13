@@ -118,7 +118,7 @@ MUTANTS = {
 	if (!env || *env < '1' || *env > '9')
 		return 0;
 	floor = strtoull(env, &end, 10);
-	if (end == env || floor == 0)
+	if (end == env || floor == 0 || *end)
 		return 0;""",
         """	env = "1968000";
 	floor = 1968000ULL;"""),
@@ -128,8 +128,8 @@ MUTANTS = {
         ";"),
     # the watchdog must reconcile after the parent's pipe closes
     "watchdog_never_reconciles": ("sigkill_watchdog",
-        "ane_floor_reconcile(p);\n\t\t_exit(0);",
-        "_exit(0);"),
+        "ane_floor_watchdog_reconcile(p, (int)ppid);\n\t\t_exit(0);",
+        "(void)ppid;\n\t\t_exit(0);"),
     # the SIGINT/SIGTERM handler must release before dying
     "signal_skips_release": (None,
         """	ane_floor_release(&ane_floor_paths);
@@ -141,6 +141,76 @@ MUTANTS = {
 		if (!ane_floor_pid_dead(st->pids[i], st->ticks[i])) {""",
         """	for (i = 0; i < st->npids; i++) {
 		if (kill((pid_t)st->pids[i], 0) == 0) {"""),
+    # trailing junk after the digits is not a number: the gate must reject
+    # "1968000kHz" before it touches sysfs
+    "env_trailing_junk_ok": (None,
+        """	floor = strtoull(env, &end, 10);
+	if (end == env || floor == 0 || *end)
+		return 0;""",
+        """	floor = strtoull(env, &end, 10);
+	if (end == env || floor == 0)
+		return 0;"""),
+    # a full holder table must not join unrecorded: the run sits out, or a
+    # later failed write would decrement somebody else's entry
+    "holder_full_joins": (None,
+        """			if (st.npids == ANE_CPU_FLOOR_HOLDER_MAX) {
+				/* the holder table is full: the recorded holders
+				 * already keep the floor up, so this run sits
+				 * out instead of holding without a record (a
+				 * later failed write would then decrement
+				 * somebody else's entry) */
+				close(lockfd);
+				return 0;
+			}
+			st.pids[st.npids] = (int)getpid();
+			st.ticks[st.npids] = my_ticks;
+			st.npids++;""",
+        """			if (st.npids < ANE_CPU_FLOOR_HOLDER_MAX) {
+				st.pids[st.npids] = (int)getpid();
+				st.ticks[st.npids] = my_ticks;
+				st.npids++;
+			}"""),
+    # an inherited SIG_IGN must be put back untouched, with the floor intact
+    "signal_ign_releases": (None,
+        """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
+	if (o->sa_handler == SIG_IGN) {
+		/* the run inherited SIG_IGN (nohup, a background job): the
+		 * signal is not meant for this process, so put it back and
+		 * keep holding the floor */
+		sigaction(sig, o, NULL);
+		return;
+	}
+	ane_floor_release(&ane_floor_paths);""",
+        """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
+	ane_floor_release(&ane_floor_paths);"""),
+    # the watchdog must ride out the dying-parent window: the fds close in
+    # do_exit before the dying process is a zombie, so one reconcile at pipe
+    # close can still see it alive and leave the floor raised
+    "watchdog_reconciles_once": ("slow_teardown",
+        """	const struct timespec step = { 0, 20 * 1000 * 1000 };
+	struct ane_floor_state st;
+	int i, j;
+
+	for (i = 0; i < 250; i++) {
+		unsigned long long ticks = 0;
+		int found = 0;
+
+		ane_floor_reconcile(p);
+		if (ane_floor_state_read(p->state, &st) != 0)
+			return;	/* no record left: nothing is held */
+		for (j = 0; j < st.npids; j++) {
+			if (st.pids[j] == ppid) {
+				ticks = st.ticks[j];
+				found = 1;
+				break;
+			}
+		}
+		if (!found || ane_floor_pid_dead(ppid, ticks))
+			return;	/* this run is out; whoever is left is alive */
+		nanosleep(&step, NULL);
+	}""",
+        """	if (!ane_floor_pid_dead(ppid, 0))
+		ane_floor_reconcile(p);"""),
 }
 
 

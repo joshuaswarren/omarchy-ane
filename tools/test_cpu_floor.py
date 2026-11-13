@@ -70,12 +70,16 @@ def wait_for(pred, timeout=5.0, step=0.05):
     return pred()
 
 
-def serve(tree, seconds, tag):
+def serve(tree, seconds, tag, slowclose=False):
     # start_new_session: the watchdog child joins the group, so a full crash
     # (server plus watchdog) is one killpg to a group this test owns.
+    argv = [str(SERVE), tag]
+    if slowclose:
+        argv[1:1] = ["slowclose", str(seconds)]
+    else:
+        argv[1:1] = [str(seconds)]
     return subprocess.Popen(
-        [str(SERVE), str(seconds), tag],
-        env=tree.env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        argv, env=tree.env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, start_new_session=True)
 
 
@@ -190,6 +194,28 @@ def sigkill_watchdog(ok):
         p.wait(10)
         ok(wait_for(lambda: restored(t)), "watchdog restores after SIGKILL")
         ok(wait_for(lambda: not t.state.exists()), "watchdog removes the state")
+    finally:
+        t.close()
+
+
+@case
+def slow_teardown(ok):
+    """A dying holder releases its fds (the watchdog pipe among them) inside
+    do_exit, BEFORE exit_notify makes it a zombie: the watchdog's first look
+    can still see the holder alive, keep the record and leave the floor
+    raised. slowclose cuts the pipe while the holder lives and dies only
+    later -- the same order, wide enough to lose the race on purpose -- so
+    the watchdog must keep reconciling until the holder is really gone."""
+    t = Tree()
+    try:
+        p = serve(t, 0.5, "floor-slow", slowclose=True)
+        ok(p.stdout.readline().strip() == "FLOOR raised", "serve reports the raise")
+        ok(raised(t), "floor applied while the holder lives")
+        p.wait(10)
+        ok(wait_for(lambda: restored(t), timeout=10.0),
+           "watchdog rides out the slow teardown")
+        ok(wait_for(lambda: not t.state.exists()),
+           "state removed after the slow teardown")
     finally:
         t.close()
 
