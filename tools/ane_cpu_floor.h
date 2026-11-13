@@ -47,10 +47,14 @@
  *     the state file once the parent is really gone -- a dying process
  *     releases its fds (the pipe among them) inside do_exit, before
  *     exit_notify makes it a zombie, so the first look at the pid can still
- *     say alive;
- *   - a watchdog that dies too (or a run that was killed before it could
- *     record anything): the state file survives as the stale-state record and
- *     the next begin reconciles it before raising again.
+ *     say alive. The watchdog runs in its own session (setsid) with SIGHUP,
+ *     SIGINT, SIGQUIT and SIGTERM ignored, so a group kill that takes the
+ *     run -- systemd's KillMode, the OOM killer, a pkill sweep (#413) --
+ *     leaves the watchdog alive to restore;
+ *   - a watchdog SIGKILLed itself, OOM-killed, or a run that was killed
+ *     before it could record anything: the state file survives as the
+ *     stale-state record and the next begin reconciles it before raising
+ *     again.
  *
  * Concurrent ane-run instances share one state file under a flock, and no
  * begin ever lowers the file: a fresh raise sits out when the file already
@@ -516,13 +520,19 @@ static void ane_floor_watchdog_reconcile(const struct ane_floor_paths *p, int pp
  * child then reconciles under the lock. */
 static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 {
-	int fds[2];
+	int fds[2], syncfds[2];
 	pid_t kid;
 	pid_t ppid = getpid();	/* read before the fork: the child inherits it */
 	const struct timespec fstep = { 0, 50 * 1000 * 1000 };
+	char c;
 
 	if (pipe(fds))
 		return;
+	if (pipe(syncfds)) {
+		close(fds[0]);
+		close(fds[1]);
+		return;
+	}
 	kid = fork();
 	if (kid < 0) {
 		/* a fork can fail on a loaded host, and the watchdog is the
@@ -533,13 +543,33 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 	if (kid < 0) {
 		close(fds[0]);
 		close(fds[1]);
+		close(syncfds[0]);
+		close(syncfds[1]);
 		return;
 	}
 	if (kid == 0) {
 		struct pollfd pfd;
 		int rfd = fds[0];
 
+		/* the watchdog detaches into its own session and ignores the
+		 * catchable deaths: a group SIGHUP, SIGQUIT or SIGKILL that
+		 * takes the run (#413: systemd's KillMode, the OOM killer, a
+		 * pkill sweep) leaves the watchdog alive to restore. A
+		 * SIGKILL aimed at the watchdog itself still strands the
+		 * floor until the next ANE_CPU_FLOOR run. */
+		setsid();
+		signal(SIGHUP, SIG_IGN);
+		signal(SIGINT, SIG_IGN);
+		signal(SIGQUIT, SIG_IGN);
+		signal(SIGTERM, SIG_IGN);
+		/* tell the parent the detachment is done: until this byte,
+		 * a group kill aimed at the run would still land here */
+		if (write(syncfds[1], "D", 1) != 1)
+			_exit(0);
+
 		close(fds[1]);
+		close(syncfds[1]);
+		close(syncfds[0]);
 		pfd.fd = rfd;
 		pfd.events = POLLIN;
 		for (;;) {
@@ -557,6 +587,13 @@ static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
 		_exit(0);
 	}
 	close(fds[0]);
+	close(syncfds[1]);
+	/* wait for the watchdog's detachment before anything can signal this
+	 * process group; a watchdog that died before the byte releases the
+	 * pipe and this read returns */
+	while (read(syncfds[0], &c, 1) < 0 && errno == EINTR)
+		;
+	close(syncfds[0]);
 	ane_floor_pipe_w = fds[1];
 }
 

@@ -302,12 +302,22 @@ MUTANTS = {
     "join_writes_below": (None,
         "if (end != buf && cur >= floor)",
         "if (end != buf && (cur >= floor || cur < floor))"),
-    # SIGHUP joins the chained set: a group hangup must not strand the floor
-    "sighup_not_chained": ("sighup_group",
+    # SIGHUP joins the chained set: with the watchdog killed first, only
+    # the run's handler can restore a hangup death
+    "sighup_not_chained": ("sighup_no_watchdog",
         "static const int sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT,",
         "static const int sigs[] = { SIGINT, SIGTERM,"),
-    # SIGQUIT joins the chained set: a group ^\\ must not strand the floor
-    "sigquit_not_chained": ("sigquit_group",
+    # the watchdog must survive the run's group being SIGKILLed (#413):
+    # it detaches into its own session, so killpg of the run's group
+    # cannot reach it
+    "watchdog_setsid_removed": ("crash_all_stale",
+        """		setsid();
+		signal(SIGHUP, SIG_IGN);""",
+        """		(void)0;
+		signal(SIGHUP, SIG_IGN);"""),
+    # SIGQUIT joins the chained set: with the watchdog killed first, only
+    # the run's handler can restore a quit death
+    "sigquit_not_chained": ("sigquit_no_watchdog",
         """static const int sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT,
 					    SIGPIPE, SIGALRM };""",
         """static const int sigs[] = { SIGINT, SIGTERM, SIGHUP,

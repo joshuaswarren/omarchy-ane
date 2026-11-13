@@ -89,6 +89,15 @@ def kill_group(proc):
         pass
 
 
+def watchdog_pid(proc):
+    """The forked watchdog child, via /proc; [] when it has not forked yet
+    or already exited."""
+    try:
+        return Path(f"/proc/{proc.pid}/task/{proc.pid}/children").read_text().split()
+    except (FileNotFoundError, ProcessLookupError):
+        return []
+
+
 def raised(tree):
     return tree.freq.read_bytes().strip() == b"1968000"
 
@@ -186,9 +195,9 @@ def sigint(ok):
 @case
 def sighup_group(ok):
     """SIGHUP to the whole process group, the shape of a terminal or ssh
-    hangup: the run's chained handler must restore before the default
-    action kills it -- the watchdog shares the group and dies too, so it
-    cannot cover this (the catchable half of #413's cause)."""
+    hangup: the run restores -- through its chained handler, or through
+    the watchdog, which since #413 runs detached in its own session and
+    survives the group delivery."""
     t = Tree()
     try:
         p = serve(t, 60, "floor-hup")
@@ -204,8 +213,9 @@ def sighup_group(ok):
 
 @case
 def sigquit_group(ok):
-    """SIGQUIT to the whole process group (a group ^\\): the chained
-    handler restores and the run still dies by SIGQUIT."""
+    """SIGQUIT to the whole process group (a group ^\\): the run restores
+    through the chained handler or the detached watchdog and still dies
+    by SIGQUIT."""
     t = Tree()
     try:
         p = serve(t, 60, "floor-quit")
@@ -215,6 +225,54 @@ def sigquit_group(ok):
         ok(wait_for(lambda: restored(t)), "the group quit restores")
         ok(wait_for(lambda: not t.state.exists()),
            "the group quit removes the state")
+    finally:
+        t.close()
+
+
+@case
+def sighup_no_watchdog(ok):
+    """SIGHUP to the run alone with the watchdog killed first: nothing
+    but the run's chained handler can restore now. Without SIGHUP in the
+    chained set the default action kills the run with the floor raised
+    and nothing restores it."""
+    t = Tree()
+    try:
+        p = serve(t, 60, "floor-hup-nw")
+        p.stdout.readline()
+        ok(len(watchdog_pid(p)) == 1, "the watchdog is forked")
+        for w in watchdog_pid(p):
+            try:
+                os.kill(int(w), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        p.send_signal(signal.SIGHUP)
+        ok(p.wait(10) == -signal.SIGHUP, "SIGHUP still terminates by signal")
+        ok(wait_for(lambda: restored(t)), "the handler restores without a watchdog")
+        ok(wait_for(lambda: not t.state.exists()),
+           "the handler removes the state without a watchdog")
+    finally:
+        t.close()
+
+
+@case
+def sigquit_no_watchdog(ok):
+    """SIGQUIT to the run alone with the watchdog killed first: the
+    chained handler restores, the run still dies by SIGQUIT."""
+    t = Tree()
+    try:
+        p = serve(t, 60, "floor-quit-nw")
+        p.stdout.readline()
+        ok(len(watchdog_pid(p)) == 1, "the watchdog is forked")
+        for w in watchdog_pid(p):
+            try:
+                os.kill(int(w), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        p.send_signal(signal.SIGQUIT)
+        ok(p.wait(10) == -signal.SIGQUIT, "SIGQUIT still terminates by signal")
+        ok(wait_for(lambda: restored(t)), "the handler restores without a watchdog")
+        ok(wait_for(lambda: not t.state.exists()),
+           "the handler removes the state without a watchdog")
     finally:
         t.close()
 
@@ -306,15 +364,23 @@ def concurrent_refcount(ok):
 
 @case
 def crash_all_stale(ok):
-    """SIGKILL the server and its watchdog: the next run reconciles the stale state."""
+    """SIGKILL the run's whole group - systemd's KillMode, the OOM killer,
+    a pkill -9 sweep (#413): the watchdog runs detached in its own session
+    with the catchable deaths ignored, so it survives the group kill and
+    restores the floor itself. The stale record is then crafted by hand,
+    because nothing natural leaves one anymore: the next run reconciles
+    it before it raises."""
     t = Tree()
     try:
         p = serve(t, 60, "floor-crash")
         p.stdout.readline()
         kill_group(p)
         p.wait(10)
-        time.sleep(0.3)
-        ok(t.state.exists() and raised(t), "orphaned state survives the full crash")
+        ok(wait_for(lambda: restored(t), timeout=15.0),
+           "the group SIGKILL cannot take the detached watchdog down")
+        ok(wait_for(lambda: not t.state.exists(), timeout=15.0),
+           "the surviving watchdog removes the state")
+        t.state.write_text("saved 702000\npid 4000000\n")
         p2 = serve(t, 0.4, "floor-crash2")
         ok(p2.stdout.readline().strip() == "FLOOR raised", "next run raises after reconcile")
         ok("4000000" not in state_text(t), "stale pid dropped")
@@ -325,9 +391,9 @@ def crash_all_stale(ok):
 
 @case
 def crash_saved_value(ok):
-    """After a full crash the next run reconciles the stale state, and its
-    watchdog restores the recorded saved value - here 553000, not the
-    fixture's usual 702000, so a hard-coded restore cannot hide."""
+    """After a full group SIGKILL the detached watchdog (#413) restores
+    the recorded saved value - here 553000, not the fixture's usual
+    702000, so a hard-coded restore cannot hide."""
     t = Tree(freq=b"553000\n")
     try:
         p = serve(t, 60, "floor-saved")
@@ -335,15 +401,10 @@ def crash_saved_value(ok):
         ok(raised(t), "floor applied")
         kill_group(p)
         p.wait(10)
-        time.sleep(0.3)
-        ok(t.state.exists() and "saved 553000" in state_text(t),
-           "the stale record carries the real saved value")
-        p2 = serve(t, 60, "floor-saved2")
-        ok(p2.stdout.readline().strip() == "FLOOR raised", "next run raises after reconcile")
-        kill(p2)
-        p2.wait(10)
         ok(wait_for(lambda: t.freq.read_bytes().strip() == b"553000", timeout=15.0),
            "the watchdog restored the saved 553000")
+        ok(wait_for(lambda: not t.state.exists(), timeout=15.0),
+           "the state is removed")
     finally:
         t.close()
 
@@ -354,11 +415,14 @@ def ane_run_error_exit(ok):
     the production binary (built without ANE_CPU_FLOOR_TESTING), so the
     environment cannot point its sysfs writes or its state directory
     anywhere but the real paths - the fake tree stays untouched and no
-    floor line may appear on stderr, however the run exits."""
+    floor line may appear on stderr, however the run exits. The floor
+    variable itself is not set: a root run on a real t6021 would write
+    the real /sys/devices/system/cpu file, and make check must fail
+    closed - tests never touch real sysfs."""
     if not ANE_RUN.exists():
         ok(False, "tools/ane-run is not built (make tools first)")
         return
-    t = Tree()
+    t = Tree(floor=None)
     try:
         anec = TOOLS.parent / "fixtures/h14-anec/add/program-0.anec"
         p = subprocess.run(

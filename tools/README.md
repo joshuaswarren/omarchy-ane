@@ -18,9 +18,12 @@ may hold the lock itself, and if it never frees, only a SIG_DFL disposition
 re-raises and dies by the signal, while the watchdog restores at death);
 SIGKILL and crashes through a forked watchdog child; and a stale state file
 under `/run/ane-run` that the next run reconciles before it raises again.
-Only a SIGKILL that takes the run and its watchdog together (a group kill, a
-stop-timeout, the OOM killer) leaves the floor raised until the next
-`ANE_CPU_FLOOR` run reconciles it; that is issue #413's remaining half. The watchdog restores only once the dying
+The watchdog runs detached in its own session with SIGHUP, SIGINT, SIGQUIT
+and SIGTERM ignored, so a group kill that takes the run (systemd's
+KillMode, the OOM killer, a pkill sweep) leaves the watchdog alive to
+restore - that closes issue #413. What still strands the floor until the
+next `ANE_CPU_FLOOR` run reconciles it: a SIGKILL aimed at the watchdog
+itself, the OOM killer taking the watchdog, or a begin whose fork failed. The watchdog restores only once the dying
 holder is really gone: the dying process releases its file descriptors (the
 watchdog's pipe among them) before it becomes a zombie, so one reconcile at
 pipe close can still see it alive and would leave the floor raised. A holder
