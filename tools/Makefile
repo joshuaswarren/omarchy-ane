@@ -42,6 +42,14 @@ test_check_band: test_check_band.c ane_check_band.h
 test_ane_timing: test_ane_timing.c ane_timing.h
 	$(CC) $(CFLAGS) -o $@ test_ane_timing.c -lm
 
+# CPU clock floor (ane_cpu_floor.h): state machine over fake sysfs, host only.
+test_cpu_floor: test_cpu_floor.c ane_cpu_floor.h
+	$(CC) $(CFLAGS) -o $@ test_cpu_floor.c
+
+# The serving stand-in the process-level floor tests signal and kill.
+test_cpu_floor_serve: test_cpu_floor_serve.c ane_cpu_floor.h
+	$(CC) $(CFLAGS) -o $@ test_cpu_floor_serve.c
+
 # libane sources rebuilt with every unset stack variable filled with 0xfe,
 # and linked against the fake DRM node in test_libane_ioctl.c.
 LIBANE_SRC = ../libane/ane.c ../libane/ane_m2.c ../libane/ane_sha256.c
@@ -164,6 +172,9 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	$(PYTHON) ../ane/test/tm_telemetry_test.py
 	$(PYTHON) test_ane_run_expect_bind.py
 	$(PYTHON) test_h15_load.py
+	./test_cpu_floor
+	$(PYTHON) test_cpu_floor.py
+	$(PYTHON) test_cpu_floor_mutants.py
 ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_resident.py
 	$(PYTHON) test_qwen_resident_ab.py
@@ -211,4 +222,4 @@ else
 endif
 
 clean:
-	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing
+	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve
