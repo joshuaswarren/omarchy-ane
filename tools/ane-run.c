@@ -10,6 +10,7 @@
 
 #include "ane.h"
 #include "ane_m2.h"
+#include "ane_cpu_floor.h"
 
 /* Populate the nchw shadow for one channel. Used by --check OP in
  * ane-run.c to attach the proven oracle layout to an island ANEC
@@ -2041,6 +2042,10 @@ int main(int argc, char **argv)
 		free_port_read(&pr);
 		return ret;
 	}
+
+	/* The CPU clock floor (t6021 policy4) for the serving window; every exit
+	 * path after this restores, including the error returns below. */
+	ane_cpu_floor_begin();
 
 	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count, dev)
 			: (tile_shift ? __ane_init_shift(anec, dev, tile_shift)

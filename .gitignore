@@ -90,3 +90,5 @@ tools/test_t6021_legtab
 tools/test_t6021_mring
 tools/test_t6021_prog_lookup
 tools/test_t6021_progtab
+tools/test_cpu_floor
+tools/test_cpu_floor_serve
