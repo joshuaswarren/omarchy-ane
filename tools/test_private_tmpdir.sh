@@ -7,55 +7,54 @@
 # $TMPDIR), never at fixed shared /tmp names. Two concurrent
 # `make -C tools check` runs on one host used to share
 # /tmp/t6021-lookup-p*.anec; one run loaded the other's file mid-write
-# and segfaulted. The occupant check proves the fixed names are not
-# used; the concurrent check proves two instances coexist and that
-# nothing is left behind. usage: sh test_private_tmpdir.sh
-# [binary] [fixtures-dir]   (run from tools/)
+# and segfaulted. The binary reports its lookup directory through
+# T6021_LOOKUP_DIR_REPORT; this script runs two instances in separate
+# private TMPDIRs and asserts each reported, used and cleaned its own.
+# Nothing outside this script's own scratch tree is created or
+# checked, so concurrent copies of the script cannot interfere.
+# usage: sh test_private_tmpdir.sh [binary] [fixtures-dir]   (run from tools/)
 set -eu
 BIN=${1:-./test_libane_ioctl}
 FIX=${2:-../fixtures/h14-anec}
 fail=0
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 
-# An ordinary concurrent run -- or a crashed one -- leaves its file at
-# the fixed shared name. A directory there cannot be opened for
-# writing, so any use of the fixed name fails the run.
-for name in /tmp/t6021-lookup-p00.anec /tmp/t6021-lookup-alias.anec; do
-	mkdir "$name"
-done
-if "$BIN" "$FIX" >"$tmp/occupant.log" 2>&1; then
-	echo "ok: run with an occupant at the fixed /tmp names passed"
-else
-	echo "FAIL private tmpdir: the test still writes the fixed shared" \
-	     "/tmp/t6021-lookup-* names (occupant broke the run):"
-	tail -n 5 "$tmp/occupant.log"
-	fail=1
-fi
-rmdir /tmp/t6021-lookup-p00.anec /tmp/t6021-lookup-alias.anec
+# One scratch tree for everything this invocation creates; the trap is
+# set before any file or directory is made and removes only it.
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir "$scratch/p1" "$scratch/p2"
 
-# Two concurrent instances: both must pass and leave nothing behind.
-TMPDIR="$tmp" "$BIN" "$FIX" >"$tmp/c1.log" 2>&1 & p1=$!
-"$BIN" "$FIX" >"$tmp/c2.log" 2>&1 & p2=$!
+TMPDIR="$scratch/p1" T6021_LOOKUP_DIR_REPORT="$scratch/report1" \
+	"$BIN" "$FIX" >"$scratch/run1.log" 2>&1 & q1=$!
+TMPDIR="$scratch/p2" T6021_LOOKUP_DIR_REPORT="$scratch/report2" \
+	"$BIN" "$FIX" >"$scratch/run2.log" 2>&1 & q2=$!
 r1=0
 r2=0
-wait "$p1" || r1=$?
-wait "$p2" || r2=$?
-if [ "$r1" -eq 0 ] && grep -q 'IOCTL-CHECK PASS' "$tmp/c1.log" &&
-   [ "$r2" -eq 0 ] && grep -q 'IOCTL-CHECK PASS' "$tmp/c2.log"; then
-	echo "ok: two concurrent instances both passed"
-else
-	echo "FAIL private tmpdir: concurrent instances interfere" \
-	     "(exit $r1/$r2):"
-	tail -n 5 "$tmp/c1.log" "$tmp/c2.log"
-	fail=1
-fi
-if [ -z "$(ls /tmp/t6021-lookup-* "$tmp"/t6021-lookup-* 2>/dev/null)" ]; then
-	echo "ok: no lookup files left in /tmp or TMPDIR"
-else
-	echo "FAIL private tmpdir: lookup files left behind:" \
-	     "$(ls /tmp/t6021-lookup-* "$tmp"/t6021-lookup-* 2>/dev/null)"
-	fail=1
-fi
+wait "$q1" || r1=$?
+wait "$q2" || r2=$?
+
+for i in 1 2; do
+	log="$scratch/run$i.log"
+	rep="$scratch/report$i"
+	dir="$scratch/p$i"
+	ri=$(eval "echo \${r$i}")
+	if [ "$ri" -eq 0 ] && grep -q 'IOCTL-CHECK PASS' "$log" &&
+	   grep -q "^$dir/t6021-lookup-" "$rep" 2>/dev/null; then
+		echo "ok: instance $i built its lookup programs in its private TMPDIR"
+	else
+		echo "FAIL private tmpdir: instance $i did not use its" \
+		     "private TMPDIR (exit $ri):"
+		tail -n 5 "$log"
+		fail=1
+	fi
+	if [ -z "$(find "$dir" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+		echo "ok: instance $i left its private TMPDIR empty"
+	else
+		echo "FAIL private tmpdir: instance $i left files in its" \
+		     "private TMPDIR:"
+		find "$dir" -mindepth 1
+		fail=1
+	fi
+done
 
 exit "$fail"

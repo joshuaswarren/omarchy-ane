@@ -1172,6 +1172,7 @@ static void run_prog_lookup_body(const char *path)
 static void run_prog_lookup(const char *path)
 {
 	const char *base = getenv("TMPDIR");
+	const char *report = getenv("T6021_LOOKUP_DIR_REPORT");
 	char pattern[512];
 
 	if (!base || !*base) {
@@ -1184,6 +1185,17 @@ static void run_prog_lookup(const char *path)
 		return;
 	}
 	memcpy(lookup_dir, pattern, strlen(pattern) + 1);
+	/* Regression hook: test_private_tmpdir.sh reads the private
+	 * directory back through this file, so it never has to watch
+	 * or touch the shared /tmp names itself. */
+	if (report) {
+		FILE *r = fopen(report, "a");
+
+		if (r) {
+			fprintf(r, "%s\n", lookup_dir);
+			fclose(r);
+		}
+	}
 	run_prog_lookup_body(path);
 	run_prog_lookup_cleanup();
 }
