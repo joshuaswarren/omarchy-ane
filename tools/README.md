@@ -31,4 +31,9 @@ service); the package grants and installs no such privilege. On any SoC
 whose device tree does not name t6021, or without policy4, it is a silent
 no-op even when set. policy4 is the first P cluster: the M2 Max's second P
 cluster (policy8, cpus 8-11) is not floored, so work the scheduler places
-there runs ungated.
+there runs ungated. The host-test overrides (`ANE_RUN_CPUFREQ_ROOT`,
+`ANE_RUN_STATE_DIR`) are compiled out of the production `ane-run`: it is
+built without `-DANE_CPU_FLOOR_TESTING` and ignores both variables, so even
+a run with a preserved environment (sudo -E, env_keep) cannot have its
+sysfs writes or state directory pointed anywhere but the real paths; only
+the test binaries honor them.

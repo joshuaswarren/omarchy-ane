@@ -341,6 +341,52 @@ int main(void)
 		(void)unlink(path);
 	}
 
+	/* 13: the saved value is read under the lock: an administrator value
+	 * that lands in the file while a begin waits for the lock must not be
+	 * clobbered by a restore of a stale value read before the lock */
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	{
+		pid_t holder, kid;
+		int st, syncpipe[2], gopipe[2];
+		char c;
+		struct timespec settle = { 0, 500 * 1000 * 1000 };
+
+		EXPECT(pipe(syncpipe) == 0 && pipe(gopipe) == 0, "case 13 pipes open");
+		holder = fork();
+		if (holder == 0) {
+			int lfd2;
+			char lpath[1024];
+
+			ane_floor_join(lpath, sizeof(lpath), var, "ane-run.lock");
+			lfd2 = open(lpath, O_RDWR | O_CREAT, 0644);
+			flock(lfd2, LOCK_EX);
+			(void)write(syncpipe[1], "L", 1);
+			(void)read(gopipe[0], &c, 1);
+			/* the administrator change lands while the begin waits */
+			mkfreq(sysfs, "apple,t6021", "553000\n");
+			close(lfd2);	/* the waiting begin proceeds */
+			_exit(0);
+		}
+		(void)read(syncpipe[0], &c, 1);	/* the lock is held */
+		kid = fork();
+		if (kid == 0) {
+			ane_cpu_floor_forked_child();
+			ane_cpu_floor_begin();
+			ane_cpu_floor_end();
+			_exit(0);
+		}
+		nanosleep(&settle, NULL);	/* let the begin block on the lock */
+		(void)write(gopipe[1], "G", 1);
+		waitpid(holder, &st, 0);
+		waitpid(kid, &st, 0);
+		close(syncpipe[0]);
+		close(syncpipe[1]);
+		close(gopipe[0]);
+		close(gopipe[1]);
+		EXPECT(strcmp(freq_of(sysfs), "553000") == 0,
+			"an admin change landing during begin is not clobbered");
+	}
+
 	/* 10: the real compatible bytes are NUL separated; the gate must scan
 	 * every entry, so t6021 in the SECOND entry still engages the floor,
 	 * while a t60210 entry (t6021 as a substring) must not match. */

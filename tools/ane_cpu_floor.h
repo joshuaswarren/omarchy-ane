@@ -63,7 +63,12 @@
  * t6021, this is a silent no-op and ane-run never fails because of it. sysfs
  * is never made world-writable here.
  *
- * Host-test overrides (never set in production):
+ * Host-test overrides (compiled out of the production binary: ane-run is
+ * built without -DANE_CPU_FLOOR_TESTING and ignores both variables, so a
+ * run with a preserved environment -- sudo -E, env_keep, a root service
+ * with a user-influenced environment -- cannot have its sysfs writes or its
+ * state directory pointed anywhere but the real paths; the test binaries
+ * are built with the flag and honor them):
  *   ANE_RUN_CPUFREQ_ROOT  replaces /sys/devices/system/cpu with a fake tree;
  *                         the SoC gate then reads <root>/compatible;
  *   ANE_RUN_STATE_DIR     replaces /run/ane-run (lock and state files).
@@ -605,7 +610,7 @@ static int ane_cpu_floor_begin(void)
 	struct ane_floor_paths *p = &ane_floor_paths;
 	struct ane_floor_state st;
 	char buf[128], floor_out[32], *end;
-	const char *root, *dir, *env;
+	const char *root = NULL, *dir = NULL, *env;
 	unsigned long long saved, floor, my_ticks;
 	int lockfd, raised_fresh = 0;
 
@@ -626,8 +631,15 @@ static int ane_cpu_floor_begin(void)
 	}
 	if (ane_floor_held)
 		return 1;
+#ifdef ANE_CPU_FLOOR_TESTING
+	/* the host-test overrides are compiled out of the production binary:
+	 * ane-run is built without this flag, so a run with a preserved
+	 * environment (sudo -E, env_keep, a root service with a
+	 * user-influenced environment) cannot have its sysfs writes or its
+	 * state directory pointed anywhere but the real paths */
 	root = getenv(ANE_CPU_FLOOR_SYSFS_ENV);
 	dir = getenv(ANE_CPU_FLOOR_STATE_ENV);
+#endif
 	if (ane_floor_join(p->freq, sizeof(p->freq),
 			   root ? root : "/sys/devices/system/cpu",
 			   ANE_CPU_FLOOR_CPU "/cpufreq/scaling_min_freq"))
@@ -665,13 +677,6 @@ static int ane_cpu_floor_begin(void)
 		if (!hit)
 			return 0;
 	}
-	/* What the file holds now (an orphaned floor from a dead run counts only
-	 * after the stale record below has been reconciled). */
-	if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0)
-		return 0;
-	saved = strtoull(buf, &end, 10);
-	if (end == buf)
-		return 0;
 	my_ticks = ane_floor_start_ticks((int)getpid());
 
 	lockfd = ane_floor_lock(p);
@@ -736,9 +741,21 @@ static int ane_cpu_floor_begin(void)
 			raised_fresh = 1;
 		}
 	} else {
-		/* fresh, no record: the already-at-floor shortcut lives here, so a
-		 * holder joining a raised word or reconciling an orphan above is
-		 * never refused by it */
+		/* fresh, no record: the saved value is read under the lock, so
+		 * a value that lands in the file while this begin waited for
+		 * the lock wins, and a concurrent begin or end cannot feed a
+		 * stale one to the shortcut or to the record (an orphaned
+		 * floor from a dead run counts only after the stale-record
+		 * branch above has been reconciled) */
+		if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0) {
+			close(lockfd);
+			return 0;
+		}
+		saved = strtoull(buf, &end, 10);
+		if (end == buf) {
+			close(lockfd);
+			return 0;
+		}
 		if (saved >= floor) {
 			close(lockfd);
 			return 0;

@@ -22,7 +22,8 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 HEADER = (TOOLS / "ane_cpu_floor.h").read_text()
-CFLAGS = ["-std=gnu99", "-Wall", "-Wextra", "-Werror", "-O2"]
+CFLAGS = ["-std=gnu99", "-Wall", "-Wextra", "-Werror", "-O2",
+          "-DANE_CPU_FLOOR_TESTING"]
 
 # name -> (case for test_cpu_floor.py or None for the unit suite, old, new)
 MUTANTS = {
@@ -201,6 +202,27 @@ MUTANTS = {
 	ane_floor_release(&ane_floor_paths, 0);""",
         """	o = &ane_floor_old[sig == SIGINT ? 0 : 1];
 	ane_floor_release(&ane_floor_paths, 0);"""),
+    # the fresh branch must read the saved value under the lock: a mutant
+    # that trusts a value read before the lock clobbers an administrator
+    # change that landed while the begin waited (unit case 13, and case 2's
+    # 553000 restore)
+    "fresh_saved_stale_value": (None,
+        """		/* fresh, no record: the saved value is read under the lock, so
+		 * a value that lands in the file while this begin waited for
+		 * the lock wins, and a concurrent begin or end cannot feed a
+		 * stale one to the shortcut or to the record (an orphaned
+		 * floor from a dead run counts only after the stale-record
+		 * branch above has been reconciled) */
+		if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0) {
+			close(lockfd);
+			return 0;
+		}
+		saved = strtoull(buf, &end, 10);
+		if (end == buf) {
+			close(lockfd);
+			return 0;
+		}""",
+        """		saved = 702000ULL;"""),
     # the watchdog must ride out the dying-parent window: the fds close in
     # do_exit before the dying process is a zombie, so one reconcile at pipe
     # close can still see it alive and leave the floor raised

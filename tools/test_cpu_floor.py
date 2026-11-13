@@ -314,7 +314,11 @@ def crash_saved_value(ok):
 
 @case
 def ane_run_error_exit(ok):
-    """The real ane-run, no device: the raise still unwinds on the error exit."""
+    """The real ane-run, no device: the test overrides are compiled out of
+    the production binary (built without ANE_CPU_FLOOR_TESTING), so the
+    environment cannot point its sysfs writes or its state directory
+    anywhere but the real paths - the fake tree stays untouched and no
+    floor line may appear on stderr, however the run exits."""
     if not ANE_RUN.exists():
         ok(False, "tools/ane-run is not built (make tools first)")
         return
@@ -325,8 +329,10 @@ def ane_run_error_exit(ok):
             [str(ANE_RUN), "--anec", str(anec)],
             env=t.env(), capture_output=True, text=True, timeout=60)
         ok(p.returncode == 1, "ane-run fails on the missing device as before")
-        ok(restored(t), "the error exit restored the saved value")
-        ok(not t.state.exists(), "the error exit removed the state")
+        ok("cpu floor" not in p.stderr,
+           "ane-run honors no test overrides: no floor line on stderr")
+        ok(t.freq.read_bytes() == b"702000\n", "the fake sysfs tree is untouched")
+        ok(not t.state.exists(), "no state file under the fake state dir")
     finally:
         t.close()
 
