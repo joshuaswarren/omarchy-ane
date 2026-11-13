@@ -152,7 +152,8 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
 check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
-	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing
+	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing \
+	test_cpu_floor test_cpu_floor_serve
 	sh test_ane_run_tile_shift.sh ./ane-run
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
