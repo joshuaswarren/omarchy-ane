@@ -853,11 +853,36 @@ static int ane_m2_fread_build_digest(const void *buf, uint64_t len,
 	return err;
 }
 
-static void run_prog_lookup(const char *path)
+/* The synthetic lookup programs live in one per-run private directory:
+ * two concurrent make check runs on one host must not share file names
+ * (one run used to load the other's /tmp/t6021-lookup-*.anec and
+ * segfault). One mkdtemp at test start, everything under it, removed
+ * on every exit path. */
+static char lookup_dir[512];
+
+static void run_prog_lookup_cleanup(void)
+{
+	char p[512];
+	int n;
+
+	if (!lookup_dir[0]) {
+		return;
+	}
+	for (n = 0; n < LOOKUP_N; n++) {
+		snprintf(p, sizeof(p), "%s/p%02d.anec", lookup_dir, n);
+		unlink(p);
+	}
+	snprintf(p, sizeof(p), "%s/alias.anec", lookup_dir);
+	unlink(p);
+	rmdir(lookup_dir);
+	lookup_dir[0] = '\0';
+}
+
+static void run_prog_lookup_body(const char *path)
 {
 	const int before = failures;
 	static struct ane_nn *nns[3][LOOKUP_N];
-	static char paths[LOOKUP_N][64];
+	static char paths[LOOKUP_N][512];
 	static unsigned d1_prog[LOOKUP_N];
 	uint64_t held_pass1 = 0;
 	int pass, n;
@@ -892,14 +917,12 @@ static void run_prog_lookup(const char *path)
 		uint8_t *buf;
 		long len, off;
 		int ok = 0;
-		char name[64];
 		uint8_t base[ANE_SHA256_LEN], d[ANE_SHA256_LEN];
 		FILE *in = fopen(path, "rb");
 		FILE *out;
 
-		snprintf(name, sizeof(name),
-			 "/tmp/t6021-lookup-p%02d.anec", n);
-		memcpy(paths[n], name, sizeof(name));
+		snprintf(paths[n], sizeof(paths[n]),
+			 "%s/p%02d.anec", lookup_dir, n);
 		if (!in) {
 			printf("FAIL lookup: cannot read %s\n", path);
 			failures++;
@@ -1068,17 +1091,20 @@ static void run_prog_lookup(const char *path)
 	 * would have returned the held program and allocated nothing)
 	 * and becomes its own registered program. */
 	{
-		const char *alias = "/tmp/t6021-lookup-alias.anec";
+		char alias[512];
 		unsigned start = n_init_sizes;
 		unsigned delta;
 		struct ane_nn *nn;
 		uint8_t pdig[ANE_SHA256_LEN], adig[ANE_SHA256_LEN];
 		FILE *in = fopen(paths[0], "rb");
-		FILE *out = fopen(alias, "wb");
+		FILE *out = NULL;
 		uint8_t *buf;
 		long len, off;
 		int ok = 0;
 
+		snprintf(alias, sizeof(alias), "%s/alias.anec",
+			 lookup_dir);
+		out = fopen(alias, "wb");
 		if (!in || !out) {
 			if (in)
 				fclose(in);
@@ -1135,14 +1161,31 @@ static void run_prog_lookup(const char *path)
 		if (nn) {
 			ane_free(nn);
 		}
-		unlink(alias);
 	}
 
-	/* cleanup */
-	for (n = 0; n < LOOKUP_N; n++) {
-		unlink(paths[n]);
-	}
 	(void)before;
+}
+
+/* One private mkdtemp directory (honouring $TMPDIR, default /tmp),
+ * every lookup file under it, removed on every exit path -- the body
+ * returns early on several failure paths. */
+static void run_prog_lookup(const char *path)
+{
+	const char *base = getenv("TMPDIR");
+	char pattern[512];
+
+	if (!base || !*base) {
+		base = "/tmp";
+	}
+	snprintf(pattern, sizeof(pattern), "%s/t6021-lookup-XXXXXX", base);
+	if (!mkdtemp(pattern)) {
+		printf("FAIL lookup: mkdtemp %s failed\n", pattern);
+		failures++;
+		return;
+	}
+	memcpy(lookup_dir, pattern, strlen(pattern) + 1);
+	run_prog_lookup_body(path);
+	run_prog_lookup_cleanup();
 }
 
 int main(int argc, char **argv)
