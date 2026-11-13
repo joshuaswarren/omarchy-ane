@@ -36,6 +36,25 @@ static void ane_floor_test_signal(int sig)
 	(void)sig;	/* swallow the re-raised signal: proves the release ran */
 }
 
+/* /proc/device-tree/compatible on the 14-inch M2 Max: NUL separated entries,
+ * captured from row m2-cpu-floor-pr411-078's finding. strlen on the buffer
+ * sees only the first entry. */
+static const char compat_real_m2[] =
+	"apple,j414c\0apple,t6021\0apple,arm-platform\0";
+
+static void mkcompat(const char *root, const void *data, size_t len)
+{
+	char path[1024];
+	FILE *f;
+
+	ane_floor_join(path, sizeof(path), root, "compatible");
+	f = fopen(path, "w");
+	if (!f)
+		return;
+	fwrite(data, 1, len, f);
+	fclose(f);
+}
+
 static void mkfreq(const char *root, const char *compat, const char *val)
 {
 	char path[1024];
@@ -120,7 +139,7 @@ int main(void)
 		unsetenv(ANE_CPU_FLOOR_ENV);
 		unsetenv(ANE_CPU_FLOOR_STATE_ENV);
 		mkdir(sysfs, 0755);
-		mkfreq(sysfs, "apple,t6021\n", "placeholder");
+		mkfreq(sysfs, "apple,t6021", "placeholder");
 		ane_floor_join(path, sizeof(path), sysfs, "cpu4/cpufreq/scaling_min_freq");
 		unlink(path);
 		if (mkfifo(path, 0644))
@@ -143,7 +162,7 @@ int main(void)
 		EXPECT(ane_cpu_floor_begin() == 0, "zero ANE_CPU_FLOOR: begin skips");
 		setenv(ANE_CPU_FLOOR_STATE_ENV, var, 1);
 		setenv(ANE_CPU_FLOOR_ENV, "1000000", 1);
-		mkfreq(sysfs, "apple,t6021\n", "702000\n");
+		mkfreq(sysfs, "apple,t6021", "702000\n");
 		EXPECT(ane_cpu_floor_begin() == 1, "a custom floor value is honoured");
 		EXPECT(strstr(freq_of(sysfs), "1000000") != NULL, "the floor comes from the env, not a constant");
 		ane_cpu_floor_end();
@@ -153,7 +172,8 @@ int main(void)
 
 	/* 1: normal restore -- raise, then end puts the SAVED value back */
 	mkdir(var, 0755);
-	mkfreq(sysfs, "apple,j414s\napple,t6021\n", "702000\n");
+	mkfreq(sysfs, "apple,t6021", "702000\n");
+	mkcompat(sysfs, compat_real_m2, sizeof(compat_real_m2));
 	EXPECT(ane_cpu_floor_begin() == 1, "t6021 with policy4: begin participates");
 	EXPECT(strcmp(freq_of(sysfs), "1968000") == 0, "begin writes the floor");
 	EXPECT(strstr(state_of(var), "saved 702000") != NULL, "state records the saved value");
@@ -162,7 +182,7 @@ int main(void)
 	EXPECT(strstr(state_of(var), "<absent>") != NULL, "end removes the state file");
 
 	/* 2: the saved value is whatever was there, never a constant */
-	mkfreq(sysfs, "apple,t6021\n", "553000\n");
+	mkfreq(sysfs, "apple,t6021", "553000\n");
 	EXPECT(ane_cpu_floor_begin() == 1, "second cycle participates");
 	ane_cpu_floor_end();
 	EXPECT(strcmp(freq_of(sysfs), "553000") == 0, "restore is not hardcoded");
@@ -178,7 +198,7 @@ int main(void)
 	EXPECT(strstr(state_of(var), "<absent>") != NULL, "t8103: no state file");
 
 	/* 5: no policy4: silent no-op */
-	mkfreq(sysfs, "apple,t6021\n", "");
+	mkfreq(sysfs, "apple,t6021", "");
 	{
 		char path[1024];
 		ane_floor_join(path, sizeof(path), sysfs, "cpu4/cpufreq/scaling_min_freq");
@@ -188,17 +208,17 @@ int main(void)
 	EXPECT(strstr(state_of(var), "<absent>") != NULL, "no policy4: no state file");
 
 	/* 6: saved value unreadable (garbage): silent no-op */
-	mkfreq(sysfs, "apple,t6021\n", "nonsense\n");
+	mkfreq(sysfs, "apple,t6021", "nonsense\n");
 	EXPECT(ane_cpu_floor_begin() == 0, "unreadable saved value: begin skips");
 
 	/* 7: already at or above the floor: nothing to do */
-	mkfreq(sysfs, "apple,t6021\n", "1968000\n");
+	mkfreq(sysfs, "apple,t6021", "1968000\n");
 	EXPECT(ane_cpu_floor_begin() == 0, "floor already applied: begin skips");
-	mkfreq(sysfs, "apple,t6021\n", "3264000\n");
+	mkfreq(sysfs, "apple,t6021", "3264000\n");
 	EXPECT(ane_cpu_floor_begin() == 0, "above the floor: begin skips");
 
 	/* 8: write refused (read-only sysfs file): silent skip, no state */
-	mkfreq(sysfs, "apple,t6021\n", "702000\n");
+	mkfreq(sysfs, "apple,t6021", "702000\n");
 	{
 		char path[1024];
 		ane_floor_join(path, sizeof(path), sysfs, "cpu4/cpufreq/scaling_min_freq");
@@ -211,7 +231,7 @@ int main(void)
 	}
 
 	/* 9: two holders -- the floor outlives the first to leave, the last restores */
-	mkfreq(sysfs, "apple,t6021\n", "702000\n");
+	mkfreq(sysfs, "apple,t6021", "702000\n");
 	EXPECT(ane_cpu_floor_begin() == 1, "first holder raises");
 	{
 		pid_t kid = fork();
@@ -235,7 +255,7 @@ int main(void)
 	}
 
 	/* 10: stale state (holder pid is dead) is reconciled by the next begin */
-	mkfreq(sysfs, "apple,t6021\n", "1968000\n");
+	mkfreq(sysfs, "apple,t6021", "1968000\n");
 	{
 		char path[1024];
 		FILE *f;
@@ -252,7 +272,7 @@ int main(void)
 	EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "the reconciled cycle restores too");
 
 	/* 11: an end under a live foreign holder leaves the floor to that holder */
-	mkfreq(sysfs, "apple,t6021\n", "702000\n");
+	mkfreq(sysfs, "apple,t6021", "702000\n");
 	{
 		pid_t kid = fork();
 
@@ -275,6 +295,25 @@ int main(void)
 		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "foreign holder restored at its end");
 	}
 
+	/* 10: the real compatible bytes are NUL separated; the gate must scan
+	 * every entry, so t6021 in the SECOND entry still engages the floor,
+	 * while a t60210 entry (t6021 as a substring) must not match. */
+	{
+		static const char compat_t60210[] = "apple,t60210\0apple,arm-platform\0";
+
+		mkfreq(sysfs, "", "702000\n");
+		mkcompat(sysfs, compat_real_m2, sizeof(compat_real_m2));
+		EXPECT(ane_cpu_floor_begin() == 1, "NUL separated compatible: the second entry matches");
+		EXPECT(strstr(freq_of(sysfs), "1968000") != NULL, "the floor engaged on the real bytes");
+		ane_cpu_floor_end();
+		EXPECT(strcmp(freq_of(sysfs), "702000") == 0, "and restored again");
+
+		mkfreq(sysfs, "", "702000\n");
+		mkcompat(sysfs, compat_t60210, sizeof(compat_t60210));
+		EXPECT(ane_cpu_floor_begin() == 0, "t6021 as a substring of t60210 does not match");
+		EXPECT(strstr(freq_of(sysfs), "702000") != NULL, "the near-miss entry leaves sysfs alone");
+	}
+
 	/* 9: the signal handler itself must restore before it hands the signal
 	 * back: a captured SIGTERM proves the release happened in the dying
 	 * process, not later in the watchdog. */
@@ -284,7 +323,7 @@ int main(void)
 		memset(&cap, 0, sizeof(cap));
 		cap.sa_handler = ane_floor_test_signal;
 		sigaction(SIGTERM, &cap, NULL);
-		mkfreq(sysfs, "apple,t6021\n", "702000\n");
+		mkfreq(sysfs, "apple,t6021", "702000\n");
 		EXPECT(ane_cpu_floor_begin() == 1, "raise before the captured signal");
 		EXPECT(strstr(freq_of(sysfs), "1968000") != NULL, "floor applied before the signal");
 		raise(SIGTERM);

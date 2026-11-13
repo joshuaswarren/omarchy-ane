@@ -87,6 +87,31 @@ MUTANTS = {
     "join_drops_pid": ("concurrent_refcount",
         "st.pids[st.npids] = (int)getpid();",
         "st.npids = 1; st.pids[0] = 0;"),
+    # the SoC gate must walk the NUL separated compatible entries; a strstr on
+    # the whole buffer scans only the first entry and never sees "apple,t6021"
+    "gate_uses_strstr": (None,
+        """	{
+		int gotc = ane_floor_read(p->compat, buf, sizeof(buf));
+		size_t off;
+		int hit = 0;
+
+		if (gotc < 0)
+			return 0;
+		for (off = 0; off < (size_t)gotc; off += strlen(buf + off) + 1) {
+			if (!strcmp(buf + off, "apple,t6021")) {
+				hit = 1;
+				break;
+			}
+		}
+		if (!hit)
+			return 0;
+	}""",
+        """		if (ane_floor_read(p->compat, buf, sizeof(buf)) < 0 || !strstr(buf, "t6021"))
+			return 0;"""),
+    # whole-entry equality: a longer entry such as "apple,t60210" is not a match
+    "gate_matches_substring": (None,
+        """			if (!strcmp(buf + off, "apple,t6021")) {""",
+        """			if (strstr(buf + off, "apple,t6021")) {"""),
     # the opt-in gate: with ANE_CPU_FLOOR absent nothing may be read or written
     "optin_gate_removed": (None,
         """	env = getenv(ANE_CPU_FLOOR_ENV);

@@ -534,9 +534,28 @@ static int ane_cpu_floor_begin(void)
 	if (ane_floor_join(p->lock, sizeof(p->lock), p->dir, "ane-run.lock"))
 		return 0;
 
-	/* SoC gate: t6021 in the device tree, else silent no-op (M1 and every other chip). */
-	if (ane_floor_read(p->compat, buf, sizeof(buf)) < 0 || !strstr(buf, "t6021"))
-		return 0;
+	/* SoC gate: t6021 in the device tree, else silent no-op (M1 and every
+	 * other chip). compatible is a NUL separated list of entries
+	 * ("apple,j414c\0apple,t6021\0apple,arm-platform\0"); a strstr on the
+	 * whole buffer scans only the first entry, so walk every entry and
+	 * require whole-entry equality with "apple,t6021" - a longer entry such
+	 * as "apple,t60210" is not a match. */
+	{
+		int gotc = ane_floor_read(p->compat, buf, sizeof(buf));
+		size_t off;
+		int hit = 0;
+
+		if (gotc < 0)
+			return 0;
+		for (off = 0; off < (size_t)gotc; off += strlen(buf + off) + 1) {
+			if (!strcmp(buf + off, "apple,t6021")) {
+				hit = 1;
+				break;
+			}
+		}
+		if (!hit)
+			return 0;
+	}
 	/* What the file holds now (an orphaned floor from a dead run counts only
 	 * after the stale record below has been reconciled). */
 	if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0)

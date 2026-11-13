@@ -22,7 +22,9 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 SERVE = Path(os.environ.get("ANE_RUN_FLOOR_SERVE") or TOOLS / "test_cpu_floor_serve")
 ANE_RUN = TOOLS / "ane-run"
-COMPAT_T6021 = b"apple,j414s\napple,t6021\n"
+# /proc/device-tree/compatible holds NUL separated entries on the real
+# machine (row m2-cpu-floor-pr411-078): "apple,j414c", "apple,t6021", ...
+COMPAT_T6021 = b"apple,j414c\x00apple,t6021\x00apple,arm-platform\x00"
 
 
 class Tree:
