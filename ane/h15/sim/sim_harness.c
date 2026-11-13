@@ -277,6 +277,7 @@ static void reset_all(void)
 	cold_first = false;
 	probe_gates = false;
 	probe_pc = false;
+	probe_mbx = false;
 	fw_seg = NULL;
 	sim_region_ram = REGION_DISJOINT;
 	sim_n_iocalls = sim_io_fail = sim_n_dom_live = sim_map_fail_at = sim_unmap_fail_at = 0;
@@ -3437,6 +3438,26 @@ static void pos_enable_fail_gates(void)
 	chk(ret == 0 && events_in(s->engine_pa + 0x1844000, 4, 0) == 2 && events_in(s->engine_pa + 0x184c000, 4, 0) == 2 &&
 	    events_in(s->engine_pa + 0x1850000, 4, 0) == 2,
 	    "EO9 probe_scr on T6030 reads the doorbell, irq status and irq ack words twice (before RUN, after the wait), no writes there");
+	remove_if_probed();
+
+	map_setup(&ane_t6031_soc, "apple,t6031-ane");
+	probe_scr = false;
+	probe_mbx = true;
+	ret = probe_now();
+	chk(ret != 0 && sim_n_iomap == 0 && events_in(0, ~0ULL, 0) == 0 && log_count("REFUSED reason=probe_gates_probe_pc_probe_scr_probe_mbx") == 1,
+	    "EO10 probe_mbx on T6031 is refused by the row gate, before any mapping or access");
+	remove_if_probed();
+
+	map_setup(s, "apple,t6030-ane");
+	probe_scr = false;
+	probe_mbx = true;
+	ret = probe_now();
+	chk(ret == 0 && events_in(s->engine_pa + 0x1844000, 4, 0) == 3 && events_in(s->engine_pa + 0x184c000, 4, 0) == 3 &&
+	    events_in(s->engine_pa + 0x1850000, 4, 0) == 3 && log_count("ane_h15 mbx t+1000ms") == 1 &&
+	    log_count("ane_h15 mbx t+5000ms") == 1 && log_count("ane_h15 mbx t+10000ms") == 1 &&
+	    events_in(s->engine_pa + 0x1844000, 4, 1) == 0 && events_in(s->engine_pa + 0x184c000, 4, 1) == 0 &&
+	    events_in(s->engine_pa + 0x1850000, 4, 1) == 0,
+	    "EO11 probe_mbx on T6030 samples the mailbox control and irq words at 1, 5 and 10 s, reads only");
 	remove_if_probed();
 	if (fails == before)
 		printf("    EO failure paths and row gates PASS\n");
