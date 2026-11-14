@@ -7,7 +7,7 @@ executes, reads and unpacks. The libane src/dst index order of every program com
 does not name get zeros of the header's tile size).
 
 Run: MIL_HWXC_DIR=/path/to/mil-hwx-compiler python3 h13_qwen_decode.py --pkg DIR --lib libane_python.so --out OUT [--prompts N] [--tokens T]
-MIL_HWXC_DIR is a mil-hwx-compiler checkout: tools/h13_run_linux.py there supplies LibANEAdapter and PreparedProgram (the libane binding and the strided-surface packing).
+MIL_HWXC_DIR is a mil-hwx-compiler checkout: tools/h13_run_linux.py there supplies LibANEAdapter and PreparedProgram (the libane binding and the strided-surface packing). The checkout needs PreparedProgram.send_surfaces (mil-hwx-compiler 1b8c11b or later).
 """
 import argparse
 import hashlib
@@ -141,8 +141,7 @@ class H13Decoder(dec.Decoder):
         in_ports, in_sizes, out_ports = self.plan[i]
         prog = self.prepared[i]
         data = [pack(arrays[p["name"]], p, size) if p else bytes(size) for p, size in zip(in_ports, in_sizes)]
-        prog.refill(data)
-        prog.transfer_in()
+        prog.send_surfaces(data)
         start = time.perf_counter()
         prog.submit()
         exec_ms = 1e3 * (time.perf_counter() - start)
