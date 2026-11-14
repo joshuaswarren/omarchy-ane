@@ -27,6 +27,8 @@ if not (COMPILER / "tools" / "h13_run_linux.py").is_file():
     sys.exit("set MIL_HWXC_DIR to a mil-hwx-compiler checkout (tools/h13_run_linux.py is missing in %s)" % COMPILER)
 sys.path.insert(0, str(COMPILER / "tools"))
 import h13_run_linux as rl
+if not hasattr(rl.PreparedProgram, "send_surfaces"):
+    sys.exit("%s has no PreparedProgram.send_surfaces: update mil-hwx-compiler to 1b8c11b or later" % COMPILER)
 import numpy as np
 import qwen_m2_decode as dec
 from numpy.lib.stride_tricks import as_strided
