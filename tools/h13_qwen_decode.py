@@ -6,23 +6,26 @@ handle prepared once (pyane_init, buffers), each call packs the dense arrays int
 executes, reads and unpacks. The libane src/dst index order of every program comes from a port of libane's ane_bind_walk (ascending channel; surfaces the stream
 does not name get zeros of the header's tile size).
 
-Run: python3 h13_qwen_decode.py --pkg DIR --lib libane_python.so --out OUT [--prompts N] [--tokens T] [--smoke]
+Run: MIL_HWXC_DIR=/path/to/mil-hwx-compiler python3 h13_qwen_decode.py --pkg DIR --lib libane_python.so --out OUT [--prompts N] [--tokens T]
+MIL_HWXC_DIR is a mil-hwx-compiler checkout: tools/h13_run_linux.py there supplies LibANEAdapter and PreparedProgram (the libane binding and the strided-surface packing).
 """
 import argparse
 import hashlib
 import json
+import os
 import struct
 import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE / "tools"))
-sys.path.insert(0, str(HERE / "research"))
 import pcore_mask
 
 PINNED = pcore_mask.pin_self()  # before numpy starts its BLAS threads
 
+COMPILER = Path(os.environ.get("MIL_HWXC_DIR", "mil-hwx-compiler-unset"))
+if not (COMPILER / "tools" / "h13_run_linux.py").is_file():
+    sys.exit("set MIL_HWXC_DIR to a mil-hwx-compiler checkout (tools/h13_run_linux.py is missing in %s)" % COMPILER)
+sys.path.insert(0, str(COMPILER / "tools"))
 import h13_run_linux as rl
 import numpy as np
 import qwen_m2_decode as dec

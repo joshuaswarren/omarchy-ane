@@ -2,7 +2,7 @@
 """H13 decode of many prompts at a longer context (Q78): the pinned h13_qwen_decode.py machinery (unchanged) with a loop that keeps every step's wall time and exec time, the logits sha256 per prompt, and writes
 records after every prompt. Free-running (the device's own greedy ids) or teacher-forced. Logits are saved per prompt as fp32 (steps x 248320).
 
-usage: h13_qwen_decode_long_q6k.py --pkg DIR --lib LIB --manifest JSON --ref PROMPTS.json --out OUT [--prompts N --tokens T --forced-ids JSON --fp32-head]
+usage: MIL_HWXC_DIR=/path/to/mil-hwx-compiler h13_qwen_decode_long_q6k.py --pkg DIR --lib LIB --manifest JSON --ref PROMPTS.json --out OUT [--prompts N --tokens T --forced-ids JSON --fp32-head]
 Q6_K head by default (Q163: 13-inch step 0.1200 to 0.0941 s, logits within 7.6e-6 of the fp32 head); --fp32-head restores the old head (2.03 GB read per token).
 """
 import argparse
@@ -12,10 +12,6 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-sys.path.insert(0, str(HERE / "tools"))
-sys.path.insert(0, str(HERE / "research"))
 import h13_qwen_decode as base
 import numpy as np
 import qwen_m2_decode as dec
