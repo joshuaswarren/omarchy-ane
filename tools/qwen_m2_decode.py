@@ -130,13 +130,27 @@ def head_threads():
     return len(p) if p else min(8, os.cpu_count() or 1)
 
 
+def open_gguf(path):
+    """A GGUFReader whose file mapping is a plain ndarray. GGUFReader maps the file with np.memmap, so each of the thousands of slices it takes while it parses the header
+    and builds the tensors is a memmap instance; a plain-ndarray view of the same mapping gives the same fields and tensors without that cost."""
+    from gguf import GGUFReader
+
+    class PlainReader(GGUFReader):
+        def _get(self, *args, **kwargs):
+            if isinstance(self.data, np.memmap):
+                self.data = self.data.view(np.ndarray)
+            return super()._get(*args, **kwargs)
+
+    return PlainReader(path)
+
+
 def load_head(path, q6k=False):
     """(embedding, tied head, rope (dh, rotary dim, base)) from the GGUF, as staged_qwen_runner.load_gguf_parts and its metadata reads.
     Default: the head dequantized to float32 (2.03 GB) and an fp16 embedding table. q6k=True: the Q6_K bytes of token_embd.weight (417 MB) read by tools/q6k_head.py,
     with an fp32 activation vector; the weight values are the same, only the float32 summation order of the logits differs."""
-    from gguf import GGMLQuantizationType, GGUFReader
+    from gguf import GGMLQuantizationType
     from gguf.quants import dequantize
-    reader = GGUFReader(path)
+    reader = open_gguf(path)
     tensor = next(t for t in reader.tensors if t.name == "token_embd.weight")
     if q6k:
         if tensor.tensor_type != GGMLQuantizationType.Q6_K:
