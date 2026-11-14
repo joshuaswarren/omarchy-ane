@@ -242,6 +242,7 @@ struct ane_rtclient {
 	u32 legacy_allocated;		/* high-water mark of the table: slots below it may be free (cpu NULL) */
 	size_t legacy_bytes;
 	u32 legacy_malloc_cursor;
+	struct ane_legtab_free_log free_log;	/* how the last firmware FREE answers logged (ane_t6021_legtab.h) */
 	u32 legacy_owner;		/* stamp of the buffers the firmware asks for now (ane_t6021_legtab.h): program id + 1 while a command of that program runs, ANE_LEGTAB_PENDING during a LOAD, else none; set under ane_t6021_fw_lock */
 	u32 legacy_cmd_cursor[ANE_T6021_CHMAN_COUNT];
 	/* One reusable 16 KiB command buffer for every host command
@@ -594,8 +595,13 @@ static int ane_rtclient_malloc_service(struct ane_rtclient *ane, unsigned int *c
 			ane->legacy_bytes -= fb->size;
 			memset(fb, 0, sizeof(*fb));
 		}
-		dev_info(ane->dev, "fw returned iova %#llx, answered, %s (legacy table: %u slots high water, %zu bytes)\n", hdr,
-			 freed >= 0 ? "buffer released" : "no table entry", ane->legacy_allocated, ane->legacy_bytes);
+		/* Info level only when the answer says something new (ane_t6021_legtab.h); the routine answer logs at debug. */
+		if (ane_legtab_free_log_info(&ane->free_log, ktime_to_us(ktime_get()), hdr, ane->legacy_allocated, freed))
+			dev_info(ane->dev, "fw returned iova %#llx, answered, %s (legacy table: %u slots high water, %zu bytes)\n", hdr,
+				 freed >= 0 ? "buffer released" : "no table entry", ane->legacy_allocated, ane->legacy_bytes);
+		else
+			dev_dbg(ane->dev, "fw returned iova %#llx, answered, %s (legacy table: %u slots high water, %zu bytes)\n", hdr,
+				freed >= 0 ? "buffer released" : "no table entry", ane->legacy_allocated, ane->legacy_bytes);
 		*cursor = (*cursor + 1) % ane_t6021_chman_layout[5].size;
 		return 1;
 	case ANE_T6021_MRING_IDLE:

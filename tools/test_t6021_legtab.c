@@ -184,6 +184,38 @@ static void test_wait(void)
 	check(fw_wait(&f, 4, 500000) == -EOPNOTSUPP && f.t[0].cpu, "an error from the ring is returned");
 }
 
+/* ane_legtab_free_log_info: one answered FREE logs at info level only when the answer says something new. The 14-inch M2 Max soak of 2026-11-13 measured about
+ * 1744 info lines in 15 minutes (about 1.9 per second) from the per-answer line alone, which drowned fault lines elsewhere in the kernel log. Clock cases:
+ * 1000 answers of the same buffer in half a second log one info line, an answer 10 s after the last line logs again, a new iova logs inside the window, a
+ * grown table and an unmatched FREE log whatever the clock says, and after every info line the same answer goes quiet again. */
+static void test_free_log(void)
+{
+	struct ane_legtab_free_log s;
+	u64 now = 0;
+	int i, infos = 0;
+
+	memset(&s, 0, sizeof(s));
+	for (i = 0; i < 1000; i++) {
+		now += 500;	/* the measured device pace, about two answers a second */
+		infos += ane_legtab_free_log_info(&s, now, 0xeb800000, 10, 0);
+	}
+	check(infos == 1, "1000 answers of the same buffer in 0.5 s log exactly one info line");
+
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US, 0xeb800000, 10, 0) == 1,
+	      "an answer 10 s after the last info line logs again");
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US + 500, 0xeb800000, 10, 0) == 0,
+	      "the same answer right after it stays at debug");
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US + 1000, 0x1230000, 10, 0) == 1,
+	      "a changed iova logs at info inside the window");
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US + 1500, 0x1230000, 11, 0) == 1,
+	      "a grown slots high water logs at info inside the window");
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US + 2000, 0x1230000, 11, -1) == 1,
+	      "an unmatched FREE logs at info inside the window");
+	check(ane_legtab_free_log_info(&s, now + ANE_LEGTAB_FREE_INFO_PERIOD_US + 2500, 0x1230000, 11, -1) == 1,
+	      "an unmatched FREE is never suppressed");
+	check(s.high_water == 11 && s.last_iova == 0x1230000, "the state tracks the last answer");
+}
+
 int main(void)
 {
 	struct ane_legacy_buffer t[8];
@@ -228,6 +260,7 @@ int main(void)
 	}
 	check(used == 8, "the high-water mark stays at 8 over 1000 rounds");
 	test_wait();
+	test_free_log();
 	if (failures) {
 		fprintf(stderr, "%d check(s) failed\n", failures);
 		return 1;
