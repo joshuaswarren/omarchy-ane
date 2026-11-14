@@ -21,12 +21,12 @@ check-h15-firmware:
 	test -n "$(H15_FW_ANE1_INPUT_DIR)"
 	H15_FW_INPUT_DIR="$(H15_FW_INPUT_DIR)" H15_FW_ANE1_INPUT_DIR="$(H15_FW_ANE1_INPUT_DIR)" python3 test_h15_firmware.py -v
 
-ane-run: ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
+ane-run: ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h ane_cpu_floor.h $(LIB) ../libane/ane.h ../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-run.c $(LIB) -lm
 
 # Resident session (qwen_m2_decode --resident): includes ane-run.c for the
 # strict port-table reader, so it rebuilds whenever ane-run.c changes.
-ane-session: ane-session.c ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h $(LIB) ../libane/ane.h \
+ane-session: ane-session.c ane-run.c ane_f16_add.h ane_check_band.h ane_timing.h ane_cpu_floor.h $(LIB) ../libane/ane.h \
 	../libane/ane_m2.h
 	$(CC) $(CFLAGS) -o $@ ane-session.c $(LIB) -lm
 
@@ -41,6 +41,17 @@ test_check_band: test_check_band.c ane_check_band.h
 # Mean and raw per-call output of ane-run --time-raw, host only (no device).
 test_ane_timing: test_ane_timing.c ane_timing.h
 	$(CC) $(CFLAGS) -o $@ test_ane_timing.c -lm
+
+# CPU clock floor (ane_cpu_floor.h): state machine over fake sysfs, host only.
+# The test overrides live behind -DANE_CPU_FLOOR_TESTING: the production
+# ane-run is built without it and ignores ANE_RUN_CPUFREQ_ROOT and
+# ANE_RUN_STATE_DIR.
+test_cpu_floor: test_cpu_floor.c ane_cpu_floor.h
+	$(CC) $(CFLAGS) -DANE_CPU_FLOOR_TESTING -o $@ test_cpu_floor.c
+
+# The serving stand-in the process-level floor tests signal and kill.
+test_cpu_floor_serve: test_cpu_floor_serve.c ane_cpu_floor.h
+	$(CC) $(CFLAGS) -DANE_CPU_FLOOR_TESTING -o $@ test_cpu_floor_serve.c
 
 # libane sources rebuilt with every unset stack variable filled with 0xfe,
 # and linked against the fake DRM node in test_libane_ioctl.c.
@@ -92,7 +103,7 @@ test_t6021_legtab: test_t6021_legtab.c ../ane/t6021/ane_t6021_legtab.h ane_pool_
 
 # ane-session LOAD cache: drives the real session main over the fake
 # DRM node and counts the BO_INITs a repeated LOAD issues.
-test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c \
+test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c ane_cpu_floor.h \
 	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
 	../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -I../libane -I../ane/src/uapi/drm -I/usr/include/libdrm \
@@ -102,7 +113,7 @@ test_ane_session_cache: test_ane_session_cache.c ane-session.c ane-run.c \
 # ane-session STATE and RESET (resident states): the real session over the fake DRM node with a
 # fake device that writes nonzero padding; no argument runs the checks, any argument serves the
 # session protocol for test_qwen_resident_states.py. Mutation proof: test_ane_session_state_mutants.py.
-test_ane_session_state: test_ane_session_state.c ane-session.c ane-run.c \
+test_ane_session_state: test_ane_session_state.c ane-session.c ane-run.c ane_cpu_floor.h \
 	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
 	../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -Wno-error=maybe-uninitialized -I../libane -I../ane/src/uapi/drm -I/usr/include/libdrm \
@@ -135,7 +146,7 @@ PYTHON ?= python3
 NUMPY_OK := $(shell $(PYTHON) -c 'import numpy' >/dev/null 2>&1 && echo yes)
 
 ASAN_OK := $(shell echo 'int main(void){return 0;}' | $(CC) -fsanitize=address -x c - -o /dev/null 2>/dev/null && echo yes)
-test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
+test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c ane_cpu_floor.h \
 	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
 	../ane/src/uapi/drm/ane_accel.h
 	$(CC) -I../libane -I../ane/src/uapi/drm -I/usr/include/libdrm -std=gnu99 -O1 -g \
@@ -144,7 +155,8 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
 check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
-	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing
+	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing \
+	test_cpu_floor test_cpu_floor_serve
 	sh test_ane_run_tile_shift.sh ./ane-run
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
@@ -165,6 +177,9 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	$(PYTHON) ../ane/test/tm_telemetry_test.py
 	$(PYTHON) test_ane_run_expect_bind.py
 	$(PYTHON) test_h15_load.py
+	./test_cpu_floor
+	$(PYTHON) test_cpu_floor.py
+	$(PYTHON) test_cpu_floor_mutants.py
 ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_resident.py
 	$(PYTHON) test_qwen_resident_ab.py
@@ -212,4 +227,4 @@ else
 endif
 
 clean:
-	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing
+	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve

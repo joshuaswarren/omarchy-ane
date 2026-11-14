@@ -10,6 +10,7 @@
 
 #include "ane.h"
 #include "ane_m2.h"
+#include "ane_cpu_floor.h"
 
 /* Populate the nchw shadow for one channel. Used by --check OP in
  * ane-run.c to attach the proven oracle layout to an island ANEC
@@ -1846,6 +1847,10 @@ static void usage(void)
 		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
 		"  --dev N: the accel node to open (/dev/accel/accelN; default 0,\n"
 		"    or ANE_DEVICE); die 1 of an Ultra board is dev 1.\n"
+		"  ANE_CPU_FLOOR=<kHz>: opt-in; hold the t6021 P cluster's clock floor\n"
+		"    (cpu4/cpufreq/scaling_min_freq) at <kHz> while the run serves and\n"
+		"    restore the old value on every exit (needs sysfs write access, for\n"
+		"    example a run under sudo). Unset keeps sysfs untouched.\n"
 		"  --tile-shift N: log2 of the byte unit of the ANEC header's tile counts\n"
 		"    (default 14 = 0x4000 bytes, the H13 island containers; 9 = 512 bytes,\n"
 		"    the whole-program containers from the hwxv2 converter). Index mode only,\n"
@@ -2041,6 +2046,10 @@ int main(int argc, char **argv)
 		free_port_read(&pr);
 		return ret;
 	}
+
+	/* The CPU clock floor (t6021 policy4) for the serving window; every exit
+	 * path after this restores, including the error returns below. */
+	ane_cpu_floor_begin();
 
 	nn = ports_mode ? ane_m2_init_ports(anec, pr.ports, pr.count, dev)
 			: (tile_shift ? __ane_init_shift(anec, dev, tile_shift)
