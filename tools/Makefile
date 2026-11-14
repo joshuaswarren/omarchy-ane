@@ -161,6 +161,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
+	sh test_private_tmpdir.sh ./test_libane_ioctl ../fixtures/h14-anec
 	./test_ane_stats
 	./test_t6021_pool
 	./test_ane_session_cache

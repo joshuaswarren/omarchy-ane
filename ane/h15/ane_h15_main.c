@@ -347,6 +347,9 @@ MODULE_PARM_DESC(gate_noop, "enable_order only: instead of the order, write the 
 static bool cold_first;
 module_param(cold_first, bool, 0444);
 MODULE_PARM_DESC(cold_first, "enable_order only: first take the child ps words to the aurora cold state (ps 0xc008 <- 0x300, poll &0x8ff == 0; read gate &3 == 3; ps 0xc000 <- 0x300, poll), then run the observed order. Raw PS writes. Off by default.");
+static bool probe_mbx;
+module_param(probe_mbx, bool, 0444);
+MODULE_PARM_DESC(probe_mbx, "Stage=run (5), T6030 only (refused on other rows): after the wait, at 1, 5 and 10 s (counted from the end of the wait, after sleeping) read CPU_STATUS, the two mailbox CTRL words, SCRATCH0..7 and the three words at engine+0x1844000, +0x184c000, +0x1850000 and log them. If the I2A mailbox is not empty it pops one message once and does not acknowledge it. Every other access is a plain read; the pop is the one side effect (reading RECV1 removes the message from the queue). Off by default.");
 static bool probe_scr;
 module_param(probe_scr, bool, 0444);
 MODULE_PARM_DESC(probe_scr, "Stage=run (5), T6030 only (refused on other rows; the words were read on a T6030 14-inch M3 Pro board, core running and stopped): read engine+0x1840000..+0x1840100 and the three words at +0x1844000, +0x184c000, +0x1850000 before RUN and after the wait and log the nonzero words, read only. Off by default.");
@@ -686,9 +689,9 @@ static bool ane_h15_read_ok(const struct ane_h15_soc *s, u32 off, u32 size)
 	if (probe_ce && off >= 0x18a4000 && end <= 0x18a4020 && size == 4 && end <= s->engine_size)
 		return true;
 	/* +0x1844000/+0x184c000/+0x1850000: the doorbell, irq status and irq ack words at the #1595 offsets from the scratch block base */
-	if (probe_scr && (off == 0x1844000 || off == 0x184c000 || off == 0x1850000) && size == 4 && end <= s->engine_size)
+	if ((probe_scr || probe_mbx) && (off == 0x1844000 || off == 0x184c000 || off == 0x1850000) && size == 4 && end <= s->engine_size)
 		return true;
-	if (probe_scr && off >= 0x1840000 && end <= 0x1840100 && size == 4 && end <= s->engine_size)
+	if ((probe_scr || probe_mbx) && off >= 0x1840000 && end <= 0x1840100 && size == 4 && end <= s->engine_size)
 		return true;
 	if (dapf_prog && off == 0x1800208 && size == 4)
 		return true;
@@ -2086,6 +2089,52 @@ static void ane_h15_scr_region(struct ane_h15 *ane, const char *when)
 	}
 }
 
+/* One probe_mbx sample: every word is a plain read; the one pop-on-read register is read only if I2A says a message is waiting. */
+static int ane_h15_mbx_sample(struct ane_h15 *ane, unsigned int t_ms, bool *popped)
+{
+	const struct ane_h15_soc *s = ane->soc;
+	u32 st, a2i, i2a, irq[3], sc[8], i;
+	u64 m0 = 0, m1 = 0;
+	int ret;
+
+	ret = ane_h15_read_word(ane, "CPU_STATUS", s->cpu_status, &st);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "MBOX_A2I_CTRL", s->mbox + 0x110, &a2i);
+	if (!ret)
+		ret = ane_h15_read_word(ane, "MBOX_I2A_CTRL", s->mbox + 0x114, &i2a);
+	for (i = 0; !ret && i < 3; i++)
+		ret = ane_h15_read_word(ane, "mbxirq", i == 0 ? 0x1844000 : i == 1 ? 0x184c000 : 0x1850000, &irq[i]);
+	for (i = 0; !ret && i < 8; i++)
+		ret = ane_h15_read_word(ane, "mbxscr", 0x1840050 + 4 * i, &sc[i]);
+	if (ret)
+		return ret;
+	dev_info(ane->dev, "ane_h15 mbx t+%ums cpu_status=%#x a2i_ctrl=%#x i2a_ctrl=%#x doorbell=%#x irq_status=%#x irq_ack=%#x scr=%#x,%#x,%#x,%#x,%#x,%#x,%#x,%#x\n",
+		 t_ms, st, a2i, i2a, irq[0], irq[1], irq[2], sc[0], sc[1], sc[2], sc[3], sc[4], sc[5], sc[6], sc[7]);
+	if (!(i2a & ANE_H15_MBOX_EMPTY) && !*popped) {
+		*popped = true;
+		ret = ane_h15_read_word64(ane, "MBOX_I2A_RECV0", s->mbox + ANE_H15_MBOX_I2A_RECV0, &m0);
+		if (!ret)
+			ret = ane_h15_read_word64(ane, "MBOX_I2A_RECV1", s->mbox + ANE_H15_MBOX_I2A_RECV1, &m1);
+		if (!ret)
+			dev_info(ane->dev, "ane_h15 mbx msg raw0=%#llx raw1=%#llx\n", m0, m1);
+	}
+	return ret;
+}
+
+static void ane_h15_mbx_samples(struct ane_h15 *ane)
+{
+	static const unsigned int t_ms[] = { 1000, 5000, 10000 };
+	unsigned int i, prev = 0;
+	bool popped = false;
+
+	for (i = 0; i < ARRAY_SIZE(t_ms); i++) {
+		msleep(t_ms[i] - prev);
+		prev = t_ms[i];
+		if (ane_h15_mbx_sample(ane, t_ms[i], &popped))
+			return;
+	}
+}
+
 static int ane_h15_scr_wr(struct ane_h15 *ane, unsigned int i, u32 v)
 {
 	u32 off = ANE_H15_SCRATCH_OFF + 4 * i;
@@ -3301,6 +3350,8 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			msgs++;
 		}
 	}
+	if (stg == 5 && probe_mbx)
+		ane_h15_mbx_samples(ane);
 	if (stg == 5)
 		ane_h15_post_wait_status(ane);
 	if ((stg == 5 || stg == 3) && (run_scratch || kboot))
@@ -3475,8 +3526,8 @@ static int ane_h15_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 	/* probe_gates reads ps 0x10000 and probe_pc reads EDPCSR: both only on the T6030 row they were measured on */
-	if ((probe_gates || probe_pc || probe_scr) && soc->pwgate_word != 0x2b6c) {
-		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc_probe_scr: T6030 row only\n");
+	if ((probe_gates || probe_pc || probe_scr || probe_mbx) && soc->pwgate_word != 0x2b6c) {
+		dev_err(&pdev->dev, "REFUSED reason=probe_gates_probe_pc_probe_scr_probe_mbx: T6030 row only\n");
 		return -EINVAL;
 	}
 	if (enable_order && (stage_idx < 5 || stage_idx > 7 || !dapf_prog || pwgate_t6031)) {
