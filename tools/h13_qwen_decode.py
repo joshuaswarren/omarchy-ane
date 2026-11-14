@@ -31,7 +31,7 @@ if not hasattr(rl.PreparedProgram, "send_surfaces"):
     sys.exit("%s has no PreparedProgram.send_surfaces: update mil-hwx-compiler to 1b8c11b or later" % COMPILER)
 import numpy as np
 import qwen_m2_decode as dec
-from numpy.lib.stride_tricks import as_strided
+from h13_surface import pack, unpack
 
 f16 = np.float16
 TILE = 1 << 14
@@ -87,23 +87,6 @@ def walk(anec):
         (dsts if len(dsts) < dst_count else srcs).append(ch)
     assert len(srcs) == src_count and len(dsts) == dst_count, (srcs, dsts, src_count, dst_count)
     return srcs, dsts, tiles
-
-
-def surface_view(buf, port):
-    n, c, h, w = port["shape"]
-    plane, row = port["strides"][1], port["strides"][2]
-    return as_strided(buf, shape=(n, c, h, w), strides=(c * plane, plane, row, 2), writeable=buf.flags.writeable)
-
-
-def pack(dense, port, alloc):
-    buf = np.zeros(alloc // 2, dtype=f16)
-    surface_view(buf, port)[...] = np.asarray(dense, dtype=f16).reshape(port["shape"])
-    return buf.tobytes()
-
-
-def unpack(raw, port):
-    buf = np.frombuffer(raw, dtype=f16)
-    return np.array(surface_view(buf, port))
 
 
 class H13Decoder(dec.Decoder):
