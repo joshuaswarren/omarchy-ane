@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `ane_t6021`: a firmware FREE answer logs at info level only when the answer says something new - the first answer since boot, an iova the last info line did not show, a grown legacy table, a FREE with no table entry, or 10 s after the last info line. Every answer still logs at debug, and an unanswered FREE still warns at unload. This stops the per-answer info line (about 1744 lines in 15 minutes on a 14-inch M2 Max, about 1.9 per second) from drowning other kernel messages; the host unit test now logs 1 info line per 1000 answers inside a 10 s window (a simulator count, not a device measurement). The module is not built or loaded on a device for this change.
+
 ## 0.5.12 (2026-11-13)
 
 This release makes the T6021 program unload wait for the firmware instead of sleeping (#390), runs the H18 program sequence end to end on the M6 (T8152) with a hardened failpath (#393-#396), adds the T8132 (M5 Max) diagnostic row to H18 (#391, #398), and lands the H15 PMP-vote, PWGATE and probe work (#392, #397, #402-#404, #409, #412).

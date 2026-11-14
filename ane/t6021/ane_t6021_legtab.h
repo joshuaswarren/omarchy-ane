@@ -79,6 +79,38 @@ struct ane_legtab_wait_ops {
 	void (*pause)(void *ctx);	/* give the CPU away for a short while between two looks at an empty ring */
 };
 
+/* How one answered FREE of the firmware's SHAREDMALLOC ring logs. The full line goes to the debug log every time; the info-level copy appears only when the
+ * answer says something new. When the firmware keeps handing the same buffer back (a steady unload loop freed one buffer about two times a second on the
+ * 14-inch M2 Max), the per-answer info line alone filled the kernel log and drowned fault lines from elsewhere in the driver. */
+struct ane_legtab_free_log {
+	u64 last_info_us;	/* when the last info-level answer logged (0 = none yet) */
+	u64 last_iova;		/* the iova the last info line showed */
+	u32 high_water;		/* the table's slots high water the last answer saw */
+};
+
+#define ANE_LEGTAB_FREE_INFO_PERIOD_US	10000000ull	/* smallest time between routine info lines (10 s) */
+
+/* Decide whether one answered FREE logs at info level: yes when the FREE has no table entry (freed < 0, an anomaly), the table's slots high water grew, this
+ * is the first answer since boot, the iova differs from the one the last info line showed, or ANE_LEGTAB_FREE_INFO_PERIOD_US passed since the last info line;
+ * no while the firmware keeps answering the same buffer. Updates the state in place. */
+static inline int ane_legtab_free_log_info(struct ane_legtab_free_log *s, u64 now_us, u64 iova, u32 high_water, int freed)
+{
+	int info;
+
+	if (freed < 0 || high_water > s->high_water)
+		info = 1;
+	else
+		info = s->last_info_us == 0 ||
+		       now_us - s->last_info_us >= ANE_LEGTAB_FREE_INFO_PERIOD_US ||
+		       iova != s->last_iova;
+	s->high_water = high_water;
+	if (info) {
+		s->last_info_us = now_us;
+		s->last_iova = iova;
+	}
+	return info;
+}
+
 /* Wait until every buffer stamped `owner` has been given back, answering the ring while it waits. The ring is looked at once before anything else is
  * tested, so a bound of 0 still answers what is posted. Returns 0 when none is stamped or as soon as the last one is back, -ETIMEDOUT when some are
  * still out bound_us after the start, or the negative result of serve(). `used` is the table's high-water mark, which grows while the wait runs. */
