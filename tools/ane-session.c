@@ -28,7 +28,10 @@
  *       cached program, so names that share one cached program stay isolated.
  *       Indices are positions among the inputs and among the outputs.
  *   RESET [<name>]                -> OK RESET   (zero the states of one or all names)
- *   LOCK | UNLOCK                 -> OK LOCK | OK UNLOCK   (flock the lock file)
+ *   LOCK | UNLOCK                 -> OK LOCK | OK UNLOCK   (flock the lock file; no flock when
+ *       ANE_LOCK_HELD_FD names an inherited fd that is open on that same file: the idle guard
+ *       already holds the lock on it, and a second flock through our own fd would wait on it
+ *       forever)
  *   QUIT                          -> OK QUIT, exit 0 (1 if a CALL failed)
  *
  * Guards refuse a LOAD BEFORE any device open:
@@ -47,8 +50,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -112,6 +117,7 @@ struct session {
 	int dev;
 	int failed;
 	int lock_fd;
+	int lock_held; /* 1 once ANE_LOCK_HELD_FD proved the caller holds the lock file */
 	const char *lock_path;
 };
 
@@ -755,8 +761,32 @@ static int cmd_call(struct session *s, const char *name)
 	return 0;
 }
 
+/* The idle guard runs a ticket with the ANE lock held on an inherited fd and names it in
+ * ANE_LOCK_HELD_FD. Trust it only when that fd is open on the very file we would lock. */
+static int caller_holds_lock(const char *lock_path)
+{
+	const char *env = getenv("ANE_LOCK_HELD_FD");
+	char *end;
+	long fd;
+	struct stat held, lock;
+
+	if (!env || !*env) {
+		return 0;
+	}
+	fd = strtol(env, &end, 10);
+	if (*end || fd < 3 || fd > INT_MAX) {
+		return 0;
+	}
+	return !fstat((int)fd, &held) && !stat(lock_path, &lock) && S_ISREG(held.st_mode) &&
+	       held.st_dev == lock.st_dev && held.st_ino == lock.st_ino;
+}
+
 static int cmd_lock(struct session *s)
 {
+	if (s->lock_held) {
+		replyf("OK LOCK\n");
+		return 0;
+	}
 	if (s->lock_fd < 0) {
 		s->lock_fd = open(s->lock_path, O_RDWR | O_CREAT, 0666);
 		if (s->lock_fd < 0) {
@@ -844,6 +874,7 @@ int main(int argc, char **argv)
 	if (!s.lock_path) {
 		s.lock_path = "/var/tmp/ane-run.lock";
 	}
+	s.lock_held = caller_holds_lock(s.lock_path);
 	if (cap_mb) {
 		s.bo_cap = strtoull(cap_mb, NULL, 0) << 20;
 	} else if (!sysfs_u64("bo_total_max_mb", &v)) {

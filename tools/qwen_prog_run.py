@@ -215,10 +215,12 @@ class ResidentSession:
         self.work.mkdir(parents=True, exist_ok=True)
         self.log_path = self.work / "ane-session.log"
         self.log = open(self.log_path, "ab")
+        held = os.environ.get("ANE_LOCK_HELD_FD", "")
+        keep = (int(held),) if held.isdigit() and int(held) > 2 and os.path.exists(f"/proc/self/fd/{held}") else ()
         self.proc = subprocess.Popen(
             [str(session_bin), "--dev", str(dev), "--lock", str(lock_path)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log,
-            bufsize=0)
+            bufsize=0, pass_fds=keep)
         self.timeout = timeout
         self.names = []
         self.resident = {}   # name -> {"in": {port names}, "out": {port names}}

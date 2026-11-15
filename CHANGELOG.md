@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ane-session`, `qwen_prog_run`: a session started inside a ticket that already holds `/var/tmp/ane-run.lock` no longer waits on that lock forever. The ticket names its inherited fd in `ANE_LOCK_HELD_FD`; `ResidentSession` passes that fd to `ane-session`, and the session skips its own `flock` only when the fd is open on the same file (same device and inode). Before this, `qwen_m2_decode --resident` under the idle guard stopped with `STOP session: no reply within 120s`. A session with no guard, or with a stale or wrong fd, still locks. Tests: `test_ane_session_lock.py` (red before the change) and `test_qwen_session_lock_fd.py`.
 - `ane_t6021`: a firmware FREE answer logs at info level only when the answer says something new - the first answer since boot, an iova the last info line did not show, a grown legacy table, a FREE with no table entry, or 10 s after the last info line. Every answer still logs at debug, and an unanswered FREE still warns at unload. This stops the per-answer info line (about 1744 lines in 15 minutes on a 14-inch M2 Max, about 1.9 per second) from drowning other kernel messages; the host unit test now logs 1 info line per 1000 answers inside a 10 s window (a simulator count, not a device measurement). The module is not built or loaded on a device for this change.
 
 ## 0.5.12 (2026-11-13)
