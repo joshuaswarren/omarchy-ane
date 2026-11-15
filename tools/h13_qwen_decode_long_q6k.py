@@ -30,6 +30,8 @@ def main(argv=None):
     ap.add_argument("--tokens", type=int, default=128)
     ap.add_argument("--forced-ids")
     ap.add_argument("--fp32-head", action="store_true", help="read the head as an fp32 copy (the old default) instead of Q6_K")
+    ap.add_argument("--no-state-worker", action="store_true",
+                    help="send and read every surface each call; the worker (default) chains the program states on one background thread")
     a = ap.parse_args(argv)
     manifest = json.loads(Path(a.manifest).read_text())
     out = Path(a.out)
