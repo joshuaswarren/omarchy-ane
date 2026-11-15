@@ -1,7 +1,8 @@
 """A/B runner for the H13 Qwen decode: two staged decoder trees or two argument sets, four samples in ABBA order.
 
-This is a template, not a module. The row builder fills the upper-case names between double at-signs (HOSTNAME, KERNEL,
-MODE, ARMS, PINS, TREES, BOUNDS, QUESTION) and queues the result as one idle-guard ANE row. Every exit with a reason
+This is a template, not a module. The row builder replaces the upper-case names between double at-signs (HOSTNAME,
+KERNEL, MODE, ARMS, PINS, TREES, BOUNDS, QUESTION) with Python literals, repr() of the value, so a quote or a newline
+in HOSTNAME, MODE or QUESTION stays valid. It queues the result as one idle-guard ANE row. Every exit with a reason
 prints a RUNNER-EXIT-REASON line to stdout, so the row file shows why a row stopped. tests/test_h13_ab_runner.py
 renders it with stub values and checks the arm checks and the exit reasons."""
 
@@ -21,14 +22,14 @@ ROOT = Path('/var/tmp/w73-main')
 H = Path('/var/tmp/h13qwen')
 PKG = H / 'h13-L1024-s1gptq-pkg-v1'
 STATS = Path('/sys/class/accel/accel0/device/ane_stats')
-HOSTNAME = '@@HOSTNAME@@'
+HOSTNAME = @@HOSTNAME@@
 KERNELS = @@KERNEL@@
-MODE = '@@MODE@@'
+MODE = @@MODE@@
 ARMS = @@ARMS@@
 PINS = @@PINS@@
 TREES = @@TREES@@
 GAIN_LO, GAIN_HI = @@BOUNDS@@
-QUESTION = '@@QUESTION@@'
+QUESTION = @@QUESTION@@
 MEM_FLOOR_GIB = 6
 
 BOOT = '''
