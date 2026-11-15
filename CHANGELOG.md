@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+## 0.5.13 (2026-11-15)
+
+This release adds the H13 Qwen decode driver (#417) and four changes to it (#418 to #421). It removes the switch interval the state worker set (#437). It holds the CPU latency request at 0 while the M2 ANE dispatches (#422). A session started inside a ticket inherits the device lock (#428). The inherited fd must be plain digits (#429, #430). It keeps the Qwen decode states inside the session by default on the M2 (#431).
+
+Gate, 2026-11-15, tree `3cef271`. 34 host-runnable steps ran and passed. A 35th step, the dkms-exclusive test, exited 0 and checked nothing, because the host has no dkms. The steps:
+
+- `make -B check`: tools check, session-cache ASan run, resident-states AB and qwen suites. The first run used plain `make`. It kept the tracked `test_ane_session_cache_lsan` binary from 2026-10-09. The result here is a rerun with `make -B check`, which rebuilds every test binary from this tree. It exited 0.
+- the `tests/` python suites: 119 passed, 15 skipped.
+- the public-text check and its behavior test.
+- the dt-overlays python battery: `test_asahi_dtbs`, `test_ane_dt`, `test_ane_firmware_fetch`, `test_t8112_kit`, `test_promotion_check`, `test_promote_from_verdict`, `test_ane_smoke`, `test_ane_dvfs_level`, the dvfs model test, `test_ane_probe`, `test_ane_adt_scan`, `test_ane_intree`, `test_aurora_dt`, `test_promote_chip`, the data schema checks, `gen_coverage_table --check`, `test_ane_constants_table` and `test_t6030_dart_overlay`.
+- the C host regressions: `h14_boot_regression`, `test_ane_pwgate` and its latch test.
+- the contributors unit tests.
+- the per-chip simulators: h15 `check` and `sim-test`, h16 `sim`, h17 `sim-all`, h18 `sim-test`, `sim-dt-pmp` and `sim-dt-align-check`.
+
+Not run:
+
+- `test_ane_m2` and `test_ane_overlays`. They need the aurora DTB tree, which this host did not build. CI builds it.
+- `tests/test_gguf_plain.py`, the Q6_K hook test in `make check` and the `test_q6k_head.py` bench command-line test. The `gguf` module is not importable on this host.
+- 10 tests in `test_q6k_head.py`. They need a native aarch64 host with FP16FML. 3 more tests need staged Qwen inputs.
+- `tools/test_promotion_identity.py` and `tools/test_qwen_resident_states_mutants.py`.
+- Everything on a device. No `ane-run` or module built from this tree has run on a lab machine.
+
+The decode timings below come from lab queue rows on the 16-inch M1 Max and the 13-inch M1. Each row ran four ABBA processes at ctx1k, 24 tokens, with identical logits, and reports whole-process wall time. The decoder trees were staged from each commit. They are not a build of this tree.
+
+- `tools`: the H13 Qwen decode driver lands (#417): `h13_qwen_decode.py` and `h13_qwen_decode_long_q6k.py`. These are the files the 13-inch M1 and 16-inch M1 Max ctx1k timings ran, so a measurement can name a commit.
+- `tools`: four changes to that decoder, each faster in the newest rows.
+  - #418 sends the packed surfaces with `send_surfaces`: -3.11% on the 16-inch M1 Max and -3.23% on the 13-inch M1.
+  - #419 reuses the surface buffers in pack and unpack: -1.30% on the 16-inch M1 Max, where the row checked at run time that the arms differ, and -2.42% on the 13-inch M1, where it did not (the staged decoder files differ). An earlier 16-inch row without the check gave 0.0%.
+  - #420 reads the GGUF through a plain-ndarray mapping in `load_head`. It measured -4.12% on the 16-inch M1 Max (an earlier row gave -3.36%) and -5.59% on the 13-inch M1.
+  - #421 chains the program states on one background worker: -7.42% (16-inch M1 Max) and -8.90% (13-inch M1) against the decoder of #419. On the 16-inch M1 Max, main with the worker is 6.11% faster than main with `--no-state-worker`.
+- `tools`: #423 balanced the switch interval across decoders. #424 fixed three review notes on it and #425 tested its counter after the close paths. #437 removed the counter, its helpers, the tests that pinned it and the 0.0001 s interval #421 set. The #424 test of the padded pack stays. The A/B compared the PR decoder (A, 0.005 s) with main (B, 0.0001 s). B changed wall time by +0.04% on the 16-inch M1 Max, by -1.49% on the 13-inch M1 (one 51.09 s sample) and by -0.10% on the repeat. The first comparison for #437 had both arms at 0.0001 s and was rejected.
+- `libane` on M2: `/dev/cpu_dma_latency` is held at 0 only while a T6021 program dispatches (#422). #426 tests its CPU cost, the fork child, the stderr gate and the day clamp. #427 removes the test's temp files on every exit path. With a separate process holding the request at 0, the share of slow ANE calls on a 14-inch M2 Max fell from 0.285 to 0.017. The libane hold itself has not run on a device.
+- Gates: #432 copies `pcore_mask.py` into the mutants harness and fixes a stale dump pattern. #434 gives the dump refusal its own failure message. #435 anchors the token ids to the staged package and pins its manifest. #436 moves the anchor into one `qwen_anchor` module. It makes the frozen gate check the package bytes against its sealed `SHA256SUMS`.
 - `ane-session`, `qwen_prog_run`: a session started inside a ticket that already holds `/var/tmp/ane-run.lock` no longer waits on that lock forever. The ticket names its inherited fd in `ANE_LOCK_HELD_FD`; `ResidentSession` passes that fd to `ane-session`, and the session skips its own `flock` only when the fd is open on the same file (same device and inode). Before this, `qwen_m2_decode --resident` under the idle guard stopped with `STOP session: no reply within 120s`. A session with no guard, or with a stale or wrong fd, still locks. Tests: `test_ane_session_lock.py` (red before the change) and `test_qwen_session_lock_fd.py`.
 - `ane-session`: `ANE_LOCK_HELD_FD` must be plain decimal digits; a leading space, a sign or trailing text is ignored and the session locks as before (`strtol` had accepted a leading space). The per-call `ane_call` path and `island_real`, `parakeet_encoder_islands` still run `flock /var/tmp/ane-run.lock` themselves and do not read the variable, so they still wait inside a ticket that holds the lock.
 - `qwen_prog_run`: `ResidentSession` passes `ANE_LOCK_HELD_FD` on only for ASCII digits. A superscript two (`str.isdigit` is true for it) made `int()` raise `ValueError` and crash the session start; before #430 only that value crashed, other non-ASCII digits were already refused by the `/proc` path check.
