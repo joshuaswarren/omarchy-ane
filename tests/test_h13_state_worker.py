@@ -139,6 +139,77 @@ def test_worker_off_is_the_whole_set_path():
     assert d.chained == {}
 
 
+def open_decoder():
+    """A decoder opened through the real worker setup: no device, no package."""
+    d = object.__new__(hd.H13Decoder)
+    d.plan, d.prepared, d.state_pairs, d.state_slots = [], [], [], []
+    d.chained, d.state_wait_s, d._state_packs = {}, 0.0, {}
+    d.resident_states = False
+    d._start_state_worker()
+    return d
+
+
+def test_switch_interval_survives_out_of_order_close():
+    """The switch interval is process-global: the first worker saves the
+    original and the last close restores it, so two decoders closing in either
+    order leave the original interval behind."""
+    original = sys.getswitchinterval()
+    try:
+        a, b = open_decoder(), open_decoder()
+        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # setswitchinterval roundtrips through microseconds
+        a.close()
+        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # b's worker is still open
+        b.close()
+        assert sys.getswitchinterval() == original
+
+        a, b = open_decoder(), open_decoder()
+        b.close()
+        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # the other close order
+        a.close()
+        assert sys.getswitchinterval() == original
+    finally:
+        sys.setswitchinterval(original)
+
+
+def padded_port(name, shape):
+    """A strided-surface port whose rows are padded past the dense shape and
+    whose allocation has a tail gap after the last plane."""
+    n, c, h, w = shape
+    row = (w * 2 + 31) // 32 * 32
+    plane = (h * row + 127) // 128 * 128
+    return {"name": name, "shape": list(shape), "strides": [0, plane, row, 2]}, (n * c * plane + 63) // 64 * 64 + 64
+
+
+def ref_pack_state(dense, port, alloc):
+    """Hand-built strided layout, independent of h13_surface: element (i, j, k, m)
+    lands at i*c*plane + j*plane + k*row + m*2 in a zeroed buffer."""
+    n, c, h, w = port["shape"]
+    plane, row = port["strides"][1], port["strides"][2]
+    raw = bytearray(alloc)
+    values = np.asarray(dense, dtype=np.float16).reshape(n, c, h, w)
+    for i in range(n):
+        for j in range(c):
+            for k in range(h):
+                base = i * c * plane + j * plane + k * row
+                raw[base:base + w * 2] = values[i, j, k].tobytes()
+    return bytes(raw)
+
+
+def test_pack_state_writes_padded_ports_exactly_and_leaves_the_padding_zero():
+    """The worker's staging buffer spans the port's whole allocation: a padded
+    port's row gaps and tail gap must stay zero, and the cached buffer must be
+    rewritten in place on the second pack of the same port."""
+    port, alloc = padded_port("state_in", (2, 3, 4, 5))
+    assert alloc > 2 * 3 * 4 * 5 * 2  # the allocation is really padded
+    dense = np.arange(2 * 3 * 4 * 5).reshape(2, 3, 4, 5).astype(F16)
+    d = decoder(FakeProgram(), [])
+
+    assert bytes(d._pack_state(0, dense, port, alloc)) == ref_pack_state(dense, port, alloc)
+
+    second = (np.arange(2 * 3 * 4 * 5)[::-1] % 512).reshape(2, 3, 4, 5).astype(F16)
+    assert bytes(d._pack_state(0, second, port, alloc)) == ref_pack_state(second, port, alloc)
+
+
 def test_state_pairs_must_match_exactly_one_surface():
     pr = {"states": [
         {"in_port": "state_in", "out_port": "state_out", "in_shape": list(STATE_SHAPE)},
