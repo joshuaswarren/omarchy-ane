@@ -66,6 +66,11 @@ test_ane_stats: test_ane_stats.c ../ane/include/ane_stats.h \
 		test_ane_stats.c ../ane/ane_stats_show.c
 
 
+# CPU latency hold (libane/ane_latency.h), host only (no device): a plain file stands in for /dev/cpu_dma_latency.
+test_ane_latency: test_ane_latency.c ../libane/ane_latency.h
+	$(CC) $(CFLAGS) -o $@ test_ane_latency.c -pthread
+
+
 ane-bo-probe: ane-bo-probe.c ../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -I../ane/src/uapi/drm -I/usr/include/libdrm -o $@ ane-bo-probe.c
 
@@ -144,7 +149,7 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
 check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
-	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing
+	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing test_ane_latency
 	sh test_ane_run_tile_shift.sh ./ane-run
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
@@ -158,6 +163,10 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	./test_t6021_prog_lookup
 	./test_check_band
 	./test_ane_timing
+	./test_ane_latency
+	./test_ane_latency off
+	./test_ane_latency missing
+	./test_ane_latency default
 	$(PYTHON) ../ane/test/retirement_model_test.py
 	$(PYTHON) ../ane/test/tm_transient_fault_test.py
 	$(PYTHON) ../ane/test/tm_close_test.py
