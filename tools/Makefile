@@ -167,6 +167,8 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	./test_ane_latency off
 	./test_ane_latency missing
 	./test_ane_latency default
+	./test_ane_latency explicit
+	./test_ane_latency clamp
 	$(PYTHON) ../ane/test/retirement_model_test.py
 	$(PYTHON) ../ane/test/tm_transient_fault_test.py
 	$(PYTHON) ../ane/test/tm_close_test.py
