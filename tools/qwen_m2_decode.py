@@ -336,8 +336,11 @@ class Decoder:
                     raise Refuse(f"prog_{i:03d}: session reports {got}, "
                                  f"table holds ({n_in}, {n_out})")
                 if self.resident_states:
-                    self.session.states(f"prog_{i:03d}", ports,
-                                        [(s["in_port"], s["out_port"]) for s in self.progs[i]["states"]])
+                    try:
+                        self.session.states(f"prog_{i:03d}", ports,
+                                            [(s["in_port"], s["out_port"]) for s in self.progs[i]["states"]])
+                    except Refuse as e:
+                        raise Refuse(f"{e}; --host-states keeps the states on the host") from e
         self.reset()
 
     def reset(self):
