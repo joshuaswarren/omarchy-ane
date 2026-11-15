@@ -58,6 +58,10 @@ class SessionLockFd(unittest.TestCase):
     def test_a_malformed_variable_passes_nothing(self):
         self.assertEqual(self.reply("nine"), "closed")
 
+    def test_names_with_text_space_or_sign_pass_nothing(self):
+        for text in ("9x", " 9", "-9", "+9", ""):
+            self.assertEqual(self.reply(text), "closed", repr(text))
+
 
 if __name__ == "__main__":
     unittest.main()
