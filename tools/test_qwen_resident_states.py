@@ -235,6 +235,20 @@ def check_args(failures):
         pass
 
 
+def check_states_refusal_hint(failures, decoder):
+    """A session refusal of a state pair names --host-states: there is no fallback to host states."""
+    def refuse(name, ports, pairs):
+        raise qpr.Refuse(f"{name}: session refused STATE a->b: ERR BAD")
+    decoder.session.states = refuse
+    try:
+        decoder.configure(4)
+        failures.append("configure did not refuse when the session refused the state pair")
+    except dec.Refuse as e:
+        if "session refused STATE a->b: ERR BAD" not in str(e) or "--host-states" not in str(e):
+            failures.append(f"the refusal lost its cause or does not name --host-states: {e}")
+    decoder.close_session()
+
+
 def main():
     failures = []
     with tempfile.TemporaryDirectory() as d:
@@ -253,6 +267,7 @@ def main():
         if not bytes_b < bytes_a / 5:
             failures.append(f"payload did not shrink: host-chained {bytes_a} B, resident-states {bytes_b} B")
         print(f"decode arms compared over {len(host_chained)} values; bytes to the session {bytes_a} -> {bytes_b}")
+        check_states_refusal_hint(failures, make_decoder(root, manifest, ports_dir, anec_dir, serve, True, "h"))
         reset_a, _ = run_decode(make_decoder(root, manifest, ports_dir, anec_dir, serve, False, "c"), between="reset")
         reset_b, _ = run_decode(make_decoder(root, manifest, ports_dir, anec_dir, serve, True, "d"), between="reset")
         for key in sorted(set(reset_a) | set(reset_b)):
