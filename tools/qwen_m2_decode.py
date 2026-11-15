@@ -282,7 +282,7 @@ class Decoder:
         self.resident_states = bool(getattr(args, "resident_states", False))
         if self.resident_states and (not getattr(args, "resident", False) or getattr(args, "dump", None)):
             # The dump check compares every state port; the states are not on the wire here.
-            raise Refuse("--resident-states needs --resident and does not apply to --dump")
+            raise Refuse("resident states need --resident and do not apply to --dump")
         self.manifest = manifest
         self.work = Path(args.out) / "surf"
         self.work.mkdir(parents=True, exist_ok=True)
@@ -611,7 +611,7 @@ def summary(out):
             print(" ".join(f"{k}={v}" for k, v in rec.items()))
 
 
-def main(argv=None):
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--manifest", default="/var/tmp/qwen-decode/manifest.json")
     ap.add_argument("--anec-dir", default="/var/tmp/qwen-real-anec-h14")
@@ -642,10 +642,11 @@ def main(argv=None):
     ap.add_argument("--q6k-head", action="store_true",
                     help="read the tied head as Q6_K (417 MB, tools/q6k_head.py) instead of the dequantized float32 head (2.03 GB): same weights, fp32 activation, "
                          "float32 summation order differs (default off until the decode gate has passed)")
-    ap.add_argument("--resident-states", action="store_true",
-                    help="with --resident: keep every state (DeltaNet, conv, KV) inside the "
-                         "session instead of sending it out and back on every CALL; the "
-                         "logits and tokens must stay bit-identical (default off)")
+    ap.add_argument("--host-states", action="store_true",
+                    help="with --resident: send every state (DeltaNet, conv, KV) out and back on every CALL "
+                         "instead of keeping it inside the session. States stay in the session by default "
+                         "(14.8 and 16.9 percent faster step p50 on the 14-inch M2 Max, logits bit-identical); "
+                         "--dump always uses host states")
     ap.add_argument("--summary", action="store_true")
     ap.add_argument("--m-per-prompt", action="store_true",
                     help="max_len = len(prompt) + new tokens per prompt (ANEForge generate without max_len)")
@@ -654,10 +655,12 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.m_per_prompt and args.dump:
         ap.error("--dump holds max_len 50 executions; it does not apply to --m-per-prompt")
-    if args.resident_states and not args.resident:
-        ap.error("--resident-states needs --resident")
-    if args.resident_states and args.dump:
-        ap.error("--dump compares every state port; it does not apply to --resident-states")
+    args.resident_states = bool(args.resident and not args.host_states and not args.dump)
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     if args.summary:
         summary(args.out)
         return 0

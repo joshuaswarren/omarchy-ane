@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
 
-"""A/B/A/B of the staged-Qwen M2 decode: host-chained states (arm A, the unchanged --resident path) against
-session-resident states (arm B, --resident-states), in ONE decoder process, ONE ane-session and ONE boot.
+"""A/B/A/B of the staged-Qwen M2 decode: host-chained states (arm A, --resident --host-states) against
+session-resident states (arm B, the --resident default), in ONE decoder process, ONE ane-session and ONE boot.
 
 The 38 programs LOAD once; every arm calls Decoder.configure, which FREEs and re-LOADs the same keys (no device work),
 resets the states and, for arm B only, registers the state pairs. Arms alternate A B A B so a drift of the machine cannot
@@ -271,7 +271,7 @@ def main(argv=None):
               f"start + {FROZEN['anec_total_bytes']} < cap")
         print("  1. read boot id and bo_total_bytes; load the programs; read bo_total_bytes again; take the kernel mark")
         for i, arm in enumerate(ORDER):
-            print(f"  {i + 2}. idle {args.idle}s; arm {arm}: {args.prompt}, {FROZEN['steps']} new tokens, --resident{' --resident-states' if arm == 'B' else ''}")
+            print(f"  {i + 2}. idle {args.idle}s; arm {arm}: {args.prompt}, {FROZEN['steps']} new tokens, --resident{' --host-states' if arm == 'A' else ''}")
         print("  6. check the kernel span; judge: 16 steps, 16 anchor ids, 38 named exec medians per arm, logits sha equal in all arms, one boot id, "
               f"zero bo_total growth, no EXCH or STOP line, B/A step p50 <= {THRESHOLD} in both pairs, per-program exec within 5 percent per pair")
         return 0
