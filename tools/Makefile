@@ -159,6 +159,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	./test_t6021_pool
 	./test_ane_session_cache
 	./test_ane_session_state
+	$(PYTHON) test_ane_session_lock.py
 	./test_ane_bo_probe
 	./test_t6021_prog_lookup
 	./test_check_band
@@ -178,6 +179,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t
 	$(PYTHON) test_h15_load.py
 ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_resident.py
+	$(PYTHON) test_qwen_session_lock_fd.py
 	$(PYTHON) test_qwen_resident_ab.py
 	$(PYTHON) test_qwen_resident_proxy.py
 	$(PYTHON) test_qwen_resident_states.py
