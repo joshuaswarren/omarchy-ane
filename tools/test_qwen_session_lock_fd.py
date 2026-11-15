@@ -59,7 +59,7 @@ class SessionLockFd(unittest.TestCase):
         self.assertEqual(self.reply("nine"), "closed")
 
     def test_names_with_text_space_or_sign_pass_nothing(self):
-        for text in ("9x", " 9", "-9", "+9", ""):
+        for text in ("9x", " 9", "-9", "+9", "", "\u00b2", "\u0669"):
             self.assertEqual(self.reply(text), "closed", repr(text))
 
 
