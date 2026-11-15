@@ -121,29 +121,6 @@ def state_pairs(pr, in_ports, out_ports, i):
     return pairs
 
 
-_SWITCH_WORKERS = 0
-_SWITCH_INTERVAL = None
-
-
-def _enter_switch_interval():
-    """One process-global switch interval shared by every decoder's state
-    worker: the first starter saves the original, the last closer restores it,
-    so decoders closing out of order cannot leave 0.0001 behind."""
-    global _SWITCH_WORKERS, _SWITCH_INTERVAL
-    if _SWITCH_WORKERS == 0:
-        _SWITCH_INTERVAL = sys.getswitchinterval()
-        sys.setswitchinterval(0.0001)
-    _SWITCH_WORKERS += 1
-
-
-def _leave_switch_interval():
-    global _SWITCH_WORKERS, _SWITCH_INTERVAL
-    _SWITCH_WORKERS -= 1
-    if _SWITCH_WORKERS == 0:
-        sys.setswitchinterval(_SWITCH_INTERVAL)
-        _SWITCH_INTERVAL = None
-
-
 class H13Decoder(dec.Decoder):
     """The decoder with the program calls on H13 through libane handles."""
 
@@ -187,11 +164,7 @@ class H13Decoder(dec.Decoder):
             self.resident_states = False
         else:
             self._start_state_worker()
-        try:
-            self.reset()
-        except BaseException:
-            self.close()  # restore the switch interval, or the process-global counter leaks
-            raise
+        self.reset()
 
     def _start_state_worker(self):
         """The one background thread that chains this decoder's program states."""
@@ -201,7 +174,6 @@ class H13Decoder(dec.Decoder):
             raise dec.Refuse("%s has no PreparedProgram.%s: this checkout needs the mil-hwx-compiler one-surface state-IO change (agent/h13-state-io); pass --no-state-worker for the old whole-set path" % (COMPILER, ", ".join(missing)))
         self.worker_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="h13-state")
         self.resident_states = True
-        _enter_switch_interval()
 
     def call(self, i, arrays):
         in_ports, in_sizes, out_ports = self.plan[i]
@@ -273,7 +245,6 @@ class H13Decoder(dec.Decoder):
             if self.worker_pool is not None:
                 self.worker_pool.shutdown(wait=True)
                 self.worker_pool = None
-                _leave_switch_interval()
             for p in self.prepared:
                 p.close()
             self.prepared = []

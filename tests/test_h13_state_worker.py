@@ -152,82 +152,22 @@ def open_decoder():
     return d
 
 
-def test_switch_interval_survives_out_of_order_close():
-    """The switch interval is process-global: the first worker saves the
-    original and the last close restores it, so two decoders closing in either
-    order leave the original interval behind."""
+def test_the_state_worker_leaves_the_switch_interval_alone():
+    """The worker used to drop the process-global switch interval to 0.0001 (#421, #423).
+    ABBA runs that checked each arm's closing interval (0.005 against 0.0001) changed
+    whole-process wall by +0.04 percent on the 16-inch M1 Max and by -1.49 and -0.10
+    percent on the 13-inch M1 (the first 13-inch run had one 51.09 s outlier). The
+    interval stays whatever the process had, through open, close and a second close."""
     original = sys.getswitchinterval()
+    d = open_decoder()
     try:
-        a, b = open_decoder(), open_decoder()
-        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # setswitchinterval roundtrips through microseconds
-        a.close()
-        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # b's worker is still open
-        b.close()
-        assert sys.getswitchinterval() == original
-
-        a, b = open_decoder(), open_decoder()
-        b.close()
-        assert abs(sys.getswitchinterval() - 0.0001) < 1e-12  # the other close order
-        a.close()
+        assert d.worker_pool is not None
         assert sys.getswitchinterval() == original
     finally:
-        sys.setswitchinterval(original)
-
-
-def test_close_is_safe_without_a_started_worker_and_twice():
-    """close() without a started worker, and a second close of a started one,
-    must leave the counter at zero and the interval at the original."""
-    original = sys.getswitchinterval()
-    try:
-        assert hd._SWITCH_WORKERS == 0
-        off = decoder(FakeProgram(), [])
-        off.worker_pool = None
-        off.close()
-        assert off.worker_pool is None
-        assert sys.getswitchinterval() == original
-        assert hd._SWITCH_WORKERS == 0  # close without a start never touched the counter
-
-        d = open_decoder()
         d.close()
         d.close()
-        assert d.worker_pool is None
-        assert sys.getswitchinterval() == original
-        assert hd._SWITCH_WORKERS == 0  # the double close unwound exactly once
-    finally:
-        hd._SWITCH_WORKERS = 0
-        sys.setswitchinterval(original)
-
-
-def test_init_reset_failure_restores_the_switch_interval(tmp_path, monkeypatch):
-    """The real __init__ with a failing reset(): the exception propagates, the
-    except branch closes the worker so the process-global interval is restored
-    and the counter is balanced for the next decoder."""
-    (tmp_path / "pkg").mkdir()
-    (tmp_path / "pkg" / "manifest.json").write_text('{"programs": []}')
-    monkeypatch.setattr(hd.rl, "LibANEAdapter", lambda lib, n: None, raising=False)
-    monkeypatch.setattr(hd.rl, "PreparedProgram",
-                        type("PreparedProgram", (), {"send_surface": None, "stage_surface": None,
-                                                     "read_surface": None}), raising=False)
-    monkeypatch.setattr(hd.H13Decoder, "reset",
-                        lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
-    args = type("Args", (), {"no_state_worker": False})()
-    original = sys.getswitchinterval()
-    try:
-        assert hd._SWITCH_WORKERS == 0
-        try:
-            hd.H13Decoder(args, {"max_len": 8, "programs": []}, str(tmp_path), object())
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError("the reset failure was swallowed")
-        assert hd._SWITCH_WORKERS == 0  # the failed open did not leak a worker
-        assert sys.getswitchinterval() == original  # the except branch closed the worker
-        open_decoder().close()
-        assert hd._SWITCH_WORKERS == 0
-        assert sys.getswitchinterval() == original  # the counter is balanced afterwards
-    finally:
-        hd._SWITCH_WORKERS = 0
-        sys.setswitchinterval(original)
+    assert d.worker_pool is None
+    assert sys.getswitchinterval() == original
 
 
 def padded_port(name, shape, align=32):
