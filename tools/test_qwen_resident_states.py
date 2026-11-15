@@ -231,8 +231,11 @@ def check_args(failures):
     try:
         dec.Decoder(args, {"max_len": 4, "programs": []})
         failures.append("Decoder accepted --resident-states with a dump")
-    except dec.Refuse:
-        pass
+    except dec.Refuse as e:
+        if "--dump" not in str(e):
+            failures.append(f"the dump refusal does not name --dump: {e}")
+    except Exception as e:
+        failures.append(f"Decoder raised {e!r} instead of refusing resident states with a dump")
 
 
 def check_states_refusal_hint(failures, decoder):
