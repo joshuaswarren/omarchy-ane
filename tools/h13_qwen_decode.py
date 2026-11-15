@@ -187,7 +187,11 @@ class H13Decoder(dec.Decoder):
             self.resident_states = False
         else:
             self._start_state_worker()
-        self.reset()
+        try:
+            self.reset()
+        except BaseException:
+            self.close()  # restore the switch interval, or the process-global counter leaks
+            raise
 
     def _start_state_worker(self):
         """The one background thread that chains this decoder's program states."""

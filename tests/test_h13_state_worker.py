@@ -64,6 +64,9 @@ class FakeProgram:
     def submit(self):
         self.submits += 1
 
+    def close(self):
+        self.closed = True
+
 
 def decoder(prog, pairs):
     """An H13Decoder skeleton with one program: no device, no package."""
@@ -171,11 +174,60 @@ def test_switch_interval_survives_out_of_order_close():
         sys.setswitchinterval(original)
 
 
-def padded_port(name, shape):
+def test_close_is_safe_without_a_started_worker_and_twice():
+    """close() without a started worker, and a second close of a started one,
+    must leave the counter at zero and the interval at the original."""
+    original = sys.getswitchinterval()
+    try:
+        off = decoder(FakeProgram(), [])
+        off.worker_pool = None
+        off.close()
+        assert off.worker_pool is None
+        assert sys.getswitchinterval() == original
+
+        d = open_decoder()
+        d.close()
+        d.close()
+        assert d.worker_pool is None
+        assert sys.getswitchinterval() == original
+    finally:
+        sys.setswitchinterval(original)
+
+
+def test_init_reset_failure_restores_the_switch_interval(tmp_path, monkeypatch):
+    """The real __init__ with a failing reset(): the exception propagates, the
+    except branch closes the worker so the process-global interval is restored
+    and the counter is balanced for the next decoder."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "manifest.json").write_text('{"programs": []}')
+    monkeypatch.setattr(hd.rl, "LibANEAdapter", lambda lib, n: None, raising=False)
+    monkeypatch.setattr(hd.rl, "PreparedProgram",
+                        type("PreparedProgram", (), {"send_surface": None, "stage_surface": None,
+                                                     "read_surface": None}), raising=False)
+    monkeypatch.setattr(hd.H13Decoder, "reset",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+    args = type("Args", (), {"no_state_worker": False})()
+    original = sys.getswitchinterval()
+    try:
+        try:
+            hd.H13Decoder(args, {"max_len": 8, "programs": []}, str(tmp_path), object())
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the reset failure was swallowed")
+        assert sys.getswitchinterval() == original  # the except branch closed the worker
+        open_decoder().close()
+        assert sys.getswitchinterval() == original  # the counter is balanced afterwards
+    finally:
+        sys.setswitchinterval(original)
+
+
+def padded_port(name, shape, align=32):
     """A strided-surface port whose rows are padded past the dense shape and
-    whose allocation has a tail gap after the last plane."""
+    whose allocation has a tail gap after the last plane. `align` varies the
+    row stride without moving the plane or the allocation."""
     n, c, h, w = shape
-    row = (w * 2 + 31) // 32 * 32
+    row = (w * 2 + align - 1) // align * align
     plane = (h * row + 127) // 128 * 128
     return {"name": name, "shape": list(shape), "strides": [0, plane, row, 2]}, (n * c * plane + 63) // 64 * 64 + 64
 
@@ -204,10 +256,20 @@ def test_pack_state_writes_padded_ports_exactly_and_leaves_the_padding_zero():
     dense = np.arange(2 * 3 * 4 * 5).reshape(2, 3, 4, 5).astype(F16)
     d = decoder(FakeProgram(), [])
 
-    assert bytes(d._pack_state(0, dense, port, alloc)) == ref_pack_state(dense, port, alloc)
+    first = d._pack_state(0, dense, port, alloc)
+    assert bytes(first) == ref_pack_state(dense, port, alloc)
 
     second = (np.arange(2 * 3 * 4 * 5)[::-1] % 512).reshape(2, 3, 4, 5).astype(F16)
-    assert bytes(d._pack_state(0, second, port, alloc)) == ref_pack_state(second, port, alloc)
+    repacked = d._pack_state(0, second, port, alloc)
+    assert repacked is first  # the cached staging buffer is rewritten in place, not replaced
+    assert bytes(repacked) == ref_pack_state(second, port, alloc)
+
+    # same shape and allocation, tighter row padding: a different cache entry, its own buffer
+    loose_port, loose_alloc = padded_port("state_in", (2, 3, 4, 5), align=16)
+    assert loose_alloc == alloc
+    other = d._pack_state(0, dense, loose_port, loose_alloc)
+    assert other is not first
+    assert bytes(other) == ref_pack_state(dense, loose_port, loose_alloc)
 
 
 def test_state_pairs_must_match_exactly_one_surface():
