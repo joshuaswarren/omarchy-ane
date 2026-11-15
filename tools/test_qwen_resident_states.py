@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
 
-"""Host test of qwen_m2_decode --resident-states (no ANE, no device).
+"""Host test of the session-resident states of qwen_m2_decode (the default with --resident; --host-states opts out; no ANE, no device).
 
 The REAL ane-session (tools/ane-session.c) runs over a fake DRM node whose device writes every output tile byte,
 padding included, as a function of every input tile byte (tools/test_ane_session_state.c in serve mode). The decoder
@@ -11,13 +11,14 @@ of the tile is padding the fake device fills with nonzero bytes), two prompts of
 prompt, as the run loop does).
 
 Checks:
-  1. host-chained resident decode and --resident-states decode agree bit for bit: every program's lane inputs, lane
+  1. host-chained resident decode and resident-states decode agree bit for bit: every program's lane inputs, lane
      outputs and the hidden of every step of both prompts (the padding semantic and RESET per prompt);
-  2. --resident-states writes far fewer bytes to the session than the host-chained arm (the state tiles are gone);
+  2. resident states write far fewer bytes to the session than the host-chained arm (the state tiles are gone);
   3. LOAD-time refusals: a pair whose output strides differ is refused before anything is sent; the pairing request
      takes the port indices from the manifest pair, not from shapes (K and V of identical shape, listed in the
      opposite order of the ports);
-  4. --resident-states needs --resident and refuses --dump.
+  4. the command line turns resident states on with --resident, off with --host-states or --dump, and the retired
+     --resident-states flag is refused; the Decoder refuses resident states with a dump.
 Run test_qwen_resident_states_mutants.py for the mutation proof."""
 import copy
 import hashlib
@@ -210,16 +211,22 @@ def check_pairing_and_refusals(failures):
 
 
 def check_args(failures):
-    ap_cases = [["--resident-states"], ["--resident", "--resident-states", "--dump", "x"]]
-    for argv in ap_cases:
+    wanted = {(): False, ("--resident",): True, ("--resident", "--host-states"): False,
+              ("--resident", "--dump", "x"): False, ("--host-states",): False}
+    for argv, states in wanted.items():
         try:
-            dec.main(argv)
-            failures.append(f"main({argv}) did not refuse")
-        except SystemExit as e:
-            if e.code == 0:
-                failures.append(f"main({argv}) exited 0")
-        except Exception as e:  # noqa: BLE001
-            failures.append(f"main({argv}) raised {type(e).__name__} instead of refusing")
+            got = dec.parse_args(list(argv)).resident_states
+        except SystemExit:
+            failures.append(f"parse_args({list(argv)}) refused")
+            continue
+        if got != states:
+            failures.append(f"parse_args({list(argv)}).resident_states is {got}, wanted {states}")
+    try:
+        dec.parse_args(["--resident", "--resident-states"])
+        failures.append("the retired --resident-states flag was accepted")
+    except SystemExit as e:
+        if e.code == 0:
+            failures.append("--resident-states exited 0")
     args = Namespace(out="/tmp/unused", resident=True, resident_states=True, dump="d")
     try:
         dec.Decoder(args, {"max_len": 4, "programs": []})
