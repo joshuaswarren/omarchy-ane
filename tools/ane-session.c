@@ -762,7 +762,9 @@ static int cmd_call(struct session *s, const char *name)
 }
 
 /* The idle guard runs a ticket with the ANE lock held on an inherited fd and names it in
- * ANE_LOCK_HELD_FD. Trust it only when that fd is open on the very file we would lock. */
+ * ANE_LOCK_HELD_FD (plain decimal digits only). Trust it only when that fd is open on the very
+ * file we would lock. Callers that run `flock /var/tmp/ane-run.lock` themselves (qwen_prog_run
+ * ane_call, island_real, parakeet_encoder_islands) do not read it and still wait under a guard. */
 static int caller_holds_lock(const char *lock_path)
 {
 	const char *env = getenv("ANE_LOCK_HELD_FD");
@@ -770,7 +772,7 @@ static int caller_holds_lock(const char *lock_path)
 	long fd;
 	struct stat held, lock;
 
-	if (!env || !*env) {
+	if (!env || *env < '0' || *env > '9') {
 		return 0;
 	}
 	fd = strtol(env, &end, 10);

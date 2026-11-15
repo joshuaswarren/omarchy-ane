@@ -101,6 +101,20 @@ class SessionLock(unittest.TestCase):
         self.assertEqual(self.command("UNLOCK", 5), "OK UNLOCK")
         self.assertTrue(blocked(self.lock), "the session released the guard's lock")
 
+    def malformed_name_still_locks(self, text):
+        self.take_guard_lock()
+        self.start(env_fd=text, pass_guard=True)
+        self.assertIsNone(self.command("LOCK", 1), f"a malformed ANE_LOCK_HELD_FD {text!r} was trusted")
+
+    def test_env_with_trailing_text_still_locks(self):
+        self.malformed_name_still_locks("9x")
+
+    def test_env_with_leading_space_still_locks(self):
+        self.malformed_name_still_locks(" 9")
+
+    def test_env_with_a_sign_still_locks(self):
+        self.malformed_name_still_locks("-9")
+
     def test_env_fd_that_is_not_open_still_locks(self):
         self.take_guard_lock()
         self.start(env_fd=HELD_FD)
