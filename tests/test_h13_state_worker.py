@@ -179,18 +179,22 @@ def test_close_is_safe_without_a_started_worker_and_twice():
     must leave the counter at zero and the interval at the original."""
     original = sys.getswitchinterval()
     try:
+        assert hd._SWITCH_WORKERS == 0
         off = decoder(FakeProgram(), [])
         off.worker_pool = None
         off.close()
         assert off.worker_pool is None
         assert sys.getswitchinterval() == original
+        assert hd._SWITCH_WORKERS == 0  # close without a start never touched the counter
 
         d = open_decoder()
         d.close()
         d.close()
         assert d.worker_pool is None
         assert sys.getswitchinterval() == original
+        assert hd._SWITCH_WORKERS == 0  # the double close unwound exactly once
     finally:
+        hd._SWITCH_WORKERS = 0
         sys.setswitchinterval(original)
 
 
@@ -209,16 +213,20 @@ def test_init_reset_failure_restores_the_switch_interval(tmp_path, monkeypatch):
     args = type("Args", (), {"no_state_worker": False})()
     original = sys.getswitchinterval()
     try:
+        assert hd._SWITCH_WORKERS == 0
         try:
             hd.H13Decoder(args, {"max_len": 8, "programs": []}, str(tmp_path), object())
         except RuntimeError:
             pass
         else:
             raise AssertionError("the reset failure was swallowed")
+        assert hd._SWITCH_WORKERS == 0  # the failed open did not leak a worker
         assert sys.getswitchinterval() == original  # the except branch closed the worker
         open_decoder().close()
+        assert hd._SWITCH_WORKERS == 0
         assert sys.getswitchinterval() == original  # the counter is balanced afterwards
     finally:
+        hd._SWITCH_WORKERS = 0
         sys.setswitchinterval(original)
 
 
