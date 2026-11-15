@@ -14,11 +14,11 @@ FROZEN gate (judge(); fixed before any run, nothing here is a default a caller m
   * exactly four arms in the order A B A B; each has exactly 16 generated steps, 16 token ids, 16 positive finite step walls
     and exactly 38 finite positive per-program exec medians named prog_000 .. prog_037 (a missing, extra, truncated, empty,
     NaN, infinite or non-positive entry fails; nothing is skipped);
-  * the 16 token ids of every arm equal ANCHOR_TOKENS, and each other. ANCHOR_TOKENS are the ids of the unchanged resident decode
-    of p001 on the staged fp16 H14 package whose manifest sha256 is ANCHOR_MANIFEST_SHA256 (14-inch M2 Max, 2026-11-15: decoder
-    a9e3a83 and 7b59c97, C and numpy surface pack, all four gate arms: identical ids and logits). The 2026-10-10 receipt
-    (receipts/2026-10-10-m2-max-resident-decode-openblas) recorded other ids on the package built before 2026-10-20; those ids
-    no longer apply. The ids do NOT equal reference-tokens.json (they agree to index 13 and differ at 14); that file is not an anchor;
+  * the 16 token ids of every arm equal ANCHOR_TOKENS (qwen_anchor.py), and each other. They are the ids of the unchanged resident
+    decode of p001 on the staged fp16 H14 package. The frozen gate refuses to run unless fp16/SHA256SUMS next to the manifest has
+    the sha256 ANCHOR_SEAL_SHA256, every file it lists (the manifest and the 38 programs) hashes to its entry, and --anec-dir and
+    --ports-dir are that package's pkg. The ids of the 2026-10-10 receipt belong to the package built before 2026-10-20 and no
+    longer apply. The ids do NOT equal reference-tokens.json (they agree to index 13 and differ at 14); that file is not an anchor;
   * the fp32 logits file sha256 and size are identical in all four arms (arm to arm, byte equal). The receipt's logits hash and
     ref-logits-p001.npy are orientation only: they depend on the numpy and BLAS build and never replace or weaken this;
   * one boot id: read before the load and at the start and end of every arm, identical in all ten reads;
@@ -45,6 +45,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from qwen_anchor import ANCHOR_SEAL_SHA256, ANCHOR_TOKENS  # noqa: E402
 import qwen_m2_decode as dec  # noqa: E402
 import qwen_resident_ab as old_ab  # noqa: E402
 
@@ -52,9 +53,6 @@ ORDER = "ABAB"
 THRESHOLD = 0.90
 EXEC_DRIFT = 0.05
 FROZEN = {"steps": 16, "programs": 38, "prompt": "p001", "idle": 60, "anec_total_bytes": 2754388032}
-# The 16 ids of generated_ids of the unchanged resident decode of p001 on the package with manifest ANCHOR_MANIFEST_SHA256.
-ANCHOR_TOKENS = [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 11247, 579, 7772, 369]
-ANCHOR_MANIFEST_SHA256 = "dd07f20df4ede3291a4d0f20f2675fe3cc1a97d890bafd95121176e942c57bca"
 BO_MAX_MB = "/sys/module/ane_t6021/parameters/bo_total_max_mb"
 THREAD_ENV = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "GOTO_NUM_THREADS", "OPENBLAS_CORETYPE", "VECLIB_MAXIMUM_THREADS")
 
@@ -134,6 +132,28 @@ def decode_arm(decoder, arm, prompt, new_tokens, cos, sin, embed, head, out, sna
 
 def good_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0
+
+
+def package_problem(seal, pin, *pkg_dirs):
+    """None when the sealed package is the one the anchor ids belong to; else the reason. Reads every listed file."""
+    try:
+        raw = seal.read_bytes()
+    except OSError as e:
+        return f"{seal}: {e.strerror}"
+    if hashlib.sha256(raw).hexdigest() != pin:
+        return f"{seal} sha256 is not the {pin} the anchor ids belong to"
+    for line in raw.decode().splitlines():
+        digest, name = line.split("  ", 1)
+        try:
+            h = hashlib.sha256()
+            with open(seal.parent / name, "rb") as f:
+                for chunk in iter(lambda: f.read(1 << 20), b""):
+                    h.update(chunk)
+        except OSError as e:
+            return f"{name}: {e.strerror}"
+        if h.hexdigest() != digest:
+            return f"{name} does not match its entry in {seal}"
+    return next((f"{d} is not {seal.parent / 'pkg'}" for d in pkg_dirs if Path(d).resolve() != (seal.parent / "pkg").resolve()), None)
 
 
 def frozen_spec(programs=FROZEN["programs"]):
@@ -295,9 +315,9 @@ def main(argv=None):
             problems.append("bo_total_bytes or bo_total_max_mb is unreadable")
         elif start["bo_total_bytes"] + FROZEN["anec_total_bytes"] >= cap_mb << 20:
             problems.append(f"bo_total_bytes {start['bo_total_bytes']} plus the 38 sections {FROZEN['anec_total_bytes']} is not below the {cap_mb} MiB cap")
-        manifest_sha = hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest()
-        if manifest_sha != ANCHOR_MANIFEST_SHA256:
-            problems.append(f"manifest sha256 {manifest_sha} is not the {ANCHOR_MANIFEST_SHA256} the anchor ids belong to")
+        bad_package = package_problem(Path(args.manifest).parent / "SHA256SUMS", ANCHOR_SEAL_SHA256, args.anec_dir, args.ports_dir)
+        if bad_package:
+            problems.append(bad_package)
         if problems:
             print("REFUSE: " + "; ".join(problems) + " (use --unfrozen for a host test, which never exits 0)")
             return 2

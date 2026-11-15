@@ -206,7 +206,10 @@ PRE_MUTANTS = {   # preflight refusals: each mutant must stop refusing one defec
     "bo_unreadable_ok": ('if start["bo_total_bytes"] is None or cap_mb is None:', "if False:"),
     "cap_not_checked": ('elif start["bo_total_bytes"] + FROZEN["anec_total_bytes"] >= cap_mb << 20:', "elif False:"),
     "prompt_not_checked": ('if args.prompt != FROZEN["prompt"] or', "if"),
-    "manifest_not_checked": ("if manifest_sha != ANCHOR_MANIFEST_SHA256:", "if False:"),
+    "package_not_checked": ("if bad_package:", "if False:"),
+    "seal_pin_not_checked": ("if hashlib.sha256(raw).hexdigest() != pin:", "if False:"),
+    "listed_file_not_hashed": ("if h.hexdigest() != digest:", "if False:"),
+    "pkg_dirs_not_checked": ('if Path(d).resolve() != (seal.parent / "pkg").resolve()', "if False"),
 }
 
 
@@ -217,14 +220,21 @@ def preflight_cases(mod):
     res = {}
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "manifest.json").write_text(json.dumps({"max_len": 4, "programs": [{} for _ in range(38)]}))
-        dummy_sha = hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({"max_len": 4, "programs": [{} for _ in range(38)]}))
+
+        def seal(digest, name="manifest.json"):
+            (root / "SHA256SUMS").write_text(f"{digest}  {name}\n")
+            return hashlib.sha256((root / "SHA256SUMS").read_bytes()).hexdigest()
+        good_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        good_pin = seal(good_digest)
         env_ok = {"numpy": "x", "python": "x", "blas": [{"path": "p", "realpath": "p", "sha256": "s"}], "reference_blas": False, "threads_env": {}, "cpu_count": 1}
         snap = {"boot_id": "b", "bo_total_bytes": 1_700_000_000, "exch_lines": 0}
-        base_args = ["--manifest", str(root / "manifest.json"), "--ref", str(root / "ref.json"), "--out", str(root / "out")]
+        base_args = ["--manifest", str(manifest), "--ref", str(root / "ref.json"), "--out", str(root / "out"),
+                     "--anec-dir", str(root / "pkg"), "--ports-dir", str(root / "pkg")]
 
-        def run(args, env=env_ok, snapshot=snap, cap=12288, pin=dummy_sha):
-            mod["ANCHOR_MANIFEST_SHA256"] = pin
+        def run(args, env=env_ok, snapshot=snap, cap=12288, pin=good_pin):
+            mod["ANCHOR_SEAL_SHA256"] = pin
             mod["environment"] = lambda: env
             mod["snapshot"] = lambda: snapshot
             mod["read_cap_mb"] = lambda: cap
@@ -245,7 +255,10 @@ def preflight_cases(mod):
         res["cap_unreadable"] = run([], cap=None)
         res["start_plus_sections_at_cap"] = run([], snapshot=dict(snap, bo_total_bytes=(12288 << 20) - 2_754_388_032))
         res["start_plus_sections_just_below_cap"] = run([], snapshot=dict(snap, bo_total_bytes=(12288 << 20) - 2_754_388_032 - 1))
-        res["manifest_not_the_anchors_package"] = run([], pin="0" * 64)
+        res["seal_not_the_anchors_package"] = run([], pin="0" * 64)
+        res["listed_file_changed"] = run([], pin=seal("0" * 64))
+        res["listed_file_missing"] = run([], pin=seal(good_digest, "gone.json"))
+        res["anec_dir_elsewhere"] = run(["--anec-dir", str(root / "other")], pin=seal(good_digest))
     return res
 
 
@@ -328,7 +341,8 @@ def main():
             failures.append(f"mutant {name} SURVIVED")
     want_pre = {"frozen_ok_reaches_the_load": "passed-preflight", "idle_59": 2, "prompt_p002": 2, "tokens_8": 2, "reference_blas": 2,
                 "no_blas_mapped": 2, "bo_unreadable": 2, "cap_unreadable": 2, "start_plus_sections_at_cap": 2,
-                "start_plus_sections_just_below_cap": "passed-preflight", "manifest_not_the_anchors_package": 2}
+                "start_plus_sections_just_below_cap": "passed-preflight", "seal_not_the_anchors_package": 2,
+                "listed_file_changed": 2, "listed_file_missing": 2, "anec_dir_elsewhere": 2}
     pre = preflight_cases(load_module_copy(SRC))
     for k, w in want_pre.items():
         v = pre[k]
