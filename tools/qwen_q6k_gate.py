@@ -29,6 +29,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pcore_mask  # noqa: E402
+from qwen_anchor import ANCHOR_TOKENS  # noqa: E402
 
 PINNED = pcore_mask.pin_self()
 if PINNED is not None:
@@ -36,7 +37,6 @@ if PINNED is not None:
 
 import numpy as np  # noqa: E402
 
-ANCHOR_TOKENS = [271, 248068, 271, 248069, 271, 33704, 82, 2222, 383, 8964, 1521, 279, 35003, 314, 279, 8964]
 MARGIN_FRACTION = 0.1
 RATIO_BAR = 0.50
 
