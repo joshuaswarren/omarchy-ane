@@ -194,19 +194,30 @@ def test_close_is_safe_without_a_started_worker_and_twice():
         sys.setswitchinterval(original)
 
 
-def test_close_after_a_started_worker_restores_the_interval_and_closes_prepared():
-    """The body of __init__'s reset()-failure branch: close() on a started
-    decoder with live prepared programs must unwind the process-global counter
-    and release the programs."""
+def test_init_reset_failure_restores_the_switch_interval(tmp_path, monkeypatch):
+    """The real __init__ with a failing reset(): the exception propagates, the
+    except branch closes the worker so the process-global interval is restored
+    and the counter is balanced for the next decoder."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "manifest.json").write_text('{"programs": []}')
+    monkeypatch.setattr(hd.rl, "LibANEAdapter", lambda lib, n: None, raising=False)
+    monkeypatch.setattr(hd.rl, "PreparedProgram",
+                        type("PreparedProgram", (), {"send_surface": None, "stage_surface": None,
+                                                     "read_surface": None}), raising=False)
+    monkeypatch.setattr(hd.H13Decoder, "reset",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+    args = type("Args", (), {"no_state_worker": False})()
     original = sys.getswitchinterval()
-    closed = []
     try:
-        d = open_decoder()
-        d.prepared = [type("P", (), {"close": lambda self: closed.append(1)})()]
-        d.close()
-        assert closed == [1]
-        assert d.worker_pool is None
-        assert sys.getswitchinterval() == original
+        try:
+            hd.H13Decoder(args, {"max_len": 8, "programs": []}, str(tmp_path), object())
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the reset failure was swallowed")
+        assert sys.getswitchinterval() == original  # the except branch closed the worker
+        open_decoder().close()
+        assert sys.getswitchinterval() == original  # the counter is balanced afterwards
     finally:
         sys.setswitchinterval(original)
 
