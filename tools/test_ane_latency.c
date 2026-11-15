@@ -133,6 +133,7 @@ int main(int argc, char **argv)
 		return 2;
 	}
 	if (write(fd, "x", 1) != 1) {
+		unlink(path);
 		return 2;
 	}
 	close(fd);
@@ -161,6 +162,7 @@ int main(int argc, char **argv)
 		close(cap);
 		expect("unopenable file: dispatch continues, hold disabled", ane_lat.disabled && ane_lat.fd < 0);
 		expect("default-on failure stays silent on stderr", stat(errpath, &st) == 0 && st.st_size == 0);
+		unlink(path);
 		unlink(errpath);
 		return bad;
 	}
@@ -193,6 +195,7 @@ int main(int argc, char **argv)
 		close(cap);
 		expect("explicit env: dispatch continues, hold disabled", ane_lat.disabled && ane_lat.fd < 0);
 		expect("explicit env: exactly one stderr line naming the hold", stderr_one_hold_line());
+		unlink(path);
 		unlink(errpath);
 		return bad;
 	}
@@ -204,6 +207,7 @@ int main(int argc, char **argv)
 		ane_latency_touch();
 		sleep_ms(200);
 		expect("day clamp: the wrapped value did not become a tiny idle time", open_fds() == 1);
+		unlink(path);
 		return bad;
 	}
 
