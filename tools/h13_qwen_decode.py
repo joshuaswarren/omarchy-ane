@@ -6,16 +6,26 @@ handle prepared once (pyane_init, buffers), each call packs the dense arrays int
 executes, reads and unpacks. The libane src/dst index order of every program comes from a port of libane's ane_bind_walk (ascending channel; surfaces the stream
 does not name get zeros of the header's tile size).
 
+The state worker (default on, --no-state-worker for the old whole-set path) chains every
+program's state output into its own state input on one background thread between
+its calls: the state output comes back deferred (the step loop stores it), the
+state input is skipped, and the worker reads the state surface, unpacks, repacks
+into its own surface staging and stages+ sends it while the host runs the other
+37 programs of the step. A call that follows a chained one awaits the worker's
+future before sending anything.
+
 Run: MIL_HWXC_DIR=/path/to/mil-hwx-compiler python3 h13_qwen_decode.py --pkg DIR --lib libane_python.so --out OUT [--prompts N] [--tokens T]
-MIL_HWXC_DIR is a mil-hwx-compiler checkout: tools/h13_run_linux.py there supplies LibANEAdapter and PreparedProgram (the libane binding and the strided-surface packing). The checkout needs PreparedProgram.send_surfaces (mil-hwx-compiler 1b8c11b or later).
+MIL_HWXC_DIR is a mil-hwx-compiler checkout: tools/h13_run_linux.py there supplies LibANEAdapter and PreparedProgram (the libane binding and the strided-surface packing). The checkout needs PreparedProgram.send_surface/stage_surface/read_surface (mil-hwx-compiler agent/h13-state-io or later): every call now sends per surface, and the state worker stages the chained states.
 """
 import argparse
+import ctypes
 import hashlib
 import json
 import os
 import struct
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pcore_mask
@@ -27,11 +37,11 @@ if not (COMPILER / "tools" / "h13_run_linux.py").is_file():
     sys.exit("set MIL_HWXC_DIR to a mil-hwx-compiler checkout (tools/h13_run_linux.py is missing in %s)" % COMPILER)
 sys.path.insert(0, str(COMPILER / "tools"))
 import h13_run_linux as rl
-if not hasattr(rl.PreparedProgram, "send_surfaces"):
-    sys.exit("%s has no PreparedProgram.send_surfaces: update mil-hwx-compiler to 1b8c11b or later" % COMPILER)
+if not hasattr(rl.PreparedProgram, "send_surface"):
+    sys.exit("%s has no PreparedProgram.send_surface: this checkout needs the mil-hwx-compiler one-surface state-IO change (agent/h13-state-io) or newer" % COMPILER)
 import numpy as np
 import qwen_m2_decode as dec
-from h13_surface import pack, unpack
+from h13_surface import pack, unpack, surface_view
 
 f16 = np.float16
 TILE = 1 << 14
@@ -89,6 +99,28 @@ def walk(anec):
     return srcs, dsts, tiles
 
 
+class Deferred:
+    """Placeholder for a state output the worker owns: reshape returns self, so the
+    step loop's outs[port].reshape(shape) stores it without a host copy. The worker
+    has staged the state into the program's input buffer by the time the next call
+    of that program awaits its future."""
+
+    def reshape(self, *shape):
+        return self
+
+
+def state_pairs(pr, in_ports, out_ports, i):
+    """(kin, kout, in_shape) per state of program i; each port matched exactly once."""
+    pairs = []
+    for s in pr["states"]:
+        kin = [k for k, p in enumerate(in_ports) if p and p["name"] == s["in_port"]]
+        kout = [k for k, p in enumerate(out_ports) if p and p["name"] == s["out_port"]]
+        if len(kin) != 1 or len(kout) != 1:
+            raise dec.Refuse(f"program {i}: state {s['in_port']}->{s['out_port']} does not match exactly one src and one dst surface")
+        pairs.append((kin[0], kout[0], tuple(s["in_shape"])))
+    return pairs
+
+
 class H13Decoder(dec.Decoder):
     """The decoder with the program calls on H13 through libane handles."""
 
@@ -105,6 +137,7 @@ class H13Decoder(dec.Decoder):
             raise dec.Refuse(f"package holds {len(pm['programs'])} programs, the decode manifest {len(self.progs)}")
         self.adapter = rl.LibANEAdapter(lib, 0)
         self.prepared, self.plan = [], []
+        self.state_pairs, self.state_slots = [], []
         for i, (pr, hp) in enumerate(zip(self.progs, pm["programs"])):
             anec = (Path(pkg) / "pkg" / hp["file"]).read_bytes()
             if hashlib.sha256(anec).hexdigest() != hp["anec_sha256"]:
@@ -120,24 +153,100 @@ class H13Decoder(dec.Decoder):
             out_sizes = [tiles[ch] * TILE for ch in dsts]
             self.prepared.append(rl.PreparedProgram(self.adapter, anec, placeholders, out_sizes))
             self.plan.append((in_ports, [tiles[ch] * TILE for ch in srcs], out_ports))
+            pairs = state_pairs(pr, in_ports, out_ports, i)
+            self.state_pairs.append(pairs)
+            self.state_slots.append((frozenset(k for k, _, _ in pairs), frozenset(o for _, o, _ in pairs)))
+        self.chained = {}
+        self._state_packs = {}
+        self.state_wait_s = 0.0
+        if getattr(args, "no_state_worker", False):
+            self.worker_pool = None
+            self.resident_states = False
+        else:
+            missing = [name for name in ("send_surface", "stage_surface", "read_surface")
+                       if not hasattr(rl.PreparedProgram, name)]
+            if missing:
+                raise dec.Refuse("%s has no PreparedProgram.%s: this checkout needs the mil-hwx-compiler one-surface state-IO change (agent/h13-state-io); pass --no-state-worker for the old whole-set path" % (COMPILER, ", ".join(missing)))
+            self.worker_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="h13-state")
+            self.resident_states = True
+            self._switch_interval = sys.getswitchinterval()
+            sys.setswitchinterval(0.0001)
         self.reset()
 
     def call(self, i, arrays):
         in_ports, in_sizes, out_ports = self.plan[i]
         prog = self.prepared[i]
-        data = [pack(arrays[p["name"]], p, size) if p else bytes(size) for p, size in zip(in_ports, in_sizes)]
-        prog.send_surfaces(data)
+        chained = self.chained.pop(i, None)
+        if chained is not None:
+            start = time.perf_counter()
+            chained.result()
+            self.state_wait_s += time.perf_counter() - start
+            skip_in, skip_out = self.state_slots[i]
+        else:
+            skip_in = skip_out = frozenset()
+        for k, (p, size) in enumerate(zip(in_ports, in_sizes)):
+            if k in skip_in:
+                continue
+            prog.send_surface(k, pack(arrays[p["name"]], p, size) if p else bytes(size))
         start = time.perf_counter()
         prog.submit()
         exec_ms = 1e3 * (time.perf_counter() - start)
-        raws = prog.transfer_out()
-        outs = {p["name"]: unpack(raw, p) for p, raw in zip(out_ports, raws) if p}
+        outs = {}
+        for k, p in enumerate(out_ports):
+            if not p:
+                continue
+            outs[p["name"]] = Deferred() if k in skip_out else unpack(prog.read_surface(k), p)
+        if self.worker_pool is not None and self.state_pairs[i]:
+            self.chained[i] = self.worker_pool.submit(self._chain_state, i)
         return outs, exec_ms
 
+    def drain(self):
+        """Await every pending chain job; reset() and close() go through here."""
+        pending = list(self.chained.values())
+        self.chained.clear()
+        for future in pending:
+            future.result()
+
+    def reset(self):
+        self.drain()
+        dec.Decoder.reset(self)
+
+    def _chain_state(self, i):
+        """Worker job: read program i's state outputs, repack them and stage them
+        into the state input buffers, so the next call of this program only sends
+        its non-state surfaces."""
+        in_ports, in_sizes, out_ports = self.plan[i]
+        prog = self.prepared[i]
+        for kin, kout, shape in self.state_pairs[i]:
+            dense = unpack(prog.read_surface(kout), out_ports[kout]).reshape(shape)
+            prog.stage_surface(kin, self._pack_state(i, dense, in_ports[kin], in_sizes[kin]))
+
+    def _pack_state(self, i, dense, port, size):
+        """pack() for the worker thread: h13_surface.pack keeps one cache that
+        only the main thread may touch, so the staging buffer and its strided
+        view live here, per (program, shape, strides, size)."""
+        cache = self._state_packs.setdefault(i, {})
+        key = (tuple(port["shape"]), tuple(port["strides"]), size)
+        entry = cache.get(key)
+        if entry is None:
+            staging = ctypes.create_string_buffer(size)
+            flat = np.ndarray(shape=(size // 2,), dtype=f16, buffer=staging)
+            entry = cache[key] = (staging, surface_view(flat, port))
+        staging, view = entry
+        view[...] = np.asarray(dense, dtype=f16).reshape(port["shape"])
+        return staging
+
     def close(self):
-        for p in self.prepared:
-            p.close()
-        self.prepared = []
+        try:
+            self.drain()
+        finally:
+            if self.worker_pool is not None:
+                self.worker_pool.shutdown(wait=True)
+                self.worker_pool = None
+                sys.setswitchinterval(self._switch_interval)
+            for p in self.prepared:
+                p.close()
+            self.prepared = []
 
 
 def decode_prompt(decoder, prompt, n_new, cos, sin, embed, head, forced=None):
@@ -174,6 +283,8 @@ def main(argv=None):
     ap.add_argument("--prompts", type=int, default=1)
     ap.add_argument("--tokens", type=int, default=8)
     ap.add_argument("--forced-ids", help="JSON {prompt id: [token ids]}: teacher-force these tokens (the M2 control's)")
+    ap.add_argument("--no-state-worker", action="store_true",
+                    help="send and read every surface each call (the old path); the worker chains the program states on one background thread")
     args = ap.parse_args(argv)
     manifest = json.loads(Path(args.manifest).read_text())
     out = Path(args.out)
@@ -192,7 +303,8 @@ def main(argv=None):
             r = decode_prompt(decoder, prompt, args.tokens, cos, sin, embed, head, forced.get(prompt["id"]))
             r["logits"].tofile(out / f"logits-{prompt['id']}.f32")
             rec = {"prompt": prompt["id"], "tokens": r["tokens"], "step_p50_s": sorted(r["walls"])[len(r["walls"]) // 2],
-                   "exec_ms_sum_median": sorted(r["exec_ms"])[len(r["exec_ms"]) // 2], "steps": len(r["walls"])}
+                   "exec_ms_sum_median": sorted(r["exec_ms"])[len(r["exec_ms"]) // 2], "steps": len(r["walls"]),
+                   "state_worker": decoder.worker_pool is not None}
             if prompt["id"] in forced:
                 rec["forced"] = True
             records.append(rec)
