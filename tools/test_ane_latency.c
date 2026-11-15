@@ -83,6 +83,26 @@ static int file_is_zero_word(void)
 	return got == sizeof(word) && word == 0;
 }
 
+/* 1 when the captured stderr file is exactly one line naming the hold being off. */
+static int stderr_one_hold_line(void)
+{
+	char buf[300];
+	FILE *f = fopen(errpath, "rb");
+	size_t got = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+	char *nl;
+
+	if (f) {
+		fclose(f);
+	}
+	if (!got || got == sizeof(buf) - 1) {
+		return 0;
+	}
+	buf[got] = 0;
+	nl = strchr(buf, '\n');
+	return nl && nl[1] == 0 && strncmp(buf, "LIBANE:", 7) == 0 &&
+	       strstr(buf, "cpu latency hold off") != NULL;
+}
+
 /* Milliseconds until the hold drops, or -1 once limit_ms passed with the file still open. */
 static long wait_closed_ms(long limit_ms)
 {
@@ -157,6 +177,36 @@ int main(int argc, char **argv)
 		return bad;
 	}
 
+	if (argc > 1 && !strcmp(argv[1], "explicit")) {
+		int errfd = dup(STDERR_FILENO);
+		int cap = mkstemp(errpath);
+
+		setenv("ANE_CPU_LATENCY_DEV", "/nonexistent/latency", 1);
+		setenv("ANE_CPU_LATENCY_HOLD_MS", "30", 1);
+		fflush(stderr);
+		dup2(cap, STDERR_FILENO);
+		ane_latency_touch();
+		ane_latency_touch();
+		fflush(stderr);
+		dup2(errfd, STDERR_FILENO);
+		close(errfd);
+		close(cap);
+		expect("explicit env: dispatch continues, hold disabled", ane_lat.disabled && ane_lat.fd < 0);
+		expect("explicit env: exactly one stderr line naming the hold", stderr_one_hold_line());
+		unlink(errpath);
+		return bad;
+	}
+	if (argc > 1 && !strcmp(argv[1], "clamp")) {
+		/* 18446744073710 ms * 1e6 wraps uint64 to about 0.45 ms: without the day clamp the hold
+		   would drop within a few ms. Clamped it is one day, so the hold must still be open
+		   after 200 ms and the process must exit cleanly. */
+		setenv("ANE_CPU_LATENCY_HOLD_MS", "18446744073710", 1);
+		ane_latency_touch();
+		sleep_ms(200);
+		expect("day clamp: the wrapped value did not become a tiny idle time", open_fds() == 1);
+		return bad;
+	}
+
 	setenv("ANE_CPU_LATENCY_HOLD_MS", "30", 1);
 	expect("no hold before the first dispatch", open_fds() == 0);
 	ane_latency_touch();
@@ -191,6 +241,13 @@ int main(int argc, char **argv)
 	ane_latency_touch();
 	expect("the next dispatch holds again", open_fds() == 1 && file_is_zero_word());
 
+	/* A touch while the hold is open returns early and never re-reads the env, so drop the
+	   30 ms hold here before the fork section raises the parent's idle time to 300 ms. */
+	expect("and it drops again", wait_closed_ms(1000) >= 0);
+
+	/* The parent holds for 300 ms: longer than the child's own 30 ms drop plus its wait bound,
+	   so the child's lifetime cannot expire the parent's hold and the next check stays exact. */
+	setenv("ANE_CPU_LATENCY_HOLD_MS", "300", 1);
 	ane_latency_touch();
 	pid = fork();
 	if (pid == 0) {
@@ -198,23 +255,44 @@ int main(int argc, char **argv)
 		int child_bad = open_fds() != 0;
 		int rf = open(path, O_RDONLY);
 
+		/* The child picks its own idle time again. */
+		setenv("ANE_CPU_LATENCY_HOLD_MS", "30", 1);
 		ane_latency_touch();
 		child_bad |= rf < 0 || read(rf, &word, sizeof(word)) != sizeof(word) || word != 0;
 		if (rf >= 0) {
 			close(rf);
 		}
 		child_bad |= open_fds() != 1;
+		/* The rebuilt hold is the child's own: no watcher survives the fork, so the child must drop
+		   it with no further dispatch (idle 30 ms, bound idle plus slack), or the hold leaks for
+		   the child's whole life. Deleting the watcher_running reset in ane_latency_child fails
+		   exactly here: the child has no watcher and never drops. */
+		child_bad |= wait_closed_ms(150) < 0;
 		_exit(child_bad ? 1 : 0);
 	}
 	{
 		int st = -1;
 
-		expect("fork: the child dropped the inherited hold and rebuilt its own",
+		expect("fork: the child drops the inherited hold, rebuilds its own and drops it too",
 		       pid > 0 && waitpid(pid, &st, 0) == pid && WIFEXITED(st) && WEXITSTATUS(st) == 0);
 	}
 	expect("fork: the parent's hold is untouched", open_fds() == 1);
 
-	expect("and it drops again", wait_closed_ms(1000) >= 0);
+	expect("and the parent's hold still drops after the fork", wait_closed_ms(1000) >= 0);
+
+	/* The 30 ms-scale spin check above cannot see busy timedwait wakeups: a watcher whose
+	   deadline remaining is mutated to 1 ns burns about 31 ms of CPU per 300 ms hold, which
+	   slips under that 15 ms bound. One long hold (the idle time is still the fork section's
+	   300 ms) with no dispatch and no fd polling during the window (the poll itself costs
+	   CPU): the watcher must stay under 3 ms of process CPU. */
+	ane_latency_touch();
+	expect("long hold: open right after the dispatch", open_fds() == 1);
+	c0 = cpu_ms();
+	sleep_ms(400);
+	dropped = cpu_ms() - c0;
+	expect("long hold: dropped with no further dispatch",
+	       open_fds() == 0 && __atomic_load_n(&ane_lat.held, __ATOMIC_ACQUIRE) == 0);
+	expect("long hold: the watcher burned under 3 ms of CPU", dropped <= 3);
 
 	unlink(path);
 	return bad;
