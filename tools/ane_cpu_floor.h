@@ -1,0 +1,952 @@
+// SPDX-License-Identifier: MIT
+/* Copyright 2026 Joshua Warren */
+
+#ifndef ANE_CPU_FLOOR_H
+#define ANE_CPU_FLOOR_H
+
+/*
+ * ane_cpu_floor.h -- hold a CPU clock floor under a serving ane-run (t6021 only).
+ *
+ * With ANE_CPU_FLOOR=<kHz> set (for example ANE_CPU_FLOOR=1968000, the value
+ * the rows measure), ane-run raises the t6021 (M2 Max) P cluster's minimum
+ * clock (policy4, cpus 4-7, scaling_min_freq) to <kHz> while it serves so the
+ * schedutil governor cannot idle the P cores between ANE submissions; the
+ * M2 Max's second P cluster (policy8, cpus 8-11) is not floored, so work the
+ * scheduler places there runs ungated; with the variable unset, zero, or not
+ * a number -- trailing junk included, "1968000kHz" is not a number -- nothing
+ * under sysfs is read or written at all. Only scaling_min_freq is written:
+ * the governor is never changed, and the value found in the file is saved and
+ * restored, never assumed. Measured in row m2-minfreq-interleaved-074
+ * (default and 1968000 alternating in one row, linked program, cpu4 pinned,
+ * schedutil, one 14-inch M2 Max, 840 s): default 702000 kHz n=214000 p50/p90/p99
+ * 1.907/2.066/2.242 ms; 1968000 kHz n=213000 1.874/1.939/1.994 ms (p90
+ * -6.1 percent, p99 -11.1 percent, p50 -1.7 percent). The minimum was
+ * restored to 702000 at the end of the row. The power cost is row 072
+ * (hwmon4 "Total System Power", 1 Hz, medians over about 359 samples per arm,
+ * one 14-inch M2 Max, whole machine): idle +1.30 W and serve +1.94 W at the
+ * floor, which is why the floor is held only while ane-run serves. The means
+ * are not usable: rare spikes of about 100 W hit both arms and their source
+ * is not identified yet (a follow-up row looks for it). The ring program is
+ * row 075, still to run.
+ *
+ * Every exit path restores:
+ *   - normal exit: atexit restores in this process;
+ *   - SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGPIPE and SIGALRM: a chained
+ *     handler restores, then gives the signal back
+ *     so the exit status still says how the run died; the restore takes the
+ *     state lock non-blocking with a bounded retry (the frame the signal
+ *     interrupted may hold the lock itself), and if the lock never frees,
+ *     the run dies by the signal when the previous disposition is
+ *     SIG_DFL; a previous real handler is reinstated and receives this
+ *     delivery (the raise stays pending behind the sa_mask), so its own
+ *     semantics decide what happens next; an
+ *     inherited SIG_IGN (a background job) is put back untouched and
+ *     the floor survives the delivery;
+ *   - SIGKILL or a crash: a watchdog child forked at begin watches a pipe; the
+ *     kernel closes the pipe when the parent dies, and the child restores from
+ *     the state file once the parent is really gone -- a dying process
+ *     releases its fds (the pipe among them) inside do_exit, before
+ *     exit_notify makes it a zombie, so the first look at the pid can still
+ *     say alive. The watchdog runs in its own session (setsid) with SIGHUP,
+ *     SIGINT, SIGQUIT and SIGTERM ignored, so a process-group kill that
+ *     takes the run -- a terminal or ssh hangup, a group ^\, a pkill
+ *     sweep over the group (#413) -- leaves the watchdog alive to
+ *     restore. It stays in the run's control group: a systemd kill that
+ *     takes the whole cgroup (KillMode=control-group, the final SIGKILL
+ *     stage of mixed, memory.oom.group) kills the watchdog with the run;
+ *   - a watchdog SIGKILLed itself, a cgroup kill as above, or a run
+ *     killed between the fork and the child's setsid -- a window a few
+ *     scheduling steps wide at begin; the sync handoff only orders the
+ *     run's own signals behind the detach, and an external group kill in
+ *     that window takes both -- leaves the state file as the stale
+ *     record and the next begin reconciles it before raising again.
+ *
+ * Concurrent ane-run instances share one state file under a flock, and no
+ * begin ever lowers the file: a fresh raise sits out when the file already
+ * sits at or above the floor, a join raises only above the file's current
+ * content, and a stale record is adopted -- a following raise starts from
+ * the recorded saved value with a single write, and a sit-out begin still
+ * restores that value with its one undo write. The state
+ * carries every holder pid with its /proc start time; a holder whose pid is
+ * gone, is a zombie, or whose start time no longer matches is dead, so a
+ * killed run cannot pin the floor (a pid that was reused after a fast crash
+ * belongs to a stranger and counts as dead).
+ *
+ * Privilege: nothing in the package grants write access to cpufreq sysfs
+ * today. The accel node is mode 0666 through systemd's 50-udev-default.rules,
+ * but sysfs is not, and the package installs no sudoers rule, udev rule or
+ * unit for it. The floor therefore applies only when this process can already
+ * write scaling_min_freq (a run under sudo or a root service); without write
+ * access, without policy4, or on any SoC whose device tree does not name
+ * t6021, this is a silent no-op and ane-run never fails because of it. sysfs
+ * is never made world-writable here.
+ *
+ * Host-test overrides (compiled out of the production binary: ane-run is
+ * built without -DANE_CPU_FLOOR_TESTING and ignores both variables, so a
+ * run with a preserved environment -- sudo -E, env_keep, a root service
+ * with a user-influenced environment -- cannot have its sysfs writes or its
+ * state directory pointed anywhere but the real paths; the test binaries
+ * are built with the flag and honor them):
+ *   ANE_RUN_CPUFREQ_ROOT  replaces /sys/devices/system/cpu with a fake tree;
+ *                         the SoC gate then reads <root>/compatible;
+ *   ANE_RUN_STATE_DIR     replaces /run/ane-run (lock and state files).
+ */
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+
+#define ANE_CPU_FLOOR_SYSFS_ENV "ANE_RUN_CPUFREQ_ROOT"
+#define ANE_CPU_FLOOR_STATE_ENV "ANE_RUN_STATE_DIR"
+#define ANE_CPU_FLOOR_ENV "ANE_CPU_FLOOR"
+#define ANE_CPU_FLOOR_CPU "cpu4"	/* policy4: the t6021 P cluster, cpus 4-7 */
+#define ANE_CPU_FLOOR_KHZ_DEFAULT "1968000"	/* kHz, the value the rows measure */
+#define ANE_CPU_FLOOR_HOLDER_MAX 64
+
+/* The state file is one "saved" line plus one "pid" line per holder, and
+ * ane_floor_state_write composes it with no per-append bounds check (the
+ * signal-safe ane_floor_num), so its buffer is sized here from the
+ * compile-time maxima: a 64-bit decimal is 20 digits, a positive pid 10. */
+#define ANE_FLOOR_NUM_MAX 20
+#define ANE_FLOOR_PID_MAX 10
+#define ANE_FLOOR_LINE_MAX \
+	(4 + ANE_FLOOR_PID_MAX + 1 + ANE_FLOOR_NUM_MAX + 1)
+#define ANE_FLOOR_STATE_MAX \
+	(6 + ANE_FLOOR_NUM_MAX + 1 + \
+	 ANE_CPU_FLOOR_HOLDER_MAX * ANE_FLOOR_LINE_MAX)
+
+struct ane_floor_paths {
+	char freq[512];		/* scaling_min_freq of policy4 */
+	char compat[512];	/* the SoC gate */
+	char dir[512];		/* state directory */
+	char state[512];	/* state file */
+	char lock[512];		/* lock file */
+};
+
+struct ane_floor_state {
+	unsigned long long saved;
+	int pids[ANE_CPU_FLOOR_HOLDER_MAX];
+	unsigned long long ticks[ANE_CPU_FLOOR_HOLDER_MAX];	/* /proc start time */
+	int npids;
+};
+
+static struct ane_floor_paths ane_floor_paths;
+
+#define ANE_FLOOR_SIG_MAX 32	/* a chained signal must index below this */
+static struct sigaction ane_floor_old[ANE_FLOOR_SIG_MAX];
+_Static_assert(SIGINT < ANE_FLOOR_SIG_MAX && SIGTERM < ANE_FLOOR_SIG_MAX &&
+	SIGHUP < ANE_FLOOR_SIG_MAX && SIGQUIT < ANE_FLOOR_SIG_MAX &&
+	SIGPIPE < ANE_FLOOR_SIG_MAX && SIGALRM < ANE_FLOOR_SIG_MAX,
+	"every chained signal indexes ane_floor_old");
+
+static int ane_floor_held;	/* this process is a live holder */
+static int ane_floor_pipe_w = -1;
+
+static void ane_cpu_floor_end(void);
+static void ane_floor_drop_pid(const struct ane_floor_paths *p, int pid, int blocking);
+
+/* A process that fork()ed while holding the floor must call this in the child
+ * before it does anything else: the child inherits the participation flag and
+ * the watchdog pipe but owns neither. It holds no state-file membership, so
+ * its own begin/end start fresh, and its copy of the pipe closes without
+ * releasing the parent's watchdog. */
+static void __attribute__((unused)) ane_cpu_floor_forked_child(void)
+{
+	ane_floor_held = 0;
+	if (ane_floor_pipe_w >= 0) {
+		close(ane_floor_pipe_w);
+		ane_floor_pipe_w = -1;
+	}
+}
+
+/* Append a decimal number: used on the signal path, where snprintf is not
+ * async-signal-safe. Returns the new end pointer. */
+static char *ane_floor_num(char *dst, unsigned long long v)
+{
+	char tmp[24];
+	int n = 0;
+
+	do {
+		tmp[n++] = (char)('0' + (v % 10));
+		v /= 10;
+	} while (v);
+	while (n)
+		*dst++ = tmp[--n];
+	return dst;
+}
+
+/* Join a base path and a leaf without printf: paths stay bounded and
+ * -Wformat-truncation stays quiet. Used before any signal can arrive. */
+static int ane_floor_join(char *dst, size_t len, const char *base, const char *leaf)
+{
+	size_t n = strlen(base);
+
+	if (n + strlen(leaf) + 2 > len)
+		return -1;
+	memcpy(dst, base, n);
+	dst[n++] = '/';
+	memcpy(dst + n, leaf, strlen(leaf) + 1);
+	return 0;
+}
+
+static int ane_floor_read(const char *path, char *buf, size_t len)
+{
+	int fd, got;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return -1;
+	got = (int)read(fd, buf, len - 1);
+	close(fd);
+	if (got < 0)
+		return -1;
+	buf[got] = 0;
+	return got;
+}
+
+static int ane_floor_write(const char *path, const char *s)
+{
+	int fd, ok;
+
+	fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return -1;
+	ok = write(fd, s, strlen(s)) == (ssize_t)strlen(s) ? 0 : -1;
+	close(fd);
+	return ok;
+}
+
+/* Take the state lock. mkdir(2) is not async-signal-safe, so the signal path
+ * calls this with make_dir 0: the directory always exists while a holder
+ * lives, and without it there is nothing to release. */
+static int ane_floor_lock_at(const struct ane_floor_paths *p, int make_dir)
+{
+	int fd;
+
+	if (make_dir && mkdir(p->dir, 0755) && errno != EEXIST)
+		return -1;
+	fd = open(p->lock, O_RDWR | O_CREAT, 0644);
+	if (fd < 0)
+		return -1;
+	if (flock(fd, LOCK_EX)) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+static int ane_floor_lock(const struct ane_floor_paths *p)
+{
+	return ane_floor_lock_at(p, 1);
+}
+
+/* Take the state lock without blocking: the signal path uses it, because
+ * the frame the signal interrupted may hold the lock itself, and a blocking
+ * flock there would hang the process forever. */
+static int ane_floor_lock_try(const struct ane_floor_paths *p)
+{
+	int fd;
+
+	fd = open(p->lock, O_RDWR | O_CREAT, 0644);
+	if (fd < 0)
+		return -1;
+	if (flock(fd, LOCK_EX | LOCK_NB)) {
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+/* The start time of a pid, /proc/<pid>/stat field 22 in clock ticks. 0 when
+ * the pid does not exist or the field cannot be read. */
+static unsigned long long ane_floor_start_ticks(int pid)
+{
+	char path[48], buf[1024], *p, *tok;
+	unsigned long long v = 0;
+	int fd, n, i;
+
+	p = path;
+	memcpy(p, "/proc/", 6);
+	p += 6;
+	p = ane_floor_num(p, (unsigned long long)pid);
+	memcpy(p, "/stat", 6);
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;
+	n = (int)read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return 0;
+	buf[n] = 0;
+	p = strrchr(buf, ')');
+	if (!p)
+		return 0;
+	/* field 22 is the 20th token after field 2; field 3 (the state letter)
+	 * starts right after ") " */
+	tok = p + 2;
+	for (i = 3; i <= 22 && tok; i++) {
+		if (i == 22) {
+			v = strtoull(tok, NULL, 10);
+			break;
+		}
+		while (*tok && *tok != ' ')
+			tok++;
+		while (*tok == ' ')
+			tok++;
+		if (!*tok)
+			tok = NULL;
+	}
+	return v;
+}
+
+/* A holder is dead when /proc/<pid>/stat is gone, shows a zombie (exited,
+ * not yet reaped), or its start time no longer matches the record (the pid
+ * was reused by a stranger). kill() alone cannot tell: a reuse by another
+ * user answers EPERM, as if the stranger were our holder. */
+static int ane_floor_pid_dead(int pid, unsigned long long ticks)
+{
+	char path[48], buf[1024], *p, *tok;
+	int fd, n, i;
+	unsigned long long cur = 0;
+
+	p = path;
+	memcpy(p, "/proc/", 6);
+	p += 6;
+	p = ane_floor_num(p, (unsigned long long)pid);
+	memcpy(p, "/stat", 6);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		if (errno != ENOENT)
+			return 0;	/* unreadable: assume alive */
+		/* hidepid mounts hide a live stranger's /proc entry, so a
+		 * missing stat is not proof: EPERM or 0 from kill() means
+		 * the pid exists and is alive */
+		return kill(pid, 0) == -1 && errno == ESRCH;
+	}
+	n = (int)read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return 0;
+	buf[n] = 0;
+	p = strrchr(buf, ')');
+	if (!p)
+		return 0;
+	if (p[1] == ' ' && p[2] == 'Z')
+		return 1;
+	tok = p + 2;
+	for (i = 3; i <= 22 && tok; i++) {
+		if (i == 22) {
+			cur = strtoull(tok, NULL, 10);
+			break;
+		}
+		while (*tok && *tok != ' ')
+			tok++;
+		while (*tok == ' ')
+			tok++;
+		if (!*tok)
+			tok = NULL;
+	}
+	return ticks != 0 && cur != 0 && cur != ticks;
+}
+
+static void ane_floor_prune(struct ane_floor_state *st)
+{
+	int i, live = 0;
+
+	for (i = 0; i < st->npids; i++) {
+		if (!ane_floor_pid_dead(st->pids[i], st->ticks[i])) {
+			st->pids[live] = st->pids[i];
+			st->ticks[live] = st->ticks[i];
+			live++;
+		}
+	}
+	st->npids = live;
+}
+
+static int ane_floor_state_read(const char *path, struct ane_floor_state *st)
+{
+	char buf[8192], *line, *end;
+
+	memset(st, 0, sizeof(*st));
+	if (ane_floor_read(path, buf, sizeof(buf)) < 0)
+		return -1;
+	line = strstr(buf, "saved ");
+	if (!line)
+		return -1;
+	st->saved = strtoull(line + 6, &end, 10);
+	if (end == line + 6)
+		return -1;
+	line = buf;
+	while ((line = strstr(line, "\npid ")) != NULL &&
+	       st->npids < ANE_CPU_FLOOR_HOLDER_MAX) {
+		long v = strtol(line + 5, &end, 10);
+
+		if (end != line + 5 && v > 0) {
+			st->pids[st->npids] = (int)v;
+			st->ticks[st->npids] =
+				strtoull(end, NULL, 10);	/* 0 when absent */
+			st->npids++;
+		}
+		line = end;
+	}
+	return 0;
+}
+
+static int ane_floor_state_write(const struct ane_floor_paths *p, const struct ane_floor_state *st)
+{
+	char buf[ANE_FLOOR_STATE_MAX], tmp[512], *w = buf;
+	int i, r, fd;
+
+	/* the composition below appends with no bounds checks: the assert
+	 * pins the worst case, the saved line plus one full-width line per
+	 * holder, against the sizing above */
+	_Static_assert(sizeof(buf) == 6 + ANE_FLOOR_NUM_MAX + 1 +
+		ANE_CPU_FLOOR_HOLDER_MAX * ANE_FLOOR_LINE_MAX,
+		"state buffer fits the saved line and every full-width holder line");
+
+	/* write to a sibling and rename: a writer killed mid-write (or two
+	 * writers racing) can never leave a torn state file behind */
+	memcpy(w, "saved ", 6);
+	w += 6;
+	w = ane_floor_num(w, st->saved);
+	*w++ = '\n';
+	for (i = 0; i < st->npids; i++) {
+		memcpy(w, "pid ", 4);
+		w += 4;
+		w = ane_floor_num(w, (unsigned long long)st->pids[i]);
+		if (st->ticks[i]) {
+			*w++ = ' ';
+			w = ane_floor_num(w, st->ticks[i]);
+		}
+		*w++ = '\n';
+	}
+	if (ane_floor_join(tmp, sizeof(tmp), p->dir, "ane-run.state.tmp"))
+		return -1;
+	fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return -1;
+	r = write(fd, buf, (size_t)(w - buf)) == (ssize_t)(w - buf) ? 0 : -1;
+	close(fd);
+	if (r)
+		return -1;
+	if (rename(tmp, p->state)) {
+		unlink(tmp);
+		return -1;
+	}
+	return 0;
+}
+
+
+/* Drop dead holders; when none are left, give the saved value back and clear
+ * the record. Called from begin (a stale file) and from the watchdog (the
+ * parent died) -- never from a signal handler. */
+static void ane_floor_reconcile(const struct ane_floor_paths *p)
+{
+	struct ane_floor_state st;
+	char saved[32], *w = saved;
+	int fd = ane_floor_lock(p);
+
+	if (fd < 0)
+		return;
+	if (ane_floor_state_read(p->state, &st) == 0) {
+		ane_floor_prune(&st);
+		if (st.npids == 0) {
+			w = ane_floor_num(w, st.saved);
+			*w++ = '\n';
+			*w = 0;
+			ane_floor_write(p->freq, saved);
+			unlink(p->state);
+		} else {
+			ane_floor_state_write(p, &st);
+		}
+	}
+	close(fd);
+}
+
+/* The watchdog's reconcile: the dying parent releases its fds (the pipe
+ * among them) from do_exit, BEFORE exit_notify makes it a zombie, so for the
+ * rest of its exit kill(pid, 0) still answers and /proc still shows a live
+ * state. One reconcile at pipe close can therefore see this run's holder as
+ * alive, keep the record and leave the floor raised. Loop, bounded, until
+ * this run's holder is really out of the record (gone, a zombie, or its
+ * start time reused); a holder still alive at the bound -- an intentional
+ * early pipe close under a live run -- keeps its record and its floor. The
+ * bound has to cover a holder that is merely SLOW to die (a throttled or
+ * loaded exit), not only a fast one: giving up on one of those strands the
+ * floor until the next run. */
+static void ane_floor_watchdog_reconcile(const struct ane_floor_paths *p, int ppid)
+{
+	const struct timespec step = { 0, 20 * 1000 * 1000 };
+	struct ane_floor_state st;
+	int i, j;
+
+	for (i = 0; i < 1500; i++) {	/* 30 s */
+		unsigned long long ticks = 0;
+		int found = 0;
+
+		ane_floor_reconcile(p);
+		if (ane_floor_state_read(p->state, &st) != 0)
+			return;	/* no record left: nothing is held */
+		for (j = 0; j < st.npids; j++) {
+			if (st.pids[j] == ppid) {
+				ticks = st.ticks[j];
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			return;	/* this run is out; whoever is left is alive */
+		if ((int)getppid() != ppid) {
+			/* reparenting happens only at the parent's death, so
+			 * the holder is dead even when /proc still argues
+			 * alive -- a stranger can reuse the pid within the
+			 * same start tick. Drop it directly: the floor must
+			 * not wait on a verdict the stranger can spoof. */
+			ane_floor_drop_pid(p, ppid, 1);
+			return;
+		}
+		if (ane_floor_pid_dead(ppid, ticks))
+			return;	/* gone, a zombie, or its start time reused */
+		nanosleep(&step, NULL);
+	}
+}
+
+/* The watchdog: the parent holds the write end of a pipe for its whole life;
+ * the kernel closes it on death (the clean end closes it on purpose), and the
+ * child then reconciles under the lock. */
+static void ane_floor_watchdog_start(const struct ane_floor_paths *p)
+{
+	int fds[2], syncfds[2];
+	pid_t kid;
+	pid_t ppid = getpid();	/* read before the fork: the child inherits it */
+	const struct timespec fstep = { 0, 50 * 1000 * 1000 };
+	char c;
+
+	if (pipe(fds))
+		return;
+	if (pipe(syncfds)) {
+		close(fds[0]);
+		close(fds[1]);
+		return;
+	}
+	kid = fork();
+	if (kid < 0) {
+		/* a fork can fail on a loaded host, and the watchdog is the
+		 * only SIGKILL cover: try once more before giving up on it */
+		nanosleep(&fstep, NULL);
+		kid = fork();
+	}
+	if (kid < 0) {
+		close(fds[0]);
+		close(fds[1]);
+		close(syncfds[0]);
+		close(syncfds[1]);
+		return;
+	}
+	if (kid == 0) {
+		struct pollfd pfd;
+		int rfd = fds[0];
+
+		/* the watchdog detaches into its own session and ignores the
+		 * catchable deaths: a process-group SIGHUP, SIGQUIT or
+		 * SIGKILL that takes the run (#413: a terminal or ssh
+		 * hangup, a group ^\, a pkill sweep) leaves the watchdog
+		 * alive to restore. It stays in the run's control group, so
+		 * a systemd kill that takes the whole cgroup takes it too.
+		 * The window between this fork and the setsid is a few
+		 * scheduling steps wide: the sync handoff below only orders
+		 * the run's own signals behind the detach, and an external
+		 * group kill in that window takes both. A SIGKILL aimed at
+		 * the watchdog itself strands the floor until the next
+		 * ANE_CPU_FLOOR run. */
+		setsid();
+		signal(SIGHUP, SIG_IGN);
+		signal(SIGINT, SIG_IGN);
+		signal(SIGQUIT, SIG_IGN);
+		signal(SIGTERM, SIG_IGN);
+		/* tell the parent the detachment is done: until this byte,
+		 * a group kill aimed at the run would still land here */
+		if (write(syncfds[1], "D", 1) != 1)
+			_exit(0);
+
+		close(fds[1]);
+		close(syncfds[1]);
+		close(syncfds[0]);
+		pfd.fd = rfd;
+		pfd.events = POLLIN;
+		for (;;) {
+			pfd.revents = 0;
+			if (poll(&pfd, 1, -1) < 0) {
+				if (errno == EINTR)
+					continue;
+				break;
+			}
+			if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
+				break;
+		}
+		close(rfd);
+		ane_floor_watchdog_reconcile(p, (int)ppid);
+		_exit(0);
+	}
+	close(fds[0]);
+	close(syncfds[1]);
+	/* wait for the watchdog's detachment before anything can signal this
+	 * process group; a watchdog that died before the byte releases the
+	 * pipe and this read returns */
+	while (read(syncfds[0], &c, 1) < 0 && errno == EINTR)
+		;
+	close(syncfds[0]);
+	ane_floor_pipe_w = fds[1];
+}
+
+/* Remove one pid from the state record; when it was the last holder, give
+ * the saved value back and clear the record. blocking 1 takes the lock and
+ * waits (atexit, the watchdog); blocking 0 retries bounded and non-blocking
+ * (the signal path, where the interrupted frame may hold the lock itself:
+ * a blocking flock there would deadlock the process -- if the lock never
+ * frees, only a SIG_DFL disposition re-raises and dies; any other handler
+ * keeps running, the watchdog gives up at its 30 s bound, and the floor
+ * stays raised until the next ANE_CPU_FLOOR run). */
+static void ane_floor_drop_pid(const struct ane_floor_paths *p, int pid, int blocking)
+{
+	struct ane_floor_state st;
+	const struct timespec step = { 0, 20 * 1000 * 1000 };
+	char saved[32], *w = saved;
+	int fd, i, live = 0;
+
+	if (blocking) {
+		fd = ane_floor_lock_at(p, 0);	/* no mkdir: this runs on the signal path */
+	} else {
+		fd = -1;
+		for (i = 0; fd < 0 && i < 100; i++) {
+			fd = ane_floor_lock_try(p);
+			if (fd < 0)
+				nanosleep(&step, NULL);
+		}
+	}
+	if (fd < 0)
+		return;
+	if (ane_floor_state_read(p->state, &st) == 0) {
+		for (i = 0; i < st.npids; i++) {
+			if (st.pids[i] != pid) {
+				st.pids[live] = st.pids[i];
+				st.ticks[live] = st.ticks[i];
+				live++;
+			}
+		}
+		st.npids = live;
+		if (st.npids == 0) {
+			w = ane_floor_num(w, st.saved);
+			*w++ = '\n';
+			*w = 0;
+			ane_floor_write(p->freq, saved);
+			unlink(p->state);
+		} else {
+			ane_floor_state_write(p, &st);
+		}
+	}
+	close(fd);
+}
+
+/* The one restore used by every in-process exit path (atexit and the signal
+ * handler): async-signal-safe calls only on the signal path. */
+static void ane_floor_release(const struct ane_floor_paths *p, int blocking)
+{
+	ane_floor_drop_pid(p, (int)getpid(), blocking);
+	if (ane_floor_pipe_w >= 0) {
+		close(ane_floor_pipe_w);
+		ane_floor_pipe_w = -1;
+	}
+}
+
+static void ane_floor_signal_body(int sig)
+{
+	struct sigaction *o;
+
+	if (sig <= 0 || sig >= ANE_FLOOR_SIG_MAX)
+		return;
+	o = &ane_floor_old[sig];
+	if (o->sa_handler == SIG_IGN) {
+		/* the run inherited SIG_IGN (a background job): the
+		 * signal is not meant for this process, so put it back and
+		 * keep holding the floor */
+		sigaction(sig, o, NULL);
+		return;
+	}
+	ane_floor_release(&ane_floor_paths, 0);
+	ane_floor_held = 0;
+	sigaction(sig, o, NULL);
+	/* the delivery is handed back in every non-IGN case: for SIG_DFL the
+	 * raise is the death, and for a previous handler the signal is
+	 * blocked in this frame (sa_mask below), so it stays pending and the
+	 * reinstated handler receives it the moment this one returns -- the
+	 * first delivery is never swallowed */
+	raise(sig);
+}
+
+static void ane_floor_signal(int sig)
+{
+	/* the body runs open/flock/read/write/rename/unlink/nanosleep, any
+	 * of which clobbers errno in whatever frame the signal interrupted */
+	int e = errno;
+
+	ane_floor_signal_body(sig);
+	errno = e;
+}
+
+/* Raise the floor for this run. Returns 1 when this process holds it (and so
+ * must let ane_cpu_floor_end run), 0 when the feature does not apply. Never
+ * fails the caller. */
+static int ane_cpu_floor_begin(void)
+{
+	struct ane_floor_paths *p = &ane_floor_paths;
+	struct ane_floor_state st;
+	char buf[128], floor_out[32], *end;
+	const char *root = NULL, *dir = NULL, *env;
+	unsigned long long saved, floor, my_ticks, applied = 0;
+	unsigned long long stale_saved = 0;
+	int lockfd, raised_fresh = 0, joined = 0, stale_adopt = 0;
+
+	/* Opt-in gate: with ANE_CPU_FLOOR unset, zero, or garbage the feature is
+	 * off and nothing under sysfs is read or written. */
+	env = getenv(ANE_CPU_FLOOR_ENV);
+	if (!env || *env < '1' || *env > '9')
+		return 0;
+	floor = strtoull(env, &end, 10);
+	if (end == env || floor == 0 || *end)
+		return 0;
+	{
+		char *w = floor_out;
+
+		w = ane_floor_num(w, floor);
+		*w++ = '\n';
+		*w = 0;
+	}
+	if (ane_floor_held)
+		return 1;
+#ifdef ANE_CPU_FLOOR_TESTING
+	/* the host-test overrides are compiled out of the production binary:
+	 * ane-run is built without this flag, so a run with a preserved
+	 * environment (sudo -E, env_keep, a root service with a
+	 * user-influenced environment) cannot have its sysfs writes or its
+	 * state directory pointed anywhere but the real paths */
+	root = getenv(ANE_CPU_FLOOR_SYSFS_ENV);
+	dir = getenv(ANE_CPU_FLOOR_STATE_ENV);
+#endif
+	if (ane_floor_join(p->freq, sizeof(p->freq),
+			   root ? root : "/sys/devices/system/cpu",
+			   ANE_CPU_FLOOR_CPU "/cpufreq/scaling_min_freq"))
+		return 0;
+	if (ane_floor_join(p->compat, sizeof(p->compat),
+			   root ? root : "/proc/device-tree", "compatible"))
+		return 0;
+	if (strlen(dir ? dir : "/run/ane-run") >= sizeof(p->dir))
+		return 0;
+	snprintf(p->dir, sizeof(p->dir), "%s", dir ? dir : "/run/ane-run");
+	if (ane_floor_join(p->state, sizeof(p->state), p->dir, "ane-run.state"))
+		return 0;
+	if (ane_floor_join(p->lock, sizeof(p->lock), p->dir, "ane-run.lock"))
+		return 0;
+
+	/* SoC gate: t6021 in the device tree, else silent no-op (M1 and every
+	 * other chip). compatible is a NUL separated list of entries
+	 * ("apple,j414c\0apple,t6021\0apple,arm-platform\0"); a strstr on the
+	 * whole buffer scans only the first entry, so walk every entry and
+	 * require whole-entry equality with "apple,t6021" - a longer entry such
+	 * as "apple,t60210" is not a match. */
+	{
+		int gotc = ane_floor_read(p->compat, buf, sizeof(buf));
+		size_t off;
+		int hit = 0;
+
+		if (gotc < 0)
+			return 0;
+		for (off = 0; off < (size_t)gotc; off += strlen(buf + off) + 1) {
+			if (!strcmp(buf + off, "apple,t6021")) {
+				hit = 1;
+				break;
+			}
+		}
+		if (!hit)
+			return 0;
+	}
+	my_ticks = ane_floor_start_ticks((int)getpid());
+
+	lockfd = ane_floor_lock(p);
+	if (lockfd < 0)
+		return 0;
+	if (ane_floor_state_read(p->state, &st) == 0) {
+		ane_floor_prune(&st);
+		if (st.npids > 0) {
+			/* live holders: join them, keep the floor applied */
+			unsigned long long cur = 0;
+
+			if (st.npids == ANE_CPU_FLOOR_HOLDER_MAX) {
+				/* the holder table is full: the recorded holders
+				 * already keep the floor up, so this run sits
+				 * out instead of holding without a record (a
+				 * later failed write would then decrement
+				 * somebody else's entry) */
+				close(lockfd);
+				return 0;
+			}
+			/* a join raises only above the file's current content:
+			 * another holder's raise, or an administrator change,
+			 * is never lowered */
+			applied = floor;
+			if (ane_floor_read(p->freq, buf, sizeof(buf)) >= 0) {
+				cur = strtoull(buf, &end, 10);
+				if (end != buf && cur >= floor)
+					applied = cur;
+				else if (end != buf) {
+					ane_floor_write(p->freq, floor_out);
+					applied = floor;
+				}
+			}
+			st.pids[st.npids] = (int)getpid();
+			st.ticks[st.npids] = my_ticks;
+			st.npids++;
+			if (ane_floor_state_write(p, &st)) {
+				/* leave the state as the other holders wrote it */
+				st.npids--;
+				ane_floor_state_write(p, &st);
+				close(lockfd);
+				return 0;
+			}
+			joined = 1;
+		} else {
+			/* stale: the record carries the true baseline. Adopt
+			 * it instead of writing it back here: a raise that
+			 * follows would otherwise dip the file through the
+			 * baseline (the dead run's raise, then the saved
+			 * value, then the new floor) and schedutil would see
+			 * the low value. The fresh branch below raises from
+			 * the adopted baseline; when the raise sits out, the
+			 * undo below is the one write that brings the
+			 * baseline back. */
+			stale_saved = st.saved;
+			stale_adopt = 1;
+			unlink(p->state);
+		}
+	}
+	if (!joined) {
+		/* fresh, no record -- also right after an adopted stale
+		 * record: the saved value is read under the lock, so a
+		 * concurrent begin or end cannot feed a stale one to the
+		 * shortcut or to the record (an orphaned floor from a dead
+		 * run counts only after the stale-record branch above has
+		 * been reconciled) */
+		if (ane_floor_read(p->freq, buf, sizeof(buf)) < 0) {
+			close(lockfd);
+			return 0;
+		}
+		saved = strtoull(buf, &end, 10);
+		if (end == buf) {
+			close(lockfd);
+			return 0;
+		}
+		if (stale_adopt) {
+			/* the file holds the dead run's raise; the record's
+			 * saved value is the baseline to keep, not what the
+			 * file holds now */
+			saved = stale_saved;
+			if (saved >= floor) {
+				/* the raise would sit out, but the baseline
+				 * still comes back: this undo is then the
+				 * one write, with no raise after it and no
+				 * dip */
+				char saved_out[32], *w = saved_out;
+
+				w = ane_floor_num(w, saved);
+				*w++ = '\n';
+				*w = 0;
+				ane_floor_write(p->freq, saved_out);
+				close(lockfd);
+				return 0;
+			}
+		} else if (saved >= floor) {
+			/* at or above the floor already: a raise here would
+			 * LOWER the file */
+			close(lockfd);
+			return 0;
+		}
+		/* record the saved value BEFORE touching the file, so a crash
+		 * between the two writes still reconciles */
+		st.saved = saved;
+		st.npids = 1;
+		st.pids[0] = (int)getpid();
+		st.ticks[0] = my_ticks;
+		if (ane_floor_state_write(p, &st)) {
+			close(lockfd);
+			return 0;
+		}
+		if (ane_floor_write(p->freq, floor_out)) {
+			/* no write access: silent skip, leave nothing behind */
+			unlink(p->state);
+			close(lockfd);
+			return 0;
+		}
+		raised_fresh = 1;
+	}
+	close(lockfd);
+	ane_floor_held = 1;
+
+	/* the watchdog covers SIGKILL and crashes; it is forked before the
+	 * signal handlers and the atexit hook, so it inherits neither */
+	ane_floor_watchdog_start(p);
+
+	atexit(ane_cpu_floor_end);
+	{
+		/* every catchable default-death restores before it dies:
+		 * hangups (a terminal or an ssh drop), quits, a closed pipe
+		 * and stray alarms join SIGINT/SIGTERM in the chained set.
+		 * SIGKILL stays with the watchdog (#413 covers the watchdog
+		 * dying with the group). */
+		static const int sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT,
+					    SIGPIPE, SIGALRM };
+		struct sigaction act;
+		size_t i;
+
+		memset(&act, 0, sizeof(act));
+		act.sa_handler = ane_floor_signal;
+		/* every signal is blocked while the handler runs (SIGKILL and
+		 * SIGSTOP cannot be blocked): a second chained signal stays
+		 * pending instead of nesting into a frame that holds the
+		 * state lock, and the raise above dispatches to the
+		 * reinstated disposition only after this frame is done.
+		 * The body is written to the async-signal-safe subset except
+		 * for the parse helpers (strstr, strtoull, strtol, memset,
+		 * memcpy), none of which allocate or lock on glibc. */
+		sigfillset(&act.sa_mask);
+		for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++)
+			sigaction(sigs[i], &act, &ane_floor_old[sigs[i]]);
+	}
+
+	if (raised_fresh)
+		fprintf(stderr, "ane-run: cpu floor %s/%s %llu -> %llu kHz, restored on exit\n",
+			ANE_CPU_FLOOR_CPU, "scaling_min_freq", saved, floor);
+	else
+		fprintf(stderr, "ane-run: cpu floor %s/%s held at %llu kHz, restored on exit\n",
+			ANE_CPU_FLOOR_CPU, "scaling_min_freq", applied);
+	return 1;
+}
+
+static void ane_cpu_floor_end(void)
+{
+	if (!ane_floor_held)
+		return;
+	ane_floor_held = 0;
+	ane_floor_release(&ane_floor_paths, 1);
+}
+
+#endif /* ANE_CPU_FLOOR_H */
