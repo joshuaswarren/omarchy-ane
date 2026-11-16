@@ -12,6 +12,7 @@
 2. The frozen entry's preflight refusals (prompt, size, idle, reference BLAS, unreadable or too-full BO counters).
 3. One real in-process ABAB run on the three-program fixture through the real ane-session over the fake device
    (test_qwen_resident_states.py), unfrozen: identical tokens and logits in all arms, states registered in B only, exit 3."""
+import hashlib
 import json
 import sys
 import tempfile
@@ -94,7 +95,7 @@ def cases(judge):
         "p50_inf": (with_(0, step_p50_s=inf), run_ok()),
         # the token anchor
         "all_arms_equal_but_not_the_anchor": ([rec(a, v, tokens=list(range(16))) for a, v in zip("ABAB", four)], run_ok()),
-        "one_anchor_id_off_in_all_arms": ([rec(a, v, tokens=ANCHOR[:12] + [11247] + ANCHOR[13:]) for a, v in zip("ABAB", four)], run_ok()),
+        "one_anchor_id_off_in_all_arms": ([rec(a, v, tokens=ANCHOR[:12] + [35003] + ANCHOR[13:]) for a, v in zip("ABAB", four)], run_ok()),
         # per-program exec vectors
         "exec_one_program_missing": (with_(1, exec_ms_per_program_median={n: 1.0 for n in PROGS[:-1]}), run_ok()),
         "exec_extra_program": (with_(1, exec_ms_per_program_median=execs(prog_038=1.0)), run_ok()),
@@ -205,6 +206,10 @@ PRE_MUTANTS = {   # preflight refusals: each mutant must stop refusing one defec
     "bo_unreadable_ok": ('if start["bo_total_bytes"] is None or cap_mb is None:', "if False:"),
     "cap_not_checked": ('elif start["bo_total_bytes"] + FROZEN["anec_total_bytes"] >= cap_mb << 20:', "elif False:"),
     "prompt_not_checked": ('if args.prompt != FROZEN["prompt"] or', "if"),
+    "package_not_checked": ("if bad_package:", "if False:"),
+    "seal_pin_not_checked": ("if hashlib.sha256(raw).hexdigest() != pin:", "if False:"),
+    "listed_file_not_hashed": ("if h.hexdigest() != digest:", "if False:"),
+    "pkg_dirs_not_checked": ('if Path(d).resolve() != (seal.parent / "pkg").resolve()', "if False"),
 }
 
 
@@ -215,12 +220,21 @@ def preflight_cases(mod):
     res = {}
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        (root / "manifest.json").write_text(json.dumps({"max_len": 4, "programs": [{} for _ in range(38)]}))
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({"max_len": 4, "programs": [{} for _ in range(38)]}))
+
+        def seal(digest, name="manifest.json"):
+            (root / "SHA256SUMS").write_text(f"{digest}  {name}\n")
+            return hashlib.sha256((root / "SHA256SUMS").read_bytes()).hexdigest()
+        good_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+        good_pin = seal(good_digest)
         env_ok = {"numpy": "x", "python": "x", "blas": [{"path": "p", "realpath": "p", "sha256": "s"}], "reference_blas": False, "threads_env": {}, "cpu_count": 1}
         snap = {"boot_id": "b", "bo_total_bytes": 1_700_000_000, "exch_lines": 0}
-        base_args = ["--manifest", str(root / "manifest.json"), "--ref", str(root / "ref.json"), "--out", str(root / "out")]
+        base_args = ["--manifest", str(manifest), "--ref", str(root / "ref.json"), "--out", str(root / "out"),
+                     "--anec-dir", str(root / "pkg"), "--ports-dir", str(root / "pkg")]
 
-        def run(args, env=env_ok, snapshot=snap, cap=12288):
+        def run(args, env=env_ok, snapshot=snap, cap=12288, pin=good_pin):
+            mod["ANCHOR_SEAL_SHA256"] = pin
             mod["environment"] = lambda: env
             mod["snapshot"] = lambda: snapshot
             mod["read_cap_mb"] = lambda: cap
@@ -241,6 +255,10 @@ def preflight_cases(mod):
         res["cap_unreadable"] = run([], cap=None)
         res["start_plus_sections_at_cap"] = run([], snapshot=dict(snap, bo_total_bytes=(12288 << 20) - 2_754_388_032))
         res["start_plus_sections_just_below_cap"] = run([], snapshot=dict(snap, bo_total_bytes=(12288 << 20) - 2_754_388_032 - 1))
+        res["seal_not_the_anchors_package"] = run([], pin="0" * 64)
+        res["listed_file_changed"] = run([], pin=seal("0" * 64))
+        res["listed_file_missing"] = run([], pin=seal(good_digest, "gone.json"))
+        res["anec_dir_elsewhere"] = run(["--anec-dir", str(root / "other")], pin=seal(good_digest))
     return res
 
 
@@ -323,7 +341,8 @@ def main():
             failures.append(f"mutant {name} SURVIVED")
     want_pre = {"frozen_ok_reaches_the_load": "passed-preflight", "idle_59": 2, "prompt_p002": 2, "tokens_8": 2, "reference_blas": 2,
                 "no_blas_mapped": 2, "bo_unreadable": 2, "cap_unreadable": 2, "start_plus_sections_at_cap": 2,
-                "start_plus_sections_just_below_cap": "passed-preflight"}
+                "start_plus_sections_just_below_cap": "passed-preflight", "seal_not_the_anchors_package": 2,
+                "listed_file_changed": 2, "listed_file_missing": 2, "anec_dir_elsewhere": 2}
     pre = preflight_cases(load_module_copy(SRC))
     for k, w in want_pre.items():
         v = pre[k]

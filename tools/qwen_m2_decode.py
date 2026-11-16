@@ -130,13 +130,27 @@ def head_threads():
     return len(p) if p else min(8, os.cpu_count() or 1)
 
 
+def open_gguf(path):
+    """A GGUFReader whose file mapping is a plain ndarray. GGUFReader maps the file with np.memmap, so each of the thousands of slices it takes while it parses the header
+    and builds the tensors is a memmap instance; a plain-ndarray view of the same mapping gives the same fields and tensors without that cost."""
+    from gguf import GGUFReader
+
+    class PlainReader(GGUFReader):
+        def _get(self, *args, **kwargs):
+            if isinstance(self.data, np.memmap):
+                self.data = self.data.view(np.ndarray)
+            return super()._get(*args, **kwargs)
+
+    return PlainReader(path)
+
+
 def load_head(path, q6k=False):
     """(embedding, tied head, rope (dh, rotary dim, base)) from the GGUF, as staged_qwen_runner.load_gguf_parts and its metadata reads.
     Default: the head dequantized to float32 (2.03 GB) and an fp16 embedding table. q6k=True: the Q6_K bytes of token_embd.weight (417 MB) read by tools/q6k_head.py,
     with an fp32 activation vector; the weight values are the same, only the float32 summation order of the logits differs."""
-    from gguf import GGMLQuantizationType, GGUFReader
+    from gguf import GGMLQuantizationType
     from gguf.quants import dequantize
-    reader = GGUFReader(path)
+    reader = open_gguf(path)
     tensor = next(t for t in reader.tensors if t.name == "token_embd.weight")
     if q6k:
         if tensor.tensor_type != GGMLQuantizationType.Q6_K:
@@ -268,7 +282,7 @@ class Decoder:
         self.resident_states = bool(getattr(args, "resident_states", False))
         if self.resident_states and (not getattr(args, "resident", False) or getattr(args, "dump", None)):
             # The dump check compares every state port; the states are not on the wire here.
-            raise Refuse("--resident-states needs --resident and does not apply to --dump")
+            raise Refuse("resident states need --resident and do not apply to --dump")
         self.manifest = manifest
         self.work = Path(args.out) / "surf"
         self.work.mkdir(parents=True, exist_ok=True)
@@ -322,8 +336,11 @@ class Decoder:
                     raise Refuse(f"prog_{i:03d}: session reports {got}, "
                                  f"table holds ({n_in}, {n_out})")
                 if self.resident_states:
-                    self.session.states(f"prog_{i:03d}", ports,
-                                        [(s["in_port"], s["out_port"]) for s in self.progs[i]["states"]])
+                    try:
+                        self.session.states(f"prog_{i:03d}", ports,
+                                            [(s["in_port"], s["out_port"]) for s in self.progs[i]["states"]])
+                    except Refuse as e:
+                        raise Refuse(f"{e}; --host-states keeps the states on the host") from e
         self.reset()
 
     def reset(self):
@@ -597,7 +614,7 @@ def summary(out):
             print(" ".join(f"{k}={v}" for k, v in rec.items()))
 
 
-def main(argv=None):
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--manifest", default="/var/tmp/qwen-decode/manifest.json")
     ap.add_argument("--anec-dir", default="/var/tmp/qwen-real-anec-h14")
@@ -628,10 +645,11 @@ def main(argv=None):
     ap.add_argument("--q6k-head", action="store_true",
                     help="read the tied head as Q6_K (417 MB, tools/q6k_head.py) instead of the dequantized float32 head (2.03 GB): same weights, fp32 activation, "
                          "float32 summation order differs (default off until the decode gate has passed)")
-    ap.add_argument("--resident-states", action="store_true",
-                    help="with --resident: keep every state (DeltaNet, conv, KV) inside the "
-                         "session instead of sending it out and back on every CALL; the "
-                         "logits and tokens must stay bit-identical (default off)")
+    ap.add_argument("--host-states", action="store_true",
+                    help="with --resident: send every state (DeltaNet, conv, KV) out and back on every CALL "
+                         "instead of keeping it inside the session. States stay in the session by default "
+                         "(14.8 and 16.9 percent faster step p50 on the 14-inch M2 Max, logits bit-identical); "
+                         "--dump always uses host states")
     ap.add_argument("--summary", action="store_true")
     ap.add_argument("--m-per-prompt", action="store_true",
                     help="max_len = len(prompt) + new tokens per prompt (ANEForge generate without max_len)")
@@ -640,10 +658,12 @@ def main(argv=None):
     args = ap.parse_args(argv)
     if args.m_per_prompt and args.dump:
         ap.error("--dump holds max_len 50 executions; it does not apply to --m-per-prompt")
-    if args.resident_states and not args.resident:
-        ap.error("--resident-states needs --resident")
-    if args.resident_states and args.dump:
-        ap.error("--dump compares every state port; it does not apply to --resident-states")
+    args.resident_states = bool(args.resident and not args.host_states and not args.dump)
+    return args
+
+
+def main(argv=None):
+    args = parse_args(argv)
     if args.summary:
         summary(args.out)
         return 0

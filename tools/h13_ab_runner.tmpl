@@ -1,0 +1,258 @@
+"""A/B runner for the H13 Qwen decode: two staged decoder trees or two argument sets, four samples in ABBA order.
+
+This is a template, not a module. The row builder replaces the upper-case names between double at-signs (HOSTNAME,
+KERNEL, MODE, ARMS, PINS, TREES, BOUNDS, QUESTION) with Python literals, repr() of the value, so a quote or a newline
+in HOSTNAME, MODE or QUESTION stays valid. It queues the result as one idle-guard ANE row. Every exit with a reason
+prints a RUNNER-EXIT-REASON line to stdout, so the row file shows why a row stopped. tests/test_h13_ab_runner.py
+renders it with stub values and checks the arm checks and the exit reasons."""
+
+import hashlib
+import json
+import math
+import os
+import platform
+import resource
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path('/var/tmp/w73-main')
+H = Path('/var/tmp/h13qwen')
+PKG = H / 'h13-L1024-s1gptq-pkg-v1'
+STATS = Path('/sys/class/accel/accel0/device/ane_stats')
+HOSTNAME = @@HOSTNAME@@
+KERNELS = @@KERNEL@@
+MODE = @@MODE@@
+ARMS = @@ARMS@@
+PINS = @@PINS@@
+TREES = @@TREES@@
+GAIN_LO, GAIN_HI = @@BOUNDS@@
+QUESTION = @@QUESTION@@
+MEM_FLOOR_GIB = 6
+
+BOOT = '''
+import json, sys, runpy, time
+from pathlib import Path
+report = Path(sys.argv.pop(1))
+arm = sys.argv.pop(1)
+nometa = sys.argv.pop(1) == '1'
+runner = sys.argv.pop(1)
+sys.argv[0] = runner
+sys.path.insert(0, str(Path(runner).parent))
+import pcore_mask
+pinned = pcore_mask.pin_self()
+import numpy as np
+import h13_qwen_decode as base
+from gguf import GGUFReader
+import qwen_m2_decode as dec
+opened = [None]
+original_open = dec.open_gguf
+def open_gguf(path):
+    reader = GGUFReader(path) if nometa else original_open(path)
+    opened[0] = isinstance(reader.data, np.memmap)
+    return reader
+dec.open_gguf = open_gguf
+CALL_KEYS = {'send', 'send_surfaces', 'send_surface', 'stage_surface', 'read_surface', 'refill', 'transfer_in', 'pack', 'unpack'}
+seen = {'worker': None, 'switch': None, 'calls': 0}
+original_close = base.H13Decoder.close
+def close(self):
+    seen['worker'] = getattr(self, 'worker_pool', None) is not None
+    seen['switch'] = sys.getswitchinterval()
+    return original_close(self)
+base.H13Decoder.close = close
+try:
+    runpy.run_path(runner, run_name='__main__')
+finally:
+    report.write_text(json.dumps({'arm': arm, 'memmap_after_open': opened[0], 'worker_active': seen['worker'],
+                                  'switch_interval_at_close': seen['switch'], 'pinned': pinned,
+                                  'pack_module': base.pack.__module__,
+                                  'call_names': sorted(set(base.H13Decoder.call.__code__.co_names) & CALL_KEYS)}))
+'''
+
+COUNTER_KEYS = ('busy_ns', 'jobs')
+
+
+def counters():
+    values = dict(line.split() for line in STATS.read_text().splitlines())
+    return {key: int(values[key]) for key in COUNTER_KEYS}
+
+
+def file_hash(name):
+    digest = hashlib.sha256()
+    with open(name, 'rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def tree_hash(directory):
+    digest = hashlib.sha256()
+    for item in sorted(Path(directory).iterdir()):
+        if item.is_file():
+            digest.update(item.name.encode() + b'\0' + file_hash(item).encode() + b'\n')
+    return digest.hexdigest()
+
+
+def record(out):
+    records = json.loads((out / 'records.json').read_text())['records']
+    if len(records) != 1:
+        raise ValueError('expected one prompt')
+    row = records[0]
+    if not row['finite'] or len(row['tokens']) != 24 or len(row['walls_s']) != 24 or len(row['exec_ms']) != 24:
+        raise ValueError('invalid decoder output')
+    if not all(math.isfinite(v) and v >= 0 for key in ('walls_s', 'exec_ms') for v in row[key]):
+        raise ValueError('invalid timing signal')
+    logits = out / ('logits-' + str(row['prompt']) + '.f32')
+    if not logits.is_file() or logits.stat().st_size == 0:
+        raise ValueError('missing fresh logits')
+    if file_hash(logits) != row['logits_sha256']:
+        raise ValueError('logits hash mismatch')
+    return row
+
+
+def preflight(out):
+    if socket.gethostname() != HOSTNAME or platform.release() not in KERNELS:
+        raise SystemExit('host/kernel mismatch')
+    if out.exists() or out.is_symlink():
+        raise SystemExit('output already exists')
+    if os.statvfs('/var/tmp').f_bavail * os.statvfs('/var/tmp').f_frsize < 5 * 1024**3:
+        raise SystemExit('disk floor')
+    memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
+    if int(memory['MemAvailable'].split()[0]) * 1024 < MEM_FLOOR_GIB * 1024**3:
+        raise SystemExit('memory floor')
+    for name, expected in PINS.items():
+        if file_hash(name) != expected:
+            raise SystemExit('input hash mismatch: ' + name)
+    for name, expected in TREES.items():
+        if tree_hash(name) != expected:
+            raise SystemExit('tree hash mismatch: ' + name)
+    counters()
+    print('PREFLIGHT_OK pinned inputs; no module or setting changes', flush=True)
+
+
+def command_for(index, label, sample, out):
+    arm = ARMS[label]
+    tools = ROOT / 'v' / arm['dir']
+    runner = tools / 'h13_qwen_decode_long_q6k.py'
+    inner = ['--pkg', str(PKG), '--lib', '/var/tmp/h13fb/libane_python.so',
+             '--manifest', str(PKG / 'decode-manifest-L1024.json'),
+             '--ref', str(H / 'w73-ctx1k/long-prompts-ctx1k-5.json'),
+             '--forced-ids', str(H / 'w73-ctx1k/ids-ctx1k.json'),
+             '--out', str(sample), '--prompts', '1', '--start', '0', '--tokens', '24'] + arm['extra']
+    return ['/usr/bin/timeout', '--signal=TERM', '--kill-after=5', '180', '/usr/bin/python3', '-c', BOOT,
+            str(out / ('arm-' + str(index) + '.json')), label, '1' if arm['nometa'] else '0', str(runner)] + inner
+
+
+def check_arm(measured, want):
+    if measured['memmap_after_open'] != want['nometa']:
+        raise SystemExit('GGUF mapping differs from the arm')
+    if want['worker'] is not None and measured['worker_active'] != want['worker']:
+        raise SystemExit('state worker state differs from the arm: arm expects worker %s, child ran worker %s'
+                         % (want['worker'], measured['worker_active']))
+    if want.get('switch') is not None and abs(measured['switch_interval_at_close'] - want['switch']) > 1e-9:
+        raise SystemExit('switch interval differs from the arm')
+    if bool(measured['pinned']) == ('OMARCHY_ANE_NO_PIN' in (want.get('env') or {})):
+        raise SystemExit('CPU pinning differs from the arm')
+
+
+def main():
+    mode, destination, phase = sys.argv[1:]
+    out = Path(destination)
+    if mode != MODE or phase not in ('preflight', 'run'):
+        raise SystemExit('invalid profile invocation')
+    if phase == 'preflight':
+        preflight(out)
+        return
+    if out.exists() or out.is_symlink():
+        raise SystemExit('output already exists')
+    out.mkdir(mode=0o700)
+    boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    order = ['A', 'B', 'B', 'A']
+    samples = []
+    for index, label in enumerate(order):
+        sample = out / str(index)
+        command = command_for(index, label, sample, out)
+        env = {**os.environ, 'PYTHONPATH': '/var/tmp/qwen-decode/gguf-py', 'PYTHONDONTWRITEBYTECODE': '1',
+               'OPENBLAS_NUM_THREADS': '1', 'OMP_NUM_THREADS': '1', 'MIL_HWXC_DIR': str(ROOT / 'hwxc'),
+               **ARMS[label].get('env', {})}
+        before = counters()
+        usage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
+        start = time.monotonic_ns()
+        with (out / ('child-' + str(index) + '.log')).open('xb') as log:
+            result = subprocess.run(command, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=205, check=False)
+        elapsed = time.monotonic_ns() - start
+        usage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        after = counters()
+        status = {'sample': index, 'arm': label, 'dir': ARMS[label]['dir'], 'extra': ARMS[label]['extra'],
+                  'nometa': ARMS[label]['nometa'], 'rc': result.returncode, 'wall_ns': elapsed,
+                  'before': before, 'after': after,
+                  'child_user_s': usage_after.ru_utime - usage_before.ru_utime,
+                  'child_system_s': usage_after.ru_stime - usage_before.ru_stime,
+                  'child_minor_faults': usage_after.ru_minflt - usage_before.ru_minflt}
+        (out / ('status-' + str(index) + '.json')).write_text(json.dumps(status, indent=2) + '\n')
+        print(json.dumps(status), flush=True)
+        if result.returncode != 0:
+            print('RUNNER-EXIT-REASON: sample %d child exited rc=%d (see child-%d.log)' % (index, result.returncode, index), flush=True)
+            raise SystemExit(result.returncode if result.returncode > 0 else 1)
+        if after['jobs'] <= before['jobs'] or after['busy_ns'] <= before['busy_ns']:
+            raise SystemExit('no genuine ANE activity; no hardware PERF credit')
+        if Path('/proc/sys/kernel/random/boot_id').read_text().strip() != boot:
+            raise SystemExit('boot changed')
+        decoded = record(sample)
+        measured = json.loads((out / ('arm-' + str(index) + '.json')).read_text())
+        want = ARMS[label]
+        check_arm(measured, want)
+        status.update(prompt_len=decoded['prompt_len'], logits_sha256=decoded['logits_sha256'],
+                      jobs_delta=after['jobs'] - before['jobs'],
+                      busy_fraction=(after['busy_ns'] - before['busy_ns']) / elapsed,
+                      decode_wall_s=sum(decoded['walls_s']), decode_exec_ms=sum(decoded['exec_ms']),
+                      arm_report=measured)
+        samples.append(status)
+    if len({sample['logits_sha256'] for sample in samples}) != 1:
+        raise SystemExit('A/B fresh logits differ')
+
+    def marker(sample):
+        m = sample['arm_report']
+        return (m['worker_active'], round(m['switch_interval_at_close'], 9), m['memmap_after_open'], bool(m['pinned']),
+                m['pack_module'], tuple(m['call_names']), tuple(sorted(ARMS[sample['arm']].get('env', {}).items())))
+    markers = {label: {marker(s) for s in samples if s['arm'] == label} for label in ('A', 'B')}
+    if len(markers['A']) != 1 or len(markers['B']) != 1:
+        raise SystemExit('an arm changed between its samples')
+    (marker_a,), (marker_b,) = markers['A'], markers['B']
+    if marker_a == marker_b:
+        raise SystemExit('the two arms ran the same code: an A/A row is not an A/B result')
+    names = ('worker_active', 'switch_interval_at_close', 'memmap_after_open', 'pinned', 'pack_module', 'call_names', 'env')
+    samples[0]['arms_differ_in'] = {n: [a, b] for n, a, b in zip(names, marker_a, marker_b) if a != b}
+
+    def pair(key):
+        a = [s[key] for s in samples if s['arm'] == 'A']
+        b = [s[key] for s in samples if s['arm'] == 'B']
+        return sum(a) / 2, sum(b) / 2
+    base_wall, tuned_wall = pair('wall_ns')
+    base_faults, tuned_faults = pair('child_minor_faults')
+    base_step, tuned_step = pair('decode_wall_s')
+    gain = tuned_wall / base_wall - 1
+    samples[0]['wall_change_B_over_A'] = gain
+    samples[0]['decode_wall_change_B_over_A'] = tuned_step / base_step - 1
+    samples[0]['minor_fault_change'] = tuned_faults / base_faults - 1
+    samples[0]['verdict'] = ('prediction holds: B over A wall change inside %.1f to %.1f percent' % (100 * GAIN_LO, 100 * GAIN_HI)
+                             if GAIN_LO <= gain <= GAIN_HI else 'prediction falsified: B over A wall change %.1f percent, outside %.1f to %.1f' % (100 * gain, 100 * GAIN_LO, 100 * GAIN_HI))
+    summary = {'mode': mode, 'boot': boot, 'question': QUESTION, 'arms': ARMS, 'samples': samples,
+               'limits': 'Child-only change (the staged decoder directory, or one argument, or one replaced function); no host, module or package change. Wall includes model load. busy_ns is driver submit-to-completion time.'}
+    (out / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    print(json.dumps(summary), flush=True)
+    print('PROFILE_COMPLETE genuine_ANE fixed_samples no_repeat no_settings_change', flush=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except SystemExit as exc:
+        if isinstance(exc.code, str):
+            print('RUNNER-EXIT-REASON: ' + exc.code, flush=True)
+        raise
+    except Exception as exc:
+        print('RUNNER-EXIT-REASON: %s: %s' % (type(exc).__name__, exc), flush=True)
+        raise

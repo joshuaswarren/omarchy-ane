@@ -19,7 +19,7 @@ libane: $(OBJECTS)
 	ld -r $(OBJECTS) -o $(BUILD_DIR)/${LIB_NAME}.o
 	ar rcs $(BUILD_DIR)/${LIB_NAME}.a $(BUILD_DIR)/${LIB_NAME}.o
 
-$(BUILD_DIR)/%.o : $(SRC_DIR)/%.c ane.h ane_m2.h ane_h15.h ane_f16.h ane_sha256.h ../ane/src/uapi/drm/ane_accel.h
+$(BUILD_DIR)/%.o : $(SRC_DIR)/%.c ane.h ane_m2.h ane_h15.h ane_f16.h ane_sha256.h ane_latency.h ../ane/src/uapi/drm/ane_accel.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@
 

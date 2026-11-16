@@ -14,7 +14,7 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 REPO = TOOLS.parent
-FILES = ("qwen_prog_run.py", "qwen_m2_decode.py", "qwen_m2_conform.py", "test_qwen_resident_states.py")
+FILES = ("qwen_prog_run.py", "qwen_m2_decode.py", "qwen_m2_conform.py", "pcore_mask.py", "test_qwen_resident_states.py")
 
 M = {
     "qwen_prog_run.py": {
@@ -31,10 +31,9 @@ M = {
     },
     "qwen_m2_decode.py": {
         "reset_not_sent": ("            self.session.reset_states()\n", "            pass\n"),
-        "states_not_registered": ("                if self.resident_states:\n                    self.session.states(", "                if False:\n                    self.session.states("),
+        "states_not_registered": ("                if self.resident_states:\n                    try:\n                        self.session.states(", "                if False:\n                    try:\n                        self.session.states("),
         "host_still_chains": ("            if not resident:\n                for s in pr[\"states\"]:", "            if True:\n                for s in pr[\"states\"]:"),
-        "decoder_dump_refusal_removed": ('        if self.resident_states and (not args.resident or getattr(args, "dump", None)):', "        if False:"),
-        "cli_needs_resident_removed": ("    if args.resident_states and not args.resident:", "    if False:"),
+        "decoder_dump_refusal_removed": ('        if self.resident_states and (not getattr(args, "resident", False) or getattr(args, "dump", None)):', "        if False:"),
         "state_in_still_in_arrays": ("for s in pr[\"srcs\"] if not (resident and s[\"kind\"] == \"state_in\")}", "for s in pr[\"srcs\"]}"),
     },
 }

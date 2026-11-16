@@ -16,6 +16,7 @@
 #include "ane_sha256.h"
 #include "ane.h"
 #include "ane_m2.h"
+#include "ane_latency.h"
 
 #define ANEC_M2_HEADER_SIZE 0x1000UL
 #define FRAME_BYTES	   16UL
@@ -2423,6 +2424,7 @@ int ane_m2_exec(struct ane_nn *nn)
 	if (!ctx) {
 		return -EINVAL;
 	}
+	ane_latency_touch();
 	for (i = 0; i < ctx->model.io_count; i++) {
 		io[i].buffer_id = ctx->model.io[i].buffer_id;
 		io[i].bo_handle = ctx->io_bo[i].handle;
