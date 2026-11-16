@@ -151,6 +151,8 @@ PYTHON ?= python3
 NUMPY_OK := $(shell $(PYTHON) -c 'import numpy' >/dev/null 2>&1 && echo yes)
 
 ASAN_OK := $(shell echo 'int main(void){return 0;}' | $(CC) -fsanitize=address -x c - -o /dev/null 2>/dev/null && echo yes)
+# ASan dies at startup (exit 139) under ASLR when vm.mmap_rnd_bits > 28 (README.md); empty where setarch is missing.
+NOASLR := $(shell setarch $$(uname -m) -R true 2>/dev/null && echo setarch $$(uname -m) -R)
 test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c ane_cpu_floor.h \
 	$(LIBANE_SRC) ../libane/ane.h ../libane/ane_m2.h ../libane/ane_bind.h \
 	../ane/src/uapi/drm/ane_accel.h
@@ -207,7 +209,7 @@ else
 endif
 ifeq ($(ASAN_OK),yes)
 	$(MAKE) test_ane_session_cache_lsan
-	ASAN_OPTIONS=detect_leaks=1 ./test_ane_session_cache_lsan
+	ASAN_OPTIONS=detect_leaks=1 $(NOASLR) ./test_ane_session_cache_lsan
 endif
 
 # aarch64 cross-check for the SHA-2 crypto block in ane_sha256.c:
