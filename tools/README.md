@@ -2,7 +2,7 @@
 
 Host-side helpers: `ane-run`, `ane-session` and `ane-selfcheck`, with their tests, run by `make check`.
 
-The check builds an AddressSanitizer binary; on hosts with `vm.mmap_rnd_bits` above 28 (every Proxmox node in this fleet sets 32) ASan crashes at startup with exit 139 before any test runs - intermittent, so one green run proves little. The verified workaround that needs no root in a container: run the check under `setarch -R make check`; otherwise lower the sysctl to 28 or use another machine.
+The check builds an AddressSanitizer binary; on hosts with `vm.mmap_rnd_bits` above 28 (every Proxmox node in this fleet sets 32) ASan crashes at startup with exit 139 before any test runs - intermittent, so one green run proves little. The check runs the ASan binary under `setarch -R` (no ASLR, no root needed, also in a container), so it does not flake there. Other ASan binaries you build by hand need the same prefix, or lower the sysctl to 28.
 
 ## `ANE_CPU_FLOOR` -- the opt-in CPU clock floor
 
