@@ -1197,11 +1197,28 @@ static const struct ane_soc ane_soc_t6021 = {
 	.qual = ANE_RECOGNIZED,
 };
 
+static const struct ane_soc ane_soc_t8152 = {
+	/* M6 mini (T8152, J873g). ANE windows live in the M6 ADT (capture
+	 * sha256 6d6827271263e12da4ae103c18708051156586aced2a0472ff78d5985183d254,
+	 * t8152/j873g line 313): engine CSR 0x418000000+0x2000000, five
+	 * unnamed interrupts (311 271 788 801 765 - the engine completion
+	 * line is not yet identified), gates DCS2 DCS3, ane-type 784.
+	 * No SET-block window analogous to the t8020 rows is proven: ADT
+	 * windows [4] 0x300700000+0x1c000 and [5] 0x300724000+0x4000 are
+	 * candidates only, and a guessed SET base external-aborts the SoC.
+	 * H18 execution path unported (ane.ko task path is H13/H14).
+	 * Refuses to bind; the node lands with the r20 kernel tree
+	 * (t8152-j873-ane.dtsi). Advance via the quick collector. */
+	.ps_base = 0,
+	.qual = ANE_UNSUPPORTED,
+};
+
 static const struct of_device_id ane_of_match[] = {
 	{ .compatible = "apple,t8103-ane", .data = &ane_soc_t8103 },
 	{ .compatible = "apple,t6000-ane", .data = &ane_soc_t6000 },
 	{ .compatible = "apple,t6020-ane", .data = &ane_soc_t6020 },
 	{ .compatible = "apple,t6021-ane", .data = &ane_soc_t6021 },
+	{ .compatible = "apple,t8152-ane", .data = &ane_soc_t8152 },
 	{}
 };
 
