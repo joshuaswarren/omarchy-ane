@@ -1155,7 +1155,9 @@ struct ane_soc {
  * -> tier. The T600x die-1 rows carry the measured +0x20_0000_0000
  * translation of die 0 (receipts/2026-10-03-ultra-die1: engine, pmgr and
  * SET windows of ane2 on the live M1 Ultra); they stay RECOGNIZED until a
- * die-1 run proves them. The die-0 rows are the descriptors' tiers. */
+ * die-1 run proves them. Aurora's die-1 engine nodes carry t6001-ane
+ * (t6002-peripherals.dtsi); the t6000-ane die-1 row stays for trees that
+ * still name them t6000-ane. The die-0 rows are the descriptors' tiers. */
 struct ane_soc_qual {
 	const char *compatible;
 	phys_addr_t ps_base;
@@ -1166,6 +1168,7 @@ static const struct ane_soc_qual ane_qual_table[] = {
 	{ "apple,t8103-ane", 0x23b70c000ULL, ANE_QUALIFIED },
 	{ "apple,t6000-ane", 0x28e08c000ULL, ANE_QUALIFIED },
 	{ "apple,t6000-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
+	{ "apple,t6001-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
 	{ "apple,t6021-ane", 0x28e08c000ULL, ANE_RECOGNIZED },
 };
 
@@ -1225,9 +1228,24 @@ static const struct ane_soc ane_soc_t6021 = {
 	.qual = ANE_RECOGNIZED,
 };
 
+static const struct ane_soc ane_soc_t6001 = {
+	/* The second T600x engine and both T6002 die-1 engines carry
+	 * "apple,t6001-ane" (t6001- and t6002-peripherals.dtsi on aurora
+	 * integration/aurora: ane1 on T6000/T6001, ane1/ane2/ane3 on
+	 * T6002). Those nodes name no "set" window, so ps_base falls back
+	 * here: zero keeps ane1/ane3 UNSUPPORTED until a proven base is
+	 * measured, and ane2 only reaches the die-1 table row once its
+	 * node carries the 0x28e08c000 die-relative window (phys
+	 * 0x228e08c000 through the die-1 ranges). */
+	.ps_base = 0,
+	.qual = ANE_UNSUPPORTED,
+	.tm_retention = true,
+};
+
 static const struct of_device_id ane_of_match[] = {
 	{ .compatible = "apple,t8103-ane", .data = &ane_soc_t8103 },
 	{ .compatible = "apple,t6000-ane", .data = &ane_soc_t6000 },
+	{ .compatible = "apple,t6001-ane", .data = &ane_soc_t6001 },
 	{ .compatible = "apple,t6020-ane", .data = &ane_soc_t6020 },
 	{ .compatible = "apple,t6021-ane", .data = &ane_soc_t6021 },
 	{}
