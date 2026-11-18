@@ -1,0 +1,27 @@
+# Maintainer: omarchy-ane
+# omarchy-ane-check as a package: installs the read-only Neural Engine readiness check that
+# darkhorse's wiring contract and the collector vocabulary call by name. The script reports the
+# SoC, dtbs_source, driver_source, the ANE device-tree node, driver built/loaded/bound, the
+# /dev/accel node, and on T602x the firmware; on chips no driver binds yet it says exactly that
+# (UNTESTED SoC / DATA-ONLY SoC) instead of pretending readiness. Build from a checkout of the
+# omarchy-ane repository:  cd packaging/arch/omarchy-ane-check && makepkg -f
+pkgname=omarchy-ane-check
+pkgver=${OMARCHY_ANE_PKGVER:-0.4.3.cedeebe}
+pkgrel=1
+pkgdesc="Read-only check that the Apple Neural Engine driver is ready (omarchy-ane-check)"
+arch=('any')
+url="https://github.com/joshuaswarren/omarchy-ane"
+license=('GPL-2.0-or-later')
+depends=('bash' 'python' 'kmod')
+makedepends=('shellcheck')
+options=(!strip)
+_repo=$startdir/../../..
+
+check() {
+	shellcheck -S warning "$_repo/packaging/omarchy-ane-check"
+}
+
+package() {
+	install -Dm755 "$_repo/packaging/omarchy-ane-check" "$pkgdir/usr/bin/omarchy-ane-check"
+	install -Dm644 "$_repo/docs/ane-probe.md" "$pkgdir/usr/share/doc/omarchy-ane-check/ane-probe.md"
+}
