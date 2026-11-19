@@ -8,9 +8,12 @@ integration/aurora names every non-die-0-primary T600x engine
 2. ane_qual_table must key the measured die-1 SET base 0x228e08c000 to
    t6001-ane, or the die-1 row sits behind a compatible no Aurora node
    carries and ane2 can never leave ANE_UNSUPPORTED.
-3. ane_soc_t6001 must keep .ps_base = 0: with no proven die-0 second-
-   engine base, ane1/ane3 fail -ENODEV instead of touching a guessed
-   SET window (a wrong base external-aborts the SoC).
+3. ane_soc_t6001 must keep .ps_base = 0: no fabricated SET base is
+   carried for ane1/ane3 (a wrong base external-aborts the SoC). The
+   (t6001-ane, 0) table row instead lets a set-less node bind under
+   ane.allow_unqualified=1 with the SET block unmapped — the probe
+   exercises genpd, DARTs and engine MMIO without touching an
+   unmeasured base.
 
 No device, no module load; source text only.
 """
@@ -31,6 +34,8 @@ qual = text.split('ane_soc_qual ane_qual_table[] = {', 1)[1].split('};', 1)[0]
 rows = set(re.findall(r'\{ "(apple,t[0-9]+-ane)", (0x[0-9a-fA-F]+)ULL?, (\w+) \}', qual))
 assert ('apple,t6001-ane', '0x228e08c000', 'ANE_RECOGNIZED') in rows, \
     f'no t6001-ane row at the measured die-1 SET base: {sorted(rows)}'
+assert ('apple,t6001-ane', '0x0', 'ANE_RECOGNIZED') in rows, \
+    f'no t6001-ane row for the set-less secondary engines: {sorted(rows)}'
 
 soc = text.split('ane_soc ane_soc_t6001 = {', 1)[1].split('};', 1)[0]
 assert '.ps_base = 0' in soc and '.qual = ANE_UNSUPPORTED' in soc, \

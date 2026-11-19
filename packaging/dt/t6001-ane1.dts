@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * The second ANE of T6001 (ane1 on the M1 Max), opt-in. Creates the engine,
+ * its three DARTs and its two power states; on a kernel tree that already
+ * carries the nodes (aurora's t6001-peripherals.dtsi, status "disabled")
+ * fdtoverlay merges the same properties into them.
+ *
+ * ADT facts (receipts/2026-10-01-ane-every-soc, j316cap under macOS 13.5 and
+ * 27.0, identical): ane1 = ane,t8020, reg 0x508000000+0x2000000 and
+ * 0x28e680100+0x3f2c, interrupt 797, gate ANE1-SYS-V, ane-type 96. dart-ane1
+ * = dart,t6000, reg 0x509800000/0x509810000/0x509820000 + dma 0x509804000,
+ * interrupt 798, gate ANE1-SYS-DART. The engine's register block sits at
+ * ADT reg[0]+0x1c04000 = 0x509c04000, the same +0x1c04000 offset the die-0
+ * engine's Linux node uses (0x284000000+0x1c04000 = 0x285c04000).
+ *
+ * Power states: ANE1_SYS at 0x28e680268 (parent AFNC5_LW0), ANE1_SYS_CPU at
+ * 0x28e680270 (parent ANE1_SYS) — states of the pmgr at 0x28e680000
+ * (pmgr_south), NOT of pmgr@28e080000. Upstream's provisional ps_ane1_*
+ * states live at pmgr@28e080000 @268/@270 where @268 aliases the die-0
+ * primary's power word; they stay disabled and unused. The overlay's states
+ * are the ADT addresses under pmgr_south.
+ *
+ * No "set" window and no SET base: ane1's SET block is unmeasured (the
+ * die-0 pattern would put it at pmgr_south+0xc000 = 0x28e68c000, inside
+ * ADT reg[1], but that is an inference). With no "set" the driver's
+ * ps_base is 0, the (t6001-ane, 0) qual row makes it RECOGNIZED, and it
+ * binds only under ane.allow_unqualified=1 with the SET block unmapped —
+ * the probe exercises the power topology, DART attach and engine MMIO and
+ * cannot external-abort on a guessed SET base. A node that ever names a
+ * "set" window at an unproven base still fails -ENODEV.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	/* dtb-overlays.sh: applies only when "ane-t6001-second" is a line of
+	 * /etc/omarchy-mac-boot/dtb-overlays.opt-in. */
+	omarchy,opt-in = "ane-t6001-second";
+};
+
+/ {
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@28e100000";
+		aic: __overlay__ {
+		};
+	};
+
+	/* ANE1_SYS's ADT parent: AFNC5_LW0 in pmgr@28e080000 at @1c8. */
+	fragment@1 {
+		target-path = "/soc/power-management@28e080000/power-controller@1c8";
+		ps_afnc5_lw0: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@28e680000";
+
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ps_ane1_sys: power-controller@268 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0x268 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane1_sys";
+				power-domains = <&ps_afnc5_lw0>;
+				status = "okay";
+			};
+
+			ps_ane1_sys_cpu: power-controller@270 {
+				compatible = "apple,t6000-pmgr-pwrstate", "apple,pmgr-pwrstate";
+				reg = <0x270 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane1_sys_cpu";
+				power-domains = <&ps_ane1_sys>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane1_dart0: iommu@509800000 {
+				compatible = "apple,t6000-dart", "apple,t8110-dart";
+				reg = <0x5 0x09800000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 798 4>;
+				power-domains = <&ps_ane1_sys>;
+				status = "okay";
+			};
+
+			ane1_dart1: iommu@509810000 {
+				compatible = "apple,t6000-dart", "apple,t8110-dart";
+				reg = <0x5 0x09810000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 798 4>;
+				power-domains = <&ps_ane1_sys>;
+				status = "okay";
+			};
+
+			ane1_dart2: iommu@509820000 {
+				compatible = "apple,t6000-dart", "apple,t8110-dart";
+				reg = <0x5 0x09820000 0x0 0x00004000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 0 798 4>;
+				power-domains = <&ps_ane1_sys>;
+				status = "okay";
+			};
+
+			ane1: ane@509c04000 {
+				compatible = "apple,t6001-ane", "apple,ane";
+				reg-names = "engine";
+				reg = <0x5 0x09c04000 0x0 0x00024000>;
+				interrupt-parent = <&aic>;
+				interrupt-names = "ane";
+				interrupts = <0 0 797 4>;
+				iommus = <&ane1_dart0 0>, <&ane1_dart1 0>, <&ane1_dart2 0>;
+				power-domains = <&ps_ane1_sys_cpu>;
+				status = "okay";
+			};
+		};
+	};
+};

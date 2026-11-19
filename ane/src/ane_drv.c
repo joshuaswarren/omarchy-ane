@@ -1169,6 +1169,14 @@ static const struct ane_soc_qual ane_qual_table[] = {
 	{ "apple,t6000-ane", 0x28e08c000ULL, ANE_QUALIFIED },
 	{ "apple,t6000-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
 	{ "apple,t6001-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
+	/* A t6001-ane node with no "set" window: the secondary engines
+	 * (ane1 on T6000/T6001, ane3 on T6002). ps_base stays zero, no SET
+	 * block is mapped, and recovery skips its powered-on check (the
+	 * tolerated unmapped path); the bind still exercises the genpd
+	 * topology, DART attach and engine MMIO, which is what a secondary
+	 * probe is for. RECOGNIZED keeps it behind allow_unqualified until
+	 * a run reports back. */
+	{ "apple,t6001-ane", 0x0ULL, ANE_RECOGNIZED },
 	{ "apple,t6021-ane", 0x28e08c000ULL, ANE_RECOGNIZED },
 };
 
@@ -1233,10 +1241,13 @@ static const struct ane_soc ane_soc_t6001 = {
 	 * "apple,t6001-ane" (t6001- and t6002-peripherals.dtsi on aurora
 	 * integration/aurora: ane1 on T6000/T6001, ane1/ane2/ane3 on
 	 * T6002). Those nodes name no "set" window, so ps_base falls back
-	 * here: zero keeps ane1/ane3 UNSUPPORTED until a proven base is
-	 * measured, and ane2 only reaches the die-1 table row once its
-	 * node carries the 0x28e08c000 die-relative window (phys
-	 * 0x228e08c000 through the die-1 ranges). */
+	 * here: zero now keys the (t6001-ane, 0) table row, which binds
+	 * under allow_unqualified with the SET block unmapped (the
+	 * tolerated ps-NULL path — the probe exercises power topology,
+	 * DARTs and engine MMIO without touching an unmeasured base), and
+	 * ane2 only reaches the die-1 table row once its node carries the
+	 * 0x28e08c000 die-relative window (phys 0x228e08c000 through the
+	 * die-1 ranges). */
 	.ps_base = 0,
 	.qual = ANE_UNSUPPORTED,
 	.tm_retention = true,
