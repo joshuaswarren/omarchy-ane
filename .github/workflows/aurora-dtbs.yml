@@ -26,6 +26,10 @@ on:
       - tools/test_ane_overlays.py
       - .github/workflows/aurora-dtbs.yml
 
+concurrency:
+  group: aurora-dtbs-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   data-only:
     runs-on: ubuntu-24.04

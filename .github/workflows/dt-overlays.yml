@@ -60,6 +60,10 @@ defaults:
   run:
     shell: bash
 
+concurrency:
+  group: dt-overlays-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ane-soc-data:
     runs-on: ubuntu-24.04

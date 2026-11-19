@@ -8,6 +8,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: public-text-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   no-macos-read-methods:
     runs-on: ubuntu-24.04
