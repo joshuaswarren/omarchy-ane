@@ -65,6 +65,10 @@ class NoNode(Refuse):
     """No board of the chip has an apple,*-ane node: the tree predates the in-tree driver."""
 
 
+class SharedInclude(Refuse):
+    """Another file includes CHIP.dtsi: the change would reach a second chip, so the PR needs a human."""
+
+
 def build(dts_dir, inc, board, work):
     """The board's device tree with __symbols__ (dtc -@), as an omarchy-ane-dt Tree."""
     pre, out = work / f"{board.stem}.pre", work / f"{board.stem}.dtb"
@@ -170,7 +174,8 @@ def plan(tree_dir, chip):
         others = [f.name for f in dts_dir.glob("*.dts*") if f'#include "{chip}.dtsi"' in f.read_text()
                   and f not in boards]
         if others:
-            raise Refuse(f"{', '.join(sorted(others))} include {chip}.dtsi, so a change there reaches another chip")
+            raise SharedInclude(f"{', '.join(sorted(others))} include {chip}.dtsi, so a change there reaches "
+                                "another chip")
         old = soc_file.read_text()
         first = before[boards[0].name]
         if any(l.rstrip("\n") == SWITCH for l in old.splitlines()):

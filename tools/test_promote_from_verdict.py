@@ -554,6 +554,20 @@ p = run(["aurora-plan", "--tree", str(bare), "--out", str(plan_file), "--verdict
 assert p.returncode == 0 and [l.split("\t")[:2] for l in plan_lines(p)] == [["SKIPPED", "t8112"]], p
 assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == "", p
 
+# Another chip's dtsi including CHIP.dtsi refuses because the edit would
+# reach a second chip. That refusal is stable, not corruption: SKIPPED like
+# NoNode (exit 0, no plan entry — the aurora PR for such a chip needs a
+# human), while the run goes green instead of failing the daily cron
+# forever. t6001/t6000 hit this from 2026-11-13 to 2026-11-19.
+shared = aurora_tree("disabled")
+(shared / "arch/arm64/boot/dts/apple/t8113.dtsi").write_text('#include "t8112.dtsi"\n')
+p = run(["aurora-plan", "--tree", str(shared), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 0, p
+shared_lines = plan_lines(p)
+assert [l.split("\t")[:2] for l in shared_lines] == [["SKIPPED", "t8112"]], shared_lines
+assert "include t8112.dtsi" in shared_lines[0] and "by hand" in shared_lines[0], shared_lines
+assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == "", p
+
 # Every other refusal still fails the plan: a tree that does not build, and a
 # chip with the node on one board but not on another.
 broken = aurora_tree("disabled")

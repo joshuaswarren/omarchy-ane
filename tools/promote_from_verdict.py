@@ -453,6 +453,10 @@ def aurora_plan(verdict, tree, out):
             print(f"SKIPPED\t{chip}\t{AURORA} {AURORA_BASE} {plan['base'][:12]}: {e}. The aurora PR can be made only "
                   "after the in-tree driver lands there; the overlay PR is not affected")
             continue
+        except aurora_dt.SharedInclude as e:
+            print(f"SKIPPED\t{chip}\t{AURORA} {AURORA_BASE} {plan['base'][:12]}: {e}. The aurora PR can be made "
+                  "only by hand; the overlay PR is not affected")
+            continue
         except aurora_dt.Refuse as e:
             raise Fail(f"aurora-plan: {chip}: {e}")
         if p is None:
