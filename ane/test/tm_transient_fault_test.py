@@ -134,7 +134,9 @@ int main(void) {
         fprintf(stderr, "extended deadline: rc=%d recovery=%d\n", result, recovery);
         return 1;
     }
-    scenario = 3; reads = polls = pages_released = 0; submit_us = 0; drain_us = 5000000;
+    dev = (struct ane_device){0}; tm_timeout_ms = 5000;
+    scenario = 3; reads = polls = pages_released = 0; submit_us = 0;
+    drain_us = 1000 * (s64)tm_timeout_ms;
     result = ane_tm_execute(&dev, &req);
     if (result != -ETIMEDOUT || polls != 1 || pages_released || !dev.scratch_retained) {
         fprintf(stderr, "expired retry: rc=%d polls=%d released=%d retained=%d\n",

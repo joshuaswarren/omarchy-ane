@@ -14,6 +14,8 @@ SYSFS = Path("/sys/module/ane/parameters/tm_timeout_ms")
 DEVICE = Path("/sys/class/accel/accel0/device")
 H13_COMPATIBLES = {b"apple,t8103-ane", b"apple,t6000-ane", b"apple,t6001-ane"}
 MIN_TIMEOUT_MS = 5000
+# Match the upper limit in ane/src/ane_tm.c before issuing a hardware call.
+MAX_TIMEOUT_MS = 10_000
 MIN_EXEC_NS = 2_000_000_000
 
 
@@ -50,8 +52,8 @@ def main():
             raise ValueError("fixture must have input and nonempty output buffers")
         timeout = int(SYSFS.read_text().strip())
 
-        if not MIN_TIMEOUT_MS <= timeout <= 10_000:
-            raise ValueError(f"{SYSFS}={timeout}; require 5000-10000 ms")
+        if not MIN_TIMEOUT_MS <= timeout <= MAX_TIMEOUT_MS:
+            raise ValueError(f"{SYSFS}={timeout}; require {MIN_TIMEOUT_MS}-{MAX_TIMEOUT_MS} ms")
         if (DEVICE / "driver").resolve(strict=True).name != "ane":
             raise ValueError("accel0 is not bound to the H13 driver")
         compatibles = (DEVICE / "of_node/compatible").read_bytes().split(b"\0")
