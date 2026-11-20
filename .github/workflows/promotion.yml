@@ -39,6 +39,9 @@ concurrency:
 jobs:
   verdict:
     runs-on: ubuntu-24.04
+    # Fetches the remote dataset; daily runs answer in ~2 min. 15 bounds a
+    # stalled fetch; the aurora-plan/gate jobs downstream already have 30.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: refuse a synthetic verdict in the production repo
@@ -62,6 +65,7 @@ jobs:
   propose:
     needs: verdict
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: propose (or print the plan, with dry_run)
