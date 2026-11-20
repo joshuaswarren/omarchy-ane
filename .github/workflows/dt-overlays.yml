@@ -76,7 +76,7 @@ jobs:
 
   overlays:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20   # green runs ~11 min (make check ~7 alone); 15 cancelled a run whose apt phase was ~6 min slow
     steps:
       - uses: actions/checkout@v4
       - name: DTB source selection (offline, no compilation)

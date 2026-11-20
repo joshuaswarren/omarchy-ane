@@ -114,7 +114,21 @@ def make_work():
     """A git clone of a working-tree copy, with origin and main checked out."""
     tmp = Path(tempfile.mkdtemp())
     bare, work = tmp / "origin.git", tmp / "work"
-    shutil.copytree(repo, work, ignore=shutil.ignore_patterns(".git"))
+    # Copy only the paths the tests touch. A whole-checkout copytree drags in
+    # untracked build trees and fixture checkouts: on a fat worktree this ran
+    # five times per file and wrote ~30 GB before the first test line.
+    for rel in ("tools", "packaging", ".github", "README.md", "CHANGELOG.md", ".gitignore"):
+        src = repo / rel
+        if src.is_dir():
+            shutil.copytree(src, work / rel)
+        else:
+            work.mkdir(exist_ok=True)
+            shutil.copy2(src, work / rel)
+    copied = [p for p in work.rglob("*") if p.is_file()]
+    total = sum(p.stat().st_size for p in copied)
+    assert total < 256 * 1024 * 1024, \
+        f"make_work copied {len(copied)} files, {total // 2**20} MiB; the work fixture copies only " \
+        "tools/, packaging/, .github/, README.md and CHANGELOG.md"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True)
