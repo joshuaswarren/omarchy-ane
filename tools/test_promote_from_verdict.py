@@ -114,7 +114,21 @@ def make_work():
     """A git clone of a working-tree copy, with origin and main checked out."""
     tmp = Path(tempfile.mkdtemp())
     bare, work = tmp / "origin.git", tmp / "work"
-    shutil.copytree(repo, work, ignore=shutil.ignore_patterns(".git"))
+    # Copy only the paths the tests touch. A whole-checkout copytree drags in
+    # untracked build trees and fixture checkouts: on a fat worktree this ran
+    # five times per file and wrote ~30 GB before the first test line.
+    for rel in ("tools", "packaging", ".github", "README.md", "CHANGELOG.md", ".gitignore"):
+        src = repo / rel
+        if src.is_dir():
+            shutil.copytree(src, work / rel)
+        else:
+            work.mkdir(exist_ok=True)
+            shutil.copy2(src, work / rel)
+    copied = [p for p in work.rglob("*") if p.is_file()]
+    total = sum(p.stat().st_size for p in copied)
+    assert total < 256 * 1024 * 1024, \
+        f"make_work copied {len(copied)} files, {total // 2**20} MiB; the work fixture copies only " \
+        "tools/, packaging/, .github/, README.md and CHANGELOG.md"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True)
@@ -552,6 +566,20 @@ bare = aurora_tree("okay")
 (bare / "arch/arm64/boot/dts/apple/t8112.dtsi").write_text('/ { compatible = "apple,t8112"; };\n')
 p = run(["aurora-plan", "--tree", str(bare), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
 assert p.returncode == 0 and [l.split("\t")[:2] for l in plan_lines(p)] == [["SKIPPED", "t8112"]], p
+assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == "", p
+
+# Another chip's dtsi including CHIP.dtsi refuses because the edit would
+# reach a second chip. That refusal is stable, not corruption: SKIPPED like
+# NoNode (exit 0, no plan entry — the aurora PR for such a chip needs a
+# human), while the run goes green instead of failing the daily cron
+# forever. t6001/t6000 hit this from 2026-11-13 to 2026-11-19.
+shared = aurora_tree("disabled")
+(shared / "arch/arm64/boot/dts/apple/t8113.dtsi").write_text('#include "t8112.dtsi"\n')
+p = run(["aurora-plan", "--tree", str(shared), "--out", str(plan_file), "--verdict-file", INTREE_PROMOTE], work)
+assert p.returncode == 0, p
+shared_lines = plan_lines(p)
+assert [l.split("\t")[:2] for l in shared_lines] == [["SKIPPED", "t8112"]], shared_lines
+assert "include t8112.dtsi" in shared_lines[0] and "by hand" in shared_lines[0], shared_lines
 assert json.loads(plan_file.read_text())["chips"] == [] and STUB_LOG.read_text() == "", p
 
 # Every other refusal still fails the plan: a tree that does not build, and a
