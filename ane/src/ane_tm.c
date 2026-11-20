@@ -7,6 +7,32 @@
 #include <linux/module.h>
 #include "ane_tm.h"
 
+#define ANE_TM_TIMEOUT_MIN_MS 100
+#define ANE_TM_TIMEOUT_MAX_MS 10000
+static unsigned int tm_timeout_ms = 1000;
+
+static int ane_tm_timeout_set(const char *val, const struct kernel_param *kp)
+{
+	unsigned int timeout_ms;
+	int err;
+
+	err = kstrtouint(val, 0, &timeout_ms);
+	if (err)
+		return err;
+	if (timeout_ms < ANE_TM_TIMEOUT_MIN_MS || timeout_ms > ANE_TM_TIMEOUT_MAX_MS)
+		return -EINVAL;
+	WRITE_ONCE(*(unsigned int *)kp->arg, timeout_ms);
+	return 0;
+}
+
+static const struct kernel_param_ops ane_tm_timeout_ops = {
+	.set = ane_tm_timeout_set,
+	.get = param_get_uint,
+};
+
+module_param_cb(tm_timeout_ms, &ane_tm_timeout_ops, &tm_timeout_ms, 0644);
+MODULE_PARM_DESC(tm_timeout_ms, "M1 task completion timeout in ms (100-10000, default 1000)");
+
 #define ANE_TQ_COUNT 8
 static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 						 0x5, 0x6, 0x1e, 0x1f };
@@ -265,6 +291,8 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	bool faulted = false;
 	const char *why = "timeout";
 	int err, status;
+	unsigned int timeout_ms = READ_ONCE(tm_timeout_ms);
+	ktime_t deadline;
 
 	lockdep_assert_held(&ane->engine_lock);
 	ane_dart_mask(ane);
@@ -277,9 +305,17 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		goto wedge;
 	}
 	wmb();
+	deadline = ktime_add_ms(ktime_get(), timeout_ms);
 	ane_tm_push_tq(ane, req);
 
 	for (;;) {
+		s64 remaining_us = ktime_us_delta(deadline, ktime_get());
+
+		if (remaining_us <= 0) {
+			err = -ETIMEDOUT;
+			break;
+		}
+
 		/* Latch-first completion poll. Engine register reads hang
 		 * jwm1 once a DART fault has landed (lockups 1 and 3: the
 		 * journal ends inside the 1-microsecond completion poll,
@@ -288,7 +324,7 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		 * engine is touched. Residual hazard: a fault landing
 		 * between one iteration's latch read and engine read. */
 		err = read_poll_timeout(ane_tm_poll_step, status,
-					status != 0, 1, 1000000, false,
+					status != 0, 1, remaining_us, false,
 					ane, req, &finished);
 		if (!err && status < 0) {
 			err = status;
@@ -354,8 +390,8 @@ wedge:
 	if (atomic_xchg(&ane->wedged, 1) == 0) {
 		__module_get(THIS_MODULE);
 		dev_err(ane->dev,
-			"tm completion failed: %d (%s), finish lines=%x (q%d nid=%#x td_count=%u)\n",
-			err, why, finished, req->qid, req->nid, req->td_count);
+			"tm completion failed: %d (%s), finish lines=%x (q%d nid=%#x td_count=%u tm_timeout_ms=%u)\n",
+			err, why, finished, req->qid, req->nid, req->td_count, timeout_ms);
 		if (faulted || err == -EIO ||
 		    ane_dart_faulted(ane, &fault_iova, &fault_status))
 			/* Never read the engine behind a latched fault. */

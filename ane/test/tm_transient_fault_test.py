@@ -15,6 +15,8 @@ harness = r'''
 #include <stdio.h>
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef int64_t s64;
+typedef s64 ktime_t;
 struct ane_device { int engine_lock; int wedged; int tm_retention; int dev; bool scratch_retained, quiesced; u32 last_overflow, last_info; };
 struct ane_request { int qid; int nid; };
 struct ane_dart_scratch { int unused; };
@@ -28,8 +30,26 @@ struct ane_dart_scratch { int unused; };
 #define dev_err(...) ((void)0)
 #define __module_get(x) ((void)0)
 #define atomic_xchg(ptr, value) (*(ptr) = (value), 0)
+#define READ_ONCE(x) (x)
+static unsigned int tm_timeout_ms = 1000;
+static ktime_t now_us, submit_us, drain_us;
+static int polls;
+static ktime_t ktime_get(void) { return now_us; }
+static ktime_t ktime_add_ms(ktime_t start, unsigned int ms) { return start + 1000 * (s64)ms; }
+static s64 ktime_us_delta(ktime_t end, ktime_t start) { return end - start; }
+
+static bool poll_ready(s64 timeout)
+{
+    polls++;
+    if (submit_us > timeout) {
+        now_us += timeout;
+        return false;
+    }
+    now_us += submit_us;
+    return true;
+}
 #define read_poll_timeout(op, status, cond, delay, timeout, sleep, ...) \
-    ((status) = op(__VA_ARGS__), 0)
+    (poll_ready(timeout) ? ((status) = op(__VA_ARGS__), 0) : -ETIMEDOUT)
 static int reads, scenario, recovery, recovery_result, pages_released, released_before_recovery, drains;
 static bool ane_dart_faulted(struct ane_device *ane, u64 *iova, u32 *status) {
     (void)ane; (void)iova; (void)status;
@@ -49,6 +69,7 @@ static int ane_dart_drain_fault(struct ane_device *a, u64 i, struct ane_dart_scr
     (void)a; (void)i; (void)s;
     drains++;
     if (scenario == 4 && drains == 2) return -ENOMEM;
+    now_us += drain_us;
     (*p)++;
     return 0;
 }
@@ -101,7 +122,26 @@ int main(void) {
                 result, drains, pages_released, dev.scratch_retained);
         return 1;
     }
-    puts("normal, transient and scratch lifetime: PASS");
+    dev = (struct ane_device){0}; scenario = 0; recovery = 0; submit_us = 2500000;
+    result = ane_tm_execute(&dev, &req);
+    if (result != -ETIMEDOUT || recovery != 1) {
+        fprintf(stderr, "default deadline: rc=%d recovery=%d\n", result, recovery);
+        return 1;
+    }
+    dev = (struct ane_device){0}; recovery = 0; tm_timeout_ms = 5000;
+    result = ane_tm_execute(&dev, &req);
+    if (result || recovery) {
+        fprintf(stderr, "extended deadline: rc=%d recovery=%d\n", result, recovery);
+        return 1;
+    }
+    scenario = 3; reads = polls = pages_released = 0; submit_us = 0; drain_us = 5000000;
+    result = ane_tm_execute(&dev, &req);
+    if (result != -ETIMEDOUT || polls != 1 || pages_released || !dev.scratch_retained) {
+        fprintf(stderr, "expired retry: rc=%d polls=%d released=%d retained=%d\n",
+                result, polls, pages_released, dev.scratch_retained);
+        return 1;
+    }
+    puts("completion, deadline, transient fault and scratch lifetime: PASS");
     return 0;
 }
 '''
