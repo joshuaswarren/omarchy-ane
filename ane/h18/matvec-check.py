@@ -95,20 +95,25 @@ def lane_ok(got, exact):
 
 
 def parse_dmesg(text, buf):
-    """-> (calls, outs, declared): calls[i] = (ns or None, finished); outs[i] = {byte offset: [u32 words]} of buffer buf for call i."""
-    calls, outs = [], []
+    """Return per-call timings and output chunks, the initial call total, and any sequence errors."""
+    calls, outs, problems = [], [], []
     declared = 0
     for line in text.splitlines():
         m = CALL_RE.search(line)
         if m:
+            number, total = int(m.group(1)), int(m.group(2))
+            if not calls:
+                declared = total
+            expected = len(calls) + 1
+            if number != expected or total != declared:
+                problems.append("expected call %d/%d, saw %d/%d" % (expected, declared, number, total))
             calls.append((int(m.group(3)) if m.group(3) else None, not m.group(4)))
             outs.append({})
-            declared = int(m.group(2))
             continue
         m = OUT_RE.search(line)
         if m and calls and int(m.group(1)) == buf:
             outs[-1][int(m.group(2), 0)] = [int(t, 16) for t in m.group(3).split()]
-    return calls, outs, declared
+    return calls, outs, declared, problems
 
 
 def lanes(chunks):
@@ -162,8 +167,8 @@ def cmd_check(a):
     x = struct.unpack("<%de" % K, open(a.input, "rb").read()[:2 * K]) if a.input else make_input()
     w = unpermute(kernel)
     ref = reference(x, w)
-    calls, outs, declared = parse_dmesg(open(a.dmesg, errors="replace").read(), a.buf)
-    problems, worst, worst_ulp = [], 0.0, 0.0
+    calls, outs, declared, problems = parse_dmesg(open(a.dmesg, errors="replace").read(), a.buf)
+    worst, worst_ulp = 0.0, 0.0
     if not calls:
         problems.append("no 'ane_h18 prog: call I/M' line in the log")
     if len(calls) != declared:
