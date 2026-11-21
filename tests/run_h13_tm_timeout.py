@@ -56,9 +56,9 @@ def main():
             raise ValueError(f"{SYSFS}={timeout}; require {MIN_TIMEOUT_MS}-{MAX_TIMEOUT_MS} ms")
         if (DEVICE / "driver").resolve(strict=True).name != "ane":
             raise ValueError("accel0 is not bound to the H13 driver")
-        compatibles = (DEVICE / "of_node/compatible").read_bytes().split(b"\0")
-        if H13_COMPATIBLES.isdisjoint(compatibles):
-            raise ValueError("accel0 does not have an H13 compatible")
+        primary, terminator, rest = (DEVICE / "of_node/compatible").read_bytes().partition(b"\0")
+        if primary not in H13_COMPATIBLES or not terminator or (rest and not rest.endswith(b"\0")):
+            raise ValueError("accel0 does not have an H13 primary compatible")
         if (DEVICE / "wedged").read_text().strip() != "0":
             raise ValueError("the H13 device is wedged")
         if not args.ane_run.is_file() or not os.access(args.ane_run, os.X_OK):
