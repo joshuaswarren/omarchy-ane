@@ -2086,7 +2086,7 @@ static int neg_boot(void)
 	{
 		int c;
 
-		for (c = 0; c < 4; c++) {
+		for (c = 0; c < 5; c++) {
 			const char *what = "";
 
 			boot_setup();
@@ -2095,6 +2095,7 @@ static int neg_boot(void)
 			case 1: sim_rvbar_val = 0x20000000001ULL; what = "IORVBAR at another address"; break;
 			case 2: sim_cpu_status = 0x9; what = "the core already reports RUNNING"; break;
 			case 3: sim_cpu_ctrl = 0x10; what = "CPU_CONTROL.RUN already set"; break;
+			case 4: sim_cpu_status = 0xe; what = "the core is in the post-shutdown state (bit 2, as a previous RTKit shutdown leaves it): RUN alone does not restart it"; break;
 			}
 			ret = probe_now();
 			write_seq(seq, sizeof(seq));

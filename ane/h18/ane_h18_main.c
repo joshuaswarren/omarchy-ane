@@ -3032,7 +3032,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "FAIL", "read-refused");
 		return ret;
 	}
-	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
+	/* bit 2 is set after an RTKit shutdown (the M6 read 0xe after a run, 0xa fresh from iBoot): RUN alone does not restart that core */
+	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || (st & ANE_H18_ST_SHUTDOWN) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
 		dev_err(ane->dev, "ane_h18 preflight: cpu_status=%#x cpu_control=%#x iorvbar=%#llx (want stopped, RUN clear, iorvbar %#llx)\n", st, ctrl,
 			((u64)rv_hi << 32) | rv_lo, s->rvbar_expect);
 		ane_h18_psd_off(ane);
