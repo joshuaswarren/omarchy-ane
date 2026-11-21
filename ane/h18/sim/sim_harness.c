@@ -1837,8 +1837,15 @@ static void pos_boot(void)
 					chk(log_count("call 1/3 finished in ") == 2 && log_count("call 2/3 finished in ") == 2 && log_count("call 3/3 finished in ") == 2 &&
 					    log_pos("call 1/3 finished in ") < log_pos("call 2/3 finished in ") && log_pos("call 2/3 finished in ") < log_pos("call 3/3 finished in "),
 					    "PU2 each reused call logs its ns and ms latency lines, in order");
-					chk(log_count("out buf 4 +0x0: 11223344 11223344 00000000") == 1 && log_count("out buf 4 +0x0: 00000000 00000000 00000000") == 2,
-					    "PU3 the output buffer is cleared before every reused call: calls 2 and 3, which the firmware model leaves unwritten, read zeros, not call 1's result");
+					{
+						const char *d1 = strstr(sim_log, "out buf 4 call 1/3 digest "), *d2 = strstr(sim_log, "out buf 4 call 2/3 digest "), *d3 = strstr(sim_log, "out buf 4 call 3/3 digest ");
+						size_t dl = strlen("out buf 4 call 1/3 digest ");
+
+						chk(log_count("out buf 4 +0x0: 11223344 11223344 00000000") == 1 && log_count("out buf 4 +0x0: 00000000 00000000 00000000") == 1 && log_count("out buf 4 +0x40") == 2,
+						    "PU3 under reuse only the first and the last call dump words: call 1 holds its result, call 3 (left unwritten by the model) reads zeros, so the buffer was cleared");
+						chk(d1 && d2 && d3 && log_count(" digest ") == 3 && !strncmp(d2 + dl, d3 + dl, 16) && strncmp(d1 + dl, d2 + dl, 16),
+						    "PU5 every reused call logs one digest of its whole output buffer: calls 2 and 3 (zeros) match each other and differ from call 1");
+					}
 				}
 				if (pass == 57)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000; hs_prog_reuse needs hs_prog=1") && writes() == 0 && sim_fw_requests == 0,

@@ -2288,6 +2288,15 @@ call:
 		}
 		if (prog_out_words && p->io[i].dir == 1) {
 			unsigned int w = min(words, prog_out_words), k2;
+			u64 h = 0xcbf29ce484222325ULL;	/* FNV-1a over the whole buffer, word by word: one line per call proves every call wrote the same output */
+
+			for (k2 = 0; k2 < words; k2++) {
+				h ^= o[k2];
+				h *= 0x100000001b3ULL;
+			}
+			dev_info(ane->dev, "ane_h18 prog: out buf %u call %u/%u digest %016llx\n", p->io[i].id, pass, calls, h);
+			if (hs_prog_reuse && pass != 1 && pass != calls)
+				w = 0;	/* reused calls between the first and the last log only the digest: a 1000-call run would overrun the kernel log */
 
 			for (k2 = 0; k2 < w; k2 += 16) {
 				char line[16 * 9 + 1];
