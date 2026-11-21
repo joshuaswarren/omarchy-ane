@@ -43,6 +43,8 @@ make -C tools tools
 python3 tests/run_h13_tm_timeout.py /path/to/fixture/manifest.json
 ```
 
+The test checks the first device-tree `compatible` string against the H13
+allowlist. A fallback string cannot qualify another device.
 The test checks the artifact hashes and the stream bindings before execution.
 It measures the `ane_exec` call, excluding setup and file transfers.
 The tool stops after 30 seconds. A failed call or a byte mismatch fails the test.
