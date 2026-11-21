@@ -36,7 +36,8 @@ ALLOWED_ARGV = frozenset({
     ("omarchy-ane-check",),
     ("omarchy-ane-firmware-fetch", "--check"),
 })
-CMD_PATH = "/usr/bin:/bin:/usr/local/bin"
+# Fixed system directories, never the caller's PATH. NixOS keeps dmesg and the kit tools in its system profile.
+CMD_PATH = "/usr/bin:/bin:/usr/local/bin:/run/current-system/sw/bin"
 # The ANE word in a node name, label or compatible: "ane", "ane0", "apple,t8103-ane",
 # "ane,t8132exclave", "iop-ane,ascwrap-v8", "ane_sys"; not "plane" or "lane".
 ANE_TOKEN = re.compile(r"(?<![a-z0-9])ane(?![a-z])")
