@@ -82,6 +82,9 @@ MODULE_PARM_DESC(psd_slots, "Stage=power: how many PSD slots to request, in orde
 
 static bool keep_on;
 module_param(keep_on, bool, 0444);
+static bool wake_sleeping;
+module_param(wake_sleeping, bool, 0444);
+MODULE_PARM_DESC(wake_sleeping, "stage=boot: a core left in the post-shutdown state (CPU_STATUS bit 2, after an RTKit shutdown) is woken with RTKit IOP power ON after RUN instead of being refused. Default off.");
 MODULE_PARM_DESC(keep_on, "Stage=power: leave the slots running after the reads. Default off: request state 6 again.");
 
 static bool read_mbox;
@@ -3033,7 +3036,7 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		return ret;
 	}
 	/* bit 2 is set after an RTKit shutdown (the M6 read 0xe after a run, 0xa fresh from iBoot): RUN alone does not restart that core */
-	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || (st & ANE_H18_ST_SHUTDOWN) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
+	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || ((st & ANE_H18_ST_SHUTDOWN) && !wake_sleeping) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
 		dev_err(ane->dev, "ane_h18 preflight: cpu_status=%#x cpu_control=%#x iorvbar=%#llx (want stopped, RUN clear, iorvbar %#llx)\n", st, ctrl,
 			((u64)rv_hi << 32) | rv_lo, s->rvbar_expect);
 		ane_h18_psd_off(ane);
@@ -3091,6 +3094,16 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	dev_crit(ane->dev, "ane_h18 write CPU_CONTROL=%#x pa=%#llx (RUN)\n", ctrl | ANE_H18_CPU_RUN, s->asc_pa + ANE_H18_ASC_CPU_CONTROL);
 	ane->fw_started = true;
 	writel(ctrl | ANE_H18_CPU_RUN, ane->asc + ANE_H18_ASC_CPU_CONTROL);
+	if ((st & ANE_H18_ST_SHUTDOWN) && wake_sleeping && alias_mbox && rtkit_start) {
+		/* A sleeping IOP sends no HELLO: wake it as apple_rtkit_wake() does, with IOP power ON; its acknowledgement then runs the usual AP power ON exchange. */
+		u32 wake_off = ANE_H18_PO_ALIAS_OFF + s->mbox_num * 2 * ANE_H18_PO_STRIDE;
+		char wake_tag[16];
+
+		snprintf(wake_tag, sizeof(wake_tag), "alias%u", s->mbox_num * 2);
+		dev_info(ane->dev, "ane_h18 rtkit: the core was in the post-shutdown state, sending IOP power ON to wake it\n");
+		if (ane_h18_rtkit_send(ane, wake_off, wake_tag, ((u64)ANE_H18_RTK_SET_IOP_PWR << ANE_H18_RTK_TYPE_SHIFT) | ANE_H18_RTK_PWR_ON, &sent))
+			dev_err(ane->dev, "ane_h18 rtkit: the IOP power ON wake could not be sent\n");
+	}
 	for (waited = 0; waited < boot_wait_ms; waited += 10) {
 		usleep_range(10000, 11000);
 		ret = ane_h18_read(ane, "CPU_STATUS", ane->asc, s->asc_pa, ANE_H18_ASC_CPU_STATUS, s->asc_size, &st);

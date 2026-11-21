@@ -25,6 +25,7 @@ unsigned long sim_jiffies;
 u32 sim_cpu_status = 0xa, sim_cpu_ctrl, sim_run_status = 0x9;
 u64 sim_rvbar_val = 0x10000000001ULL;
 int sim_core_running, sim_core_stuck, sim_ctrl_writes;
+int sim_sleeping;
 u32 sim_po_msg[SIM_PO_CH][SIM_PO_Q][4];
 int sim_po_n[SIM_PO_CH], sim_po_head[SIM_PO_CH];
 u32 sim_tx_w[4];
@@ -675,6 +676,7 @@ static void reset_all(void)
 	psd_state = 0;
 	psd_slots = 1;
 	keep_on = false;
+	wake_sleeping = false;
 	read_mbox = false;
 	read_ctrl = false;
 	read_dart = false;
@@ -733,6 +735,7 @@ static void reset_all(void)
 	sim_run_status = 0x9;
 	sim_rvbar_val = 0x10000000001ULL;
 	sim_core_running = sim_core_stuck = sim_ctrl_writes = 0;
+	sim_sleeping = 0;
 	memset(sim_po_msg, 0, sizeof(sim_po_msg));
 	memset(sim_po_n, 0, sizeof(sim_po_n));
 	memset(sim_po_head, 0, sizeof(sim_po_head));
@@ -1477,7 +1480,7 @@ static void pos_boot(void)
 		int pass, k, w0 = -1, w1 = -1, w7 = -1, run = -1, shut = -1, live;
 		int nsc, nst;
 
-		for (pass = 0; pass < 10; pass++) {
+		for (pass = 0; pass < 11; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1497,11 +1500,20 @@ static void pos_boot(void)
 			if (pass == 7) sim_scr[1] = 0xffffffff;
 			if (pass == 8) sim_hs_mode = 2;
 			if (pass == 9) sim_scr[7] = 0;
+			if (pass == 10) { sim_cpu_status = 0xe; sim_sleeping = 1; wake_sleeping = true; }
 			ret = probe_now();
 			nsc = events_in(SIM_SCRATCH_PA, SIM_SCRATCH_SIZE, 1);
 			for (live = 0, k = 0; k < sim_n_dma; k++)
 				live += sim_dma[k].live;
 			nst = log_count("ane_h18 rtkit shutdown: ap_acked=1 iop_acked=1");
+			if (pass == 10) {
+				int woke = 0;
+
+				for (k = 0; k < sim_n_tx_msgs && k < 32; k++)
+					woke |= sim_tx_msgs[k] == ((6ULL << 52) | 0x20);
+				chk(ret == 0 && result("boot", "PASS", "core-handshook-and-stopped") && woke && !sim_sleeping && sim_faults == 0,
+				    "HS10 wake_sleeping=1 with the core in the post-shutdown state (0xe): RUN, then IOP power ON (0x20) wakes it, the handshake and the stop pass");
+			}
 			if (pass == 0) {
 				for (k = 0; k < sim_n_events; k++) {
 					if (sim_events[k].write == 1 && sim_events[k].pa == SIM_SCRATCH_PA + 0x24 && w0 < 0) w0 = k;

@@ -293,6 +293,7 @@ extern u32 sim_psd_initial_valid[SIM_NPSD];
 extern u32 sim_cpu_status, sim_cpu_ctrl, sim_run_status;
 extern u64 sim_rvbar_val;
 extern int sim_core_running, sim_core_stuck;
+extern int sim_sleeping;	/* the core is in the post-shutdown state: RUN alone sends nothing, only an IOP power ON wakes it */
 extern int sim_ctrl_writes;
 #define SIM_PO_CH 600	/* the alias bank channel of ANE0 is window offset 0x10c00 = channel 536 */
 #define SIM_DART_PA 0x419800000ULL
@@ -354,6 +355,9 @@ static inline void sim_fw_react(u64 msg0)
 		sim_fw_enqueue(536, (8ULL << 52) | (1ULL << 51) | (1ULL << 32) | 1);
 	} else if (type == 8 && (msg0 & (1ULL << 51))) {
 		sim_fw_enqueue(536, (7ULL << 52) | sim_iop_ack_state);
+	} else if (type == 6 && state == 0x20 && sim_sleeping) {
+		sim_sleeping = 0;
+		sim_fw_enqueue(536, (7ULL << 52) | 0x20);
 	} else if (type == 0xb) {
 		if (state == 0x20 || !sim_no_shutdown_reply)
 			sim_fw_enqueue(536, (0xbULL << 52) | state);
@@ -509,6 +513,8 @@ static inline void bus_write(u64 pa, u32 v)
 		if (v & 0x10) {
 			sim_core_running = 1;
 			sim_cpu_status = sim_run_status;
+			if (sim_sleeping)
+				return;	/* a sleeping IOP waits for the wake message: no HELLO */
 			if (sim_start_chan >= 0 && sim_start_hello == 3) {
 				sim_po_n[sim_start_chan] = 0;
 				sim_po_head[sim_start_chan] = 0;
