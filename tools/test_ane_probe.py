@@ -598,6 +598,34 @@ def test_live_host():
     assert doc["schema_version"] == 3 and isinstance(doc["unreadable"], list)
 
 
+
+def test_tool_path_reaches_the_nixos_system_profile():
+    """On NixOS dmesg and omarchy-ane-check live in /run/current-system/sw/bin (issue 160).
+    The search path stays a fixed list of absolute system directories: never the caller's PATH."""
+    dirs = probe.CMD_PATH.split(":")
+    assert "/run/current-system/sw/bin" in dirs, dirs
+    assert dirs[:3] == ["/usr/bin", "/bin", "/usr/local/bin"], dirs
+    assert all(d.startswith("/") and ".." not in d for d in dirs), dirs
+    assert "os.environ" not in TOOL.read_text().split("CMD_PATH =", 1)[1].split("\n", 1)[0]
+
+
+def test_run_finds_a_tool_in_a_later_search_directory():
+    """run() resolves allowlisted commands through every CMD_PATH entry, not only the first."""
+    with tempfile.TemporaryDirectory() as tmp:
+        empty, later = Path(tmp, "empty"), Path(tmp, "later")
+        empty.mkdir(); later.mkdir()
+        tool = later / "omarchy-ane-check"
+        tool.write_text("#!/bin/sh\necho check-ok\n"); tool.chmod(0o755)
+        saved = probe.CMD_PATH
+        probe.CMD_PATH = f"{empty}:{later}"
+        try:
+            unreadable = []
+            got = probe.run(("omarchy-ane-check",), 5, unreadable, "omarchy-ane-check")
+        finally:
+            probe.CMD_PATH = saved
+        assert got is not None and got[0] == 0 and got[1] == "check-ok\n", (got, unreadable)
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `omarchy-ane-probe`: also looks for `dmesg`, `omarchy-ane-check` and `omarchy-ane-firmware-fetch` in
+  `/run/current-system/sw/bin`. On NixOS the probe reported them as "not installed" (#160). The search path is
+  still a fixed list of system directories; the caller's `PATH` is never used.
+
 - `ane`: Set `tm_timeout_ms` to allow longer M1 programs. It accepts 100 to 10,000 ms and defaults to 1,000 ms.
   All completion retries share one deadline. The separate recovery timeout stays at 1,000 ms.
 
