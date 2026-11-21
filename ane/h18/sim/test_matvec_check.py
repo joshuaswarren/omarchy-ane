@@ -27,11 +27,12 @@ def report(name, ok):
     print("  %-72s %s" % (name, "PASS" if ok else "FAIL"))
 
 
-def dump(lanes_f16, pad=0, ns=(41000, 39000, 52000), nwords=4096, lines=None):
+def dump(lanes_f16, pad=0, ns=(41000, 39000, 52000), nwords=4096, lines=None, headers=None):
     """A dmesg text with one call per entry of ns; lanes_f16: the 256 device lane values (floats) per call."""
     out = ["[   12.000000] ane_h18 0.ane: ane_h18 prog: PROCEDURE_CALL queued"]
     for i, x in enumerate(ns):
-        out.append("[   12.%06d] ane_h18 0.ane: ane_h18 prog: call %d/%d finished in %d ns" % (i, i + 1, len(ns), x))
+        header = headers[i] if headers is not None else "%d/%d" % (i + 1, len(ns))
+        out.append("[   12.%06d] ane_h18 0.ane: ane_h18 prog: call %s finished in %d ns" % (i, header, x))
         raw = (struct.pack("<%de" % mc.N, *lanes_f16) + bytes(4 * 4096 - 2 * mc.N))[:4 * nwords]
         if pad and i == 1:
             raw = raw[:2 * mc.N] + struct.pack("<I", pad) + raw[2 * mc.N + 4:]
@@ -72,6 +73,14 @@ report("clean dump of 3 calls: PASS, exit 0", rc == 0 and out.rstrip().endswith(
 report("device ns median 41000 min 39000 max 52000", "median 41000 min 39000 max 52000" in out)
 report("cpu ns per call is printed", "cpu ns per call (" in out)
 report("max abs error is the fp16 rounding of the result (under 0.01)", float(out.split("max abs error ")[1].split()[0]) < 0.01)
+
+for label, headers in (
+    ("duplicate call", ("1/3", "1/3", "3/3")),
+    ("out-of-order calls", ("2/3", "1/3", "3/3")),
+    ("inconsistent total", ("1/3", "2/4", "3/3")),
+):
+    rc, out = run(dump(good, headers=headers))
+    report("%s with correct numerical output: FAIL" % label, rc == 1 and "expected call" in out)
 
 
 
