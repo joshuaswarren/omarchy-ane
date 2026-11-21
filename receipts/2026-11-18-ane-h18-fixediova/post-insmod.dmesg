@@ -1,0 +1,1218 @@
+[    2.751054] asahi 580000000.gpu: G18_MSG role=GFX ordinal=23 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.751055] asahi 580000000.gpu: G18_MSG role=GFX ordinal=24 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.759036] asahi 580000000.gpu: G18_MSG role=GFX ordinal=25 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.759038] asahi 580000000.gpu: G18_MSG role=GFX ordinal=26 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.767052] asahi 580000000.gpu: G18_MSG role=GFX ordinal=27 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.767053] asahi 580000000.gpu: G18_MSG role=GFX ordinal=28 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.775036] asahi 580000000.gpu: G18_MSG role=GFX ordinal=29 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.775038] asahi 580000000.gpu: G18_MSG role=GFX ordinal=30 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.775367] pcie-apple 1cb0000000.pcie: Link down on /soc/pcie@1cb0000000/pci@0,0
+[    2.775371] pcie-apple 1cb0000000.pcie: J700_T8140_PCIE_LINK_DOWN_GPIOS: pwren=-19 reset=-19
+[    2.783052] asahi 580000000.gpu: G18_MSG role=GFX ordinal=31 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.783054] asahi 580000000.gpu: G18_MSG role=GFX ordinal=32 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.791040] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=2048 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.795031] usb 3-1.4: new high-speed USB device number 3 using xhci-hcd
+[    2.826046] pcie-apple 1cb0000000.pcie: J700_T8140_PCIE_LINK_RETRAIN_PASS: before=0xc3002304 after=0x9b001001 phy_accesses=0 power_toggles=0
+[    2.911054] asahi 580000000.gpu: G18_MSG role=GFX ordinal=64 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    2.951036] apple_centauri 0000:01:00.0: port transition complete: endpoint=0x1901106b LTSSM=0x11
+[    2.951119] apple_centauri 0000:01:00.0: restored 1 RID2SID entries and the MSI map (ret 0)
+[    2.951129] apple_centauri 0000:01:00.0: post-reset execution stage=0x1
+[    2.951283] pci 0000:01:00.1: [106b:1902] type 00 class 0x0d2000 PCIe Endpoint
+[    2.951328] pci 0000:01:00.1: BAR 0 [mem 0x00000000-0x0000ffff 64bit pref]
+[    2.951408] pci 0000:01:00.1: supports D1
+[    2.951409] pci 0000:01:00.1: PME# supported from D0 D1 D3hot D3cold
+[    2.951623] pci 0000:01:00.1: uses static-topology DART 388000000.iommu, sids 2, hw_ready 1, rpm status 0
+[    2.951638] pci 0000:01:00.1: Adding to iommu group 9
+[    2.951717] pci 0000:01:00.2: [106b:1903] type 00 class 0x0d1100 PCIe Endpoint
+[    2.951760] pci 0000:01:00.2: BAR 0 [mem 0x00000000-0x0000ffff 64bit pref]
+[    2.951837] pci 0000:01:00.2: supports D1
+[    2.951837] pci 0000:01:00.2: PME# supported from D0 D1 D3hot D3cold
+[    2.951944] pci 0000:01:00.2: uses static-topology DART 388000000.iommu, sids 3, hw_ready 1, rpm status 0
+[    2.951952] pci 0000:01:00.2: Adding to iommu group 10
+[    2.951989] pci 0000:01:00.1: BAR 0 [mem 0xbc2010000-0xbc201ffff 64bit pref]: assigned
+[    2.951999] pci 0000:01:00.2: BAR 0 [mem 0xbc2020000-0xbc202ffff 64bit pref]: assigned
+[    2.952117] apple_centauri 0000:01:00.1: enabling device (0000 -> 0002)
+[    2.952159] apple_centauri 0000:01:00.1: ACIPC endpoint reachable: stage=0x0, 40-bit DMA mapping=0x00000000ffff8000
+[    2.953484] apple_centauri 0000:01:00.0: secondary memory: seed=592 required=11418624
+[    3.183047] asahi 580000000.gpu: G18_MSG role=GFX ordinal=128 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    3.711052] asahi 580000000.gpu: G18_MSG role=GFX ordinal=256 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    3.807038] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=4096 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    3.809211] usb-storage 3-1.4:1.0: USB Mass Storage device detected
+[    3.809326] scsi host0: usb-storage 3-1.4:1.0
+[    3.826406] usbcore: registered new interface driver uas
+[    3.845955] apple_centauri 0000:01:00.0: Control firmware reached OS stage
+[    3.846503] apple_centauri 0000:01:00.0: Control IPC handshake complete
+[    3.847288] apple_centauri 0000:01:00.0: memswap function 0: mswc 3145728 bytes
+[    3.847686] apple_centauri 0000:01:00.0: memswap function 2: mswb 1572864 bytes
+[    3.848161] apple_centauri 0000:01:00.0: memswap function 1: msww 2097152 bytes
+[    4.023033] usb 3-1.1: new high-speed USB device number 4 using xhci-hcd
+[    4.160835] scsi host1: uas
+[    4.187171] nvme-apple 325cc0000.nvme: RTKit: syslog message: gc.c:7535: GC mode switch 0 --> 2
+[    4.340103] apple_centauri 0000:01:00.0: Control CCHI hello response received
+[    4.343122] apple_centauri 0000:01:00.0: Alpha Wi-Fi firmware running; IPC handshake complete
+[    4.627266] r8169 0000:02:00.0 end0: Link is Down
+[    4.651440] NET: Registered PF_ALG protocol family
+[    4.783055] asahi 580000000.gpu: G18_MSG role=GFX ordinal=512 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    4.920479] scsi 1:0:0:0: Direct-Access     ASMT     ASM246X          0    PQ: 0 ANSI: 6
+[    4.926759] sd 1:0:0:0: [sda] Media removed, stopped polling
+[    4.935080] sd 1:0:0:0: [sda] Attached SCSI removable disk
+[    5.847092] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=8192 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    6.175041] apple_centauri 0000:01:00.0: Wi-Fi command rings ready; interface started
+[    6.175045] apple_centauri 0000:01:00.0: cfg80211 interface wlan0 ready for scan tests; packet data unavailable
+[    6.911049] asahi 580000000.gpu: G18_MSG role=GFX ordinal=1024 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    7.431078] input: Glinet Glinet Composite Device as /devices/platform/soc/40a430000.usb/xhci-hcd.2.auto/usb5/5-1/5-1.2/5-1.2.1/5-1.2.1:1.0/0003:38EB:0001.0001/input/input1
+[    7.547101] hid-generic 0003:38EB:0001.0001: input,hidraw0: USB HID v1.01 Keyboard [Glinet Glinet Composite Device] on usb-xhci-hcd.2.auto-1.2.1/input0
+[    8.176041] apple_centauri 0000:01:00.0: Beta did not reach running firmware (exec=4294967295)
+[    8.190349] Bluetooth: Core ver 2.22
+[    8.190365] NET: Registered PF_BLUETOOTH protocol family
+[    8.190365] Bluetooth: HCI device and connection manager initialized
+[    8.190369] Bluetooth: HCI socket layer initialized
+[    8.190370] Bluetooth: L2CAP socket layer initialized
+[    8.190372] Bluetooth: SCO socket layer initialized
+[    8.191993] btcentauri 0000:01:00.2: enabling device (0004 -> 0006)
+[    8.198826] btcentauri 0000:01:00.2: Beta HCI transport registered; ACL enabled=1, SCO/ISO unsupported
+[    8.251126] r8169 0000:02:00.0 end0: Link is Up - 10Gbps/Full - flow control rx/tx
+[    8.771053] Bluetooth: hci0: Native startup accepted; configured diagnostic address in use
+[    9.191046] Bluetooth: hci0: Native Proxima Create Connection capability confirmed
+[    9.372272] asahi 580000000.gpu: G18_TRACE role=0 ordinal=52 timestamp=1221524346 type=5 id=0x12f args=[100000, 100000, 0, 0]
+[    9.372288] asahi 580000000.gpu: G18_TRACE role=0 ordinal=53 timestamp=1221524518 type=5 id=0x130 args=[100000, 0, 0, 0]
+[    9.372383] asahi 580000000.gpu: G18_APP_VM frame=1 vm=4 context=3 target=1280x720 aliases=37
+[    9.372384] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.372385] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.372386] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.372386] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.372387] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.372387] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.374907] asahi 580000000.gpu: G18_TRACE role=0 ordinal=54 timestamp=1408427950 type=5 id=0x12f args=[2, 7, 0, 0]
+[    9.374914] asahi 580000000.gpu: G18_TRACE role=0 ordinal=55 timestamp=1408428175 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.374921] asahi 580000000.gpu: G18_TRACE role=0 ordinal=56 timestamp=1408428237 type=5 id=0x146 args=[0, 1, 1, 0]
+[    9.374925] asahi 580000000.gpu: G18_TRACE role=0 ordinal=57 timestamp=1408432094 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.374933] asahi 580000000.gpu: G18_TRACE role=0 ordinal=58 timestamp=1408432740 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.374937] asahi 580000000.gpu: G18_TRACE role=0 ordinal=59 timestamp=1408433045 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.374944] asahi 580000000.gpu: G18_TRACE role=0 ordinal=60 timestamp=1408433323 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.374948] asahi 580000000.gpu: G18_TRACE role=0 ordinal=61 timestamp=1408433620 type=5 id=0x112 args=[2, 0, 0, 2]
+[    9.374954] asahi 580000000.gpu: G18_TRACE role=0 ordinal=62 timestamp=1408434154 type=5 id=0x40 args=[a, 7011020000, 1, 2]
+[    9.374960] asahi 580000000.gpu: G18_TRACE role=0 ordinal=63 timestamp=1408434447 type=5 id=0x40 args=[9, 7011000000, 0, 2]
+[    9.374966] asahi 580000000.gpu: G18_TRACE role=0 ordinal=64 timestamp=1408434710 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.374973] asahi 580000000.gpu: G18_TRACE role=0 ordinal=65 timestamp=1408434881 type=5 id=0x130 args=[2, 5, 0, 0]
+[    9.374978] asahi 580000000.gpu: G18_TRACE role=0 ordinal=66 timestamp=1408434944 type=5 id=0x12f args=[1, 5, 0, 0]
+[    9.374984] asahi 580000000.gpu: G18_TRACE role=0 ordinal=67 timestamp=1408435007 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.374988] asahi 580000000.gpu: G18_TRACE role=0 ordinal=68 timestamp=1408435068 type=5 id=0x146 args=[0, 0, 0, 0]
+[    9.374995] asahi 580000000.gpu: G18_TRACE role=0 ordinal=69 timestamp=1408435717 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.375000] asahi 580000000.gpu: G18_TRACE role=0 ordinal=70 timestamp=1408435962 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.375007] asahi 580000000.gpu: G18_TRACE role=0 ordinal=71 timestamp=1408436248 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.375014] asahi 580000000.gpu: G18_TRACE role=0 ordinal=72 timestamp=1408436527 type=5 id=0x112 args=[2, 0, 0, 20002]
+[    9.375019] asahi 580000000.gpu: G18_TRACE role=0 ordinal=73 timestamp=1408436815 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.375037] asahi 580000000.gpu: G18_TRACE role=0 ordinal=74 timestamp=1408436967 type=5 id=0x130 args=[1, 4, 0, 0]
+[    9.375042] asahi 580000000.gpu: G18_TRACE role=0 ordinal=75 timestamp=1408437028 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.375048] asahi 580000000.gpu: G18_TRACE role=0 ordinal=76 timestamp=1408437090 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.375053] asahi 580000000.gpu: G18_TRACE role=0 ordinal=77 timestamp=1408437151 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.375060] asahi 580000000.gpu: G18_TRACE role=0 ordinal=78 timestamp=1408437762 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.375066] asahi 580000000.gpu: G18_TRACE role=0 ordinal=79 timestamp=1408438007 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.375072] asahi 580000000.gpu: G18_TRACE role=0 ordinal=80 timestamp=1408438294 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.375080] asahi 580000000.gpu: G18_TRACE role=0 ordinal=81 timestamp=1408438602 type=5 id=0x112 args=[2, 0, 0, 20002]
+[    9.375085] asahi 580000000.gpu: G18_TRACE role=0 ordinal=82 timestamp=1408438889 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.375092] asahi 580000000.gpu: G18_TRACE role=0 ordinal=83 timestamp=1408439045 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.375097] asahi 580000000.gpu: G18_TRACE role=0 ordinal=84 timestamp=1408439730 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.375104] asahi 580000000.gpu: G18_TRACE role=0 ordinal=85 timestamp=1408439903 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.375110] asahi 580000000.gpu: G18_TRACE role=0 ordinal=86 timestamp=1408439963 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.375116] asahi 580000000.gpu: G18_TRACE role=0 ordinal=87 timestamp=1408440084 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.375123] asahi 580000000.gpu: G18_TRACE role=0 ordinal=88 timestamp=1408440565 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.375128] asahi 580000000.gpu: G18_TRACE role=0 ordinal=89 timestamp=1408441986 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.375134] asahi 580000000.gpu: G18_TRACE role=0 ordinal=90 timestamp=1408442099 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.375139] asahi 580000000.gpu: G18_TRACE role=0 ordinal=91 timestamp=1408442231 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.375146] asahi 580000000.gpu: G18_TRACE role=0 ordinal=92 timestamp=1408446722 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.375152] asahi 580000000.gpu: G18_TRACE role=1 ordinal=5 timestamp=1408429635 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.375160] asahi 580000000.gpu: G18_APP_BIND_PASS phase=1
+[    9.376470] asahi 580000000.gpu: G18_TRACE role=0 ordinal=93 timestamp=1408463659 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.376477] asahi 580000000.gpu: G18_TRACE role=0 ordinal=94 timestamp=1408463828 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.376483] asahi 580000000.gpu: G18_TRACE role=0 ordinal=95 timestamp=1408463891 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.376489] asahi 580000000.gpu: G18_TRACE role=0 ordinal=96 timestamp=1408467067 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.376496] asahi 580000000.gpu: G18_TRACE role=0 ordinal=97 timestamp=1408467459 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.376501] asahi 580000000.gpu: G18_TRACE role=0 ordinal=98 timestamp=1408467670 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.376508] asahi 580000000.gpu: G18_TRACE role=0 ordinal=99 timestamp=1408467895 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.376512] asahi 580000000.gpu: G18_TRACE role=0 ordinal=100 timestamp=1408468187 type=5 id=0x112 args=[2, 0, 0, 20004]
+[    9.376518] asahi 580000000.gpu: G18_TRACE role=0 ordinal=101 timestamp=1408469233 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.376523] asahi 580000000.gpu: G18_TRACE role=0 ordinal=102 timestamp=1408469393 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.376529] asahi 580000000.gpu: G18_TRACE role=0 ordinal=103 timestamp=1408469942 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.376536] asahi 580000000.gpu: G18_TRACE role=0 ordinal=104 timestamp=1408470078 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.376541] asahi 580000000.gpu: G18_TRACE role=0 ordinal=105 timestamp=1408470137 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.376548] asahi 580000000.gpu: G18_TRACE role=0 ordinal=106 timestamp=1408470221 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.376552] asahi 580000000.gpu: G18_TRACE role=0 ordinal=107 timestamp=1408470623 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.376559] asahi 580000000.gpu: G18_TRACE role=0 ordinal=108 timestamp=1408471732 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.376563] asahi 580000000.gpu: G18_TRACE role=0 ordinal=109 timestamp=1408471847 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.376570] asahi 580000000.gpu: G18_TRACE role=0 ordinal=110 timestamp=1408471965 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.376575] asahi 580000000.gpu: G18_TRACE role=0 ordinal=111 timestamp=1408475822 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.376583] asahi 580000000.gpu: G18_TRACE role=1 ordinal=6 timestamp=1408465456 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.376589] asahi 580000000.gpu: G18_APP_BIND_PASS phase=2
+[    9.377895] asahi 580000000.gpu: G18_TRACE role=0 ordinal=112 timestamp=1408498477 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.377902] asahi 580000000.gpu: G18_TRACE role=0 ordinal=113 timestamp=1408498679 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.377907] asahi 580000000.gpu: G18_TRACE role=0 ordinal=114 timestamp=1408498750 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.377913] asahi 580000000.gpu: G18_TRACE role=0 ordinal=115 timestamp=1408501995 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.377918] asahi 580000000.gpu: G18_TRACE role=0 ordinal=116 timestamp=1408502612 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.377924] asahi 580000000.gpu: G18_TRACE role=0 ordinal=117 timestamp=1408502922 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.377929] asahi 580000000.gpu: G18_TRACE role=0 ordinal=118 timestamp=1408503158 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.377936] asahi 580000000.gpu: G18_TRACE role=0 ordinal=119 timestamp=1408503427 type=5 id=0x112 args=[2, 0, 0, 40006]
+[    9.377942] asahi 580000000.gpu: G18_TRACE role=0 ordinal=120 timestamp=1408504455 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.377948] asahi 580000000.gpu: G18_TRACE role=0 ordinal=121 timestamp=1408504633 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.377955] asahi 580000000.gpu: G18_TRACE role=0 ordinal=122 timestamp=1408505197 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.377960] asahi 580000000.gpu: G18_TRACE role=0 ordinal=123 timestamp=1408505429 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.377966] asahi 580000000.gpu: G18_TRACE role=0 ordinal=124 timestamp=1408505492 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.377971] asahi 580000000.gpu: G18_TRACE role=0 ordinal=125 timestamp=1408505577 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.377977] asahi 580000000.gpu: G18_TRACE role=0 ordinal=126 timestamp=1408506023 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.377982] asahi 580000000.gpu: G18_TRACE role=0 ordinal=127 timestamp=1408507225 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.377988] asahi 580000000.gpu: G18_TRACE role=0 ordinal=128 timestamp=1408507348 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.377995] asahi 580000000.gpu: G18_TRACE role=0 ordinal=129 timestamp=1408507476 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.378000] asahi 580000000.gpu: G18_TRACE role=0 ordinal=130 timestamp=1408512152 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.378007] asahi 580000000.gpu: G18_TRACE role=1 ordinal=7 timestamp=1408500134 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.378015] asahi 580000000.gpu: G18_APP_BIND_PASS phase=3
+[    9.379099] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=ta-command fnv=0xb599be8a8b9d56cf
+[    9.379101] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=3d-command fnv=0xf5f6db81126b40e0
+[    9.379101] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=ta-registers fnv=0x40410d6ef4cf6a23
+[    9.379101] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=3d-main fnv=0xd1377a29fbc730de
+[    9.379102] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=3d-store fnv=0x48ba8175a16665e2
+[    9.379102] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=3d-resume fnv=0x47b783c217cdfba5
+[    9.379102] asahi 580000000.gpu: G18_APP_DIGEST frame=1 name=3d-load fnv=0x270dfb306dbfe7e7
+[    9.379103] asahi 580000000.gpu: G18_APP_AUDIT frame=1 pb=resident uma=match translations=1854 previous_stamp=0x0
+[    9.379106] asahi 580000000.gpu: G18_RENDER_DIGEST name=pb-state fnv=0x87a60b3126b25c85
+[    9.385632] asahi 580000000.gpu: G18_RENDER_DIGEST name=pb-page-list fnv=0x62b77d2f6a9f4225
+[    9.385636] asahi 580000000.gpu: G18_RENDER_DIGEST name=pb-row fnv=0xb82e3590e42220c5
+[    9.386161] asahi 580000000.gpu: G18_RENDER_DIGEST name=scheduler fnv=0x1f84dfb3d76a3065
+[    9.386175] asahi 580000000.gpu: G18_RENDER_DIGEST name=submitted-pre-kick fnv=0xec32669a74fcae65
+[    9.386178] asahi 580000000.gpu: G18_RENDER_DIGEST name=uma-state fnv=0x6c7ad9c9e200f02b
+[    9.386178] asahi 580000000.gpu: G18_RENDER_DIGEST name=uma-row fnv=0x0e1eb849e2e47394
+[    9.386191] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=1 name=sksm fnv=0x85bcc4ede8773e89
+[    9.386192] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=1 name=kick fnv=0x1078c9aac152f0ce
+[    9.386192] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=1 name=tag15 fnv=0x73680daf2bdedb34
+[    9.386198] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=0 name=sksm fnv=0x67f6e393756f2f43
+[    9.386198] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=0 name=kick fnv=0x18c8bcdbfc8817da
+[    9.386198] asahi 580000000.gpu: G18_APP_DIGEST frame=1 stage=0 name=tag15 fnv=0x8753f3be8c19ac7d
+[    9.386371] asahi 580000000.gpu: G18_TRACE role=0 ordinal=131 timestamp=1408728275 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.386376] asahi 580000000.gpu: G18_TRACE role=0 ordinal=132 timestamp=1408728420 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.386382] asahi 580000000.gpu: G18_TRACE role=0 ordinal=133 timestamp=1408728482 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.386389] asahi 580000000.gpu: G18_TRACE role=1 ordinal=8 timestamp=1408729477 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.386475] asahi 580000000.gpu: G18_TRACE role=0 ordinal=134 timestamp=1408731308 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.386522] asahi 580000000.gpu: G18_TRACE role=0 ordinal=135 timestamp=1408731888 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.386529] asahi 580000000.gpu: G18_TRACE role=0 ordinal=136 timestamp=1408732114 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.386534] asahi 580000000.gpu: G18_TRACE role=0 ordinal=137 timestamp=1408732352 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.386542] asahi 580000000.gpu: G18_TRACE role=0 ordinal=138 timestamp=1408732564 type=5 id=0x112 args=[2, 0, 0, 60008]
+[    9.386546] asahi 580000000.gpu: G18_TRACE role=0 ordinal=139 timestamp=1408732988 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 1]
+[    9.386553] asahi 580000000.gpu: G18_TRACE role=0 ordinal=140 timestamp=1408733058 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.386558] asahi 580000000.gpu: G18_TRACE role=0 ordinal=141 timestamp=1408733353 type=5 id=0x41 args=[a, 1, 1, 1]
+[    9.386564] asahi 580000000.gpu: G18_TRACE role=0 ordinal=142 timestamp=1408733581 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 2]
+[    9.386570] asahi 580000000.gpu: G18_TRACE role=0 ordinal=143 timestamp=1408733795 type=5 id=0x41 args=[9, 1, 0, 1]
+[    9.386576] asahi 580000000.gpu: G18_TRACE role=0 ordinal=144 timestamp=1408733972 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.386595] asahi 580000000.gpu: G18_TRACE role=0 ordinal=145 timestamp=1408734130 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.386608] asahi 580000000.gpu: G18_TRACE role=0 ordinal=146 timestamp=1408734478 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.386629] asahi 580000000.gpu: G18_TRACE role=0 ordinal=147 timestamp=1408734725 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.386638] asahi 580000000.gpu: G18_TRACE role=0 ordinal=148 timestamp=1408734821 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.386654] asahi 580000000.gpu: G18_TRACE role=0 ordinal=149 timestamp=1408735036 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.386670] asahi 580000000.gpu: G18_TRACE role=0 ordinal=150 timestamp=1408735269 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.386690] asahi 580000000.gpu: G18_TRACE role=0 ordinal=151 timestamp=1408735542 type=5 id=0x47 args=[0, 0, 0, 1]
+[    9.386705] asahi 580000000.gpu: G18_TRACE role=0 ordinal=152 timestamp=1408735979 type=5 id=0x43 args=[9, 1, 3, fffffc20c2000000]
+[    9.386720] asahi 580000000.gpu: G18_TRACE role=0 ordinal=153 timestamp=1408736992 type=5 id=0x4b args=[9, 0, 10000000001, 0]
+[    9.386742] asahi 580000000.gpu: G18_TRACE role=0 ordinal=154 timestamp=1408737126 type=5 id=0x2a args=[2, 0, 53f792cb, 53f79335]
+[    9.386748] asahi 580000000.gpu: G18_TRACE role=0 ordinal=155 timestamp=1408737712 type=5 id=0x10a args=[0, 0, 100, 2]
+[    9.386754] asahi 580000000.gpu: G18_TRACE role=0 ordinal=156 timestamp=1408737982 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.386759] asahi 580000000.gpu: G18_TRACE role=0 ordinal=157 timestamp=1408738288 type=5 id=0x56 args=[0, 1, 2, 0]
+[    9.386765] asahi 580000000.gpu: G18_TRACE role=0 ordinal=158 timestamp=1408738359 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.386771] asahi 580000000.gpu: G18_TRACE role=0 ordinal=159 timestamp=1408738457 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.386777] asahi 580000000.gpu: G18_TRACE role=0 ordinal=160 timestamp=1408738544 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.386783] asahi 580000000.gpu: G18_TRACE role=0 ordinal=161 timestamp=1408738716 type=5 id=0x48 args=[0, 1, 1, 0]
+[    9.386788] asahi 580000000.gpu: G18_TRACE role=0 ordinal=162 timestamp=1408738837 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.386795] asahi 580000000.gpu: G18_TRACE role=0 ordinal=163 timestamp=1408738990 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.386799] asahi 580000000.gpu: G18_TRACE role=0 ordinal=164 timestamp=1408739063 type=5 id=0x47 args=[0, 1, 1, 1]
+[    9.386805] asahi 580000000.gpu: G18_TRACE role=0 ordinal=165 timestamp=1408739166 type=5 id=0x43 args=[a, 1, 1000100000003, fffffc20c2000100]
+[    9.386854] asahi 580000000.gpu: G18_TRACE role=0 ordinal=166 timestamp=1408739859 type=5 id=0x4b args=[a, 0, 10000000001, 0]
+[    9.386861] asahi 580000000.gpu: G18_TRACE role=0 ordinal=167 timestamp=1408739960 type=5 id=0x2b args=[1, 1, 53f7933a, 53f7a37e]
+[    9.386870] asahi 580000000.gpu: G18_TRACE role=0 ordinal=168 timestamp=1408740342 type=5 id=0x10a args=[1, 0, 100, 1]
+[    9.386876] asahi 580000000.gpu: G18_TRACE role=0 ordinal=169 timestamp=1408740504 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.386883] asahi 580000000.gpu: G18_TRACE role=0 ordinal=170 timestamp=1408740729 type=5 id=0x56 args=[1, 2, 2, 0]
+[    9.386888] asahi 580000000.gpu: G18_TRACE role=0 ordinal=171 timestamp=1408740825 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.386895] asahi 580000000.gpu: G18_TRACE role=0 ordinal=172 timestamp=1408740930 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.386899] asahi 580000000.gpu: G18_TRACE role=0 ordinal=173 timestamp=1408741012 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, 1]
+[    9.386905] asahi 580000000.gpu: G18_TRACE role=0 ordinal=174 timestamp=1408741373 type=5 id=0xa args=[100, 9, fffffc20c2188024, 2]
+[    9.386911] asahi 580000000.gpu: G18_TRACE role=0 ordinal=175 timestamp=1408741437 type=5 id=0xc args=[100, a, fffffc20c2188028, 1]
+[    9.386917] asahi 580000000.gpu: G18_TRACE role=0 ordinal=176 timestamp=1408741519 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.386924] asahi 580000000.gpu: G18_TRACE role=0 ordinal=177 timestamp=1408741767 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.386929] asahi 580000000.gpu: G18_TRACE role=0 ordinal=178 timestamp=1408741840 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.386939] asahi 580000000.gpu: G18_TRACE role=0 ordinal=179 timestamp=1408741929 type=5 id=0x48 args=[0, 2, 1, 0]
+[    9.386944] asahi 580000000.gpu: G18_TRACE role=0 ordinal=180 timestamp=1408741994 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.386950] asahi 580000000.gpu: G18_TRACE role=0 ordinal=181 timestamp=1408742368 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.387000] asahi 580000000.gpu: G18_TRACE role=0 ordinal=182 timestamp=1408743297 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.387007] asahi 580000000.gpu: G18_TRACE role=0 ordinal=183 timestamp=1408743361 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.387013] asahi 580000000.gpu: G18_TRACE role=0 ordinal=184 timestamp=1408743429 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.387030] asahi 580000000.gpu: G18_JOB_PHASES frame=1 us=[604, 817, 7, 749, 7, 7, 749, 817] (outer inner submitted completed linked list stamps masks)
+[    9.387717] asahi 580000000.gpu: G18_TRACE role=0 ordinal=185 timestamp=1408747201 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.389572] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=ta-command fnv=0xdbb541cdff068ec3
+[    9.389573] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=3d-command fnv=0x70af52558393ab21
+[    9.389573] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=ta-registers fnv=0x4980fe3bf633f25c
+[    9.389574] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=3d-main fnv=0xb9d3c06753a0b1e9
+[    9.389574] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=3d-store fnv=0x48ba8175a16665e2
+[    9.389574] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=3d-resume fnv=0x47b783c217cdfba5
+[    9.389575] asahi 580000000.gpu: G18_APP_DIGEST frame=2 name=3d-load fnv=0x270dfb306dbfe7e7
+[    9.389575] asahi 580000000.gpu: G18_APP_AUDIT frame=2 pb=resident uma=match translations=1854 previous_stamp=0x100
+[    9.389588] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=1 name=sksm fnv=0xfd460c4547718eeb
+[    9.389589] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=1 name=kick fnv=0x70a396da5d53bfdd
+[    9.389589] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=1 name=tag15 fnv=0x73680daf2bdedb34
+[    9.389595] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=0 name=sksm fnv=0x021c7b03df86f01a
+[    9.389595] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=0 name=kick fnv=0x2385393ba1b9df29
+[    9.389596] asahi 580000000.gpu: G18_APP_DIGEST frame=2 stage=0 name=tag15 fnv=0x8753f3be8c19ac7d
+[    9.389771] asahi 580000000.gpu: G18_TRACE role=0 ordinal=186 timestamp=1408809776 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.389777] asahi 580000000.gpu: G18_TRACE role=0 ordinal=187 timestamp=1408809935 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.389784] asahi 580000000.gpu: G18_TRACE role=0 ordinal=188 timestamp=1408809997 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.389792] asahi 580000000.gpu: G18_TRACE role=1 ordinal=9 timestamp=1408811007 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.389876] asahi 580000000.gpu: G18_TRACE role=0 ordinal=189 timestamp=1408812597 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.389883] asahi 580000000.gpu: G18_TRACE role=0 ordinal=190 timestamp=1408813194 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.389889] asahi 580000000.gpu: G18_TRACE role=0 ordinal=191 timestamp=1408813443 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.389895] asahi 580000000.gpu: G18_TRACE role=0 ordinal=192 timestamp=1408813658 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.389902] asahi 580000000.gpu: G18_TRACE role=0 ordinal=193 timestamp=1408813873 type=5 id=0x112 args=[2, 0, 0, 8000a]
+[    9.389945] asahi 580000000.gpu: G18_TRACE role=0 ordinal=194 timestamp=1408814241 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 3]
+[    9.389952] asahi 580000000.gpu: G18_TRACE role=0 ordinal=195 timestamp=1408814313 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.389957] asahi 580000000.gpu: G18_TRACE role=0 ordinal=196 timestamp=1408814662 type=5 id=0x41 args=[a, 2, 1, 1]
+[    9.389963] asahi 580000000.gpu: G18_TRACE role=0 ordinal=197 timestamp=1408814956 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 4]
+[    9.389974] asahi 580000000.gpu: G18_TRACE role=0 ordinal=198 timestamp=1408815171 type=5 id=0x41 args=[9, 2, 0, 1]
+[    9.389994] asahi 580000000.gpu: G18_TRACE role=0 ordinal=199 timestamp=1408815344 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.390016] asahi 580000000.gpu: G18_TRACE role=0 ordinal=200 timestamp=1408815494 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.390033] asahi 580000000.gpu: G18_TRACE role=0 ordinal=201 timestamp=1408815832 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.390050] asahi 580000000.gpu: G18_TRACE role=0 ordinal=202 timestamp=1408816057 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.390064] asahi 580000000.gpu: G18_TRACE role=0 ordinal=203 timestamp=1408816161 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.390084] asahi 580000000.gpu: G18_TRACE role=0 ordinal=204 timestamp=1408816378 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.390097] asahi 580000000.gpu: G18_TRACE role=0 ordinal=205 timestamp=1408816594 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.390118] asahi 580000000.gpu: G18_TRACE role=0 ordinal=206 timestamp=1408816810 type=5 id=0x47 args=[0, 2, 2, 1]
+[    9.390136] asahi 580000000.gpu: G18_TRACE role=0 ordinal=207 timestamp=1408817262 type=5 id=0x43 args=[9, 2, 3, fffffc20c2000000]
+[    9.390143] asahi 580000000.gpu: G18_TRACE role=0 ordinal=208 timestamp=1408818190 type=5 id=0x4b args=[9, 10000000001, 10000000002, 0]
+[    9.390150] asahi 580000000.gpu: G18_TRACE role=0 ordinal=209 timestamp=1408818318 type=5 id=0x2a args=[4, 0, 53f8d08c, 53f8d0fa]
+[    9.390155] asahi 580000000.gpu: G18_TRACE role=0 ordinal=210 timestamp=1408818842 type=5 id=0x10a args=[0, 0, 200, 4]
+[    9.390162] asahi 580000000.gpu: G18_TRACE role=0 ordinal=211 timestamp=1408819175 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.390166] asahi 580000000.gpu: G18_TRACE role=0 ordinal=212 timestamp=1408819551 type=5 id=0x56 args=[0, 3, 4, 0]
+[    9.390172] asahi 580000000.gpu: G18_TRACE role=0 ordinal=213 timestamp=1408819655 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.390177] asahi 580000000.gpu: G18_TRACE role=0 ordinal=214 timestamp=1408819783 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.390183] asahi 580000000.gpu: G18_TRACE role=0 ordinal=215 timestamp=1408819869 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.390190] asahi 580000000.gpu: G18_TRACE role=0 ordinal=216 timestamp=1408820018 type=5 id=0x48 args=[0, 3, 1, 0]
+[    9.390195] asahi 580000000.gpu: G18_TRACE role=0 ordinal=217 timestamp=1408820140 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.390202] asahi 580000000.gpu: G18_TRACE role=0 ordinal=218 timestamp=1408820288 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.390207] asahi 580000000.gpu: G18_TRACE role=0 ordinal=219 timestamp=1408820363 type=5 id=0x47 args=[0, 3, 3, 1]
+[    9.390213] asahi 580000000.gpu: G18_TRACE role=0 ordinal=220 timestamp=1408820469 type=5 id=0x43 args=[a, 2, 1000100000003, fffffc20c2000100]
+[    9.390218] asahi 580000000.gpu: G18_TRACE role=0 ordinal=221 timestamp=1408821046 type=5 id=0x4b args=[a, 10000000001, 10000000002, 0]
+[    9.390225] asahi 580000000.gpu: G18_TRACE role=0 ordinal=222 timestamp=1408821140 type=5 id=0x2b args=[3, 1, 53f8d0ff, 53f8e1aa]
+[    9.390231] asahi 580000000.gpu: G18_TRACE role=0 ordinal=223 timestamp=1408821395 type=5 id=0x10a args=[1, 0, 200, 3]
+[    9.390237] asahi 580000000.gpu: G18_TRACE role=0 ordinal=224 timestamp=1408821549 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.390244] asahi 580000000.gpu: G18_TRACE role=0 ordinal=225 timestamp=1408821755 type=5 id=0x56 args=[1, 4, 4, 0]
+[    9.390249] asahi 580000000.gpu: G18_TRACE role=0 ordinal=226 timestamp=1408821826 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.390257] asahi 580000000.gpu: G18_TRACE role=0 ordinal=227 timestamp=1408821932 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.390262] asahi 580000000.gpu: G18_TRACE role=0 ordinal=228 timestamp=1408822012 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, 3]
+[    9.390268] asahi 580000000.gpu: G18_TRACE role=0 ordinal=229 timestamp=1408822232 type=5 id=0xa args=[200, 9, fffffc20c2188024, 4]
+[    9.390273] asahi 580000000.gpu: G18_TRACE role=0 ordinal=230 timestamp=1408822296 type=5 id=0xc args=[200, a, fffffc20c2188028, 3]
+[    9.390280] asahi 580000000.gpu: G18_TRACE role=0 ordinal=231 timestamp=1408822369 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.390287] asahi 580000000.gpu: G18_TRACE role=0 ordinal=232 timestamp=1408822597 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.390292] asahi 580000000.gpu: G18_TRACE role=0 ordinal=233 timestamp=1408822671 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.390298] asahi 580000000.gpu: G18_TRACE role=0 ordinal=234 timestamp=1408822747 type=5 id=0x48 args=[0, 4, 1, 0]
+[    9.390303] asahi 580000000.gpu: G18_TRACE role=0 ordinal=235 timestamp=1408822816 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.390309] asahi 580000000.gpu: G18_TRACE role=0 ordinal=236 timestamp=1408823211 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.390361] asahi 580000000.gpu: G18_TRACE role=0 ordinal=237 timestamp=1408824134 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.390368] asahi 580000000.gpu: G18_TRACE role=0 ordinal=238 timestamp=1408824200 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.390373] asahi 580000000.gpu: G18_TRACE role=0 ordinal=239 timestamp=1408824269 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.390384] asahi 580000000.gpu: G18_JOB_PHASES frame=2 us=[710, 774, 8, 710, 8, 8, 710, 774] (outer inner submitted completed linked list stamps masks)
+[    9.390896] asahi 580000000.gpu: G18_TRACE role=0 ordinal=240 timestamp=1408828401 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.392766] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=ta-command fnv=0x8c93b93e9efc0e4b
+[    9.392767] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=3d-command fnv=0x9b142523f7b270be
+[    9.392767] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=ta-registers fnv=0x52fae5ba9878eba1
+[    9.392767] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=3d-main fnv=0x50f3d34ed7ca32cc
+[    9.392768] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=3d-store fnv=0x48ba8175a16665e2
+[    9.392768] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=3d-resume fnv=0x47b783c217cdfba5
+[    9.392768] asahi 580000000.gpu: G18_APP_DIGEST frame=3 name=3d-load fnv=0x270dfb306dbfe7e7
+[    9.392769] asahi 580000000.gpu: G18_APP_AUDIT frame=3 pb=resident uma=match translations=1854 previous_stamp=0x200
+[    9.392782] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=1 name=sksm fnv=0xd6b712ea11539a15
+[    9.392782] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=1 name=kick fnv=0x25f1c26a0bb67f6c
+[    9.392782] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=1 name=tag15 fnv=0x73680daf2bdedb34
+[    9.392787] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=0 name=sksm fnv=0x3fdfc2c0b0858551
+[    9.392787] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=0 name=kick fnv=0x2e41b59b46eba678
+[    9.392788] asahi 580000000.gpu: G18_APP_DIGEST frame=3 stage=0 name=tag15 fnv=0x8753f3be8c19ac7d
+[    9.392963] asahi 580000000.gpu: G18_TRACE role=0 ordinal=241 timestamp=1408886532 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.392969] asahi 580000000.gpu: G18_TRACE role=0 ordinal=242 timestamp=1408886694 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.392975] asahi 580000000.gpu: G18_TRACE role=0 ordinal=243 timestamp=1408886754 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.393018] asahi 580000000.gpu: G18_TRACE role=1 ordinal=10 timestamp=1408887906 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.393062] asahi 580000000.gpu: G18_TRACE role=0 ordinal=244 timestamp=1408889670 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.393105] asahi 580000000.gpu: G18_TRACE role=0 ordinal=245 timestamp=1408890077 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.393110] asahi 580000000.gpu: G18_TRACE role=0 ordinal=246 timestamp=1408890375 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.393117] asahi 580000000.gpu: G18_TRACE role=0 ordinal=247 timestamp=1408890685 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.393123] asahi 580000000.gpu: G18_TRACE role=0 ordinal=248 timestamp=1408890916 type=5 id=0x112 args=[2, 0, 0, a000c]
+[    9.393128] asahi 580000000.gpu: G18_TRACE role=0 ordinal=249 timestamp=1408891300 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 5]
+[    9.393135] asahi 580000000.gpu: G18_TRACE role=0 ordinal=250 timestamp=1408891372 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.393140] asahi 580000000.gpu: G18_TRACE role=0 ordinal=251 timestamp=1408891636 type=5 id=0x41 args=[a, 3, 1, 1]
+[    9.393195] asahi 580000000.gpu: G18_TRACE role=0 ordinal=252 timestamp=1408891869 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 6]
+[    9.393210] asahi 580000000.gpu: G18_TRACE role=0 ordinal=253 timestamp=1408892077 type=5 id=0x41 args=[9, 3, 0, 1]
+[    9.393231] asahi 580000000.gpu: G18_TRACE role=0 ordinal=254 timestamp=1408892269 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.393240] asahi 580000000.gpu: G18_TRACE role=0 ordinal=255 timestamp=1408892430 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.393254] asahi 580000000.gpu: G18_TRACE role=0 ordinal=256 timestamp=1408892804 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.393277] asahi 580000000.gpu: G18_TRACE role=0 ordinal=257 timestamp=1408893043 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.393291] asahi 580000000.gpu: G18_TRACE role=0 ordinal=258 timestamp=1408893148 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.393306] asahi 580000000.gpu: G18_TRACE role=0 ordinal=259 timestamp=1408893341 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.393318] asahi 580000000.gpu: G18_TRACE role=0 ordinal=260 timestamp=1408893573 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.393337] asahi 580000000.gpu: G18_TRACE role=0 ordinal=261 timestamp=1408893769 type=5 id=0x47 args=[0, 4, 4, 1]
+[    9.393344] asahi 580000000.gpu: G18_TRACE role=0 ordinal=262 timestamp=1408894175 type=5 id=0x43 args=[9, 3, 3, fffffc20c2000000]
+[    9.393350] asahi 580000000.gpu: G18_TRACE role=0 ordinal=263 timestamp=1408895151 type=5 id=0x4b args=[9, 10000000002, 10000000003, 0]
+[    9.393357] asahi 580000000.gpu: G18_TRACE role=0 ordinal=264 timestamp=1408895290 type=5 id=0x2a args=[6, 0, 53f9fd17, 53f9fd8f]
+[    9.393362] asahi 580000000.gpu: G18_TRACE role=0 ordinal=265 timestamp=1408895806 type=5 id=0x10a args=[0, 0, 300, 6]
+[    9.393369] asahi 580000000.gpu: G18_TRACE role=0 ordinal=266 timestamp=1408896105 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.393373] asahi 580000000.gpu: G18_TRACE role=0 ordinal=267 timestamp=1408896490 type=5 id=0x56 args=[0, 5, 6, 0]
+[    9.393380] asahi 580000000.gpu: G18_TRACE role=0 ordinal=268 timestamp=1408896620 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.393384] asahi 580000000.gpu: G18_TRACE role=0 ordinal=269 timestamp=1408896756 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.393391] asahi 580000000.gpu: G18_TRACE role=0 ordinal=270 timestamp=1408896841 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.393397] asahi 580000000.gpu: G18_TRACE role=0 ordinal=271 timestamp=1408896995 type=5 id=0x48 args=[0, 5, 1, 0]
+[    9.393402] asahi 580000000.gpu: G18_TRACE role=0 ordinal=272 timestamp=1408897128 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.393409] asahi 580000000.gpu: G18_TRACE role=0 ordinal=273 timestamp=1408897292 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.393414] asahi 580000000.gpu: G18_TRACE role=0 ordinal=274 timestamp=1408897361 type=5 id=0x47 args=[0, 5, 5, 1]
+[    9.393421] asahi 580000000.gpu: G18_TRACE role=0 ordinal=275 timestamp=1408897472 type=5 id=0x43 args=[a, 3, 1000100000003, fffffc20c2000100]
+[    9.393425] asahi 580000000.gpu: G18_TRACE role=0 ordinal=276 timestamp=1408898095 type=5 id=0x4b args=[a, 10000000002, 10000000003, 0]
+[    9.393432] asahi 580000000.gpu: G18_TRACE role=0 ordinal=277 timestamp=1408898198 type=5 id=0x2b args=[5, 1, 53f9fd94, 53fa0e7e]
+[    9.393437] asahi 580000000.gpu: G18_TRACE role=0 ordinal=278 timestamp=1408898469 type=5 id=0x10a args=[1, 0, 300, 5]
+[    9.393444] asahi 580000000.gpu: G18_TRACE role=0 ordinal=279 timestamp=1408898623 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.393452] asahi 580000000.gpu: G18_TRACE role=0 ordinal=280 timestamp=1408898813 type=5 id=0x56 args=[1, 6, 6, 0]
+[    9.393457] asahi 580000000.gpu: G18_TRACE role=0 ordinal=281 timestamp=1408898884 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.393465] asahi 580000000.gpu: G18_TRACE role=0 ordinal=282 timestamp=1408898989 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.393469] asahi 580000000.gpu: G18_TRACE role=0 ordinal=283 timestamp=1408899071 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, 5]
+[    9.393475] asahi 580000000.gpu: G18_TRACE role=0 ordinal=284 timestamp=1408899276 type=5 id=0xa args=[300, 9, fffffc20c2188024, 6]
+[    9.393480] asahi 580000000.gpu: G18_TRACE role=0 ordinal=285 timestamp=1408899349 type=5 id=0xc args=[300, a, fffffc20c2188028, 5]
+[    9.393487] asahi 580000000.gpu: G18_TRACE role=0 ordinal=286 timestamp=1408899422 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.393492] asahi 580000000.gpu: G18_TRACE role=0 ordinal=287 timestamp=1408899659 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.393498] asahi 580000000.gpu: G18_TRACE role=0 ordinal=288 timestamp=1408899733 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.393504] asahi 580000000.gpu: G18_TRACE role=0 ordinal=289 timestamp=1408899810 type=5 id=0x48 args=[0, 6, 1, 0]
+[    9.393509] asahi 580000000.gpu: G18_TRACE role=0 ordinal=290 timestamp=1408899874 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.393516] asahi 580000000.gpu: G18_TRACE role=0 ordinal=291 timestamp=1408900265 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.393569] asahi 580000000.gpu: G18_TRACE role=0 ordinal=292 timestamp=1408901215 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.393575] asahi 580000000.gpu: G18_TRACE role=0 ordinal=293 timestamp=1408901279 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.393580] asahi 580000000.gpu: G18_TRACE role=0 ordinal=294 timestamp=1408901349 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.393592] asahi 580000000.gpu: G18_JOB_PHASES frame=3 us=[725, 790, 7, 725, 7, 7, 725, 790] (outer inner submitted completed linked list stamps masks)
+[    9.505581] asahi 580000000.gpu: G18_TRACE role=0 ordinal=295 timestamp=1408905241 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.505599] asahi 580000000.gpu: G18_TRACE role=0 ordinal=296 timestamp=1409863919 type=5 id=0x12f args=[100000, 100000, 0, 0]
+[    9.505604] asahi 580000000.gpu: G18_TRACE role=0 ordinal=297 timestamp=1409864123 type=5 id=0x130 args=[100000, 0, 0, 0]
+[    9.507687] asahi 580000000.gpu: G18_TRACE role=0 ordinal=298 timestamp=1411640504 type=5 id=0x12f args=[2, 7, 0, 0]
+[    9.507695] asahi 580000000.gpu: G18_TRACE role=0 ordinal=299 timestamp=1411640761 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.507702] asahi 580000000.gpu: G18_TRACE role=0 ordinal=300 timestamp=1411640823 type=5 id=0x146 args=[0, 1, 1, 0]
+[    9.507759] asahi 580000000.gpu: G18_TRACE role=1 ordinal=11 timestamp=1411642008 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.507839] asahi 580000000.gpu: G18_TRACE role=0 ordinal=301 timestamp=1411644159 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.507886] asahi 580000000.gpu: G18_TRACE role=0 ordinal=302 timestamp=1411644686 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.507893] asahi 580000000.gpu: G18_TRACE role=0 ordinal=303 timestamp=1411644964 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.507899] asahi 580000000.gpu: G18_TRACE role=0 ordinal=304 timestamp=1411645263 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.507907] asahi 580000000.gpu: G18_TRACE role=0 ordinal=305 timestamp=1411645540 type=5 id=0x112 args=[2, 0, 0, c000e]
+[    9.507912] asahi 580000000.gpu: G18_TRACE role=0 ordinal=306 timestamp=1411645894 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 7]
+[    9.507919] asahi 580000000.gpu: G18_TRACE role=0 ordinal=307 timestamp=1411645964 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.507923] asahi 580000000.gpu: G18_TRACE role=0 ordinal=308 timestamp=1411646240 type=5 id=0x41 args=[a, 4, 1, 1]
+[    9.507930] asahi 580000000.gpu: G18_TRACE role=0 ordinal=309 timestamp=1411646487 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 8]
+[    9.507935] asahi 580000000.gpu: G18_TRACE role=0 ordinal=310 timestamp=1411646681 type=5 id=0x41 args=[9, 4, 0, 1]
+[    9.507942] asahi 580000000.gpu: G18_TRACE role=0 ordinal=311 timestamp=1411646854 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.507949] asahi 580000000.gpu: G18_TRACE role=0 ordinal=312 timestamp=1411647004 type=5 id=0x130 args=[2, 5, 0, 0]
+[    9.507956] asahi 580000000.gpu: G18_TRACE role=0 ordinal=313 timestamp=1411647071 type=5 id=0x12f args=[1, 5, 0, 0]
+[    9.507987] asahi 580000000.gpu: G18_TRACE role=0 ordinal=314 timestamp=1411647135 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.508003] asahi 580000000.gpu: G18_TRACE role=0 ordinal=315 timestamp=1411647222 type=5 id=0x146 args=[0, 0, 0, 0]
+[    9.508031] asahi 580000000.gpu: G18_TRACE role=0 ordinal=316 timestamp=1411647840 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.508049] asahi 580000000.gpu: G18_TRACE role=0 ordinal=317 timestamp=1411648109 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.508073] asahi 580000000.gpu: G18_TRACE role=0 ordinal=318 timestamp=1411648443 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.508101] asahi 580000000.gpu: G18_TRACE role=0 ordinal=319 timestamp=1411648837 type=5 id=0x112 args=[2, 0, 0, e000e]
+[    9.508120] asahi 580000000.gpu: G18_TRACE role=0 ordinal=320 timestamp=1411649195 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.508144] asahi 580000000.gpu: G18_TRACE role=0 ordinal=321 timestamp=1411649419 type=5 id=0x130 args=[1, 4, 0, 0]
+[    9.508150] asahi 580000000.gpu: G18_TRACE role=0 ordinal=322 timestamp=1411649504 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.508157] asahi 580000000.gpu: G18_TRACE role=0 ordinal=323 timestamp=1411649599 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.508161] asahi 580000000.gpu: G18_TRACE role=0 ordinal=324 timestamp=1411649690 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.508167] asahi 580000000.gpu: G18_TRACE role=0 ordinal=325 timestamp=1411650321 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.508172] asahi 580000000.gpu: G18_TRACE role=0 ordinal=326 timestamp=1411650588 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.508178] asahi 580000000.gpu: G18_TRACE role=0 ordinal=327 timestamp=1411650985 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.508185] asahi 580000000.gpu: G18_TRACE role=0 ordinal=328 timestamp=1411651395 type=5 id=0x112 args=[2, 0, 0, e000e]
+[    9.508190] asahi 580000000.gpu: G18_TRACE role=0 ordinal=329 timestamp=1411651770 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.508197] asahi 580000000.gpu: G18_TRACE role=0 ordinal=330 timestamp=1411651983 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.508201] asahi 580000000.gpu: G18_TRACE role=0 ordinal=331 timestamp=1411652207 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.508208] asahi 580000000.gpu: G18_TRACE role=0 ordinal=332 timestamp=1411652342 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.508213] asahi 580000000.gpu: G18_TRACE role=0 ordinal=333 timestamp=1411652404 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.508219] asahi 580000000.gpu: G18_TRACE role=0 ordinal=334 timestamp=1411652535 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.508225] asahi 580000000.gpu: G18_TRACE role=0 ordinal=335 timestamp=1411652672 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.508230] asahi 580000000.gpu: G18_TRACE role=0 ordinal=336 timestamp=1411652799 type=5 id=0x47 args=[0, 6, 6, 2]
+[    9.508238] asahi 580000000.gpu: G18_TRACE role=0 ordinal=337 timestamp=1411653053 type=5 id=0x43 args=[9, 4, 3, fffffc20c2000000]
+[    9.508242] asahi 580000000.gpu: G18_TRACE role=0 ordinal=338 timestamp=1411653564 type=5 id=0x4b args=[9, 10000000003, 10000000004, 0]
+[    9.508250] asahi 580000000.gpu: G18_TRACE role=0 ordinal=339 timestamp=1411653650 type=5 id=0x2a args=[8, 0, 54240521, 54240617]
+[    9.508254] asahi 580000000.gpu: G18_TRACE role=0 ordinal=340 timestamp=1411653997 type=5 id=0x10a args=[0, 0, 400, 8]
+[    9.508261] asahi 580000000.gpu: G18_TRACE role=0 ordinal=341 timestamp=1411654171 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.508266] asahi 580000000.gpu: G18_TRACE role=0 ordinal=342 timestamp=1411654383 type=5 id=0x56 args=[0, 7, 8, 0]
+[    9.508272] asahi 580000000.gpu: G18_TRACE role=0 ordinal=343 timestamp=1411654464 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.508280] asahi 580000000.gpu: G18_TRACE role=0 ordinal=344 timestamp=1411654600 type=5 id=0x43 args=[a, 4, 1000100000003, fffffc20c2000100]
+[    9.508322] asahi 580000000.gpu: G18_TRACE role=0 ordinal=345 timestamp=1411655231 type=5 id=0x4b args=[a, 10000000003, 10000000004, 0]
+[    9.508330] asahi 580000000.gpu: G18_TRACE role=0 ordinal=346 timestamp=1411655319 type=5 id=0x2b args=[7, 1, 5424061c, 542418fa]
+[    9.508334] asahi 580000000.gpu: G18_TRACE role=0 ordinal=347 timestamp=1411655637 type=5 id=0x10a args=[1, 0, 400, 7]
+[    9.508341] asahi 580000000.gpu: G18_TRACE role=0 ordinal=348 timestamp=1411655807 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.508346] asahi 580000000.gpu: G18_TRACE role=0 ordinal=349 timestamp=1411656058 type=5 id=0x56 args=[1, 8, 8, 0]
+[    9.508352] asahi 580000000.gpu: G18_TRACE role=0 ordinal=350 timestamp=1411656128 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.508358] asahi 580000000.gpu: G18_TRACE role=0 ordinal=351 timestamp=1411656239 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.508363] asahi 580000000.gpu: G18_TRACE role=0 ordinal=352 timestamp=1411656319 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, 7]
+[    9.508371] asahi 580000000.gpu: G18_TRACE role=0 ordinal=353 timestamp=1411656535 type=5 id=0xa args=[400, 9, fffffc20c2188024, 8]
+[    9.508375] asahi 580000000.gpu: G18_TRACE role=0 ordinal=354 timestamp=1411656608 type=5 id=0xc args=[400, a, fffffc20c2188028, 7]
+[    9.508383] asahi 580000000.gpu: G18_TRACE role=0 ordinal=355 timestamp=1411656699 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.508388] asahi 580000000.gpu: G18_TRACE role=0 ordinal=356 timestamp=1411656920 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.508394] asahi 580000000.gpu: G18_TRACE role=0 ordinal=357 timestamp=1411657007 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.508400] asahi 580000000.gpu: G18_TRACE role=0 ordinal=358 timestamp=1411657152 type=5 id=0x48 args=[0, 8, 2, 0]
+[    9.508406] asahi 580000000.gpu: G18_TRACE role=0 ordinal=359 timestamp=1411657218 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.508413] asahi 580000000.gpu: G18_TRACE role=0 ordinal=360 timestamp=1411657610 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.508466] asahi 580000000.gpu: G18_TRACE role=0 ordinal=361 timestamp=1411658628 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.508474] asahi 580000000.gpu: G18_TRACE role=0 ordinal=362 timestamp=1411658699 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.508479] asahi 580000000.gpu: G18_TRACE role=0 ordinal=363 timestamp=1411658767 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.509144] asahi 580000000.gpu: G18_TRACE role=0 ordinal=364 timestamp=1411660448 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.511175] asahi 580000000.gpu: G18_TRACE role=0 ordinal=365 timestamp=1411724432 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.511181] asahi 580000000.gpu: G18_TRACE role=0 ordinal=366 timestamp=1411724602 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.511187] asahi 580000000.gpu: G18_TRACE role=0 ordinal=367 timestamp=1411724663 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.511266] asahi 580000000.gpu: G18_TRACE role=1 ordinal=12 timestamp=1411725821 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.511311] asahi 580000000.gpu: G18_TRACE role=0 ordinal=368 timestamp=1411727523 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.511359] asahi 580000000.gpu: G18_TRACE role=0 ordinal=369 timestamp=1411727931 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.511364] asahi 580000000.gpu: G18_TRACE role=0 ordinal=370 timestamp=1411728161 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.511371] asahi 580000000.gpu: G18_TRACE role=0 ordinal=371 timestamp=1411728459 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.511376] asahi 580000000.gpu: G18_TRACE role=0 ordinal=372 timestamp=1411728710 type=5 id=0x112 args=[2, 0, 0, e0010]
+[    9.511383] asahi 580000000.gpu: G18_TRACE role=0 ordinal=373 timestamp=1411729092 type=5 id=0x109 args=[2, 0, fffffc20c2000400, 9]
+[    9.511388] asahi 580000000.gpu: G18_TRACE role=0 ordinal=374 timestamp=1411729164 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.511394] asahi 580000000.gpu: G18_TRACE role=0 ordinal=375 timestamp=1411729427 type=5 id=0x41 args=[a, 5, 1, 1]
+[    9.511401] asahi 580000000.gpu: G18_TRACE role=0 ordinal=376 timestamp=1411729656 type=5 id=0x109 args=[2, 0, fffffc20c2000400, a]
+[    9.511406] asahi 580000000.gpu: G18_TRACE role=0 ordinal=377 timestamp=1411729865 type=5 id=0x41 args=[9, 5, 0, 1]
+[    9.511413] asahi 580000000.gpu: G18_TRACE role=0 ordinal=378 timestamp=1411730039 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.511419] asahi 580000000.gpu: G18_TRACE role=0 ordinal=379 timestamp=1411730196 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.511454] asahi 580000000.gpu: G18_TRACE role=0 ordinal=380 timestamp=1411730414 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.511514] asahi 580000000.gpu: G18_TRACE role=0 ordinal=381 timestamp=1411730549 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.511612] asahi 580000000.gpu: G18_TRACE role=0 ordinal=382 timestamp=1411730625 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.511633] asahi 580000000.gpu: G18_TRACE role=0 ordinal=383 timestamp=1411730825 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.511639] asahi 580000000.gpu: G18_TRACE role=0 ordinal=384 timestamp=1411731014 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.511647] asahi 580000000.gpu: G18_TRACE role=0 ordinal=385 timestamp=1411731203 type=5 id=0x47 args=[0, 8, 8, 1]
+[    9.511651] asahi 580000000.gpu: G18_TRACE role=0 ordinal=386 timestamp=1411731733 type=5 id=0x43 args=[9, 5, 3, fffffc20c2000000]
+[    9.511658] asahi 580000000.gpu: G18_TRACE role=0 ordinal=387 timestamp=1411732686 type=5 id=0x4b args=[9, 10000000004, 10000000005, 0]
+[    9.511663] asahi 580000000.gpu: G18_TRACE role=0 ordinal=388 timestamp=1411732823 type=5 id=0x2a args=[a, 0, 54254a18, 54254b59]
+[    9.511670] asahi 580000000.gpu: G18_TRACE role=0 ordinal=389 timestamp=1411733545 type=5 id=0x10a args=[0, 0, 500, a]
+[    9.511676] asahi 580000000.gpu: G18_TRACE role=0 ordinal=390 timestamp=1411733780 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.511682] asahi 580000000.gpu: G18_TRACE role=0 ordinal=391 timestamp=1411734189 type=5 id=0x56 args=[0, 9, a, 0]
+[    9.511689] asahi 580000000.gpu: G18_TRACE role=0 ordinal=392 timestamp=1411734327 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.511693] asahi 580000000.gpu: G18_TRACE role=0 ordinal=393 timestamp=1411734474 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.511700] asahi 580000000.gpu: G18_TRACE role=0 ordinal=394 timestamp=1411734619 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.511705] asahi 580000000.gpu: G18_TRACE role=0 ordinal=395 timestamp=1411734906 type=5 id=0x48 args=[0, 9, 1, 0]
+[    9.511711] asahi 580000000.gpu: G18_TRACE role=0 ordinal=396 timestamp=1411735001 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.511715] asahi 580000000.gpu: G18_TRACE role=0 ordinal=397 timestamp=1411735841 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.511721] asahi 580000000.gpu: G18_TRACE role=0 ordinal=398 timestamp=1411735914 type=5 id=0x47 args=[0, 9, 9, 1]
+[    9.511727] asahi 580000000.gpu: G18_TRACE role=0 ordinal=399 timestamp=1411736020 type=5 id=0x43 args=[a, 5, 1000100000003, fffffc20c2000100]
+[    9.511732] asahi 580000000.gpu: G18_TRACE role=0 ordinal=400 timestamp=1411736621 type=5 id=0x4b args=[a, 10000000004, 10000000005, 0]
+[    9.511739] asahi 580000000.gpu: G18_TRACE role=0 ordinal=401 timestamp=1411736726 type=5 id=0x2b args=[9, 1, 54254b5e, 54255feb]
+[    9.511744] asahi 580000000.gpu: G18_TRACE role=0 ordinal=402 timestamp=1411736997 type=5 id=0x10a args=[1, 0, 500, 9]
+[    9.511751] asahi 580000000.gpu: G18_TRACE role=0 ordinal=403 timestamp=1411737151 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.511756] asahi 580000000.gpu: G18_TRACE role=0 ordinal=404 timestamp=1411737352 type=5 id=0x56 args=[1, a, a, 0]
+[    9.511762] asahi 580000000.gpu: G18_TRACE role=0 ordinal=405 timestamp=1411737423 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.511767] asahi 580000000.gpu: G18_TRACE role=0 ordinal=406 timestamp=1411737525 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.511773] asahi 580000000.gpu: G18_TRACE role=0 ordinal=407 timestamp=1411737606 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, 9]
+[    9.511780] asahi 580000000.gpu: G18_TRACE role=0 ordinal=408 timestamp=1411737815 type=5 id=0xa args=[500, 9, fffffc20c2188024, a]
+[    9.511785] asahi 580000000.gpu: G18_TRACE role=0 ordinal=409 timestamp=1411737887 type=5 id=0xc args=[500, a, fffffc20c2188028, 9]
+[    9.511793] asahi 580000000.gpu: G18_TRACE role=0 ordinal=410 timestamp=1411737957 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.511798] asahi 580000000.gpu: G18_TRACE role=0 ordinal=411 timestamp=1411738182 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.511805] asahi 580000000.gpu: G18_TRACE role=0 ordinal=412 timestamp=1411738256 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.511809] asahi 580000000.gpu: G18_TRACE role=0 ordinal=413 timestamp=1411738333 type=5 id=0x48 args=[0, a, 1, 0]
+[    9.511816] asahi 580000000.gpu: G18_TRACE role=0 ordinal=414 timestamp=1411738398 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.511822] asahi 580000000.gpu: G18_TRACE role=0 ordinal=415 timestamp=1411738459 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.511827] asahi 580000000.gpu: G18_TRACE role=0 ordinal=416 timestamp=1411738522 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.511834] asahi 580000000.gpu: G18_TRACE role=0 ordinal=417 timestamp=1411738888 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.511839] asahi 580000000.gpu: G18_TRACE role=0 ordinal=418 timestamp=1411739813 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.511846] asahi 580000000.gpu: G18_TRACE role=0 ordinal=419 timestamp=1411739878 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.511851] asahi 580000000.gpu: G18_TRACE role=0 ordinal=420 timestamp=1411739948 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.549189] asahi 580000000.gpu: G18_TRACE role=0 ordinal=421 timestamp=1411743375 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.551325] asahi 580000000.gpu: G18_TRACE role=0 ordinal=422 timestamp=1412687737 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.551332] asahi 580000000.gpu: G18_TRACE role=0 ordinal=423 timestamp=1412687910 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.551338] asahi 580000000.gpu: G18_TRACE role=0 ordinal=424 timestamp=1412687972 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.551392] asahi 580000000.gpu: G18_TRACE role=1 ordinal=13 timestamp=1412689123 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.551470] asahi 580000000.gpu: G18_TRACE role=0 ordinal=425 timestamp=1412690904 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.551478] asahi 580000000.gpu: G18_TRACE role=0 ordinal=426 timestamp=1412691523 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.551483] asahi 580000000.gpu: G18_TRACE role=0 ordinal=427 timestamp=1412691752 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.551489] asahi 580000000.gpu: G18_TRACE role=0 ordinal=428 timestamp=1412691973 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.551531] asahi 580000000.gpu: G18_TRACE role=0 ordinal=429 timestamp=1412692186 type=5 id=0x112 args=[2, 0, 0, 100012]
+[    9.551537] asahi 580000000.gpu: G18_TRACE role=0 ordinal=430 timestamp=1412692549 type=5 id=0x109 args=[2, 0, fffffc20c2000400, b]
+[    9.551543] asahi 580000000.gpu: G18_TRACE role=0 ordinal=431 timestamp=1412692620 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.551549] asahi 580000000.gpu: G18_TRACE role=0 ordinal=432 timestamp=1412692889 type=5 id=0x41 args=[a, 6, 1, 1]
+[    9.551556] asahi 580000000.gpu: G18_TRACE role=0 ordinal=433 timestamp=1412693146 type=5 id=0x109 args=[2, 0, fffffc20c2000400, c]
+[    9.551560] asahi 580000000.gpu: G18_TRACE role=0 ordinal=434 timestamp=1412693341 type=5 id=0x41 args=[9, 6, 0, 1]
+[    9.551571] asahi 580000000.gpu: G18_TRACE role=0 ordinal=435 timestamp=1412693515 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.551583] asahi 580000000.gpu: G18_TRACE role=0 ordinal=436 timestamp=1412693668 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.551603] asahi 580000000.gpu: G18_TRACE role=0 ordinal=437 timestamp=1412693896 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.551621] asahi 580000000.gpu: G18_TRACE role=0 ordinal=438 timestamp=1412694089 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.551648] asahi 580000000.gpu: G18_TRACE role=0 ordinal=439 timestamp=1412694178 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.551684] asahi 580000000.gpu: G18_TRACE role=0 ordinal=440 timestamp=1412694410 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.551712] asahi 580000000.gpu: G18_TRACE role=0 ordinal=441 timestamp=1412694647 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.551738] asahi 580000000.gpu: G18_TRACE role=0 ordinal=442 timestamp=1412694855 type=5 id=0x47 args=[0, a, a, 1]
+[    9.551753] asahi 580000000.gpu: G18_TRACE role=0 ordinal=443 timestamp=1412695307 type=5 id=0x43 args=[9, 6, 3, fffffc20c2000000]
+[    9.551777] asahi 580000000.gpu: G18_TRACE role=0 ordinal=444 timestamp=1412696278 type=5 id=0x4b args=[9, 10000000005, 10000000006, 0]
+[    9.551782] asahi 580000000.gpu: G18_TRACE role=0 ordinal=445 timestamp=1412696444 type=5 id=0x2a args=[c, 0, 5433fda7, 5433feee]
+[    9.551789] asahi 580000000.gpu: G18_TRACE role=0 ordinal=446 timestamp=1412697097 type=5 id=0x10a args=[0, 0, 600, c]
+[    9.551794] asahi 580000000.gpu: G18_TRACE role=0 ordinal=447 timestamp=1412697357 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.551800] asahi 580000000.gpu: G18_TRACE role=0 ordinal=448 timestamp=1412697687 type=5 id=0x56 args=[0, b, c, 0]
+[    9.551807] asahi 580000000.gpu: G18_TRACE role=0 ordinal=449 timestamp=1412697802 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.551811] asahi 580000000.gpu: G18_TRACE role=0 ordinal=450 timestamp=1412697972 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.551819] asahi 580000000.gpu: G18_TRACE role=0 ordinal=451 timestamp=1412698126 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.551823] asahi 580000000.gpu: G18_TRACE role=0 ordinal=452 timestamp=1412698408 type=5 id=0x48 args=[0, b, 1, 0]
+[    9.551829] asahi 580000000.gpu: G18_TRACE role=0 ordinal=453 timestamp=1412698520 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.551834] asahi 580000000.gpu: G18_TRACE role=0 ordinal=454 timestamp=1412699314 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.551841] asahi 580000000.gpu: G18_TRACE role=0 ordinal=455 timestamp=1412699387 type=5 id=0x47 args=[0, b, b, 1]
+[    9.551848] asahi 580000000.gpu: G18_TRACE role=0 ordinal=456 timestamp=1412699491 type=5 id=0x43 args=[a, 6, 1000100000003, fffffc20c2000100]
+[    9.551853] asahi 580000000.gpu: G18_TRACE role=0 ordinal=457 timestamp=1412700106 type=5 id=0x4b args=[a, 10000000005, 10000000006, 0]
+[    9.551861] asahi 580000000.gpu: G18_TRACE role=0 ordinal=458 timestamp=1412700214 type=5 id=0x2b args=[b, 1, 5433fef3, 54341374]
+[    9.551865] asahi 580000000.gpu: G18_TRACE role=0 ordinal=459 timestamp=1412700475 type=5 id=0x10a args=[1, 0, 600, b]
+[    9.551875] asahi 580000000.gpu: G18_TRACE role=0 ordinal=460 timestamp=1412700626 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.551879] asahi 580000000.gpu: G18_TRACE role=0 ordinal=461 timestamp=1412700825 type=5 id=0x56 args=[1, c, c, 0]
+[    9.551885] asahi 580000000.gpu: G18_TRACE role=0 ordinal=462 timestamp=1412700897 type=5 id=0x56 args=[1, 1, 0, 50]
+[    9.551891] asahi 580000000.gpu: G18_TRACE role=0 ordinal=463 timestamp=1412701004 type=5 id=0x10b args=[3, 0, fffffc20c2204000, 0]
+[    9.551897] asahi 580000000.gpu: G18_TRACE role=0 ordinal=464 timestamp=1412701084 type=5 id=0x10d args=[fffffc20c2000400, 3, 0, b]
+[    9.551904] asahi 580000000.gpu: G18_TRACE role=0 ordinal=465 timestamp=1412701347 type=5 id=0xa args=[600, 9, fffffc20c2188024, c]
+[    9.551909] asahi 580000000.gpu: G18_TRACE role=0 ordinal=466 timestamp=1412701422 type=5 id=0xc args=[600, a, fffffc20c2188028, b]
+[    9.551916] asahi 580000000.gpu: G18_TRACE role=0 ordinal=467 timestamp=1412701497 type=5 id=0x28 args=[600, 0, 0, 0]
+[    9.551921] asahi 580000000.gpu: G18_TRACE role=0 ordinal=468 timestamp=1412701722 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.551927] asahi 580000000.gpu: G18_TRACE role=0 ordinal=469 timestamp=1412701797 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.551932] asahi 580000000.gpu: G18_TRACE role=0 ordinal=470 timestamp=1412701875 type=5 id=0x48 args=[0, c, 1, 0]
+[    9.551939] asahi 580000000.gpu: G18_TRACE role=0 ordinal=471 timestamp=1412701942 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.551946] asahi 580000000.gpu: G18_TRACE role=0 ordinal=472 timestamp=1412702003 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.551951] asahi 580000000.gpu: G18_TRACE role=0 ordinal=473 timestamp=1412702065 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.551958] asahi 580000000.gpu: G18_TRACE role=0 ordinal=474 timestamp=1412702433 type=5 id=0x46 args=[1, 8, 8, 0]
+[    9.551963] asahi 580000000.gpu: G18_TRACE role=0 ordinal=475 timestamp=1412703391 type=5 id=0x46 args=[1, 2, a, 0]
+[    9.551969] asahi 580000000.gpu: G18_TRACE role=0 ordinal=476 timestamp=1412703456 type=5 id=0x46 args=[1, 10, 1a, 0]
+[    9.551974] asahi 580000000.gpu: G18_TRACE role=0 ordinal=477 timestamp=1412703528 type=5 id=0x46 args=[0, 10, a, 0]
+[    9.552508] asahi 580000000.gpu: G18_TRACE role=0 ordinal=478 timestamp=1412706246 type=5 id=0x46 args=[0, 8, 2, 0]
+[    9.554744] asahi 580000000.gpu: G18_TRACE role=0 ordinal=479 timestamp=1412769308 type=5 id=0x12f args=[4, 4, 0, 0]
+[    9.554750] asahi 580000000.gpu: G18_TRACE role=0 ordinal=480 timestamp=1412769460 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.554758] asahi 580000000.gpu: G18_TRACE role=0 ordinal=481 timestamp=1412769521 type=5 id=0x146 args=[0, 2, 0, 0]
+[    9.554803] asahi 580000000.gpu: G18_TRACE role=1 ordinal=14 timestamp=1412771337 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.554880] asahi 580000000.gpu: G18_TRACE role=0 ordinal=482 timestamp=1412773010 type=5 id=0x46 args=[0, 2, 0, 0]
+[    9.554887] asahi 580000000.gpu: G18_TRACE role=0 ordinal=483 timestamp=1412773483 type=5 id=0x112 args=[4, 20002, 0, 0]
+[    9.554892] asahi 580000000.gpu: G18_TRACE role=0 ordinal=484 timestamp=1412773694 type=5 id=0x112 args=[0, 0, 0, 0]
+[    9.554942] asahi 580000000.gpu: G18_TRACE role=0 ordinal=485 timestamp=1412773918 type=5 id=0x112 args=[1, 0, 0, 0]
+[    9.554947] asahi 580000000.gpu: G18_TRACE role=0 ordinal=486 timestamp=1412774166 type=5 id=0x112 args=[2, 0, 0, 120014]
+[    9.554954] asahi 580000000.gpu: G18_TRACE role=0 ordinal=487 timestamp=1412774605 type=5 id=0x109 args=[2, 0, fffffc20c2000400, d]
+[    9.554961] asahi 580000000.gpu: G18_TRACE role=0 ordinal=488 timestamp=1412774675 type=5 id=0x10c args=[fffffc20c2000400, fffffc20c2204000, 0, 0]
+[    9.554967] asahi 580000000.gpu: G18_TRACE role=0 ordinal=489 timestamp=1412774942 type=5 id=0x41 args=[a, 7, 1, 1]
+[    9.554974] asahi 580000000.gpu: G18_TRACE role=0 ordinal=490 timestamp=1412775161 type=5 id=0x109 args=[2, 0, fffffc20c2000400, e]
+[    9.554981] asahi 580000000.gpu: G18_TRACE role=0 ordinal=491 timestamp=1412775356 type=5 id=0x41 args=[9, 7, 0, 1]
+[    9.555079] asahi 580000000.gpu: G18_TRACE role=0 ordinal=492 timestamp=1412775529 type=5 id=0x112 args=[3, 0, 0, 0]
+[    9.555147] asahi 580000000.gpu: G18_TRACE role=0 ordinal=493 timestamp=1412775692 type=5 id=0x130 args=[4, 0, 0, 0]
+[    9.555210] asahi 580000000.gpu: G18_TRACE role=0 ordinal=494 timestamp=1412775910 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.555219] asahi 580000000.gpu: G18_TRACE role=0 ordinal=495 timestamp=1412776065 type=5 id=0x147 args=[0, 0, 0, 1]
+[    9.555226] asahi 580000000.gpu: G18_TRACE role=0 ordinal=496 timestamp=1412776139 type=5 id=0x146 args=[3, 3, 0, 0]
+[    9.555232] asahi 580000000.gpu: G18_TRACE role=0 ordinal=497 timestamp=1412776330 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.555238] asahi 580000000.gpu: G18_TRACE role=0 ordinal=498 timestamp=1412776547 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.555246] asahi 580000000.gpu: G18_TRACE role=0 ordinal=499 timestamp=1412776764 type=5 id=0x47 args=[0, c, c, 1]
+[    9.555250] asahi 580000000.gpu: G18_TRACE role=0 ordinal=500 timestamp=1412777243 type=5 id=0x43 args=[9, 7, 3, fffffc20c2000000]
+[    9.555257] asahi 580000000.gpu: G18_TRACE role=0 ordinal=501 timestamp=1412778225 type=5 id=0x4b args=[9, 10000000006, 10000000007, 0]
+[    9.555262] asahi 580000000.gpu: G18_TRACE role=0 ordinal=502 timestamp=1412778394 type=5 id=0x2a args=[e, 0, 54353e0b, 54353f46]
+[    9.555269] asahi 580000000.gpu: G18_TRACE role=0 ordinal=503 timestamp=1412779063 type=5 id=0x10a args=[0, 0, 700, e]
+[    9.555276] asahi 580000000.gpu: G18_TRACE role=0 ordinal=504 timestamp=1412779349 type=5 id=0x56 args=[0, 0, 1, 0]
+[    9.555281] asahi 580000000.gpu: G18_TRACE role=0 ordinal=505 timestamp=1412779804 type=5 id=0x56 args=[0, d, e, 0]
+[    9.555287] asahi 580000000.gpu: G18_TRACE role=0 ordinal=506 timestamp=1412779940 type=5 id=0x56 args=[1, 0, 0, 50]
+[    9.555292] asahi 580000000.gpu: G18_TRACE role=0 ordinal=507 timestamp=1412780138 type=5 id=0x46 args=[1, 10, 10, 0]
+[    9.555299] asahi 580000000.gpu: G18_TRACE role=0 ordinal=508 timestamp=1412780259 type=5 id=0x46 args=[0, 10, 0, 0]
+[    9.555305] asahi 580000000.gpu: G18_TRACE role=0 ordinal=509 timestamp=1412780473 type=5 id=0x48 args=[0, d, 1, 0]
+[    9.555311] asahi 580000000.gpu: G18_TRACE role=0 ordinal=510 timestamp=1412780567 type=5 id=0x130 args=[200000, 0, 0, 0]
+[    9.555316] asahi 580000000.gpu: G18_TRACE role=0 ordinal=511 timestamp=1412781935 type=5 id=0x12f args=[200000, 200000, 0, 0]
+[    9.571332] asahi 580000000.gpu: G18_TRACE role=1 ordinal=15 timestamp=1413168045 type=5 id=0x3000247 args=[0, 0, 0, 0]
+[    9.856238] asahi 580000000.gpu: G18_APP_VM frame=20 vm=6 context=3 target=1280x720 aliases=37
+[    9.856251] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.856255] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.856256] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.856257] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.856257] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.856258] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.866772] asahi 580000000.gpu: G18_APP_VM frame=21 vm=4 context=3 target=1280x720 aliases=37
+[    9.866784] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.866787] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.866788] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.866789] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.866790] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.866790] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.883833] asahi 580000000.gpu: G18_APP_VM frame=23 vm=6 context=3 target=1280x26 aliases=37
+[    9.883850] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.883855] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.883856] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.883857] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.883857] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.883858] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.905563] asahi 580000000.gpu: G18_APP_VM frame=24 vm=4 context=3 target=1280x720 aliases=37
+[    9.905582] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.905586] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.905587] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.905588] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.905590] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.905590] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.924602] asahi 580000000.gpu: G18_APP_VM frame=26 vm=6 context=3 target=1280x26 aliases=37
+[    9.924619] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.924624] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.924625] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.924626] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.924626] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.924627] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.935144] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=16384 ep=0x20 type=0x0042 payload=0x0042000000000000
+[    9.945457] asahi 580000000.gpu: G18_APP_VM frame=27 vm=4 context=3 target=1280x720 aliases=37
+[    9.945472] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[    9.945475] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[    9.945476] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[    9.945477] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[    9.945477] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[    9.945478] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[    9.985016] scsi 0:0:0:0: Direct-Access              USB DISK 3.0     PMAP PQ: 0 ANSI: 6
+[    9.988221] sd 0:0:0:0: [sdb] 121145344 512-byte logical blocks: (62.0 GB/57.8 GiB)
+[    9.988911] sd 0:0:0:0: [sdb] Write Protect is off
+[    9.988913] sd 0:0:0:0: [sdb] Mode Sense: 23 00 00 00
+[    9.989189] sd 0:0:0:0: [sdb] No Caching mode page found
+[    9.989189] sd 0:0:0:0: [sdb] Assuming drive cache: write through
+[   10.033545] sd 0:0:0:0: [sdb] Attached SCSI removable disk
+[   10.087281] asahi 580000000.gpu: G18_APP_VM frame=29 vm=6 context=3 target=1280x26 aliases=37
+[   10.087300] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.087306] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.087307] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.087309] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.087309] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.087310] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.095337] asahi 580000000.gpu: G18_APP_VM frame=31 vm=4 context=3 target=1280x720 aliases=37
+[   10.095346] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.095349] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.095350] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.095351] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.095351] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.095352] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.170594] asahi 580000000.gpu: G18_APP_VM frame=35 vm=6 context=3 target=1280x26 aliases=37
+[   10.170610] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.170613] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.170614] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.170615] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.170615] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.170616] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.174722] asahi 580000000.gpu: G18_APP_VM frame=36 vm=4 context=3 target=1280x720 aliases=37
+[   10.174729] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.174731] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.174732] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.174733] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.174733] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.174733] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.177757] asahi 580000000.gpu: G18_APP_VM frame=37 vm=6 context=3 target=1280x26 aliases=37
+[   10.177760] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.177761] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.177762] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.177762] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.177762] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.177763] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.181031] asahi 580000000.gpu: G18_APP_VM frame=38 vm=4 context=3 target=1280x720 aliases=37
+[   10.181032] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.181033] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.181033] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.181034] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.181034] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.181034] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.211782] asahi 580000000.gpu: G18_APP_VM frame=41 vm=6 context=3 target=1280x720 aliases=37
+[   10.211789] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.211791] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.211792] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.211792] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.211792] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.211793] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.225080] asahi 580000000.gpu: G18_APP_VM frame=42 vm=4 context=3 target=1280x720 aliases=37
+[   10.225089] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.225091] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.225091] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.225092] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.225092] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.225092] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.239059] asahi 580000000.gpu: G18_APP_VM frame=44 vm=6 context=3 target=1280x207 aliases=37
+[   10.239072] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.239075] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.239077] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.239077] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.239078] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.239079] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.258395] asahi 580000000.gpu: G18_APP_VM frame=45 vm=4 context=3 target=1280x720 aliases=37
+[   10.258412] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.258414] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.258415] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.258416] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.258417] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.258417] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.288849] asahi 580000000.gpu: G18_APP_VM frame=47 vm=6 context=3 target=1280x720 aliases=37
+[   10.288870] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.288874] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.288875] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.288876] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.288876] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.288876] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.316571] asahi 580000000.gpu: G18_APP_VM frame=50 vm=4 context=3 target=1280x720 aliases=37
+[   10.316586] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.316590] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.316591] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.316592] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.316593] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.316593] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.398112] asahi 580000000.gpu: G18_APP_VM frame=52 vm=6 context=3 target=1280x720 aliases=37
+[   10.398121] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.398123] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.398124] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.398124] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.398125] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.398125] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.406462] asahi 580000000.gpu: G18_APP_VM frame=54 vm=4 context=3 target=1280x720 aliases=37
+[   10.406469] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.406470] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.406471] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.406471] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.406471] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.406472] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.449186] asahi 580000000.gpu: G18_APP_VM frame=58 vm=6 context=3 target=1280x26 aliases=37
+[   10.449203] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.449208] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.449209] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.449210] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.449211] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.449211] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.471013] asahi 580000000.gpu: G18_APP_VM frame=60 vm=4 context=3 target=1280x720 aliases=37
+[   10.471028] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.471030] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.471031] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.471032] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.471033] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.471033] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.482936] asahi 580000000.gpu: G18_APP_VM frame=62 vm=6 context=3 target=1280x26 aliases=37
+[   10.482946] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.482949] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.482950] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.482951] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.482951] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.482952] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.495498] asahi 580000000.gpu: G18_APP_VM frame=63 vm=4 context=3 target=1280x720 aliases=37
+[   10.495506] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.495509] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.495509] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.495509] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.495510] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.495510] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.501939] asahi 580000000.gpu: G18_JOB_LATENCY bounds_us=[100, 300, 1000, 3000, 10000, 100000] job=[0, 0, 30, 34, 0, 0, 0] job_max_us=2446 submit=[0, 0, 0, 8, 54, 1, 1] submit_max_us=126408
+[   10.506791] asahi 580000000.gpu: G18_APP_VM frame=66 vm=6 context=3 target=1280x26 aliases=37
+[   10.506793] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.506793] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.506794] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.506794] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.506795] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.506795] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.509583] asahi 580000000.gpu: G18_APP_VM frame=67 vm=4 context=3 target=1280x720 aliases=37
+[   10.509584] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.509585] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.509586] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.509586] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.509586] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.509587] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.517339] asahi 580000000.gpu: G18_APP_VM frame=69 vm=6 context=3 target=1280x26 aliases=37
+[   10.517344] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.517345] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.517346] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.517347] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.517347] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.517348] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.520556] asahi 580000000.gpu: G18_APP_VM frame=70 vm=4 context=3 target=1280x720 aliases=37
+[   10.520557] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.520557] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.520558] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.520558] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.520559] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.520559] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.533016] asahi 580000000.gpu: G18_APP_VM frame=73 vm=6 context=3 target=1280x26 aliases=37
+[   10.533017] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.533017] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.533017] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.533018] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.533018] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.533018] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.536141] asahi 580000000.gpu: G18_APP_VM frame=74 vm=4 context=3 target=1280x720 aliases=37
+[   10.536142] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.536143] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.536143] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.536143] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.536144] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.536144] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.547018] asahi 580000000.gpu: G18_APP_VM frame=76 vm=6 context=3 target=1280x26 aliases=37
+[   10.547029] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.547032] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.547032] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.547033] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.547034] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.547034] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.550673] asahi 580000000.gpu: G18_APP_VM frame=77 vm=4 context=3 target=1280x720 aliases=37
+[   10.550675] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.550675] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.550675] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.550676] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.550676] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.550676] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.561164] asahi 580000000.gpu: G18_APP_VM frame=79 vm=6 context=3 target=1280x26 aliases=37
+[   10.561165] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.561166] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.561166] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.561166] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.561166] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.561167] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.564287] asahi 580000000.gpu: G18_APP_VM frame=80 vm=4 context=3 target=1280x720 aliases=37
+[   10.564288] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.564289] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.564289] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.564289] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.564290] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.564290] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.578488] asahi 580000000.gpu: G18_APP_VM frame=82 vm=6 context=3 target=1280x26 aliases=37
+[   10.578496] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.578497] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.578498] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.578498] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.578499] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.578500] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.582417] asahi 580000000.gpu: G18_APP_VM frame=83 vm=4 context=3 target=1280x720 aliases=37
+[   10.582418] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.582419] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.582419] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.582420] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.582421] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.582421] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.592300] asahi 580000000.gpu: G18_APP_VM frame=85 vm=6 context=3 target=1280x26 aliases=37
+[   10.592301] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.592301] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.592302] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.592302] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.592302] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.592302] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.601467] asahi 580000000.gpu: G18_APP_VM frame=86 vm=4 context=3 target=1280x720 aliases=37
+[   10.601474] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.601476] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.601476] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.601477] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.601477] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.601477] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.611457] asahi 580000000.gpu: G18_APP_VM frame=88 vm=6 context=3 target=1280x26 aliases=37
+[   10.611458] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.611459] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.611459] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.611459] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.611459] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.611460] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.614643] asahi 580000000.gpu: G18_APP_VM frame=89 vm=4 context=3 target=1280x720 aliases=37
+[   10.614645] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.614646] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.614646] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.614647] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.614647] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.614648] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.624003] asahi 580000000.gpu: G18_APP_VM frame=91 vm=6 context=3 target=1280x26 aliases=37
+[   10.624004] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.624004] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.624004] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.624004] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.624005] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.624005] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.627118] asahi 580000000.gpu: G18_APP_VM frame=92 vm=4 context=3 target=1280x720 aliases=37
+[   10.627119] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.627120] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.627120] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.627120] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.627121] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.627121] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.640239] asahi 580000000.gpu: G18_APP_VM frame=94 vm=6 context=3 target=1280x26 aliases=37
+[   10.640240] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.640240] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.640240] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.640241] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.640241] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.640241] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.643349] asahi 580000000.gpu: G18_APP_VM frame=95 vm=4 context=3 target=1280x720 aliases=37
+[   10.643350] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.643351] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.643351] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.643351] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.643352] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.643352] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.656375] asahi 580000000.gpu: G18_APP_VM frame=97 vm=6 context=3 target=1280x26 aliases=37
+[   10.656376] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.656376] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.656376] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.656377] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.656377] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.656377] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.659478] asahi 580000000.gpu: G18_APP_VM frame=98 vm=4 context=3 target=1280x720 aliases=37
+[   10.659479] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.659479] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.659479] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.659480] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.659480] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.659481] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.672285] asahi 580000000.gpu: G18_APP_VM frame=100 vm=6 context=3 target=1280x26 aliases=37
+[   10.672286] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.672286] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.672287] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.672287] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.672287] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.672287] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.675390] asahi 580000000.gpu: G18_APP_VM frame=101 vm=4 context=3 target=1280x720 aliases=37
+[   10.675391] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.675391] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.675392] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.675392] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.675392] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.675393] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.688458] asahi 580000000.gpu: G18_APP_VM frame=103 vm=6 context=3 target=1280x26 aliases=37
+[   10.688458] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.688459] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.688459] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.688459] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.688460] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.688460] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.691548] asahi 580000000.gpu: G18_APP_VM frame=104 vm=4 context=3 target=1280x720 aliases=37
+[   10.691549] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.691549] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.691549] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.691550] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.691550] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.691550] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.768939] asahi 580000000.gpu: G18_APP_VM frame=106 vm=6 context=3 target=1280x26 aliases=37
+[   10.768941] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.768942] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.768943] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.768944] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.768944] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.768945] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.772528] asahi 580000000.gpu: G18_APP_VM frame=107 vm=4 context=3 target=1280x720 aliases=37
+[   10.772529] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.772529] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.772530] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.772530] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.772530] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.772531] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.776326] asahi 580000000.gpu: G18_APP_VM frame=108 vm=6 context=3 target=1280x26 aliases=37
+[   10.776327] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.776327] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.776328] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.776328] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.776329] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.776329] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.779620] asahi 580000000.gpu: G18_APP_VM frame=109 vm=4 context=3 target=1280x720 aliases=37
+[   10.779621] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.779622] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.779623] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.779623] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.779624] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.779624] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.898874] asahi 580000000.gpu: G18_APP_VM frame=112 vm=6 context=3 target=1280x720 aliases=37
+[   10.898886] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.898890] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.898891] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.898891] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.898892] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.898892] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.905642] asahi 580000000.gpu: G18_APP_VM frame=114 vm=4 context=3 target=1280x720 aliases=37
+[   10.905650] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.905652] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.905653] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.905653] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.905654] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.905655] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.909470] asahi 580000000.gpu: G18_APP_VM frame=115 vm=6 context=3 target=1280x720 aliases=37
+[   10.909475] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.909477] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.909477] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.909478] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.909478] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.909479] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.913228] asahi 580000000.gpu: G18_APP_VM frame=116 vm=4 context=3 target=1280x720 aliases=37
+[   10.913230] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.913230] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.913231] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.913231] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.913231] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.913232] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.917015] asahi 580000000.gpu: G18_APP_VM frame=117 vm=6 context=3 target=1280x207 aliases=37
+[   10.917016] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.917017] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.917017] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.917018] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.917018] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.917019] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   10.934612] asahi 580000000.gpu: G18_APP_VM frame=119 vm=4 context=3 target=1280x720 aliases=37
+[   10.934621] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   10.934623] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   10.934624] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   10.934625] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   10.934625] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   10.934625] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   11.019913] asahi 580000000.gpu: G18_JOB_LATENCY bounds_us=[100, 300, 1000, 3000, 10000, 100000] job=[0, 0, 65, 63, 0, 0, 0] job_max_us=2446 submit=[0, 0, 0, 38, 88, 1, 1] submit_max_us=126408
+[   11.138954] BTRFS info: device /dev/sdb (8:16) using temp-fsid 915f43da-faca-4599-aa60-53861bf515c0
+[   11.138962] BTRFS: device label OMARCHY_ROOT devid 1 transid 89 /dev/sdb (8:16) scanned by pool-0 (2199)
+[   11.146813] BTRFS info (device sdb): first mount of filesystem 4f4d5801-524f-4f54-8000-000000000001
+[   11.146817] BTRFS info (device sdb): using crc32c checksum algorithm
+[   11.163201] BTRFS info (device sdb): enabling free space tree
+[   11.859043] asahi 580000000.gpu: G18_MSG role=GFX ordinal=2048 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   13.057489] asahi 580000000.gpu: G18_APP_VM frame=133 vm=6 context=3 target=1280x26 aliases=37
+[   13.057501] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   13.057505] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   13.057505] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   13.057506] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   13.057507] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   13.057507] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   13.064287] asahi 580000000.gpu: G18_APP_VM frame=134 vm=4 context=3 target=1280x720 aliases=37
+[   13.064292] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   13.064294] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   13.064295] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   13.064296] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   13.064296] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   13.064297] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   17.888995] input: Glinet Glinet Composite Device as /devices/platform/soc/40a430000.usb/xhci-hcd.2.auto/usb5/5-1/5-1.2/5-1.2.1/5-1.2.1:1.1/0003:38EB:0001.0002/input/input2
+[   17.889128] hid-generic 0003:38EB:0001.0002: input,hidraw1: USB HID v1.01 Mouse [Glinet Glinet Composite Device] on usb-xhci-hcd.2.auto-1.2.1/input1
+[   18.107042] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=32768 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   20.435036] asahi 580000000.gpu: G18_MSG role=GFX ordinal=4096 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   28.128617] input: Glinet Glinet Composite Device as /devices/platform/soc/40a430000.usb/xhci-hcd.2.auto/usb5/5-1/5-1.2/5-1.2.1/5-1.2.1:1.2/0003:38EB:0001.0003/input/input3
+[   28.128709] hid-generic 0003:38EB:0001.0003: input,hidraw2: USB HID v1.01 Mouse [Glinet Glinet Composite Device] on usb-xhci-hcd.2.auto-1.2.1/input2
+[   34.451047] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=65536 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   37.499046] asahi 580000000.gpu: G18_MSG role=GFX ordinal=8192 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   39.444542] ane_h18: loading out-of-tree module taints kernel.
+[   50.860454] asahi 580000000.gpu: G18_APP_VM frame=148 vm=6 context=3 target=1280x26 aliases=37
+[   50.860466] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   50.860469] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   50.860470] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   50.860470] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   50.860471] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   50.860472] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   50.867275] asahi 580000000.gpu: G18_APP_VM frame=149 vm=4 context=3 target=1280x720 aliases=37
+[   50.867280] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[   50.867281] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[   50.867281] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[   50.867282] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[   50.867283] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[   50.867283] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[   67.099078] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=131072 ep=0x20 type=0x0042 payload=0x0042000000000000
+[   71.931144] asahi 580000000.gpu: G18_MSG role=GFX ordinal=16384 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  105.796464] NOTICE: Automounting of tracing to debugfs is deprecated and will be removed in 2030
+[  111.013459] asahi 580000000.gpu: G18_APP_VM frame=171 vm=6 context=3 target=1280x26 aliases=37
+[  111.013473] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  111.013476] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  111.013478] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  111.013478] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  111.013479] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  111.013480] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  111.020993] asahi 580000000.gpu: G18_APP_VM frame=172 vm=4 context=3 target=1280x720 aliases=37
+[  111.020998] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  111.021000] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  111.021000] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  111.021001] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  111.021002] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  111.021002] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  132.139265] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=262144 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  140.651274] asahi 580000000.gpu: G18_MSG role=GFX ordinal=32768 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  171.017529] asahi 580000000.gpu: G18_APP_VM frame=204 vm=6 context=3 target=1280x26 aliases=37
+[  171.017539] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  171.017542] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  171.017543] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  171.017544] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  171.017544] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  171.017545] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  171.023765] asahi 580000000.gpu: G18_APP_VM frame=205 vm=4 context=3 target=1280x720 aliases=37
+[  171.023772] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  171.023774] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  171.023774] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  171.023774] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  171.023775] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  171.023775] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  231.016369] asahi 580000000.gpu: G18_APP_VM frame=237 vm=6 context=3 target=1280x26 aliases=37
+[  231.016381] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  231.016383] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  231.016384] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  231.016385] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  231.016386] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  231.016386] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  231.022604] asahi 580000000.gpu: G18_APP_VM frame=238 vm=4 context=3 target=1280x720 aliases=37
+[  231.022609] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  231.022611] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  231.022611] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  231.022612] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  231.022612] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  231.022612] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  262.423312] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=524288 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  263.516945] asahi 580000000.gpu: G18_JOB_LATENCY bounds_us=[100, 300, 1000, 3000, 10000, 100000] job=[0, 0, 131, 125, 0, 0, 0] job_max_us=2446 submit=[0, 0, 0, 122, 132, 1, 1] submit_max_us=126408
+[  278.087313] asahi 580000000.gpu: G18_MSG role=GFX ordinal=65536 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  291.013063] asahi 580000000.gpu: G18_APP_VM frame=270 vm=6 context=3 target=1280x26 aliases=37
+[  291.013072] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  291.013075] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  291.013076] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  291.013077] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  291.013077] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  291.013078] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  291.018751] asahi 580000000.gpu: G18_APP_VM frame=271 vm=4 context=3 target=1280x720 aliases=37
+[  291.018757] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  291.018759] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  291.018759] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  291.018760] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  291.018760] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  291.018760] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  351.011293] asahi 580000000.gpu: G18_APP_VM frame=303 vm=6 context=3 target=1280x26 aliases=37
+[  351.011307] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  351.011310] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  351.011311] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  351.011312] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  351.011313] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  351.011314] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  351.016620] asahi 580000000.gpu: G18_APP_VM frame=304 vm=4 context=3 target=1280x720 aliases=37
+[  351.016625] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  351.016626] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  351.016627] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  351.016627] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  351.016628] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  351.016628] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  411.013091] asahi 580000000.gpu: G18_APP_VM frame=326 vm=6 context=3 target=1280x26 aliases=37
+[  411.013102] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  411.013105] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  411.013106] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  411.013107] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  411.013108] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  411.013108] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  411.020663] asahi 580000000.gpu: G18_APP_VM frame=327 vm=4 context=3 target=1280x720 aliases=37
+[  411.020668] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  411.020670] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  411.020671] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  411.020672] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  411.020672] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  411.020673] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  471.016122] asahi 580000000.gpu: G18_APP_VM frame=359 vm=6 context=3 target=1280x26 aliases=37
+[  471.016138] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  471.016141] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  471.016142] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  471.016143] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  471.016144] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  471.016144] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  471.023773] asahi 580000000.gpu: G18_APP_VM frame=360 vm=4 context=3 target=1280x720 aliases=37
+[  471.023779] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  471.023780] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  471.023781] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  471.023782] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  471.023782] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  471.023783] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  521.783299] asahi 580000000.gpu: G18_MSG role=GFX1 ordinal=1048576 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  531.013195] asahi 580000000.gpu: G18_APP_VM frame=392 vm=6 context=3 target=1280x26 aliases=37
+[  531.013206] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  531.013210] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  531.013211] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  531.013211] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  531.013212] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  531.013212] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  531.020777] asahi 580000000.gpu: G18_APP_VM frame=393 vm=4 context=3 target=1280x720 aliases=37
+[  531.020786] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  531.020788] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  531.020789] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  531.020789] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  531.020790] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  531.020790] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  553.147162] asahi 580000000.gpu: G18_MSG role=GFX ordinal=131072 ep=0x20 type=0x0042 payload=0x0042000000000000
+[  591.015278] asahi 580000000.gpu: G18_APP_VM frame=425 vm=6 context=3 target=1280x26 aliases=37
+[  591.015290] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  591.015293] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  591.015294] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  591.015295] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  591.015295] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  591.015296] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3
+[  591.022818] asahi 580000000.gpu: G18_APP_VM frame=426 vm=4 context=3 target=1280x720 aliases=37
+[  591.022824] asahi 580000000.gpu: G18_APP_TARGET name=tilemap-heapmeta va=0x1000000 bytes=0x4000 context=3
+[  591.022825] asahi 580000000.gpu: G18_APP_TARGET name=tpc va=0x1400000 bytes=0x8000 context=3
+[  591.022826] asahi 580000000.gpu: G18_APP_TARGET name=deflake va=0x1c00000 bytes=0xc000 context=3
+[  591.022827] asahi 580000000.gpu: G18_APP_TARGET name=ta-status va=0x1c10000 bytes=0x4000 context=3
+[  591.022828] asahi 580000000.gpu: G18_APP_TARGET name=3d-status va=0x1c20000 bytes=0x4000 context=3
+[  591.022828] asahi 580000000.gpu: G18_APP_TARGET name=auxiliary va=0x1c30000 bytes=0x10000 context=3

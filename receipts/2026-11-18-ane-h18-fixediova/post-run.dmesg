@@ -1,0 +1,1208 @@
+[  651.217200] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x480 = 0x1 0x0
+[  651.217201] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x4c0 = 0x1 0x0
+[  651.217202] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x500 = 0x1 0x0
+[  651.217203] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x540 = 0x1 0x0
+[  651.217204] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x580 = 0x1 0x0
+[  651.217205] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H +0x5c0 = 0x1 0x0
+[  651.217212] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: BUF_T2H has 64 nonzero lines, 40 not printed
+[  651.217213] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.217214] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.217215] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.217216] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.217218] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x80 = 0x3fffdfc0001 0x0
+[  651.217219] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x90 = 0x3 0x3e9f3eed0
+[  651.217220] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0xc0 = 0x3fffdfb0001 0x0
+[  651.217221] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0xd0 = 0x4 0x3e9f4980e
+[  651.217222] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x100 = 0x3fffdf40001 0x0
+[  651.217223] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x110 = 0x5 0x3e9f5f5b2
+[  651.217224] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x140 = 0x1 0x0
+[  651.217225] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x180 = 0x1 0x0
+[  651.217226] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC +0x1c0 = 0x1 0x0
+[  651.217228] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: SHAREDMALLOC has 13 nonzero lines, 0 not printed
+[  651.217228] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x0 = 0x1 0x0
+[  651.217230] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x40 = 0x1 0x0
+[  651.217230] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x80 = 0x1 0x0
+[  651.217232] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0xc0 = 0x1 0x0
+[  651.217232] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x100 = 0x1 0x0
+[  651.217234] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x140 = 0x1 0x0
+[  651.217234] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x180 = 0x1 0x0
+[  651.217235] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x1c0 = 0x1 0x0
+[  651.217236] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x200 = 0x1 0x0
+[  651.217237] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x240 = 0x1 0x0
+[  651.217238] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x280 = 0x1 0x0
+[  651.217239] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x2c0 = 0x1 0x0
+[  651.217240] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x300 = 0x1 0x0
+[  651.217241] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x340 = 0x1 0x0
+[  651.217242] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x380 = 0x1 0x0
+[  651.217243] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x3c0 = 0x1 0x0
+[  651.217244] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x400 = 0x1 0x0
+[  651.217245] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x440 = 0x1 0x0
+[  651.217246] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x480 = 0x1 0x0
+[  651.217247] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x4c0 = 0x1 0x0
+[  651.217248] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x500 = 0x1 0x0
+[  651.217249] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x540 = 0x1 0x0
+[  651.217250] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x580 = 0x1 0x0
+[  651.217251] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H +0x5c0 = 0x1 0x0
+[  651.217259] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: IO_T2H has 64 nonzero lines, 40 not printed
+[  651.217260] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.217261] ane_h18 419600000.ane: ane_h18 chan snapshot after SCRATCH3: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.217262] ane_h18 419600000.ane: ane_h18 hs surface CMD inside POOL at +0x400 iova=0x3ffffbc0400 size=0x400
+[  651.217264] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x4 slot 0 block iova 0x3ffffbc0400
+[  651.217353] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.217354] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x2
+[  651.217355] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.217356] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.217357] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.217358] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.217441] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 563 nonzero lines, 559 not printed
+[  651.217442] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.217443] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x1 0x0 0x0
+[  651.217443] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.217444] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.217445] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.217446] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.217447] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.217448] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.217449] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.217450] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.217461] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.217461] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.217462] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.217464] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.217464] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.217467] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.217468] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.217469] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.217470] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.217471] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.217481] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.217482] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.217483] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.217485] ane_h18 419600000.ane: ane_h18 cmd 0x4 answered after 0ms: header=0x3ffffbc0401 words=0xc,0x0 id=0x4 ack=0x0
+[  651.217486] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x0 slot 1 block iova 0x3ffffbc0400
+[  651.217488] ane_h18 419600000.ane: ane_h18 write IPI ack=0x2 pa=0x4198b0000
+[  651.217571] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.217572] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x2
+[  651.217573] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.217574] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.217575] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.217576] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.217658] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 563 nonzero lines, 559 not printed
+[  651.217658] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.217659] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.217660] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.217661] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.217662] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.217663] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.217664] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.217665] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.217666] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.217668] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.217678] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.217679] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.217680] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.217681] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.217682] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.217685] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.217686] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.217687] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.217688] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.217689] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.217700] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.217701] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.217702] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.217703] ane_h18 419600000.ane: ane_h18 cmd 0x0 answered after 0ms: header=0x3ffffbc0401 words=0xc,0x0 id=0x0 ack=0x0
+[  651.217705] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x3 slot 2 block iova 0x3ffffbc0400
+[  651.217706] ane_h18 419600000.ane: ane_h18 write IPI ack=0x3 pa=0x4198b0000
+[  651.217791] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.217792] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x2
+[  651.217793] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.217794] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.217795] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.217796] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.217878] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.217879] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.217880] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.217881] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.217882] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.217883] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.217884] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.217885] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.217886] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.217887] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.217888] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.217899] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.217900] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.217901] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.217902] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.217903] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.217906] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.217907] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.217908] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.217909] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.217910] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.217920] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.217921] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.217922] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.217923] ane_h18 419600000.ane: ane_h18 cmd 0x3 answered after 0ms: header=0x3ffffbc0401 words=0x10,0x0 id=0x3 ack=0x0
+[  651.217925] ane_h18 419600000.ane: ane_h18 chan: CONFIG_GET reply u32 at +8 = 0x16e3600 (macOS reads it as the tick rate)
+[  651.217926] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x22 slot 3 block iova 0x3ffffbc0400
+[  651.218010] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.218011] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x2
+[  651.218011] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.218012] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.218014] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.218015] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.218099] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.218100] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.218101] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.218101] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.218102] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.218103] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.218104] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.218105] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.218107] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.218107] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.218109] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.218120] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.218120] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.218122] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.218123] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.218124] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.218127] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.218127] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.218129] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.218129] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.218131] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.218142] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.218142] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.218143] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.218144] ane_h18 419600000.ane: ane_h18 cmd 0x22 answered after 0ms: header=0x3ffffbc0401 words=0x64,0x0 id=0x22 ack=0x0
+[  651.218146] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x0: 00000000 00000022 00000080 00000110
+[  651.218147] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x10: 00000020 00000020 00000080 00000010
+[  651.218148] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x20: 00000001 00200008 00000001 0000000a
+[  651.218149] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x30: 00000001 00000501 00000000 00000000
+[  651.218150] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x40: 00000000 00000000 00000000 00000000
+[  651.218151] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x50: 00000000 00000000 00000000 00000000
+[  651.218152] ane_h18 419600000.ane: ane_h18 chan: RESOURCE_INFO_GET reply +0x60: 00000000 00000000 00000000 00000000
+[  651.218161] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 1 size=0x4000 iova=0x3fffdf3c000
+[  651.218166] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 2 size=0x4000 iova=0x3fffdf38000
+[  651.218173] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 3 size=0x8000 iova=0x3fffdf30000
+[  651.218178] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 3 aliased at fixed iova=0x3000c000 (dma api iova 0x3fffdf30000)
+[  651.218184] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 4 size=0x4000 iova=0x3fffdf2c000
+[  651.218189] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 5 size=0x4000 iova=0x3fffdf28000
+[  651.218193] ane_h18 419600000.ane: ane_h18 hs surface PROG sec 7 size=0x4000 iova=0x3fffdf24000
+[  651.218199] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 5 size=0x8000 iova=0x3fffdf18000
+[  651.218204] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 5 aliased at fixed iova=0x30040000 (dma api iova 0x3fffdf18000)
+[  651.218212] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 6 size=0x8000 iova=0x3fffdf10000
+[  651.218216] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 6 aliased at fixed iova=0x30048000 (dma api iova 0x3fffdf10000)
+[  651.218224] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 4 size=0x8000 iova=0x3fffdf08000
+[  651.218231] ane_h18 419600000.ane: ane_h18 hs surface PROG buf 4 aliased at fixed iova=0x30050000 (dma api iova 0x3fffdf08000)
+[  651.218233] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 0 (before LOAD_PROGRAM), pa=0x419800000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  651.218235] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM +0xc00 = 0xffff
+[  651.218236] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM +0x1000 = 0x9
+[  651.218237] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM +0x1400 = 0x100ab4bd
+[  651.218238] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM +0x4000 = 0x0
+[  651.218239] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM +0x4004 = 0x0
+[  651.218241] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM stream 0: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  651.218243] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM stream 10: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  651.218246] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM stream 11: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  651.218248] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM stream 13: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  651.218250] ane_h18 419600000.ane: ane_h18 prog: DART 0 before LOAD_PROGRAM stream 15: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  651.218251] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 1 (before LOAD_PROGRAM), pa=0x419820000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  651.218252] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM +0xc00 = 0x0
+[  651.218253] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM +0x1000 = 0x1
+[  651.218254] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM +0x1400 = 0x9c94800
+[  651.218255] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM +0x4000 = 0x0
+[  651.218256] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM +0x4004 = 0x0
+[  651.218258] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM stream 0: status 0x240d +4 0x60dc652 addr 0x2fbb86f4713 +0x10 0x0
+[  651.218260] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM stream 10: status 0x240d +4 0x60dc652 addr 0x2fbb86f4713 +0x10 0x0
+[  651.218262] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM stream 11: status 0x240d +4 0x60dc652 addr 0x2fbb86f4713 +0x10 0x0
+[  651.218264] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM stream 13: status 0x240d +4 0x60dc652 addr 0x2fbb86f4713 +0x10 0x0
+[  651.218266] ane_h18 419600000.ane: ane_h18 prog: DART 1 before LOAD_PROGRAM stream 15: status 0x240d +4 0x60dc652 addr 0x2fbb86f4713 +0x10 0x0
+[  651.218267] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 2 (before LOAD_PROGRAM), pa=0x419840000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  651.218269] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM +0xc00 = 0x0
+[  651.218270] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM +0x1000 = 0x1
+[  651.218270] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM +0x1400 = 0x2257498
+[  651.218271] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM +0x4000 = 0x0
+[  651.218272] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM +0x4004 = 0x0
+[  651.218274] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM stream 0: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  651.218276] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM stream 10: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  651.218278] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM stream 11: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  651.218280] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM stream 13: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  651.218282] ane_h18 419600000.ane: ane_h18 prog: DART 2 before LOAD_PROGRAM stream 15: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  651.218283] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 3 (before LOAD_PROGRAM), pa=0x419860000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  651.218284] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM +0xc00 = 0x0
+[  651.218285] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM +0x1000 = 0x1
+[  651.218286] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM +0x1400 = 0x1189ee40
+[  651.218287] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM +0x4000 = 0x0
+[  651.218288] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM +0x4004 = 0x0
+[  651.218290] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM stream 0: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  651.218292] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM stream 10: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  651.218294] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM stream 11: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  651.218296] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM stream 13: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  651.218298] ane_h18 419600000.ane: ane_h18 prog: DART 3 before LOAD_PROGRAM stream 15: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  651.218299] ane_h18 419600000.ane: ane_h18 prog: reading the ANE DART exception state (before LOAD_PROGRAM), pa=0x419800100..0x41980c000, read only
+[  651.218301] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM +0x100 = 0x0
+[  651.218302] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM +0x104 = 0x0
+[  651.218303] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM +0x170 = 0x0
+[  651.218304] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM +0x174 = 0x0
+[  651.218304] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM +0x1c0 = 0x0
+[  651.218305] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 0 (+0x4000) = 0x0
+[  651.218306] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 1 (+0x4004) = 0x0
+[  651.218307] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 2 (+0x4008) = 0x0
+[  651.218308] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 3 (+0x400c) = 0x0
+[  651.218309] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 4 (+0x4010) = 0x0
+[  651.218310] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 5 (+0x4014) = 0x0
+[  651.218311] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 6 (+0x4018) = 0x0
+[  651.218312] ane_h18 419600000.ane: ane_h18 prog: DART exc before LOAD_PROGRAM bitmap word 7 (+0x401c) = 0x0
+[  651.218312] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x0: 00000000 00000000 00000001 00000001
+[  651.218314] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x10: 00000000 00000000 00000000 00000000
+[  651.218314] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x20: fdf3c000 000003ff 00000298 00000000
+[  651.218315] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x30: 00000000 00000000 00000001 00000002
+[  651.218316] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x40: 00000000 00000000 00000000 00000000
+[  651.218317] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x50: fdf38000 000003ff 00004000 00000000
+[  651.218317] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x60: 00000000 00000000 00000001 00000003
+[  651.218318] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x70: 00000000 00000000 00000000 00000000
+[  651.218319] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x80: 3000c000 00000000 00000104 00000000
+[  651.218320] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x90: 00000000 00000000 00000001 00000004
+[  651.218320] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xa0: 00000000 00000000 00000000 00000000
+[  651.218321] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xb0: fdf2c000 000003ff 00000410 00000000
+[  651.218322] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xc0: 00000000 00000000 00000001 00000005
+[  651.218323] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xd0: 00000000 00000000 00000000 00000000
+[  651.218323] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xe0: fdf28000 000003ff 00000038 00000000
+[  651.218324] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0xf0: 00000000 00000000 00000000 00000000
+[  651.218325] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x100: 00000000 00000000 00000000 00000000
+[  651.218325] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x110: 00000000 00000000 00000000 00000000
+[  651.218326] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x120: 00000000 00000000 00000001 00000007
+[  651.218327] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x130: 00000000 00000000 00000000 00000000
+[  651.218328] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x140: fdf24000 000003ff 00000028 00000000
+[  651.218328] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x150: 00000000 00000000 00000000 00000000
+[  651.218329] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x160: 00000000 00000000 00000000 00000000
+[  651.218330] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x170: 00000000 00000000 00000000 00000000
+[  651.218330] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x180: 00000000 00000000 00000000 00000000
+[  651.218331] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x190: 00000000 00000000 00000000 00000000
+[  651.218332] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x1a0: 00000000 00000000 00000000 00000000
+[  651.218332] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM sent +0x1b0: 00000000 00000000 ffffffff 00000000
+[  651.218334] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x200 slot 4 block iova 0x3ffffbc0400
+[  651.218419] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.218420] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.218421] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.218422] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.218423] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.218424] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.218506] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.218507] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.218508] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.218509] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.218510] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.218511] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.218512] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.218513] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.218514] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.218515] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.218516] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.218526] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.218527] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.218528] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.218529] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.218530] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.218533] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.218534] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.218535] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.218536] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.218537] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.218547] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.218548] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.218549] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.219561] ane_h18 419600000.ane: ane_h18 cmd 0x200 answered after 1ms: header=0x3ffffbc0401 words=0x1c0,0x0 id=0x200 ack=0x0
+[  651.219563] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM reply +0x0: 00000000 00000200 00000001 00000001
+[  651.219564] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM reply +0x10: 00000000 00000000 00000000 00000000
+[  651.219565] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM reply +0x20: fdf3c000 000003ff 00000298 00000000
+[  651.219566] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM reply +0x30: 00000000 00000000 00000001 00000002
+[  651.219568] ane_h18 419600000.ane: ane_h18 prog: LOAD_PROGRAM program id 0x0
+[  651.230712] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.230717] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.230718] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.230719] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.230720] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.230721] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.230807] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.230808] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.230808] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.230809] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.230810] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.230811] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.230812] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.230813] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.230814] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.230815] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.230816] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.230827] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.230827] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.230828] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.230835] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.230836] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.230839] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 13 nonzero lines, 9 not printed
+[  651.230840] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.230841] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.230842] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.230843] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.230853] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.230854] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.230855] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.242083] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x202 slot 5 block iova 0x3ffffbc0400
+[  651.242173] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.242174] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.242175] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.242176] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.242177] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.242178] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.242260] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.242261] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.242262] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.242262] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.242263] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.242264] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.242265] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.242266] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.242268] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.242269] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.242270] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.242280] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.242281] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.242282] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.242283] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.242284] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.242286] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.242287] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.242289] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.242289] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.242291] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.242300] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.242301] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.242302] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.242963] ane_h18 419600000.ane: ane_h18 hs surface FWMALLOC size=0x200000 iova=0x3fffdc00000
+[  651.242964] ane_h18 419600000.ane: ane_h18 fw MALLOC 0x200000 bytes mode 1163415632 -> iova 0x3fffdc00000 ordinal 6
+[  651.242965] ane_h18 419600000.ane: ane_h18 write doorbell BIT(5) pa=0x4198a4000 to answer the MALLOC
+[  651.243978] ane_h18 419600000.ane: ane_h18 cmd 0x202 answered after 2ms: header=0x3ffffbc0401 words=0x10,0x0 id=0x202 ack=0x0
+[  651.243980] ane_h18 419600000.ane: ane_h18 prog: CREATE_PROCESS reply +0x0: 00000000 00000202 00000000 00000000
+[  651.243981] ane_h18 419600000.ane: ane_h18 prog: CREATE_PROCESS reply +0x10: 00000000 00000000 00000000 00000000
+[  651.243982] ane_h18 419600000.ane: ane_h18 prog: CREATE_PROCESS process id 0x0
+[  651.255186] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.255188] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.255189] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.255190] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.255191] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.255192] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.255276] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.255277] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.255278] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.255279] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.255280] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.255281] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.255282] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.255283] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.255284] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.255285] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.255286] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.255297] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.255298] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.255299] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.255300] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.255301] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.255304] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.255305] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.255306] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.255307] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.255308] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.255319] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.255320] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.255321] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.266530] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x0: 00000000 00000000 00000000 00000000
+[  651.266534] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x10: 00000000 00000000 00000002 00000000
+[  651.266535] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x20: 0000add0 00000000 00000003 00000000
+[  651.266535] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x30: 00000000 00000000 00000000 00000000
+[  651.266536] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x40: 00000000 00000000 00000000 00000000
+[  651.266537] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x50: 00000000 00000000 00000000 00000000
+[  651.266538] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x60: 00000001 00000005 00000000 00000000
+[  651.266538] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x70: 00000000 00000000 30040000 00000000
+[  651.266539] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x80: 00008000 00000000 00000000 00000000
+[  651.266540] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0x90: 00000001 00000006 00000000 00000000
+[  651.266540] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0xa0: 00000000 00000000 30048000 00000000
+[  651.266541] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0xb0: 00008000 00000000 00000000 00000000
+[  651.266542] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0xc0: 00000001 00000004 00000001 00000000
+[  651.266543] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0xd0: 00000000 00000000 30050000 00000000
+[  651.266543] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL sent +0xe0: 00008000 00000000 00000000 00000000
+[  651.266545] ane_h18 419600000.ane: ane_h18 write doorbell BIT(1) pa=0x4198a4000 for command 0x204 slot 6 block iova 0x3ffffbc0400
+[  651.266640] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.266640] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.266641] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.266642] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.266643] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.266644] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.266724] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.266725] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.266726] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.266727] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.266728] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.266729] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.266730] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.266730] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.266732] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.266732] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.266734] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.266744] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.266745] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.266746] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.266748] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.266749] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.266751] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.266752] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x1 0x0
+[  651.266753] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.266754] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.266755] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0xc0 = 0x1 0x0
+[  651.266765] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 64 nonzero lines, 60 not printed
+[  651.266766] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.266767] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.266768] ane_h18 419600000.ane: ane_h18 cmd 0x204 answered after 0ms: header=0x3ffffbc0401 words=0xf0,0x0 id=0x204 ack=0x0
+[  651.266769] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL reply +0x0: 00000000 00000204 00000000 00000000
+[  651.266770] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL reply +0x10: 00000000 00000000 00000002 00000000
+[  651.266771] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL reply +0x20: 0000add0 00000000 00000003 00000000
+[  651.266772] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL reply +0x30: 00000000 00000000 00000000 00000000
+[  651.267882] ane_h18 419600000.ane: ane_h18 prog: IO_T2H slot 0 header=0x3fffdfc0000 len=0x60
+[  651.267884] ane_h18 419600000.ane: ane_h18 prog: event +0x0: 00000000 00000300 0000add0 00000000
+[  651.267885] ane_h18 419600000.ane: ane_h18 prog: event +0x10: 00000000 00000000 00000000 00000000
+[  651.267886] ane_h18 419600000.ane: ane_h18 prog: event +0x20: 00000000 00000000 ea2f3f84 00000003
+[  651.267887] ane_h18 419600000.ane: ane_h18 prog: event +0x30: 0000ff00 00000000 ea2f3f84 00000003
+[  651.267888] ane_h18 419600000.ane: ane_h18 write doorbell BIT(6) pa=0x4198a4000 to give IO_T2H slot 0 back
+[  651.277949] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.277950] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.277950] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.277951] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.277953] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.277953] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.278035] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.278035] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.278036] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.278037] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.278038] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.278039] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.278040] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.278041] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.278042] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.278043] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.278044] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.278055] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.278056] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.278057] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.278058] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.278059] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.278061] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.278062] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  651.278063] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  651.278064] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.278065] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.278077] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 65 nonzero lines, 61 not printed
+[  651.278078] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.278079] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.289248] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.289249] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.289250] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.289251] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.289252] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.289253] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.289336] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.289337] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.289338] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.289339] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.289340] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.289341] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.289342] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.289343] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.289344] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.289345] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.289346] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.289357] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.289358] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.289359] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.289360] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.289361] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.289363] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.289364] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  651.289365] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  651.289366] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.289367] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.289378] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 65 nonzero lines, 61 not printed
+[  651.289379] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.289380] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.300465] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.300466] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.300467] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.300468] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.300469] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.300470] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.300553] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.300554] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.300555] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.300556] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.300557] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.300558] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.300559] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.300560] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.300561] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.300562] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.300563] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.300574] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.300575] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.300576] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.300577] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.300578] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.300580] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.300581] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  651.300582] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  651.300583] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.300584] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.300595] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 65 nonzero lines, 61 not printed
+[  651.300595] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.300596] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.311766] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.311767] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.311767] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.311768] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.311770] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.311771] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.311852] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.311853] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.311854] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.311855] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.311856] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.311857] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.311858] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.311859] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.311860] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.311861] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.311862] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.311873] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.311873] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.311874] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.311876] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.311877] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.311879] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.311880] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  651.311881] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  651.311882] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.311883] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.311894] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 65 nonzero lines, 61 not printed
+[  651.311895] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.311896] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.323068] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: read IPI pending pa=0x4198ac000
+[  651.323069] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IPI pending = 0x0
+[  651.323070] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  651.323071] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  651.323072] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  651.323073] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  651.323156] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: TERMINAL has 568 nonzero lines, 564 not printed
+[  651.323157] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  651.323158] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  651.323159] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 0 = 0x1 0x0 0x0
+[  651.323160] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DEBUG slot 1 = 0x1 0x0 0x0
+[  651.323161] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  651.323162] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  651.323163] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x0 = 0x1 0x0
+[  651.323164] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x40 = 0x1 0x0
+[  651.323165] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0x80 = 0x1 0x0
+[  651.323166] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H +0xc0 = 0x1 0x0
+[  651.323177] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: BUF_T2H has 64 nonzero lines, 60 not printed
+[  651.323178] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  651.323179] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  651.323180] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  651.323181] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  651.323183] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: SHAREDMALLOC has 14 nonzero lines, 10 not printed
+[  651.323184] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  651.323185] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  651.323186] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x40 = 0x1 0x0
+[  651.323187] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H +0x80 = 0x1 0x0
+[  651.323198] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: IO_T2H has 65 nonzero lines, 61 not printed
+[  651.323199] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  651.323200] ane_h18 419600000.ane: ane_h18 chan snapshot ring change: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  651.433700] irq 102: nobody cared (try booting with the "irqpoll" option)
+[  651.433705] CPU: 0 UID: 0 PID: 0 Comm: swapper/0 Tainted: G S         O        7.1.12-aurora-m6usb-ARCH #23 PREEMPT 
+[  651.433707] Tainted: [S]=CPU_OUT_OF_SPEC, [O]=OOT_MODULE
+[  651.433708] Hardware name: Apple Mac mini (M6, J873) (DT)
+[  651.433708] Call trace:
+[  651.433709]  show_stack+0x18/0x24 (C)
+[  651.433716]  __dump_stack+0x28/0x38
+[  651.433718]  dump_stack_lvl+0x54/0x6c
+[  651.433719]  dump_stack+0x18/0x24
+[  651.433720]  __report_bad_irq+0x4c/0xe4
+[  651.433721]  note_interrupt+0x1c8/0x228
+[  651.433724]  handle_irq_event+0x64/0xe8
+[  651.433725]  handle_fasteoi_irq+0xcc/0x1e0
+[  651.433725]  generic_handle_domain_irq+0x3c/0x60
+[  651.433726]  aic_handle_irq+0x5c/0x1a8
+[  651.433726]  call_on_irq_stack+0x30/0x48
+[  651.433728]  do_interrupt_handler+0x4c/0x6c
+[  651.433728]  el1_interrupt+0x3c/0x60
+[  651.433732]  el1h_64_irq_handler+0x18/0x24
+[  651.433733]  el1h_64_irq+0x6c/0x70
+[  651.433733]  do_idle+0xf8/0x2e4 (P)
+[  651.433736]  cpu_startup_entry+0x34/0x38
+[  651.433737]  kernel_init+0x0/0x128
+[  651.433738]  start_kernel+0x2f0/0x388
+[  651.433742]  __primary_switched+0x88/0x90
+[  651.433744] handlers:
+[  651.433745] [<000000001f5a9735>] apple_dart_irq
+[  651.433750] Disabling IRQ #102
+[  653.506222] ane_h18 419600000.ane: ane_h18 prog: PROCEDURE_CALL gave no finish event after 2000 ms, 1 IO_T2H events
+[  653.506229] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 0 (after the call), pa=0x419800000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  653.506232] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call +0xc00 = 0xffff
+[  653.506233] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call +0x1000 = 0x9
+[  653.506234] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call +0x1400 = 0x100ab4bd
+[  653.506235] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call +0x4000 = 0x0
+[  653.506236] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call +0x4004 = 0x0
+[  653.506237] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call stream 0: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  653.506239] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call stream 10: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  653.506241] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call stream 11: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  653.506243] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call stream 13: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  653.506245] ane_h18 419600000.ane: ane_h18 prog: DART 0 after the call stream 15: status 0x300d +4 0x18b004 addr 0x13f67f854bc +0x10 0x0
+[  653.506245] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 1 (after the call), pa=0x419820000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  653.506247] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call +0xc00 = 0x0
+[  653.506248] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call +0x1000 = 0x1
+[  653.506248] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call +0x1400 = 0x9c94800
+[  653.506249] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call +0x4000 = 0x1
+[  653.506249] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call +0x4004 = 0x0
+[  653.506251] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call stream 0: status 0x0 +4 0x5021062 addr 0x3fffdfb0540 +0x10 0x0
+[  653.506253] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call stream 10: status 0x0 +4 0x5021062 addr 0x3fffdfb0540 +0x10 0x0
+[  653.506255] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call stream 11: status 0x0 +4 0x5021062 addr 0x3fffdfb0540 +0x10 0x0
+[  653.506257] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call stream 13: status 0x0 +4 0x5021062 addr 0x3fffdfb0540 +0x10 0x0
+[  653.506259] ane_h18 419600000.ane: ane_h18 prog: DART 1 after the call stream 15: status 0x0 +4 0x5021062 addr 0x3fffdfb0540 +0x10 0x0
+[  653.506259] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 2 (after the call), pa=0x419840000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  653.506260] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call +0xc00 = 0x0
+[  653.506261] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call +0x1000 = 0x1
+[  653.506261] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call +0x1400 = 0x2257498
+[  653.506262] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call +0x4000 = 0x0
+[  653.506263] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call +0x4004 = 0x0
+[  653.506264] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call stream 0: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  653.506266] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call stream 10: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  653.506268] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call stream 11: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  653.506270] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call stream 13: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  653.506271] ane_h18 419600000.ane: ane_h18 prog: DART 2 after the call stream 15: status 0x310a +4 0xf0db56c addr 0x2ba25c61f4e +0x10 0x0
+[  653.506272] ane_h18 419600000.ane: ane_h18 prog: reading DART instance 3 (after the call), pa=0x419860000 +0xc00..+0x4004 and +0x8000 + 0x40 * stream for streams 0, 10, 11, 13, 15, read only
+[  653.506273] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call +0xc00 = 0x0
+[  653.506273] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call +0x1000 = 0x1
+[  653.506274] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call +0x1400 = 0x1189ee40
+[  653.506274] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call +0x4000 = 0x0
+[  653.506275] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call +0x4004 = 0x0
+[  653.506277] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call stream 0: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  653.506278] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call stream 10: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  653.506280] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call stream 11: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  653.506282] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call stream 13: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  653.506284] ane_h18 419600000.ane: ane_h18 prog: DART 3 after the call stream 15: status 0x350a +4 0xa180561 addr 0xfbf3ba5fcb +0x10 0x0
+[  653.506284] ane_h18 419600000.ane: ane_h18 prog: reading the ANE DART exception state (after the call), pa=0x419800100..0x41980c000, read only
+[  653.506286] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call +0x100 = 0x0
+[  653.506286] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call +0x104 = 0x0
+[  653.506287] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call +0x170 = 0x0
+[  653.506287] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call +0x174 = 0x0
+[  653.506288] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call +0x1c0 = 0x0
+[  653.506289] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 0 (+0x4000) = 0x0
+[  653.506289] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 1 (+0x4004) = 0x0
+[  653.506290] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 2 (+0x4008) = 0x0
+[  653.506291] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 3 (+0x400c) = 0x0
+[  653.506291] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 4 (+0x4010) = 0x0
+[  653.506292] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 5 (+0x4014) = 0x0
+[  653.506293] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 6 (+0x4018) = 0x0
+[  653.506293] ane_h18 419600000.ane: ane_h18 prog: DART exc after the call bitmap word 7 (+0x401c) = 0x0
+[  653.506427] ane_h18 419600000.ane: ane_h18 prog: buffer 5 (input, 0x8000 bytes): 8192 nonzero words, first 40003c00 44004200 46004500 48004700
+[  653.506565] ane_h18 419600000.ane: ane_h18 prog: buffer 6 (input, 0x8000 bytes): 8192 nonzero words, first 38000000 3e003c00 41004000 43004200
+[  653.506700] ane_h18 419600000.ane: ane_h18 prog: buffer 4 (output, 0x8000 bytes): 0 nonzero words, first 00000000 00000000 00000000 00000000
+[  653.506701] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x0: 00000000 00000000 00000000 00000000
+[  653.506702] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x10: 00000000 00000000 00000000 00000000
+[  653.506703] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x20: 00000000 00000000 00000000 00000000
+[  653.506704] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x30: 00000000 00000000 00000000 00000000
+[  653.506705] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x40: 00000000 00000000 00000000 00000000
+[  653.506705] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x50: 00000000 00000000 00000000 00000000
+[  653.506706] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x60: 00000000 00000000 00000000 00000000
+[  653.506707] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x70: 00000000 00000000 00000000 00000000
+[  653.506708] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x80: 00000000 00000000 00000000 00000000
+[  653.506709] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x90: 00000000 00000000 00000000 00000000
+[  653.506710] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa0: 00000000 00000000 00000000 00000000
+[  653.506711] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb0: 00000000 00000000 00000000 00000000
+[  653.506711] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc0: 00000000 00000000 00000000 00000000
+[  653.506712] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd0: 00000000 00000000 00000000 00000000
+[  653.506713] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe0: 00000000 00000000 00000000 00000000
+[  653.506714] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf0: 00000000 00000000 00000000 00000000
+[  653.506715] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x100: 00000000 00000000 00000000 00000000
+[  653.506716] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x110: 00000000 00000000 00000000 00000000
+[  653.506717] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x120: 00000000 00000000 00000000 00000000
+[  653.506717] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x130: 00000000 00000000 00000000 00000000
+[  653.506718] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x140: 00000000 00000000 00000000 00000000
+[  653.506719] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x150: 00000000 00000000 00000000 00000000
+[  653.506720] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x160: 00000000 00000000 00000000 00000000
+[  653.506721] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x170: 00000000 00000000 00000000 00000000
+[  653.506722] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x180: 00000000 00000000 00000000 00000000
+[  653.506723] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x190: 00000000 00000000 00000000 00000000
+[  653.506723] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1a0: 00000000 00000000 00000000 00000000
+[  653.506724] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1b0: 00000000 00000000 00000000 00000000
+[  653.506725] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1c0: 00000000 00000000 00000000 00000000
+[  653.506726] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1d0: 00000000 00000000 00000000 00000000
+[  653.506727] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1e0: 00000000 00000000 00000000 00000000
+[  653.506728] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x1f0: 00000000 00000000 00000000 00000000
+[  653.506729] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x200: 00000000 00000000 00000000 00000000
+[  653.506730] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x210: 00000000 00000000 00000000 00000000
+[  653.506731] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x220: 00000000 00000000 00000000 00000000
+[  653.506732] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x230: 00000000 00000000 00000000 00000000
+[  653.506733] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x240: 00000000 00000000 00000000 00000000
+[  653.506733] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x250: 00000000 00000000 00000000 00000000
+[  653.506734] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x260: 00000000 00000000 00000000 00000000
+[  653.506735] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x270: 00000000 00000000 00000000 00000000
+[  653.506736] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x280: 00000000 00000000 00000000 00000000
+[  653.506737] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x290: 00000000 00000000 00000000 00000000
+[  653.506738] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2a0: 00000000 00000000 00000000 00000000
+[  653.506739] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2b0: 00000000 00000000 00000000 00000000
+[  653.506740] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2c0: 00000000 00000000 00000000 00000000
+[  653.506740] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2d0: 00000000 00000000 00000000 00000000
+[  653.506741] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2e0: 00000000 00000000 00000000 00000000
+[  653.506742] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x2f0: 00000000 00000000 00000000 00000000
+[  653.506743] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x300: 00000000 00000000 00000000 00000000
+[  653.506744] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x310: 00000000 00000000 00000000 00000000
+[  653.506745] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x320: 00000000 00000000 00000000 00000000
+[  653.506746] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x330: 00000000 00000000 00000000 00000000
+[  653.506746] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x340: 00000000 00000000 00000000 00000000
+[  653.506747] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x350: 00000000 00000000 00000000 00000000
+[  653.506748] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x360: 00000000 00000000 00000000 00000000
+[  653.506749] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x370: 00000000 00000000 00000000 00000000
+[  653.506750] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x380: 00000000 00000000 00000000 00000000
+[  653.506751] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x390: 00000000 00000000 00000000 00000000
+[  653.506752] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3a0: 00000000 00000000 00000000 00000000
+[  653.506753] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3b0: 00000000 00000000 00000000 00000000
+[  653.506753] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3c0: 00000000 00000000 00000000 00000000
+[  653.506754] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3d0: 00000000 00000000 00000000 00000000
+[  653.506755] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3e0: 00000000 00000000 00000000 00000000
+[  653.506756] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x3f0: 00000000 00000000 00000000 00000000
+[  653.506757] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x400: 00000000 00000000 00000000 00000000
+[  653.506758] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x410: 00000000 00000000 00000000 00000000
+[  653.506759] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x420: 00000000 00000000 00000000 00000000
+[  653.506760] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x430: 00000000 00000000 00000000 00000000
+[  653.506761] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x440: 00000000 00000000 00000000 00000000
+[  653.506762] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x450: 00000000 00000000 00000000 00000000
+[  653.506763] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x460: 00000000 00000000 00000000 00000000
+[  653.506763] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x470: 00000000 00000000 00000000 00000000
+[  653.506764] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x480: 00000000 00000000 00000000 00000000
+[  653.506765] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x490: 00000000 00000000 00000000 00000000
+[  653.506766] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4a0: 00000000 00000000 00000000 00000000
+[  653.506767] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4b0: 00000000 00000000 00000000 00000000
+[  653.506768] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4c0: 00000000 00000000 00000000 00000000
+[  653.506769] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4d0: 00000000 00000000 00000000 00000000
+[  653.506770] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4e0: 00000000 00000000 00000000 00000000
+[  653.506771] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x4f0: 00000000 00000000 00000000 00000000
+[  653.506772] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x500: 00000000 00000000 00000000 00000000
+[  653.506772] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x510: 00000000 00000000 00000000 00000000
+[  653.506773] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x520: 00000000 00000000 00000000 00000000
+[  653.506774] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x530: 00000000 00000000 00000000 00000000
+[  653.506775] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x540: 00000000 00000000 00000000 00000000
+[  653.506776] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x550: 00000000 00000000 00000000 00000000
+[  653.506777] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x560: 00000000 00000000 00000000 00000000
+[  653.506778] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x570: 00000000 00000000 00000000 00000000
+[  653.506779] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x580: 00000000 00000000 00000000 00000000
+[  653.506779] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x590: 00000000 00000000 00000000 00000000
+[  653.506780] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5a0: 00000000 00000000 00000000 00000000
+[  653.506781] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5b0: 00000000 00000000 00000000 00000000
+[  653.506782] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5c0: 00000000 00000000 00000000 00000000
+[  653.506783] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5d0: 00000000 00000000 00000000 00000000
+[  653.506784] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5e0: 00000000 00000000 00000000 00000000
+[  653.506785] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x5f0: 00000000 00000000 00000000 00000000
+[  653.506786] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x600: 00000000 00000000 00000000 00000000
+[  653.506787] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x610: 00000000 00000000 00000000 00000000
+[  653.506788] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x620: 00000000 00000000 00000000 00000000
+[  653.506788] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x630: 00000000 00000000 00000000 00000000
+[  653.506789] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x640: 00000000 00000000 00000000 00000000
+[  653.506790] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x650: 00000000 00000000 00000000 00000000
+[  653.506791] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x660: 00000000 00000000 00000000 00000000
+[  653.506792] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x670: 00000000 00000000 00000000 00000000
+[  653.506793] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x680: 00000000 00000000 00000000 00000000
+[  653.506793] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x690: 00000000 00000000 00000000 00000000
+[  653.506794] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6a0: 00000000 00000000 00000000 00000000
+[  653.506795] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6b0: 00000000 00000000 00000000 00000000
+[  653.506796] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6c0: 00000000 00000000 00000000 00000000
+[  653.506797] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6d0: 00000000 00000000 00000000 00000000
+[  653.506798] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6e0: 00000000 00000000 00000000 00000000
+[  653.506799] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x6f0: 00000000 00000000 00000000 00000000
+[  653.506799] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x700: 00000000 00000000 00000000 00000000
+[  653.506800] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x710: 00000000 00000000 00000000 00000000
+[  653.506801] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x720: 00000000 00000000 00000000 00000000
+[  653.506802] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x730: 00000000 00000000 00000000 00000000
+[  653.506803] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x740: 00000000 00000000 00000000 00000000
+[  653.506804] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x750: 00000000 00000000 00000000 00000000
+[  653.506804] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x760: 00000000 00000000 00000000 00000000
+[  653.506805] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x770: 00000000 00000000 00000000 00000000
+[  653.506806] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x780: 00000000 00000000 00000000 00000000
+[  653.506807] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x790: 00000000 00000000 00000000 00000000
+[  653.506808] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7a0: 00000000 00000000 00000000 00000000
+[  653.506809] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7b0: 00000000 00000000 00000000 00000000
+[  653.506810] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7c0: 00000000 00000000 00000000 00000000
+[  653.506810] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7d0: 00000000 00000000 00000000 00000000
+[  653.506811] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7e0: 00000000 00000000 00000000 00000000
+[  653.506812] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x7f0: 00000000 00000000 00000000 00000000
+[  653.506813] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x800: 00000000 00000000 00000000 00000000
+[  653.506814] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x810: 00000000 00000000 00000000 00000000
+[  653.506815] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x820: 00000000 00000000 00000000 00000000
+[  653.506816] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x830: 00000000 00000000 00000000 00000000
+[  653.506817] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x840: 00000000 00000000 00000000 00000000
+[  653.506817] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x850: 00000000 00000000 00000000 00000000
+[  653.506818] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x860: 00000000 00000000 00000000 00000000
+[  653.506819] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x870: 00000000 00000000 00000000 00000000
+[  653.506820] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x880: 00000000 00000000 00000000 00000000
+[  653.506821] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x890: 00000000 00000000 00000000 00000000
+[  653.506822] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8a0: 00000000 00000000 00000000 00000000
+[  653.506823] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8b0: 00000000 00000000 00000000 00000000
+[  653.506823] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8c0: 00000000 00000000 00000000 00000000
+[  653.506824] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8d0: 00000000 00000000 00000000 00000000
+[  653.506831] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8e0: 00000000 00000000 00000000 00000000
+[  653.506832] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x8f0: 00000000 00000000 00000000 00000000
+[  653.506833] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x900: 00000000 00000000 00000000 00000000
+[  653.506834] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x910: 00000000 00000000 00000000 00000000
+[  653.506835] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x920: 00000000 00000000 00000000 00000000
+[  653.506836] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x930: 00000000 00000000 00000000 00000000
+[  653.506836] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x940: 00000000 00000000 00000000 00000000
+[  653.506838] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x950: 00000000 00000000 00000000 00000000
+[  653.506839] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x960: 00000000 00000000 00000000 00000000
+[  653.506840] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x970: 00000000 00000000 00000000 00000000
+[  653.506841] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x980: 00000000 00000000 00000000 00000000
+[  653.506842] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x990: 00000000 00000000 00000000 00000000
+[  653.506843] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9a0: 00000000 00000000 00000000 00000000
+[  653.506843] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9b0: 00000000 00000000 00000000 00000000
+[  653.506844] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9c0: 00000000 00000000 00000000 00000000
+[  653.506845] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9d0: 00000000 00000000 00000000 00000000
+[  653.506846] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9e0: 00000000 00000000 00000000 00000000
+[  653.506847] ane_h18 419600000.ane: ane_h18 prog: out buffer +0x9f0: 00000000 00000000 00000000 00000000
+[  653.506848] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa00: 00000000 00000000 00000000 00000000
+[  653.506849] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa10: 00000000 00000000 00000000 00000000
+[  653.506850] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa20: 00000000 00000000 00000000 00000000
+[  653.506851] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa30: 00000000 00000000 00000000 00000000
+[  653.506851] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa40: 00000000 00000000 00000000 00000000
+[  653.506852] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa50: 00000000 00000000 00000000 00000000
+[  653.506853] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa60: 00000000 00000000 00000000 00000000
+[  653.506854] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa70: 00000000 00000000 00000000 00000000
+[  653.506855] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa80: 00000000 00000000 00000000 00000000
+[  653.506856] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xa90: 00000000 00000000 00000000 00000000
+[  653.506857] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xaa0: 00000000 00000000 00000000 00000000
+[  653.506858] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xab0: 00000000 00000000 00000000 00000000
+[  653.506858] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xac0: 00000000 00000000 00000000 00000000
+[  653.506859] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xad0: 00000000 00000000 00000000 00000000
+[  653.506860] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xae0: 00000000 00000000 00000000 00000000
+[  653.506861] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xaf0: 00000000 00000000 00000000 00000000
+[  653.506862] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb00: 00000000 00000000 00000000 00000000
+[  653.506863] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb10: 00000000 00000000 00000000 00000000
+[  653.506863] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb20: 00000000 00000000 00000000 00000000
+[  653.506864] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb30: 00000000 00000000 00000000 00000000
+[  653.506865] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb40: 00000000 00000000 00000000 00000000
+[  653.506866] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb50: 00000000 00000000 00000000 00000000
+[  653.506867] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb60: 00000000 00000000 00000000 00000000
+[  653.506868] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb70: 00000000 00000000 00000000 00000000
+[  653.506869] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb80: 00000000 00000000 00000000 00000000
+[  653.506869] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xb90: 00000000 00000000 00000000 00000000
+[  653.506870] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xba0: 00000000 00000000 00000000 00000000
+[  653.506871] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xbb0: 00000000 00000000 00000000 00000000
+[  653.506872] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xbc0: 00000000 00000000 00000000 00000000
+[  653.506873] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xbd0: 00000000 00000000 00000000 00000000
+[  653.506874] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xbe0: 00000000 00000000 00000000 00000000
+[  653.506875] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xbf0: 00000000 00000000 00000000 00000000
+[  653.506876] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc00: 00000000 00000000 00000000 00000000
+[  653.506876] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc10: 00000000 00000000 00000000 00000000
+[  653.506877] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc20: 00000000 00000000 00000000 00000000
+[  653.506878] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc30: 00000000 00000000 00000000 00000000
+[  653.506879] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc40: 00000000 00000000 00000000 00000000
+[  653.506880] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc50: 00000000 00000000 00000000 00000000
+[  653.506881] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc60: 00000000 00000000 00000000 00000000
+[  653.506882] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc70: 00000000 00000000 00000000 00000000
+[  653.506882] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc80: 00000000 00000000 00000000 00000000
+[  653.506883] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xc90: 00000000 00000000 00000000 00000000
+[  653.506884] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xca0: 00000000 00000000 00000000 00000000
+[  653.506885] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xcb0: 00000000 00000000 00000000 00000000
+[  653.506886] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xcc0: 00000000 00000000 00000000 00000000
+[  653.506887] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xcd0: 00000000 00000000 00000000 00000000
+[  653.506887] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xce0: 00000000 00000000 00000000 00000000
+[  653.506888] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xcf0: 00000000 00000000 00000000 00000000
+[  653.506889] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd00: 00000000 00000000 00000000 00000000
+[  653.506890] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd10: 00000000 00000000 00000000 00000000
+[  653.506891] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd20: 00000000 00000000 00000000 00000000
+[  653.506892] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd30: 00000000 00000000 00000000 00000000
+[  653.506893] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd40: 00000000 00000000 00000000 00000000
+[  653.506894] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd50: 00000000 00000000 00000000 00000000
+[  653.506894] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd60: 00000000 00000000 00000000 00000000
+[  653.506895] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd70: 00000000 00000000 00000000 00000000
+[  653.506896] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd80: 00000000 00000000 00000000 00000000
+[  653.506897] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xd90: 00000000 00000000 00000000 00000000
+[  653.506898] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xda0: 00000000 00000000 00000000 00000000
+[  653.506899] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xdb0: 00000000 00000000 00000000 00000000
+[  653.506900] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xdc0: 00000000 00000000 00000000 00000000
+[  653.506900] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xdd0: 00000000 00000000 00000000 00000000
+[  653.506901] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xde0: 00000000 00000000 00000000 00000000
+[  653.506902] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xdf0: 00000000 00000000 00000000 00000000
+[  653.506903] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe00: 00000000 00000000 00000000 00000000
+[  653.506904] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe10: 00000000 00000000 00000000 00000000
+[  653.506905] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe20: 00000000 00000000 00000000 00000000
+[  653.506905] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe30: 00000000 00000000 00000000 00000000
+[  653.506906] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe40: 00000000 00000000 00000000 00000000
+[  653.506907] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe50: 00000000 00000000 00000000 00000000
+[  653.506908] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe60: 00000000 00000000 00000000 00000000
+[  653.506909] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe70: 00000000 00000000 00000000 00000000
+[  653.506910] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe80: 00000000 00000000 00000000 00000000
+[  653.506911] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xe90: 00000000 00000000 00000000 00000000
+[  653.506912] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xea0: 00000000 00000000 00000000 00000000
+[  653.506912] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xeb0: 00000000 00000000 00000000 00000000
+[  653.506913] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xec0: 00000000 00000000 00000000 00000000
+[  653.506914] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xed0: 00000000 00000000 00000000 00000000
+[  653.506915] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xee0: 00000000 00000000 00000000 00000000
+[  653.506916] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xef0: 00000000 00000000 00000000 00000000
+[  653.506917] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf00: 00000000 00000000 00000000 00000000
+[  653.506918] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf10: 00000000 00000000 00000000 00000000
+[  653.506919] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf20: 00000000 00000000 00000000 00000000
+[  653.506920] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf30: 00000000 00000000 00000000 00000000
+[  653.506920] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf40: 00000000 00000000 00000000 00000000
+[  653.506921] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf50: 00000000 00000000 00000000 00000000
+[  653.506922] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf60: 00000000 00000000 00000000 00000000
+[  653.506923] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf70: 00000000 00000000 00000000 00000000
+[  653.506924] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf80: 00000000 00000000 00000000 00000000
+[  653.506925] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xf90: 00000000 00000000 00000000 00000000
+[  653.506926] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xfa0: 00000000 00000000 00000000 00000000
+[  653.506927] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xfb0: 00000000 00000000 00000000 00000000
+[  653.506928] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xfc0: 00000000 00000000 00000000 00000000
+[  653.506928] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xfd0: 00000000 00000000 00000000 00000000
+[  653.506929] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xfe0: 00000000 00000000 00000000 00000000
+[  653.506930] ane_h18 419600000.ane: ane_h18 prog: out buffer +0xff0: 00000000 00000000 00000000 00000000
+[  653.506930] ane_h18 419600000.ane: ane_h18 prog: sequence result -110
+[  653.506931] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: read IPI pending pa=0x4198ac000
+[  653.506932] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IPI pending = 0x0
+[  653.506951] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 0: ........R.............../\......................................
+[  653.506968] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 1: ........................6]......................................
+[  653.506989] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 2: ........D................_......................................
+[  653.507009] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 3: ........................Z_......................................
+[  653.507032] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 4: .........................`......................................
+[  653.507056] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 5: ........"................`......................................
+[  653.507079] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 6: ........#................`......................................
+[  653.507099] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 7: ........................la......................................
+[  653.507122] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 8: .........................a......................................
+[  653.507144] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 9: ........L................b......................................
+[  653.507168] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 10: ........L................c......................................
+[  653.507191] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 11: ........L...............id......................................
+[  653.507210] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 12: ........L................e......................................
+[  653.507230] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 13: ........L................e......................................
+[  653.507252] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 14: ........L................f......................................
+[  653.507275] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 15: ........L...............:g......................................
+[  653.507298] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 16: ........L................h......................................
+[  653.507321] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 17: ........L................h......................................
+[  653.507340] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 18: ........L................i......................................
+[  653.507364] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 19: ........6...............Zk......................................
+[  653.507386] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 20: ........,................k......................................
+[  653.507406] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 21: ........8................l......................................
+[  653.507427] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 22: ........,...............4m......................................
+[  653.507449] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 23: ........9................m......................................
+[  653.507472] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 24: ........-...............Mn......................................
+[  653.507495] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 25: ........>................n......................................
+[  653.507516] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 26: ........E................o......................................
+[  653.507539] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 27: ........E...............Kp......................................
+[  653.507563] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 28: ........0................q......................................
+[  653.507586] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 29: ........5................q......................................
+[  653.507610] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 30: ........8...............2r......................................
+[  653.507635] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL text slot 31: ........;................r......................................
+[  653.518337] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL has 512 nonzero slots as text
+[  653.518338] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x0 = 0x3fffdff0002 0x52
+[  653.518339] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x10 = 0x0 0x3e9f35c2f
+[  653.518341] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x40 = 0x3fffdff0082 0x14
+[  653.518341] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x50 = 0x0 0x3e9f35d36
+[  653.518343] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x80 = 0x3fffdff0102 0x44
+[  653.518344] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x90 = 0x0 0x3e9f35f03
+[  653.518346] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0xc0 = 0x3fffdff0182 0xf
+[  653.518347] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0xd0 = 0x0 0x3e9f35f5a
+[  653.518348] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x100 = 0x3fffdff0202 0x1d
+[  653.518349] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x110 = 0x0 0x3e9f36011
+[  653.518351] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x140 = 0x3fffdff0282 0x22
+[  653.518352] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x150 = 0x0 0x3e9f36090
+[  653.518354] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x180 = 0x3fffdff0302 0x23
+[  653.518355] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x190 = 0x0 0x3e9f360fe
+[  653.518357] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x1c0 = 0x3fffdff0382 0x1d
+[  653.518358] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x1d0 = 0x0 0x3e9f3616c
+[  653.518360] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x200 = 0x3fffdff0402 0x1e
+[  653.518361] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x210 = 0x0 0x3e9f361e6
+[  653.518363] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x240 = 0x3fffdff0482 0x4c
+[  653.518364] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x250 = 0x0 0x3e9f362db
+[  653.518366] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x280 = 0x3fffdff0502 0x4c
+[  653.518366] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x290 = 0x0 0x3e9f363af
+[  653.518368] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x2c0 = 0x3fffdff0582 0x4c
+[  653.518369] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL +0x2d0 = 0x0 0x3e9f36469
+[  653.518491] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: TERMINAL has 568 nonzero lines, 544 not printed
+[  653.518492] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO slot 0 = 0x3ffffbc0401 0xc 0x0
+[  653.518493] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO slot 1 = 0x3ffffbc0401 0xc 0x0
+[  653.518493] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: DEBUG slot 0 = 0x1 0x0 0x0
+[  653.518495] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: DEBUG slot 1 = 0x1 0x0 0x0
+[  653.518495] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_H2T slot 0 = 0x1 0x0 0x0
+[  653.518496] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_H2T slot 1 = 0x1 0x0 0x0
+[  653.518497] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x0 = 0x1 0x0
+[  653.518499] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x40 = 0x1 0x0
+[  653.518502] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x80 = 0x1 0x0
+[  653.518504] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0xc0 = 0x1 0x0
+[  653.518507] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x100 = 0x1 0x0
+[  653.518509] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x140 = 0x1 0x0
+[  653.518511] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x180 = 0x1 0x0
+[  653.518513] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x1c0 = 0x1 0x0
+[  653.518515] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x200 = 0x1 0x0
+[  653.518517] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x240 = 0x1 0x0
+[  653.518520] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x280 = 0x1 0x0
+[  653.518522] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x2c0 = 0x1 0x0
+[  653.518524] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x300 = 0x1 0x0
+[  653.518526] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x340 = 0x1 0x0
+[  653.518529] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x380 = 0x1 0x0
+[  653.518531] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x3c0 = 0x1 0x0
+[  653.518532] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x400 = 0x1 0x0
+[  653.518535] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x440 = 0x1 0x0
+[  653.518537] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x480 = 0x1 0x0
+[  653.518539] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x4c0 = 0x1 0x0
+[  653.518541] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x500 = 0x1 0x0
+[  653.518544] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x540 = 0x1 0x0
+[  653.518546] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x580 = 0x1 0x0
+[  653.518549] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H +0x5c0 = 0x1 0x0
+[  653.518559] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: BUF_T2H has 64 nonzero lines, 40 not printed
+[  653.518560] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x0 = 0x3fffdff0001 0x0
+[  653.518561] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x10 = 0x1 0x3e9f29d6b
+[  653.518563] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x40 = 0x3fffdfec001 0x0
+[  653.518564] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x50 = 0x2 0x3e9f38653
+[  653.518566] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x80 = 0x3fffdfc0001 0x0
+[  653.518567] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x90 = 0x3 0x3e9f3eed0
+[  653.518569] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0xc0 = 0x3fffdfb0001 0x0
+[  653.518570] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0xd0 = 0x4 0x3e9f4980e
+[  653.518572] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x100 = 0x3fffdf40001 0x0
+[  653.518573] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x110 = 0x5 0x3e9f5f5b2
+[  653.518575] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x140 = 0x3fffdc00001 0x0
+[  653.518576] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x150 = 0x6 0x3ea261fff
+[  653.518578] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x180 = 0x1 0x0
+[  653.518579] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC +0x1c0 = 0x1 0x0
+[  653.518581] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: SHAREDMALLOC has 14 nonzero lines, 0 not printed
+[  653.518582] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x0 = 0x3fffdfc0001 0x60
+[  653.518583] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x10 = 0x0 0x3ea2f4451
+[  653.518585] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x40 = 0x1 0x0
+[  653.518587] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x80 = 0x1 0x0
+[  653.518589] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0xc0 = 0x1 0x0
+[  653.518592] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x100 = 0x1 0x0
+[  653.518594] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x140 = 0x1 0x0
+[  653.518597] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x180 = 0x1 0x0
+[  653.518599] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x1c0 = 0x1 0x0
+[  653.518601] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x200 = 0x1 0x0
+[  653.518603] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x240 = 0x1 0x0
+[  653.518606] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x280 = 0x1 0x0
+[  653.518608] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x2c0 = 0x1 0x0
+[  653.518610] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x300 = 0x1 0x0
+[  653.518612] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x340 = 0x1 0x0
+[  653.518615] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x380 = 0x1 0x0
+[  653.518617] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x3c0 = 0x1 0x0
+[  653.518618] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x400 = 0x1 0x0
+[  653.518621] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x440 = 0x1 0x0
+[  653.518623] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x480 = 0x1 0x0
+[  653.518625] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x4c0 = 0x1 0x0
+[  653.518627] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x500 = 0x1 0x0
+[  653.518630] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x540 = 0x1 0x0
+[  653.518632] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H +0x580 = 0x1 0x0
+[  653.518644] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: IO_T2H has 65 nonzero lines, 41 not printed
+[  653.518645] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: DATA_CHAIN_H2T slot 0 = 0x1 0x0 0x0
+[  653.518646] ane_h18 419600000.ane: ane_h18 chan snapshot after the failed program: DATA_CHAIN_H2T slot 1 = 0x1 0x0 0x0
+[  653.518653] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 0 ts 0x3e9f35c2f:  - kirkland-ane0 ---------------------------------------------------------------  
+[  653.518659] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 0 raw 32 bytes: 0a2d206b69726b6c616e642d616e6530202d2d2d2d2d2d2d2d2d2d2d2d2d2d2d
+[  653.518662] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 1 ts 0x3e9f35d36:   Restart count : 0 
+[  653.518666] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 1 raw 20 bytes: 20205265737461727420636f756e74203a20300a
+[  653.518672] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 2 ts 0x3e9f35f03:   Platform : mode = TARGET, ID = 0x00000000, HW = 00000000.00000000 
+[  653.518683] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 2 raw 32 bytes: 2020506c6174666f726d203a206d6f6465203d205441524745542c204944203d
+[  653.518684] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 3 ts 0x3e9f35f5a:   Arch: arm64e 
+[  653.518690] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 3 raw 15 bytes: 2020417263683a2061726d3634650a
+[  653.518694] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 4 ts 0x3e9f36011:   System Clock : 24000000 Hz 
+[  653.518697] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 5 ts 0x3e9f36090:   Data Cache Line Size: 64 [0x40] 
+[  653.518700] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 6 ts 0x3e9f360fe:   Instruction Cache Line Size: 64  
+[  653.518703] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 7 ts 0x3e9f3616c:   MMU Page Size: 16384 bytes 
+[  653.518707] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 8 ts 0x3e9f361e6:   Boot arguments entries : 64 
+[  653.518713] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 9 ts 0x3e9f362db:     0000: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518720] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 10 ts 0x3e9f363af:     0006: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518726] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 11 ts 0x3e9f36469:     0012: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518733] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 12 ts 0x3e9f36518:     0018: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518740] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 13 ts 0x3e9f365d1:     0024: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518745] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 14 ts 0x3e9f3668a:     0030: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518751] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 15 ts 0x3e9f3673a:     0036: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518758] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 16 ts 0x3e9f3681f:     0042: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518764] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 17 ts 0x3e9f368d7:     0048: 0x00000004 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518769] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 18 ts 0x3e9f369b4:     0054: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518774] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 19 ts 0x3e9f36b5a:     0060: 0x00000000 0x00000000 0x00000000 0x00000000 
+[  653.518778] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 20 ts 0x3e9f36bf9:   Main memory :   base : 0x00000000001caf40 
+[  653.518782] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 21 ts 0x3e9f36c98:                   size : 3670016 [0x00380000] [3.50 MB] 
+[  653.518786] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 22 ts 0x3e9f36d34:   Extra heap :    base : 0x000003fffe000000 
+[  653.518790] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 23 ts 0x3e9f36dc5:                   size : 15728640 [0x00f00000] [15.0 MB] 
+[  653.518794] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 24 ts 0x3e9f36e4d:   Shared memory : base : 0x0000000000380000  
+[  653.518800] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 25 ts 0x3e9f36eec:                   size : 3754426368 [0xdfc80000] [3580.50 MB] 
+[  653.518806] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 26 ts 0x3e9f36f8d:   TEXT : 789792 [0xc0d20] - text 653672, cstring  88863, const 19700 
+[  653.518812] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 27 ts 0x3e9f3704b:   DATA : 2785536 [0x2a8100] - data 3856, bss 2048000, common 2048000 
+[  653.518816] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 28 ts 0x3e9f37106:   Initial heap free space : 334920 [0x00051c48] 
+[  653.518821] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 29 ts 0x3e9f37194:   Initial heap allocated space : 193464 [0x0002f3b8] 
+[  653.518827] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 30 ts 0x3e9f37232:   Current extra heap free space : 16255376 [0x00f80990] 
+[  653.518832] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 31 ts 0x3e9f372d6:   Current extra heap allocated space : 652912 [0x0009f670] 
+[  653.518837] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 32 ts 0x3e9f37371:   Disclaimer : Copyright (c) APPLE Inc. All Rights Reserved. 
+[  653.518839] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 33 ts 0x3e9f373dc:   Application : adc [release] 
+[  653.518843] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 34 ts 0x3e9f37446:   Linked on : Aug  8 2026 - 15:32:56 
+[  653.518845] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 35 ts 0x3e9f374ae:   Release : 10.18 
+[  653.518847] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 36 ts 0x3e9f3750e:   Device : __j8xx__ 
+[  653.518849] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 37 ts 0x3e9f37585:   Sideloaded : False 
+[  653.518853] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 38 ts 0x3e9f37608:   Tool-chain : macOS - 27.0 [clang/clang++] 
+[  653.518857] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 39 ts 0x3e9f3767c:   AneIpcVersion : Major 0x3, Minor 0x0 
+[  653.518865] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 40 ts 0x3e9f37713:  -------------------------------------------------------------------------------  
+[  653.518870] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 41 ts 0x3e9f377aa: (Aug  8 2026@15:08:13) RTKit Version: 3514.0.15 
+[  653.518872] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 42 ts 0x3e9f37801: rtbuddyFW: true 
+[  653.518873] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 43 ts 0x3e9f3785a: VM mode: dynamic 
+[  653.518876] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 44 ts 0x3e9f378d1: mmu logger : enabled 
+[  653.518880] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 45 ts 0x3e9f37949: CE script location 0x00000000000bcd00 
+[  653.518882] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 46 ts 0x3e9f379d9: cold boot counter: 1 
+[  653.518890] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 47 ts 0x3e9f385c7: [13:700414680]: [SMALL_SM_ALLOC] marker=CCMD size= 3168=(16384) caller=CANEController.cpp:242 .
+[  653.518894] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 48 ts 0x3e9f66d9a: [13:700422589]: CANEController() done .
+[  653.518901] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 49 ts 0x3e9f674cb: [13:700422694]: Initial Heap: Total size: 528384 bytes used: 205664 bytes .
+[  653.518908] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 50 ts 0x3e9f675ea: [13:700422710]: Current Extra Heap: Total size: 16908288 bytes used: 5623752 bytes .
+[  653.518914] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 51 ts 0x3ea1d1e73: [14:700528256]:   Profiling: start #0 (0xe9f3ec53) end #4 (0x0) .
+[  653.518922] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 52 ts 0x3ea1d22e7: [14:700528316]: EVT#0: POWER_ON @ 0xe9f670c4, (163551760.000000), diff: 6874 us, delta: 163551752 us .
+[  653.518931] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 53 ts 0x3ea1d2407: [14:700528332]: EVT#1: CTRL_READY @ 0xe9f67146, (163551760.000000), diff: 6879 us, delta: 5 us .
+[  653.518939] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 54 ts 0x3ea1d2530: [14:700528344]: EVT#2: CSNE_CMD_START @ 0xea1d1a4b, (163657328.000000), diff: 112447 us, delta: 105568 us .
+[  653.518947] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 55 ts 0x3ea1d2655: [14:700528356]: EVT#3: START PROCESSED @ 0xea1d1bc6, (163657344.000000), diff: 112463 us, delta: 15 us .
+[  653.518981] ane_h18 419600000.ane: ane_h18 fw log after the failed program: 56 records printed, 456 not (no buffer behind the address, or length 0 or over 0x100)
+[  653.518983] ane_h18 419600000.ane: ane_h18 handshake result -5
+[  653.518984] ane_h18 419600000.ane: ane_h18 write TX of alias24 pa=0x316010c10: msg0=0xb0000000000010 msg1=0 (one paired 16 byte store)
+[  653.529998] ane_h18 419600000.ane: ane_h18 read RX of alias24 pa=0x316010c00 (status 0x80801)
+[  653.530000] ane_h18 419600000.ane: ane_h18 msg alias24 rx=0x10,0xb00000,0x0,0x0
+[  653.530001] ane_h18 419600000.ane: ane_h18 rtkit rx type=11 ep=0x0 msg0=0xb0000000000010
+[  653.530002] ane_h18 419600000.ane: ane_h18 rtkit: AP power state acknowledged: 0x10
+[  653.530002] ane_h18 419600000.ane: ane_h18 write TX of alias24 pa=0x316010c10: msg0=0x60000000000001 msg1=0 (one paired 16 byte store)
+[  653.541015] ane_h18 419600000.ane: ane_h18 read RX of alias24 pa=0x316010c00 (status 0x80801)
+[  653.541016] ane_h18 419600000.ane: ane_h18 msg alias24 rx=0x1,0x700000,0x0,0x0
+[  653.541017] ane_h18 419600000.ane: ane_h18 rtkit rx type=7 ep=0x0 msg0=0x70000000000001
+[  653.541017] ane_h18 419600000.ane: ane_h18 rtkit: IOP power state acknowledged: 0x1
+[  653.541018] ane_h18 419600000.ane: ane_h18 rtkit shutdown: ap_acked=1 iop_acked=1 iop_idle=0 after 20ms
+[  653.541019] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.541020] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.542130] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.542132] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.543242] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.543243] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.544351] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.544353] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.545461] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.545462] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.546566] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.546567] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.547679] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.547680] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.548788] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.548789] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.549897] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.549898] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.551009] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.551010] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.552120] ane_h18 419600000.ane: ane_h18 read IDLE pa=0x419608000
+[  653.552122] ane_h18 419600000.ane: ane_h18 word=IDLE pa=0x419608000 value=0x0
+[  653.552122] ane_h18 419600000.ane: ane_h18 idle wait: idle=0x0 polls=11 seen=0
+[  653.552124] ane_h18 419600000.ane: ane_h18 write CPU_CONTROL=0x0 pa=0x419600044 (clear RUN)
+[  653.558132] ane_h18 419600000.ane: ane_h18 boot running_seen=1 messages=6 final cpu_status=0xe stopped=1
+[  653.558134] ane_h18 419600000.ane: ane_h18 RESULT stage=boot soc=t8152 verdict=FAIL reason=handshake-channel-step-failed
+[  653.558137] ane_h18 419600000.ane: ane_h18 boot lifecycle retained; no retry or removal

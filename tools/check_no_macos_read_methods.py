@@ -51,6 +51,9 @@ CAPTURED = {
     "receipts/2026-10-01-t6021-default-on-gate/logs/final/dmesg-ane.txt",
     "receipts/2026-10-01-t6021-default-on-gate/logs/host/flip-m2-compile.txt",
     "receipts/2026-10-01-t6021-default-on-gate/logs/host/host-tests-c2b7408.txt",
+    # Captured 2026-11-18 on the M6 fixediova add run (PR: #444): the run's own dmesg
+    # is evidence and is never edited; four lines carry the words and the count is frozen here.
+    "receipts/2026-11-18-ane-h18-fixediova/post-run.dmesg",
 }
 # Grandfathered 2026-11-08 (PR: public-text ratchet cleanup): captured H17 bring-up
 # evidence that landed with PR #364 before this check could run on it. Captured output
