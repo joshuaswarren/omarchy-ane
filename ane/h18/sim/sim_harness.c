@@ -301,7 +301,7 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 				if ((bid == 5 && sim_buf_va(a)[0] != 0xaa) || (bid == 6 && sim_buf_va(a)[0] != 0xbb) || (bid != 4 && bid != 5 && bid != 6))	/* the input data of the file is in the surface */
 					return 7;
 			}
-			if (type == 1 && (o = sim_buf_va(a))) {
+			if (type == 1 && (o = sim_buf_va(a)) && (sim_prog_mode != 12 || !sim_out_written)) {	/* mode 12: only the first call writes the output */
 				v = 0x11223344;
 				memcpy(o, &v, 4);
 				memcpy(o + 4, &v, 4);
@@ -698,6 +698,7 @@ static void reset_all(void)
 	dart_inst = 0;
 	prog_out_words = 0;
 	hs_prog_calls = 1;
+	hs_prog_reuse = false;
 	premap_second = 0;
 	sim_premapped = sim_pub_wait = sim_prog_mode = sim_prog_n = sim_prog_loaded = sim_prog_created = sim_t2h_back = sim_out_written = sim_t2h_posted = 0;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
@@ -1543,7 +1544,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 56; pass++) {
+		for (pass = 0; pass < 58; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1625,6 +1626,8 @@ static void pos_boot(void)
 				ane_t8152_soc_shim.dart_size = 0x1438;	/* the last DART0 word sits outside its window: the read is refused */
 			}
 			if (pass == 55) sim_core_stuck = 1;
+			if (pass == 56) { hs_prog_calls = 3; hs_prog_reuse = true; prog_out_words = 20; sim_prog_mode = 12; }
+			if (pass == 57) { hs_prog = false; hs_prog_reuse = true; }
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1822,6 +1825,31 @@ static void pos_boot(void)
 					    live_img == 0 && sim_n_iomap == sim_n_iounmap,
 					    "PG54 a DART0 read refusal with owned_fw=1 frees the staged owned image (nothing leaks, no window left mapped) and FAILs dart-read-refused");
 				}
+				if (pass == 56) {
+					static const u32 want[7] = { 0x200, 0x202, 0x204, 0x204, 0x204, 0x203, 0x201 };
+					int same = sim_prog_n == 7, q;
+
+					for (q = 0; same && q < 7; q++)
+						same = sim_prog_ops[q] == want[q];
+					chk(ret == 0 && ok && same && sim_t2h_posted == 6 && log_count("LOAD_PROGRAM program id 0x5a") == 1 && log_count("CREATE_PROCESS process id 0x77") == 1 &&
+					    log_count("sequence result 0") == 1 && live == 0,
+					    "PU1 hs_prog_reuse=1 hs_prog_calls=3: LOAD_PROGRAM and CREATE_PROCESS once, three PROCEDURE_CALLs, one TERMINATE_PROCESS and DESTROY_PROGRAM, nothing leaks");
+					chk(log_count("call 1/3 finished in ") == 2 && log_count("call 2/3 finished in ") == 2 && log_count("call 3/3 finished in ") == 2 &&
+					    log_pos("call 1/3 finished in ") < log_pos("call 2/3 finished in ") && log_pos("call 2/3 finished in ") < log_pos("call 3/3 finished in "),
+					    "PU2 each reused call logs its ns and ms latency lines, in order");
+					{
+						const char *d1 = strstr(sim_log, "out buf 4 call 1/3 digest "), *d2 = strstr(sim_log, "out buf 4 call 2/3 digest "), *d3 = strstr(sim_log, "out buf 4 call 3/3 digest ");
+						size_t dl = strlen("out buf 4 call 1/3 digest ");
+
+						chk(log_count("out buf 4 +0x0: 11223344 11223344 00000000") == 1 && log_count("out buf 4 +0x0: 00000000 00000000 00000000") == 1 && log_count("out buf 4 +0x40") == 2,
+						    "PU3 under reuse only the first and the last call dump words: call 1 holds its result, call 3 (left unwritten by the model) reads zeros, so the buffer was cleared");
+						chk(d1 && d2 && d3 && log_count(" digest ") == 3 && !strncmp(d2 + dl, d3 + dl, 16) && strncmp(d1 + dl, d2 + dl, 16),
+						    "PU5 every reused call logs one digest of its whole output buffer: calls 2 and 3 (zeros) match each other and differ from call 1");
+					}
+				}
+				if (pass == 57)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000; hs_prog_reuse needs hs_prog=1") && writes() == 0 && sim_fw_requests == 0,
+					    "PU4 hs_prog_reuse=1 without hs_prog=1 is refused before any write");
 				if (pass == 55)
 					chk(ret == -EBUSY && result("boot", "FAIL", "core-not-stopped") && sim_owner_module.refs == 1 &&
 					    log_count("reboot required") >= 1 && sim_rpm_puts == 0 && sim_n_iounmap == 0,
@@ -2058,7 +2086,7 @@ static int neg_boot(void)
 	{
 		int c;
 
-		for (c = 0; c < 4; c++) {
+		for (c = 0; c < 5; c++) {
 			const char *what = "";
 
 			boot_setup();
@@ -2067,6 +2095,7 @@ static int neg_boot(void)
 			case 1: sim_rvbar_val = 0x20000000001ULL; what = "IORVBAR at another address"; break;
 			case 2: sim_cpu_status = 0x9; what = "the core already reports RUNNING"; break;
 			case 3: sim_cpu_ctrl = 0x10; what = "CPU_CONTROL.RUN already set"; break;
+			case 4: sim_cpu_status = 0xe; what = "the core is in the post-shutdown state (bit 2, as a previous RTKit shutdown leaves it): RUN alone does not restart it"; break;
 			}
 			ret = probe_now();
 			write_seq(seq, sizeof(seq));

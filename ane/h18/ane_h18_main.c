@@ -230,6 +230,9 @@ MODULE_PARM_DESC(hs_prog_dump, "hs_prog=1: hexdump the first N bytes of every pr
 static unsigned int hs_prog_calls = 1;
 module_param(hs_prog_calls, uint, 0444);
 MODULE_PARM_DESC(hs_prog_calls, "hs_prog=1: run the whole program sequence this many times (LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, finish wait, TERMINATE_PROCESS, DESTROY_PROGRAM each pass; 1 to 1000). Per-call latency is logged as 'call i/N finished in X ms'. Default 1.");
+static bool hs_prog_reuse;
+module_param(hs_prog_reuse, bool, 0444);
+MODULE_PARM_DESC(hs_prog_reuse, "hs_prog=1: LOAD_PROGRAM and CREATE_PROCESS once, then hs_prog_calls PROCEDURE_CALLs on that process, then one TERMINATE_PROCESS and DESTROY_PROGRAM, so each call's latency is the dispatch alone and not a program load. Every output buffer is zeroed before each call. Default off (each call loads and unloads the program).");
 
 static unsigned int prog_out_words;
 module_param(prog_out_words, uint, 0444);
@@ -346,7 +349,8 @@ struct ane_h18 {
 	bool prog_cleaned;			/* the program stage unloaded the program or power-cycled the domain: the ANE holds no program, so nothing needs a reboot */
 	bool domain_down;			/* the failpath recovery powered the domain down and has not brought it back: no register of the ANE may be touched */
 	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the running call, for the finish-event peek that logs nothing */
-	u64 call_t0, call_t1;	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
+	u64 call_t0, call_t1;
+	u32 reuse_prog, reuse_proc;	/* hs_prog_reuse: the program and process ids kept between calls */	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
 	unsigned int hs_mal_n, mal_cursor, mal_slots, mal_bit;
 	size_t hs_mal_bytes;
 	unsigned int ack_logs;	/* ack writes logged so far: the address is logged for the first few, then silently */
@@ -2041,6 +2045,7 @@ static void ane_h18_failpath_recover(struct ane_h18 *ane)
  * program runs on the T8152; the matvec program's call never finishes (known failure, cause unknown). */
 static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsigned int pass, unsigned int calls, unsigned int *t2h_cursor)
 {
+	const bool first = !hs_prog_reuse || pass == 1, last = !hs_prog_reuse || pass == calls;
 	const struct ane_h18_pdesc *p = &ane->pd;
 	const u8 *fw = ane->prog_blob->data;
 	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
@@ -2050,6 +2055,13 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	bool fin = false, created = false, loaded = false;
 	int ret;
 
+	if (!first) {
+		/* hs_prog_reuse: the program and the process from call 1 are still resident, only the call runs */
+		prog = ane->reuse_prog;
+		proc = ane->reuse_proc;
+		loaded = created = true;
+		goto call;
+	}
 	for (i = 0; i < p->nsec; i++) {
 		struct ane_h18_hs_buf *b = &ane->pg_sec[i];
 		char nm[24];
@@ -2163,6 +2175,13 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	created = true;
 	ane_h18_prog_settle(ane, 20, t2h_cursor);
 
+call:
+	if (hs_prog_reuse) {
+		/* a reused call must not report the previous call's result as its own */
+		for (i = 0; i < p->nio; i++)
+			if (p->io[i].dir == 1)
+				memset(ane->pg_io[i].va, 0, p->io[i].size);
+	}
 	/* PROCEDURE_CALL: one 0x30 byte element per buffer at +0x60 (flags 1, buffer id +4, type +8, iova +0x18, size +0x20) */
 	memset(cmd, 0, sizeof(cmd));
 	{
@@ -2269,6 +2288,15 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 		}
 		if (prog_out_words && p->io[i].dir == 1) {
 			unsigned int w = min(words, prog_out_words), k2;
+			u64 h = 0xcbf29ce484222325ULL;	/* FNV-1a over the whole buffer, word by word: one line per call proves every call wrote the same output */
+
+			for (k2 = 0; k2 < words; k2++) {
+				h ^= o[k2];
+				h *= 0x100000001b3ULL;
+			}
+			dev_info(ane->dev, "ane_h18 prog: out buf %u call %u/%u digest %016llx\n", p->io[i].id, pass, calls, h);
+			if (hs_prog_reuse && pass != 1 && pass != calls)
+				w = 0;	/* reused calls between the first and the last log only the digest: a 1000-call run would overrun the kernel log */
 
 			for (k2 = 0; k2 < w; k2 += 16) {
 				char line[16 * 9 + 1];
@@ -2286,6 +2314,12 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 		goto fail;
 	}
 	ret = 0;
+	if (!last) {
+		/* hs_prog_reuse: keep the program and the process for the next call */
+		ane->reuse_prog = prog;
+		ane->reuse_proc = proc;
+		return 0;
+	}
 
 	/* unload: process first, then the program, each followed by hs_settle_ms ms of answering */
 	memset(cmd, 0, sizeof(cmd));
@@ -2592,6 +2626,8 @@ static int ane_h18_chan_step(struct ane_h18 *ane, const struct ane_h18_hs_buf *t
 				ane_h18_term_log(ane, "after the failed program");
 				return ret;
 			}
+			if (hs_prog_reuse && pass < calls)
+				continue;	/* the program, the process and the surfaces stay for the next call */
 			ane_h18_prog_surfaces_free(ane);
 			ane_h18_prog_settle(ane, hs_settle_ms, &t2h);	/* let the firmware finish with the program before the next pass loads one */
 		}
@@ -2940,8 +2976,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "REFUSED", "hs_props is 0, 1 or 2 and needs hs_start=1");
 		return -EINVAL;
 	}
-	if (((prog_out_words || hs_prog_calls != 1) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000 || hs_settle_ms > 1000) {
-		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000");
+	if (((prog_out_words || hs_prog_calls != 1 || hs_prog_reuse) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000 || hs_settle_ms > 1000) {
+		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000; hs_prog_reuse needs hs_prog=1");
 		return -EINVAL;
 	}
 	if (hs_prog) {
@@ -2996,7 +3032,8 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		ane_h18_result(ane, "boot", "FAIL", "read-refused");
 		return ret;
 	}
-	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
+	/* bit 2 is set after an RTKit shutdown (the M6 read 0xe after a run, 0xa fresh from iBoot): RUN alone does not restart that core */
+	if ((st & ANE_H18_ST_RUNNING) || !(st & ANE_H18_ST_STOPPED) || (st & ANE_H18_ST_SHUTDOWN) || (ctrl & ANE_H18_CPU_RUN) || (((u64)rv_hi << 32) | rv_lo) != s->rvbar_expect) {
 		dev_err(ane->dev, "ane_h18 preflight: cpu_status=%#x cpu_control=%#x iorvbar=%#llx (want stopped, RUN clear, iorvbar %#llx)\n", st, ctrl,
 			((u64)rv_hi << 32) | rv_lo, s->rvbar_expect);
 		ane_h18_psd_off(ane);

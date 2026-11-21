@@ -46,6 +46,7 @@
 #define ANE_H18_CPU_RUN		(1u << 4)
 #define ANE_H18_ST_RUNNING	(1u << 0)
 #define ANE_H18_ST_STOPPED	(1u << 1)
+#define ANE_H18_ST_SHUTDOWN	(1u << 2)	/* set after an RTKit shutdown, clear fresh from iBoot (measured on the M6, 2026-11-21) */
 /* IORVBAR (reg[1]) is a 64-bit register at +0, read as two 32-bit words. */
 #define ANE_H18_RVBAR_OFF	0x0
 /* Postoffice (reg[2]): 0x80 bytes per channel, status word at +0x20 of the channel. */
