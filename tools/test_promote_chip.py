@@ -63,12 +63,18 @@ def run(root, chip, to, mode, note=None):
 
 
 for chip in sorted(_chips):
-    base = make_tree()
-    before = tree(base)
-    # the direction that changes something on this tree, whatever it is
     state = _chips[chip]
     to = "opt-in" if state == "enabled" else "default-on"
+    if to == "default-on" and UNTESTED == [chip]:
+        # promoting the last opt-in chip would empty the check's UNTESTED arm;
+        # the tool refuses that by design, and the refusal is the expected result
+        p = run(make_tree(), chip, to, "--apply")
+        assert p.returncode == 1 and "UNTESTED case arm would be empty" in p.stderr, (chip, p.stderr)
+        print(f"promote_chip test: {chip} promote refused (last opt-in chip), ok")
+        continue
     back = "default-on" if to == "opt-in" else "opt-in"
+    base = make_tree()
+    before = tree(base)
     p = run(base, chip, to, "--apply")
     assert p.returncode == 0, (chip, p.stderr)
     after = tree(base)
@@ -111,21 +117,38 @@ for chip in sorted(_chips):
 
 # A promote with --note writes the Evidence cell and the overlay state line;
 # the revert keeps both evidences (the row stays true) and restores the state.
+# It needs a promote that does not empty the UNTESTED arm, so at least two.
 chip = UNTESTED[0]
+if len(UNTESTED) >= 2:
+    base = make_tree()
+    p = run(base, chip, "default-on", "--apply", note="row roundtrip1")
+    assert p.returncode == 0, p.stderr
+    dts = (base / f"packaging/dt/{chip}-ane.dts").read_text()
+    assert " * Overlay state: on by default (row roundtrip1).\n" in dts, dts[:400]
+    row = next(l for l in (base / "README.md").read_text().splitlines() if f"| {chip.upper()} |" in l)
+    assert "| row roundtrip1 |" in row, row
+    p = run(base, chip, "opt-in", "--apply")
+    assert p.returncode == 0, p.stderr
+    dts = (base / f"packaging/dt/{chip}-ane.dts").read_text()
+    assert f' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).\n' in dts
+    row = next(l for l in (base / "README.md").read_text().splitlines() if f"| {chip.upper()} |" in l)
+    assert "| row roundtrip1 |" in row, row
+    print(f"promote_chip test: {chip} --note writes the Evidence cell and state line, revert keeps them")
+else:
+    print(f"promote_chip test: --note check skipped, {len(UNTESTED)} untested chip left")
+
+# Promoting every untested chip but one leaves a single chip in the
+# omarchy-ane-dt enumeration (the t6002 promote: T8112 alone). join_names must
+# render that one name as a string, never a Python list repr.
 base = make_tree()
-p = run(base, chip, "default-on", "--apply", note="row roundtrip1")
-assert p.returncode == 0, p.stderr
-dts = (base / f"packaging/dt/{chip}-ane.dts").read_text()
-assert " * Overlay state: on by default (row roundtrip1).\n" in dts, dts[:400]
-row = next(l for l in (base / "README.md").read_text().splitlines() if f"| {chip.upper()} |" in l)
-assert "| row roundtrip1 |" in row, row
-p = run(base, chip, "opt-in", "--apply")
-assert p.returncode == 0, p.stderr
-dts = (base / f"packaging/dt/{chip}-ane.dts").read_text()
-assert f' * Overlay state: opt-in ("ane-{chip}" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).\n' in dts
-row = next(l for l in (base / "README.md").read_text().splitlines() if f"| {chip.upper()} |" in l)
-assert "| row roundtrip1 |" in row, row
-print(f"promote_chip test: {chip} --note writes the Evidence cell and state line, revert keeps them")
+for chip in UNTESTED[:-1]:
+    p = run(base, chip, "default-on", "--apply")
+    assert p.returncode == 0, (chip, p.stderr)
+left = UNTESTED[-1]
+dt = (base / "packaging/omarchy-ane-dt").read_text()
+line = next(l for l in dt.splitlines() if "the untested" in l)
+assert f"the untested {left.upper()} nodes: \"ane-{left}\";" in line and "[" not in line, line
+print(f"promote_chip test: last untested chip {left} names itself in the dt docstring")
 
 # The canonical lists do not depend on flip order: two chips promoted in
 # either order (the v0.4.3 release path: one PR merged, one refused, then the
