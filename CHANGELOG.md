@@ -8,8 +8,6 @@
 
 This release ships the t8122 (M3) opt-in ANE substrate, promotes the t6002 (M1 Ultra) ANE to default-on, fixes the M1 Ultra die-1 overlay, corrects the t8122 board rows, and enumerates the T6050 (M5 Max) through the T6021-family path in libane. Twenty-six commits (#411, #439 to #466, plus #465), seven days after 0.5.13.
 
-Gate: GitHub Actions on main at `22dddc4`. `public-text` and `aurora-dtbs` succeeded. `dt-overlays` was still running when this section was refreshed. The local studio `make -B check` was not re-run on this host.
-
 User-visible changes, grouped:
 
 - `promotion`: T6002 (M1 Ultra) ANE is on by default (row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot) (#461, 80c46b2; #465, 22dddc4).
