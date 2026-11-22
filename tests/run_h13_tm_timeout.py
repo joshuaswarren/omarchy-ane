@@ -64,9 +64,12 @@ def _check_recovery_kmsg(before, after):
         raise ValueError(
             "kernel log lacks 'tm recovered: idle' after the timeout: "
             "the driver did not finish recovery")
-    if any("recovery deferred" in line for line in fresh):
+    if any("recovery deferred" in line or "tm not idle after reset" in line
+           for line in fresh):
         raise ValueError(
-            "kernel log shows 'recovery deferred': the device refused work")
+            "kernel log shows a failed or deferred recovery "
+            "('recovery deferred' / 'tm not idle after reset'): "
+            "the device refused work")
 
 
 def main():
@@ -128,6 +131,7 @@ def main():
                     SYSFS.write_text(f"{FORCE_TIMEOUT_MS}\n")
                 except OSError as exc:
                     raise ValueError(f"--recovery needs a writable {SYSFS}: {exc}")
+                failed = None
                 try:
                     forced_ns = tmp / "forced-exec-ns.txt"
                     forced_out = tmp / "forced-out.fp16"
@@ -150,9 +154,24 @@ def main():
                             "the program did not time out inside the forced budget")
                     _check_recovery_kmsg(kmsg_before, _dmesg())
                     if (DEVICE / "wedged").read_text().strip() != "0":
-                        raise ValueError("the device did not recover after the forced timeout")
+                        raise ValueError(
+                            "the device did not recover after the forced timeout")
+                except (OSError, ValueError,
+                        subprocess.SubprocessError) as exc:
+                    failed = exc
+                    raise
                 finally:
-                    SYSFS.write_text(f"{timeout}\n")
+                    # A failed restore must not hide the first cause, but
+                    # with no prior failure it still fails the run.
+                    try:
+                        SYSFS.write_text(f"{timeout}\n")
+                    except OSError as exc:
+                        if failed is None:
+                            raise ValueError(
+                                f"failed to restore {SYSFS} to "
+                                f"{timeout} ms: {exc}") from exc
+                        print(f"WARN: also failed to restore {SYSFS} "
+                              f"to {timeout} ms: {exc}", file=sys.stderr)
                 verify_ns = tmp / "verify-exec-ns.txt"
                 verify_out = tmp / "verify-out.fp16"
                 subprocess.run(exec_cmd(args.ane_run, data, anec, inputs, verify_ns, verify_out),

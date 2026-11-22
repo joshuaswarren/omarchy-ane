@@ -102,7 +102,8 @@ def _recovery_harness(tmp_path, monkeypatch, forced, kmsg_after=None,
     the forced launch: raise CalledProcessError to simulate an abort, or
     return normally to simulate a completed run. ``kmsg_after`` lists the
     kernel lines appended during the forced run (defaults to the real
-    driver sequence). Returns (exit code, launches)."""
+    driver sequence). Returns (exit code, launches, sysfs); a refused
+    run must still leave the budget restored to its original value."""
     manifest, sysfs = _h13_device_and_manifest(tmp_path, monkeypatch)
     device = runner.DEVICE
     if kmsg_after is None:
@@ -132,7 +133,7 @@ def _recovery_harness(tmp_path, monkeypatch, forced, kmsg_after=None,
         return None
 
     monkeypatch.setattr(runner.subprocess, "run", fake_run)
-    return runner.main(), launches
+    return runner.main(), launches, sysfs
 
 
 def _abort(cmd, timing, out):
@@ -183,14 +184,17 @@ def test_recovery_rejects_a_forced_run_that_completes(tmp_path, monkeypatch):
         timing.write_text("110000000\n")
         out.write_bytes(b"partial")
 
-    code, _ = _recovery_harness(tmp_path, monkeypatch, completes)
+    code, _, sysfs = _recovery_harness(tmp_path, monkeypatch, completes)
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
 
 
 def test_recovery_rejects_a_still_wedged_device(tmp_path, monkeypatch):
     """A clean abort trace with wedged=1 left behind is not recovery."""
-    code, _ = _recovery_harness(tmp_path, monkeypatch, _abort, wedged="1\n")
+    code, _, sysfs = _recovery_harness(tmp_path, monkeypatch, _abort,
+                                       wedged="1\n")
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
 
 
 def test_recovery_rejects_wrong_stderr(tmp_path, monkeypatch):
@@ -201,22 +205,25 @@ def test_recovery_rejects_wrong_stderr(tmp_path, monkeypatch):
         raise runner.subprocess.CalledProcessError(
             1, cmd, stderr="cannot open input file\n")
 
-    code, _ = _recovery_harness(tmp_path, monkeypatch, wrong_stderr)
+    code, _, sysfs = _recovery_harness(tmp_path, monkeypatch, wrong_stderr)
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
 
 
 def test_recovery_rejects_a_missing_kernel_trace(tmp_path, monkeypatch):
     """The abort needs the driver's '-110' line followed by 'tm recovered:
     idle'; an exec failure with no kernel evidence fails."""
-    code, _ = _recovery_harness(tmp_path, monkeypatch, _abort, kmsg_after=[])
+    code, _, sysfs = _recovery_harness(tmp_path, monkeypatch, _abort,
+                                       kmsg_after=[])
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
 
 
 def test_recovery_rejects_a_non_timeout_completion_failure(tmp_path,
                                                            monkeypatch):
     """'tm completion failed' with an error other than -110 is not the
     timeout this phase forces."""
-    code, _ = _recovery_harness(
+    code, _, sysfs = _recovery_harness(
         tmp_path, monkeypatch, _abort,
         kmsg_after=[
             "[   12.300000] ane 0000:00:00.0: tm completion failed: -522 "
@@ -225,12 +232,13 @@ def test_recovery_rejects_a_non_timeout_completion_failure(tmp_path,
             "accepting work again",
         ])
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
 
 
 def test_recovery_rejects_recovery_deferred(tmp_path, monkeypatch):
     """A 'recovery deferred' line means the device refused work even if a
     later resume prints the recovered line."""
-    code, _ = _recovery_harness(
+    code, _, sysfs = _recovery_harness(
         tmp_path, monkeypatch, _abort,
         kmsg_after=[
             "[   12.300000] ane 0000:00:00.0: tm completion failed: -110 "
@@ -241,6 +249,56 @@ def test_recovery_rejects_recovery_deferred(tmp_path, monkeypatch):
             "accepting work again",
         ])
     assert code == 1
+    assert sysfs.read_text().strip() == "5000"
+
+
+def test_recovery_rejects_tm_not_idle_after_reset(tmp_path, monkeypatch):
+    """'tm not idle after reset' is the Case-B line: the engine did not
+    come back even if a later resume recovers it."""
+    code, _, sysfs = _recovery_harness(
+        tmp_path, monkeypatch, _abort,
+        kmsg_after=[
+            "[   12.300000] ane 0000:00:00.0: tm completion failed: -110 "
+            "(timed out), finish lines=0",
+            "[   12.310000] ane 0000:00:00.0: recovery: tm not idle after "
+            "reset: 0x1 (fresh 0x0); retrying after the next full "
+            "power-off (autosuspend)",
+            "[   12.450000] ane 0000:00:00.0: tm recovered: idle, "
+            "accepting work again",
+        ])
+    assert code == 1
+    assert sysfs.read_text().strip() == "5000"
+
+
+def test_recovery_fails_when_the_restore_write_fails(tmp_path,
+                                                     monkeypatch):
+    """A clean abort/recover sequence still fails when the budget cannot
+    be restored — otherwise the device stays at 100 ms for later work."""
+    def fail_restore(cmd, timing, out):
+        runner.SYSFS.chmod(0o444)
+        _abort(cmd, timing, out)
+
+    code, _, _ = _recovery_harness(tmp_path, monkeypatch, fail_restore)
+    assert code == 1
+
+
+def test_recovery_restore_failure_keeps_the_first_cause(tmp_path,
+                                                        monkeypatch, capsys):
+    """When both the forced phase and the budget restore fail, the run
+    reports the forced-phase cause (plus a restore warning), not just the
+    restore error."""
+    def abort_and_fail_restore(cmd, timing, out):
+        runner.SYSFS.chmod(0o444)
+        timing.write_text("110000000\n")
+        raise runner.subprocess.CalledProcessError(
+            1, cmd, stderr="cannot open input file\n")
+
+    code, _, _ = _recovery_harness(tmp_path, monkeypatch,
+                                   abort_and_fail_restore)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "forced run failed before the exec path" in captured.err
+    assert "failed to restore" in captured.err
 
 
 def test_recovery_reports_fail_when_budget_not_writable(tmp_path, monkeypatch):
