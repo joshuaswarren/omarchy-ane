@@ -253,6 +253,17 @@ SMOKE_FIXTURES = ${DESTDIR}/usr/share/omarchy-ane/fixtures
 
 .PHONY: install-smoke uninstall-smoke
 install-smoke:
+	# Refuse to replace package-owned files: pacman would still attribute
+	# them, -Qkk would report mismatches, and the next package upgrade would
+	# silently restore the packaged copies. Skipped under DESTDIR (packaging
+	# builds) and overridable with FORCE=1.
+	@if [ -z "$(DESTDIR)" ] && [ "$(FORCE)" != "1" ] && \
+	    command -v pacman >/dev/null 2>&1 && \
+	    pacman -Qo /usr/bin/omarchy-ane-smoke >/dev/null 2>&1; then \
+		echo "install-smoke: /usr/bin/omarchy-ane-smoke is owned by $$(pacman -Qo /usr/bin/omarchy-ane-smoke | sed 's/.* is owned by //')" >&2; \
+		echo "install-smoke: use the package, or rerun with FORCE=1 to overwrite" >&2; \
+		exit 1; \
+	fi
 	# -B: always rebuild, so a copied tree's stale or foreign-arch binary is
 	# never installed. The build fails closed if the compiler is missing.
 	$(MAKE) -B ane-run

@@ -150,6 +150,16 @@ make -C ane/t6021      # ane_t6021.ko  (M2 family)
 make -C libane && make -C bindings/python/dylib
 ```
 
+The smoke userspace also ships in the `omarchy-ane` and `omarchy-ane-tools`
+pacman packages. On an Omarchy host use the package; the source install is
+for hosts that have no package, such as the Fedora lab images. Where the
+package is installed, the source install replaces the package-owned copies:
+`pacman -Qkk` then reports mismatches, the next package upgrade silently
+restores the packaged files, and removing the package deletes the
+source-installed copies with them. To make that replacement non-silent,
+`install-smoke` refuses when pacman owns `/usr/bin/omarchy-ane-smoke`;
+`FORCE=1` overrides the refusal.
+
 Install the userspace with `sudo make install`. That installs libane, the
 Python bindings, and the ANE smoke userspace: `omarchy-ane-smoke` in
 `/usr/bin`, `omarchy-ane-run` beside it, and the add fixtures under
