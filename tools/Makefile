@@ -252,7 +252,10 @@ SMOKE_BIN = ${DESTDIR}/usr/bin
 SMOKE_FIXTURES = ${DESTDIR}/usr/share/omarchy-ane/fixtures
 
 .PHONY: install-smoke uninstall-smoke
-install-smoke: ane-run
+install-smoke:
+	# -B: always rebuild, so a copied tree's stale or foreign-arch binary is
+	# never installed. The build fails closed if the compiler is missing.
+	$(MAKE) -B ane-run
 	mkdir -p $(SMOKE_BIN) $(SMOKE_FIXTURES)/h13-anec/add $(SMOKE_FIXTURES)/h14-anec/add
 	install -m 755 ane-run $(SMOKE_BIN)/omarchy-ane-run
 	install -m 755 ../packaging/omarchy-ane-smoke $(SMOKE_BIN)/omarchy-ane-smoke
@@ -261,4 +264,4 @@ install-smoke: ane-run
 
 uninstall-smoke:
 	rm -f $(SMOKE_BIN)/omarchy-ane-smoke $(SMOKE_BIN)/omarchy-ane-run
-	rm -rf $(SMOKE_FIXTURES)
+	rm -f $(SMOKE_FIXTURES)/h13-anec/add/program-0.anec $(SMOKE_FIXTURES)/h14-anec/add/program-0.anec

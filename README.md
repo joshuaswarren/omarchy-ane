@@ -153,7 +153,9 @@ make -C libane && make -C bindings/python/dylib
 Install the userspace with `sudo make install`. That installs libane, the
 Python bindings, and the ANE smoke userspace: `omarchy-ane-smoke` in
 `/usr/bin`, `omarchy-ane-run` beside it, and the add fixtures under
-`/usr/share/omarchy-ane/fixtures`. The qualification kit calls
+`/usr/share/omarchy-ane/fixtures`. To install only the ANE smoke userspace,
+run `sudo make install-smoke`; it does not depend on the Python bindings.
+The qualification kit calls
 `omarchy-ane-smoke` by name, so a source install without it leaves the kit's
 `ane` step at exit 127 (command missing, reported as unavailable) instead of
 a measured exit 0 or an honest exit 2.

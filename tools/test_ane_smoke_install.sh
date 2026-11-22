@@ -15,7 +15,11 @@ trap cleanup EXIT
 # libane's and the bindings' install targets write into these and do not create them.
 mkdir -p "$ROOT/usr/lib" "$ROOT/usr/include"
 
-chk "the top-level install installs the smoke userspace" 'grep -q "install-smoke" "$REPO/Makefile"'
+chk "the top-level install runs the smoke install first" 'grep -A1 "^install:" "$REPO/Makefile" | tail -1 | grep -q "make -C tools install-smoke"'
+chk "the top-level install-smoke target exists" 'grep -q "^install-smoke:" "$REPO/Makefile"'
+# A copied tree can carry a stale or foreign-arch runner; the target must rebuild it
+# rather than install what the tree happens to hold.
+chk "the install target rebuilds the runner instead of installing a stale binary" 'make -C "$REPO/tools" -n install-smoke 2>/dev/null | grep -q "ane-run.c"'
 # The smoke install target on its own: a clean install into an empty DESTDIR. The top-level
 # `make install` also runs the bindings' legacy `setup.py install`, which modern setuptools
 # dropped; that is pre-existing and out of scope here.

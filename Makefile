@@ -11,10 +11,13 @@ tools: libane
 check: tools
 	make -C tools check
 
+install-smoke:
+	make -C tools install-smoke
+
 install:
+	make -C tools install-smoke
 	make -C libane install
 	make -C bindings install
-	make -C tools install-smoke
 
 clean:
 	make -C libane clean
