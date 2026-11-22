@@ -174,7 +174,9 @@ _ane = {p: st for p, src, st in (l.split() for l in (repo / "packaging/dt/overla
 _demote = sorted(c for c, st in _ane.items() if st == "enabled")[0]
 subprocess.run([sys.executable, "tools/promote_chip.py", "--chip", _demote, "--to", "opt-in", "--apply"],
                cwd=work, check=True, capture_output=True)
-subprocess.run(["git", "-C", str(work), "commit", "-qam", f"demote {_demote} to opt-in"], check=True)
+subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-qam", f"demote {_demote} to opt-in"], check=True)
 subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
 (work / "tools/__pycache__").mkdir(exist_ok=True)
 (work / "tools/__pycache__/aurora_dt.cpython-312.pyc").write_bytes(b"\x00stub")
