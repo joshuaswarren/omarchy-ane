@@ -210,9 +210,22 @@ assert subject == "PROMOTE: t8112 ANE -> default-on (row deadbeef1234; intree)",
 print("promote_from_verdict test: double propose updates PR 7, stages only the flip files")
 
 # gate merges the open PR when the fresh verdict matches the recorded block.
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+
+_spec = spec_from_loader("pfv", SourceFileLoader("pfv", str(repo / "tools/promote_from_verdict.py")))
+pfv = module_from_spec(_spec)
+_spec.loader.exec_module(pfv)
 p = run(["gate", "--pr", "7", "--verdict-file", PROMOTE], work)
 assert p.returncode == 0 and "recorded=PROMOTE fresh=PROMOTE" in p.stdout, p
 assert "MERGED\tt8112\tstub0merge1sha" in p.stdout, p.stdout
+# the merge title is exactly promo_subject's output for the recorded block: a
+# future hardcoded title cannot drift away from what PROMO_SUBJECT parses.
+_recorded7 = json.loads(state["bodies"]["7"].split("<!-- promotion-verdict\n", 1)[1].split("\n-->", 1)[0])
+_merge_puts = [c for c in (json.loads(l) for l in STUB_LOG.read_text().splitlines())
+               if c[0].endswith("/merge") and c[1] == "PUT"]
+assert len(_merge_puts) == 1 and _merge_puts[0][2]["commit_title"] == \
+    pfv.promo_subject(_recorded7, "default-on"), _merge_puts
 print("promote_from_verdict test: gate compares and merges")
 
 # gate refuses when the judged row the PR rests on is gone (a different row landed).
@@ -661,12 +674,6 @@ print("promote_from_verdict test: the token reaches only the aurora-pr job, whic
 # subject), a person squash-merged it (PR title and number, tool subject in the
 # body), or it merged in the gate's pre-arrow row form (the t6002 commits that
 # block v0.5.14); and it ignores other commits.
-from importlib.machinery import SourceFileLoader
-from importlib.util import module_from_spec, spec_from_loader
-
-_spec = spec_from_loader("pfv", SourceFileLoader("pfv", str(repo / "tools/promote_from_verdict.py")))
-pfv = module_from_spec(_spec)
-_spec.loader.exec_module(pfv)
 _recorded = {"verdict": "PROMOTE", "chip": "t8112",
              "rows": [{"row_sha": "1234abcd", "judged": True, "passed": True, "reasons": [],
                        "driver_source": "intree"}]}
