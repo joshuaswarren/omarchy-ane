@@ -217,6 +217,12 @@ def commit_note(c):
     return "row " + shas + (f"; {sources}" if sources else "")
 
 
+def promo_subject(c, to):
+    """The subject propose commits and the gate squash-merges; PROMO_SUBJECT
+    must parse it (pinned both ways in test_promote_from_verdict)."""
+    return f"{c['verdict']}: {c['chip']} ANE -> {to} ({commit_note(c)})"
+
+
 def propose(verdict):
     slug = repo_slug()
     proposed = set()
@@ -254,7 +260,7 @@ def propose(verdict):
         sh("git", "add", "--", *[line[3:] for line in changed])
         sh("git", "-c", "user.name=omarchy-ane-automation",
            "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
-           "commit", "-m", f"{c['verdict']}: {c['chip']} ANE -> {to} ({commit_note(c)})")
+           "commit", "-m", promo_subject(c, to))
         sh("git", "push", "--force-with-lease", "origin", branch)
         title = f"{c['verdict']}: {c['chip']} ({MARKETING.get(c['chip'], c['chip'])}) ANE -> {to}"
         body = ("Automatic promotion-flow PR from the promotion_check verdict.\n\n"
@@ -312,7 +318,8 @@ def gate(verdict, pr):
         raise Fail(f"PR #{pr}: the fresh verdict no longer backs it ({'; '.join(why)}); supersede with a new proposal")
     merge = gh(f"repos/{slug}/pulls/{pr}/merge", "PUT",
                {"merge_method": "squash",
-                "commit_title": f"{recorded['verdict']}: {recorded['chip']} ANE ({commit_note(recorded)})"})
+                "commit_title": promo_subject(recorded, "default-on" if recorded["verdict"] == "PROMOTE"
+                                              else "opt-in")})
     if not merge.get("merged"):
         raise Fail(f"PR #{pr}: merge refused: {merge.get('message')}")
     print(f"gate: merged PR #{pr} as {merge['sha']}")
@@ -327,10 +334,14 @@ def next_version():
     return latest, f"v{x}.{y}.{z + 1}"
 
 
-PROMO_SUBJECT = re.compile(r"^(PROMOTE|REVERT): (\S+) ANE -> (default-on|opt-in) "
+PROMO_SUBJECT = re.compile(r"^(PROMOTE|REVERT): (\S+) ANE(?: -> (default-on|opt-in))? "
                            r"\(row ([0-9a-f,]+|none)(?:; ([a-z,]+))?\)$")
-# A promotion PR squash-merged by hand keeps GitHub's default subject (the PR title and its number); the
-# tool's own commit subject is then the first bullet of the body ("* PROMOTE: ...").
+# The arrow is optional for subjects the gate wrote before it switched to
+# promo_subject (e.g. "PROMOTE: t6002 ANE (row 0846cbcc5337; dkms)", on main
+# since v0.5.13): merged_promotions then takes the target state from the
+# verdict. A promotion PR squash-merged by hand keeps GitHub's default subject
+# (the PR title and its number); the tool's own commit subject is then the
+# first bullet of the body ("* PROMOTE: ...").
 PR_SUBJECT = re.compile(r"^(PROMOTE|REVERT): \S+ \([^)]*\) ANE -> (?:default-on|opt-in) \(#\d+\)$")
 
 
@@ -348,7 +359,8 @@ def merged_promotions(since):
             m = next((PROMO_SUBJECT.match(l[2:]) for l in body.splitlines()
                       if l.startswith("* ") and PROMO_SUBJECT.match(l[2:])), None)
         if m:
-            out.append({"sha": sha, "verdict": m[1], "chip": m[2], "to": m[3],
+            out.append({"sha": sha, "verdict": m[1], "chip": m[2],
+                        "to": m[3] or ("default-on" if m[1] == "PROMOTE" else "opt-in"),
                         "rows": m[4], "sources": m[5] or ""})
     out.reverse()
     return out
