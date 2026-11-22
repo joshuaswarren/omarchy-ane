@@ -165,6 +165,17 @@ print("promote_from_verdict test: production refuses synthetic verdicts")
 # by earlier steps of the same runner never lands in the PR (v0.4.3 shipped a
 # committed __pycache__ blob because propose ran `git add -A`).
 work = make_work()
+# Since t6002's promotion, t8112 is the only opt-in chip of this tree, so
+# promoting it would empty the check's UNTESTED arm and promote_chip refuses;
+# the fixture demotes one enabled chip first (in production, the hand step the
+# refusal asks for).
+_ane = {p: st for p, src, st in (l.split() for l in (repo / "packaging/dt/overlays").read_text().splitlines()
+                                 if l and l[0] != "#") if src == f"{p}-ane.dts"}
+_demote = sorted(c for c, st in _ane.items() if st == "enabled")[0]
+subprocess.run([sys.executable, "tools/promote_chip.py", "--chip", _demote, "--to", "opt-in", "--apply"],
+               cwd=work, check=True, capture_output=True)
+subprocess.run(["git", "-C", str(work), "commit", "-qam", f"demote {_demote} to opt-in"], check=True)
+subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
 (work / "tools/__pycache__").mkdir(exist_ok=True)
 (work / "tools/__pycache__/aurora_dt.cpython-312.pyc").write_bytes(b"\x00stub")
 (work / "tools/stray.blob").write_bytes(b"\x00stub")
