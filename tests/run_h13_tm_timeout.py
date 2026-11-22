@@ -39,6 +39,36 @@ def exec_cmd(ane_run, data, anec, inputs, timing, actual):
     return cmd + ["--out", f"0={actual}"]
 
 
+def _dmesg():
+    return subprocess.run(["dmesg"], capture_output=True, text=True,
+                          check=True).stdout.splitlines()
+
+
+def _check_recovery_kmsg(before, after):
+    # Lines appended since the forced run began (dmesg is append-only;
+    # the common-prefix walk also tolerates a ring-buffer wrap).
+    common = 0
+    for old, new in zip(before, after):
+        if old != new:
+            break
+        common += 1
+    fresh = after[common:]
+    failed_at = next(
+        (i for i, line in enumerate(fresh)
+         if "tm completion failed: -110" in line), None)
+    if failed_at is None:
+        raise ValueError(
+            "kernel log lacks 'tm completion failed: -110' (-ETIMEDOUT): "
+            "the abort was not the timeout this phase forces")
+    if not any("tm recovered: idle" in line for line in fresh[failed_at + 1:]):
+        raise ValueError(
+            "kernel log lacks 'tm recovered: idle' after the timeout: "
+            "the driver did not finish recovery")
+    if any("recovery deferred" in line for line in fresh):
+        raise ValueError(
+            "kernel log shows 'recovery deferred': the device refused work")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
@@ -101,6 +131,7 @@ def main():
                 try:
                     forced_ns = tmp / "forced-exec-ns.txt"
                     forced_out = tmp / "forced-out.fp16"
+                    kmsg_before = _dmesg()
                     start = time.monotonic()
                     try:
                         subprocess.run(
@@ -117,6 +148,7 @@ def main():
                     if completed or elapsed >= MIN_EXEC_NS / 1e9:
                         raise ValueError(
                             "the program did not time out inside the forced budget")
+                    _check_recovery_kmsg(kmsg_before, _dmesg())
                     if (DEVICE / "wedged").read_text().strip() != "0":
                         raise ValueError("the device did not recover after the forced timeout")
                 finally:
