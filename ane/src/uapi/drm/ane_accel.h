@@ -26,6 +26,33 @@ extern "C" {
 #define ANE_M2_MAX_SECTIONS	16
 #define ANE_M2_MAX_BINDS	64
 
+/*
+ * ABI 3 (T6050 / M5, the aurora ane_t6021 H17 line): the driver reports
+ * DRM_IOCTL_VERSION major 3 and answers GET_CAPS with abi_version 3 and
+ * chip_family 17 (measured on the M5 Max, boot 7e6f417b, 2026-11-22).
+ * The M2 libane path enumerates the device but its PROG_LOAD/EXEC calls
+ * are not this ABI; programs go through the H16 backend.
+ */
+#define ANE_ABI_V3_MAJOR	3
+#define ANE_CHIP_H17		17
+#define ANE_V3_GET_CAPS		0x00 /* DRM_COMMAND_BASE + 0, the aurora node */
+
+/* The aurora GET_CAPS argument (aurora include/uapi/drm/ane_accel.h):
+ * DRM_IOWR(DRM_COMMAND_BASE + 0x00); eight __u32, size says how many the
+ * driver filled. DRM_COMMAND_BASE is 0x40 (drm_mode.h). */
+struct ane_v3_get_caps {
+	__u32 flags;
+	__u32 size;
+	__u32 abi_version;
+	__u32 chip_family;
+	__u32 section_size;
+	__u32 bind_size;
+	__u32 exec_io_size;
+	__u32 pad;
+};
+#define ANE_V3_GET_CAPS_IOCTL \
+	DRM_IOWR(0x40 + ANE_V3_GET_CAPS, struct ane_v3_get_caps)
+
 #define DRM_ANE_BO_INIT 0x1
 #define DRM_ANE_BO_FREE 0x2
 #define DRM_ANE_SUBMIT	0x3
