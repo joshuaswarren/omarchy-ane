@@ -11,7 +11,7 @@
 // Cases:
 //   1. by_chip(0x6050) on a V3/family-17 node  -> 0, family 17, abi 3
 //   2. by_chip(0x6050) on a V3/family-13 node  -> -ENODEV (not a T6050)
-//   3. by_chip(0x6021) on a V3 node            -> -ENODEV (T6021 row is ABI 2)
+//   3. by_chip(0x6021) on a V3 node            -> -EINVAL (no T6021 row yet)
 //   4. by_chip(0x1234)                         -> -EINVAL (not in the table)
 //   5. ane_device_info(1) with one node        -> -ENODEV
 //   6. ane_device_info(0) on a V3 node         -> 0, abi 3
