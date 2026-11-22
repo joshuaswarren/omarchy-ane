@@ -129,7 +129,9 @@ Die-1 shape, following the tree's own conventions:
 
 - New `t600x-ane-die1.dtsi` (and `t602x-ane-die1.dtsi`) with the ANE, its
   three DARTs and (T602x) the mailbox, node names and regs untranslated:
-  `ane@284000000` under `&die1` (bus translation makes it 0x2284000000),
+  `ane@284000000` under `&die1` (the unit address keeps the path the tools use; on
+  T6002 the first `reg` is the register sub-aperture 0x285c04000, translated to
+  0x2285c04000; the T602x full window translates to 0x2284000000),
   `iommu@285800000` and siblings likewise. `DIE_NODE()`/`DIE_LABEL()` for the
   pmgr references: `&ps_ane_sys_cpu_die1`, `&ps_ane_set1_die1`, ...
 - Interrupts: `interrupt-parent = <&aic>`; `interrupts = <AIC_IRQ 1 770 ...>`
