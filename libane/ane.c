@@ -433,10 +433,12 @@ static inline int is_ane_device(int fd, int *abi_major)
 	if (!version.name_len) {
 		return -EINVAL;
 	}
-	/* ABI 1 is the M1 submit path; ABI 2 is the T6021 program path
-	 * (ane_accel.h). Anything else is not this driver. */
+	/* ABI 1 is the M1 submit path; ABI 2 is the T6021 program path; ABI 3
+	 * is the T6050 (M5) H17 line on the aurora node (ane_accel.h). Anything
+	 * else is not this driver. */
 	if (version.version_major != ANE_ABI_MAJOR &&
-	    version.version_major != ANE_ABI_M2_MAJOR) {
+	    version.version_major != ANE_ABI_M2_MAJOR &&
+	    version.version_major != ANE_ABI_V3_MAJOR) {
 		return -EINVAL;
 	}
 
@@ -535,6 +537,100 @@ static inline void ane_device_close(struct ane_nn *nn)
 {
 	device_close(nn->fd);
 	nn->fd = 0;
+}
+
+/* ---- T6050 (M5 Max) enumeration on the T6021-family path ----------------- */
+
+/* The chip table: chip dev_id -> the (DRM version major, GET_CAPS
+ * chip_family) its node reports. T6050 is measured on the M5 Max (abi 3,
+ * family 17, aurora GET_CAPS, 2026-11-22). */
+struct ane_dev_id_row {
+	uint32_t chip;
+	int abi_major;
+	uint32_t chip_family;
+};
+
+static const struct ane_dev_id_row ane_dev_id_table[] = {
+	{ ANE_DEV_ID_T6050, ANE_ABI_V3_MAJOR, ANE_CHIP_H17 },
+};
+
+/* The aurora GET_CAPS argument and ioctl live in the uapi header
+ * (ane/src/uapi/drm/ane_accel.h): struct ane_v3_get_caps,
+ * ANE_V3_GET_CAPS_IOCTL. */
+
+/* Read GET_CAPS from an open ane node; 0 fills family, -1 leaves it 0. */
+static inline int ane_read_chip_family(int fd, uint32_t *chip_family)
+{
+	struct ane_v3_get_caps caps = {};
+
+	*chip_family = 0;
+	if (ioctl(fd, ANE_V3_GET_CAPS_IOCTL, &caps) < 0) {
+		return -1;
+	}
+	if (caps.size < sizeof(caps)) {
+		return -1;
+	}
+	*chip_family = caps.chip_family;
+
+	return 0;
+}
+
+int ane_device_info(int dev_id, struct ane_dev_info *info)
+{
+	int abi_major = 0;
+	int fd = device_open(dev_id, &abi_major);
+
+	if (fd < 0) {
+		return fd;
+	}
+
+	info->abi_major = abi_major;
+	info->fd = fd;
+	ane_read_chip_family(fd, &info->chip_family);
+
+	return 0;
+}
+
+int ane_device_info_by_chip(uint32_t chip, struct ane_dev_info *info)
+{
+	const struct ane_dev_id_row *want = NULL;
+
+	for (size_t r = 0; r < sizeof(ane_dev_id_table) / sizeof(*ane_dev_id_table); r++) {
+		if (ane_dev_id_table[r].chip == chip) {
+			want = &ane_dev_id_table[r];
+			break;
+		}
+	}
+	if (!want) {
+		ane_err("chip dev_id 0x%x is not in the libane table\n", chip);
+		return -EINVAL;
+	}
+
+	for (int i = 0; i < MAX_NODE_COUNT; i++) {
+		char node[MAX_NODE_LEN];
+		int abi_major = 0;
+		uint32_t family = 0;
+		int fd;
+
+		snprintf(node, MAX_NODE_LEN, "/dev/accel/accel%d", i);
+
+		fd = open_fd(node, &abi_major);
+		if (fd < 0) {
+			continue;
+		}
+		ane_read_chip_family(fd, &family);
+		if (abi_major == want->abi_major && family == want->chip_family) {
+			info->abi_major = abi_major;
+			info->chip_family = family;
+			info->fd = fd;
+			return 0;
+		}
+		close(fd);
+	}
+
+	ane_err("no node matches chip dev_id 0x%x (abi %d, family %u)\n",
+		want->chip, want->abi_major, want->chip_family);
+	return -ENODEV;
 }
 
 static inline int ane_model_init(struct ane_nn *nn, const char *path,
