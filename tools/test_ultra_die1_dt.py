@@ -134,11 +134,11 @@ def main():
             # Both SET windows at 0x28e08c000 (die 1 = +0x20_0000_0000) — the
             # qualification table's bases, on the nodes' own reg windows. The
             # engine reg follows each family's shape: T602x carries the full ADT
-            # window on both dies (0x284000000 -> die 1 0x2284000000); the T600x
-            # die-0 tree uses the register sub-aperture 0x285c04000 and the
-            # die-1 overlay the ADT window (docs/ultra-die1.md §5).
+            # window on both dies (0x284000000 -> die 1 0x2284000000); T600x
+            # uses the register sub-aperture 0x285c04000 on both dies, because
+            # ane.ko addresses TM/TQ at fixed offsets from it (ane_tm.c).
             bases = {tuple(oadt.cells(t.nodes[p]['reg'])[:2]) for p, _ in anes}
-            want = {(0x2, 0x84000000), (0x2, 0x85c04000)} if soc == 't6002' \
+            want = {(0x2, 0x85c04000)} if soc == 't6002' \
                 else {(0x2, 0x84000000)}
             assert bases == want, (soc, bases)
             # Both SET windows are the same bus-relative cells (0x2,
@@ -149,6 +149,16 @@ def main():
             # the qualification table keys.
             sets = {tuple(oadt.cells(t.nodes[p]['reg'])[-4:-2]) for p, _ in anes}
             assert sets == {(0x2, 0x8e08c000)}, (soc, sets)
+            if soc == 't6002':
+                # ane.ko maps exactly the register sub-aperture on both dies.
+                sizes = {tuple(oadt.cells(t.nodes[p]['reg'])[2:4]) for p, _ in anes}
+                assert sizes == {(0x0, 0x24000)}, (soc, sizes)
+            # genpd names come from pmgr `label`; a duplicate makes the second
+            # registration fail with -EEXIST (and hung the boot on T6002).
+            labels = [t.nodes[p]['label'].rstrip(b'\0') for p in t.nodes
+                      if '/power-controller@' in p and 'label' in t.nodes[p]]
+            dups = sorted({l for l in labels if labels.count(l) > 1})
+            assert not dups, f'{soc}: duplicate pmgr labels {dups}'
 
             # No collisions: the die-0 result's new paths are disjoint from what
             # die 1 added, and applying die 1 twice changes nothing.

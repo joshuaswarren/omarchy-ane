@@ -63,13 +63,16 @@
 			 * 7.1.13 ships none. The die-1 DART sits in the pmp
 			 * domain as die 0 does, so this fragment defines the
 			 * node where a tree lacks it and merges the same
-			 * properties where it has one. */
+			 * properties where it has one. The label is pmp_die1
+			 * (the DIE_LABEL convention): die 0's node is already
+			 * "pmp", and a second genpd of that name fails with
+			 * -EEXIST. */
 			ps_pmp: power-controller@2c8 {
 				compatible = "apple,t6020-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate", "apple,pmgr-pwrstate";
 				reg = <0x2c8 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "pmp";
+				label = "pmp_die1";
 				apple,always-on;
 			};
 		};

@@ -14,12 +14,14 @@ with the overlay's nodes and power states disabled (aurora-silicon/linux #65,
 #155) the overlay applies again and gives the same tree. Needs dtc and
 fdtoverlay 1.7.1 or newer, and fdtput. Without ANE_DTBS it does nothing.
 
-Then every packaging/dt/PREFIX-ane-dataonly.dts: it must have the
-"omarchy,data-only" root property, and on each OUT/dtbs/PREFIX-*.dtb
-fdtoverlay must apply it and dtc must read the result, with the board
-compatible and every stock node kept. No PREFIX-*.dtb is a notice, not a
-failure. --data-only checks only these (the aurora-wip trees,
-.github/workflows/aurora-dtbs.yml)."""
+Then every packaging/dt/PREFIX-ane-experimental.dts: the full opt-in ANE
+substrate overlay. It is not a row of the overlays table; the checks are the
+row checks minus the table semantics: dtc compiles it, the root carries
+"omarchy,opt-in" and "omarchy,skip-if-compatible", and on each OUT/dtbs/PREFIX-*.dtb
+omarchy-ane-dt's build() applies it and validate() accepts the result with
+exactly one enabled ANE node of the wanted compatible; the overlay's DART and
+mailbox nodes are present and disabled, and the disabled re-apply and skip
+rules hold like for the rows. No PREFIX-ane-experimental.dts is a notice."""
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
@@ -79,6 +81,49 @@ else:
                 assert again is not None, f'{source} on {board.name}: skipped over disabled nodes'
                 assert oadt.Tree(again[0]).nodes == result.nodes, f'{source} on {board.name}: re-apply differs'
             print(f'test_ane_overlays: {source} ({state}): {len(boards)} boards: '
+                  + ' '.join(b.stem for b in boards))
+        experimental = sorted(dt.glob('*-ane-experimental.dts'))
+        for source in experimental:
+            prefix = source.name.removesuffix('-ane-experimental.dts')
+            dtbo = work / f'{source.name}.dtbo'
+            subprocess.run(['dtc', '-q', '-@', '-I', 'dts', '-O', 'dtb', '-o', str(dtbo), str(source)], check=True)
+            root_props = oadt.Tree(dtbo.read_bytes())
+            assert root_props.strings('/', 'omarchy,opt-in'), f'{source.name}: no omarchy,opt-in root property'
+            assert root_props.strings('/', 'omarchy,skip-if-compatible'), f'{source.name}: no omarchy,skip-if-compatible root property'
+            wanted = oadt.skip_compatibles(dtbo)
+            boards = sorted(Path(dtbs).glob(f'{prefix}-*.dtb'))
+            if not boards:
+                print(f'::notice::test_ane_overlays: {source.name}: no {prefix}-*.dtb in {dtbs}; compiled, not applied')
+            for board in boards:
+                stock = oadt.Tree(board.read_bytes())
+                built = oadt.build(board, [dtbo], work)
+                assert built is not None, f'{source.name} on {board.name}: skipped on a stock tree'
+                data, _ = built
+                result = oadt.Tree(data)
+                ane = result.ane_nodes()
+                assert len(ane) == 1 and result.strings(ane[0], 'compatible') == wanted, (source.name, board.name, ane)
+                assert result.enabled(ane[0]), f'{source.name} on {board.name}: ane node not enabled'
+                substrate = [p for p in result.nodes
+                             if p.split('/')[-1] in ('iommu@311800000', 'iommu@311810000',
+                                                     'iommu@311820000', 'mailbox@311408000')]
+                assert len(substrate) == 4, f'{source.name} on {board.name}: want 3 DARTs + 1 mailbox, got {substrate}'
+                for path in substrate:
+                    assert not result.enabled(path), f'{source.name} on {board.name}: {path} must be disabled'
+                    assert 'status' in result.nodes[path] and b'disabled' in result.nodes[path]['status'], (source.name, board.name, path)
+
+                # The kernel's own enabled node wins.
+                (work / 'enabled.dtb').write_bytes(data)
+                assert oadt.build(work / 'enabled.dtb', [dtbo], work) is None, f'{source.name} on {board.name}: not skipped'
+
+                # A kernel whose ANE node exists but is disabled lets the
+                # overlay apply; its enabled ane node replaces the disabled one.
+                (work / 'off.dtb').write_bytes(data)
+                subprocess.run(['fdtput', '-t', 's', str(work / 'off.dtb'), ane[0], 'status', 'disabled'], check=True)
+                off_built = oadt.build(work / 'off.dtb', [dtbo], work)
+                assert off_built is not None, f'{source.name} on {board.name}: skipped over a disabled kernel node'
+                assert oadt.Tree(off_built[0]).enabled(ane[0]), f'{source.name} on {board.name}: ane node not enabled'
+                applied += 1
+            print(f'test_ane_overlays: {source.name} (experimental): {len(boards)} boards: '
                   + ' '.join(b.stem for b in boards))
         data_only = sorted(dt.glob('*-ane-dataonly.dts'))
         for source in data_only:
