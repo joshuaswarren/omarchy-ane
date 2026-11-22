@@ -66,11 +66,33 @@ for chip in sorted(_chips):
     state = _chips[chip]
     to = "opt-in" if state == "enabled" else "default-on"
     if to == "default-on" and UNTESTED == [chip]:
-        # promoting the last opt-in chip would empty the check's UNTESTED arm;
-        # the tool refuses that by design, and the refusal is the expected result
-        p = run(make_tree(), chip, to, "--apply")
-        assert p.returncode == 1 and "UNTESTED case arm would be empty" in p.stderr, (chip, p.stderr)
-        print(f"promote_chip test: {chip} promote refused (last opt-in chip), ok")
+        # promoting the last opt-in chip empties the check's UNTESTED arm;
+        # promote_chip collapses the arm to a bare fall-through instead of
+        # refusing (Main 10:50: the old refusal left main red forever once
+        # every chip had a pass). The flip must succeed and stay green.
+        base = make_tree()
+        before = tree(base)
+        p = run(base, chip, to, "--apply")
+        assert p.returncode == 0, (chip, p.stderr)
+        after = tree(base)
+        changed = {k for k in after if before.get(k) != after[k]}
+        assert changed == set(flip_files(chip)), (chip, sorted(changed))
+        # the collapse rewrites the two pattern lines to a bare fall-through:
+        # '  *)' with no ';;' (the arm body that follows is shared)
+        check_after = after["packaging/omarchy-ane-check"].decode()
+        m_star = re.search(r'(?m)^  \*\)\n', check_after)
+        assert m_star, (chip, check_after[check_after.index("case $soc in"):][:120])
+        assert not re.search(r'(?m)^  [a-z0-9|"]+\) ;;\n  [a-z0-9|]+\)\n', check_after), chip
+        back = "opt-in"
+        base2 = make_tree()
+        p2 = run(base2, chip, back, "--apply")
+        assert p2.returncode == 0, (chip, p2.stderr)
+        after2 = tree(base2)
+        check2 = after2["packaging/omarchy-ane-check"].decode()
+        # the round trip restores the full two-line arm with the chip back off:
+        # the second pattern line must be exactly the chip again
+        assert re.search(rf"(?m)^  [a-z0-9|\"]+\) ;;\n  {chip}\)\n", check2), chip
+        print(f"promote_chip test: {chip} promote collapsed the empty UNTESTED arm, round trip ok")
         continue
     back = "default-on" if to == "opt-in" else "opt-in"
     base = make_tree()
