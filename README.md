@@ -150,6 +150,14 @@ make -C ane/t6021      # ane_t6021.ko  (M2 family)
 make -C libane && make -C bindings/python/dylib
 ```
 
+Install the userspace with `sudo make install`. That installs libane, the
+Python bindings, and the ANE smoke userspace: `omarchy-ane-smoke` in
+`/usr/bin`, `omarchy-ane-run` beside it, and the add fixtures under
+`/usr/share/omarchy-ane/fixtures`. The qualification kit calls
+`omarchy-ane-smoke` by name, so a source install without it leaves the kit's
+`ane` step at exit 127 (command missing, reported as unavailable) instead of
+a measured exit 0 or an honest exit 2.
+
 Build against the headers of the kernel you run. `dkms.conf` at the repo root
 builds the same two modules through DKMS. The overlays install with
 `packaging/build-dtbo /`.
