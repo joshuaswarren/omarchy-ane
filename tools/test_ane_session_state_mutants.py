@@ -61,7 +61,8 @@ MUTANTS = {
 
 def build_and_run(src, work):
     (work / "ane-session.c").write_text(src)
-    for name in ("test_ane_session_state.c", "ane-run.c", "ane_f16_add.h", "ane_check_band.h", "ane_timing.h"):
+    for name in ("test_ane_session_state.c", "ane-run.c", "ane_f16_add.h", "ane_check_band.h", "ane_timing.h",
+                 "ane_cpu_floor.h"):
         shutil.copy(TOOLS / name, work / name)
     exe = work / "t"
     cc = subprocess.run(
