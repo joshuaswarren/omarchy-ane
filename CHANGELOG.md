@@ -3,6 +3,8 @@
 ## Unreleased
 
 - T6002 (M1 Ultra) ANE on by default. (row 0846cbcc5337; dkms)
+- T6002 (M1 Ultra) die 0: second passing row on community silicon (mijuny, #304): 220/220 and
+  20/20 smoke calls bit-exact, plus a 171,023-call random-input stress pass on one boot.
 - `omarchy-ane-probe`: also looks for `dmesg`, `omarchy-ane-check` and `omarchy-ane-firmware-fetch` in
   `/run/current-system/sw/bin`. On NixOS the probe reported them as "not installed" (#160). The search path is
   still a fixed list of system directories; the caller's `PATH` is never used.

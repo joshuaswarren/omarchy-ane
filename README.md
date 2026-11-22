@@ -33,9 +33,8 @@ Part of the Omarchy on Apple Silicon ecosystem:
   system that can apply the overlay (omarchy-mac-boot overlay support, or the
   kernel's own device tree already carrying the node) and, on the M2 family,
   the firmware fetch; the install section covers both.
-- Opt in, untested: M1 Ultra (die 0), plain M2. A driver
-  and a cited overlay exist; nobody has run them on that silicon. You add one
-  opt-in key.
+- Opt in, untested: plain M2. A driver and a cited
+  overlay exist; nobody has run them on that silicon. You add one opt-in key.
 - No packaged driver for M3 and later. Experimental bring-up modules for the
   first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
   `ane/h18` (Mac mini M6 and 14-inch M5 Max MacBook Pro). None is packaged or
@@ -57,7 +56,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
 | M1 | T8103 | not recorded | `apple,t8103-ane` | `ane` | on by default | none | fp16 execution verified |
 | M1 Pro | T6000 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
 | M1 Max | T6001 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
-| M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | row 0846cbcc5337; dkms |
+| M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot |
 | M2 | T8112 | not recorded | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | not tested |
 | M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree |
 | M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
