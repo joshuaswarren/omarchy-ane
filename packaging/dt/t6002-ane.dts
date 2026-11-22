@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+ OR MIT
 /*
- * Overlay state: opt-in ("ane-t6002" in /etc/omarchy-mac-boot/dtb-overlays.opt-in).
+ * Overlay state: on by default (row 0846cbcc5337; dkms).
  * ANE for T6002 (M1 Ultra) board device trees: the die-0 ANE only.
  *
  * Die 0 is the T6001 die (t600x-ane.dtsi): the macOS 13.5 ADT of j375d has
@@ -18,8 +18,6 @@
 / {
 	/* dtb-overlays.sh: a kernel tree that has the node keeps its own. */
 	omarchy,skip-if-compatible = "apple,t6000-ane";
-	/* dtb-overlays.sh: applies only when opted in. */
-	omarchy,opt-in = "ane-t6002";
 };
 
 /include/ "t600x-ane.dtsi"

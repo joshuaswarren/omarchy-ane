@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- T6002 (M1 Ultra) ANE on by default. (row 0846cbcc5337; dkms)
 - `omarchy-ane-probe`: also looks for `dmesg`, `omarchy-ane-check` and `omarchy-ane-firmware-fetch` in
   `/run/current-system/sw/bin`. On NixOS the probe reported them as "not installed" (#160). The search path is
   still a fixed list of system directories; the caller's `PATH` is never used.
