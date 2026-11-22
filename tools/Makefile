@@ -64,6 +64,13 @@ test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_libane_ioctl.c $(LIBANE_SRC) -lm
 
+# T6050 (M5 Max) enumeration through the T6021-family path, host-only.
+test_libane_t6050: test_libane_t6050.c $(LIBANE_SRC) ../libane/ane.h \
+	../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I/usr/include/libdrm \
+		-Wl,--wrap=open,--wrap=ioctl \
+		-o $@ test_libane_t6050.c $(LIBANE_SRC) -lm
+
 # ane_stats host unit test: pure host compile of the shared header
 # (counters + ring + torn-read + union rule + stats=0 path) plus the
 # REAL ane/ane_stats_show.c against the stub kernel headers in
@@ -161,10 +168,11 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c an
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-run ane-selfcheck ane-session test_libane_ioctl test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
+check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
 	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing test_ane_latency \
 	test_cpu_floor test_cpu_floor_serve
 	sh test_ane_run_tile_shift.sh ./ane-run
+	./test_libane_t6050
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec

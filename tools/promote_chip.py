@@ -179,6 +179,31 @@ def edit_dts(text, chip, promote, note=None):
 
 def edit_check(text, chip, promote):
     m = re.search(r'(?m)^  ([a-z0-9|"]+)\) ;;\n  ([a-z0-9|]+)\)\n', text)
+    if not m and not promote:
+        # the arm was collapsed when the last untested chip promoted: the check
+        # has a bare fall-through and no off arm. Re-emit the full pair with the
+        # chip back in the off list and every other chip in the on list (the on
+        # chips never left; only the arm shape collapsed).
+        m2 = re.search(r'(?m)^  \*\)\n', text)
+        if not m2:
+            raise Refuse("packaging/omarchy-ane-check: neither the UNTESTED case lists "
+                         "nor the collapsed fall-through arm are in the expected shape")
+        # on chips: every overlay row whose chip-ane.dts state is enabled
+        # (they never left the on list; only the arm shape collapsed). Rebuild
+        # the list through insert_on so FIRST_CLASS seating matches the
+        # promote path's canonical order instead of file order.
+        enabled = [row.split()[0] for row in read("packaging/dt/overlays").splitlines()
+                   if row and row[0] != "#"
+                   and row.split()[1] == f"{row.split()[0]}-ane.dts"
+                   and row.split()[2] == "enabled"]
+        on_list = []
+        for c in enabled:
+            if c != chip:
+                insert_on(on_list, c)
+        off_list = [chip]
+        new = ('  ' + "|".join(on_list) + '|"") ;;\n' if on_list else '  "") ;;\n') \
+            + f'  {chip})\n'
+        return text[:m2.start()] + new + text[m2.end():]
     if not m:
         raise Refuse("packaging/omarchy-ane-check: the UNTESTED case lists are not in the expected shape")
     on_list = [t for t in m.group(1).split("|") if t and t != '""']
@@ -189,14 +214,22 @@ def edit_check(text, chip, promote):
             if chip not in on_list:
                 insert_on(on_list, chip)
         if not off_list:
-            raise Refuse("packaging/omarchy-ane-check: the UNTESTED case arm would be empty "
-                         "(every untested chip would be on); remove the arm by hand")
+            # the last untested chip just left the arm: collapse the two pattern
+            # lines to a bare fall-through and keep the shared arm body (instead
+            # of refusing and leaving main red forever once every chip has a
+            # pass; re-add the arm by hand when the next untested chip lands)
+            print("promote_chip: the UNTESTED arm emptied; collapsing it to a bare "
+                  "fall-through - re-add the arm when the next untested chip lands")
+            return text[:m.start()] + '  *)\n' + text[m.end():]
     elif chip in on_list:
         on_list.remove(chip)
-        if chip not in off_list:
-            bisect.insort(off_list, chip)
+        bisect.insort(off_list, chip)
+    elif not promote:
+        # the arm was collapsed when the last chip promoted (the off arm is
+        # a bare fall-through); re-emit it with the chip back in the off list
+        off_list = [chip]
     on_expr = ("|".join(on_list) + '|""') if on_list else '""'
-    new = f'  {on_expr}) ;;\n  {"|".join(off_list)})\n'
+    new = f'  {on_expr}) ;;\n  {"|".join(off_list)})\n' if off_list else '  *)\n'
     return text[:m.start()] + new + text[m.end():]
 
 

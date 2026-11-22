@@ -118,6 +118,28 @@ struct ane_nn {
 struct ane_nn *__ane_init(const char *path, int dev_id);
 #define ane_init(path) (__ane_init(path, 0))
 
+/*
+ * The T6021-family chip table: one row per chip dev_id this libane
+ * enumerates, with the (DRM version major, GET_CAPS chip_family) the node
+ * must report. T6050 is the M5 Max (ABI 3, family 17, measured 2026-11-22).
+ */
+#define ANE_DEV_ID_T6021 0x6021
+#define ANE_DEV_ID_T6050 0x6050
+
+struct ane_dev_info {
+	int abi_major;        /* DRM_IOCTL_VERSION major of the open node */
+	uint32_t chip_family; /* GET_CAPS chip_family; 0 when the node does not answer GET_CAPS */
+	int fd;               /* open accel node; the caller owns and closes it */
+};
+
+/* Enumerate by accelerator index (0..MAX_ANE_DEVICES-1). 0 fills info. */
+int ane_device_info(int dev_id, struct ane_dev_info *info);
+
+/* Enumerate a chip from the table: walk the accel nodes and return the one
+ * whose version major and GET_CAPS family match the chip's row. -ENODEV
+ * when no node matches. */
+int ane_device_info_by_chip(uint32_t chip, struct ane_dev_info *info);
+
 void __ane_free(struct ane_nn *nn);
 #define ane_free(nn) (__ane_free(nn))
 

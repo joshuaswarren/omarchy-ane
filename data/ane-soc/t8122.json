@@ -49,6 +49,12 @@
       "kind": "community-row",
       "ref": "Community-data worker record 3bec43ce7fff370df201e18fcf78d27ad7c50c4b9419a64ae092a49668b20348 (deep, Linux, 2026-10-02): running device tree reports model 'Apple MacBook Air (13-inch, 2024)', compatible apple,j613 apple,t8122, os-fw-version 14.7. SHA-256 is the record content hash.",
       "sha256": "3bec43ce7fff370df201e18fcf78d27ad7c50c4b9419a64ae092a49668b20348"
+    },
+    {
+      "id": "S9",
+      "kind": "aurora-dts",
+      "ref": "aurora-silicon/linux at 75f7012d5efde3cc4920e6ca9665822099a9e086 (local linux-aurora checkout), arch/arm64/boot/dts/apple/{t8122-j433,t8122-j434,t8122-j504,t8122-j615}.dts header target-types and product names, verified 2026-11-22; sha256 is over the four files concatenated in that order.",
+      "sha256": "0fcb558128d829120c10cdd044222e5d2d81a89aa77ab5b4068c8ba65b4befdc"
     }
   ],
   "marketing": {
@@ -63,23 +69,23 @@
     {
       "v": {
         "value": "j433",
-        "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023, 8-core)"
+        "marketing_product": "iMac 24-inch (2x USB-C, M3, 2023)"
       },
-      "src": "S1"
+      "src": "S9"
     },
     {
       "v": {
         "value": "j434",
-        "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023, 8-core)"
+        "marketing_product": "iMac 24-inch (4x USB-C, M3, 2023)"
       },
-      "src": "S1"
+      "src": "S9"
     },
     {
       "v": {
         "value": "j504",
-        "marketing_product": "iMac 24-inch M3 (Oct 2023)"
+        "marketing_product": "MacBook Pro 14-inch M3 (2023)"
       },
-      "src": "S1"
+      "src": "S9"
     },
     {
       "v": {
@@ -91,9 +97,9 @@
     {
       "v": {
         "value": "j615",
-        "marketing_product": "MacBook Pro 14-inch M3 (Nov 2023)"
+        "marketing_product": "MacBook Air 15-inch M3 (2024)"
       },
-      "src": "S1"
+      "src": "S9"
     }
   ],
   "ane": {
