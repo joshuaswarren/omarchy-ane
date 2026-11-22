@@ -118,7 +118,8 @@ def opt_in_ane_chips():
 
 
 def join_names(names):
-    return names if len(names) <= 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+    return names[0] if len(names) == 1 else \
+        (f"{', '.join(names[:-1])} and {names[-1]}" if names else "")
 
 
 def edit_overlays(text, chip, promote):

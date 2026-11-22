@@ -1,0 +1,147 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * OPT-IN EXPERIMENTAL overlay for T8122 (M3) board device trees: the full
+ * ANE device substrate, matching aurora-silicon/linux #2331's t8122 dtsi.
+ * Not an installed row of packaging/dt/overlays: it applies only with the
+ * opt-in key ane-h15-experimental in /etc/omarchy-platform/dtb-overlays.opt-in,
+ * which the owner writes. It upgrades packaging/dt/t8122-ane-dataonly.dts
+ * from data-only facts to real nodes for the first-boot ladder.
+ *
+ * Node shape, addresses, interrupts and the ane-type word are aurora-silicon
+ * /linux #2331's t8122-peripherals.dtsi and t8122-pmgr.dtsi verbatim (the
+ * pinned ADT facts they encode: engine 0x310000000+0x2000000, pmgr
+ * 0x2d0700000+0x18000, aux-0 0x2d0724000+0x4000; DARTs 0x311800000/0x311810000/
+ * 0x311820000, each 0x4000, IRQ 525; mailbox at the ASC wrapper + 0x8000,
+ * wrapper = engine + 0x1400000, IRQs 506-509; ane IRQ 524; ps words at pmgr
+ * +0x438 (ANE_SYS) and +0xc000/+0xc008/+0xc010/+0xc018 (ANE_MPM/CPU/TD/BASE)).
+ *
+ * The three ANE DART instances and the mailbox stay disabled: enabled ANE DART
+ * nodes hung a T6030 at boot (PR 173), ane_h15 drives the ASC v4 mailbox by
+ * polling, and omarchy-ane-dt refuses an enabled node that names a disabled
+ * provider. The ane node therefore carries no iommus and no mboxes yet;
+ * G307's enable-once-proven patch adds them and flips the providers when the
+ * silicon run proves the boot path. Kernels that already carry an enabled
+ * ane node skip this overlay; a kernel with #2331's disabled nodes lets it
+ * apply, and its enabled ane node then replaces the kernel's disabled one.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h15-experimental";
+	omarchy,skip-if-compatible = "apple,t8122-ane";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@2d1000000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@2d0700000/power-controller@438";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@2d0700000";
+		__overlay__ {
+			ps_ane_mpm: power-controller@c000 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc000 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_mpm";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_cpu: power-controller@c008 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc008 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_cpu";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_td: power-controller@c010 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc010 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_td";
+				power-domains = <&ps_ane_sys>;
+			};
+			ps_ane_base: power-controller@c018 {
+				compatible = "apple,t8122-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+				reg = <0xc018 4>;
+				#power-domain-cells = <0>;
+				#reset-cells = <0>;
+				label = "ane_base";
+				power-domains = <&ps_ane_td>, <&ps_ane_cpu>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@311800000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+			ane_dart1: iommu@311810000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+			ane_dart2: iommu@311820000 {
+				compatible = "apple,t8122-dart", "apple,t8110-dart";
+				reg = <0x3 0x11820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 525 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+
+			ane_mbox: mailbox@311408000 {
+				compatible = "apple,t8122-asc-mailbox", "apple,asc-mailbox-v4";
+				reg = <0x3 0x11408000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 506 4>,
+					     <0 507 4>,
+					     <0 508 4>,
+					     <0 509 4>;
+				interrupt-names = "send-empty", "send-not-empty",
+						  "recv-empty", "recv-not-empty";
+				#mbox-cells = <0>;
+				power-domains = <&ps_ane_cpu>;
+				status = "disabled";
+			};
+
+			ane: ane@310000000 {
+				compatible = "apple,t8122-ane";
+				reg-names = "engine", "pmgr", "aux-0";
+				reg = <0x3 0x10000000 0x0 0x2000000>,
+				      <0x2 0xd0700000 0x0 0x18000>,
+				      <0x2 0xd0724000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 524 4>;
+				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
+						<&ps_ane_cpu>, <&ps_ane_td>,
+						<&ps_ane_base>;
+				apple,ane-type = <0xb0>;
+				status = "okay";
+			};
+		};
+	};
+};

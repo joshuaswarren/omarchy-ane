@@ -48,3 +48,19 @@ allowlist. A fallback string cannot qualify another device.
 The test checks the artifact hashes and the stream bindings before execution.
 It measures the `ane_exec` call, excluding setup and file transfers.
 The tool stops after 30 seconds. A failed call or a byte mismatch fails the test.
+
+## Recovery trace
+
+Pass `--recovery` to add the issue-447 Case-A trace after the parity run:
+the runner writes the driver minimum (100 ms) to `tm_timeout_ms`, re-runs the
+same program, and requires it to abort in under two seconds with an
+`ane_exec` failure. It then reads `dmesg` and requires the kernel sequence
+`tm completion failed: -110` (the driver's `-ETIMEDOUT` line) followed by
+`tm recovered: idle`, with no `recovery deferred`; it checks `wedged == 0`,
+restores the original budget, and re-runs the program to a byte-exact pass —
+the "idle, accepting work again" proof. The parameter write and the `dmesg`
+read need root; without `--recovery` the runner stays read-only as before.
+
+```sh
+sudo python3 tests/run_h13_tm_timeout.py /path/to/fixture/manifest.json --recovery
+```

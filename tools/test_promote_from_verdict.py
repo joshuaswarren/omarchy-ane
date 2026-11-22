@@ -165,6 +165,19 @@ print("promote_from_verdict test: production refuses synthetic verdicts")
 # by earlier steps of the same runner never lands in the PR (v0.4.3 shipped a
 # committed __pycache__ blob because propose ran `git add -A`).
 work = make_work()
+# Since t6002's promotion, t8112 is the only opt-in chip of this tree, so
+# promoting it would empty the check's UNTESTED arm and promote_chip refuses;
+# the fixture demotes one enabled chip first (in production, the hand step the
+# refusal asks for).
+_ane = {p: st for p, src, st in (l.split() for l in (repo / "packaging/dt/overlays").read_text().splitlines()
+                                 if l and l[0] != "#") if src == f"{p}-ane.dts"}
+_demote = sorted(c for c, st in _ane.items() if st == "enabled")[0]
+subprocess.run([sys.executable, "tools/promote_chip.py", "--chip", _demote, "--to", "opt-in", "--apply"],
+               cwd=work, check=True, capture_output=True)
+subprocess.run(["git", "-C", str(work), "-c", "user.name=Joshua Warren",
+                "-c", "user.email=816217+joshuaswarren@users.noreply.github.com",
+                "commit", "-qam", f"demote {_demote} to opt-in"], check=True)
+subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
 (work / "tools/__pycache__").mkdir(exist_ok=True)
 (work / "tools/__pycache__/aurora_dt.cpython-312.pyc").write_bytes(b"\x00stub")
 (work / "tools/stray.blob").write_bytes(b"\x00stub")
@@ -644,22 +657,34 @@ for name in ("aurora-plan", "aurora-pr"):
 print("promote_from_verdict test: the token reaches only the aurora-pr job, which builds nothing")
 
 
-# merged_promotions finds a promotion whether the tool's gate merged it (exact subject) or a person
-# squash-merged it (PR title and number, tool subject in the body), and ignores other commits.
+# merged_promotions finds a promotion whether the tool's gate merged it (its own
+# subject), a person squash-merged it (PR title and number, tool subject in the
+# body), or it merged in the gate's pre-arrow row form (the t6002 commits that
+# block v0.5.14); and it ignores other commits.
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 
 _spec = spec_from_loader("pfv", SourceFileLoader("pfv", str(repo / "tools/promote_from_verdict.py")))
 pfv = module_from_spec(_spec)
 _spec.loader.exec_module(pfv)
+_recorded = {"verdict": "PROMOTE", "chip": "t8112",
+             "rows": [{"row_sha": "1234abcd", "judged": True, "passed": True, "reasons": [],
+                       "driver_source": "intree"}]}
+# the subject the gate writes for this recorded block
+_gate_subject = pfv.promo_subject(_recorded, "default-on")
 _log = ("aaa\x1fPROMOTE: t6022 (M2 Ultra) ANE -> default-on (#297)\x1f* PROMOTE: t6022 ANE -> default-on (row 316ea37e17f0; dkms)\n\n* other\n\x1e\n"
-        "bbb\x1fPROMOTE: t8112 ANE -> default-on (row 1234abcd; intree)\x1f\x1e\n"
+        "bbb\x1f" + _gate_subject + "\x1f\x1e\n"
+        "ggg\x1fPROMOTE: t6002 ANE (row 0846cbcc5337; dkms)\x1f\x1e\n"
+        "hhh\x1fREVERT: t6021 ANE (row 00aa11bb22cc)\x1f\x1e\n"
         "ccc\x1fdocs: something (#12)\x1f* PROMOTE: t9999 ANE -> default-on (row dead)\n\x1e\n"
         "ddd\x1fPROMOTE: t6020 (M2 Pro) ANE -> default-on (#9)\x1fno tool bullet here\n\x1e\n")
 pfv.sh = lambda *a, **k: _log
 _got = pfv.merged_promotions("v0.0.0")
-assert [(g["sha"], g["chip"], g["rows"], g["sources"]) for g in _got] == [
-    ("bbb", "t8112", "1234abcd", "intree"), ("aaa", "t6022", "316ea37e17f0", "dkms")], _got
-print("promote_from_verdict test: merged_promotions reads the gate subject and a hand squash merge, nothing else")
+assert [(g["sha"], g["chip"], g["to"], g["rows"], g["sources"]) for g in _got] == [
+    ("hhh", "t6021", "opt-in", "00aa11bb22cc", ""),
+    ("ggg", "t6002", "default-on", "0846cbcc5337", "dkms"),
+    ("bbb", "t8112", "default-on", "1234abcd", "intree"),
+    ("aaa", "t6022", "default-on", "316ea37e17f0", "dkms")], _got
+print("promote_from_verdict test: merged_promotions reads the gate subject, a hand squash merge and the pre-arrow row form, nothing else")
 
 print("promote_from_verdict test: ok")
