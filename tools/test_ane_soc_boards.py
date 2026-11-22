@@ -100,6 +100,7 @@ def main(argv: list[str]) -> int:
         print(f"SKIP: no aurora dts checkout at {dts} (set AURORA_DTS_DIR); nothing to resolve against")
         return 0
     sweep_all = "--all" in argv
+    # explicit SoC names win over --all: naming records narrows even a --all sweep
     wanted = {a for a in argv if not a.startswith("--")} or ({"t8122"} if not sweep_all else set())
     records = sorted((ROOT / "data/ane-soc").glob("t*.json"))
     if not records:
