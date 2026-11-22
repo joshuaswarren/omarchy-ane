@@ -243,3 +243,36 @@ endif
 
 clean:
 	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve
+
+# Install the ANE smoke userspace: the program the qualification kit calls by
+# name (bare `omarchy-ane-smoke`), the runner it drives, and the add fixtures
+# it reads. Without this a source install leaves the kit's `ane` step at exit
+# 127 (command missing) instead of a measured exit 0 or an honest exit 2.
+SMOKE_BIN = ${DESTDIR}/usr/bin
+SMOKE_FIXTURES = ${DESTDIR}/usr/share/omarchy-ane/fixtures
+
+.PHONY: install-smoke uninstall-smoke
+install-smoke:
+	# Refuse to replace package-owned files: pacman would still attribute
+	# them, -Qkk would report mismatches, and the next package upgrade would
+	# silently restore the packaged copies. Skipped under DESTDIR (packaging
+	# builds) and overridable with FORCE=1.
+	@if [ -z "$(DESTDIR)" ] && [ "$(FORCE)" != "1" ] && \
+	    command -v pacman >/dev/null 2>&1 && \
+	    pacman -Qo /usr/bin/omarchy-ane-smoke >/dev/null 2>&1; then \
+		echo "install-smoke: /usr/bin/omarchy-ane-smoke is owned by $$(pacman -Qo /usr/bin/omarchy-ane-smoke | sed 's/.* is owned by //')" >&2; \
+		echo "install-smoke: use the package, or rerun with FORCE=1 to overwrite" >&2; \
+		exit 1; \
+	fi
+	# -B: always rebuild, so a copied tree's stale or foreign-arch binary is
+	# never installed. The build fails closed if the compiler is missing.
+	$(MAKE) -B ane-run
+	mkdir -p $(SMOKE_BIN) $(SMOKE_FIXTURES)/h13-anec/add $(SMOKE_FIXTURES)/h14-anec/add
+	install -m 755 ane-run $(SMOKE_BIN)/omarchy-ane-run
+	install -m 755 ../packaging/omarchy-ane-smoke $(SMOKE_BIN)/omarchy-ane-smoke
+	install -m 644 ../fixtures/h13-anec/add/program-0.anec $(SMOKE_FIXTURES)/h13-anec/add/program-0.anec
+	install -m 644 ../fixtures/h14-anec/add/program-0.anec $(SMOKE_FIXTURES)/h14-anec/add/program-0.anec
+
+uninstall-smoke:
+	rm -f $(SMOKE_BIN)/omarchy-ane-smoke $(SMOKE_BIN)/omarchy-ane-run
+	rm -f $(SMOKE_FIXTURES)/h13-anec/add/program-0.anec $(SMOKE_FIXTURES)/h14-anec/add/program-0.anec
