@@ -2,23 +2,38 @@
 
 ## Unreleased
 
-- T6002 (M1 Ultra) ANE on by default. (row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot)
-- T6002 (M1 Ultra) die 0: second passing row on community silicon (mijuny, #304): 220/220 and
-  20/20 smoke calls bit-exact, plus a 171,023-call random-input stress pass on one boot.
-- `omarchy-ane-probe`: also looks for `dmesg`, `omarchy-ane-check` and `omarchy-ane-firmware-fetch` in
-  `/run/current-system/sw/bin`. On NixOS the probe reported them as "not installed" (#160). The search path is
-  still a fixed list of system directories; the caller's `PATH` is never used.
+- (nothing yet)
 
-- `ane`: Set `tm_timeout_ms` to allow longer M1 programs. It accepts 100 to 10,000 ms and defaults to 1,000 ms.
-  All completion retries share one deadline. The separate recovery timeout stays at 1,000 ms.
+## 0.5.14 (2026-11-22)
 
-- The H13 timeout test rejects devices whose first device-tree compatible is outside the H13 allowlist.
+This release ships the t8122 (M3) opt-in ANE substrate, promotes the t6002 (M1 Ultra) ANE to default-on, fixes the M1 Ultra die-1 overlay, corrects the t8122 board rows, and enumerates the T6050 (M5 Max) through the T6021-family path in libane. Twenty-six commits (#411, #439 to #466, plus #465), seven days after 0.5.13.
 
-- `run_h13_tm_timeout.py --recovery`: after the parity run, force a clean timeout at the driver minimum
-  (100 ms), require the device unwedged, restore the budget, and re-run the program to a byte-exact pass —
-  the issue-447 Case-A recovery trace. Needs a writable `tm_timeout_ms` (root).
+User-visible changes, grouped:
 
-- `ane-run`: gains an opt-in t6021 CPU clock floor (`ANE_CPU_FLOOR=<kHz>`, for example 1968000). While set, ane-run raises the P-cluster floor (policy4, cpus 4-7; the second P cluster, policy8 cpus 8-11, stays unfloored) from the value it finds in `scaling_min_freq`, keeps schedutil, and restores the saved value on every exit path: normal exit, SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGPIPE and SIGALRM (the handler saves and restores errno in whatever frame the signal interrupted and blocks the chained set while it runs, so a second signal stays pending instead of nesting into the lock frame; an inherited SIG_IGN is put back untouched and the floor survives the delivery; a previous real handler is reinstated and receives the delivery; the restore takes the state lock non-blocking with a bounded retry, because the frame the signal interrupted may hold the lock itself, and if it never frees, the SIG_DFL raise kills the run while the watchdog restores at death), SIGKILL and crashes through a forked watchdog child that runs in its own session with SIGHUP, SIGINT, SIGQUIT and SIGTERM ignored, so a process-group kill that takes the run - a terminal or ssh hangup, a group `^\`, a pkill sweep over the group (#413) - leaves the watchdog alive to restore (it stays in the run's control group: a systemd kill that takes the whole cgroup - `KillMode=control-group`, the final SIGKILL stage of `mixed`, `memory.oom.group` - kills the watchdog with the run), keeps reconciling until the dying holder is really gone - the dying process releases its file descriptors before it becomes a zombie, so one reconcile at pipe close can still see it alive and leave the floor raised - and a stale state file that the next run reconciles: a run killed between the fork and the child's setsid (a few scheduling steps; the sync handoff only orders the run's own signals behind the detach), a watchdog SIGKILLed itself, or a cgroup kill - holders are recorded with their `/proc` start time and counted dead from `/proc/<pid>/stat` alone (gone, zombie, or a start time that no longer matches), because `kill()` alone answers for a pid reused by another user. Concurrent instances share one state file under a lock; the first raises and the last restores, and a run that finds the holder table full sits out instead of holding without a record. No begin ever lowers the file: a fresh raise sits out when the file already sits at or above the floor, a joiner raises only above the file's current content (another holder's raise or an administrator change wins), and a stale record is adopted - a following raise starts from the recorded saved value with a single write (the file never dips through the baseline; schedutil never sees the low value), and a sit-out begin still restores that value with its one undo write. The state record is composed into a buffer sized from the compile-time maxima (64 holders x the maximum line length, pinned by a static assert); a fixed 1024-byte buffer overflowed the stack from about 50 holders (ASan-proven end to end at 50 and 51 live holders). The SoC gate walks the NUL separated entries of `compatible` (the last entry needs no trailing NUL, an empty file is a no-op) and matches the whole entry `apple,t6021` (the real device tree lists `apple,j414c` first, and a `strstr` over the whole buffer never reaches the second entry - found by the first hardware row). With the variable unset, zero, or not a number - trailing junk included, `1968000kHz` is not a number - nothing is read or written under sysfs. The host-test overrides (`ANE_RUN_CPUFREQ_ROOT`, `ANE_RUN_STATE_DIR`) are compiled out of the production ane-run (it is built without `-DANE_CPU_FLOOR_TESTING` and ignores both variables), so a run with a preserved environment - sudo -E, env_keep, a root service with a user-influenced environment - cannot have its sysfs writes or its state directory pointed anywhere but the real paths; the saved value is read under the state lock, so an administrator change that lands in the file while a begin waits for the lock is not clobbered by a stale restore. No t6021 in the device tree, no policy4, or no write access to sysfs is a silent no-op even when set; the package grants no cpufreq write privilege today, installs none, and never makes sysfs world-writable. Same-row measurement on one 14-inch M2 Max (row m2-minfreq-interleaved-074, 840 s): linked-program p90 2.066 -> 1.939 ms and p99 2.242 -> 1.994 ms, p50 1.907 -> 1.874 ms. Power (row 072, hwmon4 whole-machine medians): about +1.3 W idle and +1.9 W while serving, so the floor is held only while ane-run serves; the means are contaminated by rare spikes of about 100 W in both arms and the spike source is still unknown. The ring program is still to run (row 075). Host tests: a 107-check state-machine suite (off by default, nothing read without the variable), 16 process cases (off, signals, a group hangup and a group quit, a SIGHUP and a SIGQUIT delivered with the watchdog killed first, the watchdog surviving a group SIGKILL, self-locked signal, slow teardown, a crashed saved value restored by the surviving watchdog, concurrency, the real ane-run error exit with the floor variable unset, so a root run cannot touch real sysfs, and a stale record whose raise never dips the file through the baseline, watched by a write logger) and a 30-mutant proof. (#411, #413)
+- `promotion`: T6002 (M1 Ultra) ANE is on by default (row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot) (#461, 80c46b2; #465, 22dddc4).
+- T6002 (M1 Ultra) die 0: second passing row on community silicon (mijuny, #304, #465): 220/220 and 20/20 smoke calls bit-exact, plus a 171,023-call random-input stress pass on one boot.
+- `ane`: the M1 Ultra die-1 ANE passes bit-exact add tests after two overlay fixes — a duplicate power-domain label and the die-1 engine register window (#460, 9d97004).
+- `packaging`: the t8122-ane-experimental substrate (#457, 9464f7f). The opt-in overlay carries the full node set. DARTs and the mailbox stay disabled.
+- `ane-soc`: t8122 board rows match the aurora dts headers. j433 and j434 are 24-inch iMacs, j504 is the MacBook Pro 14-inch M3, j615 is the MacBook Air 15-inch M3. `tools/test_ane_soc_boards.py` resolves each board row (#456, cbb80d4).
+- `libane`: enumerate the T6050 (M5 Max) through the T6021-family path (#463, be961f2).
+- `packaging`: the ANE smoke userspace installs from source (#455, f286ab9).
+- `packaging`: `omarchy-ane-check` is a pacman package (#442, 581d237).
+- `ane/h18`: load the program once and call it N times, one output digest per call (#453, 30552e1). `matvec-check` validates the call sequence (#451, 0f26af0).
+- `ane`: match `t6001-ane` so T600x die-1 and second engines can probe (#443, b09d8cf).
+- `ane`: `tm_timeout_ms` accepts 100 to 10,000 ms (default 1,000) so longer M1 programs complete (#448, f13fc94).
+- `ane-run`: opt-in t6021 CPU clock floor (`ANE_CPU_FLOOR=<kHz>`), off by default (#411, 562d71c).
+- `omarchy-ane-probe`: finds `dmesg` and the kit tools under `/run/current-system/sw/bin` on NixOS (#452, c7be8c3).
+- `promotion`: skip chips another dtsi already includes instead of failing the run (#446, 258aac2).
+- `promote_chip`: when the last untested chip promotes, collapse the check's UNTESTED arm to a bare fall-through instead of refusing (#464, bdd5d30).
+
+Internal / test-only:
+
+- `promote_from_verdict` parses the gate's own merge subject, including the pre-arrow t6002 form (#462, 4e85b95). The gate merge title test pins `promo_subject` (#466, d198808).
+- The H13 timeout host run is gated on an H13 primary compatible (#449, 5fae949) and gains the issue-447 recovery trace (#454, 0a70b12).
+- CI bounds every job and cancels stale runs (#445, 7517110).
+- The ASan session-cache test runs under `setarch -R` (#441, bbd81e6). The A/B runner template lands with its host tests (#439, 5aab3f7; #440, 65130d8).
+- `promote_chip` `join_names` renders one or zero names as strings (#459, a56046c).
+- h18 receipts for the 2026-11-18 fixediova add reproduction, marked historical (#444, 7bb7047).
 
 ## 0.5.13 (2026-11-15)
 
