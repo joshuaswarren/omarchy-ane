@@ -786,7 +786,7 @@ static int ane_stats_init(struct ane_device *ane)
 	/* Die-keyed directory name, deterministic from the node (not probe
 	 * order): die 0 keeps the legacy "ane" (every die-0 consumer reads
 	 * /sys/kernel/debug/ane/); die >= 1 names by dev_name
-	 * (2284000000.ane), so a die-1 node on its own — die 0 disabled —
+	 * (2285c04000.ane on T6002), so a die-1 node on its own — die 0 disabled —
 	 * also gets the suffixed name. */
 	{
 		struct resource *eng = platform_get_resource(

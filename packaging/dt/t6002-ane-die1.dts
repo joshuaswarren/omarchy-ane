@@ -11,8 +11,10 @@
  *
  * Node names and regs stay in the die-1 bus's untranslated (child)
  * address space; the bus ranges (t6002.dtsi: soc@2200000000, 0x2_x ->
- * 0x22_x) do the translation, so the ane engine reg 0x284000000 reads
- * 0x2284000000 and the SET window 0x28e08c000 reads 0x228e08c000. ane.ko
+ * 0x22_x) do the translation, so the ane engine reg 0x285c04000 (the register
+ * sub-aperture, as die 0 in t600x-ane.dtsi) reads 0x2285c04000 and the SET
+ * window 0x28e08c000 reads 0x228e08c000. The node name keeps the ADT unit
+ * address (ane@284000000), as die 0 does. ane.ko
  * takes the SET base from this node and finds it RECOGNIZED, not
  * QUALIFIED: a die-1 bind needs ane.allow_unqualified=1 until a die-1
  * run proves it (ane/src/ane_drv.c ane_qual_table).
@@ -64,7 +66,7 @@
 				reg = <0xc000 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_set0";
+				label = "ane_set0_die1";
 				power-domains = <&ane_cpu_pd>;
 				status = "okay";
 			};
@@ -74,7 +76,7 @@
 				reg = <0xc008 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_base";
+				label = "ane_base_die1";
 				power-domains = <&ps_ane_set0>;
 				status = "okay";
 			};
@@ -84,7 +86,7 @@
 				reg = <0xc010 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_set1";
+				label = "ane_set1_die1";
 				power-domains = <&ps_ane_base>;
 				status = "okay";
 			};
@@ -94,7 +96,7 @@
 				reg = <0xc018 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_set2";
+				label = "ane_set2_die1";
 				power-domains = <&ps_ane_base>;
 				status = "okay";
 			};
@@ -104,7 +106,7 @@
 				reg = <0xc020 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_set3";
+				label = "ane_set3_die1";
 				power-domains = <&ps_ane_base>;
 				status = "okay";
 			};
@@ -114,7 +116,7 @@
 				reg = <0xc028 4>;
 				#power-domain-cells = <0>;
 				#reset-cells = <0>;
-				label = "ane_set4";
+				label = "ane_set4_die1";
 				power-domains = <&ps_ane_base>;
 				status = "okay";
 			};
@@ -158,7 +160,11 @@
 			ane1: ane@284000000 {
 				compatible = "apple,t6000-ane";
 				reg-names = "engine", "set";
-				reg = <0x2 0x84000000 0x0 0x2000000>,
+				/* The register sub-aperture, as on die 0 (t600x-ane.dtsi): ane.ko
+				 * addresses TM/TQ at fixed offsets from this window (ane_tm.c
+				 * ANE_TM_BASE 0x20000, ANE_TQ_BASE 0x21000). The ADT window
+				 * 0x284000000/0x2000000 would put TM 0x1c04000 below die 0 + 0x20_0000_0000. */
+				reg = <0x2 0x85c04000 0x0 0x24000>,
 				      <0x2 0x8e08c000 0x0 0x38>;
 				interrupt-parent = <&aic>;
 				interrupt-names = "ane";
