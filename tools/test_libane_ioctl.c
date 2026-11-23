@@ -398,8 +398,8 @@ static int fake_exec(const struct drm_ane_exec *a)
 	if (a->count && a->count <= ANE_M2_MAX_BINDS) {
 		static struct drm_ane_exec_io fake_last_ios[ANE_M2_MAX_BINDS];
 
-		memcpy(fake_last_ios, io,
-		       (size_t)a->count * sizeof(fake_last_ios[0]));
+		memmove(fake_last_ios, io,
+			(size_t)a->count * sizeof(fake_last_ios[0]));
 		fake_last_exec.io_ptr = (uint64_t)(uintptr_t)fake_last_ios;
 	}
 	if (a->pad > 16) {

@@ -599,7 +599,18 @@ static int ane_rtclient_malloc_service(struct ane_rtclient *ane, unsigned int *c
 		dma_wmb();
 		writel(BIT(5), ipi);
 		/* The firmware unmapped it before it asked, so the buffer can go back to the kernel now that the answer is out. The command buffer is never matched. */
-		freed = ane_legtab_find(ane->legacy_buffers, ane->legacy_allocated, hdr, ane->cmd_buf);
+		{
+			const struct ane_legacy_buffer *keep[1 + ANE_T6021_CALL_BATCH_MAX];
+			u32 keeps = 0, i;
+
+			/* A firmware FREE must never match a buffer the driver itself uses: the single-call command buffer
+			 * and every live batch command buffer. */
+			keep[keeps++] = ane->cmd_buf;
+			for (i = 0; i < ANE_T6021_CALL_BATCH_MAX; i++)
+				if (ane->batch_cmd[i])
+					keep[keeps++] = ane->batch_cmd[i];
+			freed = ane_legtab_find(ane->legacy_buffers, ane->legacy_allocated, hdr, keep, keeps);
+		}
 		if (freed >= 0) {
 			struct ane_legacy_buffer *fb = &ane->legacy_buffers[freed];
 
@@ -1052,11 +1063,12 @@ static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 		return 0;
 	while (n < c->size) {
 		u64 *slot = ane->fw->boot_ipc + c->off + (size_t)slot_i * 64;
-		u64 hdr = READ_ONCE(slot[0]), len = READ_ONCE(slot[1]);
+		u64 hdr = READ_ONCE(slot[0]), len;
 
 		if (hdr & 1)
 			break;
 		dma_rmb();
+		len = READ_ONCE(slot[1]);
 		dev_dbg(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
 			 c->name, slot_i, hdr, len);
 		if (channel == 6 && len >= ANE_T2H_CALL_STATE_OFF + 4) {
@@ -1757,6 +1769,7 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 	u64 tickets[ANE_T6021_CALL_BATCH_MAX] = { };
 	ktime_t submits[ANE_T6021_CALL_BATCH_MAX];
 	struct ane_legacy_buffer *cmd[ANE_T6021_CALL_BATCH_MAX];
+	struct ane_t6021_fd *fd = file->driver_priv;
 	bool stats_call = stats && ane->fw;
 	bool tracing;
 	unsigned int timeout_ms = user->timeout_ms ? user->timeout_ms : 5000;
@@ -1771,8 +1784,7 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 		ret = -ENODEV;
 		goto out;
 	}
-	if (!ane_t6021_fdprogs_has(&file->driver_priv->progs,
-				   user->prog_id)) {
+	if (!fd || !ane_t6021_fdprogs_has(&fd->progs, user->prog_id)) {
 		ret = -ENOENT;
 		goto out;
 	}
@@ -1804,7 +1816,11 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 
 		if (served < 0) {
 			ret = served;
-			goto out;
+			/* Same contract as the sync exchange: a SHAREDMALLOC
+			 * answer the ring cannot give leaves the device not
+			 * safe to reuse until the module reload door runs. */
+			atomic_set(&ane_t6021_quarantined, 1);
+			goto out_owner;
 		}
 		if (!served)
 			break;
@@ -1951,14 +1967,13 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		ane->legacy_owner = user->prog_id + 1;
 		ret = ane_rtclient_build_call_cmd(ane, file, command, user,
 						  ios);
-		if (ret)
-			goto unlock;
-		ret = ane_rtclient_command(ane, command,
-					   cmd_size,
-					   CSNE_CMD_PROCEDURE_CALL,
-					   1,
-					   user->timeout_ms ?
-					   user->timeout_ms : 5000);
+		if (!ret)
+			ret = ane_rtclient_command(ane, command,
+						   cmd_size,
+						   CSNE_CMD_PROCEDURE_CALL,
+						   1,
+						   user->timeout_ms ?
+						   user->timeout_ms : 5000);
 		ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
 	}
 unlock:
