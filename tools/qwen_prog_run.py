@@ -24,6 +24,9 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ane_run_lock import flock_argv  # noqa: E402
+
 
 class Refuse(Exception):
     pass
@@ -179,7 +182,7 @@ def ane_call(anec, ports_path, ports, arrays, work, ane_run, timeout, repeat=1, 
             filename.unlink(missing_ok=True)
             output_surfaces[name] = filename
             output_args.extend(["--out", f"{name}={filename}"])
-    locked = ["flock", "/var/tmp/ane-run.lock", "timeout", str(timeout), ane_run,
+    locked = [*flock_argv(), "timeout", str(timeout), ane_run,
               "--anec", str(anec), "--ports", str(ports_path),
               *input_args, *output_args, "--repeat", str(repeat), "--time"]
     if dry:

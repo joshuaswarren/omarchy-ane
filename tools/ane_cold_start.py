@@ -31,6 +31,9 @@ import threading
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ane_run_lock import dup_held_lock  # noqa: E402
+
 LOCK = "/var/tmp/ane-run.lock"
 GATE_S = 120
 
@@ -163,6 +166,9 @@ def wait_idle():
 
 
 def take_lock():
+    held = dup_held_lock(LOCK)
+    if held is not None:
+        return held
     fd = os.open(LOCK, os.O_RDWR | os.O_CREAT, 0o666)
     deadline = time.monotonic() + GATE_S
     while True:
