@@ -127,7 +127,9 @@ for chip in sorted(_chips):
     if "CHANGELOG.md" in residue:
         added = [l for l in rt["CHANGELOG.md"].decode().splitlines()
                  if l not in before["CHANGELOG.md"].decode().splitlines()]
-        assert len(added) == 1 and f"{chip.upper()} (" in added[0], (chip, added)
+        # a re-promote whose line is already in released history leaves no
+        # residue; anything else leaves exactly one new chip line
+        assert len(added) <= 1 and all(f"{chip.upper()} (" in l for l in added), (chip, added)
     print(f"promote_chip test: {chip} {to} -> {back}: round trip ok")
 
     # the flip-sensitive offline suites on this chip's flipped tree
