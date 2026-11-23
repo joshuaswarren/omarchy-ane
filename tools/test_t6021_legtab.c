@@ -232,16 +232,22 @@ int main(void)
 		if ((u32)k == used)
 			used++;
 	}
-	check(ane_legtab_find(t, used, 0x2000, NULL) == 1, "a FREE finds the buffer by DMA address");
-	check(ane_legtab_find(t, used, 0x2000, &t[1]) == -1, "the kept buffer is never matched");
-	check(ane_legtab_find(t, used, 0x9000, NULL) == -1, "an unknown address matches nothing");
+	{
+		const struct ane_legacy_buffer *keep1[] = { &t[1] };
+		const struct ane_legacy_buffer *keep3[] = { &t[1], NULL, &t[0] };
+
+		check(ane_legtab_find(t, used, 0x2000, NULL, 0) == 1, "a FREE finds the buffer by DMA address");
+		check(ane_legtab_find(t, used, 0x2000, keep1, 1) == -1, "the kept buffer is never matched");
+		check(ane_legtab_find(t, used, 0x1000, keep3, 3) == -1, "every entry in the keep list is protected, NULLs included");
+		check(ane_legtab_find(t, used, 0x9000, NULL, 0) == -1, "an unknown address matches nothing");
+	}
 	/* a slot with a stale DMA address but no cpu pointer is free and never matches */
 	t[2].cpu = NULL;
-	check(ane_legtab_find(t, used, 0x3000, NULL) == -1, "a slot without a cpu pointer never matches, whatever its stale address");
+	check(ane_legtab_find(t, used, 0x3000, NULL, 0) == -1, "a slot without a cpu pointer never matches, whatever its stale address");
 	t[2].cpu = &mem[2];
 	/* free slot 1: it is the next one handed out, the table does not grow */
 	memset(&t[1], 0, sizeof(t[1]));
-	check(ane_legtab_find(t, used, 0x2000, NULL) == -1, "a freed slot no longer matches");
+	check(ane_legtab_find(t, used, 0x2000, NULL, 0) == -1, "a freed slot no longer matches");
 	check(ane_legtab_pick(t, used, 8) == 1, "the first free slot below the high-water mark is reused");
 	/* fill up to the cap, then no slot */
 	for (; used < 8;) {

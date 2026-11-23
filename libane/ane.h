@@ -144,6 +144,7 @@ void __ane_free(struct ane_nn *nn);
 #define ane_free(nn) (__ane_free(nn))
 
 int ane_exec(struct ane_nn *nn);
+int ane_exec_batch(struct ane_nn *nn, uint32_t batch);
 int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
 		  uint32_t state_src_idx, uint32_t state_dst_idx);
 uint64_t ane_kernel_capacity(struct ane_nn *nn);

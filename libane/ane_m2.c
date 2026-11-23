@@ -2414,7 +2414,7 @@ void ane_m2_close(struct ane_nn *nn)
 	ane_m2_ctx_free(nn, ctx, ANE_M2_SEC_COUNT, (int)ctx->model.io_count);
 }
 
-int ane_m2_exec(struct ane_nn *nn)
+int ane_m2_exec_batch(struct ane_nn *nn, uint32_t batch)
 {
 	struct ane_m2_ctx *ctx = nn->m2;
 	struct drm_ane_exec_io io[ANE_M2_MAX_BINDS];
@@ -2439,13 +2439,20 @@ int ane_m2_exec(struct ane_nn *nn)
 	args.priority = ANE_M2_PRIORITY_DEFAULT;
 	args.timeout_ms = ANE_M2_EXEC_TIMEOUT_MS;
 	args.count = ctx->model.io_count;
-	args.pad = 0;
+	/* 0 and 1 are one call; 2..16 batch that many calls on one
+	 * EXEC (uapi drm_ane_exec.pad). */
+	args.pad = batch;
 	args.io_ptr = (uint64_t)(uintptr_t)io;
 	if (ioctl(nn->fd, DRM_IOCTL_ANE_EXEC, &args) < 0) {
 		ane_m2_err("DRM_IOCTL_ANE_EXEC failed: %s\n", strerror(errno));
 		return -EINVAL;
 	}
 	return 0;
+}
+
+int ane_m2_exec(struct ane_nn *nn)
+{
+	return ane_m2_exec_batch(nn, 0);
 }
 
 static struct ane_m2_io *nth_io(struct ane_m2_ctx *ctx, uint32_t dir,

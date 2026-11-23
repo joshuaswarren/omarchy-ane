@@ -40,15 +40,22 @@ static inline int ane_legtab_pick(const struct ane_legacy_buffer *t, u32 used, u
 	return used < cap ? (int)used : -1;
 }
 
-/* The slot that holds the buffer whose DMA address is `dma`, or -1. `keep` (may be NULL) is a buffer the driver itself still uses and that a FREE must
- * never match. */
-static inline int ane_legtab_find(const struct ane_legacy_buffer *t, u32 used, u64 dma, const struct ane_legacy_buffer *keep)
+/* The slot that holds the buffer whose DMA address is `dma`, or -1. `keep`/`keeps` lists the buffers the driver itself still uses and
+ * that a FREE must never match (the in-flight command buffer and the batch command buffers); entries may be NULL. */
+static inline int ane_legtab_find(const struct ane_legacy_buffer *t, u32 used, u64 dma,
+				  const struct ane_legacy_buffer *const *keep, u32 keeps)
 {
-	u32 i;
+	u32 i, j;
 
-	for (i = 0; i < used; i++)
-		if (t[i].cpu && t[i].dma == dma && &t[i] != keep)
+	for (i = 0; i < used; i++) {
+		if (!t[i].cpu || t[i].dma != dma)
+			continue;
+		for (j = 0; j < keeps; j++)
+			if (&t[i] == keep[j])
+				break;
+		if (j == keeps)
 			return (int)i;
+	}
 	return -1;
 }
 

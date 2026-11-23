@@ -216,6 +216,12 @@ MODULE_PARM_DESC(dyn_pg,
 #define ANE_LEGACY_ALLOCS 8192
 #define ANE_LEGACY_BYTES SZ_512M
 
+/* Batched EXEC (drm_ane_exec.pad 2..this): calls posted back-to-back on
+ * the channel-1 IO ring, one finish event reaped per call. The IO ring
+ * has one 64-byte slot per in-flight command, so a batch cannot exceed
+ * ane_t6021_chman_layout[1].size (0x10). */
+#define ANE_T6021_CALL_BATCH_MAX 16
+
 struct ane_rtclient {
 	struct device *dev;
 	void __iomem *engine;
@@ -253,6 +259,12 @@ struct ane_rtclient {
 	 * command. The legacy_buffers table stays for fw MALLOC replies,
 	 * which the firmware may reference forever (held until reboot). */
 	struct ane_legacy_buffer *cmd_buf;
+	/* Per-call command buffers for a batched EXEC (drm_ane_exec.pad
+	 * 2..ANE_T6021_CALL_BATCH_MAX): one 16 KiB buffer per in-flight
+	 * call, allocated lazily and kept until module removal. Each IO
+	 * ring slot points at its own buffer, so posting call k+1 never
+	 * rewrites a buffer the firmware may still be reading. */
+	struct ane_legacy_buffer *batch_cmd[ANE_T6021_CALL_BATCH_MAX];
 };
 
 /* Per-open BO ownership (drm_file->driver_priv). Handles live in the
@@ -587,7 +599,18 @@ static int ane_rtclient_malloc_service(struct ane_rtclient *ane, unsigned int *c
 		dma_wmb();
 		writel(BIT(5), ipi);
 		/* The firmware unmapped it before it asked, so the buffer can go back to the kernel now that the answer is out. The command buffer is never matched. */
-		freed = ane_legtab_find(ane->legacy_buffers, ane->legacy_allocated, hdr, ane->cmd_buf);
+		{
+			const struct ane_legacy_buffer *keep[1 + ANE_T6021_CALL_BATCH_MAX];
+			u32 keeps = 0, i;
+
+			/* A firmware FREE must never match a buffer the driver itself uses: the single-call command buffer
+			 * and every live batch command buffer. */
+			keep[keeps++] = ane->cmd_buf;
+			for (i = 0; i < ANE_T6021_CALL_BATCH_MAX; i++)
+				if (ane->batch_cmd[i])
+					keep[keeps++] = ane->batch_cmd[i];
+			freed = ane_legtab_find(ane->legacy_buffers, ane->legacy_allocated, hdr, keep, keeps);
+		}
 		if (freed >= 0) {
 			struct ane_legacy_buffer *fb = &ane->legacy_buffers[freed];
 
@@ -752,6 +775,72 @@ static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
 out:
 	ane->legacy_malloc_cursor = cursor;
 	return result;
+}
+
+/* Post one command slot on a host-to-firmware ring without waiting for
+ * its ack: the IO channel has one 64-byte slot per in-flight command,
+ * the firmware flips each slot at its own ack, and the doorbell makes
+ * it take the command. A batch posts every slot first and validates
+ * the acks while reaping the finish events (ane_rtclient_legacy_ackok),
+ * so call k+1's enqueue overlaps call k's execution. Returns the slot
+ * index it used, negative errno on refusal. */
+static int ane_rtclient_legacy_post(struct ane_rtclient *ane,
+				    struct ane_legacy_buffer *command,
+				    size_t length, u16 opcode,
+				    unsigned int channel, unsigned int *cursorp)
+{
+	struct ane_t6021 *a = ane->fw;
+	u64 *io;
+	void __iomem *ipi;
+	unsigned int slot = *cursorp;
+
+	if (!ane->held || !ane->chman_ok ||
+	    ane_t6021_chman_check(a->boot_ipc, a->boot_ipc_iova))
+		return -EPROTO;
+	if (length < 8 || length > command->size ||
+	    channel >= ANE_T6021_CHMAN_COUNT)
+		return -EINVAL;
+	io = a->boot_ipc + ane_t6021_chman_layout[channel].off +
+	     (size_t)slot * 64;
+	/* A slot that is not host-owned would be rewritten under an
+	 * unacked command; the batch never reaches the next slot before
+	 * its own is free, and the ring wedges if it did (see the sync
+	 * exchange's EBUSY). */
+	if (!(READ_ONCE(io[0]) & 1))
+		return -EBUSY;
+	((u16 *)command->cpu)[2] = opcode;
+	WRITE_ONCE(io[1], length);
+	WRITE_ONCE(io[2], length);
+	dma_wmb();
+	WRITE_ONCE(io[0], command->dma);
+	dma_wmb();
+	ipi = ane->engine + ANE_IPI_OFF;
+	writel(BIT(ane_t6021_chman_layout[channel].bit), ipi);
+	*cursorp = (slot + 1) % ane_t6021_chman_layout[channel].size;
+	return slot;
+}
+
+/* Validate one posted command's ack after its finish event arrived:
+ * the sync exchange checks the same reply fields inline (header flipped
+ * to dma|1, lengths agree, opcode echoed, status zero). */
+static int ane_rtclient_legacy_ackok(struct ane_rtclient *ane,
+				     struct ane_legacy_buffer *command,
+				     size_t length, u16 opcode,
+				     unsigned int channel, unsigned int slot)
+{
+	struct ane_t6021 *a = ane->fw;
+	u64 *io = a->boot_ipc + ane_t6021_chman_layout[channel].off +
+		  (size_t)slot * 64;
+	u64 header = READ_ONCE(io[0]);
+
+	if (!(header & 1))
+		return -EBUSY; /* not acked yet */
+	dma_rmb();
+	return (header == (command->dma | 1) &&
+		READ_ONCE(io[1]) == length &&
+		READ_ONCE(io[2]) == 0 &&
+		((u16 *)command->cpu)[2] == opcode &&
+		((u16 *)command->cpu)[3] == 0) ? 0 : -EPROTO;
 }
 
 /* Extra sleep after a CALL's finish event. 0 by default: the finish event
@@ -959,25 +1048,27 @@ static const void *ane_rtclient_fw_cpu(struct ane_rtclient *ane, u64 iova,
  * DMA address with bit0 clear; the host returns the slot by setting
  * bit0 and ringing the channel's doorbell bit, as the allocation ring
  * does. The sequencer drained channels 4/6 after every step; the
- * ioctls drain them after every completed exchange. Returns true when
- * an IO_T2H slot held the finish event of a CALL. */
-static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
-				   unsigned int channel)
+ * ioctls drain them after every completed exchange. Returns the number
+ * of IO_T2H finish events of a CALL it saw (0 = none; a batched exec
+ * reaps one event per call, so it counts them). */
+static unsigned int ane_rtclient_drain_t2h(struct ane_rtclient *ane,
+					   unsigned int channel)
 {
 	const struct ane_t6021_chman_static *c = &ane_t6021_chman_layout[channel];
 	unsigned int n = 0, slot_i = ane->legacy_cmd_cursor[channel];
 	void __iomem *ipi = ane->engine + ANE_IPI_OFF;
-	bool finished = false;
+	unsigned int finished = 0;
 
 	if (!ane->fw || !ane->fw->boot_ipc)
-		return false;
+		return 0;
 	while (n < c->size) {
 		u64 *slot = ane->fw->boot_ipc + c->off + (size_t)slot_i * 64;
-		u64 hdr = READ_ONCE(slot[0]), len = READ_ONCE(slot[1]);
+		u64 hdr = READ_ONCE(slot[0]), len;
 
 		if (hdr & 1)
 			break;
 		dma_rmb();
+		len = READ_ONCE(slot[1]);
 		dev_dbg(ane->dev, "T2H ch=%s slot=%u hdr=%016llx len=%#llx\n",
 			 c->name, slot_i, hdr, len);
 		if (channel == 6 && len >= ANE_T2H_CALL_STATE_OFF + 4) {
@@ -993,7 +1084,7 @@ static bool ane_rtclient_drain_t2h(struct ane_rtclient *ane,
 				if (ane_t6021_tracing)
 					ane_t6021_trace_add(ANE_TR_EVENT, state);
 				if (state == ANE_T2H_CALL_FINISHED)
-					finished = true;
+					finished++;
 			}
 		}
 		n++;
@@ -1084,6 +1175,34 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
 			usleep_range(50, 100);
 	} while (time_before(jiffies, deadline));
 	return ane_rtclient_drain_t2h(ane, 6) ? 0 : -ETIMEDOUT;
+}
+
+/* Batched completion reap: wait until `need` finish events have drained
+ * in total (*seen carries the count across calls of a batch). Each
+ * drain returns every pending slot, so a single drain can cover
+ * several calls; the ack of each call is validated by its own slot
+ * check afterwards. The poll services the SHAREDMALLOC ring like the
+ * sync exchange does inside its ack spin: a firmware allocation ask
+ * that sits unanswered while the batch waits would stall it. */
+static int ane_rtclient_call_wait_n(struct ane_rtclient *ane,
+				    unsigned int timeout_ms,
+				    unsigned int *seen, unsigned int need,
+				    unsigned int *mcursor)
+{
+	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	int served;
+
+	do {
+		*seen += ane_rtclient_drain_t2h(ane, 6);
+		if (*seen >= need)
+			return 0;
+		served = ane_rtclient_malloc_service(ane, mcursor);
+		if (served < 0)
+			return served;
+		usleep_range(50, 100);
+	} while (time_before(jiffies, deadline));
+	*seen += ane_rtclient_drain_t2h(ane, 6);
+	return *seen >= need ? 0 : -ETIMEDOUT;
 }
 
 static int ane_rtclient_command(struct ane_rtclient *ane,
@@ -1565,6 +1684,228 @@ static int ane_rtclient_create_process(struct ane_rtclient *ane,
 	return ret;
 }
 
+/* Build one PROCEDURE_CALL command buffer for `user`'s binds. Used by
+ * the single-call path (into ane->cmd_buf) and by the batched path
+ * (into one buffer per call). */
+static int ane_rtclient_build_call_cmd(struct ane_rtclient *ane,
+				       struct drm_file *file,
+				       struct ane_legacy_buffer *command,
+				       const struct drm_ane_exec *user,
+				       const struct drm_ane_exec_io *ios)
+{
+	struct ane_t6021_fd *fd = file->driver_priv;
+	u8 *cmd = command->cpu;
+	int ret = 0, i;
+
+	memset(command->cpu, 0, SZ_16K);
+	*(u32 *)(cmd + 0x08) = cpu_to_le32(user->prog_id);
+	*(u32 *)(cmd + 0x0c) = cpu_to_le32(user->proc_id);
+	*(u64 *)(cmd + 0x10) = cpu_to_le64(0);
+	*(u32 *)(cmd + 0x18) = cpu_to_le32(user->priority);
+	*(u64 *)(cmd + 0x20) = cpu_to_le64(ANE_CALL_COOKIE);
+	*(u32 *)(cmd + 0x28) = cpu_to_le32(user->count);
+	for (i = 0; i < user->count; i++) {
+		struct ane_t6021_bo *bo = NULL, *b;
+		u64 slot_base = 0x60 + (u64)i * 0x30;
+		u64 iova;
+
+		mutex_lock(&ane_t6021_bo_lock);
+		list_for_each_entry(b, &fd->bos, pool.node) {
+			if (b->handle == ios[i].bo_handle) {
+				bo = b;
+				break;
+			}
+		}
+		if (!bo || ios[i].size > bo->size) {
+			mutex_unlock(&ane_t6021_bo_lock);
+			return -EINVAL;
+		}
+		/* The IOVA below is about to be published to the
+		 * firmware, so mark the BO before the exchange.
+		 * Under bo_lock the handle reference cannot go
+		 * away, so no kref is needed here. */
+		bo->fw_ref = true;
+		bo->fw_io = true;
+		iova = bo->dma;
+		mutex_unlock(&ane_t6021_bo_lock);
+		*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
+		*(u32 *)(cmd + slot_base + 0x04) =
+			cpu_to_le32(ios[i].buffer_id);
+		*(u32 *)(cmd + slot_base + 0x08) =
+			cpu_to_le32(ios[i].type);
+		*(u64 *)(cmd + slot_base + 0x18) =
+			cpu_to_le64(iova);
+		*(u64 *)(cmd + slot_base + 0x20) =
+			cpu_to_le64(ios[i].size);
+	}
+	/* Drain the CPU write buffers so the input BOs the user
+	 * filled through its uncached mapping are in DRAM before
+	 * the fw starts reading them. */
+	wmb();
+	return ret;
+}
+
+/* Batched PROCEDURE_CALL (drm_ane_exec.pad 2..ANE_T6021_CALL_BATCH_MAX):
+ * post every call back-to-back on the channel-1 IO ring (one slot per
+ * call, each pointing at its own command buffer), then reap one finish
+ * event per call and validate its ack. The firmware runs its task
+ * manager serially, so call k+1 executes after call k; the win is that
+ * the host posts and reaps in bulk instead of paying a full
+ * exchange-wait-drain round trip per call. All calls bind the same BOs
+ * and the caller may read outputs only after the ioctl returns. Under
+ * trace_td the EVENT records of a batch carry the batch's last call
+ * id; the CALL/ACK pairs stay per call. The batch waits do not take
+ * TD/PS samples (the traced single-call wait does); per-task timelines
+ * need the sync path. */
+static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
+					     struct drm_file *file,
+					     const struct drm_ane_exec *user,
+					     const struct drm_ane_exec_io *ios,
+					     size_t cmd_size,
+					     unsigned int batch)
+{
+	unsigned int channel = 1, start, cursor, served_cursor, seen = 0;
+	unsigned int done = 0, begun = 0, j;
+	u64 tickets[ANE_T6021_CALL_BATCH_MAX] = { };
+	ktime_t submits[ANE_T6021_CALL_BATCH_MAX];
+	struct ane_legacy_buffer *cmd[ANE_T6021_CALL_BATCH_MAX];
+	struct ane_t6021_fd *fd = file->driver_priv;
+	bool stats_call = stats && ane->fw;
+	bool tracing;
+	unsigned int timeout_ms = user->timeout_ms ? user->timeout_ms : 5000;
+	int ret = 0, k;
+
+	mutex_lock(&ane_t6021_fw_lock);
+	if (atomic_read(&ane_t6021_quarantined)) {
+		ret = -ETIMEDOUT;
+		goto out;
+	}
+	if (!ane->cmd_buf) {
+		ret = -ENODEV;
+		goto out;
+	}
+	if (!fd || !ane_t6021_fdprogs_has(&fd->progs, user->prog_id)) {
+		ret = -ENOENT;
+		goto out;
+	}
+	for (k = 0; k < batch; k++) {
+		if (!ane->batch_cmd[k]) {
+			ret = ane_rtclient_legacy_alloc(ane, SZ_16K);
+			if (ret)
+				goto out;
+			ane->batch_cmd[k] =
+				&ane->legacy_buffers[ane->legacy_last -
+						     ane->legacy_buffers];
+		}
+		cmd[k] = ane->batch_cmd[k];
+		ret = ane_rtclient_build_call_cmd(ane, file, cmd[k], user,
+						  ios);
+		if (ret)
+			goto out;
+	}
+	tracing = trace_td && ane->soc->trace_td_off;
+	ane_t6021_tracing = tracing;
+	ane->legacy_owner = user->prog_id + 1;
+	start = cursor = ane->legacy_cmd_cursor[channel];
+	/* The sync exchange answers any SHAREDMALLOC entry that arrived
+	 * since the last command before it posts; so does the batch. */
+	served_cursor = ane->legacy_malloc_cursor;
+	for (j = 0; j < ane_t6021_chman_layout[5].size; j++) {
+		int served = ane_rtclient_malloc_service(ane,
+							 &served_cursor);
+
+		if (served < 0) {
+			ret = served;
+			/* Same contract as the sync exchange: a SHAREDMALLOC
+			 * answer the ring cannot give leaves the device not
+			 * safe to reuse until the module reload door runs. */
+			atomic_set(&ane_t6021_quarantined, 1);
+			goto out_owner;
+		}
+		if (!served)
+			break;
+	}
+	for (k = 0; k < batch; k++) {
+		int slot = ane_rtclient_legacy_post(ane, cmd[k], cmd_size,
+						    CSNE_CMD_PROCEDURE_CALL,
+						    channel, &cursor);
+
+		if (slot < 0) {
+			ret = slot;
+			/* Same contract as the sync exchange: a posted
+			 * slot that never flips or a held slot means
+			 * the ring is not what we think. */
+			atomic_set(&ane_t6021_quarantined, 1);
+			goto out_owner;
+		}
+		if (stats_call) {
+			submits[k] = ktime_get_ns();
+			tickets[k] = ane_stats_begin(&ane->fw->stats_ctrs,
+						     &ane->fw->stats_ring,
+						     submits[k], 1u);
+			begun = k + 1;
+		}
+		if (tracing) {
+			ane_t6021_trace->calls++;
+			ane_t6021_trace_add(ANE_TR_CALL, 0);
+		}
+	}
+	for (k = 0; k < batch; k++) {
+		ret = ane_rtclient_call_wait_n(ane, timeout_ms, &seen, k + 1,
+					       &served_cursor);
+		if (ret) {
+			/* Same contract as the sync exchange: any failed
+			 * wait or SHAREDMALLOC answer leaves posted slots
+			 * un-reaped, and the device is not safe to reuse
+			 * until the module reload door runs. */
+			atomic_set(&ane_t6021_quarantined, 1);
+			dev_err(ane->dev,
+				"batch call %d completion wait failed %d: %u of %u finish events\n",
+				k, ret, seen, batch);
+			goto out_owner;
+		}
+		ret = ane_rtclient_legacy_ackok(ane, cmd[k], cmd_size,
+						CSNE_CMD_PROCEDURE_CALL,
+						channel,
+						(start + k) %
+						ane_t6021_chman_layout[channel].size);
+		if (ret) {
+			dev_err(ane->dev,
+				"batch call %d ack invalid %d\n", k, ret);
+			atomic_set(&ane_t6021_quarantined, 1);
+			goto out_owner;
+		}
+		if (tracing)
+			ane_t6021_trace_add(ANE_TR_ACK, 0);
+		if (stats_call) {
+			ane_stats_complete(&ane->fw->stats_ctrs,
+					   &ane->fw->stats_ring, tickets[k],
+					   ktime_get_ns(), 0u, 0ull);
+			done = k + 1;
+		}
+	}
+	if (call_settle_us)
+		usleep_range(call_settle_us, call_settle_us + 100);
+	ane->legacy_cmd_cursor[channel] = cursor;
+	ane_rtclient_drain_t2h(ane, 4);
+	ane_rtclient_drain_t2h(ane, 6);
+out_owner:
+	/* Complete every ticket the failure left open (rc = ret); the
+	 * calls that finished normally already carried 0. Begun bounds
+	 * this: tickets only exist for posts that actually happened. */
+	if (stats_call)
+		for (j = done; j < begun; j++)
+			ane_stats_complete(&ane->fw->stats_ctrs,
+					   &ane->fw->stats_ring, tickets[j],
+					   ktime_get_ns(), (u32)ret, 0ull);
+	ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
+	ane->legacy_malloc_cursor = served_cursor;
+out:
+	ane_t6021_tracing = false;
+	mutex_unlock(&ane_t6021_fw_lock);
+	return ret;
+}
+
 static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 				       struct drm_file *file,
 				       const struct drm_ane_exec *user)
@@ -1574,10 +1915,12 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 	struct ane_t6021_fd *fd = file->driver_priv;
 	size_t ios_size;
 	size_t cmd_size;
-	int ret, i;
+	unsigned int batch = user->pad ? user->pad : 1;
+	int ret;
 
 	if (user->count < 1 || user->count > ANE_M2_MAX_BINDS ||
-	    user->priority < 2 || user->priority > 7 || !fd)
+	    user->priority < 2 || user->priority > 7 || !fd ||
+	    batch > ANE_T6021_CALL_BATCH_MAX)
 		return -EINVAL;
 
 	ios_size = (size_t)user->count * sizeof(*ios);
@@ -1594,6 +1937,13 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 	if (cmd_size > SZ_16K) {
 		kfree(ios);
 		return -E2BIG;
+	}
+
+	if (batch > 1) {
+		ret = ane_rtclient_procedure_call_batch(ane, file, user,
+							ios, cmd_size, batch);
+		kfree(ios);
+		return ret;
 	}
 
 	mutex_lock(&ane_t6021_fw_lock);
@@ -1613,62 +1963,17 @@ static int ane_rtclient_procedure_call(struct ane_rtclient *ane,
 		kfree(ios);
 		return -ENOENT;
 	}
-	memset(command->cpu, 0, SZ_16K);
 	{
-		u8 *cmd = command->cpu;
-
-		*(u32 *)(cmd + 0x08) = cpu_to_le32(user->prog_id);
-		*(u32 *)(cmd + 0x0c) = cpu_to_le32(user->proc_id);
-		*(u64 *)(cmd + 0x10) = cpu_to_le64(0);
-		*(u32 *)(cmd + 0x18) = cpu_to_le32(user->priority);
-		*(u64 *)(cmd + 0x20) = cpu_to_le64(ANE_CALL_COOKIE);
-		*(u32 *)(cmd + 0x28) = cpu_to_le32(user->count);
-		for (i = 0; i < user->count; i++) {
-			struct ane_t6021_bo *bo = NULL, *b;
-			u64 slot_base = 0x60 + (u64)i * 0x30;
-			u64 iova;
-
-			mutex_lock(&ane_t6021_bo_lock);
-			list_for_each_entry(b, &fd->bos, pool.node) {
-				if (b->handle == ios[i].bo_handle) {
-					bo = b;
-					break;
-				}
-			}
-			if (!bo || ios[i].size > bo->size) {
-				mutex_unlock(&ane_t6021_bo_lock);
-				ret = -EINVAL;
-				goto unlock;
-			}
-			/* The IOVA below is about to be published to the
-			 * firmware, so mark the BO before the exchange.
-			 * Under bo_lock the handle reference cannot go
-			 * away, so no kref is needed here. */
-			bo->fw_ref = true;
-			bo->fw_io = true;
-			iova = bo->dma;
-			mutex_unlock(&ane_t6021_bo_lock);
-			*(u32 *)(cmd + slot_base + 0x00) = cpu_to_le32(1);
-			*(u32 *)(cmd + slot_base + 0x04) =
-				cpu_to_le32(ios[i].buffer_id);
-			*(u32 *)(cmd + slot_base + 0x08) =
-				cpu_to_le32(ios[i].type);
-			*(u64 *)(cmd + slot_base + 0x18) =
-				cpu_to_le64(iova);
-			*(u64 *)(cmd + slot_base + 0x20) =
-				cpu_to_le64(ios[i].size);
-		}
-		/* Drain the CPU write buffers so the input BOs the user
-		 * filled through its uncached mapping are in DRAM before
-		 * the fw starts reading them. */
-		wmb();
 		ane->legacy_owner = user->prog_id + 1;
-		ret = ane_rtclient_command(ane, command,
-							       cmd_size,
-							       CSNE_CMD_PROCEDURE_CALL,
-							       1,
-							       user->timeout_ms ?
-							       user->timeout_ms : 5000);
+		ret = ane_rtclient_build_call_cmd(ane, file, command, user,
+						  ios);
+		if (!ret)
+			ret = ane_rtclient_command(ane, command,
+						   cmd_size,
+						   CSNE_CMD_PROCEDURE_CALL,
+						   1,
+						   user->timeout_ms ?
+						   user->timeout_ms : 5000);
 		ane->legacy_owner = ANE_LEGTAB_NO_OWNER;
 	}
 unlock:
