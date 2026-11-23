@@ -33,6 +33,15 @@ static const struct kernel_param_ops ane_tm_timeout_ops = {
 module_param_cb(tm_timeout_ms, &ane_tm_timeout_ops, &tm_timeout_ms, 0644);
 MODULE_PARM_DESC(tm_timeout_ms, "M1 task completion timeout in ms (100-10000, default 1000)");
 
+/* A completion that used most of its timeout budget is the interesting
+ * tm_timeout_ms data point: the program succeeded but the next slower
+ * one becomes a -ETIMEDOUT. Ratelimited so a chatty workload cannot
+ * spam the log. */
+static bool ane_tm_slow_complete(u64 elapsed_us, unsigned int timeout_ms)
+{
+	return elapsed_us > (u64)timeout_ms * 750;
+}
+
 #define ANE_TQ_COUNT 8
 static const int TQ_PRTY_TABLE[ANE_TQ_COUNT] = { 0x1, 0x2, 0x3,	 0x4,
 						 0x5, 0x6, 0x1e, 0x1f };
@@ -292,7 +301,8 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	const char *why = "timeout";
 	int err, status;
 	unsigned int timeout_ms = READ_ONCE(tm_timeout_ms);
-	ktime_t deadline;
+	u64 elapsed_us;
+	ktime_t start, deadline;
 
 	lockdep_assert_held(&ane->engine_lock);
 	ane_dart_mask(ane);
@@ -305,7 +315,8 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		goto wedge;
 	}
 	wmb();
-	deadline = ktime_add_ms(ktime_get(), timeout_ms);
+	start = ktime_get();
+	deadline = ktime_add_ms(start, timeout_ms);
 	ane_tm_push_tq(ane, req);
 
 	for (;;) {
@@ -317,12 +328,13 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 		}
 
 		/* Latch-first completion poll. Engine register reads hang
-		 * jwm1 once a DART fault has landed (lockups 1 and 3: the
-		 * journal ends inside the 1-microsecond completion poll,
-		 * before any fault handling ran), so the poll op consults
-		 * the DART error latch first and stops the poll before the
-		 * engine is touched. Residual hazard: a fault landing
-		 * between one iteration's latch read and engine read. */
+		 * the M1 test host once a DART fault has landed (lockups 1
+		 * and 3: the journal ends inside the 1-microsecond
+		 * completion poll, before any fault handling ran), so the
+		 * poll op consults the DART error latch first and stops
+		 * the poll before the engine is touched. Residual hazard:
+		 * a fault landing between one iteration's latch read and
+		 * engine read. */
 		err = read_poll_timeout(ane_tm_poll_step, status,
 					status != 0, 1, remaining_us, false,
 					ane, req, &finished);
@@ -383,6 +395,11 @@ int ane_tm_execute(struct ane_device *ane, struct ane_request *req)
 	rmb();
 	tq_write32(ane, TQ_STATUS(req->qid), 0x0);
 	ane_dart_unmask(ane);
+	elapsed_us = ktime_us_delta(ktime_get(), start);
+	if (ane_tm_slow_complete(elapsed_us, timeout_ms))
+		dev_warn_ratelimited(ane->dev,
+				     "tm completion slow: %llu us (>75%% of tm_timeout_ms=%u)\n",
+				     elapsed_us, timeout_ms);
 	return 0;
 
 wedge:
