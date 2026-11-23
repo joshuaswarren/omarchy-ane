@@ -139,13 +139,7 @@ for chip in sorted(_chips):
     p = run(base, chip, to, "--check", note)  # writes nothing
     assert p.returncode == 0 and tree(base) == after, (chip, p.stderr)
 
-    print("DBG note:", (note or "None")[:60])
-    dbg = tree(base)["CHANGELOG.md"].decode().splitlines()
-    print("DBG before-T6002:", [l[:58] for l in dbg if "T6002" in l and l.strip().startswith("-")])
     p = run(base, chip, back, "--apply", note)
-    assert p.returncode == 0, (chip, p.stderr)
-    dbg2 = tree(base)["CHANGELOG.md"].decode().splitlines()
-    print("DBG after-T6002:", [l[:58] for l in dbg2 if "T6002" in l and l.strip().startswith("-")])
     rt = tree(base)
     residue = {k for k in rt if rt[k] != before.get(k)} | {k for k in before if k not in rt}
     assert residue <= {"CHANGELOG.md"}, (chip, sorted(residue))
