@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- (nothing yet)
+- `ane`: a completed task that used more than 75% of `tm_timeout_ms` logs a ratelimited `tm completion slow` warning, so a valid-but-slow program shows up in the log before it becomes a timeout.
 
 ## 0.5.14 (2026-11-22)
 

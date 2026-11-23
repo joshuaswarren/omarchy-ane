@@ -7,7 +7,8 @@ import tempfile
 source = (pathlib.Path(__file__).resolve().parents[1] / 'src/ane_tm.c').read_text()
 start = source.index('static int ane_tm_poll_step(')
 end = source.index('\n/*\n * Bounded recovery', start)
-functions = source[start:end]
+helper = source.index('static bool ane_tm_slow_complete(')
+functions = source[helper:source.index('\n}', helper) + 2] + source[start:end]
 harness = r'''
 #include <stdbool.h>
 #include <stdint.h>
@@ -28,6 +29,8 @@ struct ane_dart_scratch { int unused; };
 #define wmb() ((void)0)
 #define rmb() ((void)0)
 #define dev_err(...) ((void)0)
+static int warns;
+#define dev_warn_ratelimited(...) do { warns++; } while (0)
 #define __module_get(x) ((void)0)
 #define atomic_xchg(ptr, value) (*(ptr) = (value), 0)
 #define READ_ONCE(x) (x)
@@ -132,6 +135,17 @@ int main(void) {
     result = ane_tm_execute(&dev, &req);
     if (result || recovery) {
         fprintf(stderr, "extended deadline: rc=%d recovery=%d\n", result, recovery);
+        return 1;
+    }
+    if (warns) {
+        fprintf(stderr, "fast completion warned: warns=%d\n", warns);
+        return 1;
+    }
+    dev = (struct ane_device){0}; recovery = 0; warns = 0; tm_timeout_ms = 5000;
+    submit_us = 4000000;
+    result = ane_tm_execute(&dev, &req);
+    if (result || warns != 1) {
+        fprintf(stderr, "slow completion: rc=%d warns=%d\n", result, warns);
         return 1;
     }
     dev = (struct ane_device){0}; tm_timeout_ms = 5000;

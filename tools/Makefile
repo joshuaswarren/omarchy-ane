@@ -193,6 +193,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 tes
 	./test_ane_latency explicit
 	./test_ane_latency clamp
 	$(PYTHON) ../ane/test/retirement_model_test.py
+	$(PYTHON) ../ane/test/tm_timeout_warn_test.py
 	$(PYTHON) ../ane/test/tm_transient_fault_test.py
 	$(PYTHON) ../ane/test/tm_close_test.py
 	$(PYTHON) ../ane/test/tm_recovery_guard_test.py
