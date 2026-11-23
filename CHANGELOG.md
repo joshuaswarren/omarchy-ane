@@ -33,7 +33,7 @@ Internal / test-only:
 - CI bounds every job and cancels stale runs (#445, 7517110).
 - The ASan session-cache test runs under `setarch -R` (#441, bbd81e6). The A/B runner template lands with its host tests (#439, 5aab3f7; #440, 65130d8).
 - `promote_chip` `join_names` renders one or zero names as strings (#459, a56046c).
-- h18 receipts for the 2026-11-18 fixediova add reproduction, marked historical (#444, 7bb7047).
+- h18 receipts for the 2026-11-18 fixediova add reproduction: the recorded ane-h18-fixediova receipt (history in git), marked historical (#444, 7bb7047).
 
 ## 0.5.13 (2026-11-15)
 
