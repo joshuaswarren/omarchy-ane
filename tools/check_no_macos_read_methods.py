@@ -42,57 +42,23 @@ PATTERNS = [
 ALLOWED = {"packaging/omarchy-ane-firmware-fetch"}
 # Decided 2026-10-30: captured program output and a run's own source copy are evidence and are never edited. Explicit list, not a glob:
 # a new capture that carries the words fails until it is added here on purpose.
+# Captured program output and a run's own source copy are evidence and are never
+# edited: files here are skipped by files() and guarded by their frozen count where
+# one is recorded. A new capture that carries the words fails until it is added here
+# on purpose.
 CAPTURED = {
+    # Kept receipts/ evidence: the run's own source copy (read-method text is frozen).
     "receipts/2026-09-24-t6021-pwgate/ane_t6021_fwload.c",
-    "receipts/2026-09-24-t6021-pwgate/ane_t6021_rtclient_main.c",
-    "receipts/2026-10-01-t6021-dart-kernel/logs/hw_reset.disasm.txt",
+    # Kept receipts/ evidence: captured run log (read-method text is frozen).
     "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-ane.txt",
-    "receipts/2026-10-01-t6021-default-on-gate/logs/P/dmesg-ane.txt",
-    "receipts/2026-10-01-t6021-default-on-gate/logs/final/dmesg-ane.txt",
-    "receipts/2026-10-01-t6021-default-on-gate/logs/host/flip-m2-compile.txt",
-    "receipts/2026-10-01-t6021-default-on-gate/logs/host/host-tests-c2b7408.txt",
-    # Captured 2026-11-18 on the M6 fixediova add run (PR: #444): the run's own dmesg
-    # is evidence and is never edited; four lines carry the words and the count is frozen here.
-    "receipts/2026-11-18-ane-h18-fixediova/post-run.dmesg",
 }
-# Grandfathered 2026-11-08 (PR: public-text ratchet cleanup): captured H17 bring-up
-# evidence that landed with PR #364 before this check could run on it. Captured output
-# and captured-data ledgers are never edited, so they are allowlisted on purpose, file
-# by file: disassembly and decode dumps, run logs, rung assessments, the stage-4
-# evidence ledger the planner consumes, and the planner test whose assertions embed the
-# captured run's addresses. Read-method TOOLING and TEACHING DOCS are not on this list;
-# they moved to the private lab store (ane-h17-lab) in the same change.
+# Grandfathered 2026-11-08 (PR: public-text ratchet cleanup): captured H17 evidence
+# that landed with PR #364 before this check could run on it. The receipts/ part of
+# that evidence was deleted (docs cleanup, 2026-11-22); the stage-4 data ledger the
+# planner consumes stays captured here. Read-method TOOLING and TEACHING DOCS are not
+# on this list; they moved to the private lab store (ane-h17-lab).
 CAPTURED_H17 = {
     "data/h17/t8140-stage4.json",
-    "receipts/2026-10-30-j700-h17-adt/README.md",
-    "receipts/2026-10-30-j700-h17-asc-map/README.md",
-    "receipts/2026-10-30-j700-h17-hang/README.md",
-    "receipts/2026-10-30-j700-h17-qualified-map/README.md",
-    "receipts/2026-10-31-j700-h17-power-contract/README.md",
-    "receipts/2026-11-01-j700-h17-exclave-vs-sep/README.md",
-    "receipts/2026-11-01-j700-h17-linux-support-plan/README.md",
-    "receipts/2026-11-02-j700-h17-safe-round/README.md",
-    "receipts/2026-11-02-j700-h17-stage5-review/README.md",
-    "receipts/2026-11-03-j700-h17-clock-gap/README.md",
-    "receipts/2026-11-03-j700-h17-offline-subagents/README.md",
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-exclave-kernelcache-report.md",
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md",
-    "receipts/2026-11-03-j700-h17-offline-subagents/t8140-anehal-register-map.md",
-    "receipts/2026-11-03-j700-h17-poweron-and-tunable-freezes/README.md",
-    "receipts/2026-11-04-j700-h17-adt-parser-fixes/README.md",
-    "receipts/2026-11-04-j700-h17-adt-parser-fixes/live-dt.log",
-    "receipts/2026-11-04-j700-h17-clkgen-live/README.md",
-    "receipts/2026-11-04-j700-h17-clkgen-map71-correction/README.md",
-    "receipts/2026-11-04-j700-h17-clock-pmp-command/README.md",
-    "receipts/2026-11-04-j700-h17-clock-window-derivation/README.md",
-    "receipts/2026-11-04-j700-h17-first-firmware-wake/README.md",
-    "receipts/2026-11-04-j700-h17-fwboot-clean-negative/README.md",
-    "receipts/2026-11-04-j700-h17-order-adapter/README.md",
-    "receipts/2026-11-04-j700-h17-order-helper/README.md",
-    "receipts/2026-11-04-j700-h17-table-discovery-implementation/README.md",
-    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt",
-    "receipts/2026-11-04-j700-h17-wake-scratch-snapshot/README.md",
-    "receipts/2026-11-05-j700-h17-next-command-rung-assessment.md",
 }
 # A rung assessment belongs here only when it is a run's own ledger; interpretation prose gets
 # neutralized instead, like receipts/2026-11-04-j700-h17-bringup-state/README.md was.
@@ -101,35 +67,6 @@ CAPTURED_H17 = {
 # gain any. A no-op edit still passes; new read-method text in a captured file fails.
 CAPTURED_H17_COUNTS = {
     "data/h17/t8140-stage4.json": 121,
-    "receipts/2026-10-30-j700-h17-adt/README.md": 4,
-    "receipts/2026-10-30-j700-h17-asc-map/README.md": 2,
-    "receipts/2026-10-30-j700-h17-hang/README.md": 1,
-    "receipts/2026-10-30-j700-h17-qualified-map/README.md": 2,
-    "receipts/2026-10-31-j700-h17-power-contract/README.md": 55,
-    "receipts/2026-11-01-j700-h17-exclave-vs-sep/README.md": 8,
-    "receipts/2026-11-01-j700-h17-linux-support-plan/README.md": 6,
-    "receipts/2026-11-02-j700-h17-safe-round/README.md": 2,
-    "receipts/2026-11-02-j700-h17-stage5-review/README.md": 1,
-    "receipts/2026-11-03-j700-h17-clock-gap/README.md": 24,
-    "receipts/2026-11-03-j700-h17-offline-subagents/README.md": 15,
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-exclave-kernelcache-report.md": 127,
-    "receipts/2026-11-03-j700-h17-offline-subagents/j700-h17-first-engine-write.md": 179,
-    "receipts/2026-11-03-j700-h17-offline-subagents/t8140-anehal-register-map.md": 151,
-    "receipts/2026-11-03-j700-h17-poweron-and-tunable-freezes/README.md": 2,
-    "receipts/2026-11-04-j700-h17-adt-parser-fixes/README.md": 3,
-    "receipts/2026-11-04-j700-h17-adt-parser-fixes/live-dt.log": 2,
-    "receipts/2026-11-04-j700-h17-clkgen-live/README.md": 3,
-    "receipts/2026-11-04-j700-h17-clkgen-map71-correction/README.md": 2,
-    "receipts/2026-11-04-j700-h17-clock-pmp-command/README.md": 11,
-    "receipts/2026-11-04-j700-h17-clock-window-derivation/README.md": 12,
-    "receipts/2026-11-04-j700-h17-first-firmware-wake/README.md": 1,
-    "receipts/2026-11-04-j700-h17-fwboot-clean-negative/README.md": 2,
-    "receipts/2026-11-04-j700-h17-order-adapter/README.md": 2,
-    "receipts/2026-11-04-j700-h17-order-helper/README.md": 6,
-    "receipts/2026-11-04-j700-h17-table-discovery-implementation/README.md": 2,
-    "receipts/2026-11-04-j700-h17-tunable-decode/selfcheck.txt": 13,
-    "receipts/2026-11-04-j700-h17-wake-scratch-snapshot/README.md": 1,
-    "receipts/2026-11-05-j700-h17-next-command-rung-assessment.md": 26,
 }
 CAPTURED_H17 |= CAPTURED_H17_COUNTS.keys()
 ALLOWED = ALLOWED | CAPTURED | CAPTURED_H17

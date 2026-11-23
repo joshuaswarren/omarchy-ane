@@ -117,13 +117,13 @@ commit(repo)
 # (the override must sit before the checker's main guard, or sys.exit swallows it)
 with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py")) as f:
     body = f.read()
-override = ("ALLOWED.add('receipts/2026-10-30-j700-h17-frozen/README.md')\n"
-            "CAPTURED_H17_COUNTS.update({'receipts/2026-10-30-j700-h17-frozen/README.md': 1})\n")
+override = ("ALLOWED.add('data/h17/t8140-frozen.json')\n"
+            "CAPTURED_H17_COUNTS.update({'data/h17/t8140-frozen.json': 1})\n")
 assert body.count('if __name__ == "__main__":') == 1
 body = body.replace('if __name__ == "__main__":', override + 'if __name__ == "__main__":')
 with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py"), "w") as f:
     f.write(body)
-frozen = "receipts/2026-10-30-j700-h17-frozen/README.md"
+frozen = "data/h17/t8140-frozen.json"
 os.makedirs(os.path.dirname(os.path.join(repo, frozen)), exist_ok=True)
 with open(os.path.join(repo, frozen), "w") as f:
     f.write(line)
