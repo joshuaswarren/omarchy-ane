@@ -289,11 +289,15 @@ def changelog_line(chip, promote, note):
 
 def edit_changelog(text, chip, promote, note):
     keep = changelog_line(chip, promote, note)
-    drop = changelog_line(chip, not promote, note)
-    kept = [l for l in text.splitlines(keepends=True) if l.rstrip("\n") not in (keep, drop)]
-    h = next((i for i, l in enumerate(kept) if l.strip() == "## Unreleased"), None)
+    # collapse this chip's earlier entries, whatever note they carry, but only
+    # inside Unreleased: a released section is history and stays untouched.
+    stems = (changelog_line(chip, True, None), changelog_line(chip, False, None))
+    lines = text.splitlines(keepends=True)
+    h = next((i for i, l in enumerate(lines) if l.strip() == "## Unreleased"), None)
     if h is None:
         raise Refuse("CHANGELOG.md: no Unreleased section")
+    end = next((i for i in range(h + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    kept = lines[:h + 1] + [l for l in lines[h + 1:end] if not l.startswith(stems)] + lines[end:]
     at = h + 2 if h + 1 < len(kept) and kept[h + 1].strip() == "" else h + 1
     # after a release, Unreleased is empty right above the released heading:
     # keep the blank line between the entry and that heading
