@@ -544,9 +544,12 @@ static int ane_pd_cycle(struct ane_device *ane)
 
 /*
  * Drain the task-manager state a timed-out task leaves behind when the
- * tm/tq file survives the power cycle in retention (T6001; descriptor
- * tm_retention). T8103 never runs this: its cycle is a full POR of the
- * file, and the re-arm below starts it clean.
+ * tm/tq file survives the power cycle in retention (T600x and T8103;
+ * descriptor tm_retention). The old T8103 full-POR assumption was
+ * falsified twice: the stage-1 comment above names the 2026-11-02
+ * T8103 "reads TM_STATUS 0 after stage 1" case, and the 2026-11-23
+ * jw16 wedge logged "tm not idle after reset" with a dead task's
+ * queue fetches still firing on the ANE DARTs.
  *
  * Two things must go, or the retained TM never reads idle again:
  *   - pending events on both IRQ lines. Each event pops by reading
@@ -627,6 +630,49 @@ static void ane_tm_drain_retained(struct ane_device *ane)
 		       ane->engine + ANE_TM_BASE + TM_ERROR2);
 	ane_rec_read32(ane, "TM_ERROR3 tm+0x60 (drain)",
 		       ane->engine + ANE_TM_BASE + TM_ERROR3);
+}
+
+/*
+ * Teardown-stage quiesce for ane_platform_remove. Stop every firmware
+ * stream and engine-originated DMA before remove unmaps BO IOVAs or the
+ * genpd detach drops power: drain the retained task-manager state
+ * exactly as recovery does (halts the queue enables and clears any
+ * latched queue entry still driving fetches), then gate the engine's
+ * power partitions. Unlike ane_pd_cycle the partitions stay gated;
+ * remove's detach owns the final power state. With a single power
+ * domain there is no engine-only partition to gate without also
+ * dropping the DART suppliers the unmaps need, so the drain stands
+ * alone there and the detach supplies the power-off. Callers hold
+ * engine_lock with the device resumed. Returns the first suspend error;
+ * the caller proceeds with teardown regardless.
+ */
+int ane_tm_quiesce(struct ane_device *ane)
+{
+	int err = 0;
+
+	lockdep_assert_held(&ane->engine_lock);
+	ane_tm_drain_retained(ane);
+
+	ane->recovering = true;
+	if (ane->pd_count > 1) {
+		int gated = 0;
+
+		for (int i = 0; i < ane->pd_count; i++) {
+			pm_runtime_get_noresume(ane->pd_dev[i]);
+			gated = i + 1;
+			err = pm_runtime_force_suspend(ane->pd_dev[i]);
+			dev_dbg(ane->dev,
+				"ANERD quiesce pd[%d] force_suspend -> %d (ps act %#x)\n",
+				i, err, ane_ps_act(ane));
+			if (err)
+				break;
+		}
+		while (gated--)
+			pm_runtime_put_noidle(ane->pd_dev[gated]);
+	}
+	ane->recovering = false;
+
+	return err;
 }
 
 int ane_tm_recover(struct ane_device *ane)
