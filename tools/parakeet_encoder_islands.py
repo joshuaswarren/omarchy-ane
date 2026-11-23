@@ -55,6 +55,7 @@ import numpy as np
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from island_ref import ISLANDS, alloc_for_ch, in_arg_order, read_fp16_surface  # noqa: E402
+from ane_run_lock import flock_argv  # noqa: E402
 
 MIL_NUMPY_PATH = "/home/joshuawarren/src/mlx-omarchy/overlay/tools/coreml/mil_numpy.py"
 
@@ -158,7 +159,9 @@ class AneDispatcher:
             )
             remote_in[ch] = remote
 
-        cmd = ["flock", "/var/tmp/ane-run.lock", "timeout", "60",
+        # flock_argv honors ANE_LOCK_HELD_FD: under the guard the ticket
+        # already owns the device, so the remote command must not flock again.
+        cmd = [*flock_argv(), "timeout", "60",
                "/var/tmp/inst/tools/ane-run", "--anec",
                f"{self.anec_root}/{ISLAND_DEVICE[island]}/program-0.anec"]
         for slot, ch in in_arg_order(cfg):
