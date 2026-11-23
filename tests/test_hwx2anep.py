@@ -139,5 +139,67 @@ def test_the_text_region_holds_the_task_stream(converted):
     assert converted[text:text + size] == hwx[0x4000:0x4000 + size]
 
 
+def test_print_plan_writes_nothing(tmp_path):
+    """wAX's note: --print-plan must not write a file."""
+    target = tmp_path / "must-not-exist.bin"
+    result = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(FIXTURE / "program-0.hwx"),
+         "--manifest", str(FIXTURE / "manifest.json"),
+         "--print-plan"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not target.exists(), "--print-plan wrote a file"
+    assert "text IOVA" in result.stdout, result.stdout
+    # And it must not have created the file named by -o either.
+    named = tmp_path / "also-not-written.bin"
+    result = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(FIXTURE / "program-0.hwx"),
+         "--manifest", str(FIXTURE / "manifest.json"),
+         "-o", str(named), "--print-plan"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not named.exists(), "--print-plan wrote the named output file"
+
+
+def _tampered_manifest(tmp_path, mutate):
+    manifest = json.loads((FIXTURE / "manifest.json").read_text())
+    mutate(manifest)
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+    return path
+
+
+def test_a_size_mismatch_is_refused(tmp_path):
+    """wAX's note: the HWX and the manifest must be cross-checked, not
+    taken by position."""
+    def shrink(manifest):
+        manifest["inputs"][0]["allocationBytes"] = 4096
+    manifest = _tampered_manifest(tmp_path, shrink)
+    result = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(FIXTURE / "program-0.hwx"),
+         "--manifest", str(manifest),
+         "-o", str(tmp_path / "prog.bin")],
+        capture_output=True, text=True)
+    assert result.returncode != 0, "a mismatched buffer size was accepted"
+    assert "manifest says" in result.stderr, result.stderr
+
+
+def test_a_missing_buffer_is_refused(tmp_path):
+    def drop(manifest):
+        manifest["inputs"].pop()
+    manifest = _tampered_manifest(tmp_path, drop)
+    result = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(FIXTURE / "program-0.hwx"),
+         "--manifest", str(manifest),
+         "-o", str(tmp_path / "prog.bin")],
+        capture_output=True, text=True)
+    assert result.returncode != 0, "a missing buffer was accepted"
+    assert "buffers" in result.stderr, result.stderr
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

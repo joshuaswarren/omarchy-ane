@@ -89,8 +89,11 @@ def parse_hwx(data):
                 if filesize and (offset + size > len(data)):
                     raise ValueError("section %s/%s runs past the file"
                                      % (segment, name))
-                sections[(segment, name)] = {"addr": addr, "size": size,
-                                             "offset": offset}
+                # A segment can hold several sections with the same name
+                # (the HWX has two __FVMLIB/__const surfaces), so keep them
+                # all.
+                sections.setdefault((segment, name), []).append(
+                    {"addr": addr, "size": size, "offset": offset})
                 sc += 80
         elif command == 0x40 and command_size == 0x20:
             address = struct.unpack_from("<Q", data, cursor + 0x10)[0]
@@ -99,15 +102,99 @@ def parse_hwx(data):
     return subtype, sections, refs
 
 
+def one(sections, key):
+    """The single section with that (segment, name), or None."""
+    found = sections.get(key, [])
+    return found[0] if len(found) == 1 else None
+
+
+def match_buffers(refs, inputs, outputs, sections):
+    """Match the HWX's buffer references to the manifest's entries.
+
+    The references carry an address and a name ('input0', 'output0'); the
+    manifest carries the buffer id, the MIL name and the allocation size.
+    Neither list is trusted on its own: every reference must find the
+    manifest entry of the same kind (by name when the names agree, by kind
+    otherwise), the HWX's buffer surface at that address must have the
+    manifest's allocation size, and the addresses must form the ladder the
+    loader maps them on - consecutive, 16 KiB aligned, each step the
+    aligned size of the previous buffer.
+    """
+    if len(refs) != len(inputs) + len(outputs):
+        raise ValueError("the HWX names %d buffers, the manifest %d inputs "
+                         "and %d outputs" % (len(refs), len(inputs),
+                                             len(outputs)))
+    surfaces = {}
+    for (segment, name), infos in sections.items():
+        if segment == "__FVMLIB":
+            for info in infos:
+                surfaces[info["addr"]] = info["size"]
+
+    def kind_of(ref_name):
+        lowered = ref_name.lower()
+        if lowered.startswith("input"):
+            return 0
+        if lowered.startswith("output"):
+            return 1
+        raise ValueError("buffer reference %r names no direction" % ref_name)
+
+    entries = [(entry, 0) for entry in inputs] + [(entry, 1) for entry in outputs]
+    by_name = {}
+    for entry, kind in entries:
+        by_name.setdefault(entry.get("name", ""), []).append((entry, kind))
+
+    ios = []
+    used = set()
+    for position, (address, ref_name) in enumerate(refs):
+        kind = kind_of(ref_name)
+        candidates = [item for item in entries
+                      if item[1] == kind and id(item[0]) not in used]
+        if not candidates:
+            raise ValueError("buffer reference %r has no manifest entry"
+                             % ref_name)
+        # Prefer an exact name match; otherwise take the first free entry of
+        # the same kind and let the address and size checks confirm it.
+        match = None
+        for entry, entry_kind in candidates:
+            if entry.get("name") == ref_name:
+                match = (entry, entry_kind)
+                break
+        if match is None:
+            match = candidates[0]
+        entry, _ = match
+        used.add(id(entry))
+        size = entry["allocationBytes"]
+        surface = surfaces.get(address)
+        if surface is None:
+            raise ValueError("buffer reference %r at 0x%x has no __FVMLIB "
+                             "surface" % (ref_name, address))
+        if surface != size:
+            raise ValueError("buffer reference %r at 0x%x covers %d bytes, "
+                             "the manifest says %d" % (ref_name, address,
+                                                       surface, size))
+        if position:
+            previous = ios[-1]
+            step = (previous["size"] + 0x3FFF) & ~0x3FFF
+            if address != previous["addr"] + step:
+                raise ValueError("buffer reference %r at 0x%x does not follow "
+                                 "0x%x by its aligned size 0x%x"
+                                 % (ref_name, address, previous["addr"], step))
+            if address % 0x4000:
+                raise ValueError("buffer reference %r at 0x%x is not 16 KiB "
+                                 "aligned" % (ref_name, address))
+        ios.append({"id": entry["index"], "dir": kind, "size": size,
+                    "addr": address, "name": ref_name})
+    return ios
+
+
 def build(hwx, manifest):
     """Build the ANEP bytes from an HWX image and its compile manifest."""
     subtype, sections, refs = parse_hwx(hwx)
     if subtype != H18_SUBTYPE:
         raise ValueError("HWX subtype 0x%04x is not H18 (0x%04x)"
                          % (subtype, H18_SUBTYPE))
-
-    text = sections.get(("__TEXT", "__text"))
-    const = sections.get(("__TEXT", "__const"))
+    text = one(sections, ("__TEXT", "__text"))
+    const = one(sections, ("__TEXT", "__const"))
     if text is None:
         raise ValueError("the HWX has no __TEXT/__text section")
     if const is None:
@@ -117,8 +204,8 @@ def build(hwx, manifest):
                          "window is %d" % (const["size"], CONST_BYTES))
     # Section 2: the const window first, the weights (if any) behind it.
     sec2 = hwx[const["offset"]:const["offset"] + CONST_BYTES]
-    kern = sections.get(("__FVMLIB", "__KERN_0")) or \
-        sections.get(("__KERN", "__KERN_0"))
+    kern = one(sections, ("__FVMLIB", "__KERN_0")) or \
+        one(sections, ("__KERN", "__KERN_0"))
     if kern is not None:
         sec2 += hwx[kern["offset"]:kern["offset"] + kern["size"]]
     # Section 3: the task stream.
@@ -126,16 +213,7 @@ def build(hwx, manifest):
 
     inputs = sorted(manifest["inputs"], key=lambda i: i["index"])
     outputs = sorted(manifest["outputs"], key=lambda o: o["index"])
-    if len(refs) != len(inputs) + len(outputs):
-        raise ValueError("the HWX names %d buffers, the manifest %d inputs "
-                         "and %d outputs" % (len(refs), len(inputs),
-                                             len(outputs)))
-    ios = []
-    for order, (ref, entry) in enumerate(zip(refs, inputs + outputs)):
-        direction = 0 if order < len(inputs) else 1
-        ios.append({"id": entry["index"], "dir": direction,
-                    "size": entry["allocationBytes"], "addr": ref[0],
-                    "name": ref[1]})
+    ios = match_buffers(refs, inputs, outputs, sections)
 
     nsec, nio = 2, len(ios)
     if nsec > ANEP_MAX_SECS or nio > ANEP_MAX_IO:
@@ -187,10 +265,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--hwx", required=True)
     ap.add_argument("--manifest", required=True)
-    ap.add_argument("-o", "--output", required=True)
+    ap.add_argument("-o", "--output",
+                    help="the program file to write (not needed with "
+                         "--print-plan)")
     ap.add_argument("--print-plan", action="store_true",
-                    help="print the loader's fixed-IOVA plan and exit")
+                    help="print the loader's fixed-IOVA plan and write nothing")
     args = ap.parse_args()
+    if not args.print_plan and not args.output:
+        ap.error("an output path is needed unless --print-plan is given")
     blob, plan = build(open(args.hwx, "rb").read(),
                         json.load(open(args.manifest)))
     if args.print_plan:
@@ -205,6 +287,7 @@ def main():
             print("buffer id=%d dir=%d size=%d addr=0x%x name=%s"
                   % (entry["id"], entry["dir"], entry["size"], entry["addr"],
                      entry["name"]))
+        return 0
     with open(args.output, "wb") as handle:
         handle.write(blob)
     print("wrote %s: %d bytes, %d sections, %d buffers"
