@@ -1190,9 +1190,14 @@ MODULE_PARM_DESC(allow_unqualified,
 
 static const struct ane_soc ane_soc_t8103 = {
 	/* M1 (m1-test-host). SET block mapped read-only for the recovery ACTUAL
-	 * log and the powered-on guard. Execution proven in the fleet. */
+	 * log and the powered-on guard. Execution proven in the fleet. The
+	 * tm/tq file retains queue state through the partition cycle after
+	 * all (jw16 DART-fault receipts 2026-11-23: "tm not idle after
+	 * reset" and dead-task fetches re-firing on re-power), so recovery
+	 * must drain it exactly like T600x. */
 	.ps_base = 0x23b70c000ULL,
 	.qual = ANE_QUALIFIED,
+	.tm_retention = true,
 };
 
 static const struct ane_soc ane_soc_t6000 = {
@@ -1431,6 +1436,16 @@ static void ane_platform_remove(struct platform_device *pdev)
 	mutex_lock(&ane->engine_lock);
 	ane->removed = true;
 	drm_dev_unplug(&ane->drm);
+
+	/* Quiesce before any DART teardown: a firmware stream still
+	 * fetching a retained or timed-out task must not outlive the BO
+	 * IOVAs it translates (jw16 fault receipt 2026-11-23: dead tasks
+	 * kept DMA-ing stale descriptors after unload, "NO PTE FOR IOVA"
+	 * on the ANE DARTs). Runs for the wedged bail-out too, so forced
+	 * removal at least leaves a stopped engine. */
+	if (ane_tm_quiesce(ane))
+		dev_warn(ane->dev,
+			 "engine quiesce failed; continuing teardown\n");
 
 	/* Returning cannot stop forced removal or its devres cleanup. */
 	if (atomic_read(&ane->wedged)) {
