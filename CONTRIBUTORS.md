@@ -9,7 +9,9 @@ registry are credited for the foundation their commits provide.
 - [@chriskearney](https://github.com/chriskearney)
 - [@eiln](https://github.com/eiln)
 - [@leifliddy](https://github.com/leifliddy)
+- [@lookevink](https://github.com/lookevink)
 - [@mattmireles](https://github.com/mattmireles)
+- [@mijuny](https://github.com/mijuny)
 - [@Ophuscado](https://github.com/Ophuscado)
 - [@techmore](https://github.com/techmore)
 
