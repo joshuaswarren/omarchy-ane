@@ -39,7 +39,7 @@
  * packaging/dt/t602x-ane.dtsi:55-62,112-138 (dart-ane0 in pmp 0x2c8,
  * dart-ane1/2 in ane_cpu 0x2e0), the islands :67-106, the ADT regs :40-44,
  * all checked against the live DT of the test boot. Tunable masks and
- * values: receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv.
+ * values: receipts/2026-10-01-t6021-dart-tunables/dart-tunables.tsv.
  * PARAMS and PERF names: m1n1 0b1c9d98b709 proxyclient/m1n1/hw/dart8110.py
  * :11-35,216-234 (the PERF names are marked as guesses there). TLB_CMD,
  * ERROR, PROTECT, ENABLE/DISABLE_STREAMS, TCR, TTBR: omarchy-linux

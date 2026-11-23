@@ -5,7 +5,7 @@
 > the autoloaded `ane_t6021` module and executes H14 programs (add, mul,
 > relu, scalar ops, clip, matvec up to 2048x5120) on the valid lanes of
 > each surface. Current record:
-> [receipts/2026-09-29-t6021-installed-path](../receipts/2026-09-29-t6021-installed-path/README.md).
+> the recorded 2026-09-29 t6021-installed-path receipt (history in git).
 > The older sections stay as history until they are rewritten.
 
 This is the canonical record of what the T6021 ANE work has proven, what it has
@@ -170,9 +170,9 @@ ane-linux-experiments abb63dd, closure omarchy-ane ee14b27).
   devicetree, args, `panic=30`) over the proxy in one unbroken session and
   resets the PMU panic counter. U-Boot is not involved.
   Receipt: ane-linux-experiments `lane/m2-fwstart` 91dbab3,
-  `receipts/2026-09-25-m2-bootpath-recovery/README.md`; the 43ec stage-1
+  the recorded 2026-09-25 m2-bootpath-recovery receipt (history in git); the 43ec stage-1
   lineage is identified in 58b0917
-  (`receipts/2026-09-25-m2-43ec-provenance.md`).
+  (the recorded 2026-09-25 m2-43ec-provenance receipt (history in git)).
 
 ## 8. Tools and artifacts
 
@@ -250,7 +250,7 @@ same word fine, so the abort is specific to the core's fetch. The
 firmware did complete its EL3 to EL1 reset first (VBAR_EL1 reads back the
 image base its prologue writes at 0x10000a54234). The ISP-style warm
 reset (EDPRCR = 2) does not change the stall. Detail:
-receipts/2026-09-24-t6001-asc-debug.
+the recorded 2026-09-24 asc-debug receipt (history in git).
 
 ## 12. T6021 VENC leg: firmware reaches its service loop (2026-09-24)
 
@@ -341,7 +341,7 @@ addresses and data base 0: they never ran what iBoot runs.
 with them, the copy equals every capture byte for byte (guard aside).
 `fw_alias_reserved=0` runs that copy and needs no preload address or
 reserved memory. No T6021 has run it yet (receipt
-`receipts/2026-10-01-t602x-independent/README.md`).
+the recorded 2026-10-01 t602x-independent receipt (history in git)).
 
 ### What the host must do, from the working drivers
 
@@ -529,7 +529,7 @@ as the whole explanation for the ANE.
 ## 16. macOS power-state form: ane_sys_mpm stays off (2026-09-25)
 
 Source: ane-linux-experiments `lane/m2-fwstart` 511acc6,
-`receipts/2026-09-25-macos-ane-pstable`. macOS 27.0 (26A428) on T6021. A macOS
+the recorded 2026-09-25 macos-ane-pstable receipt (history in git). macOS 27.0 (26A428) on T6021. A macOS
 register capture read the pmgr power-state block (PA `0x28e080000`) 14 times
 around a Parakeet encoder run: 3 idle samples, 10 during the run at 4.8 W ANE
 power (powermetrics), 1 after. Field layout per Linux `pmgr-pwrstate.c`:
@@ -561,7 +561,7 @@ TARGET [3:0], ACTUAL [7:4], PS_AUTO [27:24], AUTO_ENABLE bit 28.
 ## 17. macOS working-state engine dump (2026-09-25)
 
 Source: ane-linux-experiments `lane/m2-fwstart` b7c7bc5,
-`receipts/2026-09-25-macos-ane-engine-dump`. Same T6021 laptop and capture tool,
+the recorded 2026-09-25 macos-ane-engine-dump receipt (history in git). Same T6021 laptop and capture tool,
 two gated passes (load3, load4) while the ANE firmware ran under the encoder.
 Engine base 0x284000000. Linux column: lane receipts
 `2026-09-25-m2-handshake` and `2026-09-23-m2-fwstart` s9.
@@ -704,9 +704,9 @@ bit 1 clear, write the DAPF slices (+0x04 r4, +0x08 start, +0x10 end,
 +0x00 r0 enable, +0x20 r20, stride 0x40), then re-protect by writing 0x6
 to PROTECT (0x285800200). That is the working-state value (section 17).
 Receipt: ane-linux-experiments `lane/m2-fwstart`
-22b208b, `receipts/2026-09-25-t6021-ane-dapf/` (ADT data and m1n1
+22b208b, the recorded 2026-09-25 t6021-ane-dapf receipt (history in git) (ADT data and m1n1
 entry list included). First hardware leg failed (M2FwStart-2, receipt
-`lane/m2-fwstart` caeb09cf, `receipts/2026-09-25-t6021-dapf-lock/`): the
+`lane/m2-fwstart` caeb09cf, the recorded 2026-09-25 t6021-dapf-lock receipt (history in git)): the
 five writes did not land — every entry stayed r0=0, start=0, end=3.
 PROTECT_LOCK read 0x2: bit 1 is set-once, and a live UNPROTECT could not
 clear it (the bit was set before this Linux session; Linux apple-dart
@@ -723,7 +723,7 @@ from; carry it to T6021 only after a check on that chip.
 ### T6001: firmware cold start as macOS does it
 
 Source: ane-linux-experiments `lane/jw16-lsink2-clean` 82ede28 (merged
-caabc0f), `receipts/2026-09-24-launch-sink2/asc-capture/run-205806/`. From a
+caabc0f), the recorded 2026-09-24 asc-capture run (history in git). From a
 T6001 macOS boot log.
 
 - macOS starts the firmware lazily, on the first power-on client (the ISP
@@ -791,7 +791,7 @@ Source: private notes. T6001-derived.
 ### T8103: ANE clock lead
 
 Source: ane-linux-experiments fedd4da (section 7) and 887ba0e (section 8),
-`receipts/2026-09-25-m1-ane-clock-macos/`. The a90b9a9 section 9 PA
+the recorded 2026-09-25 m1-ane-clock-macos receipt (history in git). The a90b9a9 section 9 PA
 reading is retracted (fix 8637d99); the history bullet below records it.
 
 - Same Parakeet encoder on the same M1 (T8103): macOS 112.99 ms median,
@@ -833,7 +833,7 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   `(old & ~0x1000) | 0x80001000`; power-down to 0 clears bit 12. No
   Linux code writes that engine word. Executed, in two halves
   (AneAcgT8103, ane-linux-experiments 9288833,
-  `receipts/2026-09-25-jwm1-t8103-acg-hack/`; omarchy-ane
+  the recorded 2026-09-25 jwm1-t8103-acg-hack receipt (history in git); omarchy-ane
   `agent/t8103-acg` eb4cf4c). Read half: Linux's power-up value at the
   word is 0x80000000 — bit 12 clear where the reference side sets it; the two systems
   genuinely disagree. Write half, falsified: applying the reference RMW
@@ -848,7 +848,7 @@ reading is retracted (fix 8637d99); the history bullet below records it.
   the force-wakeup workaround and the general path is a plain BIT(29)
   RMW, with none of the acg constants, and the T6001 ADT carries no
   ane-acg-hack (Jw16Levers5, ane-linux-experiments e5e82aa,
-  `receipts/2026-09-25-jw16-levers5/receipt-step3-4.md`). The ACG lever is
+  the recorded 2026-09-25 jw16-levers5 receipt (history in git)). The ACG lever is
   T8103-only; a Linux acg_hack fix does not transfer. Whether the T6021
   ADT carries the flag is unchecked — that decides whether this path can
   matter for the M2 park.
@@ -860,7 +860,7 @@ reading is retracted (fix 8637d99); the history bullet below records it.
 
 ### T6021: the macOS pmgr has no ANE perf-state path
 
-Source: ane-linux-experiments 887ba0e, `receipts/2026-09-25-m1-ane-clock-macos/`
+Source: ane-linux-experiments 887ba0e, the recorded 2026-09-25 m1-ane-clock-macos receipt (history in git)
 section 8. macOS 13.5 behaviour. T6021-specific as a negative: the
 same check on T8103 has since run and differs — its PMGR accepts ANE
 domain 8 (see the T8103 clock lead above).
@@ -883,7 +883,7 @@ the same domain as T8103. Each chip's read is its own.
 
 Source: ane-linux-experiments f5a8d4b (landing d99d9d4 on
 `agent/jwm1-parity5-gpu-parity-m64`),
-`receipts/2026-09-25-jwm1-qwen-ane-layout-gate/`. Stack: installed module at
+the recorded 2026-09-25 jwm1-qwen-ane-layout-gate receipt (history in git). Stack: installed module at
 omarchy-ane a9a5f60, libane rebuilt from the same commit, 38 staged Qwen
 programs (one per layer slot), guard-checked load.
 
@@ -896,12 +896,12 @@ programs (one per layer slot), guard-checked load.
   e2e 5.314 vs 6.718 s = 0.787x [0.770, 0.806] PASS; TTFT 1.534 vs 1.189 s
   = 1.347x [1.236, 1.480] FAIL. The ~345 ms TTFT gap was this lane's live
   lever; it is closed by the next bullet.
-- Same merge carries `receipts/2026-09-25-jwm1-parakeet-golden-rerun`:
+- Same merge carries the recorded 2026-09-25 jwm1-parakeet-golden-rerun receipt (history in git):
   Parakeet golden PASS bit-exact on the installed a9a5f60 stack. The earlier
   post-reboot hang left no kernel trace, did not reproduce under an
   instrumented re-run.
 - TTFT lever closed; the first root cause did not survive. b93397a
-  (`receipts/2026-09-25-jwm1-qwen-ane-ttft-rt/`) called the ~154 ms slow
+  (the recorded 2026-09-25 jwm1-qwen-ane-ttft-rt receipt (history in git)) called the ~154 ms slow
   steps (16% of steps) scheduler wakeup stalls in the kernel `ane_exec`
   completion poll and passed the cell with `chrt -f 50`. Per-step schedstat
   falsified that: inside a slow step every program runs at about 2x its
@@ -912,7 +912,7 @@ programs (one per layer slot), guard-checked load.
   lets schedutil park both clusters low, and the bandwidth-bound Qwen step
   (~1.2 GB of Q4 weights per 65 ms) streams at the low memory p-state.
   SCHED_FIFO had helped only because it holds a CPU at max frequency.
-  ff9ac7c (`receipts/2026-09-25-jwm1-ane-dvfs-boost/`): omarchy-ane main
+  ff9ac7c (the recorded 2026-09-25 jwm1-ane-dvfs-boost receipt (history in git)): omarchy-ane main
   5a22ee3 adds `ane/src/ane_boost.c` — from the first submit until
   `boost_idle_ms` (default 100, 0 = off) after the last, the driver holds
   a `FREQ_QOS_MIN` at `cpuinfo.max_freq` on every cpufreq policy. The
@@ -926,7 +926,7 @@ programs (one per layer slot), guard-checked load.
   T8103 clock lead above).
 - Same merge decomposed the GPU TTFT at RT: 219.6 ms fixed cost +
   1.19 ms/token (the old 4.81 ms/token slope was jitter;
-  `receipts/2026-09-25-jwm1-gpu-ttft-fixed-cost/`). A Mesa barrier-batch
+  the recorded 2026-09-25 jwm1-gpu-ttft-fixed-cost receipt (history in git)). A Mesa barrier-batch
   candidate is pending a rare-race battery.
 
 ### T6001: tm/tq retention blocks in-place recovery
@@ -952,7 +952,7 @@ Validated on T6001.
 Source: Jw16Levers3 validation of omarchy-ane 5a22ee3 on T6001, built
 on-device (v0.1.0-605-g5a22ee3, module sha256 `cf1d4bf1...`), installed
 persistently with `boost_idle_ms=100`. Receipt: ane-linux-experiments main
-3120fe1 (commit a5a1095), `receipts/2026-09-25-jw16-levers3/receipt.md`
+3120fe1 (commit a5a1095), the recorded 2026-09-25 jw16-levers3 receipt (history in git)
 with artifacts/ane and artifacts/ane-ab.
 
 - Kill-race x10: PASS 10/10 reopen-clean. The awk source-anchor half of
@@ -976,7 +976,7 @@ with artifacts/ane and artifacts/ane-ab.
 ### T6001: the 440 ms encoder gap is engine-side; the tuning values are unreachable
 
 Source: ane-linux-experiments d733cd1,
-`receipts/2026-09-25-jw16-levers6/receipt-encoder-anomaly.md`.
+the recorded 2026-09-25 jw16-levers6 receipt (history in git).
 
 - kprobe on the whole-encoder submit: dispatch is 13-139 us, execute is
   431.5-438.8 ms — the 440 ms run is 99.97% engine window (gold
@@ -997,7 +997,7 @@ Source: ane-linux-experiments d733cd1,
 ### T6001: ANE perf-state live capture
 
 Source: ane-linux-experiments a3641215,
-`receipts/2026-09-25-t6001-perfstate-capture/`.
+the recorded 2026-09-25 t6001-perfstate-capture receipt (history in git).
 
 - Live fact from a 25G83 capture: the PMGR perf-state path is the live
   ANE path on T6001, with ANE domain 8 (36 probe hits with a2=8) — the
@@ -1018,7 +1018,7 @@ Source: ane-linux-experiments a3641215,
   fully determined (a scaffold exists; it needs a scoped PMGR-map
   extension, since the targets are PMGR-mapped).
 - The DVFS pair is PMP-served (PmpDvfsResearch, d54d714b,
-  `receipts/2026-09-25-pmp-dvfs-map113/`): PA 0x400004000 is the pmgr
+  the recorded 2026-09-25 pmp-dvfs-map113 receipt (history in git)): PA 0x400004000 is the pmgr
   reg[113] window (raw ADT 0x200004000 pre-bridge) in the die-IO band —
   not inside any T6001 PMP PIO range (those are 0x282000000 /
   0x304000000 / 0x383000000 / 0x402000000; it is the T6021 PMP whose PIO
@@ -1043,7 +1043,7 @@ Source: ane-linux-experiments a3641215,
   boot payload is transient) — 0865be7/0af98f6.
 - The tunable-table sweep is now systematic (Jw16Levers5, ane-linux-experiments
   0865be7; interpretation amended in 0af98f6,
-  `receipts/2026-09-25-ane-tunables-static/`): the T8103 13.5 macOS kernel
+  the recorded 2026-09-25 ane-tunables-static receipt (history in git)): the T8103 13.5 macOS kernel
   holds 179 tunable tables in a 16-byte-record
   `{offset, clear, set, pad}` + zero-separator format, and they belong to
   the PMGR power manager, not the ANE driver.
@@ -1127,7 +1127,7 @@ every H2T ring slot to ownership `1` before the ACK
 SCRATCH3 store), the fault does not occur: the post-ACK exception globals
 read 0 and **SCRATCH3 clears to
 `0x00000000`** — the 13.5 post-DONE sequence completes end to end.
-Receipt: `receipts/2026-09-27-t6021-ring-owner-h2t-init.md`.
+Receipt: the recorded 2026-09-27 t6021-ring-owner-h2t-init receipt (history in git).
 Handshake-only: no CSNE command, no inference, no program load.
 
 ### Backing-envelope contract
@@ -1139,7 +1139,7 @@ Handshake-only: no CSNE command, no inference, no program load.
   reserved mode maps SEG0, SEGi and the owned tail; own memory
   (`fw_alias_reserved=0`) maps the whole staged copy. So the grant
   does not need `fw_alias_reserved=1` (corrected 2026-10-01, receipt
-  `receipts/2026-10-01-t602x-independent/README.md`).
+  the recorded 2026-10-01 t602x-independent receipt (history in git)).
 - The bound and alignment check is the probe-top predicate
   `ane_t6021_fwload_options_ok()`, which `ane_rtclient_probe` calls
   before `devm_kzalloc`/power; `ane_t6021_fwload_probe()` repeats it
@@ -1160,10 +1160,10 @@ the actual log captured this time).
 
 ### Receipts (in this repo)
 
-- `receipts/2026-09-27-t6021-13_5-legacy-only-publish.md` —
+- the recorded 2026-09-27 legacy-only-publish receipt (history in git) —
   full provenance, param contract, run list, and what is NOT in
   this publication.
-- `receipts/2026-09-27-t6021-ring-owner-h2t-init.md` — the
+- the recorded 2026-09-27 t6021-ring-owner-h2t-init receipt (history in git) — the
   ring-owner fix: H2T slots host-initialized before the ACK, the
   SCRATCH3-clear verification, and the superseded-park explanation.
 - Boot IDs and box identities are intentionally omitted; the runs
@@ -1189,7 +1189,7 @@ the actual log captured this time).
 
 ## 21. Stock kernel, packaged overlay, ANE mailbox (2026-09-30)
 
-Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-stock-mailbox/README.md).
+Record: the recorded 2026-09-30 t6021-stock-mailbox receipt (history in git).
 
 - The stock Arch ARM kernel `7.1.13-3-1-ARCH` runs the ANE; the poll-TX
   kernel is not needed. The mailbox node needs a second, never-firing
@@ -1214,16 +1214,16 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
   processes. They now go to a pool at the last reference and are reused
   after zeroing (omarchy-ane `b17f49b`); program sections stay held. 105,232
   add processes ran exact on one boot with used memory flat within 88 MiB
-  ([receipts/2026-09-30-t6021-bo-pool](../receipts/2026-09-30-t6021-bo-pool/README.md)).
+  (the recorded 2026-09-30 t6021-bo-pool receipt (history in git)).
 - The total BO cap is now the parameter `bo_total_max_mb` (12288 MiB by
   default, omarchy-ane `62f04c6`); `bo_total_bytes` shows the counted bytes.
   The 32-bit DMA mask still limits all BOs to 4 GiB of IOVA, so `BO_INIT`
   fails with `ENOMEM` before the cap. One boot loaded and ran all 38 Qwen
   programs once each, with 2.63 GiB counted at the end
-  ([receipts/2026-10-01-t6021-bo-cap](../receipts/2026-10-01-t6021-bo-cap/README.md)).
+  (the recorded 2026-10-01 t6021-bo-cap receipt (history in git)).
 - The disk boot path works on the test laptop since 2026-10-01 with the
   opt-in `uboot-serial-stdin-t6021` overlay and the lab m1n1 stage 2
-  ([receipts/2026-10-01-t6021-disk-boot](../receipts/2026-10-01-t6021-disk-boot/README.md));
+  (the recorded 2026-10-01 t6021-disk-boot receipt (history in git));
   see section 26 for the 0.4.0 module on that path.
 - `ane-run --ports` binds the port table on the device and refuses a port
   whose surface is larger than its io BO (`49eb8ed`). A BAR slot is the
@@ -1236,7 +1236,7 @@ Record: [receipts/2026-09-30-t6021-stock-mailbox](../receipts/2026-09-30-t6021-s
 
 ## 22. CALL completion: the IO_T2H finish event (2026-09-30)
 
-Record: [receipts/2026-09-30-t6021-call-wait](../receipts/2026-09-30-t6021-call-wait/README.md).
+Record: the recorded 2026-09-30 t6021-call-wait receipt (history in git).
 
 - The last-committed-TD word (TM +0x20458) holds the call's nid (bits
   23:16, +1 per call) and the index of the last task taken (bits 15:0; a
@@ -1262,7 +1262,7 @@ Record: [receipts/2026-09-30-t6021-call-wait](../receipts/2026-09-30-t6021-call-
   add went from 1.478 to 0.308-0.319 ms median per call, the ledger ANE
   cell from 674 to 3,206 jobs/s (boot `772d212d`, aurora 11.36).
   `call_settle_us` now defaults to 0
-  ([receipts/2026-10-06-t6021-call-settle](../receipts/2026-10-06-t6021-call-settle/README.md)).
+  (the recorded 2026-10-06 t6021-call-settle receipt (history in git)).
 
 ## 23. Qwen per-program conformance against the M1 (2026-10-01)
 
@@ -1284,7 +1284,7 @@ Record: [receipts/2026-09-30-t6021-qwen-chain/conformance.md](../receipts/2026-0
 
 ## 24. The whole Parakeet encoder as one H14 program (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-parakeet-encoder](../receipts/2026-10-01-t6021-parakeet-encoder/README.md).
+Record: the recorded 2026-10-01 t6021-parakeet-encoder receipt (history in git).
 
 - Apple's h14 cross-compile accepts the encoder's ANE-segment MIL (the
   compile input of the H13 whole-encoder HWX) whole: one program, 3,597
@@ -1303,7 +1303,7 @@ Record: [receipts/2026-10-01-t6021-parakeet-encoder](../receipts/2026-10-01-t602
 
 ## 25. Per-task timeline of the encoder: trace_td (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-td/README.md).
+Record: the recorded 2026-10-01 t6021-trace-td receipt (history in git).
 
 - `ane_t6021.trace_td` (runtime switch, default 0, omarchy-ane `7ae53e0`)
   samples the last-committed-TD word every 20-40 us during the completion
@@ -1331,7 +1331,7 @@ Record: [receipts/2026-10-01-t6021-trace-td](../receipts/2026-10-01-t6021-trace-
 
 ## 26. The 0.4.0 release module and the #23 overlay on a disk boot (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-release-boot](../receipts/2026-10-01-t6021-release-boot/README.md).
+Record: the recorded 2026-10-01 t6021-release-boot receipt (history in git).
 
 - The release-built `ane_t6021.ko` (sha256 `54c1da56…`, 0.4.0) and a boot.bin
   built by the packaged path from the #23 overlay (j414c tree `c31a54c3…`)
@@ -1348,8 +1348,8 @@ Record: [receipts/2026-10-01-t6021-release-boot](../receipts/2026-10-01-t6021-re
 
 ## 27. The M2's native encoder program under Linux: H_driver (2026-10-01)
 
-Records: [receipts/2026-10-01-t6021-native-macos](../receipts/2026-10-01-t6021-native-macos/README.md)
-(macOS side) and [receipts/2026-10-01-t6021-native-vs-cross](../receipts/2026-10-01-t6021-native-vs-cross/README.md).
+Records: the recorded 2026-10-01 t6021-native-macos receipt (history in git)
+(macOS side) and the recorded 2026-10-01 t6021-native-vs-cross receipt (history in git).
 
 - The M2's own macOS 27 compile of the whole encoder (HWX `6430da18…`, 3,597
   tasks) runs under our driver in 253.10 ms. The Mac Studio cross-compile
@@ -1370,7 +1370,7 @@ Records: [receipts/2026-10-01-t6021-native-macos](../receipts/2026-10-01-t6021-n
 ## 28. The macOS ANE0 AXI2AF bridge tunables: applied, no speed change (2026-10-01)
 
 Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-bridge/README.md)
-(table and probe) and [receipts/2026-10-01-t6021-af-bridge-run](../receipts/2026-10-01-t6021-af-bridge-run/README.md).
+(table and probe) and the recorded 2026-10-01 t6021-af-bridge-run receipt (history in git).
 
 - Under Linux none of the 26 bridge registers at 0x284000000 + 0x000..0xa00
   holds the macOS value (the macOS bridge-tunable write path). Two of them
@@ -1390,7 +1390,7 @@ Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-b
 
 ## 29. macOS vs Linux MMIO footprint: the DART tunables (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-macos-vs-linux-mmio](../receipts/2026-10-01-t6021-macos-vs-linux-mmio/README.md)
+Record: the recorded 2026-10-01 t6021-macos-vs-linux-mmio receipt (history in git)
 (offline; no device run).
 
 - The only DMA-path setting in the 13.5 hv trace that Linux never makes is
@@ -1437,7 +1437,7 @@ Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-d
 
 ## 31. The ten Linux-only P-1 writes: skipped, no speed change; the DART DVA window (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-p1-groups](../receipts/2026-10-01-t6021-p1-groups/README.md).
+Record: the recorded 2026-10-01 t6021-p1-groups receipt (history in git).
 
 - P-1 writes 12 words in the engine page; the macOS 13.5 trace never writes
   ten of them (0x038, 0x03c, 0x600, 0x738, 0x798, 0x7f8, 0x900, 0x410,
@@ -1458,7 +1458,7 @@ Record: [receipts/2026-10-01-t6021-p1-groups](../receipts/2026-10-01-t6021-p1-gr
 
 ## 32. Own memory is the default: device gate with the lab and the stock m1n1 (2026-10-01)
 
-Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021-default-on-gate/README.md).
+Record: the recorded 2026-10-01 t6021-default-on-gate receipt (history in git).
 
 - The firmware runs from a driver-owned copy with iBoot's runtime patches
   replayed (`fw_alias_reserved=0`, the default since #49), aliased at the
@@ -1476,7 +1476,7 @@ Record: [receipts/2026-10-01-t6021-default-on-gate](../receipts/2026-10-01-t6021
 
 ## 33. The DART tunables at DART reset: 0x20c faults in the reference order too (2026-10-02)
 
-Record: [receipts/2026-10-01-t6021-dart-kernel](../receipts/2026-10-01-t6021-dart-kernel/README.md).
+Record: the recorded 2026-10-01 t6021-dart-kernel receipt (history in git).
 
 - `kernel/patches/apple-dart-ane-tunables.patch` (vendor 7.1.13-3 series, parameter
   `apple_dart.ane_tunables`, default off) writes the 19 macOS words per bulk

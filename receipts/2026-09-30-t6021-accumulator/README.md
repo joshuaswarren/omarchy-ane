@@ -4,7 +4,7 @@
 
 Identify the C pv accumulator model that bit-exactly reproduces the saved
 real-parakeet layer-0 device output, given that input FTZ and product FTZ
-have already been falsified (`receipts/2026-09-30-t6021-island-golden/README.md`,
+have already been falsified (the recorded 2026-09-30 t6021-island-golden run (history in git),
 C pv subnormal / FTZ follow-up: 0.02288818 vs 0.02287292).
 
 ## Offline phase — no standard model is bit-exact

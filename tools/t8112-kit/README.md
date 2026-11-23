@@ -156,4 +156,4 @@ On the 17 pre-Linux captures, it reports only the iBoot fields, and
 tunables (byte for byte, in the same C rows), entry IOVA 0x10000000000 and PMU
 page 0x28e084000. `tools/test_t8112_kit.py` checks the decoder and the diffs,
 the live path against a fake proxy that has no write method, and the replay.
-See [receipts/2026-10-01-t8112-kit](../../receipts/2026-10-01-t8112-kit/README.md).
+See the recorded 2026-10-01 t8112-kit receipt (history in git).

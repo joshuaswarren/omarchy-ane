@@ -124,7 +124,7 @@ Decision: `omarchy-ane-dt apply`, `update-m1n1-dtbs` and both
 (asahi-alarm) installs, which have no omarchy-mac-boot at all, so on them
 `omarchy-ane-dt` is the only thing that applies the overlays. The lab M2 Max
 is such an install: its disk boot used copies that `omarchy-ane-dt apply`
-wrote ([t6021-disk-boot](../2026-10-01-t6021-disk-boot/README.md)), and
+wrote (the recorded 2026-10-01 t6021-disk-boot receipt; history in git), and
 `apply` writes copies only where no omarchy-mac-boot is installed. Inference:
 its overlays sit in `/usr/lib` from a hand `build-dtbo` run, because that
 receipt names `build-dtbo` and no package. Not checked on the laptop.

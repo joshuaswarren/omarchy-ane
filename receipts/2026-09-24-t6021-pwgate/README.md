@@ -5,7 +5,7 @@ already read 3 and 0, the theory is dead without a write.
 
 That literal address is not on the derivation. The static receipt
 (ane-linux-experiments agent/ane-static-start-r,
-receipts/2026-09-24-t6021-macos-start-sequence §19) derives:
+the recorded 2026-09-24 t6021-macos-start-sequence run §19 (history in git)) derives:
 PWGATE+0x12cc <- 3, PWGATE+0x13cc <- 0, PWGATE = the set window
 0x28e08c000, so literal 0x28e092cc / 0x28e093cc. But 0x28e08c000+0x12cc is
 0x28e08e2cc, not 0x28e092cc. The literal is 0x052cc past the set window,
@@ -63,7 +63,7 @@ fresh-boot, pre-release test.
 ## First-release run with the PWGATE writes (17:58 boot, Main go)
 
 The boot was fresh: uptime 0 at 17:57, and no ANE module had been loaded.
-`sid15_prep.sh` (../2026-09-24-t6021-coresight-dart) read:
+the `sid15_prep.sh` of the recorded 2026-09-24 t6021-coresight-dart run (history in git) read:
 
     STATUS 0x2a  RVBAR 0x10000000001  I2A 0x00020001  SCRATCH7 0
     TCR0 0x9, TTBR0 0x1000e0c9, ENABLE 0xffff on all three DARTs

@@ -4,7 +4,7 @@ Nothing in this directory is installed, autoloaded or shipped as
 working support. `ane_h16.ko` is a bring-up tool for the first owner of
 an M4-family (T8132 / T6040 / T6041) Linux box. H17 rows join the same
 module from `ane/h17/` (AneH17Driver). Facts and receipts:
-`receipts/2026-10-03-ane-h16/README.md`.
+the recorded 2026-10-03 ane-h16 receipt (history in git).
 
 **Current safety constraints:** T8140 `stage=boot` now runs the dedicated
 H17 path: kext steps 1–8 (CE handshake, 37 HAL tunables, PS/PWGATE
@@ -13,8 +13,8 @@ cold-branch scratch sequence, CPU release, wake poll and post-wake steps
 19–21. The generic H16 rows keep the old path. The H17 sequence is
 source-derived; it ran on J700/T8140 on 2026-11-04 with RESULT PASS
 boot-wake (see
-`receipts/2026-11-04-j700-h17-first-firmware-wake/README.md`), and later
-rungs are in `receipts/2026-11-04-j700-h17-wake-irq-status/`. Each run
+the recorded 2026-11-04 j700-h17-first-firmware-wake receipt (history in git)), and later
+rungs are in the recorded 2026-11-04 wake-irq-status receipt (history in git). Each run
 needs a fresh boot. Generic boot staging requires a DMA-API IOMMU domain
 and boot-time
 IOMMU_RESV_RESERVED coverage for fixed alias IOVAs (installed in the

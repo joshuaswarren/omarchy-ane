@@ -9,7 +9,7 @@ Progress: the boot register map is pinned (RVBAR `0x1050000`, CPU control
 the T8140 firmware is verified against its fetch pin, and a T8140 soc row
 now exists in `ane/h17/ane_h17_soc.{h,c}` for this repo's own driver. The
 exclave analysis is in
-`receipts/2026-11-01-j700-h17-exclave-vs-sep/`.
+the recorded 2026-11-01 j700-h17-exclave-vs-sep run (history in git).
 
 ## Context
 

@@ -17,7 +17,7 @@ buffers below 4 GiB, outside the macOS window.
 Default (parameter unset or 0): no DART gets a table, hw_reset is unchanged.
 
 Source of the values: omarchy-ane
-receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv.
+receipts/2026-10-01-t6021-dart-tunables/dart-tunables.tsv.
 ---
 --- a/drivers/iommu/apple-dart.c
 +++ b/drivers/iommu/apple-dart.c
@@ -50,7 +50,7 @@ receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv.
 + * order: TTBRs cleared, full TLB flush, tunables, then streams and TTBRs.
 + * The DVA window (0x300-0x310) is left out because ane_t6021 maps its
 + * buffers below 4 GiB, outside the macOS window.
-+ * Source: omarchy-ane receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv
++ * Source: omarchy-ane receipts/2026-10-01-t6021-dart-tunables/dart-tunables.tsv
 + */
 +struct apple_dart_tunables {
 +	phys_addr_t base;

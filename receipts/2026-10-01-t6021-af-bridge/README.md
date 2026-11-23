@@ -1,7 +1,7 @@
 # T6021: the ANE0 AXI2AF bridge tunables, read-only comparison prepared (2026-10-01)
 
 Status: prepared here; run later on 2026-10-01, see
-[2026-10-01-t6021-af-bridge-run](../2026-10-01-t6021-af-bridge-run/README.md)
+the recorded 2026-10-01 t6021-af-bridge-run receipt (history in git)
 (0 of 26 applied under Linux; applying all 26 does not change the speed).
 No register on the M2 was read or written for this receipt.
 
@@ -13,7 +13,7 @@ v1.6.1 has no T6020/T6021 case in its static tunables. Do these registers
 hold the macOS values under Linux, that is `(read & mask) == value`? If
 they do not, the bridge runs on other settings than macOS uses, a
 candidate cause of the 254 ms vs 90 ms encoder gap
-([2026-10-01-t6021-parakeet-encoder](../2026-10-01-t6021-parakeet-encoder/README.md)).
+(the recorded 2026-10-01 t6021-parakeet-encoder receipt; history in git).
 
 ## The table (offset from the bridge base, mask, value)
 

@@ -97,8 +97,8 @@ with open(os.path.join(repo, "packaging", "omarchy-ane-other-tool"), "w") as f:
     f.write("clean\n")
 commit(repo)
 # captured output is evidence and is never edited: the explicit list may carry the words, any other path may not
-cap = "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-ane.txt"
-other = "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-other.txt"
+cap = "receipts/2026-09-24-t6021-pwgate/ane_t6021_fwload.c"
+other = "receipts/2026-09-24-t6021-pwgate/other.c"
 os.makedirs(os.path.dirname(os.path.join(repo, cap)), exist_ok=True)
 line = "fwload: own memory: iBoot patches replayed (soc 0x6021 rev 0x11 DATA 0x100000c4000)\n"
 with open(os.path.join(repo, cap), "w") as f:
@@ -108,7 +108,7 @@ expect("a listed captured log may carry the words", run(repo), 0, "ok")
 with open(os.path.join(repo, other), "w") as f:
     f.write(line)
 commit(repo)
-expect("an unlisted log in the same folder may not", run(repo), 1, "dmesg-other.txt")
+expect("an unlisted log in the same folder may not", run(repo), 1, "other.c")
 for name in (cap, other):
     with open(os.path.join(repo, name), "w") as f:
         f.write("clean\n")
@@ -117,13 +117,13 @@ commit(repo)
 # (the override must sit before the checker's main guard, or sys.exit swallows it)
 with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py")) as f:
     body = f.read()
-override = ("ALLOWED.add('receipts/2026-10-30-j700-h17-frozen/README.md')\n"
-            "CAPTURED_H17_COUNTS.update({'receipts/2026-10-30-j700-h17-frozen/README.md': 1})\n")
+override = ("ALLOWED.add('data/h17/t8140-frozen.json')\n"
+            "CAPTURED_H17_COUNTS.update({'data/h17/t8140-frozen.json': 1})\n")
 assert body.count('if __name__ == "__main__":') == 1
 body = body.replace('if __name__ == "__main__":', override + 'if __name__ == "__main__":')
 with open(os.path.join(repo, "tools", "check_no_macos_read_methods.py"), "w") as f:
     f.write(body)
-frozen = "receipts/2026-10-30-j700-h17-frozen/README.md"
+frozen = "data/h17/t8140-frozen.json"
 os.makedirs(os.path.dirname(os.path.join(repo, frozen)), exist_ok=True)
 with open(os.path.join(repo, frozen), "w") as f:
     f.write(line)

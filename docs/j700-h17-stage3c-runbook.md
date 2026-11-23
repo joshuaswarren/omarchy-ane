@@ -3,7 +3,7 @@
 Status: **executed 2026-11-02 — PASS.** Boot `3134730e-…` on kernel
 `7.2.11-14-1-ARCH`, preflight PASS, overlay applied, all three sub-domains
 reached `ACTUAL=0xf` and returned `off-0` on unload. Receipt:
-`receipts/2026-11-02-j700-h17-stage3c-vote-pass/`.
+the recorded 2026-11-02 j700-h17-stage3c-vote-pass receipt (history in git).
 
 Stage 4 (`ane_h17_engine_probe.ko`) is built but **not run**: it performs
 the first engine-window read, and a stalled read would force a reboot.

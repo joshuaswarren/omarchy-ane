@@ -192,7 +192,7 @@ static struct platform_driver ane_h17_start_driver = {
 
 static int __init ane_h17_start_init(void)
 {
-	pr_err("ane_h17_start: draft module is not runnable; see receipts/2026-11-02-j700-h17-stage5-review/\n");
+	pr_err("ane_h17_start: draft module is not runnable\n");
 	return -EPERM;
 }
 
