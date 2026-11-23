@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <ane_accel.h>
@@ -381,11 +382,16 @@ static int fake_prog_lookup(struct drm_ane_prog_lookup *a)
 	return 0;
 }
 
+/* The last EXEC the fake saw, for tests that replay it with mutated
+ * fields (the batch contract test below). */
+static struct drm_ane_exec fake_last_exec;
+
 static int fake_exec(const struct drm_ane_exec *a)
 {
 	const struct drm_ane_exec_io *io = (const void *)(uintptr_t)a->io_ptr;
 	uint32_t i;
 
+	fake_last_exec = *a;
 	if (a->pad) {
 		return refuse("drm_ane_exec.pad", a->pad);
 	}
@@ -1200,6 +1206,67 @@ static void run_prog_lookup(const char *path)
 	run_prog_lookup_cleanup();
 }
 
+/* Batched EXEC contract: drm_ane_exec.pad 2..16 is a call count (0 and
+ * 1 stay "one call"). The driver today refuses every nonzero pad, so
+ * the pad=4 replay is the red contract test: it goes green with the
+ * driver change. The pad replay must not double-count the fake's own
+ * refusal, so the refusal's failure tally is rolled back. */
+static void run_exec_batch(const char *path)
+{
+	const int before = failures;
+	struct ane_nn *nn;
+	struct drm_ane_exec a;
+	int fd, rc;
+
+	abi_major = ANE_ABI_M2_MAJOR;
+	mmap_countdown = 0;
+	nn = ane_init(path);
+	if (!nn) {
+		printf("FAIL exec-batch: init failed\n");
+		failures++;
+		return;
+	}
+	if (ane_exec(nn)) {
+		printf("FAIL exec-batch: single exec failed\n");
+		failures++;
+		ane_free(nn);
+		return;
+	}
+	fd = fake_fds[n_fake_fds - 1];
+
+	a = fake_last_exec;
+	a.pad = 4;
+	rc = ioctl(fd, DRM_IOCTL_ANE_EXEC, &a);
+	if (rc) {
+		printf("FAIL exec-batch: pad=4 refused, errno %d\n", errno);
+		failures++;
+	}
+
+	/* pad=17 must be refused; the refusal goes through refuse(),
+	 * whose tally this expected-refusal check drops. */
+	{
+		const int rf = failures;
+
+		a.pad = 17;
+		rc = ioctl(fd, DRM_IOCTL_ANE_EXEC, &a);
+		if (!rc) {
+			printf("FAIL exec-batch: pad=17 accepted\n");
+			failures++;
+		}
+		failures = rf;
+	}
+
+	a.pad = 1;
+	rc = ioctl(fd, DRM_IOCTL_ANE_EXEC, &a);
+	if (rc) {
+		printf("FAIL exec-batch: pad=1 refused, errno %d\n", errno);
+		failures++;
+	}
+	ane_free(nn);
+	printf("%s exec-batch contract\n",
+	       failures == before ? "ok" : "FAIL");
+}
+
 int main(int argc, char **argv)
 {
 	const char *dir = argc > 1 ? argv[1] : "../fixtures/h14-anec";
@@ -1225,6 +1292,7 @@ int main(int argc, char **argv)
 	run_section_release(path);
 	run_sec_order(path);
 	run_prog_lookup(path);
+	run_exec_batch(path);
 	printf(failures ? "IOCTL-CHECK FAIL\n" : "IOCTL-CHECK PASS\n");
 	return failures != 0;
 }
