@@ -1169,17 +1169,24 @@ static int ane_rtclient_call_wait(struct ane_rtclient *ane,
  * in total (*seen carries the count across calls of a batch). Each
  * drain returns every pending slot, so a single drain can cover
  * several calls; the ack of each call is validated by its own slot
- * check afterwards. */
+ * check afterwards. The poll services the SHAREDMALLOC ring like the
+ * sync exchange does inside its ack spin: a firmware allocation ask
+ * that sits unanswered while the batch waits would stall it. */
 static int ane_rtclient_call_wait_n(struct ane_rtclient *ane,
 				    unsigned int timeout_ms,
-				    unsigned int *seen, unsigned int need)
+				    unsigned int *seen, unsigned int need,
+				    unsigned int *mcursor)
 {
 	unsigned long deadline = jiffies + msecs_to_jiffies(timeout_ms);
+	int served;
 
 	do {
 		*seen += ane_rtclient_drain_t2h(ane, 6);
 		if (*seen >= need)
 			return 0;
+		served = ane_rtclient_malloc_service(ane, mcursor);
+		if (served < 0)
+			return served;
 		usleep_range(50, 100);
 	} while (time_before(jiffies, deadline));
 	*seen += ane_rtclient_drain_t2h(ane, 6);
@@ -1735,7 +1742,9 @@ static int ane_rtclient_build_call_cmd(struct ane_rtclient *ane,
  * exchange-wait-drain round trip per call. All calls bind the same BOs
  * and the caller may read outputs only after the ioctl returns. Under
  * trace_td the EVENT records of a batch carry the batch's last call
- * id; the CALL/ACK pairs stay per call. */
+ * id; the CALL/ACK pairs stay per call. The batch waits do not take
+ * TD/PS samples (the traced single-call wait does); per-task timelines
+ * need the sync path. */
 static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 					     struct drm_file *file,
 					     const struct drm_ane_exec *user,
@@ -1744,7 +1753,7 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 					     unsigned int batch)
 {
 	unsigned int channel = 1, start, cursor, served_cursor, seen = 0;
-	unsigned int done = 0, j;
+	unsigned int done = 0, begun = 0, j;
 	u64 tickets[ANE_T6021_CALL_BATCH_MAX] = { };
 	ktime_t submits[ANE_T6021_CALL_BATCH_MAX];
 	struct ane_legacy_buffer *cmd[ANE_T6021_CALL_BATCH_MAX];
@@ -1769,10 +1778,9 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 	}
 	for (k = 0; k < batch; k++) {
 		if (!ane->batch_cmd[k]) {
-			if (ane_rtclient_legacy_alloc(ane, SZ_16K)) {
-				ret = -ENOMEM;
+			ret = ane_rtclient_legacy_alloc(ane, SZ_16K);
+			if (ret)
 				goto out;
-			}
 			ane->batch_cmd[k] =
 				&ane->legacy_buffers[ane->legacy_last -
 						     ane->legacy_buffers];
@@ -1787,7 +1795,20 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 	ane_t6021_tracing = tracing;
 	ane->legacy_owner = user->prog_id + 1;
 	start = cursor = ane->legacy_cmd_cursor[channel];
+	/* The sync exchange answers any SHAREDMALLOC entry that arrived
+	 * since the last command before it posts; so does the batch. */
 	served_cursor = ane->legacy_malloc_cursor;
+	for (j = 0; j < ane_t6021_chman_layout[5].size; j++) {
+		int served = ane_rtclient_malloc_service(ane,
+							 &served_cursor);
+
+		if (served < 0) {
+			ret = served;
+			goto out;
+		}
+		if (!served)
+			break;
+	}
 	for (k = 0; k < batch; k++) {
 		int slot = ane_rtclient_legacy_post(ane, cmd[k], cmd_size,
 						    CSNE_CMD_PROCEDURE_CALL,
@@ -1806,6 +1827,7 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 			tickets[k] = ane_stats_begin(&ane->fw->stats_ctrs,
 						     &ane->fw->stats_ring,
 						     submits[k], 1u);
+			begun = k + 1;
 		}
 		if (tracing) {
 			ane_t6021_trace->calls++;
@@ -1813,19 +1835,17 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 		}
 	}
 	for (k = 0; k < batch; k++) {
-		int served = ane_rtclient_malloc_service(ane,
-							 &served_cursor);
-
-		if (served < 0) {
-			ret = served;
-			goto out_owner;
-		}
-		ret = ane_rtclient_call_wait_n(ane, timeout_ms, &seen, k + 1);
+		ret = ane_rtclient_call_wait_n(ane, timeout_ms, &seen, k + 1,
+					       &served_cursor);
 		if (ret) {
+			/* Same contract as the sync exchange: any failed
+			 * wait or SHAREDMALLOC answer leaves posted slots
+			 * un-reaped, and the device is not safe to reuse
+			 * until the module reload door runs. */
+			atomic_set(&ane_t6021_quarantined, 1);
 			dev_err(ane->dev,
 				"batch call %d completion wait failed %d: %u of %u finish events\n",
 				k, ret, seen, batch);
-			atomic_set(&ane_t6021_quarantined, 1);
 			goto out_owner;
 		}
 		ret = ane_rtclient_legacy_ackok(ane, cmd[k], cmd_size,
@@ -1855,9 +1875,10 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 	ane_rtclient_drain_t2h(ane, 6);
 out_owner:
 	/* Complete every ticket the failure left open (rc = ret); the
-	 * calls that finished normally already carried 0. */
+	 * calls that finished normally already carried 0. Begun bounds
+	 * this: tickets only exist for posts that actually happened. */
 	if (stats_call)
-		for (j = done; j < batch; j++)
+		for (j = done; j < begun; j++)
 			ane_stats_complete(&ane->fw->stats_ctrs,
 					   &ane->fw->stats_ring, tickets[j],
 					   ktime_get_ns(), (u32)ret, 0ull);

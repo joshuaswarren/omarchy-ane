@@ -2008,6 +2008,8 @@ int main(int argc, char **argv)
 				fprintf(stderr, "--batch must be 1..16\n");
 				return 2;
 			}
+			if (!batch)
+				batch = 1;
 		} else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
 			check = parse_check_op(argv[++i]);
 			if (check < 0) {
@@ -2182,13 +2184,14 @@ int main(int argc, char **argv)
 			double mean = ane_lat_mean(lat, done);
 
 			qsort(lat, done, sizeof(*lat), cmp_double);
-			printf("exec ms over %u calls: min %.3f p10 %.3f p25 %.3f "
+			printf("exec ms over %u calls (%u sample%s): min %.3f p10 %.3f p25 %.3f "
 			       "median %.3f p75 %.3f p90 %.3f p99 %.3f max %.3f mean %.4f%s\n",
-			       repeat, lat[0], lat[done / 10], lat[done / 4],
+			       repeat, done, done == 1 ? "" : "s",
+			       lat[0], lat[done / 10], lat[done / 4],
 			       lat[done / 2], lat[(done * 3) / 4],
 			       lat[(done * 9) / 10], lat[(done * 99) / 100],
 			       lat[done - 1], mean,
-			       b > 1 ? " (batched: one sample per batch, wall/K)" : "");
+			       b > 1 ? " (batched: per-call = batch wall/K)" : "");
 		}
 		free(ns);
 		free(lat);

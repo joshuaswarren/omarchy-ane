@@ -393,19 +393,23 @@ static int fake_exec(const struct drm_ane_exec *a)
 
 	fake_last_exec = *a;
 	/* Snapshot the io array too: libane passes a stack array that is
-	 * dead by the time a test replays the recorded EXEC. */
+	 * dead by the time a test replays the recorded EXEC. Static
+	 * storage: no free, and the pointer never dangles. */
 	if (a->count && a->count <= ANE_M2_MAX_BINDS) {
-		struct drm_ane_exec_io *snap =
-			malloc((size_t)a->count * sizeof(*snap));
+		static struct drm_ane_exec_io fake_last_ios[ANE_M2_MAX_BINDS];
 
-		if (snap) {
-			memcpy(snap, io,
-			       (size_t)a->count * sizeof(*snap));
-			fake_last_exec.io_ptr = (uint64_t)(uintptr_t)snap;
-		}
+		memcpy(fake_last_ios, io,
+		       (size_t)a->count * sizeof(fake_last_ios[0]));
+		fake_last_exec.io_ptr = (uint64_t)(uintptr_t)fake_last_ios;
 	}
 	if (a->pad > 16) {
-		return refuse("drm_ane_exec.pad", a->pad);
+		/* The batch contract cap. Expected by the batch test, so
+		 * this refusal prints without refuse()'s failure tally:
+		 * the test owns the count. */
+		printf("refused drm_ane_exec.pad = %#llx (the in-tree driver returns -EINVAL)\n",
+		       (unsigned long long)a->pad);
+		errno = EINVAL;
+		return -1;
 	}
 	if (!a->count || a->count > ANE_M2_MAX_BINDS) {
 		return refuse("drm_ane_exec.count", a->count);
@@ -1254,18 +1258,13 @@ static void run_exec_batch(const char *path)
 		failures++;
 	}
 
-	/* pad=17 must be refused; the refusal goes through refuse(),
-	 * whose tally this expected-refusal check drops. */
-	{
-		const int rf = failures;
-
-		a.pad = 17;
-		rc = ioctl(fd, DRM_IOCTL_ANE_EXEC, &a);
-		if (!rc) {
-			printf("FAIL exec-batch: pad=17 accepted\n");
-			failures++;
-		}
-		failures = rf;
+	/* pad=17 must be refused; the fake's cap refusal carries no
+	 * tally of its own. */
+	a.pad = 17;
+	rc = ioctl(fd, DRM_IOCTL_ANE_EXEC, &a);
+	if (!rc) {
+		printf("FAIL exec-batch: pad=17 accepted\n");
+		failures++;
 	}
 
 	a.pad = 1;
