@@ -179,11 +179,11 @@ reason and a device test for each group:
 1. A module with the call-wait fix (#11, `3a942d6`: a CALL waits for the
    firmware's finish event) must be loaded. `prog_000` has 32 tasks and
    `prog_001` has 10; the old wait returned before a multi-task program
-   finished ([call-wait](../2026-09-30-t6021-call-wait/README.md)).
+   finished (the recorded 2026-09-30 call-wait receipt; history in git).
 2. `prog_001` is the first port-table program with a scratch. Slot 3 binds
    bufferId 0x40 (16,384 B). The derived build used the same binding for the
    three bmm islands, which passed on the M2
-   ([island-bmm](../2026-09-30-t6021-island-bmm/README.md)).
+   (the recorded 2026-09-30 island-bmm receipt; history in git).
 3. Host-proven commands (dry run, no device):
    - `qwen_prog_run.py --prog prog_000 --in t1=… --in t5=…` with goldens for
      t16, t20, t22, t26, t35, t37 and t38 (capture e0418).

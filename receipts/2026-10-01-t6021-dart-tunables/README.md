@@ -43,7 +43,7 @@ word stops the ANE.
 ## Question and decision rule
 
 The input is step 4 of
-[2026-10-01-t6021-macos-vs-linux-mmio](../2026-10-01-t6021-macos-vs-linux-mmio/README.md)
+the recorded 2026-10-01 t6021-macos-vs-linux-mmio receipt (history in git)
 (E1 and E2) and its `dart-tunables.tsv` (ADT masks and values, equal to the
 macOS 13.5 hv trace and the 26.6.2 j414c iBoot tables). The rule was written
 before the first device access (private notebook entry, 19:16Z):

@@ -1,6 +1,6 @@
 # M2 Max (T6021): resident Qwen3.8-2B decode with numpy on OpenBLAS, 2026-10-10
 
-Two runs on one boot. The raw files are in this directory. The decoder, the module and the programs are the ones of [2026-10-10-m2-max-resident-qwen-decode](../2026-10-10-m2-max-resident-qwen-decode/README.md). Only the system BLAS that numpy links changed.
+Two runs on one boot. The raw files are in this directory. The decoder, the module and the programs are the ones of the recorded 2026-10-10 m2-max-resident-qwen-decode receipt (history in git). Only the system BLAS that numpy links changed.
 
 ## What changed
 On Arch the `blas`, `cblas` and `lapack` packages are the reference implementation. numpy linked `/usr/lib/libcblas.so.3`, which pointed at `libcblas.so.3.12.0`. Its matvec runs on one thread.
