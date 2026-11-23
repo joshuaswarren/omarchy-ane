@@ -16,6 +16,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from island_ref import ISLANDS, alloc_for_ch, in_arg_order, read_fp16_surface
+from ane_run_lock import flock_argv
 
 ISLAND_CAPTURE = {
     "island-a-kt": ("a-kt", {5: "pos_kT", 6: "q_v"}, "attention_scores_1"),
@@ -145,7 +146,9 @@ def run_one(root, manifest, layer, island_name, host):
         input_paths[ch] = remote
     remote_out = f"{remote_dir}/out-ch4.bin"
     anec = f"/var/tmp/inst/fixtures/h14-anec/{island_name}/program-0.anec"
-    command = ["flock", "/var/tmp/ane-run.lock", "timeout", "60", ANE_RUN, "--anec", anec]
+    # flock_argv honors ANE_LOCK_HELD_FD: under the guard the ticket already
+    # owns the device, so the remote command must not flock again.
+    command = [*flock_argv(), "timeout", "60", ANE_RUN, "--anec", anec]
     for slot, ch in in_arg_order(island):
         command += ["--in", f"{slot}={input_paths[ch]}"]
     command += ["--out", f"0={remote_out}", "--time"]
