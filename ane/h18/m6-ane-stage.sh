@@ -173,6 +173,14 @@ case "$step" in
      [ "$chan" -ge 2 ] && args="$args hs_cmds=1"
      [ "$chan" -ge 3 ] && args="$args hs_start=1"
      [ "$chan" = 4 ] && args="$args hs_prog=1"
+     # A program file built from an HWX (tools/hwx2anep.py) carries absolute
+     # IOVAs, so the loader must place the task stream and the buffers where
+     # the program expects them. These are opt-in: unset keeps the loader's
+     # dynamic IOVAs, which is what the ANEC-built program files use.
+     [ -n "$PROG_IOVA_BUFS" ] && args="$args prog_iova_bufs=$PROG_IOVA_BUFS"
+     [ -n "$PROG_IOVA_TEXT" ] && args="$args prog_iova_text=$PROG_IOVA_TEXT"
+     [ -n "$PROG_IOVA_KERN" ] && args="$args prog_iova_kern=$PROG_IOVA_KERN"
+     [ -n "$PROG_TEXT_CONST" ] && args="$args prog_text_const=$PROG_TEXT_CONST"
      [ "$dinst" = 0 ] || args="$args dart_inst=$dinst"
      [ "$premap" = 0 ] || args="$args hs_premap=1"
      [ "$props" = 0 ] || args="$args hs_props=$props"
