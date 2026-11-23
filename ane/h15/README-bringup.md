@@ -4,7 +4,7 @@ Nothing in this directory is installed, autoloaded or shipped as
 working support. `ane_h15.ko` is a bring-up tool for the first owner
 of an M3 (T8122 / T6030 / T6031) Linux box. T6034 is a fourth data
 row in the same module (j514m / j516m). Facts and the b0 family
-decision: `receipts/2026-10-03-ane-h15/README.md`. The structural
+decision: the recorded 2026-10-03 ane-h15 receipt (history in git). The structural
 template is `ane/h16/`.
 
 ## Host-owned firmware staging
@@ -514,7 +514,7 @@ the dmesg back.
 - Do not add IRQs or mailbox interrupts to the overlay: which of
   the two ADT ANE lines is the mailbox recv line is not
   established, and a mismapped mailbox IRQ stormed at ~700 kHz
-  on T6021 (`receipts/2026-09-30-t6021-stock-mailbox`).
+  on T6021 (recorded 2026-09-30 stock-mailbox run; history in git).
 
 ## What a volunteer can run safely now
 

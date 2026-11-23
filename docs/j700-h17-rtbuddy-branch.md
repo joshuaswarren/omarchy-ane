@@ -42,7 +42,7 @@ Evidence for `ASC + 0x8000`:
   `0x1608000`.
 
 This was a family-pattern pin, and it is now **confirmed on hardware**:
-the read-only probe (`receipts/2026-11-02-j700-h17-mailbox-confirmed/`)
+the read-only probe (the recorded 2026-11-02 j700-h17-mailbox-confirmed receipt (history in git))
 reads `A2I_CTRL` and `I2A_CTRL` as `0x00020001` — the documented
 pre-boot ASC value (enabled, empty, no traffic). The interface text still
 carries no mailbox constant (it belongs to the RTBuddy transport), so the
@@ -158,7 +158,7 @@ its device-clock enable call over the `clock-ids` table.
 
 The ID-to-register map is not in the ADT; it lives in
 the platform-IO driver's `function-clock_gate`. See
-`receipts/2026-11-03-j700-h17-clock-gap/`.
+the recorded 2026-11-03 j700-h17-clock-gap receipt (history in git).
 
 Any engine read or write should wait for this to be closed: a gated clock
 is the best explanation for the intermittent PMU-level resets.

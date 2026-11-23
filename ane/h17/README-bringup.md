@@ -15,7 +15,7 @@ not part of the package or DKMS.
 The source facts are `data/ane-soc/t8140.json` at omarchy-ane `063ae8e`
 (ANE type `0x200`, firmware TEXT `0xc0000`, DATA `0x2ac000`), and the
 aurora `t8140.dtsi` at `68df87370abac4e227936552dd9be2252972e551`
-(disabled ANE and DART nodes). The addresses in the [live receipt](../../receipts/2026-10-30-j700-h17-adt/README.md)
+(disabled ANE and DART nodes). The addresses in the recorded 2026-10-30 live-ADT run (history in git)
 come from this boot's ADT, and may differ after reboot.
 
 ## Stage 0 command and stop rule
@@ -107,14 +107,14 @@ refusal-only wake module or diagnostics-only runner. Planner output
 authorizes no hardware experiment, including the historical commands below.
 Hardware rungs that already ran are listed under "Hardware status on
 J700/T8140"; each one needed its own opt-in boot and its own receipt.
-See the [source-evidence receipt](../../receipts/2026-10-31-j700-h17-source-evidence/README.md).
-The [path-guard follow-up](../../receipts/2026-10-31-j700-h17-path-guards/README.md)
+The source evidence is the recorded 2026-10-31 run (history in git).
+The path-guard follow-up (recorded 2026-10-31; history in git)
 records the separate RTBuddy/exclave decisions, provider-index binding,
 and partial power ordering; none is an executable bring-up recipe.
-The [provider-contract follow-up](../../receipts/2026-10-31-j700-h17-provider-contract/README.md)
+The provider-contract follow-up (recorded 2026-10-31; history in git)
 adds the explicit direct-provider match, resource-0 candidate, and named
 provider power/RPC dependencies. Its range-fit tests are not safe-access proof.
-The [power-contract follow-up](../../receipts/2026-10-31-j700-h17-power-contract/README.md)
+The power-contract follow-up (recorded 2026-10-31; history in git)
 traces the J700 CPU power-on/off register sequences to their PS and PWGATE
 windows, resolves the byte-513 PSD branch as unreachable in the retained
 build, and drafts the Linux ownership/handoff requirements. Compiled-source
@@ -160,7 +160,7 @@ returned to `off-0` after the vote was released. Re-confirmed on boot
 same word `0x23ff`, TARGET and ACTUAL `0xf`, `WAS_GATED` `0x3`,
 `BUSY` clear; the post-unload genpd summary was unavailable because
 debugfs was not readable. Receipt:
-`receipts/2026-11-01-j700-h17-stage3-ps-pass/`. Stop on any PMGR
+the recorded 2026-11-01 j700-h17-stage3-ps-pass run (history in git). Stop on any PMGR
 timeout, external abort, or DART fault; a hang requires reboot before
 retry.
 
@@ -199,7 +199,7 @@ sub-domain words at `ACTUAL=0` (`WAS_GATED=0x3` for the first three;
 `0xc018` reads `0x0`). The ANE engine is therefore unpowered. Raising a
 sub-domain needs a DT genpd node and a planned reboot; a direct ps-word
 write is not attempted. Receipt:
-`receipts/2026-11-01-j700-h17-stage3b-subdomain-off/`.
+the recorded 2026-11-01 j700-h17-stage3b-subdomain-off run (history in git).
 
 ## Stage 3c: sub-domain genpd vote — PASS
 
@@ -211,7 +211,7 @@ back. On boot `3134730e-…` / kernel `7.2.11-14-1-ARCH` every word read
 `TARGET=0xf ACTUAL=0xf BUSY=0`, and all domains returned `off-0` after
 `rmmod`. `0xc000` is the only word with `APPLE_PMGR_PS_AUTO` set. No raw
 ps-word write was performed. Receipt:
-`receipts/2026-11-02-j700-h17-stage3c-vote-pass/`.
+the recorded 2026-11-02 j700-h17-stage3c-vote-pass run (history in git).
 
 ## Stage 4: first engine read — PASS (read-only)
 
@@ -230,7 +230,7 @@ firmware entry point is latched while the CPU reads stopped/idle. The
 three sub-domains are therefore sufficient for engine reads. Reading one
 offset does not qualify a neighbourhood; no write, firmware start, DART,
 or mailbox was attempted. Receipt:
-`receipts/2026-11-02-j700-h17-stage4-engine-read/`.
+the recorded 2026-11-02 j700-h17-stage4-engine-read run (history in git).
 
 ## Hardware status on J700/T8140
 
@@ -239,22 +239,22 @@ whole picture: hardware has run on this board, and every hardware rung is a
 separate opt-in boot with its own receipt.
 
 - Read-only engine access, mailbox confirmed, no write:
-  `receipts/2026-11-02-j700-h17-mailbox-confirmed/README.md`.
+  the recorded 2026-11-02 j700-h17-mailbox-confirmed run (history in git).
 - Engine read of one window, three sub-domains sufficient:
-  `receipts/2026-11-02-j700-h17-stage4-engine-read/`.
+  the recorded 2026-11-02 j700-h17-stage4-engine-read run (history in git).
 - Any engine write froze the machine, and the write path later hung the
   board. Writes stay refused:
-  `receipts/2026-11-03-j700-h17-any-write-freezes/README.md` and
-  `receipts/2026-11-03-j700-h17-write-hang/README.md`.
+  the recorded 2026-11-03 j700-h17-any-write-freezes run (history in git) and
+  the recorded 2026-11-03 j700-h17-write-hang run (history in git).
 - First firmware wake through `ane_h16.ko optin=t8140 stage=boot`, RESULT
   PASS boot-wake:
-  `receipts/2026-11-04-j700-h17-first-firmware-wake/README.md`.
+  the recorded 2026-11-04 j700-h17-first-firmware-wake run (history in git).
 - Post-wake IRQ-status read, status word 0x00000000:
-  `receipts/2026-11-04-j700-h17-wake-irq-status/README.md` and
-  `receipts/2026-11-06-j700-h17-irq-status-capture/`.
+  the recorded 2026-11-04 j700-h17-wake-irq-status run (history in git) and
+  the recorded 2026-11-06 j700-h17-irq-status-capture run (history in git).
 - Channel registration handshake: the firmware cleared SCRATCH3 and the
   runner stopped at the acknowledgement boundary:
-  `receipts/2026-11-05-j700-h17-channel-registration.md`.
+  the recorded 2026-11-05 channel-registration receipt (history in git).
 
 No command round trip, task submission or ANE computation has run. The
 module refuses before engine access **or watchdog rehearsal**. The
@@ -264,7 +264,7 @@ The reviewed watchdog-only probe has been removed from the live module:
 there is no executable engine, power, watchdog or file-I/O path to enable
 by changing a qualification macro. Functional T8140 initialization and
 device-local error handling remain unresolved. See the
-[review-fix receipt](../../receipts/2026-10-31-j700-h17-review-fixes/README.md).
+the recorded 2026-10-31 review-fix run (history in git).
 
 `transaction.h` implements read-only transaction control for a future
 qualified adapter. It validates every step before acquiring resources,
@@ -293,7 +293,7 @@ never does that: its power-down entry point runs a nine-step sequence
 against the PS word (`PMGR+0xc000`) and the
 PWGATE window (`0x300724000`, offsets `0x268c`/`0x26b0`). The compiled
 sequence is in
-`receipts/2026-10-31-j700-h17-power-contract/README.md`.
+the recorded 2026-10-31 j700-h17-power-contract run (history in git).
 
 `ane_h17_poweroff_probe.ko` runs that sequence with **no engine MMIO**,
 so a reset can be attributed to the teardown path rather than to a read:

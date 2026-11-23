@@ -11,19 +11,19 @@ Boot path status: the module works on the stock Arch ARM kernel
 `7.1.13-3-1-ARCH` (three boots; the third used the complete overlay
 `packaging/dt/t6021-ane.dts`, the first two a lab overlay with the
 same ANE nodes; receipt
-[2026-09-30-t6021-stock-mailbox](../../receipts/2026-09-30-t6021-stock-mailbox/README.md))
+from the 2026-09-30 stock-mailbox run (history in git))
 and on `7.1.13-ARCH-polltx`. Up to 2026-09-30 every boot, on both kernels,
 was a USB proxy chain load (kernel, DTB and initramfs staged over the m1n1
 proxy by the M1 host), with the module and the DTB installed by hand. On
 2026-10-01 one M2 Max booted from the internal disk (m1n1, U-Boot, GRUB)
 with `omarchy-ane-dt apply` and `update-m1n1`, and `ane_t6021` loaded at
 boot (receipt
-[2026-10-01-t6021-disk-boot](../../receipts/2026-10-01-t6021-disk-boot/README.md)).
+the 2026-10-01 disk-boot run (history in git)).
 That boot used a lab m1n1 stage 2 that adds the two `ane-firmware`
 reserved-memory nodes; the packaged m1n1 1.6.1 does not add them. The
 default, `fw_alias_reserved=0`, needs no reservation: the driver runs its own
 copy of the firmware with iBoot's runtime patches replayed (receipt
-[2026-10-01-t602x-independent](../../receipts/2026-10-01-t602x-independent/README.md),
+the 2026-10-01 independent-driver comparison (history in git),
 "Boot B" for the T6021 device test). The lab option `fw_alias_reserved=1`
 maps the preloaded physical windows instead; probe refuses it, before any
 power access, unless no-map `/reserved-memory` nodes cover both windows.
@@ -35,7 +35,7 @@ receipt. The kernel was `7.1.12-2-7-ARCH`, which is not one of the two kernels
 in the proven list. This run adds a third kernel to the record and does
 not change that list. The add and mul gate loops and a 1024x1024 matvec passed
 (receipt
-[2026-11-05-t6021-stage2-boot-and-first-jobs](../../receipts/2026-11-05-t6021-stage2-boot-and-first-jobs/README.md)).
+the 2026-11-05 stage-2 boot run (history in git)).
 The receipt lists what was not covered, including one deviation from `gate.sh`.
 
 On that laptop the disk boot also needs the opt-in overlay
@@ -50,7 +50,7 @@ The overlay goes away when the packaged U-Boot passes only keyboard reports from
 ## Prerequisites
 
 - Kernel: stock Arch ARM `7.1.13-3-1-ARCH` (proven 2026-09-30 with the
-  packaged overlay, receipts/2026-09-30-t6021-stock-mailbox) or
+  packaged overlay; recorded run in git history) or
   `7.1.13-ARCH-polltx`. The module builds against
   `/lib/modules/$(uname -r)/build`.
 - Device tree: `packaging/dt/t6021-ane.dts` adds the `apple,t6021-ane`
@@ -117,7 +117,7 @@ libane ABI 2, on `7.1.13-ARCH-polltx` unless noted. On the stock
 kernel, each of three boots passed 20 of 20 gate loads (`add`, `mul`,
 2048x2048 matvec and 17 more `add` runs; receipt
 2026-09-30-t6021-stock-mailbox). Receipts:
-[2026-09-29-t6021-installed-path](../../receipts/2026-09-29-t6021-installed-path/README.md)
+the 2026-09-29 installed-path run (history in git)
 and the 2026-09-30 receipts named below.
 
 Elementwise and clip ops on [1,512,1,1] (512 valid fp16 lanes,
@@ -134,18 +134,18 @@ Parakeet attention islands. On random U(-1, 1) inputs, the three
 batched-matmul islands (island-c-pv, island-a-kt, island-a-attn-p1)
 pass on 3 of 3 seeds: 99.77 to 99.80 percent of lanes are within
 max(3 ulp, 4 cond-units) of the fp64 reference
-([2026-09-30-t6021-island-bmm](../../receipts/2026-09-30-t6021-island-bmm/README.md)).
+(the 2026-09-30 island-bmm run (history in git)).
 On real-model operands (layers 0, 11 and 23), island-a-kt and
 island-a-attn-p1 stay within 1.0 cond-unit of the exact fp64 product
 on every lane (worst ratio 0.91). island-c-pv fails that strict bound
 on 1.3, 47.6 and 52.4 percent of lanes (worst ratio 14.5, 104.1 and
 65.3), and its accumulator model is not identified
-([2026-09-30-t6021-island-golden](../../receipts/2026-09-30-t6021-island-golden/README.md),
-[2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
+(the 2026-09-30 island-golden run (history in git),
+the 2026-09-30 accumulator run (history in git)).
 The two select islands are bit-exact on all 1,125,000 valid lanes on
 3 seeds. In the loop-closed encoder test with all four island
 families on the ANE
-([2026-09-30-t6021-parakeet-encoder-islands](../../receipts/2026-09-30-t6021-parakeet-encoder-islands/README.md)):
+(the 2026-09-30 parakeet-encoder-islands run (history in git)):
 120 device submissions, zero failures, and the decoded transcript is
 byte-identical to the golden transcript from the pinned macOS ANE
 capture.
@@ -153,7 +153,7 @@ capture.
 Lifecycle: 160 of 160 gate trials across four parallel `ane-run`
 workers; 150 loads of the 2048x5120 matvec (20 MiB weights, about
 3 GiB of BO traffic) with no `BO_INIT` failure and no IOMMU fault
-([2026-09-29-t6021-installed-path](../../receipts/2026-09-29-t6021-installed-path/README.md),
+(the 2026-09-29 installed-path run (history in git),
 "BO lifetime").
 
 Not proven:
@@ -164,26 +164,26 @@ Not proven:
 - Qwen on the M2. Program 20 of the 38 staged programs (20 tasks,
   84 MB of constants) matches the M1 golden on the device with the
   named-port binding: relative L2 0.00117, 50 of 50 runs identical
-  ([2026-09-30-t6021-call-wait](../../receipts/2026-09-30-t6021-call-wait/README.md)).
+  (the 2026-09-30 call-wait run (history in git)).
   The other 37 programs have not run: their port tables give some
   surfaces a channel smaller than the surface, and the loader takes
   one output only.
 - The rms_norm chain. The device writes only channels 64 to 2047 of
   2048, so the program does not qualify for a model run (receipt
-  [2026-09-30-t6021-island-select-rms](../../receipts/2026-09-30-t6021-island-select-rms/README.md)).
+  the 2026-09-30 island-select-rms run (history in git)).
 - An explanation for the intermittent all-zero output seen on three
   boots in 2026-09 (about 1 call in 5 on those boots). The CALL wait
   then returned at dispatch, before the finish event existed in the
   driver. On the finish-event wait with no post-call sleep, 6000 add
   calls with new inputs per call read their own result right after the
   ioctl returned
-  ([2026-10-06-t6021-call-settle](../../receipts/2026-10-06-t6021-call-settle/README.md));
+  (the 2026-10-06 call-settle run (history in git));
   the failing boots have not recurred.
 - A bit-exact model of the C pv accumulator. It is fp32-class, but
   no tested model reproduces it; the strict per-lane bound fails on
   1.3 to 52.4 percent of lanes per layer and the deviation does not
   propagate to the transcript
-  ([2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
+  (the 2026-09-30 accumulator run (history in git)).
 
 ## Lifecycle (wedged-pin rule)
 
@@ -286,15 +286,15 @@ bisection only.
 | `scratch3_ack` | `1` | rtclient | After DONE, write SCRATCH3 = 0x08042006 |
 | `legacy_only` | `1` | rtclient | Use the pinned 13.5 legacy ChMan transport |
 | `legacy_query` | `1` | rtclient | Service bounded startup allocations and CONFIG_GET |
-| `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (receipts/2026-09-30-t6021-stock-mailbox). A firmware that speaks RTKit needs `1000` (the lab value). |
+| `hello_wait_ms` | `0` | rtclient | RTKit HELLO wait in legacy mode. 0 skips RTKit, so the ANE mailbox never starts: the 13.5 firmware sent no HELLO on any recorded boot (-ETIME after 1000 ms), and starting the mailbox enables AIC2 884, which then fired ~700,000 times/s (recorded run; history in git). A firmware that speaks RTKit needs `1000` (the lab value). |
 | `poll_rx` | `1` | rtclient | Drive RX by `apple_rtkit_poll` from the workqueue (only with an RTKit instance: `legacy_only=0`, or legacy mode with `hello_wait_ms` > 0) |
 | `start_app_eps` | `1` | rtclient | STARTEP fw-announced app endpoints after a successful handshake |
 | `bo_total_max_mb` | `12288` | rtclient | Cap on the BO bytes held at one time, in MiB; `BO_INIT` returns `ENOSPC` above it. `0` refuses every `BO_INIT`; there is no unlimited value. Read at load (0444). |
 | `bo_total_bytes` | read only | rtclient | The BO bytes counted against `bo_total_max_mb` now. |
-| `call_settle_us` | `0` | rtclient | Runtime (0644). Microseconds to sleep after a CALL's finish event. The event already marks the output in DRAM (receipts/2026-10-06-t6021-call-settle); a nonzero value only tests a suspected late output write. Was 1000 before 2026-10-06. |
+| `call_settle_us` | `0` | rtclient | Runtime (0644). Microseconds to sleep after a CALL's finish event. The event already marks the output in DRAM (recorded run; history in git); a nonzero value only tests a suspected late output write. Was 1000 before 2026-10-06. |
 | `call_poll_us` | `1000` | rtclient | Runtime (0644). Microseconds of 1-us-cadence polling at the head of the CALL finish-event wait before falling back to the uniform 50-100 us sleep. `0` restores the 50-100 us cadence everywhere. Set 0 to trade the per-call detection lag back for CPU on a busy box; no reload needed. |
 | `trace_td` | `0` | rtclient | Runtime switch (0644). 1 records a read-only timeline of each CALL (ack, each new value of the last-taken-TD word, the IO_T2H events, the finish) in debugfs `ane_t6021_trace/trace_td`; each switch to 1 empties it. The TD word is read only while the ANE pmgr PS words read 0x3ff, and never with `dyn_pg=1`. 0 leaves the CALL path unchanged. The trace owns the `ane_t6021_trace` directory, so any load order works next to the probe's `stats=1` files in `ane_t6021/`. |
-| `dyn_pg` | `0` | rtclient | Lab, selene 13.5 (T602x) only; probe refuses it on other SoCs. 1 sends `SET_DYNAMIC_POWERGATE` (0x2d) = 1 once after CONFIG_GET, so the firmware turns the compute islands (td, base, set1-4) off between jobs. The driver keeps its runtime-PM reference. Unproven on hardware: see receipts/2026-10-03-t6021-dynpg. |
+| `dyn_pg` | `0` | rtclient | Lab, selene 13.5 (T602x) only; probe refuses it on other SoCs. 1 sends `SET_DYNAMIC_POWERGATE` (0x2d) = 1 once after CONFIG_GET, so the firmware turns the compute islands (td, base, set1-4) off between jobs. The driver keeps its runtime-PM reference. Unproven on hardware: see the recorded 2026-10-03 dynpg run (history in git). |
 
 With `stats=1`, T602x probe also creates debugfs `ane_t6021/ane_pg_state`
 (0400). Each read prints the seven ANE PS words that `trace_td` checks
@@ -316,7 +316,7 @@ gated are simply absent) and `legacy_notify_ack`/`legacy_fast_poll`
 attach + `pm_runtime_resume_and_get` always run, which IS the lab
 default path. `af_bridge_macos` (#33) is absent too: the 26 macOS AXI2AF
 bridge values did not change the encoder time
-(receipts/2026-10-01-t6021-af-bridge-run).
+(recorded run; history in git).
 
 ## DRM device
 
