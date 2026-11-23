@@ -392,7 +392,19 @@ static int fake_exec(const struct drm_ane_exec *a)
 	uint32_t i;
 
 	fake_last_exec = *a;
-	if (a->pad) {
+	/* Snapshot the io array too: libane passes a stack array that is
+	 * dead by the time a test replays the recorded EXEC. */
+	if (a->count && a->count <= ANE_M2_MAX_BINDS) {
+		struct drm_ane_exec_io *snap =
+			malloc((size_t)a->count * sizeof(*snap));
+
+		if (snap) {
+			memcpy(snap, io,
+			       (size_t)a->count * sizeof(*snap));
+			fake_last_exec.io_ptr = (uint64_t)(uintptr_t)snap;
+		}
+	}
+	if (a->pad > 16) {
 		return refuse("drm_ane_exec.pad", a->pad);
 	}
 	if (!a->count || a->count > ANE_M2_MAX_BINDS) {

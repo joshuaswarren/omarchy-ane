@@ -130,7 +130,12 @@ struct drm_ane_exec {
 	__u32 priority;		/* 2..7 */
 	__u32 timeout_ms;
 	__u32 count;		/* 1..ANE_M2_MAX_BINDS */
-	__u32 pad;
+	__u32 pad;		/* t6021 EXEC: 0 or 1 = one call (as before);
+				 * 2..16 = batched call count: the driver
+				 * posts pad PROCEDURE_CALLs back-to-back
+				 * on the channel-1 IO ring and returns
+				 * after pad finish events. All calls
+				 * bind the same buffers. */
 	__u64 io_ptr;		/* struct drm_ane_exec_io[count] */
 };
 

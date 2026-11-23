@@ -1841,7 +1841,7 @@ static void usage(void)
 {
 	fprintf(stderr,
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
-		"[--out IDX=FILE]... [--repeat N] [--time] [--time-raw FILE] [--check OP] "
+		"[--out IDX=FILE]... [--repeat N] [--batch K] [--time] [--time-raw FILE] [--check OP] "
 		"[--weights FILE] [--dev N] [--tile-shift N] [--expect-bind IN:OUT]\n"
 		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
 		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
@@ -1891,7 +1891,11 @@ static void usage(void)
 		"  io records the runner would submit, then exit. No device.\n"
 		"--time: print the quantiles and the mean of the per-call exec times.\n"
 		"--time-raw FILE: also write every call's exec time in ns, one integer per\n"
-		"  line, in call order (implies --time).\n");
+		"  line, in call order (implies --time).\n"
+		"--batch K: K calls per DRM_ANE_EXEC (t6021 batched exec, K 2..16; the\n"
+		"  default 1 keeps one ioctl per call). Each timing sample is the batch\n"
+		"  wall time divided by K, so the quantiles describe steady-state\n"
+		"  per-call latency; --time-raw writes one sample per batch.\n");
 }
 
 int main(int argc, char **argv)
@@ -1904,6 +1908,7 @@ int main(int argc, char **argv)
 	struct name_file nins[IO_ARGS] = { 0 };
 	struct name_file nouts[IO_ARGS] = { 0 };
 	uint32_t repeat = 1;
+	uint32_t batch = 1;
 	int timing = 0;
 	const char *time_raw = NULL;
 	int check = -1;
@@ -1997,6 +2002,12 @@ int main(int argc, char **argv)
 			time_raw = argv[++i];
 		} else if (!strcmp(argv[i], "--repeat") && i + 1 < argc) {
 			repeat = (uint32_t)strtoul(argv[++i], NULL, 0);
+		} else if (!strcmp(argv[i], "--batch") && i + 1 < argc) {
+			batch = (uint32_t)strtoul(argv[++i], NULL, 0);
+			if (batch > 16) {
+				fprintf(stderr, "--batch must be 1..16\n");
+				return 2;
+			}
 		} else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
 			check = parse_check_op(argv[++i]);
 			if (check < 0) {
@@ -2131,27 +2142,34 @@ int main(int argc, char **argv)
 		double *lat = timing ? calloc(repeat, sizeof(*lat)) : NULL;
 		uint64_t *ns = time_raw ? calloc(repeat, sizeof(*ns)) : NULL;
 		uint32_t done = 0;
+		uint32_t b = batch > 1 ? batch : 1;
 
 		if ((timing && !lat) || (time_raw && !ns)) {
 			fprintf(stderr, "cannot allocate the per-call timing buffers for %u calls\n", repeat);
 			ret = 1;
 		}
 
-		for (uint32_t r = 0; r < repeat && !ret; r++) {
+		for (uint32_t r = 0; r < repeat && !ret; r += b) {
 			struct timespec t0, t1;
+			uint32_t calls = repeat - r < b ? repeat - r : b;
 
 			clock_gettime(CLOCK_MONOTONIC, &t0);
-			if (ane_exec(nn) < 0) {
+			if (b > 1) {
+				if (ane_exec_batch(nn, calls) < 0) {
+					fprintf(stderr, "ane_exec_batch(%u) failed\n", calls);
+					ret = 1;
+				}
+			} else if (ane_exec(nn) < 0) {
 				fprintf(stderr, "ane_exec failed\n");
 				ret = 1;
 			}
 			clock_gettime(CLOCK_MONOTONIC, &t1);
 			if (lat) {
-				lat[done] = (t1.tv_sec - t0.tv_sec) * 1e3 +
-					    (t1.tv_nsec - t0.tv_nsec) / 1e6;
+				lat[done] = ((t1.tv_sec - t0.tv_sec) * 1e3 +
+					     (t1.tv_nsec - t0.tv_nsec) / 1e6) / calls;
 				if (ns) {
 					ns[done] = (uint64_t)((long long)(t1.tv_sec - t0.tv_sec) * 1000000000LL +
-							      (t1.tv_nsec - t0.tv_nsec));
+							      (t1.tv_nsec - t0.tv_nsec)) / calls;
 				}
 				done++;
 			}
@@ -2165,11 +2183,12 @@ int main(int argc, char **argv)
 
 			qsort(lat, done, sizeof(*lat), cmp_double);
 			printf("exec ms over %u calls: min %.3f p10 %.3f p25 %.3f "
-			       "median %.3f p75 %.3f p90 %.3f p99 %.3f max %.3f mean %.4f\n",
-			       done, lat[0], lat[done / 10], lat[done / 4],
+			       "median %.3f p75 %.3f p90 %.3f p99 %.3f max %.3f mean %.4f%s\n",
+			       repeat, lat[0], lat[done / 10], lat[done / 4],
 			       lat[done / 2], lat[(done * 3) / 4],
 			       lat[(done * 9) / 10], lat[(done * 99) / 100],
-			       lat[done - 1], mean);
+			       lat[done - 1], mean,
+			       b > 1 ? " (batched: one sample per batch, wall/K)" : "");
 		}
 		free(ns);
 		free(lat);

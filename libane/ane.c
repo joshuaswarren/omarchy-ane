@@ -853,6 +853,23 @@ int ane_exec(struct ane_nn *nn)
 	return ret;
 }
 
+/* Batched exec: `batch` calls per DRM_ANE_EXEC (t6021 only; the M1
+ * path has no batch and refuses batch > 1). */
+int ane_exec_batch(struct ane_nn *nn, uint32_t batch)
+{
+	uint64_t t = timing_start();
+	int ret;
+
+	if (nn->m2)
+		ret = ane_m2_exec_batch(nn, batch);
+	else if (batch > 1)
+		ret = -ENOSYS;
+	else
+		ret = ane_exec_with_state_swap(nn, 0, 0, 0);
+	timing_end("exec", t, 0);
+	return ret;
+}
+
 int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
 		  uint32_t state_src_idx, uint32_t state_dst_idx)
 {

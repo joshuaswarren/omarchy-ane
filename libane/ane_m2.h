@@ -183,6 +183,7 @@ struct ane_nn *ane_m2_init_ports(const char *path,
 				 uint32_t port_count, int dev_id);
 
 int ane_m2_exec(struct ane_nn *nn);
+int ane_m2_exec_batch(struct ane_nn *nn, uint32_t batch);
 int ane_m2_send(struct ane_nn *nn, const void *from, uint32_t idx);
 int ane_m2_read(struct ane_nn *nn, void *to, uint32_t idx);
 uint64_t ane_m2_src_size(struct ane_nn *nn, uint32_t idx);
