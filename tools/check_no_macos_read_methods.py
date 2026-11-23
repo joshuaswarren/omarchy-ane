@@ -49,8 +49,6 @@ ALLOWED = {"packaging/omarchy-ane-firmware-fetch"}
 CAPTURED = {
     # Kept receipts/ evidence: the run's own source copy (read-method text is frozen).
     "receipts/2026-09-24-t6021-pwgate/ane_t6021_fwload.c",
-    # Kept receipts/ evidence: captured run log (read-method text is frozen).
-    "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-ane.txt",
 }
 # Grandfathered 2026-11-08 (PR: public-text ratchet cleanup): captured H17 evidence
 # that landed with PR #364 before this check could run on it. The receipts/ part of

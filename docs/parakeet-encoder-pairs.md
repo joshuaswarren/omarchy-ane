@@ -22,4 +22,4 @@ The macOS numbers are CoreML `cpuAndNeuralEngine` medians of 15 reps after 3 war
 
 The 13-inch macOS reference is the 11 October run with the fixed harness, which places every arm on the ANE: two runs of 15 reps, 111.62 and 111.52 ms, on macOS 27.0. The raw run files are kept in the lab's records and can be sent on request.
 
-A 30 minute soak at level 5 (9,000 calls in 36 blocks) stayed bit-exact, with block medians from 198.97 to 199.05 ms. Its record is in `receipts/2026-10-30-ane-level5-soak`. The level 2 soak (7,500 calls in 30 blocks, 240.38 to 240.59 ms) is in `receipts/2026-10-30-ane-level2-soak`.
+A 30 minute soak at level 5 (9,000 calls in 36 blocks) stayed bit-exact, with block medians from 198.97 to 199.05 ms. Its record is in `receipts/2026-10-30-ane-level5-soak`. The level 2 soak (7,500 calls in 30 blocks, 240.38 to 240.59 ms) is the recorded 2026-10-30 level-2 soak run (history in git).

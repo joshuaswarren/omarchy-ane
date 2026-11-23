@@ -319,7 +319,7 @@ What this shows and what it does not:
     e2q-run.sh ROOT 0 1 2 4 7 final     # stopped at 7 (A arm failed after the 0x20c fault)
     e2q-run.sh ROOT 3 final             # next boot
     python3 scripts/e2q_analyze.py e2q-runs
-    python3 scripts/dart_compare.py ../2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv LOG...
+    python3 scripts/dart_compare.py dart-tunables.tsv LOG...
 
 E1 and E2 ran the probe from commit `2f943fe`; `260d869` added a log line
 with a 50 ms drain before the first read of each RMW and the source

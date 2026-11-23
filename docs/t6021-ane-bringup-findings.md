@@ -723,7 +723,7 @@ from; carry it to T6021 only after a check on that chip.
 ### T6001: firmware cold start as macOS does it
 
 Source: ane-linux-experiments `lane/jw16-lsink2-clean` 82ede28 (merged
-caabc0f), `the recorded 2026-09-24 asc-capture run (history in git)`. From a
+caabc0f), the recorded 2026-09-24 asc-capture run (history in git). From a
 T6001 macOS boot log.
 
 - macOS starts the firmware lazily, on the first power-on client (the ISP
@@ -1232,7 +1232,7 @@ Record: the recorded 2026-09-30 t6021-stock-mailbox receipt (history in git).
   16 KiB is one slot and one BO. All 38 regenerated Qwen tables pass the
   size gate and `--dry-run`; the port build takes several outputs and the
   slot-3 scratch, and refuses a task-stream slot the table does not bind
-  (ports-sizes table in the recorded 2026-09-30 qwen-chain receipt; history in git).
+  ([ports-sizes.md](../receipts/2026-09-30-t6021-qwen-chain/ports-sizes.md)).
 
 ## 22. CALL completion: the IO_T2H finish event (2026-09-30)
 
@@ -1266,7 +1266,7 @@ Record: the recorded 2026-09-30 t6021-call-wait receipt (history in git).
 
 ## 23. Qwen per-program conformance against the M1 (2026-10-01)
 
-Record: the recorded 2026-09-30 qwen-chain conformance receipt (history in git).
+Record: [receipts/2026-09-30-t6021-qwen-chain/conformance.md](../receipts/2026-09-30-t6021-qwen-chain/conformance.md).
 
 - All 38 Apple-compiled Qwen programs match the M1 outputs of the same
   decode step on boot `0e2c3743` (module `a584a967`). That covers six steps
@@ -1369,7 +1369,7 @@ Records: the recorded 2026-10-01 t6021-native-macos receipt (history in git)
 
 ## 28. The macOS ANE0 AXI2AF bridge tunables: applied, no speed change (2026-10-01)
 
-Records: the recorded 2026-10-01 t6021-af-bridge receipt (history in git)
+Records: [receipts/2026-10-01-t6021-af-bridge](../receipts/2026-10-01-t6021-af-bridge/README.md)
 (table and probe) and the recorded 2026-10-01 t6021-af-bridge-run receipt (history in git).
 
 - Under Linux none of the 26 bridge registers at 0x284000000 + 0x000..0xa00
@@ -1412,7 +1412,7 @@ Record: the recorded 2026-10-01 t6021-macos-vs-linux-mmio receipt (history in gi
 
 ## 30. The ANE DART tunables under Linux: read, applied, 0x20c breaks translation (2026-10-01)
 
-Record: the recorded 2026-10-01 t6021-dart-tunables receipt (history in git).
+Record: [receipts/2026-10-01-t6021-dart-tunables](../receipts/2026-10-01-t6021-dart-tunables/README.md).
 
 - Under Linux, dart-ane1 (BRD) and dart-ane2 (BWR) keep their reset values:
   0 of the 22 ADT tunable words on each holds the macOS value. dart-ane0

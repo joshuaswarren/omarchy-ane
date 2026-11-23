@@ -12,7 +12,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location(
-    "afb", HERE.parent.parent / "2026-10-01-t6021-af-bridge-run/scripts/analyze.py")
+    "afb", HERE / "analyze.py")
 afb = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(afb)
 

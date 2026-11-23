@@ -97,8 +97,8 @@ with open(os.path.join(repo, "packaging", "omarchy-ane-other-tool"), "w") as f:
     f.write("clean\n")
 commit(repo)
 # captured output is evidence and is never edited: the explicit list may carry the words, any other path may not
-cap = "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-ane.txt"
-other = "receipts/2026-10-01-t6021-default-on-gate/logs/B/dmesg-other.txt"
+cap = "receipts/2026-09-24-t6021-pwgate/ane_t6021_fwload.c"
+other = "receipts/2026-09-24-t6021-pwgate/other.c"
 os.makedirs(os.path.dirname(os.path.join(repo, cap)), exist_ok=True)
 line = "fwload: own memory: iBoot patches replayed (soc 0x6021 rev 0x11 DATA 0x100000c4000)\n"
 with open(os.path.join(repo, cap), "w") as f:
@@ -108,7 +108,7 @@ expect("a listed captured log may carry the words", run(repo), 0, "ok")
 with open(os.path.join(repo, other), "w") as f:
     f.write(line)
 commit(repo)
-expect("an unlisted log in the same folder may not", run(repo), 1, "dmesg-other.txt")
+expect("an unlisted log in the same folder may not", run(repo), 1, "other.c")
 for name in (cap, other):
     with open(os.path.join(repo, name), "w") as f:
         f.write("clean\n")

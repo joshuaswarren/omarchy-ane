@@ -263,8 +263,7 @@ REHEARSE-FIRE. No panic/reboot test is required as a normal-operation goal.
 The reviewed watchdog-only probe has been removed from the live module:
 there is no executable engine, power, watchdog or file-I/O path to enable
 by changing a qualification macro. Functional T8140 initialization and
-device-local error handling remain unresolved. See the
-the recorded 2026-10-31 review-fix run (history in git).
+device-local error handling remain unresolved. See the recorded 2026-10-31 review-fix run (history in git).
 
 `transaction.h` implements read-only transaction control for a future
 qualified adapter. It validates every step before acquiring resources,

@@ -3,7 +3,7 @@
 
 usage: dart_compare.py DART_TUNABLES_TSV LOG [LOG...]
 
-DART_TUNABLES_TSV is receipts/2026-10-01-t6021-macos-vs-linux-mmio/dart-tunables.tsv.
+DART_TUNABLES_TSV is receipts/2026-10-01-t6021-dart-tunables/dart-tunables.tsv (vendored copy).
 Each LOG holds "ane_dart_probe: 0x<PA> = 0x<value>" lines (dmesg or netconsole).
 Prints one row per ADT word: instance, offset, mask, value, the read of each log,
 and applied = (read & mask) == value. Then every word that differs between logs."""

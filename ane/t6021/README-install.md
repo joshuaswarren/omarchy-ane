@@ -140,8 +140,8 @@ island-a-attn-p1 stay within 1.0 cond-unit of the exact fp64 product
 on every lane (worst ratio 0.91). island-c-pv fails that strict bound
 on 1.3, 47.6 and 52.4 percent of lanes (worst ratio 14.5, 104.1 and
 65.3), and its accumulator model is not identified
-(the 2026-09-30 island-golden run (history in git),
-the 2026-09-30 accumulator run (history in git)).
+(the recorded 2026-09-30 island-golden run (history in git),
+[2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
 The two select islands are bit-exact on all 1,125,000 valid lanes on
 3 seeds. In the loop-closed encoder test with all four island
 families on the ANE
@@ -183,7 +183,7 @@ Not proven:
   no tested model reproduces it; the strict per-lane bound fails on
   1.3 to 52.4 percent of lanes per layer and the deviation does not
   propagate to the transcript
-  (the 2026-09-30 accumulator run (history in git)).
+  ([2026-09-30-t6021-accumulator](../../receipts/2026-09-30-t6021-accumulator/README.md)).
 
 ## Lifecycle (wedged-pin rule)
 

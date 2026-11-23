@@ -20,7 +20,7 @@ builds in-kernel (`__KERNEL__`) and in userspace.
   ANE-DART leaf PTE `0x000fff1000084801` (receipts
   2026-09-24-t6021-coresight-dart) byte-exactly, and the same format was
   walked by working hardware when the T6021 firmware ran inference
-  (receipts/2026-09-29-t6021-installed-path).
+  (the recorded 2026-09-29 t6021-installed-path run; history in git).
 - Register words: t8110 TTBR `(root >> 14) << 2 | VALID(bit0)` and TCR
   `TRANSLATE(bit0) | FOUR_LEVEL(bit3)`; the working macOS dart-ane sid0
   TCR `0x9` and TTBR `0x1004102d` are on record (docs/t6021-ane-bringup

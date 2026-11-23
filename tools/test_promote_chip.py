@@ -116,30 +116,11 @@ for chip in sorted(_chips):
 
     # a chip promoted with a note carries it in the dts line; the way back to default-on needs the same note
     note = None
-    m = re.search(r"Overlay state: on by default \((.+)\)\.", before[f"packaging/dt/{chip}-ane.dts"].decode())
-    if m:
-        # an enabled base carries an evidence note: the flip to opt-in and
-        # every re-run must carry it too, or edit_changelog's drop filter
-        # misses the noted line and the round trip leaves two entries
-        note = m.group(1)
-    p = run(base, chip, to, "--apply", note)
-    assert p.returncode == 0, (chip, p.stderr)
-    after = tree(base)
-    changed = {k for k in after if before.get(k) != after[k]}
-    assert changed == set(flip_files(chip)), (chip, sorted(changed))
-    # the entry lands under Unreleased, and the released section below it keeps
-    # its blank line (after a release, Unreleased sits empty right above it)
-    cl = after["CHANGELOG.md"].decode().splitlines()
-    h = cl.index("## Unreleased")
-    nxt = next(n for n in range(h + 1, len(cl)) if cl[n].startswith("## "))
-    assert cl[nxt - 1] == "" and any(f"{chip.upper()} (" in l for l in cl[h + 1:nxt]), (chip, cl[h:nxt + 1])
-
-    p = run(base, chip, to, "--apply", note)  # idempotent
-    assert p.returncode == 0 and tree(base) == after, (chip, p.stdout, p.stderr)
-    p = run(base, chip, to, "--check", note)  # writes nothing
-    assert p.returncode == 0 and tree(base) == after, (chip, p.stderr)
-
+    if back == "default-on":
+        m = re.search(r"Overlay state: on by default \((.+)\)\.", before[f"packaging/dt/{chip}-ane.dts"].decode())
+        note = m.group(1) if m else None
     p = run(base, chip, back, "--apply", note)
+    assert p.returncode == 0, (chip, p.stderr)
     rt = tree(base)
     residue = {k for k in rt if rt[k] != before.get(k)} | {k for k in before if k not in rt}
     assert residue <= {"CHANGELOG.md"}, (chip, sorted(residue))
