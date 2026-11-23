@@ -36,11 +36,12 @@ H14_ADD = "h14-anec/add/program-0.anec"
 H13_ADD = "h13-anec/add/program-0.anec"
 H15_ADD = "h15-hwx/add/model.hwx"
 M3 = {"t6030", "t6031", "t6034", "t8122"}
+M4 = {"t6040", "t6041"}
 FIXTURE = {"t6020": H14_ADD, "t6021": H14_ADD, "t6022": H14_ADD, "t8112": H14_ADD,
            "t8103": H13_ADD, "t6000": H13_ADD, "t6001": H13_ADD, "t6002": H13_ADD,
-           **{c: H15_ADD for c in M3}}
+           **{c: H15_ADD for c in M3}, **{c: H15_ADD for c in M4}}
 H13 = {"t8103", "t6000", "t6001", "t6002"}
-MODULE = {**{c: "ane" for c in H13}, **{c: "ane_t6021" for c in ("t6020", "t6021", "t6022", "t8112")},
+MODULE = {**{c: "ane" for c in H13}, **{c: "ane_t6021" for c in ("t6020", "t6021", "t6022", "t8112", *M4)},
           **{c: "ane_h15" for c in M3}}
 H14_GOLDEN = "94041b7cc10a66dfd76ecfd469728ad9d66f68b508f4a9744ce41208d6a4de0b"
 H13_GOLDEN = "5ad7eccd2977a88a375f123fe42c6780855953a1e9df4ac442cae383bc240dd6"

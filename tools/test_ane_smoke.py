@@ -292,6 +292,22 @@ for chip in ('t6030', 't6031', 't6034', 't8122'):
     assert err == f'omarchy-ane-smoke: unavailable: no driver for this chip can run a job yet\n', (chip, err)
     assert not (root / 'count').exists(), f'{chip}: no call may run'
     shutil.rmtree(root)
+
+# 10. M4 chips resolve the H15 fixture and the in-tree ane_t6021 driver. A
+# bound die runs the job end to end; an unbound one reports the missing
+# binding instead of a driver-name miss.
+for chip in ('t6040', 't6041'):
+    assert smoke.MODULE[chip] == 'ane_t6021' and smoke.GOLDEN[chip] == smoke.H14_GOLDEN, chip
+    root = machine(chip, chip)
+    rc, out, err = smoke_run(root)
+    assert rc == 0 and out['errors'] == 0 and out['sha256'] == [smoke.H14_GOLDEN] * 20, (chip, rc, out, err)
+    shutil.rmtree(root)
+    root = machine(chip, chip, bound=False)
+    assert (root / smoke.FIXTURES / smoke.FIXTURE[chip]).is_file(), f'{chip}: fixture not installed'
+    rc, out, err = smoke_run(root)
+    assert rc == 2 and out['available'] is False and out['chip'] == chip, (chip, rc, out)
+    assert 'ane_t6021 is bound to no device' in out['reason'], (chip, out)
+    shutil.rmtree(root)
 print('test_ane_smoke: ok')
 
 
