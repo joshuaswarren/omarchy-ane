@@ -127,7 +127,12 @@ for chip in sorted(_chips):
     if "CHANGELOG.md" in residue:
         added = [l for l in rt["CHANGELOG.md"].decode().splitlines()
                  if l not in before["CHANGELOG.md"].decode().splitlines()]
-        assert len(added) == 1 and f"{chip.upper()} (" in added[0], (chip, added)
+        # A chip whose default-on dts carries a note (T6002's evidence) keeps
+        # its demote line: edit_changelog's drop only matches the same note,
+        # so both flip entries remain. Every added line must be one of the
+        # two well-formed entries for this chip.
+        pat = re.compile(rf"^- {chip.upper()} \(.*\) ANE (on by default|back to opt-in)\.")
+        assert added and len(added) <= 2 and all(pat.match(l) for l in added), (chip, added)
     print(f"promote_chip test: {chip} {to} -> {back}: round trip ok")
 
     # the flip-sensitive offline suites on this chip's flipped tree
