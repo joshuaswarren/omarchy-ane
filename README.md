@@ -37,7 +37,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
   probe or a smoke pass does not establish model support.
   See [newer chip data](docs/ane-soc-data.md).
 
-| Mac | SoC | Internal | Linux `compatible` | Driver | State | Opt-in key | Measured result | Receipt |
+| Mac | SoC | Internal | Linux `compatible` | Driver (module parameter) | State | Overlay opt-in key | Measured result | Receipt |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | M1 | T8103 | H13 | `apple,t8103-ane` | `ane` | on by default | none | 20/20 fp16 add calls bit-exact; Parakeet encoder also checked. | [0.5.11 hardware smoke](https://github.com/joshuaswarren/omarchy-ane/pull/388) |
 | M1 Pro | T6000 | H13 | `apple,t6000-ane` | `ane` | on by default | none | Passing fp16 smoke row `6eb94f49985b`. | [Promotion receipt](https://github.com/joshuaswarren/omarchy-ane/commit/0477f725208fed1d3d4ff8949951f0fc96d6385e) |
@@ -47,17 +47,23 @@ Part of the Omarchy on Apple Silicon ecosystem:
 | M2 Pro | T6020 | H14 | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree | [20/20 bit-exact add calls, #333](https://github.com/joshuaswarren/omarchy-ane/pull/333) |
 | M2 Max | T6021 | H14 | `apple,t6021-ane` | `ane_t6021` | on by default | none | 20/20 fp16 add calls bit-exact; eight operations and a 1024 × 1024 matvec passed. | [0.5.11 hardware smoke](https://github.com/joshuaswarren/omarchy-ane/pull/388) |
 | M2 Ultra | T6022 | H14 | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) | [20/20 bit-exact add calls, #278](https://github.com/joshuaswarren/omarchy-ane/pull/278); die 1 not yet qualified |
-| M3 | T8122 | 0xb0 (ADT) | `apple,t8122-ane` (linux #2331, disabled) | `ane_h15` | experimental | `ane-h15-experimental` | J613 stage 2 read found the gate closed even with all five power domains on. No Linux ANE program yet. | [H15 record](ane/h15/README-bringup.md#what-it-does) |
-| M3 Pro | T6030 | 0xc0 (ADT) | `apple,t6030-ane` (linux #2331, disabled) | `ane_h15` | experimental | `optin=t6030` | J516S stages 0 and 1 passed; stage 5 ended with no mailbox message. No Linux ANE program yet. | [Stages 0–1](https://github.com/joshuaswarren/omarchy-ane/pull/173), [stage 5](ane/h15/README-bringup.md#not-verified-honest-limits) |
-| M3 Max | T6031/T6034 | 0xe0 (ADT) | `apple,t6031-ane` (linux #2331, disabled; T6034 reuses it) | `ane_h15` | experimental | per-SoC opt-in | T6031 J516C passed MacLab stages 0–2 and a separate read-only DART probe. Later bring-up runs crashed; no Linux ANE program yet. | [Stages 0–2](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6478824656), [DART probe](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6480074143), [crashes](https://github.com/joshuaswarren/omarchy-ane/pull/354) |
-| M4 | T8132 | H16 | `apple,t8132-ane` | `ane_h16` | experimental | `optin=t8132` | J773g Mac mini passed device-tree and status probes; all five power domains on. Firmware boot and ANE computation not yet run. | [T8132 receipt](ane/h16/README-bringup.md#measured-on-a-t8132) |
-| M4 Pro | T6040 | H16 | `apple,t6040-ane` | `ane_h16` | experimental | `optin=t6040` | Device-tree data and a host-tested bring-up path; no hardware ANE program yet. | [T6040 data](data/ane-soc/t6040.json), [#473](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
+| M3 | T8122 | 0xb0 (ADT) | `apple,t8122-ane` (linux #2331, disabled) | `ane_h15` (`optin=t8122`) | experimental | `ane-h15-experimental` | J613 stage 2 read found the gate closed even with all five power domains on. No Linux ANE program yet. | [H15 record](ane/h15/README-bringup.md#what-it-does) |
+| M3 Pro | T6030 | 0xc0 (ADT) | `apple,t6030-ane` (linux #2331, disabled) | `ane_h15` (`optin=t6030`) | experimental | `ane-h15-experimental` | J516S stages 0 and 1 passed; stage 5 ended with no mailbox message. No Linux ANE program yet. | [Stages 0–1](https://github.com/joshuaswarren/omarchy-ane/pull/173), [stage 5](ane/h15/README-bringup.md#not-verified-honest-limits) |
+| M3 Max | T6031 | 0xe0 (ADT) | `apple,t6031-ane` (linux #2331, disabled) | `ane_h15` (`optin=t6031`) | experimental | `ane-h15-experimental` | J516C passed MacLab stages 0–2 and a separate read-only DART probe. Later bring-up runs crashed; no Linux ANE program yet. | [Stages 0–2](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6478824656), [DART probe](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6480074143), [crashes](https://github.com/joshuaswarren/omarchy-ane/pull/354) |
+| M3 Max | T6034 | 0xe0 (ADT) | `apple,t6034-ane` | `ane_h15` (`optin=t6034`) | data-only record; experimental driver match | no overlay supplied | Shares the T6031 ADT layout, not its hardware run results. No Linux ANE program yet. | [T6034 data](data/ane-soc/t6034.json), [H15 device tree](ane/h15/README-bringup.md#device-tree-one-overlay-per-soc) |
+| M4 | T8132 | H16 | `apple,t8132-ane` | `ane_h16` (`optin=t8132`) | experimental | `ane-h16-experimental` | J773g Mac mini passed device-tree and status probes; all five power domains on. Firmware boot and ANE computation not yet run. | [T8132 receipt](ane/h16/README-bringup.md#measured-on-a-t8132) |
+| M4 Pro | T6040 | H16 | `apple,t6040-ane` | `ane_h16` (`optin=t6040`) | experimental | — (run-time overlay) | Device-tree data and a host-tested bring-up path; no hardware ANE program yet. | [T6040 data](data/ane-soc/t6040.json), [#473](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
 | M4 Max | T6041 | H16 | `apple,t6041-ane` | Aurora in-tree `ane_t6021` | experimental | — | J616C reported a live ANE node with no driver bound; the new smoke mapping was tested on a host, not on the ANE. No hardware ANE program yet. | [J616C report](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
 | M5 | T8142 | H17 | not yet recorded | — | data only | — | Device-tree capture only; no Linux ANE program yet. | [T8142 record](data/ane-soc/t8142.json) |
 | M5 Max | T6050 | H17 | `apple,t6050-ane` | Aurora in-tree `ane_t6021` (ABI 3) | experimental, not packaged here | — | One Qwen3-4B layer ran with eight ANE programs and host-side work. A later eight-layer, one-token run took 84.3 ms with final-state cosine similarity 0.999998927. | [Layer receipt](https://github.com/joshuaswarren/omarchy-ane/pull/410), [device receipt](https://github.com/joshuaswarren/omarchy-ane/pull/463), [G529 run](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
-| Mac mini M6 | T8152 | H18 | `apple,t8152-ane` | `ane_h18` | experimental, not packaged here | `optin=t8152` | Three interleaved fixture programs ran bit-exact on both engines in one boot. The separate AN-23 weighted-matvec test stalled after firmware start; the chain has not yet completed. | [Nov 24 keep-alive and AN-23 runs](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
+| Mac mini M6 | T8152 | H18 | `apple,t8152-ane` | `ane_h18` (`optin=t8152`) | experimental, not packaged here | — (board DTB) | Three interleaved fixture programs ran bit-exact on both engines in one boot. The separate AN-23 weighted-matvec test stalled after firmware start; the chain has not yet completed. | [Nov 24 keep-alive and AN-23 runs](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
 
 ### Overlay opt-in
+
+An overlay key is not an `optin=<soc>` module parameter. Experimental boot
+overlays are not installed by the package; see the
+[H15](ane/h15/README-bringup.md#device-tree-one-overlay-per-soc) and
+[H16](ane/h16/README-bringup.md) bring-up guides before using their keys.
 
 The T8112 note: after adding the key, run
 `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The M2 Pro
@@ -73,7 +79,7 @@ the power-state words, and Linux gets here after the power domain is already on.
 The guarded path has not yet passed an ANE smoke test on base M2 silicon.
 A hang or reset is possible. A reboot undoes it.
 
-To opt in, append the key as one line to
+For a packaged overlay, append the key as one line to
 `/etc/omarchy-mac-boot/dtb-overlays.opt-in`, then:
 
 ```sh
