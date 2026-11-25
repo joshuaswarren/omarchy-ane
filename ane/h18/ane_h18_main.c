@@ -223,6 +223,10 @@ static unsigned long long prog_iova_kern;
 module_param(prog_iova_kern, ullong, 0444);
 MODULE_PARM_DESC(prog_iova_kern, "hs_prog: nonzero copies program section 2 behind its first 0x4000 bytes (the HWX __KERN_0, the weights) into its own surface and maps it at this fixed IOVA, 16 KiB aligned, below 0xe0000000 (the matvec program: 0x30010000). Same alias mapping and unmap as prog_iova_bufs. Default 0: not mapped.");
 
+static bool prog_kern_slot;
+module_param(prog_kern_slot, bool, 0444);
+MODULE_PARM_DESC(prog_kern_slot, "hs_prog with prog_iova_kern: point LOAD_PROGRAM section 2 (slot 1, firmware BAR 8) at the separate prog_iova_kern surface (size - 0x4000) instead of pg_sec[s2]. Default off.");
+
 static unsigned int hs_prog_dump;
 module_param(hs_prog_dump, uint, 0444);
 static unsigned int hs_settle_ms = 10;
@@ -2044,8 +2048,8 @@ static void ane_h18_failpath_recover(struct ane_h18 *ane)
  * finish event, then TERMINATE_PROCESS and DESTROY_PROGRAM. Every reply is logged whole. A command the firmware refuses (acknowledgement not zero) or does not
  * answer ends the sequence; the program and the process are unloaded anyway, and a firmware that does not answer the unload is power-cycled and reset. On the
  * M6 the recovery has only been seen to work this far: the matvec program still ended core-not-stopped after the power cycle, so a stuck core is not yet
- * proven clearable without a reboot. The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. The H14 add
- * program runs on the T8152; the matvec program's call never finishes (known failure, cause unknown). */
+ * proven clearable without a reboot. The wire format is the T6021's, as macOS behaviour on the T8152 gives the same command ids and sizes. On H18G (T8152),
+ * weighted programs also need prog_kern_slot=1 with prog_iova_kern so LOAD_PROGRAM slot 1 (firmware BAR 8) points at the weights surface instead of section 2's const header. */
 static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsigned int pass, unsigned int calls, unsigned int *t2h_cursor)
 {
 	const bool first = !hs_prog_reuse || pass == 1, last = !hs_prog_reuse || pass == calls;
@@ -2135,7 +2139,9 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	memset(cmd, 0, sizeof(cmd));
 	for (i = 0; i < p->nsec; i++) {
 		u8 *r = cmd + 8 + (size_t)(p->sec[i].id - 1) * 0x30;
-		u64 iova = ane->pg_sec[i].iova, size = p->sec[i].size;
+		bool use_kern = prog_kern_slot && prog_iova_kern && p->sec[i].id == 2 && p->sec[i].size > 0x4000;
+		u64 iova = use_kern ? ane->pg_kern.iova : ane->pg_sec[i].iova;
+		u64 size = use_kern ? p->sec[i].size - 0x4000 : p->sec[i].size;
 		u32 one = 1, id = p->sec[i].id;
 
 		memcpy(r, &one, 4);
@@ -2981,6 +2987,10 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	}
 	if (((prog_out_words || hs_prog_calls != 1 || hs_prog_reuse) && !hs_prog) || !hs_prog_calls || hs_prog_calls > 1000 || hs_settle_ms > 1000) {
 		ane_h18_result(ane, "boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000; hs_prog_reuse needs hs_prog=1");
+		return -EINVAL;
+	}
+	if (prog_kern_slot && (!hs_prog || !prog_iova_kern)) {
+		ane_h18_result(ane, "boot", "REFUSED", "prog_kern_slot=1 needs hs_prog=1 and prog_iova_kern");
 		return -EINVAL;
 	}
 	if (hs_prog) {

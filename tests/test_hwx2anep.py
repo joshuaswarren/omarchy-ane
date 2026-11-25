@@ -201,5 +201,117 @@ def test_a_missing_buffer_is_refused(tmp_path):
     assert "buffers" in result.stderr, result.stderr
 
 
+def _build_synthetic_h18g_hwx(subtype=11, kern_seg="__KERN_0", kern_sec="__kern_0"):
+    """Build a minimal H18G HWX with __TEXT/__text, __TEXT/__const, weights, and two IO surfaces."""
+    text_bytes = bytes([0x42]) * 0x200
+    const_bytes = bytes([0x11]) * CONST_BYTES
+    kern_bytes = bytes((i & 0xff) for i in range(0x4000))
+
+    def seg_cmd(segname, sections, filesize):
+        cmd_size = 72 + 80 * len(sections)
+        buf = bytearray(cmd_size)
+        struct.pack_into("<2I16s4Q4I", buf, 0,
+                         0x19, cmd_size, segname.encode("ascii"),
+                         0, 0, 0, filesize, 0, 0, len(sections), 0)
+        for idx, (secname, addr, size, offset) in enumerate(sections):
+            struct.pack_into("<16s16s2Q8I", buf, 72 + idx * 80,
+                             secname.encode("ascii"), segname.encode("ascii"),
+                             addr, size, offset, 0, 0, 0, 0, 0, 0, 0)
+        return bytes(buf)
+
+    def ref_cmd(addr, name):
+        buf = bytearray(0x20)
+        struct.pack_into("<2I", buf, 0, 0x40, 0x20)
+        struct.pack_into("<Q", buf, 0x10, addr)
+        encoded = name.encode("ascii")
+        buf[0x18:0x18 + len(encoded)] = encoded
+        return bytes(buf)
+
+    text_off = 0x4000
+    const_off = text_off + 0x280
+    kern_off = 0x10000
+    cmds = (
+        seg_cmd("__TEXT", [
+            ("__text", 0x30008000, len(text_bytes), text_off),
+            ("__const", 0x30008280, len(const_bytes), const_off),
+        ], len(text_bytes) + len(const_bytes))
+        + seg_cmd(kern_seg, [
+            (kern_sec, 0x30010000, len(kern_bytes), kern_off),
+        ], len(kern_bytes))
+        + seg_cmd("__FVMLIB", [
+            ("__const", 0x30000000, 0x4000, 0),
+            ("__const", 0x30004000, 0x4000, 0),
+        ], 0)
+        + ref_cmd(0x30000000, "input0")
+        + ref_cmd(0x30004000, "output0")
+    )
+    image = bytearray(kern_off + len(kern_bytes))
+    struct.pack_into("<8I", image, 0, 0xBEEFFACE, 0, subtype, 0, 5, len(cmds), 0, 0)
+    image[32:32 + len(cmds)] = cmds
+    image[text_off:text_off + len(text_bytes)] = text_bytes
+    image[const_off:const_off + len(const_bytes)] = const_bytes
+    image[kern_off:kern_off + len(kern_bytes)] = kern_bytes
+    manifest = {
+        "inputs": [{"index": 5, "name": "input0", "allocationBytes": 0x4000}],
+        "outputs": [{"index": 4, "name": "output0", "allocationBytes": 0x4000}],
+    }
+    return bytes(image), manifest, text_bytes, const_bytes, kern_bytes
+
+
+def test_h18g_subtype_and_kern_0_section(tmp_path):
+    """H18G (subtype=11) HWX with (__KERN_0, __kern_0) weights packs cleanly and advertises prog_kern_slot=1."""
+    hwx, manifest, text_bytes, const_bytes, kern_bytes = _build_synthetic_h18g_hwx()
+    hwx_path = tmp_path / "h18g.hwx"
+    man_path = tmp_path / "manifest.json"
+    out_path = tmp_path / "prog.bin"
+    hwx_path.write_bytes(hwx)
+    man_path.write_text(json.dumps(manifest))
+
+    plan_res = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(hwx_path), "--manifest", str(man_path), "--print-plan"],
+        capture_output=True, text=True)
+    assert plan_res.returncode == 0, plan_res.stdout + plan_res.stderr
+    assert "text IOVA      0x30008000" in plan_res.stdout, plan_res.stdout
+    assert "kern IOVA      0x30010000 (prog_kern_slot=1)" in plan_res.stdout, plan_res.stdout
+    assert not out_path.exists()
+
+    build_res = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(hwx_path), "--manifest", str(man_path), "-o", str(out_path)],
+        capture_output=True, text=True)
+    assert build_res.returncode == 0, build_res.stdout + build_res.stderr
+    blob = out_path.read_bytes()
+    secs, ios = parse_anep(blob)
+    by_id = {sid: (size, off) for sid, size, off in secs}
+    assert by_id[2][0] == CONST_BYTES + len(kern_bytes)
+    assert blob[by_id[2][1]:by_id[2][1] + CONST_BYTES] == const_bytes
+    assert blob[by_id[2][1] + CONST_BYTES:by_id[2][1] + by_id[2][0]] == kern_bytes
+    assert blob[by_id[3][1]:by_id[3][1] + by_id[3][0]] == text_bytes
+    assert [(b[0], b[1], b[2]) for b in ios] == [(5, 0, 0x4000), (4, 1, 0x4000)]
+
+
+def test_unsupported_subtype_is_refused(tmp_path):
+    hwx, manifest, _, _, _ = _build_synthetic_h18g_hwx(subtype=12)
+    hwx_path = tmp_path / "bad.hwx"
+    man_path = tmp_path / "manifest.json"
+    hwx_path.write_bytes(hwx)
+    man_path.write_text(json.dumps(manifest))
+    result = subprocess.run(
+        [sys.executable, str(CONVERTER),
+         "--hwx", str(hwx_path), "--manifest", str(man_path),
+         "-o", str(tmp_path / "prog.bin")],
+        capture_output=True, text=True)
+    assert result.returncode != 0, "an unsupported HWX subtype was accepted"
+    assert "not H18/H18G" in result.stderr, result.stderr
+
+
+def test_h18g_compiled_pack_sha_is_pinned():
+    """mil-hwxc --target H18G (mil-hwx-compiler#41) pack SHA is pinned in m6-ane-stage.sh."""
+    stage = (ROOT / "ane" / "h18" / "m6-ane-stage.sh").read_text()
+    assert "32e86745d8ab452939efa72f47aaaeeda18a158b4aa49bb9022c6c651c0971cb" in stage
+    assert "prog_kern_slot=1" in stage
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
