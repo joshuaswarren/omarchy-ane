@@ -97,6 +97,7 @@ u64 sim_load_sec2_iova, sim_load_sec2_size;
 u8 sim_load_sec2_b1;
 int sim_pub_wait, sim_premapped;
 u64 sim_ktime_calls;
+u64 sim_map_fail_iova;
 
 /* Multi-program firmware model: tracks N concurrently resident programs with distinct prog_id/proc_id,
  * verifies every PROCEDURE_CALL against still-live section surfaces, and supports targeted fault injection. */
@@ -118,6 +119,8 @@ static u16 sim_res_fail_op;		/* nonzero: return sim_res_fail_ack on this op (fil
 static u32 sim_res_fail_prog;
 static u16 sim_res_fail_ack;
 static u32 sim_res_spoof_prog, sim_res_spoof_proc;	/* nonzero: stamp wrong resident prog/proc into IO_T2H events */
+static u32 sim_res_dup_prog;				/* nonzero: force next LOAD_PROGRAM to return this duplicate prog_id */
+static int sim_res_malformed_create;			/* nonzero: next CREATE_PROCESS leaves proc_id at 0xffffffff */
 
 static struct sim_fw_prog *sim_fw_find(u32 prog_id)
 {
@@ -276,7 +279,7 @@ static u8 *sim_buf_va(u64 iova)
 
 /* The firmware's side of LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, TERMINATE_PROCESS and DESTROY_PROGRAM. Returns the acknowledgement for +6: 0 ok, 3 refused by
  * the mode, 4 an id it does not know, 5 a program with a live process, 7 an address that is not in a buffer the host allocated. A call posts two IO_T2H events. */
-static u16 sim_prog_cmd(u16 op, u8 *blk)
+static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 {
 	u32 prog = 0, proc = 0, v;
 	u64 cookie, a, s;
@@ -323,6 +326,16 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 
 		if (sim_prog_mode == 1)
 			return 3;
+		if (cmd_len != 0x1c0)
+			return 7;
+		if (sim_res_dup_prog) {
+			v = sim_res_dup_prog;
+			sim_res_dup_prog = 0;
+			memcpy(blk + 0x1b8, &v, 4);
+			if (sim_prog_n <= (int)ARRAY_SIZE(sim_prog_ids))
+				sim_prog_ids[sim_prog_n - 1] = v;
+			return 0;
+		}
 		for (slot = 0; slot < ARRAY_SIZE(sim_fw_progs); slot++)
 			if (!sim_fw_progs[slot].live) {
 				fp = &sim_fw_progs[slot];
@@ -379,8 +392,14 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 			return 3;
 		if (sim_prog_mode == 6)
 			return 0xffff;
+		if (cmd_len != 0x10)
+			return 7;
 		if (!fp)
 			return 4;
+		if (sim_res_malformed_create) {
+			sim_res_malformed_create = 0;
+			return 0;	/* leaves proc_id at 0xffffffff */
+		}
 		v = 0x77 + sim_fw_next_proc++;
 		memcpy(blk + 0xc, &v, 4);
 		fp->proc_id = v;
@@ -467,6 +486,8 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 	case 0x203: {
 		struct sim_fw_prog *fp = sim_fw_find(prog);
 
+		if (cmd_len != 0x10)
+			return 7;
 		if (!fp || !fp->has_proc || fp->proc_id != proc)
 			return 4;
 		fp->has_proc = false;
@@ -478,6 +499,8 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 
 		if (sim_prog_mode == 11)	/* PG52: the firmware never answers the unload */
 			return 0xffff;
+		if (cmd_len != 0x0c)
+			return 7;
 		if (!fp)
 			return 4;
 		if (fp->has_proc)
@@ -685,7 +708,7 @@ void sim_db_react(u32 v)
 			memcpy(blk + 6, &bad, 2);
 		}
 		if ((op >= 0x200 && op <= 0x204) || op == 0x20d) {
-			u16 ack = sim_prog_cmd(op, blk);
+			u16 ack = sim_prog_cmd(op, blk, ring[k * 8 + 1]);
 
 			if (ack == 0xffff)	/* the modelled firmware does not answer this one */
 				return;
@@ -847,6 +870,9 @@ static void reset_all(void)
 	sim_res_fail_ack = 0;
 	sim_res_spoof_prog = 0;
 	sim_res_spoof_proc = 0;
+	sim_res_dup_prog = 0;
+	sim_res_malformed_create = 0;
+	sim_map_fail_iova = 0;
 	sim_fw_hook = NULL;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
 	make_blob();
@@ -3219,6 +3245,88 @@ static void pos_residency(void)
 		ane_h18_remove(&pdev);
 		chk(r_wrong == -EIO && sim_owner_module.refs >= 1 && res_live_dma() > 0,
 		    "RP8 wrong-resident finish event (B's prog/proc on call A) is rejected by peek and t2h: -EIO, HELD, pinned");
+	}
+
+	/* RP9: partial-map rollback short unmap in ane_h18_hs_alloc_at() -> leaked pages NOT freed, module pinned,
+	 * range stays HELD (-EBUSY on overlapping retain), non-overlapping retain still succeeds. */
+	{
+		struct file f;
+		char hOk[32], rep[96];
+		ssize_t r_fail, r_ov, r_ok;
+		int live_after_fail;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		sim_map_fail_iova = 0x30010000;	/* 2nd 16 KiB page of 32 KiB text surface at 0x3000c000 */
+		sim_unmap_short_iova = 0x3000c000;
+		r_fail = res_cmd(&f, "retain weighted.bin 30000000 3000c000 280 30020000 1\n", rep, sizeof(rep));
+		sim_map_fail_iova = 0;
+		sim_unmap_short_iova = 0;
+		live_after_fail = res_live_dma();
+		r_ov = res_cmd(&f, "retain weighted.bin 30000000 3000c000 280 30020000 1\n", rep, sizeof(rep));
+		r_ok = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hOk, sizeof(hOk));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_fail == -ENOMEM && log_count("rollback unmapped") == 1 && sim_owner_module.refs >= 1 &&
+		    live_after_fail >= 1 && res_live_dma() == 1 && r_ov == -EBUSY && r_ok == 17,
+		    "RP9 short partial-map rollback keeps pages leaked, pins module, holds range (-EBUSY), other slots work");
+	}
+
+	/* RP10a: duplicate LIVE prog_id from LOAD_PROGRAM -> no DESTROY_PROGRAM (would kill A), A intact,
+	 * slot HELD, module pinned, engine quarantined (-ESHUTDOWN). */
+	{
+		struct file f;
+		char hA[32], rep[96], cmd[128];
+		u32 progA;
+		int prog_before, prog_after;
+		ssize_t r_dup, r_callA, r_ret;
+		struct sim_fw_prog *fpA;
+		bool a_still_live;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA, sizeof(hA));
+		hA[16] = '\0';
+		progA = sim_prog_ids[0];
+		prog_before = sim_prog_n;
+		sim_res_dup_prog = progA;
+		r_dup = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		sim_res_dup_prog = 0;
+		prog_after = sim_prog_n;
+		fpA = sim_fw_find(progA);
+		a_still_live = fpA && fpA->live && fpA->has_proc;
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		r_callA = res_cmd(&f, cmd, rep, sizeof(rep));
+		r_ret = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_dup == -EIO && prog_after == prog_before + 1 && sim_prog_ops[prog_before] == 0x200 &&
+		    a_still_live && sim_owner_module.refs >= 1 && res_live_dma() > 0 &&
+		    r_callA == -ESHUTDOWN && r_ret == -ESHUTDOWN,
+		    "RP10a duplicate LIVE prog_id quarantines engine without DESTROY_PROGRAM, leaves A intact");
+	}
+
+	/* RP10b: malformed CREATE_PROCESS (proc == ~0u) -> no DESTROY_PROGRAM, slot HELD, module pinned,
+	 * engine quarantined (-ESHUTDOWN). */
+	{
+		struct file f;
+		char rep[96];
+		ssize_t r_mal, r_ret;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		sim_res_malformed_create = 1;
+		r_mal = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		sim_res_malformed_create = 0;
+		r_ret = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_mal == -EIO && sim_prog_n == 2 && sim_prog_ops[0] == 0x200 && sim_prog_ops[1] == 0x202 &&
+		    sim_owner_module.refs >= 1 && res_live_dma() > 0 && r_ret == -ESHUTDOWN,
+		    "RP10b malformed CREATE_PROCESS (~0u) quarantines engine without guessing DESTROY_PROGRAM");
 	}
 }
 

@@ -1238,8 +1238,20 @@ static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, si
 		ret = pa ? iommu_map(dom, at + off, pa, SZ_16K, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL) : -EFAULT;
 		if (ret) {
 			dev_err(ane->dev, "ane_h18 fixed IOVA %#llx for %s: map of page at +%#zx failed: %d\n", at, name, off, ret);
-			if (off)
-				iommu_unmap(dom, at, off);
+			if (off) {
+				size_t un = off;
+
+				un = iommu_unmap(dom, at, off);
+				if (un != off) {
+					dev_err(ane->dev, "ane_h18 fixed alias at %#llx rollback unmapped %#zx of %#zx bytes: the pages are leaked, not freed\n", at, un, off);
+					b->iova = at;
+					b->size = off;
+					b->fixed = false;
+					b->va = NULL;
+					b->leaked = true;
+					ane_h18_pin_module(ane);
+				}
+			}
 			return ret;
 		}
 	}
@@ -2950,7 +2962,7 @@ static int ane_h18_rtkit_step(struct ane_h18 *ane, u32 chan_off, const char *tag
 
 static int ane_h18_res_dbg_init(struct ane_h18 *ane);
 static void ane_h18_res_dbg_exit(struct ane_h18 *ane);
-static void ane_h18_res_teardown_all(struct ane_h18 *ane);
+static int ane_h18_res_teardown_all(struct ane_h18 *ane);
 static void ane_h18_live_shutdown(struct ane_h18 *ane);
 
 static int ane_h18_stage_boot(struct ane_h18 *ane)
@@ -3597,45 +3609,40 @@ static u64 ane_h18_res_io_at(const struct ane_h18_pdesc *p, u64 base, unsigned i
 	return at;
 }
 
+static bool ane_h18_res_free_one_buf(struct ane_h18 *ane, struct ane_h18_hs_buf *b,
+				     struct ane_h18_iova_range *leaked, unsigned int *nleaked)
+{
+	bool fixed = b->fixed;
+	u64 iova = b->iova, sz = b->size;
+
+	if (b->leaked) {
+		if (*nleaked < ANE_H18_SLOT_MAX_RANGES && sz)
+			leaked[(*nleaked)++] = (struct ane_h18_iova_range){ iova, sz };
+		return false;
+	}
+	if (!ane_h18_hs_buf_free(ane, b)) {
+		b->leaked = true;
+		if (fixed && *nleaked < ANE_H18_SLOT_MAX_RANGES && sz)
+			leaked[(*nleaked)++] = (struct ane_h18_iova_range){ iova, sz };
+		return false;
+	}
+	return true;
+}
+
 static bool ane_h18_res_free_slot_surfaces(struct ane_h18 *ane, struct ane_h18_res_slot *slot,
 					   struct ane_h18_iova_range *leaked, unsigned int *nleaked)
 {
 	bool clean = true;
 	unsigned int i, n = 0;
 
-	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++) {
-		struct ane_h18_hs_buf *b = &slot->pg_sec[i];
-		bool fixed = b->fixed;
-		u64 iova = b->iova, sz = b->size;
-
-		if (!ane_h18_hs_buf_free(ane, b)) {
+	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
+		if (!ane_h18_res_free_one_buf(ane, &slot->pg_sec[i], leaked, &n))
 			clean = false;
-			if (fixed && n < ANE_H18_SLOT_MAX_RANGES)
-				leaked[n++] = (struct ane_h18_iova_range){ iova, sz };
-		}
-	}
-	{
-		struct ane_h18_hs_buf *b = &slot->pg_kern;
-		bool fixed = b->fixed;
-		u64 iova = b->iova, sz = b->size;
-
-		if (!ane_h18_hs_buf_free(ane, b)) {
+	if (!ane_h18_res_free_one_buf(ane, &slot->pg_kern, leaked, &n))
+		clean = false;
+	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
+		if (!ane_h18_res_free_one_buf(ane, &slot->pg_io[i], leaked, &n))
 			clean = false;
-			if (fixed && n < ANE_H18_SLOT_MAX_RANGES)
-				leaked[n++] = (struct ane_h18_iova_range){ iova, sz };
-		}
-	}
-	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++) {
-		struct ane_h18_hs_buf *b = &slot->pg_io[i];
-		bool fixed = b->fixed;
-		u64 iova = b->iova, sz = b->size;
-
-		if (!ane_h18_hs_buf_free(ane, b)) {
-			clean = false;
-			if (fixed && n < ANE_H18_SLOT_MAX_RANGES)
-				leaked[n++] = (struct ane_h18_iova_range){ iova, sz };
-		}
-	}
 	*nleaked = n;
 	return clean;
 }
@@ -3701,6 +3708,8 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 	}
 
 	memset(slot, 0, sizeof(*slot));
+	slot->prog_id = ANE_H18_RES_NOID;
+	slot->proc_id = ANE_H18_RES_NOID;
 	slot->pd = pd;
 	slot->opts = *opts;
 	for (i = 0; i < pd.nsec; i++) {
@@ -3769,12 +3778,14 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 		return -EIO;
 	}
 	memcpy(&prog, (u8 *)ane->hs_cmd.va + 0x1b8, 4);
-	if (prog == ANE_H18_RES_NOID) {
+	if (prog == ANE_H18_RES_NOID || ane_h18_res_has_prog_id(&ane->res_tab, prog)) {
+		dev_err(ane->dev, "ane_h18 resident retain %s: invalid or duplicate prog_id %#x; quarantining engine\n", fw_name, prog);
 		ane_h18_res_mark_held(slot, ranges, nranges);
 		ane_h18_pin_module(ane);
 		ane->live_broken = true;
 		return -EIO;
 	}
+	slot->prog_id = prog;
 
 	/* CREATE_PROCESS (0x202) */
 	memset(cmd, 0, sizeof(cmd));
@@ -3783,31 +3794,27 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 	memcpy(cmd + 0xc, &w, 4);
 	ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_CREATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
 	if (ret) {
-		if (ret == -ETIMEDOUT) {
-			ane_h18_res_mark_held(slot, ranges, nranges);
-			ane_h18_pin_module(ane);
-			ane->live_broken = true;
-			return -EIO;
+		if (ret == -EREMOTEIO) {
+			/* Clean firmware refusal with trustworthy prog_id: unwind via DESTROY_PROGRAM (0x0c / 4B body) + settle. */
+			memset(cmd, 0, sizeof(cmd));
+			memcpy(cmd + 8, &prog, 4);
+			if (!ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk)) {
+				ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
+				goto err_unwind_surfaces;
+			}
 		}
-		memset(cmd, 0, sizeof(cmd));
-		memcpy(cmd + 8, &prog, 4);
-		if (ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x10, false, 0, cmd + 8, 8, &blk)) {
-			ane_h18_res_mark_held(slot, ranges, nranges);
-			ane_h18_pin_module(ane);
-			return -EIO;
-		}
-		goto err_unwind_surfaces;
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
 	}
 	memcpy(&proc, (u8 *)ane->hs_cmd.va + 0xc, 4);
 	if (proc == ANE_H18_RES_NOID) {
-		memset(cmd, 0, sizeof(cmd));
-		memcpy(cmd + 8, &prog, 4);
-		if (ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x10, false, 0, cmd + 8, 8, &blk)) {
-			ane_h18_res_mark_held(slot, ranges, nranges);
-			ane_h18_pin_module(ane);
-			return -EIO;
-		}
-		goto err_unwind_surfaces;
+		/* Malformed CREATE_PROCESS reply: do not guess DESTROY; hold slot and quarantine engine. */
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
 	}
 
 	*handle_out = ane_h18_res_activate(&ane->res_tab, idx, prog, proc, ranges, nranges);
@@ -3951,13 +3958,16 @@ static int ane_h18_res_free_one(struct ane_h18 *ane, u64 handle)
 	t_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10,
 				 false, 0, cmd + 8, 8, &blk);
 	if (!t_ret) {
+		ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
 		memset(cmd, 0, sizeof(cmd));
 		memcpy(cmd + 8, &slot->prog_id, 4);
-		d_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x10,
-					 false, 0, cmd + 8, 8, &blk);
+		d_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c,
+					 false, 0, cmd + 8, 4, &blk);
+		if (!d_ret)
+			ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
 	}
 	unload_err = t_ret || d_ret;
-	timed_out = t_ret == -ETIMEDOUT || d_ret == -ETIMEDOUT;
+	timed_out = (t_ret && t_ret != -EREMOTEIO) || (d_ret && d_ret != -EREMOTEIO);
 	if (unload_err) {
 		ane_h18_res_mark_held(slot, NULL, 0);
 		ane_h18_pin_module(ane);
@@ -3975,16 +3985,24 @@ static int ane_h18_res_free_one(struct ane_h18 *ane, u64 handle)
 	return 0;
 }
 
-static void ane_h18_res_teardown_all(struct ane_h18 *ane)
+static int ane_h18_res_teardown_all(struct ane_h18 *ane)
 {
 	unsigned int i;
+	int first_err = 0;
 
 	for (i = 0; i < ANE_H18_MAX_RESIDENT; i++) {
 		struct ane_h18_res_slot *slot = &ane->res_tab.slots[i];
 
-		if (slot->state == ANE_H18_SLOT_LIVE)
-			ane_h18_res_free_one(ane, slot->handle);
+		if (slot->state == ANE_H18_SLOT_LIVE) {
+			int err = ane_h18_res_free_one(ane, slot->handle);
+
+			if (err && !first_err)
+				first_err = err;
+		}
 	}
+	if (first_err)
+		dev_err(ane->dev, "ane_h18 resident teardown sweep failed (%d): affected slots HELD\n", first_err);
+	return first_err;
 }
 
 static void ane_h18_live_shutdown(struct ane_h18 *ane)

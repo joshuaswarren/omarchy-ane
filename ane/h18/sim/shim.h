@@ -828,10 +828,13 @@ static inline int iommu_attach_device(struct iommu_domain *dom, struct device *d
 struct sim_iomap { u64 iova, pa, size; bool live; };
 extern struct sim_iomap sim_iomaps[SIM_NIOMAPS];
 extern int sim_n_iomaps;
+extern u64 sim_map_fail_iova;		/* fail iommu_map(-ENOMEM) when mapping exactly this iova */
 static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa, size_t size, int prot, int gfp)
 {
 	(void)dom; (void)gfp;
 	sim_iorec(SIM_IO_MAP, iova, pa, size, prot);
+	if (sim_map_fail_iova && iova == sim_map_fail_iova)
+		return -ENOMEM;
 	if (sim_n_iomaps < SIM_NIOMAPS)
 		sim_iomaps[sim_n_iomaps++] = (struct sim_iomap){ iova, pa, size, true };
 	if (sim_io_fail == 3) {

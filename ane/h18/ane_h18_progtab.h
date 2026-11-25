@@ -54,6 +54,7 @@ struct ane_h18_hs_buf {
 	dma_addr_t dma;		/* the address dma_alloc_coherent returned: what dma_free_coherent needs */
 	size_t size;
 	bool fixed;		/* an alias mapping at `iova` was added with iommu_map and is removed with iommu_unmap before the free */
+	bool leaked;		/* a short alias unmap (free or partial-map rollback) retained the pages and range; never dma_free_coherent */
 };
 
 struct ane_h18_pdesc {
@@ -283,6 +284,21 @@ static inline unsigned int ane_h18_res_count_state(const struct ane_h18_res_tab 
 		if (t->slots[i].state == state)
 			n++;
 	return n;
+}
+
+/* True if any LIVE or HELD slot already owns this firmware prog_id. */
+static inline bool ane_h18_res_has_prog_id(const struct ane_h18_res_tab *t, u32 prog_id)
+{
+	unsigned int i;
+
+	for (i = 0; i < ANE_H18_MAX_RESIDENT; i++) {
+		const struct ane_h18_res_slot *slot = &t->slots[i];
+
+		if (slot->state != ANE_H18_SLOT_FREE && slot->prog_id != ANE_H18_RES_NOID &&
+		    slot->prog_id == prog_id)
+			return true;
+	}
+	return false;
 }
 
 #endif /* __ANE_H18_PROGTAB_H__ */
