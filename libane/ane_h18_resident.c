@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "ane_h18_resident.h"
+#include "../ane/h18/ane_h18_res_uapi.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -7,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 
 #define FW_NAME_MAX 63
@@ -126,6 +128,34 @@ int ane_h18_resident_call(int fd, uint64_t handle,
 	if (errno == ERANGE || strncmp(end, " digest=", 8) || parse_hex(end + 8, &info.digest))
 		return -EPROTO;
 	*result = info;
+	return 0;
+}
+
+int ane_h18_resident_call_io(int fd, uint64_t handle,
+			    const struct ane_h18_resident_io *io,
+			    struct ane_h18_resident_result *result)
+{
+	struct ane_h18_res_call_io request;
+	int ret;
+
+	if (!handle || !io || !result || !io->input || !io->output ||
+	    !io->input_bytes || !io->output_bytes || io->input_id == io->output_id)
+		return -EINVAL;
+	request = (struct ane_h18_res_call_io) {
+		.version = ANE_H18_RES_ABI_VERSION, .handle = handle,
+		.in_surface_id = io->input_id, .out_surface_id = io->output_id,
+		.in_len = io->input_bytes, .out_len = io->output_bytes,
+		.in_ptr = (uintptr_t)io->input, .out_ptr = (uintptr_t)io->output,
+	};
+	/* A failed ioctl may already have run the firmware operation. */
+	ret = ioctl(fd, ANE_H18_IOC_CALL_IO, &request);
+	if (ret < 0)
+		return -errno;
+	if (ret || request.output_bytes != io->output_bytes)
+		return -EPROTO;
+	*result = (struct ane_h18_resident_result) {
+		.latency_ns = request.latency_ns, .digest = request.digest,
+	};
 	return 0;
 }
 
