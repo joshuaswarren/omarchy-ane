@@ -38,6 +38,8 @@ import sys
 
 HWX_MAGIC = 0xBEEFFACE
 H18_SUBTYPE = 10
+H18G_SUBTYPE = 11
+SUPPORTED_SUBTYPES = (H18_SUBTYPE, H18G_SUBTYPE)
 ANEP_MAGIC = 0x50454E41      # 'ANEP', ane/h18/ane_h18.h:127
 ANEP_VERSION = 1
 ANEP_MAX_SECS = 9
@@ -190,9 +192,9 @@ def match_buffers(refs, inputs, outputs, sections):
 def build(hwx, manifest):
     """Build the ANEP bytes from an HWX image and its compile manifest."""
     subtype, sections, refs = parse_hwx(hwx)
-    if subtype != H18_SUBTYPE:
-        raise ValueError("HWX subtype 0x%04x is not H18 (0x%04x)"
-                         % (subtype, H18_SUBTYPE))
+    if subtype not in SUPPORTED_SUBTYPES:
+        raise ValueError("HWX subtype 0x%04x is not H18/H18G (0x%04x, 0x%04x)"
+                         % (subtype, H18_SUBTYPE, H18G_SUBTYPE))
     text = one(sections, ("__TEXT", "__text"))
     const = one(sections, ("__TEXT", "__const"))
     if text is None:
@@ -204,7 +206,8 @@ def build(hwx, manifest):
                          "window is %d" % (const["size"], CONST_BYTES))
     # Section 2: the const window first, the weights (if any) behind it.
     sec2 = hwx[const["offset"]:const["offset"] + CONST_BYTES]
-    kern = one(sections, ("__FVMLIB", "__KERN_0")) or \
+    kern = one(sections, ("__KERN_0", "__kern_0")) or \
+        one(sections, ("__FVMLIB", "__KERN_0")) or \
         one(sections, ("__KERN", "__KERN_0"))
     if kern is not None:
         sec2 += hwx[kern["offset"]:kern["offset"] + kern["size"]]
@@ -253,11 +256,14 @@ def build(hwx, manifest):
         struct.pack_into("<Q", out, r + 24, 0)     # data size: zero filled
         r += 0x20
     return bytes(out), {
+        "subtype": subtype,
         "sections": [{"id": 2, "size": len(sec2)}, {"id": 3, "size": len(sec3)}],
         "buffers": ios,
         "text_addr": text["addr"],
         "const_addr": const["addr"],
         "const_copy_offset": const["addr"] - text["addr"],
+        "kern_addr": kern["addr"] if kern is not None else None,
+        "kern_slot": 1 if kern is not None else 0,
     }
 
 
@@ -280,9 +286,11 @@ def main():
         print("const IOVA     0x%x (copy at +0x%x in the text region)"
               % (plan["const_addr"], plan["const_copy_offset"]))
         print("const copy     %d bytes" % CONST_BYTES)
-        print("kern           %s" % ("present behind the const window"
-                                     if plan["sections"][0]["size"] > CONST_BYTES
-                                     else "absent (no weights)"))
+        if plan["kern_addr"] is not None:
+            print("kern IOVA      0x%x (prog_kern_slot=%d)"
+                  % (plan["kern_addr"], plan["kern_slot"]))
+        else:
+            print("kern           absent (no weights)")
         for entry in plan["buffers"]:
             print("buffer id=%d dir=%d size=%d addr=0x%x name=%s"
                   % (entry["id"], entry["dir"], entry["size"], entry["addr"],

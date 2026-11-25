@@ -87,10 +87,12 @@ static struct ane_h18_soc ane_t8152_soc_shim;	/* reset_all() copies the row in: 
 const u8 *sim_fw_data;
 size_t sim_fw_size;
 int sim_fw_err, sim_fw_released, sim_fw_requests;
-static u8 sim_blob[0x8000];
+static u8 sim_blob[0x10000];
 static size_t sim_blob_len;
 int sim_prog_mode, sim_prog_n, sim_prog_loaded, sim_prog_created, sim_t2h_back, sim_out_written, sim_t2h_posted;
 u32 sim_prog_ops[16];
+u64 sim_load_sec2_iova, sim_load_sec2_size;
+u8 sim_load_sec2_b1;
 int sim_pub_wait, sim_premapped;
 u64 sim_ktime_calls;
 
@@ -160,6 +162,36 @@ static void make_blob_kern(void)
 	}
 	for (i = 0; i < 2; i++) {
 		u64 doff = 0x6300 + 0x40 * i;
+		u8 *r = sim_blob + 0x20 + 6 * 0x20 + i * 0x20;
+
+		memcpy(r + 16, &doff, 8);
+		memset(sim_blob + doff, i ? 0xbb : 0xaa, 0x40);
+	}
+	memcpy(sim_blob + 16, &fsize, 8);
+	sim_blob_len = fsize;
+	sim_fw_size = fsize;
+}
+
+/* H18G weighted trial file: section 2 has 0x4000 bytes of __TEXT/__const (0x11) followed by 0x4000 bytes of __KERN_0 weights (0x11 at +0, 0x5a at +1..),
+ * and section 3 fits before prog_text_const=0x280. */
+static void make_blob_kern_weights(void)
+{
+	static const u64 pos[6] = { 0x1000, 0x1100, 0x9100, 0x9300, 0x9700, 0x9c00 };
+	static const u64 size[6] = { 0x100, 0x8000, 0x200, 0x400, 0x500, 0x600 };
+	u64 fsize = 0xa280, i;
+
+	make_blob();
+	for (i = 0; i < 6; i++) {
+		u8 *r = sim_blob + 0x20 + i * 0x20;
+
+		memcpy(r + 8, &size[i], 8);
+		memcpy(r + 16, &pos[i], 8);
+		memset(sim_blob + pos[i], 0x10 + i, size[i]);
+	}
+	/* Mark the weights tail behind the 0x4000 const window so LOAD_PROGRAM slot 1 proves it received pg_kern, not pg_sec[s2]. */
+	memset(sim_blob + pos[1] + 0x4000 + 1, 0x5a, 0x4000 - 1);
+	for (i = 0; i < 2; i++) {
+		u64 doff = 0xa200 + 0x40 * i;
 		u8 *r = sim_blob + 0x20 + 6 * 0x20 + i * 0x20;
 
 		memcpy(r + 16, &doff, 8);
@@ -251,6 +283,11 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 				return 7;
 			if (sim_buf_va(a)[0] != 0x10 + (id == 7 ? 5 : id - 1))	/* the section bytes of the file are in the surface */
 				return 7;
+			if (id == 2) {
+				sim_load_sec2_iova = a;
+				sim_load_sec2_size = s;
+				sim_load_sec2_b1 = s > 1 ? sim_buf_va(a)[1] : 0;
+			}
 			n++;
 		}
 		if (!n)
@@ -705,7 +742,12 @@ static void reset_all(void)
 	sim_premapped = sim_pub_wait = sim_prog_mode = sim_prog_n = sim_prog_loaded = sim_prog_created = sim_t2h_back = sim_out_written = sim_t2h_posted = 0;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
 	make_blob();
+	prog_text_const = 0;
 	prog_iova_kern = 0;
+	prog_kern_slot = false;
+	sim_load_sec2_iova = 0;
+	sim_load_sec2_size = 0;
+	sim_load_sec2_b1 = 0;
 	hs_settle_ms = 10;
 	sim_unmap_short_iova = 0;
 	sim_owner_module.refs = 0;
@@ -1556,7 +1598,7 @@ static void pos_boot(void)
 		int pass, k, w3 = -1, db = -1, nsc3, nh2t, ok;
 		u8 *ipc;
 
-		for (pass = 0; pass < 58; pass++) {
+		for (pass = 0; pass < 62; pass++) {
 			kboot_setup();
 			alias_mbox = true;
 			rtkit_hello = true;
@@ -1640,6 +1682,24 @@ static void pos_boot(void)
 			if (pass == 55) sim_core_stuck = 1;
 			if (pass == 56) { hs_prog_calls = 3; hs_prog_reuse = true; prog_out_words = 20; sim_prog_mode = 12; }
 			if (pass == 57) { hs_prog = false; hs_prog_reuse = true; }
+			if (pass == 58) {
+				make_blob_kern_weights();
+				prog_iova_bufs = 0x30000000;
+				prog_iova_text = 0x3000c000;
+				prog_text_const = 0x280;
+				prog_iova_kern = 0x30020000;
+				prog_kern_slot = true;
+			}
+			if (pass == 59) {
+				make_blob_kern_weights();
+				prog_iova_bufs = 0x30000000;
+				prog_iova_text = 0x3000c000;
+				prog_text_const = 0x280;
+				prog_iova_kern = 0x30020000;
+				prog_kern_slot = false;
+			}
+			if (pass == 60) { prog_iova_kern = 0; prog_kern_slot = true; }
+			if (pass == 61) { hs_prog = false; prog_iova_kern = 0x30010000; prog_kern_slot = true; }
 			ret = probe_now();
 			ipc = sim_n_dma > 1 ? sim_dma[1].va : NULL;
 			nsc3 = 0;
@@ -1862,6 +1922,26 @@ static void pos_boot(void)
 				if (pass == 57)
 					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_out_words needs hs_prog=1; hs_prog_calls is 1 to 1000 and needs hs_prog=1 above 1; hs_settle_ms is 0 to 1000; hs_prog_reuse needs hs_prog=1") && writes() == 0 && sim_fw_requests == 0,
 					    "PU4 hs_prog_reuse=1 without hs_prog=1 is refused before any write");
+				if (pass == 58) {
+					int kmap = 0, kunmap = 0;
+
+					for (kk = 0; kk < sim_n_iocalls; kk++) {
+						kmap += sim_iocalls[kk].code == SIM_IO_MAP && sim_iocalls[kk].iova == 0x30020000;
+						kunmap += sim_iocalls[kk].code == SIM_IO_UNMAP && sim_iocalls[kk].iova == 0x30020000;
+					}
+					chk(ret == 0 && ok && sim_load_sec2_iova == 0x30020000 && sim_load_sec2_size == 0x4000 && sim_load_sec2_b1 == 0x5a &&
+					    kmap == 1 && kunmap == 1 && live == 0,
+					    "KS1 prog_kern_slot=1 with prog_iova_kern=0x30020000: LOAD_PROGRAM slot 1 (sec 2) points at pg_kern.iova with size-0x4000 and the weights tail behind the const window, then unmaps clean");
+				}
+				if (pass == 59)
+					chk(ret == 0 && ok && sim_load_sec2_iova != 0x30020000 && sim_load_sec2_size == 0x8000 && sim_load_sec2_b1 == 0x11 && live == 0,
+					    "KS2 prog_kern_slot=0 with prog_iova_kern=0x30020000: LOAD_PROGRAM slot 1 keeps pg_sec[s2] and full section 2 size");
+				if (pass == 60)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_kern_slot=1 needs hs_prog=1 and prog_iova_kern") && writes() == 0 && sim_fw_requests == 0 && sim_n_dma == 0,
+					    "KS3 prog_kern_slot=1 without prog_iova_kern is refused before any write, file load or allocation");
+				if (pass == 61)
+					chk(ret == -EINVAL && result("boot", "REFUSED", "prog_kern_slot=1 needs hs_prog=1 and prog_iova_kern") && writes() == 0 && sim_fw_requests == 0 && sim_n_dma == 0,
+					    "KS4 prog_kern_slot=1 without hs_prog=1 is refused before any write, file load or allocation");
 				if (pass == 55)
 					chk(ret == -EBUSY && result("boot", "FAIL", "core-not-stopped") && sim_owner_module.refs == 1 &&
 					    log_count("reboot required") >= 1 && sim_rpm_puts == 0 && sim_n_iounmap == 0,

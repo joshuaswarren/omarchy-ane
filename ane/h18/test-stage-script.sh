@@ -234,6 +234,15 @@ expect "step 5 with dinst=16 refused" 2 bash "$S" 5 0123abcd GO 1 2 800 1 3 1 1 
 sleep 1
 FAKE_STAGE=boot expect "step 5 with chan=4, dinst=2 and premap=1 passes" 0 bash "$S" 5 0123abcd GO 1 2 800 1 3 1 1 4 2 1 1
 grep -q 'hs_prog=1 dart_inst=2 hs_premap=1 hs_props=1' "$T/insmod.args" && echo "  PASS dinst and premap args reach the module" || { echo "  FAIL dinst/premap args"; fails=$((fails + 1)); }
+rm -f "$T/work/step4-run-0123abcd"
+sleep 1
+# H18G weighted program flags: PROG_KERN_SLOT=1 needs chan=4 and PROG_IOVA_KERN
+PROG_KERN_SLOT=2 expect "step 5 with PROG_KERN_SLOT=2 refused" 2 bash "$S" 5 0123abcd GO 1 2 800 0 3 1 1 4
+PROG_KERN_SLOT=1 expect "step 5 with PROG_KERN_SLOT=1 and no PROG_IOVA_KERN refused" 2 bash "$S" 5 0123abcd GO 1 2 800 0 3 1 1 4
+PROG_KERN_SLOT=1 PROG_IOVA_KERN=0x30010000 expect "step 5 with PROG_KERN_SLOT=1 and chan=3 refused" 2 bash "$S" 5 0123abcd GO 1 2 800 0 3 1 1 3
+sleep 1
+FAKE_STAGE=boot PROG_IOVA_BUFS=0x30000000 PROG_IOVA_TEXT=0x30008000 PROG_TEXT_CONST=0x280 PROG_IOVA_KERN=0x30010000 PROG_KERN_SLOT=1 expect "step 5 with H18G fixed-IOVA and PROG_KERN_SLOT=1 passes" 0 bash "$S" 5 0123abcd GO 1 2 800 0 3 1 1 4
+grep -q 'prog_iova_bufs=0x30000000 prog_iova_text=0x30008000 prog_iova_kern=0x30010000 prog_text_const=0x280 prog_kern_slot=1' "$T/insmod.args" && echo "  PASS H18G fixed-IOVA and prog_kern_slot=1 args reach the module" || { echo "  FAIL H18G prog_kern_slot args"; fails=$((fails + 1)); }
 rm -f "$T/work/step4-run-0123abcd" "$T/dt/soc/ane@419600000/iommus" "$T/dt/soc/ane@419600000/power-domains"
 sleep 1
 # after a step 4 ran, no ANE step of any number may start until a reboot
