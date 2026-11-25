@@ -11,7 +11,7 @@ BUILD_DIR = .
 SRC_DIR = .
 
 OBJECTS = $(BUILD_DIR)/ane.o $(BUILD_DIR)/ane_m2.o $(BUILD_DIR)/ane_h15.o \
-	$(BUILD_DIR)/ane_h15_firmware.o $(BUILD_DIR)/ane_sha256.o
+	$(BUILD_DIR)/ane_h15_firmware.o $(BUILD_DIR)/ane_sha256.o $(BUILD_DIR)/ane_h18_resident.o
 
 .PHONY: libane install uninstall clean
 
@@ -24,11 +24,12 @@ $(BUILD_DIR)/%.o : $(SRC_DIR)/%.c ane.h ane_m2.h ane_h15.h ane_f16.h ane_sha256.
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@
 
 $(BUILD_DIR)/ane_h15_firmware.o: ../ane/h15/ane_h15_fw_pins.h ../ane/h15/ane_h15_fw_layout.h
+$(BUILD_DIR)/ane_h18_resident.o: ane_h18_resident.h
 
 install: libane
 	install $(BUILD_DIR)/${LIB_NAME}.a ${DESTDIR}/usr/lib
 	mkdir -p ${DESTDIR}/usr/include/${LIB_NAME}
-	cp ane.h ane_h15.h ane_f16.h ${DESTDIR}/usr/include/${LIB_NAME}
+	cp ane.h ane_h15.h ane_h18_resident.h ane_f16.h ${DESTDIR}/usr/include/${LIB_NAME}
 
 uninstall:
 	rm -f ${DESTDIR}/usr/lib/${LIB_NAME}.a
