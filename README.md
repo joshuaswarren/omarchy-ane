@@ -54,26 +54,8 @@ Part of the Omarchy on Apple Silicon ecosystem:
 | M4 Pro | T6040 | H16 | `apple,t6040-ane` | `ane_h16` | experimental | `optin=t6040` | Device-tree data and a host-tested bring-up path; no hardware ANE program yet. | [T6040 data](data/ane-soc/t6040.json), [#473](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
 | M4 Max | T6041 | H16 | `apple,t6041-ane` | Aurora in-tree `ane_t6021` | experimental | — | J616C reported a live ANE node with no driver bound; the new smoke mapping was tested on a host, not on the ANE. No hardware ANE program yet. | [J616C report](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
 | M5 | T8142 | H17 | not yet recorded | — | data only | — | Device-tree capture only; no Linux ANE program yet. | [T8142 record](data/ane-soc/t8142.json) |
-| M5 Max | T6050 | H17 | `apple,t6050-ane` | Aurora in-tree `ane_t6021` (ABI 3) | experimental, not packaged here | — | One Qwen3-4B layer ran with eight ANE programs and host-side work; eight layers later ran for one token. | [Layer receipt](https://github.com/joshuaswarren/omarchy-ane/pull/410), [device receipt](https://github.com/joshuaswarren/omarchy-ane/pull/463), [G529 run](#m5-max-h17-run-record) |
-| Mac mini M6 | T8152 | H18 | `apple,t8152-ane` | `ane_h18` | experimental, not packaged here | `optin=t8152` | Three interleaved programs ran bit-exact on both engines in one boot. The weighted-matvec chain has not yet completed. | [Nov 24 run record](#m6-h18-run-record) |
-
-### M5 Max H17 run record
-
-G529 (2026-11-23): eight Qwen3-4B decoder layers chained for one token on the
-T6050 test kernel. The chain took 84.3 ms; final-state cosine similarity to the
-reference was 0.999998927. This was not a full-model run.
-
-### M6 H18 run record
-
-On 2026-11-24, w8G's `w8g-keep-alive-both` run used an experimental module
-(SHA-256 prefix `67c6c160`, boot `efcc2ce6`). Three fixture programs ran
-interleaved, five submissions each on `ane0` and `ane1`, all bit-exact. This
-extends the [first fp16 add result](ane/h18/README-bringup.md#2026-11-03-the-command-queue-and-the-first-program).
-
-The separate AN-23 weighted-matvec pack (marked H14) reached firmware start
-but produced neither a finish event nor nonzero output, including on retry
-with premapping. The chain is not yet qualified; see also the
-[earlier matvec failure](ane/h18/README-bringup.md#what-it-does).
+| M5 Max | T6050 | H17 | `apple,t6050-ane` | Aurora in-tree `ane_t6021` (ABI 3) | experimental, not packaged here | — | One Qwen3-4B layer ran with eight ANE programs and host-side work. A later eight-layer, one-token run took 84.3 ms with final-state cosine similarity 0.999998927. | [Layer receipt](https://github.com/joshuaswarren/omarchy-ane/pull/410), [device receipt](https://github.com/joshuaswarren/omarchy-ane/pull/463), [G529 run](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
+| Mac mini M6 | T8152 | H18 | `apple,t8152-ane` | `ane_h18` | experimental, not packaged here | `optin=t8152` | Three interleaved fixture programs ran bit-exact on both engines in one boot. The separate AN-23 weighted-matvec test stalled after firmware start; the chain has not yet completed. | [Nov 24 keep-alive and AN-23 runs](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
 
 ### Overlay opt-in
 
