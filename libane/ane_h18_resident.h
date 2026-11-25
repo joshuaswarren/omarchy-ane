@@ -17,6 +17,12 @@ struct ane_h18_resident_result {
 	uint64_t latency_ns, digest;
 };
 
+struct ane_h18_resident_io {
+	const void *input;
+	void *output;
+	uint32_t input_id, input_bytes, output_id, output_bytes;
+};
+
 /* Experimental H18 diagnostic session, not a DRM ABI. Open a resident debugfs
  * file and serialize calls on the returned fd; close it to end the session.
  * Other operations return 0 or -errno. Handles are local to this session.
@@ -30,6 +36,12 @@ int ane_h18_resident_retain(int fd, const char *name,
 /* Call the selected resident program with its embedded ANEP inputs. */
 int ane_h18_resident_call(int fd, uint64_t handle,
 			 struct ane_h18_resident_result *result);
+/* Call with a writable input surface and read back the requested output.
+ * On error the output buffer is unspecified, and the call is not retried.
+ */
+int ane_h18_resident_call_io(int fd, uint64_t handle,
+			    const struct ane_h18_resident_io *io,
+			    struct ane_h18_resident_result *result);
 int ane_h18_resident_free(int fd, uint64_t handle);
 
 #ifdef __cplusplus

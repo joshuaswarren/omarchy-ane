@@ -71,8 +71,8 @@ test_libane_t6050: test_libane_t6050.c $(LIBANE_SRC) ../libane/ane.h \
 		-Wl,--wrap=open,--wrap=ioctl \
 		-o $@ test_libane_t6050.c $(LIBANE_SRC) -lm
 
-test_libane_h18_resident: test_libane_h18_resident.c ../libane/ane_h18_resident.c ../libane/ane_h18_resident.h
-	$(CC) $(CFLAGS) -Wl,--wrap=open,--wrap=write,--wrap=read -o $@ $(filter %.c,$^)
+test_libane_h18_resident: test_libane_h18_resident.c ../libane/ane_h18_resident.c ../libane/ane_h18_resident.h ../ane/h18/ane_h18_res_uapi.h
+	$(CC) $(CFLAGS) -Wl,--wrap=open,--wrap=write,--wrap=read,--wrap=ioctl -o $@ $(filter %.c,$^)
 
 # ane_stats host unit test: pure host compile of the shared header
 # (counters + ring + torn-read + union rule + stats=0 path) plus the
