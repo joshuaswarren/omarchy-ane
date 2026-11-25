@@ -1,7 +1,8 @@
 # omarchy-ane
 
-Linux driver for the Apple Neural Engine (ANE) in M1 and M2 Macs, with experimental bring-up modules for M3, M4 and the Mac mini M6. It ships DRM
-kernel modules and `libane`, the userspace library. Based on [eiln/ane](https://github.com/eiln/ane),
+Linux driver and tools for the Apple Neural Engine (ANE), packaged for M1 and
+M2 Macs, with experimental work on M3 through M6. It ships DRM kernel modules
+and `libane`, the userspace library. Based on [eiln/ane](https://github.com/eiln/ane),
 which reverse engineered the M1; this fork adds the other chips, packaging,
 device-tree overlays and verification tools.
 
@@ -26,44 +27,43 @@ Part of the Omarchy on Apple Silicon ecosystem:
 
 ## Support at a glance
 
-- Enabled by default: M1, M1 Pro, M1 Max, M2 Pro, M2 Max, M2 Ultra (die 0
-  only; one passing row). The overlay
-  applies at install and the driver binds at boot. Each of these chips has run
-  exact fp16 execution on real hardware. Enabled by default still requires a
-  system that can apply the overlay (omarchy-mac-boot overlay support, or the
-  kernel's own device tree already carrying the node) and, on the M2 family,
-  the firmware fetch; the install section covers both.
-- Opt in, untested: plain M2. A driver and a cited
-  overlay exist; nobody has run them on that silicon. You add one opt-in key.
-- No packaged driver for M3 and later. Experimental bring-up modules for the
-  first owner of such a machine live in `ane/h15` (M3), `ane/h16` (M4) and
-  `ane/h18` (Mac mini M6 and 14-inch M5 Max MacBook Pro). None is packaged or
-  autoloaded; each loads by hand
-  behind its own opt-in parameter and per-stage confirmations
-  ([h15](ane/h15/README-bringup.md), [h16](ane/h16/README-bringup.md),
-  [h18](ane/h18/README-bringup.md)). The M6 module has run the first verified
-  computation on that chip under Linux: a one-op fp16 add, output byte-identical
-  to the reference (2026-11-03, [issue #319](https://github.com/joshuaswarren/omarchy-ane/issues/319)). The
-  M3 and M4 modules remain bring-up-only. The M5 Max row is diagnostic only: the
-  module applies a power-domain overlay and reads registers read-only (all 20
-  probe cells answered with no crash on that machine); the ANE firmware was
-  never started there. Data
-  for newer chips sits in `data/ane-soc/`
-  ([docs/ane-soc-data.md](docs/ane-soc-data.md)).
+- Enabled by default: M1, M1 Pro, M1 Max, M1 Ultra (die 0), M2 Pro, M2 Max
+  and M2 Ultra (die 0). Each has run a bit-exact fp16 smoke test on hardware.
+  This still requires an applicable overlay or a kernel device tree that
+  already carries the node, plus the firmware fetch on the M2 family.
+- Base M2 is opt-in; the first volunteer run did not qualify ANE execution.
+- This repo does not package a driver for M3 or later. The table distinguishes
+  opt-in bring-up from tests on a separate experimental kernel. A device-tree
+  probe or a smoke pass does not establish model support.
+  See [newer chip data](docs/ane-soc-data.md).
 
-| Mac | SoC | Internal | Linux `compatible` | Driver | State | Opt-in key | Tested by |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| M1 | T8103 | not recorded | `apple,t8103-ane` | `ane` | on by default | none | fp16 execution verified |
-| M1 Pro | T6000 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
-| M1 Max | T6001 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | fp16 execution verified |
-| M1 Ultra | T6002 | not recorded | `apple,t6000-ane` | `ane` | on by default | none | row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot |
-| M2 | T8112 | not recorded | `apple,t8112-ane` | `ane_t6021` | opt-in, untested | `ane-t8112` + note | not tested |
-| M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree |
-| M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
-| M2 Ultra | T6022 | not recorded | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) |
-| M3 | T8122 | 0xb0 (ADT) | `apple,t8122-ane` (linux #2331, disabled) | `ane_h15` | opt-in experimental overlay, not yet run | `ane-h15-experimental` | GPU: G15G Honeykrisp. ANE stages 0-2 not yet run on this chip; ladder staged, blocked on the maclab booking (drills G308/G702) |
-| M3 Pro | T6030 | 0xc0 (ADT) | `apple,t6030-ane` (linux #2331, disabled) | `ane_h15` | opt-in experimental overlay, untested | `ane-h15-experimental` | GPU: G15S. No Linux ANE run recorded |
-| M3 Max | T6031/T6034 | 0xe0 (ADT) | `apple,t6031-ane` (linux #2331, disabled; T6034 reuses it) | `ane_h15` | opt-in experimental overlay; stages 0-2 PASS on J516C via MacLab (soc=ln, Oct 29-31), stage ladder past 2 stopped at a crash record | `ane-h15-experimental` | GPU: G15C Honeykrisp. First ANE program on Linux: none yet |
+| Mac | SoC | Internal | Linux `compatible` | Driver (module parameter) | State | Overlay opt-in key | Measured result | Receipt |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M1 | T8103 | H13 | `apple,t8103-ane` | `ane` | on by default | none | 20/20 fp16 add calls bit-exact; Parakeet encoder also checked. | [0.5.11 hardware smoke](https://github.com/joshuaswarren/omarchy-ane/pull/388) |
+| M1 Pro | T6000 | H13 | `apple,t6000-ane` | `ane` | on by default | none | Passing fp16 smoke row `6eb94f49985b`. | [Promotion receipt](https://github.com/joshuaswarren/omarchy-ane/commit/0477f725208fed1d3d4ff8949951f0fc96d6385e) |
+| M1 Max | T6001 | H13 | `apple,t6000-ane` | `ane` | on by default | none | 20/20 fp16 add calls bit-exact; 9,000 bit-exact Parakeet encoder calls in a 30-minute soak. | [0.5.11 hardware smoke](https://github.com/joshuaswarren/omarchy-ane/pull/388), [soak](receipts/2026-10-30-ane-level5-soak/README.md) |
+| M1 Ultra | T6002 | H13 | `apple,t6000-ane` | `ane` | on by default | none | row 0846cbcc5337; dkms; community pass (mijuny, #304): 220/220 + 20/20 smoke bit-exact, 171,023-call stress, one boot | [Die 0 community receipt](receipts/2026-11-22-t6002-die0-community/README.md); die 1 not yet qualified |
+| M2 | T8112 | H14 | `apple,t8112-ane` | `ane_t6021` | opt-in, not yet qualified | `ane-t8112` + note | First volunteer run exposed a power-gate failure path; no passing smoke yet. | [0.5.6 record](CHANGELOG.md#056-2026-10-29) |
+| M2 Pro | T6020 | H14 | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree | [20/20 bit-exact add calls, #333](https://github.com/joshuaswarren/omarchy-ane/pull/333) |
+| M2 Max | T6021 | H14 | `apple,t6021-ane` | `ane_t6021` | on by default | none | 20/20 fp16 add calls bit-exact; eight operations and a 1024 × 1024 matvec passed. | [0.5.11 hardware smoke](https://github.com/joshuaswarren/omarchy-ane/pull/388) |
+| M2 Ultra | T6022 | H14 | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) | [20/20 bit-exact add calls, #278](https://github.com/joshuaswarren/omarchy-ane/pull/278); die 1 not yet qualified |
+| M3 | T8122 | 0xb0 (ADT) | `apple,t8122-ane` (linux #2331, disabled) | `ane_h15` (`optin=t8122`) | experimental | `ane-h15-experimental` | J613 stage 2 read found the gate closed even with all five power domains on. No Linux ANE program yet. | [H15 record](ane/h15/README-bringup.md#what-it-does) |
+| M3 Pro | T6030 | 0xc0 (ADT) | `apple,t6030-ane` (linux #2331, disabled) | `ane_h15` (`optin=t6030`) | experimental | `ane-h15-experimental` | J516S stages 0 and 1 passed; stage 5 ended with no mailbox message. No Linux ANE program yet. | [Stages 0–1](https://github.com/joshuaswarren/omarchy-ane/pull/173), [stage 5](ane/h15/README-bringup.md#not-verified-honest-limits) |
+| M3 Max | T6031 | 0xe0 (ADT) | `apple,t6031-ane` (linux #2331, disabled) | `ane_h15` (`optin=t6031`) | experimental | `ane-h15-experimental` | J516C passed MacLab stages 0–2 and a separate read-only DART probe. Later bring-up runs crashed; no Linux ANE program yet. | [Stages 0–2](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6478824656), [DART probe](https://github.com/joshuaswarren/omarchy-ane/issues/176#issuecomment-6480074143), [crashes](https://github.com/joshuaswarren/omarchy-ane/pull/354) |
+| M3 Max | T6034 | 0xe0 (ADT) | `apple,t6034-ane` | `ane_h15` (`optin=t6034`) | data-only record; experimental driver match | no overlay supplied | Shares the T6031 ADT layout, not its hardware run results. No Linux ANE program yet. | [T6034 data](data/ane-soc/t6034.json), [H15 device tree](ane/h15/README-bringup.md#device-tree-one-overlay-per-soc) |
+| M4 | T8132 | H16 | `apple,t8132-ane` | `ane_h16` (`optin=t8132`) | experimental | `ane-h16-experimental` | J773g Mac mini passed device-tree and status probes; all five power domains on. Firmware boot and ANE computation not yet run. | [T8132 receipt](ane/h16/README-bringup.md#measured-on-a-t8132) |
+| M4 Pro | T6040 | H16 | `apple,t6040-ane` | `ane_h16` (`optin=t6040`) | experimental | — (run-time overlay) | Device-tree data and a host-tested bring-up path; no hardware ANE program yet. | [T6040 data](data/ane-soc/t6040.json), [#473](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
+| M4 Max | T6041 | H16 | `apple,t6041-ane` | Aurora in-tree `ane_t6021` | experimental | — | J616C reported a live ANE node with no driver bound; the new smoke mapping was tested on a host, not on the ANE. No hardware ANE program yet. | [J616C report](https://github.com/joshuaswarren/omarchy-ane/pull/473) |
+| M5 | T8142 | H17 | not yet recorded | — | data only | — | Device-tree capture only; no Linux ANE program yet. | [T8142 record](data/ane-soc/t8142.json) |
+| M5 Max | T6050 | H17 | `apple,t6050-ane` | Aurora in-tree `ane_t6021` (ABI 3) | experimental, not packaged here | — | One Qwen3-4B layer ran with eight ANE programs and host-side work. A later eight-layer, one-token run took 84.3 ms with final-state cosine similarity 0.999998927. | [Layer receipt](https://github.com/joshuaswarren/omarchy-ane/pull/410), [device receipt](https://github.com/joshuaswarren/omarchy-ane/pull/463), [G529 run](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
+| Mac mini M6 | T8152 | H18 | `apple,t8152-ane` | `ane_h18` (`optin=t8152`) | experimental, not packaged here | — (board DTB) | Three interleaved fixture programs ran bit-exact on both engines in one boot. The separate AN-23 weighted-matvec test stalled after firmware start; the chain has not yet completed. | [Nov 24 keep-alive and AN-23 runs](https://github.com/joshuaswarren/omarchy-ane/pull/479#issuecomment-7149393701) |
+
+### Overlay opt-in
+
+An overlay key is not an `optin=<soc>` module parameter. Experimental boot
+overlays are not installed by the package; see the
+[H15](ane/h15/README-bringup.md#device-tree-one-overlay-per-soc) and
+[H16](ane/h16/README-bringup.md) bring-up guides before using their keys.
 
 The T8112 note: after adding the key, run
 `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The M2 Pro
@@ -76,10 +76,10 @@ exactly 0x30000000, then wait up to 100 ms for the gate to open. Any other
 word refuses without a write. The default is off. It is the same write the
 macOS kext does, in a different order: the kext opens the gate before it writes
 the power-state words, and Linux gets here after the power domain is already on.
-Nobody has run it on base M2 silicon yet, so a hang or reset is possible. A
-reboot undoes it.
+The guarded path has not yet passed an ANE smoke test on base M2 silicon.
+A hang or reset is possible. A reboot undoes it.
 
-To opt in, append the key as one line to
+For a packaged overlay, append the key as one line to
 `/etc/omarchy-mac-boot/dtb-overlays.opt-in`, then:
 
 ```sh
