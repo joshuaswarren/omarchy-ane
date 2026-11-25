@@ -61,6 +61,9 @@ Part of the Omarchy on Apple Silicon ecosystem:
 | M2 Pro | T6020 | not recorded | `apple,t6020-ane` | `ane_t6021` | on by default | none | row 3c9389040f51,02ba4b462a7d; dkms,intree |
 | M2 Max | T6021 | not recorded | `apple,t6021-ane` | `ane_t6021` | on by default | none | fp16 execution verified |
 | M2 Ultra | T6022 | not recorded | `apple,t6022-ane` | `ane_t6021` | on by default | none | row 316ea37e17f0; dkms; die 0 only; kernel 7.1.13 with the ANE DART power-domain change (#278) |
+| M3 | T8122 | 0xb0 (ADT) | `apple,t8122-ane` (linux #2331, disabled) | `ane_h15` | opt-in experimental overlay, not yet run | `ane-h15-experimental` | GPU: G15G Honeykrisp. ANE stages 0-2 not yet run on this chip; ladder staged, blocked on the maclab booking (drills G308/G702) |
+| M3 Pro | T6030 | 0xc0 (ADT) | `apple,t6030-ane` (linux #2331, disabled) | `ane_h15` | opt-in experimental overlay, untested | `ane-h15-experimental` | GPU: G15S. No Linux ANE run recorded |
+| M3 Max | T6031/T6034 | 0xe0 (ADT) | `apple,t6031-ane` (linux #2331, disabled; T6034 reuses it) | `ane_h15` | opt-in experimental overlay; stages 0-2 PASS on J516C via MacLab (soc=ln, Oct 29-31), stage ladder past 2 stopped at a crash record | `ane-h15-experimental` | GPU: G15C Honeykrisp. First ANE program on Linux: none yet |
 
 The T8112 note: after adding the key, run
 `sudo omarchy-ane-firmware-fetch` before `omarchy-ane-dt apply`. The M2 Pro
