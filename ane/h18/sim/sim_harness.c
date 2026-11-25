@@ -59,14 +59,15 @@ struct device_node *sim_phandle_target[SIM_PHANDLE_SLOTS];
 int sim_pd_attached, sim_pd_false_votes, sim_pd_attach_fail, sim_count_error;
 struct dev_pm_domain_list sim_pd_list;
 struct device *sim_pdev_dev;
-int sim_rd_ready;			/* the module published the reads step control */
+int sim_rd_ready, sim_res_ready;	/* the module published the reads / resident controls */
+int (*sim_fw_hook)(const char *name, const u8 **data, size_t *size);
 u64 sim_gate_pa[2];			/* stage=reads seams: the pmgr gate-state pages */
 u32 sim_gate_val[2];
 bool sim_ps_on;				/* the four ANE ps registers read fully on when set */
 int sim_iomap_fail_at;
-struct sim_iocall sim_iocalls[64];
+struct sim_iocall sim_iocalls[SIM_NIOCALLS];
 int sim_n_iocalls, sim_io_fail, sim_n_dom_live;
-struct sim_iomap sim_iomaps[64];
+struct sim_iomap sim_iomaps[SIM_NIOMAPS];
 int sim_n_iomaps;
 unsigned long sim_op_seq, sim_last_dmafree_seq;
 u64 sim_unmap_short_iova;
@@ -90,11 +91,61 @@ int sim_fw_err, sim_fw_released, sim_fw_requests;
 static u8 sim_blob[0x10000];
 static size_t sim_blob_len;
 int sim_prog_mode, sim_prog_n, sim_prog_loaded, sim_prog_created, sim_t2h_back, sim_out_written, sim_t2h_posted;
-u32 sim_prog_ops[16];
+u32 sim_prog_ops[64];
+u32 sim_prog_ids[64];
 u64 sim_load_sec2_iova, sim_load_sec2_size;
 u8 sim_load_sec2_b1;
 int sim_pub_wait, sim_premapped;
 u64 sim_ktime_calls;
+u64 sim_map_fail_iova;
+
+/* Multi-program firmware model: tracks N concurrently resident programs with distinct prog_id/proc_id,
+ * verifies every PROCEDURE_CALL against still-live section surfaces, and supports targeted fault injection. */
+struct sim_fw_prog {
+	bool live;
+	bool has_proc;
+	u32 prog_id;
+	u32 proc_id;
+	u32 out_tag;
+	unsigned int nsec;
+	u64 sec_iova[9];
+	u64 sec_size[9];
+	u64 sec2_iova;
+	u64 sec2_size;
+};
+static struct sim_fw_prog sim_fw_progs[32];
+static u32 sim_fw_next_prog, sim_fw_next_proc;
+static u16 sim_res_fail_op;		/* nonzero: return sim_res_fail_ack on this op (filtered by sim_res_fail_prog if nonzero) */
+static u32 sim_res_fail_prog;
+static u16 sim_res_fail_ack;
+static u32 sim_res_spoof_prog, sim_res_spoof_proc;	/* nonzero: stamp wrong resident prog/proc into IO_T2H events */
+static u32 sim_res_dup_prog;				/* nonzero: force next LOAD_PROGRAM to return this duplicate prog_id */
+static int sim_res_malformed_create;			/* nonzero: next CREATE_PROCESS leaves proc_id at 0xffffffff */
+
+static struct sim_fw_prog *sim_fw_find(u32 prog_id)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(sim_fw_progs); i++)
+		if (sim_fw_progs[i].live && sim_fw_progs[i].prog_id == prog_id)
+			return &sim_fw_progs[i];
+	return NULL;
+}
+
+static void sim_fw_sync_flags(void)
+{
+	unsigned int i;
+
+	sim_prog_loaded = 0;
+	sim_prog_created = 0;
+	for (i = 0; i < ARRAY_SIZE(sim_fw_progs); i++) {
+		if (sim_fw_progs[i].live) {
+			sim_prog_loaded = 1;
+			if (sim_fw_progs[i].has_proc)
+				sim_prog_created = 1;
+		}
+	}
+}
 
 /* the file: sections 1 to 5 and 7 (the add program's six), buffers 5 and 6 as inputs and 4 as the output, 0x4000 bytes each; input 5 starts with 0xaa bytes */
 static void make_blob(void)
@@ -228,17 +279,21 @@ static u8 *sim_buf_va(u64 iova)
 
 /* The firmware's side of LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, TERMINATE_PROCESS and DESTROY_PROGRAM. Returns the acknowledgement for +6: 0 ok, 3 refused by
  * the mode, 4 an id it does not know, 5 a program with a live process, 7 an address that is not in a buffer the host allocated. A call posts two IO_T2H events. */
-static u16 sim_prog_cmd(u16 op, u8 *blk)
+static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 {
 	u32 prog = 0, proc = 0, v;
 	u64 cookie, a, s;
 	int i, n;
 
-	if (sim_prog_n < 16)
+	if (sim_prog_n < (int)ARRAY_SIZE(sim_prog_ops))
 		sim_prog_ops[sim_prog_n] = op;
 	sim_prog_n++;
 	memcpy(&prog, blk + 8, 4);
 	memcpy(&proc, blk + 0xc, 4);
+	if (sim_prog_n <= (int)ARRAY_SIZE(sim_prog_ids))
+		sim_prog_ids[sim_prog_n - 1] = prog;
+	if (sim_res_fail_op == op && (!sim_res_fail_prog || sim_res_fail_prog == prog))
+		return sim_res_fail_ack ? sim_res_fail_ack : 3;
 	switch (op) {
 	case 0x20d: {
 		u32 a1, ty, f54, f58, f60;
@@ -265,9 +320,30 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		sim_premapped = 1;
 		return 0;
 	}
-	case 0x200:
+	case 0x200: {
+		struct sim_fw_prog *fp = NULL;
+		unsigned int slot;
+
 		if (sim_prog_mode == 1)
 			return 3;
+		if (cmd_len != 0x1c0)
+			return 7;
+		if (sim_res_dup_prog) {
+			v = sim_res_dup_prog;
+			sim_res_dup_prog = 0;
+			memcpy(blk + 0x1b8, &v, 4);
+			if (sim_prog_n <= (int)ARRAY_SIZE(sim_prog_ids))
+				sim_prog_ids[sim_prog_n - 1] = v;
+			return 0;
+		}
+		for (slot = 0; slot < ARRAY_SIZE(sim_fw_progs); slot++)
+			if (!sim_fw_progs[slot].live) {
+				fp = &sim_fw_progs[slot];
+				break;
+			}
+		if (!fp)
+			return 3;
+		memset(fp, 0, sizeof(*fp));
 		n = 0;
 		for (i = 1; i <= 9; i++) {
 			const u8 *r = blk + 8 + (i - 1) * 0x30;
@@ -287,35 +363,63 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 				sim_load_sec2_iova = a;
 				sim_load_sec2_size = s;
 				sim_load_sec2_b1 = s > 1 ? sim_buf_va(a)[1] : 0;
+				fp->sec2_iova = a;
+				fp->sec2_size = s;
 			}
+			fp->sec_iova[n] = a;
+			fp->sec_size[n] = s;
 			n++;
 		}
 		if (!n)
 			return 7;
+		fp->nsec = (unsigned int)n;
+		v = 0x5a + sim_fw_next_prog++;
+		fp->prog_id = v;
+		fp->out_tag = 0x11223344u + slot;
+		fp->live = true;
 		if (sim_prog_mode != 4) {
-			v = 0x5a;
 			memcpy(blk + 0x1b8, &v, 4);
+			if (sim_prog_n <= (int)ARRAY_SIZE(sim_prog_ids))
+				sim_prog_ids[sim_prog_n - 1] = v;
 		}
-		sim_prog_loaded = 1;
+		sim_fw_sync_flags();
 		return 0;
-	case 0x202:
+	}
+	case 0x202: {
+		struct sim_fw_prog *fp = sim_fw_find(prog);
+
 		if (sim_prog_mode == 2)
 			return 3;
 		if (sim_prog_mode == 6)
 			return 0xffff;
-		if (!sim_prog_loaded || prog != 0x5a)
+		if (cmd_len != 0x10)
+			return 7;
+		if (!fp)
 			return 4;
-		v = 0x77;
+		if (sim_res_malformed_create) {
+			sim_res_malformed_create = 0;
+			return 0;	/* leaves proc_id at 0xffffffff */
+		}
+		v = 0x77 + sim_fw_next_proc++;
 		memcpy(blk + 0xc, &v, 4);
-		sim_prog_created = 1;
+		fp->proc_id = v;
+		fp->has_proc = true;
+		sim_fw_sync_flags();
 		return 0;
+	}
 	case 0x204: {
+		struct sim_fw_prog *fp = sim_fw_find(prog);
 		u32 cnt, prio;
 		u64 *ring = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
 		u8 *pool = sim_dma[0].va;
+		unsigned int si;
 
-		if (!sim_prog_created || prog != 0x5a || proc != 0x77)
+		if (!fp || !fp->has_proc || fp->proc_id != proc)
 			return 4;
+		/* Every section surface of the called resident program must still be live and mapped. */
+		for (si = 0; si < fp->nsec; si++)
+			if (!sim_buf_ok(fp->sec_iova[si], fp->sec_size[si]))
+				return 7;
 		memcpy(&prio, blk + 0x18, 4);
 		memcpy(&cookie, blk + 0x20, 8);
 		memcpy(&cnt, blk + 0x28, 4);
@@ -340,7 +444,7 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 					return 7;
 			}
 			if (type == 1 && (o = sim_buf_va(a)) && (sim_prog_mode != 12 || !sim_out_written)) {	/* mode 12: only the first call writes the output */
-				v = 0x11223344;
+				v = fp->out_tag;
 				memcpy(o, &v, 4);
 				memcpy(o + 4, &v, 4);
 				sim_out_written = 1;
@@ -351,16 +455,19 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		int base = sim_t2h_posted;
 
 		for (i = 0; i < 2; i++) {
-			int sl = base + i;
+			int sl = (base + i) % 0x40;
 			u8 *ev = pool + 0x1000 + sl * 0x40;
-			u32 seq = sl + 1, k = 0x300, st = i;
+			u32 seq = (u32)(base + i + 1), k = 0x300, st = (u32)i;
+
+			u32 ev_prog = sim_res_spoof_prog ? sim_res_spoof_prog : prog;
+			u32 ev_proc = sim_res_spoof_proc ? sim_res_spoof_proc : proc;
 
 			memset(ev, 0, 0x28);
 			memcpy(ev, &seq, 4);
 			memcpy(ev + 4, &k, 4);
 			memcpy(ev + 8, &cookie, 8);
-			memcpy(ev + 0x10, &prog, 4);
-			memcpy(ev + 0x14, &proc, 4);
+			memcpy(ev + 0x10, &ev_prog, 4);
+			memcpy(ev + 0x14, &ev_proc, 4);
 			memcpy(ev + 0x1c, &st, 4);
 			ring[sl * 8 + 1] = 0x28;
 			if (sim_prog_mode == 5) {	/* the length first, the address (the publication) three sleeps later */
@@ -376,20 +483,32 @@ static u16 sim_prog_cmd(u16 op, u8 *blk)
 		}
 		return 0;
 	}
-	case 0x203:
-		if (!sim_prog_created || prog != 0x5a || proc != 0x77)
+	case 0x203: {
+		struct sim_fw_prog *fp = sim_fw_find(prog);
+
+		if (cmd_len != 0x10)
+			return 7;
+		if (!fp || !fp->has_proc || fp->proc_id != proc)
 			return 4;
-		sim_prog_created = 0;
+		fp->has_proc = false;
+		sim_fw_sync_flags();
 		return 0;
-	case 0x201:
+	}
+	case 0x201: {
+		struct sim_fw_prog *fp = sim_fw_find(prog);
+
 		if (sim_prog_mode == 11)	/* PG52: the firmware never answers the unload */
 			return 0xffff;
-		if (!sim_prog_loaded || prog != 0x5a)
+		if (cmd_len != 0x0c)
+			return 7;
+		if (!fp)
 			return 4;
-		if (sim_prog_created)
+		if (fp->has_proc)
 			return 5;
-		sim_prog_loaded = 0;
+		fp->live = false;
+		sim_fw_sync_flags();
 		return 0;
+	}
 	}
 	return 4;
 }
@@ -550,11 +669,12 @@ void sim_db_react(u32 v)
 	}
 	if (v == BIT(6) && sim_n_dma > 1) {
 		u64 *r6 = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
-		int q;
+		int q, nback = 0;
 
-		for (q = 0; q < 2; q++)
+		for (q = 0; q < 0x40; q++)
 			if (r6[q * 8] & 1)
-				sim_t2h_back = q + 1;
+				nback++;
+		sim_t2h_back = nback;
 		return;
 	}
 	if (v != BIT(1) || sim_n_dma < 3)
@@ -588,7 +708,7 @@ void sim_db_react(u32 v)
 			memcpy(blk + 6, &bad, 2);
 		}
 		if ((op >= 0x200 && op <= 0x204) || op == 0x20d) {
-			u16 ack = sim_prog_cmd(op, blk);
+			u16 ack = sim_prog_cmd(op, blk, ring[k * 8 + 1]);
 
 			if (ack == 0xffff)	/* the modelled firmware does not answer this one */
 				return;
@@ -713,6 +833,7 @@ static void reset_all(void)
 	psd_state = 0;
 	psd_slots = 1;
 	keep_on = false;
+	keep_alive = false;
 	wake_sleeping = false;
 	read_mbox = false;
 	read_ctrl = false;
@@ -740,6 +861,19 @@ static void reset_all(void)
 	hs_prog_reuse = false;
 	premap_second = 0;
 	sim_premapped = sim_pub_wait = sim_prog_mode = sim_prog_n = sim_prog_loaded = sim_prog_created = sim_t2h_back = sim_out_written = sim_t2h_posted = 0;
+	memset(sim_prog_ops, 0, sizeof(sim_prog_ops));
+	memset(sim_prog_ids, 0, sizeof(sim_prog_ids));
+	memset(sim_fw_progs, 0, sizeof(sim_fw_progs));
+	sim_fw_next_prog = sim_fw_next_proc = 0;
+	sim_res_fail_op = 0;
+	sim_res_fail_prog = 0;
+	sim_res_fail_ack = 0;
+	sim_res_spoof_prog = 0;
+	sim_res_spoof_proc = 0;
+	sim_res_dup_prog = 0;
+	sim_res_malformed_create = 0;
+	sim_map_fail_iova = 0;
+	sim_fw_hook = NULL;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
 	make_blob();
 	prog_text_const = 0;
@@ -790,6 +924,9 @@ static void reset_all(void)
 	sim_pd_list.num_pds = 0;
 	sim_pdev_dev = &pdev.dev;
 	sim_rd_ready = 0;
+	sim_res_ready = 0;
+	sim_res_entry.live = false;
+	sim_res_dir_entry.live = false;
 	sim_ps_on = false;
 	sim_iomap_fail_at = 0;
 	allow_reads = false;
@@ -2729,6 +2866,470 @@ static int neg_reads(void)
 	return fails;
 }
 
+/* ---- H18 resident binding lifetime tests (RP1..RP7): N resident programs, switch without reload, free in any order ---- */
+static u8 sim_blob_plain[0x10000];
+static size_t sim_blob_plain_len;
+static u8 sim_blob_weighted[0x10000];
+static size_t sim_blob_weighted_len;
+static u8 sim_blob_bad[32];
+
+static int sim_res_fw_hook(const char *name, const u8 **data, size_t *size)
+{
+	if (!strcmp(name, "missing.bin"))
+		return -ENOENT;
+	if (!strcmp(name, "bad.bin")) {
+		*data = sim_blob_bad;
+		*size = sizeof(sim_blob_bad);
+		return 0;
+	}
+	if (!strcmp(name, "weighted.bin")) {
+		*data = sim_blob_weighted;
+		*size = sim_blob_weighted_len;
+		return 0;
+	}
+	*data = sim_blob_plain;
+	*size = sim_blob_plain_len;
+	return 0;
+}
+
+static void res_boot_live(void)
+{
+	static const u32 scr[] = { 8, 0xc440, 0x100, 0xf00000, 0, 0x100090, 0, ANE_H18_HS_READY };
+
+	kboot_setup();
+	make_blob();
+	memcpy(sim_blob_plain, sim_blob, sim_blob_len);
+	sim_blob_plain_len = sim_blob_len;
+	make_blob_kern_weights();
+	memcpy(sim_blob_weighted, sim_blob, sim_blob_len);
+	sim_blob_weighted_len = sim_blob_len;
+	memset(sim_blob_bad, 0xff, sizeof(sim_blob_bad));
+	sim_fw_hook = sim_res_fw_hook;
+
+	alias_mbox = rtkit_hello = rtkit_start = read_scratch = true;
+	handshake = hs_chan = hs_cmds = hs_start = true;
+	keep_alive = true;
+	rtkit_stop = 1;
+	sim_start_chan = 536;
+	sim_start_hello = 3;
+	sim_scr_model = sim_hs_table = 1;
+	memcpy(sim_scr, scr, sizeof(scr));
+}
+
+static int res_open(struct file *f)
+{
+	struct inode ino = { .i_private = sim_res_entry.data };
+
+	memset(f, 0, sizeof(*f));
+	return sim_res_entry.ops->open(&ino, f);
+}
+
+static int res_close(struct file *f)
+{
+	struct inode ino = { .i_private = sim_res_entry.data };
+
+	return sim_res_entry.ops->release(&ino, f);
+}
+
+static ssize_t res_cmd(struct file *f, const char *cmd, char *reply, size_t rsz)
+{
+	ssize_t w = sim_res_entry.ops->write(f, cmd, strlen(cmd), &f->f_pos);
+
+	if (w < 0)
+		return w;
+	if (reply && rsz) {
+		ssize_t r = sim_res_entry.ops->read(f, reply, rsz - 1, &f->f_pos);
+
+		reply[r > 0 ? r : 0] = '\0';
+		return r;
+	}
+	return w;
+}
+
+static int res_live_dma(void)
+{
+	int i, live = 0;
+
+	for (i = 0; i < sim_n_dma; i++)
+		live += sim_dma[i].live;
+	return live;
+}
+
+static void pos_residency(void)
+{
+	/* RP1: exact non-LIFO wire order (two LOAD/CREATEs, four calls without reload, free A — first loaded — before B,
+	 * then call B again and free B), exclusive per-open session, distinct FW IDs and digests, clean rmmod with zero DMA leak. */
+	{
+		static const u32 want_ops[] = {
+			0x200, 0x202, 0x200, 0x202, 0x204, 0x204,
+			0x204, 0x203, 0x201, 0x204, 0x203, 0x201,
+		};
+		struct file f1, f2;
+		char hA[32], hB[32], r1[96], r2[96], r3[96], r4[96], rf[32], cmd[128];
+		u64 ns1 = 0, ns2 = 0, ns3 = 0, ns4 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0;
+		u32 a, b;
+		int ret, o1, o2;
+
+		res_boot_live();
+		ret = probe_now();
+		chk(ret == 0 && result("boot", "PASS", "core-live-ready") && sim_res_ready && sim_res_entry.live && sim_res_entry.mode == 0600,
+		    "RP1a keep_alive=1 boots live and exposes root-only 0600 debugfs resident");
+		o1 = res_open(&f1);
+		o2 = res_open(&f2);
+		chk(o1 == 0 && o2 == -EBUSY, "RP1b exclusive per-open session: first open succeeds, second concurrent open returns -EBUSY");
+		ret = (int)res_cmd(&f1, "retain sim.bin 0 0 0 0 0\n", hA, sizeof(hA));
+		chk(ret == 17 && hA[16] == '\n', "RP1c retain A returns 16-hex handle + newline");
+		hA[16] = '\0';
+		ret = (int)res_cmd(&f1, "retain sim.bin 0 0 0 0 0\n", hB, sizeof(hB));
+		chk(ret == 17 && hB[16] == '\n' && strcmp(hA, hB) != 0, "RP1d retain B returns distinct 16-hex handle");
+		hB[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		ret = (int)res_cmd(&f1, cmd, r1, sizeof(r1));
+		sscanf(r1, "ns=%llu digest=%llx", (unsigned long long *)&ns1, (unsigned long long *)&d1);
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		ret = ret > 0 ? (int)res_cmd(&f1, cmd, r2, sizeof(r2)) : ret;
+		sscanf(r2, "ns=%llu digest=%llx", (unsigned long long *)&ns2, (unsigned long long *)&d2);
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		ret = ret > 0 ? (int)res_cmd(&f1, cmd, r3, sizeof(r3)) : ret;
+		sscanf(r3, "ns=%llu digest=%llx", (unsigned long long *)&ns3, (unsigned long long *)&d3);
+		/* Non-LIFO: free A (first loaded) before B, then call B again without reload. */
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA);
+		ret = ret > 0 ? (int)res_cmd(&f1, cmd, rf, sizeof(rf)) : ret;
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		ret = ret > 0 ? (int)res_cmd(&f1, cmd, r4, sizeof(r4)) : ret;
+		sscanf(r4, "ns=%llu digest=%llx", (unsigned long long *)&ns4, (unsigned long long *)&d4);
+		snprintf(cmd, sizeof(cmd), "free %s\n", hB);
+		ret = ret > 0 ? (int)res_cmd(&f1, cmd, rf, sizeof(rf)) : ret;
+		res_close(&f1);
+		ane_h18_remove(&pdev);
+		a = sim_prog_ids[0];
+		b = sim_prog_ids[2];
+		chk(ret > 0 && sim_prog_n == (int)ARRAY_SIZE(want_ops) && !memcmp(sim_prog_ops, want_ops, sizeof(want_ops)),
+		    "RP1e exact wire order: two LOAD/CREATEs, four calls without reload, two TERMINATE/DESTROYs");
+		chk(a != b && sim_prog_ids[1] == a && sim_prog_ids[3] == b && sim_prog_ids[4] == a &&
+		    sim_prog_ids[5] == b && sim_prog_ids[6] == a && sim_prog_ids[7] == a &&
+		    sim_prog_ids[8] == a && sim_prog_ids[9] == b && sim_prog_ids[10] == b &&
+		    sim_prog_ids[11] == b && sim_t2h_back == 8 && d1 != d2 && d1 == d3 && d2 == d4 &&
+		    ns1 > 0 && ns4 > 0 && res_live_dma() == 0 && sim_owner_module.refs == 0 && !sim_res_ready,
+		    "RP1f non-LIFO: distinct FW IDs + digests, free A before B then call B, clean rmmod with zero DMA leak");
+	}
+
+	/* RP2: 3 resident programs, middle-first free, double-free & stale-generation handle refused after slot reuse. */
+	{
+		struct file f;
+		char hA[32], hB[32], hC[32], hD[32], rep[96], cmd[128];
+		ssize_t r_callB, r_freeB2, r_staleB, r_callD;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA, sizeof(hA)); hA[16] = '\0';
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hB, sizeof(hB)); hB[16] = '\0';
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hC, sizeof(hC)); hC[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "free %s\n", hB);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		r_callB = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hB);
+		r_freeB2 = res_cmd(&f, cmd, rep, sizeof(rep));
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hD, sizeof(hD)); hD[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		r_staleB = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "call %s\n", hD);
+		r_callD = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hC); res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA); res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hD); res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_callB == -ENOENT && r_freeB2 == -ENOENT && strcmp(hD, hB) != 0 && r_staleB == -ENOENT && r_callD > 0 && res_live_dma() == 0,
+		    "RP2 middle-first free + slot reuse bumps generation: stale handle B returns -ENOENT, D runs clean");
+	}
+
+	/* RP3: disjoint fixed-IOVA + kern_slot=1 residency, overlap refusal (-EBUSY) BEFORE iommu_map/LOAD_PROGRAM,
+	 * self-overlap refusal (-EINVAL), and range reuse after free. */
+	{
+		struct file f;
+		char hA[32], hB[32], hC[32], rep[96], cmd[160];
+		ssize_t r_ov_buf, r_ov_kern, r_self_ov, r_b, r_ca, r_cb, r_c;
+		int io_before, prog_before, io_after, prog_after;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain weighted.bin 0x30000000 0x3000c000 0x280 0x30020000 1\n", hA, sizeof(hA));
+		hA[16] = '\0';
+		chk(sim_load_sec2_iova == 0x30020000 && sim_load_sec2_size == 0x4000 && sim_load_sec2_b1 == 0x5a,
+		    "RP3a resident retain with kern_slot=1 binds LOAD_PROGRAM slot 1 to pg_kern (size-0x4000, weights tail)");
+		io_before = sim_n_iocalls;
+		prog_before = sim_prog_n;
+		r_ov_buf = res_cmd(&f, "retain weighted.bin 0x30004000 0x3010c000 0x280 0x30120000 1\n", rep, sizeof(rep));
+		r_ov_kern = res_cmd(&f, "retain weighted.bin 0x30100000 0x3010c000 0x280 0x30020000 1\n", rep, sizeof(rep));
+		r_self_ov = res_cmd(&f, "retain weighted.bin 0x30100000 0x30104000 0x280 0x30120000 1\n", rep, sizeof(rep));
+		io_after = sim_n_iocalls;
+		prog_after = sim_prog_n;
+		chk(r_ov_buf == -EBUSY && r_ov_kern == -EBUSY && r_self_ov == -EINVAL && io_after == io_before && prog_after == prog_before,
+		    "RP3b overlapping fixed IOVAs refused (-EBUSY) and self-overlap (-EINVAL) BEFORE any IOMMU map or LOAD_PROGRAM");
+		r_b = res_cmd(&f, "retain weighted.bin 30100000 3010c000 280 30120000 1\n", hB, sizeof(hB));
+		hB[16] = '\0';
+		{
+			struct sim_fw_prog *fpA = sim_fw_find(sim_prog_ids[0]);
+			struct sim_fw_prog *fpB = sim_fw_find(sim_prog_ids[2]);
+
+			chk(fpA && fpB && fpA->sec2_iova == 0x30020000 && fpA->sec2_size == 0x4000 &&
+			    fpB->sec2_iova == 0x30120000 && fpB->sec2_size == 0x4000,
+			    "RP3c LOAD_PROGRAM slot 1 (pg_kern) is bound per-program (A=0x30020000, B=0x30120000), never re-pointed");
+		}
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA); r_ca = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB); r_cb = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA); res_cmd(&f, cmd, rep, sizeof(rep));
+		/* After freeing A (first loaded), B's slot-1 kern surface stays mapped and B still runs; A's range is reusable. */
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		r_cb = r_cb > 0 ? res_cmd(&f, cmd, rep, sizeof(rep)) : r_cb;
+		r_c = res_cmd(&f, "retain weighted.bin 30000000 3000c000 280 30020000 1\n", hC, sizeof(hC));
+		hC[16] = '\0';
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_b == 17 && r_ca > 0 && r_cb > 0 && r_c == 17 && res_live_dma() == 0,
+		    "RP3d disjoint bare-hex fixed-IOVA weighted pair switches without reload; freeing A keeps B live and frees A's range for reuse");
+	}
+
+	/* RP4: 16-slot host table cap (-ENOSPC on 17th), reuse after middle free, and automatic release() teardown. */
+	{
+		struct file f, f2;
+		char handles[16][32], rep[96], cmd[128];
+		int i, ok16 = 1;
+		ssize_t r17, r18;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		for (i = 0; i < 16; i++) {
+			if (res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", handles[i], sizeof(handles[i])) != 17)
+				ok16 = 0;
+			handles[i][16] = '\0';
+		}
+		r17 = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", handles[7]);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		r18 = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		res_close(&f);	/* tears down all 16 remaining LIVE slots */
+		chk(ok16 && r17 == -ENOSPC && r18 == 17 && !sim_prog_loaded && res_open(&f2) == 0,
+		    "RP4 16 host slots cap at -ENOSPC, middle slot reusable, close() tears down all LIVE slots and releases session");
+		res_close(&f2);
+		ane_h18_remove(&pdev);
+		chk(res_live_dma() == 0 && sim_owner_module.refs == 0, "RP4b zero DMA leak after close() teardown and rmmod");
+	}
+
+	/* RP5: unload failure -> HELD slot retains surfaces + fixed ranges forever, pins module, NO out-of-band reset,
+	 * other LIVE slots keep working! */
+	{
+		struct file f;
+		char hA[32], hB[32], rep[96], cmd[128];
+		ssize_t r_freeA, r_callA, r_ov, r_callB, r_freeB;
+		u32 progA;
+		int live_after_freeA;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain weighted.bin 0x30000000 0x3000c000 0x280 0x30020000 1\n", hA, sizeof(hA));
+		hA[16] = '\0';
+		progA = sim_prog_ids[0];
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hB, sizeof(hB));
+		hB[16] = '\0';
+		sim_res_fail_op = 0x201;
+		sim_res_fail_prog = progA;
+		sim_res_fail_ack = 3;
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA);
+		r_freeA = res_cmd(&f, cmd, rep, sizeof(rep));
+		live_after_freeA = res_live_dma();
+		sim_res_fail_op = 0;
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		r_callA = res_cmd(&f, cmd, rep, sizeof(rep));
+		r_ov = res_cmd(&f, "retain weighted.bin 0x30000000 0x3000c000 0x280 0x30020000 1\n", rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "call %s\n", hB);
+		r_callB = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hB);
+		r_freeB = res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_freeA == -EIO && r_callA == -ESHUTDOWN && r_ov == -EBUSY && r_callB > 0 && r_freeB > 0 &&
+		    sim_owner_module.refs >= 1 && live_after_freeA > 0 && res_live_dma() > 0 && sim_rpm_gets == 1,
+		    "RP5 failed DESTROY_PROGRAM marks slot HELD (surfaces + fixed range kept, module pinned, no engine reset, B still runs)");
+	}
+
+	/* RP6: short alias unmap on free -> slot HELD, leaked page not freed, range stays reserved, module pinned. */
+	{
+		struct file f;
+		char hA[32], rep[96], cmd[128];
+		ssize_t r_freeA, r_ov;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain weighted.bin 0x30000000 0x3000c000 0x280 0x30020000 1\n", hA, sizeof(hA));
+		hA[16] = '\0';
+		sim_unmap_short_iova = 0x30000000;
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA);
+		r_freeA = res_cmd(&f, cmd, rep, sizeof(rep));
+		sim_unmap_short_iova = 0;
+		r_ov = res_cmd(&f, "retain weighted.bin 0x30000000 0x3010c000 0x280 0x30120000 1\n", rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_freeA == -EIO && r_ov == -EBUSY && sim_owner_module.refs >= 1 && log_count("the pages are leaked, not freed") == 1 && res_live_dma() == 1,
+		    "RP6 short alias unmap on free leaks that page, pins module, keeps range reserved in HELD slot (-EBUSY)");
+	}
+
+	/* RP7: bad syntax/basename/kern_slot, CREATE_PROCESS rollback (DESTROY_PROGRAM + zero leak), and keep_alive gating. */
+	{
+		struct file f;
+		char rep[96];
+		ssize_t r_path, r_miss, r_bad, r_ks, r_zero, r_cp;
+		int live_before, live_after, ret_ka;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		r_path = res_cmd(&f, "retain ../evil.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		r_miss = res_cmd(&f, "retain missing.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		r_bad = res_cmd(&f, "retain bad.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		r_ks = res_cmd(&f, "retain sim.bin 0 0 0 0 1\n", rep, sizeof(rep));
+		r_zero = res_cmd(&f, "call 0\n", rep, sizeof(rep));
+		chk(res_cmd(&f, "retain aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0 0 0 0 0\n", rep, sizeof(rep)) == -EINVAL &&
+		    res_cmd(&f, "retain bad$name.bin 0 0 0 0 0\n", rep, sizeof(rep)) == -EINVAL,
+		    "RP7c 64-char basename and non-[A-Za-z0-9._-] characters are refused (-EINVAL)");
+		live_before = res_live_dma();
+		sim_res_fail_op = 0x202;
+		sim_res_fail_ack = 3;
+		r_cp = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		sim_res_fail_op = 0;
+		live_after = res_live_dma();
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_path == -EINVAL && r_miss == -ENOENT && r_bad == -EINVAL && r_ks == -EINVAL && r_zero == -ENOENT &&
+		    r_cp == -EIO && live_after == live_before && !sim_prog_loaded && res_live_dma() == 0,
+		    "RP7a input validation + CREATE_PROCESS refusal sends DESTROY_PROGRAM and frees candidate cleanly");
+
+		kboot_setup();
+		alias_mbox = rtkit_hello = rtkit_start = read_scratch = true;
+		handshake = hs_chan = hs_cmds = true;
+		hs_start = false;
+		keep_alive = true;
+		rtkit_stop = 1;
+		ret_ka = probe_now();
+		chk(ret_ka == -EINVAL && result("boot", "REFUSED", "keep_alive=1 needs hs_start=1, rtkit_stop=1 or 2, owned_fw=0 and hs_prog=0") && writes() == 0,
+		    "RP7b keep_alive=1 without hs_start=1 is refused before any write");
+	}
+
+	/* RP8: wrong-resident completion event (state=1 + cookie 0xADD0, but +0x10/+0x14 carry B's prog/proc while calling A):
+	 * BOTH timed peek and prog_t2h must reject it; call A fails -EIO, marks A HELD and pins module. */
+	{
+		struct file f;
+		char hA[32], hB[32], rep[96], cmd[128];
+		u32 progB;
+		ssize_t r_wrong;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA, sizeof(hA)); hA[16] = '\0';
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hB, sizeof(hB)); hB[16] = '\0';
+		progB = sim_prog_ids[2];
+		sim_res_spoof_prog = progB;
+		sim_res_spoof_proc = sim_fw_find(progB)->proc_id;
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		r_wrong = res_cmd(&f, cmd, rep, sizeof(rep));
+		sim_res_spoof_prog = sim_res_spoof_proc = 0;
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_wrong == -EIO && sim_owner_module.refs >= 1 && res_live_dma() > 0,
+		    "RP8 wrong-resident finish event (B's prog/proc on call A) is rejected by peek and t2h: -EIO, HELD, pinned");
+	}
+
+	/* RP9: partial-map rollback short unmap in ane_h18_hs_alloc_at() -> leaked pages NOT freed, module pinned,
+	 * range stays HELD (-EBUSY on overlapping retain), non-overlapping retain still succeeds. */
+	{
+		struct file f;
+		char hOk[32], rep[96];
+		ssize_t r_fail, r_ov, r_ok;
+		int live_after_fail;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		sim_map_fail_iova = 0x30010000;	/* 2nd 16 KiB page of 32 KiB text surface at 0x3000c000 */
+		sim_unmap_short_iova = 0x3000c000;
+		r_fail = res_cmd(&f, "retain weighted.bin 30000000 3000c000 280 30020000 1\n", rep, sizeof(rep));
+		sim_map_fail_iova = 0;
+		sim_unmap_short_iova = 0;
+		live_after_fail = res_live_dma();
+		r_ov = res_cmd(&f, "retain weighted.bin 30000000 3000c000 280 30020000 1\n", rep, sizeof(rep));
+		r_ok = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hOk, sizeof(hOk));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_fail == -ENOMEM && log_count("rollback unmapped") == 1 && sim_owner_module.refs >= 1 &&
+		    live_after_fail >= 1 && res_live_dma() == 1 && r_ov == -EBUSY && r_ok == 17,
+		    "RP9 short partial-map rollback keeps pages leaked, pins module, holds range (-EBUSY), other slots work");
+	}
+
+	/* RP10a: duplicate LIVE prog_id from LOAD_PROGRAM -> no DESTROY_PROGRAM (would kill A), A intact,
+	 * slot HELD, module pinned, engine quarantined (-ESHUTDOWN). */
+	{
+		struct file f;
+		char hA[32], rep[96], cmd[128];
+		u32 progA;
+		int prog_before, prog_after;
+		ssize_t r_dup, r_callA, r_ret;
+		struct sim_fw_prog *fpA;
+		bool a_still_live;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA, sizeof(hA));
+		hA[16] = '\0';
+		progA = sim_prog_ids[0];
+		prog_before = sim_prog_n;
+		sim_res_dup_prog = progA;
+		r_dup = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		sim_res_dup_prog = 0;
+		prog_after = sim_prog_n;
+		fpA = sim_fw_find(progA);
+		a_still_live = fpA && fpA->live && fpA->has_proc;
+		snprintf(cmd, sizeof(cmd), "call %s\n", hA);
+		r_callA = res_cmd(&f, cmd, rep, sizeof(rep));
+		r_ret = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_dup == -EIO && prog_after == prog_before + 1 && sim_prog_ops[prog_before] == 0x200 &&
+		    a_still_live && sim_owner_module.refs >= 1 && res_live_dma() > 0 &&
+		    r_callA == -ESHUTDOWN && r_ret == -ESHUTDOWN,
+		    "RP10a duplicate LIVE prog_id quarantines engine without DESTROY_PROGRAM, leaves A intact");
+	}
+
+	/* RP10b: malformed CREATE_PROCESS (proc == ~0u) -> no DESTROY_PROGRAM, slot HELD, module pinned,
+	 * engine quarantined (-ESHUTDOWN). */
+	{
+		struct file f;
+		char rep[96];
+		ssize_t r_mal, r_ret;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		sim_res_malformed_create = 1;
+		r_mal = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		sim_res_malformed_create = 0;
+		r_ret = res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_mal == -EIO && sim_prog_n == 2 && sim_prog_ops[0] == 0x200 && sim_prog_ops[1] == 0x202 &&
+		    sim_owner_module.refs >= 1 && res_live_dma() > 0 && r_ret == -ESHUTDOWN,
+		    "RP10b malformed CREATE_PROCESS (~0u) quarantines engine without guessing DESTROY_PROGRAM");
+	}
+}
+
 int main(int argc, char **argv)
 {
 	const char *mode = argc > 1 ? argv[1] : "pos";
@@ -2741,6 +3342,7 @@ int main(int argc, char **argv)
 		pos_power();
 		pos_boot();
 		pos_prog_parse();
+		pos_residency();
 		printf("%s\n", fails ? "SIM-TEST: FAILED" : "SIM-TEST: all positive controls PASS");
 	} else if (!strcmp(mode, "neg-psd-never")) {
 		fails = neg_never();

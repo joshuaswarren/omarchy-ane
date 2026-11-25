@@ -2,6 +2,7 @@ ane-run
 ane-session
 ane-selfcheck
 test_libane_ioctl
+test_libane_h18_resident
 test_check_band
 test_ane_timing
 test_ane_latency

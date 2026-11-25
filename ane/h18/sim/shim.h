@@ -111,7 +111,8 @@ static inline int of_property_read_u32_index(const struct device_node *n, const 
 }
 
 
-struct device { struct device_node *of_node; };
+struct device { struct device_node *of_node; const char *name; };
+static inline const char *dev_name(const struct device *d) { return (d && d->name) ? d->name : "419600000.ane"; }
 struct platform_device { struct device dev; void *drvdata; };
 struct resource { u64 start; u64 end; };
 
@@ -199,27 +200,39 @@ struct platform_driver {
 #define GFP_ZERO_UNUSED 0
 static inline void *kzalloc(size_t n, int gfp) { (void)gfp; return calloc(1, n); }
 static inline void kfree(const void *p) { free((void *)p); }
-/* request_firmware: the harness hands out sim_fw_data (sim_fw_size bytes) unless sim_fw_err is set */
+/* request_firmware: optional hook for multi-program sim tests; otherwise hands out sim_fw_data unless sim_fw_err is set */
 struct firmware { size_t size; const u8 *data; };
 extern const u8 *sim_fw_data;
 extern size_t sim_fw_size;
 extern int sim_fw_err, sim_fw_released, sim_fw_requests;
+extern int (*sim_fw_hook)(const char *name, const u8 **data, size_t *size);
 static inline int request_firmware(const struct firmware **fw, const char *name, struct device *dev)
 {
-	static struct firmware f;
+	struct firmware *f;
+	const u8 *d = sim_fw_data;
+	size_t sz = sim_fw_size;
 
-	(void)name; (void)dev;
+	(void)dev;
 	sim_fw_requests++;
-	if (sim_fw_err)
+	if (sim_fw_hook) {
+		int rc = sim_fw_hook(name, &d, &sz);
+
+		if (rc)
+			return rc;
+	} else if (sim_fw_err) {
 		return sim_fw_err;
-	f.size = sim_fw_size;
-	f.data = sim_fw_data;
-	*fw = &f;
+	}
+	f = calloc(1, sizeof(*f));
+	if (!f)
+		return -ENOMEM;
+	f->size = sz;
+	f->data = d;
+	*fw = f;
 	return 0;
 }
 static inline void release_firmware(const struct firmware *fw)
 {
-	(void)fw;
+	free((void *)fw);
 	sim_fw_released++;
 }
 #define PAGE_SIZE 0x4000UL
@@ -235,7 +248,7 @@ static inline void release_firmware(const struct firmware *fw)
 typedef u64 dma_addr_t;
 #define DMA_BIT_MASK(n) ((1ULL << (n)) - 1)
 struct sim_dma { void *va; dma_addr_t iova; size_t size; int live; unsigned long free_seq; };
-#define SIM_NDMA 32
+#define SIM_NDMA 256
 extern struct sim_dma sim_dma[SIM_NDMA];
 extern unsigned long sim_op_seq, sim_last_dmafree_seq;
 extern int sim_n_dma, sim_dma_fail, sim_dma_mask_bits;
@@ -673,8 +686,9 @@ static inline int devm_pm_domain_attach_list(struct device *dev,
 	return sim_pd_attached;
 }
 
-/* ---- the reads step control: mutex, user-copy helpers, debugfs ---- */
+/* ---- the reads and resident controls: mutex, user-copy helpers, debugfs ---- */
 struct mutex { pthread_mutex_t value; };
+static inline void mutex_init(struct mutex *m) { pthread_mutex_init(&m->value, NULL); }
 static inline void mutex_lock(struct mutex *m) { pthread_mutex_lock(&m->value); }
 static inline void mutex_unlock(struct mutex *m) { pthread_mutex_unlock(&m->value); }
 /* the kernel's DEFINE_MUTEX does not add a storage class; callers write `static DEFINE_MUTEX(...)` */
@@ -705,28 +719,70 @@ static inline ssize_t simple_write_to_buffer(void *to, size_t avail, loff_t *ppo
 	*ppos += cp;
 	return (ssize_t)cp;
 }
+static inline ssize_t simple_read_from_buffer(void *to, size_t count, loff_t *ppos,
+					      const void *from, size_t available)
+{
+	size_t rem, cp;
+
+	if (*ppos < 0)
+		return -EINVAL;
+	if ((size_t)*ppos >= available || !count)
+		return 0;
+	rem = available - (size_t)*ppos;
+	cp = count < rem ? count : rem;
+	memcpy(to, (const u8 *)from + *ppos, cp);
+	*ppos += cp;
+	return (ssize_t)cp;
+}
 #define __user
 struct inode { void *i_private; };
-struct file { void *private_data; };
+struct file { void *private_data; loff_t f_pos; };
 struct file_operations {
 	struct module *owner;
+	int (*open)(struct inode *, struct file *);
+	int (*release)(struct inode *, struct file *);
+	ssize_t (*read)(struct file *, char *, size_t, loff_t *);
 	ssize_t (*write)(struct file *, const char *, size_t, loff_t *);
 };
-struct dentry { void *data; const struct file_operations *ops; bool live; };
-extern int sim_rd_ready;
+struct dentry { void *data; const struct file_operations *ops; bool live; int mode; };
+extern int sim_rd_ready, sim_res_ready;
 static struct dentry sim_rd_entry;	/* the reads step control, driven by the harness */
+static struct dentry sim_res_dir_entry, sim_res_entry;	/* the resident session control, driven by the harness */
+static inline struct dentry *debugfs_create_dir(const char *name, struct dentry *parent)
+{
+	(void)name; (void)parent;
+	sim_res_dir_entry = (struct dentry){ .live = true };
+	return &sim_res_dir_entry;
+}
 static inline struct dentry *debugfs_create_file(const char *name, int mode, void *parent, void *data, const struct file_operations *ops)
 {
 	(void)parent;
-	if (strcmp(name, "ane_h18_rd"))
-		abort();
-	if (mode != 0200)
-		abort();
-	sim_rd_entry = (struct dentry){ .data = data, .ops = ops, .live = true };
-	sim_rd_ready = 1;
-	return &sim_rd_entry;
+	if (!strcmp(name, "ane_h18_rd")) {
+		if (mode != 0200)
+			abort();
+		sim_rd_entry = (struct dentry){ .data = data, .ops = ops, .live = true, .mode = mode };
+		sim_rd_ready = 1;
+		return &sim_rd_entry;
+	}
+	if (!strcmp(name, "resident")) {
+		if (mode != 0600)
+			abort();
+		sim_res_entry = (struct dentry){ .data = data, .ops = ops, .live = true, .mode = mode };
+		sim_res_ready = 1;
+		return &sim_res_entry;
+	}
+	abort();
 }
 static inline void debugfs_remove(struct dentry *entry) { if (entry) entry->live = false; }
+static inline void debugfs_remove_recursive(struct dentry *entry)
+{
+	if (entry)
+		entry->live = false;
+	if (entry == &sim_res_dir_entry) {
+		sim_res_entry.live = false;
+		sim_res_ready = 0;
+	}
+}
 #define IS_ERR_OR_NULL(p) (!(p) || IS_ERR(p))
 
 #define IOMMU_READ 1
@@ -737,13 +793,15 @@ extern struct iommu_domain sim_default_dom;
 extern int sim_default_dom_none;
 static inline struct iommu_domain *iommu_get_domain_for_dev(struct device *d) { (void)d; return sim_default_dom_none ? NULL : &sim_default_dom; }
 enum { SIM_IO_ALLOC = 1, SIM_IO_ATTACH, SIM_IO_MAP, SIM_IO_UNMAP, SIM_IO_DETACH, SIM_IO_FREE };
+#define SIM_NIOCALLS 256
+#define SIM_NIOMAPS 256
 struct sim_iocall { int code; u64 iova, pa, size; int prot; int ev; unsigned long seq; };
-extern struct sim_iocall sim_iocalls[64];
+extern struct sim_iocall sim_iocalls[SIM_NIOCALLS];
 extern int sim_n_iocalls, sim_io_fail;		/* sim_io_fail: 1 alloc fails, 2 attach fails, 3 the second map fails, 4 the third read+write map fails */
 extern int sim_n_dom_live;
 static inline void sim_iorec(int code, u64 iova, u64 pa, u64 size, int prot)
 {
-	if (sim_n_iocalls < 64) {
+	if (sim_n_iocalls < SIM_NIOCALLS) {
 		struct sim_iocall *c = &sim_iocalls[sim_n_iocalls];
 
 		c->code = code; c->iova = iova; c->pa = pa; c->size = size; c->prot = prot; c->ev = sim_n_events;
@@ -767,19 +825,22 @@ static inline int iommu_attach_device(struct iommu_domain *dom, struct device *d
 	sim_iorec(SIM_IO_ATTACH, 0, 0, 0, 0);
 	return sim_io_fail == 2 ? -EBUSY : 0;
 }
-struct sim_iomap { u64 iova, pa, size; };
-extern struct sim_iomap sim_iomaps[64];
+struct sim_iomap { u64 iova, pa, size; bool live; };
+extern struct sim_iomap sim_iomaps[SIM_NIOMAPS];
 extern int sim_n_iomaps;
+extern u64 sim_map_fail_iova;		/* fail iommu_map(-ENOMEM) when mapping exactly this iova */
 static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa, size_t size, int prot, int gfp)
 {
 	(void)dom; (void)gfp;
 	sim_iorec(SIM_IO_MAP, iova, pa, size, prot);
-	if (sim_n_iomaps < 64)
-		sim_iomaps[sim_n_iomaps++] = (struct sim_iomap){ iova, pa, size };
+	if (sim_map_fail_iova && iova == sim_map_fail_iova)
+		return -ENOMEM;
+	if (sim_n_iomaps < SIM_NIOMAPS)
+		sim_iomaps[sim_n_iomaps++] = (struct sim_iomap){ iova, pa, size, true };
 	if (sim_io_fail == 3) {
 		int maps = 0, k;
 
-		for (k = 0; k < sim_n_iocalls && k < 64; k++)
+		for (k = 0; k < sim_n_iocalls && k < SIM_NIOCALLS; k++)
 			maps += sim_iocalls[k].code == SIM_IO_MAP;
 		if (maps == 2)
 			return -ENOMEM;
@@ -787,7 +848,7 @@ static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa
 	if (sim_io_fail == 4 && prot == (IOMMU_READ | IOMMU_WRITE)) {
 		int rw = 0, k;
 
-		for (k = 0; k < sim_n_iocalls && k < 64; k++)
+		for (k = 0; k < sim_n_iocalls && k < SIM_NIOCALLS; k++)
 			rw += sim_iocalls[k].code == SIM_IO_MAP && sim_iocalls[k].prot == (IOMMU_READ | IOMMU_WRITE);
 		if (rw == 3)
 			return -ENOMEM;
@@ -797,9 +858,16 @@ static inline int iommu_map(struct iommu_domain *dom, unsigned long iova, u64 pa
 extern u64 sim_unmap_short_iova;	/* the harness pins an alias iova here: an unmap of exactly it returns half the size (a short unmap) */
 static inline size_t iommu_unmap(struct iommu_domain *dom, unsigned long iova, size_t size)
 {
+	int k;
+
 	(void)dom;
 	sim_iorec(SIM_IO_UNMAP, iova, 0, size, 0);
-	return sim_unmap_short_iova == iova && size > 1 ? size / 2 : size;
+	if (sim_unmap_short_iova == iova && size > 1)
+		return size / 2;
+	for (k = 0; k < sim_n_iomaps; k++)
+		if (sim_iomaps[k].live && sim_iomaps[k].iova >= iova && sim_iomaps[k].iova < iova + size)
+			sim_iomaps[k].live = false;
+	return size;
 }
 /* The fake translation: a lookup resolves inside a live dma_alloc_coherent range (identity), then through the ranges iommu_map recorded (aliases), so the
  * fixed-alias and owned-page paths can run; anything else is unmapped, which is the honest sim answer for pages the fake firmware cannot drive. Not recorded:
@@ -813,7 +881,7 @@ static inline u64 iommu_iova_to_phys(struct iommu_domain *dom, unsigned long iov
 		if (sim_dma[k].live && iova >= sim_dma[k].iova && iova < sim_dma[k].iova + sim_dma[k].size)
 			return iova;
 	for (k = sim_n_iomaps - 1; k >= 0; k--)
-		if (iova >= sim_iomaps[k].iova && iova < sim_iomaps[k].iova + sim_iomaps[k].size)
+		if (sim_iomaps[k].live && iova >= sim_iomaps[k].iova && iova < sim_iomaps[k].iova + sim_iomaps[k].size)
 			return sim_iomaps[k].pa + (iova - sim_iomaps[k].iova);
 	return 0;
 }

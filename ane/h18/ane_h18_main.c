@@ -59,6 +59,7 @@
 #include "ane_h18_dt.h"
 #include "ane_h18_fw_pins.h"
 #include "ane_h18_fw_layout.h"
+#include "ane_h18_progtab.h"
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -82,6 +83,9 @@ MODULE_PARM_DESC(psd_slots, "Stage=power: how many PSD slots to request, in orde
 
 static bool keep_on;
 module_param(keep_on, bool, 0444);
+static bool keep_alive;
+module_param(keep_alive, bool, 0444);
+MODULE_PARM_DESC(keep_alive, "stage=boot with hs_start=1, rtkit_stop=1 or 2, owned_fw=0 and hs_prog=0: keep RTKit and CSNE channels live after probe and expose root-only debugfs resident session for N resident programs; shut down cleanly on rmmod. Default off.");
 static bool wake_sleeping;
 module_param(wake_sleeping, bool, 0444);
 MODULE_PARM_DESC(wake_sleeping, "stage=boot: a core left in the post-shutdown state (CPU_STATUS bit 2, after an RTKit shutdown) is woken with RTKit IOP power ON after RUN instead of being refused. Default off.");
@@ -320,6 +324,13 @@ static const struct { const char *name; u32 off; } ane_h18_rd_list[] = {
 	{ "AUR_CE_ERROR", 0x18a4018 },
 };
 
+struct ane_h18_ring {
+	u64 *base;		/* the ring in the IPC surface, 64 byte slots, 8 u64 each */
+	u64 iova;
+	u32 slots, bit, type;
+	unsigned int cursor;
+};
+
 struct ane_h18 {
 	struct device *dev;
 	const struct ane_h18_soc *soc;
@@ -339,13 +350,7 @@ struct ane_h18 {
 	void __iomem *ipi_ack;
 	struct iommu_domain *domain;
 	bool dom_own;		/* the domain was allocated and attached here (map_fw without handshake); otherwise it is the default DMA domain */
-	struct ane_h18_hs_buf {
-		void *va;
-		dma_addr_t iova;	/* the address the firmware is given: the fixed alias when `fixed`, else the DMA API address */
-		dma_addr_t dma;		/* the address dma_alloc_coherent returned: what dma_free_coherent needs */
-		size_t size;
-		bool fixed;		/* an alias mapping at `iova` was added with iommu_map and is removed with iommu_unmap before the free */
-	} hs_pool, hs_ipc, hs_heap, hs_cmd, hs_mal[ANE_H18_MAL_MAX_BUFS], owned_fw_img;
+	struct ane_h18_hs_buf hs_pool, hs_ipc, hs_heap, hs_cmd, hs_mal[ANE_H18_MAL_MAX_BUFS], owned_fw_img;
 	/* the Linux-owned image (owned_fw=1): staged unmodified pinned payload, planned pages, the two fixed segment maps */
 	u64 owned_pa[ANE_H18_FW_PAGES];		/* physical address of each 16 KiB image page, read from the default domain before any attach */
 	u64 map_iova[2], map_size[2];		/* the fixed TEXT/DATA IOVAs and full sizes (owned pages or iBoot segments) */
@@ -357,6 +362,8 @@ struct ane_h18 {
 	bool domain_down;			/* the failpath recovery powered the domain down and has not brought it back: no register of the ANE may be touched */
 	unsigned int *call_t2h;	/* prog_out_words: the IO_T2H cursor of the running call, for the finish-event peek that logs nothing */
 	u64 call_t0, call_t1;
+	bool call_match_ids;		/* resident call: require finish event +0x10/+0x14 to match call_prog_id/call_proc_id */
+	u32 call_prog_id, call_proc_id;
 	u32 reuse_prog, reuse_proc;	/* hs_prog_reuse: the program and process ids kept between calls */	/* its ns stamps: the doorbell write, and the first poll iteration that saw the finish event */
 	unsigned int hs_mal_n, mal_cursor, mal_slots, mal_bit;
 	size_t hs_mal_bytes;
@@ -389,13 +396,21 @@ struct ane_h18 {
 	bool fw_started;
 	/* hs_prog: the validated program file and the buffers made from it, freed with the surfaces after the core stopped */
 	const struct firmware *prog_blob;
-	struct ane_h18_pdesc {
-		unsigned int nsec, nio;
-		struct { u32 id; u64 size, off; } sec[ANE_H18_PROG_MAX_SECS];
-		struct { u32 id, dir; u64 size, doff, dsize; } io[ANE_H18_PROG_MAX_IO];
-	} pd;
+	struct ane_h18_pdesc pd;
 	struct ane_h18_hs_buf pg_sec[ANE_H18_PROG_MAX_SECS], pg_io[ANE_H18_PROG_MAX_IO], pg_pool;
 	struct ane_h18_hs_buf pg_kern;
+	/* keep_alive=1: persistent live CSNE state and exclusive resident-program session */
+	struct ane_h18_ring io_ring;
+	unsigned int t2h_cursor;
+	bool live;
+	bool live_broken;
+	bool res_open;
+	struct mutex res_lock;
+	struct dentry *res_dir;
+	struct dentry *res_file;
+	struct ane_h18_res_tab res_tab;
+	char res_reply[128];
+	size_t res_reply_len;
 };
 
 static void ane_h18_result(struct ane_h18 *ane, const char *stg, const char *verdict, const char *reason)
@@ -1092,11 +1107,12 @@ static void ane_h18_scratch_write(struct ane_h18 *ane, unsigned int i, u32 v)
 }
 
 /* One program surface goes back: the fixed alias is unmapped first so the device cannot reach the pages after the DMA API releases them. When the unmap
- * is short, part of the alias is still mapped, so the pages stay allocated (leaked, logged) instead of going back to the allocator under a live mapping. */
-static void ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
+ * is short, part of the alias is still mapped, so the pages stay allocated (leaked, logged) instead of going back to the allocator under a live mapping.
+ * Returns true if freed cleanly (or already empty), false if a short alias unmap leaked the pages and pinned the module. */
+static bool ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
 {
 	if (!b->va)
-		return;
+		return true;
 	if (b->fixed) {
 		size_t un = ane->domain ? iommu_unmap(ane->domain, b->iova, b->size) : b->size;
 
@@ -1105,11 +1121,12 @@ static void ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
 			dev_err(ane->dev, "ane_h18 fixed alias at %#llx unmapped %#zx of %#zx bytes: the pages are leaked, not freed\n", (u64)b->iova, un, b->size);
 			b->va = NULL;
 			ane_h18_pin_module(ane);
-			return;
+			return false;
 		}
 	}
 	dma_free_coherent(ane->dev, b->size, b->va, b->dma);
 	b->va = NULL;
+	return true;
 }
 
 /* The program surfaces and their fixed-IOVA aliases of a finished pass. Only safe once every command answered (the failure paths leave them for ane_h18_hs_free). */
@@ -1221,8 +1238,20 @@ static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, si
 		ret = pa ? iommu_map(dom, at + off, pa, SZ_16K, IOMMU_READ | IOMMU_WRITE, GFP_KERNEL) : -EFAULT;
 		if (ret) {
 			dev_err(ane->dev, "ane_h18 fixed IOVA %#llx for %s: map of page at +%#zx failed: %d\n", at, name, off, ret);
-			if (off)
-				iommu_unmap(dom, at, off);
+			if (off) {
+				size_t un = off;
+
+				un = iommu_unmap(dom, at, off);
+				if (un != off) {
+					dev_err(ane->dev, "ane_h18 fixed alias at %#llx rollback unmapped %#zx of %#zx bytes: the pages are leaked, not freed\n", at, un, off);
+					b->iova = at;
+					b->size = off;
+					b->fixed = false;
+					b->va = NULL;
+					b->leaked = true;
+					ane_h18_pin_module(ane);
+				}
+			}
 			return ret;
 		}
 	}
@@ -1270,13 +1299,6 @@ static const struct ane_h18_hs_buf *ane_h18_hs_find(const struct ane_h18 *ane, u
 
 static int ane_h18_rtkit_step(struct ane_h18 *ane, u32 chan_off, const char *tag, unsigned int *sent);
 
-struct ane_h18_ring {
-	u64 *base;		/* the ring in the IPC surface, 64 byte slots, 8 u64 each */
-	u64 iova;
-	u32 slots, bit, type;
-	unsigned int cursor;
-};
-
 /* Look an entry of the published table up by name. The entry has to be sane: type 0 to 2, bit below 32, 1 to CH_MAX_SLOTS slots, a ring that lies inside the
  * surface that holds the table, aligned to a slot. */
 static int ane_h18_chan_get(struct ane_h18 *ane, const struct ane_h18_hs_buf *tb, const u8 *tp, unsigned int i, struct ane_h18_ring *r, char *name)
@@ -1321,14 +1343,20 @@ static struct ane_h18_ring_copy *ane_h18_call_ring(struct ane_h18 *ane)
 }
 
 /* True when the event is the finish of our procedure: cookie at +8, state 1 at +0x1c. */
-static bool ane_h18_ev_fin(const u8 *ev)
+static bool ane_h18_ev_fin(const struct ane_h18 *ane, const u8 *ev)
 {
 	u64 cookie;
-	u32 state;
+	u32 prog, proc, state;
 
 	memcpy(&cookie, ev + 8, 8);
+	memcpy(&prog, ev + 0x10, 4);
+	memcpy(&proc, ev + 0x14, 4);
 	memcpy(&state, ev + 0x1c, 4);
-	return cookie == ANE_H18_PROG_COOKIE && state == 1;
+	if (cookie != ANE_H18_PROG_COOKIE || state != 1)
+		return false;
+	if (ane->call_match_ids && (prog != ane->call_prog_id || proc != ane->call_proc_id))
+		return false;
+	return true;
 }
 
 /* The latency stamp of prog_out_words: call_t0 is taken right before the doorbell write that hands PROCEDURE_CALL to the firmware. call_t1 is ktime_get_ns() of
@@ -1351,7 +1379,7 @@ static void ane_h18_call_peek(struct ane_h18 *ane)
 		dma_rmb();
 		len = READ_ONCE(r->base[(size_t)c * 8 + 1]);
 		ev = len >= 0x20 && len <= 0x1000 ? ane_h18_prog_cpu(ane, hdr, len) : NULL;
-		if (ev && ane_h18_ev_fin(ev)) {
+		if (ev && ane_h18_ev_fin(ane, ev)) {
 			ane->call_t1 = ktime_get_ns();
 			return;
 		}
@@ -1823,13 +1851,8 @@ static unsigned int ane_h18_prog_t2h(struct ane_h18 *ane, unsigned int *cursor, 
 		dev_info(ane->dev, "ane_h18 prog: IO_T2H slot %u header=%#llx len=%#llx\n", *cursor, hdr, len);
 		ev = len >= 0x20 && len <= 0x1000 ? ane_h18_prog_cpu(ane, hdr, len) : NULL;
 		if (ev) {
-			u64 cookie;
-			u32 state;
-
 			ane_h18_prog_dump(ane, "event", ev, len < 0x40 ? len : 0x40);
-			memcpy(&cookie, ev + 8, 8);
-			memcpy(&state, ev + 0x1c, 4);
-			if (cookie == ANE_H18_PROG_COOKIE && state == 1)
+			if (ane_h18_ev_fin(ane, ev))
 				*finished = true;
 		} else {
 			dev_warn(ane->dev, "ane_h18 prog: the event address %#llx is not in a buffer the firmware was given, slot given back unread\n", hdr);
@@ -2513,6 +2536,8 @@ static int ane_h18_chan_step(struct ane_h18 *ane, const struct ane_h18_hs_buf *t
 	ane->hs_cmd.va = (u8 *)ane->hs_pool.va + ANE_H18_CMD_POOL_OFF;
 	ane->hs_cmd.iova = ane->hs_pool.iova + ANE_H18_CMD_POOL_OFF;
 	ane->hs_cmd.size = hs_premap ? ANE_H18_PREMAP_BLOCK : hs_prog ? ANE_H18_PROG_BLOCK : ANE_H18_CMD_BLOCK;
+	if (keep_alive && ane->hs_cmd.size < ANE_H18_PROG_BLOCK)
+		ane->hs_cmd.size = ANE_H18_PROG_BLOCK;
 	ane->hs_cmd_in_pool = true;
 	dev_info(ane->dev, "ane_h18 hs surface CMD inside POOL at +%#x iova=%#llx size=%#zx\n", ANE_H18_CMD_POOL_OFF, (u64)ane->hs_cmd.iova, ane->hs_cmd.size);
 	{
@@ -2640,6 +2665,10 @@ static int ane_h18_chan_step(struct ane_h18 *ane, const struct ane_h18_hs_buf *t
 			ane_h18_prog_surfaces_free(ane);
 			ane_h18_prog_settle(ane, hs_settle_ms, &t2h);	/* let the firmware finish with the program before the next pass loads one */
 		}
+	}
+	if (keep_alive) {
+		ane->io_ring = io;
+		ane->t2h_cursor = 0;
 	}
 	{
 		u64 digest = 0;
@@ -2931,6 +2960,11 @@ static int ane_h18_rtkit_step(struct ane_h18 *ane, u32 chan_off, const char *tag
 	return 1;
 }
 
+static int ane_h18_res_dbg_init(struct ane_h18 *ane);
+static void ane_h18_res_dbg_exit(struct ane_h18 *ane);
+static int ane_h18_res_teardown_all(struct ane_h18 *ane);
+static void ane_h18_live_shutdown(struct ane_h18 *ane);
+
 static int ane_h18_stage_boot(struct ane_h18 *ane)
 {
 	const struct ane_h18_soc *s = ane->soc;
@@ -2991,6 +3025,10 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 	}
 	if (prog_kern_slot && (!hs_prog || !prog_iova_kern)) {
 		ane_h18_result(ane, "boot", "REFUSED", "prog_kern_slot=1 needs hs_prog=1 and prog_iova_kern");
+		return -EINVAL;
+	}
+	if (keep_alive && (!hs_start || !rtkit_stop || owned_fw || hs_prog)) {
+		ane_h18_result(ane, "boot", "REFUSED", "keep_alive=1 needs hs_start=1, rtkit_stop=1 or 2, owned_fw=0 and hs_prog=0");
 		return -EINVAL;
 	}
 	if (hs_prog) {
@@ -3154,6 +3192,18 @@ static int ane_h18_stage_boot(struct ane_h18 *ane)
 		}
 		dev_info(ane->dev, "ane_h18 handshake result %d\n", hs_ret);
 	}
+	if (keep_alive && !hs_ret) {
+		ane->live = true;
+		ret = ane_h18_res_dbg_init(ane);
+		if (ret) {
+			ane_h18_live_shutdown(ane);
+			ane->live = false;
+			ane_h18_result(ane, "boot", "FAIL", "resident-debugfs-failed");
+			return ret;
+		}
+		ane_h18_result(ane, "boot", "PASS", "core-live-ready");
+		return 0;
+	}
 	if (ane->domain_down) {
 		ane_h18_pin_module(ane);
 		dev_emerg(ane->dev, "ane_h18 boot: the domain is still down after the unload recovery, no ANE register is touched; the surfaces stay allocated, reboot required\n");
@@ -3295,6 +3345,7 @@ static int ane_h18_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	ane->dev = &pdev->dev;
 	ane->soc = soc_sel;
+	mutex_init(&ane->res_lock);
 	ane->kpsd = of_property_present(pdev->dev.of_node, "power-domains");
 	ane->pd_count = of_count_phandle_with_args(pdev->dev.of_node, "power-domains",
 						   "#power-domain-cells");
@@ -3544,11 +3595,685 @@ out:
 	return ret;
 }
 
+/* ---- keep_alive=1: N resident H18 programs, switch without reload, free in any order ---- */
+
+static u64 ane_h18_res_io_at(const struct ane_h18_pdesc *p, u64 base, unsigned int i)
+{
+	u64 at = base;
+	unsigned int k;
+
+	if (!at)
+		return 0;
+	for (k = 0; k < i; k++)
+		at += ALIGN(p->io[k].size, SZ_16K);
+	return at;
+}
+
+static bool ane_h18_res_free_one_buf(struct ane_h18 *ane, struct ane_h18_hs_buf *b,
+				     struct ane_h18_iova_range *leaked, unsigned int *nleaked)
+{
+	bool fixed = b->fixed;
+	u64 iova = b->iova, sz = b->size;
+
+	if (b->leaked) {
+		if (*nleaked < ANE_H18_SLOT_MAX_RANGES && sz)
+			leaked[(*nleaked)++] = (struct ane_h18_iova_range){ iova, sz };
+		return false;
+	}
+	if (!ane_h18_hs_buf_free(ane, b)) {
+		b->leaked = true;
+		if (fixed && *nleaked < ANE_H18_SLOT_MAX_RANGES && sz)
+			leaked[(*nleaked)++] = (struct ane_h18_iova_range){ iova, sz };
+		return false;
+	}
+	return true;
+}
+
+static bool ane_h18_res_free_slot_surfaces(struct ane_h18 *ane, struct ane_h18_res_slot *slot,
+					   struct ane_h18_iova_range *leaked, unsigned int *nleaked)
+{
+	bool clean = true;
+	unsigned int i, n = 0;
+
+	for (i = 0; i < ANE_H18_PROG_MAX_SECS; i++)
+		if (!ane_h18_res_free_one_buf(ane, &slot->pg_sec[i], leaked, &n))
+			clean = false;
+	if (!ane_h18_res_free_one_buf(ane, &slot->pg_kern, leaked, &n))
+		clean = false;
+	for (i = 0; i < ANE_H18_PROG_MAX_IO; i++)
+		if (!ane_h18_res_free_one_buf(ane, &slot->pg_io[i], leaked, &n))
+			clean = false;
+	*nleaked = n;
+	return clean;
+}
+
+static bool ane_h18_res_valid_name(const char *s)
+{
+	size_t n = 0;
+
+	if (!s || !*s || !strcmp(s, ".") || strstr(s, ".."))
+		return false;
+	for (; *s; s++) {
+		char c = *s;
+		bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			  (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+
+		if (!ok || ++n > 63)
+			return false;
+	}
+	return true;
+}
+
+static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
+				  const struct ane_h18_res_opts *opts, u64 *handle_out)
+{
+	struct ane_h18_iova_range ranges[ANE_H18_SLOT_MAX_RANGES];
+	struct ane_h18_iova_range leaked[ANE_H18_SLOT_MAX_RANGES];
+	struct ane_h18_pdesc pd;
+	struct ane_h18_res_slot *slot;
+	const struct firmware *blob = NULL;
+	const char *why = "";
+	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
+	unsigned int idx = 0, nranges = 0, nleaked = 0, i;
+	unsigned int s2 = ANE_H18_PROG_MAX_SECS, s3 = ANE_H18_PROG_MAX_SECS;
+	u32 prog = ANE_H18_RES_NOID, proc = ANE_H18_RES_NOID, w;
+	int ret;
+
+	if (!ane->live || ane->live_broken)
+		return -ESHUTDOWN;
+	if (!ane_h18_res_valid_name(fw_name))
+		return -EINVAL;
+	slot = ane_h18_res_alloc_slot(&ane->res_tab, &idx);
+	if (!slot)
+		return -ENOSPC;
+	ret = request_firmware(&blob, fw_name, ane->dev);
+	if (ret)
+		return -ENOENT;
+	ret = ane_h18_prog_parse(blob->data, blob->size, &pd, &why);
+	if (ret) {
+		dev_err(ane->dev, "ane_h18 resident retain %s: %s\n", fw_name, why);
+		release_firmware(blob);
+		return -EINVAL;
+	}
+	ret = ane_h18_res_plan_ranges(&pd, opts, ranges, &nranges);
+	if (ret) {
+		release_firmware(blob);
+		return ret;
+	}
+	ret = ane_h18_res_check_overlap(&ane->res_tab, ranges, nranges);
+	if (ret) {
+		dev_err(ane->dev, "ane_h18 resident retain %s: fixed IOVA overlaps a LIVE or HELD slot\n", fw_name);
+		release_firmware(blob);
+		return ret;
+	}
+
+	memset(slot, 0, sizeof(*slot));
+	slot->prog_id = ANE_H18_RES_NOID;
+	slot->proc_id = ANE_H18_RES_NOID;
+	slot->pd = pd;
+	slot->opts = *opts;
+	for (i = 0; i < pd.nsec; i++) {
+		char nm[24];
+
+		if (pd.sec[i].id == 2)
+			s2 = i;
+		if (pd.sec[i].id == 3)
+			s3 = i;
+		snprintf(nm, sizeof(nm), "RES%u sec %u", idx, pd.sec[i].id);
+		ret = ane_h18_hs_alloc_at(ane, &slot->pg_sec[i],
+					  ALIGN(pd.sec[i].size, opts->iova_text && pd.sec[i].id == 3 ? 0x8000 : SZ_16K),
+					  nm, opts->iova_text && pd.sec[i].id == 3 ? opts->iova_text : 0);
+		if (ret)
+			goto err_free_blob;
+		memcpy(slot->pg_sec[i].va, blob->data + pd.sec[i].off, pd.sec[i].size);
+	}
+	if (opts->text_const)
+		memcpy((u8 *)slot->pg_sec[s3].va + opts->text_const, blob->data + pd.sec[s2].off, 0x4000);
+	if (opts->iova_kern) {
+		u64 ksz = pd.sec[s2].size - 0x4000;
+
+		ret = ane_h18_hs_alloc_at(ane, &slot->pg_kern, ALIGN(ksz, SZ_16K), "RES kern", opts->iova_kern);
+		if (ret)
+			goto err_free_blob;
+		memcpy(slot->pg_kern.va, blob->data + pd.sec[s2].off + 0x4000, ksz);
+	}
+	for (i = 0; i < pd.nio; i++) {
+		char nm[24];
+
+		snprintf(nm, sizeof(nm), "RES%u buf %u", idx, pd.io[i].id);
+		ret = ane_h18_hs_alloc_at(ane, &slot->pg_io[i], ALIGN(pd.io[i].size, SZ_16K), nm,
+					  ane_h18_res_io_at(&pd, opts->iova_bufs, i));
+		if (ret)
+			goto err_free_blob;
+		if (pd.io[i].dsize)
+			memcpy(slot->pg_io[i].va, blob->data + pd.io[i].doff, pd.io[i].dsize);
+	}
+	release_firmware(blob);
+	blob = NULL;
+	wmb();
+
+	/* LOAD_PROGRAM (0x200) */
+	memset(cmd, 0, sizeof(cmd));
+	for (i = 0; i < pd.nsec; i++) {
+		u8 *r = cmd + 8 + (size_t)(pd.sec[i].id - 1) * 0x30;
+		bool use_kern = opts->kern_slot && opts->iova_kern && pd.sec[i].id == 2 && pd.sec[i].size > 0x4000;
+		u64 iova = use_kern ? slot->pg_kern.iova : slot->pg_sec[i].iova;
+		u64 size = use_kern ? pd.sec[i].size - 0x4000 : pd.sec[i].size;
+		u32 one = 1, id = pd.sec[i].id;
+
+		memcpy(r, &one, 4);
+		memcpy(r + 4, &id, 4);
+		memcpy(r + 0x18, &iova, 8);
+		memcpy(r + 0x20, &size, 8);
+	}
+	w = ANE_H18_RES_NOID;
+	memcpy(cmd + 0x1b8, &w, 4);
+	ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_LOAD_PROGRAM, 0x1c0, false, 0, cmd + 8, 0x1c0 - 8, &blk);
+	if (ret) {
+		if (ret == -EREMOTEIO)
+			goto err_unwind_surfaces;
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+	memcpy(&prog, (u8 *)ane->hs_cmd.va + 0x1b8, 4);
+	if (prog == ANE_H18_RES_NOID || ane_h18_res_has_prog_id(&ane->res_tab, prog)) {
+		dev_err(ane->dev, "ane_h18 resident retain %s: invalid or duplicate prog_id %#x; quarantining engine\n", fw_name, prog);
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+	slot->prog_id = prog;
+
+	/* CREATE_PROCESS (0x202) */
+	memset(cmd, 0, sizeof(cmd));
+	memcpy(cmd + 8, &prog, 4);
+	w = ANE_H18_RES_NOID;
+	memcpy(cmd + 0xc, &w, 4);
+	ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_CREATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
+	if (ret) {
+		if (ret == -EREMOTEIO) {
+			/* Clean firmware refusal with trustworthy prog_id: unwind via DESTROY_PROGRAM (0x0c / 4B body) + settle. */
+			memset(cmd, 0, sizeof(cmd));
+			memcpy(cmd + 8, &prog, 4);
+			if (!ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk)) {
+				ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
+				goto err_unwind_surfaces;
+			}
+		}
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+	memcpy(&proc, (u8 *)ane->hs_cmd.va + 0xc, 4);
+	if (proc == ANE_H18_RES_NOID) {
+		/* Malformed CREATE_PROCESS reply: do not guess DESTROY; hold slot and quarantine engine. */
+		ane_h18_res_mark_held(slot, ranges, nranges);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+
+	*handle_out = ane_h18_res_activate(&ane->res_tab, idx, prog, proc, ranges, nranges);
+	dev_info(ane->dev, "ane_h18 resident retain %s -> handle=%016llx slot=%u prog=%#x proc=%#x\n",
+		 fw_name, *handle_out, idx, prog, proc);
+	return 0;
+
+err_free_blob:
+	if (blob)
+		release_firmware(blob);
+err_unwind_surfaces:
+	if (!ane_h18_res_free_slot_surfaces(ane, slot, leaked, &nleaked))
+		ane_h18_res_mark_held(slot, leaked, nleaked);
+	else
+		ane_h18_res_mark_free(slot);
+	return ret == -EREMOTEIO ? -EIO : ret;
+}
+
+static int ane_h18_res_call_one(struct ane_h18 *ane, u64 handle, u64 *ns_out, u64 *digest_out)
+{
+	struct ane_h18_res_slot *slot;
+	const struct ane_h18_pdesc *p;
+	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
+	unsigned int i, waited;
+	bool fin = false;
+	u64 digest = 0, out_hash = 0, t0n;
+	u32 last_pend = 0;
+	int err = 0, ret;
+
+	if (!ane->live || ane->live_broken)
+		return -ESHUTDOWN;
+	slot = ane_h18_res_lookup(&ane->res_tab, handle, &err);
+	if (!slot)
+		return err;
+	p = &slot->pd;
+	for (i = 0; i < p->nio; i++)
+		if (p->io[i].dir == 1)
+			memset(slot->pg_io[i].va, 0, p->io[i].size);
+
+	/* PROCEDURE_CALL (0x204) only: zero LOAD_PROGRAM or CREATE_PROCESS on switch */
+	memset(cmd, 0, sizeof(cmd));
+	{
+		u32 prio = ANE_H18_PROG_PRIORITY, cnt = p->nio;
+		u64 cookie = ANE_H18_PROG_COOKIE;
+
+		memcpy(cmd + 8, &slot->prog_id, 4);
+		memcpy(cmd + 0xc, &slot->proc_id, 4);
+		memcpy(cmd + 0x18, &prio, 4);
+		memcpy(cmd + 0x20, &cookie, 8);
+		memcpy(cmd + 0x28, &cnt, 4);
+	}
+	for (i = 0; i < p->nio; i++) {
+		u8 *r = cmd + 0x60 + (size_t)i * 0x30;
+		u64 iova = slot->pg_io[i].iova, size = p->io[i].size;
+		u32 one = 1, id = p->io[i].id, type = p->io[i].dir == 1 ? 1 : 0;
+
+		memcpy(r, &one, 4);
+		memcpy(r + 4, &id, 4);
+		memcpy(r + 8, &type, 4);
+		memcpy(r + 0x18, &iova, 8);
+		memcpy(r + 0x20, &size, 8);
+	}
+	wmb();
+	ane->call_t2h = &ane->t2h_cursor;
+	ane->call_t0 = ane->call_t1 = 0;
+	ane->call_prog_id = slot->prog_id;
+	ane->call_proc_id = slot->proc_id;
+	ane->call_match_ids = true;
+	ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_PROCEDURE_CALL, 0x60 + p->nio * 0x30,
+			       false, 0, cmd + 8, 0x60 + p->nio * 0x30 - 8, &blk);
+	ane->call_t2h = NULL;
+	if (ret) {
+		ane->call_match_ids = false;
+		if (ret == -EREMOTEIO)
+			return -EIO;
+		ane_h18_res_mark_held(slot, NULL, 0);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+	t0n = ktime_get_ns();
+	ane->call_t2h = &ane->t2h_cursor;
+	for (waited = 0; waited < hs_wait_ms && !ane->call_t1;
+	     waited = (unsigned int)((ktime_get_ns() - t0n) / NSEC_PER_MSEC)) {
+		ane_h18_chan_poll(ane, 1, &digest, &last_pend);
+		ane_h18_call_peek(ane);
+		cpu_relax();
+		cond_resched();
+	}
+	ane->call_t2h = NULL;
+	ane_h18_prog_t2h(ane, &ane->t2h_cursor, &fin);
+	ane->call_match_ids = false;
+	if (!fin) {
+		ane_h18_res_mark_held(slot, NULL, 0);
+		ane_h18_pin_module(ane);
+		ane->live_broken = true;
+		return -EIO;
+	}
+	for (i = 0; i < p->nio; i++) {
+		if (p->io[i].dir == 1) {
+			const u32 *o = slot->pg_io[i].va;
+			unsigned int k2, words = p->io[i].size / 4;
+			u64 h = 0xcbf29ce484222325ULL;
+
+			for (k2 = 0; k2 < words; k2++) {
+				h ^= o[k2];
+				h *= 0x100000001b3ULL;
+			}
+			out_hash = h;
+			break;
+		}
+	}
+	*ns_out = ane->call_t1 ? ane->call_t1 - ane->call_t0 : 0;
+	*digest_out = out_hash;
+	return 0;
+}
+
+static int ane_h18_res_free_one(struct ane_h18 *ane, u64 handle)
+{
+	struct ane_h18_iova_range leaked[ANE_H18_SLOT_MAX_RANGES];
+	struct ane_h18_res_slot *slot;
+	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
+	unsigned int nleaked = 0;
+	int err = 0, t_ret, d_ret = 0;
+	bool unload_err, timed_out;
+
+	if (!ane->live)
+		return -ESHUTDOWN;
+	slot = ane_h18_res_lookup(&ane->res_tab, handle, &err);
+	if (!slot)
+		return err;
+	if (ane->live_broken) {
+		ane_h18_res_mark_held(slot, NULL, 0);
+		ane_h18_pin_module(ane);
+		return -ESHUTDOWN;
+	}
+
+	memset(cmd, 0, sizeof(cmd));
+	memcpy(cmd + 8, &slot->prog_id, 4);
+	memcpy(cmd + 0xc, &slot->proc_id, 4);
+	t_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10,
+				 false, 0, cmd + 8, 8, &blk);
+	if (!t_ret) {
+		ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
+		memset(cmd, 0, sizeof(cmd));
+		memcpy(cmd + 8, &slot->prog_id, 4);
+		d_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c,
+					 false, 0, cmd + 8, 4, &blk);
+		if (!d_ret)
+			ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
+	}
+	unload_err = t_ret || d_ret;
+	timed_out = (t_ret && t_ret != -EREMOTEIO) || (d_ret && d_ret != -EREMOTEIO);
+	if (unload_err) {
+		ane_h18_res_mark_held(slot, NULL, 0);
+		ane_h18_pin_module(ane);
+		if (timed_out)
+			ane->live_broken = true;
+		dev_err(ane->dev, "ane_h18 resident free handle=%016llx failed (term=%d destroy=%d): slot HELD, buffers retained\n",
+			handle, t_ret, d_ret);
+		return -EIO;
+	}
+	if (!ane_h18_res_free_slot_surfaces(ane, slot, leaked, &nleaked)) {
+		ane_h18_res_mark_held(slot, leaked, nleaked);
+		return -EIO;
+	}
+	ane_h18_res_mark_free(slot);
+	return 0;
+}
+
+static int ane_h18_res_teardown_all(struct ane_h18 *ane)
+{
+	unsigned int i;
+	int first_err = 0;
+
+	for (i = 0; i < ANE_H18_MAX_RESIDENT; i++) {
+		struct ane_h18_res_slot *slot = &ane->res_tab.slots[i];
+
+		if (slot->state == ANE_H18_SLOT_LIVE) {
+			int err = ane_h18_res_free_one(ane, slot->handle);
+
+			if (err && !first_err)
+				first_err = err;
+		}
+	}
+	if (first_err)
+		dev_err(ane->dev, "ane_h18 resident teardown sweep failed (%d): affected slots HELD\n", first_err);
+	return first_err;
+}
+
+static void ane_h18_live_shutdown(struct ane_h18 *ane)
+{
+	const struct ane_h18_soc *s = ane->soc;
+	unsigned int i, waited, sent = 0;
+	u32 ctrl, st = 0;
+	bool stopped = false;
+
+	if (rtkit_stop && ane->rtk_ap_on) {
+		u32 chan_off = ANE_H18_PO_ALIAS_OFF + s->mbox_num * 2 * ANE_H18_PO_STRIDE;
+		char tag[16];
+
+		snprintf(tag, sizeof(tag), "alias%u", s->mbox_num * 2);
+		for (waited = 0; waited < ANE_H18_RTK_STOP_WAIT_MS && ane->rtk_txq_n; waited += 10) {
+			usleep_range(10000, 11000);
+			ane_h18_rtkit_step(ane, chan_off, tag, &sent);
+		}
+		sent = 0;
+		ane->rtk_shutdown = true;
+		ane->rtk_ap_state = rtkit_stop == 2 ? ANE_H18_RTK_PWR_OFF : ANE_H18_RTK_PWR_QUIESCED;
+		ane->rtk_iop_state = rtkit_stop == 2 ? ANE_H18_RTK_PWR_OFF : ANE_H18_RTK_PWR_SLEEP;
+		if (!ane_h18_rtkit_send(ane, chan_off, tag, ((u64)ANE_H18_RTK_AP_PWR << ANE_H18_RTK_TYPE_SHIFT) | ane->rtk_ap_state, &sent)) {
+			for (waited = 0; waited < ANE_H18_RTK_STOP_WAIT_MS && !ane->rtk_iop_acked && !ane->rtk_iop_idle; waited += 10) {
+				usleep_range(10000, 11000);
+				ane_h18_rtkit_step(ane, chan_off, tag, &sent);
+			}
+		}
+	}
+	ctrl = readl(ane->asc + ANE_H18_ASC_CPU_CONTROL);
+	writel(ctrl & ~ANE_H18_CPU_RUN, ane->asc + ANE_H18_ASC_CPU_CONTROL);
+	for (i = 0; i < 20; i++) {
+		usleep_range(5000, 6000);
+		st = readl(ane->asc + ANE_H18_ASC_CPU_STATUS);
+		if (st & ANE_H18_ST_STOPPED) {
+			stopped = true;
+			break;
+		}
+	}
+	if (!stopped) {
+		ane_h18_pin_module(ane);
+		dev_emerg(ane->dev, "ane_h18 live shutdown: core did not stop after RUN was cleared, reboot required\n");
+		return;
+	}
+	ane->fw_started = false;
+	if (!ane->map_retained) {
+		ane_h18_hs_free(ane);
+		if (!ane_h18_res_count_state(&ane->res_tab, ANE_H18_SLOT_HELD))
+			ane_h18_unmap_firmware(ane, ARRAY_SIZE(s->fw_seg));
+	}
+	if (!keep_on)
+		ane_h18_psd_off(ane);
+}
+
+static int ane_h18_parse_hex_u64(const char *s, u64 *out)
+{
+	u64 v = 0;
+	unsigned int digits = 0;
+
+	if (!s || !*s)
+		return -EINVAL;
+	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+		s += 2;
+	if (!*s)
+		return -EINVAL;
+	for (; *s; s++) {
+		u64 d;
+
+		if (*s >= '0' && *s <= '9')
+			d = (u64)(*s - '0');
+		else if (*s >= 'a' && *s <= 'f')
+			d = (u64)(*s - 'a' + 10);
+		else if (*s >= 'A' && *s <= 'F')
+			d = (u64)(*s - 'A' + 10);
+		else
+			return -EINVAL;
+		if (++digits > 16)
+			return -EINVAL;
+		v = (v << 4) | d;
+	}
+	*out = v;
+	return 0;
+}
+
+static int ane_h18_res_open(struct inode *inode, struct file *file)
+{
+	struct ane_h18 *ane = inode ? inode->i_private : NULL;
+
+	if (!ane)
+		return -ENODEV;
+	mutex_lock(&ane->res_lock);
+	if (!ane->live || ane->live_broken) {
+		mutex_unlock(&ane->res_lock);
+		return -ESHUTDOWN;
+	}
+	if (ane->res_open) {
+		mutex_unlock(&ane->res_lock);
+		return -EBUSY;
+	}
+	ane->res_open = true;
+	ane->res_reply_len = 0;
+	ane->res_reply[0] = '\0';
+	file->private_data = ane;
+	mutex_unlock(&ane->res_lock);
+	return 0;
+}
+
+static int ane_h18_res_release(struct inode *inode, struct file *file)
+{
+	struct ane_h18 *ane = file ? file->private_data : NULL;
+
+	(void)inode;
+	if (!ane)
+		return 0;
+	mutex_lock(&ane->res_lock);
+	ane_h18_res_teardown_all(ane);
+	ane->res_open = false;
+	ane->res_reply_len = 0;
+	ane->res_reply[0] = '\0';
+	mutex_unlock(&ane->res_lock);
+	return 0;
+}
+
+static ssize_t ane_h18_res_read(struct file *file, char __user *ubuf, size_t count, loff_t *ppos)
+{
+	struct ane_h18 *ane = file ? file->private_data : NULL;
+	ssize_t n;
+
+	if (!ane)
+		return -ENODEV;
+	mutex_lock(&ane->res_lock);
+	n = simple_read_from_buffer(ubuf, count, ppos, ane->res_reply, ane->res_reply_len);
+	mutex_unlock(&ane->res_lock);
+	return n;
+}
+
+static ssize_t ane_h18_res_write(struct file *file, const char __user *ubuf, size_t count, loff_t *ppos)
+{
+	struct ane_h18 *ane = file ? file->private_data : NULL;
+	char buf[256], *p, *tok[8];
+	unsigned int ntok = 0;
+	loff_t pos = 0;
+	ssize_t cp;
+	int ret;
+
+	if (!ane)
+		return -ENODEV;
+	if (!count || count >= sizeof(buf))
+		return -EINVAL;
+	cp = simple_write_to_buffer(buf, sizeof(buf) - 1, &pos, ubuf, count);
+	if (cp < 0)
+		return cp;
+	buf[cp] = '\0';
+	p = strim(buf);
+	while (*p) {
+		if (ntok >= ARRAY_SIZE(tok))
+			return -EINVAL;
+		tok[ntok++] = p;
+		while (*p && *p != ' ' && *p != '\t')
+			p++;
+		if (*p) {
+			*p++ = '\0';
+			while (*p == ' ' || *p == '\t')
+				p++;
+		}
+	}
+	if (!ntok)
+		return -EINVAL;
+
+	mutex_lock(&ane->res_lock);
+	ane->res_reply_len = 0;
+	ane->res_reply[0] = '\0';
+	*ppos = 0;
+	if (!strcmp(tok[0], "retain")) {
+		struct ane_h18_res_opts opts;
+		u64 tc = 0, ks = 0, handle = 0;
+
+		if (ntok != 7 || ane_h18_parse_hex_u64(tok[2], &opts.iova_bufs) ||
+		    ane_h18_parse_hex_u64(tok[3], &opts.iova_text) ||
+		    ane_h18_parse_hex_u64(tok[4], &tc) || tc > 0xffffffffULL ||
+		    ane_h18_parse_hex_u64(tok[5], &opts.iova_kern) ||
+		    (strcmp(tok[6], "0") && strcmp(tok[6], "1"))) {
+			ret = -EINVAL;
+		} else {
+			ks = tok[6][0] == '1';
+			opts.text_const = (u32)tc;
+			opts.kern_slot = ks != 0;
+			ret = ane_h18_res_retain_one(ane, tok[1], &opts, &handle);
+			if (!ret)
+				ane->res_reply_len = (size_t)snprintf(ane->res_reply, sizeof(ane->res_reply),
+								      "%016llx\n", (unsigned long long)handle);
+		}
+	} else if (!strcmp(tok[0], "call")) {
+		u64 handle = 0, ns = 0, digest = 0;
+
+		if (ntok != 2 || ane_h18_parse_hex_u64(tok[1], &handle)) {
+			ret = -EINVAL;
+		} else {
+			ret = ane_h18_res_call_one(ane, handle, &ns, &digest);
+			if (!ret)
+				ane->res_reply_len = (size_t)snprintf(ane->res_reply, sizeof(ane->res_reply),
+								      "ns=%llu digest=%016llx\n",
+								      (unsigned long long)ns,
+								      (unsigned long long)digest);
+		}
+	} else if (!strcmp(tok[0], "free")) {
+		u64 handle = 0;
+
+		if (ntok != 2 || ane_h18_parse_hex_u64(tok[1], &handle)) {
+			ret = -EINVAL;
+		} else {
+			ret = ane_h18_res_free_one(ane, handle);
+			if (!ret)
+				ane->res_reply_len = (size_t)snprintf(ane->res_reply, sizeof(ane->res_reply), "ok\n");
+		}
+	} else {
+		ret = -EINVAL;
+	}
+	mutex_unlock(&ane->res_lock);
+	return ret ? ret : (ssize_t)count;
+}
+
+static const struct file_operations ane_h18_res_fops = {
+	.owner = THIS_MODULE,
+	.open = ane_h18_res_open,
+	.release = ane_h18_res_release,
+	.read = ane_h18_res_read,
+	.write = ane_h18_res_write,
+};
+
+static int ane_h18_res_dbg_init(struct ane_h18 *ane)
+{
+	const char *dir_name = (ane->soc && ane->soc->asc_pa == 0x419600000ULL) ? "ane" : dev_name(ane->dev);
+
+	ane->res_dir = debugfs_create_dir(dir_name, NULL);
+	if (IS_ERR_OR_NULL(ane->res_dir)) {
+		ane->res_dir = NULL;
+		return -ENOMEM;
+	}
+	ane->res_file = debugfs_create_file("resident", 0600, ane->res_dir, ane, &ane_h18_res_fops);
+	if (IS_ERR_OR_NULL(ane->res_file)) {
+		debugfs_remove_recursive(ane->res_dir);
+		ane->res_dir = NULL;
+		ane->res_file = NULL;
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+static void ane_h18_res_dbg_exit(struct ane_h18 *ane)
+{
+	if (ane->res_dir) {
+		debugfs_remove_recursive(ane->res_dir);
+		ane->res_dir = NULL;
+		ane->res_file = NULL;
+	}
+}
+
 static void ane_h18_remove(struct platform_device *pdev)
 {
 	struct ane_h18 *ane = platform_get_drvdata(pdev);
 
 	if (ane) {
+		if (ane->live) {
+			ane_h18_res_dbg_exit(ane);
+			mutex_lock(&ane->res_lock);
+			ane_h18_res_teardown_all(ane);
+			mutex_unlock(&ane->res_lock);
+			ane_h18_live_shutdown(ane);
+			ane->live = false;
+		}
 		if (ane->fw_started) {
 			dev_emerg(&pdev->dev, "ane_h18 the core may still run: reboot required\n");
 			return;
