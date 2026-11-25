@@ -71,6 +71,9 @@ test_libane_t6050: test_libane_t6050.c $(LIBANE_SRC) ../libane/ane.h \
 		-Wl,--wrap=open,--wrap=ioctl \
 		-o $@ test_libane_t6050.c $(LIBANE_SRC) -lm
 
+test_libane_h18_resident: test_libane_h18_resident.c ../libane/ane_h18_resident.c ../libane/ane_h18_resident.h
+	$(CC) $(CFLAGS) -Wl,--wrap=open,--wrap=write,--wrap=read -o $@ $(filter %.c,$^)
+
 # ane_stats host unit test: pure host compile of the shared header
 # (counters + ring + torn-read + union rule + stats=0 path) plus the
 # REAL ane/ane_stats_show.c against the stub kernel headers in
@@ -170,9 +173,10 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c an
 
 check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
 	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing test_ane_latency \
-	test_cpu_floor test_cpu_floor_serve
+	test_cpu_floor test_cpu_floor_serve test_libane_h18_resident
 	sh test_ane_run_tile_shift.sh ./ane-run
 	./test_libane_t6050
+	./test_libane_h18_resident
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
 	./test_libane_ioctl ../fixtures/h14-anec
@@ -252,6 +256,7 @@ endif
 
 clean:
 	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve
+	rm -f test_libane_h18_resident
 
 # Install the ANE smoke userspace: the program the qualification kit calls by
 # name (bare `omarchy-ane-smoke`), the runner it drives, and the add fixtures
