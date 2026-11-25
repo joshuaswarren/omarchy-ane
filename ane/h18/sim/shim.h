@@ -19,11 +19,14 @@
 #include <stddef.h>
 #include <errno.h>
 #include <pthread.h>
+#include <asm-generic/ioctl.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef uint32_t __u32;
+typedef uint64_t __u64;
 
 #define __iomem
 
@@ -735,6 +738,46 @@ static inline ssize_t simple_read_from_buffer(void *to, size_t count, loff_t *pp
 	return (ssize_t)cp;
 }
 #define __user
+extern int sim_cfu_fail_at, sim_cfu_calls;
+extern int sim_ctu_fail_at, sim_ctu_calls;
+extern int sim_kvmalloc_fail_at, sim_kvmalloc_calls, sim_kv_live;
+static inline unsigned long copy_from_user(void *to, const void __user *from, unsigned long n)
+{
+	sim_cfu_calls++;
+	if (!from || (sim_cfu_fail_at && sim_cfu_calls == sim_cfu_fail_at))
+		return n;
+	memcpy(to, from, n);
+	return 0;
+}
+static inline unsigned long copy_to_user(void __user *to, const void *from, unsigned long n)
+{
+	sim_ctu_calls++;
+	if (!to || (sim_ctu_fail_at && sim_ctu_calls == sim_ctu_fail_at))
+		return n;
+	memcpy(to, from, n);
+	return 0;
+}
+#define u64_to_user_ptr(x) ((void __user *)(uintptr_t)(x))
+static inline void *kvmalloc(size_t size, int gfp)
+{
+	void *p;
+
+	(void)gfp;
+	sim_kvmalloc_calls++;
+	if (sim_kvmalloc_fail_at && sim_kvmalloc_calls == sim_kvmalloc_fail_at)
+		return NULL;
+	p = malloc(size);
+	if (p)
+		sim_kv_live++;
+	return p;
+}
+static inline void kvfree(const void *p)
+{
+	if (p) {
+		sim_kv_live--;
+		free((void *)p);
+	}
+}
 struct inode { void *i_private; };
 struct file { void *private_data; loff_t f_pos; };
 struct file_operations {
@@ -743,6 +786,7 @@ struct file_operations {
 	int (*release)(struct inode *, struct file *);
 	ssize_t (*read)(struct file *, char *, size_t, loff_t *);
 	ssize_t (*write)(struct file *, const char *, size_t, loff_t *);
+	long (*unlocked_ioctl)(struct file *, unsigned int, unsigned long);
 };
 struct dentry { void *data; const struct file_operations *ops; bool live; int mode; };
 extern int sim_rd_ready, sim_res_ready;

@@ -50,8 +50,11 @@
 #include <linux/types.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
+#include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/pm_domain.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
 
 #include <crypto/sha2.h>
 
@@ -60,6 +63,9 @@
 #include "ane_h18_fw_pins.h"
 #include "ane_h18_fw_layout.h"
 #include "ane_h18_progtab.h"
+#include "ane_h18_res_uapi.h"
+
+_Static_assert(sizeof(struct ane_h18_res_call_io) == 72, "ane_h18_res_call_io ABI size");
 
 static char *optin;
 module_param(optin, charp, 0444);
@@ -3833,23 +3839,32 @@ err_unwind_surfaces:
 	return ret == -EREMOTEIO ? -EIO : ret;
 }
 
-static int ane_h18_res_call_one(struct ane_h18 *ane, u64 handle, u64 *ns_out, u64 *digest_out)
+struct ane_h18_res_io_req {
+	unsigned int in_idx;
+	const void *in_buf;
+	size_t in_len;
+	unsigned int out_idx;
+	void *out_buf;
+	size_t out_len;
+};
+
+static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *slot,
+				 const struct ane_h18_res_io_req *io, u64 *ns_out, u64 *digest_out)
 {
-	struct ane_h18_res_slot *slot;
-	const struct ane_h18_pdesc *p;
+	const struct ane_h18_pdesc *p = &slot->pd;
 	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
 	unsigned int i, waited;
 	bool fin = false;
 	u64 digest = 0, out_hash = 0, t0n;
 	u32 last_pend = 0;
-	int err = 0, ret;
+	int ret;
 
-	if (!ane->live || ane->live_broken)
-		return -ESHUTDOWN;
-	slot = ane_h18_res_lookup(&ane->res_tab, handle, &err);
-	if (!slot)
-		return err;
-	p = &slot->pd;
+	if (io) {
+		memcpy(slot->pg_io[io->in_idx].va, io->in_buf, io->in_len);
+		if (io->in_len < p->io[io->in_idx].size)
+			memset((u8 *)slot->pg_io[io->in_idx].va + io->in_len, 0,
+			       p->io[io->in_idx].size - io->in_len);
+	}
 	for (i = 0; i < p->nio; i++)
 		if (p->io[i].dir == 1)
 			memset(slot->pg_io[i].va, 0, p->io[i].size);
@@ -3913,8 +3928,9 @@ static int ane_h18_res_call_one(struct ane_h18 *ane, u64 handle, u64 *ns_out, u6
 		ane->live_broken = true;
 		return -EIO;
 	}
+	dma_rmb();
 	for (i = 0; i < p->nio; i++) {
-		if (p->io[i].dir == 1) {
+		if (io ? i == io->out_idx : p->io[i].dir == 1) {
 			const u32 *o = slot->pg_io[i].va;
 			unsigned int k2, words = p->io[i].size / 4;
 			u64 h = 0xcbf29ce484222325ULL;
@@ -3924,12 +3940,27 @@ static int ane_h18_res_call_one(struct ane_h18 *ane, u64 handle, u64 *ns_out, u6
 				h *= 0x100000001b3ULL;
 			}
 			out_hash = h;
+			if (io)
+				memcpy(io->out_buf, slot->pg_io[i].va, io->out_len);
 			break;
 		}
 	}
 	*ns_out = ane->call_t1 ? ane->call_t1 - ane->call_t0 : 0;
 	*digest_out = out_hash;
 	return 0;
+}
+
+static int ane_h18_res_call_one(struct ane_h18 *ane, u64 handle, u64 *ns_out, u64 *digest_out)
+{
+	struct ane_h18_res_slot *slot;
+	int err = 0;
+
+	if (!ane->live || ane->live_broken)
+		return -ESHUTDOWN;
+	slot = ane_h18_res_lookup(&ane->res_tab, handle, &err);
+	if (!slot)
+		return err;
+	return ane_h18_res_call_exec(ane, slot, NULL, ns_out, digest_out);
 }
 
 static int ane_h18_res_free_one(struct ane_h18 *ane, u64 handle)
@@ -4225,12 +4256,102 @@ static ssize_t ane_h18_res_write(struct file *file, const char __user *ubuf, siz
 	return ret ? ret : (ssize_t)count;
 }
 
+static long ane_h18_res_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct ane_h18 *ane = file ? file->private_data : NULL;
+	void __user *argp = (void __user *)arg;
+	struct ane_h18_res_call_io req;
+	struct ane_h18_res_slot *slot;
+	const struct ane_h18_pdesc *p;
+	struct ane_h18_res_io_req io;
+	void *in_buf = NULL, *out_buf = NULL;
+	unsigned int i;
+	int in_idx = -1, out_idx = -1;
+	u64 ns = 0, digest = 0;
+	int err = 0, ret;
+
+	if (!ane)
+		return -ENODEV;
+	if (cmd != ANE_H18_IOC_CALL_IO)
+		return -ENOTTY;
+	if (copy_from_user(&req, argp, sizeof(req)))
+		return -EFAULT;
+	if (req.version != ANE_H18_RES_ABI_VERSION || req.flags || req.reserved ||
+	    !req.in_len || !req.out_len || !req.in_ptr || !req.out_ptr)
+		return -EINVAL;
+
+	mutex_lock(&ane->res_lock);
+	if (!ane->live || ane->live_broken) {
+		ret = -ESHUTDOWN;
+		goto out_unlock;
+	}
+	slot = ane_h18_res_lookup(&ane->res_tab, req.handle, &err);
+	if (!slot) {
+		ret = err;
+		goto out_unlock;
+	}
+	p = &slot->pd;
+	for (i = 0; i < p->nio; i++) {
+		if (p->io[i].dir == 0 && p->io[i].id == req.in_surface_id && slot->pg_io[i].va)
+			in_idx = (int)i;
+		if (p->io[i].dir == 1 && p->io[i].id == req.out_surface_id && slot->pg_io[i].va)
+			out_idx = (int)i;
+	}
+	if (in_idx < 0 || out_idx < 0 || in_idx == out_idx ||
+	    req.in_len > p->io[in_idx].size || req.out_len > p->io[out_idx].size) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+
+	in_buf = kvmalloc(req.in_len, GFP_KERNEL);
+	if (!in_buf) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
+	out_buf = kvmalloc(req.out_len, GFP_KERNEL);
+	if (!out_buf) {
+		ret = -ENOMEM;
+		goto out_unlock;
+	}
+	if (copy_from_user(in_buf, u64_to_user_ptr(req.in_ptr), req.in_len)) {
+		ret = -EFAULT;
+		goto out_unlock;
+	}
+
+	io.in_idx = (unsigned int)in_idx;
+	io.in_buf = in_buf;
+	io.in_len = req.in_len;
+	io.out_idx = (unsigned int)out_idx;
+	io.out_buf = out_buf;
+	io.out_len = req.out_len;
+	ret = ane_h18_res_call_exec(ane, slot, &io, &ns, &digest);
+
+out_unlock:
+	mutex_unlock(&ane->res_lock);
+	if (!ret) {
+		if (copy_to_user(u64_to_user_ptr(req.out_ptr), out_buf, req.out_len)) {
+			ret = -EFAULT;
+		} else {
+			req.latency_ns = ns;
+			req.digest = digest;
+			req.output_bytes = req.out_len;
+			req.reserved = 0;
+			if (copy_to_user(argp, &req, sizeof(req)))
+				ret = -EFAULT;
+		}
+	}
+	kvfree(out_buf);
+	kvfree(in_buf);
+	return ret;
+}
+
 static const struct file_operations ane_h18_res_fops = {
 	.owner = THIS_MODULE,
 	.open = ane_h18_res_open,
 	.release = ane_h18_res_release,
 	.read = ane_h18_res_read,
 	.write = ane_h18_res_write,
+	.unlocked_ioctl = ane_h18_res_ioctl,
 };
 
 static int ane_h18_res_dbg_init(struct ane_h18 *ane)
