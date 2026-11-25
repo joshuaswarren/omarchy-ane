@@ -4298,6 +4298,7 @@ static long ane_h18_res_ioctl(struct file *file, unsigned int cmd, unsigned long
 			out_idx = (int)i;
 	}
 	if (in_idx < 0 || out_idx < 0 || in_idx == out_idx ||
+	    p->io[in_idx].doff || p->io[in_idx].dsize ||
 	    req.in_len > p->io[in_idx].size || req.out_len > p->io[out_idx].size) {
 		ret = -EINVAL;
 		goto out_unlock;

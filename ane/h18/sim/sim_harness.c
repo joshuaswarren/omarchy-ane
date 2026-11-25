@@ -2916,6 +2916,10 @@ static int neg_reads(void)
 /* ---- H18 resident binding lifetime tests (RP1..RP7): N resident programs, switch without reload, free in any order ---- */
 static u8 sim_blob_plain[0x10000];
 static size_t sim_blob_plain_len;
+static u8 sim_blob_plain_io[0x10000];
+static size_t sim_blob_plain_io_len;
+static u8 sim_blob_bad_doff[0x10000];
+static size_t sim_blob_bad_doff_len;
 static u8 sim_blob_weighted[0x10000];
 static size_t sim_blob_weighted_len;
 static u8 sim_blob_bad[32];
@@ -2934,6 +2938,16 @@ static int sim_res_fw_hook(const char *name, const u8 **data, size_t *size)
 		*size = sim_blob_weighted_len;
 		return 0;
 	}
+	if (!strcmp(name, "plain_io.bin")) {
+		*data = sim_blob_plain_io;
+		*size = sim_blob_plain_io_len;
+		return 0;
+	}
+	if (!strcmp(name, "bad_doff.bin")) {
+		*data = sim_blob_bad_doff;
+		*size = sim_blob_bad_doff_len;
+		return 0;
+	}
 	*data = sim_blob_plain;
 	*size = sim_blob_plain_len;
 	return 0;
@@ -2942,11 +2956,20 @@ static int sim_res_fw_hook(const char *name, const u8 **data, size_t *size)
 static void res_boot_live(void)
 {
 	static const u32 scr[] = { 8, 0xc440, 0x100, 0xf00000, 0, 0x100090, 0, ANE_H18_HS_READY };
+	u64 bad_doff = 0x1000;
 
 	kboot_setup();
 	make_blob();
 	memcpy(sim_blob_plain, sim_blob, sim_blob_len);
 	sim_blob_plain_len = sim_blob_len;
+	memcpy(sim_blob_plain_io, sim_blob, sim_blob_len);
+	sim_blob_plain_io_len = sim_blob_len;
+	/* io[0] (id=5): clear doff and dsize for a plain-input program without embedded data. */
+	memset(sim_blob_plain_io + 0x20 + 6 * 0x20 + 16, 0, 16);
+	memcpy(sim_blob_bad_doff, sim_blob_plain_io, sim_blob_plain_io_len);
+	sim_blob_bad_doff_len = sim_blob_plain_io_len;
+	/* io[0] (id=5): nonzero doff with dsize=0 must still be refused by CALL_IO. */
+	memcpy(sim_blob_bad_doff + 0x20 + 6 * 0x20 + 16, &bad_doff, 8);
 	make_blob_kern_weights();
 	memcpy(sim_blob_weighted, sim_blob, sim_blob_len);
 	sim_blob_weighted_len = sim_blob_len;
@@ -3392,10 +3415,10 @@ static void pos_residency(void)
 		probe_now();
 		sim_res_io_echo = 1;
 		res_open(&f);
-		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
 		hA_str[16] = '\0';
 		sscanf(hA_str, "%llx", (unsigned long long *)&hA);
-		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
 		hB_str[16] = '\0';
 		sscanf(hB_str, "%llx", (unsigned long long *)&hB);
 
@@ -3598,10 +3621,10 @@ static void pos_residency(void)
 		probe_now();
 		sim_res_io_echo = 1;
 		res_open(&f);
-		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
 		hA_str[16] = '\0';
 		sscanf(hA_str, "%llx", (unsigned long long *)&hA);
-		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
 		progB = sim_prog_ids[2];
 		memset(in_512, 0x33, sizeof(in_512));
 		memset(sentinel, 0x66, sizeof(sentinel));
@@ -3628,6 +3651,56 @@ static void pos_residency(void)
 		chk(r_spoof == -EIO && sent_ok && sreq.output_bytes == 0x4321 && r_after == -ESHUTDOWN &&
 		    sim_owner_module.refs >= 1 && res_live_dma() > 0 && sim_kv_live == 0,
 		    "RP11i unmatched finish on CALL_IO returns -EIO without copying output, quarantines engine (-ESHUTDOWN)");
+	}
+
+	/* RP11j: CALL_IO refuses embedded-input control programs (doff != 0 or dsize != 0) with -EINVAL
+	 * before touching DMA or issuing PROCEDURE_CALL, so legacy ASCII call still sees embedded input intact. */
+	{
+		struct file f;
+		char hCtrl_str[32], hDoff_str[32], rep[96], cmd[128];
+		u64 hCtrl = 0, hDoff = 0;
+		u8 overwrite[512], out_buf[512];
+		struct ane_h18_res_call_io creq;
+		int prog_before;
+		long r_embed, r_doff;
+		ssize_t r_legacy;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hCtrl_str, sizeof(hCtrl_str));
+		hCtrl_str[16] = '\0';
+		sscanf(hCtrl_str, "%llx", (unsigned long long *)&hCtrl);
+		res_cmd(&f, "retain bad_doff.bin 0 0 0 0 0\n", hDoff_str, sizeof(hDoff_str));
+		hDoff_str[16] = '\0';
+		sscanf(hDoff_str, "%llx", (unsigned long long *)&hDoff);
+
+		memset(overwrite, 0x33, sizeof(overwrite));
+		memset(out_buf, 0x88, sizeof(out_buf));
+		memset(&creq, 0, sizeof(creq));
+		creq.version = ANE_H18_RES_ABI_VERSION;
+		creq.handle = hCtrl;
+		creq.in_surface_id = 5;
+		creq.out_surface_id = 4;
+		creq.in_len = sizeof(overwrite);
+		creq.out_len = sizeof(out_buf);
+		creq.in_ptr = (u64)(uintptr_t)overwrite;
+		creq.out_ptr = (u64)(uintptr_t)out_buf;
+
+		prog_before = sim_prog_n;
+		r_embed = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&creq);
+		creq.handle = hDoff;
+		r_doff = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&creq);
+		/* Legacy ASCII call on hCtrl checks sim_buf_va(id5)[0] == 0xaa in fake FW; must still succeed. */
+		snprintf(cmd, sizeof(cmd), "call %s\n", hCtrl_str);
+		r_legacy = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hCtrl_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hDoff_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_embed == -EINVAL && r_doff == -EINVAL && sim_prog_n == prog_before + 5 &&
+		    r_legacy > 0 && res_live_dma() == 0 && sim_kv_live == 0,
+		    "RP11j CALL_IO refuses embedded/nonzero-doff input (-EINVAL) with no call/overwrite; legacy call preserves 0xaa input");
 	}
 }
 
