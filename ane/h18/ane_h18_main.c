@@ -1179,15 +1179,9 @@ static void ane_h18_hs_free(struct ane_h18 *ane)
 	}
 
 	for (i = 0; i < 4; i++)
-		if (b[i]->va) {
-			dma_free_coherent(ane->dev, b[i]->size, b[i]->va, b[i]->iova);
-			b[i]->va = NULL;
-		}
+		ane_h18_hs_buf_free(ane, b[i]);
 	for (i = 0; i < ane->hs_mal_n; i++)
-		if (ane->hs_mal[i].va) {
-			dma_free_coherent(ane->dev, ane->hs_mal[i].size, ane->hs_mal[i].va, ane->hs_mal[i].iova);
-			ane->hs_mal[i].va = NULL;
-		}
+		ane_h18_hs_buf_free(ane, &ane->hs_mal[i]);
 	ane->hs_mal_n = 0;
 	ane->mal_ring = NULL;
 	memset(ane->ch_rings, 0, sizeof(ane->ch_rings));
@@ -1204,13 +1198,13 @@ static void ane_h18_hs_free(struct ane_h18 *ane)
 }
 
 /* One zeroed surface from the DMA API, in the default domain the firmware segments are mapped in. It must not overlap a firmware segment. */
-static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_t size, const char *name)
+static int ane_h18_hs_alloc_opts(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_t size, const char *name, bool allow_sg)
 {
 	const struct ane_h18_soc *s = ane->soc;
 	unsigned int i;
 
 	b->sgt = NULL;
-	if (size > ANE_H18_HS_SG_THRESH) {
+	if (allow_sg && size > ANE_H18_HS_SG_THRESH) {
 		struct sg_table *sgt = dma_alloc_noncontiguous(ane->dev, size, DMA_BIDIRECTIONAL, GFP_KERNEL, 0);
 
 		if (!sgt) {
@@ -1252,6 +1246,11 @@ static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_
 	return 0;
 }
 
+static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_t size, const char *name)
+{
+	return ane_h18_hs_alloc_opts(ane, b, size, name, false);
+}
+
 /* A surface at a fixed IOVA: allocated as above, then aliased. The pages stay where the DMA API put them; each 16 KiB page of the allocation is looked up in the
  * domain and mapped again at `at` + its offset, read and write. The target range must be 16 KiB aligned, below the DART's 0xe0000000 limit, clear of the firmware
  * segments and unmapped. A failure unmaps what this call mapped; the allocation itself is freed by ane_h18_hs_free. */
@@ -1263,7 +1262,7 @@ static int ane_h18_hs_alloc_at(struct ane_h18 *ane, struct ane_h18_hs_buf *b, si
 	unsigned int i;
 	int ret;
 
-	ret = ane_h18_hs_alloc(ane, b, size, name);
+	ret = ane_h18_hs_alloc_opts(ane, b, size, name, true);
 	if (ret || !at)
 		return ret;
 	if (!dom) {
@@ -1545,10 +1544,7 @@ static int ane_h18_mal_service(struct ane_h18 *ane)
 		b = &ane->hs_mal[i];
 		ret = ane_h18_hs_alloc(ane, b, size, "FWMALLOC");
 		if (ret) {
-			if (b->va) {
-				dma_free_coherent(ane->dev, b->size, b->va, b->iova);
-				b->va = NULL;
-			}
+			ane_h18_hs_buf_free(ane, b);
 			ane->mal_err = ret;
 			return ret;
 		}
@@ -1572,9 +1568,8 @@ static int ane_h18_mal_service(struct ane_h18 *ane)
 		writel(BIT(ane->mal_bit), ane->doorbell);
 		for (i = 0; i < ane->hs_mal_n; i++)
 			if (ane->hs_mal[i].va && ane->hs_mal[i].iova == hdr) {
-				dma_free_coherent(ane->dev, ane->hs_mal[i].size, ane->hs_mal[i].va, ane->hs_mal[i].iova);
 				ane->hs_mal_bytes -= ane->hs_mal[i].size;
-				ane->hs_mal[i].va = NULL;
+				ane_h18_hs_buf_free(ane, &ane->hs_mal[i]);
 				break;
 			}
 		ane->mal_cursor = (ane->mal_cursor + 1) % ane->mal_slots;
