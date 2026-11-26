@@ -733,7 +733,7 @@ static int ane_rtclient_legacy_exchange(struct ane_rtclient *ane,
 	WRITE_ONCE(io[2], length);
 	dma_wmb();
 	WRITE_ONCE(io[0], command->dma);
-	dma_wmb();
+	mb();
 	writel(BIT(ane_t6021_chman_layout[channel].bit), ipi);
 	deadline = jiffies + msecs_to_jiffies(timeout_ms);
 	while (time_before(jiffies, deadline)) {
@@ -813,7 +813,7 @@ static int ane_rtclient_legacy_post(struct ane_rtclient *ane,
 	WRITE_ONCE(io[2], length);
 	dma_wmb();
 	WRITE_ONCE(io[0], command->dma);
-	dma_wmb();
+	mb();
 	ipi = ane->engine + ANE_IPI_OFF;
 	writel(BIT(ane_t6021_chman_layout[channel].bit), ipi);
 	*cursorp = (slot + 1) % ane_t6021_chman_layout[channel].size;
@@ -1285,8 +1285,11 @@ static int ane_rtclient_command(struct ane_rtclient *ane,
 	 * did this per step; same ack, channels 4 and 6). */
 	ane_rtclient_drain_t2h(ane, 4);
 	ane_rtclient_drain_t2h(ane, 6);
-	/* BOs are dma_alloc_coherent memory mapped write-combined for the
-	 * CPU, so no cache maintenance is needed on either side. */
+	/* BOs are non-coherent Normal-NC (write-combined) memory on both
+	 * CPU and DART (no dma-coherent on &ane); full system barrier
+	 * (dsb sy) orders subsequent userspace reads of output BOs after
+	 * the firmware finish event and any call_settle_us wait. */
+	mb();
 	return 0;
 }
 
@@ -1738,10 +1741,11 @@ static int ane_rtclient_build_call_cmd(struct ane_rtclient *ane,
 		*(u64 *)(cmd + slot_base + 0x20) =
 			cpu_to_le64(ios[i].size);
 	}
-	/* Drain the CPU write buffers so the input BOs the user
-	 * filled through its uncached mapping are in DRAM before
-	 * the fw starts reading them. */
-	wmb();
+	/* Full system barrier (dsb sy) so every CPU store into the
+	 * non-coherent Normal-NC input BOs and command buffer reaches
+	 * DRAM before the firmware doorbell fires, and no prior read
+	 * reorders across submission. */
+	mb();
 	return ret;
 }
 
@@ -1889,6 +1893,7 @@ static int ane_rtclient_procedure_call_batch(struct ane_rtclient *ane,
 	ane->legacy_cmd_cursor[channel] = cursor;
 	ane_rtclient_drain_t2h(ane, 4);
 	ane_rtclient_drain_t2h(ane, 6);
+	mb();
 out_owner:
 	/* Complete every ticket the failure left open (rc = ret); the
 	 * calls that finished normally already carried 0. Begun bounds
@@ -2069,6 +2074,7 @@ static int ane_t6021_bo_init_ioctl(struct drm_device *drm, void *data,
 	bo = ent ? container_of(ent, struct ane_t6021_bo, pool) : NULL;
 	if (bo) {
 		memset(bo->cpu, 0, PAGE_ALIGN(args->size));
+		mb();
 		goto publish;
 	}
 	/* A failed attempt evicts the oldest parked duplicate (real
@@ -2134,10 +2140,13 @@ static int ane_t6021_bo_free_ioctl(struct drm_device *drm, void *data,
 }
 
 /* Resolve the BO a user mmap names (BO_INIT returned offset = handle
- * << PAGE_SHIFT) and map the coherent buffer cacheably — the device
- * half coheres through the DART (IOMMU_CACHE), so reads after EXEC
- * observe the firmware's writes without extra sync. The mapping takes
- * one BO reference: it survives BO_FREE until the vma is gone. */
+ * << PAGE_SHIFT) and map the coherent buffer via dma_mmap_coherent().
+ * On T602x, &ane has no dma-coherent property, so the CPU mapping is
+ * Normal-NC (write-combined) and the DART sets NO_CACHE rather than
+ * IOMMU_CACHE; CPU/ANE visibility is ordered by the explicit mb()
+ * barriers (and optional call_settle_us) around PROCEDURE_CALL. The
+ * mapping takes one BO reference: it survives BO_FREE until the vma
+ * is gone. */
 static int ane_t6021_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct drm_file *file = filp->private_data;
