@@ -48,13 +48,16 @@ struct ane_h18_iova_range {
 	u64 size;
 };
 
+struct sg_table;
+
 struct ane_h18_hs_buf {
 	void *va;
+	struct sg_table *sgt;	/* non-NULL when allocated via dma_alloc_noncontiguous + dma_vmap_noncontiguous */
 	dma_addr_t iova;	/* the address the firmware is given: the fixed alias when `fixed`, else the DMA API address */
-	dma_addr_t dma;		/* the address dma_alloc_coherent returned: what dma_free_coherent needs */
+	dma_addr_t dma;		/* the address DMA API returned: what dma_free_* needs */
 	size_t size;
 	bool fixed;		/* an alias mapping at `iova` was added with iommu_map and is removed with iommu_unmap before the free */
-	bool leaked;		/* a short alias unmap (free or partial-map rollback) retained the pages and range; never dma_free_coherent */
+	bool leaked;		/* a short alias unmap (free or partial-map rollback) retained the pages and range; never dma_free_* */
 };
 
 struct ane_h18_pdesc {

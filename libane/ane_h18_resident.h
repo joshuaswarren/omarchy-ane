@@ -39,9 +39,25 @@ int ane_h18_resident_call(int fd, uint64_t handle,
 /* Call with a writable input surface and read back the requested output.
  * On error the output buffer is unspecified, and the call is not retried.
  */
+struct ane_h18_resident_in_buf {
+	uint32_t id, bytes;
+	const void *data;
+};
+
+struct ane_h18_resident_out_buf {
+	uint32_t id, bytes;
+	void *data;
+};
+
 int ane_h18_resident_call_io(int fd, uint64_t handle,
 			    const struct ane_h18_resident_io *io,
 			    struct ane_h18_resident_result *result);
+int ane_h18_resident_call_multi_io(int fd, uint64_t handle,
+				  const struct ane_h18_resident_in_buf *inputs,
+				  unsigned int in_count,
+				  const struct ane_h18_resident_out_buf *outputs,
+				  unsigned int out_count,
+				  struct ane_h18_resident_result *result);
 int ane_h18_resident_free(int fd, uint64_t handle);
 
 #ifdef __cplusplus

@@ -57,4 +57,38 @@ struct ane_h18_res_call_io {
 
 #define ANE_H18_IOC_CALL_IO	_IOWR(ANE_H18_RES_IOC_MAGIC, 1, struct ane_h18_res_call_io)
 
+/*
+ * ANE_H18_IOC_CALL_MULTI_IO: execute one retained resident program with
+ * 1..ANE_H18_RES_MAX_USER_IO explicit writable input surfaces and
+ * 1..ANE_H18_RES_MAX_USER_IO explicit output surfaces on the resident fd.
+ *
+ * Pre-loaded read-only input surfaces (ANEP dir == 0 with nonzero data) stay
+ * untouched across calls; scratch surfaces (dir == 2) are zeroed before call.
+ * Unused entries in inputs[in_count..] and outputs[out_count..] must be zero.
+ * digest is FNV-1a 64-bit over all u32 words of outputs[0].surface_id.
+ */
+#define ANE_H18_RES_MAX_USER_IO	8U
+
+struct ane_h18_res_buf_desc {
+	__u32 surface_id;
+	__u32 len;
+	__u64 ptr;
+};
+
+struct ane_h18_res_call_multi_io {
+	__u32 version;
+	__u32 flags;
+	__u64 handle;
+	__u32 in_count;
+	__u32 out_count;
+	struct ane_h18_res_buf_desc inputs[ANE_H18_RES_MAX_USER_IO];
+	struct ane_h18_res_buf_desc outputs[ANE_H18_RES_MAX_USER_IO];
+	__u64 latency_ns;
+	__u64 digest;
+	__u32 reserved;
+	__u32 pad;
+};
+
+#define ANE_H18_IOC_CALL_MULTI_IO	_IOWR(ANE_H18_RES_IOC_MAGIC, 2, struct ane_h18_res_call_multi_io)
+
 #endif /* _ANE_H18_RES_UAPI_H */

@@ -239,6 +239,9 @@ static inline void release_firmware(const struct firmware *fw)
 	sim_fw_released++;
 }
 #define PAGE_SIZE 0x4000UL
+#ifndef SZ_1M
+#define SZ_1M 0x100000UL
+#endif
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
 #define wmb() do { } while (0)
 #define dma_wmb() do { } while (0)
@@ -284,6 +287,55 @@ static inline void dma_free_coherent(struct device *d, size_t size, void *va, dm
 			sim_dma[k].free_seq = sim_last_dmafree_seq = ++sim_op_seq;
 		}
 }
+#define DMA_MAPPING_ERROR (~(dma_addr_t)0)
+enum dma_data_direction { DMA_BIDIRECTIONAL = 0, DMA_TO_DEVICE = 1, DMA_FROM_DEVICE = 2 };
+struct scatterlist { dma_addr_t dma_address; unsigned int dma_length; };
+struct sg_table { struct scatterlist *sgl; unsigned int nents; unsigned int orig_nents; void *sim_va; };
+static inline dma_addr_t sg_dma_address(const struct scatterlist *sg) { return sg->dma_address; }
+static inline unsigned int sg_dma_len(const struct scatterlist *sg) { return sg->dma_length; }
+static inline struct sg_table *dma_alloc_noncontiguous(struct device *d, size_t size, enum dma_data_direction dir, int gfp, unsigned long attrs)
+{
+	struct sg_table *sgt;
+	struct scatterlist *sgl;
+	dma_addr_t iova = 0;
+	void *va;
+
+	(void)dir; (void)attrs;
+	va = dma_alloc_coherent(d, size, &iova, gfp);
+	if (!va)
+		return NULL;
+	sgt = calloc(1, sizeof(*sgt));
+	sgl = calloc(1, sizeof(*sgl));
+	if (!sgt || !sgl) {
+		free(sgt); free(sgl);
+		dma_free_coherent(d, size, va, iova);
+		return NULL;
+	}
+	sgl->dma_address = iova;
+	sgl->dma_length = (unsigned int)size;
+	sgt->sgl = sgl;
+	sgt->nents = 3;
+	sgt->orig_nents = 3;
+	sgt->sim_va = va;
+	return sgt;
+}
+static inline void *dma_vmap_noncontiguous(struct device *d, size_t size, struct sg_table *sgt)
+{
+	(void)d; (void)size;
+	return sgt ? sgt->sim_va : NULL;
+}
+static inline void dma_vunmap_noncontiguous(struct device *d, void *va) { (void)d; (void)va; }
+static inline void dma_free_noncontiguous(struct device *d, size_t size, struct sg_table *sgt, enum dma_data_direction dir)
+{
+	(void)dir;
+	if (!sgt)
+		return;
+	dma_free_coherent(d, size, sgt->sim_va, sgt->sgl->dma_address);
+	free(sgt->sgl);
+	free(sgt);
+}
+static inline void dma_sync_sgtable_for_device(struct device *d, struct sg_table *sgt, enum dma_data_direction dir) { (void)d; (void)sgt; (void)dir; }
+static inline void dma_sync_sgtable_for_cpu(struct device *d, struct sg_table *sgt, enum dma_data_direction dir) { (void)d; (void)sgt; (void)dir; }
 static inline void *devm_kzalloc(struct device *d, size_t n, int f) { (void)d; (void)f; return calloc(1, n); }
 static inline void platform_set_drvdata(struct platform_device *p, void *d) { p->drvdata = d; }
 static inline void *platform_get_drvdata(struct platform_device *p) { return p->drvdata; }

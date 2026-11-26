@@ -127,9 +127,10 @@ static inline enum ane_h18_mal_kind ane_h18_mal_classify(u64 hdr, u64 size, u64 
 #define ANE_H18_PROG_MAGIC	0x50454e41	/* 'ANEP' */
 #define ANE_H18_PROG_VERSION	1
 #define ANE_H18_PROG_MAX_SECS	9
-#define ANE_H18_PROG_MAX_IO	8
-#define ANE_H18_PROG_MAX_BUF	0x4000000	/* one buffer, 64 MiB */
-#define ANE_H18_PROG_MAX_BYTES	0xc000000	/* all buffers together, 192 MiB */
+#define ANE_H18_PROG_MAX_IO	16	/* 0x60 + 16 * 0x30 = 0x360 <= ANE_H18_PROG_BLOCK (0x400) */
+#define ANE_H18_PROG_MAX_BUF	0xa000000	/* one buffer, 160 MiB (covers 128 MiB __KERN_k segments) */
+#define ANE_H18_PROG_MAX_BYTES	0x28000000	/* all buffers together, 640 MiB (covers full encoder) */
+#define ANE_H18_HS_SG_THRESH	SZ_1M	/* surfaces > 1 MiB use noncontiguous IOMMU-coalesced DMA */
 #define ANE_H18_PROG_COOKIE	0xADD0	/* the call cookie of the T6021 driver, returned in the IO_T2H events */
 #define ANE_H18_PROG_PRIORITY	2
 #define ANE_H18_CSNE_PREMAP_BUFFER	0x20d	/* 0x3490 bytes, type 2 for the inference request pool: the shipped system sends it at init, before any call */
