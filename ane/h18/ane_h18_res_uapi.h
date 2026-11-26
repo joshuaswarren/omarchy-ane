@@ -16,7 +16,8 @@
  *   version        : must equal ANE_H18_RES_ABI_VERSION (1).
  *   flags          : must be 0.
  *   handle         : 64-bit resident handle returned by ASCII "retain".
- *   in_surface_id  : ANEP input surface id (dir == 0) of that program.
+ *   in_surface_id  : ANEP plain-input surface id (dir == 0, with both ANEP
+ *                    data offset and data size equal to 0) of that program.
  *   out_surface_id : ANEP output surface id (dir == 1) of that program.
  *   in_len         : bytes to read from in_ptr (1 .. in_surface.size).
  *                    Writable input tail [in_len .. in_surface.size) is zeroed
@@ -29,7 +30,8 @@
  *   out_ptr        : userspace pointer to out_len output buffer (non-zero).
  *   reserved       : must be 0 on input; set to 0 on output.
  *
- * Output fields (populated only when ioctl returns 0; untouched on any errno):
+ * Output buffer and metadata fields are valid only when ioctl returns 0
+ * (unspecified on any errno, as copy_to_user may partially copy before EFAULT):
  *   latency_ns     : matched-finish call latency in nanoseconds.
  *   digest         : FNV-1a 64-bit digest over all u32 words of out_surface_id.
  *   output_bytes   : exact bytes copied to out_ptr (always == out_len on 0).
