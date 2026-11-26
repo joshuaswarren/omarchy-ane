@@ -217,6 +217,7 @@ ifeq ($(NUMPY_OK),yes)
 	$(PYTHON) test_qwen_placement.py
 	$(PYTHON) test_qwen_q6k_hook.py
 	$(PYTHON) test_qwen_q6k_gate.py
+	$(PYTHON) test_matvec_golden.py
 else
 	@echo "SKIP resident Python tests: numpy is not installed"
 endif
