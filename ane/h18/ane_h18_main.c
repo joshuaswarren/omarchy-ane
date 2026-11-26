@@ -33,6 +33,7 @@
 #include <linux/errno.h>
 #include <linux/firmware.h>
 #include <linux/io.h>
+#include <linux/scatterlist.h>
 #include <linux/iommu.h>
 #include <linux/pm_runtime.h>
 #include <linux/ioport.h>
@@ -417,6 +418,7 @@ struct ane_h18 {
 	struct ane_h18_res_tab res_tab;
 	char res_reply[128];
 	size_t res_reply_len;
+	u8 res_cmd[ANE_H18_PROG_BLOCK];
 };
 
 static void ane_h18_result(struct ane_h18 *ane, const char *stg, const char *verdict, const char *reason)
@@ -1130,9 +1132,27 @@ static bool ane_h18_hs_buf_free(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
 			return false;
 		}
 	}
-	dma_free_coherent(ane->dev, b->size, b->va, b->dma);
+	if (b->sgt) {
+		dma_vunmap_noncontiguous(ane->dev, b->va);
+		dma_free_noncontiguous(ane->dev, b->size, b->sgt, DMA_BIDIRECTIONAL);
+		b->sgt = NULL;
+	} else {
+		dma_free_coherent(ane->dev, b->size, b->va, b->dma);
+	}
 	b->va = NULL;
 	return true;
+}
+
+static void ane_h18_hs_buf_sync_dev(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
+{
+	if (b->sgt)
+		dma_sync_sgtable_for_device(ane->dev, b->sgt, DMA_BIDIRECTIONAL);
+}
+
+static void ane_h18_hs_buf_sync_cpu(struct ane_h18 *ane, struct ane_h18_hs_buf *b)
+{
+	if (b->sgt)
+		dma_sync_sgtable_for_cpu(ane->dev, b->sgt, DMA_BIDIRECTIONAL);
 }
 
 /* The program surfaces and their fixed-IOVA aliases of a finished pass. Only safe once every command answered (the failure paths leave them for ane_h18_hs_free). */
@@ -1189,10 +1209,36 @@ static int ane_h18_hs_alloc(struct ane_h18 *ane, struct ane_h18_hs_buf *b, size_
 	const struct ane_h18_soc *s = ane->soc;
 	unsigned int i;
 
-	b->va = dma_alloc_coherent(ane->dev, size, &b->iova, GFP_KERNEL);
-	if (!b->va) {
-		dev_err(ane->dev, "ane_h18 handshake: allocation of %s (%#zx bytes) failed\n", name, size);
-		return -ENOMEM;
+	b->sgt = NULL;
+	if (size > ANE_H18_HS_SG_THRESH) {
+		struct sg_table *sgt = dma_alloc_noncontiguous(ane->dev, size, DMA_BIDIRECTIONAL, GFP_KERNEL, 0);
+
+		if (!sgt) {
+			dev_err(ane->dev, "ane_h18 handshake: noncontiguous allocation of %s (%#zx bytes) failed\n", name, size);
+			return -ENOMEM;
+		}
+		if (!sgt->sgl || sg_dma_address(sgt->sgl) == DMA_MAPPING_ERROR || sg_dma_len(sgt->sgl) < size) {
+			dev_err(ane->dev, "ane_h18 handshake: noncontiguous %s (%#zx bytes) did not coalesce into one IOVA (nents=%u dma=%#llx len=%#x)\n",
+				name, size, sgt->nents, sgt->sgl ? (u64)sg_dma_address(sgt->sgl) : 0ULL,
+				sgt->sgl ? sg_dma_len(sgt->sgl) : 0U);
+			dma_free_noncontiguous(ane->dev, size, sgt, DMA_BIDIRECTIONAL);
+			return -ENOMEM;
+		}
+		b->va = dma_vmap_noncontiguous(ane->dev, size, sgt);
+		if (!b->va) {
+			dev_err(ane->dev, "ane_h18 handshake: vmap of %s (%#zx bytes) failed\n", name, size);
+			dma_free_noncontiguous(ane->dev, size, sgt, DMA_BIDIRECTIONAL);
+			return -ENOMEM;
+		}
+		memset(b->va, 0, size);
+		b->sgt = sgt;
+		b->iova = sg_dma_address(sgt->sgl);
+	} else {
+		b->va = dma_alloc_coherent(ane->dev, size, &b->iova, GFP_KERNEL);
+		if (!b->va) {
+			dev_err(ane->dev, "ane_h18 handshake: allocation of %s (%#zx bytes) failed\n", name, size);
+			return -ENOMEM;
+		}
 	}
 	b->dma = b->iova;
 	b->fixed = false;
@@ -2150,7 +2196,12 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 			return ret;
 		if (p->io[i].dsize)
 			memcpy(b->va, fw + p->io[i].doff, p->io[i].dsize);
+		ane_h18_hs_buf_sync_dev(ane, b);
 	}
+	for (i = 0; i < p->nsec; i++)
+		ane_h18_hs_buf_sync_dev(ane, &ane->pg_sec[i]);
+	if (prog_iova_kern)
+		ane_h18_hs_buf_sync_dev(ane, &ane->pg_kern);
 	wmb();
 	ane_h18_dart_exc(ane, "before LOAD_PROGRAM");
 	if (hs_premap) {
@@ -2165,7 +2216,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	}
 
 	/* LOAD_PROGRAM */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	for (i = 0; i < p->nsec; i++) {
 		u8 *r = cmd + 8 + (size_t)(p->sec[i].id - 1) * 0x30;
 		bool use_kern = prog_kern_slot && prog_iova_kern && p->sec[i].id == 2 && p->sec[i].size > 0x4000;
@@ -2196,7 +2247,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	ane_h18_prog_settle(ane, 20, t2h_cursor);
 
 	/* CREATE_PROCESS */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	memcpy(cmd + 8, &prog, 4);
 	w = ~0u;
 	memcpy(cmd + 0xc, &w, 4);
@@ -2221,7 +2272,7 @@ call:
 				memset(ane->pg_io[i].va, 0, p->io[i].size);
 	}
 	/* PROCEDURE_CALL: one 0x30 byte element per buffer at +0x60 (flags 1, buffer id +4, type +8, iova +0x18, size +0x20) */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	{
 		u32 prio = ANE_H18_PROG_PRIORITY, cnt = p->nio;
 		u64 cookie = ANE_H18_PROG_COOKIE;
@@ -2360,7 +2411,7 @@ call:
 	}
 
 	/* unload: process first, then the program, each followed by hs_settle_ms ms of answering */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	memcpy(cmd + 8, &prog, 4);
 	memcpy(cmd + 0xc, &proc, 4);
 	i = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
@@ -2382,7 +2433,7 @@ fail:
 		int unanswered = 0, cmdret;
 
 		if (created) {
-			memset(cmd, 0, sizeof(cmd));
+			memset(cmd, 0, ANE_H18_PROG_BLOCK);
 			memcpy(cmd + 8, &prog, 4);
 			memcpy(cmd + 0xc, &proc, 4);
 			cmdret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
@@ -2395,7 +2446,7 @@ fail:
 			created = false;
 		}
 		if (loaded) {
-			memset(cmd, 0, sizeof(cmd));
+			memset(cmd, 0, ANE_H18_PROG_BLOCK);
 			memcpy(cmd + 8, &prog, 4);
 			cmdret = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk);
 			ane_h18_prog_dump(ane, "DESTROY_PROGRAM reply", (u8 *)ane->hs_cmd.va, 0x20);
@@ -2413,7 +2464,7 @@ fail:
 		goto fail_nounload;
 	}
 	if (created) {
-		memset(cmd, 0, sizeof(cmd));
+		memset(cmd, 0, ANE_H18_PROG_BLOCK);
 		memcpy(cmd + 8, &prog, 4);
 		memcpy(cmd + 0xc, &proc, 4);
 		(void)ane_h18_cmd_body(ane, io, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
@@ -2424,7 +2475,7 @@ destroy:
 	if (loaded) {
 		int r2;
 
-		memset(cmd, 0, sizeof(cmd));
+		memset(cmd, 0, ANE_H18_PROG_BLOCK);
 		memcpy(cmd + 8, &prog, 4);
 		r2 = ane_h18_cmd_body(ane, io, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk);
 		ane_h18_prog_dump(ane, "DESTROY_PROGRAM reply", (u8 *)ane->hs_cmd.va, 0x20);
@@ -3679,7 +3730,7 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 	struct ane_h18_res_slot *slot;
 	const struct firmware *blob = NULL;
 	const char *why = "";
-	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
+	u8 *cmd = ane->res_cmd, *blk;
 	unsigned int idx = 0, nranges = 0, nleaked = 0, i;
 	unsigned int s2 = ANE_H18_PROG_MAX_SECS, s3 = ANE_H18_PROG_MAX_SECS;
 	u32 prog = ANE_H18_RES_NOID, proc = ANE_H18_RES_NOID, w;
@@ -3753,13 +3804,18 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 			goto err_free_blob;
 		if (pd.io[i].dsize)
 			memcpy(slot->pg_io[i].va, blob->data + pd.io[i].doff, pd.io[i].dsize);
+		ane_h18_hs_buf_sync_dev(ane, &slot->pg_io[i]);
 	}
+	for (i = 0; i < pd.nsec; i++)
+		ane_h18_hs_buf_sync_dev(ane, &slot->pg_sec[i]);
+	if (opts->iova_kern)
+		ane_h18_hs_buf_sync_dev(ane, &slot->pg_kern);
 	release_firmware(blob);
 	blob = NULL;
 	wmb();
 
 	/* LOAD_PROGRAM (0x200) */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	for (i = 0; i < pd.nsec; i++) {
 		u8 *r = cmd + 8 + (size_t)(pd.sec[i].id - 1) * 0x30;
 		bool use_kern = opts->kern_slot && opts->iova_kern && pd.sec[i].id == 2 && pd.sec[i].size > 0x4000;
@@ -3794,7 +3850,7 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 	slot->prog_id = prog;
 
 	/* CREATE_PROCESS (0x202) */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	memcpy(cmd + 8, &prog, 4);
 	w = ANE_H18_RES_NOID;
 	memcpy(cmd + 0xc, &w, 4);
@@ -3802,7 +3858,7 @@ static int ane_h18_res_retain_one(struct ane_h18 *ane, const char *fw_name,
 	if (ret) {
 		if (ret == -EREMOTEIO) {
 			/* Clean firmware refusal with trustworthy prog_id: unwind via DESTROY_PROGRAM (0x0c / 4B body) + settle. */
-			memset(cmd, 0, sizeof(cmd));
+			memset(cmd, 0, ANE_H18_PROG_BLOCK);
 			memcpy(cmd + 8, &prog, 4);
 			if (!ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c, false, 0, cmd + 8, 4, &blk)) {
 				ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
@@ -3840,37 +3896,47 @@ err_unwind_surfaces:
 }
 
 struct ane_h18_res_io_req {
-	unsigned int in_idx;
-	const void *in_buf;
-	size_t in_len;
-	unsigned int out_idx;
-	void *out_buf;
-	size_t out_len;
+	unsigned int in_count;
+	unsigned int out_count;
+	unsigned int in_idx[ANE_H18_RES_MAX_USER_IO];
+	const void *in_buf[ANE_H18_RES_MAX_USER_IO];
+	size_t in_len[ANE_H18_RES_MAX_USER_IO];
+	unsigned int out_idx[ANE_H18_RES_MAX_USER_IO];
+	void *out_buf[ANE_H18_RES_MAX_USER_IO];
+	size_t out_len[ANE_H18_RES_MAX_USER_IO];
 };
 
 static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *slot,
 				 const struct ane_h18_res_io_req *io, u64 *ns_out, u64 *digest_out)
 {
 	const struct ane_h18_pdesc *p = &slot->pd;
-	u8 cmd[ANE_H18_PROG_BLOCK], *blk;
-	unsigned int i, waited;
+	u8 *cmd = ane->res_cmd, *blk;
+	unsigned int i, j, waited;
 	bool fin = false;
 	u64 digest = 0, out_hash = 0, t0n;
 	u32 last_pend = 0;
 	int ret;
 
 	if (io) {
-		memcpy(slot->pg_io[io->in_idx].va, io->in_buf, io->in_len);
-		if (io->in_len < p->io[io->in_idx].size)
-			memset((u8 *)slot->pg_io[io->in_idx].va + io->in_len, 0,
-			       p->io[io->in_idx].size - io->in_len);
+		for (j = 0; j < io->in_count; j++) {
+			unsigned int idx = io->in_idx[j];
+
+			memcpy(slot->pg_io[idx].va, io->in_buf[j], io->in_len[j]);
+			if (io->in_len[j] < p->io[idx].size)
+				memset((u8 *)slot->pg_io[idx].va + io->in_len[j], 0,
+				       p->io[idx].size - io->in_len[j]);
+			ane_h18_hs_buf_sync_dev(ane, &slot->pg_io[idx]);
+		}
 	}
-	for (i = 0; i < p->nio; i++)
-		if (p->io[i].dir == 1)
+	for (i = 0; i < p->nio; i++) {
+		if (p->io[i].dir == 1 || p->io[i].dir == 2) {
 			memset(slot->pg_io[i].va, 0, p->io[i].size);
+			ane_h18_hs_buf_sync_dev(ane, &slot->pg_io[i]);
+		}
+	}
 
 	/* PROCEDURE_CALL (0x204) only: zero LOAD_PROGRAM or CREATE_PROCESS on switch */
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	{
 		u32 prio = ANE_H18_PROG_PRIORITY, cnt = p->nio;
 		u64 cookie = ANE_H18_PROG_COOKIE;
@@ -3929,20 +3995,40 @@ static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *s
 		return -EIO;
 	}
 	dma_rmb();
-	for (i = 0; i < p->nio; i++) {
-		if (io ? i == io->out_idx : p->io[i].dir == 1) {
-			const u32 *o = slot->pg_io[i].va;
-			unsigned int k2, words = p->io[i].size / 4;
-			u64 h = 0xcbf29ce484222325ULL;
+	for (i = 0; i < p->nio; i++)
+		if (p->io[i].dir == 1)
+			ane_h18_hs_buf_sync_cpu(ane, &slot->pg_io[i]);
+	if (io) {
+		for (j = 0; j < io->out_count; j++) {
+			unsigned int idx = io->out_idx[j];
 
-			for (k2 = 0; k2 < words; k2++) {
-				h ^= o[k2];
-				h *= 0x100000001b3ULL;
+			if (j == 0) {
+				const u32 *o = slot->pg_io[idx].va;
+				unsigned int k2, words = p->io[idx].size / 4;
+				u64 h = 0xcbf29ce484222325ULL;
+
+				for (k2 = 0; k2 < words; k2++) {
+					h ^= o[k2];
+					h *= 0x100000001b3ULL;
+				}
+				out_hash = h;
 			}
-			out_hash = h;
-			if (io)
-				memcpy(io->out_buf, slot->pg_io[i].va, io->out_len);
-			break;
+			memcpy(io->out_buf[j], slot->pg_io[idx].va, io->out_len[j]);
+		}
+	} else {
+		for (i = 0; i < p->nio; i++) {
+			if (p->io[i].dir == 1) {
+				const u32 *o = slot->pg_io[i].va;
+				unsigned int k2, words = p->io[i].size / 4;
+				u64 h = 0xcbf29ce484222325ULL;
+
+				for (k2 = 0; k2 < words; k2++) {
+					h ^= o[k2];
+					h *= 0x100000001b3ULL;
+				}
+				out_hash = h;
+				break;
+			}
 		}
 	}
 	*ns_out = ane->call_t1 ? ane->call_t1 - ane->call_t0 : 0;
@@ -3983,14 +4069,14 @@ static int ane_h18_res_free_one(struct ane_h18 *ane, u64 handle)
 		return -ESHUTDOWN;
 	}
 
-	memset(cmd, 0, sizeof(cmd));
+	memset(cmd, 0, ANE_H18_PROG_BLOCK);
 	memcpy(cmd + 8, &slot->prog_id, 4);
 	memcpy(cmd + 0xc, &slot->proc_id, 4);
 	t_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_TERMINATE_PROCESS, 0x10,
 				 false, 0, cmd + 8, 8, &blk);
 	if (!t_ret) {
 		ane_h18_prog_settle(ane, hs_settle_ms, &ane->t2h_cursor);
-		memset(cmd, 0, sizeof(cmd));
+		memset(cmd, 0, ANE_H18_PROG_BLOCK);
 		memcpy(cmd + 8, &slot->prog_id, 4);
 		d_ret = ane_h18_cmd_body(ane, &ane->io_ring, ANE_H18_CSNE_DESTROY_PROGRAM, 0x0c,
 					 false, 0, cmd + 8, 4, &blk);
@@ -4256,94 +4342,184 @@ static ssize_t ane_h18_res_write(struct file *file, const char __user *ubuf, siz
 	return ret ? ret : (ssize_t)count;
 }
 
-static long ane_h18_res_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long ane_h18_res_ioctl_multi(struct ane_h18 *ane, void __user *argp,
+				    bool is_single)
 {
-	struct ane_h18 *ane = file ? file->private_data : NULL;
-	void __user *argp = (void __user *)arg;
-	struct ane_h18_res_call_io req;
+	struct ane_h18_res_call_io sreq;
+	struct ane_h18_res_call_multi_io mreq;
 	struct ane_h18_res_slot *slot;
 	const struct ane_h18_pdesc *p;
 	struct ane_h18_res_io_req io;
-	void *in_buf = NULL, *out_buf = NULL;
-	unsigned int i;
-	int in_idx = -1, out_idx = -1;
+	void *in_bufs[ANE_H18_RES_MAX_USER_IO] = { NULL };
+	void *out_bufs[ANE_H18_RES_MAX_USER_IO] = { NULL };
+	unsigned int i, j, k;
 	u64 ns = 0, digest = 0;
 	int err = 0, ret;
 
-	if (!ane)
-		return -ENODEV;
-	if (cmd != ANE_H18_IOC_CALL_IO)
-		return -ENOTTY;
-	if (copy_from_user(&req, argp, sizeof(req)))
-		return -EFAULT;
-	if (req.version != ANE_H18_RES_ABI_VERSION || req.flags || req.reserved ||
-	    !req.in_len || !req.out_len || !req.in_ptr || !req.out_ptr)
-		return -EINVAL;
+	memset(&io, 0, sizeof(io));
+	if (is_single) {
+		if (copy_from_user(&sreq, argp, sizeof(sreq)))
+			return -EFAULT;
+		if (sreq.version != ANE_H18_RES_ABI_VERSION || sreq.flags || sreq.reserved ||
+		    !sreq.in_len || !sreq.out_len || !sreq.in_ptr || !sreq.out_ptr)
+			return -EINVAL;
+		memset(&mreq, 0, sizeof(mreq));
+		mreq.version = sreq.version;
+		mreq.handle = sreq.handle;
+		mreq.in_count = 1;
+		mreq.out_count = 1;
+		mreq.inputs[0].surface_id = sreq.in_surface_id;
+		mreq.inputs[0].len = sreq.in_len;
+		mreq.inputs[0].ptr = sreq.in_ptr;
+		mreq.outputs[0].surface_id = sreq.out_surface_id;
+		mreq.outputs[0].len = sreq.out_len;
+		mreq.outputs[0].ptr = sreq.out_ptr;
+	} else {
+		if (copy_from_user(&mreq, argp, sizeof(mreq)))
+			return -EFAULT;
+		if (mreq.version != ANE_H18_RES_ABI_VERSION || mreq.flags || mreq.reserved || mreq.pad ||
+		    !mreq.in_count || mreq.in_count > ANE_H18_RES_MAX_USER_IO ||
+		    !mreq.out_count || mreq.out_count > ANE_H18_RES_MAX_USER_IO)
+			return -EINVAL;
+		for (j = 0; j < mreq.in_count; j++)
+			if (!mreq.inputs[j].len || !mreq.inputs[j].ptr)
+				return -EINVAL;
+		for (j = mreq.in_count; j < ANE_H18_RES_MAX_USER_IO; j++)
+			if (mreq.inputs[j].surface_id || mreq.inputs[j].len || mreq.inputs[j].ptr)
+				return -EINVAL;
+		for (j = 0; j < mreq.out_count; j++)
+			if (!mreq.outputs[j].len || !mreq.outputs[j].ptr)
+				return -EINVAL;
+		for (j = mreq.out_count; j < ANE_H18_RES_MAX_USER_IO; j++)
+			if (mreq.outputs[j].surface_id || mreq.outputs[j].len || mreq.outputs[j].ptr)
+				return -EINVAL;
+	}
 
 	mutex_lock(&ane->res_lock);
 	if (!ane->live || ane->live_broken) {
 		ret = -ESHUTDOWN;
 		goto out_unlock;
 	}
-	slot = ane_h18_res_lookup(&ane->res_tab, req.handle, &err);
+	slot = ane_h18_res_lookup(&ane->res_tab, mreq.handle, &err);
 	if (!slot) {
 		ret = err;
 		goto out_unlock;
 	}
 	p = &slot->pd;
-	for (i = 0; i < p->nio; i++) {
-		if (p->io[i].dir == 0 && p->io[i].id == req.in_surface_id && slot->pg_io[i].va)
-			in_idx = (int)i;
-		if (p->io[i].dir == 1 && p->io[i].id == req.out_surface_id && slot->pg_io[i].va)
-			out_idx = (int)i;
+	io.in_count = mreq.in_count;
+	io.out_count = mreq.out_count;
+
+	for (j = 0; j < mreq.in_count; j++) {
+		int found = -1;
+
+		for (i = 0; i < p->nio; i++)
+			if (p->io[i].dir == 0 && p->io[i].id == mreq.inputs[j].surface_id && slot->pg_io[i].va) {
+				found = (int)i;
+				break;
+			}
+		if (found < 0 || p->io[found].doff || p->io[found].dsize ||
+		    mreq.inputs[j].len > p->io[found].size) {
+			ret = -EINVAL;
+			goto out_unlock;
+		}
+		for (k = 0; k < j; k++)
+			if (io.in_idx[k] == (unsigned int)found) {
+				ret = -EINVAL;
+				goto out_unlock;
+			}
+		io.in_idx[j] = (unsigned int)found;
 	}
-	if (in_idx < 0 || out_idx < 0 || in_idx == out_idx ||
-	    p->io[in_idx].doff || p->io[in_idx].dsize ||
-	    req.in_len > p->io[in_idx].size || req.out_len > p->io[out_idx].size) {
-		ret = -EINVAL;
-		goto out_unlock;
+	for (j = 0; j < mreq.out_count; j++) {
+		int found = -1;
+
+		for (i = 0; i < p->nio; i++)
+			if (p->io[i].dir == 1 && p->io[i].id == mreq.outputs[j].surface_id && slot->pg_io[i].va) {
+				found = (int)i;
+				break;
+			}
+		if (found < 0 || mreq.outputs[j].len > p->io[found].size) {
+			ret = -EINVAL;
+			goto out_unlock;
+		}
+		for (k = 0; k < j; k++)
+			if (io.out_idx[k] == (unsigned int)found) {
+				ret = -EINVAL;
+				goto out_unlock;
+			}
+		io.out_idx[j] = (unsigned int)found;
 	}
 
-	in_buf = kvmalloc(req.in_len, GFP_KERNEL);
-	if (!in_buf) {
-		ret = -ENOMEM;
-		goto out_unlock;
+	for (j = 0; j < mreq.in_count; j++) {
+		in_bufs[j] = kvmalloc(mreq.inputs[j].len, GFP_KERNEL);
+		if (!in_bufs[j]) {
+			ret = -ENOMEM;
+			goto out_unlock;
+		}
+		if (copy_from_user(in_bufs[j], u64_to_user_ptr(mreq.inputs[j].ptr), mreq.inputs[j].len)) {
+			ret = -EFAULT;
+			goto out_unlock;
+		}
+		io.in_buf[j] = in_bufs[j];
+		io.in_len[j] = mreq.inputs[j].len;
 	}
-	out_buf = kvmalloc(req.out_len, GFP_KERNEL);
-	if (!out_buf) {
-		ret = -ENOMEM;
-		goto out_unlock;
-	}
-	if (copy_from_user(in_buf, u64_to_user_ptr(req.in_ptr), req.in_len)) {
-		ret = -EFAULT;
-		goto out_unlock;
+	for (j = 0; j < mreq.out_count; j++) {
+		out_bufs[j] = kvmalloc(mreq.outputs[j].len, GFP_KERNEL);
+		if (!out_bufs[j]) {
+			ret = -ENOMEM;
+			goto out_unlock;
+		}
+		io.out_buf[j] = out_bufs[j];
+		io.out_len[j] = mreq.outputs[j].len;
 	}
 
-	io.in_idx = (unsigned int)in_idx;
-	io.in_buf = in_buf;
-	io.in_len = req.in_len;
-	io.out_idx = (unsigned int)out_idx;
-	io.out_buf = out_buf;
-	io.out_len = req.out_len;
 	ret = ane_h18_res_call_exec(ane, slot, &io, &ns, &digest);
 
 out_unlock:
 	mutex_unlock(&ane->res_lock);
 	if (!ret) {
-		if (copy_to_user(u64_to_user_ptr(req.out_ptr), out_buf, req.out_len)) {
-			ret = -EFAULT;
-		} else {
-			req.latency_ns = ns;
-			req.digest = digest;
-			req.output_bytes = req.out_len;
-			req.reserved = 0;
-			if (copy_to_user(argp, &req, sizeof(req)))
+		for (j = 0; j < mreq.out_count; j++) {
+			if (copy_to_user(u64_to_user_ptr(mreq.outputs[j].ptr), out_bufs[j], mreq.outputs[j].len)) {
 				ret = -EFAULT;
+				break;
+			}
+		}
+		if (!ret) {
+			if (is_single) {
+				sreq.latency_ns = ns;
+				sreq.digest = digest;
+				sreq.output_bytes = sreq.out_len;
+				sreq.reserved = 0;
+				if (copy_to_user(argp, &sreq, sizeof(sreq)))
+					ret = -EFAULT;
+			} else {
+				mreq.latency_ns = ns;
+				mreq.digest = digest;
+				mreq.reserved = 0;
+				mreq.pad = 0;
+				if (copy_to_user(argp, &mreq, sizeof(mreq)))
+					ret = -EFAULT;
+			}
 		}
 	}
-	kvfree(out_buf);
-	kvfree(in_buf);
+	for (j = 0; j < ANE_H18_RES_MAX_USER_IO; j++) {
+		kvfree(out_bufs[j]);
+		kvfree(in_bufs[j]);
+	}
 	return ret;
+}
+
+static long ane_h18_res_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct ane_h18 *ane = file ? file->private_data : NULL;
+	void __user *argp = (void __user *)arg;
+
+	if (!ane)
+		return -ENODEV;
+	if (cmd == ANE_H18_IOC_CALL_IO)
+		return ane_h18_res_ioctl_multi(ane, argp, true);
+	if (cmd == ANE_H18_IOC_CALL_MULTI_IO)
+		return ane_h18_res_ioctl_multi(ane, argp, false);
+	return -ENOTTY;
 }
 
 static const struct file_operations ane_h18_res_fops = {

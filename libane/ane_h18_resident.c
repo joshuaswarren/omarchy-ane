@@ -159,6 +159,51 @@ int ane_h18_resident_call_io(int fd, uint64_t handle,
 	return 0;
 }
 
+int ane_h18_resident_call_multi_io(int fd, uint64_t handle,
+				  const struct ane_h18_resident_in_buf *inputs,
+				  unsigned int in_count,
+				  const struct ane_h18_resident_out_buf *outputs,
+				  unsigned int out_count,
+				  struct ane_h18_resident_result *result)
+{
+	struct ane_h18_res_call_multi_io request;
+	unsigned int i;
+	int ret;
+
+	if (!handle || !inputs || !outputs || !result ||
+	    !in_count || in_count > ANE_H18_RES_MAX_USER_IO ||
+	    !out_count || out_count > ANE_H18_RES_MAX_USER_IO)
+		return -EINVAL;
+	memset(&request, 0, sizeof(request));
+	request.version = ANE_H18_RES_ABI_VERSION;
+	request.handle = handle;
+	request.in_count = in_count;
+	request.out_count = out_count;
+	for (i = 0; i < in_count; i++) {
+		if (!inputs[i].data || !inputs[i].bytes)
+			return -EINVAL;
+		request.inputs[i].surface_id = inputs[i].id;
+		request.inputs[i].len = inputs[i].bytes;
+		request.inputs[i].ptr = (uintptr_t)inputs[i].data;
+	}
+	for (i = 0; i < out_count; i++) {
+		if (!outputs[i].data || !outputs[i].bytes)
+			return -EINVAL;
+		request.outputs[i].surface_id = outputs[i].id;
+		request.outputs[i].len = outputs[i].bytes;
+		request.outputs[i].ptr = (uintptr_t)outputs[i].data;
+	}
+	ret = ioctl(fd, ANE_H18_IOC_CALL_MULTI_IO, &request);
+	if (ret < 0)
+		return -errno;
+	if (ret)
+		return -EPROTO;
+	*result = (struct ane_h18_resident_result) {
+		.latency_ns = request.latency_ns, .digest = request.digest,
+	};
+	return 0;
+}
+
 int ane_h18_resident_free(int fd, uint64_t handle)
 {
 	char reply[REPLY_SIZE];

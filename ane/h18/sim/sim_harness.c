@@ -431,7 +431,7 @@ static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 		memcpy(&prio, blk + 0x18, 4);
 		memcpy(&cookie, blk + 0x20, 8);
 		memcpy(&cnt, blk + 0x28, 4);
-		if (prio != 2 || cookie != 0xADD0 || !cnt || cnt > 8)
+		if (prio != 2 || cookie != 0xADD0 || !cnt || cnt > ANE_H18_PROG_MAX_IO)
 			return 7;
 		{
 			const u8 *in5_va = NULL;
@@ -449,7 +449,22 @@ static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 				memcpy(&s, r + 0x20, 8);
 				if (flags != 1 || !sim_buf_ok(a, s))
 					return 7;
-				if (sim_res_io_echo) {
+				if (sim_res_io_echo == 2) {
+					if (bid == 11 && sim_buf_va(a)[0] != 0x77)
+						return 7;
+					if (bid == 64 && sim_buf_va(a)[0] != 0x00)
+						return 7;
+					if (bid == 5 && type == 0) {
+						in5_va = sim_buf_va(a);
+						in5_sz = (size_t)s;
+					}
+					if (type == 1 && (o = sim_buf_va(a))) {
+						u8 tag = (u8)(bid == 4 ? 0x44 : 0x77);
+						o[0] = tag;
+						o[1] = in5_va ? (u8)(in5_va[0] ^ 0x5aU) : 0;
+						sim_out_written = 1;
+					}
+				} else if (sim_res_io_echo) {
 					if (bid != 4 && bid != 5 && bid != 6)
 						return 7;
 					if (bid == 5 && type == 0) {
@@ -1392,7 +1407,7 @@ static void pos_prog_parse(void)
 		{ "a section offset inside the tables", 0x20 + 16, &(u64){ 0x10 }, 8 },
 		{ "a section id of zero", 0x20, &(u64){ 0 }, 4 },
 		{ "two sections with one id", 0x20 + 0x20, &(u32){ 1 }, 4 },
-		{ "nine buffers", 12, &(u32){ 9 }, 4 },
+		{ "seventeen buffers", 12, &(u32){ 17 }, 4 },
 		{ "no sections", 8, &(u32){ 0 }, 4 },
 		{ "ten sections", 8, &(u32){ 10 }, 4 },
 		{ "a buffer direction of 3", 0x20 + 6 * 0x20 + 4, &(u32){ 3 }, 4 },
@@ -1420,14 +1435,45 @@ static void pos_prog_parse(void)
 	/* the same files, truncated: the header or the tables do not fit */
 	memcpy(b, sim_blob, sim_blob_len);
 	chk(ane_h18_prog_parse(b, 0x10, &pd, &why) == -EINVAL && ane_h18_prog_parse(b, 0x100, &pd, &why) == -EINVAL, "PG14 a file shorter than its header or tables is refused");
-	/* total over the limit: buffers are not bounded by the file (zero filled), so three of 64 MiB plus the sections are over 192 MiB; two of 64 MiB are fine */
+	/* total over the limit: 3 x 160 MiB (480 MiB) + sections <= 640 MiB passes; 4 x 160 MiB (640 MiB) + sections > 640 MiB is refused */
 	memcpy(b, sim_blob, sim_blob_len);
 	v = ANE_H18_PROG_MAX_BUF;
 	memcpy(b + 0x20 + 6 * 0x20 + 8, &v, 8);
 	memcpy(b + 0x20 + 7 * 0x20 + 8, &v, 8);
-	chk(ane_h18_prog_parse(b, n, &pd, &why) == 0, "PG15 two buffers of 64 MiB with the sections are within the byte limit");
 	memcpy(b + 0x20 + 8 * 0x20 + 8, &v, 8);
-	chk(ane_h18_prog_parse(b, n, &pd, &why) == -EINVAL, "PG15 three buffers of 64 MiB with the sections are over the byte limit and refused");
+	chk(ane_h18_prog_parse(b, n, &pd, &why) == 0, "PG15 three buffers of 160 MiB with the sections are within the 640 MiB limit");
+	/* bump section 2 size to 160 MiB as well -> 4 x 160 MiB + other sections > 640 MiB */
+	memcpy(b + 0x20 + 1 * 0x20 + 8, &v, 8);
+	/* section bounds are checked against file size, so use 4th io slot or verify limit via 3 x 160M + sec overflow */
+	memcpy(b, sim_blob, sim_blob_len);
+	/* craft a 5-buffer header with 4 x 160 MiB zero-filled buffers + sections (> 640 MiB) */
+	{
+		static u8 b5[0x8000];
+		u64 fsz = 0x20 + (6 + 5) * 0x20 + 0x400;
+		u32 nsec = 6, nio = 5, sid, iid, dir;
+		u64 sz16 = 0x10, off = 0x20 + (6 + 5) * 0x20;
+		memset(b5, 0, fsz);
+		memcpy(b5, "ANEP", 4);
+		memcpy(b5 + 4, &(u32){ 1 }, 4);
+		memcpy(b5 + 8, &nsec, 4);
+		memcpy(b5 + 12, &nio, 4);
+		memcpy(b5 + 16, &fsz, 8);
+		for (k = 0; k < 6; k++) {
+			sid = (u32)(k + 1);
+			memcpy(b5 + 0x20 + k * 0x20, &sid, 4);
+			memcpy(b5 + 0x20 + k * 0x20 + 8, &sz16, 8);
+			memcpy(b5 + 0x20 + k * 0x20 + 16, &off, 8);
+			off += 0x10;
+		}
+		for (k = 0; k < 5; k++) {
+			iid = (u32)(4 + k); dir = (u32)(k == 0 ? 1 : 0);
+			u64 bsz = k < 4 ? ANE_H18_PROG_MAX_BUF : 0x4000ULL;
+			memcpy(b5 + 0x20 + (6 + k) * 0x20, &iid, 4);
+			memcpy(b5 + 0x20 + (6 + k) * 0x20 + 4, &dir, 4);
+			memcpy(b5 + 0x20 + (6 + k) * 0x20 + 8, &bsz, 8);
+		}
+		chk(ane_h18_prog_parse(b5, fsz, &pd, &why) == -EINVAL, "PG15 four buffers of 160 MiB with sections are over the 640 MiB limit and refused");
+	}
 }
 
 static void pos_boot(void)
@@ -3720,6 +3766,130 @@ static void pos_residency(void)
 		chk(r_embed == -EINVAL && r_doff == -EINVAL && sim_prog_n == prog_before + 5 &&
 		    r_legacy > 0 && res_live_dma() == 0 && sim_kv_live == 0,
 		    "RP11j CALL_IO refuses embedded/nonzero-doff input (-EINVAL) with no call/overwrite; legacy call preserves 0xaa input");
+	}
+
+	/* RP12: noncontiguous SG surfaces (> 1 MiB) + ANE_H18_IOC_CALL_MULTI_IO (2 in + 2 out + >1M scratch + preloaded const). */
+	{
+		static u8 mblob[0x4000];
+		const u32 nsec = 6, nio = 6;
+		const u64 hdr_end = 0x20 + (nsec + nio) * 0x20;
+		u64 cur = hdr_end, fsz, hA = 0;
+		struct file f;
+		char rep[96], cmd[128], hA_str[32];
+		ssize_t rn;
+		struct { u32 id; u64 sz; } secs[6] = {
+			{ 1, 0x40 }, { 2, 0x40 }, { 3, 0x40 }, { 4, 0x40 }, { 5, 0x40 }, { 7, 0x40 }
+		};
+		struct { u32 id, dir; u64 sz, dsz; } ios[6] = {
+			{ 11, 0, 0x4000, 0x40 },        /* preloaded const */
+			{ 64, 2, 0x200000, 0 },         /* 2 MiB scratch -> exercises noncontiguous SG path */
+			{ 5,  0, 0x4000, 0 },           /* writable input 0 */
+			{ 6,  0, 0x4000, 0 },           /* writable input 1 */
+			{ 4,  1, 0x4000, 0 },           /* output 0 */
+			{ 7,  1, 0x4000, 0 },           /* output 1 */
+		};
+		u32 i, ver = 1;
+		u64 sec_off[6], pre_off = 0;
+
+		memset(mblob, 0, sizeof(mblob));
+		for (i = 0; i < nsec; i++) {
+			sec_off[i] = cur;
+			memset(mblob + cur, (int)(0x10 + i), secs[i].sz);
+			cur += secs[i].sz;
+		}
+		pre_off = cur;
+		memset(mblob + pre_off, 0x77, 0x40);
+		cur += 0x40;
+		fsz = cur;
+		memcpy(mblob, "ANEP", 4);
+		memcpy(mblob + 4, &ver, 4);
+		memcpy(mblob + 8, &nsec, 4);
+		memcpy(mblob + 12, &nio, 4);
+		memcpy(mblob + 16, &fsz, 8);
+		for (i = 0; i < nsec; i++) {
+			u8 *r = mblob + 0x20 + i * 0x20;
+			memcpy(r, &secs[i].id, 4);
+			memcpy(r + 8, &secs[i].sz, 8);
+			memcpy(r + 16, &sec_off[i], 8);
+		}
+		for (i = 0; i < nio; i++) {
+			u8 *r = mblob + 0x20 + (nsec + i) * 0x20;
+			u64 doff = ios[i].dsz ? pre_off : 0;
+			memcpy(r, &ios[i].id, 4);
+			memcpy(r + 4, &ios[i].dir, 4);
+			memcpy(r + 8, &ios[i].sz, 8);
+			memcpy(r + 16, &doff, 8);
+			memcpy(r + 24, &ios[i].dsz, 8);
+		}
+
+		res_boot_live();
+		sim_fw_data = mblob;
+		sim_fw_size = (size_t)fsz;
+		sim_fw_hook = NULL;
+		probe_now();
+		memset(&f, 0, sizeof(f));
+		res_open(&f);
+		rn = res_cmd(&f, "retain multi.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
+		chk(rn == 17, "RP12a retain multi-IO program with 2 MiB noncontiguous scratch succeeds");
+		hA_str[16] = 0;
+		sscanf(hA_str, "%llx", (unsigned long long *)&hA);
+
+		{
+			struct ane_h18 *ane_p = platform_get_drvdata(&pdev);
+			struct ane_h18_res_slot *sl = &ane_p->res_tab.slots[0];
+			u8 in0[128], in1[256], out0[512], out1[256];
+			struct ane_h18_res_call_multi_io mreq;
+			long r_ok, r_dup, r_emb, r_tail, r_cnt, r_pad;
+
+			chk(sl->pg_io[1].sgt != NULL && sl->pg_io[0].sgt == NULL,
+			    "RP12a2 2 MiB scratch allocated via dma_alloc_noncontiguous, <=1 MiB via coherent");
+			memset(sl->pg_io[1].va, 0x55, 64);
+			memset(in0, 0x11, sizeof(in0));
+			memset(in1, 0x22, sizeof(in1));
+			memset(out0, 0xcc, sizeof(out0));
+			memset(out1, 0xdd, sizeof(out1));
+			memset(&mreq, 0, sizeof(mreq));
+			mreq.version = ANE_H18_RES_ABI_VERSION;
+			mreq.handle = hA;
+			mreq.in_count = 2;
+			mreq.out_count = 2;
+			mreq.inputs[0].surface_id = 5; mreq.inputs[0].len = sizeof(in0); mreq.inputs[0].ptr = (uintptr_t)in0;
+			mreq.inputs[1].surface_id = 6; mreq.inputs[1].len = sizeof(in1); mreq.inputs[1].ptr = (uintptr_t)in1;
+			mreq.outputs[0].surface_id = 4; mreq.outputs[0].len = sizeof(out0); mreq.outputs[0].ptr = (uintptr_t)out0;
+			mreq.outputs[1].surface_id = 7; mreq.outputs[1].len = sizeof(out1); mreq.outputs[1].ptr = (uintptr_t)out1;
+			sim_res_io_echo = 2;
+			r_ok = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			sim_res_io_echo = 0;
+			chk(r_ok == 0 && ((u8 *)sl->pg_io[0].va)[0] == 0x77 &&
+			    ((u8 *)sl->pg_io[1].va)[0] == 0x00 &&
+			    ((u8 *)sl->pg_io[2].va)[0] == 0x11 && ((u8 *)sl->pg_io[2].va)[128] == 0x00 &&
+			    ((u8 *)sl->pg_io[3].va)[0] == 0x22 && ((u8 *)sl->pg_io[3].va)[256] == 0x00 &&
+			    out0[0] == 0x44 && out0[1] == (0x11 ^ 0x5a) && out1[0] == 0x77 && out1[1] == (0x11 ^ 0x5a) && sim_kv_live == 0,
+			    "RP12b CALL_MULTI_IO copies 2 inputs, zeroes tails+scratch, preserves preloaded const, returns 2 outputs");
+
+			mreq.inputs[1].surface_id = 5;
+			r_dup = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			mreq.inputs[1].surface_id = 11;
+			r_emb = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			mreq.inputs[1].surface_id = 6;
+			mreq.inputs[2].surface_id = 99;
+			r_tail = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			mreq.inputs[2].surface_id = 0;
+			mreq.in_count = 0;
+			r_cnt = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			mreq.in_count = 2; mreq.pad = 1;
+			r_pad = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_MULTI_IO, (unsigned long)(uintptr_t)&mreq);
+			chk(r_dup == -EINVAL && r_emb == -EINVAL && r_tail == -EINVAL &&
+			    r_cnt == -EINVAL && r_pad == -EINVAL && sim_kv_live == 0,
+			    "RP12c CALL_MULTI_IO rejects duplicate/embedded/nonzero-unused/zero-count/nonzero-pad with -EINVAL");
+		}
+
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA_str);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(res_live_dma() == 0 && sim_kv_live == 0,
+		    "RP12d noncontiguous SG + multi-IO free/rmmod leaves zero DMA and bounce leaks");
 	}
 }
 
