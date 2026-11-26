@@ -1,0 +1,93 @@
+{
+  "purpose": "Golden CPU fp16 output digests for the five M6 ANE ladder rungs (mul control, clip, relu, rms, matvec+iova_kern), so SUP-15 receipts self-check each rung's output. Computed on x86 CPU; no device data.",
+  "generator": "ane/h18/ladder-digests.py",
+  "x_vector": "x[j] = ((37j + 11) mod 257 - 128) / 128, residue 0 -> +1/128",
+  "rungs": {
+    "mul": {
+      "program_fixture": "fixtures/h14-anec/mul/program-0.anec",
+      "program_sha256": "b32fef9f18eaf2a92bbef1ce14d92c37c430af70f08f6506b0993be9a1e3cc67",
+      "kernel_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "golden_output_sha256": "beebf1d29e11ee3fd5b555d7bb8e40e4c9a83e59289812676c8d21f81d30820d",
+      "output_surface_bytes": 32768,
+      "cpu_rule": "y[j] = fp16(a[j]*b[j]), round half-away; a=x, b=x shifted one lane",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/mul-a.f16",
+        "channel6": "ladder-inputs/mul-b.f16"
+      },
+      "input_sha256": {
+        "mul-a.f16": "bbae1e9c9dedf5415268048bf5336f7f4bfa14e8b38f2e3bf9d7febd45347763",
+        "mul-b.f16": "687f293c5db8e96d5f60be83b92d0f265ff24231b0159b83e33c443d804dde1f"
+      }
+    },
+    "clip-high": {
+      "program_fixture": "fixtures/h14-anec/clip-high/program-0.anec",
+      "program_sha256": "abe78b1292775e365a83e5e98c1aee7baed0eb83d0b165f7b559378755c40495",
+      "kernel_sha256": "6583db31c7ca75f8bf1ed23e54995378db6b4e9c7de4551d58cc0bf395627d9d",
+      "golden_output_sha256": "bde496b41fb4c75ac3f209cbbfbd10931a19966163b55441f63ecad9f44ae7d9",
+      "output_surface_bytes": 32768,
+      "cpu_rule": "y[j] = min(x[j], 0.5), exact fp16",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/clip-in.f16"
+      },
+      "input_sha256": {
+        "clip-in.f16": "bbae1e9c9dedf5415268048bf5336f7f4bfa14e8b38f2e3bf9d7febd45347763"
+      }
+    },
+    "clip-low": {
+      "program_fixture": "fixtures/h14-anec/clip-low/program-0.anec",
+      "program_sha256": "1b2c143310945eeebbb4ed8b2bf571d2d826f3b46988a43c3f417b94e7552329",
+      "kernel_sha256": "7f87233f65891b6bfa41de070deaac18395d9cb6b63dd800ee8043c29d716567",
+      "golden_output_sha256": "3c95ffc9779ecd0bacd0b4a8ee0f1795661fd4d79edb98fd66211d11302abd15",
+      "output_surface_bytes": 32768,
+      "cpu_rule": "y[j] = max(x[j], 0.5), exact fp16",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/clip-in.f16"
+      },
+      "input_sha256": {
+        "clip-in.f16": "bbae1e9c9dedf5415268048bf5336f7f4bfa14e8b38f2e3bf9d7febd45347763"
+      }
+    },
+    "relu": {
+      "program_fixture": "fixtures/h14-anec/relu/program-0.anec",
+      "program_sha256": "429d991a07fcc8a1a4928390ff782c9351c855cd5e4299703b30799aa675e77d",
+      "kernel_sha256": "4fe7b59af6de3b665b67788cc2f99892ab827efae3a467342b3bb4e3bc8e5bfe",
+      "golden_output_sha256": "9d739d39ddd962ab0179bfd96eb23e115262c175f8af5ca9dd3b4f28c2bca096",
+      "output_surface_bytes": 32768,
+      "cpu_rule": "y[j] = max(x[j], 0), exact fp16",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/relu-in.f16"
+      },
+      "input_sha256": {
+        "relu-in.f16": "bbae1e9c9dedf5415268048bf5336f7f4bfa14e8b38f2e3bf9d7febd45347763"
+      }
+    },
+    "rms-c2048-gamma": {
+      "program_fixture": "fixtures/h14-anec/rms-c2048-gamma/program-0.anec",
+      "program_sha256": "2c02a3216690c2d4d5db967c74bfd6c3db04c41e36a22f229851e375272fc022",
+      "kernel_sha256": "6b44c2f1444452b0b20fff03735b985f207f5f48755408bf0ab5982e0e197b83",
+      "golden_output_sha256": "7ce5861901dde995d5c039c0e414f37af52bfcd6c7a10d313389ef5b10e8b6d2",
+      "output_surface_bytes": 131072,
+      "cpu_rule": "rs = sqrt(E[x^2] + 2^-17*max|x|^2); y[r] = fp16(x[r]*fp16(0.5/rs)), half-away, r in 64..2047; rows 0..63 device-untouched, golden zeros",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/rms-in.f16"
+      },
+      "input_sha256": {
+        "rms-in.f16": "8dc612f04a55373c139f7d1010977b50c25b859aaf9d24e2ff7122faea3820d1"
+      }
+    },
+    "matvec": {
+      "program_fixture": "fixtures/h14-anec/matvec/program-0.anec",
+      "program_sha256": "cfb057c907695747c37aadf4b9e2695fdf7d4916dcc3957289aad487c4712e52",
+      "kernel_sha256": "b5838c5c70cab1156c8c5be5c3c87b5ce2c15a22fdf35aa380b09e8c80030b77",
+      "golden_output_sha256": "f595b6570d55837387481c7f2609b10ea9c9a4e1a4b61a5cc17356ec28912f4a",
+      "output_surface_bytes": 16384,
+      "cpu_rule": "y[n] = fp16(sum_k x[k]*W[n][k]), fp64 accumulate, IEEE half-even; W un-permuted from kernel.bin",
+      "input_fixtures": {
+        "channel5": "ladder-inputs/matvec-in.f16"
+      },
+      "input_sha256": {
+        "matvec-in.f16": "513c92f1067e1b1a8ec67157333894c7a4a4b777e68d5651b4908420b0184bf1"
+      }
+    }
+  }
+}
