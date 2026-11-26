@@ -3844,6 +3844,8 @@ static void pos_residency(void)
 			chk(sl->pg_io[1].sgt != NULL && sl->pg_io[0].sgt == NULL,
 			    "RP12a2 2 MiB scratch allocated via dma_alloc_noncontiguous, <=1 MiB via coherent");
 			memset(sl->pg_io[1].va, 0x55, 64);
+			memset((u8 *)sl->pg_io[2].va + sizeof(in0), 0xee, 64);
+			memset((u8 *)sl->pg_io[3].va + sizeof(in1), 0xee, 64);
 			memset(in0, 0x11, sizeof(in0));
 			memset(in1, 0x22, sizeof(in1));
 			memset(out0, 0xcc, sizeof(out0));

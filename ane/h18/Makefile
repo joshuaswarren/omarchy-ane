@@ -494,29 +494,29 @@ sim-mutation-resnodupprog:
 sim-mutation-resrollshort:
 	$(call mutant,resrollshort,s/if (un != off) {/if (0 \/* NEG: short rollback ignored *\/) {/,NEG: short rollback ignored,pos)
 
-# CALL_IO skips zeroing the writable input tail [in_len .. surface.size)
+# CALL_IO / CALL_MULTI_IO skips zeroing the writable input tail [in_len .. surface.size)
 sim-mutation-resionotailzero:
-	$(call mutant,resionotailzero,s/if (io->in_len < p->io\[io->in_idx\].size)/if (0 \/* NEG: input tail not zeroed *\/)/,NEG: input tail not zeroed,pos)
+	$(call mutant,resionotailzero,s/if (io->in_len\[j\] < p->io\[idx\].size)/if (0 \/* NEG: input tail not zeroed *\/)/,NEG: input tail not zeroed,pos)
 
-# CALL_IO skips bounding in_len/out_len against ANEP-mapped surface sizes
+# CALL_IO / CALL_MULTI_IO skips bounding in_len against ANEP-mapped surface sizes
 sim-mutation-resionobounds:
-	$(call mutant,resionobounds,s/req.in_len > p->io\[in_idx\].size || req.out_len > p->io\[out_idx\].size/0 \/* NEG: ioctl len bounds off *\//,NEG: ioctl len bounds off,pos)
+	$(call mutant,resionobounds,s/mreq.inputs\[j\].len > p->io\[found\].size/0 \/* NEG: ioctl len bounds off *\//,NEG: ioctl len bounds off,pos)
 
 # CALL_IO skips ABI version/flags/reserved validation
 sim-mutation-resionoverflag:
-	$(call mutant,resionoverflag,s/req.version != ANE_H18_RES_ABI_VERSION || req.flags || req.reserved/0 \/* NEG: abi ver\/flags off *\//,NEG: abi ver/flags off,pos)
+	$(call mutant,resionoverflag,s/sreq.version != ANE_H18_RES_ABI_VERSION || sreq.flags || sreq.reserved/0 \/* NEG: abi ver\/flags off *\//,NEG: abi ver/flags off,pos)
 
-# CALL_IO ignores surface direction (dir==0 vs dir==1) when resolving surface IDs
+# CALL_IO / CALL_MULTI_IO ignores surface direction (dir==0 vs dir==1) when resolving surface IDs
 sim-mutation-resionodir:
-	$(call mutant,resionodir,s/p->io\[i\].dir == 1 && p->io\[i\].id == req.out_surface_id/p->io[i].id == req.out_surface_id \/* NEG: out dir off *\//,NEG: out dir off,pos)
+	$(call mutant,resionodir,s/p->io\[i\].dir == 1 && p->io\[i\].id == mreq.outputs\[j\].surface_id/p->io[i].id == mreq.outputs[j].surface_id \/* NEG: out dir off *\//,NEG: out dir off,pos)
 
-# CALL_IO copies output back to userspace even after a failed firmware call
+# CALL_IO / CALL_MULTI_IO copies output back to userspace even after a failed firmware call
 sim-mutation-resiocopyonerr:
-	$(call mutant,resiocopyonerr,/^static long ane_h18_res_ioctl/$(COMMA)/^}/ s/if (!ret) {/if (!ret || out_buf \/* NEG: copy on err *\/) {/,NEG: copy on err,pos)
+	$(call mutant,resiocopyonerr,/^out_unlock:/$(COMMA)/^}/ s/^\tif (!ret) {/\tif (!ret || out_bufs[0] \/* NEG: copy on err *\/) {/,NEG: copy on err,pos)
 
-# CALL_IO allows overwriting an embedded-input control surface (nonzero doff or dsize)
+# CALL_IO / CALL_MULTI_IO allows overwriting an embedded-input control surface (nonzero doff or dsize)
 sim-mutation-resioembed:
-	$(call mutant,resioembed,s/p->io\[in_idx\].doff || p->io\[in_idx\].dsize/0 \/* NEG: embedded input allowed *\//,NEG: embedded input allowed,pos)
+	$(call mutant,resioembed,s/p->io\[found\].doff || p->io\[found\].dsize/0 \/* NEG: embedded input allowed *\//,NEG: embedded input allowed,pos)
 
 sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-dt-align-check sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
 	sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
