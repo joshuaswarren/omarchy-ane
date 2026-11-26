@@ -121,6 +121,14 @@ static u16 sim_res_fail_ack;
 static u32 sim_res_spoof_prog, sim_res_spoof_proc;	/* nonzero: stamp wrong resident prog/proc into IO_T2H events */
 static u32 sim_res_dup_prog;				/* nonzero: force next LOAD_PROGRAM to return this duplicate prog_id */
 static int sim_res_malformed_create;			/* nonzero: next CREATE_PROCESS leaves proc_id at 0xffffffff */
+int sim_cfu_fail_at, sim_cfu_calls;
+int sim_ctu_fail_at, sim_ctu_calls;
+unsigned long sim_cfu_partial, sim_ctu_partial;
+int sim_kvmalloc_fail_at, sim_kvmalloc_calls, sim_kv_live;
+static int sim_res_io_echo;				/* nonzero: firmware echoes 512B id5^0x5a into id4 + checks zero pre-state */
+static u8 sim_res_io_last_in[0x4000];
+static size_t sim_res_io_last_in_sz;
+static int sim_res_io_out_was_zero;
 
 static struct sim_fw_prog *sim_fw_find(u32 prog_id)
 {
@@ -425,29 +433,62 @@ static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 		memcpy(&cnt, blk + 0x28, 4);
 		if (prio != 2 || cookie != 0xADD0 || !cnt || cnt > 8)
 			return 7;
-		for (i = 0; i < (int)cnt; i++) {
-			const u8 *r = blk + 0x60 + i * 0x30;
-			u32 flags, type;
-			u8 *o;
+		{
+			const u8 *in5_va = NULL;
+			size_t in5_sz = 0;
 
-			memcpy(&flags, r, 4);
-			memcpy(&type, r + 8, 4);
-			memcpy(&a, r + 0x18, 8);
-			memcpy(&s, r + 0x20, 8);
-			if (flags != 1 || !sim_buf_ok(a, s))
-				return 7;
-			{
-				u32 bid;
+			for (i = 0; i < (int)cnt; i++) {
+				const u8 *r = blk + 0x60 + i * 0x30;
+				u32 flags, type, bid;
+				u8 *o;
 
+				memcpy(&flags, r, 4);
 				memcpy(&bid, r + 4, 4);
-				if ((bid == 5 && sim_buf_va(a)[0] != 0xaa) || (bid == 6 && sim_buf_va(a)[0] != 0xbb) || (bid != 4 && bid != 5 && bid != 6))	/* the input data of the file is in the surface */
+				memcpy(&type, r + 8, 4);
+				memcpy(&a, r + 0x18, 8);
+				memcpy(&s, r + 0x20, 8);
+				if (flags != 1 || !sim_buf_ok(a, s))
 					return 7;
-			}
-			if (type == 1 && (o = sim_buf_va(a)) && (sim_prog_mode != 12 || !sim_out_written)) {	/* mode 12: only the first call writes the output */
-				v = fp->out_tag;
-				memcpy(o, &v, 4);
-				memcpy(o + 4, &v, 4);
-				sim_out_written = 1;
+				if (sim_res_io_echo) {
+					if (bid != 4 && bid != 5 && bid != 6)
+						return 7;
+					if (bid == 5 && type == 0) {
+						in5_va = sim_buf_va(a);
+						in5_sz = (size_t)s;
+						sim_res_io_last_in_sz = in5_sz < sizeof(sim_res_io_last_in) ? in5_sz : sizeof(sim_res_io_last_in);
+						memcpy(sim_res_io_last_in, in5_va, sim_res_io_last_in_sz);
+					}
+					if (type == 1 && (o = sim_buf_va(a))) {
+						size_t k;
+
+						sim_res_io_out_was_zero = 1;
+						for (k = 0; k < (size_t)s; k++)
+							if (o[k] != 0) {
+								sim_res_io_out_was_zero = 0;
+								break;
+							}
+						if (in5_va) {
+							size_t n = 512;
+
+							if (n > in5_sz)
+								n = in5_sz;
+							if (n > (size_t)s)
+								n = (size_t)s;
+							for (k = 0; k < n; k++)
+								o[k] = (u8)(in5_va[k] ^ 0x5aU);
+						}
+						sim_out_written = 1;
+					}
+				} else {
+					if ((bid == 5 && sim_buf_va(a)[0] != 0xaa) || (bid == 6 && sim_buf_va(a)[0] != 0xbb) || (bid != 4 && bid != 5 && bid != 6))	/* the input data of the file is in the surface */
+						return 7;
+					if (type == 1 && (o = sim_buf_va(a)) && (sim_prog_mode != 12 || !sim_out_written)) {	/* mode 12: only the first call writes the output */
+						v = fp->out_tag;
+						memcpy(o, &v, 4);
+						memcpy(o + 4, &v, 4);
+						sim_out_written = 1;
+					}
+				}
 			}
 		}
 		if (sim_prog_mode == 3)
@@ -872,6 +913,14 @@ static void reset_all(void)
 	sim_res_spoof_proc = 0;
 	sim_res_dup_prog = 0;
 	sim_res_malformed_create = 0;
+	sim_cfu_fail_at = sim_cfu_calls = 0;
+	sim_ctu_fail_at = sim_ctu_calls = 0;
+	sim_cfu_partial = sim_ctu_partial = 0;
+	sim_kvmalloc_fail_at = sim_kvmalloc_calls = sim_kv_live = 0;
+	sim_res_io_echo = 0;
+	sim_res_io_last_in_sz = 0;
+	sim_res_io_out_was_zero = 0;
+	memset(sim_res_io_last_in, 0, sizeof(sim_res_io_last_in));
 	sim_map_fail_iova = 0;
 	sim_fw_hook = NULL;
 	sim_fw_err = sim_fw_released = sim_fw_requests = 0;
@@ -2869,6 +2918,10 @@ static int neg_reads(void)
 /* ---- H18 resident binding lifetime tests (RP1..RP7): N resident programs, switch without reload, free in any order ---- */
 static u8 sim_blob_plain[0x10000];
 static size_t sim_blob_plain_len;
+static u8 sim_blob_plain_io[0x10000];
+static size_t sim_blob_plain_io_len;
+static u8 sim_blob_bad_doff[0x10000];
+static size_t sim_blob_bad_doff_len;
 static u8 sim_blob_weighted[0x10000];
 static size_t sim_blob_weighted_len;
 static u8 sim_blob_bad[32];
@@ -2887,6 +2940,16 @@ static int sim_res_fw_hook(const char *name, const u8 **data, size_t *size)
 		*size = sim_blob_weighted_len;
 		return 0;
 	}
+	if (!strcmp(name, "plain_io.bin")) {
+		*data = sim_blob_plain_io;
+		*size = sim_blob_plain_io_len;
+		return 0;
+	}
+	if (!strcmp(name, "bad_doff.bin")) {
+		*data = sim_blob_bad_doff;
+		*size = sim_blob_bad_doff_len;
+		return 0;
+	}
 	*data = sim_blob_plain;
 	*size = sim_blob_plain_len;
 	return 0;
@@ -2895,11 +2958,20 @@ static int sim_res_fw_hook(const char *name, const u8 **data, size_t *size)
 static void res_boot_live(void)
 {
 	static const u32 scr[] = { 8, 0xc440, 0x100, 0xf00000, 0, 0x100090, 0, ANE_H18_HS_READY };
+	u64 bad_doff = 0x1000;
 
 	kboot_setup();
 	make_blob();
 	memcpy(sim_blob_plain, sim_blob, sim_blob_len);
 	sim_blob_plain_len = sim_blob_len;
+	memcpy(sim_blob_plain_io, sim_blob, sim_blob_len);
+	sim_blob_plain_io_len = sim_blob_len;
+	/* io[0] (id=5): clear doff and dsize for a plain-input program without embedded data. */
+	memset(sim_blob_plain_io + 0x20 + 6 * 0x20 + 16, 0, 16);
+	memcpy(sim_blob_bad_doff, sim_blob_plain_io, sim_blob_plain_io_len);
+	sim_blob_bad_doff_len = sim_blob_plain_io_len;
+	/* io[0] (id=5): nonzero doff with dsize=0 must still be refused by CALL_IO. */
+	memcpy(sim_blob_bad_doff + 0x20 + 6 * 0x20 + 16, &bad_doff, 8);
 	make_blob_kern_weights();
 	memcpy(sim_blob_weighted, sim_blob, sim_blob_len);
 	sim_blob_weighted_len = sim_blob_len;
@@ -3327,6 +3399,327 @@ static void pos_residency(void)
 		chk(r_mal == -EIO && sim_prog_n == 2 && sim_prog_ops[0] == 0x200 && sim_prog_ops[1] == 0x202 &&
 		    sim_owner_module.refs >= 1 && res_live_dma() > 0 && r_ret == -ESHUTDOWN,
 		    "RP10b malformed CREATE_PROCESS (~0u) quarantines engine without guessing DESTROY_PROGRAM");
+	}
+
+	/* RP11: ANE_H18_IOC_CALL_IO on the same exclusive resident fd (512B input -> id5, 16 KiB output <- id4,
+	 * tail zeroing, output zeroing, digest match, partial read, error/fault isolation, zero reload & zero leak). */
+	{
+		struct file f;
+		char hA_str[32], hB_str[32], rep[96], cmd[128];
+		u64 hA = 0, hB = 0, expect_digest;
+		u8 in_big[1024], in_512[512], out_16k[0x4000], out_part[512 + 32];
+		struct ane_h18_res_call_io req;
+		size_t k;
+		long rc;
+		int tail_zero_ok, gold_ok, pad_zero_ok, part_ok;
+
+		res_boot_live();
+		probe_now();
+		sim_res_io_echo = 1;
+		res_open(&f);
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
+		hA_str[16] = '\0';
+		sscanf(hA_str, "%llx", (unsigned long long *)&hA);
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
+		hB_str[16] = '\0';
+		sscanf(hB_str, "%llx", (unsigned long long *)&hB);
+
+		/* RP11a: First write 1024 non-zero bytes to id5 so bytes [512..1024) are dirty, then write 512 bytes
+		 * and read full 16 KiB id4: verify input tail [512..16384) zeroed, output zeroed before call,
+		 * 512 gold bytes + 15872 zero padding bytes returned, output_bytes==16384, latency_ns>0, exact FNV-1a digest. */
+		for (k = 0; k < sizeof(in_big); k++)
+			in_big[k] = (u8)(0xa5U ^ (k & 0xffU));
+		memset(out_16k, 0xee, sizeof(out_16k));
+		memset(&req, 0, sizeof(req));
+		req.version = ANE_H18_RES_ABI_VERSION;
+		req.handle = hA;
+		req.in_surface_id = 5;
+		req.out_surface_id = 4;
+		req.in_len = sizeof(in_big);
+		req.out_len = sizeof(out_16k);
+		req.in_ptr = (u64)(uintptr_t)in_big;
+		req.out_ptr = (u64)(uintptr_t)out_16k;
+		rc = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&req);
+		chk(rc == 0 && sim_res_io_out_was_zero && req.output_bytes == sizeof(out_16k) && req.latency_ns > 0 && sim_kv_live == 0,
+		    "RP11a priming 1024B CALL_IO succeeds with zeroed output surface and zero bounce leak");
+
+		for (k = 0; k < sizeof(in_512); k++)
+			in_512[k] = (u8)((k * 7U + 3U) & 0xffU);
+		memset(out_16k, 0xcc, sizeof(out_16k));
+		req.in_len = sizeof(in_512);
+		req.out_len = sizeof(out_16k);
+		req.in_ptr = (u64)(uintptr_t)in_512;
+		req.out_ptr = (u64)(uintptr_t)out_16k;
+		req.latency_ns = 0;
+		req.digest = 0;
+		req.output_bytes = 0;
+		rc = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&req);
+		tail_zero_ok = (sim_res_io_last_in_sz == 0x4000 && !memcmp(sim_res_io_last_in, in_512, sizeof(in_512)));
+		for (k = sizeof(in_512); k < sim_res_io_last_in_sz; k++)
+			if (sim_res_io_last_in[k] != 0)
+				tail_zero_ok = 0;
+		gold_ok = 1;
+		for (k = 0; k < sizeof(in_512); k++)
+			if (out_16k[k] != (u8)(in_512[k] ^ 0x5aU))
+				gold_ok = 0;
+		pad_zero_ok = 1;
+		for (k = sizeof(in_512); k < sizeof(out_16k); k++)
+			if (out_16k[k] != 0)
+				pad_zero_ok = 0;
+		expect_digest = 0xcbf29ce484222325ULL;
+		for (k = 0; k < sizeof(out_16k) / 4; k++) {
+			u32 w;
+
+			memcpy(&w, out_16k + k * 4, 4);
+			expect_digest ^= w;
+			expect_digest *= 0x100000001b3ULL;
+		}
+		chk(rc == 0 && sim_res_io_out_was_zero && tail_zero_ok && gold_ok && pad_zero_ok &&
+		    req.output_bytes == sizeof(out_16k) && req.latency_ns > 0 && req.digest == expect_digest && sim_kv_live == 0,
+		    "RP11b 512B id5 -> 16 KiB id4 CALL_IO zeroes input tail + output, returns 512B gold + zero padding + exact digest");
+
+		/* RP11c: partial out_len (512B) copies exactly 512B without touching guard canary, digest still covers full id4. */
+		memset(out_part, 0xdd, sizeof(out_part));
+		req.handle = hB;
+		req.in_len = sizeof(in_512);
+		req.out_len = 512;
+		req.in_ptr = (u64)(uintptr_t)in_512;
+		req.out_ptr = (u64)(uintptr_t)out_part;
+		rc = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&req);
+		part_ok = (rc == 0 && req.output_bytes == 512 && req.digest == expect_digest && !memcmp(out_part, out_16k, 512));
+		for (k = 512; k < sizeof(out_part); k++)
+			if (out_part[k] != 0xdd)
+				part_ok = 0;
+		chk(part_ok && sim_prog_n == 7 && sim_prog_ops[4] == 0x204 && sim_prog_ops[5] == 0x204 && sim_prog_ops[6] == 0x204,
+		    "RP11c partial out_len=512 copies exact 512B without overrun, switches handle B with zero reloads");
+
+		/* RP11d: validation matrix (cmd, version, flags, reserved, zero lens, null ptrs, oversize, bad/swapped surface IDs, bad handle). */
+		{
+			struct ane_h18_res_call_io bad;
+			int prog_before = sim_prog_n;
+			long r_cmd, r_ver, r_flg, r_res, r_in0, r_out0, r_inp, r_outp;
+			long r_inbig, r_outbig, r_noid, r_swapin, r_swapout, r_out_is_in, r_swapboth, r_badh;
+
+			memset(&bad, 0, sizeof(bad));
+			bad.version = ANE_H18_RES_ABI_VERSION;
+			bad.handle = hA;
+			bad.in_surface_id = 5;
+			bad.out_surface_id = 4;
+			bad.in_len = 512;
+			bad.out_len = 512;
+			bad.in_ptr = (u64)(uintptr_t)in_512;
+			bad.out_ptr = (u64)(uintptr_t)out_part;
+
+			r_cmd = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO + 1, (unsigned long)(uintptr_t)&bad);
+			bad.version = 2; r_ver = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.version = 1;
+			bad.flags = 1; r_flg = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.flags = 0;
+			bad.reserved = 1; r_res = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.reserved = 0;
+			bad.in_len = 0; r_in0 = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_len = 512;
+			bad.out_len = 0; r_out0 = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.out_len = 512;
+			bad.in_ptr = 0; r_inp = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_ptr = (u64)(uintptr_t)in_512;
+			bad.out_ptr = 0; r_outp = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.out_ptr = (u64)(uintptr_t)out_part;
+			bad.in_len = 0x4001; r_inbig = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_len = 512;
+			bad.out_len = 0x4001; r_outbig = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.out_len = 512;
+			bad.in_surface_id = 99; r_noid = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_surface_id = 5;
+			bad.in_surface_id = 4; r_swapin = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_surface_id = 5;
+			bad.out_surface_id = 5; r_swapout = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.out_surface_id = 4;
+			bad.out_surface_id = 6; r_out_is_in = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.out_surface_id = 4;
+			bad.in_surface_id = 4; bad.out_surface_id = 5; r_swapboth = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad); bad.in_surface_id = 5; bad.out_surface_id = 4;
+			bad.handle = 0xdeadbeefULL; r_badh = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&bad);
+			chk(r_cmd == -ENOTTY && r_ver == -EINVAL && r_flg == -EINVAL && r_res == -EINVAL &&
+			    r_in0 == -EINVAL && r_out0 == -EINVAL && r_inp == -EINVAL && r_outp == -EINVAL &&
+			    r_inbig == -EINVAL && r_outbig == -EINVAL && r_noid == -EINVAL && r_swapin == -EINVAL &&
+			    r_swapout == -EINVAL && r_out_is_in == -EINVAL && r_swapboth == -EINVAL && r_badh == -ENOENT &&
+			    sim_prog_n == prog_before && sim_kv_live == 0,
+			    "RP11d CALL_IO rejects bad cmd (-ENOTTY), ABI/bounds/dir (-EINVAL), bad handle (-ENOENT) without issuing firmware call");
+		}
+
+		/* RP11e/f: user-copy faults (including partial copies returning 0 < rem < n) and kvmalloc failure (-ENOMEM). */
+		{
+			struct ane_h18_res_call_io ureq;
+			u8 partial_out[512];
+			int prog_before = sim_prog_n;
+			long r_arg_fault, r_in_fault, r_in_partial, r_out_fault, r_arg_ctu_partial, r_oom;
+
+			memset(&ureq, 0, sizeof(ureq));
+			ureq.version = ANE_H18_RES_ABI_VERSION;
+			ureq.handle = hA;
+			ureq.in_surface_id = 5;
+			ureq.out_surface_id = 4;
+			ureq.in_len = 512;
+			ureq.out_len = 512;
+			ureq.in_ptr = (u64)(uintptr_t)in_512;
+			ureq.out_ptr = (u64)(uintptr_t)partial_out;
+			ureq.output_bytes = 0x1234;
+
+			r_arg_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, 0);
+			sim_cfu_calls = 0; sim_cfu_fail_at = 2; sim_cfu_partial = 0;	/* full fault on in_ptr */
+			r_in_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_cfu_calls = 0; sim_cfu_fail_at = 2; sim_cfu_partial = 128;	/* partial copy fault on in_ptr (384B uncopied) */
+			r_in_partial = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_cfu_fail_at = 0; sim_cfu_partial = 0;
+			sim_kvmalloc_calls = 0; sim_kvmalloc_fail_at = 2; /* fail out_buf alloc after in_buf alloc */
+			r_oom = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_kvmalloc_fail_at = 0;
+			chk(r_arg_fault == -EFAULT && r_in_fault == -EFAULT && r_in_partial == -EFAULT && r_oom == -ENOMEM &&
+			    sim_prog_n == prog_before && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
+			    "RP11e arg/in_ptr full+partial -EFAULT and -ENOMEM abort before PROCEDURE_CALL with zero bounce leak");
+
+			memset(partial_out, 0xaa, sizeof(partial_out));
+			sim_ctu_calls = 0; sim_ctu_fail_at = 1; sim_ctu_partial = 128; /* partial copy_to_user on out_ptr */
+			r_out_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_ctu_fail_at = 0; sim_ctu_partial = 0;
+			chk(r_out_fault == -EFAULT && sim_ctu_calls == 1 && !memcmp(partial_out, out_16k, 128) &&
+			    partial_out[128] == 0xaa && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
+			    "RP11f partial out_ptr copy_to_user -EFAULT stops before argp copy-back with zero bounce leak");
+
+			/* Partial copy_to_user on final argp struct (models page-straddling read-only tail):
+			 * latency_ns (+48) is written before fault at +56, output_bytes (+64) stays stale, ioctl returns -EFAULT. */
+			ureq.latency_ns = 0;
+			ureq.digest = 0xdeadULL;
+			ureq.output_bytes = 0x1234;
+			sim_ctu_calls = 0; sim_ctu_fail_at = 2; sim_ctu_partial = offsetof(struct ane_h18_res_call_io, digest);
+			r_arg_ctu_partial = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_ctu_fail_at = 0; sim_ctu_partial = 0;
+			chk(r_arg_ctu_partial == -EFAULT && sim_ctu_calls == 2 && ureq.latency_ns > 0 &&
+			    ureq.digest == 0xdeadULL && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
+			    "RP11f2 partial argp copy_to_user -EFAULT surfaces error cleanly even after partial metadata write");
+		}
+
+		/* RP11g: firmware refusal (-EIO) does NOT copy output or mutate caller struct; handle remains usable, then free clean. */
+		{
+			struct ane_h18_res_call_io ereq;
+			u8 sentinel[512];
+			int sent_ok = 1;
+			long r_fwerr;
+
+			memset(sentinel, 0x77, sizeof(sentinel));
+			memset(&ereq, 0, sizeof(ereq));
+			ereq.version = ANE_H18_RES_ABI_VERSION;
+			ereq.handle = hA;
+			ereq.in_surface_id = 5;
+			ereq.out_surface_id = 4;
+			ereq.in_len = 512;
+			ereq.out_len = sizeof(sentinel);
+			ereq.in_ptr = (u64)(uintptr_t)in_512;
+			ereq.out_ptr = (u64)(uintptr_t)sentinel;
+			ereq.output_bytes = 0x5555;
+			ereq.latency_ns = 0x9999;
+			sim_res_fail_op = 0x204;
+			sim_res_fail_ack = 3;
+			r_fwerr = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ereq);
+			sim_res_fail_op = 0;
+			for (k = 0; k < sizeof(sentinel); k++)
+				if (sentinel[k] != 0x77)
+					sent_ok = 0;
+			chk(r_fwerr == -EIO && sent_ok && ereq.output_bytes == 0x5555 && ereq.latency_ns == 0x9999 && sim_kv_live == 0,
+			    "RP11g firmware refusal (-EIO) never copies output or mutates caller struct");
+		}
+
+		snprintf(cmd, sizeof(cmd), "free %s\n", hA_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hB_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(res_live_dma() == 0 && sim_owner_module.refs == 0 && sim_kv_live == 0,
+		    "RP11h same-fd retain + CALL_IO + free closes and removes cleanly with zero DMA/bounce leak");
+	}
+
+	/* RP11i: spoofed/unmatched finish on CALL_IO -> -EIO, caller out_ptr & struct untouched, slot HELD, engine quarantined. */
+	{
+		struct file f;
+		char hA_str[32], hB_str[32];
+		u64 hA = 0;
+		u32 progB;
+		u8 in_512[512], sentinel[512];
+		struct ane_h18_res_call_io sreq;
+		size_t k;
+		long r_spoof, r_after;
+		int sent_ok = 1;
+
+		res_boot_live();
+		probe_now();
+		sim_res_io_echo = 1;
+		res_open(&f);
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hA_str, sizeof(hA_str));
+		hA_str[16] = '\0';
+		sscanf(hA_str, "%llx", (unsigned long long *)&hA);
+		res_cmd(&f, "retain plain_io.bin 0 0 0 0 0\n", hB_str, sizeof(hB_str));
+		progB = sim_prog_ids[2];
+		memset(in_512, 0x33, sizeof(in_512));
+		memset(sentinel, 0x66, sizeof(sentinel));
+		memset(&sreq, 0, sizeof(sreq));
+		sreq.version = ANE_H18_RES_ABI_VERSION;
+		sreq.handle = hA;
+		sreq.in_surface_id = 5;
+		sreq.out_surface_id = 4;
+		sreq.in_len = sizeof(in_512);
+		sreq.out_len = sizeof(sentinel);
+		sreq.in_ptr = (u64)(uintptr_t)in_512;
+		sreq.out_ptr = (u64)(uintptr_t)sentinel;
+		sreq.output_bytes = 0x4321;
+		sim_res_spoof_prog = progB;
+		sim_res_spoof_proc = sim_fw_find(progB)->proc_id;
+		r_spoof = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&sreq);
+		sim_res_spoof_prog = sim_res_spoof_proc = 0;
+		for (k = 0; k < sizeof(sentinel); k++)
+			if (sentinel[k] != 0x66)
+				sent_ok = 0;
+		r_after = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&sreq);
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_spoof == -EIO && sent_ok && sreq.output_bytes == 0x4321 && r_after == -ESHUTDOWN &&
+		    sim_owner_module.refs >= 1 && res_live_dma() > 0 && sim_kv_live == 0,
+		    "RP11i unmatched finish on CALL_IO returns -EIO without copying output, quarantines engine (-ESHUTDOWN)");
+	}
+
+	/* RP11j: CALL_IO refuses embedded-input control programs (doff != 0 or dsize != 0) with -EINVAL
+	 * before touching DMA or issuing PROCEDURE_CALL, so legacy ASCII call still sees embedded input intact. */
+	{
+		struct file f;
+		char hCtrl_str[32], hDoff_str[32], rep[96], cmd[128];
+		u64 hCtrl = 0, hDoff = 0;
+		u8 overwrite[512], out_buf[512];
+		struct ane_h18_res_call_io creq;
+		int prog_before;
+		long r_embed, r_doff;
+		ssize_t r_legacy;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", hCtrl_str, sizeof(hCtrl_str));
+		hCtrl_str[16] = '\0';
+		sscanf(hCtrl_str, "%llx", (unsigned long long *)&hCtrl);
+		res_cmd(&f, "retain bad_doff.bin 0 0 0 0 0\n", hDoff_str, sizeof(hDoff_str));
+		hDoff_str[16] = '\0';
+		sscanf(hDoff_str, "%llx", (unsigned long long *)&hDoff);
+
+		memset(overwrite, 0x33, sizeof(overwrite));
+		memset(out_buf, 0x88, sizeof(out_buf));
+		memset(&creq, 0, sizeof(creq));
+		creq.version = ANE_H18_RES_ABI_VERSION;
+		creq.handle = hCtrl;
+		creq.in_surface_id = 5;
+		creq.out_surface_id = 4;
+		creq.in_len = sizeof(overwrite);
+		creq.out_len = sizeof(out_buf);
+		creq.in_ptr = (u64)(uintptr_t)overwrite;
+		creq.out_ptr = (u64)(uintptr_t)out_buf;
+
+		prog_before = sim_prog_n;
+		r_embed = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&creq);
+		creq.handle = hDoff;
+		r_doff = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&creq);
+		/* Legacy ASCII call on hCtrl checks sim_buf_va(id5)[0] == 0xaa in fake FW; must still succeed. */
+		snprintf(cmd, sizeof(cmd), "call %s\n", hCtrl_str);
+		r_legacy = res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hCtrl_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		snprintf(cmd, sizeof(cmd), "free %s\n", hDoff_str); res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(r_embed == -EINVAL && r_doff == -EINVAL && sim_prog_n == prog_before + 5 &&
+		    r_legacy > 0 && res_live_dma() == 0 && sim_kv_live == 0,
+		    "RP11j CALL_IO refuses embedded/nonzero-doff input (-EINVAL) with no call/overwrite; legacy call preserves 0xaa input");
 	}
 }
 

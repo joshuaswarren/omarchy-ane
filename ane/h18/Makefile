@@ -23,7 +23,7 @@ default: modules
 modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
-sim/sim_h18: sim/sim_harness.c sim/shim.h ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_progtab.h
+sim/sim_h18: sim/sim_harness.c sim/shim.h ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_progtab.h ane_h18_res_uapi.h
 	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ sim/sim_harness.c
 
 sim/sim_dt_pmp: sim/test_dt_pmp.c ane_h18_dt.c ane_h18_dt.h ane_h18_dt_t8132_data.h
@@ -94,7 +94,7 @@ COMMA := ,
 define mutant
 	rm -rf /tmp/ane_h18-$(1) && mkdir -p /tmp/ane_h18-$(1)
 	cp -r sim /tmp/ane_h18-$(1)/sim
-	cp ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_fwload.h ane_h18_fw_pins.h ane_h18_fw_layout.h ane_h18_progtab.h /tmp/ane_h18-$(1)/
+	cp ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_fwload.h ane_h18_fw_pins.h ane_h18_fw_layout.h ane_h18_progtab.h ane_h18_res_uapi.h /tmp/ane_h18-$(1)/
 	sed '$(2)' ane_h18_main.c > /tmp/ane_h18-$(1)/ane_h18_main.c
 	grep -q '$(3)' /tmp/ane_h18-$(1)/ane_h18_main.c
 	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h18-$(1)/sim -I /tmp/ane_h18-$(1)/sim/inc -o /tmp/ane_h18-$(1)/sim_h18 /tmp/ane_h18-$(1)/sim/sim_harness.c
@@ -108,7 +108,7 @@ endef
 define mutant_progtab
 	rm -rf /tmp/ane_h18-$(1) && mkdir -p /tmp/ane_h18-$(1)
 	cp -r sim /tmp/ane_h18-$(1)/sim
-	cp ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_fwload.h ane_h18_fw_pins.h ane_h18_fw_layout.h ane_h18_progtab.h /tmp/ane_h18-$(1)/
+	cp ane_h18_main.c ane_h18_soc.c ane_h18.h ane_h18_dt.h ane_h18_fwload.h ane_h18_fw_pins.h ane_h18_fw_layout.h ane_h18_progtab.h ane_h18_res_uapi.h /tmp/ane_h18-$(1)/
 	sed '$(2)' ane_h18_progtab.h > /tmp/ane_h18-$(1)/ane_h18_progtab.h
 	grep -q '$(3)' /tmp/ane_h18-$(1)/ane_h18_progtab.h
 	$(SIM_CC) $(SIM_CFLAGS) -I /tmp/ane_h18-$(1)/sim -I /tmp/ane_h18-$(1)/sim/inc -o /tmp/ane_h18-$(1)/sim_h18 /tmp/ane_h18-$(1)/sim/sim_harness.c
@@ -494,6 +494,30 @@ sim-mutation-resnodupprog:
 sim-mutation-resrollshort:
 	$(call mutant,resrollshort,s/if (un != off) {/if (0 \/* NEG: short rollback ignored *\/) {/,NEG: short rollback ignored,pos)
 
+# CALL_IO skips zeroing the writable input tail [in_len .. surface.size)
+sim-mutation-resionotailzero:
+	$(call mutant,resionotailzero,s/if (io->in_len < p->io\[io->in_idx\].size)/if (0 \/* NEG: input tail not zeroed *\/)/,NEG: input tail not zeroed,pos)
+
+# CALL_IO skips bounding in_len/out_len against ANEP-mapped surface sizes
+sim-mutation-resionobounds:
+	$(call mutant,resionobounds,s/req.in_len > p->io\[in_idx\].size || req.out_len > p->io\[out_idx\].size/0 \/* NEG: ioctl len bounds off *\//,NEG: ioctl len bounds off,pos)
+
+# CALL_IO skips ABI version/flags/reserved validation
+sim-mutation-resionoverflag:
+	$(call mutant,resionoverflag,s/req.version != ANE_H18_RES_ABI_VERSION || req.flags || req.reserved/0 \/* NEG: abi ver\/flags off *\//,NEG: abi ver/flags off,pos)
+
+# CALL_IO ignores surface direction (dir==0 vs dir==1) when resolving surface IDs
+sim-mutation-resionodir:
+	$(call mutant,resionodir,s/p->io\[i\].dir == 1 && p->io\[i\].id == req.out_surface_id/p->io[i].id == req.out_surface_id \/* NEG: out dir off *\//,NEG: out dir off,pos)
+
+# CALL_IO copies output back to userspace even after a failed firmware call
+sim-mutation-resiocopyonerr:
+	$(call mutant,resiocopyonerr,/^static long ane_h18_res_ioctl/$(COMMA)/^}/ s/if (!ret) {/if (!ret || out_buf \/* NEG: copy on err *\/) {/,NEG: copy on err,pos)
+
+# CALL_IO allows overwriting an embedded-input control surface (nonzero doff or dsize)
+sim-mutation-resioembed:
+	$(call mutant,resioembed,s/p->io\[in_idx\].doff || p->io\[in_idx\].dsize/0 \/* NEG: embedded input allowed *\//,NEG: embedded input allowed,pos)
+
 sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-pmp sim-dt-lifecycle sim-dt-align-check sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args sim-negative-boot \
 	sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate \
 	sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt sim-mutation-nodomaingate sim-mutation-nosnapguard \
@@ -563,6 +587,12 @@ sim-all: sim-test sim-matvec-check sim-positive-reads sim-negative-reads sim-dt-
 	sim-mutation-resdestroylen \
 	sim-mutation-resnodupprog \
 	sim-mutation-resrollshort \
+	sim-mutation-resionotailzero \
+	sim-mutation-resionobounds \
+	sim-mutation-resionoverflag \
+	sim-mutation-resionodir \
+	sim-mutation-resiocopyonerr \
+	sim-mutation-resioembed \
 	sim-mutation-chsnaptxt \
 	sim-mutation-chsnapw \
 	sim-mutation-chnoserve \
@@ -577,6 +607,6 @@ clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	rm -f sim/sim_h18 sim/sim_dt_pmp sim/sim_dt_lifecycle
 
-.PHONY: sim-matvec-check sim-dt-pmp sim-dt-lifecycle sim-positive-reads sim-positive-reads-single sim-negative-reads sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgkernslot sim-mutation-pgkernsize sim-mutation-pgkernslotgate sim-mutation-resnooverlap sim-mutation-resnogen sim-mutation-resfreeonfail sim-mutation-resnoexcl sim-mutation-resnomatchid sim-mutation-resdestroylen sim-mutation-resnodupprog sim-mutation-resrollshort sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnostamp sim-mutation-pgnooutdump sim-mutation-pgonecall sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
+.PHONY: sim-matvec-check sim-dt-pmp sim-dt-lifecycle sim-positive-reads sim-positive-reads-single sim-negative-reads sim-mutation-nopwrstateid sim-mutation-novotecheck sim-mutation-nopdattach sim-mutation-pgpremapmal sim-mutation-pgnopremap sim-mutation-pgpremaptype sim-mutation-pgnodartinst sim-mutation-pgdartrec sim-mutation-pgnomaskcheck sim-mutation-pgnodartpost sim-mutation-pgdartcap sim-mutation-pgearlylen sim-mutation-pgkernslot sim-mutation-pgkernsize sim-mutation-pgkernslotgate sim-mutation-resnooverlap sim-mutation-resnogen sim-mutation-resfreeonfail sim-mutation-resnoexcl sim-mutation-resnomatchid sim-mutation-resdestroylen sim-mutation-resnodupprog sim-mutation-resrollshort sim-mutation-resionotailzero sim-mutation-resionobounds sim-mutation-resionoverflag sim-mutation-resionodir sim-mutation-resiocopyonerr sim-mutation-resioembed sim-mutation-pgnoparse sim-mutation-pgnobounds sim-mutation-pgnostartgate sim-mutation-pgblock sim-mutation-pgcookie sim-mutation-pgiovaoff sim-mutation-pgslot sim-mutation-pgouttype sim-mutation-pgnosecdata sim-mutation-pgnoindata sim-mutation-pgnogiveback sim-mutation-pgnostamp sim-mutation-pgnooutdump sim-mutation-pgonecall sim-mutation-pgnodoorbell sim-mutation-pgunloadtimeout sim-mutation-pgemptyslot sim-mutation-chsnaplim sim-mutation-chsnaptxt sim-mutation-chnostartgate sim-mutation-chnocap sim-mutation-chackalways sim-mutation-chnotext sim-mutation-chnoserve sim-mutation-chnofreeans sim-mutation-chnoipiack sim-mutation-chnosnap sim-mutation-chsnapw sim-mutation-chnowrap sim-mutation-chnoverlap sim-mutation-chnoinit sim-mutation-chnos3 sim-mutation-chnovalid sim-mutation-chs3skip sim-mutation-chnoack sim-mutation-chnobell sim-mutation-hsnowake sim-mutation-hsnohigh sim-mutation-hsnofree sim-mutation-hsbys7 sim-mutation-hsnoreqgate sim-mutation-hsnolimit sim-mutation-hsowndom sim-mutation-hsmask sim-mutation-noqueue sim-mutation-noshutfail sim-mutation-nostate6 sim-mutation-nostop sim-mutation-noackstate sim-mutation-mapgate sim-mutation-nofail sim-mutation-noundomap sim-mutation-norpmput sim-mutation-nocredit sim-mutation-wronghalf sim-mutation-nover sim-mutation-dartgate sim-mutation-hellogate sim-negative-boot sim-mutation-noconfirmboot sim-mutation-nopreflight sim-mutation-nohalt default modules sim-test sim-negative-psd-never sim-negative-psd-wrong sim-negative-dt sim-negative-args \
 	sim-mutation-noconfirm sim-mutation-nowindow sim-mutation-noundo sim-mutation-noack sim-mutation-nogate sim-mutation-nodomaingate sim-mutation-nosnapguard sim-dt-align-check sim-all clean
 endif
