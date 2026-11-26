@@ -740,20 +740,35 @@ static inline ssize_t simple_read_from_buffer(void *to, size_t count, loff_t *pp
 #define __user
 extern int sim_cfu_fail_at, sim_cfu_calls;
 extern int sim_ctu_fail_at, sim_ctu_calls;
+extern unsigned long sim_cfu_partial, sim_ctu_partial;
 extern int sim_kvmalloc_fail_at, sim_kvmalloc_calls, sim_kv_live;
 static inline unsigned long copy_from_user(void *to, const void __user *from, unsigned long n)
 {
 	sim_cfu_calls++;
-	if (!from || (sim_cfu_fail_at && sim_cfu_calls == sim_cfu_fail_at))
+	if (!from)
 		return n;
+	if (sim_cfu_fail_at && sim_cfu_calls == sim_cfu_fail_at) {
+		unsigned long done = sim_cfu_partial < n ? sim_cfu_partial : 0;
+
+		if (done)
+			memcpy(to, from, done);
+		return n - done;
+	}
 	memcpy(to, from, n);
 	return 0;
 }
 static inline unsigned long copy_to_user(void __user *to, const void *from, unsigned long n)
 {
 	sim_ctu_calls++;
-	if (!to || (sim_ctu_fail_at && sim_ctu_calls == sim_ctu_fail_at))
+	if (!to)
 		return n;
+	if (sim_ctu_fail_at && sim_ctu_calls == sim_ctu_fail_at) {
+		unsigned long done = sim_ctu_partial < n ? sim_ctu_partial : 0;
+
+		if (done)
+			memcpy(to, from, done);
+		return n - done;
+	}
 	memcpy(to, from, n);
 	return 0;
 }

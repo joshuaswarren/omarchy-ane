@@ -123,6 +123,7 @@ static u32 sim_res_dup_prog;				/* nonzero: force next LOAD_PROGRAM to return th
 static int sim_res_malformed_create;			/* nonzero: next CREATE_PROCESS leaves proc_id at 0xffffffff */
 int sim_cfu_fail_at, sim_cfu_calls;
 int sim_ctu_fail_at, sim_ctu_calls;
+unsigned long sim_cfu_partial, sim_ctu_partial;
 int sim_kvmalloc_fail_at, sim_kvmalloc_calls, sim_kv_live;
 static int sim_res_io_echo;				/* nonzero: firmware echoes 512B id5^0x5a into id4 + checks zero pre-state */
 static u8 sim_res_io_last_in[0x4000];
@@ -914,6 +915,7 @@ static void reset_all(void)
 	sim_res_malformed_create = 0;
 	sim_cfu_fail_at = sim_cfu_calls = 0;
 	sim_ctu_fail_at = sim_ctu_calls = 0;
+	sim_cfu_partial = sim_ctu_partial = 0;
 	sim_kvmalloc_fail_at = sim_kvmalloc_calls = sim_kv_live = 0;
 	sim_res_io_echo = 0;
 	sim_res_io_last_in_sz = 0;
@@ -3532,11 +3534,12 @@ static void pos_residency(void)
 			    "RP11d CALL_IO rejects bad cmd (-ENOTTY), ABI/bounds/dir (-EINVAL), bad handle (-ENOENT) without issuing firmware call");
 		}
 
-		/* RP11e: user-copy faults (-EFAULT) and kvmalloc failure (-ENOMEM) leave DMA/firmware/caller struct clean. */
+		/* RP11e/f: user-copy faults (including partial copies returning 0 < rem < n) and kvmalloc failure (-ENOMEM). */
 		{
 			struct ane_h18_res_call_io ureq;
+			u8 partial_out[512];
 			int prog_before = sim_prog_n;
-			long r_arg_fault, r_in_fault, r_out_fault, r_oom;
+			long r_arg_fault, r_in_fault, r_in_partial, r_out_fault, r_arg_ctu_partial, r_oom;
 
 			memset(&ureq, 0, sizeof(ureq));
 			ureq.version = ANE_H18_RES_ABI_VERSION;
@@ -3546,25 +3549,41 @@ static void pos_residency(void)
 			ureq.in_len = 512;
 			ureq.out_len = 512;
 			ureq.in_ptr = (u64)(uintptr_t)in_512;
-			ureq.out_ptr = (u64)(uintptr_t)out_part;
+			ureq.out_ptr = (u64)(uintptr_t)partial_out;
 			ureq.output_bytes = 0x1234;
 
 			r_arg_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, 0);
-			sim_cfu_calls = 0; sim_cfu_fail_at = 2;	/* fail in_ptr copy after struct copy */
+			sim_cfu_calls = 0; sim_cfu_fail_at = 2; sim_cfu_partial = 0;	/* full fault on in_ptr */
 			r_in_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
-			sim_cfu_fail_at = 0;
+			sim_cfu_calls = 0; sim_cfu_fail_at = 2; sim_cfu_partial = 128;	/* partial copy fault on in_ptr (384B uncopied) */
+			r_in_partial = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_cfu_fail_at = 0; sim_cfu_partial = 0;
 			sim_kvmalloc_calls = 0; sim_kvmalloc_fail_at = 2; /* fail out_buf alloc after in_buf alloc */
 			r_oom = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
 			sim_kvmalloc_fail_at = 0;
-			chk(r_arg_fault == -EFAULT && r_in_fault == -EFAULT && r_oom == -ENOMEM &&
+			chk(r_arg_fault == -EFAULT && r_in_fault == -EFAULT && r_in_partial == -EFAULT && r_oom == -ENOMEM &&
 			    sim_prog_n == prog_before && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
-			    "RP11e arg/in_ptr -EFAULT and -ENOMEM abort before PROCEDURE_CALL with zero bounce leak");
+			    "RP11e arg/in_ptr full+partial -EFAULT and -ENOMEM abort before PROCEDURE_CALL with zero bounce leak");
 
-			sim_ctu_calls = 0; sim_ctu_fail_at = 1; /* fail out_ptr copy after matched finish */
+			memset(partial_out, 0xaa, sizeof(partial_out));
+			sim_ctu_calls = 0; sim_ctu_fail_at = 1; sim_ctu_partial = 128; /* partial copy_to_user on out_ptr */
 			r_out_fault = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
-			sim_ctu_fail_at = 0;
-			chk(r_out_fault == -EFAULT && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
-			    "RP11f out_ptr copy_to_user -EFAULT leaves caller struct untouched with zero bounce leak");
+			sim_ctu_fail_at = 0; sim_ctu_partial = 0;
+			chk(r_out_fault == -EFAULT && sim_ctu_calls == 1 && !memcmp(partial_out, out_16k, 128) &&
+			    partial_out[128] == 0xaa && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
+			    "RP11f partial out_ptr copy_to_user -EFAULT stops before argp copy-back with zero bounce leak");
+
+			/* Partial copy_to_user on final argp struct (models page-straddling read-only tail):
+			 * latency_ns (+48) is written before fault at +56, output_bytes (+64) stays stale, ioctl returns -EFAULT. */
+			ureq.latency_ns = 0;
+			ureq.digest = 0xdeadULL;
+			ureq.output_bytes = 0x1234;
+			sim_ctu_calls = 0; sim_ctu_fail_at = 2; sim_ctu_partial = offsetof(struct ane_h18_res_call_io, digest);
+			r_arg_ctu_partial = sim_res_entry.ops->unlocked_ioctl(&f, ANE_H18_IOC_CALL_IO, (unsigned long)(uintptr_t)&ureq);
+			sim_ctu_fail_at = 0; sim_ctu_partial = 0;
+			chk(r_arg_ctu_partial == -EFAULT && sim_ctu_calls == 2 && ureq.latency_ns > 0 &&
+			    ureq.digest == 0xdeadULL && ureq.output_bytes == 0x1234 && sim_kv_live == 0,
+			    "RP11f2 partial argp copy_to_user -EFAULT surfaces error cleanly even after partial metadata write");
 		}
 
 		/* RP11g: firmware refusal (-EIO) does NOT copy output or mutate caller struct; handle remains usable, then free clean. */
