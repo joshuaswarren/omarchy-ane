@@ -67,7 +67,7 @@ def build_and_run(src, work):
     cc = subprocess.run(
         ["gcc", "-O1", "-std=gnu99", "-w", f"-I{LIBANE}", f"-I{UAPI}", "-I/usr/include/libdrm",
          "-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap", "-o", str(exe), str(work / "test_ane_session_state.c"),
-         str(LIBANE / "ane.c"), str(LIBANE / "ane_m2.c"), str(LIBANE / "ane_sha256.c"), "-lm"],
+         str(LIBANE / "ane.c"), str(LIBANE / "ane_m2.c"), str(LIBANE / "ane_v3.c"), str(LIBANE / "ane_sha256.c"), "-lm"],
         capture_output=True, text=True, cwd=TOOLS)
     if cc.returncode:
         return "BUILD-ERROR", cc.stderr[-300:]

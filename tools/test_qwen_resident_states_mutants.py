@@ -56,7 +56,7 @@ def main():
         serve = root / "serve"
         subprocess.run(["gcc", "-O1", "-std=gnu99", "-w", f"-I{libane}", f"-I{uapi}", "-I/usr/include/libdrm",
                         "-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap", "-o", str(serve), str(TOOLS / "test_ane_session_state.c"),
-                        str(libane / "ane.c"), str(libane / "ane_m2.c"), str(libane / "ane_sha256.c"), "-lm"],
+                        str(libane / "ane.c"), str(libane / "ane_m2.c"), str(libane / "ane_v3.c"), str(libane / "ane_sha256.c"), "-lm"],
                        check=True, cwd=TOOLS)
         work = root / "control"
         work.mkdir()

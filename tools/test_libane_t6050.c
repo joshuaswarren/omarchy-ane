@@ -168,10 +168,27 @@ int main(void)
 	}
 	close(info.fd);
 
+	/* 7. T8122 (base M3) row matches ABI 3 family 15 and refuses family 17 */
+	expect(ane_device_info_by_chip(ANE_DEV_ID_T8122, &info), -ENODEV,
+	       "by_chip T8122 refuses family 17");
+	fake_chip_family = ANE_CHIP_H15;
+	info.fd = -1;
+	expect(ane_device_info_by_chip(ANE_DEV_ID_T8122, &info), 0,
+	       "by_chip T8122 on V3 family 15");
+	if (info.chip_family != ANE_CHIP_H15 || info.abi_major != 3) {
+		printf("FAIL T8122 info fields: family %u abi %d\n",
+		       info.chip_family, info.abi_major);
+		failures++;
+	}
+	close(info.fd);
+	expect(ane_device_info_by_chip(ANE_DEV_ID_T6050, &info), -ENODEV,
+	       "by_chip T6050 refuses family 15");
+	fake_chip_family = ANE_CHIP_H17;
+
 	if (failures) {
 		printf("%d failure(s)\n", failures);
 		return 1;
 	}
-	printf("all T6050 enumeration cases pass\n");
+	printf("all ABI-3 chip enumeration cases pass\n");
 	return 0;
 }
