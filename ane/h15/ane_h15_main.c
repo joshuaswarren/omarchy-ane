@@ -128,6 +128,11 @@ static bool confirm_read;
 static bool pwr_req;
 static unsigned int pwr_poll_ms = 1000;
 module_param(confirm_read, bool, 0444);
+
+/* fw_layout_27_2: select the macOS 27.2 (26B123) segment layout
+ * (TEXT=0xc8000, DATA=0x2a4000, DATA IOVA=0x100000c8000; default legacy). */
+static bool fw_layout_is_27_2;
+module_param_named(fw_layout_27_2, fw_layout_is_27_2, bool, 0444);
 MODULE_PARM_DESC(confirm_read,
 		 "Stage=wrapper only. Off by default; stage=wrapper refuses without it. With it, stage=wrapper reads CPU_STATUS, RVBAR and the two mailbox CTRL words behind the pmgr ACTUAL=0xf gate. Reads only, nothing is written.");
 module_param(pwr_req, bool, 0444);
@@ -446,6 +451,9 @@ struct ane_h15 {
 	bool fw_started;
 	struct iommu_domain *domain;	/* map_fw: the DART domain, NULL when none */
 	u64 map_pa[2], map_iova[2], map_size[2];
+	const struct ane_h15_fw_layout *fwlay;	/* segment layout in use */
+	u64 data_iova;			/* 0 = TEXT + TEXT size (legacy) */
+
 	unsigned int map_n;	/* segments mapped so far */
 	u64 dapf_page[5];	/* dapf_prog: extra MMIO pages mapped, IOVA = PA */
 	unsigned int dapf_pages;
@@ -1352,6 +1360,8 @@ static int ane_h15_plan_owned_map(struct ane_h15 *ane)
 
 	if (ret)
 		return ret;
+	const struct ane_h15_fw_layout *fwlay = ane->fwlay ? ane->fwlay
+		: &ane_h15_fw_layout_legacy;
 	dom = iommu_get_domain_for_dev(ane->dev);
 	for (off = 0; off < ANE_H15_FW_IMAGE_SIZE; off += SZ_16K) {
 		u64 pa = iommu_iova_to_phys(dom, ane->owned_fw.iova + off);
@@ -4137,6 +4147,29 @@ static int ane_h15_probe(struct platform_device *pdev)
 	}
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
+	/* Segment layout: legacy by default; fw_layout_27_2=1 selects the
+	 * macOS 27.2 (26B123) segment pins (TEXT=0xc8000, DATA=0x2a4000,
+	 * DATA IOVA=0x100000c8000). The boot firmware hands the DATA
+	 * carve-out through the ane node's memory-region property; its base
+	 * overrides the layout's DATA IOVA. */
+	ane->fwlay = &ane_h15_fw_layout_legacy;
+	ane->data_iova = 0;
+	if (fw_layout_is_27_2) {
+		struct of_phandle_args mres;
+		ane->fwlay = &ane_h15_fw_layout_macos_27_2;
+		ane->data_iova = ane_h15_fw_layout_macos_27_2.data_iova;
+		if (!of_parse_phandle_with_args(pdev->dev.of_node, "memory-region",
+						NULL, 0, &mres)) {
+			struct resource mres_res;
+			if (!of_address_to_resource(mres.np, 0, &mres_res)) {
+				ane->data_iova = mres_res.start;
+				dev_info(&pdev->dev,
+					 "27.2 DATA IOVA from memory-region: %pap\n",
+					 &ane->data_iova);
+			}
+			of_node_put(mres.np);
+		}
+	}
 	if (!ane) {
 		ane_h15_steplog_close();
 		return -ENOMEM;
