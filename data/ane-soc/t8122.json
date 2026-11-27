@@ -39,12 +39,6 @@
       "sha256": "731710bb350c3a69366d277e93811431939ffe1178352793be3f7ef6cd047b1b"
     },
     {
-      "id": "S7",
-      "kind": "hw-adt",
-      "ref": "macOS 13.5 ANE DART page-size evidence as recorded in the lab receipt adt-13.5.txt; used only for the explicitly marked T8110-family inference.",
-      "sha256": "e4628cbf45c5735c8cd2d67b937421d4098870a36a1920cf7ac21855441412d8"
-    },
-    {
       "id": "S8",
       "kind": "community-row",
       "ref": "Community-data worker record 3bec43ce7fff370df201e18fcf78d27ad7c50c4b9419a64ae092a49668b20348 (deep, Linux, 2026-10-02): running device tree reports model 'Apple MacBook Air (13-inch, 2024)', compatible apple,j613 apple,t8122, os-fw-version 14.7. SHA-256 is the record content hash.",
@@ -55,6 +49,12 @@
       "kind": "aurora-dts",
       "ref": "aurora-silicon/linux at 75f7012d5efde3cc4920e6ca9665822099a9e086 (local linux-aurora checkout), arch/arm64/boot/dts/apple/{t8122-j433,t8122-j434,t8122-j504,t8122-j615}.dts header target-types and product names, verified 2026-11-22; sha256 is over the four files concatenated in that order.",
       "sha256": "0fcb558128d829120c10cdd044222e5d2d81a89aa77ab5b4068c8ba65b4befdc"
+    },
+    {
+      "id": "S10",
+      "kind": "hw-adt",
+      "ref": "J613 boot ADT, OS build 26B5112a: the ane and dart-ane nodes with their children, saved in vivekpal1/om3archy commit dbf589eb as ane.plist (sha256 3e06aa64143105307ea0d3428bfd21906602c7799307431386ad1fb6e7d47b78) and dart-ane.plist (sha256 3087198ca0e086fecf3f32d126560ec17df0d2e2e198ee1b579dc28b6e5a8087). SHA-256 is over the two files concatenated in that order.",
+      "sha256": "2165602b492085319e857bfe03b6d4a3d544e76162599d4aa07036bbd5e6ed24"
     }
   ],
   "marketing": {
@@ -171,12 +171,47 @@
       "src": "S1"
     },
     "iommus": {
-      "v": null,
-      "reason": "Unknown: the ADT receipt summary (S1) does not print iommu-parent, so its absence there says nothing about the ADT. The DART is the sibling dart-ane (see dart); the phandle needs a full ADT read."
+      "v": {
+        "dart": "dart-ane",
+        "streams": [
+          {
+            "mapper": "mapper-ane",
+            "stream": 0
+          }
+        ]
+      },
+      "src": "S10"
     },
     "dart_phandle_field": {
-      "v": null,
-      "reason": "Unknown: not preserved by the ADT receipt summary (S1). The earlier reason ('the ADT ane node has no iommu-parent field') had no source; the AneGenH15 notebook entry records the field as not preserved, not as absent."
+      "v": "iommu-parent",
+      "src": "S10"
+    },
+    "iommus_note": {
+      "v": "The ane node's iommu-parent is phandle 0x13b; dart-ane's own phandle is 0x13a and its one child is mapper-ane at unit address 0. The dump does not print mapper-ane's phandle: 0x13b is read as mapper-ane because it is the next phandle after dart-ane. Phandles change between boots.",
+      "src": "S10"
+    },
+    "segment_ranges": {
+      "v": [
+        {
+          "segment": "__TEXT",
+          "phys": "0x100009c4000",
+          "vmaddr": "0x0",
+          "iova": "0x10000000000",
+          "size": "0xc8000"
+        },
+        {
+          "segment": "__DATA",
+          "phys": "0x100015d0000",
+          "vmaddr": "0xc8000",
+          "iova": "0x100000c8000",
+          "size": "0x2a4000"
+        }
+      ],
+      "src": "S10"
+    },
+    "segment_ranges_note": {
+      "v": "segment-ranges is four little-endian u64 per entry (phys, vmaddr, iova, size), named by segment-names. It is the layout of the image this boot loaded (build 26B5112a), read on one boot. It is not the layout of the image under firmware: ane/h15/ane_h15_fw_layout.h gives that image a TEXT size of 0xcc000.",
+      "src": "S10"
     }
   },
   "dart": {
@@ -225,20 +260,35 @@
       "src": "S1"
     },
     "sid": {
-      "v": null,
-      "reason": "T8110 DART instance field captured in 13.5 detail (line 'sid = 64424509440' on dart-ane j180d); the T8122 detail ADT was summarized not full-parsed (the receipt script condenses), so the T8122 sid byte string is not in the lab notebook. The T8110 family sid value for ANE (sids 40961 in T8103/T6000; the T8110/T6020/T6021/T6030 family uses a different encoding per the T6020 detail 0x28e084000..0x28e084033 dapf-instance-0 byte range that is identical in shape to T6020/T6021) is consistent across the T8110 family. Field is present in ADT but the receipt script did not preserve it. Re-extract the T8122 ADT detail with the same script used for j180d to obtain the sid byte string. Not verified."
+      "v": [
+        0,
+        13,
+        15
+      ],
+      "src": "S10"
+    },
+    "sid_count": {
+      "v": 16,
+      "src": "S10"
     },
     "vm_base": {
-      "v": null,
-      "reason": "not in receipt summary; needs a full ADT re-read."
+      "v": "0x10000000000",
+      "src": "S10"
     },
     "vm_size": {
-      "v": null,
-      "reason": "not in receipt summary; needs a full ADT re-read."
+      "v": "0x30000000000",
+      "src": "S10"
     },
     "page_size": {
       "v": 16384,
-      "src": "S7"
+      "src": "S10"
+    },
+    "bypass": {
+      "v": [
+        "bypass-13",
+        "bypass-15"
+      ],
+      "src": "S10"
     }
   },
   "mailbox": {
