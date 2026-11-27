@@ -191,7 +191,7 @@
     },
     "iommus": {
       "v": null,
-      "reason": "see t8122.json dart_phandle_field."
+      "reason": "the ADT receipt summary did not preserve the iommu-parent phandle; needs a full ADT read of a T6031 machine."
     }
   },
   "ane1_j575d": {
@@ -339,15 +339,15 @@
     },
     "sid": {
       "v": null,
-      "reason": "see t8122.json dart.sid."
+      "reason": "not in the ADT receipt summary; needs a full ADT read of a T6031 machine."
     },
     "vm_base": {
       "v": null,
-      "reason": "see t8122.json dart.vm_base."
+      "reason": "not in the ADT receipt summary; needs a full ADT read of a T6031 machine."
     },
     "vm_size": {
       "v": null,
-      "reason": "see t8122.json dart.vm_size."
+      "reason": "not in the ADT receipt summary; needs a full ADT read of a T6031 machine."
     },
     "page_size": {
       "v": 16384,
