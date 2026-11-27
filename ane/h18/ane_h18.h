@@ -169,6 +169,28 @@ static inline enum ane_h18_mal_kind ane_h18_mal_classify(u64 hdr, u64 size, u64 
 #define ANE_H18_RTK_APP_EP	0x20	/* endpoints from here are application endpoints, started only once the coprocessor runs */
 #define ANE_H18_RTK_VERSION	12	/* the version macOS and Linux answer with on this firmware family */
 
+/* T8152 PMC registers (aurora-silicon/linux drivers/pmdomain/apple/pmc.c apple_pmc_hw_t8152,
+ * arch/arm64/boot/dts/apple/t8152-j873-pmc.dtsi): agent 1 (CLPC) DCS/SOC floor vote while
+ * ANE work is active, returned to 0 when idle. Rail 2 (DISP) is never touched. */
+#define ANE_H18_PMC_VOTERS_PA		0x302800000ULL
+#define ANE_H18_PMC_VOTERS_SIZE		0x10000
+#define ANE_H18_PMC_AGENT_STRIDE	0x4000
+#define ANE_H18_PMC_AGENT_CLPC		1
+#define ANE_H18_PMC_AGENT1_OFF		(ANE_H18_PMC_AGENT_CLPC * ANE_H18_PMC_AGENT_STRIDE)
+#define ANE_H18_PMC_DCS_MASK		0x0fu
+#define ANE_H18_PMC_SOC_SHIFT		4
+#define ANE_H18_PMC_SOC_MASK		0xf0u
+#define ANE_H18_PMC_FLOOR_MASK		0xffu
+#define ANE_H18_PMC_RAILS_PA		0x3029c6000ULL
+#define ANE_H18_PMC_RAILS_SIZE		0x3000
+#define ANE_H18_PMC_AGENT_STATE_OFF	0x0
+#define ANE_H18_PMC_RAIL_EN_OFF		0x2000
+#define ANE_H18_PMC_NRAILS		2	/* rail 0 = DCS, rail 1 = SOC; rail 2 = DISP untouched */
+#define ANE_H18_PMC_CLPC_BIT		(1u << ANE_H18_PMC_AGENT_CLPC)
+#define ANE_H18_PMC_DCS_MAX		7u
+#define ANE_H18_PMC_SOC_MAX		3u
+#define ANE_H18_PMC_HOLD_MAX_MS		10000u
+
 /* A firmware segment the boot loader left in DRAM (ADT /arm-io/ane segment-ranges: physical address, size, and the IOVA the firmware is linked at in the
  * ANE DART's address space). The DART maps it before the core runs. TEXT is mapped read only, DATA read and write. */
 struct ane_h18_fw_seg {
@@ -194,6 +216,12 @@ struct ane_h18_soc {
 	u32 scratch_size;
 	u64 dart_pa;		/* ANE DART instance 0 (ADT /arm-io/dart-ane reg[0]) */
 	u32 dart_size;
+	u64 pmc_voters_pa;	/* T8152 PMC voters window (apple_pmc_hw_t8152); 0 = unsupported */
+	u32 pmc_voters_size;
+	u64 pmc_rails_pa;	/* T8152 PMC rails window (agent_state + rail_enable); 0 = unsupported */
+	u32 pmc_rails_size;
+	u8 pmc_dcs_level;	/* agent 1 DCS floor while ANE work is active (0..7) */
+	u8 pmc_soc_level;	/* agent 1 SOC floor while ANE work is active (0..3) */
 	u32 mbox_num;		/* ADT msgbox-mailbox-num */
 	u64 rvbar_expect;	/* IORVBAR as the boot loader leaves it: entry 0x10000000000 (the segment-ranges remap) | valid bit. Measured on the board. */
 	u32 psd_slot[ANE_H18_NPSD];

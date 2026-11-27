@@ -388,6 +388,14 @@ extern void sim_s3_react(u32 v);		/* the modelled firmware sees the wake word */
 #define SIM_DB_PA 0x4198a4000ULL
 #define SIM_PEND_PA 0x4198ac000ULL
 #define SIM_ACK_PA 0x4198b0000ULL
+#define SIM_PMC_VOTERS_PA 0x302800000ULL
+#define SIM_PMC_VOTERS_SIZE 0x10000
+#define SIM_PMC_RAILS_PA 0x3029c6000ULL
+#define SIM_PMC_RAILS_SIZE 0x3000
+extern u32 sim_pmc_agent1_floor;
+extern u32 sim_pmc_rail_en[3];
+extern int sim_pmc_floor_writes, sim_pmc_rail_writes, sim_pmc_disp_writes;
+extern u32 sim_pmc_call_floor, sim_pmc_call_rail_en[2];
 extern int sim_ack_writes;
 extern u32 sim_ack_last;
 extern void sim_db_react(u32 v);	/* the modelled firmware sees a doorbell write */
@@ -543,6 +551,22 @@ static inline u32 bus_read(u64 pa)
 			sim_faults++;
 		else
 			v = sim_pend_val;
+	} else if (sim_in(pa, SIM_PMC_VOTERS_PA, SIM_PMC_VOTERS_SIZE)) {
+		u64 off_v = pa - SIM_PMC_VOTERS_PA;
+
+		v = (off_v == 0x4000) ? sim_pmc_agent1_floor : 0;
+	} else if (sim_in(pa, SIM_PMC_RAILS_PA, SIM_PMC_RAILS_SIZE)) {
+		u64 off_r = pa - SIM_PMC_RAILS_PA;
+
+		if (off_r == 0x4) {
+			u32 dcs = (sim_pmc_rail_en[0] & BIT(1)) ? (sim_pmc_agent1_floor & 0x0fu) : 0;
+			u32 soc = (sim_pmc_rail_en[1] & BIT(1)) ? (sim_pmc_agent1_floor & 0xf0u) : 0;
+			v = dcs | soc;
+		} else if (off_r >= 0x2000 && off_r < 0x200c && ((off_r & 3) == 0)) {
+			v = sim_pmc_rail_en[(off_r - 0x2000) / 4];
+		} else {
+			v = 0;
+		}
 	} else if (sim_in(pa, SIM_DART_PA, SIM_DART_SIZE) || sim_in(pa, SIM_DART_PA + 0x20000, SIM_DART_SIZE) || sim_in(pa, SIM_DART_PA + 0x40000, SIM_DART_SIZE) || sim_in(pa, SIM_DART_PA + 0x60000, SIM_DART_SIZE)) {
 		/* the DART block is only reachable with both ANE PSD slots on */
 		if (sim_psd_state[0] == 6 || sim_psd_state[1] == 6)
@@ -644,6 +668,30 @@ static inline void bus_write(u64 pa, u32 v)
 		sim_db_writes++;
 		if (pa == SIM_DB_PA)
 			sim_db_react(v);
+		return;
+	}
+	if (i < 0 && sim_in(pa, SIM_PMC_VOTERS_PA, SIM_PMC_VOTERS_SIZE)) {
+		if (pa - SIM_PMC_VOTERS_PA == 0x4000) {
+			sim_pmc_agent1_floor = v;
+			sim_pmc_floor_writes++;
+		} else {
+			sim_faults++;
+		}
+		return;
+	}
+	if (i < 0 && sim_in(pa, SIM_PMC_RAILS_PA, SIM_PMC_RAILS_SIZE)) {
+		u64 off_r = pa - SIM_PMC_RAILS_PA;
+
+		if (off_r == 0x2000 || off_r == 0x2004) {
+			sim_pmc_rail_en[(off_r - 0x2000) / 4] = v;
+			sim_pmc_rail_writes++;
+		} else if (off_r == 0x2008) {
+			sim_pmc_rail_en[2] = v;
+			sim_pmc_disp_writes++;
+			sim_faults++;
+		} else {
+			sim_faults++;
+		}
 		return;
 	}
 	if (i < 0)
@@ -1011,6 +1059,51 @@ extern unsigned long sim_jiffies;
 static inline unsigned long msecs_to_jiffies(unsigned int ms) { return ms; }
 static inline bool time_after(unsigned long a, unsigned long b) { return (long)(b - a) < 0; }
 extern void sim_usleep_hook(void);
+
+/* ---- minimal delayed_work shim ---- */
+struct work_struct {
+	void (*func)(struct work_struct *);
+};
+struct delayed_work {
+	struct work_struct work;
+	unsigned long due;
+	bool pending;
+};
+extern struct delayed_work *sim_dwork_slot;
+#define to_delayed_work(w) ((struct delayed_work *)(w))
+#define INIT_DELAYED_WORK(_dw, _fn) do { \
+	(_dw)->work.func = (_fn); \
+	(_dw)->due = 0; \
+	(_dw)->pending = false; \
+} while (0)
+static inline bool schedule_delayed_work(struct delayed_work *dw, unsigned long delay)
+{
+	dw->due = sim_jiffies + delay;
+	dw->pending = true;
+	sim_dwork_slot = dw;
+	return true;
+}
+static inline bool cancel_delayed_work(struct delayed_work *dw)
+{
+	bool was = dw->pending;
+
+	dw->pending = false;
+	return was;
+}
+static inline bool cancel_delayed_work_sync(struct delayed_work *dw)
+{
+	return cancel_delayed_work(dw);
+}
+static inline void sim_dwork_tick(void)
+{
+	struct delayed_work *dw = sim_dwork_slot;
+
+	if (dw && dw->pending && !time_after(dw->due, sim_jiffies)) {
+		dw->pending = false;
+		if (dw->work.func)
+			dw->work.func(&dw->work);
+	}
+}
 /* ktime: the virtual jiffies plus one microsecond per reading, so a spin loop ends and every stamp is different */
 extern u64 sim_ktime_calls;
 #define NSEC_PER_MSEC 1000000ULL
@@ -1020,10 +1113,10 @@ static inline ktime_t ktime_get(void) { return ktime_get_ns(); }
 static inline u64 ktime_to_ms(ktime_t t) { return t / NSEC_PER_MSEC; }
 /* min: plain operands here, no kernel macro machinery */
 #define min(a, b) ((a) < (b) ? (a) : (b))
-static inline void msleep(unsigned int ms) { sim_jiffies += ms ? ms : 1; sim_credits_now = 1; sim_usleep_hook(); }
+static inline void msleep(unsigned int ms) { sim_jiffies += ms ? ms : 1; sim_credits_now = 1; sim_dwork_tick(); sim_usleep_hook(); }
 #define cpu_relax() ((void)0)
 #define cond_resched() sim_usleep_hook()	/* a yield lets the fake firmware deferred work run: the delayed IO_T2H publication */
-static inline void usleep_range(unsigned long lo, unsigned long hi) { sim_jiffies += (lo + hi) / 2000 + 1; sim_credits_now = 1; sim_usleep_hook(); }
+static inline void usleep_range(unsigned long lo, unsigned long hi) { sim_jiffies += (lo + hi) / 2000 + 1; sim_credits_now = 1; sim_dwork_tick(); sim_usleep_hook(); }
 
 #define ERANGE_UNUSED 0
 
