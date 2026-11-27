@@ -195,6 +195,21 @@ module_param(chan_cmds, bool, 0444);
 MODULE_PARM_DESC(chan_cmds,
 		 "stage=chan: after the channel step send PRINT_ENABLE and CONFIG_GET on the IO ring (writes the doorbell at engine + 0x1844000). Default off.");
 
+static bool hs_prog;
+module_param(hs_prog, bool, 0444);
+MODULE_PARM_DESC(hs_prog,
+		 "Stage=chan (confirm_chan=1): after the channel step load the program file prog_fw (made by ane-prog-pack from an ANEC), LOAD_PROGRAM, CREATE_PROCESS and PROCEDURE_CALL on the IO ring with the T6021 wire format, wait for the IO_T2H finish event, then TERMINATE_PROCESS and DESTROY_PROGRAM. The file is checked and the buffers are allocated before the first command. Default off.");
+
+static char *prog_fw = "ane_h15_prog.bin";
+module_param(prog_fw, charp, 0444);
+MODULE_PARM_DESC(prog_fw,
+		 "hs_prog=1: the program file name under /lib/firmware. Default ane_h15_prog.bin.");
+
+static unsigned int hs_settle_ms = 10;
+module_param(hs_settle_ms, uint, 0444);
+MODULE_PARM_DESC(hs_settle_ms,
+		 "hs_prog=1: milliseconds the driver waits after each unload command and after the call, so the firmware can finish tearing the previous program down. Default 10.");
+
 static unsigned int hs_wait_ms = 1000;
 module_param(hs_wait_ms, uint, 0444);
 MODULE_PARM_DESC(hs_wait_ms,
@@ -387,6 +402,40 @@ struct ane_h15_hs_buf {
 	size_t size;
 };
 
+struct ane_h15_ring {
+	u64 *base;
+	u64 iova;
+	u32 slots, bit, type;
+	unsigned int cursor;
+};
+
+/* The packed program file ane-prog-pack writes (tools/ane-prog-pack.c), one program per file: 'ANEP' version 1,
+ * at most 9 sections (LOAD_PROGRAM carries nine 0x30 byte records), 16 buffers, one buffer at most 160 MiB and
+ * all buffers together at most 640 MiB (h18 hs_prog bounds, covering full encoder programs). */
+#define ANE_H15_PROG_MAGIC	0x50454e41	/* 'ANEP' */
+#define ANE_H15_PROG_VERSION	1
+#define ANE_H15_PROG_MAX_SECS	9
+#define ANE_H15_PROG_MAX_IO	16
+#define ANE_H15_PROG_MAX_BUF	0xa000000
+#define ANE_H15_PROG_MAX_BYTES	0x28000000
+#define ANE_H15_PROG_COOKIE	0xadd0		/* the call cookie of the T6021 driver, returned in the IO_T2H events */
+#define ANE_H15_PROG_PRIORITY	2
+
+/* One record of the packed program file ane-prog-pack writes (tools/ane-prog-pack.c): header, then nsec
+ * section records and nio buffer records of 0x20 bytes each. Every size and offset is checked against
+ * the file and the limits before anything is allocated. */
+struct ane_h15_pdesc {
+	struct {
+		u32 id;
+		u64 size, off;
+	} sec[ANE_H15_PROG_MAX_SECS];
+	struct {
+		u32 id, dir;
+		u64 size, doff, dsize;
+	} io[ANE_H15_PROG_MAX_IO];
+	u32 nsec, nio;
+};
+
 struct ane_h15 {
 	struct device *dev;
 	const struct ane_h15_soc *soc;
@@ -411,6 +460,12 @@ struct ane_h15 {
 	u32 ipi_last;		/* stage 7: last IPI pending value seen, for the change log */
 	struct ane_h15_hs_buf hs_pool, hs_ipc, hs_heap, hs_cmd;
 	struct ane_h15_hs_buf owned_fw;
+	/* hs_prog: the parsed program file, its section and buffer surfaces, and the table's IO and
+	 * IO_T2H rings, recorded by the channel step before anything is sent. */
+	const struct firmware *prog_blob;
+	struct ane_h15_pdesc pd;
+	struct ane_h15_hs_buf pg_sec[ANE_H15_PROG_MAX_SECS], pg_io[ANE_H15_PROG_MAX_IO];
+	struct ane_h15_ring prog_io, prog_t2h;
 	/* The ANE node carries several power-domains (sys, mpm, cpu, td,
 	 * base). The kernel's automatic attach handles only a single
 	 * domain, so for more than one we attach each by id and link it
@@ -1611,6 +1666,11 @@ struct ane_h15_rtk {
 	unsigned int sent, rx;
 	int hs_ret;
 	bool hs_done;
+	/* hs_prog: the program stage runs inside the live session; its result is reported after the
+	 * core stopped and every surface was freed, so a program failure never skips the shutdown. */
+	int prog_ret;
+	bool prog_ran, prog_ok;
+	const char *prog_why;
 };
 
 static int ane_h15_rtk_send(struct ane_h15 *ane, struct ane_h15_rtk *k, u64 m0)
@@ -1789,13 +1849,13 @@ static int ane_h15_rtk_poll_once(struct ane_h15 *ane, struct ane_h15_rtk *k)
 #define ANE_H15_CMD_BLOCK	0x4000
 #define ANE_H15_CSNE_CONFIG_GET	0x03
 #define ANE_H15_CSNE_PRINT_ENABLE 0x04
-
-struct ane_h15_ring {
-	u64 *base;
-	u64 iova;
-	u32 slots, bit, type;
-	unsigned int cursor;
-};
+/* The program commands, carried from the T6021 wire (h18 hs_prog): the T8152 confirmed the same ids and
+ * sizes, but no H15 macOS run has been measured, so these are an assumption hs_prog exists to test. */
+#define ANE_H15_CSNE_LOAD_PROGRAM	0x200	/* nine 0x30 byte section records at +8 (flags 1, id +4, iova +0x18, size +0x20), 0x1c0 bytes, the program id comes back at +0x1b8 */
+#define ANE_H15_CSNE_DESTROY_PROGRAM	0x201	/* 0x0c bytes, program id at +8, needs zero processes */
+#define ANE_H15_CSNE_CREATE_PROCESS	0x202	/* 0x10 bytes, program id at +8, the process id comes back at +0xc */
+#define ANE_H15_CSNE_TERMINATE_PROCESS	0x203	/* 0x10 bytes, program id at +8, process id at +0xc */
+#define ANE_H15_CSNE_PROCEDURE_CALL	0x204	/* 0x60 bytes plus one 0x30 byte element per buffer */
 
 static int ane_h15_scr_rd(struct ane_h15 *ane, unsigned int i, u32 *v)
 {
@@ -2350,25 +2410,34 @@ static int ane_h15_chan_get(struct ane_h15 *ane, const struct ane_h15_hs_buf *tb
 	return 0;
 }
 
-/* One command on the IO ring: the command block (id at +4, optional u32 argument at +8), slot header = its DMA address, doorbell BIT(bit), then wait for
- * the firmware to give the slot back (header | 1) with a zero acknowledgement at +6. */
-static int ane_h15_cmd(struct ane_h15 *ane, struct ane_h15_ring *io, u16 op, u32 len, bool arg_set, u32 arg, u8 **blk)
+/* One command on the IO ring: the command block (id at +4, optional u32 argument at +8, the body at the end of
+ * the `len` bytes), slot header = its DMA address, doorbell BIT(bit), then wait for the firmware to give the
+ * slot back (header | 1). A malformed answer is -EPROTO, a refusal (acknowledgement not zero) -EREMOTEIO, no
+ * answer -ETIMEDOUT. */
+static int ane_h15_cmd_body(struct ane_h15 *ane, struct ane_h15_ring *io, u16 op, u32 len, bool arg_set, u32 arg,
+			    const u8 *body, u32 body_len, u8 **blk)
 {
 	u64 *slot = io->base + io->cursor * 8, hdr, dma = ane->hs_cmd.iova;
 	u8 *cmd = ane->hs_cmd.va;
 	unsigned int waited;
 	u16 id, ack;
 
-	if (!chan_cmds || (u64)ANE_H15_DOORBELL_OFF + 4 > ane->soc->engine_size)
+	if ((!chan_cmds && !hs_prog) || (u64)ANE_H15_DOORBELL_OFF + 4 > ane->soc->engine_size)
 		return -EPERM;
 	if (!(READ_ONCE(slot[0]) & 1)) {
 		dev_err(ane->dev, "ane_h15 cmd %#x: IO slot %u is not host owned (%#llx)\n", op, io->cursor, READ_ONCE(slot[0]));
 		return -EBUSY;
 	}
+	if (len > ane->hs_cmd.size || body_len > len || (body_len && len - body_len < 8)) {
+		dev_err(ane->dev, "ane_h15 cmd %#x: length %#x does not fit the block (%#zx)\n", op, len, ane->hs_cmd.size);
+		return -EINVAL;
+	}
 	memset(cmd, 0, ANE_H15_CMD_BLOCK);
 	memcpy(cmd + 4, &op, 2);
 	if (arg_set)
 		memcpy(cmd + 8, &arg, 4);
+	if (body_len)
+		memcpy(cmd + len - body_len, body, body_len);
 	WRITE_ONCE(slot[1], len);
 	WRITE_ONCE(slot[2], len);
 	dma_wmb();
@@ -2389,12 +2458,447 @@ static int ane_h15_cmd(struct ane_h15 *ane, struct ane_h15_ring *io, u16 op, u32
 				 READ_ONCE(slot[1]), READ_ONCE(slot[2]), id, ack);
 			io->cursor = (io->cursor + 1) % io->slots;
 			*blk = cmd;
-			return (hdr == (dma | 1) && READ_ONCE(slot[1]) == len && READ_ONCE(slot[2]) == 0 && id == op && !ack) ? 0 : -EPROTO;
+			if (!(hdr == (dma | 1) && READ_ONCE(slot[1]) == len && READ_ONCE(slot[2]) == 0 && id == op))
+				return -EPROTO;	/* not the answer to this command */
+			return ack ? -EREMOTEIO : 0;	/* the firmware answered and refused */
 		}
 		usleep_range(500, 1000);
 	}
 	dev_err(ane->dev, "ane_h15 cmd %#x: no answer within %ums (header %#llx)\n", op, hs_wait_ms, READ_ONCE(slot[0]));
 	return -ETIMEDOUT;
+}
+
+static int ane_h15_cmd(struct ane_h15 *ane, struct ane_h15_ring *io, u16 op, u32 len, bool arg_set, u32 arg, u8 **blk)
+{
+	return ane_h15_cmd_body(ane, io, op, len, arg_set, arg, NULL, 0, blk);
+}
+
+/* ---- hs_prog: one bounded ANEP program on the IO ring ----
+ *
+ * Ported from the M6 module (ane/h18, ane_h18_prog_run): after the channel step, check the program file,
+ * allocate the section and buffer surfaces, LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL, wait for the finish
+ * event in IO_T2H, then TERMINATE_PROCESS and DESTROY_PROGRAM. Every reply is logged whole. A command the
+ * firmware refuses (acknowledgement not zero) or answers malformed ends the sequence; the program and the
+ * process are unloaded anyway. Only an unload the firmware does not answer ends with the program possibly
+ * resident (h18 power-cycles the domain there; this module has no equivalent yet, so the run fails and says so).
+ */
+
+/* Log the first `n` bytes of a reply or event, 16 bytes a line. */
+static void ane_h15_prog_dump(struct ane_h15 *ane, const char *what, const u8 *p, unsigned int n)
+{
+	unsigned int k;
+
+	for (k = 0; k < n; k += 16) {
+		u32 q[4] = { 0 };
+		unsigned int m = n - k < 16 ? n - k : 16;
+
+		memcpy(q, p + k, m);
+		dev_info(ane->dev, "ane_h15 prog: %s +%#x: %08x %08x %08x %08x\n", what, k, q[0], q[1], q[2], q[3]);
+	}
+}
+
+/* Every size and offset is checked against the file and the limits before anything is allocated. Returns 0 or
+ * -EINVAL with *why set. */
+static int ane_h15_prog_parse(const u8 *d, size_t n, struct ane_h15_pdesc *p, const char **why)
+{
+	u32 magic, version, nsec, nio, i, j;
+	u64 fsize, total = 0;
+	size_t pos;
+
+	memset(p, 0, sizeof(*p));
+	if (n < 0x20) {
+		*why = "file shorter than its header";
+		return -EINVAL;
+	}
+	memcpy(&magic, d, 4);
+	memcpy(&version, d + 4, 4);
+	memcpy(&nsec, d + 8, 4);
+	memcpy(&nio, d + 12, 4);
+	memcpy(&fsize, d + 16, 8);
+	if (magic != ANE_H15_PROG_MAGIC || version != ANE_H15_PROG_VERSION) {
+		*why = "not an ANEP version 1 file";
+		return -EINVAL;
+	}
+	if (fsize != n) {
+		*why = "the size in the header is not the file size";
+		return -EINVAL;
+	}
+	if (!nsec || nsec > ANE_H15_PROG_MAX_SECS || !nio || nio > ANE_H15_PROG_MAX_IO) {
+		*why = "section or buffer count out of range";
+		return -EINVAL;
+	}
+	pos = 0x20 + (size_t)(nsec + nio) * 0x20;
+	if (pos > n) {
+		*why = "the record tables do not fit in the file";
+		return -EINVAL;
+	}
+	p->nsec = nsec;
+	p->nio = nio;
+	for (i = 0; i < nsec; i++) {
+		const u8 *r = d + 0x20 + (size_t)i * 0x20;
+		u64 size, off;
+		u32 id;
+
+		memcpy(&id, r, 4);
+		memcpy(&size, r + 8, 8);
+		memcpy(&off, r + 16, 8);
+		if (id < 1 || id > ANE_H15_PROG_MAX_SECS || !size || size > ANE_H15_PROG_MAX_BUF || off % 16 ||
+		    off < pos || off > n || size > n - off) {
+			*why = "a section record is out of range";
+			return -EINVAL;
+		}
+		for (j = 0; j < i; j++)
+			if (p->sec[j].id == id) {
+				*why = "two sections with the same id";
+				return -EINVAL;
+			}
+		p->sec[i].id = id;
+		p->sec[i].size = size;
+		p->sec[i].off = off;
+		total += size;
+	}
+	for (i = 0; i < nio; i++) {
+		const u8 *r = d + 0x20 + ((size_t)nsec + i) * 0x20;
+		u64 size, doff, dsize;
+		u32 id, dir;
+
+		memcpy(&id, r, 4);
+		memcpy(&dir, r + 4, 4);
+		memcpy(&size, r + 8, 8);
+		memcpy(&doff, r + 16, 8);
+		memcpy(&dsize, r + 24, 8);
+		if (dir > 2 || !size || size > ANE_H15_PROG_MAX_BUF || dsize > size ||
+		    (dsize && (doff > n || dsize > n - doff))) {
+			*why = "a buffer record is out of range";
+			return -EINVAL;
+		}
+		for (j = 0; j < i; j++)
+			if (p->io[j].id == id) {
+				*why = "two buffers with the same id";
+				return -EINVAL;
+			}
+		p->io[i].id = id;
+		p->io[i].dir = dir;
+		p->io[i].size = size;
+		p->io[i].doff = doff;
+		p->io[i].dsize = dsize;
+		total += size;
+	}
+	if (total > ANE_H15_PROG_MAX_BYTES) {
+		*why = "the buffers together are over the limit";
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/* The CPU address of `len` bytes at a firmware address inside one of the surfaces the firmware was given, or NULL. */
+static const u8 *ane_h15_prog_cpu(const struct ane_h15 *ane, u64 a, size_t len)
+{
+	const struct ane_h15_hs_buf *fixed[3] = { &ane->hs_pool, &ane->hs_ipc, &ane->hs_heap };
+	unsigned int i;
+
+	for (i = 0; i < ANE_H15_PROG_MAX_IO; i++)
+		if (ane->pg_io[i].va && a >= ane->pg_io[i].iova && a - ane->pg_io[i].iova + len <= ane->pg_io[i].size)
+			return (u8 *)ane->pg_io[i].va + (a - ane->pg_io[i].iova);
+	for (i = 0; i < ANE_H15_PROG_MAX_SECS; i++)
+		if (ane->pg_sec[i].va && a >= ane->pg_sec[i].iova && a - ane->pg_sec[i].iova + len <= ane->pg_sec[i].size)
+			return (u8 *)ane->pg_sec[i].va + (a - ane->pg_sec[i].iova);
+	for (i = 0; i < 3; i++)
+		if (fixed[i]->va && a >= fixed[i]->iova && a - fixed[i]->iova + len <= fixed[i]->size)
+			return (u8 *)fixed[i]->va + (a - fixed[i]->iova);
+	return NULL;
+}
+
+/* Drain the IO_T2H ring from its cursor: every published record is an event in a surface the firmware was given;
+ * look for our procedure's finish (cookie, state 1), give the slot back and ring the ring's doorbell bit. */
+static void ane_h15_prog_t2h(struct ane_h15 *ane, bool *fin)
+{
+	struct ane_h15_ring *r = &ane->prog_t2h;
+	unsigned int n;
+
+	if (!r->base)
+		return;
+	for (n = 0; n < r->slots; n++) {
+		u64 *slot = r->base + r->cursor * 8, hdr = READ_ONCE(slot[0]), len, cookie;
+		const u8 *ev;
+		u32 state;
+
+		if ((hdr & 1) || !hdr)
+			return;		/* nothing published here (0), or still host owned */
+		dma_rmb();
+		len = READ_ONCE(slot[1]);
+		ev = len >= 0x20 && len <= 0x1000 ? ane_h15_prog_cpu(ane, hdr, len) : NULL;
+		if (!ev) {
+			dev_warn(ane->dev, "ane_h15 prog: the event address %#llx is not in a surface the firmware was given, slot given back unread\n", hdr);
+		} else {
+			ane_h15_prog_dump(ane, "event", ev, len < 0x40 ? (unsigned int)len : 0x40);
+			memcpy(&cookie, ev + 8, 8);
+			memcpy(&state, ev + 0x1c, 4);
+			if (cookie == ANE_H15_PROG_COOKIE && state == 1)
+				*fin = true;
+		}
+		WRITE_ONCE(slot[0], hdr | 1);
+		dma_wmb();
+		dev_crit(ane->dev, "ane_h15 write doorbell BIT(%u) pa=%#llx to give IO_T2H slot %u back\n", r->bit,
+			 ane->soc->engine_pa + ANE_H15_DOORBELL_OFF, r->cursor);
+		ane_h15_step("write doorbell BIT(%u) pa=%#llx\n", r->bit, ane->soc->engine_pa + ANE_H15_DOORBELL_OFF);
+		writel(BIT(r->bit), ane->engine + ANE_H15_DOORBELL_OFF);
+		r->cursor = (r->cursor + 1) % r->slots;
+	}
+}
+
+/* Keep answering the firmware for `ms` ms (T2H events, IPI acknowledges). */
+static void ane_h15_prog_settle(struct ane_h15 *ane, unsigned int ms)
+{
+	bool fin = false;
+	unsigned int k;
+
+	for (k = 0; k < ms; k++) {
+		usleep_range(1000, 1100);
+		ane_h15_ipi_poll(ane);
+		ane_h15_prog_t2h(ane, &fin);
+	}
+}
+
+/* Everything the program stage allocated or pinned, on every exit. */
+static void ane_h15_prog_free(struct ane_h15 *ane)
+{
+	unsigned int i;
+
+	for (i = 0; i < ANE_H15_PROG_MAX_SECS; i++)
+		if (ane->pg_sec[i].va) {
+			dma_free_coherent(ane->dev, ane->pg_sec[i].size, ane->pg_sec[i].va, ane->pg_sec[i].iova);
+			ane->pg_sec[i].va = NULL;
+		}
+	for (i = 0; i < ANE_H15_PROG_MAX_IO; i++)
+		if (ane->pg_io[i].va) {
+			dma_free_coherent(ane->dev, ane->pg_io[i].size, ane->pg_io[i].va, ane->pg_io[i].iova);
+			ane->pg_io[i].va = NULL;
+		}
+	if (ane->prog_blob) {
+		release_firmware(ane->prog_blob);
+		ane->prog_blob = NULL;
+	}
+	memset(&ane->pd, 0, sizeof(ane->pd));
+}
+
+/* The whole bounded submit. Returns 0 or the errno; *why carries the result reason. */
+static int ane_h15_prog_run(struct ane_h15 *ane, const char **why)
+{
+	const struct ane_h15_pdesc *p = &ane->pd;
+	struct ane_h15_ring *io = &ane->prog_io;
+	u8 cmd[0x400];
+	u32 prog = ~0u, proc = ~0u, w;
+	unsigned int i, waited;
+	bool created = false, loaded = false, fin = false;
+	const char *diag = NULL;
+	u8 *blk;
+	int ret;
+
+	*why = "program-submit-failed";
+	/* the file is checked before the first command and before anything is allocated */
+	ret = request_firmware(&ane->prog_blob, prog_fw, ane->dev);
+	if (ret) {
+		dev_err(ane->dev, "ane_h15 prog: request_firmware(%s): %d\n", prog_fw, ret);
+		*why = "program-file-missing";
+		return ret;
+	}
+	ret = ane_h15_prog_parse(ane->prog_blob->data, ane->prog_blob->size, &ane->pd, &diag);
+	if (ret) {
+		dev_err(ane->dev, "ane_h15 prog: %s: the file is refused before anything is allocated or sent\n", diag);
+		*why = "program-file-rejected";
+		ane_h15_prog_free(ane);
+		return ret;
+	}
+	if (!io->base || !ane->prog_t2h.base) {
+		dev_err(ane->dev, "ane_h15 prog: the table has no IO or IO_T2H ring, nothing sent\n");
+		ane_h15_prog_free(ane);
+		*why = "program-no-io-ring";
+		return -EPROTO;
+	}
+	if (!ane->hs_cmd.va) {			/* chan_cmds=1 allocated the command block already */
+		ret = ane_h15_hs_alloc(ane, &ane->hs_cmd, ANE_H15_CMD_BLOCK, "CMD");
+		if (ret) {
+			ane_h15_prog_free(ane);
+			return ret;
+		}
+	}
+	/* the surfaces before LOAD_PROGRAM: the sections, then the buffers with their initial data */
+	for (i = 0; i < p->nsec; i++) {
+		struct ane_h15_hs_buf *b = &ane->pg_sec[i];
+		char nm[24];
+
+		snprintf(nm, sizeof(nm), "PROG sec %u", p->sec[i].id);
+		ret = ane_h15_hs_alloc(ane, b, ALIGN(p->sec[i].size, SZ_16K), nm);
+		if (ret) {
+			ane_h15_prog_free(ane);
+			return ret;
+		}
+		memcpy(b->va, ane->prog_blob->data + p->sec[i].off, p->sec[i].size);
+	}
+	for (i = 0; i < p->nio; i++) {
+		struct ane_h15_hs_buf *b = &ane->pg_io[i];
+		char nm[24];
+
+		snprintf(nm, sizeof(nm), "PROG buf %u", p->io[i].id);
+		ret = ane_h15_hs_alloc(ane, b, ALIGN(p->io[i].size, SZ_16K), nm);
+		if (ret) {
+			ane_h15_prog_free(ane);
+			return ret;
+		}
+		if (p->io[i].dsize)
+			memcpy(b->va, ane->prog_blob->data + p->io[i].doff, p->io[i].dsize);
+	}
+	wmb();
+
+	/* LOAD_PROGRAM: one 0x30 byte record per section at +8 (flags 1, id +4, iova +0x18, size +0x20); the
+	 * program id comes back at +0x1b8 */
+	memset(cmd, 0, sizeof(cmd));
+	for (i = 0; i < p->nsec; i++) {
+		u8 *r = cmd + 8 + (size_t)(p->sec[i].id - 1) * 0x30;
+		u64 iova = ane->pg_sec[i].iova, size = p->sec[i].size;
+		u32 one = 1, id = p->sec[i].id;
+
+		memcpy(r, &one, 4);
+		memcpy(r + 4, &id, 4);
+		memcpy(r + 0x18, &iova, 8);
+		memcpy(r + 0x20, &size, 8);
+	}
+	w = ~0u;
+	memcpy(cmd + 0x1b8, &w, 4);
+	ane_h15_prog_dump(ane, "LOAD_PROGRAM sent", cmd, 0x1c0);
+	ret = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_LOAD_PROGRAM, 0x1c0, false, 0, cmd + 8, 0x1b8, &blk);
+	ane_h15_prog_dump(ane, "LOAD_PROGRAM reply", ane->hs_cmd.va, 0x40);
+	if (ret)
+		goto fail;
+	memcpy(&prog, ane->hs_cmd.va + 0x1b8, 4);
+	dev_info(ane->dev, "ane_h15 prog: LOAD_PROGRAM program id %#x\n", prog);
+	if (prog == ~0u) {
+		dev_err(ane->dev, "ane_h15 prog: the firmware did not write a program id\n");
+		ret = -EPROTO;
+		goto fail;
+	}
+	loaded = true;
+	ane_h15_prog_settle(ane, 20);
+
+	/* CREATE_PROCESS: program id at +8, the process id comes back at +0xc */
+	memset(cmd, 0, sizeof(cmd));
+	memcpy(cmd + 8, &prog, 4);
+	w = ~0u;
+	memcpy(cmd + 0xc, &w, 4);
+	ret = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_CREATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
+	ane_h15_prog_dump(ane, "CREATE_PROCESS reply", ane->hs_cmd.va, 0x20);
+	if (ret)
+		goto fail;
+	memcpy(&proc, ane->hs_cmd.va + 0xc, 4);
+	dev_info(ane->dev, "ane_h15 prog: CREATE_PROCESS process id %#x\n", proc);
+	if (proc == ~0u) {
+		dev_err(ane->dev, "ane_h15 prog: the firmware did not write a process id\n");
+		ret = -EPROTO;
+		goto fail;
+	}
+	created = true;
+	ane_h15_prog_settle(ane, 20);
+
+	/* PROCEDURE_CALL: priority at +0x18, cookie at +0x20, buffer count at +0x28, then one 0x30 byte element
+	 * per buffer at +0x60 (flags 1, buffer id +4, type 1 output / 0 input +8, iova +0x18, size +0x20) */
+	memset(cmd, 0, sizeof(cmd));
+	{
+		u32 prio = ANE_H15_PROG_PRIORITY, cnt = p->nio;
+		u64 cookie = ANE_H15_PROG_COOKIE;
+
+		memcpy(cmd + 8, &prog, 4);
+		memcpy(cmd + 0xc, &proc, 4);
+		memcpy(cmd + 0x18, &prio, 4);
+		memcpy(cmd + 0x20, &cookie, 8);
+		memcpy(cmd + 0x28, &cnt, 4);
+	}
+	for (i = 0; i < p->nio; i++) {
+		u8 *r = cmd + 0x60 + (size_t)i * 0x30;
+		u64 iova = ane->pg_io[i].iova, size = p->io[i].size;
+		u32 one = 1, id = p->io[i].id, type = p->io[i].dir == 1 ? 1 : 0;
+
+		memcpy(r, &one, 4);
+		memcpy(r + 4, &id, 4);
+		memcpy(r + 8, &type, 4);
+		memcpy(r + 0x18, &iova, 8);
+		memcpy(r + 0x20, &size, 8);
+	}
+	wmb();
+	ane_h15_prog_dump(ane, "PROCEDURE_CALL sent", cmd, 0x60 + p->nio * 0x30);
+	ret = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_PROCEDURE_CALL, 0x60 + p->nio * 0x30, false, 0,
+			       cmd + 8, 0x60 + p->nio * 0x30 - 8, &blk);
+	ane_h15_prog_dump(ane, "PROCEDURE_CALL reply", ane->hs_cmd.va, 0x40);
+	if (ret)
+		goto fail;
+	for (waited = 0; waited < hs_wait_ms && !fin; waited++) {
+		usleep_range(1000, 1100);
+		ane_h15_ipi_poll(ane);
+		ane_h15_prog_t2h(ane, &fin);
+	}
+	dev_info(ane->dev, "ane_h15 prog: PROCEDURE_CALL %s after %ums\n", fin ? "finished" : "gave no finish event", waited);
+	if (!fin) {
+		ret = -ETIMEDOUT;
+		*why = "program-finish-timeout";
+		goto fail;
+	}
+
+	/* unload: the process first, then the program; a refusal or a malformed answer also ends the run */
+	memset(cmd, 0, sizeof(cmd));
+	memcpy(cmd + 8, &prog, 4);
+	memcpy(cmd + 0xc, &proc, 4);
+	ret = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
+	ane_h15_prog_dump(ane, "TERMINATE_PROCESS reply", ane->hs_cmd.va, 0x20);
+	if (ret)
+		goto fail;
+	created = false;
+	ane_h15_prog_settle(ane, hs_settle_ms);
+	memset(cmd, 0, sizeof(cmd));
+	memcpy(cmd + 8, &prog, 4);
+	ret = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_DESTROY_PROGRAM, 0xc, false, 0, cmd + 8, 4, &blk);
+	ane_h15_prog_dump(ane, "DESTROY_PROGRAM reply", ane->hs_cmd.va, 0x20);
+	if (ret)
+		goto fail;
+	loaded = false;
+	ane_h15_prog_settle(ane, hs_settle_ms);
+	ane_h15_prog_free(ane);
+	return 0;
+
+fail:
+	/* the program and the process are unloaded even when a command or the call failed; only an unload the
+	 * firmware does not answer leaves it possibly resident (h18 power-cycles the domain there; this module
+	 * has no equivalent yet, so the run fails and the message names the reset) */
+	if (created) {
+		int r1;
+
+		memset(cmd, 0, sizeof(cmd));
+		memcpy(cmd + 8, &prog, 4);
+		memcpy(cmd + 0xc, &proc, 4);
+		r1 = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_TERMINATE_PROCESS, 0x10, false, 0, cmd + 8, 8, &blk);
+		ane_h15_prog_dump(ane, "TERMINATE_PROCESS reply", ane->hs_cmd.va, 0x20);
+		ane_h15_prog_settle(ane, hs_settle_ms);
+		if (r1) {
+			dev_emerg(ane->dev, "ane_h15 prog: TERMINATE_PROCESS was not answered (%d): the firmware may hold the process, reset the ANE before the next submit\n", r1);
+			*why = "program-unload-unanswered";
+		}
+		created = false;
+	}
+	if (loaded) {
+		int r2;
+
+		memset(cmd, 0, sizeof(cmd));
+		memcpy(cmd + 8, &prog, 4);
+		r2 = ane_h15_cmd_body(ane, io, ANE_H15_CSNE_DESTROY_PROGRAM, 0xc, false, 0, cmd + 8, 4, &blk);
+		ane_h15_prog_dump(ane, "DESTROY_PROGRAM reply", ane->hs_cmd.va, 0x20);
+		ane_h15_prog_settle(ane, hs_settle_ms);
+		if (r2) {
+			dev_emerg(ane->dev, "ane_h15 prog: DESTROY_PROGRAM was not answered (%d): the firmware may hold the program, reset the ANE before the next submit\n", r2);
+			*why = "program-unload-unanswered";
+		}
+		loaded = false;
+	}
+	ane_h15_prog_free(ane);
+	return ret;
 }
 
 /* macOS's step after it created its channels: the host owns every H2T slot, writes READY to SCRATCH3 and waits until the firmware clears it. With
@@ -2410,6 +2914,8 @@ static int ane_h15_chan_step(struct ane_h15 *ane, const struct ane_h15_hs_buf *t
 	u8 *blk;
 	int ret;
 
+	ane->prog_io.base = NULL;		/* the rings are recorded again below, from the table that checked out */
+	ane->prog_t2h.base = NULL;
 	if (tb->iova + tb->size - table < (u64)ANE_H15_CH_COUNT * ANE_H15_CH_ENTRY) {
 		dev_err(ane->dev, "ane_h15 chan: the table does not fit in its surface\n");
 		return -EPROTO;
@@ -2424,6 +2930,8 @@ static int ane_h15_chan_step(struct ane_h15 *ane, const struct ane_h15_hs_buf *t
 			io = rings[i];
 			have_io = true;
 		}
+		if (!strcmp(name, "IO_T2H") && rings[i].type == 1)
+			ane->prog_t2h = rings[i];
 	}
 	/* the rings must not overlap the table entries or each other: the ownership loop below writes into every H2T ring */
 	for (i = 0; i < ANE_H15_CH_COUNT; i++) {
@@ -2439,7 +2947,7 @@ static int ane_h15_chan_step(struct ane_h15 *ane, const struct ane_h15_hs_buf *t
 				return -EPROTO;
 			}
 	}
-	if (chan_cmds && !have_io) {
+	if ((chan_cmds || hs_prog) && !have_io) {
 		dev_err(ane->dev, "ane_h15 chan: no IO ring of type 0 in the table, nothing written\n");
 		return -EPROTO;
 	}
@@ -2467,8 +2975,11 @@ static int ane_h15_chan_step(struct ane_h15 *ane, const struct ane_h15_hs_buf *t
 	dev_info(ane->dev, "ane_h15 chan: SCRATCH3 reads %#x after %ums\n", s3, waited);
 	if (s3)
 		return -EIO;
-	if (!chan_cmds)
+	if (!chan_cmds) {
+		if (hs_prog)
+			ane->prog_io = io;	/* no command was sent, the cursor is still 0 */
 		return 0;
+	}
 	ret = ane_h15_hs_alloc(ane, &ane->hs_cmd, ANE_H15_CMD_BLOCK, "CMD");
 	if (ret)
 		return ret;
@@ -2480,6 +2991,7 @@ static int ane_h15_chan_step(struct ane_h15 *ane, const struct ane_h15_hs_buf *t
 		return ret == -EPROTO || ret == -ETIMEDOUT || ret == -EBUSY ? -EIO : ret;
 	memcpy(&v, blk + 8, 4);
 	dev_info(ane->dev, "ane_h15 chan: CONFIG_GET reply u32 at +8 = %#x (macOS reads it as the tick rate)\n", v);
+	ane->prog_io = io;	/* with the cursor after the two commands: hs_prog sends its commands from here */
 	return 0;
 }
 
@@ -2604,6 +3116,12 @@ static void ane_h15_rtk_session(struct ane_h15 *ane, struct ane_h15_rtk *k)
 		k->hs_ret = ane_h15_chan_run(ane, k);
 		k->hs_done = true;
 		dev_info(ane->dev, "ane_h15 handshake result %d\n", k->hs_ret);
+		if (!k->hs_ret && hs_prog) {
+			k->prog_ran = true;
+			k->prog_ret = ane_h15_prog_run(ane, &k->prog_why);
+			k->prog_ok = k->prog_ret == 0;
+			dev_info(ane->dev, "ane_h15 prog result %d (%s)\n", k->prog_ret, k->prog_why);
+		}
 	}
 	if (!k->ap_on)
 		return;			/* no session to shut down */
@@ -3431,7 +3949,11 @@ static int ane_h15_run_common(struct ane_h15 *ane, unsigned int stg)
 			ane_h15_result(ane, stg, "FAIL", rtk.hs_ret == -ETIMEDOUT ? "handshake-no-table-address" : rtk.hs_ret == -EAGAIN ? "handshake-not-ready" : "handshake-not-done");
 			return rtk.hs_ret;
 		}
-		ane_h15_result(ane, stg, "PASS", stg == 7 ? "rtkit-channels-and-shutdown" : "rtkit-session-and-shutdown");
+		if (stg == 7 && rtk.prog_ret) {
+			ane_h15_result(ane, stg, "FAIL", rtk.prog_why);
+			return rtk.prog_ret;
+		}
+		ane_h15_result(ane, stg, "PASS", stg == 7 ? (rtk.prog_ok ? "program-submitted-and-shutdown" : "rtkit-channels-and-shutdown") : "rtkit-session-and-shutdown");
 		return 0;
 	}
 	if (kboot) {

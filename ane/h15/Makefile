@@ -54,6 +54,12 @@ test_rtk_startup: test_rtk_startup.c sim/sim_harness.c ane_h15_main.c ane_h15_so
 test_t8122_start: test_t8122_start.c sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
 	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ test_t8122_start.c $(SIM_SHA)
 
+# hs_prog=1: the bounded ANEP submit. pos drives LOAD_PROGRAM, CREATE_PROCESS, PROCEDURE_CALL,
+# TERMINATE_PROCESS, DESTROY_PROGRAM end to end; each fault control exits 0 iff the module refuses
+# the induced fault cleanly (no program command on a bad file, the cleanup unload on the timeout).
+test_prog_submit: test_prog_submit.c sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
+	$(SIM_CC) $(SIM_CFLAGS) -I sim -I sim/inc -o $@ test_prog_submit.c $(SIM_SHA)
+
 # P7 build: the fact table is substituted (synthetic, fully filled) so
 # the real probe + stage_boot run the every-fact-filled fall-through.
 sim/sim_h15_filled: sim/sim_harness.c ane_h15_main.c ane_h15_soc.c $(SIM_HDRS) $(SIM_SHA)
@@ -75,11 +81,31 @@ sim-overlay: sim/sim_overlay
 sim-overlay-mutation:
 	python3 sim/mutate_overlay.py
 
-sim-test: sim/sim_h15 sim-overlay test_rtk_startup test_t8122_start
+sim-test: sim/sim_h15 sim-overlay test_rtk_startup test_t8122_start test_prog_submit
 	./sim/sim_h15 pos
 	./sim/sim_h15 neg-run
 	./test_rtk_startup
 	./test_t8122_start
+	./test_prog_submit pos
+	./test_prog_submit bad-magic
+	./test_prog_submit truncated
+	./test_prog_submit oversize
+	./test_prog_submit timeout
+
+sim-prog-submit: test_prog_submit
+	./test_prog_submit pos
+
+sim-prog-bad-magic: test_prog_submit
+	./test_prog_submit bad-magic
+
+sim-prog-truncated: test_prog_submit
+	./test_prog_submit truncated
+
+sim-prog-oversize: test_prog_submit
+	./test_prog_submit oversize
+
+sim-prog-timeout: test_prog_submit
+	./test_prog_submit timeout
 
 sim-negative-ps-stuck: sim/sim_h15
 	./sim/sim_h15 neg-ps-stuck
@@ -344,12 +370,13 @@ sim-mutation-nofillrefusal: sim-probe-filled
 
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -f ane_h15_adt_test test_domain_window test_rtk_startup test_t8122_start sim/sim_h15 sim/sim_h15_filled
+	rm -f ane_h15_adt_test test_domain_window test_rtk_startup test_t8122_start test_prog_submit sim/sim_h15 sim/sim_h15_filled
 
 .PHONY: default modules check sim-test sim-negative-ps-stuck \
 	sim-negative-wrong-stage sim-negative-truncated-dt \
 	sim-negative-rpm-fail sim-negative-nopsguard \
 	sim-probe-filled sim-mutation-nounmap \
+	sim-prog-submit sim-prog-bad-magic sim-prog-truncated sim-prog-oversize sim-prog-timeout \
 	sim-negative-pd-attach-fail sim-negative-pd-link-fail \
 	sim-negative-pd-rpm-err sim-negative-pd-eacces-alone \
 	sim-mutation-pd-nolinkdetach sim-mutation-pd-anyerrignored \
