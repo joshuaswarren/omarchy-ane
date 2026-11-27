@@ -27,13 +27,15 @@ extern "C" {
 #define ANE_M2_MAX_BINDS	64
 
 /*
- * ABI 3 (T6050 / M5, the aurora ane_t6021 H17 line): the driver reports
+ * ABI 3 (in-tree aurora ane_t6021 H15/H16/H17 line): the driver reports
  * DRM_IOCTL_VERSION major 3 and answers GET_CAPS with abi_version 3 and
- * chip_family 17 (measured on the M5 Max, boot 7e6f417b, 2026-11-22).
- * The M2 libane path enumerates the device but its PROG_LOAD/EXEC calls
- * are not this ABI; programs go through the H16 backend.
+ * chip_family 15 (T8122 / M3), 16 (H16) or 17 (T6050 / M5).
+ * DRM_IOCTL_VERSION minor 1 adds surface mmap (DRM_ANE_H16_MMAP_OFFSET)
+ * and DRM_ANE_H16_EXEC_IN_PLACE.
  */
 #define ANE_ABI_V3_MAJOR	3
+#define ANE_CHIP_H15		15
+#define ANE_CHIP_H16		16
 #define ANE_CHIP_H17		17
 #define ANE_V3_GET_CAPS		0x00 /* DRM_COMMAND_BASE + 0, the aurora node */
 
@@ -172,6 +174,69 @@ struct drm_ane_prog_lookup {
 #define DRM_IOCTL_ANE_PROG_LOOKUP \
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_PROG_LOOKUP, \
 		 struct drm_ane_prog_lookup)
+
+/*
+ * ABI version 3 (aurora-silicon/linux include/uapi/drm/ane_accel.h):
+ * H15 (T8122), H16 and H17 programs load an HWX plus four host-built
+ * sections via DRM_IOCTL_ANE_H16_LOAD and execute via DRM_IOCTL_ANE_H16_EXEC.
+ * Command 0x07 overlaps ABI-2 PROG_LOOKUP numerically, with distinct struct
+ * size and ABI major gating (DRM_IOCTL_VERSION major == 3).
+ */
+#define DRM_ANE_H16_LOAD	0x07
+#define DRM_ANE_H16_EXEC	0x08
+
+#define DRM_ANE_H16_SECTION_GENERIC		1
+#define DRM_ANE_H16_SECTION_OPERATION		2
+#define DRM_ANE_H16_SECTION_PROCEDURE		3
+#define DRM_ANE_H16_SECTION_TEXT_PROPERTIES	4
+#define DRM_ANE_H16_SECTIONS			4
+#define DRM_ANE_H16_SECTION_MIN			0x28
+#define DRM_ANE_H16_SECTION_MAX			0x10000
+
+#define DRM_ANE_H16_RESOURCE_GENERIC		1002
+#define DRM_ANE_H16_RESOURCE_OPERATION		1003
+#define DRM_ANE_H16_RESOURCE_PROCEDURE		1004
+#define DRM_ANE_H16_RESOURCE_TEXT_PROPERTIES	1005
+#define DRM_ANE_H16_RESOURCE_TEXT		1006
+#define DRM_ANE_H16_RESOURCE_KERNEL		1007
+#define DRM_ANE_H16_SURFACES			4
+
+#define DRM_ANE_H16_MMAP_OFFSET(i)	(((__u64)((i) + 1)) << 32)
+#define DRM_ANE_H16_EXEC_IN_PLACE	(1u << 0)
+
+struct drm_ane_h16_section {
+	__u32 kind;
+	__u32 size;
+	__u64 data_ptr;
+};
+
+struct drm_ane_h16_load {
+	__u64 hwx_ptr;
+	__u64 hwx_size;
+	__u64 sections_ptr;
+	__u32 section_count;
+	__u32 flags;
+	__u32 surface_count;
+	__u32 pad;
+	__u64 surface_size[DRM_ANE_H16_SURFACES];
+	__u32 surface_direction[DRM_ANE_H16_SURFACES];
+};
+
+struct drm_ane_h16_buffer {
+	__u64 ptr;
+	__u64 size;
+};
+
+struct drm_ane_h16_exec {
+	__u64 buffers_ptr;
+	__u32 count;
+	__u32 flags;
+};
+
+#define DRM_IOCTL_ANE_H16_LOAD \
+	DRM_IOWR(DRM_COMMAND_BASE + DRM_ANE_H16_LOAD, struct drm_ane_h16_load)
+#define DRM_IOCTL_ANE_H16_EXEC \
+	DRM_IOW(DRM_COMMAND_BASE + DRM_ANE_H16_EXEC, struct drm_ane_h16_exec)
 
 #if defined(__cplusplus)
 }

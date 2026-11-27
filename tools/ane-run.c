@@ -816,7 +816,7 @@ static int write_exact(const char *path, const void *buf, uint64_t size)
  * keyed by the tiles[] signature, so the check tool sees the proven
  * surface layouts. */
 enum {
-	CHK_ADD, CHK_MUL, CHK_RELU, CHK_ADD_SCALAR, CHK_MUL_SCALAR,
+	CHK_ADD, CHK_ADD_DENSE, CHK_MUL, CHK_RELU, CHK_ADD_SCALAR, CHK_MUL_SCALAR,
 	CHK_REAL_DIV, CHK_CLIP_LOW, CHK_CLIP_HIGH, CHK_MATVEC,
 	CHK_SELECT, CHK_BMM, CHK_RMS, CHK_COUNT
 };
@@ -827,6 +827,7 @@ static const struct {
 	int matvec;
 } check_ops[CHK_COUNT] = {
 	{ "add", 2, 0 },
+	{ "add-dense", 2, 0 },
 	{ "mul", 2, 0 },
 	{ "relu", 1, 0 },
 	{ "add-scalar", 1, 0 },
@@ -1566,6 +1567,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 {
 	int two_in;
 	int matvec;
+	int dense;
 	uint64_t a_size, b_size = 0, y_size, n, lanes, i, j;
 	uint64_t pad_in = 0, pad_out = 0, exact = 0, in_band = 0;
 	uint64_t max_ulp_milli = 0;
@@ -1586,6 +1588,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 	}
 	two_in = check_ops[op].ins == 2;
 	matvec = check_ops[op].matvec;
+	dense = op == CHK_ADD_DENSE;
 
 	if (!in[0].set || in[0].idx != 0 || !out[0].set || out[0].idx != 0 ||
 	    (two_in && (!in[1].set || in[1].idx != 1))) {
@@ -1605,7 +1608,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 		return -1;
 	}
 	n = a_size / 2;
-	lanes = matvec ? 256 : n / 32;
+	lanes = matvec ? 256 : (dense ? n : n / 32);
 
 	a = read_exact(in[0].path, a_size);
 	if (two_in) {
@@ -1644,8 +1647,8 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 		}
 		lanes = (uint64_t)M * N;
 	}
-	#define A_VALID(i) (matvec ? (i) < (uint64_t)M * K : ((i) % 32) == 0)
-	#define Y_VALID(i) (matvec ? (i) < (uint64_t)M * N : ((i) % 32) == 0)
+	#define A_VALID(i) (matvec ? (i) < (uint64_t)M * K : (dense ? 1 : ((i) % 32) == 0))
+	#define Y_VALID(i) (matvec ? (i) < (uint64_t)M * N : (dense ? 1 : ((i) % 32) == 0))
 	for (i = 0; i < n; i++) {
 		pad_in += !A_VALID(i) && ((a[i] != 0) || (b && b[i] != 0));
 		pad_out += !Y_VALID(i) && y[i] != 0;
@@ -1654,7 +1657,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 		double va;
 		uint16_t want;
 
-		i = matvec ? j : j * 32;
+		i = (matvec || dense) ? j : j * 32;
 		va = matvec ? 0.0 : ane_f16_to_f64(a[i]);
 
 		if (matvec) {
@@ -1698,6 +1701,7 @@ static int check_program(int op, struct ane_nn *nn, struct io_file *in,
 		}
 		switch (op) {
 		case CHK_ADD:
+		case CHK_ADD_DENSE:
 			want = ane_f16_round_half_away(va +
 				ane_f16_to_f64(b[i]));
 			break;
@@ -1843,6 +1847,8 @@ static void usage(void)
 		"usage: ane-run --anec FILE [--in IDX=FILE]... "
 		"[--out IDX=FILE]... [--repeat N] [--batch K] [--time] [--time-raw FILE] [--check OP] "
 		"[--weights FILE] [--dev N] [--tile-shift N] [--expect-bind IN:OUT]\n"
+		"   or: ane-run --hwx FILE [--in IDX=FILE]... [--out IDX=FILE]... "
+		"[--repeat N] [--time] [--time-raw FILE] [--check add-dense] [--dev N]\n"
 		"   or: ane-run --anec FILE --ports FILE.json [--in NAME=FILE]...\n"
 		"                                  [--out NAME=FILE]... [--dry-run] [--dev N]\n"
 		"  --dev N: the accel node to open (/dev/accel/accelN; default 0,\n"
@@ -1858,7 +1864,7 @@ static void usage(void)
 		"  --expect-bind IN:OUT: the channel of each input and output, in\n"
 		"    index order (e.g. 7,8,9:4). Refuse to run, exit 2, when libane's\n"
 		"    stream-derived binding differs. M1-family index path only.\n"
-		"OP: add mul relu add-scalar mul-scalar real-div-scalar "
+		"OP: add add-dense mul relu add-scalar mul-scalar real-div-scalar "
 		"clip-low clip-high matvec\n"
 		"    select bmm rms\n"
 		"  select: 3 inputs --in 0=a --in 1=b --in 2=cond\n"
@@ -1925,7 +1931,8 @@ int main(int argc, char **argv)
 	const char *expect_bind = NULL;
 
 	for (int i = 1; i < argc; i++) {
-		if (!strcmp(argv[i], "--anec") && i + 1 < argc) {
+		if ((!strcmp(argv[i], "--anec") || !strcmp(argv[i], "--hwx")) &&
+		    i + 1 < argc) {
 			anec = argv[++i];
 		} else if (!strcmp(argv[i], "--in") && i + 1 < argc) {
 			if (ports_mode) {
@@ -2074,7 +2081,7 @@ int main(int argc, char **argv)
 	}
 
 	if (expect_bind) {
-		int bad = nn->m2 ? -1 : check_expected_bind(nn, expect_bind);
+		int bad = (nn->m2 || nn->v3) ? -1 : check_expected_bind(nn, expect_bind);
 
 		if (bad) {
 			if (bad < 0)

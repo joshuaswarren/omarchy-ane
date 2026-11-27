@@ -93,7 +93,8 @@ struct ane_nn {
 			      * H13 island containers use 0xE (0x4000-B units),
 			      * whole-program containers from the hwxv2
 			      * converter use 0x9 (512-B units). */
-	void *m2; /* ABI-2 (T6021) backend state; NULL on the M1 path. */
+	void *m2; /* ABI-2 (T6021) backend state; NULL on ABI 1/3. */
+	void *v3; /* ABI-3 (in-tree H15/H16/H17) backend state; NULL on ABI 1/2. */
 };
 
 /* #define LIBANE_CONFIG_NO_ERR */
@@ -121,9 +122,11 @@ struct ane_nn *__ane_init(const char *path, int dev_id);
 /*
  * The T6021-family chip table: one row per chip dev_id this libane
  * enumerates, with the (DRM version major, GET_CAPS chip_family) the node
- * must report. T6050 is the M5 Max (ABI 3, family 17, measured 2026-11-22).
+ * must report. T8122 is the base M3 (ABI 3, family 15); T6050 is the M5 Max
+ * (ABI 3, family 17, measured 2026-11-22).
  */
 #define ANE_DEV_ID_T6021 0x6021
+#define ANE_DEV_ID_T8122 0x8122
 #define ANE_DEV_ID_T6050 0x6050
 
 struct ane_dev_info {

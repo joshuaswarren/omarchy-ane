@@ -55,21 +55,28 @@ test_cpu_floor_serve: test_cpu_floor_serve.c ane_cpu_floor.h
 
 # libane sources rebuilt with every unset stack variable filled with 0xfe,
 # and linked against the fake DRM node in test_libane_ioctl.c.
-LIBANE_SRC = ../libane/ane.c ../libane/ane_m2.c ../libane/ane_sha256.c
+LIBANE_SRC = ../libane/ane.c ../libane/ane_m2.c ../libane/ane_v3.c ../libane/ane_sha256.c
 
 test_libane_ioctl: test_libane_ioctl.c $(LIBANE_SRC) ../libane/ane.h \
-	../libane/ane_m2.h ../libane/ane_bind.h ../libane/ane_f16.h \
+	../libane/ane_m2.h ../libane/ane_v3.h ../libane/ane_bind.h ../libane/ane_f16.h \
 	../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -I/usr/include/libdrm -ftrivial-auto-var-init=pattern \
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_libane_ioctl.c $(LIBANE_SRC) -lm
 
-# T6050 (M5 Max) enumeration through the T6021-family path, host-only.
+# T6050 (M5 Max) and T8122 (base M3) enumeration through the ABI-3 path, host-only.
 test_libane_t6050: test_libane_t6050.c $(LIBANE_SRC) ../libane/ane.h \
-	../ane/src/uapi/drm/ane_accel.h
+	../libane/ane_v3.h ../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -I/usr/include/libdrm \
 		-Wl,--wrap=open,--wrap=ioctl \
 		-o $@ test_libane_t6050.c $(LIBANE_SRC) -lm
+
+# ABI-3 (in-tree H15/H16/H17) section builder, H16_LOAD, mmap in-place and copy-mode EXEC, host-only.
+test_libane_v3: test_libane_v3.c $(LIBANE_SRC) ../libane/ane.h \
+	../libane/ane_v3.h ../ane/src/uapi/drm/ane_accel.h
+	$(CC) $(CFLAGS) -I/usr/include/libdrm -ftrivial-auto-var-init=pattern \
+		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap,--wrap=munmap \
+		-o $@ test_libane_v3.c $(LIBANE_SRC) -lm
 
 test_libane_h18_resident: test_libane_h18_resident.c ../libane/ane_h18_resident.c ../libane/ane_h18_resident.h ../ane/h18/ane_h18_res_uapi.h
 	$(CC) $(CFLAGS) -Wl,--wrap=open,--wrap=write,--wrap=read,--wrap=ioctl -o $@ $(filter %.c,$^)
@@ -146,12 +153,12 @@ test_ane_bo_probe: test_ane_bo_probe.c ane-bo-probe.c \
 # PROG_LOOKUP digest tests: NIST SHA-256 vectors and the driver's
 # program-digest construction over a real fixture (host only).
 test_t6021_prog_lookup: test_t6021_prog_lookup.c ../libane/ane_sha256.c \
-	../libane/ane_sha256.h ../libane/ane_m2.h ../libane/ane.h \
+	../libane/ane_sha256.h ../libane/ane_m2.h ../libane/ane_v3.h ../libane/ane.h \
 	../libane/ane_bind.h ../ane/src/uapi/drm/ane_accel.h
 	$(CC) $(CFLAGS) -I../libane -I../ane/src/uapi/drm \
 		-I/usr/include/libdrm -o $@ \
 		test_t6021_prog_lookup.c ../libane/ane_sha256.c \
-		../libane/ane_m2.c ../libane/ane.c -lm
+		../libane/ane_m2.c ../libane/ane_v3.c ../libane/ane.c -lm
 
 # The same session-cache test under LeakSanitizer: the cache-hit path once
 # leaked one port table per hit and no plain run could see it. Skipped when
@@ -171,11 +178,12 @@ test_ane_session_cache_lsan: test_ane_session_cache.c ane-session.c ane-run.c an
 		-Wl,--wrap=open,--wrap=ioctl,--wrap=mmap \
 		-o $@ test_ane_session_cache.c $(LIBANE_SRC) -lm
 
-check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
+check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 test_libane_v3 test_ane_stats test_t6021_pool test_t6021_progtab test_t6021_mring test_t6021_legtab \
 	test_ane_session_cache test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_check_band test_ane_timing test_ane_latency \
 	test_cpu_floor test_cpu_floor_serve test_libane_h18_resident
 	sh test_ane_run_tile_shift.sh ./ane-run
 	./test_libane_t6050
+	./test_libane_v3 ../fixtures/h15-hwx/add/model.hwx ../fixtures/h15-hwx/add/load/base
 	./test_libane_h18_resident
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
@@ -241,7 +249,7 @@ ifneq ($(CROSS_QEMU),)
 		-I/usr/aarch64-linux-gnu/include \
 		-I/usr/aarch64-linux-gnu/include/drm \
 		-o test_t6021_prog_lookup_a64 test_t6021_prog_lookup.c \
-		../libane/ane_sha256.c ../libane/ane_m2.c ../libane/ane.c -lm
+		../libane/ane_sha256.c ../libane/ane_m2.c ../libane/ane_v3.c ../libane/ane.c -lm
 	(cd ../fixtures && qemu-aarch64-static -cpu max \
 		-L /usr/aarch64-linux-gnu \
 		$(abspath test_t6021_prog_lookup_a64) 2>&1) | tee test_sha256_a64.log
@@ -256,7 +264,7 @@ else
 endif
 
 clean:
-	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve
+	rm -f ane-run ane-session ane-selfcheck test_libane_ioctl test_libane_t6050 test_libane_v3 test_ane_stats test_t6021_pool test_ane_session_cache test_ane_session_cache_lsan test_ane_session_state test_ane_bo_probe test_t6021_prog_lookup test_t6021_prog_lookup_a64 test_sha256_a64.log test_check_band test_ane_timing test_cpu_floor test_cpu_floor_serve
 	rm -f test_libane_h18_resident
 
 # Install the ANE smoke userspace: the program the qualification kit calls by

@@ -19,6 +19,7 @@
 #include "ane.h"
 #include "ane_bind.h"
 #include "ane_m2.h"
+#include "ane_v3.h"
 
 #ifndef LIBANE_CONFIG_NO_ERR
 #define ane_err(a, ...) fprintf(stderr, "LIBANE: ERR: " a, ##__VA_ARGS__)
@@ -421,7 +422,7 @@ static inline int ane_place_program(struct ane_nn *nn, const char *path)
 	return 0;
 }
 
-static inline int is_ane_device(int fd, int *abi_major)
+static inline int is_ane_device(int fd, int *abi_major, int *abi_minor)
 {
 	drm_version_t version = {};
 	int err = ioctl(fd, DRM_IOCTL_VERSION, &version);
@@ -434,8 +435,8 @@ static inline int is_ane_device(int fd, int *abi_major)
 		return -EINVAL;
 	}
 	/* ABI 1 is the M1 submit path; ABI 2 is the T6021 program path; ABI 3
-	 * is the T6050 (M5) H17 line on the aurora node (ane_accel.h). Anything
-	 * else is not this driver. */
+	 * is the in-tree H15 (T8122), H16 and H17 line on the aurora node
+	 * (ane_accel.h). Anything else is not this driver. */
 	if (version.version_major != ANE_ABI_MAJOR &&
 	    version.version_major != ANE_ABI_M2_MAJOR &&
 	    version.version_major != ANE_ABI_V3_MAJOR) {
@@ -463,17 +464,20 @@ static inline int is_ane_device(int fd, int *abi_major)
 	free(version.name);
 
 	*abi_major = version.version_major;
+	if (abi_minor) {
+		*abi_minor = version.version_minor;
+	}
 	return 0;
 }
 
-static inline int open_fd(const char *node, int *abi_major)
+static inline int open_fd(const char *node, int *abi_major, int *abi_minor)
 {
 	int fd = open(node, O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		return -ENODEV;
 	}
 
-	if (is_ane_device(fd, abi_major) < 0) {
+	if (is_ane_device(fd, abi_major, abi_minor) < 0) {
 		close(fd);
 		return -EINVAL;
 	}
@@ -481,7 +485,7 @@ static inline int open_fd(const char *node, int *abi_major)
 	return fd;
 }
 
-static inline int device_open(int dev_id, int *abi_major)
+static inline int device_open(int dev_id, int *abi_major, int *abi_minor)
 {
 	int fd;
 	char node[MAX_NODE_LEN];
@@ -496,7 +500,7 @@ static inline int device_open(int dev_id, int *abi_major)
 	for (int i = 0; i < MAX_NODE_COUNT; i++) {
 		snprintf(node, MAX_NODE_LEN, "/dev/accel/accel%d", i);
 
-		fd = open_fd(node, abi_major);
+		fd = open_fd(node, abi_major, abi_minor);
 		if (fd < 0) {
 			continue;
 		}
@@ -521,9 +525,9 @@ static inline void device_close(int fd)
 }
 
 static inline int ane_device_open(struct ane_nn *nn, int dev_id,
-				  int *abi_major)
+				  int *abi_major, int *abi_minor)
 {
-	int fd = device_open(dev_id, abi_major);
+	int fd = device_open(dev_id, abi_major, abi_minor);
 	if (fd < 0) {
 		return -EINVAL;
 	}
@@ -551,6 +555,7 @@ struct ane_dev_id_row {
 };
 
 static const struct ane_dev_id_row ane_dev_id_table[] = {
+	{ ANE_DEV_ID_T8122, ANE_ABI_V3_MAJOR, ANE_CHIP_H15 },
 	{ ANE_DEV_ID_T6050, ANE_ABI_V3_MAJOR, ANE_CHIP_H17 },
 };
 
@@ -578,7 +583,7 @@ static inline int ane_read_chip_family(int fd, uint32_t *chip_family)
 int ane_device_info(int dev_id, struct ane_dev_info *info)
 {
 	int abi_major = 0;
-	int fd = device_open(dev_id, &abi_major);
+	int fd = device_open(dev_id, &abi_major, NULL);
 
 	if (fd < 0) {
 		return fd;
@@ -614,7 +619,7 @@ int ane_device_info_by_chip(uint32_t chip, struct ane_dev_info *info)
 
 		snprintf(node, MAX_NODE_LEN, "/dev/accel/accel%d", i);
 
-		fd = open_fd(node, &abi_major);
+		fd = open_fd(node, &abi_major, NULL);
 		if (fd < 0) {
 			continue;
 		}
@@ -713,6 +718,7 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 {
 	struct ane_nn *nn;
 	int abi_major = 0;
+	int abi_minor = 0;
 	int staged;
 	uint64_t total = timing_start();
 	uint64_t t;
@@ -732,7 +738,7 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 	nn->tile_shift = tile_shift;
 
 	t = timing_start();
-	if (ane_device_open(nn, dev_id, &abi_major) < 0) {
+	if (ane_device_open(nn, dev_id, &abi_major, &abi_minor) < 0) {
 		ane_err("failed to open device with dev_id %d\n", dev_id);
 		free(nn);
 		return NULL;
@@ -751,6 +757,27 @@ static struct ane_nn *ane_init_common(const char *path, int dev_id,
 			return NULL;
 		}
 		timing_end("m2_open", t, 0);
+		timing_end("init_total", total, 0);
+		return nn;
+	}
+
+	/* ABI 3 (in-tree H15/H16/H17): HWX + 4 host sections via H16_LOAD. */
+	if (abi_major == ANE_ABI_V3_MAJOR) {
+		if (ports) {
+			ane_err("port tables are not used on the ABI-3 HWX path\n");
+			ane_device_close(nn);
+			free(nn);
+			return NULL;
+		}
+		t = timing_start();
+		if (ane_v3_open(nn, path, abi_minor) < 0) {
+			ane_err("failed to load ABI-3 HWX program from %s\n",
+				path);
+			ane_device_close(nn);
+			free(nn);
+			return NULL;
+		}
+		timing_end("v3_open", t, 0);
 		timing_end("init_total", total, 0);
 		return nn;
 	}
@@ -804,6 +831,8 @@ void __ane_free(struct ane_nn *nn)
 {
 	if (nn->m2) {
 		ane_m2_close(nn);
+	} else if (nn->v3) {
+		ane_v3_close(nn);
 	} else {
 		ane_chan_free(nn);
 	}
@@ -847,14 +876,15 @@ int ane_exec(struct ane_nn *nn)
 {
 	uint64_t t = timing_start();
 	int ret = nn->m2 ? ane_m2_exec(nn) :
+		  nn->v3 ? ane_v3_exec(nn) :
 			   ane_exec_with_state_swap(nn, 0, 0, 0);
 
 	timing_end("exec", t, 0);
 	return ret;
 }
 
-/* Batched exec: `batch` calls per DRM_ANE_EXEC (t6021 only; the M1
- * path has no batch and refuses batch > 1). */
+/* Batched exec: `batch` calls per DRM_ANE_EXEC (t6021 only; the M1 and
+ * ABI-3 paths have no batch and refuse batch > 1). */
 int ane_exec_batch(struct ane_nn *nn, uint32_t batch)
 {
 	uint64_t t = timing_start();
@@ -864,6 +894,8 @@ int ane_exec_batch(struct ane_nn *nn, uint32_t batch)
 		ret = ane_m2_exec_batch(nn, batch);
 	else if (batch > 1)
 		ret = -ENOSYS;
+	else if (nn->v3)
+		ret = ane_v3_exec(nn);
 	else
 		ret = ane_exec_with_state_swap(nn, 0, 0, 0);
 	timing_end("exec", t, 0);
@@ -873,7 +905,7 @@ int ane_exec_batch(struct ane_nn *nn, uint32_t batch)
 int ane_exec_loop(struct ane_nn *nn, uint32_t iterations,
 		  uint32_t state_src_idx, uint32_t state_dst_idx)
 {
-	if (nn->m2)
+	if (nn->m2 || nn->v3)
 		return -EOPNOTSUPP;
 	if (!iterations || state_src_idx >= ane_src_count(nn) ||
 	    state_dst_idx >= ane_dst_count(nn)) {
@@ -933,6 +965,9 @@ uint64_t __ane_src_size(struct ane_nn *nn, const uint32_t idx)
 	if (nn->m2) {
 		return ane_m2_src_size(nn, idx);
 	}
+	if (nn->v3) {
+		return ane_v3_src_size(nn, idx);
+	}
 	INDEX_CHECK(ane_src_count(nn), idx, 0);
 	return tile_size(nn, src_bdx(nn, idx));
 }
@@ -941,6 +976,9 @@ uint64_t __ane_dst_size(struct ane_nn *nn, const uint32_t idx)
 {
 	if (nn->m2) {
 		return ane_m2_dst_size(nn, idx);
+	}
+	if (nn->v3) {
+		return ane_v3_dst_size(nn, idx);
 	}
 	INDEX_CHECK(ane_dst_count(nn), idx, 0);
 	return tile_size(nn, dst_bdx(nn, idx));
@@ -955,6 +993,10 @@ void __ane_send(struct ane_nn *nn, void *from, const uint32_t idx)
 		ane_m2_send(nn, from, idx);
 		return;
 	}
+	if (nn->v3) {
+		ane_v3_send(nn, from, idx);
+		return;
+	}
 	INDEX_CHECK(ane_src_count(nn), idx, );
 	memcpy(nn->chans[src_bdx(nn, idx)].map, from,
 	       tile_size(nn, src_bdx(nn, idx)));
@@ -964,6 +1006,10 @@ void __ane_read(struct ane_nn *nn, void *to, const uint32_t idx)
 {
 	if (nn->m2) {
 		ane_m2_read(nn, to, idx);
+		return;
+	}
+	if (nn->v3) {
+		ane_v3_read(nn, to, idx);
 		return;
 	}
 	INDEX_CHECK(ane_dst_count(nn), idx, );
