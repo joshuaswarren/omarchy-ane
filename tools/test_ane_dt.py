@@ -106,13 +106,17 @@ with tempfile.TemporaryDirectory() as tmp:
     # Derived from the overlays table, so a promotion flip (tools/promote_chip.py)
     # keeps this suite green: an enabled row applies with no key; an opt-in row
     # waits for its own key and never for another chip's.
-    rows = [(p, src, state) for p, src, state in
-            (l.split() for l in (root / 'packaging/dt/overlays').read_text().splitlines()
-             if l and l[0] != '#') if src == f'{p}-ane.dts']
+    all_rows = [tuple(l.split()) for l in (root / 'packaging/dt/overlays').read_text().splitlines()
+                if l and l[0] != '#']
+    rows = [(p, src, state) for p, src, state in all_rows if src == f'{p}-ane.dts']
     enabled = {p for p, src, state in rows if state == 'enabled'}
     optin = {p for p, src, state in rows if state == 'opt-in'}
     for p in sorted(enabled):
-        assert chosen(f'{board[p]}.dtb') == [f'{p}/omarchy-ane.dtbo'], p
+        want_dtbos = sorted(
+            f"{p}/omarchy-{src.removeprefix(f'{p}-').removesuffix('.dts')}.dtbo"
+            for rp, src, state in all_rows if rp == p and state == 'enabled'
+        )
+        assert chosen(f'{board[p]}.dtb') == want_dtbos, (p, chosen(f'{board[p]}.dtb'), want_dtbos)
     for p in sorted(optin):
         assert chosen(f'{board[p]}.dtb') == [], p
         opt_in.write_text(f'ane-{p}\n')

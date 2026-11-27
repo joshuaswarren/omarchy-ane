@@ -178,7 +178,7 @@ def main():
                                'omarchy,opt-in') == ['ane-t6022-die1']
         rows = [l.split() for l in (root / 'packaging/dt/overlays').read_text().splitlines()
                 if l and l[0] != '#']
-        assert ['t6002', 't6002-ane-die1.dts', 'opt-in'] in rows, rows
+        assert ['t6002', 't6002-ane-die1.dts', 'enabled'] in rows, rows
         assert not any(src == 't6022-ane-die1.dts' for _, src, _ in rows), \
             'the data-only die-1 overlay must not be an installed row'
         print('test_ultra_die1_dt: ok')

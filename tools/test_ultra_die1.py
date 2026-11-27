@@ -43,7 +43,7 @@ def cells(text):
 # 1. ane.ko: the die-keyed qualification table and the descriptor fallbacks.
 rows = [(m.group(1), int(m.group(2), 0), m.group(3)) for m in re.finditer(
     r'\{ "(apple,t[0-9a-z]+-ane)", (0x[0-9a-fA-F]+)ULL, (ANE_[A-Z]+) \}', drv)]
-assert len(rows) == 4, rows
+assert len(rows) == 5, rows
 QUAL = {'ANE_QUALIFIED', 'ANE_RECOGNIZED', 'ANE_UNSUPPORTED'}
 assert {q for _, _, q in rows} <= QUAL
 die0 = {(c, b): q for c, b, q in rows if b < 0x2000000000}
@@ -53,9 +53,12 @@ die1 = {(c, b): q for c, b, q in rows if b >= 0x2000000000}
 assert die0[('apple,t8103-ane', 0x23b70c000)] == 'ANE_QUALIFIED'
 assert die0[('apple,t6000-ane', 0x28e08c000)] == 'ANE_QUALIFIED'
 assert die0[('apple,t6021-ane', 0x28e08c000)] == 'ANE_RECOGNIZED'
-# T6002 die 1 is the +0x20_0000_0000 translation (receipts/2026-10-03-ultra-die1),
-# RECOGNIZED only: binds solely under ane.allow_unqualified=1 until a die-1 run.
-assert die1 == {('apple,t6000-ane', 0x228e08c000): 'ANE_RECOGNIZED'}, die1
+# T6002 die 1 (+0x20_0000_0000 translation, receipts/2026-10-03-ultra-die1)
+# passed bit-exact add tests (#460, #490) and is QUALIFIED by default.
+assert die1 == {
+    ('apple,t6000-ane', 0x228e08c000): 'ANE_QUALIFIED',
+    ('apple,t6001-ane', 0x228e08c000): 'ANE_QUALIFIED',
+}, die1
 # Descriptors: the die-0 fallback bases match the die-0 table rows; t6020
 # keeps no base (refuses as UNSUPPORTED before the table matters).
 desc = {name: cells(re.search(rf'static const struct ane_soc {name} = \{{(.*?)\n\}};',
@@ -84,8 +87,8 @@ assert qual_for('apple,t8103-ane', None) == 'ANE_QUALIFIED'
 assert qual_for('apple,t6000-ane', None) == 'ANE_QUALIFIED'
 assert qual_for('apple,t6000-ane', 0x28e08c000) == 'ANE_QUALIFIED'
 assert qual_for('apple,t6021-ane', 0x28e08c000) == 'ANE_RECOGNIZED'
-# T6002 die-1 node: RECOGNIZED (the gate demands allow_unqualified=1).
-assert qual_for('apple,t6000-ane', 0x228e08c000) == 'ANE_RECOGNIZED'
+# T6002 die-1 node: QUALIFIED (binds by default after #460 / #490).
+assert qual_for('apple,t6000-ane', 0x228e08c000) == 'ANE_QUALIFIED'
 # A guessed base cannot bind silently, whatever the compatible.
 assert qual_for('apple,t6000-ane', 0x28e08d000) == 'ANE_UNSUPPORTED'
 assert qual_for('apple,t8103-ane', 0x23b70d000) == 'ANE_UNSUPPORTED'
@@ -199,8 +202,8 @@ import promotion_check as pc  # noqa: E402
 assert pc.die_of({'chip': 'apple,t6001'}) == 0
 assert pc.die_key({'chip': 'apple,t6001', 'summary': {'ane_port_detail': {'runtime': {
     'omarchy_ane': {'die': 1}}}}}) == ('t6001', 1)
-assert all(d == 0 for _, d in pc.ON)
-assert ('t6002', 0) not in pc.ON, 'the T6002 die-0 overlay is opt-in'
+assert ('t6002', 0) in pc.ON and ('t6002', 1) in pc.ON, \
+    'T6002 die 0 and die 1 are both enabled by default'
 assert pc.ANE_LINE.search('apple-dart 2285800000.iommu: translation fault')
 assert pc.ANE_LINE.search('apple-mailbox 2285408000.mailbox: fifo error')
 assert not pc.ANE_LINE.search('apple-dart 581008000.iommu: DART fault')
