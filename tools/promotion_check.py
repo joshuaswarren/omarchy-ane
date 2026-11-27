@@ -172,12 +172,18 @@ def judged(row):
 
 def default_on():
     """(soc, die) keys whose ANE overlay is enabled in packaging/dt/overlays.
-    Only the per-SoC overlay rows (PREFIX-ane.dts) can be enabled, and those
-    are die 0: a die-1 overlay key flips only through its own passing rows
-    (docs/ultra-die1.md §7)."""
+    Per-SoC overlays (PREFIX-ane.dts) map to die 0 and die-1 overlays
+    (PREFIX-ane-die1.dts) map to die 1 once promoted (docs/ultra-die1.md §7)."""
     lines = (REPO / "packaging/dt/overlays").read_text().splitlines()
-    return {(p, 0) for p, src, state in (l.split() for l in lines if l and l[0] != "#")
-            if src == f"{p}-ane.dts" and state == "enabled"}
+    out = set()
+    for p, src, state in (l.split() for l in lines if l and l[0] != "#"):
+        if state != "enabled":
+            continue
+        if src == f"{p}-ane.dts":
+            out.add((p, 0))
+        elif src == f"{p}-ane-die1.dts":
+            out.add((p, 1))
+    return out
 
 
 ON = default_on()

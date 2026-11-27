@@ -27,7 +27,7 @@ Part of the Omarchy on Apple Silicon ecosystem:
 
 ## Support at a glance
 
-- Enabled by default: M1, M1 Pro, M1 Max, M1 Ultra (die 0), M2 Pro, M2 Max
+- Enabled by default: M1, M1 Pro, M1 Max, M1 Ultra (die 0 and die 1), M2 Pro, M2 Max
   and M2 Ultra (die 0). Each has run a bit-exact fp16 smoke test on hardware.
   This still requires an applicable overlay or a kernel device tree that
   already carries the node, plus the firmware fetch on the M2 family.

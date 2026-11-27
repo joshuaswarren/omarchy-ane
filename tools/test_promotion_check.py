@@ -114,8 +114,10 @@ assert pc.verdict([legacy]) == {}
 # scenario below runs against whatever default-on chip is on the tree.
 rows = [l.split() for l in (Path(__file__).resolve().parents[1] /
         'packaging/dt/overlays').read_text().splitlines() if l and l[0] != '#']
-assert pc.ON == {(p, 0) for p, src, state in rows
-                 if src == f'{p}-ane.dts' and state == 'enabled'}, pc.ON
+assert pc.ON == ({(p, 0) for p, src, state in rows
+                  if src == f'{p}-ane.dts' and state == 'enabled'}
+                 | {(p, 1) for p, src, state in rows
+                    if src == f'{p}-ane-die1.dts' and state == 'enabled'}), pc.ON
 assert pc.ON, 'the scenario below needs a default-on chip'
 spec = 't6021' if ('t6021', 0) in pc.ON else sorted(pc.ON)[0][0]
 on = [row(i, soc=spec, at=f'2026-10-0{4 - i}T00:00:00.000Z') for i in (1, 2, 3)]
@@ -270,9 +272,9 @@ bad0 = copy.deepcopy(good)
 oa(bad0)['smoke']['errors'] = 1
 v = pc.verdict([bad0, d1])
 assert v[(OPT, 0)]['promote'] is False and v[(OPT, 1)]['promote'], v
-# The ON set is die-0 only: a die-1 row never rides an enabled overlay.
-assert all(d == 0 for _, d in pc.ON), pc.ON
-assert ('t8103', 1) not in pc.ON and ('t6002', 1) not in pc.ON
+# Die-1 entries appear in ON only when their own die-1 overlay is enabled.
+assert ('t6002', 1) in pc.ON
+assert ('t8103', 1) not in pc.ON and ('t6022', 1) not in pc.ON
 # Die-1 scoping of the ANE fault matcher: the die-1 DART and mailbox
 # addresses decide a row, look-alikes from other devices still do not.
 t6002_attempt = row(21, soc='t6002')

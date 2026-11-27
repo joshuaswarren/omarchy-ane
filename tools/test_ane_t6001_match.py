@@ -29,8 +29,8 @@ assert 'apple,t6001-ane' in matched, \
 
 qual = text.split('ane_soc_qual ane_qual_table[] = {', 1)[1].split('};', 1)[0]
 rows = set(re.findall(r'\{ "(apple,t[0-9]+-ane)", (0x[0-9a-fA-F]+)ULL?, (\w+) \}', qual))
-assert ('apple,t6001-ane', '0x228e08c000', 'ANE_RECOGNIZED') in rows, \
-    f'no t6001-ane row at the measured die-1 SET base: {sorted(rows)}'
+assert ('apple,t6001-ane', '0x228e08c000', 'ANE_QUALIFIED') in rows, \
+    f'no qualified t6001-ane row at the measured die-1 SET base: {sorted(rows)}'
 
 soc = text.split('ane_soc ane_soc_t6001 = {', 1)[1].split('};', 1)[0]
 assert '.ps_base = 0' in soc and '.qual = ANE_UNSUPPORTED' in soc, \

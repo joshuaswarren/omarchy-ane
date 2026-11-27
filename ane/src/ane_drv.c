@@ -1167,8 +1167,8 @@ struct ane_soc_qual {
 static const struct ane_soc_qual ane_qual_table[] = {
 	{ "apple,t8103-ane", 0x23b70c000ULL, ANE_QUALIFIED },
 	{ "apple,t6000-ane", 0x28e08c000ULL, ANE_QUALIFIED },
-	{ "apple,t6000-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
-	{ "apple,t6001-ane", 0x228e08c000ULL, ANE_RECOGNIZED },
+	{ "apple,t6000-ane", 0x228e08c000ULL, ANE_QUALIFIED },
+	{ "apple,t6001-ane", 0x228e08c000ULL, ANE_QUALIFIED },
 	{ "apple,t6021-ane", 0x28e08c000ULL, ANE_RECOGNIZED },
 };
 
