@@ -1154,10 +1154,10 @@ struct ane_soc {
 /* Die-keyed qualification (docs/ultra-die1.md §2): (compatible, SET base)
  * -> tier. The T600x die-1 rows carry the measured +0x20_0000_0000
  * translation of die 0 (receipts/2026-10-03-ultra-die1: engine, pmgr and
- * SET windows of ane2 on the live M1 Ultra); they stay RECOGNIZED until a
- * die-1 run proves them. Aurora's die-1 engine nodes carry t6001-ane
- * (t6002-peripherals.dtsi); the t6000-ane die-1 row stays for trees that
- * still name them t6000-ane. The die-0 rows are the descriptors' tiers. */
+ * SET windows of ane2 on the live M1 Ultra); qualified by live M1 Ultra
+ * die-1 bit-exact runs (#460, #490). Aurora's die-1 engine nodes carry
+ * t6001-ane (t6002-peripherals.dtsi); the t6000-ane die-1 row stays for
+ * trees that still name them t6000-ane. The die-0 rows are the descriptors' tiers. */
 struct ane_soc_qual {
 	const char *compatible;
 	phys_addr_t ps_base;
