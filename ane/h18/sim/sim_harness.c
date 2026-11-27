@@ -47,6 +47,11 @@ int sim_db_writes, sim_hs_table, sim_s3_mode, sim_cmd_mode, sim_cmds_seen, sim_t
 u32 sim_pend_val;
 int sim_ack_writes, sim_cmd_blk_in_pool, sim_posted, sim_term_tick;
 u32 sim_ack_last;
+u32 sim_pmc_agent1_floor;
+u32 sim_pmc_rail_en[3];
+int sim_pmc_floor_writes, sim_pmc_rail_writes, sim_pmc_disp_writes;
+u32 sim_pmc_call_floor, sim_pmc_call_rail_en[2];
+struct delayed_work *sim_dwork_slot;
 u32 sim_cmd_ops[16];
 u32 sim_prop[8][3];	/* CH_PROPERTY_WRITE blocks seen: arg at +8, id at +0xc, value at +0x10 */
 int sim_nprops;
@@ -421,6 +426,10 @@ static u16 sim_prog_cmd(u16 op, u8 *blk, u64 cmd_len)
 		u64 *ring = (u64 *)((u8 *)sim_dma[sim_ipc_i].va + 0xb000);
 		u8 *pool = sim_dma[0].va;
 		unsigned int si;
+
+		sim_pmc_call_floor = sim_pmc_agent1_floor;
+		sim_pmc_call_rail_en[0] = sim_pmc_rail_en[0];
+		sim_pmc_call_rail_en[1] = sim_pmc_rail_en[1];
 
 		if (!fp || !fp->has_proc || fp->proc_id != proc)
 			return 4;
@@ -913,6 +922,15 @@ static void reset_all(void)
 	sim_prop_refuse = 0;
 	dart_inst = 0;
 	prog_out_words = 0;
+	pmc_floor = -1;
+	pmc_hold_ms = 100;
+	sim_pmc_agent1_floor = 0;
+	memset(sim_pmc_rail_en, 0, sizeof(sim_pmc_rail_en));
+	sim_pmc_floor_writes = sim_pmc_rail_writes = sim_pmc_disp_writes = 0;
+	sim_pmc_call_floor = 0;
+	sim_pmc_call_rail_en[0] = sim_pmc_call_rail_en[1] = 0;
+	sim_dwork_slot = NULL;
+	memset(&ane_h18_pmc, 0, sizeof(ane_h18_pmc));
 	hs_prog_calls = 1;
 	hs_prog_reuse = false;
 	premap_second = 0;
@@ -2523,6 +2541,23 @@ static int neg_args(void)
 	psd_slots = 0;
 	ret = probe_now();
 	if (ret != -EINVAL || writes()) { printf("    psd_slots 0\n"); bad = 1; }
+	reset_all();
+	pmc_floor = 2;
+	ret = probe_now();
+	if (ret != -EINVAL || sim_n_events || sim_n_iomap) { printf("    pmc_floor 2\n"); bad = 1; }
+	reset_all();
+	pmc_floor = -2;
+	ret = probe_now();
+	if (ret != -EINVAL || sim_n_events || sim_n_iomap) { printf("    pmc_floor -2\n"); bad = 1; }
+	reset_all();
+	optin = "t8132";
+	pmc_floor = 1;
+	ret = probe_now();
+	if (ret != -EINVAL || sim_n_events || sim_n_iomap) { printf("    t8132 pmc_floor=1\n"); bad = 1; }
+	reset_all();
+	pmc_hold_ms = ANE_H18_PMC_HOLD_MAX_MS + 1;
+	ret = probe_now();
+	if (ret != -EINVAL || sim_n_events || sim_n_iomap) { printf("    pmc_hold_ms > max\n"); bad = 1; }
 	printf("%s\n", bad ? "  neg-args: harness FAILED the module (BAD)" : "  neg-args: module refuses as required");
 	return bad;
 }
@@ -3895,6 +3930,150 @@ static void pos_residency(void)
 	}
 }
 
+static void pos_pmc(void)
+{
+	/* PMC1: default pmc_floor=-1 on t8152 keep_alive=1: zero writes at idle after probe, raises 0x37 + rail0/1 BIT(1)
+	 * before PROCEDURE_CALL doorbell (rail 2 DISP untouched), drops back to 0x00 + rail_en=0 after pmc_hold_ms idle,
+	 * restores clean and balances iomap/iounmap on rmmod. */
+	{
+		struct file f;
+		char h[32], rep[128], cmd[96];
+		int ret;
+
+		res_boot_live();
+		ret = probe_now();
+		chk(ret == 0 && sim_pmc_floor_writes == 0 && sim_pmc_rail_writes == 0 &&
+		    sim_pmc_agent1_floor == 0 && sim_pmc_rail_en[0] == 0 && sim_pmc_rail_en[1] == 0,
+		    "PMC1a default pmc_floor=-1 on t8152 arms PMC with zero writes while idle");
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", h, sizeof(h));
+		h[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", h);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		chk(sim_pmc_call_floor == 0x37 && sim_pmc_call_rail_en[0] == 0x2 && sim_pmc_call_rail_en[1] == 0x2 &&
+		    sim_pmc_disp_writes == 0 && sim_faults == 0,
+		    "PMC1b active call raises agent1 floor to 0x37 (DCS=7 SOC=3) and enables rail0/1 BIT(1), DISP untouched");
+		chk(sim_pmc_agent1_floor == 0x37,
+		    "PMC1c default 100 ms idle hold keeps floor hot immediately after call");
+		msleep(pmc_hold_ms + 1);
+		chk(sim_pmc_agent1_floor == 0 && sim_pmc_rail_en[0] == 0 && sim_pmc_rail_en[1] == 0,
+		    "PMC1d after idle hold expires, agent1 floor and rail0/1 enable return to 0");
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(sim_n_iomap == sim_n_iounmap && sim_pmc_agent1_floor == 0 &&
+		    sim_pmc_rail_en[0] == 0 && sim_pmc_rail_en[1] == 0,
+		    "PMC1e rmmod balances PMC iomaps and leaves registers at 0");
+	}
+
+	/* PMC2: pmc_hold_ms=0 drops synchronously before call returns. */
+	{
+		struct file f;
+		char h[32], rep[128], cmd[96];
+
+		res_boot_live();
+		pmc_hold_ms = 0;
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", h, sizeof(h));
+		h[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", h);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		chk(sim_pmc_call_floor == 0x37 && sim_pmc_agent1_floor == 0 &&
+		    sim_pmc_rail_en[0] == 0 && sim_pmc_rail_en[1] == 0,
+		    "PMC2 pmc_hold_ms=0 raises to 0x37 during call and drops back to 0 before call returns");
+		res_close(&f);
+		ane_h18_remove(&pdev);
+	}
+
+	/* PMC3: pmc_floor=0 disables all PMC mapping and accesses on t8152. */
+	{
+		struct file f;
+		char h[32], rep[128], cmd[96];
+
+		res_boot_live();
+		pmc_floor = 0;
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", h, sizeof(h));
+		h[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", h);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(sim_pmc_floor_writes == 0 && sim_pmc_rail_writes == 0 &&
+		    events_in(SIM_PMC_VOTERS_PA, SIM_PMC_VOTERS_SIZE, 0) == 0 &&
+		    events_in(SIM_PMC_RAILS_PA, SIM_PMC_RAILS_SIZE, 0) == 0 &&
+		    sim_n_iomap == sim_n_iounmap,
+		    "PMC3 pmc_floor=0 performs zero PMC mappings or accesses");
+	}
+
+	/* PMC4: default pmc_floor=-1 is off on non-t8152 (t8132), and pmc_floor=1 on t8132 is refused. */
+	{
+		int ret;
+
+		reset_all();
+		chk(ane_h18_pmc_want(&ane_t8152_soc) && !ane_h18_pmc_want(&ane_t8132_soc),
+		    "PMC4a default pmc_floor=-1 is active for t8152 only, off for t8132");
+		optin = "t8132";
+		stage = "dt";
+		pmc_floor = 1;
+		ret = probe_now();
+		chk(ret == -EINVAL && sim_n_events == 0 && sim_n_iomap == 0,
+		    "PMC4b pmc_floor=1 on t8132 is refused with -EINVAL before any MMIO");
+	}
+
+	/* PMC5: preserve pre-existing upper bits [31:8] and pre-existing rail_en BIT(1), restore verbatim on rmmod. */
+	{
+		struct file f;
+		char h[32], rep[128], cmd[96];
+
+		res_boot_live();
+		sim_pmc_agent1_floor = 0xabcd0000u;
+		sim_pmc_rail_en[0] = 0x3u;	/* BIT(1) already enabled before us */
+		sim_pmc_rail_en[1] = 0x1u;	/* only BIT(0) enabled before us */
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", h, sizeof(h));
+		h[16] = '\0';
+		snprintf(cmd, sizeof(cmd), "call %s\n", h);
+		res_cmd(&f, cmd, rep, sizeof(rep));
+		chk(sim_pmc_call_floor == 0xabcd0037u && sim_pmc_call_rail_en[0] == 0x3u && sim_pmc_call_rail_en[1] == 0x3u,
+		    "PMC5a preserves upper bits [31:8] and other agents' rail bits during raise");
+		msleep(pmc_hold_ms + 1);
+		chk(sim_pmc_agent1_floor == 0xabcd0000u && sim_pmc_rail_en[0] == 0x3u && sim_pmc_rail_en[1] == 0x1u,
+		    "PMC5b idle drop clears only floors and newly-set rail BIT(1), keeping pre-existing bits");
+		/* Simulate another driver enabling GFX BIT(2) on rail1 before rmmod: detach must preserve it. */
+		sim_pmc_rail_en[1] |= BIT(2);
+		res_close(&f);
+		ane_h18_remove(&pdev);
+		chk(sim_pmc_agent1_floor == 0xabcd0000u && sim_pmc_rail_en[0] == 0x3u && sim_pmc_rail_en[1] == 0x5u,
+		    "PMC5c rmmod restores only owned floor/CLPC bits and preserves other agents' rail bits");
+	}
+
+	/* PMC6: resident firmware refusal (-EIO) never leaks pmc.active; floor returns to 0 on idle. */
+	{
+		struct file f;
+		char h[32], rep[128], cmd[96];
+		ssize_t r;
+
+		res_boot_live();
+		probe_now();
+		res_open(&f);
+		res_cmd(&f, "retain sim.bin 0 0 0 0 0\n", h, sizeof(h));
+		h[16] = '\0';
+		sim_res_fail_op = 0x204;
+		sim_res_fail_ack = 5;
+		snprintf(cmd, sizeof(cmd), "call %s\n", h);
+		r = res_cmd(&f, cmd, rep, sizeof(rep));
+		sim_res_fail_op = 0;
+		msleep(pmc_hold_ms + 1);
+		chk(r == -EIO && sim_pmc_agent1_floor == 0 && ane_h18_pmc.active == 0,
+		    "PMC6 firmware refusal on CALL still releases pmc.active and returns floor to 0");
+		res_close(&f);
+		ane_h18_remove(&pdev);
+	}
+}
+
 int main(int argc, char **argv)
 {
 	const char *mode = argc > 1 ? argv[1] : "pos";
@@ -3908,6 +4087,7 @@ int main(int argc, char **argv)
 		pos_boot();
 		pos_prog_parse();
 		pos_residency();
+		pos_pmc();
 		printf("%s\n", fails ? "SIM-TEST: FAILED" : "SIM-TEST: all positive controls PASS");
 	} else if (!strcmp(mode, "neg-psd-never")) {
 		fails = neg_never();

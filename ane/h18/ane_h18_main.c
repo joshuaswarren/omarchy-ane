@@ -56,6 +56,7 @@
 #include <linux/pm_domain.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/workqueue.h>
 
 #include <crypto/sha2.h>
 
@@ -256,6 +257,14 @@ static unsigned int prog_out_words;
 module_param(prog_out_words, uint, 0444);
 MODULE_PARM_DESC(prog_out_words, "hs_prog=1: dump the first N words of every output buffer after each call as 'out buf <id> +0x<off>: <16 words>', and log 'call i/N finished in X ns' while tight-polling for the finish event. X is the host poll loop's time from the doorbell write to the first iteration that saw the event: doorbell latency, the firmware's post path and the poll granularity are in it. It is NOT a hardware time. 0 (the default) keeps the sleeping poll and the millisecond log.");
 
+static int pmc_floor = -1;
+module_param(pmc_floor, int, 0444);
+MODULE_PARM_DESC(pmc_floor, "T8152 PMC agent-1 (CLPC) DCS/SOC floor while ANE work is active, returned to 0 when idle. -1 (default): auto-on for t8152 only, off on other SoCs; 0: off; 1: force on (t8152 only).");
+
+static unsigned int pmc_hold_ms = 100;
+module_param(pmc_hold_ms, uint, 0444);
+MODULE_PARM_DESC(pmc_hold_ms, "T8152 PMC floor idle hold in milliseconds after work completes before returning agent-1 DCS/SOC floors to 0 (0 to 10000; 0 = drop immediately after each call). Default 100.");
+
 enum { ANE_H18_STAGE_DT, ANE_H18_STAGE_PSD, ANE_H18_STAGE_POWER, ANE_H18_STAGE_BOOT, ANE_H18_STAGE_READS };
 
 static bool allow_reads;
@@ -411,6 +420,7 @@ struct ane_h18 {
 	unsigned int t2h_cursor;
 	bool live;
 	bool live_broken;
+	bool pmc_attached;
 	bool res_open;
 	struct mutex res_lock;
 	struct dentry *res_dir;
@@ -633,9 +643,250 @@ static void ane_h18_report_windows(struct platform_device *pdev, struct ane_h18 
 	}
 }
 
+/*
+ * T8152 PMC agent-1 (CLPC) floor control: raise DCS and SOC floors only while ANE work is active
+ * and return them to 0 when idle. Shared across any H18 instances on the SoC. Rail 2 (DISP) is
+ * never touched.
+ */
+struct ane_h18_pmc {
+	void __iomem *voters;
+	void __iomem *rails;
+	unsigned int users;
+	unsigned int active;
+	u32 saved_floor;
+	u32 saved_rail_en[ANE_H18_PMC_NRAILS];
+	u8 dcs_level;
+	u8 soc_level;
+	bool floor_raised;
+	bool touched;
+	bool warned;
+	struct delayed_work idle_work;
+};
+
+static DEFINE_MUTEX(ane_h18_pmc_lock);
+static struct ane_h18_pmc ane_h18_pmc;
+
+static bool ane_h18_pmc_want(const struct ane_h18_soc *s)
+{
+	if (!pmc_floor)
+		return false;
+	return s && s->pmc_voters_pa && s->pmc_voters_size &&
+	       s->pmc_rails_pa && s->pmc_rails_size;
+}
+
+static void ane_h18_pmc_raise_locked(struct device *dev)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+	u32 cur, want, rb_floor, rb_en[ANE_H18_PMC_NRAILS];
+	unsigned int r;
+
+	if (!p->voters || !p->rails || p->floor_raised)
+		return;
+	cur = readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+	want = (cur & ~ANE_H18_PMC_FLOOR_MASK) |
+	       (p->dcs_level & ANE_H18_PMC_DCS_MASK) |
+	       (((u32)p->soc_level << ANE_H18_PMC_SOC_SHIFT) & ANE_H18_PMC_SOC_MASK);
+	writel(want, p->voters + ANE_H18_PMC_AGENT1_OFF);
+	for (r = 0; r < ANE_H18_PMC_NRAILS; r++) {
+		u32 en = readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+
+		if (!(en & ANE_H18_PMC_CLPC_BIT))
+			writel(en | ANE_H18_PMC_CLPC_BIT, p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+		rb_en[r] = readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+	}
+	rb_floor = readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+	if (((rb_floor & ANE_H18_PMC_FLOOR_MASK) != (want & ANE_H18_PMC_FLOOR_MASK) ||
+	     !(rb_en[0] & ANE_H18_PMC_CLPC_BIT) || !(rb_en[1] & ANE_H18_PMC_CLPC_BIT)) &&
+	    !p->warned) {
+		p->warned = true;
+		dev_warn(dev, "ane_h18 pmc: agent1 floor readback mismatch floor=%#x (want %#x) rail_en=%#x,%#x\n",
+			 rb_floor, want, rb_en[0], rb_en[1]);
+	}
+	p->touched = true;
+	p->floor_raised = true;
+}
+
+static void ane_h18_pmc_drop_locked(void)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+	u32 cur;
+	unsigned int r;
+
+	if (!p->voters || !p->rails || !p->floor_raised)
+		return;
+	cur = readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+	writel(cur & ~ANE_H18_PMC_FLOOR_MASK, p->voters + ANE_H18_PMC_AGENT1_OFF);
+	(void)readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+	for (r = 0; r < ANE_H18_PMC_NRAILS; r++) {
+		if (!(p->saved_rail_en[r] & ANE_H18_PMC_CLPC_BIT)) {
+			u32 en = readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+
+			if (en & ANE_H18_PMC_CLPC_BIT) {
+				writel(en & ~ANE_H18_PMC_CLPC_BIT, p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+				(void)readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+			}
+		}
+	}
+	p->floor_raised = false;
+}
+
+static void ane_h18_pmc_idle_work(struct work_struct *work)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+
+	(void)work;
+	mutex_lock(&ane_h18_pmc_lock);
+	if (p->users && !p->active && p->floor_raised)
+		ane_h18_pmc_drop_locked();
+	mutex_unlock(&ane_h18_pmc_lock);
+}
+
+static int ane_h18_pmc_attach(struct ane_h18 *ane)
+{
+	const struct ane_h18_soc *s = ane->soc;
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+	void __iomem *voters = NULL, *rails = NULL;
+	unsigned int r;
+
+	if (!ane_h18_pmc_want(s))
+		return 0;
+	mutex_lock(&ane_h18_pmc_lock);
+	if (!p->users) {
+		voters = ioremap(s->pmc_voters_pa, s->pmc_voters_size);
+		if (!voters) {
+			mutex_unlock(&ane_h18_pmc_lock);
+			dev_err(ane->dev, "ane_h18 pmc: ioremap voters %#llx failed\n", s->pmc_voters_pa);
+			return -ENXIO;
+		}
+		rails = ioremap(s->pmc_rails_pa, s->pmc_rails_size);
+		if (!rails) {
+			iounmap(voters);
+			mutex_unlock(&ane_h18_pmc_lock);
+			dev_err(ane->dev, "ane_h18 pmc: ioremap rails %#llx failed\n", s->pmc_rails_pa);
+			return -ENXIO;
+		}
+		p->voters = voters;
+		p->rails = rails;
+		p->dcs_level = s->pmc_dcs_level;
+		p->soc_level = s->pmc_soc_level;
+		p->saved_floor = readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+		for (r = 0; r < ANE_H18_PMC_NRAILS; r++)
+			p->saved_rail_en[r] = readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+		p->active = 0;
+		p->floor_raised = false;
+		p->touched = false;
+		p->warned = false;
+		INIT_DELAYED_WORK(&p->idle_work, ane_h18_pmc_idle_work);
+		dev_info(ane->dev, "ane_h18 pmc: %s agent1 floor armed (dcs=%u soc=%u hold=%ums; boot floor=%#x rail_en=%#x,%#x)\n",
+			 s->name, p->dcs_level, p->soc_level, pmc_hold_ms,
+			 p->saved_floor, p->saved_rail_en[0], p->saved_rail_en[1]);
+	}
+	p->users++;
+	ane->pmc_attached = true;
+	mutex_unlock(&ane_h18_pmc_lock);
+	return 0;
+}
+
+static void ane_h18_pmc_work_begin(struct ane_h18 *ane)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+
+	if (!ane->pmc_attached)
+		return;
+	mutex_lock(&ane_h18_pmc_lock);
+	p->active++;
+	cancel_delayed_work(&p->idle_work);
+	ane_h18_pmc_raise_locked(ane->dev);
+	mutex_unlock(&ane_h18_pmc_lock);
+}
+
+static void ane_h18_pmc_work_end(struct ane_h18 *ane, bool immediate)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+
+	if (!ane->pmc_attached)
+		return;
+	mutex_lock(&ane_h18_pmc_lock);
+	if (p->active)
+		p->active--;
+	if (!p->active && p->floor_raised) {
+		if (immediate || !pmc_hold_ms)
+			ane_h18_pmc_drop_locked();
+		else
+			schedule_delayed_work(&p->idle_work, msecs_to_jiffies(pmc_hold_ms));
+	}
+	mutex_unlock(&ane_h18_pmc_lock);
+}
+
+static void ane_h18_pmc_drop_now(struct ane_h18 *ane)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+
+	if (!ane->pmc_attached)
+		return;
+	mutex_lock(&ane_h18_pmc_lock);
+	cancel_delayed_work(&p->idle_work);
+	if (!p->active && p->floor_raised)
+		ane_h18_pmc_drop_locked();
+	mutex_unlock(&ane_h18_pmc_lock);
+}
+
+static void ane_h18_pmc_detach(struct ane_h18 *ane)
+{
+	struct ane_h18_pmc *p = &ane_h18_pmc;
+	bool last_user = false;
+	unsigned int r;
+
+	if (!ane->pmc_attached)
+		return;
+	mutex_lock(&ane_h18_pmc_lock);
+	ane->pmc_attached = false;
+	if (p->users)
+		p->users--;
+	if (!p->users) {
+		if (p->floor_raised)
+			ane_h18_pmc_drop_locked();
+		last_user = true;
+	}
+	mutex_unlock(&ane_h18_pmc_lock);
+	if (!last_user)
+		return;
+	cancel_delayed_work_sync(&p->idle_work);
+	mutex_lock(&ane_h18_pmc_lock);
+	if (!p->users) {
+		if (p->touched && p->voters && p->rails) {
+			u32 cur = readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+
+			writel((cur & ~ANE_H18_PMC_FLOOR_MASK) | (p->saved_floor & ANE_H18_PMC_FLOOR_MASK),
+			       p->voters + ANE_H18_PMC_AGENT1_OFF);
+			(void)readl(p->voters + ANE_H18_PMC_AGENT1_OFF);
+			for (r = 0; r < ANE_H18_PMC_NRAILS; r++) {
+				if (!(p->saved_rail_en[r] & ANE_H18_PMC_CLPC_BIT)) {
+					u32 en = readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+
+					if (en & ANE_H18_PMC_CLPC_BIT) {
+						writel(en & ~ANE_H18_PMC_CLPC_BIT,
+						       p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+						(void)readl(p->rails + ANE_H18_PMC_RAIL_EN_OFF + r * 4);
+					}
+				}
+			}
+		}
+		if (p->rails) { iounmap(p->rails); p->rails = NULL; }
+		if (p->voters) { iounmap(p->voters); p->voters = NULL; }
+		p->active = 0;
+		p->floor_raised = false;
+		p->touched = false;
+		p->warned = false;
+	}
+	mutex_unlock(&ane_h18_pmc_lock);
+}
+
 static void ane_h18_unmap(struct ane_h18 *ane)
 {
 	unsigned int i;
+
+	ane_h18_pmc_detach(ane);
 
 	for (i = 0; i < ANE_H18_NPSD; i++)
 		if (ane->psd[i]) {
@@ -2129,7 +2380,7 @@ static int ane_h18_prog_run(struct ane_h18 *ane, struct ane_h18_ring *io, unsign
 	unsigned int i, got = 0, waited;
 	u32 prog = ~0u, proc = ~0u, w;
 	u64 t0;
-	bool fin = false, created = false, loaded = false;
+	bool fin = false, created = false, loaded = false, pmc_held = false;
 	int ret;
 
 	if (!first) {
@@ -2291,6 +2542,8 @@ call:
 	}
 	wmb();
 	ane_h18_prog_dump(ane, "PROCEDURE_CALL sent", cmd, 0x60 + p->nio * 0x30);
+	ane_h18_pmc_work_begin(ane);
+	pmc_held = true;
 	t0 = ktime_to_ms(ktime_get());
 	ane->call_t2h = prog_out_words ? t2h_cursor : NULL;
 	ane->call_t0 = ane->call_t1 = 0;
@@ -2393,6 +2646,10 @@ call:
 			}
 		}
 	}
+	if (pmc_held) {
+		ane_h18_pmc_work_end(ane, last || !fin);
+		pmc_held = false;
+	}
 	if (!fin) {
 		ret = -ETIMEDOUT;
 		goto fail;
@@ -2419,6 +2676,10 @@ call:
 	ane_h18_prog_settle(ane, hs_settle_ms, t2h_cursor);
 	goto destroy;
 fail:
+	if (pmc_held) {
+		ane_h18_pmc_work_end(ane, true);
+		pmc_held = false;
+	}
 	/* A command or the call timed out. The program and the process may still be resident, so the unload is tried anyway: a firmware that only lost the finish
 	 * event answers it and the ANE holds nothing. The recovery runs only on -ETIMEDOUT or -EBUSY (an unanswered reply wait, or the IO slot of an earlier
 	 * unanswered command that is not ours to send on). A command the firmware answers is taken as done without parsing the reply, so a firmware that answers
@@ -3371,6 +3632,21 @@ static int ane_h18_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "unknown stage \"%s\" (dt, psd, power, boot or reads)\n", stage);
 		return ret;
 	}
+	if (pmc_floor < -1 || pmc_floor > 1) {
+		dev_err(&pdev->dev, "ane_h18 %s: pmc_floor=%d must be -1 (auto), 0 (off) or 1 (on)\n",
+			soc_sel->name, pmc_floor);
+		return -EINVAL;
+	}
+	if (pmc_floor == 1 && (!soc_sel->pmc_voters_pa || !soc_sel->pmc_rails_pa)) {
+		dev_err(&pdev->dev, "ane_h18 %s: pmc_floor=1 is only supported on SoCs with a verified PMC table (t8152)\n",
+			soc_sel->name);
+		return -EINVAL;
+	}
+	if (pmc_hold_ms > ANE_H18_PMC_HOLD_MAX_MS) {
+		dev_err(&pdev->dev, "ane_h18 %s: pmc_hold_ms=%u exceeds %u ms\n",
+			soc_sel->name, pmc_hold_ms, ANE_H18_PMC_HOLD_MAX_MS);
+		return -EINVAL;
+	}
 	if (!soc_sel->row_complete && stage_idx != ANE_H18_STAGE_DT && stage_idx != ANE_H18_STAGE_READS) {
 		dev_err(&pdev->dev, "ane_h18 %s: row incomplete, refusing %s: only stage=dt and stage=reads are allowed (asc/rvbar/mbox/scratch/mailbox/rvbar_expect/fw_seg need hardware verification; see ane_h18_soc.c)\n",
 			soc_sel->name, stage);
@@ -3637,6 +3913,11 @@ out_unmap_eng:
 				goto out;
 			}
 		}
+	}
+	if (stage_idx == ANE_H18_STAGE_BOOT && (hs_prog || keep_alive)) {
+		ret = ane_h18_pmc_attach(ane);
+		if (ret)
+			goto out;
 	}
 	ret = stage_idx == ANE_H18_STAGE_BOOT ? ane_h18_stage_boot(ane) : ane_h18_stage_power(ane);
 out:
@@ -3954,6 +4235,7 @@ static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *s
 		memcpy(r + 0x20, &size, 8);
 	}
 	wmb();
+	ane_h18_pmc_work_begin(ane);
 	ane->call_t2h = &ane->t2h_cursor;
 	ane->call_t0 = ane->call_t1 = 0;
 	ane->call_prog_id = slot->prog_id;
@@ -3964,6 +4246,7 @@ static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *s
 	ane->call_t2h = NULL;
 	if (ret) {
 		ane->call_match_ids = false;
+		ane_h18_pmc_work_end(ane, ret != -EREMOTEIO);
 		if (ret == -EREMOTEIO)
 			return -EIO;
 		ane_h18_res_mark_held(slot, NULL, 0);
@@ -3984,11 +4267,13 @@ static int ane_h18_res_call_exec(struct ane_h18 *ane, struct ane_h18_res_slot *s
 	ane_h18_prog_t2h(ane, &ane->t2h_cursor, &fin);
 	ane->call_match_ids = false;
 	if (!fin) {
+		ane_h18_pmc_work_end(ane, true);
 		ane_h18_res_mark_held(slot, NULL, 0);
 		ane_h18_pin_module(ane);
 		ane->live_broken = true;
 		return -EIO;
 	}
+	ane_h18_pmc_work_end(ane, false);
 	dma_rmb();
 	for (i = 0; i < p->nio; i++)
 		if (p->io[i].dir == 1)
@@ -4123,6 +4408,8 @@ static void ane_h18_live_shutdown(struct ane_h18 *ane)
 	unsigned int i, waited, sent = 0;
 	u32 ctrl, st = 0;
 	bool stopped = false;
+
+	ane_h18_pmc_drop_now(ane);
 
 	if (rtkit_stop && ane->rtk_ap_on) {
 		u32 chan_off = ANE_H18_PO_ALIAS_OFF + s->mbox_num * 2 * ANE_H18_PO_STRIDE;
