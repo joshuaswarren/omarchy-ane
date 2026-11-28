@@ -51,31 +51,31 @@
       "id": "A1",
       "kind": "hw-adt",
       "sha256": "5a9dff3c68350fe50c00a1c6d2522d76ecea2471b005d4657bfd5d767b6e05fd",
-      "ref": "device tree for j714cap (build 26A428)"
+      "ref": "device tree for j714cap (macOS 27)"
     },
     {
       "id": "B1",
       "kind": "hw-chip-map",
       "sha256": "22949db91be2ddd0009a0047ceba37336452b76af3ff915f496d842b85cce6a7",
-      "ref": "chip and board map, entries for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap (build 26A428)"
+      "ref": "chip and board map, entries for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap (macOS 27)"
     },
     {
       "id": "F1",
       "kind": "hw-firmware",
       "sha256": "ac48eb953c68752d0b4f69ac830adf5ad60019325a48bf1ee72997cf97b9c5a8",
-      "ref": "ANE firmware image h17_ane0_fw_hyperion_j71y (build 26A428)"
+      "ref": "ANE firmware image h17_ane0_fw_hyperion_j71y (macOS 27)"
     },
     {
       "id": "K1",
       "kind": "hw-behaviour",
       "sha256": "a691760372651464138779c3201c1886a385ca656397362d8e7701ba19ebf436",
-      "ref": "ANE behaviour record for mac17j (build 26A428)"
+      "ref": "ANE behaviour record for mac17j (macOS 27)"
     },
     {
       "id": "F2",
       "kind": "hw-firmware",
       "sha256": "ad9151af4e732575a67ce007d385413b3d55a8eecffc562085678daa5bac151a",
-      "ref": "ANE firmware image t602x_ane0_fw_selene_rc4x (build 26A428)"
+      "ref": "ANE firmware image t602x_ane0_fw_selene_rc4x (macOS 27)"
     },
     {
       "id": "O1",
@@ -99,13 +99,13 @@
       "id": "B2",
       "kind": "hw-chip-map",
       "sha256": "0fbfae04175cde81ef36d273aa280d39ffe5a54eacba8494b45a59daca462510",
-      "ref": "BuildManifest.27.plist build identities for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap (build 27.2, 26B123)"
+      "ref": "build identities for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap (build 27.2, 26B123)"
     },
     {
       "id": "K2",
       "kind": "hw-behaviour",
       "sha256": "30f44961d1c72d66c3836cc6725c5edb14e69270624d53235677bcd72e3f6d91",
-      "ref": "kernelcache.release.Mac17,6_7_8_9_14_15_16.a2s symbol table and kernelcache strings (build 27.2, 26B123)"
+      "ref": "the release kernel image for the Mac17,6..16 family (a2s): symbol table and strings (build 27.2, 26B123)"
     }
   ],
   "ane": {
@@ -351,7 +351,7 @@
       "src": "F1"
     },
     "protocol_vs_h14": {
-      "v": "The 27.0 H14 image (t602x selene) has the same 96 CSNE_CMD names and the same RTKit_release-3514.0.15 string; its PowerControl, TM and engine-loop sources are the H14 variants",
+      "v": "The release-27 H14 image (t602x selene) has the same 96 CSNE_CMD names and the same RTKit_release-3514.0.15 string; its PowerControl, TM and engine-loop sources are the H14 variants",
       "src": "F2"
     }
   },
@@ -381,7 +381,7 @@
           "parents": [
             221
           ],
-          "note": "26A428 (A1) recorded parents [219] and ps 0x2809003d0; at 27.2 both j714cap and j716cap show parents [221] and no_ps. The offset field still reads 976 (0x3d0). Build difference, not a board difference."
+          "note": "The release-27 build (A1) recorded parents [219] and ps 0x2809003d0; at 27.2 both j714cap and j716cap show parents [221] and no_ps. The offset field still reads 976 (0x3d0). Build difference, not a board difference."
         },
         {
           "name": "ANE_SYS_V",
@@ -418,7 +418,7 @@
       "src": "A2"
     },
     "power_domains_note": {
-      "v": "power-gates and clock-gates on the ane0 node read [569, 664] and [335, 334, 381] at 27.2, unchanged from 26A428.",
+      "v": "power-gates and clock-gates on the ane0 node read [569, 664] and [335, 334, 381] at 27.2, unchanged from the release-27 record.",
       "src": "A2"
     }
   },
@@ -482,7 +482,7 @@
     },
     "image_272": {
       "v": null,
-      "reason": "The 27.2 manifest names the same h17_ane0_fw_hyperion_j71y.im4p, but the 27.2 image payload was not extracted; image_size, image_sha256, payload and segment values remain measured on the 26A428 image (F1)."
+      "reason": "The 27.2 manifest names the same h17_ane0_fw_hyperion_j71y.im4p, but the 27.2 image payload was not extracted; image_size, image_sha256, payload and segment values remain measured on the release-27 image (F1)."
     }
   },
   "driver_family": {
@@ -500,7 +500,7 @@
   },
   "ane1_j775d": {
     "v": null,
-    "reason": "The j775d ADT was not read. receipts/2026-10-01-ane-every-soc/adt-27.0.txt:197-199 lists j775d ane1 as ane,t8020 at 0x4308000000+0x2000000 (die-id 1, interrupt 4058; dart-ane1 at 0x4309800000, interrupt 4059). That summary prints no exclave property for any node (ane0 shows none there, but the full j714c ADT has exclave-assigned on ane0), so whether ane1 is exclave-assigned is not measured. The chip and board map gives Ap,ANE1 preloaded=false (source B1)."
+    "reason": "The j775d ADT was not read. the every-SoC receipt (receipts/2026-10-01-ane-every-soc/, release-27 ADT dump lines 197-199) lists j775d ane1 as ane,t8020 at 0x4308000000+0x2000000 (die-id 1, interrupt 4058; dart-ane1 at 0x4309800000, interrupt 4059). That summary prints no exclave property for any node (ane0 shows none there, but the full j714c ADT has exclave-assigned on ane0), so whether ane1 is exclave-assigned is not measured. The chip and board map gives Ap,ANE1 preloaded=false (source B1)."
   },
   "clpc": {
     "perf_domain": {
@@ -543,7 +543,7 @@
     "src": "B2"
   },
   "driver_family_272": {
-    "v": "27.2 kernelcache contains AppleT6050ANEHAL.kext, AppleANELoadBalancer.kext and AppleH16ANEInterface.kext; the T6050 HAL binds ane,t8132exclave, dart,t8110 and an ANEExclaveProxy service.",
+    "v": "27.2 kernel image contains the T6050 ANE HAL, the ANE load balancer and the H16 ANE interface bundles; the T6050 HAL binds ane,t8132exclave, dart,t8110 and an ANEExclaveProxy service.",
     "src": "K2"
   }
 }

@@ -2,8 +2,8 @@
 """Cross-check test for data/ane-soc/t6050.json against the macOS 27.2 inputs.
 
 The record was re-derived from the 27.2 (26B123) j716cap device tree dump
-(source A2), the 27.2 BuildManifest build identities (source B2), and the
-27.2 kernelcache strings (source K2). This test re-asserts the values those
+(source A2), the 27.2 build identity list (source B2), and the
+27.2 kernel-image strings (source K2). This test re-asserts the values those
 inputs carry so a later edit cannot silently drift from the extraction:
 
   python3 tools/test_ane_soc_t6050_272.py
@@ -91,7 +91,7 @@ def main():
           == [222, 223, 224, 569, 664, 568])
     check("pmgr.mpm", pmgr["ANE_MPM"]["ps"] == "0x2809003c0" and pmgr["ANE_MPM"]["parents"] == [219])
     check("pmgr.cpu", pmgr["ANE_CPU"]["ps"] == "0x2809003c8" and pmgr["ANE_CPU"]["parents"] == [219])
-    # 27.2: TDBASE moved to parent 221 and no_ps (26A428 had parent 219 + ps)
+    # 27.2: TDBASE moved to parent 221 and no_ps (release 27 had parent 219 + ps)
     check("pmgr.tdbase", pmgr["ANE_TDBASE"]["parents"] == [221] and
           pmgr["ANE_TDBASE"]["ps"].startswith("none"), pmgr["ANE_TDBASE"])
     for name in ("ANE_MPM", "ANE_CPU"):
@@ -110,7 +110,7 @@ def main():
 
     check("clpc", "ANE" in doc["clpc"]["perf_domain"]["v"] and
           doc["clpc"]["ane_utilization"]["v"]["target"] == 52428)
-    check("kc_kexts", "AppleT6050ANEHAL" in doc["driver_family_272"]["v"])
+    check("kc_kexts", "T6050 ANE HAL" in doc["driver_family_272"]["v"])
 
     if failures:
         print("t6050 27.2 cross-check FAILURES:", file=sys.stderr)
