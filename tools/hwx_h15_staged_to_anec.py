@@ -83,6 +83,36 @@ def parse_hwx_segments(data: bytes) -> dict:
     return mod.parse_hwx_segments(data)
 
 
+def tensor_symbols(data: bytes) -> list[str]:
+    """Symbol name of every kind-3 tensor descriptor, in load-command order.
+
+    A kind-3 command's u32 at +0x20 offsets into the command and names a
+    NUL-terminated symbol ("a", "b", "y@output") the compiler stamped on the
+    tensor — the same symbol the LC 0x40 named-buffer commands and the
+    symtab surface carry. The name is the tensor identity: subtype 6 decodes
+    no IOVA array, and same-size buffers make an address/size match bind the
+    wrong channel (the add-128 model allocates a, b and y at 0x8000 each).
+    The part before "@" is the symbol; the suffix is the role tag.
+    """
+    out = []
+    _, _, _, _, ncmds, cmdbytes, _, _ = struct.unpack_from("<8I", data)
+    cursor, end = 32, 32 + cmdbytes
+    while cursor < end:
+        cmd, size = struct.unpack_from("<2I", data, cursor)
+        if size < 8 or cursor + size > end:
+            raise Refuse(f"truncated load command at {cursor:#x}")
+        if cmd == 4 and size >= 0x78 \
+                and struct.unpack_from("<I", data, cursor + 8)[0] == 3:
+            nameoff = struct.unpack_from("<I", data, cursor + 0x20)[0]
+            if not 0x78 <= nameoff < size:
+                raise Refuse(f"kind-3 descriptor at {cursor:#x} carries a "
+                             f"name offset {nameoff:#x} outside the command")
+            raw = data[cursor + nameoff:cursor + size].split(b"\0", 1)[0]
+            out.append(raw.decode("ascii", "replace").split("@", 1)[0])
+        cursor += size
+    return out
+
+
 def convert(data: bytes) -> tuple[bytes, dict]:
     base = _base()
     hwx = parse_hwx_segments(data)
@@ -113,17 +143,35 @@ def convert(data: bytes) -> tuple[bytes, dict]:
     if len(by_addr) != len(hwx["buffers"]):
         raise Refuse("duplicate buffer addresses in the HWX")
 
+    symbols = tensor_symbols(data)
+    if len(symbols) != len(hwx["tensors"]):
+        raise Refuse(f"{len(symbols)} descriptor symbol names but "
+                     f"{len(hwx['tensors'])} tensor descriptors")
+    for tensor, symbol in zip(hwx["tensors"], symbols):
+        tensor["symbol"] = symbol
+
     outputs = [t for t in hwx["tensors"] if t["binding"] == 2]
     inputs = [t for t in hwx["tensors"] if t["binding"] == 1]
     if len(by_addr) != len(hwx["tensors"]):
         raise Refuse(f"{len(by_addr)} buffers but "
                      f"{len(hwx['tensors'])} tensor descriptors")
 
+    # Buffers bind to tensors by symbol name (LC 0x40 name = descriptor
+    # symbol), never by allocation size: equal-size buffers make a size
+    # match pick the lowest address and misbind every channel.
+    if len({info["name"] for info in by_addr.values()}) != len(by_addr):
+        raise Refuse("duplicate LC 0x40 buffer names; symbols must be unique")
+
     def take(tensor, pool):
-        for addr in sorted(pool):
-            if pool[addr]["allocation"] == tensor["total_bytes"]:
+        for addr, info in pool.items():
+            if info["name"] == tensor["symbol"]:
+                if info["allocation"] != tensor["total_bytes"]:
+                    raise Refuse(
+                        f"buffer {info['name']} allocates "
+                        f"{info['allocation']} B, tensor needs "
+                        f"{tensor['total_bytes']}")
                 return addr, pool.pop(addr)
-        raise Refuse(f"no buffer of {tensor['total_bytes']} B for tensor "
+        raise Refuse(f"no buffer named {tensor['symbol']} for tensor "
                      f"shape {tensor['shape']}")
 
     pool = dict(by_addr)
