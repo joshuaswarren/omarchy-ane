@@ -103,10 +103,19 @@ else:
                 ane = result.ane_nodes()
                 assert len(ane) == 1 and result.strings(ane[0], 'compatible') == wanted, (source.name, board.name, ane)
                 assert result.enabled(ane[0]), f'{source.name} on {board.name}: ane node not enabled'
+                substrate_units = {
+                    't8122': ('iommu@311800000', 'iommu@311810000',
+                              'iommu@311820000', 'mailbox@311408000'),
+                    't6031': ('iommu@3c9800000', 'iommu@3c9810000',
+                              'iommu@3c9820000', 'mailbox@3c9408000'),
+                }
+                units = substrate_units.get(prefix)
+                assert units is not None, (
+                    f'{source.name}: no substrate unit map for {prefix}')
                 substrate = [p for p in result.nodes
-                             if p.split('/')[-1] in ('iommu@311800000', 'iommu@311810000',
-                                                     'iommu@311820000', 'mailbox@311408000')]
-                assert len(substrate) == 4, f'{source.name} on {board.name}: want 3 DARTs + 1 mailbox, got {substrate}'
+                             if p.split('/')[-1] in units]
+                assert len(substrate) == 4, (f'{source.name} on {board.name}: '
+                    f'want 3 DARTs + 1 mailbox, got {substrate}')
                 for path in substrate:
                     assert not result.enabled(path), f'{source.name} on {board.name}: {path} must be disabled'
                     assert 'status' in result.nodes[path] and b'disabled' in result.nodes[path]['status'], (source.name, board.name, path)
