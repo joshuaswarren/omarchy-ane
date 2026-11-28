@@ -103,9 +103,12 @@ else:
                 ane = result.ane_nodes()
                 assert len(ane) == 1 and result.strings(ane[0], 'compatible') == wanted, (source.name, board.name, ane)
                 assert result.enabled(ane[0]), f'{source.name} on {board.name}: ane node not enabled'
+                # The substrate the overlay adds (a prefix's own unit addresses:
+                # t8122 parks them at 3118xxxxx, t6031 at 3c98xxxxx/3c9408000).
                 substrate = [p for p in result.nodes
-                             if p.split('/')[-1] in ('iommu@311800000', 'iommu@311810000',
-                                                     'iommu@311820000', 'mailbox@311408000')]
+                             if p not in stock.nodes
+                             and (p.split('/')[-1].startswith('iommu@')
+                                  or p.split('/')[-1].startswith('mailbox@'))]
                 assert len(substrate) == 4, f'{source.name} on {board.name}: want 3 DARTs + 1 mailbox, got {substrate}'
                 for path in substrate:
                     assert not result.enabled(path), f'{source.name} on {board.name}: {path} must be disabled'

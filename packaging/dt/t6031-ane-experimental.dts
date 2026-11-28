@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: GPL-2.0-only OR MIT
+/*
+ * OPT-IN EXPERIMENTAL overlay for T6031 (M3 Max, single-die ANE0) board
+ * device trees: the full ANE device substrate, matching aurora-silicon/linux
+ * #2331's t6031 dtsi. Not an installed row of packaging/dt/overlays: it
+ * applies only with the opt-in key ane-h15-experimental in
+ * /etc/omarchy-platform/dtb-overlays.opt-in, which the owner writes. It
+ * upgrades the base M3 Max tree (whose t6031-pmgr.dtsi already carries the
+ * five ps_ane_* power states) from power-domain facts to real ANE nodes for
+ * the alternate-host first-boot ladder (G702: naeems-m3-max / ryan-m3max).
+ *
+ * Node shape, addresses and interrupts are aurora-silicon/linux #2331's
+ * t6031-peripherals.dtsi verbatim (the pinned ADT facts they encode: engine
+ * 0x3c8000000+0x2000000, pmgr-mirror 0x292280000+0x10000, aux-0 0x292290000
+ * +0x4000, aux-1 0x2903c0000+0x30000, aux-3 0x404000000+0x2000000, aux-4
+ * 0x2a02dc000+0x4000; DARTs 0x3c9800000/0x3c9810000/0x3c9820000, each
+ * 0x4000, IRQ 984; mailbox at the ASC wrapper + 0x8000 (wrapper = engine +
+ * 0x1400000), IRQs 964-967; ane IRQ 983; ps words ane_sys @520, ane_mpm
+ * @5a0, ane_cpu @5a8, ane_td @5b8, ane_base @5c0 in the t6031 pmgr).
+ *
+ * The three ANE DART instances and the mailbox stay disabled: enabled ANE
+ * DART nodes hung a T6030 at boot (PR 173), ane_h15 drives the ASC v4
+ * mailbox by polling, and omarchy-ane-dt refuses an enabled node that names
+ * a disabled provider. The ane node therefore carries no iommus and no
+ * mboxes yet; the enable-once-proven patch adds them and flips the
+ * providers when the silicon run proves the boot path. Kernels that already
+ * carry an enabled ane node skip this overlay; a kernel with #2331's
+ * disabled nodes lets it apply, and its enabled ane node then replaces the
+ * kernel's disabled one.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	omarchy,opt-in = "ane-h15-experimental";
+	omarchy,skip-if-compatible = "apple,t6031-ane";
+
+	fragment@0 {
+		target-path = "/soc/interrupt-controller@292400000";
+		aic: __overlay__ {
+		};
+	};
+
+	fragment@1 {
+		target-path = "/soc/power-management@292280000/power-controller@520";
+		ps_ane_sys: __overlay__ {
+		};
+	};
+
+	fragment@2 {
+		target-path = "/soc/power-management@292280000/power-controller@5a0";
+		ps_ane_mpm: __overlay__ {
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc/power-management@292280000/power-controller@5a8";
+		ps_ane_cpu: __overlay__ {
+		};
+	};
+
+	fragment@4 {
+		target-path = "/soc/power-management@292280000/power-controller@5b8";
+		ps_ane_td: __overlay__ {
+		};
+	};
+
+	fragment@5 {
+		target-path = "/soc/power-management@292280000/power-controller@5c0";
+		ps_ane_base: __overlay__ {
+		};
+	};
+
+	fragment@6 {
+		target-path = "/soc";
+
+		__overlay__ {
+			ane_dart0: iommu@3c9800000 {
+				compatible = "apple,t6031-dart", "apple,t8110-dart";
+				reg = <0x3 0xc9800000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 984 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+			ane_dart1: iommu@3c9810000 {
+				compatible = "apple,t6031-dart", "apple,t8110-dart";
+				reg = <0x3 0xc9810000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 984 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+			ane_dart2: iommu@3c9820000 {
+				compatible = "apple,t6031-dart", "apple,t8110-dart";
+				reg = <0x3 0xc9820000 0x0 0x4000>;
+				#iommu-cells = <1>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 984 4>;
+				power-domains = <&ps_ane_sys>;
+				status = "disabled";
+			};
+
+			ane_mbox: mailbox@3c9408000 {
+				compatible = "apple,t6031-asc-mailbox", "apple,asc-mailbox-v4";
+				reg = <0x3 0xc9408000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 964 4>,
+					     <0 965 4>,
+					     <0 966 4>,
+					     <0 967 4>;
+				interrupt-names = "send-empty", "send-not-empty",
+						  "recv-empty", "recv-not-empty";
+				#mbox-cells = <0>;
+				power-domains = <&ps_ane_cpu>;
+				status = "disabled";
+			};
+
+			ane: ane@3c8000000 {
+				compatible = "apple,t6031-ane";
+				reg-names = "engine", "pmgr", "aux-0", "aux-1",
+					    "aux-3", "aux-4";
+				reg = <0x3 0xc8000000 0x0 0x2000000>,
+				      <0x2 0x92280000 0x0 0x10000>,
+				      <0x2 0x92290000 0x0 0x4000>,
+				      <0x2 0x903c0000 0x0 0x30000>,
+				      <0x4 0x04000000 0x0 0x2000000>,
+				      <0x2 0xa02dc000 0x0 0x4000>;
+				interrupt-parent = <&aic>;
+				interrupts = <0 983 4>;
+				power-domains = <&ps_ane_sys>, <&ps_ane_mpm>,
+						<&ps_ane_cpu>, <&ps_ane_td>,
+						<&ps_ane_base>;
+				apple,ane-type = <0xe0>;
+				status = "okay";
+			};
+		};
+	};
+};

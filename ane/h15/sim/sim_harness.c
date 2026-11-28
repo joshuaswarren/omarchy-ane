@@ -3737,9 +3737,11 @@ static u32 ipi_raise;		/* what the model raises at publish and on every doorbell
 static bool fw_ipi_hold;	/* the acknowledge never clears pending (the cap control) */
 static struct {
 	bool s7_zero, s0_big, s3_big, no_table, s3_stuck, no_answer, bad_ack, bad_ring, overlap_ring;
+	bool prog_no_finish;	/* PROCEDURE_CALL is answered but the finish event never comes */
 } hso;
 static bool fw_h2t_ok;
 static int fw_cmds, fw_io_cursor;
+static unsigned int fw_t2h_cursor;	/* the model's IO_T2H publish cursor */
 static u64 fw_ipc_iova, fw_ipc_size;
 
 static void *dma_host(u64 iova)
@@ -3855,6 +3857,33 @@ static void fw_doorbell(u32 v)
 	memcpy(cmd + 6, &ack, 2);
 	if (id == 3)
 		memcpy(cmd + 8, &tick, 4);
+	else if (id == 0x200) {		/* LOAD_PROGRAM (ane/h15 hs_prog): the firmware writes a program id at +0x1b8 */
+		u32 pid = 1;
+
+		memcpy(cmd + 0x1b8, &pid, 4);
+	} else if (id == 0x202) {	/* CREATE_PROCESS: the process id comes back at +0xc */
+		u32 q = 0x11;
+
+		memcpy(cmd + 0xc, &q, 4);
+	} else if (id == 0x204 && !hso.prog_no_finish) {	/* PROCEDURE_CALL: post the finish event in the POOL
+								 * surface and a record in the IO_T2H ring */
+		u8 *pool = sim_dma[0].va, *ev;
+		u64 eaddr, elen = 0x20, cookie = 0xadd0, *t2h;
+		u32 pid = 1, q = 0x11, st = 1;
+
+		if (pool) {
+			ev = pool + 0x200;
+			memset(ev, 0, 0x20);
+			memcpy(ev + 8, &cookie, 8);
+			memcpy(ev + 0x10, &pid, 4);
+			memcpy(ev + 0x14, &q, 4);
+			memcpy(ev + 0x1c, &st, 4);
+			eaddr = sim_dma[0].iova + 0x200;
+			t2h = (u64 *)(ipc + fw_tab[5].off + (fw_t2h_cursor++ % fw_tab[5].slots) * 0x40);
+			t2h[0] = eaddr;
+			t2h[1] = elen;
+		}
+	}
 	memcpy(&len1, slotp + 8, 8);
 	memcpy(slotp + 16, &zero, 8);
 	hdr |= 1;
@@ -4119,6 +4148,7 @@ static void ch_setup(void)
 	fw_chan = true;
 	fw_h2t_ok = false;
 	fw_cmds = fw_io_cursor = 0;
+	fw_t2h_cursor = 0;
 	fw_ipc_iova = fw_ipc_size = 0;
 	fw_ipi_pend = ipi_raise = 0;
 	fw_ipi_hold = false;
