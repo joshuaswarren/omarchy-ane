@@ -51,6 +51,7 @@
 #include <linux/moduleparam.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/spinlock.h>
 
 #include "ane.h"
 #include "ane_dvfs_req.h"
@@ -115,9 +116,19 @@ static void dvfs_cmd(struct ane_device *ane, u32 prev, u32 new)
  * one read-modify-write under the report's lock, shared with every other client of the word, and the acknowledge wait in the same call. Otherwise (the
  * export is missing, or no report is bound yet: -ENODEV) the masked read-modify-write of bit 10 here, without that lock, and the acknowledge poll here.
  */
+/*
+ * Serializes the fallback PS-REQ read-modify-write across every ANE
+ * instance in this kernel: runtime PM serializes only per device, and a
+ * die pair runs its dvfs paths concurrently. Other PMP clients of the
+ * word are covered only through pmp-report's locked writer (the export
+ * path); this lock cannot order against them and does not pretend to.
+ */
+static DEFINE_SPINLOCK(ps_req_lock);
+
 static int ps_req_request(struct ane_device *ane, bool enable, bool no_ack)
 {
 	struct ane_dvfs *d = &ane->dvfs;
+	unsigned long flags;
 	u64 req, ack;
 	int ret;
 
@@ -126,8 +137,10 @@ static int ps_req_request(struct ane_device *ane, bool enable, bool no_ack)
 		if (ret != -ENODEV)
 			return ret;
 	}
+	spin_lock_irqsave(&ps_req_lock, flags);
 	req = ptd_read(ane, PTD_REG_PS_REQ);
 	ptd_write(ane, PTD_REG_PS_REQ, enable ? ane_dvfs_req_up(req) : ane_dvfs_req_down(req));
+	spin_unlock_irqrestore(&ps_req_lock, flags);
 	if (no_ack)
 		return 0;
 	return read_poll_timeout(ptd_read, ack, !!(ack & PS_ANE_SYS) == enable, 200, 50000, false, ane, PTD_REG_PS_ACK);
