@@ -284,7 +284,7 @@ board probe wraps the three checks — ANE device-tree presence, driver version,
 and one model run attempt — into one paste-ready report:
 
 ```sh
-packaging/omarchy-ane-probe  # read-only, no privileges; paste the block into #304
+packaging/omarchy-ane-report  # read-only, no privileges; paste the block into #304
 ```
 
 On a board with no packaged driver it still prints the device-tree and driver

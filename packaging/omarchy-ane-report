@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Copyright 2026 Joshua Warren
-# omarchy-ane-probe: the three-command probe board owners run for issue #304.
+# omarchy-ane-report: the three-command probe board owners run for issue #304.
 #
 #   1. ANE device-tree presence (node path, status, die)
 #   2. driver version (package, module, loaded/bound, /dev/accel)
@@ -12,7 +12,7 @@
 # an MMIO word, and it needs no privileges. Run it and paste the report block
 # into https://github.com/joshuaswarren/omarchy-ane/issues/304
 #
-# Output schema "ane-probe.v1": one `key: value` line per fact. Keys, in
+# Output schema "ane-report.v1": one `key: value` line per fact. Keys, in
 # emission order: schema, mac-model, kernel, soc, ane-dt[N]|ane-dt,
 # driver-package, driver-module[NAME]|driver-module, dev-accel, model-run,
 # model-run-json (only when the smoke emits a JSON line). The schema line is
@@ -21,10 +21,10 @@
 # --self-test runs the script against fixture device trees and stub tools in
 # a temp dir and asserts every failure mode line. Override hooks used by it
 # (and by anyone replaying a captured tree): DT, SYS_MODULE, DEV_ACCEL,
-# PROBE_SMOKE, PROBE_CHECK (set-but-empty = unavailable).
+# REPORT_SMOKE, REPORT_CHECK (set-but-empty = unavailable).
 set -u
 
-SCHEMA=ane-probe.v1
+SCHEMA=ane-report.v1
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 DT=${DT:-/sys/firmware/devicetree/base}
 SYS_MODULE=${SYS_MODULE:-/sys/module}
@@ -61,7 +61,7 @@ if [ "${1:-}" = --self-test ]; then
 	t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 	fails=0
 	ok() { if grep -qF "$2" "$3"; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s — missing "%s"\n' "$1" "$2"; fails=$((fails+1)); fi; }
-	run() { DT=$2 SYS_MODULE=$t/sysmod SYS_PLATFORM_DRIVERS=$t/sysdrv DEV_ACCEL=$t/accel PROBE_SMOKE=${3-} PROBE_CHECK=${4-} bash "$0" >"$1"; }
+	run() { DT=$2 SYS_MODULE=$t/sysmod SYS_PLATFORM_DRIVERS=$t/sysdrv DEV_ACCEL=$t/accel REPORT_SMOKE=${3-} REPORT_CHECK=${4-} bash "$0" >"$1"; }
 	mkdir -p "$t/sysmod" "$t/sysdrv" "$t/accel" "$t/empty-dt" "$t/dt/arm-io/ane0" "$t/dt/arm-io/ane1"
 	printf 'Mac14,13\0' >"$t/dt/model"
 	printf 'apple,t6021\0apple,j475c\0' >"$t/dt/compatible"
@@ -94,7 +94,7 @@ EOF
 	run "$t/o2" "$t/empty-dt" '' ''
 	ok "no ane node" "no ANE node in the live device tree" "$t/o2"
 	run "$t/o3" "$t/dt" '' ''
-	ok "schema" "schema: ane-probe.v1" "$t/o3"
+	ok "schema" "schema: ane-report.v1" "$t/o3"
 	ok "die0 node" "/arm-io/ane0 status=okay die=0" "$t/o3"
 	ok "die1 node" "/arm-io/ane1 status=disabled die=1" "$t/o3"
 	ok "no modules" "driver-module: none installed" "$t/o3"
@@ -112,8 +112,8 @@ EOF
 	exit "$fails"
 fi
 
-echo "ANE board probe for issue #304 — paste the block between the markers"
-echo "--- ane-probe $(date -u +%FT%TZ) ---"
+echo "ANE board report for issue #304 — paste the block between the markers"
+echo "--- ane-report $(date -u +%FT%TZ) ---"
 report schema "$SCHEMA"
 
 # --- Probe 1: ANE device-tree presence -------------------------------------
@@ -162,14 +162,14 @@ else
 fi
 
 # --- Probe 3: one model run attempt -----------------------------------------
-if [ "${PROBE_SMOKE+set}" = set ]; then
-	smoke=$PROBE_SMOKE
+if [ "${REPORT_SMOKE+set}" = set ]; then
+	smoke=$REPORT_SMOKE
 else
 	smoke=$(command -v omarchy-ane-smoke 2>/dev/null || true)
 	[ -n "$smoke" ] || [ ! -x "$HERE/omarchy-ane-smoke" ] || smoke=$HERE/omarchy-ane-smoke
 fi
-if [ "${PROBE_CHECK+set}" = set ]; then
-	check=$PROBE_CHECK
+if [ "${REPORT_CHECK+set}" = set ]; then
+	check=$REPORT_CHECK
 else
 	check=$(command -v omarchy-ane-check 2>/dev/null || true)
 	[ -n "$check" ] || [ ! -x "$HERE/omarchy-ane-check" ] || check=$HERE/omarchy-ane-check
