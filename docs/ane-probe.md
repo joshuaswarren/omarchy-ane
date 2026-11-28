@@ -39,6 +39,7 @@ process about 0.2 s.
 | `check` | `omarchy-ane-check` exit code and output |
 | `firmware` | `omarchy-ane-firmware-fetch --check` exit code and output; `firmware_present` is true when it exits 0 |
 | `soc_table` | the device tree compared with `data/ane-soc/<soc>.json` |
+| `os_fw_version` | `asahi,os-fw-version` under `/chosen` (the m1n1/u-boot firmware string) |
 | `reachability` | whether this machine's device tree gives the ANE to the operating system (see below) |
 
 Each node record has the path, the compatible list, the status, the label,
@@ -132,7 +133,8 @@ large, only `schema_version`, `tool`, `generated_at`, `elapsed_ms`, `soc` and
 `ane_linux.ane_probe`. It runs `omarchy-ane-probe --json` with a 15 s
 timeout. A missing tool gives `{available: false, reason}`, and output that
 is not JSON gives `{available: false, error}`. `schema_version` changes when
-a top-level field is added or removed: version 2 added `reachability`.
+a top-level field is added or removed: version 2 added `reachability`,
+version 3 added `os_fw_version`.
 
 ## Tests
 
