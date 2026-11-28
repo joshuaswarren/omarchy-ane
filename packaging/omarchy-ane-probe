@@ -11,10 +11,25 @@
 # Read-only: it never writes a device-tree property, a module parameter, or
 # an MMIO word, and it needs no privileges. Run it and paste the report block
 # into https://github.com/joshuaswarren/omarchy-ane/issues/304
+#
+# Output schema "ane-probe.v1": one `key: value` line per fact. Keys, in
+# emission order: schema, mac-model, kernel, soc, ane-dt[N]|ane-dt,
+# driver-package, driver-module[NAME]|driver-module, dev-accel, model-run,
+# model-run-json (only when the smoke emits a JSON line). The schema line is
+# always first inside the --- markers; new keys append at the end.
+#
+# --self-test runs the script against fixture device trees and stub tools in
+# a temp dir and asserts every failure mode line. Override hooks used by it
+# (and by anyone replaying a captured tree): DT, SYS_MODULE, DEV_ACCEL,
+# PROBE_SMOKE, PROBE_CHECK (set-but-empty = unavailable).
 set -u
 
+SCHEMA=ane-probe.v1
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 DT=${DT:-/sys/firmware/devicetree/base}
+SYS_MODULE=${SYS_MODULE:-/sys/module}
+SYS_PLATFORM_DRIVERS=${SYS_PLATFORM_DRIVERS:-/sys/bus/platform/drivers}
+DEV_ACCEL=${DEV_ACCEL:-/dev/accel}
 MODULES="ane ane_t6021 ane_h15 ane_h16 ane_h18"
 # Ultra die 1 is die 0 + 0x20_0000_0000 on every window (receipt
 # 2026-10-03-ultra-die1); the ANE node reg[0] floor-divided by it names the die.
@@ -41,8 +56,65 @@ node_die() {
 	printf '%d' $(( (0x${hex:0:8} * 4294967296 + 0x${hex:8:8}) / DIE_STRIDE ))
 }
 
+if [ "${1:-}" = --self-test ]; then
+	# Exercise every failure-mode line against fixtures in a temp dir.
+	t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+	fails=0
+	ok() { if grep -qF "$2" "$3"; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s — missing "%s"\n' "$1" "$2"; fails=$((fails+1)); fi; }
+	run() { DT=$2 SYS_MODULE=$t/sysmod SYS_PLATFORM_DRIVERS=$t/sysdrv DEV_ACCEL=$t/accel PROBE_SMOKE=${3-} PROBE_CHECK=${4-} bash "$0" >"$1"; }
+	mkdir -p "$t/sysmod" "$t/sysdrv" "$t/accel" "$t/empty-dt" "$t/dt/arm-io/ane0" "$t/dt/arm-io/ane1"
+	printf 'Mac14,13\0' >"$t/dt/model"
+	printf 'apple,t6021\0apple,j475c\0' >"$t/dt/compatible"
+	printf 'apple,t6021-ane\0apple,ane\0' >"$t/dt/arm-io/ane0/compatible"
+	printf 'okay\0' >"$t/dt/arm-io/ane0/status"
+	printf '\x00\x00\x00\x02\x84\x00\x00\x00' >"$t/dt/arm-io/ane0/reg"
+	printf 'apple,t6021-ane\0' >"$t/dt/arm-io/ane1/compatible"
+	printf 'disabled\0' >"$t/dt/arm-io/ane1/status"
+	printf '\x00\x00\x00\x22\x84\x00\x00\x00' >"$t/dt/arm-io/ane1/reg"
+	cat >"$t/smoke-fail" <<'EOF'
+#!/usr/bin/env bash
+echo "mailbox timeout"
+exit 1
+EOF
+	cat >"$t/smoke-pass" <<'EOF'
+#!/usr/bin/env bash
+echo "fp16 add"
+echo '{"result":"pass"}'
+exit 0
+EOF
+	cat >"$t/check-pass" <<'EOF'
+#!/usr/bin/env bash
+echo "check ok"
+exit 0
+EOF
+	chmod +x "$t/smoke-fail" "$t/smoke-pass" "$t/check-pass"
+
+	run "$t/o1" "$t/missing-dt" '' ''
+	ok "no device tree" "no device tree at" "$t/o1"
+	run "$t/o2" "$t/empty-dt" '' ''
+	ok "no ane node" "no ANE node in the live device tree" "$t/o2"
+	run "$t/o3" "$t/dt" '' ''
+	ok "schema" "schema: ane-probe.v1" "$t/o3"
+	ok "die0 node" "/arm-io/ane0 status=okay die=0" "$t/o3"
+	ok "die1 node" "/arm-io/ane1 status=disabled die=1" "$t/o3"
+	ok "no modules" "driver-module: none installed" "$t/o3"
+	ok "no accel" "dev-accel: no /dev/accel node" "$t/o3"
+	ok "no smoke" "model-run: NOT-RUN" "$t/o3"
+	run "$t/o4" "$t/dt" "$t/smoke-fail" ''
+	ok "smoke fail" "model-run: FAIL — mailbox timeout" "$t/o4"
+	run "$t/o5" "$t/dt" "$t/smoke-pass" ''
+	ok "smoke pass" "model-run: PASS — fp16 add" "$t/o5"
+	ok "smoke json" 'model-run-json: {"result":"pass"}' "$t/o5"
+	run "$t/o6" "$t/dt" '' "$t/check-pass"
+	ok "check fallback" "model-run: PASS — check ok" "$t/o6"
+	printf '%s\n' "---"
+	if [ "$fails" -eq 0 ]; then echo "self-test: all checks passed"; else echo "self-test: $fails FAILED"; fi
+	exit "$fails"
+fi
+
 echo "ANE board probe for issue #304 — paste the block between the markers"
 echo "--- ane-probe $(date -u +%FT%TZ) ---"
+report schema "$SCHEMA"
 
 # --- Probe 1: ANE device-tree presence -------------------------------------
 report mac-model "$(first_string "$DT/model" unknown)"
@@ -70,11 +142,11 @@ else
 fi
 seen=0
 for m in $MODULES; do
-	if [ -d "/sys/module/$m" ]; then
+	if [ -d "$SYS_MODULE/$m" ]; then
 		seen=1
 		ver=$(modinfo -F version "$m" 2>/dev/null | head -1)
-		src=$(cat "/sys/module/$m/srcversion" 2>/dev/null)
-		bound=$(find "/sys/bus/platform/drivers/$m" -mindepth 1 -maxdepth 1 -type l ! -name module 2>/dev/null | wc -l)
+		src=$(cat "$SYS_MODULE/$m/srcversion" 2>/dev/null)
+		bound=$(find "$SYS_PLATFORM_DRIVERS/$m" -mindepth 1 -maxdepth 1 -type l ! -name module 2>/dev/null | wc -l)
 		report "driver-module[$m]" "version=${ver:-?} srcversion=${src:-?} loaded bound=$bound"
 	elif command -v modinfo >/dev/null 2>&1 && modinfo "$m" >/dev/null 2>&1; then
 		seen=1
@@ -82,7 +154,7 @@ for m in $MODULES; do
 	fi
 done
 [ "$seen" -eq 1 ] || report driver-module "none installed ($MODULES)"
-accels=$(find /dev/accel -mindepth 1 -maxdepth 1 2>/dev/null | sort)
+accels=$(find "$DEV_ACCEL" -mindepth 1 -maxdepth 1 2>/dev/null | sort)
 if [ -n "$accels" ]; then
 	for a in $accels; do report dev-accel "$(stat -c '%n %A' "$a")"; done
 else
@@ -90,10 +162,18 @@ else
 fi
 
 # --- Probe 3: one model run attempt -----------------------------------------
-smoke=$(command -v omarchy-ane-smoke 2>/dev/null || true)
-[ -n "$smoke" ] || [ ! -x "$HERE/omarchy-ane-smoke" ] || smoke=$HERE/omarchy-ane-smoke
-check=$(command -v omarchy-ane-check 2>/dev/null || true)
-[ -n "$check" ] || [ ! -x "$HERE/omarchy-ane-check" ] || check=$HERE/omarchy-ane-check
+if [ "${PROBE_SMOKE+set}" = set ]; then
+	smoke=$PROBE_SMOKE
+else
+	smoke=$(command -v omarchy-ane-smoke 2>/dev/null || true)
+	[ -n "$smoke" ] || [ ! -x "$HERE/omarchy-ane-smoke" ] || smoke=$HERE/omarchy-ane-smoke
+fi
+if [ "${PROBE_CHECK+set}" = set ]; then
+	check=$PROBE_CHECK
+else
+	check=$(command -v omarchy-ane-check 2>/dev/null || true)
+	[ -n "$check" ] || [ ! -x "$HERE/omarchy-ane-check" ] || check=$HERE/omarchy-ane-check
+fi
 if [ -n "$smoke" ]; then
 	out=$("$smoke" --timeout 30 2>&1)
 	rc=$?
