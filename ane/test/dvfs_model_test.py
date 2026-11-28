@@ -133,7 +133,7 @@ void fake_usleep(void) { }
 void *fake_symbol_get(void) { return export_mode ? (void *)fake_set_request : NULL; }
 struct device_node *fake_find_compat(void) { return export_mode == 2 ? NULL : &np0; }
 u32 fake_readl(void *p) { return (u32)get((u64)(uintptr_t)p); }
-int threaded_ps, torn_writes;
+int threaded_ps, torn_writes, ps_stale_window;
 u64 psreq_shared;
 u64 fake_readq(void *p)
 {
@@ -142,6 +142,8 @@ u64 fake_readq(void *p)
 	if (threaded_ps && pa == PTD_BASE + 0xf8 * 16) {
 		volatile int i;
 		u64 v = __atomic_load_n(&psreq_shared, __ATOMIC_SEQ_CST);
+		if (!(v & (1ULL << 9)))
+			__atomic_store_n(&ps_stale_window, 1, __ATOMIC_SEQ_CST);
 		/* the vulnerable point: another client's write can land between this read and the driver's write; a bounded spin widens it enough for the scheduler to act */
 		for (i = 0; i < 4000; i++)
 			sched_yield();
@@ -224,7 +226,11 @@ static int stop_foreign;
 static void *foreign_client(void *a)
 {
 	unsigned long f;
+	unsigned long i;
 
+	/* a torn write needs this client's first bit-9 store to land inside an RMW that read a word without bit 9; waiting on the stale-read window instead of racing thread start makes the negative control deterministic */
+	for (i = 0; i < 50000000UL && !__atomic_load_n(&ps_stale_window, __ATOMIC_SEQ_CST); i++)
+		sched_yield();
 	/* another client of the word's locked read-modify-write: the AGX vote, bit 9.
 	 * It takes the same lock the driver's fallback RMW does — an unlocked
 	 * foreign client would legitimately still tear the word, which is the
@@ -410,7 +416,7 @@ int main(void)
 		pthread_t ta, tb, tf;
 		struct ane_device a0, a1;
 
-		threaded_ps = 1; torn_writes = 0;
+		threaded_ps = 1; torn_writes = 0; ps_stale_window = 0;
 		psreq_shared = 0x60003000ULL;
 		memset(&a0, 0, sizeof(a0)); memset(&a1, 0, sizeof(a1));
 		a0.dvfs.ptd = (void *)(uintptr_t)PTD_BASE;
