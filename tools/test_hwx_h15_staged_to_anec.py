@@ -8,7 +8,9 @@ The device-level facts need an H15 HWX; point ANE_H15_TEST_HWX at one
 run, which is the failing-first contract: the H14 tool must refuse a
 subtype-6 HWX, and the H15 tool must refuse a subtype-5 HWX.
 """
+import hashlib
 import importlib.util
+import json
 import os
 import struct
 from pathlib import Path
@@ -111,3 +113,30 @@ def test_h15_channels_bind_by_symbol_not_address_order(h15):
     assert ch[4]["iova"] == "0x30010000"
     assert ch[5]["iova"] == "0x30000000"
     assert ch[6]["iova"] == "0x30008000"
+
+H15_GOLDENS = TOOLS.parent / "fixtures/h15-hwx"
+
+
+@pytest.mark.parametrize("family", ["add", "mul", "matvec"])
+def test_h15_golden_channels(h15, family):
+    # Q-87: golden-file coverage for take()'s symbol-name binding, on top
+    # of the single add-128 equal-allocation case in
+    # test_h15_channels_bind_by_symbol_not_address_order. Each fixture dir
+    # ships an ANECCompile model.hwx plus golden-channels.json, recorded
+    # when the fixture landed; the digest field pins golden to binary.
+    # add and mul allocate a, b and y at the same size, so an address or
+    # size match misbinds every channel. matvec allocates a at 0x8000 and
+    # b, y at 0x2000 each: a sorted-address size match binds the output
+    # channel to 'b' and the second input to 'y'.
+    fixture = H15_GOLDENS / family
+    golden = json.loads((fixture / "golden-channels.json").read_text())
+    hwx = (fixture / "model.hwx").read_bytes()
+    assert hashlib.sha256(hwx).hexdigest()[:12] == \
+        golden["model_hwx_sha256_12"]
+    _, info = h15.convert(hwx)
+    for field in ("input_count", "task_count", "stream_bytes",
+                  "constant_bytes", "content_bytes"):
+        assert info[field] == golden[field]
+    channels = {str(ch): rec for ch, rec in info["channels"].items()}
+    assert channels == golden["channels"]
+
