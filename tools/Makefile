@@ -184,6 +184,7 @@ check: ane-run ane-selfcheck ane-session test_libane_ioctl test_libane_t6050 tes
 	sh test_ane_run_tile_shift.sh ./ane-run
 	./test_libane_t6050
 	./test_libane_v3 ../fixtures/h15-hwx/add/model.hwx ../fixtures/h15-hwx/add/load/base
+	$(PYTHON) test_j615_kit.py
 	./test_libane_h18_resident
 	sh test_port_reader.sh
 	./ane-selfcheck ../fixtures/h14-anec
