@@ -29,8 +29,9 @@ entry:
 
     /* Private stack at the top of jwm1's reserved isp-heap hole
      * (0xbd2bb0000 + 0x1ac000 = 0xbd2d5c000). Nothing else owns that DRAM. */
-    movz    x10, #0xd5c0, lsl #16
-    movk    x10, #0xbd2d, lsl #32
+    movz    x10, #0xc000
+    movk    x10, #0xd2d5, lsl #16
+    movk    x10, #0x000b, lsl #32
     mov     sp, x10
 
     bl      payload_main
