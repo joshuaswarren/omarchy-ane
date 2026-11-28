@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "program": "matvec",
+  "hwx": "matvec/model.hwx",
+  "notes": "Ports come from the model.mil graph: fp16 inputs a and b, output y. Bar slots, buffer ids, channels and strides are absent on purpose. The repo port reader parses H14 program-descriptor HWX files only, and this legacy thread-state HWX has no reader yet. Read the numbers from the file before a driver uses them; do not copy them from another chip.",
+  "ports": [
+    {
+      "name": "a",
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ],
+      "dtype": "fp16"
+    },
+    {
+      "name": "b",
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        128,
+        1
+      ],
+      "dtype": "fp16"
+    },
+    {
+      "name": "y",
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        128,
+        1
+      ],
+      "dtype": "fp16"
+    }
+  ]
+}
