@@ -95,3 +95,19 @@ def test_h15_conversion_contract(h15, tmp_path):
     assert channels[4]["role"] == "output"
     for ch in range(5, 5 + info["input_count"]):
         assert channels[ch]["role"] == "input"
+
+
+def test_h15_channels_bind_by_symbol_not_address_order(h15):
+    # M3-06: fixtures/h15-hwx/add/model.hwx allocates a, b and y at the same
+    # 0x8000 bytes each, so a sorted-address size match binds the output to
+    # 'a'. The LC 0x40 names (a@0x30000000, b@0x30008000, y@0x30010000) are
+    # the tensor identity: ch4 must take 'y', ch5 'a', ch6 'b'.
+    data = (TOOLS.parent / "fixtures/h15-hwx/add/model.hwx").read_bytes()
+    _, info = h15.convert(data)
+    ch = info["channels"]
+    assert ch[4]["name"] == "y" and ch[4]["role"] == "output"
+    assert ch[5]["name"] == "a" and ch[5]["role"] == "input"
+    assert ch[6]["name"] == "b" and ch[6]["role"] == "input"
+    assert ch[4]["iova"] == "0x30010000"
+    assert ch[5]["iova"] == "0x30000000"
+    assert ch[6]["iova"] == "0x30008000"
