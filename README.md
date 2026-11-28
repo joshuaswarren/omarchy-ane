@@ -279,6 +279,17 @@ omarchy-ane-check --installed   # after a kernel update: both modules rebuilt fo
 omarchy-ane-check --smoke    # runs the add program 20 times, bit-exact or fail
 ```
 
+For [issue #304](https://github.com/joshuaswarren/omarchy-ane/issues/304) the
+board probe wraps the three checks — ANE device-tree presence, driver version,
+and one model run attempt — into one paste-ready report:
+
+```sh
+packaging/omarchy-ane-report  # read-only, no privileges; paste the block into #304
+```
+
+On a board with no packaged driver it still prints the device-tree and driver
+lines with the reason no run happened.
+
 `ready` (exit 0) means the driver is built, loaded, bound, and the
 `/dev/accel` node is open. On the M2 family the check also verifies the
 installed firmware against the pin. `omarchy-ane-check --smoke` exits 0 only
