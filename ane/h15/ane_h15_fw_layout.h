@@ -2,7 +2,15 @@
 #ifndef ANE_H15_FW_LAYOUT_H
 #define ANE_H15_FW_LAYOUT_H
 
+#ifdef __KERNEL__
 #include <linux/types.h>
+
+#else
+/* libane builds this header on the host (ane_h15_firmware.c), where the
+ * kernel's u32/u64 names do not exist; the stub mirrors include/linux/types.h
+ * (ane/common/stub/linux/types.h). */
+#include "../common/stub/linux/types.h"
+#endif
 
 /* Firmware segment layouts for the H15 family.
  *
@@ -11,7 +19,7 @@
  * follows at payload offset 0xd0000, and both segments map contiguously:
  * TEXT at the RVBAR entry IOVA, DATA directly behind it.
  *
- * macOS 27.2 (26B123): the TEXT carve-out moves to 0xc8000 and the DATA
+ * The 27.2-generation image: the TEXT carve-out moves to 0xc8000 and the DATA
  * segment to payload offset 0x2a4000; DATA maps at its own IOVA base,
  * 0x100000c8000 (read from the live device tree's memory-region property
  * when present — see ane_h15_dt_memory_region()). The pins below encode
@@ -63,7 +71,7 @@ static const struct ane_h15_fw_layout ane_h15_fw_layout_legacy = {
 	.data_iova = 0,
 };
 
-/* macOS 27.2 (26B123): TEXT=0xc8000, DATA=0x2a4000,
+/* The 27.2-generation pins: TEXT=0xc8000, DATA=0x2a4000,
  * DATA IOVA=0x100000c8000. */
 #define ANE_H15_FW_LAYOUT_MACOS_27_2_NAME "macos-27.2"
 static const struct ane_h15_fw_layout ane_h15_fw_layout_macos_27_2 = {

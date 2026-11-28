@@ -4148,7 +4148,7 @@ static int ane_h15_probe(struct platform_device *pdev)
 
 	ane = devm_kzalloc(&pdev->dev, sizeof(*ane), GFP_KERNEL);
 	/* Segment layout: legacy by default; fw_layout_27_2=1 selects the
-	 * macOS 27.2 (26B123) segment pins (TEXT=0xc8000, DATA=0x2a4000,
+	 * The 27.2-generation segment pins (TEXT=0xc8000, DATA=0x2a4000,
 	 * DATA IOVA=0x100000c8000). The boot firmware hands the DATA
 	 * carve-out through the ane node's memory-region property; its base
 	 * overrides the layout's DATA IOVA. */
