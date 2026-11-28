@@ -75,6 +75,7 @@ jobs:
           python3 tools/validate_ane_soc.py data/ane-soc/*.json tests/fixtures/ane-soc/*.json
           python3 tools/test_validate_ane_soc.py
           python3 tools/gen_coverage_table.py --check
+          python3 tools/test_gen_coverage_table.py
           python3 tools/test_ane_constants_table.py
           python3 tools/test_t6030_dart_overlay.py
 
