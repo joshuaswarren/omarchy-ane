@@ -37,7 +37,7 @@ node_is_ane() {
 node_die() {
 	local hex
 	hex=$(od -An -v -tx1 -N8 "$1/reg" 2>/dev/null | tr -d ' \n')
-	[ ${#hex} -ge 8 ] || { printf '?'; return; }
+	[ ${#hex} -ge 16 ] || { printf '?'; return; }
 	printf '%d' $(( (0x${hex:0:8} * 4294967296 + 0x${hex:8:8}) / DIE_STRIDE ))
 }
 
@@ -111,6 +111,7 @@ elif [ -n "$check" ]; then
 	line=$(printf '%s\n' "$out" | tail -1)
 	case $rc in
 		0) report model-run "PASS — $line" ;;
+		1) report model-run "FAIL — $line" ;;
 		*) report model-run "NOT-RUN — $line" ;;
 	esac
 else
