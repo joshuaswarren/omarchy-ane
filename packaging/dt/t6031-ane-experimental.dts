@@ -42,31 +42,31 @@
 	};
 
 	fragment@1 {
-		target-path = "/soc/power-management@350700000/power-controller@520";
+		target-path = "/soc/power-management@292280000/power-controller@520";
 		ps_ane_sys: __overlay__ {
 		};
 	};
 
 	fragment@2 {
-		target-path = "/soc/power-management@350700000/power-controller@5a0";
+		target-path = "/soc/power-management@292280000/power-controller@5a0";
 		ps_ane_mpm: __overlay__ {
 		};
 	};
 
 	fragment@3 {
-		target-path = "/soc/power-management@350700000/power-controller@5a8";
+		target-path = "/soc/power-management@292280000/power-controller@5a8";
 		ps_ane_cpu: __overlay__ {
 		};
 	};
 
 	fragment@4 {
-		target-path = "/soc/power-management@350700000/power-controller@5b8";
+		target-path = "/soc/power-management@292280000/power-controller@5b8";
 		ps_ane_td: __overlay__ {
 		};
 	};
 
 	fragment@5 {
-		target-path = "/soc/power-management@350700000/power-controller@5c0";
+		target-path = "/soc/power-management@292280000/power-controller@5c0";
 		ps_ane_base: __overlay__ {
 		};
 	};

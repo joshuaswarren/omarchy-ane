@@ -56,7 +56,10 @@ for prefix in $prefixes; do
   for f in "$dts/$prefix"-*.dts; do
     b=$(basename "$f" .dts)
     gcc -E -nostdinc -I "$inc" -undef -D__DTS__ -x assembler-with-cpp -o "$out/$b.dts.tmp" "$f"
-    "$out/bin/dtc" -q -O dtb -o "$out/dtbs/$b.dtb" -b 0 -i "$dts" -i "$inc" "$out/$b.dts.tmp"
+    # -@ keeps __symbols__ in the base: overlays that attach by label (aic,
+# ps_ane_*) resolve phandles against it; without it fdtoverlay answers
+# FDT_ERR_NOTFOUND for any overlay that references a base label.
+    "$out/bin/dtc" -q -@ -O dtb -o "$out/dtbs/$b.dtb" -b 0 -i "$dts" -i "$inc" "$out/$b.dts.tmp"
     rm "$out/$b.dts.tmp"
   done
 done
