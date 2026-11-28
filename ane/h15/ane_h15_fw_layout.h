@@ -6,10 +6,12 @@
 #include <linux/types.h>
 
 #else
-/* libane builds this header on the host (ane_h15_firmware.c), where the
- * kernel's u32/u64 names do not exist; the stub mirrors include/linux/types.h
- * (ane/common/stub/linux/types.h). */
-#include "../common/stub/linux/types.h"
+/* Host builds: libane (ane_h15_firmware.c) has no kernel types, and the
+ * sim already typedefs u32/u64 from stdint in shim.h - same-type typedef
+ * redefinition is legal under the sim's gnu11, and identical to these. */
+#include <stdint.h>
+typedef uint32_t u32;
+typedef uint64_t u64;
 #endif
 
 /* Firmware segment layouts for the H15 family.
