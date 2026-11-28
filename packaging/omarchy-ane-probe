@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright 2026 Joshua Warren
+# omarchy-ane-probe: the three-command probe board owners run for issue #304.
+#
+#   1. ANE device-tree presence (node path, status, die)
+#   2. driver version (package, module, loaded/bound, /dev/accel)
+#   3. one model run attempt (the packaged fp16 add smoke, or an honest
+#      "no run possible" line naming the reason)
+#
+# Read-only: it never writes a device-tree property, a module parameter, or
+# an MMIO word, and it needs no privileges. Run it and paste the report block
+# into https://github.com/joshuaswarren/omarchy-ane/issues/304
+set -u
+
+HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+DT=${DT:-/sys/firmware/devicetree/base}
+MODULES="ane ane_t6021 ane_h15 ane_h16 ane_h18"
+# Ultra die 1 is die 0 + 0x20_0000_0000 on every window (receipt
+# 2026-10-03-ultra-die1); the ANE node reg[0] floor-divided by it names the die.
+DIE_STRIDE=137438953472
+
+report() { printf '%s: %s\n' "$1" "$2"; }
+
+first_string() {
+	# First NUL-terminated string of a device-tree property, or a default.
+	local s
+	s=$(tr '\0' '\n' 2>/dev/null <"$1" | sed -n '1p')
+	printf '%s' "${s:-$2}"
+}
+
+node_is_ane() {
+	# The ANE node's compatible ends in -ane (apple,t8103-ane, ...).
+	tr '\0' '\n' <"$1/compatible" 2>/dev/null | grep -q '\-ane$'
+}
+
+node_die() {
+	local hex
+	hex=$(od -An -v -tx1 -N8 "$1/reg" 2>/dev/null | tr -d ' \n')
+	[ ${#hex} -ge 8 ] || { printf '?'; return; }
+	printf '%d' $(( (0x${hex:0:8} * 4294967296 + 0x${hex:8:8}) / DIE_STRIDE ))
+}
+
+echo "ANE board probe for issue #304 — paste the block between the markers"
+echo "--- ane-probe $(date -u +%FT%TZ) ---"
+
+# --- Probe 1: ANE device-tree presence -------------------------------------
+report mac-model "$(first_string "$DT/model" unknown)"
+report kernel "$(uname -r)"
+soc=$(tr '\0' '\n' 2>/dev/null <"$DT/compatible" | sed -n 's/^apple,\(t[0-9]*\).*$/\1/p' | head -1)
+report soc "${soc:-none}"
+if [ -d "$DT" ]; then
+	found=0
+	while IFS= read -r -d '' compat; do
+		node=${compat%/compatible}
+		node_is_ane "$node" || continue
+		found=$((found + 1))
+		report "ane-dt[$found]" "${node#"$DT"} status=$(first_string "$node/status" okay) die=$(node_die "$node")"
+	done < <(find "$DT" -name compatible -print0 2>/dev/null)
+	[ "$found" -gt 0 ] || report ane-dt "no ANE node in the live device tree"
+else
+	report ane-dt "no device tree at $DT (not an Apple Silicon boot?)"
+fi
+
+# --- Probe 2: driver version ------------------------------------------------
+if command -v pacman >/dev/null 2>&1; then
+	report driver-package "$(pacman -Q omarchy-ane-dkms 2>/dev/null || printf 'omarchy-ane-dkms not installed')"
+else
+	report driver-package "no pacman on this system"
+fi
+seen=0
+for m in $MODULES; do
+	if [ -d "/sys/module/$m" ]; then
+		seen=1
+		ver=$(modinfo -F version "$m" 2>/dev/null | head -1)
+		src=$(cat "/sys/module/$m/srcversion" 2>/dev/null)
+		bound=$(find "/sys/bus/platform/drivers/$m" -mindepth 1 -maxdepth 1 -type l ! -name module 2>/dev/null | wc -l)
+		report "driver-module[$m]" "version=${ver:-?} srcversion=${src:-?} loaded bound=$bound"
+	elif command -v modinfo >/dev/null 2>&1 && modinfo "$m" >/dev/null 2>&1; then
+		seen=1
+		report "driver-module[$m]" "installed, not loaded (version $(modinfo -F version "$m" 2>/dev/null | head -1))"
+	fi
+done
+[ "$seen" -eq 1 ] || report driver-module "none installed ($MODULES)"
+accels=$(find /dev/accel -mindepth 1 -maxdepth 1 2>/dev/null | sort)
+if [ -n "$accels" ]; then
+	for a in $accels; do report dev-accel "$(stat -c '%n %A' "$a")"; done
+else
+	report dev-accel "no /dev/accel node"
+fi
+
+# --- Probe 3: one model run attempt -----------------------------------------
+smoke=$(command -v omarchy-ane-smoke 2>/dev/null || true)
+[ -n "$smoke" ] || [ ! -x "$HERE/omarchy-ane-smoke" ] || smoke=$HERE/omarchy-ane-smoke
+check=$(command -v omarchy-ane-check 2>/dev/null || true)
+[ -n "$check" ] || [ ! -x "$HERE/omarchy-ane-check" ] || check=$HERE/omarchy-ane-check
+if [ -n "$smoke" ]; then
+	out=$("$smoke" --timeout 30 2>&1)
+	rc=$?
+	line=$(printf '%s\n' "$out" | grep -v '^{' | tail -1)
+	case $rc in
+		0) report model-run "PASS — $line" ;;
+		1) report model-run "FAIL — $line" ;;
+		*) report model-run "NOT-RUN — $line" ;;
+	esac
+	json=$(printf '%s\n' "$out" | sed -n 's/^\({.*}\)$/\1/p' | tail -1)
+	[ -z "$json" ] || report model-run-json "$json"
+elif [ -n "$check" ]; then
+	out=$("$check" --smoke 2>&1)
+	rc=$?
+	line=$(printf '%s\n' "$out" | tail -1)
+	case $rc in
+		0) report model-run "PASS — $line" ;;
+		*) report model-run "NOT-RUN — $line" ;;
+	esac
+else
+	report model-run "NOT-RUN — omarchy-ane-smoke is not installed; install omarchy-ane-dkms or run this script from an omarchy-ane checkout"
+fi
+echo "--- end ---"
+echo "Add your Mac model (for example 'Mac Studio M1 Ultra') and paste the block into #304."
+exit 0
