@@ -100,8 +100,8 @@ def test_h15_conversion_contract(h15, tmp_path):
 def test_h15_channels_bind_by_symbol_not_address_order(h15):
     # M3-06: fixtures/h15-hwx/add/model.hwx allocates a, b and y at the same
     # 0x8000 bytes each, so a sorted-address size match binds the output to
-    # 'a'. The LC 0x40 names (a@0x30000000, b@0x30008000, y@0x30010000) are
-    # the tensor identity: ch4 must take 'y', ch5 'a', ch6 'b'.
+    # 'a'. The LC 0x40 named buffers are the tensor identity: ch4 must take
+    # 'y' (the highest of the three buffer iovas), ch5 'a', ch6 'b'.
     data = (TOOLS.parent / "fixtures/h15-hwx/add/model.hwx").read_bytes()
     _, info = h15.convert(data)
     ch = info["channels"]
