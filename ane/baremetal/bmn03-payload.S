@@ -3,11 +3,14 @@
  * bmn03-payload.S — arm64 Image-format entry stub for the BMN-03 bare-metal
  * ANE power-up payload (t8103 / jwm1).
  *
- * Boot path: ESP `aura-try` marker names a trial stage2 (m1n1/boot-try.bin =
- * stock boot.bin + this Image appended). The stage2's payload scan treats the
- * last kernel-format record as the kernel, so this file replaces u-boot for
- * exactly one boot, under the 178 s trial watchdog. Entry: x0 = devicetree
- * pointer (unused), MMU off, trial WDT armed.
+ * Two delivery paths share this entry contract (x0 = devicetree, MMU off):
+ *  1. ESP `aura-try` marker names a trial stage2 (stock boot.bin + this Image
+ *     appended); the stage2's payload scan treats the last kernel-format
+ *     record as the kernel. Needs a post-Oct-31 stage1 — absent on jwm1.
+ *  2. `kexec -s -e` from the running Linux; cpu_soft_restart enters at the
+ *     image base with MMU off. Works on the current install.
+ * The payload arms the t8103 WDT itself first thing — the trial watchdog
+ * arm fails on this chip (wdt-version gate) and kexec has no trial stage.
  */
 
     .section .text.head

@@ -36,6 +36,19 @@
 typedef unsigned int u32;
 typedef unsigned long long u64;
 
+/* t8103 primary WDT (aura src/wdt.c offsets — the chip-agnostic reboot/arm
+ * sequence; t8103 has no wdt-version or reg[2] secondary, so the version-2
+ * checks do not apply). Armed first thing so the whole payload is covered
+ * under BOTH delivery paths: kexec -e (no trial stage arms a WDT at all)
+ * and aura-try on an upgraded stage1 (wdt_arm_trial returns -1 on t8103 —
+ * its wdt-version==2 gate never matches — so the trial would run uncovered
+ * without this). */
+#define WDT_BASE  0x23d2b0000ULL
+#define WDT_COUNT 0x10
+#define WDT_ALARM 0x14
+#define WDT_CTL   0x1c
+#define WDT_SECONDS 178u
+
 #define PMGR_PS_BASE 0x23b700000ULL
 
 /* PMGR PS register fields (aura src/pmgr.c) */
@@ -106,6 +119,15 @@ static u32 raise_one(u32 off, u32 i)
 
 void payload_main(void)
 {
+    /* Arm the hardware watchdog before anything else: disarm, clear the
+     * count, load a 178 s alarm, enable. If any later step hangs or faults,
+     * the SoC resets and the next boot takes the stock path. */
+    wr(WDT_BASE + WDT_CTL, 0);
+    wr(WDT_BASE + WDT_COUNT, 0);
+    wr(WDT_BASE + WDT_ALARM, WDT_SECONDS * 24000000u);
+    wr(WDT_BASE + WDT_CTL, 4);
+    __asm__ volatile("dsb sy" ::: "memory");
+
     wr(MARKER_BASE + 0x00, 0x424d4e33); /* "BMN3" */
     wr(MARKER_BASE + 0x04, 1);
     u64 t0 = cntpct();
