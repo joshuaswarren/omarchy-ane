@@ -72,8 +72,23 @@ struct device_node *fake_find_compat(void);
 #define ENODEV 19
 #define read_poll_timeout(op, val, cond, sleep_us, timeout_us, sleep_before_read, args...) \
 	({ int __i, __r = -ETIMEDOUT; for (__i = 0; __i < 5; __i++) { (val) = op(args); if (cond) { __r = 0; break; } } __r; })
+/* The driver serializes its fallback PS-REQ RMW on a spinlock. In this
+ * model the lock is a real mutex, so case 10 runs actual concurrent
+ * threads through it; -DUNLOCKED_SPIN rebuilds with the lock removed as
+ * the negative control (the torn-write detector must fire there). */
+#include <pthread.h>
+#include <sched.h>
+typedef pthread_mutex_t spinlock_t;
+#define DEFINE_SPINLOCK(l) pthread_mutex_t l = PTHREAD_MUTEX_INITIALIZER
+#ifdef UNLOCKED_SPIN
+#define spin_lock_irqsave(l, f) do { (void)(l); (void)(f); } while (0)
+#define spin_unlock_irqrestore(l, f) do { (void)(l); (void)(f); } while (0)
+#else
+#define spin_lock_irqsave(l, f) do { (void)(f); pthread_mutex_lock(l); } while (0)
+#define spin_unlock_irqrestore(l, f) do { (void)(f); pthread_mutex_unlock(l); } while (0)
+#endif
 """
-for n in ("delay", "device", "io", "iopoll", "module", "moduleparam", "of", "of_address", "types"):
+for n in ("delay", "device", "io", "iopoll", "module", "moduleparam", "of", "of_address", "spinlock", "types"):
     with open(T + "/inc/linux/%s.h" % n, "w") as f:
         f.write('#include "../common.h"\n')
 with open(T + "/inc/common.h", "w") as f:
@@ -118,7 +133,22 @@ void fake_usleep(void) { }
 void *fake_symbol_get(void) { return export_mode ? (void *)fake_set_request : NULL; }
 struct device_node *fake_find_compat(void) { return export_mode == 2 ? NULL : &np0; }
 u32 fake_readl(void *p) { return (u32)get((u64)(uintptr_t)p); }
-u64 fake_readq(void *p) { return get((u64)(uintptr_t)p); }
+int threaded_ps, torn_writes;
+u64 psreq_shared;
+u64 fake_readq(void *p)
+{
+	u64 pa = (u64)(uintptr_t)p;
+
+	if (threaded_ps && pa == PTD_BASE + 0xf8 * 16) {
+		volatile int i;
+		u64 v = __atomic_load_n(&psreq_shared, __ATOMIC_SEQ_CST);
+		/* the vulnerable point: another client's write can land between this read and the driver's write; a bounded spin widens it enough for the scheduler to act */
+		for (i = 0; i < 4000; i++)
+			sched_yield();
+		return v;
+	}
+	return get(pa);
+}
 void fake_writel(u32 v, void *p)
 {
 	log_n += sprintf(log_buf + log_n, "W32 %llx %08x\n", (u64)(uintptr_t)p, v);
@@ -130,6 +160,14 @@ void fake_writeq(u64 v, void *p)
 {
 	u64 pa = (u64)(uintptr_t)p;
 
+	if (threaded_ps && pa == PTD_BASE + 0x10000 + 0xf8 * 8) {
+		u64 before = __atomic_load_n(&psreq_shared, __ATOMIC_SEQ_CST);
+		/* the foreign client only ever sets bit 9; a write that clears it restored a stale word */
+		if ((before & (1ULL << 9)) && !(v & (1ULL << 9)))
+			torn_writes++;
+		__atomic_store_n(&psreq_shared, v, __ATOMIC_SEQ_CST);
+		return;
+	}
 	log_n += sprintf(log_buf + log_n, "W64 %llx %016llx\n", pa, v);
 	/* update space reg*8 shows in the read entity reg*16; PS-ACK follows PS-REQ */
 	put(PTD_BASE + (pa - PTD_BASE - 0x10000) / 8 * 16, v);
@@ -180,6 +218,33 @@ static void fresh(void)
 	put(PTD_BASE + 0xf8 * 16, 0x60003000ULL);	/* PS-REQ as booted */
 	put(PTD_BASE + 0x100 * 16, 0x60003000ULL);	/* PS-ACK */
 	ane_dvfs_init(&ane);
+}
+
+static int stop_foreign;
+static void *foreign_client(void *a)
+{
+	unsigned long f;
+
+	/* another client of the word's locked read-modify-write: the AGX vote, bit 9.
+	 * It takes the same lock the driver's fallback RMW does — an unlocked
+	 * foreign client would legitimately still tear the word, which is the
+	 * residual the driver's comment names (foreign clients are covered only
+	 * through pmp-report's locked writer). Runs until the ane threads end. */
+	while (!__atomic_load_n(&stop_foreign, __ATOMIC_SEQ_CST)) {
+		spin_lock_irqsave(&ps_req_lock, f);
+		__atomic_store_n(&psreq_shared, __atomic_load_n(&psreq_shared, __ATOMIC_SEQ_CST) | (1ULL << 9), __ATOMIC_SEQ_CST);
+		spin_unlock_irqrestore(&ps_req_lock, f);
+	}
+	return 0;
+}
+
+static void *ane_client(void *a)
+{
+	int i;
+
+	for (i = 0; i < 400; i++)
+		ps_req_request((struct ane_device *)a, (i & 1) != 0, true);
+	return 0;
 }
 
 int main(void)
@@ -333,21 +398,59 @@ int main(void)
 	ane_dvfs_up(&ane);
 	EXPECT(ane.dvfs.active && export_calls == 1 && strstr(log_buf, "EXPORT 10 1 0\nW64 28e3d07c0 0000000060003400\nW32 285868a00 80000001\n") != NULL, "export reports -ENODEV: falls back to the masked read-modify-write");
 	export_ret = 0;
+	/* 9e is below; 10 follows it */
 	/* 9d: no report node in the device tree: the export symbol is given back at once and nothing is called */
 	fresh(); export_arm = 2; fresh(); dvfs_level = 1;
 	EXPECT(!ane.dvfs.set_request && puts_n == 1, "no report node: symbol given back, no export in use");
 	ane_dvfs_up(&ane);
 	EXPECT(ane.dvfs.active && export_calls == 0 && !strstr(log_buf, "EXPORT"), "no report node: the masked read-modify-write is used");
 	export_ret = 0;
+	/* 10: the fallback RMW is serialized across instances: two ANE devices and a foreign AGX-vote client (its own lock) race on one word. fake_readq loads then yields, so an unserialized RMW restores a stale word and clears bit 9 — the fake counts each lost bit as torn_writes. Under UNLOCKED_SPIN the same run must tear. */
+	{
+		pthread_t ta, tb, tf;
+		struct ane_device a0, a1;
+
+		threaded_ps = 1; torn_writes = 0;
+		psreq_shared = 0x60003000ULL;
+		memset(&a0, 0, sizeof(a0)); memset(&a1, 0, sizeof(a1));
+		a0.dvfs.ptd = (void *)(uintptr_t)PTD_BASE;
+		a1.dvfs.ptd = (void *)(uintptr_t)PTD_BASE;
+		stop_foreign = 0;
+		pthread_create(&tf, 0, foreign_client, 0);
+		pthread_create(&ta, 0, ane_client, &a0);
+		pthread_create(&tb, 0, ane_client, &a1);
+		pthread_join(ta, 0); pthread_join(tb, 0);
+		__atomic_store_n(&stop_foreign, 1, __ATOMIC_SEQ_CST);
+		pthread_join(tf, 0);
+		threaded_ps = 0;
+#ifdef UNLOCKED_SPIN
+		EXPECT(torn_writes > 0, "negative control: without the spinlock the detector must see torn writes");
+#else
+		EXPECT(torn_writes == 0, "two instances racing the fallback RMW never lose the foreign client's bit");
+#endif
+	}
+	threaded_ps = 0;
 	printf(fails ? "RESULT: %d FAILURES\n" : "RESULT: all checks passed\n", fails);
 	return fails != 0;
 }
 """
 with open(T + "/test.c", "w") as f:
     f.write(TEST)
-r = subprocess.run(["gcc", "-Wall", "-I" + T + "/inc", "-I" + T, "-o", T + "/t", T + "/test.c"], capture_output=True, text=True)
+r = subprocess.run(["gcc", "-Wall", "-pthread", "-I" + T + "/inc", "-I" + T, "-o", T + "/t", T + "/test.c"], capture_output=True, text=True)
 errs = [line for line in r.stderr.splitlines() if "error" in line]
 if errs:
     print("\n".join(errs))
     sys.exit(2)
-sys.exit(subprocess.run([T + "/t"]).returncode)
+main_rc = subprocess.run([T + "/t"]).returncode
+if main_rc:
+    sys.exit(main_rc)
+# negative control: same test with the driver's spinlock compiled out —
+# the torn-write detector must fire, proving the check has teeth.
+r = subprocess.run(["gcc", "-Wall", "-pthread", "-DUNLOCKED_SPIN", "-I" + T + "/inc", "-I" + T, "-o", T + "/t_nolock", T + "/test.c"], capture_output=True, text=True)
+errs = [line for line in r.stderr.splitlines() if "error" in line]
+if errs:
+    print("\n".join(errs))
+    sys.exit(2)
+nc = subprocess.run([T + "/t_nolock"], capture_output=True, text=True)
+print(nc.stdout.strip().splitlines()[-1] if nc.stdout.strip() else "(no output)")
+sys.exit(0 if nc.returncode == 0 else 2)
