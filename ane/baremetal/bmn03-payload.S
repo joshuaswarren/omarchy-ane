@@ -17,7 +17,7 @@ _start:
     .long   0                   /* code1 */
     .quad   0                   /* text_offset: image starts executing at +0 */
     .quad   _payload_end - _start  /* image_size: required by m1n1's loader */
-    .quad   0x0b                /* flags: LE, kernel-anywhere, phys-end flag */
+    .quad   0x0a                /* flags: LE (bit0=0), kernel-anywhere, phys-end */
     .quad   0                   /* res2 */
     .quad   0                   /* res3 */
     .quad   0                   /* res4 */
