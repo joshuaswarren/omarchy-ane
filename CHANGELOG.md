@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `docs`: `docs/m6-g18g-compute-constraints.md` records the G18G
+  `wg <= 128` fault-free compute constraint, the no-timestamp-wheel /
+  `EINVAL`-as-`DEVICE_LOST` admission behavior and the EBUSY-on-clean-boot
+  data point, plus the `vulkan_tdt_loop.py` OOB defects they exposed
+  (#488).
 - README: the default-on measured-result rows name the driver release of record (T6000 0.4.3, T6002 die-0 community run 0.5.13 and die-1 on the 0.5.13 module with the 0.5.14 overlay fixes, T6020 0.5.9, T6022 0.5.6); the dt Overlay-state notes carry the same text so promote_chip round-trips regenerate the rows.
 - `ane`: a completed task that used more than 75% of `tm_timeout_ms` logs a ratelimited `tm completion slow` warning, so a valid-but-slow program shows up in the log before it becomes a timeout.
 
