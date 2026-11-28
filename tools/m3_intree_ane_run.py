@@ -245,6 +245,15 @@ def self_test() -> None:
             raise AssertionError("wrong ane-type accepted")
         (node / "apple,ane-type").write_bytes(struct.pack(">I", ANE_TYPE_T8122))
 
+        (node / "iommus").write_bytes(b"\x00" * 8)
+        try:
+            validate_dt(root)
+        except Refuse as e:
+            assert "DART" in str(e), e
+        else:
+            raise AssertionError("wrong DART stream count accepted")
+        (node / "iommus").write_bytes(b"\x00" * (DART_STREAMS * 8))
+
         (device / "driver").unlink()
         (device / "driver").symlink_to(f"../../../../bus/platform/drivers/{OUT_OF_TREE}")
         try:
@@ -253,8 +262,28 @@ def self_test() -> None:
             assert OUT_OF_TREE in str(e), e
         else:
             raise AssertionError("ane_h15 collision accepted")
+
+        (device / "driver").unlink()
+        (device / "driver").symlink_to("../../../../bus/platform/drivers/ane_upstream_v1")
+        try:
+            accel_device(root, 0)
+        except Refuse as e:
+            assert INTREE_DRIVER in str(e), e
+        else:
+            raise AssertionError("non-intree driver accepted")
+
+        (device / "driver").unlink()
+        try:
+            accel_device(root, 0)
+        except Refuse as e:
+            assert "no driver bound" in str(e), e
+        else:
+            raise AssertionError("unbound accel device accepted")
+
         print("self-test: dt pass, memory-region refusal, ane-type refusal, "
-              "ane_h15 collision refusal, fixture header, golden recompute — all ok")
+              "DART-count refusal, ane_h15 collision refusal, wrong-driver "
+              "refusal, unbound-device refusal, fixture header, golden "
+              "recompute — all ok")
     finally:
         import shutil
         shutil.rmtree(root, ignore_errors=True)
