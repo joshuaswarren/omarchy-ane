@@ -1,0 +1,208 @@
+{
+  "schema": "mil-hwxc.h18-anec-package.v1",
+  "artifactFormat": "hwx",
+  "target": "H18",
+  "encoder": "ANECCompile-direct",
+  "operation": "matmul",
+  "file": "program-0.hwx",
+  "bytes": 65536,
+  "constantBytes": 16384,
+  "constantOffset": 320,
+  "firstTaskBytes": 816,
+  "taskDescriptors": 1,
+  "dispatchPlan": [
+    0
+  ],
+  "inputs": [
+    {
+      "name": "a",
+      "index": 5,
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        64,
+        64
+      ],
+      "dtype": "float16",
+      "logicalBytes": 8192,
+      "allocationBytes": 32768,
+      "nchw": [
+        1,
+        512,
+        1,
+        1,
+        64,
+        64
+      ]
+    },
+    {
+      "name": "b",
+      "index": 6,
+      "direction": "input",
+      "shape": [
+        1,
+        1,
+        64,
+        1
+      ],
+      "dtype": "float16",
+      "logicalBytes": 128,
+      "allocationBytes": 8192,
+      "nchw": [
+        1,
+        128,
+        1,
+        1,
+        64,
+        64
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "y",
+      "index": 4,
+      "direction": "output",
+      "shape": [
+        1,
+        1,
+        64,
+        1
+      ],
+      "dtype": "float16",
+      "logicalBytes": 128,
+      "allocationBytes": 8192,
+      "nchw": [
+        1,
+        128,
+        1,
+        1,
+        64,
+        64
+      ]
+    }
+  ],
+  "intermediates": [],
+  "constantInputs": {},
+  "programs": [
+    {
+      "file": "program-0.hwx",
+      "bytes": 65536,
+      "constantBytes": 16384,
+      "constantOffset": 320,
+      "firstTaskBytes": 816,
+      "taskDescriptors": 1,
+      "encoder": "ANECCompile-direct",
+      "operation": "matmul",
+      "dispatchPlan": [
+        0
+      ],
+      "inputs": [
+        {
+          "name": "a",
+          "index": 5,
+          "direction": "input",
+          "shape": [
+            1,
+            1,
+            64,
+            64
+          ],
+          "dtype": "float16",
+          "logicalBytes": 8192,
+          "allocationBytes": 32768,
+          "nchw": [
+            1,
+            512,
+            1,
+            1,
+            64,
+            64
+          ]
+        },
+        {
+          "name": "b",
+          "index": 6,
+          "direction": "input",
+          "shape": [
+            1,
+            1,
+            64,
+            1
+          ],
+          "dtype": "float16",
+          "logicalBytes": 128,
+          "allocationBytes": 8192,
+          "nchw": [
+            1,
+            128,
+            1,
+            1,
+            64,
+            64
+          ]
+        }
+      ],
+      "outputs": [
+        {
+          "name": "y",
+          "index": 4,
+          "direction": "output",
+          "shape": [
+            1,
+            1,
+            64,
+            1
+          ],
+          "dtype": "float16",
+          "logicalBytes": 128,
+          "allocationBytes": 8192,
+          "nchw": [
+            1,
+            128,
+            1,
+            1,
+            64,
+            64
+          ]
+        }
+      ],
+      "intermediates": [],
+      "constantInputs": {}
+    }
+  ],
+  "tensors": {
+    "a": {
+      "role": "input",
+      "shape": [
+        1,
+        1,
+        64,
+        64
+      ],
+      "logicalBytes": 8192
+    },
+    "b": {
+      "role": "input",
+      "shape": [
+        1,
+        1,
+        64,
+        1
+      ],
+      "logicalBytes": 128
+    },
+    "y": {
+      "role": "output",
+      "shape": [
+        1,
+        1,
+        64,
+        1
+      ],
+      "logicalBytes": 128
+    }
+  },
+  "notes": "matmul is outside mil-hwxc's H18 template envelope (elementwise/unary/scalar-const only), so this capture is the raw ANECCompile output named program-0.hwx; the manifest fields mirror the mil-hwxc package schema."
+}

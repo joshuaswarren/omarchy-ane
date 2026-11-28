@@ -1,0 +1,50 @@
+{
+  "fixture": "mul",
+  "model_hwx_sha256_12": "7e88b1f3707b",
+  "input_count": 2,
+  "task_count": 1,
+  "stream_bytes": 284,
+  "constant_bytes": 16384,
+  "content_bytes": 16704,
+  "channels": {
+    "4": {
+      "role": "output",
+      "iova": "0x30010000",
+      "name": "y",
+      "allocation_bytes": 32768,
+      "element_code": 5,
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ]
+    },
+    "5": {
+      "role": "input",
+      "iova": "0x30000000",
+      "name": "a",
+      "allocation_bytes": 32768,
+      "element_code": 5,
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ]
+    },
+    "6": {
+      "role": "input",
+      "iova": "0x30008000",
+      "name": "b",
+      "allocation_bytes": 32768,
+      "element_code": 5,
+      "shape": [
+        1,
+        1,
+        128,
+        128
+      ]
+    }
+  }
+}
