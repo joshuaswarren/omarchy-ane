@@ -88,20 +88,38 @@
       "kind": "compiler-oracle",
       "sha256": "ed8912530c7fecbaeb1b17a55974acbf23e4485c0d4030438009261468b0f6af",
       "ref": "NeoAne2 2026-10-02 rerun of the same ANECCompile tool on the same host for targets h16 and h17, cases add [1,64,1,1] and mul [1,256,1,16] fp16; structure and byte-diff counts only (lab notebook artifacts/NeoAne2/oracle/hwx-h16-vs-h17.txt)"
+    },
+    {
+      "id": "A2",
+      "kind": "hw-adt",
+      "sha256": "d48400d13187a9f281e877d593c5de6cc488272dd294ec217e7888d0d0439a0c",
+      "ref": "device tree for j716cap (build 27.2, 26B123), adt.txt dump"
+    },
+    {
+      "id": "B2",
+      "kind": "hw-chip-map",
+      "sha256": "0fbfae04175cde81ef36d273aa280d39ffe5a54eacba8494b45a59daca462510",
+      "ref": "BuildManifest.27.plist build identities for j714cap, j714sap, j716cap, j716sap, j775cap, j775dap, j873sap (build 27.2, 26B123)"
+    },
+    {
+      "id": "K2",
+      "kind": "hw-behaviour",
+      "sha256": "30f44961d1c72d66c3836cc6725c5edb14e69270624d53235677bcd72e3f6d91",
+      "ref": "kernelcache.release.Mac17,6_7_8_9_14_15_16.a2s symbol table and kernelcache strings (build 27.2, 26B123)"
     }
   ],
   "ane": {
     "node": {
       "v": "/arm-io/ane0",
-      "src": "A1"
+      "src": "A2"
     },
     "compatible": {
       "v": "ane,t8132exclave",
-      "src": "A1"
+      "src": "A2"
     },
     "ane_type": {
       "v": 544,
-      "src": "A1"
+      "src": "A2"
     },
     "reg": {
       "v": [
@@ -141,7 +159,7 @@
           "size": "0x4000"
         }
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "reg_names": {
       "v": null,
@@ -155,14 +173,14 @@
         ],
         "controller": "aic,3 at 0x280400000+0x1cc000"
       },
-      "src": "A1"
+      "src": "A2"
     },
     "power_domains": {
       "v": [
         "ANE_SYS_V (no_ps)",
         "ANE_SYS_V_PMP (no_ps)"
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "clock_ids": {
       "v": [
@@ -170,7 +188,7 @@
         334,
         381
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "iommus": {
       "v": {
@@ -186,7 +204,7 @@
           }
         ]
       },
-      "src": "A1"
+      "src": "A2"
     },
     "exclave": {
       "v": {
@@ -195,7 +213,7 @@
         "exclave-edk-service": "com.apple.service.ANEExclave_EDK",
         "exclave-reg": "0x549c00000+0x88000"
       },
-      "src": "A1"
+      "src": "A2"
     },
     "other_props": {
       "v": {
@@ -204,7 +222,7 @@
         "ane-id": 0,
         "die-ane-id": 0
       },
-      "src": "A1"
+      "src": "A2"
     },
     "segment_ranges": {
       "v": null,
@@ -214,11 +232,11 @@
   "dart": {
     "compatible": {
       "v": "dart,t8110",
-      "src": "A1"
+      "src": "A2"
     },
     "type": {
       "v": "t8110",
-      "src": "A1"
+      "src": "A2"
     },
     "reg": {
       "v": [
@@ -227,13 +245,13 @@
         "0x509840000+0xc000",
         "0x509810000+0x4000"
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "interrupts": {
       "v": [
         955
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "sid": {
       "v": [
@@ -243,7 +261,7 @@
         13,
         15
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "exclave_sid": {
       "v": [
@@ -255,38 +273,38 @@
         6,
         7
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "sid_count": {
       "v": 16,
-      "src": "A1"
+      "src": "A2"
     },
     "vm_base": {
       "v": "0x10000000000",
-      "src": "A1"
+      "src": "A2"
     },
     "vm_size": {
       "v": "0x30000000000",
-      "src": "A1"
+      "src": "A2"
     },
     "page_size": {
       "v": 16384,
-      "src": "A1"
+      "src": "A2"
     },
     "dart_options": {
       "v": 37,
-      "src": "A1"
+      "src": "A2"
     },
     "flush_by_dva": {
       "v": 1,
-      "src": "A1"
+      "src": "A2"
     },
     "bypass": {
       "v": [
         "bypass-10",
         "bypass-13"
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "mappers": {
       "v": {
@@ -300,7 +318,7 @@
         "mapper-ane0-iso7": 7,
         "mapper-ane0-mpm": 11
       },
-      "src": "A1"
+      "src": "A2"
     },
     "dapf_ranges": {
       "v": [
@@ -310,13 +328,13 @@
         "0x2302668000-0x2302668003",
         "0x6302668000-0x6302668003"
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "power_domains": {
       "v": [
         "ANE_SYS_DART"
       ],
-      "src": "A1"
+      "src": "A2"
     },
     "tunables": {
       "v": null,
@@ -359,34 +377,55 @@
         {
           "name": "ANE_TDBASE",
           "id": 224,
-          "ps": "0x2809003d0",
+          "ps": "none (no_ps flag)",
+          "parents": [
+            221
+          ],
+          "note": "26A428 (A1) recorded parents [219] and ps 0x2809003d0; at 27.2 both j714cap and j716cap show parents [221] and no_ps. The offset field still reads 976 (0x3d0). Build difference, not a board difference."
+        },
+        {
+          "name": "ANE_SYS_V",
+          "id": 569,
+          "ps": "none (no_ps flag)",
+          "parents": [
+            223
+          ],
+          "flags": "notify_pmp, ps_cfg16 128, id1 17"
+        },
+        {
+          "name": "ANE_SYS_V_PMP",
+          "id": 664,
+          "ps": "none (no_ps flag)",
           "parents": [
             219
           ]
         },
         {
-          "name": "ANE_SYS_V",
-          "id": 569,
-          "ps": "none (no_ps flag)"
-        },
-        {
-          "name": "ANE_SYS_V_PMP",
-          "id": 664,
-          "ps": "none (no_ps flag)"
-        },
-        {
           "name": "ANE_SYS_DART",
           "id": 568,
-          "ps": "none (no_ps flag)"
+          "ps": "none (no_ps flag)",
+          "parents_u8id": [
+            131,
+            1
+          ],
+          "parents_u16id": [
+            387,
+            0
+          ],
+          "flags": "id1 24"
         }
       ],
-      "src": "A1"
+      "src": "A2"
+    },
+    "power_domains_note": {
+      "v": "power-gates and clock-gates on the ane0 node read [569, 664] and [335, 334, 381] at 27.2, unchanged from 26A428.",
+      "src": "A2"
     }
   },
   "firmware": {
     "name": {
       "v": "h17_ane0_fw_hyperion_j71y.im4p",
-      "src": "B1"
+      "src": "B2"
     },
     "chip_map": {
       "v": {
@@ -399,7 +438,7 @@
           "Personalize": true
         }
       },
-      "src": "B1"
+      "src": "B2"
     },
     "image_size": {
       "v": 1556505,
@@ -439,7 +478,11 @@
     },
     "loaded_by": {
       "v": "iBoot (IsLoadedByiBoot true, IsFUDFirmware true)",
-      "src": "B1"
+      "src": "B2"
+    },
+    "image_272": {
+      "v": null,
+      "reason": "The 27.2 manifest names the same h17_ane0_fw_hyperion_j71y.im4p, but the 27.2 image payload was not extracted; image_size, image_sha256, payload and segment values remain measured on the 26A428 image (F1)."
     }
   },
   "driver_family": {
@@ -458,5 +501,49 @@
   "ane1_j775d": {
     "v": null,
     "reason": "The j775d ADT was not read. receipts/2026-10-01-ane-every-soc/adt-27.0.txt:197-199 lists j775d ane1 as ane,t8020 at 0x4308000000+0x2000000 (die-id 1, interrupt 4058; dart-ane1 at 0x4309800000, interrupt 4059). That summary prints no exclave property for any node (ane0 shows none there, but the full j714c ADT has exclave-assigned on ane0), so whether ane1 is exclave-assigned is not measured. The chip and board map gives Ap,ANE1 preloaded=false (source B1)."
+  },
+  "clpc": {
+    "perf_domain": {
+      "v": "ANE perf-domain index 8 in pmgr perf-domains blob (ANE name at record index 8)",
+      "src": "A2"
+    },
+    "ane_utilization": {
+      "v": {
+        "target": 52428,
+        "ki_up": 154009,
+        "ki_down": 32768,
+        "kp_up": 0,
+        "kp_down": 0
+      },
+      "src": "A2"
+    },
+    "sotra_devices": {
+      "v": "clpc node carries sotra_h17d, sotra_h17s, sotra_h17cr1, sotra_h17cr2, sotra_h17c device tables with compatible clpc,t6050/clpc,t6050d; their soc-devices lists are recorded in the ADT but not decoded here",
+      "src": "A2"
+    },
+    "voter_agent": {
+      "v": {
+        "clpc-voter-agent-idx": 1,
+        "ap-voter-agent-idx": 3,
+        "pmp-voter-agent-idx": 0
+      },
+      "src": "A2"
+    }
+  },
+  "board_ids": {
+    "v": {
+      "j714c": "0x0A",
+      "j714s": "0x08",
+      "j716c": "0x0E",
+      "j716s": "0x0C",
+      "j775c": "0x10",
+      "j775d": "0x12",
+      "j873s": "0x02"
+    },
+    "src": "B2"
+  },
+  "driver_family_272": {
+    "v": "27.2 kernelcache contains AppleT6050ANEHAL.kext, AppleANELoadBalancer.kext and AppleH16ANEInterface.kext; the T6050 HAL binds ane,t8132exclave, dart,t8110 and an ANEExclaveProxy service.",
+    "src": "K2"
   }
 }
