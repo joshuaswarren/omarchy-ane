@@ -133,7 +133,8 @@ large, only `schema_version`, `tool`, `generated_at`, `elapsed_ms`, `soc` and
 `ane_linux.ane_probe`. It runs `omarchy-ane-probe --json` with a 15 s
 timeout. A missing tool gives `{available: false, reason}`, and output that
 is not JSON gives `{available: false, error}`. `schema_version` changes when
-a top-level field is added or removed: version 2 added `reachability`.
+a top-level field is added or removed: version 2 added `reachability`,
+version 3 added `os_fw_version`.
 
 ## Tests
 
